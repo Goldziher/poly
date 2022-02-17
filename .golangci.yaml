@@ -1,0 +1,63 @@
+errorlint:
+  asserts: false
+linters-settings:
+  goconst:
+    min-len: 2
+    min-occurrences: 3
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - performance
+  goimports:
+    local-prefixes: github.com/StreamElements/
+  govet:
+    check-shadowing: true
+linters:
+  enable:
+    - bidichk
+    - deadcode
+    - durationcheck
+    - errcheck
+    - errorlint
+    - exportloopref
+    - goimports
+    - goconst
+    - gocritic
+    - godot
+    - godox
+    - gofmt
+    - goheader
+    - gomoddirectives
+    - gomodguard
+    - goprintffuncname
+    - gosec
+    - ineffassign
+    - gosimple
+    - govet
+    - nolintlint
+    - predeclared
+    - rowserrcheck
+    - sqlclosecheck
+    - staticcheck
+    - structcheck
+    - tenv
+    - testpackage
+    - typecheck
+    - unconvert
+    - unparam
+    - unused
+    - varcheck
+    - wastedassign
+    - whitespace
+issues:
+  fix: true
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - gosec
+      text: "weak cryptographic primitive"
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+run:
+  issues-exit-code: 1
