@@ -1,0 +1,20 @@
+[package]
+name = "polylint"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Universal, zero-dependency linter: one binary that lints every language in-process, no per-language toolchains required."
+keywords = ["linter", "lint", "polyglot", "universal", "formatter"]
+categories = ["development-tools", "command-line-utilities"]
+
+[[bin]]
+name = "polylint"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+owo-colors.workspace = true
+polylint-core.workspace = true

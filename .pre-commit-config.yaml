@@ -1,0 +1,75 @@
+default_install_hook_types:
+  - pre-commit
+  - commit-msg
+default_stages:
+  - pre-commit
+exclude: ^target/
+
+repos:
+  - repo: https://github.com/Goldziher/gitfluff
+    rev: v0.8.0
+    hooks:
+      - id: gitfluff-lint
+        args:
+          - --write
+        stages:
+          - commit-msg
+
+  - repo: https://github.com/xberg-io/pre-commit-hooks
+    rev: v3.0.0
+    hooks:
+      # File safety
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-merge-conflict
+      - id: check-added-large-files
+      - id: detect-private-key
+      - id: check-case-conflict
+      - id: check-executables-have-shebangs
+      - id: check-shebang-scripts-are-executable
+      - id: mixed-line-ending
+      - id: typos
+        args:
+          - --force-exclude
+      - id: check-json
+      - id: check-yaml
+      - id: check-toml
+
+      # Shell
+      - id: shfmt
+        args:
+          - -w
+          - -i
+          - "2"
+      - id: shellcheck
+
+      # Markdown
+      - id: rumdl-fmt
+      - id: markdownlint-rumdl-strict
+        # .ai-rulez/ prose is rendered into many tool-native formats; long lines
+        # there are expected and respected by ai-rulez's own templates.
+        exclude: ^\.ai-rulez/
+
+      # Rust
+      - id: cargo-fmt
+        args:
+          - --all
+      - id: cargo-clippy
+        args:
+          - --fix
+          - --allow-dirty
+          - --allow-staged
+          - --all-targets
+          - --
+          - -D
+          - warnings
+      - id: cargo-sort
+      - id: cargo-machete
+      - id: cargo-deny
+        args:
+          - check
+      - id: rustdoc-lint
+      # 1,000 LOC ceiling per .rs file — split early.
+      - id: rust-max-lines
+        args:
+          - --max=1000

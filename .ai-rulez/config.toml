@@ -1,0 +1,49 @@
+version = "4.0"
+name = "polylint"
+description = "Universal zero-dependency linter & formatter — two pure-Rust binaries (polylint + polyfmt) wrapping best-in-class tools as in-process backends, with a tree-sitter generic tier for everything else."
+gitignore = true
+
+presets = [
+  "claude",
+  "cursor",
+  "gemini",
+  "windsurf",
+  "copilot",
+  "continue-dev",
+  "amp",
+  "cline",
+  "codex",
+  "opencode",
+  "junie",
+  "antigravity",
+]
+
+builtins = [
+  "rust",
+  "cicd",
+  "documentation",
+  "observability",
+  "default-commands",
+]
+
+# polylint USES basemind: it is delivered via the [[plugins]] marketplace entry below (the
+# launcher downloads the published binary), so it is intentionally NOT declared as a
+# project-level mcp_server — that would duplicate the plugin in Claude Code and pin a local
+# binary path.
+
+[[mcp_servers]]
+name = "ai-rulez"
+description = "Manage AI governance config via MCP."
+command = "npx"
+args = ["-y", "ai-rulez@latest", "mcp"]
+
+[[marketplaces]]
+name = "basemind"
+source = "Goldziher/basemind"
+type = "github"
+
+[[plugins]]
+marketplace = "basemind"
+name = "basemind"
+scope = "project"
+enabled = true

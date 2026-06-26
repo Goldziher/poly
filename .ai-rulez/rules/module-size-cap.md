@@ -1,0 +1,16 @@
+---
+priority: critical
+---
+
+# Module Size Cap
+
+- Every file under `crates/**/src/**/*.rs` is capped at **1000 lines** by the prek hook
+  `rust-max-lines` (see `.pre-commit-config.yaml`).
+- When a file approaches the cap, refactor by extracting helpers, types, or submodules — **do
+  not raise the cap**.
+- The cap reinforces the project's one-concern-per-file shape: a backend lives in
+  `crates/polylint-core/src/engines/<tool>.rs`, and when it outgrows the cap it is split per
+  concern (e.g. `engines/<tool>/lint.rs`, `engines/<tool>/format.rs`, `engines/<tool>/config.rs`)
+  rather than left as one oversized module. Pipeline stages (`discover.rs`, `cache.rs`,
+  `runner.rs`, `report.rs`, …) each stay in their own file for the same reason.
+</content>
