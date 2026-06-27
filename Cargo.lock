@@ -1845,6 +1845,7 @@ dependencies = [
  "anyhow",
  "assert_cmd",
  "clap",
+ "poly-config",
  "predicates",
  "regex",
  "serde",
@@ -4373,6 +4374,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "gitfluff",
  "owo-colors",
  "polylint-core",
 ]

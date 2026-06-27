@@ -53,6 +53,7 @@ etcetera = "0.11.0"
 fancy-regex = "0.18.0"
 fs-err = { version = "3.3.0", features = ["tokio"] }
 futures = "0.3.31"
+gitfluff = { path = "crates/gitfluff" }
 globset = "0.4.18"
 graphql-parser = "0.4"
 hex = "0.4.3"

@@ -1,8 +1,8 @@
 //! `poly` — the single universal, zero-dependency linter & formatter CLI.
 //!
-//! `poly lint [PATHS]…` lints; `poly fmt [PATHS]…` formats. The same engine
-//! powers both; `polylint` and `polyfmt` ship as thin aliases for the two
-//! subcommands.
+//! `poly lint [PATHS]…` lints; `poly fmt [PATHS]…` formats; `poly commit`
+//! lints/cleans a commit message (gitfluff). The same engine powers lint/fmt;
+//! `polylint` and `polyfmt` ship as thin aliases for those two subcommands.
 
 use std::process::ExitCode;
 
@@ -27,11 +27,27 @@ enum Command {
     Lint(LintArgs),
     /// Format files (dry-run by default; use --fix to write in place).
     Fmt(FmtArgs),
+    /// Lint and optionally clean a commit message (reads `[commit]` from poly.toml).
+    Commit(Box<gitfluff::cli::LintArgs>),
 }
 
 fn main() -> ExitCode {
     match Cli::parse().command {
         Command::Lint(args) => run_lint(args),
         Command::Fmt(args) => run_fmt(args),
+        Command::Commit(args) => run_commit(*args),
+    }
+}
+
+/// Run the gitfluff-backed commit-message linter and map its exit code onto an
+/// [`ExitCode`].
+fn run_commit(args: gitfluff::cli::LintArgs) -> ExitCode {
+    match gitfluff::run_lint(args) {
+        Ok(0) => ExitCode::SUCCESS,
+        Ok(code) => ExitCode::from(code as u8),
+        Err(error) => {
+            eprintln!("poly commit: {error:#}");
+            ExitCode::FAILURE
+        }
     }
 }
