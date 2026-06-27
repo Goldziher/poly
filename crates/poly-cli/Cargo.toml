@@ -1,0 +1,24 @@
+[package]
+name = "poly-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Universal, zero-dependency linter & formatter: a single `poly` CLI (poly lint / poly fmt) that handles every language in-process, no per-language toolchains required."
+keywords = ["linter", "formatter", "polyglot", "universal", "lint"]
+categories = ["development-tools", "command-line-utilities"]
+
+[lib]
+name = "poly_cli"
+path = "src/lib.rs"
+
+[[bin]]
+name = "poly"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+owo-colors.workspace = true
+polylint-core.workspace = true

@@ -1,6 +1,11 @@
 [workspace]
 resolver = "3"
-members = ["crates/polyfmt", "crates/polylint", "crates/polylint-core"]
+members = [
+    "crates/poly-cli",
+    "crates/polyfmt",
+    "crates/polylint",
+    "crates/polylint-core",
+]
 
 [workspace.package]
 version = "0.1.0"
@@ -29,6 +34,7 @@ oxc_allocator = "0.137"
 oxc_codegen = "0.137"
 oxc_parser = "0.137"
 oxc_span = "0.137"
+poly-cli = { path = "crates/poly-cli" }
 polylint-core = { path = "crates/polylint-core" }
 rayon = "1"
 # ruff component crates (published to crates.io by astral-sh) — used by the
