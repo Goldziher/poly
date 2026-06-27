@@ -17,8 +17,8 @@ use oxc_diagnostics::Severity as OxcSeverity;
 use oxc_formatter::JsFormatOptions;
 use oxc_formatter_core::{IndentWidth, LineWidth};
 use oxc_linter::{
-    ConfigStore, ConfigStoreBuilder, ExternalPluginStore, LintOptions, LintService,
-    LintServiceOptions, Linter, Message, PossibleFixes, RuntimeFileSystem,
+    AllowWarnDeny, ConfigStore, ConfigStoreBuilder, ExternalPluginStore, LintFilter, LintOptions,
+    LintService, LintServiceOptions, Linter, Message, PossibleFixes, RuntimeFileSystem,
 };
 use oxc_span::SourceType;
 
@@ -66,10 +66,10 @@ impl crate::engine::Engine for OxcEngine {
         VERSION
     }
 
-    fn lint(&self, src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
+    fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
         match src.language {
             Language::Json | Language::Jsonc => lint_json(src),
-            _ => lint_js(src),
+            _ => lint_js(src, cfg),
         }
     }
 
@@ -173,14 +173,69 @@ fn lint_service() -> &'static LintService {
 
 // ── lint_js: run oxlint correctness rules in-process ─────────────────────────
 
-fn lint_js(src: &SourceFile) -> anyhow::Result<Vec<Diagnostic>> {
-    let service = lint_service();
+/// Run `service` against one source file and return the raw oxlint messages.
+///
+/// Extracted so both the cached-service and the per-config-service paths share
+/// identical call-site code.
+fn run_with_service(service: &LintService, src: &SourceFile) -> Vec<Message> {
     let arc_path: Arc<OsStr> = Arc::from(src.path.as_os_str());
     let fs = MemoryFileSystem {
         path: &src.path,
         content: &src.content,
     };
-    let messages = service.run_source(&fs, vec![arc_path]);
+    service.run_source(&fs, vec![arc_path])
+}
+
+/// Build a fresh [`LintService`] applying `select` / `ignore` rule filters from
+/// `cfg.options`.
+///
+/// Only called when `cfg.options` is non-empty; the empty-config fast path
+/// reuses the shared [`OnceLock`] service from [`lint_service`].
+///
+/// * `select = ["rule", …]` — enable each named rule at Warning severity.
+/// * `ignore = ["rule", …]` — disable each named rule (Allow).
+///
+/// Unrecognised or malformed rule names are silently skipped so that a typo
+/// in the user's config does not prevent the other rules from running.
+fn build_configured_service(cfg: &EngineConfig) -> anyhow::Result<LintService> {
+    let mut plugin_store = ExternalPluginStore::default();
+    let mut builder = ConfigStoreBuilder::default();
+
+    if let Some(arr) = cfg.options.get("select").and_then(|v| v.as_array()) {
+        for name in arr.iter().filter_map(|v| v.as_str()) {
+            if let Ok(filter) = LintFilter::new(AllowWarnDeny::Warn, name.to_owned()) {
+                builder = builder.with_filter(&filter);
+            }
+        }
+    }
+
+    if let Some(arr) = cfg.options.get("ignore").and_then(|v| v.as_array()) {
+        for name in arr.iter().filter_map(|v| v.as_str()) {
+            if let Ok(filter) = LintFilter::new(AllowWarnDeny::Allow, name.to_owned()) {
+                builder = builder.with_filter(&filter);
+            }
+        }
+    }
+
+    let config = builder
+        .build(&mut plugin_store)
+        .map_err(|e| anyhow::anyhow!("oxlint config error: {e}"))?;
+    let config_store = ConfigStore::new(config, Default::default(), plugin_store);
+    let linter = Linter::new(LintOptions::default(), config_store, None);
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let options = LintServiceOptions::new(cwd);
+    Ok(LintService::new(linter, options))
+}
+
+fn lint_js(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
+    let messages = if cfg.options.is_empty() {
+        // Fast path: reuse the lazily-initialised shared service; no allocation.
+        run_with_service(lint_service(), src)
+    } else {
+        // Config path: build a per-call service with the requested rule filters.
+        let service = build_configured_service(cfg)?;
+        run_with_service(&service, src)
+    };
     let diagnostics = messages
         .into_iter()
         .map(|msg| map_oxlint_message(msg, &src.content))
@@ -462,14 +517,14 @@ mod tests {
             "export function square(n) { return n * n; }\n",
             Language::JavaScript,
         );
-        let diags = lint_js(&src).unwrap();
+        let diags = lint_js(&src, &default_cfg()).unwrap();
         assert!(diags.is_empty(), "expected no diagnostics; got: {diags:#?}");
     }
 
     #[test]
     fn invalid_js_produces_parse_error() {
         let src = make_src("const x = {\n  a: 1,\nconst y = 2;\n", Language::JavaScript);
-        let diags = lint_js(&src).unwrap();
+        let diags = lint_js(&src, &default_cfg()).unwrap();
         assert!(
             !diags.is_empty(),
             "expected at least one diagnostic for broken JS"

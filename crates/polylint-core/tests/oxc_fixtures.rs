@@ -81,6 +81,46 @@ fn oxc_oxlint_no_debugger_rule() {
     insta::assert_debug_snapshot!(summary);
 }
 
+/// Behavioral proof: `ignore = ["no-debugger"]` in engine config suppresses the
+/// `no-debugger` rule that fires by default.
+///
+/// This verifies end-to-end that config options flow through `lint()` into
+/// `ConfigStoreBuilder::with_filter` and actually change the rule output.
+#[test]
+fn oxc_config_ignore_suppresses_rule() {
+    let content = include_str!("fixtures/oxc/bad_js.js");
+    let src = make_src(content, "bad_js.js", Language::JavaScript);
+    let engine = OxcEngine;
+
+    // Default config: no-debugger fires.
+    let default_diags = engine.lint(&src, &default_cfg()).unwrap();
+    assert!(
+        default_diags
+            .iter()
+            .any(|d| d.code.as_deref() == Some("no-debugger")),
+        "expected no-debugger with default config; got: {default_diags:?}"
+    );
+
+    // Config with ignore = ["no-debugger"]: rule must be suppressed.
+    let mut opts = toml::Table::new();
+    opts.insert(
+        "ignore".to_owned(),
+        toml::Value::Array(vec![toml::Value::String("no-debugger".to_owned())]),
+    );
+    let cfg_ignore = EngineConfig {
+        globals: GlobalDefaults::default(),
+        indent_width: 2,
+        options: opts,
+    };
+    let ignore_diags = engine.lint(&src, &cfg_ignore).unwrap();
+    assert!(
+        !ignore_diags
+            .iter()
+            .any(|d| d.code.as_deref() == Some("no-debugger")),
+        "no-debugger should be suppressed via ignore config; got: {ignore_diags:?}"
+    );
+}
+
 /// JSON with a trailing comma — asserts the expected parse-error Diagnostic.
 #[test]
 fn oxc_known_bad_json_diagnostics() {
