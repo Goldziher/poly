@@ -1,0 +1,9 @@
+---
+source: crates/polylint-core/tests/oxc_fixtures.rs
+assertion_line: 89
+expression: text
+---
+{
+  "b": 2,
+  "a": 1
+}
