@@ -56,10 +56,14 @@ impl Engine for NixFmtEngine {
     /// when the output equals the input (already formatted) and when the input
     /// cannot be parsed, so unparsable Nix is never corrupted.
     fn format(&self, src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
+        // Config is intentionally unused: alejandra is a zero-configuration
+        // formatter (fixed two-space indent, no line-length knob). The
+        // `alejandra::format::in_memory` API accepts only a path and content;
+        // there are no option structs to populate. This mirrors how `gofmt` is
+        // used — the tool's output is authoritative and we don't second-guess it.
+        //
         // `in_memory` takes ownership of both strings; the clone is at the API
         // boundary (alejandra parses `before` into an rnix tree internally).
-        // alejandra is fully opinionated (two-space indent) and exposes no
-        // configuration in this version.
         let (status, after) =
             in_memory(src.path.to_string_lossy().into_owned(), src.content.clone());
         match status {

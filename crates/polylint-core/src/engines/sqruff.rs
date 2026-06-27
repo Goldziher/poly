@@ -84,7 +84,12 @@ impl Engine for SqruffEngine {
 /// Build a [`FluffConfig`] from a polylint [`EngineConfig`].
 ///
 /// Layering: sqruff defaults (from embedded `default_config.cfg`) → opinionated
-/// polylint override (line length 120) → user `polylint.toml` options (dialect).
+/// polylint override (line length 120) → user `polylint.toml` options.
+///
+/// Supported options in `[lint.sql.sqruff]` / `[fmt.sql.sqruff]`:
+/// - `dialect` — SQL dialect string (default `"ansi"`).
+/// - `rules` — array of rule codes / group names to allow-list.
+/// - `exclude_rules` — array of rule codes / group names to deny-list.
 fn build_fluff_config(cfg: &EngineConfig) -> anyhow::Result<FluffConfig> {
     let mut fluff = FluffConfig::default();
 
@@ -112,6 +117,34 @@ fn build_fluff_config(cfg: &EngineConfig) -> anyhow::Result<FluffConfig> {
         fluff
             .override_dialect(kind)
             .map_err(|e| anyhow::anyhow!("sqruff override_dialect failed: {e}"))?;
+    }
+
+    // User rule allow-list: `rules = ["CP01", "LT01"]` selects only those rules.
+    if let Some(rules) = cfg.options.get("rules").and_then(|v| v.as_array()) {
+        let val = Value::Array(
+            rules
+                .iter()
+                .filter_map(|v| v.as_str())
+                .map(|s| Value::String(s.into()))
+                .collect(),
+        );
+        if let Some(core) = fluff.raw.get_mut("core").and_then(|v| v.as_map_mut()) {
+            core.insert("rule_allowlist".to_string(), val);
+        }
+    }
+
+    // User rule deny-list: `exclude_rules = ["CP01"]` suppresses those rules.
+    if let Some(exclude_rules) = cfg.options.get("exclude_rules").and_then(|v| v.as_array()) {
+        let val = Value::Array(
+            exclude_rules
+                .iter()
+                .filter_map(|v| v.as_str())
+                .map(|s| Value::String(s.into()))
+                .collect(),
+        );
+        if let Some(core) = fluff.raw.get_mut("core").and_then(|v| v.as_map_mut()) {
+            core.insert("rule_denylist".to_string(), val);
+        }
     }
 
     Ok(fluff)

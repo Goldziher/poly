@@ -101,7 +101,14 @@ impl Engine for GraphQlEngine {
     }
 
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
-        let indent = u32::try_from(cfg.indent_width).unwrap_or(2);
+        // Indent width: opinionated default from language (2), overridable via
+        // `[fmt.graphql.graphql] indent_width = 4` in `polylint.toml`.
+        let indent = cfg
+            .options
+            .get("indent_width")
+            .and_then(|v| v.as_integer())
+            .and_then(|v| u32::try_from(v).ok())
+            .unwrap_or_else(|| u32::try_from(cfg.indent_width).unwrap_or(2));
         let mut style = Style::default();
         style.indent(indent);
 

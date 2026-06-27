@@ -80,12 +80,29 @@ impl Engine for TyposEngine {
         TYPOS_VERSION
     }
 
-    fn lint(&self, src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
+    fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
         // Generated/minified assets are pure noise word-by-word; skip them.
         if is_generated_or_minified(&src.content) {
             return Ok(Vec::new());
         }
-        let dict = BuiltinDictionary;
+
+        // Collect user-defined words to treat as valid spellings.
+        // Configurable via `[lint.<lang>.typos] extend_ignore_words = ["foo", "bar"]`.
+        let ignore_words: Vec<String> = cfg
+            .options
+            .get("extend_ignore_words")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str())
+                    .map(|s| s.to_ascii_lowercase())
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let dict = ConfiguredDictionary {
+            ignore_words: &ignore_words,
+        };
         let diags = typos::check_str(&src.content, &TOKENIZER, &dict)
             .filter(|typo| typo.typo.len() >= MIN_TYPO_LEN)
             .map(|typo| typo_to_diagnostic(&src.content, typo))
@@ -107,12 +124,20 @@ fn is_generated_or_minified(content: &str) -> bool {
 // Built-in dictionary
 // ---------------------------------------------------------------------------
 
-/// Minimal in-process dictionary wrapping `typos_dict::WORD`.
+/// In-process dictionary wrapping `typos_dict::WORD`, extended with a
+/// caller-supplied list of words to treat as valid.
+///
+/// The `ignore_words` slice contains **lowercased** word strings. Any token
+/// whose lowercased form appears in that slice is returned as
+/// [`typos::Status::Valid`], bypassing the built-in dictionary lookup.
 ///
 /// Implements [`typos::Dictionary`] so it can be passed to [`typos::check_str`].
-struct BuiltinDictionary;
+struct ConfiguredDictionary<'a> {
+    /// Lowercased words the user wants treated as valid spellings.
+    ignore_words: &'a [String],
+}
 
-impl typos::Dictionary for BuiltinDictionary {
+impl typos::Dictionary for ConfiguredDictionary<'_> {
     fn correct_ident<'s>(
         &'s self,
         ident: typos::tokens::Identifier<'_>,
@@ -133,6 +158,12 @@ impl typos::Dictionary for BuiltinDictionary {
         // Skip numeric / symbol tokens (no case → not a word).
         if word_token.case() == Case::None {
             return None;
+        }
+
+        // User-defined ignore list (stored lowercased, compared lowercased).
+        let lowered = word_token.token().to_ascii_lowercase();
+        if self.ignore_words.iter().any(|w| w == &lowered) {
+            return Some(typos::Status::Valid);
         }
 
         let word_case = UniCase::new(word_token.token());

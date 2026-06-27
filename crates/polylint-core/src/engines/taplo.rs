@@ -72,6 +72,9 @@ impl Engine for TaploEngine {
     }
 
     fn lint(&self, src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
+        // Config is intentionally unused: taplo lint is syntax/semantic only
+        // (parser errors + DOM validation). Neither the taplo parser nor the DOM
+        // validator exposes rule toggles or severity overrides via the public API.
         let mut diags = Vec::new();
 
         // --- Syntax errors from the parser -------------------------------------

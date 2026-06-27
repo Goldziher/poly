@@ -51,6 +51,9 @@ impl Engine for YamlEngine {
     }
 
     fn lint(&self, src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
+        // Config is intentionally unused: saphyr validity is binary (valid YAML
+        // or a syntax error). There are no rule toggles, thresholds, or
+        // dialect settings available through the saphyr API.
         match Yaml::load_from_str(&src.content) {
             Ok(_) => Ok(Vec::new()),
             Err(err) => {
