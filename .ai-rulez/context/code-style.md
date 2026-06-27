@@ -28,12 +28,22 @@ Project-specific conventions baked into context so they ship into every AI tool'
 
 ## Dependency policy
 
-- **Pure-Rust, no subprocess, no system dependency — ever.** Each wrapped tool is a crate dep.
-- **Wrap first, vendor as fallback.** If a crate externalizes the API we need, wrap it. Only
-  if it does not, **vendor** its source into `vendor/` and record the upstream commit +
-  license in `vendor/ATTRIBUTIONS.md`. No version pinning, no git-rev deps.
-- Empirically verify a tool's crate API by cloning it to `/tmp` before wrapping.
-- `cargo deny` gates licenses (no GPL/AGPL); vendored sources must pass it.
+- **Pure-Rust, in-process, no subprocess, no system dependency — ever.** Every wrapped tool is
+  compiled in as a crate dependency; we never shell out to an installed binary.
+- **Prefer crates.io; use a pinned git dependency when the library we need isn't published**
+  (or only stale/yanked versions are). Several upstream tools ship a usable library only in
+  their monorepo — oxc's `oxc_formatter` (oxfmt) and `oxc_linter` (oxlint), and ruff's
+  internals — so depend on the GitHub repo pinned to a specific `rev` (commit) for
+  reproducibility. When several crates come from one monorepo (e.g. all of oxc), pin them to the
+  **same `rev`** so their internal versions stay consistent.
+- **Do not vendor.** A pinned git dep tracks upstream without a forked copy to maintain. (There
+  is no `vendor/` directory.)
+- We do **not** publish our own crates to crates.io (see release-versioning), so git deps are
+  fine — crates.io only forbids them when *publishing*, which we don't do.
+- Empirically verify a tool's library API by cloning it to `/tmp` at the exact pinned `rev`
+  before wiring it.
+- Pin the git `rev` and commit `Cargo.lock` for reproducible builds.
+- `cargo deny` gates licenses (no GPL/AGPL) across the full dependency tree, git deps included.
 
 ## Opinionated defaults
 

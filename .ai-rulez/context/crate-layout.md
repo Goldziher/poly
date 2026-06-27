@@ -6,21 +6,21 @@ priority: high
 
 polylint is a Cargo **workspace** that ships two self-contained binaries driven by one
 config: `polylint` (lint) and `polyfmt` (format). Everything runs **in-process, pure Rust** —
-no subprocess, no system dependency, ever. A tool is consumed as a wrapped crate; if a crate
-does not externalize what we need, its source is **vendored** (recorded in
-`vendor/ATTRIBUTIONS.md`). No version pinning, no git-rev deps.
+no subprocess, no system dependency, ever. A tool is consumed as a crate dependency: from
+crates.io when published, otherwise from a **pinned git `rev`** of its upstream repo (e.g.
+oxc's `oxc_formatter`/`oxc_linter`, ruff's internals). We do **not** vendor and we do **not**
+publish our own crates to crates.io — binaries are distributed as prebuilt release artifacts
+plus an installer (see release-versioning).
 
 ## Workspace root
 
 - `Cargo.toml` — `[workspace]` (resolver 3, edition 2024). Members: `crates/polylint-core`,
-  `crates/polylint`, `crates/polyfmt`. Shared deps live under `[workspace.dependencies]`.
-- `deny.toml` — `cargo deny` license / source allow-list (no GPL/AGPL; vendored sources must
-  be attributed and license-compatible).
-- `vendor/` — vendored upstream sources, only when a crate must be forked because it does not
-  expose a usable API (e.g. oxfmt, ruff internals). `vendor/ATTRIBUTIONS.md` records each
-  source's upstream commit + license.
+  `crates/polylint`, `crates/polyfmt`, `crates/poly-cli`. Shared deps live under
+  `[workspace.dependencies]`; git deps are pinned to a `rev` (monorepo crates share one `rev`).
+- `deny.toml` — `cargo deny` license / source allow-list (no GPL/AGPL), applied across the full
+  dependency tree including git deps and their transitive dependencies.
 
-## `crates/polylint-core/` — the engine library (path dep; publish later if desired)
+## `crates/polylint-core/` — the engine library (path dep; not published)
 
 `src/`:
 
