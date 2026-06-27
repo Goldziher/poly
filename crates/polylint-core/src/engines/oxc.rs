@@ -1,29 +1,35 @@
-//! oxc backend (M2): JS, TS, JSX, TSX lint + format via `oxc_parser` /
+//! oxc backend (M2): JS, TS, JSX, TSX lint + format via `oxc_linter` /
 //! `oxc_formatter`, plus JSON/JSONC format via `serde_json`.
 //!
-//! Phase 1: JS/TS formatting uses `oxc_formatter` (Prettier-compatible,
-//! v0.56.0). `oxc_codegen` is no longer used — it was a code generator, not
-//! a pretty-printer, and corrupted idiomatic TypeScript.
+//! Lint path uses `oxc_linter` (oxlint) to run the full correctness rule set
+//! in-process via `LintService::run_source`. An in-memory `RuntimeFileSystem`
+//! adapter feeds file content from RAM — no disk read inside the engine.
 //!
-//! The lint path still returns parse errors only; `oxc_linter` integration
-//! (Phase 2) is deferred because its API requires a full `LintService`
-//! orchestration stack not suited to per-file in-process calls.
+//! `oxc_formatter` (Prettier-compatible, v0.56.0) handles JS/TS formatting.
+//! `serde_json` handles JSON/JSONC.
+
+use std::ffi::OsStr;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, OnceLock};
 
 use oxc_allocator::Allocator;
+use oxc_diagnostics::Severity as OxcSeverity;
 use oxc_formatter::JsFormatOptions;
 use oxc_formatter_core::{IndentWidth, LineWidth};
-use oxc_parser::Parser;
+use oxc_linter::{
+    ConfigStore, ConfigStoreBuilder, ExternalPluginStore, LintOptions, LintService,
+    LintServiceOptions, Linter, Message, PossibleFixes, RuntimeFileSystem,
+};
 use oxc_span::SourceType;
 
 use crate::config::EngineConfig;
-use crate::engine::{Capabilities, Diagnostic, FormatOutput, Severity, SourceFile, Span};
+use crate::engine::{Capabilities, Diagnostic, Edit, FormatOutput, Severity, SourceFile, Span};
 use crate::language::Language;
 
 /// Version string folded into the blake3 cache key.
 /// Bump whenever the output of `lint` or `format` could change.
-/// Reflects the oxc monorepo rev pinned in `Cargo.toml` + the formatter crate
-/// version declared in that rev's workspace (0.56.0).
-const VERSION: &str = "oxc_formatter:0.56.0+parser:0.56.0+rev:5762638";
+/// Reflects the oxc monorepo rev + formatter version + oxlint integration marker.
+const VERSION: &str = "oxc_formatter:0.56.0+oxlint+parser:0.56.0+rev:5762638";
 
 static LANGUAGES: &[Language] = &[
     Language::JavaScript,
@@ -34,9 +40,9 @@ static LANGUAGES: &[Language] = &[
     Language::Jsonc,
 ];
 
-/// oxc backend: wraps `oxc_parser` for lint diagnostics and `oxc_formatter`
-/// for JS/TS formatting (Prettier-compatible); uses `serde_json` for
-/// JSON/JSONC.
+/// oxc backend: wraps `oxc_linter` for full correctness-rule lint diagnostics,
+/// `oxc_formatter` for JS/TS formatting (Prettier-compatible), and `serde_json`
+/// for JSON/JSONC.
 pub struct OxcEngine;
 
 impl crate::engine::Engine for OxcEngine {
@@ -105,40 +111,141 @@ fn offset_to_line_col(src: &str, offset: usize) -> (u32, u32) {
     (line, col)
 }
 
+// ── in-memory RuntimeFileSystem adapter ─────────────────────────────────────
+
+/// Feeds `oxc_linter`'s parser with file content from RAM.
+/// `read_to_arena_str` copies `content` into the oxc arena allocator — no disk
+/// access ever occurs inside the engine.
+struct MemoryFileSystem<'a> {
+    path: &'a Path,
+    content: &'a str,
+}
+
+impl RuntimeFileSystem for MemoryFileSystem<'_> {
+    fn read_to_arena_str<'arena>(
+        &self,
+        path: &Path,
+        allocator: &'arena Allocator,
+    ) -> Result<&'arena str, std::io::Error> {
+        if path == self.path {
+            Ok(allocator.alloc_str(self.content))
+        } else {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "path not available in memory",
+            ))
+        }
+    }
+
+    fn write_file(&self, _path: &Path, _content: &str) -> Result<(), std::io::Error> {
+        // We never write back through the linter.
+        Ok(())
+    }
+}
+
+// ── LintService construction (lazily initialised, reused across files) ───────
+
+/// Returns the lazily-initialised shared [`LintService`] configured with
+/// oxlint's default correctness rule set.
+///
+/// Building the service (rule table + allocator pool) is expensive; the
+/// `OnceLock` ensures the cost is paid at most once per process.
+///
+/// # Panics
+/// Panics on first call if the default `ConfigStore` cannot be built — this is
+/// a compile-time invariant that cannot fail with no external inputs.
+fn lint_service() -> &'static LintService {
+    static SERVICE: OnceLock<LintService> = OnceLock::new();
+    SERVICE.get_or_init(|| {
+        let mut plugin_store = ExternalPluginStore::default();
+        let config = ConfigStoreBuilder::default()
+            .build(&mut plugin_store)
+            // SAFETY: ConfigStoreBuilder::default().build() with no external
+            // configuration is infallible — it only reads built-in rule defs.
+            .expect("oxc_linter default ConfigStore build is infallible");
+        let config_store = ConfigStore::new(config, Default::default(), plugin_store);
+        let linter = Linter::new(LintOptions::default(), config_store, None);
+        let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let options = LintServiceOptions::new(cwd);
+        LintService::new(linter, options)
+    })
+}
+
+// ── lint_js: run oxlint correctness rules in-process ─────────────────────────
+
 fn lint_js(src: &SourceFile) -> anyhow::Result<Vec<Diagnostic>> {
-    let allocator = Allocator::new();
-    let source_type = source_type_for(&src.language);
-    let ret = Parser::new(&allocator, &src.content, source_type).parse();
-    let diagnostics = ret
-        .diagnostics
-        .errors()
-        .map(|diag| {
-            // OxcDiagnostic derefs to OxcDiagnosticInner; .labels derefs to [LabeledSpan].
-            let span = diag.labels.first().map(|label| {
-                // oxc-miette ByteOffset is u32; cast to usize for offset_to_line_col.
-                let start_offset = label.offset() as usize;
-                let end_offset = start_offset + label.len() as usize;
-                let (start_line, start_col) = offset_to_line_col(&src.content, start_offset);
-                let (end_line, end_col) = offset_to_line_col(&src.content, end_offset);
-                Span {
-                    start_line,
-                    start_col,
-                    end_line,
-                    end_col,
-                }
-            });
-            Diagnostic {
-                engine: "oxc".to_owned(),
-                code: Some("parse-error".to_owned()),
-                message: diag.to_string(),
-                severity: Severity::Error,
-                span,
-                fix: None,
-                metadata: Default::default(),
-            }
-        })
+    let service = lint_service();
+    let arc_path: Arc<OsStr> = Arc::from(src.path.as_os_str());
+    let fs = MemoryFileSystem {
+        path: &src.path,
+        content: &src.content,
+    };
+    let messages = service.run_source(&fs, vec![arc_path]);
+    let diagnostics = messages
+        .into_iter()
+        .map(|msg| map_oxlint_message(msg, &src.content))
         .collect();
     Ok(diagnostics)
+}
+
+/// Map one `oxc_linter::Message` to a polylint [`Diagnostic`].
+///
+/// Rule code: `plugin/rule` for non-eslint plugins; bare `rule` for
+/// `eslint/*`. `None` when the message has no rule (e.g. a parse error).
+///
+/// Fix: only attached for `PossibleFixes::Single` (one contiguous edit).
+/// Multi-edit fixes are dropped to avoid partial application corrupting
+/// the source.
+fn map_oxlint_message(msg: Message, content: &str) -> Diagnostic {
+    let severity = match msg.error.severity {
+        OxcSeverity::Error => Severity::Error,
+        OxcSeverity::Warning => Severity::Warning,
+        OxcSeverity::Advice => Severity::Info,
+    };
+
+    let code = msg.rule.as_ref().map(|r| {
+        if r.plugin_name == "eslint" {
+            r.rule_name.to_string()
+        } else {
+            format!("{}/{}", r.plugin_name, r.rule_name)
+        }
+    });
+
+    // `Display for OxcDiagnostic` formats as the primary message string.
+    let message_text = msg.error.to_string();
+
+    let start = msg.span.start as usize;
+    let end = msg.span.end as usize;
+    let (start_line, start_col) = offset_to_line_col(content, start);
+    let (end_line, end_col) = offset_to_line_col(content, end);
+    let span = Some(Span {
+        start_line,
+        start_col,
+        end_line,
+        end_col,
+    });
+
+    // Only map a fix when there is exactly one edit; skip multi-edit fixes to
+    // avoid partially applying an incomplete set of changes.
+    let fix = if let PossibleFixes::Single(f) = msg.fixes {
+        Some(Edit {
+            start_byte: f.span.start as usize,
+            end_byte: f.span.end as usize,
+            replacement: f.content.into_owned(),
+        })
+    } else {
+        None
+    };
+
+    Diagnostic {
+        engine: "oxc".to_owned(),
+        code,
+        message: message_text,
+        severity,
+        span,
+        fix,
+        metadata: Default::default(),
+    }
 }
 
 /// Format a JS/TS/JSX/TSX file using `oxc_formatter` (Prettier-compatible).
@@ -350,17 +457,29 @@ mod tests {
 
     #[test]
     fn valid_js_produces_no_diagnostics() {
-        let src = make_src("const x = 1;\n", Language::JavaScript);
+        // Export the function so it is considered "used" by no-unused-vars.
+        let src = make_src(
+            "export function square(n) { return n * n; }\n",
+            Language::JavaScript,
+        );
         let diags = lint_js(&src).unwrap();
-        assert!(diags.is_empty());
+        assert!(diags.is_empty(), "expected no diagnostics; got: {diags:#?}");
     }
 
     #[test]
     fn invalid_js_produces_parse_error() {
         let src = make_src("const x = {\n  a: 1,\nconst y = 2;\n", Language::JavaScript);
         let diags = lint_js(&src).unwrap();
-        assert!(!diags.is_empty());
-        assert_eq!(diags[0].code, Some("parse-error".to_owned()));
+        assert!(
+            !diags.is_empty(),
+            "expected at least one diagnostic for broken JS"
+        );
+        // oxlint wraps parse errors with Error severity; no rule is associated.
+        assert_eq!(diags[0].severity, Severity::Error);
+        assert!(
+            diags[0].code.is_none(),
+            "parse error should not have a rule code"
+        );
     }
 
     #[test]
@@ -428,5 +547,34 @@ mod tests {
         assert!(engine.capabilities().lint);
         assert!(engine.capabilities().format);
         assert!(!engine.capabilities().fix);
+    }
+
+    /// Parser used by oxlint still needs an Allocator; verify it works
+    /// with our MemoryFileSystem adapter.
+    #[test]
+    fn memory_fs_returns_source_for_matching_path() {
+        let path = PathBuf::from("test.ts");
+        let content = "const x: number = 1;\n";
+        let allocator = Allocator::new();
+        let fs = MemoryFileSystem {
+            path: &path,
+            content,
+        };
+        let result = fs.read_to_arena_str(&path, &allocator);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), content);
+    }
+
+    #[test]
+    fn memory_fs_errors_on_unknown_path() {
+        let path = PathBuf::from("test.ts");
+        let allocator = Allocator::new();
+        let fs = MemoryFileSystem {
+            path: &path,
+            content: "const x = 1;\n",
+        };
+        let other = PathBuf::from("other.ts");
+        let result = fs.read_to_arena_str(&other, &allocator);
+        assert!(result.is_err());
     }
 }

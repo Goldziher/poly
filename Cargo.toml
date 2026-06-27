@@ -34,9 +34,10 @@ owo-colors = { version = "4", features = ["supports-colors"] }
 # oxc_formatter and oxc_formatter_core were never published to crates.io.
 # Rev = latest HEAD of the oxc monorepo as of 2026-06-26.
 oxc_allocator = { git = "https://github.com/oxc-project/oxc", rev = "5762638c8ec6981455ef6d7e9482d2ceca757829" }
+oxc_diagnostics = { git = "https://github.com/oxc-project/oxc", rev = "5762638c8ec6981455ef6d7e9482d2ceca757829" }
 oxc_formatter = { git = "https://github.com/oxc-project/oxc", rev = "5762638c8ec6981455ef6d7e9482d2ceca757829" }
 oxc_formatter_core = { git = "https://github.com/oxc-project/oxc", rev = "5762638c8ec6981455ef6d7e9482d2ceca757829" }
-oxc_parser = { git = "https://github.com/oxc-project/oxc", rev = "5762638c8ec6981455ef6d7e9482d2ceca757829" }
+oxc_linter = { git = "https://github.com/oxc-project/oxc", rev = "5762638c8ec6981455ef6d7e9482d2ceca757829" }
 oxc_span = { git = "https://github.com/oxc-project/oxc", rev = "5762638c8ec6981455ef6d7e9482d2ceca757829" }
 poly-cli = { path = "crates/poly-cli" }
 polylint-core = { path = "crates/polylint-core" }

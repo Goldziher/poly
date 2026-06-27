@@ -25,11 +25,12 @@ ignore.workspace = true
 malva.workspace = true
 markup_fmt.workspace = true
 owo-colors.workspace = true
-# oxc backend (M2) — all git deps pinned to the same rev (see workspace Cargo.toml)
+# oxc backend (M2 + oxlint) — all git deps pinned to the same rev (see workspace Cargo.toml)
 oxc_allocator.workspace = true
+oxc_diagnostics.workspace = true
 oxc_formatter.workspace = true
 oxc_formatter_core.workspace = true
-oxc_parser.workspace = true
+oxc_linter.workspace = true
 oxc_span.workspace = true
 rayon.workspace = true
 # ruff git deps — all pinned to the same rev (see workspace Cargo.toml)

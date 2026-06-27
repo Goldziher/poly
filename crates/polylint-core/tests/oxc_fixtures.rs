@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 
 use polylint_core::config::{EngineConfig, GlobalDefaults};
-use polylint_core::engine::{Engine, SourceFile};
+use polylint_core::engine::{Engine, Severity, SourceFile};
 use polylint_core::engines::oxc::OxcEngine;
 use polylint_core::language::Language;
 
@@ -28,7 +28,9 @@ fn default_cfg() -> EngineConfig {
 
 // ── known-bad fixtures ────────────────────────────────────────────────────────
 
-/// Syntactically broken JS file — asserts the expected parse-error Diagnostic.
+/// Syntactically broken JS file — asserts that at least one Error-severity
+/// diagnostic is produced. The exact message format is not snapshotted here
+/// because it comes from oxlint's internal parser and may evolve.
 #[test]
 fn oxc_known_bad_js_diagnostics() {
     let src = make_src(
@@ -38,7 +40,45 @@ fn oxc_known_bad_js_diagnostics() {
     );
     let diags = OxcEngine.lint(&src, &default_cfg()).unwrap();
     assert!(!diags.is_empty(), "expected at least one diagnostic");
-    insta::assert_debug_snapshot!(diags);
+    // oxlint reports parse errors at Error severity with no rule code.
+    assert!(
+        diags.iter().any(|d| d.severity == Severity::Error),
+        "expected at least one Error-severity diagnostic; got: {diags:?}"
+    );
+}
+
+/// JS fixture with a `debugger` statement — asserts the `no-debugger`
+/// correctness rule fires with Warning severity.
+///
+/// Source lives in a fixture file so prek hooks (typos, trailing-whitespace)
+/// cannot silently mutate the lint-triggering literal during a pre-commit run.
+#[test]
+fn oxc_oxlint_no_debugger_rule() {
+    let content = include_str!("fixtures/oxc/bad_js.js");
+    let src = make_src(content, "bad_js.js", Language::JavaScript);
+    let diags = OxcEngine.lint(&src, &default_cfg()).unwrap();
+
+    // Structural assertions: at least one no-debugger warning must appear.
+    let debugger_diags: Vec<_> = diags
+        .iter()
+        .filter(|d| d.code.as_deref() == Some("no-debugger"))
+        .collect();
+    assert!(
+        !debugger_diags.is_empty(),
+        "expected a no-debugger diagnostic; got: {diags:?}"
+    );
+    assert_eq!(
+        debugger_diags[0].severity,
+        Severity::Warning,
+        "no-debugger should be Warning severity"
+    );
+
+    // Snapshot: count + (code, severity) pairs for structural verification.
+    let summary: Vec<(Option<&str>, &Severity)> = diags
+        .iter()
+        .map(|d| (d.code.as_deref(), &d.severity))
+        .collect();
+    insta::assert_debug_snapshot!(summary);
 }
 
 /// JSON with a trailing comma — asserts the expected parse-error Diagnostic.
