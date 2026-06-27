@@ -1,0 +1,7 @@
+---
+source: crates/polylint-core/tests/ruff_engine.rs
+expression: format_to_string(KNOWN_UNFORMATTED)
+---
+def add(a, b):
+    x = {"a": 1, "b": 2}
+    return a + b

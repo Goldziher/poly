@@ -3,6 +3,7 @@
 //! [`crate::registry::engines_for`].
 
 pub mod oxc;
+pub mod ruff;
 pub mod rumdl;
 pub mod sqruff;
 pub mod taplo;

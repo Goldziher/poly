@@ -25,6 +25,12 @@ oxc_parser = "0.137"
 oxc_span = "0.137"
 polylint-core = { path = "crates/polylint-core" }
 rayon = "1"
+# ruff component crates (published to crates.io by astral-sh) — used by the
+# ruff Python backend (M3)
+ruff_formatter = "0.0.3"
+ruff_python_formatter = "0.0.3"
+ruff_python_parser = "0.0.3"
+ruff_source_file = "0.0.3"
 rumdl = { version = "0.2", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }

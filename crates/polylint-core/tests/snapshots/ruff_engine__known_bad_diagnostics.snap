@@ -1,0 +1,13 @@
+---
+source: crates/polylint-core/tests/ruff_engine.rs
+expression: summary
+---
+[
+    (
+        "ruff",
+        "E999",
+        Some(
+            1,
+        ),
+    ),
+]

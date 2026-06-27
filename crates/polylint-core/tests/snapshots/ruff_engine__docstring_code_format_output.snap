@@ -1,0 +1,11 @@
+---
+source: crates/polylint-core/tests/ruff_engine.rs
+expression: format_to_string(DOCSTRING_CODE)
+---
+def example():
+    """Summary.
+
+    >>> x = 1
+    >>> y = [1, 2, 3]
+    """
+    return None
