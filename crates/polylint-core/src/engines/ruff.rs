@@ -64,32 +64,90 @@ use crate::language::Language;
 /// because the ruff formatter already handles those whitespace/blank-line rules.
 static RULE_CODES: &[&str] = &["F", "E4", "E7", "E9", "W6", "I", "UP", "B"];
 
-/// Build a [`RuleTable`] from the opinionated rule selection.
-fn build_rule_table() -> RuleTable {
+/// Resolve a list of rule-code strings to ruff `Rule`s.
+fn rules_for_codes(codes: &[String]) -> Vec<ruff_linter::registry::Rule> {
     let preview = PreviewOptions::default();
-    // Collect the rules to a `Vec` first because `RuleSelector::rules` returns
-    // an iterator that borrows the selector — it cannot escape the closure.
-    let rules: Vec<_> = RULE_CODES
+    // Collect to a `Vec` first because `RuleSelector::rules` returns an iterator
+    // that borrows the selector — it cannot escape the closure.
+    codes
         .iter()
         .filter_map(|s| RuleSelector::from_str(s).ok())
         .flat_map(|sel| sel.rules(&preview).collect::<Vec<_>>())
-        .collect();
-    RuleTable::from_iter(rules)
+        .collect()
 }
 
-/// Return the shared [`LinterSettings`], initializing on first call.
+/// Build a [`RuleTable`] from a selected set of codes minus an ignored set.
+fn build_rule_table(select: &[String], ignore: &[String]) -> RuleTable {
+    let selected = rules_for_codes(select);
+    let ignored = rules_for_codes(ignore);
+    RuleTable::from_iter(selected.into_iter().filter(|rule| !ignored.contains(rule)))
+}
+
+/// Read an array-of-strings option from the engine config.
+fn string_list(cfg: &EngineConfig, key: &str) -> Vec<String> {
+    cfg.options
+        .get(key)
+        .and_then(toml::Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The opinionated default [`LinterSettings`], built once and shared.
 ///
 /// `LinterSettings` is `Clone + Send + Sync`; the `OnceLock` ensures it is
-/// built at most once and then borrowed concurrently from the rayon thread pool.
-fn linter_settings() -> &'static LinterSettings {
+/// built at most once and then borrowed concurrently from the rayon thread
+/// pool. Used as the fast path when no `[lint.python.ruff]` config is present.
+fn default_settings() -> &'static LinterSettings {
     static SETTINGS: OnceLock<LinterSettings> = OnceLock::new();
     SETTINGS.get_or_init(|| {
+        let codes: Vec<String> = RULE_CODES.iter().map(|s| (*s).to_owned()).collect();
         let mut settings = LinterSettings::new(Path::new("."));
-        settings.rules = build_rule_table();
+        settings.rules = build_rule_table(&codes, &[]);
         settings.line_length = ruff_linter::line_width::LineLength::try_from(120_u16)
             .expect("120 is a valid line length");
         settings
     })
+}
+
+/// Build [`LinterSettings`] from user config, layered over the opinionated base.
+///
+/// Honors `[lint.python.ruff]` keys: `select` (replaces the default rule set),
+/// `extend_select` (adds to it), `ignore` (removes rules), and `line_length`
+/// (overriding the global default — only affects line-length rules, which the
+/// default set omits). Called only when config options are present; the empty
+/// case uses [`default_settings`] to avoid rebuilding per file.
+fn build_settings(cfg: &EngineConfig) -> LinterSettings {
+    let select = string_list(cfg, "select");
+    let extend_select = string_list(cfg, "extend_select");
+    let ignore = string_list(cfg, "ignore");
+
+    let mut codes: Vec<String> = if select.is_empty() {
+        RULE_CODES.iter().map(|s| (*s).to_owned()).collect()
+    } else {
+        select
+    };
+    codes.extend(extend_select);
+
+    let line_length = cfg
+        .options
+        .get("line_length")
+        .and_then(toml::Value::as_integer)
+        .map(|v| v as usize)
+        .unwrap_or(cfg.globals.line_length);
+
+    let mut settings = LinterSettings::new(Path::new("."));
+    settings.rules = build_rule_table(&codes, &ignore);
+    settings.line_length = u16::try_from(line_length)
+        .ok()
+        .and_then(|w| ruff_linter::line_width::LineLength::try_from(w).ok())
+        .unwrap_or_else(|| {
+            ruff_linter::line_width::LineLength::try_from(120_u16).expect("120 is valid")
+        });
+    settings
 }
 
 /// Convert a ruff [`RuffSeverity`] to the polylint [`Severity`].
@@ -129,7 +187,17 @@ impl Engine for RuffEngine {
         concat!("git-ruff:", "03f787e51e94999977b9a5a32b0153d82d7e2142")
     }
 
-    fn lint(&self, src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
+    fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
+        // Fast path: no `[lint.python.ruff]` config → reuse the shared default
+        // settings. Only build per-call settings when the user configured rules.
+        let owned_settings;
+        let settings = if cfg.options.is_empty() {
+            default_settings()
+        } else {
+            owned_settings = build_settings(cfg);
+            &owned_settings
+        };
+
         let is_stub = src.path.extension().is_some_and(|e| e == "pyi");
         let source_kind = SourceKind::Python {
             code: src.content.clone(),
@@ -144,7 +212,7 @@ impl Engine for RuffEngine {
         let result = lint_only(
             &src.path,
             None, // no package-root; isort treats all imports as third-party
-            linter_settings(),
+            settings,
             flags::Noqa::Enabled,
             &source_kind,
             source_type,
