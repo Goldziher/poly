@@ -1,0 +1,17 @@
+[package]
+name = "ruff_source_file"
+version = "0.0.3"
+description = "Internal component crate of ruff (vendored into polylint)"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+
+[features]
+serde = ["dep:serde", "ruff_text_size/serde"]
+get-size = ["dep:get-size2", "ruff_text_size/get-size"]
+
+[dependencies]
+get-size2 = { version = "0.10", features = ["derive"], optional = true }
+memchr = "2.7"
+ruff_text_size = { path = "../ruff_text_size" }
+serde = { version = "1", features = ["derive"], optional = true }

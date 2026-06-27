@@ -1,0 +1,81 @@
+---
+source: crates/ruff_python_formatter/src/comments/mod.rs
+expression: comments.debug(test_case.source_code)
+---
+{
+    Node {
+        kind: StmtIf,
+        range: 21..117,
+        source: `if x == y:⏎`,
+    }: {
+        "leading": [],
+        "dangling": [],
+        "trailing": [
+            SourceComment {
+                text: "# Trailing `if` statement comment",
+                position: OwnLine,
+                formatted: false,
+            },
+        ],
+    },
+    Node {
+        kind: StmtExpr,
+        range: 101..117,
+        source: `print("Greater")`,
+    }: {
+        "leading": [],
+        "dangling": [],
+        "trailing": [
+            SourceComment {
+                text: "# trailing `else` comment",
+                position: OwnLine,
+                formatted: false,
+            },
+        ],
+    },
+    Node {
+        kind: StmtIf,
+        range: 214..237,
+        source: `if y == z:⏎`,
+    }: {
+        "leading": [],
+        "dangling": [],
+        "trailing": [
+            SourceComment {
+                text: "# Trailing `if` statement comment",
+                position: OwnLine,
+                formatted: false,
+            },
+        ],
+    },
+    Node {
+        kind: StmtPass,
+        range: 233..237,
+        source: `pass`,
+    }: {
+        "leading": [],
+        "dangling": [],
+        "trailing": [
+            SourceComment {
+                text: "# Trailing `pass` comment",
+                position: OwnLine,
+                formatted: false,
+            },
+        ],
+    },
+    Node {
+        kind: StmtFunctionDef,
+        range: 333..357,
+        source: `def func():⏎`,
+    }: {
+        "leading": [],
+        "dangling": [],
+        "trailing": [
+            SourceComment {
+                text: "# Trailing `func` function comment",
+                position: OwnLine,
+                formatted: false,
+            },
+        ],
+    },
+}

@@ -1,0 +1,33 @@
+[package]
+name = "ruff_python_parser"
+version = "0.0.3"
+description = "Internal component crate of ruff (vendored into polylint)"
+authors = ["Charlie Marsh <charlie.r.marsh@gmail.com>", "RustPython Team"]
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+
+[lib]
+test = false
+
+[dependencies]
+bitflags = "2.5"
+bstr = "1.9"
+compact_str = "0.9"
+get-size2 = { version = "0.10", features = ["derive", "compact-str", "thin-vec"] }
+memchr = "2.7"
+ruff_python_ast = { path = "../ruff_python_ast", features = ["get-size"] }
+ruff_python_trivia = { path = "../ruff_python_trivia" }
+ruff_text_size = { path = "../ruff_text_size", features = ["get-size"] }
+rustc-hash = "2"
+static_assertions = "1.1"
+thin-vec = "0.2"
+unicode-ident = "1.0"
+unicode-normalization = "0.1"
+unicode_names2 = "1.2"
+
+[dev-dependencies]
+insta = "1.35"
+
+[lints.clippy]
+collapsible_if = "allow"

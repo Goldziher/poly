@@ -1,0 +1,47 @@
+[package]
+name = "ruff_python_ast"
+version = "0.0.3"
+description = "Internal component crate of ruff (vendored into polylint)"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+
+[package.metadata.cargo-machete]
+ignored = ["ruff_cache", "ruff_macros"]
+
+[features]
+schemars = ["dep:schemars", "dep:serde_json"]
+cache = ["dep:ruff_cache", "dep:ruff_macros"]
+serde = [
+    "dep:serde",
+    "ruff_text_size/serde",
+    "dep:ruff_cache",
+    "compact_str/serde",
+    "thin-vec/serde",
+]
+get-size = ["dep:get-size2", "ruff_text_size/get-size"]
+
+[lib]
+
+[dependencies]
+aho-corasick = "1.1"
+arrayvec = "0.7"
+bitflags = "2.5"
+compact_str = "0.9"
+get-size2 = { version = "0.10", features = ["derive", "compact-str", "thin-vec"], optional = true }
+is-macro = "0.3"
+memchr = "2.7"
+ruff_cache = { path = "../ruff_cache", optional = true }
+ruff_macros = { path = "../ruff_macros", optional = true }
+ruff_python_trivia = { path = "../ruff_python_trivia" }
+ruff_source_file = { path = "../ruff_source_file" }
+ruff_text_size = { path = "../ruff_text_size" }
+rustc-hash = "2"
+schemars = { version = "1.0", optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+thiserror = "2"
+thin-vec = "0.2"
+
+[lints.clippy]
+collapsible_if = "allow"

@@ -1,0 +1,18 @@
+[package]
+name = "ruff_python_trivia"
+version = "0.0.3"
+description = "Internal component crate of ruff (vendored into polylint)"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+
+[package.metadata.cargo-machete]
+ignored = ["memchr"]
+
+[dependencies]
+itertools = "0.15"
+memchr = "2.7"
+ruff_source_file = { path = "../ruff_source_file" }
+ruff_text_size = { path = "../ruff_text_size" }
+rustc-hash = "2"
+unicode-ident = "1.0"

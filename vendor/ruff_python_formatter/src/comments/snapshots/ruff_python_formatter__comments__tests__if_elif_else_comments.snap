@@ -1,0 +1,86 @@
+---
+source: crates/ruff_python_formatter/src/comments/mod.rs
+expression: comments.debug(test_case.source_code)
+---
+{
+    Node {
+        kind: StmtPass,
+        range: 16..20,
+        source: `pass`,
+    }: {
+        "leading": [],
+        "dangling": [],
+        "trailing": [
+            SourceComment {
+                text: "# trailing `pass` comment",
+                position: EndOfLine,
+                formatted: false,
+            },
+            SourceComment {
+                text: "# Root `if` trailing comment",
+                position: OwnLine,
+                formatted: false,
+            },
+        ],
+    },
+    Node {
+        kind: ElifElseClause,
+        range: 104..124,
+        source: `elif x < y:⏎`,
+    }: {
+        "leading": [
+            SourceComment {
+                text: "# Leading elif comment",
+                position: OwnLine,
+                formatted: false,
+            },
+        ],
+        "dangling": [],
+        "trailing": [],
+    },
+    Node {
+        kind: StmtPass,
+        range: 120..124,
+        source: `pass`,
+    }: {
+        "leading": [],
+        "dangling": [],
+        "trailing": [
+            SourceComment {
+                text: "# `elif` trailing comment",
+                position: OwnLine,
+                formatted: false,
+            },
+        ],
+    },
+    Node {
+        kind: ElifElseClause,
+        range: 178..192,
+        source: `else:⏎`,
+    }: {
+        "leading": [
+            SourceComment {
+                text: "# Leading else comment",
+                position: OwnLine,
+                formatted: false,
+            },
+        ],
+        "dangling": [],
+        "trailing": [],
+    },
+    Node {
+        kind: StmtPass,
+        range: 188..192,
+        source: `pass`,
+    }: {
+        "leading": [],
+        "dangling": [],
+        "trailing": [
+            SourceComment {
+                text: "# `else` trailing comment",
+                position: OwnLine,
+                formatted: false,
+            },
+        ],
+    },
+}

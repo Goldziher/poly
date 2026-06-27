@@ -1,0 +1,55 @@
+[package]
+name = "ruff_python_formatter"
+version = "0.0.3"
+description = "Internal component crate of ruff (vendored into polylint)"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+
+[package.metadata.cargo-machete]
+ignored = ["ruff_cache"]
+
+[features]
+default = ["serde"]
+schemars = ["dep:schemars", "dep:serde_json", "ruff_formatter/schemars"]
+serde = [
+    "dep:serde",
+    "ruff_formatter/serde",
+    "ruff_source_file/serde",
+    "ruff_python_ast/serde",
+]
+
+[lib]
+doctest = false
+test = false
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+countme = "3.0"
+itertools = "0.15"
+memchr = "2.7"
+regex = "1"
+ruff_cache = { path = "../ruff_cache" }
+ruff_formatter = { path = "../ruff_formatter" }
+ruff_macros = { path = "../ruff_macros" }
+ruff_python_ast = { path = "../ruff_python_ast" }
+ruff_python_parser = { path = "../ruff_python_parser" }
+ruff_python_trivia = { path = "../ruff_python_trivia" }
+ruff_source_file = { path = "../ruff_source_file" }
+ruff_text_size = { path = "../ruff_text_size" }
+rustc-hash = "2"
+schemars = { version = "1.0", optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+smallvec = { version = "1.13", features = ["union", "const_generics", "const_new"] }
+static_assertions = "1.1"
+thiserror = "2"
+tracing = "0.1"
+
+[dev-dependencies]
+insta = "1.35"
+
+[lints.clippy]
+collapsible_if = "allow"
+incompatible_msrv = "allow"

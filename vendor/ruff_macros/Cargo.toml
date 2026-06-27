@@ -1,0 +1,19 @@
+[package]
+name = "ruff_macros"
+version = "0.0.3"
+description = "Internal component crate of ruff (vendored into polylint)"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+heck = "0.5"
+itertools = "0.15"
+proc-macro2 = "1.0"
+quote = "1.0"
+regex = "1"
+ruff_python_trivia = { path = "../ruff_python_trivia" }
+syn = { version = "2.0", features = ["full", "extra-traits"] }
