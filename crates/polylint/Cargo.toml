@@ -9,6 +9,10 @@ description = "Universal, zero-dependency linter: one binary that lints every la
 keywords = ["linter", "lint", "polyglot", "universal", "formatter"]
 categories = ["development-tools", "command-line-utilities"]
 
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/poly-{ version }-{ target }.{ archive-suffix }"
+bin-dir = "."
+
 [[bin]]
 name = "polylint"
 path = "src/main.rs"

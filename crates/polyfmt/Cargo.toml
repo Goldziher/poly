@@ -9,6 +9,10 @@ description = "Universal, zero-dependency formatter: one binary that formats eve
 keywords = ["formatter", "format", "polyglot", "universal", "linter"]
 categories = ["development-tools", "command-line-utilities"]
 
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/poly-{ version }-{ target }.{ archive-suffix }"
+bin-dir = "."
+
 [[bin]]
 name = "polyfmt"
 path = "src/main.rs"

@@ -9,6 +9,10 @@ description = "Universal, zero-dependency linter & formatter: a single `poly` CL
 keywords = ["linter", "formatter", "polyglot", "universal", "lint"]
 categories = ["development-tools", "command-line-utilities"]
 
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/poly-{ version }-{ target }.{ archive-suffix }"
+bin-dir = "."
+
 [lib]
 name = "poly_cli"
 path = "src/lib.rs"
