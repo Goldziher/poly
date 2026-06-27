@@ -1,0 +1,21 @@
+[package]
+name = "conformance"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Dev-only differential harness: compares polyfmt output against each language's idiomatic reference formatter"
+publish = false
+
+[[bin]]
+name = "conformance"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+polylint-core.workspace = true
+serde.workspace = true
+tempfile.workspace = true
+toml.workspace = true

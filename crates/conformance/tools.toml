@@ -1,0 +1,35 @@
+# Reference formatters per language for the conformance harness.
+#
+# `conformance generate` builds each `docker/<lang>.Dockerfile` (tagged
+# `conformance-<lang>`) and pipes every file under `corpus/<lang>/` through it
+# (stdin -> stdout) to produce the committed golden output in `golden/<lang>/`.
+# `conformance check` runs polyfmt over the same corpus and scores its output
+# against the golden, so we can measure — per language — how close our pure-Rust
+# formatter is to being a drop-in replacement for the idiomatic reference tool.
+#
+# Opinionated reference tools only. Languages whose toolchain ships a canonical
+# formatter we simply match (Go/gofmt, Rust/rustfmt) are intentionally absent.
+
+[languages.elixir]
+reference = "mix format"
+extensions = ["ex", "exs"]
+
+[languages.shell]
+reference = "shfmt -i 2"
+extensions = ["sh", "bash"]
+
+[languages.ruby]
+reference = "standardrb --fix"
+extensions = ["rb"]
+
+[languages.php]
+reference = "laravel/pint"
+extensions = ["php"]
+
+[languages.java]
+reference = "palantir-java-format"
+extensions = ["java"]
+
+[languages.kotlin]
+reference = "ktfmt"
+extensions = ["kt", "kts"]

@@ -437,6 +437,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b46dec724fd22199ebde05033a0cbae453bc3b1ecff11eb6a6bb3eec4b90c6a4"
 
 [[package]]
+name = "conformance"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "polylint-core",
+ "serde",
+ "tempfile",
+ "toml",
+]
+
+[[package]]
 name = "console"
 version = "0.16.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
