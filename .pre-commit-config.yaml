@@ -23,11 +23,13 @@ repos:
       # File safety
       - id: trailing-whitespace
         # Test fixtures intentionally contain bad content (trailing whitespace,
-        # malformed headings, etc.) — exclude them from all fixable hooks so
-        # known-bad inputs survive the commit pipeline.
-        exclude: ^crates/[^/]+/tests/fixtures/
+        # malformed headings, etc.) and insta snapshots capture exact formatter
+        # output (which may legitimately end a line with whitespace, e.g. a
+        # Markdown hard break) — exclude both from fixable hooks so known-bad
+        # inputs and recorded outputs survive the commit pipeline.
+        exclude: ^crates/[^/]+/tests/(fixtures|snapshots)/
       - id: end-of-file-fixer
-        exclude: ^crates/[^/]+/tests/fixtures/
+        exclude: ^crates/[^/]+/tests/(fixtures|snapshots)/
       - id: check-merge-conflict
       - id: check-added-large-files
       - id: detect-private-key
@@ -35,6 +37,7 @@ repos:
       - id: check-executables-have-shebangs
       - id: check-shebang-scripts-are-executable
       - id: mixed-line-ending
+        exclude: ^crates/[^/]+/tests/(fixtures|snapshots)/
       - id: typos
         args:
           - --force-exclude
