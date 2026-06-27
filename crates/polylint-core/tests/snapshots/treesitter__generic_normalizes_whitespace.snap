@@ -1,0 +1,9 @@
+---
+source: crates/polylint-core/tests/treesitter.rs
+expression: formatted
+---
+first line
+
+
+
+second line

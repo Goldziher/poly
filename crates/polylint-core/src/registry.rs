@@ -1,7 +1,8 @@
 //! Backend registry: maps a [`Language`] to the ordered list of engines that
-//! handle it. Native backends are wired here as they land (M2+); the reference
-//! [`WhitespaceEngine`] serves any language not yet claimed by a native backend
-//! and stands in for the tree-sitter generic tier until M5.
+//! handle it. Native backends are wired here as they land; the
+//! [`TreeSitterEngine`] generic tier serves any language no native backend has
+//! claimed (structural reindent for brace grammars, whitespace normalization
+//! otherwise).
 
 use crate::engine::Engine;
 use crate::engines::graphql::GraphQlEngine;
@@ -13,7 +14,7 @@ use crate::engines::ruff::RuffEngine;
 use crate::engines::rumdl::RumdlEngine;
 use crate::engines::sqruff::SqruffEngine;
 use crate::engines::taplo::TaploEngine;
-use crate::engines::whitespace::WhitespaceEngine;
+use crate::engines::treesitter::TreeSitterEngine;
 use crate::language::Language;
 
 /// Engines applicable to a language, in priority order (formatters run in sequence).
@@ -34,7 +35,7 @@ pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
         Language::GraphQl => vec![Box::new(GraphQlEngine)],
         Language::Html | Language::Vue | Language::Svelte => vec![Box::new(MarkupFmtEngine)],
         // As other native backends land they are matched here, falling through
-        // to the generic tier for everything else.
-        _ => vec![Box::new(WhitespaceEngine)],
+        // to the tree-sitter generic tier for everything else.
+        _ => vec![Box::new(TreeSitterEngine)],
     }
 }

@@ -11,4 +11,4 @@ pub mod ruff;
 pub mod rumdl;
 pub mod sqruff;
 pub mod taplo;
-pub mod whitespace;
+pub mod treesitter;

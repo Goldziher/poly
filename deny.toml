@@ -20,6 +20,10 @@ allow = [
     "Unicode-3.0",
     "BSL-1.0",
     "OpenSSL",
+    # Permissive data license on the Mozilla CA root-cert bundle (webpki-roots),
+    # pulled by ureq's TLS stack for the tree-sitter grammar download feature.
+    # Non-copyleft; compatible with our permissive-only policy.
+    "CDLA-Permissive-2.0",
 ]
 
 [bans]

@@ -1,0 +1,11 @@
+---
+source: crates/polylint-core/tests/treesitter.rs
+expression: formatted
+---
+package main
+import "fmt"
+func main() {
+    if true {
+        fmt.Println("hi")
+    }
+}

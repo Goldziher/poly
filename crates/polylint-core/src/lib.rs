@@ -7,8 +7,8 @@
 //! cached by content hash ([`cache`], blake3), and reported ([`report`]).
 //!
 //! New backends implement [`engine::Engine`] and are wired into
-//! [`registry::engines_for`]. [`engines::whitespace::WhitespaceEngine`] is the
-//! reference implementation and the template for real backends.
+//! [`registry::engines_for`]. [`engines::treesitter::TreeSitterEngine`] is the
+//! generic tier that serves any language without a native backend.
 
 pub mod cache;
 pub mod config;

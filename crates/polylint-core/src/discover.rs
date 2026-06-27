@@ -16,6 +16,18 @@ pub struct DiscoveredFile {
     pub language: Language,
 }
 
+/// Detect a file's language: tier-1 extension mapping first, then the
+/// tree-sitter language pack's path detection for the long tail (mapped to
+/// [`Language::Other`] so the generic tier handles it). Files neither can
+/// identify are skipped.
+fn detect(path: &std::path::Path) -> Option<Language> {
+    if let Some(language) = Language::from_path(path) {
+        return Some(language);
+    }
+    let name = tree_sitter_language_pack::detect_language(&path.to_string_lossy())?;
+    Some(Language::Other(name.to_string()))
+}
+
 /// Recursively discover supported files under `paths`.
 pub fn discover(paths: &[PathBuf]) -> Vec<DiscoveredFile> {
     let mut out = Vec::new();
@@ -32,7 +44,7 @@ pub fn discover(paths: &[PathBuf]) -> Vec<DiscoveredFile> {
                 continue;
             }
             let path = entry.path();
-            if let Some(language) = Language::from_path(path) {
+            if let Some(language) = detect(path) {
                 out.push(DiscoveredFile {
                     path: path.to_path_buf(),
                     language,
