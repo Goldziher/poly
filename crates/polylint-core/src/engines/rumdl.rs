@@ -136,6 +136,7 @@ fn map_warning(w: &LintWarning, engine: &str) -> Diagnostic {
             end_col: w.end_column as u32,
         }),
         fix,
+        metadata: Default::default(),
     }
 }
 

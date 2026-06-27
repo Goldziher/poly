@@ -76,6 +76,7 @@ impl Engine for RuffEngine {
                         end_col: end.column.get() as u32,
                     }),
                     fix: None,
+                    metadata: Default::default(),
                 }])
             }
         }

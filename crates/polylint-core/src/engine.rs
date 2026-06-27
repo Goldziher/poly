@@ -86,6 +86,10 @@ pub struct Diagnostic {
     /// Suggested autofix, if available.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub fix: Option<Edit>,
+    /// Tool-specific extras (rule URL, fix applicability, category, …), rendered
+    /// verbatim by the output layer. Empty for most findings.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub metadata: std::collections::BTreeMap<String, String>,
 }
 
 /// Result of a format pass.

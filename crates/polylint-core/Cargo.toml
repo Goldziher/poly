@@ -8,9 +8,9 @@ authors.workspace = true
 description = "Core engine for the polylint/polyfmt universal, zero-dependency linter & formatter"
 
 [package.metadata.cargo-machete]
-# rumdl's lib crate name is rumdl_lib; cargo-machete cannot detect the usage
-# via the package name.
-ignored = ["rumdl"]
+# rumdl's lib crate name is rumdl_lib and serde_toon_format's lib crate name is
+# serde_toon; cargo-machete cannot detect the usage via the package name.
+ignored = ["rumdl", "serde_toon_format"]
 
 [lib]
 name = "polylint_core"
@@ -39,6 +39,7 @@ rumdl.workspace = true
 saphyr.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+serde_toon_format.workspace = true
 sqruff-lib.workspace = true
 sqruff-lib-core.workspace = true
 taplo.workspace = true
@@ -50,4 +51,5 @@ unicase.workspace = true
 
 [dev-dependencies]
 insta.workspace = true
+owo-colors.workspace = true
 tempfile.workspace = true

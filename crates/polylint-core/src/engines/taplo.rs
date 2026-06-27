@@ -87,6 +87,7 @@ impl Engine for TaploEngine {
                 message: error.message.clone(),
                 span: Some(span),
                 fix: None,
+                metadata: Default::default(),
             });
         }
 
@@ -103,6 +104,7 @@ impl Engine for TaploEngine {
                     message: error.to_string(),
                     span,
                     fix: None,
+                    metadata: Default::default(),
                 });
             }
         }

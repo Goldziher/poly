@@ -1,0 +1,11 @@
+---
+source: crates/polylint-core/tests/report.rs
+expression: text
+---
+src/main.py
+  12:80  warning  ruff  E501  line too long
+      category=style
+      url=https://example.test/rules/E501
+  1:1  error  ruff    syntax error
+
+2 issue(s) found.

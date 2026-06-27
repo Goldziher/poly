@@ -2086,6 +2086,7 @@ dependencies = [
  "saphyr",
  "serde",
  "serde_json",
+ "serde_toon_format",
  "sqruff-lib",
  "sqruff-lib-core",
  "taplo",
@@ -3027,6 +3028,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6662b5879511e06e8999a8a235d848113e942c9124f211511b16466ee2995f26"
 dependencies = [
  "serde_core",
+]
+
+[[package]]
+name = "serde_toon_format"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "45abc88be1b465c1676fbbe94f866e872d3e9c22b3c10de6e1d90ae76dd45d51"
+dependencies = [
+ "itoa",
+ "memchr",
+ "ryu",
+ "serde",
+ "serde_json",
+ "smallvec",
+ "smol_str 0.3.6",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

@@ -141,5 +141,6 @@ fn violation_to_diagnostic(violation: SQLBaseError) -> Diagnostic {
             None
         },
         fix: None,
+        metadata: Default::default(),
     }
 }

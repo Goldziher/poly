@@ -185,6 +185,7 @@ fn typo_to_diagnostic(content: &str, typo: typos::Typo<'_>) -> Diagnostic {
             end_col,
         }),
         fix,
+        metadata: Default::default(),
     }
 }
 

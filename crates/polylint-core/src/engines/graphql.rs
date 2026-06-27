@@ -96,6 +96,7 @@ impl Engine for GraphQlEngine {
             message: err_msg,
             span,
             fix: None,
+            metadata: Default::default(),
         }])
     }
 

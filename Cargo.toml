@@ -48,6 +48,9 @@ rumdl = { version = "0.2", default-features = false }
 saphyr = "0.0.6"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
+# serde_toon_format — TOON (Token-Oriented Object Notation) serde serializer
+# for the `--format toon` output renderer
+serde_toon_format = "0.1"
 sqruff-lib = "0.38"
 sqruff-lib-core = "0.38"
 taplo = "0.14"

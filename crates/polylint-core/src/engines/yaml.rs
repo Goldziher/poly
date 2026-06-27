@@ -71,6 +71,7 @@ impl Engine for YamlEngine {
                         end_col: col,
                     }),
                     fix: None,
+                    metadata: Default::default(),
                 }])
             }
         }

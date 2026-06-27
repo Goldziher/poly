@@ -126,6 +126,7 @@ fn lint_js(src: &SourceFile) -> anyhow::Result<Vec<Diagnostic>> {
                 severity: Severity::Error,
                 span,
                 fix: None,
+                metadata: Default::default(),
             }
         })
         .collect();
@@ -192,6 +193,7 @@ fn lint_json(src: &SourceFile) -> anyhow::Result<Vec<Diagnostic>> {
                     end_col: col,
                 }),
                 fix: None,
+                metadata: Default::default(),
             }])
         }
     }

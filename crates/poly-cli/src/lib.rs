@@ -8,13 +8,15 @@ use std::process::ExitCode;
 use clap::Args;
 use polylint_core::{Config, RunOptions, report};
 
-/// Human-readable or machine-readable output.
+/// Output rendering format.
 #[derive(Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum OutputFormat {
     /// Colored, human-oriented output.
-    Human,
+    Pretty,
     /// JSON.
     Json,
+    /// TOON (Token-Oriented Object Notation).
+    Toon,
 }
 
 /// Flags shared by both subcommands.
@@ -24,7 +26,7 @@ pub struct CommonArgs {
     pub paths: Vec<PathBuf>,
 
     /// Output format.
-    #[arg(long, value_enum, default_value_t = OutputFormat::Human)]
+    #[arg(long, value_enum, default_value_t = OutputFormat::Pretty)]
     pub format: OutputFormat,
 
     /// Path to a config file (default: nearest polylint.toml).
@@ -76,9 +78,13 @@ pub fn run_lint(args: LintArgs) -> ExitCode {
     match polylint_core::lint(&paths, &config, &opts) {
         Ok(results) => {
             let count = match common.format {
-                OutputFormat::Human => report::report_lint_human(&results),
+                OutputFormat::Pretty => report::report_lint_pretty(&results),
                 OutputFormat::Json => {
                     println!("{}", report::report_lint_json(&results));
+                    results.iter().map(|r| r.diagnostics.len()).sum()
+                }
+                OutputFormat::Toon => {
+                    println!("{}", report::report_lint_toon(&results));
                     results.iter().map(|r| r.diagnostics.len()).sum()
                 }
             };
@@ -108,9 +114,13 @@ pub fn run_fmt(args: FmtArgs) -> ExitCode {
     match polylint_core::format(&paths, &config, &opts, write) {
         Ok(results) => {
             let changed = match common.format {
-                OutputFormat::Human => report::report_format_human(&results, args.check),
+                OutputFormat::Pretty => report::report_format_pretty(&results, args.check),
                 OutputFormat::Json => {
                     println!("{}", report::report_format_json(&results));
+                    results.iter().filter(|r| r.changed).count()
+                }
+                OutputFormat::Toon => {
+                    println!("{}", report::report_format_toon(&results));
                     results.iter().filter(|r| r.changed).count()
                 }
             };
