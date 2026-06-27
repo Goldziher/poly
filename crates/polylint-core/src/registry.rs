@@ -15,12 +15,13 @@ use crate::engines::rumdl::RumdlEngine;
 use crate::engines::sqruff::SqruffEngine;
 use crate::engines::taplo::TaploEngine;
 use crate::engines::treesitter::TreeSitterEngine;
+use crate::engines::typos::TyposEngine;
 use crate::engines::yaml::YamlEngine;
 use crate::language::Language;
 
 /// Engines applicable to a language, in priority order (formatters run in sequence).
 pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
-    match lang {
+    let mut engines: Vec<Box<dyn Engine>> = match lang {
         Language::JavaScript
         | Language::TypeScript
         | Language::Jsx
@@ -39,5 +40,9 @@ pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
         // As other native backends land they are matched here, falling through
         // to the tree-sitter generic tier for everything else.
         _ => vec![Box::new(TreeSitterEngine)],
-    }
+    };
+    // typos is cross-cutting: every file is spell-checked in addition to its
+    // language-specific lint/format engines.
+    engines.push(Box::new(TyposEngine));
+    engines
 }

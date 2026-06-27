@@ -636,6 +636,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "dictgen"
+version = "0.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "241177aa78d646ea2434aed987729780e4792918d309cedab8859133745c64e7"
+dependencies = [
+ "phf 0.13.1",
+ "phf_shared 0.13.1",
+ "unicase",
+]
+
+[[package]]
 name = "diff"
 version = "0.1.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1989,6 +2000,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.118",
+ "unicase",
 ]
 
 [[package]]
@@ -2007,6 +2019,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e57fef6bc5981e38c2ce2d63bfa546861309f875b8a75f092d1d54ae2d64f266"
 dependencies = [
  "siphasher",
+ "unicase",
 ]
 
 [[package]]
@@ -2080,6 +2093,9 @@ dependencies = [
  "tempfile",
  "toml",
  "tree-sitter-language-pack",
+ "typos",
+ "typos-dict",
+ "unicase",
 ]
 
 [[package]]
@@ -3051,6 +3067,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "703d5c7ef118737c72f1af64ad2f6f8c5e1921f818cdcb97b8fe6fc69bf66214"
 
 [[package]]
+name = "simdutf8"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
+
+[[package]]
 name = "similar"
 version = "2.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3628,6 +3650,30 @@ name = "typenum"
 version = "1.20.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20"
+
+[[package]]
+name = "typos"
+version = "0.10.43"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc89e9df07f00957d70c4386975fcdcaf3803fe6a924bf94702ce95a103cc9fc"
+dependencies = [
+ "bstr",
+ "itertools 0.14.0",
+ "serde",
+ "simdutf8",
+ "unicode-ident",
+ "winnow",
+]
+
+[[package]]
+name = "typos-dict"
+version = "0.13.30"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e249493f9a5d0daa41c3df2198ba951fa871a54c1d134a6a33010a9644ee16e5"
+dependencies = [
+ "dictgen",
+ "phf 0.13.1",
+]
 
 [[package]]
 name = "unicase"

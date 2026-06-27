@@ -45,6 +45,9 @@ sqruff-lib-core.workspace = true
 taplo.workspace = true
 toml.workspace = true
 tree-sitter-language-pack.workspace = true
+typos.workspace = true
+typos-dict.workspace = true
+unicase.workspace = true
 
 [dev-dependencies]
 insta.workspace = true
