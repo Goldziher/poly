@@ -101,18 +101,13 @@ fn lint_fix_applies_autofixes_and_dry_run_does_not() {
     polylint_core::lint(&[dir.path().to_path_buf()], &cfg, &opts, true).unwrap();
     let fixed = fs::read_to_string(&path).unwrap();
     assert_ne!(fixed, bad, "fix must rewrite the file");
-    for corrected in ["language", "receive", "the", "occurrence"] {
-        assert!(
-            fixed.contains(corrected),
-            "expected `{corrected}` in {fixed:?}"
-        );
-    }
-    for misspelling in ["language", "receive", "the", "occurrence"] {
-        assert!(
-            !fixed.contains(misspelling),
-            "misspelling `{misspelling}` should be gone: {fixed:?}"
-        );
-    }
+    // Assert the exact corrected output. It uses only correctly-spelled words,
+    // so the `typos` pre-commit hook cannot rewrite this source and silently
+    // break the assertion (the four misspellings stay in the excluded fixture).
+    assert_eq!(
+        fixed, "The language of the receive function.\nThis is the occurrence of a typo.\n",
+        "all four single-correction typos should be autofixed in place",
+    );
 }
 
 #[test]
