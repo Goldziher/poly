@@ -36,3 +36,6 @@ version = 2
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
+# oxc_formatter and oxc_formatter_core are not published to crates.io;
+# we pin all oxc crates to a single git rev for internal type consistency.
+allow-git = ["https://github.com/oxc-project/oxc"]

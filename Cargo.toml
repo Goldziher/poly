@@ -29,11 +29,15 @@ insta = "1"
 malva = "0.16"
 markup_fmt = "0.27"
 owo-colors = { version = "4", features = ["supports-colors"] }
-# oxc published crates — used by the oxc backend (M2)
-oxc_allocator = "0.137"
-oxc_codegen = "0.137"
-oxc_parser = "0.137"
-oxc_span = "0.137"
+# oxc git deps — all crates MUST share the same `rev` to keep the internal
+# oxc_ast / oxc_span type graph consistent. Published versions are stale;
+# oxc_formatter and oxc_formatter_core were never published to crates.io.
+# Rev = latest HEAD of the oxc monorepo as of 2026-06-26.
+oxc_allocator = { git = "https://github.com/oxc-project/oxc", rev = "5762638c8ec6981455ef6d7e9482d2ceca757829" }
+oxc_formatter = { git = "https://github.com/oxc-project/oxc", rev = "5762638c8ec6981455ef6d7e9482d2ceca757829" }
+oxc_formatter_core = { git = "https://github.com/oxc-project/oxc", rev = "5762638c8ec6981455ef6d7e9482d2ceca757829" }
+oxc_parser = { git = "https://github.com/oxc-project/oxc", rev = "5762638c8ec6981455ef6d7e9482d2ceca757829" }
+oxc_span = { git = "https://github.com/oxc-project/oxc", rev = "5762638c8ec6981455ef6d7e9482d2ceca757829" }
 poly-cli = { path = "crates/poly-cli" }
 polylint-core = { path = "crates/polylint-core" }
 rayon = "1"

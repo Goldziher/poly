@@ -1,12 +1,17 @@
 //! oxc backend (M2): JS, TS, JSX, TSX lint + format via `oxc_parser` /
-//! `oxc_codegen`, plus JSON/JSONC format via `serde_json`.
+//! `oxc_formatter`, plus JSON/JSONC format via `serde_json`.
 //!
-//! `oxc_linter` and `oxc_formatter` are not published to crates.io, so we wrap
-//! the published crates only: parse errors are the lint diagnostics, and
-//! `oxc_codegen` re-emits the AST as the format output.
+//! Phase 1: JS/TS formatting uses `oxc_formatter` (Prettier-compatible,
+//! v0.56.0). `oxc_codegen` is no longer used — it was a code generator, not
+//! a pretty-printer, and corrupted idiomatic TypeScript.
+//!
+//! The lint path still returns parse errors only; `oxc_linter` integration
+//! (Phase 2) is deferred because its API requires a full `LintService`
+//! orchestration stack not suited to per-file in-process calls.
 
 use oxc_allocator::Allocator;
-use oxc_codegen::{Codegen, CodegenOptions, IndentChar};
+use oxc_formatter::JsFormatOptions;
+use oxc_formatter_core::{IndentWidth, LineWidth};
 use oxc_parser::Parser;
 use oxc_span::SourceType;
 
@@ -16,7 +21,9 @@ use crate::language::Language;
 
 /// Version string folded into the blake3 cache key.
 /// Bump whenever the output of `lint` or `format` could change.
-const VERSION: &str = "oxc_parser:0.137+codegen:0.137";
+/// Reflects the oxc monorepo rev pinned in `Cargo.toml` + the formatter crate
+/// version declared in that rev's workspace (0.56.0).
+const VERSION: &str = "oxc_formatter:0.56.0+parser:0.56.0+rev:5762638";
 
 static LANGUAGES: &[Language] = &[
     Language::JavaScript,
@@ -27,8 +34,9 @@ static LANGUAGES: &[Language] = &[
     Language::Jsonc,
 ];
 
-/// oxc backend: wraps `oxc_parser` for lint diagnostics and `oxc_codegen` for
-/// JS/TS formatting; uses `serde_json` for JSON/JSONC.
+/// oxc backend: wraps `oxc_parser` for lint diagnostics and `oxc_formatter`
+/// for JS/TS formatting (Prettier-compatible); uses `serde_json` for
+/// JSON/JSONC.
 pub struct OxcEngine;
 
 impl crate::engine::Engine for OxcEngine {
@@ -133,37 +141,57 @@ fn lint_js(src: &SourceFile) -> anyhow::Result<Vec<Diagnostic>> {
     Ok(diagnostics)
 }
 
+/// Format a JS/TS/JSX/TSX file using `oxc_formatter` (Prettier-compatible).
+///
+/// Line width is taken from `cfg.globals.line_length` (project default: 120).
+/// oxfmt's own default is 100; we override to 120 per polylint's opinionated
+/// layer. Indent width comes from `cfg.indent_width` (default: 2).
 fn format_js(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
     let allocator = Allocator::new();
     let source_type = source_type_for(&src.language);
-    let ret = Parser::new(&allocator, &src.content, source_type).parse();
 
-    // If the file has parse errors we cannot meaningfully reformat it.
-    if ret.diagnostics.has_errors() {
-        return Ok(FormatOutput::Unchanged);
-    }
+    // Line width from config, clamped to a valid value.
+    let line_width = u16::try_from(cfg.globals.line_length)
+        .ok()
+        .and_then(|w| LineWidth::try_from(w).ok())
+        .unwrap_or_else(|| {
+            // SAFETY: 120 is always in [LineWidth::MIN, LineWidth::MAX].
+            LineWidth::try_from(120u16).expect("120 is a valid LineWidth")
+        });
 
-    let formatted = Codegen::new()
-        .with_options(CodegenOptions {
-            single_quote: false,
-            indent_char: IndentChar::Space,
-            indent_width: cfg.indent_width,
-            ..CodegenOptions::default()
-        })
-        .build(&ret.program)
-        .code;
+    let indent_width = u8::try_from(cfg.indent_width)
+        .ok()
+        .and_then(|w| IndentWidth::try_from(w).ok())
+        .unwrap_or_default(); // default is 2
 
-    // Ensure final newline.
-    let formatted = if formatted.ends_with('\n') {
-        formatted
-    } else {
-        format!("{formatted}\n")
+    let options = JsFormatOptions {
+        line_width,
+        indent_width,
+        ..JsFormatOptions::default()
     };
 
-    if formatted == src.content {
+    // format() parses internally; returns Err on the first parse error.
+    let formatted =
+        match oxc_formatter::format(&allocator, &src.content, source_type, options, None) {
+            // Cannot meaningfully reformat a file with parse errors.
+            Err(_) => return Ok(FormatOutput::Unchanged),
+            Ok(f) => f,
+        };
+
+    let printed = formatted
+        .print()
+        .map_err(|e| anyhow::anyhow!("oxc_formatter print error: {e}"))?;
+    let mut code = printed.into_code();
+
+    // Ensure a trailing newline.
+    if !code.ends_with('\n') {
+        code.push('\n');
+    }
+
+    if code == src.content {
         Ok(FormatOutput::Unchanged)
     } else {
-        Ok(FormatOutput::Formatted(formatted))
+        Ok(FormatOutput::Formatted(code))
     }
 }
 
@@ -345,14 +373,16 @@ mod tests {
 
     #[test]
     fn format_js_returns_unchanged_for_already_formatted() {
-        // Already formatted output should round-trip as Unchanged.
+        // Run once to get the canonical Prettier-style form, then verify
+        // the second pass is idempotent (Unchanged).
         let src = make_src("const x = {\n  a: 1,\n  b: 2,\n};\n", Language::JavaScript);
         let cfg = default_cfg();
-        // Run once to get canonical form.
+        // First pass: may reformat (e.g. collapse to single line).
         let first = match format_js(&src, &cfg).unwrap() {
             FormatOutput::Formatted(s) => s,
             FormatOutput::Unchanged => src.content.clone(),
         };
+        // Second pass: must be idempotent.
         let src2 = make_src(&first, Language::JavaScript);
         let second = format_js(&src2, &cfg).unwrap();
         assert!(
@@ -378,6 +408,7 @@ mod tests {
 
     #[test]
     fn jsonc_with_comments_is_valid() {
+        // Language::Jsonc — strip_jsonc_comments is called before serde_json parse.
         let src = make_src("{\n  // comment\n  \"a\": 1\n}\n", Language::Jsonc);
         let diags = lint_json(&src).unwrap();
         assert!(diags.is_empty(), "got diags: {diags:?}");

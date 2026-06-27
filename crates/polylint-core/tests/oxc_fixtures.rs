@@ -59,7 +59,7 @@ fn oxc_known_bad_json_diagnostics() {
 
 // ── known-unformatted fixtures ────────────────────────────────────────────────
 
-/// Compact JS file → asserts exact formatted output from oxc_codegen.
+/// Compact JS file → asserts exact Prettier-compatible output from oxc_formatter.
 #[test]
 fn oxc_known_unformatted_js_output() {
     let src = make_src(
