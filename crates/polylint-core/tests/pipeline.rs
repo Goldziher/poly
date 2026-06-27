@@ -12,11 +12,12 @@ fn write(dir: &std::path::Path, name: &str, content: &str) -> std::path::PathBuf
 
 #[test]
 fn lint_flags_trailing_whitespace() {
-    // Use a YAML file: TOML now routes to the taplo native backend which does
-    // not emit trailing-whitespace diagnostics; YAML still uses the whitespace
-    // engine which does.
+    // Use a Go file: it has no native backend, so it routes to the tree-sitter
+    // generic tier, which emits the catch-all trailing-whitespace diagnostic.
+    // (TOML→taplo and YAML→yaml are native backends that do not.) The lint is
+    // purely textual, so no grammar download happens here.
     let dir = tempfile::tempdir().unwrap();
-    write(dir.path(), "a.yaml", "key: value   \nother: value\n");
+    write(dir.path(), "a.go", "package main   \nfunc main() {}\n");
     let cfg = Config::default();
     let opts = RunOptions {
         no_cache: true,

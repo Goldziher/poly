@@ -12,3 +12,4 @@ pub mod rumdl;
 pub mod sqruff;
 pub mod taplo;
 pub mod treesitter;
+pub mod yaml;

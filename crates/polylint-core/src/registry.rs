@@ -15,6 +15,7 @@ use crate::engines::rumdl::RumdlEngine;
 use crate::engines::sqruff::SqruffEngine;
 use crate::engines::taplo::TaploEngine;
 use crate::engines::treesitter::TreeSitterEngine;
+use crate::engines::yaml::YamlEngine;
 use crate::language::Language;
 
 /// Engines applicable to a language, in priority order (formatters run in sequence).
@@ -30,6 +31,7 @@ pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
         Language::Markdown => vec![Box::new(RumdlEngine)],
         Language::Python => vec![Box::new(RuffEngine)],
         Language::Sql => vec![Box::new(SqruffEngine)],
+        Language::Yaml => vec![Box::new(YamlEngine)],
         Language::Css | Language::Scss | Language::Less => vec![Box::new(MalvaEngine)],
         Language::Nix => vec![Box::new(NixFmtEngine)],
         Language::GraphQl => vec![Box::new(GraphQlEngine)],

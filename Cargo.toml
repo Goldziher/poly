@@ -45,6 +45,8 @@ ruff_python_formatter = "0.0.3"
 ruff_python_parser = "0.0.3"
 ruff_source_file = "0.0.3"
 rumdl = { version = "0.2", default-features = false }
+# saphyr — pure-Rust YAML parser, used by the yaml backend for validity lint
+saphyr = "0.0.6"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 sqruff-lib = "0.38"
