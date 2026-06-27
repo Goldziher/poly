@@ -32,10 +32,13 @@ oxc_formatter_core.workspace = true
 oxc_parser.workspace = true
 oxc_span.workspace = true
 rayon.workspace = true
+# ruff git deps — all pinned to the same rev (see workspace Cargo.toml)
+ruff_db.workspace = true
 ruff_formatter.workspace = true
+ruff_linter.workspace = true
+ruff_python_ast.workspace = true
 ruff_python_formatter.workspace = true
-ruff_python_parser.workspace = true
-ruff_source_file.workspace = true
+ruff_text_size.workspace = true
 rumdl.workspace = true
 saphyr.workspace = true
 serde.workspace = true

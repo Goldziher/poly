@@ -1,7 +1,7 @@
 //! Insta snapshot fixtures for the ruff Python backend.
 //!
-//! - `known_bad_diagnostics` — a Python file with a syntax error asserts the
-//!   expected parse-error [`Diagnostic`] (`E999`).
+//! - `known_bad_diagnostics` — a Python file with real rule violations asserts
+//!   the expected [`Diagnostic`]s (F401, W605, E711).
 //! - `known_unformatted_output` — a badly-formatted Python file asserts the
 //!   exact output produced by the ruff formatter.
 //! - `docstring_code_format_output` — proves the opinionated
@@ -40,12 +40,23 @@ fn format_to_string(content: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Known-bad fixture: a syntax error produces an E999 parse diagnostic.
+// Known-bad fixture: real rule violations produce expected diagnostics.
+//
+// Violations in this snippet:
+//   F401 — `os` is imported but never used
+//   W605 — `"\s"` contains an invalid escape sequence
+//   E711 — comparison to None should use `is`/`is not`
+//
+// Note: avoid trailing whitespace and misspellings — pre-commit hooks rewrite
+// them and would break the test constants.
 // ---------------------------------------------------------------------------
 
 const KNOWN_BAD: &str = "\
-def broken(:
-    return 1
+import os
+x = \"\\s\"
+def check(val):
+    if val == None:
+        pass
 ";
 
 #[test]
@@ -54,17 +65,34 @@ fn known_bad_diagnostics() {
     let src = make_src("known_bad.py", KNOWN_BAD);
     let diags = engine.lint(&src, &engine_cfg()).unwrap();
 
-    assert!(!diags.is_empty(), "expected a parse-error diagnostic");
-    let summary: Vec<_> = diags
+    assert!(!diags.is_empty(), "expected rule diagnostics");
+
+    // Assert structural properties: engine name, non-empty code, line presence.
+    for diag in &diags {
+        assert_eq!(diag.engine, "ruff");
+        assert!(
+            diag.code.is_some(),
+            "every ruff diagnostic must carry a rule code"
+        );
+        assert!(
+            diag.span.is_some(),
+            "every ruff diagnostic must carry a span"
+        );
+    }
+
+    // Collect (code, start_line) for snapshot.
+    let mut summary: Vec<_> = diags
         .iter()
         .map(|d| {
             (
-                d.engine.as_str(),
                 d.code.as_deref().unwrap_or(""),
                 d.span.as_ref().map(|s| s.start_line),
             )
         })
         .collect();
+    // Sort for determinism — ruff does not guarantee order across rules.
+    summary.sort_unstable();
+
     insta::assert_debug_snapshot!("known_bad_diagnostics", summary);
 }
 

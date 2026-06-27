@@ -1,15 +1,33 @@
-//! Python backend: formatting via `ruff_python_formatter`, lint via
-//! `ruff_python_parser` (parse-error diagnostics only).
+//! Python backend: full rule-based linting via `ruff_linter` and formatting
+//! via `ruff_python_formatter`.
 //!
-//! Capabilities: [`Capabilities::format`] + [`Capabilities::lint`].
-//! These crates are consumed as published dependencies (astral-sh publishes
-//! ruff's component crates to crates.io). Full rule-based lint (`ruff_linter`)
-//! is deferred to a later milestone.
+//! Both depend on the astral-sh/ruff git monorepo, pinned to rev
+//! `03f787e51e94999977b9a5a32b0153d82d7e2142`. The `RUFF_REV` constant is
+//! folded into [`RuffEngine::version`] so that upgrading the pin automatically
+//! invalidates the polylint cache.
 //!
-//! # Opinionated defaults layered on top of ruff's own defaults
+//! # Opinionated rule selection
+//!
+//! The default selection extends ruff's built-in defaults (F + E4/E7/E9) with:
+//!
+//! | Code | Linter | Rationale |
+//! |------|--------|-----------|
+//! | `F`  | Pyflakes | undefined names, unused imports, etc. |
+//! | `E4` | pycodestyle | import errors (E401/E402) |
+//! | `E7` | pycodestyle | statement errors (E711…E743) |
+//! | `E9` | pycodestyle | runtime/syntax errors (E999) |
+//! | `W6` | pycodestyle | W605 — invalid escape sequence |
+//! | `I`  | isort | import sorting |
+//! | `UP` | pyupgrade | modernize Python syntax |
+//! | `B`  | flake8-bugbear | common bugs and design issues |
+//!
+//! `E1`/`E2`/`E3`/`W1`/`W2`/`W3` are intentionally excluded — they overlap
+//! with the ruff formatter and would fire on every well-formatted file.
+//!
+//! # Opinionated format defaults
 //!
 //! | Setting | Polylint default | ruff default |
-//! |---|---|---|
+//! |---------|-----------------|--------------|
 //! | `line-length` | 120 | 88 |
 //! | `docstring-code-format` | `true` | `false` |
 //! | `docstring-code-line-width` | 120 | dynamic |
@@ -17,16 +35,73 @@
 //! These defaults are overridden by any `[fmt.python.ruff]` or
 //! `[lint.python.ruff]` table in the user's `polylint.toml`.
 
+use std::path::Path;
+use std::str::FromStr;
+use std::sync::OnceLock;
+
+use ruff_db::diagnostic::Severity as RuffSeverity;
 use ruff_formatter::LineWidth;
+use ruff_linter::linter::{ParseSource, lint_only};
+use ruff_linter::rule_selector::{PreviewOptions, RuleSelector};
+use ruff_linter::settings::LinterSettings;
+use ruff_linter::settings::flags;
+use ruff_linter::settings::rule_table::RuleTable;
+use ruff_linter::source_kind::SourceKind;
+use ruff_python_ast::PySourceType;
 use ruff_python_formatter::{DocstringCode, DocstringCodeLineWidth, PyFormatOptions};
-use ruff_python_parser::parse_module;
-use ruff_source_file::LineIndex;
+use ruff_text_size::Ranged;
 
 use crate::config::EngineConfig;
-use crate::engine::{Capabilities, Diagnostic, Engine, FormatOutput, Severity, SourceFile, Span};
+use crate::engine::{
+    Capabilities, Diagnostic, Edit, Engine, FormatOutput, Severity, SourceFile, Span,
+};
 use crate::language::Language;
 
-/// Ruff Python backend.
+/// Opinionated rule selection: string codes resolved by [`RuleSelector::from_str`].
+///
+/// Extends ruff's built-in defaults (F + E4/E7/E9) with W6 (invalid escape),
+/// I (isort), UP (pyupgrade), and B (flake8-bugbear). Omits E1/E2/E3/W1/W2/W3
+/// because the ruff formatter already handles those whitespace/blank-line rules.
+static RULE_CODES: &[&str] = &["F", "E4", "E7", "E9", "W6", "I", "UP", "B"];
+
+/// Build a [`RuleTable`] from the opinionated rule selection.
+fn build_rule_table() -> RuleTable {
+    let preview = PreviewOptions::default();
+    // Collect the rules to a `Vec` first because `RuleSelector::rules` returns
+    // an iterator that borrows the selector — it cannot escape the closure.
+    let rules: Vec<_> = RULE_CODES
+        .iter()
+        .filter_map(|s| RuleSelector::from_str(s).ok())
+        .flat_map(|sel| sel.rules(&preview).collect::<Vec<_>>())
+        .collect();
+    RuleTable::from_iter(rules)
+}
+
+/// Return the shared [`LinterSettings`], initializing on first call.
+///
+/// `LinterSettings` is `Clone + Send + Sync`; the `OnceLock` ensures it is
+/// built at most once and then borrowed concurrently from the rayon thread pool.
+fn linter_settings() -> &'static LinterSettings {
+    static SETTINGS: OnceLock<LinterSettings> = OnceLock::new();
+    SETTINGS.get_or_init(|| {
+        let mut settings = LinterSettings::new(Path::new("."));
+        settings.rules = build_rule_table();
+        settings.line_length = ruff_linter::line_width::LineLength::try_from(120_u16)
+            .expect("120 is a valid line length");
+        settings
+    })
+}
+
+/// Convert a ruff [`RuffSeverity`] to the polylint [`Severity`].
+fn map_severity(s: RuffSeverity) -> Severity {
+    match s {
+        RuffSeverity::Info => Severity::Info,
+        RuffSeverity::Warning => Severity::Warning,
+        RuffSeverity::Error | RuffSeverity::Fatal => Severity::Error,
+    }
+}
+
+/// Ruff Python backend (lint + format).
 pub struct RuffEngine;
 
 static LANGUAGES: &[Language] = &[Language::Python];
@@ -44,42 +119,86 @@ impl Engine for RuffEngine {
         Capabilities {
             lint: true,
             format: true,
-            fix: false,
+            fix: true,
         }
     }
 
+    /// Version string incorporates the pinned ruff git rev so that upgrading
+    /// the rev automatically invalidates any cached lint/format output.
     fn version(&self) -> &str {
-        // Tracks the published `ruff_python_formatter` crate version; bump in
-        // lock-step with the dependency so cached output is invalidated when the
-        // formatter changes.
-        "0.0.3"
+        concat!("git-ruff:", "03f787e51e94999977b9a5a32b0153d82d7e2142")
     }
 
     fn lint(&self, src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
-        // Only parse-error diagnostics for now.
-        let result = parse_module(&src.content);
-        match result {
-            Ok(_) => Ok(Vec::new()),
-            Err(err) => {
-                let index = LineIndex::from_source_text(&src.content);
-                let start = index.line_column(err.location.start(), &src.content);
-                let end = index.line_column(err.location.end(), &src.content);
-                Ok(vec![Diagnostic {
-                    engine: "ruff".to_string(),
-                    code: Some("E999".to_string()),
-                    severity: Severity::Error,
-                    message: err.error.to_string(),
-                    span: Some(Span {
+        let is_stub = src.path.extension().is_some_and(|e| e == "pyi");
+        let source_kind = SourceKind::Python {
+            code: src.content.clone(),
+            is_stub,
+        };
+        let source_type = if is_stub {
+            PySourceType::Stub
+        } else {
+            PySourceType::Python
+        };
+
+        let result = lint_only(
+            &src.path,
+            None, // no package-root; isort treats all imports as third-party
+            linter_settings(),
+            flags::Noqa::Enabled,
+            &source_kind,
+            source_type,
+            ParseSource::None,
+        );
+
+        let diagnostics = result
+            .diagnostics
+            .into_iter()
+            .map(|ruff_diag| {
+                let code = ruff_diag.secondary_code().map(|c| c.as_str().to_string());
+                let severity = map_severity(ruff_diag.severity());
+                let message = ruff_diag.primary_message().to_string();
+
+                let span = ruff_diag
+                    .ruff_start_location()
+                    .zip(ruff_diag.ruff_end_location())
+                    .map(|(start, end)| Span {
                         start_line: start.line.get() as u32,
                         start_col: start.column.get() as u32,
                         end_line: end.line.get() as u32,
                         end_col: end.column.get() as u32,
-                    }),
-                    fix: None,
+                    });
+
+                // Only auto-apply fixes that ruff marks `Safe` and that consist
+                // of exactly one edit. Our `Diagnostic` carries a single `Edit`,
+                // so a multi-edit fix cannot be applied atomically — applying a
+                // subset would corrupt the file. `Unsafe`/`DisplayOnly` fixes and
+                // multi-edit fixes still surface as diagnostics, just without an
+                // autofix. (Multi-edit fix support is tracked as a follow-up.)
+                let fix = ruff_diag
+                    .fix()
+                    .filter(|f| f.applicability().is_safe() && f.edits().len() == 1)
+                    .and_then(|f| {
+                        f.edits().first().map(|edit| Edit {
+                            start_byte: edit.start().to_usize(),
+                            end_byte: edit.end().to_usize(),
+                            replacement: edit.content().unwrap_or("").to_string(),
+                        })
+                    });
+
+                Diagnostic {
+                    engine: "ruff".to_string(),
+                    code,
+                    severity,
+                    message,
+                    span,
+                    fix,
                     metadata: Default::default(),
-                }])
-            }
-        }
+                }
+            })
+            .collect();
+
+        Ok(diagnostics)
     }
 
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {

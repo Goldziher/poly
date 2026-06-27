@@ -24,6 +24,9 @@ allow = [
     # pulled by ureq's TLS stack for the tree-sitter grammar download feature.
     # Non-copyleft; compatible with our permissive-only policy.
     "CDLA-Permissive-2.0",
+    # Python Software Foundation License 2.0 — permissive, used by libcst
+    # (a transitive dep of ruff_linter). Compatible with our permissive-only policy.
+    "PSF-2.0",
 ]
 
 [bans]
@@ -32,10 +35,21 @@ wildcards = "allow"
 
 [advisories]
 version = 2
+ignore = [
+    # RUSTSEC-2024-0436: `paste` crate is unmaintained (archived by dtolnay).
+    # This is a transitive dep via libcst → ruff_linter; no safe upgrade exists
+    # at the pinned rev. Risk is low: paste is a compile-time macro only.
+    "RUSTSEC-2024-0436",
+]
 
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
 # oxc_formatter and oxc_formatter_core are not published to crates.io;
 # we pin all oxc crates to a single git rev for internal type consistency.
-allow-git = ["https://github.com/oxc-project/oxc"]
+# ruff_linter was never published to crates.io; all ruff crates are pinned to
+# a single git rev so the internal type graph stays consistent.
+allow-git = [
+    "https://github.com/oxc-project/oxc",
+    "https://github.com/astral-sh/ruff",
+]
