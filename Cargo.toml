@@ -4,6 +4,7 @@ members = [
     "crates/conformance",
     "crates/gitfluff",
     "crates/poly-cli",
+    "crates/poly-config",
     "crates/polyfmt",
     "crates/polyhooks",
     "crates/polylint",
@@ -98,6 +99,7 @@ oxc_linter = { git = "https://github.com/oxc-project/oxc", rev = "5762638c8ec698
 oxc_span = { git = "https://github.com/oxc-project/oxc", rev = "5762638c8ec6981455ef6d7e9482d2ceca757829" }
 phf = { version = "0.13.1", default-features = false, features = ["macros"] }
 poly-cli = { path = "crates/poly-cli" }
+poly-config = { path = "crates/poly-config" }
 polylint-core = { path = "crates/polylint-core" }
 pprof = "0.15.0"
 # predicates — assertion combinators for the vendored gitfluff CLI tests

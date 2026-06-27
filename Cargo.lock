@@ -4378,6 +4378,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "poly-config"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "tempfile",
+ "toml 1.1.2+spec-1.1.0",
+]
+
+[[package]]
 name = "polyfmt"
 version = "0.1.0"
 dependencies = [
@@ -4502,6 +4512,7 @@ dependencies = [
  "oxc_formatter_json",
  "oxc_linter",
  "oxc_span",
+ "poly-config",
  "pretty_graphql",
  "pretty_yaml",
  "rayon",

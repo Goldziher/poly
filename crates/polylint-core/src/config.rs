@@ -1,10 +1,17 @@
-//! Configuration: canonical `polylint.toml`, normalized into a [`Config`] and
-//! sliced per-engine. Layering is: tool defaults (inside each engine) →
-//! opinionated [`GlobalDefaults`] → user `polylint.toml`.
+//! Configuration: the unified `poly.toml` (back-compat `polylint.toml`), parsed
+//! by the [`poly_config`] crate and sliced per-engine here. Layering is: tool
+//! defaults (inside each engine) → opinionated [`GlobalDefaults`] → user config.
+//!
+//! `polylint-core` consumes only the `[defaults]`, `[lint.*]`, and `[fmt.*]`
+//! tables; the `[commit]` and `[hooks]` sections of the same file are read
+//! directly from [`poly_config`] by the `poly commit` / `poly hooks` surfaces.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-use serde::Deserialize;
+// Re-exported so the rest of the crate (and downstream consumers) keep importing
+// these from `polylint_core` / `crate::config` unchanged after the schema moved
+// into the shared `poly-config` crate.
+pub use poly_config::{GlobalDefaults, LineEnding};
 
 use crate::language::Language;
 
@@ -17,50 +24,11 @@ pub enum Kind {
     Format,
 }
 
-/// Line-ending style.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LineEnding {
-    /// Unix `\n`.
-    Lf,
-    /// Windows `\r\n`.
-    Crlf,
-}
-
-impl LineEnding {
-    /// The line-ending byte sequence (`"\n"` or `"\r\n"`).
-    pub fn as_str(self) -> &'static str {
-        match self {
-            LineEnding::Lf => "\n",
-            LineEnding::Crlf => "\r\n",
-        }
-    }
-}
-
-/// Opinionated global defaults applied wherever a tool exposes the setting.
-#[derive(Debug, Clone)]
-pub struct GlobalDefaults {
-    /// Target maximum line length (applied where a tool exposes it).
-    pub line_length: usize,
-    /// Line-ending style to enforce.
-    pub line_ending: LineEnding,
-    /// Whether to enforce a single trailing newline.
-    pub final_newline: bool,
-    /// Whether to strip trailing whitespace on each line.
-    pub trim_trailing_whitespace: bool,
-}
-
-impl Default for GlobalDefaults {
-    fn default() -> Self {
-        Self {
-            line_length: 120,
-            line_ending: LineEnding::Lf,
-            final_newline: true,
-            trim_trailing_whitespace: true,
-        }
-    }
-}
-
-/// The fully normalized configuration.
+/// The fully normalized configuration for the lint/format surfaces.
+///
+/// This is a thin projection of [`poly_config::PolyConfig`] onto the tables
+/// `polylint-core` needs; the `[commit]` / `[hooks]` sections are intentionally
+/// dropped here and consumed elsewhere.
 #[derive(Debug, Clone, Default)]
 pub struct Config {
     /// Global opinionated defaults.
@@ -83,19 +51,15 @@ pub struct EngineConfig {
 }
 
 impl Config {
-    /// Load config by searching from `start` upward for `polylint.toml`.
+    /// Load config by searching from `start` upward for `poly.toml` (or the
+    /// back-compat `polylint.toml`).
     pub fn load(start: &Path) -> anyhow::Result<Config> {
-        match find_config(start) {
-            Some(path) => Config::load_file(&path),
-            None => Ok(Config::default()),
-        }
+        Ok(poly_config::PolyConfig::load(start)?.into())
     }
 
     /// Load config from an explicit file path.
     pub fn load_file(path: &Path) -> anyhow::Result<Config> {
-        let text = std::fs::read_to_string(path)?;
-        let raw: RawConfig = toml::from_str(&text)?;
-        Ok(raw.into())
+        Ok(poly_config::PolyConfig::load_file(path)?.into())
     }
 
     /// Build the [`EngineConfig`] slice for a given language + engine + phase.
@@ -119,64 +83,12 @@ impl Config {
     }
 }
 
-fn find_config(start: &Path) -> Option<PathBuf> {
-    let mut dir = if start.is_file() {
-        start.parent()?
-    } else {
-        start
-    };
-    loop {
-        let candidate = dir.join("polylint.toml");
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-        dir = dir.parent()?;
-    }
-}
-
-#[derive(Debug, Deserialize, Default)]
-#[serde(default)]
-struct RawConfig {
-    defaults: RawDefaults,
-    lint: toml::Table,
-    fmt: toml::Table,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(default)]
-struct RawDefaults {
-    line_length: usize,
-    final_newline: bool,
-    trim_trailing_whitespace: bool,
-    line_ending: String,
-}
-
-impl Default for RawDefaults {
-    fn default() -> Self {
-        Self {
-            line_length: 120,
-            final_newline: true,
-            trim_trailing_whitespace: true,
-            line_ending: "lf".to_string(),
-        }
-    }
-}
-
-impl From<RawConfig> for Config {
-    fn from(raw: RawConfig) -> Self {
-        let line_ending = match raw.defaults.line_ending.to_ascii_lowercase().as_str() {
-            "crlf" => LineEnding::Crlf,
-            _ => LineEnding::Lf,
-        };
+impl From<poly_config::PolyConfig> for Config {
+    fn from(pc: poly_config::PolyConfig) -> Self {
         Config {
-            defaults: GlobalDefaults {
-                line_length: raw.defaults.line_length,
-                line_ending,
-                final_newline: raw.defaults.final_newline,
-                trim_trailing_whitespace: raw.defaults.trim_trailing_whitespace,
-            },
-            lint: raw.lint,
-            fmt: raw.fmt,
+            defaults: pc.defaults,
+            lint: pc.lint,
+            fmt: pc.fmt,
         }
     }
 }

@@ -43,6 +43,7 @@ oxc_formatter_core.workspace = true
 oxc_formatter_json.workspace = true
 oxc_linter.workspace = true
 oxc_span.workspace = true
+poly-config.workspace = true
 pretty_graphql.workspace = true
 pretty_yaml.workspace = true
 rayon.workspace = true
