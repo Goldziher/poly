@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "crates/conformance",
+    "crates/gitfluff",
     "crates/poly-cli",
     "crates/polyfmt",
     "crates/polylint",
@@ -20,6 +21,8 @@ authors = ["Na'aman Hirschfeld <nhirschfeld@gmail.com>"]
 # nixpkgs-fmt, which pulls unmaintained ansi_term/atty (cargo deny advisories)
 alejandra = "3.1"
 anyhow = "1"
+# assert_cmd — CLI integration testing for the vendored gitfluff binary
+assert_cmd = "2"
 blake3 = "1"
 clap = { version = "4", features = ["derive"] }
 graphql-parser = "0.4"
@@ -54,11 +57,14 @@ oxc_linter = { git = "https://github.com/oxc-project/oxc", rev = "5762638c8ec698
 oxc_span = { git = "https://github.com/oxc-project/oxc", rev = "5762638c8ec6981455ef6d7e9482d2ceca757829" }
 poly-cli = { path = "crates/poly-cli" }
 polylint-core = { path = "crates/polylint-core" }
+# predicates — assertion combinators for the vendored gitfluff CLI tests
+predicates = "3"
 # pretty_graphql — g-plane pure-Rust GraphQL formatter (MIT); SDL + query docs
 pretty_graphql = "0.2.3"
 # pretty_yaml — g-plane pure-Rust YAML formatter (MIT); CST-based structural reflow
 pretty_yaml = "0.6"
 rayon = "1"
+regex = "1"
 # ruff git deps — all crates MUST share the same `rev` to keep the internal
 # ruff type graph consistent. The published 0.0.3 crates are stale; ruff_linter
 # was never published to crates.io. Rev = HEAD of astral-sh/ruff as of 2026-06-27.
