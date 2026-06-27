@@ -6,6 +6,7 @@
 
 use crate::engine::Engine;
 use crate::engines::graphql::GraphQlEngine;
+use crate::engines::mago::MagoEngine;
 use crate::engines::malva::MalvaEngine;
 use crate::engines::markup_fmt::MarkupFmtEngine;
 use crate::engines::nixfmt::NixFmtEngine;
@@ -37,6 +38,7 @@ pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
         Language::Nix => vec![Box::new(NixFmtEngine)],
         Language::GraphQl => vec![Box::new(GraphQlEngine)],
         Language::Html | Language::Vue | Language::Svelte => vec![Box::new(MarkupFmtEngine)],
+        Language::Php => vec![Box::new(MagoEngine)],
         // As other native backends land they are matched here, falling through
         // to the tree-sitter generic tier for everything else.
         _ => vec![Box::new(TreeSitterEngine)],

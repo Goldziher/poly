@@ -1,0 +1,26 @@
+---
+source: crates/polylint-core/tests/mago.rs
+expression: summary
+---
+[
+    (
+        "mago",
+        "parse",
+        Error,
+    ),
+    (
+        "mago",
+        "parse",
+        Error,
+    ),
+    (
+        "mago",
+        "parse",
+        Error,
+    ),
+    (
+        "mago",
+        "no-redundant-file",
+        Hint,
+    ),
+]

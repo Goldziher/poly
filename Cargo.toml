@@ -11,7 +11,7 @@ members = [
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.94"
+rust-version = "1.96"
 license = "MIT OR Apache-2.0"
 authors = ["Na'aman Hirschfeld <nhirschfeld@gmail.com>"]
 
@@ -26,6 +26,18 @@ graphql-parser = "0.4"
 ignore = "0.4"
 # insta snapshot testing
 insta = "1"
+# mago — tier-1 PHP linter + formatter backend (MIT OR Apache-2.0, v1.42.0)
+# All eight crates are pinned to the same version for internal type consistency.
+mago-allocator = { version = "=1.42.0" }
+mago-database = { version = "=1.42.0" }
+mago-formatter = { version = "=1.42.0" }
+mago-linter = { version = "=1.42.0" }
+mago-names = { version = "=1.42.0" }
+mago-php-version = { version = "=1.42.0" }
+mago-reporting = { version = "=1.42.0" }
+mago-span = { version = "=1.42.0" }
+mago-syntax = { version = "=1.42.0" }
+mago-text-edit = { version = "=1.42.0" }
 malva = "0.16"
 markup_fmt = "0.27"
 owo-colors = { version = "4", features = ["supports-colors"] }
