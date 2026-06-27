@@ -1,0 +1,36 @@
+# Pre-commit hooks for polylint/polyfmt.
+#
+# A consuming repository can use these two hooks to replace its entire per-language
+# linter + formatter stack (ruff, oxlint, shfmt, taplo, …) with polylint and polyfmt.
+# Install the hooks in the consuming repo's .pre-commit-config.yaml:
+#
+#   - repo: https://github.com/Goldziher/polylint
+#     rev: <version>
+#     hooks:
+#       - id: polylint
+#       - id: polyfmt
+
+- id: polylint
+  name: polylint (universal linter)
+  description: Run polylint on the staged files
+  # `language: rust` means pre-commit will invoke `cargo install` to install the binary.
+  # The binary name is derived from `entry` (polylint).
+  language: rust
+  entry: polylint
+  types: [text]
+  # `pass_filenames: true` passes the staged file list to the binary.
+  pass_filenames: true
+  # Exit code 1 signals that issues were found (used by pre-commit to block the commit).
+  stages: [pre-commit]
+
+- id: polyfmt
+  name: polyfmt (universal formatter)
+  description: Run polyfmt --check on the staged files (dry-run; no writes in pre-commit)
+  language: rust
+  entry: polyfmt --check
+  types: [text]
+  pass_filenames: true
+  # Exit code 1 signals that files would be reformatted (used by pre-commit to block the commit).
+  # Remove the `--check` flag in the entry if you want pre-commit to auto-fix formatting
+  # (format in place). Default is dry-run (`--check`) for safety in CI.
+  stages: [pre-commit]

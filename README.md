@@ -1,12 +1,15 @@
-# polylint / polyfmt
+# polylint
+
+[![CI](https://github.com/Goldziher/polylint/actions/workflows/ci.yml/badge.svg)](https://github.com/Goldziher/polylint/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](LICENSE)
 
 **One linter and one formatter for every language — pure Rust, in-process, zero system dependencies.**
 
-`polylint` (lint) and `polyfmt` (format) are two self-contained binaries that aim to replace
-your entire per-language tool stack — `ruff` + `oxlint` + `oxfmt` + `taplo` + `rumdl` + `shfmt`
-
-- `clang-format` + … — and all of their system dependencies (Python, Node, Go, a JVM, …)
-with **two binaries and one config file**.
+`poly` is a single CLI with subcommands `poly lint` and `poly fmt` that replace your entire
+per-language tool stack — `ruff` + `oxlint` + `oxfmt` + `taplo` + `rumdl` + `shfmt` +
+`clang-format` + … and all of their system dependencies (Python, Node, Go, a JVM, …) — with
+**one binary and one config file**. Alias binaries `polylint` and `polyfmt` preserve the
+crates.io names.
 
 Everything runs **in-process, in pure Rust**. There are no subprocesses and nothing to install
 on the host: where a high-quality Rust crate exists for a language it is wrapped directly, and
@@ -39,19 +42,25 @@ polylint collapses that into:
 ## Install
 
 ```sh
-cargo install polylint   # the linter
-cargo install polyfmt    # the formatter
+cargo install poly-cli   # the primary CLI: poly lint, poly fmt
 ```
 
-> **Note:** the `0.0.1` releases on crates.io are name-reservation stubs only. Functional
-> releases are upcoming as the milestones below land.
+Or install the alias binaries individually:
+
+```sh
+cargo install polylint   # alias for `poly lint`
+cargo install polyfmt    # alias for `poly fmt`
+```
+
+> **Note:** the `0.0.1` releases on crates.io are name-reservation stubs. Functional
+> releases ship as new backends land (see [Roadmap](#roadmap)).
 
 ## Usage
 
 ### Lint
 
 ```sh
-polylint [PATHS]...
+poly lint [PATHS]...
 
   --format <human|json>   Output format (default: human)
   --config <PATH>         Use an explicit config (default: nearest polylint.toml)
@@ -60,14 +69,12 @@ polylint [PATHS]...
   --no-color              Disable colored output
 ```
 
-`PATHS` defaults to the current directory. Files are discovered through the `ignore` crate, so
-`.gitignore` is respected. *(An `--fix` flag to apply autofixes in place is planned — see the
-roadmap.)*
+Or use the alias: `polylint [PATHS]...` with the same flags.
 
 ### Format
 
 ```sh
-polyfmt [PATHS]...
+poly fmt [PATHS]...
 
   --check                 Do not write; exit non-zero if any file would change
   --format <human|json>   Output format (default: human)
@@ -77,14 +84,19 @@ polyfmt [PATHS]...
   --no-color              Disable colored output
 ```
 
-Without `--check`, `polyfmt` rewrites files in place. With `--check` it writes nothing and only
-reports what would change — ideal for CI and pre-commit.
+Or use the alias: `polyfmt [PATHS]...` with the same flags.
+
+Without `--check`, `poly fmt` rewrites files in place. With `--check` it writes nothing and
+only reports what would change — ideal for CI and pre-commit.
+
+`PATHS` defaults to the current directory. Files are discovered through the `ignore` crate, so
+`.gitignore` is respected.
 
 ### Exit codes
 
-Both binaries use exit codes designed to drive CI and git hooks:
+All binaries use exit codes designed to drive CI and git hooks:
 
-| Code | `polylint`                        | `polyfmt`                                   |
+| Code | `poly lint` / `polylint`          | `poly fmt` / `polyfmt`                      |
 |------|-----------------------------------|---------------------------------------------|
 | `0`  | No issues found                   | Formatting complete (or nothing to change)  |
 | `1`  | Lint issues found                 | `--check`: at least one file would change   |
@@ -163,8 +175,10 @@ polylint/
 ├── crates/
 │   ├── polylint-core/   # engine library: trait, registry, config, cache, runner, reporting
 │   │   └── src/engines/ # backends (whitespace today; native + tree-sitter to come)
-│   ├── polylint/        # `polylint` binary (lint) — thin CLI
-│   └── polyfmt/         # `polyfmt` binary (format) — thin CLI
+│   ├── poly-cli/        # `poly lint` / `poly fmt` — shared library + CLI
+│   ├── polylint/        # `polylint` binary (alias for `poly lint`)
+│   ├── polyfmt/         # `polyfmt` binary (alias for `poly fmt`)
+│   └── conformance/     # dev-only: differential test harness vs reference formatters
 ```
 
 ## Language & backend support
@@ -215,19 +229,30 @@ long tail; native backends then progressively upgrade individual languages to hi
 - **Ongoing.** Progressively port more of the tree-sitter tail to native Rust backends for
   higher-fidelity formatting.
 
-### Pre-commit (planned)
+### Pre-commit
 
-A goal of M7 is to ship a `.pre-commit-hooks.yaml` so a repository can replace its entire
-pre-commit stack — and all the toolchains behind it — with just two hooks (`polylint` and
-`polyfmt`).
+Add polylint to your repo's `.pre-commit-config.yaml`:
+
+```yaml
+- repo: https://github.com/Goldziher/polylint
+  rev: v0.1.0  # or whichever version
+  hooks:
+    - id: polylint
+    - id: polyfmt
+```
+
+This replaces your entire per-language pre-commit hook stack (ruff, oxlint, shfmt, taplo,
+rumdl, etc.) with just two hooks. See `.pre-commit-hooks.yaml` for hook configuration and
+options.
 
 ## Contributing
 
-Contributions are welcome. The project is greenfield and the architecture (the `Engine` trait +
-static registry) is intended to make adding a backend a self-contained unit of work. Each native
+Contributions are welcome. See [CLAUDE.md](CLAUDE.md) for architecture, conventions, and
+instructions. The project is greenfield and the architecture (the `Engine` trait + static
+registry) is intended to make adding a backend a self-contained unit of work. Each native
 backend begins with an empirical check that the upstream crate externalizes the API we need; if
-it doesn't, the source is vendored and recorded in `ATTRIBUTIONS.md`. No subprocesses, no system
-dependencies — ever.
+it doesn't, the source is vendored and recorded in `ATTRIBUTIONS.md`. No subprocesses, no
+system dependencies — ever.
 
 ## License
 
