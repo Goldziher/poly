@@ -4376,7 +4376,11 @@ dependencies = [
  "clap",
  "gitfluff",
  "owo-colors",
+ "poly-config",
  "polylint-core",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]

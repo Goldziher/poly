@@ -26,4 +26,10 @@ anyhow.workspace = true
 clap.workspace = true
 gitfluff.workspace = true
 owo-colors.workspace = true
+poly-config.workspace = true
 polylint-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

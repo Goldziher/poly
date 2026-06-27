@@ -8,6 +8,10 @@ use std::process::ExitCode;
 use clap::Args;
 use polylint_core::{Config, RunOptions, report};
 
+pub mod hooks;
+
+pub use hooks::{HooksArgs, run_hooks};
+
 /// Output rendering format.
 #[derive(Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum OutputFormat {
