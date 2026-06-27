@@ -1,0 +1,6 @@
+---
+source: crates/polylint-core/tests/oxc_fixtures.rs
+assertion_line: 54
+expression: "diags[0].message"
+---
+"trailing comma at line 4 column 1"
