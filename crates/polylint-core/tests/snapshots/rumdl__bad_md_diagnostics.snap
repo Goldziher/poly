@@ -4,5 +4,4 @@ expression: summary
 ---
 [
     "line=1 code=MD018 msg=No space after # in heading",
-    "line=1 code=MD063 msg=Heading should use title case: 'Bad Heading — no space after hash (MD018)' -> 'Bad Heading — No Space After Hash (MD018)'",
 ]

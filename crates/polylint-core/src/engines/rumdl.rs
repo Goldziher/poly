@@ -1,8 +1,9 @@
 //! rumdl backend — Markdown lint and auto-format.
 //!
 //! Wraps [`rumdl_lib`](https://crates.io/crates/rumdl) in-process — no subprocess, no system
-//! dependency. Capabilities: lint (all default rules) + format (apply all auto-fixable rules
-//! iteratively until convergence).
+//! dependency. Capabilities: lint (standard markdownlint rules; rumdl-proprietary stylistic
+//! extensions off by default — see [`DEFAULT_DISABLED_RULES`]) + format (apply all
+//! auto-fixable rules iteratively until convergence).
 //!
 //! Config layering: rumdl defaults → opinionated override (line-length 120) → user
 //! `[lint.markdown.rumdl]` / `[fmt.markdown.rumdl]` table in `polylint.toml`.
@@ -11,7 +12,7 @@ use rumdl_lib::{
     config::Config as RumdlConfig,
     fix_coordinator::FixCoordinator,
     rule::{LintWarning, Severity as RumdlSeverity},
-    rules::all_rules,
+    rules::{all_rules, filter_rules},
     types::LineLength,
 };
 
@@ -25,7 +26,19 @@ use crate::language::Language;
 pub struct RumdlEngine;
 
 /// Embedded crate version so the cache key changes whenever rumdl output could change.
-const RUMDL_VERSION: &str = "0.2.23";
+/// The `+defaults1` suffix marks the opinionated default-disabled rule set below.
+const RUMDL_VERSION: &str = "0.2.23+defaults1";
+
+/// rumdl-proprietary stylistic rules disabled by default.
+///
+/// These extend beyond the standard markdownlint set (which stops at MD059) and
+/// are purely stylistic — table-cell alignment (MD060), heading capitalization
+/// (MD063), frontmatter key sort (MD072), heading-anchor collisions (MD080), and
+/// empty sections (MD082). Per the project's defaults policy ("purely stylistic
+/// rules: pick one convention or turn the rule off — never bikeshed"), they are
+/// off by default. A user can re-enable any of them via an `enable` list in the
+/// `[lint.markdown.rumdl]` table of `polylint.toml`.
+const DEFAULT_DISABLED_RULES: &[&str] = &["MD060", "MD063", "MD072", "MD080", "MD082"];
 
 static LANGUAGES: &[Language] = &[Language::Markdown];
 
@@ -52,7 +65,7 @@ impl Engine for RumdlEngine {
 
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
         let rumdl_cfg = build_rumdl_config(cfg);
-        let rules = all_rules(&rumdl_cfg);
+        let rules = filter_rules(&all_rules(&rumdl_cfg), &rumdl_cfg.global);
         let flavor = rumdl_cfg.markdown_flavor();
         rumdl_lib::lint(
             &src.content,
@@ -68,7 +81,7 @@ impl Engine for RumdlEngine {
 
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
         let rumdl_cfg = build_rumdl_config(cfg);
-        let rules = all_rules(&rumdl_cfg);
+        let rules = filter_rules(&all_rules(&rumdl_cfg), &rumdl_cfg.global);
         let coordinator = FixCoordinator::default();
         let mut content = src.content.clone();
         coordinator
@@ -97,18 +110,39 @@ fn build_rumdl_config(cfg: &EngineConfig) -> RumdlConfig {
     config.global.line_length = LineLength::new(line_length);
 
     // Optional rule-override lists from polylint.toml.
-    if let Some(arr) = cfg.options.get("disable").and_then(toml::Value::as_array) {
-        config.global.disable = arr
-            .iter()
-            .filter_map(|v| v.as_str().map(str::to_owned))
-            .collect();
-    }
-    if let Some(arr) = cfg.options.get("enable").and_then(toml::Value::as_array) {
-        config.global.enable = arr
-            .iter()
-            .filter_map(|v| v.as_str().map(str::to_owned))
-            .collect();
-    }
+    let user_enable: Vec<String> = cfg
+        .options
+        .get("enable")
+        .and_then(toml::Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default();
+    let user_disable: Vec<String> = cfg
+        .options
+        .get("disable")
+        .and_then(toml::Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // Opinionated defaults: disable the rumdl-proprietary stylistic rules, except
+    // any the user explicitly re-enabled (so the `enable` list wins — rumdl's
+    // `filter_rules` otherwise lets `disable` override `enable`).
+    let mut disable: Vec<String> = DEFAULT_DISABLED_RULES
+        .iter()
+        .filter(|rule| !user_enable.iter().any(|e| e.eq_ignore_ascii_case(rule)))
+        .map(|rule| (*rule).to_owned())
+        .collect();
+    disable.extend(user_disable);
+
+    config.global.disable = disable;
+    config.global.enable = user_enable;
     config
 }
 
