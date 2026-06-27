@@ -12,8 +12,11 @@ fn write(dir: &std::path::Path, name: &str, content: &str) -> std::path::PathBuf
 
 #[test]
 fn lint_flags_trailing_whitespace() {
+    // Use a YAML file: TOML now routes to the taplo native backend which does
+    // not emit trailing-whitespace diagnostics; YAML still uses the whitespace
+    // engine which does.
     let dir = tempfile::tempdir().unwrap();
-    write(dir.path(), "a.toml", "x = 1   \ny = 2\n");
+    write(dir.path(), "a.yaml", "key: value   \nother: value\n");
     let cfg = Config::default();
     let opts = RunOptions {
         no_cache: true,
@@ -48,8 +51,11 @@ fn format_check_does_not_write_but_reports_change() {
 
 #[test]
 fn format_write_is_idempotent() {
+    // Use a YAML file to test whitespace-engine idempotency (trailing ws +
+    // blank lines normalized to one trailing newline). TOML now routes to the
+    // taplo native backend which has different blank-line semantics.
     let dir = tempfile::tempdir().unwrap();
-    let path = write(dir.path(), "a.toml", "x = 1   \n\n\n");
+    let path = write(dir.path(), "a.yaml", "key: value   \n\n\n");
     let cfg = Config::default();
     let opts = RunOptions {
         no_cache: true,
@@ -59,7 +65,10 @@ fn format_write_is_idempotent() {
     let first = polylint_core::format(&[dir.path().to_path_buf()], &cfg, &opts, true).unwrap();
     assert!(first[0].changed);
     let after = fs::read_to_string(&path).unwrap();
-    assert_eq!(after, "x = 1\n", "trailing ws + blank lines normalized");
+    assert_eq!(
+        after, "key: value\n",
+        "trailing ws + blank lines normalized"
+    );
 
     // Second pass: nothing left to change.
     let second = polylint_core::format(&[dir.path().to_path_buf()], &cfg, &opts, true).unwrap();

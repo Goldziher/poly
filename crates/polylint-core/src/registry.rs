@@ -1,10 +1,11 @@
 //! Backend registry: maps a [`Language`] to the ordered list of engines that
 //! handle it. Native backends are wired here as they land (M2+); the reference
-//! [`WhitespaceEngine`] currently serves every language and also stands in for
-//! the tree-sitter generic tier until M5.
+//! [`WhitespaceEngine`] serves any language not yet claimed by a native backend
+//! and stands in for the tree-sitter generic tier until M5.
 
 use crate::engine::Engine;
 use crate::engines::oxc::OxcEngine;
+use crate::engines::taplo::TaploEngine;
 use crate::engines::whitespace::WhitespaceEngine;
 use crate::language::Language;
 
@@ -17,6 +18,9 @@ pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
         | Language::Tsx
         | Language::Json
         | Language::Jsonc => vec![Box::new(OxcEngine)],
+        Language::Toml => vec![Box::new(TaploEngine::new())],
+        // As other native backends land they are matched here, falling through
+        // to the generic tier for everything else.
         _ => vec![Box::new(WhitespaceEngine)],
     }
 }

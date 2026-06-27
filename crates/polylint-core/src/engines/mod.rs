@@ -3,4 +3,5 @@
 //! [`crate::registry::engines_for`].
 
 pub mod oxc;
+pub mod taplo;
 pub mod whitespace;

@@ -27,6 +27,7 @@ polylint-core = { path = "crates/polylint-core" }
 rayon = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
+taplo = "0.14"
 tempfile = "3"
 thiserror = "2"
 toml = "1.1"
