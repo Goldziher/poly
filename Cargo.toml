@@ -37,6 +37,7 @@ oxc_allocator = { git = "https://github.com/oxc-project/oxc", rev = "5762638c8ec
 oxc_diagnostics = { git = "https://github.com/oxc-project/oxc", rev = "5762638c8ec6981455ef6d7e9482d2ceca757829" }
 oxc_formatter = { git = "https://github.com/oxc-project/oxc", rev = "5762638c8ec6981455ef6d7e9482d2ceca757829" }
 oxc_formatter_core = { git = "https://github.com/oxc-project/oxc", rev = "5762638c8ec6981455ef6d7e9482d2ceca757829" }
+oxc_formatter_json = { git = "https://github.com/oxc-project/oxc", rev = "5762638c8ec6981455ef6d7e9482d2ceca757829" }
 oxc_linter = { git = "https://github.com/oxc-project/oxc", rev = "5762638c8ec6981455ef6d7e9482d2ceca757829" }
 oxc_span = { git = "https://github.com/oxc-project/oxc", rev = "5762638c8ec6981455ef6d7e9482d2ceca757829" }
 poly-cli = { path = "crates/poly-cli" }

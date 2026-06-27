@@ -1,12 +1,13 @@
 //! oxc backend (M2): JS, TS, JSX, TSX lint + format via `oxc_linter` /
-//! `oxc_formatter`, plus JSON/JSONC format via `serde_json`.
+//! `oxc_formatter`, plus JSON/JSONC format via `oxc_formatter_json`.
 //!
 //! Lint path uses `oxc_linter` (oxlint) to run the full correctness rule set
 //! in-process via `LintService::run_source`. An in-memory `RuntimeFileSystem`
 //! adapter feeds file content from RAM — no disk read inside the engine.
 //!
 //! `oxc_formatter` (Prettier-compatible, v0.56.0) handles JS/TS formatting.
-//! `serde_json` handles JSON/JSONC.
+//! `oxc_formatter_json` handles JSON/JSONC formatting: Prettier-compatible,
+//! short arrays stay inline, JSONC comments are preserved.
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
@@ -16,6 +17,7 @@ use oxc_allocator::Allocator;
 use oxc_diagnostics::Severity as OxcSeverity;
 use oxc_formatter::JsFormatOptions;
 use oxc_formatter_core::{IndentWidth, LineWidth};
+use oxc_formatter_json::{JsonFormatOptions, JsonVariant};
 use oxc_linter::{
     AllowWarnDeny, ConfigStore, ConfigStoreBuilder, ExternalPluginStore, LintFilter, LintOptions,
     LintService, LintServiceOptions, Linter, Message, PossibleFixes, RuntimeFileSystem,
@@ -29,7 +31,7 @@ use crate::language::Language;
 /// Version string folded into the blake3 cache key.
 /// Bump whenever the output of `lint` or `format` could change.
 /// Reflects the oxc monorepo rev + formatter version + oxlint integration marker.
-const VERSION: &str = "oxc_formatter:0.56.0+oxlint+parser:0.56.0+rev:5762638";
+const VERSION: &str = "oxc_formatter:0.56.0+oxlint+parser:0.56.0+rev:5762638+json-fmt";
 
 static LANGUAGES: &[Language] = &[
     Language::JavaScript,
@@ -41,8 +43,8 @@ static LANGUAGES: &[Language] = &[
 ];
 
 /// oxc backend: wraps `oxc_linter` for full correctness-rule lint diagnostics,
-/// `oxc_formatter` for JS/TS formatting (Prettier-compatible), and `serde_json`
-/// for JSON/JSONC.
+/// `oxc_formatter` for JS/TS formatting (Prettier-compatible), and
+/// `oxc_formatter_json` for JSON/JSONC formatting.
 pub struct OxcEngine;
 
 impl crate::engine::Engine for OxcEngine {
@@ -75,7 +77,7 @@ impl crate::engine::Engine for OxcEngine {
 
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
         match src.language {
-            Language::Json | Language::Jsonc => format_json(src),
+            Language::Json | Language::Jsonc => format_json(src, cfg),
             _ => format_js(src, cfg),
         }
     }
@@ -389,30 +391,63 @@ fn lint_json(src: &SourceFile) -> anyhow::Result<Vec<Diagnostic>> {
     }
 }
 
-fn format_json(src: &SourceFile) -> anyhow::Result<FormatOutput> {
-    // JSONC carries comments that a serde_json round-trip would discard, and
-    // serde has no comment-preserving emitter. Never reformat JSONC — report it
-    // unchanged rather than silently deleting comments.
-    if src.language == Language::Jsonc {
-        return Ok(FormatOutput::Unchanged);
-    }
+fn format_json(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
+    let allocator = Allocator::new();
 
-    // Key order is preserved via serde_json's `preserve_order` feature, so a
-    // format never reshuffles object members.
-    let value: serde_json::Value = match serde_json::from_str(&src.content) {
-        Ok(v) => v,
-        Err(_) => return Ok(FormatOutput::Unchanged),
+    // Route JSONC through the Jsonc variant so the formatter preserves comments.
+    // The Json variant enforces strict JSON output (no trailing commas, double quotes).
+    let variant = match src.language {
+        Language::Jsonc => JsonVariant::Jsonc,
+        _ => JsonVariant::Json,
     };
 
-    let mut pretty = serde_json::to_string_pretty(&value)?;
-    if !pretty.ends_with('\n') {
-        pretty.push('\n');
+    // Line width from config, clamped to the formatter's valid range.
+    let line_width = u16::try_from(cfg.globals.line_length)
+        .ok()
+        .and_then(|w| LineWidth::try_from(w).ok())
+        .unwrap_or_else(|| {
+            // SAFETY: 120 is always in [LineWidth::MIN, LineWidth::MAX].
+            LineWidth::try_from(120u16).expect("120 is a valid LineWidth")
+        });
+
+    let indent_width = u8::try_from(cfg.indent_width)
+        .ok()
+        .and_then(|w| IndentWidth::try_from(w).ok())
+        .unwrap_or_default(); // default is 2
+
+    let options = JsonFormatOptions {
+        variant,
+        line_width,
+        indent_width,
+        // Expand::Auto (default): objects collapse to one line when the source
+        // had no newline after `{`, and arrays pack inline when they fit within
+        // line_width. This replaces serde_json's one-element-per-line behavior
+        // for short arrays like `["CodeBlock","Code"]`.
+        ..JsonFormatOptions::default()
+    };
+
+    // On parse error, leave the file unchanged rather than reporting an error
+    // (lint_json handles parse diagnostics separately).
+    let formatted = match oxc_formatter_json::format(&allocator, &src.content, options) {
+        Err(_) => return Ok(FormatOutput::Unchanged),
+        Ok(f) => f,
+    };
+
+    let mut code = formatted
+        .print()
+        .map_err(|e| anyhow::anyhow!("oxc_formatter_json print error: {e}"))?
+        .into_code();
+
+    // Guard: the formatter adds a trailing newline via hard_line_break(), but
+    // ensure it defensively in case that changes.
+    if !code.ends_with('\n') {
+        code.push('\n');
     }
 
-    if pretty == src.content {
+    if code == src.content {
         Ok(FormatOutput::Unchanged)
     } else {
-        Ok(FormatOutput::Formatted(pretty))
+        Ok(FormatOutput::Formatted(code))
     }
 }
 

@@ -187,3 +187,56 @@ fn oxc_jsonc_with_comments_is_clean() {
         "JSONC with valid comments should have no errors; got: {diags:?}"
     );
 }
+
+/// Behavioral proof: a short JSON array stays inline after formatting.
+///
+/// serde_json's `to_string_pretty` used to explode `["CodeBlock","Code"]` to
+/// one element per line; oxc_formatter_json packs them inline when they fit.
+#[test]
+fn oxc_format_json_short_array_stays_inline() {
+    let src = make_src(
+        r#"{"parsers":["CodeBlock","Code"]}"#,
+        "config.json",
+        Language::Json,
+    );
+    let out = OxcEngine.format(&src, &default_cfg()).unwrap();
+    let formatted = match out {
+        polylint_core::engine::FormatOutput::Formatted(text) => text,
+        polylint_core::engine::FormatOutput::Unchanged => {
+            panic!("expected Formatted, got Unchanged");
+        }
+    };
+    // The array must stay on a single line — no newline between `[` and `]`.
+    assert!(
+        formatted.contains(r#"["CodeBlock", "Code"]"#),
+        "short array should stay inline; got:\n{formatted}"
+    );
+}
+
+/// Behavioral proof: JSONC comments are preserved through `format()`.
+///
+/// Previously format_json returned FormatOutput::Unchanged for JSONC; now it
+/// reformats via oxc_formatter_json which must re-emit the comments.
+#[test]
+fn oxc_format_jsonc_preserves_comments() {
+    let src = make_src(
+        "{\n  // line comment\n  \"key\": \"value\" /* block comment */\n}\n",
+        "config.jsonc",
+        Language::Jsonc,
+    );
+    let out = OxcEngine.format(&src, &default_cfg()).unwrap();
+    // The formatter may return Unchanged (already canonical) or Formatted.
+    // Either way, comments must survive — check them on the output text.
+    let text = match out {
+        polylint_core::engine::FormatOutput::Formatted(text) => text,
+        polylint_core::engine::FormatOutput::Unchanged => src.content.clone(),
+    };
+    assert!(
+        text.contains("// line comment"),
+        "line comment must survive JSONC formatting; got:\n{text}"
+    );
+    assert!(
+        text.contains("/* block comment */"),
+        "block comment must survive JSONC formatting; got:\n{text}"
+    );
+}

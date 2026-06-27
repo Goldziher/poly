@@ -1,9 +1,6 @@
 ---
 source: crates/polylint-core/tests/oxc_fixtures.rs
-assertion_line: 89
+assertion_line: 168
 expression: text
 ---
-{
-  "b": 2,
-  "a": 1
-}
+{ "b": 2, "a": 1 }
