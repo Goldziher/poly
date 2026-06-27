@@ -7,6 +7,11 @@ license.workspace = true
 authors.workspace = true
 description = "Core engine for the polylint/polyfmt universal, zero-dependency linter & formatter"
 
+[package.metadata.cargo-machete]
+# rumdl's lib crate name is rumdl_lib; cargo-machete cannot detect the usage
+# via the package name.
+ignored = ["rumdl"]
+
 [lib]
 name = "polylint_core"
 path = "src/lib.rs"
@@ -23,6 +28,7 @@ oxc_codegen.workspace = true
 oxc_parser.workspace = true
 oxc_span.workspace = true
 rayon.workspace = true
+rumdl.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 taplo.workspace = true

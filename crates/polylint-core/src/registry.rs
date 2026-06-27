@@ -5,6 +5,7 @@
 
 use crate::engine::Engine;
 use crate::engines::oxc::OxcEngine;
+use crate::engines::rumdl::RumdlEngine;
 use crate::engines::taplo::TaploEngine;
 use crate::engines::whitespace::WhitespaceEngine;
 use crate::language::Language;
@@ -19,6 +20,7 @@ pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
         | Language::Json
         | Language::Jsonc => vec![Box::new(OxcEngine)],
         Language::Toml => vec![Box::new(TaploEngine::new())],
+        Language::Markdown => vec![Box::new(RumdlEngine)],
         // As other native backends land they are matched here, falling through
         // to the generic tier for everything else.
         _ => vec![Box::new(WhitespaceEngine)],

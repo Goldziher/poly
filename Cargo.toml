@@ -25,6 +25,7 @@ oxc_parser = "0.137"
 oxc_span = "0.137"
 polylint-core = { path = "crates/polylint-core" }
 rayon = "1"
+rumdl = { version = "0.2", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 taplo = "0.14"

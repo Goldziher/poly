@@ -3,5 +3,6 @@
 //! [`crate::registry::engines_for`].
 
 pub mod oxc;
+pub mod rumdl;
 pub mod taplo;
 pub mod whitespace;
