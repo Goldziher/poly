@@ -29,6 +29,20 @@ allow = [
     "PSF-2.0",
 ]
 
+# rubyfmt's Cargo.toml omits the `license` field; the repo ships a standard
+# MIT LICENSE file. `clarify` provides the CRC32 of the LICENSE file so
+# cargo-deny can verify the license expression without a manifest field.
+[[licenses.clarify]]
+name = "rubyfmt"
+version = "*"
+expression = "MIT"
+
+[[licenses.clarify.license-files]]
+# The rubyfmt package root is `librubyfmt/`; the LICENSE file lives in the
+# repository root one level up. Path is relative to the crate root.
+path = "../LICENSE"
+hash = 0x59B3BDDF
+
 [bans]
 multiple-versions = "allow"
 wildcards = "allow"
@@ -50,6 +64,7 @@ unknown-git = "deny"
 # ruff_linter was never published to crates.io; all ruff crates are pinned to
 # a single git rev so the internal type graph stays consistent.
 allow-git = [
+    "https://github.com/fables-tales/rubyfmt",
     "https://github.com/oxc-project/oxc",
     "https://github.com/astral-sh/ruff",
 ]

@@ -8,6 +8,7 @@ pub mod malva;
 pub mod markup_fmt;
 pub mod nixfmt;
 pub mod oxc;
+pub mod rubyfmt;
 pub mod ruff;
 pub mod rumdl;
 pub mod sqruff;

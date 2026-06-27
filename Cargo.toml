@@ -72,6 +72,11 @@ ruff_python_parser = { git = "https://github.com/astral-sh/ruff", rev = "03f787e
 ruff_source_file = { git = "https://github.com/astral-sh/ruff", rev = "03f787e51e94999977b9a5a32b0153d82d7e2142" }
 ruff_text_size = { git = "https://github.com/astral-sh/ruff", rev = "03f787e51e94999977b9a5a32b0153d82d7e2142" }
 rumdl = { version = "0.2", default-features = false }
+# rubyfmt — opinionated Ruby formatter built on the Prism parser (MIT).
+# Not published to crates.io; pinned to a specific git rev for reproducibility.
+# default-features = false disables the optional tikv-jemallocator/jemalloc
+# allocator so rubyfmt does not override the workspace's allocator.
+rubyfmt = { git = "https://github.com/fables-tales/rubyfmt", rev = "d3d433caffa02446a295f60fd8b727099bebbb97", default-features = false }
 # saphyr — pure-Rust YAML parser, used by the yaml backend for validity lint
 saphyr = "0.0.6"
 serde = { version = "1", features = ["derive"] }
