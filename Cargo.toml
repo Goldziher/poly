@@ -5,6 +5,7 @@ members = [
     "crates/gitfluff",
     "crates/poly-cli",
     "crates/polyfmt",
+    "crates/polyhooks",
     "crates/polylint",
     "crates/polylint-core",
 ]
@@ -17,18 +18,55 @@ license = "MIT OR Apache-2.0"
 authors = ["Na'aman Hirschfeld <nhirschfeld@gmail.com>"]
 
 [workspace.dependencies]
+aho-corasick = "1.1.4"
 # alejandra — Nix formatter (UNLICENSE, pure Rust via rnix); chosen over
 # nixpkgs-fmt, which pulls unmaintained ansi_term/atty (cargo deny advisories)
 alejandra = "3.1"
+annotate-snippets = "0.12.13"
+anstream = "1.0.0"
+anstyle-query = "1.1.5"
 anyhow = "1"
 # assert_cmd — CLI integration testing for the vendored gitfluff binary
 assert_cmd = "2"
+assert_fs = "1.1.2"
+async-compression = { version = "0.4.18", features = ["gzip", "xz", "tokio"] }
+async_zip = { version = "0.0.18", package = "astral_async_zip", features = [
+    "deflate",
+    "tokio",
+] }
+axoupdater = { version = "0.10.0", default-features = false, features = [
+    "github_releases",
+] }
 blake3 = "1"
+bstr = "1.11.0"
+cargo_metadata = "0.23.1"
 clap = { version = "4", features = ["derive"] }
+clap_complete = { version = "4.6.0", features = ["unstable-dynamic"] }
+console = { version = "0.16", default-features = false, features = [
+    "ansi-parsing",
+    "std",
+] }
+ctrlc = "3.4.5"
+dunce = "1.0.5"
+etcetera = "0.11.0"
+fancy-regex = "0.18.0"
+fs-err = { version = "3.3.0", features = ["tokio"] }
+futures = "0.3.31"
+globset = "0.4.18"
 graphql-parser = "0.4"
+hex = "0.4.3"
+http = "1.1.0"
 ignore = "0.4"
+indicatif = "0.18.0"
+indoc = "2.0.5"
 # insta snapshot testing
 insta = "1"
+insta-cmd = "0.6.0"
+itertools = "0.14.0"
+json5 = "1.3.0"
+libc = "0.2.182"
+# Enable static linking for liblzma (xz feature in async-compression).
+liblzma = { version = "0.4.5", features = ["static"] }
 # mago — tier-1 PHP linter + formatter backend (MIT OR Apache-2.0, v1.42.0)
 # All eight crates are pinned to the same version for internal type consistency.
 mago-allocator = { version = "=1.42.0" }
@@ -42,7 +80,10 @@ mago-span = { version = "=1.42.0" }
 mago-syntax = { version = "=1.42.0" }
 mago-text-edit = { version = "=1.42.0" }
 malva = "0.16"
+markdown = "1.0.0"
 markup_fmt = "0.27"
+mea = "0.6.3"
+memchr = "2.7.5"
 owo-colors = { version = "4", features = ["supports-colors"] }
 # oxc git deps — all crates MUST share the same `rev` to keep the internal
 # oxc_ast / oxc_span type graph consistent. Published versions are stale;
@@ -55,16 +96,34 @@ oxc_formatter_core = { git = "https://github.com/oxc-project/oxc", rev = "576263
 oxc_formatter_json = { git = "https://github.com/oxc-project/oxc", rev = "5762638c8ec6981455ef6d7e9482d2ceca757829" }
 oxc_linter = { git = "https://github.com/oxc-project/oxc", rev = "5762638c8ec6981455ef6d7e9482d2ceca757829" }
 oxc_span = { git = "https://github.com/oxc-project/oxc", rev = "5762638c8ec6981455ef6d7e9482d2ceca757829" }
+phf = { version = "0.13.1", default-features = false, features = ["macros"] }
 poly-cli = { path = "crates/poly-cli" }
 polylint-core = { path = "crates/polylint-core" }
+pprof = "0.15.0"
 # predicates — assertion combinators for the vendored gitfluff CLI tests
 predicates = "3"
+pretty_assertions = "1.4.1"
 # pretty_graphql — g-plane pure-Rust GraphQL formatter (MIT); SDL + query docs
 pretty_graphql = "0.2.3"
 # pretty_yaml — g-plane pure-Rust YAML formatter (MIT); CST-based structural reflow
 pretty_yaml = "0.6"
+quick-xml = "0.40"
+rand = "0.10.0"
 rayon = "1"
 regex = "1"
+reqwest = { version = "0.13.2", default-features = false, features = [
+    "http2",
+    "stream",
+    "json",
+    "rustls",
+    "system-proxy",
+    "socks",
+] }
+# rubyfmt — opinionated Ruby formatter built on the Prism parser (MIT).
+# Not published to crates.io; pinned to a specific git rev for reproducibility.
+# default-features = false disables the optional tikv-jemallocator/jemalloc
+# allocator so rubyfmt does not override the workspace's allocator.
+rubyfmt = { git = "https://github.com/fables-tales/rubyfmt", rev = "d3d433caffa02446a295f60fd8b727099bebbb97", default-features = false }
 # ruff git deps — all crates MUST share the same `rev` to keep the internal
 # ruff type graph consistent. The published 0.0.3 crates are stale; ruff_linter
 # was never published to crates.io. Rev = HEAD of astral-sh/ruff as of 2026-06-27.
@@ -78,23 +137,45 @@ ruff_python_parser = { git = "https://github.com/astral-sh/ruff", rev = "03f787e
 ruff_source_file = { git = "https://github.com/astral-sh/ruff", rev = "03f787e51e94999977b9a5a32b0153d82d7e2142" }
 ruff_text_size = { git = "https://github.com/astral-sh/ruff", rev = "03f787e51e94999977b9a5a32b0153d82d7e2142" }
 rumdl = { version = "0.2", default-features = false }
-# rubyfmt — opinionated Ruby formatter built on the Prism parser (MIT).
-# Not published to crates.io; pinned to a specific git rev for reproducibility.
-# default-features = false disables the optional tikv-jemallocator/jemalloc
-# allocator so rubyfmt does not override the workspace's allocator.
-rubyfmt = { git = "https://github.com/fables-tales/rubyfmt", rev = "d3d433caffa02446a295f60fd8b727099bebbb97", default-features = false }
+rustc-hash = "2.1.1"
+rustix = { version = "1.0.8", features = ["pty", "process", "fs", "termios"] }
+same-file = "1.0.6"
 # saphyr — pure-Rust YAML parser, used by the yaml backend for validity lint
 saphyr = "0.0.6"
+schemars = "1.1.0"
+seahash = "4.1.0"
+semver = { version = "1.0.24", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
+serde-saphyr = { version = "0.0.27", default-features = false, features = [
+    "deserialize",
+    "serialize",
+] }
 serde_json = { version = "1", features = ["preserve_order"] }
+serde_stacker = "0.1.12"
 # serde_toon_format — TOON (Token-Oriented Object Notation) serde serializer
 # for the `--format toon` output renderer
 serde_toon_format = "0.1"
+shlex = "1.3.0"
+similar = "3.0.0"
 sqruff-lib = "0.38"
 sqruff-lib-core = "0.38"
+strum = { version = "0.28.0", features = ["derive"] }
 taplo = "0.14"
+target-lexicon = "0.13.0"
 tempfile = "3"
+textwrap = "0.16.0"
 thiserror = "2"
+tokio = { version = "1.47.1", features = [
+    "fs",
+    "io-std",
+    "process",
+    "rt",
+    "sync",
+    "macros",
+    "net",
+] }
+tokio-tar = { version = "0.6.0", package = "astral-tokio-tar" }
+tokio-util = "0.7.13"
 toml = "1.1"
 toml_edit = "0.25"
 tracing = "0.1"
@@ -106,6 +187,10 @@ tree-sitter-language-pack = "1.10"
 typos = "0.10"
 typos-dict = "0.13"
 unicase = "2"
+unicode-width = { version = "0.2.0", default-features = false }
+walkdir = "2.5.0"
+webpki-root-certs = "1.0.6"
+which = "8.0.0"
 
 [profile.release]
 lto = "thin"

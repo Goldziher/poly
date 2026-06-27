@@ -1,0 +1,37 @@
+polyhooks
+=========
+
+This crate is a vendored fork of prek, a fast Git hook manager written in Rust
+and designed as a drop-in alternative to pre-commit.
+
+  Upstream project : prek
+  Upstream author  : j178 <hi@j178.dev>
+  Upstream repo    : https://github.com/j178/prek
+  Vendored tag     : v0.4.5
+  Vendored commit  : bb3108283fd4aab0d9eb59f23098e0c05a96cdbe
+  Upstream license : MIT (SPDX: MIT) — see ./LICENSE
+
+We vendor (rather than depend on a pinned git revision) because we intend to
+deeply modify this code: retargeting its configuration from
+`.pre-commit-config.yaml` to polylint's `poly.toml`, adding an in-process fast
+path, and folding it into the `poly` binary family. This is an intentional
+exception to the polylint "no vendoring / pinned-git-dep" rule, which targets
+wrapped *library* backends, not a tool we are forking outright.
+
+Changes from upstream in this phase-1 vendoring (behavior-preserving):
+  - The upstream Cargo workspace (crates `prek`, `prek-consts`, `prek-identify`,
+    `prek-pty`) was flattened into a single crate, `polyhooks`. The three helper
+    crates became the public modules `consts`, `identify`, and `pty`
+    respectively; cross-crate paths (`prek_consts::`, `prek_identify::`,
+    `prek_pty::`) were rewritten to the in-crate equivalents
+    (`polyhooks::consts::`, `polyhooks::identify::`, `polyhooks::pty::`).
+  - The `serde` cfg gates in the `identify` module were dropped because serde is
+    an unconditional dependency here (the binary always enabled it upstream).
+  - The binary target is still named `prek` so the vendored integration tests
+    and shell-completion snapshots keep working.
+
+Third-party license texts retained from upstream live in ./licenses/.
+
+Original prek copyright notice (MIT):
+
+    Copyright (c) 2024 j178
