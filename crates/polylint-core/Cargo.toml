@@ -20,7 +20,6 @@ path = "src/lib.rs"
 alejandra.workspace = true
 anyhow.workspace = true
 blake3.workspace = true
-dirs.workspace = true
 graphql-parser.workspace = true
 ignore.workspace = true
 malva.workspace = true

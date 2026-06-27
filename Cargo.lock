@@ -2067,7 +2067,6 @@ dependencies = [
  "alejandra",
  "anyhow",
  "blake3",
- "dirs",
  "graphql-parser",
  "ignore",
  "insta",

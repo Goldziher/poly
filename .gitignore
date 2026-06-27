@@ -1,4 +1,5 @@
 /target
+.polylint/
 
 # BEGIN ai-rulez (DO NOT EDIT - managed by ai-rulez)
 .agents/
