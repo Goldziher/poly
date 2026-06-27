@@ -1,0 +1,5 @@
+---
+source: crates/polylint-core/tests/sqruff.rs
+expression: formatted
+---
+select id, name from users where id = 1

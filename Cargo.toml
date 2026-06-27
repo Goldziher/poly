@@ -28,6 +28,8 @@ rayon = "1"
 rumdl = { version = "0.2", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
+sqruff-lib = "0.38"
+sqruff-lib-core = "0.38"
 taplo = "0.14"
 tempfile = "3"
 thiserror = "2"

@@ -1,0 +1,23 @@
+---
+source: crates/polylint-core/tests/sqruff.rs
+expression: diags
+---
+[
+    Diagnostic {
+        engine: "sqruff",
+        code: Some(
+            "LT01",
+        ),
+        severity: Warning,
+        message: "Expected single whitespace between \",\" and \"name\".",
+        span: Some(
+            Span {
+                start_line: 1,
+                start_col: 11,
+                end_line: 1,
+                end_col: 11,
+            },
+        ),
+        fix: None,
+    },
+]

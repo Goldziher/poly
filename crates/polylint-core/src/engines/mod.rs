@@ -4,5 +4,6 @@
 
 pub mod oxc;
 pub mod rumdl;
+pub mod sqruff;
 pub mod taplo;
 pub mod whitespace;
