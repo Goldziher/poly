@@ -58,6 +58,8 @@ pub enum Language {
     Ruby,
     /// PHP.
     Php,
+    /// R.
+    R,
     /// Elixir.
     Elixir,
     /// C.
@@ -102,6 +104,7 @@ impl Language {
             Language::Kotlin => "kotlin",
             Language::Ruby => "ruby",
             Language::Php => "php",
+            Language::R => "r",
             Language::Elixir => "elixir",
             Language::C => "c",
             Language::Cpp => "cpp",
@@ -154,6 +157,7 @@ impl Language {
             "kt" | "kts" => Language::Kotlin,
             "rb" => Language::Ruby,
             "php" => Language::Php,
+            "r" => Language::R,
             "ex" | "exs" => Language::Elixir,
             "c" | "h" => Language::C,
             "cpp" | "cc" | "cxx" | "hpp" | "hh" => Language::Cpp,
@@ -175,6 +179,7 @@ impl Language {
             | Language::Jsonc
             | Language::Yaml
             | Language::Ruby
+            | Language::R
             | Language::Css
             | Language::Scss
             | Language::Less

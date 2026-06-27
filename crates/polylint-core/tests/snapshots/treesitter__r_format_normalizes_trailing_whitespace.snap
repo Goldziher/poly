@@ -1,0 +1,7 @@
+---
+source: crates/polylint-core/tests/treesitter.rs
+expression: text
+---
+f <- function(x) {
+  x + 1
+}
