@@ -1,0 +1,5 @@
+---
+source: crates/polylint-core/tests/markup_fmt_fixtures.rs
+expression: "format_to_string(\"App.vue\", Language::Vue, KNOWN_UNFORMATTED_VUE)"
+---
+<template><div class="box"><Button :label="title" @click="onClick">Go</Button></div></template>

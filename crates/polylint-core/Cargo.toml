@@ -24,6 +24,7 @@ dirs.workspace = true
 graphql-parser.workspace = true
 ignore.workspace = true
 malva.workspace = true
+markup_fmt.workspace = true
 owo-colors.workspace = true
 # oxc backend (M2) — all published crates, no git deps
 oxc_allocator.workspace = true

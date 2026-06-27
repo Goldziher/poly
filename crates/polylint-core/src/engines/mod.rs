@@ -4,6 +4,7 @@
 
 pub mod graphql;
 pub mod malva;
+pub mod markup_fmt;
 pub mod nixfmt;
 pub mod oxc;
 pub mod ruff;

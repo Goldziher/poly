@@ -487,6 +487,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0a5c400df2834b80a4c3327b3aad3a4c4cd4de0629063962b03235697506a28"
 
 [[package]]
+name = "css_dataset"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "25670139e591f1c2869eb8d0d977028f8d05e859132b4c874ecd02a00d3c9174"
+
+[[package]]
 name = "dashmap"
 version = "6.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1174,6 +1180,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "markup_fmt"
+version = "0.27.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "83b53ac34c9d6498632dcca4ad4542b1aef7c605d1d19037207910c4efe060a9"
+dependencies = [
+ "aho-corasick",
+ "anyhow",
+ "css_dataset",
+ "itertools 0.14.0",
+ "memchr",
+ "regex",
+ "tiny_pretty",
+]
+
+[[package]]
 name = "matchit"
 version = "0.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1735,6 +1756,7 @@ dependencies = [
  "ignore",
  "insta",
  "malva",
+ "markup_fmt",
  "owo-colors",
  "oxc_allocator",
  "oxc_codegen",
