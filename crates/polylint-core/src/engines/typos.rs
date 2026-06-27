@@ -28,9 +28,25 @@ use crate::config::EngineConfig;
 use crate::engine::{Capabilities, Diagnostic, Edit, Engine, Severity, SourceFile, Span};
 use crate::language::Language;
 
-/// Combined cache-key version: `typos` tokeniser + `typos-dict` word list.
-/// Bump whenever either crate is updated.
-const TYPOS_VERSION: &str = "0.10.43+dict-0.13.30";
+/// Combined cache-key version: `typos` tokeniser + `typos-dict` word list,
+/// plus a marker for the noise-suppression guards below. Bump whenever either
+/// crate is updated OR the guard logic changes (it alters output).
+const TYPOS_VERSION: &str = "0.10.43+dict-0.13.30+guards1";
+
+/// Skip spell-checking files at least this large: generated/minified bundles
+/// dominate by size and are pure noise word-by-word.
+const MAX_SPELL_CHECK_BYTES: usize = 1 << 20; // 1 MiB
+
+/// Skip files containing any line at least this long: very long lines are a
+/// reliable signal of minified/generated content (one 11.7 MB Plotly bundle in
+/// the dry-run corpus produced ~5k false positives each), not hand-written
+/// prose or code.
+const MAX_LINE_BYTES: usize = 2_000;
+
+/// Minimum length of a flagged token. Ultra-short corrections (two-letter
+/// minified identifiers) are overwhelmingly noise rather than real typos, so
+/// require at least this many bytes; common three-letter typos are kept.
+const MIN_TYPO_LEN: usize = 3;
 
 /// Cross-cutting spell-checker declares no tier-1 language ownership.
 static LANGUAGES: &[Language] = &[];
@@ -65,12 +81,26 @@ impl Engine for TyposEngine {
     }
 
     fn lint(&self, src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
+        // Generated/minified assets are pure noise word-by-word; skip them.
+        if is_generated_or_minified(&src.content) {
+            return Ok(Vec::new());
+        }
         let dict = BuiltinDictionary;
         let diags = typos::check_str(&src.content, &TOKENIZER, &dict)
+            .filter(|typo| typo.typo.len() >= MIN_TYPO_LEN)
             .map(|typo| typo_to_diagnostic(&src.content, typo))
             .collect();
         Ok(diags)
     }
+}
+
+/// Whether `content` looks generated/minified and should not be spell-checked:
+/// at least [`MAX_SPELL_CHECK_BYTES`] in size, or containing any line of at
+/// least [`MAX_LINE_BYTES`]. Both are reliable signals of machine-emitted
+/// bundles rather than hand-written prose or code.
+fn is_generated_or_minified(content: &str) -> bool {
+    content.len() >= MAX_SPELL_CHECK_BYTES
+        || content.lines().any(|line| line.len() >= MAX_LINE_BYTES)
 }
 
 // ---------------------------------------------------------------------------
