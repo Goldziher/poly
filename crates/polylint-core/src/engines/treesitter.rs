@@ -6,8 +6,13 @@
 //! Two modes, chosen per language:
 //! - **Structural reindent** for brace-delimited grammars (Go, C, C++, Java,
 //!   Kotlin, Rust, …): the CST locates the real `{}` / `[]` / `()` delimiter
-//!   tokens — ignoring any that live inside strings or comments, since those are
-//!   not separate leaf nodes — and each line is re-indented by bracket depth.
+//!   tokens and re-indents each line by bracket depth. Byte ranges covered by
+//!   string-literal and comment CST nodes are excluded: delimiters inside them
+//!   never count toward depth, and any line whose leading whitespace begins
+//!   inside such a range is emitted verbatim — so the interior of a multiline
+//!   raw string, heredoc, or block comment is byte-preserved. The indent unit
+//!   is per-grammar (tabs for Go, two spaces for Swift/Dart, `indent_width`
+//!   spaces otherwise) to match each language's canonical formatter.
 //! - **Whitespace normalization** for every other grammar, and whenever the
 //!   grammar is unavailable or the source fails to parse. This never corrupts
 //!   unparsable input (it only trims trailing whitespace and fixes line
@@ -64,7 +69,9 @@ impl Engine for TreeSitterEngine {
     }
 
     fn version(&self) -> &str {
-        "1"
+        // Bumped to 2: string/comment ranges are now excluded from reindent and
+        // the indent unit is per-grammar, so cached output could differ from v1.
+        "2"
     }
 
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
@@ -138,8 +145,8 @@ fn reindent_braces(name: &str, src: &SourceFile, cfg: &EngineConfig) -> Option<S
         // `contains_key` above guarantees the entry exists.
         let parser = pool.get_mut(name)?;
         let tree = parser.parse(&src.content)?;
-        let delimiters = collect_delimiters(&tree.root_node());
-        Some(reindent(&src.content, &delimiters, cfg))
+        let cst = collect_cst(&tree.root_node());
+        Some(reindent(&src.content, name, &cst, cfg))
     })
 }
 
@@ -149,28 +156,61 @@ struct Delimiter {
     open: bool,
 }
 
-/// Collect every brace/bracket/paren delimiter that is a real leaf token in the
-/// CST, in source order. Delimiters inside string or comment nodes are not
-/// separate leaves, so they are naturally excluded.
-fn collect_delimiters(root: &Node) -> Vec<Delimiter> {
-    let mut out = Vec::new();
+/// Structural facts extracted from one CST walk: the brace/bracket/paren
+/// delimiters that drive depth, and the byte ranges of string/comment nodes
+/// whose interiors must never be reindented.
+struct CstFacts {
+    /// Delimiters in source order. Excludes any inside a protected range.
+    delimiters: Vec<Delimiter>,
+    /// `[start, end)` byte ranges covered by string-literal / comment nodes,
+    /// in source order. Used to leave string and comment interiors verbatim.
+    protected: Vec<(usize, usize)>,
+}
+
+impl CstFacts {
+    /// Whether `byte` falls strictly inside any protected range, i.e. it is an
+    /// interior byte of a string or comment (`start < byte < end`). The opening
+    /// byte of the range is excluded so the line that opens the node is still
+    /// reindented as real code.
+    fn is_interior(&self, byte: usize) -> bool {
+        self.protected
+            .iter()
+            .any(|&(start, end)| start < byte && byte < end)
+    }
+}
+
+/// Walk the CST once, collecting depth-driving delimiters and the byte ranges of
+/// string/comment nodes. tree-sitter node kinds vary per grammar, so protected
+/// nodes are matched by `kind()` containing "string" or "comment" — the portable
+/// signal across grammars. The walk does not descend into a protected node, so
+/// delimiters living inside a string or comment are never collected and thus
+/// never count toward bracket depth.
+fn collect_cst(root: &Node) -> CstFacts {
+    let mut delimiters = Vec::new();
+    let mut protected: Vec<(usize, usize)> = Vec::new();
     let mut cursor = root.walk();
     loop {
         let node = cursor.node();
-        if node.child_count() == 0 {
-            match node.kind().as_str() {
-                "{" | "(" | "[" => out.push(Delimiter {
+        let kind = node.kind();
+        let is_protected = kind.contains("string") || kind.contains("comment");
+        if is_protected {
+            protected.push((node.start_byte(), node.end_byte()));
+        } else if node.child_count() == 0 {
+            match kind.as_str() {
+                "{" | "(" | "[" => delimiters.push(Delimiter {
                     byte: node.start_byte(),
                     open: true,
                 }),
-                "}" | ")" | "]" => out.push(Delimiter {
+                "}" | ")" | "]" => delimiters.push(Delimiter {
                     byte: node.start_byte(),
                     open: false,
                 }),
                 _ => {}
             }
         }
-        if cursor.goto_first_child() {
+        // Descend only into non-protected nodes; a string/comment subtree is
+        // treated as an opaque protected range.
+        if !is_protected && cursor.goto_first_child() {
             continue;
         }
         loop {
@@ -178,10 +218,28 @@ fn collect_delimiters(root: &Node) -> Vec<Delimiter> {
                 break;
             }
             if !cursor.goto_parent() {
-                out.sort_by_key(|d| d.byte);
-                return out;
+                delimiters.sort_by_key(|d| d.byte);
+                protected.sort_by_key(|r| r.0);
+                return CstFacts {
+                    delimiters,
+                    protected,
+                };
             }
         }
+    }
+}
+
+/// The indent unit string for a grammar: a tab for Go (gofmt indents with
+/// tabs), two spaces for Dart (`dart format` defaults to two-space and is
+/// near-universal), and `indent_width` spaces (default 4) otherwise. Swift is
+/// intentionally left at `indent_width`: although swift-format defaults to two
+/// spaces, the dominant Swift idiom (Xcode default) is four, so forcing two
+/// churns more real code than it fixes until a native Swift formatter exists.
+fn indent_unit(grammar_name: &str, indent_width: usize) -> String {
+    match grammar_name {
+        "go" => "\t".to_string(),
+        "dart" => "  ".to_string(),
+        _ => " ".repeat(indent_width.max(1)),
     }
 }
 
@@ -189,9 +247,15 @@ fn collect_delimiters(root: &Node) -> Vec<Delimiter> {
 /// begins with a closing delimiter is dedented one level. Blank lines are
 /// preserved as empty. Trailing whitespace is stripped and the configured line
 /// ending / final newline are applied.
-fn reindent(source: &str, delimiters: &[Delimiter], cfg: &EngineConfig) -> String {
-    let unit = " ".repeat(cfg.indent_width.max(1));
+///
+/// Lines whose leading whitespace begins inside a string-literal or comment
+/// range (per `facts.protected`) are emitted **verbatim** — neither reindented
+/// nor trimmed — so the interior of a multiline string or block comment is
+/// byte-preserved. The indent unit is chosen per grammar via [`indent_unit`].
+fn reindent(source: &str, grammar_name: &str, facts: &CstFacts, cfg: &EngineConfig) -> String {
+    let unit = indent_unit(grammar_name, cfg.indent_width);
     let line_ending = cfg.globals.line_ending.as_str();
+    let delimiters = &facts.delimiters;
 
     let mut out = String::with_capacity(source.len() + source.len() / 8);
     let mut depth: i32 = 0;
@@ -203,6 +267,20 @@ fn reindent(source: &str, delimiters: &[Delimiter], cfg: &EngineConfig) -> Strin
         let line = raw.strip_suffix('\r').unwrap_or(raw);
         let line_start = byte;
         let line_end = byte + line.len();
+
+        // A line whose start byte is interior to a string/comment node is part
+        // of a multiline literal or block comment: emit it exactly as-is.
+        if facts.is_interior(line_start) {
+            if !first {
+                out.push_str(line_ending);
+            }
+            first = false;
+            out.push_str(line);
+            // Delimiters inside protected ranges are not collected, so depth is
+            // unaffected here; just advance the byte cursor past the newline.
+            byte = line_end + 1;
+            continue;
+        }
 
         let opens = count_delimiters(delimiters, line_start, line_end, true);
         let closes = count_delimiters(delimiters, line_start, line_end, false);
@@ -299,6 +377,64 @@ mod tests {
         assert!(caps.format);
         // The generic tier carries the catch-all trailing-whitespace lint.
         assert!(caps.lint);
+    }
+
+    fn formatted_text(out: FormatOutput, original: &str) -> String {
+        match out {
+            FormatOutput::Formatted(text) => text,
+            FormatOutput::Unchanged => original.to_string(),
+        }
+    }
+
+    #[test]
+    fn rust_raw_string_interior_is_byte_preserved_while_code_reindents() {
+        // The raw string holds irregularly indented lines (8 and 3 spaces) plus
+        // a `{` that must NOT count toward bracket depth. Surrounding code is
+        // under-indented so we can prove it gets reindented to 4-space depth.
+        let engine = TreeSitterEngine;
+        let input = concat!(
+            "fn main() {\n",
+            "let template = r#\"\n",
+            "        deeply indented {line}\n",
+            "   another\n",
+            "\"#;\n",
+            "println!(\"{}\", template);\n",
+            "}\n",
+        );
+        let expected = concat!(
+            "fn main() {\n",
+            "    let template = r#\"\n",
+            "        deeply indented {line}\n",
+            "   another\n",
+            "\"#;\n",
+            "    println!(\"{}\", template);\n",
+            "}\n",
+        );
+        let s = src("main.rs", Language::Other("rust".into()), input);
+        let text = formatted_text(engine.format(&s, &cfg(4)).unwrap(), input);
+        assert_eq!(text, expected, "code reindented, string interior preserved");
+        // The exact interior bytes between the raw-string delimiters survive.
+        let interior = "\n        deeply indented {line}\n   another\n";
+        assert!(
+            text.contains(interior),
+            "raw-string interior must be verbatim"
+        );
+    }
+
+    #[test]
+    fn go_reindents_with_tabs_not_spaces() {
+        let engine = TreeSitterEngine;
+        let input = concat!("package main\n", "\n", "func main() {\n", "x := 1\n", "}\n");
+        let expected = concat!(
+            "package main\n",
+            "\n",
+            "func main() {\n",
+            "\tx := 1\n",
+            "}\n",
+        );
+        let s = src("main.go", Language::Other("go".into()), input);
+        let text = formatted_text(engine.format(&s, &cfg(4)).unwrap(), input);
+        assert_eq!(text, expected, "Go must reindent with a tab, not spaces");
     }
 
     #[test]
