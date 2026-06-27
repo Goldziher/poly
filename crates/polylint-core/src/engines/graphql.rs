@@ -134,7 +134,7 @@ impl Engine for GraphQlEngine {
             Err(_) => return Ok(FormatOutput::Unchanged),
         };
 
-        if formatted == src.content {
+        if formatted == *src.content {
             Ok(FormatOutput::Unchanged)
         } else {
             Ok(FormatOutput::Formatted(formatted))

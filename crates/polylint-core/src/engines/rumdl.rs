@@ -2,7 +2,7 @@
 //!
 //! Wraps [`rumdl_lib`](https://crates.io/crates/rumdl) in-process — no subprocess, no system
 //! dependency. Capabilities: lint (standard markdownlint rules; rumdl-proprietary stylistic
-//! extensions off by default — see [`DEFAULT_DISABLED_RULES`]) + format (apply all
+//! extensions off by default — see the `DEFAULT_DISABLED_RULES` constant) + format (apply all
 //! auto-fixable rules iteratively until convergence).
 //!
 //! Config layering: rumdl defaults → opinionated override (line-length 120) → user
@@ -83,11 +83,11 @@ impl Engine for RumdlEngine {
         let rumdl_cfg = build_rumdl_config(cfg);
         let rules = filter_rules(&all_rules(&rumdl_cfg), &rumdl_cfg.global);
         let coordinator = FixCoordinator::default();
-        let mut content = src.content.clone();
+        let mut content = src.content.to_string();
         coordinator
             .apply_fixes_iterative(&rules, &[], &mut content, &rumdl_cfg, 10, Some(&src.path))
             .map_err(|e| anyhow::anyhow!("rumdl format: {e}"))?;
-        if content == src.content {
+        if content == *src.content {
             Ok(FormatOutput::Unchanged)
         } else {
             Ok(FormatOutput::Formatted(content))
@@ -193,7 +193,7 @@ mod tests {
         SourceFile {
             path: PathBuf::from("test.md"),
             language: Language::Markdown,
-            content: content.to_owned(),
+            content: content.into(),
         }
     }
 

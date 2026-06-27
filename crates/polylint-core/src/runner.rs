@@ -2,7 +2,7 @@
 //! content-hash caching, collect results. Defaults to all logical cores.
 
 use std::path::PathBuf;
-use std::sync::Once;
+use std::sync::{Arc, Once};
 
 use rayon::prelude::*;
 use serde::Serialize;
@@ -131,7 +131,7 @@ fn lint_content(
     let src = SourceFile {
         path: f.path.clone(),
         language: f.language.clone(),
-        content: content.to_string(),
+        content: Arc::from(content),
     };
     let mut all = Vec::new();
     for engine in engines_for(&f.language) {
@@ -191,7 +191,16 @@ fn format_one(
     write: bool,
 ) -> anyhow::Result<FormatResult> {
     let original = std::fs::read_to_string(&f.path)?;
-    let mut current = original.clone();
+    // The file's bytes are shared across every format engine via `Arc<str>`:
+    // each engine gets a refcount bump, not a fresh copy of the contents.
+    let mut current: Arc<str> = Arc::from(original.as_str());
+    // Construct the `SourceFile` once and re-point its content per engine
+    // instead of rebuilding (and cloning the contents) on each iteration.
+    let mut src = SourceFile {
+        path: f.path.clone(),
+        language: f.language.clone(),
+        content: Arc::clone(&current),
+    };
     for engine in engines_for(&f.language) {
         if !engine.capabilities().format {
             continue;
@@ -206,30 +215,30 @@ fn format_one(
         if let Some(bytes) = cache.get(&key)
             && let Ok(text) = String::from_utf8(bytes)
         {
-            current = text;
+            current = Arc::from(text);
             continue;
         }
-        let src = SourceFile {
-            path: f.path.clone(),
-            language: f.language.clone(),
-            content: current.clone(),
-        };
-        let out = match engine.format(&src, &ecfg)? {
-            FormatOutput::Unchanged => current.clone(),
-            FormatOutput::Formatted(s) => s,
+        src.content = Arc::clone(&current);
+        let out: Arc<str> = match engine.format(&src, &ecfg)? {
+            FormatOutput::Unchanged => Arc::clone(&current),
+            FormatOutput::Formatted(s) => Arc::from(s),
         };
         let _ = cache.put(&key, out.as_bytes());
         current = out;
     }
 
-    let changed = current != original;
+    let changed = *current != *original;
     if changed && write {
         write_atomic(&f.path, &current)?;
     }
     Ok(FormatResult {
         path: f.path.clone(),
         changed,
-        formatted: if changed { Some(current) } else { None },
+        formatted: if changed {
+            Some(current.to_string())
+        } else {
+            None
+        },
     })
 }
 

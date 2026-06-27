@@ -118,7 +118,7 @@ impl Engine for TaploEngine {
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
         let opts = build_options(cfg);
         let formatted = formatter::format(&src.content, opts);
-        if formatted == src.content {
+        if formatted == *src.content {
             Ok(FormatOutput::Unchanged)
         } else {
             Ok(FormatOutput::Formatted(formatted))
@@ -241,7 +241,7 @@ mod tests {
         SourceFile {
             path: "test.toml".into(),
             language: Language::Toml,
-            content: content.to_string(),
+            content: content.into(),
         }
     }
 

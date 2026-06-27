@@ -104,7 +104,7 @@ fn ruff_lint_honors_ignore_config() {
     let src = SourceFile {
         path: "sample.py".into(),
         language: Language::Python,
-        content: "import os\n\nx = 1\n".to_string(),
+        content: "import os\n\nx = 1\n".into(),
     };
 
     // Default config: F401 fires.

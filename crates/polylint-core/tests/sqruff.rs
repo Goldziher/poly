@@ -15,7 +15,7 @@ fn make_source(path: &str, content: &str) -> SourceFile {
     SourceFile {
         path: PathBuf::from(path),
         language: Language::Sql,
-        content: content.to_string(),
+        content: content.into(),
     }
 }
 

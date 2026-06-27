@@ -64,8 +64,10 @@ impl Engine for NixFmtEngine {
         //
         // `in_memory` takes ownership of both strings; the clone is at the API
         // boundary (alejandra parses `before` into an rnix tree internally).
-        let (status, after) =
-            in_memory(src.path.to_string_lossy().into_owned(), src.content.clone());
+        let (status, after) = in_memory(
+            src.path.to_string_lossy().into_owned(),
+            src.content.to_string(),
+        );
         match status {
             // Parse error: leave the file untouched rather than risk data loss.
             Status::Error(_) => Ok(FormatOutput::Unchanged),
@@ -85,7 +87,7 @@ mod tests {
         SourceFile {
             path: PathBuf::from("test.nix"),
             language: Language::Nix,
-            content: content.to_string(),
+            content: content.into(),
         }
     }
 

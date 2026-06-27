@@ -24,7 +24,7 @@ fn make_src(content: &str) -> SourceFile {
     SourceFile {
         path: "fixture.txt".into(),
         language: Language::Markdown,
-        content: content.to_string(),
+        content: content.into(),
     }
 }
 

@@ -24,7 +24,7 @@ fn make_src(path: &str, content: &str) -> SourceFile {
     SourceFile {
         path: path.into(),
         language: Language::Toml,
-        content: content.to_string(),
+        content: content.into(),
     }
 }
 

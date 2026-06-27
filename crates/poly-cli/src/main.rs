@@ -25,7 +25,7 @@ struct Cli {
 enum Command {
     /// Lint files (report diagnostics; never writes).
     Lint(LintArgs),
-    /// Format files (writes in place; use --check for a dry run).
+    /// Format files (dry-run by default; use --fix to write in place).
     Fmt(FmtArgs),
 }
 

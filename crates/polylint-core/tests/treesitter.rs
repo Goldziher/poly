@@ -31,7 +31,7 @@ fn make_src(path: &str, language: Language, content: &str) -> SourceFile {
     SourceFile {
         path: path.into(),
         language,
-        content: content.to_string(),
+        content: content.into(),
     }
 }
 

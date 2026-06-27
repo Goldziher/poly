@@ -35,7 +35,7 @@ fn sqruff_src() -> SourceFile {
         path: PathBuf::from("check.sql"),
         language: Language::Sql,
         // The SQL keyword casing is intentionally inconsistent to trigger CP01.
-        content: "select id, name FROM users\n".to_string(),
+        content: "select id, name FROM users\n".into(),
     }
 }
 
@@ -96,7 +96,7 @@ fn typos_src() -> SourceFile {
     SourceFile {
         path: PathBuf::from("check.txt"),
         language: Language::Markdown,
-        content: SHORT_TOKENS.to_string(),
+        content: SHORT_TOKENS.into(),
     }
 }
 
@@ -158,7 +158,7 @@ fn graphql_src() -> SourceFile {
     SourceFile {
         path: PathBuf::from("schema.graphql"),
         language: Language::GraphQl,
-        content: COMPACT_SDL.to_string(),
+        content: COMPACT_SDL.into(),
     }
 }
 

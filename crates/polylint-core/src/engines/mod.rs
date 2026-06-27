@@ -1,6 +1,6 @@
 //! Backend implementations. Each backend is a self-contained module implementing
-//! [`crate::engine::Engine`]. New backends are added here and wired into
-//! [`crate::registry::engines_for`].
+//! [`crate::engine::Engine`]. New backends are added here and wired into the
+//! crate-private registry that routes each language to its backend(s).
 
 pub mod graphql;
 pub mod mago;

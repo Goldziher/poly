@@ -352,7 +352,7 @@ fn format_js(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutpu
         code.push('\n');
     }
 
-    if code == src.content {
+    if code == *src.content {
         Ok(FormatOutput::Unchanged)
     } else {
         Ok(FormatOutput::Formatted(code))
@@ -365,7 +365,7 @@ fn lint_json(src: &SourceFile) -> anyhow::Result<Vec<Diagnostic>> {
     let text = if src.language == Language::Jsonc {
         strip_jsonc_comments(&src.content)
     } else {
-        src.content.clone()
+        src.content.to_string()
     };
 
     match serde_json::from_str::<serde_json::Value>(&text) {
@@ -444,7 +444,7 @@ fn format_json(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOut
         code.push('\n');
     }
 
-    if code == src.content {
+    if code == *src.content {
         Ok(FormatOutput::Unchanged)
     } else {
         Ok(FormatOutput::Formatted(code))
@@ -533,7 +533,7 @@ mod tests {
         SourceFile {
             path: PathBuf::from("test.js"),
             language: lang,
-            content: content.to_owned(),
+            content: content.into(),
         }
     }
 
@@ -589,7 +589,7 @@ mod tests {
         // First pass: may reformat (e.g. collapse to single line).
         let first = match format_js(&src, &cfg).unwrap() {
             FormatOutput::Formatted(s) => s,
-            FormatOutput::Unchanged => src.content.clone(),
+            FormatOutput::Unchanged => src.content.to_string(),
         };
         // Second pass: must be idempotent.
         let src2 = make_src(&first, Language::JavaScript);

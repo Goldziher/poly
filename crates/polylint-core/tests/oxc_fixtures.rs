@@ -14,7 +14,7 @@ fn make_src(content: &str, path: &str, lang: Language) -> SourceFile {
     SourceFile {
         path: PathBuf::from(path),
         language: lang,
-        content: content.to_owned(),
+        content: content.into(),
     }
 }
 
@@ -229,7 +229,7 @@ fn oxc_format_jsonc_preserves_comments() {
     // Either way, comments must survive — check them on the output text.
     let text = match out {
         polylint_core::engine::FormatOutput::Formatted(text) => text,
-        polylint_core::engine::FormatOutput::Unchanged => src.content.clone(),
+        polylint_core::engine::FormatOutput::Unchanged => src.content.to_string(),
     };
     assert!(
         text.contains("// line comment"),

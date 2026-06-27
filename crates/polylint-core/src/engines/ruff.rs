@@ -200,7 +200,7 @@ impl Engine for RuffEngine {
 
         let is_stub = src.path.extension().is_some_and(|e| e == "pyi");
         let source_kind = SourceKind::Python {
-            code: src.content.clone(),
+            code: src.content.to_string(),
             is_stub,
         };
         let source_type = if is_stub {
@@ -283,7 +283,7 @@ impl Engine for RuffEngine {
         match ruff_python_formatter::format_module_source(&src.content, options) {
             Ok(printed) => {
                 let formatted = printed.into_code();
-                if formatted == src.content {
+                if formatted == *src.content {
                     Ok(FormatOutput::Unchanged)
                 } else {
                     Ok(FormatOutput::Formatted(formatted))

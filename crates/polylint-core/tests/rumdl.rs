@@ -32,7 +32,7 @@ fn load_fixture(name: &str) -> SourceFile {
     SourceFile {
         path,
         language: Language::Markdown,
-        content,
+        content: content.into(),
     }
 }
 

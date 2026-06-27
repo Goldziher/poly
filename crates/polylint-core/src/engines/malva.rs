@@ -50,7 +50,7 @@ impl Engine for MalvaEngine {
         let options = build_options(cfg);
         let formatted = malva::format_text(&src.content, syntax, &options)
             .map_err(|e| anyhow::anyhow!("malva format error: {e}"))?;
-        if formatted == src.content {
+        if formatted == *src.content {
             Ok(FormatOutput::Unchanged)
         } else {
             Ok(FormatOutput::Formatted(formatted))
@@ -105,7 +105,7 @@ mod tests {
         SourceFile {
             path: PathBuf::from(path),
             language,
-            content: content.to_string(),
+            content: content.into(),
         }
     }
 

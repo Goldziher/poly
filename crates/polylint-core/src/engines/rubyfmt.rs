@@ -69,7 +69,7 @@ impl Engine for RubyfmtEngine {
                 // than corrupting it.
                 match String::from_utf8(bytes) {
                     Ok(formatted) => {
-                        if formatted == src.content {
+                        if formatted == *src.content {
                             Ok(FormatOutput::Unchanged)
                         } else {
                             Ok(FormatOutput::Formatted(formatted))
@@ -100,7 +100,7 @@ mod tests {
         SourceFile {
             path: PathBuf::from("test.rb"),
             language: Language::Ruby,
-            content: content.to_string(),
+            content: content.into(),
         }
     }
 

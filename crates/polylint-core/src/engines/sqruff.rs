@@ -70,7 +70,7 @@ impl Engine for SqruffEngine {
             .map_err(|e| anyhow::anyhow!("sqruff format lint_string failed: {e}"))?;
         if linted.has_fixes() {
             let fixed = linted.fix_string();
-            if fixed == src.content {
+            if fixed == *src.content {
                 Ok(FormatOutput::Unchanged)
             } else {
                 Ok(FormatOutput::Formatted(fixed))

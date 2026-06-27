@@ -22,7 +22,7 @@ fn make_src(content: &str) -> SourceFile {
     SourceFile {
         path: "known_unformatted.nix".into(),
         language: Language::Nix,
-        content: content.to_string(),
+        content: content.into(),
     }
 }
 

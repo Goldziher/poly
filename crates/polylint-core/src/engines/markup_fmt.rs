@@ -75,7 +75,7 @@ impl Engine for MarkupFmtEngine {
         let formatted = format_text(&src.content, language, &options, |code, _| Ok(code.into()))
             .map_err(|e| anyhow::anyhow!("markup_fmt error: {e}"))?;
 
-        if formatted == src.content {
+        if formatted == *src.content {
             Ok(FormatOutput::Unchanged)
         } else {
             Ok(FormatOutput::Formatted(formatted))
@@ -112,7 +112,7 @@ mod tests {
         SourceFile {
             path: PathBuf::from(path),
             language,
-            content: content.to_string(),
+            content: content.into(),
         }
     }
 

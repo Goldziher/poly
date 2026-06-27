@@ -55,7 +55,7 @@ pub(super) fn format_php(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result
         Err(_) => return Ok(FormatOutput::Unchanged),
     };
 
-    if formatted == src.content {
+    if formatted == *src.content {
         Ok(FormatOutput::Unchanged)
     } else {
         Ok(FormatOutput::Formatted(formatted))

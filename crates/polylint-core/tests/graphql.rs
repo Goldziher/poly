@@ -24,7 +24,7 @@ fn make_src(content: &str) -> SourceFile {
     SourceFile {
         path: "fixture.graphql".into(),
         language: Language::GraphQl,
-        content: content.to_string(),
+        content: content.into(),
     }
 }
 

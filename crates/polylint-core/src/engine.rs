@@ -2,6 +2,7 @@
 //! and format-output types backends produce.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
@@ -15,8 +16,10 @@ pub struct SourceFile {
     pub path: PathBuf,
     /// Detected language of the file.
     pub language: Language,
-    /// Full file contents.
-    pub content: String,
+    /// Full file contents. Held as `Arc<str>` so a single file's bytes can be
+    /// shared across every engine that runs on it (and across fix passes)
+    /// without re-cloning the contents on the per-file hot path.
+    pub content: Arc<str>,
 }
 
 /// What a backend is able to do for its language(s).
@@ -31,7 +34,7 @@ pub struct Capabilities {
 }
 
 /// Severity of a [`Diagnostic`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Severity {
     /// A problem that should fail the run.
@@ -45,7 +48,7 @@ pub enum Severity {
 }
 
 /// 1-based line/column source span.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Span {
     /// 1-based line of the span start.
     pub start_line: u32,
@@ -58,7 +61,7 @@ pub struct Span {
 }
 
 /// A byte-range replacement used to apply an autofix.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Edit {
     /// Inclusive start byte offset into the source.
     pub start_byte: usize,
@@ -103,6 +106,13 @@ pub enum FormatOutput {
 
 /// A linter/formatter backend. Backends are pure functions of
 /// `(source, config)` so results can be content-hash cached.
+///
+/// # Stability
+///
+/// This trait is an **internal extension point**, not part of the stable public
+/// API. Backends are implemented within this crate and reached through the
+/// [`lint`](crate::lint) / [`format`](crate::format) orchestrators; implementing
+/// it downstream is unsupported and may break without notice.
 pub trait Engine: Send + Sync {
     /// Stable backend id (e.g. `"taplo"`, `"oxc"`), used in config + cache keys.
     fn name(&self) -> &'static str;

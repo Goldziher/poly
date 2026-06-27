@@ -110,7 +110,7 @@ impl Engine for TreeSitterEngine {
                 .unwrap_or_else(|| normalize_whitespace(&src.content, &cfg.globals)),
             _ => normalize_whitespace(&src.content, &cfg.globals),
         };
-        if formatted == src.content {
+        if formatted == *src.content {
             Ok(FormatOutput::Unchanged)
         } else {
             Ok(FormatOutput::Formatted(formatted))
@@ -364,7 +364,7 @@ mod tests {
         SourceFile {
             path: PathBuf::from(path),
             language,
-            content: content.to_string(),
+            content: content.into(),
         }
     }
 

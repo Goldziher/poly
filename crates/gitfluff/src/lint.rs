@@ -37,7 +37,7 @@ pub enum BodyPolicy {
     RequireBody,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct LintOptions {
     pub message_pattern: Option<MessagePattern>,
     pub exclude_rules: Vec<ExcludeRule>,
