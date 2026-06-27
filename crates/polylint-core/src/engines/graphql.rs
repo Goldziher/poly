@@ -1,36 +1,43 @@
-//! GraphQL backend: formatting and parse-error lint via `graphql-parser`.
+//! GraphQL backend: formatting via `pretty_graphql`, parse-error lint via
+//! `graphql-parser`.
 //!
 //! Capabilities: [`Capabilities::lint`] (parse-error diagnostics) and
-//! [`Capabilities::format`] (canonical pretty-print via `Document::format`).
+//! [`Capabilities::format`] (Prettier-style canonical output via
+//! `pretty_graphql::format_text`).
 //!
 //! Both GraphQL Schema Definition Language (SDL) files and query/operation
-//! files share the `.graphql` / `.gql` extension. The backend tries SDL
-//! parsing first (most common in project repositories), then falls back to
-//! query document parsing. If both fail, the parse error is surfaced as a
-//! [`Diagnostic`].
+//! files share the `.graphql` / `.gql` extension. For **linting**, the backend
+//! tries SDL parsing first (most common in project repositories), then falls
+//! back to query document parsing. If both fail, the parse error is surfaced as
+//! a [`Diagnostic`].
+//!
+//! For **formatting**, `pretty_graphql` accepts both SDL and query documents
+//! through the same `format_text` entry point. If the document is unparsable
+//! the formatter returns an error and we return [`FormatOutput::Unchanged`] to
+//! avoid data loss.
 //!
 //! # Opinionated defaults
 //!
-//! | Setting | Polylint default | graphql-parser default |
+//! | Setting | Polylint default | pretty_graphql default |
 //! |---|---|---|
-//! | `indent` | 2 | 2 |
+//! | `print_width` | 120 | 80 |
+//! | `indent_width` | 2 | 2 |
+//! | `use_tabs` | false | false |
 //!
-//! `graphql-parser` does not expose a line-length setting; its formatter
-//! emits one field / argument per line, so line length is not a meaningful
-//! concept. The indent width is taken from [`EngineConfig::indent_width`]
-//! (itself derived from [`Language::default_indent_width`], which is 2 for
-//! GraphQL) and can be overridden via `[fmt.graphql.graphql]` in
-//! `polylint.toml`.
+//! `print_width` follows [`crate::config::GlobalDefaults::line_length`] (default 120) and can
+//! be further overridden via `[fmt.graphql.graphql]` in `polylint.toml`. The
+//! `indent_width` comes from [`EngineConfig::indent_width`] (itself derived
+//! from [`Language::default_indent_width`], which is 2 for GraphQL).
 
-use graphql_parser::Style;
 use graphql_parser::query::parse_query;
 use graphql_parser::schema::parse_schema;
+use pretty_graphql::config::{FormatOptions, LayoutOptions};
 
 use crate::config::EngineConfig;
 use crate::engine::{Capabilities, Diagnostic, Engine, FormatOutput, Severity, SourceFile, Span};
 use crate::language::Language;
 
-/// GraphQL backend powered by `graphql-parser`.
+/// GraphQL backend: `pretty_graphql` for formatting, `graphql-parser` for lint.
 pub struct GraphQlEngine;
 
 static LANGUAGES: &[Language] = &[Language::GraphQl];
@@ -53,9 +60,9 @@ impl Engine for GraphQlEngine {
     }
 
     fn version(&self) -> &str {
-        // Tracks the published `graphql-parser` crate version; bump when the
-        // dependency is updated so cached output is invalidated.
-        "0.4"
+        // Tracks the active formatter; bump when the formatter dep is updated
+        // so cached output is invalidated.  Format: `<formatter>-<version>`.
+        "pretty_graphql-0.2.3"
     }
 
     fn lint(&self, src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
@@ -101,24 +108,30 @@ impl Engine for GraphQlEngine {
     }
 
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
-        // Indent width: opinionated default from language (2), overridable via
-        // `[fmt.graphql.graphql] indent_width = 4` in `polylint.toml`.
-        let indent = cfg
+        // `print_width` from globals (default 120); `indent_width` from engine
+        // config (default 2 for GraphQL).
+        let print_width = cfg.globals.line_length;
+        let indent_width = cfg
             .options
             .get("indent_width")
             .and_then(|v| v.as_integer())
-            .and_then(|v| u32::try_from(v).ok())
-            .unwrap_or_else(|| u32::try_from(cfg.indent_width).unwrap_or(2));
-        let mut style = Style::default();
-        style.indent(indent);
+            .and_then(|v| usize::try_from(v).ok())
+            .unwrap_or(cfg.indent_width);
 
-        let formatted = if let Ok(doc) = parse_schema::<&str>(&src.content) {
-            doc.format(&style)
-        } else if let Ok(doc) = parse_query::<&str>(&src.content) {
-            doc.format(&style)
-        } else {
-            // Cannot parse: leave the file untouched to avoid data loss.
-            return Ok(FormatOutput::Unchanged);
+        let options = FormatOptions {
+            layout: LayoutOptions {
+                print_width,
+                indent_width,
+                use_tabs: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let formatted = match pretty_graphql::format_text(&src.content, &options) {
+            Ok(s) => s,
+            // Unparsable document: leave untouched to avoid data loss.
+            Err(_) => return Ok(FormatOutput::Unchanged),
         };
 
         if formatted == src.content {
