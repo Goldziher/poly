@@ -4,6 +4,7 @@
 //! and stands in for the tree-sitter generic tier until M5.
 
 use crate::engine::Engine;
+use crate::engines::graphql::GraphQlEngine;
 use crate::engines::malva::MalvaEngine;
 use crate::engines::nixfmt::NixFmtEngine;
 use crate::engines::oxc::OxcEngine;
@@ -29,6 +30,7 @@ pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
         Language::Sql => vec![Box::new(SqruffEngine)],
         Language::Css | Language::Scss | Language::Less => vec![Box::new(MalvaEngine)],
         Language::Nix => vec![Box::new(NixFmtEngine)],
+        Language::GraphQl => vec![Box::new(GraphQlEngine)],
         // As other native backends land they are matched here, falling through
         // to the generic tier for everything else.
         _ => vec![Box::new(WhitespaceEngine)],

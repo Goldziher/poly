@@ -17,6 +17,7 @@ anyhow = "1"
 blake3 = "1"
 clap = { version = "4", features = ["derive"] }
 dirs = "6"
+graphql-parser = "0.4"
 ignore = "0.4"
 # insta snapshot testing
 insta = "1"

@@ -1,0 +1,11 @@
+---
+source: crates/polylint-core/tests/graphql.rs
+expression: summary
+---
+[
+    (
+        "graphql",
+        "syntax",
+        true,
+    ),
+]
