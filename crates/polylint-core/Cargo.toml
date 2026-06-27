@@ -20,7 +20,10 @@ owo-colors.workspace = true
 rayon.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sqruff-lib.workspace = true
+sqruff-lib-core.workspace = true
 toml.workspace = true
 
 [dev-dependencies]
+insta = "1"
 tempfile.workspace = true
