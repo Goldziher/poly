@@ -25,6 +25,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "alejandra"
+version = "3.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2bc05c61ca4cc9ccd139efa86d1e8414e2e0f2dc6584edc3de33f04eebfa1dee"
+dependencies = [
+ "mimalloc",
+ "rnix",
+ "rowan 0.12.6",
+]
+
+[[package]]
 name = "allocator-api2"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -249,6 +260,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cbitset"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "29b6ad25ae296159fb0da12b970b2fe179b234584d7cd294c891e2bbb284466b"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "cc"
 version = "1.2.65"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -385,6 +405,12 @@ name = "constant_time_eq"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
+
+[[package]]
+name = "countme"
+version = "2.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "328b822bdcba4d4e402be8d9adb6eebf269f969f8eadef977a553ff3c4fbcb58"
 
 [[package]]
 name = "countme"
@@ -796,6 +822,12 @@ dependencies = [
 
 [[package]]
 name = "hashbrown"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d7afe4a420e3fe79967a00898cc1f4db7c8a49a9333a29f8a4bd76a253d5cd04"
+
+[[package]]
+name = "hashbrown"
 version = "0.14.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
@@ -897,7 +929,7 @@ version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4b719c59241cfaac1042a6d26787e28ed7ee4a4e21a5a907786f54222d1b0062"
 dependencies = [
- "memoffset",
+ "memoffset 0.9.1",
 ]
 
 [[package]]
@@ -1132,6 +1164,15 @@ name = "memchr"
 version = "2.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "88904434abc2901f197fe8cc55f0445e7ded921dba5911dad2e2b39b48e663c4"
+
+[[package]]
+name = "memoffset"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5aa361d4faea93603064a027415f07bd8e1d5c88c9fbf68bf56a285428fd79ce"
+dependencies = [
+ "autocfg",
+]
 
 [[package]]
 name = "memoffset"
@@ -1666,6 +1707,7 @@ dependencies = [
 name = "polylint-core"
 version = "0.1.0"
 dependencies = [
+ "alejandra",
  "anyhow",
  "blake3",
  "dirs",
@@ -1968,14 +2010,38 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
+name = "rnix"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8024a523e8836f1a5d051203dc00d833357fee94e351b51348dfaeca5364daa9"
+dependencies = [
+ "cbitset",
+ "rowan 0.12.6",
+ "smol_str 0.1.24",
+]
+
+[[package]]
+name = "rowan"
+version = "0.12.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a1b36e449f3702f3b0c821411db1cbdf30fb451726a9456dce5dabcd44420043"
+dependencies = [
+ "countme 2.0.4",
+ "hashbrown 0.9.1",
+ "memoffset 0.6.5",
+ "rustc-hash 1.1.0",
+ "text-size",
+]
+
+[[package]]
 name = "rowan"
 version = "0.15.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "62f509095fc8cc0c8c8564016771d458079c11a8d857e65861f045145c0d3208"
 dependencies = [
- "countme",
+ "countme 3.0.1",
  "hashbrown 0.14.5",
- "memoffset",
+ "memoffset 0.9.1",
  "rustc-hash 1.1.0",
  "text-size",
 ]
@@ -2143,7 +2209,7 @@ checksum = "18260559e54ff64a6cf2512c7c98aa503ee1015b8c11546bb994e51d52246318"
 dependencies = [
  "anyhow",
  "clap",
- "countme",
+ "countme 3.0.1",
  "itertools 0.15.0",
  "memchr",
  "regex",
@@ -2520,6 +2586,15 @@ checksum = "e8e2fb0f499abb4d162f2bedad68f5ef91a1682b5a03596ddb67efd37768d100"
 
 [[package]]
 name = "smol_str"
+version = "0.1.24"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fad6c857cbab2627dcf01ec85a623ca4e7dcb5691cbaa3d7fb7653671f0d09c9"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "smol_str"
 version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4aaa7368fcf4852a4c2dd92df0cace6a71f2091ca0a23391ce7f3a31833f1523"
@@ -2550,7 +2625,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
- "smol_str",
+ "smol_str 0.3.6",
  "sqruff-lib-core",
  "sqruff-lib-dialects",
  "strum",
@@ -2573,7 +2648,7 @@ dependencies = [
  "nohash-hasher",
  "pretty_assertions",
  "regex-automata",
- "smol_str",
+ "smol_str 0.3.6",
  "strum",
  "strum_macros",
  "thiserror 2.0.18",
@@ -2693,7 +2768,7 @@ dependencies = [
  "itertools 0.10.5",
  "logos",
  "once_cell",
- "rowan",
+ "rowan 0.15.18",
  "serde",
  "serde_json",
  "thiserror 1.0.69",

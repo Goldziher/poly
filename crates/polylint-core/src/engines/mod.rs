@@ -3,6 +3,7 @@
 //! [`crate::registry::engines_for`].
 
 pub mod malva;
+pub mod nixfmt;
 pub mod oxc;
 pub mod ruff;
 pub mod rumdl;

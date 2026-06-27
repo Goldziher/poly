@@ -5,6 +5,7 @@
 
 use crate::engine::Engine;
 use crate::engines::malva::MalvaEngine;
+use crate::engines::nixfmt::NixFmtEngine;
 use crate::engines::oxc::OxcEngine;
 use crate::engines::ruff::RuffEngine;
 use crate::engines::rumdl::RumdlEngine;
@@ -27,6 +28,7 @@ pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
         Language::Python => vec![Box::new(RuffEngine)],
         Language::Sql => vec![Box::new(SqruffEngine)],
         Language::Css | Language::Scss | Language::Less => vec![Box::new(MalvaEngine)],
+        Language::Nix => vec![Box::new(NixFmtEngine)],
         // As other native backends land they are matched here, falling through
         // to the generic tier for everything else.
         _ => vec![Box::new(WhitespaceEngine)],

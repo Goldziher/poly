@@ -17,6 +17,7 @@ name = "polylint_core"
 path = "src/lib.rs"
 
 [dependencies]
+alejandra.workspace = true
 anyhow.workspace = true
 blake3.workspace = true
 dirs.workspace = true

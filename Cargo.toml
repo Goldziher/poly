@@ -10,6 +10,9 @@ license = "MIT OR Apache-2.0"
 authors = ["Na'aman Hirschfeld <nhirschfeld@gmail.com>"]
 
 [workspace.dependencies]
+# alejandra — Nix formatter (UNLICENSE, pure Rust via rnix); chosen over
+# nixpkgs-fmt, which pulls unmaintained ansi_term/atty (cargo deny advisories)
+alejandra = "3.1"
 anyhow = "1"
 blake3 = "1"
 clap = { version = "4", features = ["derive"] }
