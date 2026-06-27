@@ -20,7 +20,12 @@ repos:
     hooks:
       # File safety
       - id: trailing-whitespace
+        # Test fixtures intentionally contain bad content (trailing whitespace,
+        # malformed headings, etc.) — exclude them from all fixable hooks so
+        # known-bad inputs survive the commit pipeline.
+        exclude: ^crates/[^/]+/tests/fixtures/
       - id: end-of-file-fixer
+        exclude: ^crates/[^/]+/tests/fixtures/
       - id: check-merge-conflict
       - id: check-added-large-files
       - id: detect-private-key
@@ -45,10 +50,13 @@ repos:
 
       # Markdown
       - id: rumdl-fmt
+        # Test fixtures intentionally contain bad Markdown — exclude them.
+        exclude: ^crates/[^/]+/tests/fixtures/
       - id: markdownlint-rumdl-strict
         # .ai-rulez/ prose is rendered into many tool-native formats; long lines
         # there are expected and respected by ai-rulez's own templates.
-        exclude: ^\.ai-rulez/
+        # Test fixtures intentionally contain bad Markdown.
+        exclude: ^(\.ai-rulez|crates/[^/]+/tests/fixtures)/
 
       # Rust
       - id: cargo-fmt
