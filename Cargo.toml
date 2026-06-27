@@ -17,6 +17,7 @@ dirs = "6"
 ignore = "0.4"
 # insta snapshot testing
 insta = "1"
+malva = "0.16"
 owo-colors = { version = "4", features = ["supports-colors"] }
 # oxc published crates — used by the oxc backend (M2)
 oxc_allocator = "0.137"

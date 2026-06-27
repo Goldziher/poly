@@ -21,6 +21,7 @@ anyhow.workspace = true
 blake3.workspace = true
 dirs.workspace = true
 ignore.workspace = true
+malva.workspace = true
 owo-colors.workspace = true
 # oxc backend (M2) — all published crates, no git deps
 oxc_allocator.workspace = true

@@ -1086,6 +1086,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "malva"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ed54a855fc80dddeb3518c03d04a2bb06954955297ee514429935149e58eaa75"
+dependencies = [
+ "aho-corasick",
+ "itertools 0.14.0",
+ "memchr",
+ "raffia",
+ "tiny_pretty",
+]
+
+[[package]]
 name = "manyhow"
 version = "0.11.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1658,6 +1671,7 @@ dependencies = [
  "dirs",
  "ignore",
  "insta",
+ "malva",
  "owo-colors",
  "oxc_allocator",
  "oxc_codegen",
@@ -1790,6 +1804,27 @@ name = "r-efi"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
+
+[[package]]
+name = "raffia"
+version = "0.12.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a589c5611a5f7713bf0c13e949c4c791a359ff517a9f27552475b470e8873229"
+dependencies = [
+ "raffia_macro",
+ "smallvec",
+]
+
+[[package]]
+name = "raffia_macro"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8ac21f5e4bc6b29ea5d5e691a9aa08b2b9fd8891f48a99157b9f02d8a48e1318"
+dependencies = [
+ "heck",
+ "quote",
+ "syn 2.0.118",
+]
 
 [[package]]
 name = "rand"
@@ -2794,6 +2829,12 @@ dependencies = [
  "num-conv",
  "time-core",
 ]
+
+[[package]]
+name = "tiny_pretty"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c6f118a569adc26e8a9a377130f181a461770225e588c73a00c8636b8680b6c"
 
 [[package]]
 name = "tinyvec"
