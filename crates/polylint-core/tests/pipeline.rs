@@ -23,7 +23,7 @@ fn lint_flags_trailing_whitespace() {
         no_cache: true,
         jobs: Some(1),
     };
-    let results = polylint_core::lint(&[dir.path().to_path_buf()], &cfg, &opts).unwrap();
+    let results = polylint_core::lint(&[dir.path().to_path_buf()], &cfg, &opts, false).unwrap();
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].diagnostics.len(), 1);
     assert_eq!(
@@ -74,6 +74,45 @@ fn format_write_is_idempotent() {
     // Second pass: nothing left to change.
     let second = polylint_core::format(&[dir.path().to_path_buf()], &cfg, &opts, true).unwrap();
     assert!(!second[0].changed, "formatting must be idempotent");
+}
+
+#[test]
+fn lint_fix_applies_autofixes_and_dry_run_does_not() {
+    // The misspellings live in an excluded fixture so the `typos` pre-commit
+    // hook cannot "correct" this test's source out from under it.
+    let bad = include_str!("fixtures/typos/known_bad.txt");
+    let dir = tempfile::tempdir().unwrap();
+    let path = write(dir.path(), "notes.md", bad);
+    let cfg = Config::default();
+    let opts = RunOptions {
+        no_cache: true,
+        jobs: Some(1),
+    };
+
+    // Dry run (fix = false) must not touch the file on disk.
+    polylint_core::lint(&[dir.path().to_path_buf()], &cfg, &opts, false).unwrap();
+    assert_eq!(
+        fs::read_to_string(&path).unwrap(),
+        bad,
+        "dry run must not modify files"
+    );
+
+    // fix = true applies the single-correction typo autofixes in place.
+    polylint_core::lint(&[dir.path().to_path_buf()], &cfg, &opts, true).unwrap();
+    let fixed = fs::read_to_string(&path).unwrap();
+    assert_ne!(fixed, bad, "fix must rewrite the file");
+    for corrected in ["language", "receive", "the", "occurrence"] {
+        assert!(
+            fixed.contains(corrected),
+            "expected `{corrected}` in {fixed:?}"
+        );
+    }
+    for misspelling in ["language", "receive", "the", "occurrence"] {
+        assert!(
+            !fixed.contains(misspelling),
+            "misspelling `{misspelling}` should be gone: {fixed:?}"
+        );
+    }
 }
 
 #[test]

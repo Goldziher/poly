@@ -44,6 +44,11 @@ pub struct CommonArgs {
     /// Disable colored output.
     #[arg(long)]
     pub no_color: bool,
+
+    /// Apply fixes in place: autofixes for `lint`, formatting for `fmt`. The
+    /// default is a dry run that reports what would change and writes nothing.
+    #[arg(long)]
+    pub fix: bool,
 }
 
 /// `poly lint` arguments.
@@ -57,8 +62,9 @@ pub struct LintArgs {
 /// `poly fmt` arguments.
 #[derive(Args)]
 pub struct FmtArgs {
-    /// Check only: do not write; exit non-zero if any file would change.
-    #[arg(long)]
+    /// Explicit dry run (the default): report what would change, write nothing,
+    /// exit non-zero if any file would change. Conflicts with `--fix`.
+    #[arg(long, conflicts_with = "fix")]
     pub check: bool,
 
     /// Flags shared with `poly lint`.
@@ -75,7 +81,7 @@ pub fn run_lint(args: LintArgs) -> ExitCode {
         Err(code) => return code,
     };
 
-    match polylint_core::lint(&paths, &config, &opts) {
+    match polylint_core::lint(&paths, &config, &opts, common.fix) {
         Ok(results) => {
             let count = match common.format {
                 OutputFormat::Pretty => report::report_lint_pretty(&results),
@@ -110,11 +116,13 @@ pub fn run_fmt(args: FmtArgs) -> ExitCode {
         Err(code) => return code,
     };
 
-    let write = !args.check;
+    // Dry run by default; `--fix` writes formatted output in place. `--check`
+    // is an explicit alias for the default dry run.
+    let write = common.fix;
     match polylint_core::format(&paths, &config, &opts, write) {
         Ok(results) => {
             let changed = match common.format {
-                OutputFormat::Pretty => report::report_format_pretty(&results, args.check),
+                OutputFormat::Pretty => report::report_format_pretty(&results, !write),
                 OutputFormat::Json => {
                     println!("{}", report::report_format_json(&results));
                     results.iter().filter(|r| r.changed).count()
@@ -124,7 +132,7 @@ pub fn run_fmt(args: FmtArgs) -> ExitCode {
                     results.iter().filter(|r| r.changed).count()
                 }
             };
-            if args.check && changed > 0 {
+            if !write && changed > 0 {
                 ExitCode::from(1)
             } else {
                 ExitCode::SUCCESS

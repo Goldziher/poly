@@ -16,13 +16,15 @@ on the host: where a high-quality Rust crate exists for a language it is wrapped
 everything else is covered by a generic tree-sitter–driven formatter whose grammars are fetched
 on demand. Install two binaries, drop in one `polylint.toml`, and lint/format the whole repo.
 
-> **Status: early development.** Milestone **M1** (foundation) is complete: the Cargo workspace,
-> the `Engine` trait, the static registry, TOML config + opinionated defaults, a blake3
-> content-hash cache, an `ignore`-based file walker, a rayon-parallel runner, human + JSON
-> reporting, and both CLIs are all in place and wired end-to-end. Today the only working backend
-> is the **reference whitespace normalizer**, which serves every language. The native backends
-> (oxc, ruff, taplo, rumdl, sqruff, …) and the tree-sitter generic tier are upcoming milestones —
-> see [Roadmap](#roadmap). Do not expect language-aware linting or formatting yet.
+> **Status: active development.** The foundation and the backend waves are in place: the Cargo
+> workspace, the `Engine` trait + static registry, TOML config + opinionated defaults, a blake3
+> content-hash cache, an `ignore`-based file walker, a rayon-parallel runner, three output
+> formats (`pretty`/`json`/`toon`), `--fix`/dry-run-by-default, and the `poly` CLI plus its
+> `polylint`/`polyfmt` aliases. Native backends are wired for JS/TS/JSON (oxc), Python (ruff),
+> TOML (taplo), Markdown (rumdl), SQL (sqruff), CSS/SCSS/Less (malva), HTML/Vue/Svelte
+> (markup_fmt), GraphQL, Nix (alejandra), and YAML, with cross-cutting spell-check (typos); every
+> other language is covered by the tree-sitter generic tier. Still in progress: closing the
+> conformance gap with per-language idiomatic formatters — see [Roadmap](#roadmap).
 
 ## Why
 
@@ -62,32 +64,38 @@ cargo install polyfmt    # alias for `poly fmt`
 ```sh
 poly lint [PATHS]...
 
-  --format <human|json>   Output format (default: human)
-  --config <PATH>         Use an explicit config (default: nearest polylint.toml)
-  --no-cache              Bypass the result cache
-  -j, --jobs <N>          Parallel jobs (default: all logical cores)
-  --no-color              Disable colored output
+  --fix                       Apply autofixes in place (default: dry run)
+  --format <pretty|json|toon> Output format (default: pretty)
+  --config <PATH>             Use an explicit config (default: nearest polylint.toml)
+  --no-cache                  Bypass the result cache
+  -j, --jobs <N>              Parallel jobs (default: all logical cores)
+  --no-color                  Disable colored output
 ```
 
 Or use the alias: `polylint [PATHS]...` with the same flags.
+
+By default `poly lint` only reports. With `--fix` it applies the autofixes carried by
+diagnostics (re-linting until stable) and rewrites the file, then reports whatever remains.
 
 ### Format
 
 ```sh
 poly fmt [PATHS]...
 
-  --check                 Do not write; exit non-zero if any file would change
-  --format <human|json>   Output format (default: human)
-  --config <PATH>         Use an explicit config (default: nearest polylint.toml)
-  --no-cache              Bypass the result cache
-  -j, --jobs <N>          Parallel jobs (default: all logical cores)
-  --no-color              Disable colored output
+  --fix                       Write formatted output in place (default: dry run)
+  --check                     Explicit dry run (the default); conflicts with --fix
+  --format <pretty|json|toon> Output format (default: pretty)
+  --config <PATH>             Use an explicit config (default: nearest polylint.toml)
+  --no-cache                  Bypass the result cache
+  -j, --jobs <N>              Parallel jobs (default: all logical cores)
+  --no-color                  Disable colored output
 ```
 
 Or use the alias: `polyfmt [PATHS]...` with the same flags.
 
-Without `--check`, `poly fmt` rewrites files in place. With `--check` it writes nothing and
-only reports what would change — ideal for CI and pre-commit.
+`poly fmt` is dry-run by default: it reports what would change, writes nothing, and exits
+non-zero if any file would change — ideal for CI and pre-commit. Pass `--fix` to rewrite files
+in place. `--check` is an explicit alias for the default dry run.
 
 `PATHS` defaults to the current directory. Files are discovered through the `ignore` crate, so
 `.gitignore` is respected.
@@ -98,8 +106,8 @@ All binaries use exit codes designed to drive CI and git hooks:
 
 | Code | `poly lint` / `polylint`          | `poly fmt` / `polyfmt`                      |
 |------|-----------------------------------|---------------------------------------------|
-| `0`  | No issues found                   | Formatting complete (or nothing to change)  |
-| `1`  | Lint issues found                 | `--check`: at least one file would change   |
+| `0`  | No issues (or all autofixed)      | `--fix`: written; dry run: nothing to change |
+| `1`  | Lint issues remain                | Dry run (default): at least one file would change |
 | `2`  | Internal error (e.g. bad config)  | Internal error (e.g. bad config)            |
 
 ## Configuration

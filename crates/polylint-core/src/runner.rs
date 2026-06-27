@@ -10,7 +10,7 @@ use serde::Serialize;
 use crate::cache::Cache;
 use crate::config::{Config, Kind};
 use crate::discover::{DiscoveredFile, discover};
-use crate::engine::{Diagnostic, FormatOutput, SourceFile};
+use crate::engine::{Diagnostic, Edit, FormatOutput, SourceFile};
 use crate::registry::engines_for;
 
 /// Options controlling a lint/format run.
@@ -43,19 +43,26 @@ pub struct FormatResult {
     pub formatted: Option<String>,
 }
 
+/// Maximum autofix passes per file: applying a fix can surface or resolve
+/// others, so re-lint until stable, but cap to guarantee termination.
+const MAX_FIX_PASSES: usize = 5;
+
 /// Lint all discovered files under `paths`. Returns one [`LintResult`] per file
-/// that produced at least one diagnostic.
+/// that still has at least one diagnostic. When `fix` is true, each file's
+/// available autofixes are applied in place (re-linting until stable) before
+/// the remaining, unfixable diagnostics are reported.
 pub fn lint(
     paths: &[PathBuf],
     config: &Config,
     opts: &RunOptions,
+    fix: bool,
 ) -> anyhow::Result<Vec<LintResult>> {
     configure_pool(opts.jobs);
     let cache = Cache::new(!opts.no_cache)?;
     let files = discover(paths);
     let mut results: Vec<LintResult> = files
         .par_iter()
-        .filter_map(|f| lint_one(f, config, &cache).ok())
+        .filter_map(|f| lint_one(f, config, &cache, fix).ok())
         .filter(|r| !r.diagnostics.is_empty())
         .collect();
     results.sort_by(|a, b| a.path.cmp(&b.path));
@@ -81,12 +88,50 @@ pub fn format(
     Ok(results)
 }
 
-fn lint_one(f: &DiscoveredFile, config: &Config, cache: &Cache) -> anyhow::Result<LintResult> {
-    let content = std::fs::read_to_string(&f.path)?;
+fn lint_one(
+    f: &DiscoveredFile,
+    config: &Config,
+    cache: &Cache,
+    fix: bool,
+) -> anyhow::Result<LintResult> {
+    let original = std::fs::read_to_string(&f.path)?;
+    let mut content = original.clone();
+    let mut diagnostics = lint_content(f, config, cache, &content)?;
+
+    if fix {
+        for _ in 0..MAX_FIX_PASSES {
+            let edits: Vec<&Edit> = diagnostics.iter().filter_map(|d| d.fix.as_ref()).collect();
+            match apply_edits(&content, &edits) {
+                Some(next) if next != content => {
+                    content = next;
+                    diagnostics = lint_content(f, config, cache, &content)?;
+                }
+                _ => break,
+            }
+        }
+        if content != original {
+            write_atomic(&f.path, &content)?;
+        }
+    }
+
+    Ok(LintResult {
+        path: f.path.clone(),
+        diagnostics,
+    })
+}
+
+/// Run every lint-capable engine for the file's language over `content`,
+/// content-hash caching each engine's diagnostics.
+fn lint_content(
+    f: &DiscoveredFile,
+    config: &Config,
+    cache: &Cache,
+    content: &str,
+) -> anyhow::Result<Vec<Diagnostic>> {
     let src = SourceFile {
         path: f.path.clone(),
         language: f.language.clone(),
-        content,
+        content: content.to_string(),
     };
     let mut all = Vec::new();
     for engine in engines_for(&f.language) {
@@ -112,10 +157,31 @@ fn lint_one(f: &DiscoveredFile, config: &Config, cache: &Cache) -> anyhow::Resul
         }
         all.extend(diags);
     }
-    Ok(LintResult {
-        path: f.path.clone(),
-        diagnostics: all,
-    })
+    Ok(all)
+}
+
+/// Apply non-overlapping byte-range autofixes to `content`. Edits are applied
+/// right-to-left so earlier byte offsets stay valid; any edit that overlaps one
+/// already applied, lands out of bounds, or falls on a non-char boundary is
+/// skipped. Returns the rewritten text, or `None` if nothing was applied.
+fn apply_edits(content: &str, edits: &[&Edit]) -> Option<String> {
+    let mut sorted: Vec<&Edit> = edits.to_vec();
+    sorted.sort_by_key(|e| std::cmp::Reverse(e.start_byte));
+    let mut result = content.to_string();
+    let mut prev_start = usize::MAX;
+    let mut applied = false;
+    for e in sorted {
+        if e.start_byte > e.end_byte || e.end_byte > result.len() || e.end_byte > prev_start {
+            continue;
+        }
+        if !result.is_char_boundary(e.start_byte) || !result.is_char_boundary(e.end_byte) {
+            continue;
+        }
+        result.replace_range(e.start_byte..e.end_byte, &e.replacement);
+        prev_start = e.start_byte;
+        applied = true;
+    }
+    applied.then_some(result)
 }
 
 fn format_one(

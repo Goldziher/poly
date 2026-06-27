@@ -54,7 +54,9 @@ impl Engine for TyposEngine {
         Capabilities {
             lint: true,
             format: false,
-            fix: false,
+            // Emits a byte-range autofix whenever a misspelling has exactly one
+            // correction (see `typo_to_diagnostic`).
+            fix: true,
         }
     }
 
