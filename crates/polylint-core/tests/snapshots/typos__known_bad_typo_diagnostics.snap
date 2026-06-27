@@ -6,7 +6,7 @@ expression: summary
     (
         "typos",
         "typo",
-        "`language` should be `language`",
+        "`languge` should be `language`",
         Some(
             (
                 1,
@@ -17,18 +17,18 @@ expression: summary
     (
         "typos",
         "typo",
-        "`receive` should be `receive`",
+        "`recieve` should be `receive`",
         Some(
             (
                 1,
-                21,
+                20,
             ),
         ),
     ),
     (
         "typos",
         "typo",
-        "`the` should be `the`",
+        "`teh` should be `the`",
         Some(
             (
                 2,
@@ -39,7 +39,7 @@ expression: summary
     (
         "typos",
         "typo",
-        "`occurrence` should be `occurrence`",
+        "`occurence` should be `occurrence`",
         Some(
             (
                 2,

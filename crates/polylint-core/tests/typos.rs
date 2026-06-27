@@ -29,17 +29,18 @@ fn make_src(content: &str) -> SourceFile {
 }
 
 // ---------------------------------------------------------------------------
-// Known-bad fixture: a file with several clear typos.
+// Known-bad fixture: a file with several clear typos. The content lives in an
+// external fixture file (under tests/fixtures/, which `.typos.toml` excludes)
+// so the `typos` pre-commit hook cannot "correct" the misspellings and silently
+// break this test.
 //
-// "language" → "language"  (line 1)
-// "receive"  → "receive"   (line 1)
-// "the"      → "the"       (line 2)
+// "language"   → "language"   (line 1)
+// "receive"   → "receive"    (line 1)
+// "the"       → "the"        (line 2)
+// "occurrence" → "occurrence" (line 2)
 // ---------------------------------------------------------------------------
 
-const KNOWN_BAD: &str = "\
-The language of the receive function.
-This is the occurrence of a typo.
-";
+const KNOWN_BAD: &str = include_str!("fixtures/typos/known_bad.txt");
 
 #[test]
 fn known_bad_typo_diagnostics() {

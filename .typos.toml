@@ -11,4 +11,7 @@ patern = "patern"
 pattrn = "pattrn"
 
 [files]
-extend-exclude = ["tests/fixtures/**"]
+# `tests/fixtures/**` — known-bad inputs deliberately contain misspellings.
+# `tests/snapshots/**` — insta snapshots are generated artifacts; a known-bad
+# spell-check snapshot necessarily embeds the misspelling in its message.
+extend-exclude = ["**/tests/fixtures/**", "**/tests/snapshots/**"]
