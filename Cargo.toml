@@ -44,6 +44,8 @@ poly-cli = { path = "crates/poly-cli" }
 polylint-core = { path = "crates/polylint-core" }
 # pretty_graphql — g-plane pure-Rust GraphQL formatter (MIT); SDL + query docs
 pretty_graphql = "0.2.3"
+# pretty_yaml — g-plane pure-Rust YAML formatter (MIT); CST-based structural reflow
+pretty_yaml = "0.6"
 rayon = "1"
 # ruff git deps — all crates MUST share the same `rev` to keep the internal
 # ruff type graph consistent. The published 0.0.3 crates are stale; ruff_linter

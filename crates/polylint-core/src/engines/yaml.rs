@@ -1,4 +1,4 @@
-//! YAML backend: validity lint via `saphyr`, whitespace-safe format.
+//! YAML backend: validity lint via `saphyr`, structural format via `pretty_yaml`.
 //!
 //! Capabilities: [`Capabilities::lint`] + [`Capabilities::format`]. No fix.
 //!
@@ -9,20 +9,21 @@
 //! the scanner's [`saphyr::Marker`].
 //!
 //! # Format
-//! Structural YAML reflow is explicitly out of scope: comment preservation
-//! across a round-trip is unsolved and would silently corrupt files. Format
-//! is therefore limited to [`crate::defaults::normalize_whitespace`]:
-//! trim trailing whitespace, normalize line endings, enforce a final newline.
-//! Returns [`FormatOutput::Unchanged`] when the result equals the input.
+//! Delegates to [`pretty_yaml::format_text`] which performs a full CST-based
+//! structural reflow: normalized indentation, colon spacing, quote
+//! canonicalization, trailing whitespace removal, and final-newline
+//! enforcement. Config is mapped: `line_length → print_width`,
+//! `indent_width → indent_width`, `line_ending → line_break`.
+//! Returns [`FormatOutput::Unchanged`] when the output equals the input.
 
+use pretty_yaml::config::{FormatOptions, LanguageOptions, LayoutOptions, LineBreak};
 use saphyr::{LoadableYamlNode, Yaml};
 
-use crate::config::EngineConfig;
-use crate::defaults::normalize_whitespace;
+use crate::config::{EngineConfig, LineEnding};
 use crate::engine::{Capabilities, Diagnostic, Engine, FormatOutput, Severity, SourceFile, Span};
 use crate::language::Language;
 
-/// YAML backend (validity lint + whitespace-safe format).
+/// YAML backend (validity lint + structural format via `pretty_yaml`).
 pub struct YamlEngine;
 
 static LANGUAGES: &[Language] = &[Language::Yaml];
@@ -45,9 +46,10 @@ impl Engine for YamlEngine {
     }
 
     fn version(&self) -> &str {
-        // Tracks the published `saphyr` crate version; bump when the
-        // dependency version changes so stale cached output is invalidated.
-        "0.0.6"
+        // Tracks the saphyr version (lint) and pretty_yaml version (format).
+        // Bump when either dependency version changes so stale cached output is
+        // invalidated — both are folded into the cache key.
+        "0.0.6+pretty_yaml-0.6.0"
     }
 
     fn lint(&self, src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
@@ -81,11 +83,29 @@ impl Engine for YamlEngine {
     }
 
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
-        let normalized = normalize_whitespace(&src.content, &cfg.globals);
-        if normalized == src.content {
+        let line_break = match cfg.globals.line_ending {
+            LineEnding::Crlf => LineBreak::Crlf,
+            LineEnding::Lf => LineBreak::Lf,
+        };
+        let options = FormatOptions {
+            layout: LayoutOptions {
+                print_width: cfg.globals.line_length,
+                indent_width: cfg.indent_width,
+                line_break,
+            },
+            language: LanguageOptions::default(),
+        };
+        // Unparsable YAML: leave the file untouched rather than failing the
+        // whole run. The saphyr-based `lint` path already surfaces the syntax
+        // error as a diagnostic, so we don't lose the signal.
+        let formatted = match pretty_yaml::format_text(&src.content, &options) {
+            Ok(formatted) => formatted,
+            Err(_) => return Ok(FormatOutput::Unchanged),
+        };
+        if formatted == src.content {
             Ok(FormatOutput::Unchanged)
         } else {
-            Ok(FormatOutput::Formatted(normalized))
+            Ok(FormatOutput::Formatted(formatted))
         }
     }
 }

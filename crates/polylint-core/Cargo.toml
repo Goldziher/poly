@@ -34,6 +34,7 @@ oxc_formatter_json.workspace = true
 oxc_linter.workspace = true
 oxc_span.workspace = true
 pretty_graphql.workspace = true
+pretty_yaml.workspace = true
 rayon.workspace = true
 # ruff git deps — all pinned to the same rev (see workspace Cargo.toml)
 ruff_db.workspace = true

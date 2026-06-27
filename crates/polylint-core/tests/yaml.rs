@@ -96,3 +96,31 @@ fn already_formatted_returns_unchanged() {
         "expected Unchanged for already-clean YAML"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Structural-reformat fixture: extra colon/dash spacing is canonicalized.
+// pretty_yaml normalizes `a:    1` → `a: 1` and `  -   y` → `  - y`,
+// demonstrating real CST-driven reflow rather than mere whitespace trimming.
+// ---------------------------------------------------------------------------
+
+/// Extra spaces after `:` on the first key and after `-` on the last list
+/// item.  No trailing whitespace so prek hooks leave this literal alone.
+const STRUCTURAL_UNFORMATTED: &str = "a:    1\nb:\n  - x\n  -   y\n";
+
+#[test]
+fn structural_reformat_canonicalizes_spacing() {
+    let engine = YamlEngine;
+    let src = make_src("structural.yaml", STRUCTURAL_UNFORMATTED);
+    match engine.format(&src, &engine_cfg()).unwrap() {
+        FormatOutput::Formatted(text) => {
+            // Output must differ from input (structural change, not just
+            // whitespace trim) and must match the pretty_yaml snapshot.
+            assert_ne!(
+                text, STRUCTURAL_UNFORMATTED,
+                "formatted output should differ from input"
+            );
+            insta::assert_snapshot!("structural_reformat", text);
+        }
+        FormatOutput::Unchanged => panic!("expected Formatted, got Unchanged"),
+    }
+}
