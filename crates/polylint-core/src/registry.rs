@@ -4,14 +4,17 @@
 //! the tree-sitter generic tier until M5.
 
 use crate::engine::Engine;
+use crate::engines::taplo::TaploEngine;
 use crate::engines::whitespace::WhitespaceEngine;
 use crate::language::Language;
 
 /// Engines applicable to a language, in priority order (formatters run in sequence).
-pub fn engines_for(_lang: &Language) -> Vec<Box<dyn Engine>> {
-    // As native backends land they are matched here, e.g.:
-    //   Language::Toml => vec![Box::new(TaploEngine::new())],
-    //   Language::Python => vec![Box::new(RuffEngine::new())],
-    // falling through to the generic tier for everything else.
-    vec![Box::new(WhitespaceEngine)]
+pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
+    match lang {
+        Language::Toml => vec![Box::new(TaploEngine::new())],
+        // As other native backends land they will be matched here, e.g.:
+        //   Language::Python => vec![Box::new(RuffEngine::new())],
+        // falling through to the generic tier for everything else.
+        _ => vec![Box::new(WhitespaceEngine)],
+    }
 }

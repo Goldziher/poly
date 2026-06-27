@@ -1,0 +1,11 @@
+---
+source: crates/polylint-core/tests/taplo_fixtures.rs
+expression: formatted
+---
+[package]
+name = "polylint"
+version = "0.1.0"
+authors = ["Alice", "Bob", "Carol"]
+
+[dependencies]
+anyhow = "1"

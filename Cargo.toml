@@ -1,31 +1,33 @@
 [workspace]
 resolver = "3"
-members = ["crates/polylint-core", "crates/polylint", "crates/polyfmt"]
+members = ["crates/polyfmt", "crates/polylint", "crates/polylint-core"]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.88"
 license = "MIT OR Apache-2.0"
 authors = ["Na'aman Hirschfeld <nhirschfeld@gmail.com>"]
 
 [workspace.dependencies]
-polylint-core = { path = "crates/polylint-core" }
 anyhow = "1"
-thiserror = "2"
+blake3 = "1"
+clap = { version = "4", features = ["derive"] }
+dirs = "6"
+ignore = "0.4"
+insta = "1"
+owo-colors = { version = "4", features = ["supports-colors"] }
+polylint-core = { path = "crates/polylint-core" }
+rayon = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+taplo = "0.14"
+tempfile = "3"
+thiserror = "2"
 toml = "1.1"
 toml_edit = "0.25"
-blake3 = "1"
-rayon = "1"
-ignore = "0.4"
-dirs = "6"
-owo-colors = { version = "4", features = ["supports-colors"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
-clap = { version = "4", features = ["derive"] }
-tempfile = "3"
 
 [profile.release]
 lto = "thin"

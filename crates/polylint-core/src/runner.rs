@@ -100,11 +100,11 @@ fn lint_one(f: &DiscoveredFile, config: &Config, cache: &Cache) -> anyhow::Resul
             &ecfg.options,
             &src.content,
         );
-        if let Some(bytes) = cache.get(&key) {
-            if let Ok(diags) = serde_json::from_slice::<Vec<Diagnostic>>(&bytes) {
-                all.extend(diags);
-                continue;
-            }
+        if let Some(bytes) = cache.get(&key)
+            && let Ok(diags) = serde_json::from_slice::<Vec<Diagnostic>>(&bytes)
+        {
+            all.extend(diags);
+            continue;
         }
         let diags = engine.lint(&src, &ecfg)?;
         if let Ok(bytes) = serde_json::to_vec(&diags) {
@@ -137,11 +137,11 @@ fn format_one(
             &ecfg.options,
             &current,
         );
-        if let Some(bytes) = cache.get(&key) {
-            if let Ok(text) = String::from_utf8(bytes) {
-                current = text;
-                continue;
-            }
+        if let Some(bytes) = cache.get(&key)
+            && let Ok(text) = String::from_utf8(bytes)
+        {
+            current = text;
+            continue;
         }
         let src = SourceFile {
             path: f.path.clone(),
@@ -183,10 +183,10 @@ fn configure_pool(jobs: Option<usize>) {
     static INIT: Once = Once::new();
     INIT.call_once(|| {
         let mut builder = rayon::ThreadPoolBuilder::new();
-        if let Some(n) = jobs {
-            if n > 0 {
-                builder = builder.num_threads(n);
-            }
+        if let Some(n) = jobs
+            && n > 0
+        {
+            builder = builder.num_threads(n);
         }
         // Ignore error: the global pool may already be initialized by a caller.
         let _ = builder.build_global();
