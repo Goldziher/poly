@@ -76,6 +76,19 @@ typos-dict.workspace = true
 unicase.workspace = true
 
 [dev-dependencies]
+criterion.workspace = true
 insta.workspace = true
 owo-colors.workspace = true
 tempfile.workspace = true
+
+[[bench]]
+name = "generic_formatter"
+harness = false
+
+[[bench]]
+name = "cache_key"
+harness = false
+
+[[bench]]
+name = "runner_e2e"
+harness = false

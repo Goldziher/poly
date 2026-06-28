@@ -43,6 +43,9 @@ console = { version = "0.16", default-features = false, features = [
     "ansi-parsing",
     "std",
 ] }
+# criterion — statistical microbenchmark harness for the hot-path benches under
+# crates/polylint-core/benches/ (dev-dependency only; never linked into binaries)
+criterion = "0.5"
 ctrlc = "3.4.5"
 dunce = "1.0.5"
 etcetera = "0.11.0"
