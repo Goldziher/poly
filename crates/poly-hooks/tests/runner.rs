@@ -9,7 +9,9 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use poly_hooks::model::{HookCommand, HookStatus, StageStatus};
+use poly_cache::ResultCache;
+use poly_hooks::filter::FilePattern;
+use poly_hooks::model::{HookCache, HookCommand, HookStatus, StageStatus};
 use poly_hooks::{Hook, HookRunReporter, HookRunRequest, Stage, StageSpec, run};
 use tempfile::TempDir;
 
@@ -443,4 +445,180 @@ fn hook_command_script_form_executes() {
     let outcome = run(request(root, pre_commit(vec![hook]))).expect("run");
     assert!(outcome.success());
     assert_eq!(read(root, "script.out"), "ran");
+}
+
+// ── tier-1 result caching ───────────────────────────────────────────────────
+
+/// An enabled result cache rooted in its own temp dir (isolated from the repo).
+fn cache_at(dir: &TempDir) -> ResultCache {
+    ResultCache::open(dir.path().join("cache"), true).expect("open cache")
+}
+
+/// Commit a tracked file so `git ls-files` lists it and the worktree is clean.
+fn commit_tracked(root: &Path, name: &str, contents: &str) {
+    std::fs::write(root.join(name), contents).unwrap();
+    git(root, &["add", name]);
+    git(root, &["commit", "-qm", "init"]);
+}
+
+#[test]
+fn matched_files_hook_is_cached_on_second_identical_run() {
+    let repo = init_repo();
+    let root = repo.path();
+    commit_tracked(root, "input.txt", "data\n");
+    let cache_dir = TempDir::new().unwrap();
+
+    // Each real execution appends to runs.log; a cache hit must skip the body.
+    let make = || {
+        let mut hook = Hook::run("counter", "printf x >> runs.log");
+        hook.pass_filenames = false;
+        hook.cache = HookCache::MatchedFiles;
+        hook
+    };
+    let build = || {
+        let mut req = request(root, pre_commit(vec![make()]));
+        req.files = vec![PathBuf::from("input.txt")];
+        req.cache = Some(cache_at(&cache_dir));
+        req
+    };
+
+    let first = run(build()).expect("run");
+    assert!(first.success());
+    assert!(!first.stages[0].hooks[0].cached, "first run is a miss");
+    assert_eq!(read(root, "runs.log"), "x");
+
+    let second = run(build()).expect("run");
+    assert!(second.success());
+    assert!(second.stages[0].hooks[0].cached, "second run must hit");
+    assert_eq!(read(root, "runs.log"), "x", "cache hit must not re-execute");
+}
+
+#[test]
+fn editing_a_declared_input_invalidates_the_cache() {
+    let repo = init_repo();
+    let root = repo.path();
+    commit_tracked(root, "input.txt", "v1\n");
+    let cache_dir = TempDir::new().unwrap();
+
+    let make = || {
+        let mut hook = Hook::run("c", "printf x >> runs.log");
+        hook.pass_filenames = false;
+        hook.always_run = true;
+        hook.cache = HookCache::DeclaredInputs(FilePattern::glob(vec!["**/*.txt".into()]).unwrap());
+        hook
+    };
+    let build = || {
+        let mut req = request(root, pre_commit(vec![make()]));
+        req.cache = Some(cache_at(&cache_dir));
+        req
+    };
+
+    run(build()).expect("run"); // miss → executes
+    assert_eq!(read(root, "runs.log"), "x");
+    let hit = run(build()).expect("run"); // unchanged → hit
+    assert!(hit.stages[0].hooks[0].cached);
+    assert_eq!(read(root, "runs.log"), "x");
+
+    // Change the declared input; the next run must re-execute.
+    std::fs::write(root.join("input.txt"), "v2\n").unwrap();
+    let miss = run(build()).expect("run");
+    assert!(!miss.stages[0].hooks[0].cached, "edit must invalidate");
+    assert_eq!(read(root, "runs.log"), "xx");
+}
+
+#[test]
+fn a_hook_that_modifies_its_inputs_is_never_cached() {
+    let repo = init_repo();
+    let root = repo.path();
+    commit_tracked(root, "f.txt", "orig\n");
+    let cache_dir = TempDir::new().unwrap();
+
+    // The hook rewrites its matched file (a worktree diff) and logs each run.
+    let make = || {
+        let mut hook = Hook::run("fixer", "printf changed > f.txt; printf x >> runs.log");
+        hook.pass_filenames = false;
+        hook.cache = HookCache::MatchedFiles;
+        hook
+    };
+    let build = || {
+        let mut req = request(root, pre_commit(vec![make()]));
+        req.files = vec![PathBuf::from("f.txt")];
+        req.cache = Some(cache_at(&cache_dir));
+        req
+    };
+
+    run(build()).expect("run");
+    let second = run(build()).expect("run");
+    assert!(
+        !second.stages[0].hooks[0].cached,
+        "tree-mutating hook must not cache"
+    );
+    assert_eq!(read(root, "runs.log"), "xx", "must execute on both runs");
+}
+
+#[test]
+fn declared_inputs_hook_that_mutates_an_input_is_never_cached() {
+    let repo = init_repo();
+    let root = repo.path();
+    commit_tracked(root, "dep.txt", "orig\n");
+    let cache_dir = TempDir::new().unwrap();
+
+    // Declares `**/*.txt` as inputs but also REWRITES dep.txt — a mutation to a
+    // declared input outside the (empty) matched set. It must never be cached,
+    // even though its pre-execution digest is stable once dep.txt is reverted.
+    let make = || {
+        let mut hook = Hook::run("mutator", "printf x >> runs.log; printf changed > dep.txt");
+        hook.pass_filenames = false;
+        hook.always_run = true;
+        hook.cache = HookCache::DeclaredInputs(FilePattern::glob(vec!["**/*.txt".into()]).unwrap());
+        hook
+    };
+    let build = || {
+        let mut req = request(root, pre_commit(vec![make()]));
+        req.cache = Some(cache_at(&cache_dir));
+        req
+    };
+
+    run(build()).expect("run"); // executes, mutates dep.txt → must NOT store
+    assert_eq!(read(root, "runs.log"), "x");
+
+    // Revert dep.txt so the pre-execution digest matches the first run. Had the
+    // first run wrongly stored, this would be a hit and skip execution.
+    std::fs::write(root.join("dep.txt"), "orig\n").unwrap();
+    let second = run(build()).expect("run");
+    assert!(
+        !second.stages[0].hooks[0].cached,
+        "a hook that mutated a declared input must never be cached"
+    );
+    assert_eq!(read(root, "runs.log"), "xx", "must re-execute, not hit");
+}
+
+#[test]
+fn cache_none_bypasses_caching_entirely() {
+    let repo = init_repo();
+    let root = repo.path();
+    commit_tracked(root, "input.txt", "data\n");
+    let cache_dir = TempDir::new().unwrap();
+
+    let make = || {
+        let mut hook = Hook::run("counter", "printf x >> runs.log");
+        hook.pass_filenames = false;
+        hook.cache = HookCache::MatchedFiles;
+        hook
+    };
+
+    // First run WITH cache stores an entry.
+    let mut req1 = request(root, pre_commit(vec![make()]));
+    req1.files = vec![PathBuf::from("input.txt")];
+    req1.cache = Some(cache_at(&cache_dir));
+    run(req1).expect("run");
+    assert_eq!(read(root, "runs.log"), "x");
+
+    // Second run with cache = None must bypass the stored entry and re-execute.
+    let mut req2 = request(root, pre_commit(vec![make()]));
+    req2.files = vec![PathBuf::from("input.txt")];
+    req2.cache = None;
+    let second = run(req2).expect("run");
+    assert!(!second.stages[0].hooks[0].cached);
+    assert_eq!(read(root, "runs.log"), "xx", "cache=None must re-execute");
 }

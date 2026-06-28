@@ -23,18 +23,19 @@
 //! modified its matched files has those files `git add`ed, and execution
 //! continues.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
+use poly_cache::{CacheKey, InputDigest, Namespace, ResultCache};
 use rayon::prelude::*;
 use tracing::warn;
 
-use crate::filter::{FileTagCache, HookFileFilter};
+use crate::filter::{FilePattern, FileTagCache, HookFileFilter};
 use crate::git;
 use crate::model::{
-    Hook, HookCommand, HookOutcome, HookRunOutcome, HookRunRequest, HookStatus, SkipReason,
-    StageOutcome, StageSpec, StageStatus, StepOutcome,
+    Hook, HookCache, HookCommand, HookOutcome, HookRunOutcome, HookRunRequest, HookStatus,
+    SkipReason, StageOutcome, StageSpec, StageStatus, StepOutcome,
 };
 use crate::process::Cmd;
 use crate::reporter::CaptureSink;
@@ -165,15 +166,45 @@ fn run_hooks(
         let outcomes = run_group(request, spec, prepared, &group, serial);
 
         let mut abort = false;
-        for (&pos, mut outcome) in group.iter().zip(outcomes) {
+        for (&pos, (mut outcome, store_key)) in group.iter().zip(outcomes) {
             let hook = &spec.hooks[pos];
-            if matches!(outcome.status, HookStatus::Passed) && hook.stage_fixed {
-                let modified = modified_matched(&request.root, &prepared[pos].matched)?;
-                if !modified.is_empty() {
-                    git::add(&request.root, &modified)?;
-                    outcome.files_modified = true;
+            let passed = matches!(outcome.status, HookStatus::Passed);
+
+            // The matched-file modification set is needed for `stage_fixed`
+            // re-staging *and* to gate caching: a hook that mutated its inputs
+            // must never be stored. Compute it once, only when it can matter.
+            let mut modified = if passed && (hook.stage_fixed || store_key.is_some()) {
+                modified_matched(&request.root, &prepared[pos].matched)?
+            } else {
+                Vec::new()
+            };
+
+            if passed && hook.stage_fixed && !modified.is_empty() {
+                git::add(&request.root, &modified)?;
+                outcome.files_modified = true;
+            }
+
+            // For `DeclaredInputs` caching the digested set differs from
+            // `matched`; a mutation to a declared input outside `matched` must
+            // also block storing, or a later hit would drop that side effect.
+            if modified.is_empty() && store_key.is_some() {
+                if let HookCache::DeclaredInputs(pattern) = &hook.cache {
+                    let declared = declared_input_files(&request.root, pattern)?;
+                    modified = modified_matched(&request.root, &declared)?;
                 }
             }
+
+            // Store only a passing, tree-clean run. `store_key` is `Some` only on
+            // a cache miss for a cacheable hook, so the bytes are written once. A
+            // store failure (full / read-only cache) must not fail the hook run.
+            if let (Some(cache), Some(key)) = (request.cache.as_ref(), &store_key) {
+                if passed && modified.is_empty() {
+                    if let Err(error) = cache.put(Namespace::Hook, key, &outcome.output) {
+                        warn!(hook = %hook.id, "failed to store hook result cache entry: {error:#}");
+                    }
+                }
+            }
+
             if outcome.status.is_failure() {
                 any_failed = true;
                 if hook.fail_fast {
@@ -190,20 +221,40 @@ fn run_hooks(
     Ok((collected, any_failed))
 }
 
+/// Run one priority group, returning each hook's outcome paired with the cache
+/// key under which it should be stored (`Some` only on a cache miss for a
+/// cacheable hook; `None` for skips, hits, and non-cacheable hooks).
 fn run_group(
     request: &HookRunRequest,
     spec: &StageSpec,
     prepared: &[Prepared],
     group: &[usize],
     serial: bool,
-) -> Vec<HookOutcome> {
-    let run_one = |&pos: &usize| -> HookOutcome {
+) -> Vec<(HookOutcome, Option<CacheKey>)> {
+    let run_one = |&pos: &usize| -> (HookOutcome, Option<CacheKey>) {
         let hook = &spec.hooks[pos];
         if let Some(reason) = &prepared[pos].skip {
-            return skipped_outcome(hook, pos, reason.clone());
+            return (skipped_outcome(hook, pos, reason.clone()), None);
         }
-        let refs: Vec<&Path> = prepared[pos].matched.iter().map(AsRef::as_ref).collect();
-        run_hook(&request.root, hook, pos, &refs)
+        let matched = &prepared[pos].matched;
+
+        // Derive the key once (reading input bytes at most once); `None` when
+        // caching is off, the hook is not cacheable, or an input is unreadable.
+        let key = request
+            .cache
+            .as_ref()
+            .and_then(|_| cache_key(&request.root, hook, matched));
+
+        // Lookup: a hit short-circuits execution. Only passing, tree-clean runs
+        // are ever stored, so a hit always means "passed cleanly".
+        if let (Some(cache), Some(key)) = (request.cache.as_ref(), key.as_ref()) {
+            if let Some(output) = cache.get(Namespace::Hook, key) {
+                return (cached_outcome(hook, pos, output), None);
+            }
+        }
+
+        let refs: Vec<&Path> = matched.iter().map(AsRef::as_ref).collect();
+        (run_hook(&request.root, hook, pos, &refs), key)
     };
 
     if serial {
@@ -242,6 +293,7 @@ fn run_hook(root: &Path, hook: &Hook, position: usize, matched: &[&Path]) -> Hoo
         files_modified: false,
         output,
         duration: start.elapsed(),
+        cached: false,
     }
 }
 
@@ -252,7 +304,22 @@ fn skipped_outcome(hook: &Hook, position: usize, reason: SkipReason) -> HookOutc
         status: HookStatus::Skipped(reason),
         files_modified: false,
         output: Vec::new(),
-        duration: std::time::Duration::ZERO,
+        duration: Duration::ZERO,
+        cached: false,
+    }
+}
+
+/// Build the outcome for a hook served from the result cache: a passing,
+/// zero-duration run carrying the stored output bytes.
+fn cached_outcome(hook: &Hook, position: usize, output: Vec<u8>) -> HookOutcome {
+    HookOutcome {
+        id: hook.id.clone(),
+        position,
+        status: HookStatus::Passed,
+        files_modified: false,
+        output,
+        duration: Duration::ZERO,
+        cached: true,
     }
 }
 
@@ -437,6 +504,98 @@ fn modified_matched(
         }
     }
     Ok(modified)
+}
+
+// ── Result-cache key derivation ─────────────────────────────────────────────
+
+/// Derive the [`Namespace::Hook`] cache key for `hook`, or `None` when the hook
+/// is not cacheable or its inputs cannot be read.
+///
+/// The key folds in the hook id, a command-identity `version`, the declared
+/// environment (as the `args` table), and a content digest of the relevant
+/// input files — so a changed command, env, or input invalidates the entry.
+fn cache_key(root: &Path, hook: &Hook, matched: &[PathBuf]) -> Option<CacheKey> {
+    let digest = match &hook.cache {
+        HookCache::Disabled => return None,
+        HookCache::MatchedFiles => matched_files_digest(root, matched)?,
+        HookCache::DeclaredInputs(pattern) => declared_inputs_digest(root, pattern)?,
+    };
+    let version = hook_version(hook);
+    let args = hook_env_table(hook);
+    Some(ResultCache::key(
+        Namespace::Hook,
+        &hook.id,
+        &version,
+        &args,
+        &digest,
+    ))
+}
+
+/// Digest the hook's matched files (each as `(relative_path, bytes)`).
+///
+/// Returns `None` if any matched file cannot be read, which skips caching this
+/// hook rather than risk a key derived from partial inputs.
+fn matched_files_digest(root: &Path, matched: &[PathBuf]) -> Option<InputDigest> {
+    read_digest(root, matched.iter().cloned())
+}
+
+/// Digest every tracked file matching `pattern`, resolved against the whole
+/// tree (`git ls-files`) rather than just the changed set.
+///
+/// Returns `None` if the tree cannot be listed or a matching file is unreadable.
+fn declared_inputs_digest(root: &Path, pattern: &FilePattern) -> Option<InputDigest> {
+    let selected = declared_input_files(root, pattern).ok()?;
+    read_digest(root, selected.into_iter())
+}
+
+/// The tracked files matching a `DeclaredInputs` pattern (`git ls-files` filtered
+/// by the glob). Used both for the digest and the cache-store mutation guard.
+fn declared_input_files(root: &Path, pattern: &FilePattern) -> anyhow::Result<Vec<PathBuf>> {
+    Ok(git::list_files(root)?
+        .into_iter()
+        .filter(|path| pattern.is_match(path))
+        .collect())
+}
+
+/// Read the given repo-relative paths and fold them into an [`InputDigest`],
+/// sorted by path for a deterministic key. `None` if any read fails.
+fn read_digest(root: &Path, paths: impl Iterator<Item = PathBuf>) -> Option<InputDigest> {
+    let mut files: Vec<(String, Vec<u8>)> = Vec::new();
+    for path in paths {
+        let bytes = std::fs::read(root.join(&path)).ok()?;
+        files.push((path.to_string_lossy().into_owned(), bytes));
+    }
+    files.sort_by(|a, b| a.0.cmp(&b.0));
+    Some(ResultCache::file_set_digest(
+        files
+            .iter()
+            .map(|(path, bytes)| (path.as_str(), bytes.as_slice())),
+    ))
+}
+
+/// A string capturing the hook's command identity, so a changed command, script
+/// target, argument list, or file-passing mode invalidates the cache key.
+fn hook_version(hook: &Hook) -> String {
+    let base = match &hook.command {
+        HookCommand::Run(line) => line.clone(),
+        HookCommand::Script { path, runner } => format!("script\0{runner:?}\0{path}"),
+    };
+    // `pass_filenames` changes the effective argv (per-file vs aggregate), so a
+    // toggle must invalidate even when command, args, env, and inputs are equal.
+    format!(
+        "{base}\0{}\0pass_filenames={}",
+        hook.args.join("\0"),
+        hook.pass_filenames
+    )
+}
+
+/// The hook's declared environment as a TOML table, so an env change invalidates
+/// the cache key. The `BTreeMap` is already ordered, giving a stable table.
+fn hook_env_table(hook: &Hook) -> toml::Table {
+    hook.env
+        .iter()
+        .map(|(key, value)| (key.clone(), toml::Value::String(value.clone())))
+        .collect()
 }
 
 /// Estimate the argv bytes consumed by everything except the matched files, so

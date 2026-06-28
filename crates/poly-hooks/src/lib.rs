@@ -64,8 +64,8 @@ pub mod pty;
 // Re-export the most commonly used types at the crate root for convenience.
 pub use hook_impl::{PushInfo, RunInputs};
 pub use model::{
-    Hook, HookCommand, HookOutcome, HookRunOutcome, HookRunRequest, HookStatus, SkipReason,
-    StageOutcome, StageSpec, StageStatus, StepOutcome,
+    Hook, HookCache, HookCommand, HookOutcome, HookRunOutcome, HookRunRequest, HookStatus,
+    SkipReason, StageOutcome, StageSpec, StageStatus, StepOutcome,
 };
 pub use process::{Cmd, OutputSink};
 pub use reporter::{CaptureSink, HookRunReporter};

@@ -252,6 +252,10 @@ impl SerializedArgs {
 ///
 /// When constructed with `enabled = false`, every `get` returns `None` and
 /// every `put` is a no-op.  The directory is not created.
+///
+/// `Clone` duplicates the lightweight handle (root path + enabled flag); both
+/// clones address the same on-disk cache directory.
+#[derive(Debug, Clone)]
 pub struct ResultCache {
     /// `<repo>/.polylint/cache/`
     root: PathBuf,

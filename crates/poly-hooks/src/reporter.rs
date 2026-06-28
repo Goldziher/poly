@@ -240,6 +240,8 @@ impl HookRunReporter {
             };
             let suffix = if hook.files_modified {
                 " (files modified)"
+            } else if hook.cached {
+                " (cached)"
             } else {
                 ""
             };

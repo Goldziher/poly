@@ -18,12 +18,15 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use poly_config::{
-    BuiltinHook, Guard, HooksConfig, Job, Patterns, Stage as ConfigStage, StageConfig,
+    BuiltinHook, Guard, HookCacheMode, HooksConfig, Job, Patterns, Stage as ConfigStage,
+    StageConfig,
 };
 use poly_hooks::Stage as HookStage;
 use poly_hooks::filter::FilePattern;
 use poly_hooks::identify::TagSet;
 use poly_hooks::model::{Hook, HookCommand, StageSpec};
+
+mod cache;
 
 /// Map a config [`ConfigStage`] to the runner's [`HookStage`].
 ///
@@ -75,17 +78,20 @@ pub fn from_hook_stage(stage: HookStage) -> ConfigStage {
 ///
 /// `poly_bin` is the absolute path of the running `poly` binary (used as the
 /// entry for builtins); `files` is the resolved candidate file set, used only
-/// for `{staged_files}` / `{all_files}` template substitution.
+/// for `{staged_files}` / `{all_files}` template substitution; `cache_mode` is
+/// the global `[cache.results] hooks` mode, used to resolve each hook's
+/// effective result-cache policy.
 ///
 /// # Errors
 ///
-/// Returns `Err` if a builtin's configured stage name is invalid or a job's
-/// file glob fails to compile.
+/// Returns `Err` if a builtin's configured stage name is invalid, or a job's
+/// file glob (or cache-input glob) fails to compile.
 pub fn lower_stage(
     hooks: &HooksConfig,
     poly_bin: &Path,
     stage: HookStage,
     files: &[PathBuf],
+    cache_mode: &HookCacheMode,
 ) -> Result<StageSpec> {
     let config_stage = from_hook_stage(stage);
     let stage_config = hooks.stage_configs.get(&config_stage);
@@ -100,14 +106,14 @@ pub fn lower_stage(
     }
 
     let mut entries: Vec<Hook> = Vec::new();
-    append_builtins(hooks, poly_bin, config_stage, &mut entries)?;
+    append_builtins(hooks, poly_bin, config_stage, cache_mode, &mut entries)?;
 
     if let Some(cfg) = stage_config {
-        append_jobs(hooks, stage, cfg, files, &mut entries)?;
+        append_jobs(hooks, stage, cfg, files, cache_mode, &mut entries)?;
     }
     // `[hooks.always]` jobs are appended to every concrete stage.
     if let Some(always) = hooks.stage_configs.get(&ConfigStage::Always) {
-        append_jobs(hooks, stage, always, files, &mut entries)?;
+        append_jobs(hooks, stage, always, files, cache_mode, &mut entries)?;
     }
 
     // Priority order; `sort_by_key` is stable, so equal-priority hooks keep
@@ -136,6 +142,7 @@ fn append_builtins(
     hooks: &HooksConfig,
     poly_bin: &Path,
     config_stage: ConfigStage,
+    cache_mode: &HookCacheMode,
     out: &mut Vec<Hook>,
 ) -> Result<()> {
     let poly = shell_quote(&poly_bin.to_string_lossy());
@@ -148,7 +155,9 @@ fn append_builtins(
             config_stage,
         )?
     {
-        out.push(Hook::run("polylint", format!("{poly} lint")));
+        let mut hook = Hook::run("polylint", format!("{poly} lint"));
+        hook.cache = cache::builtin_cache(cache_mode);
+        out.push(hook);
     }
     if hooks.builtin.polyfmt.enabled
         && builtin_runs_on(
@@ -158,7 +167,9 @@ fn append_builtins(
             config_stage,
         )?
     {
-        out.push(Hook::run("polyfmt", format!("{poly} fmt --check")));
+        let mut hook = Hook::run("polyfmt", format!("{poly} fmt --check"));
+        hook.cache = cache::builtin_cache(cache_mode);
+        out.push(hook);
     }
     if hooks.builtin.commit.enabled
         && builtin_runs_on(
@@ -209,6 +220,7 @@ fn append_jobs(
     stage: HookStage,
     cfg: &StageConfig,
     files: &[PathBuf],
+    cache_mode: &HookCacheMode,
     out: &mut Vec<Hook>,
 ) -> Result<()> {
     for (label, job) in cfg.labeled_jobs() {
@@ -218,7 +230,9 @@ fn append_jobs(
         if job_excluded_by_tags(job, &cfg.exclude_tags) {
             continue;
         }
-        out.push(job_to_hook(hooks, stage, cfg, &label, job, files)?);
+        out.push(job_to_hook(
+            hooks, stage, cfg, &label, job, files, cache_mode,
+        )?);
     }
     Ok(())
 }
@@ -230,6 +244,7 @@ fn job_to_hook(
     label: &str,
     job: &Job,
     files: &[PathBuf],
+    cache_mode: &HookCacheMode,
 ) -> Result<Hook> {
     // Per-job env merged over the global `[hooks].env` (job wins).
     let mut env: BTreeMap<String, String> = hooks.env.clone();
@@ -249,6 +264,8 @@ fn job_to_hook(
     let scoped = filter_files(files, files_pattern.as_ref(), exclude_pattern.as_ref());
     let (command, pass_filenames) = build_command(job, &scoped)?;
 
+    let cache = cache::job_cache(job, cache_mode)?;
+
     Ok(Hook {
         id: label.to_string(),
         stage,
@@ -259,6 +276,7 @@ fn job_to_hook(
         exclude: exclude_pattern,
         types,
         priority: job.priority,
+        cache,
         // `parallel`/`piped` are stage-level in the lefthook schema. `piped`
         // (serial, abort-on-first-failure) maps to `require_serial` + `fail_fast`.
         parallel: cfg.parallel,
@@ -493,7 +511,14 @@ polylint = true
 polyfmt = true
 "#,
         );
-        let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[]).unwrap();
+        let spec = lower_stage(
+            &hooks,
+            &poly(),
+            HookStage::PreCommit,
+            &[],
+            &HookCacheMode::Safe,
+        )
+        .unwrap();
         assert_eq!(ids(&spec), vec!["polylint", "polyfmt"]);
         let HookCommand::Run(line) = &spec.hooks[0].command else {
             panic!("expected run command");
@@ -512,10 +537,24 @@ commit = true
 "#,
         );
         // Not present on pre-commit...
-        let pre = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[]).unwrap();
+        let pre = lower_stage(
+            &hooks,
+            &poly(),
+            HookStage::PreCommit,
+            &[],
+            &HookCacheMode::Safe,
+        )
+        .unwrap();
         assert!(pre.hooks.is_empty());
         // ...but present on commit-msg, with file passing for the message file.
-        let msg = lower_stage(&hooks, &poly(), HookStage::CommitMsg, &[]).unwrap();
+        let msg = lower_stage(
+            &hooks,
+            &poly(),
+            HookStage::CommitMsg,
+            &[],
+            &HookCacheMode::Safe,
+        )
+        .unwrap();
         assert_eq!(ids(&msg), vec!["poly-commit"]);
         assert!(msg.hooks[0].pass_filenames);
     }
@@ -537,7 +576,14 @@ stage_fixed = true
 files = "**/*.rs"
 "#,
         );
-        let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[]).unwrap();
+        let spec = lower_stage(
+            &hooks,
+            &poly(),
+            HookStage::PreCommit,
+            &[],
+            &HookCacheMode::Safe,
+        )
+        .unwrap();
         assert_eq!(ids(&spec), vec!["fmt"]);
         let hook = &spec.hooks[0];
         assert!(matches!(&hook.command, HookCommand::Run(line) if line == "cargo fmt"));
@@ -560,7 +606,14 @@ script = "lint.sh"
 runner = "bash"
 "#,
         );
-        let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[]).unwrap();
+        let spec = lower_stage(
+            &hooks,
+            &poly(),
+            HookStage::PreCommit,
+            &[],
+            &HookCacheMode::Safe,
+        )
+        .unwrap();
         let HookCommand::Script { path, runner } = &spec.hooks[0].command else {
             panic!("expected script command");
         };
@@ -585,7 +638,14 @@ run = "echo late"
 priority = 5
 "#,
         );
-        let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[]).unwrap();
+        let spec = lower_stage(
+            &hooks,
+            &poly(),
+            HookStage::PreCommit,
+            &[],
+            &HookCacheMode::Safe,
+        )
+        .unwrap();
         // `early` (-5) < polylint (0) < `late` (5).
         assert_eq!(ids(&spec), vec!["early", "polylint", "late"]);
     }
@@ -604,9 +664,23 @@ name = "commit-only"
 run = "echo commit"
 "#,
         );
-        let pre = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[]).unwrap();
+        let pre = lower_stage(
+            &hooks,
+            &poly(),
+            HookStage::PreCommit,
+            &[],
+            &HookCacheMode::Safe,
+        )
+        .unwrap();
         assert_eq!(ids(&pre), vec!["commit-only", "everywhere"]);
-        let push = lower_stage(&hooks, &poly(), HookStage::PrePush, &[]).unwrap();
+        let push = lower_stage(
+            &hooks,
+            &poly(),
+            HookStage::PrePush,
+            &[],
+            &HookCacheMode::Safe,
+        )
+        .unwrap();
         assert_eq!(ids(&push), vec!["everywhere"]);
     }
 
@@ -621,7 +695,14 @@ files = ["src/**/*.rs"]
 exclude = "src/generated/**"
 "#,
         );
-        let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[]).unwrap();
+        let spec = lower_stage(
+            &hooks,
+            &poly(),
+            HookStage::PreCommit,
+            &[],
+            &HookCacheMode::Safe,
+        )
+        .unwrap();
         let hook = &spec.hooks[0];
         assert!(hook.files.as_ref().unwrap().is_match(Path::new("src/a.rs")));
         assert!(
@@ -650,7 +731,14 @@ name = "kept"
 run = "z"
 "#,
         );
-        let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[]).unwrap();
+        let spec = lower_stage(
+            &hooks,
+            &poly(),
+            HookStage::PreCommit,
+            &[],
+            &HookCacheMode::Safe,
+        )
+        .unwrap();
         assert_eq!(ids(&spec), vec!["kept"]);
     }
 
@@ -664,7 +752,14 @@ skip = true
 run = "x"
 "#,
         );
-        let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[]).unwrap();
+        let spec = lower_stage(
+            &hooks,
+            &poly(),
+            HookStage::PreCommit,
+            &[],
+            &HookCacheMode::Safe,
+        )
+        .unwrap();
         assert!(spec.hooks.is_empty());
     }
 
@@ -678,7 +773,14 @@ run = "prettier --write {staged_files}"
 "#,
         );
         let files = vec![PathBuf::from("a.js"), PathBuf::from("b.js")];
-        let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &files).unwrap();
+        let spec = lower_stage(
+            &hooks,
+            &poly(),
+            HookStage::PreCommit,
+            &files,
+            &HookCacheMode::Safe,
+        )
+        .unwrap();
         let hook = &spec.hooks[0];
         let HookCommand::Run(line) = &hook.command else {
             panic!("expected run command");
@@ -698,7 +800,14 @@ files = "**/*.rs"
 "#,
         );
         let files = vec![PathBuf::from("src/a.rs"), PathBuf::from("README.md")];
-        let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &files).unwrap();
+        let spec = lower_stage(
+            &hooks,
+            &poly(),
+            HookStage::PreCommit,
+            &files,
+            &HookCacheMode::Safe,
+        )
+        .unwrap();
         let HookCommand::Run(line) = &spec.hooks[0].command else {
             panic!("expected run command");
         };
@@ -721,7 +830,14 @@ run = "echo {staged_files}"
 "#,
         );
         let files = vec![PathBuf::from("my file.js")];
-        let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &files).unwrap();
+        let spec = lower_stage(
+            &hooks,
+            &poly(),
+            HookStage::PreCommit,
+            &files,
+            &HookCacheMode::Safe,
+        )
+        .unwrap();
         let HookCommand::Run(line) = &spec.hooks[0].command else {
             panic!("expected run command");
         };
@@ -739,7 +855,14 @@ polylint = true
 skip = true
 "#,
         );
-        let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[]).unwrap();
+        let spec = lower_stage(
+            &hooks,
+            &poly(),
+            HookStage::PreCommit,
+            &[],
+            &HookCacheMode::Safe,
+        )
+        .unwrap();
         assert!(
             spec.hooks.is_empty(),
             "stage skip must suppress builtins too"
@@ -758,7 +881,14 @@ after = ["echo a", "echo b"]
 run = "x"
 "#,
         );
-        let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[]).unwrap();
+        let spec = lower_stage(
+            &hooks,
+            &poly(),
+            HookStage::PreCommit,
+            &[],
+            &HookCacheMode::Safe,
+        )
+        .unwrap();
         assert_eq!(spec.precondition.as_deref(), Some("command -v cargo"));
         assert_eq!(spec.before, vec!["echo before"]);
         assert_eq!(spec.after, vec!["echo a", "echo b"]);
@@ -780,7 +910,14 @@ run = "y"
 tags = ["slow"]
 "#,
         );
-        let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[]).unwrap();
+        let spec = lower_stage(
+            &hooks,
+            &poly(),
+            HookStage::PreCommit,
+            &[],
+            &HookCacheMode::Safe,
+        )
+        .unwrap();
         assert_eq!(ids(&spec), vec!["fast"]);
     }
 }

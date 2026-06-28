@@ -16,6 +16,7 @@ use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
+use poly_cache::ResultCache;
 use poly_config::{PolyConfig, Stage as ConfigStage};
 use poly_hooks::stage::RunInputMode;
 
@@ -65,6 +66,10 @@ pub struct RunArgs {
     /// Number of parallel jobs (default: env / all logical cores).
     #[arg(short = 'j', long)]
     pub jobs: Option<usize>,
+
+    /// Bypass the result cache for this run (neither read nor write).
+    #[arg(long)]
+    pub no_cache: bool,
 }
 
 /// `poly hooks install` arguments.
@@ -102,6 +107,10 @@ pub struct HookImplArgs {
     #[arg(short = 'j', long)]
     pub jobs: Option<usize>,
 
+    /// Bypass the result cache for this run (neither read nor write).
+    #[arg(long)]
+    pub no_cache: bool,
+
     /// The raw git hook arguments, passed after `--`.
     #[arg(last = true)]
     pub git_args: Vec<OsString>,
@@ -135,7 +144,14 @@ fn run_stage(args: RunArgs) -> Result<ExitCode> {
     let message_file = resolve_message_file(stage, args.message_file)?;
     let root = poly_hooks::git::get_root().context("failed to resolve the git repository root")?;
     let files = candidate_files(&root, stage, args.all_files, None, None)?;
-    let spec = lower::lower_stage(&config.hooks, &poly_bin, stage, &files)?;
+    let cache = open_result_cache(&config, &root, args.no_cache)?;
+    let spec = lower::lower_stage(
+        &config.hooks,
+        &poly_bin,
+        stage,
+        &files,
+        &config.cache.results.hooks,
+    )?;
 
     let request = poly_hooks::HookRunRequest {
         root,
@@ -143,6 +159,7 @@ fn run_stage(args: RunArgs) -> Result<ExitCode> {
         message_file,
         stages: vec![spec],
         concurrency: args.jobs,
+        cache,
     };
     run_and_report(request)
 }
@@ -229,7 +246,14 @@ fn hook_impl(args: HookImplArgs) -> Result<ExitCode> {
         inputs.from_ref.as_deref(),
         inputs.to_ref.as_deref(),
     )?;
-    let spec = lower::lower_stage(&config.hooks, &poly_bin, stage, &files)?;
+    let cache = open_result_cache(&config, &root, args.no_cache)?;
+    let spec = lower::lower_stage(
+        &config.hooks,
+        &poly_bin,
+        stage,
+        &files,
+        &config.cache.results.hooks,
+    )?;
 
     let request = poly_hooks::HookRunRequest {
         root,
@@ -237,6 +261,7 @@ fn hook_impl(args: HookImplArgs) -> Result<ExitCode> {
         message_file: inputs.message_file,
         stages: vec![spec],
         concurrency: args.jobs,
+        cache,
     };
     run_and_report(request)
 }
@@ -267,6 +292,25 @@ fn candidate_files(
             }
         }
     }
+}
+
+/// Open the tier-1 result cache for a hook run, honouring `[cache] enabled`,
+/// the optional `[cache] dir` override, and the `--no-cache` flag.
+///
+/// Returns `None` when caching is disabled — the runner then neither reads nor
+/// writes cache entries.
+fn open_result_cache(
+    config: &PolyConfig,
+    root: &Path,
+    no_cache: bool,
+) -> Result<Option<ResultCache>> {
+    let enabled = config.cache.enabled && !no_cache;
+    let cache = match &config.cache.dir {
+        Some(dir) => ResultCache::open(PathBuf::from(dir), enabled),
+        None => ResultCache::open_from(root, enabled),
+    }
+    .context("failed to open the hook result cache")?;
+    Ok(enabled.then_some(cache))
 }
 
 fn run_and_report(request: poly_hooks::HookRunRequest) -> Result<ExitCode> {

@@ -12,9 +12,38 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use poly_cache::ResultCache;
+
 use crate::filter::FilePattern;
 use crate::identify::TagSet;
 use crate::stage::Stage;
+
+/// How a hook participates in tier-1 result caching.
+///
+/// The runner only ever stores an entry for a **passing, tree-clean** run, so a
+/// cache hit always means "passed without modifying its inputs".
+// `DeclaredInputs` carries a [`FilePattern`] (which wraps a compiled regex /
+// glob set), and those are not `PartialEq`/`Eq`, so this enum cannot derive
+// them — use [`HookCache::is_enabled`] / `matches!` instead of `==`.
+#[derive(Debug, Clone, Default)]
+pub enum HookCache {
+    /// Never cached.
+    #[default]
+    Disabled,
+    /// Cache keyed by the content digest of the hook's matched files.
+    MatchedFiles,
+    /// Cache keyed by the content digest of these declared input globs
+    /// (resolved against the whole tracked tree, not just the changed set).
+    DeclaredInputs(FilePattern),
+}
+
+impl HookCache {
+    /// Whether this policy permits the hook to be cached at all.
+    #[must_use]
+    pub fn is_enabled(&self) -> bool {
+        !matches!(self, HookCache::Disabled)
+    }
+}
 
 /// What a [`Hook`] executes.
 #[derive(Debug, Clone)]
@@ -88,6 +117,8 @@ pub struct Hook {
     pub pass_filenames: bool,
     /// Message printed when the hook fails.
     pub fail_text: Option<String>,
+    /// Tier-1 result-cache policy (default [`HookCache::Disabled`]).
+    pub cache: HookCache,
 }
 
 impl Hook {
@@ -139,6 +170,11 @@ pub struct HookRunRequest {
     pub stages: Vec<StageSpec>,
     /// Explicit concurrency override (`-j`); `None` → env / CPU count.
     pub concurrency: Option<usize>,
+    /// Tier-1 result cache; `None` disables hook result caching for this run.
+    ///
+    /// [`ResultCache`] is `Send + Sync`, so the shared handle is borrowed
+    /// directly inside the rayon pool — no `Arc` wrapper is needed.
+    pub cache: Option<ResultCache>,
 }
 
 /// The result of running all requested stages.
@@ -221,6 +257,9 @@ pub struct HookOutcome {
     pub output: Vec<u8>,
     /// Wall-clock execution time.
     pub duration: Duration,
+    /// Whether this outcome was served from the tier-1 result cache (the hook
+    /// body was not executed).
+    pub cached: bool,
 }
 
 /// Pass/fail/skip status shared by hooks and steps.

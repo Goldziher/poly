@@ -187,6 +187,60 @@ fn hook_impl_pre_commit_runs_and_restages() {
 }
 
 #[test]
+fn run_pre_commit_caches_second_unchanged_run_and_no_cache_forces_rerun() {
+    let repo = init_repo();
+    let root = repo.path();
+    // A declared-inputs job (Safe mode default) that appends to a sentinel each
+    // real execution. tracked.txt is the declared input.
+    write(
+        root,
+        "poly.toml",
+        r#"
+[hooks.pre-commit]
+[[hooks.pre-commit.jobs]]
+name = "sentinel"
+run = "printf x >> runs.log"
+cache = { inputs = ["tracked.txt"] }
+"#,
+    );
+    write(root, "tracked.txt", "content");
+    git(root, &["add", "tracked.txt"]);
+    git(root, &["commit", "-qm", "init"]);
+
+    // First run executes the job.
+    let first = poly_hooks(root, &["run", "pre-commit"]);
+    assert!(
+        first.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    assert_eq!(std::fs::read_to_string(root.join("runs.log")).unwrap(), "x");
+
+    // Second run over the unchanged repo is served from cache.
+    let second = poly_hooks(root, &["run", "pre-commit"]);
+    assert!(second.status.success());
+    let report = String::from_utf8_lossy(&second.stdout);
+    assert!(
+        report.contains("(cached)"),
+        "second run not cached:\n{report}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join("runs.log")).unwrap(),
+        "x",
+        "cached hook must not re-execute"
+    );
+
+    // --no-cache forces a real re-run.
+    let third = poly_hooks(root, &["run", "pre-commit", "--no-cache"]);
+    assert!(third.status.success());
+    assert_eq!(
+        std::fs::read_to_string(root.join("runs.log")).unwrap(),
+        "xx",
+        "--no-cache must re-execute"
+    );
+}
+
+#[test]
 fn install_writes_a_shim_that_git_commit_triggers() {
     let repo = init_repo();
     let root = repo.path();
