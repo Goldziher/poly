@@ -28,8 +28,14 @@ Project-specific conventions baked into context so they ship into every AI tool'
 
 ## Dependency policy
 
-- **Pure-Rust, in-process, no subprocess, no system dependency — ever.** Every wrapped tool is
-  compiled in as a crate dependency; we never shell out to an installed binary.
+- **Pure-Rust, in-process, no subprocess, no system dependency — by default.** Every wrapped
+  tool is compiled in as a crate dependency; engines never shell out. **One scoped, opt-in
+  exception:** *native-toolchain backends* (see crate-layout) may invoke a language's canonical
+  first-party CLI — `gofmt`, `rustfmt`, `zig fmt`, … — when it is present on the host. They are
+  **off by default**, and when the tool is absent the language falls through to the tree-sitter
+  tier, so the zero-dependency guarantee still holds for everyone who hasn't opted in. (`poly
+  hooks`/polyhooks is a separate, pre-existing exception, since running foreign hooks inherently
+  shells out.)
 - **Prefer crates.io; use a pinned git dependency when the library we need isn't published**
   (or only stale/yanked versions are). Several upstream tools ship a usable library only in
   their monorepo — oxc's `oxc_formatter` (oxfmt) and `oxc_linter` (oxlint), and ruff's

@@ -6,7 +6,9 @@ priority: high
 
 polylint is a Cargo **workspace** that ships two self-contained binaries driven by one
 config: `polylint` (lint) and `polyfmt` (format). Everything runs **in-process, pure Rust** —
-no subprocess, no system dependency, ever. A tool is consumed as a crate dependency: from
+no subprocess, no system dependency by default (two scoped exceptions: opt-in
+**native-toolchain backends** and the `poly hooks` engine — see Coverage tiers below). A tool is
+consumed as a crate dependency: from
 crates.io when published, otherwise from a **pinned git `rev`** of its upstream repo (e.g.
 oxc's `oxc_formatter`/`oxc_linter`, ruff's internals). We do **not** vendor and we do **not**
 publish our own crates to crates.io — binaries are distributed as prebuilt release artifacts
@@ -48,6 +50,9 @@ plus an installer (see release-versioning).
   - `whitespace.rs` / `treesitter.rs` — the **tier-2 generic formatter** built on
     `tree-sitter-language-pack`: CST-driven structural reindent + whitespace normalization,
     the catch-all for every language without a native backend.
+  - `native_tool.rs` — the **opt-in native-toolchain backend** (table-driven): wraps a
+    language's canonical first-party CLI (`gofmt`, `rustfmt`, `zig fmt`, …) as a subprocess
+    when present and enabled. One file, one table — not one file per tool.
 
 ## `crates/polylint/` and `crates/polyfmt/` — the binaries (thin)
 
@@ -76,16 +81,40 @@ must change whenever output could change, because it is part of the cache key; `
 returns `Unchanged` rather than echoing input so the runner can skip writes; `lint`/`format`
 default to no-ops for engines that lack a capability (declare honestly via `capabilities()`).
 
-## Two-tier coverage
+## Coverage tiers
 
-1. **Native Rust crate backend** where one exists — highest-fidelity output, registered for
-   its specific languages in `registry.rs`.
-2. **Tree-sitter generic tier** (`whitespace.rs` / `treesitter.rs`) — the catch-all for
-   *everything else* (shell, Go, Java, Kotlin, Ruby, PHP, Elixir, C/C++, Dockerfile, protobuf,
-   Rust, and the long tail of 300+ grammars). Best-effort structural reindent, pure Rust,
-   grammars fetched on demand → still zero system deps. This is the coverage mechanism, not a
-   fallback to avoid; native ports can later upgrade individual languages from tier-2 to
+Three backend mechanisms, in resolution order per language:
+
+1. **Native Rust crate backend (tier-1)** where one exists — highest-fidelity, fully
+   in-process, zero deps; registered for its specific languages in `registry.rs`.
+2. **Tree-sitter generic tier (tier-2)** (`whitespace.rs` / `treesitter.rs`) — the catch-all
+   for *everything else* (shell, Go, Java, Kotlin, Ruby, PHP, Elixir, C/C++, Dockerfile,
+   protobuf, Rust, and the long tail of 300+ grammars). Best-effort structural reindent, pure
+   Rust, grammars fetched on demand → still zero system deps. This is the coverage mechanism,
+   not a fallback to avoid; native ports can later upgrade individual languages from tier-2 to
    tier-1 fidelity.
+3. **Native-toolchain backend (opt-in)** (`native_tool.rs`) — for languages whose *canonical*
+   formatter/linter is a first-party CLI with no usable Rust library: Go's `gofmt`, Rust's
+   `rustfmt`, Zig's `zig fmt`, and the like. This is the **single, scoped exception** to the
+   no-subprocess rule (the `poly hooks` engine is the other, separate one). It exists because no
+   pure-Rust crate can match these tools, and reimplementing them is a disproportionate
+   maintenance sink. Strict discipline keeps the exception honest:
+
+   - **Opt-in, off by default.** Enabled per-tool via config (`[fmt.<lang>.<tool>] enabled =
+     true`). Output then depends on the host tool's presence and version, which is at odds with
+     reproducibility — so it is a deliberate opt-in, never the default, and CI must pin the
+     toolchain. Default-off means the zero-dependency promise is intact for everyone who hasn't
+     asked for this.
+   - **Capability-gated, graceful degradation.** Probe for the tool once (cached); declare the
+     `format`/`lint` capability only when it is found *and* enabled; otherwise the language
+     falls through to tier-2. A missing toolchain is never an error — just lower fidelity.
+   - **Per-file, stdin→stdout only.** Wrap only tools that process a single file over
+     stdin/stdout (`gofmt`, `rustfmt`, `zig fmt`). Project-wide tools that must compile a
+     package — `clippy`, `go vet`, `mix format` — do **not** fit the rayon per-file unit or the
+     content-hash cache and are explicitly out of scope for this tier.
+   - **Honest cache key + least privilege.** Fold the tool's resolved `--version` into
+     `version()` so a toolchain upgrade invalidates the cache. Invoke with a fixed argv, no
+     shell, content fed on stdin — never pass file contents through a shell.
 
 ## Tests
 
