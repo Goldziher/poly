@@ -9,6 +9,7 @@ pub mod markup_fmt;
 pub mod native_tool;
 pub mod nixfmt;
 pub mod oxc;
+pub mod r;
 pub mod rubyfmt;
 pub mod ruff;
 pub mod rumdl;

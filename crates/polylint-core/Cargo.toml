@@ -17,6 +17,10 @@ name = "polylint_core"
 path = "src/lib.rs"
 
 [dependencies]
+# air R formatter backend
+air_r_formatter.workspace = true
+air_r_parser.workspace = true
+air_settings.workspace = true
 alejandra.workspace = true
 anyhow.workspace = true
 blake3.workspace = true

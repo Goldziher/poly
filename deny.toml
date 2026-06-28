@@ -54,6 +54,12 @@ ignore = [
     # This is a transitive dep via libcst → ruff_linter; no safe upgrade exists
     # at the pinned rev. Risk is low: paste is a compile-time macro only.
     "RUSTSEC-2024-0436",
+    # RUSTSEC-2026-0173: `proc-macro-error2` is unmaintained.
+    # This is a transitive dep via biome_deserialize_macros → biome_formatter →
+    # air_r_formatter (the lionel-/biome fork). No safe upgrade path exists
+    # at the pinned rev. Risk is low: proc-macro-error2 is a compile-time
+    # proc-macro only (no runtime code).
+    "RUSTSEC-2026-0173",
 ]
 
 [sources]
@@ -67,4 +73,8 @@ allow-git = [
     "https://github.com/fables-tales/rubyfmt",
     "https://github.com/oxc-project/oxc",
     "https://github.com/astral-sh/ruff",
+    # air R formatter fork + its transitive biome fork + tree-sitter-r grammar
+    "https://github.com/Goldziher/r-air-fork",
+    "https://github.com/lionel-/biome",
+    "https://github.com/r-lib/tree-sitter-r",
 ]

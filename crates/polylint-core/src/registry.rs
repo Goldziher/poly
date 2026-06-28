@@ -12,6 +12,7 @@ use crate::engines::markup_fmt::MarkupFmtEngine;
 use crate::engines::native_tool::NativeToolEngine;
 use crate::engines::nixfmt::NixFmtEngine;
 use crate::engines::oxc::OxcEngine;
+use crate::engines::r::REngine;
 use crate::engines::rubyfmt::RubyfmtEngine;
 use crate::engines::ruff::RuffEngine;
 use crate::engines::rumdl::RumdlEngine;
@@ -50,6 +51,7 @@ pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
         | Language::Mustache
         | Language::Xml => vec![Box::new(MarkupFmtEngine)],
         Language::Php => vec![Box::new(MagoEngine)],
+        Language::R => vec![Box::new(REngine)],
         // Tier-3 opt-in native tool backends. Each `NativeToolEngine` takes the
         // registry slot that `TreeSitterEngine` would otherwise occupy; it
         // delegates internally to `TreeSitterEngine` when disabled or absent.
