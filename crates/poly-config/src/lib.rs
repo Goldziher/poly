@@ -23,11 +23,19 @@ mod hooks;
 pub use cache::{CacheConfig, HookCacheMode, ResultsCacheConfig, SccacheConfig};
 pub use commit::{CleanupRule, CommitConfig, CommitRules, ExcludeRule, MessageRule};
 pub use defaults::{GlobalDefaults, LineEnding};
-pub use hooks::{BuiltinHook, BuiltinHooks, HooksConfig, RepoHook, RepoHooks};
+pub use hooks::{
+    BuiltinHook, BuiltinHooks, Guard, GuardCondition, GuardMatch, HooksConfig, Job, JobCache,
+    ParseStageError, Patterns, Stage, StageConfig,
+};
 
 /// Config file names in precedence order: `poly.toml` wins over `polylint.toml`
 /// within the same directory.
 pub const CONFIG_FILE_NAMES: [&str; 2] = ["poly.toml", "polylint.toml"];
+
+/// Name of the optional local override file deep-merged over the primary config
+/// when it sits in the same directory (issue #2193). Scalars and arrays in the
+/// override replace the base; tables are merged recursively.
+pub const LOCAL_OVERRIDE_NAME: &str = "poly.local.toml";
 
 /// The fully parsed `poly.toml` (or back-compat `polylint.toml`).
 ///
@@ -60,10 +68,46 @@ impl PolyConfig {
     }
 
     /// Load config from an explicit file path.
+    ///
+    /// If a [`LOCAL_OVERRIDE_NAME`] file sits next to `path`, it is deep-merged
+    /// over the primary config before deserialization. The merged `[hooks]`
+    /// table is then validated (see [`HooksConfig::validate`]).
     pub fn load_file(path: &Path) -> anyhow::Result<PolyConfig> {
         let text = std::fs::read_to_string(path)?;
-        let raw: RawPolyConfig = toml::from_str(&text)?;
-        Ok(raw.into())
+        let mut table: toml::Table = toml::from_str(&text)?;
+
+        if let Some(parent) = path.parent() {
+            let override_path = parent.join(LOCAL_OVERRIDE_NAME);
+            if override_path.is_file() {
+                let override_text = std::fs::read_to_string(&override_path)?;
+                let override_table: toml::Table = toml::from_str(&override_text)?;
+                merge_tables(&mut table, override_table);
+            }
+        }
+
+        let raw: RawPolyConfig = table.try_into()?;
+        let config: PolyConfig = raw.into();
+        config
+            .hooks
+            .validate()
+            .map_err(|message| anyhow::anyhow!("invalid [hooks] config: {message}"))?;
+        Ok(config)
+    }
+}
+
+/// Recursively deep-merge `override_table` over `base`. Two tables at the same
+/// key are merged key-by-key; any other value (scalar or array) in the override
+/// replaces the base value.
+fn merge_tables(base: &mut toml::Table, override_table: toml::Table) {
+    for (key, override_value) in override_table {
+        match (base.get_mut(&key), override_value) {
+            (Some(toml::Value::Table(base_child)), toml::Value::Table(override_child)) => {
+                merge_tables(base_child, override_child);
+            }
+            (_, override_value) => {
+                base.insert(key, override_value);
+            }
+        }
     }
 }
 
@@ -124,7 +168,7 @@ mod tests {
         let config = PolyConfig::load(dir.path()).expect("load");
         assert_eq!(config.defaults.line_length, 120);
         assert!(config.lint.is_empty());
-        assert!(config.hooks.repos.is_empty());
+        assert!(config.hooks.stage_configs.is_empty());
         assert!(!config.hooks.builtin.polylint.enabled);
     }
 
@@ -281,7 +325,7 @@ max_size = "5G"
     }
 
     #[test]
-    fn parses_hooks_builtin_toggle_and_table() {
+    fn parses_hooks_builtin_and_inline_stages() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("poly.toml");
         fs::write(
@@ -295,10 +339,10 @@ polylint = true
 polyfmt = { stages = ["pre-commit"] }
 commit = { enabled = false }
 
-[[hooks.repo]]
-repo = "https://github.com/example/hooks"
-rev = "v1.2.0"
-hooks = [{ id = "some-hook", args = ["--fix"] }]
+[hooks.pre-commit]
+parallel = true
+[[hooks.pre-commit.jobs]]
+run = "cargo fmt --check"
 "#,
         )
         .unwrap();
@@ -312,11 +356,84 @@ hooks = [{ id = "some-hook", args = ["--fix"] }]
         assert_eq!(config.hooks.builtin.polyfmt.stages, vec!["pre-commit"]);
         // table with explicit `enabled = false`
         assert!(!config.hooks.builtin.commit.enabled);
-        // foreign repo
-        assert_eq!(config.hooks.repos.len(), 1);
-        let repo = &config.hooks.repos[0];
-        assert_eq!(repo.rev.as_deref(), Some("v1.2.0"));
-        assert_eq!(repo.hooks[0].id, "some-hook");
-        assert_eq!(repo.hooks[0].args, vec!["--fix"]);
+        // inline stage
+        let pre_commit = &config.hooks.stage_configs[&Stage::PreCommit];
+        assert!(pre_commit.parallel);
+        assert_eq!(pre_commit.jobs.len(), 1);
+        assert_eq!(pre_commit.jobs[0].run.as_deref(), Some("cargo fmt --check"));
+    }
+
+    #[test]
+    fn imported_repos_are_rejected_at_load() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("poly.toml");
+        fs::write(
+            &path,
+            r#"
+[[hooks.repo]]
+repo = "https://github.com/example/hooks"
+"#,
+        )
+        .unwrap();
+        let error = PolyConfig::load_file(&path).unwrap_err().to_string();
+        assert!(error.contains("no longer supported"), "{error}");
+    }
+
+    #[test]
+    fn invalid_hooks_job_fails_load() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("poly.toml");
+        fs::write(
+            &path,
+            r#"
+[hooks.pre-commit]
+[[hooks.pre-commit.jobs]]
+run = "x"
+script = "y.sh"
+"#,
+        )
+        .unwrap();
+        let error = PolyConfig::load_file(&path).unwrap_err().to_string();
+        assert!(error.contains("invalid [hooks] config"), "{error}");
+    }
+
+    #[test]
+    fn local_override_deep_merges_nested_value() {
+        let dir = tempdir().unwrap();
+        fs::write(
+            dir.path().join("poly.toml"),
+            r#"
+[defaults]
+line_length = 100
+[cache.results]
+hooks = "safe"
+"#,
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join(LOCAL_OVERRIDE_NAME),
+            r#"
+[defaults]
+line_length = 80
+"#,
+        )
+        .unwrap();
+        let config = PolyConfig::load(dir.path()).expect("load");
+        // Overridden nested scalar takes the local value...
+        assert_eq!(config.defaults.line_length, 80);
+        // ...while untouched nested tables are preserved from the base.
+        assert_eq!(config.cache.results.hooks, crate::HookCacheMode::Safe);
+    }
+
+    #[test]
+    fn absent_local_override_is_a_no_op() {
+        let dir = tempdir().unwrap();
+        fs::write(
+            dir.path().join("poly.toml"),
+            "[defaults]\nline_length = 99\n",
+        )
+        .unwrap();
+        let config = PolyConfig::load(dir.path()).expect("load");
+        assert_eq!(config.defaults.line_length, 99);
     }
 }

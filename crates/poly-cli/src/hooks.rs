@@ -130,28 +130,6 @@ fn to_precommit_config(hooks: &HooksConfig, poly_bin: &Path) -> PrecommitConfig 
         });
     }
 
-    // Foreign cloned repos, passed through.
-    for repo in &hooks.repos {
-        repos.push(PrecommitRepo {
-            repo: repo.repo.clone(),
-            rev: repo.rev.clone(),
-            hooks: repo
-                .hooks
-                .iter()
-                .map(|h| PrecommitHook {
-                    id: h.id.clone(),
-                    name: None,
-                    entry: None,
-                    language: None,
-                    args: h.args.clone(),
-                    stages: h.stages.clone(),
-                    pass_filenames: None,
-                    exclude: h.exclude.clone(),
-                })
-                .collect(),
-        });
-    }
-
     PrecommitConfig {
         default_stages: hooks.stages.clone(),
         repos,
@@ -292,29 +270,6 @@ polylint = true
         assert_eq!(config.repos.len(), 1);
         assert_eq!(config.repos[0].hooks.len(), 1);
         assert_eq!(config.repos[0].hooks[0].id, "polylint");
-    }
-
-    #[test]
-    fn foreign_repos_pass_through() {
-        let hooks = cfg_from(
-            r#"
-[[hooks.repo]]
-repo = "https://github.com/example/hooks"
-rev = "v1.2.0"
-hooks = [{ id = "some-hook", args = ["--fix"], exclude = "^vendor/" }]
-"#,
-        );
-        let config = to_precommit_config(&hooks, Path::new("poly"));
-        assert_eq!(config.repos.len(), 1);
-        let remote = &config.repos[0];
-        assert_eq!(remote.repo, "https://github.com/example/hooks");
-        assert_eq!(remote.rev.as_deref(), Some("v1.2.0"));
-        assert_eq!(remote.hooks[0].id, "some-hook");
-        assert_eq!(remote.hooks[0].args, vec!["--fix"]);
-        assert_eq!(remote.hooks[0].exclude.as_deref(), Some("^vendor/"));
-        // Foreign hooks carry no synthesized entry/language.
-        assert_eq!(remote.hooks[0].entry, None);
-        assert_eq!(remote.hooks[0].language, None);
     }
 
     #[test]
