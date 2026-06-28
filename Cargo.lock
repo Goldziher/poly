@@ -4068,7 +4068,9 @@ dependencies = [
  "polylint-core",
  "serde_json",
  "tempfile",
+ "tracing",
  "tracing-subscriber",
+ "which",
 ]
 
 [[package]]

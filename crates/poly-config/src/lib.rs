@@ -24,8 +24,9 @@ pub use cache::{CacheConfig, HookCacheMode, ResultsCacheConfig, SccacheConfig};
 pub use commit::{CleanupRule, CommitConfig, CommitRules, ExcludeRule, MessageRule};
 pub use defaults::{GlobalDefaults, LineEnding};
 pub use hooks::{
-    BuiltinHook, BuiltinHooks, Guard, GuardCondition, GuardMatch, HooksConfig, Job, JobCache,
-    ParseStageError, Patterns, Stage, StageConfig,
+    BuiltinHook, BuiltinHooks, CargoHooks, DEFAULT_MAX_ADDED_FILE_KB, FileSafetyHooks, Guard,
+    GuardCondition, GuardMatch, HooksConfig, Job, JobCache, ParseStageError, Patterns, Stage,
+    StageConfig,
 };
 
 /// Config file names in precedence order: `poly.toml` wins over `polylint.toml`

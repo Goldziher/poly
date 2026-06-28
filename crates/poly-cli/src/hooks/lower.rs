@@ -18,14 +18,16 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use poly_config::{
-    BuiltinHook, Guard, HookCacheMode, HooksConfig, Job, Patterns, Stage as ConfigStage,
-    StageConfig,
+    Guard, HookCacheMode, HooksConfig, Job, Patterns, Stage as ConfigStage, StageConfig,
 };
 use poly_hooks::Stage as HookStage;
 use poly_hooks::filter::FilePattern;
 use poly_hooks::identify::TagSet;
 use poly_hooks::model::{Hook, HookCommand, StageSpec};
 
+use self::builtins::{PathProbe, ToolProbe};
+
+mod builtins;
 mod cache;
 
 /// Map a config [`ConfigStage`] to the runner's [`HookStage`].
@@ -93,6 +95,21 @@ pub fn lower_stage(
     files: &[PathBuf],
     cache_mode: &HookCacheMode,
 ) -> Result<StageSpec> {
+    lower_stage_with_probe(hooks, poly_bin, stage, files, cache_mode, &PathProbe)
+}
+
+/// [`lower_stage`] with an injectable capability [`ToolProbe`].
+///
+/// `lower_stage` calls this with the production [`PathProbe`]; tests pass a stub
+/// so Cargo-builtin gating is deterministic regardless of the host toolchain.
+fn lower_stage_with_probe(
+    hooks: &HooksConfig,
+    poly_bin: &Path,
+    stage: HookStage,
+    files: &[PathBuf],
+    cache_mode: &HookCacheMode,
+    probe: &dyn ToolProbe,
+) -> Result<StageSpec> {
     let config_stage = from_hook_stage(stage);
     let stage_config = hooks.stage_configs.get(&config_stage);
 
@@ -106,7 +123,14 @@ pub fn lower_stage(
     }
 
     let mut entries: Vec<Hook> = Vec::new();
-    append_builtins(hooks, poly_bin, config_stage, cache_mode, &mut entries)?;
+    append_builtins(
+        hooks,
+        poly_bin,
+        config_stage,
+        cache_mode,
+        probe,
+        &mut entries,
+    )?;
 
     if let Some(cfg) = stage_config {
         append_jobs(hooks, stage, cfg, files, cache_mode, &mut entries)?;
@@ -143,13 +167,14 @@ fn append_builtins(
     poly_bin: &Path,
     config_stage: ConfigStage,
     cache_mode: &HookCacheMode,
+    probe: &dyn ToolProbe,
     out: &mut Vec<Hook>,
 ) -> Result<()> {
     let poly = shell_quote(&poly_bin.to_string_lossy());
 
     if hooks.builtin.polylint.enabled
         && builtin_runs_on(
-            &hooks.builtin.polylint,
+            &hooks.builtin.polylint.stages,
             &hooks.stages,
             ConfigStage::PreCommit,
             config_stage,
@@ -161,7 +186,7 @@ fn append_builtins(
     }
     if hooks.builtin.polyfmt.enabled
         && builtin_runs_on(
-            &hooks.builtin.polyfmt,
+            &hooks.builtin.polyfmt.stages,
             &hooks.stages,
             ConfigStage::PreCommit,
             config_stage,
@@ -173,7 +198,7 @@ fn append_builtins(
     }
     if hooks.builtin.commit.enabled
         && builtin_runs_on(
-            &hooks.builtin.commit,
+            &hooks.builtin.commit.stages,
             &hooks.stages,
             ConfigStage::CommitMsg,
             config_stage,
@@ -184,19 +209,21 @@ fn append_builtins(
         // the runner's message-file mode is that path). `Hook::run` enables it.
         out.push(Hook::run("poly-commit", format!("{poly} commit")));
     }
+    builtins::append_file_safety(hooks, &poly, config_stage, out)?;
+    builtins::append_cargo(hooks, config_stage, probe, out)?;
     Ok(())
 }
 
 /// Whether a builtin runs on `config_stage`, given its own `stages`, the global
 /// default `stages`, and the builtin's own fallback when both are empty.
-fn builtin_runs_on(
-    builtin: &BuiltinHook,
+pub(super) fn builtin_runs_on(
+    own_stages: &[String],
     default_stages: &[String],
     fallback: ConfigStage,
     config_stage: ConfigStage,
 ) -> Result<bool> {
-    let raw = if !builtin.stages.is_empty() {
-        builtin.stages.as_slice()
+    let raw = if !own_stages.is_empty() {
+        own_stages
     } else if !default_stages.is_empty() {
         default_stages
     } else {

@@ -20,6 +20,7 @@ use poly_cache::ResultCache;
 use poly_config::{PolyConfig, Stage as ConfigStage};
 use poly_hooks::stage::RunInputMode;
 
+use crate::hooks::checks::{self, CheckArgs};
 use crate::hooks::lower;
 
 /// `poly hooks` arguments — an optional subcommand (defaulting to `run`).
@@ -42,6 +43,12 @@ pub enum HooksCommand {
     /// Internal: invoked by an installed shim when a git hook fires.
     #[command(name = "hook-impl")]
     HookImpl(HookImplArgs),
+    /// Internal: run the pure-Rust file-safety checks over the given files.
+    ///
+    /// The `file_safety` builtin lowers to this subcommand; it is not part of
+    /// the user-facing surface, so it is hidden from `--help`.
+    #[command(hide = true)]
+    Check(CheckArgs),
 }
 
 /// `poly hooks run` arguments.
@@ -132,6 +139,7 @@ pub fn run_hooks(args: HooksArgs) -> ExitCode {
         Some(HooksCommand::Install(install_args)) => install(install_args),
         Some(HooksCommand::Uninstall(uninstall_args)) => uninstall(uninstall_args),
         Some(HooksCommand::HookImpl(hook_impl_args)) => hook_impl(hook_impl_args),
+        Some(HooksCommand::Check(check_args)) => checks::run_file_safety_checks(&check_args),
     };
     match result {
         Ok(code) => code,

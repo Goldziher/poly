@@ -7,6 +7,7 @@
 //! running `poly` binary, and inline jobs (`[[hooks.<stage>.jobs]]`, `.commands`,
 //! `.scripts`) lower to per-stage hooks.
 
+pub mod checks;
 pub mod commands;
 pub mod lower;
 

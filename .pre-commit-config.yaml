@@ -33,6 +33,10 @@ repos:
       - id: check-merge-conflict
       - id: check-added-large-files
       - id: detect-private-key
+        # poly's own detect-private-key check lists the private-key header
+        # markers as string constants (and a test fixture exercises one), so
+        # this file legitimately contains them.
+        exclude: ^crates/poly-cli/src/hooks/checks\.rs$
       - id: check-case-conflict
       - id: check-executables-have-shebangs
       - id: check-shebang-scripts-are-executable

@@ -1,11 +1,25 @@
-//! `[hooks.builtin]` — poly's first-class in-process hooks (`polylint`,
-//! `polyfmt`, `poly commit`).
+//! `[hooks.builtin]` — poly's first-class in-process hooks.
 //!
-//! Each builtin is either a bare boolean (`polylint = true`, enable with the
-//! default stages) or a table (`polyfmt = { stages = ["pre-commit"] }`); a
-//! table without an explicit `enabled` key is treated as enabled.
+//! Three families of builtin live here:
+//!
+//! - the single-tool hooks `polylint` / `polyfmt` / `commit`, each a bare
+//!   boolean (`polylint = true`) or a table (`polyfmt = { stages = [...] }`);
+//! - the [`FileSafetyHooks`] group (`file_safety`) — the pure-Rust replacement
+//!   for the pre-commit-hooks file-safety block (merge-conflict markers, large
+//!   files, private keys, case collisions, shebang/executable parity);
+//! - the [`CargoHooks`] group (`cargo`) — whole-workspace Cargo tools (`cargo
+//!   clippy` / `sort` / `machete` / `deny`), each default-on within the group
+//!   and capability-probed at lowering time.
+//!
+//! A bare-boolean form enables the hook (or group) with default stages and, for
+//! the groups, every member check turned on; a table form may set `enabled`,
+//! `stages`, and per-member toggles. A table without an explicit `enabled` key
+//! is treated as enabled.
 
 use serde::{Deserialize, Deserializer};
+
+/// Default ceiling, in kibibytes, for [`FileSafetyHooks::added_large_files`].
+pub const DEFAULT_MAX_ADDED_FILE_KB: u64 = 500;
 
 /// `[hooks.builtin]` — poly's first-class in-process hooks.
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
@@ -17,6 +31,10 @@ pub struct BuiltinHooks {
     pub polyfmt: BuiltinHook,
     /// The `poly commit` message-lint hook.
     pub commit: BuiltinHook,
+    /// The pure-Rust file-safety check group (`file_safety`).
+    pub file_safety: FileSafetyHooks,
+    /// The whole-workspace Cargo tool group (`cargo`).
+    pub cargo: CargoHooks,
 }
 
 /// One builtin hook. Accepts either a bare boolean (`polylint = true`) or a
@@ -61,6 +79,191 @@ impl<'de> Deserialize<'de> for BuiltinHook {
     }
 }
 
+// ── file_safety ───────────────────────────────────────────────────────────────
+
+/// The `file_safety` builtin group — pure-Rust file-safety checks.
+///
+/// Enable the whole group with defaults via `file_safety = true`, or tune it
+/// with a table:
+///
+/// ```toml
+/// [hooks.builtin.file_safety]
+/// stages = ["pre-commit"]
+/// max_added_file_kb = 1000
+/// private_key = false           # opt a single check out
+/// ```
+///
+/// Every member check defaults to on when the group is enabled; the group
+/// itself is off by default (like the other builtins).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileSafetyHooks {
+    /// Whether the file-safety group is active.
+    pub enabled: bool,
+    /// Stages this group runs in; empty means inherit [`super::HooksConfig::stages`].
+    pub stages: Vec<String>,
+    /// Size ceiling, in kibibytes, for the large-file check.
+    pub max_added_file_kb: u64,
+    /// Reject files containing git merge-conflict markers.
+    pub merge_conflict: bool,
+    /// Reject files larger than [`Self::max_added_file_kb`].
+    pub added_large_files: bool,
+    /// Reject files containing a private-key header.
+    pub private_key: bool,
+    /// Reject paths that collide case-insensitively.
+    pub case_conflict: bool,
+    /// Require executable files to start with a `#!` shebang.
+    pub executables_have_shebangs: bool,
+    /// Require files starting with `#!` to be executable.
+    pub shebang_scripts_are_executable: bool,
+}
+
+impl Default for FileSafetyHooks {
+    fn default() -> Self {
+        // The group is off by default; every member check is on so enabling the
+        // group (`file_safety = true`) turns the whole block on.
+        Self {
+            enabled: false,
+            stages: Vec::new(),
+            max_added_file_kb: DEFAULT_MAX_ADDED_FILE_KB,
+            merge_conflict: true,
+            added_large_files: true,
+            private_key: true,
+            case_conflict: true,
+            executables_have_shebangs: true,
+            shebang_scripts_are_executable: true,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum FileSafetyRepr {
+    Toggle(bool),
+    Table(FileSafetyTable),
+}
+
+#[derive(Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
+struct FileSafetyTable {
+    enabled: Option<bool>,
+    stages: Vec<String>,
+    max_added_file_kb: Option<u64>,
+    merge_conflict: Option<bool>,
+    added_large_files: Option<bool>,
+    private_key: Option<bool>,
+    case_conflict: Option<bool>,
+    executables_have_shebangs: Option<bool>,
+    shebang_scripts_are_executable: Option<bool>,
+}
+
+impl<'de> Deserialize<'de> for FileSafetyHooks {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        match FileSafetyRepr::deserialize(deserializer)? {
+            FileSafetyRepr::Toggle(enabled) => Ok(FileSafetyHooks {
+                enabled,
+                ..FileSafetyHooks::default()
+            }),
+            FileSafetyRepr::Table(table) => Ok(FileSafetyHooks {
+                enabled: table.enabled.unwrap_or(true),
+                stages: table.stages,
+                max_added_file_kb: table.max_added_file_kb.unwrap_or(DEFAULT_MAX_ADDED_FILE_KB),
+                merge_conflict: table.merge_conflict.unwrap_or(true),
+                added_large_files: table.added_large_files.unwrap_or(true),
+                private_key: table.private_key.unwrap_or(true),
+                case_conflict: table.case_conflict.unwrap_or(true),
+                executables_have_shebangs: table.executables_have_shebangs.unwrap_or(true),
+                shebang_scripts_are_executable: table
+                    .shebang_scripts_are_executable
+                    .unwrap_or(true),
+            }),
+        }
+    }
+}
+
+// ── cargo ───────────────────────────────────────────────────────────────────
+
+/// The `cargo` builtin group — whole-workspace Cargo tools.
+///
+/// Enable the group with defaults via `cargo = true`, or tune it with a table:
+///
+/// ```toml
+/// [hooks.builtin.cargo]
+/// stages = ["pre-commit"]
+/// machete = false               # opt a single tool out
+/// ```
+///
+/// Each member tool defaults to on when the group is enabled; the group itself
+/// is off by default. Member tools are capability-probed at lowering time and
+/// silently skipped when the tool is not on `PATH`, so enabling the group is
+/// safe even in a repository that only ships some of them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CargoHooks {
+    /// Whether the Cargo tool group is active.
+    pub enabled: bool,
+    /// Stages this group runs in; empty means inherit [`super::HooksConfig::stages`].
+    pub stages: Vec<String>,
+    /// Run `cargo clippy` over the workspace.
+    pub clippy: bool,
+    /// Run `cargo sort --check` over the workspace.
+    pub sort: bool,
+    /// Run `cargo machete` over the workspace.
+    pub machete: bool,
+    /// Run `cargo deny check` over the workspace.
+    pub deny: bool,
+}
+
+impl Default for CargoHooks {
+    fn default() -> Self {
+        // The group is off by default; every member tool is on so enabling the
+        // group (`cargo = true`) turns the whole block on.
+        Self {
+            enabled: false,
+            stages: Vec::new(),
+            clippy: true,
+            sort: true,
+            machete: true,
+            deny: true,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum CargoRepr {
+    Toggle(bool),
+    Table(CargoTable),
+}
+
+#[derive(Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
+struct CargoTable {
+    enabled: Option<bool>,
+    stages: Vec<String>,
+    clippy: Option<bool>,
+    sort: Option<bool>,
+    machete: Option<bool>,
+    deny: Option<bool>,
+}
+
+impl<'de> Deserialize<'de> for CargoHooks {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        match CargoRepr::deserialize(deserializer)? {
+            CargoRepr::Toggle(enabled) => Ok(CargoHooks {
+                enabled,
+                ..CargoHooks::default()
+            }),
+            CargoRepr::Table(table) => Ok(CargoHooks {
+                enabled: table.enabled.unwrap_or(true),
+                stages: table.stages,
+                clippy: table.clippy.unwrap_or(true),
+                sort: table.sort.unwrap_or(true),
+                machete: table.machete.unwrap_or(true),
+                deny: table.deny.unwrap_or(true),
+            }),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -85,5 +288,99 @@ mod tests {
     fn table_with_explicit_disable() {
         let hooks: BuiltinHooks = toml::from_str("commit = { enabled = false }").unwrap();
         assert!(!hooks.commit.enabled);
+    }
+
+    #[test]
+    fn file_safety_and_cargo_are_off_by_default() {
+        let hooks = BuiltinHooks::default();
+        assert!(!hooks.file_safety.enabled);
+        assert!(!hooks.cargo.enabled);
+        // Member checks default on so a bare toggle turns the whole group on.
+        assert!(hooks.file_safety.merge_conflict);
+        assert!(hooks.cargo.clippy);
+        assert_eq!(
+            hooks.file_safety.max_added_file_kb,
+            DEFAULT_MAX_ADDED_FILE_KB
+        );
+    }
+
+    #[test]
+    fn file_safety_bare_toggle_enables_every_check() {
+        let hooks: BuiltinHooks = toml::from_str("file_safety = true").unwrap();
+        let safety = &hooks.file_safety;
+        assert!(safety.enabled);
+        assert!(safety.merge_conflict);
+        assert!(safety.added_large_files);
+        assert!(safety.private_key);
+        assert!(safety.case_conflict);
+        assert!(safety.executables_have_shebangs);
+        assert!(safety.shebang_scripts_are_executable);
+        assert_eq!(safety.max_added_file_kb, DEFAULT_MAX_ADDED_FILE_KB);
+    }
+
+    #[test]
+    fn file_safety_table_opts_out_a_single_check_and_keeps_the_rest_on() {
+        let hooks: BuiltinHooks = toml::from_str(
+            r#"
+[file_safety]
+max_added_file_kb = 1000
+private_key = false
+"#,
+        )
+        .unwrap();
+        let safety = &hooks.file_safety;
+        assert!(safety.enabled);
+        assert_eq!(safety.max_added_file_kb, 1000);
+        assert!(!safety.private_key);
+        assert!(safety.merge_conflict);
+        assert!(safety.added_large_files);
+    }
+
+    #[test]
+    fn file_safety_table_with_stages_carries_them() {
+        let hooks: BuiltinHooks =
+            toml::from_str(r#"file_safety = { stages = ["pre-commit", "pre-push"] }"#).unwrap();
+        assert!(hooks.file_safety.enabled);
+        assert_eq!(hooks.file_safety.stages, vec!["pre-commit", "pre-push"]);
+    }
+
+    #[test]
+    fn file_safety_rejects_unknown_keys() {
+        let result: Result<BuiltinHooks, _> = toml::from_str("[file_safety]\nbogus = true\n");
+        assert!(result.is_err(), "deny_unknown_fields must reject `bogus`");
+    }
+
+    #[test]
+    fn cargo_bare_toggle_enables_every_tool() {
+        let hooks: BuiltinHooks = toml::from_str("cargo = true").unwrap();
+        let cargo = &hooks.cargo;
+        assert!(cargo.enabled);
+        assert!(cargo.clippy);
+        assert!(cargo.sort);
+        assert!(cargo.machete);
+        assert!(cargo.deny);
+    }
+
+    #[test]
+    fn cargo_table_opts_out_a_single_tool() {
+        let hooks: BuiltinHooks = toml::from_str(
+            r#"
+[cargo]
+machete = false
+"#,
+        )
+        .unwrap();
+        let cargo = &hooks.cargo;
+        assert!(cargo.enabled);
+        assert!(!cargo.machete);
+        assert!(cargo.clippy);
+        assert!(cargo.sort);
+        assert!(cargo.deny);
+    }
+
+    #[test]
+    fn cargo_table_with_explicit_disable() {
+        let hooks: BuiltinHooks = toml::from_str("cargo = { enabled = false }").unwrap();
+        assert!(!hooks.cargo.enabled);
     }
 }
