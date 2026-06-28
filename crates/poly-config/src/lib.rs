@@ -15,10 +15,12 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
+mod cache;
 mod commit;
 mod defaults;
 mod hooks;
 
+pub use cache::{CacheConfig, HookCacheMode, ResultsCacheConfig, SccacheConfig};
 pub use commit::{CleanupRule, CommitConfig, CommitRules, ExcludeRule, MessageRule};
 pub use defaults::{GlobalDefaults, LineEnding};
 pub use hooks::{BuiltinHook, BuiltinHooks, HooksConfig, RepoHook, RepoHooks};
@@ -43,6 +45,8 @@ pub struct PolyConfig {
     pub commit: CommitConfig,
     /// `[hooks]` — `poly hooks` configuration.
     pub hooks: HooksConfig,
+    /// `[cache]` — result-cache and sccache configuration.
+    pub cache: CacheConfig,
 }
 
 impl PolyConfig {
@@ -90,6 +94,7 @@ struct RawPolyConfig {
     fmt: toml::Table,
     commit: CommitConfig,
     hooks: HooksConfig,
+    cache: CacheConfig,
 }
 
 impl From<RawPolyConfig> for PolyConfig {
@@ -100,6 +105,7 @@ impl From<RawPolyConfig> for PolyConfig {
             fmt: raw.fmt,
             commit: raw.commit,
             hooks: raw.hooks,
+            cache: raw.cache,
         }
     }
 }
@@ -199,6 +205,79 @@ pattern = "^WIP"
         assert_eq!(config.commit.rules.require_body, Some(true));
         assert_eq!(config.commit.rules.excludes.len(), 1);
         assert_eq!(config.commit.rules.excludes[0].pattern, "^WIP");
+    }
+
+    #[test]
+    fn absent_cache_table_yields_defaults() {
+        let dir = tempdir().unwrap();
+        let config = PolyConfig::load(dir.path()).expect("load");
+        assert!(config.cache.enabled, "cache.enabled must default to true");
+        assert_eq!(config.cache.results.hooks, crate::HookCacheMode::Safe);
+        assert!(
+            !config.cache.sccache.enabled,
+            "sccache.enabled must default to false"
+        );
+        assert!(config.cache.dir.is_none());
+    }
+
+    #[test]
+    fn parses_cache_table_full() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("poly.toml");
+        fs::write(
+            &path,
+            r#"
+[cache]
+enabled = true
+
+[cache.results]
+hooks = "safe"
+
+[cache.sccache]
+enabled = true
+bin = "/usr/bin/sccache"
+dir = "/tmp/sccache"
+max_size = "5G"
+"#,
+        )
+        .unwrap();
+        let config = PolyConfig::load_file(&path).expect("load");
+        assert!(config.cache.enabled);
+        assert_eq!(config.cache.results.hooks, crate::HookCacheMode::Safe);
+        assert!(config.cache.sccache.enabled);
+        assert_eq!(
+            config.cache.sccache.bin.as_deref(),
+            Some("/usr/bin/sccache")
+        );
+        assert_eq!(config.cache.sccache.dir.as_deref(), Some("/tmp/sccache"));
+        assert_eq!(config.cache.sccache.max_size.as_deref(), Some("5G"));
+    }
+
+    #[test]
+    fn parses_cache_mode_off_and_aggressive() {
+        let dir = tempdir().unwrap();
+        let off_path = dir.path().join("off.toml");
+        fs::write(&off_path, "[cache.results]\nhooks = \"off\"\n").unwrap();
+        let config_off = PolyConfig::load_file(&off_path).expect("load off");
+        assert_eq!(config_off.cache.results.hooks, crate::HookCacheMode::Off);
+
+        let agg_path = dir.path().join("agg.toml");
+        fs::write(&agg_path, "[cache.results]\nhooks = \"aggressive\"\n").unwrap();
+        let config_agg = PolyConfig::load_file(&agg_path).expect("load aggressive");
+        assert_eq!(
+            config_agg.cache.results.hooks,
+            crate::HookCacheMode::Aggressive
+        );
+    }
+
+    #[test]
+    fn parses_cache_disabled_with_dir_override() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("poly.toml");
+        fs::write(&path, "[cache]\nenabled = false\ndir = \"/custom/cache\"\n").unwrap();
+        let config = PolyConfig::load_file(&path).expect("load");
+        assert!(!config.cache.enabled);
+        assert_eq!(config.cache.dir.as_deref(), Some("/custom/cache"));
     }
 
     #[test]

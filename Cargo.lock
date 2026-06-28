@@ -4654,6 +4654,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19f132c84eca552bf34cab8ec81f1c1dcc229b811638f9d283dceabe58c5569e"
 
 [[package]]
+name = "poly-cache"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "blake3",
+ "tempfile",
+ "toml 1.1.2+spec-1.1.0",
+]
+
+[[package]]
 name = "poly-cli"
 version = "0.1.0"
 dependencies = [
