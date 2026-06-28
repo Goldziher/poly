@@ -9,6 +9,7 @@ use crate::engines::graphql::GraphQlEngine;
 use crate::engines::mago::MagoEngine;
 use crate::engines::malva::MalvaEngine;
 use crate::engines::markup_fmt::MarkupFmtEngine;
+use crate::engines::native_tool::NativeToolEngine;
 use crate::engines::nixfmt::NixFmtEngine;
 use crate::engines::oxc::OxcEngine;
 use crate::engines::rubyfmt::RubyfmtEngine;
@@ -49,6 +50,14 @@ pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
         | Language::Mustache
         | Language::Xml => vec![Box::new(MarkupFmtEngine)],
         Language::Php => vec![Box::new(MagoEngine)],
+        // Tier-3 opt-in native tool backends. Each `NativeToolEngine` takes the
+        // registry slot that `TreeSitterEngine` would otherwise occupy; it
+        // delegates internally to `TreeSitterEngine` when disabled or absent.
+        // This guarantees exactly one formatter runs per file (no double-format)
+        // and that the default output is byte-identical to today's tier-2 output.
+        Language::Go => vec![Box::new(NativeToolEngine::for_language(Language::Go))],
+        Language::Rust => vec![Box::new(NativeToolEngine::for_language(Language::Rust))],
+        Language::Zig => vec![Box::new(NativeToolEngine::for_language(Language::Zig))],
         // As other native backends land they are matched here, falling through
         // to the tree-sitter generic tier for everything else.
         _ => vec![Box::new(TreeSitterEngine)],

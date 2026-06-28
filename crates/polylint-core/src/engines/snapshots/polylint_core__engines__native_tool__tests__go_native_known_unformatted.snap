@@ -1,0 +1,11 @@
+---
+source: crates/polylint-core/src/engines/native_tool.rs
+expression: formatted
+---
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("hello")
+}

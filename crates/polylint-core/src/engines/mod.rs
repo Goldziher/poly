@@ -6,6 +6,7 @@ pub mod graphql;
 pub mod mago;
 pub mod malva;
 pub mod markup_fmt;
+pub mod native_tool;
 pub mod nixfmt;
 pub mod oxc;
 pub mod rubyfmt;

@@ -1,0 +1,8 @@
+---
+source: crates/polylint-core/tests/native_tool.rs
+expression: formatted
+---
+fn main() {
+    println!("hello");
+    let x = 1 + 2;
+}

@@ -82,6 +82,8 @@ pub enum Language {
     Rust,
     /// Protocol Buffers.
     Proto,
+    /// Zig.
+    Zig,
     /// Any other language, identified by its tree-sitter-language-pack id.
     Other(String),
 }
@@ -128,6 +130,7 @@ impl Language {
             Language::Cpp => "cpp",
             Language::Rust => "rust",
             Language::Proto => "proto",
+            Language::Zig => "zig",
             Language::Other(s) => s.as_str(),
         }
     }
@@ -199,6 +202,7 @@ impl Language {
             "cpp" | "cc" | "cxx" | "hpp" | "hh" => Language::Cpp,
             "rs" => Language::Rust,
             "proto" => Language::Proto,
+            "zig" => Language::Zig,
             _ => return None,
         };
         Some(lang)
