@@ -19,5 +19,6 @@ struct Cli {
 }
 
 fn main() -> ExitCode {
+    poly_cli::init_logging();
     run_fmt(Cli::parse().args)
 }

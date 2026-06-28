@@ -1,26 +1,37 @@
-//! Tier-3 opt-in native toolchain backends: thin wrappers around first-party
-//! formatter CLIs (`gofmt` for Go, `rustfmt` for Rust, `zig fmt` for Zig).
+//! Native toolchain backends: thin wrappers around first-party formatter CLIs
+//! (`gofmt` for Go, `rustfmt` for Rust, `zig fmt` for Zig).
 //!
-//! This tier is **off by default** and must be explicitly enabled per language
-//! in `poly.toml`:
+//! ## Default-on for canonical toolchains (ADR 0014 amendment)
+//!
+//! The **canonical** first-party formatters — `rustfmt` (Rust) and `gofmt`
+//! (Go) — are **default-on when the tool is detected on `PATH`**. When present,
+//! `poly fmt` formats those languages through the real tool instead of the
+//! lower-fidelity tree-sitter generic tier; when absent, the language falls
+//! through to the generic tier and an **info-level** notice is emitted once per
+//! language per run. This preserves the zero-system-dependency guarantee (a
+//! missing toolchain is never an error) while fixing the measured tier-2 churn
+//! against `rustfmt`.
+//!
+//! Other tools (currently `zig fmt`) remain **opt-in, off by default**; a user
+//! enables them per language in `poly.toml`. The default-on tools can also be
+//! forced off the same way:
 //!
 //! ```toml
-//! [fmt.go.gofmt]
-//! enabled = true
-//!
+//! # force a canonical tool off (fall back to the generic tier)
 //! [fmt.rust.rustfmt]
-//! enabled = true
+//! enabled = false
 //!
+//! # opt a non-canonical tool in
 //! [fmt.zig.zigfmt]
 //! enabled = true
 //! ```
 //!
-//! When disabled (the default) or when the tool is not found on `PATH`, this
-//! engine transparently delegates to the tree-sitter generic tier — so the
+//! When disabled or when the tool is not found on `PATH`, this engine
+//! transparently delegates to the tree-sitter generic tier — so the
 //! zero-dependency guarantee is preserved and the output is byte-identical to
-//! today's tier-2 behaviour. When enabled and the tool is present, the engine
-//! pipes the file content through the tool's `stdin → stdout` interface and
-//! returns the formatted result.
+//! the tier-2 behaviour. When active and the tool is present, the engine pipes
+//! the file content through the tool's `stdin → stdout` interface and returns
+//! the formatted result.
 //!
 //! ## Design rationale: registry slot vs. sequence position
 //!
@@ -46,10 +57,11 @@
 
 use std::io::Write;
 use std::process::{Command, Stdio};
-use std::sync::OnceLock;
+use std::sync::{Once, OnceLock};
 use std::thread;
 
 use anyhow::Context;
+use tracing::info;
 
 use crate::config::EngineConfig;
 use crate::engine::{Capabilities, Diagnostic, Engine, FormatOutput, SourceFile};
@@ -73,13 +85,19 @@ struct ToolSpec {
     version_binary: &'static str,
     /// Arguments for the version probe.
     version_args: &'static [&'static str],
+    /// Whether this tool is **default-on** when detected on `PATH`. The
+    /// canonical first-party formatters (`rustfmt`, `gofmt`) set this; other
+    /// tools (e.g. `zig fmt`) stay opt-in (`false`). A user can always override
+    /// either way via `[fmt.<lang>.<tool>] enabled = …`.
+    default_on: bool,
 }
 
 // ---------------------------------------------------------------------------
 // Per-tool specs
 // ---------------------------------------------------------------------------
 
-/// `gofmt`: reads stdin unconditionally; no flags needed.
+/// `gofmt`: reads stdin unconditionally; no flags needed. Canonical Go
+/// formatter → **default-on** when found on `PATH`.
 static GOFMT_SPEC: ToolSpec = ToolSpec {
     engine_name: "gofmt",
     format_binary: "gofmt",
@@ -87,24 +105,28 @@ static GOFMT_SPEC: ToolSpec = ToolSpec {
     // gofmt has no --version flag; use `go version` which ships alongside gofmt.
     version_binary: "go",
     version_args: &["version"],
+    default_on: true,
 };
 
-/// `rustfmt --emit=stdout`: reads stdin, writes to stdout.
+/// `rustfmt --emit=stdout`: reads stdin, writes to stdout. Canonical Rust
+/// formatter → **default-on** when found on `PATH`.
 static RUSTFMT_SPEC: ToolSpec = ToolSpec {
     engine_name: "rustfmt",
     format_binary: "rustfmt",
     format_args: &["--emit=stdout"],
     version_binary: "rustfmt",
     version_args: &["--version"],
+    default_on: true,
 };
 
-/// `zig fmt --stdin`: reads stdin, writes to stdout.
+/// `zig fmt --stdin`: reads stdin, writes to stdout. Opt-in (off by default).
 static ZIGFMT_SPEC: ToolSpec = ToolSpec {
     engine_name: "zigfmt",
     format_binary: "zig",
     format_args: &["fmt", "--stdin"],
     version_binary: "zig",
     version_args: &["version"],
+    default_on: false,
 };
 
 // ---------------------------------------------------------------------------
@@ -124,6 +146,13 @@ static ZIGFMT_PROBE: OnceLock<Option<String>> = OnceLock::new();
 static GOFMT_KEY: OnceLock<String> = OnceLock::new();
 static RUSTFMT_KEY: OnceLock<String> = OnceLock::new();
 static ZIGFMT_KEY: OnceLock<String> = OnceLock::new();
+
+// Guards the "falling back to the generic tier" info notice so it fires at most
+// once per language per process run, never once per file (the format() path runs
+// inside the per-file rayon loop).
+static GOFMT_NOTICE: Once = Once::new();
+static RUSTFMT_NOTICE: Once = Once::new();
+static ZIGFMT_NOTICE: Once = Once::new();
 
 // ---------------------------------------------------------------------------
 // Per-language static slices for Engine::languages
@@ -183,6 +212,45 @@ impl NativeToolEngine {
             Language::Rust => &RUSTFMT_KEY,
             Language::Zig => &ZIGFMT_KEY,
             _ => unreachable!("NativeToolEngine only handles Go, Rust, and Zig"),
+        }
+    }
+
+    fn notice_lock(&self) -> &'static Once {
+        match &self.language {
+            Language::Go => &GOFMT_NOTICE,
+            Language::Rust => &RUSTFMT_NOTICE,
+            Language::Zig => &ZIGFMT_NOTICE,
+            _ => unreachable!("NativeToolEngine only handles Go, Rust, and Zig"),
+        }
+    }
+
+    /// Whether the native tool is *wanted* for this run: the user's explicit
+    /// `enabled = …` if present, otherwise the tool's `default_on` policy
+    /// (`true` for the canonical `rustfmt` / `gofmt`, `false` for opt-in tools).
+    fn is_enabled(&self, cfg: &EngineConfig) -> bool {
+        cfg.options
+            .get("enabled")
+            .and_then(toml::Value::as_bool)
+            .unwrap_or(self.spec().default_on)
+    }
+
+    /// Emit the tier-2 fallback notice at most once per language per run.
+    ///
+    /// Only fires when the tool was *wanted* (enabled / default-on) but is
+    /// absent from `PATH` — the measured pain case. An explicit `enabled =
+    /// false` is the user's choice and stays silent; presence of the tool means
+    /// no fallback happens at all.
+    fn notify_tier2_fallback(&self, cfg: &EngineConfig) {
+        if should_notify_fallback(self.is_enabled(cfg), self.probed_version().is_some()) {
+            let spec = self.spec();
+            self.notice_lock().call_once(|| {
+                info!(
+                    language = self.language.id(),
+                    tool = spec.format_binary,
+                    "{} not found on PATH; formatting via the generic tree-sitter tier (lower fidelity)",
+                    spec.format_binary
+                );
+            });
         }
     }
 
@@ -254,26 +322,32 @@ impl Engine for NativeToolEngine {
         TreeSitterEngine.lint(src, cfg)
     }
 
-    /// Format via the native tool when the opt-in is active and the tool is on
-    /// `PATH`; otherwise delegate to [`TreeSitterEngine`] (tier-2 fallback).
+    /// Format via the native tool when it is wanted and present on `PATH`;
+    /// otherwise delegate to [`TreeSitterEngine`] (tier-2 fallback).
     ///
-    /// The `enabled` flag is read from `cfg.options["enabled"]` (a TOML bool,
-    /// default `false`). Users set it via `[fmt.<lang>.<tool>] enabled = true`
-    /// in `poly.toml`.
+    /// "Wanted" defaults to the tool's `default_on` policy: the canonical
+    /// `rustfmt` / `gofmt` are on by default, opt-in tools are off. The user
+    /// overrides this via `[fmt.<lang>.<tool>] enabled = …` in `poly.toml`.
+    ///
+    /// When a wanted tool is absent, this is never an error: the language
+    /// degrades to the generic tier and an info-level notice is emitted once
+    /// per language per run (see [`NativeToolEngine::notify_tier2_fallback`]).
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
-        let enabled = cfg
-            .options
-            .get("enabled")
-            .and_then(toml::Value::as_bool)
-            .unwrap_or(false);
-
-        // Degrade gracefully: disabled OR tool not on PATH → tier-2.
-        if !enabled || self.probed_version().is_none() {
+        // Degrade gracefully: not wanted OR tool not on PATH → tier-2.
+        if !self.is_enabled(cfg) || self.probed_version().is_none() {
+            self.notify_tier2_fallback(cfg);
             return TreeSitterEngine.format(src, cfg);
         }
 
         format_via_tool(self.spec(), src)
     }
+}
+
+/// Decide whether the tier-2 fallback info notice should fire: the tool was
+/// wanted (`enabled` / default-on) but is not present on `PATH`. Pure so it can
+/// be unit-tested without a real toolchain.
+fn should_notify_fallback(wanted: bool, present: bool) -> bool {
+    wanted && !present
 }
 
 // ---------------------------------------------------------------------------
@@ -401,8 +475,9 @@ mod tests {
         }
     }
 
-    fn disabled_cfg() -> EngineConfig {
-        // options table is empty → `enabled` defaults to false
+    /// Empty options → the tool's `default_on` policy decides (canonical tools
+    /// on, opt-in tools off). This is the out-of-the-box config.
+    fn default_cfg() -> EngineConfig {
         EngineConfig {
             globals: GlobalDefaults::default(),
             indent_width: 4,
@@ -410,9 +485,21 @@ mod tests {
         }
     }
 
+    /// Explicit `enabled = false` — forces tier-2 fallback for any tool,
+    /// including the default-on canonical ones.
+    fn disabled_cfg() -> EngineConfig {
+        bool_cfg(false)
+    }
+
+    /// Explicit `enabled = true` — forces the native tool on (subject to it
+    /// being present on `PATH`).
     fn enabled_cfg() -> EngineConfig {
+        bool_cfg(true)
+    }
+
+    fn bool_cfg(enabled: bool) -> EngineConfig {
         let mut options = toml::Table::new();
-        options.insert("enabled".to_string(), toml::Value::Boolean(true));
+        options.insert("enabled".to_string(), toml::Value::Boolean(enabled));
         EngineConfig {
             globals: GlobalDefaults::default(),
             indent_width: 4,
@@ -632,6 +719,131 @@ mod tests {
         assert!(
             matches!(result, FormatOutput::Unchanged),
             "gofmt must return Unchanged for already-formatted source"
+        );
+    }
+
+    // ---------------------------------------------------------------------------
+    // Default-on resolution policy (ADR 0014 amendment)
+    // ---------------------------------------------------------------------------
+
+    /// Canonical toolchains (rustfmt, gofmt) are wanted by default; opt-in tools
+    /// (zig fmt) are not. The empty/default config drives this.
+    #[test]
+    fn default_policy_canonical_on_option_off() {
+        assert!(
+            NativeToolEngine::for_language(Language::Rust).is_enabled(&default_cfg()),
+            "rustfmt must be default-on (canonical toolchain)"
+        );
+        assert!(
+            NativeToolEngine::for_language(Language::Go).is_enabled(&default_cfg()),
+            "gofmt must be default-on (canonical toolchain)"
+        );
+        assert!(
+            !NativeToolEngine::for_language(Language::Zig).is_enabled(&default_cfg()),
+            "zig fmt must stay opt-in (off by default)"
+        );
+    }
+
+    /// An explicit `enabled = false` overrides the default-on policy for the
+    /// canonical tools, and `enabled = true` opts a default-off tool in.
+    #[test]
+    fn explicit_config_overrides_default_policy() {
+        assert!(
+            !NativeToolEngine::for_language(Language::Rust).is_enabled(&disabled_cfg()),
+            "explicit enabled=false must force rustfmt off"
+        );
+        assert!(
+            !NativeToolEngine::for_language(Language::Go).is_enabled(&disabled_cfg()),
+            "explicit enabled=false must force gofmt off"
+        );
+        assert!(
+            NativeToolEngine::for_language(Language::Zig).is_enabled(&enabled_cfg()),
+            "explicit enabled=true must opt zig fmt in"
+        );
+    }
+
+    /// The info-notice trigger is a pure predicate: notify iff the tool was
+    /// wanted but is absent from PATH. This is the rustfmt/gofmt-absent path.
+    #[test]
+    fn fallback_notice_fires_only_when_wanted_and_absent() {
+        // wanted + absent → notify (route to tree-sitter + info path)
+        assert!(should_notify_fallback(true, false));
+        // wanted + present → native tool runs, no fallback
+        assert!(!should_notify_fallback(true, true));
+        // not wanted (explicitly disabled) → silent tier-2, the user's choice
+        assert!(!should_notify_fallback(false, false));
+        assert!(!should_notify_fallback(false, true));
+    }
+
+    /// Default config (no explicit `enabled`) must route to exactly the right
+    /// formatter for Rust depending only on rustfmt's presence — never error.
+    ///
+    /// - rustfmt present → native-tool output (differs from tier-2 on this input).
+    /// - rustfmt absent  → byte-identical to the tree-sitter generic tier, and
+    ///   the fallback predicate is satisfied (info path).
+    ///
+    /// Does not require rustfmt to be installed: both branches are asserted.
+    #[test]
+    fn default_rust_routes_by_rustfmt_presence() {
+        const UNFORMATTED: &str = "fn main(){let x=1+2;println!(\"{x}\");}\n";
+        let engine = NativeToolEngine::for_language(Language::Rust);
+        let src = make_src("main.rs", Language::Rust, UNFORMATTED);
+
+        let result = engine.format(&src, &default_cfg()).unwrap();
+        let out = match result {
+            FormatOutput::Formatted(s) => s,
+            FormatOutput::Unchanged => UNFORMATTED.to_string(),
+        };
+
+        let tier2 = match TreeSitterEngine.format(&src, &default_cfg()).unwrap() {
+            FormatOutput::Formatted(s) => s,
+            FormatOutput::Unchanged => UNFORMATTED.to_string(),
+        };
+
+        if engine.probed_version().is_some() {
+            // rustfmt present + default-on → native tool wins over tier-2.
+            assert!(
+                out.contains("fn main() {"),
+                "rustfmt should expand the signature; got: {out:?}"
+            );
+            assert!(
+                !should_notify_fallback(engine.is_enabled(&default_cfg()), true),
+                "no fallback notice when rustfmt is present"
+            );
+        } else {
+            // rustfmt absent → generic tier, byte-identical, info path armed.
+            assert_eq!(
+                out, tier2,
+                "absent rustfmt must fall back to byte-identical tree-sitter output"
+            );
+            assert!(
+                should_notify_fallback(engine.is_enabled(&default_cfg()), false),
+                "absent default-on rustfmt must arm the tier-2 fallback notice"
+            );
+        }
+    }
+
+    /// Explicitly disabling a canonical tool always routes to the generic tier,
+    /// byte-identical to a direct `TreeSitterEngine` call — independent of
+    /// whether rustfmt is installed (simulates the absent case via config).
+    #[test]
+    fn disabled_rust_delegates_to_tier2() {
+        const SRC: &str = "fn main(){let x=1+2;println!(\"{x}\");}\n";
+        let engine = NativeToolEngine::for_language(Language::Rust);
+        let src = make_src("main.rs", Language::Rust, SRC);
+
+        let native_out = match engine.format(&src, &disabled_cfg()).unwrap() {
+            FormatOutput::Formatted(s) => s,
+            FormatOutput::Unchanged => SRC.to_string(),
+        };
+        let tier2_out = match TreeSitterEngine.format(&src, &disabled_cfg()).unwrap() {
+            FormatOutput::Formatted(s) => s,
+            FormatOutput::Unchanged => SRC.to_string(),
+        };
+
+        assert_eq!(
+            native_out, tier2_out,
+            "explicitly disabled rustfmt must produce byte-identical tree-sitter output"
         );
     }
 }

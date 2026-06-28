@@ -17,8 +17,19 @@ option to use the canonical tool when available.
 
 ## Decision
 
-- **Native-toolchain backends are opt-in, off by default.** Enabled per-tool via
-  `[tools.<lang>.<tool>] enabled = true` in `poly.toml` (ADR 0013). Missing toolchains
+- **Canonical formatters are default-on when present (amendment, 2026-06-28).** The
+  first-party formatters with no viable Rust library — `rustfmt` (Rust) and `gofmt`
+  (Go) — format their languages **by default when detected on `PATH`**, winning over the
+  tier-2 generic tier. This supersedes the original opt-in-off default for these two
+  tools: measured tier-2 Rust formatting was both the slowest path and ~67%
+  would-change churn against `rustfmt`, so honoring the canonical tool when available is
+  the better default. When the tool is absent, the language falls through to tier-2 and an
+  **info-level** notice is emitted once per language per run; absence is never an error, so
+  the zero-system-dependency guarantee still holds for anyone without the toolchain. A user
+  can still force a canonical tool off with `[fmt.<lang>.<tool>] enabled = false`.
+- **Other native-toolchain backends remain opt-in, off by default.** Tools other than the
+  canonical formatters above (e.g. `zig fmt`) are enabled per-tool via
+  `[fmt.<lang>.<tool>] enabled = true` in `poly.toml` (ADR 0013). Missing toolchains
   are never errors; the language falls through to tier-2 generic formatting (ADR 0004).
 - **Single-file, stdin→stdout tools only.** Wrap tools that process one file per
   invocation over stdin (gofmt, rustfmt, zig fmt). Project-wide tools (clippy, go vet,
@@ -59,8 +70,12 @@ Negative / risks:
 
 ## Alternatives considered
 
-- **Always use native toolchains when available:** rejected — it breaks the zero-dep
-  guarantee for the default case; users who don't opt in should never see it.
+- **Always use native toolchains when available:** rejected in general, but **adopted for
+  the canonical formatters** (`rustfmt`, `gofmt`) in the 2026-06-28 amendment — these have
+  no viable Rust library and tier-2 was demonstrably lower fidelity, so default-on-when-
+  present is correct for them. The zero-dep guarantee is preserved because absence is not an
+  error (info notice + tier-2 fallback), and a user can still force them off. Other tools
+  stay opt-in.
 - **Vendor pure-Rust reimplementations of all tools:** rejected — it's a maintenance
   sink and will never match the first-party behavior; tier-2 generic formatting is the
   right fallback.

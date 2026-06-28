@@ -36,6 +36,7 @@ enum Command {
 }
 
 fn main() -> ExitCode {
+    poly_cli::init_logging();
     match Cli::parse().command {
         Command::Lint(args) => run_lint(args),
         Command::Fmt(args) => run_fmt(args),

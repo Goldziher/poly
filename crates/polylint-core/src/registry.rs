@@ -52,11 +52,15 @@ pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
         | Language::Xml => vec![Box::new(MarkupFmtEngine)],
         Language::Php => vec![Box::new(MagoEngine)],
         Language::R => vec![Box::new(REngine)],
-        // Tier-3 opt-in native tool backends. Each `NativeToolEngine` takes the
-        // registry slot that `TreeSitterEngine` would otherwise occupy; it
-        // delegates internally to `TreeSitterEngine` when disabled or absent.
-        // This guarantees exactly one formatter runs per file (no double-format)
-        // and that the default output is byte-identical to today's tier-2 output.
+        // Native toolchain backends. Each `NativeToolEngine` takes the registry
+        // slot that `TreeSitterEngine` would otherwise occupy; it delegates
+        // internally to `TreeSitterEngine` when the tool is disabled or absent.
+        // This guarantees exactly one formatter runs per file (no double-format).
+        //
+        // The canonical formatters `rustfmt` (Rust) and `gofmt` (Go) are
+        // DEFAULT-ON when detected on PATH: present + enabled → the native tool
+        // wins over the tree-sitter generic tier; absent → tier-2 fallback with a
+        // once-per-language info notice. `zig fmt` stays opt-in (off by default).
         Language::Go => vec![Box::new(NativeToolEngine::for_language(Language::Go))],
         Language::Rust => vec![Box::new(NativeToolEngine::for_language(Language::Rust))],
         Language::Zig => vec![Box::new(NativeToolEngine::for_language(Language::Zig))],

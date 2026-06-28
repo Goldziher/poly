@@ -12,10 +12,11 @@ fn write(dir: &std::path::Path, name: &str, content: &str) -> std::path::PathBuf
 
 #[test]
 fn lint_flags_trailing_whitespace() {
-    // Use a Go file: it has no native backend, so it routes to the tree-sitter
-    // generic tier, which emits the catch-all trailing-whitespace diagnostic.
-    // (TOML→taplo and YAML→yaml are native backends that do not.) The lint is
-    // purely textual, so no grammar download happens here.
+    // Use a Go file: its NativeToolEngine slot delegates `lint` to the
+    // tree-sitter generic tier, which emits the catch-all trailing-whitespace
+    // diagnostic (gofmt is format-only). (TOML→taplo and YAML→yaml are native
+    // backends that do not.) The lint is purely textual, so no grammar download
+    // happens here.
     let dir = tempfile::tempdir().unwrap();
     write(dir.path(), "a.go", "package main   \nfunc main() {}\n");
     let cfg = Config::default();

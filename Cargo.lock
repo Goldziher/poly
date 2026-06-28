@@ -4713,6 +4713,7 @@ dependencies = [
  "polylint-core",
  "serde_json",
  "tempfile",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -4903,6 +4904,7 @@ dependencies = [
  "taplo",
  "tempfile",
  "toml 1.1.2+spec-1.1.0",
+ "tracing",
  "tree-sitter-language-pack",
  "typos",
  "typos-dict",

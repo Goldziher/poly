@@ -10,9 +10,10 @@
 //!   the exact formatted output.
 //! - `rust_known_unformatted` — a Rust source file that rustfmt reformats.
 //! - `zig_known_unformatted` — a Zig source file that zig fmt reformats.
-//! - `disabled_is_tier2` — with no config (enabled=false, the default),
-//!   `NativeToolEngine` must produce byte-identical output to `TreeSitterEngine`
-//!   for Go — proving the default-off invariant.
+//! - `disabled_is_tier2` — with an explicit `enabled = false`, `NativeToolEngine`
+//!   must produce byte-identical output to `TreeSitterEngine` for Go — proving
+//!   the config-disable fallback. (The canonical tools rustfmt/gofmt are now
+//!   default-ON when present, so an explicit override is required to disable.)
 
 use polylint_core::{
     Language,
@@ -35,10 +36,14 @@ fn make_src(path: &str, language: Language, content: &str) -> SourceFile {
 }
 
 fn disabled_cfg() -> EngineConfig {
+    // Explicit enabled=false: required now that the canonical tools (rustfmt,
+    // gofmt) are default-on when present.
+    let mut options = toml::Table::new();
+    options.insert("enabled".to_string(), toml::Value::Boolean(false));
     EngineConfig {
         globals: GlobalDefaults::default(),
         indent_width: 4,
-        options: toml::Table::new(),
+        options,
     }
 }
 
@@ -56,8 +61,8 @@ fn enabled_cfg() -> EngineConfig {
 // Default-off invariant
 // ---------------------------------------------------------------------------
 
-/// With no config (enabled = false, the default), `NativeToolEngine` for Go
-/// must produce byte-identical output to a direct `TreeSitterEngine` call.
+/// With an explicit `enabled = false`, `NativeToolEngine` for Go must produce
+/// byte-identical output to a direct `TreeSitterEngine` call.
 ///
 /// This test does NOT require `gofmt` to be installed and must always pass.
 #[test]

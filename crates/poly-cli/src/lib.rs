@@ -14,6 +14,24 @@ pub mod hooks;
 pub use cache_cmd::{CacheArgs, run_cache};
 pub use hooks::{HooksArgs, run_hooks};
 
+/// Install the process-wide `tracing` subscriber for the CLI binaries.
+///
+/// Idempotent (safe to call from every entry point). Logs to **stderr** so they
+/// never pollute `--format json` on stdout. The default filter surfaces poly's
+/// own info-level notices — e.g. the "toolchain not found; using the generic
+/// tier" fallback — while keeping dependencies quiet; override with `RUST_LOG`.
+pub fn init_logging() {
+    use tracing_subscriber::{EnvFilter, fmt};
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        EnvFilter::new("warn,polylint_core=info,poly_hooks=info,poly_cache=info,poly_cli=info")
+    });
+    let _ = fmt()
+        .with_env_filter(filter)
+        .with_target(false)
+        .with_writer(std::io::stderr)
+        .try_init();
+}
+
 /// Output rendering format.
 #[derive(Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum OutputFormat {

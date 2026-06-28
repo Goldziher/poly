@@ -30,6 +30,7 @@ poly-cache.workspace = true
 poly-config.workspace = true
 poly-hooks.workspace = true
 polylint-core.workspace = true
+tracing-subscriber.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
