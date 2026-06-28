@@ -4729,15 +4729,17 @@ name = "poly-hooks"
 version = "0.1.0"
 dependencies = [
  "anstyle-query",
+ "anyhow",
  "clap",
  "console",
  "dunce",
- "fancy-regex 0.18.0",
  "globset",
  "indoc",
  "libc",
  "owo-colors",
  "polyhooks",
+ "rayon",
+ "regex",
  "rustix 1.1.4",
  "serde",
  "strum",

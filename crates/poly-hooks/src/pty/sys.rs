@@ -84,20 +84,15 @@ impl Pty {
 
 impl From<Pty> for OwnedFd {
     fn from(pty: Pty) -> Self {
-        let Pty(fd) = pty;
-        let raw = fd.as_raw_fd();
-        std::mem::forget(fd);
-        // SAFETY: we just obtained the raw fd from a valid OwnedFd and
-        // ensured the OwnedFd won't close it by forgetting it.
-        unsafe { Self::from_raw_fd(raw) }
+        // Move the owned fd out directly — no raw-fd round-trip (and no leak via
+        // `forget`) is needed to transfer ownership.
+        pty.0
     }
 }
 
 impl AsFd for Pty {
     fn as_fd(&self) -> BorrowedFd<'_> {
-        let raw = self.0.as_raw_fd();
-        // SAFETY: fd is valid and owned by self.
-        unsafe { BorrowedFd::borrow_raw(raw) }
+        self.0.as_fd()
     }
 }
 
@@ -173,8 +168,11 @@ impl Pts {
         let pts_fd = self.0.as_raw_fd();
         move || {
             rustix::process::setsid()?;
-            // SAFETY: pts_fd is valid for the lifetime of the closure (the
-            // parent calls this from pre_exec, before exec; the fd is still open).
+            // SAFETY: `pts_fd` is the raw fd of `self.0`. The caller MUST keep
+            // the `Pts` that owns it alive until `Command::spawn()` returns —
+            // this closure runs in the forked child via `pre_exec`, before
+            // `exec`, and if the owning `Pts` were dropped earlier the fd would
+            // be closed and this `borrow_raw` would alias a dangling descriptor.
             rustix::process::ioctl_tiocsctty(unsafe { BorrowedFd::borrow_raw(pts_fd) })?;
             Ok(())
         }

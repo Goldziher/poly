@@ -65,7 +65,13 @@ pub enum FilePattern {
     /// Never match any file.
     Never,
     /// Match via a regular expression (text match on the path string).
-    Regex(fancy_regex::Regex),
+    ///
+    /// Backed by the linear-time [`regex`] crate rather than `fancy_regex`: the
+    /// patterns here come from user-supplied `files`/`exclude` config, and
+    /// `fancy_regex`'s backtracking engine has exponential worst-case behaviour
+    /// (`ReDoS`). `regex` is guaranteed linear and rejects lookaround/backrefs
+    /// at compile time, so a hostile pattern cannot wedge the runner.
+    Regex(regex::Regex),
     /// Match via one or more glob patterns.
     Glob(GlobPatterns),
 }
@@ -84,9 +90,10 @@ impl FilePattern {
     ///
     /// # Errors
     ///
-    /// Returns `Err` if the pattern is invalid regex syntax.
-    pub fn regex(pattern: &str) -> Result<Self, fancy_regex::Error> {
-        Ok(Self::Regex(fancy_regex::Regex::new(pattern)?))
+    /// Returns `Err` if the pattern is invalid regex syntax, or uses a feature
+    /// (lookaround / backreferences) the linear-time engine rejects.
+    pub fn regex(pattern: &str) -> Result<Self, regex::Error> {
+        Ok(Self::Regex(regex::Regex::new(pattern)?))
     }
 
     /// Return `true` if `path` matches this pattern.
@@ -97,9 +104,7 @@ impl FilePattern {
     pub fn is_match(&self, path: &Path) -> bool {
         match self {
             Self::Never => false,
-            Self::Regex(regex) => path
-                .to_str()
-                .is_some_and(|p| regex.is_match(p).unwrap_or(false)),
+            Self::Regex(regex) => path.to_str().is_some_and(|p| regex.is_match(p)),
             Self::Glob(globs) => globs.is_match(path),
         }
     }

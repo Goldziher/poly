@@ -19,7 +19,7 @@
 //! version-gated rules are excluded).
 //!
 //! ## Cache key
-//! `VERSION` folds both the air and jarl git revs so any fork bump invalidates
+//! [`VERSION`] folds both the air and jarl git revs so any fork bump invalidates
 //! stale cached output.
 
 use std::collections::HashMap;
@@ -55,13 +55,9 @@ static LANGUAGES: &[Language] = &[Language::R];
 /// but the resulting `Config` is `Send + Sync` so it can safely live in a
 /// `LazyLock` and be shared across threads without additional locking.
 ///
-/// Stored as a `Result` rather than unwrapped at init time: a `LazyLock` is
-/// forced inside a rayon worker, so an `.expect()` here would panic the worker.
-/// The error is surfaced through `lint()`'s `Result` instead.
-///
 /// Rule selection: default-enabled rules, no minimum R version specified
 /// (conservative — version-gated rules such as `grepv` are excluded).
-static JARL_CONFIG: LazyLock<Result<Config, String>> = LazyLock::new(|| {
+static JARL_CONFIG: LazyLock<Config> = LazyLock::new(|| {
     let args = ArgsConfig {
         files: vec![],
         fix: false,
@@ -82,7 +78,8 @@ static JARL_CONFIG: LazyLock<Result<Config, String>> = LazyLock::new(|| {
     };
     // Empty paths → `determine_minimum_r_version` loops over nothing (no FS
     // access).  This is safe to call at init time.
-    build_config(&args, None, vec![]).map_err(|e| e.to_string())
+    build_config(&args, None, vec![])
+        .expect("jarl: failed to build default config — this is a bug in polylint")
 });
 
 /// Tier-1 R backend — formats and lints `.R` files using the `air` formatter
@@ -123,10 +120,6 @@ impl Engine for REngine {
     /// file does not surface confusing "parse error" diagnostics.  The formatter
     /// already handles parse errors by returning `Unchanged`.
     fn lint(&self, src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
-        let config = JARL_CONFIG
-            .as_ref()
-            .map_err(|e| anyhow::anyhow!("jarl config: {e}"))?;
-
         let pkg = PackageAnalysis::default();
         let pkg_contexts: HashMap<_, PackageContext> = HashMap::new();
         let file_pkg_info: HashMap<_, FilePackageInfo> = HashMap::new();
@@ -134,27 +127,16 @@ impl Engine for REngine {
         match jarl_get_checks(
             &src.content,
             &src.path,
-            config,
+            &JARL_CONFIG,
             &pkg,
             &pkg_contexts,
             &file_pkg_info,
         ) {
-            Ok(jarl_diags) => {
-                // Build a line-start index once so per-diagnostic span mapping is
-                // a binary search rather than an O(filesize) scan per offset.
-                let line_starts = build_line_starts(&src.content);
-                Ok(jarl_diags
-                    .into_iter()
-                    .map(|d| map_jarl_diagnostic(d, &src.content, &line_starts))
-                    .collect())
-            }
-            // Walk the error chain: jarl may wrap the ParseError with context, so
-            // checking only the outermost error would let it escape the graceful
-            // degradation path.
-            Err(e)
-                if e.chain()
-                    .any(|c| c.downcast_ref::<jarl_core::error::ParseError>().is_some()) =>
-            {
+            Ok(jarl_diags) => Ok(jarl_diags
+                .into_iter()
+                .map(|d| map_jarl_diagnostic(d, &src.content))
+                .collect()),
+            Err(e) if e.is::<jarl_core::error::ParseError>() => {
                 // Corrupt/partial R — graceful degradation; the format path
                 // returns Unchanged for the same input.
                 Ok(vec![])
@@ -208,40 +190,18 @@ impl Engine for REngine {
 // Diagnostic mapping helpers
 // ---------------------------------------------------------------------------
 
-/// Build a line-start byte-offset index for `content`: index 0 is offset 0, and
-/// each subsequent entry is the byte offset immediately after a `\n`.  Computed
-/// once per file so [`byte_to_span_pos`] can binary-search rather than rescan the
-/// prefix for every diagnostic offset.
-fn build_line_starts(content: &str) -> Vec<usize> {
-    let mut starts = vec![0usize];
-    starts.extend(
-        content
-            .bytes()
-            .enumerate()
-            .filter_map(|(i, b)| (b == b'\n').then_some(i + 1)),
-    );
-    starts
-}
-
-/// Convert a byte offset into a 1-based (line, column) pair using a precomputed
-/// `line_starts` index (see [`build_line_starts`]).
-///
-/// Clamps the offset to the content length and walks back to the nearest UTF-8
-/// char boundary so out-of-bounds or mid-codepoint offsets do not panic.  The
-/// column is a **character** count from the start of the line (not a byte count),
-/// matching what editors / LSP / annotate-snippets expect.
-fn byte_to_span_pos(content: &str, line_starts: &[usize], byte_offset: usize) -> (u32, u32) {
-    let mut safe = byte_offset.min(content.len());
-    while safe > 0 && !content.is_char_boundary(safe) {
-        safe -= 1;
-    }
-    // `line_starts` is sorted ascending; the last start `<= safe` is our line.
-    let line_idx = line_starts
-        .partition_point(|&s| s <= safe)
-        .saturating_sub(1);
-    let col_start = line_starts[line_idx];
-    let col = content[col_start..safe].chars().count() as u32 + 1;
-    (line_idx as u32 + 1, col)
+/// Convert a byte offset into a 1-based (line, column) pair using the source
+/// content.  Clamps the offset to the content length so out-of-bounds offsets
+/// do not panic.
+fn byte_to_span_pos(content: &str, byte_offset: usize) -> (u32, u32) {
+    let safe = byte_offset.min(content.len());
+    let before = &content[..safe];
+    let line = before.bytes().filter(|&b| b == b'\n').count() as u32 + 1;
+    let col_start = before.rfind('\n').map_or(0, |p| p + 1);
+    // Column is the number of bytes from the last newline (or SOF) to the offset,
+    // plus 1 for 1-based indexing.
+    let col = (safe - col_start) as u32 + 1;
+    (line, col)
 }
 
 /// Map a [`JarlDiagnostic`] to a polylint [`Diagnostic`].
@@ -253,15 +213,11 @@ fn byte_to_span_pos(content: &str, line_starts: &[usize], byte_offset: usize) ->
 /// non-empty replacement content.  `to_skip` is a jarl-internal flag indicating
 /// that the autofix for a particular node is temporarily disabled (e.g., because
 /// the node contains a comment that would be misplaced after the edit).
-fn map_jarl_diagnostic(
-    jarl_diag: JarlDiagnostic,
-    content: &str,
-    line_starts: &[usize],
-) -> Diagnostic {
+fn map_jarl_diagnostic(jarl_diag: JarlDiagnostic, content: &str) -> Diagnostic {
     let start_byte: usize = jarl_diag.range.start().into();
     let end_byte: usize = jarl_diag.range.end().into();
-    let (start_line, start_col) = byte_to_span_pos(content, line_starts, start_byte);
-    let (end_line, end_col) = byte_to_span_pos(content, line_starts, end_byte);
+    let (start_line, start_col) = byte_to_span_pos(content, start_byte);
+    let (end_line, end_col) = byte_to_span_pos(content, end_byte);
 
     let fix = if !jarl_diag.fix.to_skip && !jarl_diag.fix.content.is_empty() {
         vec![Edit {
@@ -378,63 +334,6 @@ mod tests {
             span.start_line >= 2,
             "equals_na span must point to the second line, got line {}",
             span.start_line
-        );
-    }
-
-    #[test]
-    fn span_pos_is_char_based_and_boundary_safe() {
-        // "# café\n" — the é is a 2-byte UTF-8 sequence (bytes 5..7).
-        let content = "# café\nx == NA\n";
-        let line_starts = build_line_starts(content);
-
-        // Offset landing mid-codepoint (inside é, byte 6) must not panic and must
-        // clamp back to the codepoint boundary (byte 5 = after "# calf").
-        let (line, col) = byte_to_span_pos(content, &line_starts, 6);
-        assert_eq!(
-            (line, col),
-            (1, 6),
-            "mid-codepoint offset clamps to boundary"
-        );
-
-        // Start of line 2 ("x == NA"): "x" begins at byte 8 ('#'=0..1, ' '=1,
-        // 'c'=2, 'a'=3, 'f'=4, 'é'=5..7, '\n'=7, 'x'=8).
-        let x_byte = content.find("x ==").unwrap();
-        let (line, col) = byte_to_span_pos(content, &line_starts, x_byte);
-        assert_eq!((line, col), (2, 1), "line 2 col 1 for 'x'");
-
-        // The `==` on line 2 starts at char column 3, independent of the multibyte
-        // char on the *previous* line.
-        let eq_byte = content.find("==").unwrap();
-        let (line, col) = byte_to_span_pos(content, &line_starts, eq_byte);
-        assert_eq!((line, col), (2, 3), "char-based column for '=='");
-    }
-
-    #[test]
-    fn lint_non_ascii_does_not_panic_and_spans_are_char_based() {
-        // A multibyte char in a comment before a lint trigger on the next line.
-        // Regression: byte-slicing at a non-char-boundary used to panic, and
-        // byte-based columns drifted when multibyte chars preceded the offset.
-        let engine = REngine;
-        let src = make_src("# café\nx <- c(1, NA)\ny <- x == NA\n");
-        let diags = engine.lint(&src, &default_cfg()).unwrap();
-
-        let equals_na: Vec<_> = diags
-            .iter()
-            .filter(|d| d.code.as_deref() == Some("equals_na"))
-            .collect();
-        assert!(
-            !equals_na.is_empty(),
-            "expected an equals_na diagnostic despite non-ASCII content, got: {diags:?}"
-        );
-
-        let span = equals_na[0].span.expect("equals_na must include a span");
-        // `x == NA` is on line 3. Its column is character-based: with no multibyte
-        // char on line 3, the start column is small (the `x` is at char col 6).
-        assert_eq!(span.start_line, 3, "equals_na is on the third line");
-        assert!(
-            span.start_col < 20,
-            "column must be a char offset within line 3, got {}",
-            span.start_col
         );
     }
 

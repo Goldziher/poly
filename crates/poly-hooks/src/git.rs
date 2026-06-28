@@ -39,6 +39,15 @@ pub enum Error {
     /// Git output was not valid UTF-8.
     #[error(transparent)]
     Utf8(#[from] std::str::Utf8Error),
+
+    /// A revision argument began with `-`, which git would parse as an option.
+    #[error("invalid git revision (must not begin with `-`): old={old:?}, new={new:?}")]
+    InvalidRevision {
+        /// The `old` side of the requested range.
+        old: String,
+        /// The `new` side of the requested range.
+        new: String,
+    },
 }
 
 /// Resolved path to the `git` binary (or the error from `which::which`).
@@ -162,6 +171,15 @@ pub fn get_staged_files(root: &Path) -> Result<Vec<PathBuf>, Error> {
 /// List files changed between `old` and `new` (merge-base or direct range).
 #[instrument(level = "trace")]
 pub fn get_changed_files(old: &str, new: &str, root: &Path) -> Result<Vec<PathBuf>, Error> {
+    // Guard against argument injection: a ref beginning with `-` would be parsed
+    // by git as an option rather than as part of the `old...new` range.
+    if old.starts_with('-') || new.starts_with('-') {
+        return Err(Error::InvalidRevision {
+            old: old.to_string(),
+            new: new.to_string(),
+        });
+    }
+
     let build_cmd = |range: String| -> Result<Cmd, Error> {
         let mut cmd = git_cmd("get changed files")?;
         cmd.arg("diff")
@@ -212,6 +230,24 @@ pub fn get_diff(path: &Path) -> Result<Vec<u8>, Error> {
     Ok(output.stdout)
 }
 
+/// Stage `paths` into the index (`git add -- <paths>`).
+///
+/// Used by `stage_fixed` to re-stage files a hook rewrote. A no-op when
+/// `paths` is empty.
+#[instrument(level = "trace", skip(paths))]
+pub fn add(root: &Path, paths: &[PathBuf]) -> Result<(), Error> {
+    if paths.is_empty() {
+        return Ok(());
+    }
+    let mut cmd = git_cmd("git add")?;
+    cmd.current_dir(root).arg("add").arg("--");
+    for path in paths {
+        cmd.arg(path);
+    }
+    cmd.check(true).status()?;
+    Ok(())
+}
+
 /// Return `true` if `path` has any unstaged modifications in the working tree.
 #[instrument(level = "trace")]
 pub fn has_worktree_diff(path: &Path) -> Result<bool, Error> {
@@ -234,6 +270,35 @@ pub fn has_worktree_diff(path: &Path) -> Result<bool, Error> {
         return Ok(true);
     }
 
+    cmd.check_status(status)?;
+    Ok(true)
+}
+
+/// Like [`has_worktree_diff`], but runs git inside `root` so the (repo-relative)
+/// `path` resolves correctly regardless of the process working directory.
+///
+/// Used by the runner's `stage_fixed` boundary to detect files a hook rewrote.
+#[instrument(level = "trace")]
+pub fn has_worktree_diff_in(root: &Path, path: &Path) -> Result<bool, Error> {
+    let mut cmd = git_cmd("check worktree diff")?;
+    let status = cmd
+        .current_dir(root)
+        .arg("diff-files")
+        .arg("--quiet")
+        .arg("--no-ext-diff")
+        .arg("--no-textconv")
+        .arg("--ignore-submodules")
+        .arg("--")
+        .arg(path)
+        .check(false)
+        .status()?;
+
+    if status.success() {
+        return Ok(false);
+    }
+    if status.code() == Some(1) {
+        return Ok(true);
+    }
     cmd.check_status(status)?;
     Ok(true)
 }

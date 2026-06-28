@@ -9,16 +9,18 @@ description = "Execution building blocks for poly's native git hook runner (sync
 
 [dependencies]
 anstyle-query = { workspace = true }
+anyhow = { workspace = true }
 clap = { workspace = true }
 console = { workspace = true }
 dunce = { workspace = true }
-fancy-regex = { workspace = true }
 globset = { workspace = true }
 owo-colors = { workspace = true }
 # polyhooks is the vendored prek fork; we re-export its `identify` and `consts`
 # modules (both already 100% sync) to avoid duplicating the large generated
 # tags table. These re-exports will be inlined when polyhooks is removed in B4.
 polyhooks = { path = "../polyhooks" }
+rayon = { workspace = true }
+regex = { workspace = true }
 serde = { workspace = true }
 strum = { workspace = true }
 thiserror = { workspace = true }

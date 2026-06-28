@@ -148,14 +148,129 @@ fn is_preview_char(ch: char) -> bool {
     matches!(ch, '\n' | '\r' | '\t') || !ch.is_control()
 }
 
-// ── HookRunReporter (B1 TODO) ─────────────────────────────────────────────────
+// ── CaptureSink ───────────────────────────────────────────────────────────────
 
-// TODO(B1): Port `HookRunReporter` once the `Hook` model and rayon runner are
-// available. The full implementation requires:
-//   - `crate::hook::Hook` (rayon hook-runner phase)
-//   - `indicatif` progress bars + `MultiProgress`
-//   - Per-hook `HookBar` and `HookGroup` tracking structs
-//   - `HookOutputSink` implementing `OutputSink`
+/// An [`OutputSink`](crate::process::OutputSink) that accumulates every chunk
+/// into a single buffer.
+///
+/// Each hook (and each `ARG_MAX` batch) executes with its own `CaptureSink`, so
+/// concurrently-running hooks never interleave their output. The runner renders
+/// the captured buffers sequentially afterwards (capture-then-render).
+#[derive(Debug, Default)]
+pub struct CaptureSink {
+    buffer: Vec<u8>,
+}
+
+impl CaptureSink {
+    /// Consume the sink and return the captured bytes.
+    #[must_use]
+    pub fn into_bytes(self) -> Vec<u8> {
+        self.buffer
+    }
+}
+
+impl crate::process::OutputSink for CaptureSink {
+    fn write_chunk(&mut self, chunk: &[u8]) {
+        self.buffer.extend_from_slice(chunk);
+    }
+}
+
+// ── HookRunReporter ─────────────────────────────────────────────────────────
+
+/// Renders a completed [`HookRunOutcome`](crate::model::HookRunOutcome) into a
+/// deterministic, non-interleaved report.
+///
+/// All hooks are reported in position order (the runner sorts them), and each
+/// hook's captured output is emitted as one contiguous block — there is no live
+/// progress UI and no chunk interleaving, so the output is reproducible.
+#[derive(Debug, Default)]
+pub struct HookRunReporter;
+
+impl HookRunReporter {
+    /// Create a reporter.
+    #[must_use]
+    pub fn new() -> Self {
+        Self
+    }
+
+    /// Render the whole run to a `String`.
+    // `&self` today carries no render options; it is kept for forward-compat
+    // (colour / verbosity toggles) without a breaking signature change.
+    #[allow(clippy::unused_self)]
+    #[must_use]
+    pub fn render(&self, outcome: &crate::model::HookRunOutcome) -> String {
+        let mut report = String::new();
+        for stage in &outcome.stages {
+            Self::render_stage(&mut report, stage);
+        }
+        report
+    }
+
+    fn render_stage(report: &mut String, stage: &crate::model::StageOutcome) {
+        use std::fmt::Write as _;
+
+        use crate::model::{HookStatus, StageStatus};
+
+        let _ = writeln!(report, "[stage] {}", stage.stage);
+        match &stage.status {
+            StageStatus::Skipped(reason) => {
+                let _ = writeln!(report, "  skipped: {reason}");
+                return;
+            }
+            StageStatus::Aborted(reason) => {
+                let _ = writeln!(report, "  aborted: {reason}");
+            }
+            StageStatus::Ran => {}
+        }
+
+        for step in &stage.before {
+            let _ = writeln!(
+                report,
+                "  {} before: {}",
+                project_status_marker(step.status.is_failure()),
+                step.command
+            );
+            append_failure_output(report, &step.status, &step.output);
+        }
+
+        for hook in &stage.hooks {
+            let marker = match &hook.status {
+                HookStatus::Skipped(_) => "-".to_string(),
+                status => project_status_marker(status.is_failure()),
+            };
+            let suffix = if hook.files_modified {
+                " (files modified)"
+            } else {
+                ""
+            };
+            let _ = writeln!(report, "  {marker} {}{suffix}", hook.id);
+            append_failure_output(report, &hook.status, &hook.output);
+        }
+
+        for step in &stage.after {
+            let _ = writeln!(
+                report,
+                "  {} after: {}",
+                project_status_marker(step.status.is_failure()),
+                step.command
+            );
+            append_failure_output(report, &step.status, &step.output);
+        }
+    }
+}
+
+fn append_failure_output(report: &mut String, status: &crate::model::HookStatus, output: &[u8]) {
+    use std::fmt::Write as _;
+
+    if !status.is_failure() {
+        return;
+    }
+    let text = String::from_utf8_lossy(output);
+    let text = strip_ansi_codes(&text);
+    for line in text.lines() {
+        let _ = writeln!(report, "      {line}");
+    }
+}
 
 #[cfg(test)]
 mod tests {

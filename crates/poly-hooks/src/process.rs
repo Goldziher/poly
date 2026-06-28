@@ -97,9 +97,26 @@ fn write_trimmed_output_section(
         return Ok(());
     };
 
-    writeln!(f, "\n{}\n{}", label.red(), first)?;
-    for line in lines {
+    // Truncate the rendered output: a failing command's stdout/stderr may carry
+    // secrets (tokens echoed by a misconfigured tool, env dumps, …) and is
+    // written verbatim into error messages and trace logs. Cap the total at
+    // `LOG_TRUNCATE_LIMIT` characters and elide the remainder.
+    let limit = *LOG_TRUNCATE_LIMIT;
+    writeln!(f, "\n{}", label.red())?;
+    let mut used = 0usize;
+    for line in std::iter::once(first).chain(lines) {
+        if used >= limit {
+            writeln!(f, "[...]")?;
+            break;
+        }
+        let remaining = limit - used;
+        if line.chars().count() > remaining {
+            let truncated: String = line.chars().take(remaining).collect();
+            writeln!(f, "{truncated} [...]")?;
+            break;
+        }
         writeln!(f, "{line}")?;
+        used += line.chars().count();
     }
     Ok(())
 }

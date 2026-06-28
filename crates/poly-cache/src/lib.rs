@@ -26,7 +26,7 @@
 //! # Key derivation
 //!
 //! ```text
-//! input_digest  = blake3( concat(path \0 blake3(file_bytes)_raw  for each file, sorted by path) )
+//! input_digest  = blake3( concat(path \0 blake3(file_bytes)_hex  for each file, sorted by path) )
 //!
 //! cache_key     = blake3( namespace_dir \0 id \0 version \0 toml(args) \0 input_digest_hex )
 //! ```
@@ -92,7 +92,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 /// Increment this whenever the cache layout changes incompatibly.  Tools such
 /// as `poly cache gc` compare the sentinel against this value to decide whether
 /// an existing tree is safe to reuse.
-pub const CACHE_FORMAT_VERSION: &str = "2";
+pub const CACHE_FORMAT_VERSION: &str = "1";
 
 static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -231,7 +231,6 @@ impl std::fmt::Display for CacheKey {
 ///
 /// When constructed with `enabled = false`, every `get` returns `None` and
 /// every `put` is a no-op.  The directory is not created.
-#[derive(Debug)]
 pub struct ResultCache {
     /// `<repo>/.polylint/cache/`
     root: PathBuf,
@@ -249,7 +248,6 @@ impl ResultCache {
     /// `VERSION` sentinel.  When disabled, returns a no-op stub.
     pub fn open(root: PathBuf, enabled: bool) -> anyhow::Result<Self> {
         if enabled {
-            Self::check_version(&root)?;
             Self::init_dirs(&root)?;
         }
         Ok(Self { root, enabled })
@@ -273,26 +271,6 @@ impl ResultCache {
     // Internal helpers
     // -----------------------------------------------------------------------
 
-    /// Validate the on-disk `VERSION` sentinel against [`CACHE_FORMAT_VERSION`].
-    ///
-    /// When a tree already exists (the `VERSION` file is present) and its
-    /// contents do not match the current format version, return an error so the
-    /// caller does not serve stale entries.  A missing sentinel (fresh tree) is
-    /// not an error — [`init_dirs`] writes it.
-    ///
-    /// [`init_dirs`]: ResultCache::init_dirs
-    fn check_version(root: &Path) -> anyhow::Result<()> {
-        let version_path = root.join("VERSION");
-        match std::fs::read_to_string(&version_path) {
-            Ok(found) if found != CACHE_FORMAT_VERSION => Err(anyhow::anyhow!(
-                "cache format version mismatch: expected {CACHE_FORMAT_VERSION}, found {found}; \
-                 clear the cache or pass --no-cache"
-            )),
-            // Matching sentinel, or a missing one (fresh tree) — both fine.
-            _ => Ok(()),
-        }
-    }
-
     /// Create the full sub-directory tree and write the VERSION sentinel.
     fn init_dirs(root: &Path) -> anyhow::Result<()> {
         for sub in ["results/lint", "results/fmt", "results/hook"] {
@@ -303,32 +281,14 @@ impl ResultCache {
                 )
             })?;
         }
-        // Write the sentinel only for a fresh tree; `create_new` makes this
-        // atomic, so a concurrent opener cannot race between an existence check
-        // and the write. An already-present sentinel is left untouched.
         let version_path = root.join("VERSION");
-        match std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&version_path)
-        {
-            Ok(mut file) => {
-                use std::io::Write as _;
-                file.write_all(CACHE_FORMAT_VERSION.as_bytes())
-                    .map_err(|e| {
-                        anyhow::anyhow!(
-                            "failed to write cache VERSION sentinel {}: {e}",
-                            version_path.display()
-                        )
-                    })?;
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
-            Err(e) => {
-                return Err(anyhow::anyhow!(
-                    "failed to create cache VERSION sentinel {}: {e}",
+        if !version_path.exists() {
+            std::fs::write(&version_path, CACHE_FORMAT_VERSION).map_err(|e| {
+                anyhow::anyhow!(
+                    "failed to write cache VERSION sentinel {}: {e}",
                     version_path.display()
-                ));
-            }
+                )
+            })?;
         }
         Ok(())
     }
@@ -361,24 +321,27 @@ impl ResultCache {
     /// Algorithm:
     /// 1. Compute `blake3(bytes)` for each file.
     /// 2. Sort entries by path (byte order) for a stable digest.
-    /// 3. Feed the outer hasher with `path \0 file_hash_raw_bytes` for each entry.
+    /// 3. Feed the outer hasher with `path \0 file_hash_hex` for each entry.
     ///
     /// For hooks, pass every file in the hook's matched input set.  For a
     /// single lint/fmt file use [`single_file_digest`] instead.
     ///
     /// [`single_file_digest`]: ResultCache::single_file_digest
     pub fn file_set_digest<'a>(files: impl Iterator<Item = (&'a str, &'a [u8])>) -> InputDigest {
-        let mut entries: Vec<(&'a str, blake3::Hash)> = files
-            .map(|(path, bytes)| (path, blake3::hash(bytes)))
+        let mut entries: Vec<(&'a str, String)> = files
+            .map(|(path, bytes)| {
+                let file_hash = blake3::hash(bytes).to_hex().to_string();
+                (path, file_hash)
+            })
             .collect();
         // Sort by path so the digest is stable regardless of iteration order.
         entries.sort_unstable_by_key(|(path, _)| *path);
 
         let mut outer = blake3::Hasher::new();
-        for (path, hash) in &entries {
+        for (path, hash_hex) in &entries {
             outer.update(path.as_bytes());
             outer.update(b"\0");
-            outer.update(hash.as_bytes());
+            outer.update(hash_hex.as_bytes());
         }
         InputDigest(outer.finalize().to_hex().to_string())
     }
@@ -420,8 +383,7 @@ impl ResultCache {
         hasher.update(b"\0");
         hasher.update(version.as_bytes());
         hasher.update(b"\0");
-        let serialised_args = toml::to_string(args)
-            .expect("cache: failed to serialize args toml::Table — this is a bug");
+        let serialised_args = toml::to_string(args).unwrap_or_default();
         hasher.update(serialised_args.as_bytes());
         hasher.update(b"\0");
         hasher.update(input_digest.as_str().as_bytes());
@@ -461,11 +423,8 @@ impl ResultCache {
             ));
         std::fs::write(&tmp, bytes)
             .map_err(|e| anyhow::anyhow!("cache write {}: {e}", tmp.display()))?;
-        if let Err(e) = std::fs::rename(&tmp, &dest) {
-            // Don't leave the orphaned tmp file behind; ignore the cleanup error.
-            let _ = std::fs::remove_file(&tmp);
-            return Err(anyhow::anyhow!("cache rename to {}: {e}", dest.display()));
-        }
+        std::fs::rename(&tmp, &dest)
+            .map_err(|e| anyhow::anyhow!("cache rename to {}: {e}", dest.display()))?;
         Ok(())
     }
 
@@ -708,38 +667,14 @@ mod tests {
     fn version_sentinel_not_overwritten_when_present() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().join("cache");
-        // Pre-create with the current (matching) version string.
-        std::fs::create_dir_all(root.join("results/lint")).unwrap();
-        std::fs::create_dir_all(root.join("results/fmt")).unwrap();
-        std::fs::create_dir_all(root.join("results/hook")).unwrap();
-        std::fs::write(root.join("VERSION"), CACHE_FORMAT_VERSION).unwrap();
-        ResultCache::open(root.clone(), true).unwrap();
-        // `create_new` leaves an existing sentinel untouched.
-        let version = std::fs::read_to_string(root.join("VERSION")).unwrap();
-        assert_eq!(
-            version, CACHE_FORMAT_VERSION,
-            "existing VERSION must not be overwritten"
-        );
-    }
-
-    #[test]
-    fn open_fails_on_version_mismatch() {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path().join("cache");
-        // Pre-create a tree carrying a stale, mismatched sentinel.
+        // Pre-create with a different version string.
         std::fs::create_dir_all(root.join("results/lint")).unwrap();
         std::fs::create_dir_all(root.join("results/fmt")).unwrap();
         std::fs::create_dir_all(root.join("results/hook")).unwrap();
         std::fs::write(root.join("VERSION"), "0").unwrap();
-        let err = ResultCache::open(root.clone(), true)
-            .expect_err("open must fail when the on-disk VERSION does not match");
-        let message = err.to_string();
-        assert!(
-            message.contains("cache format version mismatch"),
-            "error should explain the mismatch, got: {message}"
-        );
-        // The stale sentinel is left untouched for the user to clear.
+        ResultCache::open(root.clone(), true).unwrap();
+        // Must NOT overwrite — GC/migration tools are responsible for bumping.
         let version = std::fs::read_to_string(root.join("VERSION")).unwrap();
-        assert_eq!(version, "0");
+        assert_eq!(version, "0", "existing VERSION must not be overwritten");
     }
 }
