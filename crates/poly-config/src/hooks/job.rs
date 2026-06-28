@@ -10,7 +10,9 @@ use crate::hooks::patterns::{Guard, Patterns};
 /// One runnable unit within a stage (lefthook "command" or "script").
 ///
 /// A job runs exactly one of `run` (a shell command) **xor** `script` (a script
-/// file interpreted by `runner`); [`super::HooksConfig::validate`] enforces this.
+/// file); [`super::HooksConfig::validate`] enforces this. A `script` may name a
+/// `runner` (interpreter) but does not require one — when omitted, the runner
+/// defaults to a shell at execution time.
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields)]
 pub struct Job {
@@ -19,9 +21,11 @@ pub struct Job {
     pub name: Option<String>,
     /// Shell command to run. Mutually exclusive with `script`.
     pub run: Option<String>,
-    /// Script file to run. Mutually exclusive with `run`; requires `runner`.
+    /// Script file to run. Mutually exclusive with `run`. An explicit `runner`
+    /// is optional; without one the script runs under a default shell.
     pub script: Option<String>,
-    /// Interpreter used to execute `script` (e.g. `bash`, `python`).
+    /// Optional interpreter used to execute `script` (e.g. `bash`, `python`).
+    /// Only meaningful alongside `script`.
     pub runner: Option<String>,
     /// Extra arguments appended to the invocation.
     pub args: Vec<String>,

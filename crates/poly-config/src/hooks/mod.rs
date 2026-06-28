@@ -53,6 +53,10 @@ impl HooksConfig {
     ///   applies to every inline job without exception).
     /// - `runner` is only meaningful with `script`.
     /// - `skip` and `only` are not both set on the same stage or job.
+    /// - `only = false` (run only when never ≡ always skip) is rejected on a
+    ///   stage or job, as a likely mistake.
+    /// - Effective job labels are unique within a stage, so an explicit
+    ///   [`Job::name`] cannot collide with another job's label.
     ///
     /// Unknown stage keys and imported-repo keys are already rejected during
     /// deserialization, so they never reach this method.
@@ -63,12 +67,33 @@ impl HooksConfig {
                     "stage `{stage}` sets both `skip` and `only`; choose one"
                 ));
             }
+            reject_only_never(&format!("stage `{stage}`"), config.only.as_ref())?;
+            let mut seen_labels: BTreeMap<String, ()> = BTreeMap::new();
             for (label, job) in config.labeled_jobs() {
+                if seen_labels.insert(label.clone(), ()).is_some() {
+                    return Err(format!(
+                        "stage `{stage}` has two jobs with the effective label \
+                         `{label}`; give each a distinct name or map key"
+                    ));
+                }
                 validate_job(*stage, &label, job)?;
             }
         }
         Ok(())
     }
+}
+
+/// Reject an `only` guard that can never match (`only = false`), which is
+/// equivalent to "always skip" and is almost certainly a configuration mistake.
+/// `skip = false` is left as a harmless no-op.
+fn reject_only_never(location: &str, only: Option<&Guard>) -> Result<(), String> {
+    if matches!(only, Some(Guard::Always(false))) {
+        return Err(format!(
+            "{location} sets `only = false`, which never matches (≡ always \
+             skip); remove it or use `skip` instead"
+        ));
+    }
+    Ok(())
 }
 
 /// Validate a single inline job within a stage.
@@ -87,6 +112,9 @@ fn validate_job(stage: Stage, label: &str, job: &Job) -> Result<(), String> {
         }
         _ => {}
     }
+    // A `runner` is only meaningful alongside `script`, so `runner` without
+    // `script` is an error. The reverse is allowed: a `script` need not name a
+    // `runner` — it defaults to a shell at execution time.
     if job.runner.is_some() && job.script.is_none() {
         return Err(format!("{location} sets `runner` without `script`"));
     }
@@ -95,6 +123,7 @@ fn validate_job(stage: Stage, label: &str, job: &Job) -> Result<(), String> {
             "{location} sets both `skip` and `only`; choose one"
         ));
     }
+    reject_only_never(&location, job.only.as_ref())?;
     Ok(())
 }
 
@@ -141,6 +170,11 @@ impl<'de> Visitor<'de> for HooksConfigVisitor {
                     }
                 }
                 "repo" | "repos" => {
+                    // The `MapAccess` contract requires consuming the value for
+                    // every key returned by `next_key`, even on the error path;
+                    // skipping it is undefined behaviour per serde (the TOML
+                    // deserializer tolerates it, but others do not).
+                    let _: serde::de::IgnoredAny = map.next_value()?;
                     return Err(de::Error::custom(
                         "imported pre-commit repos are no longer supported; \
                          define hooks inline in poly.toml",
@@ -289,6 +323,20 @@ runner = "bash"
     }
 
     #[test]
+    fn validate_allows_script_without_runner() {
+        // A `script` does not require an explicit `runner` (defaults to a shell
+        // at execution time); only `runner` without `script` is an error.
+        let hooks = parse(
+            r#"
+[pre-commit]
+[[pre-commit.jobs]]
+script = "lint.sh"
+"#,
+        );
+        hooks.validate().expect("script without runner is valid");
+    }
+
+    #[test]
     fn validate_rejects_skip_and_only_together() {
         let hooks = parse(
             r#"
@@ -299,6 +347,77 @@ only = true
         );
         let err = hooks.validate().unwrap_err();
         assert!(err.contains("both `skip` and `only`"), "{err}");
+    }
+
+    #[test]
+    fn repo_key_with_value_is_rejected_after_consuming_value() {
+        // The `repo` key's value (a table here) must be consumed before the
+        // error is returned to honour the MapAccess contract; the deserializer
+        // must still reject it with the migration guidance.
+        let err = toml::from_str::<HooksConfig>(
+            r#"
+repo = { url = "https://github.com/example/hooks" }
+"#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("no longer supported"), "rejected: {err}");
+    }
+
+    #[test]
+    fn validate_rejects_only_false_on_stage() {
+        let hooks = parse(
+            r#"
+[pre-commit]
+only = false
+"#,
+        );
+        let err = hooks.validate().unwrap_err();
+        assert!(err.contains("never matches"), "{err}");
+    }
+
+    #[test]
+    fn validate_rejects_only_false_on_job() {
+        let hooks = parse(
+            r#"
+[pre-commit]
+[[pre-commit.jobs]]
+run = "x"
+only = false
+"#,
+        );
+        let err = hooks.validate().unwrap_err();
+        assert!(err.contains("never matches"), "{err}");
+    }
+
+    #[test]
+    fn validate_allows_skip_false_as_noop() {
+        let hooks = parse(
+            r#"
+[pre-commit]
+[[pre-commit.jobs]]
+run = "x"
+skip = false
+"#,
+        );
+        hooks.validate().expect("skip = false is a harmless no-op");
+    }
+
+    #[test]
+    fn validate_rejects_duplicate_effective_job_labels() {
+        // A command's explicit `name` collides with a script's map key.
+        let hooks = parse(
+            r#"
+[pre-commit.commands.alpha]
+run = "x"
+name = "dup"
+
+[pre-commit.scripts.dup]
+script = "y.sh"
+"#,
+        );
+        let err = hooks.validate().unwrap_err();
+        assert!(err.contains("effective label `dup`"), "{err}");
     }
 
     #[test]

@@ -33,8 +33,13 @@ pub use hooks::{
 pub const CONFIG_FILE_NAMES: [&str; 2] = ["poly.toml", "polylint.toml"];
 
 /// Name of the optional local override file deep-merged over the primary config
-/// when it sits in the same directory (issue #2193). Scalars and arrays in the
-/// override replace the base; tables are merged recursively.
+/// when it sits in the same directory (issue #2193).
+///
+/// Merge semantics (see [`merge_tables`]): only **tables** merge recursively,
+/// key-by-key. Every other value — scalars *and* arrays — in the override
+/// **replaces** the base value wholesale. In particular, an array field such as
+/// `stages = [...]` or a stage `exclude = [...]` in the override is **not**
+/// concatenated with the base; the override's array is used verbatim.
 pub const LOCAL_OVERRIDE_NAME: &str = "poly.local.toml";
 
 /// The fully parsed `poly.toml` (or back-compat `polylint.toml`).
@@ -423,6 +428,31 @@ line_length = 80
         assert_eq!(config.defaults.line_length, 80);
         // ...while untouched nested tables are preserved from the base.
         assert_eq!(config.cache.results.hooks, crate::HookCacheMode::Safe);
+    }
+
+    #[test]
+    fn local_override_replaces_arrays_wholesale() {
+        let dir = tempdir().unwrap();
+        fs::write(
+            dir.path().join("poly.toml"),
+            r#"
+[hooks]
+stages = ["pre-commit", "pre-push"]
+"#,
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join(LOCAL_OVERRIDE_NAME),
+            r#"
+[hooks]
+stages = ["pre-push"]
+"#,
+        )
+        .unwrap();
+        let config = PolyConfig::load(dir.path()).expect("load");
+        // The override array replaces the base array verbatim — it is NOT
+        // concatenated (which would yield three entries).
+        assert_eq!(config.hooks.stages, vec!["pre-push".to_string()]);
     }
 
     #[test]
