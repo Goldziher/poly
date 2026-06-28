@@ -1,0 +1,48 @@
+[package]
+name = "poly-hooks"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Execution building blocks for poly's native git hook runner (sync, no tokio)."
+
+[dependencies]
+anstyle-query = { workspace = true }
+clap = { workspace = true }
+console = { workspace = true }
+dunce = { workspace = true }
+fancy-regex = { workspace = true }
+globset = { workspace = true }
+owo-colors = { workspace = true }
+# polyhooks is the vendored prek fork; we re-export its `identify` and `consts`
+# modules (both already 100% sync) to avoid duplicating the large generated
+# tags table. These re-exports will be inlined when polyhooks is removed in B4.
+polyhooks = { path = "../polyhooks" }
+serde = { workspace = true }
+strum = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+unicode-width = { workspace = true }
+which = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true }
+rustix = { workspace = true }
+
+[dev-dependencies]
+indoc = { workspace = true }
+tempfile = { workspace = true }
+
+[lints.rust]
+missing_docs = "warn"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -2 }
+collapsible_else_if = "allow"
+collapsible_if = "allow"
+if_not_else = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"

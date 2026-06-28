@@ -4725,6 +4725,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "poly-hooks"
+version = "0.1.0"
+dependencies = [
+ "anstyle-query",
+ "clap",
+ "console",
+ "dunce",
+ "fancy-regex 0.18.0",
+ "globset",
+ "indoc",
+ "libc",
+ "owo-colors",
+ "polyhooks",
+ "rustix 1.1.4",
+ "serde",
+ "strum",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tracing",
+ "unicode-width 0.2.2",
+ "which",
+]
+
+[[package]]
 name = "polyfmt"
 version = "0.1.0"
 dependencies = [

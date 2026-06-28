@@ -1,0 +1,56 @@
+//! `poly-hooks` — sync execution building blocks for the poly native hook runner.
+//!
+//! This crate is phase B0 of the hooks rewrite plan. It ports the low-level
+//! execution primitives from the vendored `polyhooks` (prek) fork into a
+//! synchronous, tokio-free form, ready for the rayon-based B1 runner.
+//!
+//! # Modules
+//!
+//! - [`consts`] — environment variable names (re-exported from `polyhooks`).
+//! - [`identify`] — file-type tagging by filename/shebang (re-exported from `polyhooks`).
+//! - [`stage`] — [`Stage`] enum + [`HookType`] and their mapping.
+//! - [`process`] — synchronous [`Cmd`] wrapper over [`std::process::Command`].
+//! - [`git`] — synchronous git helpers (staged files, diff, worktree state).
+//! - [`filter`] — filename + tag-based file filtering primitives.
+//! - [`reporter`] — output rendering helpers ([`reporter::OutputPreview`], status markers).
+//! - [`fs`] — path utilities (clean, simplify, normalize, relative).
+//! - [`cleanup`] — global cleanup hook registry.
+//! - [`pty`] (Unix-only) — blocking PTY primitives for colored subprocess output.
+//!
+//! # B1 placeholder
+//!
+//! The in-memory `Hook` model and the rayon runner live in B1. This crate
+//! intentionally exposes no `run()` entry point yet; callers will find it once
+//! `HookRunRequest` / `HookRunOutcome` are added in the next phase.
+
+// Allow missing_docs on the re-exported modules since they originate in the
+// vendored polyhooks crate, which is exempt from our doc requirements.
+#![allow(missing_docs)]
+
+/// Environment variable names. Re-exported from the vendored `polyhooks` crate.
+/// These will be inlined when `polyhooks` is removed in B4.
+pub mod consts {
+    pub use polyhooks::consts::*;
+}
+
+/// File-type identification by filename, shebang, and interpreter.
+/// Re-exported from the vendored `polyhooks` crate (already fully synchronous).
+/// Will be inlined when `polyhooks` is removed in B4.
+pub mod identify {
+    pub use polyhooks::identify::*;
+}
+
+pub mod cleanup;
+pub mod filter;
+pub mod fs;
+pub mod git;
+pub mod process;
+pub mod reporter;
+pub mod stage;
+
+#[cfg(unix)]
+pub mod pty;
+
+// Re-export the most commonly used types at the crate root for convenience.
+pub use process::{Cmd, OutputSink};
+pub use stage::{HookType, Stage};
