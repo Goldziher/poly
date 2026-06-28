@@ -23,6 +23,8 @@ air_r_parser.workspace = true
 air_settings.workspace = true
 alejandra.workspace = true
 anyhow.workspace = true
+# dockerfile-parser — Dockerfile AST (MIT); used by the DockerfileEngine
+dockerfile-parser.workspace = true
 graphql-parser.workspace = true
 ignore.workspace = true
 jarl-core.workspace = true

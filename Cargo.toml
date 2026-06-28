@@ -47,6 +47,9 @@ console = { version = "0.16", default-features = false, features = [
 # crates/polylint-core/benches/ (dev-dependency only; never linked into binaries)
 criterion = "0.5"
 ctrlc = "3.4.5"
+# dockerfile-parser — pure-Rust Dockerfile AST parser (MIT, HPE).
+# Used by the DockerfileEngine to lint Dockerfiles with hadolint-style rules.
+dockerfile-parser = "0.9.0"
 dunce = "1.0.5"
 etcetera = "0.11.0"
 fancy-regex = "0.18.0"
