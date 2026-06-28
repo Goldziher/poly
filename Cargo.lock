@@ -518,6 +518,8 @@ dependencies = [
  "biome_json_syntax",
  "biome_rowan",
  "enumflags2",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -588,6 +590,7 @@ dependencies = [
  "drop_bomb",
  "indexmap",
  "rustc-hash 2.1.2",
+ "serde",
  "tracing",
  "unicode-width 0.1.14",
 ]
@@ -1910,6 +1913,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "fs"
+version = "0.0.0"
+source = "git+https://github.com/Goldziher/r-air-fork?rev=c916545f14f76e1d6bd6ff918870f86dfa704b63#c916545f14f76e1d6bd6ff918870f86dfa704b63"
+dependencies = [
+ "path-absolutize",
+]
+
+[[package]]
 name = "fs-err"
 version = "3.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2816,6 +2827,31 @@ name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
+
+[[package]]
+name = "jarl-core"
+version = "0.6.0-alpha.4"
+source = "git+https://github.com/Goldziher/r-jarl-fork?rev=24e39d0405e9a358ae988e5f8f86fa5437e3fdd9#24e39d0405e9a358ae988e5f8f86fa5437e3fdd9"
+dependencies = [
+ "air_r_parser",
+ "air_r_syntax",
+ "annotate-snippets 0.12.16",
+ "anyhow",
+ "biome_formatter",
+ "biome_rowan",
+ "etcetera",
+ "fs",
+ "ignore",
+ "path-absolutize",
+ "rayon",
+ "regex",
+ "rustc-hash 2.1.2",
+ "serde",
+ "strsim",
+ "toml 1.1.2+spec-1.1.0",
+ "tracing",
+ "workspace",
+]
 
 [[package]]
 name = "javascript-globals"
@@ -4795,6 +4831,7 @@ dependencies = [
  "graphql-parser",
  "ignore",
  "insta",
+ "jarl-core",
  "mago-allocator",
  "mago-database",
  "mago-formatter",
@@ -8376,6 +8413,26 @@ name = "wit-bindgen"
 version = "0.57.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
+
+[[package]]
+name = "workspace"
+version = "0.1.0"
+source = "git+https://github.com/Goldziher/r-air-fork?rev=c916545f14f76e1d6bd6ff918870f86dfa704b63#c916545f14f76e1d6bd6ff918870f86dfa704b63"
+dependencies = [
+ "air_r_formatter",
+ "air_r_parser",
+ "anyhow",
+ "biome_formatter",
+ "fs",
+ "ignore",
+ "line_ending",
+ "rustc-hash 2.1.2",
+ "serde",
+ "settings",
+ "thiserror 2.0.18",
+ "toml 1.1.2+spec-1.1.0",
+ "tracing",
+]
 
 [[package]]
 name = "writeable"

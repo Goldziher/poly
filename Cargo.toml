@@ -131,6 +131,10 @@ air_r_parser = { git = "https://github.com/Goldziher/r-air-fork", rev = "c916545
 # settings — air's settings crate; `biome` feature enables Into<biome_formatter::*> conversions
 # used when constructing RFormatOptions from polylint EngineConfig values.
 air_settings = { package = "settings", git = "https://github.com/Goldziher/r-air-fork", rev = "c916545f14f76e1d6bd6ff918870f86dfa704b63", features = ["biome"] }
+# jarl R linter — the tier-1 R linting backend. Depends on the same air fork
+# rev as air_r_parser so that air_r_parser/air_r_syntax unify into one copy
+# (Cargo deduplicates git deps that share the same URL + rev).
+jarl-core = { git = "https://github.com/Goldziher/r-jarl-fork", rev = "24e39d0405e9a358ae988e5f8f86fa5437e3fdd9" }
 # rubyfmt — opinionated Ruby formatter built on the Prism parser (MIT).
 # Not published to crates.io; pinned to a specific git rev for reproducibility.
 # default-features = false disables the optional tikv-jemallocator/jemalloc

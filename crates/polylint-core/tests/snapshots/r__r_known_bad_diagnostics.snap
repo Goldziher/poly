@@ -1,0 +1,12 @@
+---
+source: crates/polylint-core/tests/r.rs
+expression: summary
+---
+[
+    (
+        "r",
+        "equals_na",
+        Warning,
+        true,
+    ),
+]

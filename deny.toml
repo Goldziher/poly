@@ -29,19 +29,31 @@ allow = [
     "PSF-2.0",
 ]
 
+# jarl-core's workspace Cargo.toml sets `license-file = "LICENSE.md"` but the
+# actual file at the repo root is named `LICENSE` (no .md extension).
+# The path is relative to the jarl-core crate root (crates/jarl-core/).
+# Hash is XxHash32 of the normalized file content (cargo-deny's hash algorithm).
+[[licenses.clarify]]
+name = "jarl-core"
+expression = "MIT"
+
+[[licenses.clarify.license-files]]
+path = "../../LICENSE"
+hash = 0x3B9B906C
+
 # rubyfmt's Cargo.toml omits the `license` field; the repo ships a standard
-# MIT LICENSE file. `clarify` provides the CRC32 of the LICENSE file so
+# MIT LICENSE file. `clarify` provides the XxHash32 of the LICENSE file so
 # cargo-deny can verify the license expression without a manifest field.
+# Hash is XxHash32 of the normalized file content (cargo-deny's hash algorithm).
 [[licenses.clarify]]
 name = "rubyfmt"
-version = "*"
 expression = "MIT"
 
 [[licenses.clarify.license-files]]
 # The rubyfmt package root is `librubyfmt/`; the LICENSE file lives in the
 # repository root one level up. Path is relative to the crate root.
 path = "../LICENSE"
-hash = 0x59B3BDDF
+hash = 0x3634FEBB
 
 [bans]
 multiple-versions = "allow"
@@ -77,4 +89,6 @@ allow-git = [
     "https://github.com/Goldziher/r-air-fork",
     "https://github.com/lionel-/biome",
     "https://github.com/r-lib/tree-sitter-r",
+    # jarl R linter fork (MIT); depends on the same r-air-fork rev as above
+    "https://github.com/Goldziher/r-jarl-fork",
 ]
