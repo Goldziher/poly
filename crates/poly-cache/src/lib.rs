@@ -219,6 +219,27 @@ impl std::fmt::Display for CacheKey {
 }
 
 // ---------------------------------------------------------------------------
+// SerializedArgs
+// ---------------------------------------------------------------------------
+
+/// The TOML serialisation of an engine's (or hook's) `args` table, computed
+/// once via [`ResultCache::serialize_args`] and reused across many per-file
+/// keys via [`ResultCache::key_with_args`].
+///
+/// Serialising `args` is comparatively expensive, so the per-file rayon path
+/// serialises once per engine and borrows the result into the file loop rather
+/// than re-serialising for every file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SerializedArgs(String);
+
+impl SerializedArgs {
+    /// The serialised TOML string folded into a [`CacheKey`].
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+// ---------------------------------------------------------------------------
 // ResultCache
 // ---------------------------------------------------------------------------
 
@@ -376,6 +397,45 @@ impl ResultCache {
         args: &toml::Table,
         input_digest: &InputDigest,
     ) -> CacheKey {
+        Self::key_with_args(
+            namespace,
+            id,
+            version,
+            &Self::serialize_args(args),
+            input_digest,
+        )
+    }
+
+    /// Serialise an `args` table once for reuse across many [`key_with_args`]
+    /// calls.
+    ///
+    /// The result is byte-for-byte the serialisation [`key`] folds in, so
+    /// `key(.., args, ..)` and `key_with_args(.., &serialize_args(args), ..)`
+    /// produce identical [`CacheKey`]s.
+    ///
+    /// [`key`]: ResultCache::key
+    /// [`key_with_args`]: ResultCache::key_with_args
+    pub fn serialize_args(args: &toml::Table) -> SerializedArgs {
+        SerializedArgs(toml::to_string(args).unwrap_or_default())
+    }
+
+    /// Derive a [`CacheKey`] from pre-serialised `args`.
+    ///
+    /// This is the single key-derivation code path; [`key`] is a thin wrapper
+    /// that serialises `args` first.  In the per-file rayon loop, serialise the
+    /// engine's args once with [`serialize_args`] and borrow the
+    /// [`SerializedArgs`] into every call here so the cost is paid once per
+    /// engine rather than once per file.
+    ///
+    /// [`key`]: ResultCache::key
+    /// [`serialize_args`]: ResultCache::serialize_args
+    pub fn key_with_args(
+        namespace: Namespace,
+        id: &str,
+        version: &str,
+        args: &SerializedArgs,
+        input_digest: &InputDigest,
+    ) -> CacheKey {
         let mut hasher = blake3::Hasher::new();
         hasher.update(namespace.as_dir().as_bytes());
         hasher.update(b"\0");
@@ -383,8 +443,7 @@ impl ResultCache {
         hasher.update(b"\0");
         hasher.update(version.as_bytes());
         hasher.update(b"\0");
-        let serialised_args = toml::to_string(args).unwrap_or_default();
-        hasher.update(serialised_args.as_bytes());
+        hasher.update(args.as_str().as_bytes());
         hasher.update(b"\0");
         hasher.update(input_digest.as_str().as_bytes());
         CacheKey(hasher.finalize().to_hex().to_string())
@@ -537,6 +596,20 @@ mod tests {
             "disabled get must miss"
         );
         assert!(!root.exists(), "disabled put must not create cache dir");
+    }
+
+    #[test]
+    fn key_with_pre_serialized_args_matches_key() {
+        let digest = ResultCache::single_file_digest("content");
+        let mut args = empty_args();
+        args.insert("line-length".into(), toml::Value::Integer(120));
+        let direct = ResultCache::key(Namespace::Fmt, "eng", "1", &args, &digest);
+        let serialized = ResultCache::serialize_args(&args);
+        let via_args = ResultCache::key_with_args(Namespace::Fmt, "eng", "1", &serialized, &digest);
+        assert_eq!(
+            direct, via_args,
+            "key and key_with_args(serialize_args(..)) must be byte-identical"
+        );
     }
 
     // -----------------------------------------------------------------------

@@ -112,13 +112,18 @@ fn lint_fix_applies_autofixes_and_dry_run_does_not() {
 
 #[test]
 fn cache_round_trips() {
-    use polylint_core::cache::Cache;
-    let cache = Cache::new(true).unwrap();
+    use poly_cache::{Namespace, ResultCache};
+    let dir = tempfile::tempdir().unwrap();
+    let cache = ResultCache::open(dir.path().join("cache"), true).unwrap();
     let opts = toml::Table::new();
-    let key = Cache::key("fmt:test", "1", &opts, "some content");
-    cache.put(&key, b"formatted").unwrap();
-    assert_eq!(cache.get(&key).as_deref(), Some(&b"formatted"[..]));
+    let digest = ResultCache::single_file_digest("some content");
+    let key = ResultCache::key(Namespace::Fmt, "test", "1", &opts, &digest);
+    cache.put(Namespace::Fmt, &key, b"formatted").unwrap();
+    assert_eq!(
+        cache.get(Namespace::Fmt, &key).as_deref(),
+        Some(&b"formatted"[..])
+    );
     // A different version yields a different key (invalidation).
-    let key2 = Cache::key("fmt:test", "2", &opts, "some content");
+    let key2 = ResultCache::key(Namespace::Fmt, "test", "2", &opts, &digest);
     assert_ne!(key, key2);
 }

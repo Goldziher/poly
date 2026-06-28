@@ -1,16 +1,18 @@
 //! Parallel orchestration (rayon): discover files, route to backends, run with
 //! content-hash caching, collect results. Defaults to all logical cores.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Once};
 
+use poly_cache::{Namespace, ResultCache, SerializedArgs};
 use rayon::prelude::*;
 use serde::Serialize;
 
-use crate::cache::Cache;
-use crate::config::{Config, Kind};
+use crate::config::{Config, EngineConfig, Kind};
 use crate::discover::{DiscoveredFile, discover};
-use crate::engine::{Diagnostic, Edit, FormatOutput, SourceFile};
+use crate::engine::{Diagnostic, Edit, Engine, FormatOutput, SourceFile};
+use crate::language::Language;
 use crate::registry::engines_for;
 
 /// Options controlling a lint/format run.
@@ -47,6 +49,55 @@ pub struct FormatResult {
 /// others, so re-lint until stable, but cap to guarantee termination.
 const MAX_FIX_PASSES: usize = 5;
 
+/// One engine paired with its resolved config and once-serialised cache args.
+///
+/// Built once per language (not per file) so the per-file rayon loop neither
+/// rebuilds the engine list, re-resolves `EngineConfig`, nor re-serialises the
+/// engine's options into the cache key — the latter was the per-file hot-path
+/// cost this carries out of the loop.
+struct EnginePlan {
+    engine: Box<dyn Engine>,
+    config: EngineConfig,
+    serialized_args: SerializedArgs,
+}
+
+/// Resolve the engines (filtered to those with the requested capability) for a
+/// language, pre-resolving each one's config and serialising its args once.
+fn plan_engines(language: &Language, config: &Config, kind: Kind) -> Vec<EnginePlan> {
+    engines_for(language)
+        .into_iter()
+        .filter(|engine| match kind {
+            Kind::Lint => engine.capabilities().lint,
+            Kind::Format => engine.capabilities().format,
+        })
+        .map(|engine| {
+            let cfg = config.engine_config(language, engine.name(), kind);
+            let serialized_args = ResultCache::serialize_args(&cfg.options);
+            EnginePlan {
+                engine,
+                config: cfg,
+                serialized_args,
+            }
+        })
+        .collect()
+}
+
+/// Build a per-language engine plan covering every language present in `files`,
+/// so each distinct language is planned exactly once before the file loop.
+fn plan_by_language(
+    files: &[DiscoveredFile],
+    config: &Config,
+    kind: Kind,
+) -> HashMap<Language, Vec<EnginePlan>> {
+    let mut plans: HashMap<Language, Vec<EnginePlan>> = HashMap::new();
+    for f in files {
+        plans
+            .entry(f.language.clone())
+            .or_insert_with(|| plan_engines(&f.language, config, kind));
+    }
+    plans
+}
+
 /// Lint all discovered files under `paths`. Returns one [`LintResult`] per file
 /// that still has at least one diagnostic. When `fix` is true, each file's
 /// available autofixes are applied in place (re-linting until stable) before
@@ -58,11 +109,12 @@ pub fn lint(
     fix: bool,
 ) -> anyhow::Result<Vec<LintResult>> {
     configure_pool(opts.jobs);
-    let cache = Cache::new(!opts.no_cache)?;
+    let cache = ResultCache::open_default(!opts.no_cache)?;
     let files = discover(paths);
+    let plans = plan_by_language(&files, config, Kind::Lint);
     let mut results: Vec<LintResult> = files
         .par_iter()
-        .filter_map(|f| match lint_one(f, config, &cache, fix) {
+        .filter_map(|f| match lint_one(f, &plans, &cache, fix) {
             Ok(result) => Some(result),
             // A per-file failure (read, parse, or — when fixing — the atomic
             // write) must not be swallowed silently; surface it and skip the file.
@@ -86,11 +138,12 @@ pub fn format(
     write: bool,
 ) -> anyhow::Result<Vec<FormatResult>> {
     configure_pool(opts.jobs);
-    let cache = Cache::new(!opts.no_cache)?;
+    let cache = ResultCache::open_default(!opts.no_cache)?;
     let files = discover(paths);
+    let plans = plan_by_language(&files, config, Kind::Format);
     let mut results: Vec<FormatResult> = files
         .par_iter()
-        .filter_map(|f| format_one(f, config, &cache, write).ok())
+        .filter_map(|f| format_one(f, &plans, &cache, write).ok())
         .collect();
     results.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(results)
@@ -98,15 +151,17 @@ pub fn format(
 
 fn lint_one(
     f: &DiscoveredFile,
-    config: &Config,
-    cache: &Cache,
+    plans: &HashMap<Language, Vec<EnginePlan>>,
+    cache: &ResultCache,
     fix: bool,
 ) -> anyhow::Result<LintResult> {
     let original = std::fs::read_to_string(&f.path)?;
-    let mut content = original.clone();
-    let mut diagnostics = lint_content(f, config, cache, &content)?;
+    let mut diagnostics = lint_content(f, plans, cache, &original)?;
 
     if fix {
+        // Only the fix path mutates the buffer, so clone lazily here; a plain
+        // (no-fix) lint borrows `original` and never copies the file.
+        let mut content = original.clone();
         for _ in 0..MAX_FIX_PASSES {
             let edit_groups: Vec<&[Edit]> = diagnostics
                 .iter()
@@ -116,7 +171,7 @@ fn lint_one(
             match apply_edits(&content, &edit_groups) {
                 Some(next) if next != content => {
                     content = next;
-                    diagnostics = lint_content(f, config, cache, &content)?;
+                    diagnostics = lint_content(f, plans, cache, &content)?;
                 }
                 _ => break,
             }
@@ -136,8 +191,8 @@ fn lint_one(
 /// content-hash caching each engine's diagnostics.
 fn lint_content(
     f: &DiscoveredFile,
-    config: &Config,
-    cache: &Cache,
+    plans: &HashMap<Language, Vec<EnginePlan>>,
+    cache: &ResultCache,
     content: &str,
 ) -> anyhow::Result<Vec<Diagnostic>> {
     let src = SourceFile {
@@ -145,27 +200,27 @@ fn lint_content(
         language: f.language.clone(),
         content: Arc::from(content),
     };
+    // Content is constant across this file's engines, so digest it once.
+    let digest = ResultCache::single_file_digest(content);
     let mut all = Vec::new();
-    for engine in engines_for(&f.language) {
-        if !engine.capabilities().lint {
-            continue;
-        }
-        let ecfg = config.engine_config(&f.language, engine.name(), Kind::Lint);
-        let key = Cache::key(
-            &format!("lint:{}", engine.name()),
-            engine.version(),
-            &ecfg.options,
-            &src.content,
+    let engine_plans = plans.get(&f.language).map(Vec::as_slice).unwrap_or(&[]);
+    for plan in engine_plans {
+        let key = ResultCache::key_with_args(
+            Namespace::Lint,
+            plan.engine.name(),
+            plan.engine.version(),
+            &plan.serialized_args,
+            &digest,
         );
-        if let Some(bytes) = cache.get(&key)
+        if let Some(bytes) = cache.get(Namespace::Lint, &key)
             && let Ok(diags) = serde_json::from_slice::<Vec<Diagnostic>>(&bytes)
         {
             all.extend(diags);
             continue;
         }
-        let diags = engine.lint(&src, &ecfg)?;
+        let diags = plan.engine.lint(&src, &plan.config)?;
         if let Ok(bytes) = serde_json::to_vec(&diags) {
-            let _ = cache.put(&key, &bytes);
+            let _ = cache.put(Namespace::Lint, &key, &bytes);
         }
         all.extend(diags);
     }
@@ -260,8 +315,8 @@ fn has_internal_overlap(group: &[Edit]) -> bool {
 
 fn format_one(
     f: &DiscoveredFile,
-    config: &Config,
-    cache: &Cache,
+    plans: &HashMap<Language, Vec<EnginePlan>>,
+    cache: &ResultCache,
     write: bool,
 ) -> anyhow::Result<FormatResult> {
     let original = std::fs::read_to_string(&f.path)?;
@@ -275,29 +330,30 @@ fn format_one(
         language: f.language.clone(),
         content: Arc::clone(&current),
     };
-    for engine in engines_for(&f.language) {
-        if !engine.capabilities().format {
-            continue;
-        }
-        let ecfg = config.engine_config(&f.language, engine.name(), Kind::Format);
-        let key = Cache::key(
-            &format!("fmt:{}", engine.name()),
-            engine.version(),
-            &ecfg.options,
-            &current,
+    let engine_plans = plans.get(&f.language).map(Vec::as_slice).unwrap_or(&[]);
+    for plan in engine_plans {
+        // Each engine's output feeds the next, so the digest is recomputed from
+        // the current text; the args, however, were serialised once per engine.
+        let digest = ResultCache::single_file_digest(&current);
+        let key = ResultCache::key_with_args(
+            Namespace::Fmt,
+            plan.engine.name(),
+            plan.engine.version(),
+            &plan.serialized_args,
+            &digest,
         );
-        if let Some(bytes) = cache.get(&key)
+        if let Some(bytes) = cache.get(Namespace::Fmt, &key)
             && let Ok(text) = String::from_utf8(bytes)
         {
             current = Arc::from(text);
             continue;
         }
         src.content = Arc::clone(&current);
-        let out: Arc<str> = match engine.format(&src, &ecfg)? {
+        let out: Arc<str> = match plan.engine.format(&src, &plan.config)? {
             FormatOutput::Unchanged => Arc::clone(&current),
             FormatOutput::Formatted(s) => Arc::from(s),
         };
-        let _ = cache.put(&key, out.as_bytes());
+        let _ = cache.put(Namespace::Fmt, &key, out.as_bytes());
         current = out;
     }
 

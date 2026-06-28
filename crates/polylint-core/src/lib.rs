@@ -9,16 +9,15 @@
 //! New backends implement [`engine::Engine`] and are wired into the registry.
 //! The tree-sitter generic tier serves any language without a native backend.
 //!
-//! The `engines`, `discover`, and `cache` modules are `#[doc(hidden)]`: they are
-//! reachable for the in-crate integration tests but are not part of the stable
-//! public API. `registry` is crate-private. Downstream consumers use the
-//! curated re-exports below plus [`lint`] / [`format()`].
+//! Result caching is provided by the shared `poly-cache` crate. The `engines`
+//! and `discover` modules are `#[doc(hidden)]`: they are reachable for the
+//! in-crate integration tests but are not part of the stable public API.
+//! `registry` is crate-private. Downstream consumers use the curated re-exports
+//! below plus [`lint`] / [`format()`].
 
 // Public-for-tests, not part of the stable API: the per-backend integration
-// tests under `tests/` construct engines and exercise the cache/discovery
-// directly, so these stay `pub` but are hidden from the documented surface.
-#[doc(hidden)]
-pub mod cache;
+// tests under `tests/` construct engines and exercise discovery directly, so
+// these stay `pub` but are hidden from the documented surface.
 pub mod config;
 pub mod defaults;
 #[doc(hidden)]
