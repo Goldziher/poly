@@ -2,6 +2,8 @@
 
 - Status: Accepted
 - Date: 2026-06-26
+- Updated: 2026-06-28 (pivot to pinned git deps, no crates.io publish, new vendoring
+  exceptions)
 
 ## Context
 
@@ -14,49 +16,64 @@ fast-moving. We need one consistent rule for how we depend on them.
 
 A strict ordering:
 
-1. **Wrap the published crate first.** If an upstream crate (e.g. `taplo`, `sqruff_lib`,
-   `rumdl_lib`, `oxc_linter`) externalizes the API we need, depend on it directly and write
-   a thin `Engine` adapter (ADR 0004).
-2. **Vendor the source only if it doesn't externalize what's needed.** When the logic is
-   not reachable as a library (the likely case for ruff and possibly oxfmt), copy the
-   relevant source into `vendor/`, record every vendored source — upstream repo, license,
-   and the exact commit — in `ATTRIBUTIONS.md`, and adapt minimally.
-3. **No version pinning. No git-rev dependencies.** Depend on published crates by
-   permissive semver ranges (mirroring the alef `Cargo.toml` conventions); never pin an
-   exact `=x.y.z` and never point a dependency at a git revision.
+1. **Prefer published crates on crates.io.** If an upstream crate (e.g. `taplo`,
+   `sqruff_lib`, `rumdl_lib`) externalizes the API we need, depend on it directly and
+   write a thin `Engine` adapter (ADR 0004).
+2. **Use pinned git `rev` for monorepo internals.** When a tool (ruff, oxc) ships useful
+   logic only in its monorepo and not as a published crate, depend on the GitHub repo
+   pinned to a specific `rev` (commit) for reproducibility. When multiple crates come
+   from one monorepo (e.g. all of oxc), pin them to the **same `rev`** to keep internal
+   versions consistent.
+3. **No version vendoring in a `vendor/` directory.** Do not maintain a forked copy of
+   upstream source. Pinned git deps track upstream without duplication and are fine since
+   we do not publish our own crates to crates.io (see below).
+4. **Two documented vendoring exceptions (see `ATTRIBUTIONS.md`):**
+   - **prek (derived & vendored into `crates/poly-hooks`):** git-hook execution primitives,
+     ported to sync/rayon form. Vendored copy `crates/polyhooks` retained during
+     migration, removed once inlined.
+   - **mdsf tool-catalog data:** tool-definition JSON (tool → binary → argv → stdin →
+     languages) and fixtures, vendored to populate the built-in tool registry without a
+     crate dependency.
 
-Each backend begins with an **empirical API check**: clone the crate to `/tmp`, confirm
-whether it externalizes what we need, then wrap or vendor accordingly.
+**Distribution note:** poly ships **prebuilt, platform-specific binaries** attached to a
+GitHub release (see ADR 0010), plus an installer (`curl | sh` / npm / pip / cargo-binstall).
+We do **not** publish crates to crates.io; pinned git deps are only possible because we
+distribute binaries.
 
-A `cargo deny` license gate guards the tree: no GPL/AGPL pulled in, and `ATTRIBUTIONS.md`
-must stay complete.
+Each backend begins with an **empirical API check**: clone the crate to `/tmp` at the
+exact `rev`, confirm the library API, then wrap or decide on a git dep.
+
+A `cargo deny` license gate guards the full dependency tree (crates.io + git deps and
+their transitive deps): no GPL/AGPL. All vendored sources are recorded in `ATTRIBUTIONS.md`
+with their license and copyright.
 
 ## Consequences
 
 Positive:
 
-- We get upstream bug fixes and improvements automatically for wrapped crates.
-- Vendoring is bounded and auditable: it only happens when forced, and is always
-  attributed and license-checked.
-- No git-rev/pinning means a clean, reproducible-by-semver dependency graph that
-  `cargo update` can advance.
+- Published crates get upstream bug fixes automatically.
+- Pinned git `rev` provides reproducible, auditable dependencies without maintaining a
+  fork. Commits pinned in `Cargo.toml` are easy to review and track.
+- Binary distribution means git-rev dependencies are fine — they're unavailable in
+  crates.io only because crates.io forbids publishing with them.
+- `Cargo.lock` commits make builds reproducible; `cargo deny` gates licenses.
+- Bounded vendoring (two exceptions, both documented in `ATTRIBUTIONS.md`) keeps the
+  maintenance surface minimal.
 
 Negative / risks:
 
-- Unpinned ranges mean an upstream release can change behavior or break our build between
-  CI runs; we accept this in exchange for staying current (the dry-run corpus catches
-  regressions).
-- Vendored code is a maintenance fork: we must periodically re-sync against upstream and
-  re-record commits, or drift silently.
-- **ruff has no stable public library API**, so vendoring `ruff_linter` /
-  `ruff_python_formatter` / `ruff_python_parser` is the likely outcome — the largest
-  vendoring commitment we expect to carry.
+- Pinned git `rev`s mean we're not automatically advanced by `cargo update`; upstream
+  changes must be reviewed and explicitly pulled (a feature, not a bug, for this use case).
+- The prek port into `poly-hooks` requires ongoing maintenance as prek evolves.
+- The mdsf catalog data must be kept in sync if we want new tools; updates are manual.
 
 ## Alternatives considered
 
 - **Vendor everything for stability:** rejected — turns the project into a permanent fork
   of a dozen tools; unmaintainable.
-- **Pin exact versions / use git revs:** rejected — pinning freezes us out of fixes and
-  bloats the lockfile churn story; git-rev deps can't be published to crates.io anyway.
-- **Fork-and-PR upstreams to export APIs:** preferred long-term where feasible, but we
-  cannot block on upstream review; vendoring is the pragmatic bridge.
+- **Unpin all git deps / use semver ranges:** rejected — the resulting churn and
+  non-determinism is unacceptable for a dev tool that must be reproducible across a
+  team's development and CI environments. Pinning is a strength for tools, not a
+  weakness.
+- **Publish crates to crates.io:** rejected — it forces unpinning, which then forces
+  vendoring; binary distribution is the right boundary.

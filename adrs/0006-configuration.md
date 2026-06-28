@@ -1,44 +1,59 @@
-# 0006 — Configuration: Canonical polylint.toml, YAML Auto-Detected
+# 0006 — Configuration: Canonical poly.toml, YAML Auto-Detected
 
 - Status: Accepted
 - Date: 2026-06-26
+- Updated: 2026-06-28 (unified under `poly.toml` for lint/fmt/hooks/commit via
+  `poly-config` crate)
 
 ## Context
 
 Replacing many tools with two binaries (ADR 0001) means replacing many config files
 (`pyproject.toml`/`ruff.toml`, `.prettierrc`, `.eslintrc`, `taplo.toml`, `.sqlfluff`, …)
-with one. We need a single config format that is ergonomic, comment-friendly, and
-round-trippable so we can read, modify, and re-emit it without destroying user intent. Some
-ecosystems also lean toward YAML, so detection should be forgiving.
+with one. As `poly` grows into an umbrella family (lint, format, git-hooks, commit-message
+linting — ADR 0011), one unified config must drive all of them. We need a single config
+format that is ergonomic, comment-friendly, and round-trippable so we can read, modify, and
+re-emit it without destroying user intent. Some ecosystems also lean toward YAML, so
+detection should be forgiving.
 
 ## Decision
 
-- **Canonical config is `polylint.toml`**, read and written with **comment-preserving
-  `toml_edit`** so comments and formatting survive any tooling that rewrites config.
+- **Canonical config is `poly.toml`** (managed by the `poly-config` crate), read and
+  written with **comment-preserving `toml_edit`** so comments and formatting survive any
+  tooling that rewrites config.
+- **`polylint.toml` is still accepted** for backward compatibility, but `poly.toml` takes
+  precedence if both exist.
 - A **YAML config is auto-detected** (parsed with `saphyr`) when present, but **TOML
-  wins**: if both exist, `polylint.toml` is authoritative.
-- The schema layers cleanly into per-engine config slices (`[fmt.python.ruff]`,
-  `[lint.js.oxc]`, …) that each `Engine` receives as its `EngineConfig`.
-- `--config <path>` overrides discovery for both binaries.
+  wins**: if multiple configs exist, the order is `poly.toml` > `polylint.toml` > YAML.
+- **One config drives the entire `poly` umbrella** (ADR 0011): lint, format, git-hooks,
+  commit-message linting. Schema sections: `[lint]`, `[fmt]`, `[hooks]`, `[commit]`,
+  `[cache]`. Per-engine config slices (`[fmt.python.ruff]`, `[lint.js.oxc]`, …) and
+  per-tool config (`[hooks.rust.clippy]`, etc.) each `Engine` or hook-runner receives as
+  its `EngineConfig` or tool-specific settings.
+- `--config <path>` overrides discovery for all poly subcommands (lint, fmt, hooks,
+  commit).
 
 ## Consequences
 
 Positive:
 
-- One file configures lint and format across every language; onboarding is "read one
-  `polylint.toml`".
-- `toml_edit` round-tripping enables future `polylint --init` / auto-fix-config tooling
+- One file (`poly.toml`) configures lint, format, git-hooks, and commit-message linting
+  across every language and hook; onboarding is "read one config".
+- `toml_edit` round-tripping enables future `poly --init` / auto-fix-config tooling
   without clobbering user comments.
 - YAML auto-detection eases migration for YAML-first repos without making YAML a second
   source of truth.
+- Backward compatibility: repos with `polylint.toml` continue to work without changes.
 
 Negative / risks:
 
-- Two accepted input formats means two parse paths to keep in sync; the "TOML wins" rule
-  must be applied consistently and surfaced clearly to avoid confusion when both files
-  exist.
-- A unified schema must map onto each tool's native option vocabulary; mismatches
-  (options one tool has and another lacks) need deliberate, documented handling.
+- Three accepted input formats (`poly.toml` > `polylint.toml` > YAML) means three parse
+  paths to keep in sync; the precedence rule must be applied consistently and surfaced
+  clearly to avoid confusion when multiple files exist.
+- A unified schema must map onto each tool's (and hook runner's) native option
+  vocabulary; mismatches (options one tool has and another lacks) need deliberate,
+  documented handling.
+- The `poly-config` crate must maintain the growing schema as new hooks and tools are
+  added (ADR 0013).
 
 ## Alternatives considered
 
