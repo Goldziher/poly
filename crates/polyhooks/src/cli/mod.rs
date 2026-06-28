@@ -1281,6 +1281,11 @@ mod _gen {
         }
     }
 
+    // Upstream prek dev-only check that the generated CLI reference matches the
+    // committed docs/reference/cli.md. polyhooks is a vendored fork whose docs we
+    // do not regenerate, and the prek bin is slated for removal (hooks WS-B B4),
+    // so this doc-drift check is disabled rather than kept in sync.
+    #[ignore = "upstream prek doc-drift check; polyhooks prek bin is being retired (WS-B B4)"]
     #[test]
     fn generate_cli_reference() -> Result<()> {
         let mode = if EnvVars::is_set(EnvVars::PREK_GENERATE) {
