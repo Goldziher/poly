@@ -8,7 +8,6 @@ members = [
     "crates/poly-config",
     "crates/poly-hooks",
     "crates/polyfmt",
-    "crates/polyhooks",
     "crates/polylint",
     "crates/polylint-core",
 ]
@@ -32,11 +31,6 @@ anyhow = "1"
 # assert_cmd — CLI integration testing for the vendored gitfluff binary
 assert_cmd = "2"
 assert_fs = "1.1.2"
-async-compression = { version = "0.4.18", features = ["gzip", "xz", "tokio"] }
-async_zip = { version = "0.0.18", package = "astral_async_zip", features = [
-    "deflate",
-    "tokio",
-] }
 axoupdater = { version = "0.10.0", default-features = false, features = [
     "github_releases",
 ] }
@@ -53,8 +47,7 @@ ctrlc = "3.4.5"
 dunce = "1.0.5"
 etcetera = "0.11.0"
 fancy-regex = "0.18.0"
-fs-err = { version = "3.3.0", features = ["tokio"] }
-futures = "0.3.31"
+fs-err = "3.3.0"
 gitfluff = { path = "crates/gitfluff" }
 globset = "0.4.18"
 graphql-parser = "0.4"
@@ -86,7 +79,6 @@ mago-text-edit = { version = "=1.42.0" }
 malva = "0.16"
 markdown = "1.0.0"
 markup_fmt = "0.27"
-mea = "0.6.3"
 memchr = "2.7.5"
 owo-colors = { version = "4", features = ["supports-colors"] }
 # oxc git deps — all crates MUST share the same `rev` to keep the internal
@@ -118,14 +110,6 @@ quick-xml = "0.40"
 rand = "0.10.0"
 rayon = "1"
 regex = "1"
-reqwest = { version = "0.13.2", default-features = false, features = [
-    "http2",
-    "stream",
-    "json",
-    "rustls",
-    "system-proxy",
-    "socks",
-] }
 # air R formatter — all air-fork crates share rev c916545f14f76e1d6bd6ff918870f86dfa704b63.
 # The biome git deps they pull in are from lionel-/biome at a1296ea6ba363d8b8d8f02181b2a4ce9315c5ef9.
 air_r_formatter = { git = "https://github.com/Goldziher/r-air-fork", rev = "c916545f14f76e1d6bd6ff918870f86dfa704b63" }
@@ -183,17 +167,6 @@ target-lexicon = "0.13.0"
 tempfile = "3"
 textwrap = "0.16.0"
 thiserror = "2"
-tokio = { version = "1.47.1", features = [
-    "fs",
-    "io-std",
-    "process",
-    "rt",
-    "sync",
-    "macros",
-    "net",
-] }
-tokio-tar = { version = "0.6.0", package = "astral-tokio-tar" }
-tokio-util = "0.7.13"
 toml = "1.1"
 toml_edit = "0.25"
 tracing = "0.1"
@@ -207,7 +180,6 @@ typos-dict = "0.13"
 unicase = "2"
 unicode-width = { version = "0.2.0", default-features = false }
 walkdir = "2.5.0"
-webpki-root-certs = "1.0.6"
 which = "8.0.0"
 
 [profile.release]

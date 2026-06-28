@@ -8,8 +8,8 @@
 use std::cell::OnceCell;
 use std::path::Path;
 
+use crate::identify::{TagSet, tags_from_path};
 use globset::{Glob, GlobSet, GlobSetBuilder};
-use polyhooks::identify::{TagSet, tags_from_path};
 use tracing::error;
 
 // ── GlobPatterns ─────────────────────────────────────────────────────────────

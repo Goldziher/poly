@@ -161,6 +161,15 @@ impl TagSet {
     }
 }
 
+impl<'a> IntoIterator for &'a TagSet {
+    type Item = &'static str;
+    type IntoIter = TagSetIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
 impl BitOrAssign<&TagSet> for TagSet {
     fn bitor_assign(&mut self, rhs: &TagSet) {
         for idx in 0..TAG_WORDS {
@@ -204,27 +213,6 @@ impl<'de> serde::Deserialize<'de> for TagSet {
         }
 
         deserializer.deserialize_seq(TagSetVisitor)
-    }
-}
-
-#[cfg(feature = "schemars")]
-impl schemars::JsonSchema for TagSet {
-    fn inline_schema() -> bool {
-        true
-    }
-
-    fn schema_name() -> Cow<'static, str> {
-        Cow::Borrowed("TagSet")
-    }
-
-    fn json_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        schemars::json_schema!({
-            "type": "array",
-            "items": {
-                "type": "string",
-            },
-            "uniqueItems": true,
-        })
     }
 }
 
@@ -344,8 +332,7 @@ fn tags_from_extension(filename: &Path) -> TagSet {
 fn tags_from_interpreter(interpreter: &str) -> TagSet {
     let mut name = interpreter
         .rfind('/')
-        .map(|pos| &interpreter[pos + 1..])
-        .unwrap_or(interpreter);
+        .map_or(interpreter, |pos| &interpreter[pos + 1..]);
 
     while !name.is_empty() {
         if let Some(tags) = tags::INTERPRETERS.get(name) {

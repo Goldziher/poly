@@ -12,7 +12,7 @@ use std::ffi::OsStr;
 use std::path::Path;
 use std::sync::LazyLock;
 
-use polyhooks::consts::env_vars::EnvVars;
+use crate::consts::env_vars::EnvVars;
 use tracing::warn;
 
 /// Resolve the effective concurrency from the no-concurrency flag, an optional

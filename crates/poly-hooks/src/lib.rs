@@ -6,8 +6,8 @@
 //!
 //! # Modules
 //!
-//! - [`consts`] — environment variable names (re-exported from `polyhooks`).
-//! - [`identify`] — file-type tagging by filename/shebang (re-exported from `polyhooks`).
+//! - [`consts`] — environment variable names + config filename constants.
+//! - [`identify`] — file-type tagging by filename, shebang, and interpreter.
 //! - [`stage`] — [`Stage`] enum + [`HookType`] and their mapping.
 //! - [`process`] — synchronous [`Cmd`] wrapper over [`std::process::Command`].
 //! - [`git`] — synchronous git helpers (staged files, diff, worktree state).
@@ -28,22 +28,13 @@
 //! dedicated rayon pool and returns a [`HookRunOutcome`]. Per stage the order is
 //! precondition → before → hooks (rayon) → after.
 
-// Allow missing_docs on the re-exported modules since they originate in the
-// vendored polyhooks crate, which is exempt from our doc requirements.
+// Allow missing_docs on the `identify` and `consts` modules: their source was
+// inlined from the vendored prek fork (MIT, Chris Kuehl / Anthony Sottile) and
+// is exempt from our doc requirements to keep upstream merges sane.
 #![allow(missing_docs)]
 
-/// Environment variable names. Re-exported from the vendored `polyhooks` crate.
-/// These will be inlined when `polyhooks` is removed in B4.
-pub mod consts {
-    pub use polyhooks::consts::*;
-}
-
-/// File-type identification by filename, shebang, and interpreter.
-/// Re-exported from the vendored `polyhooks` crate (already fully synchronous).
-/// Will be inlined when `polyhooks` is removed in B4.
-pub mod identify {
-    pub use polyhooks::identify::*;
-}
+pub mod consts;
+pub mod identify;
 
 pub mod cleanup;
 pub mod concurrency;

@@ -15,8 +15,8 @@ use std::path::Path;
 use std::process::{Command, CommandArgs, CommandEnvs, ExitStatus, Output, Stdio};
 use std::sync::LazyLock;
 
+use crate::consts::env_vars::EnvVars;
 use owo_colors::OwoColorize as _;
-use polyhooks::consts::env_vars::EnvVars;
 use thiserror::Error;
 use tracing::trace;
 

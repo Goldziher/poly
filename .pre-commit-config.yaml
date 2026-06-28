@@ -33,11 +33,6 @@ repos:
       - id: check-merge-conflict
       - id: check-added-large-files
       - id: detect-private-key
-        # crates/polyhooks is vendored prek, which itself ships a
-        # detect-private-key hook: its implementation carries key-header
-        # patterns and its tests carry a dummy key fixture. Both are false
-        # positives, scoped out here (not a global relaxation of this hook).
-        exclude: ^crates/polyhooks/
       - id: check-case-conflict
       - id: check-executables-have-shebangs
       - id: check-shebang-scripts-are-executable
@@ -46,10 +41,10 @@ repos:
       - id: typos
         args:
           - --force-exclude
-        # crates/polyhooks is vendored prek; its sources legitimately contain
-        # base64 cert blobs and file-extension tokens (e.g. "style") that trip
-        # the spell-checker. Not ours to "fix".
-        exclude: ^crates/polyhooks/
+        # identify/tags.rs is generated tag data (file-extension tokens like
+        # "style") inlined from the prek fork; it legitimately trips the
+        # spell-checker and is not ours to "fix".
+        exclude: ^crates/poly-hooks/src/identify/tags\.rs$
       - id: check-json
       - id: check-yaml
       - id: check-toml
@@ -95,6 +90,7 @@ repos:
       - id: rust-max-lines
         args:
           - --max=1000
-        # crates/polyhooks is a vendored fork of prek; its upstream files are
-        # not held to our one-concern-per-file cap (keeps upstream merges sane).
-        exclude: ^crates/polyhooks/
+        # identify/tags.rs is a generated tag-data table (~1264 LOC) inlined
+        # from the prek fork; it is exempt from the one-concern-per-file cap
+        # and must not be split.
+        exclude: ^crates/poly-hooks/src/identify/tags\.rs$
