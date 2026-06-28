@@ -18,7 +18,12 @@
 //! # max_size = "10G"
 //! ```
 
+use std::path::Path;
+
 use serde::Deserialize;
+
+/// Default `sccache` binary name, resolved on `$PATH` when `bin` is unset.
+pub const DEFAULT_SCCACHE_BIN: &str = "sccache";
 
 // ---------------------------------------------------------------------------
 // HookCacheMode
@@ -90,6 +95,48 @@ pub struct SccacheConfig {
     pub max_size: Option<String>,
 }
 
+impl SccacheConfig {
+    /// Resolve and validate the `sccache` binary to invoke as `RUSTC_WRAPPER`.
+    ///
+    /// Because a repository's checked-in `poly.toml` controls this value and it
+    /// becomes `RUSTC_WRAPPER`, only two shapes are accepted:
+    ///
+    /// - a **bare command name** (no path separators) resolved on `$PATH`
+    ///   — the default `sccache` when `bin` is unset; or
+    /// - an **absolute path**.
+    ///
+    /// A relative path containing separators (e.g. `./evil`, `a/b`) is rejected
+    /// so a hostile repo cannot silently point the compiler wrapper at a
+    /// repo-relative binary. The consumer (`poly-hooks` runner) MUST call this
+    /// rather than reading [`bin`][Self::bin] directly.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` when `bin` is empty or is a relative path with separators.
+    pub fn validated_bin(&self) -> anyhow::Result<&str> {
+        let Some(bin) = self.bin.as_deref() else {
+            return Ok(DEFAULT_SCCACHE_BIN);
+        };
+        if bin.is_empty() {
+            anyhow::bail!("[cache.sccache] bin must not be empty");
+        }
+        // A bare command name has exactly one path component and no separator of
+        // either platform's flavour (guard both so a Windows-style separator is
+        // rejected on Unix too).
+        let is_bare_name =
+            Path::new(bin).components().count() == 1 && !bin.contains('/') && !bin.contains('\\');
+        if Path::new(bin).is_absolute() || is_bare_name {
+            Ok(bin)
+        } else {
+            anyhow::bail!(
+                "[cache.sccache] bin = {bin:?} must be a bare command name (resolved on \
+                 $PATH) or an absolute path; a relative path with separators is rejected \
+                 to avoid executing a repo-relative binary as RUSTC_WRAPPER"
+            );
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // CacheConfig
 // ---------------------------------------------------------------------------
@@ -129,5 +176,53 @@ impl Default for CacheConfig {
             results: ResultsCacheConfig::default(),
             sccache: SccacheConfig::default(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn with_bin(bin: Option<&str>) -> SccacheConfig {
+        SccacheConfig {
+            bin: bin.map(str::to_owned),
+            ..SccacheConfig::default()
+        }
+    }
+
+    #[test]
+    fn validated_bin_defaults_to_sccache_when_unset() {
+        assert_eq!(with_bin(None).validated_bin().unwrap(), DEFAULT_SCCACHE_BIN);
+    }
+
+    #[test]
+    fn validated_bin_accepts_bare_command_name() {
+        assert_eq!(
+            with_bin(Some("sccache")).validated_bin().unwrap(),
+            "sccache"
+        );
+    }
+
+    #[test]
+    fn validated_bin_accepts_absolute_path() {
+        let abs = if cfg!(windows) {
+            r"C:\tools\sccache.exe"
+        } else {
+            "/usr/local/bin/sccache"
+        };
+        assert_eq!(with_bin(Some(abs)).validated_bin().unwrap(), abs);
+    }
+
+    #[test]
+    fn validated_bin_rejects_relative_path_with_separator() {
+        assert!(with_bin(Some("./evil")).validated_bin().is_err());
+        assert!(with_bin(Some("a/b")).validated_bin().is_err());
+        // A Windows-style separator is rejected on every platform.
+        assert!(with_bin(Some(r"a\b")).validated_bin().is_err());
+    }
+
+    #[test]
+    fn validated_bin_rejects_empty() {
+        assert!(with_bin(Some("")).validated_bin().is_err());
     }
 }

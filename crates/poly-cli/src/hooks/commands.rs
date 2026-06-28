@@ -177,7 +177,7 @@ fn run_stage(args: RunArgs) -> Result<ExitCode> {
         stages: vec![spec],
         concurrency: args.jobs,
         cache,
-        sccache: sccache_settings(&config, args.no_sccache),
+        sccache: sccache_settings(&config, args.no_sccache)?,
     };
     run_and_report(request)
 }
@@ -281,7 +281,7 @@ fn hook_impl(args: HookImplArgs) -> Result<ExitCode> {
         stages: vec![spec],
         concurrency: args.jobs,
         cache,
-        sccache: sccache_settings(&config, args.no_sccache),
+        sccache: sccache_settings(&config, args.no_sccache)?,
     };
     run_and_report(request)
 }
@@ -339,18 +339,23 @@ fn open_result_cache(
 /// Returns `None` (sccache off) unless `[cache.sccache] enabled = true` and
 /// `--no-sccache` was not given. The binary defaults to `"sccache"` when
 /// `[cache.sccache] bin` is absent.
-fn sccache_settings(config: &PolyConfig, no_sccache: bool) -> Option<poly_hooks::SccacheSettings> {
+fn sccache_settings(
+    config: &PolyConfig,
+    no_sccache: bool,
+) -> Result<Option<poly_hooks::SccacheSettings>> {
     let sccache = &config.cache.sccache;
     // The master `[cache] enabled` flag is a global kill switch; sccache is a
     // further opt-in layered on top of it.
     if !config.cache.enabled || !sccache.enabled || no_sccache {
-        return None;
+        return Ok(None);
     }
-    Some(poly_hooks::SccacheSettings {
-        bin: sccache.bin.clone().unwrap_or_else(|| "sccache".to_string()),
+    // Validate `bin` before it becomes RUSTC_WRAPPER so a checked-in poly.toml
+    // cannot redirect the compiler to a repo-relative binary.
+    Ok(Some(poly_hooks::SccacheSettings {
+        bin: sccache.validated_bin()?.to_string(),
         dir: sccache.dir.clone().map(PathBuf::from),
         max_size: sccache.max_size.clone(),
-    })
+    }))
 }
 
 fn run_and_report(request: poly_hooks::HookRunRequest) -> Result<ExitCode> {
