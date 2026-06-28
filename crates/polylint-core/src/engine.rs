@@ -86,9 +86,10 @@ pub struct Diagnostic {
     /// Source location, if known.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub span: Option<Span>,
-    /// Suggested autofix, if available.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub fix: Option<Edit>,
+    /// Suggested autofixes, if available.  A non-empty Vec is applied
+    /// atomically: either all edits apply, or none do (see `runner::apply_edits`).
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub fix: Vec<Edit>,
     /// Tool-specific extras (rule URL, fix applicability, category, …), rendered
     /// verbatim by the output layer. Empty for most findings.
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]

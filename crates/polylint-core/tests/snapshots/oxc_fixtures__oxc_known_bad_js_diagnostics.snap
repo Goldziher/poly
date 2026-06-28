@@ -18,7 +18,7 @@ expression: diags
                 end_col: 8,
             },
         ),
-        fix: None,
+        fix: [],
         metadata: {},
     },
 ]

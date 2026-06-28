@@ -62,7 +62,15 @@ pub fn lint(
     let files = discover(paths);
     let mut results: Vec<LintResult> = files
         .par_iter()
-        .filter_map(|f| lint_one(f, config, &cache, fix).ok())
+        .filter_map(|f| match lint_one(f, config, &cache, fix) {
+            Ok(result) => Some(result),
+            // A per-file failure (read, parse, or — when fixing — the atomic
+            // write) must not be swallowed silently; surface it and skip the file.
+            Err(error) => {
+                eprintln!("warning: {}: {error:#}", f.path.display());
+                None
+            }
+        })
         .filter(|r| !r.diagnostics.is_empty())
         .collect();
     results.sort_by(|a, b| a.path.cmp(&b.path));
@@ -100,8 +108,12 @@ fn lint_one(
 
     if fix {
         for _ in 0..MAX_FIX_PASSES {
-            let edits: Vec<&Edit> = diagnostics.iter().filter_map(|d| d.fix.as_ref()).collect();
-            match apply_edits(&content, &edits) {
+            let edit_groups: Vec<&[Edit]> = diagnostics
+                .iter()
+                .filter(|d| !d.fix.is_empty())
+                .map(|d| d.fix.as_slice())
+                .collect();
+            match apply_edits(&content, &edit_groups) {
                 Some(next) if next != content => {
                     content = next;
                     diagnostics = lint_content(f, config, cache, &content)?;
@@ -160,28 +172,90 @@ fn lint_content(
     Ok(all)
 }
 
-/// Apply non-overlapping byte-range autofixes to `content`. Edits are applied
-/// right-to-left so earlier byte offsets stay valid; any edit that overlaps one
-/// already applied, lands out of bounds, or falls on a non-char boundary is
-/// skipped. Returns the rewritten text, or `None` if nothing was applied.
-fn apply_edits(content: &str, edits: &[&Edit]) -> Option<String> {
-    let mut sorted: Vec<&Edit> = edits.to_vec();
-    sorted.sort_by_key(|e| std::cmp::Reverse(e.start_byte));
+/// Apply autofix edit groups to `content`, one group per diagnostic.
+///
+/// Each group is the full `fix` vec of one [`Diagnostic`] and is applied
+/// **atomically**: all of its edits apply, or none do.
+///
+/// Selection rules (right-to-left):
+/// 1. Any group whose own edits overlap each other internally is discarded
+///    (prevents corrupted output from a malformed backend fix).
+/// 2. Groups are attempted rightmost-first.  If any edit in a group would
+///    reach into bytes already committed by a previously-applied group, the
+///    entire group is skipped; the convergence loop in [`lint_one`] will retry
+///    it on the next pass once those diagnostics have been re-evaluated.
+///
+/// Returns the rewritten text, or `None` if no edit was applied.
+fn apply_edits(content: &str, edit_groups: &[&[Edit]]) -> Option<String> {
+    // Step 1 — filter groups with internal overlaps; sort remaining groups
+    // rightmost-first (by the highest end_byte in the group).
+    let mut valid: Vec<&[Edit]> = edit_groups
+        .iter()
+        .copied()
+        .filter(|g| !g.is_empty() && !has_internal_overlap(g))
+        .collect();
+    valid.sort_by_key(|g| std::cmp::Reverse(g.iter().map(|e| e.end_byte).max().unwrap_or(0)));
+
     let mut result = content.to_string();
+    // `prev_start` = leftmost start_byte committed so far.  Any edit whose
+    // end_byte exceeds `prev_start` would overlap an already-committed range.
     let mut prev_start = usize::MAX;
     let mut applied = false;
-    for e in sorted {
-        if e.start_byte > e.end_byte || e.end_byte > result.len() || e.end_byte > prev_start {
-            continue;
+
+    'groups: for group in &valid {
+        // Validate every edit in the group against the current result length
+        // and the committed boundary.
+        for e in *group {
+            if e.start_byte > e.end_byte || e.end_byte > result.len() || e.end_byte > prev_start {
+                continue 'groups;
+            }
+            if !result.is_char_boundary(e.start_byte) || !result.is_char_boundary(e.end_byte) {
+                continue 'groups;
+            }
         }
-        if !result.is_char_boundary(e.start_byte) || !result.is_char_boundary(e.end_byte) {
-            continue;
+
+        // Group is safe — apply its edits right-to-left within the group. The
+        // single-edit case (every backend today) skips the sort allocation.
+        if let [e] = *group {
+            result.replace_range(e.start_byte..e.end_byte, &e.replacement);
+        } else {
+            let mut ordered: Vec<&Edit> = group.iter().collect();
+            ordered.sort_by_key(|e| std::cmp::Reverse(e.start_byte));
+            for e in &ordered {
+                result.replace_range(e.start_byte..e.end_byte, &e.replacement);
+            }
         }
-        result.replace_range(e.start_byte..e.end_byte, &e.replacement);
-        prev_start = e.start_byte;
+
+        // Advance the committed boundary to the leftmost start in this group.
+        prev_start = group
+            .iter()
+            .map(|e| e.start_byte)
+            .min()
+            .unwrap_or(prev_start);
         applied = true;
     }
+
     applied.then_some(result)
+}
+
+/// Returns `true` when any two edits in `group` have overlapping byte ranges.
+///
+/// O(n²) — acceptable because fix groups are tiny (1–4 edits in practice).
+fn has_internal_overlap(group: &[Edit]) -> bool {
+    for (i, a) in group.iter().enumerate() {
+        for b in group.iter().skip(i + 1) {
+            // Ranges intersect, or two zero-width insertions land on the same
+            // byte (order between them would be ambiguous).
+            let intersects = a.start_byte < b.end_byte && b.start_byte < a.end_byte;
+            let same_point_insert = a.start_byte == a.end_byte
+                && b.start_byte == b.end_byte
+                && a.start_byte == b.start_byte;
+            if intersects || same_point_insert {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 fn format_one(
@@ -266,4 +340,85 @@ fn configure_pool(jobs: Option<usize>) {
         // Ignore error: the global pool may already be initialized by a caller.
         let _ = builder.build_global();
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn edit(start: usize, end: usize, rep: &str) -> Edit {
+        Edit {
+            start_byte: start,
+            end_byte: end,
+            replacement: rep.to_owned(),
+        }
+    }
+
+    // ── apply_edits ──────────────────────────────────────────────────────────
+
+    /// Two diagnostics, each with two non-overlapping edits; all four apply.
+    #[test]
+    fn multi_edit_two_groups_apply_atomically() {
+        // content: "hello world foo"
+        //           0123456789012345
+        let content = "hello world foo";
+        // Group A: replace "world" (6..11) → "earth", replace "foo" (12..15) → "bar"
+        let group_a = vec![edit(6, 11, "earth"), edit(12, 15, "bar")];
+        // Group B: replace "hello" (0..5) → "hey"
+        let group_b = vec![edit(0, 5, "hey")];
+
+        let result = apply_edits(content, &[group_a.as_slice(), group_b.as_slice()])
+            .expect("should produce output");
+        assert_eq!(result, "hey earth bar");
+    }
+
+    /// A diagnostic whose edits overlap each other is skipped entirely.
+    #[test]
+    fn overlapping_edits_within_group_are_skipped() {
+        let content = "abcdefgh";
+        // Overlapping: [2..6) and [4..8) share bytes 4–6.
+        let bad_group = vec![edit(2, 6, "X"), edit(4, 8, "Y")];
+
+        let result = apply_edits(content, &[bad_group.as_slice()]);
+        assert!(result.is_none(), "overlapping group must produce no output");
+    }
+
+    /// When two groups from different diagnostics conflict, the leftward group
+    /// is deferred (not corrupted).
+    #[test]
+    fn cross_group_conflict_defers_leftward_group() {
+        // content: "abcde"
+        // Group A (rightmost): replace [3..5) → "XX"
+        // Group B (leftward, overlapping): replace [2..4) → "YY" — conflicts with A
+        let content = "abcde";
+        let group_a = vec![edit(3, 5, "XX")];
+        let group_b = vec![edit(2, 4, "YY")];
+
+        let result = apply_edits(content, &[group_a.as_slice(), group_b.as_slice()])
+            .expect("should produce output from group A");
+        // Group A applies, group B is skipped.
+        assert_eq!(result, "abcXX");
+    }
+
+    // ── has_internal_overlap ─────────────────────────────────────────────────
+
+    #[test]
+    fn non_overlapping_edits_pass_internal_check() {
+        let group = vec![edit(0, 5, "a"), edit(5, 10, "b")];
+        assert!(!has_internal_overlap(&group));
+    }
+
+    #[test]
+    fn adjacent_edits_are_not_overlapping() {
+        // [0,5) and [5,10) share no bytes (end is exclusive).
+        let group = vec![edit(0, 5, "a"), edit(5, 10, "b")];
+        assert!(!has_internal_overlap(&group));
+    }
+
+    #[test]
+    fn touching_edits_with_overlap_detected() {
+        // [0,6) and [4,10) overlap at bytes 4–6.
+        let group = vec![edit(0, 6, "a"), edit(4, 10, "b")];
+        assert!(has_internal_overlap(&group));
+    }
 }

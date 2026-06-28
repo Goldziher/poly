@@ -102,7 +102,7 @@ impl Engine for GraphQlEngine {
             severity: Severity::Error,
             message: err_msg,
             span,
-            fix: None,
+            fix: vec![],
             metadata: Default::default(),
         }])
     }

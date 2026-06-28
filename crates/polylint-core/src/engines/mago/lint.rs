@@ -60,7 +60,7 @@ pub(super) fn lint_php(src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<
             severity: Severity::Error,
             message: error.to_string(),
             span: Some(span),
-            fix: None,
+            fix: vec![],
             metadata: Default::default(),
         });
     }
@@ -87,9 +87,10 @@ pub(super) fn lint_php(src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<
         // Use the primary annotation span as the diagnostic location.
         let span = issue.primary_span().map(|s| convert_span(s, &file));
 
-        // Wire a fix only when the issue has exactly one safe edit on the
-        // current file — matches how ruff.rs attaches fixes conservatively.
-        let fix = extract_single_safe_fix(issue, file_id, &src.content);
+        // Wire all safe edits for the current file.  The runner applies the
+        // full set atomically (overlap guard included), so multi-edit fixes
+        // are safe to forward.
+        let fix = extract_safe_fixes(issue, file_id, &src.content);
 
         diags.push(Diagnostic {
             engine: "mago".to_string(),
@@ -134,36 +135,35 @@ fn parse_error_code(error: &mago_syntax::error::ParseError) -> String {
     }
 }
 
-/// Extract a single safe [`Edit`] fix from a lint issue, or `None` if the
-/// issue has zero, multiple, or only unsafe edits.
-fn extract_single_safe_fix(
+/// Extract all safe [`Edit`]s from a lint issue that apply to `file_id`.
+///
+/// Only edits marked [`Safety::Safe`] within the byte bounds of `source` are
+/// included.  If the issue has no safe edits, or edits on a different file,
+/// an empty `Vec` is returned.  The runner applies the returned set atomically
+/// (with an internal overlap guard), so it is safe to return multiple edits.
+fn extract_safe_fixes(
     issue: &mago_reporting::Issue,
     file_id: mago_database::file::FileId,
     source: &str,
-) -> Option<Edit> {
-    // Only wire fixes when the issue affects exactly one file (the current
-    // file) and that file has exactly one edit.
-    if issue.edits.len() != 1 {
-        return None;
-    }
-    let edits = issue.edits.get(&file_id)?;
-    if edits.len() != 1 {
-        return None;
-    }
-    let edit = &edits[0];
-    if edit.safety != Safety::Safe {
-        return None;
-    }
-    // Validate byte range is within source bounds.
-    let start = edit.range.start as usize;
-    let end = edit.range.end as usize;
-    if end > source.len() || start > end {
-        return None;
-    }
-    let replacement = String::from_utf8(edit.new_text.clone()).ok()?;
-    Some(Edit {
-        start_byte: start,
-        end_byte: end,
-        replacement,
-    })
+) -> Vec<Edit> {
+    let Some(edits) = issue.edits.get(&file_id) else {
+        return vec![];
+    };
+    edits
+        .iter()
+        .filter(|e| e.safety == Safety::Safe)
+        .filter_map(|e| {
+            let start = e.range.start as usize;
+            let end = e.range.end as usize;
+            if end > source.len() || start > end {
+                return None;
+            }
+            let replacement = String::from_utf8(e.new_text.clone()).ok()?;
+            Some(Edit {
+                start_byte: start,
+                end_byte: end,
+                replacement,
+            })
+        })
+        .collect()
 }

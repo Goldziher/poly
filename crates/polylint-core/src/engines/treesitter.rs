@@ -96,7 +96,7 @@ impl Engine for TreeSitterEngine {
                         end_line: (i + 1) as u32,
                         end_col: (line.len() + 1) as u32,
                     }),
-                    fix: None,
+                    fix: vec![],
                     metadata: Default::default(),
                 });
             }

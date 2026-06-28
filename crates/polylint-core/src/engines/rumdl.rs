@@ -153,11 +153,16 @@ fn map_warning(w: &LintWarning, engine: &str) -> Diagnostic {
         RumdlSeverity::Warning => Severity::Warning,
         RumdlSeverity::Info => Severity::Info,
     };
-    let fix = w.fix.as_ref().map(|f| Edit {
-        start_byte: f.range.start,
-        end_byte: f.range.end,
-        replacement: f.replacement.clone(),
-    });
+    let fix: Vec<Edit> = w
+        .fix
+        .as_ref()
+        .map(|f| Edit {
+            start_byte: f.range.start,
+            end_byte: f.range.end,
+            replacement: f.replacement.clone(),
+        })
+        .into_iter()
+        .collect();
     Diagnostic {
         engine: engine.to_owned(),
         code: w.rule_name.clone(),

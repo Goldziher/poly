@@ -173,7 +173,7 @@ fn violation_to_diagnostic(violation: SQLBaseError) -> Diagnostic {
         } else {
             None
         },
-        fix: None,
+        fix: vec![],
         metadata: Default::default(),
     }
 }

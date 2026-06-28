@@ -129,7 +129,7 @@ fn drops_ultra_short_corrections_but_keeps_three_char_typos() {
         "only the 3-char typo should survive the length filter: {diags:?}",
     );
     assert_eq!(
-        diags[0].fix.as_ref().map(|e| e.replacement.as_str()),
+        diags[0].fix.first().map(|e| e.replacement.as_str()),
         Some("the"),
         "the surviving typo should carry its single-correction autofix",
     );

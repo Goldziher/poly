@@ -75,7 +75,7 @@ impl Engine for YamlEngine {
                         end_line: line,
                         end_col: col,
                     }),
-                    fix: None,
+                    fix: vec![],
                     metadata: Default::default(),
                 }])
             }

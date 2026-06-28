@@ -60,7 +60,7 @@ impl crate::engine::Engine for OxcEngine {
         Capabilities {
             lint: true,
             format: true,
-            fix: false,
+            fix: true,
         }
     }
 
@@ -250,9 +250,9 @@ fn lint_js(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnosti
 /// Rule code: `plugin/rule` for non-eslint plugins; bare `rule` for
 /// `eslint/*`. `None` when the message has no rule (e.g. a parse error).
 ///
-/// Fix: only attached for `PossibleFixes::Single` (one contiguous edit).
-/// Multi-edit fixes are dropped to avoid partial application corrupting
-/// the source.
+/// Fix: all edits are forwarded — `Single` as one edit, `Multiple` as the full
+/// list. The runner applies each diagnostic's edits atomically (all-or-nothing,
+/// with an overlap guard), so multi-edit fixes are safe to attach.
 fn map_oxlint_message(msg: Message, content: &str) -> Diagnostic {
     let severity = match msg.error.severity {
         OxcSeverity::Error => Severity::Error,
@@ -282,16 +282,24 @@ fn map_oxlint_message(msg: Message, content: &str) -> Diagnostic {
         end_col,
     });
 
-    // Only map a fix when there is exactly one edit; skip multi-edit fixes to
-    // avoid partially applying an incomplete set of changes.
-    let fix = if let PossibleFixes::Single(f) = msg.fixes {
-        Some(Edit {
+    // Map all fix edits.  Multi-edit fixes are applied atomically by the
+    // runner (all or nothing with an overlap guard), so it is safe to forward
+    // the full edit list here.
+    let fix: Vec<Edit> = match msg.fixes {
+        PossibleFixes::Single(f) => vec![Edit {
             start_byte: f.span.start as usize,
             end_byte: f.span.end as usize,
             replacement: f.content.into_owned(),
-        })
-    } else {
-        None
+        }],
+        PossibleFixes::Multiple(fixes) => fixes
+            .into_iter()
+            .map(|f| Edit {
+                start_byte: f.span.start as usize,
+                end_byte: f.span.end as usize,
+                replacement: f.content.into_owned(),
+            })
+            .collect(),
+        PossibleFixes::None => vec![],
     };
 
     Diagnostic {
@@ -384,7 +392,7 @@ fn lint_json(src: &SourceFile) -> anyhow::Result<Vec<Diagnostic>> {
                     end_line: line,
                     end_col: col,
                 }),
-                fix: None,
+                fix: vec![],
                 metadata: Default::default(),
             }])
         }
@@ -636,7 +644,7 @@ mod tests {
         assert_eq!(engine.name(), "oxc");
         assert!(engine.capabilities().lint);
         assert!(engine.capabilities().format);
-        assert!(!engine.capabilities().fix);
+        assert!(engine.capabilities().fix);
     }
 
     /// Parser used by oxlint still needs an Allocator; verify it works

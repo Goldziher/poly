@@ -89,7 +89,7 @@ impl Engine for TaploEngine {
                 severity: Severity::Error,
                 message: error.message.clone(),
                 span: Some(span),
-                fix: None,
+                fix: vec![],
                 metadata: Default::default(),
             });
         }
@@ -106,7 +106,7 @@ impl Engine for TaploEngine {
                     severity: Severity::Error,
                     message: error.to_string(),
                     span,
-                    fix: None,
+                    fix: vec![],
                     metadata: Default::default(),
                 });
             }

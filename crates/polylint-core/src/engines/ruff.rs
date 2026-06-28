@@ -237,22 +237,24 @@ impl Engine for RuffEngine {
                         end_col: end.column.get() as u32,
                     });
 
-                // Only auto-apply fixes that ruff marks `Safe` and that consist
-                // of exactly one edit. Our `Diagnostic` carries a single `Edit`,
-                // so a multi-edit fix cannot be applied atomically — applying a
-                // subset would corrupt the file. `Unsafe`/`DisplayOnly` fixes and
-                // multi-edit fixes still surface as diagnostics, just without an
-                // autofix. (Multi-edit fix support is tracked as a follow-up.)
-                let fix = ruff_diag
+                // Collect all edits from safe ruff fixes.  Multi-edit fixes are
+                // now applied atomically by the runner (all or nothing), so it is
+                // safe to forward the full edit list.  `Unsafe`/`DisplayOnly`
+                // fixes are still suppressed.
+                let fix: Vec<Edit> = ruff_diag
                     .fix()
-                    .filter(|f| f.applicability().is_safe() && f.edits().len() == 1)
-                    .and_then(|f| {
-                        f.edits().first().map(|edit| Edit {
-                            start_byte: edit.start().to_usize(),
-                            end_byte: edit.end().to_usize(),
-                            replacement: edit.content().unwrap_or("").to_string(),
-                        })
-                    });
+                    .filter(|f| f.applicability().is_safe())
+                    .map(|f| {
+                        f.edits()
+                            .iter()
+                            .map(|e| Edit {
+                                start_byte: e.start().to_usize(),
+                                end_byte: e.end().to_usize(),
+                                replacement: e.content().unwrap_or("").to_string(),
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
 
                 Diagnostic {
                     engine: "ruff".to_string(),

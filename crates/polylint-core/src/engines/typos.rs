@@ -226,14 +226,14 @@ fn typo_to_diagnostic(content: &str, typo: typos::Typo<'_>) -> Diagnostic {
 
     // Emit an autofix only when exactly one correction is available; multiple
     // candidates require human judgment.
-    let fix = if corrections.len() == 1 {
-        Some(Edit {
+    let fix: Vec<Edit> = if corrections.len() == 1 {
+        vec![Edit {
             start_byte,
             end_byte,
             replacement: corrections[0].to_string(),
-        })
+        }]
     } else {
-        None
+        vec![]
     };
 
     Diagnostic {

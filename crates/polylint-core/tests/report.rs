@@ -32,7 +32,7 @@ fn sample_lint_results() -> Vec<LintResult> {
                         end_line: 12,
                         end_col: 95,
                     }),
-                    fix: None,
+                    fix: vec![],
                     metadata,
                 },
                 Diagnostic {
@@ -46,7 +46,7 @@ fn sample_lint_results() -> Vec<LintResult> {
                         end_line: 1,
                         end_col: 1,
                     }),
-                    fix: None,
+                    fix: vec![],
                     metadata: BTreeMap::new(),
                 },
             ],
