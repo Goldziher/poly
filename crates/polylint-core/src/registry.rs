@@ -39,7 +39,15 @@ pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
         Language::Nix => vec![Box::new(NixFmtEngine)],
         Language::Ruby => vec![Box::new(RubyfmtEngine)],
         Language::GraphQl => vec![Box::new(GraphQlEngine)],
-        Language::Html | Language::Vue | Language::Svelte => vec![Box::new(MarkupFmtEngine)],
+        Language::Html
+        | Language::Vue
+        | Language::Svelte
+        | Language::Astro
+        | Language::Angular
+        | Language::Jinja
+        | Language::Vento
+        | Language::Mustache
+        | Language::Xml => vec![Box::new(MarkupFmtEngine)],
         Language::Php => vec![Box::new(MagoEngine)],
         // As other native backends land they are matched here, falling through
         // to the tree-sitter generic tier for everything else.

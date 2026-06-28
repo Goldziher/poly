@@ -1,4 +1,5 @@
-//! Markup backend: HTML / Vue / Svelte formatting via [`markup_fmt`].
+//! Markup backend: HTML / Vue / Svelte / Astro / Angular / Jinja / Vento /
+//! Mustache / XML formatting via [`markup_fmt`].
 //!
 //! Capabilities: [`Capabilities::format`] only — markup_fmt is a formatter and
 //! does not report diagnostics.
@@ -10,11 +11,25 @@
 //! JS/CSS is left untouched; a later milestone can route those blocks through
 //! the oxc / malva backends.
 //!
+//! ## Angular detection
+//! Angular templates share the `.html` extension with plain HTML. polylint
+//! follows markup_fmt's own `detect_language` heuristic: a file whose stem
+//! ends with `.component` (e.g. `app.component.html`) is routed to
+//! `Language::Angular`; all other `.html` files go to `Language::Html`.
+//!
+//! ## Jinja covers Twig / Nunjucks
+//! markup_fmt v0.27 exposes a single `Jinja` variant that handles Jinja2,
+//! Twig, and Nunjucks templates. Extensions `.jinja`, `.jinja2`, `.j2`,
+//! `.twig`, and `.njk` all route here.
+//!
+//! ## Mustache covers Handlebars
+//! Similarly, `.mustache`, `.hbs`, and `.handlebars` all route to the
+//! `Mustache` variant.
+//!
 //! ## Options layering
 //! markup_fmt defaults → polylint opinionated override (print_width 120,
-//! indent_width from the language default, which is 2 for these markup
-//! languages) → user `[fmt.html.markup_fmt]` / `[fmt.vue.markup_fmt]` /
-//! `[fmt.svelte.markup_fmt]`.
+//! indent_width 2 for all markup languages) → user
+//! `[fmt.<lang>.markup_fmt]`.
 
 use markup_fmt::Language as MarkupLanguage;
 use markup_fmt::config::{FormatOptions, LayoutOptions};
@@ -24,7 +39,8 @@ use crate::config::EngineConfig;
 use crate::engine::{Capabilities, Engine, FormatOutput, SourceFile};
 use crate::language::Language;
 
-/// markup_fmt HTML / Vue / Svelte formatter backend.
+/// markup_fmt HTML / Vue / Svelte / Astro / Angular / Jinja / Vento /
+/// Mustache / XML formatter backend.
 pub struct MarkupFmtEngine;
 
 /// markup_fmt crate version — folded into the cache key so upgrades invalidate
@@ -32,7 +48,17 @@ pub struct MarkupFmtEngine;
 const VERSION: &str = "0.27.3";
 
 /// Languages handled by this backend.
-static LANGUAGES: &[Language] = &[Language::Html, Language::Vue, Language::Svelte];
+static LANGUAGES: &[Language] = &[
+    Language::Html,
+    Language::Vue,
+    Language::Svelte,
+    Language::Astro,
+    Language::Angular,
+    Language::Jinja,
+    Language::Vento,
+    Language::Mustache,
+    Language::Xml,
+];
 
 impl Engine for MarkupFmtEngine {
     fn name(&self) -> &'static str {
@@ -89,6 +115,12 @@ fn markup_language(lang: &Language) -> Option<MarkupLanguage> {
         Language::Html => Some(MarkupLanguage::Html),
         Language::Vue => Some(MarkupLanguage::Vue),
         Language::Svelte => Some(MarkupLanguage::Svelte),
+        Language::Astro => Some(MarkupLanguage::Astro),
+        Language::Angular => Some(MarkupLanguage::Angular),
+        Language::Jinja => Some(MarkupLanguage::Jinja),
+        Language::Vento => Some(MarkupLanguage::Vento),
+        Language::Mustache => Some(MarkupLanguage::Mustache),
+        Language::Xml => Some(MarkupLanguage::Xml),
         _ => None,
     }
 }
@@ -120,9 +152,22 @@ mod tests {
     fn engine_metadata() {
         let engine = MarkupFmtEngine;
         assert_eq!(engine.name(), "markup_fmt");
-        assert!(engine.languages().contains(&Language::Html));
-        assert!(engine.languages().contains(&Language::Vue));
-        assert!(engine.languages().contains(&Language::Svelte));
+        for lang in &[
+            Language::Html,
+            Language::Vue,
+            Language::Svelte,
+            Language::Astro,
+            Language::Angular,
+            Language::Jinja,
+            Language::Vento,
+            Language::Mustache,
+            Language::Xml,
+        ] {
+            assert!(
+                engine.languages().contains(lang),
+                "{lang:?} should be listed in MarkupFmtEngine::languages()"
+            );
+        }
         let caps = engine.capabilities();
         assert!(!caps.lint);
         assert!(caps.format);

@@ -40,6 +40,18 @@ pub enum Language {
     Vue,
     /// Svelte component.
     Svelte,
+    /// Astro component.
+    Astro,
+    /// Angular component template (matched via `*.component.html` filename convention).
+    Angular,
+    /// Jinja2 / Twig / Nunjucks template.
+    Jinja,
+    /// Vento template.
+    Vento,
+    /// Mustache / Handlebars template.
+    Mustache,
+    /// XML / SVG document.
+    Xml,
     /// GraphQL.
     GraphQl,
     /// Nix.
@@ -95,6 +107,12 @@ impl Language {
             Language::Html => "html",
             Language::Vue => "vue",
             Language::Svelte => "svelte",
+            Language::Astro => "astro",
+            Language::Angular => "angular",
+            Language::Jinja => "jinja",
+            Language::Vento => "vento",
+            Language::Mustache => "mustache",
+            Language::Xml => "xml",
             Language::GraphQl => "graphql",
             Language::Nix => "nix",
             Language::Shell => "shell",
@@ -146,9 +164,27 @@ impl Language {
             "css" => Language::Css,
             "scss" => Language::Scss,
             "less" => Language::Less,
-            "html" | "htm" => Language::Html,
+            "html" | "htm" => {
+                // Angular component templates follow the `*.component.html`
+                // convention. markup_fmt's own `detect_language` applies this only to
+                // `.html`; we extend it to `.htm` by analogy (`*.component.htm` is
+                // effectively nonexistent in practice, so there is no routing risk).
+                if path
+                    .file_stem()
+                    .is_some_and(|s| s.to_string_lossy().ends_with(".component"))
+                {
+                    Language::Angular
+                } else {
+                    Language::Html
+                }
+            }
             "vue" => Language::Vue,
             "svelte" => Language::Svelte,
+            "astro" => Language::Astro,
+            "jinja" | "jinja2" | "j2" | "twig" | "njk" => Language::Jinja,
+            "vto" => Language::Vento,
+            "mustache" | "hbs" | "handlebars" => Language::Mustache,
+            "xml" | "svg" | "wsdl" | "xsd" | "xslt" | "xsl" => Language::Xml,
             "graphql" | "gql" => Language::GraphQl,
             "nix" => Language::Nix,
             "sh" | "bash" | "zsh" => Language::Shell,
@@ -186,6 +222,12 @@ impl Language {
             | Language::Html
             | Language::Vue
             | Language::Svelte
+            | Language::Astro
+            | Language::Angular
+            | Language::Jinja
+            | Language::Vento
+            | Language::Mustache
+            | Language::Xml
             | Language::GraphQl => 2,
             _ => 4,
         }

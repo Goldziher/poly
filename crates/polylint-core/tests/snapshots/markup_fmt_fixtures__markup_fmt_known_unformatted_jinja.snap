@@ -1,0 +1,11 @@
+---
+source: crates/polylint-core/tests/markup_fmt_fixtures.rs
+expression: "format_to_string(\"base.jinja2\", Language::Jinja, KNOWN_UNFORMATTED_JINJA)"
+---
+<html>
+  <head><title>{{ page_title }}</title></head>
+  <body>
+    <h1>{{ heading }}</h1>
+    <p class="intro">{{ body }}</p>
+  </body>
+</html>
