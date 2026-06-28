@@ -43,6 +43,11 @@ pub struct HooksConfig {
     pub builtin: BuiltinHooks,
     /// Per-stage inline hook configuration, keyed by git [`Stage`].
     pub stage_configs: BTreeMap<Stage, StageConfig>,
+    /// Whether a `[hooks]` section was present in the source config (vs this
+    /// being the default produced when no `[hooks]` table exists). Gates the
+    /// default-on builtins (e.g. the `cargo` group) so repos that have not
+    /// adopted poly hooks are never silently given extra hooks.
+    pub present: bool,
 }
 
 impl HooksConfig {
@@ -166,6 +171,8 @@ impl<'de> Visitor<'de> for HooksConfigVisitor {
             env: env.unwrap_or_default(),
             builtin: builtin.unwrap_or_default(),
             stage_configs,
+            // Reached only when a `[hooks]` table exists in the source.
+            present: true,
         })
     }
 }

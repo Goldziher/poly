@@ -10,6 +10,8 @@
 //!   `deny` hooks, each capability-probed against `PATH` so an absent tool is
 //!   skipped (with a `tracing::info!` notice) rather than failing the run.
 
+use std::path::Path;
+
 use anyhow::Result;
 use poly_config::{CargoHooks, FileSafetyHooks, HooksConfig, Stage as ConfigStage};
 use poly_hooks::model::{Hook, HookCache};
@@ -24,14 +26,29 @@ use super::builtin_runs_on;
 pub(super) trait ToolProbe {
     /// Whether `tool` (e.g. `"cargo-clippy"`) is available on this host.
     fn is_available(&self, tool: &str) -> bool;
+
+    /// Whether the repository is a Cargo project (a `Cargo.toml` at its root).
+    ///
+    /// Gates the *default-on* `cargo` builtin group so it never tries to run
+    /// `cargo clippy` in a non-Rust repo. An explicit `cargo = true` bypasses
+    /// this — that is the user's deliberate choice.
+    fn is_cargo_project(&self) -> bool;
 }
 
-/// The production probe: resolves a tool against `PATH` (and Windows `PATHEXT`).
-pub(super) struct PathProbe;
+/// The production probe: resolves a tool against `PATH` (and Windows `PATHEXT`)
+/// and detects a Cargo project relative to the repository root.
+pub(super) struct PathProbe<'a> {
+    /// Repository root, used to look for a `Cargo.toml`.
+    pub root: &'a Path,
+}
 
-impl ToolProbe for PathProbe {
+impl ToolProbe for PathProbe<'_> {
     fn is_available(&self, tool: &str) -> bool {
         which::which(tool).is_ok()
+    }
+
+    fn is_cargo_project(&self) -> bool {
+        self.root.join("Cargo.toml").is_file()
     }
 }
 
@@ -139,6 +156,27 @@ fn cargo_tools(cargo: &CargoHooks) -> [CargoTool; 4] {
     ]
 }
 
+/// Resolve the effective `cargo` builtin group, or `None` when it is inactive.
+///
+/// Precedence: an explicit `[hooks.builtin] cargo` value wins (`cargo = false`
+/// disables, `cargo = true` / a table enables). When the key is absent, the
+/// group runs by default **iff** a `[hooks]` section was configured — so a repo
+/// that has adopted poly hooks gets clippy/sort/machete/deny (each still
+/// capability-probed), while a repo with no `[hooks]` section never does.
+fn resolve_cargo_group(hooks: &HooksConfig, cargo_project: bool) -> Option<CargoHooks> {
+    match &hooks.builtin.cargo {
+        Some(cargo) if cargo.enabled => Some(cargo.clone()),
+        Some(_) => None,
+        // Absent key: default-on only in a repo that has adopted poly hooks AND
+        // is actually a Cargo project (else `cargo clippy` would fail).
+        None if hooks.present && cargo_project => Some(CargoHooks {
+            enabled: true,
+            ..CargoHooks::default()
+        }),
+        None => None,
+    }
+}
+
 /// Append the enabled, present `cargo` builtins as whole-workspace hooks.
 ///
 /// Each tool is capability-probed: an absent tool is skipped with a
@@ -151,18 +189,18 @@ pub(super) fn append_cargo(
     probe: &dyn ToolProbe,
     out: &mut Vec<Hook>,
 ) -> Result<()> {
-    let cargo = &hooks.builtin.cargo;
-    if !cargo.enabled
-        || !builtin_runs_on(
-            &cargo.stages,
-            &hooks.stages,
-            ConfigStage::PreCommit,
-            config_stage,
-        )?
-    {
+    let Some(cargo) = resolve_cargo_group(hooks, probe.is_cargo_project()) else {
+        return Ok(());
+    };
+    if !builtin_runs_on(
+        &cargo.stages,
+        &hooks.stages,
+        ConfigStage::PreCommit,
+        config_stage,
+    )? {
         return Ok(());
     }
-    for tool in cargo_tools(cargo) {
+    for tool in cargo_tools(&cargo) {
         if !tool.enabled {
             continue;
         }
@@ -188,13 +226,14 @@ pub(super) fn append_cargo(
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
+    use anyhow::Result;
     use poly_config::{HookCacheMode, HooksConfig, PolyConfig};
     use poly_hooks::Stage as HookStage;
     use poly_hooks::model::{HookCommand, StageSpec};
 
-    use super::super::{lower_stage, lower_stage_with_probe};
+    use super::super::lower_stage_with_probe;
     use super::ToolProbe;
 
     /// A [`ToolProbe`] over a fixed allow-list, so Cargo-builtin gating is
@@ -205,6 +244,34 @@ mod tests {
         fn is_available(&self, tool: &str) -> bool {
             self.0.contains(&tool)
         }
+        fn is_cargo_project(&self) -> bool {
+            true
+        }
+    }
+
+    /// Like [`StubProbe`] but reports the repo is *not* a Cargo project, to
+    /// exercise the default-on cargo gate.
+    struct NonCargoProbe(&'static [&'static str]);
+
+    impl ToolProbe for NonCargoProbe {
+        fn is_available(&self, tool: &str) -> bool {
+            self.0.contains(&tool)
+        }
+        fn is_cargo_project(&self) -> bool {
+            false
+        }
+    }
+
+    /// `lower_stage` over a probe reporting no external tools, so the default-on
+    /// `cargo` builtin group never intrudes on tests that don't exercise it.
+    fn lower_stage(
+        hooks: &HooksConfig,
+        poly_bin: &Path,
+        stage: HookStage,
+        files: &[PathBuf],
+        cache_mode: &HookCacheMode,
+    ) -> Result<StageSpec> {
+        lower_stage_with_probe(hooks, poly_bin, stage, files, cache_mode, &StubProbe(&[]))
     }
 
     fn hooks_from(toml: &str) -> HooksConfig {
@@ -328,6 +395,81 @@ shebang_scripts_are_executable = false
     }
 
     #[test]
+    fn cargo_defaults_on_when_a_hooks_section_is_present() {
+        // A `[hooks]` section with no explicit `cargo` key → the group runs by
+        // default, emitting every tool found on PATH.
+        let hooks = hooks_from("[hooks]\nstages = [\"pre-commit\"]\n");
+        assert!(hooks.present);
+        let probe = StubProbe(&["cargo-clippy", "cargo-sort", "cargo-machete", "cargo-deny"]);
+        let spec = lower_stage_with_probe(
+            &hooks,
+            &poly(),
+            HookStage::PreCommit,
+            &[],
+            &HookCacheMode::Safe,
+            &probe,
+        )
+        .unwrap();
+        assert_eq!(
+            ids(&spec),
+            vec!["cargo-clippy", "cargo-sort", "cargo-machete", "cargo-deny"]
+        );
+    }
+
+    #[test]
+    fn cargo_does_not_default_on_outside_a_cargo_project() {
+        // `[hooks]` present and tools on PATH, but the repo is not a Cargo
+        // project → the default-on group stays off (it would fail otherwise).
+        let hooks = hooks_from("[hooks]\nstages = [\"pre-commit\"]\n");
+        let probe = NonCargoProbe(&["cargo-clippy", "cargo-sort", "cargo-machete", "cargo-deny"]);
+        let spec = lower_stage_with_probe(
+            &hooks,
+            &poly(),
+            HookStage::PreCommit,
+            &[],
+            &HookCacheMode::Safe,
+            &probe,
+        )
+        .unwrap();
+        assert!(spec.hooks.is_empty(), "{:?}", ids(&spec));
+    }
+
+    #[test]
+    fn cargo_default_on_is_suppressed_by_explicit_false() {
+        let hooks = hooks_from("[hooks.builtin]\ncargo = false\n");
+        let probe = StubProbe(&["cargo-clippy"]);
+        let spec = lower_stage_with_probe(
+            &hooks,
+            &poly(),
+            HookStage::PreCommit,
+            &[],
+            &HookCacheMode::Safe,
+            &probe,
+        )
+        .unwrap();
+        assert!(spec.hooks.is_empty(), "{:?}", ids(&spec));
+    }
+
+    #[test]
+    fn cargo_does_not_default_on_without_a_hooks_section() {
+        // No `[hooks]` table at all → the repo has not adopted poly hooks, so
+        // the cargo group stays off even with tools on PATH.
+        let hooks = hooks_from("");
+        assert!(!hooks.present);
+        let probe = StubProbe(&["cargo-clippy"]);
+        let spec = lower_stage_with_probe(
+            &hooks,
+            &poly(),
+            HookStage::PreCommit,
+            &[],
+            &HookCacheMode::Safe,
+            &probe,
+        )
+        .unwrap();
+        assert!(spec.hooks.is_empty());
+    }
+
+    #[test]
     fn cargo_lowers_only_tools_present_on_path() {
         let hooks = hooks_from("[hooks.builtin]\ncargo = true\n");
         // Only clippy and deny are "installed".
@@ -390,7 +532,9 @@ shebang_scripts_are_executable = false
     }
 
     #[test]
-    fn cargo_disabled_lowers_to_nothing_regardless_of_path() {
+    fn cargo_defaults_on_alongside_an_explicit_builtin() {
+        // `polylint` is explicit; the `cargo` group defaults on (a `[hooks]`
+        // section exists) and appends each tool found on PATH.
         let hooks = hooks_from("[hooks.builtin]\npolylint = true\n");
         let probe = StubProbe(&["cargo-clippy", "cargo-sort", "cargo-machete", "cargo-deny"]);
         let spec = lower_stage_with_probe(
@@ -402,8 +546,12 @@ shebang_scripts_are_executable = false
             &probe,
         )
         .unwrap();
-        // Only the explicitly-enabled polylint builtin is present.
-        assert_eq!(ids(&spec), vec!["polylint"]);
+        let got = ids(&spec);
+        assert!(got.contains(&"polylint".to_string()), "{got:?}");
+        for tool in ["cargo-clippy", "cargo-sort", "cargo-machete", "cargo-deny"] {
+            assert!(got.contains(&tool.to_string()), "missing {tool}: {got:?}");
+        }
+        assert_eq!(got.len(), 5, "{got:?}");
     }
 
     #[test]

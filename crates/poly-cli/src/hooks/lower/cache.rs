@@ -102,7 +102,10 @@ mod tests {
         id: &str,
         mode: &HookCacheMode,
     ) -> HookCache {
-        let spec = lower_stage(hooks, &poly(), stage, &[], mode).unwrap();
+        // A non-Cargo temp root keeps the default-on cargo group from intruding
+        // on these cache-policy assertions regardless of the host toolchain.
+        let root = tempfile::tempdir().unwrap();
+        let spec = lower_stage(hooks, &poly(), stage, &[], mode, root.path()).unwrap();
         spec.hooks
             .into_iter()
             .find(|hook| hook.id == id)

@@ -34,7 +34,11 @@ pub struct BuiltinHooks {
     /// The pure-Rust file-safety check group (`file_safety`).
     pub file_safety: FileSafetyHooks,
     /// The whole-workspace Cargo tool group (`cargo`).
-    pub cargo: CargoHooks,
+    ///
+    /// `None` when the `cargo` key is absent — distinct from an explicit
+    /// `cargo = false`. With a `[hooks]` section present, an absent key means
+    /// the group runs by default (capability-probed); an explicit value wins.
+    pub cargo: Option<CargoHooks>,
 }
 
 /// One builtin hook. Accepts either a bare boolean (`polylint = true`) or a
@@ -291,13 +295,15 @@ mod tests {
     }
 
     #[test]
-    fn file_safety_and_cargo_are_off_by_default() {
+    fn file_safety_off_and_cargo_absent_by_default() {
         let hooks = BuiltinHooks::default();
         assert!(!hooks.file_safety.enabled);
-        assert!(!hooks.cargo.enabled);
+        // `cargo` is absent (None), distinct from an explicit `cargo = false`;
+        // its default-on behavior is gated on a `[hooks]` section at lowering.
+        assert!(hooks.cargo.is_none());
         // Member checks default on so a bare toggle turns the whole group on.
         assert!(hooks.file_safety.merge_conflict);
-        assert!(hooks.cargo.clippy);
+        assert!(CargoHooks::default().clippy);
         assert_eq!(
             hooks.file_safety.max_added_file_kb,
             DEFAULT_MAX_ADDED_FILE_KB
@@ -353,7 +359,7 @@ private_key = false
     #[test]
     fn cargo_bare_toggle_enables_every_tool() {
         let hooks: BuiltinHooks = toml::from_str("cargo = true").unwrap();
-        let cargo = &hooks.cargo;
+        let cargo = hooks.cargo.as_ref().expect("cargo present");
         assert!(cargo.enabled);
         assert!(cargo.clippy);
         assert!(cargo.sort);
@@ -370,7 +376,7 @@ machete = false
 "#,
         )
         .unwrap();
-        let cargo = &hooks.cargo;
+        let cargo = hooks.cargo.as_ref().expect("cargo present");
         assert!(cargo.enabled);
         assert!(!cargo.machete);
         assert!(cargo.clippy);
@@ -381,6 +387,6 @@ machete = false
     #[test]
     fn cargo_table_with_explicit_disable() {
         let hooks: BuiltinHooks = toml::from_str("cargo = { enabled = false }").unwrap();
-        assert!(!hooks.cargo.enabled);
+        assert!(!hooks.cargo.expect("cargo present").enabled);
     }
 }

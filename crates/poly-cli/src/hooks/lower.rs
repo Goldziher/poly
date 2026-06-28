@@ -94,8 +94,16 @@ pub fn lower_stage(
     stage: HookStage,
     files: &[PathBuf],
     cache_mode: &HookCacheMode,
+    root: &Path,
 ) -> Result<StageSpec> {
-    lower_stage_with_probe(hooks, poly_bin, stage, files, cache_mode, &PathProbe)
+    lower_stage_with_probe(
+        hooks,
+        poly_bin,
+        stage,
+        files,
+        cache_mode,
+        &PathProbe { root },
+    )
 }
 
 /// [`lower_stage`] with an injectable capability [`ToolProbe`].
@@ -477,6 +485,29 @@ mod tests {
 
     fn ids(spec: &StageSpec) -> Vec<String> {
         spec.hooks.iter().map(|h| h.id.clone()).collect()
+    }
+
+    /// Test-local `lower_stage` shadowing the production one (a local item wins
+    /// over the `use super::*` glob): it routes lowering through a probe that
+    /// reports no external tools, so the default-on `cargo` builtin group stays
+    /// deterministic regardless of what the host has installed.
+    fn lower_stage(
+        hooks: &HooksConfig,
+        poly_bin: &Path,
+        stage: HookStage,
+        files: &[PathBuf],
+        cache_mode: &HookCacheMode,
+    ) -> Result<StageSpec> {
+        struct NoTools;
+        impl ToolProbe for NoTools {
+            fn is_available(&self, _tool: &str) -> bool {
+                false
+            }
+            fn is_cargo_project(&self) -> bool {
+                false
+            }
+        }
+        lower_stage_with_probe(hooks, poly_bin, stage, files, cache_mode, &NoTools)
     }
 
     #[test]
