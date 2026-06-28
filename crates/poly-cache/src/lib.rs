@@ -26,7 +26,7 @@
 //! # Key derivation
 //!
 //! ```text
-//! input_digest  = blake3( concat(path \0 blake3(file_bytes)_hex  for each file, sorted by path) )
+//! input_digest  = blake3( concat(path \0 blake3(file_bytes)_raw  for each file, sorted by path) )
 //!
 //! cache_key     = blake3( namespace_dir \0 id \0 version \0 toml(args) \0 input_digest_hex )
 //! ```
@@ -96,7 +96,7 @@ pub use maintenance::{CacheStats, NamespaceStats};
 /// Increment this whenever the cache layout changes incompatibly.  Tools such
 /// as `poly cache gc` compare the sentinel against this value to decide whether
 /// an existing tree is safe to reuse.
-pub const CACHE_FORMAT_VERSION: &str = "1";
+pub const CACHE_FORMAT_VERSION: &str = "2";
 
 static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -354,27 +354,30 @@ impl ResultCache {
     /// Algorithm:
     /// 1. Compute `blake3(bytes)` for each file.
     /// 2. Sort entries by path (byte order) for a stable digest.
-    /// 3. Feed the outer hasher with `path \0 file_hash_hex` for each entry.
+    /// 3. Feed the outer hasher with `path \0 file_hash_raw` for each entry,
+    ///    where `file_hash_raw` is the 32 raw hash bytes.
+    ///
+    /// The per-file hash is kept as a [`blake3::Hash`] (a `Copy`, stack-resident
+    /// 32-byte value) and its raw bytes are fed straight into the outer hasher —
+    /// no per-file hex `String` is allocated. This runs once per file on every
+    /// lint/format pass, so the avoided allocation multiplies by the corpus size.
     ///
     /// For hooks, pass every file in the hook's matched input set.  For a
     /// single lint/fmt file use [`single_file_digest`] instead.
     ///
     /// [`single_file_digest`]: ResultCache::single_file_digest
     pub fn file_set_digest<'a>(files: impl Iterator<Item = (&'a str, &'a [u8])>) -> InputDigest {
-        let mut entries: Vec<(&'a str, String)> = files
-            .map(|(path, bytes)| {
-                let file_hash = blake3::hash(bytes).to_hex().to_string();
-                (path, file_hash)
-            })
+        let mut entries: Vec<(&'a str, blake3::Hash)> = files
+            .map(|(path, bytes)| (path, blake3::hash(bytes)))
             .collect();
         // Sort by path so the digest is stable regardless of iteration order.
         entries.sort_unstable_by_key(|(path, _)| *path);
 
         let mut outer = blake3::Hasher::new();
-        for (path, hash_hex) in &entries {
+        for (path, file_hash) in &entries {
             outer.update(path.as_bytes());
             outer.update(b"\0");
-            outer.update(hash_hex.as_bytes());
+            outer.update(file_hash.as_bytes());
         }
         InputDigest(outer.finalize().to_hex().to_string())
     }
@@ -682,6 +685,24 @@ mod tests {
         let d2 = ResultCache::file_set_digest(
             [("a.py", b"v1" as &[u8]), ("b.py", b"CHANGED")].into_iter(),
         );
+        assert_ne!(d1, d2);
+    }
+
+    #[test]
+    fn file_set_digest_is_deterministic_across_calls() {
+        let files = || [("a.py", b"alpha" as &[u8]), ("b.py", b"beta")].into_iter();
+        assert_eq!(
+            ResultCache::file_set_digest(files()),
+            ResultCache::file_set_digest(files()),
+            "identical input sets must produce identical digests"
+        );
+    }
+
+    #[test]
+    fn file_set_digest_differs_on_path_change() {
+        // Same content, different path → different digest (paths are folded in).
+        let d1 = ResultCache::file_set_digest(std::iter::once(("a.py", b"same" as &[u8])));
+        let d2 = ResultCache::file_set_digest(std::iter::once(("b.py", b"same" as &[u8])));
         assert_ne!(d1, d2);
     }
 
