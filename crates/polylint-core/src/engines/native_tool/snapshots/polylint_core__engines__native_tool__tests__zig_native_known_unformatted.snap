@@ -1,5 +1,5 @@
 ---
-source: crates/polylint-core/src/engines/native_tool.rs
+source: crates/polylint-core/src/engines/native_tool/mod.rs
 expression: formatted
 ---
 const std = @import("std");

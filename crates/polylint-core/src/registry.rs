@@ -66,6 +66,15 @@ pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
         Language::Go => vec![Box::new(NativeToolEngine::for_language(Language::Go))],
         Language::Rust => vec![Box::new(NativeToolEngine::for_language(Language::Rust))],
         Language::Zig => vec![Box::new(NativeToolEngine::for_language(Language::Zig))],
+        // Shell: two opt-in native tools registered separately.
+        // `shell_format()` (shfmt) holds the format slot; `shell_lint()`
+        // (shellcheck) holds the lint slot. Both delegate to TreeSitterEngine
+        // when disabled or absent so the language is never left without
+        // formatting or linting.
+        Language::Shell => vec![
+            Box::new(NativeToolEngine::shell_format()),
+            Box::new(NativeToolEngine::shell_lint()),
+        ],
         // As other native backends land they are matched here, falling through
         // to the tree-sitter generic tier for everything else.
         _ => vec![Box::new(TreeSitterEngine)],
