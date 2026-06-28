@@ -167,6 +167,21 @@ pub fn get_staged_files(root: &Path) -> Result<Vec<PathBuf>, Error> {
     Ok(zsplit(&output.stdout)?)
 }
 
+/// List every file tracked in the index (`git ls-files`).
+///
+/// Used by `poly hooks run --all-files` and by `pre-push` over a root-commit
+/// push, where the whole tracked tree is checked rather than a diff range.
+#[instrument(level = "trace")]
+pub fn list_files(root: &Path) -> Result<Vec<PathBuf>, Error> {
+    let output = git_cmd("list tracked files")?
+        .current_dir(root)
+        .arg("ls-files")
+        .arg("-z")
+        .check(true)
+        .output()?;
+    Ok(zsplit(&output.stdout)?)
+}
+
 /// List files changed between `old` and `new` (merge-base or direct range).
 #[instrument(level = "trace")]
 pub fn get_changed_files(old: &str, new: &str, root: &Path) -> Result<Vec<PathBuf>, Error> {

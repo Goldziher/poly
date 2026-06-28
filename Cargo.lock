@@ -4708,8 +4708,8 @@ dependencies = [
  "gitfluff",
  "owo-colors",
  "poly-config",
+ "poly-hooks",
  "polylint-core",
- "serde",
  "serde_json",
  "tempfile",
 ]

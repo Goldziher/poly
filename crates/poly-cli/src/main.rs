@@ -29,7 +29,7 @@ enum Command {
     Fmt(FmtArgs),
     /// Lint and optionally clean a commit message (reads `[commit]` from poly.toml).
     Commit(Box<gitfluff::cli::LintArgs>),
-    /// Run git hooks declared in `[hooks]` of poly.toml (via the prek engine).
+    /// Run git hooks declared in `[hooks]` of poly.toml (native runner).
     Hooks(HooksArgs),
 }
 
