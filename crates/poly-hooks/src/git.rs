@@ -8,10 +8,9 @@
 //! phases or the polyhooks crate:
 //!
 //! `init_repo`, `shallow_clone`, `full_clone`, `clone_repo_attempt`,
-//! `clone_repo`, `get_lfs_files`, `get_ancestors_not_in_remote`,
-//! `get_git_dir`, `get_git_common_dir`, `get_git_hooks_dir`, `write_tree`,
-//! `ls_files`, `has_diff`, `files_not_staged`, `has_unmerged_paths`,
-//! `is_in_merge_conflict`, `get_conflicted_files`.
+//! `clone_repo`, `get_lfs_files`, `write_tree`, `ls_files`, `has_diff`,
+//! `files_not_staged`, `has_unmerged_paths`, `is_in_merge_conflict`,
+//! `get_conflicted_files`.
 
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
@@ -347,9 +346,166 @@ pub fn get_git_hooks_dir() -> Result<PathBuf, Error> {
     Ok(hooks_dir.clean())
 }
 
+// ── Pre-push stdin parsing helpers ─────────────────────────────────────────────
+
+/// Return `true` if `rev` names an existing, valid git object in `root`.
+///
+/// Used by the pre-push shim to decide whether the remote tip it was handed on
+/// stdin is a commit this repository can reason about.
+#[instrument(level = "trace")]
+pub fn rev_exists(rev: &str, root: &Path) -> Result<bool, Error> {
+    let mut cmd = git_cmd("git cat-file")?;
+    let status = cmd
+        .current_dir(root)
+        .arg("cat-file")
+        // Exit 0 if <object> exists and is a valid object, 1 if it does not.
+        .arg("-e")
+        .arg(rev)
+        .check(false)
+        .status()?;
+
+    if status.success() {
+        return Ok(true);
+    }
+    // Exit 1 = object absent; any other status (e.g. 128 for a corrupt object
+    // store) is a real git error and must not masquerade as "absent".
+    if status.code() == Some(1) {
+        return Ok(false);
+    }
+
+    cmd.check_status(status)?;
+    Ok(false)
+}
+
+/// Return `true` if `ancestor` is an ancestor of `commit` (via `merge-base`).
+///
+/// Exit code `0` means yes, `1` means no; any other status is propagated.
+#[instrument(level = "trace")]
+pub fn is_ancestor(ancestor: &str, commit: &str, root: &Path) -> Result<bool, Error> {
+    let mut cmd = git_cmd("check commit ancestry")?;
+    let status = cmd
+        .current_dir(root)
+        .arg("merge-base")
+        .arg("--is-ancestor")
+        .arg(ancestor)
+        .arg(commit)
+        .check(false)
+        .status()?;
+
+    if status.success() {
+        return Ok(true);
+    }
+    if status.code() == Some(1) {
+        return Ok(false);
+    }
+
+    cmd.check_status(status)?;
+    Ok(false)
+}
+
+/// Commits reachable from `local_sha` that no ref of `remote_name` can reach.
+///
+/// Ordered oldest-first (`--topo-order --reverse`), so the first element is the
+/// earliest commit the remote does not already have.
+#[instrument(level = "trace")]
+pub fn get_ancestors_not_in_remote(
+    local_sha: &str,
+    remote_name: &str,
+    root: &Path,
+) -> Result<Vec<String>, Error> {
+    let output = git_cmd("get ancestors not in remote")?
+        .current_dir(root)
+        .arg("rev-list")
+        .arg(local_sha)
+        .arg("--topo-order")
+        .arg("--reverse")
+        .arg("--not")
+        .arg(format!("--remotes={remote_name}"))
+        .check(true)
+        .output()?;
+    Ok(std::str::from_utf8(&output.stdout)?
+        .trim_ascii()
+        .lines()
+        .map(ToString::to_string)
+        .collect())
+}
+
+/// Root commits (commits with no parents) reachable from `local_sha`.
+#[instrument(level = "trace")]
+pub fn get_root_commits(local_sha: &str, root: &Path) -> Result<Vec<String>, Error> {
+    let output = git_cmd("get root commits")?
+        .current_dir(root)
+        .arg("rev-list")
+        .arg("--max-parents=0")
+        .arg(local_sha)
+        .check(true)
+        .output()?;
+    Ok(std::str::from_utf8(&output.stdout)?
+        .trim_ascii()
+        .lines()
+        .map(ToString::to_string)
+        .collect())
+}
+
+/// Resolve the first parent of `commit` (`<commit>^`), if any.
+///
+/// Returns `Ok(None)` when `commit` has no parent (e.g. a root commit).
+#[instrument(level = "trace")]
+pub fn get_parent_commit(commit: &str, root: &Path) -> Result<Option<String>, Error> {
+    let output = git_cmd("get parent commit")?
+        .current_dir(root)
+        .arg("rev-parse")
+        .arg(format!("{commit}^"))
+        .check(false)
+        .output()?;
+    if output.status.success() {
+        Ok(Some(
+            std::str::from_utf8(&output.stdout)?
+                .trim_ascii()
+                .to_string(),
+        ))
+    } else {
+        Ok(None)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::process::Command;
+
+    use tempfile::TempDir;
+
+    fn git_run(repo: &Path, args: &[&str]) -> String {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(repo)
+            .output()
+            .expect("git invocation");
+        assert!(
+            output.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8_lossy(&output.stdout).trim().to_string()
+    }
+
+    fn init_temp_repo() -> TempDir {
+        let dir = TempDir::new().expect("tempdir");
+        let path = dir.path();
+        git_run(path, &["init", "-q"]);
+        git_run(path, &["config", "user.email", "test@example.com"]);
+        git_run(path, &["config", "user.name", "Test"]);
+        git_run(path, &["config", "commit.gpgsign", "false"]);
+        dir
+    }
+
+    fn commit_file(repo: &Path, name: &str) -> String {
+        std::fs::write(repo.join(name), name).expect("write file");
+        git_run(repo, &["add", name]);
+        git_run(repo, &["commit", "-q", "-m", name]);
+        git_run(repo, &["rev-parse", "HEAD"])
+    }
 
     #[test]
     fn zsplit_splits_on_nul_and_filters_empty() {
@@ -372,5 +528,48 @@ mod tests {
         // We're inside the polylint worktree, so get_root() must succeed.
         let root = get_root().expect("git root");
         assert!(root.is_dir(), "root is not a directory: {}", root.display());
+    }
+
+    #[test]
+    fn rev_exists_distinguishes_real_and_bogus_revisions() {
+        let repo = init_temp_repo();
+        let head = commit_file(repo.path(), "a.txt");
+        assert!(rev_exists(&head, repo.path()).expect("rev_exists"));
+        assert!(
+            !rev_exists("0000000000000000000000000000000000000000", repo.path())
+                .expect("rev_exists")
+        );
+    }
+
+    #[test]
+    fn is_ancestor_reports_parentage() {
+        let repo = init_temp_repo();
+        let first = commit_file(repo.path(), "a.txt");
+        let second = commit_file(repo.path(), "b.txt");
+        assert!(is_ancestor(&first, &second, repo.path()).expect("is_ancestor"));
+        assert!(!is_ancestor(&second, &first, repo.path()).expect("is_ancestor"));
+    }
+
+    #[test]
+    fn get_parent_commit_resolves_first_parent() {
+        let repo = init_temp_repo();
+        let first = commit_file(repo.path(), "a.txt");
+        let second = commit_file(repo.path(), "b.txt");
+        let parent = get_parent_commit(&second, repo.path()).expect("parent");
+        assert_eq!(parent.as_deref(), Some(first.as_str()));
+        // A root commit has no parent.
+        assert_eq!(
+            get_parent_commit(&first, repo.path()).expect("parent"),
+            None
+        );
+    }
+
+    #[test]
+    fn get_root_commits_lists_only_the_root() {
+        let repo = init_temp_repo();
+        let first = commit_file(repo.path(), "a.txt");
+        let second = commit_file(repo.path(), "b.txt");
+        let roots = get_root_commits(&second, repo.path()).expect("roots");
+        assert_eq!(roots, vec![first]);
     }
 }

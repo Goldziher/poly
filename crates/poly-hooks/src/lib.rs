@@ -11,6 +11,8 @@
 //! - [`stage`] — [`Stage`] enum + [`HookType`] and their mapping.
 //! - [`process`] — synchronous [`Cmd`] wrapper over [`std::process::Command`].
 //! - [`git`] — synchronous git helpers (staged files, diff, worktree state).
+//! - [`install`] — install/uninstall the git-hook shims that invoke `poly hooks hook-impl`.
+//! - [`hook_impl`] — parse a fired git hook's args/stdin into [`hook_impl::RunInputs`].
 //! - [`filter`] — filename + tag-based file filtering primitives.
 //! - [`reporter`] — output rendering helpers ([`reporter::OutputPreview`], status markers).
 //! - [`fs`] — path utilities (clean, simplify, normalize, relative).
@@ -48,6 +50,8 @@ pub mod concurrency;
 pub mod filter;
 pub mod fs;
 pub mod git;
+pub mod hook_impl;
+pub mod install;
 pub mod model;
 pub mod process;
 pub mod reporter;
@@ -58,6 +62,7 @@ pub mod stage;
 pub mod pty;
 
 // Re-export the most commonly used types at the crate root for convenience.
+pub use hook_impl::{PushInfo, RunInputs};
 pub use model::{
     Hook, HookCommand, HookOutcome, HookRunOutcome, HookRunRequest, HookStatus, SkipReason,
     StageOutcome, StageSpec, StageStatus, StepOutcome,
