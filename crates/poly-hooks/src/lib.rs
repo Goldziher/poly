@@ -65,7 +65,7 @@ pub mod pty;
 pub use hook_impl::{PushInfo, RunInputs};
 pub use model::{
     Hook, HookCache, HookCommand, HookOutcome, HookRunOutcome, HookRunRequest, HookStatus,
-    SkipReason, StageOutcome, StageSpec, StageStatus, StepOutcome,
+    SccacheSettings, SkipReason, StageOutcome, StageSpec, StageStatus, StepOutcome,
 };
 pub use process::{Cmd, OutputSink};
 pub use reporter::{CaptureSink, HookRunReporter};

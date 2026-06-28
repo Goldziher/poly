@@ -8,8 +8,10 @@ use std::process::ExitCode;
 use clap::Args;
 use polylint_core::{Config, RunOptions, report};
 
+pub mod cache_cmd;
 pub mod hooks;
 
+pub use cache_cmd::{CacheArgs, run_cache};
 pub use hooks::{HooksArgs, run_hooks};
 
 /// Output rendering format.

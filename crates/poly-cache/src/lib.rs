@@ -83,6 +83,10 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
+mod maintenance;
+
+pub use maintenance::{CacheStats, NamespaceStats};
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -161,6 +165,10 @@ pub enum Namespace {
 }
 
 impl Namespace {
+    /// Every namespace, in a fixed order — used by maintenance operations that
+    /// walk the whole `results/` tree.
+    pub const ALL: [Namespace; 3] = [Namespace::Lint, Namespace::Fmt, Namespace::Hook];
+
     /// The sub-directory component used in the storage path.
     pub fn as_dir(self) -> &'static str {
         match self {

@@ -25,6 +25,7 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::Once;
 use std::time::{Duration, Instant};
 
 use poly_cache::{CacheKey, InputDigest, Namespace, ResultCache};
@@ -35,7 +36,7 @@ use crate::filter::{FilePattern, FileTagCache, HookFileFilter};
 use crate::git;
 use crate::model::{
     Hook, HookCache, HookCommand, HookOutcome, HookRunOutcome, HookRunRequest, HookStatus,
-    SkipReason, StageOutcome, StageSpec, StageStatus, StepOutcome,
+    SccacheSettings, SkipReason, StageOutcome, StageSpec, StageStatus, StepOutcome,
 };
 use crate::process::Cmd;
 use crate::reporter::CaptureSink;
@@ -254,7 +255,10 @@ fn run_group(
         }
 
         let refs: Vec<&Path> = matched.iter().map(AsRef::as_ref).collect();
-        (run_hook(&request.root, hook, pos, &refs), key)
+        (
+            run_hook(&request.root, hook, pos, &refs, request.sccache.as_ref()),
+            key,
+        )
     };
 
     if serial {
@@ -267,14 +271,20 @@ fn run_group(
 /// Execute a single hook over its matched files, splitting into `ARG_MAX` batches
 /// run via `par_iter`. Passes only when every batch passes; output is
 /// concatenated in batch order.
-fn run_hook(root: &Path, hook: &Hook, position: usize, matched: &[&Path]) -> HookOutcome {
+fn run_hook(
+    root: &Path,
+    hook: &Hook,
+    position: usize,
+    matched: &[&Path],
+    sccache: Option<&SccacheSettings>,
+) -> HookOutcome {
     let start = Instant::now();
     let base_len = base_arg_len(hook);
     let batches = crate::concurrency::partition_files(matched, base_len);
 
     let results: Vec<(HookStatus, Vec<u8>)> = batches
         .into_par_iter()
-        .map(|batch| execute(build_command(hook, root, batch)))
+        .map(|batch| execute(build_command(hook, root, batch, sccache)))
         .collect();
 
     let mut output = Vec::new();
@@ -325,7 +335,12 @@ fn cached_outcome(hook: &Hook, position: usize, output: Vec<u8>) -> HookOutcome 
 
 // ── Command construction & execution ────────────────────────────────────────
 
-fn build_command(hook: &Hook, root: &Path, files: &[&Path]) -> Cmd {
+fn build_command(
+    hook: &Hook,
+    root: &Path,
+    files: &[&Path],
+    sccache: Option<&SccacheSettings>,
+) -> Cmd {
     let mut cmd = match &hook.command {
         HookCommand::Run(line) => shell_command(line, &hook.args, files, hook.pass_filenames),
         HookCommand::Script { path, runner } => {
@@ -346,7 +361,59 @@ fn build_command(hook: &Hook, root: &Path, files: &[&Path]) -> Cmd {
     };
     cmd.current_dir(root);
     cmd.envs(hook.env.iter());
+    inject_sccache_env(&mut cmd, hook, sccache);
     cmd
+}
+
+/// Module-global guard so the shared sccache server is started at most once per
+/// `poly hooks` process, no matter how many compiler hooks or batches run.
+static SCCACHE_SERVER_START: Once = Once::new();
+
+/// Inject the tier-2 sccache environment into a compiler hook's command.
+///
+/// A no-op unless the hook opted in via [`Hook::compiler`] **and** the run
+/// carries [`SccacheSettings`]. Starts the shared sccache server once per
+/// process (best-effort — a start failure only warns, since sccache also
+/// auto-starts on first client use), then sets `RUSTC_WRAPPER` plus the
+/// optional `SCCACHE_DIR` / `SCCACHE_CACHE_SIZE`.
+///
+/// Caveat: if an sccache server is already running with a different `SCCACHE_DIR`
+/// / size, the client env is ignored by that server — this is accepted.
+fn inject_sccache_env(cmd: &mut Cmd, hook: &Hook, sccache: Option<&SccacheSettings>) {
+    if !hook.compiler {
+        return;
+    }
+    let Some(settings) = sccache else {
+        return;
+    };
+    ensure_sccache_server(settings);
+    cmd.env("RUSTC_WRAPPER", &settings.bin);
+    if let Some(dir) = &settings.dir {
+        cmd.env("SCCACHE_DIR", dir);
+    }
+    if let Some(max_size) = &settings.max_size {
+        cmd.env("SCCACHE_CACHE_SIZE", max_size);
+    }
+}
+
+/// Start the sccache server idempotently (once per process), with the resolved
+/// `SCCACHE_DIR` / `SCCACHE_CACHE_SIZE` in its own environment. Best-effort: a
+/// launch failure is logged and ignored.
+fn ensure_sccache_server(settings: &SccacheSettings) {
+    SCCACHE_SERVER_START.call_once(|| {
+        let mut cmd = Cmd::new(&settings.bin, format!("{} --start-server", settings.bin));
+        cmd.arg("--start-server");
+        if let Some(dir) = &settings.dir {
+            cmd.env("SCCACHE_DIR", dir);
+        }
+        if let Some(max_size) = &settings.max_size {
+            cmd.env("SCCACHE_CACHE_SIZE", max_size);
+        }
+        cmd.check(false).stdout(Stdio::null()).stderr(Stdio::null());
+        if let Err(error) = cmd.status() {
+            warn!("failed to start sccache server: {error}");
+        }
+    });
 }
 
 #[cfg(not(windows))]
@@ -608,4 +675,84 @@ fn base_arg_len(hook: &Hook) -> usize {
     };
     let args_len: usize = hook.args.iter().map(|a| a.len() + 9).sum();
     FIXED + command_len + args_len
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+    use std::path::Path;
+
+    use super::{Hook, SccacheSettings, build_command};
+
+    /// Collect the explicit environment overrides a built [`super::Cmd`] carries.
+    fn injected_env(hook: &Hook, sccache: Option<&SccacheSettings>) -> HashMap<String, String> {
+        let cmd = build_command(hook, Path::new("."), &[], sccache);
+        cmd.get_envs()
+            .filter_map(|(key, value)| {
+                value.map(|value| {
+                    (
+                        key.to_string_lossy().into_owned(),
+                        value.to_string_lossy().into_owned(),
+                    )
+                })
+            })
+            .collect()
+    }
+
+    /// `bin = "true"` keeps the one-shot `--start-server` probe harmless: `true`
+    /// ignores its arguments and exits 0, so the test never requires sccache.
+    fn settings() -> SccacheSettings {
+        SccacheSettings {
+            bin: "true".to_string(),
+            dir: Some(std::path::PathBuf::from("/tmp/sccache-test")),
+            max_size: Some("2G".to_string()),
+        }
+    }
+
+    #[test]
+    fn compiler_hook_gets_sccache_env_injected() {
+        let mut hook = Hook::run("clippy", "cargo clippy");
+        hook.compiler = true;
+        let env = injected_env(&hook, Some(&settings()));
+        assert_eq!(env.get("RUSTC_WRAPPER").map(String::as_str), Some("true"));
+        assert_eq!(
+            env.get("SCCACHE_DIR").map(String::as_str),
+            Some("/tmp/sccache-test")
+        );
+        assert_eq!(
+            env.get("SCCACHE_CACHE_SIZE").map(String::as_str),
+            Some("2G")
+        );
+    }
+
+    #[test]
+    fn non_compiler_hook_gets_no_sccache_env() {
+        let hook = Hook::run("fmt", "cargo fmt --check");
+        let env = injected_env(&hook, Some(&settings()));
+        assert!(!env.contains_key("RUSTC_WRAPPER"), "env: {env:?}");
+        assert!(!env.contains_key("SCCACHE_DIR"), "env: {env:?}");
+    }
+
+    #[test]
+    fn compiler_hook_without_settings_gets_no_sccache_env() {
+        let mut hook = Hook::run("clippy", "cargo clippy");
+        hook.compiler = true;
+        let env = injected_env(&hook, None);
+        assert!(!env.contains_key("RUSTC_WRAPPER"), "env: {env:?}");
+    }
+
+    #[test]
+    fn sccache_settings_without_dir_omits_dir_env() {
+        let mut hook = Hook::run("clippy", "cargo clippy");
+        hook.compiler = true;
+        let bare = SccacheSettings {
+            bin: "true".to_string(),
+            dir: None,
+            max_size: None,
+        };
+        let env = injected_env(&hook, Some(&bare));
+        assert_eq!(env.get("RUSTC_WRAPPER").map(String::as_str), Some("true"));
+        assert!(!env.contains_key("SCCACHE_DIR"), "env: {env:?}");
+        assert!(!env.contains_key("SCCACHE_CACHE_SIZE"), "env: {env:?}");
+    }
 }

@@ -70,6 +70,10 @@ pub struct RunArgs {
     /// Bypass the result cache for this run (neither read nor write).
     #[arg(long)]
     pub no_cache: bool,
+
+    /// Disable tier-2 sccache env injection for compiler hooks this run.
+    #[arg(long)]
+    pub no_sccache: bool,
 }
 
 /// `poly hooks install` arguments.
@@ -110,6 +114,10 @@ pub struct HookImplArgs {
     /// Bypass the result cache for this run (neither read nor write).
     #[arg(long)]
     pub no_cache: bool,
+
+    /// Disable tier-2 sccache env injection for compiler hooks this run.
+    #[arg(long)]
+    pub no_sccache: bool,
 
     /// The raw git hook arguments, passed after `--`.
     #[arg(last = true)]
@@ -160,6 +168,7 @@ fn run_stage(args: RunArgs) -> Result<ExitCode> {
         stages: vec![spec],
         concurrency: args.jobs,
         cache,
+        sccache: sccache_settings(&config, args.no_sccache),
     };
     run_and_report(request)
 }
@@ -262,6 +271,7 @@ fn hook_impl(args: HookImplArgs) -> Result<ExitCode> {
         stages: vec![spec],
         concurrency: args.jobs,
         cache,
+        sccache: sccache_settings(&config, args.no_sccache),
     };
     run_and_report(request)
 }
@@ -311,6 +321,26 @@ fn open_result_cache(
     }
     .context("failed to open the hook result cache")?;
     Ok(enabled.then_some(cache))
+}
+
+/// Resolve tier-2 sccache settings for a hook run from the `[cache.sccache]`
+/// table, honouring the `--no-sccache` flag.
+///
+/// Returns `None` (sccache off) unless `[cache.sccache] enabled = true` and
+/// `--no-sccache` was not given. The binary defaults to `"sccache"` when
+/// `[cache.sccache] bin` is absent.
+fn sccache_settings(config: &PolyConfig, no_sccache: bool) -> Option<poly_hooks::SccacheSettings> {
+    let sccache = &config.cache.sccache;
+    // The master `[cache] enabled` flag is a global kill switch; sccache is a
+    // further opt-in layered on top of it.
+    if !config.cache.enabled || !sccache.enabled || no_sccache {
+        return None;
+    }
+    Some(poly_hooks::SccacheSettings {
+        bin: sccache.bin.clone().unwrap_or_else(|| "sccache".to_string()),
+        dir: sccache.dir.clone().map(PathBuf::from),
+        max_size: sccache.max_size.clone(),
+    })
 }
 
 fn run_and_report(request: poly_hooks::HookRunRequest) -> Result<ExitCode> {

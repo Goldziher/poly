@@ -265,6 +265,8 @@ fn job_to_hook(
     let (command, pass_filenames) = build_command(job, &scoped)?;
 
     let cache = cache::job_cache(job, cache_mode)?;
+    // Tier-2 sccache opt-in; only honoured when the run carries sccache settings.
+    let compiler = job.cache.as_ref().is_some_and(|cache| cache.compiler);
 
     Ok(Hook {
         id: label.to_string(),
@@ -277,6 +279,7 @@ fn job_to_hook(
         types,
         priority: job.priority,
         cache,
+        compiler,
         // `parallel`/`piped` are stage-level in the lefthook schema. `piped`
         // (serial, abort-on-first-failure) maps to `require_serial` + `fail_fast`.
         parallel: cfg.parallel,

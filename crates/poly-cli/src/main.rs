@@ -7,7 +7,7 @@
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use poly_cli::{FmtArgs, HooksArgs, LintArgs, run_fmt, run_hooks, run_lint};
+use poly_cli::{CacheArgs, FmtArgs, HooksArgs, LintArgs, run_cache, run_fmt, run_hooks, run_lint};
 
 #[derive(Parser)]
 #[command(
@@ -31,6 +31,8 @@ enum Command {
     Commit(Box<gitfluff::cli::LintArgs>),
     /// Run git hooks declared in `[hooks]` of poly.toml (native runner).
     Hooks(HooksArgs),
+    /// Inspect and maintain the result cache (stats / size / gc / clean).
+    Cache(CacheArgs),
 }
 
 fn main() -> ExitCode {
@@ -39,6 +41,7 @@ fn main() -> ExitCode {
         Command::Fmt(args) => run_fmt(args),
         Command::Commit(args) => run_commit(*args),
         Command::Hooks(args) => run_hooks(args),
+        Command::Cache(args) => run_cache(args),
     }
 }
 

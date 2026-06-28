@@ -119,6 +119,9 @@ pub struct Hook {
     pub fail_text: Option<String>,
     /// Tier-1 result-cache policy (default [`HookCache::Disabled`]).
     pub cache: HookCache,
+    /// Opt into tier-2 sccache env injection (`RUSTC_WRAPPER`, …). Only honoured
+    /// when the run carries [`HookRunRequest::sccache`]; default `false`.
+    pub compiler: bool,
 }
 
 impl Hook {
@@ -157,6 +160,23 @@ pub struct StageSpec {
     pub hooks: Vec<Hook>,
 }
 
+/// Resolved tier-2 sccache settings for a hook run.
+///
+/// `poly-hooks` must not depend on `poly-config`, so this is the runner-local
+/// projection of the `[cache.sccache]` table: when a [`HookRunRequest`] carries
+/// `Some(SccacheSettings)`, the runner starts the shared sccache server once per
+/// process and injects `RUSTC_WRAPPER` / `SCCACHE_DIR` / `SCCACHE_CACHE_SIZE`
+/// into every hook whose [`Hook::compiler`] flag is set.
+#[derive(Debug, Clone, Default)]
+pub struct SccacheSettings {
+    /// Resolved `sccache` binary name or path (default `"sccache"`).
+    pub bin: String,
+    /// Optional `SCCACHE_DIR` storage directory.
+    pub dir: Option<PathBuf>,
+    /// Optional `SCCACHE_CACHE_SIZE` budget string (e.g. `"10G"`).
+    pub max_size: Option<String>,
+}
+
 /// A request to run one or more stages.
 #[derive(Debug, Clone, Default)]
 pub struct HookRunRequest {
@@ -175,6 +195,9 @@ pub struct HookRunRequest {
     /// [`ResultCache`] is `Send + Sync`, so the shared handle is borrowed
     /// directly inside the rayon pool — no `Arc` wrapper is needed.
     pub cache: Option<ResultCache>,
+    /// Tier-2 sccache settings; `None` disables sccache env injection for this
+    /// run (compiler hooks then run with the inherited environment).
+    pub sccache: Option<SccacheSettings>,
 }
 
 /// The result of running all requested stages.
