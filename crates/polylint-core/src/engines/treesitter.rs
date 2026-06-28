@@ -5,14 +5,17 @@
 //!
 //! Two modes, chosen per language:
 //! - **Structural reindent** for brace-delimited grammars (Go, C, C++, Java,
-//!   Kotlin, Rust, …): the CST locates the real `{}` / `[]` / `()` delimiter
-//!   tokens and re-indents each line by bracket depth. Byte ranges covered by
-//!   string-literal and comment CST nodes are excluded: delimiters inside them
-//!   never count toward depth, and any line whose leading whitespace begins
-//!   inside such a range is emitted verbatim — so the interior of a multiline
-//!   raw string, heredoc, or block comment is byte-preserved. The indent unit
-//!   is per-grammar (tabs for Go, two spaces for Swift/Dart, `indent_width`
-//!   spaces otherwise) to match each language's canonical formatter.
+//!   Kotlin, Rust, …): the CST locates all bracket tokens and re-indents each
+//!   line by depth using a **conservative level-keyed-by-open-line** model.
+//!   Multiple brackets opened on the same line coalesce to one indent level.
+//!   A level is released when the first leading closer pops any bracket opened
+//!   on that line. Byte ranges covered by string-literal and comment CST nodes
+//!   are excluded: delimiters inside them never count toward depth, and any
+//!   line whose leading whitespace begins inside such a range is emitted
+//!   verbatim. The indent unit is per-grammar (tabs for Go, two spaces for
+//!   Swift/Dart, `indent_width` spaces otherwise). Per-language switch/case
+//!   adjustments apply for Swift (case labels align with `switch`), Dart, and
+//!   C# (case bodies get an extra indent level).
 //! - **Whitespace normalization** for every other grammar, and whenever the
 //!   grammar is unavailable or the source fails to parse. This never corrupts
 //!   unparsable input (it only trims trailing whitespace and fixes line
@@ -69,9 +72,12 @@ impl Engine for TreeSitterEngine {
     }
 
     fn version(&self) -> &str {
-        // Bumped to 2: string/comment ranges are now excluded from reindent and
-        // the indent unit is per-grammar, so cached output could differ from v1.
-        "2"
+        // Version 5: replaced brace-line-dominance with the conservative
+        // level-keyed-by-open-line model. Multiple brackets opened on the same
+        // line coalesce to one indent level; a level is released by the first
+        // leading closer that pops any bracket from that open-line.
+        // Also carries the CRLF byte-cursor fix from v4.
+        "5"
     }
 
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
@@ -145,26 +151,45 @@ fn reindent_braces(name: &str, src: &SourceFile, cfg: &EngineConfig) -> Option<S
         // `contains_key` above guarantees the entry exists.
         let parser = pool.get_mut(name)?;
         let tree = parser.parse(&src.content)?;
-        let cst = collect_cst(&tree.root_node());
+        let cst = collect_cst(&tree.root_node(), name);
         Some(reindent(&src.content, name, &cst, cfg))
     })
 }
 
-/// A delimiter token located in the CST: its byte offset and whether it opens.
+/// A delimiter token located in the CST: its byte offset and whether it opens
+/// (`(`, `[`, `{`) or closes (`)`, `]`, `}`). Only tokens outside protected
+/// string/comment ranges are collected; interior brackets never count toward
+/// depth.
 struct Delimiter {
     byte: usize,
     open: bool,
 }
 
-/// Structural facts extracted from one CST walk: the brace/bracket/paren
-/// delimiters that drive depth, and the byte ranges of string/comment nodes
-/// whose interiors must never be reindented.
+/// Structural facts extracted from one CST walk: the bracket delimiters that
+/// drive depth, byte ranges of string/comment nodes whose interiors must never
+/// be reindented, and per-language switch/case adjustment ranges.
 struct CstFacts {
-    /// Delimiters in source order. Excludes any inside a protected range.
+    /// All structural delimiters in source order: openers (`{`, `(`, `[`)
+    /// and closers (`}`, `)`, `]`). The depth model is
+    /// level-keyed-by-open-line: multiple brackets opened on the same source
+    /// line coalesce to one indent level; a level is released by the first
+    /// leading closer that pops any bracket opened on that line.
     delimiters: Vec<Delimiter>,
     /// `[start, end)` byte ranges covered by string-literal / comment nodes,
     /// in source order. Used to leave string and comment interiors verbatim.
     protected: Vec<(usize, usize)>,
+    /// Lines whose `line_start` falls in `[start, end)` get their computed
+    /// indent level reduced by 1. Used for Swift `switch_entry` case-label
+    /// lines: swift-format aligns case labels with the `switch` keyword rather
+    /// than indenting them into the switch body.
+    case_label_dedent: Vec<(usize, usize)>,
+    /// Lines whose `line_start` falls in `[start, end)` get their computed
+    /// indent level increased by 1. Used for Dart/C# switch case bodies
+    /// (implicit extra indent after `case …:`) and, combined with
+    /// `case_label_dedent`, for the statement body inside a Swift
+    /// `switch_entry` (net effect: body stays at bracket depth while the
+    /// label is pulled out one level).
+    case_body_extra: Vec<(usize, usize)>,
 }
 
 impl CstFacts {
@@ -177,15 +202,28 @@ impl CstFacts {
             .iter()
             .any(|&(start, end)| start < byte && byte < end)
     }
+
+    /// Net indent-level adjustment for a line whose first byte is `line_start`.
+    /// Returns −1, 0, or +1 based on the per-language case/label ranges.
+    fn case_adjustment(&self, line_start: usize) -> i32 {
+        let dedent = self
+            .case_label_dedent
+            .iter()
+            .any(|&(s, e)| s <= line_start && line_start < e);
+        let extra = self
+            .case_body_extra
+            .iter()
+            .any(|&(s, e)| s <= line_start && line_start < e);
+        (if extra { 1 } else { 0 }) - (if dedent { 1 } else { 0 })
+    }
 }
 
-/// Walk the CST once, collecting depth-driving delimiters and the byte ranges of
-/// string/comment nodes. tree-sitter node kinds vary per grammar, so protected
-/// nodes are matched by `kind()` containing "string" or "comment" — the portable
-/// signal across grammars. The walk does not descend into a protected node, so
-/// delimiters living inside a string or comment are never collected and thus
-/// never count toward bracket depth.
-fn collect_cst(root: &Node) -> CstFacts {
+/// Walk the CST once, collecting all structural delimiters and the byte ranges
+/// of string/comment nodes. All bracket types (`{`/`(`/`[` and their closers)
+/// are tracked. The walk does not descend into protected nodes, so delimiters
+/// inside strings/comments never count toward depth. Per-language switch/case
+/// adjustments are collected in a second pass via [`collect_case_adjustments`].
+fn collect_cst(root: &Node, grammar_name: &str) -> CstFacts {
     let mut delimiters = Vec::new();
     let mut protected: Vec<(usize, usize)> = Vec::new();
     let mut cursor = root.walk();
@@ -197,11 +235,11 @@ fn collect_cst(root: &Node) -> CstFacts {
             protected.push((node.start_byte(), node.end_byte()));
         } else if node.child_count() == 0 {
             match kind.as_str() {
-                "{" | "(" | "[" => delimiters.push(Delimiter {
+                "(" | "[" | "{" => delimiters.push(Delimiter {
                     byte: node.start_byte(),
                     open: true,
                 }),
-                "}" | ")" | "]" => delimiters.push(Delimiter {
+                ")" | "]" | "}" => delimiters.push(Delimiter {
                     byte: node.start_byte(),
                     open: false,
                 }),
@@ -220,83 +258,203 @@ fn collect_cst(root: &Node) -> CstFacts {
             if !cursor.goto_parent() {
                 delimiters.sort_by_key(|d| d.byte);
                 protected.sort_by_key(|r| r.0);
+                let mut case_label_dedent = Vec::new();
+                let mut case_body_extra = Vec::new();
+                collect_case_adjustments(
+                    root,
+                    grammar_name,
+                    &mut case_body_extra,
+                    &mut case_label_dedent,
+                );
                 return CstFacts {
                     delimiters,
                     protected,
+                    case_label_dedent,
+                    case_body_extra,
                 };
             }
         }
     }
 }
 
-/// The indent unit string for a grammar: a tab for Go (gofmt indents with
-/// tabs), two spaces for Dart (`dart format` defaults to two-space and is
-/// near-universal), and `indent_width` spaces (default 4) otherwise. Swift is
-/// intentionally left at `indent_width`: although swift-format defaults to two
-/// spaces, the dominant Swift idiom (Xcode default) is four, so forcing two
-/// churns more real code than it fixes until a native Swift formatter exists.
+/// Populate per-language switch/case indent-adjustment ranges. This is a
+/// second CST pass kept separate from the main delimiter walk for clarity.
+fn collect_case_adjustments(
+    root: &Node,
+    grammar_name: &str,
+    case_body_extra: &mut Vec<(usize, usize)>,
+    case_label_dedent: &mut Vec<(usize, usize)>,
+) {
+    match grammar_name {
+        // Node-kind strings were verified against:
+        //   swift  — tree-sitter-swift 0.6.x (grammar tag v0.6.0)
+        //   dart   — tree-sitter-dart  0.0.3 (grammar shipped in language-pack)
+        //   csharp — tree-sitter-c-sharp 0.23.x (grammar tag v0.23.1)
+        // If the grammar is upgraded, re-check that these node kinds still exist.
+        "swift" => collect_swift_case_adjustments(root, case_body_extra, case_label_dedent),
+        "dart" => collect_switch_case_bodies(
+            root,
+            "switch_statement_case",
+            "switch_statement_default",
+            case_body_extra,
+        ),
+        "csharp" => {
+            collect_switch_case_bodies(root, "switch_section", "switch_section", case_body_extra)
+        }
+        _ => {}
+    }
+}
+
+/// Swift: each `switch_entry` node is dedented back to the `switch` level
+/// (swift-format's style), and its `statements` child is given extra indent so
+/// the body ends up at bracket depth (net adjustment of 0 for body lines).
+fn collect_swift_case_adjustments(
+    root: &Node,
+    case_body_extra: &mut Vec<(usize, usize)>,
+    case_label_dedent: &mut Vec<(usize, usize)>,
+) {
+    if root.kind() == "switch_entry" {
+        // The entire entry (case label + body) is dedented one level so the
+        // case label sits at the switch's depth, not the switch body's depth.
+        case_label_dedent.push((root.start_byte(), root.end_byte()));
+        // The `statements` child gets +1 so it ends at bracket depth (the
+        // dedent and the extra-indent cancel, keeping body at bracket depth).
+        let mut cursor = root.walk();
+        if cursor.goto_first_child() {
+            loop {
+                let child = cursor.node();
+                if child.kind() == "statements" {
+                    case_body_extra.push((child.start_byte(), child.end_byte()));
+                }
+                if !cursor.goto_next_sibling() {
+                    break;
+                }
+            }
+        }
+    }
+    // Always recurse so nested switch statements are handled.
+    let mut cursor = root.walk();
+    if cursor.goto_first_child() {
+        loop {
+            collect_swift_case_adjustments(&cursor.node(), case_body_extra, case_label_dedent);
+            if !cursor.goto_next_sibling() {
+                break;
+            }
+        }
+    }
+}
+
+/// Dart / C#: walk the tree looking for `case_kind` and `default_kind` nodes.
+/// For each such node, find the last `:` child; any siblings after that `:` are
+/// the implicit case body and receive a +1 extra-indent adjustment.
+fn collect_switch_case_bodies(
+    root: &Node,
+    case_kind: &str,
+    default_kind: &str,
+    case_body_extra: &mut Vec<(usize, usize)>,
+) {
+    let kind = root.kind();
+    if kind == case_kind || kind == default_kind {
+        let mut after_colon = false;
+        let mut cursor = root.walk();
+        if cursor.goto_first_child() {
+            loop {
+                let child = cursor.node();
+                if after_colon {
+                    case_body_extra.push((child.start_byte(), child.end_byte()));
+                }
+                if child.kind() == ":" {
+                    after_colon = true;
+                }
+                if !cursor.goto_next_sibling() {
+                    break;
+                }
+            }
+        }
+    }
+    // Recurse so nested switch statements are handled.
+    let mut cursor = root.walk();
+    if cursor.goto_first_child() {
+        loop {
+            collect_switch_case_bodies(&cursor.node(), case_kind, default_kind, case_body_extra);
+            if !cursor.goto_next_sibling() {
+                break;
+            }
+        }
+    }
+}
+
+/// The indent unit string for a grammar: a tab for Go (gofmt), two spaces for
+/// Dart (`dart format`) and Swift (Xcode default is 4 but swift-format and the
+/// conformance golden use 2), and `indent_width` spaces (default 4) otherwise.
 fn indent_unit(grammar_name: &str, indent_width: usize) -> String {
     match grammar_name {
         "go" => "\t".to_string(),
-        "dart" => "  ".to_string(),
+        "dart" | "swift" => "  ".to_string(),
         _ => " ".repeat(indent_width.max(1)),
     }
 }
 
-/// Re-emit `source` with each line indented by its bracket depth. A line that
-/// begins with a closing delimiter is dedented one level. Blank lines are
-/// preserved as empty. Trailing whitespace is stripped and the configured line
-/// ending / final newline are applied.
-///
-/// Lines whose leading whitespace begins inside a string-literal or comment
-/// range (per `facts.protected`) are emitted **verbatim** — neither reindented
-/// nor trimmed — so the interior of a multiline string or block comment is
-/// byte-preserved. The indent unit is chosen per grammar via [`indent_unit`].
+/// Re-emit `source` with each line indented by its bracket depth. Uses the
+/// conservative level-keyed-by-open-line model: multiple brackets opened on the
+/// same line coalesce to one level; leading closers release their levels before
+/// the render depth is sampled. Verbatim emission for protected ranges.
 fn reindent(source: &str, grammar_name: &str, facts: &CstFacts, cfg: &EngineConfig) -> String {
     let unit = indent_unit(grammar_name, cfg.indent_width);
     let line_ending = cfg.globals.line_ending.as_str();
     let delimiters = &facts.delimiters;
 
     let mut out = String::with_capacity(source.len() + source.len() / 8);
-    let mut depth: i32 = 0;
     let mut byte = 0usize;
     let mut first = true;
+    // raw_stack: per-open-bracket entry storing the line index it was opened on.
+    let mut raw_stack: Vec<usize> = Vec::new();
+    // active_levels: each distinct open-line contributes at most one depth unit.
+    let mut active_levels: Vec<usize> = Vec::new();
 
-    for raw in source.split('\n') {
-        // Strip a trailing '\r' so CRLF input is handled; re-added via line_ending.
+    for (line_idx, raw) in source.split('\n').enumerate() {
+        // Strip '\r' for CRLF; it is re-added via line_ending.
         let line = raw.strip_suffix('\r').unwrap_or(raw);
         let line_start = byte;
         let line_end = byte + line.len();
 
-        // A line whose start byte is interior to a string/comment node is part
-        // of a multiline literal or block comment: emit it exactly as-is.
+        // Interior of a multiline string/comment: emit verbatim, don't reindent.
         if facts.is_interior(line_start) {
             if !first {
                 out.push_str(line_ending);
             }
             first = false;
             out.push_str(line);
-            // Delimiters inside protected ranges are not collected, so depth is
-            // unaffected here; just advance the byte cursor past the newline.
-            byte = line_end + 1;
+            byte += raw.len() + 1; // raw includes '\r' for CRLF — must not use line.len()
             continue;
         }
 
-        let opens = count_delimiters(delimiters, line_start, line_end, true);
-        let closes = count_delimiters(delimiters, line_start, line_end, false);
+        // Delimiters on this line in byte order.
+        let line_delims: Vec<&Delimiter> = delimiters
+            .iter()
+            .filter(|d| d.byte >= line_start && d.byte < line_end)
+            .collect();
 
-        let trimmed = line.trim();
-        let starts_with_closer = first_nonws_is_closer(line, line_start, delimiters);
-        let level = if starts_with_closer {
-            (depth - 1).max(0)
-        } else {
-            depth.max(0)
-        };
+        // Leading-closer run: consecutive `)` `]` `}` at line start.
+        // Each pops raw_stack and, if the popped open-line is in active_levels,
+        // releases that level. Depth is sampled AFTER all leading closers fire.
+        let leading = count_leading_closers(line, line_start, &line_delims);
+        for _ in 0..leading {
+            if let Some(open_line) = raw_stack.pop()
+                && let Some(pos) = active_levels.iter().position(|&x| x == open_line)
+            {
+                active_levels.remove(pos);
+            }
+        }
+
+        let base = active_levels.len() as i32;
+        let level = (base + facts.case_adjustment(line_start)).max(0) as usize;
 
         if !first {
             out.push_str(line_ending);
         }
         first = false;
+        let trimmed = line.trim();
         if !trimmed.is_empty() {
             for _ in 0..level {
                 out.push_str(&unit);
@@ -304,31 +462,51 @@ fn reindent(source: &str, grammar_name: &str, facts: &CstFacts, cfg: &EngineConf
             out.push_str(trimmed);
         }
 
-        depth = (depth + opens - closes).max(0);
-        byte = line_end + 1; // advance past the '\n'
+        // Process remaining delimiters: openers push line_idx, closers pop and
+        // optionally release.
+        for d in &line_delims[leading..] {
+            if d.open {
+                raw_stack.push(line_idx);
+            } else if let Some(open_line) = raw_stack.pop()
+                && let Some(pos) = active_levels.iter().position(|&x| x == open_line)
+            {
+                active_levels.remove(pos);
+            }
+        }
+
+        // Coalesce: if this line left unmatched opens, it contributes one new level.
+        if raw_stack.contains(&line_idx) && !active_levels.contains(&line_idx) {
+            active_levels.push(line_idx);
+        }
+
+        byte += raw.len() + 1; // raw includes '\r' for CRLF — must not use line.len()
     }
 
     apply_trailing_newline(&mut out, source, line_ending, cfg.globals.final_newline);
     out
 }
 
-/// Count opening (`open == true`) or closing delimiters whose byte offset falls
-/// within `[start, end)`.
-fn count_delimiters(delimiters: &[Delimiter], start: usize, end: usize, open: bool) -> i32 {
-    delimiters
-        .iter()
-        .filter(|d| d.open == open && d.byte >= start && d.byte < end)
-        .count() as i32
-}
-
-/// Whether the first non-whitespace byte of `line` is a closing-delimiter token
-/// (checked against the CST, so a `}` inside a string does not count).
-fn first_nonws_is_closer(line: &str, line_start: usize, delimiters: &[Delimiter]) -> bool {
-    let Some(offset) = line.find(|c: char| !c.is_whitespace()) else {
-        return false;
+/// Count consecutive closing-bracket CST tokens at the start of `line` (after
+/// whitespace). Stops at the first character that is not `)`, `]`, `}`, or
+/// that does not correspond to a real CST closer token in `line_delims`.
+/// `line_delims` must be sorted by byte (ascending) — inherited from the sort
+/// in [`collect_cst`].
+fn count_leading_closers(line: &str, line_start: usize, line_delims: &[&Delimiter]) -> usize {
+    let Some(first_nonws) = line.find(|c: char| !c.is_whitespace()) else {
+        return 0;
     };
-    let abs = line_start + offset;
-    delimiters.iter().any(|d| !d.open && d.byte == abs)
+    let mut count = 0usize;
+    let mut abs = line_start + first_nonws;
+    for ch in line[first_nonws..].chars() {
+        match ch {
+            ')' | ']' | '}' if line_delims.iter().any(|d| !d.open && d.byte == abs) => {
+                count += 1;
+                abs += ch.len_utf8();
+            }
+            _ => break,
+        }
+    }
+    count
 }
 
 /// Ensure the output ends (or does not end) with a single trailing newline,
@@ -388,9 +566,7 @@ mod tests {
 
     #[test]
     fn rust_raw_string_interior_is_byte_preserved_while_code_reindents() {
-        // The raw string holds irregularly indented lines (8 and 3 spaces) plus
-        // a `{` that must NOT count toward bracket depth. Surrounding code is
-        // under-indented so we can prove it gets reindented to 4-space depth.
+        // Raw string interior (including `{`) is verbatim; surrounding code reindents.
         let engine = TreeSitterEngine;
         let input = concat!(
             "fn main() {\n",
@@ -454,5 +630,366 @@ mod tests {
             }
             FormatOutput::Unchanged => panic!("expected trailing whitespace to be trimmed"),
         }
+    }
+
+    #[test]
+    fn swift_uses_two_space_indent() {
+        // swift-format defaults to two-space indentation.
+        let engine = TreeSitterEngine;
+        let input = concat!("struct Point {\n", "let x: Int\n", "let y: Int\n", "}\n");
+        let expected = concat!(
+            "struct Point {\n",
+            "  let x: Int\n",
+            "  let y: Int\n",
+            "}\n"
+        );
+        let s = src("test.swift", Language::Other("swift".into()), input);
+        let text = formatted_text(engine.format(&s, &cfg(4)).unwrap(), input);
+        assert_eq!(text, expected, "Swift must use 2-space indent");
+    }
+
+    #[test]
+    fn swift_switch_case_labels_align_with_switch_keyword() {
+        // swift-format aligns case labels with `switch`, not inside the body.
+        // Case label at depth 1 (same as `switch`), body at depth 2.
+        let engine = TreeSitterEngine;
+        let input = concat!(
+            "func f() -> Int {\n",
+            "switch shape {\n",
+            "case .circle:\n",
+            "return 1\n",
+            "case .rect:\n",
+            "return 2\n",
+            "}\n",
+            "}\n",
+        );
+        let expected = concat!(
+            "func f() -> Int {\n",
+            "  switch shape {\n",
+            "  case .circle:\n",
+            "    return 1\n",
+            "  case .rect:\n",
+            "    return 2\n",
+            "  }\n",
+            "}\n",
+        );
+        let s = src("test.swift", Language::Other("swift".into()), input);
+        let text = formatted_text(engine.format(&s, &cfg(4)).unwrap(), input);
+        assert_eq!(
+            text, expected,
+            "Swift case labels align with switch keyword"
+        );
+    }
+
+    #[test]
+    fn dart_switch_case_body_extra_indent() {
+        // dart format indents case bodies one extra level past the case label.
+        let engine = TreeSitterEngine;
+        let input = concat!(
+            "int f(int n) {\n",
+            "switch (n) {\n",
+            "case 0:\n",
+            "return 0;\n",
+            "default:\n",
+            "return -1;\n",
+            "}\n",
+            "}\n",
+        );
+        let expected = concat!(
+            "int f(int n) {\n",
+            "  switch (n) {\n",
+            "    case 0:\n",
+            "      return 0;\n",
+            "    default:\n",
+            "      return -1;\n",
+            "  }\n",
+            "}\n",
+        );
+        let s = src("test.dart", Language::Other("dart".into()), input);
+        let text = formatted_text(engine.format(&s, &cfg(4)).unwrap(), input);
+        assert_eq!(text, expected, "Dart case body gets extra indent level");
+    }
+
+    #[test]
+    fn dart_closure_argument_not_over_indented() {
+        // With the level-keyed-by-open-line model, `list.map((n) {` opens
+        // two parens and a brace on the same line — they coalesce to one new
+        // depth level (+1). The closure body is therefore at depth+1 (NOT +3),
+        // and `})` releases that single level on its closing line.
+        let engine = TreeSitterEngine;
+        let input = concat!(
+            "void main() {\n",
+            "final result = list.map((n) {\n",
+            "return n * 2;\n",
+            "}).toList();\n",
+            "}\n",
+        );
+        let expected = concat!(
+            "void main() {\n",
+            "  final result = list.map((n) {\n",
+            "    return n * 2;\n",
+            "  }).toList();\n",
+            "}\n",
+        );
+        let s = src("test.dart", Language::Other("dart".into()), input);
+        let text = formatted_text(engine.format(&s, &cfg(4)).unwrap(), input);
+        assert_eq!(
+            text, expected,
+            "Dart closure body must not be over-indented"
+        );
+    }
+
+    // ── CRLF byte-cursor fix ─────────────────────────────────────────────────
+
+    #[test]
+    fn crlf_brace_counting_does_not_drift() {
+        // Before the fix, `line.len() + 1` drifted by 1 per line on CRLF,
+        // causing delimiters to miss their line window. Fix: `raw.len() + 1`.
+        let engine = TreeSitterEngine;
+        let crlf = "package main\r\n\r\nfunc main() {\r\nx := 1\r\n}\r\n";
+        let lf = "package main\n\nfunc main() {\nx := 1\n}\n";
+        let expected = "package main\n\nfunc main() {\n\tx := 1\n}\n";
+
+        let crlf_src = src("main.go", Language::Other("go".into()), crlf);
+        let lf_src = src("main.go", Language::Other("go".into()), lf);
+
+        let crlf_out = formatted_text(engine.format(&crlf_src, &cfg(4)).unwrap(), crlf);
+        let lf_out = formatted_text(engine.format(&lf_src, &cfg(4)).unwrap(), lf);
+
+        assert_eq!(lf_out, expected, "LF Go reindented with tabs");
+        assert_eq!(
+            crlf_out, expected,
+            "CRLF Go reindented identically (no byte drift)"
+        );
+    }
+
+    // ── paren/bracket continuation indent ────────────────────────────────────
+    // Go/Rust expected outputs verified by running gofmt/rustfmt on the inputs.
+
+    #[test]
+    fn go_multiline_call_args_get_continuation_indent() {
+        // Ground truth: gofmt. Args one tab deeper than the call site.
+        let engine = TreeSitterEngine;
+        let input = concat!(
+            "package main\n",
+            "\n",
+            "func main() {\n",
+            "result, err := pkg.LongFunc(\n",
+            "arg1,\n",
+            "arg2,\n",
+            ")\n",
+            "_ = result\n",
+            "_ = err\n",
+            "}\n",
+        );
+        let expected = concat!(
+            "package main\n",
+            "\n",
+            "func main() {\n",
+            "\tresult, err := pkg.LongFunc(\n",
+            "\t\targ1,\n",
+            "\t\targ2,\n",
+            "\t)\n",
+            "\t_ = result\n",
+            "\t_ = err\n",
+            "}\n",
+        );
+        let s = src("main.go", Language::Other("go".into()), input);
+        let text = formatted_text(engine.format(&s, &cfg(4)).unwrap(), input);
+        assert_eq!(
+            text, expected,
+            "Go multi-line call args at +1 continuation depth"
+        );
+    }
+
+    #[test]
+    fn rust_multiline_call_args_get_continuation_indent() {
+        // Ground truth: rustfmt. Names long enough to stay multi-line at 100-col.
+        let engine = TreeSitterEngine;
+        let input = concat!(
+            "fn main() {\n",
+            "let result = some_very_long_function_name(\n",
+            "very_long_argument_one,\n",
+            "very_long_argument_two,\n",
+            "very_long_argument_three,\n",
+            ");\n",
+            "}\n",
+        );
+        let expected = concat!(
+            "fn main() {\n",
+            "    let result = some_very_long_function_name(\n",
+            "        very_long_argument_one,\n",
+            "        very_long_argument_two,\n",
+            "        very_long_argument_three,\n",
+            "    );\n",
+            "}\n",
+        );
+        let s = src("main.rs", Language::Other("rust".into()), input);
+        let text = formatted_text(engine.format(&s, &cfg(4)).unwrap(), input);
+        assert_eq!(
+            text, expected,
+            "Rust multi-line call args at +1 continuation depth"
+        );
+    }
+
+    #[test]
+    fn java_multiline_call_args_get_continuation_indent() {
+        // Expected output from the tier-2 generic reindenter (4-space): each
+        // argument is one level deeper than the method body, `)` dedents back.
+        let engine = TreeSitterEngine;
+        let input = concat!(
+            "class Foo {\n",
+            "void method() {\n",
+            "String result = SomeClass.longMethodName(\n",
+            "arg1,\n",
+            "arg2,\n",
+            "arg3\n",
+            ");\n",
+            "}\n",
+            "}\n",
+        );
+        let expected = concat!(
+            "class Foo {\n",
+            "    void method() {\n",
+            "        String result = SomeClass.longMethodName(\n",
+            "            arg1,\n",
+            "            arg2,\n",
+            "            arg3\n",
+            "        );\n",
+            "    }\n",
+            "}\n",
+        );
+        let s = src("Test.java", Language::Other("java".into()), input);
+        let text = formatted_text(engine.format(&s, &cfg(4)).unwrap(), input);
+        assert_eq!(
+            text, expected,
+            "Java multi-line call args at +1 continuation depth"
+        );
+    }
+
+    #[test]
+    fn kotlin_multiline_call_args_get_continuation_indent() {
+        // Expected output from the tier-2 generic reindenter (4-space): same
+        // level-keyed-by-open-line behaviour as Java/Go/Rust.
+        let engine = TreeSitterEngine;
+        let input = concat!(
+            "fun main() {\n",
+            "val result = someObject.doTheThing(\n",
+            "argument1,\n",
+            "argument2,\n",
+            ")\n",
+            "println(result)\n",
+            "}\n",
+        );
+        let expected = concat!(
+            "fun main() {\n",
+            "    val result = someObject.doTheThing(\n",
+            "        argument1,\n",
+            "        argument2,\n",
+            "    )\n",
+            "    println(result)\n",
+            "}\n",
+        );
+        let s = src("main.kt", Language::Other("kotlin".into()), input);
+        let text = formatted_text(engine.format(&s, &cfg(4)).unwrap(), input);
+        assert_eq!(
+            text, expected,
+            "Kotlin multi-line call args at +1 continuation depth"
+        );
+    }
+
+    // ── regression: level-keyed-by-open-line fixes ───────────────────────────
+    // Failed under brace-line-dominance; must pass under the new model.
+
+    #[test]
+    fn java_constructor_paren_then_brace_close() {
+        // Algorithm-expected (no Java formatter available as ground truth).
+        // The `) {` pattern: `)` closes the constructor parameter list while `{`
+        // opens the body on the same line. The body must be at class-depth+1 (=2),
+        // not class-depth+2 (=3) as the old brace-line-dominance model produced.
+        let engine = TreeSitterEngine;
+        let input = concat!(
+            "class Foo {\n",
+            "Foo(\n",
+            "Type arg\n",
+            ") {\n",
+            "this.arg = arg;\n",
+            "}\n",
+            "}\n",
+        );
+        let expected = concat!(
+            "class Foo {\n",
+            "    Foo(\n",
+            "        Type arg\n",
+            "    ) {\n",
+            "        this.arg = arg;\n",
+            "    }\n",
+            "}\n",
+        );
+        let s = src("Foo.java", Language::Other("java".into()), input);
+        let text = formatted_text(engine.format(&s, &cfg(4)).unwrap(), input);
+        assert_eq!(
+            text, expected,
+            "Java constructor body must be at class+1 depth, not class+2"
+        );
+    }
+
+    #[test]
+    fn go_struct_in_call_close_then_paren_close_no_drift() {
+        // Ground truth: `gofmt` on the same input produces the expected output.
+        // `doThing(Config{` opens two brackets on one line — they coalesce to one
+        // level. After `},` closes the struct, the `(` from `doThing(` is still
+        // open at depth 1. The `)` then closes it; code after the call (`x := 1`)
+        // must remain at depth 1, not drift to 0.
+        let engine = TreeSitterEngine;
+        let input = concat!(
+            "package main\n",
+            "\n",
+            "func main() {\n",
+            "doThing(Config{\n",
+            "field: 1,\n",
+            "},\n",
+            ")\n",
+            "x := 1\n",
+            "}\n",
+        );
+        let expected = concat!(
+            "package main\n",
+            "\n",
+            "func main() {\n",
+            "\tdoThing(Config{\n",
+            "\t\tfield: 1,\n",
+            "\t},\n",
+            "\t)\n",
+            "\tx := 1\n",
+            "}\n",
+        );
+        let s = src("main.go", Language::Other("go".into()), input);
+        let text = formatted_text(engine.format(&s, &cfg(4)).unwrap(), input);
+        assert_eq!(
+            text, expected,
+            "code after struct-in-call must not drift to depth 0"
+        );
+    }
+
+    #[test]
+    fn double_brace_close_releases_two_levels() {
+        // Algorithm-expected: `}}` on one line closes two levels opened on two
+        // distinct lines, so both are released as leading closers before the
+        // render depth is computed, giving depth 0 for the `}}` line itself.
+        let engine = TreeSitterEngine;
+        let input = concat!("class A {\n", "void f() {\n", "x = 1;\n", "}}\n",);
+        let expected = concat!(
+            "class A {\n",
+            "    void f() {\n",
+            "        x = 1;\n",
+            "}}\n",
+        );
+        let s = src("A.java", Language::Other("java".into()), input);
+        let text = formatted_text(engine.format(&s, &cfg(4)).unwrap(), input);
+        assert_eq!(
+            text, expected,
+            "}}: two leading closers each release one level"
+        );
     }
 }
