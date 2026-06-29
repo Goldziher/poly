@@ -168,6 +168,7 @@ fn run_stage(args: RunArgs) -> Result<ExitCode> {
         &files,
         &config.cache.results.hooks,
         &root,
+        &config.tools,
     )?;
 
     let request = poly_hooks::HookRunRequest {
@@ -272,6 +273,7 @@ fn hook_impl(args: HookImplArgs) -> Result<ExitCode> {
         &files,
         &config.cache.results.hooks,
         &root,
+        &config.tools,
     )?;
 
     let request = poly_hooks::HookRunRequest {

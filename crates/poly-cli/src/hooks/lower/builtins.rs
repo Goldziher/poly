@@ -13,11 +13,14 @@
 use std::path::Path;
 
 use anyhow::Result;
-use poly_config::{CargoHooks, FileSafetyHooks, HooksConfig, Stage as ConfigStage};
+use poly_catalog::{Catalog, Command as CatalogCommand, PATH_PLACEHOLDER};
+use poly_config::{
+    CargoHooks, FileSafetyHooks, HooksConfig, Stage as ConfigStage, ToolConfig, ToolsConfig,
+};
 use poly_hooks::model::{Hook, HookCache};
 use tracing::info;
 
-use super::builtin_runs_on;
+use super::{builtin_runs_on, shell_quote};
 
 /// Capability probe: whether an external tool is resolvable on `PATH`.
 ///
@@ -233,12 +236,108 @@ pub(super) fn append_cargo(
     Ok(())
 }
 
+/// Append a per-file hook for every enabled `[tools.<name>]` (ADR 0013) bound to
+/// `config_stage`.
+///
+/// A catalog tool is **off by default** and bound to a stage only by an explicit
+/// `stages = [...]` entry (an empty `stages` means "not a hook" — it is unbound),
+/// so this never intrudes on a repo that has not opted a tool in. Each tool is
+/// capability-probed against `PATH`: an absent binary is skipped with a
+/// `tracing::info!` notice rather than failing the run, mirroring [`append_cargo`].
+///
+/// Dispatch is **per-file** (the mdsf-native model): the hook passes filenames,
+/// and the catalog `$PATH` placeholder — the slot mdsf substitutes the file path
+/// into — is dropped from the argv so the matched files the runner appends take
+/// its place. There is deliberately no project-wide mode.
+pub(super) fn append_catalog_tools(
+    tools: &ToolsConfig,
+    config_stage: ConfigStage,
+    probe: &dyn ToolProbe,
+    out: &mut Vec<Hook>,
+) -> Result<()> {
+    if tools.is_empty() {
+        return Ok(());
+    }
+    let catalog = Catalog::get();
+    for (name, tool_config) in tools.iter() {
+        if !tool_config.enabled || !tool_config.stages.contains(&config_stage) {
+            continue;
+        }
+        // Names are allowlist-validated at config load, so an absent entry here
+        // is a defensive skip rather than an error.
+        let Some(tool) = catalog.tool(name) else {
+            continue;
+        };
+        if !probe.is_available(&tool.binary) {
+            info!(
+                tool = name.as_str(),
+                binary = tool.binary.as_str(),
+                "catalog tool skipped: binary not found on PATH"
+            );
+            continue;
+        }
+        let Some(command) = resolve_catalog_command(tool, tool_config) else {
+            continue;
+        };
+        let arguments = tool_config
+            .args
+            .clone()
+            .unwrap_or_else(|| command.arguments.clone());
+        let line = catalog_command_line(&tool.binary, &arguments);
+
+        let mut hook = Hook::run(name, line);
+        // Per-file dispatch: the runner appends the matched files (`Hook::run`
+        // sets `pass_filenames = true`). Result-caching is disabled — the tool
+        // is external and may rewrite the file in place.
+        let (files, exclude) =
+            super::builtin_globs(tool_config.files.as_ref(), tool_config.exclude.as_ref())?;
+        hook.files = files;
+        hook.exclude = exclude;
+        hook.cache = HookCache::Disabled;
+        out.push(hook);
+    }
+    Ok(())
+}
+
+/// Resolve which catalog [`CatalogCommand`] an enabled tool runs: an explicit
+/// `command = "..."` selects by name; otherwise prefer the tool's format command,
+/// then its lint command. `None` when the tool exposes neither.
+fn resolve_catalog_command<'a>(
+    tool: &'a poly_catalog::Tool,
+    tool_config: &ToolConfig,
+) -> Option<&'a CatalogCommand> {
+    match tool_config.command.as_deref() {
+        Some(name) => tool.command(name),
+        None => tool
+            .format_command()
+            .map(|(_, command)| command)
+            .or_else(|| tool.lint_command().map(|(_, command)| command)),
+    }
+}
+
+/// Build the shell command line for a per-file catalog hook: the binary followed
+/// by its argv with the [`PATH_PLACEHOLDER`] dropped (the runner appends the
+/// matched files in its place), each token shell-quoted.
+fn catalog_command_line(binary: &str, arguments: &[String]) -> String {
+    std::iter::once(binary)
+        .map(String::from)
+        .chain(
+            arguments
+                .iter()
+                .filter(|argument| *argument != PATH_PLACEHOLDER)
+                .cloned(),
+        )
+        .map(|token| shell_quote(&token))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::{Path, PathBuf};
 
     use anyhow::Result;
-    use poly_config::{HookCacheMode, HooksConfig, PolyConfig};
+    use poly_config::{HookCacheMode, HooksConfig, PolyConfig, ToolsConfig};
     use poly_hooks::Stage as HookStage;
     use poly_hooks::model::{HookCommand, StageSpec};
 
@@ -280,7 +379,15 @@ mod tests {
         files: &[PathBuf],
         cache_mode: &HookCacheMode,
     ) -> Result<StageSpec> {
-        lower_stage_with_probe(hooks, poly_bin, stage, files, cache_mode, &StubProbe(&[]))
+        lower_stage_with_probe(
+            hooks,
+            poly_bin,
+            stage,
+            files,
+            cache_mode,
+            &StubProbe(&[]),
+            &ToolsConfig::default(),
+        )
     }
 
     fn hooks_from(toml: &str) -> HooksConfig {
@@ -288,6 +395,13 @@ mod tests {
         let path = dir.path().join("poly.toml");
         std::fs::write(&path, toml).unwrap();
         PolyConfig::load_file(&path).unwrap().hooks
+    }
+
+    fn config_from(toml: &str) -> PolyConfig {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("poly.toml");
+        std::fs::write(&path, toml).unwrap();
+        PolyConfig::load_file(&path).unwrap()
     }
 
     fn poly() -> PathBuf {
@@ -443,6 +557,7 @@ shebang_scripts_are_executable = false
             &[],
             &HookCacheMode::Safe,
             &probe,
+            &ToolsConfig::default(),
         )
         .unwrap();
         assert_eq!(
@@ -464,6 +579,7 @@ shebang_scripts_are_executable = false
             &[],
             &HookCacheMode::Safe,
             &probe,
+            &ToolsConfig::default(),
         )
         .unwrap();
         assert!(spec.hooks.is_empty(), "{:?}", ids(&spec));
@@ -480,6 +596,7 @@ shebang_scripts_are_executable = false
             &[],
             &HookCacheMode::Safe,
             &probe,
+            &ToolsConfig::default(),
         )
         .unwrap();
         assert!(spec.hooks.is_empty(), "{:?}", ids(&spec));
@@ -499,6 +616,7 @@ shebang_scripts_are_executable = false
             &[],
             &HookCacheMode::Safe,
             &probe,
+            &ToolsConfig::default(),
         )
         .unwrap();
         assert!(spec.hooks.is_empty());
@@ -516,6 +634,7 @@ shebang_scripts_are_executable = false
             &[],
             &HookCacheMode::Safe,
             &probe,
+            &ToolsConfig::default(),
         )
         .unwrap();
         assert_eq!(ids(&spec), vec!["cargo-clippy", "cargo-deny"]);
@@ -545,6 +664,7 @@ shebang_scripts_are_executable = false
             &[],
             &HookCacheMode::Safe,
             &probe,
+            &ToolsConfig::default(),
         )
         .unwrap();
         assert!(spec.hooks.is_empty(), "{:?}", ids(&spec));
@@ -561,6 +681,7 @@ shebang_scripts_are_executable = false
             &[],
             &HookCacheMode::Safe,
             &probe,
+            &ToolsConfig::default(),
         )
         .unwrap();
         assert_eq!(ids(&spec), vec!["cargo-clippy", "cargo-sort", "cargo-deny"]);
@@ -579,6 +700,7 @@ shebang_scripts_are_executable = false
             &[],
             &HookCacheMode::Safe,
             &probe,
+            &ToolsConfig::default(),
         )
         .unwrap();
         let got = ids(&spec);
@@ -601,6 +723,7 @@ shebang_scripts_are_executable = false
             &[],
             &HookCacheMode::Safe,
             &probe,
+            &ToolsConfig::default(),
         )
         .unwrap();
         assert!(pre.hooks.is_empty());
@@ -612,11 +735,111 @@ shebang_scripts_are_executable = false
             &[],
             &HookCacheMode::Safe,
             &probe,
+            &ToolsConfig::default(),
         )
         .unwrap();
         assert_eq!(
             ids(&push),
             vec!["cargo-clippy", "cargo-sort", "cargo-machete", "cargo-deny"]
         );
+    }
+
+    // ── Catalog tools (ADR 0013) ──────────────────────────────────────────────
+
+    #[test]
+    fn catalog_tool_on_a_stage_lowers_to_a_per_file_hook_when_present() {
+        let config = config_from(
+            r#"
+[tools.shfmt]
+enabled = true
+stages = ["pre-commit"]
+"#,
+        );
+        // shfmt's binary is "shfmt"; report it present.
+        let probe = StubProbe(&["shfmt"]);
+        let spec = lower_stage_with_probe(
+            &config.hooks,
+            &poly(),
+            HookStage::PreCommit,
+            &[],
+            &HookCacheMode::Safe,
+            &probe,
+            &config.tools,
+        )
+        .unwrap();
+        assert_eq!(ids(&spec), vec!["shfmt"]);
+        let hook = &spec.hooks[0];
+        // Per-file dispatch: filenames are appended by the runner.
+        assert!(hook.pass_filenames, "catalog hooks run per-file");
+        let line = run_line(&spec, "shfmt");
+        assert!(line.starts_with("'shfmt'"), "runs the tool binary: {line}");
+        // The `$PATH` placeholder is dropped — files take its place.
+        assert!(!line.contains("$PATH"), "placeholder dropped: {line}");
+    }
+
+    #[test]
+    fn catalog_tool_is_skipped_when_its_binary_is_absent() {
+        let config = config_from(
+            r#"
+[tools.shfmt]
+enabled = true
+stages = ["pre-commit"]
+"#,
+        );
+        // No binaries on PATH → the tool degrades to nothing rather than failing.
+        let probe = StubProbe(&[]);
+        let spec = lower_stage_with_probe(
+            &config.hooks,
+            &poly(),
+            HookStage::PreCommit,
+            &[],
+            &HookCacheMode::Safe,
+            &probe,
+            &config.tools,
+        )
+        .unwrap();
+        assert!(spec.hooks.is_empty(), "{:?}", ids(&spec));
+    }
+
+    #[test]
+    fn catalog_tool_does_not_lower_on_an_unbound_stage() {
+        // Bound to pre-push only → never appears on pre-commit, even when present.
+        let config = config_from(
+            r#"
+[tools.shfmt]
+enabled = true
+stages = ["pre-push"]
+"#,
+        );
+        let probe = StubProbe(&["shfmt"]);
+        let spec = lower_stage_with_probe(
+            &config.hooks,
+            &poly(),
+            HookStage::PreCommit,
+            &[],
+            &HookCacheMode::Safe,
+            &probe,
+            &config.tools,
+        )
+        .unwrap();
+        assert!(spec.hooks.is_empty(), "{:?}", ids(&spec));
+    }
+
+    #[test]
+    fn catalog_tool_with_empty_stages_is_inert() {
+        // `enabled = true` but no `stages` → not a hook on any stage.
+        let config = config_from("[tools.shfmt]\nenabled = true\n");
+        let probe = StubProbe(&["shfmt"]);
+        let spec = lower_stage_with_probe(
+            &config.hooks,
+            &poly(),
+            HookStage::PreCommit,
+            &[],
+            &HookCacheMode::Safe,
+            &probe,
+            &config.tools,
+        )
+        .unwrap();
+        assert!(spec.hooks.is_empty(), "{:?}", ids(&spec));
     }
 }

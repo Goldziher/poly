@@ -19,6 +19,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use poly_config::{
     Guard, HookCacheMode, HooksConfig, Job, Patterns, Stage as ConfigStage, StageConfig,
+    ToolsConfig,
 };
 use poly_hooks::Stage as HookStage;
 use poly_hooks::filter::FilePattern;
@@ -95,6 +96,7 @@ pub fn lower_stage(
     files: &[PathBuf],
     cache_mode: &HookCacheMode,
     root: &Path,
+    tools: &ToolsConfig,
 ) -> Result<StageSpec> {
     lower_stage_with_probe(
         hooks,
@@ -103,6 +105,7 @@ pub fn lower_stage(
         files,
         cache_mode,
         &PathProbe { root },
+        tools,
     )
 }
 
@@ -117,6 +120,7 @@ fn lower_stage_with_probe(
     files: &[PathBuf],
     cache_mode: &HookCacheMode,
     probe: &dyn ToolProbe,
+    tools: &ToolsConfig,
 ) -> Result<StageSpec> {
     let config_stage = from_hook_stage(stage);
     let stage_config = hooks.stage_configs.get(&config_stage);
@@ -139,6 +143,9 @@ fn lower_stage_with_probe(
         probe,
         &mut entries,
     )?;
+    // Catalog tools (ADR 0013): each enabled `[tools.<name>]` bound to this stage
+    // lowers to a per-file hook (capability-probed, absent binary skipped).
+    builtins::append_catalog_tools(tools, config_stage, probe, &mut entries)?;
 
     if let Some(cfg) = stage_config {
         append_jobs(hooks, stage, cfg, files, cache_mode, &mut entries)?;

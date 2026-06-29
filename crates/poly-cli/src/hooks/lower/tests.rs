@@ -38,7 +38,15 @@ fn lower_stage(
             false
         }
     }
-    lower_stage_with_probe(hooks, poly_bin, stage, files, cache_mode, &NoTools)
+    lower_stage_with_probe(
+        hooks,
+        poly_bin,
+        stage,
+        files,
+        cache_mode,
+        &NoTools,
+        &poly_config::ToolsConfig::default(),
+    )
 }
 
 #[test]

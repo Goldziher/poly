@@ -4261,6 +4261,7 @@ dependencies = [
  "gitfluff",
  "owo-colors",
  "poly-cache",
+ "poly-catalog",
  "poly-config",
  "poly-hooks",
  "polylint-core",

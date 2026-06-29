@@ -28,6 +28,7 @@ clap.workspace = true
 gitfluff.workspace = true
 owo-colors.workspace = true
 poly-cache.workspace = true
+poly-catalog.workspace = true
 poly-config.workspace = true
 poly-hooks.workspace = true
 polylint-core.workspace = true
