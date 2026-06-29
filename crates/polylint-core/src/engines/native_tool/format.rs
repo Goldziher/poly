@@ -11,6 +11,22 @@ use crate::engine::{FormatOutput, SourceFile};
 
 use super::spec::ToolSpec;
 
+/// Largest input written to the child's stdin **inline** on the current rayon
+/// worker (no dedicated thread). Inputs up to this size fit within the OS pipe
+/// buffer on every supported platform — macOS pipe capacity can be as small as
+/// 16 KiB — so a single-threaded `write_all` cannot block waiting for the child
+/// to drain, and there is no deadlock risk. This removes a per-file kernel
+/// thread spawn/join from the hot path for the common case (most source files
+/// are well under 8 KiB). Larger inputs fall back to a dedicated writer thread.
+const STDIN_INLINE_LIMIT: usize = 8 * 1024;
+
+/// How stdin was fed to the child: inline (small inputs) or via a writer thread
+/// (large inputs, to avoid a pipe-buffer deadlock against `wait_with_output`).
+enum StdinWriter {
+    Inline(std::io::Result<()>),
+    Thread(thread::JoinHandle<std::io::Result<()>>),
+}
+
 /// Pipe `src.content` through the format binary described by `spec`
 /// (stdin → stdout).
 ///
@@ -25,10 +41,11 @@ use super::spec::ToolSpec;
 ///
 /// # Deadlock prevention
 ///
-/// A dedicated OS thread writes stdin while the main (rayon) worker thread
-/// collects stdout via `wait_with_output`. This prevents the pipe-buffer
-/// deadlock that can occur for source files larger than the OS pipe buffer
-/// (~64 KB on Linux) when a formatter buffers all input before writing output.
+/// Inputs up to [`STDIN_INLINE_LIMIT`] are written inline on the calling rayon
+/// worker (they fit the OS pipe buffer, so the write cannot block). Larger
+/// inputs are written from a dedicated OS thread while this thread drains stdout
+/// via `wait_with_output`, preventing the pipe-buffer deadlock that can occur
+/// when a formatter buffers all input before writing any output.
 pub(crate) fn format_via_tool(
     spec: &ToolSpec,
     src: &SourceFile,
@@ -63,33 +80,50 @@ pub(crate) fn format_via_tool(
         .take()
         .ok_or_else(|| anyhow::anyhow!("'{format_binary}' stdin pipe was not created"))?;
 
-    // Write in a separate thread to prevent a deadlock that would occur if the
-    // child's stdout pipe fills before we have read any of it.
-    let write_thread = thread::spawn(move || -> std::io::Result<()> {
-        stdin_handle.write_all(content.as_bytes())
-        // stdin_handle is dropped here, sending EOF to the child.
-    });
+    // Feed stdin without deadlocking against our own `wait_with_output`:
+    // small inputs fit the pipe buffer, so write them inline (no thread spawn);
+    // larger inputs are written from a dedicated thread that runs while we drain
+    // stdout, since the child may buffer all input before emitting any output.
+    let writer = if content.len() <= STDIN_INLINE_LIMIT {
+        let result = stdin_handle.write_all(content.as_bytes());
+        drop(stdin_handle); // send EOF to the child
+        StdinWriter::Inline(result)
+    } else {
+        StdinWriter::Thread(thread::spawn(move || -> std::io::Result<()> {
+            stdin_handle.write_all(content.as_bytes())
+            // stdin_handle is dropped here, sending EOF to the child.
+        }))
+    };
 
-    // Collect all stdout while the write thread is running.
+    // Collect all stdout (while the writer thread, if any, is running).
     let output = child
         .wait_with_output()
         .with_context(|| format!("'{format_binary}' wait_with_output failed"))?;
 
-    // Check exit status BEFORE the write-thread join. A non-zero exit (e.g.
-    // `zig fmt --stdin` on a syntax error) can close the child's stdin before
-    // the write finishes, so the write thread sees a broken pipe — that is not
-    // a real error, it is the tool rejecting input. Reap the thread without
-    // propagating and preserve the file unchanged rather than risk data loss.
+    // Check exit status BEFORE inspecting the write outcome. A non-zero exit
+    // (e.g. `zig fmt --stdin` on a syntax error) can close the child's stdin
+    // before the write finishes, so the writer sees a broken pipe — that is not
+    // a real error, it is the tool rejecting input. Discard the write outcome
+    // and preserve the file unchanged rather than risk data loss.
     if !output.status.success() {
-        let _ = write_thread.join();
+        if let StdinWriter::Thread(handle) = writer {
+            let _ = handle.join();
+        }
         return Ok(FormatOutput::Unchanged);
     }
 
     // Exit was clean — a write error here is genuinely unexpected.
-    write_thread
-        .join()
-        .map_err(|_| anyhow::anyhow!("stdin write thread panicked for '{format_binary}'"))?
-        .with_context(|| format!("failed to write to '{format_binary}' stdin"))?;
+    match writer {
+        StdinWriter::Inline(result) => {
+            result.with_context(|| format!("failed to write to '{format_binary}' stdin"))?;
+        }
+        StdinWriter::Thread(handle) => {
+            handle
+                .join()
+                .map_err(|_| anyhow::anyhow!("stdin write thread panicked for '{format_binary}'"))?
+                .with_context(|| format!("failed to write to '{format_binary}' stdin"))?;
+        }
+    }
 
     let formatted = String::from_utf8(output.stdout)
         .with_context(|| format!("'{format_binary}' produced non-UTF-8 output"))?;

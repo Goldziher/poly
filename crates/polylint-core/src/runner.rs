@@ -1,12 +1,12 @@
 //! Parallel orchestration (rayon): discover files, route to backends, run with
 //! content-hash caching, collect results. Defaults to all logical cores.
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Once};
 
 use poly_cache::{Namespace, ResultCache, SerializedArgs};
 use rayon::prelude::*;
+use rustc_hash::FxHashMap;
 use serde::Serialize;
 
 use crate::config::{Config, EngineConfig, Kind};
@@ -88,8 +88,10 @@ fn plan_by_language(
     files: &[DiscoveredFile],
     config: &Config,
     kind: Kind,
-) -> HashMap<Language, Vec<EnginePlan>> {
-    let mut plans: HashMap<Language, Vec<EnginePlan>> = HashMap::new();
+) -> FxHashMap<Language, Vec<EnginePlan>> {
+    // `Language` is a small enum key; FxHashMap's fast non-cryptographic hash
+    // beats std SipHash here, and this lookup runs once per file × engine pass.
+    let mut plans: FxHashMap<Language, Vec<EnginePlan>> = FxHashMap::default();
     for f in files {
         plans
             .entry(f.language.clone())
@@ -143,7 +145,15 @@ pub fn format(
     let plans = plan_by_language(&files, config, Kind::Format);
     let mut results: Vec<FormatResult> = files
         .par_iter()
-        .filter_map(|f| format_one(f, &plans, &cache, write).ok())
+        .filter_map(|f| match format_one(f, &plans, &cache, write) {
+            Ok(result) => Some(result),
+            // A per-file failure (read, engine, or — when writing — the atomic
+            // rename) must not be swallowed silently; surface it and skip the file.
+            Err(error) => {
+                eprintln!("warning: {}: {error:#}", f.path.display());
+                None
+            }
+        })
         .collect();
     results.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(results)
@@ -151,7 +161,7 @@ pub fn format(
 
 fn lint_one(
     f: &DiscoveredFile,
-    plans: &HashMap<Language, Vec<EnginePlan>>,
+    plans: &FxHashMap<Language, Vec<EnginePlan>>,
     cache: &ResultCache,
     fix: bool,
 ) -> anyhow::Result<LintResult> {
@@ -191,7 +201,7 @@ fn lint_one(
 /// content-hash caching each engine's diagnostics.
 fn lint_content(
     f: &DiscoveredFile,
-    plans: &HashMap<Language, Vec<EnginePlan>>,
+    plans: &FxHashMap<Language, Vec<EnginePlan>>,
     cache: &ResultCache,
     content: &str,
 ) -> anyhow::Result<Vec<Diagnostic>> {
@@ -219,8 +229,13 @@ fn lint_content(
             continue;
         }
         let diags = plan.engine.lint(&src, &plan.config)?;
-        if let Ok(bytes) = serde_json::to_vec(&diags) {
-            let _ = cache.put(Namespace::Lint, &key, &bytes);
+        if let Ok(bytes) = serde_json::to_vec(&diags)
+            && let Err(error) = cache.put(Namespace::Lint, &key, &bytes)
+        {
+            tracing::warn!(
+                engine = plan.engine.name(),
+                "failed to store lint cache entry: {error:#}"
+            );
         }
         all.extend(diags);
     }
@@ -315,7 +330,7 @@ fn has_internal_overlap(group: &[Edit]) -> bool {
 
 fn format_one(
     f: &DiscoveredFile,
-    plans: &HashMap<Language, Vec<EnginePlan>>,
+    plans: &FxHashMap<Language, Vec<EnginePlan>>,
     cache: &ResultCache,
     write: bool,
 ) -> anyhow::Result<FormatResult> {
@@ -353,7 +368,12 @@ fn format_one(
             FormatOutput::Unchanged => Arc::clone(&current),
             FormatOutput::Formatted(s) => Arc::from(s),
         };
-        let _ = cache.put(Namespace::Fmt, &key, out.as_bytes());
+        if let Err(error) = cache.put(Namespace::Fmt, &key, out.as_bytes()) {
+            tracing::warn!(
+                engine = plan.engine.name(),
+                "failed to store fmt cache entry: {error:#}"
+            );
+        }
         current = out;
     }
 
@@ -380,7 +400,12 @@ fn write_atomic(path: &std::path::Path, contents: &str) -> anyhow::Result<()> {
         .unwrap_or("polyfmt");
     let tmp = parent.join(format!(".{file_name}.{}.polyfmt.tmp", std::process::id()));
     std::fs::write(&tmp, contents)?;
-    std::fs::rename(&tmp, path)?;
+    // On rename failure (e.g. cross-device, permissions) the sibling tmp would
+    // otherwise be orphaned in the working tree; clean it up best-effort.
+    if let Err(error) = std::fs::rename(&tmp, path) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(error.into());
+    }
     Ok(())
 }
 
