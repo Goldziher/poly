@@ -16,13 +16,22 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::sync::LazyLock;
 
+use aho_corasick::AhoCorasick;
 use anyhow::{Context, Result};
 use clap::Args;
 use poly_config::DEFAULT_MAX_ADDED_FILE_KB;
 
 /// Number of bytes per kibibyte, for the large-file size ceiling.
 const BYTES_PER_KIB: u64 = 1024;
+
+/// Upper bound on the file size the content-scanning checks
+/// ([`check_merge_conflict`], [`check_private_key`]) will read into memory. A
+/// hand-edited conflict or a committed private key is never multi-megabyte, so
+/// skipping larger files preserves the checks' intent while bounding memory
+/// (a staged binary blob can no longer trigger an OOM).
+const MAX_CONTENT_SCAN_BYTES: u64 = 10 * 1024 * 1024;
 
 /// Private-key headers rejected by [`check_private_key`]. Mirrors the
 /// pre-commit-hooks `detect-private-key` blocklist.
@@ -43,6 +52,33 @@ const PRIVATE_KEY_MARKERS: &[&str] = &[
 /// these exactly or is the prefix followed by a space (`<<<<<<< branch`), which
 /// avoids flagging longer rules like `========` (eight `=`) used as headings.
 const CONFLICT_MARKERS: &[&str] = &["<<<<<<<", "=======", ">>>>>>>", "|||||||"];
+
+/// Aho-Corasick automaton over [`PRIVATE_KEY_MARKERS`], built once. A single
+/// SIMD-accelerated pass over the raw file bytes replaces the previous
+/// ten-marker `str::contains` loop, and `find` reports which marker matched.
+///
+/// Construction is infallible for these compile-time-constant ASCII patterns;
+/// `expect` documents that invariant.
+static PRIVATE_KEY_AUTOMATON: LazyLock<AhoCorasick> =
+    LazyLock::new(|| AhoCorasick::new(PRIVATE_KEY_MARKERS).expect("private-key markers compile"));
+
+/// Aho-Corasick automaton over [`CONFLICT_MARKERS`], built once. Used only as a
+/// cheap skip-fast-path: if none of the marker prefixes appears anywhere in a
+/// file, it cannot contain a marker line, so the precise per-line scan is
+/// skipped without allocating. Files that match still go through the exact
+/// line-level check, so behavior is unchanged for real conflict files.
+static CONFLICT_MARKER_AUTOMATON: LazyLock<AhoCorasick> =
+    LazyLock::new(|| AhoCorasick::new(CONFLICT_MARKERS).expect("conflict markers compile"));
+
+/// Read `path` for a content-scanning check, returning `None` (skip) when it
+/// cannot be stat'd, is not a regular file, or exceeds [`MAX_CONTENT_SCAN_BYTES`].
+fn read_for_scan(path: &Path) -> Option<Vec<u8>> {
+    let metadata = std::fs::metadata(path).ok()?;
+    if !metadata.is_file() || metadata.len() > MAX_CONTENT_SCAN_BYTES {
+        return None;
+    }
+    std::fs::read(path).ok()
+}
 
 /// `poly hooks check` — the hidden subcommand the file-safety builtin lowers to.
 ///
@@ -177,9 +213,13 @@ fn is_conflict_marker(line: &str) -> bool {
 fn check_merge_conflict(root: &Path, files: &[PathBuf]) -> Vec<Violation> {
     let mut violations = Vec::new();
     for path in files {
-        let Ok(bytes) = std::fs::read(root.join(path)) else {
+        let Some(bytes) = read_for_scan(&root.join(path)) else {
             continue;
         };
+        // Fast skip: no marker prefix anywhere means no marker line is possible.
+        if !CONFLICT_MARKER_AUTOMATON.is_match(&bytes) {
+            continue;
+        }
         let text = String::from_utf8_lossy(&bytes);
         for (index, line) in text.lines().enumerate() {
             if is_conflict_marker(line) {
@@ -224,14 +264,14 @@ fn check_added_large_files(root: &Path, files: &[PathBuf], max_kb: u64) -> Vec<V
 fn check_private_key(root: &Path, files: &[PathBuf]) -> Vec<Violation> {
     let mut violations = Vec::new();
     for path in files {
-        let Ok(bytes) = std::fs::read(root.join(path)) else {
+        let Some(bytes) = read_for_scan(&root.join(path)) else {
             continue;
         };
-        let text = String::from_utf8_lossy(&bytes);
-        if let Some(marker) = PRIVATE_KEY_MARKERS
-            .iter()
-            .find(|marker| text.contains(*marker))
-        {
+        // Single SIMD pass over the raw bytes; the markers are ASCII so no
+        // UTF-8 conversion is needed. `pattern()` indexes back into the marker
+        // list to name which header matched.
+        if let Some(found) = PRIVATE_KEY_AUTOMATON.find(&bytes) {
+            let marker = PRIVATE_KEY_MARKERS[found.pattern().as_usize()];
             violations.push(Violation::new(
                 "detect-private-key",
                 path.clone(),
@@ -247,7 +287,7 @@ fn check_private_key(root: &Path, files: &[PathBuf]) -> Vec<Violation> {
 /// Reports one problem per colliding group, naming every member, so a
 /// case-insensitive filesystem cannot end up with two of them checked out.
 fn check_case_conflict(files: &[PathBuf]) -> Vec<Violation> {
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, HashSet};
 
     let mut groups: BTreeMap<String, Vec<&PathBuf>> = BTreeMap::new();
     for path in files {
@@ -258,10 +298,12 @@ fn check_case_conflict(files: &[PathBuf]) -> Vec<Violation> {
     let mut violations = Vec::new();
     for members in groups.values() {
         // A real collision needs two paths that differ only by case; identical
-        // paths repeated in the input are not a conflict.
+        // paths repeated in the input are not a conflict. Track membership in a
+        // set (O(1) lookup) while preserving first-seen order for the report.
+        let mut seen: HashSet<&PathBuf> = HashSet::new();
         let mut distinct: Vec<&PathBuf> = Vec::new();
         for member in members {
-            if !distinct.contains(member) {
+            if seen.insert(member) {
                 distinct.push(member);
             }
         }
@@ -282,12 +324,17 @@ fn check_case_conflict(files: &[PathBuf]) -> Vec<Violation> {
     violations
 }
 
-/// Read the first two bytes of `path`, returning `None` when it is unreadable
-/// or shorter than the shebang prefix.
+/// Whether `path` begins with a `#!` shebang, reading only the first two bytes.
+///
+/// Returns `false` when the file is unreadable or shorter than the prefix; never
+/// reads the whole file (a large committed binary is not buffered into memory).
 fn starts_with_shebang(path: &Path) -> bool {
-    std::fs::read(path)
-        .ok()
-        .is_some_and(|bytes| bytes.starts_with(b"#!"))
+    use std::io::Read as _;
+
+    let mut prefix = [0u8; 2];
+    std::fs::File::open(path)
+        .and_then(|mut file| file.read_exact(&mut prefix))
+        .is_ok_and(|()| prefix == *b"#!")
 }
 
 /// Require executable files to begin with a `#!` shebang.
@@ -315,8 +362,23 @@ fn check_executables_have_shebangs(root: &Path, files: &[PathBuf]) -> Vec<Violat
 /// Require files that begin with a `#!` shebang to be executable.
 ///
 /// On non-Unix targets, file mode bits are unavailable, so this check is a
-/// no-op.
+/// no-op: `is_executable` is unconditionally `false` there, so without this
+/// guard every shebang script would be falsely flagged.
 fn check_shebang_scripts_are_executable(root: &Path, files: &[PathBuf]) -> Vec<Violation> {
+    #[cfg(not(unix))]
+    {
+        let _ = (root, files);
+        return Vec::new();
+    }
+    #[cfg(unix)]
+    {
+        check_shebang_scripts_are_executable_unix(root, files)
+    }
+}
+
+/// Unix implementation of [`check_shebang_scripts_are_executable`].
+#[cfg(unix)]
+fn check_shebang_scripts_are_executable_unix(root: &Path, files: &[PathBuf]) -> Vec<Violation> {
     let mut violations = Vec::new();
     for path in files {
         let absolute = root.join(path);
@@ -411,6 +473,20 @@ mod tests {
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].path, key);
         assert!(violations[0].message.contains("OPENSSH PRIVATE KEY"));
+    }
+
+    #[test]
+    fn content_checks_skip_files_over_the_size_cap() {
+        let dir = tempfile::tempdir().unwrap();
+        // A file larger than the scan cap is skipped even if it contains a
+        // marker, so a huge staged blob can never be read into memory.
+        let mut blob = vec![b'x'; (MAX_CONTENT_SCAN_BYTES as usize) + 1];
+        blob.extend_from_slice(b"\n-----BEGIN OPENSSH PRIVATE KEY-----\n");
+        blob.extend_from_slice(b"<<<<<<< HEAD\n");
+        let big = write(dir.path(), "huge.bin", &blob);
+
+        assert!(check_private_key(dir.path(), std::slice::from_ref(&big)).is_empty());
+        assert!(check_merge_conflict(dir.path(), &[big]).is_empty());
     }
 
     #[test]

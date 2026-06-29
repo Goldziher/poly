@@ -463,6 +463,14 @@ fn shell_quote(value: &str) -> String {
     // `cmd /C` expands `%VAR%` even inside double quotes and treats `"` as a
     // token boundary, so a user-controlled path could inject or break the
     // command line. Double both before wrapping.
+    //
+    // `!` (delayed-expansion) is intentionally NOT escaped: `cmd /C` runs
+    // without `ENABLEDELAYEDEXPANSION`, so `!` is already a literal here.
+    // Escaping it (`^!`/`^^!`) is only correct when delayed expansion is on and
+    // would otherwise inject a stray caret, corrupting legitimate filenames —
+    // so escaping would trade a non-issue for a real bug. The robust fix for
+    // hostile filenames is argv-passing (the runner's non-shell path), not
+    // string quoting.
     let escaped = value.replace('%', "%%").replace('"', "\"\"");
     format!("\"{escaped}\"")
 }

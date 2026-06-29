@@ -22,6 +22,7 @@ name = "poly"
 path = "src/main.rs"
 
 [dependencies]
+aho-corasick.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 gitfluff.workspace = true
