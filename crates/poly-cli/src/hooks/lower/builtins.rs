@@ -81,6 +81,9 @@ pub(super) fn append_file_safety(
         return Ok(());
     };
     let mut hook = Hook::run("file-safety", format!("{poly} hooks check {flags}"));
+    let (files, exclude) = super::builtin_globs(safety.files.as_ref(), safety.exclude.as_ref())?;
+    hook.files = files;
+    hook.exclude = exclude;
     hook.cache = HookCache::Disabled;
     out.push(hook);
     Ok(())
@@ -335,6 +338,32 @@ mod tests {
         // The matched files are appended by the runner, so it passes filenames.
         let hook = &spec.hooks[0];
         assert!(hook.pass_filenames);
+    }
+
+    #[test]
+    fn file_safety_exclude_lowers_to_the_hook_exclude_glob() {
+        let hooks = hooks_from(
+            r#"
+[hooks.builtin.file_safety]
+exclude = "crates/poly-cli/src/hooks/checks.rs"
+"#,
+        );
+        let spec = lower_stage(
+            &hooks,
+            &poly(),
+            HookStage::PreCommit,
+            &[],
+            &HookCacheMode::Safe,
+        )
+        .unwrap();
+        let hook = spec
+            .hooks
+            .iter()
+            .find(|hook| hook.id == "file-safety")
+            .expect("file-safety lowered");
+        let exclude = hook.exclude.as_ref().expect("exclude glob present");
+        assert!(exclude.is_match(Path::new("crates/poly-cli/src/hooks/checks.rs")));
+        assert!(!exclude.is_match(Path::new("crates/poly-cli/src/hooks/lower.rs")));
     }
 
     #[test]

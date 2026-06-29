@@ -18,6 +18,8 @@
 
 use serde::{Deserialize, Deserializer};
 
+use super::patterns::Patterns;
+
 /// Default ceiling, in kibibytes, for [`FileSafetyHooks::added_large_files`].
 pub const DEFAULT_MAX_ADDED_FILE_KB: u64 = 500;
 
@@ -50,6 +52,10 @@ pub struct BuiltinHook {
     pub enabled: bool,
     /// Stages this hook runs in; empty means inherit [`super::HooksConfig::stages`].
     pub stages: Vec<String>,
+    /// File include glob(s); `None` matches every candidate file.
+    pub files: Option<Patterns>,
+    /// File exclude glob(s) filtered from the matched set before the hook runs.
+    pub exclude: Option<Patterns>,
 }
 
 /// On-disk form of a builtin hook: bare toggle or a table.
@@ -65,6 +71,8 @@ enum BuiltinHookRepr {
 struct BuiltinHookTable {
     enabled: Option<bool>,
     stages: Vec<String>,
+    files: Option<Patterns>,
+    exclude: Option<Patterns>,
 }
 
 impl<'de> Deserialize<'de> for BuiltinHook {
@@ -73,11 +81,15 @@ impl<'de> Deserialize<'de> for BuiltinHook {
             BuiltinHookRepr::Toggle(enabled) => Ok(BuiltinHook {
                 enabled,
                 stages: Vec::new(),
+                files: None,
+                exclude: None,
             }),
             // Presence of a table implies the hook is enabled unless it says otherwise.
             BuiltinHookRepr::Table(table) => Ok(BuiltinHook {
                 enabled: table.enabled.unwrap_or(true),
                 stages: table.stages,
+                files: table.files,
+                exclude: table.exclude,
             }),
         }
     }
@@ -105,6 +117,10 @@ pub struct FileSafetyHooks {
     pub enabled: bool,
     /// Stages this group runs in; empty means inherit [`super::HooksConfig::stages`].
     pub stages: Vec<String>,
+    /// File include glob(s); `None` matches every candidate file.
+    pub files: Option<Patterns>,
+    /// File exclude glob(s) filtered from the matched set before the checks run.
+    pub exclude: Option<Patterns>,
     /// Size ceiling, in kibibytes, for the large-file check.
     pub max_added_file_kb: u64,
     /// Reject files containing git merge-conflict markers.
@@ -128,6 +144,8 @@ impl Default for FileSafetyHooks {
         Self {
             enabled: false,
             stages: Vec::new(),
+            files: None,
+            exclude: None,
             max_added_file_kb: DEFAULT_MAX_ADDED_FILE_KB,
             merge_conflict: true,
             added_large_files: true,
@@ -151,6 +169,8 @@ enum FileSafetyRepr {
 struct FileSafetyTable {
     enabled: Option<bool>,
     stages: Vec<String>,
+    files: Option<Patterns>,
+    exclude: Option<Patterns>,
     max_added_file_kb: Option<u64>,
     merge_conflict: Option<bool>,
     added_large_files: Option<bool>,
@@ -170,6 +190,8 @@ impl<'de> Deserialize<'de> for FileSafetyHooks {
             FileSafetyRepr::Table(table) => Ok(FileSafetyHooks {
                 enabled: table.enabled.unwrap_or(true),
                 stages: table.stages,
+                files: table.files,
+                exclude: table.exclude,
                 max_added_file_kb: table.max_added_file_kb.unwrap_or(DEFAULT_MAX_ADDED_FILE_KB),
                 merge_conflict: table.merge_conflict.unwrap_or(true),
                 added_large_files: table.added_large_files.unwrap_or(true),
@@ -292,6 +314,45 @@ mod tests {
     fn table_with_explicit_disable() {
         let hooks: BuiltinHooks = toml::from_str("commit = { enabled = false }").unwrap();
         assert!(!hooks.commit.enabled);
+    }
+
+    #[test]
+    fn builtin_table_parses_files_and_exclude_globs() {
+        let hooks: BuiltinHooks = toml::from_str(
+            r#"
+[polylint]
+exclude = ["**/tags.rs", ".ai-rulez/**"]
+[polyfmt]
+files = "**/*.rs"
+"#,
+        )
+        .unwrap();
+        assert!(hooks.polylint.enabled);
+        assert_eq!(
+            hooks.polylint.exclude.as_ref().map(Patterns::as_slice),
+            Some(&["**/tags.rs".to_string(), ".ai-rulez/**".to_string()][..])
+        );
+        assert!(hooks.polylint.files.is_none());
+        assert_eq!(
+            hooks.polyfmt.files.as_ref().map(Patterns::as_slice),
+            Some(&["**/*.rs".to_string()][..])
+        );
+    }
+
+    #[test]
+    fn file_safety_table_parses_exclude_glob() {
+        let hooks: BuiltinHooks = toml::from_str(
+            r#"
+[file_safety]
+exclude = "crates/poly-cli/src/hooks/checks.rs"
+"#,
+        )
+        .unwrap();
+        assert!(hooks.file_safety.enabled);
+        assert_eq!(
+            hooks.file_safety.exclude.as_ref().map(Patterns::as_slice),
+            Some(&["crates/poly-cli/src/hooks/checks.rs".to_string()][..])
+        );
     }
 
     #[test]
