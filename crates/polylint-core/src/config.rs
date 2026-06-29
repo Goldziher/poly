@@ -37,6 +37,8 @@ pub struct Config {
     pub lint: toml::Table,
     /// `[fmt.<lang>.<tool>]` tables.
     pub fmt: toml::Table,
+    /// `[tools.<name>]` — opted-in vendored catalog tools (ADR 0013).
+    pub tools: poly_config::ToolsConfig,
 }
 
 /// The slice of config handed to one engine for one file.
@@ -89,6 +91,7 @@ impl From<poly_config::PolyConfig> for Config {
             defaults: pc.defaults,
             lint: pc.lint,
             fmt: pc.fmt,
+            tools: pc.tools,
         }
     }
 }

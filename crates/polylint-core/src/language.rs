@@ -212,6 +212,59 @@ impl Language {
         Some(lang)
     }
 
+    /// Map a catalog (mdsf) language identifier to a poly [`Language`].
+    ///
+    /// Used to route an enabled `[tools.<name>]` catalog tool to the files it
+    /// handles: a tool declaring `languages = ["go"]` is routed to
+    /// [`Language::Go`]. Names with a dedicated tier-1 variant map to it
+    /// (handling spelling differences like `c++` / `c#` and the template-family
+    /// aliases); anything else maps to [`Language::Other`] so a tool for a
+    /// long-tail language still routes to files the tree-sitter tier detects
+    /// under that same id.
+    pub fn from_catalog_name(name: &str) -> Language {
+        match name {
+            "python" => Language::Python,
+            "javascript" => Language::JavaScript,
+            "typescript" => Language::TypeScript,
+            "jsx" => Language::Jsx,
+            "tsx" => Language::Tsx,
+            "json" => Language::Json,
+            "json5" | "jsonc" => Language::Jsonc,
+            "yaml" => Language::Yaml,
+            "toml" => Language::Toml,
+            "markdown" => Language::Markdown,
+            "sql" => Language::Sql,
+            "css" => Language::Css,
+            "scss" => Language::Scss,
+            "less" => Language::Less,
+            "html" => Language::Html,
+            "vue" => Language::Vue,
+            "svelte" => Language::Svelte,
+            "astro" => Language::Astro,
+            "jinja" | "twig" | "nunjucks" | "django" => Language::Jinja,
+            "handlebars" | "mustache" => Language::Mustache,
+            "xml" => Language::Xml,
+            "graphql" => Language::GraphQl,
+            "hcl" | "terraform" => Language::Hcl,
+            "nix" => Language::Nix,
+            "bash" | "shell" | "sh" | "zsh" => Language::Shell,
+            "docker" | "dockerfile" => Language::Dockerfile,
+            "go" => Language::Go,
+            "java" => Language::Java,
+            "kotlin" => Language::Kotlin,
+            "ruby" => Language::Ruby,
+            "php" => Language::Php,
+            "r" => Language::R,
+            "elixir" => Language::Elixir,
+            "c" => Language::C,
+            "c++" | "cpp" => Language::Cpp,
+            "rust" => Language::Rust,
+            "protobuf" | "proto" => Language::Proto,
+            "zig" => Language::Zig,
+            other => Language::Other(other.to_string()),
+        }
+    }
+
     /// Opinionated default indentation width for this language.
     pub fn default_indent_width(&self) -> usize {
         match self {

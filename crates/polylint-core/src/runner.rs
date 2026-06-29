@@ -12,6 +12,7 @@ use serde::Serialize;
 use crate::config::{Config, EngineConfig, Kind};
 use crate::discover::{DiscoveredFile, discover};
 use crate::engine::{Diagnostic, Edit, Engine, FormatOutput, SourceFile};
+use crate::engines::catalog_tool::CatalogToolEngine;
 use crate::language::Language;
 use crate::registry::engines_for;
 
@@ -64,7 +65,9 @@ struct EnginePlan {
 /// Resolve the engines (filtered to those with the requested capability) for a
 /// language, pre-resolving each one's config and serialising its args once.
 fn plan_engines(language: &Language, config: &Config, kind: Kind) -> Vec<EnginePlan> {
-    engines_for(language)
+    let mut engines = engines_for(language);
+    engines.extend(catalog_engines_for(language, config, kind));
+    engines
         .into_iter()
         .filter(|engine| match kind {
             Kind::Lint => engine.capabilities().lint,
@@ -80,6 +83,44 @@ fn plan_engines(language: &Language, config: &Config, kind: Kind) -> Vec<EngineP
             }
         })
         .collect()
+}
+
+/// Build the catalog-driven engines (ADR 0013) for `language`: one
+/// [`CatalogToolEngine`] per enabled `[tools.<name>]` whose catalog tool both
+/// declares a language that maps to `language` and exposes the capability for
+/// `kind`. Catalog tools are format-only for now, so this is empty for
+/// [`Kind::Lint`].
+fn catalog_engines_for(language: &Language, config: &Config, kind: Kind) -> Vec<Box<dyn Engine>> {
+    if kind != Kind::Format {
+        return Vec::new();
+    }
+    let catalog = poly_catalog::Catalog::get();
+    let mut engines: Vec<Box<dyn Engine>> = Vec::new();
+    for (name, tool_config) in config.tools.iter() {
+        if !tool_config.enabled {
+            continue;
+        }
+        // Names are allowlist-validated at config load, so an absent entry here
+        // is a defensive skip rather than an error.
+        let Some(tool) = catalog.tool(name) else {
+            continue;
+        };
+        let serves_language = tool
+            .languages
+            .iter()
+            .any(|catalog_lang| &Language::from_catalog_name(catalog_lang) == language);
+        if !serves_language {
+            continue;
+        }
+        if let Some(engine) = CatalogToolEngine::format_engine(
+            tool,
+            tool_config.command.as_deref(),
+            tool_config.args.as_deref(),
+        ) {
+            engines.push(Box::new(engine));
+        }
+    }
+    engines
 }
 
 /// Build a per-language engine plan covering every language present in `files`,

@@ -4367,6 +4367,7 @@ dependencies = [
  "oxc_linter",
  "oxc_span",
  "poly-cache",
+ "poly-catalog",
  "poly-config",
  "pretty_graphql",
  "pretty_yaml",
@@ -4395,6 +4396,7 @@ dependencies = [
  "typos",
  "typos-dict",
  "unicase",
+ "which",
 ]
 
 [[package]]

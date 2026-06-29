@@ -2,6 +2,7 @@
 //! [`crate::engine::Engine`]. New backends are added here and wired into the
 //! crate-private registry that routes each language to its backend(s).
 
+pub mod catalog_tool;
 pub mod dockerfile;
 pub mod graphql;
 pub mod hcl;
