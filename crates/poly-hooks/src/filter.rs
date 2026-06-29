@@ -10,6 +10,7 @@ use std::path::Path;
 
 use crate::identify::{TagSet, tags_from_path};
 use globset::{Glob, GlobSet, GlobSetBuilder};
+use rustc_hash::FxHashMap;
 use tracing::error;
 
 // ── GlobPatterns ─────────────────────────────────────────────────────────────
@@ -268,6 +269,9 @@ impl<'a> HookFileFilter<'a> {
 #[derive(Default)]
 pub struct FileTagCache<'a> {
     paths: Vec<&'a Path>,
+    /// Path → index, so `tags_for` is O(1) instead of a linear scan over
+    /// `paths` (which is O(files²·hooks) across a tag-filtered run).
+    index: FxHashMap<&'a Path, usize>,
     tags_by_file: Vec<OnceCell<Option<TagSet>>>,
 }
 
@@ -278,9 +282,16 @@ impl<'a> FileTagCache<'a> {
         I: IntoIterator<Item = &'a Path>,
     {
         let paths = paths.into_iter().collect::<Vec<_>>();
+        // First occurrence wins, matching the previous `position` lookup when a
+        // path appears more than once.
+        let mut index = FxHashMap::default();
+        for (idx, &path) in paths.iter().enumerate() {
+            index.entry(path).or_insert(idx);
+        }
         let tags_by_file = (0..paths.len()).map(|_| OnceCell::new()).collect();
         Self {
             paths,
+            index,
             tags_by_file,
         }
     }
@@ -290,7 +301,7 @@ impl<'a> FileTagCache<'a> {
     /// Returns `None` if `path` is not in the cache or if tag identification
     /// failed.
     pub fn tags_for(&self, path: &Path) -> Option<&TagSet> {
-        let idx = self.paths.iter().position(|&p| p == path)?;
+        let idx = *self.index.get(path)?;
         self.tags(idx)
     }
 

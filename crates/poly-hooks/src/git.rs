@@ -66,7 +66,7 @@ pub static GIT_ROOT: LazyLock<Result<PathBuf, Error>> = LazyLock::new(|| {
 ///
 /// `GIT_INDEX_FILE` is intentionally kept so that `git write-tree` works
 /// correctly when called from inside a `git commit -a` / `-p` hook.
-pub static GIT_ENV_TO_REMOVE: LazyLock<Vec<(String, String)>> = LazyLock::new(|| {
+pub static GIT_ENV_TO_REMOVE: LazyLock<Vec<String>> = LazyLock::new(|| {
     const KEEP: &[&str] = &[
         "GIT_EXEC_PATH",
         "GIT_SSH",
@@ -87,6 +87,7 @@ pub static GIT_ENV_TO_REMOVE: LazyLock<Vec<(String, String)>> = LazyLock::new(||
                 && !k.starts_with("GIT_CONFIG_VALUE_")
                 && !KEEP.contains(&k.as_str())
         })
+        .map(|(key, _)| key)
         .collect()
 });
 
@@ -180,6 +181,22 @@ pub fn list_files(root: &Path) -> Result<Vec<PathBuf>, Error> {
         .check(true)
         .output()?;
     Ok(zsplit(&output.stdout)?)
+}
+
+/// Reject a revision that git would misinterpret as an option.
+///
+/// Revisions reaching us from untrusted input — notably the SHAs parsed from
+/// the pre-push hook's stdin — must never begin with `-`, or git parses them as
+/// a flag instead of an object name. That is an argument-injection vector even
+/// though we never route these values through a shell (`Cmd::arg`, not `sh -c`).
+fn validate_revision(rev: &str) -> Result<(), Error> {
+    if rev.starts_with('-') {
+        return Err(Error::InvalidRevision {
+            old: rev.to_string(),
+            new: String::new(),
+        });
+    }
+    Ok(())
 }
 
 /// List files changed between `old` and `new` (merge-base or direct range).
@@ -369,6 +386,7 @@ pub fn get_git_hooks_dir() -> Result<PathBuf, Error> {
 /// stdin is a commit this repository can reason about.
 #[instrument(level = "trace")]
 pub fn rev_exists(rev: &str, root: &Path) -> Result<bool, Error> {
+    validate_revision(rev)?;
     let mut cmd = git_cmd("git cat-file")?;
     let status = cmd
         .current_dir(root)
@@ -397,6 +415,8 @@ pub fn rev_exists(rev: &str, root: &Path) -> Result<bool, Error> {
 /// Exit code `0` means yes, `1` means no; any other status is propagated.
 #[instrument(level = "trace")]
 pub fn is_ancestor(ancestor: &str, commit: &str, root: &Path) -> Result<bool, Error> {
+    validate_revision(ancestor)?;
+    validate_revision(commit)?;
     let mut cmd = git_cmd("check commit ancestry")?;
     let status = cmd
         .current_dir(root)
@@ -428,6 +448,9 @@ pub fn get_ancestors_not_in_remote(
     remote_name: &str,
     root: &Path,
 ) -> Result<Vec<String>, Error> {
+    validate_revision(local_sha)?;
+    // `remote_name` is safe: it is bound inside `--remotes={remote_name}`, so it
+    // can never be parsed as a standalone option even if it begins with `-`.
     let output = git_cmd("get ancestors not in remote")?
         .current_dir(root)
         .arg("rev-list")
@@ -448,6 +471,7 @@ pub fn get_ancestors_not_in_remote(
 /// Root commits (commits with no parents) reachable from `local_sha`.
 #[instrument(level = "trace")]
 pub fn get_root_commits(local_sha: &str, root: &Path) -> Result<Vec<String>, Error> {
+    validate_revision(local_sha)?;
     let output = git_cmd("get root commits")?
         .current_dir(root)
         .arg("rev-list")
@@ -467,6 +491,9 @@ pub fn get_root_commits(local_sha: &str, root: &Path) -> Result<Vec<String>, Err
 /// Returns `Ok(None)` when `commit` has no parent (e.g. a root commit).
 #[instrument(level = "trace")]
 pub fn get_parent_commit(commit: &str, root: &Path) -> Result<Option<String>, Error> {
+    // `commit` is interpolated into `{commit}^`, so a leading `-` would still
+    // reach `rev-parse` as an option-like token; guard it like the others.
+    validate_revision(commit)?;
     let output = git_cmd("get parent commit")?
         .current_dir(root)
         .arg("rev-parse")
@@ -503,6 +530,41 @@ mod tests {
             String::from_utf8_lossy(&output.stderr)
         );
         String::from_utf8_lossy(&output.stdout).trim().to_string()
+    }
+
+    #[test]
+    fn revision_functions_reject_option_like_input() {
+        // A `-`-prefixed revision (e.g. from a hostile pre-push stdin) must be
+        // rejected before it can reach git as an option. The guard fires before
+        // any git invocation, so an empty temp dir suffices.
+        let dir = TempDir::new().expect("tempdir");
+        let root = dir.path();
+        let evil = "--upload-pack=touch /tmp/pwned";
+
+        assert!(matches!(
+            rev_exists(evil, root),
+            Err(Error::InvalidRevision { .. })
+        ));
+        assert!(matches!(
+            is_ancestor(evil, "HEAD", root),
+            Err(Error::InvalidRevision { .. })
+        ));
+        assert!(matches!(
+            is_ancestor("HEAD", evil, root),
+            Err(Error::InvalidRevision { .. })
+        ));
+        assert!(matches!(
+            get_ancestors_not_in_remote(evil, "origin", root),
+            Err(Error::InvalidRevision { .. })
+        ));
+        assert!(matches!(
+            get_root_commits(evil, root),
+            Err(Error::InvalidRevision { .. })
+        ));
+        assert!(matches!(
+            get_parent_commit(evil, root),
+            Err(Error::InvalidRevision { .. })
+        ));
     }
 
     fn init_temp_repo() -> TempDir {

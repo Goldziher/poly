@@ -440,7 +440,7 @@ impl Cmd {
 
     /// Remove git-injected environment variables to isolate git invocations.
     pub fn remove_git_envs(&mut self) -> &mut Self {
-        for (key, _) in crate::git::GIT_ENV_TO_REMOVE.iter() {
+        for key in crate::git::GIT_ENV_TO_REMOVE.iter() {
             self.inner.env_remove(key);
         }
         self

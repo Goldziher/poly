@@ -431,18 +431,35 @@ fn shell_command(line: &str, args: &[String], files: &[&Path], pass_filenames: b
     cmd
 }
 
+/// Quote a token for inclusion in a `cmd /C` command line so an
+/// attacker-controlled value (notably a tracked filename like `foo & evil.exe`)
+/// cannot inject cmd.exe syntax. Wrap in double quotes — which neutralizes the
+/// metacharacters cmd interprets outside quotes (`&`, `|`, `<`, `>`, `(`, `)`,
+/// whitespace) — doubling any embedded `"` and escaping `%`.
+///
+/// Kept un-gated so the quoting logic is unit-tested on every platform; it is
+/// only *called* from the `cfg(windows)` `shell_command` below.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn cmd_quote(value: &str) -> String {
+    let escaped = value.replace('"', "\"\"").replace('%', "%%");
+    format!("\"{escaped}\"")
+}
+
 #[cfg(windows)]
 fn shell_command(line: &str, args: &[String], files: &[&Path], pass_filenames: bool) -> Cmd {
     // `cmd /C` has no `"$@"`, so join the command, args, and files into one line.
+    // `line` is the author's command (trusted); args and matched files are
+    // quoted so they are passed as literal tokens — matching the Unix branch,
+    // where they reach the program as separate argv and are never reinterpreted.
     let mut joined = line.to_string();
     for arg in args {
         joined.push(' ');
-        joined.push_str(arg);
+        joined.push_str(&cmd_quote(arg));
     }
     if pass_filenames {
         for file in files {
             joined.push(' ');
-            joined.push_str(&file.to_string_lossy());
+            joined.push_str(&cmd_quote(&file.to_string_lossy()));
         }
     }
     let mut cmd = Cmd::new(SHELL, line.to_string());
@@ -643,17 +660,29 @@ fn read_digest(root: &Path, paths: impl Iterator<Item = PathBuf>) -> Option<Inpu
 /// A string capturing the hook's command identity, so a changed command, script
 /// target, argument list, or file-passing mode invalidates the cache key.
 fn hook_version(hook: &Hook) -> String {
-    let base = match &hook.command {
-        HookCommand::Run(line) => line.clone(),
-        HookCommand::Script { path, runner } => format!("script\0{runner:?}\0{path}"),
-    };
+    use std::fmt::Write as _;
+    // Build the identity string in one buffer — no `line.clone()` or
+    // `args.join("\0")` intermediates. The produced bytes are identical to the
+    // previous `format!`, so existing cache keys stay valid.
+    let mut version = String::new();
+    match &hook.command {
+        HookCommand::Run(line) => version.push_str(line),
+        // Writing into a String is infallible.
+        HookCommand::Script { path, runner } => {
+            let _ = write!(version, "script\0{runner:?}\0{path}");
+        }
+    }
+    version.push('\0');
+    for (index, arg) in hook.args.iter().enumerate() {
+        if index > 0 {
+            version.push('\0');
+        }
+        version.push_str(arg);
+    }
     // `pass_filenames` changes the effective argv (per-file vs aggregate), so a
     // toggle must invalidate even when command, args, env, and inputs are equal.
-    format!(
-        "{base}\0{}\0pass_filenames={}",
-        hook.args.join("\0"),
-        hook.pass_filenames
-    )
+    let _ = write!(version, "\0pass_filenames={}", hook.pass_filenames);
+    version
 }
 
 /// The hook's declared environment as a TOML table, so an env change invalidates
@@ -682,7 +711,17 @@ mod tests {
     use std::collections::HashMap;
     use std::path::Path;
 
-    use super::{Hook, SccacheSettings, build_command};
+    use super::{Hook, SccacheSettings, build_command, cmd_quote};
+
+    #[test]
+    fn cmd_quote_neutralizes_metacharacters() {
+        // A filename with a cmd.exe command separator must come back wrapped in
+        // quotes so it is a single literal token, not `evil.exe` as a command.
+        assert_eq!(cmd_quote("foo.rs & evil.exe"), "\"foo.rs & evil.exe\"");
+        // Embedded quotes are doubled; percent is escaped.
+        assert_eq!(cmd_quote("a\"b"), "\"a\"\"b\"");
+        assert_eq!(cmd_quote("100%done"), "\"100%%done\"");
+    }
 
     /// Collect the explicit environment overrides a built [`super::Cmd`] carries.
     fn injected_env(hook: &Hook, sccache: Option<&SccacheSettings>) -> HashMap<String, String> {
