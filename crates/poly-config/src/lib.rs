@@ -19,6 +19,7 @@ mod cache;
 mod commit;
 mod defaults;
 mod hooks;
+mod tools;
 
 pub use cache::{CacheConfig, HookCacheMode, ResultsCacheConfig, SccacheConfig};
 pub use commit::{CleanupRule, CommitConfig, CommitRules, ExcludeRule, MessageRule};
@@ -28,6 +29,7 @@ pub use hooks::{
     GuardCondition, GuardMatch, HooksConfig, Job, JobCache, ParseStageError, Patterns, Stage,
     StageConfig,
 };
+pub use tools::{ToolConfig, ToolsConfig};
 
 /// Config file names in precedence order: `poly.toml` wins over `polylint.toml`
 /// within the same directory.
@@ -56,6 +58,8 @@ pub struct PolyConfig {
     pub hooks: HooksConfig,
     /// `[cache]` — result-cache and sccache configuration.
     pub cache: CacheConfig,
+    /// `[tools.<name>]` — opted-in vendored catalog tools (ADR 0013).
+    pub tools: ToolsConfig,
 }
 
 impl PolyConfig {
@@ -92,6 +96,10 @@ impl PolyConfig {
             .hooks
             .validate()
             .map_err(|message| anyhow::anyhow!("invalid [hooks] config: {message}"))?;
+        config
+            .tools
+            .validate()
+            .map_err(|message| anyhow::anyhow!("invalid [tools] config: {message}"))?;
         Ok(config)
     }
 }
@@ -140,6 +148,7 @@ struct RawPolyConfig {
     commit: CommitConfig,
     hooks: HooksConfig,
     cache: CacheConfig,
+    tools: ToolsConfig,
 }
 
 impl From<RawPolyConfig> for PolyConfig {
@@ -151,6 +160,7 @@ impl From<RawPolyConfig> for PolyConfig {
             commit: raw.commit,
             hooks: raw.hooks,
             cache: raw.cache,
+            tools: raw.tools,
         }
     }
 }
@@ -424,6 +434,52 @@ line_length = 80
         assert_eq!(config.defaults.line_length, 80);
         // ...while untouched nested tables are preserved from the base.
         assert_eq!(config.cache.results.hooks, crate::HookCacheMode::Safe);
+    }
+
+    #[test]
+    fn parses_tools_table_from_poly_toml() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("poly.toml");
+        fs::write(
+            &path,
+            r#"
+[tools.shfmt]
+enabled = true
+args = ["-i", "2"]
+stages = ["pre-commit"]
+
+[tools.clang-format]
+enabled = true
+"#,
+        )
+        .unwrap();
+        let config = PolyConfig::load_file(&path).expect("load");
+        assert_eq!(config.tools.len(), 2);
+        let shfmt = config.tools.get("shfmt").expect("shfmt present");
+        assert!(shfmt.enabled);
+        assert_eq!(
+            shfmt.args.as_deref(),
+            Some(&["-i".to_string(), "2".to_string()][..])
+        );
+        assert_eq!(shfmt.stages, vec![Stage::PreCommit]);
+        assert!(config.tools.get("clang-format").unwrap().enabled);
+    }
+
+    #[test]
+    fn unknown_tool_name_fails_load() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("poly.toml");
+        fs::write(&path, "[tools.not-a-real-tool]\nenabled = true\n").unwrap();
+        let error = PolyConfig::load_file(&path).unwrap_err().to_string();
+        assert!(error.contains("invalid [tools] config"), "{error}");
+        assert!(error.contains("not-a-real-tool"), "{error}");
+    }
+
+    #[test]
+    fn absent_tools_table_yields_empty() {
+        let dir = tempdir().unwrap();
+        let config = PolyConfig::load(dir.path()).expect("load");
+        assert!(config.tools.is_empty());
     }
 
     #[test]

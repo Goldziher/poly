@@ -4226,6 +4226,7 @@ name = "poly-config"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "poly-catalog",
  "serde",
  "tempfile",
  "toml 1.1.2+spec-1.1.0",

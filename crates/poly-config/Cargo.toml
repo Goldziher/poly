@@ -14,6 +14,7 @@ path = "src/lib.rs"
 
 [dependencies]
 anyhow.workspace = true
+poly-catalog.workspace = true
 serde.workspace = true
 toml.workspace = true
 
