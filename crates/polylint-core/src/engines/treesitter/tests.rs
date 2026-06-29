@@ -465,3 +465,94 @@ fn double_brace_close_releases_two_levels() {
         "}}: two leading closers each release one level"
     );
 }
+
+// ── LEAVE_UNTOUCHED: data / template / asset grammars ───────────────────────
+
+#[test]
+fn csv_with_trailing_whitespace_is_byte_identical_after_format() {
+    // CSV fields may contain trailing spaces that are part of the value.
+    // tier-2 must not strip them.
+    let engine = TreeSitterEngine;
+    // Note: no final newline — intentional to verify that policy is also not applied.
+    let input = "id,name,value   \n1,foo ,42\n2,bar,  99   ";
+    let s = src("data.csv", Language::Other("csv".into()), input);
+    let out = engine.format(&s, &cfg(4)).unwrap();
+    assert!(
+        matches!(out, FormatOutput::Unchanged),
+        "CSV must be returned Unchanged, got Formatted"
+    );
+}
+
+#[test]
+fn csv_emits_zero_lint_diagnostics() {
+    // Even with trailing whitespace on every line, a CSV file must produce no
+    // diagnostics — any change would silently corrupt field values.
+    let engine = TreeSitterEngine;
+    let input = "id,name   \n1,foo bar   \n2,baz   ";
+    let s = src("data.csv", Language::Other("csv".into()), input);
+    let diags = engine.lint(&s, &cfg(4)).unwrap();
+    assert!(
+        diags.is_empty(),
+        "CSV must emit zero diagnostics, got {:?}",
+        diags
+    );
+}
+
+#[test]
+fn erb_template_with_trailing_whitespace_is_byte_identical_after_format() {
+    // Whitespace around ERB tags is rendered verbatim into the template output;
+    // stripping it would change the HTML/text the template produces.
+    let engine = TreeSitterEngine;
+    // Trailing spaces on the first line are intentional template whitespace;
+    // no final newline to also verify that policy is suppressed.
+    let input = "<html>   \n<% items.each do |item| %>   \n  <%= item.name %>\n<% end %>";
+    let s = src(
+        "page.erb",
+        Language::Other("embeddedtemplate".into()),
+        input,
+    );
+    let out = engine.format(&s, &cfg(4)).unwrap();
+    assert!(
+        matches!(out, FormatOutput::Unchanged),
+        "ERB must be returned Unchanged, got Formatted"
+    );
+}
+
+#[test]
+fn erb_emits_zero_lint_diagnostics() {
+    // Same rationale as CSV: trailing whitespace in ERB is semantic output.
+    let engine = TreeSitterEngine;
+    let input = "<div>   \n  <%= value %>   \n</div>   ";
+    let s = src(
+        "partial.erb",
+        Language::Other("embeddedtemplate".into()),
+        input,
+    );
+    let diags = engine.lint(&s, &cfg(4)).unwrap();
+    assert!(
+        diags.is_empty(),
+        "ERB must emit zero diagnostics, got {:?}",
+        diags
+    );
+}
+
+#[test]
+fn non_member_grammar_still_gets_whitespace_normalization() {
+    // Regression guard: a language NOT in LEAVE_UNTOUCHED (bash) must still
+    // receive trailing-whitespace stripping via normalize_whitespace.
+    let engine = TreeSitterEngine;
+    let input = "#!/bin/bash   \necho hello   \n";
+    let s = src("script.sh", Language::Other("bash".into()), input);
+    let out = engine.format(&s, &cfg(4)).unwrap();
+    match out {
+        FormatOutput::Formatted(text) => {
+            assert_eq!(
+                text, "#!/bin/bash\necho hello\n",
+                "bash trailing whitespace must be stripped"
+            );
+        }
+        FormatOutput::Unchanged => panic!(
+            "bash with trailing whitespace must be Formatted (whitespace stripped), not Unchanged"
+        ),
+    }
+}

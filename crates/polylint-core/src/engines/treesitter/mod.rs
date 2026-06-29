@@ -3,19 +3,25 @@
 //! and dynamically loads grammars on demand, so one binary covers the long tail
 //! of languages with zero preinstalled language tools.
 //!
-//! Two modes, chosen per language:
-//! - **Structural reindent** for brace-delimited grammars (Go, C, C++, Java,
-//!   Kotlin, Rust, …): the CST locates all bracket tokens and re-indents each
-//!   line by depth using a **conservative level-keyed-by-open-line** model.
-//!   Multiple brackets opened on the same line coalesce to one indent level.
-//!   A level is released when the first leading closer pops any bracket opened
-//!   on that line. Byte ranges covered by string-literal and comment CST nodes
-//!   are excluded: delimiters inside them never count toward depth, and any
-//!   line whose leading whitespace begins inside such a range is emitted
-//!   verbatim. The indent unit is per-grammar (tabs for Go, two spaces for
-//!   Swift/Dart, `indent_width` spaces otherwise). Per-language switch/case
-//!   adjustments apply for Swift (case labels align with `switch`), Dart, and
-//!   C# (case bodies get an extra indent level).
+//! Three modes, chosen per grammar:
+//! - **Leave untouched** for data, template, and asset grammars in
+//!   [`LEAVE_UNTOUCHED`]: both `lint` and `format` are no-ops. Whitespace
+//!   inside these files is semantically significant output (CSV fields, ERB
+//!   template whitespace, diff context lines) — normalizing it silently
+//!   corrupts data.
+//! - **Structural reindent** for brace-delimited grammars in [`BRACE_FAMILY`]
+//!   (Go, C, C++, Java, Kotlin, Rust, …): the CST locates all bracket tokens
+//!   and re-indents each line by depth using a **conservative
+//!   level-keyed-by-open-line** model. Multiple brackets opened on the same
+//!   line coalesce to one indent level. A level is released when the first
+//!   leading closer pops any bracket opened on that line. Byte ranges covered
+//!   by string-literal and comment CST nodes are excluded: delimiters inside
+//!   them never count toward depth, and any line whose leading whitespace
+//!   begins inside such a range is emitted verbatim. The indent unit is
+//!   per-grammar (tabs for Go, two spaces for Swift/Dart, `indent_width`
+//!   spaces otherwise). Per-language switch/case adjustments apply for Swift
+//!   (case labels align with `switch`), Dart, and C# (case bodies get an
+//!   extra indent level).
 //! - **Whitespace normalization** for every other grammar, and whenever the
 //!   grammar is unavailable or the source fails to parse. This never corrupts
 //!   unparsable input (it only trims trailing whitespace and fixes line
@@ -54,6 +60,35 @@ const BRACE_FAMILY: &[&str] = &[
     "dart", "glsl", "hlsl", "cuda", "zig",
 ];
 
+/// Grammar names for which **both `lint` and `format` are unconditional
+/// no-ops**. These are data, template, and asset languages where any whitespace
+/// change — even stripping trailing spaces — silently mutates the file's
+/// semantic content or rendered output:
+///
+/// - `csv` / `tsv`: field values; a trailing space inside a field is data.
+/// - `embeddedtemplate` (ERB): whitespace around `<% %>` tags is rendered
+///   verbatim into the template output.
+/// - `jinja2` (.j2/.jinja2): same reasoning as ERB.
+/// - `ini` / `properties`: key-value config; value whitespace can be
+///   intentional and is consumed literally by many parsers.
+/// - `po` (gettext): `msgid`/`msgstr` field content is exact; whitespace
+///   changes break translation strings.
+/// - `diff` / `patch`: the `+`/`-`/` ` line prefix IS the file structure;
+///   stripping trailing whitespace from a context line corrupts the patch.
+///
+/// Tier-1 backends already own json/yaml/xml/html/svg/toml/graphql/jinja/
+/// mustache/vue/svelte, so those never reach this tier.
+const LEAVE_UNTOUCHED: &[&str] = &[
+    "csv",
+    "tsv",
+    "embeddedtemplate",
+    "jinja2",
+    "ini",
+    "properties",
+    "po",
+    "diff",
+];
+
 impl Engine for TreeSitterEngine {
     fn name(&self) -> &'static str {
         "treesitter"
@@ -72,15 +107,21 @@ impl Engine for TreeSitterEngine {
     }
 
     fn version(&self) -> &str {
-        // Version 5: replaced brace-line-dominance with the conservative
-        // level-keyed-by-open-line model. Multiple brackets opened on the same
-        // line coalesce to one indent level; a level is released by the first
-        // leading closer that pops any bracket from that open-line.
-        // Also carries the CRLF byte-cursor fix from v4.
-        "5"
+        // Version 6: data/template/asset grammars in LEAVE_UNTOUCHED are now
+        // unconditional no-ops for both lint and format. Any file matched by
+        // that set previously received whitespace normalization (trailing-space
+        // strip, final-newline enforcement), which silently mutated CSV fields,
+        // ERB template output, diff context lines, and gettext strings.
+        // Prior versions: v5 level-keyed-by-open-line model; v4 CRLF fix.
+        "6"
     }
 
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
+        // Data/template/asset grammars: any whitespace change (including
+        // trailing-space removal) silently mutates semantic content.
+        if grammar_name(src).is_some_and(|n| LEAVE_UNTOUCHED.contains(&n.as_str())) {
+            return Ok(Vec::new());
+        }
         // Language-agnostic trailing-whitespace lint, the catch-all diagnostic
         // for every file the generic tier serves.
         if !cfg.globals.trim_trailing_whitespace {
@@ -111,6 +152,11 @@ impl Engine for TreeSitterEngine {
     }
 
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
+        // Data/template/asset grammars: leave byte-identical — no whitespace
+        // normalization, no structural reindent.
+        if grammar_name(src).is_some_and(|n| LEAVE_UNTOUCHED.contains(&n.as_str())) {
+            return Ok(FormatOutput::Unchanged);
+        }
         let formatted = match grammar_name(src) {
             Some(name) if BRACE_FAMILY.contains(&name.as_str()) => reindent_braces(&name, src, cfg)
                 .unwrap_or_else(|| normalize_whitespace(&src.content, &cfg.globals)),
