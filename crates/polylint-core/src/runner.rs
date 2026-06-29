@@ -87,13 +87,16 @@ fn plan_engines(language: &Language, config: &Config, kind: Kind) -> Vec<EngineP
 
 /// Build the catalog-driven engines (ADR 0013) for `language`: one
 /// [`CatalogToolEngine`] per enabled `[tools.<name>]` whose catalog tool both
-/// declares a language that maps to `language` and exposes the capability for
-/// `kind`. Catalog tools are format-only for now, so this is empty for
-/// [`Kind::Lint`].
+/// declares a language that maps to `language` and exposes a usable command for
+/// `kind`.
+///
+/// [`Kind::Format`] wires the tool's format command; [`Kind::Lint`] wires its
+/// lint command — but only when that command is **non-mutating** (a `--fix` /
+/// `--write` / `-w` / `-i` command would corrupt files if run as a linter, so
+/// [`CatalogToolEngine::lint_engine`] skips it). Catalog linting is a
+/// best-effort, breadth-tier mechanism (file-level, exit-code based); structured
+/// per-tool diagnostics remain the curated native backends' job.
 fn catalog_engines_for(language: &Language, config: &Config, kind: Kind) -> Vec<Box<dyn Engine>> {
-    if kind != Kind::Format {
-        return Vec::new();
-    }
     let catalog = poly_catalog::Catalog::get();
     let mut engines: Vec<Box<dyn Engine>> = Vec::new();
     for (name, tool_config) in config.tools.iter() {
@@ -112,11 +115,13 @@ fn catalog_engines_for(language: &Language, config: &Config, kind: Kind) -> Vec<
         if !serves_language {
             continue;
         }
-        if let Some(engine) = CatalogToolEngine::format_engine(
-            tool,
-            tool_config.command.as_deref(),
-            tool_config.args.as_deref(),
-        ) {
+        let command = tool_config.command.as_deref();
+        let args = tool_config.args.as_deref();
+        let engine = match kind {
+            Kind::Format => CatalogToolEngine::format_engine(tool, command, args),
+            Kind::Lint => CatalogToolEngine::lint_engine(tool, command, args),
+        };
+        if let Some(engine) = engine {
             engines.push(Box::new(engine));
         }
     }
