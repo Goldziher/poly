@@ -20,9 +20,12 @@ adding to it.
   before real releases.
 - A Cargo **workspace** with `crates/polylint-core`, `crates/polylint`, `crates/polyfmt`,
   and an optional `vendor/` (ADR 0003).
-- **Ship a `.pre-commit-hooks.yaml`** defining exactly two hooks (`polylint` and `polyfmt`)
-  so a consuming repo can **replace its entire hook list with two entries** pointed at this
-  repo.
+- ~~**Ship a `.pre-commit-hooks.yaml`** defining exactly two hooks (`polylint` and
+  `polyfmt`) so a consuming repo can **replace its entire hook list with two entries**
+  pointed at this repo.~~ **Superseded (2026-06-29) by ADR 0011/0012:** poly ships a
+  self-contained `poly hooks` runner driven by `poly.toml [hooks]`, so the
+  `.pre-commit-hooks.yaml` artifact was dropped — a consuming repo wires poly directly
+  instead of routing through pre-commit/prek.
 
 ## Consequences
 
@@ -32,8 +35,9 @@ Positive:
   trivial and the engine is reusable/embeddable.
 - Reserved names prevent squatting and give a stable install story (`cargo install
   polylint polyfmt`).
-- The shipped hooks file makes the headline pitch real: a repo's `.pre-commit-config.yaml`
-  collapses to two hooks, deleting every per-tool hook and its system dependency.
+- The headline pitch is now delivered by `poly hooks` (ADR 0012): a repo's hook sprawl
+  collapses to one `poly.toml [hooks]` block driven by poly's own runner, deleting every
+  per-tool hook and its system dependency — no pre-commit/prek dependency in between.
 
 Negative / risks:
 

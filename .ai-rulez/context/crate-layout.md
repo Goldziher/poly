@@ -57,8 +57,10 @@ plus an installer (see release-versioning).
 ## `crates/polylint/` and `crates/polyfmt/` — the binaries (thin)
 
 Each is a thin clap CLI over `polylint-core`. `polylint [PATHS]… --fix --format human|json
---config <p> --no-cache -j <N> --no-color`; `polyfmt [PATHS]… --check …`. Ship
-`.pre-commit-hooks.yaml` so a consuming repo replaces its whole hook list with two hooks.
+--config <p> --no-cache -j <N> --no-color`; `polyfmt [PATHS]… --check …`. A consuming repo
+collapses its hook sprawl onto poly's own `poly hooks` runner via `poly.toml [hooks]` (ADR
+0012) — poly no longer ships a `.pre-commit-hooks.yaml`, so there is no pre-commit/prek
+dependency in between.
 
 ## The `Engine` trait contract (`engine.rs`)
 
