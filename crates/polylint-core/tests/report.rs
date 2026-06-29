@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use polylint_core::report::{self, Verbosity};
-use polylint_core::runner::{FormatResult, LintResult};
+use polylint_core::runner::{EngineDebug, FormatResult, LintResult, RunDebug};
 use polylint_core::{Diagnostic, Severity, Span};
 
 fn sample_lint_results() -> Vec<LintResult> {
@@ -150,4 +150,81 @@ fn format_json_lists_results() {
 fn format_toon_lists_results() {
     let toon = report::report_format_toon(&sample_format_results());
     insta::assert_snapshot!("format_toon", toon);
+}
+
+/// `--debug` pretty output: the dim `[debug] <engine> v<ver>  ran|cache hit
+/// <ms>` block must render after the diagnostic lines for each file.
+///
+/// Two engine entries are used:
+///   - `ruff v0.11.0` with `cache_hit = false` → "ran"
+///   - `typos v1.32.0` with `cache_hit = true` → "cache hit"
+///
+/// `duration_ms` values are fixed constants so the snapshot is deterministic.
+/// The result also has one diagnostic (to verify diagnostics and the debug
+/// block coexist in the output).
+#[test]
+fn lint_pretty_debug_renders_engine_timing_block() {
+    owo_colors::set_override(false);
+
+    let results = vec![LintResult {
+        path: PathBuf::from("src/main.py"),
+        diagnostics: vec![Diagnostic {
+            engine: "ruff".to_string(),
+            code: Some("E501".to_string()),
+            severity: Severity::Warning,
+            title: "line too long".to_string(),
+            description: None,
+            span: Some(Span {
+                start_line: 12,
+                start_col: 80,
+                end_line: 12,
+                end_col: 95,
+            }),
+            url: None,
+            fix: vec![],
+            metadata: BTreeMap::new(),
+        }],
+        debug: Some(RunDebug {
+            engines: vec![
+                EngineDebug {
+                    engine: "ruff".to_string(),
+                    version: "0.11.0".to_string(),
+                    duration_ms: 1.00_f64,
+                    cache_hit: false,
+                },
+                EngineDebug {
+                    engine: "typos".to_string(),
+                    version: "1.32.0".to_string(),
+                    duration_ms: 0.00_f64,
+                    cache_hit: true,
+                },
+            ],
+        }),
+    }];
+
+    let (text, total) = report::render_lint_pretty(&results, Verbosity::new(false, true));
+
+    assert_eq!(total, 1, "one diagnostic in the result set");
+
+    // The debug block must appear (path header + diagnostic + debug entries).
+    assert!(
+        text.contains("[debug] ruff"),
+        "--debug must render the ruff engine block; got:\n{text}"
+    );
+    assert!(
+        text.contains("[debug] typos"),
+        "--debug must render the typos engine block; got:\n{text}"
+    );
+    // cache_hit=false → "ran"
+    assert!(
+        text.contains("ran"),
+        "--debug must render 'ran' for cache_hit=false; got:\n{text}"
+    );
+    // cache_hit=true → "cache hit"
+    assert!(
+        text.contains("cache hit"),
+        "--debug must render 'cache hit' for cache_hit=true; got:\n{text}"
+    );
+
+    insta::assert_snapshot!("lint_pretty_debug", text);
 }
