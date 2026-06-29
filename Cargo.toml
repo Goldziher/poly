@@ -21,6 +21,15 @@ authors = ["Na'aman Hirschfeld <nhirschfeld@gmail.com>"]
 
 [workspace.dependencies]
 aho-corasick = "1.1.4"
+# air R formatter — all air-fork crates share rev c916545f14f76e1d6bd6ff918870f86dfa704b63.
+# The biome git deps they pull in are from lionel-/biome at a1296ea6ba363d8b8d8f02181b2a4ce9315c5ef9.
+air_r_formatter = { git = "https://github.com/Goldziher/r-air-fork", rev = "c916545f14f76e1d6bd6ff918870f86dfa704b63" }
+air_r_parser = { git = "https://github.com/Goldziher/r-air-fork", rev = "c916545f14f76e1d6bd6ff918870f86dfa704b63" }
+# settings — air's settings crate; `biome` feature enables Into<biome_formatter::*> conversions
+# used when constructing RFormatOptions from polylint EngineConfig values.
+air_settings = { package = "settings", git = "https://github.com/Goldziher/r-air-fork", rev = "c916545f14f76e1d6bd6ff918870f86dfa704b63", features = [
+    "biome",
+] }
 # alejandra — Nix formatter (UNLICENSE, pure Rust via rnix); chosen over
 # nixpkgs-fmt, which pulls unmaintained ansi_term/atty (cargo deny advisories)
 alejandra = "3.1"
@@ -31,23 +40,18 @@ anyhow = "1"
 # assert_cmd — CLI integration testing for the vendored gitfluff binary
 assert_cmd = "2"
 assert_fs = "1.1.4"
-axoupdater = { version = "0.10.0", default-features = false, features = [
-    "github_releases",
-] }
+axoupdater = { version = "0.10.0", default-features = false, features = ["github_releases"] }
 blake3 = "1"
 bstr = "1.12.3"
 cargo_metadata = "0.23.1"
 clap = { version = "4", features = ["derive"] }
 clap_complete = { version = "4.6.5", features = ["unstable-dynamic"] }
-console = { version = "0.16", default-features = false, features = [
-    "ansi-parsing",
-    "std",
-] }
+console = { version = "0.16", default-features = false, features = ["ansi-parsing", "std"] }
 # criterion — statistical microbenchmark harness for the hot-path benches under
 # crates/polylint-core/benches/ (dev-dependency only; never linked into binaries)
 criterion = "0.8"
 ctrlc = "3.5.2"
-# dockerfile-parser — pure-Rust Dockerfile AST parser (MIT, HPE).
+# dockerfile-parser — pure-Rust Dockerfile AST parser (MIT-licensed, by Hewlett Packard Enterprise).
 # Used by the DockerfileEngine to lint Dockerfiles with hadolint-style rules.
 dockerfile-parser = "0.9.0"
 dunce = "1.0.5"
@@ -66,6 +70,10 @@ indoc = "2.0.7"
 insta = "1"
 insta-cmd = "0.7.0"
 itertools = "0.15.0"
+# jarl R linter — the tier-1 R linting backend. Depends on the same air fork
+# rev as air_r_parser so that air_r_parser/air_r_syntax unify into one copy
+# (Cargo deduplicates git deps that share the same URL + rev).
+jarl-core = { git = "https://github.com/Goldziher/r-jarl-fork", rev = "24e39d0405e9a358ae988e5f8f86fa5437e3fdd9" }
 json5 = "1.3.1"
 libc = "0.2.186"
 # Enable static linking for liblzma (xz feature in async-compression).
@@ -116,17 +124,6 @@ quick-xml = "0.40"
 rand = "0.10.1"
 rayon = "1"
 regex = "1"
-# air R formatter — all air-fork crates share rev c916545f14f76e1d6bd6ff918870f86dfa704b63.
-# The biome git deps they pull in are from lionel-/biome at a1296ea6ba363d8b8d8f02181b2a4ce9315c5ef9.
-air_r_formatter = { git = "https://github.com/Goldziher/r-air-fork", rev = "c916545f14f76e1d6bd6ff918870f86dfa704b63" }
-air_r_parser = { git = "https://github.com/Goldziher/r-air-fork", rev = "c916545f14f76e1d6bd6ff918870f86dfa704b63" }
-# settings — air's settings crate; `biome` feature enables Into<biome_formatter::*> conversions
-# used when constructing RFormatOptions from polylint EngineConfig values.
-air_settings = { package = "settings", git = "https://github.com/Goldziher/r-air-fork", rev = "c916545f14f76e1d6bd6ff918870f86dfa704b63", features = ["biome"] }
-# jarl R linter — the tier-1 R linting backend. Depends on the same air fork
-# rev as air_r_parser so that air_r_parser/air_r_syntax unify into one copy
-# (Cargo deduplicates git deps that share the same URL + rev).
-jarl-core = { git = "https://github.com/Goldziher/r-jarl-fork", rev = "24e39d0405e9a358ae988e5f8f86fa5437e3fdd9" }
 # rubyfmt — opinionated Ruby formatter built on the Prism parser (MIT).
 # Not published to crates.io; pinned to a specific git rev for reproducibility.
 # default-features = false disables the optional tikv-jemallocator/jemalloc
@@ -154,10 +151,7 @@ schemars = "1.2.1"
 seahash = "4.1.0"
 semver = { version = "1.0.28", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
-serde-saphyr = { version = "0.0.28", default-features = false, features = [
-    "deserialize",
-    "serialize",
-] }
+serde-saphyr = { version = "0.0.28", default-features = false, features = ["deserialize", "serialize"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 serde_stacker = "0.1.14"
 # serde_toon_format — TOON (Token-Oriented Object Notation) serde serializer
