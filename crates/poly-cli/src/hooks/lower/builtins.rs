@@ -143,7 +143,13 @@ fn cargo_tools(cargo: &CargoHooks) -> [CargoTool; 4] {
             enabled: cargo.machete,
             id: "cargo-machete",
             probe: "cargo-machete",
-            command: "cargo machete",
+            // Invoke the binary directly rather than via `cargo machete`: the
+            // latter relies on cargo-machete stripping the leading "machete"
+            // subcommand token, a heuristic that misfires when `CARGO_PKG_NAME`
+            // is set in the environment (e.g. a hook run under `cargo run`),
+            // leaving "machete" to be parsed as a path argument. The direct
+            // binary takes no subcommand token and analyses the cwd.
+            command: "cargo-machete",
             compiler: false,
         },
         CargoTool {
