@@ -181,8 +181,9 @@ toml_edit = "0.25"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 # tree-sitter-language-pack — tier-2 generic formatter; default features
-# (dynamic-loading + download) fetch grammars from GitHub releases on demand
-tree-sitter-language-pack = "1.11"
+# (dynamic-loading + download) fetch grammars from GitHub releases on demand.
+# 1.12 adds prefetch() + the lock-free get_language fast path (see runner.rs).
+tree-sitter-language-pack = "1.12"
 # typos + typos-dict — cross-cutting spell-check backend
 typos = "0.10"
 typos-dict = "0.13"

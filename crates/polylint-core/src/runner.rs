@@ -157,6 +157,36 @@ fn catalog_engines_for(language: &Language, config: &Config, kind: Kind) -> Vec<
     engines
 }
 
+/// Warm the tree-sitter-language-pack grammars the generic (tier-2) backend will
+/// need, in one pass before the rayon loop, so the hot loop only parses — never
+/// downloads or `dlopen`s a grammar under contention. Only grammars for files
+/// routed to the `treesitter` engine are prefetched (tier-1 languages handled by
+/// a native backend never touch the pack). A failure is non-fatal: the per-file
+/// path still lazily loads each grammar on first use.
+fn prefetch_tier2_grammars(plans: &FxHashMap<Language, Vec<EnginePlan>>) {
+    let grammars: Vec<&str> = plans
+        .iter()
+        .filter(|(_, engine_plans)| {
+            engine_plans
+                .iter()
+                .any(|plan| plan.engine.name() == "treesitter")
+        })
+        .filter_map(|(language, _)| match language {
+            // The generic tier keys off the pack's grammar id, which is exactly
+            // the `Language::Other` payload (set by discovery via the pack's own
+            // path detection).
+            Language::Other(name) => Some(name.as_str()),
+            _ => None,
+        })
+        .collect();
+    if grammars.is_empty() {
+        return;
+    }
+    if let Err(error) = tree_sitter_language_pack::prefetch(&grammars) {
+        tracing::warn!(%error, "tier-2 grammar prefetch failed; falling back to lazy load");
+    }
+}
+
 /// Build a per-language engine plan covering every language present in `files`,
 /// so each distinct language is planned exactly once before the file loop.
 fn plan_by_language(
@@ -190,6 +220,7 @@ pub fn lint(
     let cache = ResultCache::open_default(!opts.no_cache)?;
     let files = discover(paths);
     let plans = plan_by_language(&files, config, Kind::Lint);
+    prefetch_tier2_grammars(&plans);
     let mut results: Vec<LintResult> = files
         .par_iter()
         .filter_map(|f| match lint_one(f, &plans, &cache, fix, collect_debug) {
@@ -220,6 +251,7 @@ pub fn format(
     let cache = ResultCache::open_default(!opts.no_cache)?;
     let files = discover(paths);
     let plans = plan_by_language(&files, config, Kind::Format);
+    prefetch_tier2_grammars(&plans);
     let mut results: Vec<FormatResult> = files
         .par_iter()
         .filter_map(

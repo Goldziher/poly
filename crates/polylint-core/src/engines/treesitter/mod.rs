@@ -107,13 +107,12 @@ impl Engine for TreeSitterEngine {
     }
 
     fn version(&self) -> &str {
-        // Version 6: data/template/asset grammars in LEAVE_UNTOUCHED are now
-        // unconditional no-ops for both lint and format. Any file matched by
-        // that set previously received whitespace normalization (trailing-space
-        // strip, final-newline enforcement), which silently mutated CSV fields,
-        // ERB template output, diff context lines, and gettext strings.
-        // Prior versions: v5 level-keyed-by-open-line model; v4 CRLF fix.
-        "6"
+        // Folds the tree-sitter-language-pack version so a grammar upgrade
+        // invalidates cached tier-2 output (grammars drive parsing and thus the
+        // reindent). Bump the leading number on logic changes, the tslp suffix on
+        // a pack bump.
+        // History: v6 LEAVE_UNTOUCHED no-ops; v5 level-keyed-by-open-line; v4 CRLF fix.
+        "6+tslp1.12.0"
     }
 
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
