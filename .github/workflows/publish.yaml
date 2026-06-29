@@ -1,0 +1,348 @@
+name: Publish Packages
+
+on:
+  push:
+    tags:
+      - v[0-9]+.*
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish (e.g., v0.1.0)"
+        required: true
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  meta:
+    name: Resolve release metadata
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      release_assets_exist: ${{ steps.release_assets.outputs.release_assets_exist }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || '' }}
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag="${{ github.event.inputs.tag }}"
+          else
+            tag="${GITHUB_REF#refs/tags/}"
+          fi
+
+          version="${tag#v}"
+
+          {
+            echo "version=$version"
+            echo "tag=$tag"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Git tag: $tag"
+          echo "Cargo version: $version"
+
+      - name: Verify version consistency
+        run: |
+          set -euo pipefail
+          target_version="${{ steps.version.outputs.version }}"
+
+          echo "Verifying version consistency for: $target_version"
+
+          # Check Cargo.toml workspace version
+          cargo_version="$(grep -E '^version = "' Cargo.toml | head -1 | cut -d'"' -f2)"
+          if [ "$cargo_version" != "$target_version" ]; then
+            echo "::error::Cargo.toml version mismatch: expected $target_version, got $cargo_version"
+            exit 1
+          fi
+
+          echo "✓ Version verified: $cargo_version"
+
+      - name: Detect existing GitHub release assets
+        id: release_assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${{ steps.version.outputs.tag }}"
+          release_assets_exist=false
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            count="$(gh release view "$tag" --json assets --jq '.assets | length')"
+            if [ "${count:-0}" -gt 0 ]; then
+              release_assets_exist=true
+            fi
+          fi
+
+          echo "release_assets_exist=$release_assets_exist" >> "$GITHUB_OUTPUT"
+          echo "GitHub release assets exist? $release_assets_exist"
+
+  create_release:
+    name: Create GitHub release
+    needs: meta
+    if: needs.meta.outputs.release_assets_exist != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || '' }}
+
+      - name: Ensure the GitHub release exists
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${{ needs.meta.outputs.tag }}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag already exists."
+          else
+            prerelease=""
+            case "$tag" in
+              *-rc.* | *-beta* | *-alpha*) prerelease="--prerelease" ;;
+            esac
+            # Create as a DRAFT. The build matrix uploads binaries to it, but it
+            # stays invisible (assets not publicly downloadable) until the
+            # finalize_release job promotes it — and that job only runs once
+            # checksums (which requires all platform binaries) succeeds. A failed
+            # platform build therefore leaves a hidden draft, not a live release
+            # with missing binaries and no checksums.
+            gh release create "$tag" --title "$tag" --notes "Release $tag" --verify-tag --draft $prerelease
+          fi
+
+  build-binaries:
+    name: Build binaries / ${{ matrix.triple }}
+    needs: [meta, create_release]
+    if: needs.meta.outputs.release_assets_exist != 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x86_64 gnu
+          - triple: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            use_cross: false
+          # Linux x86_64 musl
+          - triple: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            use_cross: true
+          # Linux aarch64 gnu
+          - triple: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            use_cross: true
+          # macOS x86_64
+          - triple: x86_64-apple-darwin
+            os: macos-13
+            use_cross: false
+          # macOS aarch64 (Apple Silicon)
+          - triple: aarch64-apple-darwin
+            os: macos-14
+            use_cross: false
+          # Windows x86_64
+          - triple: x86_64-pc-windows-msvc
+            os: windows-latest
+            use_cross: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || '' }}
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.triple }}
+
+      - name: Setup cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.triple }}
+
+      - name: Install cross (if needed)
+        if: matrix.use_cross
+        run: cargo install cross
+
+      - name: Build binaries
+        run: |
+          if [ "${{ matrix.use_cross }}" = "true" ]; then
+            cross build --release --target ${{ matrix.triple }}
+          else
+            cargo build --release --target ${{ matrix.triple }}
+          fi
+        shell: bash
+
+      - name: Strip binaries
+        run: |
+          case "${{ matrix.triple }}" in
+            *windows*)
+              # Windows binaries don't benefit from strip
+              ;;
+            *)
+              strip target/${{ matrix.triple }}/release/poly || true
+              strip target/${{ matrix.triple }}/release/polylint || true
+              strip target/${{ matrix.triple }}/release/polyfmt || true
+              ;;
+          esac
+        shell: bash
+
+      - name: Create release artifacts
+        run: |
+          cd target/${{ matrix.triple }}/release
+
+          case "${{ matrix.triple }}" in
+            *windows*)
+              7z a ../../../poly-${{ needs.meta.outputs.version }}-${{ matrix.triple }}.zip poly.exe polylint.exe polyfmt.exe
+              ;;
+            *)
+              tar czf ../../../poly-${{ needs.meta.outputs.version }}-${{ matrix.triple }}.tar.gz poly polylint polyfmt
+              ;;
+          esac
+        shell: bash
+
+      - name: Upload release artifacts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${{ needs.meta.outputs.tag }}"
+
+          case "${{ matrix.triple }}" in
+            *windows*)
+              archive="poly-${{ needs.meta.outputs.version }}-${{ matrix.triple }}.zip"
+              ;;
+            *)
+              archive="poly-${{ needs.meta.outputs.version }}-${{ matrix.triple }}.tar.gz"
+              ;;
+          esac
+
+          if [ ! -f "$archive" ]; then
+            echo "::error::Archive not found: $archive"
+            exit 1
+          fi
+
+          gh release upload "$tag" "$archive" --clobber
+
+      - name: Save artifact for checksums
+        uses: actions/upload-artifact@v4
+        with:
+          name: releases
+          path: |
+            poly-${{ needs.meta.outputs.version }}-${{ matrix.triple }}.tar.gz
+            poly-${{ needs.meta.outputs.version }}-${{ matrix.triple }}.zip
+          if-no-files-found: ignore
+
+  checksums:
+    name: Generate and upload checksums
+    needs: [meta, build-binaries]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || '' }}
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: releases
+          path: artifacts
+
+      - name: Verify all expected archives are present
+        run: |
+          set -euo pipefail
+
+          # Expected archives for the 6 build targets
+          expected=(
+            "poly-${{ needs.meta.outputs.version }}-x86_64-unknown-linux-gnu.tar.gz"
+            "poly-${{ needs.meta.outputs.version }}-x86_64-unknown-linux-musl.tar.gz"
+            "poly-${{ needs.meta.outputs.version }}-aarch64-unknown-linux-gnu.tar.gz"
+            "poly-${{ needs.meta.outputs.version }}-x86_64-apple-darwin.tar.gz"
+            "poly-${{ needs.meta.outputs.version }}-aarch64-apple-darwin.tar.gz"
+            "poly-${{ needs.meta.outputs.version }}-x86_64-pc-windows-msvc.zip"
+          )
+
+          missing_count=0
+          for expected_asset in "${expected[@]}"; do
+            if [ ! -f "artifacts/$expected_asset" ]; then
+              echo "::error::Missing expected archive: $expected_asset"
+              missing_count=$((missing_count + 1))
+            fi
+          done
+
+          if [ $missing_count -gt 0 ]; then
+            echo "::error::Release is incomplete: $missing_count of 6 platform archives missing. The release must have all 6 binaries before checksums can be generated."
+            exit 1
+          fi
+
+          echo "✓ All 6 expected archives present"
+
+      - name: Generate checksums
+        run: |
+          set -euo pipefail
+          cd artifacts
+          find . -type f \( -name "*.tar.gz" -o -name "*.zip" \) -exec sha256sum {} \; | sort > ../sha256sums.txt
+          cat ../sha256sums.txt
+
+      - name: Upload checksums to release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${{ needs.meta.outputs.tag }}"
+          gh release upload "$tag" sha256sums.txt --clobber
+
+  finalize_release:
+    name: Publish GitHub release
+    needs: [meta, checksums]
+    if: always() && needs.meta.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Promote draft to published release once complete
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${{ needs.meta.outputs.tag }}"
+          version="${{ needs.meta.outputs.version }}"
+
+          # The full asset set the installer needs: every platform archive plus
+          # the checksums file they verify against.
+          required=(
+            "poly-${version}-x86_64-unknown-linux-gnu.tar.gz"
+            "poly-${version}-x86_64-unknown-linux-musl.tar.gz"
+            "poly-${version}-aarch64-unknown-linux-gnu.tar.gz"
+            "poly-${version}-x86_64-apple-darwin.tar.gz"
+            "poly-${version}-aarch64-apple-darwin.tar.gz"
+            "poly-${version}-x86_64-pc-windows-msvc.zip"
+            "sha256sums.txt"
+          )
+
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets -q '.assets[].name' \
+            > /tmp/assets.txt || true
+          missing=0
+          for asset in "${required[@]}"; do
+            if ! grep -qx "$asset" /tmp/assets.txt; then
+              echo "::error::release $tag is missing $asset"
+              missing=$((missing + 1))
+            fi
+          done
+          if [ "$missing" -gt 0 ]; then
+            echo "::error::release $tag is incomplete ($missing required assets missing); leaving it as a draft"
+            exit 1
+          fi
+
+          gh release edit "$tag" --draft=false --repo "$GITHUB_REPOSITORY"
+          echo "✓ Promoted $tag to a published release"
