@@ -450,10 +450,22 @@ fn write_atomic(path: &std::path::Path, contents: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Stack size for rayon worker threads, in bytes (16 MiB).
+///
+/// rayon workers default to Rust's spawned-thread stack of 2 MiB, but the
+/// per-file engines run recursive-descent parsers/formatters (oxc, mago,
+/// markup_fmt, the tree-sitter reindent) whose recursion depth tracks source
+/// nesting. On real-world files that 2 MiB is not enough and a worker overflows
+/// its stack — an uncatchable abort that takes down the whole run. The process
+/// main thread already gets 8 MiB (which is why single-file, inline runs never
+/// crashed); we give workers a generous 16 MiB so a deeply nested file degrades
+/// to a normal result instead of aborting.
+const WORKER_STACK_SIZE: usize = 16 * 1024 * 1024;
+
 fn configure_pool(jobs: Option<usize>) {
     static INIT: Once = Once::new();
     INIT.call_once(|| {
-        let mut builder = rayon::ThreadPoolBuilder::new();
+        let mut builder = rayon::ThreadPoolBuilder::new().stack_size(WORKER_STACK_SIZE);
         if let Some(n) = jobs
             && n > 0
         {
@@ -542,5 +554,38 @@ mod tests {
         // [0,6) and [4,10) overlap at bytes 4–6.
         let group = vec![edit(0, 6, "a"), edit(4, 10, "b")];
         assert!(has_internal_overlap(&group));
+    }
+
+    // ── worker stack size ────────────────────────────────────────────────────
+
+    /// Recurse `depth` frames, each pinning ~8 KiB of stack, returning the
+    /// accumulated depth. `black_box` keeps the per-frame buffer from being
+    /// optimised away, so the stack actually grows.
+    fn recurse_pinning_stack(depth: usize) -> usize {
+        let mut frame = [0u8; 8 * 1024];
+        frame[0] = (depth & 0xff) as u8;
+        std::hint::black_box(&frame);
+        if depth == 0 {
+            frame[0] as usize
+        } else {
+            recurse_pinning_stack(depth - 1).wrapping_add(1)
+        }
+    }
+
+    /// A worker thread sized at [`WORKER_STACK_SIZE`] must accommodate recursion
+    /// far deeper than the 2 MiB default rayon stack — the regression that made
+    /// per-file engines abort the whole run on nested real-world files
+    /// (spikard corpus). ~640 frames × 8 KiB ≈ 5 MiB of pinned stack overflows
+    /// the old 2 MiB default but fits comfortably in 16 MiB.
+    #[test]
+    fn worker_stack_accommodates_deep_recursion() {
+        const FRAMES: usize = 640;
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .stack_size(WORKER_STACK_SIZE)
+            .build()
+            .expect("build local pool");
+        let result = pool.install(|| recurse_pinning_stack(FRAMES));
+        assert_eq!(result, FRAMES);
     }
 }
