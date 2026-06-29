@@ -69,6 +69,7 @@ use self::spec::{
     SHFMT_PROBE, SHFMT_SPEC, ZIGFMT_KEY, ZIGFMT_NOTICE, ZIGFMT_PROBE, ZIGFMT_SPEC,
 };
 
+mod edition;
 mod format;
 mod lint;
 mod probe;
@@ -294,9 +295,17 @@ impl Engine for NativeToolEngine {
     fn version(&self) -> &str {
         self.key_lock().get_or_init(|| {
             let ts = TreeSitterEngine.version();
+            // Edition-aware tools (rustfmt) now pass `--edition`, which changes
+            // their output relative to the prior edition-2015 default; mark the
+            // key so previously cached results are invalidated.
+            let edition_marker = if self.spec().edition_flag {
+                " | edition-aware"
+            } else {
+                ""
+            };
             match self.probed_version() {
-                Some(tool) => format!("{tool} | ts:{ts}"),
-                None => format!("native-tool:absent | ts:{ts}"),
+                Some(tool) => format!("{tool} | ts:{ts}{edition_marker}"),
+                None => format!("native-tool:absent | ts:{ts}{edition_marker}"),
             }
         })
     }

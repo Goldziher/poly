@@ -151,6 +151,38 @@ fn rust_known_unformatted_snapshot() {
     insta::assert_snapshot!("rust_native_known_unformatted", formatted);
 }
 
+/// Edition-awareness: rustfmt with `--edition` resolved from the workspace
+/// `Cargo.toml` (2024) must leave an already-`cargo fmt`-clean source file
+/// `Unchanged`. Without the edition flag rustfmt assumes edition 2015 and can
+/// reformat clean edition-2024 source — a false positive on every `.rs` file.
+///
+/// Uses this crate's own `src/lib.rs` (kept `cargo fmt`-clean by the prek
+/// hooks). Skipped when `rustfmt` is not on PATH.
+#[test]
+fn rustfmt_leaves_clean_2024_source_unchanged() {
+    let engine = NativeToolEngine::for_language(Language::Rust);
+    if !engine.is_available() {
+        eprintln!(
+            "rustfmt not found on PATH — skipping rustfmt_leaves_clean_2024_source_unchanged"
+        );
+        return;
+    }
+
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/lib.rs");
+    let content = std::fs::read_to_string(&path).expect("read crate src/lib.rs");
+    let src = SourceFile {
+        path,
+        language: Language::Rust,
+        content: content.into(),
+    };
+
+    let result = engine.format(&src, &enabled_cfg()).unwrap();
+    assert!(
+        matches!(result, FormatOutput::Unchanged),
+        "rustfmt with --edition 2024 must leave a cargo-fmt-clean file unchanged, got: {result:?}"
+    );
+}
+
 /// Known-unformatted Zig: missing indentation.
 const ZIG_UNFORMATTED: &str = concat!(
     "const std = @import(\"std\");\n",

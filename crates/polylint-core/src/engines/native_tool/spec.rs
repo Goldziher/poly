@@ -36,6 +36,12 @@ pub(crate) struct ToolSpec {
     /// canonical first-party formatters (`rustfmt`, `gofmt`) set this; other
     /// tools (e.g. `zig fmt`, `shfmt`, `shellcheck`) stay opt-in (`false`).
     pub(crate) default_on: bool,
+    /// Whether the tool accepts an `--edition <year>` flag whose value is
+    /// resolved from the file's `Cargo.toml`. Only `rustfmt` sets this: without
+    /// it rustfmt defaults to edition 2015 and reformats edition-2024 source
+    /// that `cargo fmt` (which passes the manifest edition) considers clean.
+    /// `gofmt` / `zig fmt` / `shfmt` have no edition concept (`false`).
+    pub(crate) edition_flag: bool,
 }
 
 impl ToolSpec {
@@ -64,6 +70,7 @@ pub(crate) static GOFMT_SPEC: ToolSpec = ToolSpec {
     version_binary: "go",
     version_args: &["version"],
     default_on: true,
+    edition_flag: false,
 };
 
 /// `rustfmt --emit=stdout`: reads stdin, writes to stdout. Canonical Rust
@@ -78,6 +85,7 @@ pub(crate) static RUSTFMT_SPEC: ToolSpec = ToolSpec {
     version_binary: "rustfmt",
     version_args: &["--version"],
     default_on: true,
+    edition_flag: true,
 };
 
 /// `zig fmt --stdin`: reads stdin, writes to stdout. Opt-in (off by default).
@@ -91,6 +99,7 @@ pub(crate) static ZIGFMT_SPEC: ToolSpec = ToolSpec {
     version_binary: "zig",
     version_args: &["version"],
     default_on: false,
+    edition_flag: false,
 };
 
 /// `shfmt -`: reads stdin, writes formatted shell source to stdout. Opt-in
@@ -109,6 +118,7 @@ pub(crate) static SHFMT_SPEC: ToolSpec = ToolSpec {
     version_binary: "shfmt",
     version_args: &["--version"],
     default_on: false,
+    edition_flag: false,
 };
 
 /// `shellcheck --format=json1 -`: reads shell source from stdin, emits a
@@ -125,6 +135,7 @@ pub(crate) static SHELLCHECK_SPEC: ToolSpec = ToolSpec {
     version_binary: "shellcheck",
     version_args: &["--version"],
     default_on: false,
+    edition_flag: false,
 };
 
 // ---------------------------------------------------------------------------

@@ -63,6 +63,13 @@ pub(crate) fn format_via_tool(
         cmd.arg("-i");
         cmd.arg(indent_width.to_string());
     }
+    // Pass `--edition <year>` resolved from the file's Cargo.toml when the tool
+    // accepts it (rustfmt). Without this, rustfmt assumes edition 2015 and
+    // reformats edition-2024 source that `cargo fmt` leaves clean.
+    if spec.edition_flag {
+        cmd.arg("--edition");
+        cmd.arg(super::edition::resolve_edition(&src.path));
+    }
     cmd.args(spec.format_args);
 
     let mut child = cmd
