@@ -1,0 +1,77 @@
+# poly.toml — the single config that drives `poly lint`, `poly fmt`,
+# `poly hooks`, and `poly commit`.
+#
+# This repo dogfoods `poly hooks`: the `[hooks]` table below replaces the former
+# `.pre-commit-config.yaml`. `poly hooks install` writes the git-hook shims;
+# `poly hooks run pre-commit` runs the pre-commit stage.
+
+[hooks]
+# Default stage for builtins that do not declare their own.
+stages = ["pre-commit"]
+
+[hooks.builtin]
+# polylint: typos, JSON/YAML/TOML validation, shellcheck, and markdown linting.
+# Excludes mirror the former per-hook excludes: generated tag data, ai-rulez
+# prose (rendered, long lines expected), test fixtures (intentionally bad), and
+# the conformance corpus/golden (exact reference-formatter bytes — never lint).
+polylint = { exclude = [
+    "**/identify/tags.rs",
+    ".ai-rulez/**",
+    "crates/*/tests/fixtures/**",
+    "crates/conformance/corpus/**",
+    "crates/conformance/golden/**",
+    "crates/conformance/docker/**",
+] }
+
+# polyfmt: trailing-whitespace, final-newline, line-ending normalization, shfmt,
+# rumdl markdown formatting, rustfmt (native toolchain), and the generic tier.
+# Fixtures and snapshots capture intentionally-unformatted / exact-byte content,
+# and the conformance golden files are reference output — none may be rewritten.
+polyfmt = { exclude = [
+    ".ai-rulez/**",
+    "crates/*/tests/fixtures/**",
+    "crates/*/tests/snapshots/**",
+    "crates/conformance/corpus/**",
+    "crates/conformance/golden/**",
+    "crates/conformance/docker/**",
+] }
+
+# poly commit replaces gitfluff-lint on the commit-msg stage (Conventional
+# Commits). It needs an explicit stage so it does not inherit the global
+# pre-commit default above.
+commit = { stages = ["commit-msg"] }
+
+# Pure-Rust file-safety checks: merge-conflict markers, large files, private
+# keys, case collisions, and shebang/executable parity. checks.rs legitimately
+# embeds private-key header literals; the conformance corpus/golden hold
+# intentionally non-executable sample scripts — all excluded from the scans.
+file_safety = { exclude = [
+    "crates/poly-cli/src/hooks/checks.rs",
+    "crates/conformance/corpus/**",
+    "crates/conformance/golden/**",
+] }
+
+# Whole-workspace cargo tools: clippy, sort, machete, deny. Each is
+# capability-probed and skipped (with a notice) when absent from PATH.
+cargo = true
+
+# rustdoc-lint and rust-max-lines have no builtin; run them as vendored scripts.
+# Both receive the staged Rust files; rustdoc-lint ignores them (whole-workspace
+# `cargo doc`), rust-max-lines enforces the 1000-line per-file ceiling.
+[hooks.pre-commit.scripts.rust-max-lines]
+script = "scripts/hooks/rust-max-lines.sh"
+runner = "bash"
+args = ["--max=1000"]
+files = "**/*.rs"
+# Generated tag data exceeds the cap by design and must not be split.
+exclude = "**/identify/tags.rs"
+
+[hooks.pre-commit.scripts.rustdoc-lint]
+script = "scripts/hooks/rustdoc-lint.sh"
+runner = "bash"
+files = "**/*.rs"
+
+# No `[commit]` table: `poly commit` (the commit-msg builtin above) enforces
+# Conventional Commits with its built-in defaults. The hook lints rather than
+# rewrites — a non-conforming message (or stray AI-attribution line) fails the
+# commit loudly instead of being silently edited.

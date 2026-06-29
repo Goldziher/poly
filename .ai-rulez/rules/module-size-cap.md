@@ -4,8 +4,9 @@ priority: critical
 
 # Module Size Cap
 
-- Every file under `crates/**/src/**/*.rs` is capped at **1000 lines** by the prek hook
-  `rust-max-lines` (see `.pre-commit-config.yaml`).
+- Every file under `crates/**/src/**/*.rs` is capped at **1000 lines** by the `rust-max-lines`
+  hook (see `poly.toml` → `[hooks.pre-commit.scripts.rust-max-lines]`). Files named `tests.rs`
+  and files under a `tests/` directory are exempt.
 - When a file approaches the cap, refactor by extracting helpers, types, or submodules — **do
   not raise the cap**.
 - The cap reinforces the project's one-concern-per-file shape: a backend lives in

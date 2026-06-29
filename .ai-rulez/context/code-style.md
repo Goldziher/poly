@@ -11,7 +11,7 @@ Project-specific conventions baked into context so they ship into every AI tool'
 - **One concern per file.** A backend lives in `crates/polylint-core/src/engines/<tool>.rs`;
   pipeline stages live in their own files (`discover.rs`, `cache.rs`, `runner.rs`,
   `report.rs`, …). Match that shape when adding a new tool area.
-- **1000-line cap** on every `*.rs` file, enforced by the `rust-max-lines` prek hook. Refactor
+- **1000-line cap** on every `*.rs` file, enforced by the `rust-max-lines` hook in `poly.toml`. Refactor
   by extracting helpers, types, or submodules — never by lifting the cap. When an
   `engines/<tool>.rs` grows past it, split per backend concern (e.g. `<tool>/lint.rs`,
   `<tool>/format.rs`, `<tool>/config.rs`).

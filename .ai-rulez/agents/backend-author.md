@@ -37,7 +37,8 @@ when run in parallel with sibling agents.
 - 1000-line cap per file; split per concern (`<tool>/lint.rs`, `<tool>/format.rs`, …) before
   exceeding it.
 - Before handing back: `cargo fmt`, `cargo clippy --workspace --all-targets -- -D warnings`,
-  `cargo test --workspace`, `prek run -a`. Commit with a signed Conventional Commit.
+  `cargo test --workspace`, `poly hooks run pre-commit --all-files`. Commit with a signed
+  Conventional Commit.
 
 ## Tooling
 
