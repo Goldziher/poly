@@ -1,0 +1,87 @@
+# Official GitHub Action to install the poly CLI (poly, polylint, polyfmt) in CI.
+#
+# Delegates the actual download/target-detection/checksum/extraction to the
+# repository's install.sh (POLY_INSTALL_DIR-configurable, version-arg-capable),
+# so there is exactly one copy of that logic. This action adds: latest-version
+# resolution for the cache key, actions/cache integration (cache: true by
+# default), and PATH wiring. A version bump changes the cache key, so the
+# previous version's cache is naturally not restored (invalidated).
+name: "Setup poly CLI"
+description: "Install poly, polylint, and polyfmt with optional local caching"
+
+inputs:
+  version:
+    description: 'Release version to install (e.g. v0.1.0 or 0.1.0). Omit or pass "latest" to resolve the latest release dynamically.'
+    required: false
+    default: ""
+  cache:
+    description: "Cache the installed binaries locally with actions/cache."
+    required: false
+    default: "true"
+  github-token:
+    description: "Token used to query the GitHub API when resolving the latest release."
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  version:
+    description: "The resolved version that was installed (without the v prefix)."
+    value: ${{ steps.resolve.outputs.version }}
+  install-dir:
+    description: "Directory the binaries were installed into (added to PATH)."
+    value: ${{ steps.resolve.outputs.install-dir }}
+
+runs:
+  using: "composite"
+  steps:
+    # Resolve the effective version up front so the cache key embeds it (a
+    # version bump => new key => old cache not restored). Also fixes the install
+    # directory used for caching + PATH.
+    - id: resolve
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        set -euo pipefail
+        version="${{ inputs.version }}"
+        if [ -z "$version" ] || [ "$version" = "latest" ]; then
+          version="$(gh release view --repo Goldziher/polylint --json tagName -q '.tagName' 2>/dev/null || true)"
+          if [ -z "$version" ]; then
+            echo "::error::could not resolve the latest polylint release" >&2
+            exit 1
+          fi
+        fi
+        version="${version#v}"
+        install_dir="${RUNNER_TEMP}/poly-install"
+        mkdir -p "$install_dir"
+        {
+          echo "version=$version"
+          echo "install-dir=$install_dir"
+          echo "cache-key=poly-v${version}-${RUNNER_OS}-${RUNNER_ARCH}"
+        } >> "$GITHUB_OUTPUT"
+        echo "Resolved poly $version -> $install_dir"
+
+    - id: cache
+      if: inputs.cache == 'true'
+      uses: actions/cache@v4
+      with:
+        path: ${{ steps.resolve.outputs.install-dir }}
+        key: ${{ steps.resolve.outputs.cache-key }}
+
+    # Install via the repo's install.sh on a cache miss (or when caching is off).
+    # POLY_INSTALL_DIR points it at the cached directory; the explicit version
+    # avoids a second API round-trip and keeps install in sync with the key.
+    - if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        POLY_INSTALL_DIR: ${{ steps.resolve.outputs.install-dir }}
+      run: |
+        set -euo pipefail
+        bash "${GITHUB_ACTION_PATH}/install.sh" "${{ steps.resolve.outputs.version }}"
+
+    - shell: bash
+      run: echo "${{ steps.resolve.outputs.install-dir }}" >> "$GITHUB_PATH"
+
+    - shell: bash
+      run: |
+        "${{ steps.resolve.outputs.install-dir }}/poly" --version
