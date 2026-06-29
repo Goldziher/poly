@@ -238,10 +238,12 @@ impl Language {
             "scss" => Language::Scss,
             "less" => Language::Less,
             "html" => Language::Html,
+            "angular" => Language::Angular,
             "vue" => Language::Vue,
             "svelte" => Language::Svelte,
             "astro" => Language::Astro,
             "jinja" | "twig" | "nunjucks" | "django" => Language::Jinja,
+            "vento" => Language::Vento,
             "handlebars" | "mustache" => Language::Mustache,
             "xml" => Language::Xml,
             "graphql" => Language::GraphQl,
@@ -258,9 +260,19 @@ impl Language {
             "elixir" => Language::Elixir,
             "c" => Language::C,
             "c++" | "cpp" => Language::Cpp,
+            // `c#` / `csharp`: poly has no `CSharp` variant yet, so these are
+            // intentionally left to fall through to `Language::Other`. clang-format
+            // (and other C# catalog tools) therefore will not route to `.cs` files
+            // until a dedicated `CSharp` variant exists — out of scope here.
             "rust" => Language::Rust,
             "protobuf" | "proto" => Language::Proto,
             "zig" => Language::Zig,
+            // mdsf spells these with a long form; poly's tree-sitter detection
+            // assigns the canonical pack id (`makefile` aliases to `make`, and
+            // `.vim` files detect as `vim`). Normalise both so an enabled catalog
+            // tool routes to the files discovery actually labels.
+            "make" | "makefile" => Language::Other("make".to_string()),
+            "vim" | "vimscript" => Language::Other("vim".to_string()),
             other => Language::Other(other.to_string()),
         }
     }
@@ -293,5 +305,46 @@ impl Language {
             | Language::Hcl => 2,
             _ => 4,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Language;
+
+    #[test]
+    fn from_catalog_name_maps_angular_and_vento_to_their_variants() {
+        assert_eq!(Language::from_catalog_name("angular"), Language::Angular);
+        assert_eq!(Language::from_catalog_name("vento"), Language::Vento);
+    }
+
+    #[test]
+    fn from_catalog_name_normalises_make_aliases_to_pack_id() {
+        // mdsf uses both `make` and `makefile`; the tree-sitter pack's canonical
+        // id is `make` (it aliases `makefile` -> `make`), so both must land there.
+        let expected = Language::Other("make".to_string());
+        assert_eq!(Language::from_catalog_name("make"), expected);
+        assert_eq!(Language::from_catalog_name("makefile"), expected);
+    }
+
+    #[test]
+    fn from_catalog_name_normalises_vimscript_to_pack_id() {
+        // mdsf spells it `vimscript`; the pack detects `.vim` files as `vim`.
+        let expected = Language::Other("vim".to_string());
+        assert_eq!(Language::from_catalog_name("vimscript"), expected);
+        assert_eq!(Language::from_catalog_name("vim"), expected);
+    }
+
+    #[test]
+    fn from_catalog_name_leaves_csharp_unmapped() {
+        // No `CSharp` variant exists, so C# stays `Other` (see the inline note).
+        assert_eq!(
+            Language::from_catalog_name("c#"),
+            Language::Other("c#".to_string())
+        );
+        assert_eq!(
+            Language::from_catalog_name("csharp"),
+            Language::Other("csharp".to_string())
+        );
     }
 }
