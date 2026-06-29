@@ -69,7 +69,7 @@ hcl-rs = "0.19.7"
 hex = "0.4.3"
 http = "1.4.2"
 ignore = "0.4"
-indicatif = "0.18.4"
+indicatif = "0.18.5"
 indoc = "2.0.7"
 # insta snapshot testing
 insta = "1"
@@ -130,6 +130,9 @@ quick-xml = "0.40"
 rand = "0.10.1"
 rayon = "1"
 regex = "1"
+# rmcp — official Rust Model Context Protocol SDK (Apache-2.0). Declared here for the
+# forthcoming poly-mcp server that mirrors the CLI; not yet consumed by any member crate.
+rmcp = "2.0.0"
 # rubyfmt — opinionated Ruby formatter built on the Prism parser (MIT).
 # Not published to crates.io; pinned to a specific git rev for reproducibility.
 # default-features = false disables the optional tikv-jemallocator/jemalloc
