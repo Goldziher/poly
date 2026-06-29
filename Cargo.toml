@@ -24,29 +24,29 @@ aho-corasick = "1.1.4"
 # alejandra — Nix formatter (UNLICENSE, pure Rust via rnix); chosen over
 # nixpkgs-fmt, which pulls unmaintained ansi_term/atty (cargo deny advisories)
 alejandra = "3.1"
-annotate-snippets = "0.12.13"
+annotate-snippets = "0.12.16"
 anstream = "1.0.0"
 anstyle-query = "1.1.5"
 anyhow = "1"
 # assert_cmd — CLI integration testing for the vendored gitfluff binary
 assert_cmd = "2"
-assert_fs = "1.1.2"
+assert_fs = "1.1.4"
 axoupdater = { version = "0.10.0", default-features = false, features = [
     "github_releases",
 ] }
 blake3 = "1"
-bstr = "1.11.0"
+bstr = "1.12.3"
 cargo_metadata = "0.23.1"
 clap = { version = "4", features = ["derive"] }
-clap_complete = { version = "4.6.0", features = ["unstable-dynamic"] }
+clap_complete = { version = "4.6.5", features = ["unstable-dynamic"] }
 console = { version = "0.16", default-features = false, features = [
     "ansi-parsing",
     "std",
 ] }
 # criterion — statistical microbenchmark harness for the hot-path benches under
 # crates/polylint-core/benches/ (dev-dependency only; never linked into binaries)
-criterion = "0.5"
-ctrlc = "3.4.5"
+criterion = "0.8"
+ctrlc = "3.5.2"
 # dockerfile-parser — pure-Rust Dockerfile AST parser (MIT, HPE).
 # Used by the DockerfileEngine to lint Dockerfiles with hadolint-style rules.
 dockerfile-parser = "0.9.0"
@@ -58,18 +58,18 @@ gitfluff = { path = "crates/gitfluff" }
 globset = "0.4.18"
 graphql-parser = "0.4"
 hex = "0.4.3"
-http = "1.1.0"
+http = "1.4.2"
 ignore = "0.4"
-indicatif = "0.18.0"
-indoc = "2.0.5"
+indicatif = "0.18.4"
+indoc = "2.0.7"
 # insta snapshot testing
 insta = "1"
-insta-cmd = "0.6.0"
-itertools = "0.14.0"
-json5 = "1.3.0"
-libc = "0.2.182"
+insta-cmd = "0.7.0"
+itertools = "0.15.0"
+json5 = "1.3.1"
+libc = "0.2.186"
 # Enable static linking for liblzma (xz feature in async-compression).
-liblzma = { version = "0.4.5", features = ["static"] }
+liblzma = { version = "0.4.7", features = ["static"] }
 # mago — tier-1 PHP linter + formatter backend (MIT OR Apache-2.0, v1.42.0)
 # All eight crates are pinned to the same version for internal type consistency.
 mago-allocator = { version = "=1.42.0" }
@@ -85,7 +85,7 @@ mago-text-edit = { version = "=1.42.0" }
 malva = "0.16"
 markdown = "1.0.0"
 markup_fmt = "0.27"
-memchr = "2.7.5"
+memchr = "2.8.2"
 owo-colors = { version = "4", features = ["supports-colors"] }
 # oxc git deps — all crates MUST share the same `rev` to keep the internal
 # oxc_ast / oxc_span type graph consistent. Published versions are stale;
@@ -98,7 +98,7 @@ oxc_formatter_core = { git = "https://github.com/oxc-project/oxc", rev = "576263
 oxc_formatter_json = { git = "https://github.com/oxc-project/oxc", rev = "5762638c8ec6981455ef6d7e9482d2ceca757829" }
 oxc_linter = { git = "https://github.com/oxc-project/oxc", rev = "5762638c8ec6981455ef6d7e9482d2ceca757829" }
 oxc_span = { git = "https://github.com/oxc-project/oxc", rev = "5762638c8ec6981455ef6d7e9482d2ceca757829" }
-phf = { version = "0.13.1", default-features = false, features = ["macros"] }
+phf = { version = "0.14.0", default-features = false, features = ["macros"] }
 poly-cache = { path = "crates/poly-cache" }
 poly-cli = { path = "crates/poly-cli" }
 poly-config = { path = "crates/poly-config" }
@@ -113,7 +113,7 @@ pretty_graphql = "0.2.3"
 # pretty_yaml — g-plane pure-Rust YAML formatter (MIT); CST-based structural reflow
 pretty_yaml = "0.6"
 quick-xml = "0.40"
-rand = "0.10.0"
+rand = "0.10.1"
 rayon = "1"
 regex = "1"
 # air R formatter — all air-fork crates share rev c916545f14f76e1d6bd6ff918870f86dfa704b63.
@@ -145,33 +145,33 @@ ruff_python_parser = { git = "https://github.com/astral-sh/ruff", rev = "03f787e
 ruff_source_file = { git = "https://github.com/astral-sh/ruff", rev = "03f787e51e94999977b9a5a32b0153d82d7e2142" }
 ruff_text_size = { git = "https://github.com/astral-sh/ruff", rev = "03f787e51e94999977b9a5a32b0153d82d7e2142" }
 rumdl = { version = "0.2", default-features = false }
-rustc-hash = "2.1.1"
-rustix = { version = "1.0.8", features = ["pty", "process", "fs", "termios"] }
+rustc-hash = "2.1.2"
+rustix = { version = "1.1.4", features = ["pty", "process", "fs", "termios"] }
 same-file = "1.0.6"
 # saphyr — pure-Rust YAML parser, used by the yaml backend for validity lint
 saphyr = "0.0.6"
-schemars = "1.1.0"
+schemars = "1.2.1"
 seahash = "4.1.0"
-semver = { version = "1.0.24", features = ["serde"] }
+semver = { version = "1.0.28", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
-serde-saphyr = { version = "0.0.27", default-features = false, features = [
+serde-saphyr = { version = "0.0.28", default-features = false, features = [
     "deserialize",
     "serialize",
 ] }
 serde_json = { version = "1", features = ["preserve_order"] }
-serde_stacker = "0.1.12"
+serde_stacker = "0.1.14"
 # serde_toon_format — TOON (Token-Oriented Object Notation) serde serializer
 # for the `--format toon` output renderer
 serde_toon_format = "0.1"
-shlex = "1.3.0"
-similar = "3.0.0"
+shlex = "2.0.1"
+similar = "3.1.1"
 sqruff-lib = "0.38"
 sqruff-lib-core = "0.38"
 strum = { version = "0.28.0", features = ["derive"] }
 taplo = "0.14"
-target-lexicon = "0.13.0"
+target-lexicon = "0.13.5"
 tempfile = "3"
-textwrap = "0.16.0"
+textwrap = "0.16.2"
 thiserror = "2"
 toml = "1.1"
 toml_edit = "0.25"
@@ -179,14 +179,14 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 # tree-sitter-language-pack — tier-2 generic formatter; default features
 # (dynamic-loading + download) fetch grammars from GitHub releases on demand
-tree-sitter-language-pack = "1.10"
+tree-sitter-language-pack = "1.11"
 # typos + typos-dict — cross-cutting spell-check backend
 typos = "0.10"
 typos-dict = "0.13"
 unicase = "2"
-unicode-width = { version = "0.2.0", default-features = false }
+unicode-width = { version = "0.2.2", default-features = false }
 walkdir = "2.5.0"
-which = "8.0.0"
+which = "8.0.4"
 
 [profile.release]
 lto = "thin"
