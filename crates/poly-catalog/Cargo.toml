@@ -1,0 +1,21 @@
+[package]
+name = "poly-catalog"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Vendored tool-catalog registry (tool → binary → argv/$PATH/stdin → languages) derived from mdsf, for poly's native-tool backends and hooks"
+publish = false
+
+[lib]
+name = "poly_catalog"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"

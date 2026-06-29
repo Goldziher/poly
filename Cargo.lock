@@ -4193,6 +4193,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "poly-catalog"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "poly-cli"
 version = "0.1.0"
 dependencies = [

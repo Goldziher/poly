@@ -1,0 +1,7504 @@
+[
+ {
+  "name": "action-validator",
+  "binary": "action-validator",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "yaml"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/mpalmer/action-validator"
+ },
+ {
+  "name": "actionlint",
+  "binary": "actionlint",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "yaml"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/rhysd/actionlint"
+ },
+ {
+  "name": "air",
+  "binary": "air",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "r"
+  ],
+  "commands": {
+   "format": {
+    "arguments": [
+     "format",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/posit-dev/air"
+ },
+ {
+  "name": "alejandra",
+  "binary": "alejandra",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "nix"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--quiet",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/kamadorueda/alejandra"
+ },
+ {
+  "name": "alex",
+  "binary": "alex",
+  "categories": [
+   "spell-check"
+  ],
+  "languages": [
+   "markdown"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--quiet",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/get-alex/alex"
+ },
+ {
+  "name": "ameba",
+  "binary": "ameba",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "crystal"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--fix",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/crystal-ameba/ameba"
+ },
+ {
+  "name": "ansible-lint",
+  "binary": "ansible-lint",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "ansible"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/ansible/ansible-lint"
+ },
+ {
+  "name": "api-linter",
+  "binary": "api-linter",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "protobuf"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/googleapis/api-linter"
+ },
+ {
+  "name": "asmfmt",
+  "binary": "asmfmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "go"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-w",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/klauspost/asmfmt"
+ },
+ {
+  "name": "astyle",
+  "binary": "astyle",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "c",
+   "c#",
+   "c++",
+   "java",
+   "objective-c"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--quiet",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://gitlab.com/saalen/astyle"
+ },
+ {
+  "name": "atlas",
+  "binary": "atlas",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "hcl"
+  ],
+  "commands": {
+   "fmt": {
+    "arguments": [
+     "schema",
+     "fmt",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "lint": {
+    "arguments": [
+     "schema",
+     "lint",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/ariga/atlas"
+ },
+ {
+  "name": "auto-optional",
+  "binary": "auto-optional",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "python"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/luttik/auto-optional"
+ },
+ {
+  "name": "autocorrect",
+  "binary": "autocorrect",
+  "categories": [
+   "spell-check"
+  ],
+  "languages": [],
+  "commands": {
+   "": {
+    "arguments": [
+     "--fix",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/huacnlee/autocorrect"
+ },
+ {
+  "name": "autoflake",
+  "binary": "autoflake",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "python"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--quiet",
+     "--in-place",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/pycqa/autoflake"
+ },
+ {
+  "name": "autopep8",
+  "binary": "autopep8",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "python"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--in-place",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/hhatto/autopep8"
+ },
+ {
+  "name": "bashate",
+  "binary": "bashate",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "bash"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/openstack/bashate"
+ },
+ {
+  "name": "beancount-black",
+  "binary": "bean-black",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "beancount"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/launchplatform/beancount-black"
+ },
+ {
+  "name": "beautysh",
+  "binary": "beautysh",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "bash",
+   "shell"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/lovesegfault/beautysh"
+ },
+ {
+  "name": "bibtex-tidy",
+  "binary": "bibtex-tidy",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "bibtex"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-m",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/flamingtempura/bibtex-tidy"
+ },
+ {
+  "name": "bicep",
+  "binary": "bicep",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "bicep"
+  ],
+  "commands": {
+   "format": {
+    "arguments": [
+     "format",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/azure/bicep"
+ },
+ {
+  "name": "biome",
+  "binary": "biome",
+  "categories": [
+   "formatter",
+   "linter"
+  ],
+  "languages": [
+   "javascript",
+   "json",
+   "typescript",
+   "vue"
+  ],
+  "commands": {
+   "check": {
+    "arguments": [
+     "check",
+     "--write",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "check:unsafe": {
+    "arguments": [
+     "check",
+     "--write",
+     "--unsafe",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "format": {
+    "arguments": [
+     "format",
+     "--write",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "lint": {
+    "arguments": [
+     "lint",
+     "--write",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "lint:unsafe": {
+    "arguments": [
+     "lint",
+     "--write",
+     "--unsafe",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/biomejs/biome"
+ },
+ {
+  "name": "black",
+  "binary": "black",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "python"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--quiet",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/psf/black"
+ },
+ {
+  "name": "blade-formatter",
+  "binary": "blade-formatter",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "blade",
+   "laravel",
+   "php"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--write",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/shufo/blade-formatter"
+ },
+ {
+  "name": "blue",
+  "binary": "blue",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "python"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--quiet",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/grantjenks/blue"
+ },
+ {
+  "name": "bpfmt",
+  "binary": "bpfmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "blueprint"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-w",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://source.android.com/docs/setup/reference/androidbp#formatter"
+ },
+ {
+  "name": "brighterscript-formatter",
+  "binary": "bsfmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "brighterscript",
+   "brightscript"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH",
+     "--write"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/rokucommunity/brighterscript-formatter"
+ },
+ {
+  "name": "brittany",
+  "binary": "brittany",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "haskell"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--write-mode=inplace",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/lspitzner/brittany"
+ },
+ {
+  "name": "brunette",
+  "binary": "brunette",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "python"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--quiet",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://pypi.org/project/brunette"
+ },
+ {
+  "name": "bslint",
+  "binary": "bslint",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "brightscript",
+   "brightscripter"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--fix",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/rokucommunity/bslint"
+ },
+ {
+  "name": "buf",
+  "binary": "buf",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "protobuf"
+  ],
+  "commands": {
+   "format": {
+    "arguments": [
+     "format",
+     "--write",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "lint": {
+    "arguments": [
+     "lint",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://buf.build/docs/reference/cli/buf"
+ },
+ {
+  "name": "buildifier",
+  "binary": "buildifier",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "bazel"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/bazelbuild/buildtools"
+ },
+ {
+  "name": "c3fmt",
+  "binary": "c3fmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "c3"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--in-place",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/lmichaudel/c3fmt"
+ },
+ {
+  "name": "cabal-fmt",
+  "binary": "cabal-fmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "cabal"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--inplace",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/phadej/cabal-fmt"
+ },
+ {
+  "name": "cabal-gild",
+  "binary": "cabal-gild",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "cabal",
+   "haskell"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--input",
+     "$PATH",
+     "--output",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/tfausak/cabal-gild"
+ },
+ {
+  "name": "cabal-prettify",
+  "binary": "cabal-prettify",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "cabal"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/kindaro/cabal-prettify"
+ },
+ {
+  "name": "cabal",
+  "binary": "cabal",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "cabal"
+  ],
+  "commands": {
+   "format": {
+    "arguments": [
+     "format",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://www.haskell.org/cabal"
+ },
+ {
+  "name": "caddy",
+  "binary": "caddy",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "caddy"
+  ],
+  "commands": {
+   "fmt": {
+    "arguments": [
+     "fmt",
+     "$PATH",
+     "-w"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://caddyserver.com/docs/command-line#caddy-fmt"
+ },
+ {
+  "name": "caramel",
+  "binary": "caramel",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "caramel"
+  ],
+  "commands": {
+   "fmt": {
+    "arguments": [
+     "fmt",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://caramel.run"
+ },
+ {
+  "name": "cedar",
+  "binary": "cedar",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "cedar"
+  ],
+  "commands": {
+   "format": {
+    "arguments": [
+     "format"
+    ],
+    "stdin": true
+   }
+  },
+  "homepage": "https://github.com/cedar-policy/cedar"
+ },
+ {
+  "name": "cfn-lint",
+  "binary": "cfn-lint",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "cloudformation",
+   "json",
+   "yaml"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/aws-cloudformation/cfn-lint"
+ },
+ {
+  "name": "checkmake",
+  "binary": "checkmake",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "makefile"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/mrtazz/checkmake"
+ },
+ {
+  "name": "clang-format",
+  "binary": "clang-format",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "c",
+   "c#",
+   "c++",
+   "java",
+   "javascript",
+   "json",
+   "objective-c",
+   "protobuf"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-i",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://clang.llvm.org/docs/ClangFormat.html"
+ },
+ {
+  "name": "clang-tidy",
+  "binary": "clang-tidy",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "c++"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--fix",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://clang.llvm.org/extra/clang-tidy"
+ },
+ {
+  "name": "clj-kondo",
+  "binary": "clj-kondo",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "clojure",
+   "clojurescript"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--lint",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/clj-kondo/clj-kondo"
+ },
+ {
+  "name": "cljfmt",
+  "binary": "cljfmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "clojure"
+  ],
+  "commands": {
+   "fix": {
+    "arguments": [
+     "fix",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/weavejester/cljfmt"
+ },
+ {
+  "name": "cljstyle",
+  "binary": "cljstyle",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "clojure"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "fix",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/greglook/cljstyle"
+ },
+ {
+  "name": "cmake-format",
+  "binary": "cmake-format",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "cmake"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-i",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://cmake-format.readthedocs.io/en/latest/cmake-format.html"
+ },
+ {
+  "name": "cmake-lint",
+  "binary": "cmake-lint",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "cmake"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://cmake-format.readthedocs.io/en/latest/lint-usage.html"
+ },
+ {
+  "name": "codeql",
+  "binary": "codeql",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "codeql"
+  ],
+  "commands": {
+   "query:format": {
+    "arguments": [
+     "query",
+     "format",
+     "-i",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://docs.github.com/en/code-security/codeql-cli/codeql-cli-manual"
+ },
+ {
+  "name": "codespell",
+  "binary": "codespell",
+  "categories": [
+   "spell-check"
+  ],
+  "languages": [],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH",
+     "--check-hidden",
+     "--write-changes"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/codespell-project/codespell"
+ },
+ {
+  "name": "coffeelint",
+  "binary": "coffeelint",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "coffeescript"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-q",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/coffeelint/coffeelint"
+ },
+ {
+  "name": "cppcheck",
+  "binary": "cppcheck",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "c",
+   "c++"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://cppcheck.sourceforge.io"
+ },
+ {
+  "name": "cpplint",
+  "binary": "cpplint",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "c++"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--quiet",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/cpplint/cpplint"
+ },
+ {
+  "name": "crlfmt",
+  "binary": "crlfmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "go"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-w",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/cockroachdb/crlfmt"
+ },
+ {
+  "name": "crystal",
+  "binary": "crystal",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "crystal"
+  ],
+  "commands": {
+   "format": {
+    "arguments": [
+     "tool",
+     "format",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://crystal-lang.org"
+ },
+ {
+  "name": "csharpier",
+  "binary": "csharpier",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "c#"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "format",
+     "--write-stdout"
+    ],
+    "stdin": true
+   }
+  },
+  "homepage": "https://github.com/belav/csharpier"
+ },
+ {
+  "name": "css-beautify",
+  "binary": "css-beautify",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "css"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-r",
+     "--type",
+     "css",
+     "-f",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/beautifier/js-beautify"
+ },
+ {
+  "name": "csscomb",
+  "binary": "csscomb",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "css"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-t",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/csscomb/csscomb.js"
+ },
+ {
+  "name": "csslint",
+  "binary": "csslint",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "css"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--quiet",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/csslint/csslint"
+ },
+ {
+  "name": "cue",
+  "binary": "cue",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "cue"
+  ],
+  "commands": {
+   "fmt": {
+    "arguments": [
+     "fmt",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/cue-lang/cue"
+ },
+ {
+  "name": "cueimports",
+  "binary": "cueimports",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "cue"
+  ],
+  "commands": {
+   "": {
+    "arguments": [],
+    "stdin": true
+   }
+  },
+  "homepage": "https://github.com/asdine/cueimports"
+ },
+ {
+  "name": "curlylint",
+  "binary": "curlylint",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "django",
+   "html",
+   "jinja",
+   "liquid",
+   "nunjucks",
+   "twig"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-q",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/thibaudcolas/curlylint"
+ },
+ {
+  "name": "d2",
+  "binary": "d2",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "d2"
+  ],
+  "commands": {
+   "fmt": {
+    "arguments": [
+     "fmt",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://d2lang.com"
+ },
+ {
+  "name": "dart",
+  "binary": "dart",
+  "categories": [
+   "formatter",
+   "linter"
+  ],
+  "languages": [
+   "dart",
+   "flutter"
+  ],
+  "commands": {
+   "fix": {
+    "arguments": [
+     "fix",
+     "--apply",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "format": {
+    "arguments": [
+     "format",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://dart.dev/tools"
+ },
+ {
+  "name": "dcm",
+  "binary": "dcm",
+  "categories": [
+   "formatter",
+   "linter"
+  ],
+  "languages": [
+   "dart",
+   "flutter"
+  ],
+  "commands": {
+   "fix": {
+    "arguments": [
+     "fix",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "format": {
+    "arguments": [
+     "format",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://dcm.dev"
+ },
+ {
+  "name": "deadnix",
+  "binary": "deadnix",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "nix"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-q",
+     "--edit",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/astro/deadnix"
+ },
+ {
+  "name": "deno",
+  "binary": "deno",
+  "categories": [
+   "formatter",
+   "linter"
+  ],
+  "languages": [
+   "javascript",
+   "json",
+   "typescript"
+  ],
+  "commands": {
+   "fmt": {
+    "arguments": [
+     "fmt",
+     "--quiet",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "lint": {
+    "arguments": [
+     "lint",
+     "--fix",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://docs.deno.com/runtime/reference/cli"
+ },
+ {
+  "name": "dfmt",
+  "binary": "dfmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "d"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-i",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/dlang-community/dfmt"
+ },
+ {
+  "name": "dhall",
+  "binary": "dhall",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "dhall"
+  ],
+  "commands": {
+   "format": {
+    "arguments": [
+     "format",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "lint": {
+    "arguments": [
+     "lint",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://dhall-lang.org"
+ },
+ {
+  "name": "djade",
+  "binary": "djade",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "django",
+   "python"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/adamchainz/djade"
+ },
+ {
+  "name": "djangofmt",
+  "binary": "djangofmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "django",
+   "html",
+   "python"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/unknownplatypus/djangofmt"
+ },
+ {
+  "name": "djlint",
+  "binary": "djlint",
+  "categories": [
+   "formatter",
+   "linter"
+  ],
+  "languages": [
+   "handlebars",
+   "html",
+   "jinja",
+   "mustache",
+   "nunjucks",
+   "twig"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH",
+     "--reformat"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://www.djlint.com"
+ },
+ {
+  "name": "docformatter",
+  "binary": "docformatter",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "python"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--in-place",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/pycqa/docformatter"
+ },
+ {
+  "name": "dockerfmt",
+  "binary": "dockerfmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "docker"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-w",
+     "-n",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/reteps/dockerfmt"
+ },
+ {
+  "name": "dockfmt",
+  "binary": "dockfmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "docker"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "fmt",
+     "-w",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/jessfraz/dockfmt"
+ },
+ {
+  "name": "docstrfmt",
+  "binary": "docstrfmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "python",
+   "restructuredtext",
+   "sphinx"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/lilspazjoekp/docstrfmt"
+ },
+ {
+  "name": "doctoc",
+  "binary": "doctoc",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "markdown"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/thlorenz/doctoc"
+ },
+ {
+  "name": "dotenv-linter",
+  "binary": "dotenv-linter",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "env"
+  ],
+  "commands": {
+   "fix": {
+    "arguments": [
+     "fix",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/dotenv-linter/dotenv-linter"
+ },
+ {
+  "name": "dprint",
+  "binary": "dprint",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [],
+  "commands": {
+   "fmt": {
+    "arguments": [
+     "fmt",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://dprint.dev"
+ },
+ {
+  "name": "dscanner",
+  "binary": "dscanner",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "d"
+  ],
+  "commands": {
+   "fix": {
+    "arguments": [
+     "fix",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "lint": {
+    "arguments": [
+     "lint",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/dlang-community/d-scanner"
+ },
+ {
+  "name": "dune",
+  "binary": "dune",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "dune",
+   "ocaml",
+   "reasonml"
+  ],
+  "commands": {
+   "format-dune-file": {
+    "arguments": [
+     "format-dune-file"
+    ],
+    "stdin": true
+   }
+  },
+  "homepage": "https://github.com/ocaml/dune"
+ },
+ {
+  "name": "duster",
+  "binary": "duster",
+  "categories": [
+   "formatter",
+   "linter"
+  ],
+  "languages": [
+   "php"
+  ],
+  "commands": {
+   "fix": {
+    "arguments": [
+     "fix",
+     "--quiet",
+     "--no-interaction",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "lint": {
+    "arguments": [
+     "lint",
+     "--quiet",
+     "--no-interaction",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/tighten/duster"
+ },
+ {
+  "name": "dx",
+  "binary": "dx",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "rsx",
+   "rust"
+  ],
+  "commands": {
+   "fmt": {
+    "arguments": [
+     "fmt",
+     "--all-code",
+     "--file",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/dioxuslabs/dioxus"
+ },
+ {
+  "name": "easy-coding-standard",
+  "binary": "ecs",
+  "categories": [
+   "formatter",
+   "linter"
+  ],
+  "languages": [
+   "php"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "check",
+     "$PATH",
+     "--fix",
+     "--no-interaction"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/easy-coding-standard/easy-coding-standard"
+ },
+ {
+  "name": "efmt",
+  "binary": "efmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "erlang"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-w",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/sile/efmt"
+ },
+ {
+  "name": "elm-format",
+  "binary": "elm-format",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "elm"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--elm-version=0.19",
+     "--yes",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/avh4/elm-format"
+ },
+ {
+  "name": "eradicate",
+  "binary": "eradicate",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "python"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--in-place",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/pycqa/eradicate"
+ },
+ {
+  "name": "erb-formatter",
+  "binary": "erb-format",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "erb",
+   "ruby"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH",
+     "--write"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/nebulab/erb-formatter"
+ },
+ {
+  "name": "erg",
+  "binary": "erg",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "erg"
+  ],
+  "commands": {
+   "lint": {
+    "arguments": [
+     "lint",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/erg-lang/erg"
+ },
+ {
+  "name": "erlfmt",
+  "binary": "erlfmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "erlang"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-w",
+     "'$PATH'"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/whatsapp/erlfmt"
+ },
+ {
+  "name": "eslint",
+  "binary": "eslint",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "javascript",
+   "typescript"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--fix",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/eslint/eslint"
+ },
+ {
+  "name": "fantomas",
+  "binary": "fantomas",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "f#"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/fsprojects/fantomas"
+ },
+ {
+  "name": "fish_indent",
+  "binary": "fish_indent",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "fish"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-w",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://fishshell.com/docs/current/cmds/fish_indent.html"
+ },
+ {
+  "name": "fixjson",
+  "binary": "fixjson",
+  "categories": [
+   "formatter",
+   "linter"
+  ],
+  "languages": [
+   "json",
+   "json5"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-w",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/rhysd/fixjson"
+ },
+ {
+  "name": "floskell",
+  "binary": "floskell",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "haskell"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/ennocramer/floskell"
+ },
+ {
+  "name": "flynt",
+  "binary": "flynt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "python"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/ikamensh/flynt"
+ },
+ {
+  "name": "fnlfmt",
+  "binary": "fnlfmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "fennel"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://git.sr.ht/~technomancy/fnlfmt"
+ },
+ {
+  "name": "forge",
+  "binary": "forge",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "solidity"
+  ],
+  "commands": {
+   "fmt": {
+    "arguments": [
+     "fmt",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/foundry-rs/foundry"
+ },
+ {
+  "name": "fortitude",
+  "binary": "fortitude",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "fortran"
+  ],
+  "commands": {
+   "check": {
+    "arguments": [
+     "check",
+     "--quiet",
+     "--no-respect-gitignore",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "check:fix": {
+    "arguments": [
+     "check",
+     "--quiet",
+     "--no-respect-gitignore",
+     "--fix",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "check:fix:unsafe": {
+    "arguments": [
+     "check",
+     "--quiet",
+     "--no-respect-gitignore",
+     "--fix",
+     "--unsafe-fixes",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/plasmafair/fortitude"
+ },
+ {
+  "name": "fortran-linter",
+  "binary": "fortran-linter",
+  "categories": [
+   "formatter",
+   "linter"
+  ],
+  "languages": [
+   "fortran"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-i",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/cphyc/fortran-linter"
+ },
+ {
+  "name": "fourmolu",
+  "binary": "fourmolu",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "haskell"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-i",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/fourmolu/fourmolu"
+ },
+ {
+  "name": "fprettify",
+  "binary": "fprettify",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "fortran"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/fortran-lang/fprettify"
+ },
+ {
+  "name": "futhark",
+  "binary": "futhark",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "futhark"
+  ],
+  "commands": {
+   "fmt": {
+    "arguments": [
+     "fmt",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://futhark.readthedocs.io/en/latest/man/futhark-fmt.html"
+ },
+ {
+  "name": "fvm",
+  "binary": "fvm",
+  "categories": [
+   "formatter",
+   "linter"
+  ],
+  "languages": [
+   "dart",
+   "flutter"
+  ],
+  "commands": {
+   "dart:fix": {
+    "arguments": [
+     "dart",
+     "fix",
+     "--apply",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "dart:format": {
+    "arguments": [
+     "dart",
+     "format",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/leoafarias/fvm"
+ },
+ {
+  "name": "gci",
+  "binary": "gci",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "go"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "write",
+     "--skip-generated",
+     "--skip-vendor",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/daixiang0/gci"
+ },
+ {
+  "name": "gdformat",
+  "binary": "gdformat",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "gdscript"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/scony/godot-gdscript-toolkit"
+ },
+ {
+  "name": "gdlint",
+  "binary": "gdlint",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "gdscript"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/scony/godot-gdscript-toolkit"
+ },
+ {
+  "name": "gersemi",
+  "binary": "gersemi",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "cmake"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-i",
+     "-q",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/blankspruce/gersemi"
+ },
+ {
+  "name": "ghokin",
+  "binary": "ghokin",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "behat",
+   "cucumber",
+   "gherkin"
+  ],
+  "commands": {
+   "check": {
+    "arguments": [
+     "check",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "fmt": {
+    "arguments": [
+     "fmt",
+     "replace",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/antham/ghokin"
+ },
+ {
+  "name": "gleam",
+  "binary": "gleam",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "gleam"
+  ],
+  "commands": {
+   "format": {
+    "arguments": [
+     "format",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://gleam.run"
+ },
+ {
+  "name": "gluon",
+  "binary": "gluon",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "gluon"
+  ],
+  "commands": {
+   "fmt": {
+    "arguments": [
+     "fmt",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/gluon-lang/gluon"
+ },
+ {
+  "name": "gofmt",
+  "binary": "gofmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "go"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-w",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://pkg.go.dev/cmd/gofmt"
+ },
+ {
+  "name": "gofumpt",
+  "binary": "gofumpt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "go"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-w",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/mvdan/gofumpt"
+ },
+ {
+  "name": "goimports-reviser",
+  "binary": "goimports-reviser",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "go"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-format",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/incu6us/goimports-reviser"
+ },
+ {
+  "name": "goimports",
+  "binary": "goimports",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "go"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-w",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://pkg.go.dev/golang.org/x/tools/cmd/goimports"
+ },
+ {
+  "name": "golangci-lint",
+  "binary": "golangci-lint",
+  "categories": [
+   "formatter",
+   "linter"
+  ],
+  "languages": [
+   "go"
+  ],
+  "commands": {
+   "fmt": {
+    "arguments": [
+     "fmt",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "run": {
+    "arguments": [
+     "run",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "run:fix": {
+    "arguments": [
+     "run",
+     "--fix",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/golangci/golangci-lint"
+ },
+ {
+  "name": "golines",
+  "binary": "golines",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "go"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-w",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/golangci/golines"
+ },
+ {
+  "name": "google-java-format",
+  "binary": "google-java-format",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "java"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-i",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/google/google-java-format"
+ },
+ {
+  "name": "gospel",
+  "binary": "gospel",
+  "categories": [
+   "spell-check"
+  ],
+  "languages": [
+   "go"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/kortschak/gospel"
+ },
+ {
+  "name": "grafbase",
+  "binary": "grafbase",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "graphql"
+  ],
+  "commands": {
+   "lint": {
+    "arguments": [
+     "lint",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/grafbase/grafbase"
+ },
+ {
+  "name": "grain",
+  "binary": "grain",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "grain"
+  ],
+  "commands": {
+   "format": {
+    "arguments": [
+     "format",
+     "$PATH",
+     "-o",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://grain-lang.org/docs/tooling/grain_cli"
+ },
+ {
+  "name": "hadolint",
+  "binary": "hadolint",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "dockerfile"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/hadolint/hadolint"
+ },
+ {
+  "name": "haml-lint",
+  "binary": "haml-lint",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "haml"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--auto-correct",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/sds/haml-lint"
+ },
+ {
+  "name": "hclfmt",
+  "binary": "hclfmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "hcl"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-w",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/hashicorp/hcl"
+ },
+ {
+  "name": "hfmt",
+  "binary": "hfmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "haskell"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-w",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/danstiner/hfmt"
+ },
+ {
+  "name": "hindent",
+  "binary": "hindent",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "haskell"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/mihaimaruseac/hindent"
+ },
+ {
+  "name": "hledger-fmt",
+  "binary": "hledger-fmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "hledger"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--no-diff",
+     "--exit-zero-on-changes",
+     "-"
+    ],
+    "stdin": true
+   }
+  },
+  "homepage": "https://github.com/mondeja/hledger-fmt"
+ },
+ {
+  "name": "hlint",
+  "binary": "hlint",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "haskell"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/ndmitchell/hlint"
+ },
+ {
+  "name": "hongdown",
+  "binary": "hongdown",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "markdown"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-w",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/dahlia/hongdown"
+ },
+ {
+  "name": "html-beautify",
+  "binary": "html-beautify",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "html"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-r",
+     "--type",
+     "html",
+     "-f",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/beautifier/js-beautify"
+ },
+ {
+  "name": "htmlbeautifier",
+  "binary": "htmlbeautifier",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "erb",
+   "html",
+   "ruby"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/threedaymonk/htmlbeautifier"
+ },
+ {
+  "name": "htmlhint",
+  "binary": "htmlhint",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "html"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/htmlhint/htmlhint"
+ },
+ {
+  "name": "hurlfmt",
+  "binary": "hurlfmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "hurl"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--in-place",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://hurl.dev"
+ },
+ {
+  "name": "imba",
+  "binary": "imba",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "imba"
+  ],
+  "commands": {
+   "fmt": {
+    "arguments": [
+     "fmt",
+     "-f",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://imba.io"
+ },
+ {
+  "name": "inko",
+  "binary": "inko",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "inko"
+  ],
+  "commands": {
+   "fmt": {
+    "arguments": [
+     "fmt",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/inko-lang/inko"
+ },
+ {
+  "name": "isort",
+  "binary": "isort",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "python"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--quiet",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/timothycrosley/isort"
+ },
+ {
+  "name": "janet-format",
+  "binary": "janet-format",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "janet"
+  ],
+  "commands": {
+   "": {
+    "arguments": [],
+    "stdin": true
+   }
+  },
+  "homepage": "https://github.com/janet-lang/spork"
+ },
+ {
+  "name": "joker",
+  "binary": "joker",
+  "categories": [
+   "formatter",
+   "linter"
+  ],
+  "languages": [
+   "clojure"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--format",
+     "--write",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/candid82/joker"
+ },
+ {
+  "name": "jq",
+  "binary": "jq",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "json"
+  ],
+  "commands": {
+   "": {
+    "arguments": [],
+    "stdin": true
+   }
+  },
+  "homepage": "https://github.com/jqlang/jq"
+ },
+ {
+  "name": "jqfmt",
+  "binary": "jqfmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "jq"
+  ],
+  "commands": {
+   "": {
+    "arguments": [],
+    "stdin": true
+   }
+  },
+  "homepage": "https://github.com/noperator/jqfmt"
+ },
+ {
+  "name": "js-beautify",
+  "binary": "js-beautify",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "javascript"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-r",
+     "--type",
+     "js",
+     "-f",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/beautifier/js-beautify"
+ },
+ {
+  "name": "json5format",
+  "binary": "json5format",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "json",
+   "json5"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-r",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/google/json5format"
+ },
+ {
+  "name": "json_repair",
+  "binary": "json_repair",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "json"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-i",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/mangiucugna/json_repair"
+ },
+ {
+  "name": "jsona",
+  "binary": "jsona",
+  "categories": [
+   "formatter",
+   "linter"
+  ],
+  "languages": [
+   "jsona"
+  ],
+  "commands": {
+   "format": {
+    "arguments": [
+     "format",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "lint": {
+    "arguments": [
+     "lint",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/jsona/jsona"
+ },
+ {
+  "name": "jsonlint",
+  "binary": "jsonlint",
+  "categories": [
+   "formatter",
+   "linter"
+  ],
+  "languages": [
+   "json"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-i",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "sort": {
+    "arguments": [
+     "-s",
+     "-i",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/zaach/jsonlint"
+ },
+ {
+  "name": "jsonnet-lint",
+  "binary": "jsonnet-lint",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "jsonnet"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://jsonnet.org/learning/tools.html"
+ },
+ {
+  "name": "jsonnetfmt",
+  "binary": "jsonnetfmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "jsonnet"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-i",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://jsonnet.org/learning/tools.html"
+ },
+ {
+  "name": "jsonpp",
+  "binary": "jsonpp",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "json"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-s"
+    ],
+    "stdin": true
+   }
+  },
+  "homepage": "https://github.com/jmhodges/jsonpp"
+ },
+ {
+  "name": "juliaformatter_jl",
+  "binary": "julia",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "julia"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-E",
+     "using JuliaFormatter;format_file(\\\"$PATH\\\")"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/domluna/juliaformatter.jl"
+ },
+ {
+  "name": "just",
+  "binary": "just",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "just"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--fmt",
+     "--unstable",
+     "--justfile",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/casey/just"
+ },
+ {
+  "name": "kcl",
+  "binary": "kcl",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "kcl"
+  ],
+  "commands": {
+   "fmt": {
+    "arguments": [
+     "fmt",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "lint": {
+    "arguments": [
+     "lint",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://www.kcl-lang.io/docs/tools/cli/kcl/fmt"
+ },
+ {
+  "name": "kdlfmt",
+  "binary": "kdlfmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "kdl"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "format",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "v1": {
+    "arguments": [
+     "format",
+     "--kdl-version",
+     "v1",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "v2": {
+    "arguments": [
+     "format",
+     "--kdl-version",
+     "v2",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/hougesen/kdlfmt"
+ },
+ {
+  "name": "kdoc-formatter",
+  "binary": "kdoc-formatter",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "kotlin"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--quiet",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/tnorbye/kdoc-formatter"
+ },
+ {
+  "name": "keep-sorted",
+  "binary": "keep-sorted",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/google/keep-sorted"
+ },
+ {
+  "name": "ktfmt",
+  "binary": "ktfmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "kotlin"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/facebook/ktfmt"
+ },
+ {
+  "name": "ktlint",
+  "binary": "ktlint",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "kotlin"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--format",
+     "--log-level=error",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/pinterest/ktlint"
+ },
+ {
+  "name": "kube-linter",
+  "binary": "kube-linter",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "kubernetes",
+   "yaml"
+  ],
+  "commands": {
+   "lint": {
+    "arguments": [
+     "lint",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/stackrox/kube-linter"
+ },
+ {
+  "name": "kulala-fmt",
+  "binary": "kulala-fmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "http"
+  ],
+  "commands": {
+   "check": {
+    "arguments": [
+     "check",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "format": {
+    "arguments": [
+     "format",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/mistweaverco/kulala-fmt"
+ },
+ {
+  "name": "leptosfmt",
+  "binary": "leptosfmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "rust"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/bram209/leptosfmt"
+ },
+ {
+  "name": "liquidsoap-prettier",
+  "binary": "liquidsoap-prettier",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "liquidsoap"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--write",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/savonet/liquidsoap-prettier"
+ },
+ {
+  "name": "luacheck",
+  "binary": "luacheck",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "lua"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/lunarmodules/luacheck"
+ },
+ {
+  "name": "luaformatter",
+  "binary": "lua-format",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "lua"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-i",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/koihik/luaformatter"
+ },
+ {
+  "name": "luau-analyze",
+  "binary": "luau-analyze",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "luau"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://luau.org"
+ },
+ {
+  "name": "mado",
+  "binary": "mado",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "markdown"
+  ],
+  "commands": {
+   "check": {
+    "arguments": [
+     "check",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/akiomik/mado"
+ },
+ {
+  "name": "mago",
+  "binary": "mago",
+  "categories": [
+   "formatter",
+   "linter"
+  ],
+  "languages": [
+   "php"
+  ],
+  "commands": {
+   "analyze": {
+    "arguments": [
+     "analyze",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "analyze:fix": {
+    "arguments": [
+     "analyze",
+     "--fix",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "analyze:fix:unsafe": {
+    "arguments": [
+     "analyze",
+     "--fix",
+     "--potentially-unsafe",
+     "--unsafe",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "format": {
+    "arguments": [
+     "format",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "lint": {
+    "arguments": [
+     "lint",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "lint:fix": {
+    "arguments": [
+     "lint",
+     "--fix",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "lint:fix:unsafe": {
+    "arguments": [
+     "lint",
+     "--fix",
+     "--potentially-unsafe",
+     "--unsafe",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/carthage-software/mago"
+ },
+ {
+  "name": "markdownfmt",
+  "binary": "markdownfmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "markdown"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-w",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/shurcool/markdownfmt"
+ },
+ {
+  "name": "markdownlint-cli2",
+  "binary": "markdownlint-cli2",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "markdown"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--fix",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/davidanson/markdownlint-cli2"
+ },
+ {
+  "name": "markdownlint",
+  "binary": "markdownlint",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "markdown"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--fix",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/davidanson/markdownlint"
+ },
+ {
+  "name": "markuplint",
+  "binary": "markuplint",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "html"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--fix",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://markuplint.dev"
+ },
+ {
+  "name": "mbake",
+  "binary": "mbake",
+  "categories": [
+   "formatter",
+   "linter"
+  ],
+  "languages": [
+   "make"
+  ],
+  "commands": {
+   "format": {
+    "arguments": [
+     "format",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "validate": {
+    "arguments": [
+     "validate",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/ebodshojaei/bake"
+ },
+ {
+  "name": "md-padding",
+  "binary": "md-padding",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "markdown"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-i",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/harttle/md-padding"
+ },
+ {
+  "name": "mdformat",
+  "binary": "mdformat",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "markdwon"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/executablebooks/mdformat"
+ },
+ {
+  "name": "mdsf",
+  "binary": "mdsf",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "markdown"
+  ],
+  "commands": {
+   "format": {
+    "arguments": [
+     "format",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "verify": {
+    "arguments": [
+     "verify",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/hougesen/mdsf"
+ },
+ {
+  "name": "mdslw",
+  "binary": "mdslw",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "markdown"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/razziel89/mdslw"
+ },
+ {
+  "name": "meson",
+  "binary": "meson",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "meson"
+  ],
+  "commands": {
+   "fmt": {
+    "arguments": [
+     "fmt",
+     "-i",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://mesonbuild.com"
+ },
+ {
+  "name": "mh_lint",
+  "binary": "mh_lint",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "matlab"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/florianschanda/miss_hit"
+ },
+ {
+  "name": "mh_style",
+  "binary": "mh_style",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "matlab"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/florianschanda/miss_hit"
+ },
+ {
+  "name": "mise",
+  "binary": "mise",
+  "categories": [],
+  "languages": [],
+  "commands": {
+   "fmt": {
+    "arguments": [
+     "fmt",
+     "--stdin"
+    ],
+    "stdin": true
+   }
+  },
+  "homepage": "https://github.com/jdx/mise"
+ },
+ {
+  "name": "misspell",
+  "binary": "misspell",
+  "categories": [
+   "spell-check"
+  ],
+  "languages": [],
+  "commands": {
+   "": {
+    "arguments": [
+     "-w",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/client9/misspell"
+ },
+ {
+  "name": "mix",
+  "binary": "mix",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "elixir"
+  ],
+  "commands": {
+   "format": {
+    "arguments": [
+     "format",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://hexdocs.pm/mix/main/Mix.Tasks.Format.html"
+ },
+ {
+  "name": "mojo",
+  "binary": "mojo",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "mojo"
+  ],
+  "commands": {
+   "format": {
+    "arguments": [
+     "format",
+     "-q",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://docs.modular.com/mojo/cli/format"
+ },
+ {
+  "name": "muon",
+  "binary": "muon",
+  "categories": [
+   "formatter",
+   "linter"
+  ],
+  "languages": [
+   "meson"
+  ],
+  "commands": {
+   "fmt": {
+    "arguments": [
+     "fmt",
+     "-i",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "lint": {
+    "arguments": [
+     "lint",
+     "-i",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/muon-build/muon"
+ },
+ {
+  "name": "mypy",
+  "binary": "mypy",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "python"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/python/mypy"
+ },
+ {
+  "name": "nasmfmt",
+  "binary": "nasmfmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "assembly"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/yamnikov-oleg/nasmfmt"
+ },
+ {
+  "name": "nginxbeautifier",
+  "binary": "nginxbeautifier",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "nginx"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/vasilevich/nginxbeautifier"
+ },
+ {
+  "name": "nginxfmt",
+  "binary": "nginxfmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "nginx"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/slomkowski/nginx-config-formatter"
+ },
+ {
+  "name": "nickel",
+  "binary": "nickel",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "nickel"
+  ],
+  "commands": {
+   "format": {
+    "arguments": [
+     "format",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://nickel-lang.org"
+ },
+ {
+  "name": "nimpretty",
+  "binary": "nimpretty",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "nim"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/nim-lang/nim"
+ },
+ {
+  "name": "nixfmt",
+  "binary": "nixfmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "nix"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/nixos/nixfmt"
+ },
+ {
+  "name": "nixpkgs-fmt",
+  "binary": "nixpkgs-fmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "nix"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/nix-community/nixpkgs-fmt"
+ },
+ {
+  "name": "nomad",
+  "binary": "nomad",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "hcl"
+  ],
+  "commands": {
+   "fmt": {
+    "arguments": [
+     "fmt",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://developer.hashicorp.com/nomad/docs/commands"
+ },
+ {
+  "name": "nph",
+  "binary": "nph",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "nim"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/arnetheduck/nph"
+ },
+ {
+  "name": "npm-groovy-lint",
+  "binary": "npm-groovy-lint",
+  "categories": [
+   "formatter",
+   "linter"
+  ],
+  "languages": [
+   "groovy"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--format",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/nvuillam/npm-groovy-lint"
+ },
+ {
+  "name": "nufmt",
+  "binary": "nufmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "nushell"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/nushell/nufmt"
+ },
+ {
+  "name": "ocamlformat",
+  "binary": "ocamlformat",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "ocaml"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--ignore-invalid-option",
+     "--inplace",
+     "--enable-outside-detected-project",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/ocaml-ppx/ocamlformat"
+ },
+ {
+  "name": "ocp-indent",
+  "binary": "ocp-indent",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "ocaml"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--inplace",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/ocamlpro/ocp-indent"
+ },
+ {
+  "name": "odinfmt",
+  "binary": "odinfmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "odin"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-w",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/danielgavin/ols"
+ },
+ {
+  "name": "oelint-adv",
+  "binary": "oelint-adv",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "bitbake"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--fix",
+     "--nobackup",
+     "--quiet",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/priv-kweihmann/oelint-adv"
+ },
+ {
+  "name": "opa",
+  "binary": "opa",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "rego"
+  ],
+  "commands": {
+   "fmt": {
+    "arguments": [
+     "fmt",
+     "$PATH",
+     "-w"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://www.openpolicyagent.org/docs/latest/cli"
+ },
+ {
+  "name": "openapi-format",
+  "binary": "openapi-format",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "json",
+   "openapi",
+   "yaml"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH",
+     "--output",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/thim81/openapi-format"
+ },
+ {
+  "name": "ormolu",
+  "binary": "ormolu",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "haskell"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--mode",
+     "inplace",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/tweag/ormolu"
+ },
+ {
+  "name": "oxfmt",
+  "binary": "oxfmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "javascript",
+   "typescript"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://oxc.rs/docs/guide/usage/formatter.html"
+ },
+ {
+  "name": "oxlint",
+  "binary": "oxlint",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "javascript",
+   "typescript"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--fix",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://oxc.rs/docs/guide/usage/linter.html"
+ },
+ {
+  "name": "packer",
+  "binary": "packer",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "hcl"
+  ],
+  "commands": {
+   "fix": {
+    "arguments": [
+     "fix",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "fmt": {
+    "arguments": [
+     "fmt",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "validate": {
+    "arguments": [
+     "validate",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://developer.hashicorp.com/packer/docs/commands"
+ },
+ {
+  "name": "panache",
+  "binary": "panache",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "markdown",
+   "pandoc",
+   "quarto",
+   "rmarkdown"
+  ],
+  "commands": {
+   "format": {
+    "arguments": [
+     "format",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "lint": {
+    "arguments": [
+     "lint",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/jolars/panache"
+ },
+ {
+  "name": "pasfmt",
+  "binary": "pasfmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "delphi",
+   "pascal"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/integrated-application-development/pasfmt"
+ },
+ {
+  "name": "perflint",
+  "binary": "perflint",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "python"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/tonybaloney/perflint"
+ },
+ {
+  "name": "perltidy",
+  "binary": "perltidy",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "perl"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-b",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/perltidy/perltidy"
+ },
+ {
+  "name": "pg_format",
+  "binary": "pg_format",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "sql"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--inplace",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/darold/pgformatter"
+ },
+ {
+  "name": "php-cs-fixer",
+  "binary": "php-cs-fixer",
+  "categories": [
+   "formatter",
+   "linter"
+  ],
+  "languages": [
+   "php"
+  ],
+  "commands": {
+   "fix": {
+    "arguments": [
+     "fix",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/php-cs-fixer/php-cs-fixer"
+ },
+ {
+  "name": "phpcbf",
+  "binary": "phpcbf",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "php"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/phpcsstandards/php_codesniffer"
+ },
+ {
+  "name": "phpinsights",
+  "binary": "phpinsights",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "php"
+  ],
+  "commands": {
+   "fix": {
+    "arguments": [
+     "fix",
+     "$PATH",
+     "--no-interaction",
+     "--quiet"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/nunomaduro/phpinsights"
+ },
+ {
+  "name": "pint",
+  "binary": "pint",
+  "categories": [
+   "formatter",
+   "linter"
+  ],
+  "languages": [
+   "php"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/laravel/pint"
+ },
+ {
+  "name": "pkl",
+  "binary": "pkl",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "pkl"
+  ],
+  "commands": {
+   "format": {
+    "arguments": [
+     "-w",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/apple/pkl"
+ },
+ {
+  "name": "prettier",
+  "binary": "prettier",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "angular",
+   "css",
+   "ember",
+   "graphql",
+   "handlebars",
+   "html",
+   "javascript",
+   "json",
+   "less",
+   "markdown",
+   "scss",
+   "typescript",
+   "vue"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--embedded-language-formatting",
+     "off",
+     "--log-level",
+     "error",
+     "--write",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/prettier/prettier"
+ },
+ {
+  "name": "prettierd",
+  "binary": "prettierd",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "angular",
+   "css",
+   "ember",
+   "graphql",
+   "handlebars",
+   "html",
+   "javascript",
+   "json",
+   "less",
+   "markdown",
+   "scss",
+   "typescript",
+   "vue"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": true
+   }
+  },
+  "homepage": "https://github.com/fsouza/prettierd"
+ },
+ {
+  "name": "pretty-php",
+  "binary": "pretty-php",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "php"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/lkrms/pretty-php"
+ },
+ {
+  "name": "prettypst",
+  "binary": "prettypst",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "typst"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/antonwetzel/prettypst"
+ },
+ {
+  "name": "prisma",
+  "binary": "prisma",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "prisma"
+  ],
+  "commands": {
+   "format": {
+    "arguments": [
+     "format",
+     "--schema=$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://www.prisma.io/docs/orm/tools/prisma-cli"
+ },
+ {
+  "name": "proselint",
+  "binary": "proselint",
+  "categories": [
+   "spell-check"
+  ],
+  "languages": [],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/amperser/proselint"
+ },
+ {
+  "name": "protolint",
+  "binary": "protolint",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "protobuf"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "lint",
+     "-fix",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/yoheimuta/protolint"
+ },
+ {
+  "name": "ptop",
+  "binary": "ptop",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "pascal"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://www.freepascal.org/tools/ptop.html"
+ },
+ {
+  "name": "pug-lint",
+  "binary": "pug-lint",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "pug"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/pugjs/pug-lint"
+ },
+ {
+  "name": "puppet-lint",
+  "binary": "puppet-lint",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "puppet"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--fix",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/puppetlabs/puppet-lint"
+ },
+ {
+  "name": "purs-tidy",
+  "binary": "purs-tidy",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "purescript"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "format-in-place",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/natefaubion/purescript-tidy"
+ },
+ {
+  "name": "purty",
+  "binary": "purty",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "purescript"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--write",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://gitlab.com/joneshf/purty"
+ },
+ {
+  "name": "pycln",
+  "binary": "pycln",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "python"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--no-gitignore",
+     "--quiet",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/hadialqattan/pycln"
+ },
+ {
+  "name": "pycodestyle",
+  "binary": "pycodestyle",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "python"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/pycqa/pycodestyle"
+ },
+ {
+  "name": "pydoclint",
+  "binary": "pydoclint",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "python"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/jsh9/pydoclint"
+ },
+ {
+  "name": "pydocstringformatter",
+  "binary": "pydocstringformatter",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "python"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-w",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/danielnoord/pydocstringformatter"
+ },
+ {
+  "name": "pydocstyle",
+  "binary": "pydocstyle",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "python"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/pycqa/pydocstyle"
+ },
+ {
+  "name": "pyflakes",
+  "binary": "pyflakes",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "python"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/pycqa/pyflakes"
+ },
+ {
+  "name": "pyink",
+  "binary": "pyink",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "python"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--quiet",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/google/pyink"
+ },
+ {
+  "name": "pylint",
+  "binary": "pylint",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "python"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--module-naming-style=any",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/pylint-dev/pylint"
+ },
+ {
+  "name": "pymarkdownlnt",
+  "binary": "pymarkdownlnt",
+  "categories": [
+   "formatter",
+   "linter"
+  ],
+  "languages": [
+   "markdown"
+  ],
+  "commands": {
+   "fix": {
+    "arguments": [
+     "--return-code-scheme",
+     "minimal",
+     "fix",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/jackdewinter/pymarkdown"
+ },
+ {
+  "name": "pyment",
+  "binary": "pyment",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "python"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-w",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/dadadel/pyment"
+ },
+ {
+  "name": "pyrefly",
+  "binary": "pyrefly",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "python"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "check",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/facebook/pyrefly"
+ },
+ {
+  "name": "pyupgrade",
+  "binary": "pyupgrade",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "python"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--exit-zero-even-if-changed",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/asottile/pyupgrade"
+ },
+ {
+  "name": "qmlfmt",
+  "binary": "qmlfmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "qml"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-w",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/jesperhh/qmlfmt"
+ },
+ {
+  "name": "qmlformat",
+  "binary": "qmlformat",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "qml"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-i",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://doc.qt.io/qt-6/qtqml-tooling-qmlformat.html"
+ },
+ {
+  "name": "qmllint",
+  "binary": "qmllint",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "qml"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://doc.qt.io/qt-6/qtqml-tooling-qmllint.html"
+ },
+ {
+  "name": "quick-lint-js",
+  "binary": "quick-lint-js",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "javascript"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/quick-lint/quick-lint-js"
+ },
+ {
+  "name": "raco",
+  "binary": "raco",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "racket"
+  ],
+  "commands": {
+   "fmt": {
+    "arguments": [
+     "fmt",
+     "-i",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://docs.racket-lang.org/fmt"
+ },
+ {
+  "name": "reek",
+  "binary": "reek",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "ruby"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/troessner/reek"
+ },
+ {
+  "name": "refmt",
+  "binary": "refmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "reason"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--in-place",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://reasonml.github.io/docs/en/refmt"
+ },
+ {
+  "name": "reformat-gherkin",
+  "binary": "reformat-gherkin",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "gherkin"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/ducminh-phan/reformat-gherkin"
+ },
+ {
+  "name": "refurb",
+  "binary": "refurb",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "python"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/dosisod/refurb"
+ },
+ {
+  "name": "regal",
+  "binary": "regal",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "rego"
+  ],
+  "commands": {
+   "fix": {
+    "arguments": [
+     "fix",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "lint": {
+    "arguments": [
+     "lint",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/styrainc/regal"
+ },
+ {
+  "name": "reorder-python-imports",
+  "binary": "reorder-python-imports",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "python"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--exit-zero-even-if-changed",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/asottile/reorder-python-imports"
+ },
+ {
+  "name": "rescript",
+  "binary": "rescript",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "rescript"
+  ],
+  "commands": {
+   "format": {
+    "arguments": [
+     "format",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/rescript-lang/rescript"
+ },
+ {
+  "name": "revive",
+  "binary": "revive",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "go"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/mgechev/revive"
+ },
+ {
+  "name": "roc",
+  "binary": "roc",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "roc"
+  ],
+  "commands": {
+   "format": {
+    "arguments": [
+     "format",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/roc-lang/roc"
+ },
+ {
+  "name": "rstfmt",
+  "binary": "rstfmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "restructuredtext"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/dzhu/rstfmt"
+ },
+ {
+  "name": "rubocop",
+  "binary": "rubocop",
+  "categories": [
+   "formatter",
+   "linter"
+  ],
+  "languages": [
+   "ruby"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--fix-layout",
+     "--autocorrect",
+     "--format",
+     "quiet",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/rubocop/rubocop"
+ },
+ {
+  "name": "rubyfmt",
+  "binary": "rubyfmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "ruby"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-i",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/fables-tales/rubyfmt"
+ },
+ {
+  "name": "ruff",
+  "binary": "ruff",
+  "categories": [
+   "formatter",
+   "linter"
+  ],
+  "languages": [
+   "python"
+  ],
+  "commands": {
+   "check": {
+    "arguments": [
+     "check",
+     "--fix",
+     "--quiet",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "format": {
+    "arguments": [
+     "format",
+     "--quiet",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/astral-sh/ruff"
+ },
+ {
+  "name": "rufo",
+  "binary": "rufo",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "ruby"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--simple-exit",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/ruby-formatter/rufo"
+ },
+ {
+  "name": "rumdl",
+  "binary": "rumdl",
+  "categories": [
+   "formatter",
+   "linter"
+  ],
+  "languages": [
+   "markdown"
+  ],
+  "commands": {
+   "check": {
+    "arguments": [
+     "check",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "check:fix": {
+    "arguments": [
+     "check",
+     "--fix",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "fmt": {
+    "arguments": [
+     "fmt",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/rvben/rumdl"
+ },
+ {
+  "name": "rune",
+  "binary": "rune",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "rune"
+  ],
+  "commands": {
+   "fmt": {
+    "arguments": [
+     "fmt",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/rune-rs/rune"
+ },
+ {
+  "name": "runic",
+  "binary": "runic",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "julia"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--inplace",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/fredrikekre/runic.jl"
+ },
+ {
+  "name": "rustfmt",
+  "binary": "rustfmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "rust"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--edition",
+     "2024",
+     "--quiet",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "2015": {
+    "arguments": [
+     "--edition",
+     "2015",
+     "--quiet",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "2018": {
+    "arguments": [
+     "--edition",
+     "2018",
+     "--quiet",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "2021": {
+    "arguments": [
+     "--edition",
+     "2021",
+     "--quiet",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "2024": {
+    "arguments": [
+     "--edition",
+     "2024",
+     "--quiet",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/rust-lang/rustfmt"
+ },
+ {
+  "name": "rustywind",
+  "binary": "rustywind",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "html"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--write",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/avencera/rustywind"
+ },
+ {
+  "name": "salt-lint",
+  "binary": "salt-lint",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "salt"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/warpnet/salt-lint"
+ },
+ {
+  "name": "scala",
+  "binary": "scala",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "scala"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "fmt",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://www.scala-lang.org"
+ },
+ {
+  "name": "scalafmt",
+  "binary": "scalafmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "scala"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--quiet",
+     "--mode",
+     "any",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/scalameta/scalafmt"
+ },
+ {
+  "name": "scalariform",
+  "binary": "scalariform",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "scala"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/scala-ide/scalariform"
+ },
+ {
+  "name": "selene",
+  "binary": "selene",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "lua"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--no-summary",
+     "--quiet",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/kampfkarren/selene"
+ },
+ {
+  "name": "semistandard",
+  "binary": "semistandard",
+  "categories": [
+   "formatter",
+   "linter"
+  ],
+  "languages": [
+   "javascript"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--fix",
+     "--stdin"
+    ],
+    "stdin": true
+   }
+  },
+  "homepage": "https://github.com/standard/semistandard"
+ },
+ {
+  "name": "shellcheck",
+  "binary": "shellcheck",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "bash",
+   "shell"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/koalaman/shellcheck"
+ },
+ {
+  "name": "shellharden",
+  "binary": "shellharden",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "bash",
+   "shell"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--transform",
+     "--replace",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/anordal/shellharden"
+ },
+ {
+  "name": "shfmt",
+  "binary": "shfmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "shell"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--write",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/mvdan/sh"
+ },
+ {
+  "name": "sleek",
+  "binary": "sleek",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "sql"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/nrempel/sleek"
+ },
+ {
+  "name": "slim-lint",
+  "binary": "slim-lint",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "slim"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/sds/slim-lint"
+ },
+ {
+  "name": "smlfmt",
+  "binary": "smlfmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "standard-ml"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--force",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/shwestrick/smlfmt"
+ },
+ {
+  "name": "snakefmt",
+  "binary": "snakefmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "snakemake"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/snakemake/snakefmt"
+ },
+ {
+  "name": "solhint",
+  "binary": "solhint",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "solidity"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--quiet",
+     "--fix",
+     "--noPrompt",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/protofire/solhint"
+ },
+ {
+  "name": "sphinx-lint",
+  "binary": "sphinx-lint",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "python",
+   "restructredtext"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/sphinx-contrib/sphinx-lint"
+ },
+ {
+  "name": "sql-formatter",
+  "binary": "sql-formatter",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "sql"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--fix",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/sql-formatter-org/sql-formatter"
+ },
+ {
+  "name": "sqlfluff",
+  "binary": "sqlfluff",
+  "categories": [
+   "formatter",
+   "linter"
+  ],
+  "languages": [
+   "sql"
+  ],
+  "commands": {
+   "fix": {
+    "arguments": [
+     "fix",
+     "--disable-progress-bar",
+     "--nocolor",
+     "--dialect",
+     "ansi",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "format": {
+    "arguments": [
+     "format",
+     "--disable-progress-bar",
+     "--nocolor",
+     "--dialect",
+     "ansi",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "lint": {
+    "arguments": [
+     "lint",
+     "--disable-progress-bar",
+     "--nocolor",
+     "--dialect",
+     "ansi",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/sqlfluff/sqlfluff"
+ },
+ {
+  "name": "sqlfmt",
+  "binary": "sqlfmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "sql"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/tconbeer/sqlfmt"
+ },
+ {
+  "name": "sqlint",
+  "binary": "sqlint",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "sql"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/purcell/sqlint"
+ },
+ {
+  "name": "sqruff",
+  "binary": "sqruff",
+  "categories": [
+   "formatter",
+   "linter"
+  ],
+  "languages": [
+   "sql"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "fix",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/quarylabs/sqruff"
+ },
+ {
+  "name": "squawk",
+  "binary": "squawk",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "postgresql",
+   "sql"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/sbdchd/squawk"
+ },
+ {
+  "name": "standardjs",
+  "binary": "standard",
+  "categories": [
+   "formatter",
+   "linter"
+  ],
+  "languages": [
+   "javascript"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--fix",
+     "--stdin"
+    ],
+    "stdin": true
+   }
+  },
+  "homepage": "https://github.com/standard/standard"
+ },
+ {
+  "name": "standardrb",
+  "binary": "standardrb",
+  "categories": [
+   "formatter",
+   "linter"
+  ],
+  "languages": [
+   "ruby"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--fix",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/standardrb/standard"
+ },
+ {
+  "name": "statix",
+  "binary": "statix",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "nix"
+  ],
+  "commands": {
+   "check": {
+    "arguments": [
+     "check",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "fix": {
+    "arguments": [
+     "fix",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/oppiliappan/statix"
+ },
+ {
+  "name": "stylefmt",
+  "binary": "stylefmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "css",
+   "scss"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/matype/stylefmt"
+ },
+ {
+  "name": "stylelint",
+  "binary": "stylelint",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "css",
+   "scss"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--fix",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/stylelint/stylelint"
+ },
+ {
+  "name": "stylish-haskell",
+  "binary": "stylish-haskell",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "haskell"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--inplace",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/haskell/stylish-haskell"
+ },
+ {
+  "name": "stylua",
+  "binary": "stylua",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "lua"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--verify",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/johnnymorganz/stylua"
+ },
+ {
+  "name": "superhtml",
+  "binary": "superhtml",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "html"
+  ],
+  "commands": {
+   "check": {
+    "arguments": [
+     "check",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "fmt": {
+    "arguments": [
+     "fmt",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/kristoff-it/superhtml"
+ },
+ {
+  "name": "svlint",
+  "binary": "svlint",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "systemverilog"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/dalance/svlint"
+ },
+ {
+  "name": "swift-format",
+  "binary": "swift-format",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "swift"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--in-place",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/swiftlang/swift-format"
+ },
+ {
+  "name": "swiftformat",
+  "binary": "swiftformat",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "swift"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--quiet",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/nicklockwood/swiftformat"
+ },
+ {
+  "name": "swiftlint",
+  "binary": "swiftlint",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "swift"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/realm/swiftlint"
+ },
+ {
+  "name": "taplo",
+  "binary": "taplo",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "toml"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "format",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/tamasfe/taplo"
+ },
+ {
+  "name": "tclfmt",
+  "binary": "tclfmt",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "tcl"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/nmoroze/tclint"
+ },
+ {
+  "name": "tclint",
+  "binary": "tclint",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "tcl"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/nmoroze/tclint"
+ },
+ {
+  "name": "templ",
+  "binary": "templ",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "go",
+   "templ"
+  ],
+  "commands": {
+   "fmt": {
+    "arguments": [
+     "fmt",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/a-h/templ"
+ },
+ {
+  "name": "terraform",
+  "binary": "terraform",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "terraform"
+  ],
+  "commands": {
+   "fmt": {
+    "arguments": [
+     "fmt",
+     "-write=true",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://www.terraform.io/docs/cli/commands/fmt.html"
+ },
+ {
+  "name": "terragrunt",
+  "binary": "terragrunt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "hcl"
+  ],
+  "commands": {
+   "hclfmt": {
+    "arguments": [
+     "hclfmt",
+     "--terragrunt-hclfmt-file",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://terragrunt.gruntwork.io/docs/reference/cli-options/#hclfmt"
+ },
+ {
+  "name": "tex-fmt",
+  "binary": "tex-fmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "latex"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/wgunderwood/tex-fmt"
+ },
+ {
+  "name": "textlint",
+  "binary": "textlint",
+  "categories": [
+   "spell-check"
+  ],
+  "languages": [],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "fix": {
+    "arguments": [
+     "--fix",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/textlint/textlint"
+ },
+ {
+  "name": "tlint",
+  "binary": "tlint",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "php"
+  ],
+  "commands": {
+   "format": {
+    "arguments": [
+     "format",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/tighten/tlint"
+ },
+ {
+  "name": "tofu",
+  "binary": "tofu",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "terraform",
+   "tofu"
+  ],
+  "commands": {
+   "fmt": {
+    "arguments": [
+     "fmt",
+     "-write=true",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://opentofu.org/docs/cli/commands/fmt"
+ },
+ {
+  "name": "tombi",
+  "binary": "tombi",
+  "categories": [
+   "formatter",
+   "linter"
+  ],
+  "languages": [
+   "toml"
+  ],
+  "commands": {
+   "format": {
+    "arguments": [
+     "format",
+     "-"
+    ],
+    "stdin": true
+   },
+   "lint": {
+    "arguments": [
+     "lint",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/tombi-toml/tombi"
+ },
+ {
+  "name": "toml-sort",
+  "binary": "toml-sort",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "toml"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-i",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/pappasam/toml-sort"
+ },
+ {
+  "name": "topiary",
+  "binary": "topiary",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [],
+  "commands": {
+   "": {
+    "arguments": [
+     "format",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/tweag/topiary"
+ },
+ {
+  "name": "tryceratops",
+  "binary": "tryceratops",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "python"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--autofix",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/guilatrova/tryceratops"
+ },
+ {
+  "name": "ts-standard",
+  "binary": "ts-standard",
+  "categories": [
+   "formatter",
+   "linter"
+  ],
+  "languages": [
+   "typescript"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--fix",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/standard/ts-standard"
+ },
+ {
+  "name": "tsp",
+  "binary": "tsp",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "typespec"
+  ],
+  "commands": {
+   "format": {
+    "arguments": [
+     "format",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/microsoft/typespec"
+ },
+ {
+  "name": "tsqllint",
+  "binary": "tsqllint",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "sql"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--fix",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/tsqllint/tsqllint"
+ },
+ {
+  "name": "twig-cs-fixer",
+  "binary": "twig-cs-fixer",
+  "categories": [
+   "formatter",
+   "linter"
+  ],
+  "languages": [
+   "twig"
+  ],
+  "commands": {
+   "check": {
+    "arguments": [
+     "check",
+     "$PATH",
+     "--no-interaction"
+    ],
+    "stdin": false
+   },
+   "fix": {
+    "arguments": [
+     "fix",
+     "$PATH",
+     "--no-interaction"
+    ],
+    "stdin": false
+   },
+   "lint": {
+    "arguments": [
+     "lint",
+     "$PATH",
+     "--no-interaction"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/vincentlanglet/twig-cs-fixer"
+ },
+ {
+  "name": "twigcs",
+  "binary": "twigcs",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "php",
+   "twig"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/friendsoftwig/twigcs"
+ },
+ {
+  "name": "txtpbfmt",
+  "binary": "txtpbfmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "protobuf"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/protocolbuffers/txtpbfmt"
+ },
+ {
+  "name": "ty",
+  "binary": "ty",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "python"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "check",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/astral-sh/ty"
+ },
+ {
+  "name": "typos",
+  "binary": "typos",
+  "categories": [
+   "spell-check"
+  ],
+  "languages": [],
+  "commands": {
+   "": {
+    "arguments": [
+     "-w",
+     "--no-ignore",
+     "--hidden",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/crate-ci/typos"
+ },
+ {
+  "name": "typstfmt",
+  "binary": "typstfmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "typst"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/astrale-sharp/typstfmt"
+ },
+ {
+  "name": "typstyle",
+  "binary": "typstyle",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "typst"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-i",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/enter-tainer/typstyle"
+ },
+ {
+  "name": "ufmt",
+  "binary": "ufmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "python"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "format",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/omnilib/ufmt"
+ },
+ {
+  "name": "uiua",
+  "binary": "uiua",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "uiua"
+  ],
+  "commands": {
+   "fmt": {
+    "arguments": [
+     "fmt",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/uiua-lang/uiua"
+ },
+ {
+  "name": "unimport",
+  "binary": "unimport",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "python"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-r",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/hakancelikdev/unimport"
+ },
+ {
+  "name": "usort",
+  "binary": "usort",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "python"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "format",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/facebook/usort"
+ },
+ {
+  "name": "v",
+  "binary": "v",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "v"
+  ],
+  "commands": {
+   "fmt": {
+    "arguments": [
+     "fmt",
+     "-w",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://vlang.io"
+ },
+ {
+  "name": "vacuum",
+  "binary": "vacuum",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "json",
+   "openapi",
+   "yaml"
+  ],
+  "commands": {
+   "lint": {
+    "arguments": [
+     "lint",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/daveshanley/vacuum"
+ },
+ {
+  "name": "verusfmt",
+  "binary": "verusfmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "rust",
+   "verus"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/verus-lang/verusfmt"
+ },
+ {
+  "name": "veryl",
+  "binary": "veryl",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "veryl"
+  ],
+  "commands": {
+   "fmt": {
+    "arguments": [
+     "fmt",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/veryl-lang/veryl"
+ },
+ {
+  "name": "vhdl-style-guide",
+  "binary": "vsg",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "vhdl"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-f",
+     "$PATH",
+     "--fix"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/jeremiah-c-leary/vhdl-style-guide"
+ },
+ {
+  "name": "vint",
+  "binary": "vint",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "vimscript"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "neovim": {
+    "arguments": [
+     "--enable-neovim",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/vimjas/vint"
+ },
+ {
+  "name": "wa",
+  "binary": "wa",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "wa"
+  ],
+  "commands": {
+   "fmt": {
+    "arguments": [
+     "fmt",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/wa-lang/wa"
+ },
+ {
+  "name": "wfindent",
+  "binary": "wfindent",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "fortran"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/wvermin/findent"
+ },
+ {
+  "name": "write-good",
+  "binary": "write-good",
+  "categories": [
+   "linter"
+  ],
+  "languages": [],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/btford/write-good"
+ },
+ {
+  "name": "xmlformat",
+  "binary": "xmlformat",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "xml"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--overwrite",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/pamoller/xmlformatter"
+ },
+ {
+  "name": "xmllint",
+  "binary": "xmllint",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "xml"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--format",
+     "$PATH",
+     "--output",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://gnome.pages.gitlab.gnome.org/libxml2/xmllint.html"
+ },
+ {
+  "name": "xo",
+  "binary": "xo",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "javascript",
+   "typescript"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--fix",
+     "--stdin"
+    ],
+    "stdin": true
+   }
+  },
+  "homepage": "https://github.com/xojs/xo"
+ },
+ {
+  "name": "xq",
+  "binary": "xq",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "html",
+   "xml"
+  ],
+  "commands": {
+   "": {
+    "arguments": [],
+    "stdin": true
+   },
+   "html": {
+    "arguments": [
+     "--html"
+    ],
+    "stdin": true
+   }
+  },
+  "homepage": "https://github.com/sibprogrammer/xq"
+ },
+ {
+  "name": "yamlfix",
+  "binary": "yamlfix",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "yaml"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/lyz-code/yamlfix"
+ },
+ {
+  "name": "yamlfmt",
+  "binary": "yamlfmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "yaml"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-quiet",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/google/yamlfmt"
+ },
+ {
+  "name": "yamllint",
+  "binary": "yamllint",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "yaml"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/adrienverge/yamllint"
+ },
+ {
+  "name": "yapf",
+  "binary": "yapf",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "python"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--in-place",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/google/yapf"
+ },
+ {
+  "name": "yard-lint",
+  "binary": "yard-lint",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "ruby"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/mensfeld/yard-lint"
+ },
+ {
+  "name": "yew-fmt",
+  "binary": "yew-fmt",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "rust"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--edition",
+     "2021",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/its-the-shrimp/yew-fmt"
+ },
+ {
+  "name": "yq",
+  "binary": "yq",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "yaml"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--inplace",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/mikefarah/yq"
+ },
+ {
+  "name": "zig",
+  "binary": "zig",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "zig"
+  ],
+  "commands": {
+   "fmt": {
+    "arguments": [
+     "fmt",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://ziglang.org"
+ },
+ {
+  "name": "ziggy",
+  "binary": "ziggy",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "ziggy"
+  ],
+  "commands": {
+   "check": {
+    "arguments": [
+     "check",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "fmt": {
+    "arguments": [
+     "fmt",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://ziggy-lang.io"
+ },
+ {
+  "name": "zprint",
+  "binary": "zprint",
+  "categories": [
+   "formatter"
+  ],
+  "languages": [
+   "clojure",
+   "clojurescript"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "-w",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/kkinnear/zprint"
+ },
+ {
+  "name": "zsweep",
+  "binary": "zsweep",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "zsh"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "--auto",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/psprint/zsh-sweep"
+ },
+ {
+  "name": "zuban",
+  "binary": "zuban",
+  "categories": [
+   "linter"
+  ],
+  "languages": [
+   "python"
+  ],
+  "commands": {
+   "": {
+    "arguments": [
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "check": {
+    "arguments": [
+     "check",
+     "$PATH"
+    ],
+    "stdin": false
+   },
+   "mypy": {
+    "arguments": [
+     "mypy",
+     "$PATH"
+    ],
+    "stdin": false
+   }
+  },
+  "homepage": "https://github.com/zubanls/zuban"
+ }
+]

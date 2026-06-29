@@ -21,6 +21,7 @@ polylint = { exclude = [
     "crates/conformance/corpus/**",
     "crates/conformance/golden/**",
     "crates/conformance/docker/**",
+    "crates/poly-catalog/data/**",
 ] }
 
 # polyfmt: trailing-whitespace, final-newline, line-ending normalization, shfmt,
@@ -34,6 +35,7 @@ polyfmt = { exclude = [
     "crates/conformance/corpus/**",
     "crates/conformance/golden/**",
     "crates/conformance/docker/**",
+    "crates/poly-catalog/data/**",
 ] }
 
 # poly commit replaces gitfluff-lint on the commit-msg stage (Conventional

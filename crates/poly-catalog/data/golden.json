@@ -1,0 +1,1395 @@
+[
+ {
+  "tool": "actionlint",
+  "command": "",
+  "language": "yaml",
+  "input": "name: action\non: push\njobs:\n  format:\n    runs-on: ubuntu-latest\n    steps:\n      - run: mdsf format .\n",
+  "output": "name: action\non: push\njobs:\n  format:\n    runs-on: ubuntu-latest\n    steps:\n      - run: mdsf format .\n"
+ },
+ {
+  "tool": "air",
+  "command": "format",
+  "language": "r",
+  "input": "data            |>\n                  select(foo)\n\n  foo         <- function(bar         =                               1, baz=2)                                 {\n   list(bar,                 baz)\n }\n\n",
+  "output": "data |>\n  select(foo)\n\nfoo <- function(bar = 1, baz = 2) {\n  list(bar, baz)\n}\n"
+ },
+ {
+  "tool": "alejandra",
+  "command": "",
+  "language": "nix",
+  "input": "{\n            lib, buildPythonPackage, fetchFromGitHub, redis }:\n\nbuildPythonPackage rec {\n  pname = \"huey\";\n  version = \"2.4.2\";\n\n  src = fetchFromGitHub {\n    owner = \"coleifer\";\n    repo = pname;\n    rev = version;\n    sha256 = \"00fi04991skq61gjrmig8ry6936pc8zs7p8py8spfipbxf1irkjg\";\n  };\n\n  propagatedBuildInputs = [ redis ];\n\n  # connects to redis\n  doCheck = false;\n\n  meta = with lib; {\n    description = \"A little task queue for python\";\n    homepage = \"https://github.com/coleifer/huey\";\n    license = licenses.mit;\n    maintainers = [ maintainers.globin ];\n  };\n}\n",
+  "output": "{\n  lib,\n  buildPythonPackage,\n  fetchFromGitHub,\n  redis,\n}:\nbuildPythonPackage rec {\n  pname = \"huey\";\n  version = \"2.4.2\";\n\n  src = fetchFromGitHub {\n    owner = \"coleifer\";\n    repo = pname;\n    rev = version;\n    sha256 = \"00fi04991skq61gjrmig8ry6936pc8zs7p8py8spfipbxf1irkjg\";\n  };\n\n  propagatedBuildInputs = [redis];\n\n  # connects to redis\n  doCheck = false;\n\n  meta = with lib; {\n    description = \"A little task queue for python\";\n    homepage = \"https://github.com/coleifer/huey\";\n    license = licenses.mit;\n    maintainers = [maintainers.globin];\n  };\n}\n"
+ },
+ {
+  "tool": "alex",
+  "command": "",
+  "language": "markdown",
+  "input": "hello\n",
+  "output": "hello\n"
+ },
+ {
+  "tool": "auto-optional",
+  "command": "",
+  "language": "python",
+  "input": "def foo(bar: str = None):\n    pass\n",
+  "output": "from typing import Optional\ndef foo(bar: Optional[str] = None):\n    pass\n"
+ },
+ {
+  "tool": "autoflake",
+  "command": "",
+  "language": "python",
+  "input": "import math\nimport re\nimport os\nimport random\nimport multiprocessing\nimport grp, pwd, platform\nimport subprocess, sys\n\n\ndef foo():\n    from abc import ABCMeta, WeakSet\n    try:\n        import multiprocessing\n        print(multiprocessing.cpu_count())\n    except ImportError as exception:\n        print(sys.version)\n    return math.pi\n",
+  "output": "import math\nimport sys\n\n\ndef foo():\n    try:\n        import multiprocessing\n        print(multiprocessing.cpu_count())\n    except ImportError as exception:\n        print(sys.version)\n    return math.pi\n"
+ },
+ {
+  "tool": "autopep8",
+  "command": "",
+  "language": "python",
+  "input": "def add( a: int ,  b:int)->int: return a+b",
+  "output": "def add(a: int,  b: int) -> int: return a+b\n"
+ },
+ {
+  "tool": "bashate",
+  "command": "",
+  "language": "bash",
+  "input": "# for loop examples\n\n# pass\nfor i in $(seq 1 5); do\n    echo $i\ndone\n\n# pass\nfor (( i = 0 ; i < 5 ; i++ )); do\n    echo $i\ndone\n\n# fail E010\nfor i in $(seq 1 5); do\n    echo $i\ndone\n\n# fail E010\nfor (( i = 0 ; i < 5 ; i++ )); do\n    echo $i\ndone\n\nawk '{\n    for (i = 1; i < 5; i++)\n        print $i\n}' < /dev/null\n",
+  "output": "# for loop examples\n\n# pass\nfor i in $(seq 1 5); do\n    echo $i\ndone\n\n# pass\nfor (( i = 0 ; i < 5 ; i++ )); do\n    echo $i\ndone\n\n# fail E010\nfor i in $(seq 1 5); do\n    echo $i\ndone\n\n# fail E010\nfor (( i = 0 ; i < 5 ; i++ )); do\n    echo $i\ndone\n\nawk '{\n    for (i = 1; i < 5; i++)\n        print $i\n}' < /dev/null\n"
+ },
+ {
+  "tool": "beautysh",
+  "command": "",
+  "language": "bash",
+  "input": "#!/bin/bash\n\n       add() {\n    echo \"$1\" + \"$2\"\n             }\n",
+  "output": "#!/bin/bash\n\nadd() {\n    echo \"$1\" + \"$2\"\n}\n"
+ },
+ {
+  "tool": "beautysh",
+  "command": "",
+  "language": "shell",
+  "input": "#!/bin/shell\n\n       add() {\n    echo \"$1\" + \"$2\"\n             }\n",
+  "output": "#!/bin/shell\n\nadd() {\n    echo \"$1\" + \"$2\"\n}\n"
+ },
+ {
+  "tool": "biome",
+  "command": "check",
+  "language": "typescript",
+  "input": "\n    async function asyncAddition(\n            a:number,b:number\n        ) :Promise<\nnumber>\n    {\n        return a+b\n    }\n\n            ",
+  "output": "async function asyncAddition(a: number, b: number): Promise<number> {\n\treturn a + b;\n}\n"
+ },
+ {
+  "tool": "biome",
+  "command": "check:unsafe",
+  "language": "typescript",
+  "input": "\n    async function asyncAddition(\n            a:number,b:number\n        ) :Promise<\nnumber>\n    {\n        return a+b\n    }\n\n            ",
+  "output": "async function _asyncAddition(a: number, b: number): Promise<number> {\n\treturn a + b;\n}\n"
+ },
+ {
+  "tool": "biome",
+  "command": "format",
+  "language": "javascript",
+  "input": "\n    async function asyncAddition(\n            a,b\n        ) {\n        return a+b\n    }\n\n            ",
+  "output": "async function asyncAddition(a, b) {\n\treturn a + b;\n}\n"
+ },
+ {
+  "tool": "biome",
+  "command": "format",
+  "language": "json",
+  "input": "\n              {\n              \"key\": \"value\",\n  \"key2\": [\n      \"value2\",\n      \"value3\",\n      1\n            , null]\n }\n  ",
+  "output": "{\n\t\"key\": \"value\",\n\t\"key2\": [\"value2\", \"value3\", 1, null]\n}\n"
+ },
+ {
+  "tool": "biome",
+  "command": "format",
+  "language": "typescript",
+  "input": "\n    async function asyncAddition(\n            a:number,b:number\n        ) :Promise<\nnumber>\n    {\n        return a+b\n    }\n\n            ",
+  "output": "async function asyncAddition(a: number, b: number): Promise<number> {\n\treturn a + b;\n}\n"
+ },
+ {
+  "tool": "biome",
+  "command": "lint",
+  "language": "javascript",
+  "input": "let variable = 0;\n",
+  "output": "const variable = 0;\n"
+ },
+ {
+  "tool": "biome",
+  "command": "lint:unsafe",
+  "language": "javascript",
+  "input": "const hello = \"hello\";\nconst world = \"world\";\n\nconsole.log(\"\" + hello + world);\n",
+  "output": "const hello = \"hello\";\nconst world = \"world\";\n\nconsole.log(`${hello}${world}`);\n"
+ },
+ {
+  "tool": "black",
+  "command": "",
+  "language": "python",
+  "input": "def add( a: int ,  b:int)->int: return a+b",
+  "output": "def add(a: int, b: int) -> int:\n    return a + b\n"
+ },
+ {
+  "tool": "blade-formatter",
+  "command": "",
+  "language": "blade",
+  "input": "@extends('frontend.layouts.app')\n@section('title') foo\n@endsection\n@section('content')\n<section id=\"content\">\n<div class=\"container mod-users-pd-h\">\n    <div class=\"pf-user-header\">\n    <div></div>\n    <p>@lang('users.index')</p>\n    </div>\n        <div class=\"pf-users-branch\">\n            <ul class=\"pf-users-branch__list\">\n                @foreach($users as $user)\n        <li>\n            <img src=\"{{ asset('img/frontend/icon/branch-arrow.svg') }}\" alt=\"branch_arrow\">\n            {{ link_to_route(\"frontend.users.user.show\",$users[\"name\"],$users['_id']) }}\n        </li>\n        @endforeach\n      </ul>\n      <div class=\"pf-users-branch__btn\">\n      @can('create', App\\Models\\User::class)\n            {!! link_to_route(\"frontend.users.user.create\",__('users.create'),[1,2,3],['class' => 'btn']) !!}\n            @endcan\n        </div>\n  </div>\n    </div>\n</section>\n@endsection\n@section('footer')\n@stop",
+  "output": "@extends('frontend.layouts.app')\n@section('title') foo\n@endsection\n@section('content')\n    <section id=\"content\">\n        <div class=\"container mod-users-pd-h\">\n            <div class=\"pf-user-header\">\n                <div></div>\n                <p>@lang('users.index')</p>\n            </div>\n            <div class=\"pf-users-branch\">\n                <ul class=\"pf-users-branch__list\">\n                    @foreach ($users as $user)\n                        <li>\n                            <img src=\"{{ asset('img/frontend/icon/branch-arrow.svg') }}\" alt=\"branch_arrow\">\n                            {{ link_to_route('frontend.users.user.show', $users['name'], $users['_id']) }}\n                        </li>\n                    @endforeach\n                </ul>\n                <div class=\"pf-users-branch__btn\">\n                    @can('create', App\\Models\\User::class)\n                        {!! link_to_route('frontend.users.user.create', __('users.create'), [1, 2, 3], ['class' => 'btn']) !!}\n                    @endcan\n                </div>\n            </div>\n        </div>\n    </section>\n@endsection\n@section('footer')\n@stop\n"
+ },
+ {
+  "tool": "blue",
+  "command": "",
+  "language": "python",
+  "input": "def add( a: int ,  b:int)->int: return a+b",
+  "output": "def add(a: int, b: int) -> int:\n    return a + b\n"
+ },
+ {
+  "tool": "buf",
+  "command": "format",
+  "language": "protobuf",
+  "input": "service SearchService {\n                              rpc Search (SearchRequest) returns (SearchResponse);\n                               }",
+  "output": "service SearchService {\n  rpc Search(SearchRequest) returns (SearchResponse);\n}\n"
+ },
+ {
+  "tool": "cabal",
+  "command": "format",
+  "language": "cabal",
+  "input": "cabal-version: 2.4\nname: mdsf\nversion: 0\n\nexecutable msdf\n    default-language: Haskell2010\n    hs-source-dirs: src\n    main-is: Mdsf.hs\n    build-depends: base >=4.11 && <4.13, pretty >=1.1.3.6 && <1.2, bytestring, Cabal ^>=2.5, containers ^>=0.5.11.0 || ^>=0.6.0.1\n    other-extensions:\n      DeriveFunctor FlexibleContexts ExistentialQuantification OverloadedStrings\n      RankNTypes",
+  "output": "cabal-version: 2.4\nname:          mdsf\nversion:       0\n\nexecutable msdf\n    main-is:          Mdsf.hs\n    hs-source-dirs:   src\n    default-language: Haskell2010\n    other-extensions:\n        DeriveFunctor FlexibleContexts ExistentialQuantification\n        OverloadedStrings RankNTypes\n\n    build-depends:\n        base >=4.11 && <4.13,\n        pretty >=1.1.3.6 && <1.2,\n        bytestring,\n        Cabal ^>=2.5,\n        containers ^>=0.5.11.0 || ^>=0.6.0.1\n"
+ },
+ {
+  "tool": "clang-format",
+  "command": "",
+  "language": "c",
+  "input": "int add(int a,int b){\n                a-b;\n       return a + b;\n    }",
+  "output": "int add(int a, int b) {\n  a - b;\n  return a + b;\n}"
+ },
+ {
+  "tool": "clang-format",
+  "command": "",
+  "language": "cpp",
+  "input": "int add(int a,int b){\n                 a-b;\n       return a + b;\n    }",
+  "output": "int add(int a, int b) {\n  a - b;\n  return a + b;\n}"
+ },
+ {
+  "tool": "clang-format",
+  "command": "",
+  "language": "csharp",
+  "input": "namespace Mdsf {\n                        class Adder {\n                                                    public static int add(int a,int b) {\n                                a-b ;\n                                                        return a + b;\n                                                    }\n                                                 }\n                                                 } ",
+  "output": "namespace Mdsf {\nclass Adder {\n  public static int add(int a, int b) {\n    a - b;\n    return a + b;\n  }\n}\n}"
+ },
+ {
+  "tool": "clang-format",
+  "command": "",
+  "language": "java",
+  "input": "class HelloWorld {\n    public static void main(String[] args) {\n                System.out.println(\"Hello\");\n                System.out.println(\"World!\");\n                 }\n}",
+  "output": "class HelloWorld {\n  public static void main(String[] args) {\n    System.out.println(\"Hello\");\n    System.out.println(\"World!\");\n  }\n}"
+ },
+ {
+  "tool": "clang-format",
+  "command": "",
+  "language": "javascript",
+  "input": "    async function asyncAddition(  a,b) {\n            a * b;\n        return a+b\n    }            ",
+  "output": "async function asyncAddition(a, b) {\n  a * b;\n  return a + b\n}"
+ },
+ {
+  "tool": "clang-format",
+  "command": "",
+  "language": "json",
+  "input": "              {\n              \"key\": \"value\",\n  \"key2\": [\"value2\", \"value3\", 1            , null]\n }  ",
+  "output": "{\n  \"key\": \"value\",\n  \"key2\": [\n    \"value2\",\n    \"value3\",\n    1,\n    null\n  ]\n}"
+ },
+ {
+  "tool": "clang-format",
+  "command": "",
+  "language": "objective-c",
+  "input": "int add(int a,int b){\n            a - a ;\n       return a + b;\n    }",
+  "output": "int add(int a, int b) {\n  a - a;\n  return a + b;\n}"
+ },
+ {
+  "tool": "clang-format",
+  "command": "",
+  "language": "protobuf",
+  "input": "service SearchService {\n                              rpc Search (SearchRequest) returns (SearchResponse);\n                               }",
+  "output": "service SearchService { rpc Search(SearchRequest) returns (SearchResponse); }"
+ },
+ {
+  "tool": "cljstyle",
+  "command": "",
+  "language": "clojure",
+  "input": "(  ns\n foo.bar.baz  \"some doc\"\n    (:require (foo.bar [abc :as abc]\n        def))\n    (:use foo.bar.qux)\n    (:import foo.bar.qux.Foo\n      ;; Need this for the thing\n      foo.bar.qux.Bar)\n    )\n\n(defn hello \"says hi\" (\n      [] (hello \"world\")\n  ) ([name]\n  ( println \"Hello,\" name  )\n  ))",
+  "output": "(ns foo.bar.baz\n  \"some doc\"\n  (:require\n    [foo.bar.abc :as abc]\n    [foo.bar.def]\n    [foo.bar.qux :refer :all])\n  (:import\n    (foo.bar.qux\n      ;; Need this for the thing\n      Bar\n      Foo)))\n\n\n(defn hello\n  \"says hi\"\n  ([] (hello \"world\"))\n  ([name]\n   (println \"Hello,\" name)))\n"
+ },
+ {
+  "tool": "coffeelint",
+  "command": "",
+  "language": "coffeescript",
+  "input": "add = (a, b) -> a + b",
+  "output": "add = (a, b) -> a + b"
+ },
+ {
+  "tool": "cppcheck",
+  "command": "",
+  "language": "cpp",
+  "input": "int add(int a, int b) { return a + b; }\n",
+  "output": "int add(int a, int b) { return a + b; }\n"
+ },
+ {
+  "tool": "cpplint",
+  "command": "",
+  "language": "cpp",
+  "input": "// Copyright 2025 Mads Hougesen\nint add(int a, int b) { return a + b; }\n",
+  "output": "// Copyright 2025 Mads Hougesen\nint add(int a, int b) { return a + b; }\n"
+ },
+ {
+  "tool": "crystal",
+  "command": "format",
+  "language": "crystal",
+  "input": "def add(a, b)  return a + b end",
+  "output": "def add(a, b)\n  return a + b\nend\n"
+ },
+ {
+  "tool": "csharpier",
+  "command": "",
+  "language": "csharp",
+  "input": "namespace Mdsf {\n                        class Adder {\n                                                    public static int add(int a,int b) {\n                                var c=a+b ;\n                                                        return c ;\n                                                    }\n                                                 }\n                                                 } ",
+  "output": "namespace Mdsf\n{\n    class Adder\n    {\n        public static int add(int a, int b)\n        {\n            var c = a + b;\n            return c;\n        }\n    }\n}\n"
+ },
+ {
+  "tool": "css-beautify",
+  "command": "",
+  "language": "css",
+  "input": "h1   {color: blue;} p    {color: red;}",
+  "output": "h1 {\n    color: blue;\n}\n\np {\n    color: red;\n}"
+ },
+ {
+  "tool": "csscomb",
+  "command": "",
+  "language": "css",
+  "input": "h1   {color: blue;}\np {color: red;}",
+  "output": "h1\n{\n    color: blue;\n}\np\n{\n    color: red;\n}\n"
+ },
+ {
+  "tool": "csslint",
+  "command": "",
+  "language": "css",
+  "input": "body {\n  background: red;\n}\n",
+  "output": "body {\n  background: red;\n}\n"
+ },
+ {
+  "tool": "dart",
+  "command": "format",
+  "language": "dart",
+  "input": "class Adder {   int add(int a, int b) {     return a + b;   } }    ",
+  "output": "class Adder {\n  int add(int a, int b) {\n    return a + b;\n  }\n}\n"
+ },
+ {
+  "tool": "deno",
+  "command": "fmt",
+  "language": "javascript",
+  "input": "\n    async function asyncAddition(a,b){\n        return a+b\n    }\n\n            ",
+  "output": "async function asyncAddition(a, b) {\n  return a + b;\n}\n"
+ },
+ {
+  "tool": "deno",
+  "command": "fmt",
+  "language": "json",
+  "input": "\n              {\n              \"key\": \"value\",\n  \"key2\": [\n      \"value2\",\n      \"value3\",\n      1\n            , null]\n }\n  ",
+  "output": "{\n  \"key\": \"value\",\n  \"key2\": [\n    \"value2\",\n    \"value3\",\n    1,\n    null\n  ]\n}\n"
+ },
+ {
+  "tool": "deno",
+  "command": "fmt",
+  "language": "typescript",
+  "input": "\n    async function asyncAddition(                                a:       \tnumber,b:number ) :Promise< number>\n    {\n        return a+b\n    }\n\n            ",
+  "output": "async function asyncAddition(a: number, b: number): Promise<number> {\n  return a + b;\n}\n"
+ },
+ {
+  "tool": "dfmt",
+  "command": "",
+  "language": "d",
+  "input": "int add(int a,int b){return a + b;}\n",
+  "output": "int add(int a, int b)\n{\n    return a + b;\n}\n"
+ },
+ {
+  "tool": "dockerfmt",
+  "command": "",
+  "language": "dockerfile",
+  "input": "FROM          ubuntu:latest\n RUN   echo   \"Hello world\"\n",
+  "output": "FROM ubuntu:latest\nRUN echo \"Hello world\"\n"
+ },
+ {
+  "tool": "dune",
+  "command": "format-dune-file",
+  "language": "dune",
+  "input": "(executable\n           (name asd))",
+  "output": "(executable\n (name asd))"
+ },
+ {
+  "tool": "dx",
+  "command": "fmt",
+  "language": "rust",
+  "input": "fn add(a:i32,b:i32)->i32{a+b}",
+  "output": "fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n"
+ },
+ {
+  "tool": "efmt",
+  "command": "",
+  "language": "erlang",
+  "input": "what_is(Erlang) ->\ncase Erlang of movie->[hello(mike,joe,robert),credits]; language->formatting_arguments end\n.",
+  "output": "what_is(Erlang) ->\n    case Erlang of movie -> [hello(mike, joe, robert), credits]; language -> formatting_arguments end.\n"
+ },
+ {
+  "tool": "elm-format",
+  "command": "",
+  "language": "elm",
+  "input": "import   Html       exposing   (text)\n\n\nmain =\n      text              \"Hello!\"\n\n\n  ",
+  "output": "module Main exposing (main)\n\nimport Html exposing (text)\n\n\nmain =\n    text \"Hello!\"\n"
+ },
+ {
+  "tool": "erg",
+  "command": "lint",
+  "language": ".erg",
+  "input": "add(a, b) = a + b\n\nprint!(add(1, 2))\n",
+  "output": "add(a, b) = a + b\n\nprint!(add(1, 2))\n"
+ },
+ {
+  "tool": "erlfmt",
+  "command": "",
+  "language": "erlang",
+  "input": "what_is(Erlang) ->\ncase Erlang of movie->[hello(mike,joe,robert),credits]; language->formatting_arguments end\n.",
+  "output": "what_is(Erlang) ->\n    case Erlang of\n        movie -> [hello(mike, joe, robert), credits];\n        language -> no_more_formatting_arguments\n    end."
+ },
+ {
+  "tool": "fantomas",
+  "command": "",
+  "language": "fsharp",
+  "input": "\nlet add a b  =  a +  b\n            ",
+  "output": "let add a b = a + b\n"
+ },
+ {
+  "tool": "fixjson",
+  "command": "",
+  "language": "json",
+  "input": "{     \"fixjson\": \"fixjson\"  }",
+  "output": "{\n  \"fixjson\": \"fixjson\"\n}\n"
+ },
+ {
+  "tool": "fortitude",
+  "command": "check",
+  "language": ".f90",
+  "input": "program example\n    implicit none (type, external)\n\n    contains\n        integer function addnum(a, b)\n            integer, intent(in) :: a, b\n            return a + b\n        end function addnum\n\nend program example\n",
+  "output": "program example\n    implicit none (type, external)\n\n    contains\n        integer function addnum(a, b)\n            integer, intent(in) :: a, b\n            return a + b\n        end function addnum\n\nend program example\n"
+ },
+ {
+  "tool": "fortitude",
+  "command": "check:fix",
+  "language": ".f90",
+  "input": "program example\n    implicit none (type, external)\n\n    contains\n        integer function addnum(a, b)\n            integer, intent(in) :: a, b\n            return a + b\n        end function addnum\n\nend program example\n",
+  "output": "program example\n    implicit none (type, external)\n\n    contains\n        integer function addnum(a, b)\n            integer, intent(in) :: a, b\n            return a + b\n        end function addnum\n\nend program example\n"
+ },
+ {
+  "tool": "fortitude",
+  "command": "check:fix:unsafe",
+  "language": ".f90",
+  "input": "program example\n    implicit none\n\n    contains\n        integer function addnum(a, b)\n            integer, intent(in) :: a, b\n            return a + b\n        end function addnum\n\nend program example\n",
+  "output": "program example\n    implicit none (type, external)\n\n    contains\n        integer function addnum(a, b)\n            integer, intent(in) :: a, b\n            return a + b\n        end function addnum\n\nend program example\n"
+ },
+ {
+  "tool": "fortran-linter",
+  "command": "",
+  "language": ".f90",
+  "input": "program example\n    implicit none (type, external)\n\n    contains\n        integer function addnum(a, b)\n            integer, intent(in) :: a, b\n            return a + b\n        end function addnum\n\nend program example",
+  "output": "program example\nimplicit none (type, external)\n\ncontains\ninteger function addnum(a, b)\n    integer, intent(in) :: a, b\n    return a + b\nend function addnum\n\nend program example\n"
+ },
+ {
+  "tool": "fourmolu",
+  "command": "",
+  "language": "haskell",
+  "input": "\naddNumbers::Int->Int->Int\naddNumbers a b = do\n        a + b\n        ",
+  "output": "addNumbers :: Int -> Int -> Int\naddNumbers a b = do\n    a + b\n"
+ },
+ {
+  "tool": "fprettify",
+  "command": "",
+  "language": "fortran",
+  "input": "program demo\ninteger :: endif,if,elseif\ninteger,DIMENSION(2) :: function\nendif=3;if=2\nif(endif==2)then\nendif=5\nelseif=if+4*(endif+&\n2**10)\nelseif(endif==3)then\nfunction(if)=endif/elseif\nprint*,endif\nendif\nend program",
+  "output": "program demo\n   integer :: endif, if, elseif\n   integer, DIMENSION(2) :: function\n   endif = 3; if = 2\n   if (endif == 2) then\n      endif = 5\n      elseif = if + 4*(endif + &\n                       2**10)\n   elseif (endif == 3) then\n      function(if) = endif/elseif\n      print *, endif\n   end if\nend program\n"
+ },
+ {
+  "tool": "fvm",
+  "command": "dart:format",
+  "language": "dart",
+  "input": "class Adder {   int add(int a, int b) {     return a + b;   } }    ",
+  "output": "class Adder {\n  int add(int a, int b) {\n    return a + b;\n  }\n}\n"
+ },
+ {
+  "tool": "gleam",
+  "command": "format",
+  "language": "gleam",
+  "input": "pub fn add(a:Int,b:Int)->Int{a+b}",
+  "output": "pub fn add(a: Int, b: Int) -> Int {\n  a + b\n}\n"
+ },
+ {
+  "tool": "gofmt",
+  "command": "",
+  "language": "go",
+  "input": "package main\n\n   func add(a int , b int  ) int {\n                return a + b\n       }\n\n    ",
+  "output": "package main\n\nfunc add(a int, b int) int {\n\treturn a + b\n}\n"
+ },
+ {
+  "tool": "gofumpt",
+  "command": "",
+  "language": "go",
+  "input": "package main\n\n   func add(a int , b int  ) int {\n                return a + b\n       }\n\n    ",
+  "output": "package main\n\nfunc add(a int, b int) int {\n\treturn a + b\n}\n"
+ },
+ {
+  "tool": "goimports",
+  "command": "",
+  "language": "go",
+  "input": "package main\n\nimport (\n\t\"os\"\n\t\"fmt\"\n)\n\nfunc add(a int, b int) int {\n\tfmt.Print(a)\n\tfmt.Print(b)\n\treturn a + b\n}\n",
+  "output": "package main\n\nimport (\n\t\"fmt\"\n)\n\nfunc add(a int, b int) int {\n\tfmt.Print(a)\n\tfmt.Print(b)\n\treturn a + b\n}\n"
+ },
+ {
+  "tool": "golines",
+  "command": "",
+  "language": "go",
+  "input": "package main\n\nimport (\n\t\"os\"\n\t\"fmt\"\n)\n\nfunc add(a int, b int) int {\n\tfmt.Print(a)\n\tfmt.Print(b)\n\treturn a + b\n}\n",
+  "output": "package main\n\nimport (\n\t\"fmt\"\n)\n\nfunc add(a int, b int) int {\n\tfmt.Print(a)\n\tfmt.Print(b)\n\treturn a + b\n}\n"
+ },
+ {
+  "tool": "google-java-format",
+  "command": "",
+  "language": "java",
+  "input": "class HelloWorld {\n    public static void main(String[] args) {\n                System.out.println(\"Hello\");\n                System.out.println(\"World!\");\n                 }\n}",
+  "output": "class HelloWorld {\n  public static void main(String[] args) {\n    System.out.println(\"Hello\");\n    System.out.println(\"World!\");\n  }\n}\n"
+ },
+ {
+  "tool": "grain",
+  "command": "format",
+  "language": "grain",
+  "input": "module Hello\n\n                                print(\"Hello, world!\")\n",
+  "output": "module Hello\n\nprint(\"Hello, world!\")\n"
+ },
+ {
+  "tool": "hindent",
+  "command": "",
+  "language": "haskell",
+  "input": "\naddNumbers::Int->Int->Int\naddNumbers a b = do\n        a + b\n        ",
+  "output": "addNumbers :: Int -> Int -> Int\naddNumbers a b = do\n  a + b\n"
+ },
+ {
+  "tool": "hlint",
+  "command": "",
+  "language": "haskell",
+  "input": "add :: Int -> Int -> Int\nadd a b = a + b",
+  "output": "add :: Int -> Int -> Int\nadd a b = a + b"
+ },
+ {
+  "tool": "html-beautify",
+  "command": "",
+  "language": "html",
+  "input": "<div>\n                    <p>\n                    Mads was here\n                    </p>\n        </div>",
+  "output": "<div>\n    <p>\n        Mads was here\n    </p>\n</div>"
+ },
+ {
+  "tool": "htmlbeautifier",
+  "command": "",
+  "language": "html",
+  "input": "<div>\n                    <p>\n                    Mads was here\n                    </p>\n        </div>",
+  "output": "<div>\n  <p>\n    Mads was here\n  </p>\n</div>\n"
+ },
+ {
+  "tool": "hurlfmt",
+  "command": "",
+  "language": "hurl",
+  "input": "  GET        https://example.ord/cats/123           ",
+  "output": "GET https://example.ord/cats/123"
+ },
+ {
+  "tool": "isort",
+  "command": "",
+  "language": "python",
+  "input": "from q import d\nimport b\nimport a\nimport c\n\n\ndef add(a: int, b: int) -> int:\n  return a + b\n",
+  "output": "import a\nimport b\nimport c\nfrom q import d\n\n\ndef add(a: int, b: int) -> int:\n  return a + b\n"
+ },
+ {
+  "tool": "jq",
+  "command": "",
+  "language": "json",
+  "input": "{\"key\":1}",
+  "output": "{\n  \"key\": 1\n}\n"
+ },
+ {
+  "tool": "jqfmt",
+  "command": "",
+  "language": "jq",
+  "input": "{one: .two, three: [.four, .five, [.fivetwo, .fivethree]], six: map(select((.seven | .eight | .nine)))}",
+  "output": "{ one: .two, three: [.four, .five, [.fivetwo, .fivethree]], six: map(select((.seven | .eight | .nine))) }"
+ },
+ {
+  "tool": "js-beautify",
+  "command": "",
+  "language": "javascript",
+  "input": "function add (a,b){return a +b }",
+  "output": "function add(a, b) {\n    return a + b\n}"
+ },
+ {
+  "tool": "json_repair",
+  "command": "",
+  "language": "json",
+  "input": "[1 2 3]",
+  "output": "[\n  1,\n  2,\n  3\n]\n"
+ },
+ {
+  "tool": "jsonlint",
+  "command": "",
+  "language": "json",
+  "input": "{ \"k\": \"v\" }",
+  "output": "{\n  \"k\": \"v\"\n}"
+ },
+ {
+  "tool": "jsonlint",
+  "command": "sort",
+  "language": "json",
+  "input": "{ \"b\": \"b\", \"a\": \"a\" }",
+  "output": "{\n  \"a\": \"a\",\n  \"b\": \"b\"\n}"
+ },
+ {
+  "tool": "jsonpp",
+  "command": "",
+  "language": "json",
+  "input": "{\n              \"key\": \"value\",\n  \"key2\": [\"value2\", \"value3\", 1            , null]\n }",
+  "output": "{\n  \"key\": \"value\",\n  \"key2\": [\n    \"value2\",\n    \"value3\",\n    1,\n    null\n  ]\n}"
+ },
+ {
+  "tool": "juliaformatter_jl",
+  "command": "",
+  "language": "julia",
+  "input": "function add( a:: Int32,  b::Int32 )\n            c = a+ b\n            return c\n            end ",
+  "output": "function add(a::Int32, b::Int32)\n    c = a + b\n    return c\nend\n"
+ },
+ {
+  "tool": "just",
+  "command": "",
+  "language": "just",
+  "input": "build:\n                cargo build\n                cargo build --release\n            ",
+  "output": "build:\n    cargo build\n    cargo build --release\n"
+ },
+ {
+  "tool": "kcl",
+  "command": "fmt",
+  "language": "kcl",
+  "input": "apiVersion = \"apps/v1\"\nkind = \"Deployment\"\nmetadata = {\n    name =  \"nginx\"\n                   labels.app = \"nginx\"\n}\nspec = {\n    replicas    = 3\n    selector.matchLabels = metadata.labels\n    template.metadata.labels =                  metadata.labels\n    template.spec.containers = [     {\n        name = metadata.name\n        image = \"${metadata.name}:1.14.2\"\n        ports = [{                                                  containerPort = 80}]\n    }]\n}\n",
+  "output": "apiVersion = \"apps/v1\"\nkind = \"Deployment\"\nmetadata = {\n    name = \"nginx\"\n    labels.app = \"nginx\"\n}\nspec = {\n    replicas = 3\n    selector.matchLabels = metadata.labels\n    template.metadata.labels = metadata.labels\n    template.spec.containers = [{\n        name = metadata.name\n        image = \"${metadata.name}:1.14.2\"\n        ports = [{containerPort = 80}]\n    }]\n}\n"
+ },
+ {
+  "tool": "kdlfmt",
+  "command": "",
+  "language": "kdl",
+  "input": "world {    child \"1\"\nchild \"2\"   }\n",
+  "output": "world {\n    child \"1\"\n    child \"2\"\n}\n"
+ },
+ {
+  "tool": "kdlfmt",
+  "command": "v1",
+  "language": "kdl",
+  "input": "world {\n    child \"1\"\nchild \"2\"\n     }\n",
+  "output": "world {\n    child \"1\"\n    child \"2\"\n}\n"
+ },
+ {
+  "tool": "kdlfmt",
+  "command": "v2",
+  "language": "kdl",
+  "input": "world {    child \"1\"\nchild \"2\"   }\n",
+  "output": "world {\n    child \"1\"\n    child \"2\"\n}\n"
+ },
+ {
+  "tool": "ktfmt",
+  "command": "",
+  "language": "kotlin",
+  "input": "            fun add(a:Int ,b:Int ):Int {\n                    return a + b\n                }\n            ",
+  "output": "fun add(a: Int, b: Int): Int {\n  return a + b\n}\n"
+ },
+ {
+  "tool": "ktlint",
+  "command": "",
+  "language": "kotlin",
+  "input": "            fun add(a:Int ,b:Int ):Int {\n                    return a + b\n                }\n            ",
+  "output": "\n\nfun add(\n    a: Int,\n    b: Int,\n): Int = a + b\n"
+ },
+ {
+  "tool": "luaformatter",
+  "command": "",
+  "language": "lua",
+  "input": "\n\n        local               function        add (                                       a , b\n)\nlocal c=a+b\nreturn    c\n\n\nend\n    ",
+  "output": "local function add(a, b)\n    local c = a + b\n    return c\n\nend\n"
+ },
+ {
+  "tool": "mado",
+  "command": "check",
+  "language": "markdown",
+  "input": "# Hello world\n\n- Hello\n- world\n",
+  "output": "# Hello world\n\n- Hello\n- world\n"
+ },
+ {
+  "tool": "mago",
+  "command": "format",
+  "language": "php",
+  "input": "<?php\necho \"Hello World!\";\n?>",
+  "output": "<?php\n\necho 'Hello World!';\n"
+ },
+ {
+  "tool": "mago",
+  "command": "lint",
+  "language": "php",
+  "input": "<?php\necho 'Hello World!';\n",
+  "output": "<?php\necho 'Hello World!';\n"
+ },
+ {
+  "tool": "mago",
+  "command": "lint:fix",
+  "language": "php",
+  "input": "<?php\necho 'Hello World!';\n",
+  "output": "<?php\necho 'Hello World!';\n"
+ },
+ {
+  "tool": "mago",
+  "command": "lint:fix:unsafe",
+  "language": "php",
+  "input": "<?php\necho 'Hello World!';\n",
+  "output": "<?php\n\ndeclare(strict_types=1);\n\necho 'Hello World!';\n"
+ },
+ {
+  "tool": "markdownfmt",
+  "command": "",
+  "language": "markdown",
+  "input": "# hello w   world\n\nthis   text has      weird spacing\n\n- first\n* second",
+  "output": "hello w world\n=============\n\nthis text has weird spacing\n\n-\tfirst\n-\tsecond\n"
+ },
+ {
+  "tool": "markdownlint-cli2",
+  "command": "",
+  "language": "markdown",
+  "input": "# Hello world\n\n- asd\n* vasd\n",
+  "output": "# Hello world\n\n- asd\n- vasd\n"
+ },
+ {
+  "tool": "markdownlint",
+  "command": "",
+  "language": "markdown",
+  "input": "# Hello world\n\n- asd\n* vasd\n",
+  "output": "# Hello world\n\n- asd\n- vasd\n"
+ },
+ {
+  "tool": "mbake",
+  "command": "format",
+  "language": "Makefile",
+  "input": "CC:=gcc\nCFLAGS= -Wall -g\nSOURCES=main.c \\n  utils.c \\n  helper.c\n\n.PHONY: clean\nall: $(TARGET)\n\t$(CC) $(CFLAGS) -o $@ $^\n\n.PHONY: install\nclean:\n\trm -f *.o\n",
+  "output": "CC := gcc\nCFLAGS = -Wall -g\nSOURCES = main.c \\n  utils.c \\n  helper.c\n\n.PHONY: clean\nall: $(TARGET)\n\t$(CC) $(CFLAGS) -o $@ $^\n\n.PHONY: install\nclean:\n\trm -f *.o\n"
+ },
+ {
+  "tool": "mbake",
+  "command": "validate",
+  "language": "Makefile",
+  "input": "CC := gcc\nCFLAGS = -Wall -g\nSOURCES = main.c \\n  utils.c \\n  helper.c\n\n.PHONY: all clean install\n\nall: $(TARGET)\n\t$(CC) $(CFLAGS) -o $@ $^\n\nclean:\n\trm -f *.o\n",
+  "output": "CC := gcc\nCFLAGS = -Wall -g\nSOURCES = main.c \\n  utils.c \\n  helper.c\n\n.PHONY: all clean install\n\nall: $(TARGET)\n\t$(CC) $(CFLAGS) -o $@ $^\n\nclean:\n\trm -f *.o\n"
+ },
+ {
+  "tool": "mdsf",
+  "command": "format",
+  "language": "markdown",
+  "input": "",
+  "output": ""
+ },
+ {
+  "tool": "mdsf",
+  "command": "verify",
+  "language": "markdown",
+  "input": "",
+  "output": ""
+ },
+ {
+  "tool": "mise",
+  "command": "fmt",
+  "language": "toml",
+  "input": "[env]\nNODE_ENV = 'production'\n\n\n[tools]\nerlang                = ['23.3', '24.0']\nterraform = '1.0.0'\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n[tasks.build]\nrun = 'echo \"running build tasks\"'\n",
+  "output": "[env]\nNODE_ENV = 'production'\n\n\n[tools]\nerlang = ['23.3', '24.0']\nterraform = '1.0.0'\n\n\n[tasks.build]\nrun = 'echo \"running build tasks\"'\n"
+ },
+ {
+  "tool": "misspell",
+  "command": "",
+  "language": "markdown",
+  "input": "langauge\n",
+  "output": "language\n"
+ },
+ {
+  "tool": "mix",
+  "command": "format",
+  "language": "elixir",
+  "input": "\n        def              add(a  ,      b   )   do    a   +   b                 end\n\n",
+  "output": "def add(a, b) do\n  a + b\nend\n"
+ },
+ {
+  "tool": "nginxbeautifier",
+  "command": "",
+  "language": ".conf",
+  "input": "server {\n    listen 80;\n        listen [::]:80;\n       server_name example.com;\n    }\n",
+  "output": "server {\n\tlisten 80;\n\tlisten [::]:80;\n\tserver_name example.com;\n}\n"
+ },
+ {
+  "tool": "nginxfmt",
+  "command": "",
+  "language": ".conf",
+  "input": "server {\n    listen 80;\n        listen [::]:80;\n       server_name example.com;\n    }\n",
+  "output": "server {\n    listen 80;\n    listen [::]:80;\n    server_name example.com;\n}\n"
+ },
+ {
+  "tool": "nimpretty",
+  "command": "",
+  "language": "nim",
+  "input": "proc           add( a         :int , b:int )        : int =\n  return a +          b  ",
+  "output": "proc add(a: int, b: int): int =\n  return a + b\n"
+ },
+ {
+  "tool": "nixfmt",
+  "command": "",
+  "language": "nix",
+  "input": "{ lib, buildPythonPackage, fetchFromGitHub, redis }:\n\nbuildPythonPackage rec {\n  pname = \"huey\";\n  version = \"2.4.2\";\n\n  src = fetchFromGitHub {\n    owner = \"coleifer\";\n    repo = pname;\n    rev = version;\n    sha256 = \"00fi04991skq61gjrmig8ry6936pc8zs7p8py8spfipbxf1irkjg\";\n  };\n\n  propagatedBuildInputs = [ redis ];\n\n  # connects to redis\n  doCheck = false;\n\n  meta = with lib; {\n    description = \"A little task queue for python\";\n    homepage = \"https://github.com/coleifer/huey\";\n    license = licenses.mit;\n    maintainers = [ maintainers.globin ];\n  };\n}\n",
+  "output": "{ lib, buildPythonPackage, fetchFromGitHub, redis }:\n\nbuildPythonPackage rec {\n  pname = \"huey\";\n  version = \"2.4.2\";\n\n  src = fetchFromGitHub {\n    owner = \"coleifer\";\n    repo = pname;\n    rev = version;\n    sha256 = \"00fi04991skq61gjrmig8ry6936pc8zs7p8py8spfipbxf1irkjg\";\n  };\n\n  propagatedBuildInputs = [ redis ];\n\n  # connects to redis\n  doCheck = false;\n\n  meta = with lib; {\n    description = \"A little task queue for python\";\n    homepage = \"https://github.com/coleifer/huey\";\n    license = licenses.mit;\n    maintainers = [ maintainers.globin ];\n  };\n}\n"
+ },
+ {
+  "tool": "nixpkgs-fmt",
+  "command": "",
+  "language": "nix",
+  "input": "{\n            lib, buildPythonPackage, fetchFromGitHub, redis }:\n\nbuildPythonPackage rec {\n  pname =   \"huey\";\n  version = \"2.4.2\";\n\n  src = fetchFromGitHub {\n    owner = \"coleifer\";\n    repo = pname;\n    rev = version;\n    sha256 = \"00fi04991skq61gjrmig8ry6936pc8zs7p8py8spfipbxf1irkjg\";\n  };\n\n  propagatedBuildInputs = [ redis ];\n\n  # connects to redis\n  doCheck = false;\n\n  meta = with lib; {\n    description = \"A little task queue for python\";\n    homepage = \"https://github.com/coleifer/huey\";\n    license = licenses.mit;\n    maintainers = [ maintainers.globin ];\n  };\n}\n",
+  "output": "{ lib\n, buildPythonPackage\n, fetchFromGitHub\n, redis\n}:\n\nbuildPythonPackage rec {\n  pname = \"huey\";\n  version = \"2.4.2\";\n\n  src = fetchFromGitHub {\n    owner = \"coleifer\";\n    repo = pname;\n    rev = version;\n    sha256 = \"00fi04991skq61gjrmig8ry6936pc8zs7p8py8spfipbxf1irkjg\";\n  };\n\n  propagatedBuildInputs = [ redis ];\n\n  # connects to redis\n  doCheck = false;\n\n  meta = with lib; {\n    description = \"A little task queue for python\";\n    homepage = \"https://github.com/coleifer/huey\";\n    license = licenses.mit;\n    maintainers = [ maintainers.globin ];\n  };\n}\n"
+ },
+ {
+  "tool": "nph",
+  "command": "",
+  "language": "nim",
+  "input": "proc add(a:int,b:int):int =\n            return a+b\n",
+  "output": "proc add(a: int, b: int): int =\n  return a + b\n"
+ },
+ {
+  "tool": "ocamlformat",
+  "command": "",
+  "language": "ocaml",
+  "input": "\nlet add a b  =  a +  b\n            ",
+  "output": "let add a b = a + b\n"
+ },
+ {
+  "tool": "ocp-indent",
+  "command": "",
+  "language": "ocaml",
+  "input": "\nlet add a b\n                             = a + b\n            ",
+  "output": "\nlet add a b\n  = a + b\n"
+ },
+ {
+  "tool": "ormolu",
+  "command": "",
+  "language": "haskell",
+  "input": "\naddNumbers::Int->Int->Int\naddNumbers a b = do\n        a + b\n        ",
+  "output": "addNumbers :: Int -> Int -> Int\naddNumbers a b = do\n  a + b\n"
+ },
+ {
+  "tool": "oxfmt",
+  "command": "",
+  "language": "typescript",
+  "input": "const x =     10;",
+  "output": "const x = 10;\n"
+ },
+ {
+  "tool": "perflint",
+  "command": "",
+  "language": "python",
+  "input": "def add(a, b): return a + b",
+  "output": "def add(a, b): return a + b"
+ },
+ {
+  "tool": "prettier",
+  "command": "",
+  "language": "javascript",
+  "input": "\n    async function asyncAddition(\n            a,b\n        ) {\n        return a+b\n    }\n\n            ",
+  "output": "async function asyncAddition(a, b) {\n  return a + b;\n}\n"
+ },
+ {
+  "tool": "prettier",
+  "command": "",
+  "language": "json",
+  "input": "\n              {\n              \"key\": \"value\",\n  \"key2\": [\n      \"value2\",\n      \"value3\",\n      1\n            , null]\n }\n  ",
+  "output": "{\n  \"key\": \"value\",\n  \"key2\": [\"value2\", \"value3\", 1, null]\n}\n"
+ },
+ {
+  "tool": "prettierd",
+  "command": "",
+  "language": "javascript",
+  "input": "\n    async function asyncAddition(\n            a,b\n        ) {\n        return a+b\n    }\n\n            ",
+  "output": "async function asyncAddition(a, b) {\n  return a + b;\n}\n"
+ },
+ {
+  "tool": "prettierd",
+  "command": "",
+  "language": "json",
+  "input": "\n              {\n              \"key\": \"value\",\n  \"key2\": [\n      \"value2\",\n      \"value3\",\n      1\n            , null]\n }\n  ",
+  "output": "{\n  \"key\": \"value\",\n  \"key2\": [\"value2\", \"value3\", 1, null]\n}\n"
+ },
+ {
+  "tool": "purs-tidy",
+  "command": "",
+  "language": "purescript",
+  "input": "module       Test.Main   where\n\nimport Prelude\n\nimport   Effect   (Effect)\nimport                  Effect.Class.Console  (log)\n\nmain     ::   Effect Unit\nmain   =    do\n  log          \"You should add some tests.\"",
+  "output": "module Test.Main where\n\nimport Prelude\n\nimport Effect (Effect)\nimport Effect.Class.Console (log)\n\nmain :: Effect Unit\nmain = do\n  log \"You should add some tests.\""
+ },
+ {
+  "tool": "purty",
+  "command": "",
+  "language": "purescript",
+  "input": "module Mdsf where\n\n\n\n\nadd   :: Int -> Int  ->    Int\nadd a   b = a +         b\n",
+  "output": "module Mdsf where\n\nadd :: Int -> Int -> Int\nadd a b = a + b\n"
+ },
+ {
+  "tool": "pycln",
+  "command": "",
+  "language": "python",
+  "input": "import math",
+  "output": ""
+ },
+ {
+  "tool": "pyflakes",
+  "command": "",
+  "language": "python",
+  "input": "def add(a: int, b: int) -> int:\n    return a + b",
+  "output": "def add(a: int, b: int) -> int:\n    return a + b"
+ },
+ {
+  "tool": "pyink",
+  "command": "",
+  "language": "python",
+  "input": "def add( a: int ,  b:int)->int: return a+b",
+  "output": "def add(a: int, b: int) -> int:\n    return a + b\n"
+ },
+ {
+  "tool": "pylint",
+  "command": "",
+  "language": "python",
+  "input": "\"\"\"\nmdsf test module for pylint\n\"\"\"\n\n\ndef add(a: int, b: int) -> int:\n    \"\"\"\n    Add the numbers\n    \"\"\"\n    return a + b\n",
+  "output": "\"\"\"\nmdsf test module for pylint\n\"\"\"\n\n\ndef add(a: int, b: int) -> int:\n    \"\"\"\n    Add the numbers\n    \"\"\"\n    return a + b\n"
+ },
+ {
+  "tool": "pymarkdownlnt",
+  "command": "fix",
+  "language": "markdown",
+  "input": "Line 1\n\n\n\n\nLine 2\n\n\n\n\nLine 3\n",
+  "output": "Line 1\n\nLine 2\n\nLine 3\n"
+ },
+ {
+  "tool": "pyrefly",
+  "command": "",
+  "language": "python",
+  "input": "def add(a: int, b: int) -> int:\n    return a + b\n\n\nadd(1, 2)\n",
+  "output": "def add(a: int, b: int) -> int:\n    return a + b\n\n\nadd(1, 2)\n"
+ },
+ {
+  "tool": "pyupgrade",
+  "command": "",
+  "language": "python",
+  "input": "set([x for x in y])",
+  "output": "{x for x in y}"
+ },
+ {
+  "tool": "reorder-python-imports",
+  "command": "",
+  "language": "python",
+  "input": "import sys\nimport pyramid\nimport reorder_python_imports",
+  "output": "import sys\n\nimport pyramid\nimport reorder_python_imports\n"
+ },
+ {
+  "tool": "rescript",
+  "command": "format",
+  "language": "rescript",
+  "input": "module Button = {\n  @react.component\n  let make = (~count) =>   {\n    let times = switch    count {\n            | 1          =>   \"once\"\n    | 2  =>         \"twice\"\n    |   n =>      n->Int.toString ++ \" times\"\n     }\n     let text =                           `Click me ${times}`\n\n    <button> {text->React.string} </button>\n  }\n}",
+  "output": "module Button = {\n  @react.component\n  let make = (~count) => {\n    let times = switch count {\n    | 1 => \"once\"\n    | 2 => \"twice\"\n    | n => n->Int.toString ++ \" times\"\n    }\n    let text = `Click me ${times}`\n\n    <button> {text->React.string} </button>\n  }\n}\n"
+ },
+ {
+  "tool": "roc",
+  "command": "format",
+  "language": "roc",
+  "input": "app \"helloWorld\"\n    packages { pf: \"https://github.com/roc-lang/\" }\n    imports [pf.Stdout]\n    provides [main] to pf\n\n\n\n\n\n\nmain =\n    Stdout.line \"Hello, World!\"\n\n\n    ",
+  "output": "app [main] { pf: platform \"https://github.com/roc-lang/\" }\n\nimport pf.Stdout\n\nmain =\n    Stdout.line \"Hello, World!\"\n\n"
+ },
+ {
+  "tool": "rubocop",
+  "command": "",
+  "language": "ruby",
+  "input": "def   add(  a ,                                                          b )\n                        return a + b\n                end",
+  "output": "def add(a, b)\n  return a + b\nend\n"
+ },
+ {
+  "tool": "rubyfmt",
+  "command": "",
+  "language": "ruby",
+  "input": "def   add(  a ,                                                          b )\n                        return a + b\n                end",
+  "output": "def add(a, b)\n  return a + b\nend\n"
+ },
+ {
+  "tool": "ruff",
+  "command": "check",
+  "language": "python",
+  "input": "def add(a: int, b: int) -> int:\n    return a + b\n",
+  "output": "def add(a: int, b: int) -> int:\n    return a + b\n"
+ },
+ {
+  "tool": "ruff",
+  "command": "format",
+  "language": "python",
+  "input": "def add( a: int ,  b:int)->int: return a+b",
+  "output": "def add(a: int, b: int) -> int:\n    return a + b\n"
+ },
+ {
+  "tool": "rufo",
+  "command": "",
+  "language": "ruby",
+  "input": "def   add(  a ,                                                          b )\n                        return a + b\n                end",
+  "output": "def add(a, b)\n  return a + b\nend\n"
+ },
+ {
+  "tool": "rustfmt",
+  "command": "",
+  "language": "rust",
+  "input": "pub\n                    async\n            fn    add( a: i32,\n                            b:i32 )->                   i32 {a+b}\n    ",
+  "output": "pub async fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n"
+ },
+ {
+  "tool": "rustfmt",
+  "command": "2015",
+  "language": "rust",
+  "input": "pub\n                    \n            fn    add( a: i32,\n                            b:i32 )->                   i32 {a+b}\n    ",
+  "output": "pub fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n"
+ },
+ {
+  "tool": "rustfmt",
+  "command": "2018",
+  "language": "rust",
+  "input": "pub\n                    \n            fn    add( a: i32,\n                            b:i32 )->                   i32 {a+b}\n    ",
+  "output": "pub fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n"
+ },
+ {
+  "tool": "rustfmt",
+  "command": "2021",
+  "language": "rust",
+  "input": "pub\n                    async\n            fn    add( a: i32,\n                            b:i32 )->                   i32 {a+b}\n    ",
+  "output": "pub async fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n"
+ },
+ {
+  "tool": "rustfmt",
+  "command": "2024",
+  "language": "rust",
+  "input": "pub\n                    async\n            fn    add( a: i32,\n                            b:i32 )->                   i32 {a+b}\n    ",
+  "output": "pub async fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n"
+ },
+ {
+  "tool": "rustywind",
+  "command": "",
+  "language": "html",
+  "input": "<div class=\"flex-col flex\"></div>\n",
+  "output": "<div class=\"flex flex-col\"></div>\n"
+ },
+ {
+  "tool": "scala",
+  "command": "",
+  "language": "scala",
+  "input": "object Addition {\n             def main() = {\n                 println(1 + 3)\n             }\n    }",
+  "output": "object Addition {\n  def main() = {\n    println(1 + 3)\n  }\n}\n"
+ },
+ {
+  "tool": "scalafmt",
+  "command": "",
+  "language": "scala",
+  "input": "object Addition {\n             def main() = {\n                 println(1 + 3)\n             }\n    }",
+  "output": "object Addition {\n  def main() = {\n    println(1 + 3)\n  }\n}\n"
+ },
+ {
+  "tool": "selene",
+  "command": "",
+  "language": "lua",
+  "input": "function add(a, b)\n\treturn a + b\nend\n\nreturn add\n",
+  "output": "function add(a, b)\n\treturn a + b\nend\n\nreturn add\n"
+ },
+ {
+  "tool": "semistandard",
+  "command": "",
+  "language": "javascript",
+  "input": "    async function asyncAddition(a,b  )\n    {\n        return a+b\n    }\n\nconsole.info(asyncAddition(1, 2));\n            ",
+  "output": "async function asyncAddition (a, b) {\n  return a + b;\n}\n\nconsole.info(asyncAddition(1, 2));\n"
+ },
+ {
+  "tool": "shellcheck",
+  "command": "",
+  "language": "shell",
+  "input": "#!/bin/sh\n\necho \"Hello World\"\n",
+  "output": "#!/bin/sh\n\necho \"Hello World\"\n"
+ },
+ {
+  "tool": "shfmt",
+  "command": "",
+  "language": "bash",
+  "input": "\n\n#!/bin/bash\n\n       add      ()   {\n    echo \"$1\"                 +          \"$2\"\n             }\n\n\n\n\n\n\n\n\n",
+  "output": "#!/bin/bash\n\nadd() {\n\techo \"$1\" + \"$2\"\n}\n"
+ },
+ {
+  "tool": "shfmt",
+  "command": "",
+  "language": "shell",
+  "input": "\n\n#!/bin/sh\n\n       add      ()   {\n    echo \"$1\"                 +          \"$2\"\n             }\n\n\n\n\n\n\n\n\n",
+  "output": "#!/bin/sh\n\nadd() {\n\techo \"$1\" + \"$2\"\n}\n"
+ },
+ {
+  "tool": "shfmt",
+  "command": "",
+  "language": "zsh",
+  "input": "\n\n#!/bin/zsh\n\n       add      ()   {\n    echo \"$1\"                 +          \"$2\"\n             }\n\n\n\n\n\n\n\n\n",
+  "output": "#!/bin/zsh\n\nadd() {\n\techo \"$1\" + \"$2\"\n}\n"
+ },
+ {
+  "tool": "sleek",
+  "command": "",
+  "language": "sql",
+  "input": "SELECT  *                  FROM  tbl\n                        WHERE                      foo   = 'bar';         ",
+  "output": "SELECT\n    *\nFROM\n    tbl\nWHERE\n    foo = 'bar';"
+ },
+ {
+  "tool": "smlfmt",
+  "command": "",
+  "language": ".sml",
+  "input": "fun add(a:int, b: int )= a+b\n",
+  "output": "fun add (a: int, b: int) = a + b\n"
+ },
+ {
+  "tool": "snakefmt",
+  "command": "",
+  "language": "snakemake",
+  "input": "from snakemake.utils import min_version\nmin_version(\"5.14.0\")\nconfigfile: \"config.yaml\"\ninclude: \"rules/foo.smk\"\n",
+  "output": "from snakemake.utils import min_version\n\nmin_version(\"5.14.0\")\n\n\nconfigfile: \"config.yaml\"\n\n\ninclude: \"rules/foo.smk\"\n"
+ },
+ {
+  "tool": "sql-formatter",
+  "command": "",
+  "language": "sql",
+  "input": "SELECT * FROM tbl WHERE foo = 'bar';",
+  "output": "SELECT\n  *\nFROM\n  tbl\nWHERE\n  foo = 'bar';\n"
+ },
+ {
+  "tool": "sqlfluff",
+  "command": "fix",
+  "language": "sql",
+  "input": "SELECT  id                  FROM  tbl\n                        WHERE                      foo   = 'bar' ;\n",
+  "output": "SELECT id FROM tbl\nWHERE foo = 'bar';\n"
+ },
+ {
+  "tool": "sqlfluff",
+  "command": "format",
+  "language": "sql",
+  "input": "SELECT  id                  FROM  tbl\n                        WHERE                      foo   = 'bar';         ",
+  "output": "SELECT id FROM tbl\nWHERE foo = 'bar';\n"
+ },
+ {
+  "tool": "sqlfluff",
+  "command": "lint",
+  "language": "sql",
+  "input": "SELECT asd FROM tbl\nWHERE foo = 'bar' LIMIT 10;\n",
+  "output": "SELECT asd FROM tbl\nWHERE foo = 'bar' LIMIT 10;\n"
+ },
+ {
+  "tool": "sqlfmt",
+  "command": "",
+  "language": "sql",
+  "input": "SELECT  *                  FROM  tbl                        WHERE                      foo   = 'bar';",
+  "output": "select *\nfrom tbl\nwhere foo = 'bar'\n;\n"
+ },
+ {
+  "tool": "sqlint",
+  "command": "",
+  "language": "sql",
+  "input": "SELECT username FROM users\nWHERE id = 1;\n",
+  "output": "SELECT username FROM users\nWHERE id = 1;\n"
+ },
+ {
+  "tool": "sqruff",
+  "command": "",
+  "language": "sql",
+  "input": "SELECT          * from dummy where Name     > 10\n",
+  "output": "SELECT * FROM dummy WHERE name > 10\n"
+ },
+ {
+  "tool": "squawk",
+  "command": "",
+  "language": "sql",
+  "input": "SELECT username FROM users;",
+  "output": "SELECT username FROM users;"
+ },
+ {
+  "tool": "standardjs",
+  "command": "",
+  "language": "javascript",
+  "input": "\n    async function asyncAddition(a,b  )\n    {\n        return a+b\n    }\n\nconsole.info(asyncAddition(1, 2));\n            ",
+  "output": "async function asyncAddition (a, b) {\n  return a + b\n}\n\nconsole.info(asyncAddition(1, 2))\n"
+ },
+ {
+  "tool": "standardrb",
+  "command": "",
+  "language": "ruby",
+  "input": "def   add(  a ,                                                          b )\n                        return a + b\n                end",
+  "output": "def add(a, b)\n  a + b\nend\n"
+ },
+ {
+  "tool": "stylefmt",
+  "command": "",
+  "language": "css",
+  "input": "/* custom properties */\n:root{--fontSize: 1rem;\n  --mainColor       :#12345678;\n--highlightColor:hwb(190, 35%, 20%);\n}\n\n/* custom media queries */\n@custom-media\n\n--viewport-medium(width<=50rem);\n\n/* some var() & calc() */\nbody{color:var(--mainColor);\n    font-size:var(--fontSize);\n line-height: calc(var(--fontSize) * 1.5);\npadding: calc((var(--fontSize) / 2) + 1px)}\n\n/* custom media query usage */\n@media (--viewport-medium) {\nbody {font-size: calc(var(--fontSize) * 1.2); }\n}\n\n/* custom selectors */\n@custom-selector :--heading h1,h2,h3,    h4,h5,h6;\n:--heading { margin-top:0 }\n\n/* colors stuff */\na{\ncolor:var(--highlightColor);\n    transition:color 1s;\n}\na:hover{color  :gray(255,50%) }\na:active{color : rebeccapurple }\na:any-link { color:color(var(--highlightColor) blackness(+20%)) }\n\n/* font stuff */\nh2 {font-variant-caps:small-caps;\n}table{font-variant-numeric: lining-nums;\n}\n\n/* filters */\n.blur{filter:blur(4px)}.sepia{\nfilter: sepia(.8);}\n",
+  "output": "/* custom properties */\n:root {\n  --fontSize: 1rem;\n  --mainColor: #12345678;\n  --highlightColor: hwb(190, 35%, 20%);\n}\n\n/* custom media queries */\n@custom-media --viewport-medium (width <= 50rem);\n\n/* some var() & calc() */\nbody {\n  color: var(--mainColor);\n  font-size: var(--fontSize);\n  line-height: calc(var(--fontSize) * 1.5);\n  padding: calc((var(--fontSize) / 2) + 1px);\n}\n\n/* custom media query usage */\n@media (--viewport-medium) {\n  body {\n    font-size: calc(var(--fontSize) * 1.2);\n  }\n}\n\n/* custom selectors */\n@custom-selector :--heading h1, h2, h3, h4, h5, h6;\n\n:--heading {\n  margin-top: 0;\n}\n\n/* colors stuff */\na {\n  color: var(--highlightColor);\n  transition: color 1s;\n}\n\na:hover {\n  color: gray(255, 50%);\n}\n\na:active {\n  color: rebeccapurple;\n}\n\na:any-link {\n  color: color(var(--highlightColor) blackness(+20%));\n}\n\n/* font stuff */\nh2 {\n  font-variant-caps: small-caps;\n}\n\ntable {\n  font-variant-numeric: lining-nums;\n}\n\n/* filters */\n.blur {\n  filter: blur(4px);\n}\n\n.sepia {\n  filter: sepia(.8);\n}\n"
+ },
+ {
+  "tool": "stylefmt",
+  "command": "",
+  "language": "scss",
+  "input": "// mixin for clearfix\n\n\n        @mixin      clearfix    ()      { &:before,\n  &:after {\n                content:\" \";\n    display              : table;  }\n\n  &:after        {clear: both;}\n   }.class\n{\n       padding:10px;@include        clearfix();}\n     .base {  color: red;  }\n\n// placeholder\n%base\n{\n\n\npadding: 12px\n}\n\n.foo{\n@extend      .base;}\n\n.bar\n      {     @extend            %base;\n\n}\n",
+  "output": "// mixin for clearfix\n\n\n@mixin clearfix() {\n  &:before,\n  &:after {\n    content: \" \";\n    display: table;\n  }\n\n  &:after {\n    clear: both;\n  }\n}\n\n.class {\n  padding: 10px;\n  @include clearfix();\n}\n\n.base {\n  color: red;\n}\n\n// placeholder\n%base {\n  padding: 12px;\n}\n\n.foo {\n  @extend .base;\n}\n\n.bar {\n  @extend %base;\n}\n"
+ },
+ {
+  "tool": "stylish-haskell",
+  "command": "",
+  "language": "haskell",
+  "input": "addNumbers::Int->Int->Int\naddNumbers a b = do\n        a + b\n        ",
+  "output": "addNumbers::Int->Int->Int\naddNumbers a b = do\n        a + b\n\n"
+ },
+ {
+  "tool": "stylua",
+  "command": "",
+  "language": "lua",
+  "input": "\n\n        local               function        add (                                       a , b\n)\n\nreturn              a +b\n\n\nend\n\n    ",
+  "output": "local function add(a, b)\n\treturn a + b\nend\n"
+ },
+ {
+  "tool": "swift-format",
+  "command": "",
+  "language": "swift",
+  "input": " func add(a:Int ,b:Int)->Int {\n    return a + b\n    }",
+  "output": "func add(a: Int, b: Int) -> Int {\n    return a + b\n}\n"
+ },
+ {
+  "tool": "swiftformat",
+  "command": "",
+  "language": "swift",
+  "input": " func add(a:Int ,b:Int)->Int {\n    return a + b\n    }",
+  "output": "func add(a: Int, b: Int) -> Int {\n    return a + b\n}\n"
+ },
+ {
+  "tool": "taplo",
+  "command": "",
+  "language": "toml",
+  "input": "          package         =              \"mdsf\"\n  author   = \"Mads Hougesen\"\n  ",
+  "output": "package = \"mdsf\"\nauthor = \"Mads Hougesen\"\n"
+ },
+ {
+  "tool": "terraform",
+  "command": "fmt",
+  "language": "tf",
+  "input": "resource \"aws_instance\" \"example\" {\n                ami   = \"abc123\"\n\n           network_interface  {\n             }\n}\n",
+  "output": "resource \"aws_instance\" \"example\" {\n  ami = \"abc123\"\n\n  network_interface {\n  }\n}\n"
+ },
+ {
+  "tool": "tex-fmt",
+  "command": "",
+  "language": "latex",
+  "input": "\\documentclass{article}\n\n\\begin{document}\n\n\\begin{itemize}\n\\item Lists with items\nover multiple lines\n\\end{itemize}\n\n\\begin{equation}\nE = m c^2\n\\end{equation}\n\n\\end{document}",
+  "output": "\\documentclass{article}\n\n\\begin{document}\n\n\\begin{itemize}\n  \\item Lists with items\n    over multiple lines\n\\end{itemize}\n\n\\begin{equation}\n  E = m c^2\n\\end{equation}\n\n\\end{document}\n"
+ },
+ {
+  "tool": "tofu",
+  "command": "fmt",
+  "language": ".tf",
+  "input": "resource \"aws_instance\" \"example\" {\n                ami   = \"abc123\"\n\n           network_interface  {\n             }\n}\n",
+  "output": "resource \"aws_instance\" \"example\" {\n  ami = \"abc123\"\n\n  network_interface {\n  }\n}\n"
+ },
+ {
+  "tool": "tombi",
+  "command": "format",
+  "language": "toml",
+  "input": "[project ]\nname =     \"hello\"",
+  "output": "[project]\nname = \"hello\"\n"
+ },
+ {
+  "tool": "tombi",
+  "command": "lint",
+  "language": "toml",
+  "input": "[project]\nname = \"hello\"\n",
+  "output": "[project]\nname = \"hello\"\n"
+ },
+ {
+  "tool": "toml-sort",
+  "command": "",
+  "language": "toml",
+  "input": "\n\n[c]\nkey = \"something\"\n\n\n[a]\nkey = \"something\"\n\n[b]\nkey = \"something\"\n\n",
+  "output": "[a]\nkey = \"something\"\n\n[b]\nkey = \"something\"\n\n[c]\nkey = \"something\"\n"
+ },
+ {
+  "tool": "topiary",
+  "command": "",
+  "language": "json",
+  "input": "\n              {\n              \"key\": \"value\",\n  \"key2\": [\n      \"value2\",\n      \"value3\",\n      1\n            , null]\n }\n  ",
+  "output": "{\n  \"key\": \"value\",\n  \"key2\": [\n    \"value2\",\n    \"value3\",\n    1,\n    null\n  ]\n}\n"
+ },
+ {
+  "tool": "tsp",
+  "command": "format",
+  "language": "typespec",
+  "input": "model Pet {  name: string;  age: int32;kind: \"dog\" | \"cat\" | \"fish\";}\n",
+  "output": "model Pet {\n  name: string;\n  age: int32;\n  kind: \"dog\" | \"cat\" | \"fish\";\n}\n"
+ },
+ {
+  "tool": "ty",
+  "command": "",
+  "language": "python",
+  "input": "def add(a: int, b: int) -> int:\n    return a + b\n\n\nadd(1, 2)\n",
+  "output": "def add(a: int, b: int) -> int:\n    return a + b\n\n\nadd(1, 2)\n"
+ },
+ {
+  "tool": "ufmt",
+  "command": "",
+  "language": "python",
+  "input": "def add( a: int ,  b:int)->int: return a+b",
+  "output": "def add(a: int, b: int) -> int:\n    return a + b\n"
+ },
+ {
+  "tool": "uiua",
+  "command": "fmt",
+  "language": "uiua",
+  "input": "\u223f[1        5     8    2]\n",
+  "output": "\u223f[1 5 8 2]\n"
+ },
+ {
+  "tool": "unimport",
+  "command": "",
+  "language": "python",
+  "input": "from typing import Optional\n",
+  "output": "\n"
+ },
+ {
+  "tool": "usort",
+  "command": "",
+  "language": "python",
+  "input": "from q import d\nimport b\nimport a\nimport c\n\n\ndef add(a: int, b: int) -> int:\n  return a + b\n",
+  "output": "import a\nimport b\nimport c\nfrom q import d\n\n\ndef add(a: int, b: int) -> int:\n  return a + b\n"
+ },
+ {
+  "tool": "verusfmt",
+  "command": "",
+  "language": "rust",
+  "input": "pub\n                    async\n            fn    add( a: i32,\n                            b:i32 )->                   i32 {a+b}\n    ",
+  "output": "pub async fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n"
+ },
+ {
+  "tool": "veryl",
+  "command": "fmt",
+  "language": "veryl",
+  "input": "/// documentation comment by markdown format\n/// * list item1\n/// * list item2\npub module Delay #( // visibility control by `pub` keyword\n              param WIDTH:                 u32 = 1, // trailing comma is allowed\n) (\n    i_clk : input clock       ,\n              i_rst : input reset       ,\n    i_data: input logic<WIDTH>,\n     o_data: input logic<WIDTH>,\n)            {\n    // unused variable which is not started with `_` are warned\n              var _unused_variable: logic;\n\n    // clock and reset signals can be omitted\n    // because Veryl can infer these signals\n                      always_ff              {\n        // abstraction syntax of reset polarity and synchronicity\n        if_reset {\n            o_data = '0;\n        } else {\n            o_data = i_data;\n        }\n    }\n}\n",
+  "output": "/// documentation comment by markdown format\n/// * list item1\n/// * list item2\npub module Delay #( // visibility control by `pub` keyword\n    param WIDTH: u32 = 1, // trailing comma is allowed\n) (\n    i_clk : input clock       ,\n    i_rst : input reset       ,\n    i_data: input logic<WIDTH>,\n    o_data: input logic<WIDTH>,\n) {\n    // unused variable which is not started with `_` are warned\n    var _unused_variable: logic;\n\n    // clock and reset signals can be omitted\n    // because Veryl can infer these signals\n    always_ff {\n        // abstraction syntax of reset polarity and synchronicity\n        if_reset {\n            o_data = '0;\n        } else {\n            o_data = i_data;\n        }\n    }\n}\n"
+ },
+ {
+  "tool": "vhdl-style-guide",
+  "command": "",
+  "language": "vhdl",
+  "input": "\narchitecture RTL of FIFO is\n\n  constant c_width : integer := 16;\n  constant c_depth :   integer := 512;\n  constant c_word :integer := 1024;\n\nbegin\n\nend architecture RTL;",
+  "output": "\narchitecture rtl of fifo is\n\n  constant c_width : integer := 16;\n  constant c_depth : integer := 512;\n  constant c_word  : integer := 1024;\n\nbegin\n\nend architecture rtl;\n"
+ },
+ {
+  "tool": "wfindent",
+  "command": "",
+  "language": "fortran",
+  "input": "program demo\ninteger :: endif,if,elseif\ninteger,DIMENSION(2) :: function\nendif=3;if=2\nif(endif==2)then\nendif=5\nelseif=if+4*(endif+&\n2**10)\nelseif(endif==3)then\nfunction(if)=endif/elseif\nprint*,endif\nendif\nend program\n",
+  "output": "program demo\n   integer :: endif,if,elseif\n   integer,DIMENSION(2) :: function\n   endif=3;if=2\n   if(endif==2)then\n      endif=5\n      elseif=if+4*(endif+&\n         2**10)\n   elseif(endif==3)then\n      function(if)=endif/elseif\n      print*,endif\n   endif\nend program\n"
+ },
+ {
+  "tool": "xmlformat",
+  "command": "",
+  "language": "xml",
+  "input": "\n<note>\n  <to>Tove</to>\n          <from>Jani</from>\n      <heading>Reminder</heading>\n        <body>Don't forget me this weekend!</body>\n   </note>",
+  "output": "<note>\n  <to>Tove</to>\n  <from>Jani</from>\n  <heading>Reminder</heading>\n  <body>Don't forget me this weekend!</body>\n</note>"
+ },
+ {
+  "tool": "xmllint",
+  "command": "",
+  "language": "xml",
+  "input": "\n<note>\n  <to>Tove</to>\n          <from>Jani</from>\n      <heading>Reminder</heading>\n        <body>Don't forget me this weekend!</body>\n   </note>",
+  "output": "<?xml version=\"1.0\"?>\n<note>\n  <to>Tove</to>\n  <from>Jani</from>\n  <heading>Reminder</heading>\n  <body>Don't forget me this weekend!</body>\n</note>\n"
+ },
+ {
+  "tool": "xo",
+  "command": "",
+  "language": "javascript",
+  "input": "    function asyncAddition(a,b  )\n    {\n        return a+b\n    }\n\n                    console.info(asyncAddition(1, 2));",
+  "output": "function asyncAddition(a, b) {\n\treturn a + b;\n}\n\nconsole.info(asyncAddition(1, 2));\n"
+ },
+ {
+  "tool": "xq",
+  "command": "",
+  "language": "xml",
+  "input": "<?xml version=\"1.0\"?> <catalog>    <book id=\"bk112\">       <author>Galos, Mike</author>       <title>Visual Studio 7: A Comprehensive Guide</title>       <genre>Computer</genre>       <price>49.95</price>       <publish_date>2001-04-16</publish_date>       <description>Microsoft Visual Studio 7 is explored in depth,       looking at how Visual Basic, Visual C++, C#, and ASP+ are        integrated into a comprehensive development        environment.</description>    </book> </catalog>",
+  "output": "<?xml version=\"1.0\"?>\n<catalog>\n  <book id=\"bk112\">\n    <author>Galos, Mike</author>\n    <title>Visual Studio 7: A Comprehensive Guide</title>\n    <genre>Computer</genre>\n    <price>49.95</price>\n    <publish_date>2001-04-16</publish_date>\n    <description>Microsoft Visual Studio 7 is explored in depth,       looking at how Visual Basic, Visual C++, C#, and ASP+ are        integrated into a comprehensive development        environment.</description>\n  </book>\n</catalog>\n"
+ },
+ {
+  "tool": "xq",
+  "command": "html",
+  "language": "html",
+  "input": "<div>          </div>",
+  "output": "<div></div>\n"
+ },
+ {
+  "tool": "yamlfix",
+  "command": "",
+  "language": "yaml",
+  "input": "\n\n\nversion:                                                                             2\nupdates:\n  - package-ecosystem:                    \"cargo\"\n    directory:  \"/\"\n    schedule:\n      interval:     \"monthly\"\n    assignees:\n      -     \"hougesen\"\n    open-pull-requests-limit:       25\n\n  - package-ecosystem:                              \"github-actions\"\n    directory:          \"/\"\n    schedule:\n        interval:          \"monthly\"\n    assignees:\n        - \"hougesen\"\n    open-pull-requests-limit: 25\n\n\n        ",
+  "output": "---\nversion: 2\nupdates:\n  - package-ecosystem: cargo\n    directory: /\n    schedule:\n      interval: monthly\n    assignees: [hougesen]\n    open-pull-requests-limit: 25\n  - package-ecosystem: github-actions\n    directory: /\n    schedule:\n      interval: monthly\n    assignees: [hougesen]\n    open-pull-requests-limit: 25\n"
+ },
+ {
+  "tool": "yamlfmt",
+  "command": "",
+  "language": "yaml",
+  "input": "\n\n\nversion:                                                                             2\nupdates:\n  - package-ecosystem:                    \"cargo\"\n    directory:  \"/\"\n    schedule:\n      interval:     \"monthly\"\n    assignees:\n      -     \"hougesen\"\n    open-pull-requests-limit:       25\n\n  - package-ecosystem:                              \"github-actions\"\n    directory:          \"/\"\n    schedule:\n        interval:          \"monthly\"\n    assignees:\n        - \"hougesen\"\n    open-pull-requests-limit: 25\n\n\n        ",
+  "output": "version: 2\nupdates:\n  - package-ecosystem: \"cargo\"\n    directory: \"/\"\n    schedule:\n      interval: \"monthly\"\n    assignees:\n      - \"hougesen\"\n    open-pull-requests-limit: 25\n  - package-ecosystem: \"github-actions\"\n    directory: \"/\"\n    schedule:\n      interval: \"monthly\"\n    assignees:\n      - \"hougesen\"\n    open-pull-requests-limit: 25\n"
+ },
+ {
+  "tool": "yamllint",
+  "command": "",
+  "language": "yaml",
+  "input": "---\nname: action\non: [push]\njobs:\n  format:\n    runs-on: ubuntu-latest\n    steps:\n      - run: mdsf format .\n",
+  "output": "---\nname: action\non: [push]\njobs:\n  format:\n    runs-on: ubuntu-latest\n    steps:\n      - run: mdsf format .\n"
+ },
+ {
+  "tool": "yapf",
+  "command": "",
+  "language": "python",
+  "input": "def add( a: int ,  b:int)->int: return a+b",
+  "output": "def add(a: int, b: int) -> int:\n    return a + b\n"
+ },
+ {
+  "tool": "yew-fmt",
+  "command": "",
+  "language": "rust",
+  "input": "pub\n                    async\n            fn    add( a: i32,\n                            b:i32 )->                   i32 {a+b}\n    ",
+  "output": "pub async fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n"
+ },
+ {
+  "tool": "yq",
+  "command": "",
+  "language": "json",
+  "input": "{ \"yq\": \"yq\"  }",
+  "output": "{\n  \"yq\": \"yq\"\n}\n"
+ },
+ {
+  "tool": "zig",
+  "command": "fmt",
+  "language": "zig",
+  "input": "\n    fn     add   (a : i32    , b :   i32 )             i32 {\n        return a + b ;\n\n    }\n    ",
+  "output": "fn add(a: i32, b: i32) i32 {\n    return a + b;\n}\n"
+ }
+]
