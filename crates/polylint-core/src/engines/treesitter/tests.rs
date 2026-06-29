@@ -536,6 +536,75 @@ fn erb_emits_zero_lint_diagnostics() {
     );
 }
 
+// ── Query-driven indent path ─────────────────────────────────────────────────
+// These tests exercise the new query-driven reindent path for non-BRACE_FAMILY
+// languages that have a bundled indents.scm in tree-sitter-language-pack 1.12.
+// The test inputs are intentionally flat (all code at column 0); the expected
+// outputs show structural reindentation at the correct depth with zero system
+// tools — the only requirement is the grammar being available (downloaded on
+// demand, exactly like the BRACE_FAMILY tests above).
+
+/// Known-unformatted RON (Rusty Object Notation) fixture.
+///
+/// RON's indents.scm tags `(array)`, `(map)`, `(tuple)`, and `(struct)` with
+/// `@indent`, plus `"{"/"}"`, `"("/")"`, `"["/ "]"` with `@branch`.  The
+/// expected output applies 4-space indentation to the struct/tuple bodies.
+#[test]
+fn ron_query_driven_structural_reindent() {
+    let engine = TreeSitterEngine;
+    // Flat RON — every field at column 0, no indentation at all.
+    let input = concat!(
+        "Scene(\n",
+        "name: \"test\",\n",
+        "entities: [\n",
+        "Entity(\n",
+        "id: 1,\n",
+        "),\n",
+        "],\n",
+        ")\n",
+    );
+    // After query-driven reindent: fields at +1 relative to enclosing
+    // tuple/array, nested entities at +2.
+    let expected = concat!(
+        "Scene(\n",
+        "    name: \"test\",\n",
+        "    entities: [\n",
+        "        Entity(\n",
+        "            id: 1,\n",
+        "        ),\n",
+        "    ],\n",
+        ")\n",
+    );
+    let s = src("scene.ron", Language::Other("ron".into()), input);
+    let text = formatted_text(engine.format(&s, &cfg(4)).unwrap(), input);
+    assert_eq!(
+        text, expected,
+        "RON query-driven indent must nest correctly"
+    );
+}
+
+/// Regression guard: query path must not change already-correct RON.
+#[test]
+fn ron_query_driven_unchanged_when_already_indented() {
+    let engine = TreeSitterEngine;
+    let already_correct = concat!(
+        "Scene(\n",
+        "    name: \"test\",\n",
+        "    entities: [\n",
+        "        Entity(\n",
+        "            id: 1,\n",
+        "        ),\n",
+        "    ],\n",
+        ")\n",
+    );
+    let s = src("scene.ron", Language::Other("ron".into()), already_correct);
+    let out = engine.format(&s, &cfg(4)).unwrap();
+    assert!(
+        matches!(out, FormatOutput::Unchanged),
+        "already-indented RON must be Unchanged"
+    );
+}
+
 #[test]
 fn non_member_grammar_still_gets_whitespace_normalization() {
     // Regression guard: a language NOT in LEAVE_UNTOUCHED (bash) must still

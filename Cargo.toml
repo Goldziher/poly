@@ -187,6 +187,10 @@ toml = "1.1"
 toml_edit = "0.25"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+# tree-sitter — raw bindings, needed to drive QueryCursor / Query::matches in the
+# tier-2 query-driven indent path (get_query returns Arc<tree_sitter::Query>).
+# Must match the version tree-sitter-language-pack depends on so Cargo unifies them.
+tree-sitter = "0.26"
 # tree-sitter-language-pack — tier-2 generic formatter; default features
 # (dynamic-loading + download) fetch grammars from GitHub releases on demand.
 # 1.12 adds prefetch() + the lock-free get_language fast path (see runner.rs).

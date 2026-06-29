@@ -27,6 +27,9 @@
 //!   unparsable input (it only trims trailing whitespace and fixes line
 //!   endings / the final newline).
 
+mod indent;
+
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
 
@@ -111,8 +114,9 @@ impl Engine for TreeSitterEngine {
         // invalidates cached tier-2 output (grammars drive parsing and thus the
         // reindent). Bump the leading number on logic changes, the tslp suffix on
         // a pack bump.
-        // History: v6 LEAVE_UNTOUCHED no-ops; v5 level-keyed-by-open-line; v4 CRLF fix.
-        "6+tslp1.12.0"
+        // History: v7 query-driven indent path; v6 LEAVE_UNTOUCHED no-ops;
+        //          v5 level-keyed-by-open-line; v4 CRLF fix.
+        "7+tslp1.12.0"
     }
 
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
@@ -154,14 +158,38 @@ impl Engine for TreeSitterEngine {
 
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
         // Data/template/asset grammars: leave byte-identical — no whitespace
-        // normalization, no structural reindent.
-        if grammar_name(src).is_some_and(|n| LEAVE_UNTOUCHED.contains(&n.as_str())) {
+        // normalization, no structural reindent. Resolve the grammar once and
+        // reuse it for both the guard and the dispatch below.
+        let name = grammar_name(src);
+        if name
+            .as_deref()
+            .is_some_and(|n| LEAVE_UNTOUCHED.contains(&n))
+        {
             return Ok(FormatOutput::Unchanged);
         }
-        let formatted = match grammar_name(src) {
-            Some(name) if BRACE_FAMILY.contains(&name.as_str()) => reindent_braces(&name, src, cfg)
-                .unwrap_or_else(|| normalize_whitespace(&src.content, &cfg.globals)),
-            _ => normalize_whitespace(&src.content, &cfg.globals),
+        let formatted = match name {
+            Some(name) => {
+                // Dispatch order:
+                // 1. Brace-counting reindent for BRACE_FAMILY languages —
+                //    these have proven correct output with per-language tuning
+                //    (tabs for Go, 2-space for Swift/Dart, custom switch/case
+                //    adjustments). Even when a BRACE_FAMILY language has a
+                //    bundled indents.scm (zig, swift, scala, proto, objc), the
+                //    Helix-style captures often target interactive indent (Enter
+                //    key) rather than whole-file reformat; the brace path stays.
+                // 2. Query-driven reindent for non-BRACE_FAMILY languages that
+                //    have a bundled indents.scm — adds structural reindent for
+                //    languages like kdl, thrift, ron, ninja, cmake, …
+                // 3. Whitespace normalization as the final catch-all.
+                if BRACE_FAMILY.contains(&name.as_str()) {
+                    reindent_braces(&name, src, cfg)
+                        .unwrap_or_else(|| normalize_whitespace(&src.content, &cfg.globals))
+                } else {
+                    indent::try_reindent_query(&name, src, cfg)
+                        .unwrap_or_else(|| normalize_whitespace(&src.content, &cfg.globals))
+                }
+            }
+            None => normalize_whitespace(&src.content, &cfg.globals),
         };
         if formatted == *src.content {
             Ok(FormatOutput::Unchanged)
@@ -443,11 +471,11 @@ fn collect_switch_case_bodies(
 /// The indent unit string for a grammar: a tab for Go (gofmt), two spaces for
 /// Dart (`dart format`) and Swift (Xcode default is 4 but swift-format and the
 /// conformance golden use 2), and `indent_width` spaces (default 4) otherwise.
-fn indent_unit(grammar_name: &str, indent_width: usize) -> String {
+fn indent_unit(grammar_name: &str, indent_width: usize) -> Cow<'static, str> {
     match grammar_name {
-        "go" => "\t".to_string(),
-        "dart" | "swift" => "  ".to_string(),
-        _ => " ".repeat(indent_width.max(1)),
+        "go" => Cow::Borrowed("\t"),
+        "dart" | "swift" => Cow::Borrowed("  "),
+        _ => Cow::Owned(" ".repeat(indent_width.max(1))),
     }
 }
 
