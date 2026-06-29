@@ -1,0 +1,12 @@
+---
+source: crates/polylint-core/tests/hcl_fixtures.rs
+expression: summary
+---
+[
+    (
+        "syntax-error",
+        Some(
+            3,
+        ),
+    ),
+]

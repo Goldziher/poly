@@ -4,6 +4,7 @@
 
 pub mod dockerfile;
 pub mod graphql;
+pub mod hcl;
 pub mod mago;
 pub mod malva;
 pub mod markup_fmt;

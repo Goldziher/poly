@@ -8,9 +8,9 @@ authors.workspace = true
 description = "Core engine for the polylint/polyfmt universal, zero-dependency linter & formatter"
 
 [package.metadata.cargo-machete]
-# rumdl's lib crate name is rumdl_lib and serde_toon_format's lib crate name is
-# serde_toon; cargo-machete cannot detect the usage via the package name.
-ignored = ["rumdl", "serde_toon_format"]
+# rumdl's lib crate name is rumdl_lib, serde_toon_format's is serde_toon, and
+# hcl-rs's is hcl; cargo-machete cannot detect the usage via the package name.
+ignored = ["rumdl", "serde_toon_format", "hcl-rs"]
 
 [lib]
 name = "polylint_core"
@@ -26,6 +26,8 @@ anyhow.workspace = true
 # dockerfile-parser — Dockerfile AST (MIT); used by the DockerfileEngine
 dockerfile-parser.workspace = true
 graphql-parser.workspace = true
+hcl-edit.workspace = true
+hcl-rs.workspace = true
 ignore.workspace = true
 jarl-core.workspace = true
 mago-allocator.workspace = true

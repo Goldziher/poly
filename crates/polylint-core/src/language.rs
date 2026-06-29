@@ -54,6 +54,8 @@ pub enum Language {
     Xml,
     /// GraphQL.
     GraphQl,
+    /// HCL / Terraform configuration language.
+    Hcl,
     /// Nix.
     Nix,
     /// Shell / Bash.
@@ -116,6 +118,7 @@ impl Language {
             Language::Mustache => "mustache",
             Language::Xml => "xml",
             Language::GraphQl => "graphql",
+            Language::Hcl => "hcl",
             Language::Nix => "nix",
             Language::Shell => "shell",
             Language::Dockerfile => "dockerfile",
@@ -189,6 +192,7 @@ impl Language {
             "mustache" | "hbs" | "handlebars" => Language::Mustache,
             "xml" | "svg" | "wsdl" | "xsd" | "xslt" | "xsl" => Language::Xml,
             "graphql" | "gql" => Language::GraphQl,
+            "hcl" | "tf" | "tfvars" => Language::Hcl,
             "nix" => Language::Nix,
             "sh" | "bash" | "zsh" => Language::Shell,
             "go" => Language::Go,
@@ -232,7 +236,8 @@ impl Language {
             | Language::Vento
             | Language::Mustache
             | Language::Xml
-            | Language::GraphQl => 2,
+            | Language::GraphQl
+            | Language::Hcl => 2,
             _ => 4,
         }
     }

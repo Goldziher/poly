@@ -7,6 +7,7 @@
 use crate::engine::Engine;
 use crate::engines::dockerfile::DockerfileEngine;
 use crate::engines::graphql::GraphQlEngine;
+use crate::engines::hcl::HclEngine;
 use crate::engines::mago::MagoEngine;
 use crate::engines::malva::MalvaEngine;
 use crate::engines::markup_fmt::MarkupFmtEngine;
@@ -42,6 +43,7 @@ pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
         Language::Nix => vec![Box::new(NixFmtEngine)],
         Language::Ruby => vec![Box::new(RubyfmtEngine)],
         Language::GraphQl => vec![Box::new(GraphQlEngine)],
+        Language::Hcl => vec![Box::new(HclEngine)],
         Language::Html
         | Language::Vue
         | Language::Svelte
