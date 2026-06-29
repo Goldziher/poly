@@ -4,9 +4,10 @@
 //! lints/cleans a commit message (gitfluff). The same engine powers lint/fmt;
 //! `polylint` and `polyfmt` ship as thin aliases for those two subcommands.
 
+use std::path::PathBuf;
 use std::process::ExitCode;
 
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 use poly_cli::{CacheArgs, FmtArgs, HooksArgs, LintArgs, run_cache, run_fmt, run_hooks, run_lint};
 
 #[derive(Parser)]
@@ -33,6 +34,17 @@ enum Command {
     Hooks(HooksArgs),
     /// Inspect and maintain the result cache (stats / size / gc / clean).
     Cache(CacheArgs),
+    /// Run an MCP server over stdio (mirrors the CLI).
+    Mcp(McpArgs),
+}
+
+/// Arguments for `poly mcp`. The server reads `poly.toml` per request like the
+/// CLI; `--config` pins a fallback config file for requests that don't name one.
+#[derive(Args)]
+struct McpArgs {
+    /// Path to a config file used for requests that do not specify their own.
+    #[arg(long, value_name = "PATH")]
+    config: Option<PathBuf>,
 }
 
 fn main() -> ExitCode {
@@ -54,6 +66,16 @@ fn main() -> ExitCode {
         Command::Cache(args) => {
             poly_cli::init_logging();
             run_cache(args)
+        }
+        Command::Mcp(args) => {
+            poly_cli::init_logging();
+            match poly_mcp::serve(args.config) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(error) => {
+                    eprintln!("poly mcp: {error:#}");
+                    ExitCode::FAILURE
+                }
+            }
         }
     }
 }

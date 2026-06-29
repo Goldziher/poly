@@ -8,6 +8,7 @@ members = [
     "crates/poly-cli",
     "crates/poly-config",
     "crates/poly-hooks",
+    "crates/poly-mcp",
     "crates/polyfmt",
     "crates/polylint",
     "crates/polylint-core",
@@ -117,6 +118,7 @@ poly-catalog = { path = "crates/poly-catalog" }
 poly-cli = { path = "crates/poly-cli" }
 poly-config = { path = "crates/poly-config" }
 poly-hooks = { path = "crates/poly-hooks" }
+poly-mcp = { path = "crates/poly-mcp" }
 polylint-core = { path = "crates/polylint-core" }
 pprof = "0.15.0"
 # predicates — assertion combinators for the vendored gitfluff CLI tests
@@ -130,9 +132,11 @@ quick-xml = "0.40"
 rand = "0.10.1"
 rayon = "1"
 regex = "1"
-# rmcp — official Rust Model Context Protocol SDK (Apache-2.0). Declared here for the
-# forthcoming poly-mcp server that mirrors the CLI; not yet consumed by any member crate.
-rmcp = "2.0.0"
+# rmcp — official Rust Model Context Protocol SDK (Apache-2.0). Consumed by poly-mcp
+# (the `poly mcp` stdio server). Keeps the default feature set (server + macros +
+# transport-io/async-rw) and adds `schemars` for tool parameter JSON Schemas; the
+# `client` feature is enabled only in poly-mcp's dev-dependencies for round-trip tests.
+rmcp = { version = "2.0.0", features = ["schemars"] }
 # rubyfmt — opinionated Ruby formatter built on the Prism parser (MIT).
 # Not published to crates.io; pinned to a specific git rev for reproducibility.
 # default-features = false disables the optional tikv-jemallocator/jemalloc
@@ -176,6 +180,9 @@ target-lexicon = "0.13.5"
 tempfile = "3"
 textwrap = "0.16.2"
 thiserror = "2"
+# tokio — async runtime for the poly-mcp stdio server only; kept out of the
+# synchronous, rayon-driven lint/format hot-path crates.
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std"] }
 toml = "1.1"
 toml_edit = "0.25"
 tracing = "0.1"

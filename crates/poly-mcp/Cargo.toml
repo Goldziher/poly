@@ -1,0 +1,27 @@
+[package]
+name = "poly-mcp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "MCP (Model Context Protocol) server over stdio that mirrors the poly CLI's lint/format/cache capabilities."
+keywords = ["mcp", "linter", "formatter", "lint", "format"]
+categories = ["development-tools"]
+
+[dependencies]
+anyhow.workspace = true
+poly-cache.workspace = true
+polylint-core.workspace = true
+rmcp = { workspace = true, features = ["server", "transport-io", "macros"] }
+schemars.workspace = true
+serde = { workspace = true }
+serde_json.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+# `client` enables the in-process round-trip integration test (initialize →
+# tools/list → tools/call) over a tokio duplex transport.
+rmcp = { workspace = true, features = ["client"] }
+tempfile.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
