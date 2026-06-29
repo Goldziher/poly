@@ -10,13 +10,15 @@ expression: json
         "engine": "ruff",
         "code": "E501",
         "severity": "warning",
-        "message": "line too long",
+        "title": "line too long",
+        "description": "the line exceeds the configured width",
         "span": {
           "start_line": 12,
           "start_col": 80,
           "end_line": 12,
           "end_col": 95
         },
+        "url": "https://example.test/rules/E501",
         "metadata": {
           "category": "style",
           "url": "https://example.test/rules/E501"
@@ -25,7 +27,7 @@ expression: json
       {
         "engine": "ruff",
         "severity": "error",
-        "message": "syntax error",
+        "title": "syntax error",
         "span": {
           "start_line": 1,
           "start_col": 1,

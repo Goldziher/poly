@@ -36,13 +36,25 @@ enum Command {
 }
 
 fn main() -> ExitCode {
-    poly_cli::init_logging();
+    // Logging is initialized *after* parsing so `poly lint`/`poly fmt --debug`
+    // can widen the log filter (the subscriber is first-call-wins). `run_lint`
+    // and `run_fmt` init it themselves from their `--debug` flag; the other
+    // subcommands have no such flag, so init at the default verbosity here.
     match Cli::parse().command {
         Command::Lint(args) => run_lint(args),
         Command::Fmt(args) => run_fmt(args),
-        Command::Commit(args) => run_commit(*args),
-        Command::Hooks(args) => run_hooks(args),
-        Command::Cache(args) => run_cache(args),
+        Command::Commit(args) => {
+            poly_cli::init_logging();
+            run_commit(*args)
+        }
+        Command::Hooks(args) => {
+            poly_cli::init_logging();
+            run_hooks(args)
+        }
+        Command::Cache(args) => {
+            poly_cli::init_logging();
+            run_cache(args)
+        }
     }
 }
 

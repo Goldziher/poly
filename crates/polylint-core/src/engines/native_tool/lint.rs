@@ -119,7 +119,9 @@ pub(crate) fn parse_shellcheck_json(
             engine: engine_name.to_owned(),
             code: Some(format!("SC{}", c.code)),
             severity: shellcheck_level_to_severity(&c.level),
-            message: c.message,
+            title: c.message,
+            description: None,
+            url: None,
             span: Some(Span {
                 start_line: c.line,
                 start_col: c.column,
@@ -216,7 +218,7 @@ mod tests {
         assert_eq!(d.code.as_deref(), Some("SC2086"));
         assert_eq!(d.severity, Severity::Info);
         assert_eq!(
-            d.message,
+            d.title,
             "Double quote to prevent globbing and word splitting."
         );
         let span = d.span.unwrap();

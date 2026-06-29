@@ -19,6 +19,7 @@ struct Cli {
 }
 
 fn main() -> ExitCode {
-    poly_cli::init_logging();
+    // `run_fmt` initializes logging after parse so `--debug` can widen the
+    // filter (the subscriber is first-call-wins).
     run_fmt(Cli::parse().args)
 }

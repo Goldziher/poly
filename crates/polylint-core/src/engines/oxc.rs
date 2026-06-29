@@ -271,6 +271,11 @@ fn map_oxlint_message(msg: Message, content: &str) -> Diagnostic {
     // `Display for OxcDiagnostic` formats as the primary message string.
     let message_text = msg.error.to_string();
 
+    // `OxcDiagnostic` derefs to its inner, which carries an optional longer
+    // `help` string and a rule documentation `url`; surface both for `--verbose`.
+    let description = msg.error.help.as_ref().map(|h| h.to_string());
+    let url = msg.error.url.as_ref().map(|u| u.to_string());
+
     let start = msg.span.start as usize;
     let end = msg.span.end as usize;
     let (start_line, start_col) = offset_to_line_col(content, start);
@@ -305,9 +310,11 @@ fn map_oxlint_message(msg: Message, content: &str) -> Diagnostic {
     Diagnostic {
         engine: "oxc".to_owned(),
         code,
-        message: message_text,
+        title: message_text,
+        description,
         severity,
         span,
+        url,
         fix,
         metadata: Default::default(),
     }
@@ -384,7 +391,9 @@ fn lint_json(src: &SourceFile) -> anyhow::Result<Vec<Diagnostic>> {
             Ok(vec![Diagnostic {
                 engine: "oxc".to_owned(),
                 code: Some("parse-error".to_owned()),
-                message: err.to_string(),
+                title: err.to_string(),
+                description: None,
+                url: None,
                 severity: Severity::Error,
                 span: Some(Span {
                     start_line: line,

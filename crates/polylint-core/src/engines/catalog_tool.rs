@@ -459,8 +459,10 @@ impl CatalogToolEngine {
             engine: self.tool.name.clone(),
             code: None,
             severity: Severity::Warning,
-            message: snippet,
+            title: snippet,
+            description: None,
             span: None,
+            url: None,
             fix: Vec::new(),
             metadata: std::collections::BTreeMap::new(),
         }]
@@ -675,9 +677,9 @@ mod tests {
         );
         assert!(diagnostic.code.is_none(), "no rule code");
         assert!(
-            diagnostic.message.contains("problem on line 1"),
+            diagnostic.title.contains("problem on line 1"),
             "carries the tool's output: {}",
-            diagnostic.message
+            diagnostic.title
         );
     }
 

@@ -136,7 +136,9 @@ impl Engine for TreeSitterEngine {
                     engine: "treesitter".to_string(),
                     code: Some("trailing-whitespace".to_string()),
                     severity: Severity::Warning,
-                    message: "trailing whitespace".to_string(),
+                    title: "trailing whitespace".to_string(),
+                    description: None,
+                    url: None,
                     span: Some(Span {
                         start_line: (i + 1) as u32,
                         start_col: (trimmed_len + 1) as u32,

@@ -24,7 +24,8 @@ fn lint_flags_trailing_whitespace() {
         no_cache: true,
         jobs: Some(1),
     };
-    let results = polylint_core::lint(&[dir.path().to_path_buf()], &cfg, &opts, false).unwrap();
+    let results =
+        polylint_core::lint(&[dir.path().to_path_buf()], &cfg, &opts, false, false).unwrap();
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].diagnostics.len(), 1);
     assert_eq!(
@@ -44,7 +45,8 @@ fn format_check_does_not_write_but_reports_change() {
         jobs: Some(1),
     };
 
-    let results = polylint_core::format(&[dir.path().to_path_buf()], &cfg, &opts, false).unwrap();
+    let results =
+        polylint_core::format(&[dir.path().to_path_buf()], &cfg, &opts, false, false).unwrap();
     assert_eq!(results.len(), 1);
     assert!(results[0].changed, "check mode should detect a change");
     // File must be untouched in check mode.
@@ -64,7 +66,8 @@ fn format_write_is_idempotent() {
         jobs: Some(1),
     };
 
-    let first = polylint_core::format(&[dir.path().to_path_buf()], &cfg, &opts, true).unwrap();
+    let first =
+        polylint_core::format(&[dir.path().to_path_buf()], &cfg, &opts, true, false).unwrap();
     assert!(first[0].changed);
     let after = fs::read_to_string(&path).unwrap();
     assert_eq!(
@@ -73,7 +76,8 @@ fn format_write_is_idempotent() {
     );
 
     // Second pass: nothing left to change.
-    let second = polylint_core::format(&[dir.path().to_path_buf()], &cfg, &opts, true).unwrap();
+    let second =
+        polylint_core::format(&[dir.path().to_path_buf()], &cfg, &opts, true, false).unwrap();
     assert!(!second[0].changed, "formatting must be idempotent");
 }
 
@@ -91,7 +95,7 @@ fn lint_fix_applies_autofixes_and_dry_run_does_not() {
     };
 
     // Dry run (fix = false) must not touch the file on disk.
-    polylint_core::lint(&[dir.path().to_path_buf()], &cfg, &opts, false).unwrap();
+    polylint_core::lint(&[dir.path().to_path_buf()], &cfg, &opts, false, false).unwrap();
     assert_eq!(
         fs::read_to_string(&path).unwrap(),
         bad,
@@ -99,7 +103,7 @@ fn lint_fix_applies_autofixes_and_dry_run_does_not() {
     );
 
     // fix = true applies the single-correction typo autofixes in place.
-    polylint_core::lint(&[dir.path().to_path_buf()], &cfg, &opts, true).unwrap();
+    polylint_core::lint(&[dir.path().to_path_buf()], &cfg, &opts, true, false).unwrap();
     let fixed = fs::read_to_string(&path).unwrap();
     assert_ne!(fixed, bad, "fix must rewrite the file");
     // Assert the exact corrected output. It uses only correctly-spelled words,

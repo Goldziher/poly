@@ -100,8 +100,10 @@ impl Engine for GraphQlEngine {
             engine: "graphql".to_string(),
             code: Some("syntax".to_string()),
             severity: Severity::Error,
-            message: err_msg,
+            title: err_msg,
+            description: None,
             span,
+            url: None,
             fix: vec![],
             metadata: Default::default(),
         }])

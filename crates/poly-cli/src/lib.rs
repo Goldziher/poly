@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::Args;
-use polylint_core::{Config, RunOptions, report};
+use polylint_core::{Config, RunOptions, Verbosity, report};
 
 pub mod cache_cmd;
 pub mod hooks;
@@ -14,16 +14,33 @@ pub mod hooks;
 pub use cache_cmd::{CacheArgs, run_cache};
 pub use hooks::{HooksArgs, run_hooks};
 
+/// Install the process-wide `tracing` subscriber for the CLI binaries at the
+/// default verbosity (info-level poly notices). Equivalent to
+/// [`init_logging_with(false)`](init_logging_with).
+pub fn init_logging() {
+    init_logging_with(false);
+}
+
 /// Install the process-wide `tracing` subscriber for the CLI binaries.
 ///
-/// Idempotent (safe to call from every entry point). Logs to **stderr** so they
-/// never pollute `--format json` on stdout. The default filter surfaces poly's
-/// own info-level notices — e.g. the "toolchain not found; using the generic
-/// tier" fallback — while keeping dependencies quiet; override with `RUST_LOG`.
-pub fn init_logging() {
+/// Idempotent (first call wins; safe to call from every entry point). Logs to
+/// **stderr** so they never pollute `--format json` on stdout. The default
+/// filter surfaces poly's own info-level notices — e.g. the "toolchain not
+/// found; using the generic tier" fallback — while keeping dependencies quiet.
+/// When `debug` is set, the poly crates are widened to `debug` level. `RUST_LOG`
+/// always overrides either default.
+///
+/// Because the subscriber is first-call-wins, callers that honor `--debug` must
+/// invoke this **after** argument parsing — see the binary entry points.
+pub fn init_logging_with(debug: bool) {
     use tracing_subscriber::{EnvFilter, fmt};
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-        EnvFilter::new("warn,polylint_core=info,poly_hooks=info,poly_cache=info,poly_cli=info")
+        let directives = if debug {
+            "warn,polylint_core=debug,poly_hooks=debug,poly_cache=debug,poly_cli=debug"
+        } else {
+            "warn,polylint_core=info,poly_hooks=info,poly_cache=info,poly_cli=info"
+        };
+        EnvFilter::new(directives)
     });
     let _ = fmt()
         .with_env_filter(filter)
@@ -73,6 +90,16 @@ pub struct CommonArgs {
     /// default is a dry run that reports what would change and writes nothing.
     #[arg(long)]
     pub fix: bool,
+
+    /// Show extra per-finding detail in `pretty` output: description, rule URL,
+    /// and metadata. No-op for `--format json`/`toon` (always fully structured).
+    #[arg(long)]
+    pub verbose: bool,
+
+    /// Emit debug data: per-engine cache hit/miss and timing (shown in `pretty`,
+    /// attached to `json`/`toon`), and raise log verbosity to `debug` on stderr.
+    #[arg(long)]
+    pub debug: bool,
 }
 
 /// `poly lint` arguments.
@@ -99,16 +126,19 @@ pub struct FmtArgs {
 /// Run the lint pipeline and map the outcome to a process exit code.
 pub fn run_lint(args: LintArgs) -> ExitCode {
     let common = args.common;
+    // Init logging after parse so `--debug` can widen the filter (first-call-wins).
+    init_logging_with(common.debug);
     apply_color(&common);
+    let verbosity = Verbosity::new(common.verbose, common.debug);
     let (paths, config, opts) = match prepare(&common) {
         Ok(triple) => triple,
         Err(code) => return code,
     };
 
-    match polylint_core::lint(&paths, &config, &opts, common.fix) {
+    match polylint_core::lint(&paths, &config, &opts, common.fix, common.debug) {
         Ok(results) => {
             let count = match common.format {
-                OutputFormat::Pretty => report::report_lint_pretty(&results),
+                OutputFormat::Pretty => report::report_lint_pretty(&results, verbosity),
                 OutputFormat::Json => {
                     println!("{}", report::report_lint_json(&results));
                     results.iter().map(|r| r.diagnostics.len()).sum()
@@ -134,7 +164,10 @@ pub fn run_lint(args: LintArgs) -> ExitCode {
 /// Run the format pipeline and map the outcome to a process exit code.
 pub fn run_fmt(args: FmtArgs) -> ExitCode {
     let common = &args.common;
+    // Init logging after parse so `--debug` can widen the filter (first-call-wins).
+    init_logging_with(common.debug);
     apply_color(common);
+    let verbosity = Verbosity::new(common.verbose, common.debug);
     let (paths, config, opts) = match prepare(common) {
         Ok(triple) => triple,
         Err(code) => return code,
@@ -143,10 +176,10 @@ pub fn run_fmt(args: FmtArgs) -> ExitCode {
     // Dry run by default; `--fix` writes formatted output in place. `--check`
     // is an explicit alias for the default dry run.
     let write = common.fix;
-    match polylint_core::format(&paths, &config, &opts, write) {
+    match polylint_core::format(&paths, &config, &opts, write, common.debug) {
         Ok(results) => {
             let changed = match common.format {
-                OutputFormat::Pretty => report::report_format_pretty(&results, !write),
+                OutputFormat::Pretty => report::report_format_pretty(&results, !write, verbosity),
                 OutputFormat::Json => {
                     println!("{}", report::report_format_json(&results));
                     results.iter().filter(|r| r.changed).count()

@@ -84,7 +84,9 @@ impl Engine for HclEngine {
                     engine: "hcl".to_string(),
                     code: Some("syntax-error".to_string()),
                     severity: Severity::Error,
-                    message: error.message().to_string(),
+                    title: error.message().to_string(),
+                    description: None,
+                    url: None,
                     span: Some(Span {
                         start_line: line,
                         start_col: col,

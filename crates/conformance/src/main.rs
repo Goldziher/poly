@@ -264,6 +264,7 @@ fn polyfmt_output(file: &Path) -> Result<String> {
         &Config::default(),
         &opts,
         false,
+        false,
     )?;
     Ok(results
         .into_iter()

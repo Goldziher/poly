@@ -58,8 +58,10 @@ pub(super) fn lint_php(src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<
             engine: "mago".to_string(),
             code: Some(parse_error_code(error)),
             severity: Severity::Error,
-            message: error.to_string(),
+            title: error.to_string(),
+            description: None,
             span: Some(span),
+            url: None,
             fix: vec![],
             metadata: Default::default(),
         });
@@ -92,12 +94,18 @@ pub(super) fn lint_php(src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<
         // are safe to forward.
         let fix = extract_safe_fixes(issue, file_id, &src.content);
 
+        // mago exposes a longer `help` string (falling back to the first note)
+        // and a rule documentation `link`; surface both for `--verbose`.
+        let description = issue.help.clone().or_else(|| issue.notes.first().cloned());
+
         diags.push(Diagnostic {
             engine: "mago".to_string(),
             code: issue.code.clone(),
             severity,
-            message: issue.message.clone(),
+            title: issue.message.clone(),
+            description,
             span,
+            url: issue.link.clone(),
             fix,
             metadata: Default::default(),
         });

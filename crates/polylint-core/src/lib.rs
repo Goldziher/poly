@@ -33,4 +33,5 @@ pub mod runner;
 pub use config::{Config, Kind};
 pub use engine::{Capabilities, Diagnostic, Engine, FormatOutput, Severity, SourceFile, Span};
 pub use language::Language;
-pub use runner::{FormatResult, LintResult, RunOptions, format, lint};
+pub use report::Verbosity;
+pub use runner::{EngineDebug, FormatResult, LintResult, RunDebug, RunOptions, format, lint};

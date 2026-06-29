@@ -68,7 +68,9 @@ impl Engine for YamlEngine {
                     engine: "yaml".to_string(),
                     code: Some("syntax".to_string()),
                     severity: Severity::Error,
-                    message: err.to_string(),
+                    title: err.to_string(),
+                    description: None,
+                    url: None,
                     span: Some(Span {
                         start_line: line,
                         start_col: col,

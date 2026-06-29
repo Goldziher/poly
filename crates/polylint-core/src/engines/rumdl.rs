@@ -167,7 +167,9 @@ fn map_warning(w: &LintWarning, engine: &str) -> Diagnostic {
         engine: engine.to_owned(),
         code: w.rule_name.clone(),
         severity,
-        message: w.message.clone(),
+        title: w.message.clone(),
+        description: None,
+        url: None,
         span: Some(Span {
             start_line: w.line as u32,
             start_col: w.column as u32,

@@ -25,6 +25,29 @@ pub struct RunOptions {
     pub jobs: Option<usize>,
 }
 
+/// Per-engine debug record for one file. Collected only when debug output is
+/// requested (`--debug`); never built on the default hot path.
+#[derive(Debug, Clone, Serialize)]
+pub struct EngineDebug {
+    /// Backend that produced this record.
+    pub engine: String,
+    /// Wrapped tool/crate version (matches the cache-key component).
+    pub version: String,
+    /// Wall-clock time the engine spent on this file, in milliseconds. Zero for
+    /// a cache hit (the engine did not run).
+    pub duration_ms: f64,
+    /// Whether the result came from the content-hash cache.
+    pub cache_hit: bool,
+}
+
+/// Per-file debug data surfaced under `--debug`: cache hit/miss and timing for
+/// each engine that ran. Populated only when debug collection is enabled.
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct RunDebug {
+    /// One entry per engine evaluated for the file.
+    pub engines: Vec<EngineDebug>,
+}
+
 /// Per-file lint outcome.
 #[derive(Debug, Clone, Serialize)]
 pub struct LintResult {
@@ -32,6 +55,9 @@ pub struct LintResult {
     pub path: PathBuf,
     /// Diagnostics from all backends for this file.
     pub diagnostics: Vec<Diagnostic>,
+    /// Debug data (cache hit/miss + timing), present only under `--debug`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub debug: Option<RunDebug>,
 }
 
 /// Per-file format outcome.
@@ -44,6 +70,9 @@ pub struct FormatResult {
     /// Formatted contents when changed (not serialized).
     #[serde(skip)]
     pub formatted: Option<String>,
+    /// Debug data (cache hit/miss + timing), present only under `--debug`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub debug: Option<RunDebug>,
 }
 
 /// Maximum autofix passes per file: applying a fix can surface or resolve
@@ -155,6 +184,7 @@ pub fn lint(
     config: &Config,
     opts: &RunOptions,
     fix: bool,
+    collect_debug: bool,
 ) -> anyhow::Result<Vec<LintResult>> {
     configure_pool(opts.jobs);
     let cache = ResultCache::open_default(!opts.no_cache)?;
@@ -162,7 +192,7 @@ pub fn lint(
     let plans = plan_by_language(&files, config, Kind::Lint);
     let mut results: Vec<LintResult> = files
         .par_iter()
-        .filter_map(|f| match lint_one(f, &plans, &cache, fix) {
+        .filter_map(|f| match lint_one(f, &plans, &cache, fix, collect_debug) {
             Ok(result) => Some(result),
             // A per-file failure (read, parse, or — when fixing — the atomic
             // write) must not be swallowed silently; surface it and skip the file.
@@ -184,6 +214,7 @@ pub fn format(
     config: &Config,
     opts: &RunOptions,
     write: bool,
+    collect_debug: bool,
 ) -> anyhow::Result<Vec<FormatResult>> {
     configure_pool(opts.jobs);
     let cache = ResultCache::open_default(!opts.no_cache)?;
@@ -191,15 +222,17 @@ pub fn format(
     let plans = plan_by_language(&files, config, Kind::Format);
     let mut results: Vec<FormatResult> = files
         .par_iter()
-        .filter_map(|f| match format_one(f, &plans, &cache, write) {
-            Ok(result) => Some(result),
-            // A per-file failure (read, engine, or — when writing — the atomic
-            // rename) must not be swallowed silently; surface it and skip the file.
-            Err(error) => {
-                eprintln!("warning: {}: {error:#}", f.path.display());
-                None
-            }
-        })
+        .filter_map(
+            |f| match format_one(f, &plans, &cache, write, collect_debug) {
+                Ok(result) => Some(result),
+                // A per-file failure (read, engine, or — when writing — the atomic
+                // rename) must not be swallowed silently; surface it and skip the file.
+                Err(error) => {
+                    eprintln!("warning: {}: {error:#}", f.path.display());
+                    None
+                }
+            },
+        )
         .collect();
     results.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(results)
@@ -210,9 +243,10 @@ fn lint_one(
     plans: &FxHashMap<Language, Vec<EnginePlan>>,
     cache: &ResultCache,
     fix: bool,
+    collect_debug: bool,
 ) -> anyhow::Result<LintResult> {
     let original = std::fs::read_to_string(&f.path)?;
-    let mut diagnostics = lint_content(f, plans, cache, &original)?;
+    let (mut diagnostics, mut debug) = lint_content(f, plans, cache, &original, collect_debug)?;
 
     if fix {
         // Only the fix path mutates the buffer, so clone lazily here; a plain
@@ -227,7 +261,10 @@ fn lint_one(
             match apply_edits(&content, &edit_groups) {
                 Some(next) if next != content => {
                     content = next;
-                    diagnostics = lint_content(f, plans, cache, &content)?;
+                    let (next_diags, next_debug) =
+                        lint_content(f, plans, cache, &content, collect_debug)?;
+                    diagnostics = next_diags;
+                    debug = next_debug;
                 }
                 _ => break,
             }
@@ -240,17 +277,21 @@ fn lint_one(
     Ok(LintResult {
         path: f.path.clone(),
         diagnostics,
+        debug,
     })
 }
 
 /// Run every lint-capable engine for the file's language over `content`,
-/// content-hash caching each engine's diagnostics.
+/// content-hash caching each engine's diagnostics. When `collect_debug` is set,
+/// also returns per-engine cache hit/miss + timing; otherwise the second tuple
+/// element is `None` and no timing instrumentation runs.
 fn lint_content(
     f: &DiscoveredFile,
     plans: &FxHashMap<Language, Vec<EnginePlan>>,
     cache: &ResultCache,
     content: &str,
-) -> anyhow::Result<Vec<Diagnostic>> {
+    collect_debug: bool,
+) -> anyhow::Result<(Vec<Diagnostic>, Option<RunDebug>)> {
     let src = SourceFile {
         path: f.path.clone(),
         language: f.language.clone(),
@@ -259,6 +300,7 @@ fn lint_content(
     // Content is constant across this file's engines, so digest it once.
     let digest = ResultCache::single_file_digest(content);
     let mut all = Vec::new();
+    let mut debug = collect_debug.then(RunDebug::default);
     let engine_plans = plans.get(&f.language).map(Vec::as_slice).unwrap_or(&[]);
     for plan in engine_plans {
         let key = ResultCache::key_with_args(
@@ -271,10 +313,14 @@ fn lint_content(
         if let Some(bytes) = cache.get(Namespace::Lint, &key)
             && let Ok(diags) = serde_json::from_slice::<Vec<Diagnostic>>(&bytes)
         {
+            push_engine_debug(debug.as_mut(), plan, None);
             all.extend(diags);
             continue;
         }
+        // Time the engine only when debug collection is on (zero cost otherwise).
+        let started = collect_debug.then(std::time::Instant::now);
         let diags = plan.engine.lint(&src, &plan.config)?;
+        push_engine_debug(debug.as_mut(), plan, started);
         if let Ok(bytes) = serde_json::to_vec(&diags)
             && let Err(error) = cache.put(Namespace::Lint, &key, &bytes)
         {
@@ -285,7 +331,29 @@ fn lint_content(
         }
         all.extend(diags);
     }
-    Ok(all)
+    Ok((all, debug))
+}
+
+/// Append one [`EngineDebug`] record when debug collection is active. `started`
+/// is `Some` for an engine that actually ran (timing it) and `None` for a cache
+/// hit (`duration_ms` = 0, `cache_hit` = true).
+fn push_engine_debug(
+    debug: Option<&mut RunDebug>,
+    plan: &EnginePlan,
+    started: Option<std::time::Instant>,
+) {
+    if let Some(debug) = debug {
+        let (duration_ms, cache_hit) = match started {
+            Some(start) => (start.elapsed().as_secs_f64() * 1000.0, false),
+            None => (0.0, true),
+        };
+        debug.engines.push(EngineDebug {
+            engine: plan.engine.name().to_owned(),
+            version: plan.engine.version().to_owned(),
+            duration_ms,
+            cache_hit,
+        });
+    }
 }
 
 /// Apply autofix edit groups to `content`, one group per diagnostic.
@@ -379,8 +447,10 @@ fn format_one(
     plans: &FxHashMap<Language, Vec<EnginePlan>>,
     cache: &ResultCache,
     write: bool,
+    collect_debug: bool,
 ) -> anyhow::Result<FormatResult> {
     let original = std::fs::read_to_string(&f.path)?;
+    let mut debug = collect_debug.then(RunDebug::default);
     // The file's bytes are shared across every format engine via `Arc<str>`:
     // each engine gets a refcount bump, not a fresh copy of the contents.
     let mut current: Arc<str> = Arc::from(original.as_str());
@@ -406,14 +476,18 @@ fn format_one(
         if let Some(bytes) = cache.get(Namespace::Fmt, &key)
             && let Ok(text) = String::from_utf8(bytes)
         {
+            push_engine_debug(debug.as_mut(), plan, None);
             current = Arc::from(text);
             continue;
         }
         src.content = Arc::clone(&current);
+        // Time the engine only when debug collection is on (zero cost otherwise).
+        let started = collect_debug.then(std::time::Instant::now);
         let out: Arc<str> = match plan.engine.format(&src, &plan.config)? {
             FormatOutput::Unchanged => Arc::clone(&current),
             FormatOutput::Formatted(s) => Arc::from(s),
         };
+        push_engine_debug(debug.as_mut(), plan, started);
         if let Err(error) = cache.put(Namespace::Fmt, &key, out.as_bytes()) {
             tracing::warn!(
                 engine = plan.engine.name(),
@@ -435,6 +509,7 @@ fn format_one(
         } else {
             None
         },
+        debug,
     })
 }
 

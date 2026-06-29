@@ -260,8 +260,10 @@ impl Engine for RuffEngine {
                     engine: "ruff".to_string(),
                     code,
                     severity,
-                    message,
+                    title: message,
+                    description: None,
                     span,
+                    url: None,
                     fix,
                     metadata: Default::default(),
                 }

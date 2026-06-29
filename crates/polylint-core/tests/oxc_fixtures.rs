@@ -134,7 +134,7 @@ fn oxc_known_bad_json_diagnostics() {
         !diags.is_empty(),
         "expected at least one diagnostic for trailing comma"
     );
-    insta::assert_debug_snapshot!(diags[0].message);
+    insta::assert_debug_snapshot!(diags[0].title);
 }
 
 // ── known-unformatted fixtures ────────────────────────────────────────────────

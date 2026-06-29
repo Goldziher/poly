@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use polylint_core::report;
+use polylint_core::report::{self, Verbosity};
 use polylint_core::runner::{FormatResult, LintResult};
 use polylint_core::{Diagnostic, Severity, Span};
 
@@ -25,13 +25,15 @@ fn sample_lint_results() -> Vec<LintResult> {
                     engine: "ruff".to_string(),
                     code: Some("E501".to_string()),
                     severity: Severity::Warning,
-                    message: "line too long".to_string(),
+                    title: "line too long".to_string(),
+                    description: Some("the line exceeds the configured width".to_string()),
                     span: Some(Span {
                         start_line: 12,
                         start_col: 80,
                         end_line: 12,
                         end_col: 95,
                     }),
+                    url: Some("https://example.test/rules/E501".to_string()),
                     fix: vec![],
                     metadata,
                 },
@@ -39,21 +41,25 @@ fn sample_lint_results() -> Vec<LintResult> {
                     engine: "ruff".to_string(),
                     code: None,
                     severity: Severity::Error,
-                    message: "syntax error".to_string(),
+                    title: "syntax error".to_string(),
+                    description: None,
                     span: Some(Span {
                         start_line: 1,
                         start_col: 1,
                         end_line: 1,
                         end_col: 1,
                     }),
+                    url: None,
                     fix: vec![],
                     metadata: BTreeMap::new(),
                 },
             ],
+            debug: None,
         },
         LintResult {
             path: PathBuf::from("src/clean.py"),
             diagnostics: vec![],
+            debug: None,
         },
     ]
 }
@@ -64,21 +70,53 @@ fn sample_format_results() -> Vec<FormatResult> {
             path: PathBuf::from("src/main.py"),
             changed: true,
             formatted: Some("formatted".to_string()),
+            debug: None,
         },
         FormatResult {
             path: PathBuf::from("src/clean.py"),
             changed: false,
             formatted: None,
+            debug: None,
         },
     ]
 }
 
 #[test]
-fn lint_pretty_renders_full_envelope_with_metadata() {
+fn lint_pretty_default_is_terse_without_description_url_or_metadata() {
     owo_colors::set_override(false);
-    let (text, total) = report::render_lint_pretty(&sample_lint_results());
+    let (text, total) = report::render_lint_pretty(&sample_lint_results(), Verbosity::default());
     assert_eq!(total, 2, "two diagnostics across the result set");
+    // Default view hides description, url, and metadata.
+    assert!(
+        !text.contains("the line exceeds the configured width"),
+        "default view must not show description"
+    );
+    assert!(
+        !text.contains("category=style"),
+        "default view must not show metadata"
+    );
     insta::assert_snapshot!("lint_pretty", text);
+}
+
+#[test]
+fn lint_pretty_verbose_shows_description_url_and_metadata() {
+    owo_colors::set_override(false);
+    let verbose = Verbosity::new(true, false);
+    let (text, total) = report::render_lint_pretty(&sample_lint_results(), verbose);
+    assert_eq!(total, 2);
+    assert!(
+        text.contains("the line exceeds the configured width"),
+        "--verbose must show description"
+    );
+    assert!(
+        text.contains("https://example.test/rules/E501"),
+        "--verbose must show url"
+    );
+    assert!(
+        text.contains("category=style"),
+        "--verbose must show metadata"
+    );
+    insta::assert_snapshot!("lint_pretty_verbose", text);
 }
 
 #[test]
@@ -96,7 +134,8 @@ fn lint_toon_renders_full_envelope() {
 #[test]
 fn format_pretty_lists_changed_files() {
     owo_colors::set_override(false);
-    let (text, changed) = report::render_format_pretty(&sample_format_results(), false);
+    let (text, changed) =
+        report::render_format_pretty(&sample_format_results(), false, Verbosity::default());
     assert_eq!(changed, 1, "one file changed");
     insta::assert_snapshot!("format_pretty", text);
 }

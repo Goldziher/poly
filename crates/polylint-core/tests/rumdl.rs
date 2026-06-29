@@ -58,7 +58,7 @@ fn bad_md_diagnostics() {
                 "line={} code={} msg={}",
                 d.span.as_ref().map(|s| s.start_line).unwrap_or(0),
                 d.code.as_deref().unwrap_or("<none>"),
-                d.message
+                d.title
             )
         })
         .collect();

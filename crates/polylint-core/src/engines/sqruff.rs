@@ -162,7 +162,9 @@ fn violation_to_diagnostic(violation: SQLBaseError) -> Diagnostic {
             Some(code_str.to_string())
         },
         severity: Severity::Warning,
-        message: violation.description.clone(),
+        title: violation.description.clone(),
+        description: None,
+        url: None,
         span: if violation.line_no > 0 {
             Some(Span {
                 start_line: violation.line_no as u32,

@@ -326,8 +326,10 @@ fn make_diag(
         engine: engine.to_owned(),
         code: Some(code.to_owned()),
         severity,
-        message: message.into(),
+        title: message.into(),
+        description: None,
         span,
+        url: None,
         fix: Vec::new(),
         metadata: std::collections::BTreeMap::new(),
     }

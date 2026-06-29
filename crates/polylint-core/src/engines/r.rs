@@ -233,7 +233,9 @@ fn map_jarl_diagnostic(jarl_diag: JarlDiagnostic, content: &str) -> Diagnostic {
         engine: "r".to_string(),
         code: Some(jarl_diag.message.name),
         severity: Severity::Warning,
-        message: jarl_diag.message.body,
+        title: jarl_diag.message.body,
+        description: None,
+        url: None,
         span: Some(Span {
             start_line,
             start_col,

@@ -240,7 +240,9 @@ fn typo_to_diagnostic(content: &str, typo: typos::Typo<'_>) -> Diagnostic {
         engine: "typos".to_string(),
         code: Some("typo".to_string()),
         severity: Severity::Warning,
-        message,
+        title: message,
+        description: None,
+        url: None,
         span: Some(Span {
             start_line,
             start_col,

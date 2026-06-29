@@ -96,7 +96,7 @@ pub use maintenance::{CacheStats, NamespaceStats};
 /// Increment this whenever the cache layout changes incompatibly.  Tools such
 /// as `poly cache gc` compare the sentinel against this value to decide whether
 /// an existing tree is safe to reuse.
-pub const CACHE_FORMAT_VERSION: &str = "2";
+pub const CACHE_FORMAT_VERSION: &str = "3";
 
 static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 

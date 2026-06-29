@@ -9,7 +9,8 @@ expression: diags
             "LT01",
         ),
         severity: Warning,
-        message: "Expected single whitespace between \",\" and \"name\".",
+        title: "Expected single whitespace between \",\" and \"name\".",
+        description: None,
         span: Some(
             Span {
                 start_line: 1,
@@ -18,6 +19,7 @@ expression: diags
                 end_col: 11,
             },
         ),
+        url: None,
         fix: [],
         metadata: {},
     },

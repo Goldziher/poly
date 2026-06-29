@@ -81,11 +81,17 @@ pub struct Diagnostic {
     pub code: Option<String>,
     /// Severity of the finding.
     pub severity: Severity,
-    /// Human-readable message.
-    pub message: String,
+    /// Short, one-line title — always shown (default view).
+    pub title: String,
+    /// Longer explanation if the tool provides one; shown only under --verbose.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub description: Option<String>,
     /// Source location, if known.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub span: Option<Span>,
+    /// Rule/doc URL if the tool exposes one; shown only under --verbose.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub url: Option<String>,
     /// Suggested autofixes, if available.  A non-empty Vec is applied
     /// atomically: either all edits apply, or none do (see `runner::apply_edits`).
     #[serde(skip_serializing_if = "Vec::is_empty", default)]

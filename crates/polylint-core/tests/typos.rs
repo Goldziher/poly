@@ -57,7 +57,7 @@ fn known_bad_typo_diagnostics() {
             (
                 d.engine.as_str(),
                 d.code.as_deref().unwrap_or(""),
-                d.message.as_str(),
+                d.title.as_str(),
                 d.span.as_ref().map(|s| (s.start_line, s.start_col)),
             )
         })

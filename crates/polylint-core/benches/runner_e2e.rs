@@ -76,6 +76,7 @@ fn bench_runner(c: &mut Criterion) {
                 black_box(&config),
                 black_box(&opts),
                 false,
+                false,
             )
             .expect("format run");
             black_box(results);

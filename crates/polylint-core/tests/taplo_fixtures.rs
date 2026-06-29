@@ -45,13 +45,13 @@ fn known_bad_lint_snapshot() {
     let src = make_src("known_bad.toml", KNOWN_BAD);
     let diags = engine.lint(&src, &engine_cfg()).unwrap();
 
-    // Collect a stable, snapshot-friendly summary: (code, message, line).
+    // Collect a stable, snapshot-friendly summary: (code, title, line).
     let summary: Vec<_> = diags
         .iter()
         .map(|d| {
             (
                 d.code.as_deref().unwrap_or(""),
-                d.message.as_str(),
+                d.title.as_str(),
                 d.span.as_ref().map(|s| s.start_line),
             )
         })

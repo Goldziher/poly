@@ -19,6 +19,7 @@ struct Cli {
 }
 
 fn main() -> ExitCode {
-    poly_cli::init_logging();
+    // `run_lint` initializes logging after parse so `--debug` can widen the
+    // filter (the subscriber is first-call-wins).
     run_lint(Cli::parse().args)
 }
