@@ -88,7 +88,10 @@ fn sqruff_format_already_formatted_is_unchanged() {
 // with the sentinel rule code "????" (no rule attached).  These must be mapped
 // to Severity::Error (not Warning) and have code == None.
 
-const BROKEN_SQL: &str = "??? INVALID SQL ???\n";
+// An unclosed parenthesis is a genuine parse error (sqruff emits a single
+// unparsable-segment diagnostic with no rule code), unlike lexable-but-invalid
+// SQL which only trips layout rules.
+const BROKEN_SQL: &str = "SELECT (\n";
 
 #[test]
 fn sqruff_parse_error_yields_error_severity() {
