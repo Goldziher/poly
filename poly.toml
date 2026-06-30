@@ -77,3 +77,12 @@ files = "**/*.rs"
 # Conventional Commits with its built-in defaults. The hook lints rather than
 # rewrites — a non-conforming message (or stray AI-attribution line) fails the
 # commit loudly instead of being silently edited.
+
+# `certifi` is the PyPI CA-bundle package the pip-package wrapper depends on for
+# TLS verification; typos flags it as a misspelling of "certify". It is a valid
+# spelling everywhere it appears (the Python downloader + the pyproject dep).
+[lint.python.typos]
+extend_ignore_words = ["certifi"]
+
+[lint.toml.typos]
+extend_ignore_words = ["certifi"]

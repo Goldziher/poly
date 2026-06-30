@@ -1,0 +1,41 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "polylint"
+version = "0.1.0"
+description = "Universal zero-dependency linter & formatter — two pure-Rust binaries (polylint + polyfmt) plus the poly CLI, wrapping best-in-class tools as in-process backends with a tree-sitter generic tier for everything else."
+readme = "README.md"
+license = "MIT OR Apache-2.0"
+authors = [{ name = "Na'aman Hirschfeld", email = "nhirschfeld@gmail.com" }]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Software Development :: Quality Assurance",
+    "Environment :: Console",
+]
+keywords = ["linter", "formatter", "lint", "format", "polyglot"]
+requires-python = ">=3.8"
+dependencies = ["certifi>=2024.7.4"]
+
+[project.urls]
+Homepage = "https://github.com/Goldziher/polylint"
+Repository = "https://github.com/Goldziher/polylint"
+Issues = "https://github.com/Goldziher/polylint/issues"
+
+[project.scripts]
+poly = "polylint.cli:poly"
+polylint = "polylint.cli:polylint"
+polyfmt = "polylint.cli:polyfmt"
+
+[tool.hatch.build.targets.wheel]
+packages = ["polylint"]

@@ -1,0 +1,33 @@
+{
+  "name": "poly-lint",
+  "version": "0.1.0",
+  "description": "Universal zero-dependency linter & formatter — two pure-Rust binaries (polylint + polyfmt) wrapping best-in-class tools as in-process backends, with a tree-sitter generic tier for everything else.",
+  "keywords": ["linter", "formatter", "lint", "format", "polyglot"],
+  "homepage": "https://github.com/Goldziher/polylint#readme",
+  "bugs": {
+    "url": "https://github.com/Goldziher/polylint/issues"
+  },
+  "license": "(MIT OR Apache-2.0)",
+  "author": "Na'aman Hirschfeld <nhirschfeld@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Goldziher/polylint.git"
+  },
+  "bin": {
+    "poly": "bin/poly.js",
+    "polylint": "bin/polylint.js",
+    "polyfmt": "bin/polyfmt.js"
+  },
+  "files": ["index.js", "install.js", "bin/"],
+  "main": "index.js",
+  "scripts": {
+    "postinstall": "node install.js"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.12",
+    "tar": "^7.5.16"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
