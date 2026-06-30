@@ -1,0 +1,14 @@
+# Build acceleration via sccache.
+#
+# `rustc-wrapper` routes every rustc invocation through sccache's shared compile
+# cache, so clean builds and branch switches reuse previously-compiled artifacts
+# (the pinned oxc / ruff git dependencies dominate build time and cache well).
+#
+# Requires `sccache` on PATH:
+#   cargo install sccache --locked   # or: brew install sccache
+#
+# CI provisions it via mozilla-actions/sccache-action. If you do not have
+# sccache installed, either install it (one command above) or override locally
+# with `CARGO_BUILD_RUSTC_WRAPPER=""` / `RUSTC_WRAPPER=""`.
+[build]
+rustc-wrapper = "sccache"

@@ -184,6 +184,12 @@ jobs:
     needs: [meta, create_release]
     if: needs.meta.outputs.release_assets_exist != 'true'
     runs-on: ${{ matrix.os }}
+    # .cargo/config.toml sets rustc-wrapper = "sccache"; native builds get
+    # sccache from the action below. The Alpine container build neutralizes the
+    # wrapper instead (see that step), since rust:alpine has no sccache.
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      CARGO_INCREMENTAL: 0
     strategy:
       fail-fast: false
       matrix:
@@ -230,6 +236,10 @@ jobs:
         with:
           key: ${{ matrix.triple }}
 
+      - name: Setup sccache
+        if: ${{ !matrix.alpine }}
+        uses: mozilla-actions/sccache-action@v0.0.9
+
       # ruby-prism-sys runs bindgen at build time and needs libclang + libc
       # headers; native Linux runners get them from apt.
       - name: Install clang for bindgen (Linux)
@@ -256,9 +266,13 @@ jobs:
           # dynamically linked (-crt-static off) to dlopen libclang. Building
           # host-native applies the flag everywhere. Then place the binary at the
           # triple path the shared packaging step expects.
+          # RUSTC_WRAPPER="" disables the sccache wrapper that .cargo/config.toml
+          # sets repo-wide; rust:alpine has no sccache, and the env var overrides
+          # the config value.
           docker run --rm -v "$PWD":/work -w /work \
             -e CARGO_TARGET_DIR=/work/target \
             -e LIBCLANG_PATH=/usr/lib \
+            -e RUSTC_WRAPPER="" \
             -e RUSTFLAGS="-C target-feature=-crt-static" \
             rust:alpine sh -c '
               set -e
