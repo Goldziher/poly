@@ -1,0 +1,174 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 1200 340"
+  width="1200"
+  height="340"
+  role="img"
+  aria-label="polylint — universal linter and formatter"
+>
+  <title>polylint — universal linter &amp; formatter</title>
+  <defs>
+    <radialGradient
+      id="g1"
+      gradientUnits="userSpaceOnUse"
+      cx="430"
+      cy="155"
+      r="430"
+      gradientTransform="translate(430 155) scale(1 0.5) translate(-430 -155)"
+    >
+      <stop offset="0%" stop-color="#5b8def" stop-opacity="0.16" />
+      <stop offset="70%" stop-color="#5b8def" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient
+      id="g2"
+      gradientUnits="userSpaceOnUse"
+      cx="770"
+      cy="155"
+      r="430"
+      gradientTransform="translate(770 155) scale(1 0.5) translate(-770 -155)"
+    >
+      <stop offset="0%" stop-color="#3ddc97" stop-opacity="0.16" />
+      <stop offset="70%" stop-color="#3ddc97" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient
+      id="vig"
+      gradientUnits="userSpaceOnUse"
+      cx="600"
+      cy="170"
+      r="660"
+      gradientTransform="translate(600 170) scale(1 0.62) translate(-600 -170)"
+    >
+      <stop offset="58%" stop-color="#05070d" stop-opacity="0" />
+      <stop offset="100%" stop-color="#05070d" stop-opacity="0.65" />
+    </radialGradient>
+    <linearGradient id="rule" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#5b8def" stop-opacity="0" />
+      <stop offset="50%" stop-color="#3ddc97" stop-opacity="0.7" />
+      <stop offset="100%" stop-color="#3ddc97" stop-opacity="0" />
+    </linearGradient>
+    <clipPath id="clip"><rect width="1200" height="340" rx="18" /></clipPath>
+  </defs>
+  <g clip-path="url(#clip)">
+    <rect width="1200" height="340" fill="#0b0e16" />
+    <rect width="1200" height="340" fill="url(#g1)" />
+    <rect width="1200" height="340" fill="url(#g2)" />
+    <rect width="1200" height="340" fill="url(#vig)" />
+    <rect x="83.0" y="78.0" width="20" height="20" fill="#5b8def" />
+    <rect x="105.0" y="78.0" width="20" height="20" fill="#5b8def" />
+    <rect x="127.0" y="78.0" width="20" height="20" fill="#5b8def" />
+    <rect x="149.0" y="78.0" width="20" height="20" fill="#5b8def" />
+    <rect x="83.0" y="100.0" width="20" height="20" fill="#5b8def" />
+    <rect x="171.0" y="100.0" width="20" height="20" fill="#5b8def" />
+    <rect x="83.0" y="122.0" width="20" height="20" fill="#5b8def" />
+    <rect x="171.0" y="122.0" width="20" height="20" fill="#5b8def" />
+    <rect x="83.0" y="144.0" width="20" height="20" fill="#5b8def" />
+    <rect x="105.0" y="144.0" width="20" height="20" fill="#5b8def" />
+    <rect x="127.0" y="144.0" width="20" height="20" fill="#5b8def" />
+    <rect x="149.0" y="144.0" width="20" height="20" fill="#5b8def" />
+    <rect x="83.0" y="166.0" width="20" height="20" fill="#5b8def" />
+    <rect x="83.0" y="188.0" width="20" height="20" fill="#5b8def" />
+    <rect x="83.0" y="210.0" width="20" height="20" fill="#5b8def" />
+    <rect x="237.0" y="78.0" width="20" height="20" fill="#5b8def" />
+    <rect x="259.0" y="78.0" width="20" height="20" fill="#5b8def" />
+    <rect x="281.0" y="78.0" width="20" height="20" fill="#5b8def" />
+    <rect x="215.0" y="100.0" width="20" height="20" fill="#5b8def" />
+    <rect x="303.0" y="100.0" width="20" height="20" fill="#5b8def" />
+    <rect x="215.0" y="122.0" width="20" height="20" fill="#5b8def" />
+    <rect x="303.0" y="122.0" width="20" height="20" fill="#5b8def" />
+    <rect x="215.0" y="144.0" width="20" height="20" fill="#5b8def" />
+    <rect x="303.0" y="144.0" width="20" height="20" fill="#5b8def" />
+    <rect x="215.0" y="166.0" width="20" height="20" fill="#5b8def" />
+    <rect x="303.0" y="166.0" width="20" height="20" fill="#5b8def" />
+    <rect x="215.0" y="188.0" width="20" height="20" fill="#5b8def" />
+    <rect x="303.0" y="188.0" width="20" height="20" fill="#5b8def" />
+    <rect x="237.0" y="210.0" width="20" height="20" fill="#5b8def" />
+    <rect x="259.0" y="210.0" width="20" height="20" fill="#5b8def" />
+    <rect x="281.0" y="210.0" width="20" height="20" fill="#5b8def" />
+    <rect x="347.0" y="78.0" width="20" height="20" fill="#5b8def" />
+    <rect x="347.0" y="100.0" width="20" height="20" fill="#5b8def" />
+    <rect x="347.0" y="122.0" width="20" height="20" fill="#5b8def" />
+    <rect x="347.0" y="144.0" width="20" height="20" fill="#5b8def" />
+    <rect x="347.0" y="166.0" width="20" height="20" fill="#5b8def" />
+    <rect x="347.0" y="188.0" width="20" height="20" fill="#5b8def" />
+    <rect x="347.0" y="210.0" width="20" height="20" fill="#5b8def" />
+    <rect x="369.0" y="210.0" width="20" height="20" fill="#5b8def" />
+    <rect x="391.0" y="210.0" width="20" height="20" fill="#5b8def" />
+    <rect x="413.0" y="210.0" width="20" height="20" fill="#5b8def" />
+    <rect x="435.0" y="210.0" width="20" height="20" fill="#5b8def" />
+    <rect x="479.0" y="78.0" width="20" height="20" fill="#5b8def" />
+    <rect x="567.0" y="78.0" width="20" height="20" fill="#5b8def" />
+    <rect x="479.0" y="100.0" width="20" height="20" fill="#5b8def" />
+    <rect x="567.0" y="100.0" width="20" height="20" fill="#5b8def" />
+    <rect x="501.0" y="122.0" width="20" height="20" fill="#5b8def" />
+    <rect x="545.0" y="122.0" width="20" height="20" fill="#5b8def" />
+    <rect x="523.0" y="144.0" width="20" height="20" fill="#5b8def" />
+    <rect x="523.0" y="166.0" width="20" height="20" fill="#5b8def" />
+    <rect x="523.0" y="188.0" width="20" height="20" fill="#5b8def" />
+    <rect x="523.0" y="210.0" width="20" height="20" fill="#5b8def" />
+    <rect x="611.0" y="78.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="611.0" y="100.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="611.0" y="122.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="611.0" y="144.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="611.0" y="166.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="611.0" y="188.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="611.0" y="210.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="633.0" y="210.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="655.0" y="210.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="677.0" y="210.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="699.0" y="210.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="743.0" y="78.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="765.0" y="78.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="787.0" y="78.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="809.0" y="78.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="831.0" y="78.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="787.0" y="100.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="787.0" y="122.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="787.0" y="144.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="787.0" y="166.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="787.0" y="188.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="743.0" y="210.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="765.0" y="210.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="787.0" y="210.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="809.0" y="210.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="831.0" y="210.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="875.0" y="78.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="963.0" y="78.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="875.0" y="100.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="897.0" y="100.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="963.0" y="100.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="875.0" y="122.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="919.0" y="122.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="963.0" y="122.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="875.0" y="144.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="919.0" y="144.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="963.0" y="144.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="875.0" y="166.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="941.0" y="166.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="963.0" y="166.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="875.0" y="188.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="963.0" y="188.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="875.0" y="210.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="963.0" y="210.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="1007.0" y="78.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="1029.0" y="78.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="1051.0" y="78.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="1073.0" y="78.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="1095.0" y="78.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="1051.0" y="100.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="1051.0" y="122.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="1051.0" y="144.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="1051.0" y="166.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="1051.0" y="188.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="1051.0" y="210.0" width="20" height="20" fill="#3ddc97" />
+    <rect x="450.0" y="254.0" width="300" height="3" fill="url(#rule)" />
+    <text
+      x="600"
+      y="288"
+      text-anchor="middle"
+      font-family="'SFMono-Regular',ui-monospace,'Cascadia Mono','Menlo',monospace"
+      font-size="22"
+      letter-spacing="6"
+      fill="#8b97a8"
+    >UNIVERSAL  LINTER  &amp;  FORMATTER</text>
+  </g>
+</svg>

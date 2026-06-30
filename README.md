@@ -1,7 +1,14 @@
-# poly
+<!-- markdownlint-disable MD033 MD041 -->
+<div align="center">
 
-[![CI](https://github.com/Goldziher/polylint/actions/workflows/ci.yaml/badge.svg)](https://github.com/Goldziher/polylint/actions/workflows/ci.yaml)
-[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#license)
+<img src="docs/media/polylint-banner.svg" alt="polylint — universal linter & formatter" width="820">
+
+[![CI](https://img.shields.io/github/actions/workflow/status/Goldziher/polylint/ci.yaml?style=flat-square)](https://github.com/Goldziher/polylint/actions/workflows/ci.yaml)
+[![npm](https://img.shields.io/npm/v/@nhirschfeld/polylint?style=flat-square)](https://www.npmjs.com/package/@nhirschfeld/polylint)
+[![PyPI](https://img.shields.io/pypi/v/polylint?style=flat-square)](https://pypi.org/project/polylint/)
+[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue?style=flat-square)](#license)
+
+</div>
 
 **Universal zero-dependency linter & formatter. Pure Rust, in-process, one config.**
 
@@ -70,10 +77,8 @@ brew install Goldziher/tap/polylint
 
 **npm:**
 
-The unscoped `polylint` name on npm belongs to an unrelated project, so poly publishes as `poly-lint`.
-
 ```sh
-npm install -g poly-lint
+npm install -g @nhirschfeld/polylint
 ```
 
 **PyPI:**
