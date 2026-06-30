@@ -13,6 +13,9 @@ use crate::config::{Config, EngineConfig, Kind};
 use crate::discover::{DiscoveredFile, discover};
 use crate::engine::{Diagnostic, Edit, Engine, FormatOutput, SourceFile};
 use crate::engines::catalog_tool::CatalogToolEngine;
+use crate::filter::{
+    PerFileIgnores, is_generated_lockfile, match_bases, merged_excludes, relative_for_match,
+};
 use crate::language::Language;
 use crate::registry::engines_for;
 
@@ -26,74 +29,6 @@ pub struct RunOptions {
     /// Extra gitignore-style exclude globs supplied at call time (CLI `--exclude`
     /// / MCP `exclude`), merged with the config's `[discovery] exclude`.
     pub exclude: Vec<String>,
-}
-
-/// The full exclude set for a run: `[discovery] exclude` from config, plus any
-/// call-time `--exclude` / MCP globs. Built once per run (not in the hot loop).
-fn merged_excludes(config: &Config, opts: &RunOptions) -> Vec<String> {
-    if opts.exclude.is_empty() {
-        return config.exclude.clone();
-    }
-    let mut excludes = config.exclude.clone();
-    excludes.extend(opts.exclude.iter().cloned());
-    excludes
-}
-
-/// Compiled `[per-file-ignores]`: each path glob paired with the rule codes to
-/// suppress for files it matches. Built once per run, applied as a post-lint
-/// filter on the normalized `Diagnostic.code` so it is engine-agnostic.
-struct PerFileIgnores {
-    entries: Vec<(globset::GlobMatcher, Vec<String>)>,
-}
-
-impl PerFileIgnores {
-    /// Compile the config map; an invalid glob is skipped with a warning rather
-    /// than failing the run.
-    fn compile(map: &std::collections::BTreeMap<String, Vec<String>>) -> Self {
-        let entries = map
-            .iter()
-            .filter_map(|(glob, rules)| match globset::Glob::new(glob) {
-                Ok(compiled) => Some((compiled.compile_matcher(), rules.clone())),
-                Err(error) => {
-                    tracing::warn!(%glob, %error, "skipping invalid [per-file-ignores] glob");
-                    None
-                }
-            })
-            .collect();
-        Self { entries }
-    }
-
-    fn is_empty(&self) -> bool {
-        self.entries.is_empty()
-    }
-
-    /// Drop diagnostics whose `code` matches (exact or prefix, ruff-style) a rule
-    /// listed for a glob the file matches. `rel` is the file path relative to the
-    /// run root, forward-slash normalized (per-file-ignore globs are repo-rooted).
-    fn apply(&self, rel: &str, diagnostics: &mut Vec<Diagnostic>) {
-        if self.entries.is_empty() {
-            return;
-        }
-        diagnostics.retain(|diagnostic| {
-            let Some(code) = diagnostic.code.as_deref() else {
-                return true;
-            };
-            !self.entries.iter().any(|(matcher, rules)| {
-                matcher.is_match(rel)
-                    && rules
-                        .iter()
-                        .any(|rule| code == rule || code.starts_with(rule.as_str()))
-            })
-        });
-    }
-}
-
-/// File path relative to the run root (cwd), forward-slash normalized, for
-/// matching repo-rooted `[per-file-ignores]` globs against `poly lint .` output.
-fn relative_for_match(path: &std::path::Path, cwd: &std::path::Path) -> String {
-    let rel = path.strip_prefix(cwd).unwrap_or(path);
-    let rel = rel.strip_prefix(".").unwrap_or(rel);
-    rel.to_string_lossy().replace('\\', "/")
 }
 
 /// Per-engine debug record for one file. Collected only when debug output is
@@ -289,31 +224,24 @@ pub fn lint(
 ) -> anyhow::Result<Vec<LintResult>> {
     configure_pool(opts.jobs);
     let cache = ResultCache::open_default(!opts.no_cache)?;
-    let files = discover(paths, &merged_excludes(config, opts));
+    let files = discover(paths, &merged_excludes(&config.exclude, &opts.exclude));
     let plans = plan_by_language(&files, config, Kind::Lint);
     prefetch_tier2_grammars(&plans);
     let ignores = PerFileIgnores::compile(&config.per_file_ignores);
-    let cwd = std::env::current_dir().unwrap_or_default();
+    let bases = match_bases(paths);
     let mut results: Vec<LintResult> = files
         .par_iter()
-        .filter_map(|f| match lint_one(f, &plans, &cache, fix, collect_debug) {
-            Ok(result) => Some(result),
-            // A per-file failure (read, parse, or — when fixing — the atomic
-            // write) must not be swallowed silently; surface it and skip the file.
-            Err(error) => {
-                eprintln!("warning: {}: {error:#}", f.path.display());
-                None
-            }
-        })
-        .map(|mut result| {
-            // Suppress per-file-ignored rules before the empty-result filter, so a
-            // file whose only findings are all ignored drops out entirely.
-            if !ignores.is_empty() {
-                let rel = relative_for_match(&result.path, &cwd);
-                ignores.apply(&rel, &mut result.diagnostics);
-            }
-            result
-        })
+        .filter_map(
+            |f| match lint_one(f, &plans, &cache, fix, collect_debug, &ignores, &bases) {
+                Ok(result) => Some(result),
+                // A per-file failure (read, parse, or — when fixing — the atomic
+                // write) must not be swallowed silently; surface it and skip the file.
+                Err(error) => {
+                    tracing::warn!(path = %f.path.display(), "lint failed: {error:#}");
+                    None
+                }
+            },
+        )
         .filter(|r| !r.diagnostics.is_empty())
         .collect();
     results.sort_by(|a, b| a.path.cmp(&b.path));
@@ -336,10 +264,11 @@ pub fn format(
     // them on a directory walk so a stray `poly fmt .` is safe — but still honour
     // a lock file passed explicitly as a path argument.
     let explicit: FxHashSet<&std::path::Path> = paths.iter().map(PathBuf::as_path).collect();
-    let files: Vec<DiscoveredFile> = discover(paths, &merged_excludes(config, opts))
-        .into_iter()
-        .filter(|f| explicit.contains(f.path.as_path()) || !is_generated_lockfile(&f.path))
-        .collect();
+    let files: Vec<DiscoveredFile> =
+        discover(paths, &merged_excludes(&config.exclude, &opts.exclude))
+            .into_iter()
+            .filter(|f| explicit.contains(f.path.as_path()) || !is_generated_lockfile(&f.path))
+            .collect();
     let plans = plan_by_language(&files, config, Kind::Format);
     prefetch_tier2_grammars(&plans);
     let mut results: Vec<FormatResult> = files
@@ -350,7 +279,7 @@ pub fn format(
                 // A per-file failure (read, engine, or — when writing — the atomic
                 // rename) must not be swallowed silently; surface it and skip the file.
                 Err(error) => {
-                    eprintln!("warning: {}: {error:#}", f.path.display());
+                    tracing::warn!(path = %f.path.display(), "format failed: {error:#}");
                     None
                 }
             },
@@ -360,36 +289,29 @@ pub fn format(
     Ok(results)
 }
 
-/// Generated lock files, by exact name, that `poly fmt` never rewrites on a
-/// directory walk. Any `*.lock` file is also treated as a lock file; these are
-/// the ones whose names do not end in `.lock`.
-const LOCKFILE_NAMES: &[&str] = &[
-    "package-lock.json",
-    "npm-shrinkwrap.json",
-    "pnpm-lock.yaml",
-    "bun.lockb",
-];
-
-/// Whether `path` is a machine-generated lock file that must not be reformatted.
-/// Matched by the `*.lock` extension (Cargo.lock, yarn.lock, poetry.lock,
-/// uv.lock, composer.lock, Gemfile.lock, flake.lock, deno.lock, …) or by an
-/// exact name in [`LOCKFILE_NAMES`] for the lock files that don't end in `.lock`.
-fn is_generated_lockfile(path: &std::path::Path) -> bool {
-    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
-        return false;
-    };
-    name.ends_with(".lock") || LOCKFILE_NAMES.contains(&name)
-}
-
+#[allow(clippy::too_many_arguments)] // cohesive per-file lint inputs; splitting would obscure the flow
 fn lint_one(
     f: &DiscoveredFile,
     plans: &FxHashMap<Language, Vec<EnginePlan>>,
     cache: &ResultCache,
     fix: bool,
     collect_debug: bool,
+    ignores: &PerFileIgnores,
+    bases: &[PathBuf],
 ) -> anyhow::Result<LintResult> {
     let original = std::fs::read_to_string(&f.path)?;
+    // Per-file-ignored rules are suppressed *before* the fix loop so `--fix` does
+    // not silently rewrite a file for a rule the user configured to ignore
+    // (ruff's semantics: ignored rules never fire for the matching file).
+    let rel = (!ignores.is_empty()).then(|| relative_for_match(&f.path, bases));
+    let suppress = |diagnostics: &mut Vec<Diagnostic>| {
+        if let Some(rel) = &rel {
+            ignores.apply(rel, diagnostics);
+        }
+    };
+
     let (mut diagnostics, mut debug) = lint_content(f, plans, cache, &original, collect_debug)?;
+    suppress(&mut diagnostics);
 
     if fix {
         // Only the fix path mutates the buffer, so clone lazily here; a plain
@@ -407,6 +329,7 @@ fn lint_one(
                     let (next_diags, next_debug) =
                         lint_content(f, plans, cache, &content, collect_debug)?;
                     diagnostics = next_diags;
+                    suppress(&mut diagnostics);
                     debug = next_debug;
                 }
                 _ => break,
@@ -702,110 +625,6 @@ fn configure_pool(jobs: Option<usize>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn diag(code: Option<&str>) -> Diagnostic {
-        Diagnostic {
-            engine: "test".to_string(),
-            code: code.map(str::to_owned),
-            severity: crate::engine::Severity::Warning,
-            title: "x".to_string(),
-            description: None,
-            span: None,
-            url: None,
-            fix: Vec::new(),
-            metadata: std::collections::BTreeMap::new(),
-        }
-    }
-
-    #[test]
-    fn per_file_ignores_suppress_matching_codes() {
-        let mut map = std::collections::BTreeMap::new();
-        map.insert(
-            "tests/**".to_string(),
-            vec!["F401".to_string(), "too-many-methods".to_string()],
-        );
-        let ignores = PerFileIgnores::compile(&map);
-
-        // A file under the glob: listed codes (exact + the prefix family) drop;
-        // an unlisted code and a code-less diagnostic stay.
-        let mut diags = vec![
-            diag(Some("F401")),
-            diag(Some("too-many-methods")),
-            diag(Some("E501")),
-            diag(None),
-        ];
-        ignores.apply("tests/unit/foo.py", &mut diags);
-        let codes: Vec<_> = diags.iter().map(|d| d.code.clone()).collect();
-        assert_eq!(codes, vec![Some("E501".to_string()), None]);
-
-        // A file outside the glob keeps everything.
-        let mut diags = vec![diag(Some("F401"))];
-        ignores.apply("src/foo.py", &mut diags);
-        assert_eq!(diags.len(), 1, "non-matching path is untouched");
-    }
-
-    #[test]
-    fn per_file_ignores_prefix_selector() {
-        let mut map = std::collections::BTreeMap::new();
-        map.insert("gen/**".to_string(), vec!["F".to_string()]);
-        let ignores = PerFileIgnores::compile(&map);
-        let mut diags = vec![diag(Some("F401")), diag(Some("E501"))];
-        ignores.apply("gen/a.py", &mut diags);
-        assert_eq!(
-            diags.iter().map(|d| d.code.clone()).collect::<Vec<_>>(),
-            vec![Some("E501".to_string())],
-            "prefix `F` suppresses the F-family, leaves E"
-        );
-    }
-
-    #[test]
-    fn merged_excludes_unions_config_and_opts() {
-        let config = Config {
-            exclude: vec!["test_apps/**".to_string()],
-            ..Config::default()
-        };
-        // No call-time excludes → config set verbatim (no realloc churn).
-        let opts = RunOptions::default();
-        assert_eq!(merged_excludes(&config, &opts), vec!["test_apps/**"]);
-
-        // Call-time excludes append to the config set.
-        let opts = RunOptions {
-            exclude: vec!["artifacts/**".to_string()],
-            ..RunOptions::default()
-        };
-        assert_eq!(
-            merged_excludes(&config, &opts),
-            vec!["test_apps/**".to_string(), "artifacts/**".to_string()],
-        );
-    }
-
-    #[test]
-    fn recognizes_generated_lock_files() {
-        for name in [
-            "Cargo.lock",
-            "yarn.lock",
-            "poetry.lock",
-            "uv.lock",
-            "Gemfile.lock",
-            "flake.lock",
-            "composer.lock",
-            "package-lock.json",
-            "pnpm-lock.yaml",
-            "npm-shrinkwrap.json",
-            "bun.lockb",
-        ] {
-            assert!(
-                is_generated_lockfile(std::path::Path::new(name)),
-                "{name} should be treated as a lock file"
-            );
-        }
-        for name in ["main.rs", "Cargo.toml", "package.json", "lockfile.txt"] {
-            assert!(
-                !is_generated_lockfile(std::path::Path::new(name)),
-                "{name} must not be treated as a lock file"
-            );
-        }
-    }
 
     fn edit(start: usize, end: usize, rep: &str) -> Edit {
         Edit {

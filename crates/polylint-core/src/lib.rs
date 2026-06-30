@@ -25,6 +25,7 @@ pub mod discover;
 pub mod engine;
 #[doc(hidden)]
 pub mod engines;
+pub(crate) mod filter;
 pub mod language;
 pub(crate) mod registry;
 pub mod report;

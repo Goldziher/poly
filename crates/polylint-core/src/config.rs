@@ -6,6 +6,7 @@
 //! tables; the `[commit]` and `[hooks]` sections of the same file are read
 //! directly from [`poly_config`] by the `poly commit` / `poly hooks` surfaces.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
 // Re-exported so the rest of the crate (and downstream consumers) keep importing
@@ -44,7 +45,7 @@ pub struct Config {
     pub tools: poly_config::ToolsConfig,
     /// `[per-file-ignores]` — path glob → rule codes suppressed for matching
     /// files (lint-only). Applied as a post-lint filter on `Diagnostic.code`.
-    pub per_file_ignores: std::collections::BTreeMap<String, Vec<String>>,
+    pub per_file_ignores: BTreeMap<String, Vec<String>>,
 }
 
 /// The slice of config handed to one engine for one file.
