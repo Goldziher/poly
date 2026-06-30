@@ -48,6 +48,8 @@ pub const LOCAL_OVERRIDE_NAME: &str = "poly.local.toml";
 pub struct PolyConfig {
     /// `[defaults]` — opinionated global defaults.
     pub defaults: GlobalDefaults,
+    /// `[discovery]` — file-walk tuning for direct `poly lint`/`poly fmt`/`poly cache`.
+    pub discovery: DiscoveryConfig,
     /// `[lint.<lang>.<tool>]` tables.
     pub lint: toml::Table,
     /// `[fmt.<lang>.<tool>]` tables.
@@ -60,6 +62,20 @@ pub struct PolyConfig {
     pub cache: CacheConfig,
     /// `[tools.<name>]` — opted-in vendored catalog tools (ADR 0013).
     pub tools: ToolsConfig,
+}
+
+/// `[discovery]` — tunes the file walk that direct `poly lint` / `poly fmt` /
+/// `poly cache` runs (the CI / GitHub Action path).
+///
+/// The hooks path already excludes per-builtin; this gives the direct-CLI path
+/// the same reach. Globs are gitignore-style and compose with `.gitignore` and
+/// the built-in vendored/generated prune set — they never override an explicitly
+/// passed path argument.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct DiscoveryConfig {
+    /// Gitignore-style globs excluded from discovery, e.g. `"test_apps/**"`.
+    pub exclude: Vec<String>,
 }
 
 impl PolyConfig {
@@ -143,6 +159,7 @@ pub fn find_config(start: &Path) -> Option<PathBuf> {
 #[serde(default)]
 struct RawPolyConfig {
     defaults: defaults::RawDefaults,
+    discovery: DiscoveryConfig,
     lint: toml::Table,
     fmt: toml::Table,
     commit: CommitConfig,
@@ -155,6 +172,7 @@ impl From<RawPolyConfig> for PolyConfig {
     fn from(raw: RawPolyConfig) -> Self {
         PolyConfig {
             defaults: raw.defaults.into(),
+            discovery: raw.discovery,
             lint: raw.lint,
             fmt: raw.fmt,
             commit: raw.commit,
@@ -207,6 +225,32 @@ semicolons = true
         assert_eq!(config.defaults.line_ending, LineEnding::Crlf);
         assert!(config.lint.contains_key("python"));
         assert!(config.fmt.contains_key("javascript"));
+    }
+
+    #[test]
+    fn parses_discovery_exclude() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("poly.toml");
+        fs::write(
+            &path,
+            r#"
+[discovery]
+exclude = ["test_apps/**", "artifacts/**"]
+"#,
+        )
+        .unwrap();
+        let config = PolyConfig::load_file(&path).expect("load");
+        assert_eq!(
+            config.discovery.exclude,
+            vec!["test_apps/**".to_string(), "artifacts/**".to_string()],
+        );
+    }
+
+    #[test]
+    fn absent_discovery_table_yields_no_excludes() {
+        let dir = tempdir().unwrap();
+        let config = PolyConfig::load(dir.path()).expect("load");
+        assert!(config.discovery.exclude.is_empty());
     }
 
     #[test]

@@ -33,6 +33,9 @@ pub enum Kind {
 pub struct Config {
     /// Global opinionated defaults.
     pub defaults: GlobalDefaults,
+    /// `[discovery] exclude` — gitignore-style globs pruned from the file walk
+    /// on direct `poly lint`/`poly fmt`/`poly cache` runs.
+    pub exclude: Vec<String>,
     /// `[lint.<lang>.<tool>]` tables.
     pub lint: toml::Table,
     /// `[fmt.<lang>.<tool>]` tables.
@@ -89,6 +92,7 @@ impl From<poly_config::PolyConfig> for Config {
     fn from(pc: poly_config::PolyConfig) -> Self {
         Config {
             defaults: pc.defaults,
+            exclude: pc.discovery.exclude,
             lint: pc.lint,
             fmt: pc.fmt,
             tools: pc.tools,

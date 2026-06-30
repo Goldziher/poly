@@ -218,7 +218,7 @@ pub fn lint(
 ) -> anyhow::Result<Vec<LintResult>> {
     configure_pool(opts.jobs);
     let cache = ResultCache::open_default(!opts.no_cache)?;
-    let files = discover(paths);
+    let files = discover(paths, &config.exclude);
     let plans = plan_by_language(&files, config, Kind::Lint);
     prefetch_tier2_grammars(&plans);
     let mut results: Vec<LintResult> = files
@@ -249,7 +249,7 @@ pub fn format(
 ) -> anyhow::Result<Vec<FormatResult>> {
     configure_pool(opts.jobs);
     let cache = ResultCache::open_default(!opts.no_cache)?;
-    let files = discover(paths);
+    let files = discover(paths, &config.exclude);
     let plans = plan_by_language(&files, config, Kind::Format);
     prefetch_tier2_grammars(&plans);
     let mut results: Vec<FormatResult> = files

@@ -186,6 +186,12 @@ line_ending = "lf"
 final_newline = true
 trim_trailing_whitespace = true
 
+[discovery]
+# Gitignore-style globs pruned from the file walk on every direct
+# `poly lint` / `poly fmt` run (the CI and GitHub Action path), on top of
+# `.gitignore` and the built-in vendored/generated prune set.
+exclude = ["test_apps/**", "docs/snippets/**", "artifacts/**"]
+
 [fmt.python.ruff]
 docstring_code_format = true
 docstring_code_line_length = 120

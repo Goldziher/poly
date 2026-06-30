@@ -4,6 +4,7 @@
 use std::path::PathBuf;
 
 use ignore::WalkBuilder;
+use ignore::overrides::OverrideBuilder;
 
 use crate::language::Language;
 
@@ -62,10 +63,17 @@ fn detect(path: &std::path::Path) -> Option<Language> {
 }
 
 /// Recursively discover supported files under `paths`.
-pub fn discover(paths: &[PathBuf]) -> Vec<DiscoveredFile> {
+///
+/// `exclude` holds gitignore-style globs from `[discovery] exclude`; matching
+/// paths are pruned from the walk in addition to `.gitignore` and the built-in
+/// [`PRUNED_DIRECTORIES`] set. The globs are matched relative to each walk root,
+/// so an explicitly passed path argument is never affected by another root's
+/// excludes.
+pub fn discover(paths: &[PathBuf], exclude: &[String]) -> Vec<DiscoveredFile> {
     let mut out = Vec::new();
     for root in paths {
-        let walker = WalkBuilder::new(root)
+        let mut builder = WalkBuilder::new(root);
+        builder
             .hidden(false)
             .git_ignore(true)
             .git_global(true)
@@ -83,8 +91,11 @@ pub fn discover(paths: &[PathBuf]) -> Vec<DiscoveredFile> {
                     return !PRUNED_DIRECTORIES.iter().any(|pruned| name == *pruned);
                 }
                 true
-            })
-            .build();
+            });
+        if let Some(overrides) = build_excludes(root, exclude) {
+            builder.overrides(overrides);
+        }
+        let walker = builder.build();
         for entry in walker.flatten() {
             if !entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
                 continue;
@@ -99,4 +110,32 @@ pub fn discover(paths: &[PathBuf]) -> Vec<DiscoveredFile> {
         }
     }
     out
+}
+
+/// Build an [`ignore::overrides::Override`] from `[discovery] exclude` globs,
+/// rooted at `root`. Each glob is added with a leading `!` so it acts as an
+/// ignore (exclusion) — with no whitelist glob present, the override behaves
+/// like a `.gitignore`: matched paths are pruned and everything else is kept.
+/// Returns `None` when there is nothing to exclude. An individual malformed
+/// glob is skipped with a warning rather than aborting discovery.
+fn build_excludes(
+    root: &std::path::Path,
+    exclude: &[String],
+) -> Option<ignore::overrides::Override> {
+    if exclude.is_empty() {
+        return None;
+    }
+    let mut builder = OverrideBuilder::new(root);
+    for glob in exclude {
+        if let Err(error) = builder.add(&format!("!{glob}")) {
+            tracing::warn!(%glob, %error, "skipping invalid [discovery] exclude glob");
+        }
+    }
+    match builder.build() {
+        Ok(overrides) => Some(overrides),
+        Err(error) => {
+            tracing::warn!(%error, "failed to build [discovery] exclude globs; ignoring them");
+            None
+        }
+    }
 }
