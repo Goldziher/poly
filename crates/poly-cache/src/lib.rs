@@ -80,8 +80,10 @@
 //! are implemented, add `fd-lock` or `fs2` to the workspace and open `.lock` with
 //! an exclusive `FileLock` before mutating the directory tree.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 mod maintenance;
 
@@ -177,6 +179,118 @@ impl Namespace {
             Namespace::Hook => "hook",
         }
     }
+
+    /// Dense index into the per-namespace [`PresenceIndex`] arrays, matching the
+    /// order of [`Namespace::ALL`].
+    fn slot(self) -> usize {
+        match self {
+            Namespace::Lint => 0,
+            Namespace::Fmt => 1,
+            Namespace::Hook => 2,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// PresenceIndex
+// ---------------------------------------------------------------------------
+
+/// An in-memory snapshot of which cache keys exist on disk, taken once when the
+/// cache is opened.
+///
+/// # Why
+///
+/// A whole-repository run issues one [`ResultCache::get`] per (file, engine). On
+/// a cold or sparse cache the overwhelming majority of those are misses, and
+/// before this index every miss cost an `open(2)` that returned `ENOENT` — tens
+/// of thousands of failed syscalls that made a cold run slower than running the
+/// tools with no cache at all. The index turns a miss into an in-memory hash
+/// lookup; only a confirmed hit touches the filesystem.
+///
+/// # Snapshot + session layers
+///
+/// `snapshot` is built once at open and never mutated, so it is read lock-free
+/// across rayon workers — this is the layer that turns the millions of cold
+/// misses into hash lookups. `added` records keys written by [`ResultCache::put`]
+/// during the current process so that a get of a just-put key still hits (the
+/// runner never does this, but the library contract and direct callers expect
+/// it). The `any_added` flag keeps the hot path lock-free: until the first put,
+/// every miss skips the `added` mutex entirely, and because puts are
+/// duration-gated to expensive results, most runs never set it.
+#[derive(Debug)]
+struct PresenceIndex {
+    /// Immutable on-disk key set per namespace, indexed by [`Namespace::slot`].
+    snapshot: [HashSet<String>; 3],
+    /// Keys written during this process, per namespace; consulted only when
+    /// [`any_added`](Self::any_added) is set.
+    added: [Mutex<HashSet<String>>; 3],
+    /// Whether any [`put`](ResultCache::put) has run; lets `contains` skip the
+    /// `added` mutex on the common (no-write) path.
+    any_added: AtomicBool,
+}
+
+impl PresenceIndex {
+    /// An empty index (no keys present) — used for a disabled cache.
+    fn empty() -> Self {
+        Self {
+            snapshot: [HashSet::new(), HashSet::new(), HashSet::new()],
+            added: [
+                Mutex::new(HashSet::new()),
+                Mutex::new(HashSet::new()),
+                Mutex::new(HashSet::new()),
+            ],
+            any_added: AtomicBool::new(false),
+        }
+    }
+
+    /// Scan each namespace directory once, recording the entry file names (the
+    /// hex cache keys). `.`-prefixed temporaries from in-flight [`put`]s are
+    /// skipped so a half-written entry is never treated as present.
+    ///
+    /// [`put`]: ResultCache::put
+    fn scan(root: &Path) -> Self {
+        let mut index = Self::empty();
+        for namespace in Namespace::ALL {
+            let dir = root.join("results").join(namespace.as_dir());
+            let Ok(read_dir) = std::fs::read_dir(&dir) else {
+                continue;
+            };
+            let set = &mut index.snapshot[namespace.slot()];
+            for entry in read_dir.flatten() {
+                if let Ok(name) = entry.file_name().into_string()
+                    && !name.starts_with('.')
+                {
+                    set.insert(name);
+                }
+            }
+        }
+        index
+    }
+
+    /// Whether a key may exist on disk for `namespace` (snapshot or written this
+    /// process).
+    fn contains(&self, namespace: Namespace, key: &CacheKey) -> bool {
+        if self.snapshot[namespace.slot()].contains(key.as_str()) {
+            return true;
+        }
+        // Fast path: no put has happened, so the `added` set is empty.
+        if !self.any_added.load(Ordering::Acquire) {
+            return false;
+        }
+        self.added[namespace.slot()]
+            .lock()
+            .expect("presence index mutex poisoned")
+            .contains(key.as_str())
+    }
+
+    /// Record a key written by [`put`](ResultCache::put) so later gets hit.
+    fn record(&self, namespace: Namespace, key: &CacheKey) {
+        self.added[namespace.slot()]
+            .lock()
+            .expect("presence index mutex poisoned")
+            .insert(key.as_str().to_owned());
+        self.any_added.store(true, Ordering::Release);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -268,6 +382,9 @@ pub struct ResultCache {
     /// `<repo>/.polylint/cache/`
     root: PathBuf,
     enabled: bool,
+    /// Snapshot of on-disk keys, taken at open; lets `get` skip a syscall on a
+    /// miss. Shared (lock-free) across clones and rayon workers.
+    present: Arc<PresenceIndex>,
 }
 
 impl ResultCache {
@@ -280,10 +397,19 @@ impl ResultCache {
     /// When `enabled`, creates the full sub-directory tree and writes the
     /// `VERSION` sentinel.  When disabled, returns a no-op stub.
     pub fn open(root: PathBuf, enabled: bool) -> anyhow::Result<Self> {
-        if enabled {
+        let present = if enabled {
             Self::init_dirs(&root)?;
-        }
-        Ok(Self { root, enabled })
+            // Scan after init_dirs so the namespace directories exist; a fresh
+            // tree simply yields empty sets.
+            PresenceIndex::scan(&root)
+        } else {
+            PresenceIndex::empty()
+        };
+        Ok(Self {
+            root,
+            enabled,
+            present: Arc::new(present),
+        })
     }
 
     /// Open the cache by walking upward from `start` to find the repo root.
@@ -469,8 +595,12 @@ impl ResultCache {
     // -----------------------------------------------------------------------
 
     /// Fetch a cached entry by key, or `None` on miss / when disabled.
+    ///
+    /// A key absent from the open-time [`PresenceIndex`] returns `None` without
+    /// touching the filesystem, so a miss costs a hash lookup rather than a
+    /// failed `open(2)`.
     pub fn get(&self, namespace: Namespace, key: &CacheKey) -> Option<Vec<u8>> {
-        if !self.enabled {
+        if !self.enabled || !self.present.contains(namespace, key) {
             return None;
         }
         std::fs::read(self.entry_path(namespace, key)).ok()
@@ -499,6 +629,9 @@ impl ResultCache {
             .map_err(|e| anyhow::anyhow!("cache write {}: {e}", tmp.display()))?;
         std::fs::rename(&tmp, &dest)
             .map_err(|e| anyhow::anyhow!("cache rename to {}: {e}", dest.display()))?;
+        // Make the freshly-written entry visible to subsequent gets on this
+        // handle (the open-time snapshot predates it).
+        self.present.record(namespace, key);
         Ok(())
     }
 
@@ -555,6 +688,40 @@ mod tests {
             cache.get(Namespace::Lint, &key).as_deref(),
             Some(&b"stored"[..])
         );
+    }
+
+    /// The presence index is an open-time snapshot, so an entry written by a
+    /// *previous* handle (a prior run) must be found by a freshly-opened cache.
+    #[test]
+    fn reopened_cache_sees_prior_puts_via_snapshot() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("cache");
+        let digest = ResultCache::single_file_digest("content");
+        let key = ResultCache::key(Namespace::Lint, "eng", "1", &empty_args(), &digest);
+        {
+            let first = ResultCache::open(root.clone(), true).expect("open cache");
+            first.put(Namespace::Lint, &key, b"stored").unwrap();
+        }
+        // A new handle scans the on-disk tree at open and must see the entry.
+        let second = ResultCache::open(root, true).expect("reopen cache");
+        assert_eq!(
+            second.get(Namespace::Lint, &key).as_deref(),
+            Some(&b"stored"[..]),
+            "reopened cache must find an entry a prior handle wrote"
+        );
+    }
+
+    /// A key never written must miss even after *other* keys have been put (the
+    /// `any_added` fast path and the on-disk file must agree).
+    #[test]
+    fn unwritten_key_misses_after_unrelated_put() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cache = cache_at(&tmp);
+        let digest = ResultCache::single_file_digest("content");
+        let written = ResultCache::key(Namespace::Lint, "eng", "1", &empty_args(), &digest);
+        cache.put(Namespace::Lint, &written, b"stored").unwrap();
+        let other = ResultCache::key(Namespace::Lint, "other", "1", &empty_args(), &digest);
+        assert_eq!(cache.get(Namespace::Lint, &other), None);
     }
 
     #[test]

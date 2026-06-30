@@ -143,5 +143,12 @@ fn bench_generic_formatter(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_generic_formatter);
+#[path = "support/profiler.rs"]
+mod profiler;
+
+criterion_group! {
+    name = benches;
+    config = Criterion::default().with_profiler(profiler::FlamegraphProfiler::new(997));
+    targets = bench_generic_formatter
+}
 criterion_main!(benches);

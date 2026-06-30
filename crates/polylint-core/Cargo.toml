@@ -91,6 +91,9 @@ which.workspace = true
 criterion.workspace = true
 insta.workspace = true
 owo-colors.workspace = true
+# pprof — CPU sampling for the bench flamegraph profiler (see
+# benches/support/profiler.rs). `flamegraph` pulls in the inferno SVG writer.
+pprof = { workspace = true, features = ["flamegraph"] }
 
 [[bench]]
 name = "generic_formatter"

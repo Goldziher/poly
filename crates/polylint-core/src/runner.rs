@@ -79,6 +79,19 @@ pub struct FormatResult {
 /// others, so re-lint until stable, but cap to guarantee termination.
 const MAX_FIX_PASSES: usize = 5;
 
+/// Minimum engine runtime for a result to be worth caching.
+///
+/// Persisting a result costs a serialize + atomic temp-write + rename, and
+/// reading it back costs an open + read + deserialize. When an engine produced a
+/// result in less time than this, that round-trip is slower than just recomputing
+/// it — and on a whole-repository run the overwhelming majority of files fall
+/// here, so unconditionally caching them made a cold run several times slower than
+/// `--no-cache` (one tiny cache file per file × engine). Only results that took at
+/// least this long are persisted; cheaper ones are recomputed every run, which is
+/// by construction fast. Genuinely expensive files (large/slow inputs) still get
+/// cached and skip the work on the next run.
+const MIN_CACHE_DURATION: std::time::Duration = std::time::Duration::from_millis(5);
+
 /// One engine paired with its resolved config and once-serialised cache args.
 ///
 /// Built once per language (not per file) so the per-file rayon loop neither
@@ -358,32 +371,43 @@ fn lint_content(
         language: f.language.clone(),
         content: Arc::from(content),
     };
-    // Content is constant across this file's engines, so digest it once.
-    let digest = ResultCache::single_file_digest(content);
+    // The digest (and the per-engine keys derived from it) are only needed to
+    // address the cache, so skip them entirely when the cache is disabled.
+    let digest = cache
+        .enabled()
+        .then(|| ResultCache::single_file_digest(content));
     let mut all = Vec::new();
     let mut debug = collect_debug.then(RunDebug::default);
     let engine_plans = plans.get(&f.language).map(Vec::as_slice).unwrap_or(&[]);
     for plan in engine_plans {
-        let key = ResultCache::key_with_args(
-            Namespace::Lint,
-            plan.engine.name(),
-            plan.engine.version(),
-            &plan.serialized_args,
-            &digest,
-        );
-        if let Some(bytes) = cache.get(Namespace::Lint, &key)
+        let key = digest.as_ref().map(|digest| {
+            ResultCache::key_with_args(
+                Namespace::Lint,
+                plan.engine.name(),
+                plan.engine.version(),
+                &plan.serialized_args,
+                digest,
+            )
+        });
+        if let Some(key) = &key
+            && let Some(bytes) = cache.get(Namespace::Lint, key)
             && let Ok(diags) = serde_json::from_slice::<Vec<Diagnostic>>(&bytes)
         {
             push_engine_debug(debug.as_mut(), plan, None);
             all.extend(diags);
             continue;
         }
-        // Time the engine only when debug collection is on (zero cost otherwise).
-        let started = collect_debug.then(std::time::Instant::now);
+        let started = std::time::Instant::now();
         let diags = plan.engine.lint(&src, &plan.config)?;
-        push_engine_debug(debug.as_mut(), plan, started);
-        if let Ok(bytes) = serde_json::to_vec(&diags)
-            && let Err(error) = cache.put(Namespace::Lint, &key, &bytes)
+        let elapsed = started.elapsed();
+        note_slow_engine(&f.path, content.len(), plan.engine.name(), elapsed);
+        push_engine_debug(debug.as_mut(), plan, Some(started));
+        // Persist only results expensive enough that reloading beats recomputing
+        // (see MIN_CACHE_DURATION).
+        if let Some(key) = &key
+            && elapsed >= MIN_CACHE_DURATION
+            && let Ok(bytes) = serde_json::to_vec(&diags)
+            && let Err(error) = cache.put(Namespace::Lint, key, &bytes)
         {
             tracing::warn!(
                 engine = plan.engine.name(),
@@ -414,6 +438,64 @@ fn push_engine_debug(
             duration_ms,
             cache_hit,
         });
+    }
+}
+
+/// A single engine taking at least this long on one file is surfaced at `warn`:
+/// at this scale it is almost always a pathological input for that backend (a
+/// huge generated file, or a backend with super-linear behaviour on certain
+/// shapes), and it serialises a whole-repo run on one core.
+const SLOW_ENGINE_WARN: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// A run at least this long is surfaced at `info` (visible under `-v`), so the
+/// per-file cost is observable before it reaches the `warn` threshold.
+const SLOW_ENGINE_INFO: std::time::Duration = std::time::Duration::from_millis(250);
+
+/// The generic tree-sitter tier; slow runs here are our own code, not a wrapped
+/// upstream tool, so the upstream-issue hint is omitted for it.
+const GENERIC_TIER_ENGINE: &str = "treesitter";
+
+/// Surface a slow single-file engine run, noting the file, its size, the backend,
+/// and the elapsed time. For a wrapped upstream tool (anything but the generic
+/// tree-sitter tier) the message suggests reporting it upstream, since the cost
+/// is in that tool, not in polylint.
+fn note_slow_engine(
+    path: &std::path::Path,
+    bytes: usize,
+    engine: &str,
+    elapsed: std::time::Duration,
+) {
+    // tracing's Value impls cover u64 but not u128/usize, so normalise here.
+    let bytes = bytes as u64;
+    let elapsed_ms = elapsed.as_millis() as u64;
+    let file = path.display();
+    if elapsed >= SLOW_ENGINE_WARN {
+        if engine == GENERIC_TIER_ENGINE {
+            tracing::warn!(
+                %file,
+                bytes,
+                engine,
+                elapsed_ms,
+                "slow on a large file (generic tree-sitter tier)"
+            );
+        } else {
+            tracing::warn!(
+                %file,
+                bytes,
+                engine,
+                elapsed_ms,
+                "slow on this file; the cost is in the `{engine}` backend — \
+                 consider reporting it upstream to the {engine} project"
+            );
+        }
+    } else if elapsed >= SLOW_ENGINE_INFO {
+        tracing::info!(
+            %file,
+            bytes,
+            engine,
+            elapsed_ms,
+            "engine spent notable time on this file"
+        );
     }
 }
 
@@ -523,18 +605,23 @@ fn format_one(
         content: Arc::clone(&current),
     };
     let engine_plans = plans.get(&f.language).map(Vec::as_slice).unwrap_or(&[]);
+    let cache_enabled = cache.enabled();
     for plan in engine_plans {
         // Each engine's output feeds the next, so the digest is recomputed from
         // the current text; the args, however, were serialised once per engine.
-        let digest = ResultCache::single_file_digest(&current);
-        let key = ResultCache::key_with_args(
-            Namespace::Fmt,
-            plan.engine.name(),
-            plan.engine.version(),
-            &plan.serialized_args,
-            &digest,
-        );
-        if let Some(bytes) = cache.get(Namespace::Fmt, &key)
+        // Only needed to address the cache, so skip it when the cache is off.
+        let key = cache_enabled.then(|| {
+            let digest = ResultCache::single_file_digest(&current);
+            ResultCache::key_with_args(
+                Namespace::Fmt,
+                plan.engine.name(),
+                plan.engine.version(),
+                &plan.serialized_args,
+                &digest,
+            )
+        });
+        if let Some(key) = &key
+            && let Some(bytes) = cache.get(Namespace::Fmt, key)
             && let Ok(text) = String::from_utf8(bytes)
         {
             push_engine_debug(debug.as_mut(), plan, None);
@@ -542,14 +629,20 @@ fn format_one(
             continue;
         }
         src.content = Arc::clone(&current);
-        // Time the engine only when debug collection is on (zero cost otherwise).
-        let started = collect_debug.then(std::time::Instant::now);
+        let started = std::time::Instant::now();
         let out: Arc<str> = match plan.engine.format(&src, &plan.config)? {
             FormatOutput::Unchanged => Arc::clone(&current),
             FormatOutput::Formatted(s) => Arc::from(s),
         };
-        push_engine_debug(debug.as_mut(), plan, started);
-        if let Err(error) = cache.put(Namespace::Fmt, &key, out.as_bytes()) {
+        let elapsed = started.elapsed();
+        note_slow_engine(&f.path, src.content.len(), plan.engine.name(), elapsed);
+        push_engine_debug(debug.as_mut(), plan, Some(started));
+        // Persist only results expensive enough that reloading beats recomputing
+        // (see MIN_CACHE_DURATION).
+        if let Some(key) = &key
+            && elapsed >= MIN_CACHE_DURATION
+            && let Err(error) = cache.put(Namespace::Fmt, key, out.as_bytes())
+        {
             tracing::warn!(
                 engine = plan.engine.name(),
                 "failed to store fmt cache entry: {error:#}"
@@ -620,6 +713,91 @@ fn configure_pool(jobs: Option<usize>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A lint engine that sleeps a fixed duration, used to exercise the
+    /// duration-gated cache-write policy ([`MIN_CACHE_DURATION`]).
+    struct TimedEngine {
+        name: &'static str,
+        delay: std::time::Duration,
+    }
+
+    impl Engine for TimedEngine {
+        fn name(&self) -> &'static str {
+            self.name
+        }
+        fn languages(&self) -> &'static [Language] {
+            &[]
+        }
+        fn capabilities(&self) -> crate::engine::Capabilities {
+            crate::engine::Capabilities {
+                lint: true,
+                format: false,
+                fix: false,
+            }
+        }
+        fn version(&self) -> &str {
+            "1"
+        }
+        fn lint(&self, _src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
+            std::thread::sleep(self.delay);
+            Ok(Vec::new())
+        }
+    }
+
+    /// Only results whose engine ran at least [`MIN_CACHE_DURATION`] are
+    /// persisted: a cheap result is recomputed each run (caching it cost more
+    /// than recomputing), while an expensive one is cached even when it produced
+    /// no diagnostics (the gate is on cost, not on emptiness).
+    #[test]
+    fn caches_only_results_above_duration_threshold() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cache = ResultCache::open(tmp.path().join("cache"), true).expect("open cache");
+        let config = Config::default();
+        let content = "x = 1\n";
+        let language = Language::Python;
+
+        let empty_args = ResultCache::serialize_args(&toml::Table::new());
+        let key_for = |name: &str| {
+            let digest = ResultCache::single_file_digest(content);
+            ResultCache::key_with_args(Namespace::Lint, name, "1", &empty_args, &digest)
+        };
+        let plan = |name: &'static str, delay| EnginePlan {
+            engine: Box::new(TimedEngine { name, delay }),
+            config: config.engine_config(&language, name, Kind::Lint),
+            serialized_args: ResultCache::serialize_args(&toml::Table::new()),
+        };
+        let file = DiscoveredFile {
+            path: std::path::PathBuf::from("mem.py"),
+            language: language.clone(),
+        };
+
+        // Fast engine (no delay): below threshold → must not be cached.
+        let mut plans: FxHashMap<Language, Vec<EnginePlan>> = FxHashMap::default();
+        plans.insert(
+            language.clone(),
+            vec![plan("fast-eng", std::time::Duration::ZERO)],
+        );
+        lint_content(&file, &plans, &cache, content, false).expect("lint fast");
+        assert!(
+            cache.get(Namespace::Lint, &key_for("fast-eng")).is_none(),
+            "a sub-threshold (cheap) result must not be cached"
+        );
+
+        // Slow engine (> threshold): must be cached despite producing no diagnostics.
+        let mut plans: FxHashMap<Language, Vec<EnginePlan>> = FxHashMap::default();
+        plans.insert(
+            language.clone(),
+            vec![plan(
+                "slow-eng",
+                MIN_CACHE_DURATION + std::time::Duration::from_millis(20),
+            )],
+        );
+        lint_content(&file, &plans, &cache, content, false).expect("lint slow");
+        assert!(
+            cache.get(Namespace::Lint, &key_for("slow-eng")).is_some(),
+            "an above-threshold (expensive) result must be cached"
+        );
+    }
 
     #[test]
     fn recognizes_generated_lock_files() {
