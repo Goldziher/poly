@@ -85,4 +85,11 @@ files = "**/*.rs"
 extend_ignore_words = ["certifi"]
 
 [lint.toml.typos]
-extend_ignore_words = ["certifi"]
+# `markdwon` et al. appear below as ignore-word entries for the README catalog.
+extend_ignore_words = ["certifi", "markdwon", "restructredtext", "brightscripter"]
+
+# The README's catalog table is generated verbatim from the vendored mdsf
+# registry (scripts/gen-catalog-md.py); a few upstream language tags carry
+# spellings typos would otherwise flag. They are reproduced as-is, not authored.
+[lint.markdown.typos]
+extend_ignore_words = ["markdwon", "restructredtext", "brightscripter"]
