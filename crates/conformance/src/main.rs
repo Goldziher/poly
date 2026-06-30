@@ -258,6 +258,7 @@ fn poly_fmt_output(file: &Path) -> Result<String> {
     let opts = RunOptions {
         no_cache: true,
         jobs: Some(1),
+        exclude: Vec::new(),
     };
     let results = polylint_core::format(
         std::slice::from_ref(&target),

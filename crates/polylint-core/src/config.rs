@@ -92,7 +92,7 @@ impl From<poly_config::PolyConfig> for Config {
     fn from(pc: poly_config::PolyConfig) -> Self {
         Config {
             defaults: pc.defaults,
-            exclude: pc.discovery.exclude,
+            exclude: pc.discovery.exclude.as_slice().to_vec(),
             lint: pc.lint,
             fmt: pc.fmt,
             tools: pc.tools,

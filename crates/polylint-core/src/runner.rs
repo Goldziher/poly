@@ -23,6 +23,20 @@ pub struct RunOptions {
     pub no_cache: bool,
     /// Number of worker threads; `None` => all logical cores.
     pub jobs: Option<usize>,
+    /// Extra gitignore-style exclude globs supplied at call time (CLI `--exclude`
+    /// / MCP `exclude`), merged with the config's `[discovery] exclude`.
+    pub exclude: Vec<String>,
+}
+
+/// The full exclude set for a run: `[discovery] exclude` from config, plus any
+/// call-time `--exclude` / MCP globs. Built once per run (not in the hot loop).
+fn merged_excludes(config: &Config, opts: &RunOptions) -> Vec<String> {
+    if opts.exclude.is_empty() {
+        return config.exclude.clone();
+    }
+    let mut excludes = config.exclude.clone();
+    excludes.extend(opts.exclude.iter().cloned());
+    excludes
 }
 
 /// Per-engine debug record for one file. Collected only when debug output is
@@ -218,7 +232,7 @@ pub fn lint(
 ) -> anyhow::Result<Vec<LintResult>> {
     configure_pool(opts.jobs);
     let cache = ResultCache::open_default(!opts.no_cache)?;
-    let files = discover(paths, &config.exclude);
+    let files = discover(paths, &merged_excludes(config, opts));
     let plans = plan_by_language(&files, config, Kind::Lint);
     prefetch_tier2_grammars(&plans);
     let mut results: Vec<LintResult> = files
@@ -254,7 +268,7 @@ pub fn format(
     // them on a directory walk so a stray `poly fmt .` is safe — but still honour
     // a lock file passed explicitly as a path argument.
     let explicit: FxHashSet<&std::path::Path> = paths.iter().map(PathBuf::as_path).collect();
-    let files: Vec<DiscoveredFile> = discover(paths, &config.exclude)
+    let files: Vec<DiscoveredFile> = discover(paths, &merged_excludes(config, opts))
         .into_iter()
         .filter(|f| explicit.contains(f.path.as_path()) || !is_generated_lockfile(&f.path))
         .collect();
@@ -620,6 +634,27 @@ fn configure_pool(jobs: Option<usize>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn merged_excludes_unions_config_and_opts() {
+        let config = Config {
+            exclude: vec!["test_apps/**".to_string()],
+            ..Config::default()
+        };
+        // No call-time excludes → config set verbatim (no realloc churn).
+        let opts = RunOptions::default();
+        assert_eq!(merged_excludes(&config, &opts), vec!["test_apps/**"]);
+
+        // Call-time excludes append to the config set.
+        let opts = RunOptions {
+            exclude: vec!["artifacts/**".to_string()],
+            ..RunOptions::default()
+        };
+        assert_eq!(
+            merged_excludes(&config, &opts),
+            vec!["test_apps/**".to_string(), "artifacts/**".to_string()],
+        );
+    }
 
     #[test]
     fn recognizes_generated_lock_files() {

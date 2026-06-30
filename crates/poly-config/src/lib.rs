@@ -74,8 +74,10 @@ pub struct PolyConfig {
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct DiscoveryConfig {
-    /// Gitignore-style globs excluded from discovery, e.g. `"test_apps/**"`.
-    pub exclude: Vec<String>,
+    /// Gitignore-style globs excluded from discovery. Accepts a single string or
+    /// an array (`exclude = "test_apps/**"` or `exclude = ["a/**", "b/**"]`),
+    /// matching the `files`/`exclude` shape used throughout `[hooks]`/`[tools]`.
+    pub exclude: Patterns,
 }
 
 impl PolyConfig {
@@ -241,8 +243,20 @@ exclude = ["test_apps/**", "artifacts/**"]
         .unwrap();
         let config = PolyConfig::load_file(&path).expect("load");
         assert_eq!(
-            config.discovery.exclude,
-            vec!["test_apps/**".to_string(), "artifacts/**".to_string()],
+            config.discovery.exclude.as_slice(),
+            &["test_apps/**".to_string(), "artifacts/**".to_string()],
+        );
+    }
+
+    #[test]
+    fn discovery_exclude_accepts_a_single_string() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("poly.toml");
+        fs::write(&path, "[discovery]\nexclude = \"test_apps/**\"\n").unwrap();
+        let config = PolyConfig::load_file(&path).expect("load");
+        assert_eq!(
+            config.discovery.exclude.as_slice(),
+            &["test_apps/**".to_string()]
         );
     }
 
