@@ -349,6 +349,20 @@ impl ResultCache {
         Self::file_set_digest(std::iter::once(("", content.as_bytes())))
     }
 
+    /// Like [`single_file_digest`] but folds `path` into the digest. Use this for
+    /// **lint** results, whose diagnostics can depend on the file's path or its
+    /// on-disk package context (e.g. ruff's INP001 message embeds the path, and
+    /// isort first-party classification depends on the package root). Without the
+    /// path, two byte-identical files (e.g. empty `__init__.py`) would share a
+    /// cache entry and the second would be served the first's path-bearing
+    /// diagnostics. Format output is path-independent, so it keeps using
+    /// [`single_file_digest`].
+    ///
+    /// [`single_file_digest`]: ResultCache::single_file_digest
+    pub fn single_file_digest_with_path(path: &str, content: &str) -> InputDigest {
+        Self::file_set_digest(std::iter::once((path, content.as_bytes())))
+    }
+
     /// Compute an [`InputDigest`] over a set of `(repo_relative_path, bytes)` pairs.
     ///
     /// Algorithm:

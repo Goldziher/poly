@@ -114,6 +114,13 @@ pub(crate) fn relative_for_match(path: &Path, bases: &[PathBuf]) -> String {
     let mut rel = path;
     for base in bases {
         if let Ok(stripped) = path.strip_prefix(base) {
+            // A single-file path arg appears in `bases` as itself, so stripping
+            // it yields the empty path — which matches no glob. Skip that base
+            // and keep the (already-relative) path so `tests/**` still matches a
+            // file passed as `poly lint tests/x.py`.
+            if stripped.as_os_str().is_empty() {
+                continue;
+            }
             rel = stripped;
             break;
         }
@@ -263,6 +270,14 @@ mod tests {
         );
         assert_eq!(
             relative_for_match(Path::new("./tests/a.py"), &[PathBuf::from("/x")]),
+            "tests/a.py"
+        );
+        // A single-file arg appears in `bases` as itself — stripping it must not
+        // collapse the path to "" (which would match no glob). Regression for
+        // `poly lint tests/a.py` not applying per-file-ignores.
+        let file = PathBuf::from("tests/a.py");
+        assert_eq!(
+            relative_for_match(Path::new("tests/a.py"), &[PathBuf::from("/cwd"), file]),
             "tests/a.py"
         );
     }

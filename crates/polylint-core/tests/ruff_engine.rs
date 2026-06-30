@@ -144,3 +144,126 @@ fn docstring_code_format_output() {
         format_to_string(DOCSTRING_CODE)
     );
 }
+
+/// Regression: ruff's INP001 (implicit-namespace-package) must respect the
+/// real on-disk package root. A module inside a package (with `__init__.py`)
+/// must NOT be flagged, even though poly lints one file at a time — the engine
+/// resolves the package root from disk. A module in a dir with no `__init__.py`
+/// still trips it (sanity that the rule is active in this config).
+#[test]
+fn inp001_respects_on_disk_package_root() {
+    use std::fs;
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    fs::create_dir_all(root.join("pkg")).unwrap();
+    fs::write(root.join("pkg/__init__.py"), "").unwrap();
+    fs::write(root.join("pkg/mod.py"), "x = 1\n").unwrap();
+    fs::create_dir_all(root.join("loose")).unwrap();
+    fs::write(root.join("loose/orphan.py"), "x = 1\n").unwrap();
+
+    let engine = RuffEngine;
+    let mut options = toml::Table::new();
+    options.insert(
+        "select".to_string(),
+        toml::Value::Array(vec![toml::Value::String("INP".into())]),
+    );
+    let cfg = EngineConfig {
+        options,
+        ..engine_cfg()
+    };
+
+    let in_pkg = SourceFile {
+        path: root.join("pkg/mod.py"),
+        language: Language::Python,
+        content: "x = 1\n".into(),
+    };
+    let pkg = engine.lint(&in_pkg, &cfg).unwrap();
+    assert!(
+        !pkg.iter().any(|d| d.code.as_deref() == Some("INP001")),
+        "a module in a package (has __init__.py) must not trip INP001; got: {pkg:?}"
+    );
+
+    let orphan = SourceFile {
+        path: root.join("loose/orphan.py"),
+        language: Language::Python,
+        content: "x = 1\n".into(),
+    };
+    let orphan_diags = engine.lint(&orphan, &cfg).unwrap();
+    assert!(
+        orphan_diags
+            .iter()
+            .any(|d| d.code.as_deref() == Some("INP001")),
+        "a module with no __init__.py must trip INP001 (rule is active); got: {orphan_diags:?}"
+    );
+}
+
+/// `mccabe_max_complexity` is honored: C901 fires at a low threshold, not a high one.
+#[test]
+fn mccabe_max_complexity_param_is_honored() {
+    let engine = RuffEngine;
+    let src = make_src(
+        "m.py",
+        "def f(x):\n    if x == 1:\n        return 1\n    elif x == 2:\n        return 2\n    elif x == 3:\n        return 3\n    elif x == 4:\n        return 4\n    return 0\n",
+    );
+    let cfg = |max: i64| {
+        let mut o = toml::Table::new();
+        o.insert(
+            "select".to_string(),
+            toml::Value::Array(vec![toml::Value::String("C901".into())]),
+        );
+        o.insert(
+            "mccabe_max_complexity".to_string(),
+            toml::Value::Integer(max),
+        );
+        EngineConfig {
+            options: o,
+            ..engine_cfg()
+        }
+    };
+    let fired = |c: &EngineConfig| {
+        engine
+            .lint(&make_src("m.py", &src.content), c)
+            .unwrap()
+            .iter()
+            .any(|d| d.code.as_deref() == Some("C901"))
+    };
+    assert!(fired(&cfg(1)), "C901 must fire at max_complexity=1");
+    assert!(!fired(&cfg(50)), "C901 must not fire at max_complexity=50");
+}
+
+/// `pydocstyle_convention = "google"` disables the D-rules google turns off,
+/// so a docstring trips fewer D findings than with no convention.
+#[test]
+fn pydocstyle_convention_reduces_d_rules() {
+    let engine = RuffEngine;
+    let body = "def f():\n    \"\"\"Summary.\n\n    Body.\n    \"\"\"\n    return 1\n";
+    let count_d = |opts: toml::Table| {
+        engine
+            .lint(
+                &make_src("m.py", body),
+                &EngineConfig {
+                    options: opts,
+                    ..engine_cfg()
+                },
+            )
+            .unwrap()
+            .iter()
+            .filter(|d| d.code.as_deref().is_some_and(|c| c.starts_with('D')))
+            .count()
+    };
+    let mut base = toml::Table::new();
+    base.insert(
+        "select".to_string(),
+        toml::Value::Array(vec![toml::Value::String("D".into())]),
+    );
+    let no_conv = count_d(base.clone());
+    base.insert(
+        "pydocstyle_convention".to_string(),
+        toml::Value::String("google".into()),
+    );
+    let google = count_d(base);
+    assert!(
+        google < no_conv,
+        "google convention should disable some D-rules: no_conv={no_conv} google={google}"
+    );
+}

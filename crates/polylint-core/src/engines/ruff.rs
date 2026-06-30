@@ -42,7 +42,10 @@ use std::sync::OnceLock;
 use ruff_db::diagnostic::Severity as RuffSeverity;
 use ruff_formatter::LineWidth;
 use ruff_linter::linter::{ParseSource, lint_only};
+use ruff_linter::package::PackageRoot;
+use ruff_linter::packaging::detect_package_root;
 use ruff_linter::rule_selector::{PreviewOptions, RuleSelector};
+use ruff_linter::rules::pydocstyle::settings::Convention as PydocstyleConvention;
 use ruff_linter::settings::LinterSettings;
 use ruff_linter::settings::flags;
 use ruff_linter::settings::rule_table::RuleTable;
@@ -141,6 +144,47 @@ fn build_settings(cfg: &EngineConfig) -> LinterSettings {
         .unwrap_or_else(|| {
             ruff_linter::line_width::LineLength::try_from(120_u16).expect("120 is valid")
         });
+
+    // Per-plugin parameters (matching ruff's own option names, flattened).
+    let usize_opt = |key: &str| {
+        cfg.options
+            .get(key)
+            .and_then(toml::Value::as_integer)
+            .and_then(|v| usize::try_from(v).ok())
+    };
+    if let Some(v) = usize_opt("mccabe_max_complexity") {
+        settings.mccabe.max_complexity = v;
+    }
+    if let Some(v) = usize_opt("pylint_max_args") {
+        settings.pylint.max_args = v;
+    }
+    if let Some(v) = usize_opt("pylint_max_branches") {
+        settings.pylint.max_branches = v;
+    }
+    if let Some(v) = usize_opt("pylint_max_returns") {
+        settings.pylint.max_returns = v;
+    }
+
+    // pydocstyle convention: set it AND disable the D-rules that convention
+    // turns off (ruff applies this at config-resolution time; poly builds the
+    // rule table by hand, so do it explicitly).
+    if let Some(convention) = cfg
+        .options
+        .get("pydocstyle_convention")
+        .and_then(toml::Value::as_str)
+        .and_then(|s| match s {
+            "google" => Some(PydocstyleConvention::Google),
+            "numpy" => Some(PydocstyleConvention::Numpy),
+            "pep257" => Some(PydocstyleConvention::Pep257),
+            _ => None,
+        })
+    {
+        settings.pydocstyle.convention = Some(convention);
+        for rule in convention.rules_to_be_ignored() {
+            settings.rules.disable(*rule);
+        }
+    }
+
     settings
 }
 
@@ -178,7 +222,14 @@ impl Engine for RuffEngine {
     /// Version string incorporates the pinned ruff git rev so that upgrading
     /// the rev automatically invalidates any cached lint/format output.
     fn version(&self) -> &str {
-        concat!("git-ruff:", "03f787e51e94999977b9a5a32b0153d82d7e2142")
+        // Suffix bumped when engine logic (not just the pinned rev) changes the
+        // output for the same input: +pkgroot = package-root resolution (INP001 /
+        // isort), +plugins = pydocstyle/mccabe/pylint param wiring.
+        concat!(
+            "git-ruff:",
+            "03f787e51e94999977b9a5a32b0153d82d7e2142",
+            "+pkgroot+plugins"
+        )
     }
 
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
@@ -203,9 +254,20 @@ impl Engine for RuffEngine {
             PySourceType::Python
         };
 
+        // Resolve the package root from the file's directory (walk ancestors for
+        // `__init__.py`) so ruff's filesystem-context checks behave as they do
+        // over a real tree: without it, INP001 (implicit-namespace-package)
+        // over-fires for every file in a package, and isort (I001/I002 — in the
+        // default set) wrongly classifies first-party imports as third-party.
+        let package = src
+            .path
+            .parent()
+            .and_then(|parent| detect_package_root(parent, &settings.namespace_packages))
+            .map(PackageRoot::root);
+
         let result = lint_only(
             &src.path,
-            None, // no package-root; isort treats all imports as third-party
+            package,
             settings,
             flags::Noqa::Enabled,
             &source_kind,

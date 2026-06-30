@@ -110,7 +110,7 @@ fn plan_engines(language: &Language, config: &Config, kind: Kind) -> Vec<EngineP
         })
         .map(|engine| {
             let cfg = config.engine_config(language, engine.name(), kind);
-            let serialized_args = ResultCache::serialize_args(&cfg.options);
+            let serialized_args = ResultCache::serialize_args(&cache_args(&cfg));
             EnginePlan {
                 engine,
                 config: cfg,
@@ -118,6 +118,36 @@ fn plan_engines(language: &Language, config: &Config, kind: Kind) -> Vec<EngineP
             }
         })
         .collect()
+}
+
+/// The args table folded into the cache key for an engine: the user's per-engine
+/// `options` PLUS the effective `[defaults]` globals + indent width under
+/// reserved `__`-prefixed keys. Without the globals, changing `[defaults]
+/// line_length` (etc.) would not invalidate cached output, since most engines
+/// read those from globals rather than their own options table.
+fn cache_args(cfg: &EngineConfig) -> toml::Table {
+    let mut table = cfg.options.clone();
+    table.insert(
+        "__globals_line_length".to_string(),
+        toml::Value::Integer(cfg.globals.line_length as i64),
+    );
+    table.insert(
+        "__globals_line_ending".to_string(),
+        toml::Value::String(format!("{:?}", cfg.globals.line_ending)),
+    );
+    table.insert(
+        "__globals_final_newline".to_string(),
+        toml::Value::Boolean(cfg.globals.final_newline),
+    );
+    table.insert(
+        "__globals_trim_trailing_whitespace".to_string(),
+        toml::Value::Boolean(cfg.globals.trim_trailing_whitespace),
+    );
+    table.insert(
+        "__indent_width".to_string(),
+        toml::Value::Integer(cfg.indent_width as i64),
+    );
+    table
 }
 
 /// Build the catalog-driven engines (ADR 0013) for `language`: one
@@ -365,8 +395,11 @@ fn lint_content(
         language: f.language.clone(),
         content: Arc::from(content),
     };
-    // Content is constant across this file's engines, so digest it once.
-    let digest = ResultCache::single_file_digest(content);
+    // Content is constant across this file's engines, so digest it once. The
+    // path is folded in because lint diagnostics can depend on it (ruff INP001
+    // message, isort package classification) — without it, byte-identical files
+    // would share a cache entry and be served each other's path-bearing results.
+    let digest = ResultCache::single_file_digest_with_path(&f.path.to_string_lossy(), content);
     let mut all = Vec::new();
     let mut debug = collect_debug.then(RunDebug::default);
     let engine_plans = plans.get(&f.language).map(Vec::as_slice).unwrap_or(&[]);
