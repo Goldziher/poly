@@ -85,5 +85,12 @@ fn bench_runner(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_runner);
+#[path = "support/profiler.rs"]
+mod profiler;
+
+criterion_group! {
+    name = benches;
+    config = Criterion::default().with_profiler(profiler::FlamegraphProfiler::new(997));
+    targets = bench_runner
+}
 criterion_main!(benches);

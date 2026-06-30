@@ -84,5 +84,56 @@ fn bench_cache_key(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, bench_cache_key);
+/// Cache `get` on a miss vs a hit. The miss path is the one a whole-repo run
+/// hits tens of thousands of times: it must be served from the in-memory
+/// presence index with no syscall (it used to cost a failing `open()`), so a
+/// regression that reintroduces a per-miss syscall shows up here as the miss
+/// approaching the hit's cost.
+fn bench_cache_get(c: &mut Criterion) {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().join("cache");
+    let args = ResultCache::serialize_args(&toml::Table::new());
+
+    // Populate one entry, then reopen so the presence-index snapshot includes it
+    // (mirrors a warm run that scans the on-disk tree at startup).
+    {
+        let cache = ResultCache::open(root.clone(), true).expect("open cache");
+        let digest = ResultCache::single_file_digest("cached payload");
+        let present = ResultCache::key_with_args(Namespace::Lint, "eng", "1", &args, &digest);
+        cache.put(Namespace::Lint, &present, b"payload").expect("put");
+    }
+    let cache = ResultCache::open(root, true).expect("reopen cache");
+    let present = ResultCache::key_with_args(
+        Namespace::Lint,
+        "eng",
+        "1",
+        &args,
+        &ResultCache::single_file_digest("cached payload"),
+    );
+    let absent = ResultCache::key_with_args(
+        Namespace::Lint,
+        "eng",
+        "1",
+        &args,
+        &ResultCache::single_file_digest("never stored"),
+    );
+
+    let mut group = c.benchmark_group("cache_get");
+    group.bench_function("miss_via_presence_index", |b| {
+        b.iter(|| black_box(cache.get(Namespace::Lint, black_box(&absent))));
+    });
+    group.bench_function("hit_reads_file", |b| {
+        b.iter(|| black_box(cache.get(Namespace::Lint, black_box(&present))));
+    });
+    group.finish();
+}
+
+#[path = "support/profiler.rs"]
+mod profiler;
+
+criterion_group! {
+    name = benches;
+    config = Criterion::default().with_profiler(profiler::FlamegraphProfiler::new(997));
+    targets = bench_cache_key, bench_cache_get
+}
 criterion_main!(benches);
