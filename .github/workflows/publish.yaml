@@ -188,30 +188,26 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Linux x86_64 gnu
+          # Linux x86_64 gnu (native)
           - triple: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-            use_cross: false
-          # Linux x86_64 musl
+          # Linux aarch64 gnu (native arm64 runner — no cross needed)
+          - triple: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+          # Linux x86_64 musl (built in an Alpine container; cross images lack the
+          # libc headers ruby-prism-sys's bindgen step needs — sys/cdefs.h/limits.h)
           - triple: x86_64-unknown-linux-musl
             os: ubuntu-latest
-            use_cross: true
-          # Linux aarch64 gnu
-          - triple: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
-            use_cross: true
+            alpine: true
           # macOS x86_64
           - triple: x86_64-apple-darwin
             os: macos-13
-            use_cross: false
           # macOS aarch64 (Apple Silicon)
           - triple: aarch64-apple-darwin
             os: macos-14
-            use_cross: false
           # Windows x86_64
           - triple: x86_64-pc-windows-msvc
             os: windows-latest
-            use_cross: false
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -220,29 +216,50 @@ jobs:
           ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || '' }}
 
       - name: Setup Rust
+        if: ${{ !matrix.alpine }}
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.triple }}
 
       - name: Setup cache
+        if: ${{ !matrix.alpine }}
         uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.triple }}
 
-      - name: Install cross (if needed)
-        if: matrix.use_cross
-        run: cargo install cross
-
-      - name: Build binaries
-        run: |
-          if [ "${{ matrix.use_cross }}" = "true" ]; then
-            cross build --release --target ${{ matrix.triple }}
-          else
-            cargo build --release --target ${{ matrix.triple }}
-          fi
+      # ruby-prism-sys runs bindgen at build time and needs libclang + libc
+      # headers; native Linux runners get them from apt.
+      - name: Install clang for bindgen (Linux)
+        if: ${{ runner.os == 'Linux' && !matrix.alpine }}
+        run: sudo apt-get update && sudo apt-get install -y clang libclang-dev
         shell: bash
 
-      - name: Strip binaries
+      - name: Build binary (native)
+        if: ${{ !matrix.alpine }}
+        run: cargo build --release --target ${{ matrix.triple }}
+        shell: bash
+
+      # musl: build in the official rust:alpine image (musl-native), so prism's
+      # bindgen finds musl headers + libclang. -crt-static makes build scripts
+      # dynamically linked so they can dlopen libclang (the binary then links musl
+      # dynamically — correct for Alpine). `cross` lacked the libc headers.
+      - name: Build binary (musl, Alpine container)
+        if: ${{ matrix.alpine }}
+        run: |
+          docker run --rm -v "$PWD":/work -w /work \
+            -e CARGO_TARGET_DIR=/work/target \
+            -e LIBCLANG_PATH=/usr/lib \
+            -e RUSTFLAGS="-C target-feature=-crt-static" \
+            rust:alpine sh -c '
+              set -e
+              apk add --no-cache build-base musl-dev clang clang-dev llvm-dev pkgconf git perl
+              cargo build --release --target ${{ matrix.triple }}
+              strip target/${{ matrix.triple }}/release/poly
+            '
+        shell: bash
+
+      - name: Strip binary
+        if: ${{ !matrix.alpine }}
         run: |
           case "${{ matrix.triple }}" in
             *windows*)
@@ -250,8 +267,6 @@ jobs:
               ;;
             *)
               strip target/${{ matrix.triple }}/release/poly || true
-              strip target/${{ matrix.triple }}/release/polylint || true
-              strip target/${{ matrix.triple }}/release/polyfmt || true
               ;;
           esac
         shell: bash
@@ -262,10 +277,10 @@ jobs:
 
           case "${{ matrix.triple }}" in
             *windows*)
-              7z a ../../../poly-${{ needs.meta.outputs.version }}-${{ matrix.triple }}.zip poly.exe polylint.exe polyfmt.exe
+              7z a ../../../poly-${{ needs.meta.outputs.version }}-${{ matrix.triple }}.zip poly.exe
               ;;
             *)
-              tar czf ../../../poly-${{ needs.meta.outputs.version }}-${{ matrix.triple }}.tar.gz poly polylint polyfmt
+              tar czf ../../../poly-${{ needs.meta.outputs.version }}-${{ matrix.triple }}.tar.gz poly
               ;;
           esac
         shell: bash
