@@ -9,8 +9,29 @@
 //!
 //! ## Config layering
 //! `taplo` defaults → opinionated override (column_width 120) → user
-//! `[fmt.toml.taplo]` table (only `column_width` and `indent_width` are
-//! forwarded; all other keys are silently ignored for now).
+//! `[fmt.toml.taplo]` table.
+//!
+//! ### Supported `[fmt.toml.taplo]` keys
+//! | Key | Type | taplo default | Description |
+//! |-----|------|---------------|-------------|
+//! | `column_width` | integer | 80 (poly: 120) | Target column width |
+//! | `indent_width` | integer | 2 | Spaces per indent level |
+//! | `allowed_blank_lines` | integer | 2 | Max consecutive blank lines |
+//! | `align_entries` | bool | false | Align values in adjacent key/value pairs |
+//! | `reorder_keys` | bool | false | Alphabetically sort keys within a table |
+//! | `indent_tables` | bool | false | Indent sub-tables relative to their parent |
+//! | `array_trailing_comma` | bool | true | Add trailing comma to multi-line arrays |
+//! | `array_auto_expand` | bool | true | Auto-expand arrays exceeding column_width |
+//! | `compact_arrays` | bool | true | Omit padding spaces inside single-line arrays |
+//! | `compact_inline_tables` | bool | false | Omit padding spaces inside inline tables |
+//!
+//! **Note on `serde` feature**: `taplo::formatter::Options` only derives
+//! `serde::Deserialize` when the `serde` feature is enabled. Enabling that
+//! feature requires editing the workspace-root `Cargo.toml`; to avoid that
+//! constraint the ~10 most useful fields are mapped manually above. Remaining
+//! taplo options (`reorder_arrays`, `inline_table_expand`, `compact_entries`,
+//! `align_comments`, etc.) stay at taplo's defaults until the feature is
+//! activated.
 
 use taplo::{
     dom,
@@ -25,7 +46,7 @@ use crate::{
 };
 
 /// The taplo crate version this backend wraps; used as part of the cache key.
-const TAPLO_VERSION: &str = "0.14.0";
+const TAPLO_VERSION: &str = "0.14.0+opts-1";
 
 /// Tier-1 languages handled by this backend.
 static LANGUAGES: &[Language] = &[Language::Toml];
@@ -137,7 +158,13 @@ impl Engine for TaploEngine {
 /// Build `taplo::formatter::Options` from an [`EngineConfig`].
 ///
 /// Layering: taplo defaults → opinionated override (column_width 120) →
-/// user `[fmt.toml.taplo]` options (`column_width`, `indent_width`).
+/// user `[fmt.toml.taplo]` options.
+///
+/// `taplo::formatter::Options` only derives `serde::Deserialize` when the
+/// upstream `serde` feature is enabled (which would require editing the
+/// workspace-root `Cargo.toml`).  Instead, the most useful fields are read
+/// manually from `cfg.options` via `toml::Value::as_bool` /
+/// `toml::Value::as_integer` lookups.
 fn build_options(cfg: &EngineConfig) -> Options {
     // Opinionated overrides on top of taplo's own defaults.
     let mut opts = Options {
@@ -152,22 +179,85 @@ fn build_options(cfg: &EngineConfig) -> Options {
         ..Options::default()
     };
 
-    // User overrides from [fmt.toml.taplo] in polylint.toml.
-    if let Some(column_width) = cfg
+    // ── layout ───────────────────────────────────────────────────────────────
+    if let Some(v) = cfg
         .options
         .get("column_width")
         .and_then(toml::Value::as_integer)
-        && column_width > 0
+        && v > 0
     {
-        opts.column_width = column_width as usize;
+        opts.column_width = v as usize;
     }
-    if let Some(indent_width) = cfg
+    if let Some(v) = cfg
         .options
         .get("indent_width")
         .and_then(toml::Value::as_integer)
-        && indent_width > 0
+        // Cap at 32 so a pathological `indent_width` can't allocate a huge
+        // indent string per file.
+        && (1..=32).contains(&v)
     {
-        opts.indent_string = " ".repeat(indent_width as usize);
+        opts.indent_string = " ".repeat(v as usize);
+    }
+    if let Some(v) = cfg
+        .options
+        .get("allowed_blank_lines")
+        .and_then(toml::Value::as_integer)
+        && v >= 0
+    {
+        opts.allowed_blank_lines = v as usize;
+    }
+
+    // ── entry ordering ────────────────────────────────────────────────────────
+    if let Some(v) = cfg
+        .options
+        .get("align_entries")
+        .and_then(toml::Value::as_bool)
+    {
+        opts.align_entries = v;
+    }
+    if let Some(v) = cfg
+        .options
+        .get("reorder_keys")
+        .and_then(toml::Value::as_bool)
+    {
+        opts.reorder_keys = v;
+    }
+    if let Some(v) = cfg
+        .options
+        .get("indent_tables")
+        .and_then(toml::Value::as_bool)
+    {
+        opts.indent_tables = v;
+    }
+
+    // ── array formatting ──────────────────────────────────────────────────────
+    if let Some(v) = cfg
+        .options
+        .get("array_trailing_comma")
+        .and_then(toml::Value::as_bool)
+    {
+        opts.array_trailing_comma = v;
+    }
+    if let Some(v) = cfg
+        .options
+        .get("array_auto_expand")
+        .and_then(toml::Value::as_bool)
+    {
+        opts.array_auto_expand = v;
+    }
+    if let Some(v) = cfg
+        .options
+        .get("compact_arrays")
+        .and_then(toml::Value::as_bool)
+    {
+        opts.compact_arrays = v;
+    }
+    if let Some(v) = cfg
+        .options
+        .get("compact_inline_tables")
+        .and_then(toml::Value::as_bool)
+    {
+        opts.compact_inline_tables = v;
     }
 
     opts

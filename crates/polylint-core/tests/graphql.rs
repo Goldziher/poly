@@ -94,3 +94,34 @@ fn known_unformatted_schema_output() {
         format_to_string(KNOWN_UNFORMATTED_SCHEMA)
     );
 }
+
+/// A pretty_graphql LanguageOptions field set via `[fmt.graphql.graphql]`
+/// reaches the formatter: `arguments.paren_spacing = true` adds spaces inside
+/// argument parentheses (default false).
+#[test]
+fn format_honors_language_option() {
+    let engine = GraphQlEngine;
+    let query = "query Q { user(id: 1, name: \"a\") { id name } }\n";
+    let default_out = format_to_string(query);
+
+    let mut options = toml::Table::new();
+    options.insert(
+        "arguments.paren_spacing".to_string(),
+        toml::Value::Boolean(true),
+    );
+    let cfg = EngineConfig {
+        options,
+        ..engine_cfg()
+    };
+    let FormatOutput::Formatted(out) = engine.format(&make_src(query), &cfg).unwrap() else {
+        panic!("`arguments.paren_spacing = true` should reformat the argument parens");
+    };
+    assert_ne!(
+        out, default_out,
+        "[fmt.graphql.graphql] arguments.paren_spacing must change output"
+    );
+    assert!(
+        out.contains("( id: 1, name: \"a\" )"),
+        "arguments.paren_spacing adds inner spaces; got: {out}"
+    );
+}

@@ -6,9 +6,15 @@
 //! ## Options layering
 //! malva defaults → polylint opinionated override (line length 120, indent 2) →
 //! user `[fmt.css.malva]` / `[fmt.scss.malva]` / `[fmt.less.malva]`.
+//!
+//! The user table is deserialized into [`malva::config::FormatOptions`] (via
+//! the `config_serde` feature).  All [`malva::config::LanguageOptions`] fields
+//! are exposed.  Layout fields (`print_width`, `indent_width`, `line_break`,
+//! `use_tabs`) are always taken from poly globals and override anything the
+//! user places in the options table.
 
 use malva::Syntax;
-use malva::config::{FormatOptions, LayoutOptions};
+use malva::config::FormatOptions;
 
 use crate::config::EngineConfig;
 use crate::engine::{Capabilities, Engine, FormatOutput, SourceFile};
@@ -18,7 +24,9 @@ use crate::language::Language;
 pub struct MalvaEngine;
 
 /// malva crate version — folded into the cache key so upgrades invalidate stale results.
-const MALVA_VERSION: &str = "0.16.0";
+/// Bumped suffix to +opts-1 after exposing full LanguageOptions (options were previously
+/// ignored — existing caches must be invalidated).
+const MALVA_VERSION: &str = "0.16.0+opts-1";
 
 /// Languages handled by this backend.
 static LANGUAGES: &[Language] = &[Language::Css, Language::Scss, Language::Less];
@@ -70,20 +78,33 @@ fn language_to_syntax(lang: &Language) -> Option<Syntax> {
 
 /// Build [`FormatOptions`] from a polylint [`EngineConfig`].
 ///
-/// Layering: malva defaults → opinionated override (print_width=120, indent from lang default)
-/// → user `polylint.toml` options are not yet applied structurally (no schema mapping needed
-/// at this layer — the user can pass raw malva TOML keys in the future).
+/// Layering:
+/// 1. `FormatOptions::default()` — malva's own defaults.
+/// 2. If `cfg.options` is non-empty, deserialise into `FormatOptions` via
+///    `config_serde`; unknown keys are silently ignored.
+/// 3. Override all `LayoutOptions` fields with poly's globals — these always
+///    win over any layout keys the user may have placed in the options table.
 fn build_options(cfg: &EngineConfig) -> FormatOptions {
-    FormatOptions {
-        layout: LayoutOptions {
-            // Polylint opinionated override: line length 120 (or user global).
-            print_width: cfg.globals.line_length,
-            // Use language's standard indent width (2 for CSS/SCSS/Less).
-            indent_width: cfg.indent_width,
-            ..LayoutOptions::default()
-        },
-        ..FormatOptions::default()
-    }
+    let mut options: FormatOptions = if cfg.options.is_empty() {
+        FormatOptions::default()
+    } else {
+        toml::Value::Table(cfg.options.clone())
+            .try_into()
+            .unwrap_or_else(|error| {
+                tracing::warn!(%error, "[fmt.<css|scss|less>.malva] options could not be parsed; using defaults");
+                FormatOptions::default()
+            })
+    };
+
+    // Poly's layout always wins — these come from globals, not the user table.
+    // (use_tabs has no global, so it stays user-controllable from the table.)
+    options.layout.print_width = cfg.globals.line_length;
+    options.layout.indent_width = cfg.indent_width;
+    options.layout.line_break = match cfg.globals.line_ending {
+        crate::config::LineEnding::Crlf => malva::config::LineBreak::Crlf,
+        crate::config::LineEnding::Lf => malva::config::LineBreak::Lf,
+    };
+    options
 }
 
 #[cfg(test)]

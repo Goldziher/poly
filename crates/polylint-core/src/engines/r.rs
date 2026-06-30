@@ -12,15 +12,40 @@
 //!   rules that advertise a [`jarl_core::rule_set::FixStatus::Safe`] fix.
 //!
 //! ## Config layering
-//! Format: air defaults → opinionated override (line_width 120, indent_style Space,
-//! indent_width from `cfg.indent_width`) → user `[fmt.r.r]` table.
 //!
-//! Lint: jarl's default-enabled rules, no minimum R version assumed (conservative:
-//! version-gated rules are excluded).
+//! ### `[lint.r.r]`
+//!
+//! Uses the shared `RuleSelection` schema:
+//!
+//! | Key | Type | Purpose |
+//! |-----|------|---------|
+//! | `select` | `[String]` | Replace the default rule set. Pass rule codes or jarl category group names (`COMM`, `CORR`, `SUSP`, `PERF`, `READ`, `TESTTHAT`, `DPLYR`) or the special value `ALL`. Names are case-sensitive. |
+//! | `extend_select` | `[String]` | Add to the default rule set. |
+//! | `ignore` | `[String]` | Remove from the active set. |
+//! | `[rules.<id>]` | table | Per-rule overrides. `level` can be `"error"`, `"warning"`, `"info"`, `"hint"`. |
+//!
+//! When `select`/`extend_select`/`ignore` are all absent the global
+//! [`JARL_CONFIG`] static is reused (fast path — no per-file config rebuild).
+//!
+//! ### `[fmt.r.r]`
+//!
+//! | Key | Type | Values | Default |
+//! |-----|------|--------|---------|
+//! | `indent_style` | string | `"space"`, `"tab"` | `"space"` |
+//! | `indent_width` | integer | 1–24 | from `EngineConfig.indent_width` |
+//! | `line_ending` | string | `"lf"`, `"crlf"` | `"lf"` |
+//! | `persistent_line_breaks` | string | `"respect"`, `"ignore"` | `"respect"` |
+//! | `assignment_style` | string | `"arrow"`, `"equal"`, `"preserve"` | `"arrow"` |
+//!
+//! Line length is controlled by the global `line_length` key, not duplicated
+//! here.
 //!
 //! ## Cache key
 //! [`VERSION`] folds both the air and jarl git revs so any fork bump invalidates
-//! stale cached output.
+//! stale cached output.  The runner also folds `cfg.options` (the resolved
+//! `[lint.r.r]` / `[fmt.r.r]` table) into the cache key via
+//! `ResultCache::serialize_args`, so a static `VERSION` is sufficient — config
+//! changes naturally invalidate cache entries without a version bump.
 
 use std::collections::HashMap;
 use std::sync::LazyLock;
@@ -28,7 +53,9 @@ use std::sync::LazyLock;
 use air_r_formatter::context::RFormatOptions;
 use air_r_formatter::format_node;
 use air_r_parser::RParserOptions;
-use air_settings::{IndentStyle, IndentWidth, LineWidth};
+use air_settings::{
+    AssignmentStyle, IndentStyle, IndentWidth, LineEnding, LineWidth, PersistentLineBreaks,
+};
 use jarl_core::check::get_checks as jarl_get_checks;
 use jarl_core::config::{ArgsConfig, Config, build_config};
 use jarl_core::diagnostic::Diagnostic as JarlDiagnostic;
@@ -38,6 +65,7 @@ use crate::config::EngineConfig;
 use crate::engine::{
     Capabilities, Diagnostic, Edit, Engine, FormatOutput, Severity, SourceFile, Span,
 };
+use crate::engines::rule_config::RuleSelection;
 use crate::language::Language;
 
 /// Cache key version: folds both the air and jarl git revs so any fork bump
@@ -119,7 +147,39 @@ impl Engine for REngine {
     /// Parse errors are silently swallowed (`Ok(vec![])`) so that a broken R
     /// file does not surface confusing "parse error" diagnostics.  The formatter
     /// already handles parse errors by returning `Unchanged`.
-    fn lint(&self, src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
+    ///
+    /// Rule selection from `[lint.r.r]` is applied by building a per-call
+    /// [`Config`] from a `[lint.r.r]` `select`/`extend_select`/`ignore`.
+    /// When no selection config is present the global [`JARL_CONFIG`] static is
+    /// reused (fast path — avoids rebuilding an identical config per file).
+    fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
+        let selection = RuleSelection::from_options(cfg);
+
+        // Build jarl Config: reuse the global default when no selection is
+        // provided so the common case pays zero per-file allocation.
+        let owned_config;
+        let jarl_cfg: &Config = if selection.is_empty() {
+            &JARL_CONFIG
+        } else {
+            let args = ArgsConfig {
+                files: vec![],
+                fix: false,
+                unsafe_fixes: false,
+                fix_only: false,
+                select: selection.select.join(","),
+                extend_select: selection.extend_select.join(","),
+                ignore: selection.ignore.join(","),
+                min_r_version: None,
+                allow_dirty: true,
+                allow_no_vcs: true,
+                assignment: None,
+            };
+            // Propagate UnknownRulesError so the user sees a clear message
+            // about invalid rule codes/category names in [lint.r.r].
+            owned_config = build_config(&args, None, vec![])?;
+            &owned_config
+        };
+
         let pkg = PackageAnalysis::default();
         let pkg_contexts: HashMap<_, PackageContext> = HashMap::new();
         let file_pkg_info: HashMap<_, FilePackageInfo> = HashMap::new();
@@ -127,14 +187,25 @@ impl Engine for REngine {
         match jarl_get_checks(
             &src.content,
             &src.path,
-            &JARL_CONFIG,
+            jarl_cfg,
             &pkg,
             &pkg_contexts,
             &file_pkg_info,
         ) {
             Ok(jarl_diags) => Ok(jarl_diags
                 .into_iter()
-                .map(|d| map_jarl_diagnostic(d, &src.content))
+                .map(|d| {
+                    let mut diag = map_jarl_diagnostic(d, &src.content);
+                    // Apply per-rule severity override from
+                    // [lint.r.r.rules.<id>] level = "error"|"warning"|...
+                    if let Some(code) = diag.code.as_deref()
+                        && let Some(opts) = selection.rules.get(code)
+                        && let Some(level) = opts.level
+                    {
+                        diag.severity = level;
+                    }
+                    diag
+                })
                 .collect()),
             Err(e) if e.is::<jarl_core::error::ParseError>() => {
                 // Corrupt/partial R — graceful degradation; the format path
@@ -148,6 +219,9 @@ impl Engine for REngine {
     /// Format `src.content` with air. Returns [`FormatOutput::Unchanged`] when:
     /// - the formatter output equals the input (file is already well-formatted), or
     /// - the file has parse errors (corrupt/partial R is left untouched).
+    ///
+    /// All `[fmt.r.r]` keys are optional; unrecognised string values are silently
+    /// ignored and the option falls back to its polylint default.
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
         let parse = air_r_parser::parse(&src.content, RParserOptions::default());
 
@@ -167,10 +241,53 @@ impl Engine for REngine {
         // indent_width is usize; IndentWidth accepts values 1..=24.
         let indent_width = IndentWidth::try_from(cfg.indent_width).unwrap_or_default();
 
+        // Parse optional [fmt.r.r] keys; silently fall back to polylint defaults
+        // for absent or unrecognised values (no user-visible error — unknown
+        // option strings are a minor misconfiguration, not a crash).
+        let indent_style = cfg
+            .options
+            .get("indent_style")
+            .and_then(toml::Value::as_str)
+            .and_then(|s| s.parse::<IndentStyle>().ok())
+            .unwrap_or(IndentStyle::Space); // opinionated override: always Space
+
+        let line_ending = cfg
+            .options
+            .get("line_ending")
+            .and_then(toml::Value::as_str)
+            .and_then(|s| match s {
+                "lf" => Some(LineEnding::Lf),
+                "crlf" => Some(LineEnding::Crlf),
+                _ => None,
+            })
+            // Default to poly's global line-ending (so `[defaults] line_ending`
+            // reaches R formatting like it does YAML), not air's own default.
+            .unwrap_or(match cfg.globals.line_ending {
+                crate::config::LineEnding::Crlf => LineEnding::Crlf,
+                crate::config::LineEnding::Lf => LineEnding::Lf,
+            });
+
+        let persistent_line_breaks = cfg
+            .options
+            .get("persistent_line_breaks")
+            .and_then(toml::Value::as_str)
+            .and_then(|s| s.parse::<PersistentLineBreaks>().ok())
+            .unwrap_or_default(); // air default: Respect
+
+        let assignment_style = cfg
+            .options
+            .get("assignment_style")
+            .and_then(toml::Value::as_str)
+            .and_then(|s| s.parse::<AssignmentStyle>().ok())
+            .unwrap_or_default(); // air default: Arrow (<-)
+
         let opts = RFormatOptions::new()
             .with_line_width(line_width)
-            .with_indent_style(IndentStyle::Space)
-            .with_indent_width(indent_width);
+            .with_indent_style(indent_style)
+            .with_indent_width(indent_width)
+            .with_line_ending(line_ending)
+            .with_persistent_line_breaks(persistent_line_breaks)
+            .with_assignment_style(assignment_style);
 
         let code = format_node(opts, &parse.syntax())
             .map_err(|e| anyhow::anyhow!("air: format_node failed: {e}"))?
@@ -267,6 +384,16 @@ mod tests {
             globals: GlobalDefaults::default(),
             indent_width: 2,
             options: toml::Table::new(),
+        }
+    }
+
+    /// Build an [`EngineConfig`] from a TOML snippet that represents the
+    /// options table (e.g. `select = [\"CORR\"]`).
+    fn cfg_from_toml(toml_str: &str) -> EngineConfig {
+        EngineConfig {
+            globals: GlobalDefaults::default(),
+            indent_width: 2,
+            options: toml::from_str(toml_str).expect("valid TOML in test"),
         }
     }
 
@@ -373,5 +500,116 @@ mod tests {
             matches!(out, FormatOutput::Unchanged),
             "expected Unchanged for unparsable input"
         );
+    }
+
+    // ── Config-wiring tests (Phase 2) ───────────────────────────────────────
+
+    #[test]
+    fn lint_default_fires_perf_rule() {
+        // `any(duplicated(x))` triggers the `any_duplicated` PERF rule by default.
+        let engine = REngine;
+        let src = make_src("any(duplicated(c(1, 2, 1)))\n");
+        let diags = engine.lint(&src, &default_cfg()).unwrap();
+        let codes: Vec<_> = diags.iter().filter_map(|d| d.code.as_deref()).collect();
+        assert!(
+            codes.contains(&"any_duplicated"),
+            "expected any_duplicated in default rule set, got: {codes:?}"
+        );
+    }
+
+    #[test]
+    fn lint_select_corr_filters_out_perf_rule() {
+        // With select = ["CORR"], only Correctness rules are active.
+        // `any_duplicated` is a PERF rule and must NOT appear.
+        let engine = REngine;
+        let src = make_src("any(duplicated(c(1, 2, 1)))\n");
+        let cfg = cfg_from_toml(r#"select = ["CORR"]"#);
+        let diags = engine.lint(&src, &cfg).unwrap();
+        let codes: Vec<_> = diags.iter().filter_map(|d| d.code.as_deref()).collect();
+        assert!(
+            !codes.contains(&"any_duplicated"),
+            "any_duplicated must be absent when select=[\"CORR\"], got: {codes:?}"
+        );
+    }
+
+    #[test]
+    fn lint_ignore_equals_na_drops_it() {
+        // `x == NA` triggers `equals_na` by default.
+        // With ignore = ["equals_na"], that diagnostic must be absent.
+        let engine = REngine;
+        let src = make_src("x <- c(1, 2, NA)\ny <- x == NA\n");
+
+        // Sanity-check: the rule fires without ignore.
+        let default_diags = engine.lint(&src, &default_cfg()).unwrap();
+        let has_without_ignore = default_diags
+            .iter()
+            .any(|d| d.code.as_deref() == Some("equals_na"));
+        assert!(has_without_ignore, "equals_na must fire by default");
+
+        // Now with ignore: it must disappear.
+        let cfg = cfg_from_toml(r#"ignore = ["equals_na"]"#);
+        let diags = engine.lint(&src, &cfg).unwrap();
+        let has_with_ignore = diags.iter().any(|d| d.code.as_deref() == Some("equals_na"));
+        assert!(
+            !has_with_ignore,
+            "equals_na must be absent when in ignore list"
+        );
+    }
+
+    #[test]
+    fn lint_rule_level_override_to_error_changes_severity() {
+        // `equals_na` normally maps to Severity::Warning.
+        // A [rules.equals_na] level = "error" override must produce Severity::Error.
+        let engine = REngine;
+        let src = make_src("x <- c(1, 2, NA)\ny <- x == NA\n");
+        let cfg = cfg_from_toml(
+            r#"
+[rules.equals_na]
+level = "error"
+"#,
+        );
+        let diags = engine.lint(&src, &cfg).unwrap();
+        let equals_na: Vec<_> = diags
+            .iter()
+            .filter(|d| d.code.as_deref() == Some("equals_na"))
+            .collect();
+        assert!(
+            !equals_na.is_empty(),
+            "equals_na must still fire with level override"
+        );
+        assert_eq!(
+            equals_na[0].severity,
+            Severity::Error,
+            "severity must be overridden to Error"
+        );
+    }
+
+    #[test]
+    fn fmt_assignment_style_equal_changes_arrow_to_equals() {
+        // `assignment_style = "equal"` rewrites top-level `<-` to `=`.
+        let engine = REngine;
+        let src = make_src("x <- 1\n");
+
+        // Default (Arrow): already formatted — must be Unchanged.
+        let default_out = engine.format(&src, &default_cfg()).unwrap();
+        assert!(
+            matches!(default_out, FormatOutput::Unchanged),
+            "x <- 1 must be Unchanged under default Arrow style"
+        );
+
+        // Equal style: `<-` → `=`.
+        let cfg = cfg_from_toml(r#"assignment_style = "equal""#);
+        let equal_out = engine.format(&src, &cfg).unwrap();
+        match equal_out {
+            FormatOutput::Formatted(code) => {
+                assert!(
+                    code.contains("x = 1"),
+                    "assignment_style=equal must rewrite <- to =, got: {code:?}"
+                );
+            }
+            FormatOutput::Unchanged => {
+                panic!("expected Formatted with assignment_style=equal, got Unchanged");
+            }
+        }
     }
 }

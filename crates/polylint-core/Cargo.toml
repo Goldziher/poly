@@ -44,8 +44,8 @@ mago-reporting.workspace = true
 mago-span.workspace = true
 mago-syntax.workspace = true
 mago-text-edit.workspace = true
-malva.workspace = true
-markup_fmt.workspace = true
+malva = { workspace = true, features = ["config_serde"] }
+markup_fmt = { workspace = true, features = ["config_serde"] }
 owo-colors.workspace = true
 # oxc backend (M2 + oxlint) — all git deps pinned to the same rev (see workspace Cargo.toml)
 oxc_allocator.workspace = true
@@ -58,8 +58,8 @@ oxc_span.workspace = true
 poly-cache.workspace = true
 poly-catalog.workspace = true
 poly-config.workspace = true
-pretty_graphql.workspace = true
-pretty_yaml.workspace = true
+pretty_graphql = { workspace = true, features = ["config_serde"] }
+pretty_yaml = { workspace = true, features = ["config_serde"] }
 rayon.workspace = true
 rubyfmt.workspace = true
 # ruff git deps — all pinned to the same rev (see workspace Cargo.toml)

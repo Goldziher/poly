@@ -4,6 +4,8 @@
 //!   [`Diagnostic`]s (duplicate key).
 //! - `known_unformatted_snapshot` — a known-unformatted TOML file asserts the
 //!   exact formatted output produced by the taplo formatter.
+//! - `reorder_keys_changes_output` — proves the `reorder_keys` option wired in
+//!   Phase 2 actually changes output vs the default (default = preserve order).
 
 use polylint_core::{
     Language,
@@ -88,4 +90,57 @@ fn known_unformatted_snapshot() {
     };
 
     insta::assert_snapshot!("known_unformatted_output", formatted);
+}
+
+// ---------------------------------------------------------------------------
+// Option fixture: `reorder_keys` changes output vs default
+// ---------------------------------------------------------------------------
+
+/// Keys in non-alphabetical order; with `reorder_keys = false` (default) the
+/// order is preserved, with `reorder_keys = true` they sort alphabetically.
+const REORDER_INPUT: &str = "\
+z_key = \"last\"
+a_key = \"first\"
+m_key = \"middle\"
+";
+
+#[test]
+fn reorder_keys_changes_output() {
+    let engine = TaploEngine::new();
+    let src = make_src("reorder.toml", REORDER_INPUT);
+
+    // Default config: reorder_keys = false → order must be preserved.
+    let default_out = match engine.format(&src, &engine_cfg()).unwrap() {
+        FormatOutput::Formatted(s) => s,
+        FormatOutput::Unchanged => REORDER_INPUT.to_string(),
+    };
+    let z_default = default_out.find("z_key").expect("z_key missing");
+    let a_default = default_out.find("a_key").expect("a_key missing");
+    assert!(
+        z_default < a_default,
+        "default config should preserve key order (z before a), got:\n{default_out}"
+    );
+
+    // Config with reorder_keys = true → keys must be alphabetically sorted.
+    let mut opts = toml::Table::new();
+    opts.insert("reorder_keys".to_string(), toml::Value::Boolean(true));
+    let reorder_cfg = EngineConfig {
+        globals: GlobalDefaults::default(),
+        indent_width: 2,
+        options: opts,
+    };
+    let reorder_out = match engine.format(&src, &reorder_cfg).unwrap() {
+        FormatOutput::Formatted(s) => s,
+        FormatOutput::Unchanged => REORDER_INPUT.to_string(),
+    };
+    let z_reorder = reorder_out
+        .find("z_key")
+        .expect("z_key missing after reorder");
+    let a_reorder = reorder_out
+        .find("a_key")
+        .expect("a_key missing after reorder");
+    assert!(
+        a_reorder < z_reorder,
+        "reorder_keys = true should place a_key before z_key, got:\n{reorder_out}"
+    );
 }
