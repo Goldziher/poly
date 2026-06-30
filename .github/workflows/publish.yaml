@@ -316,6 +316,7 @@ jobs:
           fi
 
           gh release upload "$tag" "$archive" --clobber
+        shell: bash
 
       - name: Save artifact for checksums
         uses: actions/upload-artifact@v4
