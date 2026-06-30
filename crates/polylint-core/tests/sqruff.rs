@@ -81,3 +81,61 @@ fn sqruff_format_already_formatted_is_unchanged() {
         );
     }
 }
+
+// --- per-rule parameter fixture: capitalisation policy -----------------------
+//
+// Proves that `rule_configs."capitalisation.keywords" = { capitalisation_policy
+// = "upper" }` changes lint findings vs the default `consistent` policy.
+// Default (consistent): all-lowercase SQL has no CP01 violation because the
+// capitalisation is internally consistent.
+// With "upper": lowercase keywords `select` / `from` violate CP01.
+
+const LOWERCASE_SQL: &str = "select a, b from users\n";
+
+#[test]
+fn sqruff_per_rule_param_capitalisation_policy_upper() {
+    use polylint_core::config::{EngineConfig, GlobalDefaults};
+
+    let engine = SqruffEngine;
+    let src = make_source("test.sql", LOWERCASE_SQL);
+
+    // Baseline: default config (consistent) should not flag all-lowercase SQL.
+    let default_diags = engine.lint(&src, &lint_cfg()).unwrap();
+    let cp01_default = default_diags
+        .iter()
+        .filter(|d| d.code.as_deref() == Some("CP01"))
+        .count();
+    assert_eq!(
+        cp01_default, 0,
+        "consistent policy should not flag all-lowercase SQL; got: {default_diags:#?}"
+    );
+
+    // With capitalisation_policy = "upper": lowercase keywords must be flagged.
+    let mut cap_opts = toml::Table::new();
+    cap_opts.insert(
+        "capitalisation_policy".to_string(),
+        toml::Value::String("upper".to_string()),
+    );
+    let mut rule_configs = toml::Table::new();
+    rule_configs.insert(
+        "capitalisation.keywords".to_string(),
+        toml::Value::Table(cap_opts),
+    );
+    let mut options = toml::Table::new();
+    options.insert("rule_configs".to_string(), toml::Value::Table(rule_configs));
+
+    let upper_cfg = EngineConfig {
+        globals: GlobalDefaults::default(),
+        indent_width: 4,
+        options,
+    };
+
+    let upper_diags = engine.lint(&src, &upper_cfg).unwrap();
+    assert!(
+        upper_diags
+            .iter()
+            .any(|d| d.code.as_deref() == Some("CP01")),
+        "capitalisation_policy = 'upper' should flag lowercase keywords (CP01); \
+         got: {upper_diags:#?}"
+    );
+}

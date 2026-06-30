@@ -3,10 +3,34 @@
 //! Dialect defaults to `ansi`. Override with `dialect = "postgres"` (or any other
 //! dialect sqruff supports) in the `[lint.sql.sqruff]` / `[fmt.sql.sqruff]` config
 //! table. Line length defaults to the polylint global (120).
+//!
+//! ## Supported config keys
+//! | Key | Type | Description |
+//! |-----|------|-------------|
+//! | `dialect` | string | SQL dialect (default `"ansi"`) |
+//! | `rules` | string array | Allow-list of rule codes/groups |
+//! | `exclude_rules` | string array | Deny-list of rule codes/groups |
+//! | `rule_configs` | table | Per-rule parameter overrides (see below) |
+//!
+//! ### Per-rule parameters (`rule_configs`)
+//! Map rule section names to inline tables of key/value pairs:
+//!
+//! ```toml
+//! [lint.sql.sqruff.rule_configs]
+//! "capitalisation.keywords" = { capitalisation_policy = "upper" }
+//! "layout.long_lines"       = { ignore_comment_lines = true }
+//! ```
+//!
+//! These forward directly into sqruff's `[sqruff:rules:<name>]` INI sections.
+//! Non-scalar values (nested tables, arrays) within a rule entry are ignored.
+//!
+//! **Note on `rule_configs` vs `rules`**: `rules` is an array of rule *codes*
+//! for allow-listing; `rule_configs` is a table of *per-rule parameters*.  They
+//! are separate keys and can coexist.
 
 use std::str::FromStr as _;
 
-use sqruff_lib::core::config::{FluffConfig, Value};
+use sqruff_lib::core::config::FluffConfig;
 use sqruff_lib::core::linter::core::Linter;
 use sqruff_lib_core::dialects::init::DialectKind;
 use sqruff_lib_core::errors::SQLBaseError;
@@ -83,30 +107,23 @@ impl Engine for SqruffEngine {
 
 /// Build a [`FluffConfig`] from a polylint [`EngineConfig`].
 ///
-/// Layering: sqruff defaults (from embedded `default_config.cfg`) → opinionated
-/// polylint override (line length 120) → user `polylint.toml` options.
+/// Constructs an INI-format config string from user options and passes it to
+/// [`FluffConfig::from_source`], which merges the user overrides on top of
+/// sqruff's own embedded `default_config.cfg`.
 ///
-/// Supported options in `[lint.sql.sqruff]` / `[fmt.sql.sqruff]`:
-/// - `dialect` — SQL dialect string (default `"ansi"`).
-/// - `rules` — array of rule codes / group names to allow-list.
-/// - `exclude_rules` — array of rule codes / group names to deny-list.
+/// Layering: sqruff defaults → opinionated polylint override (`max_line_length`
+/// 120) → user `polylint.toml` options.
 fn build_fluff_config(cfg: &EngineConfig) -> anyhow::Result<FluffConfig> {
-    let mut fluff = FluffConfig::default();
-
-    // Opinionated override: line length 120 (polylint global default).
-    let line_length = cfg.globals.line_length as i32;
-    if let Some(core) = fluff.raw.get_mut("core").and_then(|v| v.as_map_mut()) {
-        core.insert("max_line_length".to_string(), Value::Int(line_length));
-    }
-
-    // User dialect override — defaults to ansi (sqruff's own default).
     let dialect_str = cfg
         .options
         .get("dialect")
         .and_then(|v| v.as_str())
         .unwrap_or("ansi");
+
+    // Validate the dialect upfront so we can surface a descriptive error rather
+    // than panicking inside FluffConfig::new.
     if dialect_str != "ansi" {
-        let kind = DialectKind::from_str(dialect_str).map_err(|_| {
+        DialectKind::from_str(dialect_str).map_err(|_| {
             anyhow::anyhow!(
                 "unknown SQL dialect {dialect_str:?}; \
                  supported values: ansi, bigquery, clickhouse, databricks, db2, duckdb, \
@@ -114,40 +131,70 @@ fn build_fluff_config(cfg: &EngineConfig) -> anyhow::Result<FluffConfig> {
                  sqlite, trino, tsql"
             )
         })?;
-        fluff
-            .override_dialect(kind)
-            .map_err(|e| anyhow::anyhow!("sqruff override_dialect failed: {e}"))?;
     }
 
-    // User rule allow-list: `rules = ["CP01", "LT01"]` selects only those rules.
+    // Build an INI config string.  FluffConfig::from_source merges this with
+    // sqruff's built-in defaults — user entries win on conflict.
+    let mut ini = format!("[sqruff]\nmax_line_length = {}\n", cfg.globals.line_length);
+
+    if dialect_str != "ansi" {
+        ini.push_str(&format!("dialect = {dialect_str}\n"));
+    }
+
+    // Rule allow-list: `rules = ["CP01", "LT01"]` selects only those rules.
     if let Some(rules) = cfg.options.get("rules").and_then(|v| v.as_array()) {
-        let val = Value::Array(
-            rules
-                .iter()
-                .filter_map(|v| v.as_str())
-                .map(|s| Value::String(s.into()))
-                .collect(),
-        );
-        if let Some(core) = fluff.raw.get_mut("core").and_then(|v| v.as_map_mut()) {
-            core.insert("rule_allowlist".to_string(), val);
+        let codes: Vec<&str> = rules.iter().filter_map(|v| v.as_str()).collect();
+        if !codes.is_empty() {
+            ini.push_str(&format!("rules = {}\n", codes.join(",")));
         }
     }
 
-    // User rule deny-list: `exclude_rules = ["CP01"]` suppresses those rules.
-    if let Some(exclude_rules) = cfg.options.get("exclude_rules").and_then(|v| v.as_array()) {
-        let val = Value::Array(
-            exclude_rules
-                .iter()
-                .filter_map(|v| v.as_str())
-                .map(|s| Value::String(s.into()))
-                .collect(),
-        );
-        if let Some(core) = fluff.raw.get_mut("core").and_then(|v| v.as_map_mut()) {
-            core.insert("rule_denylist".to_string(), val);
+    // Rule deny-list: `exclude_rules = ["CP01"]` suppresses those rules.
+    if let Some(excluded) = cfg.options.get("exclude_rules").and_then(|v| v.as_array()) {
+        let codes: Vec<&str> = excluded.iter().filter_map(|v| v.as_str()).collect();
+        if !codes.is_empty() {
+            ini.push_str(&format!("exclude_rules = {}\n", codes.join(",")));
         }
     }
 
-    Ok(fluff)
+    // Per-rule parameters: `[lint.sql.sqruff.rule_configs]`.
+    // Each key is a rule section name (e.g. `"capitalisation.keywords"`);
+    // each value is an inline table of option key/value pairs.
+    // These become `[sqruff:rules:<name>]` INI sections that sqruff merges on
+    // top of its own rule defaults.
+    if let Some(rule_configs) = cfg.options.get("rule_configs").and_then(|v| v.as_table()) {
+        for (rule_name, rule_opts) in rule_configs {
+            if let Some(opts_table) = rule_opts.as_table() {
+                ini.push_str(&format!("\n[sqruff:rules:{rule_name}]\n"));
+                for (key, val) in opts_table {
+                    ini.push_str(&format!("{key} = {}\n", toml_val_to_ini_str(val)));
+                }
+            }
+        }
+    }
+
+    Ok(FluffConfig::from_source(&ini, None))
+}
+
+/// Convert a scalar [`toml::Value`] into a bare string for an INI entry value.
+///
+/// Non-scalar values (arrays, tables) are rendered as an empty string — per-rule
+/// parameters are expected to be scalars.  Booleans use sqruff's `True`/`False`
+/// casing (case-insensitive in the INI parser, but matches the convention).
+fn toml_val_to_ini_str(v: &toml::Value) -> String {
+    match v {
+        toml::Value::String(s) => s.clone(),
+        toml::Value::Boolean(b) => {
+            if *b {
+                "True".to_string()
+            } else {
+                "False".to_string()
+            }
+        }
+        toml::Value::Integer(i) => i.to_string(),
+        toml::Value::Float(f) => f.to_string(),
+        _ => String::new(),
+    }
 }
 
 /// Convert a sqruff [`SQLBaseError`] to a polylint [`Diagnostic`].
