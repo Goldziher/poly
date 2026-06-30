@@ -54,6 +54,29 @@ curl -fsSL https://raw.githubusercontent.com/Goldziher/polylint/main/install.sh 
 Installs `poly`, `polylint`, and `polyfmt` into `~/.local/bin` (override with `POLY_INSTALL_DIR`),
 verifying `sha256sums.txt`.
 
+**Homebrew:**
+
+```sh
+brew install Goldziher/tap/polylint
+```
+
+**npm:**
+
+The unscoped `polylint` name on npm belongs to an unrelated project, so poly publishes as `poly-lint`.
+
+```sh
+npm install -g poly-lint
+```
+
+**PyPI:**
+
+```sh
+pip install polylint
+```
+
+The npm and PyPI packages are thin wrappers that download the matching prebuilt binary (verified
+against `sha256sums.txt`) on first install; both install `poly`, `polylint`, and `polyfmt`.
+
 **cargo-binstall:**
 
 Because we don't publish to crates.io, point binstall at the repo directly:
