@@ -5,6 +5,9 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
 description = "Core engine for the polylint/polyfmt universal, zero-dependency linter & formatter"
 
 [package.metadata.cargo-machete]

@@ -20,6 +20,9 @@ edition = "2024"
 rust-version = "1.96"
 license = "MIT OR Apache-2.0"
 authors = ["Na'aman Hirschfeld <nhirschfeld@gmail.com>"]
+repository = "https://github.com/Goldziher/polylint"
+homepage = "https://github.com/Goldziher/polylint"
+documentation = "https://github.com/Goldziher/polylint"
 
 [workspace.dependencies]
 aho-corasick = "1.1.4"
