@@ -24,6 +24,7 @@
 
 mod format;
 mod lint;
+pub(super) mod rules;
 
 use crate::config::EngineConfig;
 use crate::engine::{Capabilities, Diagnostic, Engine, FormatOutput, SourceFile};

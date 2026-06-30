@@ -89,7 +89,7 @@ liblzma = { version = "0.4.7", features = ["static"] }
 # All eight crates are pinned to the same version for internal type consistency.
 mago-allocator = { version = "=1.42.0" }
 mago-database = { version = "=1.42.0" }
-mago-formatter = { version = "=1.42.0" }
+mago-formatter = { version = "=1.42.0", features = ["serde"] }
 mago-linter = { version = "=1.42.0" }
 mago-names = { version = "=1.42.0" }
 mago-php-version = { version = "=1.42.0" }

@@ -84,16 +84,10 @@ fn build_rule_table(select: &[String], ignore: &[String]) -> RuleTable {
 }
 
 /// Read an array-of-strings option from the engine config.
+///
+/// Delegates to the shared helper in [`super::rule_config`].
 fn string_list(cfg: &EngineConfig, key: &str) -> Vec<String> {
-    cfg.options
-        .get(key)
-        .and_then(toml::Value::as_array)
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(str::to_owned))
-                .collect()
-        })
-        .unwrap_or_default()
+    super::rule_config::string_list(cfg, key)
 }
 
 /// The opinionated default [`LinterSettings`], built once and shared.
