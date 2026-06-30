@@ -44,7 +44,7 @@ module.exports = function run(base) {
       `${base}: native binary not found at ${binaryPath}.\n` +
         `The postinstall step that downloads the binary from GitHub releases may have failed.\n` +
         `You can try:\n` +
-        `  1. Reinstall: npm install -g poly-lint\n` +
+        `  1. Reinstall: npm install -g @nhirschfeld/polylint\n` +
         `  2. Download a release binary from https://github.com/Goldziher/polylint/releases`,
     );
     process.exit(1);

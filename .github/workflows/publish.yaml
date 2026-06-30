@@ -110,7 +110,7 @@ jobs:
           version="${{ steps.version.outputs.version }}"
 
           npm_exists=false
-          if npm view "poly-lint@${version}" version >/dev/null 2>&1; then
+          if npm view "@nhirschfeld/polylint@${version}" version >/dev/null 2>&1; then
             npm_exists=true
           fi
 
@@ -124,7 +124,7 @@ jobs:
             echo "pypi_exists=$pypi_exists"
           } >> "$GITHUB_OUTPUT"
 
-          echo "Already published? npm(poly-lint)=$npm_exists  PyPI(polylint)=$pypi_exists"
+          echo "Already published? npm(@nhirschfeld/polylint)=$npm_exists  PyPI(polylint)=$pypi_exists"
 
       - name: Detect existing GitHub release assets
         id: release_assets
@@ -450,7 +450,7 @@ jobs:
           fi
 
   publish_npm:
-    name: Publish npm (poly-lint)
+    name: Publish npm (@nhirschfeld/polylint)
     # Gated on finalize_release: npm-package/install.js downloads the platform
     # binary from the GitHub release, so it must not publish until that release
     # is live. Skipped if this version is already on npm.

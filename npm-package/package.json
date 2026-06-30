@@ -1,5 +1,5 @@
 {
-  "name": "poly-lint",
+  "name": "@nhirschfeld/polylint",
   "version": "0.1.0",
   "description": "Universal zero-dependency linter & formatter — two pure-Rust binaries (polylint + polyfmt) wrapping best-in-class tools as in-process backends, with a tree-sitter generic tier for everything else.",
   "keywords": ["linter", "formatter", "lint", "format", "polyglot"],

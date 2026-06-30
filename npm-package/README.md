@@ -6,12 +6,12 @@ everything else. Installs three commands: `poly`, `polylint`, `polyfmt`.
 
 <!-- markdownlint-disable-next-line MD013 -->
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/Goldziher/polylint#readme)
-[![npm](https://img.shields.io/npm/v/poly-lint.svg)](https://www.npmjs.com/package/poly-lint)
+[![npm](https://img.shields.io/npm/v/@nhirschfeld/polylint.svg)](https://www.npmjs.com/package/@nhirschfeld/polylint)
 
 ## Install
 
 ```bash
-npm install -g poly-lint
+npm install -g @nhirschfeld/polylint
 ```
 
 This installs three binaries on your `PATH`: `poly` (the umbrella CLI), `polylint` (lint), and
