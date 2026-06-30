@@ -1,0 +1,73 @@
+version: "3"
+
+# Developer task runner for polylint. Mirrors the dev workflow in CLAUDE.md and
+# the CI gate. The `conformance` crate is excluded from the default lint/test
+# tasks (it runs reference formatters under Docker — see `task conformance`).
+
+vars:
+  POLY: cargo run -q -p poly-cli --bin poly --
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+    silent: true
+
+  setup:
+    desc: Fetch dependencies and install the git hooks
+    cmds:
+      - cargo fetch
+      - "{{.POLY}} hooks install"
+
+  build:
+    desc: Build the whole workspace
+    cmds:
+      - cargo build --workspace --exclude conformance
+
+  test:
+    desc: Run the test suite
+    cmds:
+      - cargo test --workspace --exclude conformance
+
+  lint:
+    desc: Clippy (deny warnings) plus poly's own lint over the repo
+    cmds:
+      - cargo clippy --workspace --exclude conformance --all-targets -- -D warnings
+      - "{{.POLY}} lint ."
+
+  format:
+    desc: Format Rust with rustfmt and the rest of the tree with polyfmt
+    aliases: [fmt]
+    cmds:
+      - cargo fmt
+      - "{{.POLY}} fmt --fix ."
+
+  format:check:
+    desc: Verify formatting without writing changes
+    aliases: [fmt:check]
+    cmds:
+      - cargo fmt --check
+      - "{{.POLY}} fmt ."
+
+  hooks:
+    desc: Run the full pre-commit hook stage from poly.toml over all files
+    cmds:
+      - "{{.POLY}} hooks run pre-commit --all-files"
+
+  bench:
+    desc: Run benchmarks
+    cmds:
+      - cargo bench --workspace --exclude conformance
+
+  conformance:
+    desc: Run the Docker-based conformance harness vs reference formatters
+    cmds:
+      - cargo test -p conformance
+
+  check:
+    desc: Full local gate (format check, lint, test) — run before pushing
+    cmds:
+      - task: format:check
+      - task: lint
+      - task: test
