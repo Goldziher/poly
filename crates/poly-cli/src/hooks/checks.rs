@@ -365,14 +365,14 @@ fn check_executables_have_shebangs(root: &Path, files: &[PathBuf]) -> Vec<Violat
 /// no-op: `is_executable` is unconditionally `false` there, so without this
 /// guard every shebang script would be falsely flagged.
 fn check_shebang_scripts_are_executable(root: &Path, files: &[PathBuf]) -> Vec<Violation> {
-    #[cfg(not(unix))]
-    {
-        let _ = (root, files);
-        return Vec::new();
-    }
     #[cfg(unix)]
     {
         check_shebang_scripts_are_executable_unix(root, files)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (root, files);
+        Vec::new()
     }
 }
 
