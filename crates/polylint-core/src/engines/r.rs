@@ -326,17 +326,19 @@ fn byte_to_span_pos(content: &str, byte_offset: usize) -> (u32, u32) {
 /// Severity is always [`Severity::Warning`] — jarl violations have no severity
 /// field; they are all style/correctness warnings, never fatal errors.
 ///
-/// A fix edit is included when the jarl fix is not marked `to_skip` and has
-/// non-empty replacement content.  `to_skip` is a jarl-internal flag indicating
-/// that the autofix for a particular node is temporarily disabled (e.g., because
-/// the node contains a comment that would be misplaced after the edit).
+/// A fix edit is included only when [`JarlDiagnostic::has_safe_fix`] returns
+/// `true`: the jarl fix is not marked `to_skip`, has non-empty replacement
+/// content, **and** the rule's [`FixStatus`] is `Safe`.  Rules with `Unsafe`
+/// fix status (e.g. `all_equal`, `condition_call`, `nzchar`, `pipe_consistency`)
+/// are not applied automatically — they could change program semantics and
+/// require human review.
 fn map_jarl_diagnostic(jarl_diag: JarlDiagnostic, content: &str) -> Diagnostic {
     let start_byte: usize = jarl_diag.range.start().into();
     let end_byte: usize = jarl_diag.range.end().into();
     let (start_line, start_col) = byte_to_span_pos(content, start_byte);
     let (end_line, end_col) = byte_to_span_pos(content, end_byte);
 
-    let fix = if !jarl_diag.fix.to_skip && !jarl_diag.fix.content.is_empty() {
+    let fix = if jarl_diag.has_safe_fix() {
         vec![Edit {
             start_byte: jarl_diag.fix.start,
             end_byte: jarl_diag.fix.end,
@@ -581,6 +583,49 @@ level = "error"
             equals_na[0].severity,
             Severity::Error,
             "severity must be overridden to Error"
+        );
+    }
+
+    #[test]
+    fn lint_unsafe_fix_rule_has_no_edit() {
+        // `all_equal` has FixStatus::Unsafe in jarl's rule_set.
+        // polylint must NOT emit an Edit for it; doing so would silently apply a
+        // semantics-changing transformation under `poly lint --fix`.
+        //
+        // Trigger: `isFALSE(all.equal(x, y))` is the canonical pattern the rule
+        // detects.  The jarl fix content is non-empty (rewrites to
+        // `!isTRUE(all.equal(x, y))`), so the old `!to_skip && !content.is_empty()`
+        // guard incorrectly emitted an Edit.  The new `has_safe_fix()` guard rejects it.
+        let engine = REngine;
+        let src = make_src("if (isFALSE(all.equal(x, y))) stop(\"different\")\n");
+        let diags = engine.lint(&src, &default_cfg()).unwrap();
+        let all_equal_diags: Vec<_> = diags
+            .iter()
+            .filter(|d| d.code.as_deref() == Some("all_equal"))
+            .collect();
+        assert!(
+            !all_equal_diags.is_empty(),
+            "expected at least one all_equal diagnostic; got: {diags:?}"
+        );
+        assert!(
+            all_equal_diags.iter().all(|d| d.fix.is_empty()),
+            "all_equal has Unsafe fix status; Edit must not be emitted under \
+             --fix; got: {all_equal_diags:#?}"
+        );
+    }
+
+    #[test]
+    fn lint_unknown_rule_select_returns_err() {
+        // When `select` contains a completely unknown rule code, `build_config`
+        // propagates `jarl_core::error::UnknownRulesError` as `Err`.
+        // This exercises the error path that was previously untested.
+        let engine = REngine;
+        let src = make_src("x <- 1\n");
+        let cfg = cfg_from_toml(r#"select = ["TOTALLY_FAKE_RULE"]"#);
+        let result = engine.lint(&src, &cfg);
+        assert!(
+            result.is_err(),
+            "expected Err for unknown rule in select, got Ok"
         );
     }
 

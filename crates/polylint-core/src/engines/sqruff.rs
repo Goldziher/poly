@@ -43,7 +43,11 @@ use crate::language::Language;
 pub struct SqruffEngine;
 
 /// sqruff-lib crate version; part of the cache key so upgrades invalidate stale results.
-const SQRUFF_VERSION: &str = "0.38.0+rule-configs-1";
+///
+/// Bumped to `+rule-configs-2` because parse/lex errors now emit `Error` severity (not
+/// `Warning`), so the same input can yield different diagnostic output for the same
+/// sqruff-lib version.
+const SQRUFF_VERSION: &str = "0.38.0+rule-configs-2";
 
 /// Languages handled by this backend.
 static LANGUAGES: &[Language] = &[Language::Sql];
@@ -58,10 +62,14 @@ impl Engine for SqruffEngine {
     }
 
     fn capabilities(&self) -> Capabilities {
+        // `fix` is false: sqruff's autofix edits are not wired through the
+        // polylint `Edit` path, so advertising fix=true would silently do nothing
+        // under `poly lint --fix`.  The format path already applies structural
+        // fixes via `lint_string(…, fix=true)` / `fix_string()`.
         Capabilities {
             lint: true,
             format: true,
-            fix: true,
+            fix: false,
         }
     }
 
@@ -205,17 +213,27 @@ fn toml_val_to_ini_str(v: &toml::Value) -> String {
 }
 
 /// Convert a sqruff [`SQLBaseError`] to a polylint [`Diagnostic`].
+///
+/// Parse and lex errors carry the sentinel code `"????"` (sqruff's internal
+/// "no rule attached" marker).  These are structural failures — the file could
+/// not be parsed — and are mapped to [`Severity::Error`].  Real rule violations
+/// (any other code) are [`Severity::Warning`].
 fn violation_to_diagnostic(violation: SQLBaseError) -> Diagnostic {
     let code_str = violation.rule_code();
+    let is_parse_error = code_str == "????";
     Diagnostic {
         engine: "sqruff".to_string(),
-        // Map the sentinel "????" (no rule attached, e.g. parse errors) to None.
-        code: if code_str == "????" {
+        // Map the sentinel "????" (no rule attached, e.g. parse/lex errors) to None.
+        code: if is_parse_error {
             None
         } else {
             Some(code_str.to_string())
         },
-        severity: Severity::Warning,
+        severity: if is_parse_error {
+            Severity::Error
+        } else {
+            Severity::Warning
+        },
         title: violation.description.clone(),
         description: None,
         url: None,

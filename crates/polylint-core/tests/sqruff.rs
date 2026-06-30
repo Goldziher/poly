@@ -82,6 +82,50 @@ fn sqruff_format_already_formatted_is_unchanged() {
     }
 }
 
+// --- parse-error severity fixture --------------------------------------------
+//
+// Completely invalid SQL triggers a parse/lex error — sqruff emits a violation
+// with the sentinel rule code "????" (no rule attached).  These must be mapped
+// to Severity::Error (not Warning) and have code == None.
+
+const BROKEN_SQL: &str = "??? INVALID SQL ???\n";
+
+#[test]
+fn sqruff_parse_error_yields_error_severity() {
+    use polylint_core::engine::Severity;
+
+    let engine = SqruffEngine;
+    let src = make_source("broken.sql", BROKEN_SQL);
+    let diags = engine.lint(&src, &lint_cfg()).unwrap();
+
+    let parse_errors: Vec<_> = diags.iter().filter(|d| d.code.is_none()).collect();
+    assert!(
+        !parse_errors.is_empty(),
+        "expected at least one parse-error diagnostic (code=None) for broken SQL; \
+         got: {diags:#?}"
+    );
+    assert!(
+        parse_errors.iter().all(|d| d.severity == Severity::Error),
+        "parse-error diagnostics must have Error severity; got: {parse_errors:#?}"
+    );
+}
+
+// --- fix-capability fixture --------------------------------------------------
+//
+// sqruff's autofix edits are not wired through the polylint Edit path; the
+// fix capability must be false so `poly lint --fix` does not silently no-op.
+
+#[test]
+fn sqruff_capabilities_fix_is_false() {
+    let engine = SqruffEngine;
+    let caps = engine.capabilities();
+    assert!(
+        !caps.fix,
+        "sqruff fix capability must be false (autofix edits are not wired \
+         through the polylint Edit path)"
+    );
+}
+
 // --- per-rule parameter fixture: capitalisation policy -----------------------
 //
 // Proves that `rule_configs."capitalisation.keywords" = { capitalisation_policy
