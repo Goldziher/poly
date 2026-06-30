@@ -347,7 +347,7 @@ impl Engine for NativeToolEngine {
                     self.notify_tier2_fallback(cfg);
                     return TreeSitterEngine.format(src, cfg);
                 }
-                format_via_tool(self.spec(), src, cfg.indent_width)
+                format_via_tool(self.spec(), src, cfg.indent_width, cfg.globals.line_length)
             }
             NativeRole::Shellcheck => Ok(FormatOutput::Unchanged),
         }

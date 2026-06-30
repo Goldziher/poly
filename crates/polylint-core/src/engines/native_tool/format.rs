@@ -33,6 +33,9 @@ enum StdinWriter {
 /// `indent_width` is injected as `-i {indent_width}` when
 /// `spec.format_indent_flag` is true (used by shfmt).
 ///
+/// `line_length` is injected as `--config max_width={line_length}` when
+/// `spec.max_width_flag` is true (used by rustfmt, which defaults to 100).
+///
 /// Returns:
 /// - [`FormatOutput::Unchanged`] when the tool exits non-zero (syntax error
 ///   in the source — never corrupt the file), or when the output equals the
@@ -50,6 +53,7 @@ pub(crate) fn format_via_tool(
     spec: &ToolSpec,
     src: &SourceFile,
     indent_width: usize,
+    line_length: usize,
 ) -> anyhow::Result<FormatOutput> {
     let format_binary = spec
         .format_binary
@@ -69,6 +73,13 @@ pub(crate) fn format_via_tool(
     if spec.edition_flag {
         cmd.arg("--edition");
         cmd.arg(super::edition::resolve_edition(&src.path));
+    }
+    // Inject `--config max_width=<line_length>` when the spec requests it
+    // (rustfmt only). Without this, rustfmt defaults to 100 columns — below
+    // poly's opinionated 120-column policy.
+    if spec.max_width_flag {
+        cmd.arg("--config");
+        cmd.arg(format!("max_width={line_length}"));
     }
     cmd.args(spec.format_args);
 

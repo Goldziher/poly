@@ -66,7 +66,10 @@ impl crate::engine::Engine for OxcEngine {
         Capabilities {
             lint: true,
             format: true,
-            fix: true,
+            // LintOptions defaults to FixKind::None so can_apply is always
+            // false — no Edit is ever emitted.  Declare fix=false rather than
+            // advertising a capability that does nothing.
+            fix: false,
         }
     }
 
@@ -830,7 +833,9 @@ mod tests {
         assert_eq!(engine.name(), "oxc");
         assert!(engine.capabilities().lint);
         assert!(engine.capabilities().format);
-        assert!(engine.capabilities().fix);
+        // fix is false: LintOptions defaults to FixKind::None, so no Edit is
+        // ever emitted — advertising fix=true would be a lie.
+        assert!(!engine.capabilities().fix);
     }
 
     /// Parser used by oxlint still needs an Allocator; verify it works

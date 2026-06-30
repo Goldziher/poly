@@ -33,7 +33,7 @@ use crate::language::Language;
 /// Combined version string used as the Engine cache key.
 /// Encodes both `hcl-rs` and `hcl-edit` versions so that bumping either dep
 /// invalidates stale cached results.
-const ENGINE_VERSION: &str = "hcl-rs 0.19.7 + hcl-edit 0.9.6";
+const ENGINE_VERSION: &str = "hcl-rs 0.19.7 + hcl-edit 0.9.6 + trailing-comments-v2";
 
 static LANGUAGES: &[Language] = &[Language::Hcl];
 
@@ -117,18 +117,44 @@ impl Engine for HclEngine {
 
 /// Detect whether `source` contains any HCL comment syntax.
 ///
-/// Only leading `#` / `//` (after `trim_start`) are considered line-comment
-/// markers, so a `//` that appears *inside* a string value at a non-line-start
-/// position does not trigger.  A `/*` anywhere in the source triggers the
-/// block-comment check.
+/// Scans each line character-by-character, tracking double-quoted string state
+/// (respecting `\"` escape sequences), so that `#` or `//` inside a string
+/// value are not mistaken for comments.  Examples:
+///
+/// - `url = "https://example.com"` → **false** (`//` is inside a string)
+/// - `x = 1 # trailing comment` → **true**
+/// - `x = 1 // trailing comment` → **true**
+/// - `/* block */` anywhere in source → **true** (fast-path check)
+///
+/// Note: `/*` inside a string literal is a pre-existing false-positive;
+/// block comments in practice never appear inside string values.
 fn has_comments(source: &str) -> bool {
     if source.contains("/*") {
         return true;
     }
     for line in source.lines() {
-        let trimmed = line.trim_start();
-        if trimmed.starts_with('#') || trimmed.starts_with("//") {
-            return true;
+        let bytes = line.as_bytes();
+        let mut in_string = false;
+        let mut i = 0;
+        while i < bytes.len() {
+            if in_string {
+                if bytes[i] == b'\\' {
+                    // Skip the escaped character — cannot be a comment marker.
+                    i += 2;
+                    continue;
+                }
+                if bytes[i] == b'"' {
+                    in_string = false;
+                }
+            } else {
+                match bytes[i] {
+                    b'"' => in_string = true,
+                    b'#' => return true,
+                    b'/' if i + 1 < bytes.len() && bytes[i + 1] == b'/' => return true,
+                    _ => {}
+                }
+            }
+            i += 1;
         }
     }
     false
@@ -237,9 +263,40 @@ mod tests {
 
     #[test]
     fn has_comments_slash_in_string_is_safe() {
-        // A URL value like "https://..." must NOT trigger: the `//` is not at
-        // the start of a trimmed line.
+        // A URL value like "https://..." must NOT trigger: the `//` is inside
+        // a double-quoted string and must not be treated as a comment marker.
         assert!(!has_comments("url = \"https://example.com/path\"\n"));
+    }
+
+    #[test]
+    fn has_comments_detects_trailing_hash() {
+        // Inline trailing comment after a value — previously not detected.
+        assert!(has_comments("x = 1 # trailing comment\n"));
+    }
+
+    #[test]
+    fn has_comments_detects_trailing_slash_slash() {
+        // Inline trailing `//` comment after a value — previously not detected.
+        assert!(has_comments("x = 1 // trailing comment\n"));
+    }
+
+    #[test]
+    fn format_trailing_comment_preserved() {
+        let engine = HclEngine;
+        let src = make_src(
+            "main.tf",
+            Language::Hcl,
+            "x = 1 # keep this\nresource \"r\" \"a\" {\n  ami = \"x\"\n}\n",
+        );
+        let result = engine.format(&src, &default_cfg()).unwrap();
+        let output = match result {
+            FormatOutput::Unchanged => src.content.to_string(),
+            FormatOutput::Formatted(s) => s,
+        };
+        assert!(
+            output.contains("# keep this"),
+            "trailing comment must survive format: {output}"
+        );
     }
 
     // -----------------------------------------------------------------------

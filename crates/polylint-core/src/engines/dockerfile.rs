@@ -53,7 +53,10 @@ const DL4001: &str = "DL4001";
 // ---------------------------------------------------------------------------
 
 /// dockerfile-parser crate version embedded into the cache key.
-const DOCKERFILE_PARSER_VERSION: &str = "0.9.0";
+const DOCKERFILE_PARSER_VERSION: &str = "0.9.0+parse-diag-v1";
+
+/// Diagnostic code emitted when the Dockerfile cannot be parsed at all.
+const PARSE_ERROR: &str = "parse-error";
 
 /// Languages handled by this backend.
 static LANGUAGES: &[Language] = &[Language::Dockerfile];
@@ -83,11 +86,17 @@ impl Engine for DockerfileEngine {
     }
 
     fn lint(&self, src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
-        // Gracefully degrade on parse failure: return no diagnostics rather
-        // than propagating an error that would abort the whole run.
         let dockerfile = match Dockerfile::parse(&src.content) {
             Ok(df) => df,
-            Err(_) => return Ok(Vec::new()),
+            Err(e) => {
+                return Ok(vec![make_diag(
+                    self.name(),
+                    PARSE_ERROR,
+                    Severity::Error,
+                    format!("parse error: {e}"),
+                    None,
+                )]);
+            }
         };
 
         let mut diags: Vec<Diagnostic> = Vec::new();
@@ -418,6 +427,36 @@ mod tests {
         assert!(
             !diags.iter().any(|d| d.code.as_deref() == Some(DL3000)),
             "should not fire DL3000 for absolute WORKDIR"
+        );
+    }
+
+    #[test]
+    fn parse_failure_produces_error_diagnostic() {
+        let engine = DockerfileEngine;
+        // An ambiguous line continuation after a complete LABEL value is a
+        // documented parse error in dockerfile-parser (the backslash after the
+        // closing `"` makes the continuation ambiguous).
+        let src = SourceFile {
+            path: "Dockerfile".into(),
+            language: Language::Dockerfile,
+            content: "LABEL foo=\"bar\\\n      baz\"\\\nRUN foo\n".into(),
+        };
+        let diags = engine.lint(&src, &engine_cfg()).unwrap();
+        assert!(
+            !diags.is_empty(),
+            "a malformed Dockerfile must produce at least one diagnostic"
+        );
+        let parse_diag = diags
+            .iter()
+            .find(|d| d.code.as_deref() == Some(PARSE_ERROR));
+        assert!(
+            parse_diag.is_some(),
+            "expected a parse-error diagnostic, got: {diags:?}"
+        );
+        assert_eq!(
+            parse_diag.unwrap().severity,
+            Severity::Error,
+            "parse-error diagnostic must have Error severity"
         );
     }
 }

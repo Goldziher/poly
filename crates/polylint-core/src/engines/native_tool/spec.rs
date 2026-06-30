@@ -42,6 +42,10 @@ pub(crate) struct ToolSpec {
     /// that `cargo fmt` (which passes the manifest edition) considers clean.
     /// `gofmt` / `zig fmt` / `shfmt` have no edition concept (`false`).
     pub(crate) edition_flag: bool,
+    /// Whether to inject `--config max_width=<line_length>` before the static
+    /// format args. Only `rustfmt` sets this: without it rustfmt defaults to
+    /// 100 columns, violating poly's opinionated 120-column policy.
+    pub(crate) max_width_flag: bool,
 }
 
 impl ToolSpec {
@@ -71,6 +75,7 @@ pub(crate) static GOFMT_SPEC: ToolSpec = ToolSpec {
     version_args: &["version"],
     default_on: true,
     edition_flag: false,
+    max_width_flag: false,
 };
 
 /// `rustfmt --emit=stdout`: reads stdin, writes to stdout. Canonical Rust
@@ -86,6 +91,9 @@ pub(crate) static RUSTFMT_SPEC: ToolSpec = ToolSpec {
     version_args: &["--version"],
     default_on: true,
     edition_flag: true,
+    // Inject --config max_width=<line_length> to honour poly's 120-column
+    // opinionated default; rustfmt's own default is 100.
+    max_width_flag: true,
 };
 
 /// `zig fmt --stdin`: reads stdin, writes to stdout. Opt-in (off by default).
@@ -100,6 +108,7 @@ pub(crate) static ZIGFMT_SPEC: ToolSpec = ToolSpec {
     version_args: &["version"],
     default_on: false,
     edition_flag: false,
+    max_width_flag: false,
 };
 
 /// `shfmt -`: reads stdin, writes formatted shell source to stdout. Opt-in
@@ -119,6 +128,7 @@ pub(crate) static SHFMT_SPEC: ToolSpec = ToolSpec {
     version_args: &["--version"],
     default_on: false,
     edition_flag: false,
+    max_width_flag: false,
 };
 
 /// `shellcheck --format=json1 -`: reads shell source from stdin, emits a
@@ -136,6 +146,7 @@ pub(crate) static SHELLCHECK_SPEC: ToolSpec = ToolSpec {
     version_args: &["--version"],
     default_on: false,
     edition_flag: false,
+    max_width_flag: false,
 };
 
 // ---------------------------------------------------------------------------
@@ -184,3 +195,42 @@ pub(crate) static GOFMT_NOTICE: Once = Once::new();
 pub(crate) static RUSTFMT_NOTICE: Once = Once::new();
 pub(crate) static ZIGFMT_NOTICE: Once = Once::new();
 pub(crate) static SHFMT_NOTICE: Once = Once::new();
+
+// ---------------------------------------------------------------------------
+// Unit tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rustfmt_spec_has_max_width_flag() {
+        // Verifies that the max_width_flag is correctly set so that
+        // format_via_tool injects --config max_width=<line_length> for rustfmt.
+        assert!(
+            RUSTFMT_SPEC.max_width_flag,
+            "RUSTFMT_SPEC.max_width_flag must be true to enforce the 120-column policy"
+        );
+    }
+
+    #[test]
+    fn other_specs_have_no_max_width_flag() {
+        assert!(
+            !GOFMT_SPEC.max_width_flag,
+            "gofmt does not support max_width_flag"
+        );
+        assert!(
+            !ZIGFMT_SPEC.max_width_flag,
+            "zigfmt does not support max_width_flag"
+        );
+        assert!(
+            !SHFMT_SPEC.max_width_flag,
+            "shfmt does not support max_width_flag"
+        );
+        assert!(
+            !SHELLCHECK_SPEC.max_width_flag,
+            "shellcheck does not support max_width_flag"
+        );
+    }
+}
