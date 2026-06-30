@@ -109,6 +109,13 @@ fn parse_rules_sub_table(options: &toml::Table) -> BTreeMap<String, RuleOptions>
             let mut opts = RuleOptions::default();
             if let Some(level_str) = sub.get("level").and_then(toml::Value::as_str) {
                 opts.level = parse_level(level_str);
+                if opts.level.is_none() {
+                    tracing::warn!(
+                        rule = %code,
+                        level = level_str,
+                        "unrecognized level in [rules.<id>]; using the rule's default severity"
+                    );
+                }
             }
             for (k, v) in sub {
                 if k != "level" {

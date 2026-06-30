@@ -19,11 +19,40 @@
 //! | `safety` | `Safety` |
 //! | `correctness` | `Correctness` |
 
+use std::collections::HashSet;
+
+use anyhow::Context as _;
 use mago_linter::category::Category;
 use mago_linter::integration::IntegrationSet;
 use mago_linter::rule::AnyRule;
 use mago_linter::settings::Settings;
 use mago_php_version::PHPVersion;
+
+use crate::config::EngineConfig;
+
+/// Parse `php_version` from `cfg.options` (e.g. `"8.2"` → `PHPVersion::PHP82`),
+/// shared by the lint and format passes so both honor the same target version.
+///
+/// # Errors
+///
+/// `Ok(None)` when the key is absent; an `Err` when it is present but malformed
+/// (so a typo like `"8.x"` is reported rather than silently defaulted).
+pub fn parse_php_version(cfg: &EngineConfig) -> anyhow::Result<Option<PHPVersion>> {
+    let Some(value) = cfg.options.get("php_version") else {
+        return Ok(None);
+    };
+    let text = value
+        .as_str()
+        .context("[*.php.mago] php_version must be a string, e.g. \"8.2\"")?;
+    let mut parts = text.splitn(3, '.');
+    let major: u32 = parts
+        .next()
+        .and_then(|p| p.parse().ok())
+        .with_context(|| format!("invalid php_version {text:?}; expected MAJOR[.MINOR[.PATCH]]"))?;
+    let minor: u32 = parts.next().map_or(0, |p| p.parse().unwrap_or(0));
+    let patch: u32 = parts.next().map_or(0, |p| p.parse().unwrap_or(0));
+    Ok(Some(PHPVersion::new(major, minor, patch)))
+}
 
 // ── Category parsing ──────────────────────────────────────────────────────────
 
@@ -99,18 +128,19 @@ pub fn expand_to_codes(
     php_version: PHPVersion,
     integrations: IntegrationSet,
 ) -> anyhow::Result<Vec<String>> {
-    let all = all_codes(php_version, integrations);
+    let all: HashSet<String> = all_codes(php_version, integrations).into_iter().collect();
     let mut out: Vec<String> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
     for item in items {
         if let Some(cat) = parse_category(item) {
             let codes = codes_for_category(cat, php_version, integrations);
             for code in codes {
-                if !out.contains(&code) {
+                if seen.insert(code.clone()) {
                     out.push(code);
                 }
             }
         } else if all.contains(item) {
-            if !out.contains(item) {
+            if seen.insert(item.clone()) {
                 out.push(item.clone());
             }
         } else {

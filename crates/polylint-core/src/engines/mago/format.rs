@@ -31,10 +31,13 @@ const PHP_VERSION: PHPVersion = PHPVersion::PHP84;
 /// Creates a per-call arena and `Formatter`, avoiding any stored state so this
 /// function is safe to call from multiple rayon threads concurrently.
 pub(super) fn format_php(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
+    // Honor the configured target so the formatter does not emit syntax (e.g.
+    // PHP 8.4 `new` without parens) the user's runtime cannot parse.
+    let php_version = super::rules::parse_php_version(cfg)?.unwrap_or(PHP_VERSION);
     let settings = build_format_settings(cfg);
 
     let arena = mago_allocator::LocalArena::new();
-    let formatter = Formatter::new(&arena, PHP_VERSION, settings);
+    let formatter = Formatter::new(&arena, php_version, settings);
 
     let name: Cow<'static, [u8]> = Cow::Borrowed(b"input.php");
     let code: Cow<'static, [u8]> = Cow::Owned(src.content.as_bytes().to_vec());
@@ -87,7 +90,10 @@ fn build_format_settings(cfg: &EngineConfig) -> FormatSettings {
     // errors here.
     let raw: RawFormatSettings = toml::Value::Table(cfg.options.clone())
         .try_into()
-        .unwrap_or_default();
+        .unwrap_or_else(|error| {
+            tracing::warn!(%error, "[fmt.php.mago] options could not be parsed; using defaults");
+            RawFormatSettings::default()
+        });
 
     // Step 4: merge — user's Some fields win; None keeps the base value.
     raw.merge_with(base)

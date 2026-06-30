@@ -37,6 +37,7 @@ use mago_names::resolver::NameResolver;
 use mago_php_version::PHPVersion;
 use mago_reporting::Level;
 use mago_span::HasSpan as _;
+use mago_syntax::error::ParseError;
 use mago_syntax::parser::parse_file;
 use mago_text_edit::Safety;
 
@@ -86,7 +87,7 @@ pub(super) fn lint_php(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<V
 
     // ── 2. Run the linter ────────────────────────────────────────────────────
     let selection = RuleSelection::from_options(cfg);
-    let php_version = parse_php_version(cfg).unwrap_or(PHP_VERSION);
+    let php_version = rules::parse_php_version(cfg)?.unwrap_or(PHP_VERSION);
     let integrations = parse_integrations(cfg)?;
 
     let settings = Settings {
@@ -97,6 +98,13 @@ pub(super) fn lint_php(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<V
 
     // Build the 'only' allowlist when the user supplied any selection config.
     // None → run all default-enabled rules unchanged (fast path).
+    //
+    // PERF: when a selection is configured this expands the rule registry (and
+    // `Linter::new` rebuilds it) once per file, though the config is constant per
+    // language. The registry is ~100 rules, so this is bounded; caching an
+    // `Arc<RuleRegistry>` per engine instance (via `Linter::from_registry`) is the
+    // optimization, deferred until measured on a real PHP corpus per the repo's
+    // measure-before-optimizing rule.
     let only_list: Option<Vec<String>> = if selection.is_empty() {
         None
     } else {
@@ -132,19 +140,6 @@ pub(super) fn lint_php(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<V
 }
 
 // ── Config parsing ────────────────────────────────────────────────────────────
-
-/// Parse `php_version` from `cfg.options` (e.g. `"8.2"` → `PHPVersion::PHP82`).
-///
-/// Returns `None` when the key is absent.  Invalid strings are ignored and
-/// `None` is returned so the caller can fall back to the default.
-fn parse_php_version(cfg: &EngineConfig) -> Option<PHPVersion> {
-    let s = cfg.options.get("php_version")?.as_str()?;
-    let mut parts = s.splitn(3, '.');
-    let major: u32 = parts.next()?.parse().ok()?;
-    let minor: u32 = parts.next().unwrap_or("0").parse().ok()?;
-    let patch: u32 = parts.next().unwrap_or("0").parse().ok()?;
-    Some(PHPVersion::new(major, minor, patch))
-}
 
 /// Parse `integrations` from `cfg.options` as a list of integration name strings.
 ///
@@ -259,8 +254,7 @@ fn convert_span(span: mago_span::Span, file: &File) -> Span {
 }
 
 /// Return a short stable code string for a parse error kind.
-fn parse_error_code(error: &mago_syntax::error::ParseError) -> String {
-    use mago_syntax::error::ParseError;
+fn parse_error_code(error: &ParseError) -> String {
     match error {
         ParseError::SyntaxError(_) | ParseError::UnclosedLiteralString(_, _) => {
             "syntax".to_string()

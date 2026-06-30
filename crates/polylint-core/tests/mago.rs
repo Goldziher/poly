@@ -191,6 +191,30 @@ fn select_by_category_restricts_to_correctness_rules() {
     );
 }
 
+/// Ignoring every category empties the `only` allowlist, which mago runs as
+/// "no rules" (not "all rules") — so no linter diagnostics remain.
+#[test]
+fn ignore_all_categories_yields_no_lint_diagnostics() {
+    let engine = MagoEngine;
+    let src = make_src("multi.php", MULTI_CATEGORY_PHP);
+    let cfg = cfg_from_str(
+        r#"ignore = ["clarity","best-practices","consistency","deprecation","maintainability","redundancy","security","safety","correctness"]"#,
+    );
+
+    let diags = engine.lint(&src, &cfg).unwrap();
+    // MULTI_CATEGORY_PHP is valid, so there are no syntax/parse diagnostics to
+    // filter; every remaining diagnostic would be a linter finding.
+    let lint_codes: Vec<_> = diags
+        .iter()
+        .filter_map(|d| d.code.as_deref())
+        .filter(|c| *c != "syntax" && *c != "parse")
+        .collect();
+    assert!(
+        lint_codes.is_empty(),
+        "ignoring all categories must run zero rules; got: {lint_codes:?}"
+    );
+}
+
 /// `ignore = ["strict-types"]` suppresses exactly that rule.
 /// `no-debug-symbols` must still appear.
 #[test]
