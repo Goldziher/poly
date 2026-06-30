@@ -6,7 +6,7 @@ use std::sync::{Arc, Once};
 
 use poly_cache::{Namespace, ResultCache, SerializedArgs};
 use rayon::prelude::*;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use serde::Serialize;
 
 use crate::config::{Config, EngineConfig, Kind};
@@ -249,7 +249,15 @@ pub fn format(
 ) -> anyhow::Result<Vec<FormatResult>> {
     configure_pool(opts.jobs);
     let cache = ResultCache::open_default(!opts.no_cache)?;
-    let files = discover(paths, &config.exclude);
+    // Generated lock files are machine-maintained; reformatting them (taplo over
+    // Cargo.lock, the YAML formatter over pnpm-lock.yaml, …) corrupts them. Skip
+    // them on a directory walk so a stray `poly fmt .` is safe — but still honour
+    // a lock file passed explicitly as a path argument.
+    let explicit: FxHashSet<&std::path::Path> = paths.iter().map(PathBuf::as_path).collect();
+    let files: Vec<DiscoveredFile> = discover(paths, &config.exclude)
+        .into_iter()
+        .filter(|f| explicit.contains(f.path.as_path()) || !is_generated_lockfile(&f.path))
+        .collect();
     let plans = plan_by_language(&files, config, Kind::Format);
     prefetch_tier2_grammars(&plans);
     let mut results: Vec<FormatResult> = files
@@ -268,6 +276,27 @@ pub fn format(
         .collect();
     results.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(results)
+}
+
+/// Generated lock files, by exact name, that `poly fmt` never rewrites on a
+/// directory walk. Any `*.lock` file is also treated as a lock file; these are
+/// the ones whose names do not end in `.lock`.
+const LOCKFILE_NAMES: &[&str] = &[
+    "package-lock.json",
+    "npm-shrinkwrap.json",
+    "pnpm-lock.yaml",
+    "bun.lockb",
+];
+
+/// Whether `path` is a machine-generated lock file that must not be reformatted.
+/// Matched by the `*.lock` extension (Cargo.lock, yarn.lock, poetry.lock,
+/// uv.lock, composer.lock, Gemfile.lock, flake.lock, deno.lock, …) or by an
+/// exact name in [`LOCKFILE_NAMES`] for the lock files that don't end in `.lock`.
+fn is_generated_lockfile(path: &std::path::Path) -> bool {
+    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+        return false;
+    };
+    name.ends_with(".lock") || LOCKFILE_NAMES.contains(&name)
 }
 
 fn lint_one(
@@ -591,6 +620,34 @@ fn configure_pool(jobs: Option<usize>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recognizes_generated_lock_files() {
+        for name in [
+            "Cargo.lock",
+            "yarn.lock",
+            "poetry.lock",
+            "uv.lock",
+            "Gemfile.lock",
+            "flake.lock",
+            "composer.lock",
+            "package-lock.json",
+            "pnpm-lock.yaml",
+            "npm-shrinkwrap.json",
+            "bun.lockb",
+        ] {
+            assert!(
+                is_generated_lockfile(std::path::Path::new(name)),
+                "{name} should be treated as a lock file"
+            );
+        }
+        for name in ["main.rs", "Cargo.toml", "package.json", "lockfile.txt"] {
+            assert!(
+                !is_generated_lockfile(std::path::Path::new(name)),
+                "{name} must not be treated as a lock file"
+            );
+        }
+    }
 
     fn edit(start: usize, end: usize, rep: &str) -> Edit {
         Edit {
