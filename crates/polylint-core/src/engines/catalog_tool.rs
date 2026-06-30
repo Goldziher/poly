@@ -646,18 +646,21 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn lint_engine_reports_one_diagnostic_on_nonzero_exit() {
-        use std::os::unix::fs::PermissionsExt as _;
-
-        let dir = tempfile::tempdir().unwrap();
-        let script = dir.path().join("fakelint.sh");
-        std::fs::write(&script, "#!/bin/sh\necho 'problem on line 1' >&2\nexit 3\n").unwrap();
-        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
-
+        // Drive the tool through an inline `sh -c` command rather than writing
+        // and exec'ing a script file: exec'ing a freshly written executable can
+        // transiently fail with ETXTBSY when a concurrent test thread forks
+        // while this file's write fd is briefly open (CLOEXEC only closes on
+        // exec, not fork). `sh -c` reaches the same stdout/stderr/exit-code
+        // behaviour without ever exec'ing a file we just wrote.
         let tool = leak_tool(
             "fakelint",
-            &script.to_string_lossy(),
+            "sh",
             "linter",
-            vec![PATH_PLACEHOLDER.to_string()],
+            vec![
+                "-c".to_string(),
+                "echo 'problem on line 1' >&2\nexit 3".to_string(),
+                PATH_PLACEHOLDER.to_string(),
+            ],
         );
         let engine =
             CatalogToolEngine::lint_engine(tool, None, None).expect("non-mutating linter wires");
@@ -686,18 +689,18 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn lint_engine_reports_nothing_on_zero_exit() {
-        use std::os::unix::fs::PermissionsExt as _;
-
-        let dir = tempfile::tempdir().unwrap();
-        let script = dir.path().join("ok.sh");
-        std::fs::write(&script, "#!/bin/sh\nexit 0\n").unwrap();
-        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
-
+        // Inline `sh -c` instead of exec'ing a freshly written script — see
+        // `lint_engine_reports_one_diagnostic_on_nonzero_exit` for why (ETXTBSY
+        // race under concurrent test threads).
         let tool = leak_tool(
             "oklint",
-            &script.to_string_lossy(),
+            "sh",
             "linter",
-            vec![PATH_PLACEHOLDER.to_string()],
+            vec![
+                "-c".to_string(),
+                "exit 0".to_string(),
+                PATH_PLACEHOLDER.to_string(),
+            ],
         );
         let engine = CatalogToolEngine::lint_engine(tool, None, None).unwrap();
         let diagnostics = engine
