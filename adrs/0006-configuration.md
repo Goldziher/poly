@@ -17,18 +17,17 @@ detection should be forgiving.
 
 ## Decision
 
-- **Canonical config is `poly.toml`** (managed by the `poly-config` crate), read and
-  written with **comment-preserving `toml_edit`** so comments and formatting survive any
-  tooling that rewrites config.
+- **Canonical config is `poly.toml`** (managed by the `poly-config` crate), parsed with
+  standard `toml`/serde.
 - **`polylint.toml` is still accepted** for backward compatibility, but `poly.toml` takes
   precedence if both exist.
-- A **YAML config is auto-detected** (parsed with `saphyr`) when present, but **TOML
-  wins**: if multiple configs exist, the order is `poly.toml` > `polylint.toml` > YAML.
+- **`poly.local.toml` deep-merges over the primary config** when it sits in the same
+  directory. Scalars and arrays replace; tables merge recursively.
 - **One config drives the entire `poly` umbrella** (ADR 0011): lint, format, git-hooks,
-  commit-message linting. Schema sections: `[lint]`, `[fmt]`, `[hooks]`, `[commit]`,
-  `[cache]`. Per-engine config slices (`[fmt.python.ruff]`, `[lint.js.oxc]`, …) and
-  per-tool config (`[hooks.rust.clippy]`, etc.) each `Engine` or hook-runner receives as
-  its `EngineConfig` or tool-specific settings.
+  commit-message linting. Schema sections: `[defaults]`, `[discovery]`, `[lint]`, `[fmt]`,
+  `[commit]`, `[hooks]`, `[cache]`, `[tools]`, `[per-file-ignores]`. Per-engine config
+  slices (`[fmt.python.ruff]`, `[lint.js.oxc]`, …) and per-tool config (`[hooks.rust.clippy]`,
+  etc.) each `Engine` or hook-runner receives as its `EngineConfig` or tool-specific settings.
 - `--config <path>` overrides discovery for all poly subcommands (lint, fmt, hooks,
   commit).
 
@@ -38,10 +37,8 @@ Positive:
 
 - One file (`poly.toml`) configures lint, format, git-hooks, and commit-message linting
   across every language and hook; onboarding is "read one config".
-- `toml_edit` round-tripping enables future `poly --init` / auto-fix-config tooling
-  without clobbering user comments.
-- YAML auto-detection eases migration for YAML-first repos without making YAML a second
-  source of truth.
+- `poly.local.toml` enables local development overrides (e.g. stricter rules in CI, relaxed
+  rules locally) without modifying the primary config.
 - Backward compatibility: repos with `polylint.toml` continue to work without changes.
 
 Negative / risks:

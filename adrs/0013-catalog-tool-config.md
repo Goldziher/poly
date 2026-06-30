@@ -1,7 +1,8 @@
 # 0013 — Catalog-Driven Tool Config: Retire .pre-commit-config.yaml
 
-- Status: Accepted, implementation pending
+- Status: Accepted
 - Date: 2026-06-28
+- Updated: 2026-06-30 (implementation complete: poly-catalog crate, `[tools]` schema, catalog_tool engine)
 
 ## Context
 

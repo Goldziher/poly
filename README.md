@@ -13,9 +13,9 @@ external tools are opt-in.
 Lint + format · one `poly.toml` · pure Rust default · blake3 cache · rayon parallelism · hooks +
 commit checks · JSON + TOON + MCP
 
-[![CI](https://img.shields.io/github/actions/workflow/status/Goldziher/polylint/ci.yaml?style=flat-square)](https://github.com/Goldziher/polylint/actions/workflows/ci.yaml)
-[![npm](https://img.shields.io/npm/v/@nhirschfeld/polylint?style=flat-square)](https://www.npmjs.com/package/@nhirschfeld/polylint)
-[![PyPI](https://img.shields.io/pypi/v/polylint?style=flat-square)](https://pypi.org/project/polylint/)
+[![CI](https://img.shields.io/github/actions/workflow/status/Goldziher/polylint/ci.yaml?style=flat-square&cacheSeconds=300)](https://github.com/Goldziher/polylint/actions/workflows/ci.yaml)
+[![npm](https://img.shields.io/npm/v/@nhirschfeld/polylint?style=flat-square&cacheSeconds=300)](https://www.npmjs.com/package/@nhirschfeld/polylint)
+[![PyPI](https://img.shields.io/pypi/v/polylint?style=flat-square&cacheSeconds=300)](https://pypi.org/project/polylint/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 
 [Install](#installation) · [Quickstart](#quickstart) · [What You Get](#what-you-get) ·
@@ -87,7 +87,7 @@ irm https://raw.githubusercontent.com/Goldziher/polylint/main/install.ps1 | iex
 ```
 
 Both installers detect the platform, download the matching release archive, verify it against
-`sha256sums.txt`, and install `poly`. Set `POLY_VERSION=v0.1.0` to pin a version or
+`sha256sums.txt`, and install `poly`. Set `POLY_VERSION=v0.1.5` to pin a version or
 `POLY_INSTALL_DIR=/path/to/bin` to choose the destination.
 
 ### GitHub Actions
@@ -199,15 +199,16 @@ docstring_code_line_length = 120
 [lint.python.ruff]
 select = ["E", "F", "W"]
 
-# Per-tool rule config uses a uniform `select`/`ignore` (rule codes or category
-# names), with per-rule overrides under `[lint.<lang>.<tool>.rules.<id>]`.
+# All tools support uniform `select`/`ignore` for rule filtering (rule codes or
+# category names). Some backends (mago, R) support per-rule overrides under
+# `[lint.<lang>.<tool>.rules.<id>]` for backend-specific configuration.
 [lint.php.mago]
 select = ["correctness", "security"]   # categories or rule codes
 ignore = ["no-else-clause"]
 php_version = "8.2"
 
 [lint.php.mago.rules.cyclomatic-complexity]
-level = "warning"   # error | warning | info | hint
+level = "warning"   # error | warning | info | hint (mago, R only)
 threshold = 20
 
 # Suppress specific rules per path glob (lint-only), across every backend.
@@ -748,9 +749,12 @@ poly cache clean
 poly mcp --config /path/to/poly.toml
 ```
 
-The MCP server exposes read-only tools for lint, format checks, and cache stats, plus separate
-mutating tools for lint fixes, format writes, and cache cleanup. Every MCP operation returns the same
-JSON shape as the corresponding CLI command with `--format json`.
+The MCP server exposes tools for lint, format, and cache operations. Read-only tools are
+`lint`, `format_check`, and `cache_stats`; mutating tools are `lint_fix`, `format_write`,
+and `cache_clean`. The lint/format tools accept `paths`, `exclude` (gitignore-style glob patterns,
+merged with config), and `config` (explicit config file path) parameters for full feature parity
+with the CLI.
+Every MCP operation returns the same JSON shape as the corresponding CLI command with `--format json`.
 
 </details>
 

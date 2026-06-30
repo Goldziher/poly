@@ -8,7 +8,7 @@
 # positional argument. POSIX sh — works under dash/ash/bash/zsh.
 #
 # Environment / flags:
-#   POLY_VERSION=v0.1.0       install a specific version (default: latest)
+#   POLY_VERSION=v0.1.5       install a specific version (default: latest)
 #   POLY_INSTALL_DIR=DIR      install location (default: ~/.local/bin)
 #   POLY_NO_MODIFY_PATH=1     do not touch shell profiles
 #   --version <v> | <v>       same as POLY_VERSION (positional kept for back-compat)

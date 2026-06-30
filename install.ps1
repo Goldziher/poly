@@ -8,7 +8,7 @@
         irm https://raw.githubusercontent.com/Goldziher/polylint/main/install.ps1 | iex
 
     Pin a version or change the install dir with environment variables before running:
-        $env:POLY_VERSION = "v0.1.0"
+        $env:POLY_VERSION = "v0.1.5"
         $env:POLY_INSTALL_DIR = "C:\tools\poly"
         $env:POLY_NO_MODIFY_PATH = "1"
 #>

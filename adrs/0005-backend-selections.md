@@ -16,21 +16,27 @@ v1 / launch tier-1 backends:
 
 | Language(s) | Backend | Notes |
 |---|---|---|
-| JS/TS/JSX/TSX/JSON/YAML/CSS | **oxc** | `oxc_linter` + `oxc_formatter`; vendor oxfmt if not exposed. |
-| Python | **ruff** | No stable lib API; vendoring likely (ADR 0003). |
-| TOML | **taplo** | Wraps cleanly (expected). |
-| Markdown | **rumdl** | `rumdl_lib`. |
-| SQL | **sqruff** | `sqruff_lib`. |
+| JS/TS/JSX/TSX/JSON/YAML/CSS | **oxc** | `oxc_linter` + `oxc_formatter` (wrapped via pinned git dep, ADR 0003). |
+| Python | **ruff** | Wrapped via pinned git dep (ADR 0003); all ruff crates share the same `rev`. |
+| TOML | **taplo** | Published on crates.io. |
+| Markdown | **rumdl** | Published as `rumdl_lib` on crates.io. |
+| SQL | **sqruff** | Published as `sqruff_lib` on crates.io. |
 
 Fast-follow tier-1 backends (each upgrades a language out of tier-2):
 
-| Language(s)                  | Backend          |
-|------------------------------|------------------|
-| CSS / SCSS / Less            | **malva**        |
-| HTML / Vue / Svelte          | **markup_fmt**   |
-| GraphQL                      | **graphql** formatter |
-| Nix                          | **nixpkgs-fmt**  |
-| Cross-language spell-check   | **typos**        |
+| Language(s)                  | Backend          | Notes |
+|------------------------------|------------------|-------|
+| CSS / SCSS / Less            | **malva**        | Published on crates.io. |
+| HTML / Vue / Svelte          | **markup_fmt**   | Published on crates.io. |
+| GraphQL                      | **graphql** formatter | Published on crates.io. |
+| Nix                          | **alejandra**    | Pure-Rust formatter; nixpkgs-fmt rejected due to unmaintained advisories (RUSTSEC-2021-0139 / RUSTSEC-2024-0375). |
+| Cross-language spell-check   | **typos**        | Published on crates.io. |
+| PHP                          | **mago**         | Published on crates.io. Provides linting and formatting. |
+| Ruby                         | **rubyfmt**      | Pure-Rust formatter. |
+| R                            | **air** / **jarl** | Static analysis (air) and formatter (jarl). |
+| HCL / Terraform              | **hcl-rs** / **hcl-edit** | Wraps hcl-rs for parsing and hcl-edit for comment-safe formatting. |
+| Dockerfile                   | **markup_fmt**   | HTML/Vue/Svelte (reused via language registry). |
+| XML                          | **markup_fmt**   | HTML/Vue/Svelte (reused via language registry). |
 
 Everything not listed here is served by the tier-2 tree-sitter generic formatter.
 
@@ -46,13 +52,11 @@ Positive:
 
 Negative / risks:
 
-- **ruff** is the highest-risk backend: vendoring a large, fast-moving codebase with no
-  API stability guarantee is a standing maintenance cost.
-- **oxc**'s formatter API maturity is uncertain; we may have to vendor oxfmt and track its
-  evolution.
-- Multiple heavy parsers (oxc, ruff, sqruff) in one binary increase build time and size.
-- YAML comment-preservation strategy (oxc fmt vs a yaml-edit approach) is unresolved and
-  decided during implementation.
+- **ruff and oxc** are pinned git deps without stable published crates; tracking upstream
+  is a standing maintenance cost.
+- Multiple heavy parsers (oxc, ruff, sqruff, mago) in one binary increase build time and
+  size; distribution is ~70 MB per platform.
+- New tier-1 backends require empirical API checks before wrapping (see ADR 0003).
 
 ## Alternatives considered
 

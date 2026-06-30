@@ -21,13 +21,14 @@ Context, Decision, Consequences (positive and negative/risks), and Alternatives 
 | [0005](0005-backend-selections.md) | Native Backend (Tier-1) Selections | Accepted |
 | [0006](0006-configuration.md) | Configuration: Canonical poly.toml, YAML Auto-Detected | Accepted |
 | [0007](0007-opinionated-defaults.md) | Opinionated Defaults: Tool Defaults Plus a Thin Override Layer | Accepted |
-| [0008](0008-caching.md) | Caching: Two-Tier, CACHE_FORMAT_VERSION, Hook Soundness | Accepted |
+| [0008](0008-caching.md) | Caching: blake3 Content-Hash, Two-Tier, CACHE_FORMAT_VERSION | Accepted |
 | [0009](0009-parallelism.md) | Parallelism: rayon Over Files, Saturate All Cores | Accepted |
 | [0010](0010-distribution-and-naming.md) | Distribution, Naming, and Pre-Commit Integration | Accepted |
 | [0011](0011-poly-umbrella.md) | The poly Umbrella: One Binary Family, One Config | Accepted |
 | [0012](0012-native-hook-runner.md) | Native Hook Runner Replaces the prek Bridge | Accepted |
-| [0013](0013-catalog-tool-config.md) | Catalog-Driven Tool Config: Retire .pre-commit-config.yaml | Accepted, pending impl |
+| [0013](0013-catalog-tool-config.md) | Catalog-Driven Tool Config: Retire .pre-commit-config.yaml | Accepted |
 | [0014](0014-toolchain-interop.md) | Toolchain Interop: Capability-Probed First-Party CLIs | Accepted |
+| [0015](0015-fat-cli-vs-modular-backends.md) | Fat CLI vs. Modular Backends | Accepted |
 
 ## Conventions
 

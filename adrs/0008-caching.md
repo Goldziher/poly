@@ -22,6 +22,12 @@ The `poly-cache` crate provides a **two-tier cache** under `.polylint/cache/`:
 - **Key = blake3 over `(namespace, engine name, engine version, resolved config, file
   bytes)` for engines**, or **`(namespace, hook name, version, declared inputs)`** for
   hooks. All components affect output and must be in the key.
+- **For lint operations, the key additionally includes the file path** to capture
+  path-dependent diagnostics (e.g. ruff's INP001 import-not-in-init-file rule). For
+  formatting, the key does not include the path since formatted output is path-independent.
+- **The effective `[defaults]` globals** (line_length, line_ending, final_newline,
+  trim_trailing_whitespace) **and indent_width are folded into the key**, so overrides to
+  these settings invalidate cached results.
 - **Value = the engine's or hook's output:** diagnostics for lint, formatted bytes /
   `Unchanged` for format, hook result + stdout/stderr for hooks.
 - **CACHE_FORMAT_VERSION:** included in the cache-dir structure to invalidate the entire

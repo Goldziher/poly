@@ -17,9 +17,10 @@ adding to it.
   defaults, cache, runner, reporter). Core is a path dependency; publishing it separately
   is an open follow-up.
 - **Names reserved on crates.io at v0.0.1** (done 2026-06-26) so the identity is locked
-  before real releases.
+  before real releases, though we do not publish to crates.io (binaries are distributed as
+  prebuilt artifacts, ADR 0003).
 - A Cargo **workspace** with `crates/polylint-core`, `crates/polylint`, `crates/polyfmt`,
-  and an optional `vendor/` (ADR 0003).
+  `crates/poly-cli`, and supporting infrastructure crates.
 - ~~**Ship a `.pre-commit-hooks.yaml`** defining exactly two hooks (`polylint` and
   `polyfmt`) so a consuming repo can **replace its entire hook list with two entries**
   pointed at this repo.~~ **Superseded (2026-06-29) by ADR 0011/0012:** poly ships a
