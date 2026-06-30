@@ -114,12 +114,9 @@ fn apply_executable_permissions(path: &Path) -> Result<()> {
 
     #[cfg(not(unix))]
     {
-        let mut perms = fs::metadata(path)
-            .with_context(|| format!("failed to read permissions for {}", path.display()))?
-            .permissions();
-        perms.set_readonly(false);
-        fs::set_permissions(path, perms)
-            .with_context(|| format!("failed to adjust permissions on {}", path.display()))?;
+        // Windows has no executable bit, and a freshly written hook file is
+        // already writable, so there is nothing to adjust here.
+        let _ = path;
     }
 
     Ok(())
