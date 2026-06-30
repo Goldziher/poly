@@ -133,6 +133,9 @@ impl<S: OutputSink> OutputSink for &mut S {
     }
 }
 
+// Only the Unix PTY read loop (`run_on_pty`) calls this; on Windows the
+// piped-output path is used instead, so gate it to avoid a dead-code warning.
+#[cfg(not(windows))]
 fn write_output_chunk(output: &mut Vec<u8>, sink: &mut impl OutputSink, chunk: &[u8]) {
     output.extend_from_slice(chunk);
     sink.write_chunk(chunk);

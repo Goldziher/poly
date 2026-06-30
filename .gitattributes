@@ -1,0 +1,6 @@
+# Normalize all text to LF on checkout (incl. Windows) so line-ending-sensitive
+# tooling — e.g. rustfmt comparing a checked-out source against its formatted
+# output — behaves identically on every platform. Binary assets are excluded.
+* text=auto eol=lf
+
+*.png binary
