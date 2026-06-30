@@ -180,3 +180,26 @@ fn markup_fmt_known_unformatted_xml() {
         format_to_string("config.xml", Language::Xml, KNOWN_UNFORMATTED_XML)
     );
 }
+
+// --- LanguageOptions wiring ---------------------------------------------------
+
+/// A markup_fmt LanguageOptions field set via `[fmt.html.markup_fmt]` reaches
+/// the formatter: `quotes = "single"` switches attribute quotes to single.
+#[test]
+fn markup_fmt_honors_language_option() {
+    let engine = MarkupFmtEngine;
+    let src = make_src("q.html", Language::Html, "<a href=\"x\">y</a>\n");
+    let mut options = toml::Table::new();
+    options.insert("quotes".to_string(), toml::Value::String("single".into()));
+    let cfg = EngineConfig {
+        options,
+        ..engine_cfg()
+    };
+    let FormatOutput::Formatted(out) = engine.format(&src, &cfg).unwrap() else {
+        panic!("`quotes = single` should switch attribute quotes");
+    };
+    assert!(
+        out.contains("href='x'"),
+        "[fmt.html.markup_fmt] quotes must reach markup_fmt; got: {out}"
+    );
+}

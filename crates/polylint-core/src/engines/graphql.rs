@@ -31,7 +31,7 @@
 
 use graphql_parser::query::parse_query;
 use graphql_parser::schema::parse_schema;
-use pretty_graphql::config::{FormatOptions, LayoutOptions};
+use pretty_graphql::config::FormatOptions;
 
 use crate::config::EngineConfig;
 use crate::engine::{Capabilities, Diagnostic, Engine, FormatOutput, Severity, SourceFile, Span};
@@ -62,7 +62,8 @@ impl Engine for GraphQlEngine {
     fn version(&self) -> &str {
         // Tracks the active formatter; bump when the formatter dep is updated
         // so cached output is invalidated.  Format: `<formatter>-<version>`.
-        "pretty_graphql-0.2.3"
+        // Bumped after exposing full LanguageOptions via config_serde.
+        "pretty_graphql-0.2.3+config"
     }
 
     fn lint(&self, src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
@@ -110,25 +111,7 @@ impl Engine for GraphQlEngine {
     }
 
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
-        // `print_width` from globals (default 120); `indent_width` from engine
-        // config (default 2 for GraphQL).
-        let print_width = cfg.globals.line_length;
-        let indent_width = cfg
-            .options
-            .get("indent_width")
-            .and_then(|v| v.as_integer())
-            .and_then(|v| usize::try_from(v).ok())
-            .unwrap_or(cfg.indent_width);
-
-        let options = FormatOptions {
-            layout: LayoutOptions {
-                print_width,
-                indent_width,
-                use_tabs: false,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
+        let options = build_format_options(cfg);
 
         let formatted = match pretty_graphql::format_text(&src.content, &options) {
             Ok(s) => s,
@@ -142,6 +125,29 @@ impl Engine for GraphQlEngine {
             Ok(FormatOutput::Formatted(formatted))
         }
     }
+}
+
+// ── Options construction ──────────────────────────────────────────────────────
+
+/// Build [`FormatOptions`] by layering the user's `[fmt.graphql.graphql]` table
+/// over pretty_graphql's defaults, then forcing poly's layout (print_width,
+/// indent_width, no tabs) from globals so those always come from poly. All
+/// [`pretty_graphql::config::LanguageOptions`] fields are user-controllable.
+fn build_format_options(cfg: &EngineConfig) -> FormatOptions {
+    let mut options: FormatOptions = if cfg.options.is_empty() {
+        FormatOptions::default()
+    } else {
+        toml::Value::Table(cfg.options.clone())
+            .try_into()
+            .unwrap_or_else(|error| {
+                tracing::warn!(%error, "[fmt.graphql.graphql] options could not be parsed; using defaults");
+                FormatOptions::default()
+            })
+    };
+    options.layout.print_width = cfg.globals.line_length;
+    options.layout.indent_width = cfg.indent_width;
+    options.layout.use_tabs = false;
+    options
 }
 
 /// Returns `true` when the content is likely a Schema Definition Language

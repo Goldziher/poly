@@ -124,3 +124,28 @@ fn structural_reformat_canonicalizes_spacing() {
         FormatOutput::Unchanged => panic!("expected Formatted, got Unchanged"),
     }
 }
+
+/// A `pretty_yaml` LanguageOptions field set via `[fmt.yaml.yaml]` reaches the
+/// formatter: `quotes = "prefer-single"` flips a double-quoted scalar to single
+/// quotes (default is prefer-double).
+#[test]
+fn format_honors_language_option() {
+    let engine = YamlEngine;
+    let src = make_src("q.yaml", "key: \"value\"\n");
+    let mut options = toml::Table::new();
+    options.insert(
+        "quotes".to_string(),
+        toml::Value::String("prefer-single".into()),
+    );
+    let cfg = EngineConfig {
+        options,
+        ..engine_cfg()
+    };
+    let FormatOutput::Formatted(out) = engine.format(&src, &cfg).unwrap() else {
+        panic!("`quotes = prefer-single` should reformat the double-quoted scalar");
+    };
+    assert!(
+        out.contains("'value'") && !out.contains("\"value\""),
+        "[fmt.yaml.yaml] quotes must reach pretty_yaml; got: {out}"
+    );
+}

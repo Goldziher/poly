@@ -30,6 +30,12 @@
 //! markup_fmt defaults → polylint opinionated override (print_width 120,
 //! indent_width 2 for all markup languages) → user
 //! `[fmt.<lang>.markup_fmt]`.
+//!
+//! The user table is deserialized into [`markup_fmt::config::FormatOptions`]
+//! (via the `config_serde` feature).  All
+//! [`markup_fmt::config::LanguageOptions`] fields are exposed.  Layout fields
+//! (`print_width`, `indent_width`, `line_break`, `use_tabs`) are always taken
+//! from poly globals and override anything in the options table.
 
 use markup_fmt::Language as MarkupLanguage;
 use markup_fmt::config::{FormatOptions, LayoutOptions};
@@ -45,7 +51,9 @@ pub struct MarkupFmtEngine;
 
 /// markup_fmt crate version — folded into the cache key so upgrades invalidate
 /// any stale cached output.
-const VERSION: &str = "0.27.3";
+/// Bumped suffix to +opts-1 after exposing full LanguageOptions (options were
+/// previously ignored — existing caches must be invalidated).
+const VERSION: &str = "0.27.3+opts-1";
 
 /// Languages handled by this backend.
 static LANGUAGES: &[Language] = &[
@@ -86,14 +94,7 @@ impl Engine for MarkupFmtEngine {
             return Ok(FormatOutput::Unchanged);
         };
 
-        let options = FormatOptions {
-            layout: LayoutOptions {
-                print_width: cfg.globals.line_length,
-                indent_width: cfg.indent_width,
-                ..LayoutOptions::default()
-            },
-            ..FormatOptions::default()
-        };
+        let options = build_options(cfg);
 
         // No-op external formatter: embedded <script>/<style> blocks pass
         // through untouched (v1 limitation). The closure's error type is
@@ -123,6 +124,35 @@ fn markup_language(lang: &Language) -> Option<MarkupLanguage> {
         Language::Xml => Some(MarkupLanguage::Xml),
         _ => None,
     }
+}
+
+/// Build [`FormatOptions`] from a polylint [`EngineConfig`].
+///
+/// Layering:
+/// 1. `FormatOptions::default()` — markup_fmt's own defaults.
+/// 2. If `cfg.options` is non-empty, deserialise into `FormatOptions` via
+///    `config_serde`; unknown keys are silently ignored.
+/// 3. Override all `LayoutOptions` fields with poly's globals — these always
+///    win over any layout keys the user may have placed in the options table.
+fn build_options(cfg: &EngineConfig) -> FormatOptions {
+    let mut options: FormatOptions = if cfg.options.is_empty() {
+        FormatOptions::default()
+    } else {
+        toml::Value::Table(cfg.options.clone())
+            .try_into()
+            .unwrap_or_else(|error| {
+                tracing::warn!(%error, "[fmt.html.markup_fmt] options could not be parsed; using defaults");
+                FormatOptions::default()
+            })
+    };
+
+    // Poly's layout overrides always win.
+    options.layout = LayoutOptions {
+        print_width: cfg.globals.line_length,
+        indent_width: cfg.indent_width,
+        ..LayoutOptions::default()
+    };
+    options
 }
 
 #[cfg(test)]

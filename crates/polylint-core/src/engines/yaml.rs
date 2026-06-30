@@ -12,11 +12,21 @@
 //! Delegates to [`pretty_yaml::format_text`] which performs a full CST-based
 //! structural reflow: normalized indentation, colon spacing, quote
 //! canonicalization, trailing whitespace removal, and final-newline
-//! enforcement. Config is mapped: `line_length → print_width`,
-//! `indent_width → indent_width`, `line_ending → line_break`.
+//! enforcement.
+//!
+//! ## Options layering
+//! pretty_yaml defaults → polylint opinionated override (print_width=120,
+//! indent_width from language default, line_break from global line_ending) →
+//! user `[fmt.yaml.yaml]` table.  The user table is deserialized into
+//! [`pretty_yaml::config::FormatOptions`] (via the `config_serde` feature)
+//! then poly's layout fields are applied on top, so `print_width` and
+//! `indent_width` always come from poly globals regardless of what the user
+//! writes in the options table.  All [`pretty_yaml::config::LanguageOptions`]
+//! fields are user-controllable.
+//!
 //! Returns [`FormatOutput::Unchanged`] when the output equals the input.
 
-use pretty_yaml::config::{FormatOptions, LanguageOptions, LayoutOptions, LineBreak};
+use pretty_yaml::config::{FormatOptions, LineBreak};
 use saphyr::{LoadableYamlNode, Yaml};
 
 use crate::config::{EngineConfig, LineEnding};
@@ -49,7 +59,9 @@ impl Engine for YamlEngine {
         // Tracks the saphyr version (lint) and pretty_yaml version (format).
         // Bump when either dependency version changes so stale cached output is
         // invalidated — both are folded into the cache key.
-        "0.0.6+pretty_yaml-0.6.0"
+        // Bumped from 0.0.6 to 0.0.7 to invalidate caches after exposing full
+        // LanguageOptions via config_serde (options were previously ignored).
+        "0.0.7+pretty_yaml-0.6.0"
     }
 
     fn lint(&self, src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
@@ -85,18 +97,7 @@ impl Engine for YamlEngine {
     }
 
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
-        let line_break = match cfg.globals.line_ending {
-            LineEnding::Crlf => LineBreak::Crlf,
-            LineEnding::Lf => LineBreak::Lf,
-        };
-        let options = FormatOptions {
-            layout: LayoutOptions {
-                print_width: cfg.globals.line_length,
-                indent_width: cfg.indent_width,
-                line_break,
-            },
-            language: LanguageOptions::default(),
-        };
+        let options = build_format_options(cfg);
         // Unparsable YAML: leave the file untouched rather than failing the
         // whole run. The saphyr-based `lint` path already surfaces the syntax
         // error as a diagnostic, so we don't lose the signal.
@@ -110,4 +111,37 @@ impl Engine for YamlEngine {
             Ok(FormatOutput::Formatted(formatted))
         }
     }
+}
+
+// ── Options construction ──────────────────────────────────────────────────────
+
+/// Build [`FormatOptions`] by layering user options over polylint opinionated
+/// defaults over pretty_yaml's own defaults.
+///
+/// 1. Start with `FormatOptions::default()` (pretty_yaml's defaults).
+/// 2. If `cfg.options` is non-empty, deserialise it into `FormatOptions` via
+///    `config_serde`; unknown keys are silently ignored.
+/// 3. Override layout fields with poly's globals (print_width, indent_width,
+///    line_break) — these always come from poly, never from the user table.
+fn build_format_options(cfg: &EngineConfig) -> FormatOptions {
+    let mut options: FormatOptions = if cfg.options.is_empty() {
+        FormatOptions::default()
+    } else {
+        toml::Value::Table(cfg.options.clone())
+            .try_into()
+            .unwrap_or_else(|error| {
+                tracing::warn!(%error, "[fmt.yaml.yaml] options could not be parsed; using defaults");
+                FormatOptions::default()
+            })
+    };
+
+    // Poly's layout overrides always win — they come from globals, not from
+    // the per-engine options table.
+    options.layout.print_width = cfg.globals.line_length;
+    options.layout.indent_width = cfg.indent_width;
+    options.layout.line_break = match cfg.globals.line_ending {
+        LineEnding::Crlf => LineBreak::Crlf,
+        LineEnding::Lf => LineBreak::Lf,
+    };
+    options
 }

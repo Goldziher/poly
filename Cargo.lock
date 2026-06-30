@@ -3121,6 +3121,7 @@ dependencies = [
  "itertools 0.14.0",
  "memchr",
  "raffia",
+ "serde",
  "tiny_pretty 0.4.2",
 ]
 
@@ -3168,6 +3169,7 @@ dependencies = [
  "itertools 0.14.0",
  "memchr",
  "regex",
+ "serde",
  "tiny_pretty 0.4.2",
 ]
 
@@ -4592,6 +4594,7 @@ dependencies = [
  "apollo-parser",
  "memchr",
  "rowan 0.16.1",
+ "serde",
  "tiny_pretty 0.2.1",
 ]
 
@@ -4602,6 +4605,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6f5db2b0044c0dae209c173c6049f210c9449092b07304c9c8b8d555c606e93e"
 dependencies = [
  "rowan 0.16.1",
+ "serde",
  "tiny_pretty 0.2.1",
  "yaml_parser",
 ]
@@ -4765,6 +4769,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a589c5611a5f7713bf0c13e949c4c791a359ff517a9f27552475b470e8873229"
 dependencies = [
  "raffia_macro",
+ "serde",
  "smallvec",
 ]
 

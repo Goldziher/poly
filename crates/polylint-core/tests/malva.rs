@@ -116,3 +116,24 @@ fn format_unchanged_for_canonical_css() {
         "canonical CSS must round-trip as Unchanged"
     );
 }
+
+/// A malva LanguageOptions field set via `[fmt.css.malva]` reaches the
+/// formatter: `hex-case = "upper"` uppercases hex colors.
+#[test]
+fn format_honors_language_option() {
+    let engine = MalvaEngine;
+    let src = make_src("hex.css", Language::Css, "a {\n  color: #fff;\n}\n");
+    let mut options = toml::Table::new();
+    options.insert("hex_case".to_string(), toml::Value::String("upper".into()));
+    let cfg = EngineConfig {
+        options,
+        ..engine_cfg()
+    };
+    let FormatOutput::Formatted(out) = engine.format(&src, &cfg).unwrap() else {
+        panic!("`hex_case = upper` should uppercase the hex color");
+    };
+    assert!(
+        out.contains("#FFF"),
+        "[fmt.css.malva] hex_case must reach malva; got: {out}"
+    );
+}
