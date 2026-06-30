@@ -772,7 +772,12 @@ stages = ["pre-commit"]
         // Per-file dispatch: filenames are appended by the runner.
         assert!(hook.pass_filenames, "catalog hooks run per-file");
         let line = run_line(&spec, "shfmt");
-        assert!(line.starts_with("'shfmt'"), "runs the tool binary: {line}");
+        // Quoting is platform-specific (single quotes on Unix, double on Windows
+        // for cmd /C), so compare against shell_quote, not a hard-coded form.
+        assert!(
+            line.starts_with(super::shell_quote("shfmt").as_str()),
+            "runs the tool binary: {line}"
+        );
         // The `$PATH` placeholder is dropped — files take its place.
         assert!(!line.contains("$PATH"), "placeholder dropped: {line}");
     }
