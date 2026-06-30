@@ -51,8 +51,16 @@ like `ruff` / `biome`, not published to crates.io).
 curl -fsSL https://raw.githubusercontent.com/Goldziher/polylint/main/install.sh | sh
 ```
 
-Installs `poly`, `polylint`, and `polyfmt` into `~/.local/bin` (override with `POLY_INSTALL_DIR`),
-verifying `sha256sums.txt`.
+On Windows (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/Goldziher/polylint/main/install.ps1 | iex
+```
+
+Detects your platform and downloads the matching prebuilt binary, verifies it against
+`sha256sums.txt`, and installs `poly`, `polylint`, and `polyfmt` into `~/.local/bin` (override with
+`POLY_INSTALL_DIR`). **Re-run the same command any time to update to the latest release**; pin a
+version with `POLY_VERSION=v0.1.0`.
 
 **Homebrew:**
 

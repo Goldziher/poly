@@ -77,7 +77,9 @@ runs:
         POLY_INSTALL_DIR: ${{ steps.resolve.outputs.install-dir }}
       run: |
         set -euo pipefail
-        bash "${GITHUB_ACTION_PATH}/install.sh" "${{ steps.resolve.outputs.version }}"
+        # --no-modify-path: this action wires PATH via $GITHUB_PATH below, so the
+        # installer must not also edit the runner's shell profiles.
+        bash "${GITHUB_ACTION_PATH}/install.sh" --no-modify-path "${{ steps.resolve.outputs.version }}"
 
     - shell: bash
       run: echo "${{ steps.resolve.outputs.install-dir }}" >> "$GITHUB_PATH"
