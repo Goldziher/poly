@@ -3,8 +3,7 @@
     poly installer for Windows — downloads the correct prebuilt binaries.
 
 .DESCRIPTION
-    Installs poly, polylint, and polyfmt. Re-run any time to UPDATE to the latest
-    release (it overwrites in place).
+    Installs poly. Re-run any time to UPDATE to the latest release (it overwrites in place).
 
         irm https://raw.githubusercontent.com/Goldziher/polylint/main/install.ps1 | iex
 
@@ -17,7 +16,7 @@
 $ErrorActionPreference = "Stop"
 
 $Repo = "Goldziher/polylint"
-$Binaries = @("poly.exe", "polylint.exe", "polyfmt.exe")
+$Binaries = @("poly.exe")
 
 $Version = if ($env:POLY_VERSION) { $env:POLY_VERSION } else { "latest" }
 $InstallDir = if ($env:POLY_INSTALL_DIR) { $env:POLY_INSTALL_DIR } else { "$env:LOCALAPPDATA\poly\bin" }
@@ -99,7 +98,7 @@ try {
         if (-not (Test-Path $src)) { Die "Expected binary $binary missing from $asset" }
         Copy-Item -Path $src -Destination (Join-Path $InstallDir $binary) -Force
     }
-    Info "Installed poly, polylint, polyfmt -> $InstallDir"
+    Info "Installed poly -> $InstallDir"
 } finally {
     Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
 }

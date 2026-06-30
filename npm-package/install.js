@@ -12,8 +12,8 @@ const AdmZip = require("adm-zip");
 
 const { version } = require("./package.json");
 
-// poly ships three standalone binaries in the archive root.
-const BINARY_BASENAMES = ["poly", "polylint", "polyfmt"];
+// poly ships one standalone binary in the archive root.
+const BINARY_BASENAMES = ["poly"];
 
 // `os.arch()` reflects the Node process arch, so an x64 Node under Rosetta reports
 // "x64" even on Apple Silicon hardware. Probe a hardware-level signal the translation
@@ -250,19 +250,19 @@ async function installBinary() {
     const binDir = path.join(__dirname, "bin");
     const archivePath = path.join(binDir, assetName);
 
-    // The three standalone binaries the archive root is expected to contain.
+    // The standalone binary the archive root is expected to contain.
     const binaryPaths = BINARY_BASENAMES.map((base) => path.join(binDir, isWindows ? `${base}.exe` : base));
 
     if (!fs.existsSync(binDir)) {
       fs.mkdirSync(binDir, { recursive: true });
     }
 
-    // Skip the download only when all three binaries are already present.
+    // Skip the download only when the binary is already present.
     if (binaryPaths.every((p) => fs.existsSync(p))) {
       return;
     }
 
-    console.log(`Downloading poly binaries from ${archiveUrl}...`);
+    console.log(`Downloading poly binary from ${archiveUrl}...`);
 
     await retryWithBackoff(() => downloadWithRedirects(archiveUrl, archivePath));
 
@@ -270,10 +270,10 @@ async function installBinary() {
     // extracting anything. Any fetch/parse/mismatch failure aborts the install.
     await verifyChecksum(archivePath, assetName, checksumsUrl);
 
-    console.log("Extracting archive (poly + polylint + polyfmt)...");
+    console.log("Extracting archive (poly)...");
 
-    // The archive root contains all three standalone binaries — there is no
-    // bundled lib/ tree. Extract the whole archive into bin/.
+    // The archive root contains the standalone binary; there is no bundled lib/
+    // tree. Extract the whole archive into bin/.
     if (isZip) {
       const zip = new AdmZip(archivePath);
       zip.extractAllTo(binDir, true);
@@ -297,9 +297,9 @@ async function installBinary() {
       }
     }
 
-    console.log("poly binaries installed successfully!");
+    console.log("poly binary installed successfully!");
   } catch (error) {
-    console.error("Error installing poly binaries:", error.message);
+    console.error("Error installing poly binary:", error.message);
     process.exit(1);
   }
 }

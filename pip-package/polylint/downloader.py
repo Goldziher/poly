@@ -17,8 +17,8 @@ from urllib.request import Request, urlopen
 
 import certifi
 
-# The three binaries shipped together in a single release archive.
-BINARIES = ("poly", "polylint", "polyfmt")
+# The binary shipped in the release archive.
+BINARIES = ("poly",)
 
 
 def _is_apple_silicon(machine: str) -> bool:
@@ -214,7 +214,7 @@ def _verify_checksum(archive: Path, asset_name: str, checksums_url: str) -> None
 
 
 def _extract(archive: Path, ext: str, destination: Path) -> None:
-    """Extract the full archive tree (all three binaries) into destination."""
+    """Extract the full archive tree into destination."""
     if ext == "zip":
         with zipfile.ZipFile(archive) as zf:
             zf.extractall(destination)
@@ -228,7 +228,7 @@ def _binary_name(base: str) -> str:
 
 
 def _cache_dir(version: str) -> Path:
-    """Directory holding the three extracted binaries for this version."""
+    """Directory holding the extracted binary for this version."""
     cache_dir = Path.home() / ".cache" / "polylint" / version
     cache_dir.mkdir(parents=True, exist_ok=True)
     return cache_dir
@@ -246,9 +246,9 @@ def _all_binaries_present(cache_dir: Path) -> bool:
 
 
 def ensure_binaries() -> Path:
-    """Ensure all three binaries are available, downloading if necessary.
+    """Ensure the poly binary is available, downloading if necessary.
 
-    Returns the cache directory containing ``poly``, ``polylint``, and ``polyfmt``.
+    Returns the cache directory containing ``poly``.
     Handles concurrent invocations via atomic rename: download+extract into a
     temp dir, then atomically move into the cache to prevent corruption from
     parallel installs.
@@ -260,7 +260,7 @@ def ensure_binaries() -> Path:
         return cache_dir
 
     archive_url, ext, asset_name, checksums_url = _asset(__version__)
-    print(f"Downloading poly binaries v{__version__}...", file=sys.stderr)
+    print(f"Downloading poly binary v{__version__}...", file=sys.stderr)
 
     # Atomic install strategy:
     # 1. Download + extract into a temp directory (not under cache_dir)
@@ -324,7 +324,7 @@ def ensure_binaries() -> Path:
             for base in BINARIES:
                 _binary_path(cache_dir, base).chmod(0o755)
 
-        print("Binaries downloaded successfully!", file=sys.stderr)
+        print("Binary downloaded successfully!", file=sys.stderr)
         return cache_dir
     finally:
         if lock_acquired:
@@ -335,7 +335,7 @@ def ensure_binaries() -> Path:
 
 
 def ensure_binary(base: str) -> str:
-    """Ensure a single named binary (``poly``/``polylint``/``polyfmt``) is available.
+    """Ensure the named poly binary is available.
 
     Honours the ``POLYLINT_BINARY_<BASE>`` and ``POLYLINT_BINARY`` overrides (the
     latter pointing at the cache directory), self-healing by downloading the
@@ -367,7 +367,7 @@ def ensure_binary(base: str) -> str:
 
 
 def run_binary(base: str, args) -> None:
-    """Run one of the poly binaries with the given arguments."""
+    """Run the poly binary with the given arguments."""
     binary_path = ensure_binary(base)
 
     try:

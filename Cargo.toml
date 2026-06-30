@@ -9,8 +9,6 @@ members = [
     "crates/poly-config",
     "crates/poly-hooks",
     "crates/poly-mcp",
-    "crates/polyfmt",
-    "crates/polylint",
     "crates/polylint-core",
 ]
 
@@ -18,7 +16,7 @@ members = [
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.96"
-license = "MIT OR Apache-2.0"
+license = "MIT"
 authors = ["Na'aman Hirschfeld <nhirschfeld@gmail.com>"]
 repository = "https://github.com/Goldziher/polylint"
 homepage = "https://github.com/Goldziher/polylint"

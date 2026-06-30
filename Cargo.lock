@@ -4425,22 +4425,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "polyfmt"
-version = "0.1.0"
-dependencies = [
- "clap",
- "poly-cli",
-]
-
-[[package]]
-name = "polylint"
-version = "0.1.0"
-dependencies = [
- "clap",
- "poly-cli",
-]
-
-[[package]]
 name = "polylint-core"
 version = "0.1.0"
 dependencies = [

@@ -5,9 +5,10 @@ build-backend = "hatchling.build"
 [project]
 name = "polylint"
 version = "0.1.0"
-description = "Universal zero-dependency linter & formatter — two pure-Rust binaries (polylint + polyfmt) plus the poly CLI, wrapping best-in-class tools as in-process backends with a tree-sitter generic tier for everything else."
+description = "Universal zero-dependency linter & formatter through the poly Rust CLI."
 readme = "README.md"
-license = "MIT OR Apache-2.0"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Na'aman Hirschfeld", email = "nhirschfeld@gmail.com" }]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -34,8 +35,6 @@ Issues = "https://github.com/Goldziher/polylint/issues"
 
 [project.scripts]
 poly = "polylint.cli:poly"
-polylint = "polylint.cli:polylint"
-polyfmt = "polylint.cli:polyfmt"
 
 [tool.hatch.build.targets.wheel]
 packages = ["polylint"]

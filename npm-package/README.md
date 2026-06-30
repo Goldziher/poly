@@ -1,11 +1,9 @@
 # poly
 
-A universal zero-dependency linter & formatter — two pure-Rust binaries (`polylint` + `polyfmt`)
-wrapping best-in-class tools as in-process backends, with a tree-sitter generic tier for
-everything else. Installs three commands: `poly`, `polylint`, `polyfmt`.
+Universal zero-dependency linter and formatter. This package installs the `poly` CLI.
 
 <!-- markdownlint-disable-next-line MD013 -->
-[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/Goldziher/polylint#readme)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](https://github.com/Goldziher/polylint/blob/main/LICENSE)
 [![npm](https://img.shields.io/npm/v/@nhirschfeld/polylint.svg)](https://www.npmjs.com/package/@nhirschfeld/polylint)
 
 ## Install
@@ -14,28 +12,24 @@ everything else. Installs three commands: `poly`, `polylint`, `polyfmt`.
 npm install -g @nhirschfeld/polylint
 ```
 
-This installs three binaries on your `PATH`: `poly` (the umbrella CLI), `polylint` (lint), and
-`polyfmt` (format).
-
-The installer downloads the appropriate pre-compiled Rust binaries for your platform (macOS,
-Linux, Windows; x86_64 + arm64) from
-[GitHub Releases](https://github.com/Goldziher/polylint/releases) on first install.
+The postinstall script downloads the matching prebuilt Rust binary bundle from
+[GitHub Releases](https://github.com/Goldziher/polylint/releases), verifies it against the release
+checksums, and exposes the `poly` command.
 
 ## Quickstart
 
 ```bash
 cd /path/to/your/repo
-polylint .           # lint the working tree
-polyfmt . --fix      # format the working tree in place
-poly hooks run       # run the configured git hooks
+poly fmt --check
+poly lint
+poly hooks run pre-commit --all-files
 ```
 
-## Full documentation
+## Full Documentation
 
-See the [main README](https://github.com/Goldziher/polylint#readme) for complete docs,
-architecture, the backend/tier reference, and configuration.
+See the [main README](https://github.com/Goldziher/polylint#readme) for installation options,
+configuration, backend coverage, architecture, and CLI reference.
 
 ## License
 
-[MIT](https://github.com/Goldziher/polylint/blob/main/LICENSE-MIT) OR
-[Apache-2.0](https://github.com/Goldziher/polylint/blob/main/LICENSE-APACHE).
+MIT - see [LICENSE](https://github.com/Goldziher/polylint/blob/main/LICENSE).

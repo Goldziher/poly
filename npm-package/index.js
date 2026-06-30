@@ -10,7 +10,5 @@ function binaryPath(base) {
 module.exports = {
   binaryPaths: {
     poly: binaryPath("poly"),
-    polylint: binaryPath("polylint"),
-    polyfmt: binaryPath("polyfmt"),
   },
 };

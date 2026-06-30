@@ -3,9 +3,8 @@ const path = require("node:path");
 const os = require("node:os");
 const fs = require("node:fs");
 
-// Shared launcher for the three thin bin/ shims (poly, polylint, polyfmt). Each
-// shim calls run("<base>"); this resolves the platform binary, self-heals once
-// by running install.js if it is missing, then execs it with the user's args.
+// Launcher for the thin poly shim. It resolves the platform binary, self-heals
+// once by running install.js if it is missing, then execs it with the user's args.
 module.exports = function run(base) {
   const binaryName = os.type() === "Windows_NT" ? `${base}.exe` : base;
   const binaryPath = path.join(__dirname, binaryName);

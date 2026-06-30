@@ -1,4 +1,4 @@
-"""CLI entry points for the poly binaries: ``poly``, ``polylint``, and ``polyfmt``."""
+"""CLI entry point for the poly binary."""
 
 import sys
 
@@ -14,16 +14,6 @@ def _run(binary_base_name: str) -> None:
 def poly() -> None:
     """Entry point for the ``poly`` umbrella CLI."""
     _run("poly")
-
-
-def polylint() -> None:
-    """Entry point for the ``polylint`` linter binary."""
-    _run("polylint")
-
-
-def polyfmt() -> None:
-    """Entry point for the ``polyfmt`` formatter binary."""
-    _run("polyfmt")
 
 
 if __name__ == "__main__":

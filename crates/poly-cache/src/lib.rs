@@ -1,4 +1,4 @@
-//! Unified result-cache for polylint, polyfmt, and poly hooks.
+//! Unified result-cache for `poly lint`, `poly fmt`, and `poly hooks`.
 //!
 //! # Overview
 //!

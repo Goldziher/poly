@@ -1,4 +1,4 @@
-# Official GitHub Action to install the poly CLI (poly, polylint, polyfmt) in CI.
+# Official GitHub Action to install the poly CLI in CI.
 #
 # Delegates the actual download/target-detection/checksum/extraction to the
 # repository's install.sh (POLY_INSTALL_DIR-configurable, version-arg-capable),
@@ -7,7 +7,7 @@
 # default), and PATH wiring. A version bump changes the cache key, so the
 # previous version's cache is naturally not restored (invalidated).
 name: "Setup poly CLI"
-description: "Install poly, polylint, and polyfmt with optional local caching"
+description: "Install poly with optional local caching"
 author: "Na'aman Hirschfeld"
 
 # Branding for the GitHub Marketplace listing (icon from the Feather set; color

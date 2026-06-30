@@ -3,8 +3,8 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/Goldziher/polylint/main/install.sh | sh
 #
-# Installs `poly`, `polylint`, and `polyfmt`. Re-run any time to UPDATE to the
-# latest release (it overwrites in place). Pin a version with `POLY_VERSION` or a
+# Installs `poly`. Re-run any time to UPDATE to the latest release (it overwrites
+# in place). Pin a version with `POLY_VERSION` or a
 # positional argument. POSIX sh — works under dash/ash/bash/zsh.
 #
 # Environment / flags:
@@ -19,7 +19,7 @@
 set -eu
 
 REPO="Goldziher/polylint"
-BINARIES="poly polylint polyfmt"
+BINARIES="poly"
 
 VERSION="${POLY_VERSION:-latest}"
 INSTALL_DIR="${POLY_INSTALL_DIR:-${HOME}/.local/bin}"
@@ -168,16 +168,16 @@ if curl -fsSL -o "${tmp}/sha256sums.txt" "${base}/sha256sums.txt" 2>/dev/null; t
     "${tmp}/sha256sums.txt" | head -1)
   actual=$(sha256_of "${tmp}/${asset}" || true)
   if [ -z "$expected" ]; then
-    die "no checksum entry for ${asset} — refusing to install unverified binaries"
+    die "no checksum entry for ${asset} — refusing to install unverified binary"
   elif [ -z "$actual" ]; then
-    warn "no sha256 tool (sha256sum/shasum/openssl) found — skipping verification"
+    die "no sha256 tool (sha256sum/shasum/openssl) found — refusing to install unverified binary"
   elif [ "$expected" != "$actual" ]; then
     die "checksum mismatch for ${asset} (expected ${expected}, got ${actual})"
   else
     info "Checksum verified"
   fi
 else
-  die "could not download sha256sums.txt — refusing to install unverified binaries"
+  die "could not download sha256sums.txt — refusing to install unverified binary"
 fi
 
 # ---- extract & install ------------------------------------------------------
@@ -188,7 +188,7 @@ for binary in $BINARIES; do
   install -m 0755 "${tmp}/${binary}" "${INSTALL_DIR}/${binary}" 2>/dev/null ||
     { cp "${tmp}/${binary}" "${INSTALL_DIR}/${binary}" && chmod 0755 "${INSTALL_DIR}/${binary}"; }
 done
-info "Installed poly, polylint, polyfmt → ${INSTALL_DIR}"
+info "Installed poly → ${INSTALL_DIR}"
 
 # ---- PATH wiring ------------------------------------------------------------
 add_path_line='export PATH="'"${INSTALL_DIR}"':$PATH"'

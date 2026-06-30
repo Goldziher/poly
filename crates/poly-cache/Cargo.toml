@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "Unified result-cache (blake3, namespaced, file-set digest) for polylint, polyfmt, and poly hooks"
+description = "Unified result-cache (blake3, namespaced, file-set digest) for poly lint, poly fmt, and poly hooks"
 publish = false
 
 [lib]

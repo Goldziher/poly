@@ -1,6 +1,6 @@
-//! Core engine for **polylint** (lint) and **polyfmt** (format): a universal,
-//! zero-dependency linter/formatter that wraps best-in-class tools as in-process
-//! Rust backends behind a single [`Engine`] trait.
+//! Core engine for `poly`: a universal, zero-dependency linter/formatter that
+//! wraps best-in-class tools as in-process Rust backends behind a single
+//! [`Engine`] trait.
 //!
 //! Architecture (see the project plan): files are discovered, routed to backends
 //! via the registry, run in parallel ([`runner`], rayon), cached by content hash

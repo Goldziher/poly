@@ -1,6 +1,4 @@
-//! Shared implementation behind the `poly` CLI and the `polylint` / `polyfmt`
-//! alias binaries. The argument groups and run logic live here so all three
-//! entry points stay in lock-step.
+//! Shared implementation behind the `poly` CLI.
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;

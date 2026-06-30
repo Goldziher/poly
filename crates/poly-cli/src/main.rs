@@ -1,8 +1,7 @@
 //! `poly` — the single universal, zero-dependency linter & formatter CLI.
 //!
 //! `poly lint [PATHS]…` lints; `poly fmt [PATHS]…` formats; `poly commit`
-//! lints/cleans a commit message (gitfluff). The same engine powers lint/fmt;
-//! `polylint` and `polyfmt` ship as thin aliases for those two subcommands.
+//! lints/cleans a commit message (gitfluff). The same engine powers lint/fmt.
 
 use std::path::PathBuf;
 use std::process::ExitCode;

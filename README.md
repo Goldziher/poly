@@ -1,250 +1,183 @@
 <!-- markdownlint-disable MD033 MD041 -->
 <div align="center">
 
-<img src="docs/media/polylint-banner.svg" alt="polylint — universal linter & formatter" width="820">
+<img src="docs/media/polylint-banner.svg" alt="polylint - universal linter and formatter" width="820">
+
+**The polyglot lint and format pipeline for whole repositories.**
+
+Polylint ships the `poly` CLI: one config, one Rust pipeline, curated in-process backends,
+tree-sitter fallback for everything else, and repo-wide cache + parallel execution. No language
+runtime is required for the default path; `gofmt` and `rustfmt` are used when present, and other
+external tools are opt-in.
+
+Lint + format · one `poly.toml` · pure Rust default · blake3 cache · rayon parallelism · hooks +
+commit checks · JSON + TOON + MCP
 
 [![CI](https://img.shields.io/github/actions/workflow/status/Goldziher/polylint/ci.yaml?style=flat-square)](https://github.com/Goldziher/polylint/actions/workflows/ci.yaml)
 [![npm](https://img.shields.io/npm/v/@nhirschfeld/polylint?style=flat-square)](https://www.npmjs.com/package/@nhirschfeld/polylint)
 [![PyPI](https://img.shields.io/pypi/v/polylint?style=flat-square)](https://pypi.org/project/polylint/)
-[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue?style=flat-square)](#license)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
+
+[Install](#installation) · [Quickstart](#quickstart) · [What You Get](#what-you-get) ·
+[How It Works](#how-it-works) · [Backends](#backend-coverage) · [CLI](#cli-reference)
 
 </div>
 
-**Universal zero-dependency linter & formatter. Pure Rust, in-process, one config.**
+---
 
-`poly` is a single CLI that replaces your entire per-language tooling stack — `ruff` + `oxlint` +
-`prettier` + `taplo` + `rumdl` + `sqruff` + `shfmt` + `rustfmt` + `gofmt` + `pre-commit` +
-commit-message linters and all their runtimes (Python, Node, Go, a JVM, …) — with **one binary and
-one `poly.toml`**:
+## Quickstart
 
-```sh
-poly lint       # lint every language in your repo
-poly fmt        # format every language in your repo
-poly fmt --fix  # apply formatting in place
-poly commit     # lint commit messages (Conventional Commits)
-poly hooks      # run git hooks declared in poly.toml
+```console
+$ poly fmt --check
+would format crates/example/src/main.rs
+
+$ poly fmt --fix
+formatted 1 file
+
+$ poly lint --format toon
+path: crates/example/src/main.rs
+diagnostics[0]: engine=ruff, code=F401, severity=warning, title="`os` imported but unused"
+
+$ poly hooks install
+installed git hooks: pre-commit, commit-msg
 ```
 
-Everything runs **in-process, in pure Rust**. No subprocesses, no system dependencies. Where a
-high-quality Rust library exists for a language, it is compiled in directly. Everything else is
-covered by a generic tree-sitter formatter (300+ grammars, structural reindent) — so the
-zero-dependency promise holds for every language on day one.
+`poly fmt` is a dry run by default (CI-friendly); add `--fix` to write changes, and `poly lint
+--fix` to apply lint autofixes. `poly hooks install` wires the git hooks once — lint, format, and
+commit checks then run on every `git commit`.
 
-## Why
+---
 
-A typical repo chains a dozen tools into `.pre-commit-config.yaml`, each with its own runtime, config
-dialect, and install story. That's slow to set up, painful in CI, impossible to reproduce without
-matching toolchains on every machine.
+## What You Get
 
-poly collapses that stack:
+<!-- markdownlint-disable MD013 -->
 
-- **One binary** (`poly`, plus `polylint` and `polyfmt` aliases) instead of a dozen tools and their runtimes.
-- **One config** (`poly.toml`) for linting, formatting, commit rules, and git hooks.
-- **Zero system dependencies** — pure Rust, in-process; tree-sitter grammars are fetched on demand.
-- **Opinionated defaults** — line length 120, LF endings, final newline, trailing whitespace
-  trimmed, docstring code formatted — nothing to bikeshed.
-- **Content-hash caching** — unchanged files skip re-processing (blake3 cache key folds in file
-  bytes + engine name + version + config).
-- **Full parallelism** — rayon per-file parallelism saturates all logical cores by default.
+| Capability | What it does | Main surfaces |
+|---|---|---|
+| **Repo-wide lint + format** | Discovers files, routes each language to the best available backend, and reports normalized diagnostics and formatting drift. | `poly lint` · `poly fmt` |
+| **One config** | `poly.toml` drives linting, formatting, hooks, commit-message policy, cache settings, and optional tool catalog entries. | `[defaults]` · `[lint.*]` · `[fmt.*]` · `[hooks]` · `[tools]` |
+| **Curated Rust backends** | Wraps high-quality Rust libraries in-process: oxc, ruff internals, taplo, rumdl, sqruff, malva, markup_fmt, mago, and more. | Backend registry |
+| **Generic fallback** | Uses `tree-sitter-language-pack` for identified languages without a dedicated backend, reindenting supported grammars and normalizing whitespace where safe. | `treesitter` tier |
+| **Cache + parallelism** | Runs per file with rayon and skips unchanged work with a blake3 content-hash cache keyed by file bytes, engine, version, and resolved config. | `poly cache` · `--no-cache` · `-j` |
+| **Git hooks** | Runs first-class builtins and inline hook jobs from `poly.toml`, with file-safety checks and Cargo tools available as builtins. | `poly hooks install` · `poly hooks run` |
+| **Commit checks** | Enforces Conventional Commits and strips AI-attribution trailers through the bundled `gitfluff` engine. | `poly commit` |
+| **Agent-friendly output** | Emits structured JSON and compact TOON, and exposes lint/format/cache operations over an MCP stdio server. | `--format json` · `--format toon` · `poly mcp` |
+| **Optional breadth tier** | Enables tools from the embedded mdsf catalog only when you opt in; commands are PATH-probed and skipped when absent. | `[tools.<name>]` |
+| **Simple distribution** | Installs prebuilt release archives containing the `poly` binary, verified by release checksums. | Installer · GitHub Action · Homebrew · npm · PyPI |
 
-## Install
+<!-- markdownlint-enable MD013 -->
 
-`poly` ships as **prebuilt, platform-specific binaries** for Linux, macOS, and Windows (distributed
-like `ruff` / `biome`, not published to crates.io).
+---
 
-**Installer script (recommended):**
+## Installation
+
+Polylint is distributed like `ruff` or `biome`: prebuilt release artifacts plus thin installers and
+package wrappers. The workspace crates are not published to crates.io.
+
+### Installer Scripts
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Goldziher/polylint/main/install.sh | sh
 ```
 
-On Windows (PowerShell):
+Windows PowerShell:
 
 ```powershell
 irm https://raw.githubusercontent.com/Goldziher/polylint/main/install.ps1 | iex
 ```
 
-Detects your platform and downloads the matching prebuilt binary, verifies it against
-`sha256sums.txt`, and installs `poly`, `polylint`, and `polyfmt` into `~/.local/bin` (override with
-`POLY_INSTALL_DIR`). **Re-run the same command any time to update to the latest release**; pin a
-version with `POLY_VERSION=v0.1.0`.
+Both installers detect the platform, download the matching release archive, verify it against
+`sha256sums.txt`, and install `poly`. Set `POLY_VERSION=v0.1.0` to pin a version or
+`POLY_INSTALL_DIR=/path/to/bin` to choose the destination.
 
-**Homebrew:**
+### GitHub Actions
+
+```yaml
+- uses: Goldziher/polylint@v0
+  with:
+    version: latest
+```
+
+The action resolves the requested release, caches the installed binary bundle by version and
+platform, and adds `poly` to `PATH`.
+
+### Package Managers
 
 ```sh
 brew install Goldziher/tap/polylint
-```
-
-**npm:**
-
-```sh
 npm install -g @nhirschfeld/polylint
-```
-
-**PyPI:**
-
-```sh
 pip install polylint
-```
-
-The npm and PyPI packages are thin wrappers that download the matching prebuilt binary (verified
-against `sha256sums.txt`) on first install; both install `poly`, `polylint`, and `polyfmt`.
-
-**cargo-binstall:**
-
-Because we don't publish to crates.io, point binstall at the repo directly:
-
-```sh
 cargo binstall --git https://github.com/Goldziher/polylint poly-cli
 ```
 
-**Manual download:**
+The npm and PyPI packages are thin wrappers that download the verified prebuilt binary bundle for
+your platform.
 
-Grab the archive for your platform from the [releases page](https://github.com/Goldziher/polylint/releases),
-extract, and add to your `PATH`. Each release includes `sha256sums.txt` for verification.
+### Manual or Source Builds
 
-**From source:**
+Download a release archive from
+[GitHub Releases](https://github.com/Goldziher/polylint/releases), or build from source:
 
 ```sh
 git clone https://github.com/Goldziher/polylint
 cd polylint
-cargo build --release  # binaries in target/release/{poly,polylint,polyfmt}
+cargo build --release
 ```
 
-**GitHub Actions:**
+Source builds place the binary at `target/release/poly`.
 
-```yaml
-- uses: Goldziher/polylint@v0   # moving major tag; or pin a release: @v0.1.0
-  with:
-    version: latest  # or a specific release, e.g. v0.1.0
+---
+
+## How It Works
+
+<details open>
+<summary><strong>Pipeline</strong></summary>
+
+`poly` discovers files once, plans engines once per language, prefetches the generic tier's
+tree-sitter grammars, and then runs the per-file work in parallel. Each backend returns the same
+`Diagnostic` and `FormatOutput` shapes, so reporting, cache behavior, and MCP output stay uniform.
+
+```mermaid
+flowchart LR
+  A["paths"]
+  B["discover<br/>gitignore aware"]
+  C["plan engines<br/>per language"]
+  D["rayon file loop"]
+  E["blake3 cache"]
+  F["lint / format<br/>reports"]
+  A --> B --> C --> D
+  D <-->|hit / miss| E
+  D --> F
 ```
 
-The action caches binaries by default and adds `poly` to `PATH`. Pass `cache: false` to skip caching.
-`@v0` tracks the latest `0.x` release; pin `@v0.1.0` for a fixed version.
+</details>
 
-## Quickstart
+<details>
+<summary><strong>Zero-dependency default</strong></summary>
 
-```sh
-# Dry run: show what would change (default)
-poly fmt
+The default path does not require Python, Node, Go, a JVM, or a project-local toolchain. Most
+backends are Rust crates compiled into the binary. Two canonical native formatters are default-on
+when present: `gofmt` for Go and `rustfmt` for Rust. If either is missing, the language falls back to
+the generic tier. `zig fmt`, `shfmt`, `shellcheck`, and catalog tools are opt-in and are skipped when
+absent.
 
-# Apply formatting in place
-poly fmt --fix
+</details>
 
-# Lint all files
-poly lint
+<details>
+<summary><strong>Cache and debug data</strong></summary>
 
-# Lint and apply autofixes
-poly lint --fix
+The result cache is keyed by file bytes, engine name, engine `version()`, and resolved engine
+configuration. A tool upgrade or config change invalidates stale entries. `--debug` reports per-file
+engine timing and cache hit/miss data in pretty output and attaches it to JSON/TOON output.
 
-# Format in JSON
-poly fmt --format json
-```
+</details>
 
-Paths default to the current directory; `.gitignore` is respected.
-
-## Usage
-
-### `poly lint` / `poly fmt`
-
-```text
-poly lint [PATHS]...
-poly fmt [PATHS]...
-
-  --fix                        Apply changes in place (autofixes for lint, formatting for fmt).
-                               Default: dry run.
-  --check                      (fmt only) Explicit dry run. Conflicts with --fix.
-  --format <pretty|json|toon>  Output format (default: pretty).
-  --config <PATH>              Use an explicit config file (default: nearest poly.toml).
-  --no-cache                   Bypass the result cache.
-  -j, --jobs <N>               Parallel jobs (default: all logical cores).
-  --no-color                   Disable colored output.
-  --verbose                    (pretty format) Show extra detail: description, rule URL, metadata.
-  --debug                      Emit cache hit/miss and timing; raise log verbosity to debug.
-```
-
-The `polylint` and `polyfmt` binaries are aliases for `poly lint` and `poly fmt` with the same flags.
-
-**Exit codes:**
-
-| Code | `poly lint`/`polylint` | `poly fmt`/`polyfmt` |
-|------|---|---|
-| 0 | No issues (or all autofixed) | `--fix`: changes applied; dry run: no changes needed |
-| 1 | Lint issues remain | Dry run (default): at least one file would change |
-| 2 | Internal error (config, I/O) | Internal error (config, I/O) |
-
-### `poly fmt` dry-run by default
-
-`poly fmt` **reports what would change, writes nothing, exits non-zero if any file would change**.
-This is ideal for CI. Pass `--fix` to rewrite in place. The `--check` flag is an explicit alias for
-the default dry-run behavior.
-
-### Output formats
-
-Three formats are available everywhere:
-
-- **`pretty`** (default) — colored, human-oriented output with inline code snippets.
-- **`json`** — fully structured JSON with all metadata.
-- **`toon`** — Token-Oriented Object Notation, compact for LLM/agent consumption.
-
-`--verbose` (pretty only) adds description, rule URL, and metadata. `--debug` emits per-engine cache
-hit/miss and timing information.
-
-### `poly commit`
-
-Lints and optionally cleans a commit message against Conventional Commits. Reads from the `[commit]`
-table in `poly.toml` (or a `.gitfluff.toml` file for back-compat). Strips AI-attribution trailers.
-
-```sh
-poly commit [MSG]
-```
-
-Driven by the bundled `gitfluff` engine (also available as a standalone binary).
-
-### `poly hooks`
-
-Runs git hooks declared in the `[hooks]` table of `poly.toml`. `poly`'s own tools (`polylint`,
-`polyfmt`, `poly commit`) are first-class hooks. Foreign pre-commit repos are cloned and run through
-the bundled `prek` engine — so `poly hooks` is a drop-in for `pre-commit` with no Python dependency.
-
-```sh
-poly hooks install          # install git-hook shims
-poly hooks run pre-commit   # run the pre-commit stage
-poly hooks run --all-files  # run all stages on all files
-```
-
-### `poly cache`
-
-Inspect and maintain the blake3 result cache.
-
-```sh
-poly cache stats   # show cache statistics
-poly cache size    # show cache size on disk
-poly cache clean   # remove all cached results
-```
-
-### `poly mcp`
-
-Run an MCP (Model Context Protocol) server over stdio. Mirrors the CLI surface via rmcp 2.0 — six
-tools: `lint` / `format_check` / `cache_stats` (read-only) + `lint_fix` / `format_write` /
-`cache_clean`.
-
-```sh
-poly mcp --config /path/to/poly.toml
-```
-
-The server reads `poly.toml` per request; `--config` provides a fallback for requests that don't specify their own.
+---
 
 ## Configuration
 
-Configuration is a single canonical **`poly.toml`**, discovered by walking up from the working
-directory. (Back-compat: `polylint.toml` is read as a fallback; `poly.toml` wins in the same
-directory.)
-
-Settings layer as **tool default → poly's opinionated override → your `poly.toml`**, so you only
-write what you want to change.
-
-### Minimal example
+Polylint discovers the nearest `poly.toml`. `polylint.toml` is still read as a fallback for older
+projects, and `poly.local.toml` can layer local overrides over the primary config.
 
 ```toml
 [defaults]
@@ -253,58 +186,27 @@ line_ending = "lf"
 final_newline = true
 trim_trailing_whitespace = true
 
-[lint.python.ruff]
-# Per-tool lint configuration (tool-specific TOML keys)
-
 [fmt.python.ruff]
 docstring_code_format = true
 docstring_code_line_length = 120
 
-[commit]
-preset = "conventional"  # lint commit messages
+[lint.python.ruff]
+select = ["E", "F", "W"]
 
 [hooks]
-stages = ["pre-commit"]
+stages = ["pre-commit", "commit-msg"]
 
 [hooks.builtin]
 polylint = true
 polyfmt = true
 commit = { stages = ["commit-msg"] }
+file_safety = true
+cargo = true
 ```
 
-### Opinionated defaults
+### Optional Catalog Tools
 
-These apply everywhere a tool supports the setting:
-
-- **Line length:** 120
-- **Line endings:** LF (`\n`)
-- **Final newline:** required
-- **Trailing whitespace:** trimmed
-- **Docstring code formatting:** enabled (where supported)
-
-### Hooks
-
-Declare hooks in the `[hooks]` table. `poly hooks install` writes git-hook shims.
-
-```toml
-[hooks]
-stages = ["pre-commit", "commit-msg"]
-
-[hooks.builtin]
-# Built-in poly tools run first
-polylint = true           # linting
-polyfmt = true            # formatting
-commit = { stages = ["commit-msg"] }  # commit messages
-
-[hooks.pre-commit.scripts.my-script]
-script = "scripts/my-hook.sh"
-runner = "bash"
-files = "**/*.rs"
-```
-
-### Catalog tools (optional)
-
-Opt into 348 additional formatters/linters via the `[tools]` table (mdsf catalog):
+Opt into tools from the embedded mdsf catalog only when you want them:
 
 ```toml
 [tools.prettier]
@@ -316,153 +218,154 @@ enabled = true
 languages = ["python"]
 ```
 
-Catalog tools are capability-probed; a missing binary degrades gracefully to the native tier.
+Catalog tools are capability-probed on `PATH`; a missing binary is skipped instead of making the
+whole run fail.
 
-### Per-language, per-tool config
+### Hooks
 
-Language-specific, tool-specific options nest under `[lint.<lang>.<tool>]` or `[fmt.<lang>.<tool>]`:
-
-```toml
-[fmt.python.ruff]
-indent_size = 4
-
-[fmt.javascript.oxc]
-max_line_length = 100
-
-[lint.python.ruff]
-line-length = 120
-select = ["E", "W", "F"]  # flake8 rule codes
-```
-
-See each tool's documentation for available options.
-
-## Language & backend support
-
-Poly uses a **three-tier coverage model**:
-
-1. **Native Rust backends (tier-1)** — highest-fidelity in-process libraries for specific languages.
-2. **Tree-sitter generic tier (tier-2)** — structural reindent + whitespace normalization for 300+ grammars.
-3. **Opt-in catalog tools** — 348 additional formatters/linters from mdsf, probed on `PATH`.
-
-Additionally, opt-in **native-toolchain backends** wrap canonical first-party formatters (`gofmt`,
-`rustfmt`, `zig fmt`) when present on the host. These are default-off; enable via
-`[fmt.<lang>.<tool>] enabled = true`.
-
-### Backend matrix
-
-| Language(s) | Backend | Lint | Format |
-|---|---|---|---|
-| JavaScript / TypeScript / JSX / TSX | oxc (oxlint + oxc_formatter) | ✅ | ✅ |
-| JSON / JSONC | oxc (oxc_formatter) | — | ✅ |
-| Python | ruff | ✅ | ✅ |
-| TOML | taplo | ✅ | ✅ |
-| Markdown | rumdl | ✅ | ✅ |
-| SQL | sqruff | ✅ | ✅ |
-| YAML | yaml (saphyr) | ✅ | ✅ |
-| CSS / SCSS / Less | malva | — | ✅ |
-| HTML / Vue / Svelte / Astro | markup_fmt | — | ✅ |
-| GraphQL | pretty_graphql | — | ✅ |
-| HCL / Terraform | hcl (hcl-rs) | — | ✅ |
-| Dockerfile | dockerfile (tree-sitter) | — | ✅ |
-| Nix | alejandra | — | ✅ |
-| Ruby | rubyfmt | — | ✅ |
-| PHP | mago | ✅ | ✅ |
-| R | air | — | ✅ |
-| Go | gofmt (native-toolchain, default-on) | — | ✅ |
-| Rust | rustfmt (native-toolchain, default-on) | — | ✅ |
-| Zig | zig fmt (native-toolchain, opt-in) | — | ✅ |
-| Shell | shfmt + shellcheck (native-toolchain, default-on) | ✅ | ✅ |
-| _(all files)_ | typos (spell-check) | ✅ | — |
-| Shell, Java, Kotlin, C/C++, Swift, Dart, C#, Protobuf, Haskell, … | tree-sitter (300+ grammars) | — | ✅ |
-
-### Native-toolchain backends
-
-Go's `gofmt`, Rust's `rustfmt`, and Shell's `shfmt`/`shellcheck` are **default-on** when detected on
-`PATH`. When absent, these languages fall through to the tree-sitter generic tier (with an
-info-level notice). Zig's `zig fmt` is **opt-in** (off by default) to keep the zero-dependency
-promise intact for users who haven't asked for it.
-
-Enable or disable per-tool in `poly.toml`:
-
-```toml
-[fmt.rust.rustfmt]
-enabled = true
-
-[fmt.zig.zig_fmt]
-enabled = false  # use tree-sitter instead
-
-[fmt.shell.shfmt]
-enabled = true
-```
-
-## Architecture
-
-`poly` is a Cargo workspace (Rust 2024) built around a single `Engine` trait. Every backend — native
-or generic — produces normalized `Diagnostic` and `FormatOutput` values, so the runner, cache, and
-reporters are uniform across all languages.
-
-Cross-cutting machinery:
-
-- **rayon `par_iter`** over discovered files, saturating available cores by default.
-- **blake3 content-hash cache** keyed over `(file bytes + engine name + engine version + resolved
-  config)`. A tool upgrade or config change invalidates stale results.
-- **`ignore` crate discovery** respects `.gitignore`.
-- **Shared `Arc<str>` file contents** so multiple engines process one file without re-cloning.
-
-### Workspace layout
-
-```text
-crates/
-├── polylint-core/        # Engine trait, registry, cache, runner, engines
-├── poly-config/          # poly.toml schema, shared by all surfaces
-├── poly-cli/             # poly CLI (lint / fmt / commit / hooks)
-├── polylint/             # polylint binary (alias for `poly lint`)
-├── polyfmt/              # polyfmt binary (alias for `poly fmt`)
-├── gitfluff/             # Conventional-Commit linter (also standalone binary)
-├── poly-hooks/           # Git-hook engine (vendored pre-commit fork)
-├── poly-mcp/             # MCP server implementation
-├── poly-cache/           # blake3 caching
-├── poly-catalog/         # 348-tool mdsf registry
-└── conformance/          # Differential testing harness (Docker)
-```
-
-## Git hooks
-
-`poly hooks` is a self-contained git-hook runner — a drop-in for `pre-commit` with no Python
-dependency. Declare hooks in `poly.toml`'s `[hooks]` table and run `poly hooks install`.
-
-```toml
-[hooks]
-stages = ["pre-commit"]
-
-[hooks.builtin]
-polylint = true
-polyfmt = true
-commit = { stages = ["commit-msg"] }
-```
-
-Then:
+Install poly's git hooks once — they then run on every `git commit`:
 
 ```sh
 poly hooks install
-git commit  # hooks run automatically
 ```
 
-`poly`'s own tools run as first-class hooks; foreign pre-commit repos referenced from `poly.toml` are
-cloned and run through the bundled `prek` engine, so a single `poly hooks` run subsumes a much larger
-per-language hook matrix.
+Hooks come from `poly.toml`: builtins (`polylint`, `polyfmt`, `commit`, `file_safety`, `cargo`)
+plus inline jobs. poly never clones or runs foreign pre-commit repositories. Add an inline job:
+
+```toml
+[hooks.pre-commit.scripts.docs]
+script = "scripts/check-docs.sh"
+runner = "bash"
+files = "**/*.md"
+```
+
+---
+
+## Backend Coverage
+
+Polylint uses a tiered model:
+
+1. Curated Rust backends for high-fidelity lint and format support.
+2. Native-toolchain backends for canonical first-party formatters when configured or present.
+3. Tree-sitter generic formatting for identified languages without a dedicated backend.
+4. Optional catalog tools from the embedded mdsf registry.
+
+<!-- markdownlint-disable MD013 -->
+
+| Language or files | Backend | Lint | Format |
+|---|---|---:|---:|
+| JavaScript / TypeScript / JSX / TSX | oxc | yes | yes |
+| JSON / JSONC | oxc parse diagnostics + formatter | yes | yes |
+| Python | ruff internals | yes | yes |
+| TOML | taplo | yes | yes |
+| Markdown | rumdl | yes | yes |
+| SQL | sqruff | yes | yes |
+| YAML | saphyr + pretty_yaml | yes | yes |
+| CSS / SCSS / Less | malva | no | yes |
+| HTML / Vue / Svelte / Astro / Angular / templates / XML | markup_fmt | no | yes |
+| GraphQL | graphql-parser + pretty_graphql | yes | yes |
+| HCL / Terraform | hcl-edit + hcl-rs, tree-sitter for comment-preserving format fallback | yes | yes |
+| Dockerfile | dockerfile-parser hadolint-style rules | yes | no |
+| Nix | alejandra | no | yes |
+| Ruby | rubyfmt | no | yes |
+| PHP | mago | yes | yes |
+| R | jarl + air formatter | yes | yes |
+| Go | `gofmt` when present, tree-sitter fallback otherwise | no | yes |
+| Rust | `rustfmt` when present, tree-sitter fallback otherwise | no | yes |
+| Zig | opt-in `zig fmt`, tree-sitter fallback otherwise | no | yes |
+| Shell | opt-in `shellcheck` + `shfmt`, tree-sitter fallback otherwise | optional | optional |
+| All text files | typos spell-check | yes | no |
+| Other identified grammars | tree-sitter generic tier | no | best effort |
+
+<!-- markdownlint-enable MD013 -->
+
+Unsupported or unknown file types are skipped unless `tree-sitter-language-pack` can identify them.
+Some whitespace-sensitive data, template, or patch grammars intentionally no-op rather than risk a
+destructive rewrite.
+
+---
+
+## CLI Reference
+
+<details>
+<summary><strong>lint and format</strong></summary>
+
+```text
+poly lint [PATHS]...
+poly fmt [PATHS]...
+
+  --fix                        Apply lint fixes or formatting in place.
+  --check                      Explicit fmt dry run. This is the default.
+  --format <pretty|json|toon>  Output format. Default: pretty.
+  --config <PATH>              Use an explicit config file.
+  --no-cache                   Bypass the result cache.
+  -j, --jobs <N>               Parallel jobs. Default: logical cores.
+  --no-color                   Disable colored output.
+  --verbose                    Pretty output includes descriptions, URLs, and metadata.
+  --debug                      Include cache hit/miss and timing data.
+```
+
+Exit codes:
+
+| Code | Meaning |
+|---:|---|
+| 0 | No issues, no formatting drift, or all writes succeeded |
+| 1 | Lint findings remain, or dry-run formatting would change files |
+| 2 | Internal error such as config or I/O failure |
+
+</details>
+
+<details>
+<summary><strong>commit, hooks, cache, and MCP</strong></summary>
+
+```sh
+poly commit "feat: add backend"
+poly hooks install
+poly cache stats
+poly cache size
+poly cache gc
+poly cache clean
+poly mcp --config /path/to/poly.toml
+```
+
+The MCP server exposes read-only tools for lint, format checks, and cache stats, plus separate
+mutating tools for lint fixes, format writes, and cache cleanup. Every MCP operation returns the same
+JSON shape as the corresponding CLI command with `--format json`.
+
+</details>
+
+---
+
+## Workspace Layout
+
+```text
+crates/
+├── polylint-core/   # Engine trait, registry, discovery, runner, reports
+├── poly-config/     # poly.toml schema and config loading
+├── poly-cli/        # poly umbrella CLI
+├── gitfluff/        # Conventional Commit linter
+├── poly-hooks/      # git-hook runner
+├── poly-mcp/        # MCP stdio server
+├── poly-cache/      # blake3 result cache
+├── poly-catalog/    # embedded mdsf tool catalog
+└── conformance/     # differential test harness
+```
+
+---
 
 ## Contributing
 
-Contributions are welcome. The codebase is organized around the `Engine` trait
-(`crates/polylint-core/src/engine.rs`): each native backend is a self-contained implementation. See
-[CLAUDE.md](CLAUDE.md) for architecture, conventions, and the workflow for adding a new backend.
+Keep changes small and test-backed. New or changed backends should include representative known-bad
+and known-unformatted fixtures under `crates/polylint-core/tests/`, and should preserve the uniform
+`Engine` boundary. Before committing, run:
 
-The key rule: **no subprocesses, no system dependencies, ever** — except opt-in native toolchain
-backends (which degrade gracefully when the tool is absent) and `poly hooks` (which must run foreign
-hooks).
+```sh
+poly hooks install   # wires lint/format/cargo checks into git; they run on every commit
+cargo test --workspace
+```
+
+---
 
 ## License
 
-Licensed under either of **MIT** or **Apache License, Version 2.0**, at your option
-(**MIT OR Apache-2.0**).
+MIT - see [LICENSE](LICENSE).

@@ -8,7 +8,7 @@ authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
 documentation.workspace = true
-description = "Core engine for the polylint/polyfmt universal, zero-dependency linter & formatter"
+description = "Core engine for the poly universal, zero-dependency linter & formatter"
 
 [package.metadata.cargo-machete]
 # rumdl's lib crate name is rumdl_lib, serde_toon_format's is serde_toon, and

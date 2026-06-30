@@ -1,5 +1,5 @@
 //! Conformance harness: a dev-only differential tester that measures how close
-//! `polyfmt` is to each language's idiomatic reference formatter.
+//! `poly fmt` is to each language's idiomatic reference formatter.
 //!
 //! Two subcommands:
 //!
@@ -7,12 +7,12 @@
 //!   (`docker/<lang>.Dockerfile`, tagged `conformance-<lang>`) and pipes every
 //!   file under `corpus/<lang>/` through it (stdin → stdout) to produce the
 //!   committed golden output under `golden/<lang>/`. Requires Docker.
-//! - `check [--lang L]… [--min S]` runs polyfmt (via `polylint-core`) over the
+//! - `check [--lang L]… [--min S]` runs poly fmt (via `polylint-core`) over the
 //!   same corpus and scores its output against the golden — exact byte match
 //!   plus a line-similarity ratio — so we can track per-language convergence.
 //!   Hermetic: no Docker, only the committed golden files.
 //!
-//! The shipped `polylint`/`polyfmt` binaries never depend on this crate or on
+//! The shipped `poly` binary never depends on this crate or on
 //! any reference tool; this harness exists only to derive and validate the
 //! conventions our pure-Rust formatters should follow.
 
@@ -26,7 +26,7 @@ use polylint_core::{Config, RunOptions};
 use serde::Deserialize;
 
 #[derive(Parser)]
-#[command(about = "Differential conformance harness: polyfmt vs reference formatters")]
+#[command(about = "Differential conformance harness: poly fmt vs reference formatters")]
 struct Cli {
     #[command(subcommand)]
     command: CommandKind,
@@ -40,7 +40,7 @@ enum CommandKind {
         #[arg(long = "lang")]
         languages: Vec<String>,
     },
-    /// Score polyfmt against the committed golden output (hermetic).
+    /// Score poly fmt against the committed golden output (hermetic).
     Check {
         /// Restrict to these languages (default: all in tools.toml).
         #[arg(long = "lang")]
@@ -215,7 +215,7 @@ fn check(root: &Path, manifest: &Manifest, requested: &[String], min: Option<f64
             let Ok(golden) = std::fs::read_to_string(&golden_path) else {
                 continue; // no golden yet for this file
             };
-            let ours = polyfmt_output(file)?;
+            let ours = poly_fmt_output(file)?;
             scored += 1;
             if ours == golden {
                 exact += 1;
@@ -246,8 +246,8 @@ fn check(root: &Path, manifest: &Manifest, requested: &[String], min: Option<f64
     Ok(())
 }
 
-/// Format one file the way `polyfmt` would, returning the resulting source.
-fn polyfmt_output(file: &Path) -> Result<String> {
+/// Format one file the way `poly fmt` would, returning the resulting source.
+fn poly_fmt_output(file: &Path) -> Result<String> {
     let original = std::fs::read_to_string(file)?;
     // Run the real pipeline in a temp dir so discovery/routing match production.
     let dir = tempfile::tempdir()?;
