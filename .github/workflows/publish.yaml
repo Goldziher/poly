@@ -499,12 +499,18 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           registry-url: "https://registry.npmjs.org"
 
       - name: Publish to npm
         run: |
           set -euo pipefail
+          # npm OIDC trusted publishing (token-less registry auth) requires
+          # npm >= 11.5.1; node 22 still bundles an older npm, so upgrade
+          # explicitly. Without it, npm signs provenance but publishes
+          # unauthenticated and the registry PUT 404s.
+          npm install -g npm@latest
+          npm --version
           version="${{ needs.meta.outputs.version }}"
           case "$version" in
             *-rc.* | *-beta* | *-alpha*) npm_tag="next" ;;
