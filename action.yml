@@ -8,6 +8,13 @@
 # previous version's cache is naturally not restored (invalidated).
 name: "Setup poly CLI"
 description: "Install poly, polylint, and polyfmt with optional local caching"
+author: "Na'aman Hirschfeld"
+
+# Branding for the GitHub Marketplace listing (icon from the Feather set; color
+# must be one of white/yellow/blue/green/orange/red/purple/gray-dark).
+branding:
+  icon: "check-circle"
+  color: "green"
 
 inputs:
   version:
