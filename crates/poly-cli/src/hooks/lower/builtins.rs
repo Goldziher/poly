@@ -124,8 +124,19 @@ struct CargoTool {
     enabled: bool,
     id: &'static str,
     probe: &'static str,
-    command: &'static str,
+    command: String,
     compiler: bool,
+}
+
+/// Build the `cargo clippy` command line from the resolved [`CargoHooks`].
+///
+/// When `clippy_args` is `Some`, the provided list **replaces** the default
+/// `--workspace --all-targets` flags; `-- -D warnings` is always appended.
+fn clippy_command(cargo: &CargoHooks) -> String {
+    match &cargo.clippy_args {
+        Some(args) => format!("cargo clippy {} -- -D warnings", args.join(" ")),
+        None => "cargo clippy --workspace --all-targets -- -D warnings".to_string(),
+    }
 }
 
 /// The four Cargo builtins, paired with the group's per-tool enable toggles.
@@ -135,14 +146,14 @@ fn cargo_tools(cargo: &CargoHooks) -> [CargoTool; 4] {
             enabled: cargo.clippy,
             id: "cargo-clippy",
             probe: "cargo-clippy",
-            command: "cargo clippy --workspace --all-targets -- -D warnings",
+            command: clippy_command(cargo),
             compiler: true,
         },
         CargoTool {
             enabled: cargo.sort,
             id: "cargo-sort",
             probe: "cargo-sort",
-            command: "cargo sort --workspace --check",
+            command: "cargo sort --workspace --check".to_string(),
             compiler: false,
         },
         CargoTool {
@@ -155,14 +166,14 @@ fn cargo_tools(cargo: &CargoHooks) -> [CargoTool; 4] {
             // is set in the environment (e.g. a hook run under `cargo run`),
             // leaving "machete" to be parsed as a path argument. The direct
             // binary takes no subcommand token and analyses the cwd.
-            command: "cargo-machete",
+            command: "cargo-machete".to_string(),
             compiler: false,
         },
         CargoTool {
             enabled: cargo.deny,
             id: "cargo-deny",
             probe: "cargo-deny",
-            command: "cargo deny check",
+            command: "cargo deny check".to_string(),
             compiler: false,
         },
     ]
@@ -294,6 +305,9 @@ pub(super) fn append_catalog_tools(
         hook.files = files;
         hook.exclude = exclude;
         hook.cache = HookCache::Disabled;
+        // Forward per-tool env vars and working-directory root from [tools.<name>].
+        hook.env.clone_from(&tool_config.env);
+        hook.cwd = tool_config.root.as_ref().map(std::path::PathBuf::from);
         out.push(hook);
     }
     Ok(())
@@ -846,5 +860,117 @@ stages = ["pre-push"]
         )
         .unwrap();
         assert!(spec.hooks.is_empty(), "{:?}", ids(&spec));
+    }
+
+    #[test]
+    fn catalog_tool_env_and_root_are_forwarded_to_hook() {
+        // env and root from [tools.shfmt] must appear on the lowered hook so the
+        // runner sets the working directory and injects the env var.
+        let config = config_from(
+            r#"
+[tools.shfmt]
+enabled = true
+stages = ["pre-commit"]
+root = "packages/shell"
+
+[tools.shfmt.env]
+GOPATH = "/home/user/go"
+"#,
+        );
+        let probe = StubProbe(&["shfmt"]);
+        let spec = lower_stage_with_probe(
+            &config.hooks,
+            &poly(),
+            HookStage::PreCommit,
+            &[],
+            &HookCacheMode::Safe,
+            &probe,
+            &config.tools,
+        )
+        .unwrap();
+        assert_eq!(ids(&spec), vec!["shfmt"]);
+        let hook = &spec.hooks[0];
+        assert_eq!(
+            hook.env.get("GOPATH").map(String::as_str),
+            Some("/home/user/go"),
+            "env var forwarded to hook"
+        );
+        assert_eq!(
+            hook.cwd.as_deref(),
+            Some(std::path::Path::new("packages/shell")),
+            "root forwarded to hook.cwd"
+        );
+    }
+
+    #[test]
+    fn cargo_clippy_args_override_appears_in_lowered_hook_command() {
+        // When clippy_args is set, the lowered hook's run command must reflect
+        // the configured flags rather than the hardcoded defaults.
+        let hooks = hooks_from(
+            r#"
+[hooks.builtin.cargo]
+clippy_args = ["--workspace", "--exclude=crawlberg-php", "--all-features"]
+"#,
+        );
+        let probe = StubProbe(&["cargo-clippy", "cargo-sort", "cargo-machete", "cargo-deny"]);
+        let spec = lower_stage_with_probe(
+            &hooks,
+            &poly(),
+            HookStage::PreCommit,
+            &[],
+            &HookCacheMode::Safe,
+            &probe,
+            &ToolsConfig::default(),
+        )
+        .unwrap();
+        let line = run_line(&spec, "cargo-clippy");
+        assert!(
+            line.contains("--exclude=crawlberg-php"),
+            "configured flag present: {line}"
+        );
+        assert!(
+            line.contains("--all-features"),
+            "configured flag present: {line}"
+        );
+        // The strict-warnings sentinel is always appended.
+        assert!(
+            line.contains("-D warnings"),
+            "strict warnings always present: {line}"
+        );
+        // The default --all-targets flag must NOT appear when overridden.
+        assert!(
+            !line.contains("--all-targets"),
+            "default flag replaced by override: {line}"
+        );
+    }
+
+    #[test]
+    fn cargo_clippy_default_command_is_unchanged_without_override() {
+        // Verify back-compat: with no clippy_args, the classic command is used.
+        let hooks = hooks_from("[hooks.builtin]\ncargo = true\n");
+        let probe = StubProbe(&["cargo-clippy", "cargo-sort", "cargo-machete", "cargo-deny"]);
+        let spec = lower_stage_with_probe(
+            &hooks,
+            &poly(),
+            HookStage::PreCommit,
+            &[],
+            &HookCacheMode::Safe,
+            &probe,
+            &ToolsConfig::default(),
+        )
+        .unwrap();
+        let line = run_line(&spec, "cargo-clippy");
+        assert!(
+            line.contains("--workspace"),
+            "default workspace flag: {line}"
+        );
+        assert!(
+            line.contains("--all-targets"),
+            "default all-targets flag: {line}"
+        );
+        assert!(
+            line.contains("-D warnings"),
+            "strict warnings always present: {line}"
+        );
     }
 }

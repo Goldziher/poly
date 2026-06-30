@@ -236,6 +236,14 @@ pub struct CargoHooks {
     pub machete: bool,
     /// Run `cargo deny check` over the workspace.
     pub deny: bool,
+    /// Override the flags passed to `cargo clippy` (the part before `-- -D warnings`).
+    ///
+    /// When `None`, the default `--workspace --all-targets` is used. When `Some`, the
+    /// provided list **replaces** the default flags entirely; `-- -D warnings` is always
+    /// appended to preserve the strict-warnings policy.
+    ///
+    /// Example: `clippy_args = ["--workspace", "--exclude=crawlberg-php", "--all-features"]`
+    pub clippy_args: Option<Vec<String>>,
 }
 
 impl Default for CargoHooks {
@@ -249,6 +257,7 @@ impl Default for CargoHooks {
             sort: true,
             machete: true,
             deny: true,
+            clippy_args: None,
         }
     }
 }
@@ -269,6 +278,7 @@ struct CargoTable {
     sort: Option<bool>,
     machete: Option<bool>,
     deny: Option<bool>,
+    clippy_args: Option<Vec<String>>,
 }
 
 impl<'de> Deserialize<'de> for CargoHooks {
@@ -285,6 +295,7 @@ impl<'de> Deserialize<'de> for CargoHooks {
                 sort: table.sort.unwrap_or(true),
                 machete: table.machete.unwrap_or(true),
                 deny: table.deny.unwrap_or(true),
+                clippy_args: table.clippy_args,
             }),
         }
     }
@@ -443,6 +454,36 @@ machete = false
         assert!(cargo.clippy);
         assert!(cargo.sort);
         assert!(cargo.deny);
+    }
+
+    #[test]
+    fn cargo_table_clippy_args_replaces_default_flags() {
+        let hooks: BuiltinHooks = toml::from_str(
+            r#"cargo = { clippy_args = ["--workspace", "--exclude=foo", "--all-features"] }"#,
+        )
+        .unwrap();
+        let cargo = hooks.cargo.expect("cargo table present");
+        assert!(cargo.clippy, "clippy is on by default in a table");
+        assert_eq!(
+            cargo.clippy_args.as_deref(),
+            Some(
+                &[
+                    "--workspace".to_string(),
+                    "--exclude=foo".to_string(),
+                    "--all-features".to_string()
+                ][..]
+            ),
+        );
+    }
+
+    #[test]
+    fn cargo_default_has_no_clippy_args_override() {
+        let hooks: BuiltinHooks = toml::from_str("cargo = true").unwrap();
+        let cargo = hooks.cargo.expect("cargo enabled");
+        assert!(
+            cargo.clippy_args.is_none(),
+            "no override → default flags apply"
+        );
     }
 
     #[test]

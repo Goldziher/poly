@@ -24,8 +24,9 @@
 //! rule code). Structured, per-rule diagnostics remain the job of the curated
 //! native backends — the catalog tier trades fidelity for breadth.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::io::Write;
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
@@ -120,17 +121,25 @@ pub struct CatalogToolEngine {
     /// Cache-key version: folds the probed binary version, the mode, the resolved
     /// argv, and the stdin mode so any change invalidates stale cached results.
     version: String,
+    /// Extra environment variables injected when spawning the tool process.
+    env: BTreeMap<String, String>,
+    /// Working directory override for the spawned process; `None` means the
+    /// process inherits the caller's cwd (the repo root at runtime).
+    root: Option<PathBuf>,
 }
 
 impl CatalogToolEngine {
     /// Build a formatter engine for `tool`. `command_name` selects the catalog
     /// command (`None` → the tool's [`Tool::format_command`]); `args_override`
-    /// replaces the command's argv when present. Returns `None` when the tool
-    /// exposes no usable format command.
+    /// replaces the command's argv when present. `env` and `root` are forwarded
+    /// to the spawned process. Returns `None` when the tool exposes no usable
+    /// format command.
     pub fn format_engine(
         tool: &'static Tool,
         command_name: Option<&str>,
         args_override: Option<&[String]>,
+        env: BTreeMap<String, String>,
+        root: Option<PathBuf>,
     ) -> Option<Self> {
         let command = match command_name {
             Some(name) => tool.command(name)?,
@@ -139,12 +148,20 @@ impl CatalogToolEngine {
         let arguments = args_override
             .map(<[String]>::to_vec)
             .unwrap_or_else(|| command.arguments.clone());
-        Some(Self::build(tool, Mode::Format, arguments, command.stdin))
+        Some(Self::build(
+            tool,
+            Mode::Format,
+            arguments,
+            command.stdin,
+            env,
+            root,
+        ))
     }
 
     /// Build a linter engine for `tool`. `command_name` selects the catalog
     /// command (`None` → the tool's [`Tool::lint_command`]); `args_override`
-    /// replaces the command's argv when present.
+    /// replaces the command's argv when present. `env` and `root` are forwarded
+    /// to the spawned process.
     ///
     /// Returns `None` when the tool exposes no usable lint command **or** when the
     /// resolved argv is mutating (contains any of [`MUTATING_FLAGS`]): a command
@@ -155,6 +172,8 @@ impl CatalogToolEngine {
         tool: &'static Tool,
         command_name: Option<&str>,
         args_override: Option<&[String]>,
+        env: BTreeMap<String, String>,
+        root: Option<PathBuf>,
     ) -> Option<Self> {
         let command = match command_name {
             Some(name) => tool.command(name)?,
@@ -166,15 +185,29 @@ impl CatalogToolEngine {
         if is_mutating(&arguments) {
             return None;
         }
-        Some(Self::build(tool, Mode::Lint, arguments, command.stdin))
+        Some(Self::build(
+            tool,
+            Mode::Lint,
+            arguments,
+            command.stdin,
+            env,
+            root,
+        ))
     }
 
     /// Shared constructor for both roles: probes the binary and folds the role,
-    /// argv, and stdin mode into the cache-key version.
-    fn build(tool: &'static Tool, mode: Mode, arguments: Vec<String>, stdin: bool) -> Self {
+    /// argv, stdin mode, env, and root into the cache-key version.
+    fn build(
+        tool: &'static Tool,
+        mode: Mode,
+        arguments: Vec<String>,
+        stdin: bool,
+        env: BTreeMap<String, String>,
+        root: Option<PathBuf>,
+    ) -> Self {
         let probe = probe_binary(&tool.binary);
         let version = format!(
-            "catalog:{}:{}:mode={mode:?}:stdin={stdin}:args={arguments:?}",
+            "catalog:{}:{}:mode={mode:?}:stdin={stdin}:args={arguments:?}:env={env:?}:root={root:?}",
             tool.name,
             probe.as_deref().unwrap_or("absent"),
         );
@@ -184,6 +217,8 @@ impl CatalogToolEngine {
             arguments,
             stdin,
             version,
+            env,
+            root,
         }
     }
 
@@ -205,6 +240,17 @@ impl CatalogToolEngine {
                 }
             })
             .collect()
+    }
+
+    /// Build a [`Command`] for `binary` pre-configured with the engine's `env`
+    /// and `root` (if any), so callers only need to append argv / stdio.
+    fn base_command(&self, binary: &str) -> Command {
+        let mut cmd = Command::new(binary);
+        cmd.envs(&self.env);
+        if let Some(root) = &self.root {
+            cmd.current_dir(root);
+        }
+        cmd
     }
 }
 
@@ -272,7 +318,8 @@ impl CatalogToolEngine {
     fn format_via_stdin(&self, src: &SourceFile) -> anyhow::Result<FormatOutput> {
         let binary = &self.tool.binary;
         let argv = self.argv_with_path("-");
-        let mut child = Command::new(binary)
+        let mut child = self
+            .base_command(binary)
             .args(&argv)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -346,7 +393,8 @@ impl CatalogToolEngine {
 
         let path = temp.path().to_string_lossy().to_string();
         let argv = self.argv_with_path(&path);
-        let output = Command::new(binary)
+        let output = self
+            .base_command(binary)
             .args(&argv)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -368,7 +416,8 @@ impl CatalogToolEngine {
     fn lint_via_stdin(&self, src: &SourceFile) -> anyhow::Result<LintOutcome> {
         let binary = &self.tool.binary;
         let argv = self.argv_with_path("-");
-        let mut child = Command::new(binary)
+        let mut child = self
+            .base_command(binary)
             .args(&argv)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -428,7 +477,8 @@ impl CatalogToolEngine {
 
         let path = temp.path().to_string_lossy().to_string();
         let argv = self.argv_with_path(&path);
-        let output = Command::new(binary)
+        let output = self
+            .base_command(binary)
             .args(&argv)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -575,11 +625,29 @@ mod tests {
         }
     }
 
+    /// Convenience wrapper for tests: build an engine with empty env and no root.
+    fn format_engine_default(
+        tool: &'static Tool,
+        command_name: Option<&str>,
+        args_override: Option<&[String]>,
+    ) -> Option<CatalogToolEngine> {
+        CatalogToolEngine::format_engine(tool, command_name, args_override, BTreeMap::new(), None)
+    }
+
+    /// Convenience wrapper for tests: build a lint engine with empty env and no root.
+    fn lint_engine_default(
+        tool: &'static Tool,
+        command_name: Option<&str>,
+        args_override: Option<&[String]>,
+    ) -> Option<CatalogToolEngine> {
+        CatalogToolEngine::lint_engine(tool, command_name, args_override, BTreeMap::new(), None)
+    }
+
     #[test]
     fn format_engine_builds_for_a_catalog_formatter() {
         let tool = Catalog::get().tool("shfmt").expect("shfmt in catalog");
-        let engine = CatalogToolEngine::format_engine(tool, None, None)
-            .expect("shfmt exposes a format command");
+        let engine =
+            format_engine_default(tool, None, None).expect("shfmt exposes a format command");
         assert_eq!(engine.name(), "shfmt");
         assert!(engine.capabilities().format);
         assert!(!engine.capabilities().lint);
@@ -590,15 +658,14 @@ mod tests {
     fn format_engine_none_for_pure_linter() {
         // shellcheck is lint-only; it has no format command.
         if let Some(tool) = Catalog::get().tool("shellcheck") {
-            assert!(CatalogToolEngine::format_engine(tool, None, None).is_none());
+            assert!(format_engine_default(tool, None, None).is_none());
         }
     }
 
     #[test]
     fn args_override_replaces_catalog_argv() {
         let tool = Catalog::get().tool("shfmt").expect("shfmt in catalog");
-        let engine =
-            CatalogToolEngine::format_engine(tool, None, Some(&["--custom".to_string()])).unwrap();
+        let engine = format_engine_default(tool, None, Some(&["--custom".to_string()])).unwrap();
         assert_eq!(engine.arguments, vec!["--custom".to_string()]);
         assert!(engine.version().contains("--custom"));
     }
@@ -606,7 +673,7 @@ mod tests {
     #[test]
     fn argv_substitutes_path_placeholder() {
         let tool = Catalog::get().tool("gofmt").expect("gofmt in catalog");
-        let engine = CatalogToolEngine::format_engine(tool, None, None).unwrap();
+        let engine = format_engine_default(tool, None, None).unwrap();
         let argv = engine.argv_with_path("/tmp/x.go");
         assert!(argv.iter().any(|a| a == "/tmp/x.go"));
         assert!(!argv.iter().any(|a| a == PATH_PLACEHOLDER));
@@ -624,7 +691,7 @@ mod tests {
                 vec![flag.to_string(), PATH_PLACEHOLDER.to_string()],
             );
             assert!(
-                CatalogToolEngine::lint_engine(tool, None, None).is_none(),
+                lint_engine_default(tool, None, None).is_none(),
                 "mutating flag `{flag}` must be rejected as a linter"
             );
         }
@@ -640,7 +707,7 @@ mod tests {
             "linter",
             vec![PATH_PLACEHOLDER.to_string()],
         );
-        assert!(CatalogToolEngine::lint_engine(tool, None, Some(&["--fix".to_string()])).is_none());
+        assert!(lint_engine_default(tool, None, Some(&["--fix".to_string()])).is_none());
     }
 
     #[cfg(unix)]
@@ -662,8 +729,7 @@ mod tests {
                 PATH_PLACEHOLDER.to_string(),
             ],
         );
-        let engine =
-            CatalogToolEngine::lint_engine(tool, None, None).expect("non-mutating linter wires");
+        let engine = lint_engine_default(tool, None, None).expect("non-mutating linter wires");
         assert!(engine.capabilities().lint);
         assert!(!engine.capabilities().format);
 
@@ -702,7 +768,7 @@ mod tests {
                 PATH_PLACEHOLDER.to_string(),
             ],
         );
-        let engine = CatalogToolEngine::lint_engine(tool, None, None).unwrap();
+        let engine = lint_engine_default(tool, None, None).unwrap();
         let diagnostics = engine
             .lint(&make_src("file.txt", "anything\n"), &cfg())
             .unwrap();
@@ -721,11 +787,77 @@ mod tests {
             .iter()
             .find(|t| t.format_command().is_some() && probe_binary(&t.binary).is_none());
         if let Some(tool) = tool {
-            let engine = CatalogToolEngine::format_engine(tool, None, None).unwrap();
+            let engine = format_engine_default(tool, None, None).unwrap();
             let result = engine
                 .format(&make_src("file.txt", "anything\n"), &cfg())
                 .unwrap();
             assert!(matches!(result, FormatOutput::Unchanged));
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn env_var_is_visible_to_the_spawned_process() {
+        // Prove the engine forwards `env` to the subprocess. Use `sh -c` inline
+        // to avoid exec'ing a freshly written file (ETXTBSY race — see above).
+        let tool = leak_tool(
+            "envcheck",
+            "sh",
+            "linter",
+            vec![
+                "-c".to_string(),
+                // Print the env var on stdout; exit non-zero so we can capture
+                // it as a diagnostic message (exit 0 yields no diagnostics).
+                "printf '%s' \"$POLY_TEST_VAR\"\nexit 1".to_string(),
+                PATH_PLACEHOLDER.to_string(),
+            ],
+        );
+        let env = BTreeMap::from([("POLY_TEST_VAR".to_string(), "hello-from-env".to_string())]);
+        let engine = CatalogToolEngine::lint_engine(tool, None, None, env, None)
+            .expect("non-mutating linter wires");
+        let diagnostics = engine
+            .lint(&make_src("file.txt", "content\n"), &cfg())
+            .unwrap();
+        assert_eq!(diagnostics.len(), 1, "non-zero exit → one diagnostic");
+        assert!(
+            diagnostics[0].title.contains("hello-from-env"),
+            "env var reflected in tool output: {}",
+            diagnostics[0].title
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn root_sets_the_working_directory_of_the_spawned_process() {
+        // Prove the engine sets the working directory via `root`. The tool
+        // prints the cwd; we canonicalize the expected path (macOS symlinks
+        // /var/folders → /private/var/folders) before comparing.
+        let tmp =
+            std::fs::canonicalize(std::env::temp_dir()).unwrap_or_else(|_| std::env::temp_dir());
+        let tool = leak_tool(
+            "cwdcheck",
+            "sh",
+            "linter",
+            vec![
+                "-c".to_string(),
+                // Print cwd (via `pwd -P` for the physical, symlink-resolved
+                // path) then exit non-zero so it surfaces as a diagnostic.
+                "pwd -P\nexit 1".to_string(),
+                PATH_PLACEHOLDER.to_string(),
+            ],
+        );
+        let engine =
+            CatalogToolEngine::lint_engine(tool, None, None, BTreeMap::new(), Some(tmp.clone()))
+                .expect("non-mutating linter wires");
+        let diagnostics = engine
+            .lint(&make_src("file.txt", "content\n"), &cfg())
+            .unwrap();
+        assert_eq!(diagnostics.len(), 1, "non-zero exit → one diagnostic");
+        let tmp_str = tmp.to_string_lossy();
+        assert!(
+            diagnostics[0].title.contains(tmp_str.as_ref()),
+            "cwd reflects root override: {}",
+            diagnostics[0].title
+        );
     }
 }

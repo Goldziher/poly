@@ -328,6 +328,7 @@ fn job_to_hook(
         command,
         args: job.args.clone(),
         env,
+        cwd: job.root.as_ref().map(std::path::PathBuf::from),
         files: files_pattern,
         exclude: exclude_pattern,
         types,

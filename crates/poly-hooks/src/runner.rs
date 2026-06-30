@@ -359,7 +359,13 @@ fn build_command(
             cmd
         }
     };
-    cmd.current_dir(root);
+    // A per-hook `cwd` overrides the repo root (resolved relative to root so
+    // relative paths like `"packages/go"` work as expected).
+    let effective_cwd = hook
+        .cwd
+        .as_deref()
+        .map_or_else(|| root.to_path_buf(), |rel| root.join(rel));
+    cmd.current_dir(&effective_cwd);
     cmd.envs(hook.env.iter());
     inject_sccache_env(&mut cmd, hook, sccache);
     cmd

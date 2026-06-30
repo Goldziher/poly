@@ -90,6 +90,9 @@ pub struct Hook {
     pub args: Vec<String>,
     /// Environment variables injected on top of the inherited environment.
     pub env: BTreeMap<String, String>,
+    /// Working directory override (relative to the repo root). `None` means
+    /// the hook runs from the repo root, matching the existing behaviour.
+    pub cwd: Option<PathBuf>,
     /// Include filter; `None` means "no filename constraint".
     pub files: Option<FilePattern>,
     /// Exclude filter; `None` means "exclude nothing".

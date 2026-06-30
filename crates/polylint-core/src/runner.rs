@@ -152,9 +152,11 @@ fn catalog_engines_for(language: &Language, config: &Config, kind: Kind) -> Vec<
         }
         let command = tool_config.command.as_deref();
         let args = tool_config.args.as_deref();
+        let env = tool_config.env.clone();
+        let root = tool_config.root.as_ref().map(std::path::PathBuf::from);
         let engine = match kind {
-            Kind::Format => CatalogToolEngine::format_engine(tool, command, args),
-            Kind::Lint => CatalogToolEngine::lint_engine(tool, command, args),
+            Kind::Format => CatalogToolEngine::format_engine(tool, command, args, env, root),
+            Kind::Lint => CatalogToolEngine::lint_engine(tool, command, args, env, root),
         };
         if let Some(engine) = engine {
             engines.push(Box::new(engine));

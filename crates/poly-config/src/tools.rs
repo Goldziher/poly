@@ -13,6 +13,10 @@
 //! stages = ["pre-commit"]     # git stages this tool runs in
 //! files = "**/*.sh"           # include glob(s)
 //! exclude = "**/vendor/**"    # exclude glob(s)
+//! root = "packages/go"        # run from this subdirectory (relative to config root)
+//!
+//! [tools.shfmt.env]           # environment variables injected when running the tool
+//! GOPATH = "/home/user/go"
 //! ```
 //!
 //! Tools are **off by default**: a bare `[tools.<name>]` table with no
@@ -107,6 +111,15 @@ pub struct ToolConfig {
     pub files: Option<Patterns>,
     /// File exclude glob(s) filtered from the matched set before the tool runs.
     pub exclude: Option<Patterns>,
+    /// Environment variables injected on top of the inherited environment when
+    /// the tool runs. Applied on both the direct-engine path and the hooks-lowering
+    /// path.
+    #[serde(default)]
+    pub env: BTreeMap<String, String>,
+    /// Working directory the tool runs in, relative to the config/repo root.
+    /// `None` means the repo root. Applied on both the direct-engine path and the
+    /// hooks-lowering path.
+    pub root: Option<String>,
 }
 
 /// Maximum edit distance at which a closest-match name is worth suggesting.
@@ -279,5 +292,33 @@ enabled = true
         let tools = ToolsConfig::default();
         assert!(tools.is_empty());
         tools.validate().expect("empty config is valid");
+    }
+
+    #[test]
+    fn should_parse_env_vars_and_root() {
+        let tools = parse(
+            r#"
+[shfmt]
+enabled = true
+root = "packages/shell"
+
+[shfmt.env]
+MYVAR = "hello"
+OTHER = "world"
+"#,
+        );
+        let shfmt = tools.get("shfmt").expect("shfmt entry present");
+        assert!(shfmt.enabled);
+        assert_eq!(shfmt.root.as_deref(), Some("packages/shell"));
+        assert_eq!(shfmt.env.get("MYVAR").map(String::as_str), Some("hello"));
+        assert_eq!(shfmt.env.get("OTHER").map(String::as_str), Some("world"));
+    }
+
+    #[test]
+    fn should_default_env_to_empty_and_root_to_none() {
+        let tools = parse("[shfmt]\nenabled = true\n");
+        let shfmt = tools.get("shfmt").expect("shfmt entry present");
+        assert!(shfmt.env.is_empty(), "env defaults to empty BTreeMap");
+        assert!(shfmt.root.is_none(), "root defaults to None");
     }
 }
