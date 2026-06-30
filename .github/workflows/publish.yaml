@@ -515,3 +515,35 @@ jobs:
         with:
           packages-dir: pip-package/dist
           skip-existing: true
+
+  update_major_tag:
+    name: Move the major version tag
+    # So consumers can pin the GitHub Action to a moving major tag (e.g.
+    # `Goldziher/polylint@v0`) that tracks the latest release in that series.
+    # Stable releases only; runs once the release is finalized. The major tag
+    # (v0, v1, …) does NOT match the `v[0-9]+.*` push trigger, so force-moving it
+    # never re-triggers this workflow.
+    needs: [meta, finalize_release]
+    if: needs.finalize_release.result == 'success' && !contains(needs.meta.outputs.version, '-rc') && !contains(needs.meta.outputs.version, '-beta') && !contains(needs.meta.outputs.version, '-alpha')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || '' }}
+
+      - name: Move major tag to this release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="${{ needs.meta.outputs.version }}"
+          tag="${{ needs.meta.outputs.tag }}"
+          major="v${version%%.*}"
+          sha="$(git rev-list -n1 "$tag")"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -f "$major" "$sha"
+          git push -f origin "refs/tags/${major}"
+          echo "Moved ${major} → ${tag} (${sha})"

@@ -114,12 +114,13 @@ cargo build --release  # binaries in target/release/{poly,polylint,polyfmt}
 **GitHub Actions:**
 
 ```yaml
-- uses: Goldziher/polylint@v0.1.0
+- uses: Goldziher/polylint@v0   # moving major tag; or pin a release: @v0.1.0
   with:
-    version: v0.1.0  # omit to auto-resolve latest
+    version: latest  # or a specific release, e.g. v0.1.0
 ```
 
 The action caches binaries by default and adds `poly` to `PATH`. Pass `cache: false` to skip caching.
+`@v0` tracks the latest `0.x` release; pin `@v0.1.0` for a fixed version.
 
 ## Quickstart
 
