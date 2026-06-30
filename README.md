@@ -199,6 +199,22 @@ docstring_code_line_length = 120
 [lint.python.ruff]
 select = ["E", "F", "W"]
 
+# Per-tool rule config uses a uniform `select`/`ignore` (rule codes or category
+# names), with per-rule overrides under `[lint.<lang>.<tool>.rules.<id>]`.
+[lint.php.mago]
+select = ["correctness", "security"]   # categories or rule codes
+ignore = ["no-else-clause"]
+php_version = "8.2"
+
+[lint.php.mago.rules.cyclomatic-complexity]
+level = "warning"   # error | warning | info | hint
+threshold = 20
+
+# Suppress specific rules per path glob (lint-only), across every backend.
+[per-file-ignores]
+"tests/**" = ["F401"]
+"**/*.generated.php" = ["correctness"]
+
 [hooks]
 stages = ["pre-commit", "commit-msg"]
 
@@ -700,6 +716,8 @@ poly fmt [PATHS]...
   --check                      Explicit fmt dry run. This is the default.
   --format <pretty|json|toon>  Output format. Default: pretty.
   --config <PATH>              Use an explicit config file.
+  --exclude <GLOB>             Exclude paths from discovery (repeatable; merged
+                               with `[discovery] exclude`).
   --no-cache                   Bypass the result cache.
   -j, --jobs <N>               Parallel jobs. Default: logical cores.
   --no-color                   Disable colored output.

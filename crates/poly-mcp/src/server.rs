@@ -29,6 +29,10 @@ pub struct PathsParams {
     /// working directory like the CLI.
     #[serde(default)]
     pub config: Option<String>,
+    /// Gitignore-style globs to exclude from discovery, merged with the config's
+    /// `[discovery] exclude`. Mirrors the CLI `--exclude` flag.
+    #[serde(default)]
+    pub exclude: Vec<String>,
 }
 
 /// MCP server mirroring the `poly` CLI's lint/format/cache capabilities.
@@ -80,7 +84,7 @@ impl PolyMcpServer {
     async fn lint(&self, params: Parameters<PathsParams>) -> Result<String, ErrorData> {
         let Parameters(args) = params;
         let config = effective_config(args.config, &self.config_override);
-        run_blocking(move || ops::lint(&args.paths, config.as_deref(), false)).await
+        run_blocking(move || ops::lint(&args.paths, &args.exclude, config.as_deref(), false)).await
     }
 
     #[tool(
@@ -90,7 +94,8 @@ impl PolyMcpServer {
     async fn format_check(&self, params: Parameters<PathsParams>) -> Result<String, ErrorData> {
         let Parameters(args) = params;
         let config = effective_config(args.config, &self.config_override);
-        run_blocking(move || ops::format(&args.paths, config.as_deref(), false)).await
+        run_blocking(move || ops::format(&args.paths, &args.exclude, config.as_deref(), false))
+            .await
     }
 
     #[tool(
@@ -100,7 +105,7 @@ impl PolyMcpServer {
     async fn lint_fix(&self, params: Parameters<PathsParams>) -> Result<String, ErrorData> {
         let Parameters(args) = params;
         let config = effective_config(args.config, &self.config_override);
-        run_blocking(move || ops::lint(&args.paths, config.as_deref(), true)).await
+        run_blocking(move || ops::lint(&args.paths, &args.exclude, config.as_deref(), true)).await
     }
 
     #[tool(
@@ -110,7 +115,7 @@ impl PolyMcpServer {
     async fn format_write(&self, params: Parameters<PathsParams>) -> Result<String, ErrorData> {
         let Parameters(args) = params;
         let config = effective_config(args.config, &self.config_override);
-        run_blocking(move || ops::format(&args.paths, config.as_deref(), true)).await
+        run_blocking(move || ops::format(&args.paths, &args.exclude, config.as_deref(), true)).await
     }
 
     #[tool(

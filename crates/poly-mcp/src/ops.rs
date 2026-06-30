@@ -38,10 +38,18 @@ fn resolve_paths(paths: &[String]) -> Vec<PathBuf> {
 /// Lint `paths`. When `fix` is true, available autofixes are applied in place
 /// before the remaining diagnostics are reported. Returns the same JSON the
 /// CLI emits under `--format json`.
-pub fn lint(paths: &[String], config: Option<&str>, fix: bool) -> anyhow::Result<String> {
+pub fn lint(
+    paths: &[String],
+    exclude: &[String],
+    config: Option<&str>,
+    fix: bool,
+) -> anyhow::Result<String> {
     let config = resolve_config(config.map(Path::new))?;
     let resolved = resolve_paths(paths);
-    let opts = RunOptions::default();
+    let opts = RunOptions {
+        exclude: exclude.to_vec(),
+        ..RunOptions::default()
+    };
     let results = polylint_core::lint(&resolved, &config, &opts, fix, false)?;
     Ok(report::report_lint_json(&results))
 }
@@ -49,10 +57,18 @@ pub fn lint(paths: &[String], config: Option<&str>, fix: bool) -> anyhow::Result
 /// Format `paths`. When `write` is true, changed files are rewritten in place;
 /// otherwise this is a dry run (`--check`). Returns the same JSON the CLI emits
 /// under `--format json`.
-pub fn format(paths: &[String], config: Option<&str>, write: bool) -> anyhow::Result<String> {
+pub fn format(
+    paths: &[String],
+    exclude: &[String],
+    config: Option<&str>,
+    write: bool,
+) -> anyhow::Result<String> {
     let config = resolve_config(config.map(Path::new))?;
     let resolved = resolve_paths(paths);
-    let opts = RunOptions::default();
+    let opts = RunOptions {
+        exclude: exclude.to_vec(),
+        ..RunOptions::default()
+    };
     let results = polylint_core::format(&resolved, &config, &opts, write, false)?;
     Ok(report::report_format_json(&results))
 }

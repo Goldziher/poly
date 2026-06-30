@@ -129,6 +129,16 @@ fn build_excludes(
     for glob in exclude {
         if let Err(error) = builder.add(&format!("!{glob}")) {
             tracing::warn!(%glob, %error, "skipping invalid [discovery] exclude glob");
+            continue;
+        }
+        // `dir/**` matches files *inside* `dir` but not `dir` itself, so the
+        // walker would descend the whole subtree before discarding each entry.
+        // Also exclude the bare directory so it is pruned before descent (like
+        // PRUNED_DIRECTORIES), turning an `O(subtree)` walk into `O(1)`.
+        if let Some(dir) = glob.strip_suffix("/**")
+            && let Err(error) = builder.add(&format!("!{dir}"))
+        {
+            tracing::warn!(%dir, %error, "skipping derived directory exclude");
         }
     }
     match builder.build() {

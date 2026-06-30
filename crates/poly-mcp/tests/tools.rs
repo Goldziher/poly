@@ -27,7 +27,7 @@ fn fixture_with_defect() -> tempfile::TempDir {
 fn lint_emits_diagnostic_contract_json() {
     let dir = fixture_with_defect();
     let path = dir.path().join("bad.rs");
-    let json = ops::lint(&[path.display().to_string()], None, false).unwrap();
+    let json = ops::lint(&[path.display().to_string()], &[], None, false).unwrap();
     let parsed: Value = serde_json::from_str(&json).unwrap();
     let results = parsed.as_array().expect("lint json is an array");
     assert!(!results.is_empty(), "expected at least one lint result");
@@ -47,7 +47,7 @@ fn format_check_reports_changed_without_writing() {
     let path = dir.path().join("bad.rs");
     let original = "fn main() {}   \n";
     std::fs::write(&path, original).unwrap();
-    let json = ops::format(&[path.display().to_string()], None, false).unwrap();
+    let json = ops::format(&[path.display().to_string()], &[], None, false).unwrap();
     let parsed: Value = serde_json::from_str(&json).unwrap();
     let results = parsed.as_array().expect("format json is an array");
     // The format contract serializes path + changed (formatted body is skipped).
@@ -63,7 +63,12 @@ fn format_check_reports_changed_without_writing() {
 fn explicit_missing_config_is_an_error() {
     // Config resolution mirrors the CLI: an explicit, unreadable config path is
     // a hard error rather than a silent fallback.
-    let result = ops::lint(&[".".to_string()], Some("/nonexistent/poly.toml"), false);
+    let result = ops::lint(
+        &[".".to_string()],
+        &[],
+        Some("/nonexistent/poly.toml"),
+        false,
+    );
     assert!(result.is_err(), "missing explicit config should error");
 }
 

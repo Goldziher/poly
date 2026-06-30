@@ -125,3 +125,186 @@ fn already_formatted_returns_unchanged() {
         "expected Unchanged for already-clean PHP"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Config-driven tests: rule selection, ignore, level override, format options.
+//
+// Test file: `<?php\nvar_dump('hello');\n`
+//   Fires (default config):
+//     - strict-types   (Correctness, Warning) — no declare(strict_types=1)
+//     - no-debug-symbols (Security, Info)     — var_dump usage
+// ---------------------------------------------------------------------------
+
+/// A PHP file that triggers rules from two different categories.
+///
+/// - `strict-types`      — Correctness — fired by absence of `declare(strict_types=1)`
+/// - `no-debug-symbols`  — Security    — fired by `var_dump` call
+const MULTI_CATEGORY_PHP: &str = "<?php\nvar_dump('hello');\n";
+
+fn cfg_from_str(toml_str: &str) -> EngineConfig {
+    EngineConfig {
+        globals: GlobalDefaults::default(),
+        indent_width: 4,
+        options: toml::from_str(toml_str).expect("valid TOML"),
+    }
+}
+
+/// Default config fires both `strict-types` (Correctness) and
+/// `no-debug-symbols` (Security).
+#[test]
+fn default_config_fires_both_categories() {
+    let engine = MagoEngine;
+    let src = make_src("multi.php", MULTI_CATEGORY_PHP);
+    let diags = engine.lint(&src, &engine_cfg()).unwrap();
+
+    let codes: Vec<_> = diags.iter().filter_map(|d| d.code.as_deref()).collect();
+
+    assert!(
+        codes.contains(&"strict-types"),
+        "expected strict-types in default results; got: {codes:?}"
+    );
+    assert!(
+        codes.contains(&"no-debug-symbols"),
+        "expected no-debug-symbols in default results; got: {codes:?}"
+    );
+}
+
+/// `select = ["correctness"]` limits results to Correctness rules only.
+/// - `strict-types` (Correctness) must still appear.
+/// - `no-debug-symbols` (Security) must be absent.
+#[test]
+fn select_by_category_restricts_to_correctness_rules() {
+    let engine = MagoEngine;
+    let src = make_src("multi.php", MULTI_CATEGORY_PHP);
+    let cfg = cfg_from_str(r#"select = ["correctness"]"#);
+
+    let diags = engine.lint(&src, &cfg).unwrap();
+    let codes: Vec<_> = diags.iter().filter_map(|d| d.code.as_deref()).collect();
+
+    assert!(
+        codes.contains(&"strict-types"),
+        "strict-types (correctness) should fire; got: {codes:?}"
+    );
+    assert!(
+        !codes.contains(&"no-debug-symbols"),
+        "no-debug-symbols (security) should be absent; got: {codes:?}"
+    );
+}
+
+/// Ignoring every category empties the `only` allowlist, which mago runs as
+/// "no rules" (not "all rules") — so no linter diagnostics remain.
+#[test]
+fn ignore_all_categories_yields_no_lint_diagnostics() {
+    let engine = MagoEngine;
+    let src = make_src("multi.php", MULTI_CATEGORY_PHP);
+    let cfg = cfg_from_str(
+        r#"ignore = ["clarity","best-practices","consistency","deprecation","maintainability","redundancy","security","safety","correctness"]"#,
+    );
+
+    let diags = engine.lint(&src, &cfg).unwrap();
+    // MULTI_CATEGORY_PHP is valid, so there are no syntax/parse diagnostics to
+    // filter; every remaining diagnostic would be a linter finding.
+    let lint_codes: Vec<_> = diags
+        .iter()
+        .filter_map(|d| d.code.as_deref())
+        .filter(|c| *c != "syntax" && *c != "parse")
+        .collect();
+    assert!(
+        lint_codes.is_empty(),
+        "ignoring all categories must run zero rules; got: {lint_codes:?}"
+    );
+}
+
+/// `ignore = ["strict-types"]` suppresses exactly that rule.
+/// `no-debug-symbols` must still appear.
+#[test]
+fn ignore_code_suppresses_that_finding() {
+    let engine = MagoEngine;
+    let src = make_src("multi.php", MULTI_CATEGORY_PHP);
+    let cfg = cfg_from_str(r#"ignore = ["strict-types"]"#);
+
+    let diags = engine.lint(&src, &cfg).unwrap();
+    let codes: Vec<_> = diags.iter().filter_map(|d| d.code.as_deref()).collect();
+
+    assert!(
+        !codes.contains(&"strict-types"),
+        "strict-types should be suppressed; got: {codes:?}"
+    );
+    assert!(
+        codes.contains(&"no-debug-symbols"),
+        "no-debug-symbols should still fire; got: {codes:?}"
+    );
+}
+
+/// `[rules.strict-types] level = "error"` overrides that rule's severity from
+/// Warning to Error.
+#[test]
+fn level_override_changes_severity_to_error() {
+    let engine = MagoEngine;
+    let src = make_src("multi.php", MULTI_CATEGORY_PHP);
+    let cfg = cfg_from_str(
+        r#"
+[rules.strict-types]
+level = "error"
+"#,
+    );
+
+    let diags = engine.lint(&src, &cfg).unwrap();
+    let strict_types_diag = diags
+        .iter()
+        .find(|d| d.code.as_deref() == Some("strict-types"))
+        .expect("strict-types should fire");
+
+    assert_eq!(
+        strict_types_diag.severity,
+        polylint_core::engine::Severity::Error,
+        "strict-types level override to 'error' should produce Severity::Error"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Format option fixture: `function-brace-style = "same_line"` changes output.
+//
+// mago default: function braces on next line  `function foo()\n{\n`
+// With same_line:                              `function foo() {\n`
+// ---------------------------------------------------------------------------
+
+/// A PHP function whose brace placement we can verify.
+const FUNCTION_PHP: &str = "<?php\nfunction foo() {\n    return 1;\n}\n";
+
+/// Default `function-brace-style` is `next_line`; the formatter moves the
+/// opening brace to a new line.
+#[test]
+fn default_format_places_function_brace_on_next_line() {
+    let engine = MagoEngine;
+    let src = make_src("fn.php", FUNCTION_PHP);
+    match engine.format(&src, &engine_cfg()).unwrap() {
+        FormatOutput::Formatted(text) => {
+            assert!(
+                text.contains("function foo()\n{"),
+                "expected next-line brace style; got:\n{text}"
+            );
+        }
+        FormatOutput::Unchanged => panic!("expected Formatted"),
+    }
+}
+
+/// `function-brace-style = "same_line"` keeps the brace on the same line as
+/// the function signature.  Verified by snapshot.
+#[test]
+fn format_option_function_brace_style_same_line() {
+    let engine = MagoEngine;
+    let src = make_src("fn.php", FUNCTION_PHP);
+    let cfg = cfg_from_str(r#"function-brace-style = "same_line""#);
+    let formatted = match engine.format(&src, &cfg).unwrap() {
+        FormatOutput::Formatted(text) => text,
+        FormatOutput::Unchanged => panic!("expected Formatted"),
+    };
+    // The opening brace must be on the same line as the function signature.
+    assert!(
+        formatted.contains("function foo() {"),
+        "expected same-line brace style; got:\n{formatted}"
+    );
+    // Snapshot the exact output for regression tracking.
+    insta::assert_snapshot!("mago_format_same_line_brace", formatted);
+}

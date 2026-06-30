@@ -8,46 +8,64 @@
 //!    [`mago_text_edit::TextEdit`] for the current file are wired as an
 //!    [`Edit`] fix.
 //!
-//! PHP version defaults to PHP 8.4; the linter settings default is PHP 8.0 but
-//! we override it to match the formatter.
+//! ## Config keys (`[lint.php.mago]`)
+//!
+//! | Key | Type | Default |
+//! |-----|------|---------|
+//! | `select` | `[String]` | all enabled rules |
+//! | `extend_select` | `[String]` | `[]` |
+//! | `ignore` | `[String]` | `[]` |
+//! | `[rules.<id>]` | table | — |
+//! | `[rules.<id>] level` | `"error"\|"warning"\|"info"\|"hint"` | rule default |
+//! | `php_version` | `"8.2"` | `"8.4"` |
+//! | `integrations` | `["laravel","symfony",…]` | `[]` |
+//!
+//! Both rule codes (`"strict-types"`) and category names (`"correctness"`) are
+//! accepted in `select`, `extend_select`, and `ignore`.  An unknown value is a
+//! hard error so typos are caught early.
 
 use std::borrow::Cow;
+use std::str::FromStr as _;
 
 use mago_allocator::LocalArena;
 use mago_database::file::File;
 use mago_database::file::HasFileId as _;
 use mago_linter::Linter;
+use mago_linter::integration::{Integration, IntegrationSet};
 use mago_linter::settings::Settings;
 use mago_names::resolver::NameResolver;
 use mago_php_version::PHPVersion;
 use mago_reporting::Level;
 use mago_span::HasSpan as _;
+use mago_syntax::error::ParseError;
 use mago_syntax::parser::parse_file;
 use mago_text_edit::Safety;
 
 use crate::config::EngineConfig;
 use crate::engine::{Diagnostic, Edit, Severity, SourceFile, Span};
+use crate::engines::rule_config::RuleSelection;
 
-/// Target PHP version for linting and name resolution.
+use super::rules;
+
+/// Polylint-default PHP version used when the user does not specify one.
 const PHP_VERSION: PHPVersion = PHPVersion::PHP84;
+
+// ── Public entry point ────────────────────────────────────────────────────────
 
 /// Lint a single PHP source file.
 ///
 /// All arena-backed objects are scoped to this function so the engine struct
 /// itself stays `Send + Sync` even though [`LocalArena`] is `!Sync`.
-pub(super) fn lint_php(src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
+pub(super) fn lint_php(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
     let arena = LocalArena::new();
 
-    // Build an ephemeral in-memory file.  The name must be `Cow<'static, [u8]>`;
-    // the contents require an owned copy because File takes ownership.
+    // Build an ephemeral in-memory file.
     let file = File::ephemeral(
         Cow::Borrowed(b"input.php"),
         Cow::Owned(src.content.as_bytes().to_vec()),
     );
 
-    // Parse the file.  The program (and its errors slice) borrows from `arena`.
     let program = parse_file(&arena, &file);
-
     let mut diags: Vec<Diagnostic> = Vec::new();
 
     // ── 1. Surface parse errors ──────────────────────────────────────────────
@@ -68,34 +86,41 @@ pub(super) fn lint_php(src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<
     }
 
     // ── 2. Run the linter ────────────────────────────────────────────────────
+    let selection = RuleSelection::from_options(cfg);
+    let php_version = rules::parse_php_version(cfg)?.unwrap_or(PHP_VERSION);
+    let integrations = parse_integrations(cfg)?;
+
     let settings = Settings {
-        php_version: PHP_VERSION,
+        php_version,
+        integrations,
         ..Settings::default()
     };
-    let names = NameResolver::new(&arena).resolve(program);
-    let linter = Linter::new(&arena, &settings, None, false);
-    let issues = linter.lint(&file, program, &names);
 
+    // Build the 'only' allowlist when the user supplied any selection config.
+    // None → run all default-enabled rules unchanged (fast path).
+    //
+    // PERF: when a selection is configured this expands the rule registry (and
+    // `Linter::new` rebuilds it) once per file, though the config is constant per
+    // language. The registry is ~100 rules, so this is bounded; caching an
+    // `Arc<RuleRegistry>` per engine instance (via `Linter::from_registry`) is the
+    // optimization, deferred until measured on a real PHP corpus per the repo's
+    // measure-before-optimizing rule.
+    let only_list: Option<Vec<String>> = if selection.is_empty() {
+        None
+    } else {
+        Some(build_only_list(&selection, php_version, integrations)?)
+    };
+    let only_ref: Option<&[String]> = only_list.as_deref();
+
+    let names = NameResolver::new(&arena).resolve(program);
+    let linter = Linter::new(&arena, &settings, only_ref, false);
+    let issues = linter.lint(&file, program, &names);
     let file_id = file.file_id();
 
     for issue in issues.iter() {
-        let severity = match issue.level {
-            Level::Error => Severity::Error,
-            Level::Warning => Severity::Warning,
-            Level::Help => Severity::Hint,
-            Level::Note => Severity::Info,
-        };
-
-        // Use the primary annotation span as the diagnostic location.
+        let severity = issue_severity(issue, &selection);
         let span = issue.primary_span().map(|s| convert_span(s, &file));
-
-        // Wire all safe edits for the current file.  The runner applies the
-        // full set atomically (overlap guard included), so multi-edit fixes
-        // are safe to forward.
         let fix = extract_safe_fixes(issue, file_id, &src.content);
-
-        // mago exposes a longer `help` string (falling back to the first note)
-        // and a rule documentation `link`; surface both for `--verbose`.
         let description = issue.help.clone().or_else(|| issue.notes.first().cloned());
 
         diags.push(Diagnostic {
@@ -114,7 +139,102 @@ pub(super) fn lint_php(src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<
     Ok(diags)
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// ── Config parsing ────────────────────────────────────────────────────────────
+
+/// Parse `integrations` from `cfg.options` as a list of integration name strings.
+///
+/// # Errors
+///
+/// Returns `anyhow::Error` when a string is not a recognised integration name.
+fn parse_integrations(cfg: &EngineConfig) -> anyhow::Result<IntegrationSet> {
+    let Some(arr) = cfg
+        .options
+        .get("integrations")
+        .and_then(toml::Value::as_array)
+    else {
+        return Ok(IntegrationSet::empty());
+    };
+    let mut set = IntegrationSet::empty();
+    for val in arr {
+        let Some(s) = val.as_str() else {
+            continue;
+        };
+        match Integration::from_str(s) {
+            Ok(integration) => set.insert(integration),
+            Err(_) => {
+                anyhow::bail!(
+                    "unknown mago integration name {:?}. Valid values: psl, guzzle, monolog, \
+                     carbon, amphp, reactphp, symfony, laravel, tempest, neutomic, spiral, \
+                     cakephp, yii, laminas, cycle, doctrine, wordpress, drupal, magento, \
+                     phpunit, pest, behat, codeception, phpspec",
+                    s
+                );
+            }
+        }
+    }
+    Ok(set)
+}
+
+// ── Allowlist construction ────────────────────────────────────────────────────
+
+/// Build the `only` allowlist from a [`RuleSelection`].
+///
+/// 1. Start with `select` (expanded) or the default-enabled codes.
+/// 2. Add `extend_select` (expanded).
+/// 3. Remove `ignore` (expanded).
+fn build_only_list(
+    selection: &RuleSelection,
+    php_version: PHPVersion,
+    integrations: IntegrationSet,
+) -> anyhow::Result<Vec<String>> {
+    // Base set.
+    let mut active: Vec<String> = if selection.select.is_empty() {
+        rules::default_enabled_codes(php_version, integrations)
+    } else {
+        rules::expand_to_codes(&selection.select, php_version, integrations)?
+    };
+
+    // extend_select — adds codes not already present.
+    let extended = rules::expand_to_codes(&selection.extend_select, php_version, integrations)?;
+    for code in extended {
+        if !active.contains(&code) {
+            active.push(code);
+        }
+    }
+
+    // ignore — removes matching codes.
+    let ignored = rules::expand_to_codes(&selection.ignore, php_version, integrations)?;
+    active.retain(|code| !ignored.contains(code));
+
+    Ok(active)
+}
+
+// ── Severity helpers ──────────────────────────────────────────────────────────
+
+/// Determine the polylint [`Severity`] for a lint issue, applying any
+/// per-rule level override from `selection.rules`.
+fn issue_severity(issue: &mago_reporting::Issue, selection: &RuleSelection) -> Severity {
+    // Check for a user-configured level override first.
+    if let Some(code) = issue.code.as_deref()
+        && let Some(opts) = selection.rules.get(code)
+        && let Some(level) = opts.level
+    {
+        return level;
+    }
+    map_level(issue.level)
+}
+
+/// Convert a mago [`Level`] to a polylint [`Severity`].
+fn map_level(level: Level) -> Severity {
+    match level {
+        Level::Error => Severity::Error,
+        Level::Warning => Severity::Warning,
+        Level::Help => Severity::Hint,
+        Level::Note => Severity::Info,
+    }
+}
+
+// ── Span / edit helpers ───────────────────────────────────────────────────────
 
 /// Convert a mago byte-offset [`mago_span::Span`] to a polylint 1-based
 /// line/column [`Span`] using [`File`]'s built-in line-number index.
@@ -134,11 +254,11 @@ fn convert_span(span: mago_span::Span, file: &File) -> Span {
 }
 
 /// Return a short stable code string for a parse error kind.
-fn parse_error_code(error: &mago_syntax::error::ParseError) -> String {
-    use mago_syntax::error::ParseError;
+fn parse_error_code(error: &ParseError) -> String {
     match error {
-        ParseError::SyntaxError(_) => "syntax".to_string(),
-        ParseError::UnclosedLiteralString(_, _) => "syntax".to_string(),
+        ParseError::SyntaxError(_) | ParseError::UnclosedLiteralString(_, _) => {
+            "syntax".to_string()
+        }
         _ => "parse".to_string(),
     }
 }
@@ -146,9 +266,8 @@ fn parse_error_code(error: &mago_syntax::error::ParseError) -> String {
 /// Extract all safe [`Edit`]s from a lint issue that apply to `file_id`.
 ///
 /// Only edits marked [`Safety::Safe`] within the byte bounds of `source` are
-/// included.  If the issue has no safe edits, or edits on a different file,
-/// an empty `Vec` is returned.  The runner applies the returned set atomically
-/// (with an internal overlap guard), so it is safe to return multiple edits.
+/// included.  The runner applies the returned set atomically (with an internal
+/// overlap guard), so it is safe to return multiple edits.
 fn extract_safe_fixes(
     issue: &mago_reporting::Issue,
     file_id: mago_database::file::FileId,

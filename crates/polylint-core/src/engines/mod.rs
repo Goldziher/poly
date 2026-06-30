@@ -15,6 +15,7 @@ pub mod oxc;
 pub mod r;
 pub mod rubyfmt;
 pub mod ruff;
+pub mod rule_config;
 pub mod rumdl;
 pub mod sqruff;
 pub mod taplo;

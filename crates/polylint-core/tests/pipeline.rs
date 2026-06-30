@@ -24,6 +24,7 @@ fn lint_flags_trailing_whitespace() {
     let opts = RunOptions {
         no_cache: true,
         jobs: Some(1),
+        exclude: Vec::new(),
     };
     let results =
         polylint_core::lint(&[dir.path().to_path_buf()], &cfg, &opts, false, false).unwrap();
@@ -44,6 +45,7 @@ fn format_check_does_not_write_but_reports_change() {
     let opts = RunOptions {
         no_cache: true,
         jobs: Some(1),
+        exclude: Vec::new(),
     };
 
     let results =
@@ -65,6 +67,7 @@ fn format_write_is_idempotent() {
     let opts = RunOptions {
         no_cache: true,
         jobs: Some(1),
+        exclude: Vec::new(),
     };
 
     let first =
@@ -93,6 +96,7 @@ fn lint_fix_applies_autofixes_and_dry_run_does_not() {
     let opts = RunOptions {
         no_cache: true,
         jobs: Some(1),
+        exclude: Vec::new(),
     };
 
     // Dry run (fix = false) must not touch the file on disk.
@@ -165,6 +169,7 @@ fn lint_json_output_schema_conforms_to_diagnostic_contract() {
     let opts = RunOptions {
         no_cache: true,
         jobs: Some(1),
+        exclude: Vec::new(),
     };
 
     let results =

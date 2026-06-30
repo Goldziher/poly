@@ -80,6 +80,11 @@ pub struct CommonArgs {
     #[arg(short = 'j', long)]
     pub jobs: Option<usize>,
 
+    /// Gitignore-style glob to exclude from discovery (repeatable). Merged with
+    /// the config's `[discovery] exclude`. Example: `--exclude 'test_apps/**'`.
+    #[arg(long = "exclude", value_name = "GLOB")]
+    pub exclude: Vec<String>,
+
     /// Disable colored output.
     #[arg(long)]
     pub no_color: bool,
@@ -224,6 +229,7 @@ fn prepare(common: &CommonArgs) -> Result<(Vec<PathBuf>, Config, RunOptions), Ex
     let opts = RunOptions {
         no_cache: common.no_cache,
         jobs: common.jobs,
+        exclude: common.exclude.clone(),
     };
     Ok((paths, config, opts))
 }

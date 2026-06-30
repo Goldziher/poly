@@ -11,6 +11,7 @@
 //! fallback. Discovery walks upward from a start directory and, within each
 //! directory, prefers `poly.toml` over `polylint.toml`.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
@@ -62,6 +63,11 @@ pub struct PolyConfig {
     pub cache: CacheConfig,
     /// `[tools.<name>]` — opted-in vendored catalog tools (ADR 0013).
     pub tools: ToolsConfig,
+    /// `[per-file-ignores]` — map of gitignore-style path glob → rule codes to
+    /// suppress for files matching that glob (lint-only). Codes are matched
+    /// against the normalized `Diagnostic.code` (exact or prefix), so a single
+    /// table covers every backend (e.g. ruff `F401`, mago `too-many-methods`).
+    pub per_file_ignores: BTreeMap<String, Vec<String>>,
 }
 
 /// `[discovery]` — tunes the file walk that direct `poly lint` / `poly fmt` /
@@ -74,8 +80,10 @@ pub struct PolyConfig {
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct DiscoveryConfig {
-    /// Gitignore-style globs excluded from discovery, e.g. `"test_apps/**"`.
-    pub exclude: Vec<String>,
+    /// Gitignore-style globs excluded from discovery. Accepts a single string or
+    /// an array (`exclude = "test_apps/**"` or `exclude = ["a/**", "b/**"]`),
+    /// matching the `files`/`exclude` shape used throughout `[hooks]`/`[tools]`.
+    pub exclude: Patterns,
 }
 
 impl PolyConfig {
@@ -166,6 +174,8 @@ struct RawPolyConfig {
     hooks: HooksConfig,
     cache: CacheConfig,
     tools: ToolsConfig,
+    #[serde(rename = "per-file-ignores")]
+    per_file_ignores: BTreeMap<String, Vec<String>>,
 }
 
 impl From<RawPolyConfig> for PolyConfig {
@@ -179,6 +189,7 @@ impl From<RawPolyConfig> for PolyConfig {
             hooks: raw.hooks,
             cache: raw.cache,
             tools: raw.tools,
+            per_file_ignores: raw.per_file_ignores,
         }
     }
 }
@@ -241,8 +252,40 @@ exclude = ["test_apps/**", "artifacts/**"]
         .unwrap();
         let config = PolyConfig::load_file(&path).expect("load");
         assert_eq!(
-            config.discovery.exclude,
-            vec!["test_apps/**".to_string(), "artifacts/**".to_string()],
+            config.discovery.exclude.as_slice(),
+            &["test_apps/**".to_string(), "artifacts/**".to_string()],
+        );
+    }
+
+    #[test]
+    fn parses_per_file_ignores() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("poly.toml");
+        fs::write(
+            &path,
+            "[per-file-ignores]\n\"tests/**\" = [\"F401\", \"too-many-methods\"]\n\"*.gen.py\" = [\"E501\"]\n",
+        )
+        .unwrap();
+        let config = PolyConfig::load_file(&path).expect("load");
+        assert_eq!(
+            config.per_file_ignores.get("tests/**"),
+            Some(&vec!["F401".to_string(), "too-many-methods".to_string()]),
+        );
+        assert_eq!(
+            config.per_file_ignores.get("*.gen.py"),
+            Some(&vec!["E501".to_string()]),
+        );
+    }
+
+    #[test]
+    fn discovery_exclude_accepts_a_single_string() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("poly.toml");
+        fs::write(&path, "[discovery]\nexclude = \"test_apps/**\"\n").unwrap();
+        let config = PolyConfig::load_file(&path).expect("load");
+        assert_eq!(
+            config.discovery.exclude.as_slice(),
+            &["test_apps/**".to_string()]
         );
     }
 

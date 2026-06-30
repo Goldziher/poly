@@ -62,6 +62,7 @@ fn run_and_group() -> HashMap<String, Vec<Diagnostic>> {
     let opts = RunOptions {
         no_cache: true,
         jobs: Some(2),
+        exclude: Vec::new(),
     };
     let results = polylint_core::lint(
         &[conformance_fixtures_dir()],

@@ -2963,6 +2963,7 @@ dependencies = [
  "mago-syntax",
  "memchr",
  "schemars",
+ "serde",
  "unicode-width 0.2.2",
 ]
 
@@ -4434,6 +4435,7 @@ dependencies = [
  "anyhow",
  "criterion",
  "dockerfile-parser",
+ "globset",
  "graphql-parser",
  "hcl-edit",
  "hcl-rs",
