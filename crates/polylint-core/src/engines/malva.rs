@@ -14,7 +14,7 @@
 //! user places in the options table.
 
 use malva::Syntax;
-use malva::config::{FormatOptions, LayoutOptions};
+use malva::config::FormatOptions;
 
 use crate::config::EngineConfig;
 use crate::engine::{Capabilities, Engine, FormatOutput, SourceFile};
@@ -91,16 +91,18 @@ fn build_options(cfg: &EngineConfig) -> FormatOptions {
         toml::Value::Table(cfg.options.clone())
             .try_into()
             .unwrap_or_else(|error| {
-                tracing::warn!(%error, "[fmt.css.malva] options could not be parsed; using defaults");
+                tracing::warn!(%error, "[fmt.<css|scss|less>.malva] options could not be parsed; using defaults");
                 FormatOptions::default()
             })
     };
 
-    // Poly's layout overrides always win.
-    options.layout = LayoutOptions {
-        print_width: cfg.globals.line_length,
-        indent_width: cfg.indent_width,
-        ..LayoutOptions::default()
+    // Poly's layout always wins — these come from globals, not the user table.
+    // (use_tabs has no global, so it stays user-controllable from the table.)
+    options.layout.print_width = cfg.globals.line_length;
+    options.layout.indent_width = cfg.indent_width;
+    options.layout.line_break = match cfg.globals.line_ending {
+        crate::config::LineEnding::Crlf => malva::config::LineBreak::Crlf,
+        crate::config::LineEnding::Lf => malva::config::LineBreak::Lf,
     };
     options
 }

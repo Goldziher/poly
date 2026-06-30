@@ -46,7 +46,7 @@ use crate::{
 };
 
 /// The taplo crate version this backend wraps; used as part of the cache key.
-const TAPLO_VERSION: &str = "0.14.0";
+const TAPLO_VERSION: &str = "0.14.0+opts-1";
 
 /// Tier-1 languages handled by this backend.
 static LANGUAGES: &[Language] = &[Language::Toml];
@@ -192,7 +192,9 @@ fn build_options(cfg: &EngineConfig) -> Options {
         .options
         .get("indent_width")
         .and_then(toml::Value::as_integer)
-        && v > 0
+        // Cap at 32 so a pathological `indent_width` can't allocate a huge
+        // indent string per file.
+        && (1..=32).contains(&v)
     {
         opts.indent_string = " ".repeat(v as usize);
     }

@@ -43,7 +43,7 @@ use crate::language::Language;
 pub struct SqruffEngine;
 
 /// sqruff-lib crate version; part of the cache key so upgrades invalidate stale results.
-const SQRUFF_VERSION: &str = "0.38.0";
+const SQRUFF_VERSION: &str = "0.38.0+rule-configs-1";
 
 /// Languages handled by this backend.
 static LANGUAGES: &[Language] = &[Language::Sql];
@@ -167,7 +167,12 @@ fn build_fluff_config(cfg: &EngineConfig) -> anyhow::Result<FluffConfig> {
             if let Some(opts_table) = rule_opts.as_table() {
                 ini.push_str(&format!("\n[sqruff:rules:{rule_name}]\n"));
                 for (key, val) in opts_table {
-                    ini.push_str(&format!("{key} = {}\n", toml_val_to_ini_str(val)));
+                    // Skip non-scalar values rather than emit a bare `key = `
+                    // (which sqruff's INI parser would read as an empty value).
+                    let val_str = toml_val_to_ini_str(val);
+                    if !val_str.is_empty() {
+                        ini.push_str(&format!("{key} = {val_str}\n"));
+                    }
                 }
             }
         }
@@ -183,7 +188,9 @@ fn build_fluff_config(cfg: &EngineConfig) -> anyhow::Result<FluffConfig> {
 /// casing (case-insensitive in the INI parser, but matches the convention).
 fn toml_val_to_ini_str(v: &toml::Value) -> String {
     match v {
-        toml::Value::String(s) => s.clone(),
+        // Strip newlines so a value can't inject a spurious `[section]` or key
+        // into the generated INI.
+        toml::Value::String(s) => s.replace(['\n', '\r'], " "),
         toml::Value::Boolean(b) => {
             if *b {
                 "True".to_string()

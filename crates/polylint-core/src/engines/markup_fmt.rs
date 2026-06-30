@@ -38,7 +38,7 @@
 //! from poly globals and override anything in the options table.
 
 use markup_fmt::Language as MarkupLanguage;
-use markup_fmt::config::{FormatOptions, LayoutOptions};
+use markup_fmt::config::FormatOptions;
 use markup_fmt::format_text;
 
 use crate::config::EngineConfig;
@@ -141,16 +141,18 @@ fn build_options(cfg: &EngineConfig) -> FormatOptions {
         toml::Value::Table(cfg.options.clone())
             .try_into()
             .unwrap_or_else(|error| {
-                tracing::warn!(%error, "[fmt.html.markup_fmt] options could not be parsed; using defaults");
+                tracing::warn!(%error, "[fmt.<html|vue|svelte|…>.markup_fmt] options could not be parsed; using defaults");
                 FormatOptions::default()
             })
     };
 
-    // Poly's layout overrides always win.
-    options.layout = LayoutOptions {
-        print_width: cfg.globals.line_length,
-        indent_width: cfg.indent_width,
-        ..LayoutOptions::default()
+    // Poly's layout always wins — these come from globals, not the user table.
+    // (use_tabs has no global, so it stays user-controllable from the table.)
+    options.layout.print_width = cfg.globals.line_length;
+    options.layout.indent_width = cfg.indent_width;
+    options.layout.line_break = match cfg.globals.line_ending {
+        crate::config::LineEnding::Crlf => markup_fmt::config::LineBreak::Crlf,
+        crate::config::LineEnding::Lf => markup_fmt::config::LineBreak::Lf,
     };
     options
 }

@@ -147,6 +147,10 @@ fn build_format_options(cfg: &EngineConfig) -> FormatOptions {
     options.layout.print_width = cfg.globals.line_length;
     options.layout.indent_width = cfg.indent_width;
     options.layout.use_tabs = false;
+    options.layout.line_break = match cfg.globals.line_ending {
+        crate::config::LineEnding::Crlf => pretty_graphql::config::LineBreak::Crlf,
+        crate::config::LineEnding::Lf => pretty_graphql::config::LineBreak::Lf,
+    };
     options
 }
 
