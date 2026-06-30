@@ -26,12 +26,14 @@
 
 use std::borrow::Cow;
 use std::str::FromStr as _;
+use std::sync::{Arc, OnceLock};
 
 use mago_allocator::LocalArena;
 use mago_database::file::File;
 use mago_database::file::HasFileId as _;
 use mago_linter::Linter;
 use mago_linter::integration::{Integration, IntegrationSet};
+use mago_linter::registry::RuleRegistry;
 use mago_linter::settings::Settings;
 use mago_names::resolver::NameResolver;
 use mago_php_version::PHPVersion;
@@ -54,9 +56,18 @@ const PHP_VERSION: PHPVersion = PHPVersion::PHP84;
 
 /// Lint a single PHP source file.
 ///
+/// `registry_cache` is the engine's [`OnceLock`]-backed registry slot.  On the
+/// first call the registry is built and stored; subsequent calls reuse the
+/// cached [`Arc<RuleRegistry>`] so [`RuleRegistry::build`] runs at most once
+/// per engine instance (i.e. once per language per run in production).
+///
 /// All arena-backed objects are scoped to this function so the engine struct
 /// itself stays `Send + Sync` even though [`LocalArena`] is `!Sync`.
-pub(super) fn lint_php(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
+pub(super) fn lint_php(
+    src: &SourceFile,
+    cfg: &EngineConfig,
+    registry_cache: &OnceLock<Arc<RuleRegistry>>,
+) -> anyhow::Result<Vec<Diagnostic>> {
     let arena = LocalArena::new();
 
     // Build an ephemeral in-memory file.
@@ -98,13 +109,6 @@ pub(super) fn lint_php(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<V
 
     // Build the 'only' allowlist when the user supplied any selection config.
     // None → run all default-enabled rules unchanged (fast path).
-    //
-    // PERF: when a selection is configured this expands the rule registry (and
-    // `Linter::new` rebuilds it) once per file, though the config is constant per
-    // language. The registry is ~100 rules, so this is bounded; caching an
-    // `Arc<RuleRegistry>` per engine instance (via `Linter::from_registry`) is the
-    // optimization, deferred until measured on a real PHP corpus per the repo's
-    // measure-before-optimizing rule.
     let only_list: Option<Vec<String>> = if selection.is_empty() {
         None
     } else {
@@ -112,8 +116,23 @@ pub(super) fn lint_php(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<V
     };
     let only_ref: Option<&[String]> = only_list.as_deref();
 
+    // Retrieve or build the rule registry.
+    //
+    // PERF: `RuleRegistry::build` iterates all ~100 rules and compiles glob
+    // patterns — measurably expensive at scale.  Because one `MagoEngine`
+    // instance is created per language per run and all files share the same
+    // resolved config, we cache the result in the engine's `OnceLock`.
+    //
+    // NOTE: The `OnceLock` initialises with the FIRST call's `settings` and
+    // `only_ref`.  Since `plan_engines` creates one engine per run with a
+    // constant config, all calls see consistent results.  In tests each test
+    // creates its own `MagoEngine::default()`, so the lock is fresh per test.
+    let registry = registry_cache
+        .get_or_init(|| Arc::new(RuleRegistry::build(&settings, only_ref, false)))
+        .clone();
+
     let names = NameResolver::new(&arena).resolve(program);
-    let linter = Linter::new(&arena, &settings, only_ref, false);
+    let linter = Linter::from_registry(&arena, registry, php_version);
     let issues = linter.lint(&file, program, &names);
     let file_id = file.file_id();
 

@@ -16,7 +16,7 @@ use std::sync::{Arc, OnceLock};
 use oxc_allocator::Allocator;
 use oxc_diagnostics::Severity as OxcSeverity;
 use oxc_formatter::JsFormatOptions;
-use oxc_formatter_core::{IndentWidth, LineWidth};
+use oxc_formatter_core::{IndentStyle, IndentWidth, LineWidth};
 use oxc_formatter_json::{JsonFormatOptions, JsonVariant};
 use oxc_linter::{
     AllowWarnDeny, ConfigStore, ConfigStoreBuilder, ExternalPluginStore, LintFilter, LintOptions,
@@ -26,12 +26,18 @@ use oxc_span::SourceType;
 
 use crate::config::EngineConfig;
 use crate::engine::{Capabilities, Diagnostic, Edit, FormatOutput, Severity, SourceFile, Span};
+use crate::engines::rule_config::RuleSelection;
 use crate::language::Language;
 
 /// Version string folded into the blake3 cache key.
 /// Bump whenever the output of `lint` or `format` could change.
 /// Reflects the oxc monorepo rev + formatter version + oxlint integration marker.
-const VERSION: &str = "oxc_formatter:0.56.0+oxlint+parser:0.56.0+rev:5762638+json-fmt";
+/// `+rules-v2`: per-rule `AllowWarnDeny::Deny` severity support added.
+/// `+fmt-opts`:  JS quote_style, semicolons, trailing_commas, arrow_parentheses,
+///               bracket_spacing, bracket_same_line, indent_style; JSON bracket_spacing
+///               and trailing_commas now wired from `cfg.options`.
+const VERSION: &str =
+    "oxc_formatter:0.56.0+oxlint+parser:0.56.0+rev:5762638+json-fmt+rules-v2+fmt-opts";
 
 static LANGUAGES: &[Language] = &[
     Language::JavaScript,
@@ -188,32 +194,61 @@ fn run_with_service(service: &LintService, src: &SourceFile) -> Vec<Message> {
     service.run_source(&fs, vec![arc_path])
 }
 
-/// Build a fresh [`LintService`] applying `select` / `ignore` rule filters from
-/// `cfg.options`.
+/// Build a fresh [`LintService`] applying rule filters from `cfg.options`.
 ///
 /// Only called when `cfg.options` is non-empty; the empty-config fast path
 /// reuses the shared [`OnceLock`] service from [`lint_service`].
 ///
+/// ## Config keys consumed
+///
 /// * `select = ["rule", …]` — enable each named rule at Warning severity.
+/// * `extend_select = ["rule", …]` — add rules on top of the default set.
 /// * `ignore = ["rule", …]` — disable each named rule (Allow).
+/// * `[rules.<id>] level = "error"` — promote a rule to Error/Deny severity.
+/// * `[rules.<id>] level = "warning"|"info"|"hint"` — keep at Warn severity.
+///
+/// Per-rule level mapping: `"error"` → [`AllowWarnDeny::Deny`];
+/// `"warning"` / `"info"` / `"hint"` → [`AllowWarnDeny::Warn`].
+/// `None` level (table present, no `level` key) leaves the rule's default.
 ///
 /// Unrecognised or malformed rule names are silently skipped so that a typo
 /// in the user's config does not prevent the other rules from running.
 fn build_configured_service(cfg: &EngineConfig) -> anyhow::Result<LintService> {
+    let selection = RuleSelection::from_options(cfg);
+
     let mut plugin_store = ExternalPluginStore::default();
     let mut builder = ConfigStoreBuilder::default();
 
-    if let Some(arr) = cfg.options.get("select").and_then(|v| v.as_array()) {
-        for name in arr.iter().filter_map(|v| v.as_str()) {
-            if let Ok(filter) = LintFilter::new(AllowWarnDeny::Warn, name.to_owned()) {
-                builder = builder.with_filter(&filter);
-            }
+    // `select` — explicit rule list, each at Warn.
+    for name in &selection.select {
+        if let Ok(filter) = LintFilter::new(AllowWarnDeny::Warn, name.to_owned()) {
+            builder = builder.with_filter(&filter);
         }
     }
 
-    if let Some(arr) = cfg.options.get("ignore").and_then(|v| v.as_array()) {
-        for name in arr.iter().filter_map(|v| v.as_str()) {
-            if let Ok(filter) = LintFilter::new(AllowWarnDeny::Allow, name.to_owned()) {
+    // `extend_select` — additive on top of the default set, also at Warn.
+    for name in &selection.extend_select {
+        if let Ok(filter) = LintFilter::new(AllowWarnDeny::Warn, name.to_owned()) {
+            builder = builder.with_filter(&filter);
+        }
+    }
+
+    // `ignore` — suppress each named rule entirely.
+    for name in &selection.ignore {
+        if let Ok(filter) = LintFilter::new(AllowWarnDeny::Allow, name.to_owned()) {
+            builder = builder.with_filter(&filter);
+        }
+    }
+
+    // `[rules.<id>] level` — per-rule severity override.
+    // `error` → Deny (oxlint Error), everything else → Warn (oxlint Warning).
+    for (code, opts) in &selection.rules {
+        if let Some(level) = opts.level {
+            let awd = match level {
+                Severity::Error => AllowWarnDeny::Deny,
+                _ => AllowWarnDeny::Warn,
+            };
+            if let Ok(filter) = LintFilter::new(awd, code.to_owned()) {
                 builder = builder.with_filter(&filter);
             }
         }
@@ -320,16 +355,30 @@ fn map_oxlint_message(msg: Message, content: &str) -> Diagnostic {
     }
 }
 
-/// Format a JS/TS/JSX/TSX file using `oxc_formatter` (Prettier-compatible).
+/// Build [`JsFormatOptions`] from a resolved [`EngineConfig`].
 ///
-/// Line width is taken from `cfg.globals.line_length` (project default: 120).
-/// oxfmt's own default is 100; we override to 120 per polylint's opinionated
-/// layer. Indent width comes from `cfg.indent_width` (default: 2).
-fn format_js(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
-    let allocator = Allocator::new();
-    let source_type = source_type_for(&src.language);
+/// ## Layering order (Prettier-compatible defaults → polylint overrides → user config)
+///
+/// | `cfg.options` key | Type | Values |
+/// |---|---|---|
+/// | `quote_style` | string | `"double"` (default) / `"single"` |
+/// | `jsx_quote_style` | string | `"double"` (default) / `"single"` |
+/// | `semicolons` | string | `"always"` (default) / `"as-needed"` |
+/// | `trailing_commas` | string | `"all"` (default) / `"es5"` / `"none"` |
+/// | `arrow_parentheses` | string | `"always"` (default) / `"as-needed"` |
+/// | `bracket_spacing` | bool | `true` (default) |
+/// | `bracket_same_line` | bool | `false` (default) |
+/// | `indent_style` | string | `"space"` (default) / `"tab"` |
+///
+/// `line_width` and `indent_width` are always taken from `cfg.globals.line_length`
+/// and `cfg.indent_width` respectively — user cannot override them here.
+fn build_js_options(cfg: &EngineConfig) -> JsFormatOptions {
+    use oxc_formatter::{
+        ArrowParentheses, BracketSameLine, BracketSpacing, QuoteStyle, Semicolons,
+        TrailingCommas as JsTrailingCommas,
+    };
 
-    // Line width from config, clamped to a valid value.
+    // Line width from polylint globals, clamped to a valid value.
     let line_width = u16::try_from(cfg.globals.line_length)
         .ok()
         .and_then(|w| LineWidth::try_from(w).ok())
@@ -343,11 +392,101 @@ fn format_js(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutpu
         .and_then(|w| IndentWidth::try_from(w).ok())
         .unwrap_or_default(); // default is 2
 
-    let options = JsFormatOptions {
+    // `indent_style`: "tab" | "space" (default).
+    let indent_style = cfg
+        .options
+        .get("indent_style")
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse::<IndentStyle>().ok())
+        .unwrap_or_default();
+
+    // `quote_style`: "double" (default) | "single".
+    let quote_style = cfg
+        .options
+        .get("quote_style")
+        .and_then(|v| v.as_str())
+        .map(|s| match s {
+            "single" => QuoteStyle::Single,
+            _ => QuoteStyle::Double,
+        })
+        .unwrap_or_default();
+
+    // `jsx_quote_style`: "double" (default) | "single".
+    let jsx_quote_style = cfg
+        .options
+        .get("jsx_quote_style")
+        .and_then(|v| v.as_str())
+        .map(|s| match s {
+            "single" => QuoteStyle::Single,
+            _ => QuoteStyle::Double,
+        })
+        .unwrap_or_default();
+
+    // `semicolons`: "always" (default) | "as-needed".
+    let semicolons = cfg
+        .options
+        .get("semicolons")
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse::<Semicolons>().ok())
+        .unwrap_or_default();
+
+    // `trailing_commas`: "all" (default) | "es5" | "none".
+    let trailing_commas = cfg
+        .options
+        .get("trailing_commas")
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse::<JsTrailingCommas>().ok())
+        .unwrap_or_default();
+
+    // `arrow_parentheses`: "always" (default) | "as-needed".
+    let arrow_parentheses = cfg
+        .options
+        .get("arrow_parentheses")
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse::<ArrowParentheses>().ok())
+        .unwrap_or_default();
+
+    // `bracket_spacing`: bool, default true.
+    let bracket_spacing = cfg
+        .options
+        .get("bracket_spacing")
+        .and_then(|v| v.as_bool())
+        .map(BracketSpacing::from)
+        .unwrap_or_default();
+
+    // `bracket_same_line`: bool, default false.
+    let bracket_same_line = cfg
+        .options
+        .get("bracket_same_line")
+        .and_then(|v| v.as_bool())
+        .map(BracketSameLine::from)
+        .unwrap_or_default();
+
+    JsFormatOptions {
         line_width,
         indent_width,
+        indent_style,
+        quote_style,
+        jsx_quote_style,
+        semicolons,
+        trailing_commas,
+        arrow_parentheses,
+        bracket_spacing,
+        bracket_same_line,
         ..JsFormatOptions::default()
-    };
+    }
+}
+
+/// Format a JS/TS/JSX/TSX file using `oxc_formatter` (Prettier-compatible).
+///
+/// Line width is taken from `cfg.globals.line_length` (project default: 120).
+/// Additional formatter options (`quote_style`, `semicolons`, `trailing_commas`,
+/// `arrow_parentheses`, `bracket_spacing`, `bracket_same_line`, `indent_style`)
+/// can be set via `[fmt.<lang>.oxc]` in `polylint.toml`.
+fn format_js(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
+    let allocator = Allocator::new();
+    let source_type = source_type_for(&src.language);
+    let options = build_js_options(cfg);
 
     // format() parses internally; returns Err on the first parse error.
     let formatted =
@@ -408,17 +547,28 @@ fn lint_json(src: &SourceFile) -> anyhow::Result<Vec<Diagnostic>> {
     }
 }
 
-fn format_json(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
-    let allocator = Allocator::new();
+/// Build [`JsonFormatOptions`] from a resolved [`EngineConfig`].
+///
+/// ## Layering order
+///
+/// | `cfg.options` key | Type | Values |
+/// |---|---|---|
+/// | `bracket_spacing` | bool | `true` (default) |
+/// | `trailing_commas` | string | `"always"` (default for JSONC) / `"never"` |
+///
+/// `line_width` and `indent_width` are always sourced from `cfg.globals.line_length`
+/// and `cfg.indent_width`. The variant (Json vs Jsonc) is derived from the file language
+/// and cannot be overridden per-option.
+fn build_json_options(src: &SourceFile, cfg: &EngineConfig) -> JsonFormatOptions {
+    use oxc_formatter_json::{BracketSpacing as JsonBracketSpacing, TrailingCommas as JsonTc};
 
-    // Route JSONC through the Jsonc variant so the formatter preserves comments.
-    // The Json variant enforces strict JSON output (no trailing commas, double quotes).
+    // Route JSONC through the Jsonc variant so comments are preserved.
     let variant = match src.language {
         Language::Jsonc => JsonVariant::Jsonc,
         _ => JsonVariant::Json,
     };
 
-    // Line width from config, clamped to the formatter's valid range.
+    // Line width from polylint globals, clamped to the formatter's valid range.
     let line_width = u16::try_from(cfg.globals.line_length)
         .ok()
         .and_then(|w| LineWidth::try_from(w).ok())
@@ -432,16 +582,43 @@ fn format_json(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOut
         .and_then(|w| IndentWidth::try_from(w).ok())
         .unwrap_or_default(); // default is 2
 
-    let options = JsonFormatOptions {
+    // `bracket_spacing`: bool, default true.
+    let bracket_spacing = cfg
+        .options
+        .get("bracket_spacing")
+        .and_then(|v| v.as_bool())
+        .map(JsonBracketSpacing::from)
+        .unwrap_or_default();
+
+    // `trailing_commas`: "always" (default) | "never".
+    // For the strict Json variant trailing commas are always off regardless of
+    // this setting; the option is most useful for JSONC/JSON5.
+    let trailing_commas = cfg
+        .options
+        .get("trailing_commas")
+        .and_then(|v| v.as_str())
+        .map(|s| match s {
+            "never" => JsonTc::Never,
+            _ => JsonTc::Always,
+        })
+        .unwrap_or_default();
+
+    JsonFormatOptions {
         variant,
         line_width,
         indent_width,
+        bracket_spacing,
+        trailing_commas,
         // Expand::Auto (default): objects collapse to one line when the source
         // had no newline after `{`, and arrays pack inline when they fit within
-        // line_width. This replaces serde_json's one-element-per-line behavior
-        // for short arrays like `["CodeBlock","Code"]`.
+        // line_width.
         ..JsonFormatOptions::default()
-    };
+    }
+}
+
+fn format_json(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
+    let allocator = Allocator::new();
+    let options = build_json_options(src, cfg);
 
     // On parse error, leave the file unchanged rather than reporting an error
     // (lint_json handles parse diagnostics separately).
@@ -683,5 +860,114 @@ mod tests {
         let other = PathBuf::from("other.ts");
         let result = fs.read_to_arena_str(&other, &allocator);
         assert!(result.is_err());
+    }
+
+    // ── per-rule severity (Task 1a) ───────────────────────────────────────────
+
+    /// `[rules.no-debugger] level = "error"` must promote the `no-debugger`
+    /// diagnostic to [`Severity::Error`] (mapped from `AllowWarnDeny::Deny`).
+    #[test]
+    fn per_rule_deny_via_rules_table_gives_error_severity() {
+        let src = make_src("const x = 1;\ndebugger;\n", Language::JavaScript);
+        let cfg = EngineConfig {
+            globals: GlobalDefaults::default(),
+            indent_width: 2,
+            options: toml::from_str(
+                r#"
+[rules.no-debugger]
+level = "error"
+"#,
+            )
+            .unwrap(),
+        };
+        let diags = lint_js(&src, &cfg).unwrap();
+        let d = diags
+            .iter()
+            .find(|d| d.code.as_deref() == Some("no-debugger"))
+            .expect("no-debugger should fire on `debugger;`");
+        assert_eq!(
+            d.severity,
+            Severity::Error,
+            "level = 'error' should promote to Severity::Error via AllowWarnDeny::Deny"
+        );
+    }
+
+    /// `[rules.no-debugger] level = "warning"` keeps the diagnostic at Warning.
+    #[test]
+    fn per_rule_warn_via_rules_table_keeps_warning_severity() {
+        let src = make_src("const x = 1;\ndebugger;\n", Language::JavaScript);
+        let cfg = EngineConfig {
+            globals: GlobalDefaults::default(),
+            indent_width: 2,
+            options: toml::from_str(
+                r#"
+[rules.no-debugger]
+level = "warning"
+"#,
+            )
+            .unwrap(),
+        };
+        let diags = lint_js(&src, &cfg).unwrap();
+        let d = diags
+            .iter()
+            .find(|d| d.code.as_deref() == Some("no-debugger"))
+            .expect("no-debugger should fire on `debugger;`");
+        assert_eq!(
+            d.severity,
+            Severity::Warning,
+            "level = 'warning' should stay Severity::Warning via AllowWarnDeny::Warn"
+        );
+    }
+
+    // ── formatter options (Task 1b) ───────────────────────────────────────────
+
+    /// `quote_style = "single"` rewrites `"hello"` to `'hello'`.
+    #[test]
+    fn js_format_single_quote_style_rewrites_double_quotes() {
+        // A file with only double-quoted strings; single-quote mode must flip them.
+        let src = make_src("export const greeting = \"hello\";\n", Language::JavaScript);
+        let cfg = EngineConfig {
+            globals: GlobalDefaults::default(),
+            indent_width: 2,
+            options: toml::from_str(r#"quote_style = "single""#).unwrap(),
+        };
+        let out = format_js(&src, &cfg).unwrap();
+        match out {
+            FormatOutput::Formatted(text) => {
+                assert!(
+                    text.contains("'hello'"),
+                    "expected single-quoted string; got: {text:?}"
+                );
+            }
+            FormatOutput::Unchanged => {
+                panic!("expected Formatted output with single quotes, got Unchanged");
+            }
+        }
+    }
+
+    /// `semicolons = "as-needed"` strips the trailing semicolons.
+    #[test]
+    fn js_format_semicolons_as_needed_removes_semicolons() {
+        let src = make_src(
+            "export const x = 1;\nexport const y = 2;\n",
+            Language::JavaScript,
+        );
+        let cfg = EngineConfig {
+            globals: GlobalDefaults::default(),
+            indent_width: 2,
+            options: toml::from_str(r#"semicolons = "as-needed""#).unwrap(),
+        };
+        let out = format_js(&src, &cfg).unwrap();
+        match out {
+            FormatOutput::Formatted(text) => {
+                assert!(
+                    !text.contains(";\n"),
+                    "expected semicolons removed; got: {text:?}"
+                );
+            }
+            FormatOutput::Unchanged => {
+                // Already matches as-needed output — acceptable if no semicolons needed.
+            }
+        }
     }
 }

@@ -21,10 +21,23 @@
 //!
 //! # Capabilities
 //! Lint, format, and single-edit safe autofixes.
+//!
+//! # Registry caching
+//! [`mago_linter::Linter::new`] rebuilds the rule registry on every call.
+//! Because `plan_engines` constructs one [`MagoEngine`] instance per language
+//! per run, and all files for that language share the same resolved
+//! [`EngineConfig`], the registry can be built once and reused.
+//! [`MagoEngine`] holds an [`OnceLock`] that fires on the first `lint` call
+//! and hands the cached [`Arc<RuleRegistry>`] to every subsequent call via
+//! [`mago_linter::Linter::from_registry`].
 
 mod format;
 mod lint;
 pub(super) mod rules;
+
+use std::sync::{Arc, OnceLock};
+
+use mago_linter::registry::RuleRegistry;
 
 use crate::config::EngineConfig;
 use crate::engine::{Capabilities, Diagnostic, Engine, FormatOutput, SourceFile};
@@ -32,10 +45,22 @@ use crate::language::Language;
 
 /// PHP backend using the `mago` linter + formatter.
 ///
-/// The engine is a zero-sized unit struct; all state (arena, parsed program,
-/// linter registry) is created per-call so the engine is `Send + Sync` and
-/// can run inside a rayon `par_iter`.
-pub struct MagoEngine;
+/// Holds a lazily-initialised rule registry so the expensive
+/// [`RuleRegistry::build`] step runs at most once per engine instance.
+/// Each engine instance is created once per language per run by `plan_engines`,
+/// so the `OnceLock` fires once per run.
+pub struct MagoEngine {
+    /// Lazily-built rule registry, shared across all `lint` calls on this instance.
+    pub(super) registry: OnceLock<Arc<RuleRegistry>>,
+}
+
+impl Default for MagoEngine {
+    fn default() -> Self {
+        Self {
+            registry: OnceLock::new(),
+        }
+    }
+}
 
 static LANGUAGES: &[Language] = &[Language::Php];
 
@@ -63,7 +88,7 @@ impl Engine for MagoEngine {
     }
 
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
-        lint::lint_php(src, cfg)
+        lint::lint_php(src, cfg, &self.registry)
     }
 
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {

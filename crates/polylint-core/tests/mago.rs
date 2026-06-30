@@ -41,7 +41,7 @@ const KNOWN_BAD: &str = "<?php\nclass Foo {\n    public function bar(\n";
 
 #[test]
 fn known_bad_diagnostics() {
-    let engine = MagoEngine;
+    let engine = MagoEngine::default();
     let src = make_src("known_bad.php", KNOWN_BAD);
     let diags = engine.lint(&src, &engine_cfg()).unwrap();
 
@@ -75,7 +75,7 @@ const VALID_PHP: &str = "<?php\n\ndeclare(strict_types=1);\n\nfinal class Calcul
 
 #[test]
 fn valid_php_has_no_parse_errors() {
-    let engine = MagoEngine;
+    let engine = MagoEngine::default();
     let src = make_src("valid.php", VALID_PHP);
     let diags = engine.lint(&src, &engine_cfg()).unwrap();
 
@@ -98,7 +98,7 @@ const KNOWN_UNFORMATTED: &str = "<?php\nclass Foo{public function bar(){return 1
 
 #[test]
 fn known_unformatted_output() {
-    let engine = MagoEngine;
+    let engine = MagoEngine::default();
     let src = make_src("unformatted.php", KNOWN_UNFORMATTED);
     match engine.format(&src, &engine_cfg()).unwrap() {
         FormatOutput::Formatted(text) => {
@@ -114,7 +114,7 @@ fn known_unformatted_output() {
 
 #[test]
 fn already_formatted_returns_unchanged() {
-    let engine = MagoEngine;
+    let engine = MagoEngine::default();
     // Use a copy of what mago produces for KNOWN_UNFORMATTED; the exact
     // content is checked in `known_unformatted_output`.  Here we just verify
     // the Unchanged contract on already-clean input.
@@ -153,7 +153,7 @@ fn cfg_from_str(toml_str: &str) -> EngineConfig {
 /// `no-debug-symbols` (Security).
 #[test]
 fn default_config_fires_both_categories() {
-    let engine = MagoEngine;
+    let engine = MagoEngine::default();
     let src = make_src("multi.php", MULTI_CATEGORY_PHP);
     let diags = engine.lint(&src, &engine_cfg()).unwrap();
 
@@ -174,7 +174,7 @@ fn default_config_fires_both_categories() {
 /// - `no-debug-symbols` (Security) must be absent.
 #[test]
 fn select_by_category_restricts_to_correctness_rules() {
-    let engine = MagoEngine;
+    let engine = MagoEngine::default();
     let src = make_src("multi.php", MULTI_CATEGORY_PHP);
     let cfg = cfg_from_str(r#"select = ["correctness"]"#);
 
@@ -195,7 +195,7 @@ fn select_by_category_restricts_to_correctness_rules() {
 /// "no rules" (not "all rules") — so no linter diagnostics remain.
 #[test]
 fn ignore_all_categories_yields_no_lint_diagnostics() {
-    let engine = MagoEngine;
+    let engine = MagoEngine::default();
     let src = make_src("multi.php", MULTI_CATEGORY_PHP);
     let cfg = cfg_from_str(
         r#"ignore = ["clarity","best-practices","consistency","deprecation","maintainability","redundancy","security","safety","correctness"]"#,
@@ -219,7 +219,7 @@ fn ignore_all_categories_yields_no_lint_diagnostics() {
 /// `no-debug-symbols` must still appear.
 #[test]
 fn ignore_code_suppresses_that_finding() {
-    let engine = MagoEngine;
+    let engine = MagoEngine::default();
     let src = make_src("multi.php", MULTI_CATEGORY_PHP);
     let cfg = cfg_from_str(r#"ignore = ["strict-types"]"#);
 
@@ -240,7 +240,7 @@ fn ignore_code_suppresses_that_finding() {
 /// Warning to Error.
 #[test]
 fn level_override_changes_severity_to_error() {
-    let engine = MagoEngine;
+    let engine = MagoEngine::default();
     let src = make_src("multi.php", MULTI_CATEGORY_PHP);
     let cfg = cfg_from_str(
         r#"
@@ -276,7 +276,7 @@ const FUNCTION_PHP: &str = "<?php\nfunction foo() {\n    return 1;\n}\n";
 /// opening brace to a new line.
 #[test]
 fn default_format_places_function_brace_on_next_line() {
-    let engine = MagoEngine;
+    let engine = MagoEngine::default();
     let src = make_src("fn.php", FUNCTION_PHP);
     match engine.format(&src, &engine_cfg()).unwrap() {
         FormatOutput::Formatted(text) => {
@@ -293,7 +293,7 @@ fn default_format_places_function_brace_on_next_line() {
 /// the function signature.  Verified by snapshot.
 #[test]
 fn format_option_function_brace_style_same_line() {
-    let engine = MagoEngine;
+    let engine = MagoEngine::default();
     let src = make_src("fn.php", FUNCTION_PHP);
     let cfg = cfg_from_str(r#"function-brace-style = "same_line""#);
     let formatted = match engine.format(&src, &cfg).unwrap() {
@@ -307,4 +307,36 @@ fn format_option_function_brace_style_same_line() {
     );
     // Snapshot the exact output for regression tracking.
     insta::assert_snapshot!("mago_format_same_line_brace", formatted);
+}
+
+// ---------------------------------------------------------------------------
+// Registry cache: two lint calls on the same engine instance must produce
+// identical results (OnceLock must not corrupt state between calls).
+// ---------------------------------------------------------------------------
+
+/// Two consecutive `lint` calls on the same [`MagoEngine`] instance with
+/// identical config must produce identical diagnostic lists.
+///
+/// This validates that the [`OnceLock<Arc<RuleRegistry>>`] cache is
+/// transparent: the second call reuses the cached registry without changing
+/// output.
+#[test]
+fn two_lint_calls_on_same_instance_produce_identical_results() {
+    let engine = MagoEngine::default();
+    let src = make_src("cached.php", MULTI_CATEGORY_PHP);
+    let cfg = engine_cfg();
+
+    let first = engine.lint(&src, &cfg).unwrap();
+    let second = engine.lint(&src, &cfg).unwrap();
+
+    assert_eq!(
+        first.len(),
+        second.len(),
+        "registry cache must not alter the number of diagnostics"
+    );
+
+    for (a, b) in first.iter().zip(second.iter()) {
+        assert_eq!(a.code, b.code, "diagnostic codes must be identical");
+        assert_eq!(a.severity, b.severity, "severities must be identical");
+    }
 }

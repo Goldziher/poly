@@ -53,7 +53,7 @@ pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
         | Language::Vento
         | Language::Mustache
         | Language::Xml => vec![Box::new(MarkupFmtEngine)],
-        Language::Php => vec![Box::new(MagoEngine)],
+        Language::Php => vec![Box::new(MagoEngine::default())],
         Language::R => vec![Box::new(REngine)],
         Language::Dockerfile => vec![Box::new(DockerfileEngine)],
         // Native toolchain backends. Each `NativeToolEngine` takes the registry
