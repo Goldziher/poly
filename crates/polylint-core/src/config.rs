@@ -84,9 +84,17 @@ impl Config {
             .and_then(|v| v.as_table())
             .cloned()
             .unwrap_or_default();
+        // A user `indent_width` in the per-engine table overrides the language
+        // default, uniformly for every engine (each reads `cfg.indent_width`).
+        let indent_width = options
+            .get("indent_width")
+            .and_then(toml::Value::as_integer)
+            .and_then(|v| usize::try_from(v).ok())
+            .filter(|&v| v > 0)
+            .unwrap_or_else(|| lang.default_indent_width());
         EngineConfig {
             globals: self.defaults.clone(),
-            indent_width: lang.default_indent_width(),
+            indent_width,
             options,
         }
     }

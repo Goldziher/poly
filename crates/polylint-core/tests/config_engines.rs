@@ -179,30 +179,22 @@ fn graphql_format_honors_indent_width_option() {
         "graphql",
         Kind::Format,
     );
-    let out4 = engine.format(&graphql_src(), &cfg4).unwrap();
+    // indent_width = 4 must actually reindent the 2-space input — require
+    // Formatted (an Unchanged result would mean the option was silently ignored).
+    let polylint_core::engine::FormatOutput::Formatted(text4) =
+        engine.format(&graphql_src(), &cfg4).unwrap()
+    else {
+        panic!("indent_width = 4 must reformat the 2-space input; got Unchanged");
+    };
+    assert!(
+        text4
+            .lines()
+            .any(|l| l.starts_with("    ") && !l.starts_with("     ")),
+        "expected a 4-space-indented line in output: {text4:?}"
+    );
 
-    // 4-space output must contain at least one run of 4 leading spaces.
-    match out4 {
-        polylint_core::engine::FormatOutput::Formatted(ref text) => {
-            assert!(
-                text.lines()
-                    .any(|l| l.starts_with("    ") && !l.starts_with("     ")),
-                "expected 4-space indent in output: {text:?}"
-            );
-        }
-        polylint_core::engine::FormatOutput::Unchanged => {
-            // Input already has 2-space indent; formatter with indent=4 should change it.
-            // Verify 2-space default matches the input:
-            assert!(
-                matches!(default_out, polylint_core::engine::FormatOutput::Unchanged),
-                "both default and 4-space produced Unchanged — input must already be 4-space"
-            );
-        }
-    }
-
-    // Default (2-space) output must NOT have a 4-space-indented line that
-    // the 4-space output does have (when the graphql-parser does produce
-    // distinct output for different indent depths).
+    // The 2-space default must NOT use 4-space indentation — proves the option,
+    // not a constant, drives the depth.
     if let polylint_core::engine::FormatOutput::Formatted(ref text2) = default_out {
         assert!(
             !text2

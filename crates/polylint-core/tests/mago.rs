@@ -340,3 +340,29 @@ fn two_lint_calls_on_same_instance_produce_identical_results() {
         assert_eq!(a.severity, b.severity, "severities must be identical");
     }
 }
+
+/// An unknown category/rule name in `select` is a hard error, not silently
+/// dropped (so a typo'd ruleset fails loudly).
+#[test]
+fn select_unknown_category_returns_error() {
+    let engine = MagoEngine::default();
+    let src = make_src("x.php", MULTI_CATEGORY_PHP);
+    let cfg = cfg_from_str("select = [\"totally-not-a-category\"]");
+    assert!(
+        engine.lint(&src, &cfg).is_err(),
+        "an unknown select category must produce an Err"
+    );
+}
+
+/// A non-numeric php_version component (e.g. "8.x") is rejected rather than
+/// silently treated as 8.0.
+#[test]
+fn non_numeric_php_version_component_returns_error() {
+    let engine = MagoEngine::default();
+    let src = make_src("x.php", MULTI_CATEGORY_PHP);
+    let cfg = cfg_from_str("php_version = \"8.x\"");
+    assert!(
+        engine.lint(&src, &cfg).is_err(),
+        "a non-numeric php_version component must produce an Err"
+    );
+}

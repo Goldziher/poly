@@ -49,8 +49,18 @@ pub fn parse_php_version(cfg: &EngineConfig) -> anyhow::Result<Option<PHPVersion
         .next()
         .and_then(|p| p.parse().ok())
         .with_context(|| format!("invalid php_version {text:?}; expected MAJOR[.MINOR[.PATCH]]"))?;
-    let minor: u32 = parts.next().map_or(0, |p| p.parse().unwrap_or(0));
-    let patch: u32 = parts.next().map_or(0, |p| p.parse().unwrap_or(0));
+    // Reject a non-numeric minor/patch (e.g. "8.x") rather than silently
+    // defaulting it to 0 — a non-numeric component is a config error, not a 0.
+    let mut component = |label: &str| -> anyhow::Result<u32> {
+        match parts.next() {
+            None | Some("") => Ok(0),
+            Some(part) => part.parse().with_context(|| {
+                format!("invalid php_version {label} in {text:?}; expected MAJOR[.MINOR[.PATCH]]")
+            }),
+        }
+    };
+    let minor = component("minor")?;
+    let patch = component("patch")?;
     Ok(Some(PHPVersion::new(major, minor, patch)))
 }
 

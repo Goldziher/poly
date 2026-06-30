@@ -146,7 +146,8 @@ fn build_format_options(cfg: &EngineConfig) -> FormatOptions {
     };
     options.layout.print_width = cfg.globals.line_length;
     options.layout.indent_width = cfg.indent_width;
-    options.layout.use_tabs = false;
+    // use_tabs has no global, so it stays user-controllable from the options
+    // table (consistent with malva/markup_fmt), defaulting to spaces.
     options.layout.line_break = match cfg.globals.line_ending {
         crate::config::LineEnding::Crlf => pretty_graphql::config::LineBreak::Crlf,
         crate::config::LineEnding::Lf => pretty_graphql::config::LineBreak::Lf,

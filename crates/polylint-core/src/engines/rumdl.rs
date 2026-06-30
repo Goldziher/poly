@@ -76,7 +76,7 @@ impl Engine for RumdlEngine {
             Some(&rumdl_cfg),
         )
         .map(|warnings| warnings.iter().map(|w| map_warning(w, "rumdl")).collect())
-        .map_err(|e| anyhow::anyhow!("rumdl lint: {e:?}"))
+        .map_err(|e| anyhow::anyhow!("rumdl lint: {e}"))
     }
 
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
