@@ -28,6 +28,7 @@ alejandra.workspace = true
 anyhow.workspace = true
 # dockerfile-parser — Dockerfile AST (MIT); used by the DockerfileEngine
 dockerfile-parser.workspace = true
+globset.workspace = true
 graphql-parser.workspace = true
 hcl-edit.workspace = true
 hcl-rs.workspace = true

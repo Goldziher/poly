@@ -42,6 +42,9 @@ pub struct Config {
     pub fmt: toml::Table,
     /// `[tools.<name>]` — opted-in vendored catalog tools (ADR 0013).
     pub tools: poly_config::ToolsConfig,
+    /// `[per-file-ignores]` — path glob → rule codes suppressed for matching
+    /// files (lint-only). Applied as a post-lint filter on `Diagnostic.code`.
+    pub per_file_ignores: std::collections::BTreeMap<String, Vec<String>>,
 }
 
 /// The slice of config handed to one engine for one file.
@@ -96,6 +99,7 @@ impl From<poly_config::PolyConfig> for Config {
             lint: pc.lint,
             fmt: pc.fmt,
             tools: pc.tools,
+            per_file_ignores: pc.per_file_ignores,
         }
     }
 }

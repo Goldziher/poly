@@ -39,6 +39,63 @@ fn merged_excludes(config: &Config, opts: &RunOptions) -> Vec<String> {
     excludes
 }
 
+/// Compiled `[per-file-ignores]`: each path glob paired with the rule codes to
+/// suppress for files it matches. Built once per run, applied as a post-lint
+/// filter on the normalized `Diagnostic.code` so it is engine-agnostic.
+struct PerFileIgnores {
+    entries: Vec<(globset::GlobMatcher, Vec<String>)>,
+}
+
+impl PerFileIgnores {
+    /// Compile the config map; an invalid glob is skipped with a warning rather
+    /// than failing the run.
+    fn compile(map: &std::collections::BTreeMap<String, Vec<String>>) -> Self {
+        let entries = map
+            .iter()
+            .filter_map(|(glob, rules)| match globset::Glob::new(glob) {
+                Ok(compiled) => Some((compiled.compile_matcher(), rules.clone())),
+                Err(error) => {
+                    tracing::warn!(%glob, %error, "skipping invalid [per-file-ignores] glob");
+                    None
+                }
+            })
+            .collect();
+        Self { entries }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// Drop diagnostics whose `code` matches (exact or prefix, ruff-style) a rule
+    /// listed for a glob the file matches. `rel` is the file path relative to the
+    /// run root, forward-slash normalized (per-file-ignore globs are repo-rooted).
+    fn apply(&self, rel: &str, diagnostics: &mut Vec<Diagnostic>) {
+        if self.entries.is_empty() {
+            return;
+        }
+        diagnostics.retain(|diagnostic| {
+            let Some(code) = diagnostic.code.as_deref() else {
+                return true;
+            };
+            !self.entries.iter().any(|(matcher, rules)| {
+                matcher.is_match(rel)
+                    && rules
+                        .iter()
+                        .any(|rule| code == rule || code.starts_with(rule.as_str()))
+            })
+        });
+    }
+}
+
+/// File path relative to the run root (cwd), forward-slash normalized, for
+/// matching repo-rooted `[per-file-ignores]` globs against `poly lint .` output.
+fn relative_for_match(path: &std::path::Path, cwd: &std::path::Path) -> String {
+    let rel = path.strip_prefix(cwd).unwrap_or(path);
+    let rel = rel.strip_prefix(".").unwrap_or(rel);
+    rel.to_string_lossy().replace('\\', "/")
+}
+
 /// Per-engine debug record for one file. Collected only when debug output is
 /// requested (`--debug`); never built on the default hot path.
 #[derive(Debug, Clone, Serialize)]
@@ -235,6 +292,8 @@ pub fn lint(
     let files = discover(paths, &merged_excludes(config, opts));
     let plans = plan_by_language(&files, config, Kind::Lint);
     prefetch_tier2_grammars(&plans);
+    let ignores = PerFileIgnores::compile(&config.per_file_ignores);
+    let cwd = std::env::current_dir().unwrap_or_default();
     let mut results: Vec<LintResult> = files
         .par_iter()
         .filter_map(|f| match lint_one(f, &plans, &cache, fix, collect_debug) {
@@ -245,6 +304,15 @@ pub fn lint(
                 eprintln!("warning: {}: {error:#}", f.path.display());
                 None
             }
+        })
+        .map(|mut result| {
+            // Suppress per-file-ignored rules before the empty-result filter, so a
+            // file whose only findings are all ignored drops out entirely.
+            if !ignores.is_empty() {
+                let rel = relative_for_match(&result.path, &cwd);
+                ignores.apply(&rel, &mut result.diagnostics);
+            }
+            result
         })
         .filter(|r| !r.diagnostics.is_empty())
         .collect();
@@ -634,6 +702,61 @@ fn configure_pool(jobs: Option<usize>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn diag(code: Option<&str>) -> Diagnostic {
+        Diagnostic {
+            engine: "test".to_string(),
+            code: code.map(str::to_owned),
+            severity: crate::engine::Severity::Warning,
+            title: "x".to_string(),
+            description: None,
+            span: None,
+            url: None,
+            fix: Vec::new(),
+            metadata: std::collections::BTreeMap::new(),
+        }
+    }
+
+    #[test]
+    fn per_file_ignores_suppress_matching_codes() {
+        let mut map = std::collections::BTreeMap::new();
+        map.insert(
+            "tests/**".to_string(),
+            vec!["F401".to_string(), "too-many-methods".to_string()],
+        );
+        let ignores = PerFileIgnores::compile(&map);
+
+        // A file under the glob: listed codes (exact + the prefix family) drop;
+        // an unlisted code and a code-less diagnostic stay.
+        let mut diags = vec![
+            diag(Some("F401")),
+            diag(Some("too-many-methods")),
+            diag(Some("E501")),
+            diag(None),
+        ];
+        ignores.apply("tests/unit/foo.py", &mut diags);
+        let codes: Vec<_> = diags.iter().map(|d| d.code.clone()).collect();
+        assert_eq!(codes, vec![Some("E501".to_string()), None]);
+
+        // A file outside the glob keeps everything.
+        let mut diags = vec![diag(Some("F401"))];
+        ignores.apply("src/foo.py", &mut diags);
+        assert_eq!(diags.len(), 1, "non-matching path is untouched");
+    }
+
+    #[test]
+    fn per_file_ignores_prefix_selector() {
+        let mut map = std::collections::BTreeMap::new();
+        map.insert("gen/**".to_string(), vec!["F".to_string()]);
+        let ignores = PerFileIgnores::compile(&map);
+        let mut diags = vec![diag(Some("F401")), diag(Some("E501"))];
+        ignores.apply("gen/a.py", &mut diags);
+        assert_eq!(
+            diags.iter().map(|d| d.code.clone()).collect::<Vec<_>>(),
+            vec![Some("E501".to_string())],
+            "prefix `F` suppresses the F-family, leaves E"
+        );
+    }
 
     #[test]
     fn merged_excludes_unions_config_and_opts() {
