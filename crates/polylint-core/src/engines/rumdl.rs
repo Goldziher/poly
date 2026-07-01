@@ -7,6 +7,11 @@
 //!
 //! Config layering: rumdl defaults → opinionated override (line-length 120) → user
 //! `[lint.markdown.rumdl]` / `[fmt.markdown.rumdl]` table in `polylint.toml`.
+//!
+//! Rule selection accepts the canonical vocabulary (ADR 0016): `select` /
+//! `extend_select` map onto rumdl's `enable`, and `ignore` maps onto `disable`.
+//! The native `enable` / `disable` keys remain accepted as aliases and are
+//! unioned with the canonical keys.
 
 use rumdl_lib::{
     config::Config as RumdlConfig,
@@ -16,6 +21,7 @@ use rumdl_lib::{
     types::LineLength,
 };
 
+use super::rule_config::{RuleSelection, string_list, union_codes, warn_and_skip_blank};
 use crate::config::EngineConfig;
 use crate::engine::{
     Capabilities, Diagnostic, Edit, Engine, FormatOutput, Severity, SourceFile, Span,
@@ -109,27 +115,24 @@ fn build_rumdl_config(cfg: &EngineConfig) -> RumdlConfig {
         .unwrap_or(cfg.globals.line_length);
     config.global.line_length = LineLength::new(line_length);
 
-    // Optional rule-override lists from polylint.toml.
-    let user_enable: Vec<String> = cfg
-        .options
-        .get("enable")
-        .and_then(toml::Value::as_array)
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(str::to_owned))
-                .collect()
-        })
-        .unwrap_or_default();
-    let user_disable: Vec<String> = cfg
-        .options
-        .get("disable")
-        .and_then(toml::Value::as_array)
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(str::to_owned))
-                .collect()
-        })
-        .unwrap_or_default();
+    // Rule selection (ADR 0016): the canonical `select` / `extend_select` /
+    // `ignore` vocabulary maps onto rumdl's native `enable` / `disable` lists,
+    // unioned with the native aliases when both are present.
+    let selection = RuleSelection::from_options(cfg);
+
+    // Enable list: native `enable` ∪ canonical `select` ∪ canonical `extend_select`.
+    let user_enable = warn_and_skip_blank(
+        union_codes(
+            string_list(cfg, "enable"),
+            selection.select.into_iter().chain(selection.extend_select),
+        ),
+        "rumdl",
+    );
+    // Disable list: native `disable` ∪ canonical `ignore`.
+    let user_disable = warn_and_skip_blank(
+        union_codes(string_list(cfg, "disable"), selection.ignore),
+        "rumdl",
+    );
 
     // Opinionated defaults: disable the rumdl-proprietary stylistic rules, except
     // any the user explicitly re-enabled (so the `enable` list wins — rumdl's

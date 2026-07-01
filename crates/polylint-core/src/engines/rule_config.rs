@@ -106,6 +106,46 @@ pub(crate) fn deserialize_options<T: serde::de::DeserializeOwned + Default>(
         })
 }
 
+/// Union two rule-code lists, preserving first-seen order and dropping exact
+/// duplicates.
+///
+/// Backends that accept both the canonical vocabulary (`select` / `ignore`) and
+/// their own native aliases use this to merge the two sources without emitting a
+/// code twice to the wrapped tool.
+pub(crate) fn union_codes(
+    primary: Vec<String>,
+    extra: impl IntoIterator<Item = String>,
+) -> Vec<String> {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut merged = Vec::new();
+    for code in primary.into_iter().chain(extra) {
+        if seen.insert(code.clone()) {
+            merged.push(code);
+        }
+    }
+    merged
+}
+
+/// Drop blank (empty or whitespace-only) rule codes, emitting a `warn` for each.
+///
+/// Backends that forward codes straight to their wrapped tool have no cheap rule
+/// registry to validate against, so this is the proportionate unknown-code
+/// guard: a code that cannot possibly resolve is surfaced and skipped rather
+/// than silently passed through as an empty INI/list entry.
+pub(crate) fn warn_and_skip_blank(codes: Vec<String>, engine: &str) -> Vec<String> {
+    codes
+        .into_iter()
+        .filter(|code| {
+            if code.trim().is_empty() {
+                tracing::warn!(code = %code, engine, "unknown rule or category; skipping");
+                false
+            } else {
+                true
+            }
+        })
+        .collect()
+}
+
 // ── Private helpers ───────────────────────────────────────────────────────────
 
 fn string_list_from_table(table: &toml::Table, key: &str) -> Vec<String> {

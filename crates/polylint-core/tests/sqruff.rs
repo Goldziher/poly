@@ -6,8 +6,8 @@
 
 use std::path::PathBuf;
 
-use polylint_core::config::{Config, Kind};
-use polylint_core::engine::{Engine, SourceFile};
+use polylint_core::config::{Config, EngineConfig, GlobalDefaults, Kind};
+use polylint_core::engine::{Diagnostic, Engine, SourceFile};
 use polylint_core::engines::sqruff::SqruffEngine;
 use polylint_core::language::Language;
 
@@ -25,6 +25,33 @@ fn lint_cfg() -> polylint_core::config::EngineConfig {
 
 fn fmt_cfg() -> polylint_core::config::EngineConfig {
     Config::default().engine_config(&Language::Sql, "sqruff", Kind::Format)
+}
+
+/// Build an `EngineConfig` whose options table holds a single string-array key.
+fn cfg_with_codes(key: &str, codes: &[&str]) -> EngineConfig {
+    let mut options = toml::Table::new();
+    options.insert(
+        key.to_string(),
+        toml::Value::Array(
+            codes
+                .iter()
+                .map(|c| toml::Value::String((*c).into()))
+                .collect(),
+        ),
+    );
+    EngineConfig {
+        globals: GlobalDefaults::default(),
+        indent_width: 4,
+        options,
+    }
+}
+
+/// Sorted, de-duplicated rule codes present in a diagnostic set (drops `None`).
+fn sorted_codes(diags: &[Diagnostic]) -> Vec<String> {
+    let mut codes: Vec<String> = diags.iter().filter_map(|d| d.code.clone()).collect();
+    codes.sort();
+    codes.dedup();
+    codes
 }
 
 // --- known-bad fixture -------------------------------------------------------
@@ -126,6 +153,63 @@ fn sqruff_capabilities_fix_is_false() {
         !caps.fix,
         "sqruff fix capability must be false (autofix edits are not wired \
          through the polylint Edit path)"
+    );
+}
+
+// --- canonical rule-selection vocabulary -------------------------------------
+//
+// ADR 0016: sqruff must accept the canonical `select` / `ignore` keys in
+// addition to its native `rules` (allow-list) / `exclude_rules` (deny-list).
+// This snippet trips two rules under the default ruleset: LT01 (missing space
+// after the comma) and CP01 (inconsistent keyword capitalisation — `SELECT`
+// upper, `from` lower). Two findings make allow-listing observable.
+
+const COMMA_SQL: &str = "SELECT id,name from users\n";
+
+#[test]
+fn canonical_select_matches_native_rules() {
+    let engine = SqruffEngine;
+    let src = make_source("t.sql", COMMA_SQL);
+
+    let native = engine
+        .lint(&src, &cfg_with_codes("rules", &["LT01"]))
+        .unwrap();
+    let canonical = engine
+        .lint(&src, &cfg_with_codes("select", &["LT01"]))
+        .unwrap();
+
+    assert_eq!(
+        sorted_codes(&native),
+        sorted_codes(&canonical),
+        "canonical `select` must behave like native `rules`"
+    );
+    assert_eq!(
+        sorted_codes(&native),
+        vec!["LT01".to_string()],
+        "allow-listing LT01 must narrow the findings to LT01 only; got: {native:#?}"
+    );
+}
+
+#[test]
+fn canonical_ignore_matches_native_exclude_rules() {
+    let engine = SqruffEngine;
+    let src = make_source("t.sql", COMMA_SQL);
+
+    let native = engine
+        .lint(&src, &cfg_with_codes("exclude_rules", &["LT01"]))
+        .unwrap();
+    let canonical = engine
+        .lint(&src, &cfg_with_codes("ignore", &["LT01"]))
+        .unwrap();
+
+    assert_eq!(
+        sorted_codes(&native),
+        sorted_codes(&canonical),
+        "canonical `ignore` must behave like native `exclude_rules`"
+    );
+    assert!(
+        !sorted_codes(&native).contains(&"LT01".to_string()),
+        "excluding LT01 must suppress it; got: {native:#?}"
     );
 }
 

@@ -8,9 +8,14 @@
 //! | Key | Type | Description |
 //! |-----|------|-------------|
 //! | `dialect` | string | SQL dialect (default `"ansi"`) |
-//! | `rules` | string array | Allow-list of rule codes/groups |
-//! | `exclude_rules` | string array | Deny-list of rule codes/groups |
+//! | `select` | string array | Allow-list of rule codes/groups (canonical, ADR 0016) |
+//! | `rules` | string array | Allow-list alias for `select` (sqruff-native) |
+//! | `ignore` | string array | Deny-list of rule codes/groups (canonical, ADR 0016) |
+//! | `exclude_rules` | string array | Deny-list alias for `ignore` (sqruff-native) |
 //! | `rule_configs` | table | Per-rule parameter overrides (see below) |
+//!
+//! The canonical and native keys are unioned when both are present. Blank codes
+//! are surfaced with a `tracing::warn` and skipped rather than forwarded.
 //!
 //! ### Per-rule parameters (`rule_configs`)
 //! Map rule section names to inline tables of key/value pairs:
@@ -35,6 +40,7 @@ use sqruff_lib::core::linter::core::Linter;
 use sqruff_lib_core::dialects::init::DialectKind;
 use sqruff_lib_core::errors::SQLBaseError;
 
+use super::rule_config::{RuleSelection, string_list, union_codes, warn_and_skip_blank};
 use crate::config::EngineConfig;
 use crate::engine::{Capabilities, Diagnostic, Engine, FormatOutput, Severity, SourceFile, Span};
 use crate::language::Language;
@@ -149,20 +155,27 @@ fn build_fluff_config(cfg: &EngineConfig) -> anyhow::Result<FluffConfig> {
         ini.push_str(&format!("dialect = {dialect_str}\n"));
     }
 
-    // Rule allow-list: `rules = ["CP01", "LT01"]` selects only those rules.
-    if let Some(rules) = cfg.options.get("rules").and_then(|v| v.as_array()) {
-        let codes: Vec<&str> = rules.iter().filter_map(|v| v.as_str()).collect();
-        if !codes.is_empty() {
-            ini.push_str(&format!("rules = {}\n", codes.join(",")));
-        }
+    // Rule selection (ADR 0016): the canonical `select` / `ignore` vocabulary is
+    // unioned with sqruff's native `rules` / `exclude_rules` aliases before being
+    // emitted as the INI allow-list / deny-list.
+    let selection = RuleSelection::from_options(cfg);
+
+    // Allow-list: native `rules` ∪ canonical `select`.
+    let allow = warn_and_skip_blank(
+        union_codes(string_list(cfg, "rules"), selection.select),
+        "sqruff",
+    );
+    if !allow.is_empty() {
+        ini.push_str(&format!("rules = {}\n", allow.join(",")));
     }
 
-    // Rule deny-list: `exclude_rules = ["CP01"]` suppresses those rules.
-    if let Some(excluded) = cfg.options.get("exclude_rules").and_then(|v| v.as_array()) {
-        let codes: Vec<&str> = excluded.iter().filter_map(|v| v.as_str()).collect();
-        if !codes.is_empty() {
-            ini.push_str(&format!("exclude_rules = {}\n", codes.join(",")));
-        }
+    // Deny-list: native `exclude_rules` ∪ canonical `ignore`.
+    let deny = warn_and_skip_blank(
+        union_codes(string_list(cfg, "exclude_rules"), selection.ignore),
+        "sqruff",
+    );
+    if !deny.is_empty() {
+        ini.push_str(&format!("exclude_rules = {}\n", deny.join(",")));
     }
 
     // Per-rule parameters: `[lint.sql.sqruff.rule_configs]`.

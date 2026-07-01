@@ -30,6 +30,16 @@ fn make_src(path: &str, content: &str) -> SourceFile {
     }
 }
 
+/// Build a TOML string-array value from a slice of codes.
+fn code_array(codes: &[&str]) -> toml::Value {
+    toml::Value::Array(
+        codes
+            .iter()
+            .map(|c| toml::Value::String((*c).into()))
+            .collect(),
+    )
+}
+
 fn format_to_string(content: &str) -> String {
     let engine = RuffEngine;
     let src = make_src("fixture.py", content);
@@ -194,6 +204,76 @@ fn inp001_respects_on_disk_package_root() {
             .iter()
             .any(|d| d.code.as_deref() == Some("INP001")),
         "a module with no __init__.py must trip INP001 (rule is active); got: {orphan_diags:?}"
+    );
+}
+
+/// Canonical `extend_select` adds a rule on top of the default set: `print(1)`
+/// is clean under the defaults (F/E4/E7/E9/W6/I/UP/B) but trips T201
+/// (flake8-print) once `extend_select = ["T201"]` is applied.
+#[test]
+fn extend_select_adds_rule_beyond_defaults() {
+    let engine = RuffEngine;
+    let content = "print(1)\n";
+
+    let base = engine
+        .lint(&make_src("m.py", content), &engine_cfg())
+        .unwrap();
+    assert!(
+        !base.iter().any(|d| d.code.as_deref() == Some("T201")),
+        "T201 must not fire under the default rule set; got: {base:?}"
+    );
+
+    let mut options = toml::Table::new();
+    options.insert("extend_select".to_string(), code_array(&["T201"]));
+    let cfg = EngineConfig {
+        options,
+        ..engine_cfg()
+    };
+    let extended = engine.lint(&make_src("m.py", content), &cfg).unwrap();
+    assert!(
+        extended.iter().any(|d| d.code.as_deref() == Some("T201")),
+        "extend_select = [\"T201\"] must flag print; got: {extended:?}"
+    );
+}
+
+/// Regression: canonical `select` narrows the active set and `ignore` removes a
+/// rule from it. `select = ["F"]` flags F401 (unused import); adding
+/// `ignore = ["F401"]` suppresses it.
+#[test]
+fn canonical_select_and_ignore_are_honored() {
+    let engine = RuffEngine;
+
+    let mut select_only = toml::Table::new();
+    select_only.insert("select".to_string(), code_array(&["F"]));
+    let selected = engine
+        .lint(
+            &make_src("known_bad.py", KNOWN_BAD),
+            &EngineConfig {
+                options: select_only,
+                ..engine_cfg()
+            },
+        )
+        .unwrap();
+    assert!(
+        selected.iter().any(|d| d.code.as_deref() == Some("F401")),
+        "select = [\"F\"] must flag F401; got: {selected:?}"
+    );
+
+    let mut with_ignore = toml::Table::new();
+    with_ignore.insert("select".to_string(), code_array(&["F"]));
+    with_ignore.insert("ignore".to_string(), code_array(&["F401"]));
+    let ignored = engine
+        .lint(
+            &make_src("known_bad.py", KNOWN_BAD),
+            &EngineConfig {
+                options: with_ignore,
+                ..engine_cfg()
+            },
+        )
+        .unwrap();
+    assert!(
+        !ignored.iter().any(|d| d.code.as_deref() == Some("F401")),
+        "ignore = [\"F401\"] must suppress F401; got: {ignored:?}"
     );
 }
 

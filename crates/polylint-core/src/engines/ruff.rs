@@ -74,7 +74,15 @@ fn rules_for_codes(codes: &[String]) -> Vec<ruff_linter::registry::Rule> {
     // that borrows the selector — it cannot escape the closure.
     codes
         .iter()
-        .filter_map(|s| RuleSelector::from_str(s).ok())
+        .filter_map(|s| match RuleSelector::from_str(s) {
+            Ok(selector) => Some(selector),
+            Err(_) => {
+                // Warn and skip rather than dropping silently (ADR 0016): a code
+                // that ruff cannot resolve is a user error worth surfacing.
+                tracing::warn!(code = %s, engine = "ruff", "unknown rule or category; skipping");
+                None
+            }
+        })
         .flat_map(|sel| sel.rules(&preview).collect::<Vec<_>>())
         .collect()
 }
@@ -84,13 +92,6 @@ fn build_rule_table(select: &[String], ignore: &[String]) -> RuleTable {
     let selected = rules_for_codes(select);
     let ignored = rules_for_codes(ignore);
     RuleTable::from_iter(selected.into_iter().filter(|rule| !ignored.contains(rule)))
-}
-
-/// Read an array-of-strings option from the engine config.
-///
-/// Delegates to the shared helper in [`super::rule_config`].
-fn string_list(cfg: &EngineConfig, key: &str) -> Vec<String> {
-    super::rule_config::string_list(cfg, key)
 }
 
 /// The opinionated default [`LinterSettings`], built once and shared.
@@ -118,16 +119,17 @@ fn default_settings() -> &'static LinterSettings {
 /// default set omits). Called only when config options are present; the empty
 /// case uses [`default_settings`] to avoid rebuilding per file.
 fn build_settings(cfg: &EngineConfig) -> LinterSettings {
-    let select = string_list(cfg, "select");
-    let extend_select = string_list(cfg, "extend_select");
-    let ignore = string_list(cfg, "ignore");
+    // Parse the canonical `select` / `extend_select` / `ignore` vocabulary
+    // through the shared parser (ADR 0016) rather than reading each key ad hoc.
+    let selection = super::rule_config::RuleSelection::from_options(cfg);
 
-    let mut codes: Vec<String> = if select.is_empty() {
+    let mut codes: Vec<String> = if selection.select.is_empty() {
         RULE_CODES.iter().map(|s| (*s).to_owned()).collect()
     } else {
-        select
+        selection.select
     };
-    codes.extend(extend_select);
+    codes.extend(selection.extend_select);
+    let ignore = selection.ignore;
 
     let line_length = cfg
         .options
