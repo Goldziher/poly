@@ -13,8 +13,10 @@ use crate::config::{Config, EngineConfig, Kind};
 use crate::discover::{DiscoveredFile, discover};
 use crate::engine::{Diagnostic, Edit, Engine, FormatOutput, SourceFile};
 use crate::engines::catalog_tool::CatalogToolEngine;
+use crate::engines::rule_config::RuleSelection;
 use crate::filter::{
-    PerFileIgnores, is_generated_lockfile, match_bases, merged_excludes, relative_for_match,
+    PerFileIgnores, SeverityRemap, is_generated_lockfile, match_bases, merged_excludes,
+    relative_for_match,
 };
 use crate::language::Language;
 use crate::registry::engines_for;
@@ -95,6 +97,10 @@ struct EnginePlan {
     engine: Box<dyn Engine>,
     config: EngineConfig,
     serialized_args: SerializedArgs,
+    /// Per-rule severity overrides for this engine, compiled once. Applied to
+    /// this plan's diagnostics only — never globally — so one engine's rule code
+    /// cannot remap another engine's identically-named code.
+    severity_remap: SeverityRemap,
 }
 
 /// Resolve the engines (filtered to those with the requested capability) for a
@@ -111,13 +117,29 @@ fn plan_engines(language: &Language, config: &Config, kind: Kind) -> Vec<EngineP
         .map(|engine| {
             let cfg = config.engine_config(language, engine.name(), kind);
             let serialized_args = ResultCache::serialize_args(&cache_args(&cfg));
+            let severity_remap = build_severity_remap(&cfg);
             EnginePlan {
                 engine,
                 config: cfg,
                 serialized_args,
+                severity_remap,
             }
         })
         .collect()
+}
+
+/// Compile this engine's per-rule severity overrides from its resolved config:
+/// the `[lint.<lang>.<tool>.rules.<code>] level` entries where a level was set.
+/// Applied uniformly as a post-lint remap, so an engine with no native severity
+/// config still honors a configured `level`.
+fn build_severity_remap(cfg: &EngineConfig) -> SeverityRemap {
+    let selection = RuleSelection::from_options(cfg);
+    let entries = selection
+        .rules
+        .into_iter()
+        .filter_map(|(code, opts)| opts.level.map(|level| (code, level)))
+        .collect();
+    SeverityRemap::new(entries)
 }
 
 /// The args table folded into the cache key for an engine: the user's per-engine
@@ -412,15 +434,18 @@ fn lint_content(
             &digest,
         );
         if let Some(bytes) = cache.get(Namespace::Lint, &key)
-            && let Ok(diags) = serde_json::from_slice::<Vec<Diagnostic>>(&bytes)
+            && let Ok(mut diags) = serde_json::from_slice::<Vec<Diagnostic>>(&bytes)
         {
             push_engine_debug(debug.as_mut(), plan, None);
+            if !plan.severity_remap.is_empty() {
+                plan.severity_remap.apply(&mut diags);
+            }
             all.extend(diags);
             continue;
         }
         // Time the engine only when debug collection is on (zero cost otherwise).
         let started = collect_debug.then(std::time::Instant::now);
-        let diags = plan.engine.lint(&src, &plan.config)?;
+        let mut diags = plan.engine.lint(&src, &plan.config)?;
         push_engine_debug(debug.as_mut(), plan, started);
         if let Ok(bytes) = serde_json::to_vec(&diags)
             && let Err(error) = cache.put(Namespace::Lint, &key, &bytes)
@@ -429,6 +454,11 @@ fn lint_content(
                 engine = plan.engine.name(),
                 "failed to store lint cache entry: {error:#}"
             );
+        }
+        // Remap after caching the raw diagnostics: apply on both the fresh and
+        // cache-hit paths so a configured `level` is honored identically.
+        if !plan.severity_remap.is_empty() {
+            plan.severity_remap.apply(&mut diags);
         }
         all.extend(diags);
     }

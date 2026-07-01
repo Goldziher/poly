@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use crate::engine::Diagnostic;
+use crate::engine::{Diagnostic, Severity};
 
 /// The full exclude set for a run: `[discovery] exclude` from config, plus any
 /// call-time `--exclude` / MCP globs. Built once per run (not in the hot loop).
@@ -89,6 +89,58 @@ impl PerFileIgnores {
                 .iter()
                 .any(|rules| rules.iter().any(|rule| code_matches_rule(code, rule)))
         });
+    }
+}
+
+/// Per-rule severity remap built from the `[lint.<lang>.<tool>.rules.<code>]
+/// level` entries. Applied as a post-lint pass on the normalized
+/// `Diagnostic.code` so it works uniformly for every engine — including those
+/// with no native severity config. Mirrors [`PerFileIgnores`]: compile once per
+/// engine plan, then apply per file.
+pub(crate) struct SeverityRemap {
+    /// `(rule_code, level)` pairs in config order; the first whose code matches a
+    /// diagnostic wins. Blank rule codes are dropped on construction so a stray
+    /// empty string cannot prefix-match (and thus remap) every code.
+    entries: Vec<(String, Severity)>,
+}
+
+impl SeverityRemap {
+    /// Build from the per-rule `level` pairs. Entries with a blank rule code are
+    /// dropped: an empty rule would prefix-match every code and silently remap
+    /// all diagnostics.
+    pub(crate) fn new(entries: Vec<(String, Severity)>) -> Self {
+        let entries = entries
+            .into_iter()
+            .filter(|(rule, _)| !rule.trim().is_empty())
+            .collect();
+        Self { entries }
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// Set each diagnostic's severity to the level of the FIRST rule whose code
+    /// matches its `code` (via [`code_matches_rule`], the same exact-or-prefix
+    /// semantics as per-file-ignores). Diagnostics without a code, or with no
+    /// matching rule, are left untouched.
+    pub(crate) fn apply(&self, diagnostics: &mut [Diagnostic]) {
+        if self.entries.is_empty() {
+            return;
+        }
+        for diagnostic in diagnostics.iter_mut() {
+            let Some(code) = diagnostic.code.as_deref() else {
+                continue;
+            };
+            let level = self
+                .entries
+                .iter()
+                .find(|(rule, _)| code_matches_rule(code, rule))
+                .map(|(_, level)| *level);
+            if let Some(level) = level {
+                diagnostic.severity = level;
+            }
+        }
     }
 }
 
@@ -279,6 +331,70 @@ mod tests {
         assert_eq!(
             relative_for_match(Path::new("tests/a.py"), &[PathBuf::from("/cwd"), file]),
             "tests/a.py"
+        );
+    }
+
+    #[test]
+    fn severity_remap_sets_first_matching_rule_level() {
+        let remap = SeverityRemap::new(vec![("F401".to_string(), Severity::Warning)]);
+        assert!(!remap.is_empty());
+
+        let mut diags = vec![diag(Some("F401")), diag(Some("E501")), diag(None)];
+        // The seed `diag` helper starts every diagnostic at Warning; make the
+        // target start at Error so the remap to Warning is observable.
+        diags[0].severity = Severity::Error;
+        remap.apply(&mut diags);
+
+        assert_eq!(diags[0].severity, Severity::Warning, "F401 is remapped");
+        assert_eq!(
+            diags[1].severity,
+            Severity::Warning,
+            "a non-matching code keeps its severity"
+        );
+        assert_eq!(
+            diags[2].severity,
+            Severity::Warning,
+            "a code-less diag is untouched"
+        );
+    }
+
+    #[test]
+    fn severity_remap_honors_prefix_family_and_first_match_wins() {
+        // Rule "F" is a ruff-style family prefix that matches F401.
+        let remap = SeverityRemap::new(vec![
+            ("F".to_string(), Severity::Hint),
+            ("F401".to_string(), Severity::Error),
+        ]);
+        let mut diags = vec![diag(Some("F401"))];
+        diags[0].severity = Severity::Warning;
+        remap.apply(&mut diags);
+        assert_eq!(
+            diags[0].severity,
+            Severity::Hint,
+            "the first matching rule wins (family prefix before the exact code)"
+        );
+        // Alphabetic boundary blocks: "F" must not remap "FOO".
+        let mut other = vec![diag(Some("FOO"))];
+        other[0].severity = Severity::Warning;
+        remap.apply(&mut other);
+        assert_eq!(
+            other[0].severity,
+            Severity::Warning,
+            "FOO is not in the F family"
+        );
+    }
+
+    #[test]
+    fn severity_remap_empty_is_a_noop() {
+        let remap = SeverityRemap::new(Vec::new());
+        assert!(remap.is_empty());
+        let mut diags = vec![diag(Some("F401"))];
+        diags[0].severity = Severity::Error;
+        remap.apply(&mut diags);
+        assert_eq!(
+            diags[0].severity,
+            Severity::Error,
+            "empty remap changes nothing"
         );
     }
 
