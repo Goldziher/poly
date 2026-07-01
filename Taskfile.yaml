@@ -78,4 +78,5 @@ tasks:
       - "sed -i.bak 's/^version = \"[^\"]*\"/version = \"{{.CLI_ARGS}}\"/' Cargo.toml && rm -f Cargo.toml.bak"
       - "sed -i.bak 's/\"version\": \"[^\"]*\"/\"version\": \"{{.CLI_ARGS}}\"/' npm-package/package.json && rm -f npm-package/package.json.bak"
       - "sed -i.bak 's/^version = \"[^\"]*\"/version = \"{{.CLI_ARGS}}\"/' pip-package/pyproject.toml && rm -f pip-package/pyproject.toml.bak"
+      - "sed -i.bak 's/^__version__ = \"[^\"]*\"/__version__ = \"{{.CLI_ARGS}}\"/' pip-package/polylint/__init__.py && rm -f pip-package/polylint/__init__.py.bak"
       - cargo update --workspace
