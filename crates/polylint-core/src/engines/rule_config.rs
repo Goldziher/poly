@@ -81,6 +81,31 @@ pub(crate) fn string_list(cfg: &EngineConfig, key: &str) -> Vec<String> {
     string_list_from_table(&cfg.options, key)
 }
 
+/// Deserialize an engine's options table into a typed config `T`.
+///
+/// Returns `T::default()` when `cfg.options` is empty (fast path: keep the
+/// tool's own defaults).  Otherwise the options table is deserialized into `T`;
+/// on a deserialization error the `context` string is logged as a warning and
+/// `T::default()` is returned so a malformed user table never aborts the run.
+///
+/// Shared across format-only backends whose upstream `FormatOptions` type is
+/// `serde`-deserializable (e.g. malva, markup_fmt); prefer this over
+/// duplicating the parse-or-default pattern.
+pub(crate) fn deserialize_options<T: serde::de::DeserializeOwned + Default>(
+    cfg: &EngineConfig,
+    context: &str,
+) -> T {
+    if cfg.options.is_empty() {
+        return T::default();
+    }
+    toml::Value::Table(cfg.options.clone())
+        .try_into()
+        .unwrap_or_else(|error| {
+            tracing::warn!(%error, "{context} options could not be parsed; using defaults");
+            T::default()
+        })
+}
+
 // ── Private helpers ───────────────────────────────────────────────────────────
 
 fn string_list_from_table(table: &toml::Table, key: &str) -> Vec<String> {
@@ -204,6 +229,46 @@ level = "nonsense"
         );
         let sel = RuleSelection::from_options(&cfg);
         assert_eq!(sel.rules.get("no-eval").unwrap().level, None);
+    }
+
+    #[derive(Debug, Default, PartialEq, serde::Deserialize)]
+    #[serde(default)]
+    struct TinyOptions {
+        width: u16,
+        name: String,
+    }
+
+    #[test]
+    fn deserialize_options_empty_gives_default() {
+        let parsed: TinyOptions = deserialize_options(&make_cfg(""), "[test]");
+        assert_eq!(parsed, TinyOptions::default());
+    }
+
+    #[test]
+    fn deserialize_options_valid_is_parsed() {
+        let cfg = make_cfg(
+            r#"
+width = 120
+name  = "poly"
+"#,
+        );
+        let parsed: TinyOptions = deserialize_options(&cfg, "[test]");
+        assert_eq!(
+            parsed,
+            TinyOptions {
+                width: 120,
+                name: "poly".to_owned(),
+            }
+        );
+    }
+
+    #[test]
+    fn deserialize_options_invalid_falls_back_to_default() {
+        // `width` expects an integer; a string value fails deserialization and
+        // must fall back to the default without panicking.
+        let cfg = make_cfg(r#"width = "not-a-number""#);
+        let parsed: TinyOptions = deserialize_options(&cfg, "[test]");
+        assert_eq!(parsed, TinyOptions::default());
     }
 
     #[test]

@@ -85,16 +85,8 @@ fn language_to_syntax(lang: &Language) -> Option<Syntax> {
 /// 3. Override all `LayoutOptions` fields with poly's globals — these always
 ///    win over any layout keys the user may have placed in the options table.
 fn build_options(cfg: &EngineConfig) -> FormatOptions {
-    let mut options: FormatOptions = if cfg.options.is_empty() {
-        FormatOptions::default()
-    } else {
-        toml::Value::Table(cfg.options.clone())
-            .try_into()
-            .unwrap_or_else(|error| {
-                tracing::warn!(%error, "[fmt.<css|scss|less>.malva] options could not be parsed; using defaults");
-                FormatOptions::default()
-            })
-    };
+    let mut options: FormatOptions =
+        super::rule_config::deserialize_options(cfg, "[fmt.<css|scss|less>.malva]");
 
     // Poly's layout always wins — these come from globals, not the user table.
     // (use_tabs has no global, so it stays user-controllable from the table.)
