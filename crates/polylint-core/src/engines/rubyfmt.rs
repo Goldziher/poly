@@ -20,9 +20,10 @@ use crate::language::Language;
 /// rubyfmt Ruby backend — format-only for `.rb` files.
 pub struct RubyfmtEngine;
 
-/// rubyfmt pinned version; folded into the cache key so upgrades invalidate
-/// any stale cached output.
-const VERSION: &str = "rubyfmt-0.14.2";
+/// rubyfmt pinned git rev; folded into the cache key so a rev bump invalidates
+/// any stale cached output. rubyfmt is a git dependency (no meaningful crates.io
+/// version), so the short rev is the authoritative source identifier.
+const VERSION: &str = "rubyfmt-git:d3d433c";
 
 /// Languages handled by this backend.
 static LANGUAGES: &[Language] = &[Language::Ruby];
