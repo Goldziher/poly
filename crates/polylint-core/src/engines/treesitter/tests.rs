@@ -583,6 +583,51 @@ fn ron_query_driven_structural_reindent() {
     );
 }
 
+/// The query-driven path must protect the interior of a multi-line comment
+/// exactly as the brace path does: leading whitespace inside a block comment is
+/// author-formatted content, so it must survive byte-for-byte while the
+/// surrounding code still reindents by structural depth. Without the
+/// protected-range guard, the reindenter would trim and re-space the interior
+/// lines, silently rewriting the comment body.
+#[test]
+fn ron_query_driven_reindent_preserves_multiline_comment_interior() {
+    let engine = TreeSitterEngine;
+    // Flat RON whose struct body opens with a block comment carrying
+    // deliberately uneven interior indentation. Those interior lines — and the
+    // closing `*/` line, whose leading whitespace is also comment content —
+    // must be emitted verbatim; only the code lines reindent to depth 1.
+    let input = concat!(
+        "Scene(\n",
+        "/* header\n",
+        "        deeply indented note\n",
+        "   shallow note\n",
+        "*/\n",
+        "name: \"x\",\n",
+        ")\n",
+    );
+    let expected = concat!(
+        "Scene(\n",
+        "    /* header\n",
+        "        deeply indented note\n",
+        "   shallow note\n",
+        "*/\n",
+        "    name: \"x\",\n",
+        ")\n",
+    );
+    let s = src("scene.ron", Language::Other("ron".into()), input);
+    let text = formatted_text(engine.format(&s, &cfg(4)).unwrap(), input);
+    assert_eq!(
+        text, expected,
+        "comment interior must be verbatim while surrounding code reindents"
+    );
+    // The exact interior bytes between the comment delimiters survive.
+    let interior = "\n        deeply indented note\n   shallow note\n";
+    assert!(
+        text.contains(interior),
+        "comment interior must be preserved byte-for-byte"
+    );
+}
+
 /// Regression guard: query path must not change already-correct RON.
 #[test]
 fn ron_query_driven_unchanged_when_already_indented() {

@@ -63,7 +63,7 @@ pub fn try_reindent_query(name: &str, src: &SourceFile, cfg: &EngineConfig) -> O
     // Parse + collect adjustments using the thread-local parser/cursor pool.
     // Both the parser and the QueryCursor are reused across files on this
     // worker thread, so the warm path performs no per-file allocation here.
-    let (openers, closers, auto_ranges) = QUERY_STATE.with(|cell| {
+    let (openers, closers, auto_ranges, protected) = QUERY_STATE.with(|cell| {
         let mut pool = cell.borrow_mut();
         if !pool.contains_key(name) {
             let language = get_language(name).ok()?;
@@ -74,12 +74,12 @@ pub fn try_reindent_query(name: &str, src: &SourceFile, cfg: &EngineConfig) -> O
         // Guaranteed present by the insert above.
         let entry = pool.get_mut(name)?;
         let tree = entry.0.parse(src.content.as_bytes(), None)?;
-        Some(collect_adjustments(
-            &query,
-            &mut entry.1,
-            &tree,
-            src.content.as_bytes(),
-        ))
+        let (openers, closers, auto_ranges) =
+            collect_adjustments(&query, &mut entry.1, &tree, src.content.as_bytes());
+        // Second pass over the same parsed tree: string/comment byte ranges whose
+        // interiors must be emitted verbatim.
+        let protected = collect_protected_ranges(&tree);
+        Some((openers, closers, auto_ranges, protected))
     })?;
 
     // Re-emit each line at its computed indent level.
@@ -90,6 +90,7 @@ pub fn try_reindent_query(name: &str, src: &SourceFile, cfg: &EngineConfig) -> O
         &openers,
         &closers,
         &auto_ranges,
+        &protected,
     ))
 }
 
@@ -197,6 +198,56 @@ fn collect_adjustments(
     (openers, closer_bytes, auto_ranges)
 }
 
+/// Walk the parsed tree once, collecting `[start_byte, end_byte)` ranges of
+/// string-literal and comment nodes. Leading whitespace inside a multi-line
+/// string, heredoc, raw string, or block comment is semantically significant,
+/// so any line whose start falls inside such a range must be emitted verbatim
+/// rather than reindented (mirrors the brace path's protected-range guard).
+///
+/// The walk does not descend into a protected node's subtree — the whole node
+/// is treated as one opaque range. Ranges are returned sorted by start byte so
+/// [`is_interior`] can binary-search them.
+fn collect_protected_ranges(tree: &tree_sitter::Tree) -> Vec<(usize, usize)> {
+    let mut ranges: Vec<(usize, usize)> = Vec::new();
+    let mut cursor = tree.root_node().walk();
+    'walk: loop {
+        let node = cursor.node();
+        let kind = node.kind();
+        let is_protected = kind.contains("string") || kind.contains("comment");
+        if is_protected {
+            ranges.push((node.start_byte(), node.end_byte()));
+        }
+        // Descend only into non-protected nodes; a string/comment subtree is an
+        // opaque protected range.
+        if !is_protected && cursor.goto_first_child() {
+            continue;
+        }
+        loop {
+            if cursor.goto_next_sibling() {
+                break;
+            }
+            if !cursor.goto_parent() {
+                break 'walk;
+            }
+        }
+    }
+    ranges.sort_unstable_by_key(|r| r.0);
+    ranges
+}
+
+/// Whether `byte` falls strictly inside any protected range (`start < byte <
+/// end`), i.e. it is an interior byte of a string or comment. The opening byte
+/// of a range is excluded so the line that opens the node is still reindented as
+/// real code. `protected` must be sorted by start byte (guaranteed by
+/// [`collect_protected_ranges`]), so this is O(log n) via `partition_point`.
+fn is_interior(protected: &[(usize, usize)], byte: usize) -> bool {
+    let pos = protected.partition_point(|&(start, _)| start < byte);
+    if pos == 0 {
+        return false;
+    }
+    byte < protected[pos - 1].1
+}
+
 /// Re-emit `src.content` with each line at its computed indent level.
 fn emit_reindented(
     src: &SourceFile,
@@ -205,6 +256,7 @@ fn emit_reindented(
     openers: &[Opener],
     closers: &CloserList,
     auto_ranges: &[(usize, usize)],
+    protected: &[(usize, usize)],
 ) -> String {
     let unit = super::indent_unit(grammar, cfg.indent_width);
     let line_ending = cfg.globals.line_ending.as_str();
@@ -222,15 +274,27 @@ fn emit_reindented(
 
     let mut out = String::with_capacity(src.content.len() + src.content.len() / 8);
     let mut first = true;
+    // Byte offset of the current line's start, tracked so protected string /
+    // comment interiors can be detected by byte range.
+    let mut byte = 0usize;
 
     for (line_idx, raw) in src.content.split('\n').enumerate() {
         // Strip '\r' for CRLF; re-added via `line_ending`.
         let line = raw.strip_suffix('\r').unwrap_or(raw);
+        let line_start = byte;
+        byte += raw.len() + 1; // raw includes '\r' for CRLF — must not use line.len()
 
         if !first {
             out.push_str(line_ending);
         }
         first = false;
+
+        // Interior of a multi-line string / comment: leading whitespace is part
+        // of the literal, so emit the line verbatim rather than reindenting.
+        if is_interior(protected, line_start) {
+            out.push_str(line);
+            continue;
+        }
 
         // Strictly interior lines of @auto/@ignore nodes: emit verbatim.
         // The first line of the node (start_row) is normal code; only lines
