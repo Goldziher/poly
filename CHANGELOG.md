@@ -5,6 +5,45 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). `polylint` and
 `polyfmt` ship and version in lock-step.
 
+## [0.1.7] - 2026-07-01
+
+### Added
+
+- **Uniform rule selection across `ruff`, `sqruff`, and `rumdl`** — all three now
+  accept the canonical `select` / `extend_select` / `ignore` vocabulary through the
+  shared parser, with each tool's native keys (`rules`/`exclude_rules`,
+  `enable`/`disable`) kept as back-compat aliases and unioned. Unknown or blank rule
+  codes are surfaced with a warning and skipped instead of dropped silently.
+- **Uniform per-rule severity remap** — a configured `[lint.<lang>.<tool>.rules.<code>]
+  level` is now honored for every engine as a post-lint remap on the normalized
+  diagnostic code, including engines with no native severity configuration.
+- ADR 0016 (uniform rule-selection model) and ADR 0017 (path exclusions and
+  per-file rule ignores) documenting the configuration design.
+
+### Fixed
+
+- **Tier-2 generic formatter** no longer rewrites the interior of multi-line
+  strings, heredocs, raw strings, or block comments on the query-driven reindent
+  path (the brace-counting path was already guarded); their significant leading
+  whitespace is preserved byte-for-byte.
+- **`rubyfmt` cache key** now folds the pinned git rev instead of a stale version
+  string, so a rev bump invalidates cached Ruby output.
+
+### Changed
+
+- **Homebrew distribution now ships bottles.** The tap formula builds `poly` from
+  source and the release dispatches the tap's bottle workflow, so `brew install`
+  pours a prebuilt bottle on supported platforms (macOS ARM64, Linux x86_64/ARM64)
+  and builds from source elsewhere.
+
+### Internal
+
+- Extracted a shared `deserialize_options` helper for the format-only backends
+  (malva, markup_fmt).
+- Added a `Cargo.lock` drift-guard test asserting every backend's `version()`
+  embeds the resolved crate version or pinned git rev — enforcing cache-key
+  discipline across all 17 backends.
+
 ## [0.1.6] - 2026-06-30
 
 ### Added
