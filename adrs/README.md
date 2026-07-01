@@ -29,6 +29,8 @@ Context, Decision, Consequences (positive and negative/risks), and Alternatives 
 | [0013](0013-catalog-tool-config.md) | Catalog-Driven Tool Config: Retire .pre-commit-config.yaml | Accepted |
 | [0014](0014-toolchain-interop.md) | Toolchain Interop: Capability-Probed First-Party CLIs | Accepted |
 | [0015](0015-fat-cli-vs-modular-backends.md) | Fat CLI vs. Modular Backends | Accepted |
+| [0016](0016-uniform-rule-selection.md) | Uniform Per-Tool Rule-Selection Model | Accepted |
+| [0017](0017-path-excludes-per-file-ignores.md) | Path Exclusions and Per-File Rule Ignores | Accepted |
 
 ## Conventions
 
