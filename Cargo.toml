@@ -48,7 +48,7 @@ blake3 = "1"
 bstr = "1.12.3"
 cargo_metadata = "0.23.1"
 clap = { version = "4", features = ["derive"] }
-clap_complete = { version = "4.6.5", features = ["unstable-dynamic"] }
+clap_complete = { version = "4.6.6", features = ["unstable-dynamic"] }
 console = { version = "0.16", default-features = false, features = ["ansi-parsing", "std"] }
 # criterion — statistical microbenchmark harness for the hot-path benches under
 # crates/polylint-core/benches/ (dev-dependency only; never linked into binaries)
@@ -71,7 +71,7 @@ hcl-rs = "0.19.7"
 hex = "0.4.3"
 http = "1.4.2"
 ignore = "0.4"
-indicatif = "0.18.5"
+indicatif = "0.18.6"
 indoc = "2.0.7"
 # insta snapshot testing
 insta = "1"
@@ -129,7 +129,7 @@ pretty_assertions = "1.4.1"
 pretty_graphql = "0.2.3"
 # pretty_yaml — g-plane pure-Rust YAML formatter (MIT); CST-based structural reflow
 pretty_yaml = "0.6"
-quick-xml = "0.40"
+quick-xml = "0.41"
 rand = "0.10.1"
 rayon = "1"
 regex = "1"
