@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::Args;
-use polylint_core::{Config, RunOptions, Verbosity, report};
+use polylint_core::{Config, LintResult, RunOptions, Severity, Verbosity, report};
 
 pub mod cache_cmd;
 pub mod hooks;
@@ -140,7 +140,9 @@ pub fn run_lint(args: LintArgs) -> ExitCode {
 
     match polylint_core::lint(&paths, &config, &opts, common.fix, common.debug) {
         Ok(results) => {
-            let count = match common.format {
+            // Render (and print) all diagnostics regardless of severity; the count
+            // returned here is not used for the exit decision.
+            let _ = match common.format {
                 OutputFormat::Pretty => report::report_lint_pretty(&results, verbosity),
                 OutputFormat::Json => {
                     println!("{}", report::report_lint_json(&results));
@@ -151,17 +153,34 @@ pub fn run_lint(args: LintArgs) -> ExitCode {
                     results.iter().map(|r| r.diagnostics.len()).sum()
                 }
             };
-            if count > 0 {
-                ExitCode::from(1)
-            } else {
-                ExitCode::SUCCESS
-            }
+            // Follow the standard linter convention (ruff/eslint/clippy): only
+            // error-severity findings fail the run. Warning/info/hint are
+            // reported but non-blocking.
+            lint_exit_code(&results)
         }
         Err(e) => {
             eprintln!("error: {e:#}");
             ExitCode::from(2)
         }
     }
+}
+
+/// Map lint results to a process exit code: `1` when any diagnostic has
+/// [`Severity::Error`], `0` otherwise. Warning/info/hint findings are
+/// non-blocking, matching the convention of ruff, eslint, and clippy.
+fn lint_exit_code(results: &[LintResult]) -> ExitCode {
+    if lint_has_errors(results) {
+        ExitCode::from(1)
+    } else {
+        ExitCode::SUCCESS
+    }
+}
+
+/// Whether any diagnostic across all results is error-severity.
+fn lint_has_errors(results: &[LintResult]) -> bool {
+    results
+        .iter()
+        .any(|r| r.diagnostics.iter().any(|d| d.severity == Severity::Error))
 }
 
 /// Run the format pipeline and map the outcome to a process exit code.
@@ -241,5 +260,66 @@ fn load_config(explicit: Option<&Path>) -> anyhow::Result<Config> {
             let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
             Config::load(&cwd)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use polylint_core::Diagnostic;
+
+    fn diag(severity: Severity) -> Diagnostic {
+        Diagnostic {
+            engine: "test".to_string(),
+            code: None,
+            severity,
+            title: "test finding".to_string(),
+            description: None,
+            span: None,
+            url: None,
+            fix: Vec::new(),
+            metadata: std::collections::BTreeMap::new(),
+        }
+    }
+
+    fn result(diagnostics: Vec<Diagnostic>) -> LintResult {
+        LintResult {
+            path: PathBuf::from("test.rs"),
+            diagnostics,
+            debug: None,
+        }
+    }
+
+    #[test]
+    fn no_diagnostics_yields_success() {
+        assert!(!lint_has_errors(&[result(vec![])]));
+    }
+
+    #[test]
+    fn warning_only_diagnostics_yield_success() {
+        let results = vec![result(vec![
+            diag(Severity::Warning),
+            diag(Severity::Info),
+            diag(Severity::Hint),
+        ])];
+        assert!(
+            !lint_has_errors(&results),
+            "warning/info/hint findings must not fail the run"
+        );
+    }
+
+    #[test]
+    fn error_diagnostic_yields_failure() {
+        let results = vec![result(vec![diag(Severity::Warning), diag(Severity::Error)])];
+        assert!(lint_has_errors(&results), "an error-severity finding must fail the run");
+    }
+
+    #[test]
+    fn error_in_any_result_yields_failure() {
+        let results = vec![
+            result(vec![diag(Severity::Warning)]),
+            result(vec![diag(Severity::Error)]),
+        ];
+        assert!(lint_has_errors(&results));
     }
 }
