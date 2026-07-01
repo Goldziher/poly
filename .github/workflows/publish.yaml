@@ -438,10 +438,10 @@ jobs:
           echo "✓ Promoted $tag to a published release"
 
   publish_homebrew:
-    name: Update Homebrew formula
+    name: Update Homebrew formula and dispatch bottles
     # Stable releases only — rc/beta/alpha pre-releases do not update the tap.
-    # Runs after the release is finalized (all assets present, draft promoted),
-    # since the formula points at the published release assets.
+    # Runs after the release is finalized (draft promoted), since the source
+    # tarball the formula points at is the tagged release.
     needs: [meta, finalize_release]
     if: needs.finalize_release.result == 'success' && !contains(needs.meta.outputs.version, '-rc') && !contains(needs.meta.outputs.version, '-beta') && !contains(needs.meta.outputs.version, '-alpha')
     runs-on: ubuntu-latest
@@ -452,9 +452,9 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || '' }}
 
-      - name: Generate formula and push to tap
+      - name: Update tap formula and start bottle workflow
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.HOMEBREW_TOKEN }}
           HOMEBREW_TOKEN: ${{ secrets.HOMEBREW_TOKEN }}
         run: |
           set -euo pipefail
@@ -465,8 +465,12 @@ jobs:
           tag="${{ needs.meta.outputs.tag }}"
           version="${{ needs.meta.outputs.version }}"
 
-          gh release download "$tag" -p "sha256sums.txt" -O checksums.txt
-          ./scripts/update-homebrew-formula.sh "$version" checksums.txt > polylint.rb
+          # The formula builds `poly` from the tagged source tarball, so the
+          # bottle workflow can `brew install --build-bottle` it.
+          archive="polylint-${version}.tar.gz"
+          curl -fsSL "https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${tag}.tar.gz" -o "$archive"
+          sha256="$(sha256sum "$archive" | awk '{print $1}')"
+          ./scripts/update-homebrew-formula.sh "$version" "$sha256" > polylint.rb
 
           git clone --depth 1 "https://x-access-token:${HOMEBREW_TOKEN}@github.com/Goldziher/homebrew-tap.git" tap
           cp polylint.rb tap/Formula/polylint.rb
@@ -480,6 +484,15 @@ jobs:
             git commit -m "polylint ${version}"
             git push
           fi
+          cd ..
+
+          # Build bottles from the source formula and merge the bottle block back
+          # into the tap (macOS ARM64 + Linux x86_64/ARM64).
+          gh workflow run bottle.yml \
+            --repo Goldziher/homebrew-tap \
+            -f formula=polylint \
+            -f tag="$tag" \
+            -f release_repo="$GITHUB_REPOSITORY"
 
   publish_npm:
     name: Publish npm (@nhirschfeld/polylint)
