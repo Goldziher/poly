@@ -5,6 +5,20 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). `polylint` and
 `polyfmt` ship and version in lock-step.
 
+## [0.1.8] - 2026-07-01
+
+### Fixed
+
+- **cli**: `poly lint` exits non-zero only when a diagnostic is error-severity.
+  Warning/info/hint findings are still reported but no longer fail the run, git
+  hooks, or CI — matching the ruff/eslint/clippy convention. Previously any finding
+  (including warnings) exited non-zero.
+
+### Changed
+
+- **deps**: upgrade dependencies to their latest versions (`cargo upgrade --incompatible`):
+  quick-xml 0.40 → 0.41, plus clap_complete and indicatif.
+
 ## [0.1.7] - 2026-07-01
 
 ### Added
