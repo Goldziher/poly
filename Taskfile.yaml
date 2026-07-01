@@ -71,3 +71,11 @@ tasks:
       - task: format:check
       - task: lint
       - task: test
+
+  set-version:
+    desc: "Sync the release version across Cargo.toml, npm-package, and pip-package (usage: task set-version -- 0.1.8)"
+    cmds:
+      - "sed -i.bak 's/^version = \"[^\"]*\"/version = \"{{.CLI_ARGS}}\"/' Cargo.toml && rm -f Cargo.toml.bak"
+      - "sed -i.bak 's/\"version\": \"[^\"]*\"/\"version\": \"{{.CLI_ARGS}}\"/' npm-package/package.json && rm -f npm-package/package.json.bak"
+      - "sed -i.bak 's/^version = \"[^\"]*\"/version = \"{{.CLI_ARGS}}\"/' pip-package/pyproject.toml && rm -f pip-package/pyproject.toml.bak"
+      - cargo update --workspace
