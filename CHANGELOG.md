@@ -7,6 +7,25 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). `polylint` and
 
 ## [Unreleased]
 
+## [0.1.15] - 2026-07-02
+
+### Added
+
+- **Hierarchical (monorepo-aware) config resolution** (ADR 0018). Running `poly`
+  from a monorepo root now discovers nested `poly.toml` files and cascades them
+  the way ruff/eslint resolve config: a file is governed by the deep-merge of its
+  ancestor config chain (workspace root as base, nearest config wins), so a
+  sub-project's `poly.toml` declares only its diff and inherits `[defaults]`, the
+  `[lint.*]`/`[fmt.*]` rule tables, and `[per-file-ignores]` from above.
+  - New `[workspace] root = true` marker bounds the upward cascade; a `.git`
+    directory is an implicit boundary, so single repos need no annotation.
+  - `[discovery] exclude` globs are unioned tree-wide, each rooted at its own
+    config directory (a nested config prunes only its subtree); `[per-file-ignores]`
+    globs resolve relative to their owning config's directory.
+  - `--config <path>` pins a single config and bypasses nested resolution.
+  - Fully back-compatible: a repo with one root `poly.toml` and no nested configs
+    resolves every file to the root config, identical to before.
+
 ## [0.1.12] - 2026-07-02
 
 ### Fixed
