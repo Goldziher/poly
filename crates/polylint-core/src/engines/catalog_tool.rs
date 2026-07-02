@@ -32,6 +32,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 
 use anyhow::Context;
+use globset::{Glob, GlobSet, GlobSetBuilder};
 use poly_catalog::{PATH_PLACEHOLDER, Tool};
 
 use crate::config::EngineConfig;
@@ -122,6 +123,10 @@ pub struct CatalogToolEngine {
     /// Working directory override for the spawned process; `None` means the
     /// process inherits the caller's cwd (the repo root at runtime).
     root: Option<PathBuf>,
+    /// Pre-compiled glob set for fast matching. Built from the catalog tool's
+    /// `path_globs` at construction time; `None` when `path_globs` is empty.
+    /// When `Some`, only files whose path matches at least one pattern are linted.
+    path_glob_set: Option<GlobSet>,
 }
 
 impl CatalogToolEngine {
@@ -188,8 +193,20 @@ impl CatalogToolEngine {
         root: Option<PathBuf>,
     ) -> Self {
         let probe = probe_binary(&tool.binary);
+        let path_globs = tool.path_globs.clone();
+        let path_glob_set = if path_globs.is_empty() {
+            None
+        } else {
+            let mut builder = GlobSetBuilder::new();
+            for pattern in &path_globs {
+                if let Ok(glob) = Glob::new(pattern) {
+                    builder.add(glob);
+                }
+            }
+            builder.build().ok()
+        };
         let version = format!(
-            "catalog:{}:{}:mode={mode:?}:stdin={stdin}:args={arguments:?}:env={env:?}:root={root:?}",
+            "catalog:{}:{}:mode={mode:?}:stdin={stdin}:args={arguments:?}:env={env:?}:root={root:?}:path_globs={path_globs:?}",
             tool.name,
             probe.as_deref().unwrap_or("absent"),
         );
@@ -201,6 +218,7 @@ impl CatalogToolEngine {
             version,
             env,
             root,
+            path_glob_set,
         }
     }
 
@@ -280,6 +298,13 @@ impl Engine for CatalogToolEngine {
     fn lint(&self, src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
         // A format engine never lints (declared via `capabilities`); guard anyway.
         if !self.is_lint() {
+            return Ok(Vec::new());
+        }
+        // Path-glob filter: skip files that don't match the catalog's declared
+        // scope (e.g. actionlint only applies to .github/workflows/ files).
+        if let Some(ref set) = self.path_glob_set
+            && !set.is_match(&src.path)
+        {
             return Ok(Vec::new());
         }
         // Absent tool → no findings (graceful degradation, never an error).
@@ -571,6 +596,7 @@ mod tests {
                 },
             )]),
             homepage: String::new(),
+            path_globs: vec![],
         }))
     }
 
@@ -794,6 +820,81 @@ mod tests {
             diagnostics[0].title.contains(tmp_str.as_ref()),
             "cwd reflects root override: {}",
             diagnostics[0].title
+        );
+    }
+
+    /// Build a leaked `&'static Tool` with path_globs, for testing the path filter.
+    fn leak_tool_with_globs(
+        name: &str,
+        binary: &str,
+        category: &str,
+        arguments: Vec<String>,
+        path_globs: Vec<String>,
+    ) -> &'static Tool {
+        Box::leak(Box::new(Tool {
+            name: name.to_string(),
+            binary: binary.to_string(),
+            categories: vec![category.to_string()],
+            languages: vec!["yaml".to_string()],
+            commands: BTreeMap::from([(
+                String::new(),
+                CatalogCommand {
+                    arguments,
+                    stdin: false,
+                },
+            )]),
+            homepage: String::new(),
+            path_globs,
+        }))
+    }
+
+    /// A tool with `path_globs` must skip files that don't match and process
+    /// files that do match. The tool always exits non-zero so we can distinguish
+    /// "processed (diagnostic)" from "skipped (empty)".
+    #[cfg(unix)]
+    #[test]
+    fn path_globs_skips_non_matching_and_runs_matching_files() {
+        let tool = leak_tool_with_globs(
+            "scopedlint",
+            "sh",
+            "linter",
+            vec![
+                "-c".to_string(),
+                // Always fail, so a non-skipped file always produces a diagnostic.
+                "exit 1".to_string(),
+                PATH_PLACEHOLDER.to_string(),
+            ],
+            vec!["**/.github/workflows/**/*.yml".to_string()],
+        );
+        let engine = lint_engine_default(tool, None, None).expect("non-mutating linter wires");
+
+        // Non-matching path → skipped (no diagnostics even though tool would fail).
+        let non_match = engine.lint(&make_src("Taskfile.yml", ""), &cfg()).unwrap();
+        assert!(
+            non_match.is_empty(),
+            "Taskfile.yml does not match .github/workflows/**/*.yml — must be skipped; got: {non_match:?}"
+        );
+
+        // Matching path → tool runs → diagnostic (exit 1).
+        let matches = engine.lint(&make_src(".github/workflows/ci.yml", ""), &cfg()).unwrap();
+        assert!(
+            !matches.is_empty(),
+            ".github/workflows/ci.yml matches the glob — tool must run and report; got: {matches:?}"
+        );
+    }
+
+    #[test]
+    fn actionlint_catalog_entry_has_github_workflows_path_globs() {
+        let catalog = poly_catalog::Catalog::get();
+        let tool = catalog.tool("actionlint").expect("actionlint is in the catalog");
+        assert!(
+            !tool.path_globs.is_empty(),
+            "actionlint must declare path_globs to restrict it to workflow files"
+        );
+        assert!(
+            tool.path_globs.iter().any(|g| g.contains(".github/workflows")),
+            "actionlint path_globs must reference .github/workflows; got: {:?}",
+            tool.path_globs
         );
     }
 }

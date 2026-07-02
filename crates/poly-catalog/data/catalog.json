@@ -35,7 +35,11 @@
     "stdin": false
    }
   },
-  "homepage": "https://github.com/rhysd/actionlint"
+  "homepage": "https://github.com/rhysd/actionlint",
+  "path_globs": [
+   "**/.github/workflows/**/*.yml",
+   "**/.github/workflows/**/*.yaml"
+  ]
  },
  {
   "name": "air",

@@ -113,3 +113,18 @@ fn golden_fixtures_reference_real_catalog_commands() {
         let _ = (&fixture.input, &fixture.output);
     }
 }
+
+#[test]
+fn actionlint_has_path_globs_scoped_to_workflows() {
+    let catalog = Catalog::get();
+    let tool = catalog.tool("actionlint").expect("actionlint present");
+    assert!(
+        !tool.path_globs.is_empty(),
+        "actionlint must declare path_globs (it only lints GitHub Actions workflows)"
+    );
+    assert!(
+        tool.path_globs.iter().any(|g| g.contains(".github/workflows")),
+        "actionlint path_globs must reference .github/workflows; got: {:?}",
+        tool.path_globs
+    );
+}

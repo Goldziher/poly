@@ -38,6 +38,13 @@ pub struct Tool {
     /// Upstream homepage, surfaced in diagnostics and help.
     #[serde(default)]
     pub homepage: String,
+    /// Optional path-glob patterns (anchored to the repository root). When
+    /// non-empty, the engine skips any file whose path does not match at least
+    /// one glob. Use `**/<dir>/**/*.ext` patterns to match both relative and
+    /// absolute paths. Currently used to scope `actionlint` to GitHub Actions
+    /// workflow files only.
+    #[serde(default)]
+    pub path_globs: Vec<String>,
 }
 
 /// One invocation recipe for a [`Tool`]: the argument vector (which may contain
