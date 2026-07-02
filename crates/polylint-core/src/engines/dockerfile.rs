@@ -20,9 +20,7 @@
 use dockerfile_parser::{Dockerfile, Instruction};
 
 use crate::config::EngineConfig;
-use crate::engine::{
-    Capabilities, Diagnostic, Engine, FormatOutput, Severity, SourceFile, Span as EngineSpan,
-};
+use crate::engine::{Capabilities, Diagnostic, Engine, FormatOutput, Severity, SourceFile, Span as EngineSpan};
 use crate::language::Language;
 
 // ---------------------------------------------------------------------------
@@ -129,9 +127,7 @@ impl Engine for DockerfileEngine {
                         let text = shell.to_string();
 
                         // DL3009: apt-get install without cache cleanup.
-                        if text.contains("apt-get install")
-                            && !text.contains("rm -rf /var/lib/apt/lists")
-                        {
+                        if text.contains("apt-get install") && !text.contains("rm -rf /var/lib/apt/lists") {
                             diags.push(make_diag(
                                 self.name(),
                                 DL3009,
@@ -362,8 +358,7 @@ fn contains_tool(text: &str, tool: &str) -> bool {
     while let Some(pos) = text[start..].find(tool) {
         let abs = start + pos;
         let before_ok = abs == 0 || !bytes[abs - 1].is_ascii_alphanumeric();
-        let after_ok =
-            (abs + tool_len) >= bytes.len() || !bytes[abs + tool_len].is_ascii_alphanumeric();
+        let after_ok = (abs + tool_len) >= bytes.len() || !bytes[abs + tool_len].is_ascii_alphanumeric();
 
         if before_ok && after_ok {
             return true;
@@ -446,9 +441,7 @@ mod tests {
             !diags.is_empty(),
             "a malformed Dockerfile must produce at least one diagnostic"
         );
-        let parse_diag = diags
-            .iter()
-            .find(|d| d.code.as_deref() == Some(PARSE_ERROR));
+        let parse_diag = diags.iter().find(|d| d.code.as_deref() == Some(PARSE_ERROR));
         assert!(
             parse_diag.is_some(),
             "expected a parse-error diagnostic, got: {diags:?}"

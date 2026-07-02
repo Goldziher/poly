@@ -165,8 +165,7 @@ fn dl3009_apt_no_cleanup_fires() {
 
 #[test]
 fn dl3009_apt_with_cleanup_ok() {
-    let src =
-        make_src("FROM alpine:3.20\nRUN apt-get install -y curl && rm -rf /var/lib/apt/lists/*\n");
+    let src = make_src("FROM alpine:3.20\nRUN apt-get install -y curl && rm -rf /var/lib/apt/lists/*\n");
     let diags = DockerfileEngine.lint(&src, &engine_cfg()).unwrap();
     assert!(
         !diags.iter().any(|d| d.code.as_deref() == Some("DL3009")),
