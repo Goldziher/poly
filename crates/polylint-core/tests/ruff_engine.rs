@@ -318,3 +318,61 @@ fn pydocstyle_convention_reduces_d_rules() {
         "google convention should disable some D-rules: no_conv={no_conv} google={google}"
     );
 }
+
+/// `known_first_party` suppresses I001 for a module that would otherwise be
+/// classified as third-party. Without `known_first_party`, importing
+/// `kreuzberg_cloud` after `pytest` (also third-party) triggers I001 because
+/// isort expects alphabetical order within the third-party block (`kreuzberg_cloud`
+/// before `pytest`), but the file has `pytest` first. With
+/// `known_first_party = ["kreuzberg_cloud"]`, the module is first-party and
+/// correctly placed after `pytest` — no I001.
+#[test]
+fn known_first_party_suppresses_i001() {
+    use std::fs;
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("test_module.py");
+    fs::write(&path, "").unwrap(); // must exist for package-root walk
+
+    // Imports sorted correctly for first-party kreuzberg_cloud:
+    // stdlib → blank → third-party → blank → first-party.
+    let body = "import os\n\nimport pytest\n\nimport kreuzberg_cloud\n";
+
+    let engine = RuffEngine;
+
+    let src = SourceFile {
+        path: path.clone(),
+        language: Language::Python,
+        content: body.into(),
+    };
+
+    // Without known_first_party: kreuzberg_cloud is treated as third-party;
+    // isort expects it before pytest (k < p), so I001 fires.
+    let base_diags = engine.lint(&src, &engine_cfg()).unwrap();
+    assert!(
+        base_diags.iter().any(|d| d.code.as_deref() == Some("I001")),
+        "without known_first_party, I001 must fire (kreuzberg_cloud is third-party, out of alpha order); got: {base_diags:?}"
+    );
+
+    // With known_first_party = ["kreuzberg_cloud"]: it is first-party, correctly
+    // placed after pytest — I001 must not fire.
+    let mut options = toml::Table::new();
+    options.insert(
+        "known_first_party".to_string(),
+        toml::Value::Array(vec![toml::Value::String("kreuzberg_cloud".into())]),
+    );
+    let cfg = EngineConfig {
+        options,
+        ..engine_cfg()
+    };
+    let src2 = SourceFile {
+        path,
+        language: Language::Python,
+        content: body.into(),
+    };
+    let fp_diags = engine.lint(&src2, &cfg).unwrap();
+    assert!(
+        !fp_diags.iter().any(|d| d.code.as_deref() == Some("I001")),
+        "with known_first_party=[\"kreuzberg_cloud\"], I001 must not fire; got: {fp_diags:?}"
+    );
+}

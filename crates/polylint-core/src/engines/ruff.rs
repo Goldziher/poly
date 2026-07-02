@@ -45,14 +45,17 @@ use ruff_linter::linter::{ParseSource, lint_only};
 use ruff_linter::package::PackageRoot;
 use ruff_linter::packaging::detect_package_root;
 use ruff_linter::rule_selector::{PreviewOptions, RuleSelector};
+use ruff_linter::rules::isort::categorize::KnownModules;
 use ruff_linter::rules::pydocstyle::settings::Convention as PydocstyleConvention;
 use ruff_linter::settings::LinterSettings;
 use ruff_linter::settings::flags;
 use ruff_linter::settings::rule_table::RuleTable;
+use ruff_linter::settings::types::IdentifierPattern;
 use ruff_linter::source_kind::SourceKind;
 use ruff_python_ast::PySourceType;
 use ruff_python_formatter::{DocstringCode, DocstringCodeLineWidth, PyFormatOptions};
 use ruff_text_size::Ranged;
+use rustc_hash::FxHashMap;
 
 use crate::config::EngineConfig;
 use crate::engine::{Capabilities, Diagnostic, Edit, Engine, FormatOutput, Severity, SourceFile, Span};
@@ -183,6 +186,34 @@ fn build_settings(cfg: &EngineConfig) -> LinterSettings {
         }
     }
 
+    // isort: known-first-party and known-third-party — classify modules that
+    // the package-root walk cannot discover (e.g. src-layout first-party
+    // packages tested from a sibling `tests/` directory).
+    let str_list = |key: &str| -> Vec<String> {
+        cfg.options
+            .get(key)
+            .and_then(toml::Value::as_array)
+            .map(|arr| arr.iter().filter_map(toml::Value::as_str).map(str::to_owned).collect())
+            .unwrap_or_default()
+    };
+    let known_first_party: Vec<IdentifierPattern> = str_list("known_first_party")
+        .iter()
+        .filter_map(|s| IdentifierPattern::new(s).ok())
+        .collect();
+    let known_third_party: Vec<IdentifierPattern> = str_list("known_third_party")
+        .iter()
+        .filter_map(|s| IdentifierPattern::new(s).ok())
+        .collect();
+    if !known_first_party.is_empty() || !known_third_party.is_empty() {
+        settings.isort.known_modules = KnownModules::new(
+            known_first_party,
+            known_third_party,
+            vec![],
+            vec![],
+            FxHashMap::default(),
+        );
+    }
+
     settings
 }
 
@@ -226,7 +257,7 @@ impl Engine for RuffEngine {
         concat!(
             "git-ruff:",
             "03f787e51e94999977b9a5a32b0153d82d7e2142",
-            "+pkgroot+plugins"
+            "+pkgroot+plugins+isort"
         )
     }
 
