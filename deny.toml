@@ -72,6 +72,17 @@ ignore = [
     # at the pinned rev. Risk is low: proc-macro-error2 is a compile-time
     # proc-macro only (no runtime code).
     "RUSTSEC-2026-0173",
+    # RUSTSEC-2026-0194 + RUSTSEC-2026-0195: quadratic attribute scan and
+    # unbounded namespace-declaration allocation in `quick-xml`.
+    # These affect `quick-xml 0.38.4`, pulled in transitively via
+    # quick-junit → ruff_db (pinned to the ruff git rev). The fix requires
+    # quick-xml ≥ 0.41.0 which needs a ruff-rev bump — tracked separately.
+    # polylint parses its own source files only, not untrusted XML; the
+    # CPU-exhaustion / OOM attack vectors described in the advisories are not
+    # reachable from our usage of ruff_db (test-result JUnit formatting, not
+    # an XML ingestion path).
+    "RUSTSEC-2026-0194",
+    "RUSTSEC-2026-0195",
 ]
 
 [sources]
