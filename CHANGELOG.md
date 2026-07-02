@@ -7,6 +7,30 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). `polylint` and
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-07-02
+
+### Fixed
+
+- **actionlint**: restrict linting to GitHub Actions workflow files
+  (`.github/workflows/**/*.yml|yaml`). Previously `poly lint .` ran `actionlint`
+  on every YAML file (including `Taskfile.yml`, `docker-compose.yaml`, etc.),
+  emitting spurious "jobs section is missing" errors. The tool now silently skips
+  non-workflow YAML. A new `path_globs` field in the catalog model provides a
+  general mechanism for future path-scoped tools.
+
+### Added
+
+- **ruff / isort**: `known_first_party` and `known_third_party` options for the
+  ruff engine, settable in `poly.toml` under `[lint.python.ruff]`. Resolves
+  false `I001` (import-block un-sorted) errors when a first-party package lives
+  in a `src/`-layout that the package-root walk cannot reach from a sibling
+  `tests/` directory.
+
+  ```toml
+  [lint.python.ruff]
+  known_first_party = ["kreuzberg_cloud"]
+  ```
+
 ## [0.1.9] - 2026-07-02
 
 ### Fixed
