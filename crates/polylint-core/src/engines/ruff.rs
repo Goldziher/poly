@@ -194,6 +194,17 @@ fn build_settings(cfg: &EngineConfig) -> LinterSettings {
         }
     }
 
+    // target-version: gates version-specific rules (e.g. pyupgrade). Accept both
+    // ruff's canonical `py310` spelling and the dotted `3.10` form.
+    if let Some(version) = cfg
+        .options
+        .get("target_version")
+        .and_then(toml::Value::as_str)
+        .and_then(parse_python_version)
+    {
+        settings.unresolved_target_version = version.into();
+    }
+
     // isort: known-first-party and known-third-party — classify modules that
     // the package-root walk cannot discover (e.g. src-layout first-party
     // packages tested from a sibling `tests/` directory).
@@ -204,6 +215,13 @@ fn build_settings(cfg: &EngineConfig) -> LinterSettings {
             .map(|arr| arr.iter().filter_map(toml::Value::as_str).map(str::to_owned).collect())
             .unwrap_or_default()
     };
+
+    // src: first-party source roots for import classification (isort). Mirrors
+    // ruff's `src`; only overrides the default when explicitly provided.
+    let src_roots = str_list("src");
+    if !src_roots.is_empty() {
+        settings.src = src_roots.iter().map(std::path::PathBuf::from).collect();
+    }
     let known_first_party: Vec<IdentifierPattern> = str_list("known_first_party")
         .iter()
         .filter_map(|s| IdentifierPattern::new(s).ok())
@@ -223,6 +241,22 @@ fn build_settings(cfg: &EngineConfig) -> LinterSettings {
     }
 
     settings
+}
+
+/// Parse a Python target version from either ruff's canonical `py310` spelling
+/// or the dotted `3.10` form. Returns `None` for anything unrecognised so the
+/// caller keeps ruff's default.
+fn parse_python_version(s: &str) -> Option<ruff_python_ast::PythonVersion> {
+    let trimmed = s.trim();
+    // `py310` / `py38` → `3.10` / `3.8` (first digit is the major version).
+    if let Some(rest) = trimmed.strip_prefix("py")
+        && rest.len() >= 2
+        && rest.chars().all(|c| c.is_ascii_digit())
+    {
+        let (major, minor) = rest.split_at(1);
+        return format!("{major}.{minor}").parse().ok();
+    }
+    trimmed.parse().ok()
 }
 
 /// Convert a ruff [`RuffSeverity`] to the polylint [`Severity`].
@@ -262,11 +296,12 @@ impl Engine for RuffEngine {
         // Suffix bumped when engine logic (not just the pinned rev) changes the
         // output for the same input: +pkgroot = package-root resolution (INP001 /
         // isort), +plugins = pydocstyle/mccabe/pylint param wiring, +e501 =
-        // pycodestyle max_line_length mirrors line_length (E501 honors config).
+        // pycodestyle max_line_length mirrors line_length (E501 honors config),
+        // +tgtsrc = target_version + src (isort roots) wiring.
         concat!(
             "git-ruff:",
             "03f787e51e94999977b9a5a32b0153d82d7e2142",
-            "+pkgroot+plugins+isort+e501"
+            "+pkgroot+plugins+isort+e501+tgtsrc"
         )
     }
 
@@ -389,5 +424,31 @@ impl Engine for RuffEngine {
             }
             Err(err) => Err(anyhow::anyhow!("ruff format error: {err}")),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_python_version;
+
+    #[test]
+    fn parses_ruff_style_py_prefix() {
+        let py310: ruff_python_ast::PythonVersion = "3.10".parse().unwrap();
+        assert_eq!(parse_python_version("py310"), Some(py310));
+        let py38: ruff_python_ast::PythonVersion = "3.8".parse().unwrap();
+        assert_eq!(parse_python_version("py38"), Some(py38));
+    }
+
+    #[test]
+    fn parses_dotted_form() {
+        let py312: ruff_python_ast::PythonVersion = "3.12".parse().unwrap();
+        assert_eq!(parse_python_version("3.12"), Some(py312));
+    }
+
+    #[test]
+    fn rejects_garbage() {
+        assert_eq!(parse_python_version("nonsense"), None);
+        assert_eq!(parse_python_version("py"), None);
+        assert_eq!(parse_python_version("pyABC"), None);
     }
 }
