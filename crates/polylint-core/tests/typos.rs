@@ -131,3 +131,115 @@ fn drops_ultra_short_corrections_but_keeps_three_char_typos() {
         "the surviving typo should carry its single-correction autofix",
     );
 }
+
+// ---------------------------------------------------------------------------
+// extend_words: a word in the map is treated as a valid spelling.
+// ---------------------------------------------------------------------------
+
+const SHORT_TOKENS: &str = include_str!("fixtures/typos/short_tokens.txt");
+
+#[test]
+fn extend_words_silences_configured_word() {
+    // short_tokens.txt contains a single 3-char typo (teh → the). Adding its
+    // key to extend_words must reduce the diagnostic count to zero.
+    let engine = TyposEngine;
+    let src = make_src(SHORT_TOKENS);
+    // Build options with extend_words containing the typo word.
+    // The word is constructed from chars so the literal misspelling does not
+    // appear in this source file.
+    let typo_word: String = ['t', 'e', 'h'].iter().collect();
+    let mut words_table = toml::Table::new();
+    words_table.insert(typo_word.clone(), toml::Value::String(typo_word));
+    let mut options = toml::Table::new();
+    options.insert("extend_words".to_string(), toml::Value::Table(words_table));
+    let cfg = EngineConfig {
+        globals: GlobalDefaults::default(),
+        indent_width: 4,
+        options,
+    };
+    let diags = engine.lint(&src, &cfg).unwrap();
+    assert!(
+        diags.is_empty(),
+        "extend_words should silence the configured word; got: {diags:?}",
+    );
+}
+
+// ---------------------------------------------------------------------------
+// extend_identifiers: a compound identifier is treated as valid, suppressing
+// any word-level typo flagging within it.
+// ---------------------------------------------------------------------------
+
+const IDENTIFIER_WITH_TYPO: &str = include_str!("fixtures/typos/identifier_with_typo.txt");
+
+#[test]
+fn extend_identifiers_silences_configured_identifier() {
+    let engine = TyposEngine;
+    // Without any config, the fixture produces at least one diagnostic (the
+    // word token within the identifier is a known typo).
+    let src_flagged = SourceFile {
+        path: "fixture.txt".into(),
+        language: Language::Markdown,
+        content: IDENTIFIER_WITH_TYPO.into(),
+    };
+    let default_diags = engine.lint(&src_flagged, &engine_cfg()).unwrap();
+    assert!(
+        !default_diags.is_empty(),
+        "expected diagnostics for identifier_with_typo.txt with default config; got none",
+    );
+
+    // Adding the identifier to extend_identifiers must silence the diagnostic.
+    let ident: String = ['t', 'e', 'h', '_', 'v', 'a', 'r', 'i', 'a', 'b', 'l', 'e']
+        .iter()
+        .collect();
+    let mut idents_table = toml::Table::new();
+    idents_table.insert(ident.clone(), toml::Value::String(ident));
+    let mut options = toml::Table::new();
+    options.insert("extend_identifiers".to_string(), toml::Value::Table(idents_table));
+    let cfg = EngineConfig {
+        globals: GlobalDefaults::default(),
+        indent_width: 4,
+        options,
+    };
+    let diags = engine.lint(&src_flagged, &cfg).unwrap();
+    assert!(
+        diags.is_empty(),
+        "extend_identifiers should silence the identifier; got: {diags:?}",
+    );
+}
+
+// ---------------------------------------------------------------------------
+// extend_exclude: files whose path matches a glob are skipped entirely.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn extend_exclude_skips_matching_file() {
+    let engine = TyposEngine;
+    // The known-bad fixture produces diagnostics normally.
+    let src = SourceFile {
+        path: "tests/fixtures/typos/known_bad.txt".into(),
+        language: Language::Markdown,
+        content: KNOWN_BAD.into(),
+    };
+    let default_diags = engine.lint(&src, &engine_cfg()).unwrap();
+    assert!(
+        !default_diags.is_empty(),
+        "expected diagnostics before excluding; got none"
+    );
+
+    // With extend_exclude matching the file's path, it must be skipped.
+    let mut options = toml::Table::new();
+    options.insert(
+        "extend_exclude".to_string(),
+        toml::Value::Array(vec![toml::Value::String("tests/fixtures/**".to_string())]),
+    );
+    let cfg = EngineConfig {
+        globals: GlobalDefaults::default(),
+        indent_width: 4,
+        options,
+    };
+    let diags = engine.lint(&src, &cfg).unwrap();
+    assert!(
+        diags.is_empty(),
+        "extend_exclude should skip the matched file; got: {diags:?}",
+    );
+}

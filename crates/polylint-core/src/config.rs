@@ -46,6 +46,8 @@ pub struct Config {
     /// `[per-file-ignores]` — path glob → rule codes suppressed for matching
     /// files (lint-only). Applied as a post-lint filter on `Diagnostic.code`.
     pub per_file_ignores: BTreeMap<String, Vec<String>>,
+    /// Native `_typos.toml` / `.typos.toml` configuration discovered near the config root.
+    pub typos_native: poly_config::TyposNative,
 }
 
 /// The slice of config handed to one engine for one file.
@@ -77,7 +79,7 @@ impl Config {
             Kind::Lint => &self.lint,
             Kind::Format => &self.fmt,
         };
-        let options = tables
+        let lang_options = tables
             .get(lang.id())
             .and_then(|v| v.as_table())
             .and_then(|t| t.get(engine_name))
@@ -86,17 +88,103 @@ impl Config {
             .unwrap_or_default();
         // A user `indent_width` in the per-engine table overrides the language
         // default, uniformly for every engine (each reads `cfg.indent_width`).
-        let indent_width = options
+        let indent_width = lang_options
             .get("indent_width")
             .and_then(toml::Value::as_integer)
             .and_then(|v| usize::try_from(v).ok())
             .filter(|&v| v > 0)
             .unwrap_or_else(|| lang.default_indent_width());
+        let options = if engine_name == "typos" {
+            self.build_typos_options(&lang_options)
+        } else {
+            lang_options
+        };
         EngineConfig {
             globals: self.defaults.clone(),
             indent_width,
             options,
         }
+    }
+
+    /// Build the merged `options` table for the typos engine.
+    ///
+    /// Precedence (lowest → highest):
+    /// 1. Native `_typos.toml` / `.typos.toml` values (`typos_native`).
+    /// 2. Language-agnostic `[lint.typos]` table from `poly.toml` (poly wins on conflict).
+    /// 3. Per-language `[lint.<lang>.typos]` `extend_ignore_words` (back-compat; unioned in).
+    fn build_typos_options(&self, lang_options: &toml::Table) -> toml::Table {
+        // Start from native file values.
+        let mut extend_words: BTreeMap<String, String> = self.typos_native.extend_words.clone();
+        let mut extend_identifiers: BTreeMap<String, String> = self.typos_native.extend_identifiers.clone();
+        let mut extend_exclude: Vec<String> = self.typos_native.extend_exclude.clone();
+        let mut extend_ignore_words: Vec<String> = vec![];
+
+        // Overlay the language-agnostic [lint.typos] table from poly.toml.
+        if let Some(poly_typos) = self.lint.get("typos").and_then(|v| v.as_table()) {
+            if let Some(words) = poly_typos.get("extend_words").and_then(|v| v.as_table()) {
+                for (k, v) in words {
+                    if let Some(s) = v.as_str() {
+                        extend_words.insert(k.clone(), s.to_string());
+                    }
+                }
+            }
+            if let Some(idents) = poly_typos.get("extend_identifiers").and_then(|v| v.as_table()) {
+                for (k, v) in idents {
+                    if let Some(s) = v.as_str() {
+                        extend_identifiers.insert(k.clone(), s.to_string());
+                    }
+                }
+            }
+            if let Some(excl) = poly_typos.get("extend_exclude").and_then(|v| v.as_array()) {
+                extend_exclude.extend(excl.iter().filter_map(|v| v.as_str()).map(|s| s.to_string()));
+            }
+            if let Some(words) = poly_typos.get("extend_ignore_words").and_then(|v| v.as_array()) {
+                extend_ignore_words.extend(words.iter().filter_map(|v| v.as_str()).map(|s| s.to_string()));
+            }
+        }
+
+        // Union per-language [lint.<lang>.typos] extend_ignore_words (back-compat).
+        if let Some(per_lang_words) = lang_options.get("extend_ignore_words").and_then(|v| v.as_array()) {
+            extend_ignore_words.extend(per_lang_words.iter().filter_map(|v| v.as_str()).map(|s| s.to_string()));
+        }
+
+        // Assemble the final options table.
+        let mut options = toml::Table::new();
+        if !extend_words.is_empty() {
+            options.insert(
+                "extend_words".to_string(),
+                toml::Value::Table(
+                    extend_words
+                        .into_iter()
+                        .map(|(k, v)| (k, toml::Value::String(v)))
+                        .collect(),
+                ),
+            );
+        }
+        if !extend_identifiers.is_empty() {
+            options.insert(
+                "extend_identifiers".to_string(),
+                toml::Value::Table(
+                    extend_identifiers
+                        .into_iter()
+                        .map(|(k, v)| (k, toml::Value::String(v)))
+                        .collect(),
+                ),
+            );
+        }
+        if !extend_exclude.is_empty() {
+            options.insert(
+                "extend_exclude".to_string(),
+                toml::Value::Array(extend_exclude.into_iter().map(toml::Value::String).collect()),
+            );
+        }
+        if !extend_ignore_words.is_empty() {
+            options.insert(
+                "extend_ignore_words".to_string(),
+                toml::Value::Array(extend_ignore_words.into_iter().map(toml::Value::String).collect()),
+            );
+        }
+        options
     }
 }
 
@@ -109,6 +197,7 @@ impl From<poly_config::PolyConfig> for Config {
             fmt: pc.fmt,
             tools: pc.tools,
             per_file_ignores: pc.per_file_ignores,
+            typos_native: pc.typos_native,
         }
     }
 }

@@ -35,6 +35,20 @@ pub use tools::{ToolConfig, ToolsConfig};
 /// within the same directory.
 pub const CONFIG_FILE_NAMES: [&str; 2] = ["poly.toml", "polylint.toml"];
 
+/// Parsed content of a `_typos.toml` or `.typos.toml` native configuration file.
+///
+/// All sections are optional; absent sections default to empty. Unknown keys
+/// are silently ignored to match typos-cli's lenient parse semantics.
+#[derive(Debug, Clone, Default)]
+pub struct TyposNative {
+    /// `[default.extend-words]` — word tokens whose keys are treated as valid spellings.
+    pub extend_words: BTreeMap<String, String>,
+    /// `[default.extend-identifiers]` — identifier tokens whose keys are treated as valid.
+    pub extend_identifiers: BTreeMap<String, String>,
+    /// `[files] extend-exclude` — gitignore-style globs of files to skip spell-checking.
+    pub extend_exclude: Vec<String>,
+}
+
 /// Name of the optional local override file deep-merged over the primary config
 /// when it sits in the same directory (issue #2193). Scalars and arrays in the
 /// override replace the base; tables are merged recursively.
@@ -67,6 +81,9 @@ pub struct PolyConfig {
     /// against the normalized `Diagnostic.code` (exact or prefix), so a single
     /// table covers every backend (e.g. ruff `F401`, mago `too-many-methods`).
     pub per_file_ignores: BTreeMap<String, Vec<String>>,
+    /// Resolved native `_typos.toml` / `.typos.toml` content, if present near the
+    /// config root. Combined with `[lint.typos]` in `polylint-core`.
+    pub typos_native: TyposNative,
 }
 
 /// `[discovery]` — tunes the file walk that direct `poly lint` / `poly fmt` /
@@ -91,7 +108,18 @@ impl PolyConfig {
     pub fn load(start: &Path) -> anyhow::Result<PolyConfig> {
         match find_config(start) {
             Some(path) => PolyConfig::load_file(&path),
-            None => Ok(PolyConfig::default()),
+            None => {
+                let mut config = PolyConfig::default();
+                let dir = if start.is_file() {
+                    start.parent().unwrap_or(start)
+                } else {
+                    start
+                };
+                config.typos_native = find_typos_native_file(dir)
+                    .map(|p| parse_typos_native(&p))
+                    .unwrap_or_default();
+                Ok(config)
+            }
         }
     }
 
@@ -114,7 +142,12 @@ impl PolyConfig {
         }
 
         let raw: RawPolyConfig = table.try_into()?;
-        let config: PolyConfig = raw.into();
+        let mut config: PolyConfig = raw.into();
+        config.typos_native = path
+            .parent()
+            .and_then(find_typos_native_file)
+            .map(|p| parse_typos_native(&p))
+            .unwrap_or_default();
         config
             .hooks
             .validate()
@@ -158,6 +191,66 @@ pub fn find_config(start: &Path) -> Option<PathBuf> {
     }
 }
 
+/// Native typos-cli config file names in preference order.
+const TYPOS_NATIVE_FILE_NAMES: [&str; 2] = ["_typos.toml", ".typos.toml"];
+
+/// Search `dir` and its ancestors for a `_typos.toml` or `.typos.toml` file.
+/// Returns the path of the first found file; `None` if no file exists.
+fn find_typos_native_file(dir: &Path) -> Option<PathBuf> {
+    let mut current = dir;
+    loop {
+        for name in TYPOS_NATIVE_FILE_NAMES {
+            let candidate = current.join(name);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+        current = current.parent()?;
+    }
+}
+
+/// Parse a `_typos.toml` / `.typos.toml` file into a [`TyposNative`] value.
+///
+/// Unknown keys and malformed sections are silently ignored (lenient parse).
+/// Returns the default (empty) value on any I/O or parse error.
+fn parse_typos_native(path: &Path) -> TyposNative {
+    let text = match std::fs::read_to_string(path) {
+        Ok(t) => t,
+        Err(_) => return TyposNative::default(),
+    };
+    let table: toml::Table = match toml::from_str(&text) {
+        Ok(t) => t,
+        Err(_) => return TyposNative::default(),
+    };
+
+    let mut result = TyposNative::default();
+
+    if let Some(default) = table.get("default").and_then(|v| v.as_table()) {
+        if let Some(words) = default.get("extend-words").and_then(|v| v.as_table()) {
+            for (k, v) in words {
+                if let Some(val) = v.as_str() {
+                    result.extend_words.insert(k.clone(), val.to_string());
+                }
+            }
+        }
+        if let Some(idents) = default.get("extend-identifiers").and_then(|v| v.as_table()) {
+            for (k, v) in idents {
+                if let Some(val) = v.as_str() {
+                    result.extend_identifiers.insert(k.clone(), val.to_string());
+                }
+            }
+        }
+    }
+
+    if let Some(files) = table.get("files").and_then(|v| v.as_table())
+        && let Some(excl) = files.get("extend-exclude").and_then(|v| v.as_array())
+    {
+        result.extend_exclude = excl.iter().filter_map(|v| v.as_str()).map(|s| s.to_string()).collect();
+    }
+
+    result
+}
+
 #[derive(Debug, Deserialize, Default)]
 #[serde(default)]
 struct RawPolyConfig {
@@ -185,6 +278,7 @@ impl From<RawPolyConfig> for PolyConfig {
             cache: raw.cache,
             tools: raw.tools,
             per_file_ignores: raw.per_file_ignores,
+            typos_native: TyposNative::default(), // populated after conversion in load_file / load
         }
     }
 }

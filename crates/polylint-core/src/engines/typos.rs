@@ -22,6 +22,7 @@
 
 use std::borrow::Cow;
 
+use globset::{Glob, GlobSetBuilder};
 use unicase::UniCase;
 
 use crate::config::EngineConfig;
@@ -31,7 +32,7 @@ use crate::language::Language;
 /// Combined cache-key version: `typos` tokeniser + `typos-dict` word list,
 /// plus a marker for the noise-suppression guards below. Bump whenever either
 /// crate is updated OR the guard logic changes (it alters output).
-const TYPOS_VERSION: &str = "0.10.43+dict-0.13.30+guards1";
+const TYPOS_VERSION: &str = "0.10.43+dict-0.13.30+guards1+cfg1";
 
 /// Skip spell-checking files at least this large: generated/minified bundles
 /// dominate by size and are pure noise word-by-word.
@@ -86,9 +87,20 @@ impl Engine for TyposEngine {
             return Ok(Vec::new());
         }
 
-        // Collect user-defined words to treat as valid spellings.
-        // Configurable via `[lint.<lang>.typos] extend_ignore_words = ["foo", "bar"]`.
-        let ignore_words: Vec<String> = cfg
+        // File-skip: if src.path matches any extend_exclude glob, return early.
+        let exclude_globs: Vec<String> = cfg
+            .options
+            .get("extend_exclude")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str()).map(|s| s.to_string()).collect())
+            .unwrap_or_default();
+        if !exclude_globs.is_empty() && path_matches_any(&src.path, &exclude_globs) {
+            return Ok(Vec::new());
+        }
+
+        // Build the valid-word set: extend_ignore_words (flat list) ∪ extend_words keys.
+        // Both are lowercased for comparison.
+        let mut valid_words: Vec<String> = cfg
             .options
             .get("extend_ignore_words")
             .and_then(|v| v.as_array())
@@ -99,9 +111,21 @@ impl Engine for TyposEngine {
                     .collect()
             })
             .unwrap_or_default();
+        if let Some(words_table) = cfg.options.get("extend_words").and_then(|v| v.as_table()) {
+            valid_words.extend(words_table.keys().map(|k| k.to_ascii_lowercase()));
+        }
+
+        // Build the valid-identifier set from extend_identifiers keys (lowercased).
+        let valid_identifiers: Vec<String> = cfg
+            .options
+            .get("extend_identifiers")
+            .and_then(|v| v.as_table())
+            .map(|t| t.keys().map(|k| k.to_ascii_lowercase()).collect())
+            .unwrap_or_default();
 
         let dict = ConfiguredDictionary {
-            ignore_words: &ignore_words,
+            valid_words: &valid_words,
+            valid_identifiers: &valid_identifiers,
         };
         let diags = typos::check_str(&src.content, &TOKENIZER, &dict)
             .filter(|typo| typo.typo.len() >= MIN_TYPO_LEN)
@@ -119,6 +143,43 @@ fn is_generated_or_minified(content: &str) -> bool {
     content.len() >= MAX_SPELL_CHECK_BYTES || content.lines().any(|line| line.len() >= MAX_LINE_BYTES)
 }
 
+/// Return `true` when `path` matches at least one of the gitignore-style glob
+/// `patterns`. Matching is tried against the full path first, then against each
+/// successive suffix (leading component stripped repeatedly) so bare patterns
+/// like `CHANGELOG.md` match `/repo/CHANGELOG.md` and `tests/**` matches
+/// `/repo/tests/foo.rs`. Malformed patterns are silently ignored.
+fn path_matches_any(path: &std::path::Path, patterns: &[String]) -> bool {
+    let mut builder = GlobSetBuilder::new();
+    for pattern in patterns {
+        if let Ok(glob) = Glob::new(pattern) {
+            builder.add(glob);
+        }
+    }
+    let Ok(set) = builder.build() else {
+        return false;
+    };
+
+    // Try the full path first.
+    if set.is_match(path) {
+        return true;
+    }
+    // Strip the first component repeatedly and try each suffix.
+    let mut tail: &std::path::Path = path;
+    loop {
+        let mut comps = tail.components();
+        let Some(_) = comps.next() else { break };
+        let rest = comps.as_path();
+        if rest == tail || rest.as_os_str().is_empty() {
+            break;
+        }
+        if set.is_match(rest) {
+            return true;
+        }
+        tail = rest;
+    }
+    false
+}
+
 // ---------------------------------------------------------------------------
 // Built-in dictionary
 // ---------------------------------------------------------------------------
@@ -126,23 +187,37 @@ fn is_generated_or_minified(content: &str) -> bool {
 /// In-process dictionary wrapping `typos_dict::WORD`, extended with a
 /// caller-supplied list of words to treat as valid.
 ///
-/// The `ignore_words` slice contains **lowercased** word strings. Any token
-/// whose lowercased form appears in that slice is returned as
-/// [`typos::Status::Valid`], bypassing the built-in dictionary lookup.
+/// `valid_words` contains **lowercased** word strings. Any token whose lowercased
+/// form appears in that slice is returned as [`typos::Status::Valid`], bypassing
+/// the built-in dictionary lookup.
+///
+/// `valid_identifiers` contains **lowercased** identifier strings. Any identifier
+/// token whose lowercased form appears in that slice is returned as valid,
+/// suppressing any word-level typo flagging within it.
 ///
 /// Implements [`typos::Dictionary`] so it can be passed to [`typos::check_str`].
 struct ConfiguredDictionary<'a> {
     /// Lowercased words the user wants treated as valid spellings.
-    ignore_words: &'a [String],
+    /// Sourced from `extend_ignore_words` (flat list) and `extend_words` keys.
+    valid_words: &'a [String],
+    /// Lowercased identifier tokens the user wants treated as valid.
+    /// Sourced from `extend_identifiers` keys.
+    valid_identifiers: &'a [String],
 }
 
 impl typos::Dictionary for ConfiguredDictionary<'_> {
     fn correct_ident<'s>(&'s self, ident: typos::tokens::Identifier<'_>) -> Option<typos::Status<'s>> {
-        // A small set of identifiers that typos-cli explicitly accepts as valid.
+        // Hard-coded identifiers that typos-cli explicitly accepts as valid.
         match ident.token() {
-            "O_WRONLY" | "dBA" => Some(typos::Status::Valid),
-            _ => None,
+            "O_WRONLY" | "dBA" => return Some(typos::Status::Valid),
+            _ => {}
         }
+        // User-defined identifier allow-list (lowercased comparison).
+        let lowered = ident.token().to_ascii_lowercase();
+        if self.valid_identifiers.iter().any(|w| w == &lowered) {
+            return Some(typos::Status::Valid);
+        }
+        None
     }
 
     fn correct_word<'s>(&'s self, word_token: typos::tokens::Word<'_>) -> Option<typos::Status<'s>> {
@@ -153,9 +228,9 @@ impl typos::Dictionary for ConfiguredDictionary<'_> {
             return None;
         }
 
-        // User-defined ignore list (stored lowercased, compared lowercased).
+        // User-defined valid-word list (stored lowercased, compared lowercased).
         let lowered = word_token.token().to_ascii_lowercase();
-        if self.ignore_words.iter().any(|w| w == &lowered) {
+        if self.valid_words.iter().any(|w| w == &lowered) {
             return Some(typos::Status::Valid);
         }
 
@@ -168,7 +243,7 @@ impl typos::Dictionary for ConfiguredDictionary<'_> {
             typos::Status::Corrections(corrections.iter().map(|c| Cow::Borrowed(*c)).collect())
         };
 
-        // Reflect the original word's casing in each correction (e.g. "LANGUAGE" → "LANGUAGE").
+        // Reflect the original word's casing in each correction.
         for s in status.corrections_mut() {
             case_correct(s, word_token.case());
         }

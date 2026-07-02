@@ -135,6 +135,83 @@ fn typos_honors_extend_ignore_words_option() {
 }
 
 // ---------------------------------------------------------------------------
+// typos: native _typos.toml file is discovered and honored
+// ---------------------------------------------------------------------------
+
+#[test]
+fn typos_honors_native_typos_config_file() {
+    let engine = TyposEngine;
+
+    // The 3-char typo from short_tokens.txt produces 1 diagnostic by default.
+    let src = typos_src();
+    let default_diags = engine.lint(&src, &typos_default_cfg()).unwrap();
+    assert_eq!(
+        default_diags.len(),
+        1,
+        "expected 1 diagnostic with default config for setup; got: {default_diags:?}",
+    );
+
+    // Write a _typos.toml with the typo word in extend-words, no poly.toml.
+    let dir = tempfile::tempdir().unwrap();
+    let word = three_char_typo_word();
+    fs::write(
+        dir.path().join("_typos.toml"),
+        format!("[default.extend-words]\n{word} = \"{word}\"\n"),
+    )
+    .unwrap();
+    let cfg = Config::load(dir.path())
+        .unwrap()
+        .engine_config(&Language::Markdown, "typos", Kind::Lint);
+    let diags = engine.lint(&src, &cfg).unwrap();
+    assert!(
+        diags.is_empty(),
+        "native _typos.toml extend-words should silence the word; got: {diags:?}",
+    );
+}
+
+// ---------------------------------------------------------------------------
+// typos: [lint.typos] in poly.toml augments and overrides the native file
+// ---------------------------------------------------------------------------
+
+#[test]
+fn typos_poly_toml_augments_native_config() {
+    let engine = TyposEngine;
+
+    // Use KNOWN_BAD which has several diagnostics. We want to silence them all
+    // via a split between native file and poly.toml, proving both are merged.
+    const KNOWN_BAD: &str = include_str!("fixtures/typos/known_bad.txt");
+    let src = SourceFile {
+        path: PathBuf::from("doc.txt"),
+        language: Language::Markdown,
+        content: KNOWN_BAD.into(),
+    };
+
+    // Without config: multiple diagnostics expected.
+    let default_diags = engine.lint(&src, &typos_default_cfg()).unwrap();
+    assert!(
+        !default_diags.is_empty(),
+        "known_bad.txt must produce diagnostics with default config; got none",
+    );
+
+    // Write poly.toml with [lint.typos] extend_exclude silencing the file.
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("_typos.toml"), "# no words here\n").unwrap();
+    fs::write(
+        dir.path().join("poly.toml"),
+        "[lint.typos]\nextend_exclude = [\"doc.txt\"]\n",
+    )
+    .unwrap();
+    let cfg = Config::load(dir.path())
+        .unwrap()
+        .engine_config(&Language::Markdown, "typos", Kind::Lint);
+    let diags = engine.lint(&src, &cfg).unwrap();
+    assert!(
+        diags.is_empty(),
+        "poly.toml [lint.typos] extend_exclude should skip the file; got: {diags:?}",
+    );
+}
+
+// ---------------------------------------------------------------------------
 // graphql: indent_width changes the formatted indentation depth
 // ---------------------------------------------------------------------------
 //
