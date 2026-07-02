@@ -32,12 +32,7 @@ fn make_src(path: &str, content: &str) -> SourceFile {
 
 /// Build a TOML string-array value from a slice of codes.
 fn code_array(codes: &[&str]) -> toml::Value {
-    toml::Value::Array(
-        codes
-            .iter()
-            .map(|c| toml::Value::String((*c).into()))
-            .collect(),
-    )
+    toml::Value::Array(codes.iter().map(|c| toml::Value::String((*c).into())).collect())
 }
 
 fn format_to_string(content: &str) -> String {
@@ -80,25 +75,14 @@ fn known_bad_diagnostics() {
     // Assert structural properties: engine name, non-empty code, line presence.
     for diag in &diags {
         assert_eq!(diag.engine, "ruff");
-        assert!(
-            diag.code.is_some(),
-            "every ruff diagnostic must carry a rule code"
-        );
-        assert!(
-            diag.span.is_some(),
-            "every ruff diagnostic must carry a span"
-        );
+        assert!(diag.code.is_some(), "every ruff diagnostic must carry a rule code");
+        assert!(diag.span.is_some(), "every ruff diagnostic must carry a span");
     }
 
     // Collect (code, start_line) for snapshot.
     let mut summary: Vec<_> = diags
         .iter()
-        .map(|d| {
-            (
-                d.code.as_deref().unwrap_or(""),
-                d.span.as_ref().map(|s| s.start_line),
-            )
-        })
+        .map(|d| (d.code.as_deref().unwrap_or(""), d.span.as_ref().map(|s| s.start_line)))
         .collect();
     // Sort for determinism — ruff does not guarantee order across rules.
     summary.sort_unstable();
@@ -126,10 +110,7 @@ def  add(a,b ):
 
 #[test]
 fn known_unformatted_output() {
-    insta::assert_snapshot!(
-        "known_unformatted_output",
-        format_to_string(KNOWN_UNFORMATTED)
-    );
+    insta::assert_snapshot!("known_unformatted_output", format_to_string(KNOWN_UNFORMATTED));
 }
 
 // ---------------------------------------------------------------------------
@@ -149,10 +130,7 @@ def example():
 
 #[test]
 fn docstring_code_format_output() {
-    insta::assert_snapshot!(
-        "docstring_code_format_output",
-        format_to_string(DOCSTRING_CODE)
-    );
+    insta::assert_snapshot!("docstring_code_format_output", format_to_string(DOCSTRING_CODE));
 }
 
 /// Regression: ruff's INP001 (implicit-namespace-package) must respect the
@@ -200,9 +178,7 @@ fn inp001_respects_on_disk_package_root() {
     };
     let orphan_diags = engine.lint(&orphan, &cfg).unwrap();
     assert!(
-        orphan_diags
-            .iter()
-            .any(|d| d.code.as_deref() == Some("INP001")),
+        orphan_diags.iter().any(|d| d.code.as_deref() == Some("INP001")),
         "a module with no __init__.py must trip INP001 (rule is active); got: {orphan_diags:?}"
     );
 }
@@ -215,9 +191,7 @@ fn extend_select_adds_rule_beyond_defaults() {
     let engine = RuffEngine;
     let content = "print(1)\n";
 
-    let base = engine
-        .lint(&make_src("m.py", content), &engine_cfg())
-        .unwrap();
+    let base = engine.lint(&make_src("m.py", content), &engine_cfg()).unwrap();
     assert!(
         !base.iter().any(|d| d.code.as_deref() == Some("T201")),
         "T201 must not fire under the default rule set; got: {base:?}"
@@ -291,10 +265,7 @@ fn mccabe_max_complexity_param_is_honored() {
             "select".to_string(),
             toml::Value::Array(vec![toml::Value::String("C901".into())]),
         );
-        o.insert(
-            "mccabe_max_complexity".to_string(),
-            toml::Value::Integer(max),
-        );
+        o.insert("mccabe_max_complexity".to_string(), toml::Value::Integer(max));
         EngineConfig {
             options: o,
             ..engine_cfg()

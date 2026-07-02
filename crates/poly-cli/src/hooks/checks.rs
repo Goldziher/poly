@@ -134,13 +134,7 @@ impl Violation {
 
 impl fmt::Display for Violation {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            formatter,
-            "{}: {} [{}]",
-            self.path.display(),
-            self.message,
-            self.check
-        )
+        write!(formatter, "{}: {} [{}]", self.path.display(), self.message, self.check)
     }
 }
 
@@ -175,11 +169,7 @@ fn collect_violations(root: &Path, args: &CheckArgs) -> Vec<Violation> {
         violations.extend(check_merge_conflict(root, &args.files));
     }
     if args.added_large_files {
-        violations.extend(check_added_large_files(
-            root,
-            &args.files,
-            args.max_added_kb,
-        ));
+        violations.extend(check_added_large_files(root, &args.files, args.max_added_kb));
     }
     if args.private_key {
         violations.extend(check_private_key(root, &args.files));
@@ -200,12 +190,9 @@ fn collect_violations(root: &Path, args: &CheckArgs) -> Vec<Violation> {
 
 /// Whether `line` is a git merge-conflict marker line.
 fn is_conflict_marker(line: &str) -> bool {
-    CONFLICT_MARKERS.iter().any(|marker| {
-        line == *marker
-            || line
-                .strip_prefix(marker)
-                .is_some_and(|rest| rest.starts_with(' '))
-    })
+    CONFLICT_MARKERS
+        .iter()
+        .any(|marker| line == *marker || line.strip_prefix(marker).is_some_and(|rest| rest.starts_with(' ')))
 }
 
 /// Reject files containing git merge-conflict markers, reporting each marker
@@ -250,10 +237,7 @@ fn check_added_large_files(root: &Path, files: &[PathBuf], max_kb: u64) -> Vec<V
             violations.push(Violation::new(
                 "check-added-large-files",
                 path.clone(),
-                format!(
-                    "file is {} KiB, over the {max_kb} KiB limit",
-                    size / BYTES_PER_KIB
-                ),
+                format!("file is {} KiB, over the {max_kb} KiB limit", size / BYTES_PER_KIB),
             ));
         }
     }
@@ -403,8 +387,7 @@ fn check_shebang_scripts_are_executable_unix(root: &Path, files: &[PathBuf]) -> 
 fn is_executable(path: &Path) -> bool {
     use std::os::unix::fs::PermissionsExt;
 
-    std::fs::metadata(path)
-        .is_ok_and(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
+    std::fs::metadata(path).is_ok_and(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
 }
 
 #[cfg(not(unix))]
@@ -462,11 +445,7 @@ mod tests {
     #[test]
     fn private_key_flags_known_headers() {
         let dir = tempfile::tempdir().unwrap();
-        let key = write(
-            dir.path(),
-            "id_rsa",
-            b"-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n",
-        );
+        let key = write(dir.path(), "id_rsa", b"-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n");
         let clean = write(dir.path(), "notes.txt", b"nothing secret here\n");
 
         let violations = check_private_key(dir.path(), &[key.clone(), clean]);
@@ -544,8 +523,7 @@ mod tests {
         let path = write(dir.path(), "script.sh", b"#!/bin/sh\necho hi\n");
         fs::set_permissions(dir.path().join(&path), fs::Permissions::from_mode(0o644)).unwrap();
 
-        let violations =
-            check_shebang_scripts_are_executable(dir.path(), std::slice::from_ref(&path));
+        let violations = check_shebang_scripts_are_executable(dir.path(), std::slice::from_ref(&path));
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].path, path);
         assert_eq!(violations[0].check, "check-shebang-scripts-are-executable");

@@ -100,10 +100,7 @@ fn autofix_inserts_blank_line_before_footer() {
     options.enforce_conventional_spec = true;
     let message = "feat: add api\n\nBody line\nRefs: 123";
     let outcome = lint_message(message, &options);
-    assert_eq!(
-        outcome.cleaned_message,
-        "feat: add api\n\nBody line\n\nRefs: 123"
-    );
+    assert_eq!(outcome.cleaned_message, "feat: add api\n\nBody line\n\nRefs: 123");
     assert!(outcome.warnings_after.is_empty());
     assert!(
         outcome
@@ -127,12 +124,7 @@ fn enforces_single_line_policy() {
     let mut options = LintOptions::default();
     options.body_policy = BodyPolicy::SingleLine;
     let outcome = lint_message("feat: header\n\nbody line", &options);
-    assert!(
-        outcome
-            .violations_before
-            .iter()
-            .any(|msg| msg.contains("single line"))
-    );
+    assert!(outcome.violations_before.iter().any(|msg| msg.contains("single line")));
 }
 
 #[test]
@@ -279,7 +271,8 @@ fn conventional_body_allows_bullets_with_colons() {
         .unwrap(),
     );
     options.enforce_conventional_spec = true;
-    let message = "feat: add api\n\n- Update: handle edge cases\n- Note: keep API stable\n\nBREAKING CHANGE: endpoint renamed";
+    let message =
+        "feat: add api\n\n- Update: handle edge cases\n- Note: keep API stable\n\nBREAKING CHANGE: endpoint renamed";
     let outcome = lint_message(message, &options);
     assert!(
         outcome.violations_before.is_empty(),

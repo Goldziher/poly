@@ -72,14 +72,8 @@ fn bench_runner(c: &mut Criterion) {
     group.sample_size(20);
     group.bench_function("format_64_rust_files_dry_run", |b| {
         b.iter(|| {
-            let results = format(
-                black_box(&paths),
-                black_box(&config),
-                black_box(&opts),
-                false,
-                false,
-            )
-            .expect("format run");
+            let results =
+                format(black_box(&paths), black_box(&config), black_box(&opts), false, false).expect("format run");
             black_box(results);
         });
     });

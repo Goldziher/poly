@@ -71,10 +71,7 @@ pub(super) fn lint_php(
     let arena = LocalArena::new();
 
     // Build an ephemeral in-memory file.
-    let file = File::ephemeral(
-        Cow::Borrowed(b"input.php"),
-        Cow::Owned(src.content.as_bytes().to_vec()),
-    );
+    let file = File::ephemeral(Cow::Borrowed(b"input.php"), Cow::Owned(src.content.as_bytes().to_vec()));
 
     let program = parse_file(&arena, &file);
     let mut diags: Vec<Diagnostic> = Vec::new();
@@ -166,11 +163,7 @@ pub(super) fn lint_php(
 ///
 /// Returns `anyhow::Error` when a string is not a recognised integration name.
 fn parse_integrations(cfg: &EngineConfig) -> anyhow::Result<IntegrationSet> {
-    let Some(arr) = cfg
-        .options
-        .get("integrations")
-        .and_then(toml::Value::as_array)
-    else {
+    let Some(arr) = cfg.options.get("integrations").and_then(toml::Value::as_array) else {
         return Ok(IntegrationSet::empty());
     };
     let mut set = IntegrationSet::empty();
@@ -275,9 +268,7 @@ fn convert_span(span: mago_span::Span, file: &File) -> Span {
 /// Return a short stable code string for a parse error kind.
 fn parse_error_code(error: &ParseError) -> String {
     match error {
-        ParseError::SyntaxError(_) | ParseError::UnclosedLiteralString(_, _) => {
-            "syntax".to_string()
-        }
+        ParseError::SyntaxError(_) | ParseError::UnclosedLiteralString(_, _) => "syntax".to_string(),
         _ => "parse".to_string(),
     }
 }
@@ -287,11 +278,7 @@ fn parse_error_code(error: &ParseError) -> String {
 /// Only edits marked [`Safety::Safe`] within the byte bounds of `source` are
 /// included.  The runner applies the returned set atomically (with an internal
 /// overlap guard), so it is safe to return multiple edits.
-fn extract_safe_fixes(
-    issue: &mago_reporting::Issue,
-    file_id: mago_database::file::FileId,
-    source: &str,
-) -> Vec<Edit> {
+fn extract_safe_fixes(issue: &mago_reporting::Issue, file_id: mago_database::file::FileId, source: &str) -> Vec<Edit> {
     let Some(edits) = issue.edits.get(&file_id) else {
         return vec![];
     };

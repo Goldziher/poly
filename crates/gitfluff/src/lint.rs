@@ -63,11 +63,9 @@ pub struct LintOutcome {
 
 pub fn lint_message(message: &str, options: &LintOptions) -> LintOutcome {
     let (violations_before, warnings_before) = evaluate_message(message, options);
-    let (mut cleaned_message, mut cleanup_summaries) =
-        apply_cleanup(message, &options.cleanup_rules);
+    let (mut cleaned_message, mut cleanup_summaries) = apply_cleanup(message, &options.cleanup_rules);
     if options.autofix {
-        let (formatted, mut format_summaries) =
-            apply_autofix(&cleaned_message, options.enforce_conventional_spec);
+        let (formatted, mut format_summaries) = apply_autofix(&cleaned_message, options.enforce_conventional_spec);
         if formatted != cleaned_message {
             cleaned_message = formatted;
         }
@@ -91,12 +89,10 @@ fn evaluate_message(message: &str, options: &LintOptions) -> (Vec<String>, Vec<S
 
     for exclude in &options.exclude_rules {
         if exclude.regex.is_match(message) {
-            let msg = exclude.message.clone().unwrap_or_else(|| {
-                format!(
-                    "Commit message matches excluded pattern `{}`",
-                    exclude.pattern_source
-                )
-            });
+            let msg = exclude
+                .message
+                .clone()
+                .unwrap_or_else(|| format!("Commit message matches excluded pattern `{}`", exclude.pattern_source));
             violations.push(msg);
         }
     }
@@ -130,11 +126,8 @@ fn evaluate_message(message: &str, options: &LintOptions) -> (Vec<String>, Vec<S
     }
 
     if options.enforce_conventional_spec {
-        let (mut errs, mut warns) = validate_conventional_commitlint_rules(
-            &normalized,
-            options.body_policy,
-            Some(title_core),
-        );
+        let (mut errs, mut warns) =
+            validate_conventional_commitlint_rules(&normalized, options.body_policy, Some(title_core));
         violations.append(&mut errs);
         warnings.append(&mut warns);
     } else {
@@ -144,11 +137,7 @@ fn evaluate_message(message: &str, options: &LintOptions) -> (Vec<String>, Vec<S
     (violations, warnings)
 }
 
-fn strip_title_affixes<'a>(
-    title_line: &'a str,
-    options: &LintOptions,
-    violations: &mut Vec<String>,
-) -> &'a str {
+fn strip_title_affixes<'a>(title_line: &'a str, options: &LintOptions, violations: &mut Vec<String>) -> &'a str {
     let mut current = title_line;
 
     if let Some(prefix) = &options.title_prefix {
@@ -231,10 +220,7 @@ fn apply_cleanup(input: &str, rules: &[CleanupRule]) -> (String, Vec<String>) {
     let mut summaries = Vec::new();
 
     for rule in rules {
-        let replaced = rule
-            .regex
-            .replace_all(&current, rule.replace.as_str())
-            .to_string();
+        let replaced = rule.regex.replace_all(&current, rule.replace.as_str()).to_string();
         if replaced != current {
             let summary = rule
                 .description
@@ -289,9 +275,7 @@ fn apply_autofix(input: &str, enforce_conventional: bool) -> (String, Vec<String
 
                 if let Some(footer_start) = detect_footer_start(&lines)
                     && footer_start > 0
-                    && lines
-                        .get(footer_start - 1)
-                        .is_some_and(|line| !line.trim().is_empty())
+                    && lines.get(footer_start - 1).is_some_and(|line| !line.trim().is_empty())
                 {
                     lines.insert(footer_start, "");
                     summaries.push("Insert blank line before footers".to_string());
@@ -343,14 +327,12 @@ fn detect_footer_start(lines: &[&str]) -> Option<usize> {
 }
 
 pub fn build_message_pattern(pattern: &str, description: Option<String>) -> Result<MessagePattern> {
-    let regex = Regex::new(pattern)
-        .with_context(|| format!("invalid message pattern regex `{pattern}`"))?;
+    let regex = Regex::new(pattern).with_context(|| format!("invalid message pattern regex `{pattern}`"))?;
     Ok(MessagePattern { regex, description })
 }
 
 pub fn build_exclude_rule(pattern: &str, message: Option<String>) -> Result<ExcludeRule> {
-    let regex =
-        Regex::new(pattern).with_context(|| format!("invalid exclude regex `{pattern}`"))?;
+    let regex = Regex::new(pattern).with_context(|| format!("invalid exclude regex `{pattern}`"))?;
     Ok(ExcludeRule {
         regex,
         message,
@@ -358,11 +340,7 @@ pub fn build_exclude_rule(pattern: &str, message: Option<String>) -> Result<Excl
     })
 }
 
-pub fn build_cleanup_rule(
-    find: &str,
-    replace: &str,
-    description: Option<String>,
-) -> Result<CleanupRule> {
+pub fn build_cleanup_rule(find: &str, replace: &str, description: Option<String>) -> Result<CleanupRule> {
     let regex = Regex::new(find).with_context(|| format!("invalid cleanup regex `{find}`"))?;
     Ok(CleanupRule {
         regex,
@@ -423,9 +401,7 @@ fn validate_body_policy(message: &str, policy: BodyPolicy) -> Vec<String> {
                     continue;
                 }
                 if !saw_blank {
-                    return vec![
-                        "Body must begin with a blank line after the description".to_string(),
-                    ];
+                    return vec!["Body must begin with a blank line after the description".to_string()];
                 }
                 body_has_content = true;
                 break;
@@ -467,9 +443,7 @@ fn parse_footer_line(line: &str) -> Option<FooterEntry> {
     if !normalized.eq_ignore_ascii_case("BREAKING CHANGE") {
         // Only allow spec-shaped tokens so body text like `- Note: ...` doesn't get
         // misclassified as a footer entry.
-        if !token.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
-            || token.chars().any(|c| c.is_whitespace())
-        {
+        if !token.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') || token.chars().any(|c| c.is_whitespace()) {
             return None;
         }
     }
@@ -499,8 +473,7 @@ fn validate_conventional_commitlint_rules(
         ));
     }
 
-    let title_re =
-        Regex::new(r"^(\w*)(?:\((.*)\))?!?: (.*)$").expect("valid conventional title regex");
+    let title_re = Regex::new(r"^(\w*)(?:\((.*)\))?!?: (.*)$").expect("valid conventional title regex");
     let (ty, subject) = title_re
         .captures(title_line)
         .map(|caps| {
@@ -512,8 +485,7 @@ fn validate_conventional_commitlint_rules(
         .unwrap_or(("", ""));
 
     let allowed_types = [
-        "build", "chore", "ci", "docs", "feat", "fix", "perf", "refactor", "revert", "style",
-        "test",
+        "build", "chore", "ci", "docs", "feat", "fix", "perf", "refactor", "revert", "style", "test",
     ];
 
     if subject.trim().is_empty() {
@@ -524,10 +496,7 @@ fn validate_conventional_commitlint_rules(
             errors.push("subject may not end with full stop".to_string());
         }
         if is_disallowed_subject_case(subject_trimmed) {
-            errors.push(
-                "subject must not be sentence-case, start-case, pascal-case, upper-case"
-                    .to_string(),
-            );
+            errors.push("subject must not be sentence-case, start-case, pascal-case, upper-case".to_string());
         }
     }
 
@@ -538,10 +507,7 @@ fn validate_conventional_commitlint_rules(
             errors.push("type must be lower-case".to_string());
         }
         if !allowed_types.contains(&ty) {
-            errors.push(format!(
-                "type must be one of [{}]",
-                allowed_types.join(", ")
-            ));
+            errors.push(format!("type must be one of [{}]", allowed_types.join(", ")));
         }
     }
 
@@ -560,9 +526,8 @@ fn validate_conventional_commitlint_rules(
     }
 
     if !footer_lines.is_empty() {
-        let has_leading_blank = footer_token_index.is_some_and(|idx| {
-            idx > 0 && rest.get(idx - 1).is_some_and(|line| line.trim().is_empty())
-        });
+        let has_leading_blank = footer_token_index
+            .is_some_and(|idx| idx > 0 && rest.get(idx - 1).is_some_and(|line| line.trim().is_empty()));
         if !has_leading_blank {
             warnings.push("footer must have leading blank line".to_string());
         }
@@ -596,8 +561,7 @@ fn validate_conventional_commitlint_rules(
         if normalized_token.eq_ignore_ascii_case("BREAKING CHANGE") {
             if footer.token != "BREAKING CHANGE" && footer.token != "BREAKING-CHANGE" {
                 errors.push(
-                    "BREAKING CHANGE footer token must be uppercase (BREAKING CHANGE or BREAKING-CHANGE)"
-                        .to_string(),
+                    "BREAKING CHANGE footer token must be uppercase (BREAKING CHANGE or BREAKING-CHANGE)".to_string(),
                 );
             }
             if footer.value.trim().is_empty() {
@@ -613,10 +577,7 @@ fn validate_conventional_commitlint_rules(
             ));
         }
 
-        if !token_trimmed
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-')
-        {
+        if !token_trimmed.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
             errors.push(format!(
                 "Footer token `{}` must use alphanumeric characters or hyphen",
                 token_trimmed
@@ -627,9 +588,7 @@ fn validate_conventional_commitlint_rules(
     (errors, warnings)
 }
 
-fn split_body_and_footer<'a>(
-    rest_lines: &'a [&'a str],
-) -> (Vec<&'a str>, Vec<&'a str>, Option<usize>) {
+fn split_body_and_footer<'a>(rest_lines: &'a [&'a str]) -> (Vec<&'a str>, Vec<&'a str>, Option<usize>) {
     let mut end = rest_lines.len();
     while end > 0 && rest_lines[end - 1].trim().is_empty() {
         end -= 1;
@@ -685,10 +644,7 @@ fn parse_footer_entries(lines: &[&str]) -> Vec<FooterEntry> {
 }
 
 fn is_disallowed_subject_case(subject: &str) -> bool {
-    is_upper_case(subject)
-        || is_pascal_case(subject)
-        || is_sentence_case(subject)
-        || is_start_case(subject)
+    is_upper_case(subject) || is_pascal_case(subject) || is_sentence_case(subject) || is_start_case(subject)
 }
 
 fn is_upper_case(subject: &str) -> bool {

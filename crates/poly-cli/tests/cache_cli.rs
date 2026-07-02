@@ -45,10 +45,7 @@ fn stats_reports_entries_for_a_populated_cache() {
     assert!(output.status.success(), "stats should succeed");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("entries"), "stats output: {stdout}");
-    assert!(
-        stdout.contains("total: 3 entries"),
-        "stats output: {stdout}"
-    );
+    assert!(stdout.contains("total: 3 entries"), "stats output: {stdout}");
 }
 
 #[test]

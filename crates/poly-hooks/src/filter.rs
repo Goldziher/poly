@@ -175,11 +175,7 @@ pub struct FileTagFilter<'a> {
 impl<'a> FileTagFilter<'a> {
     /// Create a tag filter from optional `all`/`any`/`exclude` tag sets.
     #[must_use]
-    pub fn new(
-        types: Option<&'a TagSet>,
-        types_or: Option<&'a TagSet>,
-        exclude_types: Option<&'a TagSet>,
-    ) -> Self {
+    pub fn new(types: Option<&'a TagSet>, types_or: Option<&'a TagSet>, exclude_types: Option<&'a TagSet>) -> Self {
         Self {
             all: types,
             any: types_or,
@@ -193,10 +189,7 @@ impl<'a> FileTagFilter<'a> {
         if self.all.is_some_and(|s| !s.is_subset(file_types)) {
             return false;
         }
-        if self
-            .any
-            .is_some_and(|s| !s.is_empty() && s.is_disjoint(file_types))
-        {
+        if self.any.is_some_and(|s| !s.is_empty() && s.is_disjoint(file_types)) {
             return false;
         }
         if self.exclude.is_some_and(|s| !s.is_disjoint(file_types)) {

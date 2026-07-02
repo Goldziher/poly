@@ -9,9 +9,7 @@ static CLEANUP_HOOKS: Mutex<Vec<Box<dyn Fn() + Send>>> = Mutex::new(Vec::new());
 
 /// Run all registered cleanup functions in registration order.
 pub fn cleanup() {
-    let mut hooks = CLEANUP_HOOKS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut hooks = CLEANUP_HOOKS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     for f in hooks.drain(..) {
         f();
     }

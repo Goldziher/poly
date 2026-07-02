@@ -33,11 +33,7 @@ fn default_cfg() -> EngineConfig {
 /// because it comes from oxlint's internal parser and may evolve.
 #[test]
 fn oxc_known_bad_js_diagnostics() {
-    let src = make_src(
-        "const x = {\n  a: 1,\nconst y = 2;\n",
-        "bad.js",
-        Language::JavaScript,
-    );
+    let src = make_src("const x = {\n  a: 1,\nconst y = 2;\n", "bad.js", Language::JavaScript);
     let diags = OxcEngine.lint(&src, &default_cfg()).unwrap();
     assert!(!diags.is_empty(), "expected at least one diagnostic");
     // oxlint reports parse errors at Error severity with no rule code.
@@ -74,10 +70,7 @@ fn oxc_oxlint_no_debugger_rule() {
     );
 
     // Snapshot: count + (code, severity) pairs for structural verification.
-    let summary: Vec<(Option<&str>, &Severity)> = diags
-        .iter()
-        .map(|d| (d.code.as_deref(), &d.severity))
-        .collect();
+    let summary: Vec<(Option<&str>, &Severity)> = diags.iter().map(|d| (d.code.as_deref(), &d.severity)).collect();
     insta::assert_debug_snapshot!(summary);
 }
 
@@ -95,9 +88,7 @@ fn oxc_config_ignore_suppresses_rule() {
     // Default config: no-debugger fires.
     let default_diags = engine.lint(&src, &default_cfg()).unwrap();
     assert!(
-        default_diags
-            .iter()
-            .any(|d| d.code.as_deref() == Some("no-debugger")),
+        default_diags.iter().any(|d| d.code.as_deref() == Some("no-debugger")),
         "expected no-debugger with default config; got: {default_diags:?}"
     );
 
@@ -114,9 +105,7 @@ fn oxc_config_ignore_suppresses_rule() {
     };
     let ignore_diags = engine.lint(&src, &cfg_ignore).unwrap();
     assert!(
-        !ignore_diags
-            .iter()
-            .any(|d| d.code.as_deref() == Some("no-debugger")),
+        !ignore_diags.iter().any(|d| d.code.as_deref() == Some("no-debugger")),
         "no-debugger should be suppressed via ignore config; got: {ignore_diags:?}"
     );
 }
@@ -124,16 +113,9 @@ fn oxc_config_ignore_suppresses_rule() {
 /// JSON with a trailing comma — asserts the expected parse-error Diagnostic.
 #[test]
 fn oxc_known_bad_json_diagnostics() {
-    let src = make_src(
-        "{\n  \"a\": 1,\n  \"b\": 2,\n}\n",
-        "bad.json",
-        Language::Json,
-    );
+    let src = make_src("{\n  \"a\": 1,\n  \"b\": 2,\n}\n", "bad.json", Language::Json);
     let diags = OxcEngine.lint(&src, &default_cfg()).unwrap();
-    assert!(
-        !diags.is_empty(),
-        "expected at least one diagnostic for trailing comma"
-    );
+    assert!(!diags.is_empty(), "expected at least one diagnostic for trailing comma");
     insta::assert_debug_snapshot!(diags[0].title);
 }
 
@@ -194,11 +176,7 @@ fn oxc_jsonc_with_comments_is_clean() {
 /// one element per line; oxc_formatter_json packs them inline when they fit.
 #[test]
 fn oxc_format_json_short_array_stays_inline() {
-    let src = make_src(
-        r#"{"parsers":["CodeBlock","Code"]}"#,
-        "config.json",
-        Language::Json,
-    );
+    let src = make_src(r#"{"parsers":["CodeBlock","Code"]}"#, "config.json", Language::Json);
     let out = OxcEngine.format(&src, &default_cfg()).unwrap();
     let formatted = match out {
         polylint_core::engine::FormatOutput::Formatted(text) => text,

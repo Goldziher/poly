@@ -64,10 +64,7 @@ impl RuleSelection {
 
     /// `true` when no selection config was provided (fast path: keep defaults).
     pub fn is_empty(&self) -> bool {
-        self.select.is_empty()
-            && self.extend_select.is_empty()
-            && self.ignore.is_empty()
-            && self.rules.is_empty()
+        self.select.is_empty() && self.extend_select.is_empty() && self.ignore.is_empty() && self.rules.is_empty()
     }
 }
 
@@ -91,10 +88,7 @@ pub(crate) fn string_list(cfg: &EngineConfig, key: &str) -> Vec<String> {
 /// Shared across format-only backends whose upstream `FormatOptions` type is
 /// `serde`-deserializable (e.g. malva, markup_fmt); prefer this over
 /// duplicating the parse-or-default pattern.
-pub(crate) fn deserialize_options<T: serde::de::DeserializeOwned + Default>(
-    cfg: &EngineConfig,
-    context: &str,
-) -> T {
+pub(crate) fn deserialize_options<T: serde::de::DeserializeOwned + Default>(cfg: &EngineConfig, context: &str) -> T {
     if cfg.options.is_empty() {
         return T::default();
     }
@@ -112,10 +106,7 @@ pub(crate) fn deserialize_options<T: serde::de::DeserializeOwned + Default>(
 /// Backends that accept both the canonical vocabulary (`select` / `ignore`) and
 /// their own native aliases use this to merge the two sources without emitting a
 /// code twice to the wrapped tool.
-pub(crate) fn union_codes(
-    primary: Vec<String>,
-    extra: impl IntoIterator<Item = String>,
-) -> Vec<String> {
+pub(crate) fn union_codes(primary: Vec<String>, extra: impl IntoIterator<Item = String>) -> Vec<String> {
     let mut seen = std::collections::BTreeSet::new();
     let mut merged = Vec::new();
     for code in primary.into_iter().chain(extra) {
@@ -152,11 +143,7 @@ fn string_list_from_table(table: &toml::Table, key: &str) -> Vec<String> {
     table
         .get(key)
         .and_then(toml::Value::as_array)
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(str::to_owned))
-                .collect()
-        })
+        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(str::to_owned)).collect())
         .unwrap_or_default()
 }
 
@@ -251,10 +238,7 @@ threshold = 10
 "#,
         );
         let sel = RuleSelection::from_options(&cfg);
-        let opts = sel
-            .rules
-            .get("cyclomatic-complexity")
-            .expect("rule entry present");
+        let opts = sel.rules.get("cyclomatic-complexity").expect("rule entry present");
         assert_eq!(opts.level, Some(Severity::Warning));
         assert!(opts.params.contains_key("threshold"));
     }

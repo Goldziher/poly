@@ -85,8 +85,7 @@ fn language_to_syntax(lang: &Language) -> Option<Syntax> {
 /// 3. Override all `LayoutOptions` fields with poly's globals — these always
 ///    win over any layout keys the user may have placed in the options table.
 fn build_options(cfg: &EngineConfig) -> FormatOptions {
-    let mut options: FormatOptions =
-        super::rule_config::deserialize_options(cfg, "[fmt.<css|scss|less>.malva]");
+    let mut options: FormatOptions = super::rule_config::deserialize_options(cfg, "[fmt.<css|scss|less>.malva]");
 
     // Poly's layout always wins — these come from globals, not the user table.
     // (use_tabs has no global, so it stays user-controllable from the table.)
@@ -140,10 +139,7 @@ mod tests {
         let engine = MalvaEngine;
         let src = make_src("test.css", Language::Css, ".foo { color: red; }\n");
         let diags = engine.lint(&src, &engine_cfg()).unwrap();
-        assert!(
-            diags.is_empty(),
-            "malva is format-only; expected no diagnostics"
-        );
+        assert!(diags.is_empty(), "malva is format-only; expected no diagnostics");
     }
 
     #[test]

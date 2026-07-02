@@ -57,10 +57,7 @@ pub fn normalize_path(path: PathBuf) -> PathBuf {
 ///
 /// Returns `Err` when no relative path exists (e.g. different drive letters
 /// on Windows).
-pub fn relative_to(
-    path: impl AsRef<Path>,
-    base: impl AsRef<Path>,
-) -> Result<PathBuf, std::io::Error> {
+pub fn relative_to(path: impl AsRef<Path>, base: impl AsRef<Path>) -> Result<PathBuf, std::io::Error> {
     let (stripped, common_prefix) = base
         .as_ref()
         .ancestors()

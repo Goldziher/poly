@@ -36,11 +36,7 @@ fn cache() -> &'static Mutex<HashMap<std::path::PathBuf, &'static str>> {
 pub(crate) fn resolve_edition(path: &Path) -> &'static str {
     let start_dir = path.parent().unwrap_or(path);
 
-    if let Some(found) = cache()
-        .lock()
-        .expect("edition cache mutex poisoned")
-        .get(start_dir)
-    {
+    if let Some(found) = cache().lock().expect("edition cache mutex poisoned").get(start_dir) {
         return found;
     }
 

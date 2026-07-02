@@ -15,8 +15,7 @@ use crate::engine::{Diagnostic, Edit, Engine, FormatOutput, SourceFile};
 use crate::engines::catalog_tool::CatalogToolEngine;
 use crate::engines::rule_config::RuleSelection;
 use crate::filter::{
-    PerFileIgnores, SeverityRemap, is_generated_lockfile, match_bases, merged_excludes,
-    relative_for_match,
+    PerFileIgnores, SeverityRemap, is_generated_lockfile, match_bases, merged_excludes, relative_for_match,
 };
 use crate::language::Language;
 use crate::registry::engines_for;
@@ -226,11 +225,7 @@ fn catalog_engines_for(language: &Language, config: &Config, kind: Kind) -> Vec<
 fn prefetch_tier2_grammars(plans: &FxHashMap<Language, Vec<EnginePlan>>) {
     let grammars: Vec<&str> = plans
         .iter()
-        .filter(|(_, engine_plans)| {
-            engine_plans
-                .iter()
-                .any(|plan| plan.engine.name() == "treesitter")
-        })
+        .filter(|(_, engine_plans)| engine_plans.iter().any(|plan| plan.engine.name() == "treesitter"))
         .filter_map(|(language, _)| match language {
             // The generic tier keys off the pack's grammar id, which is exactly
             // the `Language::Other` payload (set by discovery via the pack's own
@@ -249,11 +244,7 @@ fn prefetch_tier2_grammars(plans: &FxHashMap<Language, Vec<EnginePlan>>) {
 
 /// Build a per-language engine plan covering every language present in `files`,
 /// so each distinct language is planned exactly once before the file loop.
-fn plan_by_language(
-    files: &[DiscoveredFile],
-    config: &Config,
-    kind: Kind,
-) -> FxHashMap<Language, Vec<EnginePlan>> {
+fn plan_by_language(files: &[DiscoveredFile], config: &Config, kind: Kind) -> FxHashMap<Language, Vec<EnginePlan>> {
     // `Language` is a small enum key; FxHashMap's fast non-cryptographic hash
     // beats std SipHash here, and this lookup runs once per file × engine pass.
     let mut plans: FxHashMap<Language, Vec<EnginePlan>> = FxHashMap::default();
@@ -318,26 +309,23 @@ pub fn format(
     // them on a directory walk so a stray `poly fmt .` is safe — but still honour
     // a lock file passed explicitly as a path argument.
     let explicit: FxHashSet<&std::path::Path> = paths.iter().map(PathBuf::as_path).collect();
-    let files: Vec<DiscoveredFile> =
-        discover(paths, &merged_excludes(&config.exclude, &opts.exclude))
-            .into_iter()
-            .filter(|f| explicit.contains(f.path.as_path()) || !is_generated_lockfile(&f.path))
-            .collect();
+    let files: Vec<DiscoveredFile> = discover(paths, &merged_excludes(&config.exclude, &opts.exclude))
+        .into_iter()
+        .filter(|f| explicit.contains(f.path.as_path()) || !is_generated_lockfile(&f.path))
+        .collect();
     let plans = plan_by_language(&files, config, Kind::Format);
     prefetch_tier2_grammars(&plans);
     let mut results: Vec<FormatResult> = files
         .par_iter()
-        .filter_map(
-            |f| match format_one(f, &plans, &cache, write, collect_debug) {
-                Ok(result) => Some(result),
-                // A per-file failure (read, engine, or — when writing — the atomic
-                // rename) must not be swallowed silently; surface it and skip the file.
-                Err(error) => {
-                    tracing::warn!(path = %f.path.display(), "format failed: {error:#}");
-                    None
-                }
-            },
-        )
+        .filter_map(|f| match format_one(f, &plans, &cache, write, collect_debug) {
+            Ok(result) => Some(result),
+            // A per-file failure (read, engine, or — when writing — the atomic
+            // rename) must not be swallowed silently; surface it and skip the file.
+            Err(error) => {
+                tracing::warn!(path = %f.path.display(), "format failed: {error:#}");
+                None
+            }
+        })
         .collect();
     results.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(results)
@@ -380,8 +368,7 @@ fn lint_one(
             match apply_edits(&content, &edit_groups) {
                 Some(next) if next != content => {
                     content = next;
-                    let (next_diags, next_debug) =
-                        lint_content(f, plans, cache, &content, collect_debug)?;
+                    let (next_diags, next_debug) = lint_content(f, plans, cache, &content, collect_debug)?;
                     diagnostics = next_diags;
                     suppress(&mut diagnostics);
                     debug = next_debug;
@@ -468,11 +455,7 @@ fn lint_content(
 /// Append one [`EngineDebug`] record when debug collection is active. `started`
 /// is `Some` for an engine that actually ran (timing it) and `None` for a cache
 /// hit (`duration_ms` = 0, `cache_hit` = true).
-fn push_engine_debug(
-    debug: Option<&mut RunDebug>,
-    plan: &EnginePlan,
-    started: Option<std::time::Instant>,
-) {
+fn push_engine_debug(debug: Option<&mut RunDebug>, plan: &EnginePlan, started: Option<std::time::Instant>) {
     if let Some(debug) = debug {
         let (duration_ms, cache_hit) = match started {
             Some(start) => (start.elapsed().as_secs_f64() * 1000.0, false),
@@ -542,11 +525,7 @@ fn apply_edits(content: &str, edit_groups: &[&[Edit]]) -> Option<String> {
         }
 
         // Advance the committed boundary to the leftmost start in this group.
-        prev_start = group
-            .iter()
-            .map(|e| e.start_byte)
-            .min()
-            .unwrap_or(prev_start);
+        prev_start = group.iter().map(|e| e.start_byte).min().unwrap_or(prev_start);
         applied = true;
     }
 
@@ -562,9 +541,8 @@ fn has_internal_overlap(group: &[Edit]) -> bool {
             // Ranges intersect, or two zero-width insertions land on the same
             // byte (order between them would be ambiguous).
             let intersects = a.start_byte < b.end_byte && b.start_byte < a.end_byte;
-            let same_point_insert = a.start_byte == a.end_byte
-                && b.start_byte == b.end_byte
-                && a.start_byte == b.start_byte;
+            let same_point_insert =
+                a.start_byte == a.end_byte && b.start_byte == b.end_byte && a.start_byte == b.start_byte;
             if intersects || same_point_insert {
                 return true;
             }
@@ -635,21 +613,14 @@ fn format_one(
     Ok(FormatResult {
         path: f.path.clone(),
         changed,
-        formatted: if changed {
-            Some(current.to_string())
-        } else {
-            None
-        },
+        formatted: if changed { Some(current.to_string()) } else { None },
         debug,
     })
 }
 
 fn write_atomic(path: &std::path::Path, contents: &str) -> anyhow::Result<()> {
     let parent = path.parent().unwrap_or_else(|| std::path::Path::new("."));
-    let file_name = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("polyfmt");
+    let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("polyfmt");
     let tmp = parent.join(format!(".{file_name}.{}.polyfmt.tmp", std::process::id()));
     std::fs::write(&tmp, contents)?;
     // On rename failure (e.g. cross-device, permissions) the sibling tmp would
@@ -712,8 +683,7 @@ mod tests {
         // Group B: replace "hello" (0..5) → "hey"
         let group_b = vec![edit(0, 5, "hey")];
 
-        let result = apply_edits(content, &[group_a.as_slice(), group_b.as_slice()])
-            .expect("should produce output");
+        let result = apply_edits(content, &[group_a.as_slice(), group_b.as_slice()]).expect("should produce output");
         assert_eq!(result, "hey earth bar");
     }
 

@@ -12,10 +12,7 @@ use polylint_core::{Diagnostic, Severity, Span};
 fn sample_lint_results() -> Vec<LintResult> {
     let mut metadata = BTreeMap::new();
     metadata.insert("category".to_string(), "style".to_string());
-    metadata.insert(
-        "url".to_string(),
-        "https://example.test/rules/E501".to_string(),
-    );
+    metadata.insert("url".to_string(), "https://example.test/rules/E501".to_string());
 
     vec![
         LintResult {
@@ -91,10 +88,7 @@ fn lint_pretty_default_is_terse_without_description_url_or_metadata() {
         !text.contains("the line exceeds the configured width"),
         "default view must not show description"
     );
-    assert!(
-        !text.contains("category=style"),
-        "default view must not show metadata"
-    );
+    assert!(!text.contains("category=style"), "default view must not show metadata");
     insta::assert_snapshot!("lint_pretty", text);
 }
 
@@ -112,10 +106,7 @@ fn lint_pretty_verbose_shows_description_url_and_metadata() {
         text.contains("https://example.test/rules/E501"),
         "--verbose must show url"
     );
-    assert!(
-        text.contains("category=style"),
-        "--verbose must show metadata"
-    );
+    assert!(text.contains("category=style"), "--verbose must show metadata");
     insta::assert_snapshot!("lint_pretty_verbose", text);
 }
 
@@ -134,8 +125,7 @@ fn lint_toon_renders_full_envelope() {
 #[test]
 fn format_pretty_lists_changed_files() {
     owo_colors::set_override(false);
-    let (text, changed) =
-        report::render_format_pretty(&sample_format_results(), false, Verbosity::default());
+    let (text, changed) = report::render_format_pretty(&sample_format_results(), false, Verbosity::default());
     assert_eq!(changed, 1, "one file changed");
     insta::assert_snapshot!("format_pretty", text);
 }

@@ -50,13 +50,7 @@ fn known_bad_diagnostics() {
     assert!(!diags.is_empty(), "expected a parse-error diagnostic");
     let summary: Vec<_> = diags
         .iter()
-        .map(|d| {
-            (
-                d.engine.as_str(),
-                d.code.as_deref().unwrap_or(""),
-                d.span.is_some(),
-            )
-        })
+        .map(|d| (d.engine.as_str(), d.code.as_deref().unwrap_or(""), d.span.is_some()))
         .collect();
     insta::assert_debug_snapshot!("known_bad_diagnostics", summary);
 }
@@ -105,10 +99,7 @@ fn format_honors_language_option() {
     let default_out = format_to_string(query);
 
     let mut options = toml::Table::new();
-    options.insert(
-        "arguments.paren_spacing".to_string(),
-        toml::Value::Boolean(true),
-    );
+    options.insert("arguments.paren_spacing".to_string(), toml::Value::Boolean(true));
     let cfg = EngineConfig {
         options,
         ..engine_cfg()

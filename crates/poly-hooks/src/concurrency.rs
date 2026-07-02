@@ -18,11 +18,7 @@ use tracing::warn;
 /// Resolve the effective concurrency from the no-concurrency flag, an optional
 /// max-concurrency string, and the detected CPU count.
 #[must_use]
-pub fn resolve_concurrency(
-    no_concurrency: bool,
-    max_concurrency: Option<&str>,
-    cpu: usize,
-) -> usize {
+pub fn resolve_concurrency(no_concurrency: bool, max_concurrency: Option<&str>, cpu: usize) -> usize {
     if no_concurrency {
         return 1;
     }

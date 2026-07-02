@@ -63,12 +63,7 @@ fn format_check_reports_changed_without_writing() {
 fn explicit_missing_config_is_an_error() {
     // Config resolution mirrors the CLI: an explicit, unreadable config path is
     // a hard error rather than a silent fallback.
-    let result = ops::lint(
-        &[".".to_string()],
-        &[],
-        Some("/nonexistent/poly.toml"),
-        false,
-    );
+    let result = ops::lint(&[".".to_string()], &[], Some("/nonexistent/poly.toml"), false);
     assert!(result.is_err(), "missing explicit config should error");
 }
 
@@ -77,10 +72,7 @@ fn cache_stats_returns_json_object() {
     let json = ops::cache_stats().unwrap();
     let parsed: Value = serde_json::from_str(&json).unwrap();
     assert!(parsed.get("total_bytes").is_some(), "stats has total_bytes");
-    assert!(
-        parsed["per_namespace"].is_array(),
-        "stats has per_namespace array"
-    );
+    assert!(parsed["per_namespace"].is_array(), "stats has per_namespace array");
 }
 
 #[test]
@@ -147,20 +139,13 @@ async fn round_trip_initialize_list_and_call() {
     assert!(names.contains(&"lint_fix".to_string()));
 
     let mut arguments = serde_json::Map::new();
-    arguments.insert(
-        "paths".into(),
-        serde_json::json!([path.display().to_string()]),
-    );
+    arguments.insert("paths".into(), serde_json::json!([path.display().to_string()]));
     let result = client
         .call_tool(CallToolRequestParams::new("lint").with_arguments(arguments))
         .await
         .unwrap();
 
-    let text = result.content[0]
-        .as_text()
-        .expect("text content")
-        .text
-        .clone();
+    let text = result.content[0].as_text().expect("text content").text.clone();
     let parsed: Value = serde_json::from_str(&text).unwrap();
     assert!(parsed.is_array(), "lint tool returns the CLI json array");
 

@@ -137,8 +137,7 @@ pub fn root_from(start: &Path) -> PathBuf {
 ///
 /// Equivalent to `root_from(&std::env::current_dir()?)`.
 pub fn root_from_cwd() -> anyhow::Result<PathBuf> {
-    let cwd = std::env::current_dir()
-        .map_err(|e| anyhow::anyhow!("could not read current directory: {e}"))?;
+    let cwd = std::env::current_dir().map_err(|e| anyhow::anyhow!("could not read current directory: {e}"))?;
     Ok(root_from(&cwd))
 }
 
@@ -307,20 +306,13 @@ impl ResultCache {
     /// Create the full sub-directory tree and write the VERSION sentinel.
     fn init_dirs(root: &Path) -> anyhow::Result<()> {
         for sub in ["results/lint", "results/fmt", "results/hook"] {
-            std::fs::create_dir_all(root.join(sub)).map_err(|e| {
-                anyhow::anyhow!(
-                    "failed to create cache dir {}: {e}",
-                    root.join(sub).display()
-                )
-            })?;
+            std::fs::create_dir_all(root.join(sub))
+                .map_err(|e| anyhow::anyhow!("failed to create cache dir {}: {e}", root.join(sub).display()))?;
         }
         let version_path = root.join("VERSION");
         if !version_path.exists() {
             std::fs::write(&version_path, CACHE_FORMAT_VERSION).map_err(|e| {
-                anyhow::anyhow!(
-                    "failed to write cache VERSION sentinel {}: {e}",
-                    version_path.display()
-                )
+                anyhow::anyhow!("failed to write cache VERSION sentinel {}: {e}", version_path.display())
             })?;
         }
         Ok(())
@@ -328,10 +320,7 @@ impl ResultCache {
 
     /// Return the on-disk path for a cache entry.
     fn entry_path(&self, namespace: Namespace, key: &CacheKey) -> PathBuf {
-        self.root
-            .join("results")
-            .join(namespace.as_dir())
-            .join(key.as_str())
+        self.root.join("results").join(namespace.as_dir()).join(key.as_str())
     }
 
     // -----------------------------------------------------------------------
@@ -381,9 +370,8 @@ impl ResultCache {
     ///
     /// [`single_file_digest`]: ResultCache::single_file_digest
     pub fn file_set_digest<'a>(files: impl Iterator<Item = (&'a str, &'a [u8])>) -> InputDigest {
-        let mut entries: Vec<(&'a str, blake3::Hash)> = files
-            .map(|(path, bytes)| (path, blake3::hash(bytes)))
-            .collect();
+        let mut entries: Vec<(&'a str, blake3::Hash)> =
+            files.map(|(path, bytes)| (path, blake3::hash(bytes))).collect();
         // Sort by path so the digest is stable regardless of iteration order.
         entries.sort_unstable_by_key(|(path, _)| *path);
 
@@ -426,13 +414,7 @@ impl ResultCache {
         args: &toml::Table,
         input_digest: &InputDigest,
     ) -> CacheKey {
-        Self::key_with_args(
-            namespace,
-            id,
-            version,
-            &Self::serialize_args(args),
-            input_digest,
-        )
+        Self::key_with_args(namespace, id, version, &Self::serialize_args(args), input_digest)
     }
 
     /// Serialise an `args` table once for reuse across many [`key_with_args`]
@@ -499,20 +481,14 @@ impl ResultCache {
         }
         let dest = self.entry_path(namespace, key);
         let n = TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let tmp = self
-            .root
-            .join("results")
-            .join(namespace.as_dir())
-            .join(format!(
-                ".{}.{}.{}.tmp",
-                key.as_str(),
-                std::process::id(),
-                n
-            ));
-        std::fs::write(&tmp, bytes)
-            .map_err(|e| anyhow::anyhow!("cache write {}: {e}", tmp.display()))?;
-        std::fs::rename(&tmp, &dest)
-            .map_err(|e| anyhow::anyhow!("cache rename to {}: {e}", dest.display()))?;
+        let tmp = self.root.join("results").join(namespace.as_dir()).join(format!(
+            ".{}.{}.{}.tmp",
+            key.as_str(),
+            std::process::id(),
+            n
+        ));
+        std::fs::write(&tmp, bytes).map_err(|e| anyhow::anyhow!("cache write {}: {e}", tmp.display()))?;
+        std::fs::rename(&tmp, &dest).map_err(|e| anyhow::anyhow!("cache rename to {}: {e}", dest.display()))?;
         Ok(())
     }
 
@@ -565,10 +541,7 @@ mod tests {
         let digest = ResultCache::single_file_digest("content");
         let key = ResultCache::key(Namespace::Lint, "eng", "1", &empty_args(), &digest);
         cache.put(Namespace::Lint, &key, b"stored").unwrap();
-        assert_eq!(
-            cache.get(Namespace::Lint, &key).as_deref(),
-            Some(&b"stored"[..])
-        );
+        assert_eq!(cache.get(Namespace::Lint, &key).as_deref(), Some(&b"stored"[..]));
     }
 
     #[test]
@@ -619,11 +592,7 @@ mod tests {
         let digest = ResultCache::single_file_digest("content");
         let key = ResultCache::key(Namespace::Lint, "eng", "1", &empty_args(), &digest);
         cache.put(Namespace::Lint, &key, b"stored").unwrap();
-        assert_eq!(
-            cache.get(Namespace::Lint, &key),
-            None,
-            "disabled get must miss"
-        );
+        assert_eq!(cache.get(Namespace::Lint, &key), None, "disabled get must miss");
         assert!(!root.exists(), "disabled put must not create cache dir");
     }
 
@@ -686,19 +655,13 @@ mod tests {
         let b = ("beta.py", b"content_b" as &[u8]);
         let forward = ResultCache::file_set_digest([a, b].into_iter());
         let backward = ResultCache::file_set_digest([b, a].into_iter());
-        assert_eq!(
-            forward, backward,
-            "file_set_digest must be stable across input order"
-        );
+        assert_eq!(forward, backward, "file_set_digest must be stable across input order");
     }
 
     #[test]
     fn file_set_digest_differs_on_content_change() {
-        let d1 =
-            ResultCache::file_set_digest([("a.py", b"v1" as &[u8]), ("b.py", b"v2")].into_iter());
-        let d2 = ResultCache::file_set_digest(
-            [("a.py", b"v1" as &[u8]), ("b.py", b"CHANGED")].into_iter(),
-        );
+        let d1 = ResultCache::file_set_digest([("a.py", b"v1" as &[u8]), ("b.py", b"v2")].into_iter());
+        let d2 = ResultCache::file_set_digest([("a.py", b"v1" as &[u8]), ("b.py", b"CHANGED")].into_iter());
         assert_ne!(d1, d2);
     }
 

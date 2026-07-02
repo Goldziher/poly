@@ -133,10 +133,7 @@ fn format_honors_language_option() {
     let engine = YamlEngine;
     let src = make_src("q.yaml", "key: \"value\"\n");
     let mut options = toml::Table::new();
-    options.insert(
-        "quotes".to_string(),
-        toml::Value::String("prefer-single".into()),
-    );
+    options.insert("quotes".to_string(), toml::Value::String("prefer-single".into()));
     let cfg = EngineConfig {
         options,
         ..engine_cfg()

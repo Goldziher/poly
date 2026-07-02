@@ -116,8 +116,7 @@ impl Engine for TyposEngine {
 /// least [`MAX_LINE_BYTES`]. Both are reliable signals of machine-emitted
 /// bundles rather than hand-written prose or code.
 fn is_generated_or_minified(content: &str) -> bool {
-    content.len() >= MAX_SPELL_CHECK_BYTES
-        || content.lines().any(|line| line.len() >= MAX_LINE_BYTES)
+    content.len() >= MAX_SPELL_CHECK_BYTES || content.lines().any(|line| line.len() >= MAX_LINE_BYTES)
 }
 
 // ---------------------------------------------------------------------------
@@ -138,10 +137,7 @@ struct ConfiguredDictionary<'a> {
 }
 
 impl typos::Dictionary for ConfiguredDictionary<'_> {
-    fn correct_ident<'s>(
-        &'s self,
-        ident: typos::tokens::Identifier<'_>,
-    ) -> Option<typos::Status<'s>> {
+    fn correct_ident<'s>(&'s self, ident: typos::tokens::Identifier<'_>) -> Option<typos::Status<'s>> {
         // A small set of identifiers that typos-cli explicitly accepts as valid.
         match ident.token() {
             "O_WRONLY" | "dBA" => Some(typos::Status::Valid),
@@ -149,10 +145,7 @@ impl typos::Dictionary for ConfiguredDictionary<'_> {
         }
     }
 
-    fn correct_word<'s>(
-        &'s self,
-        word_token: typos::tokens::Word<'_>,
-    ) -> Option<typos::Status<'s>> {
+    fn correct_word<'s>(&'s self, word_token: typos::tokens::Word<'_>) -> Option<typos::Status<'s>> {
         use typos::tokens::Case;
 
         // Skip numeric / symbol tokens (no case → not a word).

@@ -187,8 +187,7 @@ fn format_comment_free(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<F
         .map_err(|e| anyhow::anyhow!("hcl-rs format error: {e}"))?;
     drop(formatter);
 
-    let formatted =
-        String::from_utf8(buf).map_err(|e| anyhow::anyhow!("hcl-rs produced non-UTF-8: {e}"))?;
+    let formatted = String::from_utf8(buf).map_err(|e| anyhow::anyhow!("hcl-rs produced non-UTF-8: {e}"))?;
 
     if formatted == src.content.as_ref() {
         Ok(FormatOutput::Unchanged)
@@ -308,10 +307,7 @@ mod tests {
         let engine = HclEngine;
         let v = engine.version();
         assert!(v.contains("hcl-rs"), "version should mention hcl-rs: {v}");
-        assert!(
-            v.contains("hcl-edit"),
-            "version should mention hcl-edit: {v}"
-        );
+        assert!(v.contains("hcl-edit"), "version should mention hcl-edit: {v}");
     }
 
     // -----------------------------------------------------------------------
@@ -369,10 +365,7 @@ mod tests {
                 let diags = engine
                     .lint(&make_src("main.tf", Language::Hcl, &out), &default_cfg())
                     .unwrap();
-                assert!(
-                    diags.is_empty(),
-                    "formatted output should parse cleanly: {out}"
-                );
+                assert!(diags.is_empty(), "formatted output should parse cleanly: {out}");
             }
         }
     }

@@ -94,8 +94,7 @@ impl PolyMcpServer {
     async fn format_check(&self, params: Parameters<PathsParams>) -> Result<String, ErrorData> {
         let Parameters(args) = params;
         let config = effective_config(args.config, &self.config_override);
-        run_blocking(move || ops::format(&args.paths, &args.exclude, config.as_deref(), false))
-            .await
+        run_blocking(move || ops::format(&args.paths, &args.exclude, config.as_deref(), false)).await
     }
 
     #[tool(

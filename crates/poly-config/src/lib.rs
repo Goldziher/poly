@@ -26,9 +26,8 @@ pub use cache::{CacheConfig, HookCacheMode, ResultsCacheConfig, SccacheConfig};
 pub use commit::{CleanupRule, CommitConfig, CommitRules, ExcludeRule, MessageRule};
 pub use defaults::{GlobalDefaults, LineEnding};
 pub use hooks::{
-    BuiltinHook, BuiltinHooks, CargoHooks, DEFAULT_MAX_ADDED_FILE_KB, FileSafetyHooks, Guard,
-    GuardCondition, GuardMatch, HooksConfig, Job, JobCache, ParseStageError, Patterns, Stage,
-    StageConfig,
+    BuiltinHook, BuiltinHooks, CargoHooks, DEFAULT_MAX_ADDED_FILE_KB, FileSafetyHooks, Guard, GuardCondition,
+    GuardMatch, HooksConfig, Job, JobCache, ParseStageError, Patterns, Stage, StageConfig,
 };
 pub use tools::{ToolConfig, ToolsConfig};
 
@@ -147,11 +146,7 @@ fn merge_tables(base: &mut toml::Table, override_table: toml::Table) {
 /// Find the nearest config file, walking upward from `start`. Within each
 /// directory `poly.toml` is preferred over `polylint.toml`.
 pub fn find_config(start: &Path) -> Option<PathBuf> {
-    let mut dir = if start.is_file() {
-        start.parent()?
-    } else {
-        start
-    };
+    let mut dir = if start.is_file() { start.parent()? } else { start };
     loop {
         for name in CONFIG_FILE_NAMES {
             let candidate = dir.join(name);
@@ -271,10 +266,7 @@ exclude = ["test_apps/**", "artifacts/**"]
             config.per_file_ignores.get("tests/**"),
             Some(&vec!["F401".to_string(), "too-many-methods".to_string()]),
         );
-        assert_eq!(
-            config.per_file_ignores.get("*.gen.py"),
-            Some(&vec!["E501".to_string()]),
-        );
+        assert_eq!(config.per_file_ignores.get("*.gen.py"), Some(&vec!["E501".to_string()]),);
     }
 
     #[test]
@@ -283,10 +275,7 @@ exclude = ["test_apps/**", "artifacts/**"]
         let path = dir.path().join("poly.toml");
         fs::write(&path, "[discovery]\nexclude = \"test_apps/**\"\n").unwrap();
         let config = PolyConfig::load_file(&path).expect("load");
-        assert_eq!(
-            config.discovery.exclude.as_slice(),
-            &["test_apps/**".to_string()]
-        );
+        assert_eq!(config.discovery.exclude.as_slice(), &["test_apps/**".to_string()]);
     }
 
     #[test]
@@ -299,16 +288,8 @@ exclude = ["test_apps/**", "artifacts/**"]
     #[test]
     fn poly_toml_wins_over_polylint_toml_in_same_dir() {
         let dir = tempdir().unwrap();
-        fs::write(
-            dir.path().join("poly.toml"),
-            "[defaults]\nline_length = 80\n",
-        )
-        .unwrap();
-        fs::write(
-            dir.path().join("polylint.toml"),
-            "[defaults]\nline_length = 200\n",
-        )
-        .unwrap();
+        fs::write(dir.path().join("poly.toml"), "[defaults]\nline_length = 80\n").unwrap();
+        fs::write(dir.path().join("polylint.toml"), "[defaults]\nline_length = 200\n").unwrap();
         let config = PolyConfig::load(dir.path()).expect("load");
         assert_eq!(config.defaults.line_length, 80, "poly.toml should win");
     }
@@ -316,11 +297,7 @@ exclude = ["test_apps/**", "artifacts/**"]
     #[test]
     fn falls_back_to_polylint_toml() {
         let dir = tempdir().unwrap();
-        fs::write(
-            dir.path().join("polylint.toml"),
-            "[defaults]\nline_length = 77\n",
-        )
-        .unwrap();
+        fs::write(dir.path().join("polylint.toml"), "[defaults]\nline_length = 77\n").unwrap();
         let config = PolyConfig::load(dir.path()).expect("load");
         assert_eq!(config.defaults.line_length, 77);
     }
@@ -355,10 +332,7 @@ pattern = "^WIP"
         let config = PolyConfig::load(dir.path()).expect("load");
         assert!(config.cache.enabled, "cache.enabled must default to true");
         assert_eq!(config.cache.results.hooks, crate::HookCacheMode::Safe);
-        assert!(
-            !config.cache.sccache.enabled,
-            "sccache.enabled must default to false"
-        );
+        assert!(!config.cache.sccache.enabled, "sccache.enabled must default to false");
         assert!(config.cache.dir.is_none());
     }
 
@@ -387,10 +361,7 @@ max_size = "5G"
         assert!(config.cache.enabled);
         assert_eq!(config.cache.results.hooks, crate::HookCacheMode::Safe);
         assert!(config.cache.sccache.enabled);
-        assert_eq!(
-            config.cache.sccache.bin.as_deref(),
-            Some("/usr/bin/sccache")
-        );
+        assert_eq!(config.cache.sccache.bin.as_deref(), Some("/usr/bin/sccache"));
         assert_eq!(config.cache.sccache.dir.as_deref(), Some("/tmp/sccache"));
         assert_eq!(config.cache.sccache.max_size.as_deref(), Some("5G"));
     }
@@ -406,10 +377,7 @@ max_size = "5G"
         let agg_path = dir.path().join("agg.toml");
         fs::write(&agg_path, "[cache.results]\nhooks = \"aggressive\"\n").unwrap();
         let config_agg = PolyConfig::load_file(&agg_path).expect("load aggressive");
-        assert_eq!(
-            config_agg.cache.results.hooks,
-            crate::HookCacheMode::Aggressive
-        );
+        assert_eq!(config_agg.cache.results.hooks, crate::HookCacheMode::Aggressive);
     }
 
     #[test]
@@ -544,10 +512,7 @@ enabled = true
         assert_eq!(config.tools.len(), 2);
         let shfmt = config.tools.get("shfmt").expect("shfmt present");
         assert!(shfmt.enabled);
-        assert_eq!(
-            shfmt.args.as_deref(),
-            Some(&["-i".to_string(), "2".to_string()][..])
-        );
+        assert_eq!(shfmt.args.as_deref(), Some(&["-i".to_string(), "2".to_string()][..]));
         assert_eq!(shfmt.stages, vec![Stage::PreCommit]);
         assert!(config.tools.get("clang-format").unwrap().enabled);
     }
@@ -572,11 +537,7 @@ enabled = true
     #[test]
     fn absent_local_override_is_a_no_op() {
         let dir = tempdir().unwrap();
-        fs::write(
-            dir.path().join("poly.toml"),
-            "[defaults]\nline_length = 99\n",
-        )
-        .unwrap();
+        fs::write(dir.path().join("poly.toml"), "[defaults]\nline_length = 99\n").unwrap();
         let config = PolyConfig::load(dir.path()).expect("load");
         assert_eq!(config.defaults.line_length, 99);
     }

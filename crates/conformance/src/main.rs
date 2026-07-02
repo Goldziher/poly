@@ -81,8 +81,7 @@ fn manifest_root() -> PathBuf {
 
 fn load_manifest(root: &Path) -> Result<Manifest> {
     let path = root.join("tools.toml");
-    let text = std::fs::read_to_string(&path)
-        .with_context(|| format!("reading manifest {}", path.display()))?;
+    let text = std::fs::read_to_string(&path).with_context(|| format!("reading manifest {}", path.display()))?;
     toml::from_str(&text).context("parsing tools.toml")
 }
 
@@ -97,11 +96,7 @@ fn selected<'a>(manifest: &'a Manifest, requested: &[String]) -> Result<Vec<&'a 
             bail!("unknown language '{name}' (not in tools.toml)");
         }
     }
-    Ok(manifest
-        .languages
-        .keys()
-        .filter(|k| requested.contains(k))
-        .collect())
+    Ok(manifest.languages.keys().filter(|k| requested.contains(k)).collect())
 }
 
 // ---------------------------------------------------------------------------
@@ -118,10 +113,7 @@ fn generate(root: &Path, manifest: &Manifest, requested: &[String]) -> Result<()
         }
     }
     if !failures.is_empty() {
-        eprintln!(
-            "\ngenerate completed with failures: {}",
-            failures.join(", ")
-        );
+        eprintln!("\ngenerate completed with failures: {}", failures.join(", "));
     }
     Ok(())
 }
@@ -139,8 +131,8 @@ fn generate_language(root: &Path, manifest: &Manifest, lang: &str) -> Result<()>
     std::fs::create_dir_all(&golden_dir)?;
     for file in corpus {
         let input = std::fs::read(&file)?;
-        let formatted = run_reference(lang, &input)
-            .with_context(|| format!("formatting {} via reference tool", file.display()))?;
+        let formatted =
+            run_reference(lang, &input).with_context(|| format!("formatting {} via reference tool", file.display()))?;
         let name = file.file_name().unwrap();
         std::fs::write(golden_dir.join(name), &formatted)?;
         println!("  golden: {}", golden_dir.join(name).display());
@@ -180,11 +172,7 @@ fn run_reference(lang: &str, input: &[u8]) -> Result<Vec<u8>> {
         .stderr(Stdio::piped())
         .spawn()
         .context("running docker run")?;
-    child
-        .stdin
-        .take()
-        .context("docker stdin")?
-        .write_all(input)?;
+    child.stdin.take().context("docker stdin")?.write_all(input)?;
     let out = child.wait_with_output()?;
     if !out.status.success() {
         bail!(
@@ -260,13 +248,7 @@ fn poly_fmt_output(file: &Path) -> Result<String> {
         jobs: Some(1),
         exclude: Vec::new(),
     };
-    let results = polylint_core::format(
-        std::slice::from_ref(&target),
-        &Config::default(),
-        &opts,
-        false,
-        false,
-    )?;
+    let results = polylint_core::format(std::slice::from_ref(&target), &Config::default(), &opts, false, false)?;
     Ok(results
         .into_iter()
         .find(|r| r.path == target)
@@ -291,11 +273,7 @@ fn lcs_len(a: &[&str], b: &[&str]) -> usize {
     let mut cur = vec![0usize; b.len() + 1];
     for &ai in a {
         for (j, &bj) in b.iter().enumerate() {
-            cur[j + 1] = if ai == bj {
-                prev[j] + 1
-            } else {
-                prev[j + 1].max(cur[j])
-            };
+            cur[j + 1] = if ai == bj { prev[j] + 1 } else { prev[j + 1].max(cur[j]) };
         }
         std::mem::swap(&mut prev, &mut cur);
     }

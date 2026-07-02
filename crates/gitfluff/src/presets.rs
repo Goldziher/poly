@@ -11,15 +11,12 @@ pub struct Preset {
 // Align with commitlint's default `headerPattern` (via `conventional-changelog-conventionalcommits`):
 //   /^(\w*)(?:\((.*)\))?!?: (.*)$/
 // We require a non-empty type (`\\w+`) because gitfluff treats pattern mismatches as violations.
-const CONVENTIONAL_PATTERN: &str =
-    "^(?P<type>\\w+)(\\((?P<scope>.*)\\))?(?P<breaking>!)?: (?P<description>.+)$";
+const CONVENTIONAL_PATTERN: &str = "^(?P<type>\\w+)(\\((?P<scope>.*)\\))?(?P<breaking>!)?: (?P<description>.+)$";
 
 pub fn resolve_preset(name: &str) -> Option<Preset> {
     match name.to_lowercase().as_str() {
         "conventional" | "default" => Some(conventional()),
-        "conventional-body" | "conventional_detailed" | "conventional-with-body" => {
-            Some(conventional_with_body())
-        }
+        "conventional-body" | "conventional_detailed" | "conventional-with-body" => Some(conventional_with_body()),
         "simple" | "simple-single-line" => Some(simple_single_line()),
         _ => None,
     }

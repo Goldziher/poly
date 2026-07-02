@@ -59,8 +59,8 @@ static LANGUAGES: &[Language] = &[];
 /// languages. Everything else falls back to whitespace normalization, so a
 /// layout-significant language (YAML, Python-likes) is never reflowed.
 const BRACE_FAMILY: &[&str] = &[
-    "go", "c", "cpp", "java", "kotlin", "rust", "scala", "swift", "php", "csharp", "objc", "proto",
-    "dart", "glsl", "hlsl", "cuda", "zig",
+    "go", "c", "cpp", "java", "kotlin", "rust", "scala", "swift", "php", "csharp", "objc", "proto", "dart", "glsl",
+    "hlsl", "cuda", "zig",
 ];
 
 /// Grammar names for which **both `lint` and `format` are unconditional
@@ -161,10 +161,7 @@ impl Engine for TreeSitterEngine {
         // normalization, no structural reindent. Resolve the grammar once and
         // reuse it for both the guard and the dispatch below.
         let name = grammar_name(src);
-        if name
-            .as_deref()
-            .is_some_and(|n| LEAVE_UNTOUCHED.contains(&n))
-        {
+        if name.as_deref().is_some_and(|n| LEAVE_UNTOUCHED.contains(&n)) {
             return Ok(FormatOutput::Unchanged);
         }
         let formatted = match name {
@@ -182,8 +179,7 @@ impl Engine for TreeSitterEngine {
                 //    languages like kdl, thrift, ron, ninja, cmake, …
                 // 3. Whitespace normalization as the final catch-all.
                 if BRACE_FAMILY.contains(&name.as_str()) {
-                    reindent_braces(&name, src, cfg)
-                        .unwrap_or_else(|| normalize_whitespace(&src.content, &cfg.globals))
+                    reindent_braces(&name, src, cfg).unwrap_or_else(|| normalize_whitespace(&src.content, &cfg.globals))
                 } else {
                     indent::try_reindent_query(&name, src, cfg)
                         .unwrap_or_else(|| normalize_whitespace(&src.content, &cfg.globals))
@@ -344,12 +340,7 @@ fn collect_cst(root: &Node, grammar_name: &str) -> CstFacts {
                 protected.sort_by_key(|r| r.0);
                 let mut case_label_dedent = Vec::new();
                 let mut case_body_extra = Vec::new();
-                collect_case_adjustments(
-                    root,
-                    grammar_name,
-                    &mut case_body_extra,
-                    &mut case_label_dedent,
-                );
+                collect_case_adjustments(root, grammar_name, &mut case_body_extra, &mut case_label_dedent);
                 return CstFacts {
                     delimiters,
                     protected,
@@ -382,9 +373,7 @@ fn collect_case_adjustments(
             "switch_statement_default",
             case_body_extra,
         ),
-        "csharp" => {
-            collect_switch_case_bodies(root, "switch_section", "switch_section", case_body_extra)
-        }
+        "csharp" => collect_switch_case_bodies(root, "switch_section", "switch_section", case_body_extra),
         _ => {}
     }
 }

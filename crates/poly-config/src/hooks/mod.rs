@@ -24,9 +24,7 @@ use std::fmt;
 use serde::de::{self, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 
-pub use builtin::{
-    BuiltinHook, BuiltinHooks, CargoHooks, DEFAULT_MAX_ADDED_FILE_KB, FileSafetyHooks,
-};
+pub use builtin::{BuiltinHook, BuiltinHooks, CargoHooks, DEFAULT_MAX_ADDED_FILE_KB, FileSafetyHooks};
 pub use job::{Job, JobCache};
 pub use patterns::{Guard, GuardCondition, GuardMatch, Patterns};
 pub use stage::{ParseStageError, Stage};
@@ -66,9 +64,7 @@ impl HooksConfig {
     pub fn validate(&self) -> Result<(), String> {
         for (stage, config) in &self.stage_configs {
             if config.skip.is_some() && config.only.is_some() {
-                return Err(format!(
-                    "stage `{stage}` sets both `skip` and `only`; choose one"
-                ));
+                return Err(format!("stage `{stage}` sets both `skip` and `only`; choose one"));
             }
             for (label, job) in config.labeled_jobs() {
                 validate_job(*stage, &label, job)?;
@@ -98,9 +94,7 @@ fn validate_job(stage: Stage, label: &str, job: &Job) -> Result<(), String> {
         return Err(format!("{location} sets `runner` without `script`"));
     }
     if job.skip.is_some() && job.only.is_some() {
-        return Err(format!(
-            "{location} sets both `skip` and `only`; choose one"
-        ));
+        return Err(format!("{location} sets both `skip` and `only`; choose one"));
     }
     Ok(())
 }
@@ -210,11 +204,7 @@ run = "cargo test"
         assert_eq!(hooks.stage_configs.len(), 2);
         assert!(hooks.stage_configs[&Stage::PreCommit].parallel);
         assert_eq!(hooks.stage_configs[&Stage::PreCommit].jobs.len(), 1);
-        assert!(
-            hooks.stage_configs[&Stage::PrePush]
-                .commands
-                .contains_key("test")
-        );
+        assert!(hooks.stage_configs[&Stage::PrePush].commands.contains_key("test"));
         hooks.validate().expect("valid config");
     }
 

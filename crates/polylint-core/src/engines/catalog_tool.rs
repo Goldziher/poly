@@ -73,11 +73,7 @@ fn probe_cache() -> &'static Mutex<HashMap<String, Option<String>>> {
 /// Probe a binary's presence (and best-effort version), memoised for the process
 /// lifetime. `None` means the binary is not on `PATH`.
 fn probe_binary(binary: &str) -> Option<String> {
-    if let Some(cached) = probe_cache()
-        .lock()
-        .expect("probe cache poisoned")
-        .get(binary)
-    {
+    if let Some(cached) = probe_cache().lock().expect("probe cache poisoned").get(binary) {
         return cached.clone();
     }
     let result = which::which(binary).ok().map(|_| version_of(binary));
@@ -148,14 +144,7 @@ impl CatalogToolEngine {
         let arguments = args_override
             .map(<[String]>::to_vec)
             .unwrap_or_else(|| command.arguments.clone());
-        Some(Self::build(
-            tool,
-            Mode::Format,
-            arguments,
-            command.stdin,
-            env,
-            root,
-        ))
+        Some(Self::build(tool, Mode::Format, arguments, command.stdin, env, root))
     }
 
     /// Build a linter engine for `tool`. `command_name` selects the catalog
@@ -185,14 +174,7 @@ impl CatalogToolEngine {
         if is_mutating(&arguments) {
             return None;
         }
-        Some(Self::build(
-            tool,
-            Mode::Lint,
-            arguments,
-            command.stdin,
-            env,
-            root,
-        ))
+        Some(Self::build(tool, Mode::Lint, arguments, command.stdin, env, root))
     }
 
     /// Shared constructor for both roles: probes the binary and folds the role,
@@ -339,9 +321,7 @@ impl CatalogToolEngine {
             drop(stdin_handle);
             WriteOutcome::Inline(result)
         } else {
-            WriteOutcome::Thread(thread::spawn(move || {
-                stdin_handle.write_all(content.as_bytes())
-            }))
+            WriteOutcome::Thread(thread::spawn(move || stdin_handle.write_all(content.as_bytes())))
         };
 
         let output = child
@@ -368,8 +348,8 @@ impl CatalogToolEngine {
             }
         }
 
-        let formatted = String::from_utf8(output.stdout)
-            .with_context(|| format!("'{binary}' produced non-UTF-8 output"))?;
+        let formatted =
+            String::from_utf8(output.stdout).with_context(|| format!("'{binary}' produced non-UTF-8 output"))?;
         Ok(diff_output(formatted, src))
     }
 
@@ -377,11 +357,7 @@ impl CatalogToolEngine {
     /// (which rewrites it in place), and read it back.
     fn format_via_path(&self, src: &SourceFile) -> anyhow::Result<FormatOutput> {
         let binary = &self.tool.binary;
-        let extension = src
-            .path
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .unwrap_or("txt");
+        let extension = src.path.extension().and_then(|ext| ext.to_str()).unwrap_or("txt");
         let mut temp = tempfile::Builder::new()
             .prefix("poly-catalog-")
             .suffix(&format!(".{extension}"))
@@ -437,9 +413,7 @@ impl CatalogToolEngine {
             drop(stdin_handle);
             WriteOutcome::Inline(result)
         } else {
-            WriteOutcome::Thread(thread::spawn(move || {
-                stdin_handle.write_all(content.as_bytes())
-            }))
+            WriteOutcome::Thread(thread::spawn(move || stdin_handle.write_all(content.as_bytes())))
         };
 
         let output = child
@@ -461,11 +435,7 @@ impl CatalogToolEngine {
     /// only reads, run it, and capture its exit status and combined output.
     fn lint_via_path(&self, src: &SourceFile) -> anyhow::Result<LintOutcome> {
         let binary = &self.tool.binary;
-        let extension = src
-            .path
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .unwrap_or("txt");
+        let extension = src.path.extension().and_then(|ext| ext.to_str()).unwrap_or("txt");
         let mut temp = tempfile::Builder::new()
             .prefix("poly-catalog-")
             .suffix(&format!(".{extension}"))
@@ -587,12 +557,7 @@ mod tests {
 
     /// Build a leaked `&'static Tool` for a single-command catalog tool, so the
     /// `&'static Tool` contract is satisfied without a real catalog entry.
-    fn leak_tool(
-        name: &str,
-        binary: &str,
-        category: &str,
-        arguments: Vec<String>,
-    ) -> &'static Tool {
+    fn leak_tool(name: &str, binary: &str, category: &str, arguments: Vec<String>) -> &'static Tool {
         Box::leak(Box::new(Tool {
             name: name.to_string(),
             binary: binary.to_string(),
@@ -646,8 +611,7 @@ mod tests {
     #[test]
     fn format_engine_builds_for_a_catalog_formatter() {
         let tool = Catalog::get().tool("shfmt").expect("shfmt in catalog");
-        let engine =
-            format_engine_default(tool, None, None).expect("shfmt exposes a format command");
+        let engine = format_engine_default(tool, None, None).expect("shfmt exposes a format command");
         assert_eq!(engine.name(), "shfmt");
         assert!(engine.capabilities().format);
         assert!(!engine.capabilities().lint);
@@ -701,12 +665,7 @@ mod tests {
     fn lint_engine_rejects_a_mutating_args_override() {
         // The guard applies to the user's `args` override too, not just the
         // catalog's own argv.
-        let tool = leak_tool(
-            "fakelint",
-            "true",
-            "linter",
-            vec![PATH_PLACEHOLDER.to_string()],
-        );
+        let tool = leak_tool("fakelint", "true", "linter", vec![PATH_PLACEHOLDER.to_string()]);
         assert!(lint_engine_default(tool, None, Some(&["--fix".to_string()])).is_none());
     }
 
@@ -733,17 +692,12 @@ mod tests {
         assert!(engine.capabilities().lint);
         assert!(!engine.capabilities().format);
 
-        let diagnostics = engine
-            .lint(&make_src("file.txt", "anything\n"), &cfg())
-            .unwrap();
+        let diagnostics = engine.lint(&make_src("file.txt", "anything\n"), &cfg()).unwrap();
         assert_eq!(diagnostics.len(), 1, "one file-level finding on failure");
         let diagnostic = &diagnostics[0];
         assert_eq!(diagnostic.engine, "fakelint");
         assert_eq!(diagnostic.severity, Severity::Warning);
-        assert!(
-            diagnostic.span.is_none(),
-            "no span at breadth-tier fidelity"
-        );
+        assert!(diagnostic.span.is_none(), "no span at breadth-tier fidelity");
         assert!(diagnostic.code.is_none(), "no rule code");
         assert!(
             diagnostic.title.contains("problem on line 1"),
@@ -762,20 +716,11 @@ mod tests {
             "oklint",
             "sh",
             "linter",
-            vec![
-                "-c".to_string(),
-                "exit 0".to_string(),
-                PATH_PLACEHOLDER.to_string(),
-            ],
+            vec!["-c".to_string(), "exit 0".to_string(), PATH_PLACEHOLDER.to_string()],
         );
         let engine = lint_engine_default(tool, None, None).unwrap();
-        let diagnostics = engine
-            .lint(&make_src("file.txt", "anything\n"), &cfg())
-            .unwrap();
-        assert!(
-            diagnostics.is_empty(),
-            "a passing run yields no diagnostics"
-        );
+        let diagnostics = engine.lint(&make_src("file.txt", "anything\n"), &cfg()).unwrap();
+        assert!(diagnostics.is_empty(), "a passing run yields no diagnostics");
     }
 
     #[test]
@@ -788,9 +733,7 @@ mod tests {
             .find(|t| t.format_command().is_some() && probe_binary(&t.binary).is_none());
         if let Some(tool) = tool {
             let engine = format_engine_default(tool, None, None).unwrap();
-            let result = engine
-                .format(&make_src("file.txt", "anything\n"), &cfg())
-                .unwrap();
+            let result = engine.format(&make_src("file.txt", "anything\n"), &cfg()).unwrap();
             assert!(matches!(result, FormatOutput::Unchanged));
         }
     }
@@ -813,11 +756,8 @@ mod tests {
             ],
         );
         let env = BTreeMap::from([("POLY_TEST_VAR".to_string(), "hello-from-env".to_string())]);
-        let engine = CatalogToolEngine::lint_engine(tool, None, None, env, None)
-            .expect("non-mutating linter wires");
-        let diagnostics = engine
-            .lint(&make_src("file.txt", "content\n"), &cfg())
-            .unwrap();
+        let engine = CatalogToolEngine::lint_engine(tool, None, None, env, None).expect("non-mutating linter wires");
+        let diagnostics = engine.lint(&make_src("file.txt", "content\n"), &cfg()).unwrap();
         assert_eq!(diagnostics.len(), 1, "non-zero exit → one diagnostic");
         assert!(
             diagnostics[0].title.contains("hello-from-env"),
@@ -832,8 +772,7 @@ mod tests {
         // Prove the engine sets the working directory via `root`. The tool
         // prints the cwd; we canonicalize the expected path (macOS symlinks
         // /var/folders → /private/var/folders) before comparing.
-        let tmp =
-            std::fs::canonicalize(std::env::temp_dir()).unwrap_or_else(|_| std::env::temp_dir());
+        let tmp = std::fs::canonicalize(std::env::temp_dir()).unwrap_or_else(|_| std::env::temp_dir());
         let tool = leak_tool(
             "cwdcheck",
             "sh",
@@ -846,12 +785,9 @@ mod tests {
                 PATH_PLACEHOLDER.to_string(),
             ],
         );
-        let engine =
-            CatalogToolEngine::lint_engine(tool, None, None, BTreeMap::new(), Some(tmp.clone()))
-                .expect("non-mutating linter wires");
-        let diagnostics = engine
-            .lint(&make_src("file.txt", "content\n"), &cfg())
-            .unwrap();
+        let engine = CatalogToolEngine::lint_engine(tool, None, None, BTreeMap::new(), Some(tmp.clone()))
+            .expect("non-mutating linter wires");
+        let diagnostics = engine.lint(&make_src("file.txt", "content\n"), &cfg()).unwrap();
         assert_eq!(diagnostics.len(), 1, "non-zero exit → one diagnostic");
         let tmp_str = tmp.to_string_lossy();
         assert!(

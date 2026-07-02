@@ -83,9 +83,7 @@ impl Engine for RubyfmtEngine {
             // IOError: internal I/O failure. Leave untouched.
             // Robustness rule: every file in the corpus must survive a format
             // run — never propagate a format error as a pipeline error.
-            Err(RichFormatError::SyntaxError | RichFormatError::IOError(_)) => {
-                Ok(FormatOutput::Unchanged)
-            }
+            Err(RichFormatError::SyntaxError | RichFormatError::IOError(_)) => Ok(FormatOutput::Unchanged),
         }
     }
 }

@@ -49,10 +49,7 @@ fn known_bad_lint_snapshot() {
     let src = make_src("known_bad.tf", KNOWN_BAD);
     let diags = engine.lint(&src, &engine_cfg()).unwrap();
 
-    assert!(
-        !diags.is_empty(),
-        "expected at least one diagnostic for invalid HCL"
-    );
+    assert!(!diags.is_empty(), "expected at least one diagnostic for invalid HCL");
 
     let first = &diags[0];
     assert_eq!(
@@ -71,12 +68,7 @@ fn known_bad_lint_snapshot() {
     // Stable snapshot: (code, start_line).
     let summary: Vec<_> = diags
         .iter()
-        .map(|d| {
-            (
-                d.code.as_deref().unwrap_or(""),
-                d.span.as_ref().map(|s| s.start_line),
-            )
-        })
+        .map(|d| (d.code.as_deref().unwrap_or(""), d.span.as_ref().map(|s| s.start_line)))
         .collect();
     insta::assert_debug_snapshot!("hcl_known_bad_diagnostics", summary);
 }

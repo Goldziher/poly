@@ -96,12 +96,7 @@ mod tests {
 
     /// Lower a single-stage config under an explicit cache mode and return the
     /// hook with the given id, observing the policy as wired by lowering.
-    fn cache_of(
-        hooks: &HooksConfig,
-        stage: HookStage,
-        id: &str,
-        mode: &HookCacheMode,
-    ) -> HookCache {
+    fn cache_of(hooks: &HooksConfig, stage: HookStage, id: &str, mode: &HookCacheMode) -> HookCache {
         // A non-Cargo temp root keeps the default-on cargo group from intruding
         // on these cache-policy assertions regardless of the host toolchain.
         let root = tempfile::tempdir().unwrap();
@@ -125,36 +120,21 @@ mod tests {
     #[test]
     fn builtin_polylint_caches_matched_files_in_safe_mode() {
         let hooks = hooks_from("[hooks.builtin]\npolylint = true\n");
-        let cache = cache_of(
-            &hooks,
-            HookStage::PreCommit,
-            "polylint",
-            &HookCacheMode::Safe,
-        );
+        let cache = cache_of(&hooks, HookStage::PreCommit, "polylint", &HookCacheMode::Safe);
         assert!(matches!(cache, HookCache::MatchedFiles));
     }
 
     #[test]
     fn builtin_polyfmt_caches_matched_files_in_safe_mode() {
         let hooks = hooks_from("[hooks.builtin]\npolyfmt = true\n");
-        let cache = cache_of(
-            &hooks,
-            HookStage::PreCommit,
-            "polyfmt",
-            &HookCacheMode::Safe,
-        );
+        let cache = cache_of(&hooks, HookStage::PreCommit, "polyfmt", &HookCacheMode::Safe);
         assert!(matches!(cache, HookCache::MatchedFiles));
     }
 
     #[test]
     fn builtin_is_disabled_in_off_mode() {
         let hooks = hooks_from("[hooks.builtin]\npolylint = true\n");
-        let cache = cache_of(
-            &hooks,
-            HookStage::PreCommit,
-            "polylint",
-            &HookCacheMode::Off,
-        );
+        let cache = cache_of(&hooks, HookStage::PreCommit, "polylint", &HookCacheMode::Off);
         assert!(matches!(cache, HookCache::Disabled));
     }
 
@@ -163,12 +143,7 @@ mod tests {
         let hooks = hooks_from("[hooks.builtin]\ncommit = true\n");
         // Even in Aggressive mode the commit-msg builtin is disabled (the message
         // content varies per invocation).
-        let cache = cache_of(
-            &hooks,
-            HookStage::CommitMsg,
-            "poly-commit",
-            &HookCacheMode::Aggressive,
-        );
+        let cache = cache_of(&hooks, HookStage::CommitMsg, "poly-commit", &HookCacheMode::Aggressive);
         assert!(matches!(cache, HookCache::Disabled));
     }
 
@@ -216,12 +191,7 @@ name = "j"
 run = "x"
 "#,
         );
-        let cache = cache_of(
-            &hooks,
-            HookStage::PreCommit,
-            "j",
-            &HookCacheMode::Aggressive,
-        );
+        let cache = cache_of(&hooks, HookStage::PreCommit, "j", &HookCacheMode::Aggressive);
         assert!(matches!(cache, HookCache::MatchedFiles));
     }
 

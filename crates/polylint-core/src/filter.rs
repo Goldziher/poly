@@ -36,11 +36,7 @@ impl PerFileIgnores {
         let entries = map
             .iter()
             .filter_map(|(glob, rules)| {
-                let rules: Vec<String> = rules
-                    .iter()
-                    .filter(|rule| !rule.trim().is_empty())
-                    .cloned()
-                    .collect();
+                let rules: Vec<String> = rules.iter().filter(|rule| !rule.trim().is_empty()).cloned().collect();
                 if rules.is_empty() {
                     tracing::warn!(%glob, "skipping [per-file-ignores] entry: no non-empty rule codes");
                     return None;
@@ -284,10 +280,7 @@ mod tests {
         assert!(code_matches_rule("E501", "E"), "E501 is in the E family");
         assert!(code_matches_rule("too-many-methods", "too-many"));
         assert!(code_matches_rule("F401", "F401"), "exact match");
-        assert!(
-            !code_matches_rule("ERR_X", "E"),
-            "alphabetic boundary blocks"
-        );
+        assert!(!code_matches_rule("ERR_X", "E"), "alphabetic boundary blocks");
         assert!(!code_matches_rule("FOO", "F"), "alphabetic boundary blocks");
     }
 
@@ -296,10 +289,7 @@ mod tests {
         let mut map = BTreeMap::new();
         map.insert("**".to_string(), vec![String::new(), "  ".to_string()]);
         let ignores = PerFileIgnores::compile(&map);
-        assert!(
-            ignores.is_empty(),
-            "an entry with only blank codes is skipped entirely"
-        );
+        assert!(ignores.is_empty(), "an entry with only blank codes is skipped entirely");
         let mut diags = vec![diag(Some("F401")), diag(None)];
         ignores.apply("anything.py", &mut diags);
         assert_eq!(diags.len(), 2, "nothing is suppressed");
@@ -309,10 +299,7 @@ mod tests {
     fn relative_for_match_strips_cwd_and_passed_roots() {
         let cwd = PathBuf::from("/work/repo");
         assert_eq!(
-            relative_for_match(
-                Path::new("/work/repo/tests/a.py"),
-                std::slice::from_ref(&cwd)
-            ),
+            relative_for_match(Path::new("/work/repo/tests/a.py"), std::slice::from_ref(&cwd)),
             "tests/a.py"
         );
         let bases = vec![cwd, PathBuf::from("/other/root")];
@@ -351,11 +338,7 @@ mod tests {
             Severity::Warning,
             "a non-matching code keeps its severity"
         );
-        assert_eq!(
-            diags[2].severity,
-            Severity::Warning,
-            "a code-less diag is untouched"
-        );
+        assert_eq!(diags[2].severity, Severity::Warning, "a code-less diag is untouched");
     }
 
     #[test]
@@ -377,11 +360,7 @@ mod tests {
         let mut other = vec![diag(Some("FOO"))];
         other[0].severity = Severity::Warning;
         remap.apply(&mut other);
-        assert_eq!(
-            other[0].severity,
-            Severity::Warning,
-            "FOO is not in the F family"
-        );
+        assert_eq!(other[0].severity, Severity::Warning, "FOO is not in the F family");
     }
 
     #[test]
@@ -391,11 +370,7 @@ mod tests {
         let mut diags = vec![diag(Some("F401"))];
         diags[0].severity = Severity::Error;
         remap.apply(&mut diags);
-        assert_eq!(
-            diags[0].severity,
-            Severity::Error,
-            "empty remap changes nothing"
-        );
+        assert_eq!(diags[0].severity, Severity::Error, "empty remap changes nothing");
     }
 
     #[test]

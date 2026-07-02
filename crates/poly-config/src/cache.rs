@@ -123,8 +123,7 @@ impl SccacheConfig {
         // A bare command name has exactly one path component and no separator of
         // either platform's flavour (guard both so a Windows-style separator is
         // rejected on Unix too).
-        let is_bare_name =
-            Path::new(bin).components().count() == 1 && !bin.contains('/') && !bin.contains('\\');
+        let is_bare_name = Path::new(bin).components().count() == 1 && !bin.contains('/') && !bin.contains('\\');
         if Path::new(bin).is_absolute() || is_bare_name {
             Ok(bin)
         } else {
@@ -197,10 +196,7 @@ mod tests {
 
     #[test]
     fn validated_bin_accepts_bare_command_name() {
-        assert_eq!(
-            with_bin(Some("sccache")).validated_bin().unwrap(),
-            "sccache"
-        );
+        assert_eq!(with_bin(Some("sccache")).validated_bin().unwrap(), "sccache");
     }
 
     #[test]

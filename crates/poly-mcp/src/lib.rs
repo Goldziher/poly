@@ -33,9 +33,7 @@ pub use server::PolyMcpServer;
 /// Returns an error if the tokio runtime cannot be built or the stdio
 /// transport fails to serve.
 pub fn serve(config: Option<PathBuf>) -> anyhow::Result<()> {
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()?;
+    let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
     runtime.block_on(serve_async(config))
 }
 

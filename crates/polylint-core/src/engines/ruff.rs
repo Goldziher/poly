@@ -55,9 +55,7 @@ use ruff_python_formatter::{DocstringCode, DocstringCodeLineWidth, PyFormatOptio
 use ruff_text_size::Ranged;
 
 use crate::config::EngineConfig;
-use crate::engine::{
-    Capabilities, Diagnostic, Edit, Engine, FormatOutput, Severity, SourceFile, Span,
-};
+use crate::engine::{Capabilities, Diagnostic, Edit, Engine, FormatOutput, Severity, SourceFile, Span};
 use crate::language::Language;
 
 /// Opinionated rule selection: string codes resolved by [`RuleSelector::from_str`].
@@ -105,8 +103,8 @@ fn default_settings() -> &'static LinterSettings {
         let codes: Vec<String> = RULE_CODES.iter().map(|s| (*s).to_owned()).collect();
         let mut settings = LinterSettings::new(Path::new("."));
         settings.rules = build_rule_table(&codes, &[]);
-        settings.line_length = ruff_linter::line_width::LineLength::try_from(120_u16)
-            .expect("120 is a valid line length");
+        settings.line_length =
+            ruff_linter::line_width::LineLength::try_from(120_u16).expect("120 is a valid line length");
         settings
     })
 }
@@ -143,9 +141,7 @@ fn build_settings(cfg: &EngineConfig) -> LinterSettings {
     settings.line_length = u16::try_from(line_length)
         .ok()
         .and_then(|w| ruff_linter::line_width::LineLength::try_from(w).ok())
-        .unwrap_or_else(|| {
-            ruff_linter::line_width::LineLength::try_from(120_u16).expect("120 is valid")
-        });
+        .unwrap_or_else(|| ruff_linter::line_width::LineLength::try_from(120_u16).expect("120 is valid"));
 
     // Per-plugin parameters (matching ruff's own option names, flattened).
     let usize_opt = |key: &str| {

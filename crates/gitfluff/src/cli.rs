@@ -57,11 +57,7 @@ pub struct LintArgs {
     pub msg_pattern: Option<String>,
 
     /// Optional error text shown when the pattern doesn't match.
-    #[arg(
-        long = "msg-pattern-description",
-        alias = "message-description",
-        value_name = "TEXT"
-    )]
+    #[arg(long = "msg-pattern-description", alias = "message-description", value_name = "TEXT")]
     pub msg_pattern_description: Option<String>,
 
     #[arg(long)]
@@ -74,18 +70,10 @@ pub struct LintArgs {
     #[arg(long = "cleanup-pattern", value_name = "REGEX")]
     pub cleanup_pattern: Option<String>,
 
-    #[arg(
-        long = "cleanup-replacement",
-        value_name = "TEXT",
-        requires = "cleanup_pattern"
-    )]
+    #[arg(long = "cleanup-replacement", value_name = "TEXT", requires = "cleanup_pattern")]
     pub cleanup_replacement: Option<String>,
 
-    #[arg(
-        long = "cleanup-description",
-        value_name = "TEXT",
-        requires = "cleanup_pattern"
-    )]
+    #[arg(long = "cleanup-description", value_name = "TEXT", requires = "cleanup_pattern")]
     pub cleanup_description: Option<String>,
 
     /// Fail if the commit message contains emoji characters.

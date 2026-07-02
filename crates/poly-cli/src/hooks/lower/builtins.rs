@@ -14,9 +14,7 @@ use std::path::Path;
 
 use anyhow::Result;
 use poly_catalog::{Catalog, Command as CatalogCommand, PATH_PLACEHOLDER};
-use poly_config::{
-    CargoHooks, FileSafetyHooks, HooksConfig, Stage as ConfigStage, ToolConfig, ToolsConfig,
-};
+use poly_config::{CargoHooks, FileSafetyHooks, HooksConfig, Stage as ConfigStage, ToolConfig, ToolsConfig};
 use poly_hooks::model::{Hook, HookCache};
 use tracing::info;
 
@@ -69,14 +67,7 @@ pub(super) fn append_file_safety(
     out: &mut Vec<Hook>,
 ) -> Result<()> {
     let safety = &hooks.builtin.file_safety;
-    if !safety.enabled
-        || !builtin_runs_on(
-            &safety.stages,
-            &hooks.stages,
-            ConfigStage::PreCommit,
-            config_stage,
-        )?
-    {
+    if !safety.enabled || !builtin_runs_on(&safety.stages, &hooks.stages, ConfigStage::PreCommit, config_stage)? {
         return Ok(());
     }
     let Some(flags) = file_safety_flags(safety) else {
@@ -215,12 +206,7 @@ pub(super) fn append_cargo(
     let Some(cargo) = resolve_cargo_group(hooks, probe.is_cargo_project()) else {
         return Ok(());
     };
-    if !builtin_runs_on(
-        &cargo.stages,
-        &hooks.stages,
-        ConfigStage::PreCommit,
-        config_stage,
-    )? {
+    if !builtin_runs_on(&cargo.stages, &hooks.stages, ConfigStage::PreCommit, config_stage)? {
         return Ok(());
     }
     for tool in cargo_tools(&cargo) {
@@ -290,18 +276,14 @@ pub(super) fn append_catalog_tools(
         let Some(command) = resolve_catalog_command(tool, tool_config) else {
             continue;
         };
-        let arguments = tool_config
-            .args
-            .clone()
-            .unwrap_or_else(|| command.arguments.clone());
+        let arguments = tool_config.args.clone().unwrap_or_else(|| command.arguments.clone());
         let line = catalog_command_line(&tool.binary, &arguments);
 
         let mut hook = Hook::run(name, line);
         // Per-file dispatch: the runner appends the matched files (`Hook::run`
         // sets `pass_filenames = true`). Result-caching is disabled — the tool
         // is external and may rewrite the file in place.
-        let (files, exclude) =
-            super::builtin_globs(tool_config.files.as_ref(), tool_config.exclude.as_ref())?;
+        let (files, exclude) = super::builtin_globs(tool_config.files.as_ref(), tool_config.exclude.as_ref())?;
         hook.files = files;
         hook.exclude = exclude;
         hook.cache = HookCache::Disabled;
@@ -316,10 +298,7 @@ pub(super) fn append_catalog_tools(
 /// Resolve which catalog [`CatalogCommand`] an enabled tool runs: an explicit
 /// `command = "..."` selects by name; otherwise prefer the tool's format command,
 /// then its lint command. `None` when the tool exposes neither.
-fn resolve_catalog_command<'a>(
-    tool: &'a poly_catalog::Tool,
-    tool_config: &ToolConfig,
-) -> Option<&'a CatalogCommand> {
+fn resolve_catalog_command<'a>(tool: &'a poly_catalog::Tool, tool_config: &ToolConfig) -> Option<&'a CatalogCommand> {
     match tool_config.command.as_deref() {
         Some(name) => tool.command(name),
         None => tool
@@ -441,14 +420,7 @@ mod tests {
     #[test]
     fn file_safety_bare_toggle_lowers_to_one_check_hook_with_every_flag() {
         let hooks = hooks_from("[hooks.builtin]\nfile_safety = true\n");
-        let spec = lower_stage(
-            &hooks,
-            &poly(),
-            HookStage::PreCommit,
-            &[],
-            &HookCacheMode::Safe,
-        )
-        .unwrap();
+        let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
         assert_eq!(ids(&spec), vec!["file-safety"]);
         let line = run_line(&spec, "file-safety");
         assert!(line.contains(" hooks check "), "{line}");
@@ -476,14 +448,7 @@ mod tests {
 exclude = "crates/poly-cli/src/hooks/checks.rs"
 "#,
         );
-        let spec = lower_stage(
-            &hooks,
-            &poly(),
-            HookStage::PreCommit,
-            &[],
-            &HookCacheMode::Safe,
-        )
-        .unwrap();
+        let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
         let hook = spec
             .hooks
             .iter()
@@ -504,14 +469,7 @@ case_conflict = false
 max_added_file_kb = 2048
 "#,
         );
-        let spec = lower_stage(
-            &hooks,
-            &poly(),
-            HookStage::PreCommit,
-            &[],
-            &HookCacheMode::Safe,
-        )
-        .unwrap();
+        let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
         let line = run_line(&spec, "file-safety");
         assert!(line.contains("--merge-conflict"), "{line}");
         assert!(line.contains("--max-added-kb 2048"), "{line}");
@@ -532,28 +490,14 @@ executables_have_shebangs = false
 shebang_scripts_are_executable = false
 "#,
         );
-        let spec = lower_stage(
-            &hooks,
-            &poly(),
-            HookStage::PreCommit,
-            &[],
-            &HookCacheMode::Safe,
-        )
-        .unwrap();
+        let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
         assert!(spec.hooks.is_empty(), "{:?}", ids(&spec));
     }
 
     #[test]
     fn file_safety_disabled_lowers_to_nothing() {
         let hooks = hooks_from("[hooks.builtin]\nfile_safety = false\n");
-        let spec = lower_stage(
-            &hooks,
-            &poly(),
-            HookStage::PreCommit,
-            &[],
-            &HookCacheMode::Safe,
-        )
-        .unwrap();
+        let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
         assert!(spec.hooks.is_empty());
     }
 
@@ -928,15 +872,9 @@ clippy_args = ["--workspace", "--exclude=crawlberg-php", "--all-features"]
             line.contains("--exclude=crawlberg-php"),
             "configured flag present: {line}"
         );
-        assert!(
-            line.contains("--all-features"),
-            "configured flag present: {line}"
-        );
+        assert!(line.contains("--all-features"), "configured flag present: {line}");
         // The strict-warnings sentinel is always appended.
-        assert!(
-            line.contains("-D warnings"),
-            "strict warnings always present: {line}"
-        );
+        assert!(line.contains("-D warnings"), "strict warnings always present: {line}");
         // The default --all-targets flag must NOT appear when overridden.
         assert!(
             !line.contains("--all-targets"),
@@ -960,17 +898,8 @@ clippy_args = ["--workspace", "--exclude=crawlberg-php", "--all-features"]
         )
         .unwrap();
         let line = run_line(&spec, "cargo-clippy");
-        assert!(
-            line.contains("--workspace"),
-            "default workspace flag: {line}"
-        );
-        assert!(
-            line.contains("--all-targets"),
-            "default all-targets flag: {line}"
-        );
-        assert!(
-            line.contains("-D warnings"),
-            "strict warnings always present: {line}"
-        );
+        assert!(line.contains("--workspace"), "default workspace flag: {line}");
+        assert!(line.contains("--all-targets"), "default all-targets flag: {line}");
+        assert!(line.contains("-D warnings"), "strict warnings always present: {line}");
     }
 }

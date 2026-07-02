@@ -85,8 +85,8 @@ impl Engine for SqruffEngine {
 
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
         let fluff_cfg = build_fluff_config(cfg)?;
-        let linter = Linter::new(fluff_cfg, None, None, false)
-            .map_err(|e| anyhow::anyhow!("sqruff Linter::new failed: {e}"))?;
+        let linter =
+            Linter::new(fluff_cfg, None, None, false).map_err(|e| anyhow::anyhow!("sqruff Linter::new failed: {e}"))?;
         let filename = src.path.to_string_lossy().into_owned();
         let linted = linter
             .lint_string(&src.content, Some(filename), false)
@@ -100,8 +100,8 @@ impl Engine for SqruffEngine {
 
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
         let fluff_cfg = build_fluff_config(cfg)?;
-        let linter = Linter::new(fluff_cfg, None, None, false)
-            .map_err(|e| anyhow::anyhow!("sqruff Linter::new failed: {e}"))?;
+        let linter =
+            Linter::new(fluff_cfg, None, None, false).map_err(|e| anyhow::anyhow!("sqruff Linter::new failed: {e}"))?;
         let filename = src.path.to_string_lossy().into_owned();
         let linted = linter
             .lint_string(&src.content, Some(filename), true)
@@ -128,11 +128,7 @@ impl Engine for SqruffEngine {
 /// Layering: sqruff defaults → opinionated polylint override (`max_line_length`
 /// 120) → user `polylint.toml` options.
 fn build_fluff_config(cfg: &EngineConfig) -> anyhow::Result<FluffConfig> {
-    let dialect_str = cfg
-        .options
-        .get("dialect")
-        .and_then(|v| v.as_str())
-        .unwrap_or("ansi");
+    let dialect_str = cfg.options.get("dialect").and_then(|v| v.as_str()).unwrap_or("ansi");
 
     // Validate the dialect upfront so we can surface a descriptive error rather
     // than panicking inside FluffConfig::new.
@@ -161,10 +157,7 @@ fn build_fluff_config(cfg: &EngineConfig) -> anyhow::Result<FluffConfig> {
     let selection = RuleSelection::from_options(cfg);
 
     // Allow-list: native `rules` ∪ canonical `select`.
-    let allow = warn_and_skip_blank(
-        union_codes(string_list(cfg, "rules"), selection.select),
-        "sqruff",
-    );
+    let allow = warn_and_skip_blank(union_codes(string_list(cfg, "rules"), selection.select), "sqruff");
     if !allow.is_empty() {
         ini.push_str(&format!("rules = {}\n", allow.join(",")));
     }

@@ -185,10 +185,7 @@ fn run_stage(args: RunArgs) -> Result<ExitCode> {
 
 /// A message-file stage run directly needs an explicit `--message-file`;
 /// without it the stage would silently match no files and skip every hook.
-fn resolve_message_file(
-    stage: poly_hooks::Stage,
-    provided: Option<PathBuf>,
-) -> Result<Option<PathBuf>> {
+fn resolve_message_file(stage: poly_hooks::Stage, provided: Option<PathBuf>) -> Result<Option<PathBuf>> {
     if matches!(RunInputMode::from(stage), RunInputMode::MessageFile) && provided.is_none() {
         anyhow::bail!(
             "the `{stage}` stage needs a commit-message file; pass `--message-file <path>`, \
@@ -200,10 +197,7 @@ fn resolve_message_file(
 
 /// Resolve the requested stage: an explicit argument (alias-aware), else the
 /// first configured default `stages`, else `pre-commit`.
-fn resolve_run_stage(
-    requested: Option<&str>,
-    hooks: &poly_config::HooksConfig,
-) -> Result<poly_hooks::Stage> {
+fn resolve_run_stage(requested: Option<&str>, hooks: &poly_config::HooksConfig) -> Result<poly_hooks::Stage> {
     let config_stage = match requested {
         Some(name) => name
             .parse::<ConfigStage>()
@@ -224,11 +218,9 @@ fn resolve_run_stage(
 // ── install / uninstall ─────────────────────────────────────────────────────
 
 fn install(args: InstallArgs) -> Result<ExitCode> {
-    let hooks_dir = poly_hooks::git::get_git_hooks_dir()
-        .context("failed to resolve the git hooks directory")?;
+    let hooks_dir = poly_hooks::git::get_git_hooks_dir().context("failed to resolve the git hooks directory")?;
     let poly_bin = std::env::current_exe().context("failed to resolve the running poly binary")?;
-    let written =
-        poly_hooks::install::install(&hooks_dir, &poly_bin, &args.hook_types, args.overwrite)?;
+    let written = poly_hooks::install::install(&hooks_dir, &poly_bin, &args.hook_types, args.overwrite)?;
     for path in &written {
         println!("installed {}", path.display());
     }
@@ -236,8 +228,7 @@ fn install(args: InstallArgs) -> Result<ExitCode> {
 }
 
 fn uninstall(args: UninstallArgs) -> Result<ExitCode> {
-    let hooks_dir = poly_hooks::git::get_git_hooks_dir()
-        .context("failed to resolve the git hooks directory")?;
+    let hooks_dir = poly_hooks::git::get_git_hooks_dir().context("failed to resolve the git hooks directory")?;
     let removed = poly_hooks::install::uninstall(&hooks_dir, &args.hook_types)?;
     for path in &removed {
         println!("uninstalled {}", path.display());
@@ -249,8 +240,7 @@ fn uninstall(args: UninstallArgs) -> Result<ExitCode> {
 
 fn hook_impl(args: HookImplArgs) -> Result<ExitCode> {
     let root = poly_hooks::git::get_root().context("failed to resolve the git repository root")?;
-    let Some(inputs) = poly_hooks::hook_impl::hook_impl(args.hook_type, &args.git_args, &root)?
-    else {
+    let Some(inputs) = poly_hooks::hook_impl::hook_impl(args.hook_type, &args.git_args, &root)? else {
         // Nothing to do (e.g. a `pre-push` with nothing to push).
         return Ok(ExitCode::SUCCESS);
     };
@@ -321,11 +311,7 @@ fn candidate_files(
 ///
 /// Returns `None` when caching is disabled — the runner then neither reads nor
 /// writes cache entries.
-fn open_result_cache(
-    config: &PolyConfig,
-    root: &Path,
-    no_cache: bool,
-) -> Result<Option<ResultCache>> {
+fn open_result_cache(config: &PolyConfig, root: &Path, no_cache: bool) -> Result<Option<ResultCache>> {
     let enabled = config.cache.enabled && !no_cache;
     let cache = match &config.cache.dir {
         Some(dir) => ResultCache::open(PathBuf::from(dir), enabled),
@@ -341,10 +327,7 @@ fn open_result_cache(
 /// Returns `None` (sccache off) unless `[cache.sccache] enabled = true` and
 /// `--no-sccache` was not given. The binary defaults to `"sccache"` when
 /// `[cache.sccache] bin` is absent.
-fn sccache_settings(
-    config: &PolyConfig,
-    no_sccache: bool,
-) -> Result<Option<poly_hooks::SccacheSettings>> {
+fn sccache_settings(config: &PolyConfig, no_sccache: bool) -> Result<Option<poly_hooks::SccacheSettings>> {
     let sccache = &config.cache.sccache;
     // The master `[cache] enabled` flag is a global kill switch; sccache is a
     // further opt-in layered on top of it.

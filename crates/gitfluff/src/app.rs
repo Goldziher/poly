@@ -14,8 +14,8 @@ use crate::cli::{Cli, ColorMode, Commands, HookCommand, HookInstallArgs, LintArg
 use crate::config::load_config;
 use crate::hooks::install_hook;
 use crate::lint::{
-    BodyPolicy, LintOptions, build_cleanup_rule, build_exclude_rule, build_message_pattern,
-    build_title_prefix_rule, build_title_suffix_rule, lint_message,
+    BodyPolicy, LintOptions, build_cleanup_rule, build_exclude_rule, build_message_pattern, build_title_prefix_rule,
+    build_title_suffix_rule, lint_message,
 };
 use crate::presets::resolve_preset;
 
@@ -24,10 +24,7 @@ const AI_EXCLUDE_RULES: &[(&str, &str)] = &[
         "(?mi)^Co-Authored-By:.*(?:Claude|Anthropic|ChatGPT|GPT|OpenAI).*$",
         "Remove AI co-author attribution lines",
     ),
-    (
-        "🤖 Generated with",
-        "Remove AI generation notices from commit messages",
-    ),
+    ("🤖 Generated with", "Remove AI generation notices from commit messages"),
 ];
 
 const AI_CLEANUP_RULES: &[(&str, &str, &str)] = &[
@@ -36,11 +33,7 @@ const AI_CLEANUP_RULES: &[(&str, &str, &str)] = &[
         "\n",
         "Remove Claude Code attribution block",
     ),
-    (
-        "(?m)^.*🤖 Generated with.*\n?",
-        "",
-        "Remove AI generation banner",
-    ),
+    ("(?m)^.*🤖 Generated with.*\n?", "", "Remove AI generation banner"),
     (
         "(?mi)^Generated with Claude.*\n?",
         "",
@@ -52,11 +45,7 @@ const AI_CLEANUP_RULES: &[(&str, &str, &str)] = &[
         "Drop Co-Authored-By lines referencing AI assistants",
     ),
     ("(?mi)^-\\s*Claude.*\n?", "", "Remove Claude bullet entries"),
-    (
-        "(?s)\\A\\s*\n+",
-        "",
-        "Trim leading blank lines introduced by cleanup",
-    ),
+    ("(?s)\\A\\s*\n+", "", "Trim leading blank lines introduced by cleanup"),
     (
         "(?s)\n\\s*\n\\z",
         "\n",
@@ -138,15 +127,10 @@ pub fn run_lint(args: LintArgs) -> Result<i32> {
     let preset_name = args
         .preset
         .clone()
-        .or_else(|| {
-            loaded_config
-                .as_ref()
-                .and_then(|(_, cfg)| cfg.preset.clone())
-        })
+        .or_else(|| loaded_config.as_ref().and_then(|(_, cfg)| cfg.preset.clone()))
         .unwrap_or_else(|| "conventional".to_string());
 
-    let preset =
-        resolve_preset(&preset_name).ok_or_else(|| anyhow!("unknown preset `{}`", preset_name))?;
+    let preset = resolve_preset(&preset_name).ok_or_else(|| anyhow!("unknown preset `{}`", preset_name))?;
 
     let mut enforce_spec = preset.enforce_spec;
     let mut message_pattern = Some(build_message_pattern(
@@ -157,10 +141,7 @@ pub fn run_lint(args: LintArgs) -> Result<i32> {
     if let Some((_, cfg)) = &loaded_config
         && let Some(rule) = &cfg.rules.message
     {
-        message_pattern = Some(build_message_pattern(
-            &rule.pattern,
-            rule.description.clone(),
-        )?);
+        message_pattern = Some(build_message_pattern(&rule.pattern, rule.description.clone())?);
         enforce_spec = false;
     }
 
@@ -222,23 +203,18 @@ pub fn run_lint(args: LintArgs) -> Result<i32> {
         } else if require_body_flag {
             body_policy = BodyPolicy::RequireBody;
         } else {
-            if matches!(cfg.rules.single_line, Some(false))
-                && matches!(body_policy, BodyPolicy::SingleLine)
-            {
+            if matches!(cfg.rules.single_line, Some(false)) && matches!(body_policy, BodyPolicy::SingleLine) {
                 body_policy = BodyPolicy::Any;
             }
-            if matches!(cfg.rules.require_body, Some(false))
-                && matches!(body_policy, BodyPolicy::RequireBody)
-            {
+            if matches!(cfg.rules.require_body, Some(false)) && matches!(body_policy, BodyPolicy::RequireBody) {
                 body_policy = BodyPolicy::Any;
             }
         }
 
         for exclude in &cfg.rules.excludes {
-            options.exclude_rules.push(build_exclude_rule(
-                &exclude.pattern,
-                exclude.message.clone(),
-            )?);
+            options
+                .exclude_rules
+                .push(build_exclude_rule(&exclude.pattern, exclude.message.clone())?);
         }
 
         for cleanup in &cfg.rules.cleanup {
@@ -252,25 +228,19 @@ pub fn run_lint(args: LintArgs) -> Result<i32> {
 
     for exclude in &args.exclude {
         let (pattern, message) = parse_exclude_arg(exclude)?;
-        options
-            .exclude_rules
-            .push(build_exclude_rule(&pattern, message)?);
+        options.exclude_rules.push(build_exclude_rule(&pattern, message)?);
     }
 
     for cleanup in &args.cleanup {
         let (find, replace) = parse_cleanup_arg(cleanup)?;
-        options
-            .cleanup_rules
-            .push(build_cleanup_rule(&find, &replace, None)?);
+        options.cleanup_rules.push(build_cleanup_rule(&find, &replace, None)?);
     }
 
     if let Some(pattern) = &args.cleanup_pattern {
         let replace = args.cleanup_replacement.clone().unwrap_or_default();
-        options.cleanup_rules.push(build_cleanup_rule(
-            pattern,
-            &replace,
-            args.cleanup_description.clone(),
-        )?);
+        options
+            .cleanup_rules
+            .push(build_cleanup_rule(pattern, &replace, args.cleanup_description.clone())?);
     }
 
     if args.single_line {
@@ -331,11 +301,9 @@ pub fn run_lint(args: LintArgs) -> Result<i32> {
     }
 
     for (find, replace, desc) in AI_CLEANUP_RULES {
-        options.cleanup_rules.push(build_cleanup_rule(
-            find,
-            replace,
-            Some((*desc).to_string()),
-        )?);
+        options
+            .cleanup_rules
+            .push(build_cleanup_rule(find, replace, Some((*desc).to_string()))?);
     }
 
     let outcome = lint_message(&message_data.text, &options);
@@ -392,8 +360,7 @@ pub fn run_lint(args: LintArgs) -> Result<i32> {
 
     if active_violations.is_empty() {
         if did_rewrite && exit_nonzero_on_rewrite {
-            reporter
-                .info("commit message was rewritten; please re-run the commit to review changes")?;
+            reporter.info("commit message was rewritten; please re-run the commit to review changes")?;
             Ok(1)
         } else {
             Ok(0)
@@ -407,12 +374,8 @@ fn apply_write(message: &MessageData, cleaned: &str) -> Result<()> {
     match &message.source {
         MessageSource::File(path) => {
             if cleaned != message.text {
-                fs::write(path, cleaned).with_context(|| {
-                    format!(
-                        "failed to write cleaned commit message to {}",
-                        path.display()
-                    )
-                })?;
+                fs::write(path, cleaned)
+                    .with_context(|| format!("failed to write cleaned commit message to {}", path.display()))?;
             }
         }
         MessageSource::Stdin | MessageSource::Literal => {
@@ -426,11 +389,7 @@ fn apply_write(message: &MessageData, cleaned: &str) -> Result<()> {
 }
 
 fn load_message(args: &LintArgs) -> Result<MessageData> {
-    if args.from_file.is_none()
-        && args.commit_file.is_none()
-        && !args.stdin
-        && args.message.is_none()
-    {
+    if args.from_file.is_none() && args.commit_file.is_none() && !args.stdin && args.message.is_none() {
         return Err(anyhow!(
             "no commit message source provided (pass COMMIT_FILE, --from-file, --stdin, or --message)"
         ));
@@ -606,8 +565,8 @@ fn is_merge_commit_in_progress(start_dir: &std::path::Path) -> bool {
 }
 
 fn resolve_gitdir_file(git_file: &std::path::Path) -> Result<std::path::PathBuf> {
-    let content = fs::read_to_string(git_file)
-        .with_context(|| format!("failed to read gitdir file {}", git_file.display()))?;
+    let content =
+        fs::read_to_string(git_file).with_context(|| format!("failed to read gitdir file {}", git_file.display()))?;
     let content = content.trim();
 
     let prefix = "gitdir:";
@@ -626,9 +585,6 @@ fn resolve_gitdir_file(git_file: &std::path::Path) -> Result<std::path::PathBuf>
         };
         Ok(resolved)
     } else {
-        Err(anyhow!(
-            "unexpected gitdir file format in {}",
-            git_file.display()
-        ))
+        Err(anyhow!("unexpected gitdir file format in {}", git_file.display()))
     }
 }

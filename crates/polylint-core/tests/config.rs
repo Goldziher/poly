@@ -22,11 +22,7 @@ fn default_config_uses_opinionated_defaults() {
 fn load_file_overrides_defaults() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("polylint.toml");
-    fs::write(
-        &path,
-        "[defaults]\nline_length = 100\nfinal_newline = false\n",
-    )
-    .unwrap();
+    fs::write(&path, "[defaults]\nline_length = 100\nfinal_newline = false\n").unwrap();
 
     let config = Config::load_file(&path).expect("load");
     assert_eq!(config.defaults.line_length, 100);
@@ -37,11 +33,7 @@ fn load_file_overrides_defaults() {
 #[test]
 fn load_walks_up_to_find_config() {
     let dir = tempfile::tempdir().unwrap();
-    fs::write(
-        dir.path().join("polylint.toml"),
-        "[defaults]\nline_length = 77\n",
-    )
-    .unwrap();
+    fs::write(dir.path().join("polylint.toml"), "[defaults]\nline_length = 77\n").unwrap();
     let nested = dir.path().join("a/b/c");
     fs::create_dir_all(&nested).unwrap();
 
@@ -84,10 +76,7 @@ fn engine_config_slices_the_matching_table() {
     // The format slice is distinct from the lint slice.
     let fmt_cfg = config.engine_config(&Language::Python, "ruff", Kind::Format);
     assert_eq!(
-        fmt_cfg
-            .options
-            .get("line_length")
-            .and_then(|v| v.as_integer()),
+        fmt_cfg.options.get("line_length").and_then(|v| v.as_integer()),
         Some(88)
     );
 
@@ -124,11 +113,9 @@ fn ruff_lint_honors_ignore_config() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("polylint.toml");
     fs::write(&path, "[lint.python.ruff]\nignore = [\"F401\"]\n").unwrap();
-    let cfg = Config::load_file(&path).expect("load").engine_config(
-        &Language::Python,
-        "ruff",
-        Kind::Lint,
-    );
+    let cfg = Config::load_file(&path)
+        .expect("load")
+        .engine_config(&Language::Python, "ruff", Kind::Lint);
     let codes: Vec<String> = engine
         .lint(&src, &cfg)
         .expect("lint")

@@ -133,11 +133,7 @@ pub struct PushInfo {
 ///
 /// Returns `Ok(None)` when no line describes anything to push (deletions,
 /// already-reachable tips, malformed input).
-pub fn parse_pre_push_info(
-    stdin: &[u8],
-    remote_name: &str,
-    root: &Path,
-) -> Result<Option<PushInfo>> {
+pub fn parse_pre_push_info(stdin: &[u8], remote_name: &str, root: &Path) -> Result<Option<PushInfo>> {
     let buffer = String::from_utf8_lossy(stdin);
 
     for line in buffer.lines() {
@@ -229,12 +225,7 @@ fn arg_str(arg: &OsStr) -> String {
 /// stdin (empty for everything but `pre-push`). Returns `Ok(None)` when there is
 /// nothing to do (a `pre-push` with nothing to push). Splitting the stdin read
 /// out of this function keeps it unit-testable.
-pub fn resolve_inputs(
-    hook_type: HookType,
-    args: &[OsString],
-    stdin: &[u8],
-    root: &Path,
-) -> Result<Option<RunInputs>> {
+pub fn resolve_inputs(hook_type: HookType, args: &[OsString], stdin: &[u8], root: &Path) -> Result<Option<RunInputs>> {
     let expected = hook_num_args(hook_type);
     if !expected.contains(&args.len()) {
         bail!(
@@ -334,11 +325,7 @@ fn format_argument_dump(args: &[OsString]) -> String {
     if args.is_empty() {
         String::new()
     } else {
-        let joined = args
-            .iter()
-            .map(|s| s.to_string_lossy())
-            .collect::<Vec<_>>()
-            .join(" ");
+        let joined = args.iter().map(|s| s.to_string_lossy()).collect::<Vec<_>>().join(" ");
         format!(": `{joined}`")
     }
 }
@@ -415,10 +402,7 @@ mod tests {
             .expect("parse")
             .expect("a push");
 
-        assert!(
-            push.all_files,
-            "new-branch push should check the whole tree"
-        );
+        assert!(push.all_files, "new-branch push should check the whole tree");
         assert_eq!(push.from_ref, None);
         assert_eq!(push.to_ref.as_deref(), Some(new_local.as_str()));
     }
@@ -443,10 +427,7 @@ mod tests {
         let inputs = resolve_inputs(HookType::CommitMsg, &args, &[], repo.path())
             .expect("resolve")
             .expect("inputs");
-        assert_eq!(
-            inputs.message_file.as_deref(),
-            Some(Path::new("/tmp/COMMIT_EDITMSG"))
-        );
+        assert_eq!(inputs.message_file.as_deref(), Some(Path::new("/tmp/COMMIT_EDITMSG")));
         assert_eq!(inputs.stage, Stage::CommitMsg);
         assert_eq!(inputs.input_mode(), RunInputMode::MessageFile);
     }
@@ -455,8 +436,7 @@ mod tests {
     fn resolve_inputs_rejects_wrong_argument_count() {
         let repo = init_temp_repo();
         // commit-msg expects exactly 1 argument; supply none.
-        let err =
-            resolve_inputs(HookType::CommitMsg, &[], &[], repo.path()).expect_err("should reject");
+        let err = resolve_inputs(HookType::CommitMsg, &[], &[], repo.path()).expect_err("should reject");
         assert!(err.to_string().contains("expects exactly 1 argument"));
     }
 }

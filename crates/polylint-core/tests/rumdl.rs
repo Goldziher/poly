@@ -38,12 +38,7 @@ fn cfg_with_codes(key: &str, codes: &[&str]) -> EngineConfig {
     let mut options = toml::Table::new();
     options.insert(
         key.to_string(),
-        toml::Value::Array(
-            codes
-                .iter()
-                .map(|c| toml::Value::String((*c).into()))
-                .collect(),
-        ),
+        toml::Value::Array(codes.iter().map(|c| toml::Value::String((*c).into())).collect()),
     );
     EngineConfig {
         options,
@@ -61,8 +56,7 @@ fn sorted_codes(diags: &[polylint_core::engine::Diagnostic]) -> Vec<String> {
 
 fn load_fixture(name: &str) -> SourceFile {
     let path = fixtures_dir().join(name);
-    let content =
-        fs::read_to_string(&path).unwrap_or_else(|e| panic!("failed to read fixture {name}: {e}"));
+    let content = fs::read_to_string(&path).unwrap_or_else(|e| panic!("failed to read fixture {name}: {e}"));
     SourceFile {
         path,
         language: Language::Markdown,
@@ -79,12 +73,7 @@ fn bad_md_diagnostics() {
     let cfg = default_cfg();
     let mut diags = engine.lint(&src, &cfg).expect("lint succeeded");
     // Sort for snapshot stability.
-    diags.sort_by_key(|d| {
-        (
-            d.span.as_ref().map(|s| s.start_line).unwrap_or(0),
-            d.code.clone(),
-        )
-    });
+    diags.sort_by_key(|d| (d.span.as_ref().map(|s| s.start_line).unwrap_or(0), d.code.clone()));
     let summary: Vec<_> = diags
         .iter()
         .map(|d| {
@@ -120,12 +109,8 @@ fn canonical_ignore_matches_native_disable() {
         "MD013 must fire on a 130-char line; got: {base:?}"
     );
 
-    let native = engine
-        .lint(&src, &cfg_with_codes("disable", &["MD013"]))
-        .unwrap();
-    let canonical = engine
-        .lint(&src, &cfg_with_codes("ignore", &["MD013"]))
-        .unwrap();
+    let native = engine.lint(&src, &cfg_with_codes("disable", &["MD013"])).unwrap();
+    let canonical = engine.lint(&src, &cfg_with_codes("ignore", &["MD013"])).unwrap();
 
     assert_eq!(
         sorted_codes(&native),
@@ -146,15 +131,9 @@ fn canonical_select_and_extend_select_match_native_enable() {
     // to MD018 alone, distinguishing it from the default (multi-rule) run.
     let src = md_src("#Title\n\nsome text with trailing spaces   \n");
 
-    let native = engine
-        .lint(&src, &cfg_with_codes("enable", &["MD018"]))
-        .unwrap();
-    let via_select = engine
-        .lint(&src, &cfg_with_codes("select", &["MD018"]))
-        .unwrap();
-    let via_extend = engine
-        .lint(&src, &cfg_with_codes("extend_select", &["MD018"]))
-        .unwrap();
+    let native = engine.lint(&src, &cfg_with_codes("enable", &["MD018"])).unwrap();
+    let via_select = engine.lint(&src, &cfg_with_codes("select", &["MD018"])).unwrap();
+    let via_extend = engine.lint(&src, &cfg_with_codes("extend_select", &["MD018"])).unwrap();
 
     assert_eq!(
         sorted_codes(&native),

@@ -114,11 +114,7 @@ const KNOWN_UNFORMATTED_ANGULAR: &str = "\
 fn markup_fmt_known_unformatted_angular() {
     insta::assert_snapshot!(
         "markup_fmt_known_unformatted_angular",
-        format_to_string(
-            "app.component.html",
-            Language::Angular,
-            KNOWN_UNFORMATTED_ANGULAR,
-        )
+        format_to_string("app.component.html", Language::Angular, KNOWN_UNFORMATTED_ANGULAR,)
     );
 }
 
@@ -160,11 +156,7 @@ const KNOWN_UNFORMATTED_MUSTACHE: &str = "\
 fn markup_fmt_known_unformatted_mustache() {
     insta::assert_snapshot!(
         "markup_fmt_known_unformatted_mustache",
-        format_to_string(
-            "list.mustache",
-            Language::Mustache,
-            KNOWN_UNFORMATTED_MUSTACHE
-        )
+        format_to_string("list.mustache", Language::Mustache, KNOWN_UNFORMATTED_MUSTACHE)
     );
 }
 

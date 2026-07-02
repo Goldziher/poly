@@ -47,24 +47,17 @@ fn sqruff_honors_exclude_rules_option() {
     let default_cfg = Config::default().engine_config(&Language::Sql, "sqruff", Kind::Lint);
     let default_diags = engine.lint(&sqruff_src(), &default_cfg).unwrap();
     assert!(
-        default_diags
-            .iter()
-            .any(|d| d.code.as_deref() == Some("CP01")),
+        default_diags.iter().any(|d| d.code.as_deref() == Some("CP01")),
         "expected CP01 to fire on mixed-case SQL with default config; got: {default_diags:?}"
     );
 
     // With exclude_rules = ["CP01"]: CP01 must not appear.
     let dir = tempfile::tempdir().unwrap();
     let toml_path = dir.path().join("polylint.toml");
-    fs::write(
-        &toml_path,
-        "[lint.sql.sqruff]\nexclude_rules = [\"CP01\"]\n",
-    )
-    .unwrap();
-    let cfg =
-        Config::load_file(&toml_path)
-            .unwrap()
-            .engine_config(&Language::Sql, "sqruff", Kind::Lint);
+    fs::write(&toml_path, "[lint.sql.sqruff]\nexclude_rules = [\"CP01\"]\n").unwrap();
+    let cfg = Config::load_file(&toml_path)
+        .unwrap()
+        .engine_config(&Language::Sql, "sqruff", Kind::Lint);
     let diags = engine.lint(&sqruff_src(), &cfg).unwrap();
     assert!(
         !diags.iter().any(|d| d.code.as_deref() == Some("CP01")),
@@ -130,11 +123,9 @@ fn typos_honors_extend_ignore_words_option() {
         format!("[lint.markdown.typos]\nextend_ignore_words = [\"{word}\"]\n"),
     )
     .unwrap();
-    let cfg = Config::load_file(&toml_path).unwrap().engine_config(
-        &Language::Markdown,
-        "typos",
-        Kind::Lint,
-    );
+    let cfg = Config::load_file(&toml_path)
+        .unwrap()
+        .engine_config(&Language::Markdown, "typos", Kind::Lint);
     let diags = engine.lint(&typos_src(), &cfg).unwrap();
     assert!(
         diags.is_empty(),
@@ -174,22 +165,16 @@ fn graphql_format_honors_indent_width_option() {
     let dir = tempfile::tempdir().unwrap();
     let toml_path = dir.path().join("polylint.toml");
     fs::write(&toml_path, "[fmt.graphql.graphql]\nindent_width = 4\n").unwrap();
-    let cfg4 = Config::load_file(&toml_path).unwrap().engine_config(
-        &Language::GraphQl,
-        "graphql",
-        Kind::Format,
-    );
+    let cfg4 = Config::load_file(&toml_path)
+        .unwrap()
+        .engine_config(&Language::GraphQl, "graphql", Kind::Format);
     // indent_width = 4 must actually reindent the 2-space input — require
     // Formatted (an Unchanged result would mean the option was silently ignored).
-    let polylint_core::engine::FormatOutput::Formatted(text4) =
-        engine.format(&graphql_src(), &cfg4).unwrap()
-    else {
+    let polylint_core::engine::FormatOutput::Formatted(text4) = engine.format(&graphql_src(), &cfg4).unwrap() else {
         panic!("indent_width = 4 must reformat the 2-space input; got Unchanged");
     };
     assert!(
-        text4
-            .lines()
-            .any(|l| l.starts_with("    ") && !l.starts_with("     ")),
+        text4.lines().any(|l| l.starts_with("    ") && !l.starts_with("     ")),
         "expected a 4-space-indented line in output: {text4:?}"
     );
 
@@ -197,9 +182,7 @@ fn graphql_format_honors_indent_width_option() {
     // not a constant, drives the depth.
     if let polylint_core::engine::FormatOutput::Formatted(ref text2) = default_out {
         assert!(
-            !text2
-                .lines()
-                .any(|l| l.starts_with("    ") && !l.starts_with("     ")),
+            !text2.lines().any(|l| l.starts_with("    ") && !l.starts_with("     ")),
             "default (2-space) output must not use 4-space indentation: {text2:?}"
         );
     }

@@ -147,9 +147,7 @@ pub fn get_root() -> Result<PathBuf, Error> {
         }));
     }
 
-    Ok(PathBuf::from(
-        String::from_utf8_lossy(&output.stdout).trim_ascii(),
-    ))
+    Ok(PathBuf::from(String::from_utf8_lossy(&output.stdout).trim_ascii()))
 }
 
 /// List files that are staged in the index (excluding deleted files).
@@ -341,9 +339,7 @@ pub fn get_git_dir() -> Result<PathBuf, Error> {
         .arg("--git-dir")
         .check(true)
         .output()?;
-    Ok(PathBuf::from(
-        String::from_utf8_lossy(&output.stdout).trim_ascii(),
-    ))
+    Ok(PathBuf::from(String::from_utf8_lossy(&output.stdout).trim_ascii()))
 }
 
 /// Return the git common dir (the primary `.git` even in a linked worktree).
@@ -443,11 +439,7 @@ pub fn is_ancestor(ancestor: &str, commit: &str, root: &Path) -> Result<bool, Er
 /// Ordered oldest-first (`--topo-order --reverse`), so the first element is the
 /// earliest commit the remote does not already have.
 #[instrument(level = "trace")]
-pub fn get_ancestors_not_in_remote(
-    local_sha: &str,
-    remote_name: &str,
-    root: &Path,
-) -> Result<Vec<String>, Error> {
+pub fn get_ancestors_not_in_remote(local_sha: &str, remote_name: &str, root: &Path) -> Result<Vec<String>, Error> {
     validate_revision(local_sha)?;
     // `remote_name` is safe: it is bound inside `--remotes={remote_name}`, so it
     // can never be parsed as a standalone option even if it begins with `-`.
@@ -501,11 +493,7 @@ pub fn get_parent_commit(commit: &str, root: &Path) -> Result<Option<String>, Er
         .check(false)
         .output()?;
     if output.status.success() {
-        Ok(Some(
-            std::str::from_utf8(&output.stdout)?
-                .trim_ascii()
-                .to_string(),
-        ))
+        Ok(Some(std::str::from_utf8(&output.stdout)?.trim_ascii().to_string()))
     } else {
         Ok(None)
     }
@@ -541,10 +529,7 @@ mod tests {
         let root = dir.path();
         let evil = "--upload-pack=touch /tmp/pwned";
 
-        assert!(matches!(
-            rev_exists(evil, root),
-            Err(Error::InvalidRevision { .. })
-        ));
+        assert!(matches!(rev_exists(evil, root), Err(Error::InvalidRevision { .. })));
         assert!(matches!(
             is_ancestor(evil, "HEAD", root),
             Err(Error::InvalidRevision { .. })
@@ -588,10 +573,7 @@ mod tests {
     fn zsplit_splits_on_nul_and_filters_empty() {
         let input = b"a/b.rs\0c/d.rs\0\0";
         let result = zsplit(input).expect("valid utf-8");
-        assert_eq!(
-            result,
-            vec![PathBuf::from("a/b.rs"), PathBuf::from("c/d.rs")]
-        );
+        assert_eq!(result, vec![PathBuf::from("a/b.rs"), PathBuf::from("c/d.rs")]);
     }
 
     #[test]
@@ -612,10 +594,7 @@ mod tests {
         let repo = init_temp_repo();
         let head = commit_file(repo.path(), "a.txt");
         assert!(rev_exists(&head, repo.path()).expect("rev_exists"));
-        assert!(
-            !rev_exists("0000000000000000000000000000000000000000", repo.path())
-                .expect("rev_exists")
-        );
+        assert!(!rev_exists("0000000000000000000000000000000000000000", repo.path()).expect("rev_exists"));
     }
 
     #[test]
@@ -635,10 +614,7 @@ mod tests {
         let parent = get_parent_commit(&second, repo.path()).expect("parent");
         assert_eq!(parent.as_deref(), Some(first.as_str()));
         // A root commit has no parent.
-        assert_eq!(
-            get_parent_commit(&first, repo.path()).expect("parent"),
-            None
-        );
+        assert_eq!(get_parent_commit(&first, repo.path()).expect("parent"), None);
     }
 
     #[test]

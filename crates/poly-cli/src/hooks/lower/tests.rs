@@ -94,8 +94,7 @@ fn legacy_stage_aliases_agree_across_both_enums() {
 
         // The runner's `Stage` accepts the same aliases via serde.
         let runner_stage: HookStage =
-            serde_json::from_value(serde_json::Value::String(alias.to_string()))
-                .expect("runner alias parses");
+            serde_json::from_value(serde_json::Value::String(alias.to_string())).expect("runner alias parses");
         assert_eq!(runner_stage, expected);
     }
 }
@@ -111,14 +110,7 @@ polylint = true
 polyfmt = true
 "#,
     );
-    let spec = lower_stage(
-        &hooks,
-        &poly(),
-        HookStage::PreCommit,
-        &[],
-        &HookCacheMode::Safe,
-    )
-    .unwrap();
+    let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
     assert_eq!(ids(&spec), vec!["polylint", "polyfmt"]);
     let HookCommand::Run(line) = &spec.hooks[0].command else {
         panic!("expected run command");
@@ -137,14 +129,7 @@ polylint = { exclude = ["**/tags.rs", ".ai-rulez/**"] }
 polyfmt = { exclude = "crates/*/tests/fixtures/**" }
 "#,
     );
-    let spec = lower_stage(
-        &hooks,
-        &poly(),
-        HookStage::PreCommit,
-        &[],
-        &HookCacheMode::Safe,
-    )
-    .unwrap();
+    let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
     let lint = spec.hooks.iter().find(|h| h.id == "polylint").unwrap();
     let lint_exclude = lint.exclude.as_ref().expect("polylint exclude present");
     assert!(lint_exclude.is_match(Path::new("crates/poly-hooks/src/identify/tags.rs")));
@@ -166,24 +151,10 @@ commit = true
 "#,
     );
     // Not present on pre-commit...
-    let pre = lower_stage(
-        &hooks,
-        &poly(),
-        HookStage::PreCommit,
-        &[],
-        &HookCacheMode::Safe,
-    )
-    .unwrap();
+    let pre = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
     assert!(pre.hooks.is_empty());
     // ...but present on commit-msg, with file passing for the message file.
-    let msg = lower_stage(
-        &hooks,
-        &poly(),
-        HookStage::CommitMsg,
-        &[],
-        &HookCacheMode::Safe,
-    )
-    .unwrap();
+    let msg = lower_stage(&hooks, &poly(), HookStage::CommitMsg, &[], &HookCacheMode::Safe).unwrap();
     assert_eq!(ids(&msg), vec!["poly-commit"]);
     assert!(msg.hooks[0].pass_filenames);
 }
@@ -205,14 +176,7 @@ stage_fixed = true
 files = "**/*.rs"
 "#,
     );
-    let spec = lower_stage(
-        &hooks,
-        &poly(),
-        HookStage::PreCommit,
-        &[],
-        &HookCacheMode::Safe,
-    )
-    .unwrap();
+    let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
     assert_eq!(ids(&spec), vec!["fmt"]);
     let hook = &spec.hooks[0];
     assert!(matches!(&hook.command, HookCommand::Run(line) if line == "cargo fmt"));
@@ -235,14 +199,7 @@ script = "lint.sh"
 runner = "bash"
 "#,
     );
-    let spec = lower_stage(
-        &hooks,
-        &poly(),
-        HookStage::PreCommit,
-        &[],
-        &HookCacheMode::Safe,
-    )
-    .unwrap();
+    let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
     let HookCommand::Script { path, runner } = &spec.hooks[0].command else {
         panic!("expected script command");
     };
@@ -267,14 +224,7 @@ run = "echo late"
 priority = 5
 "#,
     );
-    let spec = lower_stage(
-        &hooks,
-        &poly(),
-        HookStage::PreCommit,
-        &[],
-        &HookCacheMode::Safe,
-    )
-    .unwrap();
+    let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
     // `early` (-5) < polylint (0) < `late` (5).
     assert_eq!(ids(&spec), vec!["early", "polylint", "late"]);
 }
@@ -293,23 +243,9 @@ name = "commit-only"
 run = "echo commit"
 "#,
     );
-    let pre = lower_stage(
-        &hooks,
-        &poly(),
-        HookStage::PreCommit,
-        &[],
-        &HookCacheMode::Safe,
-    )
-    .unwrap();
+    let pre = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
     assert_eq!(ids(&pre), vec!["commit-only", "everywhere"]);
-    let push = lower_stage(
-        &hooks,
-        &poly(),
-        HookStage::PrePush,
-        &[],
-        &HookCacheMode::Safe,
-    )
-    .unwrap();
+    let push = lower_stage(&hooks, &poly(), HookStage::PrePush, &[], &HookCacheMode::Safe).unwrap();
     assert_eq!(ids(&push), vec!["everywhere"]);
 }
 
@@ -324,22 +260,10 @@ files = ["src/**/*.rs"]
 exclude = "src/generated/**"
 "#,
     );
-    let spec = lower_stage(
-        &hooks,
-        &poly(),
-        HookStage::PreCommit,
-        &[],
-        &HookCacheMode::Safe,
-    )
-    .unwrap();
+    let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
     let hook = &spec.hooks[0];
     assert!(hook.files.as_ref().unwrap().is_match(Path::new("src/a.rs")));
-    assert!(
-        hook.exclude
-            .as_ref()
-            .unwrap()
-            .is_match(Path::new("src/generated/x.rs"))
-    );
+    assert!(hook.exclude.as_ref().unwrap().is_match(Path::new("src/generated/x.rs")));
 }
 
 #[test]
@@ -360,14 +284,7 @@ name = "kept"
 run = "z"
 "#,
     );
-    let spec = lower_stage(
-        &hooks,
-        &poly(),
-        HookStage::PreCommit,
-        &[],
-        &HookCacheMode::Safe,
-    )
-    .unwrap();
+    let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
     assert_eq!(ids(&spec), vec!["kept"]);
 }
 
@@ -381,14 +298,7 @@ skip = true
 run = "x"
 "#,
     );
-    let spec = lower_stage(
-        &hooks,
-        &poly(),
-        HookStage::PreCommit,
-        &[],
-        &HookCacheMode::Safe,
-    )
-    .unwrap();
+    let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
     assert!(spec.hooks.is_empty());
 }
 
@@ -402,14 +312,7 @@ run = "prettier --write {staged_files}"
 "#,
     );
     let files = vec![PathBuf::from("a.js"), PathBuf::from("b.js")];
-    let spec = lower_stage(
-        &hooks,
-        &poly(),
-        HookStage::PreCommit,
-        &files,
-        &HookCacheMode::Safe,
-    )
-    .unwrap();
+    let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &files, &HookCacheMode::Safe).unwrap();
     let hook = &spec.hooks[0];
     let HookCommand::Run(line) = &hook.command else {
         panic!("expected run command");
@@ -429,23 +332,13 @@ files = "**/*.rs"
 "#,
     );
     let files = vec![PathBuf::from("src/a.rs"), PathBuf::from("README.md")];
-    let spec = lower_stage(
-        &hooks,
-        &poly(),
-        HookStage::PreCommit,
-        &files,
-        &HookCacheMode::Safe,
-    )
-    .unwrap();
+    let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &files, &HookCacheMode::Safe).unwrap();
     let HookCommand::Run(line) = &spec.hooks[0].command else {
         panic!("expected run command");
     };
     // Only the `.rs` file survives the job's `files` glob.
     assert!(line.contains("a.rs"), "{line}");
-    assert!(
-        !line.contains("README.md"),
-        "non-matching file leaked: {line}"
-    );
+    assert!(!line.contains("README.md"), "non-matching file leaked: {line}");
 }
 
 #[test]
@@ -459,14 +352,7 @@ run = "echo {staged_files}"
 "#,
     );
     let files = vec![PathBuf::from("my file.js")];
-    let spec = lower_stage(
-        &hooks,
-        &poly(),
-        HookStage::PreCommit,
-        &files,
-        &HookCacheMode::Safe,
-    )
-    .unwrap();
+    let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &files, &HookCacheMode::Safe).unwrap();
     let HookCommand::Run(line) = &spec.hooks[0].command else {
         panic!("expected run command");
     };
@@ -484,18 +370,8 @@ polylint = true
 skip = true
 "#,
     );
-    let spec = lower_stage(
-        &hooks,
-        &poly(),
-        HookStage::PreCommit,
-        &[],
-        &HookCacheMode::Safe,
-    )
-    .unwrap();
-    assert!(
-        spec.hooks.is_empty(),
-        "stage skip must suppress builtins too"
-    );
+    let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
+    assert!(spec.hooks.is_empty(), "stage skip must suppress builtins too");
 }
 
 #[test]
@@ -510,14 +386,7 @@ after = ["echo a", "echo b"]
 run = "x"
 "#,
     );
-    let spec = lower_stage(
-        &hooks,
-        &poly(),
-        HookStage::PreCommit,
-        &[],
-        &HookCacheMode::Safe,
-    )
-    .unwrap();
+    let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
     assert_eq!(spec.precondition.as_deref(), Some("command -v cargo"));
     assert_eq!(spec.before, vec!["echo before"]);
     assert_eq!(spec.after, vec!["echo a", "echo b"]);
@@ -539,13 +408,6 @@ run = "y"
 tags = ["slow"]
 "#,
     );
-    let spec = lower_stage(
-        &hooks,
-        &poly(),
-        HookStage::PreCommit,
-        &[],
-        &HookCacheMode::Safe,
-    )
-    .unwrap();
+    let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
     assert_eq!(ids(&spec), vec!["fast"]);
 }

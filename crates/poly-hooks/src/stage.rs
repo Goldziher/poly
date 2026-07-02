@@ -96,9 +96,7 @@ impl Stage {
 ///
 /// Every variant maps 1-to-1 to a [`Stage`] (except `Manual`, which is not
 /// triggered by a git hook and therefore has no `HookType` counterpart).
-#[derive(
-    Debug, Clone, Copy, Default, Deserialize, clap::ValueEnum, strum::AsRefStr, strum::Display,
-)]
+#[derive(Debug, Clone, Copy, Default, Deserialize, clap::ValueEnum, strum::AsRefStr, strum::Display)]
 #[serde(rename_all = "kebab-case")]
 #[strum(serialize_all = "kebab-case")]
 pub enum HookType {
@@ -158,14 +156,10 @@ impl From<Stage> for RunInputMode {
     fn from(stage: Stage) -> Self {
         match stage {
             Stage::CommitMsg | Stage::PrepareCommitMsg => Self::MessageFile,
-            Stage::Manual | Stage::PreCommit | Stage::PreMergeCommit | Stage::PrePush => {
-                Self::Files
+            Stage::Manual | Stage::PreCommit | Stage::PreMergeCommit | Stage::PrePush => Self::Files,
+            Stage::PostCheckout | Stage::PostCommit | Stage::PostMerge | Stage::PostRewrite | Stage::PreRebase => {
+                Self::NoFiles
             }
-            Stage::PostCheckout
-            | Stage::PostCommit
-            | Stage::PostMerge
-            | Stage::PostRewrite
-            | Stage::PreRebase => Self::NoFiles,
         }
     }
 }
@@ -185,10 +179,7 @@ mod tests {
     #[test]
     fn stage_run_input_mode() {
         assert_eq!(RunInputMode::from(Stage::PreCommit), RunInputMode::Files);
-        assert_eq!(
-            RunInputMode::from(Stage::CommitMsg),
-            RunInputMode::MessageFile
-        );
+        assert_eq!(RunInputMode::from(Stage::CommitMsg), RunInputMode::MessageFile);
         assert_eq!(RunInputMode::from(Stage::PostCommit), RunInputMode::NoFiles);
     }
 

@@ -54,9 +54,9 @@ pub fn parse_php_version(cfg: &EngineConfig) -> anyhow::Result<Option<PHPVersion
     let mut component = |label: &str| -> anyhow::Result<u32> {
         match parts.next() {
             None | Some("") => Ok(0),
-            Some(part) => part.parse().with_context(|| {
-                format!("invalid php_version {label} in {text:?}; expected MAJOR[.MINOR[.PATCH]]")
-            }),
+            Some(part) => part
+                .parse()
+                .with_context(|| format!("invalid php_version {label} in {text:?}; expected MAJOR[.MINOR[.PATCH]]")),
         }
     };
     let minor = component("minor")?;
@@ -90,11 +90,7 @@ pub fn parse_category(s: &str) -> Option<Category> {
 /// Return the codes of all rules in `cat` that are present in the mago
 /// registry, regardless of their default-enabled status or PHP version / integration
 /// gates.
-pub fn codes_for_category(
-    cat: Category,
-    php_version: PHPVersion,
-    integrations: IntegrationSet,
-) -> Vec<String> {
+pub fn codes_for_category(cat: Category, php_version: PHPVersion, integrations: IntegrationSet) -> Vec<String> {
     all_rules_unconstrained(php_version, integrations)
         .filter_map(|rule| {
             if rule.meta().category == cat {
@@ -177,10 +173,7 @@ fn make_settings(php_version: PHPVersion, integrations: IntegrationSet) -> Setti
 
 /// Iterate all rules, with `include_disabled = true` so version/integration
 /// requirements and default-enabled flags are both bypassed.
-fn all_rules_unconstrained(
-    php_version: PHPVersion,
-    integrations: IntegrationSet,
-) -> impl Iterator<Item = AnyRule> {
+fn all_rules_unconstrained(php_version: PHPVersion, integrations: IntegrationSet) -> impl Iterator<Item = AnyRule> {
     let settings = make_settings(php_version, integrations);
     AnyRule::get_all_for(&settings, None, true)
         .into_iter()

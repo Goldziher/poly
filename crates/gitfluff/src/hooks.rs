@@ -13,12 +13,8 @@ pub enum HookKind {
 pub fn install_hook(start_dir: &Path, kind: HookKind, write: bool, force: bool) -> Result<PathBuf> {
     let git_dir = locate_git_dir(start_dir).context("failed to locate .git directory")?;
     let hooks_dir = git_dir.join("hooks");
-    fs::create_dir_all(&hooks_dir).with_context(|| {
-        format!(
-            "failed to ensure hooks directory at {}",
-            hooks_dir.display()
-        )
-    })?;
+    fs::create_dir_all(&hooks_dir)
+        .with_context(|| format!("failed to ensure hooks directory at {}", hooks_dir.display()))?;
 
     let hook_name = hook_filename(kind);
     let hook_path = hooks_dir.join(hook_name);
@@ -32,8 +28,7 @@ pub fn install_hook(start_dir: &Path, kind: HookKind, write: bool, force: bool) 
     }
 
     let script = hook_script(kind, write)?;
-    fs::write(&hook_path, script)
-        .with_context(|| format!("failed to write hook to {}", hook_path.display()))?;
+    fs::write(&hook_path, script).with_context(|| format!("failed to write hook to {}", hook_path.display()))?;
     apply_executable_permissions(&hook_path)?;
 
     Ok(hook_path)
@@ -58,8 +53,8 @@ fn locate_git_dir(start_dir: &Path) -> Result<PathBuf> {
 }
 
 fn resolve_gitdir_file(git_file: &Path) -> Result<PathBuf> {
-    let content = fs::read_to_string(git_file)
-        .with_context(|| format!("failed to read gitdir file {}", git_file.display()))?;
+    let content =
+        fs::read_to_string(git_file).with_context(|| format!("failed to read gitdir file {}", git_file.display()))?;
     let content = content.trim();
 
     let prefix = "gitdir:";
@@ -107,9 +102,8 @@ fn apply_executable_permissions(path: &Path) -> Result<()> {
     {
         use std::os::unix::fs::PermissionsExt;
         let perms = fs::Permissions::from_mode(0o755);
-        fs::set_permissions(path, perms).with_context(|| {
-            format!("failed to set executable permissions on {}", path.display())
-        })?;
+        fs::set_permissions(path, perms)
+            .with_context(|| format!("failed to set executable permissions on {}", path.display()))?;
     }
 
     #[cfg(not(unix))]

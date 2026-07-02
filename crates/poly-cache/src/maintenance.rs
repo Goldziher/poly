@@ -79,8 +79,7 @@ impl ResultCache {
 
         let mut entries = Vec::new();
         for item in read_dir {
-            let item =
-                item.with_context(|| format!("failed to read entry in {}", dir.display()))?;
+            let item = item.with_context(|| format!("failed to read entry in {}", dir.display()))?;
             let name = item.file_name();
             // Skip in-flight `.<key>.<pid>.<n>.tmp` sibling-write temporaries.
             if name.to_string_lossy().starts_with('.') {
@@ -202,10 +201,8 @@ impl ResultCache {
         // Age eviction.
         for namespace in Namespace::ALL {
             for entry in self.collect_entries(namespace)? {
-                let too_old = max_age.is_some_and(|max_age| {
-                    now.duration_since(entry.modified)
-                        .is_ok_and(|age| age > max_age)
-                });
+                let too_old =
+                    max_age.is_some_and(|max_age| now.duration_since(entry.modified).is_ok_and(|age| age > max_age));
                 if too_old {
                     freed += remove_entry(&entry)?;
                 } else {
@@ -240,9 +237,7 @@ fn remove_entry(entry: &Entry) -> Result<u64> {
     match std::fs::remove_file(&entry.path) {
         Ok(()) => Ok(entry.size),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(0),
-        Err(error) => {
-            Err(error).with_context(|| format!("failed to remove {}", entry.path.display()))
-        }
+        Err(error) => Err(error).with_context(|| format!("failed to remove {}", entry.path.display())),
     }
 }
 
@@ -269,18 +264,10 @@ mod tests {
 
     /// Backdate an entry's mtime by the given duration.
     fn backdate(cache: &ResultCache, namespace: Namespace, key: &CacheKey, ago: Duration) {
-        let path = cache
-            .root()
-            .join("results")
-            .join(namespace.as_dir())
-            .join(key.as_str());
+        let path = cache.root().join("results").join(namespace.as_dir()).join(key.as_str());
         let when = SystemTime::now() - ago;
-        let file = std::fs::OpenOptions::new()
-            .write(true)
-            .open(&path)
-            .expect("open entry");
-        file.set_times(FileTimes::new().set_modified(when))
-            .expect("set mtime");
+        let file = std::fs::OpenOptions::new().write(true).open(&path).expect("open entry");
+        file.set_times(FileTimes::new().set_modified(when)).expect("set mtime");
     }
 
     #[test]
@@ -343,12 +330,7 @@ mod tests {
         let cache = cache_at(&tmp);
         let old = put(&cache, Namespace::Hook, "old", b"stale-bytes");
         put(&cache, Namespace::Hook, "fresh", b"new");
-        backdate(
-            &cache,
-            Namespace::Hook,
-            &old,
-            Duration::from_secs(100 * 86_400),
-        );
+        backdate(&cache, Namespace::Hook, &old, Duration::from_secs(100 * 86_400));
 
         let freed = cache.gc(Some(Duration::from_secs(86_400)), None).unwrap();
         assert_eq!(freed, "stale-bytes".len() as u64);

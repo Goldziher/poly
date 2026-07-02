@@ -35,8 +35,8 @@ use tracing::warn;
 use crate::filter::{FilePattern, FileTagCache, HookFileFilter};
 use crate::git;
 use crate::model::{
-    Hook, HookCache, HookCommand, HookOutcome, HookRunOutcome, HookRunRequest, HookStatus,
-    SccacheSettings, SkipReason, StageOutcome, StageSpec, StageStatus, StepOutcome,
+    Hook, HookCache, HookCommand, HookOutcome, HookRunOutcome, HookRunRequest, HookStatus, SccacheSettings, SkipReason,
+    StageOutcome, StageSpec, StageStatus, StepOutcome,
 };
 use crate::process::Cmd;
 use crate::reporter::CaptureSink;
@@ -67,9 +67,7 @@ const SHELL_ARG: &str = "/C";
 #[allow(clippy::needless_pass_by_value)]
 pub fn run(request: HookRunRequest) -> anyhow::Result<HookRunOutcome> {
     let threads = crate::concurrency::effective_concurrency(request.concurrency);
-    let pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(threads)
-        .build()?;
+    let pool = rayon::ThreadPoolBuilder::new().num_threads(threads).build()?;
     pool.install(|| run_all(&request))
 }
 
@@ -255,10 +253,7 @@ fn run_group(
         }
 
         let refs: Vec<&Path> = matched.iter().map(AsRef::as_ref).collect();
-        (
-            run_hook(&request.root, hook, pos, &refs, request.sccache.as_ref()),
-            key,
-        )
+        (run_hook(&request.root, hook, pos, &refs, request.sccache.as_ref()), key)
     };
 
     if serial {
@@ -335,12 +330,7 @@ fn cached_outcome(hook: &Hook, position: usize, output: Vec<u8>) -> HookOutcome 
 
 // ── Command construction & execution ────────────────────────────────────────
 
-fn build_command(
-    hook: &Hook,
-    root: &Path,
-    files: &[&Path],
-    sccache: Option<&SccacheSettings>,
-) -> Cmd {
+fn build_command(hook: &Hook, root: &Path, files: &[&Path], sccache: Option<&SccacheSettings>) -> Cmd {
     let mut cmd = match &hook.command {
         HookCommand::Run(line) => shell_command(line, &hook.args, files, hook.pass_filenames),
         HookCommand::Script { path, runner } => {
@@ -427,9 +417,7 @@ fn shell_command(line: &str, args: &[String], files: &[&Path], pass_filenames: b
     // `sh -c '<line> "$@"' poly-hook <args> <files>` — args and matched files
     // become the positional parameters consumed by `"$@"`. `$0` is a label.
     let mut cmd = Cmd::new(SHELL, line.to_string());
-    cmd.arg(SHELL_ARG)
-        .arg(format!("{line} \"$@\""))
-        .arg("poly-hook");
+    cmd.arg(SHELL_ARG).arg(format!("{line} \"$@\"")).arg("poly-hook");
     cmd.args(args);
     if pass_filenames {
         cmd.args(files.iter().map(|p| p.as_os_str()));
@@ -524,12 +512,7 @@ fn prepare(request: &HookRunRequest, spec: &StageSpec) -> Vec<Prepared> {
         .collect()
 }
 
-fn prepare_one(
-    request: &HookRunRequest,
-    hook: &Hook,
-    all_paths: &[&Path],
-    tag_cache: &FileTagCache<'_>,
-) -> Prepared {
+fn prepare_one(request: &HookRunRequest, hook: &Hook, all_paths: &[&Path], tag_cache: &FileTagCache<'_>) -> Prepared {
     match RunInputMode::from(hook.stage) {
         RunInputMode::NoFiles => Prepared {
             matched: Vec::new(),
@@ -547,13 +530,11 @@ fn prepare_one(
                 hook.types_or.as_ref(),
                 hook.exclude_types.as_ref(),
             );
-            let has_tag_filter =
-                hook.types.is_some() || hook.types_or.is_some() || hook.exclude_types.is_some();
+            let has_tag_filter = hook.types.is_some() || hook.types_or.is_some() || hook.exclude_types.is_some();
             let matched: Vec<std::path::PathBuf> = all_paths
                 .iter()
                 .filter(|path| {
-                    filter.matches_filename(path)
-                        && (!has_tag_filter || filter.matches_tags(tag_cache.tags_for(path)))
+                    filter.matches_filename(path) && (!has_tag_filter || filter.matches_tags(tag_cache.tags_for(path)))
                 })
                 .map(|path| path.to_path_buf())
                 .collect();
@@ -583,10 +564,7 @@ fn group_by_priority(hooks: &[Hook]) -> Vec<Vec<usize>> {
     groups
 }
 
-fn modified_matched(
-    root: &Path,
-    matched: &[std::path::PathBuf],
-) -> anyhow::Result<Vec<std::path::PathBuf>> {
+fn modified_matched(root: &Path, matched: &[std::path::PathBuf]) -> anyhow::Result<Vec<std::path::PathBuf>> {
     let mut modified = Vec::new();
     for path in matched {
         if git::has_worktree_diff_in(root, path)? {
@@ -612,13 +590,7 @@ fn cache_key(root: &Path, hook: &Hook, matched: &[PathBuf]) -> Option<CacheKey> 
     };
     let version = hook_version(hook);
     let args = hook_env_table(hook);
-    Some(ResultCache::key(
-        Namespace::Hook,
-        &hook.id,
-        &version,
-        &args,
-        &digest,
-    ))
+    Some(ResultCache::key(Namespace::Hook, &hook.id, &version, &args, &digest))
 }
 
 /// Digest the hook's matched files (each as `(relative_path, bytes)`).
@@ -657,9 +629,7 @@ fn read_digest(root: &Path, paths: impl Iterator<Item = PathBuf>) -> Option<Inpu
     }
     files.sort_by(|a, b| a.0.cmp(&b.0));
     Some(ResultCache::file_set_digest(
-        files
-            .iter()
-            .map(|(path, bytes)| (path.as_str(), bytes.as_slice())),
+        files.iter().map(|(path, bytes)| (path.as_str(), bytes.as_slice())),
     ))
 }
 
@@ -734,12 +704,7 @@ mod tests {
         let cmd = build_command(hook, Path::new("."), &[], sccache);
         cmd.get_envs()
             .filter_map(|(key, value)| {
-                value.map(|value| {
-                    (
-                        key.to_string_lossy().into_owned(),
-                        value.to_string_lossy().into_owned(),
-                    )
-                })
+                value.map(|value| (key.to_string_lossy().into_owned(), value.to_string_lossy().into_owned()))
             })
             .collect()
     }
@@ -760,14 +725,8 @@ mod tests {
         hook.compiler = true;
         let env = injected_env(&hook, Some(&settings()));
         assert_eq!(env.get("RUSTC_WRAPPER").map(String::as_str), Some("true"));
-        assert_eq!(
-            env.get("SCCACHE_DIR").map(String::as_str),
-            Some("/tmp/sccache-test")
-        );
-        assert_eq!(
-            env.get("SCCACHE_CACHE_SIZE").map(String::as_str),
-            Some("2G")
-        );
+        assert_eq!(env.get("SCCACHE_DIR").map(String::as_str), Some("/tmp/sccache-test"));
+        assert_eq!(env.get("SCCACHE_CACHE_SIZE").map(String::as_str), Some("2G"));
     }
 
     #[test]

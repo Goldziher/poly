@@ -32,12 +32,7 @@ fn cfg_with_codes(key: &str, codes: &[&str]) -> EngineConfig {
     let mut options = toml::Table::new();
     options.insert(
         key.to_string(),
-        toml::Value::Array(
-            codes
-                .iter()
-                .map(|c| toml::Value::String((*c).into()))
-                .collect(),
-        ),
+        toml::Value::Array(codes.iter().map(|c| toml::Value::String((*c).into())).collect()),
     );
     EngineConfig {
         globals: GlobalDefaults::default(),
@@ -171,12 +166,8 @@ fn canonical_select_matches_native_rules() {
     let engine = SqruffEngine;
     let src = make_source("t.sql", COMMA_SQL);
 
-    let native = engine
-        .lint(&src, &cfg_with_codes("rules", &["LT01"]))
-        .unwrap();
-    let canonical = engine
-        .lint(&src, &cfg_with_codes("select", &["LT01"]))
-        .unwrap();
+    let native = engine.lint(&src, &cfg_with_codes("rules", &["LT01"])).unwrap();
+    let canonical = engine.lint(&src, &cfg_with_codes("select", &["LT01"])).unwrap();
 
     assert_eq!(
         sorted_codes(&native),
@@ -195,12 +186,8 @@ fn canonical_ignore_matches_native_exclude_rules() {
     let engine = SqruffEngine;
     let src = make_source("t.sql", COMMA_SQL);
 
-    let native = engine
-        .lint(&src, &cfg_with_codes("exclude_rules", &["LT01"]))
-        .unwrap();
-    let canonical = engine
-        .lint(&src, &cfg_with_codes("ignore", &["LT01"]))
-        .unwrap();
+    let native = engine.lint(&src, &cfg_with_codes("exclude_rules", &["LT01"])).unwrap();
+    let canonical = engine.lint(&src, &cfg_with_codes("ignore", &["LT01"])).unwrap();
 
     assert_eq!(
         sorted_codes(&native),
@@ -248,10 +235,7 @@ fn sqruff_per_rule_param_capitalisation_policy_upper() {
         toml::Value::String("upper".to_string()),
     );
     let mut rule_configs = toml::Table::new();
-    rule_configs.insert(
-        "capitalisation.keywords".to_string(),
-        toml::Value::Table(cap_opts),
-    );
+    rule_configs.insert("capitalisation.keywords".to_string(), toml::Value::Table(cap_opts));
     let mut options = toml::Table::new();
     options.insert("rule_configs".to_string(), toml::Value::Table(rule_configs));
 
@@ -263,9 +247,7 @@ fn sqruff_per_rule_param_capitalisation_policy_upper() {
 
     let upper_diags = engine.lint(&src, &upper_cfg).unwrap();
     assert!(
-        upper_diags
-            .iter()
-            .any(|d| d.code.as_deref() == Some("CP01")),
+        upper_diags.iter().any(|d| d.code.as_deref() == Some("CP01")),
         "capitalisation_policy = 'upper' should flag lowercase keywords (CP01); \
          got: {upper_diags:#?}"
     );

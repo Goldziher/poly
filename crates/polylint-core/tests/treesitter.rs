@@ -98,13 +98,7 @@ fn r_lint_flags_trailing_whitespace() {
     // Snapshot the diagnostic summary (not column numbers, which vary).
     let summary: Vec<_> = diags
         .iter()
-        .map(|d| {
-            (
-                d.engine.as_str(),
-                d.code.as_deref().unwrap_or(""),
-                d.severity,
-            )
-        })
+        .map(|d| (d.engine.as_str(), d.code.as_deref().unwrap_or(""), d.severity))
         .collect();
     insta::assert_debug_snapshot!("r_lint_flags_trailing_whitespace", summary);
 }

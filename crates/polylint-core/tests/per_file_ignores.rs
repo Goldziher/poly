@@ -14,10 +14,7 @@ fn write(path: &Path, contents: &str) {
 
 fn config_ignoring(glob: &str, rules: &[&str]) -> Config {
     let mut per_file_ignores = BTreeMap::new();
-    per_file_ignores.insert(
-        glob.to_string(),
-        rules.iter().map(|r| r.to_string()).collect(),
-    );
+    per_file_ignores.insert(glob.to_string(), rules.iter().map(|r| r.to_string()).collect());
     Config {
         per_file_ignores,
         ..Config::default()

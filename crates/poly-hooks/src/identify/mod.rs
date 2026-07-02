@@ -204,8 +204,7 @@ impl<'de> serde::Deserialize<'de> for TagSet {
                         );
                         return Err(A::Error::custom(msg));
                     };
-                    let tag_id = u16::try_from(tag_id)
-                        .map_err(|_| A::Error::custom("tag id out of range"))?;
+                    let tag_id = u16::try_from(tag_id).map_err(|_| A::Error::custom("tag id out of range"))?;
                     tags.insert(tag_id);
                 }
                 Ok(tags)
@@ -429,16 +428,15 @@ pub fn parse_shebang(path: &Path) -> Result<Vec<String>, ShebangError> {
     }
 
     let mut tokens = shlex::split(line[2..].trim()).ok_or(ShebangError::ParseFailed)?;
-    let mut cmd =
-        if starts_with(&tokens, &["/usr/bin/env", "-S"]) || starts_with(&tokens, &["env", "-S"]) {
-            tokens.drain(0..2);
-            tokens
-        } else if starts_with(&tokens, &["/usr/bin/env"]) || starts_with(&tokens, &["env"]) {
-            tokens.drain(0..1);
-            tokens
-        } else {
-            tokens
-        };
+    let mut cmd = if starts_with(&tokens, &["/usr/bin/env", "-S"]) || starts_with(&tokens, &["env", "-S"]) {
+        tokens.drain(0..2);
+        tokens
+    } else if starts_with(&tokens, &["/usr/bin/env"]) || starts_with(&tokens, &["env"]) {
+        tokens.drain(0..1);
+        tokens
+    } else {
+        tokens
+    };
     if cmd.is_empty() {
         return Err(ShebangError::NoCommand);
     }
@@ -460,8 +458,7 @@ static IS_TEXT_CHAR: [u32; 8] = {
         // Printable ASCII (0x20..0x7F)
         // High bit set (>= 0x80)
         // Control characters: 7, 8, 9, 10, 11, 12, 13, 27
-        let is_text =
-            (i >= 0x20 && i < 0x7F) || i >= 0x80 || matches!(i, 7 | 8 | 9 | 10 | 11 | 12 | 13 | 27);
+        let is_text = (i >= 0x20 && i < 0x7F) || i >= 0x80 || matches!(i, 7 | 8 | 9 | 10 | 11 | 12 | 13 | 27);
         if is_text {
             table[i / 32] |= 1 << (i % 32);
         }
@@ -683,8 +680,7 @@ mod tests {
 
     #[test]
     fn tagset_deserialize_from_string_slice() {
-        let parsed: TagSet =
-            serde_json::from_str(r#"["python","text"]"#).expect("should parse tags");
+        let parsed: TagSet = serde_json::from_str(r#"["python","text"]"#).expect("should parse tags");
         assert_tagset(&parsed, &["python", "text"]);
     }
 
@@ -692,8 +688,7 @@ mod tests {
     fn tagset_deserialize_unknown_tag_errors() {
         let err = serde_json::from_str::<TagSet>(r#"["not-a-real-tag"]"#).unwrap_err();
         assert!(
-            err.to_string()
-                .contains("Type tag `not-a-real-tag` is not recognized"),
+            err.to_string().contains("Type tag `not-a-real-tag` is not recognized"),
             "unexpected error: {err}"
         );
     }

@@ -121,11 +121,7 @@ fn parallel_group_runs_every_hook() {
 
     assert!(outcome.success());
     for i in 0..4 {
-        assert_eq!(
-            read(root, &format!("h{i}.out")),
-            "x",
-            "hook h{i} did not run"
-        );
+        assert_eq!(read(root, &format!("h{i}.out")), "x", "hook h{i} did not run");
     }
     assert_eq!(outcome.stages[0].hooks.len(), 4);
 }
@@ -270,10 +266,7 @@ fn modification_left_unstaged_when_not_stage_fixed() {
     assert!(outcome.success());
     assert!(!outcome.stages[0].hooks[0].files_modified);
     // The rewrite stays in the worktree, unstaged.
-    assert!(
-        is_dirty(root, "g.txt"),
-        "g.txt modification should be unstaged"
-    );
+    assert!(is_dirty(root, "g.txt"), "g.txt modification should be unstaged");
 }
 
 // ── precondition skip ─────────────────────────────────────────────────────────
@@ -293,11 +286,7 @@ fn failing_precondition_skips_stage() {
 
     assert!(matches!(outcome.stages[0].status, StageStatus::Skipped(_)));
     assert!(outcome.stages[0].hooks.is_empty());
-    assert_eq!(
-        read(root, "h.out"),
-        "",
-        "hook must not run when precondition fails"
-    );
+    assert_eq!(read(root, "h.out"), "", "hook must not run when precondition fails");
     // A skipped stage is not a failure.
     assert!(outcome.success());
 }
@@ -337,11 +326,7 @@ fn failing_before_aborts_stage() {
     assert!(matches!(outcome.stages[0].status, StageStatus::Aborted(_)));
     assert!(!outcome.success());
     assert!(outcome.stages[0].hooks.is_empty());
-    assert_eq!(
-        read(root, "h.out"),
-        "",
-        "hooks must not run after a failed before step"
-    );
+    assert_eq!(read(root, "h.out"), "", "hooks must not run after a failed before step");
 }
 
 #[test]
@@ -377,11 +362,7 @@ fn after_skipped_when_a_hook_fails() {
 
     assert!(!outcome.success());
     assert!(outcome.stages[0].after.is_empty());
-    assert_eq!(
-        read(root, "after.out"),
-        "",
-        "after must not run when a hook failed"
-    );
+    assert_eq!(read(root, "after.out"), "", "after must not run when a hook failed");
 }
 
 // ── deterministic, non-interleaved output ──────────────────────────────────────
@@ -419,10 +400,7 @@ fn output_is_deterministic_and_non_interleaved() {
     let a2 = report1.find("A2").unwrap();
     let b1 = report1.find("B1").unwrap();
     // alpha's two lines are adjacent (no beta output interleaved between them).
-    assert!(
-        a1 < a2 && a2 < b1,
-        "alpha block must be contiguous and before beta"
-    );
+    assert!(a1 < a2 && a2 < b1, "alpha block must be contiguous and before beta");
 }
 
 #[test]
@@ -549,10 +527,7 @@ fn a_hook_that_modifies_its_inputs_is_never_cached() {
 
     run(build()).expect("run");
     let second = run(build()).expect("run");
-    assert!(
-        !second.stages[0].hooks[0].cached,
-        "tree-mutating hook must not cache"
-    );
+    assert!(!second.stages[0].hooks[0].cached, "tree-mutating hook must not cache");
     assert_eq!(read(root, "runs.log"), "xx", "must execute on both runs");
 }
 

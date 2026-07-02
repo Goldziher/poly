@@ -180,10 +180,7 @@ fn build_options(cfg: &EngineConfig) -> Options {
     };
 
     // ── layout ───────────────────────────────────────────────────────────────
-    if let Some(v) = cfg
-        .options
-        .get("column_width")
-        .and_then(toml::Value::as_integer)
+    if let Some(v) = cfg.options.get("column_width").and_then(toml::Value::as_integer)
         && v > 0
     {
         opts.column_width = v as usize;
@@ -198,65 +195,34 @@ fn build_options(cfg: &EngineConfig) -> Options {
     {
         opts.indent_string = " ".repeat(v as usize);
     }
-    if let Some(v) = cfg
-        .options
-        .get("allowed_blank_lines")
-        .and_then(toml::Value::as_integer)
+    if let Some(v) = cfg.options.get("allowed_blank_lines").and_then(toml::Value::as_integer)
         && v >= 0
     {
         opts.allowed_blank_lines = v as usize;
     }
 
     // ── entry ordering ────────────────────────────────────────────────────────
-    if let Some(v) = cfg
-        .options
-        .get("align_entries")
-        .and_then(toml::Value::as_bool)
-    {
+    if let Some(v) = cfg.options.get("align_entries").and_then(toml::Value::as_bool) {
         opts.align_entries = v;
     }
-    if let Some(v) = cfg
-        .options
-        .get("reorder_keys")
-        .and_then(toml::Value::as_bool)
-    {
+    if let Some(v) = cfg.options.get("reorder_keys").and_then(toml::Value::as_bool) {
         opts.reorder_keys = v;
     }
-    if let Some(v) = cfg
-        .options
-        .get("indent_tables")
-        .and_then(toml::Value::as_bool)
-    {
+    if let Some(v) = cfg.options.get("indent_tables").and_then(toml::Value::as_bool) {
         opts.indent_tables = v;
     }
 
     // ── array formatting ──────────────────────────────────────────────────────
-    if let Some(v) = cfg
-        .options
-        .get("array_trailing_comma")
-        .and_then(toml::Value::as_bool)
-    {
+    if let Some(v) = cfg.options.get("array_trailing_comma").and_then(toml::Value::as_bool) {
         opts.array_trailing_comma = v;
     }
-    if let Some(v) = cfg
-        .options
-        .get("array_auto_expand")
-        .and_then(toml::Value::as_bool)
-    {
+    if let Some(v) = cfg.options.get("array_auto_expand").and_then(toml::Value::as_bool) {
         opts.array_auto_expand = v;
     }
-    if let Some(v) = cfg
-        .options
-        .get("compact_arrays")
-        .and_then(toml::Value::as_bool)
-    {
+    if let Some(v) = cfg.options.get("compact_arrays").and_then(toml::Value::as_bool) {
         opts.compact_arrays = v;
     }
-    if let Some(v) = cfg
-        .options
-        .get("compact_inline_tables")
-        .and_then(toml::Value::as_bool)
-    {
+    if let Some(v) = cfg.options.get("compact_inline_tables").and_then(toml::Value::as_bool) {
         opts.compact_inline_tables = v;
     }
 
@@ -301,8 +267,7 @@ fn semantic_error_span(source: &str, error: &dom::Error) -> Option<Span> {
         dom::Error::ConflictingKeys { key, .. } => key.text_ranges().next(),
         dom::Error::ExpectedTable { not_table, .. } => not_table.text_ranges().next(),
         dom::Error::ExpectedArrayOfTables {
-            not_array_of_tables,
-            ..
+            not_array_of_tables, ..
         } => not_array_of_tables.text_ranges().next(),
         dom::Error::InvalidEscapeSequence { string } => Some(string.text_range()),
         dom::Error::UnexpectedSyntax { syntax } => Some(syntax.text_range()),
@@ -380,9 +345,7 @@ mod tests {
         let src = make_src("key = 1\nkey = 2\n");
         let diags = engine.lint(&src, &default_cfg()).unwrap();
         assert!(
-            diags
-                .iter()
-                .any(|d| d.code.as_deref() == Some("duplicate-key")),
+            diags.iter().any(|d| d.code.as_deref() == Some("duplicate-key")),
             "expected a duplicate-key diagnostic, got: {diags:?}"
         );
     }
@@ -407,10 +370,7 @@ mod tests {
         let result = engine.format(&src, &default_cfg()).unwrap();
         match result {
             FormatOutput::Formatted(out) => {
-                assert!(
-                    out.contains("key = \"value\""),
-                    "normalized key/value: {out}"
-                );
+                assert!(out.contains("key = \"value\""), "normalized key/value: {out}");
             }
             FormatOutput::Unchanged => panic!("expected reformatting"),
         }

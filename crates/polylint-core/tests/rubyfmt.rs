@@ -43,8 +43,7 @@ fn make_src(path: &str, content: &str) -> SourceFile {
 ///
 /// No trailing whitespace on any line so the `trailing-whitespace` prek
 /// hook does not rewrite this literal.
-const KNOWN_UNFORMATTED: &str =
-    "def greet( name )\n  x = 1 + 2\n  if x > 3\n\n    puts \"hello\"\n  end\nend\n";
+const KNOWN_UNFORMATTED: &str = "def greet( name )\n  x = 1 + 2\n  if x > 3\n\n    puts \"hello\"\n  end\nend\n";
 
 #[test]
 fn should_reformat_misindented_ruby() {

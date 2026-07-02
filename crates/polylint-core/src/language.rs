@@ -144,17 +144,11 @@ impl Language {
     pub fn from_path(path: &Path) -> Option<Language> {
         if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
             let lower = name.to_ascii_lowercase();
-            if lower == "dockerfile"
-                || lower.starts_with("dockerfile.")
-                || lower.ends_with(".dockerfile")
-            {
+            if lower == "dockerfile" || lower.starts_with("dockerfile.") || lower.ends_with(".dockerfile") {
                 return Some(Language::Dockerfile);
             }
         }
-        let ext = path
-            .extension()
-            .and_then(|e| e.to_str())?
-            .to_ascii_lowercase();
+        let ext = path.extension().and_then(|e| e.to_str())?.to_ascii_lowercase();
         let lang = match ext.as_str() {
             "py" | "pyi" => Language::Python,
             "js" | "cjs" | "mjs" => Language::JavaScript,
@@ -338,10 +332,7 @@ mod tests {
     #[test]
     fn from_catalog_name_leaves_csharp_unmapped() {
         // No `CSharp` variant exists, so C# stays `Other` (see the inline note).
-        assert_eq!(
-            Language::from_catalog_name("c#"),
-            Language::Other("c#".to_string())
-        );
+        assert_eq!(Language::from_catalog_name("c#"), Language::Other("c#".to_string()));
         assert_eq!(
             Language::from_catalog_name("csharp"),
             Language::Other("csharp".to_string())

@@ -38,32 +38,18 @@ fn bench_cache_key(c: &mut Criterion) {
         group.throughput(Throughput::Bytes(content.len() as u64));
 
         // The dominant cost: blake3 over the whole file.
-        group.bench_with_input(
-            BenchmarkId::new("single_file_digest", size),
-            &content,
-            |b, c| {
-                b.iter(|| black_box(ResultCache::single_file_digest(black_box(c))));
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("single_file_digest", size), &content, |b, c| {
+            b.iter(|| black_box(ResultCache::single_file_digest(black_box(c))));
+        });
 
         // The full per-engine-per-file key cost the runner pays: digest + key.
-        group.bench_with_input(
-            BenchmarkId::new("digest_plus_key", size),
-            &content,
-            |b, c| {
-                b.iter(|| {
-                    let digest = ResultCache::single_file_digest(black_box(c));
-                    let key = ResultCache::key_with_args(
-                        Namespace::Lint,
-                        "treesitter",
-                        "5",
-                        black_box(&args),
-                        &digest,
-                    );
-                    black_box(key);
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("digest_plus_key", size), &content, |b, c| {
+            b.iter(|| {
+                let digest = ResultCache::single_file_digest(black_box(c));
+                let key = ResultCache::key_with_args(Namespace::Lint, "treesitter", "5", black_box(&args), &digest);
+                black_box(key);
+            });
+        });
     }
     group.finish();
 
@@ -72,13 +58,8 @@ fn bench_cache_key(c: &mut Criterion) {
     let digest = ResultCache::single_file_digest(&content_of(8 * 1024));
     c.bench_function("cache_key/key_with_args_only", |b| {
         b.iter(|| {
-            let key = ResultCache::key_with_args(
-                Namespace::Lint,
-                "treesitter",
-                "5",
-                black_box(&args),
-                black_box(&digest),
-            );
+            let key =
+                ResultCache::key_with_args(Namespace::Lint, "treesitter", "5", black_box(&args), black_box(&digest));
             black_box(key);
         });
     });

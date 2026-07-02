@@ -28,9 +28,7 @@ use std::sync::OnceLock;
 
 use anyhow::{Context, Result};
 
-pub use model::{
-    CATEGORY_FORMATTER, CATEGORY_LINTER, CATEGORY_SPELL_CHECK, Command, PATH_PLACEHOLDER, Tool,
-};
+pub use model::{CATEGORY_FORMATTER, CATEGORY_LINTER, CATEGORY_SPELL_CHECK, Command, PATH_PLACEHOLDER, Tool};
 
 /// The vendored catalog JSON, embedded at compile time.
 const CATALOG_JSON: &str = include_str!("../data/catalog.json");
@@ -54,15 +52,12 @@ impl Catalog {
     /// integrity error, not a runtime input error (the data ships in the binary).
     pub fn get() -> &'static Catalog {
         static CATALOG: OnceLock<Catalog> = OnceLock::new();
-        CATALOG.get_or_init(|| {
-            Catalog::parse(CATALOG_JSON).expect("vendored data/catalog.json must be valid")
-        })
+        CATALOG.get_or_init(|| Catalog::parse(CATALOG_JSON).expect("vendored data/catalog.json must be valid"))
     }
 
     /// Parse a catalog from a JSON array of [`Tool`]s, building the name index.
     fn parse(json: &str) -> Result<Catalog> {
-        let tools: Vec<Tool> =
-            serde_json::from_str(json).context("parsing vendored tool catalog")?;
+        let tools: Vec<Tool> = serde_json::from_str(json).context("parsing vendored tool catalog")?;
         let index = tools
             .iter()
             .enumerate()
@@ -82,10 +77,7 @@ impl Catalog {
     }
 
     /// Tools that advertise the given mdsf `language` identifier.
-    pub fn tools_for_language<'a>(
-        &'a self,
-        language: &'a str,
-    ) -> impl Iterator<Item = &'a Tool> + 'a {
+    pub fn tools_for_language<'a>(&'a self, language: &'a str) -> impl Iterator<Item = &'a Tool> + 'a {
         self.tools
             .iter()
             .filter(move |tool| tool.languages.iter().any(|candidate| candidate == language))

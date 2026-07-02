@@ -17,10 +17,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use poly_config::{
-    Guard, HookCacheMode, HooksConfig, Job, Patterns, Stage as ConfigStage, StageConfig,
-    ToolsConfig,
-};
+use poly_config::{Guard, HookCacheMode, HooksConfig, Job, Patterns, Stage as ConfigStage, StageConfig, ToolsConfig};
 use poly_hooks::Stage as HookStage;
 use poly_hooks::filter::FilePattern;
 use poly_hooks::identify::TagSet;
@@ -98,15 +95,7 @@ pub fn lower_stage(
     root: &Path,
     tools: &ToolsConfig,
 ) -> Result<StageSpec> {
-    lower_stage_with_probe(
-        hooks,
-        poly_bin,
-        stage,
-        files,
-        cache_mode,
-        &PathProbe { root },
-        tools,
-    )
+    lower_stage_with_probe(hooks, poly_bin, stage, files, cache_mode, &PathProbe { root }, tools)
 }
 
 /// [`lower_stage`] with an injectable capability [`ToolProbe`].
@@ -135,14 +124,7 @@ fn lower_stage_with_probe(
     }
 
     let mut entries: Vec<Hook> = Vec::new();
-    append_builtins(
-        hooks,
-        poly_bin,
-        config_stage,
-        cache_mode,
-        probe,
-        &mut entries,
-    )?;
+    append_builtins(hooks, poly_bin, config_stage, cache_mode, probe, &mut entries)?;
     // Catalog tools (ADR 0013): each enabled `[tools.<name>]` bound to this stage
     // lowers to a per-file hook (capability-probed, absent binary skipped).
     builtins::append_catalog_tools(tools, config_stage, probe, &mut entries)?;
@@ -284,9 +266,7 @@ fn append_jobs(
         if job_excluded_by_tags(job, &cfg.exclude_tags) {
             continue;
         }
-        out.push(job_to_hook(
-            hooks, stage, cfg, &label, job, files, cache_mode,
-        )?);
+        out.push(job_to_hook(hooks, stage, cfg, &label, job, files, cache_mode)?);
     }
     Ok(())
 }
@@ -434,11 +414,7 @@ pub(super) fn builtin_globs(
 /// A `None` include matches everything (an unfiltered job); `exclude` removes
 /// matches. Used only for template substitution — when `pass_filenames` is left
 /// enabled the runner applies the same filter itself.
-fn filter_files(
-    files: &[PathBuf],
-    include: Option<&FilePattern>,
-    exclude: Option<&FilePattern>,
-) -> Vec<PathBuf> {
+fn filter_files(files: &[PathBuf], include: Option<&FilePattern>, exclude: Option<&FilePattern>) -> Vec<PathBuf> {
     files
         .iter()
         .filter(|path| include.is_none_or(|pattern| pattern.is_match(path.as_path())))
@@ -464,8 +440,7 @@ fn substitute_templates(run: &str, files: &[PathBuf]) -> String {
         .map(|path| shell_quote(&path.to_string_lossy()))
         .collect::<Vec<_>>()
         .join(" ");
-    run.replace("{staged_files}", &joined)
-        .replace("{all_files}", &joined)
+    run.replace("{staged_files}", &joined).replace("{all_files}", &joined)
 }
 
 fn stage_steps(cfg: Option<&StageConfig>) -> (Option<String>, Vec<String>, Vec<String>) {

@@ -80,10 +80,7 @@ fn shell_single_quote(s: &str) -> String {
 /// Render the shim script for `hook_type`, pointing at `poly_bin`.
 fn render_shim(poly_bin: &Path, hook_type: HookType) -> String {
     HOOK_TMPL
-        .replace(
-            "[POLY_PATH]",
-            &shell_single_quote(&poly_bin.display().to_string()),
-        )
+        .replace("[POLY_PATH]", &shell_single_quote(&poly_bin.display().to_string()))
         .replace("[HOOK_TYPE]", hook_type.as_ref())
 }
 
@@ -126,18 +123,12 @@ fn write_shim(path: &Path, script: &str) -> Result<()> {
             .with_context(|| format!("failed to set exec bit on `{}`", tmp.display()))?;
     }
 
-    std::fs::rename(&tmp, path)
-        .with_context(|| format!("failed to install hook shim `{}`", path.display()))?;
+    std::fs::rename(&tmp, path).with_context(|| format!("failed to install hook shim `{}`", path.display()))?;
     Ok(())
 }
 
 /// Install a single hook shim, preserving any pre-existing foreign hook.
-fn install_one(
-    hooks_dir: &Path,
-    poly_bin: &Path,
-    hook_type: HookType,
-    overwrite: bool,
-) -> Result<PathBuf> {
+fn install_one(hooks_dir: &Path, poly_bin: &Path, hook_type: HookType, overwrite: bool) -> Result<PathBuf> {
     let hook_path = hooks_dir.join(hook_type.as_ref());
     let legacy = legacy_path(hooks_dir, hook_type);
 
@@ -145,8 +136,7 @@ fn install_one(
         if overwrite {
             // Discard any preserved legacy hook when explicitly overwriting.
             if legacy.try_exists()? {
-                std::fs::remove_file(&legacy)
-                    .with_context(|| format!("failed to remove `{}`", legacy.display()))?;
+                std::fs::remove_file(&legacy).with_context(|| format!("failed to remove `{}`", legacy.display()))?;
             }
         } else if !is_our_shim(&hook_path)? {
             // A non-poly hook is already installed: move it aside so we can
@@ -181,12 +171,7 @@ fn install_one(
 /// `std::env::current_exe()`). A pre-existing non-poly hook is preserved as
 /// `<name>.legacy` (unless `overwrite` is set, which discards it). Returns the
 /// paths of the shims that were written.
-pub fn install(
-    hooks_dir: &Path,
-    poly_bin: &Path,
-    hook_types: &[HookType],
-    overwrite: bool,
-) -> Result<Vec<PathBuf>> {
+pub fn install(hooks_dir: &Path, poly_bin: &Path, hook_types: &[HookType], overwrite: bool) -> Result<Vec<PathBuf>> {
     std::fs::create_dir_all(hooks_dir)
         .with_context(|| format!("failed to create hooks dir `{}`", hooks_dir.display()))?;
 
@@ -214,16 +199,14 @@ pub fn uninstall(hooks_dir: &Path, hook_types: &[HookType]) -> Result<Vec<PathBu
 
         // A poly shim that somehow landed in the legacy slot is stale; drop it.
         if is_our_shim(&legacy)? {
-            std::fs::remove_file(&legacy)
-                .with_context(|| format!("failed to remove `{}`", legacy.display()))?;
+            std::fs::remove_file(&legacy).with_context(|| format!("failed to remove `{}`", legacy.display()))?;
         }
 
         if !is_our_shim(&hook_path)? {
             continue;
         }
 
-        std::fs::remove_file(&hook_path)
-            .with_context(|| format!("failed to remove `{}`", hook_path.display()))?;
+        std::fs::remove_file(&hook_path).with_context(|| format!("failed to remove `{}`", hook_path.display()))?;
         removed.push(hook_path.clone());
 
         // Restore a previously preserved foreign hook, if any.
@@ -253,8 +236,7 @@ mod tests {
         let dir = TempDir::new().expect("tempdir");
         let hooks = dir.path().join("hooks");
 
-        let written =
-            install(&hooks, Path::new(FAKE_POLY), &[HookType::PreCommit], false).expect("install");
+        let written = install(&hooks, Path::new(FAKE_POLY), &[HookType::PreCommit], false).expect("install");
 
         let shim = hooks.join("pre-commit");
         assert_eq!(written, vec![shim.clone()]);
@@ -316,10 +298,7 @@ mod tests {
         let removed = uninstall(&hooks, &[HookType::PreCommit]).expect("uninstall");
         assert_eq!(removed, vec![pre_commit.clone()]);
         assert!(!legacy.exists(), "legacy hook was not restored");
-        assert_eq!(
-            std::fs::read_to_string(&pre_commit).expect("read restored"),
-            original
-        );
+        assert_eq!(std::fs::read_to_string(&pre_commit).expect("read restored"), original);
     }
 
     #[test]
@@ -334,9 +313,6 @@ mod tests {
 
         let removed = uninstall(&hooks, &[HookType::PreCommit]).expect("uninstall");
         assert!(removed.is_empty());
-        assert_eq!(
-            std::fs::read_to_string(&pre_commit).expect("read"),
-            original
-        );
+        assert_eq!(std::fs::read_to_string(&pre_commit).expect("read"), original);
     }
 }

@@ -16,8 +16,7 @@ pub struct Pty(OwnedFd);
 impl Pty {
     /// Allocate a new PTY master, with `CLOEXEC` set.
     pub fn open() -> crate::pty::Result<Self> {
-        let pt =
-            rustix::pty::openpt(rustix::pty::OpenptFlags::RDWR | rustix::pty::OpenptFlags::NOCTTY)?;
+        let pt = rustix::pty::openpt(rustix::pty::OpenptFlags::RDWR | rustix::pty::OpenptFlags::NOCTTY)?;
         rustix::pty::grantpt(&pt)?;
         rustix::pty::unlockpt(&pt)?;
 
@@ -148,13 +147,7 @@ impl Pts {
     }
 
     /// Clone the slave fd into three `Stdio` handles (stdin / stdout / stderr).
-    pub fn setup_subprocess(
-        &self,
-    ) -> std::io::Result<(
-        std::process::Stdio,
-        std::process::Stdio,
-        std::process::Stdio,
-    )> {
+    pub fn setup_subprocess(&self) -> std::io::Result<(std::process::Stdio, std::process::Stdio, std::process::Stdio)> {
         Ok((
             self.0.try_clone()?.into(),
             self.0.try_clone()?.into(),

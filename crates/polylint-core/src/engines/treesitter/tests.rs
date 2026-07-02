@@ -64,23 +64,14 @@ fn rust_raw_string_interior_is_byte_preserved_while_code_reindents() {
     assert_eq!(text, expected, "code reindented, string interior preserved");
     // The exact interior bytes between the raw-string delimiters survive.
     let interior = "\n        deeply indented {line}\n   another\n";
-    assert!(
-        text.contains(interior),
-        "raw-string interior must be verbatim"
-    );
+    assert!(text.contains(interior), "raw-string interior must be verbatim");
 }
 
 #[test]
 fn go_reindents_with_tabs_not_spaces() {
     let engine = TreeSitterEngine;
     let input = concat!("package main\n", "\n", "func main() {\n", "x := 1\n", "}\n");
-    let expected = concat!(
-        "package main\n",
-        "\n",
-        "func main() {\n",
-        "\tx := 1\n",
-        "}\n",
-    );
+    let expected = concat!("package main\n", "\n", "func main() {\n", "\tx := 1\n", "}\n",);
     let s = src("main.go", Language::Other("go".into()), input);
     let text = formatted_text(engine.format(&s, &cfg(4)).unwrap(), input);
     assert_eq!(text, expected, "Go must reindent with a tab, not spaces");
@@ -110,12 +101,7 @@ fn swift_uses_two_space_indent() {
     // swift-format defaults to two-space indentation.
     let engine = TreeSitterEngine;
     let input = concat!("struct Point {\n", "let x: Int\n", "let y: Int\n", "}\n");
-    let expected = concat!(
-        "struct Point {\n",
-        "  let x: Int\n",
-        "  let y: Int\n",
-        "}\n"
-    );
+    let expected = concat!("struct Point {\n", "  let x: Int\n", "  let y: Int\n", "}\n");
     let s = src("test.swift", Language::Other("swift".into()), input);
     let text = formatted_text(engine.format(&s, &cfg(4)).unwrap(), input);
     assert_eq!(text, expected, "Swift must use 2-space indent");
@@ -148,10 +134,7 @@ fn swift_switch_case_labels_align_with_switch_keyword() {
     );
     let s = src("test.swift", Language::Other("swift".into()), input);
     let text = formatted_text(engine.format(&s, &cfg(4)).unwrap(), input);
-    assert_eq!(
-        text, expected,
-        "Swift case labels align with switch keyword"
-    );
+    assert_eq!(text, expected, "Swift case labels align with switch keyword");
 }
 
 #[test]
@@ -206,10 +189,7 @@ fn dart_closure_argument_not_over_indented() {
     );
     let s = src("test.dart", Language::Other("dart".into()), input);
     let text = formatted_text(engine.format(&s, &cfg(4)).unwrap(), input);
-    assert_eq!(
-        text, expected,
-        "Dart closure body must not be over-indented"
-    );
+    assert_eq!(text, expected, "Dart closure body must not be over-indented");
 }
 
 // ── CRLF byte-cursor fix ─────────────────────────────────────────────────
@@ -230,10 +210,7 @@ fn crlf_brace_counting_does_not_drift() {
     let lf_out = formatted_text(engine.format(&lf_src, &cfg(4)).unwrap(), lf);
 
     assert_eq!(lf_out, expected, "LF Go reindented with tabs");
-    assert_eq!(
-        crlf_out, expected,
-        "CRLF Go reindented identically (no byte drift)"
-    );
+    assert_eq!(crlf_out, expected, "CRLF Go reindented identically (no byte drift)");
 }
 
 // ── paren/bracket continuation indent ────────────────────────────────────
@@ -269,10 +246,7 @@ fn go_multiline_call_args_get_continuation_indent() {
     );
     let s = src("main.go", Language::Other("go".into()), input);
     let text = formatted_text(engine.format(&s, &cfg(4)).unwrap(), input);
-    assert_eq!(
-        text, expected,
-        "Go multi-line call args at +1 continuation depth"
-    );
+    assert_eq!(text, expected, "Go multi-line call args at +1 continuation depth");
 }
 
 #[test]
@@ -299,10 +273,7 @@ fn rust_multiline_call_args_get_continuation_indent() {
     );
     let s = src("main.rs", Language::Other("rust".into()), input);
     let text = formatted_text(engine.format(&s, &cfg(4)).unwrap(), input);
-    assert_eq!(
-        text, expected,
-        "Rust multi-line call args at +1 continuation depth"
-    );
+    assert_eq!(text, expected, "Rust multi-line call args at +1 continuation depth");
 }
 
 #[test]
@@ -334,10 +305,7 @@ fn java_multiline_call_args_get_continuation_indent() {
     );
     let s = src("Test.java", Language::Other("java".into()), input);
     let text = formatted_text(engine.format(&s, &cfg(4)).unwrap(), input);
-    assert_eq!(
-        text, expected,
-        "Java multi-line call args at +1 continuation depth"
-    );
+    assert_eq!(text, expected, "Java multi-line call args at +1 continuation depth");
 }
 
 #[test]
@@ -365,10 +333,7 @@ fn kotlin_multiline_call_args_get_continuation_indent() {
     );
     let s = src("main.kt", Language::Other("kotlin".into()), input);
     let text = formatted_text(engine.format(&s, &cfg(4)).unwrap(), input);
-    assert_eq!(
-        text, expected,
-        "Kotlin multi-line call args at +1 continuation depth"
-    );
+    assert_eq!(text, expected, "Kotlin multi-line call args at +1 continuation depth");
 }
 
 // ── regression: level-keyed-by-open-line fixes ───────────────────────────
@@ -439,10 +404,7 @@ fn go_struct_in_call_close_then_paren_close_no_drift() {
     );
     let s = src("main.go", Language::Other("go".into()), input);
     let text = formatted_text(engine.format(&s, &cfg(4)).unwrap(), input);
-    assert_eq!(
-        text, expected,
-        "code after struct-in-call must not drift to depth 0"
-    );
+    assert_eq!(text, expected, "code after struct-in-call must not drift to depth 0");
 }
 
 #[test]
@@ -452,18 +414,10 @@ fn double_brace_close_releases_two_levels() {
     // render depth is computed, giving depth 0 for the `}}` line itself.
     let engine = TreeSitterEngine;
     let input = concat!("class A {\n", "void f() {\n", "x = 1;\n", "}}\n",);
-    let expected = concat!(
-        "class A {\n",
-        "    void f() {\n",
-        "        x = 1;\n",
-        "}}\n",
-    );
+    let expected = concat!("class A {\n", "    void f() {\n", "        x = 1;\n", "}}\n",);
     let s = src("A.java", Language::Other("java".into()), input);
     let text = formatted_text(engine.format(&s, &cfg(4)).unwrap(), input);
-    assert_eq!(
-        text, expected,
-        "}}: two leading closers each release one level"
-    );
+    assert_eq!(text, expected, "}}: two leading closers each release one level");
 }
 
 // ── LEAVE_UNTOUCHED: data / template / asset grammars ───────────────────────
@@ -491,11 +445,7 @@ fn csv_emits_zero_lint_diagnostics() {
     let input = "id,name   \n1,foo bar   \n2,baz   ";
     let s = src("data.csv", Language::Other("csv".into()), input);
     let diags = engine.lint(&s, &cfg(4)).unwrap();
-    assert!(
-        diags.is_empty(),
-        "CSV must emit zero diagnostics, got {:?}",
-        diags
-    );
+    assert!(diags.is_empty(), "CSV must emit zero diagnostics, got {:?}", diags);
 }
 
 #[test]
@@ -506,11 +456,7 @@ fn erb_template_with_trailing_whitespace_is_byte_identical_after_format() {
     // Trailing spaces on the first line are intentional template whitespace;
     // no final newline to also verify that policy is suppressed.
     let input = "<html>   \n<% items.each do |item| %>   \n  <%= item.name %>\n<% end %>";
-    let s = src(
-        "page.erb",
-        Language::Other("embeddedtemplate".into()),
-        input,
-    );
+    let s = src("page.erb", Language::Other("embeddedtemplate".into()), input);
     let out = engine.format(&s, &cfg(4)).unwrap();
     assert!(
         matches!(out, FormatOutput::Unchanged),
@@ -523,17 +469,9 @@ fn erb_emits_zero_lint_diagnostics() {
     // Same rationale as CSV: trailing whitespace in ERB is semantic output.
     let engine = TreeSitterEngine;
     let input = "<div>   \n  <%= value %>   \n</div>   ";
-    let s = src(
-        "partial.erb",
-        Language::Other("embeddedtemplate".into()),
-        input,
-    );
+    let s = src("partial.erb", Language::Other("embeddedtemplate".into()), input);
     let diags = engine.lint(&s, &cfg(4)).unwrap();
-    assert!(
-        diags.is_empty(),
-        "ERB must emit zero diagnostics, got {:?}",
-        diags
-    );
+    assert!(diags.is_empty(), "ERB must emit zero diagnostics, got {:?}", diags);
 }
 
 // ── Query-driven indent path ─────────────────────────────────────────────────
@@ -577,10 +515,7 @@ fn ron_query_driven_structural_reindent() {
     );
     let s = src("scene.ron", Language::Other("ron".into()), input);
     let text = formatted_text(engine.format(&s, &cfg(4)).unwrap(), input);
-    assert_eq!(
-        text, expected,
-        "RON query-driven indent must nest correctly"
-    );
+    assert_eq!(text, expected, "RON query-driven indent must nest correctly");
 }
 
 /// The query-driven path must protect the interior of a multi-line comment
@@ -665,8 +600,8 @@ fn non_member_grammar_still_gets_whitespace_normalization() {
                 "bash trailing whitespace must be stripped"
             );
         }
-        FormatOutput::Unchanged => panic!(
-            "bash with trailing whitespace must be Formatted (whitespace stripped), not Unchanged"
-        ),
+        FormatOutput::Unchanged => {
+            panic!("bash with trailing whitespace must be Formatted (whitespace stripped), not Unchanged")
+        }
     }
 }

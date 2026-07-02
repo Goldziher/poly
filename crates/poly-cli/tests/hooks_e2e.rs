@@ -118,10 +118,7 @@ fn stage_fixed_false_leaves_modification_unstaged() {
     assert!(output.status.success());
     // The index still holds the original; the worktree holds the rewrite.
     assert_eq!(staged_blob(root, "fixed.txt"), "orig");
-    assert_eq!(
-        std::fs::read_to_string(root.join("fixed.txt")).unwrap(),
-        "changed"
-    );
+    assert_eq!(std::fs::read_to_string(root.join("fixed.txt")).unwrap(), "changed");
 }
 
 #[test]
@@ -157,10 +154,7 @@ run = "false"
     );
 
     let output = poly_hooks(root, &["run", "pre-commit"]);
-    assert!(
-        !output.status.success(),
-        "a failing job must produce a non-zero exit"
-    );
+    assert!(!output.status.success(), "a failing job must produce a non-zero exit");
 }
 
 #[test]
@@ -179,10 +173,7 @@ fn hook_impl_pre_commit_runs_and_restages() {
         String::from_utf8_lossy(&output.stderr)
     );
     let report = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        report.contains("noop") && report.contains("fixer"),
-        "{report}"
-    );
+    assert!(report.contains("noop") && report.contains("fixer"), "{report}");
     assert_eq!(staged_blob(root, "fixed.txt"), "changed");
 }
 
@@ -220,10 +211,7 @@ cache = { inputs = ["tracked.txt"] }
     let second = poly_hooks(root, &["run", "pre-commit"]);
     assert!(second.status.success());
     let report = String::from_utf8_lossy(&second.stdout);
-    assert!(
-        report.contains("(cached)"),
-        "second run not cached:\n{report}"
-    );
+    assert!(report.contains("(cached)"), "second run not cached:\n{report}");
     assert_eq!(
         std::fs::read_to_string(root.join("runs.log")).unwrap(),
         "x",

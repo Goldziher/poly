@@ -45,10 +45,7 @@ fn known_bad_typo_diagnostics() {
     let src = make_src(KNOWN_BAD);
     let diags = engine.lint(&src, &engine_cfg()).unwrap();
 
-    assert!(
-        !diags.is_empty(),
-        "expected spell-check diagnostics for known-bad file"
-    );
+    assert!(!diags.is_empty(), "expected spell-check diagnostics for known-bad file");
 
     // Summarise to (engine, code, message, span_start) for a stable snapshot.
     let summary: Vec<_> = diags

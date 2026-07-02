@@ -48,8 +48,7 @@ struct LockEntry {
 /// sources (`source = "git+…#<rev>"`), the pinned rev.
 fn parse_cargo_lock() -> HashMap<String, LockEntry> {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../Cargo.lock");
-    let text = std::fs::read_to_string(&path)
-        .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
 
     let mut map = HashMap::new();
     for block in text.split("[[package]]") {
@@ -101,12 +100,7 @@ enum Source {
 /// rev, …), which is unambiguous across the dependency tree.
 const GIT_REV_PREFIX: usize = 7;
 
-fn assert_tracks(
-    engine: &str,
-    version: &str,
-    deps: &[(&str, Source)],
-    lock: &HashMap<String, LockEntry>,
-) {
+fn assert_tracks(engine: &str, version: &str, deps: &[(&str, Source)], lock: &HashMap<String, LockEntry>) {
     for (dep, source) in deps {
         let entry = lock
             .get(*dep)
@@ -114,9 +108,10 @@ fn assert_tracks(
         let (needle, kind): (String, &str) = match source {
             Source::Registry => (entry.version.clone(), "version"),
             Source::Git => {
-                let rev = entry.git_rev.as_deref().unwrap_or_else(|| {
-                    panic!("crate `{dep}` is not a git dependency but was declared as one")
-                });
+                let rev = entry
+                    .git_rev
+                    .as_deref()
+                    .unwrap_or_else(|| panic!("crate `{dep}` is not a git dependency but was declared as one"));
                 (rev[..GIT_REV_PREFIX].to_owned(), "git rev")
             }
         };
@@ -142,17 +137,9 @@ fn engine_versions_track_cargo_lock() {
     };
 
     let checks = vec![
-        check(
-            "sqruff",
-            SqruffEngine.version(),
-            vec![("sqruff-lib", Registry)],
-        ),
+        check("sqruff", SqruffEngine.version(), vec![("sqruff-lib", Registry)]),
         check("malva", MalvaEngine.version(), vec![("malva", Registry)]),
-        check(
-            "markup_fmt",
-            MarkupFmtEngine.version(),
-            vec![("markup_fmt", Registry)],
-        ),
+        check("markup_fmt", MarkupFmtEngine.version(), vec![("markup_fmt", Registry)]),
         check("taplo", TaploEngine.version(), vec![("taplo", Registry)]),
         check("rumdl", RumdlEngine.version(), vec![("rumdl", Registry)]),
         check(
@@ -170,21 +157,9 @@ fn engine_versions_track_cargo_lock() {
             DockerfileEngine.version(),
             vec![("dockerfile-parser", Registry)],
         ),
-        check(
-            "nixfmt",
-            NixFmtEngine.version(),
-            vec![("alejandra", Registry)],
-        ),
-        check(
-            "graphql",
-            GraphQlEngine.version(),
-            vec![("pretty_graphql", Registry)],
-        ),
-        check(
-            "yaml",
-            YamlEngine.version(),
-            vec![("pretty_yaml", Registry)],
-        ),
+        check("nixfmt", NixFmtEngine.version(), vec![("alejandra", Registry)]),
+        check("graphql", GraphQlEngine.version(), vec![("pretty_graphql", Registry)]),
+        check("yaml", YamlEngine.version(), vec![("pretty_yaml", Registry)]),
         check(
             "treesitter",
             TreeSitterEngine.version(),
@@ -205,12 +180,7 @@ fn engine_versions_track_cargo_lock() {
         check("rubyfmt", RubyfmtEngine.version(), vec![("rubyfmt", Git)]),
     ];
 
-    for Check {
-        engine,
-        version,
-        deps,
-    } in &checks
-    {
+    for Check { engine, version, deps } in &checks {
         assert_tracks(engine, version, deps, &lock);
     }
 }

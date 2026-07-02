@@ -118,10 +118,7 @@ pub fn discover(paths: &[PathBuf], exclude: &[String]) -> Vec<DiscoveredFile> {
 /// like a `.gitignore`: matched paths are pruned and everything else is kept.
 /// Returns `None` when there is nothing to exclude. An individual malformed
 /// glob is skipped with a warning rather than aborting discovery.
-fn build_excludes(
-    root: &std::path::Path,
-    exclude: &[String],
-) -> Option<ignore::overrides::Override> {
+fn build_excludes(root: &std::path::Path, exclude: &[String]) -> Option<ignore::overrides::Override> {
     if exclude.is_empty() {
         return None;
     }

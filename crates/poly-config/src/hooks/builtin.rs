@@ -198,9 +198,7 @@ impl<'de> Deserialize<'de> for FileSafetyHooks {
                 private_key: table.private_key.unwrap_or(true),
                 case_conflict: table.case_conflict.unwrap_or(true),
                 executables_have_shebangs: table.executables_have_shebangs.unwrap_or(true),
-                shebang_scripts_are_executable: table
-                    .shebang_scripts_are_executable
-                    .unwrap_or(true),
+                shebang_scripts_are_executable: table.shebang_scripts_are_executable.unwrap_or(true),
             }),
         }
     }
@@ -315,8 +313,7 @@ mod tests {
 
     #[test]
     fn table_without_enabled_is_enabled() {
-        let hooks: BuiltinHooks =
-            toml::from_str(r#"polyfmt = { stages = ["pre-commit"] }"#).unwrap();
+        let hooks: BuiltinHooks = toml::from_str(r#"polyfmt = { stages = ["pre-commit"] }"#).unwrap();
         assert!(hooks.polyfmt.enabled);
         assert_eq!(hooks.polyfmt.stages, vec!["pre-commit".to_string()]);
     }
@@ -376,10 +373,7 @@ exclude = "crates/poly-cli/src/hooks/checks.rs"
         // Member checks default on so a bare toggle turns the whole group on.
         assert!(hooks.file_safety.merge_conflict);
         assert!(CargoHooks::default().clippy);
-        assert_eq!(
-            hooks.file_safety.max_added_file_kb,
-            DEFAULT_MAX_ADDED_FILE_KB
-        );
+        assert_eq!(hooks.file_safety.max_added_file_kb, DEFAULT_MAX_ADDED_FILE_KB);
     }
 
     #[test]
@@ -416,8 +410,7 @@ private_key = false
 
     #[test]
     fn file_safety_table_with_stages_carries_them() {
-        let hooks: BuiltinHooks =
-            toml::from_str(r#"file_safety = { stages = ["pre-commit", "pre-push"] }"#).unwrap();
+        let hooks: BuiltinHooks = toml::from_str(r#"file_safety = { stages = ["pre-commit", "pre-push"] }"#).unwrap();
         assert!(hooks.file_safety.enabled);
         assert_eq!(hooks.file_safety.stages, vec!["pre-commit", "pre-push"]);
     }
@@ -458,10 +451,8 @@ machete = false
 
     #[test]
     fn cargo_table_clippy_args_replaces_default_flags() {
-        let hooks: BuiltinHooks = toml::from_str(
-            r#"cargo = { clippy_args = ["--workspace", "--exclude=foo", "--all-features"] }"#,
-        )
-        .unwrap();
+        let hooks: BuiltinHooks =
+            toml::from_str(r#"cargo = { clippy_args = ["--workspace", "--exclude=foo", "--all-features"] }"#).unwrap();
         let cargo = hooks.cargo.expect("cargo table present");
         assert!(cargo.clippy, "clippy is on by default in a table");
         assert_eq!(
@@ -480,10 +471,7 @@ machete = false
     fn cargo_default_has_no_clippy_args_override() {
         let hooks: BuiltinHooks = toml::from_str("cargo = true").unwrap();
         let cargo = hooks.cargo.expect("cargo enabled");
-        assert!(
-            cargo.clippy_args.is_none(),
-            "no override → default flags apply"
-        );
+        assert!(cargo.clippy_args.is_none(), "no override → default flags apply");
     }
 
     #[test]

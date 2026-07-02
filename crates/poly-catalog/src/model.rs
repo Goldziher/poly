@@ -113,9 +113,7 @@ impl Command {
     /// Whether the argument vector references the file path via
     /// [`PATH_PLACEHOLDER`].
     pub fn uses_path(&self) -> bool {
-        self.arguments
-            .iter()
-            .any(|argument| argument == PATH_PLACEHOLDER)
+        self.arguments.iter().any(|argument| argument == PATH_PLACEHOLDER)
     }
 
     /// Concrete argv with every [`PATH_PLACEHOLDER`] replaced by `path`. Other

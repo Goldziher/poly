@@ -133,12 +133,8 @@ fn reorder_keys_changes_output() {
         FormatOutput::Formatted(s) => s,
         FormatOutput::Unchanged => REORDER_INPUT.to_string(),
     };
-    let z_reorder = reorder_out
-        .find("z_key")
-        .expect("z_key missing after reorder");
-    let a_reorder = reorder_out
-        .find("a_key")
-        .expect("a_key missing after reorder");
+    let z_reorder = reorder_out.find("z_key").expect("z_key missing after reorder");
+    let a_reorder = reorder_out.find("a_key").expect("a_key missing after reorder");
     assert!(
         a_reorder < z_reorder,
         "reorder_keys = true should place a_key before z_key, got:\n{reorder_out}"

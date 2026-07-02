@@ -53,18 +53,14 @@ use std::sync::LazyLock;
 use air_r_formatter::context::RFormatOptions;
 use air_r_formatter::format_node;
 use air_r_parser::RParserOptions;
-use air_settings::{
-    AssignmentStyle, IndentStyle, IndentWidth, LineEnding, LineWidth, PersistentLineBreaks,
-};
+use air_settings::{AssignmentStyle, IndentStyle, IndentWidth, LineEnding, LineWidth, PersistentLineBreaks};
 use jarl_core::check::get_checks as jarl_get_checks;
 use jarl_core::config::{ArgsConfig, Config, build_config};
 use jarl_core::diagnostic::Diagnostic as JarlDiagnostic;
 use jarl_core::package::{FilePackageInfo, PackageAnalysis, PackageContext};
 
 use crate::config::EngineConfig;
-use crate::engine::{
-    Capabilities, Diagnostic, Edit, Engine, FormatOutput, Severity, SourceFile, Span,
-};
+use crate::engine::{Capabilities, Diagnostic, Edit, Engine, FormatOutput, Severity, SourceFile, Span};
 use crate::engines::rule_config::RuleSelection;
 use crate::language::Language;
 
@@ -106,8 +102,7 @@ static JARL_CONFIG: LazyLock<Config> = LazyLock::new(|| {
     };
     // Empty paths → `determine_minimum_r_version` loops over nothing (no FS
     // access).  This is safe to call at init time.
-    build_config(&args, None, vec![])
-        .expect("jarl: failed to build default config — this is a bug in polylint")
+    build_config(&args, None, vec![]).expect("jarl: failed to build default config — this is a bug in polylint")
 });
 
 /// Tier-1 R backend — formats and lints `.R` files using the `air` formatter
@@ -184,14 +179,7 @@ impl Engine for REngine {
         let pkg_contexts: HashMap<_, PackageContext> = HashMap::new();
         let file_pkg_info: HashMap<_, FilePackageInfo> = HashMap::new();
 
-        match jarl_get_checks(
-            &src.content,
-            &src.path,
-            jarl_cfg,
-            &pkg,
-            &pkg_contexts,
-            &file_pkg_info,
-        ) {
+        match jarl_get_checks(&src.content, &src.path, jarl_cfg, &pkg, &pkg_contexts, &file_pkg_info) {
             Ok(jarl_diags) => Ok(jarl_diags
                 .into_iter()
                 .map(|d| {
@@ -417,10 +405,7 @@ mod tests {
         let engine = REngine;
         let src = make_src("x <- 1\n");
         let diags = engine.lint(&src, &default_cfg()).unwrap();
-        assert!(
-            diags.is_empty(),
-            "expected no diagnostics for clean R, got: {diags:?}"
-        );
+        assert!(diags.is_empty(), "expected no diagnostics for clean R, got: {diags:?}");
     }
 
     #[test]
@@ -430,10 +415,7 @@ mod tests {
         let engine = REngine;
         let src = make_src("function(\n");
         let diags = engine.lint(&src, &default_cfg()).unwrap();
-        assert!(
-            diags.is_empty(),
-            "parse error must degrade to empty diagnostics"
-        );
+        assert!(diags.is_empty(), "parse error must degrade to empty diagnostics");
     }
 
     #[test]
@@ -543,19 +525,14 @@ mod tests {
 
         // Sanity-check: the rule fires without ignore.
         let default_diags = engine.lint(&src, &default_cfg()).unwrap();
-        let has_without_ignore = default_diags
-            .iter()
-            .any(|d| d.code.as_deref() == Some("equals_na"));
+        let has_without_ignore = default_diags.iter().any(|d| d.code.as_deref() == Some("equals_na"));
         assert!(has_without_ignore, "equals_na must fire by default");
 
         // Now with ignore: it must disappear.
         let cfg = cfg_from_toml(r#"ignore = ["equals_na"]"#);
         let diags = engine.lint(&src, &cfg).unwrap();
         let has_with_ignore = diags.iter().any(|d| d.code.as_deref() == Some("equals_na"));
-        assert!(
-            !has_with_ignore,
-            "equals_na must be absent when in ignore list"
-        );
+        assert!(!has_with_ignore, "equals_na must be absent when in ignore list");
     }
 
     #[test]
@@ -575,10 +552,7 @@ level = "error"
             .iter()
             .filter(|d| d.code.as_deref() == Some("equals_na"))
             .collect();
-        assert!(
-            !equals_na.is_empty(),
-            "equals_na must still fire with level override"
-        );
+        assert!(!equals_na.is_empty(), "equals_na must still fire with level override");
         assert_eq!(
             equals_na[0].severity,
             Severity::Error,
@@ -623,10 +597,7 @@ level = "error"
         let src = make_src("x <- 1\n");
         let cfg = cfg_from_toml(r#"select = ["TOTALLY_FAKE_RULE"]"#);
         let result = engine.lint(&src, &cfg);
-        assert!(
-            result.is_err(),
-            "expected Err for unknown rule in select, got Ok"
-        );
+        assert!(result.is_err(), "expected Err for unknown rule in select, got Ok");
     }
 
     #[test]

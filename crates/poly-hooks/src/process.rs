@@ -83,11 +83,7 @@ impl Display for StatusError {
     }
 }
 
-fn write_trimmed_output_section(
-    f: &mut std::fmt::Formatter<'_>,
-    label: &str,
-    output: &str,
-) -> std::fmt::Result {
+fn write_trimmed_output_section(f: &mut std::fmt::Formatter<'_>, label: &str, output: &str) -> std::fmt::Result {
     let mut lines = output.split('\n').filter_map(|line| {
         let line = line.trim();
         if line.is_empty() { None } else { Some(line) }
@@ -460,10 +456,7 @@ impl Cmd {
         } else {
             Err(Error::Status {
                 summary: self.summary.clone(),
-                error: StatusError {
-                    status,
-                    output: None,
-                },
+                error: StatusError { status, output: None },
             })
         }
     }
@@ -528,9 +521,7 @@ fn skip_args(cmd: &OsStr, cur: &OsStr, next: Option<&&OsStr>) -> usize {
         if cur == "-c" {
             if let Some(flag) = next {
                 let flag = flag.as_encoded_bytes();
-                if flag.starts_with(b"core.useBuiltinFSMonitor")
-                    || flag.starts_with(b"protocol.version")
-                {
+                if flag.starts_with(b"core.useBuiltinFSMonitor") || flag.starts_with(b"protocol.version") {
                     return 2;
                 }
             }

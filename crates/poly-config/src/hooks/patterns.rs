@@ -146,10 +146,7 @@ mod tests {
     #[test]
     fn patterns_accepts_array() {
         let holder: Holder = toml::from_str(r#"patterns = ["a/**", "b/**"]"#).unwrap();
-        assert_eq!(
-            holder.patterns.as_slice(),
-            &["a/**".to_string(), "b/**".to_string()]
-        );
+        assert_eq!(holder.patterns.as_slice(), &["a/**".to_string(), "b/**".to_string()]);
         assert_eq!(holder.patterns.len(), 2);
         assert!(!holder.patterns.is_empty());
     }
@@ -171,10 +168,7 @@ mod tests {
         match holder.skip {
             Guard::Conditions(conditions) => {
                 assert_eq!(conditions.len(), 2);
-                assert_eq!(
-                    conditions[0],
-                    GuardCondition::Operation("merge".to_string())
-                );
+                assert_eq!(conditions[0], GuardCondition::Operation("merge".to_string()));
                 assert_eq!(
                     conditions[1],
                     GuardCondition::Match(GuardMatch {

@@ -105,12 +105,8 @@ fn shellcheck_level_to_severity(level: &str) -> Severity {
 ///
 /// This function is **pure** — it does not spawn any process — and is the
 /// primary unit-test surface for the JSON→Diagnostic mapping.
-pub(crate) fn parse_shellcheck_json(
-    engine_name: &str,
-    json: &str,
-) -> anyhow::Result<Vec<Diagnostic>> {
-    let output: ShellcheckOutput =
-        serde_json::from_str(json).context("failed to parse shellcheck JSON1 output")?;
+pub(crate) fn parse_shellcheck_json(engine_name: &str, json: &str) -> anyhow::Result<Vec<Diagnostic>> {
+    let output: ShellcheckOutput = serde_json::from_str(json).context("failed to parse shellcheck JSON1 output")?;
 
     let diags = output
         .comments
@@ -146,10 +142,7 @@ pub(crate) fn parse_shellcheck_json(
 /// This function follows the same stdin-write-thread / wait_with_output
 /// pattern as `format_via_tool` to prevent pipe-buffer deadlocks on large
 /// files.
-pub(crate) fn lint_via_shellcheck(
-    spec: &ToolSpec,
-    src: &SourceFile,
-) -> anyhow::Result<Vec<Diagnostic>> {
+pub(crate) fn lint_via_shellcheck(spec: &ToolSpec, src: &SourceFile) -> anyhow::Result<Vec<Diagnostic>> {
     let lint_binary = spec
         .lint_binary
         .expect("lint_via_shellcheck called on a format-only ToolSpec");
@@ -192,8 +185,8 @@ pub(crate) fn lint_via_shellcheck(
     }
 
     // Exit 0 or 1: JSON output is valid regardless of the exit code.
-    let json = String::from_utf8(output.stdout)
-        .with_context(|| format!("'{lint_binary}' produced non-UTF-8 output"))?;
+    let json =
+        String::from_utf8(output.stdout).with_context(|| format!("'{lint_binary}' produced non-UTF-8 output"))?;
 
     parse_shellcheck_json(spec.engine_name, &json)
 }
@@ -217,10 +210,7 @@ mod tests {
         assert_eq!(d.engine, "shellcheck");
         assert_eq!(d.code.as_deref(), Some("SC2086"));
         assert_eq!(d.severity, Severity::Info);
-        assert_eq!(
-            d.title,
-            "Double quote to prevent globbing and word splitting."
-        );
+        assert_eq!(d.title, "Double quote to prevent globbing and word splitting.");
         let span = d.span.unwrap();
         assert_eq!(span.start_line, 3);
         assert_eq!(span.start_col, 6);

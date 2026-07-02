@@ -46,22 +46,13 @@ fn known_bad_diagnostics() {
     let diags = engine.lint(&src, &engine_cfg()).unwrap();
 
     // Must have at least one parse-error diagnostic.
-    assert!(
-        !diags.is_empty(),
-        "expected at least one diagnostic, got none"
-    );
+    assert!(!diags.is_empty(), "expected at least one diagnostic, got none");
 
     // Structural snapshot: (engine, code, severity) — not brittle on the exact
     // message text which may vary between mago versions.
     let summary: Vec<_> = diags
         .iter()
-        .map(|d| {
-            (
-                d.engine.as_str(),
-                d.code.as_deref().unwrap_or(""),
-                d.severity,
-            )
-        })
+        .map(|d| (d.engine.as_str(), d.code.as_deref().unwrap_or(""), d.severity))
         .collect();
     insta::assert_debug_snapshot!("mago_known_bad_diagnostics", summary);
 }

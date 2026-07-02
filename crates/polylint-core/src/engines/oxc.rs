@@ -19,8 +19,8 @@ use oxc_formatter::JsFormatOptions;
 use oxc_formatter_core::{IndentStyle, IndentWidth, LineWidth};
 use oxc_formatter_json::{JsonFormatOptions, JsonVariant};
 use oxc_linter::{
-    AllowWarnDeny, ConfigStore, ConfigStoreBuilder, ExternalPluginStore, LintFilter, LintOptions,
-    LintService, LintServiceOptions, Linter, Message, PossibleFixes, RuntimeFileSystem,
+    AllowWarnDeny, ConfigStore, ConfigStoreBuilder, ExternalPluginStore, LintFilter, LintOptions, LintService,
+    LintServiceOptions, Linter, Message, PossibleFixes, RuntimeFileSystem,
 };
 use oxc_span::SourceType;
 
@@ -36,8 +36,7 @@ use crate::language::Language;
 /// `+fmt-opts`:  JS quote_style, semicolons, trailing_commas, arrow_parentheses,
 ///               bracket_spacing, bracket_same_line, indent_style; JSON bracket_spacing
 ///               and trailing_commas now wired from `cfg.options`.
-const VERSION: &str =
-    "oxc_formatter:0.56.0+oxlint+parser:0.56.0+rev:5762638+json-fmt+rules-v2+fmt-opts";
+const VERSION: &str = "oxc_formatter:0.56.0+oxlint+parser:0.56.0+rev:5762638+json-fmt+rules-v2+fmt-opts";
 
 static LANGUAGES: &[Language] = &[
     Language::JavaScript,
@@ -377,8 +376,7 @@ fn map_oxlint_message(msg: Message, content: &str) -> Diagnostic {
 /// and `cfg.indent_width` respectively — user cannot override them here.
 fn build_js_options(cfg: &EngineConfig) -> JsFormatOptions {
     use oxc_formatter::{
-        ArrowParentheses, BracketSameLine, BracketSpacing, QuoteStyle, Semicolons,
-        TrailingCommas as JsTrailingCommas,
+        ArrowParentheses, BracketSameLine, BracketSpacing, QuoteStyle, Semicolons, TrailingCommas as JsTrailingCommas,
     };
 
     // Line width from polylint globals, clamped to a valid value.
@@ -492,12 +490,11 @@ fn format_js(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutpu
     let options = build_js_options(cfg);
 
     // format() parses internally; returns Err on the first parse error.
-    let formatted =
-        match oxc_formatter::format(&allocator, &src.content, source_type, options, None) {
-            // Cannot meaningfully reformat a file with parse errors.
-            Err(_) => return Ok(FormatOutput::Unchanged),
-            Ok(f) => f,
-        };
+    let formatted = match oxc_formatter::format(&allocator, &src.content, source_type, options, None) {
+        // Cannot meaningfully reformat a file with parse errors.
+        Err(_) => return Ok(FormatOutput::Unchanged),
+        Ok(f) => f,
+    };
 
     let printed = formatted
         .print()
@@ -745,10 +742,7 @@ mod tests {
     #[test]
     fn valid_js_produces_no_diagnostics() {
         // Export the function so it is considered "used" by no-unused-vars.
-        let src = make_src(
-            "export function square(n) { return n * n; }\n",
-            Language::JavaScript,
-        );
+        let src = make_src("export function square(n) { return n * n; }\n", Language::JavaScript);
         let diags = lint_js(&src, &default_cfg()).unwrap();
         assert!(diags.is_empty(), "expected no diagnostics; got: {diags:#?}");
     }
@@ -757,16 +751,10 @@ mod tests {
     fn invalid_js_produces_parse_error() {
         let src = make_src("const x = {\n  a: 1,\nconst y = 2;\n", Language::JavaScript);
         let diags = lint_js(&src, &default_cfg()).unwrap();
-        assert!(
-            !diags.is_empty(),
-            "expected at least one diagnostic for broken JS"
-        );
+        assert!(!diags.is_empty(), "expected at least one diagnostic for broken JS");
         // oxlint wraps parse errors with Error severity; no rule is associated.
         assert_eq!(diags[0].severity, Severity::Error);
-        assert!(
-            diags[0].code.is_none(),
-            "parse error should not have a rule code"
-        );
+        assert!(diags[0].code.is_none(), "parse error should not have a rule code");
     }
 
     #[test]
@@ -845,10 +833,7 @@ mod tests {
         let path = PathBuf::from("test.ts");
         let content = "const x: number = 1;\n";
         let allocator = Allocator::new();
-        let fs = MemoryFileSystem {
-            path: &path,
-            content,
-        };
+        let fs = MemoryFileSystem { path: &path, content };
         let result = fs.read_to_arena_str(&path, &allocator);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), content);
@@ -939,10 +924,7 @@ level = "warning"
         let out = format_js(&src, &cfg).unwrap();
         match out {
             FormatOutput::Formatted(text) => {
-                assert!(
-                    text.contains("'hello'"),
-                    "expected single-quoted string; got: {text:?}"
-                );
+                assert!(text.contains("'hello'"), "expected single-quoted string; got: {text:?}");
             }
             FormatOutput::Unchanged => {
                 panic!("expected Formatted output with single quotes, got Unchanged");
@@ -953,10 +935,7 @@ level = "warning"
     /// `semicolons = "as-needed"` strips the trailing semicolons.
     #[test]
     fn js_format_semicolons_as_needed_removes_semicolons() {
-        let src = make_src(
-            "export const x = 1;\nexport const y = 2;\n",
-            Language::JavaScript,
-        );
+        let src = make_src("export const x = 1;\nexport const y = 2;\n", Language::JavaScript);
         let cfg = EngineConfig {
             globals: GlobalDefaults::default(),
             indent_width: 2,
@@ -965,10 +944,7 @@ level = "warning"
         let out = format_js(&src, &cfg).unwrap();
         match out {
             FormatOutput::Formatted(text) => {
-                assert!(
-                    !text.contains(";\n"),
-                    "expected semicolons removed; got: {text:?}"
-                );
+                assert!(!text.contains(";\n"), "expected semicolons removed; got: {text:?}");
             }
             FormatOutput::Unchanged => {
                 // Already matches as-needed output — acceptable if no semicolons needed.

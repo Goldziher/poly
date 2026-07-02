@@ -74,8 +74,7 @@ pub fn try_reindent_query(name: &str, src: &SourceFile, cfg: &EngineConfig) -> O
         // Guaranteed present by the insert above.
         let entry = pool.get_mut(name)?;
         let tree = entry.0.parse(src.content.as_bytes(), None)?;
-        let (openers, closers, auto_ranges) =
-            collect_adjustments(&query, &mut entry.1, &tree, src.content.as_bytes());
+        let (openers, closers, auto_ranges) = collect_adjustments(&query, &mut entry.1, &tree, src.content.as_bytes());
         // Second pass over the same parsed tree: string/comment byte ranges whose
         // interiors must be emitted verbatim.
         let protected = collect_protected_ranges(&tree);
@@ -299,10 +298,7 @@ fn emit_reindented(
         // Strictly interior lines of @auto/@ignore nodes: emit verbatim.
         // The first line of the node (start_row) is normal code; only lines
         // between start and end (exclusive of both boundaries) are protected.
-        if auto_ranges
-            .iter()
-            .any(|&(s, e)| s < line_idx && line_idx < e)
-        {
+        if auto_ranges.iter().any(|&(s, e)| s < line_idx && line_idx < e) {
             out.push_str(line);
             continue;
         }
@@ -334,11 +330,6 @@ fn emit_reindented(
         }
     }
 
-    super::apply_trailing_newline(
-        &mut out,
-        &src.content,
-        line_ending,
-        cfg.globals.final_newline,
-    );
+    super::apply_trailing_newline(&mut out, &src.content, line_ending, cfg.globals.final_newline);
     out
 }

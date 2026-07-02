@@ -184,26 +184,22 @@ fn diagnostic_contract_all_backends_conform() {
 
     // ruff: F401 / W605 / E711 are rule-based diagnostics that always carry
     // both code and span. bad.py exercises all three.
-    let ruff_diags = by_engine.get("ruff").unwrap_or_else(|| {
-        panic!("ruff produced no diagnostics; check tests/fixtures/conformance/bad.py")
-    });
+    let ruff_diags = by_engine
+        .get("ruff")
+        .unwrap_or_else(|| panic!("ruff produced no diagnostics; check tests/fixtures/conformance/bad.py"));
     assert!(
-        ruff_diags
-            .iter()
-            .any(|d| d.code.is_some() && d.span.is_some()),
+        ruff_diags.iter().any(|d| d.code.is_some() && d.span.is_some()),
         "ruff: expected ≥1 finding with both code and span on normal rule violations; \
          got: {ruff_diags:?}"
     );
 
     // oxc: no-debugger is a correctness rule; always carries code + span.
     // bad.js contains `debugger;` to trigger no-debugger.
-    let oxc_diags = by_engine.get("oxc").unwrap_or_else(|| {
-        panic!("oxc produced no diagnostics; check tests/fixtures/conformance/bad.js")
-    });
+    let oxc_diags = by_engine
+        .get("oxc")
+        .unwrap_or_else(|| panic!("oxc produced no diagnostics; check tests/fixtures/conformance/bad.js"));
     assert!(
-        oxc_diags
-            .iter()
-            .any(|d| d.code.is_some() && d.span.is_some()),
+        oxc_diags.iter().any(|d| d.code.is_some() && d.span.is_some()),
         "oxc: expected ≥1 finding with both code and span on normal rule violations; \
          got: {oxc_diags:?}"
     );
@@ -211,9 +207,9 @@ fn diagnostic_contract_all_backends_conform() {
     // rumdl: MD018 (no space after `#`) always carries both code and span.
     // bad.md starts with `#Bad Heading` to trigger MD018.
     // Some rumdl rules legitimately omit code (hence ≥1 not ALL).
-    let rumdl_diags = by_engine.get("rumdl").unwrap_or_else(|| {
-        panic!("rumdl produced no diagnostics; check tests/fixtures/conformance/bad.md")
-    });
+    let rumdl_diags = by_engine
+        .get("rumdl")
+        .unwrap_or_else(|| panic!("rumdl produced no diagnostics; check tests/fixtures/conformance/bad.md"));
     assert!(
         rumdl_diags.iter().any(|d| d.span.is_some()),
         "rumdl: expected ≥1 finding with a span; got: {rumdl_diags:?}"

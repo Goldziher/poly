@@ -153,9 +153,7 @@ fn levenshtein(a: &str, b: &str) -> usize {
         current[0] = i + 1;
         for (j, &b_char) in b_chars.iter().enumerate() {
             let cost = usize::from(a_char != b_char);
-            current[j + 1] = (previous[j + 1] + 1)
-                .min(current[j] + 1)
-                .min(previous[j] + cost);
+            current[j + 1] = (previous[j + 1] + 1).min(current[j] + 1).min(previous[j] + cost);
         }
         std::mem::swap(&mut previous, &mut current);
     }
@@ -190,10 +188,7 @@ enabled = true
         let shfmt = tools.get("shfmt").expect("shfmt entry present");
         assert!(shfmt.enabled);
         assert_eq!(shfmt.command.as_deref(), Some("format"));
-        assert_eq!(
-            shfmt.args.as_deref(),
-            Some(&["-i".to_string(), "2".to_string()][..])
-        );
+        assert_eq!(shfmt.args.as_deref(), Some(&["-i".to_string(), "2".to_string()][..]));
         assert_eq!(shfmt.stages, vec![Stage::PreCommit]);
         assert_eq!(
             shfmt.files.as_ref().map(Patterns::as_slice),
@@ -204,9 +199,7 @@ enabled = true
             Some(&["**/vendor/**".to_string()][..])
         );
 
-        let clang = tools
-            .get("clang-format")
-            .expect("clang-format entry present");
+        let clang = tools.get("clang-format").expect("clang-format entry present");
         assert!(clang.enabled);
         assert_eq!(clang.command, None);
         assert_eq!(clang.args, None);
@@ -264,10 +257,7 @@ enabled = true
             error.contains("definitely-not-a-tool"),
             "names the offending tool: {error}"
         );
-        assert!(
-            error.contains("no such tool"),
-            "explains the rejection: {error}"
-        );
+        assert!(error.contains("no such tool"), "explains the rejection: {error}");
     }
 
     #[test]

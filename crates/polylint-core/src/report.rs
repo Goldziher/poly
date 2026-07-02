@@ -51,9 +51,7 @@ impl Verbosity {
 fn severity_label(severity: Severity) -> String {
     match severity {
         Severity::Error => "error".if_supports_color(Stdout, |t| t.red()).to_string(),
-        Severity::Warning => "warning"
-            .if_supports_color(Stdout, |t| t.yellow())
-            .to_string(),
+        Severity::Warning => "warning".if_supports_color(Stdout, |t| t.yellow()).to_string(),
         Severity::Info => "info".if_supports_color(Stdout, |t| t.blue()).to_string(),
         Severity::Hint => "hint".if_supports_color(Stdout, |t| t.cyan()).to_string(),
     }
@@ -67,11 +65,7 @@ fn render_debug_block(out: &mut String, debug: &RunDebug) {
             "[debug] {} v{}  {}  {:.2}ms",
             e.engine, e.version, status, e.duration_ms
         );
-        let _ = writeln!(
-            out,
-            "      {}",
-            line.if_supports_color(Stdout, |t| t.dimmed())
-        );
+        let _ = writeln!(out, "      {}", line.if_supports_color(Stdout, |t| t.dimmed()));
     }
 }
 
@@ -88,30 +82,18 @@ pub fn render_lint_pretty(results: &[LintResult], verbosity: Verbosity) -> (Stri
             if verbosity.debug
                 && let Some(debug) = &r.debug
             {
-                let _ = writeln!(
-                    out,
-                    "{}",
-                    r.path.display().if_supports_color(Stdout, |t| t.bold())
-                );
+                let _ = writeln!(out, "{}", r.path.display().if_supports_color(Stdout, |t| t.bold()));
                 render_debug_block(&mut out, debug);
             }
             continue;
         }
-        let _ = writeln!(
-            out,
-            "{}",
-            r.path.display().if_supports_color(Stdout, |t| t.bold())
-        );
+        let _ = writeln!(out, "{}", r.path.display().if_supports_color(Stdout, |t| t.bold()));
         for d in &r.diagnostics {
             total += 1;
             // Build the terse line from only the segments that are present.
             let mut segments: Vec<String> = Vec::with_capacity(5);
             segments.push(severity_label(d.severity));
-            segments.push(
-                d.engine
-                    .if_supports_color(Stdout, |t| t.magenta())
-                    .to_string(),
-            );
+            segments.push(d.engine.if_supports_color(Stdout, |t| t.magenta()).to_string());
             if let Some(code) = d.code.as_deref() {
                 segments.push(code.if_supports_color(Stdout, |t| t.dimmed()).to_string());
             }
@@ -124,18 +106,10 @@ pub fn render_lint_pretty(results: &[LintResult], verbosity: Verbosity) -> (Stri
 
             if verbosity.verbose {
                 if let Some(description) = d.description.as_deref() {
-                    let _ = writeln!(
-                        out,
-                        "      {}",
-                        description.if_supports_color(Stdout, |t| t.dimmed())
-                    );
+                    let _ = writeln!(out, "      {}", description.if_supports_color(Stdout, |t| t.dimmed()));
                 }
                 if let Some(url) = d.url.as_deref() {
-                    let _ = writeln!(
-                        out,
-                        "      {}",
-                        url.if_supports_color(Stdout, |t| t.dimmed())
-                    );
+                    let _ = writeln!(out, "      {}", url.if_supports_color(Stdout, |t| t.dimmed()));
                 }
                 for (key, value) in &d.metadata {
                     let _ = writeln!(
@@ -153,11 +127,7 @@ pub fn render_lint_pretty(results: &[LintResult], verbosity: Verbosity) -> (Stri
         }
     }
     if total == 0 {
-        let _ = writeln!(
-            out,
-            "{}",
-            "No issues found.".if_supports_color(Stdout, |t| t.green())
-        );
+        let _ = writeln!(out, "{}", "No issues found.".if_supports_color(Stdout, |t| t.green()));
     } else {
         let _ = writeln!(
             out,
@@ -193,19 +163,11 @@ pub fn report_lint_toon(results: &[LintResult]) -> String {
 /// "would reformat" vs "reformatted" phrasing. `--debug` appends a dim per-file
 /// debug block (engine version, cache hit/miss, timing). Returns the rendered
 /// text and the number of changed files.
-pub fn render_format_pretty(
-    results: &[FormatResult],
-    check: bool,
-    verbosity: Verbosity,
-) -> (String, usize) {
+pub fn render_format_pretty(results: &[FormatResult], check: bool, verbosity: Verbosity) -> (String, usize) {
     let mut out = String::new();
     let changed: Vec<&FormatResult> = results.iter().filter(|r| r.changed).collect();
     for r in &changed {
-        let verb = if check {
-            "would reformat"
-        } else {
-            "reformatted"
-        };
+        let verb = if check { "would reformat" } else { "reformatted" };
         let _ = writeln!(
             out,
             "{} {}",
@@ -231,11 +193,7 @@ pub fn render_format_pretty(
     if verbosity.debug {
         for r in results {
             if let Some(debug) = &r.debug {
-                let _ = writeln!(
-                    out,
-                    "{}",
-                    r.path.display().if_supports_color(Stdout, |t| t.bold())
-                );
+                let _ = writeln!(out, "{}", r.path.display().if_supports_color(Stdout, |t| t.bold()));
                 render_debug_block(&mut out, debug);
             }
         }

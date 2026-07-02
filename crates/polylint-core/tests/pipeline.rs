@@ -26,14 +26,10 @@ fn lint_flags_trailing_whitespace() {
         jobs: Some(1),
         exclude: Vec::new(),
     };
-    let results =
-        polylint_core::lint(&[dir.path().to_path_buf()], &cfg, &opts, false, false).unwrap();
+    let results = polylint_core::lint(&[dir.path().to_path_buf()], &cfg, &opts, false, false).unwrap();
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].diagnostics.len(), 1);
-    assert_eq!(
-        results[0].diagnostics[0].code.as_deref(),
-        Some("trailing-whitespace")
-    );
+    assert_eq!(results[0].diagnostics[0].code.as_deref(), Some("trailing-whitespace"));
 }
 
 #[test]
@@ -48,8 +44,7 @@ fn format_check_does_not_write_but_reports_change() {
         exclude: Vec::new(),
     };
 
-    let results =
-        polylint_core::format(&[dir.path().to_path_buf()], &cfg, &opts, false, false).unwrap();
+    let results = polylint_core::format(&[dir.path().to_path_buf()], &cfg, &opts, false, false).unwrap();
     assert_eq!(results.len(), 1);
     assert!(results[0].changed, "check mode should detect a change");
     // File must be untouched in check mode.
@@ -70,18 +65,13 @@ fn format_write_is_idempotent() {
         exclude: Vec::new(),
     };
 
-    let first =
-        polylint_core::format(&[dir.path().to_path_buf()], &cfg, &opts, true, false).unwrap();
+    let first = polylint_core::format(&[dir.path().to_path_buf()], &cfg, &opts, true, false).unwrap();
     assert!(first[0].changed);
     let after = fs::read_to_string(&path).unwrap();
-    assert_eq!(
-        after, "key: value\n",
-        "trailing ws + blank lines normalized"
-    );
+    assert_eq!(after, "key: value\n", "trailing ws + blank lines normalized");
 
     // Second pass: nothing left to change.
-    let second =
-        polylint_core::format(&[dir.path().to_path_buf()], &cfg, &opts, true, false).unwrap();
+    let second = polylint_core::format(&[dir.path().to_path_buf()], &cfg, &opts, true, false).unwrap();
     assert!(!second[0].changed, "formatting must be idempotent");
 }
 
@@ -101,11 +91,7 @@ fn lint_fix_applies_autofixes_and_dry_run_does_not() {
 
     // Dry run (fix = false) must not touch the file on disk.
     polylint_core::lint(&[dir.path().to_path_buf()], &cfg, &opts, false, false).unwrap();
-    assert_eq!(
-        fs::read_to_string(&path).unwrap(),
-        bad,
-        "dry run must not modify files"
-    );
+    assert_eq!(fs::read_to_string(&path).unwrap(), bad, "dry run must not modify files");
 
     // fix = true applies the single-correction typo autofixes in place.
     polylint_core::lint(&[dir.path().to_path_buf()], &cfg, &opts, true, false).unwrap();
@@ -129,10 +115,7 @@ fn cache_round_trips() {
     let digest = ResultCache::single_file_digest("some content");
     let key = ResultCache::key(Namespace::Fmt, "test", "1", &opts, &digest);
     cache.put(Namespace::Fmt, &key, b"formatted").unwrap();
-    assert_eq!(
-        cache.get(Namespace::Fmt, &key).as_deref(),
-        Some(&b"formatted"[..])
-    );
+    assert_eq!(cache.get(Namespace::Fmt, &key).as_deref(), Some(&b"formatted"[..]));
     // A different version yields a different key (invalidation).
     let key2 = ResultCache::key(Namespace::Fmt, "test", "2", &opts, &digest);
     assert_ne!(key, key2);
@@ -172,8 +155,7 @@ fn lint_json_output_schema_conforms_to_diagnostic_contract() {
         exclude: Vec::new(),
     };
 
-    let results =
-        polylint_core::lint(&[dir.path().to_path_buf()], &cfg, &opts, false, false).unwrap();
+    let results = polylint_core::lint(&[dir.path().to_path_buf()], &cfg, &opts, false, false).unwrap();
 
     assert!(
         !results.is_empty(),
@@ -181,13 +163,10 @@ fn lint_json_output_schema_conforms_to_diagnostic_contract() {
     );
 
     let json = report_lint_json(&results);
-    let value: serde_json::Value =
-        serde_json::from_str(&json).expect("report_lint_json must produce valid JSON");
+    let value: serde_json::Value = serde_json::from_str(&json).expect("report_lint_json must produce valid JSON");
 
     // --- Envelope: top-level array of { path, diagnostics } ---
-    let arr = value
-        .as_array()
-        .expect("top-level JSON value must be an array");
+    let arr = value.as_array().expect("top-level JSON value must be an array");
     assert!(!arr.is_empty(), "JSON array must not be empty");
 
     for item in arr {
@@ -205,23 +184,15 @@ fn lint_json_output_schema_conforms_to_diagnostic_contract() {
             .as_array()
             .expect("'diagnostics' must be a JSON array");
         for diag in diags {
-            let d = diag
-                .as_object()
-                .expect("each diagnostic must be a JSON object");
+            let d = diag.as_object().expect("each diagnostic must be a JSON object");
 
             // Required keys must be present.
-            assert!(
-                d.contains_key("engine"),
-                "diagnostic must have 'engine'; got: {d:?}"
-            );
+            assert!(d.contains_key("engine"), "diagnostic must have 'engine'; got: {d:?}");
             assert!(
                 d.contains_key("severity"),
                 "diagnostic must have 'severity'; got: {d:?}"
             );
-            assert!(
-                d.contains_key("title"),
-                "diagnostic must have 'title'; got: {d:?}"
-            );
+            assert!(d.contains_key("title"), "diagnostic must have 'title'; got: {d:?}");
 
             // Required fields must be non-empty strings.
             assert!(
@@ -243,9 +214,7 @@ fn lint_json_output_schema_conforms_to_diagnostic_contract() {
         .find(|d| d["engine"].as_str() == Some("taplo"))
         .expect("expected a taplo diagnostic in the JSON output");
 
-    let d = taplo_diag
-        .as_object()
-        .expect("taplo diagnostic must be a JSON object");
+    let d = taplo_diag.as_object().expect("taplo diagnostic must be a JSON object");
 
     // taplo duplicate-key always sets code + span.
     assert!(
@@ -271,16 +240,10 @@ fn lint_json_output_schema_conforms_to_diagnostic_contract() {
         !d.contains_key("description"),
         "'description' must be absent (not serialised) when None; got: {d:?}"
     );
-    assert!(
-        !d.contains_key("url"),
-        "'url' must be absent when None; got: {d:?}"
-    );
+    assert!(!d.contains_key("url"), "'url' must be absent when None; got: {d:?}");
 
     // Empty Vec<Edit> must not produce a 'fix' key.
-    assert!(
-        !d.contains_key("fix"),
-        "'fix' must be absent when empty; got: {d:?}"
-    );
+    assert!(!d.contains_key("fix"), "'fix' must be absent when empty; got: {d:?}");
 
     // Empty BTreeMap metadata must not produce a 'metadata' key.
     assert!(

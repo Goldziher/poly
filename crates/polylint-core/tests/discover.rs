@@ -41,11 +41,7 @@ fn skips_vendored_and_build_directories() {
         !paths.contains(&dependency.as_path()),
         "files under deps must be pruned, got {paths:?}"
     );
-    assert_eq!(
-        paths.len(),
-        1,
-        "only the root source file should remain, got {paths:?}"
-    );
+    assert_eq!(paths.len(), 1, "only the root source file should remain, got {paths:?}");
 }
 
 #[test]
@@ -61,10 +57,7 @@ fn honors_discovery_exclude_globs() {
     write_file(&fixture, "y = 2\n");
     write_file(&nested, "z = 3\n");
 
-    let exclude = vec![
-        "test_apps/**".to_string(),
-        "packages/*/tools/vendor-*/**".to_string(),
-    ];
+    let exclude = vec!["test_apps/**".to_string(), "packages/*/tools/vendor-*/**".to_string()];
     let discovered = discover(&[root.to_path_buf()], &exclude);
     let paths: Vec<_> = discovered.iter().map(|f| f.path.as_path()).collect();
 

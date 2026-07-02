@@ -167,10 +167,7 @@ mod tests {
     fn accepts_legacy_aliases() {
         assert_eq!("commit".parse::<Stage>().unwrap(), Stage::PreCommit);
         assert_eq!("push".parse::<Stage>().unwrap(), Stage::PrePush);
-        assert_eq!(
-            "merge-commit".parse::<Stage>().unwrap(),
-            Stage::PreMergeCommit
-        );
+        assert_eq!("merge-commit".parse::<Stage>().unwrap(), Stage::PreMergeCommit);
     }
 
     #[test]

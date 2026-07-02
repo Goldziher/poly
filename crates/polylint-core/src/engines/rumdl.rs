@@ -23,9 +23,7 @@ use rumdl_lib::{
 
 use super::rule_config::{RuleSelection, string_list, union_codes, warn_and_skip_blank};
 use crate::config::EngineConfig;
-use crate::engine::{
-    Capabilities, Diagnostic, Edit, Engine, FormatOutput, Severity, SourceFile, Span,
-};
+use crate::engine::{Capabilities, Diagnostic, Edit, Engine, FormatOutput, Severity, SourceFile, Span};
 use crate::language::Language;
 
 /// rumdl Markdown lint + format backend.
@@ -129,10 +127,7 @@ fn build_rumdl_config(cfg: &EngineConfig) -> RumdlConfig {
         "rumdl",
     );
     // Disable list: native `disable` ∪ canonical `ignore`.
-    let user_disable = warn_and_skip_blank(
-        union_codes(string_list(cfg, "disable"), selection.ignore),
-        "rumdl",
-    );
+    let user_disable = warn_and_skip_blank(union_codes(string_list(cfg, "disable"), selection.ignore), "rumdl");
 
     // Opinionated defaults: disable the rumdl-proprietary stylistic rules, except
     // any the user explicitly re-enabled (so the `enable` list wins — rumdl's
