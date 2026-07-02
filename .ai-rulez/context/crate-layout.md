@@ -59,8 +59,8 @@ plus an installer (see release-versioning).
 Each is a thin clap CLI over `polylint-core`. `polylint [PATHS]… --fix --format human|json
 --config <p> --no-cache -j <N> --no-color`; `polyfmt [PATHS]… --check …`. A consuming repo
 collapses its hook sprawl onto poly's own `poly hooks` runner via `poly.toml [hooks]` (ADR
-0012) — poly no longer ships a `.pre-commit-hooks.yaml`, so there is no pre-commit/prek
-dependency in between.
+0012) — poly no longer ships a `.pre-commit-hooks.yaml`, so there is no external
+pre-commit-framework dependency in between.
 
 ## The `Engine` trait contract (`engine.rs`)
 

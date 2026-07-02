@@ -9,7 +9,6 @@ pip-package/*.egg-info/
 
 # BEGIN ai-rulez (DO NOT EDIT - managed by ai-rulez)
 .agents/
-.ai-rulez/.generated-manifest.json
 .claude/
 .cline/
 .clinerules/
