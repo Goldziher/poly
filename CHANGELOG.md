@@ -7,6 +7,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). `polylint` and
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-07-02
+
 ### Fixed
 
 - **rustfmt**: `poly fmt` now honours the project's `rustfmt.toml` /
