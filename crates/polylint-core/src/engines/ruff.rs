@@ -108,6 +108,10 @@ fn default_settings() -> &'static LinterSettings {
         settings.rules = build_rule_table(&codes, &[]);
         settings.line_length =
             ruff_linter::line_width::LineLength::try_from(120_u16).expect("120 is a valid line length");
+        // E501 (line-too-long) reads `pycodestyle.max_line_length`, which falls back to
+        // ruff's hardcoded 88 when unset — not the global `line_length`. Mirror it so the
+        // linter's line-length rule agrees with the formatter width.
+        settings.pycodestyle.max_line_length = settings.line_length;
         settings
     })
 }
@@ -145,6 +149,10 @@ fn build_settings(cfg: &EngineConfig) -> LinterSettings {
         .ok()
         .and_then(|w| ruff_linter::line_width::LineLength::try_from(w).ok())
         .unwrap_or_else(|| ruff_linter::line_width::LineLength::try_from(120_u16).expect("120 is valid"));
+    // E501 (line-too-long) reads `pycodestyle.max_line_length`, which falls back to
+    // ruff's hardcoded 88 when unset — not the global `line_length`. Mirror it so the
+    // linter's line-length rule agrees with the configured width and the formatter.
+    settings.pycodestyle.max_line_length = settings.line_length;
 
     // Per-plugin parameters (matching ruff's own option names, flattened).
     let usize_opt = |key: &str| {

@@ -376,3 +376,55 @@ fn known_first_party_suppresses_i001() {
         "with known_first_party=[\"kreuzberg_cloud\"], I001 must not fire; got: {fp_diags:?}"
     );
 }
+
+/// Regression: E501 (line-too-long) must honor the configured `line_length`
+/// instead of ruff's hardcoded pycodestyle default of 88. A 100-char line is
+/// clean at `line_length = 120` but flagged once the limit drops below it.
+#[test]
+fn e501_honors_configured_line_length() {
+    let engine = RuffEngine;
+    // 100-char assignment line (value padded to reach exactly 100 columns).
+    let line = format!("x = \"{}\"\n", "a".repeat(94));
+    assert_eq!(line.trim_end().len(), 100, "test fixture must be 100 chars");
+    let src = SourceFile {
+        path: std::path::PathBuf::from("mod.py"),
+        language: Language::Python,
+        content: line.clone().into(),
+    };
+
+    // select = ["E501"] with line_length = 120 → 100-char line is within limit.
+    let mut wide = toml::Table::new();
+    wide.insert("select".to_string(), code_array(&["E501"]));
+    wide.insert("line_length".to_string(), toml::Value::Integer(120));
+    let wide_diags = engine
+        .lint(
+            &src,
+            &EngineConfig {
+                options: wide,
+                ..engine_cfg()
+            },
+        )
+        .unwrap();
+    assert!(
+        !wide_diags.iter().any(|d| d.code.as_deref() == Some("E501")),
+        "E501 must not fire on a 100-char line when line_length=120; got: {wide_diags:?}"
+    );
+
+    // line_length = 80 → the same 100-char line is now too long.
+    let mut narrow = toml::Table::new();
+    narrow.insert("select".to_string(), code_array(&["E501"]));
+    narrow.insert("line_length".to_string(), toml::Value::Integer(80));
+    let narrow_diags = engine
+        .lint(
+            &src,
+            &EngineConfig {
+                options: narrow,
+                ..engine_cfg()
+            },
+        )
+        .unwrap();
+    assert!(
+        narrow_diags.iter().any(|d| d.code.as_deref() == Some("E501")),
+        "E501 must fire on a 100-char line when line_length=80; got: {narrow_diags:?}"
+    );
+}

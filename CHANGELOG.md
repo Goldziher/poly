@@ -7,6 +7,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). `polylint` and
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-07-02
+
+### Fixed
+
+- **ruff E501 now honors `line_length`.** The line-too-long rule read ruff's
+  `pycodestyle.max_line_length`, which poly never set — so it stayed pinned at
+  ruff's hardcoded 88 regardless of the configured `line_length` (while the
+  formatter correctly used 120). poly now mirrors the resolved `line_length`
+  onto `pycodestyle.max_line_length` in both the default and per-config settings,
+  so `select = ["ALL"]` projects with a 120 limit no longer see false-positive
+  E501 on 89–120 char lines.
+
 ## [0.1.10] - 2026-07-02
 
 ### Fixed
