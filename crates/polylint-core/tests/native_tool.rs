@@ -162,9 +162,7 @@ fn rust_known_unformatted_snapshot() {
 fn rustfmt_leaves_clean_2024_source_unchanged() {
     let engine = NativeToolEngine::for_language(Language::Rust);
     if !engine.is_available() {
-        eprintln!(
-            "rustfmt not found on PATH — skipping rustfmt_leaves_clean_2024_source_unchanged"
-        );
+        eprintln!("rustfmt not found on PATH — skipping rustfmt_leaves_clean_2024_source_unchanged");
         return;
     }
 
@@ -208,4 +206,97 @@ fn zig_known_unformatted_snapshot() {
     };
 
     insta::assert_snapshot!("zig_native_known_unformatted", formatted);
+}
+
+// ---------------------------------------------------------------------------
+// rustfmt.toml conformance tests
+// ---------------------------------------------------------------------------
+
+/// poly honours a project-level `rustfmt.toml`: a 95-char function signature
+/// (clean at the 120-column poly default) is reformatted when the toml sets
+/// `max_width = 60` — proving poly did NOT override it with `max_width = 120`.
+///
+/// Gated on `rustfmt` presence.
+#[test]
+fn rustfmt_honors_rustfmt_toml_max_width() {
+    let engine = NativeToolEngine::for_language(Language::Rust);
+    if !engine.is_available() {
+        eprintln!("rustfmt not found on PATH — skipping rustfmt_honors_rustfmt_toml_max_width");
+        return;
+    }
+
+    // Temp dir acts as the project root with rustfmt.toml max_width = 60.
+    let tmp = tempfile::tempdir().expect("create temp dir for rustfmt.toml test");
+    std::fs::write(tmp.path().join("rustfmt.toml"), "max_width = 60\n").expect("write rustfmt.toml");
+
+    // 95-char signature (clean at max_width 120, too wide at max_width 60).
+    // rustfmt at max_width 60 wraps the parameters → Formatted.
+    // If poly ignores the toml and injects max_width 120, rustfmt leaves it
+    // intact → Unchanged.  The assert proves poly honoured the toml.
+    const SRC: &str = concat!(
+        "fn function_with_long_params(",
+        "param_one: String, param_two: String, param_three: u32) -> bool {\n",
+        "    true\n",
+        "}\n",
+    );
+
+    let src = SourceFile {
+        path: tmp.path().join("lib.rs"),
+        language: Language::Rust,
+        content: SRC.into(),
+    };
+
+    let result = engine.format(&src, &enabled_cfg()).unwrap();
+    assert!(
+        matches!(result, FormatOutput::Formatted(_)),
+        "rustfmt must reformat the 95-char signature when rustfmt.toml sets \
+         max_width = 60; got Unchanged — poly likely forced max_width = 120 \
+         and ignored the project toml"
+    );
+}
+
+/// Without a `rustfmt.toml`, poly injects `max_width = 120` (its opinionated
+/// default).  A ~110-char function signature is clean at 120 but over
+/// rustfmt's built-in default (100), so `Unchanged` proves poly successfully
+/// injected `--config max_width = 120`.
+///
+/// Gated on `rustfmt` presence.
+#[test]
+fn rustfmt_applies_120_default_without_config() {
+    let engine = NativeToolEngine::for_language(Language::Rust);
+    if !engine.is_available() {
+        eprintln!("rustfmt not found on PATH — skipping rustfmt_applies_120_default_without_config");
+        return;
+    }
+
+    // Fresh temp dir with no rustfmt.toml anywhere in its ancestry.
+    let tmp = tempfile::tempdir().expect("create temp dir for no-config rustfmt test");
+    debug_assert!(
+        tmp.path()
+            .ancestors()
+            .all(|dir| { !dir.join("rustfmt.toml").exists() && !dir.join(".rustfmt.toml").exists() }),
+        "expected no rustfmt.toml in the temp dir ancestry"
+    );
+
+    // ~110-char first line: clean at max_width 120, reformatted by rustfmt at
+    // the built-in default of 100.  Unchanged → poly injected max_width 120.
+    const SRC: &str = concat!(
+        "fn function_with_long_name_here(",
+        "first_parameter: String, second_parameter: String, third_param: u32) -> bool {\n",
+        "    true\n",
+        "}\n",
+    );
+
+    let src = SourceFile {
+        path: tmp.path().join("main.rs"),
+        language: Language::Rust,
+        content: SRC.into(),
+    };
+
+    let result = engine.format(&src, &enabled_cfg()).unwrap();
+    assert!(
+        matches!(result, FormatOutput::Unchanged),
+        "a ~110-char signature must be Unchanged when poly applies max_width = 120; \
+         got Formatted — poly may have fallen back to rustfmt's 100-column default"
+    );
 }

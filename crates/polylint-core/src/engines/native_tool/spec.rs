@@ -42,9 +42,17 @@ pub(crate) struct ToolSpec {
     /// that `cargo fmt` (which passes the manifest edition) considers clean.
     /// `gofmt` / `zig fmt` / `shfmt` have no edition concept (`false`).
     pub(crate) edition_flag: bool,
-    /// Whether to inject `--config max_width=<line_length>` before the static
-    /// format args. Only `rustfmt` sets this: without it rustfmt defaults to
-    /// 100 columns, violating poly's opinionated 120-column policy.
+    /// Whether to enable the `rustfmt` config-discovery and max_width path.
+    /// Only `rustfmt` sets this. When `true`, `format_via_tool` walks up from
+    /// the source file's directory to locate a `rustfmt.toml` or
+    /// `.rustfmt.toml`:
+    ///
+    /// - **Found** — passes `--config-path <dir>` so rustfmt loads the
+    ///   project's full config (including its `max_width` and any other
+    ///   options). `max_width` is **not** overridden by poly.
+    /// - **Not found** — injects `--config max_width=<line_length>` to apply
+    ///   poly's opinionated 120-column default (rustfmt's own built-in
+    ///   default is 100 columns).
     pub(crate) max_width_flag: bool,
 }
 
@@ -207,27 +215,20 @@ mod tests {
     #[test]
     fn rustfmt_spec_has_max_width_flag() {
         // Verifies that the max_width_flag is correctly set so that
-        // format_via_tool injects --config max_width=<line_length> for rustfmt.
+        // format_via_tool activates rustfmt config-discovery for rustfmt
+        // (--config-path when a rustfmt.toml is found, --config max_width=120
+        // when none is found).
         assert!(
             RUSTFMT_SPEC.max_width_flag,
-            "RUSTFMT_SPEC.max_width_flag must be true to enforce the 120-column policy"
+            "RUSTFMT_SPEC.max_width_flag must be true to activate rustfmt config discovery"
         );
     }
 
     #[test]
     fn other_specs_have_no_max_width_flag() {
-        assert!(
-            !GOFMT_SPEC.max_width_flag,
-            "gofmt does not support max_width_flag"
-        );
-        assert!(
-            !ZIGFMT_SPEC.max_width_flag,
-            "zigfmt does not support max_width_flag"
-        );
-        assert!(
-            !SHFMT_SPEC.max_width_flag,
-            "shfmt does not support max_width_flag"
-        );
+        assert!(!GOFMT_SPEC.max_width_flag, "gofmt does not support max_width_flag");
+        assert!(!ZIGFMT_SPEC.max_width_flag, "zigfmt does not support max_width_flag");
+        assert!(!SHFMT_SPEC.max_width_flag, "shfmt does not support max_width_flag");
         assert!(
             !SHELLCHECK_SPEC.max_width_flag,
             "shellcheck does not support max_width_flag"

@@ -64,9 +64,9 @@ use self::lint::lint_via_shellcheck;
 use self::probe::probe_tool;
 use self::spec::ToolSpec;
 use self::spec::{
-    GOFMT_KEY, GOFMT_NOTICE, GOFMT_PROBE, GOFMT_SPEC, RUSTFMT_KEY, RUSTFMT_NOTICE, RUSTFMT_PROBE,
-    RUSTFMT_SPEC, SHELLCHECK_KEY, SHELLCHECK_PROBE, SHELLCHECK_SPEC, SHFMT_KEY, SHFMT_NOTICE,
-    SHFMT_PROBE, SHFMT_SPEC, ZIGFMT_KEY, ZIGFMT_NOTICE, ZIGFMT_PROBE, ZIGFMT_SPEC,
+    GOFMT_KEY, GOFMT_NOTICE, GOFMT_PROBE, GOFMT_SPEC, RUSTFMT_KEY, RUSTFMT_NOTICE, RUSTFMT_PROBE, RUSTFMT_SPEC,
+    SHELLCHECK_KEY, SHELLCHECK_PROBE, SHELLCHECK_SPEC, SHFMT_KEY, SHFMT_NOTICE, SHFMT_PROBE, SHFMT_SPEC, ZIGFMT_KEY,
+    ZIGFMT_NOTICE, ZIGFMT_PROBE, ZIGFMT_SPEC,
 };
 
 mod edition;
@@ -227,9 +227,7 @@ impl NativeToolEngine {
     /// Memoised in a static `OnceLock`; subsequent calls within the same
     /// process are free.
     fn probed_version(&self) -> Option<&'static str> {
-        self.probe_lock()
-            .get_or_init(|| probe_tool(self.spec()))
-            .as_deref()
+        self.probe_lock().get_or_init(|| probe_tool(self.spec())).as_deref()
     }
 
     /// Whether the underlying native tool is installed on this host.
@@ -303,9 +301,18 @@ impl Engine for NativeToolEngine {
             } else {
                 ""
             };
+            // Tools with max_width_flag now discover and honour a project-level
+            // rustfmt.toml via --config-path instead of always forcing
+            // max_width=120; mark the key to invalidate caches built under the
+            // old always-inject behaviour.
+            let config_path_marker = if self.spec().max_width_flag {
+                " | config-path-aware"
+            } else {
+                ""
+            };
             match self.probed_version() {
-                Some(tool) => format!("{tool} | ts:{ts}{edition_marker}"),
-                None => format!("native-tool:absent | ts:{ts}{edition_marker}"),
+                Some(tool) => format!("{tool} | ts:{ts}{edition_marker}{config_path_marker}"),
+                None => format!("native-tool:absent | ts:{ts}{edition_marker}{config_path_marker}"),
             }
         })
     }
@@ -320,9 +327,7 @@ impl Engine for NativeToolEngine {
     ///   append shellcheck diagnostics when the tool is enabled and present.
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
         match self.role {
-            NativeRole::GoFmt | NativeRole::Rustfmt | NativeRole::ZigFmt => {
-                TreeSitterEngine.lint(src, cfg)
-            }
+            NativeRole::GoFmt | NativeRole::Rustfmt | NativeRole::ZigFmt => TreeSitterEngine.lint(src, cfg),
             NativeRole::Shfmt => Ok(Vec::new()),
             NativeRole::Shellcheck => {
                 let mut diags = TreeSitterEngine.lint(src, cfg)?;
@@ -546,10 +551,7 @@ mod tests {
         let engine = NativeToolEngine::for_language(Language::Go);
         let src = make_src("main.go", Language::Go, "package main   \nfunc main() {}\n");
         let diags = engine.lint(&src, &disabled_cfg()).unwrap();
-        assert!(
-            !diags.is_empty(),
-            "trailing whitespace in Go source must be flagged"
-        );
+        assert!(!diags.is_empty(), "trailing whitespace in Go source must be flagged");
         assert_eq!(diags[0].code.as_deref(), Some("trailing-whitespace"));
     }
 
@@ -562,16 +564,12 @@ mod tests {
         let diags = engine.lint(&src, &disabled_cfg()).unwrap();
         // TS flags trailing whitespace regardless of shellcheck state.
         assert!(
-            diags
-                .iter()
-                .any(|d| d.code.as_deref() == Some("trailing-whitespace")),
+            diags.iter().any(|d| d.code.as_deref() == Some("trailing-whitespace")),
             "disabled shellcheck must still surface TS trailing-whitespace diagnostic"
         );
         // No shellcheck diagnostics (SC*) when disabled.
         assert!(
-            diags
-                .iter()
-                .all(|d| !d.code.as_deref().unwrap_or("").starts_with("SC")),
+            diags.iter().all(|d| !d.code.as_deref().unwrap_or("").starts_with("SC")),
             "no SC diagnostics expected when shellcheck is disabled"
         );
     }
@@ -697,8 +695,7 @@ mod tests {
             return;
         }
 
-        const UNFORMATTED: &str =
-            "package main\nimport \"fmt\"\nfunc main() {\nfmt.Println(\"hello\")\n}\n";
+        const UNFORMATTED: &str = "package main\nimport \"fmt\"\nfunc main() {\nfmt.Println(\"hello\")\n}\n";
         let src = make_src("main.go", Language::Go, UNFORMATTED);
         let result = engine.format(&src, &enabled_cfg()).unwrap();
 
@@ -723,9 +720,7 @@ mod tests {
     fn rust_native_formats_unformatted_source() {
         let engine = NativeToolEngine::for_language(Language::Rust);
         if engine.probed_version().is_none() {
-            eprintln!(
-                "rustfmt not found on PATH — skipping rust_native_formats_unformatted_source"
-            );
+            eprintln!("rustfmt not found on PATH — skipping rust_native_formats_unformatted_source");
             return;
         }
 
@@ -756,8 +751,7 @@ mod tests {
             return;
         }
 
-        const UNFORMATTED: &str =
-            "const std = @import(\"std\");\npub fn main() void {\n_ = std;\n}\n";
+        const UNFORMATTED: &str = "const std = @import(\"std\");\npub fn main() void {\n_ = std;\n}\n";
         let src = make_src("main.zig", Language::Zig, UNFORMATTED);
         let result = engine.format(&src, &enabled_cfg()).unwrap();
 
@@ -780,8 +774,7 @@ mod tests {
         }
 
         // Unformatted: body of `if` is not indented.
-        const UNFORMATTED: &str =
-            "#!/bin/bash\nif [ \"$1\" = \"hello\" ]; then\necho \"world\"\nfi\n";
+        const UNFORMATTED: &str = "#!/bin/bash\nif [ \"$1\" = \"hello\" ]; then\necho \"world\"\nfi\n";
         let src = make_src("script.sh", Language::Shell, UNFORMATTED);
         let result = engine.format(&src, &enabled_cfg()).unwrap();
 
@@ -807,9 +800,7 @@ mod tests {
     fn shellcheck_lint_produces_sc_diagnostics() {
         let engine = NativeToolEngine::shell_lint();
         if engine.probed_version().is_none() {
-            eprintln!(
-                "shellcheck not found on PATH — skipping shellcheck_lint_produces_sc_diagnostics"
-            );
+            eprintln!("shellcheck not found on PATH — skipping shellcheck_lint_produces_sc_diagnostics");
             return;
         }
 
@@ -840,14 +831,11 @@ mod tests {
     fn go_native_unchanged_on_already_formatted() {
         let engine = NativeToolEngine::for_language(Language::Go);
         if engine.probed_version().is_none() {
-            eprintln!(
-                "gofmt not found on PATH — skipping go_native_unchanged_on_already_formatted"
-            );
+            eprintln!("gofmt not found on PATH — skipping go_native_unchanged_on_already_formatted");
             return;
         }
 
-        const FORMATTED: &str =
-            "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"hello\")\n}\n";
+        const FORMATTED: &str = "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"hello\")\n}\n";
         let src = make_src("main.go", Language::Go, FORMATTED);
         let result = engine.format(&src, &enabled_cfg()).unwrap();
         assert!(

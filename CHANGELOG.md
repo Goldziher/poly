@@ -5,6 +5,18 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). `polylint` and
 `polyfmt` ship and version in lock-step.
 
+## [Unreleased]
+
+### Fixed
+
+- **rustfmt**: `poly fmt` now honours the project's `rustfmt.toml` /
+  `.rustfmt.toml` when formatting Rust source. Previously poly always injected
+  `--config max_width=120`, which silently overrode every option in the
+  project's rustfmt config (not just `max_width`). Now poly walks up from each
+  source file to find the nearest `rustfmt.toml` and passes its directory via
+  `--config-path`, letting rustfmt load the full project configuration. When no
+  config file is found the existing 120-column default is preserved.
+
 ## [0.1.8] - 2026-07-01
 
 ### Fixed
