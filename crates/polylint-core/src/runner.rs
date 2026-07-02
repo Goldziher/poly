@@ -14,11 +14,15 @@ use crate::discover::{DiscoveredFile, discover};
 use crate::engine::{Diagnostic, Edit, Engine, FormatOutput, SourceFile};
 use crate::engines::catalog_tool::CatalogToolEngine;
 use crate::engines::rule_config::RuleSelection;
-use crate::filter::{
-    PerFileIgnores, SeverityRemap, is_generated_lockfile, match_bases, merged_excludes, relative_for_match,
-};
+use crate::filter::{PerFileIgnores, SeverityRemap, is_generated_lockfile, match_bases, relative_for_match};
 use crate::language::Language;
 use crate::registry::engines_for;
+use crate::resolve::ConfigSet;
+
+/// A per-file engine plan map, keyed by `(config_id, language)` so a monorepo's
+/// nested configs each get their own plans (ADR 0018). In a single-config repo
+/// every file shares `config_id == 0`, collapsing to one plan per language.
+type PlanMap = FxHashMap<(usize, Language), Vec<EnginePlan>>;
 
 /// Options controlling a lint/format run.
 #[derive(Debug, Clone, Default)]
@@ -30,6 +34,10 @@ pub struct RunOptions {
     /// Extra gitignore-style exclude globs supplied at call time (CLI `--exclude`
     /// / MCP `exclude`), merged with the config's `[discovery] exclude`.
     pub exclude: Vec<String>,
+    /// When `true`, the caller supplied an explicit `--config <path>`: use that
+    /// single config for every file and skip hierarchical (nested `poly.toml`)
+    /// resolution (ADR 0018). Default `false` — scan for nested configs.
+    pub explicit_config: bool,
 }
 
 /// Per-engine debug record for one file. Collected only when debug output is
@@ -222,11 +230,11 @@ fn catalog_engines_for(language: &Language, config: &Config, kind: Kind) -> Vec<
 /// routed to the `treesitter` engine are prefetched (tier-1 languages handled by
 /// a native backend never touch the pack). A failure is non-fatal: the per-file
 /// path still lazily loads each grammar on first use.
-fn prefetch_tier2_grammars(plans: &FxHashMap<Language, Vec<EnginePlan>>) {
-    let grammars: Vec<&str> = plans
+fn prefetch_tier2_grammars(plans: &PlanMap) {
+    let grammars: FxHashSet<&str> = plans
         .iter()
         .filter(|(_, engine_plans)| engine_plans.iter().any(|plan| plan.engine.name() == "treesitter"))
-        .filter_map(|(language, _)| match language {
+        .filter_map(|((_, language), _)| match language {
             // The generic tier keys off the pack's grammar id, which is exactly
             // the `Language::Other` payload (set by discovery via the pack's own
             // path detection).
@@ -237,21 +245,22 @@ fn prefetch_tier2_grammars(plans: &FxHashMap<Language, Vec<EnginePlan>>) {
     if grammars.is_empty() {
         return;
     }
+    let grammars: Vec<&str> = grammars.into_iter().collect();
     if let Err(error) = tree_sitter_language_pack::prefetch(&grammars) {
         tracing::warn!(%error, "tier-2 grammar prefetch failed; falling back to lazy load");
     }
 }
 
-/// Build a per-language engine plan covering every language present in `files`,
-/// so each distinct language is planned exactly once before the file loop.
-fn plan_by_language(files: &[DiscoveredFile], config: &Config, kind: Kind) -> FxHashMap<Language, Vec<EnginePlan>> {
-    // `Language` is a small enum key; FxHashMap's fast non-cryptographic hash
-    // beats std SipHash here, and this lookup runs once per file × engine pass.
-    let mut plans: FxHashMap<Language, Vec<EnginePlan>> = FxHashMap::default();
+/// Build the engine plan for every `(config_id, language)` pair present in
+/// `files`, so each distinct pair is planned exactly once before the file loop.
+/// A nested config and the root config plan independently even for the same
+/// language, since their resolved options differ (ADR 0018).
+fn plan_by_config_language(files: &[DiscoveredFile], configs: &ConfigSet, kind: Kind) -> PlanMap {
+    let mut plans: PlanMap = FxHashMap::default();
     for f in files {
         plans
-            .entry(f.language.clone())
-            .or_insert_with(|| plan_engines(&f.language, config, kind));
+            .entry((f.config_id, f.language.clone()))
+            .or_insert_with(|| plan_engines(&f.language, configs.config(f.config_id), kind));
     }
     plans
 }
@@ -269,15 +278,21 @@ pub fn lint(
 ) -> anyhow::Result<Vec<LintResult>> {
     configure_pool(opts.jobs);
     let cache = ResultCache::open_default(!opts.no_cache)?;
-    let files = discover(paths, &merged_excludes(&config.exclude, &opts.exclude));
-    let plans = plan_by_language(&files, config, Kind::Lint);
+    let configs = build_config_set(paths, config, opts)?;
+    let files = discover(paths, &configs, &opts.exclude);
+    let plans = plan_by_config_language(&files, &configs, Kind::Lint);
     prefetch_tier2_grammars(&plans);
-    let ignores = PerFileIgnores::compile(&config.per_file_ignores);
+    // One compiled `[per-file-ignores]` matcher per resolved config, indexed by
+    // `config_id` (nested configs suppress rules for their own subtree only).
+    let ignores: Vec<PerFileIgnores> = configs
+        .iter()
+        .map(|c| PerFileIgnores::compile(&c.per_file_ignores))
+        .collect();
     let bases = match_bases(paths);
     let mut results: Vec<LintResult> = files
         .par_iter()
         .filter_map(
-            |f| match lint_one(f, &plans, &cache, fix, collect_debug, &ignores, &bases) {
+            |f| match lint_one(f, &plans, &cache, fix, collect_debug, &configs, &ignores, &bases) {
                 Ok(result) => Some(result),
                 // A per-file failure (read, parse, or — when fixing — the atomic
                 // write) must not be swallowed silently; surface it and skip the file.
@@ -291,6 +306,17 @@ pub fn lint(
         .collect();
     results.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(results)
+}
+
+/// Build the run's [`ConfigSet`]: a single explicit config (`--config`) bypasses
+/// hierarchical resolution; otherwise `config` is the root and the walked paths
+/// are scanned for nested `poly.toml` files (ADR 0018).
+fn build_config_set(paths: &[PathBuf], config: &Config, opts: &RunOptions) -> anyhow::Result<ConfigSet> {
+    if opts.explicit_config {
+        Ok(ConfigSet::single(config.clone()))
+    } else {
+        ConfigSet::build(paths, config.clone())
+    }
 }
 
 /// Format all discovered files under `paths`. When `write` is true, changed
@@ -309,11 +335,12 @@ pub fn format(
     // them on a directory walk so a stray `poly fmt .` is safe — but still honour
     // a lock file passed explicitly as a path argument.
     let explicit: FxHashSet<&std::path::Path> = paths.iter().map(PathBuf::as_path).collect();
-    let files: Vec<DiscoveredFile> = discover(paths, &merged_excludes(&config.exclude, &opts.exclude))
+    let configs = build_config_set(paths, config, opts)?;
+    let files: Vec<DiscoveredFile> = discover(paths, &configs, &opts.exclude)
         .into_iter()
         .filter(|f| explicit.contains(f.path.as_path()) || !is_generated_lockfile(&f.path))
         .collect();
-    let plans = plan_by_language(&files, config, Kind::Format);
+    let plans = plan_by_config_language(&files, &configs, Kind::Format);
     prefetch_tier2_grammars(&plans);
     let mut results: Vec<FormatResult> = files
         .par_iter()
@@ -334,21 +361,25 @@ pub fn format(
 #[allow(clippy::too_many_arguments)] // cohesive per-file lint inputs; splitting would obscure the flow
 fn lint_one(
     f: &DiscoveredFile,
-    plans: &FxHashMap<Language, Vec<EnginePlan>>,
+    plans: &PlanMap,
     cache: &ResultCache,
     fix: bool,
     collect_debug: bool,
-    ignores: &PerFileIgnores,
+    configs: &ConfigSet,
+    ignores: &[PerFileIgnores],
     bases: &[PathBuf],
 ) -> anyhow::Result<LintResult> {
     let original = std::fs::read_to_string(&f.path)?;
     // Per-file-ignored rules are suppressed *before* the fix loop so `--fix` does
     // not silently rewrite a file for a rule the user configured to ignore
-    // (ruff's semantics: ignored rules never fire for the matching file).
-    let rel = (!ignores.is_empty()).then(|| relative_for_match(&f.path, bases));
+    // (ruff's semantics: ignored rules never fire for the matching file). The
+    // matcher and its base directories are the file's own config (ADR 0018).
+    let this_ignores = &ignores[f.config_id];
+    let rel =
+        (!this_ignores.is_empty()).then(|| relative_for_match(&f.path, &configs.ignore_bases(f.config_id, bases)));
     let suppress = |diagnostics: &mut Vec<Diagnostic>| {
         if let Some(rel) = &rel {
-            ignores.apply(rel, diagnostics);
+            this_ignores.apply(rel, diagnostics);
         }
     };
 
@@ -394,7 +425,7 @@ fn lint_one(
 /// element is `None` and no timing instrumentation runs.
 fn lint_content(
     f: &DiscoveredFile,
-    plans: &FxHashMap<Language, Vec<EnginePlan>>,
+    plans: &PlanMap,
     cache: &ResultCache,
     content: &str,
     collect_debug: bool,
@@ -411,7 +442,10 @@ fn lint_content(
     let digest = ResultCache::single_file_digest_with_path(&f.path.to_string_lossy(), content);
     let mut all = Vec::new();
     let mut debug = collect_debug.then(RunDebug::default);
-    let engine_plans = plans.get(&f.language).map(Vec::as_slice).unwrap_or(&[]);
+    let engine_plans = plans
+        .get(&(f.config_id, f.language.clone()))
+        .map(Vec::as_slice)
+        .unwrap_or(&[]);
     for plan in engine_plans {
         let key = ResultCache::key_with_args(
             Namespace::Lint,
@@ -553,7 +587,7 @@ fn has_internal_overlap(group: &[Edit]) -> bool {
 
 fn format_one(
     f: &DiscoveredFile,
-    plans: &FxHashMap<Language, Vec<EnginePlan>>,
+    plans: &PlanMap,
     cache: &ResultCache,
     write: bool,
     collect_debug: bool,
@@ -570,7 +604,10 @@ fn format_one(
         language: f.language.clone(),
         content: Arc::clone(&current),
     };
-    let engine_plans = plans.get(&f.language).map(Vec::as_slice).unwrap_or(&[]);
+    let engine_plans = plans
+        .get(&(f.config_id, f.language.clone()))
+        .map(Vec::as_slice)
+        .unwrap_or(&[]);
     for plan in engine_plans {
         // Each engine's output feeds the next, so the digest is recomputed from
         // the current text; the args, however, were serialised once per engine.

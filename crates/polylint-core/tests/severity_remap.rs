@@ -35,6 +35,7 @@ fn opts() -> RunOptions {
         no_cache: true,
         jobs: Some(1),
         exclude: Vec::new(),
+        explicit_config: true,
     }
 }
 

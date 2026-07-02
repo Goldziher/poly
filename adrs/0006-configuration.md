@@ -4,6 +4,9 @@
 - Date: 2026-06-26
 - Updated: 2026-06-28 (unified under `poly.toml` for lint/fmt/hooks/commit via
   `poly-config` crate)
+- Updated: 2026-07-02 (nested `poly.toml` discovery + cascade resolution added —
+  see ADR 0018. Single-nearest-ancestor discovery remains the base; `--config`
+  still forces a single config and now also bypasses nesting.)
 
 ## Context
 

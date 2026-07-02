@@ -25,6 +25,7 @@ fn lint_flags_trailing_whitespace() {
         no_cache: true,
         jobs: Some(1),
         exclude: Vec::new(),
+        explicit_config: true,
     };
     let results = polylint_core::lint(&[dir.path().to_path_buf()], &cfg, &opts, false, false).unwrap();
     assert_eq!(results.len(), 1);
@@ -42,6 +43,7 @@ fn format_check_does_not_write_but_reports_change() {
         no_cache: true,
         jobs: Some(1),
         exclude: Vec::new(),
+        explicit_config: true,
     };
 
     let results = polylint_core::format(&[dir.path().to_path_buf()], &cfg, &opts, false, false).unwrap();
@@ -63,6 +65,7 @@ fn format_write_is_idempotent() {
         no_cache: true,
         jobs: Some(1),
         exclude: Vec::new(),
+        explicit_config: true,
     };
 
     let first = polylint_core::format(&[dir.path().to_path_buf()], &cfg, &opts, true, false).unwrap();
@@ -87,6 +90,7 @@ fn lint_fix_applies_autofixes_and_dry_run_does_not() {
         no_cache: true,
         jobs: Some(1),
         exclude: Vec::new(),
+        explicit_config: true,
     };
 
     // Dry run (fix = false) must not touch the file on disk.
@@ -153,6 +157,7 @@ fn lint_json_output_schema_conforms_to_diagnostic_contract() {
         no_cache: true,
         jobs: Some(1),
         exclude: Vec::new(),
+        explicit_config: true,
     };
 
     let results = polylint_core::lint(&[dir.path().to_path_buf()], &cfg, &opts, false, false).unwrap();

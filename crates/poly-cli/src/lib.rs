@@ -249,6 +249,9 @@ fn prepare(common: &CommonArgs) -> Result<(Vec<PathBuf>, Config, RunOptions), Ex
         no_cache: common.no_cache,
         jobs: common.jobs,
         exclude: common.exclude.clone(),
+        // An explicit `--config <path>` pins a single config and bypasses nested
+        // (monorepo) resolution; without it, poly cascades nested `poly.toml`s.
+        explicit_config: common.config.is_some(),
     };
     Ok((paths, config, opts))
 }

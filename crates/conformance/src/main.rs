@@ -247,6 +247,8 @@ fn poly_fmt_output(file: &Path) -> Result<String> {
         no_cache: true,
         jobs: Some(1),
         exclude: Vec::new(),
+        // Conformance formats one file with the default config verbatim.
+        explicit_config: true,
     };
     let results = polylint_core::format(std::slice::from_ref(&target), &Config::default(), &opts, false, false)?;
     Ok(results

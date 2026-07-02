@@ -5,6 +5,7 @@ use std::fs;
 use std::path::Path;
 
 use polylint_core::discover::discover;
+use polylint_core::{Config, ConfigSet};
 
 fn write_file(path: &Path, content: &str) {
     if let Some(parent) = path.parent() {
@@ -26,7 +27,8 @@ fn skips_vendored_and_build_directories() {
     write_file(&vendored, "const a = 1;\n");
     write_file(&dependency, "# changelog\n");
 
-    let discovered = discover(&[root.to_path_buf()], &[]);
+    let cfg = ConfigSet::single(Config::default());
+    let discovered = discover(&[root.to_path_buf()], &cfg, &[]);
     let paths: Vec<_> = discovered.iter().map(|f| f.path.as_path()).collect();
 
     assert!(
@@ -58,7 +60,8 @@ fn honors_discovery_exclude_globs() {
     write_file(&nested, "z = 3\n");
 
     let exclude = vec!["test_apps/**".to_string(), "packages/*/tools/vendor-*/**".to_string()];
-    let discovered = discover(&[root.to_path_buf()], &exclude);
+    let cfg = ConfigSet::single(Config::default());
+    let discovered = discover(&[root.to_path_buf()], &cfg, &exclude);
     let paths: Vec<_> = discovered.iter().map(|f| f.path.as_path()).collect();
 
     assert!(
@@ -88,7 +91,8 @@ fn explicitly_passed_path_is_unaffected_by_other_roots() {
 
     // Walk root is `test_apps/app`; the repo-rooted `test_apps/**` glob does not
     // match relative to this root, so the file is discovered.
-    let discovered = discover(&[root.join("test_apps/app")], &["test_apps/**".to_string()]);
+    let cfg = ConfigSet::single(Config::default());
+    let discovered = discover(&[root.join("test_apps/app")], &cfg, &["test_apps/**".to_string()]);
     let paths: Vec<_> = discovered.iter().map(|f| f.path.as_path()).collect();
     assert!(
         paths.contains(&file.as_path()),

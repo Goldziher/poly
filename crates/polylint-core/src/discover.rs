@@ -7,6 +7,7 @@ use ignore::WalkBuilder;
 use ignore::overrides::OverrideBuilder;
 
 use crate::language::Language;
+use crate::resolve::ConfigSet;
 
 /// Directory names pruned from every walk regardless of git-tracking.
 ///
@@ -41,13 +42,31 @@ const PRUNED_DIRECTORIES: &[&str] = &[
     ".polylint",
 ];
 
-/// A file found during discovery, tagged with its detected language.
+/// A file found during discovery, tagged with its detected language and the id
+/// of the config (within the run's [`ConfigSet`]) that governs it.
 #[derive(Debug, Clone)]
 pub struct DiscoveredFile {
     /// Path to the file.
     pub path: PathBuf,
     /// Detected language.
     pub language: Language,
+    /// Index into the run's [`ConfigSet`] of the nearest config governing this
+    /// file (`0` = the run's root config). Set by [`discover`].
+    pub config_id: usize,
+}
+
+/// `filter_entry` predicate shared by discovery and config scanning: prune the
+/// vendored/generated directories in [`PRUNED_DIRECTORIES`], but only when they
+/// are nested (`depth > 0`) and are directories — so an explicitly passed root
+/// such as `node_modules/foo.js` is still walked, and a plain file that happens
+/// to share one of these names is never dropped. Returns `true` to keep.
+pub(crate) fn keep_walk_entry(entry: &ignore::DirEntry) -> bool {
+    let is_directory = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+    if entry.depth() > 0 && is_directory {
+        let name = entry.file_name();
+        return !PRUNED_DIRECTORIES.iter().any(|pruned| name == *pruned);
+    }
+    true
 }
 
 /// Detect a file's language: tier-1 extension mapping first, then the
@@ -62,16 +81,18 @@ fn detect(path: &std::path::Path) -> Option<Language> {
     Some(Language::Other(name.to_string()))
 }
 
-/// Recursively discover supported files under `paths`.
+/// Recursively discover supported files under `paths`, tagging each with the
+/// nearest config in `configs` that governs it (ADR 0018).
 ///
-/// `exclude` holds gitignore-style globs from `[discovery] exclude`; matching
-/// paths are pruned from the walk in addition to `.gitignore` and the built-in
-/// [`PRUNED_DIRECTORIES`] set. The globs are matched relative to each walk root,
-/// so an explicitly passed path argument is never affected by another root's
-/// excludes.
-pub fn discover(paths: &[PathBuf], exclude: &[String]) -> Vec<DiscoveredFile> {
+/// For each walk root, the exclude set is the union of every in-tree config's
+/// `[discovery] exclude` (each rooted at its own config directory via
+/// [`ConfigSet::walk_excludes`]) plus the call-time `extra` globs. Matching paths
+/// are pruned from the walk in addition to `.gitignore` and the built-in
+/// [`PRUNED_DIRECTORIES`] set.
+pub fn discover(paths: &[PathBuf], configs: &ConfigSet, extra: &[String]) -> Vec<DiscoveredFile> {
     let mut out = Vec::new();
     for root in paths {
+        let exclude = configs.walk_excludes(root, extra);
         let mut builder = WalkBuilder::new(root);
         builder
             .hidden(false)
@@ -79,20 +100,8 @@ pub fn discover(paths: &[PathBuf], exclude: &[String]) -> Vec<DiscoveredFile> {
             .git_global(true)
             .git_exclude(true)
             .parents(true)
-            .filter_entry(|entry| {
-                // Prune known vendored/generated directories, but only when they
-                // are nested (depth > 0) and are directories — so an explicitly
-                // passed root such as `node_modules/foo.js` is still discovered,
-                // and a plain file that happens to share one of these names is
-                // never dropped.
-                let is_directory = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
-                if entry.depth() > 0 && is_directory {
-                    let name = entry.file_name();
-                    return !PRUNED_DIRECTORIES.iter().any(|pruned| name == *pruned);
-                }
-                true
-            });
-        if let Some(overrides) = build_excludes(root, exclude) {
+            .filter_entry(keep_walk_entry);
+        if let Some(overrides) = build_excludes(root, &exclude) {
             builder.overrides(overrides);
         }
         let walker = builder.build();
@@ -105,6 +114,7 @@ pub fn discover(paths: &[PathBuf], exclude: &[String]) -> Vec<DiscoveredFile> {
                 out.push(DiscoveredFile {
                     path: path.to_path_buf(),
                     language,
+                    config_id: configs.config_id_for(path),
                 });
             }
         }

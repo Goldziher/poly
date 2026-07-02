@@ -29,10 +29,13 @@ pub(crate) mod filter;
 pub mod language;
 pub(crate) mod registry;
 pub mod report;
+#[doc(hidden)]
+pub mod resolve;
 pub mod runner;
 
 pub use config::{Config, Kind};
 pub use engine::{Capabilities, Diagnostic, Engine, FormatOutput, Severity, SourceFile, Span};
 pub use language::Language;
 pub use report::Verbosity;
+pub use resolve::ConfigSet;
 pub use runner::{EngineDebug, FormatResult, LintResult, RunDebug, RunOptions, format, lint};

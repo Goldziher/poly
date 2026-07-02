@@ -177,7 +177,8 @@ engine timing and cache hit/miss data in pretty output and attaches it to JSON/T
 ## Configuration
 
 Polylint discovers the nearest `poly.toml`. `polylint.toml` is still read as a fallback for older
-projects, and `poly.local.toml` can layer local overrides over the primary config.
+projects, and `poly.local.toml` can layer local overrides over the primary config. In a monorepo,
+nested `poly.toml` files cascade — see [Nested config in a monorepo](#nested-config-in-a-monorepo).
 
 ```toml
 [defaults]
@@ -226,6 +227,43 @@ commit = { stages = ["commit-msg"] }
 file_safety = true
 cargo = true
 ```
+
+### Nested config in a monorepo
+
+Run `poly` from a monorepo root and each sub-project's `poly.toml` cascades over the root, the
+way ruff and eslint resolve config (see [ADR 0018](adrs/0018-hierarchical-configuration.md)). A
+nested config declares **only the diff** — it inherits `[defaults]`, the `[lint.*]`/`[fmt.*]` rule
+tables, and `[per-file-ignores]` from its ancestors, up to the workspace root:
+
+```toml
+# repo/poly.toml — the workspace root
+[workspace]
+root = true            # stops the upward cascade here (a repo's `.git` dir is
+                       # an implicit boundary too, so this is optional in a repo)
+
+[defaults]
+line_length = 120
+
+[lint.python.ruff]
+select = ["E", "F", "W"]
+```
+
+```toml
+# repo/frontend/poly.toml — governs repo/frontend/** only
+[defaults]
+line_length = 100      # overrides the root; ruff select is inherited
+
+[per-file-ignores]
+"*.spec.ts" = ["no-console"]   # glob is relative to repo/frontend/
+```
+
+Resolution rules:
+
+- **Rules and defaults cascade** (root → child, deep-merged; the nearest config wins).
+- **`[discovery] exclude` globs are additive** across the tree — each config's excludes prune its
+  own subtree, so a parent exclude already covers its children.
+- **`[per-file-ignores]` globs are relative** to the directory of the config that declares them.
+- `--config <path>` pins one config for the whole run and bypasses nested resolution.
 
 ### Optional Catalog Tools
 

@@ -84,6 +84,25 @@ pub struct PolyConfig {
     /// Resolved native `_typos.toml` / `.typos.toml` content, if present near the
     /// config root. Combined with `[lint.typos]` in `polylint-core`.
     pub typos_native: TyposNative,
+    /// `[workspace]` — nested-config cascade boundary marker (ADR 0018).
+    pub workspace: WorkspaceConfig,
+}
+
+/// `[workspace]` — marks a config as the cascade boundary for hierarchical
+/// resolution (ADR 0018).
+///
+/// In a monorepo, `poly` resolves the config for a file by deep-merging the
+/// chain of `poly.toml` files from the nearest one up to the workspace root.
+/// Setting `root = true` stops that upward walk at this config, so a project
+/// never inherits configuration from a `poly.toml` above its own root (e.g. one
+/// in `$HOME`). A directory containing `.git` is treated as an implicit boundary
+/// even without this marker.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct WorkspaceConfig {
+    /// When `true`, upward cascade resolution stops here — this config is the
+    /// base of the merge chain.
+    pub root: bool,
 }
 
 /// `[discovery]` — tunes the file walk that direct `poly lint` / `poly fmt` /
@@ -129,35 +148,124 @@ impl PolyConfig {
     /// over the primary config before deserialization. The merged `[hooks]`
     /// table is then validated (see [`HooksConfig::validate`]).
     pub fn load_file(path: &Path) -> anyhow::Result<PolyConfig> {
-        let text = std::fs::read_to_string(path)?;
-        let mut table: toml::Table = toml::from_str(&text)?;
+        let table = read_config_table(path)?;
+        let typos_dir = path.parent().unwrap_or(path);
+        finalize(table, typos_dir)
+    }
 
-        if let Some(parent) = path.parent() {
-            let override_path = parent.join(LOCAL_OVERRIDE_NAME);
-            if override_path.is_file() {
-                let override_text = std::fs::read_to_string(&override_path)?;
-                let override_table: toml::Table = toml::from_str(&override_text)?;
-                merge_tables(&mut table, override_table);
+    /// Resolve the effective config for `dir` by cascading the ancestor chain of
+    /// config files — the workspace root as the base, the nearest config as the
+    /// final override — deep-merged via [`merge_tables`] (ADR 0018). Each config
+    /// in the chain first absorbs its sibling [`LOCAL_OVERRIDE_NAME`].
+    ///
+    /// The upward walk stops at (and includes) the first config marked
+    /// `[workspace] root = true`, at a directory containing `.git`, or at the
+    /// filesystem root. Returns the default config (with the nearest native
+    /// typos config) when no config file is found — identical to [`load`] in the
+    /// single-config case, so a repo with exactly one root `poly.toml` and no
+    /// nested configs resolves exactly as before.
+    ///
+    /// [`load`]: PolyConfig::load
+    pub fn resolve_for_dir(dir: &Path) -> anyhow::Result<PolyConfig> {
+        // Collect (dir, table) pairs from the nearest config upward to the
+        // workspace boundary. `chain[0]` is the nearest config.
+        let mut chain: Vec<(PathBuf, toml::Table)> = Vec::new();
+        let mut current = Some(dir.to_path_buf());
+        while let Some(d) = current {
+            if let Some(path) = config_file_in(&d) {
+                let table = read_config_table(&path)?;
+                let is_root = table_marks_workspace_root(&table);
+                chain.push((d.clone(), table));
+                if is_root {
+                    break;
+                }
             }
+            // A `.git` directory marks the repository root: never cascade above
+            // it, even without an explicit `[workspace] root` marker.
+            if d.join(".git").exists() {
+                break;
+            }
+            current = d.parent().map(Path::to_path_buf);
         }
 
-        let raw: RawPolyConfig = table.try_into()?;
-        let mut config: PolyConfig = raw.into();
-        config.typos_native = path
-            .parent()
-            .and_then(find_typos_native_file)
-            .map(|p| parse_typos_native(&p))
-            .unwrap_or_default();
-        config
-            .hooks
-            .validate()
-            .map_err(|message| anyhow::anyhow!("invalid [hooks] config: {message}"))?;
-        config
-            .tools
-            .validate()
-            .map_err(|message| anyhow::anyhow!("invalid [tools] config: {message}"))?;
-        Ok(config)
+        if chain.is_empty() {
+            return Ok(PolyConfig {
+                typos_native: find_typos_native_file(dir)
+                    .map(|p| parse_typos_native(&p))
+                    .unwrap_or_default(),
+                ..PolyConfig::default()
+            });
+        }
+
+        // Fold from the topmost config (base) down to the nearest (final
+        // override). `chain` is nearest-first, so reverse to start at the base.
+        let mut iter = chain.into_iter().rev();
+        let (mut nearest_dir, mut merged) = iter.next().expect("chain is non-empty");
+        for (d, table) in iter {
+            merge_tables(&mut merged, table);
+            nearest_dir = d;
+        }
+
+        finalize(merged, &nearest_dir)
     }
+}
+
+/// Read a single config file into a [`toml::Table`], deep-merging its sibling
+/// [`LOCAL_OVERRIDE_NAME`] over it when present.
+fn read_config_table(path: &Path) -> anyhow::Result<toml::Table> {
+    let text = std::fs::read_to_string(path)?;
+    let mut table: toml::Table = toml::from_str(&text)?;
+    if let Some(parent) = path.parent() {
+        let override_path = parent.join(LOCAL_OVERRIDE_NAME);
+        if override_path.is_file() {
+            let override_text = std::fs::read_to_string(&override_path)?;
+            let override_table: toml::Table = toml::from_str(&override_text)?;
+            merge_tables(&mut table, override_table);
+        }
+    }
+    Ok(table)
+}
+
+/// Deserialize a (possibly cascade-merged) config table into a validated
+/// [`PolyConfig`], populating `typos_native` by searching upward from
+/// `typos_dir`.
+fn finalize(table: toml::Table, typos_dir: &Path) -> anyhow::Result<PolyConfig> {
+    let raw: RawPolyConfig = table.try_into()?;
+    let mut config: PolyConfig = raw.into();
+    config.typos_native = find_typos_native_file(typos_dir)
+        .map(|p| parse_typos_native(&p))
+        .unwrap_or_default();
+    config
+        .hooks
+        .validate()
+        .map_err(|message| anyhow::anyhow!("invalid [hooks] config: {message}"))?;
+    config
+        .tools
+        .validate()
+        .map_err(|message| anyhow::anyhow!("invalid [tools] config: {message}"))?;
+    Ok(config)
+}
+
+/// Return the config file in `dir` (a single directory, no upward walk),
+/// preferring `poly.toml` over `polylint.toml`.
+fn config_file_in(dir: &Path) -> Option<PathBuf> {
+    for name in CONFIG_FILE_NAMES {
+        let candidate = dir.join(name);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+/// Whether a raw config table declares `[workspace] root = true`.
+fn table_marks_workspace_root(table: &toml::Table) -> bool {
+    table
+        .get("workspace")
+        .and_then(|v| v.as_table())
+        .and_then(|t| t.get("root"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
 }
 
 /// Recursively deep-merge `override_table` over `base`. Two tables at the same
@@ -264,6 +372,7 @@ struct RawPolyConfig {
     tools: ToolsConfig,
     #[serde(rename = "per-file-ignores")]
     per_file_ignores: BTreeMap<String, Vec<String>>,
+    workspace: WorkspaceConfig,
 }
 
 impl From<RawPolyConfig> for PolyConfig {
@@ -279,6 +388,7 @@ impl From<RawPolyConfig> for PolyConfig {
             tools: raw.tools,
             per_file_ignores: raw.per_file_ignores,
             typos_native: TyposNative::default(), // populated after conversion in load_file / load
+            workspace: raw.workspace,
         }
     }
 }
@@ -634,5 +744,104 @@ enabled = true
         fs::write(dir.path().join("poly.toml"), "[defaults]\nline_length = 99\n").unwrap();
         let config = PolyConfig::load(dir.path()).expect("load");
         assert_eq!(config.defaults.line_length, 99);
+    }
+
+    #[test]
+    fn resolve_for_dir_cascades_child_over_root() {
+        let root = tempdir().unwrap();
+        fs::write(
+            root.path().join("poly.toml"),
+            r#"
+[workspace]
+root = true
+[defaults]
+line_length = 120
+[lint.python.ruff]
+select = ["ALL"]
+"#,
+        )
+        .unwrap();
+        let child = root.path().join("frontend");
+        fs::create_dir(&child).unwrap();
+        // Child declares ONLY a diff; it must inherit line_length + ruff select.
+        fs::write(child.join("poly.toml"), "[fmt.javascript.oxc]\nsemicolons = true\n").unwrap();
+
+        let config = PolyConfig::resolve_for_dir(&child).expect("resolve");
+        assert_eq!(config.defaults.line_length, 120, "inherited from root");
+        assert!(config.lint.contains_key("python"), "ruff table inherited from root");
+        assert!(config.fmt.contains_key("javascript"), "oxc table from child");
+    }
+
+    #[test]
+    fn resolve_for_dir_child_scalar_overrides_root() {
+        let root = tempdir().unwrap();
+        fs::write(
+            root.path().join("poly.toml"),
+            "[workspace]\nroot = true\n[defaults]\nline_length = 120\n",
+        )
+        .unwrap();
+        let child = root.path().join("docs-site");
+        fs::create_dir(&child).unwrap();
+        fs::write(child.join("poly.toml"), "[defaults]\nline_length = 80\n").unwrap();
+
+        let config = PolyConfig::resolve_for_dir(&child).expect("resolve");
+        assert_eq!(config.defaults.line_length, 80, "nearest config wins");
+    }
+
+    #[test]
+    fn workspace_root_marker_bounds_the_chain() {
+        // outer/poly.toml is ABOVE the marked root and must NOT be inherited.
+        let outer = tempdir().unwrap();
+        fs::write(outer.path().join("poly.toml"), "[defaults]\nline_length = 200\n").unwrap();
+        let repo = outer.path().join("repo");
+        fs::create_dir(&repo).unwrap();
+        fs::write(
+            repo.join("poly.toml"),
+            "[workspace]\nroot = true\n[defaults]\nline_length = 120\n",
+        )
+        .unwrap();
+        let pkg = repo.join("pkg");
+        fs::create_dir(&pkg).unwrap();
+        fs::write(pkg.join("poly.toml"), "[lint.rust.clippy]\n").unwrap();
+
+        let config = PolyConfig::resolve_for_dir(&pkg).expect("resolve");
+        assert_eq!(
+            config.defaults.line_length, 120,
+            "bounded at [workspace] root, not outer 200"
+        );
+    }
+
+    #[test]
+    fn resolve_for_dir_single_config_matches_load() {
+        let dir = tempdir().unwrap();
+        fs::write(
+            dir.path().join("poly.toml"),
+            "[workspace]\nroot = true\n[defaults]\nline_length = 111\n[lint.python.ruff]\nselect = [\"E\"]\n",
+        )
+        .unwrap();
+        let resolved = PolyConfig::resolve_for_dir(dir.path()).expect("resolve");
+        let loaded = PolyConfig::load(dir.path()).expect("load");
+        assert_eq!(resolved.defaults.line_length, loaded.defaults.line_length);
+        assert_eq!(
+            resolved.lint, loaded.lint,
+            "single-config resolve == load (back-compat)"
+        );
+    }
+
+    #[test]
+    fn resolve_for_dir_no_config_is_default() {
+        let dir = tempdir().unwrap();
+        let config = PolyConfig::resolve_for_dir(dir.path()).expect("resolve");
+        assert_eq!(config.defaults.line_length, 120);
+        assert!(config.lint.is_empty());
+    }
+
+    #[test]
+    fn parses_workspace_root_marker() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("poly.toml");
+        fs::write(&path, "[workspace]\nroot = true\n").unwrap();
+        let config = PolyConfig::load_file(&path).expect("load");
+        assert!(config.workspace.root);
     }
 }

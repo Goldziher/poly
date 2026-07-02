@@ -8,17 +8,6 @@ use std::path::{Path, PathBuf};
 
 use crate::engine::{Diagnostic, Severity};
 
-/// The full exclude set for a run: `[discovery] exclude` from config, plus any
-/// call-time `--exclude` / MCP globs. Built once per run (not in the hot loop).
-pub(crate) fn merged_excludes(config_exclude: &[String], extra: &[String]) -> Vec<String> {
-    if extra.is_empty() {
-        return config_exclude.to_vec();
-    }
-    let mut excludes = config_exclude.to_vec();
-    excludes.extend(extra.iter().cloned());
-    excludes
-}
-
 /// Compiled `[per-file-ignores]`: each path glob paired with the rule codes to
 /// suppress for files it matches. Built once per run, applied as a post-lint
 /// filter on the normalized `Diagnostic.code` so it is engine-agnostic.
@@ -237,18 +226,6 @@ mod tests {
             fix: Vec::new(),
             metadata: BTreeMap::new(),
         }
-    }
-
-    #[test]
-    fn merged_excludes_unions_config_and_opts() {
-        assert_eq!(
-            merged_excludes(&["test_apps/**".to_string()], &[]),
-            vec!["test_apps/**"]
-        );
-        assert_eq!(
-            merged_excludes(&["test_apps/**".to_string()], &["artifacts/**".to_string()]),
-            vec!["test_apps/**".to_string(), "artifacts/**".to_string()],
-        );
     }
 
     #[test]

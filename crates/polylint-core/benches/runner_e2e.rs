@@ -65,6 +65,7 @@ fn bench_runner(c: &mut Criterion) {
         no_cache: true,
         jobs: None,
         exclude: Vec::new(),
+        explicit_config: true,
     };
 
     let mut group = c.benchmark_group("runner_e2e");

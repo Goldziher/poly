@@ -2,6 +2,10 @@
 
 - Status: Accepted
 - Date: 2026-07-01
+- Updated: 2026-07-02 (hierarchical config, ADR 0018: with nested `poly.toml`s,
+  `[discovery] exclude` globs are unioned across the tree, each rooted at its own
+  config directory, and `[per-file-ignores]` globs are resolved relative to their
+  owning config's directory rather than only the run root.)
 
 ## Context
 

@@ -39,10 +39,13 @@ fn resolve_paths(paths: &[String]) -> Vec<PathBuf> {
 /// before the remaining diagnostics are reported. Returns the same JSON the
 /// CLI emits under `--format json`.
 pub fn lint(paths: &[String], exclude: &[String], config: Option<&str>, fix: bool) -> anyhow::Result<String> {
+    // An explicit MCP `config` pins one config (no nested resolution).
+    let explicit_config = config.is_some();
     let config = resolve_config(config.map(Path::new))?;
     let resolved = resolve_paths(paths);
     let opts = RunOptions {
         exclude: exclude.to_vec(),
+        explicit_config,
         ..RunOptions::default()
     };
     let results = polylint_core::lint(&resolved, &config, &opts, fix, false)?;
@@ -53,10 +56,13 @@ pub fn lint(paths: &[String], exclude: &[String], config: Option<&str>, fix: boo
 /// otherwise this is a dry run (`--check`). Returns the same JSON the CLI emits
 /// under `--format json`.
 pub fn format(paths: &[String], exclude: &[String], config: Option<&str>, write: bool) -> anyhow::Result<String> {
+    // An explicit MCP `config` pins one config (no nested resolution).
+    let explicit_config = config.is_some();
     let config = resolve_config(config.map(Path::new))?;
     let resolved = resolve_paths(paths);
     let opts = RunOptions {
         exclude: exclude.to_vec(),
+        explicit_config,
         ..RunOptions::default()
     };
     let results = polylint_core::format(&resolved, &config, &opts, write, false)?;

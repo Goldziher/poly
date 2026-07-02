@@ -31,6 +31,7 @@ Context, Decision, Consequences (positive and negative/risks), and Alternatives 
 | [0015](0015-fat-cli-vs-modular-backends.md) | Fat CLI vs. Modular Backends | Accepted |
 | [0016](0016-uniform-rule-selection.md) | Uniform Per-Tool Rule-Selection Model | Accepted |
 | [0017](0017-path-excludes-per-file-ignores.md) | Path Exclusions and Per-File Rule Ignores | Accepted |
+| [0018](0018-hierarchical-configuration.md) | Hierarchical Configuration Resolution for Monorepos | Accepted |
 
 ## Conventions
 
