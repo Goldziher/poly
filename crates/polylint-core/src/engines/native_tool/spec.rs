@@ -227,9 +227,18 @@ mod tests {
 
     #[test]
     fn other_specs_have_no_config_flag() {
-        assert!(!GOFMT_SPEC.rustfmt_config_flag, "gofmt does not support rustfmt_config_flag");
-        assert!(!ZIGFMT_SPEC.rustfmt_config_flag, "zigfmt does not support rustfmt_config_flag");
-        assert!(!SHFMT_SPEC.rustfmt_config_flag, "shfmt does not support rustfmt_config_flag");
+        assert!(
+            !GOFMT_SPEC.rustfmt_config_flag,
+            "gofmt does not support rustfmt_config_flag"
+        );
+        assert!(
+            !ZIGFMT_SPEC.rustfmt_config_flag,
+            "zigfmt does not support rustfmt_config_flag"
+        );
+        assert!(
+            !SHFMT_SPEC.rustfmt_config_flag,
+            "shfmt does not support rustfmt_config_flag"
+        );
         assert!(
             !SHELLCHECK_SPEC.rustfmt_config_flag,
             "shellcheck does not support rustfmt_config_flag"

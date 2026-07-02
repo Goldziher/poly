@@ -51,11 +51,7 @@ enum StdinWriter {
 /// inputs are written from a dedicated OS thread while this thread drains stdout
 /// via `wait_with_output`, preventing the pipe-buffer deadlock that can occur
 /// when a formatter buffers all input before writing any output.
-pub(crate) fn format_via_tool(
-    spec: &ToolSpec,
-    src: &SourceFile,
-    indent_width: usize,
-) -> anyhow::Result<FormatOutput> {
+pub(crate) fn format_via_tool(spec: &ToolSpec, src: &SourceFile, indent_width: usize) -> anyhow::Result<FormatOutput> {
     let format_binary = spec
         .format_binary
         .expect("format_via_tool called on a lint-only ToolSpec");
@@ -82,7 +78,9 @@ pub(crate) fn format_via_tool(
     // exactly as `cargo fmt` does. A governing `rustfmt.toml` is honoured; with
     // none, rustfmt applies its built-in defaults. poly never imposes an
     // opinionated width on Rust, so `poly fmt` and `cargo fmt` agree.
-    if spec.rustfmt_config_flag && let Some(parent) = src.path.parent().filter(|p| p.is_dir()) {
+    if spec.rustfmt_config_flag
+        && let Some(parent) = src.path.parent().filter(|p| p.is_dir())
+    {
         cmd.current_dir(parent);
     }
     cmd.args(spec.format_args);
