@@ -1,11 +1,8 @@
 //! Per-file format dispatch: pipe source content through a native formatter
 //! CLI and collect its stdout output.
 
-use std::collections::HashMap;
 use std::io::Write;
-use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::{Mutex, OnceLock};
 use std::thread;
 
 use anyhow::Context;
@@ -13,62 +10,6 @@ use anyhow::Context;
 use crate::engine::{FormatOutput, SourceFile};
 
 use super::spec::ToolSpec;
-
-// ---------------------------------------------------------------------------
-// rustfmt.toml discovery
-// ---------------------------------------------------------------------------
-
-/// Process-wide cache mapping a starting directory to the directory that
-/// contains the nearest `rustfmt.toml` or `.rustfmt.toml`, or `None` when
-/// no such file exists anywhere in the ancestry of that directory.
-///
-/// Keyed by the file's parent directory so every `.rs` file under the same
-/// directory shares a single filesystem walk — the engine runs in a rayon
-/// `par_iter` so the cache must be `Send + Sync`.
-fn rustfmt_config_cache() -> &'static Mutex<HashMap<PathBuf, Option<PathBuf>>> {
-    static CACHE: OnceLock<Mutex<HashMap<PathBuf, Option<PathBuf>>>> = OnceLock::new();
-    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-/// Locate the directory containing the nearest `rustfmt.toml` or
-/// `.rustfmt.toml` that governs `path`, walking up from the file's directory
-/// toward the filesystem root.
-///
-/// Returns `Some(dir)` when a config file is found so callers can pass
-/// `--config-path <dir>` to `rustfmt`. Returns `None` when no config file
-/// exists in any ancestor directory of `path`.
-///
-/// Results are cached per starting directory (a [`Mutex<HashMap>`] keyed by
-/// the file's parent directory) so the walk runs at most once per directory
-/// in the rayon hot path.
-pub(crate) fn find_rustfmt_config_dir(path: &Path) -> Option<PathBuf> {
-    let start_dir = path.parent().unwrap_or(path);
-
-    // Fast path: already cached for this directory.
-    {
-        let guard = rustfmt_config_cache()
-            .lock()
-            .expect("rustfmt config cache mutex poisoned");
-        if let Some(cached) = guard.get(start_dir) {
-            return cached.clone();
-        }
-    }
-
-    // Walk up from start_dir; stop at the first directory that contains
-    // `rustfmt.toml` or `.rustfmt.toml`.
-    let found = start_dir
-        .ancestors()
-        .find(|dir| dir.join("rustfmt.toml").exists() || dir.join(".rustfmt.toml").exists())
-        .map(Path::to_path_buf);
-
-    // Persist the result so subsequent files in the same directory are free.
-    rustfmt_config_cache()
-        .lock()
-        .expect("rustfmt config cache mutex poisoned")
-        .insert(start_dir.to_path_buf(), found.clone());
-
-    found
-}
 
 /// Largest input written to the child's stdin **inline** on the current rayon
 /// worker (no dedicated thread). Inputs up to this size fit within the OS pipe
@@ -92,8 +33,10 @@ enum StdinWriter {
 /// `indent_width` is injected as `-i {indent_width}` when
 /// `spec.format_indent_flag` is true (used by shfmt).
 ///
-/// `line_length` is injected as `--config max_width={line_length}` when
-/// `spec.max_width_flag` is true (used by rustfmt, which defaults to 100).
+/// For rustfmt (`spec.rustfmt_config_flag`), the child runs in the source
+/// file's directory so rustfmt discovers the governing `rustfmt.toml` itself;
+/// with no project config, rustfmt applies its own defaults — poly's output
+/// matches `cargo fmt` either way.
 ///
 /// Returns:
 /// - [`FormatOutput::Unchanged`] when the tool exits non-zero (syntax error
@@ -112,7 +55,6 @@ pub(crate) fn format_via_tool(
     spec: &ToolSpec,
     src: &SourceFile,
     indent_width: usize,
-    line_length: usize,
 ) -> anyhow::Result<FormatOutput> {
     let format_binary = spec
         .format_binary
@@ -133,23 +75,15 @@ pub(crate) fn format_via_tool(
         cmd.arg("--edition");
         cmd.arg(super::edition::resolve_edition(&src.path));
     }
-    // Inject rustfmt config when the spec requests it (rustfmt only).
-    //
-    // If a `rustfmt.toml` / `.rustfmt.toml` governs the file, pass its
-    // directory via `--config-path` so rustfmt loads the project's full
-    // configuration (including any `max_width`, `use_field_init_shorthand`,
-    // etc.). The project config is authoritative — poly never overrides it.
-    //
-    // Otherwise fall back to poly's opinionated 120-column default, which
-    // rustfmt without a config file would ignore in favour of its own 100.
-    if spec.max_width_flag {
-        if let Some(config_dir) = find_rustfmt_config_dir(&src.path) {
-            cmd.arg("--config-path");
-            cmd.arg(config_dir);
-        } else {
-            cmd.arg("--config");
-            cmd.arg(format!("max_width={line_length}"));
-        }
+    // rustfmt reads source from stdin, so it cannot see the file's on-disk
+    // location and would otherwise discover `rustfmt.toml` relative to poly's
+    // current working directory. Anchor the child process to the source file's
+    // directory so rustfmt's own config discovery walks up from the file —
+    // exactly as `cargo fmt` does. A governing `rustfmt.toml` is honoured; with
+    // none, rustfmt applies its built-in defaults. poly never imposes an
+    // opinionated width on Rust, so `poly fmt` and `cargo fmt` agree.
+    if spec.rustfmt_config_flag && let Some(parent) = src.path.parent().filter(|p| p.is_dir()) {
+        cmd.current_dir(parent);
     }
     cmd.args(spec.format_args);
 

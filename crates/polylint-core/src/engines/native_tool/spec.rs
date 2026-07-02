@@ -42,18 +42,19 @@ pub(crate) struct ToolSpec {
     /// that `cargo fmt` (which passes the manifest edition) considers clean.
     /// `gofmt` / `zig fmt` / `shfmt` have no edition concept (`false`).
     pub(crate) edition_flag: bool,
-    /// Whether to enable the `rustfmt` config-discovery and max_width path.
-    /// Only `rustfmt` sets this. When `true`, `format_via_tool` walks up from
-    /// the source file's directory to locate a `rustfmt.toml` or
-    /// `.rustfmt.toml`:
+    /// Whether to enable `rustfmt` config discovery. Only `rustfmt` sets this.
+    /// When `true`, `format_via_tool` runs rustfmt in the source file's own
+    /// directory (rustfmt reads from stdin and cannot otherwise see the file's
+    /// location), so rustfmt discovers the governing `rustfmt.toml` itself,
+    /// walking up from the file exactly as `cargo fmt` does:
     ///
-    /// - **Found** — passes `--config-path <dir>` so rustfmt loads the
-    ///   project's full config (including its `max_width` and any other
-    ///   options). `max_width` is **not** overridden by poly.
-    /// - **Not found** — injects `--config max_width=<line_length>` to apply
-    ///   poly's opinionated 120-column default (rustfmt's own built-in
-    ///   default is 100 columns).
-    pub(crate) max_width_flag: bool,
+    /// - **Config found** — rustfmt loads the project's full config (its
+    ///   `max_width` and any other options).
+    /// - **No config** — rustfmt applies its own built-in defaults.
+    ///
+    /// Either way `poly fmt` agrees with `cargo fmt`; poly never imposes an
+    /// opinionated width on Rust.
+    pub(crate) rustfmt_config_flag: bool,
 }
 
 impl ToolSpec {
@@ -83,7 +84,7 @@ pub(crate) static GOFMT_SPEC: ToolSpec = ToolSpec {
     version_args: &["version"],
     default_on: true,
     edition_flag: false,
-    max_width_flag: false,
+    rustfmt_config_flag: false,
 };
 
 /// `rustfmt --emit=stdout`: reads stdin, writes to stdout. Canonical Rust
@@ -99,9 +100,10 @@ pub(crate) static RUSTFMT_SPEC: ToolSpec = ToolSpec {
     version_args: &["--version"],
     default_on: true,
     edition_flag: true,
-    // Inject --config max_width=<line_length> to honour poly's 120-column
-    // opinionated default; rustfmt's own default is 100.
-    max_width_flag: true,
+    // Enable rustfmt.toml discovery. A project config is passed via
+    // --config-path; with no config, rustfmt applies its own defaults so
+    // poly agrees with `cargo fmt` instead of imposing an opinionated width.
+    rustfmt_config_flag: true,
 };
 
 /// `zig fmt --stdin`: reads stdin, writes to stdout. Opt-in (off by default).
@@ -116,7 +118,7 @@ pub(crate) static ZIGFMT_SPEC: ToolSpec = ToolSpec {
     version_args: &["version"],
     default_on: false,
     edition_flag: false,
-    max_width_flag: false,
+    rustfmt_config_flag: false,
 };
 
 /// `shfmt -`: reads stdin, writes formatted shell source to stdout. Opt-in
@@ -136,7 +138,7 @@ pub(crate) static SHFMT_SPEC: ToolSpec = ToolSpec {
     version_args: &["--version"],
     default_on: false,
     edition_flag: false,
-    max_width_flag: false,
+    rustfmt_config_flag: false,
 };
 
 /// `shellcheck --format=json1 -`: reads shell source from stdin, emits a
@@ -154,7 +156,7 @@ pub(crate) static SHELLCHECK_SPEC: ToolSpec = ToolSpec {
     version_args: &["--version"],
     default_on: false,
     edition_flag: false,
-    max_width_flag: false,
+    rustfmt_config_flag: false,
 };
 
 // ---------------------------------------------------------------------------
@@ -213,25 +215,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn rustfmt_spec_has_max_width_flag() {
-        // Verifies that the max_width_flag is correctly set so that
-        // format_via_tool activates rustfmt config-discovery for rustfmt
-        // (--config-path when a rustfmt.toml is found, --config max_width=120
-        // when none is found).
+    fn rustfmt_spec_has_config_flag() {
+        // Verifies rustfmt_config_flag is set so format_via_tool activates
+        // rustfmt.toml discovery (--config-path when a rustfmt.toml is found,
+        // rustfmt's own defaults when none is found).
         assert!(
-            RUSTFMT_SPEC.max_width_flag,
-            "RUSTFMT_SPEC.max_width_flag must be true to activate rustfmt config discovery"
+            RUSTFMT_SPEC.rustfmt_config_flag,
+            "RUSTFMT_SPEC.rustfmt_config_flag must be true to activate rustfmt config discovery"
         );
     }
 
     #[test]
-    fn other_specs_have_no_max_width_flag() {
-        assert!(!GOFMT_SPEC.max_width_flag, "gofmt does not support max_width_flag");
-        assert!(!ZIGFMT_SPEC.max_width_flag, "zigfmt does not support max_width_flag");
-        assert!(!SHFMT_SPEC.max_width_flag, "shfmt does not support max_width_flag");
+    fn other_specs_have_no_config_flag() {
+        assert!(!GOFMT_SPEC.rustfmt_config_flag, "gofmt does not support rustfmt_config_flag");
+        assert!(!ZIGFMT_SPEC.rustfmt_config_flag, "zigfmt does not support rustfmt_config_flag");
+        assert!(!SHFMT_SPEC.rustfmt_config_flag, "shfmt does not support rustfmt_config_flag");
         assert!(
-            !SHELLCHECK_SPEC.max_width_flag,
-            "shellcheck does not support max_width_flag"
+            !SHELLCHECK_SPEC.rustfmt_config_flag,
+            "shellcheck does not support rustfmt_config_flag"
         );
     }
 }

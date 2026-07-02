@@ -301,12 +301,12 @@ impl Engine for NativeToolEngine {
             } else {
                 ""
             };
-            // Tools with max_width_flag now discover and honour a project-level
-            // rustfmt.toml via --config-path instead of always forcing
-            // max_width=120; mark the key to invalidate caches built under the
-            // old always-inject behaviour.
-            let config_path_marker = if self.spec().max_width_flag {
-                " | config-path-aware"
+            // rustfmt now honours a project-level rustfmt.toml via --config-path
+            // and otherwise defers to rustfmt's own defaults (no forced
+            // max_width). Mark the key to invalidate caches built under the old
+            // always-inject-max_width=120 behaviour.
+            let config_path_marker = if self.spec().rustfmt_config_flag {
+                " | rustfmt-defaults"
             } else {
                 ""
             };
@@ -352,7 +352,7 @@ impl Engine for NativeToolEngine {
                     self.notify_tier2_fallback(cfg);
                     return TreeSitterEngine.format(src, cfg);
                 }
-                format_via_tool(self.spec(), src, cfg.indent_width, cfg.globals.line_length)
+                format_via_tool(self.spec(), src, cfg.indent_width)
             }
             NativeRole::Shellcheck => Ok(FormatOutput::Unchanged),
         }

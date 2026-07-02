@@ -255,17 +255,17 @@ fn rustfmt_honors_rustfmt_toml_max_width() {
     );
 }
 
-/// Without a `rustfmt.toml`, poly injects `max_width = 120` (its opinionated
-/// default).  A ~110-char function signature is clean at 120 but over
-/// rustfmt's built-in default (100), so `Unchanged` proves poly successfully
-/// injected `--config max_width = 120`.
+/// Without a `rustfmt.toml`, poly imposes no width and rustfmt applies its own
+/// built-in default (100), exactly as `cargo fmt` does. A ~110-char function
+/// signature is over rustfmt's default, so `Formatted` proves poly did NOT
+/// inject its old opinionated `max_width = 120`.
 ///
 /// Gated on `rustfmt` presence.
 #[test]
-fn rustfmt_applies_120_default_without_config() {
+fn rustfmt_uses_own_default_without_config() {
     let engine = NativeToolEngine::for_language(Language::Rust);
     if !engine.is_available() {
-        eprintln!("rustfmt not found on PATH — skipping rustfmt_applies_120_default_without_config");
+        eprintln!("rustfmt not found on PATH — skipping rustfmt_uses_own_default_without_config");
         return;
     }
 
@@ -279,7 +279,7 @@ fn rustfmt_applies_120_default_without_config() {
     );
 
     // ~110-char first line: clean at max_width 120, reformatted by rustfmt at
-    // the built-in default of 100.  Unchanged → poly injected max_width 120.
+    // its built-in default of 100. Formatted → poly did not force max_width=120.
     const SRC: &str = concat!(
         "fn function_with_long_name_here(",
         "first_parameter: String, second_parameter: String, third_param: u32) -> bool {\n",
@@ -295,8 +295,8 @@ fn rustfmt_applies_120_default_without_config() {
 
     let result = engine.format(&src, &enabled_cfg()).unwrap();
     assert!(
-        matches!(result, FormatOutput::Unchanged),
-        "a ~110-char signature must be Unchanged when poly applies max_width = 120; \
-         got Formatted — poly may have fallen back to rustfmt's 100-column default"
+        matches!(result, FormatOutput::Formatted(_)),
+        "a ~110-char signature must be Formatted when poly defers to rustfmt's \
+         100-column default; got Unchanged — poly may still be forcing max_width = 120"
     );
 }
