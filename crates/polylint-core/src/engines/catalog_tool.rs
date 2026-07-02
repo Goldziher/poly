@@ -824,6 +824,7 @@ mod tests {
     }
 
     /// Build a leaked `&'static Tool` with path_globs, for testing the path filter.
+    #[cfg(unix)]
     fn leak_tool_with_globs(
         name: &str,
         binary: &str,
