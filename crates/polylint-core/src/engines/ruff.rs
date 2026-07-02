@@ -261,11 +261,12 @@ impl Engine for RuffEngine {
     fn version(&self) -> &str {
         // Suffix bumped when engine logic (not just the pinned rev) changes the
         // output for the same input: +pkgroot = package-root resolution (INP001 /
-        // isort), +plugins = pydocstyle/mccabe/pylint param wiring.
+        // isort), +plugins = pydocstyle/mccabe/pylint param wiring, +e501 =
+        // pycodestyle max_line_length mirrors line_length (E501 honors config).
         concat!(
             "git-ruff:",
             "03f787e51e94999977b9a5a32b0153d82d7e2142",
-            "+pkgroot+plugins+isort"
+            "+pkgroot+plugins+isort+e501"
         )
     }
 

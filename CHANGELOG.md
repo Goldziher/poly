@@ -7,6 +7,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). `polylint` and
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-07-02
+
+### Fixed
+
+- **ruff cache-key** now folds the E501/`line_length` engine change (0.1.11).
+  The `line_length`-honoring fix altered lint output for the same input without
+  bumping the ruff engine `version()` suffix, so warm `.polylint` caches kept
+  serving stale 88-column E501 diagnostics. Bumped the suffix (`+e501`) to
+  invalidate them. (CI is unaffected — fresh runners have no cache.)
+
 ## [0.1.11] - 2026-07-02
 
 ### Fixed
