@@ -69,7 +69,29 @@ pub struct MigrateArgs {
     /// Allow `--write` even when the git working tree is dirty.
     #[arg(long)]
     pub allow_dirty: bool,
+
+    /// Also strip `pyproject.toml` `[tool.<x>]` sections for Python formatters
+    /// and linters superseded by ruff (black, isort, flake8, pyproject-fmt, …).
+    /// Off by default; poly does not run these tools, so keeping their config is
+    /// harmless — this is an opt-in cleanup for repos consolidating onto poly.
+    #[arg(long)]
+    pub strip_superseded: bool,
 }
+
+/// `pyproject.toml` `[tool.<x>]` sections whose tool is superseded by ruff (or
+/// poly's opinionated formatting) and which `--strip-superseded` removes.
+const SUPERSEDED_PYPROJECT_TOOLS: &[&str] = &[
+    "black",
+    "isort",
+    "flake8",
+    "pyproject-fmt",
+    "blacken-docs",
+    "autoflake",
+    "yapf",
+    "pycln",
+    "docformatter",
+    "autopep8",
+];
 
 /// A migration plan for a single directory.
 pub struct MigrationPlan {
@@ -130,8 +152,11 @@ fn run(args: MigrateArgs) -> Result<ExitCode> {
 
     let mut any_change = false;
     for dir in &dirs {
-        let plan = build_plan(dir)?;
-        if plan.results.iter().any(|r| r.absorb != Absorb::None) || !plan.kept.is_empty() {
+        let mut plan = build_plan(dir)?;
+        if args.strip_superseded {
+            plan.actions.extend(superseded_actions(dir));
+        }
+        if plan.results.iter().any(|r| r.absorb != Absorb::None) || !plan.kept.is_empty() || !plan.actions.is_empty() {
             print!("{}", report::render_plan(&plan, args.write));
         }
         if args.write && !plan.is_empty() {
@@ -212,6 +237,28 @@ fn apply_plan(plan: &MigrationPlan) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Build a `StripPyproject` action for any superseded `[tool.<x>]` sections
+/// present in `dir/pyproject.toml` (empty when none / no pyproject).
+fn superseded_actions(dir: &Path) -> Vec<Action> {
+    let path = dir.join("pyproject.toml");
+    let Some(table) = importers::load_toml(&path) else {
+        return Vec::new();
+    };
+    let Some(tool) = table.get("tool").and_then(toml::Value::as_table) else {
+        return Vec::new();
+    };
+    let sections: Vec<Vec<String>> = SUPERSEDED_PYPROJECT_TOOLS
+        .iter()
+        .filter(|name| tool.contains_key(**name))
+        .map(|name| vec!["tool".to_string(), (*name).to_string()])
+        .collect();
+    if sections.is_empty() {
+        Vec::new()
+    } else {
+        vec![Action::StripPyproject { path, sections }]
+    }
 }
 
 /// Remove the given dotted sections from a `pyproject.toml`, never deleting the
@@ -303,4 +350,34 @@ fn verify(dir: &Path) -> Result<()> {
     polylint_core::format(&paths, &config, &options, false, false).context("verify: poly fmt --check failed")?;
     println!("verify: config loaded and engines ran cleanly in {}", dir.display());
     Ok(())
+}
+
+#[cfg(test)]
+mod superseded_tests {
+    use super::*;
+
+    #[test]
+    fn strips_present_superseded_tables_only() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("pyproject.toml"),
+            "[tool.black]\nline-length = 88\n[tool.isort]\nprofile = \"black\"\n[tool.mypy]\nstrict = true\n",
+        )
+        .unwrap();
+        let actions = superseded_actions(dir.path());
+        let Action::StripPyproject { sections, .. } = actions.first().expect("one strip action") else {
+            panic!("expected StripPyproject");
+        };
+        assert!(sections.contains(&vec!["tool".to_string(), "black".to_string()]));
+        assert!(sections.contains(&vec!["tool".to_string(), "isort".to_string()]));
+        // mypy is kept (type checker, not superseded).
+        assert!(!sections.contains(&vec!["tool".to_string(), "mypy".to_string()]));
+    }
+
+    #[test]
+    fn no_superseded_tables_yields_no_action() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("pyproject.toml"), "[tool.mypy]\nstrict = true\n").unwrap();
+        assert!(superseded_actions(dir.path()).is_empty());
+    }
 }

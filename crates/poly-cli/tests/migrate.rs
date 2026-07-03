@@ -18,6 +18,7 @@ fn args(dir: &Path, write: bool) -> MigrateArgs {
         recurse: false,
         verify: false,
         allow_dirty: true,
+        strip_superseded: false,
     }
 }
 
