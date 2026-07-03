@@ -131,6 +131,24 @@ fn format_pretty_lists_changed_files() {
 }
 
 #[test]
+fn format_pretty_dry_run_uses_future_tense() {
+    owo_colors::set_override(false);
+    // `check = true` is the dry-run (no `--fix`): the summary must say the files
+    // *will* change, not that they were changed.
+    let (text, changed) = report::render_format_pretty(&sample_format_results(), true, Verbosity::default());
+    assert_eq!(changed, 1, "one file would change");
+    assert!(
+        text.contains("will change"),
+        "dry-run summary must use future tense, got: {text}"
+    );
+    assert!(
+        !text.contains("1 changed of"),
+        "dry-run summary must not use the past-tense '\u{2026} changed of \u{2026}' wording, got: {text}"
+    );
+    insta::assert_snapshot!("format_pretty_dry_run", text);
+}
+
+#[test]
 fn format_json_lists_results() {
     let json = report::report_format_json(&sample_format_results());
     insta::assert_snapshot!("format_json", json);

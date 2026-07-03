@@ -184,10 +184,17 @@ pub fn render_format_pretty(results: &[FormatResult], check: bool, verbosity: Ve
             "All formatted.".if_supports_color(Stdout, |t| t.green())
         );
     } else {
+        // Dry-run (`check`) has not written anything yet, so use the future tense;
+        // `--fix` (`!check`) actually rewrote the files, so keep the past tense.
+        let phrase = if check {
+            format!("{n} file(s) will change")
+        } else {
+            format!("{n} changed")
+        };
         let _ = writeln!(
             out,
             "\n{} of {scanned} file(s)",
-            format!("{n} changed").if_supports_color(Stdout, |t| t.yellow())
+            phrase.if_supports_color(Stdout, |t| t.yellow())
         );
     }
     if verbosity.debug {
