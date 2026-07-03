@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use crate::engine::{Diagnostic, Severity};
+use crate::language::Language;
 
 /// Compiled `[per-file-ignores]`: each path glob paired with the rule codes to
 /// suppress for files it matches. Built once per run, applied as a post-lint
@@ -209,10 +210,39 @@ pub(crate) fn is_generated_lockfile(path: &Path) -> bool {
     name.ends_with(".lock") || LOCKFILE_NAMES.contains(&name)
 }
 
+/// Whether `content` carries a file-level "do not format this file" directive
+/// for its `language`, in which case `poly fmt` leaves it untouched.
+///
+/// As the umbrella formatter, poly honors the ecosystem's established
+/// whole-file skip markers so it does not fight a tool a project already opted
+/// into (and does not disturb machine-generated bridge/glue files that carry
+/// the marker). Currently:
+///
+/// - **Swift** — `// swift-format-ignore-file` (the directive `swift-format`
+///   itself recognizes to skip a file entirely). Matched leniently anywhere in
+///   the file; it is a distinctive marker that does not occur incidentally.
+pub(crate) fn is_format_ignored(content: &str, language: &Language) -> bool {
+    match language {
+        Language::Swift => content.contains("swift-format-ignore-file"),
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::engine::Severity;
+
+    #[test]
+    fn swift_format_ignore_file_directive_skips_formatting() {
+        let ignored = "// swift-format-ignore-file\nimport Foundation\nstruct A{let x:Int}\n";
+        assert!(is_format_ignored(ignored, &Language::Swift));
+        // Same content without the marker is formatted normally.
+        let normal = "import Foundation\nstruct A{let x:Int}\n";
+        assert!(!is_format_ignored(normal, &Language::Swift));
+        // The directive is Swift-scoped; an unrelated language is never skipped.
+        assert!(!is_format_ignored(ignored, &Language::Python));
+    }
 
     fn diag(code: Option<&str>) -> Diagnostic {
         Diagnostic {

@@ -14,7 +14,9 @@ use crate::discover::{DiscoveredFile, discover};
 use crate::engine::{Diagnostic, Edit, Engine, FormatOutput, SourceFile};
 use crate::engines::catalog_tool::CatalogToolEngine;
 use crate::engines::rule_config::RuleSelection;
-use crate::filter::{PerFileIgnores, SeverityRemap, is_generated_lockfile, match_bases, relative_for_match};
+use crate::filter::{
+    PerFileIgnores, SeverityRemap, is_format_ignored, is_generated_lockfile, match_bases, relative_for_match,
+};
 use crate::language::Language;
 use crate::registry::engines_for;
 use crate::resolve::ConfigSet;
@@ -593,6 +595,18 @@ fn format_one(
     collect_debug: bool,
 ) -> anyhow::Result<FormatResult> {
     let original = std::fs::read_to_string(&f.path)?;
+    // File-level "do not format" directives (e.g. `// swift-format-ignore-file`)
+    // are honored like generated lock files: no engine runs, the file is left
+    // byte-for-byte untouched. This protects files a project explicitly opted
+    // out of formatting and machine-generated bridge/glue that carries the marker.
+    if is_format_ignored(&original, &f.language) {
+        return Ok(FormatResult {
+            path: f.path.clone(),
+            changed: false,
+            formatted: None,
+            debug: None,
+        });
+    }
     let mut debug = collect_debug.then(RunDebug::default);
     // The file's bytes are shared across every format engine via `Arc<str>`:
     // each engine gets a refcount bump, not a fresh copy of the contents.
