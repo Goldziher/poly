@@ -92,6 +92,8 @@ pub enum Language {
     Dart,
     /// Gleam.
     Gleam,
+    /// C#.
+    CSharp,
     /// Any other language, identified by its tree-sitter-language-pack id.
     Other(String),
 }
@@ -143,6 +145,7 @@ impl Language {
             Language::Swift => "swift",
             Language::Dart => "dart",
             Language::Gleam => "gleam",
+            Language::CSharp => "csharp",
             Language::Other(s) => s.as_str(),
         }
     }
@@ -213,6 +216,7 @@ impl Language {
             "swift" => Language::Swift,
             "dart" => Language::Dart,
             "gleam" => Language::Gleam,
+            "cs" => Language::CSharp,
             _ => return None,
         };
         Some(lang)
@@ -266,10 +270,7 @@ impl Language {
             "elixir" => Language::Elixir,
             "c" => Language::C,
             "c++" | "cpp" => Language::Cpp,
-            // `c#` / `csharp`: poly has no `CSharp` variant yet, so these are
-            // intentionally left to fall through to `Language::Other`. clang-format
-            // (and other C# catalog tools) therefore will not route to `.cs` files
-            // until a dedicated `CSharp` variant exists — out of scope here.
+            "c#" | "csharp" => Language::CSharp,
             "rust" => Language::Rust,
             "protobuf" | "proto" => Language::Proto,
             "zig" => Language::Zig,
@@ -347,12 +348,14 @@ mod tests {
     }
 
     #[test]
-    fn from_catalog_name_leaves_csharp_unmapped() {
-        // No `CSharp` variant exists, so C# stays `Other` (see the inline note).
-        assert_eq!(Language::from_catalog_name("c#"), Language::Other("c#".to_string()));
+    fn from_catalog_name_maps_csharp() {
+        // C# maps to its dedicated variant so `.cs` files route to the tier-2
+        // tree-sitter formatter (poly has no C# native/tier-1 backend).
+        assert_eq!(Language::from_catalog_name("c#"), Language::CSharp);
+        assert_eq!(Language::from_catalog_name("csharp"), Language::CSharp);
         assert_eq!(
-            Language::from_catalog_name("csharp"),
-            Language::Other("csharp".to_string())
+            Language::from_path(std::path::Path::new("Foo.cs")),
+            Some(Language::CSharp)
         );
     }
 }
