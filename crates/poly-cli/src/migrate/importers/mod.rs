@@ -69,9 +69,13 @@ impl ImportResult {
     }
 }
 
-/// Merge every fragment into `doc`, preferring keys already present (idempotent
-/// re-runs never churn). Returns a list of conflict notes for keys that were
-/// left untouched because the destination already defined them.
+/// Merge every fragment into `doc`. New keys are inserted; when a key already
+/// exists, string arrays are **unioned** (missing items appended, preserving
+/// order and deduping) so list-valued config like `[discovery] exclude` or a
+/// rule `select` is never silently dropped, while scalar/other values keep the
+/// existing definition. Re-runs stay idempotent (a union with an existing
+/// superset appends nothing). Returns conflict notes for the scalar keys left
+/// untouched.
 pub fn apply(doc: &mut DocumentMut, fragments: &[Fragment]) -> Vec<String> {
     let mut conflicts = Vec::new();
     for fragment in fragments {
@@ -80,17 +84,36 @@ pub fn apply(doc: &mut DocumentMut, fragments: &[Fragment]) -> Vec<String> {
         }
         let table = ensure_table(doc.as_table_mut(), &fragment.path);
         for (key, item) in &fragment.entries {
-            if table.contains_key(key) {
-                conflicts.push(format!(
-                    "[{}] {key} already set; keeping existing value",
-                    fragment.path.join(".")
-                ));
-            } else {
-                table.insert(key, item.clone());
+            match table.get_mut(key) {
+                None => {
+                    table.insert(key, item.clone());
+                }
+                Some(existing) => match (existing.as_array_mut(), item.as_array()) {
+                    (Some(existing_arr), Some(incoming_arr)) => {
+                        union_string_array(existing_arr, incoming_arr);
+                    }
+                    _ => conflicts.push(format!(
+                        "[{}] {key} already set; keeping existing value",
+                        fragment.path.join(".")
+                    )),
+                },
             }
         }
     }
     conflicts
+}
+
+/// Append every string element of `incoming` not already present in `existing`.
+/// Only string elements are considered (all migrate importers emit string
+/// arrays); non-string arrays fall through unchanged.
+fn union_string_array(existing: &mut Array, incoming: &Array) {
+    for value in incoming.iter() {
+        if let Some(s) = value.as_str()
+            && !existing.iter().any(|e| e.as_str() == Some(s))
+        {
+            existing.push(s);
+        }
+    }
 }
 
 /// Navigate (creating as needed) the table at `path`, marking freshly created

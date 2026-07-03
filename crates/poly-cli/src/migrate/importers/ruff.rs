@@ -12,6 +12,11 @@ use toml_edit::Item;
 use super::{Absorb, Fragment, ImportResult, int_item, str_array, str_item, toml_string_list};
 
 /// Top-level `[tool.ruff]` / `ruff.toml` keys this importer fully honors.
+///
+/// `exclude` / `extend-exclude` fold into `[discovery] exclude`. `format`
+/// (`[tool.ruff.format]`) is intentionally dropped: poly formats Python with
+/// opinionated ruff-formatter defaults and does not read ruff's format options,
+/// so keeping the section would change nothing — it is recorded as a note.
 const RECOGNIZED_TOP: &[&str] = &[
     "lint",
     "select",
@@ -23,6 +28,10 @@ const RECOGNIZED_TOP: &[&str] = &[
     "src",
     "line-length",
     "line_length",
+    "exclude",
+    "extend-exclude",
+    "extend_exclude",
+    "format",
 ];
 
 /// `[lint]`-subtable keys this importer fully honors.
@@ -101,12 +110,33 @@ pub fn import(dir: &Path) -> Option<ImportResult> {
     // every backend, so it lives outside the ruff table).
     let per_file = collect_per_file(pick("per-file-ignores"));
 
+    // exclude / extend-exclude → [discovery] exclude (poly prunes these from the
+    // whole file walk; the merge unions them into any existing exclude list).
+    let mut excludes = toml_string_list(table.get("extend-exclude"));
+    excludes.extend(toml_string_list(table.get("extend_exclude")));
+    excludes.extend(toml_string_list(table.get("exclude")));
+    excludes.sort();
+    excludes.dedup();
+
+    let mut notes = Vec::new();
+    if table.contains_key("format") {
+        notes.push(
+            "dropped [tool.ruff.format] — poly formats Python with opinionated ruff-formatter defaults".to_string(),
+        );
+    }
+
     let mut fragments = Vec::new();
     if !ruff_entries.is_empty() {
         fragments.push(Fragment::new(&["lint", "python", "ruff"], ruff_entries));
     }
     if !per_file.is_empty() {
         fragments.push(Fragment::new(&["per-file-ignores"], per_file));
+    }
+    if !excludes.is_empty() {
+        fragments.push(Fragment::new(
+            &["discovery"],
+            vec![("exclude".to_string(), str_array(&excludes))],
+        ));
     }
 
     let leftovers = leftover_keys(&table, lint);
@@ -122,7 +152,7 @@ pub fn import(dir: &Path) -> Option<ImportResult> {
         tool: "ruff",
         sources: vec![source],
         fragments,
-        notes: Vec::new(),
+        notes,
         absorb,
     })
 }
@@ -250,12 +280,54 @@ convention = "google"
     #[test]
     fn flat_ruff_toml_with_unknown_key_is_partial() {
         let dir = tempdir().unwrap();
+        // `preview` is a genuine ruff key poly does not represent → keep.
         std::fs::write(
             dir.path().join("ruff.toml"),
-            "select = [\"E\", \"F\"]\nextend-exclude = [\"build\"]\n",
+            "select = [\"E\", \"F\"]\npreview = true\n",
         )
         .unwrap();
         let result = import(dir.path()).unwrap();
-        assert_eq!(result.absorb, Absorb::Partial(vec!["extend-exclude".to_string()]));
+        assert_eq!(result.absorb, Absorb::Partial(vec!["preview".to_string()]));
+    }
+
+    #[test]
+    fn extend_exclude_folds_into_discovery_and_is_full() {
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("ruff.toml"),
+            "select = [\"E\"]\nextend-exclude = [\"build\", \"vendor\"]\n",
+        )
+        .unwrap();
+        let (toml, absorb) = rendered(dir.path());
+        assert_eq!(absorb, Absorb::Full, "extend-exclude is now representable");
+        assert!(
+            toml.contains("[discovery]"),
+            "exclude globs go under [discovery]: {toml}"
+        );
+        assert!(toml.contains("build") && toml.contains("vendor"), "{toml}");
+    }
+
+    #[test]
+    fn ruff_format_section_is_dropped_and_not_blocking() {
+        let dir = tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("pyproject.toml"),
+            r#"
+[tool.ruff]
+line-length = 100
+[tool.ruff.lint]
+select = ["E"]
+[tool.ruff.format]
+quote-style = "single"
+"#,
+        )
+        .unwrap();
+        let result = import(dir.path()).unwrap();
+        assert_eq!(result.absorb, Absorb::Full, "format section must not block absorption");
+        assert!(
+            result.notes.iter().any(|n| n.contains("[tool.ruff.format]")),
+            "dropping ruff format must be noted: {:?}",
+            result.notes
+        );
     }
 }
