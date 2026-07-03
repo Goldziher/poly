@@ -19,6 +19,7 @@
 
 use dockerfile_parser::{Dockerfile, Instruction};
 
+use super::rule_config::RuleSelection;
 use crate::config::EngineConfig;
 use crate::engine::{Capabilities, Diagnostic, Engine, FormatOutput, Severity, SourceFile, Span as EngineSpan};
 use crate::language::Language;
@@ -83,17 +84,22 @@ impl Engine for DockerfileEngine {
         DOCKERFILE_PARSER_VERSION
     }
 
-    fn lint(&self, src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
+    fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
+        // `[lint.dockerfile] select` / `extend_select` / `ignore` filter which
+        // DLxxxx rules fire; empty selection keeps every rule (the default).
+        let selection = RuleSelection::from_options(cfg);
+
         let dockerfile = match Dockerfile::parse(&src.content) {
             Ok(df) => df,
             Err(e) => {
-                return Ok(vec![make_diag(
+                let diags = vec![make_diag(
                     self.name(),
                     PARSE_ERROR,
                     Severity::Error,
                     format!("parse error: {e}"),
                     None,
-                )]);
+                )];
+                return Ok(apply_rule_selection(diags, &selection));
             }
         };
 
@@ -197,12 +203,38 @@ impl Engine for DockerfileEngine {
             ));
         }
 
-        Ok(diags)
+        Ok(apply_rule_selection(diags, &selection))
     }
 
     fn format(&self, _src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
         Ok(FormatOutput::Unchanged)
     }
+}
+
+/// Filter Dockerfile diagnostics by a `[lint.dockerfile]` rule selection.
+///
+/// `select` / `extend_select` restrict output to the listed codes (an empty
+/// `select` means "all rules", the default); `ignore` removes them. A code
+/// matches a pattern by exact string or prefix, so `DL30` covers `DL3009`.
+fn apply_rule_selection(diags: Vec<Diagnostic>, selection: &RuleSelection) -> Vec<Diagnostic> {
+    if selection.is_empty() {
+        return diags;
+    }
+    let keep: Vec<&String> = selection.select.iter().chain(selection.extend_select.iter()).collect();
+    let matches = |code: &str, patterns: &[&String]| {
+        patterns
+            .iter()
+            .any(|p| code == p.as_str() || code.starts_with(p.as_str()))
+    };
+    let ignore: Vec<&String> = selection.ignore.iter().collect();
+    diags
+        .into_iter()
+        .filter(|d| {
+            let code = d.code.as_deref().unwrap_or_default();
+            let selected = keep.is_empty() || matches(code, &keep);
+            selected && !matches(code, &ignore)
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -407,6 +439,58 @@ mod tests {
         assert!(
             diags.iter().any(|d| d.code.as_deref() == Some(DL3000)),
             "expected DL3000 for relative WORKDIR"
+        );
+    }
+
+    fn cfg_with(toml_str: &str) -> EngineConfig {
+        EngineConfig {
+            globals: GlobalDefaults::default(),
+            indent_width: 4,
+            options: toml::from_str(toml_str).expect("valid TOML"),
+        }
+    }
+
+    #[test]
+    fn ignore_suppresses_selected_rule() {
+        let engine = DockerfileEngine;
+        let src = SourceFile {
+            path: "Dockerfile".into(),
+            language: Language::Dockerfile,
+            content: "FROM alpine:3.18\nWORKDIR app\n".into(),
+        };
+        // Baseline: DL3000 fires.
+        assert!(
+            engine
+                .lint(&src, &engine_cfg())
+                .unwrap()
+                .iter()
+                .any(|d| d.code.as_deref() == Some(DL3000)),
+        );
+        // With `[lint.dockerfile] ignore = ["DL3000"]`, it must be suppressed.
+        let diags = engine.lint(&src, &cfg_with(r#"ignore = ["DL3000"]"#)).unwrap();
+        assert!(
+            !diags.iter().any(|d| d.code.as_deref() == Some(DL3000)),
+            "ignore must suppress DL3000: {diags:?}",
+        );
+    }
+
+    #[test]
+    fn select_restricts_to_listed_rules() {
+        let engine = DockerfileEngine;
+        // Both DL3000 (relative WORKDIR) and DL3025 (shell-form CMD) fire here.
+        let src = SourceFile {
+            path: "Dockerfile".into(),
+            language: Language::Dockerfile,
+            content: "FROM alpine:3.18\nWORKDIR app\nCMD echo hi\n".into(),
+        };
+        let diags = engine.lint(&src, &cfg_with(r#"select = ["DL3025"]"#)).unwrap();
+        assert!(
+            diags.iter().any(|d| d.code.as_deref() == Some(DL3025)),
+            "selected rule must fire: {diags:?}",
+        );
+        assert!(
+            !diags.iter().any(|d| d.code.as_deref() == Some(DL3000)),
+            "unselected rule must not fire: {diags:?}",
         );
     }
 
