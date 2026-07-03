@@ -68,8 +68,8 @@ use crate::language::Language;
 /// invalidates stale cached output.
 ///
 /// - air rev: `c916545f14f76e1d6bd6ff918870f86dfa704b63` (first 7 chars)
-/// - jarl rev: `24e39d0405e9a358ae988e5f8f86fa5437e3fdd9` (first 7 chars)
-const VERSION: &str = "air:c916545 jarl:24e39d0";
+/// - jarl rev: `61c0ce75deae7402cdf60ec947e089a4ae484e79` (first 7 chars)
+const VERSION: &str = "air:c916545 jarl:61c0ce7";
 
 /// Tier-1 languages handled by this backend.
 static LANGUAGES: &[Language] = &[Language::R];

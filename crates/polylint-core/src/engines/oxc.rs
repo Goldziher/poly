@@ -36,7 +36,7 @@ use crate::language::Language;
 /// `+fmt-opts`:  JS quote_style, semicolons, trailing_commas, arrow_parentheses,
 ///               bracket_spacing, bracket_same_line, indent_style; JSON bracket_spacing
 ///               and trailing_commas now wired from `cfg.options`.
-const VERSION: &str = "oxc_formatter:0.56.0+oxlint+parser:0.56.0+rev:5762638+json-fmt+rules-v2+fmt-opts";
+const VERSION: &str = "oxc_formatter:0.56.0+oxlint+parser:0.56.0+rev:c0c69dc+json-fmt+rules-v2+fmt-opts";
 
 static LANGUAGES: &[Language] = &[
     Language::JavaScript,
