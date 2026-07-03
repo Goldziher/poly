@@ -48,7 +48,7 @@ blake3 = "1"
 bstr = "1.12.3"
 cargo_metadata = "0.23.1"
 clap = { version = "4", features = ["derive"] }
-clap_complete = { version = "4.6.6", features = ["unstable-dynamic"] }
+clap_complete = { version = "4.6.7", features = ["unstable-dynamic"] }
 console = { version = "0.16", default-features = false, features = ["ansi-parsing", "std"] }
 # criterion — statistical microbenchmark harness for the hot-path benches under
 # crates/polylint-core/benches/ (dev-dependency only; never linked into binaries)
@@ -130,14 +130,14 @@ pretty_graphql = "0.2.3"
 # pretty_yaml — g-plane pure-Rust YAML formatter (MIT); CST-based structural reflow
 pretty_yaml = "0.6"
 quick-xml = "0.41"
-rand = "0.10.1"
+rand = "0.10.2"
 rayon = "1"
 regex = "1"
 # rmcp — official Rust Model Context Protocol SDK (Apache-2.0). Consumed by poly-mcp
 # (the `poly mcp` stdio server). Keeps the default feature set (server + macros +
 # transport-io/async-rw) and adds `schemars` for tool parameter JSON Schemas; the
 # `client` feature is enabled only in poly-mcp's dev-dependencies for round-trip tests.
-rmcp = { version = "2.0.0", features = ["schemars"] }
+rmcp = { version = "2.1.0", features = ["schemars"] }
 # rubyfmt — opinionated Ruby formatter built on the Prism parser (MIT).
 # Not published to crates.io; pinned to a specific git rev for reproducibility.
 # default-features = false disables the optional tikv-jemallocator/jemalloc
@@ -156,7 +156,7 @@ ruff_python_parser = { git = "https://github.com/astral-sh/ruff", rev = "1cb2012
 ruff_source_file = { git = "https://github.com/astral-sh/ruff", rev = "1cb20127c47cf5c66ead93fb39e47600c857bb7e" }
 ruff_text_size = { git = "https://github.com/astral-sh/ruff", rev = "1cb20127c47cf5c66ead93fb39e47600c857bb7e" }
 rumdl = { version = "0.2", default-features = false }
-rustc-hash = "2.1.2"
+rustc-hash = "2.1.3"
 rustix = { version = "1.1.4", features = ["pty", "process", "fs", "termios"] }
 same-file = "1.0.6"
 # saphyr — pure-Rust YAML parser, used by the yaml backend for validity lint
