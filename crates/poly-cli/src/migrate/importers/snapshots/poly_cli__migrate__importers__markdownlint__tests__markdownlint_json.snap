@@ -1,0 +1,13 @@
+---
+source: crates/poly-cli/src/migrate/importers/markdownlint.rs
+expression: doc.to_string()
+---
+[lint.markdown.rumdl]
+disable = ["MD013"]
+enable = ["MD024", "MD033"]
+
+[lint.markdown.rumdl.rules.MD024]
+siblings_only = true
+
+[lint.markdown.rumdl.rules.MD033]
+allowed_elements = ["br", "sub"]

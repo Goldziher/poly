@@ -8,9 +8,11 @@ use polylint_core::{Config, LintResult, RunOptions, Severity, Verbosity, report}
 
 pub mod cache_cmd;
 pub mod hooks;
+pub mod migrate;
 
 pub use cache_cmd::{CacheArgs, run_cache};
 pub use hooks::{HooksArgs, run_hooks};
+pub use migrate::{MigrateArgs, run_migrate};
 
 /// Install the process-wide `tracing` subscriber for the CLI binaries at the
 /// default verbosity (info-level poly notices). Equivalent to

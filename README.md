@@ -786,7 +786,16 @@ poly cache size
 poly cache gc
 poly cache clean
 poly mcp --config /path/to/poly.toml
+poly migrate               # dry-run: report what would move into poly.toml
+poly migrate --write       # absorb tool configs into poly.toml, remove redundant files
 ```
+
+`poly migrate` folds settings from `ruff`/`taplo`/markdownlint/`typos` config files
+(and `pyproject.toml` `[tool.ruff]`/`[tool.typos]`/`[tool.codespell]`) into `poly.toml`,
+then deletes or strips only the sources poly can fully honor — files it delegates to
+(`rustfmt.toml`, `.golangci.yml`, `clippy.toml`, …) and anything not fully representable
+are kept. It is a dry-run report by default; `--write` applies, `--recurse` walks nested
+projects, and `--verify` re-runs lint/format after writing.
 
 The MCP server exposes tools for lint, format, and cache operations. Read-only tools are
 `lint`, `format_check`, and `cache_stats`; mutating tools are `lint_fix`, `format_write`,

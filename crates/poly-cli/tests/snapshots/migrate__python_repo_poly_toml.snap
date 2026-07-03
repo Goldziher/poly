@@ -1,0 +1,15 @@
+---
+source: crates/poly-cli/tests/migrate.rs
+expression: poly
+---
+[lint.python.ruff]
+line_length = 100
+select = ["E", "F", "I"]
+ignore = ["E501"]
+
+[lint.typos]
+extend_identifiers = { HASHs = "HASHs" }
+extend_ignore_words = ["ba", "crate"]
+
+[per-file-ignores]
+"tests/**" = ["S101"]

@@ -7,7 +7,9 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Args, Parser, Subcommand};
-use poly_cli::{CacheArgs, FmtArgs, HooksArgs, LintArgs, run_cache, run_fmt, run_hooks, run_lint};
+use poly_cli::{
+    CacheArgs, FmtArgs, HooksArgs, LintArgs, MigrateArgs, run_cache, run_fmt, run_hooks, run_lint, run_migrate,
+};
 
 #[derive(Parser)]
 #[command(
@@ -31,6 +33,8 @@ enum Command {
     Commit(Box<gitfluff::cli::LintArgs>),
     /// Run git hooks declared in `[hooks]` of poly.toml (native runner).
     Hooks(HooksArgs),
+    /// Absorb foreign tool configs into poly.toml and remove what poly can honor.
+    Migrate(MigrateArgs),
     /// Inspect and maintain the result cache (stats / size / gc / clean).
     Cache(CacheArgs),
     /// Run an MCP server over stdio (mirrors the CLI).
@@ -61,6 +65,10 @@ fn main() -> ExitCode {
         Command::Hooks(args) => {
             poly_cli::init_logging();
             run_hooks(args)
+        }
+        Command::Migrate(args) => {
+            poly_cli::init_logging();
+            run_migrate(args)
         }
         Command::Cache(args) => {
             poly_cli::init_logging();

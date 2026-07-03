@@ -1,0 +1,9 @@
+---
+source: crates/poly-cli/src/migrate/importers/typos.rs
+expression: doc.to_string()
+---
+[lint.typos]
+extend_words = { teh = "teh" }
+extend_ignore_words = ["crate", "ba"]
+extend_ignore_re = ["(?Rm)^.*# spellchecker:disable-line$"]
+extend_exclude = ["vendor/**"]

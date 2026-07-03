@@ -1,0 +1,10 @@
+---
+source: crates/poly-cli/src/migrate/importers/taplo.rs
+expression: doc.to_string()
+---
+[fmt.toml.taplo]
+column_width = 100
+indent_width = 4
+align_entries = true
+reorder_keys = false
+array_auto_collapse = false

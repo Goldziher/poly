@@ -1,0 +1,14 @@
+---
+source: crates/poly-cli/src/migrate/importers/ruff.rs
+expression: toml
+---
+[lint.python.ruff]
+target_version = "py311"
+pydocstyle_convention = "google"
+line_length = 100
+select = ["ALL"]
+ignore = ["D203", "COM812"]
+
+[per-file-ignores]
+"__init__.py" = ["F401"]
+"tests/**" = ["S101", "ANN"]
