@@ -35,7 +35,9 @@ pub use tools::{ToolConfig, ToolsConfig};
 /// within the same directory.
 pub const CONFIG_FILE_NAMES: [&str; 2] = ["poly.toml", "polylint.toml"];
 
-/// Parsed content of a `_typos.toml` or `.typos.toml` native configuration file.
+/// Parsed content of a native typos configuration source: `_typos.toml`,
+/// `.typos.toml`, or a `pyproject.toml` `[tool.typos]` / `[tool.codespell]`
+/// section.
 ///
 /// All sections are optional; absent sections default to empty. Unknown keys
 /// are silently ignored to match typos-cli's lenient parse semantics.
@@ -47,6 +49,17 @@ pub struct TyposNative {
     pub extend_identifiers: BTreeMap<String, String>,
     /// `[files] extend-exclude` — gitignore-style globs of files to skip spell-checking.
     pub extend_exclude: Vec<String>,
+    /// Flat list of words treated as valid. Sourced from the non-standard
+    /// `[default].extend-ignore-words` key and from `pyproject.toml`
+    /// `[tool.codespell] ignore-words-list` (comma-separated).
+    pub extend_ignore_words: Vec<String>,
+    /// `[default].extend-ignore-re` — regexes whose matched regions of a file are
+    /// skipped entirely (e.g. to ignore base64 blobs or license headers).
+    pub extend_ignore_re: Vec<String>,
+    /// `[default].extend-ignore-words-re` — regexes; a word matching any of them is ignored.
+    pub extend_ignore_words_re: Vec<String>,
+    /// `[default].extend-ignore-identifiers-re` — regexes; an identifier matching any is ignored.
+    pub extend_ignore_identifiers_re: Vec<String>,
 }
 
 /// Name of the optional local override file deep-merged over the primary config
@@ -134,9 +147,7 @@ impl PolyConfig {
                 } else {
                     start
                 };
-                config.typos_native = find_typos_native_file(dir)
-                    .map(|p| parse_typos_native(&p))
-                    .unwrap_or_default();
+                config.typos_native = resolve_typos_native(dir);
                 Ok(config)
             }
         }
@@ -190,9 +201,7 @@ impl PolyConfig {
 
         if chain.is_empty() {
             return Ok(PolyConfig {
-                typos_native: find_typos_native_file(dir)
-                    .map(|p| parse_typos_native(&p))
-                    .unwrap_or_default(),
+                typos_native: resolve_typos_native(dir),
                 ..PolyConfig::default()
             });
         }
@@ -232,9 +241,7 @@ fn read_config_table(path: &Path) -> anyhow::Result<toml::Table> {
 fn finalize(table: toml::Table, typos_dir: &Path) -> anyhow::Result<PolyConfig> {
     let raw: RawPolyConfig = table.try_into()?;
     let mut config: PolyConfig = raw.into();
-    config.typos_native = find_typos_native_file(typos_dir)
-        .map(|p| parse_typos_native(&p))
-        .unwrap_or_default();
+    config.typos_native = resolve_typos_native(typos_dir);
     config
         .hooks
         .validate()
@@ -302,23 +309,78 @@ pub fn find_config(start: &Path) -> Option<PathBuf> {
 /// Native typos-cli config file names in preference order.
 const TYPOS_NATIVE_FILE_NAMES: [&str; 2] = ["_typos.toml", ".typos.toml"];
 
-/// Search `dir` and its ancestors for a `_typos.toml` or `.typos.toml` file.
-/// Returns the path of the first found file; `None` if no file exists.
-fn find_typos_native_file(dir: &Path) -> Option<PathBuf> {
-    let mut current = dir;
-    loop {
-        for name in TYPOS_NATIVE_FILE_NAMES {
-            let candidate = current.join(name);
-            if candidate.is_file() {
-                return Some(candidate);
-            }
-        }
-        current = current.parent()?;
+/// Resolve the effective native typos configuration for `dir` by merging the
+/// full ancestor chain of typos config sources (nearest wins), matching
+/// typos-cli's directory-tree merge semantics.
+///
+/// Each directory from `dir` up to the filesystem root contributes at most one
+/// `_typos.toml`/`.typos.toml` file plus a `pyproject.toml` `[tool.typos]` /
+/// `[tool.codespell]` section when present. Map entries (`extend-words`,
+/// `extend-identifiers`) from a nearer config override farther ones; list
+/// entries (`extend-exclude`, the `extend-ignore-*` regexes, ignore-words) are
+/// unioned across the whole chain.
+fn resolve_typos_native(dir: &Path) -> TyposNative {
+    // Nearest-first list of config sources.
+    let sources = typos_config_sources(dir);
+    // Fold farthest-first so that a nearer config's map entries overwrite.
+    let mut merged = TyposNative::default();
+    for path in sources.into_iter().rev() {
+        let parsed = parse_typos_native(&path);
+        merged.extend_words.extend(parsed.extend_words);
+        merged.extend_identifiers.extend(parsed.extend_identifiers);
+        merged.extend_exclude.extend(parsed.extend_exclude);
+        merged.extend_ignore_words.extend(parsed.extend_ignore_words);
+        merged.extend_ignore_re.extend(parsed.extend_ignore_re);
+        merged.extend_ignore_words_re.extend(parsed.extend_ignore_words_re);
+        merged
+            .extend_ignore_identifiers_re
+            .extend(parsed.extend_ignore_identifiers_re);
     }
+    merged
 }
 
-/// Parse a `_typos.toml` / `.typos.toml` file into a [`TyposNative`] value.
+/// Collect the typos config sources for `dir` and its ancestors, nearest first.
+/// A `pyproject.toml` is included only when it carries a `[tool.typos]` or
+/// `[tool.codespell]` section, so unrelated manifests are skipped.
+fn typos_config_sources(dir: &Path) -> Vec<PathBuf> {
+    let mut sources = Vec::new();
+    let mut current = Some(dir);
+    while let Some(d) = current {
+        for name in TYPOS_NATIVE_FILE_NAMES {
+            let candidate = d.join(name);
+            if candidate.is_file() {
+                sources.push(candidate);
+                break;
+            }
+        }
+        let pyproject = d.join("pyproject.toml");
+        if pyproject.is_file() && pyproject_has_typos_config(&pyproject) {
+            sources.push(pyproject);
+        }
+        current = d.parent();
+    }
+    sources
+}
+
+/// Whether a `pyproject.toml` declares a `[tool.typos]` or `[tool.codespell]`
+/// section (a cheap pre-check before the full parse).
+fn pyproject_has_typos_config(path: &Path) -> bool {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return false;
+    };
+    let Ok(table): Result<toml::Table, _> = toml::from_str(&text) else {
+        return false;
+    };
+    table
+        .get("tool")
+        .and_then(|v| v.as_table())
+        .is_some_and(|tool| tool.contains_key("typos") || tool.contains_key("codespell"))
+}
+
+/// Parse a native typos config source into a [`TyposNative`] value.
 ///
+/// Handles `_typos.toml` / `.typos.toml` (config at the document root) and
+/// `pyproject.toml` (config under `[tool.typos]`, plus `[tool.codespell]`).
 /// Unknown keys and malformed sections are silently ignored (lenient parse).
 /// Returns the default (empty) value on any I/O or parse error.
 fn parse_typos_native(path: &Path) -> TyposNative {
@@ -332,31 +394,84 @@ fn parse_typos_native(path: &Path) -> TyposNative {
     };
 
     let mut result = TyposNative::default();
+    let is_pyproject = path.file_name().is_some_and(|n| n == "pyproject.toml");
 
-    if let Some(default) = table.get("default").and_then(|v| v.as_table()) {
-        if let Some(words) = default.get("extend-words").and_then(|v| v.as_table()) {
-            for (k, v) in words {
-                if let Some(val) = v.as_str() {
-                    result.extend_words.insert(k.clone(), val.to_string());
-                }
-            }
-        }
-        if let Some(idents) = default.get("extend-identifiers").and_then(|v| v.as_table()) {
-            for (k, v) in idents {
-                if let Some(val) = v.as_str() {
-                    result.extend_identifiers.insert(k.clone(), val.to_string());
-                }
-            }
+    // For pyproject.toml the typos config lives under `[tool.typos]`; otherwise
+    // it is the document root.
+    let typos_root: Option<&toml::Table> = if is_pyproject {
+        table
+            .get("tool")
+            .and_then(|v| v.as_table())
+            .and_then(|tool| tool.get("typos"))
+            .and_then(|v| v.as_table())
+    } else {
+        Some(&table)
+    };
+
+    if let Some(root) = typos_root {
+        collect_typos_default(root.get("default").and_then(|v| v.as_table()), &mut result);
+        if let Some(files) = root.get("files").and_then(|v| v.as_table())
+            && let Some(excl) = files.get("extend-exclude").and_then(|v| v.as_array())
+        {
+            result.extend_exclude = string_array(excl);
         }
     }
 
-    if let Some(files) = table.get("files").and_then(|v| v.as_table())
-        && let Some(excl) = files.get("extend-exclude").and_then(|v| v.as_array())
+    // `pyproject.toml` `[tool.codespell] ignore-words-list` (comma-separated) is
+    // folded into the flat valid-word list, matching how poly consumes codespell.
+    if is_pyproject
+        && let Some(codespell) = table
+            .get("tool")
+            .and_then(|v| v.as_table())
+            .and_then(|tool| tool.get("codespell"))
+            .and_then(|v| v.as_table())
+        && let Some(list) = codespell.get("ignore-words-list").and_then(|v| v.as_str())
     {
-        result.extend_exclude = excl.iter().filter_map(|v| v.as_str()).map(|s| s.to_string()).collect();
+        result.extend_ignore_words.extend(
+            list.split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string),
+        );
     }
 
     result
+}
+
+/// Populate a [`TyposNative`] from a `[default]` table (typos-cli schema).
+fn collect_typos_default(default: Option<&toml::Table>, out: &mut TyposNative) {
+    let Some(default) = default else { return };
+    if let Some(words) = default.get("extend-words").and_then(|v| v.as_table()) {
+        for (k, v) in words {
+            if let Some(val) = v.as_str() {
+                out.extend_words.insert(k.clone(), val.to_string());
+            }
+        }
+    }
+    if let Some(idents) = default.get("extend-identifiers").and_then(|v| v.as_table()) {
+        for (k, v) in idents {
+            if let Some(val) = v.as_str() {
+                out.extend_identifiers.insert(k.clone(), val.to_string());
+            }
+        }
+    }
+    if let Some(arr) = default.get("extend-ignore-words").and_then(|v| v.as_array()) {
+        out.extend_ignore_words.extend(string_array(arr));
+    }
+    if let Some(arr) = default.get("extend-ignore-re").and_then(|v| v.as_array()) {
+        out.extend_ignore_re.extend(string_array(arr));
+    }
+    if let Some(arr) = default.get("extend-ignore-words-re").and_then(|v| v.as_array()) {
+        out.extend_ignore_words_re.extend(string_array(arr));
+    }
+    if let Some(arr) = default.get("extend-ignore-identifiers-re").and_then(|v| v.as_array()) {
+        out.extend_ignore_identifiers_re.extend(string_array(arr));
+    }
+}
+
+/// Collect the string elements of a TOML array, dropping non-string entries.
+fn string_array(arr: &[toml::Value]) -> Vec<String> {
+    arr.iter().filter_map(|v| v.as_str()).map(str::to_string).collect()
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -843,5 +958,105 @@ select = ["ALL"]
         fs::write(&path, "[workspace]\nroot = true\n").unwrap();
         let config = PolyConfig::load_file(&path).expect("load");
         assert!(config.workspace.root);
+    }
+
+    #[test]
+    fn parses_native_typos_ignore_regexes_and_maps() {
+        let dir = tempdir().unwrap();
+        fs::write(
+            dir.path().join("_typos.toml"),
+            r#"
+[default]
+extend-ignore-re = ["0x[0-9a-f]+", "SPDX-.*"]
+extend-ignore-words-re = ["^[A-Z]{2,}$"]
+extend-ignore-identifiers-re = ["_impl$"]
+[default.extend-words]
+ba = "ba"
+[default.extend-identifiers]
+O_WRONLY = "O_WRONLY"
+[files]
+extend-exclude = ["*.lock"]
+"#,
+        )
+        .unwrap();
+        let config = PolyConfig::load(dir.path()).expect("load");
+        let t = &config.typos_native;
+        assert_eq!(
+            t.extend_ignore_re,
+            vec!["0x[0-9a-f]+".to_string(), "SPDX-.*".to_string()]
+        );
+        assert_eq!(t.extend_ignore_words_re, vec!["^[A-Z]{2,}$".to_string()]);
+        assert_eq!(t.extend_ignore_identifiers_re, vec!["_impl$".to_string()]);
+        assert_eq!(t.extend_words.get("ba"), Some(&"ba".to_string()));
+        assert_eq!(t.extend_identifiers.get("O_WRONLY"), Some(&"O_WRONLY".to_string()));
+        assert_eq!(t.extend_exclude, vec!["*.lock".to_string()]);
+    }
+
+    #[test]
+    fn merges_ancestor_typos_configs_unioning_regexes() {
+        let root = tempdir().unwrap();
+        fs::write(
+            root.path().join("_typos.toml"),
+            "[default]\nextend-ignore-re = [\"root-re\"]\n[default.extend-words]\nfoo = \"foo\"\n",
+        )
+        .unwrap();
+        let sub = root.path().join("pkg");
+        fs::create_dir(&sub).unwrap();
+        fs::write(
+            sub.join("_typos.toml"),
+            "[default]\nextend-ignore-re = [\"sub-re\"]\n[default.extend-words]\nbar = \"bar\"\n",
+        )
+        .unwrap();
+
+        let config = PolyConfig::load(&sub).expect("load");
+        let t = &config.typos_native;
+        // Regex lists union across the whole ancestor chain.
+        assert!(t.extend_ignore_re.contains(&"root-re".to_string()), "{t:?}");
+        assert!(t.extend_ignore_re.contains(&"sub-re".to_string()), "{t:?}");
+        // Word maps merge from both directories.
+        assert_eq!(t.extend_words.get("foo"), Some(&"foo".to_string()));
+        assert_eq!(t.extend_words.get("bar"), Some(&"bar".to_string()));
+    }
+
+    #[test]
+    fn reads_pyproject_typos_and_codespell_sections() {
+        let dir = tempdir().unwrap();
+        fs::write(
+            dir.path().join("pyproject.toml"),
+            r#"
+[tool.typos.default]
+extend-ignore-re = ["pyproj-re"]
+[tool.typos.default.extend-words]
+ba = "ba"
+[tool.codespell]
+ignore-words-list = "inh, te, tha"
+"#,
+        )
+        .unwrap();
+        let config = PolyConfig::load(dir.path()).expect("load");
+        let t = &config.typos_native;
+        assert_eq!(t.extend_ignore_re, vec!["pyproj-re".to_string()]);
+        assert_eq!(t.extend_words.get("ba"), Some(&"ba".to_string()));
+        for word in ["inh", "te", "tha"] {
+            assert!(
+                t.extend_ignore_words.contains(&word.to_string()),
+                "codespell ignore-words-list should fold into extend_ignore_words: {t:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn pyproject_without_typos_config_is_ignored() {
+        let dir = tempdir().unwrap();
+        // A manifest with no typos/codespell section must not be treated as a
+        // typos source (and must not error).
+        fs::write(
+            dir.path().join("pyproject.toml"),
+            "[project]\nname = \"x\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        let config = PolyConfig::load(dir.path()).expect("load");
+        assert!(config.typos_native.extend_words.is_empty());
+        assert!(config.typos_native.extend_ignore_re.is_empty());
     }
 }

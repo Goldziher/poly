@@ -4470,6 +4470,7 @@ dependencies = [
  "pretty_graphql",
  "pretty_yaml",
  "rayon",
+ "regex",
  "rubyfmt",
  "ruff_db",
  "ruff_formatter",

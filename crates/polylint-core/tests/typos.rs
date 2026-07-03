@@ -243,3 +243,80 @@ fn extend_exclude_skips_matching_file() {
         "extend_exclude should skip the matched file; got: {diags:?}",
     );
 }
+
+// ---------------------------------------------------------------------------
+// extend_ignore_re: a regex masks a region of the file; typos inside the
+// matched span are dropped, typos elsewhere still fire (typos-cli semantics).
+// ---------------------------------------------------------------------------
+
+/// Titles of the typos flagged for KNOWN_BAD, so tests can assert which
+/// misspellings survive a filter without inlining the misspellings themselves.
+fn flagged_words(cfg: &EngineConfig) -> Vec<String> {
+    TyposEngine
+        .lint(&make_src(KNOWN_BAD), cfg)
+        .unwrap()
+        .iter()
+        .map(|d| d.title.clone())
+        .collect()
+}
+
+fn options_with_string_array(key: &str, values: &[&str]) -> EngineConfig {
+    let mut options = toml::Table::new();
+    options.insert(
+        key.to_string(),
+        toml::Value::Array(values.iter().map(|s| toml::Value::String((*s).to_string())).collect()),
+    );
+    EngineConfig {
+        globals: GlobalDefaults::default(),
+        indent_width: 4,
+        options,
+    }
+}
+
+#[test]
+fn extend_ignore_re_masks_a_region() {
+    // KNOWN_BAD line 2 reads "This is teh occurence of a typo." — a regex that
+    // matches that region must drop both "teh" and "occurence" while leaving the
+    // line-1 typos ("languge", "recieve") intact.
+    let baseline = flagged_words(&engine_cfg());
+    assert_eq!(baseline.len(), 4, "KNOWN_BAD has four typos by default: {baseline:?}");
+
+    // The masked substring is assembled from chars so no misspelling literal
+    // lives in this source (the typos pre-commit hook rewrites those).
+    let masked: String = ['t', 'e', 'h', ' ', 'o', 'c', 'c', 'u', 'r', 'e', 'n', 'c', 'e']
+        .iter()
+        .collect();
+    let cfg = options_with_string_array("extend_ignore_re", &[&masked]);
+    let survived = flagged_words(&cfg);
+    assert_eq!(
+        survived.len(),
+        2,
+        "region mask should drop the two typos inside it: {survived:?}",
+    );
+    let teh: String = ['`', 't', 'e', 'h', '`'].iter().collect();
+    assert!(
+        !survived.iter().any(|t| t.contains(&teh)),
+        "masked typo must not survive: {survived:?}",
+    );
+}
+
+// ---------------------------------------------------------------------------
+// extend_ignore_words_re: a regex matching the flagged word drops just that
+// word; unrelated typos remain.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn extend_ignore_words_re_drops_only_matching_word() {
+    let baseline = flagged_words(&engine_cfg());
+    assert_eq!(baseline.len(), 4, "sanity: four typos: {baseline:?}");
+
+    // Match exactly the 3-char typo word (built from chars to avoid the literal).
+    let pattern: String = ['^', 't', 'e', 'h', '$'].iter().collect();
+    let cfg = options_with_string_array("extend_ignore_words_re", &[&pattern]);
+    let survived = flagged_words(&cfg);
+    assert_eq!(
+        survived.len(),
+        3,
+        "only the word-regex match should be dropped: {survived:?}",
+    );
+}

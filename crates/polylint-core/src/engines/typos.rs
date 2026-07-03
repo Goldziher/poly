@@ -32,7 +32,7 @@ use crate::language::Language;
 /// Combined cache-key version: `typos` tokeniser + `typos-dict` word list,
 /// plus a marker for the noise-suppression guards below. Bump whenever either
 /// crate is updated OR the guard logic changes (it alters output).
-const TYPOS_VERSION: &str = "0.10.43+dict-0.13.30+guards1+cfg1";
+const TYPOS_VERSION: &str = "0.10.43+dict-0.13.30+guards1+cfg2";
 
 /// Skip spell-checking files at least this large: generated/minified bundles
 /// dominate by size and are pure noise word-by-word.
@@ -127,12 +127,61 @@ impl Engine for TyposEngine {
             valid_words: &valid_words,
             valid_identifiers: &valid_identifiers,
         };
+
+        // Regex-based ignores (typos-cli `extend-ignore-*-re`). Compiled per run
+        // only when configured — the common empty case does no regex work.
+        let ignore_re = compile_regexes(&str_array(&cfg.options, "extend_ignore_re"));
+        let word_ignore_re = compile_regexes(&str_array(&cfg.options, "extend_ignore_words_re"));
+        let ident_ignore_re = compile_regexes(&str_array(&cfg.options, "extend_ignore_identifiers_re"));
+        // Byte ranges masked out by `extend-ignore-re`: a typo starting inside any
+        // masked span is dropped (mirrors typos-cli region masking).
+        let masked: Vec<(usize, usize)> = ignore_re
+            .iter()
+            .flat_map(|re| re.find_iter(&src.content).map(|m| (m.start(), m.end())))
+            .collect();
+
         let diags = typos::check_str(&src.content, &TOKENIZER, &dict)
             .filter(|typo| typo.typo.len() >= MIN_TYPO_LEN)
+            .filter(|typo| !byte_in_ranges(typo.byte_offset, &masked))
+            // `extend-ignore-words-re` matches the flagged word. `-identifiers-re`
+            // is applied to the same token as a best effort: `check_str` yields
+            // word tokens, not whole identifiers, so an identifier-level regex is
+            // matched against the flagged word rather than its parent identifier.
+            .filter(|typo| !word_ignore_re.iter().any(|re| re.is_match(typo.typo.as_ref())))
+            .filter(|typo| !ident_ignore_re.iter().any(|re| re.is_match(typo.typo.as_ref())))
             .map(|typo| typo_to_diagnostic(&src.content, typo))
             .collect();
         Ok(diags)
     }
+}
+
+/// Read `options[key]` as an array of strings (empty when absent or wrong type).
+fn str_array(options: &toml::Table, key: &str) -> Vec<String> {
+    options
+        .get(key)
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(|v| v.as_str()).map(str::to_string).collect())
+        .unwrap_or_default()
+}
+
+/// Compile `patterns` into regexes, skipping (with a warning) any that fail to
+/// compile so one malformed user pattern never aborts the whole run.
+fn compile_regexes(patterns: &[String]) -> Vec<regex::Regex> {
+    patterns
+        .iter()
+        .filter_map(|p| match regex::Regex::new(p) {
+            Ok(re) => Some(re),
+            Err(_) => {
+                tracing::warn!(pattern = %p, engine = "typos", "invalid extend-ignore regex; skipping");
+                None
+            }
+        })
+        .collect()
+}
+
+/// Whether `offset` falls within any `[start, end)` range.
+fn byte_in_ranges(offset: usize, ranges: &[(usize, usize)]) -> bool {
+    ranges.iter().any(|&(start, end)| offset >= start && offset < end)
 }
 
 /// Whether `content` looks generated/minified and should not be spell-checked:

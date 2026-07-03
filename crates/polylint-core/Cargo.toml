@@ -61,6 +61,7 @@ poly-config.workspace = true
 pretty_graphql = { workspace = true, features = ["config_serde"] }
 pretty_yaml = { workspace = true, features = ["config_serde"] }
 rayon.workspace = true
+regex.workspace = true
 rubyfmt.workspace = true
 # ruff git deps — all pinned to the same rev (see workspace Cargo.toml)
 ruff_db.workspace = true

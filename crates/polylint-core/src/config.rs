@@ -117,7 +117,10 @@ impl Config {
         let mut extend_words: BTreeMap<String, String> = self.typos_native.extend_words.clone();
         let mut extend_identifiers: BTreeMap<String, String> = self.typos_native.extend_identifiers.clone();
         let mut extend_exclude: Vec<String> = self.typos_native.extend_exclude.clone();
-        let mut extend_ignore_words: Vec<String> = vec![];
+        let mut extend_ignore_words: Vec<String> = self.typos_native.extend_ignore_words.clone();
+        let mut extend_ignore_re: Vec<String> = self.typos_native.extend_ignore_re.clone();
+        let mut extend_ignore_words_re: Vec<String> = self.typos_native.extend_ignore_words_re.clone();
+        let mut extend_ignore_identifiers_re: Vec<String> = self.typos_native.extend_ignore_identifiers_re.clone();
 
         // Overlay the language-agnostic [lint.typos] table from poly.toml.
         if let Some(poly_typos) = self.lint.get("typos").and_then(|v| v.as_table()) {
@@ -135,18 +138,19 @@ impl Config {
                     }
                 }
             }
-            if let Some(excl) = poly_typos.get("extend_exclude").and_then(|v| v.as_array()) {
-                extend_exclude.extend(excl.iter().filter_map(|v| v.as_str()).map(|s| s.to_string()));
-            }
-            if let Some(words) = poly_typos.get("extend_ignore_words").and_then(|v| v.as_array()) {
-                extend_ignore_words.extend(words.iter().filter_map(|v| v.as_str()).map(|s| s.to_string()));
-            }
+            extend_string_array(&mut extend_exclude, poly_typos, "extend_exclude");
+            extend_string_array(&mut extend_ignore_words, poly_typos, "extend_ignore_words");
+            extend_string_array(&mut extend_ignore_re, poly_typos, "extend_ignore_re");
+            extend_string_array(&mut extend_ignore_words_re, poly_typos, "extend_ignore_words_re");
+            extend_string_array(
+                &mut extend_ignore_identifiers_re,
+                poly_typos,
+                "extend_ignore_identifiers_re",
+            );
         }
 
         // Union per-language [lint.<lang>.typos] extend_ignore_words (back-compat).
-        if let Some(per_lang_words) = lang_options.get("extend_ignore_words").and_then(|v| v.as_array()) {
-            extend_ignore_words.extend(per_lang_words.iter().filter_map(|v| v.as_str()).map(|s| s.to_string()));
-        }
+        extend_string_array(&mut extend_ignore_words, lang_options, "extend_ignore_words");
 
         // Assemble the final options table.
         let mut options = toml::Table::new();
@@ -172,19 +176,35 @@ impl Config {
                 ),
             );
         }
-        if !extend_exclude.is_empty() {
-            options.insert(
-                "extend_exclude".to_string(),
-                toml::Value::Array(extend_exclude.into_iter().map(toml::Value::String).collect()),
-            );
-        }
-        if !extend_ignore_words.is_empty() {
-            options.insert(
-                "extend_ignore_words".to_string(),
-                toml::Value::Array(extend_ignore_words.into_iter().map(toml::Value::String).collect()),
-            );
-        }
+        insert_string_array(&mut options, "extend_exclude", extend_exclude);
+        insert_string_array(&mut options, "extend_ignore_words", extend_ignore_words);
+        insert_string_array(&mut options, "extend_ignore_re", extend_ignore_re);
+        insert_string_array(&mut options, "extend_ignore_words_re", extend_ignore_words_re);
+        insert_string_array(
+            &mut options,
+            "extend_ignore_identifiers_re",
+            extend_ignore_identifiers_re,
+        );
         options
+    }
+}
+
+/// Append the string elements of `table[key]` (a TOML array) onto `dest`.
+/// Non-array values and non-string elements are ignored.
+fn extend_string_array(dest: &mut Vec<String>, table: &toml::Table, key: &str) {
+    if let Some(arr) = table.get(key).and_then(|v| v.as_array()) {
+        dest.extend(arr.iter().filter_map(|v| v.as_str()).map(str::to_string));
+    }
+}
+
+/// Insert `values` into `options` under `key` as a TOML string array, skipping
+/// the insert entirely when the list is empty (keeps the options table minimal).
+fn insert_string_array(options: &mut toml::Table, key: &str, values: Vec<String>) {
+    if !values.is_empty() {
+        options.insert(
+            key.to_string(),
+            toml::Value::Array(values.into_iter().map(toml::Value::String).collect()),
+        );
     }
 }
 
