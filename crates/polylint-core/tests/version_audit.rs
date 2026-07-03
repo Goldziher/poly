@@ -27,7 +27,6 @@ use polylint_core::engines::malva::MalvaEngine;
 use polylint_core::engines::markup_fmt::MarkupFmtEngine;
 use polylint_core::engines::nixfmt::NixFmtEngine;
 use polylint_core::engines::oxc::OxcEngine;
-use polylint_core::engines::r::REngine;
 use polylint_core::engines::rubyfmt::RubyfmtEngine;
 use polylint_core::engines::ruff::RuffEngine;
 use polylint_core::engines::rumdl::RumdlEngine;
@@ -172,11 +171,6 @@ fn engine_versions_track_cargo_lock() {
         ),
         check("oxc", OxcEngine.version(), vec![("oxc_formatter", Git)]),
         check("ruff", RuffEngine.version(), vec![("ruff_linter", Git)]),
-        check(
-            "r",
-            REngine.version(),
-            vec![("air_r_formatter", Git), ("jarl-core", Git)],
-        ),
         check("rubyfmt", RubyfmtEngine.version(), vec![("rubyfmt", Git)]),
     ];
 

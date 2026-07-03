@@ -20,10 +20,6 @@ name = "polylint_core"
 path = "src/lib.rs"
 
 [dependencies]
-# air R formatter + jarl R linter backends
-air_r_formatter.workspace = true
-air_r_parser.workspace = true
-air_settings.workspace = true
 alejandra.workspace = true
 anyhow.workspace = true
 # dockerfile-parser — Dockerfile AST (MIT); used by the DockerfileEngine
@@ -33,7 +29,6 @@ graphql-parser.workspace = true
 hcl-edit.workspace = true
 hcl-rs.workspace = true
 ignore.workspace = true
-jarl-core.workspace = true
 mago-allocator.workspace = true
 mago-database.workspace = true
 mago-formatter.workspace = true

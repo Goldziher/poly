@@ -96,10 +96,7 @@ allow-git = [
     "https://github.com/fables-tales/rubyfmt",
     "https://github.com/oxc-project/oxc",
     "https://github.com/astral-sh/ruff",
-    # air R formatter fork + its transitive biome fork + tree-sitter-r grammar
-    "https://github.com/Goldziher/r-air-fork",
-    "https://github.com/lionel-/biome",
-    "https://github.com/r-lib/tree-sitter-r",
-    # jarl R linter fork (MIT); depends on the same r-air-fork rev as above
-    "https://github.com/Goldziher/r-jarl-fork",
+    # biome CSS/GraphQL analyzers (official upstream); internals unpublished, so
+    # all biome_* crates are pinned to one rev for internal type consistency.
+    "https://github.com/biomejs/biome",
 ]

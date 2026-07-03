@@ -14,7 +14,7 @@
 //! # Covered backends
 //!
 //! **Structured** (contract: every real finding sets BOTH `code` and `span`):
-//!   `taplo`, `graphql`, `yaml`, `typos`, `hcl`, `r`, `treesitter`, `dockerfile`
+//!   `taplo`, `graphql`, `yaml`, `typos`, `hcl`, `treesitter`, `dockerfile`
 //!
 //! **Structured with edge-case exemptions** (contract: ≥1 *normal* finding sets
 //! BOTH `code` and `span`):
@@ -138,16 +138,7 @@ fn diagnostic_contract_all_backends_conform() {
     // code and a source location. Assert the strongest property: ALL findings
     // (not just ≥1) satisfy the invariant.
     // -------------------------------------------------------------------------
-    const STRUCTURED: &[&str] = &[
-        "taplo",
-        "graphql",
-        "yaml",
-        "typos",
-        "hcl",
-        "r",
-        "treesitter",
-        "dockerfile",
-    ];
+    const STRUCTURED: &[&str] = &["taplo", "graphql", "yaml", "typos", "hcl", "treesitter", "dockerfile"];
     for backend in STRUCTURED {
         let diags = by_engine.get(*backend).unwrap_or_else(|| {
             panic!(
@@ -236,7 +227,6 @@ fn diagnostic_contract_all_backends_conform() {
         "yaml",
         "typos",
         "hcl",
-        "r",
         "treesitter",
         "dockerfile",
         "ruff",

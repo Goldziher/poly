@@ -345,7 +345,7 @@ Polylint uses a tiered model:
 | Nix | alejandra | no | yes |
 | Ruby | rubyfmt | no | yes |
 | PHP | mago | yes | yes |
-| R | jarl + air formatter | yes | yes |
+| R | tree-sitter generic tier | no | best effort |
 | Go | `gofmt` when present, tree-sitter fallback otherwise | no | yes |
 | Rust | `rustfmt` when present, tree-sitter fallback otherwise | no | yes |
 | Zig | opt-in `zig fmt`, tree-sitter fallback otherwise | no | yes |

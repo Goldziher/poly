@@ -1,8 +1,0 @@
----
-source: crates/polylint-core/tests/r.rs
-expression: formatted
----
-x <- 1 + 2
-f <- function(a, b) {
-  a + b
-}

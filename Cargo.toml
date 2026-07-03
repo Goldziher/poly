@@ -24,15 +24,6 @@ documentation = "https://github.com/Goldziher/polylint"
 
 [workspace.dependencies]
 aho-corasick = "1.1.4"
-# air R formatter — all air-fork crates share rev c916545f14f76e1d6bd6ff918870f86dfa704b63.
-# The biome git deps they pull in are from lionel-/biome at a1296ea6ba363d8b8d8f02181b2a4ce9315c5ef9.
-air_r_formatter = { git = "https://github.com/Goldziher/r-air-fork", rev = "c916545f14f76e1d6bd6ff918870f86dfa704b63" }
-air_r_parser = { git = "https://github.com/Goldziher/r-air-fork", rev = "c916545f14f76e1d6bd6ff918870f86dfa704b63" }
-# settings — air's settings crate; `biome` feature enables Into<biome_formatter::*> conversions
-# used when constructing RFormatOptions from polylint EngineConfig values.
-air_settings = { package = "settings", git = "https://github.com/Goldziher/r-air-fork", rev = "c916545f14f76e1d6bd6ff918870f86dfa704b63", features = [
-    "biome",
-] }
 # alejandra — Nix formatter (UNLICENSE, pure Rust via rnix); chosen over
 # nixpkgs-fmt, which pulls unmaintained ansi_term/atty (cargo deny advisories)
 alejandra = "3.1"
@@ -77,10 +68,6 @@ indoc = "2.0.7"
 insta = "1"
 insta-cmd = "0.7.0"
 itertools = "0.15.0"
-# jarl R linter — the tier-1 R linting backend. Depends on the same air fork
-# rev as air_r_parser so that air_r_parser/air_r_syntax unify into one copy
-# (Cargo deduplicates git deps that share the same URL + rev).
-jarl-core = { git = "https://github.com/Goldziher/r-jarl-fork", rev = "61c0ce75deae7402cdf60ec947e089a4ae484e79" }
 json5 = "1.3.1"
 libc = "0.2.186"
 # Enable static linking for liblzma (xz feature in async-compression).
