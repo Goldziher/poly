@@ -7,6 +7,45 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). `polylint` and
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-03
+
+### Added
+
+- **Biome CSS + GraphQL linters** — two in-process tier-1 lint backends built on
+  the official `biomejs/biome` analyzer crates, filling gaps polylint had no
+  native linter for. Both are lint-only and coexist with the existing malva/
+  graphql formatters. Configured via `[lint.css.biome]` / `[lint.graphql.biome]`
+  with the shared `select`/`extend_select`/`ignore` surface; default rule groups
+  are `correctness` + `suspicious`.
+- **`poly migrate`** — new subcommand that absorbs a repo's `ruff` / `typos` /
+  `taplo` / markdownlint config (including `pyproject.toml` `[tool.ruff]` /
+  `[tool.typos]` / `[tool.codespell]`) into `poly.toml`, comment-preserving, then
+  deletes or strips only the sources poly can fully honor. Dry-run report by
+  default; `--write`, `--recurse`, `--verify`, `--strip-superseded`.
+- **Native typos config** — `_typos.toml` / `.typos.toml` / `pyproject
+  [tool.typos]` / `[tool.codespell]` are honored, including `extend-ignore-re`
+  (region masking), `extend-ignore-words-re` / `-identifiers-re`, and full
+  ancestor-chain merging.
+- **Dockerfile rule selection** — the Dockerfile backend now honors
+  `[lint.dockerfile]` `select` / `extend_select` / `ignore`.
+
+### Changed
+
+- Dry-run `poly fmt` (no `--fix`) now reports "N file(s) will change" instead of
+  the past-tense "N changed", which implied files were rewritten.
+- Bumped the pinned oxc (`c0c69dc`) and ruff (`1cb2012`) revisions and ran
+  `cargo upgrade --incompatible` (clap_complete, rand, rmcp, rustc-hash).
+
+### Removed
+
+- **The R (air/jarl) tier-1 backend.** Migrating air+jarl onto official
+  `biomejs/biome` was disproportionately costly (a large fork rebase across biome
+  API drift plus a non-upstream patch), and air/jarl were the sole consumers of
+  the `lionel-/biome` fork. Dropping them removes that fork from the dependency
+  graph and unblocks the official biome CSS/GraphQL analyzers with no crate
+  collision. R now falls through to the tier-2 tree-sitter formatter (best-effort
+  format, no lint).
+
 ## [0.1.15] - 2026-07-02
 
 ### Added
