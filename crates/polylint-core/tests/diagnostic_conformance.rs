@@ -99,7 +99,7 @@ fn run_and_group() -> HashMap<String, Vec<Diagnostic>> {
 ///   `bad.yaml`    → yaml (unclosed flow sequence)
 ///   `typos.md`    → typos (misspellings; rumdl also runs cross-file)
 ///   `bad.tf`      → hcl (unclosed block body syntax error)
-///   `bad.R`       → r (equals_na rule)
+///   `bad.R`       → treesitter (tier-2; R has no native backend)
 ///   `Dockerfile`  → dockerfile (DL3006 FROM without tag)
 ///   `trailing.go` → NativeToolEngine(gofmt) which delegates lint to treesitter
 ///                   (trailing-whitespace diagnostic emitted by treesitter)

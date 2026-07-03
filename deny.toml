@@ -67,10 +67,10 @@ ignore = [
     # at the pinned rev. Risk is low: paste is a compile-time macro only.
     "RUSTSEC-2024-0436",
     # RUSTSEC-2026-0173: `proc-macro-error2` is unmaintained.
-    # This is a transitive dep via biome_deserialize_macros → biome_formatter →
-    # air_r_formatter (the lionel-/biome fork). No safe upgrade path exists
-    # at the pinned rev. Risk is low: proc-macro-error2 is a compile-time
-    # proc-macro only (no runtime code).
+    # This is a transitive dep via biome_deserialize_macros (the biomejs/biome
+    # CSS/GraphQL analyzers). No safe upgrade path exists at the pinned rev.
+    # Risk is low: proc-macro-error2 is a compile-time proc-macro only (no
+    # runtime code).
     "RUSTSEC-2026-0173",
     # RUSTSEC-2026-0194 + RUSTSEC-2026-0195: quadratic attribute scan and
     # unbounded namespace-declaration allocation in `quick-xml`.

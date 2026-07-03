@@ -5,6 +5,8 @@
 //! otherwise).
 
 use crate::engine::Engine;
+use crate::engines::biome_css::BiomeCssEngine;
+use crate::engines::biome_graphql::BiomeGraphqlEngine;
 use crate::engines::dockerfile::DockerfileEngine;
 use crate::engines::graphql::GraphQlEngine;
 use crate::engines::hcl::HclEngine;
@@ -38,10 +40,17 @@ pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
         Language::Python => vec![Box::new(RuffEngine)],
         Language::Sql => vec![Box::new(SqruffEngine)],
         Language::Yaml => vec![Box::new(YamlEngine)],
-        Language::Css | Language::Scss | Language::Less => vec![Box::new(MalvaEngine)],
+        // MalvaEngine holds the format slot for CSS/SCSS/Less.
+        // BiomeCssEngine adds rule-based lint for CSS and SCSS; Less has no
+        // biome parser support so it falls through to MalvaEngine only.
+        Language::Less => vec![Box::new(MalvaEngine)],
+        Language::Css | Language::Scss => vec![Box::new(MalvaEngine), Box::new(BiomeCssEngine)],
         Language::Nix => vec![Box::new(NixFmtEngine)],
         Language::Ruby => vec![Box::new(RubyfmtEngine)],
-        Language::GraphQl => vec![Box::new(GraphQlEngine)],
+        // GraphQlEngine holds the format slot and emits parse-error lint.
+        // BiomeGraphqlEngine adds rule-based lint (correctness/suspicious groups).
+        // The runner filters by capability so both coexist without conflict.
+        Language::GraphQl => vec![Box::new(GraphQlEngine), Box::new(BiomeGraphqlEngine)],
         Language::Hcl => vec![Box::new(HclEngine)],
         Language::Html
         | Language::Vue

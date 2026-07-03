@@ -19,6 +19,8 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use polylint_core::engine::Engine;
+use polylint_core::engines::biome_css::BiomeCssEngine;
+use polylint_core::engines::biome_graphql::BiomeGraphqlEngine;
 use polylint_core::engines::dockerfile::DockerfileEngine;
 use polylint_core::engines::graphql::GraphQlEngine;
 use polylint_core::engines::hcl::HclEngine;
@@ -136,6 +138,12 @@ fn engine_versions_track_cargo_lock() {
     };
 
     let checks = vec![
+        check(
+            "biome-graphql",
+            BiomeGraphqlEngine.version(),
+            vec![("biome_graphql_analyze", Git)],
+        ),
+        check("biome-css", BiomeCssEngine.version(), vec![("biome_css_analyze", Git)]),
         check("sqruff", SqruffEngine.version(), vec![("sqruff-lib", Registry)]),
         check("malva", MalvaEngine.version(), vec![("malva", Registry)]),
         check("markup_fmt", MarkupFmtEngine.version(), vec![("markup_fmt", Registry)]),

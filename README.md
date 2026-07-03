@@ -337,9 +337,10 @@ Polylint uses a tiered model:
 | Markdown | rumdl | yes | yes |
 | SQL | sqruff | yes | yes |
 | YAML | saphyr + pretty_yaml | yes | yes |
-| CSS / SCSS / Less | malva | no | yes |
+| CSS / SCSS | malva (format) + biome (lint) | yes | yes |
+| Less | malva | no | yes |
 | HTML / Vue / Svelte / Astro / Angular / templates / XML | markup_fmt | no | yes |
-| GraphQL | graphql-parser + pretty_graphql | yes | yes |
+| GraphQL | graphql-parser + pretty_graphql (parse-error lint + format) + biome (rule lint) | yes | yes |
 | HCL / Terraform | hcl-edit + hcl-rs, tree-sitter for comment-preserving format fallback | yes | yes |
 | Dockerfile | dockerfile-parser hadolint-style rules | yes | no |
 | Nix | alejandra | no | yes |

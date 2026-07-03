@@ -2,6 +2,9 @@
 //! [`crate::engine::Engine`]. New backends are added here and wired into the
 //! crate-private registry that routes each language to its backend(s).
 
+pub mod biome_common;
+pub mod biome_css;
+pub mod biome_graphql;
 pub mod catalog_tool;
 pub mod dockerfile;
 pub mod graphql;
