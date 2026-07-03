@@ -55,6 +55,14 @@ pub(crate) struct ToolSpec {
     /// Either way `poly fmt` agrees with `cargo fmt`; poly never imposes an
     /// opinionated width on Rust.
     pub(crate) rustfmt_config_flag: bool,
+    /// Whether to anchor the child process to the source file's directory.
+    /// When `true`, `format_via_tool` sets `current_dir` to `src.path.parent()`
+    /// so the tool can discover project-level config files by walking up from
+    /// the file (e.g. `swift-format` reads `.swift-format` from the source
+    /// tree). `rustfmt_config_flag` implies the same anchoring; this flag
+    /// covers tools that need directory anchoring without any config-flag
+    /// injection. Set to `false` on all tools that do not need it.
+    pub(crate) run_in_file_dir: bool,
 }
 
 impl ToolSpec {
@@ -85,6 +93,7 @@ pub(crate) static GOFMT_SPEC: ToolSpec = ToolSpec {
     default_on: true,
     edition_flag: false,
     rustfmt_config_flag: false,
+    run_in_file_dir: false,
 };
 
 /// `rustfmt --emit=stdout`: reads stdin, writes to stdout. Canonical Rust
@@ -104,6 +113,9 @@ pub(crate) static RUSTFMT_SPEC: ToolSpec = ToolSpec {
     // --config-path; with no config, rustfmt applies its own defaults so
     // poly agrees with `cargo fmt` instead of imposing an opinionated width.
     rustfmt_config_flag: true,
+    // rustfmt_config_flag already implies anchoring; run_in_file_dir stays
+    // false because the OR in format_via_tool handles it via rustfmt_config_flag.
+    run_in_file_dir: false,
 };
 
 /// `zig fmt --stdin`: reads stdin, writes to stdout. Opt-in (off by default).
@@ -119,6 +131,7 @@ pub(crate) static ZIGFMT_SPEC: ToolSpec = ToolSpec {
     default_on: false,
     edition_flag: false,
     rustfmt_config_flag: false,
+    run_in_file_dir: false,
 };
 
 /// `shfmt -`: reads stdin, writes formatted shell source to stdout. Opt-in
@@ -139,6 +152,7 @@ pub(crate) static SHFMT_SPEC: ToolSpec = ToolSpec {
     default_on: false,
     edition_flag: false,
     rustfmt_config_flag: false,
+    run_in_file_dir: false,
 };
 
 /// `shellcheck --format=json1 -`: reads shell source from stdin, emits a
@@ -157,6 +171,128 @@ pub(crate) static SHELLCHECK_SPEC: ToolSpec = ToolSpec {
     default_on: false,
     edition_flag: false,
     rustfmt_config_flag: false,
+    run_in_file_dir: false,
+};
+
+// ---------------------------------------------------------------------------
+// New opt-in per-language format backends (Wave 2)
+// ---------------------------------------------------------------------------
+
+/// `google-java-format -`: reads stdin, writes formatted Java to stdout.
+/// Opt-in (off by default). JVM warnings on stderr are discarded.
+pub(crate) static JAVA_FMT_SPEC: ToolSpec = ToolSpec {
+    engine_name: "google-java-format",
+    format_binary: Some("google-java-format"),
+    format_args: &["-"],
+    format_indent_flag: false,
+    lint_binary: None,
+    lint_args: &[],
+    version_binary: "google-java-format",
+    version_args: &["--version"],
+    default_on: false,
+    edition_flag: false,
+    rustfmt_config_flag: false,
+    run_in_file_dir: false,
+};
+
+/// `ktfmt --kotlinlang-style -`: reads stdin, writes formatted Kotlin to stdout.
+/// Opt-in (off by default).
+pub(crate) static KTFMT_SPEC: ToolSpec = ToolSpec {
+    engine_name: "ktfmt",
+    format_binary: Some("ktfmt"),
+    format_args: &["--kotlinlang-style", "-"],
+    format_indent_flag: false,
+    lint_binary: None,
+    lint_args: &[],
+    version_binary: "ktfmt",
+    version_args: &["--version"],
+    default_on: false,
+    edition_flag: false,
+    rustfmt_config_flag: false,
+    run_in_file_dir: false,
+};
+
+/// `Rscript --vanilla -e 'styler::style_text(...)'`: reads R source from stdin
+/// via `file("stdin")`, formats with the `styler` package, and writes to
+/// stdout. Opt-in (off by default). Non-zero exit (syntax error or missing
+/// package) leaves the file unchanged.
+pub(crate) static RSTYLER_SPEC: ToolSpec = ToolSpec {
+    engine_name: "styler",
+    format_binary: Some("Rscript"),
+    format_args: &[
+        "--vanilla",
+        "-e",
+        concat!(
+            "con<-file(\"stdin\");",
+            "txt<-readLines(con);",
+            "cat(styler::style_text(txt),sep=\"\\n\");",
+            "cat(\"\\n\")",
+        ),
+    ],
+    format_indent_flag: false,
+    lint_binary: None,
+    lint_args: &[],
+    version_binary: "Rscript",
+    version_args: &["--version"],
+    default_on: false,
+    edition_flag: false,
+    rustfmt_config_flag: false,
+    run_in_file_dir: false,
+};
+
+/// `swift-format -`: reads Swift source from stdin, writes formatted output to
+/// stdout. Opt-in (off by default). Runs in the file's directory so
+/// `swift-format` can discover the nearest `.swift-format` config.
+pub(crate) static SWIFT_FORMAT_SPEC: ToolSpec = ToolSpec {
+    engine_name: "swift-format",
+    format_binary: Some("swift-format"),
+    format_args: &["-"],
+    format_indent_flag: false,
+    lint_binary: None,
+    lint_args: &[],
+    version_binary: "swift-format",
+    version_args: &["--version"],
+    default_on: false,
+    edition_flag: false,
+    rustfmt_config_flag: false,
+    // Anchored to the source file's directory so swift-format discovers
+    // the nearest .swift-format config file.
+    run_in_file_dir: true,
+};
+
+/// `dart format -o show`: reads Dart source from stdin (no filename argument →
+/// stdin), writes the formatted result to stdout. Opt-in (off by default).
+pub(crate) static DARTFMT_SPEC: ToolSpec = ToolSpec {
+    engine_name: "dartfmt",
+    format_binary: Some("dart"),
+    // No filename argument: dart format reads from stdin when no files given.
+    format_args: &["format", "-o", "show"],
+    format_indent_flag: false,
+    lint_binary: None,
+    lint_args: &[],
+    version_binary: "dart",
+    version_args: &["--version"],
+    default_on: false,
+    edition_flag: false,
+    rustfmt_config_flag: false,
+    run_in_file_dir: false,
+};
+
+/// `gleam format --stdin`: reads Gleam source from stdin, writes formatted
+/// output to stdout. Opt-in (off by default).
+pub(crate) static GLEAMFMT_SPEC: ToolSpec = ToolSpec {
+    engine_name: "gleamfmt",
+    format_binary: Some("gleam"),
+    format_args: &["format", "--stdin"],
+    format_indent_flag: false,
+    lint_binary: None,
+    lint_args: &[],
+    version_binary: "gleam",
+    version_args: &["--version"],
+    default_on: false,
+    edition_flag: false,
+    rustfmt_config_flag: false,
+    run_in_file_dir: false,
 };
 
 // ---------------------------------------------------------------------------
@@ -173,6 +309,18 @@ pub(crate) static ZIGFMT_PROBE: OnceLock<Option<String>> = OnceLock::new();
 pub(crate) static SHFMT_PROBE: OnceLock<Option<String>> = OnceLock::new();
 /// `Some(version)` = `shellcheck` found on PATH; `None` = absent.
 pub(crate) static SHELLCHECK_PROBE: OnceLock<Option<String>> = OnceLock::new();
+/// `Some(version)` = `google-java-format` found on PATH; `None` = absent.
+pub(crate) static JAVA_FMT_PROBE: OnceLock<Option<String>> = OnceLock::new();
+/// `Some(version)` = `ktfmt` found on PATH; `None` = absent.
+pub(crate) static KTFMT_PROBE: OnceLock<Option<String>> = OnceLock::new();
+/// `Some(version)` = `Rscript` found on PATH; `None` = absent.
+pub(crate) static RSTYLER_PROBE: OnceLock<Option<String>> = OnceLock::new();
+/// `Some(version)` = `swift-format` found on PATH; `None` = absent.
+pub(crate) static SWIFT_FORMAT_PROBE: OnceLock<Option<String>> = OnceLock::new();
+/// `Some(version)` = `dart` found on PATH; `None` = absent.
+pub(crate) static DARTFMT_PROBE: OnceLock<Option<String>> = OnceLock::new();
+/// `Some(version)` = `gleam` found on PATH; `None` = absent.
+pub(crate) static GLEAMFMT_PROBE: OnceLock<Option<String>> = OnceLock::new();
 
 // ---------------------------------------------------------------------------
 // Version cache-key strings (per tool)
@@ -187,6 +335,12 @@ pub(crate) static SHFMT_KEY: OnceLock<String> = OnceLock::new();
 /// Folds in the shellcheck version AND the tree-sitter engine version, because
 /// the lint path always includes a TreeSitterEngine.lint() delegation.
 pub(crate) static SHELLCHECK_KEY: OnceLock<String> = OnceLock::new();
+pub(crate) static JAVA_FMT_KEY: OnceLock<String> = OnceLock::new();
+pub(crate) static KTFMT_KEY: OnceLock<String> = OnceLock::new();
+pub(crate) static RSTYLER_KEY: OnceLock<String> = OnceLock::new();
+pub(crate) static SWIFT_FORMAT_KEY: OnceLock<String> = OnceLock::new();
+pub(crate) static DARTFMT_KEY: OnceLock<String> = OnceLock::new();
+pub(crate) static GLEAMFMT_KEY: OnceLock<String> = OnceLock::new();
 
 // ---------------------------------------------------------------------------
 // Tier-2 fallback notice guards (format-only engines)
@@ -205,6 +359,12 @@ pub(crate) static GOFMT_NOTICE: Once = Once::new();
 pub(crate) static RUSTFMT_NOTICE: Once = Once::new();
 pub(crate) static ZIGFMT_NOTICE: Once = Once::new();
 pub(crate) static SHFMT_NOTICE: Once = Once::new();
+pub(crate) static JAVA_FMT_NOTICE: Once = Once::new();
+pub(crate) static KTFMT_NOTICE: Once = Once::new();
+pub(crate) static RSTYLER_NOTICE: Once = Once::new();
+pub(crate) static SWIFT_FORMAT_NOTICE: Once = Once::new();
+pub(crate) static DARTFMT_NOTICE: Once = Once::new();
+pub(crate) static GLEAMFMT_NOTICE: Once = Once::new();
 
 // ---------------------------------------------------------------------------
 // Unit tests
@@ -222,6 +382,11 @@ mod tests {
         assert!(
             RUSTFMT_SPEC.rustfmt_config_flag,
             "RUSTFMT_SPEC.rustfmt_config_flag must be true to activate rustfmt config discovery"
+        );
+        // rustfmt uses rustfmt_config_flag for anchoring; run_in_file_dir stays false.
+        assert!(
+            !RUSTFMT_SPEC.run_in_file_dir,
+            "rustfmt uses rustfmt_config_flag, not run_in_file_dir"
         );
     }
 
@@ -243,5 +408,50 @@ mod tests {
             !SHELLCHECK_SPEC.rustfmt_config_flag,
             "shellcheck does not support rustfmt_config_flag"
         );
+        // New Wave 2 specs: none use rustfmt_config_flag.
+        assert!(
+            !JAVA_FMT_SPEC.rustfmt_config_flag,
+            "google-java-format does not need rustfmt_config_flag"
+        );
+        assert!(
+            !KTFMT_SPEC.rustfmt_config_flag,
+            "ktfmt does not need rustfmt_config_flag"
+        );
+        assert!(
+            !RSTYLER_SPEC.rustfmt_config_flag,
+            "styler does not need rustfmt_config_flag"
+        );
+        assert!(
+            !SWIFT_FORMAT_SPEC.rustfmt_config_flag,
+            "swift-format does not need rustfmt_config_flag"
+        );
+        assert!(
+            !DARTFMT_SPEC.rustfmt_config_flag,
+            "dartfmt does not need rustfmt_config_flag"
+        );
+        assert!(
+            !GLEAMFMT_SPEC.rustfmt_config_flag,
+            "gleamfmt does not need rustfmt_config_flag"
+        );
+        // swift-format is the only spec that sets run_in_file_dir; all others are false.
+        assert!(!GOFMT_SPEC.run_in_file_dir, "gofmt does not need run_in_file_dir");
+        assert!(!ZIGFMT_SPEC.run_in_file_dir, "zigfmt does not need run_in_file_dir");
+        assert!(!SHFMT_SPEC.run_in_file_dir, "shfmt does not need run_in_file_dir");
+        assert!(
+            !SHELLCHECK_SPEC.run_in_file_dir,
+            "shellcheck does not need run_in_file_dir"
+        );
+        assert!(
+            !JAVA_FMT_SPEC.run_in_file_dir,
+            "google-java-format does not need run_in_file_dir"
+        );
+        assert!(!KTFMT_SPEC.run_in_file_dir, "ktfmt does not need run_in_file_dir");
+        assert!(!RSTYLER_SPEC.run_in_file_dir, "styler does not need run_in_file_dir");
+        assert!(
+            SWIFT_FORMAT_SPEC.run_in_file_dir,
+            "swift-format must set run_in_file_dir to find .swift-format"
+        );
+        assert!(!DARTFMT_SPEC.run_in_file_dir, "dartfmt does not need run_in_file_dir");
+        assert!(!GLEAMFMT_SPEC.run_in_file_dir, "gleamfmt does not need run_in_file_dir");
     }
 }

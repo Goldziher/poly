@@ -3,13 +3,19 @@
 //!
 //! ## Supported tools
 //!
-//! | Language | Tool        | Kind   | Default-on |
-//! |----------|-------------|--------|------------|
-//! | Go       | `gofmt`     | format | yes        |
-//! | Rust     | `rustfmt`   | format | yes        |
-//! | Zig      | `zig fmt`   | format | no         |
-//! | Shell    | `shfmt`     | format | no         |
-//! | Shell    | `shellcheck`| lint   | no         |
+//! | Language | Tool                  | Kind   | Default-on |
+//! |----------|-----------------------|--------|------------|
+//! | Go       | `gofmt`               | format | yes        |
+//! | Rust     | `rustfmt`             | format | yes        |
+//! | Zig      | `zig fmt`             | format | no         |
+//! | Shell    | `shfmt`               | format | no         |
+//! | Shell    | `shellcheck`          | lint   | no         |
+//! | Java     | `google-java-format`  | format | no         |
+//! | Kotlin   | `ktfmt`               | format | no         |
+//! | R        | `Rscript` (styler)    | format | no         |
+//! | Swift    | `swift-format`        | format | no         |
+//! | Dart     | `dart format`         | format | no         |
+//! | Gleam    | `gleam format`        | format | no         |
 //!
 //! ## Default-on for canonical toolchains (ADR 0014 amendment)
 //!
@@ -64,9 +70,12 @@ use self::lint::lint_via_shellcheck;
 use self::probe::probe_tool;
 use self::spec::ToolSpec;
 use self::spec::{
-    GOFMT_KEY, GOFMT_NOTICE, GOFMT_PROBE, GOFMT_SPEC, RUSTFMT_KEY, RUSTFMT_NOTICE, RUSTFMT_PROBE, RUSTFMT_SPEC,
-    SHELLCHECK_KEY, SHELLCHECK_PROBE, SHELLCHECK_SPEC, SHFMT_KEY, SHFMT_NOTICE, SHFMT_PROBE, SHFMT_SPEC, ZIGFMT_KEY,
-    ZIGFMT_NOTICE, ZIGFMT_PROBE, ZIGFMT_SPEC,
+    DARTFMT_KEY, DARTFMT_NOTICE, DARTFMT_PROBE, DARTFMT_SPEC, GLEAMFMT_KEY, GLEAMFMT_NOTICE, GLEAMFMT_PROBE,
+    GLEAMFMT_SPEC, GOFMT_KEY, GOFMT_NOTICE, GOFMT_PROBE, GOFMT_SPEC, JAVA_FMT_KEY, JAVA_FMT_NOTICE, JAVA_FMT_PROBE,
+    JAVA_FMT_SPEC, KTFMT_KEY, KTFMT_NOTICE, KTFMT_PROBE, KTFMT_SPEC, RSTYLER_KEY, RSTYLER_NOTICE, RSTYLER_PROBE,
+    RSTYLER_SPEC, RUSTFMT_KEY, RUSTFMT_NOTICE, RUSTFMT_PROBE, RUSTFMT_SPEC, SHELLCHECK_KEY, SHELLCHECK_PROBE,
+    SHELLCHECK_SPEC, SHFMT_KEY, SHFMT_NOTICE, SHFMT_PROBE, SHFMT_SPEC, SWIFT_FORMAT_KEY, SWIFT_FORMAT_NOTICE,
+    SWIFT_FORMAT_PROBE, SWIFT_FORMAT_SPEC, ZIGFMT_KEY, ZIGFMT_NOTICE, ZIGFMT_PROBE, ZIGFMT_SPEC,
 };
 
 mod edition;
@@ -83,6 +92,12 @@ static GO_LANGUAGES: &[Language] = &[Language::Go];
 static RUST_LANGUAGES: &[Language] = &[Language::Rust];
 static ZIG_LANGUAGES: &[Language] = &[Language::Zig];
 static SHELL_LANGUAGES: &[Language] = &[Language::Shell];
+static JAVA_LANGUAGES: &[Language] = &[Language::Java];
+static KOTLIN_LANGUAGES: &[Language] = &[Language::Kotlin];
+static R_LANGUAGES: &[Language] = &[Language::R];
+static SWIFT_LANGUAGES: &[Language] = &[Language::Swift];
+static DART_LANGUAGES: &[Language] = &[Language::Dart];
+static GLEAM_LANGUAGES: &[Language] = &[Language::Gleam];
 
 // ---------------------------------------------------------------------------
 // NativeRole: which tool + capability this engine instance represents
@@ -101,6 +116,18 @@ enum NativeRole {
     Shfmt,
     /// `shellcheck` for Shell (lint only; format is the Shfmt entry).
     Shellcheck,
+    /// `google-java-format -` for Java (format + lint-via-TS). Opt-in.
+    JavaFmt,
+    /// `ktfmt --kotlinlang-style -` for Kotlin (format + lint-via-TS). Opt-in.
+    KtFmt,
+    /// `Rscript` / `styler` for R (format + lint-via-TS). Opt-in.
+    RStyler,
+    /// `swift-format -` for Swift (format + lint-via-TS). Opt-in.
+    SwiftFmt,
+    /// `dart format -o show` for Dart (format + lint-via-TS). Opt-in.
+    DartFmt,
+    /// `gleam format --stdin` for Gleam (format + lint-via-TS). Opt-in.
+    GleamFmt,
 }
 
 // ---------------------------------------------------------------------------
@@ -114,11 +141,13 @@ pub struct NativeToolEngine {
 }
 
 impl NativeToolEngine {
-    /// Construct the canonical format engine for Go, Rust, or Zig.
+    /// Construct the format engine for the given language.
+    ///
+    /// Supported: Go, Rust, Zig, Java, Kotlin, R, Swift, Dart, Gleam.
     ///
     /// # Panics
     ///
-    /// Panics if `language` is not `Go`, `Rust`, or `Zig`. Use
+    /// Panics if `language` is not one of the supported languages above. Use
     /// [`NativeToolEngine::shell_format`] / [`NativeToolEngine::shell_lint`]
     /// for `Language::Shell`.
     pub fn for_language(language: Language) -> Self {
@@ -126,8 +155,17 @@ impl NativeToolEngine {
             Language::Go => NativeRole::GoFmt,
             Language::Rust => NativeRole::Rustfmt,
             Language::Zig => NativeRole::ZigFmt,
+            Language::Java => NativeRole::JavaFmt,
+            Language::Kotlin => NativeRole::KtFmt,
+            Language::R => NativeRole::RStyler,
+            Language::Swift => NativeRole::SwiftFmt,
+            Language::Dart => NativeRole::DartFmt,
+            Language::Gleam => NativeRole::GleamFmt,
             other => {
-                panic!("NativeToolEngine::for_language only supports Go, Rust, Zig; got {other:?}")
+                panic!(
+                    "NativeToolEngine::for_language does not support {other:?}; \
+                     supported: Go, Rust, Zig, Java, Kotlin, R, Swift, Dart, Gleam"
+                )
             }
         };
         NativeToolEngine { role }
@@ -154,6 +192,12 @@ impl NativeToolEngine {
             NativeRole::ZigFmt => &ZIGFMT_SPEC,
             NativeRole::Shfmt => &SHFMT_SPEC,
             NativeRole::Shellcheck => &SHELLCHECK_SPEC,
+            NativeRole::JavaFmt => &JAVA_FMT_SPEC,
+            NativeRole::KtFmt => &KTFMT_SPEC,
+            NativeRole::RStyler => &RSTYLER_SPEC,
+            NativeRole::SwiftFmt => &SWIFT_FORMAT_SPEC,
+            NativeRole::DartFmt => &DARTFMT_SPEC,
+            NativeRole::GleamFmt => &GLEAMFMT_SPEC,
         }
     }
 
@@ -164,6 +208,12 @@ impl NativeToolEngine {
             NativeRole::ZigFmt => &ZIGFMT_PROBE,
             NativeRole::Shfmt => &SHFMT_PROBE,
             NativeRole::Shellcheck => &SHELLCHECK_PROBE,
+            NativeRole::JavaFmt => &JAVA_FMT_PROBE,
+            NativeRole::KtFmt => &KTFMT_PROBE,
+            NativeRole::RStyler => &RSTYLER_PROBE,
+            NativeRole::SwiftFmt => &SWIFT_FORMAT_PROBE,
+            NativeRole::DartFmt => &DARTFMT_PROBE,
+            NativeRole::GleamFmt => &GLEAMFMT_PROBE,
         }
     }
 
@@ -174,6 +224,12 @@ impl NativeToolEngine {
             NativeRole::ZigFmt => &ZIGFMT_KEY,
             NativeRole::Shfmt => &SHFMT_KEY,
             NativeRole::Shellcheck => &SHELLCHECK_KEY,
+            NativeRole::JavaFmt => &JAVA_FMT_KEY,
+            NativeRole::KtFmt => &KTFMT_KEY,
+            NativeRole::RStyler => &RSTYLER_KEY,
+            NativeRole::SwiftFmt => &SWIFT_FORMAT_KEY,
+            NativeRole::DartFmt => &DARTFMT_KEY,
+            NativeRole::GleamFmt => &GLEAMFMT_KEY,
         }
     }
 
@@ -188,6 +244,12 @@ impl NativeToolEngine {
             NativeRole::Shfmt => Some(&SHFMT_NOTICE),
             // shellcheck absent → TS lint still runs; no fallback notice needed.
             NativeRole::Shellcheck => None,
+            NativeRole::JavaFmt => Some(&JAVA_FMT_NOTICE),
+            NativeRole::KtFmt => Some(&KTFMT_NOTICE),
+            NativeRole::RStyler => Some(&RSTYLER_NOTICE),
+            NativeRole::SwiftFmt => Some(&SWIFT_FORMAT_NOTICE),
+            NativeRole::DartFmt => Some(&DARTFMT_NOTICE),
+            NativeRole::GleamFmt => Some(&GLEAMFMT_NOTICE),
         }
     }
 
@@ -251,6 +313,12 @@ impl Engine for NativeToolEngine {
             NativeRole::Rustfmt => RUST_LANGUAGES,
             NativeRole::ZigFmt => ZIG_LANGUAGES,
             NativeRole::Shfmt | NativeRole::Shellcheck => SHELL_LANGUAGES,
+            NativeRole::JavaFmt => JAVA_LANGUAGES,
+            NativeRole::KtFmt => KOTLIN_LANGUAGES,
+            NativeRole::RStyler => R_LANGUAGES,
+            NativeRole::SwiftFmt => SWIFT_LANGUAGES,
+            NativeRole::DartFmt => DART_LANGUAGES,
+            NativeRole::GleamFmt => GLEAM_LANGUAGES,
         }
     }
 
@@ -268,7 +336,15 @@ impl Engine for NativeToolEngine {
     /// engines are registered so each declares only what it actually does.
     fn capabilities(&self) -> Capabilities {
         match self.role {
-            NativeRole::GoFmt | NativeRole::Rustfmt | NativeRole::ZigFmt => Capabilities {
+            NativeRole::GoFmt
+            | NativeRole::Rustfmt
+            | NativeRole::ZigFmt
+            | NativeRole::JavaFmt
+            | NativeRole::KtFmt
+            | NativeRole::RStyler
+            | NativeRole::SwiftFmt
+            | NativeRole::DartFmt
+            | NativeRole::GleamFmt => Capabilities {
                 lint: true,
                 format: true,
                 fix: false,
@@ -327,7 +403,15 @@ impl Engine for NativeToolEngine {
     ///   append shellcheck diagnostics when the tool is enabled and present.
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
         match self.role {
-            NativeRole::GoFmt | NativeRole::Rustfmt | NativeRole::ZigFmt => TreeSitterEngine.lint(src, cfg),
+            NativeRole::GoFmt
+            | NativeRole::Rustfmt
+            | NativeRole::ZigFmt
+            | NativeRole::JavaFmt
+            | NativeRole::KtFmt
+            | NativeRole::RStyler
+            | NativeRole::SwiftFmt
+            | NativeRole::DartFmt
+            | NativeRole::GleamFmt => TreeSitterEngine.lint(src, cfg),
             NativeRole::Shfmt => Ok(Vec::new()),
             NativeRole::Shellcheck => {
                 let mut diags = TreeSitterEngine.lint(src, cfg)?;
@@ -347,7 +431,16 @@ impl Engine for NativeToolEngine {
     /// - Shell shellcheck: no-op (format capability is `false`).
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
         match self.role {
-            NativeRole::GoFmt | NativeRole::Rustfmt | NativeRole::ZigFmt | NativeRole::Shfmt => {
+            NativeRole::GoFmt
+            | NativeRole::Rustfmt
+            | NativeRole::ZigFmt
+            | NativeRole::Shfmt
+            | NativeRole::JavaFmt
+            | NativeRole::KtFmt
+            | NativeRole::RStyler
+            | NativeRole::SwiftFmt
+            | NativeRole::DartFmt
+            | NativeRole::GleamFmt => {
                 if !self.is_enabled(cfg) || self.probed_version().is_none() {
                     self.notify_tier2_fallback(cfg);
                     return TreeSitterEngine.format(src, cfg);
@@ -467,6 +560,9 @@ mod tests {
         assert!(!engine.capabilities().fix);
     }
 
+    // Wave-2 metadata tests (java/kotlin/r/swift/dart/gleam) live in
+    // crates/polylint-core/tests/native_tool.rs to keep this file under 1000 lines.
+
     // ---------------------------------------------------------------------------
     // Default-on / default-off policy
     // ---------------------------------------------------------------------------
@@ -492,6 +588,31 @@ mod tests {
         assert!(
             !NativeToolEngine::shell_lint().is_enabled(&default_cfg()),
             "shellcheck must be opt-in"
+        );
+        // All Wave-2 backends are opt-in (default_on = false).
+        assert!(
+            !NativeToolEngine::for_language(Language::Java).is_enabled(&default_cfg()),
+            "google-java-format must be opt-in"
+        );
+        assert!(
+            !NativeToolEngine::for_language(Language::Kotlin).is_enabled(&default_cfg()),
+            "ktfmt must be opt-in"
+        );
+        assert!(
+            !NativeToolEngine::for_language(Language::R).is_enabled(&default_cfg()),
+            "styler must be opt-in"
+        );
+        assert!(
+            !NativeToolEngine::for_language(Language::Swift).is_enabled(&default_cfg()),
+            "swift-format must be opt-in"
+        );
+        assert!(
+            !NativeToolEngine::for_language(Language::Dart).is_enabled(&default_cfg()),
+            "dartfmt must be opt-in"
+        );
+        assert!(
+            !NativeToolEngine::for_language(Language::Gleam).is_enabled(&default_cfg()),
+            "gleamfmt must be opt-in"
         );
     }
 

@@ -62,7 +62,6 @@ pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
         | Language::Mustache
         | Language::Xml => vec![Box::new(MarkupFmtEngine)],
         Language::Php => vec![Box::new(MagoEngine::default())],
-        // R has no native backend; it falls through to the tier-2 TreeSitterEngine.
         Language::Dockerfile => vec![Box::new(DockerfileEngine)],
         // Native toolchain backends. Each `NativeToolEngine` takes the registry
         // slot that `TreeSitterEngine` would otherwise occupy; it delegates
@@ -76,6 +75,15 @@ pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
         Language::Go => vec![Box::new(NativeToolEngine::for_language(Language::Go))],
         Language::Rust => vec![Box::new(NativeToolEngine::for_language(Language::Rust))],
         Language::Zig => vec![Box::new(NativeToolEngine::for_language(Language::Zig))],
+        // Opt-in native backends for JVM, R, Apple, Dart, and Gleam toolchains.
+        // Each delegates to TreeSitterEngine when disabled or absent, so the
+        // language is never left without formatting (see NativeToolEngine docs).
+        Language::Java => vec![Box::new(NativeToolEngine::for_language(Language::Java))],
+        Language::Kotlin => vec![Box::new(NativeToolEngine::for_language(Language::Kotlin))],
+        Language::R => vec![Box::new(NativeToolEngine::for_language(Language::R))],
+        Language::Swift => vec![Box::new(NativeToolEngine::for_language(Language::Swift))],
+        Language::Dart => vec![Box::new(NativeToolEngine::for_language(Language::Dart))],
+        Language::Gleam => vec![Box::new(NativeToolEngine::for_language(Language::Gleam))],
         // Shell: two opt-in native tools registered separately.
         // `shell_format()` (shfmt) holds the format slot; `shell_lint()`
         // (shellcheck) holds the lint slot. Both delegate to TreeSitterEngine

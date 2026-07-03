@@ -58,6 +58,70 @@ fn enabled_cfg() -> EngineConfig {
 }
 
 // ---------------------------------------------------------------------------
+// Wave-2 metadata (no tool presence required)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn engine_metadata_java() {
+    let engine = NativeToolEngine::for_language(Language::Java);
+    assert_eq!(engine.name(), "google-java-format");
+    assert_eq!(engine.languages(), &[Language::Java]);
+    assert!(engine.capabilities().format);
+    assert!(engine.capabilities().lint);
+    assert!(!engine.capabilities().fix);
+}
+
+#[test]
+fn engine_metadata_kotlin() {
+    let engine = NativeToolEngine::for_language(Language::Kotlin);
+    assert_eq!(engine.name(), "ktfmt");
+    assert_eq!(engine.languages(), &[Language::Kotlin]);
+    assert!(engine.capabilities().format);
+    assert!(engine.capabilities().lint);
+    assert!(!engine.capabilities().fix);
+}
+
+#[test]
+fn engine_metadata_r() {
+    let engine = NativeToolEngine::for_language(Language::R);
+    assert_eq!(engine.name(), "styler");
+    assert_eq!(engine.languages(), &[Language::R]);
+    assert!(engine.capabilities().format);
+    assert!(engine.capabilities().lint);
+    assert!(!engine.capabilities().fix);
+}
+
+#[test]
+fn engine_metadata_swift() {
+    let engine = NativeToolEngine::for_language(Language::Swift);
+    assert_eq!(engine.name(), "swift-format");
+    assert_eq!(engine.languages(), &[Language::Swift]);
+    assert!(engine.capabilities().format);
+    assert!(engine.capabilities().lint);
+    assert!(!engine.capabilities().fix);
+}
+
+#[test]
+fn engine_metadata_dart() {
+    let engine = NativeToolEngine::for_language(Language::Dart);
+    assert_eq!(engine.name(), "dartfmt");
+    assert_eq!(engine.languages(), &[Language::Dart]);
+    assert!(engine.capabilities().format);
+    assert!(engine.capabilities().lint);
+    assert!(!engine.capabilities().fix);
+}
+
+#[test]
+fn engine_metadata_gleam() {
+    let engine = NativeToolEngine::for_language(Language::Gleam);
+    assert_eq!(engine.name(), "gleamfmt");
+    assert_eq!(engine.languages(), &[Language::Gleam]);
+    assert!(engine.capabilities().format);
+    assert!(engine.capabilities().lint);
+    assert!(!engine.capabilities().fix);
+}
+
+// ---------------------------------------------------------------------------
 // Default-off invariant
 // ---------------------------------------------------------------------------
 
@@ -253,6 +317,137 @@ fn rustfmt_honors_rustfmt_toml_max_width() {
          max_width = 60; got Unchanged — poly likely forced max_width = 120 \
          and ignored the project toml"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Wave-2 opt-in backends (gated on tool presence)
+// ---------------------------------------------------------------------------
+
+/// Known-unformatted Java: missing blank lines between class members.
+/// Skipped when `google-java-format` is not on PATH.
+const JAVA_UNFORMATTED: &str = concat!(
+    "public class Hello {\n",
+    "public static void main(String[] args) {\n",
+    "System.out.println(\"hello\");\n",
+    "}\n",
+    "}\n",
+);
+
+#[test]
+fn java_native_known_unformatted_snapshot() {
+    let engine = NativeToolEngine::for_language(Language::Java);
+    if !engine.is_available() {
+        eprintln!("google-java-format not found on PATH — skipping java_native_known_unformatted_snapshot");
+        return;
+    }
+    let src = make_src("Hello.java", Language::Java, JAVA_UNFORMATTED);
+    let result = engine.format(&src, &enabled_cfg()).unwrap();
+    let formatted = match result {
+        FormatOutput::Formatted(s) => s,
+        FormatOutput::Unchanged => panic!("expected google-java-format to reformat the source"),
+    };
+    insta::assert_snapshot!("java_native_known_unformatted", formatted);
+}
+
+/// Known-unformatted Kotlin: missing blank lines and inconsistent indentation.
+/// Skipped when `ktfmt` is not on PATH.
+const KOTLIN_UNFORMATTED: &str = concat!("fun main() {\n", "println(\"hello\")\n", "val x=1+2\n", "}\n",);
+
+#[test]
+fn kotlin_native_known_unformatted_snapshot() {
+    let engine = NativeToolEngine::for_language(Language::Kotlin);
+    if !engine.is_available() {
+        eprintln!("ktfmt not found on PATH — skipping kotlin_native_known_unformatted_snapshot");
+        return;
+    }
+    let src = make_src("main.kt", Language::Kotlin, KOTLIN_UNFORMATTED);
+    let result = engine.format(&src, &enabled_cfg()).unwrap();
+    let formatted = match result {
+        FormatOutput::Formatted(s) => s,
+        FormatOutput::Unchanged => panic!("expected ktfmt to reformat the source"),
+    };
+    insta::assert_snapshot!("kotlin_native_known_unformatted", formatted);
+}
+
+/// Known-unformatted R: inconsistent spacing around operators.
+/// Skipped when `Rscript` is not on PATH.
+const R_UNFORMATTED: &str = concat!("x<-1+2\n", "y<-x*3\n", "print(y)\n",);
+
+#[test]
+fn r_native_known_unformatted_snapshot() {
+    let engine = NativeToolEngine::for_language(Language::R);
+    if !engine.is_available() {
+        eprintln!("Rscript not found on PATH — skipping r_native_known_unformatted_snapshot");
+        return;
+    }
+    let src = make_src("script.R", Language::R, R_UNFORMATTED);
+    let result = engine.format(&src, &enabled_cfg()).unwrap();
+    let formatted = match result {
+        FormatOutput::Formatted(s) => s,
+        // styler may not reformat all inputs; Unchanged is acceptable.
+        FormatOutput::Unchanged => R_UNFORMATTED.to_string(),
+    };
+    insta::assert_snapshot!("r_native_known_unformatted", formatted);
+}
+
+/// Known-unformatted Swift: missing blank lines and inconsistent indentation.
+/// Skipped when `swift-format` is not on PATH.
+const SWIFT_UNFORMATTED: &str = concat!("func greet(name:String)->String{\n", "return \"Hello, \"+name\n", "}\n",);
+
+#[test]
+fn swift_native_known_unformatted_snapshot() {
+    let engine = NativeToolEngine::for_language(Language::Swift);
+    if !engine.is_available() {
+        eprintln!("swift-format not found on PATH — skipping swift_native_known_unformatted_snapshot");
+        return;
+    }
+    let src = make_src("hello.swift", Language::Swift, SWIFT_UNFORMATTED);
+    let result = engine.format(&src, &enabled_cfg()).unwrap();
+    let formatted = match result {
+        FormatOutput::Formatted(s) => s,
+        FormatOutput::Unchanged => SWIFT_UNFORMATTED.to_string(),
+    };
+    insta::assert_snapshot!("swift_native_known_unformatted", formatted);
+}
+
+/// Known-unformatted Dart: missing trailing commas and inconsistent spacing.
+/// Skipped when `dart` is not on PATH.
+const DART_UNFORMATTED: &str = "void main(){print('hello');}\n";
+
+#[test]
+fn dart_native_known_unformatted_snapshot() {
+    let engine = NativeToolEngine::for_language(Language::Dart);
+    if !engine.is_available() {
+        eprintln!("dart not found on PATH — skipping dart_native_known_unformatted_snapshot");
+        return;
+    }
+    let src = make_src("main.dart", Language::Dart, DART_UNFORMATTED);
+    let result = engine.format(&src, &enabled_cfg()).unwrap();
+    let formatted = match result {
+        FormatOutput::Formatted(s) => s,
+        FormatOutput::Unchanged => panic!("expected dart format to reformat the source"),
+    };
+    insta::assert_snapshot!("dart_native_known_unformatted", formatted);
+}
+
+/// Known-unformatted Gleam: missing spaces around operators.
+/// Skipped when `gleam` is not on PATH.
+const GLEAM_UNFORMATTED: &str = concat!("pub fn main()->Nil{\n", "io.println(\"hello\")\n", "}\n",);
+
+#[test]
+fn gleam_native_known_unformatted_snapshot() {
+    let engine = NativeToolEngine::for_language(Language::Gleam);
+    if !engine.is_available() {
+        eprintln!("gleam not found on PATH — skipping gleam_native_known_unformatted_snapshot");
+        return;
+    }
+    let src = make_src("main.gleam", Language::Gleam, GLEAM_UNFORMATTED);
+    let result = engine.format(&src, &enabled_cfg()).unwrap();
+    let formatted = match result {
+        FormatOutput::Formatted(s) => s,
+        FormatOutput::Unchanged => panic!("expected gleam format to reformat the source"),
+    };
+    insta::assert_snapshot!("gleam_native_known_unformatted", formatted);
 }
 
 /// Without a `rustfmt.toml`, poly imposes no width and rustfmt applies its own

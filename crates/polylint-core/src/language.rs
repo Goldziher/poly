@@ -86,6 +86,12 @@ pub enum Language {
     Proto,
     /// Zig.
     Zig,
+    /// Swift.
+    Swift,
+    /// Dart.
+    Dart,
+    /// Gleam.
+    Gleam,
     /// Any other language, identified by its tree-sitter-language-pack id.
     Other(String),
 }
@@ -134,6 +140,9 @@ impl Language {
             Language::Rust => "rust",
             Language::Proto => "proto",
             Language::Zig => "zig",
+            Language::Swift => "swift",
+            Language::Dart => "dart",
+            Language::Gleam => "gleam",
             Language::Other(s) => s.as_str(),
         }
     }
@@ -201,6 +210,9 @@ impl Language {
             "rs" => Language::Rust,
             "proto" => Language::Proto,
             "zig" => Language::Zig,
+            "swift" => Language::Swift,
+            "dart" => Language::Dart,
+            "gleam" => Language::Gleam,
             _ => return None,
         };
         Some(lang)
@@ -261,6 +273,9 @@ impl Language {
             "rust" => Language::Rust,
             "protobuf" | "proto" => Language::Proto,
             "zig" => Language::Zig,
+            "swift" => Language::Swift,
+            "dart" => Language::Dart,
+            "gleam" => Language::Gleam,
             // mdsf spells these with a long form; poly's tree-sitter detection
             // assigns the canonical pack id (`makefile` aliases to `make`, and
             // `.vim` files detect as `vim`). Normalise both so an enabled catalog
@@ -296,7 +311,9 @@ impl Language {
             | Language::Mustache
             | Language::Xml
             | Language::GraphQl
-            | Language::Hcl => 2,
+            | Language::Hcl
+            | Language::Dart
+            | Language::Gleam => 2,
             _ => 4,
         }
     }

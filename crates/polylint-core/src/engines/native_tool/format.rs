@@ -71,14 +71,12 @@ pub(crate) fn format_via_tool(spec: &ToolSpec, src: &SourceFile, indent_width: u
         cmd.arg("--edition");
         cmd.arg(super::edition::resolve_edition(&src.path));
     }
-    // rustfmt reads source from stdin, so it cannot see the file's on-disk
-    // location and would otherwise discover `rustfmt.toml` relative to poly's
-    // current working directory. Anchor the child process to the source file's
-    // directory so rustfmt's own config discovery walks up from the file —
-    // exactly as `cargo fmt` does. A governing `rustfmt.toml` is honoured; with
-    // none, rustfmt applies its built-in defaults. poly never imposes an
-    // opinionated width on Rust, so `poly fmt` and `cargo fmt` agree.
-    if spec.rustfmt_config_flag
+    // Anchor the child process to the source file's directory when the spec
+    // needs config-file discovery rooted at the file's location:
+    // - rustfmt_config_flag: rustfmt reads rustfmt.toml walking up from cwd.
+    // - run_in_file_dir: swift-format discovers .swift-format the same way.
+    // Without anchoring, both tools discover config relative to poly's own cwd.
+    if (spec.rustfmt_config_flag || spec.run_in_file_dir)
         && let Some(parent) = src.path.parent().filter(|p| p.is_dir())
     {
         cmd.current_dir(parent);

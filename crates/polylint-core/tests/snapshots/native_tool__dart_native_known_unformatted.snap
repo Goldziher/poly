@@ -1,0 +1,7 @@
+---
+source: crates/polylint-core/tests/native_tool.rs
+expression: formatted
+---
+void main() {
+  print('hello');
+}
