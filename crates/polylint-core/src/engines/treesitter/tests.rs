@@ -585,6 +585,59 @@ fn ron_query_driven_unchanged_when_already_indented() {
     );
 }
 
+// ── Elixir: built-in do/end indentation ─────────────────────────────────────
+// Elixir uses `do...end` blocks rather than braces, so BRACE_FAMILY cannot
+// reindent it. The built-in polylint indents query drives reindentation via the
+// same query-driven path as RON/KDL, but with a query compiled from the static
+// ELIXIR_INDENTS constant rather than a bundled indents.scm from the language pack.
+
+/// Known-unformatted Elixir: the sample from the bug report — all content at
+/// column 0 instead of the canonical 2-space nesting.
+#[test]
+fn elixir_do_end_reindents_nested_modules_and_defs() {
+    let engine = TreeSitterEngine;
+    let input = concat!("defmodule Foo do\n", "def bar do\n", ":ok\n", "end\n", "end\n",);
+    let expected = concat!("defmodule Foo do\n", "  def bar do\n", "    :ok\n", "  end\n", "end\n",);
+    let s = src("foo.ex", Language::Other("elixir".into()), input);
+    let text = formatted_text(engine.format(&s, &cfg(4)).unwrap(), input);
+    assert_eq!(text, expected, "Elixir do/end blocks must reindent to 2-space nesting");
+}
+
+/// Idempotency: already-correct Elixir must be returned as `Unchanged`.
+#[test]
+fn elixir_do_end_unchanged_when_already_indented() {
+    let engine = TreeSitterEngine;
+    let already_correct = concat!("defmodule Foo do\n", "  def bar do\n", "    :ok\n", "  end\n", "end\n",);
+    let s = src("foo.ex", Language::Other("elixir".into()), already_correct);
+    let out = engine.format(&s, &cfg(4)).unwrap();
+    assert!(
+        matches!(out, FormatOutput::Unchanged),
+        "already-indented Elixir must be Unchanged"
+    );
+}
+
+/// rescue/else/catch/after sub-blocks must sit at the same depth as `do`.
+#[test]
+fn elixir_rescue_block_at_same_depth_as_do() {
+    let engine = TreeSitterEngine;
+    let input = concat!("try do\n", "raise \"error\"\n", "rescue\n", "_ -> :ok\n", "end\n",);
+    let expected = concat!("try do\n", "  raise \"error\"\n", "rescue\n", "  _ -> :ok\n", "end\n",);
+    let s = src("foo.ex", Language::Other("elixir".into()), input);
+    let text = formatted_text(engine.format(&s, &cfg(4)).unwrap(), input);
+    assert_eq!(text, expected, "rescue must be at same depth as do and end");
+}
+
+/// Anonymous functions (`fn ... end`) must indent their body by one level.
+#[test]
+fn elixir_anonymous_function_body_indented() {
+    let engine = TreeSitterEngine;
+    let input = concat!("add = fn x, y ->\n", "x + y\n", "end\n",);
+    let expected = concat!("add = fn x, y ->\n", "  x + y\n", "end\n",);
+    let s = src("foo.ex", Language::Other("elixir".into()), input);
+    let text = formatted_text(engine.format(&s, &cfg(4)).unwrap(), input);
+    assert_eq!(text, expected, "fn ... end body must be indented");
+}
+
 #[test]
 fn non_member_grammar_still_gets_whitespace_normalization() {
     // Regression guard: a language NOT in LEAVE_UNTOUCHED (bash) must still

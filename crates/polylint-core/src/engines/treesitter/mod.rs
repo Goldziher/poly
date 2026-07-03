@@ -114,9 +114,9 @@ impl Engine for TreeSitterEngine {
         // invalidates cached tier-2 output (grammars drive parsing and thus the
         // reindent). Bump the leading number on logic changes, the tslp suffix on
         // a pack bump.
-        // History: v7 query-driven indent path; v6 LEAVE_UNTOUCHED no-ops;
-        //          v5 level-keyed-by-open-line; v4 CRLF fix.
-        "7+tslp1.12.0"
+        // History: v8 Elixir do/end built-in indents query; v7 query-driven indent path;
+        //          v6 LEAVE_UNTOUCHED no-ops; v5 level-keyed-by-open-line; v4 CRLF fix.
+        "8+tslp1.12.0"
     }
 
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
@@ -181,7 +181,11 @@ impl Engine for TreeSitterEngine {
                 if BRACE_FAMILY.contains(&name.as_str()) {
                     reindent_braces(&name, src, cfg).unwrap_or_else(|| normalize_whitespace(&src.content, &cfg.globals))
                 } else {
+                    // 1. Language-pack bundled indents.scm (e.g. RON, KDL, …)
+                    // 2. Polylint built-in query for grammars without a bundled one (e.g. Elixir)
+                    // 3. Whitespace normalization (trim trailing WS, fix line endings)
                     indent::try_reindent_query(&name, src, cfg)
+                        .or_else(|| indent::try_reindent_builtin(&name, src, cfg))
                         .unwrap_or_else(|| normalize_whitespace(&src.content, &cfg.globals))
                 }
             }
@@ -458,12 +462,13 @@ fn collect_switch_case_bodies(
 }
 
 /// The indent unit string for a grammar: a tab for Go (gofmt), two spaces for
-/// Dart (`dart format`) and Swift (Xcode default is 4 but swift-format and the
-/// conformance golden use 2), and `indent_width` spaces (default 4) otherwise.
+/// Dart (`dart format`), Swift (Xcode default is 4 but swift-format and the
+/// conformance golden use 2), and Elixir (`mix format` uses 2-space canonical
+/// style), and `indent_width` spaces (default 4) otherwise.
 fn indent_unit(grammar_name: &str, indent_width: usize) -> Cow<'static, str> {
     match grammar_name {
         "go" => Cow::Borrowed("\t"),
-        "dart" | "swift" => Cow::Borrowed("  "),
+        "dart" | "swift" | "elixir" => Cow::Borrowed("  "),
         _ => Cow::Owned(" ".repeat(indent_width.max(1))),
     }
 }

@@ -30,7 +30,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use tree_sitter::{Parser as RawParser, QueryCursor, StreamingIterator};
+use tree_sitter::{Parser as RawParser, Query, QueryCursor, StreamingIterator};
 use tree_sitter_language_pack::{QueryKind, get_indents_query, get_language, get_query};
 
 use crate::config::EngineConfig;
@@ -45,6 +45,101 @@ use crate::engine::SourceFile;
 thread_local! {
     static QUERY_STATE: RefCell<HashMap<String, (RawParser, QueryCursor)>> =
         RefCell::new(HashMap::new());
+}
+
+// ── Polylint built-in indents queries ────────────────────────────────────────
+//
+// Some grammars ship without a bundled `indents.scm` in tree-sitter-language-pack
+// (e.g. Elixir's grammar is maintained by the Elixir core team and has not yet
+// contributed an indents query). Polylint provides minimal hand-written queries
+// here so those languages still receive structural reindentation via the same
+// query-driven path that bundled languages use.
+//
+// Each entry is `(grammar_name, query_source)`.
+static BUILTIN_QUERIES: &[(&str, &str)] = &[("elixir", ELIXIR_INDENTS)];
+
+/// Minimal Elixir indents query for tier-2 structural reindentation.
+///
+/// Elixir uses `do...end` blocks where braces never appear as block delimiters,
+/// so the brace-counting BRACE_FAMILY path cannot reindent it. This query
+/// captures the key structural nodes:
+///
+/// - `(do_block)` as `@indent`: every `do...end` block (defmodule, def, if,
+///   case, for, with, try, receive, …) indents its interior by one level.
+/// - `"end"` inside `do_block` as `@indent.end`: the closing keyword brings
+///   its own line back to the pre-block depth (−1).
+/// - `rescue`/`else`/`catch`/`after` keywords as `@branch`: these sub-block
+///   opener keywords appear at the same depth as the surrounding `do`, so the
+///   line they appear on gets −1, cancelling the +1 contributed by the
+///   enclosing `do_block`.
+/// - `(anonymous_function)` / `"end"`: `fn ... end` anonymous functions follow
+///   the same indent model as `do_block`.
+const ELIXIR_INDENTS: &str = r#"
+; do...end blocks (defmodule/def/if/case/for/with/try/receive/…)
+(do_block) @indent
+(do_block "end" @indent.end)
+
+; rescue/else/catch/after keywords sit at the same depth as the opening `do`,
+; so tag them as @branch to apply -1 on the line they appear on.
+(rescue_block "rescue" @branch)
+(else_block "else" @branch)
+(catch_block "catch" @branch)
+(after_block "after" @branch)
+
+; fn ... end anonymous functions
+(anonymous_function) @indent
+(anonymous_function "end" @indent.end)
+"#;
+
+// Per-thread pool for polylint built-in queries: (parser, cursor, compiled query)
+// keyed by grammar name. The compiled `Query` is stored alongside the parser and
+// cursor so the grammar is only loaded and the query is only compiled once per
+// thread per grammar, not once per file.
+thread_local! {
+    static BUILTIN_STATE: RefCell<HashMap<String, (RawParser, QueryCursor, Query)>> =
+        RefCell::new(HashMap::new());
+}
+
+/// Attempt query-driven reindentation using a polylint built-in indents query.
+///
+/// Called when [`try_reindent_query`] returns `None` (i.e. the language pack
+/// does not bundle an `indents.scm` for `name`). Returns `Some(formatted)` when
+/// a built-in query exists and parsing succeeds; returns `None` to signal the
+/// caller to fall back to whitespace normalization.
+pub fn try_reindent_builtin(name: &str, src: &SourceFile, cfg: &EngineConfig) -> Option<String> {
+    // Fast-path: no built-in query for this grammar.
+    let query_src = BUILTIN_QUERIES.iter().find(|(n, _)| *n == name).map(|(_, q)| *q)?;
+
+    let (openers, closers, auto_ranges, protected) = BUILTIN_STATE.with(|cell| {
+        let mut pool = cell.borrow_mut();
+        if !pool.contains_key(name) {
+            let language = get_language(name).ok()?;
+            let mut parser = RawParser::new();
+            parser.set_language(&language).ok()?;
+            let query = Query::new(&language, query_src).ok()?;
+            pool.insert(name.to_string(), (parser, QueryCursor::new(), query));
+        }
+        // Guaranteed present by the insert above.
+        let entry = pool.get_mut(name)?;
+        // Parse first (borrows entry.0 temporarily, returns an owned Tree).
+        let tree = entry.0.parse(src.content.as_bytes(), None)?;
+        // Then borrow entry.2 (query, immutable) and entry.1 (cursor, mutable)
+        // simultaneously — distinct fields, so the borrow checker accepts this.
+        let (openers, closers, auto_ranges) =
+            collect_adjustments(&entry.2, &mut entry.1, &tree, src.content.as_bytes());
+        let protected = collect_protected_ranges(&tree);
+        Some((openers, closers, auto_ranges, protected))
+    })?;
+
+    Some(emit_reindented(
+        src,
+        cfg,
+        name,
+        &openers,
+        &closers,
+        &auto_ranges,
+        &protected,
+    ))
 }
 
 /// Attempt query-driven reindentation for the given grammar and source.

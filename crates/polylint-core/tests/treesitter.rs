@@ -103,6 +103,46 @@ fn r_lint_flags_trailing_whitespace() {
     insta::assert_debug_snapshot!("r_lint_flags_trailing_whitespace", summary);
 }
 
+// ---------------------------------------------------------------------------
+// Elixir: built-in do/end structural reindentation
+// ---------------------------------------------------------------------------
+
+/// Known-unformatted Elixir: all code at column 0.  The built-in polylint
+/// indents query for Elixir (ELIXIR_INDENTS in indent.rs) applies 2-space
+/// structural reindentation via the query-driven path.
+const ELIXIR_UNFORMATTED: &str = "\
+defmodule Foo do
+def bar do
+:ok
+end
+end
+";
+
+#[test]
+fn generic_reindents_elixir() {
+    let engine = TreeSitterEngine;
+    let src = make_src("foo.ex", Language::Other("elixir".into()), ELIXIR_UNFORMATTED);
+    let formatted = match engine.format(&src, &engine_cfg(4)).unwrap() {
+        FormatOutput::Formatted(text) => text,
+        FormatOutput::Unchanged => ELIXIR_UNFORMATTED.to_string(),
+    };
+    insta::assert_snapshot!("generic_reindents_elixir", formatted);
+}
+
+/// Idempotency guard: a second format pass on already-correct Elixir must
+/// return `Unchanged`.
+#[test]
+fn generic_elixir_already_formatted_is_unchanged() {
+    let engine = TreeSitterEngine;
+    let already_correct = "defmodule Foo do\n  def bar do\n    :ok\n  end\nend\n";
+    let src = make_src("foo.ex", Language::Other("elixir".into()), already_correct);
+    let out = engine.format(&src, &engine_cfg(4)).unwrap();
+    assert!(
+        matches!(out, FormatOutput::Unchanged),
+        "already-indented Elixir must be Unchanged, got Formatted"
+    );
+}
+
 const WS_UNNORMALIZED: &str = "first line   \n\n\n\nsecond line\t\n";
 
 #[test]
