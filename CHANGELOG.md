@@ -7,6 +7,25 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). `polylint` and
 
 ## [Unreleased]
 
+### Added
+
+- **C# tier-2 support** — a `Language::CSharp` variant so `.cs` files route to the
+  tree-sitter generic formatter (deterministic, zero system dependency) instead of
+  being skipped. Maps the `c#` / `csharp` catalog names and the `.cs` extension.
+- **Elixir `do…end` reindent** in the tier-2 formatter. Elixir's blocks are
+  keyword-delimited (`do…end`), so they matched neither the brace-counting path nor
+  a language-pack indents query (tree-sitter-elixir ships none) and were left at
+  column 0. A new built-in-indents-query dispatch slot plus a minimal Elixir query
+  produces `mix format`'s 2-space nesting; idempotent, with heredocs/strings
+  preserved.
+
+### Changed
+
+- **`poly fmt` honors `// swift-format-ignore-file`** — a Swift file carrying the
+  directive is left byte-for-byte untouched (the same whole-file skip marker
+  `swift-format` respects), mirroring the generated-lock-file skip. Protects files a
+  project opted out of formatting and machine-generated swift-bridge glue.
+
 ## [0.2.0] - 2026-07-03
 
 ### Added
