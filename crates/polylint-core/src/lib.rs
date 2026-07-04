@@ -34,7 +34,7 @@ pub mod resolve;
 pub mod runner;
 
 pub use config::{Config, Kind};
-pub use engine::{Capabilities, Diagnostic, Engine, FormatOutput, Severity, SourceFile, Span};
+pub use engine::{Capabilities, Diagnostic, Edit, Engine, FormatOutput, Severity, SourceFile, Span};
 pub use language::Language;
 pub use report::Verbosity;
 pub use resolve::ConfigSet;

@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 use polylint_core::report::{self, Verbosity};
 use polylint_core::runner::{EngineDebug, FormatResult, LintResult, RunDebug};
-use polylint_core::{Diagnostic, Severity, Span};
+use polylint_core::{Diagnostic, Edit, Severity, Span};
 
 fn sample_lint_results() -> Vec<LintResult> {
     let mut metadata = BTreeMap::new();
@@ -108,6 +108,106 @@ fn lint_pretty_verbose_shows_description_url_and_metadata() {
     );
     assert!(text.contains("category=style"), "--verbose must show metadata");
     insta::assert_snapshot!("lint_pretty_verbose", text);
+}
+
+#[test]
+fn lint_pretty_reports_autofixable_count() {
+    owo_colors::set_override(false);
+    // Two findings, only one carrying a suggested `fix` edit: the summary must
+    // report the total and, on its own line, how many are fixable with `--fix`.
+    let results = vec![LintResult {
+        path: PathBuf::from("src/main.py"),
+        diagnostics: vec![
+            Diagnostic {
+                engine: "ruff".to_string(),
+                code: Some("F401".to_string()),
+                severity: Severity::Warning,
+                title: "unused import".to_string(),
+                description: None,
+                span: Some(Span {
+                    start_line: 1,
+                    start_col: 1,
+                    end_line: 1,
+                    end_col: 20,
+                }),
+                url: None,
+                fix: vec![Edit {
+                    start_byte: 0,
+                    end_byte: 20,
+                    replacement: String::new(),
+                }],
+                metadata: BTreeMap::new(),
+            },
+            Diagnostic {
+                engine: "ruff".to_string(),
+                code: None,
+                severity: Severity::Error,
+                title: "syntax error".to_string(),
+                description: None,
+                span: None,
+                url: None,
+                fix: vec![],
+                metadata: BTreeMap::new(),
+            },
+        ],
+        debug: None,
+    }];
+
+    let (text, total) = report::render_lint_pretty(&results, Verbosity::default());
+    assert_eq!(total, 2, "two diagnostics in the result set");
+    assert!(text.contains("2 issue(s) found."), "missing total line, got:\n{text}");
+    assert!(
+        text.contains("1 fixable with the `--fix` option."),
+        "missing autofixable count, got:\n{text}"
+    );
+    insta::assert_snapshot!("lint_pretty_fixable", text);
+}
+
+/// Boundary: when *every* finding carries an autofix, the fixable count equals
+/// the total and the hint reports all of them.
+#[test]
+fn lint_pretty_reports_all_findings_fixable_when_every_diagnostic_has_a_fix() {
+    owo_colors::set_override(false);
+    let fixable_diagnostic = |code: &str| Diagnostic {
+        engine: "ruff".to_string(),
+        code: Some(code.to_string()),
+        severity: Severity::Warning,
+        title: "unused import".to_string(),
+        description: None,
+        span: None,
+        url: None,
+        fix: vec![Edit {
+            start_byte: 0,
+            end_byte: 1,
+            replacement: String::new(),
+        }],
+        metadata: BTreeMap::new(),
+    };
+    let results = vec![LintResult {
+        path: PathBuf::from("src/main.py"),
+        diagnostics: vec![fixable_diagnostic("F401"), fixable_diagnostic("F811")],
+        debug: None,
+    }];
+
+    let (text, total) = report::render_lint_pretty(&results, Verbosity::default());
+    assert_eq!(total, 2);
+    assert!(text.contains("2 issue(s) found."), "got:\n{text}");
+    assert!(
+        text.contains("2 fixable with the `--fix` option."),
+        "every finding is fixable, so the count must equal the total; got:\n{text}"
+    );
+}
+
+/// When no finding carries an autofix, the summary must not print a fixable
+/// hint at all (rather than a misleading "0 fixable").
+#[test]
+fn lint_pretty_omits_fixable_line_when_nothing_is_fixable() {
+    owo_colors::set_override(false);
+    let (text, _total) = report::render_lint_pretty(&sample_lint_results(), Verbosity::default());
+    assert!(
+        !text.contains("fixable"),
+        "must not mention fixable when no finding has an autofix, got:\n{text}"
+    );
 }
 
 #[test]
