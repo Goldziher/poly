@@ -23,6 +23,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). `polylint` and
   option.`), making the value of a follow-up `--fix` run obvious from a dry run.
   The line is omitted when nothing is fixable.
 
+## [0.4.0] - 2026-07-04
+
 ### Added
 
 - **Colored `poly hooks install` / `uninstall` output** — a green ✓ header with
