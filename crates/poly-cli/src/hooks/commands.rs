@@ -16,6 +16,7 @@ use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
+use owo_colors::{OwoColorize, Stream::Stdout};
 use poly_cache::ResultCache;
 use poly_config::{PolyConfig, Stage as ConfigStage};
 use poly_hooks::stage::RunInputMode;
@@ -221,19 +222,57 @@ fn install(args: InstallArgs) -> Result<ExitCode> {
     let hooks_dir = poly_hooks::git::get_git_hooks_dir().context("failed to resolve the git hooks directory")?;
     let poly_bin = std::env::current_exe().context("failed to resolve the running poly binary")?;
     let written = poly_hooks::install::install(&hooks_dir, &poly_bin, &args.hook_types, args.overwrite)?;
-    for path in &written {
-        println!("installed {}", path.display());
-    }
+    print_hook_summary("Installed", "install", &hooks_dir, &written);
     Ok(ExitCode::SUCCESS)
 }
 
 fn uninstall(args: UninstallArgs) -> Result<ExitCode> {
     let hooks_dir = poly_hooks::git::get_git_hooks_dir().context("failed to resolve the git hooks directory")?;
     let removed = poly_hooks::install::uninstall(&hooks_dir, &args.hook_types)?;
-    for path in &removed {
-        println!("uninstalled {}", path.display());
-    }
+    print_hook_summary("Removed", "remove", &hooks_dir, &removed);
     Ok(ExitCode::SUCCESS)
+}
+
+/// Render a colored summary of installed/removed hook shims.
+///
+/// `done` is the past-tense header verb ("Installed" / "Removed"); `verb` the
+/// bare infinitive used in the empty-set notice ("install" / "remove"). Paths
+/// are shown relative to the current directory (the hooks live under a single
+/// directory, printed once) so no absolute paths appear in the output.
+fn print_hook_summary(done: &str, verb: &str, hooks_dir: &Path, hooks: &[PathBuf]) {
+    if hooks.is_empty() {
+        println!(
+            "{} no poly git hooks to {verb}.",
+            "·".if_supports_color(Stdout, |t| t.dimmed())
+        );
+        return;
+    }
+    let dir = relative_to_cwd(hooks_dir);
+    let plural = if hooks.len() == 1 { "" } else { "s" };
+    println!(
+        "{} {done} {} git hook{plural} in {}",
+        "✓".if_supports_color(Stdout, |t| t.green()),
+        hooks.len().if_supports_color(Stdout, |t| t.bold()),
+        dir.display().if_supports_color(Stdout, |t| t.cyan()),
+    );
+    for path in hooks {
+        let name = path.file_name().map_or_else(|| path.as_os_str(), |n| n);
+        println!(
+            "  {} {}",
+            "›".if_supports_color(Stdout, |t| t.dimmed()),
+            name.to_string_lossy()
+        );
+    }
+}
+
+/// Strip the current-directory prefix from `path` so the display is relative;
+/// falls back to `path` unchanged when it is not under the cwd (or the cwd is
+/// unavailable) or is already relative.
+fn relative_to_cwd(path: &Path) -> PathBuf {
+    std::env::current_dir()
+        .ok()
+        .and_then(|cwd| path.strip_prefix(&cwd).ok().map(Path::to_path_buf))
+        .unwrap_or_else(|| path.to_path_buf())
 }
 
 // ── hook-impl ─────────────────────────────────────────────────────────────────
