@@ -220,8 +220,7 @@ fn resolve_run_stage(requested: Option<&str>, hooks: &poly_config::HooksConfig) 
 
 fn install(args: InstallArgs) -> Result<ExitCode> {
     let hooks_dir = poly_hooks::git::get_git_hooks_dir().context("failed to resolve the git hooks directory")?;
-    let poly_bin = std::env::current_exe().context("failed to resolve the running poly binary")?;
-    let written = poly_hooks::install::install(&hooks_dir, &poly_bin, &args.hook_types, args.overwrite)?;
+    let written = poly_hooks::install::install(&hooks_dir, &args.hook_types, args.overwrite)?;
     print_hook_summary("Installed", "install", &hooks_dir, &written);
     Ok(ExitCode::SUCCESS)
 }

@@ -290,9 +290,26 @@ run = "touch sentinel.created"
     );
 
     // Commit something; the installed pre-commit shim must fire and run our job.
+    // The shim resolves `poly` from PATH, so prepend the test binary's directory
+    // (the built `poly` under target/) for the commit that triggers it.
     write(root, "tracked.txt", "content");
     git(root, &["add", "tracked.txt"]);
-    git(root, &["commit", "-q", "-m", "feat: trigger hook"]);
+    let poly_dir = Path::new(POLY).parent().expect("poly binary has a parent dir");
+    let augmented_path = match std::env::var_os("PATH") {
+        Some(existing) => format!("{}:{}", poly_dir.display(), existing.to_string_lossy()),
+        None => poly_dir.display().to_string(),
+    };
+    let commit = Command::new("git")
+        .args(["commit", "-q", "-m", "feat: trigger hook"])
+        .current_dir(root)
+        .env("PATH", augmented_path)
+        .output()
+        .expect("git commit");
+    assert!(
+        commit.status.success(),
+        "commit (with hook) failed: {}",
+        String::from_utf8_lossy(&commit.stderr)
+    );
 
     assert!(
         root.join("sentinel.created").exists(),
