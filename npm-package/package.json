@@ -1,6 +1,6 @@
 {
   "name": "@nhirschfeld/polylint",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Universal zero-dependency linter & formatter through the poly Rust CLI.",
   "keywords": ["linter", "formatter", "lint", "format", "polyglot"],
   "homepage": "https://github.com/Goldziher/polylint#readme",

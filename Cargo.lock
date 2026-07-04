@@ -1435,7 +1435,7 @@ checksum = "b46dec724fd22199ebde05033a0cbae453bc3b1ecff11eb6a6bb3eec4b90c6a4"
 
 [[package]]
 name = "conformance"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -4603,7 +4603,7 @@ dependencies = [
 
 [[package]]
 name = "poly-cache"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "blake3",
@@ -4613,7 +4613,7 @@ dependencies = [
 
 [[package]]
 name = "poly-catalog"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "serde",
@@ -4622,7 +4622,7 @@ dependencies = [
 
 [[package]]
 name = "poly-cli"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "aho-corasick",
  "anyhow",
@@ -4650,7 +4650,7 @@ dependencies = [
 
 [[package]]
 name = "poly-config"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "poly-catalog",
@@ -4661,7 +4661,7 @@ dependencies = [
 
 [[package]]
 name = "poly-hooks"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anstyle-query",
  "anyhow",
@@ -4693,7 +4693,7 @@ dependencies = [
 
 [[package]]
 name = "poly-mcp"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "poly-cache",
@@ -4708,7 +4708,7 @@ dependencies = [
 
 [[package]]
 name = "polylint-core"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "alejandra",
  "anyhow",
