@@ -14,7 +14,7 @@
 //! The engine is **capability-probed**: when the tool's binary is absent from
 //! `PATH` it is a no-op ([`FormatOutput::Unchanged`]), so a missing tool
 //! degrades gracefully rather than erroring. It is registered only for tools a
-//! user has explicitly enabled, and routed by [`crate::registry`] (hence
+//! user has explicitly enabled, and routed by `crate::registry` (hence
 //! [`Engine::languages`] returns an empty slice).
 //!
 //! A catalog tool can be wired as **either** a formatter ([`CatalogToolEngine::format_engine`])

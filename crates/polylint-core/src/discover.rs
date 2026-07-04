@@ -88,7 +88,7 @@ fn detect(path: &std::path::Path) -> Option<Language> {
 /// `[discovery] exclude` (each rooted at its own config directory via
 /// [`ConfigSet::walk_excludes`]) plus the call-time `extra` globs. Matching paths
 /// are pruned from the walk in addition to `.gitignore` and the built-in
-/// [`PRUNED_DIRECTORIES`] set.
+/// `PRUNED_DIRECTORIES` set.
 pub fn discover(paths: &[PathBuf], configs: &ConfigSet, extra: &[String]) -> Vec<DiscoveredFile> {
     let mut out = Vec::new();
     for root in paths {

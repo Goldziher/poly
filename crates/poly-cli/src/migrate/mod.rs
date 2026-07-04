@@ -3,7 +3,7 @@
 //!
 //! The default mode is a dry-run **report**; `--write` applies the plan. Each
 //! importer (ruff / typos / taplo / markdownlint) yields `poly.toml` fragments
-//! and an [`Absorb`](importers::Absorb) verdict; the deletion policy decides,
+//! and an [`importers::Absorb`] verdict; the deletion policy decides,
 //! per source, whether it may be removed, stripped (pyproject sections), or
 //! kept. Merging into an existing `poly.toml` prefers keys already present, so
 //! re-running `--write` is idempotent.

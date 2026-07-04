@@ -5,11 +5,11 @@
 //!
 //! Three modes, chosen per grammar:
 //! - **Leave untouched** for data, template, and asset grammars in
-//!   [`LEAVE_UNTOUCHED`]: both `lint` and `format` are no-ops. Whitespace
+//!   `LEAVE_UNTOUCHED`: both `lint` and `format` are no-ops. Whitespace
 //!   inside these files is semantically significant output (CSV fields, ERB
 //!   template whitespace, diff context lines) — normalizing it silently
 //!   corrupts data.
-//! - **Structural reindent** for brace-delimited grammars in [`BRACE_FAMILY`]
+//! - **Structural reindent** for brace-delimited grammars in `BRACE_FAMILY`
 //!   (Go, C, C++, Java, Kotlin, Rust, …): the CST locates all bracket tokens
 //!   and re-indents each line by depth using a **conservative
 //!   level-keyed-by-open-line** model. Multiple brackets opened on the same

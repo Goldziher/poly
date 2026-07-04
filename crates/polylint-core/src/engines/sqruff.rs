@@ -53,7 +53,7 @@ pub struct SqruffEngine;
 /// Bumped to `+rule-configs-2` because parse/lex errors now emit `Error` severity (not
 /// `Warning`), so the same input can yield different diagnostic output for the same
 /// sqruff-lib version.
-const SQRUFF_VERSION: &str = "0.38.0+rule-configs-2";
+const SQRUFF_VERSION: &str = "0.39.0+rule-configs-2";
 
 /// Languages handled by this backend.
 static LANGUAGES: &[Language] = &[Language::Sql];

@@ -100,6 +100,15 @@ extend_ignore_words = ["certifi", "markdwon", "restructredtext", "brightscripter
 [lint.markdown.typos]
 extend_ignore_words = ["markdwon", "restructredtext", "brightscripter"]
 
+# The typos backend and its config importer carry deliberately-misspelled
+# fixtures in their `#[cfg(test)]` modules (e.g. `_typos.toml` sample dicts).
+# `tests/typos.rs` is a whole fixture file — excluded outright. The remaining
+# short tokens live inside test modules of real sources (lib.rs, importers),
+# so they are ignored repo-wide; none is a plausible real word.
+[lint.rust.typos]
+extend_ignore_words = ["teh", "inh", "te", "tha"]
+extend_exclude = ["crates/polylint-core/tests/typos.rs"]
+
 # Markdown rumdl rules (formerly `.rumdl.toml`). Applied to both lint and fmt so
 # CLI runs and the `polyfmt`/`polylint` hooks share one policy.
 #   MD013: line length — ai-rulez rules / context prose can be long.

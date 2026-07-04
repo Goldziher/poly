@@ -18,11 +18,26 @@ pub enum Action {
     /// Strip the given sections from `pyproject.toml` (never delete the file).
     /// Each section is a dotted path under the document root, e.g.
     /// `["tool", "ruff"]`.
-    StripPyproject { path: PathBuf, sections: Vec<Vec<String>> },
+    StripPyproject {
+        /// The `pyproject.toml` to edit in place.
+        path: PathBuf,
+        /// Dotted table paths to remove, each rooted at the document root.
+        sections: Vec<Vec<String>>,
+    },
     /// Keep the file untouched, with a reason (delegated tool, or Partial absorb).
-    Keep { path: PathBuf, reason: String },
+    Keep {
+        /// The source file left in place.
+        path: PathBuf,
+        /// Why the file is kept rather than absorbed.
+        reason: String,
+    },
     /// Keep and merely report the file (never auto-modified).
-    ReportOnly { path: PathBuf, note: String },
+    ReportOnly {
+        /// The source file surfaced in the report.
+        path: PathBuf,
+        /// The note shown to the user about this file.
+        note: String,
+    },
 }
 
 impl Action {
