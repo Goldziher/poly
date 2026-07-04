@@ -8,14 +8,18 @@
 //! - [`OutputPreview`] — a rolling preview buffer for streamed command output.
 //! - [`truncate_to_width`] — unicode-aware ellipsis truncation.
 //!
-//! The full `HookRunReporter` (indicatif / progress-bar UI) is left as a
-//! **B1 TODO** — it requires the `Hook` model and the rayon runner, which are
-//! introduced in the next phase.
+//! Live progress is emitted by [`report_hook_started`] / [`report_hook_finished`]
+//! — line-oriented stderr updates the runner calls as each hook starts and
+//! finishes, so a long-running tool is visibly running rather than looking hung.
+//! A richer indicatif progress-bar UI (with the [`OutputPreview`] window) remains
+//! a possible future upgrade but is not required for that feedback.
 
 use std::borrow::Cow;
+use std::io::Write as _;
+use std::time::Duration;
 
 use console::strip_ansi_codes;
-use owo_colors::OwoColorize as _;
+use owo_colors::{OwoColorize as _, Stream::Stderr};
 use unicode_width::{UnicodeWidthChar as _, UnicodeWidthStr as _};
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -173,6 +177,57 @@ impl crate::process::OutputSink for CaptureSink {
     fn write_chunk(&mut self, chunk: &[u8]) {
         self.buffer.extend_from_slice(chunk);
     }
+}
+
+// ── Live progress ─────────────────────────────────────────────────────────────
+
+/// At or above this many seconds a duration renders as `s` (e.g. `1.2s`); below
+/// it, as whole milliseconds (e.g. `340ms`).
+const SECS_DISPLAY_THRESHOLD: f64 = 1.0;
+
+/// Format a hook duration compactly: `1.2s` at or above a second, else `340ms`.
+fn format_duration(duration: Duration) -> String {
+    let secs = duration.as_secs_f64();
+    if secs >= SECS_DISPLAY_THRESHOLD {
+        format!("{secs:.1}s")
+    } else {
+        format!("{}ms", duration.as_millis())
+    }
+}
+
+/// The pass/fail marker for a live progress line, coloured against **stderr**
+/// (where progress is written) so it honours `NO_COLOR` and a non-TTY stderr —
+/// unlike [`project_status_marker`], which targets the stdout report.
+fn progress_marker(failed: bool) -> String {
+    if failed {
+        "×".if_supports_color(Stderr, |t| t.red()).to_string()
+    } else {
+        "✓".if_supports_color(Stderr, |t| t.green()).to_string()
+    }
+}
+
+/// Announce (to stderr) that a hook is now executing.
+///
+/// Called just before a hook runs, so a long-running tool (`cargo clippy`,
+/// `cargo test`, …) is visibly *running* rather than leaving the terminal blank
+/// — which reads as a hung commit. The coloured marker is materialized before
+/// the stderr lock is taken, so each `writeln!` is one locked, atomic line (safe
+/// under the rayon pool) and never interleaves with the captured stdout report.
+pub fn report_hook_started(id: &str) {
+    let marker = "▶".if_supports_color(Stderr, |t| t.cyan()).to_string();
+    let mut err = std::io::stderr().lock();
+    let _ = writeln!(err, "  {marker} {id} …");
+}
+
+/// Announce (to stderr) that a hook finished, with its pass/fail mark and how
+/// long it took. Pairs with [`report_hook_started`].
+pub fn report_hook_finished(id: &str, failed: bool, duration: Duration) {
+    let marker = progress_marker(failed);
+    let elapsed = format!("({})", format_duration(duration))
+        .if_supports_color(Stderr, |t| t.dimmed())
+        .to_string();
+    let mut err = std::io::stderr().lock();
+    let _ = writeln!(err, "  {marker} {id} {elapsed}");
 }
 
 // ── HookRunReporter ─────────────────────────────────────────────────────────

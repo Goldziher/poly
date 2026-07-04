@@ -201,6 +201,13 @@ pub struct HookRunRequest {
     /// Tier-2 sccache settings; `None` disables sccache env injection for this
     /// run (compiler hooks then run with the inherited environment).
     pub sccache: Option<SccacheSettings>,
+    /// Emit live per-hook progress to stderr as each hook starts and finishes.
+    ///
+    /// Off by default (deterministic, quiet). The CLI enables it when stderr is
+    /// a terminal so a long-running hook (`cargo clippy`, `cargo test`, …) is
+    /// visibly *running* instead of looking like the commit has hung — the
+    /// captured report is still rendered to stdout once the run completes.
+    pub progress: bool,
 }
 
 /// The result of running all requested stages.

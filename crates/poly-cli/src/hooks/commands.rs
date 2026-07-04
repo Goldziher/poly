@@ -11,6 +11,7 @@
 //!   the installed shim invokes when a git hook fires.
 
 use std::ffi::OsString;
+use std::io::IsTerminal as _;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -180,8 +181,15 @@ fn run_stage(args: RunArgs) -> Result<ExitCode> {
         concurrency: args.jobs,
         cache,
         sccache: sccache_settings(&config, args.no_sccache)?,
+        progress: show_progress(),
     };
     run_and_report(request)
+}
+
+/// Whether to stream live per-hook progress: on when stderr is a terminal, so
+/// interactive runs show which tool is running while captured logs stay quiet.
+fn show_progress() -> bool {
+    std::io::stderr().is_terminal()
 }
 
 /// A message-file stage run directly needs an explicit `--message-file`;
@@ -312,6 +320,7 @@ fn hook_impl(args: HookImplArgs) -> Result<ExitCode> {
         concurrency: args.jobs,
         cache,
         sccache: sccache_settings(&config, args.no_sccache)?,
+        progress: show_progress(),
     };
     run_and_report(request)
 }

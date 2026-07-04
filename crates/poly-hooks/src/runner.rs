@@ -253,7 +253,16 @@ fn run_group(
         }
 
         let refs: Vec<&Path> = matched.iter().map(AsRef::as_ref).collect();
-        (run_hook(&request.root, hook, pos, &refs, request.sccache.as_ref()), key)
+        // A cache hit or a skip returns above without ever reaching here, so a
+        // progress line is emitted only for hooks whose body actually executes.
+        if request.progress {
+            crate::reporter::report_hook_started(&hook.id);
+        }
+        let outcome = run_hook(&request.root, hook, pos, &refs, request.sccache.as_ref());
+        if request.progress {
+            crate::reporter::report_hook_finished(&hook.id, outcome.status.is_failure(), outcome.duration);
+        }
+        (outcome, key)
     };
 
     if serial {
