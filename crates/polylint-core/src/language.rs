@@ -154,14 +154,32 @@ impl Language {
     /// Returns `None` for unknown extensions; the tree-sitter tier (M5) provides a
     /// secondary fallback for those.
     pub fn from_path(path: &Path) -> Option<Language> {
+        // Extension-based detection takes precedence so a source file whose name
+        // merely contains "dockerfile" (e.g. `dockerfile.rs`) routes by its
+        // extension rather than the Dockerfile filename special-case below.
+        if let Some(lang) = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .and_then(|ext| Self::from_extension(&ext.to_ascii_lowercase(), path))
+        {
+            return Some(lang);
+        }
+        // Real Dockerfiles (`Dockerfile`, `Dockerfile.prod`, `*.dockerfile`) have no
+        // recognised source extension, so this only fires when the extension above
+        // did not match.
         if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
             let lower = name.to_ascii_lowercase();
             if lower == "dockerfile" || lower.starts_with("dockerfile.") || lower.ends_with(".dockerfile") {
                 return Some(Language::Dockerfile);
             }
         }
-        let ext = path.extension().and_then(|e| e.to_str())?.to_ascii_lowercase();
-        let lang = match ext.as_str() {
+        None
+    }
+
+    /// Map a lowercase file extension to a [`Language`], returning `None` for
+    /// unknown extensions. `path` is used only to disambiguate `*.component.html`.
+    fn from_extension(ext: &str, path: &Path) -> Option<Language> {
+        let lang = match ext {
             "py" | "pyi" => Language::Python,
             "js" | "cjs" | "mjs" => Language::JavaScript,
             "jsx" => Language::Jsx,
@@ -322,7 +340,33 @@ impl Language {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::Language;
+
+    #[test]
+    fn from_path_prefers_rs_extension_over_dockerfile_filename() {
+        // A source file whose name merely contains "dockerfile" must route by its
+        // `.rs` extension, not be misclassified as a Dockerfile.
+        assert_eq!(Language::from_path(Path::new("dockerfile.rs")), Some(Language::Rust));
+        assert_eq!(
+            Language::from_path(Path::new("foo/dockerfile.rs")),
+            Some(Language::Rust)
+        );
+    }
+
+    #[test]
+    fn from_path_still_detects_real_dockerfiles() {
+        assert_eq!(Language::from_path(Path::new("Dockerfile")), Some(Language::Dockerfile));
+        assert_eq!(
+            Language::from_path(Path::new("Dockerfile.prod")),
+            Some(Language::Dockerfile)
+        );
+        assert_eq!(
+            Language::from_path(Path::new("something.dockerfile")),
+            Some(Language::Dockerfile)
+        );
+    }
 
     #[test]
     fn from_catalog_name_maps_angular_and_vento_to_their_variants() {
