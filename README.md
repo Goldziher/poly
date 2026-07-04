@@ -29,17 +29,25 @@ commit checks · JSON + TOON + MCP
 
 ```console
 $ poly fmt --check
-would format crates/example/src/main.rs
+would reformat crates/example/src/main.rs
+
+1 file(s) will change of 1 file(s)
 
 $ poly fmt --fix
-formatted 1 file
+reformatted crates/example/src/main.rs
+
+1 changed of 1 file(s)
 
 $ poly lint --format toon
 path: crates/example/src/main.rs
 diagnostics[0]: engine=ruff, code=F401, severity=warning, title="`os` imported but unused"
 
 $ poly hooks install
-installed git hooks: pre-commit, commit-msg
+✓ Installed 10 git hooks in .git/hooks
+  › commit-msg
+  › pre-commit
+  › pre-push
+  …
 ```
 
 `poly fmt` is a dry run by default (CI-friendly); add `--fix` to write changes, and `poly lint
@@ -87,7 +95,7 @@ irm https://raw.githubusercontent.com/Goldziher/polylint/main/install.ps1 | iex
 ```
 
 Both installers detect the platform, download the matching release archive, verify it against
-`sha256sums.txt`, and install `poly`. Set `POLY_VERSION=v0.1.5` to pin a version or
+`sha256sums.txt`, and install `poly`. Set `POLY_VERSION=v0.4.0` to pin a version or
 `POLY_INSTALL_DIR=/path/to/bin` to choose the destination.
 
 ### GitHub Actions
