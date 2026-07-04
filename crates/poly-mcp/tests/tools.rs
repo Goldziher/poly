@@ -15,18 +15,19 @@ use rmcp::ServiceExt;
 use rmcp::model::CallToolRequestParams;
 use serde_json::Value;
 
-/// Write a Rust file with a lint defect (trailing whitespace) into a temp dir.
+/// Write a Python file with a real lint defect (unused import → ruff F401) into
+/// a temp dir. Trailing whitespace is a `fmt` concern, not a lint one, so a
+/// structured linter is used here to exercise the diagnostic contract.
 fn fixture_with_defect() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
-    // Trailing whitespace on a line is caught by the generic/whitespace tier.
-    std::fs::write(dir.path().join("bad.rs"), "fn main() {}   \n").unwrap();
+    std::fs::write(dir.path().join("bad.py"), "import os\n").unwrap();
     dir
 }
 
 #[test]
 fn lint_emits_diagnostic_contract_json() {
     let dir = fixture_with_defect();
-    let path = dir.path().join("bad.rs");
+    let path = dir.path().join("bad.py");
     let json = ops::lint(&[path.display().to_string()], &[], None, false).unwrap();
     let parsed: Value = serde_json::from_str(&json).unwrap();
     let results = parsed.as_array().expect("lint json is an array");
@@ -115,7 +116,7 @@ fn server_constructs_with_config_override() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn round_trip_initialize_list_and_call() {
     let dir = fixture_with_defect();
-    let path = dir.path().join("bad.rs");
+    let path = dir.path().join("bad.py");
 
     let (server_io, client_io) = tokio::io::duplex(8192);
     let (server_read, server_write) = tokio::io::split(server_io);

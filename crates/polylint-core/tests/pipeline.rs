@@ -12,12 +12,12 @@ fn write(dir: &std::path::Path, name: &str, content: &str) -> std::path::PathBuf
 }
 
 #[test]
-fn lint_flags_trailing_whitespace() {
-    // Use a Go file: its NativeToolEngine slot delegates `lint` to the
-    // tree-sitter generic tier, which emits the catch-all trailing-whitespace
-    // diagnostic (gofmt is format-only). (TOML→taplo and YAML→yaml are native
-    // backends that do not.) The lint is purely textual, so no grammar download
-    // happens here.
+fn lint_does_not_flag_trailing_whitespace() {
+    // Regression guard: trailing whitespace is a `fmt` concern, not a `lint`
+    // one. A Go file (served by the format-only NativeToolEngine, which falls
+    // back to the tree-sitter tier) must produce NO lint diagnostics for
+    // trailing whitespace — `poly fmt --fix` strips it instead. Reporting it
+    // under `lint` where `lint --fix` could not act on it was a footgun.
     let dir = tempfile::tempdir().unwrap();
     write(dir.path(), "a.go", "package main   \nfunc main() {}\n");
     let cfg = Config::default();
@@ -28,9 +28,11 @@ fn lint_flags_trailing_whitespace() {
         explicit_config: true,
     };
     let results = polylint_core::lint(&[dir.path().to_path_buf()], &cfg, &opts, false, false).unwrap();
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0].diagnostics.len(), 1);
-    assert_eq!(results[0].diagnostics[0].code.as_deref(), Some("trailing-whitespace"));
+    assert!(
+        results.iter().all(|r| r.diagnostics.is_empty()),
+        "trailing whitespace must not surface as a lint diagnostic, got {:?}",
+        results.iter().flat_map(|r| &r.diagnostics).collect::<Vec<_>>()
+    );
 }
 
 #[test]

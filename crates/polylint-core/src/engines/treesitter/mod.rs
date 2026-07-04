@@ -37,7 +37,7 @@ use tree_sitter_language_pack::{Node, Parser, detect_language, get_parser};
 
 use crate::config::EngineConfig;
 use crate::defaults::normalize_whitespace;
-use crate::engine::{Capabilities, Diagnostic, Engine, FormatOutput, Severity, SourceFile, Span};
+use crate::engine::{Capabilities, Engine, FormatOutput, SourceFile};
 use crate::language::Language;
 
 thread_local! {
@@ -102,8 +102,13 @@ impl Engine for TreeSitterEngine {
     }
 
     fn capabilities(&self) -> Capabilities {
+        // The generic tier is a formatter, not a linter: trailing-whitespace and
+        // line-ending normalization are applied by `format` (and undone
+        // losslessly there), so there is no lint surface to declare. Reporting a
+        // "trailing whitespace" diagnostic under `lint` that `lint --fix` could
+        // not act on was a footgun — it belongs to `fmt`, which does fix it.
         Capabilities {
-            lint: true,
+            lint: false,
             format: true,
             fix: true,
         }
@@ -119,42 +124,9 @@ impl Engine for TreeSitterEngine {
         "8+tslp1.12.0"
     }
 
-    fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
-        // Data/template/asset grammars: any whitespace change (including
-        // trailing-space removal) silently mutates semantic content.
-        if grammar_name(src).is_some_and(|n| LEAVE_UNTOUCHED.contains(&n.as_str())) {
-            return Ok(Vec::new());
-        }
-        // Language-agnostic trailing-whitespace lint, the catch-all diagnostic
-        // for every file the generic tier serves.
-        if !cfg.globals.trim_trailing_whitespace {
-            return Ok(Vec::new());
-        }
-        let mut diags = Vec::new();
-        for (i, raw) in src.content.split('\n').enumerate() {
-            let line = raw.strip_suffix('\r').unwrap_or(raw);
-            let trimmed_len = line.trim_end().len();
-            if trimmed_len != line.len() {
-                diags.push(Diagnostic {
-                    engine: "treesitter".to_string(),
-                    code: Some("trailing-whitespace".to_string()),
-                    severity: Severity::Warning,
-                    title: "trailing whitespace".to_string(),
-                    description: None,
-                    url: None,
-                    span: Some(Span {
-                        start_line: (i + 1) as u32,
-                        start_col: (trimmed_len + 1) as u32,
-                        end_line: (i + 1) as u32,
-                        end_col: (line.len() + 1) as u32,
-                    }),
-                    fix: vec![],
-                    metadata: Default::default(),
-                });
-            }
-        }
-        Ok(diags)
-    }
+    // No `lint` override: the generic tier declares `lint: false` and relies on
+    // the trait's no-op default. Trailing-whitespace normalization lives in
+    // `format` (see `normalize_whitespace`), reachable via `polyfmt`.
 
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
         // Data/template/asset grammars: leave byte-identical — no whitespace

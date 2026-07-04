@@ -332,8 +332,8 @@ pub(crate) static GOFMT_KEY: OnceLock<String> = OnceLock::new();
 pub(crate) static RUSTFMT_KEY: OnceLock<String> = OnceLock::new();
 pub(crate) static ZIGFMT_KEY: OnceLock<String> = OnceLock::new();
 pub(crate) static SHFMT_KEY: OnceLock<String> = OnceLock::new();
-/// Folds in the shellcheck version AND the tree-sitter engine version, because
-/// the lint path always includes a TreeSitterEngine.lint() delegation.
+/// Folds in the shellcheck version (and, via the shared `version()` machinery,
+/// the tree-sitter engine version used by the format roles).
 pub(crate) static SHELLCHECK_KEY: OnceLock<String> = OnceLock::new();
 pub(crate) static JAVA_FMT_KEY: OnceLock<String> = OnceLock::new();
 pub(crate) static KTFMT_KEY: OnceLock<String> = OnceLock::new();

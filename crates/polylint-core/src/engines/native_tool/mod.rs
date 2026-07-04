@@ -45,9 +45,11 @@
 //! Each `NativeToolEngine` instance occupies the registry slot that
 //! `TreeSitterEngine` would otherwise hold for its language. For Shell, two
 //! entries are registered: one for `shfmt` (format) and one for `shellcheck`
-//! (lint). Internal delegation to `TreeSitterEngine` ensures exactly one
-//! formatter and one linter always runs per file, regardless of tool
-//! presence.
+//! (lint). When a format tool is absent, formatting delegates to
+//! `TreeSitterEngine` (the tier-2 fallback) so exactly one formatter always
+//! runs per file. These wrappers carry no lint rules of their own — only
+//! `shellcheck` produces lint diagnostics; the format-only roles declare
+//! `lint: false`.
 //!
 //! ## Subprocess I/O safety
 //!
@@ -106,27 +108,27 @@ static GLEAM_LANGUAGES: &[Language] = &[Language::Gleam];
 /// Which native tool and role this `NativeToolEngine` instance plays.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NativeRole {
-    /// `gofmt` for Go (format + lint-via-TS).
+    /// `gofmt` for Go (format only).
     GoFmt,
-    /// `rustfmt` for Rust (format + lint-via-TS).
+    /// `rustfmt` for Rust (format only).
     Rustfmt,
-    /// `zig fmt` for Zig (format + lint-via-TS).
+    /// `zig fmt` for Zig (format only).
     ZigFmt,
     /// `shfmt` for Shell (format only; lint is the Shellcheck entry).
     Shfmt,
     /// `shellcheck` for Shell (lint only; format is the Shfmt entry).
     Shellcheck,
-    /// `google-java-format -` for Java (format + lint-via-TS). Opt-in.
+    /// `google-java-format -` for Java (format only). Opt-in.
     JavaFmt,
-    /// `ktfmt --kotlinlang-style -` for Kotlin (format + lint-via-TS). Opt-in.
+    /// `ktfmt --kotlinlang-style -` for Kotlin (format only). Opt-in.
     KtFmt,
-    /// `Rscript` / `styler` for R (format + lint-via-TS). Opt-in.
+    /// `Rscript` / `styler` for R (format only). Opt-in.
     RStyler,
-    /// `swift-format -` for Swift (format + lint-via-TS). Opt-in.
+    /// `swift-format -` for Swift (format only). Opt-in.
     SwiftFmt,
-    /// `dart format -o show` for Dart (format + lint-via-TS). Opt-in.
+    /// `dart format -o show` for Dart (format only). Opt-in.
     DartFmt,
-    /// `gleam format --stdin` for Gleam (format + lint-via-TS). Opt-in.
+    /// `gleam format --stdin` for Gleam (format only). Opt-in.
     GleamFmt,
 }
 
@@ -324,8 +326,10 @@ impl Engine for NativeToolEngine {
 
     /// Capability declaration:
     ///
-    /// - Go/Rust/Zig format engines: both `lint` (delegated to TS) and
-    ///   `format` (native tool or TS fallback).
+    /// - Go/Rust/Zig/… format engines: `format` only. These wrap format-only
+    ///   native tools and delegate formatting to the tree-sitter tier when the
+    ///   tool is absent; they carry no lint rules (trailing-whitespace is a
+    ///   `fmt` concern, applied by `format`, not surfaced under `lint`).
     /// - Shell shfmt: `format` only (lint is the separate shellcheck entry).
     /// - Shell shellcheck: `lint` only (format is the separate shfmt entry).
     ///
@@ -344,12 +348,8 @@ impl Engine for NativeToolEngine {
             | NativeRole::RStyler
             | NativeRole::SwiftFmt
             | NativeRole::DartFmt
-            | NativeRole::GleamFmt => Capabilities {
-                lint: true,
-                format: true,
-                fix: false,
-            },
-            NativeRole::Shfmt => Capabilities {
+            | NativeRole::GleamFmt
+            | NativeRole::Shfmt => Capabilities {
                 lint: false,
                 format: true,
                 fix: false,
@@ -395,32 +395,21 @@ impl Engine for NativeToolEngine {
 
     /// Lint dispatch:
     ///
-    /// - Go/Rust/Zig: always delegate to [`TreeSitterEngine`] (trailing
-    ///   whitespace, etc.). These tools are format-only.
-    /// - Shell shfmt: no-op (lint capability is `false`; this method is not
-    ///   called by the runner, but returns empty for safety).
-    /// - Shell shellcheck: run [`TreeSitterEngine`] lint first (always), then
-    ///   append shellcheck diagnostics when the tool is enabled and present.
+    /// - Every format-only role (Go/Rust/Zig/…/shfmt): no-op. These wrap
+    ///   format-only tools and declare `lint: false`; the tree-sitter tier they
+    ///   fall back to carries no lint rules either.
+    /// - Shell shellcheck: shellcheck diagnostics when the tool is enabled and
+    ///   present; otherwise empty.
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
         match self.role {
-            NativeRole::GoFmt
-            | NativeRole::Rustfmt
-            | NativeRole::ZigFmt
-            | NativeRole::JavaFmt
-            | NativeRole::KtFmt
-            | NativeRole::RStyler
-            | NativeRole::SwiftFmt
-            | NativeRole::DartFmt
-            | NativeRole::GleamFmt => TreeSitterEngine.lint(src, cfg),
-            NativeRole::Shfmt => Ok(Vec::new()),
             NativeRole::Shellcheck => {
-                let mut diags = TreeSitterEngine.lint(src, cfg)?;
+                let mut diags = Vec::new();
                 if self.is_enabled(cfg) && self.probed_version().is_some() {
-                    let sc_diags = lint_via_shellcheck(self.spec(), src)?;
-                    diags.extend(sc_diags);
+                    diags.extend(lint_via_shellcheck(self.spec(), src)?);
                 }
                 Ok(diags)
             }
+            _ => Ok(Vec::new()),
         }
     }
 
@@ -520,7 +509,7 @@ mod tests {
         assert_eq!(engine.name(), "gofmt");
         assert_eq!(engine.languages(), &[Language::Go]);
         assert!(engine.capabilities().format);
-        assert!(engine.capabilities().lint);
+        assert!(!engine.capabilities().lint, "gofmt is format-only; no lint rules");
         assert!(!engine.capabilities().fix);
     }
 
@@ -668,30 +657,28 @@ mod tests {
     }
 
     #[test]
-    fn lint_go_with_trailing_whitespace_flagged() {
+    fn lint_go_with_trailing_whitespace_not_flagged() {
+        // Format-only roles carry no lint rules: trailing whitespace is a `fmt`
+        // concern (fixed by `format`), never surfaced as a lint diagnostic.
         let engine = NativeToolEngine::for_language(Language::Go);
         let src = make_src("main.go", Language::Go, "package main   \nfunc main() {}\n");
         let diags = engine.lint(&src, &disabled_cfg()).unwrap();
-        assert!(!diags.is_empty(), "trailing whitespace in Go source must be flagged");
-        assert_eq!(diags[0].code.as_deref(), Some("trailing-whitespace"));
+        assert!(
+            diags.is_empty(),
+            "Go is format-only; lint must emit no diagnostics, got {diags:?}"
+        );
     }
 
     #[test]
-    fn shellcheck_lint_disabled_uses_treesitter_only() {
-        // When shellcheck is disabled, the engine must still return TS lint
-        // results (e.g. trailing whitespace), NOT skip lint entirely.
+    fn shellcheck_lint_disabled_emits_nothing() {
+        // When shellcheck is disabled, its lint slot produces nothing — the
+        // tree-sitter tier it used to delegate to carries no lint rules.
         let engine = NativeToolEngine::shell_lint();
         let src = make_src("script.sh", Language::Shell, "#!/bin/bash\necho hello   \n");
         let diags = engine.lint(&src, &disabled_cfg()).unwrap();
-        // TS flags trailing whitespace regardless of shellcheck state.
         assert!(
-            diags.iter().any(|d| d.code.as_deref() == Some("trailing-whitespace")),
-            "disabled shellcheck must still surface TS trailing-whitespace diagnostic"
-        );
-        // No shellcheck diagnostics (SC*) when disabled.
-        assert!(
-            diags.iter().all(|d| !d.code.as_deref().unwrap_or("").starts_with("SC")),
-            "no SC diagnostics expected when shellcheck is disabled"
+            diags.is_empty(),
+            "disabled shellcheck must emit no diagnostics, got {diags:?}"
         );
     }
 

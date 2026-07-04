@@ -9,13 +9,13 @@
 //!   proving whitespace normalization for a non-brace language.
 //! - `r_format_normalizes_trailing_whitespace` — R language via the generic
 //!   tier: known-unformatted fixture asserting exact formatted output.
-//! - `r_lint_flags_trailing_whitespace` — R language via the generic tier:
-//!   known-bad fixture asserting the expected trailing-whitespace Diagnostic.
+//! - `r_lint_emits_no_trailing_whitespace_diagnostic` — the generic tier is
+//!   format-only, so trailing whitespace never surfaces as a lint diagnostic.
 
 use polylint_core::{
     Language,
     config::{EngineConfig, GlobalDefaults},
-    engine::{Engine, FormatOutput, Severity, SourceFile},
+    engine::{Engine, FormatOutput, SourceFile},
     engines::treesitter::TreeSitterEngine,
 };
 
@@ -78,29 +78,18 @@ fn r_format_normalizes_trailing_whitespace() {
     }
 }
 
-/// Known-bad R: trailing whitespace triggers a trailing-whitespace Diagnostic.
+/// The generic tier is format-only: trailing whitespace is fixed by `format`,
+/// never reported as a lint diagnostic (`poly fmt` strips it; `poly lint` stays
+/// quiet).
 #[test]
-fn r_lint_flags_trailing_whitespace() {
+fn r_lint_emits_no_trailing_whitespace_diagnostic() {
     let engine = TreeSitterEngine;
     let src = make_src("example.R", Language::R, R_KNOWN_UNFORMATTED);
     let diags = engine.lint(&src, &engine_cfg(2)).unwrap();
-
     assert!(
-        !diags.is_empty(),
-        "expected trailing-whitespace diagnostic for R with trailing spaces"
+        diags.is_empty(),
+        "tier-2 is format-only; lint must emit no diagnostics, got {diags:?}"
     );
-    let first = &diags[0];
-    assert_eq!(first.engine, "treesitter");
-    assert_eq!(first.code.as_deref(), Some("trailing-whitespace"));
-    assert_eq!(first.severity, Severity::Warning);
-    assert!(first.span.is_some(), "diagnostic must carry a source span");
-
-    // Snapshot the diagnostic summary (not column numbers, which vary).
-    let summary: Vec<_> = diags
-        .iter()
-        .map(|d| (d.engine.as_str(), d.code.as_deref().unwrap_or(""), d.severity))
-        .collect();
-    insta::assert_debug_snapshot!("r_lint_flags_trailing_whitespace", summary);
 }
 
 // ---------------------------------------------------------------------------

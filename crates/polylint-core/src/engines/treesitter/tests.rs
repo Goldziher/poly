@@ -20,14 +20,15 @@ fn src(path: &str, language: Language, content: &str) -> SourceFile {
 }
 
 #[test]
-fn metadata_is_generic_lint_and_format() {
+fn metadata_is_format_only() {
     let engine = TreeSitterEngine;
     assert_eq!(engine.name(), "treesitter");
     assert!(engine.languages().is_empty());
     let caps = engine.capabilities();
     assert!(caps.format);
-    // The generic tier carries the catch-all trailing-whitespace lint.
-    assert!(caps.lint);
+    // The generic tier is a formatter only — trailing-whitespace normalization
+    // is a `fmt` concern, never surfaced as a `lint` diagnostic.
+    assert!(!caps.lint);
 }
 
 fn formatted_text(out: FormatOutput, original: &str) -> String {

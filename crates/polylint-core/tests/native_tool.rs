@@ -67,7 +67,10 @@ fn engine_metadata_java() {
     assert_eq!(engine.name(), "google-java-format");
     assert_eq!(engine.languages(), &[Language::Java]);
     assert!(engine.capabilities().format);
-    assert!(engine.capabilities().lint);
+    assert!(
+        !engine.capabilities().lint,
+        "native format tool is format-only; no lint rules"
+    );
     assert!(!engine.capabilities().fix);
 }
 
@@ -77,7 +80,10 @@ fn engine_metadata_kotlin() {
     assert_eq!(engine.name(), "ktfmt");
     assert_eq!(engine.languages(), &[Language::Kotlin]);
     assert!(engine.capabilities().format);
-    assert!(engine.capabilities().lint);
+    assert!(
+        !engine.capabilities().lint,
+        "native format tool is format-only; no lint rules"
+    );
     assert!(!engine.capabilities().fix);
 }
 
@@ -87,7 +93,10 @@ fn engine_metadata_r() {
     assert_eq!(engine.name(), "styler");
     assert_eq!(engine.languages(), &[Language::R]);
     assert!(engine.capabilities().format);
-    assert!(engine.capabilities().lint);
+    assert!(
+        !engine.capabilities().lint,
+        "native format tool is format-only; no lint rules"
+    );
     assert!(!engine.capabilities().fix);
 }
 
@@ -97,7 +106,10 @@ fn engine_metadata_swift() {
     assert_eq!(engine.name(), "swift-format");
     assert_eq!(engine.languages(), &[Language::Swift]);
     assert!(engine.capabilities().format);
-    assert!(engine.capabilities().lint);
+    assert!(
+        !engine.capabilities().lint,
+        "native format tool is format-only; no lint rules"
+    );
     assert!(!engine.capabilities().fix);
 }
 
@@ -107,7 +119,10 @@ fn engine_metadata_dart() {
     assert_eq!(engine.name(), "dartfmt");
     assert_eq!(engine.languages(), &[Language::Dart]);
     assert!(engine.capabilities().format);
-    assert!(engine.capabilities().lint);
+    assert!(
+        !engine.capabilities().lint,
+        "native format tool is format-only; no lint rules"
+    );
     assert!(!engine.capabilities().fix);
 }
 
@@ -117,7 +132,10 @@ fn engine_metadata_gleam() {
     assert_eq!(engine.name(), "gleamfmt");
     assert_eq!(engine.languages(), &[Language::Gleam]);
     assert!(engine.capabilities().format);
-    assert!(engine.capabilities().lint);
+    assert!(
+        !engine.capabilities().lint,
+        "native format tool is format-only; no lint rules"
+    );
     assert!(!engine.capabilities().fix);
 }
 

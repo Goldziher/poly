@@ -14,7 +14,10 @@
 //! # Covered backends
 //!
 //! **Structured** (contract: every real finding sets BOTH `code` and `span`):
-//!   `taplo`, `graphql`, `yaml`, `typos`, `hcl`, `treesitter`, `dockerfile`
+//!   `taplo`, `graphql`, `yaml`, `typos`, `hcl`, `dockerfile`
+//!
+//! The `treesitter` tier-2 engine is format-only and emits no lint diagnostics,
+//! so it is not part of the lint-conformance set.
 //!
 //! **Structured with edge-case exemptions** (contract: ≥1 *normal* finding sets
 //! BOTH `code` and `span`):
@@ -31,8 +34,8 @@
 //! `native_tool` / `shellcheck` — the `shellcheck` binary is not guaranteed to
 //!     be present in CI; its diagnostics use a `SC<nnnn>` code scheme. When the
 //!     binary is present the contract is verified by `tests/native_tool.rs`.
-//!     When absent, the underlying `treesitter` tier still runs for Shell files
-//!     and is covered via the Go delegation path below.
+//!     When absent, the shellcheck slot emits nothing (the format-only native
+//!     tools carry no lint rules).
 //!
 //! `sqruff` — sqruff uses a `"????"` sentinel code and emits some findings with
 //!     `span.start_line = 0`. These are documented quirks, not contract
@@ -99,10 +102,10 @@ fn run_and_group() -> HashMap<String, Vec<Diagnostic>> {
 ///   `bad.yaml`    → yaml (unclosed flow sequence)
 ///   `typos.md`    → typos (misspellings; rumdl also runs cross-file)
 ///   `bad.tf`      → hcl (unclosed block body syntax error)
-///   `bad.R`       → treesitter (tier-2; R has no native backend)
+///   `bad.R`       → treesitter (tier-2, format-only; emits no lint diagnostics)
 ///   `Dockerfile`  → dockerfile (DL3006 FROM without tag)
-///   `trailing.go` → NativeToolEngine(gofmt) which delegates lint to treesitter
-///                   (trailing-whitespace diagnostic emitted by treesitter)
+///   `trailing.go` → NativeToolEngine(gofmt), format-only; trailing whitespace
+///                   is a `fmt` concern and is not surfaced under `lint`
 ///
 /// The typos engine is cross-cutting and runs on every discovered file in
 /// addition to the language-specific backend. Only `typos.md` contains actual
@@ -138,7 +141,7 @@ fn diagnostic_contract_all_backends_conform() {
     // code and a source location. Assert the strongest property: ALL findings
     // (not just ≥1) satisfy the invariant.
     // -------------------------------------------------------------------------
-    const STRUCTURED: &[&str] = &["taplo", "graphql", "yaml", "typos", "hcl", "treesitter", "dockerfile"];
+    const STRUCTURED: &[&str] = &["taplo", "graphql", "yaml", "typos", "hcl", "dockerfile"];
     for backend in STRUCTURED {
         let diags = by_engine.get(*backend).unwrap_or_else(|| {
             panic!(
@@ -227,7 +230,6 @@ fn diagnostic_contract_all_backends_conform() {
         "yaml",
         "typos",
         "hcl",
-        "treesitter",
         "dockerfile",
         "ruff",
         "oxc",
