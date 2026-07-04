@@ -7,6 +7,21 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). `polylint` and
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-07-04
+
+### Fixed
+
+- **Trailing whitespace no longer leaks into `poly lint`.** The tree-sitter
+  generic tier (and the format-only native-tool backends that fall back to it —
+  `gofmt`, `rustfmt`, `swift-format`, …) previously reported a
+  `trailing-whitespace` **lint** diagnostic that `poly lint --fix` could not act
+  on: the diagnostic carried no autofix, and the fix lives on the format path.
+  Worse, `lint` flagged it even in files that `fmt` deliberately leaves alone
+  (e.g. a Swift file marked `// swift-format-ignore-file`), so the warning could
+  never be cleared. Trailing whitespace is now purely a **`polyfmt`** concern:
+  the generic tier and the format-only native backends declare `lint: false` and
+  emit no lint diagnostics; run `poly fmt --fix` to strip trailing whitespace.
+
 ## [0.5.0] - 2026-07-04
 
 ### Added
