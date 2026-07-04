@@ -143,12 +143,45 @@ pub(crate) fn format_via_tool(spec: &ToolSpec, src: &SourceFile, indent_width: u
         }
     }
 
-    let formatted =
-        String::from_utf8(output.stdout).with_context(|| format!("'{format_binary}' produced non-UTF-8 output"))?;
+    let formatted = normalize_newlines(
+        String::from_utf8(output.stdout).with_context(|| format!("'{format_binary}' produced non-UTF-8 output"))?,
+    );
 
     if formatted == src.content.as_ref() {
         Ok(FormatOutput::Unchanged)
     } else {
         Ok(FormatOutput::Formatted(formatted))
+    }
+}
+
+/// Normalize a native tool's stdout to LF line endings.
+///
+/// Some first-party CLIs emit CRLF on Windows (e.g. `Rscript`/styler), which
+/// would make output platform-dependent and diverge from polylint's LF default.
+/// Collapsing `\r\n` to `\n` keeps formatted output identical across hosts; it is
+/// a no-op on Unix, where the tool already emits LF, so no allocation happens.
+fn normalize_newlines(formatted: String) -> String {
+    if formatted.contains('\r') {
+        formatted.replace("\r\n", "\n")
+    } else {
+        formatted
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_newlines;
+
+    #[test]
+    fn crlf_output_is_normalized_to_lf() {
+        assert_eq!(
+            normalize_newlines("x <- 1\r\ny <- 2\r\n".to_string()),
+            "x <- 1\ny <- 2\n"
+        );
+    }
+
+    #[test]
+    fn lf_output_is_left_untouched() {
+        assert_eq!(normalize_newlines("x <- 1\ny <- 2\n".to_string()), "x <- 1\ny <- 2\n");
     }
 }
