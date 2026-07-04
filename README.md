@@ -95,7 +95,7 @@ irm https://raw.githubusercontent.com/Goldziher/polylint/main/install.ps1 | iex
 ```
 
 Both installers detect the platform, download the matching release archive, verify it against
-`sha256sums.txt`, and install `poly`. Set `POLY_VERSION=v0.4.0` to pin a version or
+`sha256sums.txt`, and install `poly`. Set `POLY_VERSION=v0.5.0` to pin a version or
 `POLY_INSTALL_DIR=/path/to/bin` to choose the destination.
 
 ### GitHub Actions

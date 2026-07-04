@@ -1,3 +1,3 @@
 """polylint: universal zero-dependency linter & formatter through the ``poly`` Rust CLI."""
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"

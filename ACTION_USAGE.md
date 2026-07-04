@@ -28,7 +28,7 @@ repository's [`install.sh`](install.sh), so there is one source of truth for ins
 # Pin a version:
 - uses: Goldziher/polylint@v1
   with:
-    version: v0.4.0
+    version: v0.5.0
 
 # Disable caching:
 - uses: Goldziher/polylint@v1

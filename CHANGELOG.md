@@ -7,7 +7,21 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). `polylint` and
 
 ## [Unreleased]
 
-## [0.4.0] - 2026-07-04
+## [0.5.0] - 2026-07-04
+
+### Added
+
+- **Live per-hook progress for `poly hooks`** — when stderr is a terminal, each
+  hook now prints a `▶ <id> …` line as it starts and a `✓/× <id> (<duration>)`
+  line as it finishes, so a long-running hook (`cargo clippy`, `cargo test`, …) is
+  visibly running instead of leaving the terminal blank until the whole stage
+  completes — which read as a hung commit. Progress goes to stderr and is
+  suppressed when stderr is not a terminal (piped / CI), so captured output is
+  unchanged.
+- **Autofixable count in the lint summary** — `poly lint` now reports how many of
+  the findings can be resolved automatically (`N fixable with the `--fix`
+  option.`), making the value of a follow-up `--fix` run obvious from a dry run.
+  The line is omitted when nothing is fixable.
 
 ### Added
 
