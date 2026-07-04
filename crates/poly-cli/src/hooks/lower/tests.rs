@@ -157,6 +157,10 @@ commit = true
     let msg = lower_stage(&hooks, &poly(), HookStage::CommitMsg, &[], &HookCacheMode::Safe).unwrap();
     assert_eq!(ids(&msg), vec!["poly-commit"]);
     assert!(msg.hooks[0].pass_filenames);
+    // The hook must carry the stage it was lowered for, so the runner selects
+    // message-file input mode (not the `Stage::default()` pre-commit / file mode,
+    // which would leave it with no matched files and silently skip enforcement).
+    assert!(matches!(msg.hooks[0].stage, HookStage::CommitMsg));
 }
 
 #[test]

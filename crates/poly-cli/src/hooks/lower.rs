@@ -137,6 +137,16 @@ fn lower_stage_with_probe(
         append_jobs(hooks, stage, always, files, cache_mode, &mut entries)?;
     }
 
+    // Stamp the lowered stage onto every hook. `Hook::run` and the builtins
+    // leave `stage` at its `Stage::default()` (pre-commit), which is only
+    // accidentally correct for the pre-commit stage; the runner dispatches its
+    // input mode (files vs message-file vs no-files) off `hook.stage`, so a
+    // commit-msg / post-* hook left at the default is treated as a file hook,
+    // matches nothing, and is silently skipped.
+    for hook in &mut entries {
+        hook.stage = stage;
+    }
+
     // Priority order; `sort_by_key` is stable, so equal-priority hooks keep
     // their insertion order (builtins, then inline jobs, then `always`).
     entries.sort_by_key(|hook| hook.priority);

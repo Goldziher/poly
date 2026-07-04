@@ -178,6 +178,35 @@ fn hook_impl_pre_commit_runs_and_restages() {
 }
 
 #[test]
+fn hook_impl_commit_msg_enforces_conventional_commits() {
+    let repo = init_repo();
+    let root = repo.path();
+    write(root, "poly.toml", "[hooks.builtin]\ncommit = true\n");
+
+    // A non-conventional message must fail the commit-msg hook. The `poly-commit`
+    // builtin has to actually run (not be silently skipped): git passes the
+    // message file as the hook's single argument, so the runner must select
+    // message-file input mode for the commit-msg stage.
+    write(root, "msg-bad.txt", "nope: not a conventional type\n");
+    let bad = poly_hooks(root, &["hook-impl", "--hook-type=commit-msg", "--", "msg-bad.txt"]);
+    let bad_report = String::from_utf8_lossy(&bad.stdout);
+    assert!(!bad.status.success(), "bad message should fail: {bad_report}");
+    assert!(
+        bad_report.contains("poly-commit"),
+        "poly-commit must run, got: {bad_report}"
+    );
+
+    // A conventional message passes.
+    write(root, "msg-good.txt", "feat: add a thing\n");
+    let good = poly_hooks(root, &["hook-impl", "--hook-type=commit-msg", "--", "msg-good.txt"]);
+    assert!(
+        good.status.success(),
+        "good message should pass: {}",
+        String::from_utf8_lossy(&good.stdout)
+    );
+}
+
+#[test]
 fn run_pre_commit_caches_second_unchanged_run_and_no_cache_forces_rerun() {
     let repo = init_repo();
     let root = repo.path();
