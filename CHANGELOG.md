@@ -7,8 +7,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). `polylint` and
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-04
+
 ### Added
 
+- **Native-toolchain formatter backends** — opt-in backends that invoke a
+  language's canonical first-party CLI when it is present on the host: Java,
+  Kotlin, R, Swift, Dart, and Gleam. Off by default (enabled per-tool in config);
+  when the tool is absent the language falls through to the tier-2 tree-sitter
+  formatter, so the zero-dependency guarantee is intact for anyone who has not
+  opted in.
 - **C# tier-2 support** — a `Language::CSharp` variant so `.cs` files route to the
   tree-sitter generic formatter (deterministic, zero system dependency) instead of
   being skipped. Maps the `c#` / `csharp` catalog names and the `.cs` extension.
@@ -25,6 +33,20 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). `polylint` and
   directive is left byte-for-byte untouched (the same whole-file skip marker
   `swift-format` respects), mirroring the generated-lock-file skip. Protects files a
   project opted out of formatting and machine-generated swift-bridge glue.
+- Bumped `fs-err`, `serde-saphyr`, and `sqruff` to their latest releases.
+
+### Fixed
+
+- **`poly hooks` now enforces the `commit-msg` stage.** Lowered hooks kept
+  `Stage::default()` (pre-commit), so the runner dispatched the `poly commit`
+  (Conventional Commits) builtin in file-input mode, matched no files, and silently
+  skipped it — the git `commit-msg` hook never enforced anything. Every lowered hook
+  is now stamped with the stage it was lowered for; latent for any non-pre-commit
+  builtin, only `poly-commit` surfaced it.
+- **Rust files named like `dockerfile.rs` are no longer misdetected as
+  Dockerfiles.** Language detection now lets a known file extension (`.rs` → Rust)
+  win over the Dockerfile filename match, so `engines/dockerfile.rs` and similar no
+  longer produce spurious Dockerfile parse errors.
 
 ## [0.2.0] - 2026-07-03
 
