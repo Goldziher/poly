@@ -40,14 +40,16 @@ axoupdater = { version = "0.10.0", default-features = false, features = ["github
 # crates.io copies are stale or not published at all; pin git, same pattern as
 # oxc/ruff. License: MIT OR Apache-2.0. MSRV 1.96 (already approved).
 # Rev = HEAD of biomejs/biome as of 2026-07-03.
-biome_analyze         = { git = "https://github.com/biomejs/biome", rev = "da9b403b6bbacc8d75d56e327a46f4ed0285913e" }
-biome_css_analyze     = { git = "https://github.com/biomejs/biome", rev = "da9b403b6bbacc8d75d56e327a46f4ed0285913e" }
-biome_css_parser      = { git = "https://github.com/biomejs/biome", rev = "da9b403b6bbacc8d75d56e327a46f4ed0285913e" }
-biome_diagnostics     = { git = "https://github.com/biomejs/biome", rev = "da9b403b6bbacc8d75d56e327a46f4ed0285913e" }
+biome_analyze = { git = "https://github.com/biomejs/biome", rev = "da9b403b6bbacc8d75d56e327a46f4ed0285913e" }
+biome_css_analyze = { git = "https://github.com/biomejs/biome", rev = "da9b403b6bbacc8d75d56e327a46f4ed0285913e" }
+biome_css_parser = { git = "https://github.com/biomejs/biome", rev = "da9b403b6bbacc8d75d56e327a46f4ed0285913e" }
+biome_diagnostics = { git = "https://github.com/biomejs/biome", rev = "da9b403b6bbacc8d75d56e327a46f4ed0285913e" }
 biome_graphql_analyze = { git = "https://github.com/biomejs/biome", rev = "da9b403b6bbacc8d75d56e327a46f4ed0285913e" }
-biome_graphql_parser  = { git = "https://github.com/biomejs/biome", rev = "da9b403b6bbacc8d75d56e327a46f4ed0285913e" }
-biome_languages       = { git = "https://github.com/biomejs/biome", rev = "da9b403b6bbacc8d75d56e327a46f4ed0285913e", features = ["lang_css"] }
-biome_rowan           = { git = "https://github.com/biomejs/biome", rev = "da9b403b6bbacc8d75d56e327a46f4ed0285913e" }
+biome_graphql_parser = { git = "https://github.com/biomejs/biome", rev = "da9b403b6bbacc8d75d56e327a46f4ed0285913e" }
+biome_languages = { git = "https://github.com/biomejs/biome", rev = "da9b403b6bbacc8d75d56e327a46f4ed0285913e", features = [
+    "lang_css",
+] }
+biome_rowan = { git = "https://github.com/biomejs/biome", rev = "da9b403b6bbacc8d75d56e327a46f4ed0285913e" }
 blake3 = "1"
 bstr = "1.12.3"
 cargo_metadata = "0.23.1"
@@ -64,7 +66,7 @@ dockerfile-parser = "0.9.0"
 dunce = "1.0.5"
 etcetera = "0.11.0"
 fancy-regex = "0.18.0"
-fs-err = "3.3.0"
+fs-err = "3.3.1"
 gitfluff = { path = "crates/gitfluff" }
 globset = "0.4.18"
 graphql-parser = "0.4"
@@ -165,7 +167,7 @@ schemars = "1.2.1"
 seahash = "4.1.0"
 semver = { version = "1.0.28", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
-serde-saphyr = { version = "0.0.28", default-features = false, features = ["deserialize", "serialize"] }
+serde-saphyr = { version = "0.0.29", default-features = false, features = ["deserialize", "serialize"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 serde_stacker = "0.1.14"
 # serde_toon_format — TOON (Token-Oriented Object Notation) serde serializer
@@ -173,8 +175,8 @@ serde_stacker = "0.1.14"
 serde_toon_format = "0.1"
 shlex = "2.0.1"
 similar = "3.1.1"
-sqruff-lib = "0.38"
-sqruff-lib-core = "0.38"
+sqruff-lib = "0.39"
+sqruff-lib-core = "0.39"
 strum = { version = "0.28.0", features = ["derive"] }
 taplo = "0.14"
 target-lexicon = "0.13.5"
