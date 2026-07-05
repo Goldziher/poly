@@ -41,6 +41,13 @@ pub struct HooksConfig {
     pub builtin: BuiltinHooks,
     /// Per-stage inline hook configuration, keyed by git [`Stage`].
     pub stage_configs: BTreeMap<Stage, StageConfig>,
+    /// Whether whole-workspace hooks (`cargo`, type checkers, …) run against a
+    /// non-destructive staged-content snapshot instead of the live worktree.
+    ///
+    /// `None` (unset) uses the default: isolate when a real commit is being
+    /// gated (the `pre-commit` git-hook path), but not for `--all-files` / CI
+    /// runs, which intentionally check the whole tree. `Some(bool)` forces it.
+    pub isolate: Option<bool>,
     /// Whether a `[hooks]` section was present in the source config (vs this
     /// being the default produced when no `[hooks]` table exists). Gates the
     /// default-on builtins (e.g. the `cargo` group) so repos that have not
@@ -122,6 +129,7 @@ impl<'de> Visitor<'de> for HooksConfigVisitor {
         let mut stages: Option<Vec<String>> = None;
         let mut env: Option<BTreeMap<String, String>> = None;
         let mut builtin: Option<BuiltinHooks> = None;
+        let mut isolate: Option<bool> = None;
         let mut stage_configs: BTreeMap<Stage, StageConfig> = BTreeMap::new();
 
         while let Some(key) = map.next_key::<String>()? {
@@ -139,6 +147,11 @@ impl<'de> Visitor<'de> for HooksConfigVisitor {
                 "builtin" => {
                     if builtin.replace(map.next_value()?).is_some() {
                         return Err(de::Error::duplicate_field("builtin"));
+                    }
+                }
+                "isolate" => {
+                    if isolate.replace(map.next_value()?).is_some() {
+                        return Err(de::Error::duplicate_field("isolate"));
                     }
                 }
                 "repo" | "repos" => {
@@ -165,6 +178,7 @@ impl<'de> Visitor<'de> for HooksConfigVisitor {
             env: env.unwrap_or_default(),
             builtin: builtin.unwrap_or_default(),
             stage_configs,
+            isolate,
             // Reached only when a `[hooks]` table exists in the source.
             present: true,
         })
@@ -218,6 +232,26 @@ run = "echo hi"
 "#,
         );
         assert!(hooks.stage_configs.contains_key(&Stage::PreCommit));
+    }
+
+    #[test]
+    fn isolate_defaults_to_unset_and_parses_when_present() {
+        assert_eq!(parse("stages = [\"pre-commit\"]\n").isolate, None);
+        assert_eq!(parse("isolate = false\n").isolate, Some(false));
+        assert_eq!(parse("isolate = true\n").isolate, Some(true));
+    }
+
+    #[test]
+    fn workspace_flag_parses_on_a_job() {
+        let hooks = parse(
+            r#"
+[pre-commit.scripts.check]
+run = "cargo clippy"
+workspace = true
+"#,
+        );
+        let job = &hooks.stage_configs[&Stage::PreCommit].scripts["check"];
+        assert!(job.workspace, "workspace flag lowered onto the job");
     }
 
     #[test]

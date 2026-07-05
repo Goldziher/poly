@@ -12,13 +12,42 @@
 
 use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{Context as _, Result};
 use poly_catalog::{Catalog, Command as CatalogCommand, PATH_PLACEHOLDER};
-use poly_config::{CargoHooks, FileSafetyHooks, HooksConfig, Stage as ConfigStage, ToolConfig, ToolsConfig};
+use poly_config::{
+    CargoHooks, FileSafetyHooks, HookCacheMode, HooksConfig, Stage as ConfigStage, ToolConfig, ToolsConfig,
+};
+use poly_hooks::filter::FilePattern;
 use poly_hooks::model::{Hook, HookCache};
 use tracing::info;
 
 use super::{builtin_runs_on, shell_quote};
+
+/// Input globs the `cargo` group is result-cached on: any change to Rust
+/// sources, a manifest, the lockfile, the `cargo deny` policy, or the toolchain
+/// pin re-runs the whole group. Conservative on purpose — it never yields a
+/// false hit, at the cost of occasionally re-running when an unrelated one of
+/// these changes.
+const CARGO_CACHE_INPUTS: &[&str] = &[
+    "**/*.rs",
+    "**/Cargo.toml",
+    "Cargo.lock",
+    "deny.toml",
+    "rust-toolchain.toml",
+    "rust-toolchain",
+];
+
+/// Resolve the result-cache policy for the whole `cargo` group: declared-inputs
+/// caching by default, disabled when the group opts out (`cargo = { cache =
+/// false }`) or the global `[cache.results] hooks` mode is `off`.
+fn cargo_cache(cargo: &CargoHooks, cache_mode: &HookCacheMode) -> Result<HookCache> {
+    if !cargo.cache || matches!(cache_mode, HookCacheMode::Off) {
+        return Ok(HookCache::Disabled);
+    }
+    let pattern = FilePattern::glob(CARGO_CACHE_INPUTS.iter().map(|glob| (*glob).to_string()).collect())
+        .context("building the cargo builtin cache-input globs")?;
+    Ok(HookCache::DeclaredInputs(pattern))
+}
 
 /// Capability probe: whether an external tool is resolvable on `PATH`.
 ///
@@ -200,6 +229,7 @@ fn resolve_cargo_group(hooks: &HooksConfig, cargo_project: bool) -> Option<Cargo
 pub(super) fn append_cargo(
     hooks: &HooksConfig,
     config_stage: ConfigStage,
+    cache_mode: &HookCacheMode,
     probe: &dyn ToolProbe,
     out: &mut Vec<Hook>,
 ) -> Result<()> {
@@ -209,6 +239,7 @@ pub(super) fn append_cargo(
     if !builtin_runs_on(&cargo.stages, &hooks.stages, ConfigStage::PreCommit, config_stage)? {
         return Ok(());
     }
+    let cache = cargo_cache(&cargo, cache_mode)?;
     for tool in cargo_tools(&cargo) {
         if !tool.enabled {
             continue;
@@ -227,7 +258,12 @@ pub(super) fn append_cargo(
         hook.pass_filenames = false;
         hook.always_run = true;
         hook.compiler = tool.compiler;
-        hook.cache = HookCache::Disabled;
+        // These compile/analyse the whole tree, so under staged isolation they
+        // run against the staged snapshot rather than the live worktree.
+        hook.workspace = true;
+        // Keyed on the Rust source/manifest set (or disabled) — a commit that
+        // touches no Rust then skips the whole group.
+        hook.cache = cache.clone();
         out.push(hook);
     }
     Ok(())
@@ -332,7 +368,7 @@ mod tests {
     use anyhow::Result;
     use poly_config::{HookCacheMode, HooksConfig, PolyConfig, ToolsConfig};
     use poly_hooks::Stage as HookStage;
-    use poly_hooks::model::{HookCommand, StageSpec};
+    use poly_hooks::model::{HookCache, HookCommand, StageSpec};
 
     use super::super::lower_stage_with_probe;
     use super::ToolProbe;
@@ -605,6 +641,46 @@ shebang_scripts_are_executable = false
         // clippy is sccache-eligible; the non-compiling tools are not.
         assert!(clippy.compiler);
         assert!(!spec.hooks[1].compiler);
+        // Whole-workspace + result-cached on the Rust source set by default.
+        assert!(clippy.workspace);
+        assert!(
+            matches!(clippy.cache, HookCache::DeclaredInputs(_)),
+            "cargo group is result-cached by default"
+        );
+    }
+
+    #[test]
+    fn cargo_cache_false_disables_the_result_cache() {
+        let hooks = hooks_from("[hooks.builtin.cargo]\ncache = false\n");
+        let probe = StubProbe(&["cargo-clippy"]);
+        let spec = lower_stage_with_probe(
+            &hooks,
+            &poly(),
+            HookStage::PreCommit,
+            &[],
+            &HookCacheMode::Safe,
+            &probe,
+            &ToolsConfig::default(),
+        )
+        .unwrap();
+        assert!(matches!(spec.hooks[0].cache, HookCache::Disabled));
+    }
+
+    #[test]
+    fn cargo_cache_off_mode_disables_the_result_cache() {
+        let hooks = hooks_from("[hooks.builtin]\ncargo = true\n");
+        let probe = StubProbe(&["cargo-clippy"]);
+        let spec = lower_stage_with_probe(
+            &hooks,
+            &poly(),
+            HookStage::PreCommit,
+            &[],
+            &HookCacheMode::Off,
+            &probe,
+            &ToolsConfig::default(),
+        )
+        .unwrap();
+        assert!(matches!(spec.hooks[0].cache, HookCache::Disabled));
     }
 
     fn clippy_command() -> &'static str {

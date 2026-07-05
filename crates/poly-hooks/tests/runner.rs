@@ -597,3 +597,117 @@ fn cache_none_bypasses_caching_entirely() {
     assert!(!second.stages[0].hooks[0].cached);
     assert_eq!(read(root, "runs.log"), "xx", "cache=None must re-execute");
 }
+
+/// A `workspace` hook runs from `work_root` (the staged snapshot) while per-file
+/// hooks stay at `root`, and cargo is redirected at the real `target/`.
+#[test]
+fn workspace_hook_runs_in_work_root_with_cargo_target_dir() {
+    let repo = init_repo();
+    let root = repo.path();
+    let snap = TempDir::new().expect("snapshot dir");
+    let snap_path = snap.path();
+
+    let mut workspace_hook = cmd_hook(
+        "ws",
+        "echo ws > marker.txt && printf '%s' \"$CARGO_TARGET_DIR\" > ct.txt",
+    );
+    workspace_hook.workspace = true;
+    let per_file_hook = cmd_hook("per_file", "echo pf > marker.txt");
+
+    let req = HookRunRequest {
+        root: root.to_path_buf(),
+        work_root: Some(snap_path.to_path_buf()),
+        stages: vec![pre_commit(vec![workspace_hook, per_file_hook])],
+        ..HookRunRequest::default()
+    };
+    let outcome = run(req).expect("run");
+    assert!(outcome.success());
+
+    // The workspace hook's cwd was the snapshot: its marker landed there, not in root.
+    assert_eq!(read(snap_path, "marker.txt").trim(), "ws");
+    // The per-file hook ran from root and overwrote nothing in the snapshot.
+    assert_eq!(read(root, "marker.txt").trim(), "pf");
+    // cargo is pointed at the real repo's target dir, not the snapshot's.
+    assert_eq!(read(snap_path, "ct.txt"), root.join("target").to_string_lossy());
+}
+
+/// Without a `work_root`, a `workspace` hook runs from `root` like any other —
+/// isolation is opt-in per run, not implied by the flag.
+#[test]
+fn workspace_hook_without_work_root_runs_in_root() {
+    let repo = init_repo();
+    let root = repo.path();
+
+    let mut workspace_hook = cmd_hook(
+        "ws",
+        "echo ws > marker.txt && printf '%s' \"${CARGO_TARGET_DIR:-unset}\" > ct.txt",
+    );
+    workspace_hook.workspace = true;
+
+    let outcome = run(request(root, pre_commit(vec![workspace_hook]))).expect("run");
+    assert!(outcome.success());
+    assert_eq!(read(root, "marker.txt").trim(), "ws");
+    // No isolation → CARGO_TARGET_DIR is left untouched.
+    assert_eq!(read(root, "ct.txt"), "unset");
+}
+
+/// A workspace hook's result-cache key is derived from STAGED content (the
+/// snapshot at `work_root`), not the worktree: editing the worktree copy of a
+/// tracked input leaves a cache hit intact, while editing the snapshot copy
+/// busts it. This is what makes caching safe under isolation.
+#[test]
+fn workspace_hook_cache_key_follows_staged_snapshot_not_worktree() {
+    let repo = init_repo();
+    let root = repo.path();
+    std::fs::write(root.join("in.rs"), "STAGED").unwrap();
+    git(root, &["add", "in.rs"]);
+
+    // The snapshot holds the staged content; `runs.log` (not matched by the
+    // `*.rs` cache glob) records each real execution so hits are observable.
+    let snap = TempDir::new().expect("snapshot");
+    std::fs::write(snap.path().join("in.rs"), "STAGED").unwrap();
+    let cache_dir = TempDir::new().expect("cache");
+
+    let hook = || {
+        let mut hook = cmd_hook("ws", "echo ran >> runs.log");
+        hook.workspace = true;
+        hook.cache = HookCache::DeclaredInputs(FilePattern::glob(vec!["*.rs".to_string()]).unwrap());
+        hook
+    };
+    let run_once = || {
+        let mut req = HookRunRequest {
+            root: root.to_path_buf(),
+            work_root: Some(snap.path().to_path_buf()),
+            stages: vec![pre_commit(vec![hook()])],
+            ..HookRunRequest::default()
+        };
+        req.cache = Some(cache_at(&cache_dir));
+        run(req).expect("run");
+    };
+
+    run_once(); // miss → executes
+    run_once(); // hit → skipped
+    assert_eq!(
+        read(snap.path(), "runs.log").lines().count(),
+        1,
+        "second run must hit the cache"
+    );
+
+    // Editing the WORKTREE copy must not bust the key (staged content unchanged).
+    std::fs::write(root.join("in.rs"), "WORKTREE-DIRTY").unwrap();
+    run_once();
+    assert_eq!(
+        read(snap.path(), "runs.log").lines().count(),
+        1,
+        "worktree edit must not invalidate"
+    );
+
+    // Editing the SNAPSHOT (staged) copy busts the key → re-executes.
+    std::fs::write(snap.path().join("in.rs"), "STAGED-CHANGED").unwrap();
+    run_once();
+    assert_eq!(
+        read(snap.path(), "runs.log").lines().count(),
+        2,
+        "staged change must invalidate"
+    );
+}

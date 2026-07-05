@@ -15,6 +15,14 @@ exclude = ["node_modules/**", "target/**", "dist/**", "vendor/**"]
 # Default stage for builtins that do not declare their own.
 stages = ["pre-commit"]
 
+# Staged isolation: whole-workspace hooks (the `cargo` group, `rustdoc-lint`, and
+# any job with `workspace = true`) run against a non-destructive snapshot of the
+# staged index rather than the live worktree, so unstaged edits and untracked
+# files never affect a pre-commit check. Per-file hooks are unaffected. On by
+# default for the commit-gating path and skipped for `--all-files`; set
+# `isolate = false` to opt out.
+# isolate = true
+
 [hooks.builtin]
 # polylint: typos, JSON/YAML/TOML validation, shellcheck, and markdown linting.
 # Excludes mirror the former per-hook excludes: generated tag data, ai-rulez
@@ -78,6 +86,9 @@ exclude = "**/identify/tags.rs"
 script = "scripts/hooks/rustdoc-lint.sh"
 runner = "bash"
 files = "**/*.rs"
+# Whole-workspace `cargo doc` (ignores the per-file args): run it against the
+# staged snapshot under isolation so unstaged edits don't leak into the check.
+workspace = true
 
 # No `[commit]` table: `poly commit` (the commit-msg builtin above) enforces
 # Conventional Commits with its built-in defaults. The hook lints rather than

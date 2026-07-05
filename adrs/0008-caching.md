@@ -4,6 +4,8 @@
 - Date: 2026-06-26
 - Updated: 2026-06-28 (`poly-cache` crate introduces two-tier cache, hook-specific
   soundness model, CACHE_FORMAT_VERSION, `poly cache` CLI)
+- Updated: 2026-07-05 (whole-workspace hooks: staged-content digest + default-on `cargo`
+  group caching; see ADR 0019)
 
 ## Context
 
@@ -48,6 +50,14 @@ The `poly-cache` crate provides a **two-tier cache** under `.polylint/cache/`:
 - Inline commands (user scripts) never cache unless explicitly `cache.inputs = [...]`
   with mode `safe` (only reads these files) or `aggressive` (caches despite risk).
 - Tree-mutating hooks (those that write to disk) **never cache** — each run must execute.
+- **Whole-workspace hooks (ADR 0019) key on staged content.** A hook marked `workspace =
+  true` (e.g. the `cargo` group, `pyrefly`) analyses the whole project, so its declared
+  inputs are resolved from the whole tree, but under staged isolation the digested **bytes
+  come from the staged snapshot**, not the worktree — otherwise reverting an unstaged edit
+  would be a false hit. The `cargo` group is result-cached **by default** on the Rust
+  source/manifest set (`**/*.rs`, `Cargo.toml`, `Cargo.lock`, `deny.toml`, toolchain), so a
+  commit touching no Rust skips `clippy`/`sort`/`machete`/`deny`; opt out with `cargo =
+  { cache = false }`.
 
 **Bypass:** `--no-cache` disables caching for the run. `poly cache gc` / `poly cache
 clean` / `poly cache stats` / `poly cache size` manage the cache directory.

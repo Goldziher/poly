@@ -20,6 +20,7 @@ use clap::{Args, Subcommand};
 use owo_colors::{OwoColorize, Stream::Stdout};
 use poly_cache::ResultCache;
 use poly_config::{PolyConfig, Stage as ConfigStage};
+use poly_hooks::snapshot::StagedSnapshot;
 use poly_hooks::stage::RunInputMode;
 
 use crate::hooks::checks::{self, CheckArgs};
@@ -173,8 +174,12 @@ fn run_stage(args: RunArgs) -> Result<ExitCode> {
         &config.tools,
     )?;
 
+    let snapshot = maybe_staged_snapshot(isolation_active(&config.hooks, args.all_files, stage), &spec, &root)?;
+    let work_root = snapshot.as_ref().map(|snapshot| snapshot.path().to_path_buf());
+
     let request = poly_hooks::HookRunRequest {
         root,
+        work_root,
         files,
         message_file,
         stages: vec![spec],
@@ -312,8 +317,12 @@ fn hook_impl(args: HookImplArgs) -> Result<ExitCode> {
         &config.tools,
     )?;
 
+    let snapshot = maybe_staged_snapshot(isolation_active(&config.hooks, inputs.all_files, stage), &spec, &root)?;
+    let work_root = snapshot.as_ref().map(|snapshot| snapshot.path().to_path_buf());
+
     let request = poly_hooks::HookRunRequest {
         root,
+        work_root,
         files,
         message_file: inputs.message_file,
         stages: vec![spec],
@@ -351,6 +360,31 @@ fn candidate_files(
             }
         }
     }
+}
+
+/// Whether whole-workspace hooks should be isolated to staged content for this
+/// run.
+///
+/// The snapshot is a copy of the git **index**, so isolation only makes sense
+/// for the commit-gating stages (`pre-commit`, `pre-merge-commit`), where the
+/// index *is* what will be committed. It is never applied to `--all-files`
+/// (which intentionally checks the whole tree) or to non-index stages such as
+/// `pre-push`. Within those bounds the `[hooks] isolate` override wins,
+/// defaulting to on.
+fn isolation_active(hooks: &poly_config::HooksConfig, all_files: bool, stage: poly_hooks::Stage) -> bool {
+    let index_stage = matches!(stage, poly_hooks::Stage::PreCommit | poly_hooks::Stage::PreMergeCommit);
+    index_stage && !all_files && hooks.isolate.unwrap_or(true)
+}
+
+/// Refresh the staged-content snapshot when isolation is active and `spec`
+/// actually contains a whole-workspace hook — otherwise there is nothing to
+/// isolate and the refresh is skipped.
+fn maybe_staged_snapshot(isolate: bool, spec: &poly_hooks::StageSpec, root: &Path) -> Result<Option<StagedSnapshot>> {
+    if !isolate || !spec.hooks.iter().any(|hook| hook.workspace) {
+        return Ok(None);
+    }
+    let snapshot = StagedSnapshot::create(root).context("failed to create the staged-content snapshot")?;
+    Ok(Some(snapshot))
 }
 
 /// Open the tier-1 result cache for a hook run, honouring `[cache] enabled`,

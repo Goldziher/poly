@@ -2,6 +2,8 @@
 
 - Status: Accepted
 - Date: 2026-06-28
+- Updated: 2026-07-05 (hooks are classified per-file vs. whole-workspace; whole-workspace
+  hooks run isolated against a non-destructive staged snapshot — see ADR 0019)
 
 ## Context
 
@@ -28,6 +30,10 @@ hook runner is the natural fit.
   `[hooks.always]` pseudo-stage for commands that run everywhere.
 - **Prioritize builtins over inline commands.** Run hooks in priority groups (pre-commit →
   commit-msg → pre-push, etc.); only one hook per file match (first match wins).
+- **Per-file vs. whole-workspace hooks (amendment, 2026-07-05).** Most hooks receive the
+  staged file list. A hook marked `workspace = true` (and the `cargo` builtin group)
+  instead analyses the whole project and runs isolated against a non-destructive staged
+  snapshot rather than the live worktree; see ADR 0019 for the isolation mechanism.
 - **Install git-hook shims via `poly hooks install`.** Each git stage gets a shim that
   invokes `poly hooks hook-impl` with the stage name and stdin (modified files). No
   forking of the full poly binary per stage; `hook-impl` is lightweight.

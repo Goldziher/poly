@@ -229,7 +229,7 @@ fn append_builtins(
         out.push(Hook::run("poly-commit", format!("{poly} commit")));
     }
     builtins::append_file_safety(hooks, &poly, config_stage, out)?;
-    builtins::append_cargo(hooks, config_stage, probe, out)?;
+    builtins::append_cargo(hooks, config_stage, cache_mode, probe, out)?;
     Ok(())
 }
 
@@ -306,7 +306,11 @@ fn job_to_hook(
     // runner's own file filter never runs — scope the substituted set to the
     // job's include/exclude globs here instead.
     let scoped = filter_files(files, files_pattern.as_ref(), exclude_pattern.as_ref());
-    let (command, pass_filenames) = build_command(job, &scoped)?;
+    let (command, template_pass_filenames) = build_command(job, &scoped)?;
+    // A whole-workspace job operates on the whole project (e.g. `pyrefly check
+    // packages/python`), so the matched files are not appended to its argv — a
+    // `{staged_files}` template is the explicit way to opt back in.
+    let pass_filenames = template_pass_filenames && !job.workspace;
 
     let cache = cache::job_cache(job, cache_mode)?;
     // Tier-2 sccache opt-in; only honoured when the run carries sccache settings.
@@ -336,6 +340,7 @@ fn job_to_hook(
         // skipped when nothing matches.
         always_run: !has_include,
         pass_filenames,
+        workspace: job.workspace,
         fail_text: job.fail_text.clone(),
         ..Hook::default()
     })

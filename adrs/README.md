@@ -32,6 +32,7 @@ Context, Decision, Consequences (positive and negative/risks), and Alternatives 
 | [0016](0016-uniform-rule-selection.md) | Uniform Per-Tool Rule-Selection Model | Accepted |
 | [0017](0017-path-excludes-per-file-ignores.md) | Path Exclusions and Per-File Rule Ignores | Accepted |
 | [0018](0018-hierarchical-configuration.md) | Hierarchical Configuration Resolution for Monorepos | Accepted |
+| [0019](0019-staged-isolation-whole-workspace-hooks.md) | Staged Isolation for Whole-Workspace Hooks | Accepted |
 
 ## Conventions
 

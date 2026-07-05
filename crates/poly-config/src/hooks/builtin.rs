@@ -242,6 +242,12 @@ pub struct CargoHooks {
     ///
     /// Example: `clippy_args = ["--workspace", "--exclude=crawlberg-php", "--all-features"]`
     pub clippy_args: Option<Vec<String>>,
+    /// Whether the group's result cache is active (default on).
+    ///
+    /// When on (and `[cache.results] hooks` is not `off`), each Cargo tool is
+    /// keyed on the Rust source + manifest inputs, so a commit that changes no
+    /// Rust skips the whole group. Set `cache = false` to force every run.
+    pub cache: bool,
 }
 
 impl Default for CargoHooks {
@@ -256,6 +262,7 @@ impl Default for CargoHooks {
             machete: true,
             deny: true,
             clippy_args: None,
+            cache: true,
         }
     }
 }
@@ -277,6 +284,7 @@ struct CargoTable {
     machete: Option<bool>,
     deny: Option<bool>,
     clippy_args: Option<Vec<String>>,
+    cache: Option<bool>,
 }
 
 impl<'de> Deserialize<'de> for CargoHooks {
@@ -294,6 +302,7 @@ impl<'de> Deserialize<'de> for CargoHooks {
                 machete: table.machete.unwrap_or(true),
                 deny: table.deny.unwrap_or(true),
                 clippy_args: table.clippy_args,
+                cache: table.cache.unwrap_or(true),
             }),
         }
     }

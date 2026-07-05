@@ -20,6 +20,7 @@
 //! - [`pty`] (Unix-only) — blocking PTY primitives for colored subprocess output.
 //! - [`model`] — the in-memory hook model ([`Hook`], [`StageSpec`], request/outcome types).
 //! - [`concurrency`] — rayon pool sizing + `ARG_MAX` file batching.
+//! - [`snapshot`] — staged-content snapshots for whole-workspace hook isolation.
 //! - [`runner`] — the native rayon hook runner ([`run`]).
 //!
 //! # Entry point
@@ -47,6 +48,7 @@ pub mod model;
 pub mod process;
 pub mod reporter;
 pub mod runner;
+pub mod snapshot;
 pub mod stage;
 
 #[cfg(unix)]

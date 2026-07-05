@@ -181,6 +181,82 @@ pub fn list_files(root: &Path) -> Result<Vec<PathBuf>, Error> {
     Ok(zsplit(&output.stdout)?)
 }
 
+/// Materialize the **staged** index content into `dest` (staged snapshot).
+///
+/// Runs `git checkout-index -a -f --prefix=<dest>/`, which writes every entry in
+/// the index — i.e. exactly the staged content — beneath `dest`, recreating the
+/// repo-relative directory tree. Untracked files and unstaged worktree edits are
+/// never written, so the result is a byte-faithful, non-destructive copy of what
+/// a commit would capture. `dest` must already exist.
+///
+/// This is how whole-workspace hooks (`cargo clippy`, type checkers, …) are
+/// isolated to staged content without touching the live worktree.
+#[instrument(level = "trace")]
+pub fn checkout_index_to(root: &Path, dest: &Path) -> Result<(), Error> {
+    git_cmd("checkout staged index")?
+        .current_dir(root)
+        .arg("checkout-index")
+        .arg("-a") // all index entries
+        .arg("-f") // overwrite any pre-existing files in `dest`
+        .arg(prefix_arg(dest))
+        .check(true)
+        .status()?;
+    Ok(())
+}
+
+/// Materialize the staged content of specific `paths` into `dest`.
+///
+/// Like [`checkout_index_to`] but scoped: `git checkout-index -f --prefix=<dest>/
+/// -- <paths>`. Used by the incremental staged-snapshot refresh to rewrite only
+/// the files whose worktree differs from the index; the rest are copied from the
+/// worktree (preserving mtimes). A no-op for an empty `paths`.
+#[instrument(level = "trace", skip(paths))]
+pub fn checkout_index_paths(root: &Path, dest: &Path, paths: &[PathBuf]) -> Result<(), Error> {
+    if paths.is_empty() {
+        return Ok(());
+    }
+    let mut cmd = git_cmd("checkout staged paths")?;
+    cmd.current_dir(root)
+        .arg("checkout-index")
+        .arg("-f")
+        .arg(prefix_arg(dest))
+        .arg("--");
+    for path in paths {
+        cmd.arg(path);
+    }
+    cmd.check(true).status()?;
+    Ok(())
+}
+
+/// List tracked files whose **worktree** content differs from the **index**
+/// (`git diff-files --name-only`), i.e. the staged files carrying an additional
+/// unstaged edit. For these the worktree copy is not the staged content, so the
+/// snapshot must pull the staged blob rather than copy the worktree file.
+#[instrument(level = "trace")]
+pub fn worktree_modified_files(root: &Path) -> Result<Vec<PathBuf>, Error> {
+    let output = git_cmd("list worktree-modified files")?
+        .current_dir(root)
+        .arg("diff-files")
+        .arg("--name-only")
+        .arg("--no-ext-diff")
+        .arg("-z")
+        .check(true)
+        .output()?;
+    Ok(zsplit(&output.stdout)?)
+}
+
+/// Build the `--prefix=<dest>/` argument for `git checkout-index`.
+///
+/// The prefix is prepended verbatim to each index path, so it must carry a
+/// trailing separator or the first path component would be glued onto `dest`.
+fn prefix_arg(dest: &Path) -> std::ffi::OsString {
+    let mut prefix = dest.as_os_str().to_os_string();
+    prefix.push(std::path::MAIN_SEPARATOR_STR);
+    let mut arg = std::ffi::OsString::from("--prefix=");
+    arg.push(&prefix);
+    arg
+}
+
 /// Reject a revision that git would misinterpret as an option.
 ///
 /// Revisions reaching us from untrusted input — notably the SHAs parsed from

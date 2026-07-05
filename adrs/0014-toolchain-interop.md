@@ -2,6 +2,9 @@
 
 - Status: Accepted
 - Date: 2026-06-28
+- Updated: 2026-07-05 (project-wide tools deferred here — `cargo clippy`, `pyrefly`,
+  `golangci-lint` — now have a home as whole-workspace hooks under ADR 0019, not as
+  per-file native-toolchain backends)
 
 ## Context
 
@@ -33,7 +36,9 @@ option to use the canonical tool when available.
   are never errors; the language falls through to tier-2 generic formatting (ADR 0004).
 - **Single-file, stdin→stdout tools only.** Wrap tools that process one file per
   invocation over stdin (gofmt, rustfmt, zig fmt). Project-wide tools (clippy, go vet,
-  mix format) do NOT fit the rayon per-file unit and are explicitly out of scope.
+  mix format) do NOT fit the rayon per-file unit and are out of scope **for this
+  native-toolchain backend model** — but they are no longer homeless: they run as
+  whole-workspace hooks with staged isolation (ADR 0019).
 - **Capability-gated, graceful degradation.** Probe for the tool once and cache the
   result; declare the `format` / `lint` capability only when the tool is found AND
   enabled. If absent, no error — just lower fidelity via tier-2 fallback.
@@ -81,8 +86,10 @@ Negative / risks:
   right fallback.
 - **Async hook runner to parallelize tool invocations:** rejected — the per-file rayon
   unit (ADR 0009) already saturates cores; subprocess spawn overhead is amortized.
-- **Interop for golangci-lint / cargo-clippy / eslint:** rejected — these are
-  project-wide analysis tools, not single-file formatters. They require a whole-workspace
-  view and cannot be cached per-file. They are out of scope for the native-toolchain
-  backend model. (golangci-lint is deferred; it may become a hook builtin in ADR 0013 if
-  the use case emerges.)
+- **Interop for golangci-lint / cargo-clippy / eslint:** rejected **for the per-file
+  native-toolchain backend model** — these are project-wide analysis tools, not single-file
+  formatters, requiring a whole-workspace view that cannot be cached per-file. They are
+  instead run as **whole-workspace hooks with staged isolation and whole-tree result
+  caching (ADR 0019)**: `cargo clippy` ships as a `cargo` group builtin, and `pyrefly` /
+  `golangci-lint` are inline `workspace = true` jobs. This supersedes the earlier "deferred /
+  may become a hook builtin" note.

@@ -239,10 +239,17 @@ fn run_group(
 
         // Derive the key once (reading input bytes at most once); `None` when
         // caching is off, the hook is not cacheable, or an input is unreadable.
+        // A workspace hook under isolation is keyed on STAGED bytes (the
+        // snapshot), not the worktree — otherwise reverting an unstaged edit
+        // could replay a stale pass computed against different staged content.
+        let content_root = match (hook.workspace, request.work_root.as_deref()) {
+            (true, Some(snapshot)) => snapshot,
+            _ => request.root.as_path(),
+        };
         let key = request
             .cache
             .as_ref()
-            .and_then(|_| cache_key(&request.root, hook, matched));
+            .and_then(|_| cache_key(&request.root, content_root, hook, matched));
 
         // Lookup: a hit short-circuits execution. Only passing, tree-clean runs
         // are ever stored, so a hit always means "passed cleanly".
@@ -258,7 +265,22 @@ fn run_group(
         if request.progress {
             crate::reporter::report_hook_started(&hook.id);
         }
-        let outcome = run_hook(&request.root, hook, pos, &refs, request.sccache.as_ref());
+        // A whole-workspace hook runs from the staged snapshot when the run
+        // carries one, isolating it to staged content; per-file hooks always run
+        // from the real root. When isolated, point cargo at the real `target/`
+        // so third-party dependency artifacts are reused instead of rebuilt.
+        let (exec_root, cargo_target_dir) = match (hook.workspace, request.work_root.as_deref()) {
+            (true, Some(snapshot)) => (snapshot, Some(request.root.join("target"))),
+            _ => (request.root.as_path(), None),
+        };
+        let outcome = run_hook(
+            exec_root,
+            hook,
+            pos,
+            &refs,
+            request.sccache.as_ref(),
+            cargo_target_dir.as_deref(),
+        );
         if request.progress {
             crate::reporter::report_hook_finished(&hook.id, outcome.status.is_failure(), outcome.duration);
         }
@@ -281,6 +303,7 @@ fn run_hook(
     position: usize,
     matched: &[&Path],
     sccache: Option<&SccacheSettings>,
+    cargo_target_dir: Option<&Path>,
 ) -> HookOutcome {
     let start = Instant::now();
     let base_len = base_arg_len(hook);
@@ -288,7 +311,7 @@ fn run_hook(
 
     let results: Vec<(HookStatus, Vec<u8>)> = batches
         .into_par_iter()
-        .map(|batch| execute(build_command(hook, root, batch, sccache)))
+        .map(|batch| execute(build_command(hook, root, batch, sccache, cargo_target_dir)))
         .collect();
 
     let mut output = Vec::new();
@@ -339,7 +362,13 @@ fn cached_outcome(hook: &Hook, position: usize, output: Vec<u8>) -> HookOutcome 
 
 // ── Command construction & execution ────────────────────────────────────────
 
-fn build_command(hook: &Hook, root: &Path, files: &[&Path], sccache: Option<&SccacheSettings>) -> Cmd {
+fn build_command(
+    hook: &Hook,
+    root: &Path,
+    files: &[&Path],
+    sccache: Option<&SccacheSettings>,
+    cargo_target_dir: Option<&Path>,
+) -> Cmd {
     let mut cmd = match &hook.command {
         HookCommand::Run(line) => shell_command(line, &hook.args, files, hook.pass_filenames),
         HookCommand::Script { path, runner } => {
@@ -366,6 +395,14 @@ fn build_command(hook: &Hook, root: &Path, files: &[&Path], sccache: Option<&Scc
         .map_or_else(|| root.to_path_buf(), |rel| root.join(rel));
     cmd.current_dir(&effective_cwd);
     cmd.envs(hook.env.iter());
+    // Under staged isolation, redirect cargo's build cache to the real repo's
+    // `target/` so unchanged dependencies are not recompiled from the snapshot.
+    // A hook-level `CARGO_TARGET_DIR` in `hook.env` (rare) wins.
+    if let Some(target) = cargo_target_dir {
+        if !hook.env.contains_key("CARGO_TARGET_DIR") {
+            cmd.env("CARGO_TARGET_DIR", target);
+        }
+    }
     inject_sccache_env(&mut cmd, hook, sccache);
     cmd
 }
@@ -591,32 +628,39 @@ fn modified_matched(root: &Path, matched: &[std::path::PathBuf]) -> anyhow::Resu
 /// The key folds in the hook id, a command-identity `version`, the declared
 /// environment (as the `args` table), and a content digest of the relevant
 /// input files — so a changed command, env, or input invalidates the entry.
-fn cache_key(root: &Path, hook: &Hook, matched: &[PathBuf]) -> Option<CacheKey> {
+///
+/// `git_root` (the real repository) resolves the input *file set* — via
+/// `git ls-files` / the matched paths — while `content_root` supplies the
+/// *bytes* that are digested. They differ for a workspace hook under isolation,
+/// where the list is the tracked tree but the content is the staged snapshot.
+fn cache_key(git_root: &Path, content_root: &Path, hook: &Hook, matched: &[PathBuf]) -> Option<CacheKey> {
     let digest = match &hook.cache {
         HookCache::Disabled => return None,
-        HookCache::MatchedFiles => matched_files_digest(root, matched)?,
-        HookCache::DeclaredInputs(pattern) => declared_inputs_digest(root, pattern)?,
+        HookCache::MatchedFiles => matched_files_digest(content_root, matched)?,
+        HookCache::DeclaredInputs(pattern) => declared_inputs_digest(git_root, content_root, pattern)?,
     };
     let version = hook_version(hook);
     let args = hook_env_table(hook);
     Some(ResultCache::key(Namespace::Hook, &hook.id, &version, &args, &digest))
 }
 
-/// Digest the hook's matched files (each as `(relative_path, bytes)`).
+/// Digest the hook's matched files (each as `(relative_path, bytes)`), reading
+/// bytes from `content_root`.
 ///
 /// Returns `None` if any matched file cannot be read, which skips caching this
 /// hook rather than risk a key derived from partial inputs.
-fn matched_files_digest(root: &Path, matched: &[PathBuf]) -> Option<InputDigest> {
-    read_digest(root, matched.iter().cloned())
+fn matched_files_digest(content_root: &Path, matched: &[PathBuf]) -> Option<InputDigest> {
+    read_digest(content_root, matched.iter().cloned())
 }
 
-/// Digest every tracked file matching `pattern`, resolved against the whole
-/// tree (`git ls-files`) rather than just the changed set.
+/// Digest every tracked file matching `pattern` — the file set resolved against
+/// the whole tree (`git ls-files` under `git_root`), the bytes read from
+/// `content_root`.
 ///
 /// Returns `None` if the tree cannot be listed or a matching file is unreadable.
-fn declared_inputs_digest(root: &Path, pattern: &FilePattern) -> Option<InputDigest> {
-    let selected = declared_input_files(root, pattern).ok()?;
-    read_digest(root, selected.into_iter())
+fn declared_inputs_digest(git_root: &Path, content_root: &Path, pattern: &FilePattern) -> Option<InputDigest> {
+    let selected = declared_input_files(git_root, pattern).ok()?;
+    read_digest(content_root, selected.into_iter())
 }
 
 /// The tracked files matching a `DeclaredInputs` pattern (`git ls-files` filtered
@@ -630,10 +674,10 @@ fn declared_input_files(root: &Path, pattern: &FilePattern) -> anyhow::Result<Ve
 
 /// Read the given repo-relative paths and fold them into an [`InputDigest`],
 /// sorted by path for a deterministic key. `None` if any read fails.
-fn read_digest(root: &Path, paths: impl Iterator<Item = PathBuf>) -> Option<InputDigest> {
+fn read_digest(content_root: &Path, paths: impl Iterator<Item = PathBuf>) -> Option<InputDigest> {
     let mut files: Vec<(String, Vec<u8>)> = Vec::new();
     for path in paths {
-        let bytes = std::fs::read(root.join(&path)).ok()?;
+        let bytes = std::fs::read(content_root.join(&path)).ok()?;
         files.push((path.to_string_lossy().into_owned(), bytes));
     }
     files.sort_by(|a, b| a.0.cmp(&b.0));
@@ -710,7 +754,7 @@ mod tests {
 
     /// Collect the explicit environment overrides a built [`super::Cmd`] carries.
     fn injected_env(hook: &Hook, sccache: Option<&SccacheSettings>) -> HashMap<String, String> {
-        let cmd = build_command(hook, Path::new("."), &[], sccache);
+        let cmd = build_command(hook, Path::new("."), &[], sccache, None);
         cmd.get_envs()
             .filter_map(|(key, value)| {
                 value.map(|value| (key.to_string_lossy().into_owned(), value.to_string_lossy().into_owned()))

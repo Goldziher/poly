@@ -125,6 +125,12 @@ pub struct Hook {
     /// Opt into tier-2 sccache env injection (`RUSTC_WRAPPER`, …). Only honoured
     /// when the run carries [`HookRunRequest::sccache`]; default `false`.
     pub compiler: bool,
+    /// Whole-workspace hook: it compiles or analyses the entire project (e.g.
+    /// `cargo clippy`, a type checker) rather than the per-file set. When the
+    /// run carries a [`HookRunRequest::work_root`] staged snapshot, such a hook
+    /// runs from there instead of the live worktree, isolating it to staged
+    /// content. Per-file hooks (default `false`) are unaffected.
+    pub workspace: bool,
 }
 
 impl Hook {
@@ -183,8 +189,17 @@ pub struct SccacheSettings {
 /// A request to run one or more stages.
 #[derive(Debug, Clone, Default)]
 pub struct HookRunRequest {
-    /// Repository root; all hooks run with this as their working directory.
+    /// Repository root; per-file hooks run with this as their working directory,
+    /// and all git plumbing (staged files, re-staging fixes) targets it.
     pub root: PathBuf,
+    /// Staged-content snapshot root for whole-workspace hook isolation.
+    ///
+    /// When `Some`, a [`Hook::workspace`] hook runs from here — a non-destructive
+    /// copy of the staged index (see [`crate::snapshot`]) — so it sees staged
+    /// content only, never unstaged worktree edits or untracked files. `None`
+    /// (e.g. `--all-files`, or a stage with no workspace hooks) runs every hook
+    /// from `root` as before.
+    pub work_root: Option<PathBuf>,
     /// Candidate file universe (paths relative to `root`), filtered per hook.
     pub files: Vec<PathBuf>,
     /// Commit-message file path (for `commit-msg` / `prepare-commit-msg`).

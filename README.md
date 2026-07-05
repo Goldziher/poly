@@ -67,7 +67,7 @@ commit checks then run on every `git commit`.
 | **Curated Rust backends** | Wraps high-quality Rust libraries in-process: oxc, ruff internals, taplo, rumdl, sqruff, malva, markup_fmt, mago, and more. | Backend registry |
 | **Generic fallback** | Uses `tree-sitter-language-pack` for identified languages without a dedicated backend, reindenting supported grammars and normalizing whitespace where safe. | `treesitter` tier |
 | **Cache + parallelism** | Runs per file with rayon and skips unchanged work with a blake3 content-hash cache keyed by file bytes, engine, version, and resolved config. | `poly cache` · `--no-cache` · `-j` |
-| **Git hooks** | Runs first-class builtins and inline hook jobs from `poly.toml`, with file-safety checks and Cargo tools available as builtins. | `poly hooks install` · `poly hooks run` |
+| **Git hooks** | Runs first-class builtins and inline hook jobs from `poly.toml`, with file-safety checks and Cargo tools as builtins. Whole-workspace hooks (`cargo`, type checkers) run isolated against staged content and skip when their inputs are unchanged. | `poly hooks install` · `poly hooks run` · `workspace` · `isolate` |
 | **Commit checks** | Enforces Conventional Commits and strips AI-attribution trailers through the bundled `gitfluff` engine. | `poly commit` |
 | **Agent-friendly output** | Emits structured JSON and compact TOON, and exposes lint/format/cache operations over an MCP stdio server. | `--format json` · `--format toon` · `poly mcp` |
 | **Optional breadth tier** | Enables tools from the embedded mdsf catalog only when you opt in; commands are PATH-probed and skipped when absent. | `[tools.<name>]` |
@@ -322,6 +322,60 @@ script = "scripts/check-docs.sh"
 runner = "bash"
 files = "**/*.md"
 ```
+
+#### Per-file vs. whole-workspace hooks
+
+Most hooks are **per-file**: they receive the staged file list and run on it. But some
+tools analyze the *whole project* at once — `cargo clippy`, a type checker like `pyrefly`,
+`mypy`, `tsc` — and can't be scoped to a file list. Mark those `workspace = true`:
+
+```toml
+[hooks.pre-commit.commands.pyrefly]
+run = "pyrefly check packages/python"   # whole-package; no staged files appended
+files = "packages/python/**/*.py"        # gate: only run when a Python file is staged
+workspace = true
+```
+
+A `workspace = true` job takes no appended filenames (use a `{staged_files}` template to opt
+back in). The `cargo` builtin group is whole-workspace automatically.
+
+#### Staged isolation
+
+Whole-workspace hooks are **isolated to staged content**: they run against a non-destructive
+snapshot of the git index, so unstaged edits and untracked files never affect a pre-commit
+check — and, unlike `git stash`-based approaches, your working tree is never touched. On by
+default for the commit-gating stages (`pre-commit`, `pre-merge-commit`) and skipped for
+`--all-files`. Opt out with `isolate = false`:
+
+```toml
+[hooks]
+isolate = false   # run whole-workspace hooks against the live worktree instead
+```
+
+The snapshot is a persistent, git-ignored cache at `.polylint/staged`, refreshed in place each
+run: unchanged files keep their worktree mtime (so cargo/pyrefly/`tsc` incremental caches stay
+warm), only staged-modified files are rewritten, and files that left the tree are pruned while
+tool caches inside the snapshot are preserved. It self-heals and is purgeable like any cache
+(`rm -rf .polylint/staged`).
+
+#### Hook caching
+
+Hook results are cached (`[cache.results] hooks = "safe"` by default): a hook is **skipped
+entirely** when its declared inputs are unchanged since the last passing run. The `cargo` group
+is keyed on the Rust source/manifest set out of the box, so a commit touching no Rust skips
+`clippy`/`sort`/`machete`/`deny` (opt out with `cargo = { cache = false }`). Give a custom
+whole-workspace job the same treatment by declaring its inputs:
+
+```toml
+[hooks.pre-commit.commands.pyrefly]
+run = "pyrefly check packages/python"
+files = "packages/python/**/*.py"
+workspace = true
+cache = { inputs = ["packages/python/**/*.py", "pyproject.toml"] }
+```
+
+For workspace hooks the cache key is derived from **staged** content, so it stays correct under
+isolation. For Rust compile times, enable `[cache.sccache]` to content-cache `rustc` output.
 
 ---
 

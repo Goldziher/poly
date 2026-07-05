@@ -50,6 +50,12 @@ pub struct Job {
     /// When the job modifies files and exits 0, the runner `git add`s the
     /// matched files and continues; only a non-zero exit fails the stage.
     pub stage_fixed: bool,
+    /// Whole-workspace job: it compiles or analyses the entire project (e.g.
+    /// `cargo clippy`, a type checker like `pyrefly`) rather than a per-file
+    /// set. When staged isolation is active such a job runs against a
+    /// non-destructive snapshot of the staged index, so it never sees unstaged
+    /// worktree edits or untracked files. Default `false` (per-file).
+    pub workspace: bool,
     /// The job needs an interactive terminal.
     pub interactive: bool,
     /// Feed matched file contents to the job on stdin.
