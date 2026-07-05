@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "polylint"
-version = "0.5.1"
+version = "0.6.0"
 description = "Universal zero-dependency linter & formatter through the poly Rust CLI."
 readme = "README.md"
 license = "MIT"

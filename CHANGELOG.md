@@ -7,6 +7,31 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). `polylint` and
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-05
+
+### Added
+
+- **Whole-workspace hook isolation for `poly hooks`.** Hooks that analyze the
+  whole project rather than a file list — `cargo clippy`/`sort`/`machete`/`deny`
+  and type checkers like `pyrefly` — can now be marked `workspace = true` (the
+  `cargo` builtin group sets it automatically). A whole-workspace hook takes no
+  appended filenames (`{staged_files}` opts back in) and runs against a
+  **non-destructive snapshot of the git index** at `.polylint/staged`, so a
+  pre-commit check sees exactly what the commit would capture: unstaged edits and
+  untracked files never affect it, and — unlike `git stash`-based approaches — the
+  working tree is never touched. The snapshot is a persistent, git-ignored cache
+  sourced from the index blob and refreshed incrementally (only files whose staged
+  object id changed are re-materialized), so cargo/pyrefly/`tsc` incremental caches
+  stay warm; cargo is pointed at the real `target/` and coexists with dev builds.
+  On by default for the commit-gating stages (`pre-commit`, `pre-merge-commit`) and
+  skipped for `--all-files`; opt out with `[hooks] isolate = false`. See ADR 0019.
+- **Default-on result caching for the `cargo` builtin group**, keyed on the Rust
+  source/manifest set (`**/*.rs`, `Cargo.toml`, `Cargo.lock`, `deny.toml`,
+  toolchain files). A commit touching no Rust skips `clippy`/`sort`/`machete`/`deny`
+  entirely; a whole-workspace hook's cache key digests the **staged** snapshot
+  content, so reverting an unstaged edit is never a false hit. Opt out with
+  `cargo = { cache = false }`.
+
 ## [0.5.1] - 2026-07-04
 
 ### Fixed
