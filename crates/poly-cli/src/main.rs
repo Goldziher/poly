@@ -8,7 +8,8 @@ use std::process::ExitCode;
 
 use clap::{Args, Parser, Subcommand};
 use poly_cli::{
-    CacheArgs, FmtArgs, HooksArgs, LintArgs, MigrateArgs, run_cache, run_fmt, run_hooks, run_lint, run_migrate,
+    CacheArgs, FmtArgs, HooksArgs, LintArgs, MigrateArgs, RulesArgs, run_cache, run_fmt, run_hooks, run_lint,
+    run_migrate, run_rules,
 };
 
 #[derive(Parser)]
@@ -37,6 +38,8 @@ enum Command {
     Migrate(MigrateArgs),
     /// Inspect and maintain the result cache (stats / size / gc / clean).
     Cache(CacheArgs),
+    /// Inspect and test custom ast-grep rule packs (test / list).
+    Rules(RulesArgs),
     /// Run an MCP server over stdio (mirrors the CLI).
     Mcp(McpArgs),
 }
@@ -73,6 +76,10 @@ fn main() -> ExitCode {
         Command::Cache(args) => {
             poly_cli::init_logging();
             run_cache(args)
+        }
+        Command::Rules(args) => {
+            poly_cli::init_logging();
+            run_rules(args)
         }
         Command::Mcp(args) => {
             poly_cli::init_logging();
