@@ -7,6 +7,58 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). `polylint` and
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-07-05
+
+### Changed
+
+- **Misspellings are now reported as errors and are never autofixed.** The
+  `typos` backend previously emitted `warning`-severity findings with a
+  single-correction autofix. Auto-correcting a typo silently rewrites
+  identifiers, string keys, and API names that only *look* misspelled — a
+  frequent source of regressions — so a typo is now surfaced at `error` severity
+  (it fails `poly lint`) with the dictionary suggestion in the message, and
+  carries no autofix. Resolve typos by hand (or allow-list the word).
+- **Formatting rules no longer leak into `poly lint`.** rumdl's `Whitespace`
+  category (line length `MD013`, trailing spaces, hard tabs, blank-line runs,
+  final newline) is a `polyfmt` concern, yet every such rule also surfaced as a
+  `poly lint` finding — flooding lint with formatting noise the linter cannot
+  act on. `poly lint` now suppresses the `Whitespace` category and reports only
+  structural / content findings (broken links, heading structure, unused
+  references); `poly fmt` still owns and fixes the formatting rules.
+- **Whole-project type-checkers are no longer wired into the per-file catalog
+  lint tier.** `pyrefly`, `mypy`, `ty`, and the like resolve imports across the
+  whole project and infer an import root from the project layout, which the
+  per-file, exit-code catalog tier cannot provide — every cross-module import
+  became a spurious `missing-import`. They are now refused as catalog linters
+  (with a one-time warning); run them as a dedicated whole-project step instead.
+- **Dependency refresh.** Bumped the `oxc` / `ruff` / `biome` git dependencies to
+  their latest upstream commits and freshened crates.io dependencies (`rumdl`
+  0.2.28, `typos-dict` 0.13.31, `tree-sitter` 0.26.10, `tree-sitter-language-pack`
+  1.12.4, and others).
+
+### Fixed
+
+- **Catalog linters run against the real file on disk, not a temp copy.** A
+  catalog-tier linter (e.g. `shellcheck`, `actionlint`) was fed a temp copy of
+  the source, which destroyed project context: a Python type-checker could not
+  resolve sibling modules or the project virtualenv, and `actionlint` no longer
+  saw a `.github/workflows/` path. Read-only linting now runs against the real
+  file whenever its on-disk content matches what is being linted, falling back to
+  a temp copy only when they diverge (e.g. a re-lint after an in-memory fix).
+- **`poly hooks` whole-workspace snapshot now materializes git submodules.** The
+  staged snapshot is built with `git checkout-index`, which writes only blob
+  entries — a submodule gitlink left *no* content, so a compile hook that reached
+  into a submodule (e.g. a test that `include_bytes!`es a fixture from one) failed
+  to build in the sandbox even though the real tree compiles. Each populated
+  submodule is now exposed in the snapshot as a symlink into the live worktree, so
+  compile-time references resolve.
+- **Built-in `typos` allow-list for ubiquitous technical terms.** Common,
+  always-correct tokens the dictionary otherwise flags — established
+  abbreviations (`ser`, `flate`, `fpr`, `arange`, `unparseable`) and well-known
+  OSS names (`certifi`, `onnx`, `wasm`, `tesseract`, `pdfium`, `pymupdf`,
+  `surrealdb`, `mkdocs`, `mkdocstrings`, `rumdl`) — are now valid out of the box,
+  so every repo no longer re-lists them in `extend_words`.
+
 ## [0.6.0] - 2026-07-05
 
 ### Added

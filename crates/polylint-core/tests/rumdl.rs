@@ -96,21 +96,21 @@ fn bad_md_diagnostics() {
 #[test]
 fn canonical_ignore_matches_native_disable() {
     let engine = RumdlEngine;
-    // A wrappable long line (words separated by spaces) so MD013 flags it —
-    // a single unbreakable token is exempt from the line-length rule.
-    let long_line = vec!["word"; 30].join(" ");
-    let content = format!("# Title\n\n{long_line}\n");
-    let src = md_src(&content);
+    // `#Title` trips MD018 (no space after the hash) — a structural lint rule
+    // that survives the formatting-rule suppression, so disabling it is
+    // observable. (Whitespace-category rules like MD013 are suppressed in lint
+    // regardless, so they can't distinguish `disable` from the default.)
+    let src = md_src("#Title\n\nContent.\n");
 
-    // Baseline: MD013 (line-length) fires on the 130-char line.
+    // Baseline: MD018 fires by default.
     let base = engine.lint(&src, &default_cfg()).unwrap();
     assert!(
-        base.iter().any(|d| d.code.as_deref() == Some("MD013")),
-        "MD013 must fire on a 130-char line; got: {base:?}"
+        base.iter().any(|d| d.code.as_deref() == Some("MD018")),
+        "MD018 must fire on a heading with no space after '#'; got: {base:?}"
     );
 
-    let native = engine.lint(&src, &cfg_with_codes("disable", &["MD013"])).unwrap();
-    let canonical = engine.lint(&src, &cfg_with_codes("ignore", &["MD013"])).unwrap();
+    let native = engine.lint(&src, &cfg_with_codes("disable", &["MD018"])).unwrap();
+    let canonical = engine.lint(&src, &cfg_with_codes("ignore", &["MD018"])).unwrap();
 
     assert_eq!(
         sorted_codes(&native),
@@ -118,8 +118,8 @@ fn canonical_ignore_matches_native_disable() {
         "canonical `ignore` must behave like native `disable`"
     );
     assert!(
-        !sorted_codes(&native).contains(&"MD013".to_string()),
-        "disabling MD013 must suppress it; got: {native:?}"
+        !sorted_codes(&native).contains(&"MD018".to_string()),
+        "disabling MD018 must suppress it; got: {native:?}"
     );
 }
 

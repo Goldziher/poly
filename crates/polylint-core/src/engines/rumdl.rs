@@ -13,10 +13,12 @@
 //! The native `enable` / `disable` keys remain accepted as aliases and are
 //! unioned with the canonical keys.
 
+use std::collections::HashSet;
+
 use rumdl_lib::{
     config::Config as RumdlConfig,
     fix_coordinator::FixCoordinator,
-    rule::{LintWarning, Severity as RumdlSeverity},
+    rule::{LintWarning, Rule, RuleCategory, Severity as RumdlSeverity},
     rules::{all_rules, filter_rules},
     types::LineLength,
 };
@@ -30,8 +32,11 @@ use crate::language::Language;
 pub struct RumdlEngine;
 
 /// Embedded crate version so the cache key changes whenever rumdl output could change.
-/// The `+defaults1` suffix marks the opinionated default-disabled rule set below.
-const RUMDL_VERSION: &str = "0.2.23+defaults1";
+/// The `+defaults2` suffix marks the opinionated rule policy below: the
+/// default-disabled proprietary rules **and** the lint-mode suppression of the
+/// `Whitespace` (formatting) category. Bump the suffix whenever either changes so
+/// stale cached diagnostics are invalidated.
+const RUMDL_VERSION: &str = "0.2.28+defaults2";
 
 /// rumdl-proprietary stylistic rules disabled by default.
 ///
@@ -71,6 +76,12 @@ impl Engine for RumdlEngine {
         let rumdl_cfg = build_rumdl_config(cfg);
         let rules = filter_rules(&all_rules(&rumdl_cfg), &rumdl_cfg.global);
         let flavor = rumdl_cfg.markdown_flavor();
+        // Rules in the `Whitespace` category are pure formatting concerns owned by
+        // `poly fmt` (line length, trailing spaces, hard tabs, blank-line runs,
+        // final newline). Reporting them from `poly lint` leaks formatting into the
+        // linter, so suppress them here — the linter surfaces structural / content
+        // findings (broken links, heading structure, unused refs) only.
+        let format_owned = format_owned_rules(&rules);
         rumdl_lib::lint(
             &src.content,
             &rules,
@@ -79,7 +90,13 @@ impl Engine for RumdlEngine {
             Some(src.path.clone()),
             Some(&rumdl_cfg),
         )
-        .map(|warnings| warnings.iter().map(|w| map_warning(w, "rumdl")).collect())
+        .map(|warnings| {
+            warnings
+                .iter()
+                .filter(|w| !is_format_owned(w, &format_owned))
+                .map(|w| map_warning(w, "rumdl"))
+                .collect()
+        })
         .map_err(|e| anyhow::anyhow!("rumdl lint: {e}"))
     }
 
@@ -142,6 +159,27 @@ fn build_rumdl_config(cfg: &EngineConfig) -> RumdlConfig {
     config.global.disable = disable;
     config.global.enable = user_enable;
     config
+}
+
+/// The set of rule codes (e.g. `"MD013"`) that belong to rumdl's `Whitespace`
+/// category — the formatting rules `poly fmt` owns. Built from the active rule
+/// set so it tracks the tool's own categorisation rather than a hardcoded list.
+fn format_owned_rules(rules: &[Box<dyn Rule>]) -> HashSet<&'static str> {
+    rules
+        .iter()
+        .filter(|rule| rule.category() == RuleCategory::Whitespace)
+        .map(|rule| rule.name())
+        .collect()
+}
+
+/// Whether a warning belongs to a formatting-owned rule and must not surface in
+/// `poly lint`. A warning with no rule name is never suppressed (it cannot be
+/// attributed to a formatting rule).
+fn is_format_owned(warning: &LintWarning, format_owned: &HashSet<&'static str>) -> bool {
+    warning
+        .rule_name
+        .as_deref()
+        .is_some_and(|name| format_owned.contains(name))
 }
 
 /// Map a rumdl [`LintWarning`] to the shared [`Diagnostic`] type.
@@ -210,6 +248,34 @@ mod tests {
         let diags = engine.lint(&src, &cfg).expect("lint succeeded");
         let codes: Vec<_> = diags.iter().filter_map(|d| d.code.as_deref()).collect();
         assert!(codes.contains(&"MD018"), "expected MD018 in {codes:?}");
+    }
+
+    #[test]
+    fn lint_suppresses_whitespace_category_rules() {
+        // MD013 (line length) is in rumdl's `Whitespace` category — a formatting
+        // concern owned by `poly fmt`. It must not leak into `poly lint`.
+        let engine = RumdlEngine;
+        let long = "x".repeat(200);
+        let src = source(&format!("# Heading\n\n{long}\n"));
+        let cfg = default_cfg();
+        let diags = engine.lint(&src, &cfg).expect("lint succeeded");
+        let codes: Vec<_> = diags.iter().filter_map(|d| d.code.as_deref()).collect();
+        assert!(
+            !codes.contains(&"MD013"),
+            "MD013 (Whitespace category) must be suppressed in lint, got {codes:?}"
+        );
+    }
+
+    #[test]
+    fn lint_keeps_structural_rules() {
+        // A structural rule (MD018 — no space after hash on ATX heading) is a
+        // genuine lint finding and must still be reported.
+        let engine = RumdlEngine;
+        let src = source("#Bad Heading\n\nContent.\n");
+        let cfg = default_cfg();
+        let diags = engine.lint(&src, &cfg).expect("lint succeeded");
+        let codes: Vec<_> = diags.iter().filter_map(|d| d.code.as_deref()).collect();
+        assert!(codes.contains(&"MD018"), "structural rule must survive, got {codes:?}");
     }
 
     #[test]

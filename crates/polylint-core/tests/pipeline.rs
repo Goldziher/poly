@@ -82,11 +82,13 @@ fn format_write_is_idempotent() {
 
 #[test]
 fn lint_fix_applies_autofixes_and_dry_run_does_not() {
-    // The misspellings live in an excluded fixture so the `typos` pre-commit
-    // hook cannot "correct" this test's source out from under it.
-    let bad = include_str!("fixtures/typos/known_bad.txt");
+    // rumdl MD018 (no space after the `#` in an ATX heading) is a structural lint
+    // finding that carries a single autofix — use it to exercise `--fix` vs
+    // dry-run. (typos deliberately never autofixes, so it can't drive this test.)
+    let before = "#Heading\n\nBody text.\n";
+    let after = "# Heading\n\nBody text.\n";
     let dir = tempfile::tempdir().unwrap();
-    let path = write(dir.path(), "notes.md", bad);
+    let path = write(dir.path(), "notes.md", before);
     let cfg = Config::default();
     let opts = RunOptions {
         no_cache: true,
@@ -97,18 +99,18 @@ fn lint_fix_applies_autofixes_and_dry_run_does_not() {
 
     // Dry run (fix = false) must not touch the file on disk.
     polylint_core::lint(&[dir.path().to_path_buf()], &cfg, &opts, false, false).unwrap();
-    assert_eq!(fs::read_to_string(&path).unwrap(), bad, "dry run must not modify files");
+    assert_eq!(
+        fs::read_to_string(&path).unwrap(),
+        before,
+        "dry run must not modify files"
+    );
 
-    // fix = true applies the single-correction typo autofixes in place.
+    // fix = true applies the MD018 heading-space autofix in place.
     polylint_core::lint(&[dir.path().to_path_buf()], &cfg, &opts, true, false).unwrap();
     let fixed = fs::read_to_string(&path).unwrap();
-    assert_ne!(fixed, bad, "fix must rewrite the file");
-    // Assert the exact corrected output. It uses only correctly-spelled words,
-    // so the `typos` pre-commit hook cannot rewrite this source and silently
-    // break the assertion (the four misspellings stay in the excluded fixture).
     assert_eq!(
-        fixed, "The language of the receive function.\nThis is the occurrence of a typo.\n",
-        "all four single-correction typos should be autofixed in place",
+        fixed, after,
+        "the MD018 heading-space autofix should be applied in place"
     );
 }
 

@@ -13,7 +13,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.6.0"
+version = "0.7.0"
 edition = "2024"
 rust-version = "1.96"
 license = "MIT"
@@ -39,17 +39,17 @@ axoupdater = { version = "0.10.0", default-features = false, features = ["github
 # the internal biome_rowan / biome_analyze type graph consistent. Published
 # crates.io copies are stale or not published at all; pin git, same pattern as
 # oxc/ruff. License: MIT OR Apache-2.0. MSRV 1.96 (already approved).
-# Rev = HEAD of biomejs/biome as of 2026-07-03.
-biome_analyze = { git = "https://github.com/biomejs/biome", rev = "da9b403b6bbacc8d75d56e327a46f4ed0285913e" }
-biome_css_analyze = { git = "https://github.com/biomejs/biome", rev = "da9b403b6bbacc8d75d56e327a46f4ed0285913e" }
-biome_css_parser = { git = "https://github.com/biomejs/biome", rev = "da9b403b6bbacc8d75d56e327a46f4ed0285913e" }
-biome_diagnostics = { git = "https://github.com/biomejs/biome", rev = "da9b403b6bbacc8d75d56e327a46f4ed0285913e" }
-biome_graphql_analyze = { git = "https://github.com/biomejs/biome", rev = "da9b403b6bbacc8d75d56e327a46f4ed0285913e" }
-biome_graphql_parser = { git = "https://github.com/biomejs/biome", rev = "da9b403b6bbacc8d75d56e327a46f4ed0285913e" }
-biome_languages = { git = "https://github.com/biomejs/biome", rev = "da9b403b6bbacc8d75d56e327a46f4ed0285913e", features = [
+# Rev = HEAD of biomejs/biome as of 2026-07-05.
+biome_analyze = { git = "https://github.com/biomejs/biome", rev = "93d8e5352454bccfbd179db03b3155776599c52c" }
+biome_css_analyze = { git = "https://github.com/biomejs/biome", rev = "93d8e5352454bccfbd179db03b3155776599c52c" }
+biome_css_parser = { git = "https://github.com/biomejs/biome", rev = "93d8e5352454bccfbd179db03b3155776599c52c" }
+biome_diagnostics = { git = "https://github.com/biomejs/biome", rev = "93d8e5352454bccfbd179db03b3155776599c52c" }
+biome_graphql_analyze = { git = "https://github.com/biomejs/biome", rev = "93d8e5352454bccfbd179db03b3155776599c52c" }
+biome_graphql_parser = { git = "https://github.com/biomejs/biome", rev = "93d8e5352454bccfbd179db03b3155776599c52c" }
+biome_languages = { git = "https://github.com/biomejs/biome", rev = "93d8e5352454bccfbd179db03b3155776599c52c", features = [
     "lang_css",
 ] }
-biome_rowan = { git = "https://github.com/biomejs/biome", rev = "da9b403b6bbacc8d75d56e327a46f4ed0285913e" }
+biome_rowan = { git = "https://github.com/biomejs/biome", rev = "93d8e5352454bccfbd179db03b3155776599c52c" }
 blake3 = "1"
 bstr = "1.12.3"
 cargo_metadata = "0.23.1"
@@ -107,14 +107,14 @@ owo-colors = { version = "4", features = ["supports-colors"] }
 # oxc git deps — all crates MUST share the same `rev` to keep the internal
 # oxc_ast / oxc_span type graph consistent. Published versions are stale;
 # oxc_formatter and oxc_formatter_core were never published to crates.io.
-# Rev = latest HEAD of the oxc monorepo as of 2026-07-03.
-oxc_allocator = { git = "https://github.com/oxc-project/oxc", rev = "c0c69dcf053e08f35b74c9ae844f2a692c448cd8" }
-oxc_diagnostics = { git = "https://github.com/oxc-project/oxc", rev = "c0c69dcf053e08f35b74c9ae844f2a692c448cd8" }
-oxc_formatter = { git = "https://github.com/oxc-project/oxc", rev = "c0c69dcf053e08f35b74c9ae844f2a692c448cd8" }
-oxc_formatter_core = { git = "https://github.com/oxc-project/oxc", rev = "c0c69dcf053e08f35b74c9ae844f2a692c448cd8" }
-oxc_formatter_json = { git = "https://github.com/oxc-project/oxc", rev = "c0c69dcf053e08f35b74c9ae844f2a692c448cd8" }
-oxc_linter = { git = "https://github.com/oxc-project/oxc", rev = "c0c69dcf053e08f35b74c9ae844f2a692c448cd8" }
-oxc_span = { git = "https://github.com/oxc-project/oxc", rev = "c0c69dcf053e08f35b74c9ae844f2a692c448cd8" }
+# Rev = latest HEAD of the oxc monorepo as of 2026-07-05.
+oxc_allocator = { git = "https://github.com/oxc-project/oxc", rev = "24c19a8216c450c7438fd051d0dc96cffcb9e231" }
+oxc_diagnostics = { git = "https://github.com/oxc-project/oxc", rev = "24c19a8216c450c7438fd051d0dc96cffcb9e231" }
+oxc_formatter = { git = "https://github.com/oxc-project/oxc", rev = "24c19a8216c450c7438fd051d0dc96cffcb9e231" }
+oxc_formatter_core = { git = "https://github.com/oxc-project/oxc", rev = "24c19a8216c450c7438fd051d0dc96cffcb9e231" }
+oxc_formatter_json = { git = "https://github.com/oxc-project/oxc", rev = "24c19a8216c450c7438fd051d0dc96cffcb9e231" }
+oxc_linter = { git = "https://github.com/oxc-project/oxc", rev = "24c19a8216c450c7438fd051d0dc96cffcb9e231" }
+oxc_span = { git = "https://github.com/oxc-project/oxc", rev = "24c19a8216c450c7438fd051d0dc96cffcb9e231" }
 phf = { version = "0.14.0", default-features = false, features = ["macros"] }
 poly-cache = { path = "crates/poly-cache" }
 poly-catalog = { path = "crates/poly-catalog" }
@@ -147,16 +147,16 @@ rmcp = { version = "2.1.0", features = ["schemars"] }
 rubyfmt = { git = "https://github.com/fables-tales/rubyfmt", rev = "d3d433caffa02446a295f60fd8b727099bebbb97", default-features = false }
 # ruff git deps — all crates MUST share the same `rev` to keep the internal
 # ruff type graph consistent. The published 0.0.3 crates are stale; ruff_linter
-# was never published to crates.io. Rev = HEAD of astral-sh/ruff as of 2026-07-02.
-ruff_db = { git = "https://github.com/astral-sh/ruff", rev = "1cb20127c47cf5c66ead93fb39e47600c857bb7e" }
-ruff_diagnostics = { git = "https://github.com/astral-sh/ruff", rev = "1cb20127c47cf5c66ead93fb39e47600c857bb7e" }
-ruff_formatter = { git = "https://github.com/astral-sh/ruff", rev = "1cb20127c47cf5c66ead93fb39e47600c857bb7e" }
-ruff_linter = { git = "https://github.com/astral-sh/ruff", rev = "1cb20127c47cf5c66ead93fb39e47600c857bb7e" }
-ruff_python_ast = { git = "https://github.com/astral-sh/ruff", rev = "1cb20127c47cf5c66ead93fb39e47600c857bb7e" }
-ruff_python_formatter = { git = "https://github.com/astral-sh/ruff", rev = "1cb20127c47cf5c66ead93fb39e47600c857bb7e" }
-ruff_python_parser = { git = "https://github.com/astral-sh/ruff", rev = "1cb20127c47cf5c66ead93fb39e47600c857bb7e" }
-ruff_source_file = { git = "https://github.com/astral-sh/ruff", rev = "1cb20127c47cf5c66ead93fb39e47600c857bb7e" }
-ruff_text_size = { git = "https://github.com/astral-sh/ruff", rev = "1cb20127c47cf5c66ead93fb39e47600c857bb7e" }
+# was never published to crates.io. Rev = HEAD of astral-sh/ruff as of 2026-07-05.
+ruff_db = { git = "https://github.com/astral-sh/ruff", rev = "e6f1513d78c99bc8af1fcc3bc2a9a81e25cb3c2d" }
+ruff_diagnostics = { git = "https://github.com/astral-sh/ruff", rev = "e6f1513d78c99bc8af1fcc3bc2a9a81e25cb3c2d" }
+ruff_formatter = { git = "https://github.com/astral-sh/ruff", rev = "e6f1513d78c99bc8af1fcc3bc2a9a81e25cb3c2d" }
+ruff_linter = { git = "https://github.com/astral-sh/ruff", rev = "e6f1513d78c99bc8af1fcc3bc2a9a81e25cb3c2d" }
+ruff_python_ast = { git = "https://github.com/astral-sh/ruff", rev = "e6f1513d78c99bc8af1fcc3bc2a9a81e25cb3c2d" }
+ruff_python_formatter = { git = "https://github.com/astral-sh/ruff", rev = "e6f1513d78c99bc8af1fcc3bc2a9a81e25cb3c2d" }
+ruff_python_parser = { git = "https://github.com/astral-sh/ruff", rev = "e6f1513d78c99bc8af1fcc3bc2a9a81e25cb3c2d" }
+ruff_source_file = { git = "https://github.com/astral-sh/ruff", rev = "e6f1513d78c99bc8af1fcc3bc2a9a81e25cb3c2d" }
+ruff_text_size = { git = "https://github.com/astral-sh/ruff", rev = "e6f1513d78c99bc8af1fcc3bc2a9a81e25cb3c2d" }
 rumdl = { version = "0.2", default-features = false }
 rustc-hash = "2.1.3"
 rustix = { version = "1.1.4", features = ["pty", "process", "fs", "termios"] }

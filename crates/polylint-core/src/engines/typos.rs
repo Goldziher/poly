@@ -6,8 +6,11 @@
 //!
 //! # Capabilities
 //!
-//! Lint only. Each [`Diagnostic`] is annotated with an optional [`Edit`] fix
-//! when there is exactly one correction candidate.
+//! Lint only, and **never autofix**. Misspellings are reported at
+//! [`Severity::Error`] with the dictionary suggestion in the message, but carry
+//! no [`Edit`](crate::engine::Edit) — auto-correcting a typo silently rewrites identifiers, string
+//! keys, and API names that only *look* like misspellings, which regresses code
+//! far more often than it helps. A typo must be resolved by a human.
 //!
 //! # Version string
 //!
@@ -26,13 +29,13 @@ use globset::{Glob, GlobSetBuilder};
 use unicase::UniCase;
 
 use crate::config::EngineConfig;
-use crate::engine::{Capabilities, Diagnostic, Edit, Engine, Severity, SourceFile, Span};
+use crate::engine::{Capabilities, Diagnostic, Engine, Severity, SourceFile, Span};
 use crate::language::Language;
 
 /// Combined cache-key version: `typos` tokeniser + `typos-dict` word list,
 /// plus a marker for the noise-suppression guards below. Bump whenever either
 /// crate is updated OR the guard logic changes (it alters output).
-const TYPOS_VERSION: &str = "0.10.43+dict-0.13.30+guards1+cfg2";
+const TYPOS_VERSION: &str = "0.10.43+dict-0.13.31+guards1+cfg2+error-noautofix+builtins1";
 
 /// Skip spell-checking files at least this large: generated/minified bundles
 /// dominate by size and are pure noise word-by-word.
@@ -48,6 +51,39 @@ const MAX_LINE_BYTES: usize = 2_000;
 /// minified identifiers) are overwhelmingly noise rather than real typos, so
 /// require at least this many bytes; common three-letter typos are kept.
 const MIN_TYPO_LEN: usize = 3;
+
+/// Words the built-in dictionary flags but that are correct in essentially any
+/// codebase: established technical abbreviations and well-known OSS
+/// tool/library/format names. Baking them in spares every repo from re-listing
+/// them in `[lint.*.typos] extend_words` (they recur across the dry-run corpus).
+/// Deliberately narrow — only tokens that are proper nouns (never a real
+/// misspelling) or firmly established terms; project-specific jargon stays in the
+/// per-repo config so it can't mask genuine typos elsewhere. All entries are
+/// lowercase and compared case-insensitively.
+static BUILTIN_VALID_WORDS: &[&str] = &[
+    // Technical terms / abbreviations.
+    "ser",         // serde (Rust) serialization module / abbreviation.
+    "flate",       // DEFLATE compression (Go `compress/flate`, miniz inflate/deflate).
+    "fpr",         // GPG fingerprint record field (`gpg --with-colons`).
+    "arange",      // numpy range constructor.
+    "unparseable", // accepted variant spelling of "unparsable".
+    // Well-known OSS tool / library / format names.
+    "certifi",
+    "onnx",
+    "wasm",
+    "tesseract",
+    "pdfium",
+    "pymupdf",
+    "surrealdb",
+    "mkdocs",
+    "mkdocstrings",
+    "rumdl",
+];
+
+/// Whether `lowercased` is a built-in always-valid word (see [`BUILTIN_VALID_WORDS`]).
+fn is_builtin_valid_word(lowercased: &str) -> bool {
+    BUILTIN_VALID_WORDS.contains(&lowercased)
+}
 
 /// Cross-cutting spell-checker declares no tier-1 language ownership.
 static LANGUAGES: &[Language] = &[];
@@ -71,9 +107,9 @@ impl Engine for TyposEngine {
         Capabilities {
             lint: true,
             format: false,
-            // Emits a byte-range autofix whenever a misspelling has exactly one
-            // correction (see `typo_to_diagnostic`).
-            fix: true,
+            // Never autofix: auto-correcting a misspelling rewrites identifiers
+            // and string keys that only look like typos (see `typo_to_diagnostic`).
+            fix: false,
         }
     }
 
@@ -277,9 +313,10 @@ impl typos::Dictionary for ConfiguredDictionary<'_> {
             return None;
         }
 
-        // User-defined valid-word list (stored lowercased, compared lowercased).
+        // Built-in always-valid words ∪ user-defined valid-word list (both
+        // compared lowercased).
         let lowered = word_token.token().to_ascii_lowercase();
-        if self.valid_words.iter().any(|w| w == &lowered) {
+        if is_builtin_valid_word(&lowered) || self.valid_words.iter().any(|w| w == &lowered) {
             return Some(typos::Status::Valid);
         }
 
@@ -341,22 +378,13 @@ fn typo_to_diagnostic(content: &str, typo: typos::Typo<'_>) -> Diagnostic {
         format!("`{}` should be `{}`", typo.typo, corrections.join("` or `"))
     };
 
-    // Emit an autofix only when exactly one correction is available; multiple
-    // candidates require human judgment.
-    let fix: Vec<Edit> = if corrections.len() == 1 {
-        vec![Edit {
-            start_byte,
-            end_byte,
-            replacement: corrections[0].to_string(),
-        }]
-    } else {
-        vec![]
-    };
-
+    // No autofix — a typo is reported at error severity for manual resolution.
+    // Auto-correcting silently rewrites identifiers / string keys that merely
+    // resemble misspellings, a frequent source of regressions.
     Diagnostic {
         engine: "typos".to_string(),
         code: Some("typo".to_string()),
-        severity: Severity::Warning,
+        severity: Severity::Error,
         title: message,
         description: None,
         url: None,
@@ -366,7 +394,7 @@ fn typo_to_diagnostic(content: &str, typo: typos::Typo<'_>) -> Diagnostic {
             end_line,
             end_col,
         }),
-        fix,
+        fix: Vec::new(),
         metadata: Default::default(),
     }
 }

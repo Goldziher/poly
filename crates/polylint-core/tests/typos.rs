@@ -116,8 +116,8 @@ fn drops_ultra_short_corrections_but_keeps_three_char_typos() {
     let engine = TyposEngine;
     // short_tokens.txt holds a 2-char token (a typos-dict correction) followed
     // by a 3-char one. The 2-char token is dropped as too short to be reliable;
-    // the 3-char one survives with its single-correction autofix. Assert
-    // structurally so no misspelling literal lives in this source.
+    // the 3-char one survives. Assert structurally so no misspelling literal
+    // lives in this source.
     let src = make_src(include_str!("fixtures/typos/short_tokens.txt"));
     let diags = engine.lint(&src, &engine_cfg()).unwrap();
     assert_eq!(
@@ -125,11 +125,40 @@ fn drops_ultra_short_corrections_but_keeps_three_char_typos() {
         1,
         "only the 3-char typo should survive the length filter: {diags:?}",
     );
+    // Typos are reported at error severity with the suggestion in the message,
+    // and never carry an autofix (manual resolution required).
     assert_eq!(
-        diags[0].fix.first().map(|e| e.replacement.as_str()),
-        Some("the"),
-        "the surviving typo should carry its single-correction autofix",
+        diags[0].severity,
+        polylint_core::engine::Severity::Error,
+        "typos must be error severity",
     );
+    assert!(diags[0].fix.is_empty(), "typos must not carry an autofix");
+    assert!(
+        diags[0].title.contains("the"),
+        "the surviving typo should suggest `the` in its message: {}",
+        diags[0].title,
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Built-in allow-list: universally-correct technical terms and OSS names are
+// valid with no per-repo config (e.g. GPG `fpr`, the `certifi` package).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn builtin_valid_words_are_not_flagged() {
+    let engine = TyposEngine;
+    // `fpr` (GPG fingerprint) is flagged by the built-in dictionary by default;
+    // the engine's built-in allow-list must silence it and the other baked-in
+    // terms without any configuration.
+    for term in ["fpr", "certifi", "ser", "flate", "onnx"] {
+        let src = make_src(&format!("the {term} value here\n"));
+        let diags = engine.lint(&src, &engine_cfg()).unwrap();
+        assert!(
+            diags.is_empty(),
+            "built-in valid word `{term}` must not be flagged, got: {diags:?}",
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------

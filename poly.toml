@@ -32,6 +32,9 @@ polylint = { exclude = [
     "**/identify/tags.rs",
     ".ai-rulez/**",
     "crates/*/tests/fixtures/**",
+    # The typos backend's own test file carries deliberately-misspelled words in
+    # its assertions and explanatory comments (the known-bad fixture words) — never lint.
+    "crates/polylint-core/tests/typos.rs",
     "crates/conformance/corpus/**",
     "crates/conformance/golden/**",
     "crates/conformance/docker/**",
@@ -102,8 +105,10 @@ workspace = true
 extend_ignore_words = ["certifi"]
 
 [lint.toml.typos]
-# `markdwon` et al. appear below as ignore-word entries for the README catalog.
-extend_ignore_words = ["certifi", "markdwon", "restructredtext", "brightscripter"]
+# `markdwon` et al. appear below as ignore-word entries for the README catalog;
+# `teh`/`inh`/`tha` appear as the `[lint.rust.typos]` ignore-word values in this
+# very file. All are ignore-list vocabulary reproduced verbatim, not authored.
+extend_ignore_words = ["certifi", "markdwon", "restructredtext", "brightscripter", "teh", "inh", "tha"]
 
 # The README's catalog table is generated verbatim from the vendored mdsf
 # registry (scripts/gen-catalog-md.py); a few upstream language tags carry

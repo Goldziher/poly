@@ -45,6 +45,23 @@ use crate::language::Language;
 /// files, so such a tool is skipped (no lint engine) rather than run.
 const MUTATING_FLAGS: &[&str] = &["--fix", "--write", "-w", "-i"];
 
+/// Catalog tools that are **whole-project type-checkers**, not per-file linters.
+///
+/// They resolve imports across the whole project — sibling modules, the project's
+/// dependency graph, its virtualenv — and infer an import root from the project
+/// layout. poly's catalog tier runs one process per file with an exit-code verdict,
+/// which starves a type-checker of that context and turns every cross-module import
+/// into a spurious `missing-import`. They are therefore **not wired** as catalog
+/// linters ([`CatalogToolEngine::lint_engine`] returns `None`); a project that wants
+/// them should run them as a dedicated whole-project step outside poly.
+const WHOLE_PROJECT_LINTERS: &[&str] = &["pyrefly", "mypy", "ty", "pyright", "pyre", "pytype", "tsc"];
+
+/// Whether `name` is a whole-project type-checker unsuited to the per-file catalog
+/// lint tier (see [`WHOLE_PROJECT_LINTERS`]).
+pub(crate) fn is_whole_project_linter(name: &str) -> bool {
+    WHOLE_PROJECT_LINTERS.contains(&name)
+}
+
 /// Maximum number of bytes of a failing linter's output surfaced in the
 /// file-level diagnostic message, so a chatty tool cannot flood the report.
 const MAX_SNIPPET_LEN: usize = 2000;
@@ -157,11 +174,13 @@ impl CatalogToolEngine {
     /// replaces the command's argv when present. `env` and `root` are forwarded
     /// to the spawned process.
     ///
-    /// Returns `None` when the tool exposes no usable lint command **or** when the
-    /// resolved argv is mutating (contains any of [`MUTATING_FLAGS`]): a command
+    /// Returns `None` when the tool exposes no usable lint command, when the
+    /// resolved argv is mutating (contains any of [`MUTATING_FLAGS`]) — a command
     /// that rewrites the file must never run as a linter, since the runner does
-    /// not expect a lint pass to touch the file. Such a tool is simply not
-    /// registered as a linter (it can still be wired as a formatter).
+    /// not expect a lint pass to touch the file — or when the tool is a
+    /// whole-project type-checker ([`WHOLE_PROJECT_LINTERS`]) that cannot run per
+    /// file. Such a tool is simply not registered as a linter (it can still be
+    /// wired as a formatter).
     pub fn lint_engine(
         tool: &'static Tool,
         command_name: Option<&str>,
@@ -169,6 +188,11 @@ impl CatalogToolEngine {
         env: BTreeMap<String, String>,
         root: Option<PathBuf>,
     ) -> Option<Self> {
+        // Whole-project type-checkers cannot work per file (see
+        // `WHOLE_PROJECT_LINTERS`): never wire them as catalog linters.
+        if is_whole_project_linter(&tool.name) {
+            return None;
+        }
         let command = match command_name {
             Some(name) => tool.command(name)?,
             None => tool.lint_command()?.1,
@@ -456,10 +480,20 @@ impl CatalogToolEngine {
         ))
     }
 
-    /// Lint via a temp file (`$PATH`): write the source to a temp file the tool
-    /// only reads, run it, and capture its exit status and combined output.
+    /// Lint via a file path (`$PATH`).
+    ///
+    /// Linting is read-only, so it runs against the **real on-disk file** whenever
+    /// that file exists and still matches the in-memory content. This preserves the
+    /// project context a temp copy destroys: a Python tool resolves sibling modules
+    /// and the project virtualenv, and a path-sensitive tool (e.g. actionlint's
+    /// `.github/workflows/` detection) sees the true path. Only when the real file
+    /// is unavailable or has diverged from the content being linted (e.g. a re-lint
+    /// after an in-memory fix, or synthetic content with no backing file) does it
+    /// fall back to an isolated temp copy the tool merely reads.
     fn lint_via_path(&self, src: &SourceFile) -> anyhow::Result<LintOutcome> {
-        let binary = &self.tool.binary;
+        if let Some(real) = real_path_if_matches(&src.path, &src.content) {
+            return self.run_lint_on_path(&real.to_string_lossy());
+        }
         let extension = src.path.extension().and_then(|ext| ext.to_str()).unwrap_or("txt");
         let mut temp = tempfile::Builder::new()
             .prefix("poly-catalog-")
@@ -469,9 +503,15 @@ impl CatalogToolEngine {
         temp.write_all(src.content.as_bytes())
             .context("writing source to temp file")?;
         temp.flush().context("flushing temp file")?;
+        self.run_lint_on_path(&temp.path().to_string_lossy())
+    }
 
-        let path = temp.path().to_string_lossy().to_string();
-        let argv = self.argv_with_path(&path);
+    /// Run the path-based lint command against `path`, capturing its exit status
+    /// and combined output. Shared by the real-file and temp-copy variants of
+    /// [`CatalogToolEngine::lint_via_path`].
+    fn run_lint_on_path(&self, path: &str) -> anyhow::Result<LintOutcome> {
+        let binary = &self.tool.binary;
+        let argv = self.argv_with_path(path);
         let output = self
             .base_command(binary)
             .args(&argv)
@@ -546,6 +586,21 @@ impl LintOutcome {
     }
 }
 
+/// The canonical, absolute path of `path` when it exists on disk with content
+/// byte-identical to `content`; `None` otherwise.
+///
+/// Used to decide whether a read-only linter can run against the real file
+/// (preserving project context) instead of an isolated temp copy. The path is
+/// canonicalised to an absolute one so the tool resolves it regardless of any
+/// `root` working-directory override.
+fn real_path_if_matches(path: &std::path::Path, content: &str) -> Option<PathBuf> {
+    let bytes = std::fs::read(path).ok()?;
+    if bytes != content.as_bytes() {
+        return None;
+    }
+    std::fs::canonicalize(path).ok()
+}
+
 /// Whether `arguments` contain any [`MUTATING_FLAGS`] token — i.e. the command
 /// would rewrite the file rather than only report on it.
 fn is_mutating(arguments: &[String]) -> bool {
@@ -571,331 +626,4 @@ fn diff_output(formatted: String, src: &SourceFile) -> FormatOutput {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::collections::BTreeMap;
-    use std::path::PathBuf;
-
-    use poly_catalog::{Catalog, Command as CatalogCommand};
-
-    use super::*;
-    use crate::config::{EngineConfig, GlobalDefaults};
-
-    /// Build a leaked `&'static Tool` for a single-command catalog tool, so the
-    /// `&'static Tool` contract is satisfied without a real catalog entry.
-    fn leak_tool(name: &str, binary: &str, category: &str, arguments: Vec<String>) -> &'static Tool {
-        Box::leak(Box::new(Tool {
-            name: name.to_string(),
-            binary: binary.to_string(),
-            categories: vec![category.to_string()],
-            languages: vec!["text".to_string()],
-            commands: BTreeMap::from([(
-                String::new(),
-                CatalogCommand {
-                    arguments,
-                    stdin: false,
-                },
-            )]),
-            homepage: String::new(),
-            path_globs: vec![],
-        }))
-    }
-
-    fn make_src(path: &str, content: &str) -> SourceFile {
-        SourceFile {
-            path: PathBuf::from(path),
-            language: Language::Other("test".to_string()),
-            content: content.into(),
-        }
-    }
-
-    fn cfg() -> EngineConfig {
-        EngineConfig {
-            globals: GlobalDefaults::default(),
-            indent_width: 2,
-            options: toml::Table::new(),
-        }
-    }
-
-    /// Convenience wrapper for tests: build an engine with empty env and no root.
-    fn format_engine_default(
-        tool: &'static Tool,
-        command_name: Option<&str>,
-        args_override: Option<&[String]>,
-    ) -> Option<CatalogToolEngine> {
-        CatalogToolEngine::format_engine(tool, command_name, args_override, BTreeMap::new(), None)
-    }
-
-    /// Convenience wrapper for tests: build a lint engine with empty env and no root.
-    fn lint_engine_default(
-        tool: &'static Tool,
-        command_name: Option<&str>,
-        args_override: Option<&[String]>,
-    ) -> Option<CatalogToolEngine> {
-        CatalogToolEngine::lint_engine(tool, command_name, args_override, BTreeMap::new(), None)
-    }
-
-    #[test]
-    fn format_engine_builds_for_a_catalog_formatter() {
-        let tool = Catalog::get().tool("shfmt").expect("shfmt in catalog");
-        let engine = format_engine_default(tool, None, None).expect("shfmt exposes a format command");
-        assert_eq!(engine.name(), "shfmt");
-        assert!(engine.capabilities().format);
-        assert!(!engine.capabilities().lint);
-        assert!(engine.version().contains("shfmt"));
-    }
-
-    #[test]
-    fn format_engine_none_for_pure_linter() {
-        // shellcheck is lint-only; it has no format command.
-        if let Some(tool) = Catalog::get().tool("shellcheck") {
-            assert!(format_engine_default(tool, None, None).is_none());
-        }
-    }
-
-    #[test]
-    fn args_override_replaces_catalog_argv() {
-        let tool = Catalog::get().tool("shfmt").expect("shfmt in catalog");
-        let engine = format_engine_default(tool, None, Some(&["--custom".to_string()])).unwrap();
-        assert_eq!(engine.arguments, vec!["--custom".to_string()]);
-        assert!(engine.version().contains("--custom"));
-    }
-
-    #[test]
-    fn argv_substitutes_path_placeholder() {
-        let tool = Catalog::get().tool("gofmt").expect("gofmt in catalog");
-        let engine = format_engine_default(tool, None, None).unwrap();
-        let argv = engine.argv_with_path("/tmp/x.go");
-        assert!(argv.iter().any(|a| a == "/tmp/x.go"));
-        assert!(!argv.iter().any(|a| a == PATH_PLACEHOLDER));
-    }
-
-    #[test]
-    fn lint_engine_rejects_a_mutating_command() {
-        // A `--fix` command would rewrite files; it must never be wired as a
-        // linter, regardless of which mutating flag is present.
-        for flag in ["--fix", "--write", "-w", "-i"] {
-            let tool = leak_tool(
-                "fakefixer",
-                "true",
-                "linter",
-                vec![flag.to_string(), PATH_PLACEHOLDER.to_string()],
-            );
-            assert!(
-                lint_engine_default(tool, None, None).is_none(),
-                "mutating flag `{flag}` must be rejected as a linter"
-            );
-        }
-    }
-
-    #[test]
-    fn lint_engine_rejects_a_mutating_args_override() {
-        // The guard applies to the user's `args` override too, not just the
-        // catalog's own argv.
-        let tool = leak_tool("fakelint", "true", "linter", vec![PATH_PLACEHOLDER.to_string()]);
-        assert!(lint_engine_default(tool, None, Some(&["--fix".to_string()])).is_none());
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn lint_engine_reports_one_diagnostic_on_nonzero_exit() {
-        // Drive the tool through an inline `sh -c` command rather than writing
-        // and exec'ing a script file: exec'ing a freshly written executable can
-        // transiently fail with ETXTBSY when a concurrent test thread forks
-        // while this file's write fd is briefly open (CLOEXEC only closes on
-        // exec, not fork). `sh -c` reaches the same stdout/stderr/exit-code
-        // behaviour without ever exec'ing a file we just wrote.
-        let tool = leak_tool(
-            "fakelint",
-            "sh",
-            "linter",
-            vec![
-                "-c".to_string(),
-                "echo 'problem on line 1' >&2\nexit 3".to_string(),
-                PATH_PLACEHOLDER.to_string(),
-            ],
-        );
-        let engine = lint_engine_default(tool, None, None).expect("non-mutating linter wires");
-        assert!(engine.capabilities().lint);
-        assert!(!engine.capabilities().format);
-
-        let diagnostics = engine.lint(&make_src("file.txt", "anything\n"), &cfg()).unwrap();
-        assert_eq!(diagnostics.len(), 1, "one file-level finding on failure");
-        let diagnostic = &diagnostics[0];
-        assert_eq!(diagnostic.engine, "fakelint");
-        assert_eq!(diagnostic.severity, Severity::Warning);
-        assert!(diagnostic.span.is_none(), "no span at breadth-tier fidelity");
-        assert!(diagnostic.code.is_none(), "no rule code");
-        assert!(
-            diagnostic.title.contains("problem on line 1"),
-            "carries the tool's output: {}",
-            diagnostic.title
-        );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn lint_engine_reports_nothing_on_zero_exit() {
-        // Inline `sh -c` instead of exec'ing a freshly written script — see
-        // `lint_engine_reports_one_diagnostic_on_nonzero_exit` for why (ETXTBSY
-        // race under concurrent test threads).
-        let tool = leak_tool(
-            "oklint",
-            "sh",
-            "linter",
-            vec!["-c".to_string(), "exit 0".to_string(), PATH_PLACEHOLDER.to_string()],
-        );
-        let engine = lint_engine_default(tool, None, None).unwrap();
-        let diagnostics = engine.lint(&make_src("file.txt", "anything\n"), &cfg()).unwrap();
-        assert!(diagnostics.is_empty(), "a passing run yields no diagnostics");
-    }
-
-    #[test]
-    fn absent_binary_is_a_noop() {
-        // A catalog tool whose binary is essentially never installed in CI must
-        // degrade to Unchanged rather than erroring.
-        let tool = Catalog::get()
-            .tools()
-            .iter()
-            .find(|t| t.format_command().is_some() && probe_binary(&t.binary).is_none());
-        if let Some(tool) = tool {
-            let engine = format_engine_default(tool, None, None).unwrap();
-            let result = engine.format(&make_src("file.txt", "anything\n"), &cfg()).unwrap();
-            assert!(matches!(result, FormatOutput::Unchanged));
-        }
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn env_var_is_visible_to_the_spawned_process() {
-        // Prove the engine forwards `env` to the subprocess. Use `sh -c` inline
-        // to avoid exec'ing a freshly written file (ETXTBSY race — see above).
-        let tool = leak_tool(
-            "envcheck",
-            "sh",
-            "linter",
-            vec![
-                "-c".to_string(),
-                // Print the env var on stdout; exit non-zero so we can capture
-                // it as a diagnostic message (exit 0 yields no diagnostics).
-                "printf '%s' \"$POLY_TEST_VAR\"\nexit 1".to_string(),
-                PATH_PLACEHOLDER.to_string(),
-            ],
-        );
-        let env = BTreeMap::from([("POLY_TEST_VAR".to_string(), "hello-from-env".to_string())]);
-        let engine = CatalogToolEngine::lint_engine(tool, None, None, env, None).expect("non-mutating linter wires");
-        let diagnostics = engine.lint(&make_src("file.txt", "content\n"), &cfg()).unwrap();
-        assert_eq!(diagnostics.len(), 1, "non-zero exit → one diagnostic");
-        assert!(
-            diagnostics[0].title.contains("hello-from-env"),
-            "env var reflected in tool output: {}",
-            diagnostics[0].title
-        );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn root_sets_the_working_directory_of_the_spawned_process() {
-        // Prove the engine sets the working directory via `root`. The tool
-        // prints the cwd; we canonicalize the expected path (macOS symlinks
-        // /var/folders → /private/var/folders) before comparing.
-        let tmp = std::fs::canonicalize(std::env::temp_dir()).unwrap_or_else(|_| std::env::temp_dir());
-        let tool = leak_tool(
-            "cwdcheck",
-            "sh",
-            "linter",
-            vec![
-                "-c".to_string(),
-                // Print cwd (via `pwd -P` for the physical, symlink-resolved
-                // path) then exit non-zero so it surfaces as a diagnostic.
-                "pwd -P\nexit 1".to_string(),
-                PATH_PLACEHOLDER.to_string(),
-            ],
-        );
-        let engine = CatalogToolEngine::lint_engine(tool, None, None, BTreeMap::new(), Some(tmp.clone()))
-            .expect("non-mutating linter wires");
-        let diagnostics = engine.lint(&make_src("file.txt", "content\n"), &cfg()).unwrap();
-        assert_eq!(diagnostics.len(), 1, "non-zero exit → one diagnostic");
-        let tmp_str = tmp.to_string_lossy();
-        assert!(
-            diagnostics[0].title.contains(tmp_str.as_ref()),
-            "cwd reflects root override: {}",
-            diagnostics[0].title
-        );
-    }
-
-    /// Build a leaked `&'static Tool` with path_globs, for testing the path filter.
-    #[cfg(unix)]
-    fn leak_tool_with_globs(
-        name: &str,
-        binary: &str,
-        category: &str,
-        arguments: Vec<String>,
-        path_globs: Vec<String>,
-    ) -> &'static Tool {
-        Box::leak(Box::new(Tool {
-            name: name.to_string(),
-            binary: binary.to_string(),
-            categories: vec![category.to_string()],
-            languages: vec!["yaml".to_string()],
-            commands: BTreeMap::from([(
-                String::new(),
-                CatalogCommand {
-                    arguments,
-                    stdin: false,
-                },
-            )]),
-            homepage: String::new(),
-            path_globs,
-        }))
-    }
-
-    /// A tool with `path_globs` must skip files that don't match and process
-    /// files that do match. The tool always exits non-zero so we can distinguish
-    /// "processed (diagnostic)" from "skipped (empty)".
-    #[cfg(unix)]
-    #[test]
-    fn path_globs_skips_non_matching_and_runs_matching_files() {
-        let tool = leak_tool_with_globs(
-            "scopedlint",
-            "sh",
-            "linter",
-            vec![
-                "-c".to_string(),
-                // Always fail, so a non-skipped file always produces a diagnostic.
-                "exit 1".to_string(),
-                PATH_PLACEHOLDER.to_string(),
-            ],
-            vec!["**/.github/workflows/**/*.yml".to_string()],
-        );
-        let engine = lint_engine_default(tool, None, None).expect("non-mutating linter wires");
-
-        // Non-matching path → skipped (no diagnostics even though tool would fail).
-        let non_match = engine.lint(&make_src("Taskfile.yml", ""), &cfg()).unwrap();
-        assert!(
-            non_match.is_empty(),
-            "Taskfile.yml does not match .github/workflows/**/*.yml — must be skipped; got: {non_match:?}"
-        );
-
-        // Matching path → tool runs → diagnostic (exit 1).
-        let matches = engine.lint(&make_src(".github/workflows/ci.yml", ""), &cfg()).unwrap();
-        assert!(
-            !matches.is_empty(),
-            ".github/workflows/ci.yml matches the glob — tool must run and report; got: {matches:?}"
-        );
-    }
-
-    #[test]
-    fn actionlint_catalog_entry_has_github_workflows_path_globs() {
-        let catalog = poly_catalog::Catalog::get();
-        let tool = catalog.tool("actionlint").expect("actionlint is in the catalog");
-        assert!(
-            !tool.path_globs.is_empty(),
-            "actionlint must declare path_globs to restrict it to workflow files"
-        );
-        assert!(
-            tool.path_globs.iter().any(|g| g.contains(".github/workflows")),
-            "actionlint path_globs must reference .github/workflows; got: {:?}",
-            tool.path_globs
-        );
-    }
-}
+mod tests;

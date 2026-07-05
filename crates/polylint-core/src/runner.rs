@@ -192,6 +192,27 @@ fn cache_args(cfg: &EngineConfig) -> toml::Table {
 /// [`CatalogToolEngine::lint_engine`] skips it). Catalog linting is a
 /// best-effort, breadth-tier mechanism (file-level, exit-code based); structured
 /// per-tool diagnostics remain the curated native backends' job.
+/// Emit a one-time `warn` that an enabled whole-project type-checker is being
+/// skipped in the per-file catalog lint tier. `catalog_engines_for` runs once per
+/// `(config, language)` pair, so the warning is de-duplicated per tool name for
+/// the process lifetime to avoid repeating it for every Python file's config.
+fn warn_whole_project_linter_once(name: &str) {
+    use std::collections::HashSet;
+    use std::sync::{Mutex, OnceLock};
+    static WARNED: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    let mut warned = WARNED
+        .get_or_init(|| Mutex::new(HashSet::new()))
+        .lock()
+        .expect("warn set poisoned");
+    if warned.insert(name.to_string()) {
+        tracing::warn!(
+            tool = name,
+            "'{name}' is a whole-project type-checker and cannot run in poly's per-file lint tier; \
+             it is skipped. Run it as a dedicated whole-project step instead."
+        );
+    }
+}
+
 fn catalog_engines_for(language: &Language, config: &Config, kind: Kind) -> Vec<Box<dyn Engine>> {
     let catalog = poly_catalog::Catalog::get();
     let mut engines: Vec<Box<dyn Engine>> = Vec::new();
@@ -209,6 +230,12 @@ fn catalog_engines_for(language: &Language, config: &Config, kind: Kind) -> Vec<
             .iter()
             .any(|catalog_lang| &Language::from_catalog_name(catalog_lang) == language);
         if !serves_language {
+            continue;
+        }
+        // A whole-project type-checker enabled for linting is skipped (it cannot
+        // run per file); warn once so the user learns why it produces no findings.
+        if kind == Kind::Lint && crate::engines::catalog_tool::is_whole_project_linter(name) {
+            warn_whole_project_linter_once(name);
             continue;
         }
         let command = tool_config.command.as_deref();

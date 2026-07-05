@@ -9,6 +9,18 @@
 //! byte-faithful staged content — untracked files and unstaged worktree edits
 //! are absent — and the live worktree is never touched.
 //!
+//! # Submodules
+//!
+//! `git checkout-index` writes only blob entries, so a submodule gitlink leaves
+//! *no* content in the snapshot. A compile hook that reaches into a submodule
+//! (e.g. a test that `include_bytes!`es a fixture from one) would then fail to
+//! build in the sandbox even though the real tree compiles. To close that gap,
+//! each populated submodule is exposed in the snapshot as a **symlink into the
+//! live worktree's submodule directory**: a submodule's files are not part of the
+//! parent repo's staged commit (only its pinned gitlink is), so linking to the
+//! real checkout is both correct — the parent's hooks never lint the submodule's
+//! own sources — and cheap, avoiding a copy of a potentially large fixture tree.
+//!
 //! # Persistent, incremental cache
 //!
 //! The snapshot is a **persistent, git-ignored cache** at a stable path
@@ -116,8 +128,71 @@ fn refresh(root: &Path, dir: &Path) -> Result<(), Error> {
     }
     git::checkout_index_paths(root, dir, &to_checkout)?;
 
+    materialize_submodules(root, dir)?;
+
     write_manifest(dir, &staged)?;
     Ok(())
+}
+
+/// Expose each populated submodule in the snapshot as a symlink into the live
+/// worktree, so whole-workspace compile hooks can resolve files inside it (see
+/// the module docs). An uninitialized submodule (empty worktree directory) is
+/// skipped — there is nothing to link and the real build would fail on it too.
+fn materialize_submodules(root: &Path, dir: &Path) -> Result<(), Error> {
+    for subpath in git::list_submodule_gitlinks(root)? {
+        let source = root.join(&subpath);
+        if !is_populated_dir(&source) {
+            debug!(submodule = %subpath.display(), "skipping uninitialized submodule");
+            continue;
+        }
+        // Canonicalize so the link target is absolute and cwd-independent.
+        let target = std::fs::canonicalize(&source).unwrap_or(source);
+        ensure_symlink(&target, &dir.join(&subpath))?;
+    }
+    Ok(())
+}
+
+/// Whether `path` is a directory holding at least one entry — i.e. a checked-out,
+/// non-empty submodule (an uninitialized submodule is an empty directory).
+fn is_populated_dir(path: &Path) -> bool {
+    std::fs::read_dir(path).is_ok_and(|mut entries| entries.next().is_some())
+}
+
+/// Ensure `link` is a symlink to `target`. Idempotent: an already-correct symlink
+/// is left untouched (stable mtime keeps compilers warm); any other existing
+/// entry — a stale symlink or an empty `checkout-index` directory — is replaced.
+fn ensure_symlink(target: &Path, link: &Path) -> Result<(), Error> {
+    match std::fs::read_link(link) {
+        Ok(existing) if existing == target => return Ok(()),
+        Ok(_) => std::fs::remove_file(link)?,
+        Err(_) => {
+            // Not a symlink: remove whatever is there (if anything) before linking.
+            if let Ok(meta) = std::fs::symlink_metadata(link) {
+                if meta.is_dir() {
+                    std::fs::remove_dir_all(link)?;
+                } else {
+                    std::fs::remove_file(link)?;
+                }
+            }
+        }
+    }
+    if let Some(parent) = link.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    symlink_dir(target, link)?;
+    Ok(())
+}
+
+/// Create a directory symlink at `link` pointing to `target` (platform-specific).
+#[cfg(unix)]
+fn symlink_dir(target: &Path, link: &Path) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(target, link)
+}
+
+/// Create a directory symlink at `link` pointing to `target` (platform-specific).
+#[cfg(windows)]
+fn symlink_dir(target: &Path, link: &Path) -> std::io::Result<()> {
+    std::os::windows::fs::symlink_dir(target, link)
 }
 
 /// Whether a snapshot entry exists on disk. Uses `symlink_metadata` so a
@@ -289,6 +364,65 @@ mod tests {
             "// v2 changed\n",
             "a newly-staged OID must be re-materialized"
         );
+    }
+
+    #[test]
+    fn snapshot_exposes_submodule_content_via_symlink() {
+        // Regression: `git checkout-index` never materializes a submodule's files,
+        // so a compile hook that reaches into a submodule (e.g. `include_bytes!` of
+        // a fixture) failed in the sandbox though the real tree compiles. The
+        // snapshot must expose the submodule as a symlink into the live worktree.
+        let tmp = TempDir::new().expect("tmp");
+        let root = tmp.path();
+
+        // A standalone repo to embed as a submodule, holding a compile-time fixture.
+        let sub = root.join("subrepo_src");
+        std::fs::create_dir_all(sub.join("fixtures")).unwrap();
+        init(&sub);
+        std::fs::write(sub.join("fixtures/data.bin"), b"FIXTURE").unwrap();
+        git(&sub, &["add", "."]);
+        git(&sub, &["commit", "-q", "-m", "fixture"]);
+
+        // Parent repo with the submodule added at `vendor`. Local-path submodules
+        // require `protocol.file.allow=always` (tightened since CVE-2022-39253).
+        let parent = root.join("parent");
+        std::fs::create_dir_all(&parent).unwrap();
+        init(&parent);
+        git(
+            &parent,
+            &[
+                "-c",
+                "protocol.file.allow=always",
+                "submodule",
+                "add",
+                sub.to_str().unwrap(),
+                "vendor",
+            ],
+        );
+        std::fs::write(parent.join("main.rs"), "fn main() {}\n").unwrap();
+        git(&parent, &["add", "."]);
+
+        let snap = StagedSnapshot::create(&parent).expect("snapshot");
+
+        // The submodule fixture must resolve through the snapshot...
+        let via_snapshot = snap.path().join("vendor/fixtures/data.bin");
+        assert!(
+            via_snapshot.exists(),
+            "submodule fixture must resolve through the snapshot"
+        );
+        assert_eq!(std::fs::read(&via_snapshot).unwrap(), b"FIXTURE");
+        // ...and it must be a symlink into the worktree, not an expensive copy.
+        assert!(
+            std::fs::symlink_metadata(snap.path().join("vendor"))
+                .unwrap()
+                .file_type()
+                .is_symlink(),
+            "submodule must be exposed as a symlink, not copied"
+        );
+
+        // Refresh is idempotent — the symlink survives a second run.
+        StagedSnapshot::create(&parent).expect("refresh");
+        assert_eq!(std::fs::read(&via_snapshot).unwrap(), b"FIXTURE");
     }
 
     #[test]

@@ -275,6 +275,43 @@ fn parse_ls_files_stage(bytes: &[u8]) -> Result<Vec<StagedEntry>, Error> {
     Ok(entries)
 }
 
+/// List every submodule gitlink path recorded in the index (`git ls-files -s`
+/// entries with mode `160000`).
+///
+/// Submodules have no blob to materialize, so [`list_staged_entries`] skips them
+/// — but whole-workspace compile hooks still need the submodule's checked-out
+/// files present (e.g. a test that `include_bytes!`es a fixture from a
+/// submodule), or the isolated sandbox fails to compile even though the real tree
+/// does. The staged snapshot materializes these paths separately.
+#[instrument(level = "trace")]
+pub fn list_submodule_gitlinks(root: &Path) -> Result<Vec<PathBuf>, Error> {
+    let output = git_cmd("list submodule gitlinks")?
+        .current_dir(root)
+        .arg("ls-files")
+        .arg("-s")
+        .arg("-z")
+        .check(true)
+        .output()?;
+    parse_ls_files_gitlinks(&output.stdout)
+}
+
+/// Parse `git ls-files -s -z` output, returning only the submodule gitlink paths
+/// (mode `160000`) — the complement of [`parse_ls_files_stage`], which skips them.
+fn parse_ls_files_gitlinks(bytes: &[u8]) -> Result<Vec<PathBuf>, Error> {
+    let mut paths = Vec::new();
+    for record in bytes.split(|&byte| byte == 0).filter(|slice| !slice.is_empty()) {
+        let Some(tab) = record.iter().position(|&byte| byte == b'\t') else {
+            continue;
+        };
+        let (meta, tab_and_path) = record.split_at(tab);
+        let mode = std::str::from_utf8(meta)?.split_whitespace().next().unwrap_or_default();
+        if mode == "160000" {
+            paths.push(path_from_git_bytes(&tab_and_path[1..])?);
+        }
+    }
+    Ok(paths)
+}
+
 /// Build the `--prefix=<dest>/` argument for `git checkout-index`.
 ///
 /// The prefix is prepended verbatim to each index path, so it must carry a
@@ -689,6 +726,20 @@ mod tests {
         assert!(!entries[0].is_symlink);
         assert_eq!(entries[1].path, PathBuf::from("link"));
         assert!(entries[1].is_symlink, "mode 120000 is a symlink");
+    }
+
+    #[test]
+    fn parse_ls_files_gitlinks_returns_only_submodules() {
+        // The complement of `parse_ls_files_stage`: only mode-160000 gitlinks.
+        let input = b"100644 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0\tsrc/a.rs\0\
+160000 cccccccccccccccccccccccccccccccccccccccc 0\tvendor/sub\0\
+160000 dddddddddddddddddddddddddddddddddddddddd 0\ttest documents\0";
+        let paths = parse_ls_files_gitlinks(input).expect("parse");
+        assert_eq!(
+            paths,
+            vec![PathBuf::from("vendor/sub"), PathBuf::from("test documents")],
+            "only submodule gitlinks, paths verbatim (incl. spaces)"
+        );
     }
 
     #[test]
