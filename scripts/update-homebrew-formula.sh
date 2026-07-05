@@ -1,27 +1,51 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# update-homebrew-formula.sh <version> <source-sha256>
+# update-homebrew-formula.sh <version> [release-repo]
 #
-# Emits a Homebrew *source* formula (to stdout) that builds the `poly` binary
-# from the tagged GitHub source tarball with Cargo. This is the bottle-able
-# shape: the release workflow pushes this formula to Goldziher/homebrew-tap and
-# then dispatches the tap's `bottle.yml`, which runs `brew install --build-bottle`
-# + `brew bottle` on each platform and merges the resulting `bottle do` block
-# back into this formula. Users on a bottled platform get the prebuilt bottle;
-# everyone else builds from source.
+# Emits a Homebrew *binary* formula (to stdout) that downloads the prebuilt
+# `poly` binary from the tagged GitHub release — the same artifacts the
+# installer and the npm/PyPI wrappers use. No source build, no `rust`/`libgit2`
+# build dependencies, and no separate bottle workflow: the moment the tap
+# formula is bumped it is directly installable on every supported platform.
+# This is how ruff / oxlint / biome ship their taps.
 #
-# <source-sha256> is the sha256 of
-#   https://github.com/Goldziher/polylint/archive/refs/tags/v<version>.tar.gz
+# The per-platform sha256 values are read from the release's `sha256sums.txt`.
 
-if [ $# -ne 2 ]; then
-  echo "Usage: $0 <version> <source-sha256>" >&2
+if [ $# -lt 1 ] || [ $# -gt 2 ]; then
+  echo "Usage: $0 <version> [release-repo]" >&2
   exit 1
 fi
 
 VERSION="$1"
-SHA256="$2"
-URL="https://github.com/Goldziher/polylint/archive/refs/tags/v${VERSION}.tar.gz"
+RELEASE_REPO="${2:-Goldziher/polylint}"
+TAG="v${VERSION}"
+BASE_URL="https://github.com/${RELEASE_REPO}/releases/download/${TAG}"
+
+# Pull the checksums for this release and resolve each platform archive's hash.
+SUMS="$(curl -fsSL "${BASE_URL}/sha256sums.txt")"
+
+sha_for() {
+  # Match the archive name regardless of the leading "./" in sha256sums.txt.
+  echo "$SUMS" | awk -v f="$1" '$2 == f || $2 == "./" f { print $1; exit }'
+}
+
+ARM64_DARWIN="poly-${VERSION}-aarch64-apple-darwin.tar.gz"
+X86_64_DARWIN="poly-${VERSION}-x86_64-apple-darwin.tar.gz"
+ARM64_LINUX="poly-${VERSION}-aarch64-unknown-linux-gnu.tar.gz"
+X86_64_LINUX="poly-${VERSION}-x86_64-unknown-linux-gnu.tar.gz"
+
+SHA_ARM64_DARWIN="$(sha_for "$ARM64_DARWIN")"
+SHA_X86_64_DARWIN="$(sha_for "$X86_64_DARWIN")"
+SHA_ARM64_LINUX="$(sha_for "$ARM64_LINUX")"
+SHA_X86_64_LINUX="$(sha_for "$X86_64_LINUX")"
+
+for name in SHA_ARM64_DARWIN SHA_X86_64_DARWIN SHA_ARM64_LINUX SHA_X86_64_LINUX; do
+  if [ -z "${!name}" ]; then
+    echo "Missing checksum for $name in ${BASE_URL}/sha256sums.txt" >&2
+    exit 1
+  fi
+done
 
 cat <<EOF
 # typed: false
@@ -31,14 +55,33 @@ cat <<EOF
 class Polylint < Formula
   desc "Universal zero-dependency linter and formatter"
   homepage "https://github.com/Goldziher/polylint"
-  url "${URL}"
-  sha256 "${SHA256}"
+  version "${VERSION}"
   license "MIT"
 
-  depends_on "rust" => :build
+  on_macos do
+    on_arm do
+      url "${BASE_URL}/${ARM64_DARWIN}"
+      sha256 "${SHA_ARM64_DARWIN}"
+    end
+    on_intel do
+      url "${BASE_URL}/${X86_64_DARWIN}"
+      sha256 "${SHA_X86_64_DARWIN}"
+    end
+  end
+
+  on_linux do
+    on_arm do
+      url "${BASE_URL}/${ARM64_LINUX}"
+      sha256 "${SHA_ARM64_LINUX}"
+    end
+    on_intel do
+      url "${BASE_URL}/${X86_64_LINUX}"
+      sha256 "${SHA_X86_64_LINUX}"
+    end
+  end
 
   def install
-    system "cargo", "install", *std_cargo_args(path: "crates/poly-cli")
+    bin.install "poly"
   end
 
   test do
