@@ -5,6 +5,7 @@
 //! otherwise).
 
 use crate::engine::Engine;
+use crate::engines::astgrep::AstGrepEngine;
 use crate::engines::biome_css::BiomeCssEngine;
 use crate::engines::biome_graphql::BiomeGraphqlEngine;
 use crate::engines::dockerfile::DockerfileEngine;
@@ -100,5 +101,8 @@ pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
     // typos is cross-cutting: every file is spell-checked in addition to its
     // language-specific lint/format engines.
     engines.push(Box::new(TyposEngine));
+    // astgrep is cross-cutting: user-authored custom rules run on every file
+    // whose language has matching rules in the configured [rules] dirs.
+    engines.push(Box::new(AstGrepEngine));
     engines
 }

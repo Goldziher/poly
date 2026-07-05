@@ -75,6 +75,30 @@ pub struct PolyConfig {
     pub typos_native: TyposNative,
     /// `[workspace]` — nested-config cascade boundary marker (ADR 0018).
     pub workspace: WorkspaceConfig,
+    /// `[rules]` — custom ast-grep YAML rule directories.
+    pub rules: RulesConfig,
+}
+
+/// `[rules]` — user-defined ast-grep YAML custom-rule directories.
+///
+/// Directories listed here are scanned for `*.yml` / `*.yaml` rule files on
+/// every lint run. Paths are interpreted relative to the config file's directory.
+/// The default is `[".poly/rules"]`; set to an empty array `dirs = []` to
+/// disable custom rules entirely.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct RulesConfig {
+    /// Directories (relative to the config file) containing custom ast-grep
+    /// YAML rule files. Defaults to `[".poly/rules"]`.
+    pub dirs: Vec<String>,
+}
+
+impl Default for RulesConfig {
+    fn default() -> Self {
+        RulesConfig {
+            dirs: vec![".poly/rules".to_string()],
+        }
+    }
 }
 
 /// `[workspace]` — marks a config as the cascade boundary for hierarchical
@@ -296,6 +320,7 @@ struct RawPolyConfig {
     #[serde(rename = "per-file-ignores")]
     per_file_ignores: BTreeMap<String, Vec<String>>,
     workspace: WorkspaceConfig,
+    rules: RulesConfig,
 }
 
 impl From<RawPolyConfig> for PolyConfig {
@@ -312,6 +337,7 @@ impl From<RawPolyConfig> for PolyConfig {
             per_file_ignores: raw.per_file_ignores,
             typos_native: TyposNative::default(), // populated after conversion in load_file / load
             workspace: raw.workspace,
+            rules: raw.rules,
         }
     }
 }

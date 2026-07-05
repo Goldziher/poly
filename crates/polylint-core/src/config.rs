@@ -48,6 +48,10 @@ pub struct Config {
     pub per_file_ignores: BTreeMap<String, Vec<String>>,
     /// Native `_typos.toml` / `.typos.toml` configuration discovered near the config root.
     pub typos_native: poly_config::TyposNative,
+    /// `[rules] dirs` — custom ast-grep YAML rule directories.
+    /// Paths are relative to the config file root; resolved absolute paths are
+    /// stored here after projection from [`poly_config::PolyConfig`].
+    pub rules_dirs: Vec<String>,
 }
 
 /// The slice of config handed to one engine for one file.
@@ -96,6 +100,8 @@ impl Config {
             .unwrap_or_else(|| lang.default_indent_width());
         let options = if engine_name == "typos" {
             self.build_typos_options(&lang_options)
+        } else if engine_name == "astgrep" {
+            self.build_astgrep_options()
         } else {
             lang_options
         };
@@ -187,6 +193,26 @@ impl Config {
         );
         options
     }
+
+    /// Build the `options` table for the `astgrep` engine.
+    ///
+    /// Injects the resolved `rules_dirs` so that the engine can discover rule
+    /// files without needing direct access to the full [`Config`], plus a
+    /// content hash of every rule file (`rules_hash`) so that editing a rule —
+    /// not just changing the dirs list — invalidates the content-hash cache via
+    /// `serialized_args`. `version()` is static, so this hash is what makes rule
+    /// edits take effect.
+    fn build_astgrep_options(&self) -> toml::Table {
+        let mut options = toml::Table::new();
+        if !self.rules_dirs.is_empty() {
+            insert_string_array(&mut options, "rules_dirs", self.rules_dirs.clone());
+            let hash = crate::engines::astgrep::rules::rules_hash(&self.rules_dirs);
+            if !hash.is_empty() {
+                options.insert("rules_hash".to_string(), toml::Value::String(hash));
+            }
+        }
+        options
+    }
 }
 
 /// Append the string elements of `table[key]` (a TOML array) onto `dest`.
@@ -218,6 +244,7 @@ impl From<poly_config::PolyConfig> for Config {
             tools: pc.tools,
             per_file_ignores: pc.per_file_ignores,
             typos_native: pc.typos_native,
+            rules_dirs: pc.rules.dirs,
         }
     }
 }

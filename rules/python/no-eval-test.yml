@@ -1,0 +1,5 @@
+id: no-eval
+valid:
+  - safe_parse(x)
+invalid:
+  - eval("1 + 1")

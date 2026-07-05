@@ -1,0 +1,6 @@
+id: no-debugger
+language: javascript
+severity: error
+message: Remove the `debugger` statement before committing.
+rule:
+  pattern: debugger

@@ -1,0 +1,6 @@
+id: no-eval
+language: python
+severity: error
+message: eval() executes arbitrary code and is unsafe.
+rule:
+  pattern: eval($$$)

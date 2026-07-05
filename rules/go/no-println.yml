@@ -1,0 +1,8 @@
+id: no-println
+language: go
+severity: warning
+message: Use the structured logger, not fmt.Println.
+rule:
+  pattern:
+    context: "func f() { fmt.Println($$$) }"
+    selector: call_expression

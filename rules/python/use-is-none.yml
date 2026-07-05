@@ -1,0 +1,7 @@
+id: use-is-none
+language: python
+severity: warning
+message: Use `is None` rather than `== None`.
+rule:
+  pattern: $X == None
+fix: $X is None

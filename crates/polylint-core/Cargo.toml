@@ -22,6 +22,8 @@ path = "src/lib.rs"
 [dependencies]
 alejandra.workspace = true
 anyhow.workspace = true
+ast-grep-config.workspace = true
+ast-grep-core.workspace = true
 # biome lint backends — all pinned to the same rev (see workspace Cargo.toml)
 biome_analyze.workspace = true
 biome_css_analyze.workspace = true
@@ -31,6 +33,7 @@ biome_graphql_analyze.workspace = true
 biome_graphql_parser.workspace = true
 biome_languages.workspace = true
 biome_rowan.workspace = true
+blake3.workspace = true
 # dockerfile-parser — Dockerfile AST (MIT); used by the DockerfileEngine
 dockerfile-parser.workspace = true
 globset.workspace = true

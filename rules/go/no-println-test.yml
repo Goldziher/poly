@@ -1,0 +1,5 @@
+id: no-println
+valid:
+  - "package main\nfunc main() { log.Println(\"hi\") }"
+invalid:
+  - "package main\nimport \"fmt\"\nfunc main() { fmt.Println(\"hi\") }"

@@ -34,6 +34,11 @@ anyhow = "1"
 # assert_cmd — CLI integration testing for the vendored gitfluff binary
 assert_cmd = "2"
 assert_fs = "1.1.4"
+# ast-grep — tree-sitter-based custom rule engine (MIT, 0.44.1). Shares the
+# same tree-sitter 0.26 major as poly's tier-2 generic formatter so grammar
+# types unify without a second grammar set. Do NOT add ast-grep-language.
+ast-grep-config = "0.44.1"
+ast-grep-core = "0.44.1"
 axoupdater = { version = "0.10.0", default-features = false, features = ["github_releases"] }
 # biome analyzer git deps — all biome_* crates MUST share the same `rev` to keep
 # the internal biome_rowan / biome_analyze type graph consistent. Published

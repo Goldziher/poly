@@ -1,0 +1,6 @@
+id: no-console-log
+language: javascript
+severity: warning
+message: Remove console.log; use a real logger.
+rule:
+  pattern: console.log($$$)

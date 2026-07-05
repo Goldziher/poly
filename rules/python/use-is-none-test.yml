@@ -1,0 +1,7 @@
+id: use-is-none
+valid:
+  - x is None
+  - x == 1
+invalid:
+  - x == None
+  - result == None

@@ -1,0 +1,7 @@
+id: no-print
+language: python
+severity: warning
+message: Avoid print(); use the logging module instead.
+url: https://docs.python.org/3/library/logging.html
+rule:
+  pattern: print($$$)

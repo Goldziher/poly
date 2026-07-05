@@ -1,0 +1,7 @@
+id: no-print
+valid:
+  - logging.info("hi")
+  - x = 1
+invalid:
+  - print("hi")
+  - print(a, b)
