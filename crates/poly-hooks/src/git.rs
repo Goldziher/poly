@@ -110,7 +110,7 @@ fn zsplit(s: &[u8]) -> Result<Vec<PathBuf>, std::str::Utf8Error> {
 
 #[cfg(unix)]
 #[expect(clippy::unnecessary_wraps)]
-fn path_from_git_bytes(bytes: &[u8]) -> Result<PathBuf, std::str::Utf8Error> {
+pub(crate) fn path_from_git_bytes(bytes: &[u8]) -> Result<PathBuf, std::str::Utf8Error> {
     use std::ffi::OsStr;
     use std::os::unix::ffi::OsStrExt as _;
 
@@ -118,7 +118,7 @@ fn path_from_git_bytes(bytes: &[u8]) -> Result<PathBuf, std::str::Utf8Error> {
 }
 
 #[cfg(not(unix))]
-fn path_from_git_bytes(bytes: &[u8]) -> Result<PathBuf, std::str::Utf8Error> {
+pub(crate) fn path_from_git_bytes(bytes: &[u8]) -> Result<PathBuf, std::str::Utf8Error> {
     std::str::from_utf8(bytes).map(PathBuf::from)
 }
 
@@ -181,68 +181,98 @@ pub fn list_files(root: &Path) -> Result<Vec<PathBuf>, Error> {
     Ok(zsplit(&output.stdout)?)
 }
 
-/// Materialize the **staged** index content into `dest` (staged snapshot).
-///
-/// Runs `git checkout-index -a -f --prefix=<dest>/`, which writes every entry in
-/// the index — i.e. exactly the staged content — beneath `dest`, recreating the
-/// repo-relative directory tree. Untracked files and unstaged worktree edits are
-/// never written, so the result is a byte-faithful, non-destructive copy of what
-/// a commit would capture. `dest` must already exist.
-///
-/// This is how whole-workspace hooks (`cargo clippy`, type checkers, …) are
-/// isolated to staged content without touching the live worktree.
-#[instrument(level = "trace")]
-pub fn checkout_index_to(root: &Path, dest: &Path) -> Result<(), Error> {
-    git_cmd("checkout staged index")?
-        .current_dir(root)
-        .arg("checkout-index")
-        .arg("-a") // all index entries
-        .arg("-f") // overwrite any pre-existing files in `dest`
-        .arg(prefix_arg(dest))
-        .check(true)
-        .status()?;
-    Ok(())
-}
+/// Largest number of path arguments to pass to a single `git checkout-index`
+/// invocation. Batching keeps the argument vector well under the OS `ARG_MAX`
+/// limit on repositories with tens of thousands of files.
+const CHECKOUT_BATCH: usize = 1000;
 
-/// Materialize the staged content of specific `paths` into `dest`.
+/// Materialize the staged (index) content of specific `paths` into `dest`.
 ///
-/// Like [`checkout_index_to`] but scoped: `git checkout-index -f --prefix=<dest>/
-/// -- <paths>`. Used by the incremental staged-snapshot refresh to rewrite only
-/// the files whose worktree differs from the index; the rest are copied from the
-/// worktree (preserving mtimes). A no-op for an empty `paths`.
+/// Runs `git checkout-index -f --prefix=<dest>/ -- <paths>`, which writes each
+/// listed entry's **index blob** — i.e. exactly the staged content — beneath
+/// `dest`, recreating the repo-relative directory tree (leading directories are
+/// created, exec bits and symlinks are reproduced faithfully). Untracked files
+/// and unstaged worktree edits are never written, so the result is a
+/// byte-faithful, non-destructive copy of what a commit would capture; `dest`
+/// must already exist. This is how whole-workspace hooks (`cargo clippy`, type
+/// checkers, …) are isolated to staged content without touching the live
+/// worktree. A no-op for an empty `paths`; large lists are batched to stay under
+/// `ARG_MAX`.
 #[instrument(level = "trace", skip(paths))]
 pub fn checkout_index_paths(root: &Path, dest: &Path, paths: &[PathBuf]) -> Result<(), Error> {
-    if paths.is_empty() {
-        return Ok(());
+    for batch in paths.chunks(CHECKOUT_BATCH) {
+        let mut cmd = git_cmd("checkout staged paths")?;
+        cmd.current_dir(root)
+            .arg("checkout-index")
+            .arg("-f")
+            .arg(prefix_arg(dest))
+            .arg("--");
+        for path in batch {
+            cmd.arg(path);
+        }
+        cmd.check(true).status()?;
     }
-    let mut cmd = git_cmd("checkout staged paths")?;
-    cmd.current_dir(root)
-        .arg("checkout-index")
-        .arg("-f")
-        .arg(prefix_arg(dest))
-        .arg("--");
-    for path in paths {
-        cmd.arg(path);
-    }
-    cmd.check(true).status()?;
     Ok(())
 }
 
-/// List tracked files whose **worktree** content differs from the **index**
-/// (`git diff-files --name-only`), i.e. the staged files carrying an additional
-/// unstaged edit. For these the worktree copy is not the staged content, so the
-/// snapshot must pull the staged blob rather than copy the worktree file.
+/// A single index entry: its blob OID, repo-relative path, and whether it is a
+/// symlink — read straight from the index by [`list_staged_entries`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StagedEntry {
+    /// The staged blob's object id (the content a commit would capture).
+    pub oid: String,
+    /// Repo-relative path of the entry.
+    pub path: PathBuf,
+    /// `true` when the entry is a symlink (index mode `120000`).
+    pub is_symlink: bool,
+}
+
+/// List every entry staged in the index with its blob OID (`git ls-files -s`).
+///
+/// The OID is read directly from the index, so it is the authoritative record of
+/// "what a commit would capture" and is **independent of the worktree stat
+/// cache** — unlike `git diff-files`, which is stat-based and can under-report a
+/// genuinely-modified file as clean when the index stat cache is stale or
+/// inconsistent. The staged snapshot relies on this so that an unstaged worktree
+/// edit can never leak into the materialized content. Submodule gitlinks (mode
+/// `160000`) have no blob to materialize and are skipped.
 #[instrument(level = "trace")]
-pub fn worktree_modified_files(root: &Path) -> Result<Vec<PathBuf>, Error> {
-    let output = git_cmd("list worktree-modified files")?
+pub fn list_staged_entries(root: &Path) -> Result<Vec<StagedEntry>, Error> {
+    let output = git_cmd("list staged entries")?
         .current_dir(root)
-        .arg("diff-files")
-        .arg("--name-only")
-        .arg("--no-ext-diff")
+        .arg("ls-files")
+        .arg("-s")
         .arg("-z")
         .check(true)
         .output()?;
-    Ok(zsplit(&output.stdout)?)
+    parse_ls_files_stage(&output.stdout)
+}
+
+/// Parse `git ls-files -s -z` output: NUL-separated `<mode> <oid> <stage>\t<path>`
+/// records. Robust to 40- or 64-hex OIDs and to paths containing spaces (the
+/// path is taken verbatim after the tab).
+fn parse_ls_files_stage(bytes: &[u8]) -> Result<Vec<StagedEntry>, Error> {
+    let mut entries = Vec::new();
+    for record in bytes.split(|&byte| byte == 0).filter(|slice| !slice.is_empty()) {
+        let Some(tab) = record.iter().position(|&byte| byte == b'\t') else {
+            continue;
+        };
+        let (meta, tab_and_path) = record.split_at(tab);
+        let path = path_from_git_bytes(&tab_and_path[1..])?;
+        let meta = std::str::from_utf8(meta)?;
+        let mut fields = meta.split_whitespace();
+        let mode = fields.next().unwrap_or_default();
+        let oid = fields.next().unwrap_or_default();
+        if mode == "160000" {
+            continue; // submodule gitlink: no blob to materialize
+        }
+        entries.push(StagedEntry {
+            oid: oid.to_string(),
+            path,
+            is_symlink: mode == "120000",
+        });
+    }
+    Ok(entries)
 }
 
 /// Build the `--prefix=<dest>/` argument for `git checkout-index`.
@@ -643,6 +673,22 @@ mod tests {
         git_run(repo, &["add", name]);
         git_run(repo, &["commit", "-q", "-m", name]);
         git_run(repo, &["rev-parse", "HEAD"])
+    }
+
+    #[test]
+    fn parse_ls_files_stage_reads_oid_path_and_symlink() {
+        // `git ls-files -s -z`: `<mode> <oid> <stage>\t<path>\0`, incl. a path
+        // with a space, a symlink (mode 120000), and a skipped submodule (160000).
+        let input = b"100644 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0\tsrc/a b.rs\0\
+120000 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 0\tlink\0\
+160000 cccccccccccccccccccccccccccccccccccccccc 0\tvendored\0";
+        let entries = parse_ls_files_stage(input).expect("parse");
+        assert_eq!(entries.len(), 2, "submodule gitlink must be skipped");
+        assert_eq!(entries[0].oid, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        assert_eq!(entries[0].path, PathBuf::from("src/a b.rs"));
+        assert!(!entries[0].is_symlink);
+        assert_eq!(entries[1].path, PathBuf::from("link"));
+        assert!(entries[1].is_symlink, "mode 120000 is a symlink");
     }
 
     #[test]

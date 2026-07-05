@@ -353,10 +353,12 @@ isolate = false   # run whole-workspace hooks against the live worktree instead
 ```
 
 The snapshot is a persistent, git-ignored cache at `.polylint/staged`, refreshed in place each
-run: unchanged files keep their worktree mtime (so cargo/pyrefly/`tsc` incremental caches stay
-warm), only staged-modified files are rewritten, and files that left the tree are pruned while
-tool caches inside the snapshot are preserved. It self-heals and is purgeable like any cache
-(`rm -rf .polylint/staged`).
+run. Content is sourced straight from the git **index blob** (never copied from the worktree),
+so an unstaged edit can never leak in regardless of git's stat-cache state. A file is
+re-materialized only when its staged object id changed since the last snapshot (tracked by a
+`path → OID` manifest), so unchanged files are left untouched and cargo/pyrefly/`tsc` incremental
+caches stay warm; files that left the tree are pruned while tool caches inside the snapshot are
+preserved. It self-heals and is purgeable like any cache (`rm -rf .polylint/staged`).
 
 #### Hook caching
 

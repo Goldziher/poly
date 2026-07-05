@@ -31,16 +31,19 @@ autofix/stash conflict can lose uncommitted work. That failure mode is unaccepta
   **index** materialized with `git checkout-index`, not the live worktree. The worktree is
   never mutated — no stash, no `checkout -- .`. Untracked files and unstaged edits are absent,
   so the hook sees exactly what the commit would capture.
-- **Persistent, mtime-faithful cache, not an ephemeral dir.** The snapshot is a managed,
-  git-ignored cache at `<repo>/.polylint/staged`, refreshed in place each run: tracked files
-  whose worktree equals the index are copied **preserving their worktree mtime** (skipped
-  when already up to date), so each tool's native incremental cache — cargo's `target/`,
-  `.mypy_cache`, tsc build-info — stays warm; only files whose worktree differs from the index
-  (plus symlinks) are rewritten from the staged blob; a manifest-based prune removes files
-  that left the tree while preserving tool caches inside the snapshot. Cargo is pointed at the
-  real repo `target/` (`CARGO_TARGET_DIR`): cargo namespaces artifacts by a metadata hash that
-  includes the crate source path, so snapshot-root and dev-root builds **coexist** without
-  overwriting, and registry-dependency artifacts (path-independent) are shared.
+- **Persistent, index-sourced cache, not an ephemeral dir.** The snapshot is a managed,
+  git-ignored cache at `<repo>/.polylint/staged`, refreshed in place each run. Content is
+  sourced **only from the index blob** (`git checkout-index`), never copied from the worktree,
+  so an unstaged edit can never leak in — correctness does not depend on git's stat cache (see
+  the rejected alternative below). A path is re-materialized only when its **index OID changed**
+  since the last snapshot (or its snapshot copy is missing), tracked by a `path → OID` manifest;
+  unchanged paths are left untouched, so their mtime is stable across runs and each tool's native
+  incremental cache — cargo's `target/`, `.mypy_cache`, tsc build-info — stays warm. The same
+  manifest drives a prune of files that left the tree while preserving tool caches inside the
+  snapshot. Cargo is pointed at the real repo `target/` (`CARGO_TARGET_DIR`): cargo namespaces
+  artifacts by a metadata hash that includes the crate source path, so snapshot-root and dev-root
+  builds **coexist** without overwriting, and registry-dependency artifacts (path-independent)
+  are shared.
 - **Default-on for commit-gating stages; off for whole-tree runs.** Isolation is active for
   the index stages (`pre-commit`, `pre-merge-commit`) and skipped for `--all-files` (which
   deliberately checks the whole tree) and non-index stages. `[hooks] isolate = false` forces
@@ -58,7 +61,7 @@ Positive:
   as whole-workspace hooks, gated on staged content, with no per-file contortions.
 - Non-destructive by construction — the worktree is never touched, eliminating the entire
   class of stash/restore data-loss failures that make `pre-commit`/`prek` risky.
-- The persistent mtime-faithful snapshot keeps every tool's incremental cache warm, so
+- The persistent, OID-incremental snapshot keeps every tool's incremental cache warm, so
   isolation does not force cold rebuilds on each commit.
 - Combined with result caching, a commit touching no Rust skips the whole `cargo` group, and a
   Python-only commit skips it too — polyglot repos pay only for what changed.
@@ -90,9 +93,19 @@ Negative / risks:
   exec-bits/symlinks/CRLF/`.gitattributes` and is consistent with the git subprocess the hook
   runner already uses (ADR 0002's scoped exception). Reconsider only if the checkout ever
   becomes per-file hot-path or must work with no `git` binary present.
-- **Ephemeral per-run snapshot (delete after each run):** rejected — a fresh checkout resets
-  every file's mtime, forcing cargo/type-checkers to rebuild the whole workspace each commit.
-  The persistent mtime-faithful cache is what makes isolation cheap.
+- **Copy clean files from the worktree, checkout only `git diff-files`-modified files:** rejected
+  after a correctness bug surfaced in sibling-repo testing. `git diff-files` is **stat-based** and
+  can **under-report** a genuinely-modified file as clean when the index stat cache is stale or
+  inconsistent (observed once on a real repo: an unstaged-only, size-differing file was copied
+  from the worktree, leaking the unstaged edit into the snapshot; a later `git status` that
+  repaired the stat cache made the next run correct). `git update-index --refresh` does not
+  reliably repair every such state. Sourcing content from the **index OID** (`git ls-files -s` +
+  `git checkout-index`) is stat-independent and correct by construction; the OID manifest still
+  gives incremental, warm refreshes without the worktree-copy fast path.
+- **Ephemeral per-run snapshot (delete after each run):** rejected — a fresh checkout of the whole
+  tree each commit forces cargo/type-checkers to rebuild everything. The persistent cache
+  re-materializes only OID-changed files, leaving unchanged files (and their mtimes) in place, so
+  incremental caches stay warm.
 - **Dedicated `CARGO_TARGET_DIR` per snapshot instead of the real `target/`:** rejected —
   cargo already namespaces artifacts by source-path hash, so sharing the real `target/` reuses
   all dependency compilation and coexists with dev builds without thrash; a dedicated target

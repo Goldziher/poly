@@ -9,7 +9,7 @@
 //! byte-faithful staged content — untracked files and unstaged worktree edits
 //! are absent — and the live worktree is never touched.
 //!
-//! # Persistent, mtime-faithful cache
+//! # Persistent, incremental cache
 //!
 //! The snapshot is a **persistent, git-ignored cache** at a stable path
 //! (`<repo>/.polylint/staged`), not a throwaway per-run directory. Each run
@@ -17,13 +17,20 @@
 //! `target/`, `.mypy_cache`, tsc's build-info — persists across runs and stays
 //! warm:
 //!
-//! - Tracked files whose worktree equals the index are **copied from the
-//!   worktree preserving their mtime** (skipped entirely when the snapshot copy
-//!   is already up to date), so a compiler sees "unchanged" and does not rebuild.
-//! - Only files whose worktree differs from the index (a staged file carrying an
-//!   extra unstaged edit) — plus symlinks — are rewritten from the staged blob
-//!   via `git checkout-index`.
-//! - Files that are no longer tracked are pruned, tracked by a manifest so
+//! - Content is always sourced from the **index blob** (`git checkout-index`),
+//!   never copied from the worktree. Sourcing from the index is what makes the
+//!   snapshot byte-faithful to what a commit would capture: an unstaged worktree
+//!   edit can never leak in, regardless of the state of git's stat cache. (An
+//!   earlier design copied clean files from the worktree and only checked out
+//!   files `git diff-files` flagged as modified — but `diff-files` is stat-based
+//!   and can under-report a genuinely-modified file as clean when the index stat
+//!   cache is stale, silently leaking the unstaged edit. Sourcing from the index
+//!   OID removes that dependency entirely.)
+//! - A path is (re)materialized only when its **index OID changed** since the
+//!   last snapshot (or its snapshot copy is missing), tracked by a manifest of
+//!   `path → OID`. Unchanged paths are left untouched, so their mtime is stable
+//!   across runs and a compiler sees "unchanged" and does not rebuild.
+//! - Files that are no longer tracked are pruned via the same manifest, so
 //!   tool-generated caches inside the snapshot are never removed.
 //!
 //! # Cleanup
@@ -35,7 +42,7 @@
 //! (`rm -rf .polylint/staged`). Single-writer is assumed, matching the result
 //! cache's posture; concurrent `poly hooks` runs on one repo are not locked yet.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use tracing::debug;
@@ -91,36 +98,40 @@ impl StagedSnapshot {
 
 /// Refresh `dir` so it mirrors the current staged (index) content of `root`.
 fn refresh(root: &Path, dir: &Path) -> Result<(), Error> {
-    let tracked = git::list_files(root)?;
-    let dirty: HashSet<PathBuf> = git::worktree_modified_files(root)?.into_iter().collect();
+    let staged = git::list_staged_entries(root)?;
+    let previous = read_manifest(dir);
 
-    prune_stale(dir, &tracked);
+    prune_stale(dir, &staged, &previous);
 
-    // Files whose worktree copy is not the staged content (an extra unstaged
-    // edit) — plus symlinks — are pulled from the staged blob; everything else
-    // is copied from the worktree preserving its mtime.
-    let mut from_index: Vec<PathBuf> = Vec::new();
-    for path in &tracked {
-        let src = root.join(path);
-        if dirty.contains(path) || is_symlink(&src) {
-            from_index.push(path.clone());
-        } else {
-            copy_preserving_mtime(&src, &dir.join(path))?;
+    // Content always comes from the index blob (authoritative, stat-independent).
+    // A path is re-materialized only when its index OID changed since the last
+    // snapshot or its snapshot copy is missing; unchanged paths are left in
+    // place so their mtime is stable across runs and compilers stay warm.
+    let mut to_checkout: Vec<PathBuf> = Vec::new();
+    for entry in &staged {
+        let up_to_date = previous.get(&entry.path) == Some(&entry.oid) && snapshot_present(&dir.join(&entry.path));
+        if !up_to_date {
+            to_checkout.push(entry.path.clone());
         }
     }
-    git::checkout_index_paths(root, dir, &from_index)?;
+    git::checkout_index_paths(root, dir, &to_checkout)?;
 
-    write_manifest(dir, &tracked)?;
+    write_manifest(dir, &staged)?;
     Ok(())
 }
 
-/// Remove snapshot files listed in the previous manifest that are no longer
-/// tracked. Restricting deletion to the manifest means tool caches written into
-/// the snapshot (`target/`, `.mypy_cache`, …) are never touched.
-fn prune_stale(dir: &Path, tracked: &[PathBuf]) {
-    let previous = read_manifest(dir);
-    let current: HashSet<&PathBuf> = tracked.iter().collect();
-    for path in &previous {
+/// Whether a snapshot entry exists on disk. Uses `symlink_metadata` so a
+/// materialized symlink counts as present even if its target is absent.
+fn snapshot_present(path: &Path) -> bool {
+    std::fs::symlink_metadata(path).is_ok()
+}
+
+/// Remove snapshot files from the previous manifest that are no longer staged.
+/// Restricting deletion to the manifest means tool caches written into the
+/// snapshot (`target/`, `.mypy_cache`, …) are never touched.
+fn prune_stale(dir: &Path, staged: &[git::StagedEntry], previous: &HashMap<PathBuf, String>) {
+    let current: std::collections::HashSet<&PathBuf> = staged.iter().map(|entry| &entry.path).collect();
+    for path in previous.keys() {
         if !current.contains(path) {
             // Best-effort: a file a hook already removed is fine.
             let _ = std::fs::remove_file(dir.join(path));
@@ -128,47 +139,34 @@ fn prune_stale(dir: &Path, tracked: &[PathBuf]) {
     }
 }
 
-/// Copy `src` to `dst` and stamp `dst`'s mtime from `src`, unless `dst` already
-/// matches `src` in size and mtime (the steady-state fast path — no copy).
-fn copy_preserving_mtime(src: &Path, dst: &Path) -> Result<(), Error> {
-    let src_meta = std::fs::metadata(src)?;
-    let src_mtime = filetime::FileTime::from_last_modification_time(&src_meta);
-    if let Ok(dst_meta) = std::fs::metadata(dst) {
-        if dst_meta.len() == src_meta.len() && filetime::FileTime::from_last_modification_time(&dst_meta) == src_mtime {
-            return Ok(());
-        }
-    }
-    if let Some(parent) = dst.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::copy(src, dst)?;
-    filetime::set_file_mtime(dst, src_mtime)?;
-    Ok(())
-}
-
-fn is_symlink(path: &Path) -> bool {
-    std::fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_symlink())
-}
-
-/// Read the previous manifest (NUL-separated repo-relative paths); an absent or
-/// unreadable manifest yields an empty set (nothing to prune).
-fn read_manifest(dir: &Path) -> HashSet<PathBuf> {
+/// Read the previous manifest into a `path → OID` map (NUL-separated
+/// `<oid> <path>` records). An absent or unreadable manifest yields an empty map
+/// (everything is treated as needing materialization).
+fn read_manifest(dir: &Path) -> HashMap<PathBuf, String> {
     std::fs::read(dir.join(MANIFEST_FILE))
         .map(|bytes| {
             bytes
                 .split(|&byte| byte == 0)
                 .filter(|slice| !slice.is_empty())
-                .map(|slice| PathBuf::from(String::from_utf8_lossy(slice).into_owned()))
+                .filter_map(|record| {
+                    let space = record.iter().position(|&byte| byte == b' ')?;
+                    let oid = std::str::from_utf8(&record[..space]).ok()?.to_string();
+                    let path = git::path_from_git_bytes(&record[space + 1..]).ok()?;
+                    Some((path, oid))
+                })
                 .collect()
         })
         .unwrap_or_default()
 }
 
-/// Write the manifest of currently-tracked paths (NUL-separated).
-fn write_manifest(dir: &Path, tracked: &[PathBuf]) -> Result<(), Error> {
+/// Write the manifest of currently-staged `path → OID` pairs (NUL-separated
+/// `<oid> <path>` records; the OID has no spaces so the first space delimits it).
+fn write_manifest(dir: &Path, staged: &[git::StagedEntry]) -> Result<(), Error> {
     let mut bytes = Vec::new();
-    for path in tracked {
-        bytes.extend_from_slice(path.to_string_lossy().as_bytes());
+    for entry in staged {
+        bytes.extend_from_slice(entry.oid.as_bytes());
+        bytes.push(b' ');
+        bytes.extend_from_slice(entry.path.to_string_lossy().as_bytes());
         bytes.push(0);
     }
     std::fs::write(dir.join(MANIFEST_FILE), bytes)?;
@@ -227,21 +225,69 @@ mod tests {
     }
 
     #[test]
-    fn clean_file_mtime_is_preserved_from_the_worktree() {
+    fn snapshot_uses_index_content_even_when_worktree_differs_in_size() {
+        // The core guarantee: an unstaged worktree edit — even one `git
+        // diff-files` might under-report from a stale stat cache — must never
+        // reach the snapshot, because content is sourced from the index OID.
+        let tmp = TempDir::new().expect("tmp repo");
+        let repo = tmp.path();
+        init(repo);
+        std::fs::write(repo.join("big.h"), "STAGED\n").unwrap();
+        git(repo, &["add", "big.h"]);
+        git(repo, &["commit", "-q", "-m", "init"]);
+        // A genuine, size-changing unstaged edit (never staged).
+        std::fs::write(
+            repo.join("big.h"),
+            "WORKTREE EDIT that is much longer than the staged blob\n",
+        )
+        .unwrap();
+
+        let snap = StagedSnapshot::create(repo).expect("snapshot");
+
+        assert_eq!(
+            std::fs::read_to_string(snap.path().join("big.h")).unwrap(),
+            "STAGED\n",
+            "snapshot must hold the staged blob, not the unstaged worktree edit"
+        );
+    }
+
+    #[test]
+    fn unchanged_file_is_not_rematerialized_across_refreshes() {
+        // A file whose staged OID is unchanged must be left untouched on refresh
+        // (stable mtime) so a compiler's incremental cache stays warm.
         let tmp = TempDir::new().expect("tmp repo");
         let repo = tmp.path();
         init(repo);
         std::fs::write(repo.join("a.rs"), "fn main() {}\n").unwrap();
         git(repo, &["add", "a.rs"]);
 
-        let worktree_mtime =
-            filetime::FileTime::from_last_modification_time(&std::fs::metadata(repo.join("a.rs")).unwrap());
-        let snap = StagedSnapshot::create(repo).expect("snapshot");
-        let snap_mtime =
-            filetime::FileTime::from_last_modification_time(&std::fs::metadata(snap.path().join("a.rs")).unwrap());
+        let snap = StagedSnapshot::create(repo).expect("first");
+        let first = std::fs::metadata(snap.path().join("a.rs")).unwrap().modified().unwrap();
+
+        StagedSnapshot::create(repo).expect("refresh");
+        let second = std::fs::metadata(snap.path().join("a.rs")).unwrap().modified().unwrap();
+
+        assert_eq!(first, second, "unchanged staged OID must not be rewritten on refresh");
+    }
+
+    #[test]
+    fn changed_staged_oid_is_rematerialized() {
+        // When the staged content changes, the snapshot must pick it up.
+        let tmp = TempDir::new().expect("tmp repo");
+        let repo = tmp.path();
+        init(repo);
+        std::fs::write(repo.join("a.rs"), "// v1\n").unwrap();
+        git(repo, &["add", "a.rs"]);
+        let snap = StagedSnapshot::create(repo).expect("first");
+        assert_eq!(std::fs::read_to_string(snap.path().join("a.rs")).unwrap(), "// v1\n");
+
+        std::fs::write(repo.join("a.rs"), "// v2 changed\n").unwrap();
+        git(repo, &["add", "a.rs"]);
+        StagedSnapshot::create(repo).expect("refresh");
         assert_eq!(
-            snap_mtime, worktree_mtime,
-            "unchanged file keeps its worktree mtime so compilers stay warm"
+            std::fs::read_to_string(snap.path().join("a.rs")).unwrap(),
+            "// v2 changed\n",
+            "a newly-staged OID must be re-materialized"
         );
     }
 

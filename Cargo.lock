@@ -4668,7 +4668,6 @@ dependencies = [
  "clap",
  "console",
  "dunce",
- "filetime",
  "fs-err",
  "globset",
  "indoc",

@@ -16,7 +16,6 @@ anyhow = { workspace = true }
 clap = { workspace = true }
 console = { workspace = true }
 dunce = { workspace = true }
-filetime = { workspace = true }
 fs-err = { workspace = true }
 globset = { workspace = true }
 owo-colors = { workspace = true }
