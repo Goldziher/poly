@@ -14,7 +14,7 @@ research is inspiration only.
 ## Decision
 
 Configuration resolves in three layers: **tool default → opinionated override → user
-`polylint.toml`** (ADR 0006).
+`poly.toml`** (ADR 0006).
 
 - **Base = each wrapped tool's own defaults.** We do not re-derive style from scratch; we
   inherit ruff's, oxc's, taplo's, etc. defaults as the foundation.
@@ -25,7 +25,7 @@ Configuration resolves in three layers: **tool default → opinionated override 
   - **Purely stylistic rules:** pick one modern, consistent convention or turn the rule
     off — never bikeshed.
   - Sensible whitespace hygiene defaults (LF line endings, final newline).
-- **User `polylint.toml` always wins** over both layers.
+- **User `poly.toml` always wins** over both layers.
 - Optionally honor `.editorconfig` for indent/line-length where present.
 
 ## Consequences

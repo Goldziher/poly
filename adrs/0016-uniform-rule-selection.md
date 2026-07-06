@@ -5,10 +5,10 @@
 
 ## Context
 
-polylint wraps ~15 diverse linting backends — ruff, oxc, sqruff, mago, and others — each with
+poly wraps ~15 diverse linting backends — ruff, oxc, sqruff, mago, and others — each with
 its own native rule-selection vocabulary. ruff uses `select` / `ignore`, sqruff uses
 `rules` / `exclude_rules`, mago uses `only`, and so on. Users migrating configurations between
-tools or adopting polylint's unified config face friction: each tool's idiom differs, making
+tools or adopting poly's unified config face friction: each tool's idiom differs, making
 it hard to reason about a consistent rule policy across the entire repository.
 
 The goal is a single, canonical vocabulary that every backend respects, with a migration path
@@ -16,7 +16,7 @@ from native configs.
 
 ## Decision
 
-- **One rule-selection vocabulary across all backends:** Every linter backend in polylint
+- **One rule-selection vocabulary across all backends:** Every linter backend in poly
   accepts `select` (replace the default rule set), `extend_select` (add to the defaults),
   and `ignore` (remove from the active set) in its `[lint.<lang>.<tool>]` section. Rule
   identifiers can be code strings (e.g. `"F401"`, `"too-many-methods"`) or category names
@@ -26,7 +26,7 @@ from native configs.
   `"info"` / `"information"`, `"hint"` / `"help"`) overrides the rule's severity, and any
   other key is passed as a tool-specific parameter (e.g. `[rules.cyclomatic-complexity] level =
   "warning", threshold = 10`).
-- **Shared parser, mapped per-engine:** The module `crates/polylint-core/src/engines/rule_config.rs`
+- **Shared parser, mapped per-engine:** The module `crates/poly-core/src/engines/rule_config.rs`
   provides `RuleSelection::from_options()` to parse the uniform schema, yielding a `RuleSelection`
   struct with `select`, `extend_select`, `ignore`, and `rules` fields. Each backend then maps
   this normalized selection onto its native rule mechanism — e.g. ruff's `RuleSelector`, oxc's

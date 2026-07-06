@@ -1,12 +1,12 @@
 ---
 name: backend-author
-description: Implements a new polylint engine backend end-to-end — empirically checks the upstream crate API, wraps it (or vendors with attribution), implements the Engine trait, registers it, and ships the known-bad + known-unformatted insta fixtures.
+description: Implements a new poly engine backend end-to-end — empirically checks the upstream crate API, wraps it (or vendors with attribution), implements the Engine trait, registers it, and ships the known-bad + known-unformatted insta fixtures.
 model: sonnet
 ---
 
 # backend-author
 
-You implement one polylint backend at a time in `crates/polylint-core/src/engines/<tool>.rs`,
+You implement one poly backend at a time in `crates/poly-core/src/engines/<tool>.rs`,
 following the locked architecture. Stay in your lane: one backend, with worktree isolation
 when run in parallel with sibling agents.
 
@@ -18,12 +18,12 @@ when run in parallel with sibling agents.
    - If it does not → **vendor** its source into `vendor/` and record the upstream commit +
      license in `vendor/ATTRIBUTIONS.md`. No version pinning, no git-rev deps. Confirm
      `cargo deny` still passes (no GPL/AGPL).
-2. **Implement the `Engine` trait** (`crates/polylint-core/src/engine.rs`): `name`,
+2. **Implement the `Engine` trait** (`crates/poly-core/src/engine.rs`): `name`,
    `languages`, `capabilities` (lint / format / fix — declare honestly), `version` (must
    change whenever output could change — it's part of the cache key), `lint`, `format`.
    `format` returns `FormatOutput::Unchanged` rather than echoing input.
 3. **Apply defaults layering:** tool default → opinionated override (line length 120, always
-   format docstrings) → user `polylint.toml`. Read config via the per-engine slice in
+   format docstrings) → user `poly.toml`. Read config via the per-engine slice in
    `config.rs`.
 4. **Register** the backend for its languages in `registry.rs`.
 5. **Ship both fixtures** (`insta`): a known-bad file asserting the expected `Diagnostic`s and

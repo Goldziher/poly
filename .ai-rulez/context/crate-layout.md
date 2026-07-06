@@ -4,25 +4,26 @@ priority: high
 
 # Crate Layout
 
-polylint is a Cargo **workspace** that ships two self-contained binaries driven by one
-config: `polylint` (lint) and `polyfmt` (format). Everything runs **in-process, pure Rust** —
-no subprocess, no system dependency by default (two scoped exceptions: opt-in
-**native-toolchain backends** and the `poly hooks` engine — see Coverage tiers below). A tool is
-consumed as a crate dependency: from
-crates.io when published, otherwise from a **pinned git `rev`** of its upstream repo (e.g.
-oxc's `oxc_formatter`/`oxc_linter`, ruff's internals). We do **not** vendor and we do **not**
-publish our own crates to crates.io — binaries are distributed as prebuilt release artifacts
-plus an installer (see release-versioning).
+poly is a Cargo **workspace** that ships a single self-contained binary, `poly`, driven by one
+config. Its subcommands cover the whole surface: `poly lint`, `poly fmt`, `poly hooks`, `poly
+commit`, `poly rules`, `poly cache`, `poly mcp`, and `poly migrate`. Everything runs
+**in-process, pure Rust** — no subprocess, no system dependency by default (two scoped
+exceptions: opt-in **native-toolchain backends** and the `poly hooks` engine — see Coverage
+tiers below). A tool is consumed as a crate dependency: from crates.io when published, otherwise
+from a **pinned git `rev`** of its upstream repo (e.g. oxc's `oxc_formatter`/`oxc_linter`, ruff's
+internals). We do **not** vendor and we do **not** publish our own crates to crates.io — the
+binary is distributed as prebuilt release artifacts plus an installer (see release-versioning).
 
 ## Workspace root
 
-- `Cargo.toml` — `[workspace]` (resolver 3, edition 2024). Members: `crates/polylint-core`,
-  `crates/polylint`, `crates/polyfmt`, `crates/poly-cli`. Shared deps live under
+- `Cargo.toml` — `[workspace]` (resolver 3, edition 2024). Every workspace crate uses the
+  `poly-` prefix: `crates/poly-core` (the engine library) and the `poly-` CLI crate that builds
+  the `poly` binary, alongside the other members. Shared deps live under
   `[workspace.dependencies]`; git deps are pinned to a `rev` (monorepo crates share one `rev`).
 - `deny.toml` — `cargo deny` license / source allow-list (no GPL/AGPL), applied across the full
   dependency tree including git deps and their transitive dependencies.
 
-## `crates/polylint-core/` — the engine library (path dep; not published)
+## `crates/poly-core/` — the engine library (lib `poly_core`; path dep; not published)
 
 `src/`:
 
@@ -31,14 +32,17 @@ plus an installer (see release-versioning).
   `Severity`, `Span`, `Edit`, `Diagnostic`, `FormatOutput`. This is the keystone abstraction.
 - `registry.rs` — `Language -> &dyn Engine` resolution. A static `match` (alef-style): native
   crate backend if one is registered for the language, else the tree-sitter generic backend.
-- `config.rs` — TOML schema (`polylint.toml`, comment-preserving via `toml_edit`; YAML
+- `config.rs` — TOML schema (`poly.toml`, comment-preserving via `toml_edit`; YAML
   auto-detected via saphyr but TOML wins), normalization, and per-engine config slices.
+  `poly.local.toml` layers local overrides on top.
 - `defaults.rs` — the thin opinionated override layer (line length 120, always format
   docstrings, line-ending/final-newline). Layering is **tool default → opinionated override →
-  user `polylint.toml`**.
+  user `poly.toml`**.
 - `cache.rs` — blake3 content-hash cache over `(file bytes + engine name + engine version +
-  resolved engine config)`. Atomic sibling-tmp-then-rename + `fd-lock`; platform cache dir via
-  `dirs`; `--no-cache` bypasses.
+  resolved engine config)`. Atomic sibling-tmp-then-rename + `fd-lock`; the cache lives in the
+  per-user OS cache dir (`~/.cache/poly/<repo-key>`, `~/Library/Caches/poly/…`,
+  `%LOCALAPPDATA%\poly\…`) via `dirs`, overridable with `POLY_CACHE_HOME` or pinned via
+  `[cache] dir`; `--no-cache` bypasses.
 - `discover.rs` — file walk via the `ignore` crate (respects `.gitignore`).
 - `runner.rs` — the pipeline: discover → cache → engine → report, parallelized with **rayon
   `par_iter` over files**.
@@ -54,13 +58,13 @@ plus an installer (see release-versioning).
     language's canonical first-party CLI (`gofmt`, `rustfmt`, `zig fmt`, …) as a subprocess
     when present and enabled. One file, one table — not one file per tool.
 
-## `crates/polylint/` and `crates/polyfmt/` — the binaries (thin)
+## The `poly` binary (thin CLI)
 
-Each is a thin clap CLI over `polylint-core`. `polylint [PATHS]… --fix --format human|json
---config <p> --no-cache -j <N> --no-color`; `polyfmt [PATHS]… --check …`. A consuming repo
-collapses its hook sprawl onto poly's own `poly hooks` runner via `poly.toml [hooks]` (ADR
-0012) — poly no longer ships a `.pre-commit-hooks.yaml`, so there is no external
-pre-commit-framework dependency in between.
+The `poly-` CLI crate is a thin clap wrapper over `poly-core`. Lint and format are subcommands:
+`poly lint [PATHS]… --fix --format human|json --config <p> --no-cache -j <N> --no-color`; `poly
+fmt [PATHS]… --check …`. A consuming repo collapses its hook sprawl onto poly's own `poly hooks`
+runner via `poly.toml [hooks]` (ADR 0012) — poly no longer ships a `.pre-commit-hooks.yaml`, so
+there is no external pre-commit-framework dependency in between.
 
 ## The `Engine` trait contract (`engine.rs`)
 
@@ -120,6 +124,6 @@ Three backend mechanisms, in resolution order per language:
 
 ## Tests
 
-- `crates/polylint-core/tests/pipeline.rs` — end-to-end pipeline contract.
+- `crates/poly-core/tests/pipeline.rs` — end-to-end pipeline contract.
 - Per-backend `insta` fixtures: a known-bad file (expected `Diagnostic`s) and a
   known-unformatted file (exact formatted output).

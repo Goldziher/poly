@@ -2,6 +2,9 @@
 
 - Status: Accepted
 - Date: 2026-06-26
+- Updated: 2026-07 (v0.9.0): the two-binary framing was consolidated into a single `poly`
+  binary with `lint` / `fmt` subcommands (ADR 0011). `polylint` / `polyfmt` were only ever
+  hook IDs, never shipped binaries; the sections below record the original intent.
 
 ## Context
 

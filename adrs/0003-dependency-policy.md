@@ -36,9 +36,9 @@ A strict ordering:
      crate dependency.
 
 **Distribution note:** poly ships **prebuilt, platform-specific binaries** attached to a
-GitHub release (see ADR 0010), plus an installer (`curl | sh` / npm / pip / cargo-binstall).
-We do **not** publish crates to crates.io; pinned git deps are only possible because we
-distribute binaries.
+GitHub release (see ADR 0010), plus installers (`curl | sh` and PowerShell), a Homebrew
+formula, and the `Goldziher/poly` GitHub Action. We do **not** publish crates to crates.io;
+pinned git deps are only possible because we distribute binaries.
 
 Each backend begins with an **empirical API check**: clone the crate to `/tmp` at the
 exact `rev`, confirm the library API, then wrap or decide on a git dep.

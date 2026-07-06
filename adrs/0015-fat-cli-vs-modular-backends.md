@@ -6,9 +6,9 @@
 
 ## Context
 
-polylint ships every backend compiled into the binary: a single fat CLI (`poly`, plus the
-`polylint`/`polyfmt` aliases) distributed as prebuilt platform artifacts (ADR 0010), like
-ruff / oxlint / biome. The release binaries are ~70 MB each, dominated by a few large
+poly ships every backend compiled into the binary: a single fat CLI (`poly`) distributed as
+prebuilt platform artifacts (ADR 0010), like ruff / oxlint / biome. The release binary is
+~70 MB, dominated by a few large
 in-process backends (oxc, ruff, mago) and the embedded typos dictionary.
 
 A recurring idea was an **on-demand modular install**: a thin CLI core that fetches, verifies,
@@ -24,7 +24,7 @@ shipped as prebuilt artifacts.
 
 The grammar-pack analogy does not transfer. tree-sitter grammars are **C libraries with a
 stable C ABI**, designed to be `dlopen`'d — which is exactly why tslp can fetch and load them
-at runtime. polylint's backends are **Rust crates**:
+at runtime. poly's backends are **Rust crates**:
 
 - **No stable Rust ABI.** A `dyn Engine` cannot safely cross a `dlopen` boundary between
   independently compiled artifacts. A runtime-plugin model would require defining a C-ABI
@@ -59,8 +59,8 @@ Positive:
   infrastructure, and the zero-network guarantee holds (grammars aside, which already degrade
   gracefully).
 - The `Engine` contract (ADR 0001) stays a plain in-process Rust trait — no FFI, no ABI shims.
-- Distribution stays exactly the ruff/oxlint model already in place (ADR 0010 + the installer
-  and `setup-poly` GitHub Action).
+- Distribution stays exactly the ruff/oxlint model already in place (ADR 0010 + the
+  installers, Homebrew, and the `Goldziher/poly` GitHub Action).
 
 Negative / risks:
 

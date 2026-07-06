@@ -6,6 +6,8 @@
   soundness model, CACHE_FORMAT_VERSION, `poly cache` CLI)
 - Updated: 2026-07-05 (whole-workspace hooks: staged-content digest + default-on `cargo`
   group caching; see ADR 0019)
+- Updated: 2026-07 (v0.9.0): the cache moved out of the repo into the per-user OS cache dir
+  (`~/.cache/poly/<repo-key>`); the in-repo `.polylint/` directory is retired.
 
 ## Context
 
@@ -16,7 +18,15 @@ hooks (which may mutate the tree). Each tier has different cache-correctness con
 
 ## Decision
 
-The `poly-cache` crate provides a **two-tier cache** under `.polylint/cache/`:
+The `poly-cache` crate provides a **two-tier cache** in the per-user OS cache directory —
+`~/.cache/poly/<repo-key>` (Linux / `$XDG_CACHE_HOME`), `~/Library/Caches/poly/…` (macOS),
+`%LOCALAPPDATA%\poly\…` (Windows). `POLY_CACHE_HOME` overrides the base; `[cache] dir` pins
+an explicit root:
+
+> **Update (2026-07, v0.9.0):** the cache (result cache and the ADR 0019 staged snapshot)
+> moved out of the repo's in-tree `.polylint/` directory into the per-user OS cache dir,
+> keyed per repository, so nothing cache-related is written under version control anymore. A
+> legacy in-repo `.polylint/` is auto-removed on the next run.
 
 **Tier 1: Result cache** (`results/` subdirectory, namespaced)
 

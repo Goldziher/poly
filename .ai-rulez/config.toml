@@ -1,6 +1,6 @@
 version = "4.0"
-name = "polylint"
-description = "Universal zero-dependency linter & formatter — two pure-Rust binaries (polylint + polyfmt) wrapping best-in-class tools as in-process backends, with a tree-sitter generic tier for everything else."
+name = "poly"
+description = "Universal zero-dependency linter & formatter — a single pure-Rust binary (poly) wrapping best-in-class tools as in-process backends, with a tree-sitter generic tier for everything else."
 gitignore = true
 
 presets = [
@@ -26,7 +26,7 @@ builtins = [
   "default-commands",
 ]
 
-# polylint USES basemind: it is delivered via the [[plugins]] marketplace entry below (the
+# poly USES basemind: it is delivered via the [[plugins]] marketplace entry below (the
 # launcher downloads the published binary), so it is intentionally NOT declared as a
 # project-level mcp_server — that would duplicate the plugin in Claude Code and pin a local
 # binary path.

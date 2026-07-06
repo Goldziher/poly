@@ -17,8 +17,9 @@ priority: high
   - `cargo fmt`
   - `cargo clippy --workspace --all-targets -- -D warnings`
   - `cargo test --workspace`
-  - `poly hooks run pre-commit --all-files` — runs the full pre-commit stage from `poly.toml`:
-    polylint + polyfmt (typos, markdown, JSON/YAML/TOML, shell, Rust formatting, …), the
+  - `poly hooks run pre-commit --all-files` — runs the full pre-commit stage from `poly.toml`
+    (the `[hooks.builtin]` `lint` / `fmt` keys, plus `commit`, `file_safety`, `cargo`): typos,
+    markdown, JSON/YAML/TOML, shell, Rust formatting, …, the
     pure-Rust file-safety checks, cargo clippy / sort / machete / deny, rustdoc-lint, and
     rust-max-lines (the 1000-line cap). `poly hooks install` wires the git-hook shims so this
     runs automatically on `git commit`.

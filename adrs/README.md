@@ -1,9 +1,10 @@
 # Architecture Decision Records — poly
 
-This directory is the **source of truth** for the architectural decisions behind **poly**
-(polylint, polyfmt, poly-hooks, poly-commit) — a self-contained, zero-dependency Rust
-binary family that replaces a repository's entire toolchain: linters, formatters,
-git-hooks, and commit-message linters, all driven by one `poly.toml` config.
+This directory is the **source of truth** for the architectural decisions behind **poly** —
+a single self-contained, zero-dependency Rust binary (subcommands `lint`, `fmt`, `hooks`,
+`commit`, `rules`, `cache`, `mcp`, `migrate`) that replaces a repository's entire toolchain:
+linters, formatters, git-hooks, and commit-message linters, all driven by one `poly.toml`
+config.
 
 These ADRs are authoritative. When code, plans, or memory disagree with an accepted ADR,
 the ADR wins; changing a decision means adding or superseding an ADR here, not editing code

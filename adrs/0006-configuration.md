@@ -7,6 +7,8 @@
 - Updated: 2026-07-02 (nested `poly.toml` discovery + cascade resolution added —
   see ADR 0018. Single-nearest-ancestor discovery remains the base; `--config`
   still forces a single config and now also bypasses nesting.)
+- Updated: 2026-07 (v0.9.0): clean break — `polylint.toml` is no longer read; `poly.toml`
+  is the only accepted config name. The local override is `poly.local.toml`.
 
 ## Context
 
@@ -21,9 +23,12 @@ detection should be forgiving.
 ## Decision
 
 - **Canonical config is `poly.toml`** (managed by the `poly-config` crate), parsed with
-  standard `toml`/serde.
-- **`polylint.toml` is still accepted** for backward compatibility, but `poly.toml` takes
-  precedence if both exist.
+  standard `toml`/serde. It is the **only** accepted config name.
+
+  > **Update (2026-07, v0.9.0):** clean break — `polylint.toml` is no longer read or
+  > accepted (reversing the original back-compat decision below). The rename to `poly` is
+  > complete, so a stale `polylint.toml` is silently ignored; adopters rename it to
+  > `poly.toml`.
 - **`poly.local.toml` deep-merges over the primary config** when it sits in the same
   directory. Scalars and arrays replace; tables merge recursively.
 - **One config drives the entire `poly` umbrella** (ADR 0011): lint, format, git-hooks,
@@ -42,13 +47,16 @@ Positive:
   across every language and hook; onboarding is "read one config".
 - `poly.local.toml` enables local development overrides (e.g. stricter rules in CI, relaxed
   rules locally) without modifying the primary config.
-- Backward compatibility: repos with `polylint.toml` continue to work without changes.
+- One config name (`poly.toml`) with no legacy alias removes the "which file wins?" ambiguity
+  entirely.
 
 Negative / risks:
 
-- Three accepted input formats (`poly.toml` > `polylint.toml` > YAML) means three parse
+- Two accepted input formats (`poly.toml` and auto-detected YAML) means two parse
   paths to keep in sync; the precedence rule must be applied consistently and surfaced
   clearly to avoid confusion when multiple files exist.
+- The clean break means repos still on `polylint.toml` must rename to `poly.toml`; the old
+  name is ignored rather than honored.
 - A unified schema must map onto each tool's (and hook runner's) native option
   vocabulary; mismatches (options one tool has and another lacks) need deliberate,
   documented handling.

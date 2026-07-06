@@ -2,11 +2,14 @@
 
 - Status: Accepted
 - Date: 2026-07-05
+- Updated: 2026-07 (v0.9.0): the staged snapshot moved out of the in-repo `.polylint/staged`
+  into the per-user OS cache dir (`~/.cache/poly/<repo-key>/staged`), alongside the result
+  cache (ADR 0008).
 
 ## Context
 
 The native hook runner (ADR 0012) runs each hook over the **staged file list**. That is
-correct for per-file tools (`polylint`, `polyfmt`, catalog formatters), but a class of tools
+correct for per-file tools (`lint`, `fmt`, catalog formatters), but a class of tools
 analyses the *whole project* at once and cannot be scoped to a file list: `cargo clippy`,
 type checkers like `pyrefly` / `mypy` / `tsc`, `golangci-lint`. ADR 0014 explicitly ruled
 these "project-wide" tools out of the per-file native-toolchain model and deferred them —
@@ -31,8 +34,9 @@ autofix/stash conflict can lose uncommitted work. That failure mode is unaccepta
   **index** materialized with `git checkout-index`, not the live worktree. The worktree is
   never mutated — no stash, no `checkout -- .`. Untracked files and unstaged edits are absent,
   so the hook sees exactly what the commit would capture.
-- **Persistent, index-sourced cache, not an ephemeral dir.** The snapshot is a managed,
-  git-ignored cache at `<repo>/.polylint/staged`, refreshed in place each run. Content is
+- **Persistent, index-sourced cache, not an ephemeral dir.** The snapshot is a managed
+  cache in the per-user OS cache dir (`~/.cache/poly/<repo-key>/staged`), refreshed in place
+  each run. Content is
   sourced **only from the index blob** (`git checkout-index`), never copied from the worktree,
   so an unstaged edit can never leak in — correctness does not depend on git's stat cache (see
   the rejected alternative below). A path is re-materialized only when its **index OID changed**
@@ -68,9 +72,9 @@ Positive:
 
 Negative / risks:
 
-- A second on-disk copy of the tracked tree (`.polylint/staged`) plus, for cargo, coexisting
-  workspace-crate artifacts in `target/` — a disk cost proportional to repo size. It is
-  git-ignored, pruned, and purgeable (`rm -rf .polylint/staged`).
+- A second on-disk copy of the tracked tree (`~/.cache/poly/<repo-key>/staged`) plus, for
+  cargo, coexisting workspace-crate artifacts in `target/` — a disk cost proportional to repo
+  size. It lives outside the repo, is pruned, and is purgeable (`poly cache clean`).
 - The cleanup model shifts from "deleted every run" to a **managed cache**: bounded and
   self-healing (a crash mid-refresh is corrected next run), but persistent by design, which
   users must understand.

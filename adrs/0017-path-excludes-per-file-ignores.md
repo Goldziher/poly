@@ -9,7 +9,7 @@
 
 ## Context
 
-polylint needs two orthogonal mechanisms to avoid linting files and suppressing rules:
+poly needs two orthogonal mechanisms to avoid linting files and suppressing rules:
 
 1. **Whole-file skips:** some files should never be linted or formatted — generated code
    (protobuf stubs), lock files (Cargo.lock, package-lock.json), vendor directories. Users

@@ -4,8 +4,8 @@ priority: high
 
 # Performance Discipline
 
-polylint processes whole repositories on every lint/format run, so the hot path is
-**per-file parallelism**. The runner (`crates/polylint-core/src/runner.rs`) discovers files,
+poly processes whole repositories on every lint/format run, so the hot path is
+**per-file parallelism**. The runner (`crates/poly-core/src/runner.rs`) discovers files,
 checks the cache, dispatches to an engine, and collects reports. Apply these patterns by
 default; deviate only with measurement.
 

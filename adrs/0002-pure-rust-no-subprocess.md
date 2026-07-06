@@ -41,7 +41,7 @@ Positive:
 
 - A single statically-oriented Rust binary runs identically on any machine; CI images
   drop every language runtime.
-- The "zero-dependency proof" is testable: run polyfmt in a container with no
+- The "zero-dependency proof" is testable: run `poly fmt` in a container with no
   python/node/go/etc. and every supported language must still format.
 - Predictable performance and error handling — no process spawn overhead, no parsing of
   another tool's stdout/stderr.

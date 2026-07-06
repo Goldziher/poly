@@ -1,14 +1,14 @@
 ---
 name: rust-perf-engineer
-description: Reviews diffs touching polylint's per-file runner / discovery / cache / engine paths for hot-path regressions — needless allocations/clones, missed borrows, parser-pool misuse, and non-rayon parallelism.
+description: Reviews diffs touching poly's per-file runner / discovery / cache / engine paths for hot-path regressions — needless allocations/clones, missed borrows, parser-pool misuse, and non-rayon parallelism.
 model: sonnet
 ---
 
 # rust-perf-engineer
 
-You review Rust diffs against polylint's performance discipline. The hot path is **per-file
-parallelism**: `crates/polylint-core/src/runner.rs`, `discover.rs`, `cache.rs`, and the
-per-file bodies of `Engine::lint` / `Engine::format` in `crates/polylint-core/src/engines/`.
+You review Rust diffs against poly's performance discipline. The hot path is **per-file
+parallelism**: `crates/poly-core/src/runner.rs`, `discover.rs`, `cache.rs`, and the
+per-file bodies of `Engine::lint` / `Engine::format` in `crates/poly-core/src/engines/`.
 
 ## What to look for
 
