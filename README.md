@@ -290,6 +290,60 @@ languages = ["python"]
 Catalog tools are capability-probed on `PATH`; a missing binary is skipped instead of making the
 whole run fail.
 
+### Custom Rules
+
+Write your own lint rules — and codemods — as [ast-grep](https://ast-grep.github.io) YAML,
+in any of the 300+ languages poly can parse. Custom rules run in-process alongside the native
+backends on every `poly lint`, and `poly lint --fix` applies any `fix:` rewrites they declare.
+No plugin, no fork, no extra toolchain: rules run on the same tree-sitter grammars poly already
+bundles.
+
+Point `[rules] dirs` at one or more directories of rule files (paths are resolved relative to the
+`poly.toml` that declares them, so a rule set works from any working directory):
+
+```toml
+[rules]
+dirs = [".poly/rules"]   # default; set to [] to disable custom rules
+```
+
+Each rule is a standard ast-grep YAML document. The `language:` field names a tree-sitter
+grammar; any metavariable used in `fix:` must be bound by the `rule:` pattern:
+
+```yaml
+# .poly/rules/python/use-is-none.yml
+id: use-is-none
+language: python
+severity: warning
+message: Use `is None` rather than `== None`.
+rule:
+  pattern: $X == None
+fix: $X is None
+```
+
+For languages where a bare fragment is not valid at file top level (e.g. Go), use ast-grep's
+`context`/`selector` pattern form.
+
+#### Testing rules
+
+A rule may ship a companion `<name>-test.yml` holding `valid` snippets (must **not** match) and
+`invalid` snippets (must match). An `invalid` entry can also assert the rule's **autofix output**
+by giving `code` + `fixed` instead of a bare string:
+
+```yaml
+# .poly/rules/python/use-is-none-test.yml
+id: use-is-none
+valid:
+  - x is None
+invalid:
+  - x == None                 # must match; fix output unchecked
+  - code: result == None      # must match AND autofix to `result is None`
+    fixed: result is None
+```
+
+Run the checks with `poly rules test` (exits non-zero on any failed snippet), and list the
+discovered rules with `poly rules list`. Both default to the configured `[rules] dirs`, or accept
+explicit directories as arguments.
+
 ### Hooks
 
 Install poly's git hooks once — they then run on every `git commit`:
@@ -867,6 +921,20 @@ and `cache_clean`. The lint/format tools accept `paths`, `exclude` (gitignore-st
 merged with config), and `config` (explicit config file path) parameters for full feature parity
 with the CLI.
 Every MCP operation returns the same JSON shape as the corresponding CLI command with `--format json`.
+
+</details>
+
+<details>
+<summary><strong>custom rules</strong></summary>
+
+```sh
+poly rules test [DIR]...    # verify rules against their *-test.yml snippets
+poly rules list [DIR]...    # list discovered rules (id, language, severity)
+```
+
+With no `DIR`, both read `[rules] dirs` from the nearest `poly.toml`. `poly rules test` exits
+non-zero on any failed snippet (a `valid` snippet that matched, an `invalid` one that didn't, a
+`fixed:` autofix that differed, or a test naming an unknown rule id).
 
 </details>
 
