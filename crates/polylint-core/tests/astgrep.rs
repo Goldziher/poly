@@ -24,12 +24,21 @@ use polylint_core::{
 };
 
 /// Build an `EngineConfig` whose `options` point the engine at `dir` for rules.
+///
+/// Injects `rules_hash` alongside `rules_dirs`, exactly as
+/// `Config::build_astgrep_options` does in production, so the content-addressed
+/// rule cache path is exercised (rather than the empty-hash bypass).
 fn cfg_with_rules_dir(dir: &Path) -> EngineConfig {
+    let dirs = vec![dir.to_string_lossy().into_owned()];
     let mut options = toml::Table::new();
     options.insert(
         "rules_dirs".to_string(),
-        toml::Value::Array(vec![toml::Value::String(dir.to_string_lossy().into_owned())]),
+        toml::Value::Array(dirs.iter().cloned().map(toml::Value::String).collect()),
     );
+    let hash = polylint_core::engines::astgrep::rules::rules_hash(&dirs);
+    if !hash.is_empty() {
+        options.insert("rules_hash".to_string(), toml::Value::String(hash));
+    }
     EngineConfig {
         globals: GlobalDefaults::default(),
         indent_width: 4,
@@ -243,6 +252,33 @@ fn rule_test_fixed_assertion_checks_autofix_output() {
         "mismatch detail should show the actual fix output: {:?}",
         fixed[1].detail,
     );
+}
+
+/// A `fixed:` case whose snippet does NOT match the rule reports exactly one
+/// failure (the `Invalid` match check), not a second misleading `Fixed` failure
+/// for the fix that never ran.
+#[test]
+fn non_matching_fixed_case_reports_single_failure() {
+    use polylint_core::engines::astgrep::test::{CaseKind, run_tests};
+
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join("use-is-none.yml"),
+        "id: use-is-none\nlanguage: python\nseverity: warning\nmessage: use is None\nrule:\n  pattern: $X == None\nfix: $X is None\n",
+    )
+    .unwrap();
+    // `x is None` does NOT match `$X == None`, so the Invalid check fails; the
+    // Fixed check must be skipped.
+    fs::write(
+        dir.path().join("use-is-none-test.yml"),
+        "id: use-is-none\ninvalid:\n  - code: x is None\n    fixed: x is None\n",
+    )
+    .unwrap();
+
+    let report = run_tests(&[dir.path().to_string_lossy().into_owned()]).unwrap();
+    let failures: Vec<_> = report.outcomes.iter().filter(|o| !o.passed).collect();
+    assert_eq!(failures.len(), 1, "exactly one failure expected; got {report:?}");
+    assert_eq!(failures[0].kind, CaseKind::Invalid);
 }
 
 #[test]
