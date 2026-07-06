@@ -14,8 +14,6 @@ Lint + format · one `poly.toml` · pure Rust default · blake3 cache · rayon p
 commit checks · JSON + TOON + MCP
 
 [![CI](https://img.shields.io/github/actions/workflow/status/Goldziher/poly/ci.yaml?style=flat-square&cacheSeconds=300)](https://github.com/Goldziher/poly/actions/workflows/ci.yaml)
-[![npm](https://img.shields.io/npm/v/@nhirschfeld/polylint?style=flat-square&cacheSeconds=300)](https://www.npmjs.com/package/@nhirschfeld/polylint)
-[![PyPI](https://img.shields.io/pypi/v/polylint?style=flat-square&cacheSeconds=300)](https://pypi.org/project/polylint/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 
 [Install](#installation) · [Quickstart](#quickstart) · [What You Get](#what-you-get) ·
@@ -71,7 +69,7 @@ commit checks then run on every `git commit`.
 | **Commit checks** | Enforces Conventional Commits and strips AI-attribution trailers through the bundled `gitfluff` engine. | `poly commit` |
 | **Agent-friendly output** | Emits structured JSON and compact TOON, and exposes lint/format/cache operations over an MCP stdio server. | `--format json` · `--format toon` · `poly mcp` |
 | **Optional breadth tier** | Enables tools from the embedded mdsf catalog only when you opt in; commands are PATH-probed and skipped when absent. | `[tools.<name>]` |
-| **Simple distribution** | Installs prebuilt release archives containing the `poly` binary, verified by release checksums. | Installer · GitHub Action · Homebrew · npm · PyPI |
+| **Simple distribution** | Installs prebuilt release archives containing the `poly` binary, verified by release checksums. | Installer · GitHub Action · Homebrew |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -79,8 +77,8 @@ commit checks then run on every `git commit`.
 
 ## Installation
 
-poly is distributed like `ruff` or `biome`: prebuilt release artifacts plus thin installers and
-package wrappers. The workspace crates are not published to crates.io.
+poly is distributed like `ruff` or `biome`: prebuilt release artifacts plus a thin installer and a
+Homebrew tap. The workspace crates are not published to crates.io.
 
 ### Installer Scripts
 
@@ -112,14 +110,9 @@ platform, and adds `poly` to `PATH`.
 ### Package Managers
 
 ```sh
-brew install Goldziher/tap/polylint
-npm install -g @nhirschfeld/polylint
-pip install polylint
+brew install Goldziher/tap/poly
 cargo binstall --git https://github.com/Goldziher/poly poly-cli
 ```
-
-The npm and PyPI packages are thin wrappers that download the verified prebuilt binary bundle for
-your platform.
 
 ### Manual or Source Builds
 

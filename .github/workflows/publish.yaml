@@ -15,10 +15,8 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# id-token: write is required for npm provenance and PyPI trusted publishing (OIDC).
 permissions:
   contents: write
-  id-token: write
 
 jobs:
   meta:
@@ -28,19 +26,12 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
       release_assets_exist: ${{ steps.release_assets.outputs.release_assets_exist }}
-      npm_exists: ${{ steps.published.outputs.npm_exists }}
-      pypi_exists: ${{ steps.published.outputs.pypi_exists }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || '' }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
 
       - name: Extract version from tag
         id: version
@@ -75,56 +66,7 @@ jobs:
             exit 1
           fi
 
-          # Check npm-package/package.json (the npm wrapper ships in lock-step)
-          if [ -f npm-package/package.json ]; then
-            npm_version="$(jq -r '.version' npm-package/package.json)"
-            if [ "$npm_version" != "$target_version" ]; then
-              echo "::error::npm-package/package.json version mismatch: expected $target_version, got $npm_version"
-              exit 1
-            fi
-          fi
-
-          # Check pip-package/pyproject.toml
-          if [ -f pip-package/pyproject.toml ]; then
-            pypi_version="$(grep -E '^version = "' pip-package/pyproject.toml | head -1 | cut -d'"' -f2)"
-            if [ "$pypi_version" != "$target_version" ]; then
-              echo "::error::pip-package/pyproject.toml version mismatch: expected $target_version, got $pypi_version"
-              exit 1
-            fi
-          fi
-
-          # Check pip-package/polylint/__init__.py
-          if [ -f pip-package/polylint/__init__.py ]; then
-            init_version="$(grep -E '^__version__ = "' pip-package/polylint/__init__.py | cut -d'"' -f2)"
-            if [ "$init_version" != "$target_version" ]; then
-              echo "::error::pip-package/polylint/__init__.py version mismatch: expected $target_version, got $init_version"
-              exit 1
-            fi
-          fi
-
-          echo "✓ Version verified across Cargo + npm + pip: $cargo_version"
-
-      - name: Detect already-published package versions
-        id: published
-        run: |
-          version="${{ steps.version.outputs.version }}"
-
-          npm_exists=false
-          if npm view "@nhirschfeld/polylint@${version}" version >/dev/null 2>&1; then
-            npm_exists=true
-          fi
-
-          pypi_exists=false
-          if curl -fsS "https://pypi.org/pypi/polylint/${version}/json" >/dev/null; then
-            pypi_exists=true
-          fi
-
-          {
-            echo "npm_exists=$npm_exists"
-            echo "pypi_exists=$pypi_exists"
-          } >> "$GITHUB_OUTPUT"
-
-          echo "Already published? npm(@nhirschfeld/polylint)=$npm_exists  PyPI(polylint)=$pypi_exists"
+          echo "✓ Cargo version verified: $cargo_version"
 
       - name: Detect existing GitHub release assets
         id: release_assets
@@ -468,93 +410,20 @@ jobs:
           # attached to this release, reading their sha256s from sha256sums.txt.
           # No source build and no separate bottle workflow, so the formula is
           # directly installable the instant it lands on the tap.
-          ./scripts/update-homebrew-formula.sh "$version" "$GITHUB_REPOSITORY" > polylint.rb
+          ./scripts/update-homebrew-formula.sh "$version" "$GITHUB_REPOSITORY" > poly.rb
 
           git clone --depth 1 "https://x-access-token:${HOMEBREW_TOKEN}@github.com/Goldziher/homebrew-tap.git" tap
-          cp polylint.rb tap/Formula/polylint.rb
+          cp poly.rb tap/Formula/poly.rb
           cd tap
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Formula/polylint.rb
+          git add Formula/poly.rb
           if git diff --cached --quiet; then
             echo "Formula already up to date."
           else
-            git commit -m "polylint ${version}"
+            git commit -m "poly ${version}"
             git push
           fi
-
-  publish_npm:
-    name: Publish npm (@nhirschfeld/polylint)
-    # Gated on finalize_release: npm-package/install.js downloads the platform
-    # binary from the GitHub release, so it must not publish until that release
-    # is live. Skipped if this version is already on npm.
-    needs: [meta, finalize_release]
-    if: needs.finalize_release.result == 'success' && needs.meta.outputs.npm_exists != 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || '' }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          registry-url: "https://registry.npmjs.org"
-
-      - name: Publish to npm
-        run: |
-          set -euo pipefail
-          # npm OIDC trusted publishing (token-less registry auth) requires
-          # npm >= 11.5.1; node 22 still bundles an older npm, so upgrade
-          # explicitly. Without it, npm signs provenance but publishes
-          # unauthenticated and the registry PUT 404s.
-          npm install -g npm@latest
-          npm --version
-          version="${{ needs.meta.outputs.version }}"
-          case "$version" in
-            *-rc.* | *-beta* | *-alpha*) npm_tag="next" ;;
-            *) npm_tag="latest" ;;
-          esac
-          cd npm-package
-          # --provenance attaches a signed build-provenance attestation (uses the
-          # job's id-token). Trusted publishing means no NODE_AUTH_TOKEN is set.
-          npm publish --provenance --access public --tag "$npm_tag"
-
-  publish_pypi:
-    name: Publish PyPI (polylint)
-    # Gated on finalize_release: the pip downloader fetches the platform binary
-    # from the GitHub release, so it must not publish until that release is live.
-    needs: [meta, finalize_release]
-    if: needs.finalize_release.result == 'success' && needs.meta.outputs.pypi_exists != 'true'
-    runs-on: ubuntu-latest
-    environment: pypi
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || '' }}
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Build Python package
-        run: |
-          python -m pip install --upgrade pip build
-          cd pip-package
-          python -m build
-
-      - name: Publish to PyPI
-        # Trusted publishing (OIDC) — no API token; configure the publisher on PyPI.
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: pip-package/dist
-          skip-existing: true
 
   update_major_tag:
     name: Move the major version tag

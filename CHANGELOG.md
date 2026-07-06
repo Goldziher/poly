@@ -11,8 +11,7 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 Alignment release: `poly` is now the single brand for everything you type or run.
 The GitHub repository moved to [`Goldziher/poly`](https://github.com/Goldziher/poly)
-(old URLs redirect); the npm (`@nhirschfeld/polylint`), PyPI (`polylint`), and
-Homebrew package names are unchanged and still install the `poly` command.
+(old URLs redirect).
 
 ### Changed — breaking
 
@@ -32,7 +31,17 @@ Homebrew package names are unchanged and still install the `poly` command.
 
 - **Internal crate `polylint-core` renamed to `poly-core`** (every workspace
   crate now uses the `poly-` prefix). Visible only via `RUST_LOG` targets.
+- **Homebrew formula renamed** `polylint` → `poly`: install with
+  `brew install Goldziher/tap/poly`.
 - Logo and README refreshed to the `poly` wordmark and branding.
+
+### Removed
+
+- **npm and PyPI wrapper packages are discontinued.** poly is now distributed via
+  the `curl … | sh` / PowerShell installer, the GitHub Action, and the Homebrew
+  tap only. Prebuilt release binaries are unchanged; if you installed the `poly`
+  command through `@nhirschfeld/polylint` (npm) or `polylint` (PyPI), switch to
+  the installer or `brew install Goldziher/tap/poly`.
 
 ## [0.8.0] - 2026-07-06
 
