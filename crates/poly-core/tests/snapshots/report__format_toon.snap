@@ -1,0 +1,7 @@
+---
+source: crates/poly-core/tests/report.rs
+expression: toon
+---
+[2]{path,changed}:
+  src/main.py,true
+  src/clean.py,false

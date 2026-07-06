@@ -1,6 +1,6 @@
 # Setup poly CLI — GitHub Action
 
-A composite GitHub Action that installs the `poly`, `polylint`, and `polyfmt` binaries in a CI job,
+A composite GitHub Action that installs the `poly` binary in a CI job,
 with optional local caching. It delegates the download/target-detection/checksum/extraction to the
 repository's [`install.sh`](install.sh), so there is one source of truth for install logic.
 
@@ -23,15 +23,15 @@ repository's [`install.sh`](install.sh), so there is one source of truth for ins
 
 ```yaml
 # Latest release, cached (default):
-- uses: Goldziher/polylint@v1
+- uses: Goldziher/poly@v1
 
 # Pin a version:
-- uses: Goldziher/polylint@v1
+- uses: Goldziher/poly@v1
   with:
     version: v0.5.0
 
 # Disable caching:
-- uses: Goldziher/polylint@v1
+- uses: Goldziher/poly@v1
   with:
     cache: false
 ```
@@ -46,9 +46,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: Goldziher/polylint@v1
-      - run: polylint .
-      - run: polyfmt --check .
+      - uses: Goldziher/poly@v1
+      - run: poly lint .
+      - run: poly fmt --check .
 ```
 
 ## Caching & version invalidation

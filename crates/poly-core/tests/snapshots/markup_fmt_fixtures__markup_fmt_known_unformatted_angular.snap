@@ -1,0 +1,8 @@
+---
+source: crates/poly-core/tests/markup_fmt_fixtures.rs
+expression: "format_to_string(\"app.component.html\", Language::Angular,\nKNOWN_UNFORMATTED_ANGULAR,)"
+---
+<div class="container">
+  <p [class]="active ? 'on' : 'off'">Hello</p>
+  <button (click)="doIt()">Click</button>
+</div>

@@ -7,7 +7,7 @@
 //!   (`docker/<lang>.Dockerfile`, tagged `conformance-<lang>`) and pipes every
 //!   file under `corpus/<lang>/` through it (stdin → stdout) to produce the
 //!   committed golden output under `golden/<lang>/`. Requires Docker.
-//! - `check [--lang L]… [--min S]` runs poly fmt (via `polylint-core`) over the
+//! - `check [--lang L]… [--min S]` runs poly fmt (via `poly-core`) over the
 //!   same corpus and scores its output against the golden — exact byte match
 //!   plus a line-similarity ratio — so we can track per-language convergence.
 //!   Hermetic: no Docker, only the committed golden files.
@@ -22,7 +22,7 @@ use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
-use polylint_core::{Config, RunOptions};
+use poly_core::{Config, RunOptions};
 use serde::Deserialize;
 
 #[derive(Parser)]
@@ -250,7 +250,7 @@ fn poly_fmt_output(file: &Path) -> Result<String> {
         // Conformance formats one file with the default config verbatim.
         explicit_config: true,
     };
-    let results = polylint_core::format(std::slice::from_ref(&target), &Config::default(), &opts, false, false)?;
+    let results = poly_core::format(std::slice::from_ref(&target), &Config::default(), &opts, false, false)?;
     Ok(results
         .into_iter()
         .find(|r| r.path == target)

@@ -1,8 +1,0 @@
----
-source: crates/polylint-core/tests/native_tool.rs
-expression: formatted
----
-const std = @import("std");
-pub fn main() void {
-    _ = std;
-}

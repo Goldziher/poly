@@ -2,10 +2,37 @@
 
 All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres
-to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). `polylint` and
-`polyfmt` ship and version in lock-step.
+to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
+binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
+
+## [0.9.0] - 2026-07-06
+
+Alignment release: `poly` is now the single brand for everything you type or run.
+The GitHub repository moved to [`Goldziher/poly`](https://github.com/Goldziher/poly)
+(old URLs redirect); the npm (`@nhirschfeld/polylint`), PyPI (`polylint`), and
+Homebrew package names are unchanged and still install the `poly` command.
+
+### Changed — breaking
+
+- **Built-in hook keys renamed.** `[hooks.builtin] polylint` / `polyfmt` are now
+  `lint` / `fmt`. The old keys are rejected — update `poly.toml` (e.g.
+  `[hooks.builtin] lint = true`).
+- **`polylint.toml` is no longer read.** Only `poly.toml` (plus the
+  `poly.local.toml` override) is discovered. Rename any remaining `polylint.toml`.
+- **Cache moved out of the repo.** The result cache and hook staged-snapshot now
+  live in the per-user cache directory (`~/.cache/poly/<repo-key>` on Linux,
+  `~/Library/Caches/poly/…` on macOS, `%LOCALAPPDATA%\poly\…` on Windows) instead
+  of the in-repo `.polylint/` folder — so nothing poly-generated lands in the
+  working tree. A legacy `.polylint/` directory is auto-removed on the next run.
+  `POLY_CACHE_HOME` overrides the base; `[cache] dir` still pins an explicit root.
+
+### Changed
+
+- **Internal crate `polylint-core` renamed to `poly-core`** (every workspace
+  crate now uses the `poly-` prefix). Visible only via `RUST_LOG` targets.
+- Logo and README refreshed to the `poly` wordmark and branding.
 
 ## [0.8.0] - 2026-07-06
 
@@ -433,4 +460,4 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). `polylint` and
   caching) and README inaccuracies (version-pin examples, MCP tool names and
   parameters, version badges).
 
-[0.1.6]: https://github.com/Goldziher/polylint/releases/tag/v0.1.6
+[0.1.6]: https://github.com/Goldziher/poly/releases/tag/v0.1.6

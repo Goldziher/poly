@@ -1,7 +1,7 @@
 //! markdownlint config importer.
 //!
 //! Reads `.markdownlint.{json,jsonc,yaml,yml}` and maps rule toggles onto the
-//! polylint rumdl engine's `[lint.markdown.rumdl]` `disable` / `enable` lists,
+//! poly rumdl engine's `[lint.markdown.rumdl]` `disable` / `enable` lists,
 //! and per-rule parameter tables onto `[lint.markdown.rumdl.rules.<CODE>]`.
 //!
 //! `"default": false` (turn every rule off, then opt in) has no clean poly

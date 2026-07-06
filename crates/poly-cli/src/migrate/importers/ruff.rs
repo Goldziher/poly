@@ -2,7 +2,7 @@
 //!
 //! Reads `ruff.toml` / `.ruff.toml` (flat or `[lint]`-nested) or, failing that,
 //! `pyproject.toml` `[tool.ruff]`. Ports the selection vocabulary and the plugin
-//! knobs the polylint ruff engine understands into `[lint.python.ruff]`, and
+//! knobs the poly ruff engine understands into `[lint.python.ruff]`, and
 //! ruff's `per-file-ignores` into the top-level `[per-file-ignores]` table.
 
 use std::path::Path;

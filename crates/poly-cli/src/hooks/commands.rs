@@ -60,7 +60,7 @@ pub struct RunArgs {
     /// Stage to run (accepts aliases: `commit`, `push`, `merge-commit`).
     pub stage: Option<String>,
 
-    /// Path to the config file (default: nearest poly.toml / polylint.toml).
+    /// Path to the config file (default: nearest poly.toml).
     #[arg(long)]
     pub config: Option<PathBuf>,
 
@@ -113,7 +113,7 @@ pub struct HookImplArgs {
     #[arg(long = "hook-type", value_enum)]
     pub hook_type: poly_hooks::HookType,
 
-    /// Path to the config file (default: nearest poly.toml / polylint.toml).
+    /// Path to the config file (default: nearest poly.toml).
     #[arg(long)]
     pub config: Option<PathBuf>,
 

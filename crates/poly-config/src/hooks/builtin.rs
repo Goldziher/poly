@@ -2,8 +2,8 @@
 //!
 //! Three families of builtin live here:
 //!
-//! - the single-tool hooks `polylint` / `polyfmt` / `commit`, each a bare
-//!   boolean (`polylint = true`) or a table (`polyfmt = { stages = [...] }`);
+//! - the single-tool hooks `lint` / `fmt` / `commit`, each a bare
+//!   boolean (`lint = true`) or a table (`fmt = { stages = [...] }`);
 //! - the [`FileSafetyHooks`] group (`file_safety`) — the pure-Rust replacement
 //!   for the pre-commit-hooks file-safety block (merge-conflict markers, large
 //!   files, private keys, case collisions, shebang/executable parity);
@@ -27,10 +27,10 @@ pub const DEFAULT_MAX_ADDED_FILE_KB: u64 = 500;
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields)]
 pub struct BuiltinHooks {
-    /// The `polylint` linter hook.
-    pub polylint: BuiltinHook,
-    /// The `polyfmt` formatter hook.
-    pub polyfmt: BuiltinHook,
+    /// The `lint` linter hook.
+    pub lint: BuiltinHook,
+    /// The `fmt` formatter hook.
+    pub fmt: BuiltinHook,
     /// The `poly commit` message-lint hook.
     pub commit: BuiltinHook,
     /// The pure-Rust file-safety check group (`file_safety`).
@@ -43,8 +43,8 @@ pub struct BuiltinHooks {
     pub cargo: Option<CargoHooks>,
 }
 
-/// One builtin hook. Accepts either a bare boolean (`polylint = true`) or a
-/// table (`polyfmt = { stages = ["pre-commit"] }`); a table without an explicit
+/// One builtin hook. Accepts either a bare boolean (`lint = true`) or a
+/// table (`fmt = { stages = ["pre-commit"] }`); a table without an explicit
 /// `enabled` key is treated as enabled.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct BuiltinHook {
@@ -314,17 +314,31 @@ mod tests {
 
     #[test]
     fn bare_toggle_enables_with_no_stages() {
-        let hooks: BuiltinHooks = toml::from_str("polylint = true").unwrap();
-        assert!(hooks.polylint.enabled);
-        assert!(hooks.polylint.stages.is_empty());
-        assert!(!hooks.polyfmt.enabled);
+        let hooks: BuiltinHooks = toml::from_str("lint = true").unwrap();
+        assert!(hooks.lint.enabled);
+        assert!(hooks.lint.stages.is_empty());
+        assert!(!hooks.fmt.enabled);
     }
 
     #[test]
     fn table_without_enabled_is_enabled() {
-        let hooks: BuiltinHooks = toml::from_str(r#"polyfmt = { stages = ["pre-commit"] }"#).unwrap();
-        assert!(hooks.polyfmt.enabled);
-        assert_eq!(hooks.polyfmt.stages, vec!["pre-commit".to_string()]);
+        let hooks: BuiltinHooks = toml::from_str(r#"fmt = { stages = ["pre-commit"] }"#).unwrap();
+        assert!(hooks.fmt.enabled);
+        assert_eq!(hooks.fmt.stages, vec!["pre-commit".to_string()]);
+    }
+
+    #[test]
+    fn legacy_hook_keys_are_rejected() {
+        // Clean break (v0.9): the builtin hooks are `lint` / `fmt`, not the old
+        // `polylint` / `polyfmt`. `deny_unknown_fields` rejects the old names.
+        assert!(
+            toml::from_str::<BuiltinHooks>("polylint = true").is_err(),
+            "legacy `polylint` key must be rejected"
+        );
+        assert!(
+            toml::from_str::<BuiltinHooks>("polyfmt = true").is_err(),
+            "legacy `polyfmt` key must be rejected"
+        );
     }
 
     #[test]
@@ -337,21 +351,21 @@ mod tests {
     fn builtin_table_parses_files_and_exclude_globs() {
         let hooks: BuiltinHooks = toml::from_str(
             r#"
-[polylint]
+[lint]
 exclude = ["**/tags.rs", ".ai-rulez/**"]
-[polyfmt]
+[fmt]
 files = "**/*.rs"
 "#,
         )
         .unwrap();
-        assert!(hooks.polylint.enabled);
+        assert!(hooks.lint.enabled);
         assert_eq!(
-            hooks.polylint.exclude.as_ref().map(Patterns::as_slice),
+            hooks.lint.exclude.as_ref().map(Patterns::as_slice),
             Some(&["**/tags.rs".to_string(), ".ai-rulez/**".to_string()][..])
         );
-        assert!(hooks.polylint.files.is_none());
+        assert!(hooks.lint.files.is_none());
         assert_eq!(
-            hooks.polyfmt.files.as_ref().map(Patterns::as_slice),
+            hooks.fmt.files.as_ref().map(Patterns::as_slice),
             Some(&["**/*.rs".to_string()][..])
         );
     }

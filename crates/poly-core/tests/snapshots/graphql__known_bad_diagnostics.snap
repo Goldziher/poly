@@ -1,0 +1,11 @@
+---
+source: crates/poly-core/tests/graphql.rs
+expression: summary
+---
+[
+    (
+        "graphql",
+        "syntax",
+        true,
+    ),
+]

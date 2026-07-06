@@ -15,7 +15,7 @@ categories = ["development-tools"]
 [dependencies]
 anyhow.workspace = true
 poly-cache.workspace = true
-polylint-core.workspace = true
+poly-core.workspace = true
 rmcp = { workspace = true, features = ["server", "transport-io", "macros"] }
 schemars.workspace = true
 serde = { workspace = true }

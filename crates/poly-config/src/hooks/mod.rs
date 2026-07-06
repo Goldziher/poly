@@ -201,7 +201,7 @@ stages = ["pre-commit"]
 env = { RUST_LOG = "info" }
 
 [builtin]
-polylint = true
+lint = true
 
 [pre-commit]
 parallel = true
@@ -214,7 +214,7 @@ run = "cargo test"
         );
         assert_eq!(hooks.stages, vec!["pre-commit".to_string()]);
         assert_eq!(hooks.env.get("RUST_LOG").map(String::as_str), Some("info"));
-        assert!(hooks.builtin.polylint.enabled);
+        assert!(hooks.builtin.lint.enabled);
         assert_eq!(hooks.stage_configs.len(), 2);
         assert!(hooks.stage_configs[&Stage::PreCommit].parallel);
         assert_eq!(hooks.stage_configs[&Stage::PreCommit].jobs.len(), 1);

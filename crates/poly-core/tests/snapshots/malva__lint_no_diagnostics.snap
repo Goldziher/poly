@@ -1,0 +1,5 @@
+---
+source: crates/poly-core/tests/malva.rs
+expression: diags
+---
+[]

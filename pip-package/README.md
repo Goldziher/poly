@@ -3,7 +3,7 @@
 Universal zero-dependency linter and formatter. This package installs the `poly` CLI.
 
 <!-- markdownlint-disable-next-line MD013 -->
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](https://github.com/Goldziher/polylint/blob/main/LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](https://github.com/Goldziher/poly/blob/main/LICENSE)
 [![PyPI](https://img.shields.io/pypi/v/polylint.svg)](https://pypi.org/project/polylint/)
 
 ## Install
@@ -13,7 +13,7 @@ pip install polylint
 ```
 
 On first invocation, the wrapper downloads the matching prebuilt Rust binary bundle from
-[GitHub Releases](https://github.com/Goldziher/polylint/releases) and caches it under
+[GitHub Releases](https://github.com/Goldziher/poly/releases) and caches it under
 `~/.cache/polylint/<version>/`.
 
 Override the cache directory with `POLYLINT_BINARY=/path/to/dir`, or point at an explicit binary
@@ -30,9 +30,9 @@ poly hooks run pre-commit --all-files
 
 ## Full Documentation
 
-See the [main README](https://github.com/Goldziher/polylint#readme) for installation options,
+See the [main README](https://github.com/Goldziher/poly#readme) for installation options,
 configuration, backend coverage, architecture, and CLI reference.
 
 ## License
 
-MIT - see [LICENSE](https://github.com/Goldziher/polylint/blob/main/LICENSE).
+MIT - see [LICENSE](https://github.com/Goldziher/poly/blob/main/LICENSE).

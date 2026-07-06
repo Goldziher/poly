@@ -7,20 +7,20 @@ members = [
     "crates/poly-catalog",
     "crates/poly-cli",
     "crates/poly-config",
+    "crates/poly-core",
     "crates/poly-hooks",
     "crates/poly-mcp",
-    "crates/polylint-core",
 ]
 
 [workspace.package]
-version = "0.8.0"
+version = "0.9.0"
 edition = "2024"
 rust-version = "1.96"
 license = "MIT"
 authors = ["Na'aman Hirschfeld <nhirschfeld@gmail.com>"]
-repository = "https://github.com/Goldziher/polylint"
-homepage = "https://github.com/Goldziher/polylint"
-documentation = "https://github.com/Goldziher/polylint"
+repository = "https://github.com/Goldziher/poly"
+homepage = "https://github.com/Goldziher/poly"
+documentation = "https://github.com/Goldziher/poly"
 
 [workspace.dependencies]
 aho-corasick = "1.1.4"
@@ -62,7 +62,7 @@ clap = { version = "4", features = ["derive"] }
 clap_complete = { version = "4.6.7", features = ["unstable-dynamic"] }
 console = { version = "0.16", default-features = false, features = ["ansi-parsing", "std"] }
 # criterion — statistical microbenchmark harness for the hot-path benches under
-# crates/polylint-core/benches/ (dev-dependency only; never linked into binaries)
+# crates/poly-core/benches/ (dev-dependency only; never linked into binaries)
 criterion = "0.8"
 ctrlc = "3.5.2"
 # dockerfile-parser — pure-Rust Dockerfile AST parser (MIT-licensed, by Hewlett Packard Enterprise).
@@ -125,9 +125,9 @@ poly-cache = { path = "crates/poly-cache" }
 poly-catalog = { path = "crates/poly-catalog" }
 poly-cli = { path = "crates/poly-cli" }
 poly-config = { path = "crates/poly-config" }
+poly-core = { path = "crates/poly-core" }
 poly-hooks = { path = "crates/poly-hooks" }
 poly-mcp = { path = "crates/poly-mcp" }
-polylint-core = { path = "crates/polylint-core" }
 pprof = "0.15.0"
 # predicates — assertion combinators for the vendored gitfluff CLI tests
 predicates = "3"

@@ -1,0 +1,11 @@
+---
+source: crates/poly-core/tests/biome_graphql.rs
+expression: summary
+---
+[
+    (
+        "biome",
+        "lint/correctness/useGraphqlNamedOperations",
+        true,
+    ),
+]

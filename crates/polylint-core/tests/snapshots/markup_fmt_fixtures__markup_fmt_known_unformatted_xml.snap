@@ -1,9 +1,0 @@
----
-source: crates/polylint-core/tests/markup_fmt_fixtures.rs
-expression: "format_to_string(\"config.xml\", Language::Xml, KNOWN_UNFORMATTED_XML)"
----
-<?xml version="1.0" encoding="UTF-8"?>
-<root>
-  <child attr="value">text content</child>
-  <empty />
-</root>

@@ -1,11 +1,11 @@
 <!-- markdownlint-disable MD033 MD041 -->
 <div align="center">
 
-<img src="docs/media/polylint-banner.svg" alt="polylint - universal linter and formatter" width="820">
+<img src="docs/media/poly-banner.svg" alt="poly - universal linter and formatter" width="820">
 
 **The polyglot lint and format pipeline for whole repositories.**
 
-Polylint ships the `poly` CLI: one config, one Rust pipeline, curated in-process backends,
+**poly** is a single CLI: one config, one Rust pipeline, curated in-process backends,
 tree-sitter fallback for everything else, and repo-wide cache + parallel execution. No language
 runtime is required for the default path; `gofmt` and `rustfmt` are used when present, and other
 external tools are opt-in.
@@ -13,7 +13,7 @@ external tools are opt-in.
 Lint + format · one `poly.toml` · pure Rust default · blake3 cache · rayon parallelism · hooks +
 commit checks · JSON + TOON + MCP
 
-[![CI](https://img.shields.io/github/actions/workflow/status/Goldziher/polylint/ci.yaml?style=flat-square&cacheSeconds=300)](https://github.com/Goldziher/polylint/actions/workflows/ci.yaml)
+[![CI](https://img.shields.io/github/actions/workflow/status/Goldziher/poly/ci.yaml?style=flat-square&cacheSeconds=300)](https://github.com/Goldziher/poly/actions/workflows/ci.yaml)
 [![npm](https://img.shields.io/npm/v/@nhirschfeld/polylint?style=flat-square&cacheSeconds=300)](https://www.npmjs.com/package/@nhirschfeld/polylint)
 [![PyPI](https://img.shields.io/pypi/v/polylint?style=flat-square&cacheSeconds=300)](https://pypi.org/project/polylint/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
@@ -79,19 +79,19 @@ commit checks then run on every `git commit`.
 
 ## Installation
 
-Polylint is distributed like `ruff` or `biome`: prebuilt release artifacts plus thin installers and
+poly is distributed like `ruff` or `biome`: prebuilt release artifacts plus thin installers and
 package wrappers. The workspace crates are not published to crates.io.
 
 ### Installer Scripts
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Goldziher/polylint/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Goldziher/poly/main/install.sh | sh
 ```
 
 Windows PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/Goldziher/polylint/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/Goldziher/poly/main/install.ps1 | iex
 ```
 
 Both installers detect the platform, download the matching release archive, verify it against
@@ -101,7 +101,7 @@ Both installers detect the platform, download the matching release archive, veri
 ### GitHub Actions
 
 ```yaml
-- uses: Goldziher/polylint@v0
+- uses: Goldziher/poly@v0
   with:
     version: latest
 ```
@@ -115,7 +115,7 @@ platform, and adds `poly` to `PATH`.
 brew install Goldziher/tap/polylint
 npm install -g @nhirschfeld/polylint
 pip install polylint
-cargo binstall --git https://github.com/Goldziher/polylint poly-cli
+cargo binstall --git https://github.com/Goldziher/poly poly-cli
 ```
 
 The npm and PyPI packages are thin wrappers that download the verified prebuilt binary bundle for
@@ -124,11 +124,11 @@ your platform.
 ### Manual or Source Builds
 
 Download a release archive from
-[GitHub Releases](https://github.com/Goldziher/polylint/releases), or build from source:
+[GitHub Releases](https://github.com/Goldziher/poly/releases), or build from source:
 
 ```sh
-git clone https://github.com/Goldziher/polylint
-cd polylint
+git clone https://github.com/Goldziher/poly
+cd poly
 cargo build --release
 ```
 
@@ -184,9 +184,9 @@ engine timing and cache hit/miss data in pretty output and attaches it to JSON/T
 
 ## Configuration
 
-Polylint discovers the nearest `poly.toml`. `polylint.toml` is still read as a fallback for older
-projects, and `poly.local.toml` can layer local overrides over the primary config. In a monorepo,
-nested `poly.toml` files cascade — see [Nested config in a monorepo](#nested-config-in-a-monorepo).
+poly discovers the nearest `poly.toml`, and `poly.local.toml` can layer local overrides over the
+primary config. In a monorepo, nested `poly.toml` files cascade — see
+[Nested config in a monorepo](#nested-config-in-a-monorepo).
 
 ```toml
 [defaults]
@@ -229,8 +229,8 @@ threshold = 20
 stages = ["pre-commit", "commit-msg"]
 
 [hooks.builtin]
-polylint = true
-polyfmt = true
+lint = true
+fmt = true
 commit = { stages = ["commit-msg"] }
 file_safety = true
 cargo = true
@@ -360,8 +360,8 @@ pre-commit repositories.
 
 | Builtin | Runs |
 |---|---|
-| `polylint` | `poly lint` over the staged files |
-| `polyfmt` | `poly fmt --check` over the staged files |
+| `lint` | `poly lint` over the staged files |
+| `fmt` | `poly fmt --check` over the staged files |
 | `commit` | Conventional Commit + AI-trailer check on the commit message (`gitfluff`) |
 | `file_safety` | Pure-Rust checks: merge-conflict markers, added large files, private keys, case conflicts, and shebang/executable parity |
 | `cargo` | Whole-workspace `cargo clippy`, `cargo sort`, `cargo machete`, and `cargo deny` — each PATH-probed and skipped when absent |
@@ -406,13 +406,14 @@ default for the commit-gating stages (`pre-commit`, `pre-merge-commit`) and skip
 isolate = false   # run whole-workspace hooks against the live worktree instead
 ```
 
-The snapshot is a persistent, git-ignored cache at `.polylint/staged`, refreshed in place each
-run. Content is sourced straight from the git **index blob** (never copied from the worktree),
+The snapshot is a persistent cache in the per-user cache dir
+(`<platform-cache>/poly/<repo-key>/staged`, outside the repo), refreshed in place each run.
+Content is sourced straight from the git **index blob** (never copied from the worktree),
 so an unstaged edit can never leak in regardless of git's stat-cache state. A file is
 re-materialized only when its staged object id changed since the last snapshot (tracked by a
 `path → OID` manifest), so unchanged files are left untouched and cargo/pyrefly/`tsc` incremental
 caches stay warm; files that left the tree are pruned while tool caches inside the snapshot are
-preserved. It self-heals and is purgeable like any cache (`rm -rf .polylint/staged`).
+preserved. It self-heals and is purgeable like any cache (`poly cache clean`).
 
 #### Hook caching
 
@@ -437,7 +438,7 @@ isolation. For Rust compile times, enable `[cache.sccache]` to content-cache `ru
 
 ## Backend Coverage
 
-Polylint uses a tiered model:
+poly uses a tiered model:
 
 1. Curated Rust backends for high-fidelity lint and format support.
 2. Native-toolchain backends for canonical first-party formatters when configured or present.
@@ -944,7 +945,7 @@ non-zero on any failed snippet (a `valid` snippet that matched, an `invalid` one
 
 ```text
 crates/
-├── polylint-core/   # Engine trait, registry, discovery, runner, reports
+├── poly-core/   # Engine trait, registry, discovery, runner, reports
 ├── poly-config/     # poly.toml schema and config loading
 ├── poly-cli/        # poly umbrella CLI
 ├── gitfluff/        # Conventional Commit linter
@@ -960,7 +961,7 @@ crates/
 ## Contributing
 
 Keep changes small and test-backed. New or changed backends should include representative known-bad
-and known-unformatted fixtures under `crates/polylint-core/tests/`, and should preserve the uniform
+and known-unformatted fixtures under `crates/poly-core/tests/`, and should preserve the uniform
 `Engine` boundary. Before committing, run:
 
 ```sh

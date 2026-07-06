@@ -24,28 +24,28 @@ stages = ["pre-commit"]
 # isolate = true
 
 [hooks.builtin]
-# polylint: typos, JSON/YAML/TOML validation, shellcheck, and markdown linting.
+# lint: typos, JSON/YAML/TOML validation, shellcheck, and markdown linting.
 # Excludes mirror the former per-hook excludes: generated tag data, ai-rulez
 # prose (rendered, long lines expected), test fixtures (intentionally bad), and
 # the conformance corpus/golden (exact reference-formatter bytes — never lint).
-polylint = { exclude = [
+lint = { exclude = [
     "**/identify/tags.rs",
     ".ai-rulez/**",
     "crates/*/tests/fixtures/**",
     # The typos backend's own test file carries deliberately-misspelled words in
     # its assertions and explanatory comments (the known-bad fixture words) — never lint.
-    "crates/polylint-core/tests/typos.rs",
+    "crates/poly-core/tests/typos.rs",
     "crates/conformance/corpus/**",
     "crates/conformance/golden/**",
     "crates/conformance/docker/**",
     "crates/poly-catalog/data/**",
 ] }
 
-# polyfmt: trailing-whitespace, final-newline, line-ending normalization, shfmt,
+# fmt: trailing-whitespace, final-newline, line-ending normalization, shfmt,
 # rumdl markdown formatting, rustfmt (native toolchain), and the generic tier.
 # Fixtures and snapshots capture intentionally-unformatted / exact-byte content,
 # and the conformance golden files are reference output — none may be rewritten.
-polyfmt = { exclude = [
+fmt = { exclude = [
     ".ai-rulez/**",
     "crates/*/tests/fixtures/**",
     "crates/*/tests/snapshots/**",
@@ -123,10 +123,10 @@ extend_ignore_words = ["markdwon", "restructredtext", "brightscripter"]
 # so they are ignored repo-wide; none is a plausible real word.
 [lint.rust.typos]
 extend_ignore_words = ["teh", "inh", "te", "tha"]
-extend_exclude = ["crates/polylint-core/tests/typos.rs"]
+extend_exclude = ["crates/poly-core/tests/typos.rs"]
 
 # Markdown rumdl rules (formerly `.rumdl.toml`). Applied to both lint and fmt so
-# CLI runs and the `polyfmt`/`polylint` hooks share one policy.
+# CLI runs and the `fmt`/`lint` hooks share one policy.
 #   MD013: line length — ai-rulez rules / context prose can be long.
 #   MD024: repeated headings (CHANGELOG-style sections).
 #   MD033: inline HTML.

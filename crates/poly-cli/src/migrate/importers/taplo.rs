@@ -1,7 +1,7 @@
 //! Taplo config importer.
 //!
 //! Ports `.taplo.toml` / `taplo.toml` `[formatting]` into `[fmt.toml.taplo]`.
-//! The polylint taplo engine consumes exactly these keys.
+//! The poly taplo engine consumes exactly these keys.
 
 use std::path::Path;
 

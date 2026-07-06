@@ -1,7 +1,7 @@
 //! Synchronous engine operations shared by every MCP tool.
 //!
 //! These functions are deliberately free of any `rmcp`/`tokio` types: they run
-//! the same `polylint-core` pipeline the CLI runs and serialize their outcome
+//! the same `poly-core` pipeline the CLI runs and serialize their outcome
 //! with the **identical** JSON contract (`poly lint --format json` /
 //! `poly fmt --format json`). The async tool handlers in [`crate::server`] call
 //! them from a blocking task so the synchronous, rayon-driven engine never runs
@@ -10,7 +10,7 @@
 use std::path::{Path, PathBuf};
 
 use poly_cache::ResultCache;
-use polylint_core::{Config, RunOptions, report};
+use poly_core::{Config, RunOptions, report};
 
 /// Resolve the run configuration the way the CLI does: load an explicit file
 /// when one is supplied, otherwise discover `poly.toml` from the working
@@ -48,7 +48,7 @@ pub fn lint(paths: &[String], exclude: &[String], config: Option<&str>, fix: boo
         explicit_config,
         ..RunOptions::default()
     };
-    let results = polylint_core::lint(&resolved, &config, &opts, fix, false)?;
+    let results = poly_core::lint(&resolved, &config, &opts, fix, false)?;
     Ok(report::report_lint_json(&results))
 }
 
@@ -65,7 +65,7 @@ pub fn format(paths: &[String], exclude: &[String], config: Option<&str>, write:
         explicit_config,
         ..RunOptions::default()
     };
-    let results = polylint_core::format(&resolved, &config, &opts, write, false)?;
+    let results = poly_core::format(&resolved, &config, &opts, write, false)?;
     Ok(report::report_format_json(&results))
 }
 

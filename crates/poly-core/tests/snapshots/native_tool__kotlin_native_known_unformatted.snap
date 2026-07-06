@@ -1,0 +1,8 @@
+---
+source: crates/poly-core/tests/native_tool.rs
+expression: formatted
+---
+fun main() {
+    println("hello")
+    val x = 1 + 2
+}

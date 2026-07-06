@@ -1,0 +1,13 @@
+---
+source: crates/poly-core/tests/mago.rs
+expression: text
+---
+<?php
+
+class Foo
+{
+    public function bar()
+    {
+        return 1 + 2;
+    }
+}

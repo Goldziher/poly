@@ -1,9 +1,0 @@
----
-source: crates/polylint-core/tests/nixfmt.rs
-expression: formatted
----
-{pkgs ? import <nixpkgs> {}}:
-pkgs.mkShell {
-  buildInputs = [pkgs.git pkgs.curl];
-  shellHook = "echo hello";
-}

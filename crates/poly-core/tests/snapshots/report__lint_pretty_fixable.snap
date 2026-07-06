@@ -1,0 +1,10 @@
+---
+source: crates/poly-core/tests/report.rs
+expression: text
+---
+src/main.py
+  warning  ruff  F401  1:1  unused import
+  error  ruff  syntax error
+
+2 issue(s) found.
+1 fixable with the `--fix` option.

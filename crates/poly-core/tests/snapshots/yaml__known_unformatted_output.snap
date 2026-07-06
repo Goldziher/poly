@@ -1,0 +1,7 @@
+---
+source: crates/poly-core/tests/yaml.rs
+expression: text
+---
+name: example
+version: 1.0
+description: test

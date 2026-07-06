@@ -1,8 +1,0 @@
----
-source: crates/polylint-core/tests/oxc_fixtures.rs
-expression: text
----
-const x = { a: 1, b: 2 };
-function foo(a, b) {
-  return a + b;
-}

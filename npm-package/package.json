@@ -1,17 +1,17 @@
 {
   "name": "@nhirschfeld/polylint",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Universal zero-dependency linter & formatter through the poly Rust CLI.",
   "keywords": ["linter", "formatter", "lint", "format", "polyglot"],
-  "homepage": "https://github.com/Goldziher/polylint#readme",
+  "homepage": "https://github.com/Goldziher/poly#readme",
   "bugs": {
-    "url": "https://github.com/Goldziher/polylint/issues"
+    "url": "https://github.com/Goldziher/poly/issues"
   },
   "license": "MIT",
   "author": "Na'aman Hirschfeld <nhirschfeld@gmail.com>",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Goldziher/polylint.git"
+    "url": "git+https://github.com/Goldziher/poly.git"
   },
   "bin": {
     "poly": "bin/poly.js"

@@ -1,0 +1,11 @@
+---
+source: crates/poly-core/src/engines/native_tool/mod.rs
+expression: formatted
+---
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("hello")
+}

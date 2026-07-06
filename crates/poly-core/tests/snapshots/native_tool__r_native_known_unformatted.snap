@@ -1,0 +1,7 @@
+---
+source: crates/poly-core/tests/native_tool.rs
+expression: formatted
+---
+x <- 1 + 2
+y <- x * 3
+print(y)

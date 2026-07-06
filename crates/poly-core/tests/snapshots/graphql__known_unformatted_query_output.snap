@@ -1,0 +1,13 @@
+---
+source: crates/poly-core/tests/graphql.rs
+expression: format_to_string(KNOWN_UNFORMATTED_QUERY)
+---
+query GetUser {
+  user(id: 42) {
+    name
+    email
+    posts {
+      title
+    }
+  }
+}

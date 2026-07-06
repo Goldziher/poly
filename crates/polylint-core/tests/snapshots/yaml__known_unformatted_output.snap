@@ -1,7 +1,0 @@
----
-source: crates/polylint-core/tests/yaml.rs
-expression: text
----
-name: example
-version: 1.0
-description: test

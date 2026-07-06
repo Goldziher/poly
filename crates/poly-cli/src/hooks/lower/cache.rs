@@ -6,7 +6,7 @@ use poly_config::{HookCacheMode, Job};
 use poly_hooks::filter::FilePattern;
 use poly_hooks::model::HookCache;
 
-/// The result-cache policy for a builtin (`polylint` / `polyfmt`).
+/// The result-cache policy for a builtin (`lint` / `fmt`).
 ///
 /// Builtins are deterministic over their matched inputs, so they are cached by
 /// matched files in every mode except `Off`.
@@ -118,23 +118,23 @@ mod tests {
     }
 
     #[test]
-    fn builtin_polylint_caches_matched_files_in_safe_mode() {
-        let hooks = hooks_from("[hooks.builtin]\npolylint = true\n");
-        let cache = cache_of(&hooks, HookStage::PreCommit, "polylint", &HookCacheMode::Safe);
+    fn builtin_lint_caches_matched_files_in_safe_mode() {
+        let hooks = hooks_from("[hooks.builtin]\nlint = true\n");
+        let cache = cache_of(&hooks, HookStage::PreCommit, "lint", &HookCacheMode::Safe);
         assert!(matches!(cache, HookCache::MatchedFiles));
     }
 
     #[test]
-    fn builtin_polyfmt_caches_matched_files_in_safe_mode() {
-        let hooks = hooks_from("[hooks.builtin]\npolyfmt = true\n");
-        let cache = cache_of(&hooks, HookStage::PreCommit, "polyfmt", &HookCacheMode::Safe);
+    fn builtin_fmt_caches_matched_files_in_safe_mode() {
+        let hooks = hooks_from("[hooks.builtin]\nfmt = true\n");
+        let cache = cache_of(&hooks, HookStage::PreCommit, "fmt", &HookCacheMode::Safe);
         assert!(matches!(cache, HookCache::MatchedFiles));
     }
 
     #[test]
     fn builtin_is_disabled_in_off_mode() {
-        let hooks = hooks_from("[hooks.builtin]\npolylint = true\n");
-        let cache = cache_of(&hooks, HookStage::PreCommit, "polylint", &HookCacheMode::Off);
+        let hooks = hooks_from("[hooks.builtin]\nlint = true\n");
+        let cache = cache_of(&hooks, HookStage::PreCommit, "lint", &HookCacheMode::Off);
         assert!(matches!(cache, HookCache::Disabled));
     }
 

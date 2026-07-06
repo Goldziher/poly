@@ -54,8 +54,8 @@ pub fn load_config(explicit_path: Option<&Path>, start_dir: &Path) -> Result<Opt
         None => match find_config(start_dir) {
             Some(p) => p,
             // No gitfluff-native config: fall back to the unified `poly.toml`
-            // `[commit]` table (back-compat `polylint.toml`) so a repo using the
-            // poly umbrella needs only one config file.
+            // `[commit]` table so a repo using the poly umbrella needs only one
+            // config file.
             None => return load_poly_commit_config(start_dir),
         },
     };
@@ -66,7 +66,7 @@ pub fn load_config(explicit_path: Option<&Path>, start_dir: &Path) -> Result<Opt
     Ok(Some((path, config)))
 }
 
-/// Load the `[commit]` table from the nearest `poly.toml` / `polylint.toml`,
+/// Load the `[commit]` table from the nearest `poly.toml`,
 /// mapped onto gitfluff's [`FileConfig`]. Returns `None` when no such file
 /// exists. Gitfluff-native files (`.gitfluff.toml` / `.fluff.toml`) take
 /// precedence over this path.

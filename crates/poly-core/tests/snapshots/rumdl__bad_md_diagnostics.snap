@@ -1,0 +1,7 @@
+---
+source: crates/poly-core/tests/rumdl.rs
+expression: summary
+---
+[
+    "line=1 code=MD018 msg=No space after # in heading",
+]

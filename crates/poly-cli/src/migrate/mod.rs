@@ -337,7 +337,7 @@ fn dir_has_source(dir: &Path) -> bool {
 /// Opt-in verification: load the freshly written config and run lint + format
 /// (dry-run) to confirm every engine executes without error.
 fn verify(dir: &Path) -> Result<()> {
-    use polylint_core::{Config, RunOptions};
+    use poly_core::{Config, RunOptions};
     let config = Config::load(dir).with_context(|| format!("loading config in {}", dir.display()))?;
     let options = RunOptions {
         no_cache: true,
@@ -346,8 +346,8 @@ fn verify(dir: &Path) -> Result<()> {
         explicit_config: false,
     };
     let paths = [dir.to_path_buf()];
-    polylint_core::lint(&paths, &config, &options, false, false).context("verify: poly lint failed")?;
-    polylint_core::format(&paths, &config, &options, false, false).context("verify: poly fmt --check failed")?;
+    poly_core::lint(&paths, &config, &options, false, false).context("verify: poly lint failed")?;
+    poly_core::format(&paths, &config, &options, false, false).context("verify: poly fmt --check failed")?;
     println!("verify: config loaded and engines ran cleanly in {}", dir.display());
     Ok(())
 }

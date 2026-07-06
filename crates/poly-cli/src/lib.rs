@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::Args;
-use polylint_core::{Config, LintResult, RunOptions, Severity, Verbosity, report};
+use poly_core::{Config, LintResult, RunOptions, Severity, Verbosity, report};
 
 pub mod cache_cmd;
 pub mod hooks;
@@ -38,9 +38,9 @@ pub fn init_logging_with(debug: bool) {
     use tracing_subscriber::{EnvFilter, fmt};
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
         let directives = if debug {
-            "warn,polylint_core=debug,poly_hooks=debug,poly_cache=debug,poly_cli=debug"
+            "warn,poly_core=debug,poly_hooks=debug,poly_cache=debug,poly_cli=debug"
         } else {
-            "warn,polylint_core=info,poly_hooks=info,poly_cache=info,poly_cli=info"
+            "warn,poly_core=info,poly_hooks=info,poly_cache=info,poly_cli=info"
         };
         EnvFilter::new(directives)
     });
@@ -72,7 +72,7 @@ pub struct CommonArgs {
     #[arg(long, value_enum, default_value_t = OutputFormat::Pretty)]
     pub format: OutputFormat,
 
-    /// Path to a config file (default: nearest polylint.toml).
+    /// Path to a config file (default: nearest poly.toml).
     #[arg(long)]
     pub config: Option<PathBuf>,
 
@@ -142,7 +142,7 @@ pub fn run_lint(args: LintArgs) -> ExitCode {
         Err(code) => return code,
     };
 
-    match polylint_core::lint(&paths, &config, &opts, common.fix, common.debug) {
+    match poly_core::lint(&paths, &config, &opts, common.fix, common.debug) {
         Ok(results) => {
             // Render (and print) all diagnostics regardless of severity; the count
             // returned here is not used for the exit decision.
@@ -202,7 +202,7 @@ pub fn run_fmt(args: FmtArgs) -> ExitCode {
     // Dry run by default; `--fix` writes formatted output in place. `--check`
     // is an explicit alias for the default dry run.
     let write = common.fix;
-    match polylint_core::format(&paths, &config, &opts, write, common.debug) {
+    match poly_core::format(&paths, &config, &opts, write, common.debug) {
         Ok(results) => {
             let changed = match common.format {
                 OutputFormat::Pretty => report::report_format_pretty(&results, !write, verbosity),
@@ -273,7 +273,7 @@ fn load_config(explicit: Option<&Path>) -> anyhow::Result<Config> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use polylint_core::Diagnostic;
+    use poly_core::Diagnostic;
 
     fn diag(severity: Severity) -> Diagnostic {
         Diagnostic {

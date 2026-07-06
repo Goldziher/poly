@@ -1,0 +1,11 @@
+---
+source: crates/poly-core/tests/rubyfmt.rs
+expression: text
+---
+def greet(name)
+  x = 1 + 2
+  if x > 3
+
+    puts("hello")
+  end
+end

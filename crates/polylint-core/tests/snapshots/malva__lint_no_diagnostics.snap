@@ -1,5 +1,0 @@
----
-source: crates/polylint-core/tests/malva.rs
-expression: diags
----
-[]

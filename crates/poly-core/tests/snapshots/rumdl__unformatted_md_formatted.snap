@@ -1,0 +1,11 @@
+---
+source: crates/poly-core/tests/rumdl.rs
+expression: formatted
+---
+# Heading
+
+Line with trailing spaces
+
+Another line with trailing whitespace  
+
+Content.

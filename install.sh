@@ -1,7 +1,7 @@
 #!/bin/sh
 # poly installer — downloads the correct prebuilt binaries for this platform.
 #
-#   curl -fsSL https://raw.githubusercontent.com/Goldziher/polylint/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/Goldziher/poly/main/install.sh | sh
 #
 # Installs `poly`. Re-run any time to UPDATE to the latest release (it overwrites
 # in place). Pin a version with `POLY_VERSION` or a
@@ -18,7 +18,7 @@
 
 set -eu
 
-REPO="Goldziher/polylint"
+REPO="Goldziher/poly"
 BINARIES="poly"
 
 VERSION="${POLY_VERSION:-latest}"

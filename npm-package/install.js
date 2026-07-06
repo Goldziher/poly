@@ -57,7 +57,7 @@ function getPlatformTriple() {
 
 function getReleaseAssets() {
   const platform = getPlatformTriple();
-  const baseUrl = `https://github.com/Goldziher/polylint/releases/download/v${version}`;
+  const baseUrl = `https://github.com/Goldziher/poly/releases/download/v${version}`;
   const ext = platform.includes("windows") ? "zip" : "tar.gz";
   const assetName = `poly-${version}-${platform}.${ext}`;
   return {

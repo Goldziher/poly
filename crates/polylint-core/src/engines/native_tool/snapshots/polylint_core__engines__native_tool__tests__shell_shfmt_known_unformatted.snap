@@ -1,8 +1,0 @@
----
-source: crates/polylint-core/src/engines/native_tool/mod.rs
-expression: formatted
----
-#!/bin/bash
-if [ "$1" = "hello" ]; then
-    echo "world"
-fi

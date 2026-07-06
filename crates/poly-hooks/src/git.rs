@@ -757,7 +757,7 @@ mod tests {
 
     #[test]
     fn git_root_is_directory() {
-        // We're inside the polylint worktree, so get_root() must succeed.
+        // We're inside the poly worktree, so get_root() must succeed.
         let root = get_root().expect("git root");
         assert!(root.is_dir(), "root is not a directory: {}", root.display());
     }

@@ -1,0 +1,114 @@
+[package]
+name = "poly-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+description = "Core engine for the poly universal, zero-dependency linter & formatter"
+
+[package.metadata.cargo-machete]
+# rumdl's lib crate name is rumdl_lib, serde_toon_format's is serde_toon, and
+# hcl-rs's is hcl; cargo-machete cannot detect the usage via the package name.
+ignored = ["rumdl", "serde_toon_format", "hcl-rs"]
+
+[lib]
+name = "poly_core"
+path = "src/lib.rs"
+
+[dependencies]
+alejandra.workspace = true
+anyhow.workspace = true
+ast-grep-config.workspace = true
+ast-grep-core.workspace = true
+# biome lint backends — all pinned to the same rev (see workspace Cargo.toml)
+biome_analyze.workspace = true
+biome_css_analyze.workspace = true
+biome_css_parser.workspace = true
+biome_diagnostics.workspace = true
+biome_graphql_analyze.workspace = true
+biome_graphql_parser.workspace = true
+biome_languages.workspace = true
+biome_rowan.workspace = true
+blake3.workspace = true
+# dockerfile-parser — Dockerfile AST (MIT); used by the DockerfileEngine
+dockerfile-parser.workspace = true
+globset.workspace = true
+graphql-parser.workspace = true
+hcl-edit.workspace = true
+hcl-rs.workspace = true
+ignore.workspace = true
+mago-allocator.workspace = true
+mago-database.workspace = true
+mago-formatter.workspace = true
+mago-linter.workspace = true
+mago-names.workspace = true
+mago-php-version.workspace = true
+mago-reporting.workspace = true
+mago-span.workspace = true
+mago-syntax.workspace = true
+mago-text-edit.workspace = true
+malva = { workspace = true, features = ["config_serde"] }
+markup_fmt = { workspace = true, features = ["config_serde"] }
+owo-colors.workspace = true
+# oxc backend (M2 + oxlint) — all git deps pinned to the same rev (see workspace Cargo.toml)
+oxc_allocator.workspace = true
+oxc_diagnostics.workspace = true
+oxc_formatter.workspace = true
+oxc_formatter_core.workspace = true
+oxc_formatter_json.workspace = true
+oxc_linter.workspace = true
+oxc_span.workspace = true
+poly-cache.workspace = true
+poly-catalog.workspace = true
+poly-config.workspace = true
+pretty_graphql = { workspace = true, features = ["config_serde"] }
+pretty_yaml = { workspace = true, features = ["config_serde"] }
+rayon.workspace = true
+regex.workspace = true
+rubyfmt.workspace = true
+# ruff git deps — all pinned to the same rev (see workspace Cargo.toml)
+ruff_db.workspace = true
+ruff_formatter.workspace = true
+ruff_linter.workspace = true
+ruff_python_ast.workspace = true
+ruff_python_formatter.workspace = true
+ruff_text_size.workspace = true
+rumdl.workspace = true
+rustc-hash.workspace = true
+saphyr.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_toon_format.workspace = true
+sqruff-lib.workspace = true
+sqruff-lib-core.workspace = true
+taplo.workspace = true
+tempfile.workspace = true
+toml.workspace = true
+tracing.workspace = true
+tree-sitter.workspace = true
+tree-sitter-language-pack.workspace = true
+typos.workspace = true
+typos-dict.workspace = true
+unicase.workspace = true
+which.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+insta.workspace = true
+owo-colors.workspace = true
+
+[[bench]]
+name = "generic_formatter"
+harness = false
+
+[[bench]]
+name = "cache_key"
+harness = false
+
+[[bench]]
+name = "runner_e2e"
+harness = false

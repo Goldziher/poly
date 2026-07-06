@@ -1,0 +1,13 @@
+---
+source: crates/poly-core/tests/taplo_fixtures.rs
+expression: summary
+---
+[
+    (
+        "duplicate-key",
+        "conflicting keys",
+        Some(
+            3,
+        ),
+    ),
+]

@@ -1,9 +1,0 @@
----
-source: crates/polylint-core/tests/treesitter.rs
-expression: formatted
----
-defmodule Foo do
-  def bar do
-    :ok
-  end
-end

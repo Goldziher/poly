@@ -3,15 +3,16 @@
 //! # Overview
 //!
 //! [`ResultCache`] is a blake3 content-hash result cache backed by files under a
-//! repo-local `.polylint/cache/` directory. It generalises the single-file key that
-//! `polylint-core` uses for lint and format results into a **file-set digest**
-//! ([`InputDigest`]), enabling multi-file caching for hook results without changing
-//! the single-file path.
+//! per-user cache directory (`<platform-cache>/poly/<repo-key>/`, see
+//! [`repo_cache_dir`]). It generalises the single-file key that `poly-core` uses
+//! for lint and format results into a **file-set digest** ([`InputDigest`]),
+//! enabling multi-file caching for hook results without changing the single-file
+//! path.
 //!
 //! # Storage layout
 //!
 //! ```text
-//! <repo-root>/.polylint/cache/
+//! <platform-cache>/poly/<repo-key>/
 //!   VERSION              — format-version sentinel; bump CACHE_FORMAT_VERSION on
 //!                          breaking layout changes so GC can detect stale trees
 //!   .lock                — advisory lock PLACEHOLDER for GC/clean ops; routine
@@ -34,11 +35,11 @@
 //! For a single file use [`ResultCache::single_file_digest`]; for a matched hook file
 //! set use [`ResultCache::file_set_digest`].
 //!
-//! # Adoption path for `polylint-core/src/runner.rs`
+//! # Adoption path for `poly-core/src/runner.rs`
 //!
 //! The migration is a near one-line swap per call site.
 //!
-//! **Before** (using the private `polylint_core::cache::Cache`):
+//! **Before** (using the private `poly_core::cache::Cache`):
 //!
 //! ```rust,ignore
 //! use crate::cache::Cache;
@@ -104,10 +105,19 @@ static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 // Anchor walk
 // ---------------------------------------------------------------------------
 
+/// Environment variable overriding the poly cache home (`<platform-cache>/poly`).
+/// When set, its value replaces the OS cache directory as the base for every
+/// per-repo cache slot. Intended for CI isolation and test sandboxing.
+pub const CACHE_HOME_ENV: &str = "POLY_CACHE_HOME";
+
+/// Legacy in-repo cache directory (poly ≤ 0.8), removed on sight during
+/// migration now that the cache lives under the per-user cache home.
+const LEGACY_CACHE_DIR: &str = ".polylint";
+
 /// Return the nearest ancestor of `start` (inclusive) that contains a
 /// filesystem entry named `marker`, or `None` if no ancestor does.
 ///
-/// Used by [`root_from`] to locate the repository root.
+/// Used by [`repo_anchor`] to locate the repository root.
 pub fn find_anchor(start: &Path, marker: &str) -> Option<PathBuf> {
     start
         .ancestors()
@@ -115,30 +125,76 @@ pub fn find_anchor(start: &Path, marker: &str) -> Option<PathBuf> {
         .map(Path::to_path_buf)
 }
 
-/// Resolve the repo-local cache root directory from `start`, walking upward in
-/// priority order:
-///
-/// 1. nearest ancestor that contains a `.git` entry → `<that>/.polylint/cache`
-/// 2. else nearest ancestor that contains `poly.toml` → `<that>/.polylint/cache`
-/// 3. else nearest ancestor that contains `polylint.toml` → `<that>/.polylint/cache`
-/// 4. else `<start>/.polylint/cache`
+/// Resolve the repository root for `start`: the nearest `.git` ancestor, else
+/// the nearest `poly.toml` ancestor, else `start` itself.
 ///
 /// The `.git` anchor wins even when a config file sits deeper, so the cache is
 /// shared across a repository rather than fragmented per sub-package.
-pub fn root_from(start: &Path) -> PathBuf {
-    let anchor = find_anchor(start, ".git")
+pub fn repo_anchor(start: &Path) -> PathBuf {
+    find_anchor(start, ".git")
         .or_else(|| find_anchor(start, "poly.toml"))
-        .or_else(|| find_anchor(start, "polylint.toml"));
-    let base = anchor.unwrap_or_else(|| start.to_path_buf());
-    base.join(".polylint").join("cache")
+        .unwrap_or_else(|| start.to_path_buf())
 }
 
-/// Resolve the repo-local cache root from the current working directory.
+/// The per-user poly cache home — `<platform-cache>/poly`.
+///
+/// Honors [`CACHE_HOME_ENV`] when set; otherwise resolves the OS cache
+/// directory via `etcetera` (`~/.cache` on Linux / `$XDG_CACHE_HOME`,
+/// `~/Library/Caches` on macOS, `%LOCALAPPDATA%` on Windows).
+pub fn cache_home() -> anyhow::Result<PathBuf> {
+    if let Some(dir) = std::env::var_os(CACHE_HOME_ENV) {
+        return Ok(PathBuf::from(dir));
+    }
+    use etcetera::BaseStrategy;
+    let strategy = etcetera::choose_base_strategy()
+        .map_err(|e| anyhow::anyhow!("could not resolve the platform cache directory: {e}"))?;
+    Ok(strategy.cache_dir().join("poly"))
+}
+
+/// A stable, filesystem-safe key for the repository rooted at `anchor`.
+///
+/// The first 16 hex chars of `blake3(canonical(anchor))` — canonicalizing the
+/// root path so the same repository maps to the same cache slot regardless of
+/// the working directory (or symlink) poly was invoked through.
+pub fn repo_key(anchor: &Path) -> String {
+    let canonical = dunce::canonicalize(anchor).unwrap_or_else(|_| anchor.to_path_buf());
+    let digest = blake3::hash(canonical.to_string_lossy().as_bytes());
+    digest.to_hex()[..16].to_string()
+}
+
+/// The per-repo cache directory for the repository containing `start`:
+/// `<cache_home>/<repo-key>`. Result-cache entries live under `results/` here
+/// and the hook staged snapshot under `staged/`.
+///
+/// Best-effort removes any legacy in-repo `.polylint/` directory as a side
+/// effect, so an upgrade cleans up after the previous layout.
+pub fn repo_cache_dir(start: &Path) -> anyhow::Result<PathBuf> {
+    let anchor = repo_anchor(start);
+    remove_legacy_cache(&anchor);
+    Ok(cache_home()?.join(repo_key(&anchor)))
+}
+
+/// Best-effort removal of a legacy in-repo `.polylint/` cache directory left by
+/// poly ≤ 0.8. Errors are ignored — this is migration hygiene, never fatal.
+pub fn remove_legacy_cache(anchor: &Path) {
+    let legacy = anchor.join(LEGACY_CACHE_DIR);
+    if legacy.exists() {
+        let _ = std::fs::remove_dir_all(&legacy);
+    }
+}
+
+/// Resolve the result-cache root for `start` — equivalent to [`repo_cache_dir`].
+/// The [`ResultCache`] stores its `results/` tree and `VERSION` sentinel here.
+pub fn root_from(start: &Path) -> anyhow::Result<PathBuf> {
+    repo_cache_dir(start)
+}
+
+/// Resolve the result-cache root from the current working directory.
 ///
 /// Equivalent to `root_from(&std::env::current_dir()?)`.
 pub fn root_from_cwd() -> anyhow::Result<PathBuf> {
     let cwd = std::env::current_dir().map_err(|e| anyhow::anyhow!("could not read current directory: {e}"))?;
-    Ok(root_from(&cwd))
+    root_from(&cwd)
 }
 
 // ---------------------------------------------------------------------------
@@ -250,7 +306,8 @@ impl SerializedArgs {
 // ResultCache
 // ---------------------------------------------------------------------------
 
-/// A content-hash result cache backed by files under `<repo>/.polylint/cache/`.
+/// A content-hash result cache backed by files under
+/// `<platform-cache>/poly/<repo-key>/` (see [`repo_cache_dir`]).
 ///
 /// `ResultCache` is `Send + Sync`: individual puts are atomic (sibling-tmp +
 /// rename) so concurrent rayon workers never read a torn file.
@@ -264,7 +321,7 @@ impl SerializedArgs {
 /// clones address the same on-disk cache directory.
 #[derive(Debug, Clone)]
 pub struct ResultCache {
-    /// `<repo>/.polylint/cache/`
+    /// `<platform-cache>/poly/<repo-key>/`
     root: PathBuf,
     enabled: bool,
 }
@@ -289,7 +346,7 @@ impl ResultCache {
     ///
     /// Combines [`root_from`] with [`ResultCache::open`].
     pub fn open_from(start: &Path, enabled: bool) -> anyhow::Result<Self> {
-        Self::open(root_from(start), enabled)
+        Self::open(root_from(start)?, enabled)
     }
 
     /// Open the cache by walking upward from the current working directory.
@@ -706,7 +763,7 @@ mod tests {
     }
 
     #[test]
-    fn root_from_prefers_git_over_poly_toml() {
+    fn repo_anchor_prefers_git_over_poly_toml() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         // .git at root, poly.toml deeper
@@ -714,23 +771,63 @@ mod tests {
         let pkg = root.join("pkg");
         std::fs::create_dir_all(&pkg).unwrap();
         std::fs::write(pkg.join("poly.toml"), b"").unwrap();
-        let cache_root = root_from(&pkg);
-        // Should anchor at root (the .git anchor), not at pkg
-        assert_eq!(
-            cache_root,
-            root.join(".polylint").join("cache"),
-            ".git anchor must win over poly.toml"
-        );
+        // Should anchor at root (the .git anchor), not at pkg.
+        assert_eq!(repo_anchor(&pkg), root, ".git anchor must win over poly.toml");
     }
 
     #[test]
-    fn root_from_falls_back_to_poly_toml() {
+    fn repo_anchor_falls_back_to_poly_toml() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         std::fs::write(root.join("poly.toml"), b"").unwrap();
         let deep = root.join("sub");
         std::fs::create_dir_all(&deep).unwrap();
-        assert_eq!(root_from(&deep), root.join(".polylint").join("cache"));
+        assert_eq!(repo_anchor(&deep), root);
+    }
+
+    #[test]
+    fn cache_root_lives_under_cache_home_not_in_repo() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::create_dir_all(root.join(".git")).unwrap();
+        let pkg = root.join("pkg");
+        std::fs::create_dir_all(&pkg).unwrap();
+
+        let cache_root = root_from(&pkg).expect("root_from");
+        // The cache is content-addressed under the per-user cache home, keyed by
+        // the repo anchor — never inside the repository tree.
+        let expected = cache_home().unwrap().join(repo_key(root));
+        assert_eq!(cache_root, expected);
+        assert!(
+            !cache_root.starts_with(root),
+            "cache must live outside the repo, got {}",
+            cache_root.display()
+        );
+    }
+
+    #[test]
+    fn repo_key_is_stable_and_path_dependent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let a = tmp.path().join("repo-a");
+        let b = tmp.path().join("repo-b");
+        std::fs::create_dir_all(&a).unwrap();
+        std::fs::create_dir_all(&b).unwrap();
+        assert_eq!(repo_key(&a), repo_key(&a), "same path → same key");
+        assert_ne!(repo_key(&a), repo_key(&b), "different path → different key");
+        assert_eq!(repo_key(&a).len(), 16, "key is 16 hex chars");
+    }
+
+    #[test]
+    fn remove_legacy_cache_deletes_dot_polylint() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let legacy = root.join(".polylint").join("cache").join("results");
+        std::fs::create_dir_all(&legacy).unwrap();
+        assert!(root.join(".polylint").exists());
+        remove_legacy_cache(root);
+        assert!(!root.join(".polylint").exists(), "legacy .polylint must be removed");
+        // Idempotent: a second call on an already-clean tree is a no-op.
+        remove_legacy_cache(root);
     }
 
     // -----------------------------------------------------------------------

@@ -5,7 +5,7 @@
 //! tool annotations are static, read-only and mutating operations are split
 //! into separate tools (`lint` vs `lint_fix`, `format_check` vs
 //! `format_write`, `cache_stats` vs `cache_clean`) rather than gated behind a
-//! boolean. Each tool runs the synchronous, rayon-driven `polylint-core`
+//! boolean. Each tool runs the synchronous, rayon-driven `poly-core`
 //! pipeline on a blocking task and returns the **same JSON** the CLI emits
 //! under `--format json`.
 //!

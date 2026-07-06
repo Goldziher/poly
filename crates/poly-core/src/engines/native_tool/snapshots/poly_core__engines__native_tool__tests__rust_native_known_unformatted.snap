@@ -1,0 +1,8 @@
+---
+source: crates/poly-core/src/engines/native_tool/mod.rs
+expression: formatted
+---
+fn main() {
+    println!("hello");
+    let x = 1 + 2;
+}

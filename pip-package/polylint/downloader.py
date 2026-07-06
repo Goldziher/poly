@@ -75,7 +75,7 @@ def _asset(version: str) -> tuple[str, str, str, str]:
     triple = _platform_triple()
     ext = "zip" if "windows" in triple else "tar.gz"
     asset_name = f"poly-{version}-{triple}.{ext}"
-    base = f"https://github.com/Goldziher/polylint/releases/download/v{version}"
+    base = f"https://github.com/Goldziher/poly/releases/download/v{version}"
     archive_url = f"{base}/{asset_name}"
     checksums_url = f"{base}/sha256sums.txt"
     return archive_url, ext, asset_name, checksums_url

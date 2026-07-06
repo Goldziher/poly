@@ -15,6 +15,8 @@ path = "src/lib.rs"
 [dependencies]
 anyhow.workspace = true
 blake3.workspace = true
+dunce.workspace = true
+etcetera.workspace = true
 toml.workspace = true
 
 [dev-dependencies]

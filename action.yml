@@ -52,7 +52,7 @@ runs:
         set -euo pipefail
         version="${{ inputs.version }}"
         if [ -z "$version" ] || [ "$version" = "latest" ]; then
-          version="$(gh release view --repo Goldziher/polylint --json tagName -q '.tagName' 2>/dev/null || true)"
+          version="$(gh release view --repo Goldziher/poly --json tagName -q '.tagName' 2>/dev/null || true)"
           if [ -z "$version" ]; then
             echo "::error::could not resolve the latest polylint release" >&2
             exit 1

@@ -14,7 +14,7 @@ fn default_when_no_file_present() {
     assert_eq!(config.defaults.line_length, 120);
     assert!(config.lint.is_empty());
     assert!(config.hooks.stage_configs.is_empty());
-    assert!(!config.hooks.builtin.polylint.enabled);
+    assert!(!config.hooks.builtin.lint.enabled);
 }
 
 #[test]
@@ -96,20 +96,16 @@ fn absent_discovery_table_yields_no_excludes() {
 }
 
 #[test]
-fn poly_toml_wins_over_polylint_toml_in_same_dir() {
-    let dir = tempdir().unwrap();
-    fs::write(dir.path().join("poly.toml"), "[defaults]\nline_length = 80\n").unwrap();
-    fs::write(dir.path().join("polylint.toml"), "[defaults]\nline_length = 200\n").unwrap();
-    let config = PolyConfig::load(dir.path()).expect("load");
-    assert_eq!(config.defaults.line_length, 80, "poly.toml should win");
-}
-
-#[test]
-fn falls_back_to_polylint_toml() {
+fn legacy_polylint_toml_is_not_discovered() {
+    // Clean break (v0.9): only `poly.toml` is read. A lone `polylint.toml` is
+    // ignored, so the default config applies.
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("polylint.toml"), "[defaults]\nline_length = 77\n").unwrap();
     let config = PolyConfig::load(dir.path()).expect("load");
-    assert_eq!(config.defaults.line_length, 77);
+    assert_eq!(
+        config.defaults.line_length, 120,
+        "polylint.toml must be ignored; default line_length applies"
+    );
 }
 
 #[test]
@@ -211,8 +207,8 @@ fn parses_hooks_builtin_and_inline_stages() {
 stages = ["pre-commit"]
 
 [hooks.builtin]
-polylint = true
-polyfmt = { stages = ["pre-commit"] }
+lint = true
+fmt = { stages = ["pre-commit"] }
 commit = { enabled = false }
 
 [hooks.pre-commit]
@@ -225,11 +221,11 @@ run = "cargo fmt --check"
     let config = PolyConfig::load_file(&path).expect("load");
     assert_eq!(config.hooks.stages, vec!["pre-commit".to_string()]);
     // bare `true`
-    assert!(config.hooks.builtin.polylint.enabled);
-    assert!(config.hooks.builtin.polylint.stages.is_empty());
+    assert!(config.hooks.builtin.lint.enabled);
+    assert!(config.hooks.builtin.lint.stages.is_empty());
     // table without `enabled` → enabled
-    assert!(config.hooks.builtin.polyfmt.enabled);
-    assert_eq!(config.hooks.builtin.polyfmt.stages, vec!["pre-commit"]);
+    assert!(config.hooks.builtin.fmt.enabled);
+    assert_eq!(config.hooks.builtin.fmt.stages, vec!["pre-commit"]);
     // table with explicit `enabled = false`
     assert!(!config.hooks.builtin.commit.enabled);
     // inline stage

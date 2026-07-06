@@ -1,7 +1,7 @@
 //! `poly cache` — maintenance commands over the tier-1 result cache.
 //!
-//! Subcommands operate on the cache at `.polylint/cache` (or an explicit
-//! `--cache-dir`):
+//! Subcommands operate on the per-user result cache
+//! (`<platform-cache>/poly/<repo-key>`, or an explicit `--cache-dir`):
 //!
 //! - `poly cache stats` — entry counts, sizes, and format version (default).
 //! - `poly cache size` — the total on-disk size in bytes.

@@ -1,7 +1,7 @@
 //! gitfluff — commit-message linting, cleanup, and git-hook installation.
 //!
 //! This crate is both a standalone binary (`gitfluff`) and a library so the
-//! polylint workspace can drive the same logic in-process from a future
+//! poly workspace can drive the same logic in-process from a future
 //! `poly commit` subcommand.
 //!
 //! The reusable core is [`lint::lint_message`], a pure function over a

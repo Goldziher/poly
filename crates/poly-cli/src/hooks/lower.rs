@@ -179,37 +179,31 @@ fn append_builtins(
 ) -> Result<()> {
     let poly = shell_quote(&poly_bin.to_string_lossy());
 
-    if hooks.builtin.polylint.enabled
+    if hooks.builtin.lint.enabled
         && builtin_runs_on(
-            &hooks.builtin.polylint.stages,
+            &hooks.builtin.lint.stages,
             &hooks.stages,
             ConfigStage::PreCommit,
             config_stage,
         )?
     {
-        let mut hook = Hook::run("polylint", format!("{poly} lint"));
-        let (files, exclude) = builtin_globs(
-            hooks.builtin.polylint.files.as_ref(),
-            hooks.builtin.polylint.exclude.as_ref(),
-        )?;
+        let mut hook = Hook::run("lint", format!("{poly} lint"));
+        let (files, exclude) = builtin_globs(hooks.builtin.lint.files.as_ref(), hooks.builtin.lint.exclude.as_ref())?;
         hook.files = files;
         hook.exclude = exclude;
         hook.cache = cache::builtin_cache(cache_mode);
         out.push(hook);
     }
-    if hooks.builtin.polyfmt.enabled
+    if hooks.builtin.fmt.enabled
         && builtin_runs_on(
-            &hooks.builtin.polyfmt.stages,
+            &hooks.builtin.fmt.stages,
             &hooks.stages,
             ConfigStage::PreCommit,
             config_stage,
         )?
     {
-        let mut hook = Hook::run("polyfmt", format!("{poly} fmt --check"));
-        let (files, exclude) = builtin_globs(
-            hooks.builtin.polyfmt.files.as_ref(),
-            hooks.builtin.polyfmt.exclude.as_ref(),
-        )?;
+        let mut hook = Hook::run("fmt", format!("{poly} fmt --check"));
+        let (files, exclude) = builtin_globs(hooks.builtin.fmt.files.as_ref(), hooks.builtin.fmt.exclude.as_ref())?;
         hook.files = files;
         hook.exclude = exclude;
         hook.cache = cache::builtin_cache(cache_mode);

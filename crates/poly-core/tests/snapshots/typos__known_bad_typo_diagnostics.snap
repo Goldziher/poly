@@ -1,0 +1,50 @@
+---
+source: crates/poly-core/tests/typos.rs
+expression: summary
+---
+[
+    (
+        "typos",
+        "typo",
+        "`languge` should be `language`",
+        Some(
+            (
+                1,
+                5,
+            ),
+        ),
+    ),
+    (
+        "typos",
+        "typo",
+        "`recieve` should be `receive`",
+        Some(
+            (
+                1,
+                20,
+            ),
+        ),
+    ),
+    (
+        "typos",
+        "typo",
+        "`teh` should be `the`",
+        Some(
+            (
+                2,
+                9,
+            ),
+        ),
+    ),
+    (
+        "typos",
+        "typo",
+        "`occurence` should be `occurrence`",
+        Some(
+            (
+                2,
+                13,
+            ),
+        ),
+    ),
+]

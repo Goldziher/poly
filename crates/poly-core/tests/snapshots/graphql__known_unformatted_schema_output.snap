@@ -1,0 +1,13 @@
+---
+source: crates/poly-core/tests/graphql.rs
+expression: format_to_string(KNOWN_UNFORMATTED_SCHEMA)
+---
+type User {
+  id: ID!
+  name: String
+  email: String
+  posts: [Post!]!
+}
+type Post {
+  title: String
+}

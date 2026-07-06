@@ -559,7 +559,7 @@ jobs:
   update_major_tag:
     name: Move the major version tag
     # So consumers can pin the GitHub Action to a moving major tag (e.g.
-    # `Goldziher/polylint@v0`) that tracks the latest release in that series.
+    # `Goldziher/poly@v0`) that tracks the latest release in that series.
     # Stable releases only; runs once the release is finalized. The major tag
     # (v0, v1, …) does NOT match the `v[0-9]+.*` push trigger, so force-moving it
     # never re-triggers this workflow.

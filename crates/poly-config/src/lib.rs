@@ -5,11 +5,10 @@
 //! This crate owns only the **on-disk schema and its parsing** — it has no
 //! dependency on the engine layer, so all four surfaces can share one parsed
 //! [`PolyConfig`] without coupling. Language-aware slicing (turning the `[lint]`
-//! / `[fmt]` tables into a per-engine config) lives in `polylint-core`.
+//! / `[fmt]` tables into a per-engine config) lives in `poly-core`.
 //!
-//! The canonical file is `poly.toml`; `polylint.toml` is read as a back-compat
-//! fallback. Discovery walks upward from a start directory and, within each
-//! directory, prefers `poly.toml` over `polylint.toml`.
+//! The config file is `poly.toml`. Discovery walks upward from a start directory
+//! until it finds one.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -35,18 +34,18 @@ pub use tools::{ToolConfig, ToolsConfig};
 pub use typos_native::TyposNative;
 use typos_native::resolve_typos_native;
 
-/// Config file names in precedence order: `poly.toml` wins over `polylint.toml`
-/// within the same directory.
-pub const CONFIG_FILE_NAMES: [&str; 2] = ["poly.toml", "polylint.toml"];
+/// The config file name poly discovers. A single-element list so the discovery
+/// loops that iterate it stay unchanged if more names are ever added.
+pub const CONFIG_FILE_NAMES: [&str; 1] = ["poly.toml"];
 
 /// Name of the optional local override file deep-merged over the primary config
 /// when it sits in the same directory (issue #2193). Scalars and arrays in the
 /// override replace the base; tables are merged recursively.
 pub const LOCAL_OVERRIDE_NAME: &str = "poly.local.toml";
 
-/// The fully parsed `poly.toml` (or back-compat `polylint.toml`).
+/// The fully parsed `poly.toml`.
 ///
-/// `lint` and `fmt` are left as raw [`toml::Table`]s here; `polylint-core`
+/// `lint` and `fmt` are left as raw [`toml::Table`]s here; `poly-core`
 /// slices them per language and engine.
 #[derive(Debug, Clone, Default)]
 pub struct PolyConfig {
@@ -72,7 +71,7 @@ pub struct PolyConfig {
     /// table covers every backend (e.g. ruff `F401`, mago `too-many-methods`).
     pub per_file_ignores: BTreeMap<String, Vec<String>>,
     /// Resolved native `_typos.toml` / `.typos.toml` content, if present near the
-    /// config root. Combined with `[lint.typos]` in `polylint-core`.
+    /// config root. Combined with `[lint.typos]` in `poly-core`.
     pub typos_native: TyposNative,
     /// `[workspace]` — nested-config cascade boundary marker (ADR 0018).
     pub workspace: WorkspaceConfig,
@@ -309,8 +308,7 @@ fn finalize(table: toml::Table, typos_dir: &Path) -> anyhow::Result<PolyConfig> 
     Ok(config)
 }
 
-/// Return the config file in `dir` (a single directory, no upward walk),
-/// preferring `poly.toml` over `polylint.toml`.
+/// Return the `poly.toml` in `dir`, if present (a single directory, no upward walk).
 fn config_file_in(dir: &Path) -> Option<PathBuf> {
     for name in CONFIG_FILE_NAMES {
         let candidate = dir.join(name);
@@ -347,8 +345,7 @@ fn merge_tables(base: &mut toml::Table, override_table: toml::Table) {
     }
 }
 
-/// Find the nearest config file, walking upward from `start`. Within each
-/// directory `poly.toml` is preferred over `polylint.toml`.
+/// Find the nearest `poly.toml`, walking upward from `start`.
 pub fn find_config(start: &Path) -> Option<PathBuf> {
     let mut dir = if start.is_file() { start.parent()? } else { start };
     loop {

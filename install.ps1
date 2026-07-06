@@ -5,7 +5,7 @@
 .DESCRIPTION
     Installs poly. Re-run any time to UPDATE to the latest release (it overwrites in place).
 
-        irm https://raw.githubusercontent.com/Goldziher/polylint/main/install.ps1 | iex
+        irm https://raw.githubusercontent.com/Goldziher/poly/main/install.ps1 | iex
 
     Pin a version or change the install dir with environment variables before running:
         $env:POLY_VERSION = "v0.1.5"
@@ -15,7 +15,7 @@
 
 $ErrorActionPreference = "Stop"
 
-$Repo = "Goldziher/polylint"
+$Repo = "Goldziher/poly"
 $Binaries = @("poly.exe")
 
 $Version = if ($env:POLY_VERSION) { $env:POLY_VERSION } else { "latest" }

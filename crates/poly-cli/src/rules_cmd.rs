@@ -12,8 +12,8 @@ use std::process::ExitCode;
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand};
 use poly_config::PolyConfig;
-use polylint_core::engines::astgrep::rules::load_flat;
-use polylint_core::engines::astgrep::test::{CaseKind, run_tests};
+use poly_core::engines::astgrep::rules::load_flat;
+use poly_core::engines::astgrep::test::{CaseKind, run_tests};
 
 /// `poly rules` arguments.
 #[derive(Args)]

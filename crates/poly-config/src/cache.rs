@@ -43,7 +43,7 @@ pub enum HookCacheMode {
     Off,
     /// Cache hook results only when the hook declares its inputs (default).
     ///
-    /// Builtins (`polylint`/`polyfmt`) are always cached by matched files
+    /// Builtins (`lint`/`fmt`) are always cached by matched files
     /// because their footprint equals their input set.  An inline command is
     /// cached only when it carries a `cache = { inputs = [...] }` declaration;
     /// otherwise it always reruns.
@@ -155,11 +155,11 @@ pub struct CacheConfig {
     /// Equivalent to `--no-cache` on the CLI.
     #[serde(default = "default_cache_enabled")]
     pub enabled: bool,
-    /// Override the repo-local cache root directory.
+    /// Override the cache root directory.
     ///
-    /// When absent the default anchor walk applies (see
-    /// `poly_cache::root_from`): nearest `.git` ancestor →
-    /// `<that>/.polylint/cache`.
+    /// When absent the cache lives in the per-user cache home (see
+    /// `poly_cache::root_from`): `<platform-cache>/poly/<repo-key>`, keyed by the
+    /// nearest `.git` / `poly.toml` ancestor.
     pub dir: Option<String>,
     /// Tier-1 result-cache configuration.
     pub results: ResultsCacheConfig,

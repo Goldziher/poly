@@ -106,12 +106,12 @@ fn builtins_only_lowers_to_poly_entries() {
 [hooks]
 stages = ["pre-commit"]
 [hooks.builtin]
-polylint = true
-polyfmt = true
+lint = true
+fmt = true
 "#,
     );
     let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
-    assert_eq!(ids(&spec), vec!["polylint", "polyfmt"]);
+    assert_eq!(ids(&spec), vec!["lint", "fmt"]);
     let HookCommand::Run(line) = &spec.hooks[0].command else {
         panic!("expected run command");
     };
@@ -125,21 +125,21 @@ fn builtin_exclude_lowers_to_the_hook_exclude_glob() {
     let hooks = hooks_from(
         r#"
 [hooks.builtin]
-polylint = { exclude = ["**/tags.rs", ".ai-rulez/**"] }
-polyfmt = { exclude = "crates/*/tests/fixtures/**" }
+lint = { exclude = ["**/tags.rs", ".ai-rulez/**"] }
+fmt = { exclude = "crates/*/tests/fixtures/**" }
 "#,
     );
     let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
-    let lint = spec.hooks.iter().find(|h| h.id == "polylint").unwrap();
-    let lint_exclude = lint.exclude.as_ref().expect("polylint exclude present");
+    let lint = spec.hooks.iter().find(|h| h.id == "lint").unwrap();
+    let lint_exclude = lint.exclude.as_ref().expect("lint exclude present");
     assert!(lint_exclude.is_match(Path::new("crates/poly-hooks/src/identify/tags.rs")));
     assert!(lint_exclude.is_match(Path::new(".ai-rulez/foo.md")));
     assert!(!lint_exclude.is_match(Path::new("crates/poly-cli/src/main.rs")));
 
-    let fmt = spec.hooks.iter().find(|h| h.id == "polyfmt").unwrap();
-    let fmt_exclude = fmt.exclude.as_ref().expect("polyfmt exclude present");
-    assert!(fmt_exclude.is_match(Path::new("crates/polylint-core/tests/fixtures/bad.md")));
-    assert!(!fmt_exclude.is_match(Path::new("crates/polylint-core/src/lib.rs")));
+    let fmt = spec.hooks.iter().find(|h| h.id == "fmt").unwrap();
+    let fmt_exclude = fmt.exclude.as_ref().expect("fmt exclude present");
+    assert!(fmt_exclude.is_match(Path::new("crates/poly-core/tests/fixtures/bad.md")));
+    assert!(!fmt_exclude.is_match(Path::new("crates/poly-core/src/lib.rs")));
 }
 
 #[test]
@@ -216,7 +216,7 @@ fn builtins_and_inline_jobs_are_priority_ordered() {
     let hooks = hooks_from(
         r#"
 [hooks.builtin]
-polylint = { stages = ["pre-commit"] }
+lint = { stages = ["pre-commit"] }
 [hooks.pre-commit]
 [[hooks.pre-commit.jobs]]
 name = "early"
@@ -229,8 +229,8 @@ priority = 5
 "#,
     );
     let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
-    // `early` (-5) < polylint (0) < `late` (5).
-    assert_eq!(ids(&spec), vec!["early", "polylint", "late"]);
+    // `early` (-5) < lint (0) < `late` (5).
+    assert_eq!(ids(&spec), vec!["early", "lint", "late"]);
 }
 
 #[test]
@@ -369,7 +369,7 @@ fn stage_skip_suppresses_builtins_too() {
     let hooks = hooks_from(
         r#"
 [hooks.builtin]
-polylint = true
+lint = true
 [hooks.pre-commit]
 skip = true
 "#,

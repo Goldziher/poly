@@ -1,0 +1,6 @@
+---
+source: crates/poly-core/tests/oxc_fixtures.rs
+assertion_line: 168
+expression: text
+---
+{ "b": 2, "a": 1 }

@@ -1,0 +1,17 @@
+---
+source: crates/poly-core/tests/yaml.rs
+expression: summary
+---
+[
+    (
+        "yaml",
+        "syntax",
+        Error,
+        Some(
+            (
+                2,
+                6,
+            ),
+        ),
+    ),
+]

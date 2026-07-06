@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "polylint"
-version = "0.8.0"
+version = "0.9.0"
 description = "Universal zero-dependency linter & formatter through the poly Rust CLI."
 readme = "README.md"
 license = "MIT"
@@ -29,9 +29,9 @@ requires-python = ">=3.8"
 dependencies = ["certifi>=2024.7.4"]
 
 [project.urls]
-Homepage = "https://github.com/Goldziher/polylint"
-Repository = "https://github.com/Goldziher/polylint"
-Issues = "https://github.com/Goldziher/polylint/issues"
+Homepage = "https://github.com/Goldziher/poly"
+Repository = "https://github.com/Goldziher/poly"
+Issues = "https://github.com/Goldziher/poly/issues"
 
 [project.scripts]
 poly = "polylint.cli:poly"

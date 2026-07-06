@@ -1,7 +1,7 @@
 //! Lowering for the `file_safety` and `cargo` builtin groups.
 //!
-//! These two families are richer than the single-tool builtins (`polylint` /
-//! `polyfmt` / `commit`) handled inline in [`super`]:
+//! These two families are richer than the single-tool builtins (`lint` /
+//! `fmt` / `commit`) handled inline in [`super`]:
 //!
 //! - `file_safety` lowers to one hidden `poly hooks check …` invocation whose
 //!   flags select the enabled member checks (the runner appends the matched
@@ -723,9 +723,9 @@ shebang_scripts_are_executable = false
 
     #[test]
     fn cargo_defaults_on_alongside_an_explicit_builtin() {
-        // `polylint` is explicit; the `cargo` group defaults on (a `[hooks]`
+        // `lint` is explicit; the `cargo` group defaults on (a `[hooks]`
         // section exists) and appends each tool found on PATH.
-        let hooks = hooks_from("[hooks.builtin]\npolylint = true\n");
+        let hooks = hooks_from("[hooks.builtin]\nlint = true\n");
         let probe = StubProbe(&["cargo-clippy", "cargo-sort", "cargo-machete", "cargo-deny"]);
         let spec = lower_stage_with_probe(
             &hooks,
@@ -738,7 +738,7 @@ shebang_scripts_are_executable = false
         )
         .unwrap();
         let got = ids(&spec);
-        assert!(got.contains(&"polylint".to_string()), "{got:?}");
+        assert!(got.contains(&"lint".to_string()), "{got:?}");
         for tool in ["cargo-clippy", "cargo-sort", "cargo-machete", "cargo-deny"] {
             assert!(got.contains(&tool.to_string()), "missing {tool}: {got:?}");
         }

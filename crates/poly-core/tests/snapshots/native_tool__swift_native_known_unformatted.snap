@@ -1,0 +1,7 @@
+---
+source: crates/poly-core/tests/native_tool.rs
+expression: formatted
+---
+func greet(name: String) -> String {
+  return "Hello, " + name
+}

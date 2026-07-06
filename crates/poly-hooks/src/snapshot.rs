@@ -23,11 +23,11 @@
 //!
 //! # Persistent, incremental cache
 //!
-//! The snapshot is a **persistent, git-ignored cache** at a stable path
-//! (`<repo>/.polylint/staged`), not a throwaway per-run directory. Each run
-//! *refreshes it in place* so every tool's native incremental cache — cargo's
-//! `target/`, `.mypy_cache`, tsc's build-info — persists across runs and stays
-//! warm:
+//! The snapshot is a **persistent cache** at a stable path outside the repo
+//! (`<platform-cache>/poly/<repo-key>/staged`), not a throwaway per-run
+//! directory. Each run *refreshes it in place* so every tool's native
+//! incremental cache — cargo's `target/`, `.mypy_cache`, tsc's build-info —
+//! persists across runs and stays warm:
 //!
 //! - Content is always sourced from the **index blob** (`git checkout-index`),
 //!   never copied from the worktree. Sourcing from the index is what makes the
@@ -50,9 +50,10 @@
 //! Being a managed cache, it is *not* deleted after every run — that is what
 //! keeps incremental caches warm. Instead it is bounded and self-healing: each
 //! refresh prunes stale files, a crash mid-refresh is corrected by the next
-//! run, and it is git-ignored so it is never committed. Purge it like any cache
-//! (`rm -rf .polylint/staged`). Single-writer is assumed, matching the result
-//! cache's posture; concurrent `poly hooks` runs on one repo are not locked yet.
+//! run, and it lives outside the repo so it is never committed. Purge it like
+//! any cache (`poly cache clean`, or remove the per-user cache dir). Single-writer
+//! is assumed, matching the result cache's posture; concurrent `poly hooks` runs
+//! on one repo are not locked yet.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -61,7 +62,8 @@ use tracing::debug;
 
 use crate::git;
 
-/// Directory name for the snapshot under the repo-local `.polylint/` cache dir.
+/// Directory name for the snapshot under the per-repo cache dir
+/// (`<platform-cache>/poly/<repo-key>/staged`).
 const SNAPSHOT_SUBDIR: &str = "staged";
 
 /// Manifest recording the tracked paths materialized last run, so prune removes
@@ -78,6 +80,10 @@ pub enum Error {
     /// A `git` invocation failed while resolving or materializing staged content.
     #[error(transparent)]
     Git(#[from] git::Error),
+
+    /// The per-user cache directory (which holds the snapshot) could not be resolved.
+    #[error("could not resolve the poly cache directory: {0}")]
+    CacheDir(String),
 }
 
 /// A non-destructive, persistent copy of the repository's staged content.
@@ -91,10 +97,19 @@ pub struct StagedSnapshot {
 impl StagedSnapshot {
     /// Create or refresh the staged snapshot for the repository at `root`.
     ///
-    /// Lives at `<root>/.polylint/staged`. The first call materializes the whole
-    /// staged tree; later calls only touch what changed (see the module docs).
+    /// Lives at `<platform-cache>/poly/<repo-key>/staged`, outside the repo tree.
+    /// The first call materializes the whole staged tree; later calls only touch
+    /// what changed (see the module docs).
     pub fn create(root: &Path) -> Result<Self, Error> {
-        let dir = root.join(".polylint").join(SNAPSHOT_SUBDIR);
+        let cache_dir = poly_cache::repo_cache_dir(root).map_err(|e| Error::CacheDir(e.to_string()))?;
+        Self::create_in(&cache_dir, root)
+    }
+
+    /// Create or refresh the snapshot under `cache_dir/staged`. Separated from
+    /// [`Self::create`] so tests can target an isolated cache dir rather than the
+    /// real per-user cache home.
+    fn create_in(cache_dir: &Path, root: &Path) -> Result<Self, Error> {
+        let dir = cache_dir.join(SNAPSHOT_SUBDIR);
         std::fs::create_dir_all(&dir)?;
         refresh(root, &dir)?;
         debug!(snapshot = %dir.display(), "refreshed staged snapshot");
@@ -274,6 +289,7 @@ mod tests {
     #[test]
     fn snapshot_contains_staged_not_unstaged_or_untracked() {
         let tmp = TempDir::new().expect("tmp repo");
+        let cache = TempDir::new().expect("cache home");
         let repo = tmp.path();
         init(repo);
         std::fs::write(repo.join("committed.txt"), "staged\n").unwrap();
@@ -282,7 +298,7 @@ mod tests {
         std::fs::write(repo.join("unstaged.txt"), "v1\nDIRTY\n").unwrap();
         std::fs::write(repo.join("untracked.txt"), "nope\n").unwrap();
 
-        let snap = StagedSnapshot::create(repo).expect("snapshot");
+        let snap = StagedSnapshot::create_in(cache.path(), repo).expect("snapshot");
 
         assert_eq!(
             std::fs::read_to_string(snap.path().join("committed.txt")).unwrap(),
@@ -305,6 +321,7 @@ mod tests {
         // diff-files` might under-report from a stale stat cache — must never
         // reach the snapshot, because content is sourced from the index OID.
         let tmp = TempDir::new().expect("tmp repo");
+        let cache = TempDir::new().expect("cache home");
         let repo = tmp.path();
         init(repo);
         std::fs::write(repo.join("big.h"), "STAGED\n").unwrap();
@@ -317,7 +334,7 @@ mod tests {
         )
         .unwrap();
 
-        let snap = StagedSnapshot::create(repo).expect("snapshot");
+        let snap = StagedSnapshot::create_in(cache.path(), repo).expect("snapshot");
 
         assert_eq!(
             std::fs::read_to_string(snap.path().join("big.h")).unwrap(),
@@ -331,15 +348,16 @@ mod tests {
         // A file whose staged OID is unchanged must be left untouched on refresh
         // (stable mtime) so a compiler's incremental cache stays warm.
         let tmp = TempDir::new().expect("tmp repo");
+        let cache = TempDir::new().expect("cache home");
         let repo = tmp.path();
         init(repo);
         std::fs::write(repo.join("a.rs"), "fn main() {}\n").unwrap();
         git(repo, &["add", "a.rs"]);
 
-        let snap = StagedSnapshot::create(repo).expect("first");
+        let snap = StagedSnapshot::create_in(cache.path(), repo).expect("first");
         let first = std::fs::metadata(snap.path().join("a.rs")).unwrap().modified().unwrap();
 
-        StagedSnapshot::create(repo).expect("refresh");
+        StagedSnapshot::create_in(cache.path(), repo).expect("refresh");
         let second = std::fs::metadata(snap.path().join("a.rs")).unwrap().modified().unwrap();
 
         assert_eq!(first, second, "unchanged staged OID must not be rewritten on refresh");
@@ -349,16 +367,17 @@ mod tests {
     fn changed_staged_oid_is_rematerialized() {
         // When the staged content changes, the snapshot must pick it up.
         let tmp = TempDir::new().expect("tmp repo");
+        let cache = TempDir::new().expect("cache home");
         let repo = tmp.path();
         init(repo);
         std::fs::write(repo.join("a.rs"), "// v1\n").unwrap();
         git(repo, &["add", "a.rs"]);
-        let snap = StagedSnapshot::create(repo).expect("first");
+        let snap = StagedSnapshot::create_in(cache.path(), repo).expect("first");
         assert_eq!(std::fs::read_to_string(snap.path().join("a.rs")).unwrap(), "// v1\n");
 
         std::fs::write(repo.join("a.rs"), "// v2 changed\n").unwrap();
         git(repo, &["add", "a.rs"]);
-        StagedSnapshot::create(repo).expect("refresh");
+        StagedSnapshot::create_in(cache.path(), repo).expect("refresh");
         assert_eq!(
             std::fs::read_to_string(snap.path().join("a.rs")).unwrap(),
             "// v2 changed\n",
@@ -373,6 +392,7 @@ mod tests {
         // a fixture) failed in the sandbox though the real tree compiles. The
         // snapshot must expose the submodule as a symlink into the live worktree.
         let tmp = TempDir::new().expect("tmp");
+        let cache = TempDir::new().expect("cache home");
         let root = tmp.path();
 
         // A standalone repo to embed as a submodule, holding a compile-time fixture.
@@ -402,7 +422,7 @@ mod tests {
         std::fs::write(parent.join("main.rs"), "fn main() {}\n").unwrap();
         git(&parent, &["add", "."]);
 
-        let snap = StagedSnapshot::create(&parent).expect("snapshot");
+        let snap = StagedSnapshot::create_in(cache.path(), &parent).expect("snapshot");
 
         // The submodule fixture must resolve through the snapshot...
         let via_snapshot = snap.path().join("vendor/fixtures/data.bin");
@@ -421,20 +441,21 @@ mod tests {
         );
 
         // Refresh is idempotent — the symlink survives a second run.
-        StagedSnapshot::create(&parent).expect("refresh");
+        StagedSnapshot::create_in(cache.path(), &parent).expect("refresh");
         assert_eq!(std::fs::read(&via_snapshot).unwrap(), b"FIXTURE");
     }
 
     #[test]
     fn refresh_prunes_files_that_left_the_tree_but_keeps_tool_caches() {
         let tmp = TempDir::new().expect("tmp repo");
+        let cache = TempDir::new().expect("cache home");
         let repo = tmp.path();
         init(repo);
         std::fs::write(repo.join("keep.rs"), "a\n").unwrap();
         std::fs::write(repo.join("gone.rs"), "b\n").unwrap();
         git(repo, &["add", "keep.rs", "gone.rs"]);
         git(repo, &["commit", "-q", "-m", "init"]);
-        let snap = StagedSnapshot::create(repo).expect("first");
+        let snap = StagedSnapshot::create_in(cache.path(), repo).expect("first");
 
         // A tool writes a cache artifact into the snapshot (untracked).
         std::fs::create_dir_all(snap.path().join("target")).unwrap();
@@ -442,7 +463,7 @@ mod tests {
 
         // Remove a tracked file, then refresh.
         git(repo, &["rm", "-q", "gone.rs"]);
-        StagedSnapshot::create(repo).expect("refresh");
+        StagedSnapshot::create_in(cache.path(), repo).expect("refresh");
 
         assert!(snap.path().join("keep.rs").exists(), "still-tracked file remains");
         assert!(!snap.path().join("gone.rs").exists(), "untracked file is pruned");

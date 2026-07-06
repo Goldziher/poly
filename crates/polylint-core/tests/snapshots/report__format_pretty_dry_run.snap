@@ -1,7 +1,0 @@
----
-source: crates/polylint-core/tests/report.rs
-expression: text
----
-would reformat src/main.py
-
-1 file(s) will change of 2 file(s)
