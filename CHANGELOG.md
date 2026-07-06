@@ -7,6 +7,34 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). `polylint` and
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-07-06
+
+### Added
+
+- **Custom-rule tier.** Write your own lint rules — and codemods — as
+  [ast-grep](https://ast-grep.github.io) YAML, in any of the 300+ languages poly
+  can parse. Custom rules run in-process alongside the native backends on every
+  `poly lint`, and `poly lint --fix` applies any `fix:` rewrites they declare. No
+  plugin, no fork, no extra toolchain: rules run on the same tree-sitter grammars
+  poly already bundles. Point `[rules] dirs` at one or more rule directories
+  (default `[".poly/rules"]`); each rule is a standard ast-grep document whose
+  `language:` field names a grammar.
+- **`poly rules test` / `poly rules list`.** Verify rules against companion
+  `<name>-test.yml` snippets (`valid` must not match, `invalid` must) and list the
+  discovered rules. `poly rules test` exits non-zero on any failed snippet.
+- **`fixed:` rule-test assertion.** An `invalid` test case may be a
+  `{ code, fixed }` table that asserts the rule's applied autofix output, not just
+  that the rule fires.
+
+### Fixed
+
+- **`[rules] dirs` resolve relative to the config file**, not the process working
+  directory, so a rule set is found from any subdirectory.
+
+### Changed
+
+- **Dependency refresh.** Bumped `saphyr` (0.0.6 → 0.0.9).
+
 ## [0.7.0] - 2026-07-05
 
 ### Changed
