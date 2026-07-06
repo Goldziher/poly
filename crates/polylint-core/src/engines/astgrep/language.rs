@@ -111,6 +111,12 @@ fn expando_char_for(name: &str) -> char {
 /// `expando` so the target grammar can parse them as identifiers. Ported from
 /// `ast_grep_language::pre_process_pattern`.
 fn rewrite_sigils(expando: char, query: &str) -> Cow<'_, str> {
+    // No sigil to rewrite — borrow the input rather than allocating a char Vec.
+    // `pre_process_pattern` runs for every pattern, so skip the work for literal
+    // (metavariable-free) patterns.
+    if !query.contains('$') {
+        return Cow::Borrowed(query);
+    }
     let mut out: Vec<char> = Vec::with_capacity(query.len());
     let mut dollar_count = 0;
     for c in query.chars() {

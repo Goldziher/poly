@@ -3,9 +3,19 @@
 //! [`load_rules`] scans the configured directories for `*.yml` / `*.yaml`
 //! files, parses each with `ast_grep_config::from_yaml_string`, and groups the
 //! results by language name into a [`RuleMap`].  The map is cached behind a
-//! process-global `Mutex` keyed on the resolved directory list, so a single
-//! `poly lint` run pays the file-read cost at most once per unique `[rules]
-//! dirs` configuration.
+//! process-global `RwLock` keyed on the blake3 content hash of the rule files,
+//! so a single `poly lint` run pays the file-read cost at most once per unique
+//! rule set.
+//!
+//! ## Limitations
+//!
+//! - **No cross-file `refers:`.** Each YAML file is parsed with its own
+//!   [`GlobalRules`], so a rule cannot reference a `utils`/global rule defined
+//!   in a *different* file. Keep a rule and the utils it refers to in one file.
+//!   (Project-level ast-grep `sgconfig.yml` utils are not wired in.)
+//! - **Symlinked rule files are skipped.** Discovery uses `file_type()`
+//!   (`lstat`), so a symlink — whether to a file or a directory — is neither
+//!   read nor descended. Place real files under the rule dirs.
 
 use std::collections::HashMap;
 use std::fs;
@@ -20,36 +30,40 @@ use super::language::TslpLanguage;
 /// Rules grouped by lowercase language name.
 pub type RuleMap = HashMap<String, Vec<RuleConfig<TslpLanguage>>>;
 
-/// Cache key: the configured dirs plus a content hash of the rule files. The
-/// hash makes the cache content-addressed, so editing a rule file in a
-/// long-lived process (`poly mcp`) yields a fresh entry instead of a stale one;
-/// the dirs keep distinct rule sets (e.g. two test temp dirs) from colliding
-/// when no hash is supplied.
-type CacheKey = (Vec<String>, String);
+/// Process-global cache keyed on the blake3 content hash of the rule files.
+/// The hash folds in each file's path + bytes, so it uniquely identifies the
+/// resolved rule set: editing a rule file in a long-lived process (`poly mcp`)
+/// yields a fresh entry, and distinct rule sets never collide. An `RwLock` lets
+/// every rayon worker read concurrently on the hot (cache-hit) path; only the
+/// first load of a hash takes the write lock.
+static RULE_CACHE: OnceLock<RwLock<HashMap<String, Arc<RuleMap>>>> = OnceLock::new();
 
-/// Process-global cache. An `RwLock` lets every rayon worker read concurrently
-/// on the hot (cache-hit) path; only the first load of a key takes the write lock.
-static RULE_CACHE: OnceLock<RwLock<HashMap<CacheKey, Arc<RuleMap>>>> = OnceLock::new();
-
-fn cache() -> &'static RwLock<HashMap<CacheKey, Arc<RuleMap>>> {
+fn cache() -> &'static RwLock<HashMap<String, Arc<RuleMap>>> {
     RULE_CACHE.get_or_init(|| RwLock::new(HashMap::new()))
 }
 
-/// Return the [`RuleMap`] for `dirs`, loading from disk on first call per
-/// unique `(dirs, content_hash)` key. `content_hash` is the `rules_hash` folded
-/// into the engine config; pass `""` when no hash is available (the dirs alone
-/// then key the entry). Subsequent calls with the same key hit the cache.
+/// Return the [`RuleMap`] for `dirs`, loading from disk on first call per unique
+/// `content_hash` (the `rules_hash` folded into the engine config). Subsequent
+/// calls with the same hash hit the cache — a `&str` lookup with no per-file key
+/// allocation on the hot path.
+///
+/// An empty `content_hash` means no rule files were found (or none was supplied,
+/// as in direct unit tests); that case loads fresh without caching, so two
+/// distinct dir sets can never collide on an empty key.
 ///
 /// Directories that do not exist are silently skipped (no error) — this is the
 /// normal state for repos that haven't created any rule files yet.
 pub fn load_rules(dirs: &[String], content_hash: &str) -> anyhow::Result<Arc<RuleMap>> {
-    let key: CacheKey = (dirs.to_vec(), content_hash.to_string());
+    if content_hash.is_empty() {
+        return Ok(Arc::new(load_from_dirs(dirs)?));
+    }
 
     {
         // Recover from a poisoned lock rather than panicking across the worker
         // pool: a poisoned rule cache still holds valid (immutable) entries.
+        // Look up by `&str` — no key allocation on a cache hit.
         let guard = cache().read().unwrap_or_else(|e| e.into_inner());
-        if let Some(cached) = guard.get(&key) {
+        if let Some(cached) = guard.get(content_hash) {
             return Ok(Arc::clone(cached));
         }
     }
@@ -58,11 +72,11 @@ pub fn load_rules(dirs: &[String], content_hash: &str) -> anyhow::Result<Arc<Rul
     let arc = Arc::new(load_from_dirs(dirs)?);
 
     let mut guard = cache().write().unwrap_or_else(|e| e.into_inner());
-    // Check again in case another thread raced us to load the same key.
-    if let Some(existing) = guard.get(&key) {
+    // Check again in case another thread raced us to load the same hash.
+    if let Some(existing) = guard.get(content_hash) {
         return Ok(Arc::clone(existing));
     }
-    guard.insert(key, Arc::clone(&arc));
+    guard.insert(content_hash.to_string(), Arc::clone(&arc));
     Ok(arc)
 }
 
