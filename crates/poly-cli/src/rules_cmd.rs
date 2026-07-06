@@ -78,9 +78,13 @@ fn run_test(dirs: Vec<String>) -> Result<ExitCode> {
         let (kind, expected) = match outcome.kind {
             CaseKind::Valid => ("valid", "no match"),
             CaseKind::Invalid => ("invalid", "a match"),
+            CaseKind::Fixed => ("fixed", "matching autofix output"),
         };
+        // The `detail` carries the got/want for a fix mismatch; fall back to the
+        // generic expectation for match-only cases.
+        let reason = outcome.detail.as_deref().unwrap_or(expected);
         println!(
-            "FAIL  {rule} [{kind} #{index}] — expected {expected}",
+            "FAIL  {rule} [{kind} #{index}] — expected {reason}",
             rule = outcome.rule_id,
             index = outcome.index,
         );

@@ -20,8 +20,16 @@ pub fn diff_to_diagnostic(
     rule: &RuleConfig<TslpLanguage>,
     node_match: &NodeMatch<'_, StrDoc<TslpLanguage>>,
 ) -> Diagnostic {
-    let fixes = rule
-        .fixer
+    let fixes = fix_edits(rule, node_match);
+    build_diagnostic(engine_name, rule, node_match, fixes)
+}
+
+/// Build the byte-range autofix [`Edit`]s for a matched node from the rule's
+/// `Fixer`. Empty when the rule declares no `fix`. Shared by
+/// [`diff_to_diagnostic`] and the rule-test runner so the CLI-visible fix and
+/// the tested fix come from one code path.
+pub fn fix_edits(rule: &RuleConfig<TslpLanguage>, node_match: &NodeMatch<'_, StrDoc<TslpLanguage>>) -> Vec<Edit> {
+    rule.fixer
         .iter()
         .map(|fixer| {
             let edit = node_match.make_edit(&rule.matcher, fixer);
@@ -36,9 +44,7 @@ pub fn diff_to_diagnostic(
                 replacement: String::from_utf8_lossy(&edit.inserted_text).into_owned(),
             }
         })
-        .collect::<Vec<_>>();
-
-    build_diagnostic(engine_name, rule, node_match, fixes)
+        .collect()
 }
 
 /// Convert a lint-only ast-grep match (rule + matched nodes) to a

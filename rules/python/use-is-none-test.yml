@@ -4,4 +4,5 @@ valid:
   - x == 1
 invalid:
   - x == None
-  - result == None
+  - code: result == None
+    fixed: result is None

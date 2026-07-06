@@ -211,6 +211,40 @@ fn span_column_is_character_based() {
     );
 }
 
+/// A `fixed:` assertion in an `invalid` test case passes when the rule's
+/// applied autofix matches, and fails when it does not — proving the rule-test
+/// runner checks fix output, not just that the rule fires.
+#[test]
+fn rule_test_fixed_assertion_checks_autofix_output() {
+    use polylint_core::engines::astgrep::test::{CaseKind, run_tests};
+
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join("use-is-none.yml"),
+        "id: use-is-none\nlanguage: python\nseverity: warning\nmessage: use is None\nrule:\n  pattern: $X == None\nfix: $X is None\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("use-is-none-test.yml"),
+        // First case asserts the correct fix; second asserts a wrong one to
+        // prove a mismatch is caught.
+        "id: use-is-none\ninvalid:\n  - code: a == None\n    fixed: a is None\n  - code: b == None\n    fixed: b == None\n",
+    )
+    .unwrap();
+
+    let report = run_tests(&[dir.path().to_string_lossy().into_owned()]).unwrap();
+
+    let fixed: Vec<_> = report.outcomes.iter().filter(|o| o.kind == CaseKind::Fixed).collect();
+    assert_eq!(fixed.len(), 2, "one Fixed outcome per fixed: assertion; got {report:?}");
+    assert!(fixed[0].passed, "correct fix must pass: {:?}", fixed[0]);
+    assert!(!fixed[1].passed, "wrong fix must fail: {:?}", fixed[1]);
+    assert!(
+        fixed[1].detail.as_deref().is_some_and(|d| d.contains("b is None")),
+        "mismatch detail should show the actual fix output: {:?}",
+        fixed[1].detail,
+    );
+}
+
 #[test]
 fn no_rules_dir_is_a_noop() {
     let engine = AstGrepEngine;
