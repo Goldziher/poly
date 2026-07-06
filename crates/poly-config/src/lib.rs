@@ -101,6 +101,23 @@ impl Default for RulesConfig {
     }
 }
 
+impl RulesConfig {
+    /// Resolve every relative entry in `dirs` against `base` (the config file's
+    /// directory), leaving absolute paths untouched.
+    ///
+    /// Rule directories are declared relative to the `poly.toml` that names them,
+    /// so `poly lint` and `poly rules test` find the same rules regardless of the
+    /// process working directory. Called once at load time with the config root.
+    fn resolve_relative_to(&mut self, base: &Path) {
+        for dir in &mut self.dirs {
+            let path = Path::new(dir.as_str());
+            if path.is_relative() {
+                *dir = base.join(path).to_string_lossy().into_owned();
+            }
+        }
+    }
+}
+
 /// `[workspace]` — marks a config as the cascade boundary for hierarchical
 /// resolution (ADR 0018).
 ///
@@ -147,6 +164,9 @@ impl PolyConfig {
                 } else {
                     start
                 };
+                // No config file: anchor the default `[rules] dirs` at the start
+                // directory so discovery still has an absolute base.
+                config.rules.resolve_relative_to(dir);
                 config.typos_native = resolve_typos_native(dir);
                 Ok(config)
             }
@@ -200,10 +220,12 @@ impl PolyConfig {
         }
 
         if chain.is_empty() {
-            return Ok(PolyConfig {
+            let mut config = PolyConfig {
                 typos_native: resolve_typos_native(dir),
                 ..PolyConfig::default()
-            });
+            };
+            config.rules.resolve_relative_to(dir);
+            return Ok(config);
         }
 
         // Fold from the topmost config (base) down to the nearest (final
@@ -241,6 +263,10 @@ fn read_config_table(path: &Path) -> anyhow::Result<toml::Table> {
 fn finalize(table: toml::Table, typos_dir: &Path) -> anyhow::Result<PolyConfig> {
     let raw: RawPolyConfig = table.try_into()?;
     let mut config: PolyConfig = raw.into();
+    // `[rules] dirs` are declared relative to the config file's directory
+    // (`typos_dir` is that directory). Resolving here makes rule discovery
+    // independent of the process working directory.
+    config.rules.resolve_relative_to(typos_dir);
     config.typos_native = resolve_typos_native(typos_dir);
     config
         .hooks
@@ -783,6 +809,41 @@ select = ["ALL"]
         let config = PolyConfig::resolve_for_dir(dir.path()).expect("resolve");
         assert_eq!(config.defaults.line_length, 120);
         assert!(config.lint.is_empty());
+    }
+
+    #[test]
+    fn rules_dirs_resolve_against_config_root_not_cwd() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("poly.toml");
+        fs::write(&path, "[rules]\ndirs = [\"lint/rules\"]\n").unwrap();
+        // Load from a nested subdir: the relative rule dir must anchor at the
+        // config file's directory, not the (arbitrary) start directory.
+        let nested = dir.path().join("a").join("b");
+        fs::create_dir_all(&nested).unwrap();
+        let config = PolyConfig::load(&nested).expect("load");
+        assert_eq!(
+            config.rules.dirs,
+            vec![dir.path().join("lint/rules").to_string_lossy().into_owned()],
+        );
+    }
+
+    #[test]
+    fn rules_dirs_leave_absolute_paths_untouched() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("poly.toml");
+        fs::write(&path, "[rules]\ndirs = [\"/etc/poly/rules\"]\n").unwrap();
+        let config = PolyConfig::load_file(&path).expect("load");
+        assert_eq!(config.rules.dirs, vec!["/etc/poly/rules".to_string()]);
+    }
+
+    #[test]
+    fn default_rules_dir_anchors_at_start_when_no_config() {
+        let dir = tempdir().unwrap();
+        let config = PolyConfig::load(dir.path()).expect("load");
+        assert_eq!(
+            config.rules.dirs,
+            vec![dir.path().join(".poly/rules").to_string_lossy().into_owned()],
+        );
     }
 
     #[test]
