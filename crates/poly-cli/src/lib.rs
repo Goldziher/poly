@@ -112,6 +112,13 @@ pub struct CommonArgs {
 /// `poly lint` arguments.
 #[derive(Args)]
 pub struct LintArgs {
+    /// Skip the whole-project phase (`cargo clippy` and the other configured
+    /// whole-workspace tools). By default `poly lint` also runs the same
+    /// whole-project tools a `pre-commit` hook would; this checks only the
+    /// per-file tier. Equivalent to `[lint] workspace = false`.
+    #[arg(long)]
+    pub no_workspace: bool,
+
     /// Flags shared with `poly fmt`.
     #[command(flatten)]
     pub common: CommonArgs,
@@ -132,6 +139,7 @@ pub struct FmtArgs {
 
 /// Run the lint pipeline and map the outcome to a process exit code.
 pub fn run_lint(args: LintArgs) -> ExitCode {
+    let no_workspace = args.no_workspace;
     let common = args.common;
     // Init logging after parse so `--debug` can widen the filter (first-call-wins).
     init_logging_with(common.debug);
@@ -142,38 +150,51 @@ pub fn run_lint(args: LintArgs) -> ExitCode {
         Err(code) => return code,
     };
 
-    match poly_core::lint(&paths, &config, &opts, common.fix, common.debug) {
-        Ok(results) => {
-            // Render (and print) all diagnostics regardless of severity; the count
-            // returned here is not used for the exit decision.
-            let _ = match common.format {
-                OutputFormat::Pretty => report::report_lint_pretty(&results, verbosity),
-                OutputFormat::Json => {
-                    println!("{}", report::report_lint_json(&results));
-                    results.iter().map(|r| r.diagnostics.len()).sum()
-                }
-                OutputFormat::Toon => {
-                    println!("{}", report::report_lint_toon(&results));
-                    results.iter().map(|r| r.diagnostics.len()).sum()
-                }
-            };
-            // Follow the standard linter convention (ruff/eslint/clippy): only
-            // error-severity findings fail the run. Warning/info/hint are
-            // reported but non-blocking.
-            lint_exit_code(&results)
-        }
+    let results = match poly_core::lint(&paths, &config, &opts, common.fix, common.debug) {
+        Ok(results) => results,
         Err(e) => {
             eprintln!("error: {e:#}");
-            ExitCode::from(2)
+            return ExitCode::from(2);
         }
-    }
-}
+    };
 
-/// Map lint results to a process exit code: `1` when any diagnostic has
-/// [`Severity::Error`], `0` otherwise. Warning/info/hint findings are
-/// non-blocking, matching the convention of ruff, eslint, and clippy.
-fn lint_exit_code(results: &[LintResult]) -> ExitCode {
-    if lint_has_errors(results) {
+    // Render (and print) all per-file diagnostics regardless of severity; the
+    // count returned here is not used for the exit decision.
+    let pretty = matches!(common.format, OutputFormat::Pretty);
+    let _ = match common.format {
+        OutputFormat::Pretty => report::report_lint_pretty(&results, verbosity),
+        OutputFormat::Json => {
+            println!("{}", report::report_lint_json(&results));
+            results.iter().map(|r| r.diagnostics.len()).sum()
+        }
+        OutputFormat::Toon => {
+            println!("{}", report::report_lint_toon(&results));
+            results.iter().map(|r| r.diagnostics.len()).sum()
+        }
+    };
+
+    // The whole-project phase runs the same whole-workspace tools a pre-commit
+    // hook would (`cargo clippy`, …) and folds its pass/fail into the exit code.
+    // Its human report goes to stdout for pretty output, else stderr so a
+    // `--format json` stdout stays a single valid document.
+    let workspace_ok = match hooks::workspace_lint::run(&hooks::workspace_lint::WorkspaceLintArgs {
+        config: common.config.as_deref(),
+        no_workspace,
+        jobs: common.jobs,
+        no_cache: common.no_cache,
+        to_stdout: pretty,
+    }) {
+        Ok(ok) => ok,
+        Err(e) => {
+            eprintln!("error: whole-project lint phase failed: {e:#}");
+            return ExitCode::from(2);
+        }
+    };
+
+    // Follow the standard linter convention (ruff/eslint/clippy): only
+    // error-severity per-file findings fail the run (warning/info/hint are
+    // non-blocking), plus any whole-project tool failure.
+    if lint_has_errors(&results) || !workspace_ok {
         ExitCode::from(1)
     } else {
         ExitCode::SUCCESS

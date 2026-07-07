@@ -187,7 +187,12 @@ fn append_builtins(
             config_stage,
         )?
     {
-        let mut hook = Hook::run("lint", format!("{poly} lint"));
+        // `--no-workspace`: the `lint` builtin is the per-file tier only. The
+        // whole-project tools `poly lint` would otherwise run (`cargo clippy`, …)
+        // are the `cargo` builtin group's job within a hook run — running them
+        // here too would duplicate the work (and recurse the whole workspace on
+        // every staged-file batch).
+        let mut hook = Hook::run("lint", format!("{poly} lint --no-workspace"));
         let (files, exclude) = builtin_globs(hooks.builtin.lint.files.as_ref(), hooks.builtin.lint.exclude.as_ref())?;
         hook.files = files;
         hook.exclude = exclude;

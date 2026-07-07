@@ -115,7 +115,9 @@ fmt = true
     let HookCommand::Run(line) = &spec.hooks[0].command else {
         panic!("expected run command");
     };
-    assert!(line.ends_with(" lint"), "unexpected line: {line}");
+    // The `lint` builtin is the per-file tier only; it passes `--no-workspace`
+    // so it never re-runs the whole-project tools (the `cargo` group's job).
+    assert!(line.ends_with(" lint --no-workspace"), "unexpected line: {line}");
     assert!(line.contains("/opt/poly/bin/poly"));
     assert!(spec.hooks[0].pass_filenames);
 }

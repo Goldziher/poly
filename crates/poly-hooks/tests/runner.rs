@@ -127,6 +127,25 @@ fn parallel_group_runs_every_hook() {
 }
 
 #[test]
+fn progress_run_captures_output_and_passes() {
+    let repo = init_repo();
+    let root = repo.path();
+
+    // With `progress = true` the runner drives the indicatif spinner path
+    // (`ProgressUi` / `PreviewSink`). Under `cargo test` stderr is not a terminal,
+    // so the display self-hides — but output must still be fully captured, proving
+    // the live-preview sink never drops bytes.
+    let hooks = vec![cmd_hook("echoer", "printf 'hello world'")];
+    let mut req = request(root, pre_commit(hooks));
+    req.progress = true;
+
+    let outcome = run(req).expect("run");
+    assert!(outcome.success());
+    let hook = &outcome.stages[0].hooks[0];
+    assert_eq!(String::from_utf8_lossy(&hook.output), "hello world");
+}
+
+#[test]
 fn serial_group_runs_every_hook_when_require_serial() {
     let repo = init_repo();
     let root = repo.path();

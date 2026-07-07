@@ -28,6 +28,7 @@ use std::process::Stdio;
 use std::sync::Once;
 use std::time::{Duration, Instant};
 
+use indicatif::ProgressBar;
 use poly_cache::{CacheKey, InputDigest, Namespace, ResultCache};
 use rayon::prelude::*;
 use tracing::warn;
@@ -39,7 +40,7 @@ use crate::model::{
     StageOutcome, StageSpec, StageStatus, StepOutcome,
 };
 use crate::process::Cmd;
-use crate::reporter::CaptureSink;
+use crate::reporter::{CaptureSink, HookBar, PreviewSink, ProgressUi};
 use crate::stage::RunInputMode;
 
 #[cfg(not(windows))]
@@ -68,13 +69,17 @@ const SHELL_ARG: &str = "/C";
 pub fn run(request: HookRunRequest) -> anyhow::Result<HookRunOutcome> {
     let threads = crate::concurrency::effective_concurrency(request.concurrency);
     let pool = rayon::ThreadPoolBuilder::new().num_threads(threads).build()?;
-    pool.install(|| run_all(&request))
+    // A live multi-line progress display, only when progress was requested (the
+    // CLI enables it for an interactive stderr). The draw target self-hides on a
+    // non-terminal, so downstream code never special-cases it.
+    let ui = request.progress.then(ProgressUi::new);
+    pool.install(|| run_all(&request, ui.as_ref()))
 }
 
-fn run_all(request: &HookRunRequest) -> anyhow::Result<HookRunOutcome> {
+fn run_all(request: &HookRunRequest, ui: Option<&ProgressUi>) -> anyhow::Result<HookRunOutcome> {
     let mut stages = Vec::with_capacity(request.stages.len());
     for spec in &request.stages {
-        stages.push(run_stage(request, spec)?);
+        stages.push(run_stage(request, spec, ui)?);
     }
     Ok(HookRunOutcome { stages })
 }
@@ -85,7 +90,7 @@ struct Prepared {
     skip: Option<SkipReason>,
 }
 
-fn run_stage(request: &HookRunRequest, spec: &StageSpec) -> anyhow::Result<StageOutcome> {
+fn run_stage(request: &HookRunRequest, spec: &StageSpec, ui: Option<&ProgressUi>) -> anyhow::Result<StageOutcome> {
     // 1. precondition guard.
     if let Some(precondition) = &spec.precondition {
         if !run_precondition(&request.root, precondition) {
@@ -119,7 +124,7 @@ fn run_stage(request: &HookRunRequest, spec: &StageSpec) -> anyhow::Result<Stage
 
     // 3. hooks — priority groups, par_iter within a group.
     let prepared = prepare(request, spec);
-    let (mut hooks, any_failed) = run_hooks(request, spec, &prepared)?;
+    let (mut hooks, any_failed) = run_hooks(request, spec, &prepared, ui)?;
     hooks.sort_by_key(|hook| hook.position);
 
     // 4. after steps — only when no hook failed.
@@ -156,13 +161,14 @@ fn run_hooks(
     request: &HookRunRequest,
     spec: &StageSpec,
     prepared: &[Prepared],
+    ui: Option<&ProgressUi>,
 ) -> anyhow::Result<(Vec<HookOutcome>, bool)> {
     let mut collected = Vec::with_capacity(spec.hooks.len());
     let mut any_failed = false;
 
     for group in group_by_priority(&spec.hooks) {
         let serial = group.iter().any(|&pos| spec.hooks[pos].is_serial());
-        let outcomes = run_group(request, spec, prepared, &group, serial);
+        let outcomes = run_group(request, spec, prepared, &group, serial, ui);
 
         let mut abort = false;
         for (&pos, (mut outcome, store_key)) in group.iter().zip(outcomes) {
@@ -229,6 +235,7 @@ fn run_group(
     prepared: &[Prepared],
     group: &[usize],
     serial: bool,
+    ui: Option<&ProgressUi>,
 ) -> Vec<(HookOutcome, Option<CacheKey>)> {
     let run_one = |&pos: &usize| -> (HookOutcome, Option<CacheKey>) {
         let hook = &spec.hooks[pos];
@@ -261,10 +268,8 @@ fn run_group(
 
         let refs: Vec<&Path> = matched.iter().map(AsRef::as_ref).collect();
         // A cache hit or a skip returns above without ever reaching here, so a
-        // progress line is emitted only for hooks whose body actually executes.
-        if request.progress {
-            crate::reporter::report_hook_started(&hook.id);
-        }
+        // spinner is started only for hooks whose body actually executes.
+        let hook_bar = ui.map(|ui| ui.start(&hook.id));
         // A whole-workspace hook runs from the staged snapshot when the run
         // carries one, isolating it to staged content; per-file hooks always run
         // from the real root. When isolated, point cargo at the real `target/`
@@ -280,9 +285,10 @@ fn run_group(
             &refs,
             request.sccache.as_ref(),
             cargo_target_dir.as_deref(),
+            hook_bar.as_ref().map(HookBar::bar),
         );
-        if request.progress {
-            crate::reporter::report_hook_finished(&hook.id, outcome.status.is_failure(), outcome.duration);
+        if let (Some(ui), Some(bar)) = (ui, hook_bar.as_ref()) {
+            ui.finish(bar, outcome.status.is_failure(), outcome.duration);
         }
         (outcome, key)
     };
@@ -304,6 +310,7 @@ fn run_hook(
     matched: &[&Path],
     sccache: Option<&SccacheSettings>,
     cargo_target_dir: Option<&Path>,
+    bar: Option<&ProgressBar>,
 ) -> HookOutcome {
     let start = Instant::now();
     let base_len = base_arg_len(hook);
@@ -311,7 +318,13 @@ fn run_hook(
 
     let results: Vec<(HookStatus, Vec<u8>)> = batches
         .into_par_iter()
-        .map(|batch| execute(build_command(hook, root, batch, sccache, cargo_target_dir)))
+        .map(|batch| {
+            execute(
+                build_command(hook, root, batch, sccache, cargo_target_dir),
+                bar,
+                &hook.id,
+            )
+        })
         .collect();
 
     let mut output = Vec::new();
@@ -507,10 +520,21 @@ fn shell_command(line: &str, args: &[String], files: &[&Path], pass_filenames: b
     cmd
 }
 
-fn execute(mut cmd: Cmd) -> (HookStatus, Vec<u8>) {
-    let mut sink = CaptureSink::default();
+/// Run one command to completion, capturing its combined output. When `bar` is
+/// present the output is streamed live into the hook's spinner via a
+/// [`PreviewSink`]; otherwise a plain [`CaptureSink`] just accumulates it.
+fn execute(mut cmd: Cmd, bar: Option<&ProgressBar>, id: &str) -> (HookStatus, Vec<u8>) {
     cmd.check(false);
-    match cmd.output_with_sink(&mut sink) {
+    let (result, bytes) = if let Some(bar) = bar {
+        let mut sink = PreviewSink::new(bar, id);
+        let result = cmd.output_with_sink(&mut sink);
+        (result, sink.into_bytes())
+    } else {
+        let mut sink = CaptureSink::default();
+        let result = cmd.output_with_sink(&mut sink);
+        (result, sink.into_bytes())
+    };
+    match result {
         Ok(output) => {
             let status = if output.status.success() {
                 HookStatus::Passed
@@ -519,16 +543,16 @@ fn execute(mut cmd: Cmd) -> (HookStatus, Vec<u8>) {
                     code: output.status.code(),
                 }
             };
-            (status, sink.into_bytes())
+            (status, bytes)
         }
-        Err(error) => (HookStatus::Error(error.to_string()), sink.into_bytes()),
+        Err(error) => (HookStatus::Error(error.to_string()), bytes),
     }
 }
 
 fn run_step(root: &Path, command: &str) -> StepOutcome {
     let mut cmd = Cmd::new(SHELL, command.to_string());
     cmd.arg(SHELL_ARG).arg(command).current_dir(root);
-    let (status, output) = execute(cmd);
+    let (status, output) = execute(cmd, None, command);
     StepOutcome {
         command: command.to_string(),
         status,

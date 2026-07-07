@@ -10,5 +10,6 @@
 pub mod checks;
 pub mod commands;
 pub mod lower;
+pub mod workspace_lint;
 
 pub use commands::{HooksArgs, run_hooks};

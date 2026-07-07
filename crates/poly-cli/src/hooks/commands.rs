@@ -193,7 +193,7 @@ fn run_stage(args: RunArgs) -> Result<ExitCode> {
 
 /// Whether to stream live per-hook progress: on when stderr is a terminal, so
 /// interactive runs show which tool is running while captured logs stay quiet.
-fn show_progress() -> bool {
+pub(crate) fn show_progress() -> bool {
     std::io::stderr().is_terminal()
 }
 
@@ -392,7 +392,7 @@ fn maybe_staged_snapshot(isolate: bool, spec: &poly_hooks::StageSpec, root: &Pat
 ///
 /// Returns `None` when caching is disabled — the runner then neither reads nor
 /// writes cache entries.
-fn open_result_cache(config: &PolyConfig, root: &Path, no_cache: bool) -> Result<Option<ResultCache>> {
+pub(crate) fn open_result_cache(config: &PolyConfig, root: &Path, no_cache: bool) -> Result<Option<ResultCache>> {
     let enabled = config.cache.enabled && !no_cache;
     let cache = match &config.cache.dir {
         Some(dir) => ResultCache::open(PathBuf::from(dir), enabled),
@@ -408,7 +408,7 @@ fn open_result_cache(config: &PolyConfig, root: &Path, no_cache: bool) -> Result
 /// Returns `None` (sccache off) unless `[cache.sccache] enabled = true` and
 /// `--no-sccache` was not given. The binary defaults to `"sccache"` when
 /// `[cache.sccache] bin` is absent.
-fn sccache_settings(config: &PolyConfig, no_sccache: bool) -> Result<Option<poly_hooks::SccacheSettings>> {
+pub(crate) fn sccache_settings(config: &PolyConfig, no_sccache: bool) -> Result<Option<poly_hooks::SccacheSettings>> {
     let sccache = &config.cache.sccache;
     // The master `[cache] enabled` flag is a global kill switch; sccache is a
     // further opt-in layered on top of it.
@@ -435,7 +435,7 @@ fn run_and_report(request: poly_hooks::HookRunRequest) -> Result<ExitCode> {
     })
 }
 
-fn load_config(explicit: Option<&Path>) -> Result<PolyConfig> {
+pub(crate) fn load_config(explicit: Option<&Path>) -> Result<PolyConfig> {
     match explicit {
         Some(path) => PolyConfig::load_file(path),
         None => {

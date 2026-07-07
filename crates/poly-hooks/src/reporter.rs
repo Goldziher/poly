@@ -1,26 +1,27 @@
 //! Result rendering helpers for hook execution output.
 //!
-//! Ported from `polyhooks/src/cli/run/reporter.rs`. Only the standalone
-//! utilities that do not depend on the hook model, workspace, or indicatif
-//! progress bars are ported in this phase:
+//! Ported from `polyhooks/src/cli/run/reporter.rs`. Two families live here:
 //!
-//! - [`project_status_marker`] — a coloured "✓" / "×" string.
-//! - [`OutputPreview`] — a rolling preview buffer for streamed command output.
-//! - [`truncate_to_width`] — unicode-aware ellipsis truncation.
-//!
-//! Live progress is emitted by [`report_hook_started`] / [`report_hook_finished`]
-//! — line-oriented stderr updates the runner calls as each hook starts and
-//! finishes, so a long-running tool is visibly running rather than looking hung.
-//! A richer indicatif progress-bar UI (with the [`OutputPreview`] window) remains
-//! a possible future upgrade but is not required for that feedback.
+//! - **Final render** — [`HookRunReporter`] turns a completed
+//!   [`HookRunOutcome`](crate::model::HookRunOutcome) into a deterministic,
+//!   non-interleaved report, with the standalone helpers
+//!   [`project_status_marker`], [`OutputPreview`], and [`truncate_to_width`].
+//! - **Live progress** — [`ProgressUi`] wraps an [`indicatif::MultiProgress`]:
+//!   each executing hook gets a spinner ([`HookBar`]) whose message shows a
+//!   rolling [`OutputPreview`] window fed by a [`PreviewSink`], collapsing to a
+//!   persistent `✓/× id (dur)` line on completion. It is enabled only when a run
+//!   requests progress (an interactive stderr) and self-hides on a non-terminal,
+//!   so the deterministic final report is unaffected.
 
 use std::borrow::Cow;
-use std::io::Write as _;
 use std::time::Duration;
 
 use console::strip_ansi_codes;
+use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
 use owo_colors::{OwoColorize as _, Stream::Stderr};
 use unicode_width::{UnicodeWidthChar as _, UnicodeWidthStr as _};
+
+use crate::process::OutputSink;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -154,8 +155,7 @@ fn is_preview_char(ch: char) -> bool {
 
 // ── CaptureSink ───────────────────────────────────────────────────────────────
 
-/// An [`OutputSink`](crate::process::OutputSink) that accumulates every chunk
-/// into a single buffer.
+/// An [`OutputSink`] that accumulates every chunk into a single buffer.
 ///
 /// Each hook (and each `ARG_MAX` batch) executes with its own `CaptureSink`, so
 /// concurrently-running hooks never interleave their output. The runner renders
@@ -206,28 +206,167 @@ fn progress_marker(failed: bool) -> String {
     }
 }
 
-/// Announce (to stderr) that a hook is now executing.
+/// Spinner redraw cadence. indicatif drives the animation from its own ticker
+/// thread, so a hook blocked in a subprocess still animates.
+const SPINNER_TICK_MS: u64 = 90;
+
+/// Braille spinner frames (trailing space is the "done" frame indicatif lands on
+/// after `finish`).
+const SPINNER_FRAMES: &str = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ ";
+
+/// Fallback preview width when the terminal size cannot be probed.
+const DEFAULT_PREVIEW_WIDTH: usize = 100;
+
+/// A live multi-line progress display for a hook run.
 ///
-/// Called just before a hook runs, so a long-running tool (`cargo clippy`,
-/// `cargo test`, …) is visibly *running* rather than leaving the terminal blank
-/// — which reads as a hung commit. The coloured marker is materialized before
-/// the stderr lock is taken, so each `writeln!` is one locked, atomic line (safe
-/// under the rayon pool) and never interleaves with the captured stdout report.
-pub fn report_hook_started(id: &str) {
-    let marker = "▶".if_supports_color(Stderr, |t| t.cyan()).to_string();
-    let mut err = std::io::stderr().lock();
-    let _ = writeln!(err, "  {marker} {id} …");
+/// Wraps an [`indicatif::MultiProgress`] drawn to stderr. Each executing hook
+/// gets a spinner line (via [`Self::start`]) whose message is updated with a
+/// rolling [`OutputPreview`] window as the tool streams output; on completion
+/// [`Self::finish`] clears the spinner and prints a persistent `✓/× id (dur)`
+/// line above the still-running bars.
+///
+/// The draw target hides itself on a non-terminal stderr, so it is safe to
+/// construct whenever live progress is requested. `MultiProgress` is `Send +
+/// Sync`, so a shared `&ProgressUi` is used directly inside the rayon pool.
+#[derive(Debug)]
+pub struct ProgressUi {
+    multi: MultiProgress,
 }
 
-/// Announce (to stderr) that a hook finished, with its pass/fail mark and how
-/// long it took. Pairs with [`report_hook_started`].
-pub fn report_hook_finished(id: &str, failed: bool, duration: Duration) {
-    let marker = progress_marker(failed);
-    let elapsed = format!("({})", format_duration(duration))
-        .if_supports_color(Stderr, |t| t.dimmed())
-        .to_string();
-    let mut err = std::io::stderr().lock();
-    let _ = writeln!(err, "  {marker} {id} {elapsed}");
+impl ProgressUi {
+    /// Create a stderr-backed progress display.
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            multi: MultiProgress::with_draw_target(ProgressDrawTarget::stderr()),
+        }
+    }
+
+    /// Start a spinner for a hook that is about to execute.
+    #[must_use]
+    pub fn start(&self, id: &str) -> HookBar {
+        let bar = self.multi.add(ProgressBar::new_spinner());
+        bar.set_style(spinner_style());
+        bar.enable_steady_tick(Duration::from_millis(SPINNER_TICK_MS));
+        bar.set_message(format!("{id} …"));
+        HookBar {
+            bar,
+            id: id.to_string(),
+        }
+    }
+
+    /// Finish a hook's spinner: clear the live line and print a persistent
+    /// `✓/× id (dur)` result above the remaining bars.
+    pub fn finish(&self, hook_bar: &HookBar, failed: bool, duration: Duration) {
+        hook_bar.bar.finish_and_clear();
+        let marker = progress_marker(failed);
+        let elapsed = format!("({})", format_duration(duration))
+            .if_supports_color(Stderr, |t| t.dimmed())
+            .to_string();
+        // `println` inserts above the live bars, so completed hooks accumulate in
+        // scrollback while others keep spinning.
+        let _ = self.multi.println(format!("  {marker} {} {elapsed}", hook_bar.id));
+    }
+}
+
+impl Default for ProgressUi {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// A single hook's spinner handle, returned by [`ProgressUi::start`].
+#[derive(Debug)]
+pub struct HookBar {
+    bar: ProgressBar,
+    id: String,
+}
+
+impl HookBar {
+    /// The underlying spinner, so a [`PreviewSink`] can update its message.
+    #[must_use]
+    pub fn bar(&self) -> &ProgressBar {
+        &self.bar
+    }
+}
+
+/// The braille spinner style: a cyan spinner followed by the (possibly
+/// multi-line) preview message.
+fn spinner_style() -> ProgressStyle {
+    ProgressStyle::with_template("{spinner:.cyan} {msg}")
+        .unwrap_or_else(|_| ProgressStyle::default_spinner())
+        .tick_chars(SPINNER_FRAMES)
+}
+
+/// Probe the terminal width for truncating preview lines; falls back to a fixed
+/// width when stderr is not a sizeable terminal.
+fn preview_width() -> usize {
+    console::Term::stderr()
+        .size_checked()
+        .map_or(DEFAULT_PREVIEW_WIDTH, |(_, cols)| {
+            (cols as usize).saturating_sub(HOOK_OUTPUT_PREVIEW_PREFIX.len())
+        })
+}
+
+/// Build the spinner message: the hook id on the first line, then up to
+/// [`HOOK_OUTPUT_PREVIEW_LINES`] rolling preview lines, each truncated to the
+/// terminal width so the multi-line layout never wraps.
+fn preview_message(id: &str, preview: &OutputPreview, width: usize) -> String {
+    let lines = preview.visible_lines();
+    if lines.is_empty() {
+        return format!("{id} …");
+    }
+    let mut message = id.to_string();
+    for line in lines {
+        message.push('\n');
+        message.push_str(HOOK_OUTPUT_PREVIEW_PREFIX);
+        message.push_str(&truncate_to_width(line, width));
+    }
+    message
+}
+
+/// An [`OutputSink`] that captures every byte (for the deterministic final
+/// render) **and** drives a live [`OutputPreview`] into a spinner's message.
+///
+/// Each hook (and each `ARG_MAX` batch) owns its own sink; batches that share a
+/// hook's spinner update its message last-writer-wins, which is fine for a
+/// best-effort preview.
+#[derive(Debug)]
+pub struct PreviewSink<'a> {
+    buffer: Vec<u8>,
+    preview: OutputPreview,
+    bar: &'a ProgressBar,
+    width: usize,
+    id: &'a str,
+}
+
+impl<'a> PreviewSink<'a> {
+    /// Create a preview sink that updates `bar` with output streamed for `id`.
+    #[must_use]
+    pub fn new(bar: &'a ProgressBar, id: &'a str) -> Self {
+        Self {
+            buffer: Vec::new(),
+            preview: OutputPreview::default(),
+            bar,
+            width: preview_width(),
+            id,
+        }
+    }
+
+    /// Consume the sink and return the fully captured bytes.
+    #[must_use]
+    pub fn into_bytes(self) -> Vec<u8> {
+        self.buffer
+    }
+}
+
+impl OutputSink for PreviewSink<'_> {
+    fn write_chunk(&mut self, chunk: &[u8]) {
+        self.buffer.extend_from_slice(chunk);
+        self.preview.push_chunk(chunk);
+        self.bar
+            .set_message(preview_message(self.id, &self.preview, self.width));
+    }
 }
 
 // ── HookRunReporter ─────────────────────────────────────────────────────────
@@ -399,5 +538,34 @@ mod tests {
         let mut p = OutputPreview::default();
         p.push_chunk(b"\x1b[31mred\x1b[0m\n");
         assert_eq!(p.visible_lines(), ["red"]);
+    }
+
+    #[test]
+    fn preview_sink_captures_every_byte_across_chunks() {
+        // A hidden bar so the test drives the sink without touching a terminal.
+        let bar = ProgressBar::hidden();
+        let mut sink = PreviewSink::new(&bar, "demo");
+        sink.write_chunk(b"first line\n");
+        sink.write_chunk(b"\x1b[32msecond\x1b[0m\n");
+        // The capture keeps the raw bytes verbatim (ANSI included) for the final
+        // deterministic render — only the live preview strips ANSI.
+        assert_eq!(sink.into_bytes(), b"first line\n\x1b[32msecond\x1b[0m\n");
+    }
+
+    #[test]
+    fn preview_message_shows_id_alone_before_any_output() {
+        let preview = OutputPreview::default();
+        assert_eq!(preview_message("clippy", &preview, 80), "clippy …");
+    }
+
+    #[test]
+    fn preview_message_appends_prefixed_rolling_lines() {
+        let mut preview = OutputPreview::default();
+        preview.push_chunk(b"compiling\nlinking\n");
+        let message = preview_message("clippy", &preview, 80);
+        let mut lines = message.lines();
+        assert_eq!(lines.next(), Some("clippy"));
+        assert_eq!(lines.next(), Some("    => compiling"));
+        assert_eq!(lines.next(), Some("    => linking"));
     }
 }

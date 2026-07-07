@@ -5,6 +5,8 @@
 - Updated: 2026-07-05 (project-wide tools deferred here — `cargo clippy`, `pyrefly`,
   `golangci-lint` — now have a home as whole-workspace hooks under ADR 0019, not as
   per-file native-toolchain backends)
+- Updated: 2026-07-07 (those same whole-workspace tools now also run as a phase of
+  `poly lint`, reusing the hooks tool set/config against the live worktree; see ADR 0019)
 
 ## Context
 

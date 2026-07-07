@@ -18,6 +18,7 @@ console = { workspace = true }
 dunce = { workspace = true }
 fs-err = { workspace = true }
 globset = { workspace = true }
+indicatif = { workspace = true }
 owo-colors = { workspace = true }
 phf = { workspace = true }
 poly-cache = { workspace = true }

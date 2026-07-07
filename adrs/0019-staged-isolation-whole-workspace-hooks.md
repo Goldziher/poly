@@ -5,6 +5,10 @@
 - Updated: 2026-07 (v0.9.0): the staged snapshot moved out of the in-repo `.polylint/staged`
   into the per-user OS cache dir (`~/.cache/poly/<repo-key>/staged`), alongside the result
   cache (ADR 0008).
+- Updated: 2026-07-07: the same whole-workspace tool set now also runs as a phase of
+  `poly lint` (on by default), against the **live worktree** — not the staged snapshot, since
+  `poly lint` checks the working tree rather than gating a commit. See the "poly lint
+  whole-project phase" note below.
 
 ## Context
 
@@ -56,6 +60,15 @@ autofix/stash conflict can lose uncommitted work. That failure mode is unaccepta
   digests **staged** bytes (read from the snapshot), while the input *file set* is resolved
   from the real repository. Keying on the worktree instead would allow a false hit — reverting
   an unstaged edit could replay a pass computed against different staged content.
+- **`poly lint` whole-project phase (2026-07-07).** `poly lint` runs a whole-project phase
+  after its per-file tier: it lowers the `pre-commit` stage, keeps only the `workspace = true`
+  hooks (the `cargo` builtin group + inline whole-project jobs — one source of truth with the
+  hooks config), and runs them via the same `poly_hooks::run` engine, folding their pass/fail
+  into the lint report and exit code. It runs against the **live worktree** (`work_root = None`)
+  because `poly lint` inspects the working tree, not the index, so no staged snapshot is built.
+  On by default; `--no-workspace` (or `[lint] workspace = false`) opts out. The `lint` hook
+  builtin invokes `poly lint --no-workspace`, so a `poly hooks` run never double-runs these
+  tools (the `cargo` group already covers them).
 
 ## Consequences
 
