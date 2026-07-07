@@ -203,6 +203,12 @@ pub fn checkout_index_paths(root: &Path, dest: &Path, paths: &[PathBuf]) -> Resu
     for batch in paths.chunks(CHECKOUT_BATCH) {
         let mut cmd = git_cmd("checkout staged paths")?;
         cmd.current_dir(root)
+            // Force a byte-faithful checkout: a host `core.autocrlf=true` (the
+            // default on Windows) would rewrite LF -> CRLF as blobs land, so the
+            // snapshot would no longer mirror the index blob the doc promises.
+            // Passed as a per-invocation `-c` override before the subcommand.
+            .arg("-c")
+            .arg("core.autocrlf=false")
             .arg("checkout-index")
             .arg("-f")
             .arg(prefix_arg(dest))
