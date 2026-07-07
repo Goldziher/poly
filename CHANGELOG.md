@@ -7,6 +7,33 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-07-07
+
+### Added
+
+- **`poly lint` runs whole-project tools.** After its per-file tier, `poly lint`
+  now runs the same whole-workspace analysis tools a `pre-commit` hook would —
+  `cargo clippy` / `cargo-sort` / `cargo-machete` / `cargo-deny` and any
+  configured whole-project jobs (e.g. type checkers) — on the live worktree,
+  folding their pass/fail into the report and the exit code. It reuses the
+  existing `[hooks.builtin.cargo]` + inline `workspace = true` config as the
+  single source of truth, so `poly lint` surfaces the same findings a commit
+  would. On by default; opt out with `--no-workspace` or `[lint] workspace =
+  false`. A repo with no `[hooks]` section runs only the per-file tier. With
+  `--format json`/`toon` the whole-project section is written to stderr (stdout
+  stays a single valid document), so machine consumers must check the exit code.
+- **Animated `poly hooks` progress.** An interactive `poly hooks` run now shows a
+  live spinner per concurrently-running hook with a rolling output preview,
+  collapsing to a `✓/× id (duration)` line as each finishes. Non-interactive
+  runs (CI, pipes) keep the deterministic, quiet report unchanged.
+
+### Fixed
+
+- **Security: bump `crossbeam-epoch` to 0.9.20** (RUSTSEC-2026-0204 — invalid
+  pointer dereference in the `fmt::Pointer` impl for `Atomic`/`Shared`). Dropped
+  the now-obsolete `quick-xml` advisory ignores (RUSTSEC-2026-0194/0195); the
+  pinned ruff rev now resolves `quick-xml 0.41.0`, which is unaffected.
+
 ## [0.9.0] - 2026-07-06
 
 Alignment release: `poly` is now the single brand for everything you type or run.
