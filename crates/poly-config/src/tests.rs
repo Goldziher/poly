@@ -500,11 +500,19 @@ fn cascade_child_rules_dirs_win_and_anchor_at_child() {
 
 #[test]
 fn rules_dirs_leave_absolute_paths_untouched() {
+    // The resolver leaves absolute `dirs` entries verbatim and only anchors
+    // relative ones — so the literal must be absolute on the *host* platform
+    // (`/etc/...` is not absolute on Windows, where it would be anchored).
+    #[cfg(unix)]
+    let absolute = "/etc/poly/rules";
+    #[cfg(windows)]
+    let absolute = "C:/etc/poly/rules";
+
     let dir = tempdir().unwrap();
     let path = dir.path().join("poly.toml");
-    fs::write(&path, "[rules]\ndirs = [\"/etc/poly/rules\"]\n").unwrap();
+    fs::write(&path, format!("[rules]\ndirs = [\"{absolute}\"]\n")).unwrap();
     let config = PolyConfig::load_file(&path).expect("load");
-    assert_eq!(config.rules.dirs, vec!["/etc/poly/rules".to_string()]);
+    assert_eq!(config.rules.dirs, vec![absolute.to_string()]);
 }
 
 #[test]
