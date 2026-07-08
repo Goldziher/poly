@@ -427,6 +427,20 @@ cache = { inputs = ["packages/python/**/*.py", "pyproject.toml"] }
 For workspace hooks the cache key is derived from **staged** content, so it stays correct under
 isolation. For Rust compile times, enable `[cache.sccache]` to content-cache `rustc` output.
 
+#### Excluding the cargo group from `poly lint`
+
+`poly lint` runs the `cargo` group as its whole-project phase (see above). To keep it as a
+`pre-commit` gate but skip it in `poly lint` — e.g. a CI `validate` job whose plain checkout
+cannot compile the workspace, while a dedicated job runs clippy — set `lint = false`:
+
+```toml
+[hooks.builtin.cargo]
+lint = false   # runs in git hooks, excluded from `poly lint`'s whole-project phase
+```
+
+This is the per-group counterpart to `[lint] workspace = false`, which disables the whole-project
+phase for **every** tool at once.
+
 ---
 
 ## Backend Coverage

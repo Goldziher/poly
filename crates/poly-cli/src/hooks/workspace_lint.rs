@@ -101,7 +101,8 @@ pub(crate) fn run(args: &WorkspaceLintArgs) -> Result<bool> {
 /// Three adjustments make the lowered `pre-commit` stage safe to run as a lint
 /// phase rather than a commit gate:
 /// - keep only `workspace = true` hooks (the cargo builtins + inline whole-project
-///   jobs); per-file hooks are `poly lint`'s own tier and are dropped here;
+///   jobs) that have not opted out via `skip_in_lint` (e.g. `[hooks.builtin.cargo]
+///   lint = false`); per-file hooks are `poly lint`'s own tier and are dropped here;
 /// - force each retained hook to `always_run`, so a file-filtered inline job (e.g.
 ///   `files = "**/*.go"`) still runs against the whole project even though this
 ///   phase passes no candidate file list — otherwise it would be silently skipped
@@ -110,7 +111,7 @@ pub(crate) fn run(args: &WorkspaceLintArgs) -> Result<bool> {
 ///   runs the tools, not the user's commit-time setup/teardown (a failing `before`
 ///   would otherwise abort with no rendered explanation).
 fn retain_workspace_hooks(spec: &mut poly_hooks::StageSpec) {
-    spec.hooks.retain(|hook| hook.workspace);
+    spec.hooks.retain(|hook| hook.workspace && !hook.skip_in_lint);
     for hook in &mut spec.hooks {
         hook.always_run = true;
     }
@@ -193,19 +194,23 @@ mod tests {
         let mut ws = Hook::run("go-vet", "go vet ./...");
         ws.workspace = true;
         ws.always_run = false;
-        // …and a per-file hook that must be dropped (workspace defaults to false).
+        // …a per-file hook that must be dropped (workspace defaults to false)…
         let per_file = Hook::run("fmt", "poly fmt");
+        // …and a workspace hook that opted out of the lint phase (`lint = false`).
+        let mut opted_out = Hook::run("cargo-clippy", "cargo clippy");
+        opted_out.workspace = true;
+        opted_out.skip_in_lint = true;
 
         let mut spec = StageSpec {
             precondition: Some("test -f Cargo.toml".to_string()),
             before: vec!["echo setup".to_string()],
             after: vec!["echo teardown".to_string()],
-            hooks: vec![ws, per_file],
+            hooks: vec![ws, per_file, opted_out],
             ..StageSpec::default()
         };
         retain_workspace_hooks(&mut spec);
 
-        assert_eq!(spec.hooks.len(), 1, "only the workspace hook is kept");
+        assert_eq!(spec.hooks.len(), 1, "only the non-opted-out workspace hook is kept");
         assert_eq!(spec.hooks[0].id, "go-vet");
         assert!(
             spec.hooks[0].always_run,

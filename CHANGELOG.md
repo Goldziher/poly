@@ -7,6 +7,17 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Per-group `[hooks.builtin.cargo] lint = false`.** Keep the cargo group
+  (`clippy`/`sort`/`machete`/`deny`) as a `pre-commit` gate while excluding it
+  from the whole-project phase of `poly lint`. Where `[lint] workspace = false`
+  disables that phase wholesale, this opts out a single builtin — useful when a
+  lightweight `poly lint` (e.g. a CI `validate` job with a plain checkout) cannot
+  compile the workspace, but a properly provisioned job still runs clippy. The
+  underlying `Hook::skip_in_lint` flag drops a hook from `poly lint`'s workspace
+  phase without affecting git-hook runs.
+
 ## [0.10.0] - 2026-07-07
 
 ### Added

@@ -131,6 +131,12 @@ pub struct Hook {
     /// runs from there instead of the live worktree, isolating it to staged
     /// content. Per-file hooks (default `false`) are unaffected.
     pub workspace: bool,
+    /// Exclude this hook from the whole-project phase of `poly lint` while
+    /// keeping it in git-hook runs. `poly lint`'s workspace phase drops every
+    /// hook with this set (default `false` — participate in lint), so a tool can
+    /// gate commits without also compiling the tree on every `poly lint` (e.g. a
+    /// CI `validate` job with a plain checkout that cannot build the workspace).
+    pub skip_in_lint: bool,
 }
 
 impl Hook {

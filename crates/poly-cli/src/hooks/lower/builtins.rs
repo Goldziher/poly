@@ -261,6 +261,8 @@ pub(super) fn append_cargo(
         // These compile/analyse the whole tree, so under staged isolation they
         // run against the staged snapshot rather than the live worktree.
         hook.workspace = true;
+        // `lint = false` drops it from `poly lint`'s phase but keeps the git hook.
+        hook.skip_in_lint = !cargo.lint;
         // Keyed on the Rust source/manifest set (or disabled) — a commit that
         // touches no Rust then skips the whole group.
         hook.cache = cache.clone();
@@ -641,8 +643,9 @@ shebang_scripts_are_executable = false
         // clippy is sccache-eligible; the non-compiling tools are not.
         assert!(clippy.compiler);
         assert!(!spec.hooks[1].compiler);
-        // Whole-workspace + result-cached on the Rust source set by default.
+        // Whole-workspace, result-cached, and in `poly lint`'s phase by default.
         assert!(clippy.workspace);
+        assert!(!clippy.skip_in_lint);
         assert!(
             matches!(clippy.cache, HookCache::DeclaredInputs(_)),
             "cargo group is result-cached by default"
@@ -664,6 +667,22 @@ shebang_scripts_are_executable = false
         )
         .unwrap();
         assert!(matches!(spec.hooks[0].cache, HookCache::Disabled));
+    }
+
+    #[test]
+    fn cargo_lint_false_sets_skip_in_lint() {
+        let off = lower_stage_with_probe(
+            &hooks_from("[hooks.builtin.cargo]\nlint = false\n"),
+            &poly(),
+            HookStage::PreCommit,
+            &[],
+            &HookCacheMode::Safe,
+            &StubProbe(&["cargo-clippy"]),
+            &ToolsConfig::default(),
+        )
+        .unwrap();
+        assert_eq!(ids(&off), vec!["cargo-clippy"], "still lowered as a git hook");
+        assert!(off.hooks[0].skip_in_lint, "lint = false sets skip_in_lint");
     }
 
     #[test]

@@ -248,6 +248,12 @@ pub struct CargoHooks {
     /// keyed on the Rust source + manifest inputs, so a commit that changes no
     /// Rust skips the whole group. Set `cache = false` to force every run.
     pub cache: bool,
+    /// Whether the group runs in the whole-project phase of `poly lint` (default
+    /// on). Set `lint = false` to keep clippy/sort/machete/deny as a git-hook
+    /// gate while excluding them from `poly lint`, whose lightweight checkout may
+    /// be unable to compile the workspace. The `[lint] workspace = false` switch
+    /// disables the phase wholesale; this is the per-group opt-out.
+    pub lint: bool,
 }
 
 impl Default for CargoHooks {
@@ -263,6 +269,7 @@ impl Default for CargoHooks {
             deny: true,
             clippy_args: None,
             cache: true,
+            lint: true,
         }
     }
 }
@@ -285,6 +292,7 @@ struct CargoTable {
     deny: Option<bool>,
     clippy_args: Option<Vec<String>>,
     cache: Option<bool>,
+    lint: Option<bool>,
 }
 
 impl<'de> Deserialize<'de> for CargoHooks {
@@ -303,6 +311,7 @@ impl<'de> Deserialize<'de> for CargoHooks {
                 deny: table.deny.unwrap_or(true),
                 clippy_args: table.clippy_args,
                 cache: table.cache.unwrap_or(true),
+                lint: table.lint.unwrap_or(true),
             }),
         }
     }
@@ -501,5 +510,20 @@ machete = false
     fn cargo_table_with_explicit_disable() {
         let hooks: BuiltinHooks = toml::from_str("cargo = { enabled = false }").unwrap();
         assert!(!hooks.cargo.expect("cargo present").enabled);
+    }
+
+    #[test]
+    fn cargo_lint_defaults_on_and_opts_out() {
+        let default: BuiltinHooks = toml::from_str("cargo = true").unwrap();
+        assert!(
+            default.cargo.expect("cargo present").lint,
+            "lint participation is on by default"
+        );
+
+        let opted_out: BuiltinHooks = toml::from_str("cargo = { lint = false }").unwrap();
+        let cargo = opted_out.cargo.expect("cargo present");
+        assert!(!cargo.lint, "lint = false excludes the group from `poly lint`");
+        assert!(cargo.enabled, "the group still runs as a git hook");
+        assert!(cargo.clippy && cargo.sort && cargo.machete && cargo.deny);
     }
 }
