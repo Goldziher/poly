@@ -7,6 +7,8 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-07-08
+
 ### Added
 
 - **Per-group `[hooks.builtin.cargo] lint = false`.** Keep the cargo group
@@ -17,6 +19,12 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   compile the workspace, but a properly provisioned job still runs clippy. The
   underlying `Hook::skip_in_lint` flag drops a hook from `poly lint`'s workspace
   phase without affecting git-hook runs.
+
+### Fixed
+
+- **Windows-correct staged snapshots.** The staged-content snapshot that isolates
+  whole-workspace hooks now normalises CRLF and directory symlinks, so hooks that
+  compile or analyse the tree behave the same on Windows as on Unix.
 
 ## [0.10.0] - 2026-07-07
 
