@@ -7,6 +7,22 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-07-09
+
+### Added
+
+- **Opt-in `uncomment` comment-removal lint backend.** A new cross-cutting lint
+  engine (like `typos`) that strips comments across every language it recognizes,
+  wrapping the pure-Rust [`uncomment`](https://crates.io/crates/uncomment) crate
+  (tree-sitter based). Each removable comment is reported as a **warning** (which
+  never fails CI) carrying a delete-edit, so `poly lint` surfaces them and
+  `poly lint --fix` removes them. **Off by default**; enable and tune it with a
+  language-agnostic `[lint.uncomment]` block plus optional per-language
+  `[lint.<lang>.uncomment]` overrides (`enabled`, `remove_todos`, `remove_fixme`,
+  `remove_docs`, `use_default_ignores`, `preserve_patterns`). Preservation rules
+  keep shebangs, `~keep`, TODO/FIXME, documentation, and user patterns; a language
+  `uncomment` does not recognize is left untouched.
+
 ## [0.11.0] - 2026-07-08
 
 ### Added
