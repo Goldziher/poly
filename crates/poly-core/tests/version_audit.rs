@@ -36,6 +36,7 @@ use poly_core::engines::sqruff::SqruffEngine;
 use poly_core::engines::taplo::TaploEngine;
 use poly_core::engines::treesitter::TreeSitterEngine;
 use poly_core::engines::typos::TyposEngine;
+use poly_core::engines::uncomment::UncommentEngine;
 use poly_core::engines::yaml::YamlEngine;
 
 /// A resolved package as recorded in `Cargo.lock`.
@@ -180,6 +181,7 @@ fn engine_versions_track_cargo_lock() {
         check("oxc", OxcEngine.version(), vec![("oxc_formatter", Git)]),
         check("ruff", RuffEngine.version(), vec![("ruff_linter", Git)]),
         check("rubyfmt", RubyfmtEngine.version(), vec![("rubyfmt", Git)]),
+        check("uncomment", UncommentEngine.version(), vec![("uncomment", Registry)]),
     ];
 
     for Check { engine, version, deps } in &checks {

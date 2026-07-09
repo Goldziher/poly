@@ -337,6 +337,33 @@ Run the checks with `poly rules test` (exits non-zero on any failed snippet), an
 discovered rules with `poly rules list`. Both default to the configured `[rules] dirs`, or accept
 explicit directories as arguments.
 
+### Comment Removal (opt-in)
+
+The `uncomment` backend strips comments across every language it recognizes, guided by
+tree-sitter and a set of preservation rules (shebangs, `~keep`, TODO/FIXME, documentation, and
+your own patterns). It is a **lint** backend: `poly lint` reports each removable comment as a
+warning (which never fails CI), and `poly lint --fix` removes them.
+
+It is **off by default**. Enable it, and tune what it keeps, with a language-agnostic
+`[lint.uncomment]` block plus optional per-language overrides:
+
+```toml
+[lint.uncomment]
+enabled = true              # required — the backend is opt-in
+remove_todos = false        # keep TODO comments (default)
+remove_fixme = false        # keep FIXME comments (default)
+remove_docs = false         # keep documentation comments / docstrings (default)
+use_default_ignores = true  # keep the built-in directive allow-list (default)
+preserve_patterns = ["HACK", "NOTE"]  # keep comments containing these substrings
+
+# Per-language override: strip Python docstrings but keep them elsewhere.
+[lint.python.uncomment]
+remove_docs = true
+```
+
+Per-language booleans override the global value; `preserve_patterns` are unioned with the global
+list. A language `uncomment` does not recognize is simply left untouched.
+
 ### Hooks
 
 Install poly's git hooks once — they then run on every `git commit`:
@@ -478,6 +505,7 @@ poly uses a tiered model:
 | Zig | opt-in `zig fmt`, tree-sitter fallback otherwise | no | yes |
 | Shell | opt-in `shellcheck` + `shfmt`, tree-sitter fallback otherwise | optional | optional |
 | All text files | typos spell-check | yes | no |
+| Any recognized language | opt-in `uncomment` comment removal (see [Comment Removal](#comment-removal-opt-in)) | opt-in | no |
 | Other identified grammars | tree-sitter generic tier | no | best effort |
 
 <!-- markdownlint-enable MD013 -->

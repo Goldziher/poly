@@ -51,6 +51,9 @@ binary is distributed as prebuilt release artifacts plus an installer (see relea
 - `engines/` — one file per backend, `engines/<tool>.rs`:
   - native crate backends: `ruff.rs`, `oxc.rs`, `taplo.rs`, `rumdl.rs`, `sqruff.rs`,
     `malva.rs`, `markup_fmt.rs`, `graphql.rs`, `nixfmt.rs`, `typos.rs`, `yaml.rs`.
+  - `uncomment.rs` — the **opt-in cross-cutting comment-removal lint backend** wrapping the
+    `uncomment` crate: reports each removable comment as a warning with a delete-edit, gated on
+    `[lint.uncomment] enabled = true`. Cross-cutting like `typos` (`languages() == &[]`).
   - `whitespace.rs` / `treesitter.rs` — the **tier-2 generic formatter** built on
     `tree-sitter-language-pack`: CST-driven structural reindent + whitespace normalization,
     the catch-all for every language without a native backend.

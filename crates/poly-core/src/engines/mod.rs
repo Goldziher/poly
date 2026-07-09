@@ -24,4 +24,5 @@ pub mod sqruff;
 pub mod taplo;
 pub mod treesitter;
 pub mod typos;
+pub mod uncomment;
 pub mod yaml;

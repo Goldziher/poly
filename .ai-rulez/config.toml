@@ -3,20 +3,7 @@ name = "poly"
 description = "Universal zero-dependency linter & formatter — a single pure-Rust binary (poly) wrapping best-in-class tools as in-process backends, with a tree-sitter generic tier for everything else."
 gitignore = true
 
-presets = [
-  "claude",
-  "cursor",
-  "gemini",
-  "windsurf",
-  "copilot",
-  "continue-dev",
-  "amp",
-  "cline",
-  "codex",
-  "opencode",
-  "junie",
-  "antigravity",
-]
+presets = ["claude", "codex"]
 
 builtins = [
   "rust",

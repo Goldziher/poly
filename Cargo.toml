@@ -206,6 +206,9 @@ tree-sitter-language-pack = "1.12"
 # typos + typos-dict — cross-cutting spell-check backend
 typos = "0.10"
 typos-dict = "0.13"
+# uncomment — opt-in tree-sitter comment-removal lint backend (MIT). Shares the
+# same tree-sitter-language-pack major as poly's tier-2 tier, so grammars unify.
+uncomment = "3.2"
 unicase = "2"
 unicode-width = { version = "0.2.2", default-features = false }
 walkdir = "2.5.0"

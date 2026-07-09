@@ -101,6 +101,8 @@ impl Config {
             self.build_typos_options(&lang_options)
         } else if engine_name == "astgrep" {
             self.build_astgrep_options()
+        } else if engine_name == "uncomment" {
+            self.build_uncomment_options(&lang_options)
         } else {
             lang_options
         };
@@ -109,6 +111,51 @@ impl Config {
             indent_width,
             options,
         }
+    }
+
+    /// Build the merged `options` table for the uncomment engine.
+    ///
+    /// The uncomment backend is language-agnostic (opt-in comment removal), so its
+    /// base config lives in a language-agnostic `[lint.uncomment]` table (like
+    /// `[lint.typos]`). The per-language `[lint.<lang>.uncomment]` table
+    /// (`lang_options`) layers on top: each boolean overrides the global value, and
+    /// `preserve_patterns` are *unioned* onto the global list so a language adds
+    /// patterns without dropping the shared ones.
+    fn build_uncomment_options(&self, lang_options: &toml::Table) -> toml::Table {
+        let global = self.lint.get("uncomment").and_then(toml::Value::as_table);
+        let mut options = toml::Table::new();
+
+        // Booleans: per-language wins over global.
+        for key in [
+            "enabled",
+            "remove_todos",
+            "remove_fixme",
+            "remove_docs",
+            "use_default_ignores",
+        ] {
+            let value = lang_options
+                .get(key)
+                .or_else(|| global.and_then(|table| table.get(key)))
+                .and_then(toml::Value::as_bool);
+            if let Some(value) = value {
+                options.insert(key.to_string(), toml::Value::Boolean(value));
+            }
+        }
+
+        // preserve_patterns: union of global + per-language.
+        let mut preserve_patterns: Vec<String> = Vec::new();
+        if let Some(global) = global {
+            extend_string_array(&mut preserve_patterns, global, "preserve_patterns");
+        }
+        extend_string_array(&mut preserve_patterns, lang_options, "preserve_patterns");
+        if !preserve_patterns.is_empty() {
+            options.insert(
+                "preserve_patterns".to_string(),
+                toml::Value::Array(preserve_patterns.into_iter().map(toml::Value::String).collect()),
+            );
+        }
+
+        options
     }
 
     /// Build the merged `options` table for the typos engine.

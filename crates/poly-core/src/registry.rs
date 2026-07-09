@@ -24,6 +24,7 @@ use crate::engines::sqruff::SqruffEngine;
 use crate::engines::taplo::TaploEngine;
 use crate::engines::treesitter::TreeSitterEngine;
 use crate::engines::typos::TyposEngine;
+use crate::engines::uncomment::UncommentEngine;
 use crate::engines::yaml::YamlEngine;
 use crate::language::Language;
 
@@ -104,5 +105,9 @@ pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
     // astgrep is cross-cutting: user-authored custom rules run on every file
     // whose language has matching rules in the configured [rules] dirs.
     engines.push(Box::new(AstGrepEngine));
+    // uncomment is cross-cutting and opt-in: it lints removable comments on every
+    // language it recognizes, but only when [lint.uncomment] enabled = true
+    // (the gate lives inside the engine, so it is harmless when disabled).
+    engines.push(Box::new(UncommentEngine));
     engines
 }

@@ -121,7 +121,7 @@ impl Engine for TreeSitterEngine {
         // a pack bump.
         // History: v8 Elixir do/end built-in indents query; v7 query-driven indent path;
         //          v6 LEAVE_UNTOUCHED no-ops; v5 level-keyed-by-open-line; v4 CRLF fix.
-        "8+tslp1.12.4"
+        "8+tslp1.12.5"
     }
 
     // No `lint` override: the generic tier declares `lint: false` and relies on

@@ -3662,6 +3662,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "num_cpus"
+version = "1.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "91df4bbde75afed763b708b7eee1e8e7651e02d97f6d5dd763e89367e957b23b"
+dependencies = [
+ "hermit-abi",
+ "libc",
+]
+
+[[package]]
 name = "num_threads"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4753,6 +4763,7 @@ dependencies = [
  "tree-sitter-language-pack",
  "typos",
  "typos-dict",
+ "uncomment",
  "unicase",
  "which",
 ]
@@ -7013,9 +7024,9 @@ checksum = "009994f150cc0cd50ff54917d5bc8bffe8cad10ca10d81c34da2ec421ae61782"
 
 [[package]]
 name = "tree-sitter-language-pack"
-version = "1.12.4"
+version = "1.12.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d49e30d1927ccc08599c054380bda399817781f74eb9184007e90606c7ff3a2c"
+checksum = "f860e7a7df78207ed80a1f8a4cab7fd5e366ed9bfd5fa74f2d1ed3022905a058"
 dependencies = [
  "ahash",
  "cc",
@@ -7095,6 +7106,31 @@ name = "ucd-trie"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2896d95c02a80c6d6a5d6e953d479f5ddf2dfdb6a244441010e373ac0fb88971"
+
+[[package]]
+name = "uncomment"
+version = "3.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d31a031475f0660e2374cbc0b6709a1c2c03c8c6e00470c7e6641b523e1ec005"
+dependencies = [
+ "ahash",
+ "anyhow",
+ "clap",
+ "dirs",
+ "glob",
+ "ignore",
+ "libc",
+ "memchr",
+ "num_cpus",
+ "once_cell",
+ "rayon",
+ "saphyr",
+ "serde",
+ "toml 1.1.2+spec-1.1.0",
+ "tree-sitter",
+ "tree-sitter-language-pack",
+ "walkdir",
+]
 
 [[package]]
 name = "unicase"
