@@ -71,15 +71,11 @@ static RULE_CODES: &[&str] = &["F", "E4", "E7", "E9", "W6", "I", "UP", "B"];
 /// Resolve a list of rule-code strings to ruff `Rule`s.
 fn rules_for_codes(codes: &[String]) -> Vec<ruff_linter::registry::Rule> {
     let preview = PreviewOptions::default();
-    // Collect to a `Vec` first because `RuleSelector::rules` returns an iterator
-    // that borrows the selector — it cannot escape the closure.
     codes
         .iter()
         .filter_map(|s| match RuleSelector::from_str(s) {
             Ok(selector) => Some(selector),
             Err(_) => {
-                // Warn and skip rather than dropping silently (ADR 0016): a code
-                // that ruff cannot resolve is a user error worth surfacing.
                 tracing::warn!(code = %s, engine = "ruff", "unknown rule or category; skipping");
                 None
             }
@@ -108,9 +104,6 @@ fn default_settings() -> &'static LinterSettings {
         settings.rules = build_rule_table(&codes, &[]);
         settings.line_length =
             ruff_linter::line_width::LineLength::try_from(120_u16).expect("120 is a valid line length");
-        // E501 (line-too-long) reads `pycodestyle.max_line_length`, which falls back to
-        // ruff's hardcoded 88 when unset — not the global `line_length`. Mirror it so the
-        // linter's line-length rule agrees with the formatter width.
         settings.pycodestyle.max_line_length = settings.line_length;
         settings
     })
@@ -124,8 +117,6 @@ fn default_settings() -> &'static LinterSettings {
 /// default set omits). Called only when config options are present; the empty
 /// case uses [`default_settings`] to avoid rebuilding per file.
 fn build_settings(cfg: &EngineConfig) -> LinterSettings {
-    // Parse the canonical `select` / `extend_select` / `ignore` vocabulary
-    // through the shared parser (ADR 0016) rather than reading each key ad hoc.
     let selection = super::rule_config::RuleSelection::from_options(cfg);
 
     let mut codes: Vec<String> = if selection.select.is_empty() {
@@ -149,12 +140,8 @@ fn build_settings(cfg: &EngineConfig) -> LinterSettings {
         .ok()
         .and_then(|w| ruff_linter::line_width::LineLength::try_from(w).ok())
         .unwrap_or_else(|| ruff_linter::line_width::LineLength::try_from(120_u16).expect("120 is valid"));
-    // E501 (line-too-long) reads `pycodestyle.max_line_length`, which falls back to
-    // ruff's hardcoded 88 when unset — not the global `line_length`. Mirror it so the
-    // linter's line-length rule agrees with the configured width and the formatter.
     settings.pycodestyle.max_line_length = settings.line_length;
 
-    // Per-plugin parameters (matching ruff's own option names, flattened).
     let usize_opt = |key: &str| {
         cfg.options
             .get(key)
@@ -174,9 +161,6 @@ fn build_settings(cfg: &EngineConfig) -> LinterSettings {
         settings.pylint.max_returns = v;
     }
 
-    // pydocstyle convention: set it AND disable the D-rules that convention
-    // turns off (ruff applies this at config-resolution time; poly builds the
-    // rule table by hand, so do it explicitly).
     if let Some(convention) = cfg
         .options
         .get("pydocstyle_convention")
@@ -194,8 +178,6 @@ fn build_settings(cfg: &EngineConfig) -> LinterSettings {
         }
     }
 
-    // target-version: gates version-specific rules (e.g. pyupgrade). Accept both
-    // ruff's canonical `py310` spelling and the dotted `3.10` form.
     if let Some(version) = cfg
         .options
         .get("target_version")
@@ -206,8 +188,6 @@ fn build_settings(cfg: &EngineConfig) -> LinterSettings {
     }
 
     // isort: known-first-party and known-third-party — classify modules that
-    // the package-root walk cannot discover (e.g. src-layout first-party
-    // packages tested from a sibling `tests/` directory).
     let str_list = |key: &str| -> Vec<String> {
         cfg.options
             .get(key)
@@ -216,8 +196,6 @@ fn build_settings(cfg: &EngineConfig) -> LinterSettings {
             .unwrap_or_default()
     };
 
-    // src: first-party source roots for import classification (isort). Mirrors
-    // ruff's `src`; only overrides the default when explicitly provided.
     let src_roots = str_list("src");
     if !src_roots.is_empty() {
         settings.src = src_roots.iter().map(std::path::PathBuf::from).collect();
@@ -248,7 +226,6 @@ fn build_settings(cfg: &EngineConfig) -> LinterSettings {
 /// caller keeps ruff's default.
 fn parse_python_version(s: &str) -> Option<ruff_python_ast::PythonVersion> {
     let trimmed = s.trim();
-    // `py310` / `py38` → `3.10` / `3.8` (first digit is the major version).
     if let Some(rest) = trimmed.strip_prefix("py")
         && rest.len() >= 2
         && rest.chars().all(|c| c.is_ascii_digit())
@@ -293,11 +270,6 @@ impl Engine for RuffEngine {
     /// Version string incorporates the pinned ruff git rev so that upgrading
     /// the rev automatically invalidates any cached lint/format output.
     fn version(&self) -> &str {
-        // Suffix bumped when engine logic (not just the pinned rev) changes the
-        // output for the same input: +pkgroot = package-root resolution (INP001 /
-        // isort), +plugins = pydocstyle/mccabe/pylint param wiring, +e501 =
-        // pycodestyle max_line_length mirrors line_length (E501 honors config),
-        // +tgtsrc = target_version + src (isort roots) wiring.
         concat!(
             "git-ruff:",
             "e6f1513d78c99bc8af1fcc3bc2a9a81e25cb3c2d",
@@ -306,8 +278,6 @@ impl Engine for RuffEngine {
     }
 
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
-        // Fast path: no `[lint.python.ruff]` config → reuse the shared default
-        // settings. Only build per-call settings when the user configured rules.
         let owned_settings;
         let settings = if cfg.options.is_empty() {
             default_settings()
@@ -327,11 +297,6 @@ impl Engine for RuffEngine {
             PySourceType::Python
         };
 
-        // Resolve the package root from the file's directory (walk ancestors for
-        // `__init__.py`) so ruff's filesystem-context checks behave as they do
-        // over a real tree: without it, INP001 (implicit-namespace-package)
-        // over-fires for every file in a package, and isort (I001/I002 — in the
-        // default set) wrongly classifies first-party imports as third-party.
         let package = src
             .path
             .parent()
@@ -366,10 +331,6 @@ impl Engine for RuffEngine {
                         end_col: end.column.get() as u32,
                     });
 
-                // Collect all edits from safe ruff fixes.  Multi-edit fixes are
-                // now applied atomically by the runner (all or nothing), so it is
-                // safe to forward the full edit list.  `Unsafe`/`DisplayOnly`
-                // fixes are still suppressed.
                 let fix: Vec<Edit> = ruff_diag
                     .fix()
                     .filter(|f| f.applicability().is_safe())

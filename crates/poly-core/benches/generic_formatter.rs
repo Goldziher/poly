@@ -103,7 +103,6 @@ fn source(content: &str) -> SourceFile {
 }
 
 fn bench_generic_formatter(c: &mut Criterion) {
-    // ~16 KiB — a representative single source file on a Rust-heavy corpus.
     let content = sample_rust(16 * 1024);
     let cfg = engine_config();
     let engine = TreeSitterEngine;
@@ -111,7 +110,6 @@ fn bench_generic_formatter(c: &mut Criterion) {
     let mut group = c.benchmark_group("generic_formatter");
     group.throughput(Throughput::Bytes(content.len() as u64));
 
-    // Full hot path: parse + CST walk + reindent + serialize.
     group.bench_function("format_rust", |b| {
         let src = source(&content);
         b.iter(|| {
@@ -120,8 +118,6 @@ fn bench_generic_formatter(c: &mut Criterion) {
         });
     });
 
-    // Parse stage in isolation, parser reused across iterations (pooled-parser
-    // behaviour). Difference vs `format_rust` ≈ reindent + serialize cost.
     group.bench_function("parse_only_rust", |b| {
         let mut parser = get_parser("rust").expect("rust grammar");
         b.iter(|| {
@@ -130,8 +126,6 @@ fn bench_generic_formatter(c: &mut Criterion) {
         });
     });
 
-    // Tier-2 fallback path (no parse): trailing-whitespace trim + line-ending /
-    // final-newline normalization. The floor cost for every file.
     let globals = GlobalDefaults::default();
     group.bench_function("normalize_whitespace", |b| {
         b.iter(|| {

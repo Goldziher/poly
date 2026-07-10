@@ -1,14 +1,4 @@
 #!/usr/bin/env bash
-# rust-max-lines — fail when any passed Rust source exceeds the configured
-# line-count ceiling. Counts total file lines (including blanks and comments)
-# via `wc -l`, which is fast and parser-free. Vendored into poly so the repo
-# dogfoods `poly hooks` with no external pre-commit dependency.
-#
-# Test files are excluded by default: a path under a `tests/` directory at any
-# depth, or a file named `tests.rs`. Pass `--include-tests` to count them.
-#
-#   args: ["--max=<N>"]        default 1000
-#   args: ["--include-tests"]  also count files under tests/ and *.rs named tests.rs
 set -euo pipefail
 
 MAX_LINES=1000

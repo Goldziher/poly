@@ -25,20 +25,17 @@ function Info($msg) { Write-Host "✓ $msg" -ForegroundColor Green }
 function Warn($msg) { Write-Host "⚠ $msg" -ForegroundColor Yellow }
 function Die($msg) { Write-Host "✗ $msg" -ForegroundColor Red; exit 1 }
 
-# ---- detect the target triple ----------------------------------------------
 $arch = switch ($env:PROCESSOR_ARCHITECTURE) {
     "AMD64" { "x86_64" }
-    "ARM64" { "aarch64" }   # forward-looking; falls through to a clear error if unbuilt
+    "ARM64" { "aarch64" }
     default { Die "Unsupported architecture: $env:PROCESSOR_ARCHITECTURE" }
 }
 $target = "$arch-pc-windows-msvc"
 $ext = "zip"
 Info "Platform: $target"
 
-# ---- resolve the version ----------------------------------------------------
 if ($Version -eq "latest") {
     Info "Resolving latest release..."
-    # Follow the /releases/latest redirect (no API token, no rate limit).
     $resp = Invoke-WebRequest -Uri "https://github.com/$Repo/releases/latest" `
         -MaximumRedirection 0 -ErrorAction SilentlyContinue
     $loc = $resp.Headers.Location
@@ -56,7 +53,6 @@ $ver = $tag.TrimStart("v")
 $asset = "poly-$ver-$target.$ext"
 $base = "https://github.com/$Repo/releases/download/$tag"
 
-# ---- report install vs update ----------------------------------------------
 $existing = Join-Path $InstallDir "poly.exe"
 if (Test-Path $existing) {
     $prev = (& $existing --version 2>$null) -replace '.*\s', ''
@@ -66,7 +62,6 @@ if (Test-Path $existing) {
     Info "Installing poly $ver"
 }
 
-# ---- download ---------------------------------------------------------------
 $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("poly-" + [System.Guid]::NewGuid())
 New-Item -ItemType Directory -Path $tmp -Force | Out-Null
 try {
@@ -74,7 +69,6 @@ try {
     Info "Downloading $base/$asset"
     Invoke-WebRequest -Uri "$base/$asset" -OutFile $archive
 
-    # ---- verify the checksum ------------------------------------------------
     $sumsPath = Join-Path $tmp "sha256sums.txt"
     Invoke-WebRequest -Uri "$base/sha256sums.txt" -OutFile $sumsPath
     $expected = $null
@@ -90,7 +84,6 @@ try {
     if ($actual -ne $expected) { Die "Checksum mismatch for $asset (expected $expected, got $actual)" }
     Info "Checksum verified"
 
-    # ---- extract & install --------------------------------------------------
     Expand-Archive -Path $archive -DestinationPath $tmp -Force
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
     foreach ($binary in $Binaries) {
@@ -103,7 +96,6 @@ try {
     Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
 }
 
-# ---- PATH wiring ------------------------------------------------------------
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if (($userPath -split ';') -notcontains $InstallDir) {
     if ($env:POLY_NO_MODIFY_PATH) {

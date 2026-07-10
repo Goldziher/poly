@@ -29,9 +29,6 @@
 //! dedicated rayon pool and returns a [`HookRunOutcome`]. Per stage the order is
 //! precondition → before → hooks (rayon) → after.
 
-// Allow missing_docs on the `identify` and `consts` modules: their source was
-// inlined from the vendored prek fork (MIT, Chris Kuehl / Anthony Sottile) and
-// is exempt from our doc requirements to keep upstream merges sane.
 #![allow(missing_docs)]
 
 pub mod consts;
@@ -54,7 +51,6 @@ pub mod stage;
 #[cfg(unix)]
 pub mod pty;
 
-// Re-export the most commonly used types at the crate root for convenience.
 pub use hook_impl::{PushInfo, RunInputs};
 pub use model::{
     Hook, HookCache, HookCommand, HookOutcome, HookRunOutcome, HookRunRequest, HookStatus, SccacheSettings, SkipReason,

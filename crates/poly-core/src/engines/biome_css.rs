@@ -81,9 +81,6 @@ impl Engine for BiomeCssEngine {
         Capabilities {
             lint: true,
             format: false,
-            // Autofix is not wired for v1 — biome's mutation API requires
-            // diffing the committed AST against the original source to produce
-            // byte-range Edits, deferred to a follow-up.
             fix: false,
         }
     }
@@ -97,24 +94,16 @@ impl Engine for BiomeCssEngine {
         let parsed = parse_css(&src.content, file_source, CssParserOptions::default());
         let root = parsed.tree();
 
-        // Build the rule filter string lists; both vecs must remain alive
-        // through the `analyze()` call so `AnalysisFilter`'s borrowed
-        // `&[RuleFilter<'_>]` pointers remain valid.
         let (enabled_strs, disabled_strs) = rule_filter_strings(cfg, DEFAULT_GROUPS);
         let enabled_filters: Vec<_> = enabled_strs.iter().map(|s| str_to_rule_filter(s)).collect();
         let disabled_filters: Vec<_> = disabled_strs.iter().map(|s| str_to_rule_filter(s)).collect();
         let filter = build_lint_filter(&enabled_filters, &disabled_filters);
 
-        // Services: `semantic_model = None` causes `analyze()` to build the
-        // semantic model internally (biome_css_analyze lib.rs:~180).
-        // No ProjectLayout or ModuleDb needed for per-file lint.
         let css_services = CssAnalyzerServices::default().with_file_source(file_source);
 
         let options = AnalyzerOptions::default();
         let mut out: Vec<Diagnostic> = Vec::new();
 
-        // `plugins = &[]` — no biome plugin extensions; we only run built-in rules.
-        // `analyze` returns `(Option<Never>, Vec<Error>)` when the closure never breaks.
         let (_, _parse_errors) = biome_css_analyze::analyze(&root, filter, &options, css_services, &[], |signal| {
             if let Some(diag) = signal.diagnostic() {
                 out.push(map_biome_diag(&diag, &src.content, "biome"));
@@ -124,9 +113,6 @@ impl Engine for BiomeCssEngine {
 
         Ok(out)
     }
-
-    // format() uses the Engine trait default (returns FormatOutput::Unchanged).
-    // MalvaEngine holds the format slot for Language::Css, Scss, and Less.
 }
 
 #[cfg(test)]

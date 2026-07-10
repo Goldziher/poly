@@ -31,10 +31,6 @@ fn make_src(path: &str, language: Language, content: &str) -> SourceFile {
     }
 }
 
-// ---------------------------------------------------------------------------
-// malva is format-only — lint must always return empty diagnostics.
-// ---------------------------------------------------------------------------
-
 /// CSS file with missing spaces; malva should produce no diagnostics (it's a
 /// formatter, not a linter).
 const KNOWN_BAD_CSS: &str = ".foo{color:red;background:blue;}";
@@ -46,11 +42,6 @@ fn lint_no_diagnostics() {
     let diags = engine.lint(&src, &engine_cfg()).unwrap();
     insta::assert_debug_snapshot!("lint_no_diagnostics", diags);
 }
-
-// ---------------------------------------------------------------------------
-// Known-unformatted CSS: compact spacing, missing spaces → canonical output.
-// Also exercises print_width=120 (polylint opinionated default).
-// ---------------------------------------------------------------------------
 
 /// CSS with compact syntax that malva must expand into canonical multi-line form.
 const KNOWN_UNFORMATTED_CSS: &str = "\
@@ -71,10 +62,6 @@ fn format_css_snapshot() {
 
     insta::assert_snapshot!("format_css_output", formatted);
 }
-
-// ---------------------------------------------------------------------------
-// Known-unformatted SCSS: nested rules + variable, exercises indent_width=2.
-// ---------------------------------------------------------------------------
 
 /// SCSS with nested selectors and a variable that malva should format to
 /// canonical 2-space-indented output.
@@ -100,14 +87,9 @@ fn format_scss_snapshot() {
     insta::assert_snapshot!("format_scss_output", formatted);
 }
 
-// ---------------------------------------------------------------------------
-// Already-formatted input must round-trip as Unchanged.
-// ---------------------------------------------------------------------------
-
 #[test]
 fn format_unchanged_for_canonical_css() {
     let engine = MalvaEngine;
-    // Canonical malva output: two-space indent, space after selector brace.
     let canonical = ".foo {\n  color: red;\n}\n";
     let src = make_src("clean.css", Language::Css, canonical);
     let result = engine.format(&src, &engine_cfg()).unwrap();

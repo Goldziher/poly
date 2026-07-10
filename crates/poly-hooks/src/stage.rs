@@ -80,13 +80,13 @@ impl Stage {
     ];
 
     /// Return the bitmask for this stage (used by B1 stage-set tracking).
-    #[allow(dead_code)] // used in B1 hook-runner phase
+    #[allow(dead_code)]
     pub(crate) const fn bit(self) -> u16 {
         1u16 << (self as u8)
     }
 
     /// Look up a stage by its index in `ORDER`.
-    #[allow(dead_code)] // used in B1 hook-runner phase
+    #[allow(dead_code)]
     fn from_index(index: u32) -> Self {
         Self::ORDER[index as usize]
     }

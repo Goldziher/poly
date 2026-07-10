@@ -53,9 +53,6 @@ pub fn load_config(explicit_path: Option<&Path>, start_dir: &Path) -> Result<Opt
         Some(p) => p.to_path_buf(),
         None => match find_config(start_dir) {
             Some(p) => p,
-            // No gitfluff-native config: fall back to the unified `poly.toml`
-            // `[commit]` table so a repo using the poly umbrella needs only one
-            // config file.
             None => return load_poly_commit_config(start_dir),
         },
     };

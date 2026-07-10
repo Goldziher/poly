@@ -25,21 +25,12 @@ use crate::engine::{Capabilities, Diagnostic, Engine, FormatOutput, Severity, So
 use crate::engines::treesitter::TreeSitterEngine;
 use crate::language::Language;
 
-// ---------------------------------------------------------------------------
-// Version constants — both are folded into the cache key so that bumping
-// either upstream dep invalidates stale cached results.
-// ---------------------------------------------------------------------------
-
 /// Combined version string used as the Engine cache key.
 /// Encodes both `hcl-rs` and `hcl-edit` versions so that bumping either dep
 /// invalidates stale cached results.
 const ENGINE_VERSION: &str = "hcl-rs 0.19.7 + hcl-edit 0.9.6 + trailing-comments-v2";
 
 static LANGUAGES: &[Language] = &[Language::Hcl];
-
-// ---------------------------------------------------------------------------
-// HclEngine
-// ---------------------------------------------------------------------------
 
 /// Tier-1 HCL / Terraform backend.
 ///
@@ -77,7 +68,6 @@ impl Engine for HclEngine {
             Ok(_) => Ok(Vec::new()),
             Err(error) => {
                 let loc = error.location();
-                // location().line() and .column() are 1-based (verified in hcl-edit 0.9.6).
                 let line = loc.line() as u32;
                 let col = loc.column() as u32;
                 Ok(vec![Diagnostic {
@@ -102,18 +92,11 @@ impl Engine for HclEngine {
 
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
         if has_comments(&src.content) {
-            // Comments would be silently stripped by the hcl-rs AST path.
-            // Delegate to tier-2 (structural reindent / whitespace normalization)
-            // which never destroys existing tokens.
             return TreeSitterEngine.format(src, cfg);
         }
         format_comment_free(src, cfg)
     }
 }
-
-// ---------------------------------------------------------------------------
-// Private helpers
-// ---------------------------------------------------------------------------
 
 /// Detect whether `source` contains any HCL comment syntax.
 ///
@@ -139,7 +122,6 @@ fn has_comments(source: &str) -> bool {
         while i < bytes.len() {
             if in_string {
                 if bytes[i] == b'\\' {
-                    // Skip the escaped character — cannot be a comment marker.
                     i += 2;
                     continue;
                 }
@@ -174,9 +156,6 @@ fn format_comment_free(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<F
     let indent_width = indent_width_from_cfg(cfg);
     let indent_str = " ".repeat(indent_width);
 
-    // Build a Formatter with the resolved indent. The formatter takes a
-    // `&'a [u8]` indent whose lifetime is tied to the builder, so we create
-    // the builder and format in the same scope.
     let mut buf = Vec::<u8>::new();
     let mut formatter = hcl::format::Formatter::builder()
         .indent(indent_str.as_bytes())
@@ -207,10 +186,6 @@ fn indent_width_from_cfg(cfg: &EngineConfig) -> usize {
         .unwrap_or(cfg.indent_width)
 }
 
-// ---------------------------------------------------------------------------
-// Unit tests
-// ---------------------------------------------------------------------------
-
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -233,10 +208,6 @@ mod tests {
             options: toml::Table::new(),
         }
     }
-
-    // -----------------------------------------------------------------------
-    // has_comments
-    // -----------------------------------------------------------------------
 
     #[test]
     fn has_comments_detects_hash() {
@@ -262,20 +233,16 @@ mod tests {
 
     #[test]
     fn has_comments_slash_in_string_is_safe() {
-        // A URL value like "https://..." must NOT trigger: the `//` is inside
-        // a double-quoted string and must not be treated as a comment marker.
         assert!(!has_comments("url = \"https://example.com/path\"\n"));
     }
 
     #[test]
     fn has_comments_detects_trailing_hash() {
-        // Inline trailing comment after a value — previously not detected.
         assert!(has_comments("x = 1 # trailing comment\n"));
     }
 
     #[test]
     fn has_comments_detects_trailing_slash_slash() {
-        // Inline trailing `//` comment after a value — previously not detected.
         assert!(has_comments("x = 1 // trailing comment\n"));
     }
 
@@ -298,10 +265,6 @@ mod tests {
         );
     }
 
-    // -----------------------------------------------------------------------
-    // version
-    // -----------------------------------------------------------------------
-
     #[test]
     fn version_encodes_both_crates() {
         let engine = HclEngine;
@@ -309,10 +272,6 @@ mod tests {
         assert!(v.contains("hcl-rs"), "version should mention hcl-rs: {v}");
         assert!(v.contains("hcl-edit"), "version should mention hcl-edit: {v}");
     }
-
-    // -----------------------------------------------------------------------
-    // lint
-    // -----------------------------------------------------------------------
 
     #[test]
     fn lint_clean_hcl_produces_no_diags() {
@@ -329,7 +288,6 @@ mod tests {
     #[test]
     fn lint_syntax_error_reported() {
         let engine = HclEngine;
-        // Unclosed block is a syntax error.
         let src = make_src(
             "bad.tf",
             Language::Hcl,
@@ -343,25 +301,18 @@ mod tests {
         assert!(span.start_line >= 1, "span should have a 1-based line");
     }
 
-    // -----------------------------------------------------------------------
-    // format — comment-free path
-    // -----------------------------------------------------------------------
-
     #[test]
     fn format_clean_hcl_is_unchanged() {
         let engine = HclEngine;
-        // Already-formatted resource block with 2-space indent and trailing newline.
         let src = make_src(
             "main.tf",
             Language::Hcl,
             "resource \"aws_instance\" \"web\" {\n  ami = \"ami-12345\"\n}\n",
         );
         let result = engine.format(&src, &default_cfg()).unwrap();
-        // hcl-rs may or may not reformat; what matters is the output is still valid.
         match result {
             FormatOutput::Unchanged => {}
             FormatOutput::Formatted(out) => {
-                // Must still parse cleanly.
                 let diags = engine
                     .lint(&make_src("main.tf", Language::Hcl, &out), &default_cfg())
                     .unwrap();
@@ -373,7 +324,6 @@ mod tests {
     #[test]
     fn format_commented_file_delegates_to_tier2() {
         let engine = HclEngine;
-        // A file with a comment — must not lose the comment.
         let src = make_src(
             "main.tf",
             Language::Hcl,

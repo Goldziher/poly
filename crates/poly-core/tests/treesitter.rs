@@ -56,10 +56,6 @@ fn generic_reindents_go() {
     insta::assert_snapshot!("generic_reindents_go", formatted);
 }
 
-// ---------------------------------------------------------------------------
-// R language via tier-2 generic engine
-// ---------------------------------------------------------------------------
-
 /// Known-unformatted R: trailing spaces on line 1.  The generic tier trims
 /// them via whitespace normalization, giving the clean output below.
 const R_KNOWN_UNFORMATTED: &str = "f <- function(x) {   \n  x + 1\n}\n";
@@ -91,10 +87,6 @@ fn r_lint_emits_no_trailing_whitespace_diagnostic() {
         "tier-2 is format-only; lint must emit no diagnostics, got {diags:?}"
     );
 }
-
-// ---------------------------------------------------------------------------
-// Elixir: built-in do/end structural reindentation
-// ---------------------------------------------------------------------------
 
 /// Known-unformatted Elixir: all code at column 0.  The built-in polylint
 /// indents query for Elixir (ELIXIR_INDENTS in indent.rs) applies 2-space
@@ -136,8 +128,6 @@ const WS_UNNORMALIZED: &str = "first line   \n\n\n\nsecond line\t\n";
 
 #[test]
 fn generic_normalizes_whitespace() {
-    // An unknown grammar id never enters the brace-reindent path, so this needs
-    // no grammar download — purely whitespace normalization.
     let engine = TreeSitterEngine;
     let src = make_src(
         "notes.unknownext",

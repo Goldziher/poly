@@ -49,8 +49,6 @@ pub fn parse_php_version(cfg: &EngineConfig) -> anyhow::Result<Option<PHPVersion
         .next()
         .and_then(|p| p.parse().ok())
         .with_context(|| format!("invalid php_version {text:?}; expected MAJOR[.MINOR[.PATCH]]"))?;
-    // Reject a non-numeric minor/patch (e.g. "8.x") rather than silently
-    // defaulting it to 0 — a non-numeric component is a config error, not a 0.
     let mut component = |label: &str| -> anyhow::Result<u32> {
         match parts.next() {
             None | Some("") => Ok(0),
@@ -63,8 +61,6 @@ pub fn parse_php_version(cfg: &EngineConfig) -> anyhow::Result<Option<PHPVersion
     let patch = component("patch")?;
     Ok(Some(PHPVersion::new(major, minor, patch)))
 }
-
-// ── Category parsing ──────────────────────────────────────────────────────────
 
 /// Parse a user-supplied category string to a mago [`Category`].
 ///
@@ -84,8 +80,6 @@ pub fn parse_category(s: &str) -> Option<Category> {
         _ => None,
     }
 }
-
-// ── Rule code enumeration ─────────────────────────────────────────────────────
 
 /// Return the codes of all rules in `cat` that are present in the mago
 /// registry, regardless of their default-enabled status or PHP version / integration
@@ -119,8 +113,6 @@ pub fn all_codes(php_version: PHPVersion, integrations: IntegrationSet) -> Vec<S
         .map(|r| r.code().to_owned())
         .collect()
 }
-
-// ── Expand codes + categories ─────────────────────────────────────────────────
 
 /// Expand a list of code-or-category-name strings to a de-duplicated list of
 /// rule codes.
@@ -160,8 +152,6 @@ pub fn expand_to_codes(
     }
     Ok(out)
 }
-
-// ── Private helpers ───────────────────────────────────────────────────────────
 
 fn make_settings(php_version: PHPVersion, integrations: IntegrationSet) -> Settings {
     Settings {

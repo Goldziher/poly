@@ -1,6 +1,3 @@
-# cargo-deny configuration for polylint/polyfmt.
-# We ship permissive-only; no GPL/AGPL. Vendored sources must also be permissive
-# and recorded in ATTRIBUTIONS.md.
 
 [licenses]
 version = 2
@@ -20,19 +17,12 @@ allow = [
     "Unicode-3.0",
     "BSL-1.0",
     "OpenSSL",
-    # Permissive data license on the Mozilla CA root-cert bundle (webpki-roots),
-    # pulled by ureq's TLS stack for the tree-sitter grammar download feature.
-    # Non-copyleft; compatible with our permissive-only policy.
     "CDLA-Permissive-2.0",
-    # Python Software Foundation License 2.0 — permissive, used by libcst
-    # (a transitive dep of ruff_linter). Compatible with our permissive-only policy.
     "PSF-2.0",
 ]
 
 # jarl-core's workspace Cargo.toml sets `license-file = "LICENSE.md"` but the
 # actual file at the repo root is named `LICENSE` (no .md extension).
-# The path is relative to the jarl-core crate root (crates/jarl-core/).
-# Hash is XxHash32 of the normalized file content (cargo-deny's hash algorithm).
 [[licenses.clarify]]
 name = "jarl-core"
 expression = "MIT"
@@ -41,17 +31,13 @@ expression = "MIT"
 path = "../../LICENSE"
 hash = 0x3B9B906C
 
-# rubyfmt's Cargo.toml omits the `license` field; the repo ships a standard
 # MIT LICENSE file. `clarify` provides the XxHash32 of the LICENSE file so
-# cargo-deny can verify the license expression without a manifest field.
-# Hash is XxHash32 of the normalized file content (cargo-deny's hash algorithm).
 [[licenses.clarify]]
 name = "rubyfmt"
 expression = "MIT"
 
 [[licenses.clarify.license-files]]
 # The rubyfmt package root is `librubyfmt/`; the LICENSE file lives in the
-# repository root one level up. Path is relative to the crate root.
 path = "../LICENSE"
 hash = 0x3634FEBB
 
@@ -61,31 +47,14 @@ wildcards = "allow"
 
 [advisories]
 version = 2
-ignore = [
-    # RUSTSEC-2024-0436: `paste` crate is unmaintained (archived by dtolnay).
-    # This is a transitive dep via libcst → ruff_linter; no safe upgrade exists
-    # at the pinned rev. Risk is low: paste is a compile-time macro only.
-    "RUSTSEC-2024-0436",
-    # RUSTSEC-2026-0173: `proc-macro-error2` is unmaintained.
-    # This is a transitive dep via biome_deserialize_macros (the biomejs/biome
-    # CSS/GraphQL analyzers). No safe upgrade path exists at the pinned rev.
-    # Risk is low: proc-macro-error2 is a compile-time proc-macro only (no
-    # runtime code).
-    "RUSTSEC-2026-0173",
-]
+ignore = ["RUSTSEC-2024-0436", "RUSTSEC-2026-0173"]
 
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
-# oxc_formatter and oxc_formatter_core are not published to crates.io;
-# we pin all oxc crates to a single git rev for internal type consistency.
-# ruff_linter was never published to crates.io; all ruff crates are pinned to
-# a single git rev so the internal type graph stays consistent.
 allow-git = [
     "https://github.com/fables-tales/rubyfmt",
     "https://github.com/oxc-project/oxc",
     "https://github.com/astral-sh/ruff",
-    # biome CSS/GraphQL analyzers (official upstream); internals unpublished, so
-    # all biome_* crates are pinned to one rev for internal type consistency.
     "https://github.com/biomejs/biome",
 ]

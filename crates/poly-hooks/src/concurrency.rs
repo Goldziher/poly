@@ -57,8 +57,6 @@ pub fn effective_concurrency(request_override: Option<usize>) -> usize {
     }
 }
 
-// ── `ARG_MAX` batching ───────────────────────────────────────────────────────────
-
 /// POSIX recommends leaving headroom so the child can set its own environment.
 const ARG_HEADROOM: usize = 2048;
 /// Conservative pointer size (64-bit) for argv/envp accounting.
@@ -71,7 +69,6 @@ fn arg_size(arg: &OsStr) -> usize {
 #[cfg(unix)]
 fn platform_max_cli_length() -> usize {
     // SAFETY: `sysconf` is always safe to call with a valid name constant; it
-    // reads a system limit and has no preconditions or side effects.
     let arg_max = unsafe { libc::sysconf(libc::_SC_ARG_MAX) };
     let arg_max = if arg_max <= 0 {
         1 << 12
@@ -116,8 +113,6 @@ pub fn partition_files<'a>(files: &'a [&'a Path], base_len: usize) -> Vec<&'a [&
 
     for (index, file) in files.iter().enumerate() {
         let size = arg_size(file.as_os_str());
-        // Start a new batch when adding this file would overflow — but never
-        // emit an empty batch (always include at least one file per batch).
         if index > start && used + size > max {
             batches.push(&files[start..index]);
             start = index;
@@ -172,7 +167,6 @@ mod tests {
         let a = Path::new("a.rs");
         let b = Path::new("b.rs");
         let files = [a, b];
-        // A base length at the platform limit forces each file into its own batch.
         let batches = partition_files(&files, super::platform_max_cli_length());
         assert_eq!(batches.len(), 2);
     }

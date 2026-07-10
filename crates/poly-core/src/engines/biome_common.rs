@@ -11,8 +11,6 @@ use crate::config::EngineConfig;
 use crate::engine::{Diagnostic, Severity, Span};
 use crate::engines::rule_config::RuleSelection;
 
-// ── offset → (line, col) ─────────────────────────────────────────────────────
-
 /// Convert a byte offset to 1-based `(line, col)` in a UTF-8 source string.
 ///
 /// Mirrors the identical helper in `oxc.rs`; centralised here so both biome
@@ -49,8 +47,6 @@ pub(crate) fn text_range_to_span(src: &str, range: biome_rowan::TextRange) -> Sp
         end_col,
     }
 }
-
-// ── diagnostic mapping ────────────────────────────────────────────────────────
 
 /// Capture a biome `Diagnostic::description` as a plain `String`.
 ///
@@ -107,8 +103,6 @@ pub(crate) fn map_biome_diag(diag: &AnalyzerDiagnostic, content: &str, engine_na
     }
 }
 
-// ── rule filter construction ──────────────────────────────────────────────────
-
 /// Build `(enabled_strs, disabled_strs)` from a `[lint.<lang>.biome]` engine
 /// config, falling back to `default_groups` when the user provides no `select`.
 ///
@@ -119,12 +113,10 @@ pub(crate) fn rule_filter_strings(cfg: &EngineConfig, default_groups: &[&str]) -
     let selection = RuleSelection::from_options(cfg);
 
     let enabled: Vec<String> = if selection.select.is_empty() {
-        // No explicit select: opinionated defaults + any extend_select additions.
         let mut v: Vec<String> = default_groups.iter().map(|&s| s.to_owned()).collect();
         v.extend_from_slice(&selection.extend_select);
         v
     } else {
-        // Explicit select: replace defaults, then extend.
         let mut v = selection.select.clone();
         v.extend_from_slice(&selection.extend_select);
         v

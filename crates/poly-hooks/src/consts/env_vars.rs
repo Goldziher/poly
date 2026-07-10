@@ -10,14 +10,12 @@ impl EnvVars {
     pub const CI: &'static str = "CI";
     pub const LC_ALL: &'static str = "LC_ALL";
 
-    // Git related
     pub const GIT_DIR: &'static str = "GIT_DIR";
     pub const GIT_WORK_TREE: &'static str = "GIT_WORK_TREE";
     pub const GIT_TERMINAL_PROMPT: &'static str = "GIT_TERMINAL_PROMPT";
 
     pub const SKIP: &'static str = "SKIP";
 
-    // PREK specific environment variables, public for users
     pub const PREK_HOME: &'static str = "PREK_HOME";
     pub const PREK_COLOR: &'static str = "PREK_COLOR";
     pub const PREK_SKIP: &'static str = "PREK_SKIP";
@@ -33,7 +31,6 @@ impl EnvVars {
     pub const PREK_QUIET: &'static str = "PREK_QUIET";
     pub const PREK_LOG_TRUNCATE_LIMIT: &'static str = "PREK_LOG_TRUNCATE_LIMIT";
 
-    // PREK internal environment variables
     pub const PREK_INTERNAL__TEST_DIR: &'static str = "PREK_INTERNAL__TEST_DIR";
     pub const PREK_INTERNAL__USER_CONFIG_PATH: &'static str = "PREK_INTERNAL__USER_CONFIG_PATH";
     pub const PREK_INTERNAL__SORT_FILENAMES: &'static str = "PREK_INTERNAL__SORT_FILENAMES";
@@ -49,7 +46,6 @@ impl EnvVars {
     pub const PREK_RUNNING_LEGACY: &'static str = "PREK_RUNNING_LEGACY";
     pub const PREK_GENERATE: &'static str = "PREK_GENERATE";
 
-    // Python & uv related
     pub const VIRTUAL_ENV: &'static str = "VIRTUAL_ENV";
     pub const PYTHONHOME: &'static str = "PYTHONHOME";
     pub const UV_PYTHON: &'static str = "UV_PYTHON";
@@ -59,71 +55,56 @@ impl EnvVars {
     pub const UV_MANAGED_PYTHON: &'static str = "UV_MANAGED_PYTHON";
     pub const UV_NO_MANAGED_PYTHON: &'static str = "UV_NO_MANAGED_PYTHON";
 
-    // Node/Npm related
     pub const NODE_PATH: &'static str = "NODE_PATH";
 
-    // Bun related
     pub const BUN_INSTALL: &'static str = "BUN_INSTALL";
 
-    // Deno related
     pub const DENO_DIR: &'static str = "DENO_DIR";
     pub const DENO_NO_UPDATE_CHECK: &'static str = "DENO_NO_UPDATE_CHECK";
 
-    // GitHub API authentication (to avoid rate limits)
     pub const GITHUB_TOKEN: &'static str = "GITHUB_TOKEN";
 
-    // Go related
     pub const GOTOOLCHAIN: &'static str = "GOTOOLCHAIN";
     pub const GOROOT: &'static str = "GOROOT";
     pub const GOPATH: &'static str = "GOPATH";
     pub const GOBIN: &'static str = "GOBIN";
     pub const GOFLAGS: &'static str = "GOFLAGS";
 
-    // Lua related
     pub const LUA_PATH: &'static str = "LUA_PATH";
     pub const LUA_CPATH: &'static str = "LUA_CPATH";
 
-    // Perl related
     pub const PERL5LIB: &'static str = "PERL5LIB";
     pub const PERL_MB_OPT: &'static str = "PERL_MB_OPT";
     pub const PERL_MM_OPT: &'static str = "PERL_MM_OPT";
 
-    // R related
     pub const R_HOME: &'static str = "R_HOME";
     pub const R_PROFILE_USER: &'static str = "R_PROFILE_USER";
     pub const RENV_PROJECT: &'static str = "RENV_PROJECT";
 
-    // Conda related
     pub const CONDA_PREFIX: &'static str = "CONDA_PREFIX";
     pub const PRE_COMMIT_USE_MAMBA: &'static str = "PRE_COMMIT_USE_MAMBA";
     pub const PRE_COMMIT_USE_MICROMAMBA: &'static str = "PRE_COMMIT_USE_MICROMAMBA";
 
-    // Dart related
     pub const PUB_CACHE: &'static str = "PUB_CACHE";
 
-    // Coursier related
     pub const COURSIER_CACHE: &'static str = "COURSIER_CACHE";
 
-    // Ruby related
     pub const PREK_RUBY_MIRROR: &'static str = "PREK_RUBY_MIRROR";
     pub const GEM_HOME: &'static str = "GEM_HOME";
     pub const GEM_PATH: &'static str = "GEM_PATH";
     pub const BUNDLE_IGNORE_CONFIG: &'static str = "BUNDLE_IGNORE_CONFIG";
     pub const BUNDLE_GEMFILE: &'static str = "BUNDLE_GEMFILE";
 
-    // Rust related
     pub const PREK_RUST_PROFILE: &'static str = "PREK_RUST_PROFILE";
     pub const RUSTUP_TOOLCHAIN: &'static str = "RUSTUP_TOOLCHAIN";
     pub const RUSTUP_AUTO_INSTALL: &'static str = "RUSTUP_AUTO_INSTALL";
     pub const CARGO_HOME: &'static str = "CARGO_HOME";
     pub const RUSTUP_HOME: &'static str = "RUSTUP_HOME";
 
-    // .NET related
     pub const DOTNET_ROOT: &'static str = "DOTNET_ROOT";
 }
 
 impl EnvVars {
-    // Pre-commit environment variables that we support for compatibility
     pub const PRE_COMMIT_HOME: &'static str = "PRE_COMMIT_HOME";
     const PRE_COMMIT_ALLOW_NO_CONFIG: &'static str = "PRE_COMMIT_ALLOW_NO_CONFIG";
     const PRE_COMMIT_NO_CONCURRENCY: &'static str = "PRE_COMMIT_NO_CONCURRENCY";
@@ -175,10 +156,8 @@ impl EnvVars {
     /// Adapted from Clap's `BoolishValueParser` which is dual licensed under the MIT and Apache-2.0.
     /// See `clap_builder/src/util/str_to_bool.rs`
     fn parse_boolish(val: &str) -> Option<bool> {
-        // True values are `y`, `yes`, `t`, `true`, `on`, and `1`.
         const TRUE_LITERALS: [&str; 6] = ["y", "yes", "t", "true", "on", "1"];
 
-        // False values are `n`, `no`, `f`, `false`, `off`, and `0`.
         const FALSE_LITERALS: [&str; 6] = ["n", "no", "f", "false", "off", "0"];
 
         let val = val.to_lowercase();

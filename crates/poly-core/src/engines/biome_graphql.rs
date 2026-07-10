@@ -69,9 +69,6 @@ impl Engine for BiomeGraphqlEngine {
         Capabilities {
             lint: true,
             format: false,
-            // Autofix is not wired for v1 — biome's mutation API requires
-            // diffing the committed AST against the original source to produce
-            // byte-range Edits, which is deferred to a follow-up.
             fix: false,
         }
     }
@@ -84,9 +81,6 @@ impl Engine for BiomeGraphqlEngine {
         let parsed = parse_graphql(&src.content);
         let root = parsed.tree();
 
-        // Build the rule filter string lists; both vecs must remain alive
-        // through the `analyze()` call so `AnalysisFilter`'s borrowed
-        // `&[RuleFilter<'_>]` pointers remain valid.
         let (enabled_strs, disabled_strs) = rule_filter_strings(cfg, DEFAULT_GROUPS);
         let enabled_filters: Vec<_> = enabled_strs.iter().map(|s| str_to_rule_filter(s)).collect();
         let disabled_filters: Vec<_> = disabled_strs.iter().map(|s| str_to_rule_filter(s)).collect();
@@ -95,9 +89,6 @@ impl Engine for BiomeGraphqlEngine {
         let options = AnalyzerOptions::default();
         let mut out: Vec<Diagnostic> = Vec::new();
 
-        // `analyze` returns `(Option<Never>, Vec<Error>)`.  The closure
-        // always continues (`Never` is uninhabited, so it can never break),
-        // meaning the `Option<Never>` result is always `None`.
         let (_, _parse_errors) = biome_graphql_analyze::analyze(&root, filter, &options, |signal| {
             if let Some(diag) = signal.diagnostic() {
                 out.push(map_biome_diag(&diag, &src.content, "biome"));
@@ -107,9 +98,6 @@ impl Engine for BiomeGraphqlEngine {
 
         Ok(out)
     }
-
-    // format() uses the Engine trait default (returns FormatOutput::Unchanged).
-    // GraphQlEngine holds the format slot for Language::GraphQl.
 }
 
 #[cfg(test)]

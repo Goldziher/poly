@@ -45,7 +45,6 @@ impl TslpLanguage {
     }
 }
 
-// Deserialise from a YAML string like `language: python`.
 impl<'de> Deserialize<'de> for TslpLanguage {
     fn deserialize<D: serde::Deserializer<'de>>(de: D) -> Result<Self, D::Error> {
         let raw = String::deserialize(de)?;
@@ -58,11 +57,9 @@ impl<'de> Deserialize<'de> for TslpLanguage {
     }
 }
 
-// ── ast-grep Language trait ───────────────────────────────────────────────────
-
 impl AsgLanguage for TslpLanguage {
     fn kind_to_id(&self, kind: &str) -> u16 {
-        self.get_ts_language().id_for_node_kind(kind, /* named */ true)
+        self.get_ts_language().id_for_node_kind(kind, true)
     }
 
     fn field_to_id(&self, field: &str) -> Option<u16> {
@@ -111,9 +108,6 @@ fn expando_char_for(name: &str) -> char {
 /// `expando` so the target grammar can parse them as identifiers. Ported from
 /// `ast_grep_language::pre_process_pattern`.
 fn rewrite_sigils(expando: char, query: &str) -> Cow<'_, str> {
-    // No sigil to rewrite — borrow the input rather than allocating a char Vec.
-    // `pre_process_pattern` runs for every pattern, so skip the work for literal
-    // (metavariable-free) patterns.
     if !query.contains('$') {
         return Cow::Borrowed(query);
     }
@@ -124,7 +118,6 @@ fn rewrite_sigils(expando: char, query: &str) -> Cow<'_, str> {
             dollar_count += 1;
             continue;
         }
-        // `$A`/`$$A`/`$$$A` (named, A-Z or `_`) and anonymous `$$$` get rewritten.
         let need_replace = matches!(c, 'A'..='Z' | '_') || dollar_count == 3;
         let sigil = if need_replace { expando } else { '$' };
         out.extend(std::iter::repeat_n(sigil, dollar_count));
@@ -136,13 +129,8 @@ fn rewrite_sigils(expando: char, query: &str) -> Cow<'_, str> {
     Cow::Owned(out.into_iter().collect())
 }
 
-// ── ast-grep LanguageExt trait ────────────────────────────────────────────────
-
 impl LanguageExt for TslpLanguage {
     fn get_ts_language(&self) -> TSLanguage {
-        // Invariant: `name` was validated at construction time — both
-        // `TslpLanguage::new` and `Deserialize` call `get_language` to confirm
-        // the grammar exists — so this lookup cannot fail. (No `unsafe` here.)
         get_language(&self.name).expect("TslpLanguage grammar was validated at construction; get_language must succeed")
     }
 }

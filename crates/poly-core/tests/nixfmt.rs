@@ -26,10 +26,6 @@ fn make_src(content: &str) -> SourceFile {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Known-unformatted fixture: expects exact formatted output
-// ---------------------------------------------------------------------------
-
 /// Known-unformatted Nix: dense attribute set, missing spaces around `=`,
 /// multiple attrs crammed onto one line — nixpkgs-fmt should expand and align.
 const KNOWN_UNFORMATTED: &str = "\

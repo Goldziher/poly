@@ -136,8 +136,6 @@ fn ensure_table<'a>(root: &'a mut Table, path: &[String]) -> &'a mut Table {
     current
 }
 
-// --- value constructors ----------------------------------------------------
-
 /// A TOML array of strings.
 pub fn str_array(items: &[String]) -> Item {
     let mut array = Array::new();
@@ -170,8 +168,6 @@ pub fn int_item(value: i64) -> Item {
 pub fn bool_item(value: bool) -> Item {
     Item::Value(Value::from(value))
 }
-
-// --- file loaders ----------------------------------------------------------
 
 /// Read and parse a TOML file, returning `None` when missing or malformed.
 pub fn load_toml(path: &Path) -> Option<toml::Table> {

@@ -26,8 +26,6 @@ fn metadata_is_format_only() {
     assert!(engine.languages().is_empty());
     let caps = engine.capabilities();
     assert!(caps.format);
-    // The generic tier is a formatter only — trailing-whitespace normalization
-    // is a `fmt` concern, never surfaced as a `lint` diagnostic.
     assert!(!caps.lint);
 }
 
@@ -40,7 +38,6 @@ fn formatted_text(out: FormatOutput, original: &str) -> String {
 
 #[test]
 fn rust_raw_string_interior_is_byte_preserved_while_code_reindents() {
-    // Raw string interior (including `{`) is verbatim; surrounding code reindents.
     let engine = TreeSitterEngine;
     let input = concat!(
         "fn main() {\n",
@@ -63,7 +60,6 @@ fn rust_raw_string_interior_is_byte_preserved_while_code_reindents() {
     let s = src("main.rs", Language::Other("rust".into()), input);
     let text = formatted_text(engine.format(&s, &cfg(4)).unwrap(), input);
     assert_eq!(text, expected, "code reindented, string interior preserved");
-    // The exact interior bytes between the raw-string delimiters survive.
     let interior = "\n        deeply indented {line}\n   another\n";
     assert!(text.contains(interior), "raw-string interior must be verbatim");
 }
@@ -80,8 +76,6 @@ fn go_reindents_with_tabs_not_spaces() {
 
 #[test]
 fn whitespace_fallback_for_unknown_language() {
-    // An unknown grammar name is never in BRACE_FAMILY, so the engine only
-    // normalizes whitespace — no parsing, no grammar download.
     let engine = TreeSitterEngine;
     let s = src(
         "notes.unknownext",
@@ -99,7 +93,6 @@ fn whitespace_fallback_for_unknown_language() {
 
 #[test]
 fn swift_uses_two_space_indent() {
-    // swift-format defaults to two-space indentation.
     let engine = TreeSitterEngine;
     let input = concat!("struct Point {\n", "let x: Int\n", "let y: Int\n", "}\n");
     let expected = concat!("struct Point {\n", "  let x: Int\n", "  let y: Int\n", "}\n");
@@ -110,8 +103,6 @@ fn swift_uses_two_space_indent() {
 
 #[test]
 fn swift_switch_case_labels_align_with_switch_keyword() {
-    // swift-format aligns case labels with `switch`, not inside the body.
-    // Case label at depth 1 (same as `switch`), body at depth 2.
     let engine = TreeSitterEngine;
     let input = concat!(
         "func f() -> Int {\n",
@@ -140,7 +131,6 @@ fn swift_switch_case_labels_align_with_switch_keyword() {
 
 #[test]
 fn dart_switch_case_body_extra_indent() {
-    // dart format indents case bodies one extra level past the case label.
     let engine = TreeSitterEngine;
     let input = concat!(
         "int f(int n) {\n",
@@ -169,10 +159,6 @@ fn dart_switch_case_body_extra_indent() {
 
 #[test]
 fn dart_closure_argument_not_over_indented() {
-    // With the level-keyed-by-open-line model, `list.map((n) {` opens
-    // two parens and a brace on the same line — they coalesce to one new
-    // depth level (+1). The closure body is therefore at depth+1 (NOT +3),
-    // and `})` releases that single level on its closing line.
     let engine = TreeSitterEngine;
     let input = concat!(
         "void main() {\n",
@@ -193,12 +179,8 @@ fn dart_closure_argument_not_over_indented() {
     assert_eq!(text, expected, "Dart closure body must not be over-indented");
 }
 
-// ── CRLF byte-cursor fix ─────────────────────────────────────────────────
-
 #[test]
 fn crlf_brace_counting_does_not_drift() {
-    // Before the fix, `line.len() + 1` drifted by 1 per line on CRLF,
-    // causing delimiters to miss their line window. Fix: `raw.len() + 1`.
     let engine = TreeSitterEngine;
     let crlf = "package main\r\n\r\nfunc main() {\r\nx := 1\r\n}\r\n";
     let lf = "package main\n\nfunc main() {\nx := 1\n}\n";
@@ -214,12 +196,8 @@ fn crlf_brace_counting_does_not_drift() {
     assert_eq!(crlf_out, expected, "CRLF Go reindented identically (no byte drift)");
 }
 
-// ── paren/bracket continuation indent ────────────────────────────────────
-// Go/Rust expected outputs verified by running gofmt/rustfmt on the inputs.
-
 #[test]
 fn go_multiline_call_args_get_continuation_indent() {
-    // Ground truth: gofmt. Args one tab deeper than the call site.
     let engine = TreeSitterEngine;
     let input = concat!(
         "package main\n",
@@ -252,7 +230,6 @@ fn go_multiline_call_args_get_continuation_indent() {
 
 #[test]
 fn rust_multiline_call_args_get_continuation_indent() {
-    // Ground truth: rustfmt. Names long enough to stay multi-line at 100-col.
     let engine = TreeSitterEngine;
     let input = concat!(
         "fn main() {\n",
@@ -279,8 +256,6 @@ fn rust_multiline_call_args_get_continuation_indent() {
 
 #[test]
 fn java_multiline_call_args_get_continuation_indent() {
-    // Expected output from the tier-2 generic reindenter (4-space): each
-    // argument is one level deeper than the method body, `)` dedents back.
     let engine = TreeSitterEngine;
     let input = concat!(
         "class Foo {\n",
@@ -311,8 +286,6 @@ fn java_multiline_call_args_get_continuation_indent() {
 
 #[test]
 fn kotlin_multiline_call_args_get_continuation_indent() {
-    // Expected output from the tier-2 generic reindenter (4-space): same
-    // level-keyed-by-open-line behaviour as Java/Go/Rust.
     let engine = TreeSitterEngine;
     let input = concat!(
         "fun main() {\n",
@@ -337,15 +310,8 @@ fn kotlin_multiline_call_args_get_continuation_indent() {
     assert_eq!(text, expected, "Kotlin multi-line call args at +1 continuation depth");
 }
 
-// ── regression: level-keyed-by-open-line fixes ───────────────────────────
-// Failed under brace-line-dominance; must pass under the new model.
-
 #[test]
 fn java_constructor_paren_then_brace_close() {
-    // Algorithm-expected (no Java formatter available as ground truth).
-    // The `) {` pattern: `)` closes the constructor parameter list while `{`
-    // opens the body on the same line. The body must be at class-depth+1 (=2),
-    // not class-depth+2 (=3) as the old brace-line-dominance model produced.
     let engine = TreeSitterEngine;
     let input = concat!(
         "class Foo {\n",
@@ -375,11 +341,6 @@ fn java_constructor_paren_then_brace_close() {
 
 #[test]
 fn go_struct_in_call_close_then_paren_close_no_drift() {
-    // Ground truth: `gofmt` on the same input produces the expected output.
-    // `doThing(Config{` opens two brackets on one line — they coalesce to one
-    // level. After `},` closes the struct, the `(` from `doThing(` is still
-    // open at depth 1. The `)` then closes it; code after the call (`x := 1`)
-    // must remain at depth 1, not drift to 0.
     let engine = TreeSitterEngine;
     let input = concat!(
         "package main\n",
@@ -410,9 +371,6 @@ fn go_struct_in_call_close_then_paren_close_no_drift() {
 
 #[test]
 fn double_brace_close_releases_two_levels() {
-    // Algorithm-expected: `}}` on one line closes two levels opened on two
-    // distinct lines, so both are released as leading closers before the
-    // render depth is computed, giving depth 0 for the `}}` line itself.
     let engine = TreeSitterEngine;
     let input = concat!("class A {\n", "void f() {\n", "x = 1;\n", "}}\n",);
     let expected = concat!("class A {\n", "    void f() {\n", "        x = 1;\n", "}}\n",);
@@ -421,14 +379,9 @@ fn double_brace_close_releases_two_levels() {
     assert_eq!(text, expected, "}}: two leading closers each release one level");
 }
 
-// ── LEAVE_UNTOUCHED: data / template / asset grammars ───────────────────────
-
 #[test]
 fn csv_with_trailing_whitespace_is_byte_identical_after_format() {
-    // CSV fields may contain trailing spaces that are part of the value.
-    // tier-2 must not strip them.
     let engine = TreeSitterEngine;
-    // Note: no final newline — intentional to verify that policy is also not applied.
     let input = "id,name,value   \n1,foo ,42\n2,bar,  99   ";
     let s = src("data.csv", Language::Other("csv".into()), input);
     let out = engine.format(&s, &cfg(4)).unwrap();
@@ -440,8 +393,6 @@ fn csv_with_trailing_whitespace_is_byte_identical_after_format() {
 
 #[test]
 fn csv_emits_zero_lint_diagnostics() {
-    // Even with trailing whitespace on every line, a CSV file must produce no
-    // diagnostics — any change would silently corrupt field values.
     let engine = TreeSitterEngine;
     let input = "id,name   \n1,foo bar   \n2,baz   ";
     let s = src("data.csv", Language::Other("csv".into()), input);
@@ -451,11 +402,7 @@ fn csv_emits_zero_lint_diagnostics() {
 
 #[test]
 fn erb_template_with_trailing_whitespace_is_byte_identical_after_format() {
-    // Whitespace around ERB tags is rendered verbatim into the template output;
-    // stripping it would change the HTML/text the template produces.
     let engine = TreeSitterEngine;
-    // Trailing spaces on the first line are intentional template whitespace;
-    // no final newline to also verify that policy is suppressed.
     let input = "<html>   \n<% items.each do |item| %>   \n  <%= item.name %>\n<% end %>";
     let s = src("page.erb", Language::Other("embeddedtemplate".into()), input);
     let out = engine.format(&s, &cfg(4)).unwrap();
@@ -467,21 +414,12 @@ fn erb_template_with_trailing_whitespace_is_byte_identical_after_format() {
 
 #[test]
 fn erb_emits_zero_lint_diagnostics() {
-    // Same rationale as CSV: trailing whitespace in ERB is semantic output.
     let engine = TreeSitterEngine;
     let input = "<div>   \n  <%= value %>   \n</div>   ";
     let s = src("partial.erb", Language::Other("embeddedtemplate".into()), input);
     let diags = engine.lint(&s, &cfg(4)).unwrap();
     assert!(diags.is_empty(), "ERB must emit zero diagnostics, got {:?}", diags);
 }
-
-// ── Query-driven indent path ─────────────────────────────────────────────────
-// These tests exercise the new query-driven reindent path for non-BRACE_FAMILY
-// languages that have a bundled indents.scm in tree-sitter-language-pack 1.12.
-// The test inputs are intentionally flat (all code at column 0); the expected
-// outputs show structural reindentation at the correct depth with zero system
-// tools — the only requirement is the grammar being available (downloaded on
-// demand, exactly like the BRACE_FAMILY tests above).
 
 /// Known-unformatted RON (Rusty Object Notation) fixture.
 ///
@@ -491,7 +429,6 @@ fn erb_emits_zero_lint_diagnostics() {
 #[test]
 fn ron_query_driven_structural_reindent() {
     let engine = TreeSitterEngine;
-    // Flat RON — every field at column 0, no indentation at all.
     let input = concat!(
         "Scene(\n",
         "name: \"test\",\n",
@@ -502,8 +439,6 @@ fn ron_query_driven_structural_reindent() {
         "],\n",
         ")\n",
     );
-    // After query-driven reindent: fields at +1 relative to enclosing
-    // tuple/array, nested entities at +2.
     let expected = concat!(
         "Scene(\n",
         "    name: \"test\",\n",
@@ -528,10 +463,6 @@ fn ron_query_driven_structural_reindent() {
 #[test]
 fn ron_query_driven_reindent_preserves_multiline_comment_interior() {
     let engine = TreeSitterEngine;
-    // Flat RON whose struct body opens with a block comment carrying
-    // deliberately uneven interior indentation. Those interior lines — and the
-    // closing `*/` line, whose leading whitespace is also comment content —
-    // must be emitted verbatim; only the code lines reindent to depth 1.
     let input = concat!(
         "Scene(\n",
         "/* header\n",
@@ -556,7 +487,6 @@ fn ron_query_driven_reindent_preserves_multiline_comment_interior() {
         text, expected,
         "comment interior must be verbatim while surrounding code reindents"
     );
-    // The exact interior bytes between the comment delimiters survive.
     let interior = "\n        deeply indented note\n   shallow note\n";
     assert!(
         text.contains(interior),
@@ -585,12 +515,6 @@ fn ron_query_driven_unchanged_when_already_indented() {
         "already-indented RON must be Unchanged"
     );
 }
-
-// ── Elixir: built-in do/end indentation ─────────────────────────────────────
-// Elixir uses `do...end` blocks rather than braces, so BRACE_FAMILY cannot
-// reindent it. The built-in poly indents query drives reindentation via the
-// same query-driven path as RON/KDL, but with a query compiled from the static
-// ELIXIR_INDENTS constant rather than a bundled indents.scm from the language pack.
 
 /// Known-unformatted Elixir: the sample from the bug report — all content at
 /// column 0 instead of the canonical 2-space nesting.
@@ -641,8 +565,6 @@ fn elixir_anonymous_function_body_indented() {
 
 #[test]
 fn non_member_grammar_still_gets_whitespace_normalization() {
-    // Regression guard: a language NOT in LEAVE_UNTOUCHED (bash) must still
-    // receive trailing-whitespace stripping via normalize_whitespace.
     let engine = TreeSitterEngine;
     let input = "#!/bin/bash   \necho hello   \n";
     let s = src("script.sh", Language::Other("bash".into()), input);

@@ -93,10 +93,6 @@ fn write_trimmed_output_section(f: &mut std::fmt::Formatter<'_>, label: &str, ou
         return Ok(());
     };
 
-    // Truncate the rendered output: a failing command's stdout/stderr may carry
-    // secrets (tokens echoed by a misconfigured tool, env dumps, …) and is
-    // written verbatim into error messages and trace logs. Cap the total at
-    // `LOG_TRUNCATE_LIMIT` characters and elide the remainder.
     let limit = *LOG_TRUNCATE_LIMIT;
     writeln!(f, "\n{}", label.red())?;
     let mut used = 0usize;
@@ -129,8 +125,6 @@ impl<S: OutputSink> OutputSink for &mut S {
     }
 }
 
-// Only the Unix PTY read loop (`run_on_pty`) calls this; on Windows the
-// piped-output path is used instead, so gate it to avoid a dead-code warning.
 #[cfg(not(windows))]
 fn write_output_chunk(output: &mut Vec<u8>, sink: &mut impl OutputSink, chunk: &[u8]) {
     output.extend_from_slice(chunk);
@@ -148,8 +142,6 @@ pub struct Cmd {
     check_status: bool,
 }
 
-// ── Constructors ─────────────────────────────────────────────────────────────
-
 impl Cmd {
     /// Create a new [`Cmd`] with a human-readable summary for error messages.
     pub fn new(command: impl AsRef<OsStr>, summary: impl Into<String>) -> Self {
@@ -160,8 +152,6 @@ impl Cmd {
         }
     }
 }
-
-// ── Builder ───────────────────────────────────────────────────────────────────
 
 impl Cmd {
     /// Configure whether a non-zero exit status produces an `Err`.
@@ -180,8 +170,6 @@ impl Cmd {
         self
     }
 }
-
-// ── Execution ─────────────────────────────────────────────────────────────────
 
 impl Cmd {
     /// Run the command, ignoring its output (only checking the exit status).
@@ -231,8 +219,6 @@ impl Cmd {
             cause,
         })?;
 
-        // Post-completion feed: stdout first, then stderr, in 4 KiB chunks so
-        // downstream sinks are not overwhelmed with a single giant write.
         for chunk in output.stdout.chunks(4096) {
             sink.write_chunk(chunk);
         }
@@ -260,7 +246,6 @@ impl Cmd {
     /// until EOF/EIO before `wait()` is called.
     #[cfg(not(windows))]
     pub fn pty_output_with_sink<S: OutputSink>(&mut self, sink: S) -> Result<Output, Error> {
-        // If colour is not requested, piped output is sufficient.
         if !*USE_COLOR {
             return self.output_with_sink(sink);
         }
@@ -283,19 +268,6 @@ impl Cmd {
             cause,
         })?;
 
-        // Release every slave-side fd held by the parent so the master observes
-        // the child's last-close and the read loop terminates.
-        //
-        // `drop(pts)` releases the master's own slave handle, but it is not
-        // enough on its own: `setup_subprocess` cloned the slave fd three times
-        // into the `Stdio` handles passed to `self.inner`, and
-        // `std::process::Command` keeps those `Stdio` values alive in the parent
-        // after `spawn()` (they are only released when the `Command`'s stdio is
-        // reconfigured or the `Command` is dropped). While the parent still owns
-        // a slave fd the kernel never sees the slave's final close, so a blocking
-        // `read()` on the master never returns EOF (macOS) / `EIO` (Linux) and
-        // the loop below blocks forever. Resetting the stdio to null drops those
-        // three retained clones now that the child holds its own dup'd copies.
         drop(pts);
         self.inner.stdin(Stdio::null());
         self.inner.stdout(Stdio::null());
@@ -304,8 +276,6 @@ impl Cmd {
         let mut buffer = [0u8; 4096];
         let mut captured = Vec::new();
 
-        // Blocking read loop — handles both macOS (Ok(0) = EOF) and Linux
-        // (Err(EIO) = all slave handles closed).
         loop {
             match pty.read(&mut buffer) {
                 Ok(0) => break,
@@ -340,8 +310,6 @@ impl Cmd {
         Ok(status)
     }
 }
-
-// ── Forwarded std::process::Command APIs ─────────────────────────────────────
 
 impl Cmd {
     /// Forward to [`Command::arg`].
@@ -446,8 +414,6 @@ impl Cmd {
     }
 }
 
-// ── Diagnostic APIs ───────────────────────────────────────────────────────────
-
 impl Cmd {
     /// Return `Err` if `status` is not success.
     pub fn check_status(&self, status: ExitStatus) -> Result<(), Error> {
@@ -498,11 +464,8 @@ impl Cmd {
     }
 }
 
-// ── Colour detection ─────────────────────────────────────────────────────────
-
 /// Whether the terminal supports colour (and thus whether the PTY path is used).
 pub static USE_COLOR: LazyLock<bool> = LazyLock::new(|| {
-    // Respect the PREK_COLOR env var first, then fall back to anstyle-query.
     if let Some(v) = EnvVars::var_as_bool(EnvVars::PREK_COLOR) {
         v
     } else {
@@ -513,8 +476,6 @@ pub static USE_COLOR: LazyLock<bool> = LazyLock::new(|| {
         supports
     }
 });
-
-// ── Display ───────────────────────────────────────────────────────────────────
 
 fn skip_args(cmd: &OsStr, cur: &OsStr, next: Option<&&OsStr>) -> usize {
     if GIT.as_ref().is_ok_and(|git| cmd == git) {
@@ -607,7 +568,6 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn pty_output_captures_trailing_output_after_fast_exit() {
-        // Run a few iterations to catch potential race conditions in the blocking read loop.
         for _ in 0..5 {
             let mut sink = RecordingSink::default();
             let output = Cmd::new("/bin/sh", "pty trailing output test")
@@ -618,7 +578,6 @@ mod tests {
                 .expect("pty command should succeed");
 
             assert!(output.status.success());
-            // PTY translates \n → \r\n on some systems; normalise.
             let stdout = String::from_utf8_lossy(&output.stdout).replace("\r\n", "\n");
             assert_eq!(stdout, "FINAL\n");
             assert!(output.stderr.is_empty());

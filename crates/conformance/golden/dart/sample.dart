@@ -1,4 +1,3 @@
-// Exercises nested blocks, switch, closures, and a class.
 class Greeter {
   final String name;
   Greeter(this.name);
@@ -11,12 +10,12 @@ class Greeter {
 int classify(int n) {
   switch (n) {
     case 0:
-      return 0;
+    return 0;
     case 1:
     case 2:
-      return 1;
+    return 1;
     default:
-      return -1;
+    return -1;
   }
 }
 

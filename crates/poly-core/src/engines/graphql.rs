@@ -60,15 +60,10 @@ impl Engine for GraphQlEngine {
     }
 
     fn version(&self) -> &str {
-        // Tracks the active formatter; bump when the formatter dep is updated
-        // so cached output is invalidated.  Format: `<formatter>-<version>`.
-        // Bumped after exposing full LanguageOptions via config_serde.
         "pretty_graphql-0.2.3+config"
     }
 
     fn lint(&self, src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
-        // Try schema parse first; fall back to query parse. A successful parse
-        // of either type means no parse-error diagnostics.
         if parse_schema::<&str>(&src.content).is_ok() {
             return Ok(Vec::new());
         }
@@ -76,8 +71,6 @@ impl Engine for GraphQlEngine {
             return Ok(Vec::new());
         }
 
-        // Both failed. Re-run to capture the error message; pick schema parse
-        // error when SDL keywords appear in the content, otherwise query.
         let err_msg = if looks_like_schema(&src.content) {
             match parse_schema::<&str>(&src.content) {
                 Err(e) => e.to_string(),
@@ -115,7 +108,6 @@ impl Engine for GraphQlEngine {
 
         let formatted = match pretty_graphql::format_text(&src.content, &options) {
             Ok(s) => s,
-            // Unparsable document: leave untouched to avoid data loss.
             Err(_) => return Ok(FormatOutput::Unchanged),
         };
 
@@ -126,8 +118,6 @@ impl Engine for GraphQlEngine {
         }
     }
 }
-
-// ── Options construction ──────────────────────────────────────────────────────
 
 /// Build [`FormatOptions`] by layering the user's `[fmt.graphql.graphql]` table
 /// over pretty_graphql's defaults, then forcing poly's layout (print_width,
@@ -146,8 +136,6 @@ fn build_format_options(cfg: &EngineConfig) -> FormatOptions {
     };
     options.layout.print_width = cfg.globals.line_length;
     options.layout.indent_width = cfg.indent_width;
-    // use_tabs has no global, so it stays user-controllable from the options
-    // table (consistent with malva/markup_fmt), defaulting to spaces.
     options.layout.line_break = match cfg.globals.line_ending {
         crate::config::LineEnding::Crlf => pretty_graphql::config::LineBreak::Crlf,
         crate::config::LineEnding::Lf => pretty_graphql::config::LineBreak::Lf,
@@ -178,7 +166,6 @@ fn looks_like_schema(content: &str) -> bool {
 /// The message format emitted by `graphql-parser` is:
 /// `"[query|schema] parse error: Parse error at LINE:COL\n..."`.
 fn extract_location(err_msg: &str) -> Option<(u32, u32)> {
-    // Strip the optional "query parse error: " / "schema parse error: " prefix.
     let msg = err_msg
         .trim_start_matches("query parse error: ")
         .trim_start_matches("schema parse error: ");

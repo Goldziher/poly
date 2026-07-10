@@ -36,11 +36,6 @@ pub fn fix_edits(rule: &RuleConfig<TslpLanguage>, node_match: &NodeMatch<'_, Str
             Edit {
                 start_byte: edit.position,
                 end_byte: edit.position + edit.deleted_length,
-                // The replacement is built from the rule template + captured
-                // source bytes, both already valid UTF-8, so this is normally
-                // lossless. Use `from_utf8_lossy` rather than `unwrap_or_default`
-                // so a hypothetical invalid byte yields U+FFFD instead of an
-                // empty string that would silently DELETE the matched range.
                 replacement: String::from_utf8_lossy(&edit.inserted_text).into_owned(),
             }
         })
@@ -57,8 +52,6 @@ pub fn match_to_diagnostic(
     build_diagnostic(engine_name, rule, node_match, Vec::new())
 }
 
-// ── shared builder ────────────────────────────────────────────────────────────
-
 fn build_diagnostic(
     engine_name: &str,
     rule: &RuleConfig<TslpLanguage>,
@@ -69,9 +62,6 @@ fn build_diagnostic(
         let start = node_match.start_pos();
         let end = node_match.end_pos();
         Span {
-            // ast-grep positions are 0-based; poly Span is 1-based. `column()`
-            // returns a character column (unlike `byte_point().1`, which is a
-            // byte offset within the line), matching the other engines.
             start_line: (start.line() + 1) as u32,
             start_col: (start.column(node_match) + 1) as u32,
             end_line: (end.line() + 1) as u32,

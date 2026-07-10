@@ -11,8 +11,6 @@ documentation.workspace = true
 description = "Core engine for the poly universal, zero-dependency linter & formatter"
 
 [package.metadata.cargo-machete]
-# rumdl's lib crate name is rumdl_lib, serde_toon_format's is serde_toon, and
-# hcl-rs's is hcl; cargo-machete cannot detect the usage via the package name.
 ignored = ["rumdl", "serde_toon_format", "hcl-rs"]
 
 [lib]
@@ -24,7 +22,6 @@ alejandra.workspace = true
 anyhow.workspace = true
 ast-grep-config.workspace = true
 ast-grep-core.workspace = true
-# biome lint backends — all pinned to the same rev (see workspace Cargo.toml)
 biome_analyze.workspace = true
 biome_css_analyze.workspace = true
 biome_css_parser.workspace = true
@@ -34,7 +31,6 @@ biome_graphql_parser.workspace = true
 biome_languages.workspace = true
 biome_rowan.workspace = true
 blake3.workspace = true
-# dockerfile-parser — Dockerfile AST (MIT); used by the DockerfileEngine
 dockerfile-parser.workspace = true
 globset.workspace = true
 graphql-parser.workspace = true
@@ -54,7 +50,6 @@ mago-text-edit.workspace = true
 malva = { workspace = true, features = ["config_serde"] }
 markup_fmt = { workspace = true, features = ["config_serde"] }
 owo-colors.workspace = true
-# oxc backend (M2 + oxlint) — all git deps pinned to the same rev (see workspace Cargo.toml)
 oxc_allocator.workspace = true
 oxc_diagnostics.workspace = true
 oxc_formatter.workspace = true
@@ -70,7 +65,6 @@ pretty_yaml = { workspace = true, features = ["config_serde"] }
 rayon.workspace = true
 regex.workspace = true
 rubyfmt.workspace = true
-# ruff git deps — all pinned to the same rev (see workspace Cargo.toml)
 ruff_db.workspace = true
 ruff_formatter.workspace = true
 ruff_linter.workspace = true

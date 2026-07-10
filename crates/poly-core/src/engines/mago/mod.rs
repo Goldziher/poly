@@ -77,7 +77,6 @@ impl Engine for MagoEngine {
         Capabilities {
             lint: true,
             format: true,
-            // Single-edit safe fixes are wired in lint.rs.
             fix: true,
         }
     }

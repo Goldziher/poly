@@ -60,8 +60,6 @@ impl Engine for UncommentEngine {
     }
 
     fn languages(&self) -> &'static [Language] {
-        // Cross-cutting: applies to any language `uncomment` recognizes by
-        // extension, so it claims no language of its own (like `typos`).
         &[]
     }
 
@@ -78,8 +76,6 @@ impl Engine for UncommentEngine {
     }
 
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
-        // Opt-in: default off. The engine is always planned (static capability),
-        // but produces nothing unless explicitly enabled.
         if !enabled(cfg) {
             return Ok(Vec::new());
         }
@@ -90,10 +86,6 @@ impl Engine for UncommentEngine {
 
         let removals = match removals {
             Ok(removals) => removals,
-            // Best-effort backend: an unsupported extension or a parse hiccup must
-            // not fail the whole file's lint (that would also drop the other
-            // engines' diagnostics). Skip quietly — this is opt-in, lower-fidelity
-            // tooling by nature.
             Err(error) => {
                 tracing::debug!(path = %src.path.display(), "uncomment skipped: {error:#}");
                 return Ok(Vec::new());

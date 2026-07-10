@@ -44,9 +44,6 @@ fn format_to_string(path: &str, language: Language, content: &str) -> String {
         .unwrap()
     {
         FormatOutput::Formatted(text) => text,
-        // Every fixture below is genuinely unformatted, so a no-op would mean the
-        // fixture (or the routing) regressed — fail loudly rather than snapshot the
-        // input verbatim (which would make the assertion vacuous).
         FormatOutput::Unchanged => {
             panic!("fixture for {path} ({label}) was returned unchanged — it must be unformatted")
         }
@@ -75,8 +72,6 @@ fn markup_fmt_known_unformatted_vue() {
     );
 }
 
-// --- Svelte -------------------------------------------------------------------
-
 const KNOWN_UNFORMATTED_SVELTE: &str = "\
 <script>let name = \"world\";</script><main><h1   class=\"title\">Hello {name}</h1><button on:click={go}>Go</button></main>";
 
@@ -87,8 +82,6 @@ fn markup_fmt_known_unformatted_svelte() {
         format_to_string("App.svelte", Language::Svelte, KNOWN_UNFORMATTED_SVELTE)
     );
 }
-
-// --- Astro --------------------------------------------------------------------
 
 const KNOWN_UNFORMATTED_ASTRO: &str = "\
 ---
@@ -104,9 +97,6 @@ fn markup_fmt_known_unformatted_astro() {
     );
 }
 
-// --- Angular ------------------------------------------------------------------
-// Angular component templates use the `*.component.html` filename convention.
-
 const KNOWN_UNFORMATTED_ANGULAR: &str = "\
 <div class=\"container\"><p [class]=\"active ? 'on' : 'off'\">Hello</p><button (click)=\"doIt()\">Click</button></div>";
 
@@ -118,10 +108,6 @@ fn markup_fmt_known_unformatted_angular() {
     );
 }
 
-// --- Jinja (covers Twig / Nunjucks) -------------------------------------------
-
-// Use simple {{ variable }} interpolation — markup_fmt handles these inline and
-// still reformats the surrounding HTML structure.
 const KNOWN_UNFORMATTED_JINJA: &str = "\
 <html><head><title>{{ page_title }}</title></head><body><h1>{{ heading }}</h1><p class=\"intro\">{{ body }}</p></body></html>";
 
@@ -132,8 +118,6 @@ fn markup_fmt_known_unformatted_jinja() {
         format_to_string("base.jinja2", Language::Jinja, KNOWN_UNFORMATTED_JINJA)
     );
 }
-
-// --- Vento --------------------------------------------------------------------
 
 const KNOWN_UNFORMATTED_VENTO: &str = "\
 <html><body><p>{{ title }}</p><ul>{{ for item of items }}<li>{{ item }}</li>{{ /for }}</ul></body></html>";
@@ -146,9 +130,6 @@ fn markup_fmt_known_unformatted_vento() {
     );
 }
 
-// --- Mustache (covers Handlebars) ---------------------------------------------
-
-// Use simple {{ variable }} interpolation to avoid block-tag conservatism.
 const KNOWN_UNFORMATTED_MUSTACHE: &str = "\
 <html><head><title>{{title}}</title></head><body><p class=\"greeting\">{{message}}</p></body></html>";
 
@@ -160,8 +141,6 @@ fn markup_fmt_known_unformatted_mustache() {
     );
 }
 
-// --- XML ----------------------------------------------------------------------
-
 const KNOWN_UNFORMATTED_XML: &str = "\
 <?xml version=\"1.0\" encoding=\"UTF-8\"?><root><child attr=\"value\">text content</child><empty/></root>";
 
@@ -172,8 +151,6 @@ fn markup_fmt_known_unformatted_xml() {
         format_to_string("config.xml", Language::Xml, KNOWN_UNFORMATTED_XML)
     );
 }
-
-// --- LanguageOptions wiring ---------------------------------------------------
 
 /// A markup_fmt LanguageOptions field set via `[fmt.html.markup_fmt]` reaches
 /// the formatter: `quotes = "single"` switches attribute quotes to single.

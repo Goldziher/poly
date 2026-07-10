@@ -83,7 +83,6 @@ fn reports_removable_comments_as_warnings() {
         .unwrap();
 
     // Only the two plain comments are removable; TODO, ~keep and the doc comment
-    // are preserved by the default rules.
     let previews: Vec<Option<&str>> = diagnostics
         .iter()
         .map(|diagnostic| diagnostic.description.as_deref())
@@ -105,7 +104,6 @@ fn reports_removable_comments_as_warnings() {
         assert_eq!(diagnostic.fix[0].replacement, "");
     }
 
-    // The standalone comment is on line 1; the trailing comment on line 3.
     assert_eq!(diagnostics[0].span.unwrap().start_line, 1);
     assert_eq!(diagnostics[1].span.unwrap().start_line, 3);
 }
@@ -118,11 +116,9 @@ fn fix_strips_comments() {
         .unwrap();
     let stripped = apply_deletions(RUST_SAMPLE, &diagnostics);
 
-    // Removable comments are gone; the standalone one took its whole line with it.
     assert!(!stripped.contains("standalone removable"));
     assert!(!stripped.contains("trailing removable"));
     assert!(!stripped.starts_with("//"), "leading comment line fully removed");
-    // Preserved comments and code remain.
     assert!(stripped.contains("// TODO: keep me"));
     assert!(stripped.contains("// ~keep pinned"));
     assert!(stripped.contains("/// doc comment"));
@@ -171,9 +167,6 @@ fn remove_todos_option() {
 #[test]
 fn unsupported_language_is_noop() {
     let engine = UncommentEngine;
-    // An extension the uncomment registry does not know: skipped, never an error.
-    // The Language variant is irrelevant here — the engine detects language from
-    // the path's extension, which the uncomment registry does not recognize.
     let diagnostics = engine
         .lint(
             &src("data.unknownext", Language::Rust, "// whatever\n"),

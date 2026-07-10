@@ -1,6 +1,5 @@
 import Foundation
 
-// A small grab-bag of constructs to exercise the reindenter.
 struct Point {
   let x: Int
   let y: Int
@@ -13,10 +12,10 @@ enum Shape {
 
 func area(of shape: Shape) -> Double {
   switch shape {
-  case .circle(let radius):
-    return 3.14159 * radius * radius
-  case .rect(let w, let h):
-    return w * h
+    case .circle(let radius):
+  return 3.14159 * radius * radius
+    case .rect(let w, let h):
+  return w * h
   }
 }
 

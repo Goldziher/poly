@@ -32,10 +32,6 @@ fn make_src(path: &str, content: &str) -> SourceFile {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Known-bad fixture: unclosed class body triggers a parse error.
-// ---------------------------------------------------------------------------
-
 /// Unclosed class — the parser expects `}` before EOF.
 const KNOWN_BAD: &str = "<?php\nclass Foo {\n    public function bar(\n";
 
@@ -45,21 +41,14 @@ fn known_bad_diagnostics() {
     let src = make_src("known_bad.php", KNOWN_BAD);
     let diags = engine.lint(&src, &engine_cfg()).unwrap();
 
-    // Must have at least one parse-error diagnostic.
     assert!(!diags.is_empty(), "expected at least one diagnostic, got none");
 
-    // Structural snapshot: (engine, code, severity) — not brittle on the exact
-    // message text which may vary between mago versions.
     let summary: Vec<_> = diags
         .iter()
         .map(|d| (d.engine.as_str(), d.code.as_deref().unwrap_or(""), d.severity))
         .collect();
     insta::assert_debug_snapshot!("mago_known_bad_diagnostics", summary);
 }
-
-// ---------------------------------------------------------------------------
-// Valid PHP: a syntactically clean file produces no parse-error diagnostics.
-// ---------------------------------------------------------------------------
 
 /// A minimal valid PHP 8.4 file.
 const VALID_PHP: &str = "<?php\n\ndeclare(strict_types=1);\n\nfinal class Calculator\n{\n    public function add(int $a, int $b): int\n    {\n        return $a + $b;\n    }\n}\n";
@@ -80,10 +69,6 @@ fn valid_php_has_no_parse_errors() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// Known-unformatted fixture: dense PHP gets reformatted to PER-CS style.
-// ---------------------------------------------------------------------------
-
 /// Dense single-line class with missing spaces — mago should expand it.
 const KNOWN_UNFORMATTED: &str = "<?php\nclass Foo{public function bar(){return 1+2;}}\n";
 
@@ -99,16 +84,9 @@ fn known_unformatted_output() {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Already-formatted fixture: a well-formatted PHP file stays Unchanged.
-// ---------------------------------------------------------------------------
-
 #[test]
 fn already_formatted_returns_unchanged() {
     let engine = MagoEngine::default();
-    // Use a copy of what mago produces for KNOWN_UNFORMATTED; the exact
-    // content is checked in `known_unformatted_output`.  Here we just verify
-    // the Unchanged contract on already-clean input.
     let src = make_src("clean.php", VALID_PHP);
     let result = engine.format(&src, &engine_cfg()).unwrap();
     assert!(
@@ -116,15 +94,6 @@ fn already_formatted_returns_unchanged() {
         "expected Unchanged for already-clean PHP"
     );
 }
-
-// ---------------------------------------------------------------------------
-// Config-driven tests: rule selection, ignore, level override, format options.
-//
-// Test file: `<?php\nvar_dump('hello');\n`
-//   Fires (default config):
-//     - strict-types   (Correctness, Warning) — no declare(strict_types=1)
-//     - no-debug-symbols (Security, Info)     — var_dump usage
-// ---------------------------------------------------------------------------
 
 /// A PHP file that triggers rules from two different categories.
 ///
@@ -193,8 +162,6 @@ fn ignore_all_categories_yields_no_lint_diagnostics() {
     );
 
     let diags = engine.lint(&src, &cfg).unwrap();
-    // MULTI_CATEGORY_PHP is valid, so there are no syntax/parse diagnostics to
-    // filter; every remaining diagnostic would be a linter finding.
     let lint_codes: Vec<_> = diags
         .iter()
         .filter_map(|d| d.code.as_deref())
@@ -253,13 +220,6 @@ level = "error"
     );
 }
 
-// ---------------------------------------------------------------------------
-// Format option fixture: `function-brace-style = "same_line"` changes output.
-//
-// mago default: function braces on next line  `function foo()\n{\n`
-// With same_line:                              `function foo() {\n`
-// ---------------------------------------------------------------------------
-
 /// A PHP function whose brace placement we can verify.
 const FUNCTION_PHP: &str = "<?php\nfunction foo() {\n    return 1;\n}\n";
 
@@ -291,19 +251,12 @@ fn format_option_function_brace_style_same_line() {
         FormatOutput::Formatted(text) => text,
         FormatOutput::Unchanged => panic!("expected Formatted"),
     };
-    // The opening brace must be on the same line as the function signature.
     assert!(
         formatted.contains("function foo() {"),
         "expected same-line brace style; got:\n{formatted}"
     );
-    // Snapshot the exact output for regression tracking.
     insta::assert_snapshot!("mago_format_same_line_brace", formatted);
 }
-
-// ---------------------------------------------------------------------------
-// Registry cache: two lint calls on the same engine instance must produce
-// identical results (OnceLock must not corrupt state between calls).
-// ---------------------------------------------------------------------------
 
 /// Two consecutive `lint` calls on the same [`MagoEngine`] instance with
 /// identical config must produce identical diagnostic lists.

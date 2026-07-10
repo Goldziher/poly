@@ -1,50 +1,40 @@
-# poly.toml — the single config that drives `poly lint`, `poly fmt`,
-# `poly hooks`, and `poly commit`.
-#
-# This repo dogfoods `poly hooks`: the `[hooks]` table below replaces the former
-# `.pre-commit-config.yaml`. `poly hooks install` writes the git-hook shims;
-# `poly hooks run pre-commit` runs the pre-commit stage.
 
-# Discovery excludes (formerly the top-level `exclude` in `.rumdl.toml`). poly
-# respects .gitignore by default, so the old `respect-gitignore` toggle is
-# unnecessary.
 [discovery]
-exclude = ["node_modules/**", "target/**", "dist/**", "vendor/**"]
-
-[hooks]
-# Default stage for builtins that do not declare their own.
-stages = ["pre-commit"]
-
-# Staged isolation: whole-workspace hooks (the `cargo` group, `rustdoc-lint`, and
-# any job with `workspace = true`) run against a non-destructive snapshot of the
-# staged index rather than the live worktree, so unstaged edits and untracked
-# files never affect a pre-commit check. Per-file hooks are unaffected. On by
-# default for the commit-gating path and skipped for `--all-files`; set
-# `isolate = false` to opt out.
-# isolate = true
-
-[hooks.builtin]
-# lint: typos, JSON/YAML/TOML validation, shellcheck, and markdown linting.
-# Excludes mirror the former per-hook excludes: generated tag data, ai-rulez
-# prose (rendered, long lines expected), test fixtures (intentionally bad), and
-# the conformance corpus/golden (exact reference-formatter bytes — never lint).
-lint = { exclude = [
+exclude = [
+    "node_modules/**",
+    "target/**",
+    "dist/**",
+    "vendor/**",
     "**/identify/tags.rs",
     ".ai-rulez/**",
     "crates/*/tests/fixtures/**",
-    # The typos backend's own test file carries deliberately-misspelled words in
-    # its assertions and explanatory comments (the known-bad fixture words) — never lint.
     "crates/poly-core/tests/typos.rs",
     "crates/conformance/corpus/**",
     "crates/conformance/golden/**",
     "crates/conformance/docker/**",
     "crates/poly-catalog/data/**",
+    "crates/*-ffi/include/*.h",
+    "packages/go/include/*.h",
+]
+
+[hooks]
+stages = ["pre-commit"]
+
+
+[hooks.builtin]
+lint = { exclude = [
+    "**/identify/tags.rs",
+    ".ai-rulez/**",
+    "crates/*/tests/fixtures/**",
+    "crates/poly-core/tests/typos.rs",
+    "crates/conformance/corpus/**",
+    "crates/conformance/golden/**",
+    "crates/conformance/docker/**",
+    "crates/poly-catalog/data/**",
+    "crates/*-ffi/include/*.h",
+    "packages/go/include/*.h",
 ] }
 
-# fmt: trailing-whitespace, final-newline, line-ending normalization, shfmt,
-# rumdl markdown formatting, rustfmt (native toolchain), and the generic tier.
-# Fixtures and snapshots capture intentionally-unformatted / exact-byte content,
-# and the conformance golden files are reference output — none may be rewritten.
 fmt = { exclude = [
     ".ai-rulez/**",
     "crates/*/tests/fixtures/**",
@@ -53,88 +43,107 @@ fmt = { exclude = [
     "crates/conformance/golden/**",
     "crates/conformance/docker/**",
     "crates/poly-catalog/data/**",
+    "crates/*-ffi/include/*.h",
+    "packages/go/include/*.h",
 ] }
 
-# poly commit replaces gitfluff-lint on the commit-msg stage (Conventional
-# Commits). It needs an explicit stage so it does not inherit the global
-# pre-commit default above.
 commit = { stages = ["commit-msg"] }
 
-# Pure-Rust file-safety checks: merge-conflict markers, large files, private
-# keys, case collisions, and shebang/executable parity. checks.rs legitimately
-# embeds private-key header literals; the conformance corpus/golden hold
-# intentionally non-executable sample scripts — all excluded from the scans.
 file_safety = { exclude = [
     "crates/poly-cli/src/hooks/checks.rs",
     "crates/conformance/corpus/**",
     "crates/conformance/golden/**",
+    "crates/*-ffi/include/*.h",
+    "packages/go/include/*.h",
 ] }
 
-# Whole-workspace cargo tools: clippy, sort, machete, deny. Each is
-# capability-probed and skipped (with a notice) when absent from PATH.
 cargo = true
 
-# rustdoc-lint and rust-max-lines have no builtin; run them as vendored scripts.
-# Both receive the staged Rust files; rustdoc-lint ignores them (whole-workspace
-# `cargo doc`), rust-max-lines enforces the 1000-line per-file ceiling.
 [hooks.pre-commit.scripts.rust-max-lines]
 script = "scripts/hooks/rust-max-lines.sh"
 runner = "bash"
 args = ["--max=1000"]
 files = "**/*.rs"
-# Generated tag data exceeds the cap by design and must not be split.
 exclude = "**/identify/tags.rs"
 
 [hooks.pre-commit.scripts.rustdoc-lint]
 script = "scripts/hooks/rustdoc-lint.sh"
 runner = "bash"
 files = "**/*.rs"
-# Whole-workspace `cargo doc` (ignores the per-file args): run it against the
-# staged snapshot under isolation so unstaged edits don't leak into the check.
 workspace = true
 
-# No `[commit]` table: `poly commit` (the commit-msg builtin above) enforces
-# Conventional Commits with its built-in defaults. The hook lints rather than
-# rewrites — a non-conforming message (or stray AI-attribution line) fails the
-# commit loudly instead of being silently edited.
 
-# `certifi` is the PyPI CA-bundle package the pip-package wrapper depends on for
-# TLS verification; typos flags it as a misspelling of "certify". It is a valid
-# spelling everywhere it appears (the Python downloader + the pyproject dep).
 [lint.python.typos]
 extend_ignore_words = ["certifi"]
 
 [lint.toml.typos]
-# `markdwon` et al. appear below as ignore-word entries for the README catalog;
-# `teh`/`inh`/`tha` appear as the `[lint.rust.typos]` ignore-word values in this
-# very file. All are ignore-list vocabulary reproduced verbatim, not authored.
 extend_ignore_words = ["certifi", "markdwon", "restructredtext", "brightscripter", "teh", "inh", "tha"]
 
-# The README's catalog table is generated verbatim from the vendored mdsf
-# registry (scripts/gen-catalog-md.py); a few upstream language tags carry
-# spellings typos would otherwise flag. They are reproduced as-is, not authored.
 [lint.markdown.typos]
 extend_ignore_words = ["markdwon", "restructredtext", "brightscripter"]
 
-# The typos backend and its config importer carry deliberately-misspelled
 # fixtures in their `#[cfg(test)]` modules (e.g. `_typos.toml` sample dicts).
-# `tests/typos.rs` is a whole fixture file — excluded outright. The remaining
-# short tokens live inside test modules of real sources (lib.rs, importers),
-# so they are ignored repo-wide; none is a plausible real word.
 [lint.rust.typos]
 extend_ignore_words = ["teh", "inh", "te", "tha"]
 extend_exclude = ["crates/poly-core/tests/typos.rs"]
 
-# Markdown rumdl rules (formerly `.rumdl.toml`). Applied to both lint and fmt so
-# CLI runs and the `fmt`/`lint` hooks share one policy.
-#   MD013: line length — ai-rulez rules / context prose can be long.
-#   MD024: repeated headings (CHANGELOG-style sections).
-#   MD033: inline HTML.
-#   MD036: bold labels used as pseudo-headings inside <details> blocks
-#          (e.g. the README CLI reference) — don't promote to real headings.
-#   MD041: don't require the first line to be an H1.
 [lint.markdown.rumdl]
 disable = ["MD013", "MD024", "MD033", "MD036", "MD041"]
 
+
+[lint.uncomment]
+enabled = true
+remove_todos = false
+remove_fixme = false
+remove_docs = false
+use_default_ignores = true
+preserve_patterns = [
+    "SAFETY",
+    "HACK",
+    "WORKAROUND",
+    "NOTE",
+    "Copyright",
+    "Licensed",
+    "License",
+    "SPDX",
+    "Apache",
+    "MIT",
+    "WITHOUT WARRANTIES",
+    "limitations under the License",
+    "copyright",
+    "licensed",
+    "license",
+    "apache",
+    "you may not use this file except in compliance",
+    "You may obtain a copy of the License",
+    "you may obtain a copy of the license",
+    "http://www.apache.org/licenses/LICENSE-2.0",
+    "http://www.apache.org/licenses/license-2.0",
+    "Unless required by applicable law",
+    "unless required by applicable law",
+    "distributed under the License",
+    "distributed under the license",
+    "AS IS",
+    "as is",
+    "without warranties",
+    "specific language governing permissions",
+    "limitations under the license",
+]
 [fmt.markdown.rumdl]
 disable = ["MD013", "MD024", "MD033", "MD036", "MD041"]
+
+[per-file-ignores]
+"e2e/**" = ["comment", "doc-comment"]
+"**/e2e/**" = ["comment", "doc-comment"]
+"test_apps/**" = ["comment", "doc-comment"]
+"**/test_apps/**" = ["comment", "doc-comment"]
+"docs/assets/**" = ["comment", "doc-comment"]
+"**/generated/**" = ["comment", "doc-comment"]
+"**/*.generated.*" = ["comment", "doc-comment"]
+"**/*.g.*" = ["comment", "doc-comment"]
+"**/*.freezed.*" = ["comment", "doc-comment"]
+"crates/*-ffi/include/*.h" = ["comment", "doc-comment"]
+"packages/go/include/*.h" = ["comment", "doc-comment"]
+"Package.swift" = ["comment", "doc-comment"]
+"crates/poly-core/src/engines/dockerfile.rs" = ["comment", "doc-comment"]
+"crates/poly-core/tests/dockerfile.rs" = ["comment", "doc-comment"]

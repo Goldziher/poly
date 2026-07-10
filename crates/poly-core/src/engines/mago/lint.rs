@@ -52,8 +52,6 @@ use super::rules;
 /// Polylint-default PHP version used when the user does not specify one.
 const PHP_VERSION: PHPVersion = PHPVersion::PHP84;
 
-// ── Public entry point ────────────────────────────────────────────────────────
-
 /// Lint a single PHP source file.
 ///
 /// `registry_cache` is the engine's [`OnceLock`]-backed registry slot.  On the
@@ -70,13 +68,11 @@ pub(super) fn lint_php(
 ) -> anyhow::Result<Vec<Diagnostic>> {
     let arena = LocalArena::new();
 
-    // Build an ephemeral in-memory file.
     let file = File::ephemeral(Cow::Borrowed(b"input.php"), Cow::Owned(src.content.as_bytes().to_vec()));
 
     let program = parse_file(&arena, &file);
     let mut diags: Vec<Diagnostic> = Vec::new();
 
-    // ── 1. Surface parse errors ──────────────────────────────────────────────
     for error in program.errors {
         let mago_span = error.span();
         let span = convert_span(mago_span, &file);
@@ -93,7 +89,6 @@ pub(super) fn lint_php(
         });
     }
 
-    // ── 2. Run the linter ────────────────────────────────────────────────────
     let selection = RuleSelection::from_options(cfg);
     let php_version = rules::parse_php_version(cfg)?.unwrap_or(PHP_VERSION);
     let integrations = parse_integrations(cfg)?;
@@ -104,8 +99,6 @@ pub(super) fn lint_php(
         ..Settings::default()
     };
 
-    // Build the 'only' allowlist when the user supplied any selection config.
-    // None → run all default-enabled rules unchanged (fast path).
     let only_list: Option<Vec<String>> = if selection.is_empty() {
         None
     } else {
@@ -113,17 +106,7 @@ pub(super) fn lint_php(
     };
     let only_ref: Option<&[String]> = only_list.as_deref();
 
-    // Retrieve or build the rule registry.
-    //
-    // PERF: `RuleRegistry::build` iterates all ~100 rules and compiles glob
-    // patterns — measurably expensive at scale.  Because one `MagoEngine`
-    // instance is created per language per run and all files share the same
-    // resolved config, we cache the result in the engine's `OnceLock`.
-    //
     // NOTE: The `OnceLock` initialises with the FIRST call's `settings` and
-    // `only_ref`.  Since `plan_engines` creates one engine per run with a
-    // constant config, all calls see consistent results.  In tests each test
-    // creates its own `MagoEngine::default()`, so the lock is fresh per test.
     let registry = registry_cache
         .get_or_init(|| Arc::new(RuleRegistry::build(&settings, only_ref, false)))
         .clone();
@@ -155,8 +138,6 @@ pub(super) fn lint_php(
     Ok(diags)
 }
 
-// ── Config parsing ────────────────────────────────────────────────────────────
-
 /// Parse `integrations` from `cfg.options` as a list of integration name strings.
 ///
 /// # Errors
@@ -187,8 +168,6 @@ fn parse_integrations(cfg: &EngineConfig) -> anyhow::Result<IntegrationSet> {
     Ok(set)
 }
 
-// ── Allowlist construction ────────────────────────────────────────────────────
-
 /// Build the `only` allowlist from a [`RuleSelection`].
 ///
 /// 1. Start with `select` (expanded) or the default-enabled codes.
@@ -199,14 +178,12 @@ fn build_only_list(
     php_version: PHPVersion,
     integrations: IntegrationSet,
 ) -> anyhow::Result<Vec<String>> {
-    // Base set.
     let mut active: Vec<String> = if selection.select.is_empty() {
         rules::default_enabled_codes(php_version, integrations)
     } else {
         rules::expand_to_codes(&selection.select, php_version, integrations)?
     };
 
-    // extend_select — adds codes not already present.
     let extended = rules::expand_to_codes(&selection.extend_select, php_version, integrations)?;
     for code in extended {
         if !active.contains(&code) {
@@ -214,19 +191,15 @@ fn build_only_list(
         }
     }
 
-    // ignore — removes matching codes.
     let ignored = rules::expand_to_codes(&selection.ignore, php_version, integrations)?;
     active.retain(|code| !ignored.contains(code));
 
     Ok(active)
 }
 
-// ── Severity helpers ──────────────────────────────────────────────────────────
-
 /// Determine the poly [`Severity`] for a lint issue, applying any
 /// per-rule level override from `selection.rules`.
 fn issue_severity(issue: &mago_reporting::Issue, selection: &RuleSelection) -> Severity {
-    // Check for a user-configured level override first.
     if let Some(code) = issue.code.as_deref()
         && let Some(opts) = selection.rules.get(code)
         && let Some(level) = opts.level
@@ -245,8 +218,6 @@ fn map_level(level: Level) -> Severity {
         Level::Note => Severity::Info,
     }
 }
-
-// ── Span / edit helpers ───────────────────────────────────────────────────────
 
 /// Convert a mago byte-offset [`mago_span::Span`] to a poly 1-based
 /// line/column [`Span`] using [`File`]'s built-in line-number index.

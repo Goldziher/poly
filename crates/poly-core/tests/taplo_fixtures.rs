@@ -30,10 +30,6 @@ fn make_src(path: &str, content: &str) -> SourceFile {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Known-bad fixture: expects lint diagnostics
-// ---------------------------------------------------------------------------
-
 /// Known-bad TOML: duplicate key → `duplicate-key` diagnostic.
 const KNOWN_BAD: &str = "\
 # This TOML file is intentionally invalid.
@@ -47,7 +43,6 @@ fn known_bad_lint_snapshot() {
     let src = make_src("known_bad.toml", KNOWN_BAD);
     let diags = engine.lint(&src, &engine_cfg()).unwrap();
 
-    // Collect a stable, snapshot-friendly summary: (code, title, line).
     let summary: Vec<_> = diags
         .iter()
         .map(|d| {
@@ -61,10 +56,6 @@ fn known_bad_lint_snapshot() {
 
     insta::assert_debug_snapshot!("known_bad_diagnostics", summary);
 }
-
-// ---------------------------------------------------------------------------
-// Known-unformatted fixture: expects exact formatted output
-// ---------------------------------------------------------------------------
 
 /// Known-unformatted TOML: extra whitespace around `=`, un-spaced array —
 /// taplo should normalize it to a canonical form.
@@ -92,10 +83,6 @@ fn known_unformatted_snapshot() {
     insta::assert_snapshot!("known_unformatted_output", formatted);
 }
 
-// ---------------------------------------------------------------------------
-// Option fixture: `reorder_keys` changes output vs default
-// ---------------------------------------------------------------------------
-
 /// Keys in non-alphabetical order; with `reorder_keys = false` (default) the
 /// order is preserved, with `reorder_keys = true` they sort alphabetically.
 const REORDER_INPUT: &str = "\
@@ -109,7 +96,6 @@ fn reorder_keys_changes_output() {
     let engine = TaploEngine::new();
     let src = make_src("reorder.toml", REORDER_INPUT);
 
-    // Default config: reorder_keys = false → order must be preserved.
     let default_out = match engine.format(&src, &engine_cfg()).unwrap() {
         FormatOutput::Formatted(s) => s,
         FormatOutput::Unchanged => REORDER_INPUT.to_string(),
@@ -121,7 +107,6 @@ fn reorder_keys_changes_output() {
         "default config should preserve key order (z before a), got:\n{default_out}"
     );
 
-    // Config with reorder_keys = true → keys must be alphabetically sorted.
     let mut opts = toml::Table::new();
     opts.insert("reorder_keys".to_string(), toml::Value::Boolean(true));
     let reorder_cfg = EngineConfig {

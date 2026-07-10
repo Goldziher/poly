@@ -17,10 +17,6 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  # Slash debuginfo so the GNU linker does not run out of memory (collect2
-  # SIGBUS) statically linking the large engine dep graph — ruby-prism, mago,
-  # oxc, ruff, and 300+ tree-sitter grammars — into every test binary in
-  # parallel. `line-tables-only` keeps file:line in panic backtraces.
   CARGO_PROFILE_DEV_DEBUG: line-tables-only
   CARGO_PROFILE_TEST_DEBUG: line-tables-only
 

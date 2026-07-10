@@ -58,24 +58,14 @@ pub(crate) fn format_via_tool(spec: &ToolSpec, src: &SourceFile, indent_width: u
 
     let mut cmd = Command::new(format_binary);
 
-    // Prepend `-i <n>` when the spec requests it (e.g. shfmt). Inserted
-    // before the static format_args so the tool sees them in the right order.
     if spec.format_indent_flag {
         cmd.arg("-i");
         cmd.arg(indent_width.to_string());
     }
-    // Pass `--edition <year>` resolved from the file's Cargo.toml when the tool
-    // accepts it (rustfmt). Without this, rustfmt assumes edition 2015 and
-    // reformats edition-2024 source that `cargo fmt` leaves clean.
     if spec.edition_flag {
         cmd.arg("--edition");
         cmd.arg(super::edition::resolve_edition(&src.path));
     }
-    // Anchor the child process to the source file's directory when the spec
-    // needs config-file discovery rooted at the file's location:
-    // - rustfmt_config_flag: rustfmt reads rustfmt.toml walking up from cwd.
-    // - run_in_file_dir: swift-format discovers .swift-format the same way.
-    // Without anchoring, both tools discover config relative to poly's own cwd.
     if (spec.rustfmt_config_flag || spec.run_in_file_dir)
         && let Some(parent) = src.path.parent().filter(|p| p.is_dir())
     {
@@ -86,43 +76,30 @@ pub(crate) fn format_via_tool(spec: &ToolSpec, src: &SourceFile, indent_width: u
     let mut child = cmd
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        // Suppress tool diagnostics: non-zero exit is the failure signal.
         .stderr(Stdio::null())
         .spawn()
         .with_context(|| format!("failed to spawn '{format_binary}'"))?;
 
-    // Clone the Arc<str> — a reference-count bump, not a copy of the bytes.
     let content = std::sync::Arc::clone(&src.content);
     let mut stdin_handle = child
         .stdin
         .take()
         .ok_or_else(|| anyhow::anyhow!("'{format_binary}' stdin pipe was not created"))?;
 
-    // Feed stdin without deadlocking against our own `wait_with_output`:
-    // small inputs fit the pipe buffer, so write them inline (no thread spawn);
-    // larger inputs are written from a dedicated thread that runs while we drain
-    // stdout, since the child may buffer all input before emitting any output.
     let writer = if content.len() <= STDIN_INLINE_LIMIT {
         let result = stdin_handle.write_all(content.as_bytes());
-        drop(stdin_handle); // send EOF to the child
+        drop(stdin_handle);
         StdinWriter::Inline(result)
     } else {
         StdinWriter::Thread(thread::spawn(move || -> std::io::Result<()> {
             stdin_handle.write_all(content.as_bytes())
-            // stdin_handle is dropped here, sending EOF to the child.
         }))
     };
 
-    // Collect all stdout (while the writer thread, if any, is running).
     let output = child
         .wait_with_output()
         .with_context(|| format!("'{format_binary}' wait_with_output failed"))?;
 
-    // Check exit status BEFORE inspecting the write outcome. A non-zero exit
-    // (e.g. `zig fmt --stdin` on a syntax error) can close the child's stdin
-    // before the write finishes, so the writer sees a broken pipe — that is not
-    // a real error, it is the tool rejecting input. Discard the write outcome
-    // and preserve the file unchanged rather than risk data loss.
     if !output.status.success() {
         if let StdinWriter::Thread(handle) = writer {
             let _ = handle.join();
@@ -130,7 +107,6 @@ pub(crate) fn format_via_tool(spec: &ToolSpec, src: &SourceFile, indent_width: u
         return Ok(FormatOutput::Unchanged);
     }
 
-    // Exit was clean — a write error here is genuinely unexpected.
     match writer {
         StdinWriter::Inline(result) => {
             result.with_context(|| format!("failed to write to '{format_binary}' stdin"))?;

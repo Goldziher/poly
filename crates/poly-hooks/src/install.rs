@@ -132,14 +132,10 @@ fn install_one(hooks_dir: &Path, hook_type: HookType, overwrite: bool) -> Result
 
     if hook_path.try_exists()? {
         if overwrite {
-            // Discard any preserved legacy hook when explicitly overwriting.
             if legacy.try_exists()? {
                 std::fs::remove_file(&legacy).with_context(|| format!("failed to remove `{}`", legacy.display()))?;
             }
         } else if !is_our_shim(&hook_path)? {
-            // A non-poly hook is already installed: move it aside so we can
-            // restore it on uninstall. Refuse to clobber an existing `.legacy`
-            // backup rather than silently destroying it.
             if legacy.try_exists()? {
                 anyhow::bail!(
                     "cannot preserve existing hook `{}`: `{}` already exists; \
@@ -195,7 +191,6 @@ pub fn uninstall(hooks_dir: &Path, hook_types: &[HookType]) -> Result<Vec<PathBu
         let hook_path = hooks_dir.join(hook_type.as_ref());
         let legacy = legacy_path(hooks_dir, hook_type);
 
-        // A poly shim that somehow landed in the legacy slot is stale; drop it.
         if is_our_shim(&legacy)? {
             std::fs::remove_file(&legacy).with_context(|| format!("failed to remove `{}`", legacy.display()))?;
         }
@@ -207,7 +202,6 @@ pub fn uninstall(hooks_dir: &Path, hook_types: &[HookType]) -> Result<Vec<PathBu
         std::fs::remove_file(&hook_path).with_context(|| format!("failed to remove `{}`", hook_path.display()))?;
         removed.push(hook_path.clone());
 
-        // Restore a previously preserved foreign hook, if any.
         if legacy.try_exists()? {
             std::fs::rename(&legacy, &hook_path).with_context(|| {
                 format!(
@@ -243,8 +237,6 @@ mod tests {
             "shim missing exec line:\n{content}"
         );
         assert!(content.contains(HOOK_MARKER));
-        // The shim resolves `poly` from PATH — no absolute path is baked in — and
-        // guards against a missing `poly` with a clear failure.
         assert!(
             content.contains("command -v poly"),
             "shim missing PATH guard:\n{content}"

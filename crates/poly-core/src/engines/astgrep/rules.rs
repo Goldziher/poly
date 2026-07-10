@@ -59,20 +59,15 @@ pub fn load_rules(dirs: &[String], content_hash: &str) -> anyhow::Result<Arc<Rul
     }
 
     {
-        // Recover from a poisoned lock rather than panicking across the worker
-        // pool: a poisoned rule cache still holds valid (immutable) entries.
-        // Look up by `&str` — no key allocation on a cache hit.
         let guard = cache().read().unwrap_or_else(|e| e.into_inner());
         if let Some(cached) = guard.get(content_hash) {
             return Ok(Arc::clone(cached));
         }
     }
 
-    // Cache miss: load from disk, then insert under the write lock.
     let arc = Arc::new(load_from_dirs(dirs)?);
 
     let mut guard = cache().write().unwrap_or_else(|e| e.into_inner());
-    // Check again in case another thread raced us to load the same hash.
     if let Some(existing) = guard.get(content_hash) {
         return Ok(Arc::clone(existing));
     }
@@ -121,8 +116,6 @@ pub fn load_flat(dirs: &[String]) -> anyhow::Result<Vec<RuleConfig<TslpLanguage>
     Ok(out)
 }
 
-// ── internals ─────────────────────────────────────────────────────────────────
-
 fn load_from_dirs(dirs: &[String]) -> anyhow::Result<RuleMap> {
     let mut map: RuleMap = HashMap::new();
     for rule in load_flat(dirs)? {
@@ -159,9 +152,6 @@ fn collect_yaml_rec(dir: &Path, out: &mut Vec<PathBuf>) {
         return;
     };
     for entry in entries.flatten() {
-        // `file_type()` does NOT follow symlinks, so a symlinked directory is
-        // never descended into — this bounds recursion and avoids symlink-cycle
-        // stack overflows (real dirs only).
         let Ok(file_type) = entry.file_type() else {
             continue;
         };

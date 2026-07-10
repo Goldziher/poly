@@ -28,15 +28,6 @@ fn make_src(content: &str) -> SourceFile {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Known-bad fixture: two short lines holding four common misspellings, each
-// with a single dictionary correction. The content lives in an external
-// fixture file (under tests/fixtures/, which `.typos.toml` excludes) so the
-// `typos` pre-commit hook cannot "correct" the misspellings out of the file and
-// silently break this test. Never inline a single-correction misspelling in
-// this source for the same reason — assert structurally instead.
-// ---------------------------------------------------------------------------
-
 const KNOWN_BAD: &str = include_str!("fixtures/typos/known_bad.txt");
 
 #[test]
@@ -47,7 +38,6 @@ fn known_bad_typo_diagnostics() {
 
     assert!(!diags.is_empty(), "expected spell-check diagnostics for known-bad file");
 
-    // Summarise to (engine, code, message, span_start) for a stable snapshot.
     let summary: Vec<_> = diags
         .iter()
         .map(|d| {
@@ -62,10 +52,6 @@ fn known_bad_typo_diagnostics() {
     insta::assert_debug_snapshot!("known_bad_typo_diagnostics", summary);
 }
 
-// ---------------------------------------------------------------------------
-// Clean file: no diagnostics expected.
-// ---------------------------------------------------------------------------
-
 #[test]
 fn clean_file_has_no_typo_diagnostics() {
     let engine = TyposEngine;
@@ -77,17 +63,9 @@ fn clean_file_has_no_typo_diagnostics() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// Noise suppression: minified/generated assets and ultra-short tokens. These
-// guards removed ~99% of false positives on the dry-run corpus (a minified
-// 11.7 MB bundle that flagged every 2-char identifier).
-// ---------------------------------------------------------------------------
-
 #[test]
 fn skips_minified_content_with_very_long_lines() {
     let engine = TyposEngine;
-    // KNOWN_BAD has real typos on short lines (flagged above); collapsed onto a
-    // single very long line it reads as minified and must be skipped entirely.
     let minified = KNOWN_BAD.replace('\n', " ").repeat(60);
     assert!(minified.len() > 2_000, "fixture must exceed the line guard");
     let diags = engine.lint(&make_src(&minified), &engine_cfg()).unwrap();
@@ -100,7 +78,6 @@ fn skips_minified_content_with_very_long_lines() {
 #[test]
 fn skips_oversized_content() {
     let engine = TyposEngine;
-    // Same typos, but as a > 1 MiB file (short lines): the size guard skips it.
     let big = KNOWN_BAD.repeat(40_000);
     assert!(big.len() > (1 << 20), "fixture must exceed the size guard");
     let diags = engine.lint(&make_src(&big), &engine_cfg()).unwrap();
@@ -114,10 +91,6 @@ fn skips_oversized_content() {
 #[test]
 fn drops_ultra_short_corrections_but_keeps_three_char_typos() {
     let engine = TyposEngine;
-    // short_tokens.txt holds a 2-char token (a typos-dict correction) followed
-    // by a 3-char one. The 2-char token is dropped as too short to be reliable;
-    // the 3-char one survives. Assert structurally so no misspelling literal
-    // lives in this source.
     let src = make_src(include_str!("fixtures/typos/short_tokens.txt"));
     let diags = engine.lint(&src, &engine_cfg()).unwrap();
     assert_eq!(
@@ -125,8 +98,6 @@ fn drops_ultra_short_corrections_but_keeps_three_char_typos() {
         1,
         "only the 3-char typo should survive the length filter: {diags:?}",
     );
-    // Typos are reported at error severity with the suggestion in the message,
-    // and never carry an autofix (manual resolution required).
     assert_eq!(
         diags[0].severity,
         poly_core::engine::Severity::Error,
@@ -140,17 +111,9 @@ fn drops_ultra_short_corrections_but_keeps_three_char_typos() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// Built-in allow-list: universally-correct technical terms and OSS names are
-// valid with no per-repo config (e.g. GPG `fpr`, the `certifi` package).
-// ---------------------------------------------------------------------------
-
 #[test]
 fn builtin_valid_words_are_not_flagged() {
     let engine = TyposEngine;
-    // `fpr` (GPG fingerprint) is flagged by the built-in dictionary by default;
-    // the engine's built-in allow-list must silence it and the other baked-in
-    // terms without any configuration.
     for term in ["fpr", "certifi", "ser", "flate", "onnx"] {
         let src = make_src(&format!("the {term} value here\n"));
         let diags = engine.lint(&src, &engine_cfg()).unwrap();
@@ -161,21 +124,12 @@ fn builtin_valid_words_are_not_flagged() {
     }
 }
 
-// ---------------------------------------------------------------------------
-// extend_words: a word in the map is treated as a valid spelling.
-// ---------------------------------------------------------------------------
-
 const SHORT_TOKENS: &str = include_str!("fixtures/typos/short_tokens.txt");
 
 #[test]
 fn extend_words_silences_configured_word() {
-    // short_tokens.txt contains a single 3-char typo (teh → the). Adding its
-    // key to extend_words must reduce the diagnostic count to zero.
     let engine = TyposEngine;
     let src = make_src(SHORT_TOKENS);
-    // Build options with extend_words containing the typo word.
-    // The word is constructed from chars so the literal misspelling does not
-    // appear in this source file.
     let typo_word: String = ['t', 'e', 'h'].iter().collect();
     let mut words_table = toml::Table::new();
     words_table.insert(typo_word.clone(), toml::Value::String(typo_word));
@@ -193,18 +147,11 @@ fn extend_words_silences_configured_word() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// extend_identifiers: a compound identifier is treated as valid, suppressing
-// any word-level typo flagging within it.
-// ---------------------------------------------------------------------------
-
 const IDENTIFIER_WITH_TYPO: &str = include_str!("fixtures/typos/identifier_with_typo.txt");
 
 #[test]
 fn extend_identifiers_silences_configured_identifier() {
     let engine = TyposEngine;
-    // Without any config, the fixture produces at least one diagnostic (the
-    // word token within the identifier is a known typo).
     let src_flagged = SourceFile {
         path: "fixture.txt".into(),
         language: Language::Markdown,
@@ -216,7 +163,6 @@ fn extend_identifiers_silences_configured_identifier() {
         "expected diagnostics for identifier_with_typo.txt with default config; got none",
     );
 
-    // Adding the identifier to extend_identifiers must silence the diagnostic.
     let ident: String = ['t', 'e', 'h', '_', 'v', 'a', 'r', 'i', 'a', 'b', 'l', 'e']
         .iter()
         .collect();
@@ -236,14 +182,9 @@ fn extend_identifiers_silences_configured_identifier() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// extend_exclude: files whose path matches a glob are skipped entirely.
-// ---------------------------------------------------------------------------
-
 #[test]
 fn extend_exclude_skips_matching_file() {
     let engine = TyposEngine;
-    // The known-bad fixture produces diagnostics normally.
     let src = SourceFile {
         path: "tests/fixtures/typos/known_bad.txt".into(),
         language: Language::Markdown,
@@ -255,7 +196,6 @@ fn extend_exclude_skips_matching_file() {
         "expected diagnostics before excluding; got none"
     );
 
-    // With extend_exclude matching the file's path, it must be skipped.
     let mut options = toml::Table::new();
     options.insert(
         "extend_exclude".to_string(),
@@ -272,11 +212,6 @@ fn extend_exclude_skips_matching_file() {
         "extend_exclude should skip the matched file; got: {diags:?}",
     );
 }
-
-// ---------------------------------------------------------------------------
-// extend_ignore_re: a regex masks a region of the file; typos inside the
-// matched span are dropped, typos elsewhere still fire (typos-cli semantics).
-// ---------------------------------------------------------------------------
 
 /// Titles of the typos flagged for KNOWN_BAD, so tests can assert which
 /// misspellings survive a filter without inlining the misspellings themselves.
@@ -304,14 +239,9 @@ fn options_with_string_array(key: &str, values: &[&str]) -> EngineConfig {
 
 #[test]
 fn extend_ignore_re_masks_a_region() {
-    // KNOWN_BAD line 2 reads "This is teh occurence of a typo." — a regex that
-    // matches that region must drop both "teh" and "occurence" while leaving the
-    // line-1 typos ("languge", "recieve") intact.
     let baseline = flagged_words(&engine_cfg());
     assert_eq!(baseline.len(), 4, "KNOWN_BAD has four typos by default: {baseline:?}");
 
-    // The masked substring is assembled from chars so no misspelling literal
-    // lives in this source (the typos pre-commit hook rewrites those).
     let masked: String = ['t', 'e', 'h', ' ', 'o', 'c', 'c', 'u', 'r', 'e', 'n', 'c', 'e']
         .iter()
         .collect();
@@ -329,17 +259,11 @@ fn extend_ignore_re_masks_a_region() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// extend_ignore_words_re: a regex matching the flagged word drops just that
-// word; unrelated typos remain.
-// ---------------------------------------------------------------------------
-
 #[test]
 fn extend_ignore_words_re_drops_only_matching_word() {
     let baseline = flagged_words(&engine_cfg());
     assert_eq!(baseline.len(), 4, "sanity: four typos: {baseline:?}");
 
-    // Match exactly the 3-char typo word (built from chars to avoid the literal).
     let pattern: String = ['^', 't', 'e', 'h', '$'].iter().collect();
     let cfg = options_with_string_array("extend_ignore_words_re", &[&pattern]);
     let survived = flagged_words(&cfg);

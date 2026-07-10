@@ -141,7 +141,6 @@ pub struct FmtArgs {
 pub fn run_lint(args: LintArgs) -> ExitCode {
     let no_workspace = args.no_workspace;
     let common = args.common;
-    // Init logging after parse so `--debug` can widen the filter (first-call-wins).
     init_logging_with(common.debug);
     apply_color(&common);
     let verbosity = Verbosity::new(common.verbose, common.debug);
@@ -158,8 +157,6 @@ pub fn run_lint(args: LintArgs) -> ExitCode {
         }
     };
 
-    // Render (and print) all per-file diagnostics regardless of severity; the
-    // count returned here is not used for the exit decision.
     let pretty = matches!(common.format, OutputFormat::Pretty);
     let _ = match common.format {
         OutputFormat::Pretty => report::report_lint_pretty(&results, verbosity),
@@ -173,10 +170,6 @@ pub fn run_lint(args: LintArgs) -> ExitCode {
         }
     };
 
-    // The whole-project phase runs the same whole-workspace tools a pre-commit
-    // hook would (`cargo clippy`, …) and folds its pass/fail into the exit code.
-    // Its human report goes to stdout for pretty output, else stderr so a
-    // `--format json` stdout stays a single valid document.
     let workspace_ok = match hooks::workspace_lint::run(&hooks::workspace_lint::WorkspaceLintArgs {
         config: common.config.as_deref(),
         no_workspace,
@@ -191,9 +184,6 @@ pub fn run_lint(args: LintArgs) -> ExitCode {
         }
     };
 
-    // Follow the standard linter convention (ruff/eslint/clippy): only
-    // error-severity per-file findings fail the run (warning/info/hint are
-    // non-blocking), plus any whole-project tool failure.
     if lint_has_errors(&results) || !workspace_ok {
         ExitCode::from(1)
     } else {
@@ -211,7 +201,6 @@ fn lint_has_errors(results: &[LintResult]) -> bool {
 /// Run the format pipeline and map the outcome to a process exit code.
 pub fn run_fmt(args: FmtArgs) -> ExitCode {
     let common = &args.common;
-    // Init logging after parse so `--debug` can widen the filter (first-call-wins).
     init_logging_with(common.debug);
     apply_color(common);
     let verbosity = Verbosity::new(common.verbose, common.debug);
@@ -220,8 +209,6 @@ pub fn run_fmt(args: FmtArgs) -> ExitCode {
         Err(code) => return code,
     };
 
-    // Dry run by default; `--fix` writes formatted output in place. `--check`
-    // is an explicit alias for the default dry run.
     let write = common.fix;
     match poly_core::format(&paths, &config, &opts, write, common.debug) {
         Ok(results) => {
@@ -274,8 +261,6 @@ fn prepare(common: &CommonArgs) -> Result<(Vec<PathBuf>, Config, RunOptions), Ex
         no_cache: common.no_cache,
         jobs: common.jobs,
         exclude: common.exclude.clone(),
-        // An explicit `--config <path>` pins a single config and bypasses nested
-        // (monorepo) resolution; without it, poly cascades nested `poly.toml`s.
         explicit_config: common.config.is_some(),
     };
     Ok((paths, config, opts))

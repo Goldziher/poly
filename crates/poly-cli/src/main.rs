@@ -54,10 +54,6 @@ struct McpArgs {
 }
 
 fn main() -> ExitCode {
-    // Logging is initialized *after* parsing so `poly lint`/`poly fmt --debug`
-    // can widen the log filter (the subscriber is first-call-wins). `run_lint`
-    // and `run_fmt` init it themselves from their `--debug` flag; the other
-    // subcommands have no such flag, so init at the default verbosity here.
     match Cli::parse().command {
         Command::Lint(args) => run_lint(args),
         Command::Fmt(args) => run_fmt(args),

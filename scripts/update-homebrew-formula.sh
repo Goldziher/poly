@@ -2,15 +2,6 @@
 set -euo pipefail
 
 # update-homebrew-formula.sh <version> [release-repo]
-#
-# Emits a Homebrew *binary* formula (to stdout) that downloads the prebuilt
-# `poly` binary from the tagged GitHub release — the same artifacts the
-# curl|sh installer uses. No source build, no `rust`/`libgit2`
-# build dependencies, and no separate bottle workflow: the moment the tap
-# formula is bumped it is directly installable on every supported platform.
-# This is how ruff / oxlint / biome ship their taps.
-#
-# The per-platform sha256 values are read from the release's `sha256sums.txt`.
 
 if [ $# -lt 1 ] || [ $# -gt 2 ]; then
   echo "Usage: $0 <version> [release-repo]" >&2
@@ -22,11 +13,9 @@ RELEASE_REPO="${2:-Goldziher/poly}"
 TAG="v${VERSION}"
 BASE_URL="https://github.com/${RELEASE_REPO}/releases/download/${TAG}"
 
-# Pull the checksums for this release and resolve each platform archive's hash.
 SUMS="$(curl -fsSL "${BASE_URL}/sha256sums.txt")"
 
 sha_for() {
-  # Match the archive name regardless of the leading "./" in sha256sums.txt.
   echo "$SUMS" | awk -v f="$1" '$2 == f || $2 == "./" f { print $1; exit }'
 }
 

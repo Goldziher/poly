@@ -59,7 +59,7 @@ impl ConfigSet {
 
         for dir in scan_config_dirs(roots) {
             if !seen.insert(dir.clone()) {
-                continue; // already covered (e.g. the root dir itself)
+                continue;
             }
             let resolved: Config = poly_config::PolyConfig::resolve_for_dir(&dir)?.into();
             let id = configs.len();
@@ -67,7 +67,6 @@ impl ConfigSet {
             dirs.push(Some(dir.clone()));
             lookup.push((dir, id));
         }
-        // Deepest path first: the nearest ancestor config wins the lookup.
         lookup.sort_by_key(|(dir, _)| std::cmp::Reverse(dir.components().count()));
         Ok(Self { configs, dirs, lookup })
     }
@@ -115,7 +114,7 @@ impl ConfigSet {
         let mut contributed = false;
         for (config_dir, id) in &self.lookup {
             let Ok(rel) = config_dir.strip_prefix(root) else {
-                continue; // config dir is not under this walk root
+                continue;
             };
             contributed = true;
             for glob in &self.configs[*id].exclude {
@@ -123,8 +122,6 @@ impl ConfigSet {
             }
         }
         if !contributed {
-            // No directory-backed config under this root (e.g. a subdir/file arg
-            // whose only config is an ancestor): use the root config's excludes.
             out.extend(self.configs[0].exclude.iter().cloned());
         }
         out.extend(extra.iter().cloned());

@@ -80,7 +80,6 @@ mod tests {
     use poly_hooks::Stage as HookStage;
     use poly_hooks::model::HookCache;
 
-    // `super` is the `lower` module, where `lower_stage` lives.
     use super::super::lower_stage;
 
     fn hooks_from(toml: &str) -> HooksConfig {
@@ -97,8 +96,6 @@ mod tests {
     /// Lower a single-stage config under an explicit cache mode and return the
     /// hook with the given id, observing the policy as wired by lowering.
     fn cache_of(hooks: &HooksConfig, stage: HookStage, id: &str, mode: &HookCacheMode) -> HookCache {
-        // A non-Cargo temp root keeps the default-on cargo group from intruding
-        // on these cache-policy assertions regardless of the host toolchain.
         let root = tempfile::tempdir().unwrap();
         let spec = lower_stage(
             hooks,
@@ -141,8 +138,6 @@ mod tests {
     #[test]
     fn builtin_commit_is_never_cached() {
         let hooks = hooks_from("[hooks.builtin]\ncommit = true\n");
-        // Even in Aggressive mode the commit-msg builtin is disabled (the message
-        // content varies per invocation).
         let cache = cache_of(&hooks, HookStage::CommitMsg, "poly-commit", &HookCacheMode::Aggressive);
         assert!(matches!(cache, HookCache::Disabled));
     }
@@ -212,7 +207,6 @@ cache = { inputs = ["**/*.rs"] }
 
     #[test]
     fn job_cache_mode_override_wins_over_global() {
-        // Global Off, but the job opts into Aggressive → cached by matched files.
         let hooks = hooks_from(
             r#"
 [hooks.pre-commit]

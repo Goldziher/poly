@@ -39,7 +39,6 @@ pub fn import(dir: &Path) -> Option<ImportResult> {
     if !tool.contains_key("typos") && !tool.contains_key("codespell") {
         return None;
     }
-    // Re-root at `[tool]` so `typos` / `codespell` are top-level for `build`.
     let mut rooted = toml::Table::new();
     if let Some(t) = tool.get("typos") {
         rooted.insert("typos".to_string(), t.clone());
@@ -93,7 +92,6 @@ fn build(table: &toml::Table, source: PathBuf, pyproject: bool) -> ImportResult 
     if pyproject {
         ignore_words.extend(codespell_words(table));
         if !ignore_words.is_empty() {
-            // Replace any list added above with the codespell-augmented one.
             entries.retain(|(k, _)| k != "extend_ignore_words");
             entries.insert(0, ("extend_ignore_words".to_string(), str_array(&ignore_words)));
         }
@@ -158,13 +156,11 @@ fn leftover_keys(
     typos_root: Option<&toml::Table>,
     default: Option<&toml::Table>,
     _files: Option<&toml::Table>,
-    pyproject: bool,
+    _pyproject: bool,
 ) -> Vec<String> {
     let mut leftovers = Vec::new();
     if let Some(root) = typos_root {
         for key in root.keys() {
-            // `default` and `files` are dug into individually; `type` overrides
-            // and other tables are not representable.
             if key != "default" && key != "files" {
                 leftovers.push(key.clone());
             }
@@ -177,17 +173,12 @@ fn leftover_keys(
             }
         }
     }
-    // `[files]` — only `extend-exclude` is honored; flag any other key.
     if let Some(files) = _files {
         for key in files.keys() {
             if key != "extend-exclude" {
                 leftovers.push(format!("files.{key}"));
             }
         }
-    }
-    // codespell keys other than the folded ignore-words-list are dropped.
-    if pyproject {
-        // `codespell` is handled specially; nothing else in the re-rooted table.
     }
     leftovers.sort();
     leftovers.dedup();

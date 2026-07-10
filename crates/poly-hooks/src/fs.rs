@@ -48,8 +48,6 @@ pub fn normalize_path(path: PathBuf) -> PathBuf {
     }
 
     // SAFETY: `path` came from `OsString::into_encoded_bytes` and we only
-    // replace ASCII `\` with ASCII `/`. ASCII bytes cannot appear inside a
-    // non-ASCII UTF-8/WTF-8 sequence, so the encoding invariant is preserved.
     PathBuf::from(unsafe { OsString::from_encoded_bytes_unchecked(path) })
 }
 
@@ -104,7 +102,6 @@ impl<T: AsRef<Path>> Simplified for T {
     fn user_display(&self) -> impl Display {
         let path = dunce::simplified(self.as_ref());
 
-        // If CWD is the filesystem root, display as-is.
         if CWD.ancestors().nth(1).is_none() {
             return path.display();
         }

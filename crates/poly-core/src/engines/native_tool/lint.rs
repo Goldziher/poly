@@ -49,10 +49,6 @@ use crate::engine::{Diagnostic, Severity, SourceFile, Span};
 
 use super::spec::ToolSpec;
 
-// ---------------------------------------------------------------------------
-// Deserialization types for the JSON1 format
-// ---------------------------------------------------------------------------
-
 /// Top-level shellcheck JSON1 response object.
 #[derive(Debug, Deserialize)]
 struct ShellcheckOutput {
@@ -80,23 +76,15 @@ struct ShellcheckComment {
     message: String,
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 fn shellcheck_level_to_severity(level: &str) -> Severity {
     match level {
         "error" => Severity::Error,
         "warning" => Severity::Warning,
         "info" => Severity::Info,
         "style" => Severity::Hint,
-        _ => Severity::Warning, // defensive: unknown levels treated as warnings
+        _ => Severity::Warning,
     }
 }
-
-// ---------------------------------------------------------------------------
-// Public surface
-// ---------------------------------------------------------------------------
 
 /// Parse shellcheck's `--format=json1` stdout into normalized [`Diagnostic`]s.
 ///
@@ -151,7 +139,6 @@ pub(crate) fn lint_via_shellcheck(spec: &ToolSpec, src: &SourceFile) -> anyhow::
         .args(spec.lint_args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        // Suppress tool stderr: exit code and JSON stdout are the signals.
         .stderr(Stdio::null())
         .spawn()
         .with_context(|| format!("failed to spawn '{lint_binary}'"))?;
@@ -162,38 +149,24 @@ pub(crate) fn lint_via_shellcheck(spec: &ToolSpec, src: &SourceFile) -> anyhow::
         .take()
         .ok_or_else(|| anyhow::anyhow!("'{lint_binary}' stdin pipe was not created"))?;
 
-    let write_thread = thread::spawn(move || -> std::io::Result<()> {
-        stdin_handle.write_all(content.as_bytes())
-        // stdin_handle dropped here → EOF sent to shellcheck.
-    });
+    let write_thread = thread::spawn(move || -> std::io::Result<()> { stdin_handle.write_all(content.as_bytes()) });
 
     let output = child
         .wait_with_output()
         .with_context(|| format!("'{lint_binary}' wait_with_output failed"))?;
 
-    // Always reap the write thread. For shellcheck:
-    // - exit 0/1: shellcheck consumed all stdin, the write succeeded.
-    // - exit 2+: shellcheck may have closed stdin early (broken pipe in the
-    //   write thread). Either way we discard the write-thread error gracefully.
     let _ = write_thread.join();
 
     let exit_code = output.status.code().unwrap_or(2);
     if exit_code >= 2 {
-        // Tool error (bad options, unreadable file, etc.). Return nothing —
-        // a broken shellcheck invocation is never a hard lint error.
         return Ok(Vec::new());
     }
 
-    // Exit 0 or 1: JSON output is valid regardless of the exit code.
     let json =
         String::from_utf8(output.stdout).with_context(|| format!("'{lint_binary}' produced non-UTF-8 output"))?;
 
     parse_shellcheck_json(spec.engine_name, &json)
 }
-
-// ---------------------------------------------------------------------------
-// Unit tests (host-independent: no shellcheck binary required)
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {

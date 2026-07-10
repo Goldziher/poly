@@ -63,15 +63,10 @@ const SHELL_ARG: &str = "/C";
 ///
 /// Returns `Err` if the rayon pool cannot be built or a git index operation
 /// (used by `stage_fixed`) fails.
-// The public B1 contract takes the request by value; the runner immediately
-// borrows it for the pool closure, so by-value ownership is intentional.
 #[allow(clippy::needless_pass_by_value)]
 pub fn run(request: HookRunRequest) -> anyhow::Result<HookRunOutcome> {
     let threads = crate::concurrency::effective_concurrency(request.concurrency);
     let pool = rayon::ThreadPoolBuilder::new().num_threads(threads).build()?;
-    // A live multi-line progress display, only when progress was requested (the
-    // CLI enables it for an interactive stderr). The draw target self-hides on a
-    // non-terminal, so downstream code never special-cases it.
     let ui = request.progress.then(ProgressUi::new);
     pool.install(|| run_all(&request, ui.as_ref()))
 }
@@ -91,7 +86,6 @@ struct Prepared {
 }
 
 fn run_stage(request: &HookRunRequest, spec: &StageSpec, ui: Option<&ProgressUi>) -> anyhow::Result<StageOutcome> {
-    // 1. precondition guard.
     if let Some(precondition) = &spec.precondition {
         if !run_precondition(&request.root, precondition) {
             warn!(stage = %spec.stage, "precondition failed; skipping stage");
@@ -105,7 +99,6 @@ fn run_stage(request: &HookRunRequest, spec: &StageSpec, ui: Option<&ProgressUi>
         }
     }
 
-    // 2. before steps — abort on first failure.
     let mut before = Vec::new();
     for command in &spec.before {
         let step = run_step(&request.root, command);
@@ -122,12 +115,10 @@ fn run_stage(request: &HookRunRequest, spec: &StageSpec, ui: Option<&ProgressUi>
         }
     }
 
-    // 3. hooks — priority groups, par_iter within a group.
     let prepared = prepare(request, spec);
     let (mut hooks, any_failed) = run_hooks(request, spec, &prepared, ui)?;
     hooks.sort_by_key(|hook| hook.position);
 
-    // 4. after steps — only when no hook failed.
     let mut after = Vec::new();
     if !any_failed {
         for command in &spec.after {
@@ -175,9 +166,6 @@ fn run_hooks(
             let hook = &spec.hooks[pos];
             let passed = matches!(outcome.status, HookStatus::Passed);
 
-            // The matched-file modification set is needed for `stage_fixed`
-            // re-staging *and* to gate caching: a hook that mutated its inputs
-            // must never be stored. Compute it once, only when it can matter.
             let mut modified = if passed && (hook.stage_fixed || store_key.is_some()) {
                 modified_matched(&request.root, &prepared[pos].matched)?
             } else {
@@ -189,9 +177,6 @@ fn run_hooks(
                 outcome.files_modified = true;
             }
 
-            // For `DeclaredInputs` caching the digested set differs from
-            // `matched`; a mutation to a declared input outside `matched` must
-            // also block storing, or a later hit would drop that side effect.
             if modified.is_empty() && store_key.is_some() {
                 if let HookCache::DeclaredInputs(pattern) = &hook.cache {
                     let declared = declared_input_files(&request.root, pattern)?;
@@ -199,9 +184,6 @@ fn run_hooks(
                 }
             }
 
-            // Store only a passing, tree-clean run. `store_key` is `Some` only on
-            // a cache miss for a cacheable hook, so the bytes are written once. A
-            // store failure (full / read-only cache) must not fail the hook run.
             if let (Some(cache), Some(key)) = (request.cache.as_ref(), &store_key) {
                 if passed && modified.is_empty() {
                     if let Err(error) = cache.put(Namespace::Hook, key, &outcome.output) {
@@ -244,11 +226,6 @@ fn run_group(
         }
         let matched = &prepared[pos].matched;
 
-        // Derive the key once (reading input bytes at most once); `None` when
-        // caching is off, the hook is not cacheable, or an input is unreadable.
-        // A workspace hook under isolation is keyed on STAGED bytes (the
-        // snapshot), not the worktree — otherwise reverting an unstaged edit
-        // could replay a stale pass computed against different staged content.
         let content_root = match (hook.workspace, request.work_root.as_deref()) {
             (true, Some(snapshot)) => snapshot,
             _ => request.root.as_path(),
@@ -258,8 +235,6 @@ fn run_group(
             .as_ref()
             .and_then(|_| cache_key(&request.root, content_root, hook, matched));
 
-        // Lookup: a hit short-circuits execution. Only passing, tree-clean runs
-        // are ever stored, so a hit always means "passed cleanly".
         if let (Some(cache), Some(key)) = (request.cache.as_ref(), key.as_ref()) {
             if let Some(output) = cache.get(Namespace::Hook, key) {
                 return (cached_outcome(hook, pos, output), None);
@@ -267,13 +242,7 @@ fn run_group(
         }
 
         let refs: Vec<&Path> = matched.iter().map(AsRef::as_ref).collect();
-        // A cache hit or a skip returns above without ever reaching here, so a
-        // spinner is started only for hooks whose body actually executes.
         let hook_bar = ui.map(|ui| ui.start(&hook.id));
-        // A whole-workspace hook runs from the staged snapshot when the run
-        // carries one, isolating it to staged content; per-file hooks always run
-        // from the real root. When isolated, point cargo at the real `target/`
-        // so third-party dependency artifacts are reused instead of rebuilt.
         let (exec_root, cargo_target_dir) = match (hook.workspace, request.work_root.as_deref()) {
             (true, Some(snapshot)) => (snapshot, Some(request.root.join("target"))),
             _ => (request.root.as_path(), None),
@@ -373,8 +342,6 @@ fn cached_outcome(hook: &Hook, position: usize, output: Vec<u8>) -> HookOutcome 
     }
 }
 
-// ── Command construction & execution ────────────────────────────────────────
-
 fn build_command(
     hook: &Hook,
     root: &Path,
@@ -400,17 +367,12 @@ fn build_command(
             cmd
         }
     };
-    // A per-hook `cwd` overrides the repo root (resolved relative to root so
-    // relative paths like `"packages/go"` work as expected).
     let effective_cwd = hook
         .cwd
         .as_deref()
         .map_or_else(|| root.to_path_buf(), |rel| root.join(rel));
     cmd.current_dir(&effective_cwd);
     cmd.envs(hook.env.iter());
-    // Under staged isolation, redirect cargo's build cache to the real repo's
-    // `target/` so unchanged dependencies are not recompiled from the snapshot.
-    // A hook-level `CARGO_TARGET_DIR` in `hook.env` (rare) wins.
     if let Some(target) = cargo_target_dir {
         if !hook.env.contains_key("CARGO_TARGET_DIR") {
             cmd.env("CARGO_TARGET_DIR", target);
@@ -473,8 +435,6 @@ fn ensure_sccache_server(settings: &SccacheSettings) {
 
 #[cfg(not(windows))]
 fn shell_command(line: &str, args: &[String], files: &[&Path], pass_filenames: bool) -> Cmd {
-    // `sh -c '<line> "$@"' poly-hook <args> <files>` — args and matched files
-    // become the positional parameters consumed by `"$@"`. `$0` is a label.
     let mut cmd = Cmd::new(SHELL, line.to_string());
     cmd.arg(SHELL_ARG).arg(format!("{line} \"$@\"")).arg("poly-hook");
     cmd.args(args);
@@ -500,10 +460,6 @@ fn cmd_quote(value: &str) -> String {
 
 #[cfg(windows)]
 fn shell_command(line: &str, args: &[String], files: &[&Path], pass_filenames: bool) -> Cmd {
-    // `cmd /C` has no `"$@"`, so join the command, args, and files into one line.
-    // `line` is the author's command (trusted); args and matched files are
-    // quoted so they are passed as literal tokens — matching the Unix branch,
-    // where they reach the program as separate argv and are never reinterpreted.
     let mut joined = line.to_string();
     for arg in args {
         joined.push(' ');
@@ -570,8 +526,6 @@ fn run_precondition(root: &Path, command: &str) -> bool {
         .check(false);
     cmd.status().is_ok_and(|status| status.success())
 }
-
-// ── Preparation helpers ─────────────────────────────────────────────────────
 
 fn prepare(request: &HookRunRequest, spec: &StageSpec) -> Vec<Prepared> {
     let all_paths: Vec<&Path> = request.files.iter().map(AsRef::as_ref).collect();
@@ -644,8 +598,6 @@ fn modified_matched(root: &Path, matched: &[std::path::PathBuf]) -> anyhow::Resu
     Ok(modified)
 }
 
-// ── Result-cache key derivation ─────────────────────────────────────────────
-
 /// Derive the [`Namespace::Hook`] cache key for `hook`, or `None` when the hook
 /// is not cacheable or its inputs cannot be read.
 ///
@@ -714,13 +666,9 @@ fn read_digest(content_root: &Path, paths: impl Iterator<Item = PathBuf>) -> Opt
 /// target, argument list, or file-passing mode invalidates the cache key.
 fn hook_version(hook: &Hook) -> String {
     use std::fmt::Write as _;
-    // Build the identity string in one buffer — no `line.clone()` or
-    // `args.join("\0")` intermediates. The produced bytes are identical to the
-    // previous `format!`, so existing cache keys stay valid.
     let mut version = String::new();
     match &hook.command {
         HookCommand::Run(line) => version.push_str(line),
-        // Writing into a String is infallible.
         HookCommand::Script { path, runner } => {
             let _ = write!(version, "script\0{runner:?}\0{path}");
         }
@@ -732,8 +680,6 @@ fn hook_version(hook: &Hook) -> String {
         }
         version.push_str(arg);
     }
-    // `pass_filenames` changes the effective argv (per-file vs aggregate), so a
-    // toggle must invalidate even when command, args, env, and inputs are equal.
     let _ = write!(version, "\0pass_filenames={}", hook.pass_filenames);
     version
 }
@@ -750,7 +696,7 @@ fn hook_env_table(hook: &Hook) -> toml::Table {
 /// Estimate the argv bytes consumed by everything except the matched files, so
 /// `ARG_MAX` batching reserves the right headroom.
 fn base_arg_len(hook: &Hook) -> usize {
-    const FIXED: usize = 256; // program + shell wrapper + label
+    const FIXED: usize = 256;
     let command_len = match &hook.command {
         HookCommand::Run(line) => line.len(),
         HookCommand::Script { path, runner } => path.len() + runner.as_ref().map_or(0, String::len),
@@ -768,10 +714,7 @@ mod tests {
 
     #[test]
     fn cmd_quote_neutralizes_metacharacters() {
-        // A filename with a cmd.exe command separator must come back wrapped in
-        // quotes so it is a single literal token, not `evil.exe` as a command.
         assert_eq!(cmd_quote("foo.rs & evil.exe"), "\"foo.rs & evil.exe\"");
-        // Embedded quotes are doubled; percent is escaped.
         assert_eq!(cmd_quote("a\"b"), "\"a\"\"b\"");
         assert_eq!(cmd_quote("100%done"), "\"100%%done\"");
     }

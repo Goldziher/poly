@@ -81,7 +81,6 @@ impl ResultCache {
         for item in read_dir {
             let item = item.with_context(|| format!("failed to read entry in {}", dir.display()))?;
             let name = item.file_name();
-            // Skip in-flight `.<key>.<pid>.<n>.tmp` sibling-write temporaries.
             if name.to_string_lossy().starts_with('.') {
                 continue;
             }
@@ -91,8 +90,6 @@ impl ResultCache {
             if !metadata.is_file() {
                 continue;
             }
-            // Fall back to "now" when the platform has no mtime, so such an
-            // entry sorts as freshest and is evicted last.
             let modified = metadata.modified().unwrap_or_else(|_| SystemTime::now());
             entries.push(Entry {
                 path: item.path(),
@@ -198,7 +195,6 @@ impl ResultCache {
         let mut freed = 0u64;
         let now = SystemTime::now();
 
-        // Age eviction.
         for namespace in Namespace::ALL {
             for entry in self.collect_entries(namespace)? {
                 let too_old =
@@ -211,7 +207,6 @@ impl ResultCache {
             }
         }
 
-        // Size eviction — oldest first until within budget.
         if let Some(max_size) = max_size {
             let mut total: u64 = survivors.iter().map(|entry| entry.size).sum();
             if total > max_size {
@@ -320,7 +315,6 @@ mod tests {
         assert_eq!(cache.total_size().unwrap(), 0);
         let stats = cache.stats().unwrap();
         assert!(stats.per_namespace.iter().all(|s| s.entries == 0));
-        // The sentinel is rewritten so the tree stays usable.
         assert_eq!(stats.on_disk_version.as_deref(), Some(CACHE_FORMAT_VERSION));
     }
 
@@ -353,7 +347,6 @@ mod tests {
         backdate(&cache, Namespace::Lint, &oldest, Duration::from_secs(300));
         backdate(&cache, Namespace::Lint, &middle, Duration::from_secs(150));
 
-        // Budget of 4 bytes: keep only the newest 4-byte entry, evict the two older.
         let freed = cache.gc(None, Some(4)).unwrap();
         assert_eq!(freed, 8);
         assert_eq!(cache.total_size().unwrap(), 4);
@@ -365,7 +358,6 @@ mod tests {
         let cache = cache_at(&tmp);
         put(&cache, Namespace::Lint, "a", b"12345");
         put(&cache, Namespace::Hook, "b", b"678");
-        // Force a stale sentinel.
         std::fs::write(cache.root().join("VERSION"), "0").unwrap();
 
         let freed = cache.gc(None, None).unwrap();

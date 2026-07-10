@@ -7,8 +7,6 @@
 use std::sync::{Once, OnceLock};
 
 // ---------------------------------------------------------------------------
-// ToolSpec
-// ---------------------------------------------------------------------------
 
 /// Static description of one native CLI tool's contract.
 ///
@@ -74,10 +72,6 @@ impl ToolSpec {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Per-tool specs
-// ---------------------------------------------------------------------------
-
 /// `gofmt`: reads stdin unconditionally; no flags needed. Canonical Go
 /// formatter — **default-on** when found on `PATH`.
 pub(crate) static GOFMT_SPEC: ToolSpec = ToolSpec {
@@ -87,7 +81,6 @@ pub(crate) static GOFMT_SPEC: ToolSpec = ToolSpec {
     format_indent_flag: false,
     lint_binary: None,
     lint_args: &[],
-    // gofmt has no --version flag; use `go version` which ships alongside gofmt.
     version_binary: "go",
     version_args: &["version"],
     default_on: true,
@@ -109,12 +102,7 @@ pub(crate) static RUSTFMT_SPEC: ToolSpec = ToolSpec {
     version_args: &["--version"],
     default_on: true,
     edition_flag: true,
-    // Enable rustfmt.toml discovery. A project config is passed via
-    // --config-path; with no config, rustfmt applies its own defaults so
-    // poly agrees with `cargo fmt` instead of imposing an opinionated width.
     rustfmt_config_flag: true,
-    // rustfmt_config_flag already implies anchoring; run_in_file_dir stays
-    // false because the OR in format_via_tool handles it via rustfmt_config_flag.
     run_in_file_dir: false,
 };
 
@@ -141,8 +129,6 @@ pub(crate) static ZIGFMT_SPEC: ToolSpec = ToolSpec {
 pub(crate) static SHFMT_SPEC: ToolSpec = ToolSpec {
     engine_name: "shfmt",
     format_binary: Some("shfmt"),
-    // `-` tells shfmt to read from stdin; `-i N` is prepended dynamically
-    // via format_indent_flag when format_via_tool is called.
     format_args: &["-"],
     format_indent_flag: true,
     lint_binary: None,
@@ -164,7 +150,6 @@ pub(crate) static SHELLCHECK_SPEC: ToolSpec = ToolSpec {
     format_args: &[],
     format_indent_flag: false,
     lint_binary: Some("shellcheck"),
-    // `--format=json1` → JSON output; `-` → read from stdin.
     lint_args: &["--format=json1", "-"],
     version_binary: "shellcheck",
     version_args: &["--version"],
@@ -173,10 +158,6 @@ pub(crate) static SHELLCHECK_SPEC: ToolSpec = ToolSpec {
     rustfmt_config_flag: false,
     run_in_file_dir: false,
 };
-
-// ---------------------------------------------------------------------------
-// New opt-in per-language format backends (Wave 2)
-// ---------------------------------------------------------------------------
 
 /// `google-java-format -`: reads stdin, writes formatted Java to stdout.
 /// Opt-in (off by default). JVM warnings on stderr are discarded.
@@ -255,8 +236,6 @@ pub(crate) static SWIFT_FORMAT_SPEC: ToolSpec = ToolSpec {
     default_on: false,
     edition_flag: false,
     rustfmt_config_flag: false,
-    // Anchored to the source file's directory so swift-format discovers
-    // the nearest .swift-format config file.
     run_in_file_dir: true,
 };
 
@@ -265,7 +244,6 @@ pub(crate) static SWIFT_FORMAT_SPEC: ToolSpec = ToolSpec {
 pub(crate) static DARTFMT_SPEC: ToolSpec = ToolSpec {
     engine_name: "dartfmt",
     format_binary: Some("dart"),
-    // No filename argument: dart format reads from stdin when no files given.
     format_args: &["format", "-o", "show"],
     format_indent_flag: false,
     lint_binary: None,
@@ -295,10 +273,6 @@ pub(crate) static GLEAMFMT_SPEC: ToolSpec = ToolSpec {
     run_in_file_dir: false,
 };
 
-// ---------------------------------------------------------------------------
-// Per-tool probe caches (process lifetime, one per tool)
-// ---------------------------------------------------------------------------
-
 /// `Some(version)` = `gofmt` found on PATH; `None` = absent.
 pub(crate) static GOFMT_PROBE: OnceLock<Option<String>> = OnceLock::new();
 /// `Some(version)` = `rustfmt` found on PATH; `None` = absent.
@@ -322,10 +296,6 @@ pub(crate) static DARTFMT_PROBE: OnceLock<Option<String>> = OnceLock::new();
 /// `Some(version)` = `gleam` found on PATH; `None` = absent.
 pub(crate) static GLEAMFMT_PROBE: OnceLock<Option<String>> = OnceLock::new();
 
-// ---------------------------------------------------------------------------
-// Version cache-key strings (per tool)
-// ---------------------------------------------------------------------------
-
 /// Folds in the native tool version AND the tree-sitter engine version, because
 /// the disabled/absent path delegates to tier-2.
 pub(crate) static GOFMT_KEY: OnceLock<String> = OnceLock::new();
@@ -342,19 +312,6 @@ pub(crate) static SWIFT_FORMAT_KEY: OnceLock<String> = OnceLock::new();
 pub(crate) static DARTFMT_KEY: OnceLock<String> = OnceLock::new();
 pub(crate) static GLEAMFMT_KEY: OnceLock<String> = OnceLock::new();
 
-// ---------------------------------------------------------------------------
-// Tier-2 fallback notice guards (format-only engines)
-// ---------------------------------------------------------------------------
-
-// Guards the "falling back to the generic tier" info notice so it fires at most
-// once per language per process run, never once per file (the format() path runs
-// inside the per-file rayon loop).
-//
-// Lint-only engines (shellcheck) do not emit a fallback notice because absent
-// shellcheck silently omits shell-specific diagnostics — the TS tier still runs
-// for whitespace/generic checks. There is nothing unexpected about a machine
-// without shellcheck installed.
-
 pub(crate) static GOFMT_NOTICE: Once = Once::new();
 pub(crate) static RUSTFMT_NOTICE: Once = Once::new();
 pub(crate) static ZIGFMT_NOTICE: Once = Once::new();
@@ -366,24 +323,16 @@ pub(crate) static SWIFT_FORMAT_NOTICE: Once = Once::new();
 pub(crate) static DARTFMT_NOTICE: Once = Once::new();
 pub(crate) static GLEAMFMT_NOTICE: Once = Once::new();
 
-// ---------------------------------------------------------------------------
-// Unit tests
-// ---------------------------------------------------------------------------
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn rustfmt_spec_has_config_flag() {
-        // Verifies rustfmt_config_flag is set so format_via_tool activates
-        // rustfmt.toml discovery (--config-path when a rustfmt.toml is found,
-        // rustfmt's own defaults when none is found).
         assert!(
             RUSTFMT_SPEC.rustfmt_config_flag,
             "RUSTFMT_SPEC.rustfmt_config_flag must be true to activate rustfmt config discovery"
         );
-        // rustfmt uses rustfmt_config_flag for anchoring; run_in_file_dir stays false.
         assert!(
             !RUSTFMT_SPEC.run_in_file_dir,
             "rustfmt uses rustfmt_config_flag, not run_in_file_dir"
@@ -408,7 +357,6 @@ mod tests {
             !SHELLCHECK_SPEC.rustfmt_config_flag,
             "shellcheck does not support rustfmt_config_flag"
         );
-        // New Wave 2 specs: none use rustfmt_config_flag.
         assert!(
             !JAVA_FMT_SPEC.rustfmt_config_flag,
             "google-java-format does not need rustfmt_config_flag"
@@ -433,7 +381,6 @@ mod tests {
             !GLEAMFMT_SPEC.rustfmt_config_flag,
             "gleamfmt does not need rustfmt_config_flag"
         );
-        // swift-format is the only spec that sets run_in_file_dir; all others are false.
         assert!(!GOFMT_SPEC.run_in_file_dir, "gofmt does not need run_in_file_dir");
         assert!(!ZIGFMT_SPEC.run_in_file_dir, "zigfmt does not need run_in_file_dir");
         assert!(!SHFMT_SPEC.run_in_file_dir, "shfmt does not need run_in_file_dir");

@@ -25,26 +25,16 @@ documentation = "https://github.com/Goldziher/poly"
 [workspace.dependencies]
 aho-corasick = "1.1.4"
 # alejandra — Nix formatter (UNLICENSE, pure Rust via rnix); chosen over
-# nixpkgs-fmt, which pulls unmaintained ansi_term/atty (cargo deny advisories)
 alejandra = "3.1"
 annotate-snippets = "0.12.16"
 anstream = "1.0.0"
 anstyle-query = "1.1.5"
 anyhow = "1"
-# assert_cmd — CLI integration testing for the vendored gitfluff binary
 assert_cmd = "2"
 assert_fs = "1.1.4"
-# ast-grep — tree-sitter-based custom rule engine (MIT, 0.44.1). Shares the
-# same tree-sitter 0.26 major as poly's tier-2 generic formatter so grammar
-# types unify without a second grammar set. Do NOT add ast-grep-language.
 ast-grep-config = "0.44.1"
 ast-grep-core = "0.44.1"
 axoupdater = { version = "0.10.0", default-features = false, features = ["github_releases"] }
-# biome analyzer git deps — all biome_* crates MUST share the same `rev` to keep
-# the internal biome_rowan / biome_analyze type graph consistent. Published
-# crates.io copies are stale or not published at all; pin git, same pattern as
-# oxc/ruff. License: MIT OR Apache-2.0. MSRV 1.96 (already approved).
-# Rev = HEAD of biomejs/biome as of 2026-07-05.
 biome_analyze = { git = "https://github.com/biomejs/biome", rev = "93d8e5352454bccfbd179db03b3155776599c52c" }
 biome_css_analyze = { git = "https://github.com/biomejs/biome", rev = "93d8e5352454bccfbd179db03b3155776599c52c" }
 biome_css_parser = { git = "https://github.com/biomejs/biome", rev = "93d8e5352454bccfbd179db03b3155776599c52c" }
@@ -61,12 +51,8 @@ cargo_metadata = "0.23.1"
 clap = { version = "4", features = ["derive"] }
 clap_complete = { version = "4.6.7", features = ["unstable-dynamic"] }
 console = { version = "0.16", default-features = false, features = ["ansi-parsing", "std"] }
-# criterion — statistical microbenchmark harness for the hot-path benches under
-# crates/poly-core/benches/ (dev-dependency only; never linked into binaries)
 criterion = "0.8"
 ctrlc = "3.5.2"
-# dockerfile-parser — pure-Rust Dockerfile AST parser (MIT-licensed, by Hewlett Packard Enterprise).
-# Used by the DockerfileEngine to lint Dockerfiles with hadolint-style rules.
 dockerfile-parser = "0.9.0"
 dunce = "1.0.5"
 etcetera = "0.11.0"
@@ -76,24 +62,18 @@ gitfluff = { path = "crates/gitfluff" }
 globset = "0.4.18"
 graphql-parser = "0.4"
 hcl-edit = "0.9.6"
-# hcl-rs — HCL/Terraform formatter (MIT OR Apache-2.0). Used for comment-free
-# format pass; hcl-edit is used for parse-error lint.
 hcl-rs = "0.19.7"
 hex = "0.4.3"
 http = "1.4.2"
 ignore = "0.4"
 indicatif = "0.18.6"
 indoc = "2.0.7"
-# insta snapshot testing
 insta = "1"
 insta-cmd = "0.7.0"
 itertools = "0.15.0"
 json5 = "1.3.1"
 libc = "0.2.186"
-# Enable static linking for liblzma (xz feature in async-compression).
 liblzma = { version = "0.4.7", features = ["static"] }
-# mago — tier-1 PHP linter + formatter backend (MIT OR Apache-2.0, v1.42.0)
-# All eight crates are pinned to the same version for internal type consistency.
 mago-allocator = { version = "=1.42.0" }
 mago-database = { version = "=1.42.0" }
 mago-formatter = { version = "=1.42.0", features = ["serde"] }
@@ -109,10 +89,6 @@ markdown = "1.0.0"
 markup_fmt = "0.27"
 memchr = "2.8.2"
 owo-colors = { version = "4", features = ["supports-colors"] }
-# oxc git deps — all crates MUST share the same `rev` to keep the internal
-# oxc_ast / oxc_span type graph consistent. Published versions are stale;
-# oxc_formatter and oxc_formatter_core were never published to crates.io.
-# Rev = latest HEAD of the oxc monorepo as of 2026-07-05.
 oxc_allocator = { git = "https://github.com/oxc-project/oxc", rev = "24c19a8216c450c7438fd051d0dc96cffcb9e231" }
 oxc_diagnostics = { git = "https://github.com/oxc-project/oxc", rev = "24c19a8216c450c7438fd051d0dc96cffcb9e231" }
 oxc_formatter = { git = "https://github.com/oxc-project/oxc", rev = "24c19a8216c450c7438fd051d0dc96cffcb9e231" }
@@ -129,30 +105,16 @@ poly-core = { path = "crates/poly-core" }
 poly-hooks = { path = "crates/poly-hooks" }
 poly-mcp = { path = "crates/poly-mcp" }
 pprof = "0.15.0"
-# predicates — assertion combinators for the vendored gitfluff CLI tests
 predicates = "3"
 pretty_assertions = "1.4.1"
-# pretty_graphql — g-plane pure-Rust GraphQL formatter (MIT); SDL + query docs
 pretty_graphql = "0.2.3"
-# pretty_yaml — g-plane pure-Rust YAML formatter (MIT); CST-based structural reflow
 pretty_yaml = "0.6"
 quick-xml = "0.41"
 rand = "0.10.2"
 rayon = "1"
 regex = "1"
-# rmcp — official Rust Model Context Protocol SDK (Apache-2.0). Consumed by poly-mcp
-# (the `poly mcp` stdio server). Keeps the default feature set (server + macros +
-# transport-io/async-rw) and adds `schemars` for tool parameter JSON Schemas; the
-# `client` feature is enabled only in poly-mcp's dev-dependencies for round-trip tests.
 rmcp = { version = "2.1.0", features = ["schemars"] }
-# rubyfmt — opinionated Ruby formatter built on the Prism parser (MIT).
-# Not published to crates.io; pinned to a specific git rev for reproducibility.
-# default-features = false disables the optional tikv-jemallocator/jemalloc
-# allocator so rubyfmt does not override the workspace's allocator.
 rubyfmt = { git = "https://github.com/fables-tales/rubyfmt", rev = "d3d433caffa02446a295f60fd8b727099bebbb97", default-features = false }
-# ruff git deps — all crates MUST share the same `rev` to keep the internal
-# ruff type graph consistent. The published 0.0.3 crates are stale; ruff_linter
-# was never published to crates.io. Rev = HEAD of astral-sh/ruff as of 2026-07-05.
 ruff_db = { git = "https://github.com/astral-sh/ruff", rev = "e6f1513d78c99bc8af1fcc3bc2a9a81e25cb3c2d" }
 ruff_diagnostics = { git = "https://github.com/astral-sh/ruff", rev = "e6f1513d78c99bc8af1fcc3bc2a9a81e25cb3c2d" }
 ruff_formatter = { git = "https://github.com/astral-sh/ruff", rev = "e6f1513d78c99bc8af1fcc3bc2a9a81e25cb3c2d" }
@@ -166,7 +128,6 @@ rumdl = { version = "0.2", default-features = false }
 rustc-hash = "2.1.3"
 rustix = { version = "1.1.4", features = ["pty", "process", "fs", "termios"] }
 same-file = "1.0.6"
-# saphyr — pure-Rust YAML parser, used by the yaml backend for validity lint
 saphyr = "0.0.9"
 schemars = "1.2.1"
 seahash = "4.1.0"
@@ -175,8 +136,6 @@ serde = { version = "1", features = ["derive"] }
 serde-saphyr = { version = "0.0.29", default-features = false, features = ["deserialize", "serialize"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 serde_stacker = "0.1.14"
-# serde_toon_format — TOON (Token-Oriented Object Notation) serde serializer
-# for the `--format toon` output renderer
 serde_toon_format = "0.1"
 shlex = "2.0.1"
 similar = "3.1.1"
@@ -188,26 +147,15 @@ target-lexicon = "0.13.5"
 tempfile = "3"
 textwrap = "0.16.2"
 thiserror = "2"
-# tokio — async runtime for the poly-mcp stdio server only; kept out of the
-# synchronous, rayon-driven lint/format hot-path crates.
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std"] }
 toml = "1.1"
 toml_edit = "0.25"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
-# tree-sitter — raw bindings, needed to drive QueryCursor / Query::matches in the
-# tier-2 query-driven indent path (get_query returns Arc<tree_sitter::Query>).
-# Must match the version tree-sitter-language-pack depends on so Cargo unifies them.
 tree-sitter = "0.26"
-# tree-sitter-language-pack — tier-2 generic formatter; default features
-# (dynamic-loading + download) fetch grammars from GitHub releases on demand.
-# 1.12 adds prefetch() + the lock-free get_language fast path (see runner.rs).
 tree-sitter-language-pack = "1.12"
-# typos + typos-dict — cross-cutting spell-check backend
 typos = "0.10"
 typos-dict = "0.13"
-# uncomment — opt-in tree-sitter comment-removal lint backend (MIT). Shares the
-# same tree-sitter-language-pack major as poly's tier-2 tier, so grammars unify.
 uncomment = "3.2"
 unicase = "2"
 unicode-width = { version = "0.2.2", default-features = false }

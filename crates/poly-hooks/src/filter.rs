@@ -13,8 +13,6 @@ use globset::{Glob, GlobSet, GlobSetBuilder};
 use rustc_hash::FxHashMap;
 use tracing::error;
 
-// ── GlobPatterns ─────────────────────────────────────────────────────────────
-
 /// A compiled set of glob patterns that can match file paths.
 #[derive(Clone)]
 pub struct GlobPatterns {
@@ -57,8 +55,6 @@ impl std::fmt::Debug for GlobPatterns {
             .finish_non_exhaustive()
     }
 }
-
-// ── FilePattern ───────────────────────────────────────────────────────────────
 
 /// A file-matching pattern: never match, a regex, or a set of globs.
 #[derive(Debug, Clone)]
@@ -124,8 +120,6 @@ impl std::fmt::Display for FilePattern {
     }
 }
 
-// ── FilenameFilter ────────────────────────────────────────────────────────────
-
 /// Filter filenames by optional include and exclude patterns.
 ///
 /// A path passes if:
@@ -159,8 +153,6 @@ impl<'a> FilenameFilter<'a> {
         true
     }
 }
-
-// ── FileTagFilter ─────────────────────────────────────────────────────────────
 
 /// Filter files by tag intersection: `all`, `any`, and `exclude` tag sets.
 pub struct FileTagFilter<'a> {
@@ -198,8 +190,6 @@ impl<'a> FileTagFilter<'a> {
         true
     }
 }
-
-// ── HookFileFilter ────────────────────────────────────────────────────────────
 
 /// Combined filename + tag filter for a hook's file selection criteria.
 ///
@@ -255,8 +245,6 @@ impl<'a> HookFileFilter<'a> {
     }
 }
 
-// ── FileTagCache ──────────────────────────────────────────────────────────────
-
 /// Per-file tag cache — computes tags lazily via [`tags_from_path`] and
 /// memoises the result in a `OnceCell` for re-use within a single hook run.
 #[derive(Default)]
@@ -275,8 +263,6 @@ impl<'a> FileTagCache<'a> {
         I: IntoIterator<Item = &'a Path>,
     {
         let paths = paths.into_iter().collect::<Vec<_>>();
-        // First occurrence wins, matching the previous `position` lookup when a
-        // path appears more than once.
         let mut index = FxHashMap::default();
         for (idx, &path) in paths.iter().enumerate() {
             index.entry(path).or_insert(idx);
@@ -351,7 +337,6 @@ mod tests {
         let include = regex(r".*\.py$");
         let filter = FilenameFilter::new(Some(&include), None);
 
-        // A simple UTF-8 path must match.
         assert!(filter.matches(Path::new("foo.py")));
     }
 
@@ -387,7 +372,6 @@ mod tests {
         let include = regex(r".*\.py$");
         let path = Path::new(OsStr::from_bytes(b"bad-\xff.py"));
         let filter = FilenameFilter::new(Some(&include), None);
-        // Non-UTF-8 path → `to_str()` returns None → match returns false.
         assert!(!filter.matches(path));
     }
 

@@ -130,10 +130,6 @@ fn refresh(root: &Path, dir: &Path) -> Result<(), Error> {
 
     prune_stale(dir, &staged, &previous);
 
-    // Content always comes from the index blob (authoritative, stat-independent).
-    // A path is re-materialized only when its index OID changed since the last
-    // snapshot or its snapshot copy is missing; unchanged paths are left in
-    // place so their mtime is stable across runs and compilers stay warm.
     let mut to_checkout: Vec<PathBuf> = Vec::new();
     for entry in &staged {
         let up_to_date = previous.get(&entry.path) == Some(&entry.oid) && snapshot_present(&dir.join(&entry.path));
@@ -160,7 +156,6 @@ fn materialize_submodules(root: &Path, dir: &Path) -> Result<(), Error> {
             debug!(submodule = %subpath.display(), "skipping uninitialized submodule");
             continue;
         }
-        // Canonicalize so the link target is absolute and cwd-independent.
         let target = std::fs::canonicalize(&source).unwrap_or(source);
         ensure_symlink(&target, &dir.join(&subpath))?;
     }
@@ -177,10 +172,6 @@ fn is_populated_dir(path: &Path) -> bool {
 /// is left untouched (stable mtime keeps compilers warm); any other existing
 /// entry — a stale symlink or an empty `checkout-index` directory — is replaced.
 fn ensure_symlink(target: &Path, link: &Path) -> Result<(), Error> {
-    // Already the correct symlink? Compare by canonicalized destination rather
-    // than the raw `read_link` target, so a Windows verbatim prefix (`\\?\`) or
-    // separator difference never forces a needless recreate — which would churn
-    // the mtime and cool a compiler's cache (ADR 0019).
     if is_symlink_to(link, target) {
         return Ok(());
     }
@@ -261,7 +252,6 @@ fn prune_stale(dir: &Path, staged: &[git::StagedEntry], previous: &HashMap<PathB
     let current: std::collections::HashSet<&PathBuf> = staged.iter().map(|entry| &entry.path).collect();
     for path in previous.keys() {
         if !current.contains(path) {
-            // Best-effort: a file a hook already removed is fine.
             let _ = std::fs::remove_file(dir.join(path));
         }
     }
@@ -342,7 +332,6 @@ mod tests {
             std::fs::read_to_string(snap.path().join("committed.txt")).unwrap(),
             "staged\n"
         );
-        // The staged blob ("v1"), not the dirty worktree ("v1\nDIRTY").
         assert_eq!(
             std::fs::read_to_string(snap.path().join("unstaged.txt")).unwrap(),
             "v1\n"
@@ -355,9 +344,6 @@ mod tests {
 
     #[test]
     fn snapshot_uses_index_content_even_when_worktree_differs_in_size() {
-        // The core guarantee: an unstaged worktree edit — even one `git
-        // diff-files` might under-report from a stale stat cache — must never
-        // reach the snapshot, because content is sourced from the index OID.
         let tmp = TempDir::new().expect("tmp repo");
         let cache = TempDir::new().expect("cache home");
         let repo = tmp.path();
@@ -365,7 +351,6 @@ mod tests {
         std::fs::write(repo.join("big.h"), "STAGED\n").unwrap();
         git(repo, &["add", "big.h"]);
         git(repo, &["commit", "-q", "-m", "init"]);
-        // A genuine, size-changing unstaged edit (never staged).
         std::fs::write(
             repo.join("big.h"),
             "WORKTREE EDIT that is much longer than the staged blob\n",
@@ -383,8 +368,6 @@ mod tests {
 
     #[test]
     fn unchanged_file_is_not_rematerialized_across_refreshes() {
-        // A file whose staged OID is unchanged must be left untouched on refresh
-        // (stable mtime) so a compiler's incremental cache stays warm.
         let tmp = TempDir::new().expect("tmp repo");
         let cache = TempDir::new().expect("cache home");
         let repo = tmp.path();
@@ -403,7 +386,6 @@ mod tests {
 
     #[test]
     fn changed_staged_oid_is_rematerialized() {
-        // When the staged content changes, the snapshot must pick it up.
         let tmp = TempDir::new().expect("tmp repo");
         let cache = TempDir::new().expect("cache home");
         let repo = tmp.path();
@@ -425,15 +407,10 @@ mod tests {
 
     #[test]
     fn snapshot_exposes_submodule_content_via_symlink() {
-        // Regression: `git checkout-index` never materializes a submodule's files,
-        // so a compile hook that reaches into a submodule (e.g. `include_bytes!` of
-        // a fixture) failed in the sandbox though the real tree compiles. The
-        // snapshot must expose the submodule as a symlink into the live worktree.
         let tmp = TempDir::new().expect("tmp");
         let cache = TempDir::new().expect("cache home");
         let root = tmp.path();
 
-        // A standalone repo to embed as a submodule, holding a compile-time fixture.
         let sub = root.join("subrepo_src");
         std::fs::create_dir_all(sub.join("fixtures")).unwrap();
         init(&sub);
@@ -441,8 +418,6 @@ mod tests {
         git(&sub, &["add", "."]);
         git(&sub, &["commit", "-q", "-m", "fixture"]);
 
-        // Parent repo with the submodule added at `vendor`. Local-path submodules
-        // require `protocol.file.allow=always` (tightened since CVE-2022-39253).
         let parent = root.join("parent");
         std::fs::create_dir_all(&parent).unwrap();
         init(&parent);
@@ -462,14 +437,12 @@ mod tests {
 
         let snap = StagedSnapshot::create_in(cache.path(), &parent).expect("snapshot");
 
-        // The submodule fixture must resolve through the snapshot...
         let via_snapshot = snap.path().join("vendor/fixtures/data.bin");
         assert!(
             via_snapshot.exists(),
             "submodule fixture must resolve through the snapshot"
         );
         assert_eq!(std::fs::read(&via_snapshot).unwrap(), b"FIXTURE");
-        // ...and it must be a symlink into the worktree, not an expensive copy.
         assert!(
             std::fs::symlink_metadata(snap.path().join("vendor"))
                 .unwrap()
@@ -478,7 +451,6 @@ mod tests {
             "submodule must be exposed as a symlink, not copied"
         );
 
-        // Refresh is idempotent — the symlink survives a second run.
         StagedSnapshot::create_in(cache.path(), &parent).expect("refresh");
         assert_eq!(std::fs::read(&via_snapshot).unwrap(), b"FIXTURE");
     }
@@ -495,11 +467,9 @@ mod tests {
         git(repo, &["commit", "-q", "-m", "init"]);
         let snap = StagedSnapshot::create_in(cache.path(), repo).expect("first");
 
-        // A tool writes a cache artifact into the snapshot (untracked).
         std::fs::create_dir_all(snap.path().join("target")).unwrap();
         std::fs::write(snap.path().join("target/cache.bin"), "artifact").unwrap();
 
-        // Remove a tracked file, then refresh.
         git(repo, &["rm", "-q", "gone.rs"]);
         StagedSnapshot::create_in(cache.path(), repo).expect("refresh");
 

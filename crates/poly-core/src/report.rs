@@ -76,12 +76,9 @@ fn render_debug_block(out: &mut String, debug: &RunDebug) {
 pub fn render_lint_pretty(results: &[LintResult], verbosity: Verbosity) -> (String, usize) {
     let mut out = String::new();
     let mut total = 0usize;
-    // Count findings carrying a suggested autofix so the summary can tell the
-    // user how many of the reported issues `--fix` would resolve.
     let mut fixable = 0usize;
     for r in results {
         if r.diagnostics.is_empty() {
-            // With --debug, surface timing even for files with no findings.
             if verbosity.debug
                 && let Some(debug) = &r.debug
             {
@@ -96,7 +93,6 @@ pub fn render_lint_pretty(results: &[LintResult], verbosity: Verbosity) -> (Stri
             if !d.fix.is_empty() {
                 fixable += 1;
             }
-            // Build the terse line from only the segments that are present.
             let mut segments: Vec<String> = Vec::with_capacity(5);
             segments.push(severity_label(d.severity));
             segments.push(d.engine.if_supports_color(Stdout, |t| t.magenta()).to_string());
@@ -140,8 +136,6 @@ pub fn render_lint_pretty(results: &[LintResult], verbosity: Verbosity) -> (Stri
             "\n{}",
             format!("{total} issue(s) found.").if_supports_color(Stdout, |t| t.red())
         );
-        // Mirror ruff's hint: tell the user how many are autofixable so a dry-run
-        // makes the value of `--fix` obvious. Omitted when nothing is fixable.
         if fixable > 0 {
             let _ = writeln!(
                 out,
@@ -199,8 +193,6 @@ pub fn render_format_pretty(results: &[FormatResult], check: bool, verbosity: Ve
             "All formatted.".if_supports_color(Stdout, |t| t.green())
         );
     } else {
-        // Dry-run (`check`) has not written anything yet, so use the future tense;
-        // `--fix` (`!check`) actually rewrote the files, so keep the past tense.
         let phrase = if check {
             format!("{n} file(s) will change")
         } else {

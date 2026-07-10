@@ -138,10 +138,6 @@ fn build_excludes(root: &std::path::Path, exclude: &[String]) -> Option<ignore::
             tracing::warn!(%glob, %error, "skipping invalid [discovery] exclude glob");
             continue;
         }
-        // `dir/**` matches files *inside* `dir` but not `dir` itself, so the
-        // walker would descend the whole subtree before discarding each entry.
-        // Also exclude the bare directory so it is pruned before descent (like
-        // PRUNED_DIRECTORIES), turning an `O(subtree)` walk into `O(1)`.
         if let Some(dir) = glob.strip_suffix("/**")
             && let Err(error) = builder.add(&format!("!{dir}"))
         {

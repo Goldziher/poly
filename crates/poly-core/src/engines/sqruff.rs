@@ -68,10 +68,6 @@ impl Engine for SqruffEngine {
     }
 
     fn capabilities(&self) -> Capabilities {
-        // `fix` is false: sqruff's autofix edits are not wired through the
-        // poly `Edit` path, so advertising fix=true would silently do nothing
-        // under `poly lint --fix`.  The format path already applies structural
-        // fixes via `lint_string(…, fix=true)` / `fix_string()`.
         Capabilities {
             lint: true,
             format: true,
@@ -130,8 +126,6 @@ impl Engine for SqruffEngine {
 fn build_fluff_config(cfg: &EngineConfig) -> anyhow::Result<FluffConfig> {
     let dialect_str = cfg.options.get("dialect").and_then(|v| v.as_str()).unwrap_or("ansi");
 
-    // Validate the dialect upfront so we can surface a descriptive error rather
-    // than panicking inside FluffConfig::new.
     if dialect_str != "ansi" {
         DialectKind::from_str(dialect_str).map_err(|_| {
             anyhow::anyhow!(
@@ -143,26 +137,19 @@ fn build_fluff_config(cfg: &EngineConfig) -> anyhow::Result<FluffConfig> {
         })?;
     }
 
-    // Build an INI config string.  FluffConfig::from_source merges this with
-    // sqruff's built-in defaults — user entries win on conflict.
     let mut ini = format!("[sqruff]\nmax_line_length = {}\n", cfg.globals.line_length);
 
     if dialect_str != "ansi" {
         ini.push_str(&format!("dialect = {dialect_str}\n"));
     }
 
-    // Rule selection (ADR 0016): the canonical `select` / `ignore` vocabulary is
-    // unioned with sqruff's native `rules` / `exclude_rules` aliases before being
-    // emitted as the INI allow-list / deny-list.
     let selection = RuleSelection::from_options(cfg);
 
-    // Allow-list: native `rules` ∪ canonical `select`.
     let allow = warn_and_skip_blank(union_codes(string_list(cfg, "rules"), selection.select), "sqruff");
     if !allow.is_empty() {
         ini.push_str(&format!("rules = {}\n", allow.join(",")));
     }
 
-    // Deny-list: native `exclude_rules` ∪ canonical `ignore`.
     let deny = warn_and_skip_blank(
         union_codes(string_list(cfg, "exclude_rules"), selection.ignore),
         "sqruff",
@@ -171,18 +158,12 @@ fn build_fluff_config(cfg: &EngineConfig) -> anyhow::Result<FluffConfig> {
         ini.push_str(&format!("exclude_rules = {}\n", deny.join(",")));
     }
 
-    // Per-rule parameters: `[lint.sql.sqruff.rule_configs]`.
-    // Each key is a rule section name (e.g. `"capitalisation.keywords"`);
-    // each value is an inline table of option key/value pairs.
     // These become `[sqruff:rules:<name>]` INI sections that sqruff merges on
-    // top of its own rule defaults.
     if let Some(rule_configs) = cfg.options.get("rule_configs").and_then(|v| v.as_table()) {
         for (rule_name, rule_opts) in rule_configs {
             if let Some(opts_table) = rule_opts.as_table() {
                 ini.push_str(&format!("\n[sqruff:rules:{rule_name}]\n"));
                 for (key, val) in opts_table {
-                    // Skip non-scalar values rather than emit a bare `key = `
-                    // (which sqruff's INI parser would read as an empty value).
                     let val_str = toml_val_to_ini_str(val);
                     if !val_str.is_empty() {
                         ini.push_str(&format!("{key} = {val_str}\n"));
@@ -202,8 +183,6 @@ fn build_fluff_config(cfg: &EngineConfig) -> anyhow::Result<FluffConfig> {
 /// casing (case-insensitive in the INI parser, but matches the convention).
 fn toml_val_to_ini_str(v: &toml::Value) -> String {
     match v {
-        // Strip newlines so a value can't inject a spurious `[section]` or key
-        // into the generated INI.
         toml::Value::String(s) => s.replace(['\n', '\r'], " "),
         toml::Value::Boolean(b) => {
             if *b {
@@ -229,7 +208,6 @@ fn violation_to_diagnostic(violation: SQLBaseError) -> Diagnostic {
     let is_parse_error = code_str == "????";
     Diagnostic {
         engine: "sqruff".to_string(),
-        // Map the sentinel "????" (no rule attached, e.g. parse/lex errors) to None.
         code: if is_parse_error {
             None
         } else {

@@ -106,10 +106,6 @@ fn validate_job(stage: Stage, label: &str, job: &Job) -> Result<(), String> {
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// Custom Deserialize: partition reserved keys from per-stage keys.
-// ---------------------------------------------------------------------------
-
 impl<'de> Deserialize<'de> for HooksConfig {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         deserializer.deserialize_map(HooksConfigVisitor)
@@ -179,7 +175,6 @@ impl<'de> Visitor<'de> for HooksConfigVisitor {
             builtin: builtin.unwrap_or_default(),
             stage_configs,
             isolate,
-            // Reached only when a `[hooks]` table exists in the source.
             present: true,
         })
     }

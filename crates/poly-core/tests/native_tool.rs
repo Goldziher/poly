@@ -23,10 +23,6 @@ use poly_core::{
     engines::treesitter::TreeSitterEngine,
 };
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 fn make_src(path: &str, language: Language, content: &str) -> SourceFile {
     SourceFile {
         path: path.into(),
@@ -36,8 +32,6 @@ fn make_src(path: &str, language: Language, content: &str) -> SourceFile {
 }
 
 fn disabled_cfg() -> EngineConfig {
-    // Explicit enabled=false: required now that the canonical tools (rustfmt,
-    // gofmt) are default-on when present.
     let mut options = toml::Table::new();
     options.insert("enabled".to_string(), toml::Value::Boolean(false));
     EngineConfig {
@@ -56,10 +50,6 @@ fn enabled_cfg() -> EngineConfig {
         options,
     }
 }
-
-// ---------------------------------------------------------------------------
-// Wave-2 metadata (no tool presence required)
-// ---------------------------------------------------------------------------
 
 #[test]
 fn engine_metadata_java() {
@@ -139,10 +129,6 @@ fn engine_metadata_gleam() {
     assert!(!engine.capabilities().fix);
 }
 
-// ---------------------------------------------------------------------------
-// Default-off invariant
-// ---------------------------------------------------------------------------
-
 /// With an explicit `enabled = false`, `NativeToolEngine` for Go must produce
 /// byte-identical output to a direct `TreeSitterEngine` call.
 ///
@@ -175,13 +161,8 @@ fn disabled_is_byte_identical_to_tier2() {
         "disabled NativeToolEngine(Go) must be byte-identical to TreeSitterEngine"
     );
 
-    // Snapshot the tier-2 output for regression detection.
     insta::assert_snapshot!("native_tool_disabled_go_tier2_output", ts_out);
 }
-
-// ---------------------------------------------------------------------------
-// Known-unformatted fixtures (tool-gated)
-// ---------------------------------------------------------------------------
 
 /// Known-unformatted Go: missing blank lines and unindented body.
 const GO_UNFORMATTED: &str = concat!(
@@ -290,10 +271,6 @@ fn zig_known_unformatted_snapshot() {
     insta::assert_snapshot!("zig_native_known_unformatted", formatted);
 }
 
-// ---------------------------------------------------------------------------
-// rustfmt.toml conformance tests
-// ---------------------------------------------------------------------------
-
 /// poly honours a project-level `rustfmt.toml`: a 95-char function signature
 /// (clean at the 120-column poly default) is reformatted when the toml sets
 /// `max_width = 60` — proving poly did NOT override it with `max_width = 120`.
@@ -307,14 +284,9 @@ fn rustfmt_honors_rustfmt_toml_max_width() {
         return;
     }
 
-    // Temp dir acts as the project root with rustfmt.toml max_width = 60.
     let tmp = tempfile::tempdir().expect("create temp dir for rustfmt.toml test");
     std::fs::write(tmp.path().join("rustfmt.toml"), "max_width = 60\n").expect("write rustfmt.toml");
 
-    // 95-char signature (clean at max_width 120, too wide at max_width 60).
-    // rustfmt at max_width 60 wraps the parameters → Formatted.
-    // If poly ignores the toml and injects max_width 120, rustfmt leaves it
-    // intact → Unchanged.  The assert proves poly honoured the toml.
     const SRC: &str = concat!(
         "fn function_with_long_params(",
         "param_one: String, param_two: String, param_three: u32) -> bool {\n",
@@ -336,10 +308,6 @@ fn rustfmt_honors_rustfmt_toml_max_width() {
          and ignored the project toml"
     );
 }
-
-// ---------------------------------------------------------------------------
-// Wave-2 opt-in backends (gated on tool presence)
-// ---------------------------------------------------------------------------
 
 /// Known-unformatted Java: missing blank lines between class members.
 /// Skipped when `google-java-format` is not on PATH.
@@ -400,11 +368,6 @@ fn r_native_known_unformatted_snapshot() {
     }
     let src = make_src("script.R", Language::R, R_UNFORMATTED);
     let result = engine.format(&src, &enabled_cfg()).unwrap();
-    // `is_available()` only probes `Rscript`; the actual reformat needs the
-    // `styler` package, which may be absent even when Rscript is present (e.g.
-    // the Windows CI runner). A no-op then means "formatter effectively
-    // unavailable" — skip, rather than assert the unformatted input against the
-    // formatted snapshot.
     let FormatOutput::Formatted(formatted) = result else {
         eprintln!("R styler did not reformat (package likely absent) — skipping r_native_known_unformatted_snapshot");
         return;
@@ -486,7 +449,6 @@ fn rustfmt_uses_own_default_without_config() {
         return;
     }
 
-    // Fresh temp dir with no rustfmt.toml anywhere in its ancestry.
     let tmp = tempfile::tempdir().expect("create temp dir for no-config rustfmt test");
     debug_assert!(
         tmp.path()
@@ -495,8 +457,6 @@ fn rustfmt_uses_own_default_without_config() {
         "expected no rustfmt.toml in the temp dir ancestry"
     );
 
-    // ~110-char first line: clean at max_width 120, reformatted by rustfmt at
-    // its built-in default of 100. Formatted → poly did not force max_width=120.
     const SRC: &str = concat!(
         "fn function_with_long_name_here(",
         "first_parameter: String, second_parameter: String, third_param: u32) -> bool {\n",

@@ -36,7 +36,6 @@ fn lint_emits_diagnostic_contract_json() {
         .as_array()
         .expect("result has diagnostics array");
     let first = &diagnostics[0];
-    // The normalized Diagnostic contract: engine + severity + title always present.
     assert!(first["engine"].is_string(), "diagnostic has engine");
     assert!(first["severity"].is_string(), "diagnostic has severity");
     assert!(first["title"].is_string(), "diagnostic has title");
@@ -51,19 +50,15 @@ fn format_check_reports_changed_without_writing() {
     let json = ops::format(&[path.display().to_string()], &[], None, false).unwrap();
     let parsed: Value = serde_json::from_str(&json).unwrap();
     let results = parsed.as_array().expect("format json is an array");
-    // The format contract serializes path + changed (formatted body is skipped).
     if let Some(first) = results.first() {
         assert!(first["changed"].is_boolean(), "result has changed flag");
         assert!(first.get("path").is_some(), "result has path");
     }
-    // Dry run must not touch the file.
     assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
 }
 
 #[test]
 fn explicit_missing_config_is_an_error() {
-    // Config resolution mirrors the CLI: an explicit, unreadable config path is
-    // a hard error rather than a silent fallback.
     let result = ops::lint(&[".".to_string()], &[], Some("/nonexistent/poly.toml"), false);
     assert!(result.is_err(), "missing explicit config should error");
 }
@@ -93,13 +88,11 @@ fn registered_tools_have_expected_names_and_annotations() {
         ]
     );
 
-    // Read-only tools: read_only_hint = true, destructive_hint = false.
     for tool in ["lint", "format_check", "cache_stats"] {
         let (read_only, destructive) = server.tool_hints(tool).unwrap();
         assert_eq!(read_only, Some(true), "{tool} should be read-only");
         assert_eq!(destructive, Some(false), "{tool} should not be destructive");
     }
-    // Mutating tools: destructive_hint = true, read_only_hint = false.
     for tool in ["lint_fix", "format_write", "cache_clean"] {
         let (read_only, destructive) = server.tool_hints(tool).unwrap();
         assert_eq!(read_only, Some(false), "{tool} should not be read-only");
@@ -130,8 +123,6 @@ async fn round_trip_initialize_list_and_call() {
         service.waiting().await.unwrap();
     });
 
-    // `()` is the default no-op ClientHandler; serving it performs the MCP
-    // initialize handshake.
     let client = ().serve((client_read, client_write)).await.unwrap();
 
     let tools = client.list_all_tools().await.unwrap();

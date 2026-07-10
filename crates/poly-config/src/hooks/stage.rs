@@ -5,8 +5,6 @@
 //! pseudo-stages that pre-commit and lefthook expose. Parsing accepts the
 //! legacy aliases pre-commit understands (`commit` → `pre-commit`,
 //! `push` → `pre-push`, `merge-commit` → `pre-merge-commit`).
-//
-// parity with poly-hooks::Stage asserted in poly-cli (WS-B3)
 
 use std::fmt;
 use std::str::FromStr;

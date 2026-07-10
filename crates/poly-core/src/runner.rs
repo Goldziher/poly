@@ -220,8 +220,6 @@ fn catalog_engines_for(language: &Language, config: &Config, kind: Kind) -> Vec<
         if !tool_config.enabled {
             continue;
         }
-        // Names are allowlist-validated at config load, so an absent entry here
-        // is a defensive skip rather than an error.
         let Some(tool) = catalog.tool(name) else {
             continue;
         };
@@ -232,8 +230,6 @@ fn catalog_engines_for(language: &Language, config: &Config, kind: Kind) -> Vec<
         if !serves_language {
             continue;
         }
-        // A whole-project type-checker enabled for linting is skipped (it cannot
-        // run per file); warn once so the user learns why it produces no findings.
         if kind == Kind::Lint && crate::engines::catalog_tool::is_whole_project_linter(name) {
             warn_whole_project_linter_once(name);
             continue;
@@ -264,9 +260,6 @@ fn prefetch_tier2_grammars(plans: &PlanMap) {
         .iter()
         .filter(|(_, engine_plans)| engine_plans.iter().any(|plan| plan.engine.name() == "treesitter"))
         .filter_map(|((_, language), _)| match language {
-            // The generic tier keys off the pack's grammar id, which is exactly
-            // the `Language::Other` payload (set by discovery via the pack's own
-            // path detection).
             Language::Other(name) => Some(name.as_str()),
             _ => None,
         })
@@ -311,8 +304,6 @@ pub fn lint(
     let files = discover(paths, &configs, &opts.exclude);
     let plans = plan_by_config_language(&files, &configs, Kind::Lint);
     prefetch_tier2_grammars(&plans);
-    // One compiled `[per-file-ignores]` matcher per resolved config, indexed by
-    // `config_id` (nested configs suppress rules for their own subtree only).
     let ignores: Vec<PerFileIgnores> = configs
         .iter()
         .map(|c| PerFileIgnores::compile(&c.per_file_ignores))
@@ -323,8 +314,6 @@ pub fn lint(
         .filter_map(
             |f| match lint_one(f, &plans, &cache, fix, collect_debug, &configs, &ignores, &bases) {
                 Ok(result) => Some(result),
-                // A per-file failure (read, parse, or — when fixing — the atomic
-                // write) must not be swallowed silently; surface it and skip the file.
                 Err(error) => {
                     tracing::warn!(path = %f.path.display(), "lint failed: {error:#}");
                     None
@@ -359,10 +348,6 @@ pub fn format(
 ) -> anyhow::Result<Vec<FormatResult>> {
     configure_pool(opts.jobs);
     let cache = ResultCache::open_default(!opts.no_cache)?;
-    // Generated lock files are machine-maintained; reformatting them (taplo over
-    // Cargo.lock, the YAML formatter over pnpm-lock.yaml, …) corrupts them. Skip
-    // them on a directory walk so a stray `poly fmt .` is safe — but still honour
-    // a lock file passed explicitly as a path argument.
     let explicit: FxHashSet<&std::path::Path> = paths.iter().map(PathBuf::as_path).collect();
     let configs = build_config_set(paths, config, opts)?;
     let files: Vec<DiscoveredFile> = discover(paths, &configs, &opts.exclude)
@@ -375,8 +360,6 @@ pub fn format(
         .par_iter()
         .filter_map(|f| match format_one(f, &plans, &cache, write, collect_debug) {
             Ok(result) => Some(result),
-            // A per-file failure (read, engine, or — when writing — the atomic
-            // rename) must not be swallowed silently; surface it and skip the file.
             Err(error) => {
                 tracing::warn!(path = %f.path.display(), "format failed: {error:#}");
                 None
@@ -387,7 +370,7 @@ pub fn format(
     Ok(results)
 }
 
-#[allow(clippy::too_many_arguments)] // cohesive per-file lint inputs; splitting would obscure the flow
+#[allow(clippy::too_many_arguments)]
 fn lint_one(
     f: &DiscoveredFile,
     plans: &PlanMap,
@@ -399,10 +382,6 @@ fn lint_one(
     bases: &[PathBuf],
 ) -> anyhow::Result<LintResult> {
     let original = std::fs::read_to_string(&f.path)?;
-    // Per-file-ignored rules are suppressed *before* the fix loop so `--fix` does
-    // not silently rewrite a file for a rule the user configured to ignore
-    // (ruff's semantics: ignored rules never fire for the matching file). The
-    // matcher and its base directories are the file's own config (ADR 0018).
     let this_ignores = &ignores[f.config_id];
     let rel =
         (!this_ignores.is_empty()).then(|| relative_for_match(&f.path, &configs.ignore_bases(f.config_id, bases)));
@@ -416,8 +395,6 @@ fn lint_one(
     suppress(&mut diagnostics);
 
     if fix {
-        // Only the fix path mutates the buffer, so clone lazily here; a plain
-        // (no-fix) lint borrows `original` and never copies the file.
         let mut content = original.clone();
         for _ in 0..MAX_FIX_PASSES {
             let edit_groups: Vec<&[Edit]> = diagnostics
@@ -464,10 +441,6 @@ fn lint_content(
         language: f.language.clone(),
         content: Arc::from(content),
     };
-    // Content is constant across this file's engines, so digest it once. The
-    // path is folded in because lint diagnostics can depend on it (ruff INP001
-    // message, isort package classification) — without it, byte-identical files
-    // would share a cache entry and be served each other's path-bearing results.
     let digest = ResultCache::single_file_digest_with_path(&f.path.to_string_lossy(), content);
     let mut all = Vec::new();
     let mut debug = collect_debug.then(RunDebug::default);
@@ -493,7 +466,6 @@ fn lint_content(
             all.extend(diags);
             continue;
         }
-        // Time the engine only when debug collection is on (zero cost otherwise).
         let started = collect_debug.then(std::time::Instant::now);
         let mut diags = plan.engine.lint(&src, &plan.config)?;
         push_engine_debug(debug.as_mut(), plan, started);
@@ -505,8 +477,6 @@ fn lint_content(
                 "failed to store lint cache entry: {error:#}"
             );
         }
-        // Remap after caching the raw diagnostics: apply on both the fresh and
-        // cache-hit paths so a configured `level` is honored identically.
         if !plan.severity_remap.is_empty() {
             plan.severity_remap.apply(&mut diags);
         }
@@ -548,8 +518,6 @@ fn push_engine_debug(debug: Option<&mut RunDebug>, plan: &EnginePlan, started: O
 ///
 /// Returns the rewritten text, or `None` if no edit was applied.
 fn apply_edits(content: &str, edit_groups: &[&[Edit]]) -> Option<String> {
-    // Step 1 — filter groups with internal overlaps; sort remaining groups
-    // rightmost-first (by the highest end_byte in the group).
     let mut valid: Vec<&[Edit]> = edit_groups
         .iter()
         .copied()
@@ -558,14 +526,10 @@ fn apply_edits(content: &str, edit_groups: &[&[Edit]]) -> Option<String> {
     valid.sort_by_key(|g| std::cmp::Reverse(g.iter().map(|e| e.end_byte).max().unwrap_or(0)));
 
     let mut result = content.to_string();
-    // `prev_start` = leftmost start_byte committed so far.  Any edit whose
-    // end_byte exceeds `prev_start` would overlap an already-committed range.
     let mut prev_start = usize::MAX;
     let mut applied = false;
 
     'groups: for group in &valid {
-        // Validate every edit in the group against the current result length
-        // and the committed boundary.
         for e in *group {
             if e.start_byte > e.end_byte || e.end_byte > result.len() || e.end_byte > prev_start {
                 continue 'groups;
@@ -575,8 +539,6 @@ fn apply_edits(content: &str, edit_groups: &[&[Edit]]) -> Option<String> {
             }
         }
 
-        // Group is safe — apply its edits right-to-left within the group. The
-        // single-edit case (every backend today) skips the sort allocation.
         if let [e] = *group {
             result.replace_range(e.start_byte..e.end_byte, &e.replacement);
         } else {
@@ -587,7 +549,6 @@ fn apply_edits(content: &str, edit_groups: &[&[Edit]]) -> Option<String> {
             }
         }
 
-        // Advance the committed boundary to the leftmost start in this group.
         prev_start = group.iter().map(|e| e.start_byte).min().unwrap_or(prev_start);
         applied = true;
     }
@@ -601,8 +562,6 @@ fn apply_edits(content: &str, edit_groups: &[&[Edit]]) -> Option<String> {
 fn has_internal_overlap(group: &[Edit]) -> bool {
     for (i, a) in group.iter().enumerate() {
         for b in group.iter().skip(i + 1) {
-            // Ranges intersect, or two zero-width insertions land on the same
-            // byte (order between them would be ambiguous).
             let intersects = a.start_byte < b.end_byte && b.start_byte < a.end_byte;
             let same_point_insert =
                 a.start_byte == a.end_byte && b.start_byte == b.end_byte && a.start_byte == b.start_byte;
@@ -622,10 +581,6 @@ fn format_one(
     collect_debug: bool,
 ) -> anyhow::Result<FormatResult> {
     let original = std::fs::read_to_string(&f.path)?;
-    // File-level "do not format" directives (e.g. `// swift-format-ignore-file`)
-    // are honored like generated lock files: no engine runs, the file is left
-    // byte-for-byte untouched. This protects files a project explicitly opted
-    // out of formatting and machine-generated bridge/glue that carries the marker.
     if is_format_ignored(&original, &f.language) {
         return Ok(FormatResult {
             path: f.path.clone(),
@@ -635,11 +590,7 @@ fn format_one(
         });
     }
     let mut debug = collect_debug.then(RunDebug::default);
-    // The file's bytes are shared across every format engine via `Arc<str>`:
-    // each engine gets a refcount bump, not a fresh copy of the contents.
     let mut current: Arc<str> = Arc::from(original.as_str());
-    // Construct the `SourceFile` once and re-point its content per engine
-    // instead of rebuilding (and cloning the contents) on each iteration.
     let mut src = SourceFile {
         path: f.path.clone(),
         language: f.language.clone(),
@@ -650,8 +601,6 @@ fn format_one(
         .map(Vec::as_slice)
         .unwrap_or(&[]);
     for plan in engine_plans {
-        // Each engine's output feeds the next, so the digest is recomputed from
-        // the current text; the args, however, were serialised once per engine.
         let digest = ResultCache::single_file_digest(&current);
         let key = ResultCache::key_with_args(
             Namespace::Fmt,
@@ -668,7 +617,6 @@ fn format_one(
             continue;
         }
         src.content = Arc::clone(&current);
-        // Time the engine only when debug collection is on (zero cost otherwise).
         let started = collect_debug.then(std::time::Instant::now);
         let out: Arc<str> = match plan.engine.format(&src, &plan.config)? {
             FormatOutput::Unchanged => Arc::clone(&current),
@@ -701,8 +649,6 @@ fn write_atomic(path: &std::path::Path, contents: &str) -> anyhow::Result<()> {
     let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("poly");
     let tmp = parent.join(format!(".{file_name}.{}.poly.tmp", std::process::id()));
     std::fs::write(&tmp, contents)?;
-    // On rename failure (e.g. cross-device, permissions) the sibling tmp would
-    // otherwise be orphaned in the working tree; clean it up best-effort.
     if let Err(error) = std::fs::rename(&tmp, path) {
         let _ = std::fs::remove_file(&tmp);
         return Err(error.into());
@@ -731,7 +677,6 @@ fn configure_pool(jobs: Option<usize>) {
         {
             builder = builder.num_threads(n);
         }
-        // Ignore error: the global pool may already be initialized by a caller.
         let _ = builder.build_global();
     });
 }
@@ -748,17 +693,11 @@ mod tests {
         }
     }
 
-    // ── apply_edits ──────────────────────────────────────────────────────────
-
     /// Two diagnostics, each with two non-overlapping edits; all four apply.
     #[test]
     fn multi_edit_two_groups_apply_atomically() {
-        // content: "hello world foo"
-        //           0123456789012345
         let content = "hello world foo";
-        // Group A: replace "world" (6..11) → "earth", replace "foo" (12..15) → "bar"
         let group_a = vec![edit(6, 11, "earth"), edit(12, 15, "bar")];
-        // Group B: replace "hello" (0..5) → "hey"
         let group_b = vec![edit(0, 5, "hey")];
 
         let result = apply_edits(content, &[group_a.as_slice(), group_b.as_slice()]).expect("should produce output");
@@ -769,7 +708,6 @@ mod tests {
     #[test]
     fn overlapping_edits_within_group_are_skipped() {
         let content = "abcdefgh";
-        // Overlapping: [2..6) and [4..8) share bytes 4–6.
         let bad_group = vec![edit(2, 6, "X"), edit(4, 8, "Y")];
 
         let result = apply_edits(content, &[bad_group.as_slice()]);
@@ -780,20 +718,14 @@ mod tests {
     /// is deferred (not corrupted).
     #[test]
     fn cross_group_conflict_defers_leftward_group() {
-        // content: "abcde"
-        // Group A (rightmost): replace [3..5) → "XX"
-        // Group B (leftward, overlapping): replace [2..4) → "YY" — conflicts with A
         let content = "abcde";
         let group_a = vec![edit(3, 5, "XX")];
         let group_b = vec![edit(2, 4, "YY")];
 
         let result = apply_edits(content, &[group_a.as_slice(), group_b.as_slice()])
             .expect("should produce output from group A");
-        // Group A applies, group B is skipped.
         assert_eq!(result, "abcXX");
     }
-
-    // ── has_internal_overlap ─────────────────────────────────────────────────
 
     #[test]
     fn non_overlapping_edits_pass_internal_check() {
@@ -803,19 +735,15 @@ mod tests {
 
     #[test]
     fn adjacent_edits_are_not_overlapping() {
-        // [0,5) and [5,10) share no bytes (end is exclusive).
         let group = vec![edit(0, 5, "a"), edit(5, 10, "b")];
         assert!(!has_internal_overlap(&group));
     }
 
     #[test]
     fn touching_edits_with_overlap_detected() {
-        // [0,6) and [4,10) overlap at bytes 4–6.
         let group = vec![edit(0, 6, "a"), edit(4, 10, "b")];
         assert!(has_internal_overlap(&group));
     }
-
-    // ── worker stack size ────────────────────────────────────────────────────
 
     /// Recurse `depth` frames, each pinning ~8 KiB of stack, returning the
     /// accumulated depth. `black_box` keeps the per-frame buffer from being

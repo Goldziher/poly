@@ -22,8 +22,6 @@ const GOLDEN_JSON: &str = include_str!("../data/golden.json");
 #[test]
 fn catalog_parses_and_is_non_trivial() {
     let catalog = Catalog::get();
-    // The vendored snapshot carries hundreds of tools; guard against an empty or
-    // truncated embed without pinning the exact count (which drifts on refresh).
     assert!(
         catalog.tools().len() > 300,
         "expected the full vendored catalog, got {}",
@@ -60,7 +58,6 @@ fn shfmt_is_a_path_based_formatter() {
 
 #[test]
 fn a_stdin_tool_is_flagged_as_stdin() {
-    // cedar's `format` command reads source on stdin rather than a path.
     let cedar = Catalog::get().tool("cedar").expect("cedar present");
     let command = cedar.command("format").expect("cedar has a format command");
     assert!(command.stdin);
@@ -69,7 +66,6 @@ fn a_stdin_tool_is_flagged_as_stdin() {
 
 #[test]
 fn pure_linter_does_not_masquerade_as_formatter() {
-    // shellcheck is a linter only; it must not surface a format command.
     if let Some(shellcheck) = Catalog::get().tool("shellcheck") {
         assert!(shellcheck.is_linter());
         assert!(shellcheck.format_command().is_none(), "shellcheck is not a formatter");
@@ -108,8 +104,6 @@ fn golden_fixtures_reference_real_catalog_commands() {
             fixture.command
         );
         assert!(!fixture.language.is_empty());
-        // `input` / `output` may legitimately be empty (an empty file formats to
-        // empty); we only assert the fixture is wired to a real catalog command.
         let _ = (&fixture.input, &fixture.output);
     }
 }

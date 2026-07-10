@@ -86,10 +86,6 @@ mod lint;
 mod probe;
 mod spec;
 
-// ---------------------------------------------------------------------------
-// Per-language static slices for Engine::languages
-// ---------------------------------------------------------------------------
-
 static GO_LANGUAGES: &[Language] = &[Language::Go];
 static RUST_LANGUAGES: &[Language] = &[Language::Rust];
 static ZIG_LANGUAGES: &[Language] = &[Language::Zig];
@@ -100,10 +96,6 @@ static R_LANGUAGES: &[Language] = &[Language::R];
 static SWIFT_LANGUAGES: &[Language] = &[Language::Swift];
 static DART_LANGUAGES: &[Language] = &[Language::Dart];
 static GLEAM_LANGUAGES: &[Language] = &[Language::Gleam];
-
-// ---------------------------------------------------------------------------
-// NativeRole: which tool + capability this engine instance represents
-// ---------------------------------------------------------------------------
 
 /// Which native tool and role this `NativeToolEngine` instance plays.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -131,10 +123,6 @@ enum NativeRole {
     /// `gleam format --stdin` for Gleam (format only). Opt-in.
     GleamFmt,
 }
-
-// ---------------------------------------------------------------------------
-// NativeToolEngine
-// ---------------------------------------------------------------------------
 
 /// Tier-3 opt-in native tool backend. One instance per tool per language;
 /// see the module docs for the enabled/disabled/absent semantics.
@@ -244,7 +232,6 @@ impl NativeToolEngine {
             NativeRole::Rustfmt => Some(&RUSTFMT_NOTICE),
             NativeRole::ZigFmt => Some(&ZIGFMT_NOTICE),
             NativeRole::Shfmt => Some(&SHFMT_NOTICE),
-            // shellcheck absent → TS lint still runs; no fallback notice needed.
             NativeRole::Shellcheck => None,
             NativeRole::JavaFmt => Some(&JAVA_FMT_NOTICE),
             NativeRole::KtFmt => Some(&KTFMT_NOTICE),
@@ -299,10 +286,6 @@ impl NativeToolEngine {
         self.probed_version().is_some()
     }
 }
-
-// ---------------------------------------------------------------------------
-// Engine impl
-// ---------------------------------------------------------------------------
 
 impl Engine for NativeToolEngine {
     fn name(&self) -> &'static str {
@@ -369,18 +352,11 @@ impl Engine for NativeToolEngine {
     fn version(&self) -> &str {
         self.key_lock().get_or_init(|| {
             let ts = TreeSitterEngine.version();
-            // Edition-aware tools (rustfmt) now pass `--edition`, which changes
-            // their output relative to the prior edition-2015 default; mark the
-            // key so previously cached results are invalidated.
             let edition_marker = if self.spec().edition_flag {
                 " | edition-aware"
             } else {
                 ""
             };
-            // rustfmt now honours a project-level rustfmt.toml via --config-path
-            // and otherwise defers to rustfmt's own defaults (no forced
-            // max_width). Mark the key to invalidate caches built under the old
-            // always-inject-max_width=120 behaviour.
             let config_path_marker = if self.spec().rustfmt_config_flag {
                 " | rustfmt-defaults"
             } else {
@@ -441,20 +417,12 @@ impl Engine for NativeToolEngine {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Pure helper (also tested directly)
-// ---------------------------------------------------------------------------
-
 /// Decide whether the tier-2 fallback info notice should fire: the tool was
 /// wanted (`enabled` / default-on) but is not present on `PATH`. Pure so it
 /// can be unit-tested without a real toolchain.
 fn should_notify_fallback(wanted: bool, present: bool) -> bool {
     wanted && !present
 }
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
@@ -498,10 +466,6 @@ mod tests {
     fn enabled_cfg() -> EngineConfig {
         bool_cfg(true)
     }
-
-    // ---------------------------------------------------------------------------
-    // Metadata checks
-    // ---------------------------------------------------------------------------
 
     #[test]
     fn engine_metadata_go() {
@@ -549,13 +513,6 @@ mod tests {
         assert!(!engine.capabilities().fix);
     }
 
-    // Wave-2 metadata tests (java/kotlin/r/swift/dart/gleam) live in
-    // crates/poly-core/tests/native_tool.rs to keep this file under 1000 lines.
-
-    // ---------------------------------------------------------------------------
-    // Default-on / default-off policy
-    // ---------------------------------------------------------------------------
-
     #[test]
     fn default_policy_canonical_on_option_off() {
         assert!(
@@ -578,7 +535,6 @@ mod tests {
             !NativeToolEngine::shell_lint().is_enabled(&default_cfg()),
             "shellcheck must be opt-in"
         );
-        // All Wave-2 backends are opt-in (default_on = false).
         assert!(
             !NativeToolEngine::for_language(Language::Java).is_enabled(&default_cfg()),
             "google-java-format must be opt-in"
@@ -629,10 +585,6 @@ mod tests {
         );
     }
 
-    // ---------------------------------------------------------------------------
-    // Fallback notice predicate
-    // ---------------------------------------------------------------------------
-
     #[test]
     fn fallback_notice_fires_only_when_wanted_and_absent() {
         assert!(should_notify_fallback(true, false));
@@ -640,10 +592,6 @@ mod tests {
         assert!(!should_notify_fallback(false, false));
         assert!(!should_notify_fallback(false, true));
     }
-
-    // ---------------------------------------------------------------------------
-    // Lint delegation (Go + Shell)
-    // ---------------------------------------------------------------------------
 
     #[test]
     fn lint_clean_go_produces_no_diags() {
@@ -658,8 +606,6 @@ mod tests {
 
     #[test]
     fn lint_go_with_trailing_whitespace_not_flagged() {
-        // Format-only roles carry no lint rules: trailing whitespace is a `fmt`
-        // concern (fixed by `format`), never surfaced as a lint diagnostic.
         let engine = NativeToolEngine::for_language(Language::Go);
         let src = make_src("main.go", Language::Go, "package main   \nfunc main() {}\n");
         let diags = engine.lint(&src, &disabled_cfg()).unwrap();
@@ -671,8 +617,6 @@ mod tests {
 
     #[test]
     fn shellcheck_lint_disabled_emits_nothing() {
-        // When shellcheck is disabled, its lint slot produces nothing — the
-        // tree-sitter tier it used to delegate to carries no lint rules.
         let engine = NativeToolEngine::shell_lint();
         let src = make_src("script.sh", Language::Shell, "#!/bin/bash\necho hello   \n");
         let diags = engine.lint(&src, &disabled_cfg()).unwrap();
@@ -681,10 +625,6 @@ mod tests {
             "disabled shellcheck must emit no diagnostics, got {diags:?}"
         );
     }
-
-    // ---------------------------------------------------------------------------
-    // Disabled → tier-2 fallback (format)
-    // ---------------------------------------------------------------------------
 
     #[test]
     fn disabled_go_delegates_to_tier2() {
@@ -749,10 +689,6 @@ mod tests {
         );
     }
 
-    // ---------------------------------------------------------------------------
-    // Default-on routing (Rust: depends on rustfmt presence)
-    // ---------------------------------------------------------------------------
-
     #[test]
     fn default_rust_routes_by_rustfmt_presence() {
         const UNFORMATTED: &str = "fn main(){let x=1+2;println!(\"{x}\");}\n";
@@ -790,10 +726,6 @@ mod tests {
             );
         }
     }
-
-    // ---------------------------------------------------------------------------
-    // Native tool present → correct output (probe-gated)
-    // ---------------------------------------------------------------------------
 
     #[test]
     fn go_native_formats_unformatted_source() {
@@ -881,7 +813,6 @@ mod tests {
             return;
         }
 
-        // Unformatted: body of `if` is not indented.
         const UNFORMATTED: &str = "#!/bin/bash\nif [ \"$1\" = \"hello\" ]; then\necho \"world\"\nfi\n";
         let src = make_src("script.sh", Language::Shell, UNFORMATTED);
         let result = engine.format(&src, &enabled_cfg()).unwrap();
@@ -893,7 +824,6 @@ mod tests {
             }
         };
 
-        // shfmt with -i 4 should indent the body with 4 spaces.
         assert!(
             formatted.contains("    echo"),
             "shfmt output should use 4-space indentation; got:\n{formatted}"
@@ -912,7 +842,6 @@ mod tests {
             return;
         }
 
-        // SC2086: unquoted variable — always flagged by shellcheck.
         const BAD: &str = "#!/bin/bash\nx=\"hello world\"\necho $x\n";
         let src = make_src("bad.sh", Language::Shell, BAD);
         let diags = engine.lint(&src, &enabled_cfg()).unwrap();
@@ -930,10 +859,6 @@ mod tests {
             "expected SC2086 in diagnostics; got: {sc_diags:?}"
         );
     }
-
-    // ---------------------------------------------------------------------------
-    // Idempotency
-    // ---------------------------------------------------------------------------
 
     #[test]
     fn go_native_unchanged_on_already_formatted() {

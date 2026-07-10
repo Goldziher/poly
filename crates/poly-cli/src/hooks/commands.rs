@@ -153,8 +153,6 @@ pub fn run_hooks(args: HooksArgs) -> ExitCode {
     }
 }
 
-// ── run ───────────────────────────────────────────────────────────────────────
-
 fn run_stage(args: RunArgs) -> Result<ExitCode> {
     let config = load_config(args.config.as_deref())?;
     let poly_bin = std::env::current_exe().context("failed to resolve the running poly binary")?;
@@ -229,8 +227,6 @@ fn resolve_run_stage(requested: Option<&str>, hooks: &poly_config::HooksConfig) 
     )
 }
 
-// ── install / uninstall ─────────────────────────────────────────────────────
-
 fn install(args: InstallArgs) -> Result<ExitCode> {
     let hooks_dir = poly_hooks::git::get_git_hooks_dir().context("failed to resolve the git hooks directory")?;
     let written = poly_hooks::install::install(&hooks_dir, &args.hook_types, args.overwrite)?;
@@ -287,12 +283,9 @@ fn relative_to_cwd(path: &Path) -> PathBuf {
         .unwrap_or_else(|| path.to_path_buf())
 }
 
-// ── hook-impl ─────────────────────────────────────────────────────────────────
-
 fn hook_impl(args: HookImplArgs) -> Result<ExitCode> {
     let root = poly_hooks::git::get_root().context("failed to resolve the git repository root")?;
     let Some(inputs) = poly_hooks::hook_impl::hook_impl(args.hook_type, &args.git_args, &root)? else {
-        // Nothing to do (e.g. a `pre-push` with nothing to push).
         return Ok(ExitCode::SUCCESS);
     };
 
@@ -333,8 +326,6 @@ fn hook_impl(args: HookImplArgs) -> Result<ExitCode> {
     };
     run_and_report(request)
 }
-
-// ── shared helpers ──────────────────────────────────────────────────────────
 
 /// Resolve the candidate file set for `stage`.
 ///
@@ -410,13 +401,9 @@ pub(crate) fn open_result_cache(config: &PolyConfig, root: &Path, no_cache: bool
 /// `[cache.sccache] bin` is absent.
 pub(crate) fn sccache_settings(config: &PolyConfig, no_sccache: bool) -> Result<Option<poly_hooks::SccacheSettings>> {
     let sccache = &config.cache.sccache;
-    // The master `[cache] enabled` flag is a global kill switch; sccache is a
-    // further opt-in layered on top of it.
     if !config.cache.enabled || !sccache.enabled || no_sccache {
         return Ok(None);
     }
-    // Validate `bin` before it becomes RUSTC_WRAPPER so a checked-in poly.toml
-    // cannot redirect the compiler to a repo-relative binary.
     Ok(Some(poly_hooks::SccacheSettings {
         bin: sccache.validated_bin()?.to_string(),
         dir: sccache.dir.clone().map(PathBuf::from),

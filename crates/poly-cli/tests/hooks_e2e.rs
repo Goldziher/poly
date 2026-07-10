@@ -95,14 +95,11 @@ fn run_pre_commit_runs_all_hooks_and_restages_stage_fixed_change() {
         "stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    // Both hooks appear in the (index-ordered) report.
     assert!(report.contains("noop"), "missing noop:\n{report}");
     assert!(report.contains("fixer"), "missing fixer:\n{report}");
-    // The position of `noop` precedes `fixer` (deterministic, non-interleaved).
     let noop_at = report.find("noop").unwrap();
     let fixer_at = report.find("fixer").unwrap();
     assert!(noop_at < fixer_at, "hooks not index-ordered:\n{report}");
-    // `stage_fixed` re-staged the rewritten file.
     assert_eq!(staged_blob(root, "fixed.txt"), "changed");
 }
 
@@ -116,7 +113,6 @@ fn stage_fixed_false_leaves_modification_unstaged() {
 
     let output = poly_hooks(root, &["run", "pre-commit"]);
     assert!(output.status.success());
-    // The index still holds the original; the worktree holds the rewrite.
     assert_eq!(staged_blob(root, "fixed.txt"), "orig");
     assert_eq!(std::fs::read_to_string(root.join("fixed.txt")).unwrap(), "changed");
 }
@@ -165,7 +161,6 @@ fn hook_impl_pre_commit_runs_and_restages() {
     write(root, "fixed.txt", "orig");
     git(root, &["add", "fixed.txt"]);
 
-    // pre-commit takes no git arguments.
     let output = poly_hooks(root, &["hook-impl", "--hook-type=pre-commit", "--"]);
     assert!(
         output.status.success(),
@@ -183,10 +178,6 @@ fn hook_impl_commit_msg_enforces_conventional_commits() {
     let root = repo.path();
     write(root, "poly.toml", "[hooks.builtin]\ncommit = true\n");
 
-    // A non-conventional message must fail the commit-msg hook. The `poly-commit`
-    // builtin has to actually run (not be silently skipped): git passes the
-    // message file as the hook's single argument, so the runner must select
-    // message-file input mode for the commit-msg stage.
     write(root, "msg-bad.txt", "nope: not a conventional type\n");
     let bad = poly_hooks(root, &["hook-impl", "--hook-type=commit-msg", "--", "msg-bad.txt"]);
     let bad_report = String::from_utf8_lossy(&bad.stdout);
@@ -196,7 +187,6 @@ fn hook_impl_commit_msg_enforces_conventional_commits() {
         "poly-commit must run, got: {bad_report}"
     );
 
-    // A conventional message passes.
     write(root, "msg-good.txt", "feat: add a thing\n");
     let good = poly_hooks(root, &["hook-impl", "--hook-type=commit-msg", "--", "msg-good.txt"]);
     assert!(
@@ -210,8 +200,6 @@ fn hook_impl_commit_msg_enforces_conventional_commits() {
 fn run_pre_commit_caches_second_unchanged_run_and_no_cache_forces_rerun() {
     let repo = init_repo();
     let root = repo.path();
-    // A declared-inputs job (Safe mode default) that appends to a sentinel each
-    // real execution. tracked.txt is the declared input.
     write(
         root,
         "poly.toml",
@@ -227,7 +215,6 @@ cache = { inputs = ["tracked.txt"] }
     git(root, &["add", "tracked.txt"]);
     git(root, &["commit", "-qm", "init"]);
 
-    // First run executes the job.
     let first = poly_hooks(root, &["run", "pre-commit"]);
     assert!(
         first.status.success(),
@@ -236,7 +223,6 @@ cache = { inputs = ["tracked.txt"] }
     );
     assert_eq!(std::fs::read_to_string(root.join("runs.log")).unwrap(), "x");
 
-    // Second run over the unchanged repo is served from cache.
     let second = poly_hooks(root, &["run", "pre-commit"]);
     assert!(second.status.success());
     let report = String::from_utf8_lossy(&second.stdout);
@@ -247,7 +233,6 @@ cache = { inputs = ["tracked.txt"] }
         "cached hook must not re-execute"
     );
 
-    // --no-cache forces a real re-run.
     let third = poly_hooks(root, &["run", "pre-commit", "--no-cache"]);
     assert!(third.status.success());
     assert_eq!(
@@ -261,8 +246,6 @@ cache = { inputs = ["tracked.txt"] }
 fn install_writes_a_shim_that_git_commit_triggers() {
     let repo = init_repo();
     let root = repo.path();
-    // A pre-commit job that records a sentinel proves the shim fired through the
-    // native runner.
     write(
         root,
         "poly.toml",
@@ -289,9 +272,6 @@ run = "touch sentinel.created"
         "shim missing exec line"
     );
 
-    // Commit something; the installed pre-commit shim must fire and run our job.
-    // The shim resolves `poly` from PATH, so prepend the test binary's directory
-    // (the built `poly` under target/) for the commit that triggers it.
     write(root, "tracked.txt", "content");
     git(root, &["add", "tracked.txt"]);
     let poly_dir = Path::new(POLY).parent().expect("poly binary has a parent dir");

@@ -25,10 +25,6 @@ use serde::Deserialize;
 /// Default `sccache` binary name, resolved on `$PATH` when `bin` is unset.
 pub const DEFAULT_SCCACHE_BIN: &str = "sccache";
 
-// ---------------------------------------------------------------------------
-// HookCacheMode
-// ---------------------------------------------------------------------------
-
 /// Controls when hook results are served from the result cache.
 ///
 /// The default is [`Safe`] — hook results are cached only when the hook
@@ -57,10 +53,6 @@ pub enum HookCacheMode {
     Aggressive,
 }
 
-// ---------------------------------------------------------------------------
-// ResultsCacheConfig
-// ---------------------------------------------------------------------------
-
 /// Configuration for the tier-1 result cache.
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(default)]
@@ -68,10 +60,6 @@ pub struct ResultsCacheConfig {
     /// Cache mode for hook results.
     pub hooks: HookCacheMode,
 }
-
-// ---------------------------------------------------------------------------
-// SccacheConfig
-// ---------------------------------------------------------------------------
 
 /// Configuration for the tier-2 sccache integration (opt-in, off by default).
 ///
@@ -120,9 +108,6 @@ impl SccacheConfig {
         if bin.is_empty() {
             anyhow::bail!("[cache.sccache] bin must not be empty");
         }
-        // A bare command name has exactly one path component and no separator of
-        // either platform's flavour (guard both so a Windows-style separator is
-        // rejected on Unix too).
         let is_bare_name = Path::new(bin).components().count() == 1 && !bin.contains('/') && !bin.contains('\\');
         if Path::new(bin).is_absolute() || is_bare_name {
             Ok(bin)
@@ -135,10 +120,6 @@ impl SccacheConfig {
         }
     }
 }
-
-// ---------------------------------------------------------------------------
-// CacheConfig
-// ---------------------------------------------------------------------------
 
 fn default_cache_enabled() -> bool {
     true
@@ -213,7 +194,6 @@ mod tests {
     fn validated_bin_rejects_relative_path_with_separator() {
         assert!(with_bin(Some("./evil")).validated_bin().is_err());
         assert!(with_bin(Some("a/b")).validated_bin().is_err());
-        // A Windows-style separator is rejected on every platform.
         assert!(with_bin(Some(r"a\b")).validated_bin().is_err());
     }
 

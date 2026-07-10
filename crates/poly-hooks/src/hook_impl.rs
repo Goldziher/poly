@@ -137,12 +137,8 @@ pub fn parse_pre_push_info(stdin: &[u8], remote_name: &str, root: &Path) -> Resu
     let buffer = String::from_utf8_lossy(stdin);
 
     for line in buffer.lines() {
-        // `rsplitn(4, ' ')` yields the fields in reverse: remote_sha, remote_ref,
-        // local_sha, local_ref. Refs may contain spaces only on the right side
-        // here, so splitting from the right keeps the SHAs intact.
         let parts: Vec<&str> = line.rsplitn(4, ' ').collect();
         if parts.len() != 4 {
-            // Ignore malformed lines; a later valid line may still describe a push.
             continue;
         }
 
@@ -151,16 +147,12 @@ pub fn parse_pre_push_info(stdin: &[u8], remote_name: &str, root: &Path) -> Resu
         let remote_branch = parts[1];
         let remote_sha = parts[0];
 
-        // A zero local SHA means this push deletes the remote ref. There is no
-        // local target commit to diff, so it contributes no files to check.
         if local_sha.bytes().all(|b| b == b'0') {
             continue;
         }
 
         if !remote_sha.bytes().all(|b| b == b'0') && git::rev_exists(remote_sha, root)? {
             if git::is_ancestor(remote_sha, local_sha, root)? {
-                // Normal update: the previous remote tip is an ancestor of the
-                // new local tip, so diff exactly the newly pushed range.
                 return Ok(Some(PushInfo {
                     from_ref: Some(remote_sha.to_string()),
                     to_ref: Some(local_sha.to_string()),
@@ -169,23 +161,15 @@ pub fn parse_pre_push_info(stdin: &[u8], remote_name: &str, root: &Path) -> Resu
                     local_branch: Some(local_branch.to_string()),
                 }));
             }
-            // The old remote tip exists locally but is not in the new local
-            // history (the usual rebase/force-push shape). Fall through to the
-            // new-branch logic to derive a PR-like base.
         }
 
-        // New remote ref, missing old remote object, or rebased force-push: find
-        // the commits reachable from the local tip the remote cannot reach.
         let ancestors = git::get_ancestors_not_in_remote(local_sha, remote_name, root)?;
         let Some(first_ancestor) = ancestors.first() else {
-            // The local tip is already reachable from the remote.
             continue;
         };
 
         let roots = git::get_root_commits(local_sha, root)?;
         if roots.contains(first_ancestor) {
-            // The first commit being pushed is a root commit: no parent to use
-            // as `from_ref`, so run over the full tracked tree.
             return Ok(Some(PushInfo {
                 from_ref: None,
                 to_ref: Some(local_sha.to_string()),
@@ -195,7 +179,6 @@ pub fn parse_pre_push_info(stdin: &[u8], remote_name: &str, root: &Path) -> Resu
             }));
         }
 
-        // Use the parent of the first remote-unknown commit as the diff base.
         if let Some(source) = git::get_parent_commit(first_ancestor, root)? {
             return Ok(Some(PushInfo {
                 from_ref: Some(source),
@@ -205,12 +188,8 @@ pub fn parse_pre_push_info(stdin: &[u8], remote_name: &str, root: &Path) -> Resu
                 local_branch: Some(local_branch.to_string()),
             }));
         }
-
-        // A non-root commit should have a parent. If git cannot provide one,
-        // ignore this line and let a later line determine the range.
     }
 
-    // Nothing to push.
     Ok(None)
 }
 
@@ -375,7 +354,6 @@ mod tests {
         let old_remote = commit_file(root, "a.txt");
         let new_local = commit_file(root, "b.txt");
 
-        // `<local-ref> <local-sha> <remote-ref> <remote-sha>`
         let line = format!("refs/heads/main {new_local} refs/heads/main {old_remote}\n");
         let push = parse_pre_push_info(line.as_bytes(), "origin", root)
             .expect("parse")
@@ -395,7 +373,6 @@ mod tests {
         let _root_commit = commit_file(root, "a.txt");
         let new_local = commit_file(root, "b.txt");
 
-        // New branch: the remote SHA is all zeros.
         let zero = "0".repeat(40);
         let line = format!("refs/heads/feature {new_local} refs/heads/feature {zero}\n");
         let push = parse_pre_push_info(line.as_bytes(), "origin", root)
@@ -413,7 +390,6 @@ mod tests {
         let root = repo.path();
         commit_file(root, "a.txt");
 
-        // Deletion: the local SHA is all zeros.
         let zero = "0".repeat(40);
         let line = format!("(delete) {zero} refs/heads/gone {zero}\n");
         let push = parse_pre_push_info(line.as_bytes(), "origin", root).expect("parse");
@@ -435,7 +411,6 @@ mod tests {
     #[test]
     fn resolve_inputs_rejects_wrong_argument_count() {
         let repo = init_temp_repo();
-        // commit-msg expects exactly 1 argument; supply none.
         let err = resolve_inputs(HookType::CommitMsg, &[], &[], repo.path()).expect_err("should reject");
         assert!(err.to_string().contains("expects exactly 1 argument"));
     }

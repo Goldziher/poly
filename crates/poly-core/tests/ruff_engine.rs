@@ -44,18 +44,6 @@ fn format_to_string(content: &str) -> String {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Known-bad fixture: real rule violations produce expected diagnostics.
-//
-// Violations in this snippet:
-//   F401 — `os` is imported but never used
-//   W605 — `"\s"` contains an invalid escape sequence
-//   E711 — comparison to None should use `is`/`is not`
-//
-// Note: avoid trailing whitespace and misspellings — pre-commit hooks rewrite
-// them and would break the test constants.
-// ---------------------------------------------------------------------------
-
 const KNOWN_BAD: &str = "\
 import os
 x = \"\\s\"
@@ -72,19 +60,16 @@ fn known_bad_diagnostics() {
 
     assert!(!diags.is_empty(), "expected rule diagnostics");
 
-    // Assert structural properties: engine name, non-empty code, line presence.
     for diag in &diags {
         assert_eq!(diag.engine, "ruff");
         assert!(diag.code.is_some(), "every ruff diagnostic must carry a rule code");
         assert!(diag.span.is_some(), "every ruff diagnostic must carry a span");
     }
 
-    // Collect (code, start_line) for snapshot.
     let mut summary: Vec<_> = diags
         .iter()
         .map(|d| (d.code.as_deref().unwrap_or(""), d.span.as_ref().map(|s| s.start_line)))
         .collect();
-    // Sort for determinism — ruff does not guarantee order across rules.
     summary.sort_unstable();
 
     insta::assert_debug_snapshot!("known_bad_diagnostics", summary);
@@ -98,10 +83,6 @@ fn valid_python_has_no_diagnostics() {
     assert!(diags.is_empty(), "got: {diags:?}");
 }
 
-// ---------------------------------------------------------------------------
-// Known-unformatted fixture: messy spacing/quotes → ruff-formatted output.
-// ---------------------------------------------------------------------------
-
 const KNOWN_UNFORMATTED: &str = "\
 def  add(a,b ):
   x = {'a':1,'b':2}
@@ -112,11 +93,6 @@ def  add(a,b ):
 fn known_unformatted_output() {
     insta::assert_snapshot!("known_unformatted_output", format_to_string(KNOWN_UNFORMATTED));
 }
-
-// ---------------------------------------------------------------------------
-// Docstring code formatting: the opinionated `docstring-code-format` default
-// reformats Python code blocks embedded in docstrings.
-// ---------------------------------------------------------------------------
 
 const DOCSTRING_CODE: &str = "\
 def example():
@@ -332,10 +308,8 @@ fn known_first_party_suppresses_i001() {
 
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("test_module.py");
-    fs::write(&path, "").unwrap(); // must exist for package-root walk
+    fs::write(&path, "").unwrap();
 
-    // Imports sorted correctly for first-party kreuzberg_cloud:
-    // stdlib → blank → third-party → blank → first-party.
     let body = "import os\n\nimport pytest\n\nimport kreuzberg_cloud\n";
 
     let engine = RuffEngine;
@@ -346,16 +320,12 @@ fn known_first_party_suppresses_i001() {
         content: body.into(),
     };
 
-    // Without known_first_party: kreuzberg_cloud is treated as third-party;
-    // isort expects it before pytest (k < p), so I001 fires.
     let base_diags = engine.lint(&src, &engine_cfg()).unwrap();
     assert!(
         base_diags.iter().any(|d| d.code.as_deref() == Some("I001")),
         "without known_first_party, I001 must fire (kreuzberg_cloud is third-party, out of alpha order); got: {base_diags:?}"
     );
 
-    // With known_first_party = ["kreuzberg_cloud"]: it is first-party, correctly
-    // placed after pytest — I001 must not fire.
     let mut options = toml::Table::new();
     options.insert(
         "known_first_party".to_string(),
@@ -383,7 +353,6 @@ fn known_first_party_suppresses_i001() {
 #[test]
 fn e501_honors_configured_line_length() {
     let engine = RuffEngine;
-    // 100-char assignment line (value padded to reach exactly 100 columns).
     let line = format!("x = \"{}\"\n", "a".repeat(94));
     assert_eq!(line.trim_end().len(), 100, "test fixture must be 100 chars");
     let src = SourceFile {
@@ -392,7 +361,6 @@ fn e501_honors_configured_line_length() {
         content: line.clone().into(),
     };
 
-    // select = ["E501"] with line_length = 120 → 100-char line is within limit.
     let mut wide = toml::Table::new();
     wide.insert("select".to_string(), code_array(&["E501"]));
     wide.insert("line_length".to_string(), toml::Value::Integer(120));
@@ -410,7 +378,6 @@ fn e501_honors_configured_line_length() {
         "E501 must not fire on a 100-char line when line_length=120; got: {wide_diags:?}"
     );
 
-    // line_length = 80 → the same 100-char line is now too long.
     let mut narrow = toml::Table::new();
     narrow.insert("select".to_string(), code_array(&["E501"]));
     narrow.insert("line_length".to_string(), toml::Value::Integer(80));

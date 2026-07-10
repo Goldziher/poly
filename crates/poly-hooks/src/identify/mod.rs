@@ -1,22 +1,7 @@
 // Copyright (c) 2017 Chris Kuehl, Anthony Sottile
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
 // to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
 // The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
 // AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
 
 use std::io::{BufRead, Read};
 use std::ops::BitOrAssign;
@@ -60,13 +45,9 @@ impl Iterator for TagSetIter<'_> {
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             if self.cur_word != 0 {
-                // Find index of the least-significant set bit in the current 64-bit word.
                 let tz = self.cur_word.trailing_zeros() as usize;
-                // Clear that least-significant set bit so the next call advances to the next tag.
                 self.cur_word &= self.cur_word - 1;
 
-                // `word_idx` is already incremented when `cur_word` was loaded,
-                // so we use `word_idx - 1` here to compute the global tag index.
                 let idx = (self.word_idx.saturating_sub(1) * 64) + tz;
                 return tags::ALL_TAGS.get(idx).copied();
             }
@@ -251,9 +232,6 @@ pub fn tags_from_path(path: &Path) -> Result<TagSet, Error> {
     }
     #[cfg(not(unix))]
     {
-        // `pre-commit/identify` uses `os.access(path, os.X_OK)` to check for executability on Windows.
-        // This would actually return true for any file.
-        // We keep this behavior for compatibility.
         executable = true;
     }
 
@@ -289,18 +267,12 @@ fn tags_from_filename(filename: &Path) -> TagSet {
         return extension_tags;
     };
 
-    // Exact filename matches keep their name-specific tags even when the
-    // extension is also recognized, e.g. "Cargo.toml" or "CMakeLists.txt".
     let mut result = tags::NAMES.get(filename).copied().unwrap_or_default();
-    // If an extension matches, do not fall back to matching the filename prefix:
-    // "makefile.png" matches "png", so it should not also match "makefile".
     result |= &extension_tags;
     if !result.is_empty() {
         return result;
     }
 
-    // Allow e.g. "Dockerfile.xenial" to match "Dockerfile", but only when
-    // the real extension is unknown.
     filename
         .split('.')
         .next()
@@ -338,7 +310,6 @@ fn tags_from_interpreter(interpreter: &str) -> TagSet {
             return *tags;
         }
 
-        // python3.12.3 should match python3.12.3, python3.12, python3, python
         if let Some(pos) = name.rfind('.') {
             name = &name[..pos];
         } else {
@@ -419,7 +390,6 @@ pub fn parse_shebang(path: &Path) -> Result<Vec<String>, ShebangError> {
         return Err(ShebangError::NoShebang);
     }
 
-    // Require only printable ASCII
     if line
         .bytes()
         .any(|b| !(0x20..=0x7E).contains(&b) && !(0x09..=0x0D).contains(&b))
@@ -450,14 +420,10 @@ pub fn parse_shebang(path: &Path) -> Result<Vec<String>, ShebangError> {
     Ok(cmd)
 }
 
-// Lookup table for text character detection.
 static IS_TEXT_CHAR: [u32; 8] = {
     let mut table = [0u32; 8];
     let mut i = 0;
     while i < 256 {
-        // Printable ASCII (0x20..0x7F)
-        // High bit set (>= 0x80)
-        // Control characters: 7, 8, 9, 10, 11, 12, 13, 27
         let is_text = (i >= 0x20 && i < 0x7F) || i >= 0x80 || matches!(i, 7 | 8 | 9 | 10 | 11 | 12 | 13 | 27);
         if is_text {
             table[i / 32] |= 1 << (i % 32);

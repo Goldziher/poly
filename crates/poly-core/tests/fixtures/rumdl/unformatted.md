@@ -1,6 +1,6 @@
 # Heading
 
-Line with trailing spaces   
+Line with trailing spaces
 
 Another line with trailing whitespace  
 

@@ -48,7 +48,6 @@ pub fn import(dir: &Path) -> Option<ImportResult> {
                 entries.push(((*key).to_string(), int_item(value)));
             }
         }
-        // An `indent_string` of N spaces is equivalent to indent_width = N.
         if !has_indent_width
             && let Some(indent) = fmt.get("indent_string").and_then(toml::Value::as_str)
             && !indent.is_empty()

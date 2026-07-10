@@ -76,11 +76,6 @@ impl Engine for RumdlEngine {
         let rumdl_cfg = build_rumdl_config(cfg);
         let rules = filter_rules(&all_rules(&rumdl_cfg), &rumdl_cfg.global);
         let flavor = rumdl_cfg.markdown_flavor();
-        // Rules in the `Whitespace` category are pure formatting concerns owned by
-        // `poly fmt` (line length, trailing spaces, hard tabs, blank-line runs,
-        // final newline). Reporting them from `poly lint` leaks formatting into the
-        // linter, so suppress them here — the linter surfaces structural / content
-        // findings (broken links, heading structure, unused refs) only.
         let format_owned = format_owned_rules(&rules);
         rumdl_lib::lint(
             &src.content,
@@ -121,7 +116,6 @@ impl Engine for RumdlEngine {
 fn build_rumdl_config(cfg: &EngineConfig) -> RumdlConfig {
     let mut config = RumdlConfig::default();
 
-    // Opinionated default: line-length 120; user option overrides.
     let line_length = cfg
         .options
         .get("line_length")
@@ -130,12 +124,8 @@ fn build_rumdl_config(cfg: &EngineConfig) -> RumdlConfig {
         .unwrap_or(cfg.globals.line_length);
     config.global.line_length = LineLength::new(line_length);
 
-    // Rule selection (ADR 0016): the canonical `select` / `extend_select` /
-    // `ignore` vocabulary maps onto rumdl's native `enable` / `disable` lists,
-    // unioned with the native aliases when both are present.
     let selection = RuleSelection::from_options(cfg);
 
-    // Enable list: native `enable` ∪ canonical `select` ∪ canonical `extend_select`.
     let user_enable = warn_and_skip_blank(
         union_codes(
             string_list(cfg, "enable"),
@@ -143,12 +133,8 @@ fn build_rumdl_config(cfg: &EngineConfig) -> RumdlConfig {
         ),
         "rumdl",
     );
-    // Disable list: native `disable` ∪ canonical `ignore`.
     let user_disable = warn_and_skip_blank(union_codes(string_list(cfg, "disable"), selection.ignore), "rumdl");
 
-    // Opinionated defaults: disable the rumdl-proprietary stylistic rules, except
-    // any the user explicitly re-enabled (so the `enable` list wins — rumdl's
-    // `filter_rules` otherwise lets `disable` override `enable`).
     let mut disable: Vec<String> = DEFAULT_DISABLED_RULES
         .iter()
         .filter(|rule| !user_enable.iter().any(|e| e.eq_ignore_ascii_case(rule)))
@@ -252,8 +238,6 @@ mod tests {
 
     #[test]
     fn lint_suppresses_whitespace_category_rules() {
-        // MD013 (line length) is in rumdl's `Whitespace` category — a formatting
-        // concern owned by `poly fmt`. It must not leak into `poly lint`.
         let engine = RumdlEngine;
         let long = "x".repeat(200);
         let src = source(&format!("# Heading\n\n{long}\n"));
@@ -268,8 +252,6 @@ mod tests {
 
     #[test]
     fn lint_keeps_structural_rules() {
-        // A structural rule (MD018 — no space after hash on ATX heading) is a
-        // genuine lint finding and must still be reported.
         let engine = RumdlEngine;
         let src = source("#Bad Heading\n\nContent.\n");
         let cfg = default_cfg();

@@ -49,7 +49,6 @@ pub fn import(dir: &Path) -> Option<ImportResult> {
             continue;
         }
         if !is_md_code(key) {
-            // Alias keys (e.g. `line-length`) and extension keys are not mapped.
             leftovers.push(key.clone());
             notes.push(format!("markdownlint key `{key}` is not mapped to rumdl."));
             continue;
@@ -83,7 +82,6 @@ pub fn import(dir: &Path) -> Option<ImportResult> {
     if !top_entries.is_empty() {
         fragments.push(Fragment::new(&["lint", "markdown", "rumdl"], top_entries));
     }
-    // Rule param tables render after the parent header.
     rule_fragments.sort_by(|a, b| a.path.cmp(&b.path));
     fragments.extend(rule_fragments);
 

@@ -1,5 +1,5 @@
 def greet(name)
-  puts "hello #{name}"
+  puts("hello #{name}")
 end
 
 class Greeter

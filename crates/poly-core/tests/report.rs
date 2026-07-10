@@ -83,7 +83,6 @@ fn lint_pretty_default_is_terse_without_description_url_or_metadata() {
     owo_colors::set_override(false);
     let (text, total) = report::render_lint_pretty(&sample_lint_results(), Verbosity::default());
     assert_eq!(total, 2, "two diagnostics across the result set");
-    // Default view hides description, url, and metadata.
     assert!(
         !text.contains("the line exceeds the configured width"),
         "default view must not show description"
@@ -113,8 +112,6 @@ fn lint_pretty_verbose_shows_description_url_and_metadata() {
 #[test]
 fn lint_pretty_reports_autofixable_count() {
     owo_colors::set_override(false);
-    // Two findings, only one carrying a suggested `fix` edit: the summary must
-    // report the total and, on its own line, how many are fixable with `--fix`.
     let results = vec![LintResult {
         path: PathBuf::from("src/main.py"),
         diagnostics: vec![
@@ -233,8 +230,6 @@ fn format_pretty_lists_changed_files() {
 #[test]
 fn format_pretty_dry_run_uses_future_tense() {
     owo_colors::set_override(false);
-    // `check = true` is the dry-run (no `--fix`): the summary must say the files
-    // *will* change, not that they were changed.
     let (text, changed) = report::render_format_pretty(&sample_format_results(), true, Verbosity::default());
     assert_eq!(changed, 1, "one file would change");
     assert!(
@@ -314,7 +309,6 @@ fn lint_pretty_debug_renders_engine_timing_block() {
 
     assert_eq!(total, 1, "one diagnostic in the result set");
 
-    // The debug block must appear (path header + diagnostic + debug entries).
     assert!(
         text.contains("[debug] ruff"),
         "--debug must render the ruff engine block; got:\n{text}"
@@ -323,12 +317,10 @@ fn lint_pretty_debug_renders_engine_timing_block() {
         text.contains("[debug] typos"),
         "--debug must render the typos engine block; got:\n{text}"
     );
-    // cache_hit=false → "ran"
     assert!(
         text.contains("ran"),
         "--debug must render 'ran' for cache_hit=false; got:\n{text}"
     );
-    // cache_hit=true → "cache hit"
     assert!(
         text.contains("cache hit"),
         "--debug must render 'cache hit' for cache_hit=true; got:\n{text}"

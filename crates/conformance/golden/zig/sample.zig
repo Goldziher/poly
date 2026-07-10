@@ -1,6 +1,5 @@
 const std = @import("std");
 
-// Exercises nested blocks, switch, and a struct with a method.
 const Shape = union(enum) {
     circle: f64,
     rect: struct { w: f64, h: f64 },

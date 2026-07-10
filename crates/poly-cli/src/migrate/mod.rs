@@ -314,7 +314,6 @@ fn discover_dirs(root: &Path) -> Vec<PathBuf> {
         if !entry.file_type().is_dir() {
             return true;
         }
-        // Never descend into the root itself being skipped; only skip nested.
         entry.depth() == 0
             || !entry
                 .file_name()
@@ -370,7 +369,6 @@ mod superseded_tests {
         };
         assert!(sections.contains(&vec!["tool".to_string(), "black".to_string()]));
         assert!(sections.contains(&vec!["tool".to_string(), "isort".to_string()]));
-        // mypy is kept (type checker, not superseded).
         assert!(!sections.contains(&vec!["tool".to_string(), "mypy".to_string()]));
     }
 

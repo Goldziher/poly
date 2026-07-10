@@ -27,10 +27,6 @@ fn make_src(content: &str, lang: Language) -> SourceFile {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Known-bad fixture: unknown CSS property triggers a correctness rule.
-// ---------------------------------------------------------------------------
-
 /// CSS with a misspelled property — biome fires
 /// `lint/correctness/noUnknownProperty` on `colr`.
 const KNOWN_BAD: &str = "a { colr: blue; }\n";
@@ -45,8 +41,6 @@ fn known_bad_diagnostics() {
         "expected at least one diagnostic for unknown CSS property `colr`"
     );
 
-    // Summarise as (engine, code, span_present) — robust to biome message
-    // wording changes; the snapshot asserts the rule code and span presence.
     let summary: Vec<_> = diags
         .iter()
         .map(|d| (d.engine.as_str(), d.code.as_deref().unwrap_or(""), d.span.is_some()))

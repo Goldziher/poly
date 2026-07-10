@@ -100,7 +100,6 @@ pub(super) fn append_file_safety(
         return Ok(());
     }
     let Some(flags) = file_safety_flags(safety) else {
-        // The group is enabled but every member check is off — nothing to run.
         return Ok(());
     };
     let mut hook = Hook::run("file-safety", format!("{poly} hooks check {flags}"));
@@ -180,12 +179,6 @@ fn cargo_tools(cargo: &CargoHooks) -> [CargoTool; 4] {
             enabled: cargo.machete,
             id: "cargo-machete",
             probe: "cargo-machete",
-            // Invoke the binary directly rather than via `cargo machete`: the
-            // latter relies on cargo-machete stripping the leading "machete"
-            // subcommand token, a heuristic that misfires when `CARGO_PKG_NAME`
-            // is set in the environment (e.g. a hook run under `cargo run`),
-            // leaving "machete" to be parsed as a path argument. The direct
-            // binary takes no subcommand token and analyses the cwd.
             command: "cargo-machete".to_string(),
             compiler: false,
         },
@@ -210,8 +203,6 @@ fn resolve_cargo_group(hooks: &HooksConfig, cargo_project: bool) -> Option<Cargo
     match &hooks.builtin.cargo {
         Some(cargo) if cargo.enabled => Some(cargo.clone()),
         Some(_) => None,
-        // Absent key: default-on only in a repo that has adopted poly hooks AND
-        // is actually a Cargo project (else `cargo clippy` would fail).
         None if hooks.present && cargo_project => Some(CargoHooks {
             enabled: true,
             ..CargoHooks::default()
@@ -253,18 +244,11 @@ pub(super) fn append_cargo(
             continue;
         }
         let mut hook = Hook::run(tool.id, tool.command);
-        // Whole-workspace commands run once at the repo root regardless of which
-        // files changed; they take no per-file arguments.
         hook.pass_filenames = false;
         hook.always_run = true;
         hook.compiler = tool.compiler;
-        // These compile/analyse the whole tree, so under staged isolation they
-        // run against the staged snapshot rather than the live worktree.
         hook.workspace = true;
-        // `lint = false` drops it from `poly lint`'s phase but keeps the git hook.
         hook.skip_in_lint = !cargo.lint;
-        // Keyed on the Rust source/manifest set (or disabled) — a commit that
-        // touches no Rust then skips the whole group.
         hook.cache = cache.clone();
         out.push(hook);
     }
@@ -298,8 +282,6 @@ pub(super) fn append_catalog_tools(
         if !tool_config.enabled || !tool_config.stages.contains(&config_stage) {
             continue;
         }
-        // Names are allowlist-validated at config load, so an absent entry here
-        // is a defensive skip rather than an error.
         let Some(tool) = catalog.tool(name) else {
             continue;
         };
@@ -318,14 +300,10 @@ pub(super) fn append_catalog_tools(
         let line = catalog_command_line(&tool.binary, &arguments);
 
         let mut hook = Hook::run(name, line);
-        // Per-file dispatch: the runner appends the matched files (`Hook::run`
-        // sets `pass_filenames = true`). Result-caching is disabled — the tool
-        // is external and may rewrite the file in place.
         let (files, exclude) = super::builtin_globs(tool_config.files.as_ref(), tool_config.exclude.as_ref())?;
         hook.files = files;
         hook.exclude = exclude;
         hook.cache = HookCache::Disabled;
-        // Forward per-tool env vars and working-directory root from [tools.<name>].
         hook.env.clone_from(&tool_config.env);
         hook.cwd = tool_config.root.as_ref().map(std::path::PathBuf::from);
         out.push(hook);
@@ -473,7 +451,6 @@ mod tests {
         ] {
             assert!(line.contains(flag), "missing `{flag}` in: {line}");
         }
-        // The matched files are appended by the runner, so it passes filenames.
         let hook = &spec.hooks[0];
         assert!(hook.pass_filenames);
     }
@@ -541,8 +518,6 @@ shebang_scripts_are_executable = false
 
     #[test]
     fn cargo_defaults_on_when_a_hooks_section_is_present() {
-        // A `[hooks]` section with no explicit `cargo` key → the group runs by
-        // default, emitting every tool found on PATH.
         let hooks = hooks_from("[hooks]\nstages = [\"pre-commit\"]\n");
         assert!(hooks.present);
         let probe = StubProbe(&["cargo-clippy", "cargo-sort", "cargo-machete", "cargo-deny"]);
@@ -564,8 +539,6 @@ shebang_scripts_are_executable = false
 
     #[test]
     fn cargo_does_not_default_on_outside_a_cargo_project() {
-        // `[hooks]` present and tools on PATH, but the repo is not a Cargo
-        // project → the default-on group stays off (it would fail otherwise).
         let hooks = hooks_from("[hooks]\nstages = [\"pre-commit\"]\n");
         let probe = NonCargoProbe(&["cargo-clippy", "cargo-sort", "cargo-machete", "cargo-deny"]);
         let spec = lower_stage_with_probe(
@@ -600,8 +573,6 @@ shebang_scripts_are_executable = false
 
     #[test]
     fn cargo_does_not_default_on_without_a_hooks_section() {
-        // No `[hooks]` table at all → the repo has not adopted poly hooks, so
-        // the cargo group stays off even with tools on PATH.
         let hooks = hooks_from("");
         assert!(!hooks.present);
         let probe = StubProbe(&["cargo-clippy"]);
@@ -621,7 +592,6 @@ shebang_scripts_are_executable = false
     #[test]
     fn cargo_lowers_only_tools_present_on_path() {
         let hooks = hooks_from("[hooks.builtin]\ncargo = true\n");
-        // Only clippy and deny are "installed".
         let probe = StubProbe(&["cargo-clippy", "cargo-deny"]);
         let spec = lower_stage_with_probe(
             &hooks,
@@ -637,13 +607,10 @@ shebang_scripts_are_executable = false
 
         let clippy = &spec.hooks[0];
         assert_eq!(run_line(&spec, "cargo-clippy"), clippy_command());
-        // Whole-workspace hooks run project-wide and pass no filenames.
         assert!(clippy.always_run);
         assert!(!clippy.pass_filenames);
-        // clippy is sccache-eligible; the non-compiling tools are not.
         assert!(clippy.compiler);
         assert!(!spec.hooks[1].compiler);
-        // Whole-workspace, result-cached, and in `poly lint`'s phase by default.
         assert!(clippy.workspace);
         assert!(!clippy.skip_in_lint);
         assert!(
@@ -742,8 +709,6 @@ shebang_scripts_are_executable = false
 
     #[test]
     fn cargo_defaults_on_alongside_an_explicit_builtin() {
-        // `lint` is explicit; the `cargo` group defaults on (a `[hooks]`
-        // section exists) and appends each tool found on PATH.
         let hooks = hooks_from("[hooks.builtin]\nlint = true\n");
         let probe = StubProbe(&["cargo-clippy", "cargo-sort", "cargo-machete", "cargo-deny"]);
         let spec = lower_stage_with_probe(
@@ -768,7 +733,6 @@ shebang_scripts_are_executable = false
     fn cargo_respects_a_non_default_stage() {
         let hooks = hooks_from("[hooks.builtin.cargo]\nstages = [\"pre-push\"]\n");
         let probe = StubProbe(&["cargo-clippy", "cargo-sort", "cargo-machete", "cargo-deny"]);
-        // Not on pre-commit...
         let pre = lower_stage_with_probe(
             &hooks,
             &poly(),
@@ -780,7 +744,6 @@ shebang_scripts_are_executable = false
         )
         .unwrap();
         assert!(pre.hooks.is_empty());
-        // ...but present on pre-push.
         let push = lower_stage_with_probe(
             &hooks,
             &poly(),
@@ -797,8 +760,6 @@ shebang_scripts_are_executable = false
         );
     }
 
-    // ── Catalog tools (ADR 0013) ──────────────────────────────────────────────
-
     #[test]
     fn catalog_tool_on_a_stage_lowers_to_a_per_file_hook_when_present() {
         let config = config_from(
@@ -808,7 +769,6 @@ enabled = true
 stages = ["pre-commit"]
 "#,
         );
-        // shfmt's binary is "shfmt"; report it present.
         let probe = StubProbe(&["shfmt"]);
         let spec = lower_stage_with_probe(
             &config.hooks,
@@ -822,16 +782,12 @@ stages = ["pre-commit"]
         .unwrap();
         assert_eq!(ids(&spec), vec!["shfmt"]);
         let hook = &spec.hooks[0];
-        // Per-file dispatch: filenames are appended by the runner.
         assert!(hook.pass_filenames, "catalog hooks run per-file");
         let line = run_line(&spec, "shfmt");
-        // Quoting is platform-specific (single quotes on Unix, double on Windows
-        // for cmd /C), so compare against shell_quote, not a hard-coded form.
         assert!(
             line.starts_with(super::shell_quote("shfmt").as_str()),
             "runs the tool binary: {line}"
         );
-        // The `$PATH` placeholder is dropped — files take its place.
         assert!(!line.contains("$PATH"), "placeholder dropped: {line}");
     }
 
@@ -844,7 +800,6 @@ enabled = true
 stages = ["pre-commit"]
 "#,
         );
-        // No binaries on PATH → the tool degrades to nothing rather than failing.
         let probe = StubProbe(&[]);
         let spec = lower_stage_with_probe(
             &config.hooks,
@@ -861,7 +816,6 @@ stages = ["pre-commit"]
 
     #[test]
     fn catalog_tool_does_not_lower_on_an_unbound_stage() {
-        // Bound to pre-push only → never appears on pre-commit, even when present.
         let config = config_from(
             r#"
 [tools.shfmt]
@@ -885,7 +839,6 @@ stages = ["pre-push"]
 
     #[test]
     fn catalog_tool_with_empty_stages_is_inert() {
-        // `enabled = true` but no `stages` → not a hook on any stage.
         let config = config_from("[tools.shfmt]\nenabled = true\n");
         let probe = StubProbe(&["shfmt"]);
         let spec = lower_stage_with_probe(
@@ -903,8 +856,6 @@ stages = ["pre-push"]
 
     #[test]
     fn catalog_tool_env_and_root_are_forwarded_to_hook() {
-        // env and root from [tools.shfmt] must appear on the lowered hook so the
-        // runner sets the working directory and injects the env var.
         let config = config_from(
             r#"
 [tools.shfmt]
@@ -943,8 +894,6 @@ GOPATH = "/home/user/go"
 
     #[test]
     fn cargo_clippy_args_override_appears_in_lowered_hook_command() {
-        // When clippy_args is set, the lowered hook's run command must reflect
-        // the configured flags rather than the hardcoded defaults.
         let hooks = hooks_from(
             r#"
 [hooks.builtin.cargo]
@@ -968,9 +917,7 @@ clippy_args = ["--workspace", "--exclude=crawlberg-php", "--all-features"]
             "configured flag present: {line}"
         );
         assert!(line.contains("--all-features"), "configured flag present: {line}");
-        // The strict-warnings sentinel is always appended.
         assert!(line.contains("-D warnings"), "strict warnings always present: {line}");
-        // The default --all-targets flag must NOT appear when overridden.
         assert!(
             !line.contains("--all-targets"),
             "default flag replaced by override: {line}"
@@ -979,7 +926,6 @@ clippy_args = ["--workspace", "--exclude=crawlberg-php", "--all-features"]
 
     #[test]
     fn cargo_clippy_default_command_is_unchanged_without_override() {
-        // Verify back-compat: with no clippy_args, the classic command is used.
         let hooks = hooks_from("[hooks.builtin]\ncargo = true\n");
         let probe = StubProbe(&["cargo-clippy", "cargo-sort", "cargo-machete", "cargo-deny"]);
         let spec = lower_stage_with_probe(

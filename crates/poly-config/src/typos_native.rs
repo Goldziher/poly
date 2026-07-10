@@ -49,9 +49,7 @@ const TYPOS_NATIVE_FILE_NAMES: [&str; 2] = ["_typos.toml", ".typos.toml"];
 /// entries (`extend-exclude`, the `extend-ignore-*` regexes, ignore-words) are
 /// unioned across the whole chain.
 pub(crate) fn resolve_typos_native(dir: &Path) -> TyposNative {
-    // Nearest-first list of config sources.
     let sources = typos_config_sources(dir);
-    // Fold farthest-first so that a nearer config's map entries overwrite.
     let mut merged = TyposNative::default();
     for path in sources.into_iter().rev() {
         let parsed = parse_typos_native(&path);
@@ -125,8 +123,6 @@ fn parse_typos_native(path: &Path) -> TyposNative {
     let mut result = TyposNative::default();
     let is_pyproject = path.file_name().is_some_and(|n| n == "pyproject.toml");
 
-    // For pyproject.toml the typos config lives under `[tool.typos]`; otherwise
-    // it is the document root.
     let typos_root: Option<&toml::Table> = if is_pyproject {
         table
             .get("tool")
@@ -146,8 +142,6 @@ fn parse_typos_native(path: &Path) -> TyposNative {
         }
     }
 
-    // `pyproject.toml` `[tool.codespell] ignore-words-list` (comma-separated) is
-    // folded into the flat valid-word list, matching how poly consumes codespell.
     if is_pyproject
         && let Some(codespell) = table
             .get("tool")

@@ -57,7 +57,6 @@ impl PerFileIgnores {
     /// `"too-many"` suppresses `too-many-methods`. This keeps a short prefix from
     /// silently swallowing an unrelated code from another engine.
     pub(crate) fn apply(&self, rel: &str, diagnostics: &mut Vec<Diagnostic>) {
-        // Evaluate each glob once for this file; collect the rule lists that hit.
         let matched: Vec<&[String]> = self
             .entries
             .iter()
@@ -152,10 +151,6 @@ pub(crate) fn relative_for_match(path: &Path, bases: &[PathBuf]) -> String {
     let mut rel = path;
     for base in bases {
         if let Ok(stripped) = path.strip_prefix(base) {
-            // A single-file path arg appears in `bases` as itself, so stripping
-            // it yields the empty path — which matches no glob. Skip that base
-            // and keep the (already-relative) path so `tests/**` still matches a
-            // file passed as `poly lint tests/x.py`.
             if stripped.as_os_str().is_empty() {
                 continue;
             }
@@ -165,7 +160,6 @@ pub(crate) fn relative_for_match(path: &Path, bases: &[PathBuf]) -> String {
     }
     let rel = rel.strip_prefix(".").unwrap_or(rel);
     let text = rel.to_string_lossy();
-    // Avoid the allocation+rescan of `replace` on the common (no-backslash) path.
     if text.contains('\\') {
         text.replace('\\', "/")
     } else {
@@ -237,10 +231,8 @@ mod tests {
     fn swift_format_ignore_file_directive_skips_formatting() {
         let ignored = "// swift-format-ignore-file\nimport Foundation\nstruct A{let x:Int}\n";
         assert!(is_format_ignored(ignored, &Language::Swift));
-        // Same content without the marker is formatted normally.
         let normal = "import Foundation\nstruct A{let x:Int}\n";
         assert!(!is_format_ignored(normal, &Language::Swift));
-        // The directive is Swift-scoped; an unrelated language is never skipped.
         assert!(!is_format_ignored(ignored, &Language::Python));
     }
 
@@ -318,9 +310,6 @@ mod tests {
             relative_for_match(Path::new("./tests/a.py"), &[PathBuf::from("/x")]),
             "tests/a.py"
         );
-        // A single-file arg appears in `bases` as itself — stripping it must not
-        // collapse the path to "" (which would match no glob). Regression for
-        // `poly lint tests/a.py` not applying per-file-ignores.
         let file = PathBuf::from("tests/a.py");
         assert_eq!(
             relative_for_match(Path::new("tests/a.py"), &[PathBuf::from("/cwd"), file]),
@@ -334,8 +323,6 @@ mod tests {
         assert!(!remap.is_empty());
 
         let mut diags = vec![diag(Some("F401")), diag(Some("E501")), diag(None)];
-        // The seed `diag` helper starts every diagnostic at Warning; make the
-        // target start at Error so the remap to Warning is observable.
         diags[0].severity = Severity::Error;
         remap.apply(&mut diags);
 
@@ -350,7 +337,6 @@ mod tests {
 
     #[test]
     fn severity_remap_honors_prefix_family_and_first_match_wins() {
-        // Rule "F" is a ruff-style family prefix that matches F401.
         let remap = SeverityRemap::new(vec![
             ("F".to_string(), Severity::Hint),
             ("F401".to_string(), Severity::Error),
@@ -363,7 +349,6 @@ mod tests {
             Severity::Hint,
             "the first matching rule wins (family prefix before the exact code)"
         );
-        // Alphabetic boundary blocks: "F" must not remap "FOO".
         let mut other = vec![diag(Some("FOO"))];
         other[0].severity = Severity::Warning;
         remap.apply(&mut other);

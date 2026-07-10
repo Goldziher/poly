@@ -28,7 +28,6 @@ fn report_on_rust_repo_writes_nothing_and_keeps_rustfmt() {
     fs::write(dir.path().join("Cargo.toml"), "[package]\nname = \"demo\"\n").unwrap();
     fs::write(dir.path().join("rustfmt.toml"), "max_width = 100\n").unwrap();
 
-    // The plan classifies rustfmt.toml as KEEP and proposes no deletions.
     let plan = build_plan(dir.path()).unwrap();
     assert!(
         plan.results.iter().all(|r| !r.has_fragments()),
@@ -39,7 +38,6 @@ fn report_on_rust_repo_writes_nothing_and_keeps_rustfmt() {
         "rustfmt.toml must be on the KEEP list"
     );
 
-    // Report mode must not touch disk.
     let code = run_migrate(args(dir.path(), false));
     assert!(matches!(code, ExitCode::SUCCESS) || format!("{code:?}").contains("SUCCESS"));
     assert!(
@@ -81,17 +79,14 @@ ignore = ["E501"]
 
     run_migrate(args(dir.path(), true));
 
-    // poly.toml written with the absorbed tables.
     let poly = fs::read_to_string(dir.path().join("poly.toml")).expect("poly.toml written");
     insta::assert_snapshot!("python_repo_poly_toml", poly);
 
-    // _typos.toml fully absorbed -> deleted.
     assert!(
         !dir.path().join("_typos.toml").exists(),
         "_typos.toml should be deleted"
     );
 
-    // pyproject.toml kept, still valid, with [tool.ruff] stripped and the rest intact.
     let pyproject_text = fs::read_to_string(dir.path().join("pyproject.toml")).unwrap();
     let parsed: toml::Table = toml::from_str(&pyproject_text).expect("pyproject still parses");
     assert!(parsed.contains_key("project"), "[project] must survive");
@@ -113,7 +108,6 @@ fn write_is_idempotent() {
     let first = fs::read_to_string(dir.path().join("poly.toml")).unwrap();
     assert!(!dir.path().join("ruff.toml").exists(), "ruff.toml absorbed and deleted");
 
-    // Re-running against the already-migrated repo must not churn poly.toml.
     run_migrate(args(dir.path(), true));
     let second = fs::read_to_string(dir.path().join("poly.toml")).unwrap();
     assert_eq!(first, second, "re-running --write must be idempotent");

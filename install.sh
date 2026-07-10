@@ -1,20 +1,5 @@
 #!/bin/sh
-# poly installer — downloads the correct prebuilt binaries for this platform.
-#
-#   curl -fsSL https://raw.githubusercontent.com/Goldziher/poly/main/install.sh | sh
-#
-# Installs `poly`. Re-run any time to UPDATE to the latest release (it overwrites
 # in place). Pin a version with `POLY_VERSION` or a
-# positional argument. POSIX sh — works under dash/ash/bash/zsh.
-#
-# Environment / flags:
-#   POLY_VERSION=v0.1.5       install a specific version (default: latest)
-#   POLY_INSTALL_DIR=DIR      install location (default: ~/.local/bin)
-#   POLY_NO_MODIFY_PATH=1     do not touch shell profiles
-#   --version <v> | <v>       same as POLY_VERSION (positional kept for back-compat)
-#   --bin-dir <dir>           same as POLY_INSTALL_DIR
-#   --no-modify-path          same as POLY_NO_MODIFY_PATH=1
-#   -h | --help               show this help
 
 set -eu
 
@@ -25,7 +10,6 @@ VERSION="${POLY_VERSION:-latest}"
 INSTALL_DIR="${POLY_INSTALL_DIR:-${HOME}/.local/bin}"
 NO_MODIFY_PATH="${POLY_NO_MODIFY_PATH:-}"
 
-# ---- colors (printf, only on a TTY) ----------------------------------------
 if [ -t 1 ]; then
   C_GREEN=$(printf '\033[0;32m')
   C_YELLOW=$(printf '\033[1;33m')
@@ -48,7 +32,6 @@ usage() {
   exit 0
 }
 
-# ---- argument parsing (positional version kept for back-compat) ------------
 while [ $# -gt 0 ]; do
   case "$1" in
     -h | --help) usage ;;
@@ -74,7 +57,6 @@ done
 command -v curl >/dev/null 2>&1 || die "curl is required"
 command -v tar >/dev/null 2>&1 || die "tar is required"
 
-# ---- detect the target triple ----------------------------------------------
 uname_s=$(uname -s)
 uname_m=$(uname -m)
 
@@ -88,7 +70,6 @@ ext="tar.gz"
 case "$uname_s" in
   Darwin) target="${arch}-apple-darwin" ;;
   Linux)
-    # musl vs glibc: prefer ldd output, fall back to checking for a musl loader.
     if (ldd --version 2>&1 | grep -qi musl) || [ -e /lib/ld-musl-"${uname_m}".so.1 ]; then
       target="${arch}-unknown-linux-musl"
     else
@@ -104,9 +85,6 @@ esac
 
 info "Platform: ${C_DIM}${target}${C_OFF}"
 
-# ---- resolve the version ----------------------------------------------------
-# "latest" is resolved from the /releases/latest redirect (no API token, no rate
-# limit); the GitHub API is a fallback for unusual curl builds.
 if [ "$VERSION" = "latest" ]; then
   info "Resolving latest release..."
   effective=$(curl -fsSL -o /dev/null -w '%{url_effective}' \
@@ -127,7 +105,6 @@ version="${tag#v}"
 asset="poly-${version}-${target}.${ext}"
 base="https://github.com/${REPO}/releases/download/${tag}"
 
-# ---- detect an existing install (so we can report install vs update) -------
 previous=""
 if [ -x "${INSTALL_DIR}/poly" ]; then
   previous=$("${INSTALL_DIR}/poly" --version 2>/dev/null | awk '{print $NF}' || true)
@@ -141,7 +118,6 @@ else
   info "Installing poly ${version}"
 fi
 
-# ---- download ---------------------------------------------------------------
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
@@ -149,7 +125,6 @@ info "Downloading ${C_DIM}${base}/${asset}${C_OFF}"
 curl -fsSL -o "${tmp}/${asset}" "${base}/${asset}" ||
   die "failed to download ${asset} (does release ${tag} ship this platform?)"
 
-# ---- verify the checksum (sha256sum, shasum, or openssl) -------------------
 sha256_of() {
   if command -v sha256sum >/dev/null 2>&1; then
     sha256sum "$1" | awk '{print $1}'
@@ -163,7 +138,6 @@ sha256_of() {
 }
 
 if curl -fsSL -o "${tmp}/sha256sums.txt" "${base}/sha256sums.txt" 2>/dev/null; then
-  # Lines look like "<sha>  ./poly-<ver>-<triple>.tar.gz"; strip ./ and * markers.
   expected=$(awk -v a="$asset" '{n=$NF; sub(/^[*]/,"",n); sub(/^\.\//,"",n); if (n==a) print $1}' \
     "${tmp}/sha256sums.txt" | head -1)
   actual=$(sha256_of "${tmp}/${asset}" || true)
@@ -180,7 +154,6 @@ else
   die "could not download sha256sums.txt — refusing to install unverified binary"
 fi
 
-# ---- extract & install ------------------------------------------------------
 tar xzf "${tmp}/${asset}" -C "$tmp"
 mkdir -p "$INSTALL_DIR"
 for binary in $BINARIES; do
@@ -190,11 +163,10 @@ for binary in $BINARIES; do
 done
 info "Installed poly → ${INSTALL_DIR}"
 
-# ---- PATH wiring ------------------------------------------------------------
 add_path_line='export PATH="'"${INSTALL_DIR}"':$PATH"'
 case ":${PATH}:" in
   *":${INSTALL_DIR}:"*)
-    : # already on PATH
+    :
     ;;
   *)
     if [ -n "$NO_MODIFY_PATH" ]; then

@@ -1,3 +1,2 @@
-# Intentionally invalid TOML: duplicate key triggers taplo lint.
 name = "polylint"
 name = "duplicate"

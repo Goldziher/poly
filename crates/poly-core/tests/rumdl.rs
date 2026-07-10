@@ -64,15 +64,12 @@ fn load_fixture(name: &str) -> SourceFile {
     }
 }
 
-// ── known-bad: assert expected Diagnostic codes ──────────────────────────────
-
 #[test]
 fn bad_md_diagnostics() {
     let engine = RumdlEngine;
     let src = load_fixture("bad.md");
     let cfg = default_cfg();
     let mut diags = engine.lint(&src, &cfg).expect("lint succeeded");
-    // Sort for snapshot stability.
     diags.sort_by_key(|d| (d.span.as_ref().map(|s| s.start_line).unwrap_or(0), d.code.clone()));
     let summary: Vec<_> = diags
         .iter()
@@ -88,21 +85,11 @@ fn bad_md_diagnostics() {
     insta::assert_debug_snapshot!("bad_md_diagnostics", summary);
 }
 
-// ── canonical rule-selection vocabulary (ADR 0016) ───────────────────────────
-//
-// rumdl must accept the canonical `select` / `extend_select` / `ignore` keys in
-// addition to its native `enable` / `disable` aliases.
-
 #[test]
 fn canonical_ignore_matches_native_disable() {
     let engine = RumdlEngine;
-    // `#Title` trips MD018 (no space after the hash) — a structural lint rule
-    // that survives the formatting-rule suppression, so disabling it is
-    // observable. (Whitespace-category rules like MD013 are suppressed in lint
-    // regardless, so they can't distinguish `disable` from the default.)
     let src = md_src("#Title\n\nContent.\n");
 
-    // Baseline: MD018 fires by default.
     let base = engine.lint(&src, &default_cfg()).unwrap();
     assert!(
         base.iter().any(|d| d.code.as_deref() == Some("MD018")),
@@ -126,9 +113,6 @@ fn canonical_ignore_matches_native_disable() {
 #[test]
 fn canonical_select_and_extend_select_match_native_enable() {
     let engine = RumdlEngine;
-    // `#Title` trips MD018 (no space after the hash) and the trailing spaces
-    // trip MD009 — so an `enable` allow-list of just MD018 must narrow the set
-    // to MD018 alone, distinguishing it from the default (multi-rule) run.
     let src = md_src("#Title\n\nsome text with trailing spaces   \n");
 
     let native = engine.lint(&src, &cfg_with_codes("enable", &["MD018"])).unwrap();
@@ -151,8 +135,6 @@ fn canonical_select_and_extend_select_match_native_enable() {
         "an `enable` allow-list of MD018 must narrow the findings to MD018 only; got: {native:?}"
     );
 }
-
-// ── known-unformatted: assert exact formatted output ─────────────────────────
 
 #[test]
 fn unformatted_md_formats_cleanly() {

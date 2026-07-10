@@ -108,8 +108,6 @@ fn apply_executable_permissions(path: &Path) -> Result<()> {
 
     #[cfg(not(unix))]
     {
-        // Windows has no executable bit, and a freshly written hook file is
-        // already writable, so there is nothing to adjust here.
         let _ = path;
     }
 

@@ -47,10 +47,6 @@ use std::path::PathBuf;
 
 use poly_core::{Config, Diagnostic, RunOptions};
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 fn conformance_fixtures_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/conformance")
 }
@@ -68,14 +64,8 @@ fn run_and_group() -> HashMap<String, Vec<Diagnostic>> {
         exclude: Vec::new(),
         explicit_config: true,
     };
-    let results = poly_core::lint(
-        &[conformance_fixtures_dir()],
-        &Config::default(),
-        &opts,
-        false, // fix = false (read-only)
-        false, // collect_debug = false
-    )
-    .expect("conformance lint run must not fail");
+    let results = poly_core::lint(&[conformance_fixtures_dir()], &Config::default(), &opts, false, false)
+        .expect("conformance lint run must not fail");
 
     let mut by_engine: HashMap<String, Vec<Diagnostic>> = HashMap::new();
     for result in results {
@@ -85,10 +75,6 @@ fn run_and_group() -> HashMap<String, Vec<Diagnostic>> {
     }
     by_engine
 }
-
-// ---------------------------------------------------------------------------
-// The single conformance test
-// ---------------------------------------------------------------------------
 
 /// Diagnostic contract test. Runs the pipeline once and verifies all
 /// conformance properties in a single pass for speed.
@@ -114,9 +100,6 @@ fn run_and_group() -> HashMap<String, Vec<Diagnostic>> {
 fn diagnostic_contract_all_backends_conform() {
     let by_engine = run_and_group();
 
-    // -------------------------------------------------------------------------
-    // Part 1: Universal contract — every diagnostic has non-empty engine+title
-    // -------------------------------------------------------------------------
     let all: Vec<&Diagnostic> = by_engine.values().flatten().collect();
     assert!(
         !all.is_empty(),
@@ -134,13 +117,6 @@ fn diagnostic_contract_all_backends_conform() {
         );
     }
 
-    // -------------------------------------------------------------------------
-    // Part 2: Structured backends — every finding sets both code AND span
-    //
-    // These backends are designed so every real finding always carries a rule
-    // code and a source location. Assert the strongest property: ALL findings
-    // (not just ≥1) satisfy the invariant.
-    // -------------------------------------------------------------------------
     const STRUCTURED: &[&str] = &["taplo", "graphql", "yaml", "typos", "hcl", "dockerfile"];
     for backend in STRUCTURED {
         let diags = by_engine.get(*backend).unwrap_or_else(|| {
@@ -168,17 +144,7 @@ fn diagnostic_contract_all_backends_conform() {
         }
     }
 
-    // -------------------------------------------------------------------------
-    // Part 3: Edge-case backends — ≥1 normal finding has both code AND span
-    //
-    // These backends CAN legitimately omit one field on rare edge cases (e.g.
-    // ruff emits a file-level parse diagnostic without a span; rumdl omits code
-    // for a small set of rules). The fixture exercises a "normal" rule that
-    // always sets both, so the assertion targets ≥1 finding rather than ALL.
-    // -------------------------------------------------------------------------
-
     // ruff: F401 / W605 / E711 are rule-based diagnostics that always carry
-    // both code and span. bad.py exercises all three.
     let ruff_diags = by_engine
         .get("ruff")
         .unwrap_or_else(|| panic!("ruff produced no diagnostics; check tests/fixtures/conformance/bad.py"));
@@ -188,8 +154,6 @@ fn diagnostic_contract_all_backends_conform() {
          got: {ruff_diags:?}"
     );
 
-    // oxc: no-debugger is a correctness rule; always carries code + span.
-    // bad.js contains `debugger;` to trigger no-debugger.
     let oxc_diags = by_engine
         .get("oxc")
         .unwrap_or_else(|| panic!("oxc produced no diagnostics; check tests/fixtures/conformance/bad.js"));
@@ -199,9 +163,6 @@ fn diagnostic_contract_all_backends_conform() {
          got: {oxc_diags:?}"
     );
 
-    // rumdl: MD018 (no space after `#`) always carries both code and span.
-    // bad.md starts with `#Bad Heading` to trigger MD018.
-    // Some rumdl rules legitimately omit code (hence ≥1 not ALL).
     let rumdl_diags = by_engine
         .get("rumdl")
         .unwrap_or_else(|| panic!("rumdl produced no diagnostics; check tests/fixtures/conformance/bad.md"));
@@ -210,9 +171,6 @@ fn diagnostic_contract_all_backends_conform() {
         "rumdl: expected ≥1 finding with a span; got: {rumdl_diags:?}"
     );
 
-    // -------------------------------------------------------------------------
-    // Part 4: Audit log — print covered engines so CI output shows coverage
-    // -------------------------------------------------------------------------
     let mut covered: Vec<&str> = by_engine.keys().map(String::as_str).collect();
     covered.sort_unstable();
     println!(
@@ -222,8 +180,6 @@ fn diagnostic_contract_all_backends_conform() {
         covered.len()
     );
 
-    // Every STRUCTURED backend and every edge-case backend must be covered.
-    // This turns a silent empty-result into a loud test failure.
     const ALL_REQUIRED: &[&str] = &[
         "taplo",
         "graphql",

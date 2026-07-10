@@ -1,9 +1,5 @@
 version: "3"
 
-# Developer task runner for polylint. Mirrors the dev workflow in CLAUDE.md and
-# the CI gate. The `conformance` crate is excluded from the default lint/test
-# tasks (it runs reference formatters under Docker — see `task conformance`).
-
 vars:
   POLY: cargo run -q -p poly-cli --bin poly --
 

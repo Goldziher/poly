@@ -82,8 +82,6 @@ fn every_config_stage_maps_to_a_runner_stage_except_always() {
 
 #[test]
 fn legacy_stage_aliases_agree_across_both_enums() {
-    // Both enums accept the same pre-commit-style aliases; assert each
-    // resolves to the same logical runner stage on both sides.
     for (alias, expected) in [
         ("commit", HookStage::PreCommit),
         ("push", HookStage::PrePush),
@@ -92,7 +90,6 @@ fn legacy_stage_aliases_agree_across_both_enums() {
         let config_stage: ConfigStage = alias.parse().expect("config alias parses");
         assert_eq!(to_hook_stage(config_stage), Some(expected));
 
-        // The runner's `Stage` accepts the same aliases via serde.
         let runner_stage: HookStage =
             serde_json::from_value(serde_json::Value::String(alias.to_string())).expect("runner alias parses");
         assert_eq!(runner_stage, expected);
@@ -115,8 +112,6 @@ fmt = true
     let HookCommand::Run(line) = &spec.hooks[0].command else {
         panic!("expected run command");
     };
-    // The `lint` builtin is the per-file tier only; it passes `--no-workspace`
-    // so it never re-runs the whole-project tools (the `cargo` group's job).
     assert!(line.ends_with(" lint --no-workspace"), "unexpected line: {line}");
     assert!(line.contains("/opt/poly/bin/poly"));
     assert!(spec.hooks[0].pass_filenames);
@@ -152,16 +147,11 @@ fn commit_builtin_defaults_to_commit_msg_stage() {
 commit = true
 "#,
     );
-    // Not present on pre-commit...
     let pre = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
     assert!(pre.hooks.is_empty());
-    // ...but present on commit-msg, with file passing for the message file.
     let msg = lower_stage(&hooks, &poly(), HookStage::CommitMsg, &[], &HookCacheMode::Safe).unwrap();
     assert_eq!(ids(&msg), vec!["poly-commit"]);
     assert!(msg.hooks[0].pass_filenames);
-    // The hook must carry the stage it was lowered for, so the runner selects
-    // message-file input mode (not the `Stage::default()` pre-commit / file mode,
-    // which would leave it with no matched files and silently skip enforcement).
     assert!(matches!(msg.hooks[0].stage, HookStage::CommitMsg));
 }
 
@@ -192,7 +182,6 @@ files = "**/*.rs"
     assert!(hook.stage_fixed);
     assert!(hook.parallel);
     assert!(hook.files.is_some());
-    // A job with a file filter does not force `always_run`.
     assert!(!hook.always_run);
 }
 
@@ -231,7 +220,6 @@ priority = 5
 "#,
     );
     let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
-    // `early` (-5) < lint (0) < `late` (5).
     assert_eq!(ids(&spec), vec!["early", "lint", "late"]);
 }
 
@@ -342,7 +330,6 @@ files = "**/*.rs"
     let HookCommand::Run(line) = &spec.hooks[0].command else {
         panic!("expected run command");
     };
-    // Only the `.rs` file survives the job's `files` glob.
     assert!(line.contains("a.rs"), "{line}");
     assert!(!line.contains("README.md"), "non-matching file leaked: {line}");
 }
@@ -362,7 +349,6 @@ run = "echo {staged_files}"
     let HookCommand::Run(line) = &spec.hooks[0].command else {
         panic!("expected run command");
     };
-    // The path is single-quoted as one shell token, not split on the space.
     assert!(line.contains("'my file.js'"), "unquoted path: {line}");
 }
 

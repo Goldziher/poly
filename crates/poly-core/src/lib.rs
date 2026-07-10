@@ -15,9 +15,6 @@
 //! `registry` is crate-private. Downstream consumers use the curated re-exports
 //! below plus [`lint`] / [`format()`].
 
-// Public-for-tests, not part of the stable API: the per-backend integration
-// tests under `tests/` construct engines and exercise discovery directly, so
-// these stay `pub` but are hidden from the documented surface.
 pub mod config;
 pub mod defaults;
 #[doc(hidden)]

@@ -319,8 +319,6 @@ fn detect_footer_start(lines: &[&str]) -> Option<usize> {
     if end == 0 {
         return None;
     }
-    // Footers can span multiple lines (e.g. BREAKING CHANGE notes). Treat the footer section as the
-    // suffix of the message that contains at least one recognizable footer token line.
     (0..end)
         .rev()
         .find(|&idx| parse_footer_line(lines[idx].trim_end_matches('\r')).is_some())
@@ -390,7 +388,7 @@ fn validate_body_policy(message: &str, policy: BodyPolicy) -> Vec<String> {
         }
         BodyPolicy::RequireBody => {
             let mut lines = message.lines();
-            lines.next(); // title line
+            lines.next();
 
             let mut saw_blank = false;
             let mut body_has_content = false;
@@ -440,12 +438,11 @@ fn parse_footer_line(line: &str) -> Option<FooterEntry> {
     }
 
     let normalized = token.replace('-', " ");
-    if !normalized.eq_ignore_ascii_case("BREAKING CHANGE") {
-        // Only allow spec-shaped tokens so body text like `- Note: ...` doesn't get
-        // misclassified as a footer entry.
-        if !token.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') || token.chars().any(|c| c.is_whitespace()) {
-            return None;
-        }
+    let is_breaking_change = normalized.eq_ignore_ascii_case("BREAKING CHANGE");
+    let is_invalid_token =
+        !token.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') || token.chars().any(|c| c.is_whitespace());
+    if !is_breaking_change && is_invalid_token {
+        return None;
     }
 
     let value = line[(idx + sep_len)..].to_string();

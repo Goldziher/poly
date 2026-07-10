@@ -102,11 +102,6 @@ impl Engine for TreeSitterEngine {
     }
 
     fn capabilities(&self) -> Capabilities {
-        // The generic tier is a formatter, not a linter: trailing-whitespace and
-        // line-ending normalization are applied by `format` (and undone
-        // losslessly there), so there is no lint surface to declare. Reporting a
-        // "trailing whitespace" diagnostic under `lint` that `lint --fix` could
-        // not act on was a footgun — it belongs to `fmt`, which does fix it.
         Capabilities {
             lint: false,
             format: true,
@@ -115,47 +110,19 @@ impl Engine for TreeSitterEngine {
     }
 
     fn version(&self) -> &str {
-        // Folds the tree-sitter-language-pack version so a grammar upgrade
-        // invalidates cached tier-2 output (grammars drive parsing and thus the
-        // reindent). Bump the leading number on logic changes, the tslp suffix on
-        // a pack bump.
-        // History: v8 Elixir do/end built-in indents query; v7 query-driven indent path;
-        //          v6 LEAVE_UNTOUCHED no-ops; v5 level-keyed-by-open-line; v4 CRLF fix.
         "8+tslp1.12.5"
     }
 
-    // No `lint` override: the generic tier declares `lint: false` and relies on
-    // the trait's no-op default. Trailing-whitespace normalization lives in
-    // `format` (see `normalize_whitespace`), reachable via `poly fmt`.
-
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
-        // Data/template/asset grammars: leave byte-identical — no whitespace
-        // normalization, no structural reindent. Resolve the grammar once and
-        // reuse it for both the guard and the dispatch below.
         let name = grammar_name(src);
         if name.as_deref().is_some_and(|n| LEAVE_UNTOUCHED.contains(&n)) {
             return Ok(FormatOutput::Unchanged);
         }
         let formatted = match name {
             Some(name) => {
-                // Dispatch order:
-                // 1. Brace-counting reindent for BRACE_FAMILY languages —
-                //    these have proven correct output with per-language tuning
-                //    (tabs for Go, 2-space for Swift/Dart, custom switch/case
-                //    adjustments). Even when a BRACE_FAMILY language has a
-                //    bundled indents.scm (zig, swift, scala, proto, objc), the
-                //    Helix-style captures often target interactive indent (Enter
-                //    key) rather than whole-file reformat; the brace path stays.
-                // 2. Query-driven reindent for non-BRACE_FAMILY languages that
-                //    have a bundled indents.scm — adds structural reindent for
-                //    languages like kdl, thrift, ron, ninja, cmake, …
-                // 3. Whitespace normalization as the final catch-all.
                 if BRACE_FAMILY.contains(&name.as_str()) {
                     reindent_braces(&name, src, cfg).unwrap_or_else(|| normalize_whitespace(&src.content, &cfg.globals))
                 } else {
-                    // 1. Language-pack bundled indents.scm (e.g. RON, KDL, …)
-                    // 2. Polylint built-in query for grammars without a bundled one (e.g. Elixir)
-                    // 3. Whitespace normalization (trim trailing WS, fix line endings)
                     indent::try_reindent_query(&name, src, cfg)
                         .or_else(|| indent::try_reindent_builtin(&name, src, cfg))
                         .unwrap_or_else(|| normalize_whitespace(&src.content, &cfg.globals))
@@ -195,7 +162,6 @@ fn reindent_braces(name: &str, src: &SourceFile, cfg: &EngineConfig) -> Option<S
             let parser = get_parser(name).ok()?;
             pool.insert(name.to_string(), parser);
         }
-        // `contains_key` above guarantees the entry exists.
         let parser = pool.get_mut(name)?;
         let tree = parser.parse(&src.content)?;
         let cst = collect_cst(&tree.root_node(), name);
@@ -248,9 +214,6 @@ impl CstFacts {
     /// `protected` is sorted by start byte (guaranteed by `collect_cst`), so
     /// this is O(log n) via `partition_point` instead of a linear scan.
     fn is_interior(&self, byte: usize) -> bool {
-        // All entries at [..pos] have start < byte; the last such entry is the
-        // only candidate (ranges are non-overlapping CST nodes, so at most one
-        // can contain `byte`).
         let pos = self.protected.partition_point(|&(start, _)| start < byte);
         if pos == 0 {
             return false;
@@ -302,8 +265,6 @@ fn collect_cst(root: &Node, grammar_name: &str) -> CstFacts {
                 _ => {}
             }
         }
-        // Descend only into non-protected nodes; a string/comment subtree is
-        // treated as an opaque protected range.
         if !is_protected && cursor.goto_first_child() {
             continue;
         }
@@ -337,11 +298,6 @@ fn collect_case_adjustments(
     case_label_dedent: &mut Vec<(usize, usize)>,
 ) {
     match grammar_name {
-        // Node-kind strings were verified against:
-        //   swift  — tree-sitter-swift 0.6.x (grammar tag v0.6.0)
-        //   dart   — tree-sitter-dart  0.0.3 (grammar shipped in language-pack)
-        //   csharp — tree-sitter-c-sharp 0.23.x (grammar tag v0.23.1)
-        // If the grammar is upgraded, re-check that these node kinds still exist.
         "swift" => collect_swift_case_adjustments(root, case_body_extra, case_label_dedent),
         "dart" => collect_switch_case_bodies(
             root,
@@ -363,11 +319,7 @@ fn collect_swift_case_adjustments(
     case_label_dedent: &mut Vec<(usize, usize)>,
 ) {
     if root.kind() == "switch_entry" {
-        // The entire entry (case label + body) is dedented one level so the
-        // case label sits at the switch's depth, not the switch body's depth.
         case_label_dedent.push((root.start_byte(), root.end_byte()));
-        // The `statements` child gets +1 so it ends at bracket depth (the
-        // dedent and the extra-indent cancel, keeping body at bracket depth).
         let mut cursor = root.walk();
         if cursor.goto_first_child() {
             loop {
@@ -381,7 +333,6 @@ fn collect_swift_case_adjustments(
             }
         }
     }
-    // Always recurse so nested switch statements are handled.
     let mut cursor = root.walk();
     if cursor.goto_first_child() {
         loop {
@@ -421,7 +372,6 @@ fn collect_switch_case_bodies(
             }
         }
     }
-    // Recurse so nested switch statements are handled.
     let mut cursor = root.walk();
     if cursor.goto_first_child() {
         loop {
@@ -454,60 +404,37 @@ fn reindent(source: &str, grammar_name: &str, facts: &CstFacts, cfg: &EngineConf
     let line_ending = cfg.globals.line_ending.as_str();
     let delimiters = &facts.delimiters;
 
-    // Precompute a 64-level indent string (64 × unit_len bytes). Slicing into
-    // this replaces the `for _ in 0..level { push_str(&unit) }` loop with a
-    // single contiguous push_str, eliminating repeated per-level function calls.
-    // 64 levels covers all realistic nesting depths; deeper code falls back to
-    // the loop. The allocation is paid once per reindent call, not per line.
     const MAX_PRECOMPUTED_DEPTH: usize = 64;
     let max_indent = unit.repeat(MAX_PRECOMPUTED_DEPTH);
 
     let mut out = String::with_capacity(source.len() + source.len() / 8);
     let mut byte = 0usize;
     let mut first = true;
-    // raw_stack: per-open-bracket entry storing the line index it was opened on.
     let mut raw_stack: Vec<usize> = Vec::new();
-    // active_levels: each distinct open-line contributes at most one depth unit.
     let mut active_levels: Vec<usize> = Vec::new();
-    // d_cursor: index into the byte-sorted `delimiters` slice. Advances
-    // monotonically with `byte`, so each delimiter is visited exactly once
-    // across the entire line loop (O(lines + delimiters) rather than the
-    // previous O(lines × delimiters) Vec-filter-per-line).
     let mut d_cursor = 0usize;
 
     for (line_idx, raw) in source.split('\n').enumerate() {
-        // Strip '\r' for CRLF; it is re-added via line_ending.
         let line = raw.strip_suffix('\r').unwrap_or(raw);
         let line_start = byte;
         let line_end = byte + line.len();
 
-        // Interior of a multiline string/comment: emit verbatim, don't reindent.
         if facts.is_interior(line_start) {
             if !first {
                 out.push_str(line_ending);
             }
             first = false;
             out.push_str(line);
-            byte += raw.len() + 1; // raw includes '\r' for CRLF — must not use line.len()
+            byte += raw.len() + 1;
             continue;
         }
 
-        // Delimiters on this line: advance the cursor to the start of this
-        // line's window, then find the end. Because `byte` is monotonically
-        // increasing and delimiters are byte-sorted, `d_cursor` is already at
-        // or past any delimiter whose byte < line_start (CRLF '\r' characters
-        // are not real tokens, so no delimiter lands between line_end and
-        // line_start of the next line). This sweep is O(delimiters on this
-        // line) and the whole outer loop is O(total delimiters + total lines).
         let d_line_start = d_cursor;
         while d_cursor < delimiters.len() && delimiters[d_cursor].byte < line_end {
             d_cursor += 1;
         }
         let line_delims = &delimiters[d_line_start..d_cursor];
 
-        // Leading-closer run: consecutive `)` `]` `}` at line start.
-        // Each pops raw_stack and, if the popped open-line is in active_levels,
-        // releases that level. Depth is sampled AFTER all leading closers fire.
         let leading = count_leading_closers(line, line_start, line_delims);
         for _ in 0..leading {
             if let Some(open_line) = raw_stack.pop()
@@ -526,13 +453,10 @@ fn reindent(source: &str, grammar_name: &str, facts: &CstFacts, cfg: &EngineConf
         first = false;
         let trimmed = line.trim();
         if !trimmed.is_empty() {
-            // Emit indent: slice the precomputed max_indent string for a single
-            // contiguous push_str instead of `level` separate pushes.
             let indent_bytes = level * unit.len();
             if indent_bytes <= max_indent.len() {
                 out.push_str(&max_indent[..indent_bytes]);
             } else {
-                // Pathological depth: fall back to the loop.
                 for _ in 0..level {
                     out.push_str(&unit);
                 }
@@ -540,8 +464,6 @@ fn reindent(source: &str, grammar_name: &str, facts: &CstFacts, cfg: &EngineConf
             out.push_str(trimmed);
         }
 
-        // Process remaining delimiters: openers push line_idx, closers pop and
-        // optionally release.
         for d in &line_delims[leading..] {
             if d.open {
                 raw_stack.push(line_idx);
@@ -552,12 +474,11 @@ fn reindent(source: &str, grammar_name: &str, facts: &CstFacts, cfg: &EngineConf
             }
         }
 
-        // Coalesce: if this line left unmatched opens, it contributes one new level.
         if raw_stack.contains(&line_idx) && !active_levels.contains(&line_idx) {
             active_levels.push(line_idx);
         }
 
-        byte += raw.len() + 1; // raw includes '\r' for CRLF — must not use line.len()
+        byte += raw.len() + 1;
     }
 
     apply_trailing_newline(&mut out, source, line_ending, cfg.globals.final_newline);
@@ -578,8 +499,6 @@ fn count_leading_closers(line: &str, line_start: usize, line_delims: &[Delimiter
     for ch in line[first_nonws..].chars() {
         match ch {
             ')' | ']' | '}' => {
-                // Binary search: line_delims is byte-sorted (via collect_cst sort).
-                // Check whether the token at `abs` is a real CST closer.
                 let is_real_closer = line_delims
                     .binary_search_by_key(&abs, |d| d.byte)
                     .is_ok_and(|i| !line_delims[i].open);
@@ -599,9 +518,6 @@ fn count_leading_closers(line: &str, line_start: usize, line_delims: &[Delimiter
 /// Ensure the output ends (or does not end) with a single trailing newline,
 /// mirroring the configured `final_newline` policy and the original source.
 fn apply_trailing_newline(out: &mut String, source: &str, line_ending: &str, final_newline: bool) {
-    // `split('\n')` produced a trailing empty segment for sources that already
-    // ended in '\n'; that empty segment added a dangling line ending we trim
-    // back here before applying the policy.
     while out.ends_with('\n') || out.ends_with('\r') {
         out.pop();
     }

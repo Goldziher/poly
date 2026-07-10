@@ -39,7 +39,7 @@ const TYPOS_VERSION: &str = "0.10.43+dict-0.13.31+guards1+cfg2+error-noautofix+b
 
 /// Skip spell-checking files at least this large: generated/minified bundles
 /// dominate by size and are pure noise word-by-word.
-const MAX_SPELL_CHECK_BYTES: usize = 1 << 20; // 1 MiB
+const MAX_SPELL_CHECK_BYTES: usize = 1 << 20;
 
 /// Skip files containing any line at least this long: very long lines are a
 /// reliable signal of minified/generated content (one 11.7 MB Plotly bundle in
@@ -61,13 +61,11 @@ const MIN_TYPO_LEN: usize = 3;
 /// per-repo config so it can't mask genuine typos elsewhere. All entries are
 /// lowercase and compared case-insensitively.
 static BUILTIN_VALID_WORDS: &[&str] = &[
-    // Technical terms / abbreviations.
-    "ser",         // serde (Rust) serialization module / abbreviation.
-    "flate",       // DEFLATE compression (Go `compress/flate`, miniz inflate/deflate).
-    "fpr",         // GPG fingerprint record field (`gpg --with-colons`).
-    "arange",      // numpy range constructor.
-    "unparseable", // accepted variant spelling of "unparsable".
-    // Well-known OSS tool / library / format names.
+    "ser",
+    "flate",
+    "fpr",
+    "arange",
+    "unparseable",
     "certifi",
     "onnx",
     "wasm",
@@ -107,8 +105,6 @@ impl Engine for TyposEngine {
         Capabilities {
             lint: true,
             format: false,
-            // Never autofix: auto-correcting a misspelling rewrites identifiers
-            // and string keys that only look like typos (see `typo_to_diagnostic`).
             fix: false,
         }
     }
@@ -118,12 +114,10 @@ impl Engine for TyposEngine {
     }
 
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
-        // Generated/minified assets are pure noise word-by-word; skip them.
         if is_generated_or_minified(&src.content) {
             return Ok(Vec::new());
         }
 
-        // File-skip: if src.path matches any extend_exclude glob, return early.
         let exclude_globs: Vec<String> = cfg
             .options
             .get("extend_exclude")
@@ -134,8 +128,6 @@ impl Engine for TyposEngine {
             return Ok(Vec::new());
         }
 
-        // Build the valid-word set: extend_ignore_words (flat list) ∪ extend_words keys.
-        // Both are lowercased for comparison.
         let mut valid_words: Vec<String> = cfg
             .options
             .get("extend_ignore_words")
@@ -151,7 +143,6 @@ impl Engine for TyposEngine {
             valid_words.extend(words_table.keys().map(|k| k.to_ascii_lowercase()));
         }
 
-        // Build the valid-identifier set from extend_identifiers keys (lowercased).
         let valid_identifiers: Vec<String> = cfg
             .options
             .get("extend_identifiers")
@@ -164,13 +155,9 @@ impl Engine for TyposEngine {
             valid_identifiers: &valid_identifiers,
         };
 
-        // Regex-based ignores (typos-cli `extend-ignore-*-re`). Compiled per run
-        // only when configured — the common empty case does no regex work.
         let ignore_re = compile_regexes(&str_array(&cfg.options, "extend_ignore_re"));
         let word_ignore_re = compile_regexes(&str_array(&cfg.options, "extend_ignore_words_re"));
         let ident_ignore_re = compile_regexes(&str_array(&cfg.options, "extend_ignore_identifiers_re"));
-        // Byte ranges masked out by `extend-ignore-re`: a typo starting inside any
-        // masked span is dropped (mirrors typos-cli region masking).
         let masked: Vec<(usize, usize)> = ignore_re
             .iter()
             .flat_map(|re| re.find_iter(&src.content).map(|m| (m.start(), m.end())))
@@ -179,10 +166,6 @@ impl Engine for TyposEngine {
         let diags = typos::check_str(&src.content, &TOKENIZER, &dict)
             .filter(|typo| typo.typo.len() >= MIN_TYPO_LEN)
             .filter(|typo| !byte_in_ranges(typo.byte_offset, &masked))
-            // `extend-ignore-words-re` matches the flagged word. `-identifiers-re`
-            // is applied to the same token as a best effort: `check_str` yields
-            // word tokens, not whole identifiers, so an identifier-level regex is
-            // matched against the flagged word rather than its parent identifier.
             .filter(|typo| !word_ignore_re.iter().any(|re| re.is_match(typo.typo.as_ref())))
             .filter(|typo| !ident_ignore_re.iter().any(|re| re.is_match(typo.typo.as_ref())))
             .map(|typo| typo_to_diagnostic(&src.content, typo))
@@ -244,11 +227,9 @@ fn path_matches_any(path: &std::path::Path, patterns: &[String]) -> bool {
         return false;
     };
 
-    // Try the full path first.
     if set.is_match(path) {
         return true;
     }
-    // Strip the first component repeatedly and try each suffix.
     let mut tail: &std::path::Path = path;
     loop {
         let mut comps = tail.components();
@@ -264,10 +245,6 @@ fn path_matches_any(path: &std::path::Path, patterns: &[String]) -> bool {
     }
     false
 }
-
-// ---------------------------------------------------------------------------
-// Built-in dictionary
-// ---------------------------------------------------------------------------
 
 /// In-process dictionary wrapping `typos_dict::WORD`, extended with a
 /// caller-supplied list of words to treat as valid.
@@ -292,12 +269,10 @@ struct ConfiguredDictionary<'a> {
 
 impl typos::Dictionary for ConfiguredDictionary<'_> {
     fn correct_ident<'s>(&'s self, ident: typos::tokens::Identifier<'_>) -> Option<typos::Status<'s>> {
-        // Hard-coded identifiers that typos-cli explicitly accepts as valid.
         match ident.token() {
             "O_WRONLY" | "dBA" => return Some(typos::Status::Valid),
             _ => {}
         }
-        // User-defined identifier allow-list (lowercased comparison).
         let lowered = ident.token().to_ascii_lowercase();
         if self.valid_identifiers.iter().any(|w| w == &lowered) {
             return Some(typos::Status::Valid);
@@ -308,13 +283,10 @@ impl typos::Dictionary for ConfiguredDictionary<'_> {
     fn correct_word<'s>(&'s self, word_token: typos::tokens::Word<'_>) -> Option<typos::Status<'s>> {
         use typos::tokens::Case;
 
-        // Skip numeric / symbol tokens (no case → not a word).
         if word_token.case() == Case::None {
             return None;
         }
 
-        // Built-in always-valid words ∪ user-defined valid-word list (both
-        // compared lowercased).
         let lowered = word_token.token().to_ascii_lowercase();
         if is_builtin_valid_word(&lowered) || self.valid_words.iter().any(|w| w == &lowered) {
             return Some(typos::Status::Valid);
@@ -329,7 +301,6 @@ impl typos::Dictionary for ConfiguredDictionary<'_> {
             typos::Status::Corrections(corrections.iter().map(|c| Cow::Borrowed(*c)).collect())
         };
 
-        // Reflect the original word's casing in each correction.
         for s in status.corrections_mut() {
             case_correct(s, word_token.case());
         }
@@ -356,10 +327,6 @@ fn case_correct(correction: &mut Cow<'_, str>, case: typos::tokens::Case) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Diagnostic conversion helpers
-// ---------------------------------------------------------------------------
-
 fn typo_to_diagnostic(content: &str, typo: typos::Typo<'_>) -> Diagnostic {
     let start_byte = typo.byte_offset;
     let end_byte = start_byte + typo.typo.len();
@@ -378,9 +345,6 @@ fn typo_to_diagnostic(content: &str, typo: typos::Typo<'_>) -> Diagnostic {
         format!("`{}` should be `{}`", typo.typo, corrections.join("` or `"))
     };
 
-    // No autofix — a typo is reported at error severity for manual resolution.
-    // Auto-correcting silently rewrites identifiers / string keys that merely
-    // resemble misspellings, a frequent source of regressions.
     Diagnostic {
         engine: "typos".to_string(),
         code: Some("typo".to_string()),
@@ -404,7 +368,6 @@ fn typo_to_diagnostic(content: &str, typo: typos::Typo<'_>) -> Diagnostic {
 /// Columns count UTF-8 bytes from the start of the line, not Unicode scalar
 /// values — this matches the convention used by most editors.
 fn byte_to_line_col(content: &str, offset: usize) -> (u32, u32) {
-    // Clamp to the end of the content in case of an off-by-one on the last byte.
     let clamped = offset.min(content.len());
     let before = &content[..clamped];
     let line = (before.bytes().filter(|&b| b == b'\n').count() as u32) + 1;

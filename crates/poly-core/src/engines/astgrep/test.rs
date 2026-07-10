@@ -181,11 +181,6 @@ pub fn apply_rule_fix(rule: &RuleConfig<TslpLanguage>, code: &str) -> Option<Str
     edits.sort_by_key(|e| std::cmp::Reverse(e.start_byte));
     let mut out = code.to_string();
     for edit in edits {
-        // Guard char boundaries — `replace_range` panics on a non-boundary
-        // offset. This mirrors the runner's `apply_edits`, so a malformed
-        // user-authored fix reports a mismatch rather than crashing `poly rules
-        // test`. Skipping an edit leaves `out` unchanged for that span, which
-        // then fails the `fixed:` assertion — the intended signal.
         if !out.is_char_boundary(edit.start_byte) || !out.is_char_boundary(edit.end_byte) {
             continue;
         }
@@ -215,9 +210,6 @@ pub fn verify(test: &RuleTest, rule: &RuleConfig<TslpLanguage>) -> Vec<CaseOutco
             passed: matched,
             detail: None,
         });
-        // An `invalid` case may additionally assert its autofix output — but only
-        // check it when the rule actually matched, so a non-match reports one
-        // failure (the `Invalid` check) rather than a misleading second one.
         if let (true, Some(expected)) = (matched, case.expected_fix()) {
             let got = apply_rule_fix(rule, case.code());
             let passed = got.as_deref() == Some(expected);

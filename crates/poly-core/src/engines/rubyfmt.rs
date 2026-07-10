@@ -64,25 +64,16 @@ impl Engine for RubyfmtEngine {
     /// the tool's output is authoritative.
     fn format(&self, src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
         match format_buffer(src.content.as_bytes()) {
-            Ok(bytes) => {
-                // rubyfmt always emits valid UTF-8 Ruby source. If the bytes
-                // are somehow not valid UTF-8, leave the file untouched rather
-                // than corrupting it.
-                match String::from_utf8(bytes) {
-                    Ok(formatted) => {
-                        if formatted == *src.content {
-                            Ok(FormatOutput::Unchanged)
-                        } else {
-                            Ok(FormatOutput::Formatted(formatted))
-                        }
+            Ok(bytes) => match String::from_utf8(bytes) {
+                Ok(formatted) => {
+                    if formatted == *src.content {
+                        Ok(FormatOutput::Unchanged)
+                    } else {
+                        Ok(FormatOutput::Formatted(formatted))
                     }
-                    Err(_) => Ok(FormatOutput::Unchanged),
                 }
-            }
-            // SyntaxError: rubyfmt could not parse the file. Leave untouched.
-            // IOError: internal I/O failure. Leave untouched.
-            // Robustness rule: every file in the corpus must survive a format
-            // run — never propagate a format error as a pipeline error.
+                Err(_) => Ok(FormatOutput::Unchanged),
+            },
             Err(RichFormatError::SyntaxError | RichFormatError::IOError(_)) => Ok(FormatOutput::Unchanged),
         }
     }
@@ -133,8 +124,6 @@ mod tests {
 
     #[test]
     fn should_reformat_block_with_leading_blank_line() {
-        // rubyfmt removes blank lines at the start of blocks: `a do\n\nend`
-        // becomes `a do\nend`.
         let engine = RubyfmtEngine;
         let src = make_src("a do\n\nend\n");
         let out = engine.format(&src, &default_cfg()).unwrap();
@@ -146,8 +135,6 @@ mod tests {
 
     #[test]
     fn should_return_unchanged_on_unparsable_ruby() {
-        // An unclosed `def` is a syntax error — rubyfmt returns SyntaxError,
-        // which we map to Unchanged (robustness rule).
         let engine = RubyfmtEngine;
         let src = make_src("def foo(");
         let out = engine.format(&src, &default_cfg()).unwrap();

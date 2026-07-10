@@ -24,8 +24,6 @@ use std::collections::BTreeMap;
 use crate::config::EngineConfig;
 use crate::engine::Severity;
 
-// ── Per-rule overrides ────────────────────────────────────────────────────────
-
 /// Per-rule override from `[lint.<lang>.<tool>.rules.<id>]`.
 #[derive(Debug, Clone, Default)]
 pub struct RuleOptions {
@@ -35,8 +33,6 @@ pub struct RuleOptions {
     /// `level`).
     pub params: toml::Table,
 }
-
-// ── RuleSelection ─────────────────────────────────────────────────────────────
 
 /// Parsed rule selection from a `[lint.<lang>.<tool>]` options table.
 #[derive(Debug, Clone, Default)]
@@ -67,8 +63,6 @@ impl RuleSelection {
         self.select.is_empty() && self.extend_select.is_empty() && self.ignore.is_empty() && self.rules.is_empty()
     }
 }
-
-// ── Shared helpers ────────────────────────────────────────────────────────────
 
 /// Read an array-of-strings option from an engine config by key.
 ///
@@ -137,8 +131,6 @@ pub(crate) fn warn_and_skip_blank(codes: Vec<String>, engine: &str) -> Vec<Strin
         .collect()
 }
 
-// ── Private helpers ───────────────────────────────────────────────────────────
-
 fn string_list_from_table(table: &toml::Table, key: &str) -> Vec<String> {
     table
         .get(key)
@@ -190,8 +182,6 @@ fn parse_level(s: &str) -> Option<Severity> {
         _ => None,
     }
 }
-
-// ── Unit tests ────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -288,8 +278,6 @@ name  = "poly"
 
     #[test]
     fn deserialize_options_invalid_falls_back_to_default() {
-        // `width` expects an integer; a string value fails deserialization and
-        // must fall back to the default without panicking.
         let cfg = make_cfg(r#"width = "not-a-number""#);
         let parsed: TinyOptions = deserialize_options(&cfg, "[test]");
         assert_eq!(parsed, TinyOptions::default());

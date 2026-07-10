@@ -36,10 +36,6 @@ fn format_to_string(content: &str) -> String {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Known-bad fixture: a malformed document produces a parse diagnostic.
-// ---------------------------------------------------------------------------
-
 const KNOWN_BAD: &str = "query { user(id: ) { name } }";
 
 #[test]
@@ -63,10 +59,6 @@ fn valid_query_has_no_diagnostics() {
         .unwrap();
     assert!(diags.is_empty(), "got: {diags:?}");
 }
-
-// ---------------------------------------------------------------------------
-// Known-unformatted fixtures: messy query / schema → canonical output.
-// ---------------------------------------------------------------------------
 
 const KNOWN_UNFORMATTED_QUERY: &str = "query   GetUser{user(id:42){name,email,posts{title}}}";
 

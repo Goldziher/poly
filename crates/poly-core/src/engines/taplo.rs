@@ -96,12 +96,8 @@ impl Engine for TaploEngine {
     }
 
     fn lint(&self, src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
-        // Config is intentionally unused: taplo lint is syntax/semantic only
-        // (parser errors + DOM validation). Neither the taplo parser nor the DOM
-        // validator exposes rule toggles or severity overrides via the public API.
         let mut diags = Vec::new();
 
-        // --- Syntax errors from the parser -------------------------------------
         let parse = parser::parse(&src.content);
         for error in &parse.errors {
             let start_byte = u32::from(error.range.start()) as usize;
@@ -120,8 +116,6 @@ impl Engine for TaploEngine {
             });
         }
 
-        // --- Semantic errors from DOM validation -------------------------------
-        // Build the DOM regardless of parse errors; it may still have nodes.
         let dom = parse.into_dom();
         if let Err(errors) = dom.validate() {
             for error in errors {
@@ -154,10 +148,6 @@ impl Engine for TaploEngine {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Private helpers
-// ---------------------------------------------------------------------------
-
 /// Build `taplo::formatter::Options` from an [`EngineConfig`].
 ///
 /// Layering: taplo defaults → opinionated override (column_width 120) →
@@ -169,31 +159,20 @@ impl Engine for TaploEngine {
 /// manually from `cfg.options` via `toml::Value::as_bool` /
 /// `toml::Value::as_integer` lookups.
 fn build_options(cfg: &EngineConfig) -> Options {
-    // Opinionated overrides on top of taplo's own defaults.
     let mut opts = Options {
-        // Override: 120-column target (taplo default is 80).
         column_width: 120,
-        // Indent width from the resolved engine config (language default = 2 for TOML).
         indent_string: " ".repeat(cfg.indent_width),
-        // Line endings from global config.
         crlf: matches!(cfg.globals.line_ending, crate::config::LineEnding::Crlf),
-        // Trailing newline mirrors global final_newline.
         trailing_newline: cfg.globals.final_newline,
         ..Options::default()
     };
 
-    // ── layout ───────────────────────────────────────────────────────────────
     if let Some(v) = cfg.options.get("column_width").and_then(toml::Value::as_integer)
         && v > 0
     {
         opts.column_width = v as usize;
     }
-    if let Some(v) = cfg
-        .options
-        .get("indent_width")
-        .and_then(toml::Value::as_integer)
-        // Cap at 32 so a pathological `indent_width` can't allocate a huge
-        // indent string per file.
+    if let Some(v) = cfg.options.get("indent_width").and_then(toml::Value::as_integer)
         && (1..=32).contains(&v)
     {
         opts.indent_string = " ".repeat(v as usize);
@@ -204,7 +183,6 @@ fn build_options(cfg: &EngineConfig) -> Options {
         opts.allowed_blank_lines = v as usize;
     }
 
-    // ── entry ordering ────────────────────────────────────────────────────────
     if let Some(v) = cfg.options.get("align_entries").and_then(toml::Value::as_bool) {
         opts.align_entries = v;
     }
@@ -221,7 +199,6 @@ fn build_options(cfg: &EngineConfig) -> Options {
         opts.indent_entries = v;
     }
 
-    // ── array / inline-table formatting ───────────────────────────────────────
     if let Some(v) = cfg.options.get("array_trailing_comma").and_then(toml::Value::as_bool) {
         opts.array_trailing_comma = v;
     }
@@ -350,7 +327,6 @@ mod tests {
     fn version_is_taplo_semver() {
         let engine = TaploEngine::new();
         let v = engine.version();
-        // Must parse as semver-ish (X.Y.Z).
         assert_eq!(v.split('.').count(), 3, "version should be X.Y.Z: {v}");
     }
 
@@ -365,7 +341,6 @@ mod tests {
     #[test]
     fn lint_syntax_error_reported() {
         let engine = TaploEngine::new();
-        // Missing value after `=` is a syntax error.
         let src = make_src("key =\n");
         let diags = engine.lint(&src, &default_cfg()).unwrap();
         assert!(!diags.is_empty(), "expected a syntax-error diagnostic");
@@ -387,7 +362,6 @@ mod tests {
     #[test]
     fn format_clean_toml_is_unchanged() {
         let engine = TaploEngine::new();
-        // A well-formatted single-entry file (trailing newline).
         let src = make_src("key = \"value\"\n");
         let result = engine.format(&src, &default_cfg()).unwrap();
         assert!(
@@ -399,7 +373,6 @@ mod tests {
     #[test]
     fn format_messy_toml_is_reformatted() {
         let engine = TaploEngine::new();
-        // Extra spaces around = that taplo normalizes.
         let src = make_src("key  =  \"value\"\n");
         let result = engine.format(&src, &default_cfg()).unwrap();
         match result {
@@ -420,7 +393,6 @@ mod tests {
             indent_width: 2,
             options: opts,
         };
-        // An array that would stay on one line at width 120 but expands at 40.
         let src = make_src("arr = [\"aaaaaaaaaaaaa\", \"bbbbbbbbbbbbb\", \"ccccccccccccc\"]\n");
         let result = engine.format(&src, &cfg).unwrap();
         match result {
@@ -430,10 +402,7 @@ mod tests {
                     "array should be expanded with narrow column_width: {out}"
                 );
             }
-            FormatOutput::Unchanged => {
-                // The array may fit even at 40 — test only that the option is wired up,
-                // not the exact layout decision.
-            }
+            FormatOutput::Unchanged => {}
         }
     }
 
@@ -444,7 +413,6 @@ mod tests {
 
     #[test]
     fn byte_to_line_col_second_line() {
-        // "foo\n" is 4 bytes; 'b' is at byte 4.
         assert_eq!(byte_to_line_col("foo\nbar\n", 4), (2, 1));
     }
 }

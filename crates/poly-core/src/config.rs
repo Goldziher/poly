@@ -9,9 +9,6 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-// Re-exported so the rest of the crate (and downstream consumers) keep importing
-// these from `poly_core` / `crate::config` unchanged after the schema moved
-// into the shared `poly-config` crate.
 pub use poly_config::{GlobalDefaults, LineEnding};
 
 use crate::language::Language;
@@ -89,8 +86,6 @@ impl Config {
             .and_then(|v| v.as_table())
             .cloned()
             .unwrap_or_default();
-        // A user `indent_width` in the per-engine table overrides the language
-        // default, uniformly for every engine (each reads `cfg.indent_width`).
         let indent_width = lang_options
             .get("indent_width")
             .and_then(toml::Value::as_integer)
@@ -125,7 +120,6 @@ impl Config {
         let global = self.lint.get("uncomment").and_then(toml::Value::as_table);
         let mut options = toml::Table::new();
 
-        // Booleans: per-language wins over global.
         for key in [
             "enabled",
             "remove_todos",
@@ -142,7 +136,6 @@ impl Config {
             }
         }
 
-        // preserve_patterns: union of global + per-language.
         let mut preserve_patterns: Vec<String> = Vec::new();
         if let Some(global) = global {
             extend_string_array(&mut preserve_patterns, global, "preserve_patterns");
@@ -165,7 +158,6 @@ impl Config {
     /// 2. Language-agnostic `[lint.typos]` table from `poly.toml` (poly wins on conflict).
     /// 3. Per-language `[lint.<lang>.typos]` `extend_ignore_words` (back-compat; unioned in).
     fn build_typos_options(&self, lang_options: &toml::Table) -> toml::Table {
-        // Start from native file values.
         let mut extend_words: BTreeMap<String, String> = self.typos_native.extend_words.clone();
         let mut extend_identifiers: BTreeMap<String, String> = self.typos_native.extend_identifiers.clone();
         let mut extend_exclude: Vec<String> = self.typos_native.extend_exclude.clone();
@@ -174,7 +166,6 @@ impl Config {
         let mut extend_ignore_words_re: Vec<String> = self.typos_native.extend_ignore_words_re.clone();
         let mut extend_ignore_identifiers_re: Vec<String> = self.typos_native.extend_ignore_identifiers_re.clone();
 
-        // Overlay the language-agnostic [lint.typos] table from poly.toml.
         if let Some(poly_typos) = self.lint.get("typos").and_then(|v| v.as_table()) {
             if let Some(words) = poly_typos.get("extend_words").and_then(|v| v.as_table()) {
                 for (k, v) in words {
@@ -201,10 +192,8 @@ impl Config {
             );
         }
 
-        // Union per-language [lint.<lang>.typos] extend_ignore_words (back-compat).
         extend_string_array(&mut extend_ignore_words, lang_options, "extend_ignore_words");
 
-        // Assemble the final options table.
         let mut options = toml::Table::new();
         if !extend_words.is_empty() {
             options.insert(

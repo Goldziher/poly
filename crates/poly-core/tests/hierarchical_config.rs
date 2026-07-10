@@ -35,8 +35,6 @@ fn nested_per_file_ignores_apply_only_to_their_subtree() {
     );
     write(&root.join("sub/app.py"), "import os\n");
 
-    // Nested resolution ON (the default): `config` is the root, scanned nested
-    // configs cascade over it. Mirrors what the CLI does at a repo root.
     let config = Config::load(root).expect("load root config");
     let opts = RunOptions {
         no_cache: true,
@@ -71,8 +69,6 @@ fn nested_per_file_ignores_apply_only_to_their_subtree() {
 /// `select` from the root — asserting the cascade base is read from disk.
 #[test]
 fn single_root_repo_reports_unsuppressed_diagnostic() {
-    // Back-compat: with only a root config (no nested poly.toml), the sub file's
-    // F401 is NOT suppressed — identical to the pre-hierarchical behavior.
     let repo = tempdir().unwrap();
     let root = repo.path();
     write(

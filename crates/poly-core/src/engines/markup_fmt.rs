@@ -96,9 +96,6 @@ impl Engine for MarkupFmtEngine {
 
         let options = build_options(cfg);
 
-        // No-op external formatter: embedded <script>/<style> blocks pass
-        // through untouched (v1 limitation). The closure's error type is
-        // markup_fmt's `anyhow::Error`, inferred from `format_text`.
         let formatted = format_text(&src.content, language, &options, |code, _| Ok(code.into()))
             .map_err(|e| anyhow::anyhow!("markup_fmt error: {e}"))?;
 
@@ -138,8 +135,6 @@ fn build_options(cfg: &EngineConfig) -> FormatOptions {
     let mut options: FormatOptions =
         super::rule_config::deserialize_options(cfg, "[fmt.<html|vue|svelte|…>.markup_fmt]");
 
-    // Poly's layout always wins — these come from globals, not the user table.
-    // (use_tabs has no global, so it stays user-controllable from the table.)
     options.layout.print_width = cfg.globals.line_length;
     options.layout.indent_width = cfg.indent_width;
     options.layout.line_break = match cfg.globals.line_ending {

@@ -22,9 +22,6 @@ use crate::stage::Stage;
 ///
 /// The runner only ever stores an entry for a **passing, tree-clean** run, so a
 /// cache hit always means "passed without modifying its inputs".
-// `DeclaredInputs` carries a [`FilePattern`] (which wraps a compiled regex /
-// glob set), and those are not `PartialEq`/`Eq`, so this enum cannot derive
-// them — use [`HookCache::is_enabled`] / `matches!` instead of `==`.
 #[derive(Debug, Clone, Default)]
 pub enum HookCache {
     /// Never cached.
@@ -73,10 +70,6 @@ impl Default for HookCommand {
 /// no globs-as-strings (patterns are pre-compiled into [`FilePattern`]), no
 /// cache declaration (Workstream C), no `skip`/`only` guards (resolved during
 /// lowering in B3).
-// The flag set (parallel / require_serial / fail_fast / stage_fixed /
-// always_run / pass_filenames) is the model's natural shape — each is an
-// independent execution toggle mirrored from the poly.toml `Job` schema, not a
-// state machine that would collapse into an enum.
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, Default)]
 pub struct Hook {

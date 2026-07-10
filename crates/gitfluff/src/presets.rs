@@ -8,9 +8,6 @@ pub struct Preset {
     pub enforce_spec: bool,
 }
 
-// Align with commitlint's default `headerPattern` (via `conventional-changelog-conventionalcommits`):
-//   /^(\w*)(?:\((.*)\))?!?: (.*)$/
-// We require a non-empty type (`\\w+`) because gitfluff treats pattern mismatches as violations.
 const CONVENTIONAL_PATTERN: &str = "^(?P<type>\\w+)(\\((?P<scope>.*)\\))?(?P<breaking>!)?: (?P<description>.+)$";
 
 pub fn resolve_preset(name: &str) -> Option<Preset> {

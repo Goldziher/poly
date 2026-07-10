@@ -50,7 +50,6 @@ const RECOGNIZED_LINT: &[&str] = &[
 pub fn import(dir: &Path) -> Option<ImportResult> {
     let (table, source) = load(dir)?;
     let lint = table.get("lint").and_then(toml::Value::as_table);
-    // A key can live either at the top (flat `ruff.toml`) or under `[lint]`.
     let pick = |key: &str| lint.and_then(|l| l.get(key)).or_else(|| table.get(key));
 
     let mut ruff_entries: Vec<(String, Item)> = Vec::new();
@@ -93,9 +92,6 @@ pub fn import(dir: &Path) -> Option<ImportResult> {
         ruff_entries.push(("line_length".to_string(), int_item(value)));
     }
 
-    // select ∪ extend-select — poly's ruff engine treats `select` as the set and
-    // `extend_select` as additions, but flattening into `select` is equivalent
-    // and keeps the emitted table minimal.
     let mut select = toml_string_list(pick("select"));
     select.extend(toml_string_list(pick("extend-select")));
     if !select.is_empty() {
@@ -106,12 +102,8 @@ pub fn import(dir: &Path) -> Option<ImportResult> {
         ruff_entries.push(("ignore".to_string(), str_array(&ignore)));
     }
 
-    // per-file-ignores → top-level [per-file-ignores] (poly matches codes across
-    // every backend, so it lives outside the ruff table).
     let per_file = collect_per_file(pick("per-file-ignores"));
 
-    // exclude / extend-exclude → [discovery] exclude (poly prunes these from the
-    // whole file walk; the merge unions them into any existing exclude list).
     let mut excludes = toml_string_list(table.get("extend-exclude"));
     excludes.extend(toml_string_list(table.get("extend_exclude")));
     excludes.extend(toml_string_list(table.get("exclude")));
@@ -280,7 +272,6 @@ convention = "google"
     #[test]
     fn flat_ruff_toml_with_unknown_key_is_partial() {
         let dir = tempdir().unwrap();
-        // `preview` is a genuine ruff key poly does not represent → keep.
         std::fs::write(
             dir.path().join("ruff.toml"),
             "select = [\"E\", \"F\"]\npreview = true\n",

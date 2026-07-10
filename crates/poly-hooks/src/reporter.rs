@@ -23,15 +23,11 @@ use unicode_width::{UnicodeWidthChar as _, UnicodeWidthStr as _};
 
 use crate::process::OutputSink;
 
-// ── Constants ─────────────────────────────────────────────────────────────────
-
 /// Maximum number of lines shown in the live output preview while a hook runs.
 pub const HOOK_OUTPUT_PREVIEW_LINES: usize = 3;
 
 /// Prefix rendered before each preview line in the progress UI.
 pub const HOOK_OUTPUT_PREVIEW_PREFIX: &str = "    => ";
-
-// ── Standalone helpers ────────────────────────────────────────────────────────
 
 /// Return a coloured pass/fail status marker: "✓" (green) or "×" (red).
 #[must_use]
@@ -70,8 +66,6 @@ pub fn truncate_to_width(input: &str, width: usize) -> Cow<'_, str> {
     output.push_str("...");
     Cow::Owned(output)
 }
-
-// ── OutputPreview ─────────────────────────────────────────────────────────────
 
 /// Rolling text preview for a running hook's streamed output.
 ///
@@ -153,8 +147,6 @@ fn is_preview_char(ch: char) -> bool {
     matches!(ch, '\n' | '\r' | '\t') || !ch.is_control()
 }
 
-// ── CaptureSink ───────────────────────────────────────────────────────────────
-
 /// An [`OutputSink`] that accumulates every chunk into a single buffer.
 ///
 /// Each hook (and each `ARG_MAX` batch) executes with its own `CaptureSink`, so
@@ -178,8 +170,6 @@ impl crate::process::OutputSink for CaptureSink {
         self.buffer.extend_from_slice(chunk);
     }
 }
-
-// ── Live progress ─────────────────────────────────────────────────────────────
 
 /// At or above this many seconds a duration renders as `s` (e.g. `1.2s`); below
 /// it, as whole milliseconds (e.g. `340ms`).
@@ -263,8 +253,6 @@ impl ProgressUi {
         let elapsed = format!("({})", format_duration(duration))
             .if_supports_color(Stderr, |t| t.dimmed())
             .to_string();
-        // `println` inserts above the live bars, so completed hooks accumulate in
-        // scrollback while others keep spinning.
         let _ = self.multi.println(format!("  {marker} {} {elapsed}", hook_bar.id));
     }
 }
@@ -369,8 +357,6 @@ impl OutputSink for PreviewSink<'_> {
     }
 }
 
-// ── HookRunReporter ─────────────────────────────────────────────────────────
-
 /// Renders a completed [`HookRunOutcome`](crate::model::HookRunOutcome) into a
 /// deterministic, non-interleaved report.
 ///
@@ -388,8 +374,6 @@ impl HookRunReporter {
     }
 
     /// Render the whole run to a `String`.
-    // `&self` today carries no render options; it is kept for forward-compat
-    // (colour / verbosity toggles) without a breaking signature change.
     #[allow(clippy::unused_self)]
     #[must_use]
     pub fn render(&self, outcome: &crate::model::HookRunOutcome) -> String {
@@ -542,13 +526,10 @@ mod tests {
 
     #[test]
     fn preview_sink_captures_every_byte_across_chunks() {
-        // A hidden bar so the test drives the sink without touching a terminal.
         let bar = ProgressBar::hidden();
         let mut sink = PreviewSink::new(&bar, "demo");
         sink.write_chunk(b"first line\n");
         sink.write_chunk(b"\x1b[32msecond\x1b[0m\n");
-        // The capture keeps the raw bytes verbatim (ANSI included) for the final
-        // deterministic render — only the live preview strips ANSI.
         assert_eq!(sink.into_bytes(), b"first line\n\x1b[32msecond\x1b[0m\n");
     }
 

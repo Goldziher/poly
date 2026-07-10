@@ -130,27 +130,17 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Linux x86_64 gnu (native)
           - triple: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-          # Linux aarch64 gnu (native arm64 runner — no cross needed)
           - triple: aarch64-unknown-linux-gnu
             os: ubuntu-24.04-arm
-          # Linux x86_64 musl (built in an Alpine container; cross images lack the
-          # libc headers ruby-prism-sys's bindgen step needs — sys/cdefs.h/limits.h)
           - triple: x86_64-unknown-linux-musl
             os: ubuntu-latest
             alpine: true
-          # macOS x86_64 — cross-compiled on an Apple Silicon runner. The Intel
-          # `macos-13` runners are scarce/deprecated and queue indefinitely; the
-          # macOS SDK is universal, so `--target x86_64-apple-darwin` on macos-14
-          # builds the Intel binary without a native Intel host.
           - triple: x86_64-apple-darwin
             os: macos-14
-          # macOS aarch64 (Apple Silicon)
           - triple: aarch64-apple-darwin
             os: macos-14
-          # Windows x86_64
           - triple: x86_64-pc-windows-msvc
             os: windows-latest
     steps:
@@ -172,8 +162,6 @@ jobs:
         with:
           key: ${{ matrix.triple }}
 
-      # ruby-prism-sys runs bindgen at build time and needs libclang + libc
-      # headers; native Linux runners get them from apt.
       - name: Install clang for bindgen (Linux)
         if: ${{ runner.os == 'Linux' && !matrix.alpine }}
         run: sudo apt-get update && sudo apt-get install -y clang libclang-dev
@@ -184,10 +172,6 @@ jobs:
         run: cargo build --release --target ${{ matrix.triple }}
         shell: bash
 
-      # musl: build in the official rust:alpine image (musl-native), so prism's
-      # bindgen finds musl headers + libclang. -crt-static makes build scripts
-      # dynamically linked so they can dlopen libclang (the binary then links musl
-      # dynamically — correct for Alpine). `cross` lacked the libc headers.
       - name: Build binary (musl, Alpine container)
         if: ${{ matrix.alpine }}
         run: |
@@ -266,9 +250,6 @@ jobs:
       - name: Save artifact for checksums
         uses: actions/upload-artifact@v4
         with:
-          # One artifact per target — `upload-artifact@v4` does NOT merge same-named
-          # uploads across parallel jobs (only one would survive), so the name must
-          # be unique. The checksums job re-merges them via `pattern` + merge-multiple.
           name: releases-${{ matrix.triple }}
           path: |
             poly-${{ needs.meta.outputs.version }}-${{ matrix.triple }}.tar.gz
@@ -381,9 +362,6 @@ jobs:
 
   publish_homebrew:
     name: Update Homebrew formula
-    # Stable releases only — rc/beta/alpha pre-releases do not update the tap.
-    # Runs after the release is finalized (draft promoted), since the formula
-    # points at the prebuilt binary archives attached to the tagged release.
     needs: [meta, finalize_release]
     if: needs.finalize_release.result == 'success' && !contains(needs.meta.outputs.version, '-rc') && !contains(needs.meta.outputs.version, '-beta') && !contains(needs.meta.outputs.version, '-alpha')
     runs-on: ubuntu-latest
@@ -427,11 +405,6 @@ jobs:
 
   update_major_tag:
     name: Move the major version tag
-    # So consumers can pin the GitHub Action to a moving major tag (e.g.
-    # `Goldziher/poly@v0`) that tracks the latest release in that series.
-    # Stable releases only; runs once the release is finalized. The major tag
-    # (v0, v1, …) does NOT match the `v[0-9]+.*` push trigger, so force-moving it
-    # never re-triggers this workflow.
     needs: [meta, finalize_release]
     if: needs.finalize_release.result == 'success' && !contains(needs.meta.outputs.version, '-rc') && !contains(needs.meta.outputs.version, '-beta') && !contains(needs.meta.outputs.version, '-alpha')
     runs-on: ubuntu-latest

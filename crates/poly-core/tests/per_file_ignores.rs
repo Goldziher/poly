@@ -43,10 +43,8 @@ fn fix_does_not_rewrite_a_per_file_ignored_rule() {
     write(&active, "import os\n");
 
     let config = config_ignoring("tests/**", &["F401"]);
-    // fix = true: apply autofixes in place.
     let results = lint(&[root.to_path_buf()], &config, &opts(), true, false).unwrap();
 
-    // The ignored file is untouched on disk and reports nothing.
     assert_eq!(
         fs::read_to_string(&ignored).unwrap(),
         "import os\n",
@@ -57,7 +55,6 @@ fn fix_does_not_rewrite_a_per_file_ignored_rule() {
         "the ignored file produces no reported diagnostics"
     );
 
-    // The non-ignored file is fixed (the unused import is removed).
     assert_ne!(
         fs::read_to_string(&active).unwrap(),
         "import os\n",

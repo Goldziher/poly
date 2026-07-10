@@ -70,14 +70,12 @@ fn engine_config_slices_the_matching_table() {
     assert_eq!(ignore.len(), 1);
     assert_eq!(ignore[0].as_str(), Some("F401"));
 
-    // The format slice is distinct from the lint slice.
     let fmt_cfg = config.engine_config(&Language::Python, "ruff", Kind::Format);
     assert_eq!(
         fmt_cfg.options.get("line_length").and_then(|v| v.as_integer()),
         Some(88)
     );
 
-    // An unconfigured engine gets empty options.
     let other = config.engine_config(&Language::Python, "nonexistent", Kind::Lint);
     assert!(other.options.is_empty());
 }
@@ -93,7 +91,6 @@ fn ruff_lint_honors_ignore_config() {
         content: "import os\n\nx = 1\n".into(),
     };
 
-    // Default config: F401 fires.
     let default_cfg = Config::default().engine_config(&Language::Python, "ruff", Kind::Lint);
     let default_codes: Vec<String> = engine
         .lint(&src, &default_cfg)
@@ -106,7 +103,6 @@ fn ruff_lint_honors_ignore_config() {
         "expected F401 by default, got {default_codes:?}"
     );
 
-    // With ignore = ["F401"]: F401 is suppressed.
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("poly.toml");
     fs::write(&path, "[lint.python.ruff]\nignore = [\"F401\"]\n").unwrap();

@@ -188,8 +188,6 @@ impl CatalogToolEngine {
         env: BTreeMap<String, String>,
         root: Option<PathBuf>,
     ) -> Option<Self> {
-        // Whole-project type-checkers cannot work per file (see
-        // `WHOLE_PROJECT_LINTERS`): never wire them as catalog linters.
         if is_whole_project_linter(&tool.name) {
             return None;
         }
@@ -280,14 +278,10 @@ impl CatalogToolEngine {
 
 impl Engine for CatalogToolEngine {
     fn name(&self) -> &'static str {
-        // The catalog is a process-lifetime static, so its tool names are
-        // `'static` — satisfying the trait without leaking.
         &self.tool.name
     }
 
     fn languages(&self) -> &'static [Language] {
-        // Routing is decided by the registry from `[tools]` config, not by this
-        // slice (see module docs).
         &[]
     }
 
@@ -304,11 +298,9 @@ impl Engine for CatalogToolEngine {
     }
 
     fn format(&self, src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
-        // A lint engine never formats (declared via `capabilities`); guard anyway.
         if self.is_lint() {
             return Ok(FormatOutput::Unchanged);
         }
-        // Absent tool → no-op (graceful degradation, never an error).
         if probe_binary(&self.tool.binary).is_none() {
             return Ok(FormatOutput::Unchanged);
         }
@@ -320,18 +312,14 @@ impl Engine for CatalogToolEngine {
     }
 
     fn lint(&self, src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
-        // A format engine never lints (declared via `capabilities`); guard anyway.
         if !self.is_lint() {
             return Ok(Vec::new());
         }
-        // Path-glob filter: skip files that don't match the catalog's declared
-        // scope (e.g. actionlint only applies to .github/workflows/ files).
         if let Some(ref set) = self.path_glob_set
             && !set.is_match(&src.path)
         {
             return Ok(Vec::new());
         }
-        // Absent tool → no findings (graceful degradation, never an error).
         if probe_binary(&self.tool.binary).is_none() {
             return Ok(Vec::new());
         }
@@ -363,8 +351,6 @@ impl CatalogToolEngine {
             .stdin
             .take()
             .ok_or_else(|| anyhow::anyhow!("'{binary}' stdin pipe was not created"))?;
-        // Small inputs fit the pipe buffer (write inline); larger inputs use a
-        // writer thread to avoid deadlocking against `wait_with_output`.
         let writer = if content.len() <= STDIN_INLINE_LIMIT {
             let result = stdin_handle.write_all(content.as_bytes());
             drop(stdin_handle);
@@ -377,8 +363,6 @@ impl CatalogToolEngine {
             .wait_with_output()
             .with_context(|| format!("'{binary}' wait_with_output failed"))?;
 
-        // Non-zero exit (e.g. a syntax error) → leave the file untouched. A
-        // broken-pipe write error in that case is expected, so discard it.
         if !output.status.success() {
             if let WriteOutcome::Thread(handle) = writer {
                 let _ = handle.join();
@@ -427,7 +411,6 @@ impl CatalogToolEngine {
             .output()
             .with_context(|| format!("failed to run '{binary}'"))?;
 
-        // Non-zero exit → tool rejected the input; never corrupt the file.
         if !output.status.success() {
             return Ok(FormatOutput::Unchanged);
         }
@@ -455,8 +438,6 @@ impl CatalogToolEngine {
             .stdin
             .take()
             .ok_or_else(|| anyhow::anyhow!("'{binary}' stdin pipe was not created"))?;
-        // Mirror the formatter's pipe-buffer policy: inline writes for small
-        // inputs, a writer thread for large ones (avoids a pipe deadlock).
         let writer = if content.len() <= STDIN_INLINE_LIMIT {
             let result = stdin_handle.write_all(content.as_bytes());
             drop(stdin_handle);
@@ -468,8 +449,6 @@ impl CatalogToolEngine {
         let output = child
             .wait_with_output()
             .with_context(|| format!("'{binary}' wait_with_output failed"))?;
-        // A broken-pipe write error is expected when the tool exits early; the
-        // exit status is what matters for linting, so the write result is ignored.
         if let WriteOutcome::Thread(handle) = writer {
             let _ = handle.join();
         }
@@ -573,7 +552,6 @@ impl LintOutcome {
             trimmed.to_string()
         };
         let message = if chosen.len() > MAX_SNIPPET_LEN {
-            // Truncate on a char boundary so the snippet stays valid UTF-8.
             let mut end = MAX_SNIPPET_LEN;
             while !chosen.is_char_boundary(end) {
                 end -= 1;

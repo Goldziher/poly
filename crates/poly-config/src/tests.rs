@@ -97,8 +97,6 @@ fn absent_discovery_table_yields_no_excludes() {
 
 #[test]
 fn legacy_polylint_toml_is_not_discovered() {
-    // Clean break (v0.9): only `poly.toml` is read. A lone `polylint.toml` is
-    // ignored, so the default config applies.
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("polylint.toml"), "[defaults]\nline_length = 77\n").unwrap();
     let config = PolyConfig::load(dir.path()).expect("load");
@@ -220,15 +218,11 @@ run = "cargo fmt --check"
     .unwrap();
     let config = PolyConfig::load_file(&path).expect("load");
     assert_eq!(config.hooks.stages, vec!["pre-commit".to_string()]);
-    // bare `true`
     assert!(config.hooks.builtin.lint.enabled);
     assert!(config.hooks.builtin.lint.stages.is_empty());
-    // table without `enabled` → enabled
     assert!(config.hooks.builtin.fmt.enabled);
     assert_eq!(config.hooks.builtin.fmt.stages, vec!["pre-commit"]);
-    // table with explicit `enabled = false`
     assert!(!config.hooks.builtin.commit.enabled);
-    // inline stage
     let pre_commit = &config.hooks.stage_configs[&Stage::PreCommit];
     assert!(pre_commit.parallel);
     assert_eq!(pre_commit.jobs.len(), 1);
@@ -291,9 +285,7 @@ line_length = 80
     )
     .unwrap();
     let config = PolyConfig::load(dir.path()).expect("load");
-    // Overridden nested scalar takes the local value...
     assert_eq!(config.defaults.line_length, 80);
-    // ...while untouched nested tables are preserved from the base.
     assert_eq!(config.cache.results.hooks, crate::HookCacheMode::Safe);
 }
 
@@ -365,7 +357,6 @@ select = ["ALL"]
     .unwrap();
     let child = root.path().join("frontend");
     fs::create_dir(&child).unwrap();
-    // Child declares ONLY a diff; it must inherit line_length + ruff select.
     fs::write(child.join("poly.toml"), "[fmt.javascript.oxc]\nsemicolons = true\n").unwrap();
 
     let config = PolyConfig::resolve_for_dir(&child).expect("resolve");
@@ -392,7 +383,6 @@ fn resolve_for_dir_child_scalar_overrides_root() {
 
 #[test]
 fn workspace_root_marker_bounds_the_chain() {
-    // outer/poly.toml is ABOVE the marked root and must NOT be inherited.
     let outer = tempdir().unwrap();
     fs::write(outer.path().join("poly.toml"), "[defaults]\nline_length = 200\n").unwrap();
     let repo = outer.path().join("repo");
@@ -443,8 +433,6 @@ fn rules_dirs_resolve_against_config_root_not_cwd() {
     let dir = tempdir().unwrap();
     let path = dir.path().join("poly.toml");
     fs::write(&path, "[rules]\ndirs = [\"lint/rules\"]\n").unwrap();
-    // Load from a nested subdir: the relative rule dir must anchor at the
-    // config file's directory, not the (arbitrary) start directory.
     let nested = dir.path().join("a").join("b");
     fs::create_dir_all(&nested).unwrap();
     let config = PolyConfig::load(&nested).expect("load");
@@ -456,9 +444,6 @@ fn rules_dirs_resolve_against_config_root_not_cwd() {
 
 #[test]
 fn cascade_resolves_inherited_rules_dirs_against_declaring_config() {
-    // Root declares `[rules] dirs`; the child config omits `[rules]`, so the
-    // dirs are inherited. They must resolve against the ROOT (the config that
-    // declared them), not the nearest (child) config.
     let root = tempdir().unwrap();
     fs::write(
         root.path().join("poly.toml"),
@@ -479,8 +464,6 @@ fn cascade_resolves_inherited_rules_dirs_against_declaring_config() {
 
 #[test]
 fn cascade_child_rules_dirs_win_and_anchor_at_child() {
-    // When the child DECLARES its own `[rules] dirs`, those win and resolve
-    // against the child directory.
     let root = tempdir().unwrap();
     fs::write(
         root.path().join("poly.toml"),
@@ -500,9 +483,6 @@ fn cascade_child_rules_dirs_win_and_anchor_at_child() {
 
 #[test]
 fn rules_dirs_leave_absolute_paths_untouched() {
-    // The resolver leaves absolute `dirs` entries verbatim and only anchors
-    // relative ones — so the literal must be absolute on the *host* platform
-    // (`/etc/...` is not absolute on Windows, where it would be anchored).
     #[cfg(unix)]
     let absolute = "/etc/poly/rules";
     #[cfg(windows)]
@@ -584,10 +564,8 @@ fn merges_ancestor_typos_configs_unioning_regexes() {
 
     let config = PolyConfig::load(&sub).expect("load");
     let t = &config.typos_native;
-    // Regex lists union across the whole ancestor chain.
     assert!(t.extend_ignore_re.contains(&"root-re".to_string()), "{t:?}");
     assert!(t.extend_ignore_re.contains(&"sub-re".to_string()), "{t:?}");
-    // Word maps merge from both directories.
     assert_eq!(t.extend_words.get("foo"), Some(&"foo".to_string()));
     assert_eq!(t.extend_words.get("bar"), Some(&"bar".to_string()));
 }
@@ -622,8 +600,6 @@ ignore-words-list = "inh, te, tha"
 #[test]
 fn pyproject_without_typos_config_is_ignored() {
     let dir = tempdir().unwrap();
-    // A manifest with no typos/codespell section must not be treated as a
-    // typos source (and must not error).
     fs::write(
         dir.path().join("pyproject.toml"),
         "[project]\nname = \"x\"\nversion = \"0.1.0\"\n",

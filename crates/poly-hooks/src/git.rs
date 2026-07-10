@@ -99,8 +99,6 @@ pub fn git_cmd(summary: &str) -> Result<Cmd, Error> {
     Ok(cmd)
 }
 
-// ── Internal path helpers ─────────────────────────────────────────────────────
-
 fn zsplit(s: &[u8]) -> Result<Vec<PathBuf>, std::str::Utf8Error> {
     s.split(|&b| b == b'\0')
         .filter(|slice| !slice.is_empty())
@@ -121,8 +119,6 @@ pub(crate) fn path_from_git_bytes(bytes: &[u8]) -> Result<PathBuf, std::str::Utf
 pub(crate) fn path_from_git_bytes(bytes: &[u8]) -> Result<PathBuf, std::str::Utf8Error> {
     std::str::from_utf8(bytes).map(PathBuf::from)
 }
-
-// ── Public git helpers ────────────────────────────────────────────────────────
 
 /// Return the top-level directory of the current working tree.
 ///
@@ -158,7 +154,7 @@ pub fn get_staged_files(root: &Path) -> Result<Vec<PathBuf>, Error> {
         .arg("diff")
         .arg("--cached")
         .arg("--name-only")
-        .arg("--diff-filter=ACMRTUXB") // everything except D
+        .arg("--diff-filter=ACMRTUXB")
         .arg("--no-ext-diff")
         .arg("-z")
         .check(true)
@@ -203,10 +199,6 @@ pub fn checkout_index_paths(root: &Path, dest: &Path, paths: &[PathBuf]) -> Resu
     for batch in paths.chunks(CHECKOUT_BATCH) {
         let mut cmd = git_cmd("checkout staged paths")?;
         cmd.current_dir(root)
-            // Force a byte-faithful checkout: a host `core.autocrlf=true` (the
-            // default on Windows) would rewrite LF -> CRLF as blobs land, so the
-            // snapshot would no longer mirror the index blob the doc promises.
-            // Passed as a per-invocation `-c` override before the subcommand.
             .arg("-c")
             .arg("core.autocrlf=false")
             .arg("checkout-index")
@@ -270,7 +262,7 @@ fn parse_ls_files_stage(bytes: &[u8]) -> Result<Vec<StagedEntry>, Error> {
         let mode = fields.next().unwrap_or_default();
         let oid = fields.next().unwrap_or_default();
         if mode == "160000" {
-            continue; // submodule gitlink: no blob to materialize
+            continue;
         }
         entries.push(StagedEntry {
             oid: oid.to_string(),
@@ -349,8 +341,6 @@ fn validate_revision(rev: &str) -> Result<(), Error> {
 /// List files changed between `old` and `new` (merge-base or direct range).
 #[instrument(level = "trace")]
 pub fn get_changed_files(old: &str, new: &str, root: &Path) -> Result<Vec<PathBuf>, Error> {
-    // Guard against argument injection: a ref beginning with `-` would be parsed
-    // by git as an option rather than as part of the `old...new` range.
     if old.starts_with('-') || new.starts_with('-') {
         return Err(Error::InvalidRevision {
             old: old.to_string(),
@@ -371,13 +361,11 @@ pub fn get_changed_files(old: &str, new: &str, root: &Path) -> Result<Vec<PathBu
         Ok(cmd)
     };
 
-    // Try three-dot (merge-base) first.
     let output = build_cmd(format!("{old}...{new}"))?.check(false).output()?;
     if output.status.success() {
         return Ok(zsplit(&output.stdout)?);
     }
 
-    // Fall back to two-dot (direct range).
     let output = build_cmd(format!("{old}..{new}"))?.check(true).output()?;
     Ok(zsplit(&output.stdout)?)
 }
@@ -523,8 +511,6 @@ pub fn get_git_hooks_dir() -> Result<PathBuf, Error> {
     Ok(hooks_dir.clean())
 }
 
-// ── Pre-push stdin parsing helpers ─────────────────────────────────────────────
-
 /// Return `true` if `rev` names an existing, valid git object in `root`.
 ///
 /// Used by the pre-push shim to decide whether the remote tip it was handed on
@@ -536,7 +522,6 @@ pub fn rev_exists(rev: &str, root: &Path) -> Result<bool, Error> {
     let status = cmd
         .current_dir(root)
         .arg("cat-file")
-        // Exit 0 if <object> exists and is a valid object, 1 if it does not.
         .arg("-e")
         .arg(rev)
         .check(false)
@@ -545,8 +530,6 @@ pub fn rev_exists(rev: &str, root: &Path) -> Result<bool, Error> {
     if status.success() {
         return Ok(true);
     }
-    // Exit 1 = object absent; any other status (e.g. 128 for a corrupt object
-    // store) is a real git error and must not masquerade as "absent".
     if status.code() == Some(1) {
         return Ok(false);
     }
@@ -590,8 +573,6 @@ pub fn is_ancestor(ancestor: &str, commit: &str, root: &Path) -> Result<bool, Er
 #[instrument(level = "trace")]
 pub fn get_ancestors_not_in_remote(local_sha: &str, remote_name: &str, root: &Path) -> Result<Vec<String>, Error> {
     validate_revision(local_sha)?;
-    // `remote_name` is safe: it is bound inside `--remotes={remote_name}`, so it
-    // can never be parsed as a standalone option even if it begins with `-`.
     let output = git_cmd("get ancestors not in remote")?
         .current_dir(root)
         .arg("rev-list")
@@ -632,8 +613,6 @@ pub fn get_root_commits(local_sha: &str, root: &Path) -> Result<Vec<String>, Err
 /// Returns `Ok(None)` when `commit` has no parent (e.g. a root commit).
 #[instrument(level = "trace")]
 pub fn get_parent_commit(commit: &str, root: &Path) -> Result<Option<String>, Error> {
-    // `commit` is interpolated into `{commit}^`, so a leading `-` would still
-    // reach `rev-parse` as an option-like token; guard it like the others.
     validate_revision(commit)?;
     let output = git_cmd("get parent commit")?
         .current_dir(root)
@@ -671,9 +650,6 @@ mod tests {
 
     #[test]
     fn revision_functions_reject_option_like_input() {
-        // A `-`-prefixed revision (e.g. from a hostile pre-push stdin) must be
-        // rejected before it can reach git as an option. The guard fires before
-        // any git invocation, so an empty temp dir suffices.
         let dir = TempDir::new().expect("tempdir");
         let root = dir.path();
         let evil = "--upload-pack=touch /tmp/pwned";
@@ -720,8 +696,6 @@ mod tests {
 
     #[test]
     fn parse_ls_files_stage_reads_oid_path_and_symlink() {
-        // `git ls-files -s -z`: `<mode> <oid> <stage>\t<path>\0`, incl. a path
-        // with a space, a symlink (mode 120000), and a skipped submodule (160000).
         let input = b"100644 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0\tsrc/a b.rs\0\
 120000 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 0\tlink\0\
 160000 cccccccccccccccccccccccccccccccccccccccc 0\tvendored\0";
@@ -736,7 +710,6 @@ mod tests {
 
     #[test]
     fn parse_ls_files_gitlinks_returns_only_submodules() {
-        // The complement of `parse_ls_files_stage`: only mode-160000 gitlinks.
         let input = b"100644 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0\tsrc/a.rs\0\
 160000 cccccccccccccccccccccccccccccccccccccccc 0\tvendor/sub\0\
 160000 dddddddddddddddddddddddddddddddddddddddd 0\ttest documents\0";
@@ -757,13 +730,11 @@ mod tests {
 
     #[test]
     fn git_static_resolves() {
-        // This test runs in a git checkout, so `git` must be on PATH.
         assert!(GIT.is_ok(), "git not found: {:?}", *GIT);
     }
 
     #[test]
     fn git_root_is_directory() {
-        // We're inside the poly worktree, so get_root() must succeed.
         let root = get_root().expect("git root");
         assert!(root.is_dir(), "root is not a directory: {}", root.display());
     }
@@ -792,7 +763,6 @@ mod tests {
         let second = commit_file(repo.path(), "b.txt");
         let parent = get_parent_commit(&second, repo.path()).expect("parent");
         assert_eq!(parent.as_deref(), Some(first.as_str()));
-        // A root commit has no parent.
         assert_eq!(get_parent_commit(&first, repo.path()).expect("parent"), None);
     }
 

@@ -84,7 +84,6 @@ impl<'de> Deserialize<'de> for BuiltinHook {
                 files: None,
                 exclude: None,
             }),
-            // Presence of a table implies the hook is enabled unless it says otherwise.
             BuiltinHookRepr::Table(table) => Ok(BuiltinHook {
                 enabled: table.enabled.unwrap_or(true),
                 stages: table.stages,
@@ -94,8 +93,6 @@ impl<'de> Deserialize<'de> for BuiltinHook {
         }
     }
 }
-
-// ── file_safety ───────────────────────────────────────────────────────────────
 
 /// The `file_safety` builtin group — pure-Rust file-safety checks.
 ///
@@ -139,8 +136,6 @@ pub struct FileSafetyHooks {
 
 impl Default for FileSafetyHooks {
     fn default() -> Self {
-        // The group is off by default; every member check is on so enabling the
-        // group (`file_safety = true`) turns the whole block on.
         Self {
             enabled: false,
             stages: Vec::new(),
@@ -204,8 +199,6 @@ impl<'de> Deserialize<'de> for FileSafetyHooks {
     }
 }
 
-// ── cargo ───────────────────────────────────────────────────────────────────
-
 /// The `cargo` builtin group — whole-workspace Cargo tools.
 ///
 /// Enable the group with defaults via `cargo = true`, or tune it with a table:
@@ -258,8 +251,6 @@ pub struct CargoHooks {
 
 impl Default for CargoHooks {
     fn default() -> Self {
-        // The group is off by default; every member tool is on so enabling the
-        // group (`cargo = true`) turns the whole block on.
         Self {
             enabled: false,
             stages: Vec::new(),
@@ -338,8 +329,6 @@ mod tests {
 
     #[test]
     fn legacy_hook_keys_are_rejected() {
-        // Clean break (v0.9): the builtin hooks are `lint` / `fmt`, not the old
-        // `polylint` / `polyfmt`. `deny_unknown_fields` rejects the old names.
         assert!(
             toml::from_str::<BuiltinHooks>("polylint = true").is_err(),
             "legacy `polylint` key must be rejected"
@@ -399,10 +388,7 @@ exclude = "crates/poly-cli/src/hooks/checks.rs"
     fn file_safety_off_and_cargo_absent_by_default() {
         let hooks = BuiltinHooks::default();
         assert!(!hooks.file_safety.enabled);
-        // `cargo` is absent (None), distinct from an explicit `cargo = false`;
-        // its default-on behavior is gated on a `[hooks]` section at lowering.
         assert!(hooks.cargo.is_none());
-        // Member checks default on so a bare toggle turns the whole group on.
         assert!(hooks.file_safety.merge_conflict);
         assert!(CargoHooks::default().clippy);
         assert_eq!(hooks.file_safety.max_added_file_kb, DEFAULT_MAX_ADDED_FILE_KB);

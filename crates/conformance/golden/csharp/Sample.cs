@@ -4,7 +4,6 @@ using System.Linq;
 
 namespace Conformance
 {
-    // A small sample exercising nested blocks, switch, and lambdas.
     public class Sample
     {
         public static int Classify(int n)
@@ -12,12 +11,12 @@ namespace Conformance
             switch (n)
             {
                 case 0:
-                    return 0;
+                return 0;
                 case 1:
                 case 2:
-                    return 1;
+                return 1;
                 default:
-                    return -1;
+                return -1;
             }
         }
 

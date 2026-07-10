@@ -81,16 +81,12 @@ fn honors_discovery_exclude_globs() {
 
 #[test]
 fn explicitly_passed_path_is_unaffected_by_other_roots() {
-    // An exclude glob is matched relative to each walk root; passing a path
-    // directly still discovers it (the glob never matches across roots).
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
 
     let file = root.join("test_apps/app/main.py");
     write_file(&file, "x = 1\n");
 
-    // Walk root is `test_apps/app`; the repo-rooted `test_apps/**` glob does not
-    // match relative to this root, so the file is discovered.
     let cfg = ConfigSet::single(Config::default());
     let discovered = discover(&[root.join("test_apps/app")], &cfg, &["test_apps/**".to_string()]);
     let paths: Vec<_> = discovered.iter().map(|f| f.path.as_path()).collect();

@@ -18,7 +18,6 @@ use poly_core::{
 fn engine_cfg() -> EngineConfig {
     EngineConfig {
         globals: GlobalDefaults::default(),
-        // HCL/Terraform canonical indent is 2 spaces.
         indent_width: 2,
         options: toml::Table::new(),
     }
@@ -31,10 +30,6 @@ fn make_src(path: &str, content: &str) -> SourceFile {
         content: content.into(),
     }
 }
-
-// ---------------------------------------------------------------------------
-// Known-bad fixture: expects a syntax-error diagnostic
-// ---------------------------------------------------------------------------
 
 /// Intentionally invalid Terraform: unclosed block body.
 const KNOWN_BAD: &str = "\
@@ -65,17 +60,12 @@ fn known_bad_lint_snapshot() {
         span.start_line
     );
 
-    // Stable snapshot: (code, start_line).
     let summary: Vec<_> = diags
         .iter()
         .map(|d| (d.code.as_deref().unwrap_or(""), d.span.as_ref().map(|s| s.start_line)))
         .collect();
     insta::assert_debug_snapshot!("hcl_known_bad_diagnostics", summary);
 }
-
-// ---------------------------------------------------------------------------
-// Known-unformatted fixture: expects exact formatted output (no comments)
-// ---------------------------------------------------------------------------
 
 /// Messy Terraform that hcl-rs should normalize: inconsistent spacing around
 /// `=`, mixed attribute alignment.
@@ -99,11 +89,9 @@ fn known_unformatted_snapshot() {
 
     let formatted = match result {
         FormatOutput::Formatted(s) => s,
-        // If hcl-rs considers it already formatted, use the original.
         FormatOutput::Unchanged => KNOWN_UNFORMATTED.to_string(),
     };
 
-    // Must still parse cleanly after formatting.
     let post_diags = engine
         .lint(&make_src("known_unformatted.tf", &formatted), &engine_cfg())
         .unwrap();
@@ -114,10 +102,6 @@ fn known_unformatted_snapshot() {
 
     insta::assert_snapshot!("hcl_known_unformatted_output", formatted);
 }
-
-// ---------------------------------------------------------------------------
-// Comment-safety fixture: comments must survive a format pass
-// ---------------------------------------------------------------------------
 
 /// A `.tf` file with both a leading comment and an inline `//` comment.
 /// After formatting via the tier-2 delegation path, every comment must still

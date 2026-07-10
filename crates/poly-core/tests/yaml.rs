@@ -28,10 +28,6 @@ fn make_src(path: &str, content: &str) -> SourceFile {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Known-bad fixture: an unclosed flow sequence triggers a parse-error Diagnostic.
-// ---------------------------------------------------------------------------
-
 /// Unclosed `[` — saphyr returns a ScanError at end-of-file.
 const KNOWN_BAD: &str = "items: [1, 2, 3\nother: value\n";
 
@@ -67,10 +63,6 @@ fn valid_yaml_has_no_diagnostics() {
     assert!(diags.is_empty(), "got: {diags:?}");
 }
 
-// ---------------------------------------------------------------------------
-// Known-unformatted fixture: trailing whitespace + missing final newline.
-// ---------------------------------------------------------------------------
-
 /// Trailing spaces on lines 1 and 3, no final newline.
 const KNOWN_UNFORMATTED: &str = "name: example   \nversion: 1.0\ndescription: test  ";
 
@@ -97,12 +89,6 @@ fn already_formatted_returns_unchanged() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// Structural-reformat fixture: extra colon/dash spacing is canonicalized.
-// pretty_yaml normalizes `a:    1` → `a: 1` and `  -   y` → `  - y`,
-// demonstrating real CST-driven reflow rather than mere whitespace trimming.
-// ---------------------------------------------------------------------------
-
 /// Extra spaces after `:` on the first key and after `-` on the last list
 /// item.  No trailing whitespace so prek hooks leave this literal alone.
 const STRUCTURAL_UNFORMATTED: &str = "a:    1\nb:\n  - x\n  -   y\n";
@@ -113,8 +99,6 @@ fn structural_reformat_canonicalizes_spacing() {
     let src = make_src("structural.yaml", STRUCTURAL_UNFORMATTED);
     match engine.format(&src, &engine_cfg()).unwrap() {
         FormatOutput::Formatted(text) => {
-            // Output must differ from input (structural change, not just
-            // whitespace trim) and must match the pretty_yaml snapshot.
             assert_ne!(
                 text, STRUCTURAL_UNFORMATTED,
                 "formatted output should differ from input"

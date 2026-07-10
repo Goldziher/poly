@@ -26,8 +26,6 @@ fn default_cfg() -> EngineConfig {
     }
 }
 
-// ── known-bad fixtures ────────────────────────────────────────────────────────
-
 /// Syntactically broken JS file — asserts that at least one Error-severity
 /// diagnostic is produced. The exact message format is not snapshotted here
 /// because it comes from oxlint's internal parser and may evolve.
@@ -36,7 +34,6 @@ fn oxc_known_bad_js_diagnostics() {
     let src = make_src("const x = {\n  a: 1,\nconst y = 2;\n", "bad.js", Language::JavaScript);
     let diags = OxcEngine.lint(&src, &default_cfg()).unwrap();
     assert!(!diags.is_empty(), "expected at least one diagnostic");
-    // oxlint reports parse errors at Error severity with no rule code.
     assert!(
         diags.iter().any(|d| d.severity == Severity::Error),
         "expected at least one Error-severity diagnostic; got: {diags:?}"
@@ -54,7 +51,6 @@ fn oxc_oxlint_no_debugger_rule() {
     let src = make_src(content, "bad_js.js", Language::JavaScript);
     let diags = OxcEngine.lint(&src, &default_cfg()).unwrap();
 
-    // Structural assertions: at least one no-debugger warning must appear.
     let debugger_diags: Vec<_> = diags
         .iter()
         .filter(|d| d.code.as_deref() == Some("no-debugger"))
@@ -69,7 +65,6 @@ fn oxc_oxlint_no_debugger_rule() {
         "no-debugger should be Warning severity"
     );
 
-    // Snapshot: count + (code, severity) pairs for structural verification.
     let summary: Vec<(Option<&str>, &Severity)> = diags.iter().map(|d| (d.code.as_deref(), &d.severity)).collect();
     insta::assert_debug_snapshot!(summary);
 }
@@ -85,14 +80,12 @@ fn oxc_config_ignore_suppresses_rule() {
     let src = make_src(content, "bad_js.js", Language::JavaScript);
     let engine = OxcEngine;
 
-    // Default config: no-debugger fires.
     let default_diags = engine.lint(&src, &default_cfg()).unwrap();
     assert!(
         default_diags.iter().any(|d| d.code.as_deref() == Some("no-debugger")),
         "expected no-debugger with default config; got: {default_diags:?}"
     );
 
-    // Config with ignore = ["no-debugger"]: rule must be suppressed.
     let mut opts = toml::Table::new();
     opts.insert(
         "ignore".to_owned(),
@@ -118,8 +111,6 @@ fn oxc_known_bad_json_diagnostics() {
     assert!(!diags.is_empty(), "expected at least one diagnostic for trailing comma");
     insta::assert_debug_snapshot!(diags[0].title);
 }
-
-// ── known-unformatted fixtures ────────────────────────────────────────────────
 
 /// Compact JS file → asserts exact Prettier-compatible output from oxc_formatter.
 #[test]
@@ -184,7 +175,6 @@ fn oxc_format_json_short_array_stays_inline() {
             panic!("expected Formatted, got Unchanged");
         }
     };
-    // The array must stay on a single line — no newline between `[` and `]`.
     assert!(
         formatted.contains(r#"["CodeBlock", "Code"]"#),
         "short array should stay inline; got:\n{formatted}"
@@ -203,8 +193,6 @@ fn oxc_format_jsonc_preserves_comments() {
         Language::Jsonc,
     );
     let out = OxcEngine.format(&src, &default_cfg()).unwrap();
-    // The formatter may return Unchanged (already canonical) or Formatted.
-    // Either way, comments must survive — check them on the output text.
     let text = match out {
         poly_core::engine::FormatOutput::Formatted(text) => text,
         poly_core::engine::FormatOutput::Unchanged => src.content.to_string(),

@@ -87,8 +87,6 @@ fn language_to_syntax(lang: &Language) -> Option<Syntax> {
 fn build_options(cfg: &EngineConfig) -> FormatOptions {
     let mut options: FormatOptions = super::rule_config::deserialize_options(cfg, "[fmt.<css|scss|less>.malva]");
 
-    // Poly's layout always wins — these come from globals, not the user table.
-    // (use_tabs has no global, so it stays user-controllable from the table.)
     options.layout.print_width = cfg.globals.line_length;
     options.layout.indent_width = cfg.indent_width;
     options.layout.line_break = match cfg.globals.line_ending {
@@ -145,7 +143,6 @@ mod tests {
     #[test]
     fn format_unchanged_when_already_formatted() {
         let engine = MalvaEngine;
-        // malva's canonical output for a single rule.
         let src = make_src("clean.css", Language::Css, ".foo {\n  color: red;\n}\n");
         let result = engine.format(&src, &engine_cfg()).unwrap();
         assert!(

@@ -30,15 +30,6 @@ fn make_src(path: &str, content: &str) -> SourceFile {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Known-unformatted fixture: loose argument spacing + bare puts call.
-//
-// rubyfmt normalises `greet( name )` → `greet(name)` (no spaces inside
-// parens) and `puts "hello"` → `puts("hello")` (adds required parens).
-// The blank line inside the `if` body is preserved — only leading/trailing
-// blank lines inside block delimiters are removed.
-// ---------------------------------------------------------------------------
-
 /// Unformatted Ruby: spaces inside method-param parens and bare `puts`.
 ///
 /// No trailing whitespace on any line so the `trailing-whitespace` prek
@@ -57,15 +48,9 @@ fn should_reformat_misindented_ruby() {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Robustness fixture: syntax error must not crash or propagate an error.
-// ---------------------------------------------------------------------------
-
 #[test]
 fn should_return_unchanged_on_unparsable_ruby() {
     let engine = RubyfmtEngine;
-    // An unclosed `def foo(` is a syntax error; rubyfmt returns SyntaxError,
-    // which the engine maps to Unchanged (robustness rule).
     let src = make_src("bad.rb", "def foo(");
     let out = engine.format(&src, &engine_cfg()).unwrap();
     assert!(

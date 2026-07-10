@@ -15,8 +15,6 @@ use poly_hooks::model::{HookCache, HookCommand, HookStatus, StageStatus};
 use poly_hooks::{Hook, HookRunReporter, HookRunRequest, Stage, StageSpec, run};
 use tempfile::TempDir;
 
-// ── Helpers ─────────────────────────────────────────────────────────────────
-
 fn git(repo: &Path, args: &[&str]) -> std::process::Output {
     let output = Command::new("git")
         .args(args)
@@ -80,15 +78,11 @@ fn is_dirty(root: &Path, name: &str) -> bool {
         .success()
 }
 
-// ── Priority-group ordering ──────────────────────────────────────────────────
-
 #[test]
 fn lower_priority_group_runs_before_higher() {
     let repo = init_repo();
     let root = repo.path();
 
-    // hook "x" is declared first (position 0) but has higher priority value (0),
-    // so it runs *after* "y" (priority -1). Each appends its id to out.txt.
     let mut x = cmd_hook("x", "printf x >> out.txt");
     x.priority = 0;
     let mut y = cmd_hook("y", "printf y >> out.txt");
@@ -97,17 +91,13 @@ fn lower_priority_group_runs_before_higher() {
     let outcome = run(request(root, pre_commit(vec![x, y]))).expect("run");
 
     assert!(outcome.success());
-    // Sequential group boundaries → "y" (group -1) writes before "x" (group 0).
     assert_eq!(read(root, "out.txt"), "yx");
-    // Outcomes are sorted by position: x (0) then y (1).
     let hooks = &outcome.stages[0].hooks;
     assert_eq!(hooks[0].id, "x");
     assert_eq!(hooks[1].id, "y");
     assert_eq!(hooks[0].position, 0);
     assert_eq!(hooks[1].position, 1);
 }
-
-// ── Parallel vs serial groups ─────────────────────────────────────────────────
 
 #[test]
 fn parallel_group_runs_every_hook() {
@@ -131,10 +121,6 @@ fn progress_run_captures_output_and_passes() {
     let repo = init_repo();
     let root = repo.path();
 
-    // With `progress = true` the runner drives the indicatif spinner path
-    // (`ProgressUi` / `PreviewSink`). Under `cargo test` stderr is not a terminal,
-    // so the display self-hides — but output must still be fully captured, proving
-    // the live-preview sink never drops bytes.
     let hooks = vec![cmd_hook("echoer", "printf 'hello world'")];
     let mut req = request(root, pre_commit(hooks));
     req.progress = true;
@@ -153,7 +139,7 @@ fn serial_group_runs_every_hook_when_require_serial() {
     let hooks = (0..3)
         .map(|i| {
             let mut hook = cmd_hook(&format!("s{i}"), &format!("printf x > s{i}.out"));
-            hook.require_serial = true; // forces the whole priority group serial
+            hook.require_serial = true;
             hook
         })
         .collect();
@@ -174,7 +160,7 @@ fn single_thread_concurrency_forces_serial_and_passes() {
         .map(|i| cmd_hook(&format!("j{i}"), &format!("printf x > j{i}.out")))
         .collect();
     let mut req = request(root, pre_commit(hooks));
-    req.concurrency = Some(1); // -j1 / PREK_MAX_CONCURRENCY=1
+    req.concurrency = Some(1);
 
     let outcome = run(req).expect("run");
     assert!(outcome.success());
@@ -182,8 +168,6 @@ fn single_thread_concurrency_forces_serial_and_passes() {
         assert_eq!(read(root, &format!("j{i}.out")), "x");
     }
 }
-
-// ── fail-fast ─────────────────────────────────────────────────────────────────
 
 #[test]
 fn fail_fast_aborts_later_priority_groups() {
@@ -199,7 +183,6 @@ fn fail_fast_aborts_later_priority_groups() {
     let outcome = run(request(root, pre_commit(vec![failing, later]))).expect("run");
 
     assert!(!outcome.success());
-    // The higher-priority group never ran: only the failing hook is recorded.
     let hooks = &outcome.stages[0].hooks;
     assert_eq!(hooks.len(), 1);
     assert_eq!(hooks[0].id, "fail");
@@ -225,14 +208,10 @@ fn failure_without_fail_fast_still_runs_later_groups() {
     assert_eq!(read(root, "later.out"), "x", "later hook should still run");
 }
 
-// ── stage_fixed re-staging ────────────────────────────────────────────────────
-
 fn commit_and_stage_file(root: &Path, name: &str) {
     std::fs::write(root.join(name), "initial\n").unwrap();
     git(root, &["add", name]);
     git(root, &["commit", "-qm", "init"]);
-    // Re-stage a fresh edit so the index matches the worktree (clean) before the
-    // hook runs.
     std::fs::write(root.join(name), "staged\n").unwrap();
     git(root, &["add", name]);
 }
@@ -243,7 +222,6 @@ fn stage_fixed_restages_modified_files_and_continues() {
     let root = repo.path();
     commit_and_stage_file(root, "f.txt");
 
-    // A "formatter" that rewrites the matched file and exits 0.
     let mut hook = Hook::run("fmt", "echo formatted > f.txt");
     hook.pass_filenames = false;
     hook.stage_fixed = true;
@@ -259,7 +237,6 @@ fn stage_fixed_restages_modified_files_and_continues() {
 
     assert!(outcome.success());
     assert!(outcome.stages[0].hooks[0].files_modified);
-    // stage_fixed git-add'd the rewrite, so there is no unstaged diff left.
     assert!(!is_dirty(root, "f.txt"), "f.txt should have been re-staged");
 }
 
@@ -284,11 +261,8 @@ fn modification_left_unstaged_when_not_stage_fixed() {
 
     assert!(outcome.success());
     assert!(!outcome.stages[0].hooks[0].files_modified);
-    // The rewrite stays in the worktree, unstaged.
     assert!(is_dirty(root, "g.txt"), "g.txt modification should be unstaged");
 }
-
-// ── precondition skip ─────────────────────────────────────────────────────────
 
 #[test]
 fn failing_precondition_skips_stage() {
@@ -306,7 +280,6 @@ fn failing_precondition_skips_stage() {
     assert!(matches!(outcome.stages[0].status, StageStatus::Skipped(_)));
     assert!(outcome.stages[0].hooks.is_empty());
     assert_eq!(read(root, "h.out"), "", "hook must not run when precondition fails");
-    // A skipped stage is not a failure.
     assert!(outcome.success());
 }
 
@@ -326,8 +299,6 @@ fn passing_precondition_runs_stage() {
     assert!(matches!(outcome.stages[0].status, StageStatus::Ran));
     assert_eq!(read(root, "h.out"), "x");
 }
-
-// ── before / after steps ──────────────────────────────────────────────────────
 
 #[test]
 fn failing_before_aborts_stage() {
@@ -384,16 +355,11 @@ fn after_skipped_when_a_hook_fails() {
     assert_eq!(read(root, "after.out"), "", "after must not run when a hook failed");
 }
 
-// ── deterministic, non-interleaved output ──────────────────────────────────────
-
 #[test]
 fn output_is_deterministic_and_non_interleaved() {
     let repo = init_repo();
     let root = repo.path();
 
-    // Two failing hooks each emit a distinct two-line block. Even though they run
-    // in parallel, capture-then-render must keep each block contiguous and in
-    // position order, and produce identical output across runs.
     let make_hooks = || {
         vec![
             cmd_hook("alpha", "printf 'A1\\nA2\\n'; exit 1"),
@@ -410,7 +376,6 @@ fn output_is_deterministic_and_non_interleaved() {
 
     assert_eq!(report1, report2, "render must be deterministic");
 
-    // alpha's block precedes beta's block, and each block is contiguous.
     let alpha_idx = report1.find("alpha").expect("alpha present");
     let beta_idx = report1.find("beta").expect("beta present");
     assert!(alpha_idx < beta_idx, "alpha must render before beta");
@@ -418,7 +383,6 @@ fn output_is_deterministic_and_non_interleaved() {
     let a1 = report1.find("A1").unwrap();
     let a2 = report1.find("A2").unwrap();
     let b1 = report1.find("B1").unwrap();
-    // alpha's two lines are adjacent (no beta output interleaved between them).
     assert!(a1 < a2 && a2 < b1, "alpha block must be contiguous and before beta");
 }
 
@@ -444,8 +408,6 @@ fn hook_command_script_form_executes() {
     assert_eq!(read(root, "script.out"), "ran");
 }
 
-// ── tier-1 result caching ───────────────────────────────────────────────────
-
 /// An enabled result cache rooted in its own temp dir (isolated from the repo).
 fn cache_at(dir: &TempDir) -> ResultCache {
     ResultCache::open(dir.path().join("cache"), true).expect("open cache")
@@ -465,7 +427,6 @@ fn matched_files_hook_is_cached_on_second_identical_run() {
     commit_tracked(root, "input.txt", "data\n");
     let cache_dir = TempDir::new().unwrap();
 
-    // Each real execution appends to runs.log; a cache hit must skip the body.
     let make = || {
         let mut hook = Hook::run("counter", "printf x >> runs.log");
         hook.pass_filenames = false;
@@ -510,13 +471,12 @@ fn editing_a_declared_input_invalidates_the_cache() {
         req
     };
 
-    run(build()).expect("run"); // miss → executes
+    run(build()).expect("run");
     assert_eq!(read(root, "runs.log"), "x");
-    let hit = run(build()).expect("run"); // unchanged → hit
+    let hit = run(build()).expect("run");
     assert!(hit.stages[0].hooks[0].cached);
     assert_eq!(read(root, "runs.log"), "x");
 
-    // Change the declared input; the next run must re-execute.
     std::fs::write(root.join("input.txt"), "v2\n").unwrap();
     let miss = run(build()).expect("run");
     assert!(!miss.stages[0].hooks[0].cached, "edit must invalidate");
@@ -530,7 +490,6 @@ fn a_hook_that_modifies_its_inputs_is_never_cached() {
     commit_tracked(root, "f.txt", "orig\n");
     let cache_dir = TempDir::new().unwrap();
 
-    // The hook rewrites its matched file (a worktree diff) and logs each run.
     let make = || {
         let mut hook = Hook::run("fixer", "printf changed > f.txt; printf x >> runs.log");
         hook.pass_filenames = false;
@@ -557,9 +516,6 @@ fn declared_inputs_hook_that_mutates_an_input_is_never_cached() {
     commit_tracked(root, "dep.txt", "orig\n");
     let cache_dir = TempDir::new().unwrap();
 
-    // Declares `**/*.txt` as inputs but also REWRITES dep.txt — a mutation to a
-    // declared input outside the (empty) matched set. It must never be cached,
-    // even though its pre-execution digest is stable once dep.txt is reverted.
     let make = || {
         let mut hook = Hook::run("mutator", "printf x >> runs.log; printf changed > dep.txt");
         hook.pass_filenames = false;
@@ -573,11 +529,9 @@ fn declared_inputs_hook_that_mutates_an_input_is_never_cached() {
         req
     };
 
-    run(build()).expect("run"); // executes, mutates dep.txt → must NOT store
+    run(build()).expect("run");
     assert_eq!(read(root, "runs.log"), "x");
 
-    // Revert dep.txt so the pre-execution digest matches the first run. Had the
-    // first run wrongly stored, this would be a hit and skip execution.
     std::fs::write(root.join("dep.txt"), "orig\n").unwrap();
     let second = run(build()).expect("run");
     assert!(
@@ -601,14 +555,12 @@ fn cache_none_bypasses_caching_entirely() {
         hook
     };
 
-    // First run WITH cache stores an entry.
     let mut req1 = request(root, pre_commit(vec![make()]));
     req1.files = vec![PathBuf::from("input.txt")];
     req1.cache = Some(cache_at(&cache_dir));
     run(req1).expect("run");
     assert_eq!(read(root, "runs.log"), "x");
 
-    // Second run with cache = None must bypass the stored entry and re-execute.
     let mut req2 = request(root, pre_commit(vec![make()]));
     req2.files = vec![PathBuf::from("input.txt")];
     req2.cache = None;
@@ -642,11 +594,8 @@ fn workspace_hook_runs_in_work_root_with_cargo_target_dir() {
     let outcome = run(req).expect("run");
     assert!(outcome.success());
 
-    // The workspace hook's cwd was the snapshot: its marker landed there, not in root.
     assert_eq!(read(snap_path, "marker.txt").trim(), "ws");
-    // The per-file hook ran from root and overwrote nothing in the snapshot.
     assert_eq!(read(root, "marker.txt").trim(), "pf");
-    // cargo is pointed at the real repo's target dir, not the snapshot's.
     assert_eq!(read(snap_path, "ct.txt"), root.join("target").to_string_lossy());
 }
 
@@ -666,7 +615,6 @@ fn workspace_hook_without_work_root_runs_in_root() {
     let outcome = run(request(root, pre_commit(vec![workspace_hook]))).expect("run");
     assert!(outcome.success());
     assert_eq!(read(root, "marker.txt").trim(), "ws");
-    // No isolation → CARGO_TARGET_DIR is left untouched.
     assert_eq!(read(root, "ct.txt"), "unset");
 }
 
@@ -681,8 +629,6 @@ fn workspace_hook_cache_key_follows_staged_snapshot_not_worktree() {
     std::fs::write(root.join("in.rs"), "STAGED").unwrap();
     git(root, &["add", "in.rs"]);
 
-    // The snapshot holds the staged content; `runs.log` (not matched by the
-    // `*.rs` cache glob) records each real execution so hits are observable.
     let snap = TempDir::new().expect("snapshot");
     std::fs::write(snap.path().join("in.rs"), "STAGED").unwrap();
     let cache_dir = TempDir::new().expect("cache");
@@ -704,15 +650,14 @@ fn workspace_hook_cache_key_follows_staged_snapshot_not_worktree() {
         run(req).expect("run");
     };
 
-    run_once(); // miss → executes
-    run_once(); // hit → skipped
+    run_once();
+    run_once();
     assert_eq!(
         read(snap.path(), "runs.log").lines().count(),
         1,
         "second run must hit the cache"
     );
 
-    // Editing the WORKTREE copy must not bust the key (staged content unchanged).
     std::fs::write(root.join("in.rs"), "WORKTREE-DIRTY").unwrap();
     run_once();
     assert_eq!(
@@ -721,7 +666,6 @@ fn workspace_hook_cache_key_follows_staged_snapshot_not_worktree() {
         "worktree edit must not invalidate"
     );
 
-    // Editing the SNAPSHOT (staged) copy busts the key → re-executes.
     std::fs::write(snap.path().join("in.rs"), "STAGED-CHANGED").unwrap();
     run_once();
     assert_eq!(

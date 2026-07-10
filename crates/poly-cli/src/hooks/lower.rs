@@ -114,8 +114,6 @@ fn lower_stage_with_probe(
     let config_stage = from_hook_stage(stage);
     let stage_config = hooks.stage_configs.get(&config_stage);
 
-    // An unconditional stage-level `skip`/`only` guard yields an empty stage. It
-    // is checked *before* anything is appended, so it also suppresses builtins.
     if stage_config.is_some_and(|cfg| guard_skips(cfg.skip.as_ref(), cfg.only.as_ref())) {
         return Ok(StageSpec {
             stage,
@@ -125,30 +123,19 @@ fn lower_stage_with_probe(
 
     let mut entries: Vec<Hook> = Vec::new();
     append_builtins(hooks, poly_bin, config_stage, cache_mode, probe, &mut entries)?;
-    // Catalog tools (ADR 0013): each enabled `[tools.<name>]` bound to this stage
-    // lowers to a per-file hook (capability-probed, absent binary skipped).
     builtins::append_catalog_tools(tools, config_stage, probe, &mut entries)?;
 
     if let Some(cfg) = stage_config {
         append_jobs(hooks, stage, cfg, files, cache_mode, &mut entries)?;
     }
-    // `[hooks.always]` jobs are appended to every concrete stage.
     if let Some(always) = hooks.stage_configs.get(&ConfigStage::Always) {
         append_jobs(hooks, stage, always, files, cache_mode, &mut entries)?;
     }
 
-    // Stamp the lowered stage onto every hook. `Hook::run` and the builtins
-    // leave `stage` at its `Stage::default()` (pre-commit), which is only
-    // accidentally correct for the pre-commit stage; the runner dispatches its
-    // input mode (files vs message-file vs no-files) off `hook.stage`, so a
-    // commit-msg / post-* hook left at the default is treated as a file hook,
-    // matches nothing, and is silently skipped.
     for hook in &mut entries {
         hook.stage = stage;
     }
 
-    // Priority order; `sort_by_key` is stable, so equal-priority hooks keep
-    // their insertion order (builtins, then inline jobs, then `always`).
     entries.sort_by_key(|hook| hook.priority);
 
     let (precondition, before, after) = stage_steps(stage_config);
@@ -160,8 +147,6 @@ fn lower_stage_with_probe(
         hooks: entries,
     })
 }
-
-// ── Builtins ────────────────────────────────────────────────────────────────
 
 /// Append poly's enabled builtins that resolve to `config_stage`.
 ///
@@ -187,11 +172,6 @@ fn append_builtins(
             config_stage,
         )?
     {
-        // `--no-workspace`: the `lint` builtin is the per-file tier only. The
-        // whole-project tools `poly lint` would otherwise run (`cargo clippy`, …)
-        // are the `cargo` builtin group's job within a hook run — running them
-        // here too would duplicate the work (and recurse the whole workspace on
-        // every staged-file batch).
         let mut hook = Hook::run("lint", format!("{poly} lint --no-workspace"));
         let (files, exclude) = builtin_globs(hooks.builtin.lint.files.as_ref(), hooks.builtin.lint.exclude.as_ref())?;
         hook.files = files;
@@ -222,9 +202,6 @@ fn append_builtins(
             config_stage,
         )?
     {
-        // `poly commit` consumes the commit-message file as its positional
-        // argument, so it must run with `pass_filenames` (the matched "file" in
-        // the runner's message-file mode is that path). `Hook::run` enables it.
         out.push(Hook::run("poly-commit", format!("{poly} commit")));
     }
     builtins::append_file_safety(hooks, &poly, config_stage, out)?;
@@ -258,8 +235,6 @@ pub(super) fn builtin_runs_on(
     Ok(false)
 }
 
-// ── Inline jobs ───────────────────────────────────────────────────────────────
-
 fn append_jobs(
     hooks: &HooksConfig,
     stage: HookStage,
@@ -289,7 +264,6 @@ fn job_to_hook(
     files: &[PathBuf],
     cache_mode: &HookCacheMode,
 ) -> Result<Hook> {
-    // Per-job env merged over the global `[hooks].env` (job wins).
     let mut env: BTreeMap<String, String> = hooks.env.clone();
     env.extend(job.env.iter().map(|(k, v)| (k.clone(), v.clone())));
 
@@ -301,18 +275,11 @@ fn job_to_hook(
 
     let types = (!job.file_types.is_empty()).then(|| TagSet::from_tags(&job.file_types));
 
-    // A `{staged_files}`/`{all_files}` template disables `pass_filenames`, so the
-    // runner's own file filter never runs — scope the substituted set to the
-    // job's include/exclude globs here instead.
     let scoped = filter_files(files, files_pattern.as_ref(), exclude_pattern.as_ref());
     let (command, template_pass_filenames) = build_command(job, &scoped)?;
-    // A whole-workspace job operates on the whole project (e.g. `pyrefly check
-    // packages/python`), so the matched files are not appended to its argv — a
-    // `{staged_files}` template is the explicit way to opt back in.
     let pass_filenames = template_pass_filenames && !job.workspace;
 
     let cache = cache::job_cache(job, cache_mode)?;
-    // Tier-2 sccache opt-in; only honoured when the run carries sccache settings.
     let compiler = job.cache.as_ref().is_some_and(|cache| cache.compiler);
 
     Ok(Hook {
@@ -328,15 +295,10 @@ fn job_to_hook(
         priority: job.priority,
         cache,
         compiler,
-        // `parallel`/`piped` are stage-level in the lefthook schema. `piped`
-        // (serial, abort-on-first-failure) maps to `require_serial` + `fail_fast`.
         parallel: cfg.parallel,
         require_serial: cfg.piped,
         fail_fast: cfg.piped,
         stage_fixed: job.stage_fixed,
-        // A job with no include filter always runs (lefthook runs unfiltered
-        // commands regardless of the changed-file set); a filtered job is
-        // skipped when nothing matches.
         always_run: !has_include,
         pass_filenames,
         workspace: job.workspace,
@@ -364,12 +326,8 @@ fn build_command(job: &Job, files: &[PathBuf]) -> Result<(HookCommand, bool)> {
             true,
         ));
     }
-    // `HooksConfig::validate` (run at config load) guarantees exactly one of
-    // `run`/`script`; this arm is defensive.
     anyhow::bail!("hook job `{:?}` has neither `run` nor `script`", job.name)
 }
-
-// ── Guards, tags, patterns, templates ─────────────────────────────────────────
 
 /// Resolve `skip`/`only` guards to a skip decision.
 ///
@@ -482,17 +440,6 @@ fn shell_quote(value: &str) -> String {
 
 #[cfg(windows)]
 fn shell_quote(value: &str) -> String {
-    // `cmd /C` expands `%VAR%` even inside double quotes and treats `"` as a
-    // token boundary, so a user-controlled path could inject or break the
-    // command line. Double both before wrapping.
-    //
-    // `!` (delayed-expansion) is intentionally NOT escaped: `cmd /C` runs
-    // without `ENABLEDELAYEDEXPANSION`, so `!` is already a literal here.
-    // Escaping it (`^!`/`^^!`) is only correct when delayed expansion is on and
-    // would otherwise inject a stray caret, corrupting legitimate filenames —
-    // so escaping would trade a non-issue for a real bug. The robust fix for
-    // hostile filenames is argv-passing (the runner's non-shell path), not
-    // string quoting.
     let escaped = value.replace('%', "%%").replace('"', "\"\"");
     format!("\"{escaped}\"")
 }

@@ -24,6 +24,5 @@ pub use types::Size;
 pub fn open() -> Result<(Pty, Pts)> {
     let pty = Pty::open()?;
     let pts = pty.pts()?;
-    // Intentionally NOT calling pty.set_nonblocking() — callers block on read.
     Ok((pty, pts))
 }

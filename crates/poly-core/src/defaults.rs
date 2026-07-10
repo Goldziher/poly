@@ -21,7 +21,6 @@ pub fn normalize_whitespace(text: &str, g: &GlobalDefaults) -> String {
         })
         .collect();
 
-    // Drop trailing empty lines; a single final newline is re-added below.
     while matches!(lines.last(), Some(l) if l.is_empty()) {
         lines.pop();
     }

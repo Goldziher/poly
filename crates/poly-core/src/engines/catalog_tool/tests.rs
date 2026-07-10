@@ -72,7 +72,6 @@ fn format_engine_builds_for_a_catalog_formatter() {
 
 #[test]
 fn format_engine_none_for_pure_linter() {
-    // shellcheck is lint-only; it has no format command.
     if let Some(tool) = Catalog::get().tool("shellcheck") {
         assert!(format_engine_default(tool, None, None).is_none());
     }
@@ -97,8 +96,6 @@ fn argv_substitutes_path_placeholder() {
 
 #[test]
 fn lint_engine_rejects_a_mutating_command() {
-    // A `--fix` command would rewrite files; it must never be wired as a
-    // linter, regardless of which mutating flag is present.
     for flag in ["--fix", "--write", "-w", "-i"] {
         let tool = leak_tool(
             "fakefixer",
@@ -115,8 +112,6 @@ fn lint_engine_rejects_a_mutating_command() {
 
 #[test]
 fn lint_engine_rejects_a_mutating_args_override() {
-    // The guard applies to the user's `args` override too, not just the
-    // catalog's own argv.
     let tool = leak_tool("fakelint", "true", "linter", vec![PATH_PLACEHOLDER.to_string()]);
     assert!(lint_engine_default(tool, None, Some(&["--fix".to_string()])).is_none());
 }
@@ -124,12 +119,6 @@ fn lint_engine_rejects_a_mutating_args_override() {
 #[cfg(unix)]
 #[test]
 fn lint_engine_reports_one_diagnostic_on_nonzero_exit() {
-    // Drive the tool through an inline `sh -c` command rather than writing
-    // and exec'ing a script file: exec'ing a freshly written executable can
-    // transiently fail with ETXTBSY when a concurrent test thread forks
-    // while this file's write fd is briefly open (CLOEXEC only closes on
-    // exec, not fork). `sh -c` reaches the same stdout/stderr/exit-code
-    // behaviour without ever exec'ing a file we just wrote.
     let tool = leak_tool(
         "fakelint",
         "sh",
@@ -161,9 +150,6 @@ fn lint_engine_reports_one_diagnostic_on_nonzero_exit() {
 #[cfg(unix)]
 #[test]
 fn lint_engine_reports_nothing_on_zero_exit() {
-    // Inline `sh -c` instead of exec'ing a freshly written script — see
-    // `lint_engine_reports_one_diagnostic_on_nonzero_exit` for why (ETXTBSY
-    // race under concurrent test threads).
     let tool = leak_tool(
         "oklint",
         "sh",
@@ -178,10 +164,6 @@ fn lint_engine_reports_nothing_on_zero_exit() {
 #[cfg(unix)]
 #[test]
 fn lint_runs_against_real_file_when_content_matches_on_disk() {
-    // A read-only linter must run against the real on-disk file (preserving
-    // project context) rather than a `poly-catalog-*` temp copy. Write a real
-    // file, point src at it with matching content, and assert the tool received
-    // the canonical real path.
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("real.txt");
     std::fs::write(&file, "hello\n").unwrap();
@@ -191,7 +173,6 @@ fn lint_runs_against_real_file_when_content_matches_on_disk() {
         "linter",
         vec![
             "-c".to_string(),
-            // Print the path argument ($0) then fail so it surfaces as a diagnostic.
             "printf '%s' \"$0\"\nexit 1".to_string(),
             PATH_PLACEHOLDER.to_string(),
         ],
@@ -217,9 +198,6 @@ fn lint_runs_against_real_file_when_content_matches_on_disk() {
 #[cfg(unix)]
 #[test]
 fn lint_falls_back_to_temp_copy_when_content_diverges() {
-    // When the in-memory content differs from what's on disk (e.g. a re-lint
-    // after an in-memory fix), the linter must see the content being linted —
-    // so it falls back to a temp copy rather than the stale real file.
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("stale.txt");
     std::fs::write(&file, "on-disk\n").unwrap();
@@ -246,9 +224,6 @@ fn lint_falls_back_to_temp_copy_when_content_diverges() {
 
 #[test]
 fn lint_engine_rejects_whole_project_type_checkers() {
-    // pyrefly / mypy / ty resolve imports project-wide and cannot run per file;
-    // they must never be wired as catalog linters, even though the catalog lists
-    // them under the `linter` category.
     for name in ["pyrefly", "mypy", "ty"] {
         assert!(is_whole_project_linter(name), "{name} must be denylisted");
         if let Some(tool) = Catalog::get().tool(name) {
@@ -262,14 +237,11 @@ fn lint_engine_rejects_whole_project_type_checkers() {
 
 #[test]
 fn lint_engine_allows_per_file_linters() {
-    // A genuine per-file linter (shellcheck) is not denylisted.
     assert!(!is_whole_project_linter("shellcheck"));
 }
 
 #[test]
 fn absent_binary_is_a_noop() {
-    // A catalog tool whose binary is essentially never installed in CI must
-    // degrade to Unchanged rather than erroring.
     let tool = Catalog::get()
         .tools()
         .iter()
@@ -284,16 +256,12 @@ fn absent_binary_is_a_noop() {
 #[cfg(unix)]
 #[test]
 fn env_var_is_visible_to_the_spawned_process() {
-    // Prove the engine forwards `env` to the subprocess. Use `sh -c` inline
-    // to avoid exec'ing a freshly written file (ETXTBSY race — see above).
     let tool = leak_tool(
         "envcheck",
         "sh",
         "linter",
         vec![
             "-c".to_string(),
-            // Print the env var on stdout; exit non-zero so we can capture
-            // it as a diagnostic message (exit 0 yields no diagnostics).
             "printf '%s' \"$POLY_TEST_VAR\"\nexit 1".to_string(),
             PATH_PLACEHOLDER.to_string(),
         ],
@@ -312,9 +280,6 @@ fn env_var_is_visible_to_the_spawned_process() {
 #[cfg(unix)]
 #[test]
 fn root_sets_the_working_directory_of_the_spawned_process() {
-    // Prove the engine sets the working directory via `root`. The tool
-    // prints the cwd; we canonicalize the expected path (macOS symlinks
-    // /var/folders → /private/var/folders) before comparing.
     let tmp = std::fs::canonicalize(std::env::temp_dir()).unwrap_or_else(|_| std::env::temp_dir());
     let tool = leak_tool(
         "cwdcheck",
@@ -322,8 +287,6 @@ fn root_sets_the_working_directory_of_the_spawned_process() {
         "linter",
         vec![
             "-c".to_string(),
-            // Print cwd (via `pwd -P` for the physical, symlink-resolved
-            // path) then exit non-zero so it surfaces as a diagnostic.
             "pwd -P\nexit 1".to_string(),
             PATH_PLACEHOLDER.to_string(),
         ],
@@ -376,24 +339,17 @@ fn path_globs_skips_non_matching_and_runs_matching_files() {
         "scopedlint",
         "sh",
         "linter",
-        vec![
-            "-c".to_string(),
-            // Always fail, so a non-skipped file always produces a diagnostic.
-            "exit 1".to_string(),
-            PATH_PLACEHOLDER.to_string(),
-        ],
+        vec!["-c".to_string(), "exit 1".to_string(), PATH_PLACEHOLDER.to_string()],
         vec!["**/.github/workflows/**/*.yml".to_string()],
     );
     let engine = lint_engine_default(tool, None, None).expect("non-mutating linter wires");
 
-    // Non-matching path → skipped (no diagnostics even though tool would fail).
     let non_match = engine.lint(&make_src("Taskfile.yml", ""), &cfg()).unwrap();
     assert!(
         non_match.is_empty(),
         "Taskfile.yml does not match .github/workflows/**/*.yml — must be skipped; got: {non_match:?}"
     );
 
-    // Matching path → tool runs → diagnostic (exit 1).
     let matches = engine.lint(&make_src(".github/workflows/ci.yml", ""), &cfg()).unwrap();
     assert!(
         !matches.is_empty(),

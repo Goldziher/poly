@@ -164,8 +164,6 @@ impl PolyConfig {
                 } else {
                     start
                 };
-                // No config file: anchor the default `[rules] dirs` at the start
-                // directory so discovery still has an absolute base.
                 config.rules.resolve_relative_to(dir);
                 config.typos_native = resolve_typos_native(dir);
                 Ok(config)
@@ -198,19 +196,11 @@ impl PolyConfig {
     ///
     /// [`load`]: PolyConfig::load
     pub fn resolve_for_dir(dir: &Path) -> anyhow::Result<PolyConfig> {
-        // Collect (dir, table) pairs from the nearest config upward to the
-        // workspace boundary. `chain[0]` is the nearest config.
         let mut chain: Vec<(PathBuf, toml::Table)> = Vec::new();
         let mut current = Some(dir.to_path_buf());
         while let Some(d) = current {
             if let Some(path) = config_file_in(&d) {
                 let mut table = read_config_table(&path)?;
-                // Anchor this config's `[rules] dirs` at *its own* directory
-                // before the cascade merge. A config lower in the chain may
-                // inherit `dirs` from an ancestor; resolving here (pre-merge)
-                // keeps those paths relative to the ancestor that declared them,
-                // not the nearest config — `finalize`'s `resolve_relative_to`
-                // then no-ops on the now-absolute entries.
                 resolve_rules_dirs_in_table(&mut table, &d);
                 let is_root = table_marks_workspace_root(&table);
                 chain.push((d.clone(), table));
@@ -218,8 +208,6 @@ impl PolyConfig {
                     break;
                 }
             }
-            // A `.git` directory marks the repository root: never cascade above
-            // it, even without an explicit `[workspace] root` marker.
             if d.join(".git").exists() {
                 break;
             }
@@ -235,8 +223,6 @@ impl PolyConfig {
             return Ok(config);
         }
 
-        // Fold from the topmost config (base) down to the nearest (final
-        // override). `chain` is nearest-first, so reverse to start at the base.
         let mut iter = chain.into_iter().rev();
         let (mut nearest_dir, mut merged) = iter.next().expect("chain is non-empty");
         for (d, table) in iter {
@@ -292,9 +278,6 @@ fn resolve_rules_dirs_in_table(table: &mut toml::Table, dir: &Path) {
 fn finalize(table: toml::Table, typos_dir: &Path) -> anyhow::Result<PolyConfig> {
     let raw: RawPolyConfig = table.try_into()?;
     let mut config: PolyConfig = raw.into();
-    // `[rules] dirs` are declared relative to the config file's directory
-    // (`typos_dir` is that directory). Resolving here makes rule discovery
-    // independent of the process working directory.
     config.rules.resolve_relative_to(typos_dir);
     config.typos_native = resolve_typos_native(typos_dir);
     config
@@ -388,7 +371,7 @@ impl From<RawPolyConfig> for PolyConfig {
             cache: raw.cache,
             tools: raw.tools,
             per_file_ignores: raw.per_file_ignores,
-            typos_native: TyposNative::default(), // populated after conversion in load_file / load
+            typos_native: TyposNative::default(),
             workspace: raw.workspace,
             rules: raw.rules,
         }

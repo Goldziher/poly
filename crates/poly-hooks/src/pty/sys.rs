@@ -83,8 +83,6 @@ impl Pty {
 
 impl From<Pty> for OwnedFd {
     fn from(pty: Pty) -> Self {
-        // Move the owned fd out directly — no raw-fd round-trip (and no leak via
-        // `forget`) is needed to transfer ownership.
         pty.0
     }
 }
@@ -162,10 +160,6 @@ impl Pts {
         move || {
             rustix::process::setsid()?;
             // SAFETY: `pts_fd` is the raw fd of `self.0`. The caller MUST keep
-            // the `Pts` that owns it alive until `Command::spawn()` returns —
-            // this closure runs in the forked child via `pre_exec`, before
-            // `exec`, and if the owning `Pts` were dropped earlier the fd would
-            // be closed and this `borrow_raw` would alias a dangling descriptor.
             rustix::process::ioctl_tiocsctty(unsafe { BorrowedFd::borrow_raw(pts_fd) })?;
             Ok(())
         }

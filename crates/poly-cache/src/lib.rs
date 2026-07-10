@@ -88,10 +88,6 @@ mod maintenance;
 
 pub use maintenance::{CacheStats, NamespaceStats};
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
 /// On-disk format version written to the `VERSION` sentinel file.
 ///
 /// Increment this whenever the cache layout changes incompatibly.  Tools such
@@ -100,10 +96,6 @@ pub use maintenance::{CacheStats, NamespaceStats};
 pub const CACHE_FORMAT_VERSION: &str = "3";
 
 static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
-
-// ---------------------------------------------------------------------------
-// Anchor walk
-// ---------------------------------------------------------------------------
 
 /// Environment variable overriding the poly cache home (`<platform-cache>/poly`).
 /// When set, its value replaces the OS cache directory as the base for every
@@ -197,10 +189,6 @@ pub fn root_from_cwd() -> anyhow::Result<PathBuf> {
     root_from(&cwd)
 }
 
-// ---------------------------------------------------------------------------
-// Namespace
-// ---------------------------------------------------------------------------
-
 /// Cache namespace — routes entries into distinct sub-directories under
 /// `results/`.
 ///
@@ -234,10 +222,6 @@ impl Namespace {
     }
 }
 
-// ---------------------------------------------------------------------------
-// InputDigest
-// ---------------------------------------------------------------------------
-
 /// A blake3 digest over one or more input files, used as the content component
 /// of a [`CacheKey`].
 ///
@@ -260,10 +244,6 @@ impl std::fmt::Display for InputDigest {
     }
 }
 
-// ---------------------------------------------------------------------------
-// CacheKey
-// ---------------------------------------------------------------------------
-
 /// An opaque hex-encoded cache key produced by [`ResultCache::key`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CacheKey(String);
@@ -281,10 +261,6 @@ impl std::fmt::Display for CacheKey {
     }
 }
 
-// ---------------------------------------------------------------------------
-// SerializedArgs
-// ---------------------------------------------------------------------------
-
 /// The TOML serialisation of an engine's (or hook's) `args` table, computed
 /// once via [`ResultCache::serialize_args`] and reused across many per-file
 /// keys via [`ResultCache::key_with_args`].
@@ -301,10 +277,6 @@ impl SerializedArgs {
         &self.0
     }
 }
-
-// ---------------------------------------------------------------------------
-// ResultCache
-// ---------------------------------------------------------------------------
 
 /// A content-hash result cache backed by files under
 /// `<platform-cache>/poly/<repo-key>/` (see [`repo_cache_dir`]).
@@ -327,10 +299,6 @@ pub struct ResultCache {
 }
 
 impl ResultCache {
-    // -----------------------------------------------------------------------
-    // Constructors
-    // -----------------------------------------------------------------------
-
     /// Open the cache at an explicit `root` directory.
     ///
     /// When `enabled`, creates the full sub-directory tree and writes the
@@ -356,10 +324,6 @@ impl ResultCache {
         Self::open(root_from_cwd()?, enabled)
     }
 
-    // -----------------------------------------------------------------------
-    // Internal helpers
-    // -----------------------------------------------------------------------
-
     /// Create the full sub-directory tree and write the VERSION sentinel.
     fn init_dirs(root: &Path) -> anyhow::Result<()> {
         for sub in ["results/lint", "results/fmt", "results/hook"] {
@@ -379,10 +343,6 @@ impl ResultCache {
     fn entry_path(&self, namespace: Namespace, key: &CacheKey) -> PathBuf {
         self.root.join("results").join(namespace.as_dir()).join(key.as_str())
     }
-
-    // -----------------------------------------------------------------------
-    // Digest construction
-    // -----------------------------------------------------------------------
 
     /// Compute an [`InputDigest`] for a single file's text content.
     ///
@@ -429,7 +389,6 @@ impl ResultCache {
     pub fn file_set_digest<'a>(files: impl Iterator<Item = (&'a str, &'a [u8])>) -> InputDigest {
         let mut entries: Vec<(&'a str, blake3::Hash)> =
             files.map(|(path, bytes)| (path, blake3::hash(bytes))).collect();
-        // Sort by path so the digest is stable regardless of iteration order.
         entries.sort_unstable_by_key(|(path, _)| *path);
 
         let mut outer = blake3::Hasher::new();
@@ -440,10 +399,6 @@ impl ResultCache {
         }
         InputDigest(outer.finalize().to_hex().to_string())
     }
-
-    // -----------------------------------------------------------------------
-    // Key derivation
-    // -----------------------------------------------------------------------
 
     /// Derive a [`CacheKey`] for a cache entry.
     ///
@@ -517,10 +472,6 @@ impl ResultCache {
         CacheKey(hasher.finalize().to_hex().to_string())
     }
 
-    // -----------------------------------------------------------------------
-    // Storage
-    // -----------------------------------------------------------------------
-
     /// Fetch a cached entry by key, or `None` on miss / when disabled.
     pub fn get(&self, namespace: Namespace, key: &CacheKey) -> Option<Vec<u8>> {
         if !self.enabled {
@@ -549,10 +500,6 @@ impl ResultCache {
         Ok(())
     }
 
-    // -----------------------------------------------------------------------
-    // Accessors
-    // -----------------------------------------------------------------------
-
     /// Whether this cache is enabled.
     pub fn enabled(&self) -> bool {
         self.enabled
@@ -563,10 +510,6 @@ impl ResultCache {
         &self.root
     }
 }
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
@@ -586,10 +529,6 @@ mod tests {
     fn empty_args() -> toml::Table {
         toml::Table::new()
     }
-
-    // -----------------------------------------------------------------------
-    // get / put round-trips
-    // -----------------------------------------------------------------------
 
     #[test]
     fn get_returns_stored_bytes_on_hit() {
@@ -667,10 +606,6 @@ mod tests {
         );
     }
 
-    // -----------------------------------------------------------------------
-    // Namespace segregation
-    // -----------------------------------------------------------------------
-
     #[test]
     fn namespace_segregates_entries() {
         let tmp = tempfile::tempdir().unwrap();
@@ -680,20 +615,14 @@ mod tests {
         let lint_key = ResultCache::key(Namespace::Lint, "eng", "1", &args, &digest);
         let fmt_key = ResultCache::key(Namespace::Fmt, "eng", "1", &args, &digest);
         let hook_key = ResultCache::key(Namespace::Hook, "eng", "1", &args, &digest);
-        // Keys themselves differ because the namespace component is included.
         let keys: HashSet<_> = [lint_key.as_str(), fmt_key.as_str(), hook_key.as_str()]
             .into_iter()
             .collect();
         assert_eq!(keys.len(), 3, "each namespace must produce a distinct key");
-        // Writing to lint does not satisfy fmt or hook.
         cache.put(Namespace::Lint, &lint_key, b"lint").unwrap();
         assert_eq!(cache.get(Namespace::Fmt, &fmt_key), None);
         assert_eq!(cache.get(Namespace::Hook, &hook_key), None);
     }
-
-    // -----------------------------------------------------------------------
-    // InputDigest — single-file vs file-set consistency
-    // -----------------------------------------------------------------------
 
     #[test]
     fn single_file_digest_matches_file_set_of_one_with_empty_path() {
@@ -734,15 +663,10 @@ mod tests {
 
     #[test]
     fn file_set_digest_differs_on_path_change() {
-        // Same content, different path → different digest (paths are folded in).
         let d1 = ResultCache::file_set_digest(std::iter::once(("a.py", b"same" as &[u8])));
         let d2 = ResultCache::file_set_digest(std::iter::once(("b.py", b"same" as &[u8])));
         assert_ne!(d1, d2);
     }
-
-    // -----------------------------------------------------------------------
-    // Anchor walk
-    // -----------------------------------------------------------------------
 
     #[test]
     fn find_anchor_returns_nearest_ancestor_with_marker() {
@@ -766,12 +690,10 @@ mod tests {
     fn repo_anchor_prefers_git_over_poly_toml() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
-        // .git at root, poly.toml deeper
         std::fs::create_dir_all(root.join(".git")).unwrap();
         let pkg = root.join("pkg");
         std::fs::create_dir_all(&pkg).unwrap();
         std::fs::write(pkg.join("poly.toml"), b"").unwrap();
-        // Should anchor at root (the .git anchor), not at pkg.
         assert_eq!(repo_anchor(&pkg), root, ".git anchor must win over poly.toml");
     }
 
@@ -794,8 +716,6 @@ mod tests {
         std::fs::create_dir_all(&pkg).unwrap();
 
         let cache_root = root_from(&pkg).expect("root_from");
-        // The cache is content-addressed under the per-user cache home, keyed by
-        // the repo anchor — never inside the repository tree.
         let expected = cache_home().unwrap().join(repo_key(root));
         assert_eq!(cache_root, expected);
         assert!(
@@ -826,13 +746,8 @@ mod tests {
         assert!(root.join(".polylint").exists());
         remove_legacy_cache(root);
         assert!(!root.join(".polylint").exists(), "legacy .polylint must be removed");
-        // Idempotent: a second call on an already-clean tree is a no-op.
         remove_legacy_cache(root);
     }
-
-    // -----------------------------------------------------------------------
-    // VERSION sentinel
-    // -----------------------------------------------------------------------
 
     #[test]
     fn version_sentinel_is_written_on_open() {
@@ -847,13 +762,11 @@ mod tests {
     fn version_sentinel_not_overwritten_when_present() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().join("cache");
-        // Pre-create with a different version string.
         std::fs::create_dir_all(root.join("results/lint")).unwrap();
         std::fs::create_dir_all(root.join("results/fmt")).unwrap();
         std::fs::create_dir_all(root.join("results/hook")).unwrap();
         std::fs::write(root.join("VERSION"), "0").unwrap();
         ResultCache::open(root.clone(), true).unwrap();
-        // Must NOT overwrite — GC/migration tools are responsible for bumping.
         let version = std::fs::read_to_string(root.join("VERSION")).unwrap();
         assert_eq!(version, "0", "existing VERSION must not be overwritten");
     }

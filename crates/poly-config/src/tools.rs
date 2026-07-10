@@ -262,7 +262,6 @@ enabled = true
 
     #[test]
     fn should_suggest_closest_name_for_near_miss() {
-        // `shfmtt` is one insertion away from the real `shfmt`.
         let tools = parse("[shfmtt]\nenabled = true\n");
         let error = tools.validate().unwrap_err();
         assert!(

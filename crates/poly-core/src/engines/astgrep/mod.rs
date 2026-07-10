@@ -89,20 +89,14 @@ impl Engine for AstGrepEngine {
     }
 
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
-        // Resolve configured rule dirs from options injected by `engine_config`.
         let dirs = dirs_from_options(&cfg.options);
         if dirs.is_empty() {
             return Ok(Vec::new());
         }
 
-        // Load (or retrieve cached) rules. The `rules_hash` (folded into options
-        // by `Config::build_astgrep_options`) content-addresses the cache so a
-        // rule edit yields fresh rules even in a long-lived process.
         let content_hash = cfg.options.get("rules_hash").and_then(|v| v.as_str()).unwrap_or("");
         let rule_map = load_rules(&dirs, content_hash)?;
 
-        // Look up rules for this file's language. `Language::id()` is already
-        // lowercase, matching the lowercase keys built from `rule.language.name()`.
         let lang_name = src.language.id();
         let Some(lang_rules) = rule_map.get(lang_name) else {
             return Ok(Vec::new());
@@ -111,13 +105,10 @@ impl Engine for AstGrepEngine {
             return Ok(Vec::new());
         }
 
-        // Build the TSLP bridge language and parse the source.
         let Some(tslp_lang) = TslpLanguage::new(lang_name) else {
             return Ok(Vec::new());
         };
 
-        // Parse the source into an ast-grep root. `AstGrep::try_new` creates one
-        // StrDoc and one parse tree — no double-parse.
         let root = match ast_grep_core::AstGrep::<StrDoc<TslpLanguage>>::try_new(&src.content, tslp_lang) {
             Ok(r) => r,
             Err(e) => {
@@ -130,13 +121,6 @@ impl Engine for AstGrepEngine {
             }
         };
 
-        // Build a CombinedScan from borrows of the cached rules, skipping any
-        // rule the user disabled with `severity: off` so it never emits a
-        // diagnostic. Rebuilding the scan index per file is O(n_rules ×
-        // avg_kinds); the compiled rules themselves are cached, but the scan
-        // borrows them, so caching it too would need a self-referential struct
-        // or an owning-scan API upstream in ast-grep. Fast for typical rule
-        // counts; revisit if a large rule set proves hot on a real corpus.
         let rule_refs: Vec<_> = lang_rules
             .iter()
             .filter(|r| !matches!(r.severity, AsgSeverity::Off))
@@ -146,17 +130,14 @@ impl Engine for AstGrepEngine {
         }
         let scan = CombinedScan::new(rule_refs);
 
-        // separate_fix=true: fixable matches go into `diffs`, lint-only into `matches`.
-        let result = scan.scan(&root, /* separate_fix */ true);
+        let result = scan.scan(&root, true);
 
         let mut diagnostics: Vec<Diagnostic> = Vec::new();
 
-        // Fixable matches → diagnostics with edits.
         for (rule, node_match) in &result.diffs {
             diagnostics.push(diff_to_diagnostic(self.name(), rule, node_match));
         }
 
-        // Lint-only matches → diagnostics without edits.
         for (rule, node_matches) in &result.matches {
             for node_match in node_matches {
                 diagnostics.push(match_to_diagnostic(self.name(), rule, node_match));

@@ -28,10 +28,6 @@ fn make_src(content: &str) -> SourceFile {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Known-bad fixture: anonymous operation triggers a correctness rule.
-// ---------------------------------------------------------------------------
-
 /// An anonymous GraphQL operation — biome fires
 /// `lint/correctness/useGraphqlNamedOperations`.
 const KNOWN_BAD: &str = "query { user { id } }\n";
@@ -46,8 +42,6 @@ fn known_bad_diagnostics() {
         "expected at least one diagnostic for anonymous operation"
     );
 
-    // Summarise as (engine, code, span_present) — robust to biome message
-    // wording changes; the snapshot asserts the rule code and span presence.
     let summary: Vec<_> = diags
         .iter()
         .map(|d| (d.engine.as_str(), d.code.as_deref().unwrap_or(""), d.span.is_some()))

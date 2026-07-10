@@ -51,7 +51,6 @@ fn per_rule_level_overrides_reported_severity() {
     write(&file, "import os\n");
 
     let config = config_with_f401_level("hint");
-    // fix = false: report only, do not rewrite the file.
     let results = lint(&[root.to_path_buf()], &config, &opts(), false, false).unwrap();
 
     let f401: Vec<&Severity> = results

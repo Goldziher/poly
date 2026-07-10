@@ -77,7 +77,6 @@ fn compute_edition(start_dir: &Path) -> String {
             continue;
         };
 
-        // A concrete `[package] edition = "…"` wins immediately.
         if let Some(edition) = table
             .get("package")
             .and_then(toml::Value::as_table)
@@ -87,8 +86,6 @@ fn compute_edition(start_dir: &Path) -> String {
             return edition.to_owned();
         }
 
-        // Otherwise this manifest may be (or also be) the workspace root that
-        // members inherit from via `edition.workspace = true`.
         if let Some(edition) = table
             .get("workspace")
             .and_then(toml::Value::as_table)
@@ -99,8 +96,6 @@ fn compute_edition(start_dir: &Path) -> String {
         {
             return edition.to_owned();
         }
-        // Member manifest with `edition.workspace = true` (or no edition at
-        // all): fall through to keep walking up toward the workspace root.
     }
     FALLBACK_EDITION.to_owned()
 }
@@ -121,7 +116,6 @@ mod tests {
     /// A path with no enclosing `Cargo.toml` falls back to the default edition.
     #[test]
     fn falls_back_when_no_manifest_found() {
-        // `/` has no Cargo.toml above it on any supported platform.
         let resolved = compute_edition(Path::new("/"));
         assert_eq!(resolved, FALLBACK_EDITION);
     }

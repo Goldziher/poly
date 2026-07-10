@@ -99,15 +99,10 @@ fn selected<'a>(manifest: &'a Manifest, requested: &[String]) -> Result<Vec<&'a 
     Ok(manifest.languages.keys().filter(|k| requested.contains(k)).collect())
 }
 
-// ---------------------------------------------------------------------------
-// generate
-// ---------------------------------------------------------------------------
-
 fn generate(root: &Path, manifest: &Manifest, requested: &[String]) -> Result<()> {
     let mut failures = Vec::new();
     for lang in selected(manifest, requested)? {
         if let Err(err) = generate_language(root, manifest, lang) {
-            // One unavailable/broken reference tool must not block the others.
             eprintln!("  !! {lang}: {err:#}");
             failures.push(lang.clone());
         }
@@ -184,10 +179,6 @@ fn run_reference(lang: &str, input: &[u8]) -> Result<Vec<u8>> {
     Ok(out.stdout)
 }
 
-// ---------------------------------------------------------------------------
-// check
-// ---------------------------------------------------------------------------
-
 fn check(root: &Path, manifest: &Manifest, requested: &[String], min: Option<f64>) -> Result<()> {
     let mut failed = Vec::new();
     for lang in selected(manifest, requested)? {
@@ -201,7 +192,7 @@ fn check(root: &Path, manifest: &Manifest, requested: &[String], min: Option<f64
         for file in &corpus {
             let golden_path = golden_dir.join(file.file_name().unwrap());
             let Ok(golden) = std::fs::read_to_string(&golden_path) else {
-                continue; // no golden yet for this file
+                continue;
             };
             let ours = poly_fmt_output(file)?;
             scored += 1;
@@ -237,7 +228,6 @@ fn check(root: &Path, manifest: &Manifest, requested: &[String], min: Option<f64
 /// Format one file the way `poly fmt` would, returning the resulting source.
 fn poly_fmt_output(file: &Path) -> Result<String> {
     let original = std::fs::read_to_string(file)?;
-    // Run the real pipeline in a temp dir so discovery/routing match production.
     let dir = tempfile::tempdir()?;
     let name = file.file_name().context("corpus file name")?;
     let target = dir.path().join(name);
@@ -247,7 +237,6 @@ fn poly_fmt_output(file: &Path) -> Result<String> {
         no_cache: true,
         jobs: Some(1),
         exclude: Vec::new(),
-        // Conformance formats one file with the default config verbatim.
         explicit_config: true,
     };
     let results = poly_core::format(std::slice::from_ref(&target), &Config::default(), &opts, false, false)?;

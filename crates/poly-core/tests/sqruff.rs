@@ -49,11 +49,6 @@ fn sorted_codes(diags: &[Diagnostic]) -> Vec<String> {
     codes
 }
 
-// --- known-bad fixture -------------------------------------------------------
-//
-// SQL with a missing space after a comma; sqruff's core ruleset flags this
-// via LT01 (layout whitespace).
-
 const KNOWN_BAD: &str = "select id,name from users\n";
 
 #[test]
@@ -64,10 +59,6 @@ fn sqruff_known_bad_diagnostics() {
     assert!(!diags.is_empty(), "expected violations for known-bad SQL");
     insta::assert_debug_snapshot!("sqruff_known_bad", diags);
 }
-
-// --- known-unformatted fixture ------------------------------------------------
-//
-// SQL with spacing issues that sqruff can autofix.
 
 const KNOWN_UNFORMATTED: &str = "select id , name from  users where id=1\n";
 
@@ -84,8 +75,6 @@ fn sqruff_known_unformatted_format() {
         insta::assert_snapshot!("sqruff_known_unformatted", formatted);
     }
 }
-
-// --- idempotency check -------------------------------------------------------
 
 const WELL_FORMED: &str = "SELECT id, name\nFROM users\nWHERE id = 1\n";
 
@@ -104,15 +93,6 @@ fn sqruff_format_already_formatted_is_unchanged() {
     }
 }
 
-// --- parse-error severity fixture --------------------------------------------
-//
-// Completely invalid SQL triggers a parse/lex error — sqruff emits a violation
-// with the sentinel rule code "????" (no rule attached).  These must be mapped
-// to Severity::Error (not Warning) and have code == None.
-
-// An unclosed parenthesis is a genuine parse error (sqruff emits a single
-// unparsable-segment diagnostic with no rule code), unlike lexable-but-invalid
-// SQL which only trips layout rules.
 const BROKEN_SQL: &str = "SELECT (\n";
 
 #[test]
@@ -135,11 +115,6 @@ fn sqruff_parse_error_yields_error_severity() {
     );
 }
 
-// --- fix-capability fixture --------------------------------------------------
-//
-// sqruff's autofix edits are not wired through the polylint Edit path; the
-// fix capability must be false so `poly lint --fix` does not silently no-op.
-
 #[test]
 fn sqruff_capabilities_fix_is_false() {
     let engine = SqruffEngine;
@@ -150,14 +125,6 @@ fn sqruff_capabilities_fix_is_false() {
          through the polylint Edit path)"
     );
 }
-
-// --- canonical rule-selection vocabulary -------------------------------------
-//
-// ADR 0016: sqruff must accept the canonical `select` / `ignore` keys in
-// addition to its native `rules` (allow-list) / `exclude_rules` (deny-list).
-// This snippet trips two rules under the default ruleset: LT01 (missing space
-// after the comma) and CP01 (inconsistent keyword capitalisation — `SELECT`
-// upper, `from` lower). Two findings make allow-listing observable.
 
 const COMMA_SQL: &str = "SELECT id,name from users\n";
 
@@ -200,14 +167,6 @@ fn canonical_ignore_matches_native_exclude_rules() {
     );
 }
 
-// --- per-rule parameter fixture: capitalisation policy -----------------------
-//
-// Proves that `rule_configs."capitalisation.keywords" = { capitalisation_policy
-// = "upper" }` changes lint findings vs the default `consistent` policy.
-// Default (consistent): all-lowercase SQL has no CP01 violation because the
-// capitalisation is internally consistent.
-// With "upper": lowercase keywords `select` / `from` violate CP01.
-
 const LOWERCASE_SQL: &str = "select a, b from users\n";
 
 #[test]
@@ -217,7 +176,6 @@ fn sqruff_per_rule_param_capitalisation_policy_upper() {
     let engine = SqruffEngine;
     let src = make_source("test.sql", LOWERCASE_SQL);
 
-    // Baseline: default config (consistent) should not flag all-lowercase SQL.
     let default_diags = engine.lint(&src, &lint_cfg()).unwrap();
     let cp01_default = default_diags
         .iter()
@@ -228,7 +186,6 @@ fn sqruff_per_rule_param_capitalisation_policy_upper() {
         "consistent policy should not flag all-lowercase SQL; got: {default_diags:#?}"
     );
 
-    // With capitalisation_policy = "upper": lowercase keywords must be flagged.
     let mut cap_opts = toml::Table::new();
     cap_opts.insert(
         "capitalisation_policy".to_string(),

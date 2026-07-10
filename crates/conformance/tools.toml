@@ -1,28 +1,3 @@
-# Reference formatters per language for the conformance harness.
-#
-# `conformance generate` builds each `docker/<lang>.Dockerfile` (tagged
-# `conformance-<lang>`) and pipes every file under `corpus/<lang>/` through it
-# (stdin -> stdout) to produce the committed golden output in `golden/<lang>/`.
-# `conformance check` runs poly fmt over the same corpus and scores its output
-# against the golden, so we can measure — per language — how close our pure-Rust
-# formatter is to being a drop-in replacement for the idiomatic reference tool.
-#
-# SCOPE — this harness is the DEFAULT conformance metric, and it measures ONLY
-# the tree-sitter generic tier (the "tier-2" languages without a native backend).
-# Two classes are intentionally OUT OF SCOPE:
-#
-#   1. Native-backend languages (JSON, YAML, TOML, CSS, Markdown, Python, JS/TS,
-#      GraphQL, HTML, …). For these we deliberately ship a different best-in-class
-#      formatter, so a byte-diff against the repo's original tool is an intentional
-#      formatter *switch*, not a defect — measuring it is meaningless.
-#   2. Rust and Go. Their toolchains ship a canonical, ubiquitous, extremely fast
-#      builtin formatter (rustfmt / gofmt) that every developer already has;
-#      poly fmt formatting them adds no value, so we never try to.
-#
-# What remains — and what this manifest tracks — is the set of tier-2 languages
-# where poly fmt's zero-dependency generic formatter genuinely tries to match an
-# idiomatic reference tool you'd otherwise need a heavy toolchain (JVM, Swift,
-# Dart, .NET) to run. That tier-2 number is the metric that directs our work.
 
 [languages.elixir]
 reference = "mix format"

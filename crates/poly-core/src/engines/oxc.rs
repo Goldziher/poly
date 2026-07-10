@@ -65,9 +65,6 @@ impl crate::engine::Engine for OxcEngine {
         Capabilities {
             lint: true,
             format: true,
-            // LintOptions defaults to FixKind::None so can_apply is always
-            // false — no Edit is ever emitted.  Declare fix=false rather than
-            // advertising a capability that does nothing.
             fix: false,
         }
     }
@@ -90,8 +87,6 @@ impl crate::engine::Engine for OxcEngine {
         }
     }
 }
-
-// ── JS/TS helpers ────────────────────────────────────────────────────────────
 
 fn source_type_for(lang: &Language) -> SourceType {
     match lang {
@@ -121,8 +116,6 @@ fn offset_to_line_col(src: &str, offset: usize) -> (u32, u32) {
     (line, col)
 }
 
-// ── in-memory RuntimeFileSystem adapter ─────────────────────────────────────
-
 /// Feeds `oxc_linter`'s parser with file content from RAM.
 /// `read_to_arena_str` copies `content` into the oxc arena allocator — no disk
 /// access ever occurs inside the engine.
@@ -148,12 +141,9 @@ impl RuntimeFileSystem for MemoryFileSystem<'_> {
     }
 
     fn write_file(&self, _path: &Path, _content: &str) -> Result<(), std::io::Error> {
-        // We never write back through the linter.
         Ok(())
     }
 }
-
-// ── LintService construction (lazily initialised, reused across files) ───────
 
 /// Returns the lazily-initialised shared [`LintService`] configured with
 /// oxlint's default correctness rule set.
@@ -171,7 +161,6 @@ fn lint_service() -> &'static LintService {
         let config = ConfigStoreBuilder::default()
             .build(&mut plugin_store)
             // SAFETY: ConfigStoreBuilder::default().build() with no external
-            // configuration is infallible — it only reads built-in rule defs.
             .expect("oxc_linter default ConfigStore build is infallible");
         let config_store = ConfigStore::new(config, Default::default(), plugin_store);
         let linter = Linter::new(LintOptions::default(), config_store, None);
@@ -180,8 +169,6 @@ fn lint_service() -> &'static LintService {
         LintService::new(linter, options)
     })
 }
-
-// ── lint_js: run oxlint correctness rules in-process ─────────────────────────
 
 /// Run `service` against one source file and return the raw oxlint messages.
 ///
@@ -221,29 +208,24 @@ fn build_configured_service(cfg: &EngineConfig) -> anyhow::Result<LintService> {
     let mut plugin_store = ExternalPluginStore::default();
     let mut builder = ConfigStoreBuilder::default();
 
-    // `select` — explicit rule list, each at Warn.
     for name in &selection.select {
         if let Ok(filter) = LintFilter::new(AllowWarnDeny::Warn, name.to_owned()) {
             builder = builder.with_filter(&filter);
         }
     }
 
-    // `extend_select` — additive on top of the default set, also at Warn.
     for name in &selection.extend_select {
         if let Ok(filter) = LintFilter::new(AllowWarnDeny::Warn, name.to_owned()) {
             builder = builder.with_filter(&filter);
         }
     }
 
-    // `ignore` — suppress each named rule entirely.
     for name in &selection.ignore {
         if let Ok(filter) = LintFilter::new(AllowWarnDeny::Allow, name.to_owned()) {
             builder = builder.with_filter(&filter);
         }
     }
 
-    // `[rules.<id>] level` — per-rule severity override.
-    // `error` → Deny (oxlint Error), everything else → Warn (oxlint Warning).
     for (code, opts) in &selection.rules {
         if let Some(level) = opts.level {
             let awd = match level {
@@ -268,10 +250,8 @@ fn build_configured_service(cfg: &EngineConfig) -> anyhow::Result<LintService> {
 
 fn lint_js(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
     let messages = if cfg.options.is_empty() {
-        // Fast path: reuse the lazily-initialised shared service; no allocation.
         run_with_service(lint_service(), src)
     } else {
-        // Config path: build a per-call service with the requested rule filters.
         let service = build_configured_service(cfg)?;
         run_with_service(&service, src)
     };
@@ -305,11 +285,8 @@ fn map_oxlint_message(msg: Message, content: &str) -> Diagnostic {
         }
     });
 
-    // `Display for OxcDiagnostic` formats as the primary message string.
     let message_text = msg.error.to_string();
 
-    // `OxcDiagnostic` derefs to its inner, which carries an optional longer
-    // `help` string and a rule documentation `url`; surface both for `--verbose`.
     let description = msg.error.help.as_ref().map(|h| h.to_string());
     let url = msg.error.url.as_ref().map(|u| u.to_string());
 
@@ -324,9 +301,6 @@ fn map_oxlint_message(msg: Message, content: &str) -> Diagnostic {
         end_col,
     });
 
-    // Map all fix edits.  Multi-edit fixes are applied atomically by the
-    // runner (all or nothing with an overlap guard), so it is safe to forward
-    // the full edit list here.
     let fix: Vec<Edit> = match msg.fixes {
         PossibleFixes::Single(f) => vec![Edit {
             start_byte: f.span.start as usize,
@@ -379,7 +353,6 @@ fn build_js_options(cfg: &EngineConfig) -> JsFormatOptions {
         ArrowParentheses, BracketSameLine, BracketSpacing, QuoteStyle, Semicolons, TrailingCommas as JsTrailingCommas,
     };
 
-    // Line width from poly globals, clamped to a valid value.
     let line_width = u16::try_from(cfg.globals.line_length)
         .ok()
         .and_then(|w| LineWidth::try_from(w).ok())
@@ -391,9 +364,8 @@ fn build_js_options(cfg: &EngineConfig) -> JsFormatOptions {
     let indent_width = u8::try_from(cfg.indent_width)
         .ok()
         .and_then(|w| IndentWidth::try_from(w).ok())
-        .unwrap_or_default(); // default is 2
+        .unwrap_or_default();
 
-    // `indent_style`: "tab" | "space" (default).
     let indent_style = cfg
         .options
         .get("indent_style")
@@ -401,7 +373,6 @@ fn build_js_options(cfg: &EngineConfig) -> JsFormatOptions {
         .and_then(|s| s.parse::<IndentStyle>().ok())
         .unwrap_or_default();
 
-    // `quote_style`: "double" (default) | "single".
     let quote_style = cfg
         .options
         .get("quote_style")
@@ -412,7 +383,6 @@ fn build_js_options(cfg: &EngineConfig) -> JsFormatOptions {
         })
         .unwrap_or_default();
 
-    // `jsx_quote_style`: "double" (default) | "single".
     let jsx_quote_style = cfg
         .options
         .get("jsx_quote_style")
@@ -423,7 +393,6 @@ fn build_js_options(cfg: &EngineConfig) -> JsFormatOptions {
         })
         .unwrap_or_default();
 
-    // `semicolons`: "always" (default) | "as-needed".
     let semicolons = cfg
         .options
         .get("semicolons")
@@ -431,7 +400,6 @@ fn build_js_options(cfg: &EngineConfig) -> JsFormatOptions {
         .and_then(|s| s.parse::<Semicolons>().ok())
         .unwrap_or_default();
 
-    // `trailing_commas`: "all" (default) | "es5" | "none".
     let trailing_commas = cfg
         .options
         .get("trailing_commas")
@@ -439,7 +407,6 @@ fn build_js_options(cfg: &EngineConfig) -> JsFormatOptions {
         .and_then(|s| s.parse::<JsTrailingCommas>().ok())
         .unwrap_or_default();
 
-    // `arrow_parentheses`: "always" (default) | "as-needed".
     let arrow_parentheses = cfg
         .options
         .get("arrow_parentheses")
@@ -447,7 +414,6 @@ fn build_js_options(cfg: &EngineConfig) -> JsFormatOptions {
         .and_then(|s| s.parse::<ArrowParentheses>().ok())
         .unwrap_or_default();
 
-    // `bracket_spacing`: bool, default true.
     let bracket_spacing = cfg
         .options
         .get("bracket_spacing")
@@ -455,7 +421,6 @@ fn build_js_options(cfg: &EngineConfig) -> JsFormatOptions {
         .map(BracketSpacing::from)
         .unwrap_or_default();
 
-    // `bracket_same_line`: bool, default false.
     let bracket_same_line = cfg
         .options
         .get("bracket_same_line")
@@ -489,9 +454,7 @@ fn format_js(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutpu
     let source_type = source_type_for(&src.language);
     let options = build_js_options(cfg);
 
-    // format() parses internally; returns Err on the first parse error.
     let formatted = match oxc_formatter::format(&allocator, &src.content, source_type, options, None) {
-        // Cannot meaningfully reformat a file with parse errors.
         Err(_) => return Ok(FormatOutput::Unchanged),
         Ok(f) => f,
     };
@@ -501,7 +464,6 @@ fn format_js(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutpu
         .map_err(|e| anyhow::anyhow!("oxc_formatter print error: {e}"))?;
     let mut code = printed.into_code();
 
-    // Ensure a trailing newline.
     if !code.ends_with('\n') {
         code.push('\n');
     }
@@ -512,8 +474,6 @@ fn format_js(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutpu
         Ok(FormatOutput::Formatted(code))
     }
 }
-
-// ── JSON/JSONC helpers ────────────────────────────────────────────────────────
 
 fn lint_json(src: &SourceFile) -> anyhow::Result<Vec<Diagnostic>> {
     let text = if src.language == Language::Jsonc {
@@ -562,13 +522,11 @@ fn lint_json(src: &SourceFile) -> anyhow::Result<Vec<Diagnostic>> {
 fn build_json_options(src: &SourceFile, cfg: &EngineConfig) -> JsonFormatOptions {
     use oxc_formatter_json::{BracketSpacing as JsonBracketSpacing, TrailingCommas as JsonTc};
 
-    // Route JSONC through the Jsonc variant so comments are preserved.
     let variant = match src.language {
         Language::Jsonc => JsonVariant::Jsonc,
         _ => JsonVariant::Json,
     };
 
-    // Line width from poly globals, clamped to the formatter's valid range.
     let line_width = u16::try_from(cfg.globals.line_length)
         .ok()
         .and_then(|w| LineWidth::try_from(w).ok())
@@ -580,9 +538,8 @@ fn build_json_options(src: &SourceFile, cfg: &EngineConfig) -> JsonFormatOptions
     let indent_width = u8::try_from(cfg.indent_width)
         .ok()
         .and_then(|w| IndentWidth::try_from(w).ok())
-        .unwrap_or_default(); // default is 2
+        .unwrap_or_default();
 
-    // `bracket_spacing`: bool, default true.
     let bracket_spacing = cfg
         .options
         .get("bracket_spacing")
@@ -590,9 +547,6 @@ fn build_json_options(src: &SourceFile, cfg: &EngineConfig) -> JsonFormatOptions
         .map(JsonBracketSpacing::from)
         .unwrap_or_default();
 
-    // `trailing_commas`: "always" (default) | "never".
-    // For the strict Json variant trailing commas are always off regardless of
-    // this setting; the option is most useful for JSONC/JSON5.
     let trailing_commas = cfg
         .options
         .get("trailing_commas")
@@ -609,9 +563,6 @@ fn build_json_options(src: &SourceFile, cfg: &EngineConfig) -> JsonFormatOptions
         indent_width,
         bracket_spacing,
         trailing_commas,
-        // Expand::Auto (default): objects collapse to one line when the source
-        // had no newline after `{`, and arrays pack inline when they fit within
-        // line_width.
         ..JsonFormatOptions::default()
     }
 }
@@ -620,8 +571,6 @@ fn format_json(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOut
     let allocator = Allocator::new();
     let options = build_json_options(src, cfg);
 
-    // On parse error, leave the file unchanged rather than reporting an error
-    // (lint_json handles parse diagnostics separately).
     let formatted = match oxc_formatter_json::format(&allocator, &src.content, options) {
         Err(_) => return Ok(FormatOutput::Unchanged),
         Ok(f) => f,
@@ -632,8 +581,6 @@ fn format_json(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOut
         .map_err(|e| anyhow::anyhow!("oxc_formatter_json print error: {e}"))?
         .into_code();
 
-    // Guard: the formatter adds a trailing newline via hard_line_break(), but
-    // ensure it defensively in case that changes.
     if !code.ends_with('\n') {
         code.push('\n');
     }
@@ -653,7 +600,6 @@ fn strip_jsonc_comments(src: &str) -> String {
 
     while let Some(ch) = chars.next() {
         match ch {
-            // String literal — copy verbatim until the closing `"`.
             '"' => {
                 out.push('"');
                 loop {
@@ -673,13 +619,11 @@ fn strip_jsonc_comments(src: &str) -> String {
                     }
                 }
             }
-            // Possible comment start.
             '/' => match chars.peek() {
                 Some('/') => {
-                    chars.next(); // consume second '/'
+                    chars.next();
                     out.push(' ');
                     out.push(' ');
-                    // Consume until newline (keep newline).
                     for c in chars.by_ref() {
                         if c == '\n' {
                             out.push('\n');
@@ -690,10 +634,9 @@ fn strip_jsonc_comments(src: &str) -> String {
                     }
                 }
                 Some('*') => {
-                    chars.next(); // consume '*'
+                    chars.next();
                     out.push(' ');
                     out.push(' ');
-                    // Consume until '*/'.
                     let mut prev = ' ';
                     for c in chars.by_ref() {
                         if prev == '*' && c == '/' {
@@ -712,8 +655,6 @@ fn strip_jsonc_comments(src: &str) -> String {
 
     out
 }
-
-// ── unit tests ────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -741,7 +682,6 @@ mod tests {
 
     #[test]
     fn valid_js_produces_no_diagnostics() {
-        // Export the function so it is considered "used" by no-unused-vars.
         let src = make_src("export function square(n) { return n * n; }\n", Language::JavaScript);
         let diags = lint_js(&src, &default_cfg()).unwrap();
         assert!(diags.is_empty(), "expected no diagnostics; got: {diags:#?}");
@@ -752,7 +692,6 @@ mod tests {
         let src = make_src("const x = {\n  a: 1,\nconst y = 2;\n", Language::JavaScript);
         let diags = lint_js(&src, &default_cfg()).unwrap();
         assert!(!diags.is_empty(), "expected at least one diagnostic for broken JS");
-        // oxlint wraps parse errors with Error severity; no rule is associated.
         assert_eq!(diags[0].severity, Severity::Error);
         assert!(diags[0].code.is_none(), "parse error should not have a rule code");
     }
@@ -767,16 +706,12 @@ mod tests {
 
     #[test]
     fn format_js_returns_unchanged_for_already_formatted() {
-        // Run once to get the canonical Prettier-style form, then verify
-        // the second pass is idempotent (Unchanged).
         let src = make_src("const x = {\n  a: 1,\n  b: 2,\n};\n", Language::JavaScript);
         let cfg = default_cfg();
-        // First pass: may reformat (e.g. collapse to single line).
         let first = match format_js(&src, &cfg).unwrap() {
             FormatOutput::Formatted(s) => s,
             FormatOutput::Unchanged => src.content.to_string(),
         };
-        // Second pass: must be idempotent.
         let src2 = make_src(&first, Language::JavaScript);
         let second = format_js(&src2, &cfg).unwrap();
         assert!(
@@ -802,7 +737,6 @@ mod tests {
 
     #[test]
     fn jsonc_with_comments_is_valid() {
-        // Language::Jsonc — strip_jsonc_comments is called before serde_json parse.
         let src = make_src("{\n  // comment\n  \"a\": 1\n}\n", Language::Jsonc);
         let diags = lint_json(&src).unwrap();
         assert!(diags.is_empty(), "got diags: {diags:?}");
@@ -821,8 +755,6 @@ mod tests {
         assert_eq!(engine.name(), "oxc");
         assert!(engine.capabilities().lint);
         assert!(engine.capabilities().format);
-        // fix is false: LintOptions defaults to FixKind::None, so no Edit is
-        // ever emitted — advertising fix=true would be a lie.
         assert!(!engine.capabilities().fix);
     }
 
@@ -851,8 +783,6 @@ mod tests {
         let result = fs.read_to_arena_str(&other, &allocator);
         assert!(result.is_err());
     }
-
-    // ── per-rule severity (Task 1a) ───────────────────────────────────────────
 
     /// `[rules.no-debugger] level = "error"` must promote the `no-debugger`
     /// diagnostic to [`Severity::Error`] (mapped from `AllowWarnDeny::Deny`).
@@ -909,12 +839,9 @@ level = "warning"
         );
     }
 
-    // ── formatter options (Task 1b) ───────────────────────────────────────────
-
     /// `quote_style = "single"` rewrites `"hello"` to `'hello'`.
     #[test]
     fn js_format_single_quote_style_rewrites_double_quotes() {
-        // A file with only double-quoted strings; single-quote mode must flip them.
         let src = make_src("export const greeting = \"hello\";\n", Language::JavaScript);
         let cfg = EngineConfig {
             globals: GlobalDefaults::default(),
@@ -946,9 +873,7 @@ level = "warning"
             FormatOutput::Formatted(text) => {
                 assert!(!text.contains(";\n"), "expected semicolons removed; got: {text:?}");
             }
-            FormatOutput::Unchanged => {
-                // Already matches as-needed output — acceptable if no semicolons needed.
-            }
+            FormatOutput::Unchanged => {}
         }
     }
 }

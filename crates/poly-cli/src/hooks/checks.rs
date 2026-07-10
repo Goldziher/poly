@@ -186,8 +186,6 @@ fn collect_violations(root: &Path, args: &CheckArgs) -> Vec<Violation> {
     violations
 }
 
-// ── individual checks ─────────────────────────────────────────────────────────
-
 /// Whether `line` is a git merge-conflict marker line.
 fn is_conflict_marker(line: &str) -> bool {
     CONFLICT_MARKERS
@@ -203,7 +201,6 @@ fn check_merge_conflict(root: &Path, files: &[PathBuf]) -> Vec<Violation> {
         let Some(bytes) = read_for_scan(&root.join(path)) else {
             continue;
         };
-        // Fast skip: no marker prefix anywhere means no marker line is possible.
         if !CONFLICT_MARKER_AUTOMATON.is_match(&bytes) {
             continue;
         }
@@ -251,9 +248,6 @@ fn check_private_key(root: &Path, files: &[PathBuf]) -> Vec<Violation> {
         let Some(bytes) = read_for_scan(&root.join(path)) else {
             continue;
         };
-        // Single SIMD pass over the raw bytes; the markers are ASCII so no
-        // UTF-8 conversion is needed. `pattern()` indexes back into the marker
-        // list to name which header matched.
         if let Some(found) = PRIVATE_KEY_AUTOMATON.find(&bytes) {
             let marker = PRIVATE_KEY_MARKERS[found.pattern().as_usize()];
             violations.push(Violation::new(
@@ -281,9 +275,6 @@ fn check_case_conflict(files: &[PathBuf]) -> Vec<Violation> {
 
     let mut violations = Vec::new();
     for members in groups.values() {
-        // A real collision needs two paths that differ only by case; identical
-        // paths repeated in the input are not a conflict. Track membership in a
-        // set (O(1) lookup) while preserving first-seen order for the report.
         let mut seen: HashSet<&PathBuf> = HashSet::new();
         let mut distinct: Vec<&PathBuf> = Vec::new();
         for member in members {
@@ -457,8 +448,6 @@ mod tests {
     #[test]
     fn content_checks_skip_files_over_the_size_cap() {
         let dir = tempfile::tempdir().unwrap();
-        // A file larger than the scan cap is skipped even if it contains a
-        // marker, so a huge staged blob can never be read into memory.
         let mut blob = vec![b'x'; (MAX_CONTENT_SCAN_BYTES as usize) + 1];
         blob.extend_from_slice(b"\n-----BEGIN OPENSSH PRIVATE KEY-----\n");
         blob.extend_from_slice(b"<<<<<<< HEAD\n");
@@ -533,7 +522,6 @@ mod tests {
     fn collect_violations_runs_only_requested_checks() {
         let dir = tempfile::tempdir().unwrap();
         let path = write(dir.path(), "bad.txt", b"<<<<<<< HEAD\n");
-        // Only the large-file check is enabled, so the merge marker is ignored.
         let args = CheckArgs {
             added_large_files: true,
             max_added_kb: 1,

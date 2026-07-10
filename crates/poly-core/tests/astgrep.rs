@@ -87,24 +87,17 @@ fn python_rule_flags_and_fixes() {
         .find(|d| d.code.as_deref() == Some("no-print"))
         .unwrap_or_else(|| panic!("expected no-print diagnostic; got: {diags:?}"));
 
-    // Structural assertions on the diagnostic.
     assert_eq!(hit.engine, "astgrep");
     assert_eq!(hit.severity, poly_core::engine::Severity::Warning);
     assert!(hit.span.is_some(), "diagnostic must carry a span");
     assert_eq!(hit.span.as_ref().unwrap().start_line, 1);
 
-    // The autofix must actually rewrite print(...) → log(...).
     assert!(!hit.fix.is_empty(), "no-print rule declares a fix; edits expected");
     assert_eq!(apply_fix(source, hit), "log(\"hello\")\n");
 }
 
 #[test]
 fn go_rule_runs_on_tier2_grammar() {
-    // Go has no native poly backend — this exercises the TSLP↔ast-grep bridge
-    // on the tree-sitter generic tier.
-    // A bare Go expression is not valid at file top level, so ast-grep fragments
-    // need the `context`/`selector` form for Go — standard ast-grep usage. This
-    // exercises the TSLP↔ast-grep bridge on a grammar with no native backend.
     let dir = tempfile::tempdir().unwrap();
     fs::write(
         dir.path().join("no-println.yml"),
@@ -204,8 +197,6 @@ fn span_column_is_character_based() {
 
     let engine = AstGrepEngine;
     let cfg = cfg_with_rules_dir(dir.path());
-    // `é` (U+00E9) is 1 char but 2 bytes; `print` starts at char index 9 → col 10.
-    // A byte-based column would report 11.
     let src = make_src("m.py", Language::Python, "x = \"é\"; print(1)\n");
 
     let diags = engine.lint(&src, &cfg).unwrap();
@@ -235,8 +226,6 @@ fn rule_test_fixed_assertion_checks_autofix_output() {
     .unwrap();
     fs::write(
         dir.path().join("use-is-none-test.yml"),
-        // First case asserts the correct fix; second asserts a wrong one to
-        // prove a mismatch is caught.
         "id: use-is-none\ninvalid:\n  - code: a == None\n    fixed: a is None\n  - code: b == None\n    fixed: b == None\n",
     )
     .unwrap();
@@ -267,8 +256,6 @@ fn non_matching_fixed_case_reports_single_failure() {
         "id: use-is-none\nlanguage: python\nseverity: warning\nmessage: use is None\nrule:\n  pattern: $X == None\nfix: $X is None\n",
     )
     .unwrap();
-    // `x is None` does NOT match `$X == None`, so the Invalid check fails; the
-    // Fixed check must be skipped.
     fs::write(
         dir.path().join("use-is-none-test.yml"),
         "id: use-is-none\ninvalid:\n  - code: x is None\n    fixed: x is None\n",
@@ -284,7 +271,6 @@ fn non_matching_fixed_case_reports_single_failure() {
 #[test]
 fn no_rules_dir_is_a_noop() {
     let engine = AstGrepEngine;
-    // No `rules_dirs` option at all → engine short-circuits.
     let cfg = EngineConfig {
         globals: GlobalDefaults::default(),
         indent_width: 4,

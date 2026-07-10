@@ -134,9 +134,6 @@ impl PolyMcpServer {
     }
 }
 
-// Dispatch through the router stored on the server so it is built once in
-// `new` rather than rebuilt on every `tools/call` (the macro default is
-// `Self::tool_router()`, which reconstructs it per request).
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for PolyMcpServer {
     fn get_info(&self) -> ServerInfo {

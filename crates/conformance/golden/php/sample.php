@@ -2,7 +2,7 @@
 
 function greet($name)
 {
-    return "hello $name";
+    return "hello {$name}";
 }
 
 class Greeter

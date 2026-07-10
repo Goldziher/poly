@@ -52,15 +52,11 @@ pub(crate) fn run(args: &WorkspaceLintArgs) -> Result<bool> {
         return Ok(true);
     }
 
-    // Whole-project tools run at the repository root; fall back to the working
-    // directory for a non-git checkout so a standalone cargo project still works.
     let root = poly_hooks::git::get_root()
         .or_else(|_| std::env::current_dir())
         .context("failed to resolve the project root")?;
     let poly_bin = std::env::current_exe().context("failed to resolve the running poly binary")?;
 
-    // Lower the pre-commit stage, then reduce it to just the whole-workspace
-    // analysis hooks — the cargo builtins and inline `workspace = true` jobs.
     let mut spec = lower::lower_stage(
         &config.hooks,
         &poly_bin,
@@ -75,13 +71,10 @@ pub(crate) fn run(args: &WorkspaceLintArgs) -> Result<bool> {
         return Ok(true);
     }
 
-    // Open the cache and resolve sccache before moving `root` into the request.
     let cache = open_result_cache(&config, &root, args.no_cache)?;
     let sccache = sccache_settings(&config, false)?;
     let request = poly_hooks::HookRunRequest {
         root,
-        // No staged snapshot: `poly lint` analyses the live worktree, not the
-        // index, so whole-project tools see the working-tree content directly.
         work_root: None,
         files: Vec::new(),
         message_file: None,
@@ -190,13 +183,10 @@ mod tests {
     fn retain_keeps_workspace_hooks_forces_always_run_and_drops_steps() {
         use poly_hooks::{Hook, StageSpec};
 
-        // A whole-project inline job with a file filter (so `always_run = false`)…
         let mut ws = Hook::run("go-vet", "go vet ./...");
         ws.workspace = true;
         ws.always_run = false;
-        // …a per-file hook that must be dropped (workspace defaults to false)…
         let per_file = Hook::run("fmt", "poly fmt");
-        // …and a workspace hook that opted out of the lint phase (`lint = false`).
         let mut opted_out = Hook::run("cargo-clippy", "cargo clippy");
         opted_out.workspace = true;
         opted_out.skip_in_lint = true;
@@ -232,7 +222,6 @@ mod tests {
         let absent: toml::Table = toml::Table::new();
         assert!(!workspace_lint_disabled(&absent));
 
-        // A non-boolean value must not silently disable the phase.
         let wrong_type: toml::Table = toml::from_str("workspace = \"no\"").unwrap();
         assert!(!workspace_lint_disabled(&wrong_type));
     }

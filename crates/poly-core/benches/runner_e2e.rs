@@ -59,8 +59,6 @@ fn bench_runner(c: &mut Criterion) {
     let dir = corpus(FILE_COUNT);
     let paths = vec![PathBuf::from(dir.path())];
     let config = Config::default();
-    // Disable the cache so each iteration does the full format work (otherwise
-    // the second iteration would be an all-hit no-op and measure cache reads).
     let opts = RunOptions {
         no_cache: true,
         jobs: None,
@@ -69,7 +67,6 @@ fn bench_runner(c: &mut Criterion) {
     };
 
     let mut group = c.benchmark_group("runner_e2e");
-    // Heavier than the micro-benches; keep the sample count modest.
     group.sample_size(20);
     group.bench_function("format_64_rust_files_dry_run", |b| {
         b.iter(|| {

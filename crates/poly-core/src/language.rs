@@ -154,9 +154,6 @@ impl Language {
     /// Returns `None` for unknown extensions; the tree-sitter tier (M5) provides a
     /// secondary fallback for those.
     pub fn from_path(path: &Path) -> Option<Language> {
-        // Extension-based detection takes precedence so a source file whose name
-        // merely contains "dockerfile" (e.g. `dockerfile.rs`) routes by its
-        // extension rather than the Dockerfile filename special-case below.
         if let Some(lang) = path
             .extension()
             .and_then(|e| e.to_str())
@@ -164,9 +161,6 @@ impl Language {
         {
             return Some(lang);
         }
-        // Real Dockerfiles (`Dockerfile`, `Dockerfile.prod`, `*.dockerfile`) have no
-        // recognised source extension, so this only fires when the extension above
-        // did not match.
         if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
             let lower = name.to_ascii_lowercase();
             if lower == "dockerfile" || lower.starts_with("dockerfile.") || lower.ends_with(".dockerfile") {
@@ -195,10 +189,6 @@ impl Language {
             "scss" => Language::Scss,
             "less" => Language::Less,
             "html" | "htm" => {
-                // Angular component templates follow the `*.component.html`
-                // convention. markup_fmt's own `detect_language` applies this only to
-                // `.html`; we extend it to `.htm` by analogy (`*.component.htm` is
-                // effectively nonexistent in practice, so there is no routing risk).
                 if path
                     .file_stem()
                     .is_some_and(|s| s.to_string_lossy().ends_with(".component"))
@@ -295,10 +285,6 @@ impl Language {
             "swift" => Language::Swift,
             "dart" => Language::Dart,
             "gleam" => Language::Gleam,
-            // mdsf spells these with a long form; poly's tree-sitter detection
-            // assigns the canonical pack id (`makefile` aliases to `make`, and
-            // `.vim` files detect as `vim`). Normalise both so an enabled catalog
-            // tool routes to the files discovery actually labels.
             "make" | "makefile" => Language::Other("make".to_string()),
             "vim" | "vimscript" => Language::Other("vim".to_string()),
             other => Language::Other(other.to_string()),
@@ -346,8 +332,6 @@ mod tests {
 
     #[test]
     fn from_path_prefers_rs_extension_over_dockerfile_filename() {
-        // A source file whose name merely contains "dockerfile" must route by its
-        // `.rs` extension, not be misclassified as a Dockerfile.
         assert_eq!(Language::from_path(Path::new("dockerfile.rs")), Some(Language::Rust));
         assert_eq!(
             Language::from_path(Path::new("foo/dockerfile.rs")),
@@ -376,8 +360,6 @@ mod tests {
 
     #[test]
     fn from_catalog_name_normalises_make_aliases_to_pack_id() {
-        // mdsf uses both `make` and `makefile`; the tree-sitter pack's canonical
-        // id is `make` (it aliases `makefile` -> `make`), so both must land there.
         let expected = Language::Other("make".to_string());
         assert_eq!(Language::from_catalog_name("make"), expected);
         assert_eq!(Language::from_catalog_name("makefile"), expected);
@@ -385,7 +367,6 @@ mod tests {
 
     #[test]
     fn from_catalog_name_normalises_vimscript_to_pack_id() {
-        // mdsf spells it `vimscript`; the pack detects `.vim` files as `vim`.
         let expected = Language::Other("vim".to_string());
         assert_eq!(Language::from_catalog_name("vimscript"), expected);
         assert_eq!(Language::from_catalog_name("vim"), expected);
@@ -393,8 +374,6 @@ mod tests {
 
     #[test]
     fn from_catalog_name_maps_csharp() {
-        // C# maps to its dedicated variant so `.cs` files route to the tier-2
-        // tree-sitter formatter (poly has no C# native/tier-1 backend).
         assert_eq!(Language::from_catalog_name("c#"), Language::CSharp);
         assert_eq!(Language::from_catalog_name("csharp"), Language::CSharp);
         assert_eq!(
