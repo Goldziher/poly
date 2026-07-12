@@ -5,6 +5,12 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
+## [Unreleased]
+
+### Changed
+
+- Share URL-keyed Git hook mirrors and immutable commit checkouts globally under the XDG cache, with per-source interprocess locking.
+
 ## [0.14.0] - 2026-07-12
 
 ### Changed

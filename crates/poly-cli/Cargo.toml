@@ -29,6 +29,7 @@ aho-corasick.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 console.workspace = true
+fs2.workspace = true
 gitfluff.workspace = true
 json5.workspace = true
 owo-colors.workspace = true
@@ -41,6 +42,7 @@ poly-mcp.workspace = true
 serde.workspace = true
 serde-saphyr.workspace = true
 serde_json.workspace = true
+tempfile.workspace = true
 toml.workspace = true
 toml_edit.workspace = true
 tracing.workspace = true
@@ -50,4 +52,3 @@ which.workspace = true
 
 [dev-dependencies]
 insta.workspace = true
-tempfile.workspace = true

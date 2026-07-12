@@ -58,6 +58,7 @@ dunce = "1.0.5"
 etcetera = "0.11.0"
 fancy-regex = "0.18.0"
 fs-err = "3.3.1"
+fs2 = "0.4"
 gitfluff = { path = "crates/gitfluff" }
 globset = "0.4.18"
 graphql-parser = "0.4"

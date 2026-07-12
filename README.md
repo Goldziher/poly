@@ -376,6 +376,13 @@ Hooks come from `poly.toml`: builtins, inline jobs, and optional local or Git pr
 Git refs are resolved into `poly-hooks.lock`; normal runs stay on the locked commit and
 `poly hooks update` refreshes configured branches or tags.
 
+Git catalogs share a global cache under `$XDG_CACHE_HOME/poly/hook-sources` (or the
+platform cache directory). Poly keeps one URL-keyed bare mirror and immutable checkouts
+keyed by commit. A per-source lock serializes fetch and materialization, so different
+repositories can safely use the same catalog concurrently without duplicate clones.
+Catalog hooks always execute from the consumer repository; the read-only producer checkout is
+available through `POLY_HOOK_SOURCE_ROOT`. Local path sources bypass the global cache.
+
 ```toml
 [[hooks.sources]]
 id = "ai-rulez"

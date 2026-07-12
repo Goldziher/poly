@@ -1,9 +1,11 @@
 //! Provision catalogs selected by `[[hooks.sources]]` in `poly.toml`.
 
+use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{Context, bail};
+use fs2::FileExt;
 use poly_config::{HookMachinePreferences, HookSource, HooksConfig, Job, Stage, StageConfig, load_hook_preferences};
 use serde::{Deserialize, Serialize};
 
@@ -64,6 +66,14 @@ struct LockedSource {
     path: String,
 }
 
+struct SourceLock(File);
+
+impl Drop for SourceLock {
+    fn drop(&mut self) {
+        let _ = self.0.unlock();
+    }
+}
+
 /// Resolve selected sources and choose one eligible path for every selected hook.
 pub fn provision(root: &Path, hooks: &HooksConfig, update: bool, install: bool) -> anyhow::Result<Vec<ResolvedHook>> {
     reject_legacy_consumer_file(root)?;
@@ -71,7 +81,7 @@ pub fn provision(root: &Path, hooks: &HooksConfig, update: bool, install: bool) 
         return Ok(Vec::new());
     }
     let preferences = load_hook_preferences(root, true)?;
-    let cache_root = poly_cache::repo_cache_dir(root)?.join("hook-sources");
+    let cache_root = poly_cache::hook_sources_dir()?;
     std::fs::create_dir_all(&cache_root)
         .with_context(|| format!("creating hook source cache {}", cache_root.display()))?;
     let existing = read_lock(root)?;
@@ -279,6 +289,10 @@ pub fn merge_stage(
         job.name = Some(selected.manifest.id.clone());
         job.run = Some(selected.command.clone());
         job.script = None;
+        job.env.insert(
+            "POLY_HOOK_SOURCE_ROOT".to_string(),
+            selected.source_root.to_string_lossy().into_owned(),
+        );
         let mut stage = StageConfig::default();
         stage.commands.insert(selected.manifest.id.clone(), job);
         let mut config = HooksConfig {
@@ -304,9 +318,6 @@ pub fn merge_stage(
             }
             if let Some(always_run) = selected.manifest.always_run {
                 hook.always_run = always_run;
-            }
-            if !hook.workspace {
-                hook.cwd = Some(selected.source_root.clone());
             }
         }
         spec.hooks.extend(lowered.hooks);
@@ -334,7 +345,9 @@ fn provision_source(
         return Ok((None, canonical));
     }
     let url = source.git.as_deref().expect("validated Git source");
-    let checkout = cache_root.join(&source.id);
+    let source_key = poly_cache::hook_source_key(url);
+    let source_cache = cache_root.join(&source_key);
+    let mirror = source_cache.join("mirror.git");
     let locked = existing.and_then(|lock| {
         lock.sources
             .iter()
@@ -347,59 +360,75 @@ fn provision_source(
                 source.id
             )
         })?;
-        ensure_checkout_origin(&checkout, url)?;
-        if !git_object_exists(&checkout, &locked.revision)? {
-            run_git(&checkout, &["fetch", "--quiet", "origin", &locked.revision])?;
+        validate_locked_revision(&locked.revision)?;
+        let checkout = source_cache.join("checkouts").join(&locked.revision);
+        let _guard = lock_source(&source_cache)?;
+        if checkout_is_valid(&checkout, &locked.revision) {
+            make_read_only(&checkout)?;
+            return Ok((Some(locked.clone()), checkout));
         }
-        run_git(&checkout, &["checkout", "--quiet", "--detach", &locked.revision])?;
+        ensure_mirror(&mirror, url)?;
+        ensure_commit(&mirror, url, &locked.revision)?;
+        materialize_checkout(&mirror, &checkout, &locked.revision)?;
         return Ok((Some(locked.clone()), checkout));
     }
     let revision = source.revision.as_deref().expect("validated Git revision");
-    let target = if checkout.join(".git").exists() {
-        let origin = git_output(&checkout, &["remote", "get-url", "origin"])?;
-        if origin != url {
-            bail!(
-                "cached hook source {:?} has origin {:?}, expected {:?}",
-                source.id,
-                origin,
-                url
-            );
-        }
-        run_git(&checkout, &["fetch", "--quiet", "--force", "origin", revision])?;
-        "FETCH_HEAD"
-    } else {
-        run_command(
-            Command::new("git")
-                .args(["clone", "--quiet", "--no-checkout", "--", url])
-                .arg(&checkout),
-            "clone hook source",
-        )?;
-        revision
-    };
-    run_git(&checkout, &["checkout", "--quiet", "--detach", target])?;
-    let resolved = git_output(&checkout, &["rev-parse", "HEAD"])?;
+    let _guard = lock_source(&source_cache)?;
+    ensure_mirror(&mirror, url)?;
+    run_git(&mirror, &["fetch", "--quiet", "--force", "origin", revision])?;
+    let resolved = git_output(&mirror, &["rev-parse", "FETCH_HEAD^{commit}"])?;
+    validate_locked_revision(&resolved)?;
+    let checkout = source_cache.join("checkouts").join(&resolved);
+    materialize_checkout(&mirror, &checkout, &resolved)?;
+    let cache_path = format!("cache://hook-sources/{source_key}/{resolved}");
     Ok((
         Some(LockedSource {
             id: source.id.clone(),
             source: url.to_string(),
             revision: resolved,
-            path: format!("cache://hook-sources/{}", source.id),
+            path: cache_path,
         }),
         checkout,
     ))
 }
 
-fn ensure_checkout_origin(checkout: &Path, url: &str) -> anyhow::Result<()> {
-    if !checkout.join(".git").exists() {
-        std::fs::create_dir_all(checkout)
-            .with_context(|| format!("creating locked hook checkout {}", checkout.display()))?;
-        run_git(checkout, &["init", "--quiet"])?;
-        return run_git(checkout, &["remote", "add", "origin", url]);
+fn lock_source(source_cache: &Path) -> anyhow::Result<SourceLock> {
+    std::fs::create_dir_all(source_cache)
+        .with_context(|| format!("creating hook source cache {}", source_cache.display()))?;
+    let path = source_cache.join("source.lock");
+    let file = OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .truncate(false)
+        .open(&path)
+        .with_context(|| format!("opening hook source lock {}", path.display()))?;
+    file.lock_exclusive()
+        .with_context(|| format!("locking hook source {}", path.display()))?;
+    Ok(SourceLock(file))
+}
+
+fn ensure_mirror(mirror: &Path, url: &str) -> anyhow::Result<()> {
+    if !mirror.is_dir() {
+        let parent = mirror.parent().context("hook mirror has no parent")?;
+        let temporary = tempfile::Builder::new()
+            .prefix("mirror-")
+            .tempdir_in(parent)
+            .with_context(|| format!("creating temporary hook mirror in {}", parent.display()))?;
+        let temporary_path = temporary.path().join("repository.git");
+        run_command(
+            Command::new("git")
+                .args(["clone", "--quiet", "--mirror", "--", url])
+                .arg(&temporary_path),
+            "clone hook source mirror",
+        )?;
+        std::fs::rename(&temporary_path, mirror)
+            .with_context(|| format!("installing hook source mirror {}", mirror.display()))?;
     }
-    let origin = git_output(checkout, &["remote", "get-url", "origin"])?;
+    let origin = git_output(mirror, &["remote", "get-url", "origin"])?;
     if origin != url {
         bail!(
-            "cached hook source origin {:?} does not match configured {:?}",
+            "cached hook source mirror origin {:?} does not match configured {:?}",
             origin,
             url
         );
@@ -407,10 +436,114 @@ fn ensure_checkout_origin(checkout: &Path, url: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn git_object_exists(checkout: &Path, revision: &str) -> anyhow::Result<bool> {
+fn ensure_commit(mirror: &Path, url: &str, revision: &str) -> anyhow::Result<()> {
+    if git_object_exists(mirror, revision)? {
+        return Ok(());
+    }
+    run_git(mirror, &["fetch", "--quiet", "origin", revision])
+        .with_context(|| format!("fetching locked hook source commit {revision} from {url}"))?;
+    if !git_object_exists(mirror, revision)? {
+        bail!("locked hook source commit {revision} is unavailable from {url}");
+    }
+    Ok(())
+}
+
+fn materialize_checkout(mirror: &Path, checkout: &Path, revision: &str) -> anyhow::Result<()> {
+    if checkout.is_dir() {
+        if checkout_is_valid(checkout, revision) {
+            return make_read_only(checkout);
+        }
+        make_writable(checkout)?;
+        std::fs::remove_dir_all(checkout)
+            .with_context(|| format!("removing invalid hook checkout {}", checkout.display()))?;
+    }
+    let parent = checkout.parent().context("hook checkout has no parent")?;
+    std::fs::create_dir_all(parent)
+        .with_context(|| format!("creating hook checkout directory {}", parent.display()))?;
+    let temporary = tempfile::Builder::new()
+        .prefix("checkout-")
+        .tempdir_in(parent)
+        .with_context(|| format!("creating temporary hook checkout in {}", parent.display()))?;
+    let temporary_path = temporary.path().join("source");
+    run_command(
+        Command::new("git")
+            .args(["clone", "--quiet", "--no-checkout", "--no-hardlinks"])
+            .arg(mirror)
+            .arg(&temporary_path),
+        "clone hook source checkout",
+    )?;
+    run_git(&temporary_path, &["checkout", "--quiet", "--detach", revision])?;
+    std::fs::rename(&temporary_path, checkout)
+        .with_context(|| format!("installing hook source checkout {}", checkout.display()))?;
+    make_read_only(checkout)
+}
+
+fn checkout_is_valid(checkout: &Path, revision: &str) -> bool {
+    if !checkout.is_dir() {
+        return false;
+    }
+    let head = git_output(checkout, &["rev-parse", "HEAD^{commit}"]);
+    if !matches!(head.as_deref(), Ok(value) if value == revision) {
+        return false;
+    }
+    matches!(
+        git_output(checkout, &["status", "--porcelain=v1", "--untracked-files=all"]),
+        Ok(status) if status.is_empty()
+    )
+}
+
+fn validate_locked_revision(revision: &str) -> anyhow::Result<()> {
+    let valid_length = revision.len() == 40 || revision.len() == 64;
+    if !valid_length || !revision.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        bail!("locked hook source revision must be a full hexadecimal Git object ID: {revision:?}");
+    }
+    Ok(())
+}
+
+fn make_writable(root: &Path) -> anyhow::Result<()> {
+    for entry in walkdir::WalkDir::new(root).contents_first(true) {
+        let entry = entry.with_context(|| format!("walking hook checkout {}", root.display()))?;
+        if entry.file_type().is_symlink() {
+            continue;
+        }
+        let mut permissions = entry.metadata()?.permissions();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            permissions.set_mode(permissions.mode() | 0o700);
+        }
+        #[cfg(not(unix))]
+        permissions.set_readonly(false);
+        std::fs::set_permissions(entry.path(), permissions)
+            .with_context(|| format!("making hook checkout writable: {}", entry.path().display()))?;
+    }
+    Ok(())
+}
+
+fn make_read_only(root: &Path) -> anyhow::Result<()> {
+    for entry in walkdir::WalkDir::new(root).contents_first(true) {
+        let entry = entry.with_context(|| format!("walking hook checkout {}", root.display()))?;
+        if entry.file_type().is_symlink() {
+            continue;
+        }
+        let mut permissions = entry.metadata()?.permissions();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            permissions.set_mode(permissions.mode() & !0o222);
+        }
+        #[cfg(not(unix))]
+        permissions.set_readonly(true);
+        std::fs::set_permissions(entry.path(), permissions)
+            .with_context(|| format!("making hook checkout read-only: {}", entry.path().display()))?;
+    }
+    Ok(())
+}
+
+fn git_object_exists(repository: &Path, revision: &str) -> anyhow::Result<bool> {
     Ok(Command::new("git")
         .arg("-C")
-        .arg(checkout)
+        .arg(repository)
         .args(["cat-file", "-e", &format!("{revision}^{{commit}}")])
         .status()
         .context("checking locked Git revision")?
@@ -474,6 +607,60 @@ fn read_lock(root: &Path) -> anyhow::Result<Option<HookSourceLock>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn git_source(repository: &Path) -> HookSource {
+        HookSource {
+            id: "rules".to_string(),
+            path: None,
+            git: Some(repository.to_string_lossy().into_owned()),
+            revision: Some("HEAD".to_string()),
+            hooks: vec!["validate".to_string()],
+        }
+    }
+
+    fn create_git_source() -> tempfile::TempDir {
+        let repository = tempfile::tempdir().unwrap();
+        run_command(
+            Command::new("git").arg("init").arg("--quiet").arg(repository.path()),
+            "initialize test source",
+        )
+        .unwrap();
+        std::fs::write(repository.path().join(PRODUCER_MANIFEST_NAME), "version=1\nhooks=[]\n").unwrap();
+        run_git(repository.path(), &["add", PRODUCER_MANIFEST_NAME]).unwrap();
+        run_command(
+            Command::new("git").arg("-C").arg(repository.path()).args([
+                "-c",
+                "user.name=Poly Test",
+                "-c",
+                "user.email=poly@example.invalid",
+                "commit",
+                "--quiet",
+                "-m",
+                "catalog",
+            ]),
+            "commit test source",
+        )
+        .unwrap();
+        repository
+    }
+
+    fn make_writable(root: &Path) {
+        for entry in walkdir::WalkDir::new(root)
+            .contents_first(true)
+            .into_iter()
+            .filter_map(Result::ok)
+        {
+            let mut permissions = entry.metadata().unwrap().permissions();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                permissions.set_mode(permissions.mode() | 0o200);
+            }
+            #[cfg(not(unix))]
+            permissions.set_readonly(false);
+            std::fs::set_permissions(entry.path(), permissions).unwrap();
+        }
+    }
 
     fn write_consumer(_root: &Path, source: &Path, hooks: &[&str]) -> HooksConfig {
         let selected = hooks.iter().map(|id| format!("{id:?}")).collect::<Vec<_>>().join(",");
@@ -614,6 +801,10 @@ run = "printf"
         assert!(spec.hooks[0].always_run);
         assert!(spec.hooks[0].workspace);
         assert!(spec.hooks[0].cwd.is_none());
+        assert_eq!(
+            spec.hooks[0].env.get("POLY_HOOK_SOURCE_ROOT"),
+            Some(&producer.path().canonicalize().unwrap().to_string_lossy().into_owned())
+        );
     }
 
     #[test]
@@ -655,5 +846,146 @@ run = "true"
                 .to_string()
                 .contains("only through [[hooks.paths]]")
         );
+    }
+
+    #[test]
+    fn concurrent_consumers_share_one_mirror_and_checkout() {
+        let producer = create_git_source();
+        let cache = tempfile::tempdir().unwrap();
+        let source = git_source(producer.path());
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let mut workers = Vec::new();
+        for _ in 0..2 {
+            let cache_root = cache.path().to_path_buf();
+            let source = source.clone();
+            let barrier = barrier.clone();
+            workers.push(std::thread::spawn(move || {
+                barrier.wait();
+                provision_source(Path::new("."), &cache_root, &source, None, true).unwrap()
+            }));
+        }
+        let first = workers.remove(0).join().unwrap();
+        let second = workers.remove(0).join().unwrap();
+        assert_eq!(first.1, second.1);
+        let source_cache = cache
+            .path()
+            .join(poly_cache::hook_source_key(source.git.as_deref().unwrap()));
+        assert!(source_cache.join("mirror.git").is_dir());
+        assert_eq!(std::fs::read_dir(source_cache.join("checkouts")).unwrap().count(), 1);
+        assert!(
+            std::fs::metadata(first.1.join(PRODUCER_MANIFEST_NAME))
+                .unwrap()
+                .permissions()
+                .readonly()
+        );
+    }
+
+    #[test]
+    fn normal_run_reconstructs_exact_locked_checkout() {
+        let producer = create_git_source();
+        let cache = tempfile::tempdir().unwrap();
+        let source = git_source(producer.path());
+        let (locked, checkout) = provision_source(Path::new("."), cache.path(), &source, None, true).unwrap();
+        make_writable(&checkout);
+        std::fs::remove_dir_all(&checkout).unwrap();
+        let lock = HookSourceLock {
+            version: 1,
+            sources: vec![locked.unwrap()],
+        };
+        let (_, reconstructed) = provision_source(Path::new("."), cache.path(), &source, Some(&lock), false).unwrap();
+        assert_eq!(reconstructed, checkout);
+        assert!(checkout.join(PRODUCER_MANIFEST_NAME).is_file());
+        let head = git_output(&checkout, &["rev-parse", "HEAD"]).unwrap();
+        assert_eq!(head, lock.sources[0].revision);
+        assert!(!checkout.join(".git/objects/info/alternates").exists());
+    }
+
+    #[test]
+    fn normal_run_replaces_checkout_with_wrong_head() {
+        let producer = create_git_source();
+        let cache = tempfile::tempdir().unwrap();
+        let source = git_source(producer.path());
+        let (locked, checkout) = provision_source(Path::new("."), cache.path(), &source, None, true).unwrap();
+        let lock = HookSourceLock {
+            version: 1,
+            sources: vec![locked.unwrap()],
+        };
+        make_writable(&checkout);
+        std::fs::write(checkout.join(".git/HEAD"), "0000000000000000000000000000000000000000\n").unwrap();
+
+        let (_, reconstructed) = provision_source(Path::new("."), cache.path(), &source, Some(&lock), false).unwrap();
+
+        assert_eq!(reconstructed, checkout);
+        assert_eq!(
+            git_output(&checkout, &["rev-parse", "HEAD"]).unwrap(),
+            lock.sources[0].revision
+        );
+    }
+
+    #[test]
+    fn normal_run_replaces_tampered_checkout() {
+        let producer = create_git_source();
+        let cache = tempfile::tempdir().unwrap();
+        let source = git_source(producer.path());
+        let (locked, checkout) = provision_source(Path::new("."), cache.path(), &source, None, true).unwrap();
+        let lock = HookSourceLock {
+            version: 1,
+            sources: vec![locked.unwrap()],
+        };
+        make_writable(&checkout);
+        std::fs::write(
+            checkout.join(PRODUCER_MANIFEST_NAME),
+            "version=1\nhooks=[]\n# tampered\n",
+        )
+        .unwrap();
+
+        provision_source(Path::new("."), cache.path(), &source, Some(&lock), false).unwrap();
+
+        assert!(
+            !std::fs::read_to_string(checkout.join(PRODUCER_MANIFEST_NAME))
+                .unwrap()
+                .contains("tampered")
+        );
+    }
+
+    #[test]
+    fn normal_run_reuses_valid_checkout_without_mirror() {
+        let producer = create_git_source();
+        let cache = tempfile::tempdir().unwrap();
+        let source = git_source(producer.path());
+        let (locked, checkout) = provision_source(Path::new("."), cache.path(), &source, None, true).unwrap();
+        let lock = HookSourceLock {
+            version: 1,
+            sources: vec![locked.unwrap()],
+        };
+        let source_cache = cache
+            .path()
+            .join(poly_cache::hook_source_key(source.git.as_deref().unwrap()));
+        std::fs::remove_dir_all(source_cache.join("mirror.git")).unwrap();
+
+        let (_, reused) = provision_source(Path::new("."), cache.path(), &source, Some(&lock), false).unwrap();
+
+        assert_eq!(reused, checkout);
+        assert!(!source_cache.join("mirror.git").exists());
+    }
+
+    #[test]
+    fn normal_run_rejects_non_oid_lock_revision() {
+        let producer = create_git_source();
+        let cache = tempfile::tempdir().unwrap();
+        let source = git_source(producer.path());
+        let lock = HookSourceLock {
+            version: 1,
+            sources: vec![LockedSource {
+                id: source.id.clone(),
+                source: source.git.clone().unwrap(),
+                revision: "../../outside".to_string(),
+                path: "cache://invalid".to_string(),
+            }],
+        };
+
+        let error = provision_source(Path::new("."), cache.path(), &source, Some(&lock), false).unwrap_err();
+
+        assert!(error.to_string().contains("full hexadecimal Git object ID"));
     }
 }

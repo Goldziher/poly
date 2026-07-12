@@ -22,6 +22,11 @@
 //!     lint/<hex-key>     — serde_json-encoded Vec<Diagnostic>
 //!     fmt/<hex-key>      — UTF-8 formatted text
 //!     hook/<hex-key>     — JSON-encoded hook outcome
+//!
+//! <platform-cache>/poly/hook-sources/
+//!   <url-key>/mirror.git/             — shared bare Git mirror
+//!   <url-key>/source.lock             — per-source interprocess lock
+//!   <url-key>/checkouts/<commit-sha>/ — immutable producer checkout
 //! ```
 //!
 //! # Key derivation
@@ -141,6 +146,19 @@ pub fn cache_home() -> anyhow::Result<PathBuf> {
     let strategy = etcetera::choose_base_strategy()
         .map_err(|e| anyhow::anyhow!("could not resolve the platform cache directory: {e}"))?;
     Ok(strategy.cache_dir().join("poly"))
+}
+
+/// Global cache root for shared Git hook sources.
+///
+/// Unlike result caches, hook sources are keyed by their exact remote URL
+/// and shared by every consumer repository on the machine.
+pub fn hook_sources_dir() -> anyhow::Result<PathBuf> {
+    Ok(cache_home()?.join("hook-sources"))
+}
+
+/// Stable key for a Git hook source URL.
+pub fn hook_source_key(url: &str) -> String {
+    blake3::hash(url.as_bytes()).to_hex()[..32].to_string()
 }
 
 /// A stable, filesystem-safe key for the repository rooted at `anchor`.
@@ -769,5 +787,27 @@ mod tests {
         ResultCache::open(root.clone(), true).unwrap();
         let version = std::fs::read_to_string(root.join("VERSION")).unwrap();
         assert_eq!(version, "0", "existing VERSION must not be overwritten");
+    }
+
+    #[test]
+    fn hook_sources_are_global_and_url_keyed() {
+        let root = tempfile::tempdir().unwrap();
+        let first_repo = root.path().join("first");
+        let second_repo = root.path().join("second");
+        std::fs::create_dir_all(&first_repo).unwrap();
+        std::fs::create_dir_all(&second_repo).unwrap();
+
+        let global = hook_sources_dir().unwrap();
+        assert_eq!(global, cache_home().unwrap().join("hook-sources"));
+        assert!(!global.starts_with(repo_cache_dir(&first_repo).unwrap()));
+        assert!(!global.starts_with(repo_cache_dir(&second_repo).unwrap()));
+        assert_ne!(
+            hook_source_key("https://example.com/hooks.git/"),
+            hook_source_key("https://example.com/hooks.git")
+        );
+        assert_ne!(
+            hook_source_key("https://example.com/one"),
+            hook_source_key("https://example.com/two")
+        );
     }
 }
