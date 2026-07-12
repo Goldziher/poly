@@ -13,7 +13,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.15.2"
+version = "0.15.3"
 edition = "2024"
 rust-version = "1.96"
 license = "MIT"
@@ -88,7 +88,7 @@ mago-text-edit = { version = "=1.42.0" }
 malva = "0.16"
 markdown = "1.0.0"
 markup_fmt = "0.27"
-memchr = "2.8.2"
+memchr = "2.8.3"
 owo-colors = { version = "4", features = ["supports-colors"] }
 oxc_allocator = { git = "https://github.com/oxc-project/oxc", rev = "24c19a8216c450c7438fd051d0dc96cffcb9e231" }
 oxc_diagnostics = { git = "https://github.com/oxc-project/oxc", rev = "24c19a8216c450c7438fd051d0dc96cffcb9e231" }
@@ -114,7 +114,7 @@ quick-xml = "0.41"
 rand = "0.10.2"
 rayon = "1"
 regex = "1"
-rmcp = { version = "2.1.0", features = ["schemars"] }
+rmcp = { version = "2.2.0", features = ["schemars"] }
 rubyfmt = { git = "https://github.com/fables-tales/rubyfmt", rev = "d3d433caffa02446a295f60fd8b727099bebbb97", default-features = false }
 ruff_db = { git = "https://github.com/astral-sh/ruff", rev = "e6f1513d78c99bc8af1fcc3bc2a9a81e25cb3c2d" }
 ruff_diagnostics = { git = "https://github.com/astral-sh/ruff", rev = "e6f1513d78c99bc8af1fcc3bc2a9a81e25cb3c2d" }
@@ -129,7 +129,7 @@ rumdl = { version = "0.2", default-features = false }
 rustc-hash = "2.1.3"
 rustix = { version = "1.1.4", features = ["pty", "process", "fs", "termios"] }
 same-file = "1.0.6"
-saphyr = "0.0.9"
+saphyr = "0.0.11"
 schemars = "1.2.1"
 seahash = "4.1.0"
 semver = { version = "1.0.28", features = ["serde"] }
@@ -157,7 +157,7 @@ tree-sitter = "0.26"
 tree-sitter-language-pack = "1.12"
 typos = "0.10"
 typos-dict = "0.13"
-uncomment = "3.2"
+uncomment = "3.4"
 unicase = "2"
 unicode-width = { version = "0.2.2", default-features = false }
 walkdir = "2.5.0"

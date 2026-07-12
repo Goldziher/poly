@@ -5,6 +5,13 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
+## [0.15.3] - 2026-07-12
+
+### Changed
+
+- **Dependency refresh.** Bumped `rmcp` (2.1 → 2.2), `saphyr` (0.0.9 → 0.0.11), `uncomment` (3.2 → 3.4), and
+  `memchr` (2.8.2 → 2.8.3), along with transitive crates.io updates.
+
 ## [0.15.2] - 2026-07-12
 
 ### Fixed

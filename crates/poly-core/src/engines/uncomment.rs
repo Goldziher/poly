@@ -42,7 +42,7 @@ use crate::language::Language;
 /// Cache-key version: the wrapped crate version plus a marker for this backend's
 /// own mapping logic. Bump whenever `uncomment` is updated OR the diagnostic/edit
 /// mapping below changes (either alters output and must bust the cache).
-const UNCOMMENT_VERSION: &str = "uncomment-3.2.0+map1";
+const UNCOMMENT_VERSION: &str = "uncomment-3.4.0+map1";
 
 thread_local! {
     /// One `Processor` per rayon worker thread. The processor owns a reusable
