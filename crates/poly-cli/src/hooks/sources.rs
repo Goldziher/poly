@@ -513,6 +513,7 @@ fn validate_locked_revision(revision: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[cfg_attr(windows, allow(clippy::permissions_set_readonly_false))]
 fn make_writable(root: &Path) -> anyhow::Result<()> {
     for entry in walkdir::WalkDir::new(root).contents_first(true) {
         let entry = entry.with_context(|| format!("walking hook checkout {}", root.display()))?;
@@ -667,6 +668,7 @@ mod tests {
         repository
     }
 
+    #[cfg_attr(windows, allow(clippy::permissions_set_readonly_false))]
     fn make_writable(root: &Path) {
         for entry in walkdir::WalkDir::new(root)
             .contents_first(true)

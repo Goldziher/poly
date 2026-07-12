@@ -5,6 +5,12 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
+## [Unreleased]
+
+### Fixed
+
+- Allow the intentional Windows read-only attribute reset used to rebuild invalid cached hook checkouts.
+
 ## [0.15.1] - 2026-07-12
 
 ### Fixed
