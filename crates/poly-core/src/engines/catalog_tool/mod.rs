@@ -76,12 +76,6 @@ enum Mode {
     Lint,
 }
 
-/// Inputs at or below this size are written to the child's stdin inline (they
-/// fit the OS pipe buffer, so the write cannot block); larger inputs use a
-/// dedicated writer thread to avoid a pipe-buffer deadlock. Mirrors the
-/// native-tool formatter's policy.
-const STDIN_INLINE_LIMIT: usize = 8 * 1024;
-
 /// Per-process cache of `binary name -> Some(version) | None (absent)`.
 fn probe_cache() -> &'static Mutex<HashMap<String, Option<String>>> {
     static CACHE: OnceLock<Mutex<HashMap<String, Option<String>>>> = OnceLock::new();
@@ -351,35 +345,20 @@ impl CatalogToolEngine {
             .stdin
             .take()
             .ok_or_else(|| anyhow::anyhow!("'{binary}' stdin pipe was not created"))?;
-        let writer = if content.len() <= STDIN_INLINE_LIMIT {
-            let result = stdin_handle.write_all(content.as_bytes());
-            drop(stdin_handle);
-            WriteOutcome::Inline(result)
-        } else {
-            WriteOutcome::Thread(thread::spawn(move || stdin_handle.write_all(content.as_bytes())))
-        };
+        let write_thread = thread::spawn(move || stdin_handle.write_all(content.as_bytes()));
 
         let output = child
             .wait_with_output()
             .with_context(|| format!("'{binary}' wait_with_output failed"))?;
 
+        let write_result = write_thread
+            .join()
+            .map_err(|_| anyhow::anyhow!("stdin writer panicked for '{binary}'"))?;
+
         if !output.status.success() {
-            if let WriteOutcome::Thread(handle) = writer {
-                let _ = handle.join();
-            }
             return Ok(FormatOutput::Unchanged);
         }
-        match writer {
-            WriteOutcome::Inline(result) => {
-                result.with_context(|| format!("failed to write to '{binary}' stdin"))?;
-            }
-            WriteOutcome::Thread(handle) => {
-                handle
-                    .join()
-                    .map_err(|_| anyhow::anyhow!("stdin writer panicked for '{binary}'"))?
-                    .with_context(|| format!("failed to write to '{binary}' stdin"))?;
-            }
-        }
+        write_result.with_context(|| format!("failed to write to '{binary}' stdin"))?;
 
         let formatted =
             String::from_utf8(output.stdout).with_context(|| format!("'{binary}' produced non-UTF-8 output"))?;
@@ -438,20 +417,12 @@ impl CatalogToolEngine {
             .stdin
             .take()
             .ok_or_else(|| anyhow::anyhow!("'{binary}' stdin pipe was not created"))?;
-        let writer = if content.len() <= STDIN_INLINE_LIMIT {
-            let result = stdin_handle.write_all(content.as_bytes());
-            drop(stdin_handle);
-            WriteOutcome::Inline(result)
-        } else {
-            WriteOutcome::Thread(thread::spawn(move || stdin_handle.write_all(content.as_bytes())))
-        };
+        let write_thread = thread::spawn(move || stdin_handle.write_all(content.as_bytes()));
 
         let output = child
             .wait_with_output()
             .with_context(|| format!("'{binary}' wait_with_output failed"))?;
-        if let WriteOutcome::Thread(handle) = writer {
-            let _ = handle.join();
-        }
+        let _ = write_thread.join();
         Ok(LintOutcome::new(
             output.status.success(),
             &output.stdout,
@@ -585,12 +556,6 @@ fn is_mutating(arguments: &[String]) -> bool {
     arguments
         .iter()
         .any(|argument| MUTATING_FLAGS.contains(&argument.as_str()))
-}
-
-/// How stdin was fed to the child (see [`CatalogToolEngine::format_via_stdin`]).
-enum WriteOutcome {
-    Inline(std::io::Result<()>),
-    Thread(thread::JoinHandle<std::io::Result<()>>),
 }
 
 /// `Unchanged` when `formatted` equals the source byte-for-byte, else
