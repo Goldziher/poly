@@ -19,6 +19,7 @@ use serde::Deserialize;
 mod cache;
 mod commit;
 mod defaults;
+mod hook_sources;
 mod hooks;
 mod tools;
 mod typos_native;
@@ -26,6 +27,10 @@ mod typos_native;
 pub use cache::{CacheConfig, HookCacheMode, ResultsCacheConfig, SccacheConfig};
 pub use commit::{CleanupRule, CommitConfig, CommitRules, ExcludeRule, MessageRule};
 pub use defaults::{GlobalDefaults, LineEnding};
+pub use hook_sources::{
+    HookInstallChannel, HookMachinePreferences, HookSource, HookSourceConfig, MissingToolchainPolicy,
+    load_hook_source_config,
+};
 pub use hooks::{
     BuiltinHook, BuiltinHooks, CargoHooks, DEFAULT_MAX_ADDED_FILE_KB, FileSafetyHooks, Guard, GuardCondition,
     GuardMatch, HooksConfig, Job, JobCache, ParseStageError, Patterns, Stage, StageConfig,

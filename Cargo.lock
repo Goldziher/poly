@@ -4666,6 +4666,7 @@ dependencies = [
  "poly-core",
  "poly-hooks",
  "poly-mcp",
+ "serde",
  "serde-saphyr",
  "serde_json",
  "tempfile",

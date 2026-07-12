@@ -372,8 +372,45 @@ Install poly's git hooks once — they then run on every `git commit`:
 poly hooks install
 ```
 
-Hooks come from `poly.toml`: builtins plus inline jobs. poly never clones or runs foreign
-pre-commit repositories.
+Hooks come from `poly.toml` (builtins and inline jobs) and optional local or Git sources in
+`poly-hooks.toml`. Git refs are resolved into `poly-hooks.lock`; normal runs stay on the locked
+commit and `poly hooks update` refreshes configured branches or tags.
+
+```toml
+version = 1
+
+[[sources]]
+id = "project"
+path = "tools/hooks"
+channel = "system"
+
+[[sources]]
+id = "shared"
+git = "https://github.com/acme/poly-hooks.git"
+revision = "main"
+channel = "managed"
+toolchain = "python"
+
+[sources.installers]
+brew = ["brew", "install", "python@3.13"]
+uv = ["uv", "python", "install", "3.13"]
+```
+
+Each source contains `poly-hook.toml`, using the same `[pre-commit.commands.*]` and stage schema
+as inline hooks. Machine-only preferences belong in gitignored `poly.local.toml`:
+
+```toml
+[hook_preferences]
+channels = ["brew", "uv"]
+toolchains.python = "3.13"
+missing_toolchain = "error"
+```
+
+`poly hooks install` and `poly hooks run` install a missing toolchain using the first matching
+channel. Repository-contained local paths execute in place and reload on every run.
+Treat `poly-hooks.toml`, `poly-hooks.lock`, every source manifest, and its installer recipes as
+trusted code: hooks and installers execute with your user permissions. Normal runs never resolve
+Git refs or modify the lock; review changes and run `poly hooks update` explicitly.
 
 <details>
 <summary><strong>Builtin hooks</strong></summary>

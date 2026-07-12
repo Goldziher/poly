@@ -7,6 +7,11 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+### Added
+
+- Load executable local-path and Git hook sources from `poly-hooks.toml`, lock remote revisions, and refresh them with `poly hooks update`.
+- Install missing hook toolchains on install or first run using machine-local channel preferences from `poly.local.toml`.
+
 ## [0.12.0] - 2026-07-09
 
 ### Added

@@ -10,6 +10,7 @@
 pub mod checks;
 pub mod commands;
 pub mod lower;
+pub mod sources;
 pub mod workspace_lint;
 
 pub use commands::{HooksArgs, run_hooks};
