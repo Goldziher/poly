@@ -422,10 +422,8 @@ fn parse_footer_line(line: &str) -> Option<FooterEntry> {
 
     let (idx, sep_len) = if let Some(idx) = line.find(": ") {
         (idx, 2)
-    } else if let Some(idx) = line.find(" #") {
-        (idx, 2)
     } else {
-        return None;
+        (line.find(" #")?, 2)
     };
 
     if idx == 0 {
