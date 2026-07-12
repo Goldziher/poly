@@ -147,3 +147,8 @@ disable = ["MD013", "MD024", "MD033", "MD036", "MD041"]
 "Package.swift" = ["comment", "doc-comment"]
 "crates/poly-core/src/engines/dockerfile.rs" = ["comment", "doc-comment"]
 "crates/poly-core/tests/dockerfile.rs" = ["comment", "doc-comment"]
+[[hooks.sources]]
+id = "ai-rulez"
+git = "https://github.com/Goldziher/ai-rulez.git"
+revision = "v4.9.1"
+hooks = ["ai-rulez-validate"]
