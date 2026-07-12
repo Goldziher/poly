@@ -244,11 +244,23 @@ fn select_hooks(
 }
 
 fn check_path(path: &HookPath, root: &Path) -> anyhow::Result<bool> {
+    if let Some(binary) = command_v_binary(&path.check) {
+        return Ok(which::which(binary).is_ok());
+    }
     let output = shell_command(&path.check)
         .current_dir(root)
         .output()
         .with_context(|| format!("checking hook execution channel {:?}", path.channel))?;
     Ok(output.status.success())
+}
+
+fn command_v_binary(check: &str) -> Option<&str> {
+    let mut words = check.split_whitespace();
+    if words.next()? != "command" || words.next()? != "-v" {
+        return None;
+    }
+    let binary = words.next()?;
+    words.next().is_none().then_some(binary)
 }
 
 fn shell_command(command: &str) -> Command {
@@ -425,7 +437,8 @@ fn ensure_mirror(mirror: &Path, url: &str) -> anyhow::Result<()> {
         std::fs::rename(&temporary_path, mirror)
             .with_context(|| format!("installing hook source mirror {}", mirror.display()))?;
     }
-    let origin = git_output(mirror, &["remote", "get-url", "origin"])?;
+    // Read the stored URL without applying the user's Git `insteadOf` rewrites.
+    let origin = git_output(mirror, &["config", "--get", "remote.origin.url"])?;
     if origin != url {
         bail!(
             "cached hook source mirror origin {:?} does not match configured {:?}",
@@ -608,6 +621,14 @@ fn read_lock(root: &Path) -> anyhow::Result<Option<HookSourceLock>> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn parses_portable_command_existence_check() {
+        assert_eq!(command_v_binary("command -v npx"), Some("npx"));
+        assert_eq!(command_v_binary("command -v"), None);
+        assert_eq!(command_v_binary("command -v npx && false"), None);
+        assert_eq!(command_v_binary("npx --version"), None);
+    }
+
     fn git_source(repository: &Path) -> HookSource {
         HookSource {
             id: "rules".to_string(),
@@ -633,6 +654,8 @@ mod tests {
                 "user.name=Poly Test",
                 "-c",
                 "user.email=poly@example.invalid",
+                "-c",
+                "commit.gpgSign=false",
                 "commit",
                 "--quiet",
                 "-m",
@@ -881,26 +904,6 @@ run = "true"
     }
 
     #[test]
-    fn normal_run_reconstructs_exact_locked_checkout() {
-        let producer = create_git_source();
-        let cache = tempfile::tempdir().unwrap();
-        let source = git_source(producer.path());
-        let (locked, checkout) = provision_source(Path::new("."), cache.path(), &source, None, true).unwrap();
-        make_writable(&checkout);
-        std::fs::remove_dir_all(&checkout).unwrap();
-        let lock = HookSourceLock {
-            version: 1,
-            sources: vec![locked.unwrap()],
-        };
-        let (_, reconstructed) = provision_source(Path::new("."), cache.path(), &source, Some(&lock), false).unwrap();
-        assert_eq!(reconstructed, checkout);
-        assert!(checkout.join(PRODUCER_MANIFEST_NAME).is_file());
-        let head = git_output(&checkout, &["rev-parse", "HEAD"]).unwrap();
-        assert_eq!(head, lock.sources[0].revision);
-        assert!(!checkout.join(".git/objects/info/alternates").exists());
-    }
-
-    #[test]
     fn normal_run_replaces_checkout_with_wrong_head() {
         let producer = create_git_source();
         let cache = tempfile::tempdir().unwrap();
@@ -967,6 +970,7 @@ run = "true"
 
         assert_eq!(reused, checkout);
         assert!(!source_cache.join("mirror.git").exists());
+        assert!(!checkout.join(".git/objects/info/alternates").exists());
     }
 
     #[test]
