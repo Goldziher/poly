@@ -5,6 +5,15 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
+## [0.15.4] - 2026-07-12
+
+### Fixed
+
+- Prevent `poly hooks` (and `poly fmt`/`poly lint`) from intermittently hanging: the native-tool and catalog-tool
+  stdin backends now always feed a child's stdin from a dedicated thread while draining its stdout/stderr, instead of
+  writing small inputs inline before the drain. A wrapped tool that emitted output while still reading stdin could fill
+  its output pipe and deadlock against the blocked writer.
+
 ## [0.15.3] - 2026-07-12
 
 ### Changed
