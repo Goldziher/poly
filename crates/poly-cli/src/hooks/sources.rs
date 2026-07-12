@@ -1,24 +1,53 @@
-//! Provision local and pinned Git sources declared in `poly-hooks.toml`.
+//! Provision catalogs selected by `[[hooks.sources]]` in `poly.toml`.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{Context, bail};
-use poly_config::{
-    HookInstallChannel, HookMachinePreferences, HookSource, MissingToolchainPolicy, load_hook_source_config,
-};
+use poly_config::{HookMachinePreferences, HookSource, HooksConfig, Job, Stage, StageConfig, load_hook_preferences};
 use serde::{Deserialize, Serialize};
 
 const LOCK_FILE_NAME: &str = "poly-hooks.lock";
-const SOURCE_MANIFEST_NAME: &str = "poly-hook.toml";
+const PRODUCER_MANIFEST_NAME: &str = "poly-hooks.toml";
 
-/// A provisioned source and its live or locked checkout directory.
+/// A selected producer hook and the execution path chosen for this machine.
 #[derive(Debug, Clone)]
-pub struct ResolvedSource {
-    /// Stable identifier from the repository's `poly-hooks.toml`.
-    pub id: String,
-    /// Canonical local directory containing the source's `poly-hook.toml`.
-    pub root: PathBuf,
+pub struct ResolvedHook {
+    source_id: String,
+    source_root: PathBuf,
+    manifest: ManifestHook,
+    command: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HookPath {
+    channel: String,
+    check: String,
+    run: String,
+    #[serde(default)]
+    install: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ManifestHook {
+    id: String,
+    stages: Vec<Stage>,
+    paths: Vec<HookPath>,
+    #[serde(default)]
+    pass_filenames: Option<bool>,
+    #[serde(default)]
+    always_run: Option<bool>,
+    #[serde(flatten)]
+    job: Job,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProducerManifest {
+    version: u32,
+    hooks: Vec<ManifestHook>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -31,202 +60,259 @@ struct HookSourceLock {
 struct LockedSource {
     id: String,
     source: String,
-    revision: Option<String>,
+    revision: String,
     path: String,
 }
 
-/// Provision configured hook sources and atomically refresh `poly-hooks.lock`.
-/// Returns immediately when the repository has no `poly-hooks.toml`.
-pub fn provision(root: &Path, update: bool) -> anyhow::Result<Vec<ResolvedSource>> {
-    let Some((config, preferences)) = load_hook_source_config(root)? else {
+/// Resolve selected sources and choose one eligible path for every selected hook.
+pub fn provision(root: &Path, hooks: &HooksConfig, update: bool, install: bool) -> anyhow::Result<Vec<ResolvedHook>> {
+    reject_legacy_consumer_file(root)?;
+    if hooks.sources.is_empty() {
         return Ok(Vec::new());
-    };
+    }
+    let preferences = load_hook_preferences(root, true)?;
     let cache_root = poly_cache::repo_cache_dir(root)?.join("hook-sources");
     std::fs::create_dir_all(&cache_root)
         .with_context(|| format!("creating hook source cache {}", cache_root.display()))?;
-
     let existing = read_lock(root)?;
-    let mut locked = Vec::with_capacity(config.sources.len());
-    let mut resolved = Vec::with_capacity(config.sources.len());
-    for source in &config.sources {
-        if should_skip_for_toolchain(source, &preferences)? {
-            continue;
-        }
+    let mut locked = Vec::new();
+    let mut resolved = Vec::new();
+    for source in &hooks.sources {
         let (entry, source_root) = provision_source(root, &cache_root, source, existing.as_ref(), update)?;
-        ensure_toolchain(source, &preferences)?;
-        locked.push(entry);
-        resolved.push(ResolvedSource {
-            id: source.id.clone(),
-            root: source_root,
-        });
+        if let Some(entry) = entry {
+            locked.push(entry);
+        }
+        let manifest = load_manifest(&source_root)?;
+        resolved.extend(select_hooks(source, &source_root, manifest, &preferences, install)?);
     }
     if update {
-        write_lock(
-            root,
-            &HookSourceLock {
-                version: 1,
-                sources: locked,
-            },
-        )?;
+        if locked.is_empty() {
+            remove_lock(root)?;
+        } else {
+            write_lock(
+                root,
+                &HookSourceLock {
+                    version: 1,
+                    sources: locked,
+                },
+            )?;
+        }
     }
     Ok(resolved)
 }
 
-/// Load a source's stage manifest. Local sources are read on every invocation,
-/// so edits are immediately visible without an update step.
-pub fn load_manifest(source: &ResolvedSource) -> anyhow::Result<poly_config::HooksConfig> {
-    let path = source.root.join(SOURCE_MANIFEST_NAME);
-    let text = std::fs::read_to_string(&path).with_context(|| format!("reading hook manifest {}", path.display()))?;
-    let hooks: poly_config::HooksConfig =
-        toml::from_str(&text).with_context(|| format!("parsing hook manifest {}", path.display()))?;
-    hooks.validate().map_err(anyhow::Error::msg)?;
-    validate_manifest_paths(&hooks)?;
-    Ok(hooks)
-}
-
-fn validate_manifest_paths(hooks: &poly_config::HooksConfig) -> anyhow::Result<()> {
-    for (stage, config) in &hooks.stage_configs {
-        for (label, job) in config.labeled_jobs() {
-            for (field, value) in [("root", job.root.as_deref()), ("script", job.script.as_deref())] {
-                let Some(value) = value else { continue };
-                let path = Path::new(value);
-                if path.is_absolute()
-                    || path
-                        .components()
-                        .any(|component| matches!(component, std::path::Component::ParentDir))
-                {
-                    bail!("hook manifest stage {stage} job {label:?} {field} must stay inside its source");
-                }
-            }
-        }
+fn reject_legacy_consumer_file(root: &Path) -> anyhow::Result<()> {
+    let legacy = root.join(PRODUCER_MANIFEST_NAME);
+    if !legacy.is_file() {
+        return Ok(());
+    }
+    let text = std::fs::read_to_string(&legacy).with_context(|| format!("reading {}", legacy.display()))?;
+    let document: toml::Value = toml::from_str(&text).with_context(|| format!("parsing {}", legacy.display()))?;
+    if document.get("sources").is_some() {
+        bail!(
+            "{} is a producer catalog, not consumer configuration; move source declarations to [[hooks.sources]] in poly.toml",
+            legacy.display()
+        );
     }
     Ok(())
 }
 
-/// Lower source manifests into `spec`, prefixing identifiers and anchoring
-/// scripts/working directories at each source checkout.
+fn load_manifest(root: &Path) -> anyhow::Result<ProducerManifest> {
+    let path = root.join(PRODUCER_MANIFEST_NAME);
+    let text = std::fs::read_to_string(&path).with_context(|| format!("reading hook catalog {}", path.display()))?;
+    let manifest: ProducerManifest =
+        toml::from_str(&text).with_context(|| format!("parsing hook catalog {}", path.display()))?;
+    if manifest.version != 1 {
+        bail!(
+            "hook catalog {} has unsupported version {}; expected 1",
+            path.display(),
+            manifest.version
+        );
+    }
+    let mut ids = std::collections::BTreeSet::new();
+    for hook in &manifest.hooks {
+        if hook.id.is_empty() || !ids.insert(&hook.id) {
+            bail!(
+                "hook catalog {} contains an empty or duplicate hook id {:?}",
+                path.display(),
+                hook.id
+            );
+        }
+        if hook.stages.is_empty() {
+            bail!("catalog hook {:?} must declare at least one stage", hook.id);
+        }
+        if hook.stages.contains(&Stage::Always) {
+            bail!("catalog hook {:?} cannot use the `always` pseudo-stage", hook.id);
+        }
+        if hook.job.run.is_some() || hook.job.script.is_some() || hook.job.runner.is_some() {
+            bail!(
+                "catalog hook {:?} must declare execution only through [[hooks.paths]]",
+                hook.id
+            );
+        }
+        if hook.paths.is_empty() {
+            bail!("catalog hook {:?} must declare at least one execution path", hook.id);
+        }
+        let mut channels = std::collections::BTreeSet::new();
+        for execution in &hook.paths {
+            if execution.channel.is_empty() || execution.check.is_empty() || execution.run.is_empty() {
+                bail!(
+                    "catalog hook {:?} paths require nonempty channel, check, and run",
+                    hook.id
+                );
+            }
+            if execution.install.as_ref().is_some_and(String::is_empty) {
+                bail!("catalog hook {:?} path install command cannot be empty", hook.id);
+            }
+            if !channels.insert(&execution.channel) {
+                bail!(
+                    "catalog hook {:?} has duplicate channel {:?}",
+                    hook.id,
+                    execution.channel
+                );
+            }
+        }
+    }
+    Ok(manifest)
+}
+
+fn select_hooks(
+    source: &HookSource,
+    source_root: &Path,
+    manifest: ProducerManifest,
+    preferences: &HookMachinePreferences,
+    install: bool,
+) -> anyhow::Result<Vec<ResolvedHook>> {
+    let by_id: std::collections::BTreeMap<_, _> =
+        manifest.hooks.into_iter().map(|hook| (hook.id.clone(), hook)).collect();
+    source
+        .hooks
+        .iter()
+        .map(|id| {
+            let manifest = by_id
+                .get(id)
+                .cloned()
+                .ok_or_else(|| anyhow::anyhow!("hook source {:?} selects unknown hook {:?}", source.id, id))?;
+            let mut attempted = Vec::new();
+            let mut selected_path = None;
+            for channel in &preferences.channels {
+                let Some(path) = manifest.paths.iter().find(|path| &path.channel == channel) else {
+                    continue;
+                };
+                attempted.push(format!("{} ({})", channel, path.check));
+                if check_path(path, source_root)? {
+                    selected_path = Some(path.clone());
+                    break;
+                }
+            }
+            let path = selected_path.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "hook source {:?} hook {:?} has no eligible execution path; attempted: {}",
+                    source.id,
+                    id,
+                    if attempted.is_empty() {
+                        "no configured channels matched".to_string()
+                    } else {
+                        attempted.join(", ")
+                    }
+                )
+            })?;
+            if install && let Some(command) = &path.install {
+                run_command(
+                    shell_command(command).current_dir(source_root),
+                    "install hook execution path",
+                )?;
+            }
+            Ok(ResolvedHook {
+                source_id: source.id.clone(),
+                source_root: source_root.to_path_buf(),
+                manifest,
+                command: path.run.clone(),
+            })
+        })
+        .collect()
+}
+
+fn check_path(path: &HookPath, root: &Path) -> anyhow::Result<bool> {
+    let output = shell_command(&path.check)
+        .current_dir(root)
+        .output()
+        .with_context(|| format!("checking hook execution channel {:?}", path.channel))?;
+    Ok(output.status.success())
+}
+
+fn shell_command(command: &str) -> Command {
+    #[cfg(windows)]
+    let process = {
+        let mut p = Command::new("cmd");
+        p.args(["/C", command]);
+        p
+    };
+    #[cfg(not(windows))]
+    let process = {
+        let mut p = Command::new("sh");
+        p.args(["-c", command]);
+        p
+    };
+    process
+}
+
+/// Merge selected producer hooks for `spec.stage` into the native runner model.
 pub fn merge_stage(
     spec: &mut poly_hooks::StageSpec,
-    sources: &[ResolvedSource],
+    hooks: &[ResolvedHook],
     poly_bin: &Path,
     files: &[PathBuf],
     cache_mode: &poly_config::HookCacheMode,
+    consumer_root: &Path,
 ) -> anyhow::Result<()> {
-    for source in sources {
-        let hooks = load_manifest(source)?;
-        let mut source_spec = super::lower::lower_stage(
-            &hooks,
+    for selected in hooks {
+        if !selected
+            .manifest
+            .stages
+            .iter()
+            .any(|stage| super::lower::to_hook_stage(*stage) == Some(spec.stage))
+        {
+            continue;
+        }
+        let mut job = selected.manifest.job.clone();
+        job.name = Some(selected.manifest.id.clone());
+        job.run = Some(selected.command.clone());
+        job.script = None;
+        let mut stage = StageConfig::default();
+        stage.commands.insert(selected.manifest.id.clone(), job);
+        let mut config = HooksConfig {
+            present: true,
+            ..HooksConfig::default()
+        };
+        config
+            .stage_configs
+            .insert(super::lower::from_hook_stage(spec.stage), stage);
+        let mut lowered = super::lower::lower_stage(
+            &config,
             poly_bin,
             spec.stage,
             files,
             cache_mode,
-            &source.root,
+            consumer_root,
             &poly_config::ToolsConfig::default(),
         )?;
-        for hook in &mut source_spec.hooks {
-            hook.id = format!("{}:{}", source.id, hook.id);
-            hook.cwd = Some(match hook.cwd.take() {
-                Some(relative) => source.root.join(relative),
-                None => source.root.clone(),
-            });
-            if let poly_hooks::HookCommand::Script { path, .. } = &mut hook.command {
-                let candidate = Path::new(path);
-                if candidate.is_relative() {
-                    *path = source.root.join(candidate).to_string_lossy().into_owned();
-                }
+        for hook in &mut lowered.hooks {
+            hook.id = format!("{}:{}", selected.source_id, hook.id);
+            if let Some(pass_filenames) = selected.manifest.pass_filenames {
+                hook.pass_filenames = pass_filenames;
+            }
+            if let Some(always_run) = selected.manifest.always_run {
+                hook.always_run = always_run;
+            }
+            if !hook.workspace {
+                hook.cwd = Some(selected.source_root.clone());
             }
         }
-        if let Some(source_precondition) = source_spec.precondition.take() {
-            spec.precondition = Some(match spec.precondition.take() {
-                Some(existing) => format!("({existing}) && ({source_precondition})"),
-                None => source_precondition,
-            });
-        }
-        spec.before.extend(source_spec.before);
-        spec.after.extend(source_spec.after);
-        spec.hooks.extend(source_spec.hooks);
+        spec.hooks.extend(lowered.hooks);
     }
     spec.hooks.sort_by_key(|hook| hook.priority);
     Ok(())
-}
-
-fn should_skip_for_toolchain(source: &HookSource, preferences: &HookMachinePreferences) -> anyhow::Result<bool> {
-    if source.channel != HookInstallChannel::Managed || source.toolchain.is_some() {
-        return Ok(false);
-    }
-    match preferences.missing_toolchain {
-        MissingToolchainPolicy::Error => bail!(
-            "managed hook source {:?} has no toolchain; set `toolchain` in poly-hooks.toml or choose missing_toolchain = \"warn\"/\"skip\" in poly.local.toml",
-            source.id
-        ),
-        MissingToolchainPolicy::Warn => {
-            eprintln!(
-                "poly hooks: skipping source {:?}: managed toolchain is unset",
-                source.id
-            );
-            Ok(true)
-        }
-        MissingToolchainPolicy::Skip => Ok(true),
-    }
-}
-
-fn ensure_toolchain(source: &HookSource, preferences: &HookMachinePreferences) -> anyhow::Result<()> {
-    let Some(toolchain) = source.toolchain.as_deref() else {
-        return Ok(());
-    };
-    if which::which(toolchain).is_ok() {
-        return Ok(());
-    }
-    if source.channel == HookInstallChannel::System {
-        bail!(
-            "hook source {:?} requires missing system toolchain {:?}",
-            source.id,
-            toolchain
-        );
-    }
-    for channel in &preferences.channels {
-        if let Some(argv) = source.installers.get(channel).filter(|argv| !argv.is_empty()) {
-            eprintln!(
-                "poly hooks: installing toolchain {:?} for source {:?} via channel {:?}",
-                toolchain, source.id, channel
-            );
-            let mut command = Command::new(&argv[0]);
-            command.args(&argv[1..]);
-            return run_command(&mut command, "install hook toolchain");
-        }
-    }
-    let version = preferences.toolchains.get(toolchain).ok_or_else(|| {
-        anyhow::anyhow!("hook source {:?} requires missing toolchain {:?}; configure hook_preferences.toolchains.{} or an explicit install recipe", source.id, toolchain, toolchain)
-    })?;
-    if !source.installers.is_empty() {
-        bail!(
-            "hook source {:?} has no installer matching configured channels {:?}",
-            source.id,
-            preferences.channels
-        );
-    }
-    let mut command = match toolchain {
-        "python" => {
-            let mut c = Command::new("uv");
-            c.args(["python", "install", version]);
-            c
-        }
-        "rust" => {
-            let mut c = Command::new("rustup");
-            c.args(["toolchain", "install", version]);
-            c
-        }
-        "node" | "go" => {
-            let mut c = Command::new("mise");
-            c.args(["install", &format!("{toolchain}@{version}")]);
-            c
-        }
-        _ => bail!(
-            "no managed install recipe for toolchain {:?}; configure a channel installer",
-            toolchain
-        ),
-    };
-    run_command(&mut command, "install hook toolchain")
 }
 
 fn provision_source(
@@ -235,27 +321,18 @@ fn provision_source(
     source: &HookSource,
     existing: Option<&HookSourceLock>,
     update: bool,
-) -> anyhow::Result<(LockedSource, PathBuf)> {
-    if let Some(relative) = &source.path {
-        let canonical_root = root.canonicalize().context("canonicalizing repository root")?;
-        let path = root.join(relative);
-        let canonical = path
+) -> anyhow::Result<(Option<LockedSource>, PathBuf)> {
+    if let Some(path) = &source.path {
+        let candidate = if path.is_absolute() {
+            path.clone()
+        } else {
+            root.join(path)
+        };
+        let canonical = candidate
             .canonicalize()
-            .with_context(|| format!("resolving local hook source {}", path.display()))?;
-        if !canonical.starts_with(&canonical_root) {
-            bail!("local hook source {:?} resolves outside the repository", source.id);
-        }
-        return Ok((
-            LockedSource {
-                id: source.id.clone(),
-                source: "local".to_string(),
-                revision: None,
-                path: relative.to_string_lossy().into_owned(),
-            },
-            canonical,
-        ));
+            .with_context(|| format!("resolving local hook source {}", candidate.display()))?;
+        return Ok((None, canonical));
     }
-
     let url = source.git.as_deref().expect("validated Git source");
     let checkout = cache_root.join(&source.id);
     let locked = existing.and_then(|lock| {
@@ -270,27 +347,22 @@ fn provision_source(
                 source.id
             )
         })?;
-        let locked_revision = locked
-            .revision
-            .as_deref()
-            .ok_or_else(|| anyhow::anyhow!("Git hook source {:?} lock entry has no resolved revision", source.id))?;
         ensure_checkout_origin(&checkout, url)?;
-        if !git_object_exists(&checkout, locked_revision)? {
-            run_git(&checkout, &["fetch", "--quiet", "origin", locked_revision])?;
+        if !git_object_exists(&checkout, &locked.revision)? {
+            run_git(&checkout, &["fetch", "--quiet", "origin", &locked.revision])?;
         }
-        run_git(&checkout, &["checkout", "--quiet", "--detach", locked_revision])?;
-        return Ok((locked.clone(), checkout));
+        run_git(&checkout, &["checkout", "--quiet", "--detach", &locked.revision])?;
+        return Ok((Some(locked.clone()), checkout));
     }
     let revision = source.revision.as_deref().expect("validated Git revision");
     let target = if checkout.join(".git").exists() {
         let origin = git_output(&checkout, &["remote", "get-url", "origin"])?;
         if origin != url {
             bail!(
-                "cached hook source {:?} has origin {:?}, expected {:?}; remove {} and retry",
+                "cached hook source {:?} has origin {:?}, expected {:?}",
                 source.id,
                 origin,
-                url,
-                checkout.display()
+                url
             );
         }
         run_git(&checkout, &["fetch", "--quiet", "--force", "origin", revision])?;
@@ -307,12 +379,12 @@ fn provision_source(
     run_git(&checkout, &["checkout", "--quiet", "--detach", target])?;
     let resolved = git_output(&checkout, &["rev-parse", "HEAD"])?;
     Ok((
-        LockedSource {
+        Some(LockedSource {
             id: source.id.clone(),
             source: url.to_string(),
-            revision: Some(resolved),
+            revision: resolved,
             path: format!("cache://hook-sources/{}", source.id),
-        },
+        }),
         checkout,
     ))
 }
@@ -336,19 +408,17 @@ fn ensure_checkout_origin(checkout: &Path, url: &str) -> anyhow::Result<()> {
 }
 
 fn git_object_exists(checkout: &Path, revision: &str) -> anyhow::Result<bool> {
-    let output = Command::new("git")
+    Ok(Command::new("git")
         .arg("-C")
         .arg(checkout)
         .args(["cat-file", "-e", &format!("{revision}^{{commit}}")])
-        .output()
-        .context("checking locked Git revision")?;
-    Ok(output.status.success())
+        .status()
+        .context("checking locked Git revision")?
+        .success())
 }
-
 fn run_git(directory: &Path, args: &[&str]) -> anyhow::Result<()> {
     run_command(Command::new("git").arg("-C").arg(directory).args(args), "run git")
 }
-
 fn git_output(directory: &Path, args: &[&str]) -> anyhow::Result<String> {
     let output = Command::new("git")
         .arg("-C")
@@ -361,7 +431,6 @@ fn git_output(directory: &Path, args: &[&str]) -> anyhow::Result<String> {
     }
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
-
 fn run_command(command: &mut Command, operation: &str) -> anyhow::Result<()> {
     let output = command
         .output()
@@ -371,22 +440,31 @@ fn run_command(command: &mut Command, operation: &str) -> anyhow::Result<()> {
     }
     Ok(())
 }
-
 fn write_lock(root: &Path, lock: &HookSourceLock) -> anyhow::Result<()> {
     let path = root.join(LOCK_FILE_NAME);
     let temporary = root.join(format!("{LOCK_FILE_NAME}.tmp"));
-    let content = toml::to_string_pretty(lock).context("serializing hook source lock")?;
-    std::fs::write(&temporary, content).with_context(|| format!("writing {}", temporary.display()))?;
+    std::fs::write(
+        &temporary,
+        toml::to_string_pretty(lock).context("serializing hook source lock")?,
+    )
+    .with_context(|| format!("writing {}", temporary.display()))?;
     std::fs::rename(&temporary, &path).with_context(|| format!("installing {}", path.display()))
 }
-
+fn remove_lock(root: &Path) -> anyhow::Result<()> {
+    let path = root.join(LOCK_FILE_NAME);
+    if path.is_file() {
+        std::fs::remove_file(&path).with_context(|| format!("removing {}", path.display()))?;
+    }
+    Ok(())
+}
 fn read_lock(root: &Path) -> anyhow::Result<Option<HookSourceLock>> {
     let path = root.join(LOCK_FILE_NAME);
     if !path.is_file() {
         return Ok(None);
     }
-    let text = std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
-    let lock: HookSourceLock = toml::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
+    let lock: HookSourceLock =
+        toml::from_str(&std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?)
+            .with_context(|| format!("parsing {}", path.display()))?;
     if lock.version != 1 {
         bail!("unsupported {} version {}; expected 1", LOCK_FILE_NAME, lock.version);
     }
@@ -397,184 +475,185 @@ fn read_lock(root: &Path) -> anyhow::Result<Option<HookSourceLock>> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn provisions_safe_local_source_without_creating_lock() {
-        let root = tempfile::tempdir().unwrap();
-        std::fs::create_dir(root.path().join("hooks")).unwrap();
+    fn write_consumer(_root: &Path, source: &Path, hooks: &[&str]) -> HooksConfig {
+        let selected = hooks.iter().map(|id| format!("{id:?}")).collect::<Vec<_>>().join(",");
+        toml::from_str(&format!(
+            "[[sources]]\nid='rules'\npath={:?}\nhooks=[{}]",
+            source.to_string_lossy(),
+            selected
+        ))
+        .unwrap()
+    }
+    fn write_catalog(root: &Path) {
         std::fs::write(
-            root.path().join("poly-hooks.toml"),
+            root.join(PRODUCER_MANIFEST_NAME),
             r#"
 version = 1
-[[sources]]
-id = "local"
-path = "hooks"
-channel = "system"
+[[hooks]]
+id = "validate"
+stages = ["pre-commit"]
+args = ["ok"]
+workspace = true
+[[hooks.paths]]
+channel = "shell"
+check = "command -v printf"
+run = "printf"
+[[hooks]]
+id = "other"
+stages = ["pre-push"]
+[[hooks.paths]]
+channel = "shell"
+check = "false"
+run = "false"
 "#,
         )
         .unwrap();
-
-        provision(root.path(), false).unwrap();
-
-        assert!(!root.path().join(LOCK_FILE_NAME).exists());
+    }
+    fn preferences(root: &Path) {
+        std::fs::write(root.join("poly.local.toml"), "[hook_preferences]\nchannels=['shell']\n").unwrap();
     }
 
-    #[cfg(unix)]
     #[test]
-    fn rejects_local_symlink_escape() {
-        use std::os::unix::fs::symlink;
-        let root = tempfile::tempdir().unwrap();
-        let outside = tempfile::tempdir().unwrap();
-        symlink(outside.path(), root.path().join("hooks")).unwrap();
-        std::fs::write(
-            root.path().join("poly-hooks.toml"),
-            r#"
-version = 1
-[[sources]]
-id = "escape"
-path = "hooks"
-channel = "system"
-"#,
-        )
-        .unwrap();
+    fn selects_explicit_hook_and_guarded_path() {
+        let consumer = tempfile::tempdir().unwrap();
+        let producer = tempfile::tempdir().unwrap();
+        write_catalog(producer.path());
+        preferences(consumer.path());
+        let hooks = write_consumer(consumer.path(), producer.path(), &["validate"]);
+        let selected = provision(consumer.path(), &hooks, false, true).unwrap();
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].command, "printf");
+    }
 
+    #[test]
+    fn reports_unknown_hook() {
+        let consumer = tempfile::tempdir().unwrap();
+        let producer = tempfile::tempdir().unwrap();
+        write_catalog(producer.path());
+        preferences(consumer.path());
+        let hooks = write_consumer(consumer.path(), producer.path(), &["missing"]);
         assert!(
-            provision(root.path(), false)
+            provision(consumer.path(), &hooks, false, true)
                 .unwrap_err()
                 .to_string()
-                .contains("outside")
+                .contains("unknown hook")
         );
     }
 
     #[test]
-    fn rejects_managed_source_without_toolchain_by_default() {
-        let source = HookSource {
-            id: "remote".to_string(),
-            path: None,
-            git: Some("https://example.com/hooks.git".to_string()),
-            revision: Some("0123456789abcdef".to_string()),
-            channel: HookInstallChannel::Managed,
-            toolchain: None,
-            installers: std::collections::BTreeMap::new(),
-        };
-
-        let error = should_skip_for_toolchain(&source, &HookMachinePreferences::default()).unwrap_err();
-        assert!(error.to_string().contains("has no toolchain"));
+    fn installs_selected_path_only_when_requested() {
+        let consumer = tempfile::tempdir().unwrap();
+        let producer = tempfile::tempdir().unwrap();
+        std::fs::write(
+            producer.path().join(PRODUCER_MANIFEST_NAME),
+            r#"
+version = 1
+[[hooks]]
+id = "validate"
+stages = ["pre-commit"]
+[[hooks.paths]]
+channel = "shell"
+check = "command -v printf"
+install = "printf installed > installed.txt"
+run = "printf"
+"#,
+        )
+        .unwrap();
+        preferences(consumer.path());
+        let hooks = write_consumer(consumer.path(), producer.path(), &["validate"]);
+        provision(consumer.path(), &hooks, false, false).unwrap();
+        assert!(!producer.path().join("installed.txt").exists());
+        provision(consumer.path(), &hooks, false, true).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(producer.path().join("installed.txt")).unwrap(),
+            "installed"
+        );
     }
 
     #[test]
-    fn local_manifest_lowers_and_runs_from_source_directory() {
-        let root = tempfile::tempdir().unwrap();
-        let source_root = root.path().join("hooks");
-        std::fs::create_dir(&source_root).unwrap();
+    fn lowers_catalog_args_and_filename_controls() {
+        let consumer = tempfile::tempdir().unwrap();
+        let producer = tempfile::tempdir().unwrap();
         std::fs::write(
-            root.path().join("poly-hooks.toml"),
+            producer.path().join(PRODUCER_MANIFEST_NAME),
             r#"
 version = 1
-[[sources]]
-id = "local"
-path = "hooks"
-channel = "system"
+[[hooks]]
+id = "validate"
+stages = ["pre-commit"]
+args = ["generate", "--dry-run"]
+workspace = true
+pass_filenames = false
+always_run = true
+[[hooks.paths]]
+channel = "shell"
+check = "command -v printf"
+run = "printf"
 "#,
         )
         .unwrap();
-        std::fs::write(
-            source_root.join(SOURCE_MANIFEST_NAME),
-            r#"
-[pre-commit.commands.marker]
-run = "printf ran > marker.txt"
-"#,
-        )
-        .unwrap();
-
-        let sources = provision(root.path(), false).unwrap();
+        preferences(consumer.path());
+        let config = write_consumer(consumer.path(), producer.path(), &["validate"]);
+        let selected = provision(consumer.path(), &config, false, true).unwrap();
         let mut spec = poly_hooks::StageSpec {
             stage: poly_hooks::Stage::PreCommit,
             ..poly_hooks::StageSpec::default()
         };
         merge_stage(
             &mut spec,
-            &sources,
+            &selected,
             Path::new("poly"),
             &[],
             &poly_config::HookCacheMode::Off,
+            consumer.path(),
         )
         .unwrap();
-        let outcome = poly_hooks::run(poly_hooks::HookRunRequest {
-            root: root.path().to_path_buf(),
-            stages: vec![spec],
-            ..poly_hooks::HookRunRequest::default()
-        })
-        .unwrap();
-
-        assert!(outcome.success());
-        assert_eq!(std::fs::read_to_string(source_root.join("marker.txt")).unwrap(), "ran");
+        assert_eq!(spec.hooks.len(), 1);
+        assert_eq!(spec.hooks[0].args, ["generate", "--dry-run"]);
+        assert!(!spec.hooks[0].pass_filenames);
+        assert!(spec.hooks[0].always_run);
+        assert!(spec.hooks[0].workspace);
+        assert!(spec.hooks[0].cwd.is_none());
     }
 
     #[test]
-    fn normal_run_keeps_locked_git_revision_and_update_refreshes_it() {
-        fn git(directory: &Path, args: &[&str]) {
-            let status = Command::new("git")
-                .arg("-C")
-                .arg(directory)
-                .args(args)
-                .status()
-                .unwrap();
-            assert!(status.success(), "git {args:?} failed");
-        }
-        let upstream = tempfile::tempdir().unwrap();
-        git(upstream.path(), &["init", "-q", "-b", "main"]);
-        git(upstream.path(), &["config", "user.email", "test@example.com"]);
-        git(upstream.path(), &["config", "user.name", "Test"]);
-        std::fs::write(
-            upstream.path().join(SOURCE_MANIFEST_NAME),
-            "[pre-commit.commands.one]\nrun = \"true\"\n",
-        )
-        .unwrap();
-        git(upstream.path(), &["add", "."]);
-        git(upstream.path(), &["commit", "-qm", "one"]);
-
+    fn rejects_legacy_consumer_catalog() {
         let root = tempfile::tempdir().unwrap();
-        std::fs::write(
-            root.path().join("poly-hooks.toml"),
-            format!(
-                "version = 1\n[[sources]]\nid = \"remote\"\ngit = {:?}\nrevision = \"main\"\ntoolchain = \"sh\"\n",
-                upstream.path().to_string_lossy()
-            ),
-        )
-        .unwrap();
-        let first = provision(root.path(), true).unwrap();
-        let first_revision = git_output(&first[0].root, &["rev-parse", "HEAD"]).unwrap();
-        let original_lock = std::fs::read(root.path().join(LOCK_FILE_NAME)).unwrap();
-
-        std::fs::write(upstream.path().join("second"), "two").unwrap();
-        git(upstream.path(), &["add", "."]);
-        git(upstream.path(), &["commit", "-qm", "two"]);
-
-        std::fs::remove_dir_all(&first[0].root).unwrap();
-        let locked = provision(root.path(), false).unwrap();
-        assert_eq!(
-            git_output(&locked[0].root, &["rev-parse", "HEAD"]).unwrap(),
-            first_revision
-        );
-        assert_eq!(std::fs::read(root.path().join(LOCK_FILE_NAME)).unwrap(), original_lock);
-        let updated = provision(root.path(), true).unwrap();
-        assert_ne!(
-            git_output(&updated[0].root, &["rev-parse", "HEAD"]).unwrap(),
-            first_revision
+        let producer = tempfile::tempdir().unwrap();
+        std::fs::write(root.path().join(PRODUCER_MANIFEST_NAME), "version=1\nsources=[]").unwrap();
+        preferences(root.path());
+        let hooks = write_consumer(root.path(), producer.path(), &["validate"]);
+        assert!(
+            provision(root.path(), &hooks, false, true)
+                .unwrap_err()
+                .to_string()
+                .contains("producer catalog")
         );
     }
 
     #[test]
-    fn normal_run_rejects_unlocked_git_source_without_writing_lock() {
-        let root = tempfile::tempdir().unwrap();
+    fn rejects_catalog_execution_outside_guarded_paths() {
+        let producer = tempfile::tempdir().unwrap();
         std::fs::write(
-            root.path().join("poly-hooks.toml"),
-            "version = 1\n[[sources]]\nid = \"remote\"\ngit = \"https://example.invalid/hooks\"\nrevision = \"main\"\ntoolchain = \"sh\"\n",
+            producer.path().join(PRODUCER_MANIFEST_NAME),
+            r#"
+version = 1
+[[hooks]]
+id = "unsafe"
+stages = ["pre-commit"]
+run = "false"
+[[hooks.paths]]
+channel = "shell"
+check = "true"
+run = "true"
+"#,
         )
         .unwrap();
-
-        let error = provision(root.path(), false).unwrap_err();
-        assert!(error.to_string().contains("poly hooks update"));
-        assert!(!root.path().join(LOCK_FILE_NAME).exists());
+        assert!(
+            load_manifest(producer.path())
+                .unwrap_err()
+                .to_string()
+                .contains("only through [[hooks.paths]]")
+        );
     }
 }

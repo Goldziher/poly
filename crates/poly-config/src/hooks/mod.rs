@@ -21,6 +21,7 @@ mod stage_config;
 use std::collections::BTreeMap;
 use std::fmt;
 
+use crate::HookSource;
 use serde::de::{self, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 
@@ -33,6 +34,8 @@ pub use stage_config::StageConfig;
 /// `[hooks]` table — the inline, lefthook-style git-hook configuration.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct HooksConfig {
+    /// Local or Git producer catalogs selected by this repository.
+    pub sources: Vec<HookSource>,
     /// Default stages applied to builtin hooks that do not specify their own.
     pub stages: Vec<String>,
     /// Global environment merged into every job (issue #2195).
@@ -69,6 +72,7 @@ impl HooksConfig {
     /// Unknown stage keys and imported-repo keys are already rejected during
     /// deserialization, so they never reach this method.
     pub fn validate(&self) -> Result<(), String> {
+        crate::hook_sources::validate_sources(&self.sources)?;
         for (stage, config) in &self.stage_configs {
             if config.skip.is_some() && config.only.is_some() {
                 return Err(format!("stage `{stage}` sets both `skip` and `only`; choose one"));
@@ -126,6 +130,7 @@ impl<'de> Visitor<'de> for HooksConfigVisitor {
         let mut env: Option<BTreeMap<String, String>> = None;
         let mut builtin: Option<BuiltinHooks> = None;
         let mut isolate: Option<bool> = None;
+        let mut sources: Option<Vec<HookSource>> = None;
         let mut stage_configs: BTreeMap<Stage, StageConfig> = BTreeMap::new();
 
         while let Some(key) = map.next_key::<String>()? {
@@ -150,6 +155,11 @@ impl<'de> Visitor<'de> for HooksConfigVisitor {
                         return Err(de::Error::duplicate_field("isolate"));
                     }
                 }
+                "sources" => {
+                    if sources.replace(map.next_value()?).is_some() {
+                        return Err(de::Error::duplicate_field("sources"));
+                    }
+                }
                 "repo" | "repos" => {
                     return Err(de::Error::custom(
                         "imported pre-commit repos are no longer supported; \
@@ -170,6 +180,7 @@ impl<'de> Visitor<'de> for HooksConfigVisitor {
         }
 
         Ok(HooksConfig {
+            sources: sources.unwrap_or_default(),
             stages: stages.unwrap_or_default(),
             env: env.unwrap_or_default(),
             builtin: builtin.unwrap_or_default(),

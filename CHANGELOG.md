@@ -5,6 +5,13 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
+## [Unreleased]
+
+### Changed
+
+- Declare explicitly selected local-path and Git hook catalogs under `[[hooks.sources]]` in `poly.toml`; `poly-hooks.toml` is now producer-only.
+- Select guarded producer execution paths using machine-local channel preferences from `poly.local.toml`.
+
 ## [0.13.0] - 2026-07-12
 
 ### Added

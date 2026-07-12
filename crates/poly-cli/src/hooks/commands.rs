@@ -163,7 +163,7 @@ fn run_stage(args: RunArgs) -> Result<ExitCode> {
 
     let message_file = resolve_message_file(stage, args.message_file)?;
     let root = poly_hooks::git::get_root().context("failed to resolve the git repository root")?;
-    let sources = super::sources::provision(&root, false).context("provisioning hook sources")?;
+    let sources = super::sources::provision(&root, &config.hooks, false, false).context("provisioning hook sources")?;
     let files = candidate_files(&root, stage, args.all_files, None, None)?;
     let cache = open_result_cache(&config, &root, args.no_cache)?;
     let mut spec = lower::lower_stage(
@@ -175,7 +175,14 @@ fn run_stage(args: RunArgs) -> Result<ExitCode> {
         &root,
         &config.tools,
     )?;
-    super::sources::merge_stage(&mut spec, &sources, &poly_bin, &files, &config.cache.results.hooks)?;
+    super::sources::merge_stage(
+        &mut spec,
+        &sources,
+        &poly_bin,
+        &files,
+        &config.cache.results.hooks,
+        &root,
+    )?;
 
     let snapshot = maybe_staged_snapshot(isolation_active(&config.hooks, args.all_files, stage), &spec, &root)?;
     let work_root = snapshot.as_ref().map(|snapshot| snapshot.path().to_path_buf());
@@ -234,7 +241,8 @@ fn resolve_run_stage(requested: Option<&str>, hooks: &poly_config::HooksConfig) 
 
 fn install(args: InstallArgs) -> Result<ExitCode> {
     let root = poly_hooks::git::get_root().context("failed to resolve the git repository root")?;
-    super::sources::provision(&root, false).context("provisioning hook sources")?;
+    let config = load_config(None)?;
+    super::sources::provision(&root, &config.hooks, false, true).context("provisioning hook sources")?;
     let hooks_dir = poly_hooks::git::get_git_hooks_dir().context("failed to resolve the git hooks directory")?;
     let written = poly_hooks::install::install(&hooks_dir, &args.hook_types, args.overwrite)?;
     print_hook_summary("Installed", "install", &hooks_dir, &written);
@@ -243,11 +251,13 @@ fn install(args: InstallArgs) -> Result<ExitCode> {
 
 fn update_sources() -> Result<ExitCode> {
     let root = poly_hooks::git::get_root().context("failed to resolve the git repository root")?;
-    let sources = super::sources::provision(&root, true).context("updating hook sources")?;
+    let config = load_config(None)?;
+    super::sources::provision(&root, &config.hooks, true, false).context("updating hook sources")?;
+    let source_count = config.hooks.sources.len();
     println!(
         "Updated {} hook source{}.",
-        sources.len(),
-        if sources.len() == 1 { "" } else { "s" }
+        source_count,
+        if source_count == 1 { "" } else { "s" }
     );
     Ok(ExitCode::SUCCESS)
 }
@@ -303,12 +313,12 @@ fn relative_to_cwd(path: &Path) -> PathBuf {
 
 fn hook_impl(args: HookImplArgs) -> Result<ExitCode> {
     let root = poly_hooks::git::get_root().context("failed to resolve the git repository root")?;
-    let sources = super::sources::provision(&root, false).context("provisioning hook sources")?;
+    let config = load_config(args.config.as_deref())?;
+    let sources = super::sources::provision(&root, &config.hooks, false, false).context("provisioning hook sources")?;
     let Some(inputs) = poly_hooks::hook_impl::hook_impl(args.hook_type, &args.git_args, &root)? else {
         return Ok(ExitCode::SUCCESS);
     };
 
-    let config = load_config(args.config.as_deref())?;
     let poly_bin = std::env::current_exe().context("failed to resolve the running poly binary")?;
     let stage = inputs.stage;
     let files = candidate_files(
@@ -328,7 +338,14 @@ fn hook_impl(args: HookImplArgs) -> Result<ExitCode> {
         &root,
         &config.tools,
     )?;
-    super::sources::merge_stage(&mut spec, &sources, &poly_bin, &files, &config.cache.results.hooks)?;
+    super::sources::merge_stage(
+        &mut spec,
+        &sources,
+        &poly_bin,
+        &files,
+        &config.cache.results.hooks,
+        &root,
+    )?;
 
     let snapshot = maybe_staged_snapshot(isolation_active(&config.hooks, inputs.all_files, stage), &spec, &root)?;
     let work_root = snapshot.as_ref().map(|snapshot| snapshot.path().to_path_buf());

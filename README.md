@@ -372,45 +372,69 @@ Install poly's git hooks once — they then run on every `git commit`:
 poly hooks install
 ```
 
-Hooks come from `poly.toml` (builtins and inline jobs) and optional local or Git sources in
-`poly-hooks.toml`. Git refs are resolved into `poly-hooks.lock`; normal runs stay on the locked
-commit and `poly hooks update` refreshes configured branches or tags.
+Hooks come from `poly.toml`: builtins, inline jobs, and optional local or Git producer catalogs.
+Git refs are resolved into `poly-hooks.lock`; normal runs stay on the locked commit and
+`poly hooks update` refreshes configured branches or tags.
+
+```toml
+[[hooks.sources]]
+id = "ai-rulez"
+git = "https://github.com/acme/poly-hooks.git"
+revision = "v4.9.0"
+hooks = ["ai-rulez-validate"]
+
+[[hooks.sources]]
+id = "ai-rulez-dev"
+path = "../ai-rulez"
+hooks = ["ai-rulez-validate"]
+```
+
+Exactly one of `git` or `path` is required. Git sources require a revision and a committed lock;
+local sources accept relative, parent-relative, or absolute paths, remain unlocked, and reload on
+every run. The `hooks` list explicitly selects producer hook IDs, so new producer hooks never become
+active without a consumer configuration change.
+
+The producer alone owns `poly-hooks.toml`. It can publish multiple hooks and multiple guarded
+execution paths for each hook:
 
 ```toml
 version = 1
 
-[[sources]]
-id = "project"
-path = "tools/hooks"
-channel = "system"
+[[hooks]]
+id = "ai-rulez-validate"
+stages = ["pre-commit"]
+args = ["generate", "--dry-run"]
+files = [".ai-rulez/**", "**/.ai-rulez/**"]
+workspace = true
+pass_filenames = false
 
-[[sources]]
-id = "shared"
-git = "https://github.com/acme/poly-hooks.git"
-revision = "main"
-channel = "managed"
-toolchain = "python"
+[[hooks.paths]]
+channel = "npx"
+check = "command -v npx"
+run = "npx -y ai-rulez@latest"
 
-[sources.installers]
-brew = ["brew", "install", "python@3.13"]
-uv = ["uv", "python", "install", "3.13"]
+[[hooks.paths]]
+channel = "uvx"
+check = "command -v uvx"
+install = "uv tool install ai-rulez"
+run = "uvx ai-rulez"
 ```
 
-Each source contains `poly-hook.toml`, using the same `[pre-commit.commands.*]` and stage schema
-as inline hooks. Machine-only preferences belong in gitignored `poly.local.toml`:
+Every hook requires at least one path. Poly checks paths in the machine preference order and uses
+the first whose `check` exits zero. An optional `install` command runs only during explicit
+`poly hooks install`; ordinary hook runs use `run` directly, allowing commands such as `npx -y` or
+`uvx` to self-provision. Poly does not fall through if installation or the selected command fails.
+Machine-only preferences belong in gitignored `poly.local.toml`:
 
 ```toml
 [hook_preferences]
-channels = ["brew", "uv"]
-toolchains.python = "3.13"
-missing_toolchain = "error"
+channels = ["npx", "uvx", "system"]
 ```
 
-`poly hooks install` and `poly hooks run` install a missing toolchain using the first matching
-channel. Repository-contained local paths execute in place and reload on every run.
-Treat `poly-hooks.toml`, `poly-hooks.lock`, every source manifest, and its installer recipes as
-trusted code: hooks and installers execute with your user permissions. Normal runs never resolve
-Git refs or modify the lock; review changes and run `poly hooks update` explicitly.
+`poly hooks install` validates every selected hook path before installing Git shims. Treat producer
+catalogs and their checks and commands as trusted code: they execute with your user permissions.
+Normal runs never resolve Git refs or modify the lock; review changes and run `poly hooks update`
+explicitly.
 
 <details>
 <summary><strong>Builtin hooks</strong></summary>
