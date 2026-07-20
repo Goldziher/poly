@@ -5,6 +5,15 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
+## [0.15.5] - 2026-07-20
+
+### Changed
+
+- Bumped the `uncomment` backend to 3.5.0, which extends a `~keep` marker across a whole contiguous block of
+  standalone single-line comments instead of preserving only the marked line. A multi-line rationale comment now
+  survives with a single `~keep` rather than one per line. The engine cache key was bumped to re-run `uncomment` on
+  upgrade.
+
 ## [0.15.4] - 2026-07-12
 
 ### Fixed

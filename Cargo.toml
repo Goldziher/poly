@@ -13,7 +13,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.15.4"
+version = "0.15.5"
 edition = "2024"
 rust-version = "1.96"
 license = "MIT"
@@ -46,7 +46,7 @@ biome_languages = { git = "https://github.com/biomejs/biome", rev = "93d8e535245
 ] }
 biome_rowan = { git = "https://github.com/biomejs/biome", rev = "93d8e5352454bccfbd179db03b3155776599c52c" }
 blake3 = "1"
-bstr = "1.12.3"
+bstr = "1.13.0"
 cargo_metadata = "0.23.1"
 clap = { version = "4", features = ["derive"] }
 clap_complete = { version = "4.6.7", features = ["unstable-dynamic"] }
@@ -60,7 +60,7 @@ fancy-regex = "0.18.0"
 fs-err = "3.3.1"
 fs2 = "0.4"
 gitfluff = { path = "crates/gitfluff" }
-globset = "0.4.18"
+globset = "0.4.19"
 graphql-parser = "0.4"
 hcl-edit = "0.9.6"
 hcl-rs = "0.19.7"
@@ -154,14 +154,14 @@ toml_edit = "0.25"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 tree-sitter = "0.26"
-tree-sitter-language-pack = "1.12"
+tree-sitter-language-pack = "1.13"
 typos = "0.10"
 typos-dict = "0.13"
-uncomment = "3.4"
+uncomment = "3.5"
 unicase = "2"
 unicode-width = { version = "0.2.2", default-features = false }
 walkdir = "2.5.0"
-which = "8.0.4"
+which = "8.0.5"
 
 [profile.release]
 lto = "thin"
