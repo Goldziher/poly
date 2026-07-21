@@ -16,7 +16,7 @@
 use std::collections::HashSet;
 
 use rumdl_lib::{
-    config::Config as RumdlConfig,
+    config::{Config as RumdlConfig, MarkdownFlavor},
     fix_coordinator::FixCoordinator,
     rule::{LintWarning, Rule, RuleCategory, Severity as RumdlSeverity},
     rules::{all_rules, filter_rules},
@@ -24,6 +24,7 @@ use rumdl_lib::{
 };
 
 use super::rule_config::{RuleSelection, string_list, union_codes, warn_and_skip_blank};
+use super::template::contains_go_template;
 use crate::config::EngineConfig;
 use crate::engine::{Capabilities, Diagnostic, Edit, Engine, FormatOutput, Severity, SourceFile, Span};
 use crate::language::Language;
@@ -32,11 +33,12 @@ use crate::language::Language;
 pub struct RumdlEngine;
 
 /// Embedded crate version so the cache key changes whenever rumdl output could change.
-/// The `+defaults2` suffix marks the opinionated rule policy below: the
+/// The `+defaults3` suffix marks the opinionated rule policy below: the
 /// default-disabled proprietary rules **and** the lint-mode suppression of the
-/// `Whitespace` (formatting) category. Bump the suffix whenever either changes so
-/// stale cached diagnostics are invalidated.
-const RUMDL_VERSION: &str = "0.2.28+defaults2";
+/// `Whitespace` (formatting) category, plus MDX-flavor routing and the
+/// Go/Helm-template skip. Bump the suffix whenever any of these change so stale
+/// cached diagnostics are invalidated.
+const RUMDL_VERSION: &str = "0.2.28+defaults3-mdx-tmplskip";
 
 /// rumdl-proprietary stylistic rules disabled by default.
 ///
@@ -49,7 +51,7 @@ const RUMDL_VERSION: &str = "0.2.28+defaults2";
 /// `[lint.markdown.rumdl]` table of `poly.toml`.
 const DEFAULT_DISABLED_RULES: &[&str] = &["MD060", "MD063", "MD072", "MD080", "MD082"];
 
-static LANGUAGES: &[Language] = &[Language::Markdown];
+static LANGUAGES: &[Language] = &[Language::Markdown, Language::Mdx];
 
 impl Engine for RumdlEngine {
     fn name(&self) -> &'static str {
@@ -73,7 +75,11 @@ impl Engine for RumdlEngine {
     }
 
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
-        let rumdl_cfg = build_rumdl_config(cfg);
+        if contains_go_template(&src.content) {
+            tracing::info!(path = %src.path.display(), "skipping file with Go/Helm template syntax");
+            return Ok(Vec::new());
+        }
+        let rumdl_cfg = build_rumdl_config(cfg, &src.language);
         let rules = filter_rules(&all_rules(&rumdl_cfg), &rumdl_cfg.global);
         let flavor = rumdl_cfg.markdown_flavor();
         let format_owned = format_owned_rules(&rules);
@@ -96,7 +102,11 @@ impl Engine for RumdlEngine {
     }
 
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
-        let rumdl_cfg = build_rumdl_config(cfg);
+        if contains_go_template(&src.content) {
+            tracing::info!(path = %src.path.display(), "skipping file with Go/Helm template syntax");
+            return Ok(FormatOutput::Unchanged);
+        }
+        let rumdl_cfg = build_rumdl_config(cfg, &src.language);
         let rules = filter_rules(&all_rules(&rumdl_cfg), &rumdl_cfg.global);
         let coordinator = FixCoordinator::default();
         let mut content = src.content.to_string();
@@ -112,9 +122,15 @@ impl Engine for RumdlEngine {
 }
 
 /// Build a [`RumdlConfig`] from the resolved engine config, applying the opinionated override
-/// layer (line-length 120) before user options.
-fn build_rumdl_config(cfg: &EngineConfig) -> RumdlConfig {
+/// layer (line-length 120) before user options. `language` selects rumdl's Markdown
+/// flavor: [`Language::Mdx`] enables the MDX flavor (JSX + ESM aware) so `.mdx`
+/// files are parsed correctly.
+fn build_rumdl_config(cfg: &EngineConfig, language: &Language) -> RumdlConfig {
     let mut config = RumdlConfig::default();
+
+    if *language == Language::Mdx {
+        config.global.flavor = MarkdownFlavor::MDX;
+    }
 
     let line_length = cfg
         .options
@@ -224,6 +240,53 @@ mod tests {
             language: Language::Markdown,
             content: content.into(),
         }
+    }
+
+    fn mdx_source(content: &str) -> SourceFile {
+        SourceFile {
+            path: PathBuf::from("test.mdx"),
+            language: Language::Mdx,
+            content: content.into(),
+        }
+    }
+
+    #[test]
+    fn mdx_language_selects_mdx_flavor() {
+        let cfg = default_cfg();
+        assert_eq!(
+            build_rumdl_config(&cfg, &Language::Mdx).markdown_flavor(),
+            MarkdownFlavor::MDX
+        );
+        assert_ne!(
+            build_rumdl_config(&cfg, &Language::Markdown).markdown_flavor(),
+            MarkdownFlavor::MDX
+        );
+    }
+
+    #[test]
+    fn mdx_file_is_linted() {
+        let engine = RumdlEngine;
+        let src = mdx_source("#Bad Heading\n\nContent.\n");
+        let diags = engine.lint(&src, &default_cfg()).expect("lint succeeded");
+        let codes: Vec<_> = diags.iter().filter_map(|d| d.code.as_deref()).collect();
+        assert!(codes.contains(&"MD018"), "mdx file should be linted, got {codes:?}");
+    }
+
+    #[test]
+    fn helm_templated_markdown_is_skipped() {
+        let engine = RumdlEngine;
+        let src = source("#Bad Heading\n\n{{- if .Values.enabled }}\nContent.\n{{- end }}\n");
+        assert!(
+            engine.lint(&src, &default_cfg()).expect("lint succeeded").is_empty(),
+            "templated markdown must be skipped by lint"
+        );
+        assert!(
+            matches!(
+                engine.format(&src, &default_cfg()).expect("format succeeded"),
+                FormatOutput::Unchanged
+            ),
+            "templated markdown must be skipped by format"
+        );
     }
 
     #[test]

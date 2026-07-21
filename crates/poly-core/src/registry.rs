@@ -38,7 +38,7 @@ pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
         | Language::Json
         | Language::Jsonc => vec![Box::new(OxcEngine)],
         Language::Toml => vec![Box::new(TaploEngine::new())],
-        Language::Markdown => vec![Box::new(RumdlEngine)],
+        Language::Markdown | Language::Mdx => vec![Box::new(RumdlEngine)],
         Language::Python => vec![Box::new(RuffEngine)],
         Language::Sql => vec![Box::new(SqruffEngine)],
         Language::Yaml => vec![Box::new(YamlEngine)],

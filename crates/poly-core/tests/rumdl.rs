@@ -55,11 +55,15 @@ fn sorted_codes(diags: &[poly_core::engine::Diagnostic]) -> Vec<String> {
 }
 
 fn load_fixture(name: &str) -> SourceFile {
+    load_fixture_as(name, Language::Markdown)
+}
+
+fn load_fixture_as(name: &str, language: Language) -> SourceFile {
     let path = fixtures_dir().join(name);
     let content = fs::read_to_string(&path).unwrap_or_else(|e| panic!("failed to read fixture {name}: {e}"));
     SourceFile {
         path,
-        language: Language::Markdown,
+        language,
         content: content.into(),
     }
 }
@@ -148,6 +152,23 @@ fn unformatted_md_formats_cleanly() {
         }
         FormatOutput::Unchanged => panic!(
             "expected Formatted for unformatted.md but got Unchanged — \
+             check that the fixture still has trailing whitespace"
+        ),
+    }
+}
+
+#[test]
+fn unformatted_mdx_formats_cleanly() {
+    let engine = RumdlEngine;
+    let src = load_fixture_as("unformatted.mdx", Language::Mdx);
+    let cfg = default_cfg();
+    let output = engine.format(&src, &cfg).expect("format succeeded");
+    match output {
+        FormatOutput::Formatted(formatted) => {
+            insta::assert_snapshot!("unformatted_mdx_formatted", formatted);
+        }
+        FormatOutput::Unchanged => panic!(
+            "expected Formatted for unformatted.mdx but got Unchanged — \
              check that the fixture still has trailing whitespace"
         ),
     }

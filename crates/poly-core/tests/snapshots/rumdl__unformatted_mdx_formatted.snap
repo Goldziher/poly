@@ -1,0 +1,21 @@
+---
+source: crates/poly-core/tests/rumdl.rs
+assertion_line: 168
+expression: formatted
+---
+import { Note } from "./components/Note"
+
+# Getting Started
+
+Some intro text with trailing spaces.
+
+<Note type="tip">
+  MDX mixes Markdown with JSX. The MDX flavor must not choke on this block.
+</Note>
+
+## Steps
+
+1. First step.
+2. Second step.
+
+Done.

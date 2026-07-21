@@ -22,6 +22,7 @@ pub mod rule_config;
 pub mod rumdl;
 pub mod sqruff;
 pub mod taplo;
+pub mod template;
 pub mod treesitter;
 pub mod typos;
 pub mod uncomment;

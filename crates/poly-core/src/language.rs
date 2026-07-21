@@ -26,6 +26,8 @@ pub enum Language {
     Toml,
     /// Markdown.
     Markdown,
+    /// MDX (Markdown + JSX / ESM).
+    Mdx,
     /// SQL.
     Sql,
     /// CSS.
@@ -112,6 +114,7 @@ impl Language {
             Language::Yaml => "yaml",
             Language::Toml => "toml",
             Language::Markdown => "markdown",
+            Language::Mdx => "mdx",
             Language::Sql => "sql",
             Language::Css => "css",
             Language::Scss => "scss",
@@ -184,6 +187,7 @@ impl Language {
             "yaml" | "yml" => Language::Yaml,
             "toml" => Language::Toml,
             "md" | "markdown" => Language::Markdown,
+            "mdx" => Language::Mdx,
             "sql" => Language::Sql,
             "css" => Language::Css,
             "scss" => Language::Scss,
@@ -251,6 +255,7 @@ impl Language {
             "yaml" => Language::Yaml,
             "toml" => Language::Toml,
             "markdown" => Language::Markdown,
+            "mdx" => Language::Mdx,
             "sql" => Language::Sql,
             "css" => Language::Css,
             "scss" => Language::Scss,
@@ -370,6 +375,13 @@ mod tests {
         let expected = Language::Other("vim".to_string());
         assert_eq!(Language::from_catalog_name("vimscript"), expected);
         assert_eq!(Language::from_catalog_name("vim"), expected);
+    }
+
+    #[test]
+    fn detects_mdx_by_extension() {
+        assert_eq!(Language::from_path(Path::new("docs/index.mdx")), Some(Language::Mdx));
+        assert_eq!(Language::from_catalog_name("mdx"), Language::Mdx);
+        assert_eq!(Language::Mdx.id(), "mdx");
     }
 
     #[test]

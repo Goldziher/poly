@@ -29,6 +29,7 @@
 use pretty_yaml::config::{FormatOptions, LineBreak};
 use saphyr::{LoadableYamlNode, Yaml};
 
+use super::template::contains_go_template;
 use crate::config::{EngineConfig, LineEnding};
 use crate::engine::{Capabilities, Diagnostic, Engine, FormatOutput, Severity, SourceFile, Span};
 use crate::language::Language;
@@ -56,10 +57,14 @@ impl Engine for YamlEngine {
     }
 
     fn version(&self) -> &str {
-        "0.0.7+pretty_yaml-0.6.0"
+        "0.0.8+pretty_yaml-0.6.0+tmplskip"
     }
 
     fn lint(&self, src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
+        if contains_go_template(&src.content) {
+            tracing::info!(path = %src.path.display(), "skipping file with Go/Helm template syntax");
+            return Ok(Vec::new());
+        }
         match Yaml::load_from_str(&src.content) {
             Ok(_) => Ok(Vec::new()),
             Err(err) => {
@@ -87,6 +92,10 @@ impl Engine for YamlEngine {
     }
 
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
+        if contains_go_template(&src.content) {
+            tracing::info!(path = %src.path.display(), "skipping file with Go/Helm template syntax");
+            return Ok(FormatOutput::Unchanged);
+        }
         let options = build_format_options(cfg);
         let formatted = match pretty_yaml::format_text(&src.content, &options) {
             Ok(formatted) => formatted,
@@ -127,4 +136,69 @@ fn build_format_options(cfg: &EngineConfig) -> FormatOptions {
         LineEnding::Lf => LineBreak::Lf,
     };
     options
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::*;
+    use crate::config::{EngineConfig, GlobalDefaults};
+
+    fn default_cfg() -> EngineConfig {
+        EngineConfig {
+            globals: GlobalDefaults::default(),
+            indent_width: 2,
+            options: toml::Table::new(),
+        }
+    }
+
+    fn source(content: &str) -> SourceFile {
+        SourceFile {
+            path: PathBuf::from("templates/deployment.yaml"),
+            language: Language::Yaml,
+            content: content.into(),
+        }
+    }
+
+    #[test]
+    fn helm_templated_yaml_is_skipped_not_errored() {
+        let engine = YamlEngine;
+        // Go-templated YAML is not valid YAML; without the skip saphyr reports a syntax error.
+        let src =
+            source("metadata:\n  name: {{ .Release.Name }}\n  {{- if .Values.labels }}\n  labels: {}\n  {{- end }}\n");
+        assert!(
+            engine.lint(&src, &default_cfg()).expect("lint succeeded").is_empty(),
+            "templated YAML must be skipped, not reported as a syntax error"
+        );
+        assert!(
+            matches!(
+                engine.format(&src, &default_cfg()).expect("format succeeded"),
+                FormatOutput::Unchanged
+            ),
+            "templated YAML must be left unchanged by format"
+        );
+    }
+
+    #[test]
+    fn github_actions_expression_is_still_linted() {
+        let engine = YamlEngine;
+        // `${{ }}` is a valid YAML scalar and must NOT be skipped.
+        let src = source("on: push\njobs:\n  build:\n    if: ${{ github.event_name == 'push' }}\n");
+        assert!(
+            engine.lint(&src, &default_cfg()).expect("lint succeeded").is_empty(),
+            "valid GitHub Actions YAML should lint clean (and not be skipped as a template)"
+        );
+    }
+
+    #[test]
+    fn invalid_yaml_still_reports_syntax_error() {
+        let engine = YamlEngine;
+        let src = source("foo: [1, 2\nbar: :\n");
+        let diags = engine.lint(&src, &default_cfg()).expect("lint ran");
+        assert!(
+            diags.iter().any(|d| d.code.as_deref() == Some("syntax")),
+            "genuinely invalid YAML must still report a syntax error"
+        );
+    }
 }
