@@ -5,6 +5,29 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
+## [0.16.0] - 2026-07-21
+
+### Added
+
+- MDX (`.mdx`) formatting. `.mdx` files are now discovered and routed through the `rumdl` backend with its MDX flavor
+  enabled, preserving imports and JSX while normalizing Markdown.
+
+### Changed
+
+- Bumped the pinned `biome`, `oxc`, `ruff`, and `rubyfmt` git dependencies to their latest revisions and ran
+  `cargo upgrade --incompatible`. Affected engine cache keys were bumped so upgraded output is re-run.
+- The YAML and Markdown/MDX backends now skip files that contain Go/Helm template syntax — detected by scanning file
+  content for template actions (`{{ … }}`, `{{- … }}`, `{{/* … */}}`), not by filename. GitHub Actions `${{ … }}`
+  expressions and MDX/JSX object literals are not treated as templates. Each skip emits an info-level message.
+- Config resolution now respects a repo-root `poly.toml` when poly is invoked from a subdirectory: it cascades and
+  deep-merges every `poly.toml` (and sibling `poly.local.toml`) from the git repo root down to the working directory,
+  and re-anchors exclude globs so they still match relative to the walk root.
+
+### Fixed
+
+- `poly hooks install` now installs shims only for configured hook types and prunes stale shims, and no longer prints an
+  empty `[stage]` banner for a stage that runs no jobs — so `git commit -n` stays quiet.
+
 ## [0.15.5] - 2026-07-20
 
 ### Changed
