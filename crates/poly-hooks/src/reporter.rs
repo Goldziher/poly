@@ -389,6 +389,18 @@ impl HookRunReporter {
 
         use crate::model::{HookStatus, StageStatus};
 
+        // A stage that ran but bound no work emits nothing: with all ten shims
+        // installed, unconfigured stages fire on ordinary git operations, and an
+        // empty `[stage] <name>` banner is noise. A skipped/aborted stage still
+        // renders its reason below.
+        if matches!(stage.status, StageStatus::Ran)
+            && stage.before.is_empty()
+            && stage.hooks.is_empty()
+            && stage.after.is_empty()
+        {
+            return;
+        }
+
         let _ = writeln!(report, "[stage] {}", stage.stage);
         match &stage.status {
             StageStatus::Skipped(reason) => {
@@ -548,5 +560,44 @@ mod tests {
         assert_eq!(lines.next(), Some("clippy"));
         assert_eq!(lines.next(), Some("    => compiling"));
         assert_eq!(lines.next(), Some("    => linking"));
+    }
+
+    #[test]
+    fn ran_stage_with_no_steps_renders_nothing() {
+        use crate::model::{StageOutcome, StageStatus};
+        use crate::stage::Stage;
+
+        let outcome = StageOutcome {
+            stage: Stage::PrepareCommitMsg,
+            status: StageStatus::Ran,
+            before: Vec::new(),
+            hooks: Vec::new(),
+            after: Vec::new(),
+        };
+        let mut report = String::new();
+        HookRunReporter::render_stage(&mut report, &outcome);
+        assert_eq!(report, "", "a no-op `Ran` stage must produce no output");
+    }
+
+    #[test]
+    fn ran_stage_with_a_step_renders_the_stage_banner() {
+        use crate::model::{HookStatus, StageOutcome, StageStatus, StepOutcome};
+        use crate::stage::Stage;
+
+        let outcome = StageOutcome {
+            stage: Stage::PreCommit,
+            status: StageStatus::Ran,
+            before: vec![StepOutcome {
+                command: "echo before".to_string(),
+                status: HookStatus::Passed,
+                output: Vec::new(),
+            }],
+            hooks: Vec::new(),
+            after: Vec::new(),
+        };
+        let mut report = String::new();
+        HookRunReporter::render_stage(&mut report, &outcome);
+        assert!(report.contains("[stage] pre-commit"), "banner present: {report:?}");
+        assert!(report.contains("before: echo before"), "step rendered: {report:?}");
     }
 }

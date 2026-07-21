@@ -10,13 +10,14 @@
 //! - `poly hooks hook-impl --hook-type=<type> -- <git args>` — the entry point
 //!   the installed shim invokes when a git hook fires.
 
+use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::io::IsTerminal as _;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{Context, Result};
-use clap::{Args, Subcommand};
+use clap::{Args, Subcommand, ValueEnum as _};
 use owo_colors::{OwoColorize, Stream::Stdout};
 use poly_cache::ResultCache;
 use poly_config::{PolyConfig, Stage as ConfigStage};
@@ -91,7 +92,7 @@ pub struct RunArgs {
 /// `poly hooks install` arguments.
 #[derive(Args)]
 pub struct InstallArgs {
-    /// Hook types to install (default: every git-triggered hook type).
+    /// Hook types to install (default: the stages your `poly.toml` configures).
     #[arg(long = "hook-type", value_enum)]
     pub hook_types: Vec<poly_hooks::HookType>,
 
@@ -244,9 +245,135 @@ fn install(args: InstallArgs) -> Result<ExitCode> {
     let config = load_config(None)?;
     super::sources::provision(&root, &config.hooks, false, true).context("provisioning hook sources")?;
     let hooks_dir = poly_hooks::git::get_git_hooks_dir().context("failed to resolve the git hooks directory")?;
-    let written = poly_hooks::install::install(&hooks_dir, &args.hook_types, args.overwrite)?;
+    // An explicit `--hook-type` list is honoured verbatim; otherwise install
+    // only the shims the config actually binds work to, rather than all ten
+    // (which fire — and provision, and print — on every git operation).
+    let derived = args.hook_types.is_empty();
+    let hook_types = if derived {
+        configured_hook_types(&config)
+    } else {
+        args.hook_types.clone()
+    };
+    let written = poly_hooks::install::install(&hooks_dir, &hook_types, args.overwrite)?;
     print_hook_summary("Installed", "install", &hooks_dir, &written);
+
+    // When the shim set is derived from config, prune any leftover poly shims for
+    // stages the config no longer binds — so a repo that previously installed all
+    // ten hooks (an earlier poly, or a since-narrowed config) is realigned and
+    // stops firing poly on every unrelated git operation. Foreign hooks and any
+    // preserved `.legacy` are left untouched by `uninstall`. Skipped for an
+    // explicit `--hook-type` list, which is treated as additive.
+    if derived {
+        let kept: BTreeSet<&str> = hook_types.iter().map(|hook_type| hook_type.as_ref()).collect();
+        let stale: Vec<poly_hooks::HookType> = poly_hooks::HookType::value_variants()
+            .iter()
+            .copied()
+            .filter(|hook_type| !kept.contains(hook_type.as_ref()))
+            .collect();
+        let removed = poly_hooks::install::uninstall(&hooks_dir, &stale)?;
+        if !removed.is_empty() {
+            print_hook_summary("Removed stale", "remove", &hooks_dir, &removed);
+        }
+    }
     Ok(ExitCode::SUCCESS)
+}
+
+/// The [`poly_hooks::HookType`] a runner [`poly_hooks::Stage`] installs a shim
+/// for, or `None` for [`poly_hooks::Stage::Manual`] (run on demand via `poly
+/// hooks run`, never wired to a git hook).
+fn hook_type_of_stage(stage: poly_hooks::Stage) -> Option<poly_hooks::HookType> {
+    use poly_hooks::{HookType, Stage};
+    Some(match stage {
+        Stage::CommitMsg => HookType::CommitMsg,
+        Stage::PostCheckout => HookType::PostCheckout,
+        Stage::PostCommit => HookType::PostCommit,
+        Stage::PostMerge => HookType::PostMerge,
+        Stage::PostRewrite => HookType::PostRewrite,
+        Stage::PreCommit => HookType::PreCommit,
+        Stage::PreMergeCommit => HookType::PreMergeCommit,
+        Stage::PrePush => HookType::PrePush,
+        Stage::PreRebase => HookType::PreRebase,
+        Stage::PrepareCommitMsg => HookType::PrepareCommitMsg,
+        // `Manual` is not a git hook; `Stage` is `#[non_exhaustive]`.
+        _ => return None,
+    })
+}
+
+/// Insert the concrete runner stage(s) a config stage lowers to into `set`.
+///
+/// [`ConfigStage::Always`] has no runner counterpart — its jobs append to every
+/// concrete stage — so it expands to all git-triggered stages.
+fn add_config_stage(set: &mut BTreeSet<poly_hooks::Stage>, stage: ConfigStage) {
+    match lower::to_hook_stage(stage) {
+        Some(concrete) => {
+            set.insert(concrete);
+        }
+        None => {
+            for hook_type in poly_hooks::HookType::value_variants() {
+                set.insert(poly_hooks::Stage::from(*hook_type));
+            }
+        }
+    }
+}
+
+/// Insert the concrete runner stages named by a raw `stages = [...]` list.
+///
+/// Unparseable stage names are ignored: they cannot map to any hook, and config
+/// validation reports genuine errors on its own path.
+fn add_string_stages(set: &mut BTreeSet<poly_hooks::Stage>, stages: &[String]) {
+    for name in stages {
+        if let Ok(stage) = name.parse::<ConfigStage>() {
+            add_config_stage(set, stage);
+        }
+    }
+}
+
+/// Derive the concrete git hook types a configured repository binds work to, so
+/// `poly hooks install` (without an explicit `--hook-type`) wires only those
+/// shims instead of all ten.
+///
+/// Unions every stage the config references: the top-level `[hooks] stages`
+/// list, each builtin group's `stages`, every enabled `[tools.<name>]` binding,
+/// and every explicit `[hooks.<stage>]` table. The `always` pseudo-stage expands
+/// to every concrete stage. Falls back to `pre-commit` when the config binds
+/// nothing (e.g. a repo with no `[hooks]` section, or builtins that inherit the
+/// default stage).
+///
+/// Producer hooks from `[[hooks.sources]]` declare their stages in the provisioned
+/// catalog manifest (a runtime detail, not in `poly.toml`); they are not folded in
+/// here, so a source-only repo installs at least the `pre-commit` fallback.
+fn configured_hook_types(config: &PolyConfig) -> Vec<poly_hooks::HookType> {
+    let hooks = &config.hooks;
+    let mut set: BTreeSet<poly_hooks::Stage> = BTreeSet::new();
+
+    add_string_stages(&mut set, &hooks.stages);
+
+    add_string_stages(&mut set, &hooks.builtin.lint.stages);
+    add_string_stages(&mut set, &hooks.builtin.fmt.stages);
+    add_string_stages(&mut set, &hooks.builtin.commit.stages);
+    add_string_stages(&mut set, &hooks.builtin.file_safety.stages);
+    if let Some(cargo) = &hooks.builtin.cargo {
+        add_string_stages(&mut set, &cargo.stages);
+    }
+
+    for stage in hooks.stage_configs.keys() {
+        add_config_stage(&mut set, *stage);
+    }
+
+    for (_, tool) in config.tools.iter() {
+        if tool.enabled {
+            for stage in &tool.stages {
+                add_config_stage(&mut set, *stage);
+            }
+        }
+    }
+
+    let types: Vec<poly_hooks::HookType> = set.into_iter().filter_map(hook_type_of_stage).collect();
+    if types.is_empty() {
+        vec![poly_hooks::HookType::PreCommit]
+    } else {
+        types
+    }
 }
 
 fn update_sources() -> Result<ExitCode> {
@@ -466,5 +593,101 @@ pub(crate) fn load_config(explicit: Option<&Path>) -> Result<PolyConfig> {
             let cwd = std::env::current_dir().context("failed to resolve the working directory")?;
             PolyConfig::load(&cwd)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::ValueEnum as _;
+
+    use super::*;
+
+    /// Load a [`PolyConfig`] from an inline `poly.toml` fixture.
+    fn config_from(toml: &str) -> PolyConfig {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("poly.toml");
+        std::fs::write(&path, toml).expect("write poly.toml");
+        PolyConfig::load_file(&path).expect("parse poly.toml")
+    }
+
+    /// The kebab-case names of the derived hook types, sorted for comparison.
+    fn derived_names(config: &PolyConfig) -> Vec<String> {
+        let mut names: Vec<String> = configured_hook_types(config)
+            .iter()
+            .map(|hook_type| hook_type.as_ref().to_string())
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn derives_only_the_configured_stages_not_all_ten() {
+        let config = config_from(
+            r#"
+[hooks]
+stages = ["pre-commit"]
+[hooks.builtin]
+commit = { stages = ["commit-msg"] }
+"#,
+        );
+        assert_eq!(derived_names(&config), vec!["commit-msg", "pre-commit"]);
+    }
+
+    #[test]
+    fn empty_config_falls_back_to_pre_commit() {
+        let config = config_from("");
+        assert_eq!(derived_names(&config), vec!["pre-commit"]);
+    }
+
+    #[test]
+    fn always_pseudo_stage_expands_to_every_concrete_stage() {
+        let config = config_from(
+            r#"
+[hooks.always]
+[[hooks.always.jobs]]
+run = "echo everywhere"
+"#,
+        );
+        assert_eq!(
+            derived_names(&config).len(),
+            poly_hooks::HookType::value_variants().len(),
+            "`always` must expand to every git-triggered hook type"
+        );
+    }
+
+    #[test]
+    fn builtin_and_stage_table_and_tool_stages_all_contribute() {
+        let config = config_from(
+            r#"
+[hooks]
+stages = ["pre-commit"]
+[hooks.builtin]
+fmt = { stages = ["pre-push"] }
+[hooks.pre-merge-commit]
+[[hooks.pre-merge-commit.jobs]]
+run = "echo merge"
+[tools.shfmt]
+enabled = true
+stages = ["post-checkout"]
+"#,
+        );
+        assert_eq!(
+            derived_names(&config),
+            vec!["post-checkout", "pre-commit", "pre-merge-commit", "pre-push"]
+        );
+    }
+
+    #[test]
+    fn disabled_tool_stage_is_ignored() {
+        let config = config_from(
+            r#"
+[hooks]
+stages = ["pre-commit"]
+[tools.shfmt]
+enabled = false
+stages = ["pre-push"]
+"#,
+        );
+        assert_eq!(derived_names(&config), vec!["pre-commit"]);
     }
 }
