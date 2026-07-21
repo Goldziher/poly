@@ -147,10 +147,15 @@ fn python_docstrings_preserved() {
 
 #[test]
 fn remove_todos_option() {
+    // The TODO stands alone (no `~keep` on an adjacent line): uncomment's
+    // block-level `~keep` preserves a whole contiguous comment block when any
+    // line in it carries `~keep`, so a TODO next to `~keep` stays regardless of
+    // `remove_todos`. Isolating it keeps this test about `remove_todos` alone.
+    const TODO_SAMPLE: &str = "fn main() {\n    // TODO: strip me\n    let z = 3;\n}\n";
     let engine = UncommentEngine;
     let diagnostics = engine
         .lint(
-            &src("main.rs", Language::Rust, RUST_SAMPLE),
+            &src("main.rs", Language::Rust, TODO_SAMPLE),
             &cfg("enabled = true\nremove_todos = true"),
         )
         .unwrap();
@@ -159,7 +164,7 @@ fn remove_todos_option() {
         .map(|diagnostic| diagnostic.description.as_deref())
         .collect();
     assert!(
-        previews.contains(&Some("// TODO: keep me")),
+        previews.contains(&Some("// TODO: strip me")),
         "remove_todos = true makes the TODO removable, got {previews:?}"
     );
 }
