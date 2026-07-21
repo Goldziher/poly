@@ -71,6 +71,15 @@ pub(crate) fn run(args: &WorkspaceLintArgs) -> Result<bool> {
         return Ok(true);
     }
 
+    // When poly's own output is coloured, make the captured tools emit colour too
+    // (they otherwise see a capture pipe, not a TTY, and self-disable it). Gated on
+    // the same decision as the report below, so `--no-color`/redirected output stays
+    // clean. Paired with the pass-through in `append_output`.
+    let color = color_enabled(args.to_stdout);
+    if color {
+        force_child_color(&mut spec);
+    }
+
     let cache = open_result_cache(&config, &root, args.no_cache)?;
     let sccache = sccache_settings(&config, false)?;
     let request = poly_hooks::HookRunRequest {
@@ -85,8 +94,35 @@ pub(crate) fn run(args: &WorkspaceLintArgs) -> Result<bool> {
         progress: show_progress(),
     };
     let outcome = poly_hooks::run(request)?;
-    render(&outcome, args.to_stdout);
+    render(&outcome, args.to_stdout, color);
     Ok(outcome.success())
+}
+
+/// Force colour from the captured whole-project tools by setting the standard
+/// force-colour env vars on each hook (cargo tools honour `CARGO_TERM_COLOR`;
+/// `CLICOLOR_FORCE` / `FORCE_COLOR` cover the broader ecosystem). A user-set value
+/// wins, so explicit config is never overridden.
+fn force_child_color(spec: &mut poly_hooks::StageSpec) {
+    const FORCE_COLOR: &[(&str, &str)] = &[
+        ("CARGO_TERM_COLOR", "always"),
+        ("CLICOLOR_FORCE", "1"),
+        ("FORCE_COLOR", "1"),
+    ];
+    for hook in &mut spec.hooks {
+        for (key, value) in FORCE_COLOR {
+            hook.env.entry((*key).to_owned()).or_insert_with(|| (*value).to_owned());
+        }
+    }
+}
+
+/// Whether coloured output is enabled for the sink the report prints to. Matches
+/// the decision owo-colors makes for poly's own markers — honouring `--no-color`
+/// (global override), `NO_COLOR`/`CLICOLOR`, and per-stream TTY detection — by
+/// probing it directly, so the force-colour and ANSI-passthrough paths stay in
+/// lock-step with the rest of the report's colouring.
+fn color_enabled(to_stdout: bool) -> bool {
+    // If colour is on, the wrapper injects ANSI around the sentinel, so it differs.
+    format!("{}", 'x'.if_supports_color(sink_stream(to_stdout), |t| t.red())) != "x"
 }
 
 /// Reduce a lowered stage to just its whole-project analysis hooks.
@@ -122,7 +158,7 @@ fn workspace_lint_disabled(lint: &toml::Table) -> bool {
 /// Render the whole-project results under a lint-appropriate header — one
 /// `✓/× id` line per tool, with each failing tool's captured output indented
 /// beneath it. Written to stdout for pretty output, else stderr.
-fn render(outcome: &poly_hooks::HookRunOutcome, to_stdout: bool) {
+fn render(outcome: &poly_hooks::HookRunOutcome, to_stdout: bool, color: bool) {
     let mut buffer = String::new();
     let mut any = false;
     for stage in &outcome.stages {
@@ -133,7 +169,7 @@ fn render(outcome: &poly_hooks::HookRunOutcome, to_stdout: bool) {
             let suffix = if hook.cached { " (cached)" } else { "" };
             buffer.push_str(&format!("  {marker} {}{suffix}\n", hook.id));
             if failed {
-                append_output(&mut buffer, &hook.output);
+                append_output(&mut buffer, &hook.output, color);
             }
         }
     }
@@ -164,10 +200,16 @@ fn sink_stream(to_stdout: bool) -> Stream {
     if to_stdout { Stream::Stdout } else { Stream::Stderr }
 }
 
-/// Append a failing tool's captured output, indented, ANSI stripped.
-fn append_output(buffer: &mut String, output: &[u8]) {
-    let text = String::from_utf8_lossy(output);
-    let text = console::strip_ansi_codes(&text);
+/// Append a failing tool's captured output, indented. ANSI colour codes are kept
+/// when `color` is set (poly's output is a colour-capable terminal) and stripped
+/// otherwise, so redirected/`--no-color` output stays plain.
+fn append_output(buffer: &mut String, output: &[u8], color: bool) {
+    let raw = String::from_utf8_lossy(output);
+    let text = if color {
+        raw
+    } else {
+        std::borrow::Cow::Owned(console::strip_ansi_codes(&raw).into_owned())
+    };
     for line in text.lines() {
         buffer.push_str("      ");
         buffer.push_str(line);
@@ -177,7 +219,55 @@ fn append_output(buffer: &mut String, output: &[u8]) {
 
 #[cfg(test)]
 mod tests {
-    use super::{retain_workspace_hooks, workspace_lint_disabled};
+    use super::{append_output, force_child_color, retain_workspace_hooks, workspace_lint_disabled};
+
+    const RED_HELLO: &str = "\x1b[31mhello\x1b[0m";
+
+    #[test]
+    fn append_output_strips_ansi_when_color_off() {
+        let mut buffer = String::new();
+        append_output(&mut buffer, RED_HELLO.as_bytes(), false);
+        assert_eq!(buffer, "      hello\n", "ANSI must be stripped when colour is off");
+    }
+
+    #[test]
+    fn append_output_keeps_ansi_when_color_on() {
+        let mut buffer = String::new();
+        append_output(&mut buffer, RED_HELLO.as_bytes(), true);
+        assert_eq!(
+            buffer, "      \x1b[31mhello\x1b[0m\n",
+            "ANSI must pass through when colour is on"
+        );
+    }
+
+    #[test]
+    fn force_child_color_sets_vars_without_overriding_user() {
+        use poly_hooks::{Hook, StageSpec};
+
+        let plain = Hook::run("cargo-clippy", "cargo clippy");
+        let mut preset = Hook::run("custom", "tool");
+        preset.env.insert("CARGO_TERM_COLOR".to_owned(), "never".to_owned());
+
+        let mut spec = StageSpec {
+            hooks: vec![plain, preset],
+            ..StageSpec::default()
+        };
+        force_child_color(&mut spec);
+
+        // The plain hook gains all three force-colour vars.
+        assert_eq!(
+            spec.hooks[0].env.get("CARGO_TERM_COLOR").map(String::as_str),
+            Some("always")
+        );
+        assert_eq!(spec.hooks[0].env.get("CLICOLOR_FORCE").map(String::as_str), Some("1"));
+        assert_eq!(spec.hooks[0].env.get("FORCE_COLOR").map(String::as_str), Some("1"));
+        // The user's explicit value wins; the other vars are still added.
+        assert_eq!(
+            spec.hooks[1].env.get("CARGO_TERM_COLOR").map(String::as_str),
+            Some("never")
+        );
+        assert_eq!(spec.hooks[1].env.get("CLICOLOR_FORCE").map(String::as_str), Some("1"));
+    }
 
     #[test]
     fn retain_keeps_workspace_hooks_forces_always_run_and_drops_steps() {
