@@ -55,7 +55,7 @@ use rules::load_rules;
 /// output semantics change independently of the rule files.  Changes to the
 /// rule files themselves invalidate the cache via the `rules_hash` folded into
 /// `EngineConfig.options` by `Config::build_astgrep_options`.
-const ENGINE_VERSION: &str = "ast-grep-core-0.44.1-engine-1";
+const ENGINE_VERSION: &str = "ast-grep-core-0.44.1-engine-1+tslp1.13.2";
 
 /// Cross-cutting custom-rule engine backed by ast-grep + TSLP grammars.
 ///
