@@ -31,6 +31,14 @@ pub struct ConfigSet {
     /// `(config_dir, config_id)` for every directory-backed config, sorted by
     /// path depth descending so the first ancestor match is the nearest config.
     lookup: Vec<(PathBuf, usize)>,
+    /// Absolute, canonicalized directory where the run's root config
+    /// (`configs[0]`) file lives, when known. This may be an *ancestor* of the
+    /// walk root — running `poly` from a repo subdirectory (`frontend/`) while
+    /// the governing `poly.toml` sits at the repo root — in which case the root
+    /// config's exclude / per-file-ignore globs are anchored there and must be
+    /// re-anchored to the walk root. `None` for the single-config (`--config`)
+    /// bypass and when no config file backs the run.
+    root_config_dir: Option<PathBuf>,
 }
 
 impl ConfigSet {
@@ -41,6 +49,7 @@ impl ConfigSet {
             configs: vec![config],
             dirs: vec![None],
             lookup: Vec::new(),
+            root_config_dir: None,
         }
     }
 
@@ -51,6 +60,7 @@ impl ConfigSet {
     pub fn build(roots: &[PathBuf], root_config: Config) -> anyhow::Result<Self> {
         let primary = roots.first().cloned().unwrap_or_else(|| PathBuf::from("."));
         let root_dir = dir_of_root(&primary);
+        let root_config_dir = root_config_dir(&root_dir);
 
         let mut configs = vec![root_config];
         let mut dirs: Vec<Option<PathBuf>> = vec![Some(root_dir.clone())];
@@ -68,7 +78,12 @@ impl ConfigSet {
             lookup.push((dir, id));
         }
         lookup.sort_by_key(|(dir, _)| std::cmp::Reverse(dir.components().count()));
-        Ok(Self { configs, dirs, lookup })
+        Ok(Self {
+            configs,
+            dirs,
+            lookup,
+            root_config_dir,
+        })
     }
 
     /// The id of the config governing `file`: the nearest ancestor config
@@ -104,37 +119,72 @@ impl ConfigSet {
         self.configs.is_empty()
     }
 
-    /// Exclude globs for the walk rooted at `root`: every directory-backed config
-    /// under `root` contributes its own `[discovery] exclude` globs, each
-    /// prefixed by the config directory relative to `root` (so a nested config
-    /// only prunes its own subtree), unioned with `extra` (CLI `--exclude` / MCP
-    /// globs, rooted at `root`).
+    /// Exclude globs for the walk rooted at `root`: the run's root config
+    /// contributes its `[discovery] exclude` globs re-anchored to `root` (see
+    /// [`root_config_excludes`]), and every *nested* directory-backed config
+    /// under `root` contributes its own globs prefixed by the config directory
+    /// relative to `root` (so a nested config only prunes its own subtree),
+    /// unioned with `extra` (CLI `--exclude` / MCP globs, rooted at `root`).
+    ///
+    /// [`root_config_excludes`]: ConfigSet::root_config_excludes
     pub fn walk_excludes(&self, root: &Path, extra: &[String]) -> Vec<String> {
-        let mut out = Vec::new();
-        let mut contributed = false;
+        let mut out = self.root_config_excludes(root);
         for (config_dir, id) in &self.lookup {
-            let Ok(rel) = config_dir.strip_prefix(root) else {
+            if *id == 0 {
                 continue;
-            };
-            contributed = true;
-            for glob in &self.configs[*id].exclude {
-                out.push(prefix_glob(rel, glob));
             }
-        }
-        if !contributed {
-            out.extend(self.configs[0].exclude.iter().cloned());
+            if let Ok(rel) = config_dir.strip_prefix(root) {
+                for glob in &self.configs[*id].exclude {
+                    out.push(prefix_glob(rel, glob));
+                }
+            }
         }
         out.extend(extra.iter().cloned());
         out
     }
 
+    /// The run root config's exclude globs, re-anchored from the directory where
+    /// its config file lives to the walk `root`.
+    ///
+    /// When `poly` runs from a repo subdirectory, that config directory is an
+    /// *ancestor* of the walk root, so each glob is stripped of the subpath from
+    /// the config directory down to the walk root (globs targeting sibling
+    /// subtrees, which can never match under the walk root, are dropped — see
+    /// [`reanchor_glob`]). When the config directory *is* the walk root (the
+    /// common whole-repo run) the globs are emitted unchanged.
+    fn root_config_excludes(&self, root: &Path) -> Vec<String> {
+        let globs = &self.configs[0].exclude;
+        let Some(config_dir) = &self.root_config_dir else {
+            return globs.clone();
+        };
+        let Ok(abs_root) = std::fs::canonicalize(root) else {
+            return globs.clone();
+        };
+        match abs_root.strip_prefix(config_dir) {
+            Ok(sub) if sub.as_os_str().is_empty() => globs.clone(),
+            Ok(sub) => globs.iter().filter_map(|glob| reanchor_glob(sub, glob)).collect(),
+            Err(_) => globs.clone(),
+        }
+    }
+
     /// Bases for resolving a config's `[per-file-ignores]` globs: the config's
     /// own directory first (so a nested config's globs are relative to where it
     /// lives, matching ruff/eslint), then the run bases as a fallback.
+    ///
+    /// For the run root config (`config_id == 0`) the resolved
+    /// [`root_config_dir`] is preferred over the walk root, so a subdirectory run
+    /// still matches per-file-ignore globs anchored at the repo-root config.
+    ///
+    /// [`root_config_dir`]: ConfigSet::root_config_dir
     pub fn ignore_bases(&self, config_id: usize, run_bases: &[PathBuf]) -> Vec<PathBuf> {
         let mut bases = Vec::with_capacity(run_bases.len() + 1);
-        if let Some(Some(dir)) = self.dirs.get(config_id) {
-            bases.push(dir.clone());
+        let anchor = if config_id == 0 && self.root_config_dir.is_some() {
+            self.root_config_dir.clone()
+        } else {
+            self.dirs.get(config_id).cloned().flatten()
+        };
+        if let Some(dir) = anchor {
+            bases.push(dir);
         }
         bases.extend(run_bases.iter().cloned());
         bases
@@ -164,6 +214,72 @@ fn prefix_glob(rel: &Path, glob: &str) -> String {
         prefix.push('/');
     }
     format!("{prefix}{glob}")
+}
+
+/// The absolute, canonicalized directory whose `poly.toml` governs `walk_root`:
+/// the nearest ancestor (at or above `walk_root`) that contains a config file,
+/// bounded at the git repository root so the search never climbs past the
+/// repository. Returns `None` when `walk_root` cannot be canonicalized or no
+/// config file is found within the boundary (in which case the run root config
+/// carries no re-anchorable excludes).
+fn root_config_dir(walk_root: &Path) -> Option<PathBuf> {
+    let mut current = Some(std::fs::canonicalize(walk_root).ok()?);
+    while let Some(dir) = current {
+        if poly_config::CONFIG_FILE_NAMES
+            .iter()
+            .any(|name| dir.join(name).is_file())
+        {
+            return Some(dir);
+        }
+        if dir.join(".git").exists() {
+            break;
+        }
+        current = dir.parent().map(Path::to_path_buf);
+    }
+    None
+}
+
+/// Re-anchor an ancestor config's exclude `glob` to a walk root nested `sub`
+/// below the config directory. `sub` is the walk root relative to the config
+/// directory (e.g. `frontend`); `glob` is a gitignore-style, `/`-separated
+/// pattern (Windows `\` normalized like [`prefix_glob`]).
+///
+/// - A pattern anchored inside the walk-root subtree (`frontend/src/data/**`
+///   with `sub` = `frontend`) is stripped of the `sub/` prefix →
+///   `src/data/**`, so it matches files scanned relative to the walk root.
+/// - An un-anchored pattern (leading `**/`, or a bare name with no separator
+///   such as `.secrets.baseline`) matches at any depth and is kept unchanged.
+/// - A single leading directory segment with a recursive wildcard
+///   (`target/**`, `node_modules/**`) is a build/vendor prune that still applies
+///   under the walk root, so it is kept.
+/// - A deeper concrete sibling path (`services/api/**`) can never match anything
+///   under the walk root, so it is dropped (`None`).
+fn reanchor_glob(sub: &Path, glob: &str) -> Option<String> {
+    let glob = glob.replace('\\', "/");
+    // Un-anchored patterns apply at any depth, so they hold under the walk root.
+    if glob.starts_with("**") || !glob.contains('/') {
+        return Some(glob);
+    }
+    let sub = sub.to_string_lossy().replace('\\', "/");
+    let sub = sub.trim_end_matches('/');
+    if glob == sub {
+        // The glob excludes the entire walk-root subtree.
+        return Some("**".to_string());
+    }
+    if let Some(rest) = glob.strip_prefix(&format!("{sub}/")) {
+        // Anchored inside the walk-root subtree → drop the `sub/` prefix.
+        return Some(if rest.is_empty() {
+            "**".to_string()
+        } else {
+            rest.to_string()
+        });
+    }
+    // Anchored elsewhere: keep a single-directory recursive prune (applies under
+    // the walk root too); drop a deeper concrete sibling path (cannot match).
+    match glob.split_once('/') {
+        Some((_, rest)) if rest.is_empty() || rest == "**" => Some(glob),
+        _ => None,
+    }
 }
 
 /// Scan `roots` for every directory containing a config file, respecting
@@ -267,5 +383,75 @@ mod tests {
             "nested exclude rooted at its config dir: {excludes:?}"
         );
         assert!(excludes.contains(&"extra/**".to_string()), "CLI extra passed through");
+    }
+
+    #[test]
+    fn walk_excludes_reanchors_ancestor_root_config_from_subdir() {
+        // Root config lives at the repo root; the walk root is a subdirectory
+        // (`frontend/`). The root config's exclude globs are anchored at the repo
+        // root and must be re-anchored to the walk root.
+        let root = tempdir().unwrap();
+        write(
+            &root.path().join("poly.toml"),
+            "[workspace]\nroot = true\n[discovery]\nexclude = [\
+             \"frontend/src/data/benchmark/**\", \
+             \"frontend/src/types/api-schema.d.ts\", \
+             \"**/*.min.js\", \
+             \"target/**\", \
+             \"services/api/**\"]\n",
+        );
+        let frontend = root.path().join("frontend");
+        fs::create_dir_all(frontend.join("src")).unwrap();
+
+        let root_config: Config = poly_config::PolyConfig::resolve_for_dir(&frontend).unwrap().into();
+        let set = ConfigSet::build(std::slice::from_ref(&frontend), root_config).unwrap();
+
+        let excludes = set.walk_excludes(&frontend, &[]);
+        assert!(
+            excludes.contains(&"src/data/benchmark/**".to_string()),
+            "sub-anchored glob re-anchored to the walk root: {excludes:?}"
+        );
+        assert!(
+            excludes.contains(&"src/types/api-schema.d.ts".to_string()),
+            "sub-anchored file re-anchored to the walk root: {excludes:?}"
+        );
+        assert!(
+            excludes.contains(&"**/*.min.js".to_string()),
+            "any-depth glob preserved: {excludes:?}"
+        );
+        assert!(
+            excludes.contains(&"target/**".to_string()),
+            "single-segment recursive prune preserved: {excludes:?}"
+        );
+        assert!(
+            !excludes.iter().any(|glob| glob.contains("services")),
+            "sibling-subtree glob dropped: {excludes:?}"
+        );
+        // The un-re-anchored form must not leak through.
+        assert!(
+            !excludes.iter().any(|glob| glob.starts_with("frontend/")),
+            "no repo-root-anchored globs remain: {excludes:?}"
+        );
+    }
+
+    #[test]
+    fn reanchor_glob_classifies_patterns() {
+        let sub = Path::new("frontend");
+        assert_eq!(
+            reanchor_glob(sub, "frontend/src/data/**").as_deref(),
+            Some("src/data/**")
+        );
+        assert_eq!(reanchor_glob(sub, "frontend/x.ts").as_deref(), Some("x.ts"));
+        assert_eq!(reanchor_glob(sub, "**/*.min.js").as_deref(), Some("**/*.min.js"));
+        assert_eq!(
+            reanchor_glob(sub, ".secrets.baseline").as_deref(),
+            Some(".secrets.baseline")
+        );
+        assert_eq!(
+            reanchor_glob(sub, "node_modules/**").as_deref(),
+            Some("node_modules/**")
+        );
+        assert_eq!(reanchor_glob(sub, "services/api/**"), None);
+        assert_eq!(reanchor_glob(sub, "crates/x-ffi/include/*.h"), None);
     }
 }

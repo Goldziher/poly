@@ -421,6 +421,46 @@ fn resolve_for_dir_single_config_matches_load() {
 }
 
 #[test]
+fn load_cascades_ancestor_and_descendant_bounded_at_git() {
+    // Layout: outer/poly.toml (above the repo, MUST be ignored) →
+    // outer/repo/.git + outer/repo/poly.toml (repo root) →
+    // outer/repo/frontend/poly.toml (descendant). Loading from `frontend`
+    // deep-merges repo + frontend, inheriting the repo's settings, but never
+    // climbs past the `.git` boundary into `outer`.
+    let outer = tempdir().unwrap();
+    fs::write(outer.path().join("poly.toml"), "[defaults]\nline_length = 200\n").unwrap();
+
+    let repo = outer.path().join("repo");
+    fs::create_dir_all(repo.join(".git")).unwrap();
+    fs::write(
+        repo.join("poly.toml"),
+        "[defaults]\nline_length = 100\n[lint.python.ruff]\nselect = [\"E\"]\n",
+    )
+    .unwrap();
+
+    let frontend = repo.join("frontend");
+    fs::create_dir_all(&frontend).unwrap();
+    fs::write(frontend.join("poly.toml"), "[lint.rust.rustfmt]\nedition = \"2021\"\n").unwrap();
+
+    let config = PolyConfig::load(&frontend).expect("load");
+
+    // Inherited from the repo-root config (frontend does not override it), and
+    // NOT the stray `outer` value (200) — the `.git` boundary stops the climb.
+    assert_eq!(config.defaults.line_length, 100, "inherit repo root, bounded at .git");
+    // Deep-merged: the ancestor's lint table survives alongside the descendant's.
+    assert!(
+        config.lint.contains_key("python"),
+        "ancestor lint table inherited: {:?}",
+        config.lint
+    );
+    assert!(
+        config.lint.contains_key("rust"),
+        "descendant lint table merged: {:?}",
+        config.lint
+    );
+}
+
+#[test]
 fn resolve_for_dir_no_config_is_default() {
     let dir = tempdir().unwrap();
     let config = PolyConfig::resolve_for_dir(dir.path()).expect("resolve");

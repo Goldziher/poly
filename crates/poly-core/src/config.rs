@@ -63,7 +63,10 @@ pub struct EngineConfig {
 }
 
 impl Config {
-    /// Load config by searching from `start` upward for `poly.toml`.
+    /// Load the effective config for `start`, cascading the `poly.toml` chain
+    /// from the git repository root down to `start` (bounded at `.git`) when
+    /// inside a repo, else the single nearest `poly.toml`. See
+    /// [`poly_config::PolyConfig::load`].
     pub fn load(start: &Path) -> anyhow::Result<Config> {
         Ok(poly_config::PolyConfig::load(start)?.into())
     }

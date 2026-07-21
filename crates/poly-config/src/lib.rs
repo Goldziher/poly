@@ -154,18 +154,34 @@ pub struct DiscoveryConfig {
 }
 
 impl PolyConfig {
-    /// Load config by searching from `start` upward for a config file. Returns
-    /// the default config when none is found.
+    /// Load the effective config for `start`.
+    ///
+    /// When `start` sits inside a git repository, every `poly.toml` (each first
+    /// absorbing its sibling [`LOCAL_OVERRIDE_NAME`]) from the repository root
+    /// down to `start` is deep-merged via [`resolve_for_dir`] — the nearest
+    /// config wins, inheriting from its ancestors. The cascade is bounded at the
+    /// `.git` directory, so a stray `poly.toml` above the repository (e.g. one in
+    /// `$HOME`) is never picked up. This is what makes a run from a subdirectory
+    /// (`frontend/`) honor the repo-root config's settings and exclude globs.
+    ///
+    /// Outside a git repository the historical behavior is preserved: the single
+    /// nearest ancestor `poly.toml` is loaded on its own (no cascade), or the
+    /// default config when none is found.
+    ///
+    /// [`resolve_for_dir`]: PolyConfig::resolve_for_dir
     pub fn load(start: &Path) -> anyhow::Result<PolyConfig> {
-        match find_config(start) {
+        let dir = if start.is_file() {
+            start.parent().unwrap_or(start)
+        } else {
+            start
+        };
+        if git_root(dir).is_some() {
+            return PolyConfig::resolve_for_dir(dir);
+        }
+        match find_config(dir) {
             Some(path) => PolyConfig::load_file(&path),
             None => {
                 let mut config = PolyConfig::default();
-                let dir = if start.is_file() {
-                    start.parent().unwrap_or(start)
-                } else {
-                    start
-                };
                 config.rules.resolve_relative_to(dir);
                 config.typos_native = resolve_typos_native(dir);
                 Ok(config)
@@ -328,6 +344,22 @@ fn merge_tables(base: &mut toml::Table, override_table: toml::Table) {
             }
         }
     }
+}
+
+/// The git repository root at or above `dir`: the nearest ancestor directory
+/// containing a `.git` entry, or `None` when `dir` is not inside a git repo.
+///
+/// Used to decide whether config resolution should cascade (bounded at the repo
+/// root) or fall back to loading the single nearest `poly.toml`.
+fn git_root(dir: &Path) -> Option<PathBuf> {
+    let mut current = Some(dir.to_path_buf());
+    while let Some(d) = current {
+        if d.join(".git").exists() {
+            return Some(d);
+        }
+        current = d.parent().map(Path::to_path_buf);
+    }
+    None
 }
 
 /// Find the nearest `poly.toml`, walking upward from `start`.
