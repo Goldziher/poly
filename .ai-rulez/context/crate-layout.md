@@ -102,18 +102,21 @@ Three backend mechanisms, in resolution order per language:
    Rust, grammars fetched on demand → still zero system deps. This is the coverage mechanism,
    not a fallback to avoid; native ports can later upgrade individual languages from tier-2 to
    tier-1 fidelity.
-3. **Native-toolchain backend (opt-in)** (`native_tool.rs`) — for languages whose *canonical*
+3. **Native-toolchain backend** (`native_tool.rs`) — for languages whose *canonical*
    formatter/linter is a first-party CLI with no usable Rust library: Go's `gofmt`, Rust's
    `rustfmt`, Zig's `zig fmt`, and the like. This is the **single, scoped exception** to the
    no-subprocess rule (the `poly hooks` engine is the other, separate one). It exists because no
    pure-Rust crate can match these tools, and reimplementing them is a disproportionate
    maintenance sink. Strict discipline keeps the exception honest:
 
-   - **Opt-in, off by default.** Enabled per-tool via config (`[fmt.<lang>.<tool>] enabled =
-     true`). Output then depends on the host tool's presence and version, which is at odds with
-     reproducibility — so it is a deliberate opt-in, never the default, and CI must pin the
-     toolchain. Default-off means the zero-dependency promise is intact for everyone who hasn't
-     asked for this.
+   - **`rustfmt` and `gofmt` are default-on when present; everything else is opt-in, off by
+     default.** The two canonical formatters with no viable Rust library run automatically when
+     found on PATH (ADR 0014 amendment, 2026-06-28), matching what `cargo fmt`/`gofmt` users
+     already expect; `zig fmt` and every native *lint* tool stay opt-in via config
+     (`[fmt.<lang>.<tool>] enabled = true`). Output then depends on the host tool's presence and
+     version, which is at odds with reproducibility — so CI must pin the toolchain. Either way,
+     when the tool is absent the language falls through to tier-2, so the zero-dependency promise
+     is intact for anyone without the toolchain installed.
    - **Capability-gated, graceful degradation.** Probe for the tool once (cached); declare the
      `format`/`lint` capability only when it is found *and* enabled; otherwise the language
      falls through to tier-2. A missing toolchain is never an error — just lower fidelity.

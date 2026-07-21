@@ -29,11 +29,14 @@ Project-specific conventions baked into context so they ship into every AI tool'
 ## Dependency policy
 
 - **Pure-Rust, in-process, no subprocess, no system dependency — by default.** Every wrapped
-  tool is compiled in as a crate dependency; engines never shell out. **One scoped, opt-in
+  tool is compiled in as a crate dependency; engines never shell out. **One scoped
   exception:** *native-toolchain backends* (see crate-layout) may invoke a language's canonical
-  first-party CLI — `gofmt`, `rustfmt`, `zig fmt`, … — when it is present on the host. They are
-  **off by default**, and when the tool is absent the language falls through to the tree-sitter
-  tier, so the zero-dependency guarantee still holds for everyone who hasn't opted in. (`poly
+  first-party CLI — `gofmt`, `rustfmt`, `zig fmt`, … — when it is present on the host. The two
+  canonical formatters with no viable Rust library, **`rustfmt` and `gofmt`, are default-on when
+  present** (ADR 0014 amendment, 2026-06-28) — matching what `cargo fmt`/`gofmt` users already
+  expect; the rest (`zig fmt`, and all opt-in lint/format tools) stay **off by default**. In
+  every case, when the tool is absent the language falls through to the tree-sitter tier, so the
+  zero-dependency guarantee still holds for anyone without the toolchain installed. (`poly
   hooks`/polyhooks is a separate, pre-existing exception, since running foreign hooks inherently
   shells out.)
 - **Prefer crates.io; use a pinned git dependency when the library we need isn't published**

@@ -2,6 +2,8 @@
 # poly's result cache + hook snapshot live in the per-user cache dir
 # (~/.cache/poly on Linux), never in the repo — nothing to ignore here.
 
+poly.local.toml
+
 # BEGIN ai-rulez (DO NOT EDIT - managed by ai-rulez)
 .ai-rulez/.generated-manifest.json
 .claude/
@@ -10,4 +12,3 @@
 AGENTS.md
 CLAUDE.md
 # END ai-rulez
-poly.local.toml
