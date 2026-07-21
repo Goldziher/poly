@@ -1,15 +1,15 @@
 [workspace]
 resolver = "3"
 members = [
-    "crates/conformance",
-    "crates/gitfluff",
-    "crates/poly-cache",
-    "crates/poly-catalog",
-    "crates/poly-cli",
-    "crates/poly-config",
-    "crates/poly-core",
-    "crates/poly-hooks",
-    "crates/poly-mcp",
+  "crates/conformance",
+  "crates/gitfluff",
+  "crates/poly-cache",
+  "crates/poly-catalog",
+  "crates/poly-cli",
+  "crates/poly-config",
+  "crates/poly-core",
+  "crates/poly-hooks",
+  "crates/poly-mcp",
 ]
 
 [workspace.package]
@@ -42,7 +42,7 @@ biome_diagnostics = { git = "https://github.com/biomejs/biome", rev = "412a0e997
 biome_graphql_analyze = { git = "https://github.com/biomejs/biome", rev = "412a0e99712d4223b9f10c5f9d6b8977187ab2a2" }
 biome_graphql_parser = { git = "https://github.com/biomejs/biome", rev = "412a0e99712d4223b9f10c5f9d6b8977187ab2a2" }
 biome_languages = { git = "https://github.com/biomejs/biome", rev = "412a0e99712d4223b9f10c5f9d6b8977187ab2a2", features = [
-    "lang_css",
+  "lang_css",
 ] }
 biome_rowan = { git = "https://github.com/biomejs/biome", rev = "412a0e99712d4223b9f10c5f9d6b8977187ab2a2" }
 blake3 = "1"

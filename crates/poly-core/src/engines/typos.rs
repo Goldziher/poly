@@ -7,7 +7,7 @@
 //! # Capabilities
 //!
 //! Lint only, and **never autofix**. Misspellings are reported at
-//! [`Severity::Error`] with the dictionary suggestion in the message, but carry
+//! [`Severity::Warning`] with the dictionary suggestion in the message, but carry
 //! no [`Edit`](crate::engine::Edit) — auto-correcting a typo silently rewrites identifiers, string
 //! keys, and API names that only *look* like misspellings, which regresses code
 //! far more often than it helps. A typo must be resolved by a human.
@@ -35,7 +35,7 @@ use crate::language::Language;
 /// Combined cache-key version: `typos` tokeniser + `typos-dict` word list,
 /// plus a marker for the noise-suppression guards below. Bump whenever either
 /// crate is updated OR the guard logic changes (it alters output).
-const TYPOS_VERSION: &str = "0.10.43+dict-0.13.31+guards1+cfg2+error-noautofix+builtins1";
+const TYPOS_VERSION: &str = "0.10.43+dict-0.13.31+guards1+cfg2+warn-noautofix+builtins1";
 
 /// Skip spell-checking files at least this large: generated/minified bundles
 /// dominate by size and are pure noise word-by-word.
@@ -348,7 +348,12 @@ fn typo_to_diagnostic(content: &str, typo: typos::Typo<'_>) -> Diagnostic {
     Diagnostic {
         engine: "typos".to_string(),
         code: Some("typo".to_string()),
-        severity: Severity::Error,
+        // Warning, not Error: a single dictionary false positive (a real word
+        // inside an identifier, a short hex/base64 fragment, a domain term not in
+        // the word list) must not fail CI. `poly lint` exits non-zero only on
+        // Error severity, so spell-check findings surface without breaking builds.
+        // Users who want hard failures can raise the severity in config.
+        severity: Severity::Warning,
         title: message,
         description: None,
         url: None,

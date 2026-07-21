@@ -306,6 +306,7 @@ impl Language {
             | Language::Json
             | Language::Jsonc
             | Language::Yaml
+            | Language::Toml
             | Language::Ruby
             | Language::R
             | Language::Css

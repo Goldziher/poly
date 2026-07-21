@@ -186,6 +186,38 @@ fn extend_select_adds_rule_beyond_defaults() {
     );
 }
 
+/// B008 (function-call in argument default) is disabled by default so the
+/// idiomatic FastAPI/typer `x = Depends(...)` pattern is not flagged, while the
+/// rest of flake8-bugbear stays on. `extend_select = ["B008"]` brings it back.
+#[test]
+fn b008_is_off_by_default_but_reenableable() {
+    let engine = RuffEngine;
+    // `Depends()` in a default triggers B008; the mutable-default arg triggers B006.
+    let content = "def f(x=Depends()):\n    return x\n\n\ndef g(items=[]):\n    return items\n";
+
+    let default = engine.lint(&make_src("m.py", content), &engine_cfg()).unwrap();
+    assert!(
+        !default.iter().any(|d| d.code.as_deref() == Some("B008")),
+        "B008 must be off by default; got: {default:?}"
+    );
+    assert!(
+        default.iter().any(|d| d.code.as_deref() == Some("B006")),
+        "the rest of bugbear (B006) must still fire; got: {default:?}"
+    );
+
+    let mut options = toml::Table::new();
+    options.insert("extend_select".to_string(), code_array(&["B008"]));
+    let cfg = EngineConfig {
+        options,
+        ..engine_cfg()
+    };
+    let reenabled = engine.lint(&make_src("m.py", content), &cfg).unwrap();
+    assert!(
+        reenabled.iter().any(|d| d.code.as_deref() == Some("B008")),
+        "extend_select = [\"B008\"] must re-enable it; got: {reenabled:?}"
+    );
+}
+
 /// Regression: canonical `select` narrows the active set and `ignore` removes a
 /// rule from it. `select = ["F"]` flags F401 (unused import); adding
 /// `ignore = ["F401"]` suppresses it.

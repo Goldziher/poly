@@ -36,7 +36,8 @@ use crate::language::Language;
 /// `+fmt-opts`:  JS quote_style, semicolons, trailing_commas, arrow_parentheses,
 ///               bracket_spacing, bracket_same_line, indent_style; JSON bracket_spacing
 ///               and trailing_commas now wired from `cfg.options`.
-const VERSION: &str = "oxc_formatter:0.59.0+oxlint+parser:0.59.0+rev:4b81f4d+json-fmt+rules-v2+fmt-opts";
+const VERSION: &str =
+    "oxc_formatter:0.59.0+oxlint+parser:0.59.0+rev:4b81f4d+json-fmt+rules-v2+fmt-opts+jsonc-trailing-comma";
 
 static LANGUAGES: &[Language] = &[
     Language::JavaScript,
@@ -476,8 +477,14 @@ fn format_js(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutpu
 }
 
 fn lint_json(src: &SourceFile) -> anyhow::Result<Vec<Diagnostic>> {
+    // JSONC permits comments *and* trailing commas — both valid in the spec our
+    // formatter targets, and the JSONC formatter itself emits/preserves trailing
+    // commas. `serde_json` is strict JSON, so it rejects both. Neutralise them
+    // (replace with spaces, preserving byte offsets so any *genuine* parse error
+    // still reports at the right position) before the strict parse. Plain `.json`
+    // keeps strict semantics: a trailing comma there is a real error.
     let text = if src.language == Language::Jsonc {
-        strip_jsonc_comments(&src.content)
+        neutralize_trailing_commas(&strip_jsonc_comments(&src.content))
     } else {
         src.content.to_string()
     };
@@ -656,6 +663,52 @@ fn strip_jsonc_comments(src: &str) -> String {
     out
 }
 
+/// Replace JSONC **trailing commas** — a `,` whose next non-whitespace character
+/// is `}` or `]` — with a space, so strict `serde_json` accepts them while byte
+/// offsets (and therefore any genuine parse-error position) are preserved.
+///
+/// Operates on comment-stripped input (comments are already spaces) and is
+/// string-aware: commas and brackets inside string literals are ignored.
+fn neutralize_trailing_commas(src: &str) -> String {
+    let mut bytes: Vec<u8> = src.as_bytes().to_vec();
+    // Byte index of the most recent structural `,` with only whitespace since.
+    let mut pending_comma: Option<usize> = None;
+    let mut in_string = false;
+    let mut escaped = false;
+
+    for i in 0..bytes.len() {
+        let b = bytes[i];
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if b == b'\\' {
+                escaped = true;
+            } else if b == b'"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match b {
+            b'"' => {
+                in_string = true;
+                pending_comma = None;
+            }
+            b',' => pending_comma = Some(i),
+            b'}' | b']' => {
+                if let Some(j) = pending_comma.take() {
+                    bytes[j] = b' ';
+                }
+            }
+            _ if b.is_ascii_whitespace() => {}
+            _ => pending_comma = None,
+        }
+    }
+
+    // SAFETY-equivalent: we only ever overwrite an ASCII `,` with an ASCII space,
+    // so the buffer remains valid UTF-8.
+    String::from_utf8(bytes).expect("blanking ASCII commas keeps valid UTF-8")
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -740,6 +793,42 @@ mod tests {
         let src = make_src("{\n  // comment\n  \"a\": 1\n}\n", Language::Jsonc);
         let diags = lint_json(&src).unwrap();
         assert!(diags.is_empty(), "got diags: {diags:?}");
+    }
+
+    #[test]
+    fn jsonc_with_trailing_commas_is_valid() {
+        // Object, array, and nested trailing commas — all valid JSONC, all of
+        // which the JSONC formatter itself emits/preserves.
+        let src = make_src("{\n  \"a\": 1,\n  \"b\": [1, 2,],\n}\n", Language::Jsonc);
+        let diags = lint_json(&src).unwrap();
+        assert!(diags.is_empty(), "trailing commas are valid JSONC; got: {diags:?}");
+    }
+
+    #[test]
+    fn jsonc_genuinely_invalid_still_errors() {
+        // A real syntax error (missing value) must still be reported.
+        let src = make_src("{\n  \"a\":\n}\n", Language::Jsonc);
+        let diags = lint_json(&src).unwrap();
+        assert!(!diags.is_empty(), "malformed JSONC must still error");
+        assert_eq!(diags[0].code, Some("parse-error".to_owned()));
+    }
+
+    #[test]
+    fn plain_json_trailing_comma_still_errors() {
+        // Strict `.json` keeps strict semantics — trailing commas are invalid.
+        let src = make_src("{\"a\": 1,}", Language::Json);
+        let diags = lint_json(&src).unwrap();
+        assert!(!diags.is_empty(), "trailing comma is invalid in strict JSON");
+        assert_eq!(diags[0].code, Some("parse-error".to_owned()));
+    }
+
+    #[test]
+    fn neutralize_ignores_comma_inside_string() {
+        // A `,` followed by `]` *inside a string* is not a trailing comma.
+        let input = r#"{"a": "x,]", "b": [1,]}"#;
+        let out = neutralize_trailing_commas(input);
+        // The in-string `,` survives; the real trailing `,` before `]` is blanked.
+        assert_eq!(out, r#"{"a": "x,]", "b": [1 ]}"#);
     }
 
     #[test]

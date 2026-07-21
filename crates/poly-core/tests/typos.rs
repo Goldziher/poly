@@ -100,8 +100,8 @@ fn drops_ultra_short_corrections_but_keeps_three_char_typos() {
     );
     assert_eq!(
         diags[0].severity,
-        poly_core::engine::Severity::Error,
-        "typos must be error severity",
+        poly_core::engine::Severity::Warning,
+        "typos must be warning severity so a false positive never fails CI",
     );
     assert!(diags[0].fix.is_empty(), "typos must not carry an autofix");
     assert!(

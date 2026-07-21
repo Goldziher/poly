@@ -68,6 +68,28 @@ use crate::language::Language;
 /// because the ruff formatter already handles those whitespace/blank-line rules.
 static RULE_CODES: &[&str] = &["F", "E4", "E7", "E9", "W6", "I", "UP", "B"];
 
+/// Rules disabled by default even though their category is selected above.
+///
+/// - **B008** (function-call in an argument default) fires on the idiomatic
+///   FastAPI / typer / Click dependency-injection pattern
+///   (`def handler(user = Depends(...))`, `x = Query(...)`, `arg = Argument(...)`),
+///   where the call in the default is deliberate, not a bug. The rest of
+///   flake8-bugbear (notably B006, mutable default arguments) catches real bugs
+///   and stays on; only this false-positive-prone member is off. Re-enable it
+///   with `extend_select = ["B008"]` (or an explicit `select`) in
+///   `[lint.python.ruff]`.
+static DEFAULT_IGNORED_RULES: &[&str] = &["B008"];
+
+/// The effective default ignore set: [`DEFAULT_IGNORED_RULES`] minus any rule the
+/// user explicitly turned back on via `select` / `extend_select`.
+fn default_ignored(user_enabled: &[String]) -> Vec<String> {
+    DEFAULT_IGNORED_RULES
+        .iter()
+        .filter(|rule| !user_enabled.iter().any(|e| e.eq_ignore_ascii_case(rule)))
+        .map(|rule| (*rule).to_owned())
+        .collect()
+}
+
 /// Resolve a list of rule-code strings to ruff `Rule`s.
 fn rules_for_codes(codes: &[String]) -> Vec<ruff_linter::registry::Rule> {
     let preview = PreviewOptions::default();
@@ -101,7 +123,7 @@ fn default_settings() -> &'static LinterSettings {
     SETTINGS.get_or_init(|| {
         let codes: Vec<String> = RULE_CODES.iter().map(|s| (*s).to_owned()).collect();
         let mut settings = LinterSettings::new(Path::new("."));
-        settings.rules = build_rule_table(&codes, &[]);
+        settings.rules = build_rule_table(&codes, &default_ignored(&[]));
         settings.line_length =
             ruff_linter::line_width::LineLength::try_from(120_u16).expect("120 is a valid line length");
         settings.pycodestyle.max_line_length = settings.line_length;
@@ -125,7 +147,10 @@ fn build_settings(cfg: &EngineConfig) -> LinterSettings {
         selection.select
     };
     codes.extend(selection.extend_select);
-    let ignore = selection.ignore;
+    // Fold in the default ignore set (e.g. B008), minus anything the user has
+    // explicitly enabled via `select` / `extend_select` (now all present in `codes`).
+    let mut ignore = selection.ignore;
+    ignore.extend(default_ignored(&codes));
 
     let line_length = cfg
         .options
@@ -273,7 +298,7 @@ impl Engine for RuffEngine {
         concat!(
             "git-ruff:",
             "db17b17a825963a29df8c9435f2257ecdb17c66d",
-            "+pkgroot+plugins+isort+e501+tgtsrc"
+            "+pkgroot+plugins+isort+e501+tgtsrc+ignore-b008"
         )
     }
 

@@ -160,7 +160,7 @@ impl Engine for TaploEngine {
 /// `toml::Value::as_integer` lookups.
 fn build_options(cfg: &EngineConfig) -> Options {
     let mut opts = Options {
-        column_width: 120,
+        column_width: cfg.globals.line_length,
         indent_string: " ".repeat(cfg.indent_width),
         crlf: matches!(cfg.globals.line_ending, crate::config::LineEnding::Crlf),
         trailing_newline: cfg.globals.final_newline,
