@@ -5,6 +5,34 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
+## [0.17.0] - 2026-07-21
+
+### Added
+
+- The whole-project lint phase now preserves tool colours. When `poly lint`'s own output is a colour-capable terminal,
+  captured `cargo clippy` / `cargo-deny` / type-checker diagnostics keep their ANSI colouring instead of being stripped;
+  redirected or `--no-color`/`NO_COLOR` output stays plain.
+
+### Changed
+
+- Opinionated default-policy audit across the wrapped tools:
+  - MDX (`.mdx`) files no longer report `MD033` (inline HTML), `MD036` (emphasis-as-heading), `MD041` (first-line
+    heading), or `MD051` (link fragments) — all noise against JSX/ESM content and toolchain-generated anchors. Plain
+    `.md` is unchanged, and any rule is re-enableable via `enable`.
+  - `typos` findings are now **warnings** rather than errors, so a single dictionary false positive no longer fails CI
+    (`poly lint` exits non-zero only on errors).
+  - `ruff`'s flake8-bugbear `B008` is disabled by default — it false-positives on the FastAPI / typer `Depends()` /
+    `Query()` argument-default idiom — while the rest of bugbear (`B006`, …) stays on. Re-enable with
+    `extend_select = ["B008"]`.
+  - TOML now formats with a 2-space indent (matching YAML/JSON and taplo's own default) instead of 4, and the `taplo`
+    formatter honours the global `line_length` instead of a hardcoded 120.
+
+### Fixed
+
+- `poly lint` no longer reports a false `parse-error` on valid JSONC (`.jsonc`) files that use trailing commas —
+  including the trailing commas poly's own JSONC formatter emits. Strict `.json` still rejects them, and genuine JSONC
+  syntax errors are still reported at their correct position.
+
 ## [0.16.0] - 2026-07-21
 
 ### Added
