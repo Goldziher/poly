@@ -5,6 +5,19 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
+## [0.17.1] - 2026-07-24
+
+### Changed
+
+- Bumped the pinned `oxc`, `ruff`, and `biome` git dependencies to their latest revisions and refreshed the
+  `uncomment` backend to 3.5.1. The affected engine cache keys (`version()`) were bumped so upgraded output is
+  re-run, and stale `rumdl`/`tree-sitter-language-pack` version markers left by the previous dependency refresh
+  were corrected.
+- Homebrew now ships bottles. The `poly` formula is generated as a source build, so the tap's centralized
+  bottle pipeline compiles and attaches prebuilt bottles for macOS and Linux; `brew install Goldziher/tap/poly`
+  pours a bottle once built. The `curl | sh` and PowerShell installers continue to use the prebuilt release
+  binaries.
+
 ## [0.17.0] - 2026-07-21
 
 ### Added

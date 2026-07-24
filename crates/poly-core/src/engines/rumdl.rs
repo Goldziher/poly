@@ -39,7 +39,7 @@ pub struct RumdlEngine;
 /// default-disabled rules (see [`MDX_DEFAULT_DISABLED_RULES`]), and the
 /// Go/Helm-template skip. Bump the suffix whenever any of these change so stale
 /// cached diagnostics are invalidated.
-const RUMDL_VERSION: &str = "0.2.28+defaults4-mdx-rules-tmplskip";
+const RUMDL_VERSION: &str = "0.2.42+defaults4-mdx-rules-tmplskip";
 
 /// rumdl-proprietary stylistic rules disabled by default.
 ///
