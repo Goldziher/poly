@@ -1,7 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# update-homebrew-formula.sh <version> [release-repo]
+# update-homebrew-formula.sh <version> [release-repo]  ~keep
+#
+# Emits a *source-build* Homebrew formula for poly to stdout. The tap
+# (Goldziher/homebrew-tap) runs a centralized bottle pipeline: its
+# `auto-bottle.yml` fires whenever a `Formula/*.rb` changes and only bottles
+# source-build formulae — those that match `system "cargo"` / `depends_on
+# "rust"`. It then dispatches `bottle.yml`, which builds bottles on
+# macOS/Linux runners and commits a `bottle do` block back into the formula.
+#
+# So we deliberately emit a source build (no `bottle do` block — its absence is
+# the signal the formula still needs bottling) rather than a prebuilt-binary
+# formula. The prebuilt release archives are still produced by publish.yaml for
+# the curl|sh / PowerShell installers; only Homebrew now builds from source and
+# ships bottles.
 
 if [ $# -lt 1 ] || [ $# -gt 2 ]; then
   echo "Usage: $0 <version> [release-repo]" >&2
@@ -11,30 +24,22 @@ fi
 VERSION="$1"
 RELEASE_REPO="${2:-Goldziher/poly}"
 TAG="v${VERSION}"
-BASE_URL="https://github.com/${RELEASE_REPO}/releases/download/${TAG}"
+# GitHub's auto-generated source tarball for the tag. Stable in practice and the
+# standard source for Homebrew source-build formulae.  ~keep
+SOURCE_URL="https://github.com/${RELEASE_REPO}/archive/refs/tags/${TAG}.tar.gz"
 
-SUMS="$(curl -fsSL "${BASE_URL}/sha256sums.txt")"
+# Prefer sha256sum (Linux/CI); fall back to shasum -a 256 (macOS dev).  ~keep
+if command -v sha256sum >/dev/null 2>&1; then
+  hash_cmd="sha256sum"
+else
+  hash_cmd="shasum -a 256"
+fi
+SHA256="$(curl -fsSL "$SOURCE_URL" | $hash_cmd | awk '{print $1}')"
 
-sha_for() {
-  echo "$SUMS" | awk -v f="$1" '$2 == f || $2 == "./" f { print $1; exit }'
-}
-
-ARM64_DARWIN="poly-${VERSION}-aarch64-apple-darwin.tar.gz"
-X86_64_DARWIN="poly-${VERSION}-x86_64-apple-darwin.tar.gz"
-ARM64_LINUX="poly-${VERSION}-aarch64-unknown-linux-gnu.tar.gz"
-X86_64_LINUX="poly-${VERSION}-x86_64-unknown-linux-gnu.tar.gz"
-
-SHA_ARM64_DARWIN="$(sha_for "$ARM64_DARWIN")"
-SHA_X86_64_DARWIN="$(sha_for "$X86_64_DARWIN")"
-SHA_ARM64_LINUX="$(sha_for "$ARM64_LINUX")"
-SHA_X86_64_LINUX="$(sha_for "$X86_64_LINUX")"
-
-for name in SHA_ARM64_DARWIN SHA_X86_64_DARWIN SHA_ARM64_LINUX SHA_X86_64_LINUX; do
-  if [ -z "${!name}" ]; then
-    echo "Missing checksum for $name in ${BASE_URL}/sha256sums.txt" >&2
-    exit 1
-  fi
-done
+if [ -z "$SHA256" ]; then
+  echo "Failed to compute sha256 for ${SOURCE_URL}" >&2
+  exit 1
+fi
 
 cat <<EOF
 # typed: false
@@ -44,33 +49,19 @@ cat <<EOF
 class Poly < Formula
   desc "Universal zero-dependency linter and formatter"
   homepage "https://github.com/Goldziher/poly"
-  version "${VERSION}"
+  url "${SOURCE_URL}"
+  sha256 "${SHA256}"
   license "MIT"
 
-  on_macos do
-    on_arm do
-      url "${BASE_URL}/${ARM64_DARWIN}"
-      sha256 "${SHA_ARM64_DARWIN}"
-    end
-    on_intel do
-      url "${BASE_URL}/${X86_64_DARWIN}"
-      sha256 "${SHA_X86_64_DARWIN}"
-    end
-  end
-
-  on_linux do
-    on_arm do
-      url "${BASE_URL}/${ARM64_LINUX}"
-      sha256 "${SHA_ARM64_LINUX}"
-    end
-    on_intel do
-      url "${BASE_URL}/${X86_64_LINUX}"
-      sha256 "${SHA_X86_64_LINUX}"
-    end
-  end
+  depends_on "llvm" => :build
+  depends_on "pkg-config" => :build
+  depends_on "rust" => :build
 
   def install
-    bin.install "poly"
+    # bindgen (via ruby-prism-sys) needs libclang; Homebrew Linux has no ambient
+    # clang, so point it at the llvm build dependency.
+    ENV["LIBCLANG_PATH"] = Formula["llvm"].opt_lib.to_s
+    system "cargo", "install", *std_cargo_args(path: "crates/poly-cli")
   end
 
   test do

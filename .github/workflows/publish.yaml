@@ -384,10 +384,14 @@ jobs:
           fi
           version="${{ needs.meta.outputs.version }}"
 
-          # Binary formula: it downloads the prebuilt `poly` archives already
-          # attached to this release, reading their sha256s from sha256sums.txt.
-          # No source build and no separate bottle workflow, so the formula is
-          # directly installable the instant it lands on the tap.
+          # Source-build formula: it points at the tag's source tarball and  ~keep
+          # compiles with cargo. Pushing it to the tap triggers the tap's
+          # centralized auto-bottle pipeline (auto-bottle.yml -> bottle.yml),
+          # which builds bottles on macOS/Linux and commits a `bottle do` block
+          # back into the formula. In the window before bottles land, `brew
+          # install` builds from source; afterwards it pours the bottle. The
+          # prebuilt release archives above are still used by the curl|sh /
+          # PowerShell installers.
           ./scripts/update-homebrew-formula.sh "$version" "$GITHUB_REPOSITORY" > poly.rb
 
           git clone --depth 1 "https://x-access-token:${HOMEBREW_TOKEN}@github.com/Goldziher/homebrew-tap.git" tap
