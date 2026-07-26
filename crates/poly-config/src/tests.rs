@@ -649,3 +649,174 @@ fn pyproject_without_typos_config_is_ignored() {
     assert!(config.typos_native.extend_words.is_empty());
     assert!(config.typos_native.extend_ignore_re.is_empty());
 }
+
+#[test]
+fn extends_local_base_merges_beneath_child() {
+    let dir = tempdir().unwrap();
+    fs::write(
+        dir.path().join("base.toml"),
+        r#"
+[defaults]
+line_length = 80
+
+[lint.python.ruff]
+select = ["E", "F"]
+"#,
+    )
+    .unwrap();
+    let path = dir.path().join("poly.toml");
+    fs::write(
+        &path,
+        r#"
+extends = ["./base.toml"]
+
+[defaults]
+line_length = 120
+
+[lint.rust.clippy]
+warn = ["all"]
+"#,
+    )
+    .unwrap();
+    let config = PolyConfig::load_file(&path).expect("load");
+    // Child scalar wins over base.
+    assert_eq!(config.defaults.line_length, 120);
+    // Raw lint tables merge key-by-key: base's python and child's rust both survive.
+    assert!(config.lint.contains_key("python"), "base [lint.python] preserved");
+    assert!(config.lint.contains_key("rust"), "child [lint.rust] present");
+}
+
+#[test]
+fn extends_local_override_wins_over_base() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("base.toml"), "[defaults]\nline_length = 80\n").unwrap();
+    let path = dir.path().join("poly.toml");
+    fs::write(&path, "extends = [\"./base.toml\"]\n").unwrap();
+    // poly.local.toml is the final layer, above extends bases and poly.toml.
+    fs::write(dir.path().join("poly.local.toml"), "[defaults]\nline_length = 100\n").unwrap();
+    let config = PolyConfig::load_file(&path).expect("load");
+    assert_eq!(config.defaults.line_length, 100);
+}
+
+#[test]
+fn extends_later_entry_overrides_earlier() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("a.toml"), "[defaults]\nline_length = 80\n").unwrap();
+    fs::write(dir.path().join("b.toml"), "[defaults]\nline_length = 90\n").unwrap();
+    let path = dir.path().join("poly.toml");
+    fs::write(&path, "extends = [\"./a.toml\", \"./b.toml\"]\n").unwrap();
+    let config = PolyConfig::load_file(&path).expect("load");
+    assert_eq!(config.defaults.line_length, 90);
+}
+
+#[test]
+fn extends_transitive_chain_is_merged() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("c.toml"), "[lint.python.ruff]\nselect = [\"E\"]\n").unwrap();
+    fs::write(
+        dir.path().join("b.toml"),
+        "extends = [\"./c.toml\"]\n[defaults]\nline_length = 88\n",
+    )
+    .unwrap();
+    let path = dir.path().join("poly.toml");
+    fs::write(&path, "extends = [\"./b.toml\"]\n").unwrap();
+    let config = PolyConfig::load_file(&path).expect("load");
+    assert_eq!(config.defaults.line_length, 88);
+    assert!(config.lint.contains_key("python"));
+}
+
+#[test]
+fn extends_diamond_is_allowed_not_a_cycle() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("d.toml"), "[lint.python.ruff]\nselect = [\"E\"]\n").unwrap();
+    fs::write(
+        dir.path().join("b.toml"),
+        "extends = [\"./d.toml\"]\n[defaults]\nline_length = 81\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("c.toml"),
+        "extends = [\"./d.toml\"]\n[fmt.rust.rustfmt]\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    let path = dir.path().join("poly.toml");
+    fs::write(&path, "extends = [\"./b.toml\", \"./c.toml\"]\n").unwrap();
+    let config = PolyConfig::load_file(&path).expect("diamond must resolve, not error as a cycle");
+    // The shared base D and both mid bases survive the merge.
+    assert!(config.lint.contains_key("python"), "base D [lint.python] present");
+    assert_eq!(config.defaults.line_length, 81, "B's default present");
+    assert!(config.fmt.contains_key("rust"), "C's [fmt.rust] present");
+}
+
+#[test]
+fn extends_base_local_override_is_not_applied() {
+    // A base's own sibling `poly.local.toml` must NOT leak into a consumer.
+    let dir = tempdir().unwrap();
+    let base_dir = dir.path().join("base");
+    fs::create_dir(&base_dir).unwrap();
+    fs::write(base_dir.join("poly.toml"), "[defaults]\nline_length = 80\n").unwrap();
+    fs::write(base_dir.join("poly.local.toml"), "[defaults]\nline_length = 999\n").unwrap();
+    let path = dir.path().join("poly.toml");
+    fs::write(&path, "extends = [\"./base/poly.toml\"]\n").unwrap();
+    let config = PolyConfig::load_file(&path).expect("load");
+    assert_eq!(config.defaults.line_length, 80, "base's poly.local.toml must not apply");
+}
+
+#[test]
+fn extends_base_relative_rules_dirs_anchor_to_consumer() {
+    let dir = tempdir().unwrap();
+    let base_dir = dir.path().join("base");
+    fs::create_dir(&base_dir).unwrap();
+    fs::write(base_dir.join("poly.toml"), "[rules]\ndirs = [\"shared-rules\"]\n").unwrap();
+    let path = dir.path().join("poly.toml");
+    fs::write(&path, "extends = [\"./base/poly.toml\"]\n").unwrap();
+    let config = PolyConfig::load_file(&path).expect("load");
+    // The base's relative rule dir anchors at the consumer's directory, not the base's.
+    let expected = dir.path().join("shared-rules").to_string_lossy().into_owned();
+    assert!(
+        config.rules.dirs.contains(&expected),
+        "rules dirs = {:?}, want {expected}",
+        config.rules.dirs
+    );
+}
+
+#[test]
+fn extends_cycle_is_rejected() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("poly.toml"), "extends = [\"./a.toml\"]\n").unwrap();
+    fs::write(dir.path().join("a.toml"), "extends = [\"./poly.toml\"]\n").unwrap();
+    let error = PolyConfig::load_file(&dir.path().join("poly.toml")).unwrap_err();
+    assert!(format!("{error:#}").contains("cycle"), "{error:#}");
+}
+
+#[test]
+fn extends_missing_base_errors() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("poly.toml");
+    fs::write(&path, "extends = [\"./nope.toml\"]\n").unwrap();
+    let error = PolyConfig::load_file(&path).unwrap_err();
+    assert!(format!("{error:#}").contains("not found"), "{error:#}");
+}
+
+#[test]
+fn extends_git_source_without_cli_resolver_errors() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("poly.toml");
+    fs::write(
+        &path,
+        "extends = [{ git = \"https://example.com/base\", revision = \"abc123\" }]\n",
+    )
+    .unwrap();
+    let error = PolyConfig::load_file(&path).unwrap_err();
+    assert!(format!("{error:#}").contains("poly CLI resolver"), "{error:#}");
+}
+
+#[test]
+fn extends_in_local_override_is_rejected() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("poly.toml");
+    fs::write(&path, "[defaults]\nline_length = 100\n").unwrap();
+    fs::write(dir.path().join("poly.local.toml"), "extends = [\"./base.toml\"]\n").unwrap();
+    let error = PolyConfig::load_file(&path).unwrap_err();
+    assert!(format!("{error:#}").contains("must not declare `extends`"), "{error:#}");
+}

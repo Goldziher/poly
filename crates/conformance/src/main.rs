@@ -238,6 +238,7 @@ fn poly_fmt_output(file: &Path) -> Result<String> {
         jobs: Some(1),
         exclude: Vec::new(),
         explicit_config: true,
+        config_resolver: None,
     };
     let results = poly_core::format(std::slice::from_ref(&target), &Config::default(), &opts, false, false)?;
     Ok(results

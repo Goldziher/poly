@@ -34,7 +34,11 @@ binary is distributed as prebuilt release artifacts plus an installer (see relea
   crate backend if one is registered for the language, else the tree-sitter generic backend.
 - `config.rs` — TOML schema (`poly.toml`, comment-preserving via `toml_edit`; YAML
   auto-detected via saphyr but TOML wins), normalization, and per-engine config slices.
-  `poly.local.toml` layers local overrides on top.
+  `poly.local.toml` layers local overrides on top. A top-level `extends` list shares config
+  from local or pinned-remote base configs (ADR 0020): bases deep-merge beneath the declaring
+  file, `poly.local.toml` stays the final layer, and `poly config update` locks a symbolic git
+  ref into `poly-config.lock`. Schema + the network-free `BaseConfigResolver` trait live in the
+  `poly-config` crate (`extends.rs`); the git fetch lives in the `poly-cli` `remote` module.
 - `defaults.rs` — the thin opinionated override layer (line length 120, always format
   docstrings, line-ending/final-newline). Layering is **tool default → opinionated override →
   user `poly.toml`**.

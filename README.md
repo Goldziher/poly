@@ -266,6 +266,28 @@ Resolution rules:
 - **`[per-file-ignores]` globs are relative** to the directory of the config that declares them.
 - `--config <path>` pins one config for the whole run and bypasses nested resolution.
 
+### Sharing configuration
+
+A top-level `extends` list inherits any section of `poly.toml` — `[defaults]`,
+`[lint.*]`/`[fmt.*]`, `[tools.*]`, `[per-file-ignores]`, `[hooks.*]`, and so on — from local
+or pinned remote base configs, so an org can maintain one baseline instead of copy-pasting
+it into every repo (see [ADR 0020](adrs/0020-shared-remote-configuration.md)). Entries use
+the same `path`/`git`/`revision` vocabulary as `[[hooks.sources]]`:
+
+```toml
+extends = [
+  { git = "https://github.com/acme/poly-baseline", revision = "<40-hex-oid>", file = "poly.toml" },
+  "./poly.overrides.toml",   # later entry = higher precedence
+]
+```
+
+Bases are deep-merged underneath this file, in listed order; this `poly.toml` and then
+`poly.local.toml` always win on top. A `git` base pinned to a full commit OID needs no lock;
+a branch or tag ref requires running `poly config update` first, which resolves it into
+`poly-config.lock` and prints the `[hooks]`/`[tools]` the base introduces. `extends` is
+forbidden in `poly.local.toml`. Extending a remote base means trusting that repository to
+run code on your machine — treat it like any other dependency.
+
 ### Optional Catalog Tools
 
 Opt into tools from the embedded mdsf catalog only when you want them:

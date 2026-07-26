@@ -13,12 +13,13 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use anyhow::Context;
+use anyhow::{Context, bail};
 use serde::Deserialize;
 
 mod cache;
 mod commit;
 mod defaults;
+pub mod extends;
 mod hook_sources;
 mod hooks;
 mod tools;
@@ -27,6 +28,7 @@ mod typos_native;
 pub use cache::{CacheConfig, HookCacheMode, ResultsCacheConfig, SccacheConfig};
 pub use commit::{CleanupRule, CommitConfig, CommitRules, ExcludeRule, MessageRule};
 pub use defaults::{GlobalDefaults, LineEnding};
+pub use extends::{BaseConfigResolver, ExtendsSource, LocalPathResolver};
 pub use hook_sources::{HookMachinePreferences, HookSource, load_hook_preferences};
 pub use hooks::{
     BuiltinHook, BuiltinHooks, CargoHooks, DEFAULT_MAX_ADDED_FILE_KB, FileSafetyHooks, Guard, GuardCondition,
@@ -170,16 +172,24 @@ impl PolyConfig {
     ///
     /// [`resolve_for_dir`]: PolyConfig::resolve_for_dir
     pub fn load(start: &Path) -> anyhow::Result<PolyConfig> {
+        PolyConfig::load_with(start, &extends::LocalPathResolver)
+    }
+
+    /// [`load`](PolyConfig::load) with an explicit [`BaseConfigResolver`] for
+    /// `extends` bases. `poly-config` itself only resolves local paths (the
+    /// default [`LocalPathResolver`]); the CLI passes a resolver that also
+    /// fetches pinned remote git bases.
+    pub fn load_with(start: &Path, resolver: &dyn BaseConfigResolver) -> anyhow::Result<PolyConfig> {
         let dir = if start.is_file() {
             start.parent().unwrap_or(start)
         } else {
             start
         };
         if git_root(dir).is_some() {
-            return PolyConfig::resolve_for_dir(dir);
+            return PolyConfig::resolve_for_dir_with(dir, resolver);
         }
         match find_config(dir) {
-            Some(path) => PolyConfig::load_file(&path),
+            Some(path) => PolyConfig::load_file_with(&path, resolver),
             None => {
                 let mut config = PolyConfig::default();
                 config.rules.resolve_relative_to(dir);
@@ -195,7 +205,14 @@ impl PolyConfig {
     /// over the primary config before deserialization. The merged `[hooks]`
     /// table is then validated (see [`HooksConfig::validate`]).
     pub fn load_file(path: &Path) -> anyhow::Result<PolyConfig> {
-        let table = read_config_table(path)?;
+        PolyConfig::load_file_with(path, &extends::LocalPathResolver)
+    }
+
+    /// [`load_file`](PolyConfig::load_file) with an explicit
+    /// [`BaseConfigResolver`] for `extends` bases.
+    pub fn load_file_with(path: &Path, resolver: &dyn BaseConfigResolver) -> anyhow::Result<PolyConfig> {
+        let mut visited = Vec::new();
+        let table = read_config_table(path, resolver, &mut visited)?;
         let typos_dir = path.parent().unwrap_or(path);
         finalize(table, typos_dir)
     }
@@ -214,11 +231,20 @@ impl PolyConfig {
     ///
     /// [`load`]: PolyConfig::load
     pub fn resolve_for_dir(dir: &Path) -> anyhow::Result<PolyConfig> {
+        PolyConfig::resolve_for_dir_with(dir, &extends::LocalPathResolver)
+    }
+
+    /// [`resolve_for_dir`](PolyConfig::resolve_for_dir) with an explicit
+    /// [`BaseConfigResolver`]. Each config in the cascade resolves its own
+    /// `extends` bases (with a fresh cycle-detection set) before the ancestor
+    /// chain is deep-merged.
+    pub fn resolve_for_dir_with(dir: &Path, resolver: &dyn BaseConfigResolver) -> anyhow::Result<PolyConfig> {
         let mut chain: Vec<(PathBuf, toml::Table)> = Vec::new();
         let mut current = Some(dir.to_path_buf());
         while let Some(d) = current {
             if let Some(path) = config_file_in(&d) {
-                let mut table = read_config_table(&path)?;
+                let mut visited = Vec::new();
+                let mut table = read_config_table(&path, resolver, &mut visited)?;
                 resolve_rules_dirs_in_table(&mut table, &d);
                 let is_root = table_marks_workspace_root(&table);
                 chain.push((d.clone(), table));
@@ -252,22 +278,118 @@ impl PolyConfig {
     }
 }
 
-/// Read a single config file into a [`toml::Table`], deep-merging its sibling
-/// [`LOCAL_OVERRIDE_NAME`] over it when present.
-fn read_config_table(path: &Path) -> anyhow::Result<toml::Table> {
+/// Maximum depth of a transitive `extends` chain, a backstop against runaway
+/// recursion independent of cycle detection.
+const MAX_EXTENDS_DEPTH: usize = 32;
+
+/// Parse a single config file into a [`toml::Table`].
+fn parse_config_file(path: &Path) -> anyhow::Result<toml::Table> {
     let text = std::fs::read_to_string(path).with_context(|| format!("reading config {}", path.display()))?;
-    let mut table: toml::Table = toml::from_str(&text).with_context(|| format!("parsing config {}", path.display()))?;
+    toml::from_str(&text).with_context(|| format!("parsing config {}", path.display()))
+}
+
+/// Canonicalize `path` for cycle detection, falling back to the raw path when the
+/// filesystem cannot canonicalize it.
+fn cycle_key(path: &Path) -> PathBuf {
+    std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+}
+
+/// Read a config file into a [`toml::Table`], resolving its `extends` bases
+/// beneath it and then deep-merging its sibling [`LOCAL_OVERRIDE_NAME`] over the
+/// result.
+///
+/// `extends` bases are merged at the raw-table level (before typed
+/// deserialization) so any subset of sections can be shared; the declaring file
+/// overrides its bases, and `poly.local.toml` — which may **not** itself declare
+/// `extends` — is the final layer. `visited` detects `extends` cycles.
+fn read_config_table(
+    path: &Path,
+    resolver: &dyn BaseConfigResolver,
+    visited: &mut Vec<PathBuf>,
+) -> anyhow::Result<toml::Table> {
+    let mut memo = BTreeMap::new();
+    let mut table = resolve_config_with_extends(path, resolver, visited, &mut memo)?;
     if let Some(parent) = path.parent() {
         let override_path = parent.join(LOCAL_OVERRIDE_NAME);
         if override_path.is_file() {
-            let override_text = std::fs::read_to_string(&override_path)
-                .with_context(|| format!("reading config {}", override_path.display()))?;
-            let override_table: toml::Table = toml::from_str(&override_text)
-                .with_context(|| format!("parsing config {}", override_path.display()))?;
+            let mut override_table = parse_config_file(&override_path)?;
+            let local_extends = extends::take_extends(&mut override_table)
+                .with_context(|| format!("parsing `extends` in {}", override_path.display()))?;
+            if !local_extends.is_empty() {
+                bail!(
+                    "{} must not declare `extends` (it is a machine-local override)",
+                    override_path.display()
+                );
+            }
             merge_tables(&mut table, override_table);
         }
     }
     Ok(table)
+}
+
+/// Parse `path` and deep-merge every `extends` base beneath it (recursively),
+/// returning the merged raw table. Does **not** apply `path`'s sibling
+/// `poly.local.toml` — machine-local overrides never leak from a base into a
+/// consumer, so only [`read_config_table`] applies them, at the top level.
+fn resolve_config_with_extends(
+    path: &Path,
+    resolver: &dyn BaseConfigResolver,
+    visited: &mut Vec<PathBuf>,
+    memo: &mut BTreeMap<PathBuf, toml::Table>,
+) -> anyhow::Result<toml::Table> {
+    let key = cycle_key(path);
+    if visited.contains(&key) {
+        bail!("`extends` cycle detected at {}", path.display());
+    }
+    // A base reachable through more than one parent (a diamond) is resolved once
+    // and cloned on re-encounter — bounding a wide `extends` DAG to linear work.
+    if let Some(cached) = memo.get(&key) {
+        return Ok(cached.clone());
+    }
+    if visited.len() >= MAX_EXTENDS_DEPTH {
+        bail!("`extends` chain exceeds maximum depth of {MAX_EXTENDS_DEPTH}");
+    }
+
+    visited.push(key.clone());
+    let built = build_extends_table(path, resolver, visited, memo);
+    // Pop unconditionally so `visited` stays a correct DFS stack even on error.
+    visited.pop();
+    let result = built?;
+
+    memo.insert(key, result.clone());
+    Ok(result)
+}
+
+/// Parse `path`, resolve each of its `extends` bases (recursively, memoized), and
+/// return the base chain deep-merged beneath `path`'s own table.
+fn build_extends_table(
+    path: &Path,
+    resolver: &dyn BaseConfigResolver,
+    visited: &mut Vec<PathBuf>,
+    memo: &mut BTreeMap<PathBuf, toml::Table>,
+) -> anyhow::Result<toml::Table> {
+    let mut table = parse_config_file(path)?;
+    let sources =
+        extends::take_extends(&mut table).with_context(|| format!("parsing `extends` in {}", path.display()))?;
+    if sources.is_empty() {
+        return Ok(table);
+    }
+    let base_dir = path.parent().unwrap_or(path);
+    let mut merged = toml::Table::new();
+    for source in &sources {
+        let base_path = resolver.resolve(source, base_dir).with_context(|| {
+            format!(
+                "resolving `extends` base {:?} of {}",
+                source.display_id(),
+                path.display()
+            )
+        })?;
+        let base_table = resolve_config_with_extends(&base_path, resolver, visited, memo)?;
+        merge_tables(&mut merged, base_table);
+    }
+    // The declaring file overrides its bases.
+    merge_tables(&mut merged, table);
+    Ok(merged)
 }
 
 /// Resolve relative `[rules] dirs` entries in a raw config table against `dir`

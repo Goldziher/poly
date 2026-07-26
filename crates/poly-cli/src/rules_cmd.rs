@@ -64,7 +64,7 @@ fn resolve_dirs(dirs: Vec<String>) -> Result<Vec<String>> {
         return Ok(dirs);
     }
     let cwd = std::env::current_dir().context("failed to resolve the working directory")?;
-    let config = PolyConfig::load(&cwd).context("failed to load config")?;
+    let config = PolyConfig::load_with(&cwd, &crate::config_sources::resolver()?).context("failed to load config")?;
     Ok(config.rules.dirs)
 }
 

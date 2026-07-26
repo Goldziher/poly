@@ -88,6 +88,15 @@ pub(crate) fn validate_sources(sources: &[HookSource]) -> Result<(), String> {
                 ));
             }
         }
+        // A revision starting with `-` could be parsed by `git fetch` as an option
+        // (argument injection, e.g. `--upload-pack=...`).
+        if source
+            .revision
+            .as_deref()
+            .is_some_and(|revision| revision.starts_with('-'))
+        {
+            return Err(format!("hook source {:?} revision must not start with `-`", source.id));
+        }
         if source.hooks.is_empty() {
             return Err(format!("hook source {:?} must select at least one hook", source.id));
         }

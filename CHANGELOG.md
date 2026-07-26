@@ -5,6 +5,31 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
+## [Unreleased]
+
+### Added
+
+- `poly.toml` can now declare a top-level `extends` list to inherit any config section (`[discovery]`,
+  `[lint.*]`, `[fmt.*]`, `[tools.*]`, `[per-file-ignores]`, `[hooks.*]`, `[defaults]`, …) from local and pinned
+  remote base configs, reusing the `path`/`git`/`revision` vocabulary of `[[hooks.sources]]`. Bases are
+  deep-merged beneath this `poly.toml`, and `poly.local.toml` still wins on top. A symbolic git ref (branch or
+  tag) requires the new `poly config update` subcommand to resolve and pin it into `poly-config.lock`; `poly
+  config resolve`/`show` prints the effective merged config. See [ADR 0020](adrs/0020-shared-remote-configuration.md).
+
+## [0.17.2] - 2026-07-26
+
+### Fixed
+
+- `uncomment` no longer false-positives on comments that are not commented-out code. A new `code_only` option
+  (default `true`) keeps a removal only when the comment lexes as code in the file's language, so machine-generated
+  headers (`# alef:hash:…`, `Re-generate with:`, `DO NOT EDIT`), multi-line English NOTE blocks, and `key = value`
+  directive comments are left alone while genuine commented-out code (`// let x = foo();`, `# print("debug")`) is
+  still reported. Set `code_only = false` to restore the previous strip-every-comment behaviour. The engine cache
+  key was bumped so upgraded output is re-run.
+- `poly fmt --fix` now converges to a fixed point in a single invocation. Each file's format-engine chain is re-run
+  (bounded, up to 5 passes) until the content stops changing, so a following `poly fmt --check` is clean even when
+  an underlying formatter (clang-format, csharpier, google-java-format) is not idempotent on the first pass.
+
 ## [0.17.1] - 2026-07-24
 
 ### Changed

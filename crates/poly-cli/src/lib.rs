@@ -4,14 +4,21 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use clap::Args;
+use poly_config::BaseConfigResolver;
 use poly_core::{Config, LintResult, RunOptions, Severity, Verbosity, report};
 
+use crate::config_sources::RemoteExtendsResolver;
+
 pub mod cache_cmd;
+pub mod config_cmd;
+pub mod config_sources;
 pub mod hooks;
 pub mod migrate;
+pub mod remote;
 pub mod rules_cmd;
 
 pub use cache_cmd::{CacheArgs, run_cache};
+pub use config_cmd::{ConfigArgs, run_config};
 pub use hooks::{HooksArgs, run_hooks};
 pub use migrate::{MigrateArgs, run_migrate};
 pub use rules_cmd::{RulesArgs, run_rules};
@@ -250,7 +257,16 @@ fn prepare(common: &CommonArgs) -> Result<(Vec<PathBuf>, Config, RunOptions), Ex
     } else {
         common.paths.clone()
     };
-    let config = match load_config(common.config.as_deref()) {
+    // Build the remote `extends` resolver rooted at the repository so both the
+    // top-level load and the runner's nested-config resolution honor shared bases.
+    let resolver = match config_sources::repo_root().and_then(|root| RemoteExtendsResolver::new(&root)) {
+        Ok(resolver) => std::sync::Arc::new(resolver),
+        Err(e) => {
+            eprintln!("error: failed to prepare config resolver: {e:#}");
+            return Err(ExitCode::from(2));
+        }
+    };
+    let config = match load_config(common.config.as_deref(), resolver.as_ref()) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("error: failed to load config: {e:#}");
@@ -262,16 +278,17 @@ fn prepare(common: &CommonArgs) -> Result<(Vec<PathBuf>, Config, RunOptions), Ex
         jobs: common.jobs,
         exclude: common.exclude.clone(),
         explicit_config: common.config.is_some(),
+        config_resolver: Some(resolver),
     };
     Ok((paths, config, opts))
 }
 
-fn load_config(explicit: Option<&Path>) -> anyhow::Result<Config> {
+fn load_config(explicit: Option<&Path>, resolver: &dyn BaseConfigResolver) -> anyhow::Result<Config> {
     match explicit {
-        Some(p) => Config::load_file(p),
+        Some(p) => Config::load_file_with(p, resolver),
         None => {
             let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-            Config::load(&cwd)
+            Config::load_with(&cwd, resolver)
         }
     }
 }

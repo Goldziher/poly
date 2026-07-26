@@ -41,6 +41,7 @@ fn nested_per_file_ignores_apply_only_to_their_subtree() {
         jobs: Some(1),
         exclude: Vec::new(),
         explicit_config: false,
+        config_resolver: None,
     };
     let results = poly_core::lint(&[root.to_path_buf()], &config, &opts, false, false).unwrap();
 
@@ -83,6 +84,7 @@ fn single_root_repo_reports_unsuppressed_diagnostic() {
         jobs: Some(1),
         exclude: Vec::new(),
         explicit_config: false,
+        config_resolver: None,
     };
     let results = poly_core::lint(&[root.to_path_buf()], &config, &opts, false, false).unwrap();
 

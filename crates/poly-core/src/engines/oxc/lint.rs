@@ -1,13 +1,5 @@
-//! oxc backend (M2): JS, TS, JSX, TSX lint + format via `oxc_linter` /
-//! `oxc_formatter`, plus JSON/JSONC format via `oxc_formatter_json`.
-//!
-//! Lint path uses `oxc_linter` (oxlint) to run the full correctness rule set
-//! in-process via `LintService::run_source`. An in-memory `RuntimeFileSystem`
-//! adapter feeds file content from RAM — no disk read inside the engine.
-//!
-//! `oxc_formatter` (Prettier-compatible, v0.56.0) handles JS/TS formatting.
-//! `oxc_formatter_json` handles JSON/JSONC formatting: Prettier-compatible,
-//! short arrays stay inline, JSONC comments are preserved.
+//! oxc lint path: oxlint diagnostics for JS/TS/JSX/TSX and strict validation
+//! for JSON/JSONC.
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
@@ -15,88 +7,15 @@ use std::sync::{Arc, OnceLock};
 
 use oxc_allocator::Allocator;
 use oxc_diagnostics::Severity as OxcSeverity;
-use oxc_formatter::JsFormatOptions;
-use oxc_formatter_core::{IndentStyle, IndentWidth, LineWidth};
-use oxc_formatter_json::{JsonFormatOptions, JsonVariant};
 use oxc_linter::{
     AllowWarnDeny, ConfigStore, ConfigStoreBuilder, ExternalPluginStore, LintFilter, LintOptions, LintService,
     LintServiceOptions, Linter, Message, PossibleFixes, RuntimeFileSystem,
 };
-use oxc_span::SourceType;
 
 use crate::config::EngineConfig;
-use crate::engine::{Capabilities, Diagnostic, Edit, FormatOutput, Severity, SourceFile, Span};
+use crate::engine::{Diagnostic, Edit, Severity, SourceFile, Span};
 use crate::engines::rule_config::RuleSelection;
 use crate::language::Language;
-
-/// Version string folded into the blake3 cache key.
-/// Bump whenever the output of `lint` or `format` could change.
-/// Reflects the oxc monorepo rev + formatter version + oxlint integration marker.
-/// `+rules-v2`: per-rule `AllowWarnDeny::Deny` severity support added.
-/// `+fmt-opts`:  JS quote_style, semicolons, trailing_commas, arrow_parentheses,
-///               bracket_spacing, bracket_same_line, indent_style; JSON bracket_spacing
-///               and trailing_commas now wired from `cfg.options`.
-const VERSION: &str =
-    "oxc_formatter:0.60.0+oxlint+parser:0.141.0+rev:0aef19e+json-fmt+rules-v2+fmt-opts+jsonc-trailing-comma";
-
-static LANGUAGES: &[Language] = &[
-    Language::JavaScript,
-    Language::TypeScript,
-    Language::Jsx,
-    Language::Tsx,
-    Language::Json,
-    Language::Jsonc,
-];
-
-/// oxc backend: wraps `oxc_linter` for full correctness-rule lint diagnostics,
-/// `oxc_formatter` for JS/TS formatting (Prettier-compatible), and
-/// `oxc_formatter_json` for JSON/JSONC formatting.
-pub struct OxcEngine;
-
-impl crate::engine::Engine for OxcEngine {
-    fn name(&self) -> &'static str {
-        "oxc"
-    }
-
-    fn languages(&self) -> &'static [Language] {
-        LANGUAGES
-    }
-
-    fn capabilities(&self) -> Capabilities {
-        Capabilities {
-            lint: true,
-            format: true,
-            fix: false,
-        }
-    }
-
-    fn version(&self) -> &str {
-        VERSION
-    }
-
-    fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
-        match src.language {
-            Language::Json | Language::Jsonc => lint_json(src),
-            _ => lint_js(src, cfg),
-        }
-    }
-
-    fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
-        match src.language {
-            Language::Json | Language::Jsonc => format_json(src, cfg),
-            _ => format_js(src, cfg),
-        }
-    }
-}
-
-fn source_type_for(lang: &Language) -> SourceType {
-    match lang {
-        Language::TypeScript => SourceType::ts(),
-        Language::Tsx => SourceType::tsx(),
-        Language::Jsx => SourceType::jsx(),
-        _ => SourceType::mjs(),
-    }
-}
 
 /// Byte offset → 1-based `(line, col)`.
 fn offset_to_line_col(src: &str, offset: usize) -> (u32, u32) {
@@ -249,7 +168,7 @@ fn build_configured_service(cfg: &EngineConfig) -> anyhow::Result<LintService> {
     Ok(LintService::new(linter, options))
 }
 
-fn lint_js(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
+pub(super) fn lint_js(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
     let messages = if cfg.options.is_empty() {
         run_with_service(lint_service(), src)
     } else {
@@ -332,151 +251,7 @@ fn map_oxlint_message(msg: Message, content: &str) -> Diagnostic {
     }
 }
 
-/// Build [`JsFormatOptions`] from a resolved [`EngineConfig`].
-///
-/// ## Layering order (Prettier-compatible defaults → poly overrides → user config)
-///
-/// | `cfg.options` key | Type | Values |
-/// |---|---|---|
-/// | `quote_style` | string | `"double"` (default) / `"single"` |
-/// | `jsx_quote_style` | string | `"double"` (default) / `"single"` |
-/// | `semicolons` | string | `"always"` (default) / `"as-needed"` |
-/// | `trailing_commas` | string | `"all"` (default) / `"es5"` / `"none"` |
-/// | `arrow_parentheses` | string | `"always"` (default) / `"as-needed"` |
-/// | `bracket_spacing` | bool | `true` (default) |
-/// | `bracket_same_line` | bool | `false` (default) |
-/// | `indent_style` | string | `"space"` (default) / `"tab"` |
-///
-/// `line_width` and `indent_width` are always taken from `cfg.globals.line_length`
-/// and `cfg.indent_width` respectively — user cannot override them here.
-fn build_js_options(cfg: &EngineConfig) -> JsFormatOptions {
-    use oxc_formatter::{
-        ArrowParentheses, BracketSameLine, BracketSpacing, QuoteStyle, Semicolons, TrailingCommas as JsTrailingCommas,
-    };
-
-    let line_width = u16::try_from(cfg.globals.line_length)
-        .ok()
-        .and_then(|w| LineWidth::try_from(w).ok())
-        .unwrap_or_else(|| {
-            // SAFETY: 120 is always in [LineWidth::MIN, LineWidth::MAX].
-            LineWidth::try_from(120u16).expect("120 is a valid LineWidth")
-        });
-
-    let indent_width = u8::try_from(cfg.indent_width)
-        .ok()
-        .and_then(|w| IndentWidth::try_from(w).ok())
-        .unwrap_or_default();
-
-    let indent_style = cfg
-        .options
-        .get("indent_style")
-        .and_then(|v| v.as_str())
-        .and_then(|s| s.parse::<IndentStyle>().ok())
-        .unwrap_or_default();
-
-    let quote_style = cfg
-        .options
-        .get("quote_style")
-        .and_then(|v| v.as_str())
-        .map(|s| match s {
-            "single" => QuoteStyle::Single,
-            _ => QuoteStyle::Double,
-        })
-        .unwrap_or_default();
-
-    let jsx_quote_style = cfg
-        .options
-        .get("jsx_quote_style")
-        .and_then(|v| v.as_str())
-        .map(|s| match s {
-            "single" => QuoteStyle::Single,
-            _ => QuoteStyle::Double,
-        })
-        .unwrap_or_default();
-
-    let semicolons = cfg
-        .options
-        .get("semicolons")
-        .and_then(|v| v.as_str())
-        .and_then(|s| s.parse::<Semicolons>().ok())
-        .unwrap_or_default();
-
-    let trailing_commas = cfg
-        .options
-        .get("trailing_commas")
-        .and_then(|v| v.as_str())
-        .and_then(|s| s.parse::<JsTrailingCommas>().ok())
-        .unwrap_or_default();
-
-    let arrow_parentheses = cfg
-        .options
-        .get("arrow_parentheses")
-        .and_then(|v| v.as_str())
-        .and_then(|s| s.parse::<ArrowParentheses>().ok())
-        .unwrap_or_default();
-
-    let bracket_spacing = cfg
-        .options
-        .get("bracket_spacing")
-        .and_then(|v| v.as_bool())
-        .map(BracketSpacing::from)
-        .unwrap_or_default();
-
-    let bracket_same_line = cfg
-        .options
-        .get("bracket_same_line")
-        .and_then(|v| v.as_bool())
-        .map(BracketSameLine::from)
-        .unwrap_or_default();
-
-    JsFormatOptions {
-        line_width,
-        indent_width,
-        indent_style,
-        quote_style,
-        jsx_quote_style,
-        semicolons,
-        trailing_commas,
-        arrow_parentheses,
-        bracket_spacing,
-        bracket_same_line,
-        ..JsFormatOptions::default()
-    }
-}
-
-/// Format a JS/TS/JSX/TSX file using `oxc_formatter` (Prettier-compatible).
-///
-/// Line width is taken from `cfg.globals.line_length` (project default: 120).
-/// Additional formatter options (`quote_style`, `semicolons`, `trailing_commas`,
-/// `arrow_parentheses`, `bracket_spacing`, `bracket_same_line`, `indent_style`)
-/// can be set via `[fmt.<lang>.oxc]` in `poly.toml`.
-fn format_js(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
-    let allocator = Allocator::new();
-    let source_type = source_type_for(&src.language);
-    let options = build_js_options(cfg);
-
-    let formatted = match oxc_formatter::format(&allocator, &src.content, source_type, options, None) {
-        Err(_) => return Ok(FormatOutput::Unchanged),
-        Ok(f) => f,
-    };
-
-    let printed = formatted
-        .print()
-        .map_err(|e| anyhow::anyhow!("oxc_formatter print error: {e}"))?;
-    let mut code = printed.into_code();
-
-    if !code.ends_with('\n') {
-        code.push('\n');
-    }
-
-    if code == *src.content {
-        Ok(FormatOutput::Unchanged)
-    } else {
-        Ok(FormatOutput::Formatted(code))
-    }
-}
-
-fn lint_json(src: &SourceFile) -> anyhow::Result<Vec<Diagnostic>> {
+pub(super) fn lint_json(src: &SourceFile) -> anyhow::Result<Vec<Diagnostic>> {
     // JSONC permits comments *and* trailing commas — both valid in the spec our
     // formatter targets, and the JSONC formatter itself emits/preserves trailing
     // commas. `serde_json` is strict JSON, so it rejects both. Neutralise them
@@ -511,91 +286,6 @@ fn lint_json(src: &SourceFile) -> anyhow::Result<Vec<Diagnostic>> {
                 metadata: Default::default(),
             }])
         }
-    }
-}
-
-/// Build [`JsonFormatOptions`] from a resolved [`EngineConfig`].
-///
-/// ## Layering order
-///
-/// | `cfg.options` key | Type | Values |
-/// |---|---|---|
-/// | `bracket_spacing` | bool | `true` (default) |
-/// | `trailing_commas` | string | `"always"` (default for JSONC) / `"never"` |
-///
-/// `line_width` and `indent_width` are always sourced from `cfg.globals.line_length`
-/// and `cfg.indent_width`. The variant (Json vs Jsonc) is derived from the file language
-/// and cannot be overridden per-option.
-fn build_json_options(src: &SourceFile, cfg: &EngineConfig) -> JsonFormatOptions {
-    use oxc_formatter_json::{BracketSpacing as JsonBracketSpacing, TrailingCommas as JsonTc};
-
-    let variant = match src.language {
-        Language::Jsonc => JsonVariant::Jsonc,
-        _ => JsonVariant::Json,
-    };
-
-    let line_width = u16::try_from(cfg.globals.line_length)
-        .ok()
-        .and_then(|w| LineWidth::try_from(w).ok())
-        .unwrap_or_else(|| {
-            // SAFETY: 120 is always in [LineWidth::MIN, LineWidth::MAX].
-            LineWidth::try_from(120u16).expect("120 is a valid LineWidth")
-        });
-
-    let indent_width = u8::try_from(cfg.indent_width)
-        .ok()
-        .and_then(|w| IndentWidth::try_from(w).ok())
-        .unwrap_or_default();
-
-    let bracket_spacing = cfg
-        .options
-        .get("bracket_spacing")
-        .and_then(|v| v.as_bool())
-        .map(JsonBracketSpacing::from)
-        .unwrap_or_default();
-
-    let trailing_commas = cfg
-        .options
-        .get("trailing_commas")
-        .and_then(|v| v.as_str())
-        .map(|s| match s {
-            "never" => JsonTc::Never,
-            _ => JsonTc::Always,
-        })
-        .unwrap_or_default();
-
-    JsonFormatOptions {
-        variant,
-        line_width,
-        indent_width,
-        bracket_spacing,
-        trailing_commas,
-        ..JsonFormatOptions::default()
-    }
-}
-
-fn format_json(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
-    let allocator = Allocator::new();
-    let options = build_json_options(src, cfg);
-
-    let formatted = match oxc_formatter_json::format(&allocator, &src.content, options) {
-        Err(_) => return Ok(FormatOutput::Unchanged),
-        Ok(f) => f,
-    };
-
-    let mut code = formatted
-        .print()
-        .map_err(|e| anyhow::anyhow!("oxc_formatter_json print error: {e}"))?
-        .into_code();
-
-    if !code.ends_with('\n') {
-        code.push('\n');
-    }
-
-    if code == *src.content {
-        Ok(FormatOutput::Unchanged)
-    } else {
-        Ok(FormatOutput::Formatted(code))
     }
 }
 
@@ -715,7 +405,6 @@ mod tests {
 
     use super::*;
     use crate::config::GlobalDefaults;
-    use crate::engine::Engine;
 
     fn make_src(content: &str, lang: Language) -> SourceFile {
         SourceFile {
@@ -747,30 +436,6 @@ mod tests {
         assert!(!diags.is_empty(), "expected at least one diagnostic for broken JS");
         assert_eq!(diags[0].severity, Severity::Error);
         assert!(diags[0].code.is_none(), "parse error should not have a rule code");
-    }
-
-    #[test]
-    fn format_js_normalizes_spacing() {
-        let src = make_src("const x={a:1,b:2};\n", Language::JavaScript);
-        let cfg = default_cfg();
-        let out = format_js(&src, &cfg).unwrap();
-        assert!(matches!(out, FormatOutput::Formatted(_)));
-    }
-
-    #[test]
-    fn format_js_returns_unchanged_for_already_formatted() {
-        let src = make_src("const x = {\n  a: 1,\n  b: 2,\n};\n", Language::JavaScript);
-        let cfg = default_cfg();
-        let first = match format_js(&src, &cfg).unwrap() {
-            FormatOutput::Formatted(s) => s,
-            FormatOutput::Unchanged => src.content.to_string(),
-        };
-        let src2 = make_src(&first, Language::JavaScript);
-        let second = format_js(&src2, &cfg).unwrap();
-        assert!(
-            matches!(second, FormatOutput::Unchanged),
-            "second pass should be Unchanged; got: {second:?}"
-        );
     }
 
     #[test]
@@ -836,15 +501,6 @@ mod tests {
         let input = r#"{"url": "http://example.com"}"#;
         let stripped = strip_jsonc_comments(input);
         assert_eq!(stripped, input);
-    }
-
-    #[test]
-    fn engine_metadata() {
-        let engine = OxcEngine;
-        assert_eq!(engine.name(), "oxc");
-        assert!(engine.capabilities().lint);
-        assert!(engine.capabilities().format);
-        assert!(!engine.capabilities().fix);
     }
 
     /// Parser used by oxlint still needs an Allocator; verify it works
@@ -926,43 +582,5 @@ level = "warning"
             Severity::Warning,
             "level = 'warning' should stay Severity::Warning via AllowWarnDeny::Warn"
         );
-    }
-
-    /// `quote_style = "single"` rewrites `"hello"` to `'hello'`.
-    #[test]
-    fn js_format_single_quote_style_rewrites_double_quotes() {
-        let src = make_src("export const greeting = \"hello\";\n", Language::JavaScript);
-        let cfg = EngineConfig {
-            globals: GlobalDefaults::default(),
-            indent_width: 2,
-            options: toml::from_str(r#"quote_style = "single""#).unwrap(),
-        };
-        let out = format_js(&src, &cfg).unwrap();
-        match out {
-            FormatOutput::Formatted(text) => {
-                assert!(text.contains("'hello'"), "expected single-quoted string; got: {text:?}");
-            }
-            FormatOutput::Unchanged => {
-                panic!("expected Formatted output with single quotes, got Unchanged");
-            }
-        }
-    }
-
-    /// `semicolons = "as-needed"` strips the trailing semicolons.
-    #[test]
-    fn js_format_semicolons_as_needed_removes_semicolons() {
-        let src = make_src("export const x = 1;\nexport const y = 2;\n", Language::JavaScript);
-        let cfg = EngineConfig {
-            globals: GlobalDefaults::default(),
-            indent_width: 2,
-            options: toml::from_str(r#"semicolons = "as-needed""#).unwrap(),
-        };
-        let out = format_js(&src, &cfg).unwrap();
-        match out {
-            FormatOutput::Formatted(text) => {
-                assert!(!text.contains(";\n"), "expected semicolons removed; got: {text:?}");
-            }
-            FormatOutput::Unchanged => {}
-        }
     }
 }

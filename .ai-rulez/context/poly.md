@@ -28,9 +28,12 @@ JSON payload — to detect a whole-project tool failure.
 
 ## Configuration
 
-Per-repo `poly.toml` (with `poly.local.toml` for local overrides). The result cache and hook
-staged snapshot live in the per-user OS cache dir (`~/.cache/poly/<repo-key>` on Linux,
-`~/Library/Caches/poly/…` on macOS, `%LOCALAPPDATA%\poly\…` on Windows) — not in-repo.
+Per-repo `poly.toml` (with `poly.local.toml` for local overrides). A top-level `extends` list
+shares any config section from local or pinned-remote base configs (ADR 0020) — bases merge
+beneath the file, `poly.local.toml` wins on top; `poly config update` locks a symbolic remote
+ref into `poly-config.lock`, and `poly config show` prints the effective merged config. The
+result cache and hook staged snapshot live in the per-user OS cache dir (`~/.cache/poly/<repo-key>`
+on Linux, `~/Library/Caches/poly/…` on macOS, `%LOCALAPPDATA%\poly\…` on Windows) — not in-repo.
 `POLY_CACHE_HOME` overrides the base; `[cache] dir` pins an explicit path.
 
 ## Severity

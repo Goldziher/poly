@@ -15,6 +15,13 @@ use poly_core::{Config, RunOptions, report};
 /// Resolve the run configuration the way the CLI does: load an explicit file
 /// when one is supplied, otherwise discover `poly.toml` from the working
 /// directory (mirrors `poly_cli`'s `load_config`).
+///
+/// Local `extends` bases resolve here as usual, but remote **git** `extends`
+/// bases are not fetched: the MCP server uses the network-free default resolver
+/// (the git resolver lives in `poly-cli`, which the server cannot depend on
+/// without a dependency cycle). A repo whose config extends a remote git base
+/// should be served via the `poly` CLI. This is a documented v1 limitation
+/// (ADR 0020).
 pub fn resolve_config(explicit: Option<&Path>) -> anyhow::Result<Config> {
     match explicit {
         Some(path) => Config::load_file(path),

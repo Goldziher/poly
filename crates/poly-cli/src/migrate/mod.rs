@@ -337,12 +337,14 @@ fn dir_has_source(dir: &Path) -> bool {
 /// (dry-run) to confirm every engine executes without error.
 fn verify(dir: &Path) -> Result<()> {
     use poly_core::{Config, RunOptions};
-    let config = Config::load(dir).with_context(|| format!("loading config in {}", dir.display()))?;
+    let config = Config::load_with(dir, &crate::config_sources::resolver()?)
+        .with_context(|| format!("loading config in {}", dir.display()))?;
     let options = RunOptions {
         no_cache: true,
         jobs: None,
         exclude: Vec::new(),
         explicit_config: false,
+        config_resolver: None,
     };
     let paths = [dir.to_path_buf()];
     poly_core::lint(&paths, &config, &options, false, false).context("verify: poly lint failed")?;

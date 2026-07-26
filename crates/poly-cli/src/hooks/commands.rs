@@ -587,11 +587,15 @@ fn run_and_report(request: poly_hooks::HookRunRequest) -> Result<ExitCode> {
 }
 
 pub(crate) fn load_config(explicit: Option<&Path>) -> Result<PolyConfig> {
+    // Thread the remote `extends` resolver so `poly hooks` honors shared config
+    // bases (including their `[hooks]` sections) exactly like `poly lint`/`fmt`.
+    let root = crate::config_sources::repo_root()?;
+    let resolver = crate::config_sources::RemoteExtendsResolver::new(&root)?;
     match explicit {
-        Some(path) => PolyConfig::load_file(path),
+        Some(path) => PolyConfig::load_file_with(path, &resolver),
         None => {
             let cwd = std::env::current_dir().context("failed to resolve the working directory")?;
-            PolyConfig::load(&cwd)
+            PolyConfig::load_with(&cwd, &resolver)
         }
     }
 }

@@ -58,6 +58,17 @@ impl ConfigSet {
     /// scanning the roots for every nested `poly.toml` and
     /// resolving each via the cascade.
     pub fn build(roots: &[PathBuf], root_config: Config) -> anyhow::Result<Self> {
+        Self::build_with(roots, root_config, &poly_config::LocalPathResolver)
+    }
+
+    /// [`build`](ConfigSet::build) with an explicit resolver for nested configs'
+    /// `extends` bases. Each nested `poly.toml` resolves its own `extends`
+    /// (remote or local) through `resolver` before the cascade merges it.
+    pub fn build_with(
+        roots: &[PathBuf],
+        root_config: Config,
+        resolver: &dyn poly_config::BaseConfigResolver,
+    ) -> anyhow::Result<Self> {
         let primary = roots.first().cloned().unwrap_or_else(|| PathBuf::from("."));
         let root_dir = dir_of_root(&primary);
         let root_config_dir = root_config_dir(&root_dir);
@@ -71,7 +82,7 @@ impl ConfigSet {
             if !seen.insert(dir.clone()) {
                 continue;
             }
-            let resolved: Config = poly_config::PolyConfig::resolve_for_dir(&dir)?.into();
+            let resolved: Config = poly_config::PolyConfig::resolve_for_dir_with(&dir, resolver)?.into();
             let id = configs.len();
             configs.push(resolved);
             dirs.push(Some(dir.clone()));

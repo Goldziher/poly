@@ -21,6 +21,7 @@ fn lint_does_not_flag_trailing_whitespace() {
         jobs: Some(1),
         exclude: Vec::new(),
         explicit_config: true,
+        config_resolver: None,
     };
     let results = poly_core::lint(&[dir.path().to_path_buf()], &cfg, &opts, false, false).unwrap();
     assert!(
@@ -41,6 +42,7 @@ fn format_check_does_not_write_but_reports_change() {
         jobs: Some(1),
         exclude: Vec::new(),
         explicit_config: true,
+        config_resolver: None,
     };
 
     let results = poly_core::format(&[dir.path().to_path_buf()], &cfg, &opts, false, false).unwrap();
@@ -59,6 +61,7 @@ fn format_write_is_idempotent() {
         jobs: Some(1),
         exclude: Vec::new(),
         explicit_config: true,
+        config_resolver: None,
     };
 
     let first = poly_core::format(&[dir.path().to_path_buf()], &cfg, &opts, true, false).unwrap();
@@ -82,6 +85,7 @@ fn lint_fix_applies_autofixes_and_dry_run_does_not() {
         jobs: Some(1),
         exclude: Vec::new(),
         explicit_config: true,
+        config_resolver: None,
     };
 
     poly_core::lint(&[dir.path().to_path_buf()], &cfg, &opts, false, false).unwrap();
@@ -144,6 +148,7 @@ fn lint_json_output_schema_conforms_to_diagnostic_contract() {
         jobs: Some(1),
         exclude: Vec::new(),
         explicit_config: true,
+        config_resolver: None,
     };
 
     let results = poly_core::lint(&[dir.path().to_path_buf()], &cfg, &opts, false, false).unwrap();

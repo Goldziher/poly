@@ -40,6 +40,11 @@ pub struct RunOptions {
     /// single config for every file and skip hierarchical (nested `poly.toml`)
     /// resolution (ADR 0018). Default `false` — scan for nested configs.
     pub explicit_config: bool,
+    /// Resolver for `extends` bases (ADR 0020). When set, nested `poly.toml`
+    /// files resolve their `extends` list (local or pinned remote git bases)
+    /// through this resolver during the cascade. `None` => local-only resolution
+    /// via `LocalPathResolver` (the default; no remote fetch).
+    pub config_resolver: Option<Arc<dyn poly_config::BaseConfigResolver>>,
 }
 
 /// Per-engine debug record for one file. Collected only when debug output is
@@ -95,6 +100,15 @@ pub struct FormatResult {
 /// Maximum autofix passes per file: applying a fix can surface or resolve
 /// others, so re-lint until stable, but cap to guarantee termination.
 const MAX_FIX_PASSES: usize = 5;
+
+/// Maximum format passes per file. A formatter is not guaranteed to be
+/// idempotent — line-wrap/reflow can shift on a second run (observed with
+/// clang-format on `.h`, csharpier on `.cs`, google-java-format on `.java`) —
+/// so we re-run the whole engine chain until the content stops changing. Capped
+/// to guarantee termination when a backend genuinely oscillates. Without this,
+/// a single `poly fmt --fix` could leave a file that a subsequent `poly fmt
+/// --check` still reports as unformatted.
+const MAX_FORMAT_PASSES: usize = 5;
 
 /// One engine paired with its resolved config and once-serialised cache args.
 ///
@@ -332,6 +346,8 @@ pub fn lint(
 fn build_config_set(paths: &[PathBuf], config: &Config, opts: &RunOptions) -> anyhow::Result<ConfigSet> {
     if opts.explicit_config {
         Ok(ConfigSet::single(config.clone()))
+    } else if let Some(resolver) = &opts.config_resolver {
+        ConfigSet::build_with(paths, config.clone(), resolver.as_ref())
     } else {
         ConfigSet::build(paths, config.clone())
     }
@@ -590,47 +606,60 @@ fn format_one(
         });
     }
     let mut debug = collect_debug.then(RunDebug::default);
-    let mut current: Arc<str> = Arc::from(original.as_str());
     let mut src = SourceFile {
         path: f.path.clone(),
         language: f.language.clone(),
-        content: Arc::clone(&current),
+        content: Arc::from(original.as_str()),
     };
     let engine_plans = plans
         .get(&(f.config_id, f.language.clone()))
         .map(Vec::as_slice)
         .unwrap_or(&[]);
-    for plan in engine_plans {
-        let digest = ResultCache::single_file_digest(&current);
-        let key = ResultCache::key_with_args(
-            Namespace::Fmt,
-            plan.engine.name(),
-            plan.engine.version(),
-            &plan.serialized_args,
-            &digest,
-        );
-        if let Some(bytes) = cache.get(Namespace::Fmt, &key)
-            && let Ok(text) = String::from_utf8(bytes)
-        {
-            push_engine_debug(debug.as_mut(), plan, None);
-            current = Arc::from(text);
-            continue;
-        }
-        src.content = Arc::clone(&current);
-        let started = collect_debug.then(std::time::Instant::now);
-        let out: Arc<str> = match plan.engine.format(&src, &plan.config)? {
-            FormatOutput::Unchanged => Arc::clone(&current),
-            FormatOutput::Formatted(s) => Arc::from(s),
-        };
-        push_engine_debug(debug.as_mut(), plan, started);
-        if let Err(error) = cache.put(Namespace::Fmt, &key, out.as_bytes()) {
-            tracing::warn!(
-                engine = plan.engine.name(),
-                "failed to store fmt cache entry: {error:#}"
+
+    // Run every format engine once over `input`, returning the chained output.
+    // Debug records are collected on the first pass only (`record_debug`) so the
+    // convergence loop below does not inflate per-engine timing counts.
+    let run_pass = |input: &Arc<str>, record_debug: bool| -> anyhow::Result<Arc<str>> {
+        let mut current = Arc::clone(input);
+        for plan in engine_plans {
+            let digest = ResultCache::single_file_digest(&current);
+            let key = ResultCache::key_with_args(
+                Namespace::Fmt,
+                plan.engine.name(),
+                plan.engine.version(),
+                &plan.serialized_args,
+                &digest,
             );
+            if let Some(bytes) = cache.get(Namespace::Fmt, &key)
+                && let Ok(text) = String::from_utf8(bytes)
+            {
+                if record_debug {
+                    push_engine_debug(debug.as_mut(), plan, None);
+                }
+                current = Arc::from(text);
+                continue;
+            }
+            src.content = Arc::clone(&current);
+            let started = collect_debug.then(std::time::Instant::now);
+            let out: Arc<str> = match plan.engine.format(&src, &plan.config)? {
+                FormatOutput::Unchanged => Arc::clone(&current),
+                FormatOutput::Formatted(s) => Arc::from(s),
+            };
+            if record_debug {
+                push_engine_debug(debug.as_mut(), plan, started);
+            }
+            if let Err(error) = cache.put(Namespace::Fmt, &key, out.as_bytes()) {
+                tracing::warn!(
+                    engine = plan.engine.name(),
+                    "failed to store fmt cache entry: {error:#}"
+                );
+            }
+            current = out;
         }
-        current = out;
-    }
+        Ok(current)
+    };
+
+    let current = format_to_fixed_point(Arc::from(original.as_str()), run_pass)?;
 
     let changed = *current != *original;
     if changed && write {
@@ -642,6 +671,31 @@ fn format_one(
         formatted: if changed { Some(current.to_string()) } else { None },
         debug,
     })
+}
+
+/// Drive `run_pass` (one full format-engine chain over the content) to a fixed
+/// point: re-run it until the output stops changing, bounded by
+/// [`MAX_FORMAT_PASSES`] so a genuinely oscillating backend still terminates.
+///
+/// The first pass receives `record_debug == true`; every retry receives `false`
+/// so per-engine debug counts reflect a single logical run. A run that is already
+/// stable costs exactly one pass; each additional pass only happens when the
+/// previous one changed the content (so `poly fmt --fix` is a fixed point and a
+/// following `poly fmt --check` is clean).
+fn format_to_fixed_point<F>(initial: Arc<str>, mut run_pass: F) -> anyhow::Result<Arc<str>>
+where
+    F: FnMut(&Arc<str>, bool) -> anyhow::Result<Arc<str>>,
+{
+    let mut current = initial;
+    for pass in 0..MAX_FORMAT_PASSES {
+        let next = run_pass(&current, pass == 0)?;
+        let stable = *next == *current;
+        current = next;
+        if stable {
+            break;
+        }
+    }
+    Ok(current)
 }
 
 fn write_atomic(path: &std::path::Path, contents: &str) -> anyhow::Result<()> {
@@ -691,6 +745,70 @@ mod tests {
             end_byte: end,
             replacement: rep.to_owned(),
         }
+    }
+
+    /// A pass that is already at its fixed point runs exactly once — no wasted
+    /// confirmation pass, and the content is returned unchanged.
+    #[test]
+    fn format_to_fixed_point_stable_input_runs_once() {
+        let calls = std::cell::Cell::new(0);
+        let result = format_to_fixed_point(Arc::from("stable"), |content, _record| {
+            calls.set(calls.get() + 1);
+            Ok(Arc::clone(content))
+        })
+        .unwrap();
+        assert_eq!(&*result, "stable");
+        assert_eq!(calls.get(), 1, "an already-stable input needs a single pass");
+    }
+
+    /// A non-idempotent pass (strips one trailing '!' per run) converges within
+    /// the bound, and the driver stops as soon as a pass makes no change — so the
+    /// result is a genuine fixed point, mirroring the `fmt --fix` then `--check`
+    /// invariant.
+    #[test]
+    fn format_to_fixed_point_converges_on_non_idempotent_pass() {
+        let calls = std::cell::Cell::new(0);
+        let result = format_to_fixed_point(Arc::from("a!!!"), |content, _record| {
+            calls.set(calls.get() + 1);
+            let stripped = content.strip_suffix('!').unwrap_or(content);
+            Ok(Arc::from(stripped))
+        })
+        .unwrap();
+        assert_eq!(&*result, "a", "trailing markers fully removed");
+        // "a!!!"->"a!!"->"a!"->"a" is 3 changing passes plus 1 no-op that proves
+        // stability = 4 calls.
+        assert_eq!(calls.get(), 4);
+    }
+
+    /// Only the first pass records debug so per-engine timing counts are not
+    /// inflated by the convergence retries.
+    #[test]
+    fn format_to_fixed_point_records_debug_on_first_pass_only() {
+        let recorded: std::cell::RefCell<Vec<bool>> = std::cell::RefCell::new(Vec::new());
+        format_to_fixed_point(Arc::from("a!!"), |content, record| {
+            recorded.borrow_mut().push(record);
+            Ok(Arc::from(content.strip_suffix('!').unwrap_or(content)))
+        })
+        .unwrap();
+        assert_eq!(
+            recorded.into_inner(),
+            vec![true, false, false],
+            "debug is recorded on the first pass, never on a retry"
+        );
+    }
+
+    /// A backend that never stabilizes is bounded to `MAX_FORMAT_PASSES` runs
+    /// rather than looping forever.
+    #[test]
+    fn format_to_fixed_point_bounds_a_never_stable_pass() {
+        let calls = std::cell::Cell::new(0);
+        let result = format_to_fixed_point(Arc::from("x"), |content, _record| {
+            calls.set(calls.get() + 1);
+            Ok(Arc::from(format!("{content}y")))
+        })
+        .unwrap();
+        assert_eq!(calls.get(), MAX_FORMAT_PASSES, "oscillation is capped, not infinite");
+        assert_eq!(&*result, "xyyyyy", "returns the last bounded pass output");
     }
 
     /// Two diagnostics, each with two non-overlapping edits; all four apply.

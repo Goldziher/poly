@@ -157,7 +157,28 @@ pub fn hook_sources_dir() -> anyhow::Result<PathBuf> {
 }
 
 /// Stable key for a Git hook source URL.
+///
+/// A thin alias for [`remote_source_key`]; hook sources and other remote-git
+/// sources share one URL-keying algorithm so their on-disk caches stay
+/// interoperable.
 pub fn hook_source_key(url: &str) -> String {
+    remote_source_key(url)
+}
+
+/// Global cache root for shared remote-git sources (e.g. config `extends`).
+///
+/// Sibling to [`hook_sources_dir`]: a separate `sources/` directory keyed by
+/// remote URL, shared by every consumer repository on the machine. Kept
+/// distinct from `hook-sources/` so the two caches never orphan each other.
+pub fn remote_sources_dir() -> anyhow::Result<PathBuf> {
+    Ok(cache_home()?.join("sources"))
+}
+
+/// Stable, filesystem-safe key for a remote-git source URL.
+///
+/// The first 32 hex chars of `blake3(url)`. Shared with [`hook_source_key`] so
+/// the same URL maps to the same cache slot regardless of which caller keyed it.
+pub fn remote_source_key(url: &str) -> String {
     blake3::hash(url.as_bytes()).to_hex()[..32].to_string()
 }
 

@@ -91,7 +91,7 @@ fn resolve_root(cache_dir: Option<&Path>) -> Result<PathBuf> {
         return Ok(dir.to_path_buf());
     }
     let cwd = std::env::current_dir().context("failed to resolve the working directory")?;
-    let config = PolyConfig::load(&cwd).context("failed to load config")?;
+    let config = PolyConfig::load_with(&cwd, &crate::config_sources::resolver()?).context("failed to load config")?;
     match config.cache.dir {
         Some(dir) => Ok(PathBuf::from(dir)),
         None => root_from_cwd().context("failed to resolve the cache directory"),

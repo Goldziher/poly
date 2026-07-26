@@ -323,6 +323,110 @@ pub(crate) static SWIFT_FORMAT_NOTICE: Once = Once::new();
 pub(crate) static DARTFMT_NOTICE: Once = Once::new();
 pub(crate) static GLEAMFMT_NOTICE: Once = Once::new();
 
+/// Which native tool and role a [`super::NativeToolEngine`] instance plays.
+///
+/// The role is the discriminant that maps to this module's per-tool statics:
+/// its [`ToolSpec`] ([`NativeRole::spec`]), probe lock ([`NativeRole::probe_lock`]),
+/// version-key lock ([`NativeRole::key_lock`]), and fallback-notice guard
+/// ([`NativeRole::notice_lock`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum NativeRole {
+    /// `gofmt` for Go (format only).
+    GoFmt,
+    /// `rustfmt` for Rust (format only).
+    Rustfmt,
+    /// `zig fmt` for Zig (format only).
+    ZigFmt,
+    /// `shfmt` for Shell (format only; lint is the Shellcheck entry).
+    Shfmt,
+    /// `shellcheck` for Shell (lint only; format is the Shfmt entry).
+    Shellcheck,
+    /// `google-java-format -` for Java (format only). Opt-in.
+    JavaFmt,
+    /// `ktfmt --kotlinlang-style -` for Kotlin (format only). Opt-in.
+    KtFmt,
+    /// `Rscript` / `styler` for R (format only). Opt-in.
+    RStyler,
+    /// `swift-format -` for Swift (format only). Opt-in.
+    SwiftFmt,
+    /// `dart format -o show` for Dart (format only). Opt-in.
+    DartFmt,
+    /// `gleam format --stdin` for Gleam (format only). Opt-in.
+    GleamFmt,
+}
+
+impl NativeRole {
+    /// The static [`ToolSpec`] describing this role's CLI contract.
+    pub(super) fn spec(self) -> &'static ToolSpec {
+        match self {
+            NativeRole::GoFmt => &GOFMT_SPEC,
+            NativeRole::Rustfmt => &RUSTFMT_SPEC,
+            NativeRole::ZigFmt => &ZIGFMT_SPEC,
+            NativeRole::Shfmt => &SHFMT_SPEC,
+            NativeRole::Shellcheck => &SHELLCHECK_SPEC,
+            NativeRole::JavaFmt => &JAVA_FMT_SPEC,
+            NativeRole::KtFmt => &KTFMT_SPEC,
+            NativeRole::RStyler => &RSTYLER_SPEC,
+            NativeRole::SwiftFmt => &SWIFT_FORMAT_SPEC,
+            NativeRole::DartFmt => &DARTFMT_SPEC,
+            NativeRole::GleamFmt => &GLEAMFMT_SPEC,
+        }
+    }
+
+    /// The memoised presence-probe result lock for this role.
+    pub(super) fn probe_lock(self) -> &'static OnceLock<Option<String>> {
+        match self {
+            NativeRole::GoFmt => &GOFMT_PROBE,
+            NativeRole::Rustfmt => &RUSTFMT_PROBE,
+            NativeRole::ZigFmt => &ZIGFMT_PROBE,
+            NativeRole::Shfmt => &SHFMT_PROBE,
+            NativeRole::Shellcheck => &SHELLCHECK_PROBE,
+            NativeRole::JavaFmt => &JAVA_FMT_PROBE,
+            NativeRole::KtFmt => &KTFMT_PROBE,
+            NativeRole::RStyler => &RSTYLER_PROBE,
+            NativeRole::SwiftFmt => &SWIFT_FORMAT_PROBE,
+            NativeRole::DartFmt => &DARTFMT_PROBE,
+            NativeRole::GleamFmt => &GLEAMFMT_PROBE,
+        }
+    }
+
+    /// The memoised cache-key-version lock for this role.
+    pub(super) fn key_lock(self) -> &'static OnceLock<String> {
+        match self {
+            NativeRole::GoFmt => &GOFMT_KEY,
+            NativeRole::Rustfmt => &RUSTFMT_KEY,
+            NativeRole::ZigFmt => &ZIGFMT_KEY,
+            NativeRole::Shfmt => &SHFMT_KEY,
+            NativeRole::Shellcheck => &SHELLCHECK_KEY,
+            NativeRole::JavaFmt => &JAVA_FMT_KEY,
+            NativeRole::KtFmt => &KTFMT_KEY,
+            NativeRole::RStyler => &RSTYLER_KEY,
+            NativeRole::SwiftFmt => &SWIFT_FORMAT_KEY,
+            NativeRole::DartFmt => &DARTFMT_KEY,
+            NativeRole::GleamFmt => &GLEAMFMT_KEY,
+        }
+    }
+
+    /// Returns the tier-2 fallback notice guard for this role, or `None` when
+    /// no notice applies (lint-only tools such as shellcheck do not emit a
+    /// fallback notice when absent).
+    pub(super) fn notice_lock(self) -> Option<&'static Once> {
+        match self {
+            NativeRole::GoFmt => Some(&GOFMT_NOTICE),
+            NativeRole::Rustfmt => Some(&RUSTFMT_NOTICE),
+            NativeRole::ZigFmt => Some(&ZIGFMT_NOTICE),
+            NativeRole::Shfmt => Some(&SHFMT_NOTICE),
+            NativeRole::Shellcheck => None,
+            NativeRole::JavaFmt => Some(&JAVA_FMT_NOTICE),
+            NativeRole::KtFmt => Some(&KTFMT_NOTICE),
+            NativeRole::RStyler => Some(&RSTYLER_NOTICE),
+            NativeRole::SwiftFmt => Some(&SWIFT_FORMAT_NOTICE),
+            NativeRole::DartFmt => Some(&DARTFMT_NOTICE),
+            NativeRole::GleamFmt => Some(&GLEAMFMT_NOTICE),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

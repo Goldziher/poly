@@ -34,6 +34,7 @@ Context, Decision, Consequences (positive and negative/risks), and Alternatives 
 | [0017](0017-path-excludes-per-file-ignores.md) | Path Exclusions and Per-File Rule Ignores | Accepted |
 | [0018](0018-hierarchical-configuration.md) | Hierarchical Configuration Resolution for Monorepos | Accepted |
 | [0019](0019-staged-isolation-whole-workspace-hooks.md) | Staged Isolation for Whole-Workspace Hooks | Accepted |
+| [0020](0020-shared-remote-configuration.md) | Shared Configuration via `extends` (Local and Pinned Remote Bases) | Accepted |
 
 ## Conventions
 
