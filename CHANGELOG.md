@@ -5,7 +5,7 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
-## [Unreleased]
+## [0.18.0] - 2026-07-26
 
 ### Added
 
@@ -15,8 +15,6 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   deep-merged beneath this `poly.toml`, and `poly.local.toml` still wins on top. A symbolic git ref (branch or
   tag) requires the new `poly config update` subcommand to resolve and pin it into `poly-config.lock`; `poly
   config resolve`/`show` prints the effective merged config. See [ADR 0020](adrs/0020-shared-remote-configuration.md).
-
-## [0.17.2] - 2026-07-26
 
 ### Fixed
 
