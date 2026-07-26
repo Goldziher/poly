@@ -71,8 +71,8 @@ impl Config {
         Ok(poly_config::PolyConfig::load(start)?.into())
     }
 
-    /// [`load`](Config::load) with an explicit [`BaseConfigResolver`] for the
-    /// config's `extends` bases (ADR 0020). The default `load` resolves only
+    /// [`load`](Config::load) with an explicit [`poly_config::BaseConfigResolver`]
+    /// for the config's `extends` bases (ADR 0020). The default `load` resolves only
     /// local `path` bases; the CLI supplies a resolver that also fetches pinned
     /// remote git bases.
     pub fn load_with(start: &Path, resolver: &dyn poly_config::BaseConfigResolver) -> anyhow::Result<Config> {
@@ -84,8 +84,8 @@ impl Config {
         Ok(poly_config::PolyConfig::load_file(path)?.into())
     }
 
-    /// [`load_file`](Config::load_file) with an explicit [`BaseConfigResolver`]
-    /// for the file's `extends` bases (ADR 0020).
+    /// [`load_file`](Config::load_file) with an explicit
+    /// [`poly_config::BaseConfigResolver`] for the file's `extends` bases (ADR 0020).
     pub fn load_file_with(path: &Path, resolver: &dyn poly_config::BaseConfigResolver) -> anyhow::Result<Config> {
         Ok(poly_config::PolyConfig::load_file_with(path, resolver)?.into())
     }

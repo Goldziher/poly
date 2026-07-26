@@ -8,7 +8,7 @@
 //! skip a file that contains them.
 //!
 //! The check is deliberately specific to Go templates so it does not fire on the
-//! two common look-alikes that must keep being processed:
+//! two common lookalikes that must keep being processed:
 //! - GitHub Actions `${{ … }}` expressions — valid YAML scalars (the `{{` is
 //!   `$`-prefixed).
 //! - MDX / JSX object literals such as `style={{ color: "red" }}` — a bare `{{`

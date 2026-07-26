@@ -35,7 +35,7 @@
 //! false-positives on machine-generated headers (`# alef:hash:…`), prose NOTE
 //! blocks and `key = value` directive comments. With `code_only = true` (the
 //! default) a removal is kept only when the comment looks like commented-out
-//! *code* (see [`looks_like_commented_out_code`]); set `code_only = false` to
+//! *code* (see `looks_like_commented_out_code`); set `code_only = false` to
 //! restore the strip-every-comment behaviour.
 
 use std::cell::RefCell;
@@ -296,7 +296,6 @@ fn is_prose_sentence(line: &str) -> bool {
                 .all(|c| c.is_ascii_alphabetic() || matches!(c, '.' | ',' | '\'' | '-' | '!' | '?'))
         })
         .count();
-    // Predominantly plain words ⇒ prose. `foo.bar().baz();`-style lines fail the
     // per-word alphabetic test (parentheses, `;`) and stay classified as code.
     wordish * 10 >= words.len() * 7
 }
