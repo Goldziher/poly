@@ -71,7 +71,9 @@ fn create_git_base(config: &str) -> (tempfile::TempDir, String, String) {
     .expect("utf8 oid")
     .trim()
     .to_string();
-    let url = repo.path().to_string_lossy().into_owned();
+    // Forward slashes: valid as a local git URL on Windows and TOML-safe when
+    // interpolated into an `extends` basic string (backslashes are illegal TOML escapes).
+    let url = repo.path().to_string_lossy().replace('\\', "/");
     (repo, url, oid)
 }
 
@@ -205,7 +207,7 @@ fn symlinked_base_file_escaping_checkout_is_rejected() {
     .expect("utf8")
     .trim()
     .to_string();
-    let url = repo.path().to_string_lossy().into_owned();
+    let url = repo.path().to_string_lossy().replace('\\', "/");
 
     let (consumer_dir, config_path) = consumer(&format!(
         "extends = [{{ git = \"{url}\", revision = \"{oid}\", file = \"poly.toml\" }}]\n"
