@@ -5,6 +5,29 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
+## [0.18.1] - 2026-07-28
+
+### Fixed
+
+- The result cache no longer serves stale output after a `poly` upgrade. poly's own version is now folded into
+  every cache key, so a new binary can never reuse a predecessor's cached lint/format result — closing a
+  non-idempotency where `poly fmt --fix` left a file that a fresh (`--no-cache`) format would still change, because
+  an engine's hand-maintained `version()` had not moved even though the binary's output had. The trade-off is one
+  re-run of otherwise-cached work after each upgrade.
+- A `poly lint`/`fmt`/`hooks` run now self-heals an incompatible on-disk cache layout (wiping the entry tree when
+  the `VERSION` sentinel is stale) rather than only under `poly cache gc`. The read-only `poly cache stats`/`size`
+  maintenance commands stay non-destructive.
+
+### Changed
+
+- `poly lint --fix` and `poly fmt --fix` now run the whole-project / interop tools in **fix mode** instead of
+  check-only: `cargo sort` sorts in place (drops `--check`), `cargo-machete` gains `--fix`, and `cargo clippy` runs
+  `--fix --allow-dirty --allow-staged` (preserving `-- -D warnings` and any `clippy_args` override); `cargo deny`
+  has no autofix and stays check-only. Previously these always ran in check mode, so `--fix` reported the findings
+  but never applied them and they reappeared on every run. `poly fmt` gains a `--no-workspace` flag and only runs
+  the whole-project phase under `--fix`, so `poly fmt --check` stays a fast, pure formatter. The git-hook /
+  commit-gate path is unchanged and remains check-only.
+
 ## [0.18.0] - 2026-07-26
 
 ### Added
