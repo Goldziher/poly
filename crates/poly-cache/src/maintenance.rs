@@ -58,6 +58,21 @@ impl ResultCache {
             .map(|version| version.trim().to_string())
     }
 
+    /// Wipe the entry tree when the on-disk layout sentinel is present but does
+    /// not match [`CACHE_FORMAT_VERSION`], so an incompatible-layout cache
+    /// self-heals on open rather than only under `cache gc`. An absent sentinel
+    /// is left for [`init_dirs`] to write — a fresh tree (nothing to wipe) or a
+    /// pre-sentinel one that [`clean`] would find empty anyway.
+    ///
+    /// [`init_dirs`]: ResultCache::init_dirs
+    /// [`clean`]: ResultCache::clean
+    pub(crate) fn heal_stale_layout(&self) -> Result<()> {
+        if matches!(self.read_on_disk_version(), Some(version) if version != CACHE_FORMAT_VERSION) {
+            self.clean()?;
+        }
+        Ok(())
+    }
+
     /// Rewrite the `VERSION` sentinel to [`CACHE_FORMAT_VERSION`].
     fn rewrite_version(&self) -> Result<()> {
         let path = self.root().join("VERSION");

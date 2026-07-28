@@ -100,6 +100,18 @@ pub use maintenance::{CacheStats, NamespaceStats};
 /// an existing tree is safe to reuse.
 pub const CACHE_FORMAT_VERSION: &str = "3";
 
+/// poly's own crate version, folded into every result-cache key.
+///
+/// An engine's `version()` only moves when that engine or its wrapped upstream
+/// crate is hand-bumped — but a new poly binary can change an engine's output
+/// without moving `version()` (e.g. a tweak to the generic tree-sitter reindent
+/// logic, whose `version()` carries a hand-maintained marker). Folding the poly
+/// version in makes any release invalidate every entry, so an upgraded binary
+/// can never serve a predecessor's stale output. The trade-off is one re-run of
+/// otherwise-cached work after each upgrade, which is the correct default:
+/// correctness over cross-version cache reuse.
+const POLY_VERSION: &str = env!("CARGO_PKG_VERSION");
+
 static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Environment variable overriding the poly cache home (`<platform-cache>/poly`).
@@ -342,25 +354,51 @@ impl ResultCache {
     ///
     /// When `enabled`, creates the full sub-directory tree and writes the
     /// `VERSION` sentinel.  When disabled, returns a no-op stub.
+    ///
+    /// This is the low-level, non-healing open used by the `poly cache`
+    /// maintenance commands, so introspection (`stats` / `size`) is read-only and
+    /// never wipes a stale-layout tree. The run paths use [`open_from`] /
+    /// [`open_default`], which self-heal first.
+    ///
+    /// [`open_from`]: ResultCache::open_from
+    /// [`open_default`]: ResultCache::open_default
     pub fn open(root: PathBuf, enabled: bool) -> anyhow::Result<Self> {
+        let cache = Self { root, enabled };
         if enabled {
-            Self::init_dirs(&root)?;
+            Self::init_dirs(&cache.root)?;
         }
-        Ok(Self { root, enabled })
+        Ok(cache)
+    }
+
+    /// Open the cache, first wiping the entry tree if the on-disk `VERSION`
+    /// sentinel is from an incompatible layout (self-healing, not only under
+    /// `cache gc`). This is the run-path open: a `poly lint`/`fmt`/`hooks`
+    /// invocation self-heals a stale cache before reading or writing results.
+    fn open_healed(root: PathBuf, enabled: bool) -> anyhow::Result<Self> {
+        let cache = Self { root, enabled };
+        if enabled {
+            cache.heal_stale_layout()?;
+            Self::init_dirs(&cache.root)?;
+        }
+        Ok(cache)
     }
 
     /// Open the cache by walking upward from `start` to find the repo root.
     ///
-    /// Combines [`root_from`] with [`ResultCache::open`].
+    /// Combines [`root_from`] with the self-healing [`open_healed`].
+    ///
+    /// [`open_healed`]: ResultCache::open_healed
     pub fn open_from(start: &Path, enabled: bool) -> anyhow::Result<Self> {
-        Self::open(root_from(start)?, enabled)
+        Self::open_healed(root_from(start)?, enabled)
     }
 
     /// Open the cache by walking upward from the current working directory.
     ///
-    /// Combines [`root_from_cwd`] with [`ResultCache::open`].
+    /// Combines [`root_from_cwd`] with the self-healing [`open_healed`].
+    ///
+    /// [`open_healed`]: ResultCache::open_healed
     pub fn open_default(enabled: bool) -> anyhow::Result<Self> {
-        Self::open(root_from_cwd()?, enabled)
+        Self::open_healed(root_from_cwd()?, enabled)
     }
 
     /// Create the full sub-directory tree and write the VERSION sentinel.
@@ -444,9 +482,12 @@ impl ResultCache {
     /// The key is blake3 over:
     ///
     /// ```text
-    /// namespace_dir \0 id \0 version \0 toml(args) \0 input_digest
+    /// poly_version \0 namespace_dir \0 id \0 version \0 toml(args) \0 input_digest
     /// ```
     ///
+    /// - `poly_version` — poly's own crate version ([`POLY_VERSION`]); every
+    ///   release invalidates all entries so an upgraded binary never serves a
+    ///   predecessor's stale output.
     /// - `namespace` — selects the storage sub-directory.
     /// - `id` — engine name (lint/fmt) or hook id.
     /// - `version` — engine or hook version string; **must change whenever
@@ -498,7 +539,26 @@ impl ResultCache {
         args: &SerializedArgs,
         input_digest: &InputDigest,
     ) -> CacheKey {
+        Self::key_with_poly_version(POLY_VERSION, namespace, id, version, args, input_digest)
+    }
+
+    /// [`key_with_args`] with the poly version supplied explicitly.
+    ///
+    /// The public path always passes [`POLY_VERSION`]; this seam lets a test vary
+    /// it to prove the poly version participates in the key.
+    ///
+    /// [`key_with_args`]: ResultCache::key_with_args
+    fn key_with_poly_version(
+        poly_version: &str,
+        namespace: Namespace,
+        id: &str,
+        version: &str,
+        args: &SerializedArgs,
+        input_digest: &InputDigest,
+    ) -> CacheKey {
         let mut hasher = blake3::Hasher::new();
+        hasher.update(poly_version.as_bytes());
+        hasher.update(b"\0");
         hasher.update(namespace.as_dir().as_bytes());
         hasher.update(b"\0");
         hasher.update(id.as_bytes());
@@ -798,16 +858,75 @@ mod tests {
     }
 
     #[test]
-    fn version_sentinel_not_overwritten_when_present() {
+    fn open_healed_wipes_when_sentinel_stale() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().join("cache");
         std::fs::create_dir_all(root.join("results/lint")).unwrap();
         std::fs::create_dir_all(root.join("results/fmt")).unwrap();
         std::fs::create_dir_all(root.join("results/hook")).unwrap();
+        std::fs::write(root.join("results/lint/stale-entry"), b"cached").unwrap();
         std::fs::write(root.join("VERSION"), "0").unwrap();
-        ResultCache::open(root.clone(), true).unwrap();
+
+        ResultCache::open_healed(root.clone(), true).unwrap();
+
+        assert!(
+            !root.join("results/lint/stale-entry").exists(),
+            "an incompatible-layout entry must be wiped on a run-path open"
+        );
         let version = std::fs::read_to_string(root.join("VERSION")).unwrap();
-        assert_eq!(version, "0", "existing VERSION must not be overwritten");
+        assert_eq!(
+            version, CACHE_FORMAT_VERSION,
+            "the sentinel must be rewritten to the current format version"
+        );
+    }
+
+    #[test]
+    fn open_healed_preserves_entries_when_sentinel_current() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("cache");
+        std::fs::create_dir_all(root.join("results/lint")).unwrap();
+        std::fs::create_dir_all(root.join("results/fmt")).unwrap();
+        std::fs::create_dir_all(root.join("results/hook")).unwrap();
+        std::fs::write(root.join("results/lint/entry"), b"cached").unwrap();
+        std::fs::write(root.join("VERSION"), CACHE_FORMAT_VERSION).unwrap();
+
+        ResultCache::open_healed(root.clone(), true).unwrap();
+
+        assert!(
+            root.join("results/lint/entry").exists(),
+            "a current-layout entry must survive a run-path open"
+        );
+    }
+
+    #[test]
+    fn open_does_not_wipe_a_stale_layout() {
+        // The maintenance open is read-only: `poly cache stats`/`size` must never
+        // wipe, so a stale sentinel and its entries survive a plain `open`.
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("cache");
+        std::fs::create_dir_all(root.join("results/lint")).unwrap();
+        std::fs::create_dir_all(root.join("results/fmt")).unwrap();
+        std::fs::create_dir_all(root.join("results/hook")).unwrap();
+        std::fs::write(root.join("results/lint/entry"), b"cached").unwrap();
+        std::fs::write(root.join("VERSION"), "0").unwrap();
+
+        ResultCache::open(root.clone(), true).unwrap();
+
+        assert!(
+            root.join("results/lint/entry").exists(),
+            "a plain maintenance open must not wipe a stale-layout tree"
+        );
+        let version = std::fs::read_to_string(root.join("VERSION")).unwrap();
+        assert_eq!(version, "0", "a plain open must not rewrite the sentinel");
+    }
+
+    #[test]
+    fn key_folds_in_poly_version() {
+        let digest = ResultCache::single_file_digest("content");
+        let args = ResultCache::serialize_args(&empty_args());
+        let older = ResultCache::key_with_poly_version("0.0.1", Namespace::Lint, "eng", "1", &args, &digest);
+        let newer = ResultCache::key_with_poly_version("0.0.2", Namespace::Lint, "eng", "1", &args, &digest);
+        assert_ne!(older, newer, "a poly version change must alter the key");
     }
 
     #[test]
