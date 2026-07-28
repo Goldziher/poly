@@ -31,6 +31,10 @@ pub(crate) struct WorkspaceLintArgs<'a> {
     pub config: Option<&'a Path>,
     /// The `--no-workspace` flag: skip the phase entirely.
     pub no_workspace: bool,
+    /// Apply autofixes: run the whole-project tools (`cargo sort`, `cargo-machete`,
+    /// `cargo clippy`) in their fix mode rather than check-only. Set from
+    /// `--fix`; the git-hook / commit-gate path never enables this.
+    pub fix: bool,
     /// The `-j` concurrency override.
     pub jobs: Option<usize>,
     /// The `--no-cache` flag.
@@ -69,6 +73,9 @@ pub(crate) fn run(args: &WorkspaceLintArgs) -> Result<bool> {
     retain_workspace_hooks(&mut spec);
     if spec.hooks.is_empty() {
         return Ok(true);
+    }
+    if args.fix {
+        lower::apply_cargo_fix_mode(&mut spec);
     }
 
     // When poly's own output is coloured, make the captured tools emit colour too

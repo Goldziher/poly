@@ -25,6 +25,8 @@ use poly_hooks::model::{Hook, HookCommand, StageSpec};
 
 use self::builtins::{PathProbe, ToolProbe};
 
+pub(crate) use self::builtins::apply_cargo_fix_mode;
+
 mod builtins;
 mod cache;
 

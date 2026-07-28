@@ -558,6 +558,15 @@ lint = false   # runs in git hooks, excluded from `poly lint`'s whole-project ph
 This is the per-group counterpart to `[lint] workspace = false`, which disables the whole-project
 phase for **every** tool at once.
 
+#### Applying whole-project fixes
+
+Under `--fix`, the whole-project phase runs its tools in **fix mode**: `cargo sort` sorts in place,
+`cargo-machete --fix` prunes unused dependencies, and `cargo clippy --fix --allow-dirty
+--allow-staged` applies clippy autofixes (`cargo deny` has no autofix and stays check-only). Both
+`poly lint --fix` and `poly fmt --fix` run it — pass `--no-workspace` to skip it. `poly fmt --check`
+does not run the phase, so a dry-run format stays fast. The git-hook / commit-gate path always runs
+check-only, so a commit is never silently auto-rewritten.
+
 ---
 
 ## Backend Coverage

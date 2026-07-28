@@ -139,6 +139,13 @@ pub struct FmtArgs {
     #[arg(long, conflicts_with = "fix")]
     pub check: bool,
 
+    /// Skip the whole-project autofix phase that `poly fmt --fix` otherwise runs
+    /// (`cargo sort` / `cargo-machete` / `cargo clippy` in fix mode, plus any
+    /// configured whole-workspace tools). Equivalent to `[lint] workspace = false`.
+    /// No effect without `--fix` (the phase only runs when applying fixes).
+    #[arg(long)]
+    pub no_workspace: bool,
+
     /// Flags shared with `poly lint`.
     #[command(flatten)]
     pub common: CommonArgs,
@@ -180,6 +187,7 @@ pub fn run_lint(args: LintArgs) -> ExitCode {
     let workspace_ok = match hooks::workspace_lint::run(&hooks::workspace_lint::WorkspaceLintArgs {
         config: common.config.as_deref(),
         no_workspace,
+        fix: common.fix,
         jobs: common.jobs,
         no_cache: common.no_cache,
         to_stdout: pretty,
@@ -217,29 +225,55 @@ pub fn run_fmt(args: FmtArgs) -> ExitCode {
     };
 
     let write = common.fix;
-    match poly_core::format(&paths, &config, &opts, write, common.debug) {
-        Ok(results) => {
-            let changed = match common.format {
-                OutputFormat::Pretty => report::report_format_pretty(&results, !write, verbosity),
-                OutputFormat::Json => {
-                    println!("{}", report::report_format_json(&results));
-                    results.iter().filter(|r| r.changed).count()
-                }
-                OutputFormat::Toon => {
-                    println!("{}", report::report_format_toon(&results));
-                    results.iter().filter(|r| r.changed).count()
-                }
-            };
-            if !write && changed > 0 {
-                ExitCode::from(1)
-            } else {
-                ExitCode::SUCCESS
+    let pretty = matches!(common.format, OutputFormat::Pretty);
+    let changed = match poly_core::format(&paths, &config, &opts, write, common.debug) {
+        Ok(results) => match common.format {
+            OutputFormat::Pretty => report::report_format_pretty(&results, !write, verbosity),
+            OutputFormat::Json => {
+                println!("{}", report::report_format_json(&results));
+                results.iter().filter(|r| r.changed).count()
             }
-        }
+            OutputFormat::Toon => {
+                println!("{}", report::report_format_toon(&results));
+                results.iter().filter(|r| r.changed).count()
+            }
+        },
         Err(e) => {
             eprintln!("error: {e:#}");
-            ExitCode::from(2)
+            return ExitCode::from(2);
         }
+    };
+
+    // On `--fix`, also apply the whole-project autofixes (`cargo sort` in place,
+    // `cargo-machete --fix`, `cargo clippy --fix`, plus configured workspace
+    // tools). Gated to fix mode so a plain `poly fmt --check` stays a fast, pure
+    // formatter that never compiles the workspace.
+    if write {
+        let workspace_ok = match hooks::workspace_lint::run(&hooks::workspace_lint::WorkspaceLintArgs {
+            config: common.config.as_deref(),
+            no_workspace: args.no_workspace,
+            fix: true,
+            jobs: common.jobs,
+            no_cache: common.no_cache,
+            to_stdout: pretty,
+        }) {
+            Ok(ok) => ok,
+            Err(e) => {
+                eprintln!("error: whole-project fix phase failed: {e:#}");
+                return ExitCode::from(2);
+            }
+        };
+        return if workspace_ok {
+            ExitCode::SUCCESS
+        } else {
+            ExitCode::from(1)
+        };
+    }
+
+    if changed > 0 {
+        ExitCode::from(1)
+    } else {
+        ExitCode::SUCCESS
     }
 }
 
