@@ -5,6 +5,15 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
+## [0.18.3] - 2026-07-29
+
+### Fixed
+
+- `poly fmt` is a pure formatter again: it no longer runs the whole-project lint phase. Under `--fix` it had been
+  invoking `cargo clippy`/`cargo-sort`/`cargo-machete`/`cargo-deny` — linting, not formatting. That phase now runs
+  only under `poly lint --fix` (and the commit gate). The `--no-workspace` flag is removed from `poly fmt`, since it
+  only gated the phase that no longer runs.
+
 ## [0.18.2] - 2026-07-29
 
 ### Fixed
