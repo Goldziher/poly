@@ -5,6 +5,16 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
+## [0.18.2] - 2026-07-29
+
+### Fixed
+
+- `poly commit` now resolves remote git `extends` bases, matching `poly lint`/`poly fmt`. Previously the
+  commit-message linter loaded `poly.toml` through the network-free resolver and hard-failed with "remote git
+  extends source requires the poly CLI resolver" whenever a repo inherited its shared base from a pinned remote
+  (rather than a local sibling path), breaking the commit-msg hook. The CLI now passes its remote resolver into
+  gitfluff so the repo-local `[commit]` rules load regardless of where the base lives.
+
 ## [0.18.1] - 2026-07-29
 
 ### Fixed

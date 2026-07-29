@@ -99,7 +99,17 @@ fn main() -> ExitCode {
 /// Run the gitfluff-backed commit-message linter and map its exit code onto an
 /// [`ExitCode`].
 fn run_commit(args: gitfluff::cli::LintArgs) -> ExitCode {
-    match gitfluff::run_lint(args) {
+    // Resolve `poly.toml` `extends` bases (including pinned remote git bases) so a
+    // repo whose shared config lives in a remote — not a local sibling path —
+    // still loads its `[commit]` rules for message linting.
+    let resolver = match poly_cli::config_sources::resolver() {
+        Ok(resolver) => resolver,
+        Err(error) => {
+            eprintln!("poly commit: {error:#}");
+            return ExitCode::FAILURE;
+        }
+    };
+    match gitfluff::run_lint_with_resolver(args, &resolver) {
         Ok(0) => ExitCode::SUCCESS,
         Ok(code) => ExitCode::from(code as u8),
         Err(error) => {

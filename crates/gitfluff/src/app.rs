@@ -114,6 +114,24 @@ pub fn run_hook_install(args: HookInstallArgs) -> Result<i32> {
 /// preset is unknown, a user-supplied regex fails to compile, or writing the
 /// cleaned message back fails.
 pub fn run_lint(args: LintArgs) -> Result<i32> {
+    run_lint_with_resolver(args, &poly_config::extends::LocalPathResolver)
+}
+
+/// [`run_lint`] with an explicit
+/// [`BaseConfigResolver`](poly_config::extends::BaseConfigResolver) for the
+/// `poly.toml` `extends` bases the commit config may inherit from.
+///
+/// The standalone `gitfluff` binary is network-free and uses
+/// [`LocalPathResolver`](poly_config::extends::LocalPathResolver); the `poly`
+/// CLI passes its remote git resolver so a repo whose shared base lives in a
+/// pinned remote (not a local sibling path) still resolves its `[commit]` rules.
+///
+/// # Errors
+///
+/// Returns an error if the message source is missing, the config is invalid, a
+/// preset is unknown, a user-supplied regex fails to compile, or writing the
+/// cleaned message back fails.
+pub fn run_lint_with_resolver(args: LintArgs, resolver: &dyn poly_config::extends::BaseConfigResolver) -> Result<i32> {
     let message_data = load_message(&args)?;
     let cwd = std::env::current_dir().context("failed to discover current directory")?;
 
@@ -122,7 +140,7 @@ pub fn run_lint(args: LintArgs) -> Result<i32> {
     }
 
     let mut reporter = Reporter::new(args.color);
-    let loaded_config = load_config(args.config.as_deref(), &cwd)?;
+    let loaded_config = load_config(args.config.as_deref(), &cwd, resolver)?;
 
     let preset_name = args
         .preset

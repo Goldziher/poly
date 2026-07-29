@@ -19,4 +19,4 @@ pub mod presets;
 
 mod app;
 
-pub use app::{main_entry, run, run_hook_install, run_lint};
+pub use app::{main_entry, run, run_hook_install, run_lint, run_lint_with_resolver};

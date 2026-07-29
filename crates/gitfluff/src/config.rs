@@ -2,6 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
+use poly_config::extends::BaseConfigResolver;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize, Default)]
@@ -48,12 +49,16 @@ pub struct CleanupRuleConfig {
     pub description: Option<String>,
 }
 
-pub fn load_config(explicit_path: Option<&Path>, start_dir: &Path) -> Result<Option<(PathBuf, FileConfig)>> {
+pub fn load_config(
+    explicit_path: Option<&Path>,
+    start_dir: &Path,
+    resolver: &dyn BaseConfigResolver,
+) -> Result<Option<(PathBuf, FileConfig)>> {
     let path = match explicit_path {
         Some(p) => p.to_path_buf(),
         None => match find_config(start_dir) {
             Some(p) => p,
-            None => return load_poly_commit_config(start_dir),
+            None => return load_poly_commit_config(start_dir, resolver),
         },
     };
 
@@ -67,10 +72,17 @@ pub fn load_config(explicit_path: Option<&Path>, start_dir: &Path) -> Result<Opt
 /// mapped onto gitfluff's [`FileConfig`]. Returns `None` when no such file
 /// exists. Gitfluff-native files (`.gitfluff.toml` / `.fluff.toml`) take
 /// precedence over this path.
-fn load_poly_commit_config(start_dir: &Path) -> Result<Option<(PathBuf, FileConfig)>> {
+///
+/// `resolver` resolves any `extends` bases the `poly.toml` declares; callers on
+/// the `poly` CLI pass the remote git resolver so a repo whose base lives in a
+/// pinned remote (not a local sibling path) still loads its `[commit]` rules.
+fn load_poly_commit_config(
+    start_dir: &Path,
+    resolver: &dyn BaseConfigResolver,
+) -> Result<Option<(PathBuf, FileConfig)>> {
     match poly_config::find_config(start_dir) {
         Some(poly_path) => {
-            let poly = poly_config::PolyConfig::load_file(&poly_path)
+            let poly = poly_config::PolyConfig::load_file_with(&poly_path, resolver)
                 .with_context(|| format!("invalid config at {}", poly_path.display()))?;
             Ok(Some((poly_path, FileConfig::from(poly.commit))))
         }
@@ -180,7 +192,7 @@ pattern = "^WIP"
         )
         .unwrap();
 
-        let (path, config) = load_config(None, dir.path())
+        let (path, config) = load_config(None, dir.path(), &poly_config::extends::LocalPathResolver)
             .expect("load")
             .expect("config found via poly.toml");
         assert!(path.ends_with("poly.toml"));
@@ -197,7 +209,9 @@ pattern = "^WIP"
         fs::write(dir.path().join("poly.toml"), "[commit]\npreset = \"conventional\"\n").unwrap();
         fs::write(dir.path().join(".gitfluff.toml"), "preset = \"angular\"\n").unwrap();
 
-        let (path, config) = load_config(None, dir.path()).expect("load").expect("config found");
+        let (path, config) = load_config(None, dir.path(), &poly_config::extends::LocalPathResolver)
+            .expect("load")
+            .expect("config found");
         assert!(
             path.ends_with(".gitfluff.toml"),
             "gitfluff-native config should take precedence"
@@ -208,6 +222,10 @@ pattern = "^WIP"
     #[test]
     fn no_config_returns_none() {
         let dir = tempdir().unwrap();
-        assert!(load_config(None, dir.path()).expect("load").is_none());
+        assert!(
+            load_config(None, dir.path(), &poly_config::extends::LocalPathResolver)
+                .expect("load")
+                .is_none()
+        );
     }
 }
