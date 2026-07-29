@@ -11,7 +11,7 @@ poly is a single-binary, multi-language linter and formatter. It bundles engines
 - Lint: `poly lint .`
 - Lint, per-file tier only (skip whole-project tools): `poly lint --no-workspace .`
 - Check formatting (dry-run): `poly fmt --check .`
-- Apply formatting (and whole-project autofixes): `poly fmt --fix .`
+- Apply formatting only (no linting): `poly fmt --fix .`
 - Apply lint autofixes (and whole-project autofixes): `poly lint --fix .`
 
 ## Whole-project lint phase
@@ -28,9 +28,10 @@ JSON payload — to detect a whole-project tool failure.
 
 Under `--fix`, this phase runs the tools in **fix mode**: `cargo sort` sorts in place,
 `cargo-machete --fix` prunes unused deps, and `cargo clippy --fix --allow-dirty --allow-staged`
-applies clippy autofixes (`cargo deny` has no autofix and stays check-only). `poly fmt --fix`
-also runs this phase (add `--no-workspace` to skip it); `poly fmt --check` does not, staying a
-fast pure formatter. The git-hook / commit-gate path always runs check-only.
+applies clippy autofixes (`cargo deny` has no autofix and stays check-only). Only `poly lint --fix`
+runs this phase (add `--no-workspace` to skip it). `poly fmt` is a pure formatter — it never runs
+the whole-project phase, since that phase is linting, not formatting. The git-hook / commit-gate
+path always runs check-only.
 
 ## Configuration
 

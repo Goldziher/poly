@@ -562,10 +562,10 @@ phase for **every** tool at once.
 
 Under `--fix`, the whole-project phase runs its tools in **fix mode**: `cargo sort` sorts in place,
 `cargo-machete --fix` prunes unused dependencies, and `cargo clippy --fix --allow-dirty
---allow-staged` applies clippy autofixes (`cargo deny` has no autofix and stays check-only). Both
-`poly lint --fix` and `poly fmt --fix` run it — pass `--no-workspace` to skip it. `poly fmt --check`
-does not run the phase, so a dry-run format stays fast. The git-hook / commit-gate path always runs
-check-only, so a commit is never silently auto-rewritten.
+--allow-staged` applies clippy autofixes (`cargo deny` has no autofix and stays check-only). Only
+`poly lint --fix` runs it — pass `--no-workspace` to skip it. `poly fmt` is a pure formatter and
+never runs the whole-project phase (that phase is linting, not formatting). The git-hook /
+commit-gate path always runs check-only, so a commit is never silently auto-rewritten.
 
 ---
 
