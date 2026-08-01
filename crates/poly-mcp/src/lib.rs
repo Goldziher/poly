@@ -13,6 +13,7 @@
 //! runtime internally and runs the stdio server to completion, so callers
 //! (e.g. `poly mcp`) stay synchronous.
 
+pub mod dto;
 pub mod ops;
 pub mod server;
 

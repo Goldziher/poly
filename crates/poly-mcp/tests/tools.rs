@@ -1,75 +1,91 @@
 //! Tests for the `poly-mcp` server.
 //!
-//! Three layers:
-//! 1. `ops` behaviour — the synchronous engine calls produce the CLI's JSON
-//!    contract on a temp fixture.
-//! 2. Tool-registry introspection — the expected tool names and annotations
-//!    (read-only vs destructive) are registered.
-//! 3. An in-process round-trip over a tokio duplex transport: initialize →
-//!    tools/list → tools/call.
+//! Layers:
+//! 1. `ops` behaviour — the synchronous engine calls produce the typed results.
+//! 2. Tool-registry introspection — expected tool names and annotations.
+//! 3. In-process round-trips over a tokio duplex transport: structured content +
+//!    JSON/TOON text for the per-file tools and the new read-only tools, and the
+//!    whole-project async **Task** lifecycle (`tools/call` → `tasks/get`).
 
 use std::path::PathBuf;
+use std::time::Duration;
 
 use poly_mcp::{PolyMcpServer, ops};
 use rmcp::ServiceExt;
-use rmcp::model::CallToolRequestParams;
+use rmcp::model::{
+    CallToolRequestParams, CallToolResponse, CallToolResult, ClientCapabilities, ClientInfo, GetTaskParams,
+    Implementation, TaskPayload, TaskStatus,
+};
 use serde_json::Value;
 
 /// Write a Python file with a real lint defect (unused import → ruff F401) into
-/// a temp dir. Trailing whitespace is a `fmt` concern, not a lint one, so a
-/// structured linter is used here to exercise the diagnostic contract.
+/// a temp dir.
 fn fixture_with_defect() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("bad.py"), "import os\n").unwrap();
     dir
 }
 
+// ── Layer 1: ops behaviour ────────────────────────────────────────────────
+
 #[test]
-fn lint_emits_diagnostic_contract_json() {
+fn lint_results_carry_diagnostic_contract() {
     let dir = fixture_with_defect();
     let path = dir.path().join("bad.py");
-    let json = ops::lint(&[path.display().to_string()], &[], None, false).unwrap();
-    let parsed: Value = serde_json::from_str(&json).unwrap();
-    let results = parsed.as_array().expect("lint json is an array");
+    let results = ops::lint_results(&[path.display().to_string()], &[], None, false).unwrap();
     assert!(!results.is_empty(), "expected at least one lint result");
-    let diagnostics = results[0]["diagnostics"]
-        .as_array()
-        .expect("result has diagnostics array");
-    let first = &diagnostics[0];
-    assert!(first["engine"].is_string(), "diagnostic has engine");
-    assert!(first["severity"].is_string(), "diagnostic has severity");
-    assert!(first["title"].is_string(), "diagnostic has title");
+    let diagnostics = &results[0].diagnostics;
+    assert!(!diagnostics.is_empty(), "the bad file has diagnostics");
+    assert_eq!(diagnostics[0].engine, "ruff", "unused import is a ruff finding");
 }
 
 #[test]
-fn format_check_reports_changed_without_writing() {
+fn format_results_report_changed_without_writing() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("bad.rs");
     let original = "fn main() {}   \n";
     std::fs::write(&path, original).unwrap();
-    let json = ops::format(&[path.display().to_string()], &[], None, false).unwrap();
-    let parsed: Value = serde_json::from_str(&json).unwrap();
-    let results = parsed.as_array().expect("format json is an array");
-    if let Some(first) = results.first() {
-        assert!(first["changed"].is_boolean(), "result has changed flag");
-        assert!(first.get("path").is_some(), "result has path");
-    }
-    assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
+    let results = ops::format_results(&[path.display().to_string()], &[], None, false).unwrap();
+    assert_eq!(results.len(), 1, "one file scanned");
+    assert!(results[0].changed, "trailing whitespace would be reformatted");
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        original,
+        "check mode does not write"
+    );
 }
 
 #[test]
 fn explicit_missing_config_is_an_error() {
-    let result = ops::lint(&[".".to_string()], &[], Some("/nonexistent/poly.toml"), false);
+    let result = ops::lint_results(&[".".to_string()], &[], Some("/nonexistent/poly.toml"), false);
     assert!(result.is_err(), "missing explicit config should error");
 }
 
 #[test]
-fn cache_stats_returns_json_object() {
-    let json = ops::cache_stats().unwrap();
-    let parsed: Value = serde_json::from_str(&json).unwrap();
-    assert!(parsed.get("total_bytes").is_some(), "stats has total_bytes");
-    assert!(parsed["per_namespace"].is_array(), "stats has per_namespace array");
+fn cache_stats_report_has_format_version() {
+    let report = ops::cache_stats().unwrap();
+    assert!(!report.format_version.is_empty(), "format version is populated");
 }
+
+#[test]
+fn config_show_reports_effective_defaults() {
+    let report = ops::config_show(None).unwrap();
+    // The opinionated default line length is 120 everywhere the tool exposes it.
+    assert_eq!(report.defaults.line_length, 120, "opinionated default line length");
+}
+
+#[test]
+fn rules_report_lists_configured_dirs() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("poly.toml"), "[rules]\ndirs = []\n").unwrap();
+    let config = dir.path().join("poly.toml");
+    let report = ops::rules_report(&[], Some(&config.display().to_string()), false).unwrap();
+    assert!(report.dirs.is_empty(), "empty rule dirs from config");
+    assert!(report.rules.is_empty(), "no rules discovered");
+    assert!(report.tests.is_none(), "no test report when test=false");
+}
+
+// ── Layer 2: registry introspection ───────────────────────────────────────
 
 #[test]
 fn registered_tools_have_expected_names_and_annotations() {
@@ -81,19 +97,30 @@ fn registered_tools_have_expected_names_and_annotations() {
         vec![
             "cache_clean",
             "cache_stats",
+            "config_show",
             "format_check",
             "format_write",
             "lint",
             "lint_fix",
+            "rules",
+            "workspace_lint",
+            "workspace_lint_fix",
         ]
     );
 
-    for tool in ["lint", "format_check", "cache_stats"] {
+    for tool in [
+        "lint",
+        "format_check",
+        "cache_stats",
+        "rules",
+        "config_show",
+        "workspace_lint",
+    ] {
         let (read_only, destructive) = server.tool_hints(tool).unwrap();
         assert_eq!(read_only, Some(true), "{tool} should be read-only");
         assert_eq!(destructive, Some(false), "{tool} should not be destructive");
     }
-    for tool in ["lint_fix", "format_write", "cache_clean"] {
+    for tool in ["lint_fix", "format_write", "cache_clean", "workspace_lint_fix"] {
         let (read_only, destructive) = server.tool_hints(tool).unwrap();
         assert_eq!(read_only, Some(false), "{tool} should not be read-only");
         assert_eq!(destructive, Some(true), "{tool} should be destructive");
@@ -103,15 +130,18 @@ fn registered_tools_have_expected_names_and_annotations() {
 #[test]
 fn server_constructs_with_config_override() {
     let server = PolyMcpServer::new(Some(PathBuf::from("poly.toml")));
-    assert_eq!(server.tool_names().len(), 6);
+    assert_eq!(server.tool_names().len(), 10);
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn round_trip_initialize_list_and_call() {
-    let dir = fixture_with_defect();
-    let path = dir.path().join("bad.py");
+// ── Layer 3: in-process round-trips ───────────────────────────────────────
 
-    let (server_io, client_io) = tokio::io::duplex(8192);
+/// Wire an in-process server to a duplex transport, returning the client and the
+/// server's join handle. The client declares the tasks extension capability.
+async fn connect() -> (
+    rmcp::service::RunningService<rmcp::RoleClient, ClientInfo>,
+    tokio::task::JoinHandle<()>,
+) {
+    let (server_io, client_io) = tokio::io::duplex(1 << 16);
     let (server_read, server_write) = tokio::io::split(server_io);
     let (client_read, client_write) = tokio::io::split(client_io);
 
@@ -123,24 +153,194 @@ async fn round_trip_initialize_list_and_call() {
         service.waiting().await.unwrap();
     });
 
-    let client = ().serve((client_read, client_write)).await.unwrap();
+    let client_info = ClientInfo::new(
+        ClientCapabilities::builder().enable_tasks().build(),
+        Implementation::new("poly-mcp-test", "0.0.0"),
+    );
+    let client = client_info.serve((client_read, client_write)).await.unwrap();
+    (client, server_task)
+}
 
-    let tools = client.list_all_tools().await.unwrap();
-    let names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
+fn arguments(pairs: &[(&str, Value)]) -> serde_json::Map<String, Value> {
+    pairs.iter().map(|(k, v)| ((*k).to_string(), v.clone())).collect()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn lint_returns_structured_content_and_json_text() {
+    let dir = fixture_with_defect();
+    let path = dir.path().join("bad.py");
+    let (client, server_task) = connect().await;
+
+    let names: Vec<String> = client
+        .list_all_tools()
+        .await
+        .unwrap()
+        .iter()
+        .map(|t| t.name.to_string())
+        .collect();
     assert!(names.contains(&"lint".to_string()));
-    assert!(names.contains(&"lint_fix".to_string()));
+    assert!(names.contains(&"workspace_lint".to_string()));
 
-    let mut arguments = serde_json::Map::new();
-    arguments.insert("paths".into(), serde_json::json!([path.display().to_string()]));
     let result = client
-        .call_tool(CallToolRequestParams::new("lint").with_arguments(arguments))
+        .call_tool(
+            CallToolRequestParams::new("lint")
+                .with_arguments(arguments(&[("paths", Value::from(vec![path.display().to_string()]))])),
+        )
         .await
         .unwrap();
 
+    // Structured content is the typed LintReport object.
+    let structured = result.structured_content.as_ref().expect("structured_content present");
+    let results = structured["results"].as_array().expect("results array");
+    assert_eq!(results.len(), 1, "one file linted");
+    assert_eq!(results[0]["diagnostics"][0]["engine"], "ruff");
+
+    // The default text block stays the CLI JSON array (backward-compatible).
     let text = result.content[0].as_text().expect("text content").text.clone();
     let parsed: Value = serde_json::from_str(&text).unwrap();
-    assert!(parsed.is_array(), "lint tool returns the CLI json array");
+    assert!(parsed.is_array(), "json text block is the CLI array");
 
+    client.cancel().await.unwrap();
+    let _ = server_task.await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn lint_toon_text_differs_from_json_but_structured_matches() {
+    let dir = fixture_with_defect();
+    let path = dir.path().join("bad.py");
+    let paths = Value::from(vec![path.display().to_string()]);
+    let (client, server_task) = connect().await;
+
+    let json_result = client
+        .call_tool(CallToolRequestParams::new("lint").with_arguments(arguments(&[("paths", paths.clone())])))
+        .await
+        .unwrap();
+    let toon_result = client
+        .call_tool(
+            CallToolRequestParams::new("lint")
+                .with_arguments(arguments(&[("paths", paths), ("format", Value::from("toon"))])),
+        )
+        .await
+        .unwrap();
+
+    let json_text = json_result.content[0].as_text().unwrap().text.clone();
+    let toon_text = toon_result.content[0].as_text().unwrap().text.clone();
+    assert_ne!(json_text, toon_text, "toon text differs from json text");
+    assert!(
+        serde_json::from_str::<Value>(&toon_text).is_err(),
+        "the toon text is not JSON: {toon_text}"
+    );
+    // structured_content is JSON regardless of the requested text representation.
+    assert_eq!(
+        json_result.structured_content, toon_result.structured_content,
+        "structured content is JSON in both cases"
+    );
+
+    client.cancel().await.unwrap();
+    let _ = server_task.await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cache_stats_tool_returns_typed_structured_content() {
+    let (client, server_task) = connect().await;
+    let result = client
+        .call_tool(CallToolRequestParams::new("cache_stats"))
+        .await
+        .unwrap();
+    let structured = result.structured_content.as_ref().expect("structured_content present");
+    assert!(structured["format_version"].is_string(), "typed format_version");
+    assert!(structured["per_namespace"].is_array(), "typed per_namespace");
+    client.cancel().await.unwrap();
+    let _ = server_task.await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn config_show_tool_returns_effective_defaults() {
+    let (client, server_task) = connect().await;
+    let result = client
+        .call_tool(CallToolRequestParams::new("config_show"))
+        .await
+        .unwrap();
+    let structured = result.structured_content.as_ref().expect("structured_content present");
+    assert_eq!(
+        structured["defaults"]["line_length"], 120,
+        "opinionated default line length"
+    );
+    client.cancel().await.unwrap();
+    let _ = server_task.await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rules_tool_lists_rules_structured() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("poly.toml"), "[rules]\ndirs = []\n").unwrap();
+    let config = dir.path().join("poly.toml").display().to_string();
+    let (client, server_task) = connect().await;
+    let result = client
+        .call_tool(CallToolRequestParams::new("rules").with_arguments(arguments(&[("config", Value::from(config))])))
+        .await
+        .unwrap();
+    let structured = result.structured_content.as_ref().expect("structured_content present");
+    assert_eq!(structured["rules"], serde_json::json!([]), "no rules discovered");
+    client.cancel().await.unwrap();
+    let _ = server_task.await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn workspace_lint_runs_as_async_task_and_completes() {
+    // A config that disables the whole-project phase makes the Task settle
+    // immediately (no cargo invocation), so the test is fast and deterministic.
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("poly.toml"), "[lint]\nworkspace = false\n").unwrap();
+    let config = dir.path().join("poly.toml").display().to_string();
+    let (client, server_task) = connect().await;
+
+    // The whole-project tool returns a task handle, not a completed result.
+    let response = client
+        .call_tool_once(
+            CallToolRequestParams::new("workspace_lint").with_arguments(arguments(&[("config", Value::from(config))])),
+        )
+        .await
+        .unwrap();
+    let create = match response {
+        CallToolResponse::Task(create) => create,
+        other => panic!("expected a task handle, got {other:?}"),
+    };
+    assert_eq!(create.task.status, TaskStatus::Working, "seed task is working");
+    let task_id = create.task.task_id.clone();
+
+    // Poll tasks/get until the task settles.
+    let mut settled = None;
+    for _ in 0..200 {
+        let detailed = client.get_task(GetTaskParams::new(task_id.clone())).await.unwrap();
+        if detailed.task.status().is_terminal() {
+            settled = Some(detailed);
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let settled = settled.expect("task settled");
+    assert_eq!(settled.task.status(), TaskStatus::Completed, "task completed");
+
+    let TaskPayload::Completed { result } = settled.task.payload else {
+        panic!("expected a completed payload");
+    };
+    let call_result: CallToolResult = serde_json::from_value(Value::Object(result)).unwrap();
+    let structured = call_result
+        .structured_content
+        .expect("structured content in task result");
+    assert_eq!(structured["passed"], Value::Bool(true), "disabled phase passes");
+    assert_eq!(structured["tools"], serde_json::json!([]), "no tools ran");
+
+    client.cancel().await.unwrap();
+    let _ = server_task.await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn get_task_for_unknown_id_is_an_error() {
+    let (client, server_task) = connect().await;
+    let result = client.get_task(GetTaskParams::new("does-not-exist")).await;
+    assert!(result.is_err(), "unknown task id is rejected");
     client.cancel().await.unwrap();
     let _ = server_task.await;
 }

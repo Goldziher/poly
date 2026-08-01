@@ -33,6 +33,19 @@ runs this phase (add `--no-workspace` to skip it). `poly fmt` is a pure formatte
 the whole-project phase, since that phase is linting, not formatting. The git-hook / commit-gate
 path always runs check-only.
 
+The orchestration itself lives in `crates/poly-workspace` (`run_workspace_lint`), shared by
+`poly-cli` and the `poly mcp` `workspace_lint`/`workspace_lint_fix` tools so both surfaces run
+identical behavior against the live worktree.
+
+## Agent distribution
+
+poly publishes its own Claude/Codex plugin (`Goldziher/poly` marketplace) registering `poly mcp`
+as a stdio server plus 5 skills and 2 slash commands — generated from `.ai-rulez/` into
+`.claude-plugin/`/`.codex-plugin/` (never hand-edit the generated files). Install with
+`/plugin marketplace add Goldziher/poly` then `/plugin install poly@poly`. The plugin assumes
+`poly` is already on `PATH`; it does not bundle a binary. Bump the lock-step version with
+`scripts/release-bump.sh <version>`.
+
 ## Configuration
 
 Per-repo `poly.toml` (with `poly.local.toml` for local overrides). A top-level `extends` list

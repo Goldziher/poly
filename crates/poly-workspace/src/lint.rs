@@ -1,59 +1,129 @@
-//! The whole-project lint phase of `poly lint`.
+//! The whole-project lint phase of `poly lint`, as a front-end-agnostic API.
 //!
 //! `poly lint`'s per-file tier (native engines + catalog tools) cannot run
 //! *whole-project* analysis tools — `cargo clippy`, `cargo-sort`, `cargo-deny`,
 //! type checkers — because they need a whole-workspace view that does not fit the
 //! per-file rayon unit (ADR 0014). Those tools already have a home as
 //! **whole-workspace hooks** (ADR 0019). This module bridges the two: it reuses
-//! the hooks lowering to build exactly the same whole-workspace tool set, then
-//! runs it as a phase of `poly lint` against the **live worktree** (no staged
-//! snapshot — `poly lint` checks the working tree, not the index) and folds the
-//! pass/fail into the lint report and exit code.
+//! the hooks lowering ([`crate::lower`]) to build exactly the same whole-workspace
+//! tool set, then runs it against the **live worktree** (no staged snapshot —
+//! `poly lint` checks the working tree, not the index) and returns the pass/fail
+//! plus the structured per-tool results.
 //!
 //! The tool set and its toggles are the existing hooks config
 //! (`[hooks.builtin.cargo]` + inline `workspace = true` jobs) — a single source
 //! of truth, so `poly lint` runs the same whole-project tools a commit would.
-//! The phase is on by default; `--no-workspace` or `[lint] workspace = false`
-//! turns it off, and a repo that has not adopted `[hooks]` runs nothing here.
+//!
+//! Config is **injected**, not loaded here: the caller passes a resolved
+//! [`PolyConfig`], keeping front-end-specific `extends` resolution (the CLI's
+//! git-remote resolver vs the MCP server's network-free one) out of this crate.
+//! The CLI renders the outcome with [`render_workspace_outcome`]; a non-CLI
+//! caller can serialize [`WorkspaceLintOutcome`] directly instead.
 
 use std::io::Write as _;
-use std::path::Path;
 
 use anyhow::{Context, Result};
 use owo_colors::{OwoColorize as _, Stream};
+use poly_config::PolyConfig;
 
-use crate::hooks::commands::{load_config, open_result_cache, sccache_settings, show_progress};
-use crate::hooks::lower;
+use crate::lower;
+use crate::support::{open_result_cache, sccache_settings, show_progress};
 
-/// Inputs the whole-project lint phase needs from the `poly lint` invocation.
-pub(crate) struct WorkspaceLintArgs<'a> {
-    /// The `--config <path>` override, if any (else the nearest `poly.toml`).
-    pub config: Option<&'a Path>,
-    /// The `--no-workspace` flag: skip the phase entirely.
-    pub no_workspace: bool,
-    /// Apply autofixes: run the whole-project tools (`cargo sort`, `cargo-machete`,
-    /// `cargo clippy`) in their fix mode rather than check-only. Set from
-    /// `--fix`; the git-hook / commit-gate path never enables this.
+/// Per-invocation inputs the whole-project lint phase needs from the caller.
+///
+/// Everything else (the tool set, its toggles, the cache policy) comes from the
+/// injected [`PolyConfig`]. The `--no-workspace` short-circuit is the caller's
+/// responsibility: skip calling [`run_workspace_lint`] entirely rather than
+/// threading a flag through here.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct WorkspaceLintOptions {
+    /// Apply autofixes: run the whole-project tools (`cargo sort`,
+    /// `cargo-machete`, `cargo clippy`) in their fix mode rather than
+    /// check-only. Set from `--fix`; the git-hook / commit-gate path never
+    /// enables this.
     pub fix: bool,
     /// The `-j` concurrency override.
     pub jobs: Option<usize>,
     /// The `--no-cache` flag.
     pub no_cache: bool,
     /// Whether the human report goes to stdout (pretty) or stderr (json/toon, so
-    /// stdout stays a single valid document).
-    pub to_stdout: bool,
+    /// stdout stays a single valid document). Controls only rendering and the
+    /// colour decision — never which tools run.
+    pub report_to_stdout: bool,
 }
 
-/// Run the whole-project lint phase and return `true` when it passed (or did not
-/// run at all). A returned `false` means a whole-project tool reported failures,
-/// which the caller folds into a non-zero exit code.
-pub(crate) fn run(args: &WorkspaceLintArgs) -> Result<bool> {
-    if args.no_workspace {
-        return Ok(true);
+/// One whole-project tool's result, kept structured so a non-CLI caller (the MCP
+/// server) can serialize it. Mirrors what [`render_workspace_outcome`] prints.
+#[derive(Debug, Clone)]
+pub struct WorkspaceToolResult {
+    /// The hook id (e.g. `cargo-clippy`, or an inline job's label).
+    pub id: String,
+    /// Whether the tool reported a failure (its captured output is meaningful).
+    pub failed: bool,
+    /// Whether this result was served from the result cache.
+    pub cached: bool,
+    /// The tool's captured combined output (may contain ANSI colour codes).
+    pub output: Vec<u8>,
+}
+
+/// The outcome of the whole-project lint phase: the overall pass/fail plus each
+/// tool's structured result.
+#[derive(Debug, Clone, Default)]
+pub struct WorkspaceLintOutcome {
+    /// `true` when the phase passed (or did not run at all). `false` means a
+    /// whole-project tool reported failures — the caller folds this into a
+    /// non-zero exit code.
+    pub passed: bool,
+    /// The per-tool results, in run order. Empty when the phase did not run
+    /// (disabled, or no whole-project tools configured).
+    pub tools: Vec<WorkspaceToolResult>,
+}
+
+impl WorkspaceLintOutcome {
+    /// The outcome for a phase that did not run: passed, with no tool results.
+    fn skipped() -> Self {
+        Self {
+            passed: true,
+            tools: Vec::new(),
+        }
     }
-    let config = load_config(args.config)?;
+
+    /// Flatten a [`poly_hooks::HookRunOutcome`] into the structured outcome.
+    fn from_hook_outcome(outcome: &poly_hooks::HookRunOutcome) -> Self {
+        let mut tools = Vec::new();
+        for stage in &outcome.stages {
+            for hook in &stage.hooks {
+                tools.push(WorkspaceToolResult {
+                    id: hook.id.clone(),
+                    failed: hook.status.is_failure(),
+                    cached: hook.cached,
+                    output: hook.output.clone(),
+                });
+            }
+        }
+        Self {
+            passed: outcome.success(),
+            tools,
+        }
+    }
+}
+
+/// Run the whole-project lint phase against the live worktree and return the
+/// structured outcome.
+///
+/// `config` is the already-resolved poly configuration (the caller owns
+/// `extends` resolution). The phase is off when `[lint] workspace = false` or
+/// when the repo configures no whole-project tools — both return a passing,
+/// empty [`WorkspaceLintOutcome`]. The caller handles the `--no-workspace`
+/// short-circuit before calling.
+///
+/// # Errors
+///
+/// Returns `Err` if the project root or running binary cannot be resolved, the
+/// hooks config fails to lower, or the cache/runner setup fails.
+pub fn run_workspace_lint(config: &PolyConfig, opts: &WorkspaceLintOptions) -> Result<WorkspaceLintOutcome> {
     if workspace_lint_disabled(&config.lint) {
-        return Ok(true);
+        return Ok(WorkspaceLintOutcome::skipped());
     }
 
     let root = poly_hooks::git::get_root()
@@ -72,9 +142,9 @@ pub(crate) fn run(args: &WorkspaceLintArgs) -> Result<bool> {
     )?;
     retain_workspace_hooks(&mut spec);
     if spec.hooks.is_empty() {
-        return Ok(true);
+        return Ok(WorkspaceLintOutcome::skipped());
     }
-    if args.fix {
+    if opts.fix {
         lower::apply_cargo_fix_mode(&mut spec);
     }
 
@@ -82,27 +152,26 @@ pub(crate) fn run(args: &WorkspaceLintArgs) -> Result<bool> {
     // (they otherwise see a capture pipe, not a TTY, and self-disable it). Gated on
     // the same decision as the report below, so `--no-color`/redirected output stays
     // clean. Paired with the pass-through in `append_output`.
-    let color = color_enabled(args.to_stdout);
+    let color = color_enabled(opts.report_to_stdout);
     if color {
         force_child_color(&mut spec);
     }
 
-    let cache = open_result_cache(&config, &root, args.no_cache)?;
-    let sccache = sccache_settings(&config, false)?;
+    let cache = open_result_cache(config, &root, opts.no_cache)?;
+    let sccache = sccache_settings(config, false)?;
     let request = poly_hooks::HookRunRequest {
         root,
         work_root: None,
         files: Vec::new(),
         message_file: None,
         stages: vec![spec],
-        concurrency: args.jobs,
+        concurrency: opts.jobs,
         cache,
         sccache,
         progress: show_progress(),
     };
     let outcome = poly_hooks::run(request)?;
-    render(&outcome, args.to_stdout, color);
-    Ok(outcome.success())
+    Ok(WorkspaceLintOutcome::from_hook_outcome(&outcome))
 }
 
 /// Force colour from the captured whole-project tools by setting the standard
@@ -164,28 +233,27 @@ fn workspace_lint_disabled(lint: &toml::Table) -> bool {
 
 /// Render the whole-project results under a lint-appropriate header — one
 /// `✓/× id` line per tool, with each failing tool's captured output indented
-/// beneath it. Written to stdout for pretty output, else stderr.
-fn render(outcome: &poly_hooks::HookRunOutcome, to_stdout: bool, color: bool) {
-    let mut buffer = String::new();
-    let mut any = false;
-    for stage in &outcome.stages {
-        for hook in &stage.hooks {
-            any = true;
-            let failed = hook.status.is_failure();
-            let marker = status_marker(failed, to_stdout);
-            let suffix = if hook.cached { " (cached)" } else { "" };
-            buffer.push_str(&format!("  {marker} {}{suffix}\n", hook.id));
-            if failed {
-                append_output(&mut buffer, &hook.output, color);
-            }
-        }
-    }
-    if !any {
+/// beneath it. Written to stdout when `report_to_stdout`, else stderr.
+///
+/// Byte-for-byte identical to the historic in-CLI renderer. A phase that did not
+/// run (empty [`WorkspaceLintOutcome::tools`]) prints nothing.
+pub fn render_workspace_outcome(outcome: &WorkspaceLintOutcome, report_to_stdout: bool) {
+    if outcome.tools.is_empty() {
         return;
     }
-    let header = "whole-project checks".if_supports_color(sink_stream(to_stdout), |t| t.bold());
+    let color = color_enabled(report_to_stdout);
+    let mut buffer = String::new();
+    for tool in &outcome.tools {
+        let marker = status_marker(tool.failed, report_to_stdout);
+        let suffix = if tool.cached { " (cached)" } else { "" };
+        buffer.push_str(&format!("  {marker} {}{suffix}\n", tool.id));
+        if tool.failed {
+            append_output(&mut buffer, &tool.output, color);
+        }
+    }
+    let header = "whole-project checks".if_supports_color(sink_stream(report_to_stdout), |t| t.bold());
     let block = format!("\n{header}\n{buffer}");
-    if to_stdout {
+    if report_to_stdout {
         print!("{block}");
     } else {
         let mut err = std::io::stderr().lock();

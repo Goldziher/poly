@@ -1,0 +1,40 @@
+{
+  "name": "poly",
+  "version": "0.18.3",
+  "description": "Zero-dependency lint \u0026 format orchestrator over MCP — one pure-Rust binary wrapping ruff/oxc/taplo/rumdl and more as in-process backends, plus a tree-sitter generic tier for everything else. Exposes lint/format/cache tools with structured JSON output.",
+  "author": {
+    "name": "Na'aman Hirschfeld",
+    "email": "nhirschfeld@gmail.com",
+    "url": "https://github.com/Goldziher"
+  },
+  "homepage": "https://github.com/Goldziher/poly",
+  "repository": "https://github.com/Goldziher/poly",
+  "license": "MIT",
+  "keywords": [
+    "linter",
+    "formatter",
+    "mcp",
+    "code-quality",
+    "rust"
+  ],
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "poly",
+    "shortDescription": "Zero-dependency lint \u0026 format orchestrator over MCP",
+    "longDescription": "poly is a single pure-Rust binary that lints and formats a whole repository across languages — wrapping ruff/oxc/taplo/rumdl and more as in-process backends, with a tree-sitter generic tier for everything else. Its MCP server exposes lint/format/cache tools with structured JSON output, no subprocesses and no system dependencies by default.",
+    "developerName": "Na'aman Hirschfeld",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Read"
+    ],
+    "defaultPrompt": [
+      "Lint this repository with poly and summarize the findings.",
+      "Check formatting drift with poly and list the affected files.",
+      "Apply poly's lint and format autofixes, then report what remains.",
+      "Show poly's effective configuration for this repo."
+    ],
+    "websiteURL": "https://github.com/Goldziher/poly",
+    "brandColor": "#F97316"
+  }
+}

@@ -35,6 +35,8 @@ Context, Decision, Consequences (positive and negative/risks), and Alternatives 
 | [0018](0018-hierarchical-configuration.md) | Hierarchical Configuration Resolution for Monorepos | Accepted |
 | [0019](0019-staged-isolation-whole-workspace-hooks.md) | Staged Isolation for Whole-Workspace Hooks | Accepted |
 | [0020](0020-shared-remote-configuration.md) | Shared Configuration via `extends` (Local and Pinned Remote Bases) | Accepted |
+| [0021](0021-mcp-structured-output-toon-and-tasks.md) | MCP Structured Output, TOON, and Async Tasks | Accepted |
+| [0022](0022-plugin-marketplace-and-agent-distribution.md) | Plugin Marketplace and Agent Distribution | Accepted |
 
 ## Conventions
 

@@ -22,6 +22,21 @@ binary is distributed as prebuilt release artifacts plus an installer (see relea
   `[workspace.dependencies]`; git deps are pinned to a `rev` (monorepo crates share one `rev`).
 - `deny.toml` — `cargo deny` license / source allow-list (no GPL/AGPL), applied across the full
   dependency tree including git deps and their transitive dependencies.
+- `crates/poly-workspace/` — the whole-project (workspace) lint orchestration shared by
+  `poly-cli` and `poly-mcp`: lowers `[hooks]` config into the `poly-hooks` model, reduces it to
+  the whole-project tool set (`cargo clippy`/`cargo-sort`/`cargo-machete`/`cargo-deny`), and runs
+  it against the live worktree. Public API is narrow —
+  `run_workspace_lint(&PolyConfig, &WorkspaceLintOptions) -> WorkspaceLintOutcome` plus
+  `render_workspace_outcome` — so both consumers get identical behavior without a dependency
+  cycle: the crate never loads config itself, the caller injects an already-resolved
+  `poly_config::PolyConfig` (the CLI keeps its git-remote `extends` resolver, the MCP server
+  keeps its network-free one).
+- `.ai-rulez/`, `.claude-plugin/`, `.codex-plugin/` — the generated plugin/marketplace surface
+  (ADR 0022): hand-written source lives under `.ai-rulez/rules/`, `.ai-rulez/context/`,
+  `.ai-rulez/skills/`, `.ai-rulez/commands/`, and `.ai-rulez/config.toml`; `.claude-plugin/*.json`
+  and `.codex-plugin/plugin.json` are generated output and must never be hand-edited.
+  `scripts/release-bump.sh <version>` bumps the workspace and plugin versions together,
+  regenerates the plugin outputs, and asserts the generated manifests match before finishing.
 
 ## `crates/poly-core/` — the engine library (lib `poly_core`; path dep; not published)
 

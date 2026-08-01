@@ -12,17 +12,18 @@
 
 use std::collections::BTreeSet;
 use std::ffi::OsString;
-use std::io::IsTerminal as _;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand, ValueEnum as _};
 use owo_colors::{OwoColorize, Stream::Stdout};
-use poly_cache::ResultCache;
 use poly_config::{PolyConfig, Stage as ConfigStage};
 use poly_hooks::snapshot::StagedSnapshot;
 use poly_hooks::stage::RunInputMode;
+// Shared hook-run helpers, now owned by the `poly-workspace` crate (single source
+// of truth for the CLI and the MCP server).
+use poly_workspace::{open_result_cache, sccache_settings, show_progress};
 
 use crate::hooks::checks::{self, CheckArgs};
 use crate::hooks::lower;
@@ -200,12 +201,6 @@ fn run_stage(args: RunArgs) -> Result<ExitCode> {
         progress: show_progress(),
     };
     run_and_report(request)
-}
-
-/// Whether to stream live per-hook progress: on when stderr is a terminal, so
-/// interactive runs show which tool is running while captured logs stay quiet.
-pub(crate) fn show_progress() -> bool {
-    std::io::stderr().is_terminal()
 }
 
 /// A message-file stage run directly needs an explicit `--message-file`;
@@ -540,39 +535,6 @@ fn maybe_staged_snapshot(isolate: bool, spec: &poly_hooks::StageSpec, root: &Pat
     }
     let snapshot = StagedSnapshot::create(root).context("failed to create the staged-content snapshot")?;
     Ok(Some(snapshot))
-}
-
-/// Open the tier-1 result cache for a hook run, honouring `[cache] enabled`,
-/// the optional `[cache] dir` override, and the `--no-cache` flag.
-///
-/// Returns `None` when caching is disabled — the runner then neither reads nor
-/// writes cache entries.
-pub(crate) fn open_result_cache(config: &PolyConfig, root: &Path, no_cache: bool) -> Result<Option<ResultCache>> {
-    let enabled = config.cache.enabled && !no_cache;
-    let cache = match &config.cache.dir {
-        Some(dir) => ResultCache::open(PathBuf::from(dir), enabled),
-        None => ResultCache::open_from(root, enabled),
-    }
-    .context("failed to open the hook result cache")?;
-    Ok(enabled.then_some(cache))
-}
-
-/// Resolve tier-2 sccache settings for a hook run from the `[cache.sccache]`
-/// table, honouring the `--no-sccache` flag.
-///
-/// Returns `None` (sccache off) unless `[cache.sccache] enabled = true` and
-/// `--no-sccache` was not given. The binary defaults to `"sccache"` when
-/// `[cache.sccache] bin` is absent.
-pub(crate) fn sccache_settings(config: &PolyConfig, no_sccache: bool) -> Result<Option<poly_hooks::SccacheSettings>> {
-    let sccache = &config.cache.sccache;
-    if !config.cache.enabled || !sccache.enabled || no_sccache {
-        return Ok(None);
-    }
-    Ok(Some(poly_hooks::SccacheSettings {
-        bin: sccache.validated_bin()?.to_string(),
-        dir: sccache.dir.clone().map(PathBuf::from),
-        max_size: sccache.max_size.clone(),
-    }))
 }
 
 fn run_and_report(request: poly_hooks::HookRunRequest) -> Result<ExitCode> {

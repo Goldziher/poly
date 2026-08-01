@@ -1,0 +1,33 @@
+[package]
+name = "poly-workspace"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+description = "Whole-project (workspace) lint orchestration shared by the poly CLI and MCP server: lowers poly.toml hooks into the poly-hooks model and runs the whole-workspace tool set against the live worktree."
+publish = false
+
+[lib]
+name = "poly_workspace"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow.workspace = true
+console.workspace = true
+owo-colors.workspace = true
+poly-cache.workspace = true
+poly-catalog.workspace = true
+poly-config.workspace = true
+poly-hooks.workspace = true
+toml.workspace = true
+tracing.workspace = true
+which.workspace = true
+
+[dev-dependencies]
+clap.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true

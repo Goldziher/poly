@@ -71,5 +71,4 @@ tasks:
   set-version:
     desc: "Set the release version in the workspace Cargo.toml (usage: task set-version -- 0.1.8)"
     cmds:
-      - "sed -i.bak 's/^version = \"[^\"]*\"/version = \"{{.CLI_ARGS}}\"/' Cargo.toml && rm -f Cargo.toml.bak"
-      - cargo update --workspace
+      - "./scripts/release-bump.sh {{.CLI_ARGS}}"

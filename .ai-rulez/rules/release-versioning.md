@@ -15,7 +15,10 @@ we have no need for a source-distribution channel. There are **no npm or PyPI wr
 
 Versioning is **lock-step**: bump all surfaces to the same `X.Y.Z` in one change. The single
 source of truth is the workspace `[workspace.package] version` in the root `Cargo.toml`; member
-crates inherit it via `version.workspace = true`.
+crates inherit it via `version.workspace = true`. `.ai-rulez/config.toml [plugin] version` and
+the generated `.claude-plugin/plugin.json` / `.claude-plugin/marketplace.json` /
+`.codex-plugin/plugin.json` plugin manifests move with it — the plugin (ADR 0022) is one more
+lock-step surface, not a separately tracked version.
 
 ## Rules
 
@@ -25,4 +28,8 @@ crates inherit it via `version.workspace = true`.
   artifact matching the host.
 - We do not publish to crates.io; the binary is the only distribution surface.
 - Commit `Cargo.lock` and pin git-dependency `rev`s so a tagged build is reproducible.
+- `scripts/release-bump.sh <version>` bumps `Cargo.toml` and `.ai-rulez/config.toml [plugin]
+  version` together, regenerates the plugin outputs, and asserts the generated
+  `.claude-plugin/*.json` manifests carry the new version before finishing — never bump one
+  surface without the other.
 </content>

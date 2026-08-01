@@ -127,6 +127,26 @@ cargo build --release
 
 Source builds place the binary at `target/release/poly`.
 
+### Install as a Plugin
+
+poly ships its own Claude/Codex plugin, registering `poly mcp` as a stdio MCP server plus
+5 skills and 2 slash commands that teach an agent to use poly as its lint/format
+orchestrator. The plugin assumes `poly` is already on `PATH` (installer, Homebrew, or a
+source build above) — it does not bundle the binary.
+
+Claude Code:
+
+```text
+/plugin marketplace add Goldziher/poly
+/plugin install poly@poly
+```
+
+Codex: add the `Goldziher/poly` marketplace through your Codex client's plugin manager and
+install the `poly` plugin from it — the manifest lives at `.codex-plugin/plugin.json`.
+
+The plugin version is lock-step with the `poly` binary version (`poly --version` and the
+installed plugin version always match).
+
 ---
 
 ## How It Works
@@ -1050,12 +1070,25 @@ then deletes or strips only the sources poly can fully honor — files it delega
 are kept. It is a dry-run report by default; `--write` applies, `--recurse` walks nested
 projects, and `--verify` re-runs lint/format after writing.
 
-The MCP server exposes tools for lint, format, and cache operations. Read-only tools are
-`lint`, `format_check`, and `cache_stats`; mutating tools are `lint_fix`, `format_write`,
-and `cache_clean`. The lint/format tools accept `paths`, `exclude` (gitignore-style glob patterns,
-merged with config), and `config` (explicit config file path) parameters for full feature parity
-with the CLI.
-Every MCP operation returns the same JSON shape as the corresponding CLI command with `--format json`.
+The MCP server is **stdio-only**. Read-only tools are `lint`, `format_check`, `cache_stats`,
+`rules`, and `config_show`; mutating tools are `lint_fix`, `format_write`, and `cache_clean`.
+The lint/format tools accept `paths`, `exclude` (gitignore-style glob patterns, merged with
+config), and `config` (explicit config file path) parameters for full feature parity with the
+CLI. Every tool sets `read_only_hint`/`destructive_hint`/`idempotent_hint`/`open_world_hint`
+annotations so a client can reason about a call before making it.
+
+Every tool returns **structured content**: a typed, schema-described payload in
+`CallToolResult.structured_content`, plus a text block in JSON (default) or compact
+[TOON](https://github.com/toon-format/spec) — pick per request with the `format` parameter.
+The JSON/TOON text reproduces the CLI's `--format json`/`--format toon` output exactly.
+
+`workspace_lint` and `workspace_lint_fix` run the whole-project phase (`cargo clippy`/
+`cargo-sort`/`cargo-machete`/`cargo-deny` and any configured whole-project type checkers)
+against the live worktree — the same multi-minute operation `poly lint`'s whole-project phase
+runs. Because that can take minutes,
+both are exposed as async **Tasks**: the call returns a task handle immediately and the client
+polls `tasks/get` (or `tasks/cancel`) for the result. A client that doesn't declare the tasks
+capability gets a synchronous (blocking) result instead, so every client can use the tools.
 
 </details>
 
@@ -1085,6 +1118,7 @@ crates/
 ├── gitfluff/        # Conventional Commit linter
 ├── poly-hooks/      # git-hook runner
 ├── poly-mcp/        # MCP stdio server
+├── poly-workspace/  # whole-project lint orchestration (shared by poly-cli and poly-mcp)
 ├── poly-cache/      # blake3 result cache
 ├── poly-catalog/    # embedded mdsf tool catalog
 └── conformance/     # differential test harness

@@ -17,6 +17,12 @@ ignored = ["rumdl", "serde_toon_format", "hcl-rs"]
 name = "poly_core"
 path = "src/lib.rs"
 
+[features]
+# Derive `schemars::JsonSchema` on the public report types (Diagnostic, Span,
+# Edit, Severity, LintResult, FormatResult, RunDebug, EngineDebug) so downstream
+# crates (poly-mcp) can expose them as MCP structured tool output. Off by default.
+schemars = ["dep:schemars"]
+
 [dependencies]
 alejandra.workspace = true
 anyhow.workspace = true
@@ -74,6 +80,9 @@ ruff_text_size.workspace = true
 rumdl.workspace = true
 rustc-hash.workspace = true
 saphyr.workspace = true
+# Optional: only compiled when the `schemars` feature is enabled (by poly-mcp) to
+# derive JsonSchema on the public report types for MCP structured output.
+schemars = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
 serde_toon_format.workspace = true

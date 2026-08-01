@@ -5,6 +5,40 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
+## [0.19.0] - 2026-08-01
+
+### Added
+
+- New `crates/poly-workspace` crate: the whole-project lint orchestration (`cargo clippy` /
+  `cargo-sort` / `cargo-machete` / `cargo-deny`) is extracted out of `poly-cli` into a shared
+  library (`run_workspace_lint`, `render_workspace_outcome`) with a narrow public API, consumed
+  by both `poly-cli` and the new MCP workspace tools with no dependency cycle. `poly lint`'s CLI
+  output is byte-identical to before.
+- The MCP server (`poly mcp`) gained a broader tool surface: `rules` (list/test the custom
+  ast-grep rule packs, read-only) and `config_show` (effective merged config, read-only) join the
+  existing read-only `lint` / `format_check` / `cache_stats`, alongside the mutating `lint_fix` /
+  `format_write` / `cache_clean`. Two new tools, `workspace_lint` and `workspace_lint_fix`, expose
+  the whole-project phase as async Tasks (rmcp's `TaskManager`; poll `tasks/get`, cancel with
+  `tasks/cancel`) so a multi-minute `cargo clippy` run doesn't block the call; a client that
+  doesn't declare the tasks capability gets a synchronous (blocking) result instead. Every tool
+  now returns typed structured content (`CallToolResult.structured_content`, with a derived JSON
+  schema) in addition to a JSON or compact TOON text block, selectable per request via a `format`
+  parameter. Transport stays stdio-only.
+- poly now publishes its own Claude/Codex plugin and ai-rulez marketplace (`Goldziher/poly`),
+  registering `poly mcp` as a stdio server plus 5 skills and 2 slash commands that teach an agent
+  to use poly as its lint/format orchestrator. Install with `/plugin marketplace add
+  Goldziher/poly` then `/plugin install poly@poly` (Claude); the Codex manifest lives at
+  `.codex-plugin/plugin.json`. The plugin version is lock-step with the workspace version, bumped
+  via `scripts/release-bump.sh`.
+
+### Changed
+
+- Bumped the pinned `ruff` (0.16.1, `80790b3`), `oxc` (`65fe65d`, `oxc_formatter` 0.61 /
+  `oxc_parser` 0.142), and `biome` (2.5.6, `1139f1c`) git dependencies to their latest revisions;
+  `rubyfmt` was already current. Adjusted for one upstream API rename
+  (`Diagnostic::primary_message` → `concise_message`). The affected engine cache keys
+  (`version()`) were bumped so upgraded output is re-run.
+
 ## [0.18.3] - 2026-07-29
 
 ### Fixed

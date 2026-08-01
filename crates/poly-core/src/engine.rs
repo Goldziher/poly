@@ -35,6 +35,7 @@ pub struct Capabilities {
 
 /// Severity of a [`Diagnostic`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum Severity {
     /// A problem that should fail the run.
@@ -49,6 +50,7 @@ pub enum Severity {
 
 /// 1-based line/column source span.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct Span {
     /// 1-based line of the span start.
     pub start_line: u32,
@@ -62,6 +64,7 @@ pub struct Span {
 
 /// A byte-range replacement used to apply an autofix.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct Edit {
     /// Inclusive start byte offset into the source.
     pub start_byte: usize,
@@ -73,6 +76,7 @@ pub struct Edit {
 
 /// A normalized lint finding, uniform across all backends.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct Diagnostic {
     /// Id of the backend that produced this finding.
     pub engine: String,

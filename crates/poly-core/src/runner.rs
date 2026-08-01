@@ -50,6 +50,7 @@ pub struct RunOptions {
 /// Per-engine debug record for one file. Collected only when debug output is
 /// requested (`--debug`); never built on the default hot path.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct EngineDebug {
     /// Backend that produced this record.
     pub engine: String,
@@ -65,6 +66,7 @@ pub struct EngineDebug {
 /// Per-file debug data surfaced under `--debug`: cache hit/miss and timing for
 /// each engine that ran. Populated only when debug collection is enabled.
 #[derive(Debug, Clone, Serialize, Default)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct RunDebug {
     /// One entry per engine evaluated for the file.
     pub engines: Vec<EngineDebug>,
@@ -72,6 +74,7 @@ pub struct RunDebug {
 
 /// Per-file lint outcome.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct LintResult {
     /// File that was linted.
     pub path: PathBuf,
@@ -84,6 +87,7 @@ pub struct LintResult {
 
 /// Per-file format outcome.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct FormatResult {
     /// File that was formatted.
     pub path: PathBuf,

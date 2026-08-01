@@ -2,7 +2,7 @@
 //! via `ruff_python_formatter`.
 //!
 //! Both depend on the astral-sh/ruff git monorepo, pinned to rev
-//! `7e6e8b7dbd3240d4420e1cdd3ef990ef1897f076`. The `RUFF_REV` constant is
+//! `80790b348b5188e7fc253665540f442c6ec7dd05`. The `RUFF_REV` constant is
 //! folded into [`RuffEngine::version`] so that upgrading the pin automatically
 //! invalidates the poly cache.
 //!
@@ -297,7 +297,7 @@ impl Engine for RuffEngine {
     fn version(&self) -> &str {
         concat!(
             "git-ruff:",
-            "7e6e8b7dbd3240d4420e1cdd3ef990ef1897f076",
+            "80790b348b5188e7fc253665540f442c6ec7dd05",
             "+pkgroot+plugins+isort+e501+tgtsrc+ignore-b008"
         )
     }
@@ -344,7 +344,7 @@ impl Engine for RuffEngine {
             .map(|ruff_diag| {
                 let code = ruff_diag.secondary_code().map(|c| c.as_str().to_string());
                 let severity = map_severity(ruff_diag.severity());
-                let message = ruff_diag.primary_message().to_string();
+                let message = ruff_diag.concise_message().to_string();
 
                 let span = ruff_diag
                     .ruff_start_location()

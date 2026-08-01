@@ -5,7 +5,8 @@
 //!
 //! - `file_safety` lowers to one hidden `poly hooks check …` invocation whose
 //!   flags select the enabled member checks (the runner appends the matched
-//!   files); see [`crate::hooks::checks`].
+//!   files); the check flags themselves are lowered by the CLI's
+//!   `poly hooks check` module.
 //! - `cargo` lowers to whole-workspace `cargo clippy` / `sort` / `machete` /
 //!   `deny` hooks, each capability-probed against `PATH` so an absent tool is
 //!   skipped (with a `tracing::info!` notice) rather than failing the run.

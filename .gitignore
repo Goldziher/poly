@@ -12,3 +12,15 @@ poly.local.toml
 AGENTS.md
 CLAUDE.md
 # END ai-rulez
+
+# ai-rulez `generate --plugin` fans out plugin bundles to every harness it knows.
+# poly ships plugin surfaces for claude + codex only (.claude-plugin/, .codex-plugin/);
+# ignore the out-of-scope harness bundles and the plugin-mode manifest.
+.ai-rulez-generated.json
+.cursor-plugin/
+.factory-plugin/
+.hermes/
+.opencode/
+gemini-extension.json
+kimi.plugin.json
+/package.json

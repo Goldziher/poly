@@ -177,18 +177,15 @@ pub fn run_lint(args: LintArgs) -> ExitCode {
         }
     };
 
-    let workspace_ok = match hooks::workspace_lint::run(&hooks::workspace_lint::WorkspaceLintArgs {
-        config: common.config.as_deref(),
-        no_workspace,
-        fix: common.fix,
-        jobs: common.jobs,
-        no_cache: common.no_cache,
-        to_stdout: pretty,
-    }) {
-        Ok(ok) => ok,
-        Err(e) => {
-            eprintln!("error: whole-project lint phase failed: {e:#}");
-            return ExitCode::from(2);
+    let workspace_ok = if no_workspace {
+        true
+    } else {
+        match run_workspace_phase(&common, pretty) {
+            Ok(ok) => ok,
+            Err(e) => {
+                eprintln!("error: whole-project lint phase failed: {e:#}");
+                return ExitCode::from(2);
+            }
         }
     };
 
@@ -197,6 +194,28 @@ pub fn run_lint(args: LintArgs) -> ExitCode {
     } else {
         ExitCode::SUCCESS
     }
+}
+
+/// Run `poly lint`'s whole-project phase and render its report.
+///
+/// Loads the poly config exactly as `poly hooks` does — honouring git-remote
+/// `extends` bases via the CLI's resolver — then delegates the orchestration to
+/// the shared [`poly_workspace`] crate and prints the outcome. Returns whether
+/// the phase passed (the caller folds a `false` into a non-zero exit code). The
+/// `--no-workspace` short-circuit is handled by the caller, before this runs.
+fn run_workspace_phase(common: &CommonArgs, pretty: bool) -> anyhow::Result<bool> {
+    let config = hooks::commands::load_config(common.config.as_deref())?;
+    let outcome = poly_workspace::run_workspace_lint(
+        &config,
+        &poly_workspace::WorkspaceLintOptions {
+            fix: common.fix,
+            jobs: common.jobs,
+            no_cache: common.no_cache,
+            report_to_stdout: pretty,
+        },
+    )?;
+    poly_workspace::render_workspace_outcome(&outcome, pretty);
+    Ok(outcome.passed)
 }
 
 /// Whether any diagnostic across all results is error-severity.

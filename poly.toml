@@ -7,6 +7,8 @@ exclude = [
   "vendor/**",
   "**/identify/tags.rs",
   ".ai-rulez/**",
+  ".claude-plugin/**",
+  ".codex-plugin/**",
   "crates/*/tests/fixtures/**",
   "crates/poly-core/tests/typos.rs",
   "crates/conformance/corpus/**",
@@ -25,6 +27,8 @@ stages = ["pre-commit"]
 lint = { exclude = [
   "**/identify/tags.rs",
   ".ai-rulez/**",
+  ".claude-plugin/**",
+  ".codex-plugin/**",
   "crates/*/tests/fixtures/**",
   "crates/poly-core/tests/typos.rs",
   "crates/conformance/corpus/**",
@@ -37,6 +41,8 @@ lint = { exclude = [
 
 fmt = { exclude = [
   ".ai-rulez/**",
+  ".claude-plugin/**",
+  ".codex-plugin/**",
   "crates/*/tests/fixtures/**",
   "crates/*/tests/snapshots/**",
   "crates/conformance/corpus/**",

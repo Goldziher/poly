@@ -12,14 +12,30 @@ description = "MCP (Model Context Protocol) server over stdio that mirrors the p
 keywords = ["mcp", "linter", "formatter", "lint", "format"]
 categories = ["development-tools"]
 
+[package.metadata.cargo-machete]
+# `serde_toon_format`'s crate/lib name is `serde_toon`, so cargo-machete's
+# name-based scan can't see the `serde_toon::to_string` use in `dto.rs`.
+ignored = ["serde_toon_format"]
+
 [dependencies]
 anyhow.workspace = true
 poly-cache.workspace = true
-poly-core.workspace = true
+# Direct config access for the `config_show` tool and the network-free
+# `PolyConfig` resolution the whole-project (workspace) tools need.
+poly-config.workspace = true
+# `schemars` feature: derive JsonSchema on the report types so tools can return
+# rmcp structured content (`Json`-style output schema) mirroring the CLI JSON.
+poly-core = { workspace = true, features = ["schemars"] }
+# Whole-project (workspace) lint orchestration shared with the CLI, exposed as the
+# long-running `workspace_lint` / `workspace_lint_fix` async Task tools.
+poly-workspace.workspace = true
 rmcp = { workspace = true, features = ["server", "transport-io", "macros"] }
 schemars.workspace = true
 serde = { workspace = true }
 serde_json.workspace = true
+# TOON rendering for the non-lint/format tool DTOs (lint/format reuse poly-core's
+# `report::report_*_toon`). Imported as `serde_toon`.
+serde_toon_format.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]
