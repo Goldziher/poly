@@ -49,14 +49,14 @@ blake3 = "1"
 bstr = "1.13.0"
 cargo_metadata = "0.23.1"
 clap = { version = "4", features = ["derive"] }
-clap_complete = { version = "4.6.7", features = ["unstable-dynamic"] }
+clap_complete = { version = "4.6.8", features = ["unstable-dynamic"] }
 console = { version = "0.16", default-features = false, features = ["ansi-parsing", "std"] }
 criterion = "0.8"
 ctrlc = "3.5.2"
 dockerfile-parser = "0.9.0"
 dunce = "1.0.5"
 etcetera = "0.11.0"
-fancy-regex = "0.18.0"
+fancy-regex = "0.19.0"
 fs-err = "3.3.1"
 fs2 = "0.4"
 gitfluff = { path = "crates/gitfluff" }
@@ -65,7 +65,7 @@ graphql-parser = "0.4"
 hcl-edit = "0.9.6"
 hcl-rs = "0.19.7"
 hex = "0.4.3"
-http = "1.4.2"
+http = "1.5.0"
 ignore = "0.4"
 indicatif = "0.18.6"
 indoc = "2.0.7"
@@ -114,7 +114,7 @@ quick-xml = "0.41"
 rand = "0.10.2"
 rayon = "1"
 regex = "1"
-rmcp = { version = "2.2.0", features = ["schemars"] }
+rmcp = { version = "3.1.0", features = ["schemars"] }
 rubyfmt = { git = "https://github.com/fables-tales/rubyfmt", rev = "b63fbaa9f2ac77c84c297e88f025037120e3f077", default-features = false }
 ruff_db = { git = "https://github.com/astral-sh/ruff", rev = "7e6e8b7dbd3240d4420e1cdd3ef990ef1897f076" }
 ruff_diagnostics = { git = "https://github.com/astral-sh/ruff", rev = "7e6e8b7dbd3240d4420e1cdd3ef990ef1897f076" }
@@ -130,11 +130,11 @@ rustc-hash = "2.1.3"
 rustix = { version = "1.1.4", features = ["pty", "process", "fs", "termios"] }
 same-file = "1.0.6"
 saphyr = "0.0.11"
-schemars = "1.2.1"
+schemars = "1.2.2"
 seahash = "4.1.0"
 semver = { version = "1.0.28", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
-serde-saphyr = { version = "0.0.29", default-features = false, features = ["deserialize", "serialize"] }
+serde-saphyr = { version = "1.0.0", default-features = false, features = ["deserialize", "serialize"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 serde_stacker = "0.1.14"
 serde_toon_format = "0.1"
