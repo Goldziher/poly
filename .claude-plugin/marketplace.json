@@ -10,7 +10,7 @@
     {
       "name": "poly",
       "description": "Zero-dependency lint \u0026 format orchestrator over MCP — one pure-Rust binary wrapping ruff/oxc/taplo/rumdl and more as in-process backends, plus a tree-sitter generic tier for everything else. Exposes lint/format/cache tools with structured JSON output.",
-      "version": "0.18.3",
+      "version": "0.19.0",
       "source": "./",
       "category": "developer-tools",
       "license": "MIT",
