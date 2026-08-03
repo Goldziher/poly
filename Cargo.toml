@@ -24,7 +24,7 @@ homepage = "https://github.com/Goldziher/poly"
 documentation = "https://github.com/Goldziher/poly"
 
 [workspace.dependencies]
-aho-corasick = "1.1.4"
+aho-corasick = "1.1.5"
 # alejandra — Nix formatter (UNLICENSE, pure Rust via rnix); chosen over
 alejandra = "3.1"
 annotate-snippets = "0.12.16"
@@ -156,9 +156,9 @@ toml_edit = "0.25"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 tree-sitter = "0.26"
-tree-sitter-language-pack = "1.13"
+tree-sitter-language-pack = "1.14"
 typos = "0.10"
-typos-dict = "0.13"
+typos-dict = "0.14"
 uncomment = "3.5"
 unicase = "2"
 unicode-width = { version = "0.2.2", default-features = false }
