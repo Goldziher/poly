@@ -5,6 +5,16 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
+## [Unreleased]
+
+## [0.19.1] - 2026-08-04
+
+### Fixed
+
+- `java` and `csharp` are no longer tree-sitter bracket-reindented. Their grammars/external
+  scanners produce platform-dependent CSTs, which caused nondeterministic formatting output
+  across macOS and Linux. Both languages now use deterministic whitespace normalization instead.
+
 ## [0.19.0] - 2026-08-01
 
 ### Added

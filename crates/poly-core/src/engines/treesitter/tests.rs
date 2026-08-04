@@ -254,8 +254,15 @@ fn rust_multiline_call_args_get_continuation_indent() {
     assert_eq!(text, expected, "Rust multi-line call args at +1 continuation depth");
 }
 
+/// `java` is deliberately excluded from `BRACE_FAMILY` (see its module doc):
+/// `tree-sitter-language-pack`'s pre-built per-platform grammar binaries are
+/// not guaranteed byte-identical across releases, so poly must not derive
+/// indentation from the java CST at all — only whitespace normalization,
+/// which has no grammar dependency and is deterministic across platforms.
+/// This locks in that a badly-indented java file is left with its original
+/// (bad) indentation rather than being bracket-reindented.
 #[test]
-fn java_multiline_call_args_get_continuation_indent() {
+fn java_source_is_only_whitespace_normalized_never_bracket_reindented() {
     let engine = TreeSitterEngine;
     let input = concat!(
         "class Foo {\n",
@@ -268,20 +275,39 @@ fn java_multiline_call_args_get_continuation_indent() {
         "}\n",
         "}\n",
     );
-    let expected = concat!(
-        "class Foo {\n",
-        "    void method() {\n",
-        "        String result = SomeClass.longMethodName(\n",
-        "            arg1,\n",
-        "            arg2,\n",
-        "            arg3\n",
-        "        );\n",
-        "    }\n",
-        "}\n",
-    );
     let s = src("Test.java", Language::Other("java".into()), input);
     let text = formatted_text(engine.format(&s, &cfg(4)).unwrap(), input);
-    assert_eq!(text, expected, "Java multi-line call args at +1 continuation depth");
+    assert_eq!(
+        text, input,
+        "java must never be bracket-reindented; input already has no trailing whitespace or \
+         line-ending issues, so whitespace normalization must return it byte-identical"
+    );
+}
+
+/// `csharp` is deliberately excluded from `BRACE_FAMILY` for the same reason
+/// (see the module doc on `BRACE_FAMILY`): its external scanner's use of libc
+/// wide-ctype functions makes its CST platform-dependent, so poly must not
+/// derive indentation from it.
+#[test]
+fn csharp_source_is_only_whitespace_normalized_never_bracket_reindented() {
+    let engine = TreeSitterEngine;
+    let input = concat!(
+        "public class Foo {\n",
+        "public void Method() {\n",
+        "var result = SomeClass.LongMethodName(\n",
+        "arg1,\n",
+        "arg2\n",
+        ");\n",
+        "}\n",
+        "}\n",
+    );
+    let s = src("Test.cs", Language::Other("csharp".into()), input);
+    let text = formatted_text(engine.format(&s, &cfg(4)).unwrap(), input);
+    assert_eq!(
+        text, input,
+        "csharp must never be bracket-reindented; input already has no trailing whitespace or \
+         line-ending issues, so whitespace normalization must return it byte-identical"
+    );
 }
 
 #[test]
@@ -311,31 +337,15 @@ fn kotlin_multiline_call_args_get_continuation_indent() {
 }
 
 #[test]
-fn java_constructor_paren_then_brace_close() {
+fn go_multiline_signature_paren_then_brace_close() {
     let engine = TreeSitterEngine;
-    let input = concat!(
-        "class Foo {\n",
-        "Foo(\n",
-        "Type arg\n",
-        ") {\n",
-        "this.arg = arg;\n",
-        "}\n",
-        "}\n",
-    );
-    let expected = concat!(
-        "class Foo {\n",
-        "    Foo(\n",
-        "        Type arg\n",
-        "    ) {\n",
-        "        this.arg = arg;\n",
-        "    }\n",
-        "}\n",
-    );
-    let s = src("Foo.java", Language::Other("java".into()), input);
+    let input = concat!("func Foo(\n", "arg int,\n", ") {\n", "x = arg\n", "}\n",);
+    let expected = concat!("func Foo(\n", "\targ int,\n", ") {\n", "\tx = arg\n", "}\n",);
+    let s = src("foo.go", Language::Other("go".into()), input);
     let text = formatted_text(engine.format(&s, &cfg(4)).unwrap(), input);
     assert_eq!(
         text, expected,
-        "Java constructor body must be at class+1 depth, not class+2"
+        "closing paren-then-brace must drop back to the pre-paren depth, not leave a phantom extra level"
     );
 }
 
@@ -372,9 +382,9 @@ fn go_struct_in_call_close_then_paren_close_no_drift() {
 #[test]
 fn double_brace_close_releases_two_levels() {
     let engine = TreeSitterEngine;
-    let input = concat!("class A {\n", "void f() {\n", "x = 1;\n", "}}\n",);
-    let expected = concat!("class A {\n", "    void f() {\n", "        x = 1;\n", "}}\n",);
-    let s = src("A.java", Language::Other("java".into()), input);
+    let input = concat!("void f() {\n", "if (1) {\n", "x = 1;\n", "}}\n",);
+    let expected = concat!("void f() {\n", "    if (1) {\n", "        x = 1;\n", "}}\n",);
+    let s = src("a.c", Language::Other("c".into()), input);
     let text = formatted_text(engine.format(&s, &cfg(4)).unwrap(), input);
     assert_eq!(text, expected, "}}: two leading closers each release one level");
 }

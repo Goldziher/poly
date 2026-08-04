@@ -58,9 +58,26 @@ static LANGUAGES: &[Language] = &[];
 /// structural reindentation is safe: brace-delimited, non-whitespace-sensitive
 /// languages. Everything else falls back to whitespace normalization, so a
 /// layout-significant language (YAML, Python-likes) is never reflowed.
+///
+/// `java` and `csharp` are deliberately excluded: `csharp`'s tree-sitter
+/// external scanner (`scanner.c`) classifies characters via libc wide-ctype
+/// functions (`iswalpha`/`iswalnum`/`iswspace` from `<wctype.h>`) to skip
+/// whitespace and scan identifiers around verbatim/raw/interpolated string
+/// literals. macOS libc and glibc disagree on these functions for non-ASCII
+/// codepoints under the same locale (e.g. U+00A0 NBSP is whitespace under
+/// macOS's `iswspace` but not glibc's), so the *same source bytes* tokenize
+/// differently per platform, producing a different CST and therefore a
+/// different bracket-depth reindent from the below (itself a pure,
+/// deterministic Vec-based computation with no HashMap/HashSet involved —
+/// the divergence is upstream of it, in the compiled grammar). `java`'s
+/// grammar has no external scanner and no libc dependency, so poly cannot
+/// point to the same mechanism there; `tree-sitter-language-pack` gives no
+/// guarantee that its pre-built per-platform grammar binaries are otherwise
+/// byte-identical across releases, so both are routed to whitespace
+/// normalization, which has no grammar or libc dependency at all and is
+/// deterministic across platforms by construction.
 const BRACE_FAMILY: &[&str] = &[
-    "go", "c", "cpp", "java", "kotlin", "rust", "scala", "swift", "php", "csharp", "objc", "proto", "dart", "glsl",
-    "hlsl", "cuda", "zig",
+    "go", "c", "cpp", "kotlin", "rust", "scala", "swift", "php", "objc", "proto", "dart", "glsl", "hlsl", "cuda", "zig",
 ];
 
 /// Grammar names for which **both `lint` and `format` are unconditional
