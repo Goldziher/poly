@@ -107,6 +107,20 @@ jobs:
           tag="${{ needs.meta.outputs.tag }}"
           if gh release view "$tag" >/dev/null 2>&1; then
             echo "Release $tag already exists."
+            # A pre-existing release can be live but incomplete — a re-run, a
+            # tag pushed twice, or a release created outside this workflow. In
+            # that state it is what /releases/latest resolves to, so every
+            # consumer's installer picks it up and then fails the checksum
+            # verification, because sha256sums.txt is not uploaded until the
+            # whole build matrix finishes. Put it back into draft until
+            # finalize_release has verified the full asset set. A release that
+            # already carries sha256sums.txt is complete and is left alone.
+            if [ "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft -q '.isDraft')" != "true" ] &&
+              ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets -q '.assets[].name' |
+                grep -qx 'sha256sums.txt'; then
+              echo "::warning::release $tag is published but has no sha256sums.txt; reverting to draft until its assets are complete"
+              gh release edit "$tag" --draft=true --repo "$GITHUB_REPOSITORY"
+            fi
           else
             prerelease=""
             case "$tag" in

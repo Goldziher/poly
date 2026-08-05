@@ -98,15 +98,20 @@ impl ExtendsSource {
         // so it must be relative and free of `..`; a leading `-` on any field
         // could be treated as a flag by git.
         if let Some(file) = &self.file {
-            let path = std::path::Path::new(file);
-            if path.is_absolute() {
+            // ~keep Inspected as a string, not via `std::path`, because `Path` parses
+            // per-host: `/etc/passwd` is rooted but NOT absolute on Windows (absolute
+            // needs a drive or UNC prefix), so `is_absolute()` let it through there,
+            // and conversely `C:\x` and `a\..\b` are a plain filename and a single
+            // component on Unix. `file` is portable config resolved inside a checkout,
+            // so the same value must be accepted or rejected on every host.
+            if is_rooted(file) {
                 bail!(
                     "extends source {:?} `file` must be relative, not {:?}",
                     self.display_id(),
                     file
                 );
             }
-            if path.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+            if file.split(['/', '\\']).any(|segment| segment == "..") {
                 bail!(
                     "extends source {:?} `file` must not contain `..`: {:?}",
                     self.display_id(),
@@ -128,6 +133,17 @@ impl ExtendsSource {
         }
         Ok(())
     }
+}
+
+/// Whether `file` is rooted rather than relative, on any host: a POSIX or UNC root
+/// (`/etc/passwd`, `\\server\share`) or a drive qualifier (`C:\x`, and also `C:x`,
+/// which resolves against that drive's current directory rather than the checkout).
+fn is_rooted(file: &str) -> bool {
+    if file.starts_with('/') || file.starts_with('\\') {
+        return true;
+    }
+    let mut chars = file.chars();
+    matches!((chars.next(), chars.next()), (Some(drive), Some(':')) if drive.is_ascii_alphabetic())
 }
 
 /// Remove and parse the top-level `extends` key from a raw config table.
@@ -278,11 +294,34 @@ mod tests {
         assert!(error.to_string().contains("must not contain `..`"), "{error}");
     }
 
+    /// A backslash-separated escape is one opaque filename to `Path` on Unix, so the
+    /// `..` guard only caught it on Windows.
+    #[test]
+    fn file_with_backslash_parent_dir_is_rejected() {
+        let error =
+            take(r#"extends = [{ git = "https://x/y", revision = "deadbeef", file = "a\\..\\..\\etc" }]"#).unwrap_err();
+        assert!(error.to_string().contains("must not contain `..`"), "{error}");
+    }
+
+    /// Every spelling of "not relative" must be rejected on every host — a rooted
+    /// POSIX path, a drive-qualified Windows path, and a UNC share. `/etc/passwd`
+    /// is rooted but *not* absolute on Windows, so checking `is_absolute()` alone
+    /// let it through there.
     #[test]
     fn absolute_file_is_rejected() {
-        let error =
-            take(r#"extends = [{ git = "https://x/y", revision = "deadbeef", file = "/etc/passwd" }]"#).unwrap_err();
-        assert!(error.to_string().contains("must be relative"), "{error}");
+        for file in [
+            "/etc/passwd",
+            r"C:\Windows\system.ini",
+            r"C:relative",
+            r"\\server\share\x",
+        ] {
+            let config = format!(r#"extends = [{{ git = "https://x/y", revision = "deadbeef", file = {file:?} }}]"#);
+            let error = take(&config).unwrap_err();
+            assert!(
+                error.to_string().contains("must be relative"),
+                "{file:?} must be rejected as non-relative, got: {error}"
+            );
+        }
     }
 
     #[test]

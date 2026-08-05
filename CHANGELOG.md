@@ -7,6 +7,20 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+## [0.19.3] - 2026-08-05
+
+### Fixed
+
+- `extends` path validation means the same thing on every host. The guards that keep an
+  `extends` source's `file` inside the base checkout were written against `std::path`,
+  which parses per-platform: `/etc/passwd` is rooted but *not absolute* on Windows, so
+  `is_absolute()` accepted it there, while `C:\Windows\system.ini`, `\\server\share\x`
+  and `a\..\b` are an ordinary filename and a single component on Unix and were accepted
+  here. `file` is portable config resolved inside a checkout, so it is now inspected as a
+  string: POSIX roots, UNC roots and drive qualifiers (including the drive-relative `C:x`)
+  are rejected everywhere, as is a `..` segment separated by either slash. This was
+  failing `ci` on the windows runner.
+
 ## [0.19.2] - 2026-08-05
 
 ### Fixed
