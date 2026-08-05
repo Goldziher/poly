@@ -2,7 +2,7 @@
   "name": "poly",
   "displayName": "poly",
   "description": "Zero-dependency lint \u0026 format orchestrator over MCP — one pure-Rust binary wrapping ruff/oxc/taplo/rumdl and more as in-process backends, plus a tree-sitter generic tier for everything else. Exposes lint/format/cache tools with structured JSON output.",
-  "version": "0.19.1",
+  "version": "0.19.2",
   "author": {
     "name": "Na'aman Hirschfeld",
     "email": "nhirschfeld@gmail.com",

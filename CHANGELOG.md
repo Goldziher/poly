@@ -7,6 +7,24 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+## [0.19.2] - 2026-08-05
+
+### Fixed
+
+- `typos` no longer flags lint rule codes. Linter configuration lists them by the hundred —
+  ruff `lint.select`/`lint.ignore` and per-file-ignores, `# noqa:` suppressions, rumdl
+  `disable` — and the dictionary read the short uppercase ones as misspelled acronyms
+  (`CPY` → `COPY`/`CPU`), so every repo carrying such a config had to allowlist rule codes
+  by hand. An identifier of at most five uppercase letters followed by at most five digits
+  (`CPY`, `CPY001`, `S310`, `PLR0917`, `ASYNC230`, `MD012`) is now treated as valid. The
+  shape stays narrow: a longer uppercase run, or any token containing a separator, is an
+  ordinary identifier and is still spell-checked.
+- The `typos` and `treesitter` engines report the dependency versions they actually build
+  against. `typos-dict` 0.13.31 → 0.14.0 and `tree-sitter-language-pack` 1.13.3 → 1.14.0
+  were bumped without updating either engine's `version()`, so cached results produced by
+  the old dictionary and the old grammars were served as fresh. `version_audit` was failing
+  on `main` for both.
+
 ## [0.19.1] - 2026-08-04
 
 ### Fixed

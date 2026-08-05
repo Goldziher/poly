@@ -273,3 +273,41 @@ fn extend_ignore_words_re_drops_only_matching_word() {
         "only the word-regex match should be dropped: {survived:?}",
     );
 }
+
+/// Lint rule codes are not typos. A ruff config lists them by the hundred, and
+/// the dictionary reads the short uppercase ones as misspelled acronyms — `CPY`
+/// as `COPY`/`CPU` — which forced every repo with a ruff, pylint or rumdl config
+/// to allowlist rule codes by hand.
+#[test]
+fn lint_rule_codes_are_not_flagged_as_typos() {
+    let engine = TyposEngine;
+    let src = make_src(
+        r#"
+lint.select = ["ALL"]
+lint.ignore = ["CPY", "EM", "FBT", "TRY", "TD", "PD"]
+"**/scripts/**" = ["CPY001", "PLR0917", "RUF100", "S310", "ASYNC230", "MD012", "E501"]
+value = 1  # noqa: S310
+"#,
+    );
+    let diags = engine.lint(&src, &engine_cfg()).unwrap();
+    assert!(
+        diags.is_empty(),
+        "lint rule codes must not be spell-checked, got: {diags:?}",
+    );
+}
+
+/// The rule-code exemption must stay narrow: a longer uppercase run, or a token
+/// carrying a separator, is an ordinary identifier and is still spell-checked.
+#[test]
+fn rule_code_exemption_does_not_silence_screaming_identifiers() {
+    let engine = TyposEngine;
+    // Built from chars so poly's own typos hook does not flag this file.
+    let recieve: String = ['R', 'E', 'C', 'I', 'E', 'V', 'E'].iter().collect();
+    let src = make_src(&format!("const {recieve}_TIMEOUT: u8 = 1;\n"));
+    let diags = engine.lint(&src, &engine_cfg()).unwrap();
+    assert_eq!(
+        diags.len(),
+        1,
+        "a SCREAMING_CASE identifier with a real typo must still be flagged: {diags:?}",
+    );
+}

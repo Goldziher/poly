@@ -35,7 +35,7 @@ use crate::language::Language;
 /// Combined cache-key version: `typos` tokeniser + `typos-dict` word list,
 /// plus a marker for the noise-suppression guards below. Bump whenever either
 /// crate is updated OR the guard logic changes (it alters output).
-const TYPOS_VERSION: &str = "0.10.43+dict-0.13.31+guards1+cfg2+warn-noautofix+builtins1";
+const TYPOS_VERSION: &str = "0.10.43+dict-0.14.0+guards1+cfg2+warn-noautofix+builtins1+rulecodes1";
 
 /// Skip spell-checking files at least this large: generated/minified bundles
 /// dominate by size and are pure noise word-by-word.
@@ -81,6 +81,34 @@ static BUILTIN_VALID_WORDS: &[&str] = &[
 /// Whether `lowercased` is a built-in always-valid word (see [`BUILTIN_VALID_WORDS`]).
 fn is_builtin_valid_word(lowercased: &str) -> bool {
     BUILTIN_VALID_WORDS.contains(&lowercased)
+}
+
+/// Longest all-uppercase prefix a lint rule code may have (`ASYNC230` is the
+/// longest ruff prefix at five). Anything longer is treated as a normal
+/// SCREAMING_CASE identifier and stays spell-checked.
+const MAX_RULE_CODE_LETTERS: usize = 5;
+
+/// Longest digit suffix a lint rule code may have (`PLR0917`, `ASYNC230`).
+const MAX_RULE_CODE_DIGITS: usize = 5;
+
+/// Whether `token` has the shape of a lint rule code: an all-uppercase ASCII
+/// prefix of at most [`MAX_RULE_CODE_LETTERS`] letters, optionally followed by up
+/// to [`MAX_RULE_CODE_DIGITS`] digits — `CPY`, `CPY001`, `S310`, `RUF100`,
+/// `PLR0917`, `ASYNC230`, `MD012`.
+///
+/// Linter configuration lists these by the hundred (ruff `lint.select`/`ignore`
+/// and per-file-ignores, `# noqa:` suppressions, rumdl `disable`), and the
+/// dictionary reads them as misspelled acronyms — `CPY` as `COPY`/`CPU` — so
+/// every repo carrying such a config had to allowlist rule codes by hand. The
+/// shape is deliberately narrow: a token containing a separator (`TEH_VALUE`) or
+/// a longer uppercase run is not a rule code and stays spell-checked. ~keep
+fn is_lint_rule_code(token: &str) -> bool {
+    let letters = token.chars().take_while(char::is_ascii_uppercase).count();
+    if letters == 0 || letters > MAX_RULE_CODE_LETTERS {
+        return false;
+    }
+    let digits = &token[letters..];
+    digits.len() <= MAX_RULE_CODE_DIGITS && digits.bytes().all(|b| b.is_ascii_digit())
 }
 
 /// Cross-cutting spell-checker declares no tier-1 language ownership.
@@ -272,6 +300,9 @@ impl typos::Dictionary for ConfiguredDictionary<'_> {
         match ident.token() {
             "O_WRONLY" | "dBA" => return Some(typos::Status::Valid),
             _ => {}
+        }
+        if is_lint_rule_code(ident.token()) {
+            return Some(typos::Status::Valid);
         }
         let lowered = ident.token().to_ascii_lowercase();
         if self.valid_identifiers.iter().any(|w| w == &lowered) {
