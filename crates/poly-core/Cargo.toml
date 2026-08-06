@@ -20,7 +20,7 @@ path = "src/lib.rs"
 [features]
 # Derive `schemars::JsonSchema` on the public report types (Diagnostic, Span,
 # Edit, Severity, LintResult, FormatResult, RunDebug, EngineDebug) so downstream
-# crates (poly-mcp) can expose them as MCP structured tool output. Off by default.
+# crates (poly-mcp) can expose them as MCP structured tool output. Off by default. ~keep
 schemars = ["dep:schemars"]
 
 [dependencies]

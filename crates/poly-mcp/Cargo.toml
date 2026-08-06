@@ -34,7 +34,7 @@ schemars.workspace = true
 serde = { workspace = true }
 serde_json.workspace = true
 # TOON rendering for the non-lint/format tool DTOs (lint/format reuse poly-core's
-# `report::report_*_toon`). Imported as `serde_toon`.
+# `report::report_*_toon`). Imported as `serde_toon`. ~keep
 serde_toon_format.workspace = true
 tokio.workspace = true
 

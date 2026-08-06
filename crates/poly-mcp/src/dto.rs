@@ -49,7 +49,7 @@ fn build(structured: Value, json_text: String, toon_text: String, repr: TextRepr
     };
     // `CallToolResult::structured` seeds `structured_content` and a JSON text
     // block; override the text block with the representation the caller asked
-    // for while leaving `structured_content` as JSON.
+    // for while leaving `structured_content` as JSON. ~keep
     let mut result = CallToolResult::structured(structured);
     result.content = vec![ContentBlock::text(text)];
     result

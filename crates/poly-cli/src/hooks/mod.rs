@@ -14,7 +14,7 @@ pub mod sources;
 // The hooks→`poly-hooks` lowering now lives in the shared `poly-workspace` crate
 // (so the CLI and the MCP server share one whole-project lint orchestration). It
 // is re-exported here so the in-crate call sites keep referring to
-// `crate::hooks::lower`.
+// `crate::hooks::lower`. ~keep
 pub use poly_workspace::lower;
 
 pub use commands::{HooksArgs, run_hooks};

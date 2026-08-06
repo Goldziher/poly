@@ -127,8 +127,8 @@ fn update_locks_symbolic_ref_then_offline_load_succeeds() {
     // A fresh resolver reads the lock; the load resolves the pinned oid offline.
     let resolver = RemoteExtendsResolver::new(root).unwrap();
     let config = PolyConfig::load_file_with(&config_path, &resolver).expect("offline load via lock");
-    assert_eq!(config.defaults.line_length, 55); // from the base
-    assert!(!config.defaults.final_newline); // child override
+    assert_eq!(config.defaults.line_length, 55); // from the base ~keep
+    assert!(!config.defaults.final_newline); // child override ~keep
 }
 
 #[test]

@@ -867,7 +867,7 @@ mod tests {
         .unwrap();
         assert_eq!(&*result, "a", "trailing markers fully removed");
         // "a!!!"->"a!!"->"a!"->"a" is 3 changing passes plus 1 no-op that proves
-        // stability = 4 calls.
+        // stability = 4 calls. ~keep
         assert_eq!(calls.get(), 4);
     }
 
