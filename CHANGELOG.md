@@ -7,6 +7,17 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+## [0.19.4] - 2026-08-06
+
+### Fixed
+
+- `poly fmt --fix` and `poly lint --fix` no longer strip a file's permissions. Both write through
+  the same `write_atomic` helper, which creates a sibling temp file and renames it over the target.
+  The temp file is born with `0666 & !umask` and has no relationship to the file being rewritten, so
+  the rename replaced a `0755` script with a `0644` one — formatting an executable script silently
+  cleared its exec bit, which is how `publish-npm/scripts/publish.py` in `xberg-io/actions` started
+  failing ruff's `EXE001`. The original mode is now applied to the temp file before the rename.
+
 ## [0.19.3] - 2026-08-05
 
 ### Fixed

@@ -73,6 +73,35 @@ fn format_write_is_idempotent() {
     assert!(!second[0].changed, "formatting must be idempotent");
 }
 
+#[cfg(unix)]
+#[test]
+fn format_write_preserves_the_executable_bit() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = write(dir.path(), "script.yaml", "key: value   \n\n\n");
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+    let cfg = Config::default();
+    let opts = RunOptions {
+        no_cache: true,
+        jobs: Some(1),
+        exclude: Vec::new(),
+        explicit_config: true,
+        config_resolver: None,
+    };
+
+    let results = poly_core::format(&[dir.path().to_path_buf()], &cfg, &opts, true, false).unwrap();
+    assert!(
+        results[0].changed,
+        "the fixture must actually be rewritten for this to prove anything"
+    );
+    let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+    assert_eq!(
+        mode, 0o755,
+        "the atomic rewrite must carry the original mode across the rename"
+    );
+}
+
 #[test]
 fn lint_fix_applies_autofixes_and_dry_run_does_not() {
     let before = "#Heading\n\nBody text.\n";

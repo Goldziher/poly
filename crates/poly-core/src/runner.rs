@@ -706,7 +706,14 @@ fn write_atomic(path: &std::path::Path, contents: &str) -> anyhow::Result<()> {
     let parent = path.parent().unwrap_or_else(|| std::path::Path::new("."));
     let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("poly");
     let tmp = parent.join(format!(".{file_name}.{}.poly.tmp", std::process::id()));
+    let original_permissions = std::fs::metadata(path).ok().map(|m| m.permissions());
     std::fs::write(&tmp, contents)?;
+    // ~keep The rename replaces the original inode with a freshly created temp file, whose mode is
+    // `0666 & !umask` and has no relationship to the file being formatted. Without this, formatting
+    // an executable script silently clears its exec bit.
+    if let Some(permissions) = original_permissions {
+        std::fs::set_permissions(&tmp, permissions)?;
+    }
     if let Err(error) = std::fs::rename(&tmp, path) {
         let _ = std::fs::remove_file(&tmp);
         return Err(error.into());
