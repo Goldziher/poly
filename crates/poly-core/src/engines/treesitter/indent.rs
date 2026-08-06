@@ -59,6 +59,11 @@ static BUILTIN_QUERIES: &[(&str, &str)] = &[("elixir", ELIXIR_INDENTS)];
 ///   enclosing `do_block`.
 /// - `(anonymous_function)` / `"end"`: `fn ... end` anonymous functions follow
 ///   the same indent model as `do_block`.
+/// - `(map)` / `(list)` / `(tuple)` / `(bitstring)` as `@indent.auto`: these are
+///   emitted verbatim rather than reindented. `mix format` aligns a wrapped `=>`
+///   or operator continuation past the key (`+4` under a `+2` entry), which a
+///   level-counting model cannot express — tagging them `@indent` would trade
+///   one disagreement with `mix format` for a smaller one, and both oscillate.
 const ELIXIR_INDENTS: &str = r#"
 ; do...end blocks (defmodule/def/if/case/for/with/try/receive/…)
 (do_block) @indent
@@ -74,6 +79,13 @@ const ELIXIR_INDENTS: &str = r#"
 ; fn ... end anonymous functions
 (anonymous_function) @indent
 (anonymous_function "end" @indent.end)
+
+; Data-literal containers this model cannot indent faithfully — leave interiors
+; byte-for-byte so poly and `mix format` converge instead of fighting.
+(map) @indent.auto
+(list) @indent.auto
+(tuple) @indent.auto
+(bitstring) @indent.auto
 "#;
 
 thread_local! {
@@ -106,6 +118,14 @@ pub fn try_reindent_builtin(name: &str, src: &SourceFile, cfg: &EngineConfig) ->
         let protected = collect_protected_ranges(&tree);
         Some((openers, closers, auto_ranges, protected))
     })?;
+
+    // ~keep A query that captured nothing means poly has no structural model of this file, and
+    // `emit_reindented` trims every line and re-emits it at the computed level — which is 0 when
+    // there are no openers. Falling through to whitespace normalization keeps an unmodeled file
+    // intact instead of flattening it to column 0.
+    if openers.is_empty() && closers.is_empty() && auto_ranges.is_empty() {
+        return None;
+    }
 
     Some(emit_reindented(
         src,

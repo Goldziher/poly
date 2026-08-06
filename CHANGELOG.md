@@ -7,6 +7,26 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+## [0.19.5] - 2026-08-06
+
+### Fixed
+
+- Elixir formatting no longer strips indentation, and no longer fights `mix format`. Elixir has no
+  native backend and `tree-sitter-elixir` ships no `indents.scm`, so it runs on poly's built-in
+  `ELIXIR_INDENTS` query — which modelled only `do…end` and `fn…end`. A file containing neither, such
+  as a top-level `%{}` map, produced zero captures, and `emit_reindented` still trimmed every line and
+  re-emitted it at level 0: a `mix format`-formatted checksum map came back flattened to column 0, and
+  the two formatters then oscillated forever. Every Elixir package in the xberg-io polyrepo had drifted
+  this way and failed `mix format --check-formatted`. Two changes: `try_reindent_builtin` now returns
+  `None` when the query captures nothing at all, so a file poly has no structural model of falls
+  through to whitespace normalization instead of being flattened; and `(map)`, `(list)`, `(tuple)` and
+  `(bitstring)` are tagged `@indent.auto` so their interiors are emitted verbatim. They are
+  deliberately not `@indent` — `mix format` aligns a wrapped `=>` continuation at +4 under a +2 entry,
+  which a level-counting model cannot express, so `@indent` would only shrink the oscillation rather
+  than end it. Existing Elixir fixtures were all `do…end`/`fn…end`, the only constructs the query
+  modelled, so the idempotency tests passed vacuously and never caught this.
+  (`crates/poly-core/src/engines/treesitter/indent.rs`)
+
 ## [0.19.4] - 2026-08-06
 
 ### Fixed

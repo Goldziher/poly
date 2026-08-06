@@ -562,6 +562,63 @@ fn elixir_rescue_block_at_same_depth_as_do() {
     assert_eq!(text, expected, "rescue must be at same depth as do and end");
 }
 
+/// A `mix format`-formatted map must survive untouched. poly previously trimmed
+/// every line and re-emitted it at the computed level — 0 for a top-level map,
+/// since the query modelled only `do`/`fn` blocks — so it flattened the map to
+/// column 0 and then oscillated against `mix format` forever.
+#[test]
+fn elixir_mix_formatted_map_is_unchanged() {
+    let engine = TreeSitterEngine;
+    let already_correct = concat!(
+        "%{\n",
+        "  \"libfoo-nif-2.16-aarch64-apple-darwin.so.tar.gz\" =>\n",
+        "    \"sha256:0f0def70ac8ee555e3a5f67ebac652764f30f4252a97430f1edfebb35b5de3be\",\n",
+        "  \"libfoo-nif-2.16-x86_64-apple-darwin.so.tar.gz\" =>\n",
+        "    \"sha256:cd5c2391a37d047e4ca40a70cd3ccb624ec1361fd957db09d5ef43059a37f611\"\n",
+        "}\n",
+    );
+    let s = src("checksum.exs", Language::Other("elixir".into()), already_correct);
+    let out = engine.format(&s, &cfg(4)).unwrap();
+    assert!(
+        matches!(out, FormatOutput::Unchanged),
+        "a mix-formatted Elixir map must be left byte-for-byte, got {:?}",
+        formatted_text(engine.format(&s, &cfg(4)).unwrap(), already_correct)
+    );
+}
+
+/// The same map nested inside a `do` block: the block still indents, but the
+/// map's interior lines keep their `mix format` alignment.
+#[test]
+fn elixir_map_inside_do_block_keeps_interior_alignment() {
+    let engine = TreeSitterEngine;
+    let input = concat!(
+        "defmodule Foo do\n",
+        "def checksums do\n",
+        "%{\n",
+        "  \"a\" => \"1\",\n",
+        "  \"b\" => \"2\"\n",
+        "}\n",
+        "end\n",
+        "end\n",
+    );
+    let expected = concat!(
+        "defmodule Foo do\n",
+        "  def checksums do\n",
+        "    %{\n",
+        "  \"a\" => \"1\",\n",
+        "  \"b\" => \"2\"\n",
+        "    }\n",
+        "  end\n",
+        "end\n",
+    );
+    let s = src("foo.ex", Language::Other("elixir".into()), input);
+    let text = formatted_text(engine.format(&s, &cfg(4)).unwrap(), input);
+    assert_eq!(
+        text, expected,
+        "the do-block reindents but the map interior is emitted verbatim"
+    );
+}
+
 /// Anonymous functions (`fn ... end`) must indent their body by one level.
 #[test]
 fn elixir_anonymous_function_body_indented() {
