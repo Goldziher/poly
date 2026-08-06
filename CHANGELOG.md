@@ -7,6 +7,28 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+## [0.19.6] - 2026-08-06
+
+### Fixed
+
+- A configured catalog formatter now displaces poly's generic tree-sitter reindenter instead of
+  chaining with it. Formatters run in sequence and the whole chain repeats to a fixed point, so a
+  language served by both poly's fallback reindenter *and* an external formatter had the two fighting
+  over indentation on every pass. This is what kept Elixir from converging: even with `[tools.mix]`
+  declared, poly reindented the file and `mix format` reindented it back. The fallback is dropped only
+  when the catalog tool's binary is actually on `PATH`, so a configured-but-missing tool leaves the
+  fallback in place rather than silently dropping all formatting for the language.
+  (`crates/poly-core/src/runner.rs`, `crates/poly-core/src/engine.rs`,
+  `crates/poly-core/src/engines/catalog_tool/mod.rs`)
+
+  Elixir projects should now declare the formatter that owns the language:
+
+  ```toml
+  [tools.mix]
+  enabled = true
+  root = "packages/elixir"
+  ```
+
 ## [0.19.5] - 2026-08-06
 
 ### Fixed

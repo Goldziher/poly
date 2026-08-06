@@ -9,7 +9,7 @@ builtins = ["rust", "cicd", "documentation", "observability", "default-commands"
 
 [plugin]
 name = "poly"
-version = "0.19.5"
+version = "0.19.6"
 display_name = "poly"
 description = "Zero-dependency lint & format orchestrator over MCP — one pure-Rust binary wrapping ruff/oxc/taplo/rumdl and more as in-process backends, plus a tree-sitter generic tier for everything else. Exposes lint/format/cache tools with structured JSON output."
 homepage = "https://github.com/Goldziher/poly"

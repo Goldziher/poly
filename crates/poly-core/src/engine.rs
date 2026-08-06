@@ -148,4 +148,16 @@ pub trait Engine: Send + Sync {
     fn format(&self, _src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
         Ok(FormatOutput::Unchanged)
     }
+
+    /// Whether this backend is the authoritative formatter for its language and
+    /// should displace poly's generic tree-sitter reindenter.
+    ///
+    /// Formatters chain, so a configured external formatter running *alongside*
+    /// the generic reindenter makes the two fight over indentation and prevents
+    /// the format loop from converging. Only backends that are both configured
+    /// and actually runnable should answer `true` — otherwise a missing binary
+    /// would leave the language with no formatter at all.
+    fn supersedes_generic_formatter(&self) -> bool {
+        false
+    }
 }

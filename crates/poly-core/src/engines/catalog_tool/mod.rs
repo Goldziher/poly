@@ -291,6 +291,10 @@ impl Engine for CatalogToolEngine {
         &self.version
     }
 
+    fn supersedes_generic_formatter(&self) -> bool {
+        !self.is_lint() && probe_binary(&self.tool.binary).is_some()
+    }
+
     fn format(&self, src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
         if self.is_lint() {
             return Ok(FormatOutput::Unchanged);

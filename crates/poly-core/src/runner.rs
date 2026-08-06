@@ -114,6 +114,11 @@ const MAX_FIX_PASSES: usize = 5;
 /// --check` still reports as unformatted.
 const MAX_FORMAT_PASSES: usize = 5;
 
+/// Name of the generic tree-sitter engine — the tier-2 formatting fallback for
+/// languages with no dedicated backend. Matched by name so it can be dropped
+/// when a catalog formatter takes over the language.
+const TREE_SITTER_ENGINE: &str = "treesitter";
+
 /// One engine paired with its resolved config and once-serialised cache args.
 ///
 /// Built once per language (not per file) so the per-file rayon loop neither
@@ -130,11 +135,27 @@ struct EnginePlan {
     severity_remap: SeverityRemap,
 }
 
+/// Whether a catalog formatter takes over the language, displacing poly's generic
+/// tree-sitter reindenter.
+///
+/// Formatters chain, so running both makes them fight: poly reindents, the external
+/// tool reindents differently, and [`format_to_fixed_point`] never converges — the
+/// behaviour observed with Elixir and `mix format`. Gated on the tool actually being
+/// runnable, so a configured-but-missing binary leaves the fallback in place instead
+/// of silently dropping all formatting for the language.
+fn generic_formatter_superseded(kind: Kind, catalog: &[Box<dyn Engine>]) -> bool {
+    kind == Kind::Format && catalog.iter().any(|engine| engine.supersedes_generic_formatter())
+}
+
 /// Resolve the engines (filtered to those with the requested capability) for a
 /// language, pre-resolving each one's config and serialising its args once.
 fn plan_engines(language: &Language, config: &Config, kind: Kind) -> Vec<EnginePlan> {
     let mut engines = engines_for(language);
-    engines.extend(catalog_engines_for(language, config, kind));
+    let catalog = catalog_engines_for(language, config, kind);
+    if generic_formatter_superseded(kind, &catalog) {
+        engines.retain(|engine| engine.name() != TREE_SITTER_ENGINE);
+    }
+    engines.extend(catalog);
     engines
         .into_iter()
         .filter(|engine| match kind {
@@ -756,6 +777,65 @@ mod tests {
             end_byte: end,
             replacement: rep.to_owned(),
         }
+    }
+
+    /// Stand-in for a catalog engine, parameterised on whether its binary is present.
+    struct StubEngine(bool);
+
+    impl Engine for StubEngine {
+        fn name(&self) -> &'static str {
+            "stub"
+        }
+
+        fn languages(&self) -> &'static [Language] {
+            &[]
+        }
+
+        fn capabilities(&self) -> crate::engine::Capabilities {
+            crate::engine::Capabilities {
+                lint: false,
+                format: true,
+                fix: false,
+            }
+        }
+
+        fn version(&self) -> &str {
+            "0"
+        }
+
+        fn supersedes_generic_formatter(&self) -> bool {
+            self.0
+        }
+    }
+
+    fn catalog(available: bool) -> Vec<Box<dyn Engine>> {
+        vec![Box::new(StubEngine(available))]
+    }
+
+    /// A runnable catalog formatter owns the language, so the generic reindenter
+    /// must step aside — otherwise the two chain and fight over indentation.
+    #[test]
+    fn runnable_catalog_formatter_supersedes_the_generic_one() {
+        assert!(generic_formatter_superseded(Kind::Format, &catalog(true)));
+    }
+
+    /// A configured-but-missing binary must NOT displace the fallback, or the
+    /// language silently loses all formatting.
+    #[test]
+    fn missing_catalog_binary_leaves_the_generic_formatter_in_place() {
+        assert!(!generic_formatter_superseded(Kind::Format, &catalog(false)));
+    }
+
+    /// Linting never displaces a formatter.
+    #[test]
+    fn lint_kind_never_supersedes_the_generic_formatter() {
+        assert!(!generic_formatter_superseded(Kind::Lint, &catalog(true)));
+    }
+
+    /// No catalog tools configured — the fallback stays.
+    #[test]
+    fn no_catalog_engines_leaves_the_generic_formatter_in_place() {
+        assert!(!generic_formatter_superseded(Kind::Format, &[]));
     }
 
     /// A pass that is already at its fixed point runs exactly once — no wasted
