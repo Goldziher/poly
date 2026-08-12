@@ -13,7 +13,8 @@ use crate::config::{Config, Kind};
 use crate::discover::{DiscoveredFile, DiscoveryReport, discover_reporting};
 use crate::engine::{Diagnostic, Edit, FormatOutput, SourceFile};
 use crate::filter::{
-    PerFileIgnores, is_format_ignored, is_generated_lockfile, is_generated_source, match_bases, relative_for_match,
+    PerFileIgnores, is_format_ignored, is_generated_lockfile, is_generated_source, is_hash_stamped_source, match_bases,
+    relative_for_match,
 };
 use crate::resolve::ConfigSet;
 
@@ -175,7 +176,7 @@ const MAX_FIX_PASSES: usize = 5;
 const MAX_FORMAT_PASSES: usize = 5;
 
 /// Reason reported when `poly fmt` leaves a machine-generated file alone.
-const GENERATED_SKIP: &str = "generated (pass --fix-generated to format)";
+const GENERATED_SKIP: &str = "hash-stamped generated file (pass --fix-generated to format)";
 
 /// Lint all discovered files under `paths`. Returns one [`LintResult`] per file
 /// that still has at least one diagnostic. When `fix` is true, each file's
@@ -552,16 +553,20 @@ fn format_one(
             debug: None,
         });
     }
-    // A generated file is the generator's output, not the repo's source.
-    // Reformatting it is churn the next generation run reverts — and when the
-    // header carries a content hash (`alef:hash:`), the rewrite invalidates it,
-    // so a verify step reports drift on a file no human touched and the remedy
-    // is a regen that discards the formatting. One reporter had 110 of 123 files
-    // in that state.
+    // Skip only when the header stamps a **content hash** over the body:
+    // reformatting invalidates it, so a verify step reports drift on a file no
+    // human touched and the remedy is a regen that discards the formatting —
+    // a loop, and one reporter had 110 of 123 files in it.
+    //
+    // Deliberately narrower than `is_generated_source`, which `lint --fix` uses.
+    // Skipping here removes the file from the format gate entirely, so a bare
+    // "DO NOT EDIT" banner must not trigger it: a generator that stamps a
+    // hand-written file would otherwise drop it out of enforcement silently.
+    // Formatting a banner-only file is harmless; not checking it is not.
     //
     // Skipped rather than reported as drift: poly will not fix these, so
     // flagging them under `--check` would leave a gate that can never go green.
-    if !fix_generated && is_generated_source(&original) {
+    if !fix_generated && is_hash_stamped_source(&original) {
         return Ok(FormatResult {
             path: f.path.clone(),
             changed: false,

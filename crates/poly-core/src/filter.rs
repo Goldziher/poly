@@ -260,6 +260,34 @@ pub(crate) fn is_generated_source(content: &str) -> bool {
     })
 }
 
+/// Markers that mean the header carries a **content hash** of the file body.
+const CONTENT_HASH_MARKERS: &[&str] = &[":hash:", "sourcehash", "@checksum"];
+
+/// Whether the header stamps a content hash over the body.
+///
+/// This is a strictly narrower question than [`is_generated_source`], and the
+/// two drive different decisions:
+///
+/// - **`lint --fix`** withholds on *any* generated marker. Withholding a fix
+///   still reports the diagnostics, so nothing leaves the gate.
+/// - **`fmt`** skips only on a content hash, because skipping there removes the
+///   file from the format gate entirely.
+///
+/// The distinction exists because generalising it caused real harm. Reformatting
+/// a hash-stamped body invalidates the hash, so a verify step reports drift on a
+/// file no human touched and the remedy is a regen that discards the formatting
+/// — that is a loop, and skipping breaks it. But a bare "DO NOT EDIT" banner
+/// makes no such promise, and a generator that stamps a *hand-written* file with
+/// one would silently drop it out of lint and format enforcement — reported by a
+/// consumer whose most user-facing code left the gate without anything failing.
+/// Formatting a banner-only file is harmless; silently not checking it is not.
+pub(crate) fn is_hash_stamped_source(content: &str) -> bool {
+    content.lines().take(GENERATED_HEADER_LINES).any(|line| {
+        let lower = line.to_ascii_lowercase();
+        CONTENT_HASH_MARKERS.iter().any(|marker| lower.contains(marker))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

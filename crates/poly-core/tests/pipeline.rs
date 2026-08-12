@@ -380,3 +380,54 @@ fn fix_is_withheld_on_generated_files_but_diagnostics_are_still_reported() {
     let (_, rewritten) = fix(&generated, true);
     assert!(rewritten, "--fix-generated must apply fixes to generated files");
 }
+
+/// `fmt` skipping a file removes it from the format gate entirely, so it must
+/// require a *content hash* — not a bare "DO NOT EDIT" banner.
+///
+/// Generalising this caused real harm: a generator stamping a hand-written file
+/// with a banner silently dropped that file out of lint and format enforcement,
+/// and a consumer's most user-facing code left the gate with nothing reporting
+/// it. Reformatting a banner-only file is harmless; not checking it is not.
+#[test]
+fn fmt_skips_hash_stamped_files_but_not_banner_only_ones() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let banner = dir.path().join("banner_only.py");
+    std::fs::write(&banner, "# This file is managed by alef — DO NOT EDIT.\nx   =    1\n").expect("write");
+    let hashed = dir.path().join("hashed.py");
+    std::fs::write(
+        &hashed,
+        "# Auto-generated — DO NOT EDIT.\n# alef:hash: deadbeef\ny   =    2\n",
+    )
+    .expect("write");
+
+    let check = |path: &std::path::Path| {
+        let opts = RunOptions {
+            no_cache: true,
+            ..RunOptions::default()
+        };
+        poly_core::format(
+            std::slice::from_ref(&path.to_path_buf()),
+            &Config::default(),
+            &opts,
+            false,
+            false,
+        )
+        .expect("format")
+    };
+
+    // Banner only: still checked, and its drift is still reported.
+    let results = check(&banner);
+    assert!(
+        results.iter().any(|r| r.changed),
+        "a banner-only file must stay in the format gate"
+    );
+    assert!(results.iter().all(|r| r.skipped.is_none()));
+
+    // Hash-stamped: skipped, because reformatting would invalidate the hash.
+    let results = check(&hashed);
+    assert!(results.iter().all(|r| !r.changed));
+    assert!(
+        results.iter().any(|r| r.skipped.is_some()),
+        "a hash-stamped file must be skipped and reported as skipped"
+    );
+}

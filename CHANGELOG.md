@@ -60,8 +60,11 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   1 generated file(s) not fixed (pass `--fix-generated` to include them).
   ```
 
-  `poly fmt` is unaffected — formatting generated output is a deliberate workflow in many repos, and
-  whitespace changes do not destroy diagnostics.
+  `poly fmt` skips a generated file **only when its header stamps a content hash** (`alef:hash:`,
+  `sourcehash`, `@checksum`), because reformatting invalidates the hash and the remedy is a regen
+  that discards the formatting — a loop. A bare `DO NOT EDIT` banner does *not* trigger it: skipping
+  in `fmt` removes the file from the format gate entirely, and a generator that stamps a
+  hand-written file would otherwise drop it out of enforcement with nothing reporting it.
 
 - **`poly lint <paths>` no longer runs the whole-project phase.** Explicit path arguments now scope
   the run to the per-file tier; `poly lint` with no paths is unchanged and still runs
