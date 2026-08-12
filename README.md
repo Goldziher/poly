@@ -64,7 +64,7 @@ commit checks then run on every `git commit`.
 | **One config** | `poly.toml` drives linting, formatting, hooks, commit-message policy, cache settings, and optional tool catalog entries. | `[defaults]` · `[lint.*]` · `[fmt.*]` · `[hooks]` · `[tools]` |
 | **Curated Rust backends** | Wraps high-quality Rust libraries in-process: oxc, ruff internals, taplo, rumdl, sqruff, malva, markup_fmt, mago, and more. | Backend registry |
 | **Generic fallback** | Uses `tree-sitter-language-pack` for identified languages without a dedicated backend, reindenting supported grammars and normalizing whitespace where safe. | `treesitter` tier |
-| **Cache + parallelism** | Runs per file with rayon and skips unchanged work with a blake3 content-hash cache keyed by file bytes, engine, version, and resolved config. | `poly cache` · `--no-cache` · `-j` |
+| **Cache + parallelism** | Runs per file with rayon and skips unchanged work with a blake3 content-hash cache keyed by file bytes, engine, version, resolved config, and the identity of the poly build itself. | `poly cache` · `--no-cache` · `-j` |
 | **Git hooks** | Runs first-class builtins and inline hook jobs from `poly.toml`, with file-safety checks and Cargo tools as builtins. Whole-workspace hooks (`cargo`, type checkers) run isolated against staged content and skip when their inputs are unchanged. | `poly hooks install` · `poly hooks run` · `workspace` · `isolate` |
 | **Commit checks** | Enforces Conventional Commits and strips AI-attribution trailers through the bundled `gitfluff` engine. | `poly commit` |
 | **Agent-friendly output** | Emits structured JSON and compact TOON, and exposes lint/format/cache operations over an MCP stdio server. | `--format json` · `--format toon` · `poly mcp` |
@@ -94,18 +94,35 @@ irm https://raw.githubusercontent.com/Goldziher/poly/main/install.ps1 | iex
 
 Both installers detect the platform, download the matching release archive, verify it against
 `sha256sums.txt`, and install `poly`. Set `POLY_VERSION=v0.5.0` to pin a version or
-`POLY_INSTALL_DIR=/path/to/bin` to choose the destination.
+`POLY_INSTALL_DIR=/path/to/bin` to choose the destination. This is a **true pin**: the installer
+downloads that exact tag's release archive and refuses to install it unless it matches the
+checksum published for that release — it never falls back to "already have some `poly`, skip".
+
+Re-run either installer to upgrade. Upgrades are **atomic**: the new binary is staged beside the
+destination and renamed over it, so `poly` is never momentarily missing or half-written. That
+matters because `poly hooks install` wires git hooks that resolve `poly` from `PATH` globally and
+**fail closed** — an upgrade that deletes or truncates the destination first blocks every commit in
+every repository on the machine until it finishes. If you install poly some other way, do the same
+(write `poly.tmp`, `chmod`, then `mv` it over the target; `cargo install` already works this way)
+rather than removing or overwriting the binary in place.
 
 ### GitHub Actions
 
 ```yaml
+# Pin a version (recommended for CI reproducibility):
 - uses: Goldziher/poly@v0
   with:
-    version: latest
+    version: v0.19.7
+
+# Latest release, cached (default when `version` is omitted):
+- uses: Goldziher/poly@v0
 ```
 
-The action resolves the requested release, caches the installed binary bundle by version and
-platform, and adds `poly` to `PATH`.
+The action forwards `version:` verbatim to `install.sh`, so it is the **same true pin** as the
+installer scripts above — an exact release, checksum-verified, not a presence check. It caches the
+installed binary bundle by resolved version and platform, and adds `poly` to `PATH`. See
+[`ACTION_USAGE.md`](ACTION_USAGE.md) for the full input/output reference, including how to also
+pin the action's own code to a commit SHA independent of the `version:` input.
 
 ### Package Managers
 
@@ -113,6 +130,17 @@ platform, and adds `poly` to `PATH`.
 brew install Goldziher/tap/poly
 cargo binstall --git https://github.com/Goldziher/poly poly-cli
 ```
+
+`cargo binstall`'s `[package.metadata.binstall]` (`crates/poly-cli/Cargo.toml`) resolves against
+the same GitHub release archives as the installer scripts, so `--version 0.19.7` (or
+`poly-cli@0.19.7`) is also a true pin — it does not require a crates.io publish.
+
+**Homebrew cannot pin today.** `Goldziher/tap/poly` is a single formula that the release
+pipeline rewrites in place on every release — there is no versioned alias (e.g. `poly@0.19`) to
+request an older release by name, so `brew install`/`brew upgrade` always resolve to whatever is
+currently at `HEAD` of the tap. Treat Homebrew as a get-latest channel and verify what you got
+after the fact (below); use the installer scripts, the GitHub Action, or `cargo binstall`, all of
+which support a true pin, wherever reproducibility matters.
 
 ### Pinning poly in a repository
 
@@ -129,7 +157,13 @@ drifts with no signal. It also cannot see a `poly` from another channel shadowin
 it installed — `~/.cargo/bin` precedes `/opt/homebrew/bin` on a default macOS `PATH`, so a stray
 `cargo`-installed binary wins silently.
 
-Pin a version and verify the *resolved* binary instead:
+**Prefer a true pin:** the installer scripts (`POLY_VERSION=0.19.7 curl ... | sh`) or the GitHub
+Action (`version: v0.19.7`) install exactly the requested, checksum-verified release — no
+verify-after-the-fact needed, because there is nothing to drift.
+
+If Homebrew is the only option available (e.g. an interactive dev machine already standardized on
+`brew`), pin a version and verify the *resolved* binary instead, since brew itself cannot request
+a specific version:
 
 ```sh
 POLY_VERSION=0.19.7
@@ -148,9 +182,11 @@ fi
 Three details matter: `brew install` no-ops on an already-installed-but-outdated formula (hence
 `brew upgrade ||`), the version is re-checked *after* installing rather than assumed, and the
 failure message names `command -v poly` so a shadowed binary is identifiable rather than baffling.
+Note this still only *verifies* the version post-install — it cannot request `0.19.7` specifically
+if `brew upgrade` has already moved past it; see "Package Managers" above.
 
-In CI, prefer the GitHub Action with an explicit `version:` — it resolves and caches a specific
-release rather than whatever is already on the runner.
+In CI, prefer the GitHub Action or the installer script with an explicit version — both resolve
+and install a specific release rather than whatever is already on the runner.
 
 ### Manual or Source Builds
 
