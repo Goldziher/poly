@@ -4733,6 +4733,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "poly-buildinfo"
+version = "0.19.7"
+
+[[package]]
 name = "poly-cache"
 version = "0.19.7"
 dependencies = [
@@ -4765,6 +4769,7 @@ dependencies = [
  "insta",
  "json5",
  "owo-colors",
+ "poly-buildinfo",
  "poly-cache",
  "poly-config",
  "poly-core",
@@ -4912,6 +4917,7 @@ name = "poly-mcp"
 version = "0.19.7"
 dependencies = [
  "anyhow",
+ "poly-buildinfo",
  "poly-cache",
  "poly-config",
  "poly-core",

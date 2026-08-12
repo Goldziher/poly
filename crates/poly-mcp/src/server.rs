@@ -15,6 +15,15 @@
 //! `format_check` / `cache_stats` / `rules` / `config_show` are read-only and
 //! idempotent, while `lint_fix` / `format_write` / `cache_clean` are destructive.
 //!
+//! ## Identity
+//!
+//! Every result carries the serving binary's identity (see [`crate::identity`])
+//! under a `poly` key in `structured_content` and in `_meta`, because an MCP
+//! caller has no `poly --version` to fall back on. The server additionally
+//! fingerprints its own executable at startup and re-checks it per request: if
+//! the binary is replaced or deleted underneath a long-lived server, every tool
+//! but `version` fails rather than answering with superseded behaviour.
+//!
 //! ## Async Tasks
 //!
 //! The whole-project tools (`workspace_lint` / `workspace_lint_fix`) drive the
@@ -41,13 +50,20 @@ use rmcp::{ErrorData, RoleServer, ServerHandler, tool, tool_router};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::dto::{FormatReport, LintReport, TextRepr, WorkspaceReport, dto_result};
+use crate::dto::{
+    FormatReport, LintReport, TextRepr, VersionReport, WorkspaceReport, dto_result, schema_for_output_with_identity,
+};
+use crate::identity::ExecutableWatch;
 use crate::ops;
 
 /// Tool name for the read-only whole-project lint Task.
 const WORKSPACE_LINT: &str = "workspace_lint";
 /// Tool name for the mutating whole-project lint Task.
 const WORKSPACE_LINT_FIX: &str = "workspace_lint_fix";
+/// Tool name for the identity/health tool, which answers even when the
+/// executable has moved (it is the tool that explains why everything else
+/// stopped answering).
+const VERSION: &str = "version";
 
 /// Arguments accepted by the path-oriented lint/format tools.
 #[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
@@ -134,6 +150,10 @@ pub struct PolyMcpServer {
     /// Config path passed on the command line (`poly mcp --config`); used as the
     /// fallback when a request does not name its own config.
     config_override: Option<PathBuf>,
+    /// Fingerprint of the executable this server started from, re-checked on
+    /// every request so an upgrade underneath a running server fails loudly
+    /// instead of answering with superseded behaviour.
+    executable: ExecutableWatch,
 }
 
 /// Resolve the effective config path for a request: an explicit per-request
@@ -182,17 +202,29 @@ impl PolyMcpServer {
     /// Build a server, optionally pinning a config file used for every request
     /// that does not name its own.
     pub fn new(config_override: Option<PathBuf>) -> Self {
+        Self::with_executable_watch(config_override, ExecutableWatch::capture())
+    }
+
+    /// Build a server watching a specific executable rather than the running
+    /// one.
+    ///
+    /// [`new`](Self::new) is the normal entry point. This takes the watch as an
+    /// explicit dependency for an embedder that knows which file backs the
+    /// server — a supervisor watching the binary it launched, or a harness
+    /// exercising the replaced-underneath-a-running-server path.
+    pub fn with_executable_watch(config_override: Option<PathBuf>, executable: ExecutableWatch) -> Self {
         Self {
             tool_router: Self::tool_router(),
             task_manager: TaskManager::new(),
             config_override,
+            executable,
         }
     }
 
     #[tool(
         description = "Lint files and report diagnostics as structured JSON (plus JSON/TOON text). Never writes. Mirrors `poly lint`.",
         annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false),
-        output_schema = rmcp::handler::server::tool::schema_for_output::<LintReport>()
+        output_schema = schema_for_output_with_identity::<LintReport>()
     )]
     async fn lint(&self, params: Parameters<PathsParams>) -> Result<CallToolResult, ErrorData> {
         let Parameters(args) = params;
@@ -206,7 +238,7 @@ impl PolyMcpServer {
     #[tool(
         description = "Check formatting without writing; reports which files would change as structured JSON (plus JSON/TOON text). Mirrors `poly fmt --check`.",
         annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false),
-        output_schema = rmcp::handler::server::tool::schema_for_output::<FormatReport>()
+        output_schema = schema_for_output_with_identity::<FormatReport>()
     )]
     async fn format_check(&self, params: Parameters<PathsParams>) -> Result<CallToolResult, ErrorData> {
         let Parameters(args) = params;
@@ -220,7 +252,7 @@ impl PolyMcpServer {
     #[tool(
         description = "Lint files and apply available autofixes in place, then report remaining diagnostics. Writes files. Mirrors `poly lint --fix`.",
         annotations(read_only_hint = false, destructive_hint = true, open_world_hint = false),
-        output_schema = rmcp::handler::server::tool::schema_for_output::<LintReport>()
+        output_schema = schema_for_output_with_identity::<LintReport>()
     )]
     async fn lint_fix(&self, params: Parameters<PathsParams>) -> Result<CallToolResult, ErrorData> {
         let Parameters(args) = params;
@@ -234,7 +266,7 @@ impl PolyMcpServer {
     #[tool(
         description = "Format files in place and report which files changed. Writes files. Mirrors `poly fmt --fix`.",
         annotations(read_only_hint = false, destructive_hint = true, open_world_hint = false),
-        output_schema = rmcp::handler::server::tool::schema_for_output::<FormatReport>()
+        output_schema = schema_for_output_with_identity::<FormatReport>()
     )]
     async fn format_write(&self, params: Parameters<PathsParams>) -> Result<CallToolResult, ErrorData> {
         let Parameters(args) = params;
@@ -248,7 +280,7 @@ impl PolyMcpServer {
     #[tool(
         description = "Report result-cache footprint (entry counts, sizes, format version). Mirrors `poly cache stats`.",
         annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false),
-        output_schema = rmcp::handler::server::tool::schema_for_output::<crate::dto::CacheStatsReport>()
+        output_schema = schema_for_output_with_identity::<crate::dto::CacheStatsReport>()
     )]
     async fn cache_stats(&self, params: Parameters<FormatParams>) -> Result<CallToolResult, ErrorData> {
         let Parameters(args) = params;
@@ -259,7 +291,7 @@ impl PolyMcpServer {
     #[tool(
         description = "Remove every cached entry and report freed bytes. Mirrors `poly cache clean`.",
         annotations(read_only_hint = false, destructive_hint = true, open_world_hint = false),
-        output_schema = rmcp::handler::server::tool::schema_for_output::<crate::dto::CacheCleanReport>()
+        output_schema = schema_for_output_with_identity::<crate::dto::CacheCleanReport>()
     )]
     async fn cache_clean(&self, params: Parameters<FormatParams>) -> Result<CallToolResult, ErrorData> {
         let Parameters(args) = params;
@@ -270,7 +302,7 @@ impl PolyMcpServer {
     #[tool(
         description = "List (and optionally test) the custom ast-grep rule packs. Read-only. Mirrors `poly rules list` / `poly rules test`.",
         annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false),
-        output_schema = rmcp::handler::server::tool::schema_for_output::<crate::dto::RulesReport>()
+        output_schema = schema_for_output_with_identity::<crate::dto::RulesReport>()
     )]
     async fn rules(&self, params: Parameters<RulesParams>) -> Result<CallToolResult, ErrorData> {
         let Parameters(args) = params;
@@ -283,7 +315,7 @@ impl PolyMcpServer {
     #[tool(
         description = "Show the effective, merged config (defaults, configured lint/fmt/tool keys, rule dirs). Read-only. Mirrors `poly config show` (network-free: remote `extends` bases are not fetched).",
         annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false),
-        output_schema = rmcp::handler::server::tool::schema_for_output::<crate::dto::ConfigShowReport>()
+        output_schema = schema_for_output_with_identity::<crate::dto::ConfigShowReport>()
     )]
     async fn config_show(&self, params: Parameters<ConfigParams>) -> Result<CallToolResult, ErrorData> {
         let Parameters(args) = params;
@@ -291,6 +323,26 @@ impl PolyMcpServer {
         let repr = args.format;
         let report = run_blocking(move || ops::config_show(config.as_deref())).await?;
         dto_result(&report, repr)
+    }
+
+    #[tool(
+        name = "version",
+        description = "Report which poly binary is serving this session (version, build id, channel, executable, pid) and whether that executable is still the one on disk. Answers even when the binary has moved — it is the tool that explains why the others stopped. Read-only.",
+        annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false),
+        output_schema = schema_for_output_with_identity::<VersionReport>()
+    )]
+    async fn version(&self, params: Parameters<FormatParams>) -> Result<CallToolResult, ErrorData> {
+        let Parameters(args) = params;
+        let staleness = self.executable.check();
+        let report = VersionReport {
+            executable_current: staleness.is_none(),
+            executable_status: match staleness {
+                Some(staleness) => self.executable.stale_message(staleness),
+                None => "the executable serving this session is still the file on disk".to_string(),
+            },
+            uptime_seconds: self.executable.uptime_seconds(),
+        };
+        dto_result(&report, args.format)
     }
 }
 
@@ -369,6 +421,28 @@ impl PolyMcpServer {
     }
 }
 
+impl PolyMcpServer {
+    /// Refuse the request when the executable this server runs from is no longer
+    /// the file on disk.
+    ///
+    /// An MCP server is long-lived **by design** and has no expiry: on macOS the
+    /// kernel keeps a deleted inode alive for as long as a process holds it, so
+    /// a server started before an upgrade keeps serving the pre-upgrade build
+    /// indefinitely — answering, plausibly, with behaviour that was fixed hours
+    /// ago. Erroring is the only outcome a caller cannot mistake for a result.
+    fn reject_if_stale(&self) -> Result<(), ErrorData> {
+        let Some(staleness) = self.executable.check() else {
+            return Ok(());
+        };
+        let message = self.executable.stale_message(staleness);
+        // Also surface it on stderr, once, for whoever is reading the server's
+        // log rather than the tool result.
+        static ANNOUNCED: std::sync::Once = std::sync::Once::new();
+        ANNOUNCED.call_once(|| eprintln!("poly mcp: {message}"));
+        Err(ErrorData::internal_error(message, None))
+    }
+}
+
 /// The input schema for [`WorkspaceParams`], used by the manually-registered
 /// task tool definitions.
 fn schema_for_workspace_params() -> std::sync::Arc<rmcp::model::JsonObject> {
@@ -390,9 +464,13 @@ impl ServerHandler for PolyMcpServer {
             .with_server_info(Implementation::new("poly-mcp", env!("CARGO_PKG_VERSION")))
             .with_instructions(
                 "Universal zero-dependency linter & formatter. Tools mirror the `poly` CLI. Read-only: \
-                 lint / format_check / cache_stats / rules / config_show. Mutating: lint_fix / format_write / \
-                 cache_clean. Whole-project (long-running): workspace_lint / workspace_lint_fix, run as async \
-                 Tasks (poll tasks/get). Every tool returns structured JSON plus a JSON/TOON text block (`format`).",
+                 lint / format_check / cache_stats / rules / config_show / version. Mutating: lint_fix / \
+                 format_write / cache_clean. Whole-project (long-running): workspace_lint / workspace_lint_fix, \
+                 run as async Tasks (poll tasks/get). Every tool returns structured JSON plus a JSON/TOON text \
+                 block (`format`), and every result carries a `poly` block (version, build id, channel, \
+                 executable, pid) identifying the binary that answered — check it before acting on a result. \
+                 If this server's executable is replaced or deleted while it runs, every tool but `version` \
+                 fails until the server is restarted.",
             )
     }
 
@@ -401,6 +479,11 @@ impl ServerHandler for PolyMcpServer {
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
+        // `version` is exempt: it is the tool that *explains* a stale server,
+        // and refusing it would leave a caller with an error and no diagnosis.
+        if request.name.as_ref() != VERSION {
+            self.reject_if_stale()?;
+        }
         match request.name.as_ref() {
             WORKSPACE_LINT => self.run_workspace_tool(request, &context, false).await,
             WORKSPACE_LINT_FIX => self.run_workspace_tool(request, &context, true).await,

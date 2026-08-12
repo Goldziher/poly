@@ -1,0 +1,19 @@
+[package]
+name = "poly-buildinfo"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+description = "Build identity (version, git describe, channel) for the poly binary, captured at compile time."
+keywords = ["build", "version", "provenance"]
+categories = ["development-tools"]
+
+[lib]
+name = "poly_buildinfo"
+path = "src/lib.rs"
+
+[dependencies]

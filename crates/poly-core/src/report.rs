@@ -25,10 +25,11 @@
 
 use std::fmt::Write as _;
 
-use owo_colors::{OwoColorize, Stream::Stdout};
+use owo_colors::{OwoColorize, Stream::Stderr, Stream::Stdout};
 
+use crate::discover::DiscoveryReport;
 use crate::engine::Severity;
-use crate::runner::{FormatResult, LintResult, RunDebug};
+use crate::runner::{FormatResult, FormatRun, LintResult, LintRun, RunDebug};
 
 /// How much detail the human-oriented (`pretty`) renderers emit. `Copy` so it
 /// threads cheaply through the renderers.
@@ -69,11 +70,164 @@ fn render_debug_block(out: &mut String, debug: &RunDebug) {
     }
 }
 
+/// The summary clause naming what `[discovery] exclude` / `--exclude` pruned, or
+/// `None` when discovery excluded nothing.
+///
+/// Files and directories are reported apart because only the file count is
+/// exact: an excluded directory is pruned at its boundary and never descended
+/// into, so the number of files inside it was never measured. Collapsing the two
+/// into one "N excluded" number would claim a precision nobody paid for, which
+/// is the same dishonesty as the unqualified pass this whole feature exists to
+/// remove.
+fn exclusion_clause(discovery: &DiscoveryReport) -> Option<String> {
+    match (discovery.excluded_files, discovery.excluded_directories) {
+        (0, 0) => None,
+        (files, 0) => Some(format!("{files} file(s) excluded by config")),
+        (0, directories) => Some(format!("{directories} director(ies) excluded by config")),
+        (files, directories) => Some(format!(
+            "{files} file(s) and {directories} director(ies) excluded by config"
+        )),
+    }
+}
+
+/// How many exclude rules the detail line names before summarising the rest.
+///
+/// Rules are ordered by how much they pruned, so the ones worth investigating
+/// come first; a repo with twenty excludes should not turn every clean run into
+/// a wall of text.
+const MAX_LISTED_EXCLUDE_RULES: usize = 5;
+
+/// Render the follow-on detail lines for an exclusion: which rules matched, what
+/// each pruned, and the caveat that excluded directories were never walked.
+///
+/// Returns `None` when discovery excluded nothing, so a clean run stays quiet.
+/// Every line is indented two spaces to read as a continuation of the summary.
+pub fn render_discovery_note(discovery: &DiscoveryReport) -> Option<String> {
+    if discovery.is_empty() {
+        return None;
+    }
+    let mut out = String::new();
+    if discovery.rules.is_empty() {
+        let _ = writeln!(out, "  excluded from discovery by an exclude rule");
+    } else {
+        let mut rules = discovery
+            .rules
+            .iter()
+            .take(MAX_LISTED_EXCLUDE_RULES)
+            .map(|rule| {
+                let mut counts: Vec<String> = Vec::with_capacity(2);
+                if rule.files > 0 {
+                    counts.push(format!("{} file(s)", rule.files));
+                }
+                if rule.directories > 0 {
+                    counts.push(format!("{} dir(s)", rule.directories));
+                }
+                format!("{} ({})", rule.pattern, counts.join(", "))
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        if let Some(rest) = discovery
+            .rules
+            .len()
+            .checked_sub(MAX_LISTED_EXCLUDE_RULES)
+            .filter(|n| *n > 0)
+        {
+            let _ = write!(rules, ", and {rest} more rule(s)");
+        }
+        let _ = writeln!(out, "  excluded by [discovery] exclude / --exclude: {rules}");
+    }
+    if discovery.excluded_directories > 0 {
+        let _ = writeln!(
+            out,
+            "  excluded directories were not walked, so the files inside them are not counted"
+        );
+    }
+    if discovery.excluded_explicit > 0 {
+        let _ = writeln!(
+            out,
+            "  {} path(s) named on the command line were dropped by --force-exclude",
+            discovery.excluded_explicit
+        );
+    }
+    Some(out.if_supports_color(Stdout, |t| t.yellow()).to_string())
+}
+
+/// Append [`render_discovery_note`] to `out`, if there is anything to say.
+fn push_discovery_note(out: &mut String, discovery: &DiscoveryReport) {
+    if let Some(note) = render_discovery_note(discovery) {
+        out.push_str(&note);
+    }
+}
+
+/// Print the discovery note to **stderr**, for the `json`/`toon` formats.
+///
+/// Under those formats stdout must stay a single valid document, so the
+/// qualification goes to stderr — the same split the whole-project lint phase
+/// already uses. Colour is resolved against stderr rather than stdout, because
+/// that is the stream it lands on: a piped stdout with a TTY stderr (the usual
+/// `poly lint --format json > out.json`) would otherwise lose the highlight.
+pub fn eprint_discovery_note(discovery: &DiscoveryReport) {
+    if discovery.is_empty() {
+        return;
+    }
+    let Some(note) = render_discovery_note(discovery) else {
+        return;
+    };
+    // `render_discovery_note` resolves colour for stdout; strip that and re-apply
+    // for stderr so the two streams cannot disagree.
+    let plain = strip_ansi(&note);
+    eprint!("{}", plain.if_supports_color(Stderr, |t| t.yellow()));
+}
+
+/// Remove ANSI SGR sequences from `text`.
+///
+/// Only ever applied to poly's own rendered notes, which contain nothing more
+/// exotic than `ESC [ … m`.
+fn strip_ansi(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars();
+    while let Some(ch) = chars.next() {
+        if ch != '\u{1b}' {
+            out.push(ch);
+            continue;
+        }
+        if chars.next() != Some('[') {
+            continue;
+        }
+        for escape in chars.by_ref() {
+            if escape == 'm' {
+                break;
+            }
+        }
+    }
+    out
+}
+
 /// Build the human-oriented lint report as a string. By default one terse line
 /// per diagnostic: `level  engine  code?  line:col?  title`. `--verbose` adds
 /// `description`, `url`, and `metadata`; `--debug` adds a dim per-file debug
 /// block. Returns the rendered text and the total diagnostic count.
+///
+/// The summary is unqualified: it can say "No issues found." but not how much was
+/// looked at. Prefer [`render_lint_pretty_run`], which does both.
 pub fn render_lint_pretty(results: &[LintResult], verbosity: Verbosity) -> (String, usize) {
+    render_lint_core(results, None, &DiscoveryReport::default(), verbosity)
+}
+
+/// [`render_lint_pretty`] over a whole [`LintRun`], so the summary can state how
+/// many files were linted and what discovery excluded before them.
+pub fn render_lint_pretty_run(run: &LintRun, verbosity: Verbosity) -> (String, usize) {
+    render_lint_core(&run.results, Some(run.checked), &run.discovery, verbosity)
+}
+
+/// Shared body of the lint renderers. `checked` is `None` when the caller has no
+/// run-level count to report (the legacy results-only entry point).
+fn render_lint_core(
+    results: &[LintResult],
+    checked: Option<usize>,
+    discovery: &DiscoveryReport,
+    verbosity: Verbosity,
+) -> (String, usize) {
     let mut out = String::new();
     let mut total = 0usize;
     let mut fixable = 0usize;
@@ -129,13 +283,42 @@ pub fn render_lint_pretty(results: &[LintResult], verbosity: Verbosity) -> (Stri
         }
     }
     if total == 0 {
-        let _ = writeln!(out, "{}", "No issues found.".if_supports_color(Stdout, |t| t.green()));
+        // "No issues found." on its own cannot distinguish a verified-clean repo
+        // from one whose every file was excluded — qualify it with what was
+        // looked at and what was pruned.
+        let mut tail: Vec<String> = Vec::with_capacity(2);
+        if let Some(checked) = checked {
+            tail.push(format!("{checked} file(s) linted"));
+        }
+        if let Some(clause) = exclusion_clause(discovery) {
+            tail.push(clause);
+        }
+        let nothing_linted = checked == Some(0) && !discovery.is_empty();
+        let headline = if nothing_linted {
+            "Nothing was linted."
+                .if_supports_color(Stdout, |t| t.yellow())
+                .to_string()
+        } else {
+            "No issues found.".if_supports_color(Stdout, |t| t.green()).to_string()
+        };
+        if tail.is_empty() {
+            let _ = writeln!(out, "{headline}");
+        } else {
+            let _ = writeln!(out, "{headline} ({})", tail.join(", "));
+        }
     } else {
-        let _ = writeln!(
-            out,
-            "\n{}",
-            format!("{total} issue(s) found.").if_supports_color(Stdout, |t| t.red())
-        );
+        let mut headline = format!("{total} issue(s) found.");
+        let mut tail: Vec<String> = Vec::with_capacity(2);
+        if let Some(checked) = checked {
+            tail.push(format!("{checked} file(s) linted"));
+        }
+        if let Some(clause) = exclusion_clause(discovery) {
+            tail.push(clause);
+        }
+        if !tail.is_empty() {
+            let _ = write!(headline, " ({})", tail.join(", "));
+        }
+        let _ = writeln!(out, "\n{}", headline.if_supports_color(Stdout, |t| t.red()));
         if fixable > 0 {
             let _ = writeln!(
                 out,
@@ -144,6 +327,9 @@ pub fn render_lint_pretty(results: &[LintResult], verbosity: Verbosity) -> (Stri
             );
         }
     }
+    // What was never discovered is as load-bearing as what was: a finding list
+    // is only as trustworthy as the file set behind it.
+    push_discovery_note(&mut out, discovery);
     // Withholding a fix must be visible: an invisible skip is the same failure as
     // an invisible fix, just in the other direction.
     let withheld = results.iter().filter(|r| r.fix_withheld_generated).count();
@@ -162,6 +348,15 @@ pub fn render_lint_pretty(results: &[LintResult], verbosity: Verbosity) -> (Stri
 /// diagnostic count.
 pub fn report_lint_pretty(results: &[LintResult], verbosity: Verbosity) -> usize {
     let (text, total) = render_lint_pretty(results, verbosity);
+    print!("{text}");
+    total
+}
+
+/// Print the human-oriented lint report for a whole [`LintRun`] to stdout, so
+/// the summary is qualified by what was linted and what was excluded. Returns
+/// the total diagnostic count.
+pub fn report_lint_pretty_run(run: &LintRun, verbosity: Verbosity) -> usize {
+    let (text, total) = render_lint_pretty_run(run, verbosity);
     print!("{text}");
     total
 }
@@ -207,6 +402,22 @@ fn skip_summary(results: &[FormatResult]) -> String {
 /// debug block (engine version, cache hit/miss, timing). Returns the rendered
 /// text and the number of changed files.
 pub fn render_format_pretty(results: &[FormatResult], check: bool, verbosity: Verbosity) -> (String, usize) {
+    render_format_core(results, &DiscoveryReport::default(), check, verbosity)
+}
+
+/// [`render_format_pretty`] over a whole [`FormatRun`], so the summary can say
+/// what discovery excluded before the checked files were reached.
+pub fn render_format_pretty_run(run: &FormatRun, check: bool, verbosity: Verbosity) -> (String, usize) {
+    render_format_core(&run.results, &run.discovery, check, verbosity)
+}
+
+/// Shared body of the format renderers.
+fn render_format_core(
+    results: &[FormatResult],
+    discovery: &DiscoveryReport,
+    check: bool,
+    verbosity: Verbosity,
+) -> (String, usize) {
     let mut out = String::new();
     let changed: Vec<&FormatResult> = results.iter().filter(|r| r.changed).collect();
     for r in &changed {
@@ -230,23 +441,35 @@ pub fn render_format_pretty(results: &[FormatResult], check: bool, verbosity: Ve
         if skipped > 0 {
             let _ = write!(tail, ", {skipped} skipped ({})", skip_summary(results));
         }
-        let _ = writeln!(
-            out,
-            "{} ({tail})",
-            "All formatted.".if_supports_color(Stdout, |t| t.green())
-        );
+        if let Some(clause) = exclusion_clause(discovery) {
+            let _ = write!(tail, ", {clause}");
+        }
+        // A green "All formatted." over an empty file set is the reassuring lie
+        // this feature exists to remove: when the exclude set is the reason
+        // nothing was checked, say so instead.
+        let headline = if checked == 0 && !discovery.is_empty() {
+            "Nothing was checked."
+                .if_supports_color(Stdout, |t| t.yellow())
+                .to_string()
+        } else {
+            "All formatted.".if_supports_color(Stdout, |t| t.green()).to_string()
+        };
+        let _ = writeln!(out, "{headline} ({tail})");
     } else {
         let phrase = if check {
             format!("{n} file(s) will change")
         } else {
             format!("{n} changed")
         };
-        let _ = writeln!(
-            out,
-            "\n{} of {scanned} file(s)",
-            phrase.if_supports_color(Stdout, |t| t.yellow())
-        );
+        let mut tail = format!("of {scanned} file(s)");
+        // A partial result is no more trustworthy than a clean one: qualify it
+        // with the same exclusion accounting.
+        if let Some(clause) = exclusion_clause(discovery) {
+            let _ = write!(tail, " ({clause})");
+        }
+        let _ = writeln!(out, "\n{} {tail}", phrase.if_supports_color(Stdout, |t| t.yellow()));
     }
+    push_discovery_note(&mut out, discovery);
     if verbosity.debug {
         for r in results {
             if let Some(debug) = &r.debug {
@@ -262,6 +485,15 @@ pub fn render_format_pretty(results: &[FormatResult], check: bool, verbosity: Ve
 /// changed files.
 pub fn report_format_pretty(results: &[FormatResult], check: bool, verbosity: Verbosity) -> usize {
     let (text, n) = render_format_pretty(results, check, verbosity);
+    print!("{text}");
+    n
+}
+
+/// Print the human-oriented format report for a whole [`FormatRun`] to stdout,
+/// so the summary is qualified by what discovery excluded. Returns the number of
+/// changed files.
+pub fn report_format_pretty_run(run: &FormatRun, check: bool, verbosity: Verbosity) -> usize {
+    let (text, n) = render_format_pretty_run(run, check, verbosity);
     print!("{text}");
     n
 }

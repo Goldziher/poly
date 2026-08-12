@@ -22,8 +22,11 @@ mod defaults;
 pub mod extends;
 mod hook_sources;
 mod hooks;
+mod merge;
 mod tools;
 mod typos_native;
+
+use merge::{merge_layer, merge_tables};
 
 pub use cache::{CacheConfig, HookCacheMode, ResultsCacheConfig, SccacheConfig};
 pub use commit::{CleanupRule, CommitConfig, CommitRules, ExcludeRule, MessageRule};
@@ -289,10 +292,13 @@ impl PolyConfig {
 /// recursion independent of cycle detection.
 const MAX_EXTENDS_DEPTH: usize = 32;
 
-/// Parse a single config file into a [`toml::Table`].
+/// Parse a single config file into a [`toml::Table`], rejecting a malformed
+/// merge directive here — while the offending file is still named.
 fn parse_config_file(path: &Path) -> anyhow::Result<toml::Table> {
     let text = std::fs::read_to_string(path).with_context(|| format!("reading config {}", path.display()))?;
-    toml::from_str(&text).with_context(|| format!("parsing config {}", path.display()))
+    let table: toml::Table = toml::from_str(&text).with_context(|| format!("parsing config {}", path.display()))?;
+    merge::validate_directives(&table).with_context(|| format!("parsing config {}", path.display()))?;
+    Ok(table)
 }
 
 /// Canonicalize `path` for cycle detection, falling back to the raw path when the
@@ -328,7 +334,7 @@ fn read_config_table(
                     override_path.display()
                 );
             }
-            merge_tables(&mut table, override_table);
+            merge_layer(&mut table, override_table);
         }
     }
     Ok(table)
@@ -392,10 +398,11 @@ fn build_extends_table(
             )
         })?;
         let base_table = resolve_config_with_extends(&base_path, resolver, visited, memo)?;
-        merge_tables(&mut merged, base_table);
+        merge_layer(&mut merged, base_table);
     }
-    // The declaring file overrides its bases.
-    merge_tables(&mut merged, table);
+    // The declaring file overrides its bases — adding to, not replacing, their
+    // `exclude` lists (see [`merge`]).
+    merge_layer(&mut merged, table);
     Ok(merged)
 }
 
@@ -422,7 +429,14 @@ fn resolve_rules_dirs_in_table(table: &mut toml::Table, dir: &Path) {
 /// Deserialize a (possibly cascade-merged) config table into a validated
 /// [`PolyConfig`], populating `typos_native` by searching upward from
 /// `typos_dir`.
-fn finalize(table: toml::Table, typos_dir: &Path) -> anyhow::Result<PolyConfig> {
+///
+/// The effective `[discovery] exclude` is folded into the file-scoped
+/// `[hooks.builtin]` hooks first (see [`merge::inherit_discovery_excludes`]), and
+/// the merge directives that drove all of it are stripped — they are not part of
+/// the typed schema.
+fn finalize(mut table: toml::Table, typos_dir: &Path) -> anyhow::Result<PolyConfig> {
+    merge::inherit_discovery_excludes(&mut table);
+    merge::strip_directives(&mut table);
     let raw: RawPolyConfig = table.try_into()?;
     let mut config: PolyConfig = raw.into();
     config.rules.resolve_relative_to(typos_dir);
@@ -457,22 +471,6 @@ fn table_marks_workspace_root(table: &toml::Table) -> bool {
         .and_then(|t| t.get("root"))
         .and_then(|v| v.as_bool())
         .unwrap_or(false)
-}
-
-/// Recursively deep-merge `override_table` over `base`. Two tables at the same
-/// key are merged key-by-key; any other value (scalar or array) in the override
-/// replaces the base value.
-fn merge_tables(base: &mut toml::Table, override_table: toml::Table) {
-    for (key, override_value) in override_table {
-        match (base.get_mut(&key), override_value) {
-            (Some(toml::Value::Table(base_child)), toml::Value::Table(override_child)) => {
-                merge_tables(base_child, override_child);
-            }
-            (_, override_value) => {
-                base.insert(key, override_value);
-            }
-        }
-    }
 }
 
 /// The git repository root at or above `dir`: the nearest ancestor directory

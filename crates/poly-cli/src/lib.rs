@@ -12,6 +12,7 @@ use crate::config_sources::RemoteExtendsResolver;
 pub mod cache_cmd;
 pub mod config_cmd;
 pub mod config_sources;
+pub mod doctor;
 pub mod hooks;
 pub mod migrate;
 pub mod remote;
@@ -19,6 +20,7 @@ pub mod rules_cmd;
 
 pub use cache_cmd::{CacheArgs, run_cache};
 pub use config_cmd::{ConfigArgs, run_config};
+pub use doctor::{DoctorArgs, run_doctor};
 pub use hooks::{HooksArgs, run_hooks};
 pub use migrate::{MigrateArgs, run_migrate};
 pub use rules_cmd::{RulesArgs, run_rules};
@@ -184,23 +186,26 @@ pub fn run_lint(args: LintArgs) -> ExitCode {
         Err(code) => return code,
     };
 
-    let results = match poly_core::lint(&paths, &config, &opts, common.fix, common.debug) {
-        Ok(results) => results,
+    let run = match poly_core::lint_run(&paths, &config, &opts, common.fix, common.debug) {
+        Ok(run) => run,
         Err(e) => {
             eprintln!("error: {e:#}");
             return ExitCode::from(2);
         }
     };
+    let results = &run.results;
 
     let pretty = matches!(common.format, OutputFormat::Pretty);
     let _ = match common.format {
-        OutputFormat::Pretty => report::report_lint_pretty(&results, verbosity),
+        OutputFormat::Pretty => report::report_lint_pretty_run(&run, verbosity),
         OutputFormat::Json => {
-            println!("{}", report::report_lint_json(&results));
+            println!("{}", report::report_lint_json(results));
+            report::eprint_discovery_note(&run.discovery);
             results.iter().map(|r| r.diagnostics.len()).sum()
         }
         OutputFormat::Toon => {
-            println!("{}", report::report_lint_toon(&results));
+            println!("{}", report::report_lint_toon(results));
+            report::eprint_discovery_note(&run.discovery);
             results.iter().map(|r| r.diagnostics.len()).sum()
         }
     };
@@ -227,7 +232,7 @@ pub fn run_lint(args: LintArgs) -> ExitCode {
         }
     };
 
-    if lint_has_errors(&results) || !workspace_ok {
+    if lint_has_errors(results) || !workspace_ok {
         ExitCode::from(1)
     } else {
         ExitCode::SUCCESS
@@ -275,16 +280,18 @@ pub fn run_fmt(args: FmtArgs) -> ExitCode {
     };
 
     let write = common.fix;
-    let changed = match poly_core::format(&paths, &config, &opts, write, common.debug) {
-        Ok(results) => match common.format {
-            OutputFormat::Pretty => report::report_format_pretty(&results, !write, verbosity),
+    let changed = match poly_core::format_run(&paths, &config, &opts, write, common.debug) {
+        Ok(run) => match common.format {
+            OutputFormat::Pretty => report::report_format_pretty_run(&run, !write, verbosity),
             OutputFormat::Json => {
-                println!("{}", report::report_format_json(&results));
-                results.iter().filter(|r| r.changed).count()
+                println!("{}", report::report_format_json(&run.results));
+                report::eprint_discovery_note(&run.discovery);
+                run.results.iter().filter(|r| r.changed).count()
             }
             OutputFormat::Toon => {
-                println!("{}", report::report_format_toon(&results));
-                results.iter().filter(|r| r.changed).count()
+                println!("{}", report::report_format_toon(&run.results));
+                report::eprint_discovery_note(&run.discovery);
+                run.results.iter().filter(|r| r.changed).count()
             }
         },
         Err(e) => {

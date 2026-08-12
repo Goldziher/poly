@@ -19,6 +19,9 @@ ignored = ["serde_toon_format"]
 
 [dependencies]
 anyhow.workspace = true
+# The build identity every tool response carries, so an MCP caller can tell
+# which binary answered (an MCP caller cannot run `poly --version`).
+poly-buildinfo.workspace = true
 poly-cache.workspace = true
 # Direct config access for the `config_show` tool and the network-free
 # `PolyConfig` resolution the whole-project (workspace) tools need.

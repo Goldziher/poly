@@ -145,6 +145,59 @@ fmt = { exclude = "crates/*/tests/fixtures/**" }
     assert!(!fmt_exclude.is_match(Path::new("crates/poly-core/src/lib.rs")));
 }
 
+/// `[discovery] exclude` is repo-wide policy, so every file-scoped builtin
+/// inherits it: a repo states its excluded paths once instead of pasting the
+/// same list into `[discovery]`, `lint`, `fmt`, and `file_safety`.
+#[test]
+fn builtin_hooks_inherit_the_discovery_exclude_globs() {
+    let hooks = hooks_from(
+        r#"
+[discovery]
+exclude = ["vendor/**"]
+
+[hooks.builtin]
+lint = { exclude = ["**/tags.rs"] }
+fmt = true
+file_safety = true
+"#,
+    );
+    let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
+    for id in ["lint", "fmt", "file-safety"] {
+        let hook = spec.hooks.iter().find(|h| h.id == id).unwrap();
+        let exclude = hook.exclude.as_ref().unwrap_or_else(|| panic!("{id} exclude present"));
+        assert!(exclude.is_match(Path::new("vendor/lib/x.rs")), "{id} excludes vendor");
+        assert!(!exclude.is_match(Path::new("crates/poly-cli/src/main.rs")), "{id}");
+    }
+    let lint = spec.hooks.iter().find(|h| h.id == "lint").unwrap();
+    let lint_exclude = lint.exclude.as_ref().expect("lint exclude present");
+    assert!(
+        lint_exclude.is_match(Path::new("crates/poly-hooks/src/identify/tags.rs")),
+        "the hook's own glob survives alongside the inherited one"
+    );
+}
+
+#[test]
+fn builtin_hook_exclude_mode_replace_keeps_only_its_own_globs() {
+    let hooks = hooks_from(
+        r#"
+[discovery]
+exclude = ["vendor/**"]
+
+[hooks.builtin.lint]
+exclude = ["**/tags.rs"]
+exclude_mode = "replace"
+"#,
+    );
+    let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
+    let lint = spec.hooks.iter().find(|h| h.id == "lint").unwrap();
+    let exclude = lint.exclude.as_ref().expect("lint exclude present");
+    assert!(exclude.is_match(Path::new("crates/poly-hooks/src/identify/tags.rs")));
+    assert!(
+        !exclude.is_match(Path::new("vendor/lib/x.rs")),
+        "opted out of inheriting"
+    );
+}
+
 #[test]
 fn commit_builtin_defaults_to_commit_msg_stage() {
     let hooks = hooks_from(

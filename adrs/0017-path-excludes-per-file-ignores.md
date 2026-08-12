@@ -6,6 +6,10 @@
   `[discovery] exclude` globs are unioned across the tree, each rooted at its own
   config directory, and `[per-file-ignores]` globs are resolved relative to their
   owning config's directory rather than only the run root.)
+- Updated: 2026-08-12 (the file-scoped `[hooks.builtin]` hooks — `lint`, `fmt`,
+  `file_safety` — inherit `[discovery] exclude` instead of restating it, under the
+  accumulate rule ADR 0020 defines for `exclude`; a hook opts out with
+  `exclude_mode = "replace"` in its own table.)
 
 ## Context
 

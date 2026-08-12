@@ -86,7 +86,7 @@ fn run(args: CacheArgs) -> Result<ExitCode> {
 
 /// Resolve the cache root: `--cache-dir` if given, else `[cache] dir` from the
 /// nearest config, else the default anchor walk from the current directory.
-fn resolve_root(cache_dir: Option<&Path>) -> Result<PathBuf> {
+pub(crate) fn resolve_root(cache_dir: Option<&Path>) -> Result<PathBuf> {
     if let Some(dir) = cache_dir {
         return Ok(dir.to_path_buf());
     }

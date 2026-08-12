@@ -3,19 +3,24 @@
 //! `poly lint [PATHS]…` lints; `poly fmt [PATHS]…` formats; `poly commit`
 //! lints/cleans a commit message (gitfluff). The same engine powers lint/fmt.
 
+use std::ffi::OsString;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Args, Parser, Subcommand};
 use poly_cli::{
-    CacheArgs, ConfigArgs, FmtArgs, HooksArgs, LintArgs, MigrateArgs, RulesArgs, run_cache, run_config, run_fmt,
-    run_hooks, run_lint, run_migrate, run_rules,
+    CacheArgs, ConfigArgs, DoctorArgs, FmtArgs, HooksArgs, LintArgs, MigrateArgs, RulesArgs, run_cache, run_config,
+    run_doctor, run_fmt, run_hooks, run_lint, run_migrate, run_rules,
 };
+
+/// The `doctor` subcommand, which reports PATH conflicts itself and so is
+/// exempt from the one-line warning.
+const DOCTOR_COMMAND: &str = "doctor";
 
 #[derive(Parser)]
 #[command(
     name = "poly",
-    version,
+    version = poly_buildinfo::long_version(),
     about = "Universal, zero-dependency linter & formatter",
     propagate_version = true
 )]
@@ -44,6 +49,8 @@ enum Command {
     Config(ConfigArgs),
     /// Run an MCP server over stdio (mirrors the CLI).
     Mcp(McpArgs),
+    /// Report which poly is running, every poly on PATH, and the config in effect.
+    Doctor(DoctorArgs),
 }
 
 /// Arguments for `poly mcp`. The server reads `poly.toml` per request like the
@@ -56,7 +63,17 @@ struct McpArgs {
 }
 
 fn main() -> ExitCode {
-    match Cli::parse().command {
+    let arguments: Vec<OsString> = std::env::args_os().collect();
+    // Emitted before clap parses, so `poly --version` — the command that
+    // started two false bug reports against already-fixed code — is covered
+    // too: clap prints the version and exits without ever reaching a
+    // subcommand handler. `poly doctor` is exempt because it reports the same
+    // conflict in full, with versions and a remedy.
+    if !names_doctor(&arguments) {
+        poly_cli::doctor::warn_if_conflicting();
+    }
+
+    match Cli::parse_from(arguments).command {
         Command::Lint(args) => run_lint(args),
         Command::Fmt(args) => run_fmt(args),
         Command::Commit(args) => {
@@ -83,6 +100,10 @@ fn main() -> ExitCode {
             poly_cli::init_logging();
             run_config(args)
         }
+        Command::Doctor(args) => {
+            poly_cli::init_logging();
+            run_doctor(args)
+        }
         Command::Mcp(args) => {
             poly_cli::init_logging();
             match poly_mcp::serve(args.config) {
@@ -94,6 +115,18 @@ fn main() -> ExitCode {
             }
         }
     }
+}
+
+/// Whether the argument list invokes `poly doctor`.
+///
+/// Matches the first argument that is not a flag, so `poly --no-color doctor`
+/// is recognized as well as `poly doctor`.
+fn names_doctor(arguments: &[OsString]) -> bool {
+    arguments
+        .iter()
+        .skip(1)
+        .find(|argument| !argument.to_string_lossy().starts_with('-'))
+        .is_some_and(|argument| argument == DOCTOR_COMMAND)
 }
 
 /// Run the gitfluff-backed commit-message linter and map its exit code onto an

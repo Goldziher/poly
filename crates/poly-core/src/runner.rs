@@ -10,7 +10,7 @@ use rustc_hash::FxHashSet;
 use serde::Serialize;
 
 use crate::config::{Config, Kind};
-use crate::discover::{DiscoveredFile, discover_with};
+use crate::discover::{DiscoveredFile, DiscoveryReport, discover_reporting};
 use crate::engine::{Diagnostic, Edit, FormatOutput, SourceFile};
 use crate::filter::{
     PerFileIgnores, is_format_ignored, is_generated_lockfile, is_generated_source, match_bases, relative_for_match,
@@ -118,6 +118,30 @@ pub struct FormatResult {
     pub debug: Option<RunDebug>,
 }
 
+/// A complete lint run: the per-file results plus the run-level accounting a
+/// summary needs to qualify itself.
+///
+/// [`lint`] returns only the results, which cannot express "I checked nothing,
+/// because everything was excluded" — the failure mode this type exists to fix.
+#[derive(Debug, Clone)]
+pub struct LintRun {
+    /// Per-file results, one per file that still has at least one diagnostic.
+    pub results: Vec<LintResult>,
+    /// Files the per-file tier actually read and linted.
+    pub checked: usize,
+    /// What `[discovery] exclude` / `--exclude` pruned before any of that.
+    pub discovery: DiscoveryReport,
+}
+
+/// A complete format run: the per-file results plus what discovery pruned.
+#[derive(Debug, Clone)]
+pub struct FormatRun {
+    /// Per-file results, one per discovered file.
+    pub results: Vec<FormatResult>,
+    /// What `[discovery] exclude` / `--exclude` pruned before any of that.
+    pub discovery: DiscoveryReport,
+}
+
 /// Maximum autofix passes per file: applying a fix can surface or resolve
 /// others, so re-lint until stable, but cap to guarantee termination.
 const MAX_FIX_PASSES: usize = 5;
@@ -142,10 +166,23 @@ pub fn lint(
     fix: bool,
     collect_debug: bool,
 ) -> anyhow::Result<Vec<LintResult>> {
+    Ok(lint_run(paths, config, opts, fix, collect_debug)?.results)
+}
+
+/// [`lint`], additionally returning the run-level accounting ([`LintRun`]) a
+/// self-qualifying summary needs: how many files were actually linted, and what
+/// the exclude set pruned before they were.
+pub fn lint_run(
+    paths: &[PathBuf],
+    config: &Config,
+    opts: &RunOptions,
+    fix: bool,
+    collect_debug: bool,
+) -> anyhow::Result<LintRun> {
     configure_pool(opts.jobs);
     let cache = ResultCache::open_default(!opts.no_cache)?;
     let configs = build_config_set(paths, config, opts)?;
-    let files = discover_with(paths, &configs, &opts.exclude, opts.force_exclude);
+    let (files, discovery) = discover_reporting(paths, &configs, &opts.exclude, opts.force_exclude);
     let plans = plan_by_config_language(&files, &configs, Kind::Lint);
     prefetch_tier2_grammars(&plans);
     let ignores: Vec<PerFileIgnores> = configs
@@ -153,6 +190,10 @@ pub fn lint(
         .map(|c| PerFileIgnores::compile(&c.per_file_ignores))
         .collect();
     let bases = match_bases(paths);
+    // One relaxed increment per file, so the summary can state how many files
+    // were genuinely linted rather than how many were handed to the pipeline.
+    // Negligible next to reading and parsing the file it counts.
+    let checked = std::sync::atomic::AtomicUsize::new(0);
     let mut results: Vec<LintResult> = files
         .par_iter()
         .filter_map(|f| {
@@ -167,7 +208,10 @@ pub fn lint(
                 &ignores,
                 &bases,
             ) {
-                Ok(result) => Some(result),
+                Ok(result) => {
+                    checked.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    Some(result)
+                }
                 Err(error) => {
                     tracing::warn!(path = %f.path.display(), "lint failed: {error:#}");
                     None
@@ -177,7 +221,11 @@ pub fn lint(
         .filter(|r| !r.diagnostics.is_empty())
         .collect();
     results.sort_by(|a, b| a.path.cmp(&b.path));
-    Ok(results)
+    Ok(LintRun {
+        results,
+        checked: checked.into_inner(),
+        discovery,
+    })
 }
 
 /// Build the run's [`ConfigSet`]: a single explicit config (`--config`) bypasses
@@ -202,11 +250,25 @@ pub fn format(
     write: bool,
     collect_debug: bool,
 ) -> anyhow::Result<Vec<FormatResult>> {
+    Ok(format_run(paths, config, opts, write, collect_debug)?.results)
+}
+
+/// [`format()`], additionally returning the run-level accounting ([`FormatRun`])
+/// a self-qualifying summary needs: what the exclude set pruned before the
+/// discovered files were formatted.
+pub fn format_run(
+    paths: &[PathBuf],
+    config: &Config,
+    opts: &RunOptions,
+    write: bool,
+    collect_debug: bool,
+) -> anyhow::Result<FormatRun> {
     configure_pool(opts.jobs);
     let cache = ResultCache::open_default(!opts.no_cache)?;
     let explicit: FxHashSet<&std::path::Path> = paths.iter().map(PathBuf::as_path).collect();
     let configs = build_config_set(paths, config, opts)?;
-    let files: Vec<DiscoveredFile> = discover_with(paths, &configs, &opts.exclude, opts.force_exclude)
+    let (discovered, discovery) = discover_reporting(paths, &configs, &opts.exclude, opts.force_exclude);
+    let files: Vec<DiscoveredFile> = discovered
         .into_iter()
         .filter(|f| explicit.contains(f.path.as_path()) || !is_generated_lockfile(&f.path))
         .collect();
@@ -223,7 +285,7 @@ pub fn format(
         })
         .collect();
     results.sort_by(|a, b| a.path.cmp(&b.path));
-    Ok(results)
+    Ok(FormatRun { results, discovery })
 }
 
 #[allow(clippy::too_many_arguments)]

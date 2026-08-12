@@ -2,6 +2,8 @@
 
 - Status: Accepted
 - Date: 2026-07-26
+- Updated: 2026-08-12 (array merging: `exclude` lists accumulate across inherited
+  layers instead of replacing — see "Merge semantics for arrays" below.)
 
 ## Context
 
@@ -43,9 +45,10 @@ the same vocabulary and the same trust model rather than invent a second one.
   merges on top). `extends` resolution therefore happens once per config, before the
   directory cascade sees it — a nested `poly.toml` inherits its own `extends` bases, not
   its ancestor's.
-- **Deep-merge, not concatenation.** Merging reuses the existing raw-table `merge_tables`
-  (ADR 0006/0018): scalars and arrays replace, tables merge key-by-key. `extends` lets a
-  config inherit *any* section — it is not restricted to a subset of the schema.
+- **Deep-merge, not concatenation — except `exclude`.** Merging reuses the existing raw-table
+  merge (ADR 0006/0018): scalars and arrays replace, tables merge key-by-key. `extends` lets a
+  config inherit *any* section — it is not restricted to a subset of the schema. The one
+  exception is the `exclude` key; see "Merge semantics for arrays".
 - **Transitive chains, bounded and cycle-checked.** A base may itself declare `extends`
   (org → team → repo). Chains are resolved depth-first in listed order; a cycle is a hard
   error, and resolution is capped at depth 32 to keep pathological chains from hanging a
@@ -97,6 +100,35 @@ the same vocabulary and the same trust model rather than invent a second one.
     bypass the existing per-machine opt-in ADR 0012 requires.
   - **`extends` banned in `poly.local.toml`** (above) closes the one path that would let an
     unreviewed, ungated file introduce a remote base.
+
+## Merge semantics for arrays (2026-08-12 amendment)
+
+Replace-wholesale is right for arrays that are *values* — a rule selection, `clippy_args`,
+`stages`, `[rules] dirs` — where a consumer that restates the key means to state the whole
+thing. It is wrong for `exclude`, which is a policy *floor*. Under replace, a repo that wanted
+to add one glob to an inherited `[discovery] exclude` had to restate the base's entire list,
+which froze a copy of it: later changes to the shared base never reached that repo, silently.
+The repos that most need a baseline were exactly the ones that stopped tracking it.
+
+- **`exclude` lists accumulate; every other key replaces.** When a layer declares `exclude`, its
+  globs are appended to the ones it inherits (inherited first, exact duplicates dropped). This
+  holds for `exclude` wherever it appears — `[discovery]`, `[hooks.builtin.*]`, `[hooks.<stage>]`,
+  `[tools.*]`.
+- **`exclude_mode = "replace"` opts a table out**, making its `exclude` the whole list. `"extend"`
+  is the default and may be stated explicitly. Any other value is a hard error naming the file.
+  The key drives merging only; it is stripped before the typed schema sees it.
+- **Applies to inherited layers: `extends` bases and `poly.local.toml`.** The ADR-0018 directory
+  cascade keeps replace-on-merge, because `poly-core`'s `ConfigSet` already unions each config's
+  excludes at walk time, each anchored at its own config directory; accumulating them in the
+  merge too would re-anchor every ancestor glob under every nested config directory. The rule a
+  user sees is the same in both: excludes add up.
+- **The same rule governs `[discovery] exclude` → `[hooks.builtin.*]`** (ADR 0017 amendment): the
+  file-scoped builtins inherit the repo's exclude globs rather than each restating them.
+
+This changes behavior for an existing `extends` user who restated `exclude` in order to *shrink*
+an inherited list: they now get the union, and must add `exclude_mode = "replace"` to keep the old
+result. Excluding more than intended is the conservative direction (files go unchecked rather than
+a base's exclusions silently vanishing), and `poly config show` prints the effective list.
 
 ## Consequences
 

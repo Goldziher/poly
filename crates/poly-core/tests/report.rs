@@ -6,8 +6,8 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use poly_core::report::{self, Verbosity};
-use poly_core::runner::{EngineDebug, FormatResult, LintResult, RunDebug};
-use poly_core::{Diagnostic, Edit, Severity, Span};
+use poly_core::runner::{EngineDebug, FormatResult, FormatRun, LintResult, LintRun, RunDebug};
+use poly_core::{Diagnostic, DiscoveryReport, Edit, ExcludedRule, Severity, Span};
 
 fn sample_lint_results() -> Vec<LintResult> {
     let mut metadata = BTreeMap::new();
@@ -388,4 +388,189 @@ fn distinct_skip_reasons_are_counted_individually() {
     assert!(text.contains("0 file(s) checked"), "got: {text}");
     assert!(text.contains("2 Go/Helm template syntax"), "got: {text}");
     assert!(text.contains("1 template does not render markup"), "got: {text}");
+}
+
+/// A `DiscoveryReport` describing a pruned `test_apps/` tree plus two excluded
+/// files, as a repo with `[discovery] exclude` would produce.
+fn sample_discovery() -> DiscoveryReport {
+    DiscoveryReport {
+        excluded_files: 2,
+        excluded_directories: 1,
+        excluded_explicit: 0,
+        rules: vec![
+            ExcludedRule {
+                pattern: "test_apps/**".to_string(),
+                files: 0,
+                directories: 1,
+            },
+            ExcludedRule {
+                pattern: "**/*.tf".to_string(),
+                files: 2,
+                directories: 0,
+            },
+        ],
+    }
+}
+
+/// `All formatted.` over a file set that discovery quietly pruned is the
+/// reassuring lie this reporting exists to remove: the summary now says how much
+/// was excluded, names the rules that did it, and — because a pruned directory
+/// is never descended into — says outright that the files inside it are
+/// uncounted rather than inventing a number.
+#[test]
+fn format_summary_reports_what_discovery_excluded() {
+    owo_colors::set_override(false);
+    let run = FormatRun {
+        results: vec![FormatResult {
+            path: PathBuf::from("src/clean.py"),
+            changed: false,
+            formatted: None,
+            skipped: None,
+            debug: None,
+        }],
+        discovery: sample_discovery(),
+    };
+
+    let (text, changed) = report::render_format_pretty_run(&run, true, Verbosity::default());
+
+    assert_eq!(changed, 0);
+    assert!(text.contains("All formatted."), "got: {text}");
+    assert!(text.contains("1 file(s) checked"), "got: {text}");
+    assert!(
+        text.contains("2 file(s) and 1 director(ies) excluded by config"),
+        "got: {text}"
+    );
+    assert!(text.contains("test_apps/** (1 dir(s))"), "got: {text}");
+    assert!(text.contains("**/*.tf (2 file(s))"), "got: {text}");
+    assert!(
+        text.contains("excluded directories were not walked"),
+        "the count's limits must be stated, not implied; got: {text}"
+    );
+}
+
+/// The `--force-exclude` case: every path named on the command line was
+/// excluded, so the run checked nothing. A green `All formatted.` there is the
+/// original disease, so the headline changes and the note says why.
+#[test]
+fn format_summary_explains_a_run_that_checked_nothing() {
+    owo_colors::set_override(false);
+    let run = FormatRun {
+        results: Vec::new(),
+        discovery: DiscoveryReport {
+            excluded_files: 1,
+            excluded_directories: 0,
+            excluded_explicit: 1,
+            rules: vec![ExcludedRule {
+                pattern: "**/*.tf".to_string(),
+                files: 1,
+                directories: 0,
+            }],
+        },
+    };
+
+    let (text, changed) = report::render_format_pretty_run(&run, true, Verbosity::default());
+
+    assert_eq!(changed, 0);
+    assert!(
+        !text.contains("All formatted."),
+        "a run that checked nothing must not read as a verified pass; got: {text}"
+    );
+    assert!(text.contains("Nothing was checked."), "got: {text}");
+    assert!(text.contains("0 file(s) checked"), "got: {text}");
+    assert!(
+        text.contains("1 path(s) named on the command line were dropped by --force-exclude"),
+        "got: {text}"
+    );
+}
+
+/// Files that changed are reported as before, with the exclusion note appended —
+/// a partial run is no more trustworthy than a clean one.
+#[test]
+fn format_summary_reports_exclusions_alongside_changed_files() {
+    owo_colors::set_override(false);
+    let run = FormatRun {
+        results: sample_format_results(),
+        discovery: sample_discovery(),
+    };
+
+    let (text, changed) = report::render_format_pretty_run(&run, true, Verbosity::default());
+
+    assert_eq!(changed, 1);
+    assert!(text.contains("1 file(s) will change of 2 file(s)"), "got: {text}");
+    assert!(text.contains("test_apps/** (1 dir(s))"), "got: {text}");
+}
+
+/// `poly lint` carries the identical failure mode, and gets the identical
+/// treatment: the count of what was linted plus what was pruned before it.
+#[test]
+fn lint_summary_reports_what_discovery_excluded() {
+    owo_colors::set_override(false);
+    let run = LintRun {
+        results: Vec::new(),
+        checked: 969,
+        discovery: sample_discovery(),
+    };
+
+    let (text, total) = report::render_lint_pretty_run(&run, Verbosity::default());
+
+    assert_eq!(total, 0);
+    assert!(text.contains("No issues found."), "got: {text}");
+    assert!(text.contains("969 file(s) linted"), "got: {text}");
+    assert!(
+        text.contains("2 file(s) and 1 director(ies) excluded by config"),
+        "got: {text}"
+    );
+    assert!(text.contains("**/*.tf (2 file(s))"), "got: {text}");
+}
+
+/// A lint run that excluded everything reports no issues over no files — which
+/// must not read as a clean bill of health.
+#[test]
+fn lint_summary_explains_a_run_that_linted_nothing() {
+    owo_colors::set_override(false);
+    let run = LintRun {
+        results: Vec::new(),
+        checked: 0,
+        discovery: sample_discovery(),
+    };
+
+    let (text, _) = report::render_lint_pretty_run(&run, Verbosity::default());
+
+    assert!(!text.contains("No issues found."), "got: {text}");
+    assert!(text.contains("Nothing was linted."), "got: {text}");
+    assert!(text.contains("0 file(s) linted"), "got: {text}");
+}
+
+/// With nothing excluded the summaries are unchanged — no note, no
+/// qualification, no new noise on the overwhelmingly common path.
+#[test]
+fn summaries_stay_quiet_when_nothing_was_excluded() {
+    owo_colors::set_override(false);
+    let lint = LintRun {
+        results: Vec::new(),
+        checked: 12,
+        discovery: DiscoveryReport::default(),
+    };
+    let (text, _) = report::render_lint_pretty_run(&lint, Verbosity::default());
+    assert!(text.contains("No issues found. (12 file(s) linted)"), "got: {text}");
+    assert!(!text.contains("excluded"), "got: {text}");
+
+    let format = FormatRun {
+        results: sample_format_results(),
+        discovery: DiscoveryReport::default(),
+    };
+    let (text, _) = report::render_format_pretty_run(&format, true, Verbosity::default());
+    assert!(!text.contains("excluded"), "got: {text}");
+}
+
+/// The results-only entry points keep their exact previous output, so an
+/// existing caller sees no change until it opts into the run-level report.
+#[test]
+fn results_only_renderers_are_unchanged() {
+    owo_colors::set_override(false);
+    let (text, _) = report::render_lint_pretty(&[], Verbosity::default());
+    assert_eq!(text, "No issues found.\n");
+
+    let (text, _) = report::render_format_pretty(&[], true, Verbosity::default());
+    assert_eq!(text, "All formatted. (0 file(s) checked)\n");
 }

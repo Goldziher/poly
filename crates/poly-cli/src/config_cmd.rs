@@ -97,6 +97,16 @@ fn print_summary(config: &PolyConfig, config_path: &Path, resolver: &RemoteExten
     println!("    final_newline          = {}", defaults.final_newline);
     println!("    trim_trailing_whitespace = {}", defaults.trim_trailing_whitespace);
 
+    // The effective exclude list is worth printing in full: it accumulates across
+    // `extends` bases and `poly.local.toml`, so no single file shows it.
+    print!("[discovery]  exclude = ");
+    if config.discovery.exclude.is_empty() {
+        println!("(none)");
+    } else {
+        let globs: Vec<&str> = config.discovery.exclude.iter().map(String::as_str).collect();
+        println!("{}", globs.join(", "));
+    }
+
     print_section_keys("lint", &config.lint);
     print_section_keys("fmt", &config.fmt);
 

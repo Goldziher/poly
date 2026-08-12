@@ -32,6 +32,7 @@ fs2.workspace = true
 gitfluff.workspace = true
 json5.workspace = true
 owo-colors.workspace = true
+poly-buildinfo.workspace = true
 poly-cache.workspace = true
 poly-config.workspace = true
 poly-core.workspace = true

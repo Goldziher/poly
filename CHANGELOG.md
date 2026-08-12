@@ -130,7 +130,7 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 - **A Rust inner attribute is no longer read as a shebang.** A `.rs` file starting with
   `#![deny(...)]`, `#![allow(...)]` or `#![no_std]` was treated as a script, which flagged every
   generated binding crate in `file_safety`'s shebang checks (~133 files in one reporting repo) and
-  mis-tagged files during hook file-type identification. Both call sites now look one byte past
+  mistagged files during hook file-type identification. Both call sites now look one byte past
   `#!`; `[` is not a valid interpreter path in any language, so the check is applied generally
   rather than special-cased to `.rs`.
 

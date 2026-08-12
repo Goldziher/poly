@@ -811,6 +811,299 @@ fn extends_git_source_without_cli_resolver_errors() {
     assert!(format!("{error:#}").contains("poly CLI resolver"), "{error:#}");
 }
 
+/// The bug this rule exists to fix: a repo that adds one exclude of its own used
+/// to drop every glob it inherited, freezing a copy of the base's list.
+#[test]
+fn extends_exclude_accumulates_over_the_base() {
+    let dir = tempdir().unwrap();
+    fs::write(
+        dir.path().join("base.toml"),
+        "[discovery]\nexclude = [\"vendor/**\", \"target/**\"]\n",
+    )
+    .unwrap();
+    let path = dir.path().join("poly.toml");
+    fs::write(
+        &path,
+        "extends = [\"./base.toml\"]\n[discovery]\nexclude = [\"generated/**\"]\n",
+    )
+    .unwrap();
+    let config = PolyConfig::load_file(&path).expect("load");
+    assert_eq!(
+        config.discovery.exclude.as_slice(),
+        &[
+            "vendor/**".to_string(),
+            "target/**".to_string(),
+            "generated/**".to_string()
+        ],
+        "base globs survive, consumer's are appended"
+    );
+}
+
+#[test]
+fn extends_exclude_accumulation_dedupes_and_takes_the_bare_string_form() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("base.toml"), "[discovery]\nexclude = \"vendor/**\"\n").unwrap();
+    let path = dir.path().join("poly.toml");
+    fs::write(
+        &path,
+        "extends = [\"./base.toml\"]\n[discovery]\nexclude = [\"vendor/**\", \"dist/**\"]\n",
+    )
+    .unwrap();
+    let config = PolyConfig::load_file(&path).expect("load");
+    assert_eq!(
+        config.discovery.exclude.as_slice(),
+        &["vendor/**".to_string(), "dist/**".to_string()]
+    );
+}
+
+#[test]
+fn extends_exclude_mode_replace_drops_the_inherited_globs() {
+    let dir = tempdir().unwrap();
+    fs::write(
+        dir.path().join("base.toml"),
+        "[discovery]\nexclude = [\"vendor/**\", \"target/**\"]\n",
+    )
+    .unwrap();
+    let path = dir.path().join("poly.toml");
+    fs::write(
+        &path,
+        "extends = [\"./base.toml\"]\n[discovery]\nexclude = [\"only/**\"]\nexclude_mode = \"replace\"\n",
+    )
+    .unwrap();
+    let config = PolyConfig::load_file(&path).expect("load");
+    assert_eq!(config.discovery.exclude.as_slice(), &["only/**".to_string()]);
+}
+
+/// Backward compatibility: only `exclude` accumulates. Every other array — rule
+/// selections above all — keeps the replace semantics `extends` shipped with.
+#[test]
+fn extends_non_exclude_arrays_still_replace() {
+    let dir = tempdir().unwrap();
+    fs::write(
+        dir.path().join("base.toml"),
+        r#"
+[lint.python.ruff]
+select = ["E", "F"]
+[rules]
+dirs = ["base-rules"]
+[hooks.builtin.lint]
+files = ["src/**"]
+"#,
+    )
+    .unwrap();
+    let path = dir.path().join("poly.toml");
+    fs::write(
+        &path,
+        r#"
+extends = ["./base.toml"]
+[lint.python.ruff]
+select = ["W"]
+[rules]
+dirs = ["own-rules"]
+[hooks.builtin.lint]
+files = ["crates/**"]
+"#,
+    )
+    .unwrap();
+    let config = PolyConfig::load_file(&path).expect("load");
+    let select = config.lint["python"]["ruff"]["select"]
+        .as_array()
+        .expect("select array");
+    assert_eq!(select.len(), 1, "select replaces wholesale: {select:?}");
+    assert_eq!(select[0].as_str(), Some("W"));
+    assert_eq!(
+        config.rules.dirs.len(),
+        1,
+        "rules dirs replace: {:?}",
+        config.rules.dirs
+    );
+    assert_eq!(
+        config.hooks.builtin.lint.files.as_ref().map(Patterns::as_slice),
+        Some(&["crates/**".to_string()][..]),
+        "`files` is an include list; it replaces"
+    );
+}
+
+#[test]
+fn local_override_exclude_accumulates_over_the_config() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("poly.toml");
+    fs::write(&path, "[discovery]\nexclude = [\"vendor/**\"]\n").unwrap();
+    fs::write(
+        dir.path().join("poly.local.toml"),
+        "[discovery]\nexclude = [\"scratch/**\"]\n",
+    )
+    .unwrap();
+    let config = PolyConfig::load_file(&path).expect("load");
+    assert_eq!(
+        config.discovery.exclude.as_slice(),
+        &["vendor/**".to_string(), "scratch/**".to_string()]
+    );
+}
+
+#[test]
+fn local_override_exclude_mode_replace_wins() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("poly.toml");
+    fs::write(&path, "[discovery]\nexclude = [\"vendor/**\"]\n").unwrap();
+    fs::write(
+        dir.path().join("poly.local.toml"),
+        "[discovery]\nexclude = [\"scratch/**\"]\nexclude_mode = \"replace\"\n",
+    )
+    .unwrap();
+    let config = PolyConfig::load_file(&path).expect("load");
+    assert_eq!(config.discovery.exclude.as_slice(), &["scratch/**".to_string()]);
+}
+
+/// The ADR-0018 directory cascade keeps replace-on-merge: `poly-core`'s
+/// `ConfigSet` already unions each config's excludes at walk time, anchored at
+/// its own directory, so accumulating here would re-anchor every ancestor glob
+/// under every nested config directory.
+#[test]
+fn nested_cascade_exclude_still_replaces_per_config() {
+    let dir = tempdir().unwrap();
+    fs::create_dir(dir.path().join(".git")).unwrap();
+    fs::write(
+        dir.path().join("poly.toml"),
+        "[workspace]\nroot = true\n[discovery]\nexclude = [\"target/**\"]\n",
+    )
+    .unwrap();
+    let child = dir.path().join("frontend");
+    fs::create_dir(&child).unwrap();
+    fs::write(child.join("poly.toml"), "[discovery]\nexclude = [\"dist/**\"]\n").unwrap();
+    let config = PolyConfig::resolve_for_dir(&child).expect("resolve");
+    assert_eq!(config.discovery.exclude.as_slice(), &["dist/**".to_string()]);
+}
+
+#[test]
+fn builtin_hooks_inherit_discovery_exclude() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("poly.toml");
+    fs::write(
+        &path,
+        r#"
+[discovery]
+exclude = ["vendor/**", "target/**"]
+
+[hooks.builtin]
+lint = { exclude = ["**/tags.rs"] }
+fmt = true
+file_safety = { max_added_file_kb = 1000 }
+"#,
+    )
+    .unwrap();
+    let config = PolyConfig::load_file(&path).expect("load");
+    let builtin = &config.hooks.builtin;
+    assert_eq!(
+        builtin.lint.exclude.as_ref().map(Patterns::as_slice),
+        Some(
+            &[
+                "vendor/**".to_string(),
+                "target/**".to_string(),
+                "**/tags.rs".to_string()
+            ][..]
+        ),
+        "discovery globs first, then the hook's own"
+    );
+    assert_eq!(
+        builtin.fmt.exclude.as_ref().map(Patterns::as_slice),
+        Some(&["vendor/**".to_string(), "target/**".to_string()][..]),
+        "a bare `fmt = true` still inherits"
+    );
+    assert!(builtin.fmt.enabled, "promoting the bare toggle keeps it enabled");
+    assert_eq!(
+        builtin.file_safety.exclude.as_ref().map(Patterns::as_slice),
+        Some(&["vendor/**".to_string(), "target/**".to_string()][..])
+    );
+    assert_eq!(builtin.file_safety.max_added_file_kb, 1000, "other keys untouched");
+}
+
+#[test]
+fn builtin_hook_exclude_mode_replace_opts_out_of_discovery_excludes() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("poly.toml");
+    fs::write(
+        &path,
+        r#"
+[discovery]
+exclude = ["vendor/**"]
+
+[hooks.builtin.lint]
+exclude = ["**/tags.rs"]
+exclude_mode = "replace"
+"#,
+    )
+    .unwrap();
+    let config = PolyConfig::load_file(&path).expect("load");
+    assert_eq!(
+        config.hooks.builtin.lint.exclude.as_ref().map(Patterns::as_slice),
+        Some(&["**/tags.rs".to_string()][..])
+    );
+}
+
+#[test]
+fn disabled_and_absent_builtins_inherit_nothing() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("poly.toml");
+    fs::write(
+        &path,
+        "[discovery]\nexclude = [\"vendor/**\"]\n\n[hooks.builtin]\nlint = false\n",
+    )
+    .unwrap();
+    let config = PolyConfig::load_file(&path).expect("load");
+    assert!(!config.hooks.builtin.lint.enabled, "`lint = false` stays disabled");
+    assert!(config.hooks.builtin.lint.exclude.is_none());
+    assert!(config.hooks.builtin.fmt.exclude.is_none(), "absent hook untouched");
+}
+
+/// A base can ship the whole `[hooks]` skeleton *and* the exclude list; the
+/// consumer adds one glob and the hooks still see everything.
+#[test]
+fn extends_base_excludes_reach_the_consumers_builtin_hooks() {
+    let dir = tempdir().unwrap();
+    fs::write(
+        dir.path().join("base.toml"),
+        "[discovery]\nexclude = [\"vendor/**\"]\n[hooks.builtin]\nlint = true\n",
+    )
+    .unwrap();
+    let path = dir.path().join("poly.toml");
+    fs::write(
+        &path,
+        "extends = [\"./base.toml\"]\n[discovery]\nexclude = [\"generated/**\"]\n",
+    )
+    .unwrap();
+    let config = PolyConfig::load_file(&path).expect("load");
+    assert_eq!(
+        config.hooks.builtin.lint.exclude.as_ref().map(Patterns::as_slice),
+        Some(&["vendor/**".to_string(), "generated/**".to_string()][..])
+    );
+}
+
+#[test]
+fn exclude_mode_is_accepted_without_extends_and_never_reaches_the_schema() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("poly.toml");
+    fs::write(
+        &path,
+        "[discovery]\nexclude = [\"vendor/**\"]\nexclude_mode = \"extend\"\n\
+         [hooks.builtin.lint]\nexclude_mode = \"replace\"\n",
+    )
+    .unwrap();
+    let config = PolyConfig::load_file(&path).expect("a lone directive must not trip deny_unknown_fields");
+    assert_eq!(config.discovery.exclude.as_slice(), &["vendor/**".to_string()]);
+}
+
+#[test]
+fn unknown_exclude_mode_names_the_offending_file() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("poly.toml");
+    fs::write(&path, "[discovery]\nexclude_mode = \"append\"\n").unwrap();
+    let error = PolyConfig::load_file(&path).unwrap_err();
+    let chain = format!("{error:#}");
+    assert!(chain.contains("exclude_mode"), "{chain}");
+    assert!(chain.contains("poly.toml"), "{chain}");
+}
+
 #[test]
 fn extends_in_local_override_is_rejected() {
     let dir = tempdir().unwrap();

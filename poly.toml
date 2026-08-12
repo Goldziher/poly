@@ -23,45 +23,16 @@ exclude = [
 stages = ["pre-commit"]
 
 
+# Each file-scoped builtin inherits `[discovery] exclude`; these lists carry only
+# what is specific to the hook.
 [hooks.builtin]
-lint = { exclude = [
-  "**/identify/tags.rs",
-  ".ai-rulez/**",
-  ".claude-plugin/**",
-  ".codex-plugin/**",
-  "crates/*/tests/fixtures/**",
-  "crates/poly-core/tests/typos.rs",
-  "crates/conformance/corpus/**",
-  "crates/conformance/golden/**",
-  "crates/conformance/docker/**",
-  "crates/poly-catalog/data/**",
-  "crates/*-ffi/include/*.h",
-  "packages/go/include/*.h",
-] }
+lint = true
 
-fmt = { exclude = [
-  ".ai-rulez/**",
-  ".claude-plugin/**",
-  ".codex-plugin/**",
-  "crates/*/tests/fixtures/**",
-  "crates/*/tests/snapshots/**",
-  "crates/conformance/corpus/**",
-  "crates/conformance/golden/**",
-  "crates/conformance/docker/**",
-  "crates/poly-catalog/data/**",
-  "crates/*-ffi/include/*.h",
-  "packages/go/include/*.h",
-] }
+fmt = { exclude = ["crates/*/tests/snapshots/**"] }
 
 commit = { stages = ["commit-msg"] }
 
-file_safety = { exclude = [
-  "crates/poly-cli/src/hooks/checks.rs",
-  "crates/conformance/corpus/**",
-  "crates/conformance/golden/**",
-  "crates/*-ffi/include/*.h",
-  "packages/go/include/*.h",
-] }
+file_safety = { exclude = ["crates/poly-cli/src/hooks/checks.rs"] }
 
 cargo = true
 

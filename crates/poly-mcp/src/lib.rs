@@ -14,6 +14,7 @@
 //! (e.g. `poly mcp`) stay synchronous.
 
 pub mod dto;
+pub mod identity;
 pub mod ops;
 pub mod server;
 

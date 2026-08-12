@@ -10,7 +10,7 @@ use std::process::Command;
 use std::sync::{Once, OnceLock};
 
 use poly_cli::config_sources::{self, RemoteExtendsResolver};
-use poly_config::PolyConfig;
+use poly_config::{Patterns, PolyConfig};
 
 /// Redirect `POLY_CACHE_HOME` at a process-shared tempdir exactly once. Remote
 /// sources are keyed by URL and every test uses a unique temp repo, so one shared
@@ -99,6 +99,49 @@ fn full_oid_git_base_merges_and_child_overrides() {
     // Child override wins; the base-only value survives the merge.
     assert_eq!(config.defaults.line_length, 99);
     assert!(!config.defaults.trim_trailing_whitespace);
+}
+
+/// The point of a shared baseline: a repo adds one exclude of its own and still
+/// receives the base's list — including later changes to it — instead of holding
+/// a frozen copy. `exclude_mode = "replace"` is the opt-out.
+#[test]
+fn remote_base_exclude_globs_accumulate_under_the_consumers_own() {
+    init_cache_home();
+    let (_base, url, oid) =
+        create_git_base("[discovery]\nexclude = [\"vendor/**\", \"target/**\"]\n[hooks.builtin]\nlint = true\n");
+    let source = format!("{{ git = \"{url}\", revision = \"{oid}\", file = \"poly.toml\" }}");
+
+    let (_consumer, config_path) = consumer(&format!(
+        "extends = [{source}]\n[discovery]\nexclude = [\"generated/**\"]\n"
+    ));
+    let resolver = RemoteExtendsResolver::new(config_path.parent().unwrap()).unwrap();
+    let config = PolyConfig::load_file_with(&config_path, &resolver).expect("load with remote base");
+    assert_eq!(
+        config.discovery.exclude.as_slice(),
+        &[
+            "vendor/**".to_string(),
+            "target/**".to_string(),
+            "generated/**".to_string()
+        ],
+    );
+    assert_eq!(
+        config.hooks.builtin.lint.exclude.as_ref().map(Patterns::as_slice),
+        Some(
+            &[
+                "vendor/**".to_string(),
+                "target/**".to_string(),
+                "generated/**".to_string()
+            ][..]
+        ),
+        "the base's hooks see the merged exclude list too"
+    );
+
+    let (_replacing, replacing_path) = consumer(&format!(
+        "extends = [{source}]\n[discovery]\nexclude = [\"generated/**\"]\nexclude_mode = \"replace\"\n"
+    ));
+    let resolver = RemoteExtendsResolver::new(replacing_path.parent().unwrap()).unwrap();
+    let replaced = PolyConfig::load_file_with(&replacing_path, &resolver).expect("load with remote base");
+    assert_eq!(replaced.discovery.exclude.as_slice(), &["generated/**".to_string()]);
 }
 
 #[test]

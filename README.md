@@ -249,7 +249,9 @@ trim_trailing_whitespace = true
 [discovery]
 # Gitignore-style globs pruned from the file walk on every direct
 # `poly lint` / `poly fmt` run (the CI and GitHub Action path), on top of
-# `.gitignore` and the built-in vendored/generated prune set.
+# `.gitignore` and the built-in vendored/generated prune set. The file-scoped
+# `[hooks.builtin]` hooks (`lint`, `fmt`, `file_safety`) inherit these globs, so
+# a repo states its excluded paths once.
 exclude = ["test_apps/**", "docs/snippets/**", "artifacts/**"]
 
 [fmt.python.ruff]
@@ -340,7 +342,26 @@ extends = [
 ```
 
 Bases are deep-merged underneath this file, in listed order; this `poly.toml` and then
-`poly.local.toml` always win on top. A `git` base pinned to a full commit OID needs no lock;
+`poly.local.toml` always win on top.
+
+**`exclude` lists accumulate; every other key replaces.** A repo that adds one glob of its own
+keeps every glob it inherited — and keeps receiving later changes to the base — instead of having
+to restate the base's list and freeze a copy of it:
+
+```toml
+# base: [discovery] exclude = ["vendor/**", "target/**"]
+extends = ["../baseline/poly.toml"]
+
+[discovery]
+exclude = ["generated/**"]   # effective: vendor/**, target/**, generated/**
+```
+
+To drop what you inherited and state the whole list yourself, add `exclude_mode = "replace"` next
+to the `exclude` in that table. The same rule governs `[discovery] exclude` → `[hooks.builtin.*]`
+inheritance, and it applies to `exclude` only — rule selections, `[rules] dirs`, `clippy_args` and
+every other array still replace.
+
+A `git` base pinned to a full commit OID needs no lock;
 a branch or tag ref requires running `poly config update` first, which resolves it into
 `poly-config.lock` and prints the `[hooks]`/`[tools]` the base introduces. `extends` is
 forbidden in `poly.local.toml`. Extending a remote base means trusting that repository to
@@ -533,6 +554,16 @@ explicitly.
 | `commit` | Conventional Commit + AI-trailer check on the commit message (`gitfluff`) |
 | `file_safety` | Pure-Rust checks: merge-conflict markers, added large files, private keys, case conflicts, and shebang/executable parity |
 | `cargo` | Whole-workspace `cargo clippy`, `cargo sort`, `cargo machete`, and `cargo deny` — each PATH-probed and skipped when absent |
+
+The three file-scoped builtins (`lint`, `fmt`, `file_safety`) **inherit `[discovery] exclude`** —
+a repo's excluded paths are stated once, not restated per hook. A hook's own `exclude` adds to
+the inherited globs; `exclude_mode = "replace"` in the hook's table opts out and keeps only its
+own:
+
+```toml
+[hooks.builtin.lint]
+exclude = ["**/tags.rs"]      # effective: [discovery] exclude + **/tags.rs
+```
 
 </details>
 
@@ -1087,6 +1118,33 @@ Exit codes:
 </details>
 
 <details>
+<summary><strong>doctor — which poly am I actually running?</strong></summary>
+
+```sh
+poly doctor                  # human report; exits 1 when something is actively wrong
+poly doctor --format json    # the same report, for a bug report or a CI check
+```
+
+Run this before filing a bug. It prints the resolved path of the running executable with its
+version and **build identifier**, every `poly` on `PATH` in order with the version each one
+reports, the config files in effect, and the cache directory — then exits non-zero on a real
+defect: a competing install on `PATH`, a `poly` that cannot report its own version, or a config
+that fails to load. Each finding carries the concrete remedy, including the fact that a
+cargo-installed `~/.cargo/bin/poly` needs `rm`, not `cargo uninstall poly`.
+
+`poly --version` reports the build identifier too — `0.19.7 (release build v0.19.7, release)`
+versus `0.19.7 (dev build v0.19.7-8-g18aa5e8, debug)` — so a development build carrying
+unreleased changes cannot be quoted as a release. The identifier comes from `git describe` at
+build time; outside a git checkout it reads `unknown` rather than guessing (packagers can set
+`POLY_BUILD_ID`).
+
+When another `poly` on `PATH` differs from the running one, every command warns once on stderr
+and points at `poly doctor`. A correctly-installed poly finds a single entry and prints nothing;
+`POLY_NO_SHADOW_WARN=1` silences it regardless.
+
+</details>
+
+<details>
 <summary><strong>commit, hooks, cache, and MCP</strong></summary>
 
 ```sh
@@ -1097,6 +1155,7 @@ poly cache size
 poly cache gc
 poly cache clean
 poly mcp --config /path/to/poly.toml
+poly doctor                # which poly is running, what's on PATH, config + cache
 poly migrate               # dry-run: report what would move into poly.toml
 poly migrate --write       # absorb tool configs into poly.toml, remove redundant files
 ```
@@ -1109,7 +1168,8 @@ are kept. It is a dry-run report by default; `--write` applies, `--recurse` walk
 projects, and `--verify` re-runs lint/format after writing.
 
 The MCP server is **stdio-only**. Read-only tools are `lint`, `format_check`, `cache_stats`,
-`rules`, and `config_show`; mutating tools are `lint_fix`, `format_write`, and `cache_clean`.
+`rules`, `config_show`, and `version`; mutating tools are `lint_fix`, `format_write`, and
+`cache_clean`.
 The lint/format tools accept `paths`, `exclude` (gitignore-style glob patterns, merged with
 config), and `config` (explicit config file path) parameters for full feature parity with the
 CLI. Every tool sets `read_only_hint`/`destructive_hint`/`idempotent_hint`/`open_world_hint`
@@ -1119,6 +1179,19 @@ Every tool returns **structured content**: a typed, schema-described payload in
 `CallToolResult.structured_content`, plus a text block in JSON (default) or compact
 [TOON](https://github.com/toon-format/spec) — pick per request with the `format` parameter.
 The JSON/TOON text reproduces the CLI's `--format json`/`--format toon` output exactly.
+
+Every response also carries a **`poly` identity block** — version, build id, channel,
+executable path, and pid — in both `structured_content` and `_meta`. An MCP caller has no
+`poly --version` to fall back on, so a result that doesn't say which binary produced it is
+indistinguishable from one produced by a superseded build. The `version` tool reports the same
+identity plus whether the executable is still the file on disk, and how long the server has
+been running.
+
+MCP servers are long-lived and outlive an upgrade: the running process keeps its (possibly
+deleted) executable alive, so it would otherwise serve the pre-upgrade build forever. `poly
+mcp` fingerprints its own executable at startup and re-checks it on every request — if the
+binary is replaced or deleted underneath it, every tool except `version` fails with an
+explanation until the server is restarted.
 
 `workspace_lint` and `workspace_lint_fix` run the whole-project phase (`cargo clippy`/
 `cargo-sort`/`cargo-machete`/`cargo-deny` and any configured whole-project type checkers)

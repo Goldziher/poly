@@ -10,12 +10,13 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
+use poly_mcp::identity::ExecutableWatch;
 use poly_mcp::{PolyMcpServer, ops};
-use rmcp::ServiceExt;
 use rmcp::model::{
     CallToolRequestParams, CallToolResponse, CallToolResult, ClientCapabilities, ClientInfo, GetTaskParams,
     Implementation, TaskPayload, TaskStatus,
 };
+use rmcp::{ServerHandler, ServiceExt};
 use serde_json::Value;
 
 /// Write a Python file with a real lint defect (unused import → ruff F401) into
@@ -103,6 +104,7 @@ fn registered_tools_have_expected_names_and_annotations() {
             "lint",
             "lint_fix",
             "rules",
+            "version",
             "workspace_lint",
             "workspace_lint_fix",
         ]
@@ -114,6 +116,7 @@ fn registered_tools_have_expected_names_and_annotations() {
         "cache_stats",
         "rules",
         "config_show",
+        "version",
         "workspace_lint",
     ] {
         let (read_only, destructive) = server.tool_hints(tool).unwrap();
@@ -128,9 +131,31 @@ fn registered_tools_have_expected_names_and_annotations() {
 }
 
 #[test]
+fn declared_output_schemas_include_the_identity_they_send() {
+    let server = PolyMcpServer::new(None);
+    for name in ["lint", "format_check", "cache_stats", "config_show", "version"] {
+        let tool = server.get_tool(name).unwrap();
+        let schema = tool
+            .output_schema
+            .as_ref()
+            .unwrap_or_else(|| panic!("{name} declares an output schema"));
+        let properties = schema["properties"].as_object().unwrap();
+        assert!(
+            properties.contains_key("poly"),
+            "{name}'s schema declares the `poly` identity it actually sends"
+        );
+        let required = schema["required"].as_array().unwrap();
+        assert!(
+            required.contains(&Value::from("poly")),
+            "{name}'s schema requires the identity, since every response carries it"
+        );
+    }
+}
+
+#[test]
 fn server_constructs_with_config_override() {
     let server = PolyMcpServer::new(Some(PathBuf::from("poly.toml")));
-    assert_eq!(server.tool_names().len(), 10);
+    assert_eq!(server.tool_names().len(), 11);
 }
 
 // ── Layer 3: in-process round-trips ───────────────────────────────────────
@@ -331,6 +356,220 @@ async fn workspace_lint_runs_as_async_task_and_completes() {
         .expect("structured content in task result");
     assert_eq!(structured["passed"], Value::Bool(true), "disabled phase passes");
     assert_eq!(structured["tools"], serde_json::json!([]), "no tools ran");
+
+    client.cancel().await.unwrap();
+    let _ = server_task.await;
+}
+
+// ── Layer 4: the serving binary's identity ────────────────────────────────
+
+/// Assert a tool result carries the `poly` identity in both places a caller
+/// might look: `structured_content` and the response `_meta`.
+fn assert_identifies_the_binary(result: &CallToolResult, tool: &str) {
+    let structured = result
+        .structured_content
+        .as_ref()
+        .unwrap_or_else(|| panic!("{tool} returns structured content"));
+    let identity = &structured["poly"];
+    assert_eq!(
+        identity["version"],
+        Value::from(poly_buildinfo::VERSION),
+        "{tool} names the serving version"
+    );
+    assert_eq!(
+        identity["build_id"],
+        Value::from(poly_buildinfo::build_id()),
+        "{tool} names the build id, so a dev build cannot pass for a release"
+    );
+    assert_eq!(
+        identity["channel"],
+        Value::from(poly_buildinfo::channel().as_str()),
+        "{tool} names the channel"
+    );
+    assert_eq!(
+        identity["pid"],
+        Value::from(std::process::id()),
+        "{tool} names the serving process"
+    );
+
+    let meta = result.meta.as_ref().unwrap_or_else(|| panic!("{tool} sets _meta"));
+    assert_eq!(
+        meta.0.get("poly").map(|value| &value["version"]),
+        Some(&Value::from(poly_buildinfo::VERSION)),
+        "{tool} repeats the identity in _meta"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn every_tool_response_identifies_the_binary_that_answered() {
+    let dir = fixture_with_defect();
+    let path = dir.path().join("bad.py");
+    let (client, server_task) = connect().await;
+
+    // One read-only tool of each shape: per-file, parameterless, config-driven,
+    // and the identity tool itself.
+    let lint = client
+        .call_tool(
+            CallToolRequestParams::new("lint")
+                .with_arguments(arguments(&[("paths", Value::from(vec![path.display().to_string()]))])),
+        )
+        .await
+        .unwrap();
+    assert_identifies_the_binary(&lint, "lint");
+
+    for tool in ["format_check", "cache_stats", "config_show", "version"] {
+        let result = client.call_tool(CallToolRequestParams::new(tool)).await.unwrap();
+        assert_identifies_the_binary(&result, tool);
+    }
+
+    client.cancel().await.unwrap();
+    let _ = server_task.await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn version_tool_reports_executable_health_and_uptime() {
+    let (client, server_task) = connect().await;
+    let result = client.call_tool(CallToolRequestParams::new("version")).await.unwrap();
+    let structured = result.structured_content.as_ref().expect("structured content");
+    assert_eq!(
+        structured["executable_current"],
+        Value::Bool(true),
+        "the test binary has not been replaced mid-run"
+    );
+    assert!(
+        structured["uptime_seconds"].is_u64(),
+        "uptime lets a caller tell a pre-upgrade server from a fresh one"
+    );
+    client.cancel().await.unwrap();
+    let _ = server_task.await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn adding_identity_does_not_disturb_the_existing_payload() {
+    let dir = fixture_with_defect();
+    let path = dir.path().join("bad.py");
+    let (client, server_task) = connect().await;
+    let result = client
+        .call_tool(
+            CallToolRequestParams::new("lint")
+                .with_arguments(arguments(&[("paths", Value::from(vec![path.display().to_string()]))])),
+        )
+        .await
+        .unwrap();
+
+    // The `results` array and the CLI-identical text block are unchanged; the
+    // identity is purely additive.
+    let structured = result.structured_content.as_ref().unwrap();
+    assert_eq!(structured["results"].as_array().unwrap().len(), 1);
+    let text = result.content[0].as_text().unwrap().text.clone();
+    assert!(
+        serde_json::from_str::<Value>(&text).unwrap().is_array(),
+        "the text block is still the CLI array"
+    );
+
+    client.cancel().await.unwrap();
+    let _ = server_task.await;
+}
+
+/// Wire an in-process server whose executable watch points at `executable`,
+/// so a test can replace or delete that file mid-session.
+async fn connect_watching(
+    executable: PathBuf,
+) -> (
+    rmcp::service::RunningService<rmcp::RoleClient, ClientInfo>,
+    tokio::task::JoinHandle<()>,
+) {
+    let (server_io, client_io) = tokio::io::duplex(1 << 16);
+    let (server_read, server_write) = tokio::io::split(server_io);
+    let (client_read, client_write) = tokio::io::split(client_io);
+
+    let server_task = tokio::spawn(async move {
+        let watch = ExecutableWatch::over(Some(executable));
+        let service = PolyMcpServer::with_executable_watch(None, watch)
+            .serve((server_read, server_write))
+            .await
+            .unwrap();
+        let _ = service.waiting().await;
+    });
+
+    let client_info = ClientInfo::new(
+        ClientCapabilities::builder().enable_tasks().build(),
+        Implementation::new("poly-mcp-test", "0.0.0"),
+    );
+    let client = client_info.serve((client_read, client_write)).await.unwrap();
+    (client, server_task)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_server_whose_binary_was_replaced_refuses_to_answer() {
+    let dir = tempfile::tempdir().unwrap();
+    let executable = dir.path().join("poly");
+    std::fs::write(&executable, b"the build this server started from").unwrap();
+    let (client, server_task) = connect_watching(executable.clone()).await;
+
+    // While it is still the same file, tools answer normally.
+    assert!(
+        client
+            .call_tool(CallToolRequestParams::new("cache_stats"))
+            .await
+            .is_ok(),
+        "an untouched executable serves normally"
+    );
+
+    // The upgrade: same path, different file. The running server holds the old
+    // inode and would otherwise keep answering from it forever.
+    std::fs::remove_file(&executable).unwrap();
+    std::fs::write(&executable, b"a newer build installed underneath us").unwrap();
+
+    let error = client
+        .call_tool(CallToolRequestParams::new("cache_stats"))
+        .await
+        .expect_err("a replaced executable must fail, not answer");
+    let message = error.to_string();
+    assert!(
+        message.contains("replaced on disk"),
+        "the error says what happened: {message}"
+    );
+    assert!(
+        message.contains("Restart the MCP server"),
+        "the error says what to do: {message}"
+    );
+
+    client.cancel().await.unwrap();
+    let _ = server_task.await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_version_tool_still_answers_after_the_binary_is_deleted() {
+    let dir = tempfile::tempdir().unwrap();
+    let executable = dir.path().join("poly");
+    std::fs::write(&executable, b"the build this server started from").unwrap();
+    let (client, server_task) = connect_watching(executable.clone()).await;
+
+    std::fs::remove_file(&executable).unwrap();
+
+    // Everything else is refused, but `version` must still diagnose the cause —
+    // an error with no explanation leaves the caller exactly where they started.
+    assert!(
+        client.call_tool(CallToolRequestParams::new("lint")).await.is_err(),
+        "lint is refused once the binary is gone"
+    );
+    let result = client
+        .call_tool(CallToolRequestParams::new("version"))
+        .await
+        .expect("version answers even when the binary is gone");
+    let structured = result.structured_content.as_ref().expect("structured content");
+    assert_eq!(
+        structured["executable_current"],
+        Value::Bool(false),
+        "version reports the executable as stale"
+    );
+    assert!(
+        structured["executable_status"]
+            .as_str()
+            .is_some_and(|status| status.contains("deleted from disk")),
+        "version explains why the others refused: {structured}"
+    );
 
     client.cancel().await.unwrap();
     let _ = server_task.await;
