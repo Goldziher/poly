@@ -43,7 +43,7 @@ pub struct RumdlEngine;
 /// Go/Helm-template skip, and the MD020 guard ([`GuardedMd020`]). Bump the
 /// suffix whenever any of these change so stale cached diagnostics are
 /// invalidated.
-const RUMDL_VERSION: &str = "0.2.54+defaults5-mdx-rules-tmplskip-md020guard";
+const RUMDL_VERSION: &str = "0.2.54+defaults5-mdx-rules-tmplskip-md020guard-nostructfmt";
 
 /// rumdl-proprietary stylistic rules disabled by default.
 ///
@@ -122,7 +122,15 @@ impl Engine for RumdlEngine {
             warnings
                 .iter()
                 .filter(|w| !is_format_owned(w, &format_owned))
-                .map(|w| map_warning(w, "rumdl"))
+                .map(|w| {
+                    let mut diagnostic = map_warning(w, "rumdl");
+                    if is_structural(w) {
+                        // `poly lint --fix` applies these edits, so a structural
+                        // rule must drop its fix here too — not just in `format`.
+                        diagnostic.fix.clear();
+                    }
+                    diagnostic
+                })
                 .collect()
         })
         .map_err(|e| anyhow::anyhow!("rumdl lint: {e}"))
@@ -133,7 +141,7 @@ impl Engine for RumdlEngine {
             return Ok(FormatOutput::Unchanged);
         }
         let rumdl_cfg = build_rumdl_config(cfg, &src.language);
-        let rules = guarded_rules(&rumdl_cfg, &src.content);
+        let rules = format_rules(&rumdl_cfg, &src.content);
         let coordinator = FixCoordinator::default();
         let mut content = src.content.to_string();
         coordinator
@@ -196,6 +204,17 @@ fn build_rumdl_config(cfg: &EngineConfig, language: &Language) -> RumdlConfig {
 
 /// Rule code of rumdl's "no space inside closed ATX heading" rule.
 const MD020: &str = "MD020";
+
+/// Rule codes whose autofix rewrites a document's *structure* rather than its
+/// formatting. `poly fmt` never applies these; `poly lint` still reports them,
+/// so the author decides the repair.
+///
+/// MD001 (heading increment) is the founding member. An `h1` followed by an `h3`
+/// is a real violation, but it has two equally valid repairs — demote the `h3`,
+/// or insert the missing `h2` above — and rumdl silently picks the first,
+/// rewriting the document outline. A formatter changing which sections nest
+/// under which is beyond formatting, and the choice belongs to the author.
+const STRUCTURAL_RULES: &[&str] = &["MD001"];
 
 /// Matches an ATX heading line whose *text* ends in `#`, such as `### C#`.
 ///
@@ -348,6 +367,18 @@ fn guarded_rules(config: &RumdlConfig, original: &Arc<str>) -> Vec<Box<dyn Rule>
         .collect()
 }
 
+/// The rule set `poly fmt` drives, with every [`STRUCTURAL_RULES`] entry removed.
+///
+/// `lint` and `format` previously ran the *same* rule set, so any rule with an
+/// autofix was applied by `poly fmt` regardless of what it changed. That is how a
+/// formatter came to rewrite heading levels.
+fn format_rules(config: &RumdlConfig, original: &Arc<str>) -> Vec<Box<dyn Rule>> {
+    guarded_rules(config, original)
+        .into_iter()
+        .filter(|rule| !STRUCTURAL_RULES.contains(&rule.name()))
+        .collect()
+}
+
 /// The set of rule codes (e.g. `"MD013"`) that belong to rumdl's `Whitespace`
 /// category — the formatting rules `poly fmt` owns. Built from the active rule
 /// set so it tracks the tool's own categorisation rather than a hardcoded list.
@@ -357,6 +388,16 @@ fn format_owned_rules(rules: &[Box<dyn Rule>]) -> HashSet<&'static str> {
         .filter(|rule| rule.category() == RuleCategory::Whitespace)
         .map(|rule| rule.name())
         .collect()
+}
+
+/// Whether a warning comes from a [`STRUCTURAL_RULES`] entry, whose autofix
+/// rewrites the document's structure and is therefore never applied for the
+/// author.
+fn is_structural(warning: &LintWarning) -> bool {
+    warning
+        .rule_name
+        .as_deref()
+        .is_some_and(|name| STRUCTURAL_RULES.contains(&name))
 }
 
 /// Whether a warning belongs to a formatting-owned rule and must not surface in
