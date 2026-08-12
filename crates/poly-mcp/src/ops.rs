@@ -77,6 +77,7 @@ pub fn lint_results(
     let opts = RunOptions {
         exclude: exclude.to_vec(),
         force_exclude: false,
+        fix_generated: false,
         explicit_config,
         ..RunOptions::default()
     };
@@ -97,6 +98,7 @@ pub fn format_results(
     let opts = RunOptions {
         exclude: exclude.to_vec(),
         force_exclude: false,
+        fix_generated: false,
         explicit_config,
         ..RunOptions::default()
     };

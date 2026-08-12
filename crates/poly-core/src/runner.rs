@@ -12,7 +12,9 @@ use serde::Serialize;
 use crate::config::{Config, Kind};
 use crate::discover::{DiscoveredFile, discover_with};
 use crate::engine::{Diagnostic, Edit, FormatOutput, SourceFile};
-use crate::filter::{PerFileIgnores, is_format_ignored, is_generated_lockfile, match_bases, relative_for_match};
+use crate::filter::{
+    PerFileIgnores, is_format_ignored, is_generated_lockfile, is_generated_source, match_bases, relative_for_match,
+};
 use crate::resolve::ConfigSet;
 
 mod plan;
@@ -35,6 +37,10 @@ pub struct RunOptions {
     /// repo's `[discovery] exclude` is silently inert exactly where it matters
     /// most. On for the hook path, off for a direct CLI invocation.
     pub force_exclude: bool,
+    /// Apply `--fix` to machine-generated files too. Off by default: a fix there
+    /// is reverted by the next generation run, and can silence the diagnostic
+    /// that was the only evidence of a generator bug.
+    pub fix_generated: bool,
     /// When `true`, the caller supplied an explicit `--config <path>`: use that
     /// single config for every file and skip hierarchical (nested `poly.toml`)
     /// resolution (ADR 0018). Default `false` — scan for nested configs.
@@ -79,6 +85,10 @@ pub struct LintResult {
     pub path: PathBuf,
     /// Diagnostics from all backends for this file.
     pub diagnostics: Vec<Diagnostic>,
+    /// Set when `--fix` was requested but withheld because the file announces
+    /// itself as machine-generated. The diagnostics are still reported.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub fix_withheld_generated: bool,
     /// Debug data (cache hit/miss + timing), present only under `--debug`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub debug: Option<RunDebug>,
@@ -145,15 +155,25 @@ pub fn lint(
     let bases = match_bases(paths);
     let mut results: Vec<LintResult> = files
         .par_iter()
-        .filter_map(
-            |f| match lint_one(f, &plans, &cache, fix, collect_debug, &configs, &ignores, &bases) {
+        .filter_map(|f| {
+            match lint_one(
+                f,
+                &plans,
+                &cache,
+                fix,
+                opts.fix_generated,
+                collect_debug,
+                &configs,
+                &ignores,
+                &bases,
+            ) {
                 Ok(result) => Some(result),
                 Err(error) => {
                     tracing::warn!(path = %f.path.display(), "lint failed: {error:#}");
                     None
                 }
-            },
-        )
+            }
+        })
         .filter(|r| !r.diagnostics.is_empty())
         .collect();
     results.sort_by(|a, b| a.path.cmp(&b.path));
@@ -212,6 +232,7 @@ fn lint_one(
     plans: &PlanMap,
     cache: &ResultCache,
     fix: bool,
+    fix_generated: bool,
     collect_debug: bool,
     configs: &ConfigSet,
     ignores: &[PerFileIgnores],
@@ -230,7 +251,15 @@ fn lint_one(
     let (mut diagnostics, mut debug) = lint_content(f, plans, cache, &original, collect_debug)?;
     suppress(&mut diagnostics);
 
-    if fix {
+    // Report on generated files but never rewrite them. A fix there is churn the
+    // next generation run reverts, and it can silence the diagnostic that was the
+    // only evidence of a generator bug — `--fix-generated` opts back in.
+    let generated = fix && !fix_generated && is_generated_source(&original);
+    if generated {
+        tracing::debug!(path = %f.path.display(), "skipping --fix on generated file");
+    }
+
+    if fix && !generated {
         let mut content = original.clone();
         for _ in 0..MAX_FIX_PASSES {
             let edit_groups: Vec<&[Edit]> = diagnostics
@@ -257,6 +286,7 @@ fn lint_one(
     Ok(LintResult {
         path: f.path.clone(),
         diagnostics,
+        fix_withheld_generated: generated,
         debug,
     })
 }

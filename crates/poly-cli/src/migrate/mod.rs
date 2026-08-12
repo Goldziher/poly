@@ -344,6 +344,7 @@ fn verify(dir: &Path) -> Result<()> {
         jobs: None,
         exclude: Vec::new(),
         force_exclude: false,
+        fix_generated: false,
         explicit_config: false,
         config_resolver: None,
     };

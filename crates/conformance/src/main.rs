@@ -238,6 +238,7 @@ fn poly_fmt_output(file: &Path) -> Result<String> {
         jobs: Some(1),
         exclude: Vec::new(),
         force_exclude: false,
+        fix_generated: false,
         explicit_config: true,
         config_resolver: None,
     };

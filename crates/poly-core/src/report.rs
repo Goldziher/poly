@@ -144,6 +144,17 @@ pub fn render_lint_pretty(results: &[LintResult], verbosity: Verbosity) -> (Stri
             );
         }
     }
+    // Withholding a fix must be visible: an invisible skip is the same failure as
+    // an invisible fix, just in the other direction.
+    let withheld = results.iter().filter(|r| r.fix_withheld_generated).count();
+    if withheld > 0 {
+        let _ = writeln!(
+            out,
+            "{}",
+            format!("{withheld} generated file(s) not fixed (pass `--fix-generated` to include them).")
+                .if_supports_color(Stdout, |t| t.yellow())
+        );
+    }
     (out, total)
 }
 

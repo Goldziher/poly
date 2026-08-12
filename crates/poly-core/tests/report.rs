@@ -17,6 +17,7 @@ fn sample_lint_results() -> Vec<LintResult> {
     vec![
         LintResult {
             path: PathBuf::from("src/main.py"),
+            fix_withheld_generated: false,
             diagnostics: vec![
                 Diagnostic {
                     engine: "ruff".to_string(),
@@ -55,6 +56,7 @@ fn sample_lint_results() -> Vec<LintResult> {
         },
         LintResult {
             path: PathBuf::from("src/clean.py"),
+            fix_withheld_generated: false,
             diagnostics: vec![],
             debug: None,
         },
@@ -116,6 +118,7 @@ fn lint_pretty_reports_autofixable_count() {
     owo_colors::set_override(false);
     let results = vec![LintResult {
         path: PathBuf::from("src/main.py"),
+        fix_withheld_generated: false,
         diagnostics: vec![
             Diagnostic {
                 engine: "ruff".to_string(),
@@ -184,6 +187,7 @@ fn lint_pretty_reports_all_findings_fixable_when_every_diagnostic_has_a_fix() {
     };
     let results = vec![LintResult {
         path: PathBuf::from("src/main.py"),
+        fix_withheld_generated: false,
         diagnostics: vec![fixable_diagnostic("F401"), fixable_diagnostic("F811")],
         debug: None,
     }];
@@ -273,6 +277,7 @@ fn lint_pretty_debug_renders_engine_timing_block() {
 
     let results = vec![LintResult {
         path: PathBuf::from("src/main.py"),
+        fix_withheld_generated: false,
         diagnostics: vec![Diagnostic {
             engine: "ruff".to_string(),
             code: Some("E501".to_string()),

@@ -63,6 +63,7 @@ fn run_and_group() -> HashMap<String, Vec<Diagnostic>> {
         jobs: Some(2),
         exclude: Vec::new(),
         force_exclude: false,
+        fix_generated: false,
         explicit_config: true,
         config_resolver: None,
     };

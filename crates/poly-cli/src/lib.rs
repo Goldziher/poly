@@ -119,6 +119,15 @@ pub struct CommonArgs {
     #[arg(long)]
     pub force_exclude: bool,
 
+    /// Apply `--fix` to machine-generated files too.
+    ///
+    /// By default `--fix` reports on a file marked `DO NOT EDIT` / `@generated`
+    /// but does not rewrite it: the change is reverted by the next generation
+    /// run, and it can silence the diagnostic that was the only evidence of a
+    /// generator bug.
+    #[arg(long)]
+    pub fix_generated: bool,
+
     /// Emit debug data: per-engine cache hit/miss and timing (shown in `pretty`,
     /// attached to `json`/`toon`), and raise log verbosity to `debug` on stderr.
     #[arg(long)]
@@ -331,6 +340,7 @@ fn prepare(common: &CommonArgs) -> Result<(Vec<PathBuf>, Config, RunOptions), Ex
         jobs: common.jobs,
         exclude: common.exclude.clone(),
         force_exclude: common.force_exclude || config.force_exclude,
+        fix_generated: common.fix_generated,
         explicit_config: common.config.is_some(),
         config_resolver: Some(resolver),
     };
@@ -393,6 +403,7 @@ mod tests {
         LintResult {
             path: PathBuf::from("test.rs"),
             diagnostics,
+            fix_withheld_generated: false,
             debug: None,
         }
     }

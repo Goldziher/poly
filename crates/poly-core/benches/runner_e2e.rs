@@ -64,6 +64,7 @@ fn bench_runner(c: &mut Criterion) {
         jobs: None,
         exclude: Vec::new(),
         force_exclude: false,
+        fix_generated: false,
         explicit_config: true,
         config_resolver: None,
     };

@@ -24,6 +24,7 @@ fn config_ignoring(glob: &str, rules: &[&str]) -> Config {
 fn opts() -> RunOptions {
     RunOptions {
         force_exclude: false,
+        fix_generated: false,
         no_cache: true,
         jobs: Some(1),
         exclude: Vec::new(),

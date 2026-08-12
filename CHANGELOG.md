@@ -44,6 +44,25 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ### Changed (behaviour)
 
+- **`poly lint --fix` no longer rewrites machine-generated files.** Files whose opening lines carry
+  a `DO NOT EDIT` / `@generated` / `auto-generated` / `:hash:` marker are still **reported** on —
+  that is how a generator bug gets noticed — but the fix is withheld, because rewriting generated
+  output is churn the next generation run reverts, and it can destroy the evidence.
+
+  The reported case: ruff's `F841` fired on an unused binding in a generated test, and that binding
+  was the only signal that 39 generated tests across 8 files called an API and asserted nothing.
+  Running the obvious `poly lint --fix` rewrote it and turned a correct diagnostic about a real
+  upstream defect into a clean lint pass.
+
+  The withheld fix is reported rather than silent:
+
+  ```
+  1 generated file(s) not fixed (pass `--fix-generated` to include them).
+  ```
+
+  `poly fmt` is unaffected — formatting generated output is a deliberate workflow in many repos, and
+  whitespace changes do not destroy diagnostics.
+
 - **`poly lint <paths>` no longer runs the whole-project phase.** Explicit path arguments now scope
   the run to the per-file tier; `poly lint` with no paths is unchanged and still runs
   `cargo clippy` and the other whole-project tools. Previously a path-scoped lint silently escalated
