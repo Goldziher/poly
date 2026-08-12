@@ -50,6 +50,19 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ### Fixed
 
+- **`uncomment --fix` no longer deletes prose that continues across lines.** A comment ending
+  mid-clause — typically on `;` — was classified as commented-out code, so `poly lint --fix`
+  removed it. In a reported Helm values file this deleted
+
+  ```yaml
+  # Chromiumoxide engine still gets built because browserEndpoint is set;
+  ```
+
+  from the middle of a four-line paragraph, leaving text that still reads as valid English with its
+  explanation silently gone — data loss that passes CI and survives review. `code_only` judged prose
+  by its closing character alone; a long, overwhelmingly word-shaped line is now treated as prose
+  regardless of how it ends. Genuinely commented-out code ending in `;` is still reported.
+
 - **`poly fmt` no longer reports a file it declined to inspect as one it verified.** The summary
   counted every discovered file as "scanned", including files a backend skipped on purpose — YAML
   carrying Go/Helm template actions, and (see below) templates that do not render markup. A skipped

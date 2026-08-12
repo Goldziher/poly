@@ -259,3 +259,40 @@ fn code_only_still_flags_commented_out_python_code() {
         "a commented-out Python call is still reported"
     );
 }
+
+/// A sentence continued across lines ends mid-clause, often on `;`. Judging
+/// prose by its closing character alone deleted this line from a Helm values
+/// file, leaving the surrounding paragraph reading as valid English with its
+/// explanation silently gone — data loss that survives review.
+#[test]
+fn code_only_ignores_prose_continued_across_lines() {
+    let yaml = concat!(
+        "engine:\n",
+        "    # Default backend when the per-request override isn't set. Native is\n",
+        "    # lighter (in-process, no Chrome dep) and is our recommended default.\n",
+        "    # Chromiumoxide engine still gets built because browserEndpoint is set;\n",
+        "    # both engines coexist on every pod.\n",
+        "    browserBackend: \"native\"\n",
+    );
+
+    let diagnostics = UncommentEngine
+        .lint(&src("values.yaml", Language::Yaml, yaml), &cfg("enabled = true\n"))
+        .expect("lint");
+
+    assert!(
+        diagnostics.is_empty(),
+        "prose ending in ';' must not be reported as removable code"
+    );
+}
+
+/// The guard must not stop poly noticing genuinely commented-out code.
+#[test]
+fn code_only_still_flags_commented_out_code_ending_in_semicolon() {
+    let rust = "fn main() {\n    // let unused = compute(a, b);\n}\n";
+
+    let diagnostics = UncommentEngine
+        .lint(&src("main.rs", Language::Rust, rust), &cfg("enabled = true\n"))
+        .expect("lint");
+
+    assert!(!diagnostics.is_empty(), "commented-out code must still be reported");
+}

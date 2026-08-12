@@ -51,7 +51,7 @@ use crate::language::Language;
 /// Cache-key version: the wrapped crate version plus a marker for this backend's
 /// own mapping logic. Bump whenever `uncomment` is updated OR the diagnostic/edit
 /// mapping below changes (either alters output and must bust the cache).
-const UNCOMMENT_VERSION: &str = "uncomment-3.5.2+map2-codeonly";
+const UNCOMMENT_VERSION: &str = "uncomment-3.5.2+map2-codeonly+prose2";
 
 thread_local! {
     /// One `Processor` per rayon worker thread. The processor owns a reusable
@@ -282,22 +282,47 @@ fn is_machine_header(line: &str) -> bool {
 /// alphabetic words. Real commented-out code ends in `;`, `)` or `}`, so this
 /// only rejects prose.
 fn is_prose_sentence(line: &str) -> bool {
-    if !line.ends_with(['.', '!', '?']) {
-        return false;
-    }
     let words: Vec<&str> = line.split_whitespace().collect();
-    if words.len() < 3 {
+    let wordish = words.iter().filter(|word| is_wordish(word)).count();
+
+    // A sentence continued across lines does not end in terminal punctuation —
+    // it ends mid-clause, often on `;` or `,`. Judging prose by the closing
+    // character alone deleted this line from a Helm values file:
+    //
+    //   # Chromiumoxide engine still gets built because browserEndpoint is set;
+    //
+    // It ends in `;`, so it was read as commented-out code and `--fix` removed
+    // it, leaving the surrounding paragraph still reading as valid English with
+    // its explanation silently gone. A long, overwhelmingly word-shaped line is
+    // prose regardless of how it ends.
+    if words.len() >= PROSE_MIN_WORDS && wordish * 10 >= words.len() * 8 {
+        return true;
+    }
+
+    // Shorter lines keep the stricter original rule: real commented-out code
+    // rarely ends in a full stop.
+    if !line.ends_with(['.', '!', '?']) || words.len() < 3 {
         return false;
     }
-    let wordish = words
-        .iter()
-        .filter(|word| {
-            word.chars()
-                .all(|c| c.is_ascii_alphabetic() || matches!(c, '.' | ',' | '\'' | '-' | '!' | '?'))
-        })
-        .count();
     // per-word alphabetic test (parentheses, `;`) and stay classified as code.
     wordish * 10 >= words.len() * 7
+}
+
+/// Words below this count are too short to judge as prose without terminal
+/// punctuation — `return nil, err` would otherwise qualify.
+const PROSE_MIN_WORDS: usize = 6;
+
+/// Whether a whitespace-delimited token reads as a natural-language word:
+/// letters plus the punctuation that legitimately attaches to one. Notably
+/// excludes `(`, `)`, `=`, `{`, `}` and `_`, which are the shapes that make a
+/// token look like source rather than English.
+fn is_wordish(word: &str) -> bool {
+    let mut chars = word.chars().peekable();
+    if chars.peek().is_none() {
+        return false;
+    }
+    word.chars()
+        .all(|c| c.is_ascii_alphabetic() || matches!(c, '.' | ',' | '\'' | '-' | '!' | '?' | ';' | ':'))
 }
 
 /// Whether the line carries a high-confidence code signal. Bare `=`/`:` are
