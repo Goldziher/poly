@@ -40,6 +40,7 @@ fn nested_per_file_ignores_apply_only_to_their_subtree() {
         no_cache: true,
         jobs: Some(1),
         exclude: Vec::new(),
+        force_exclude: false,
         explicit_config: false,
         config_resolver: None,
     };
@@ -83,6 +84,7 @@ fn single_root_repo_reports_unsuppressed_diagnostic() {
         no_cache: true,
         jobs: Some(1),
         exclude: Vec::new(),
+        force_exclude: false,
         explicit_config: false,
         config_resolver: None,
     };

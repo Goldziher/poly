@@ -110,6 +110,15 @@ pub struct CommonArgs {
     #[arg(long)]
     pub verbose: bool,
 
+    /// Apply `[discovery] exclude` to explicitly named files as well as to the
+    /// directory walk.
+    ///
+    /// Naming a file normally checks it regardless of the exclude set. A hook is
+    /// always handed explicit staged paths, so it passes this to keep the repo's
+    /// excludes in force. Equivalent to `[discovery] force_exclude = true`.
+    #[arg(long)]
+    pub force_exclude: bool,
+
     /// Emit debug data: per-engine cache hit/miss and timing (shown in `pretty`,
     /// attached to `json`/`toon`), and raise log verbosity to `debug` on stderr.
     #[arg(long)]
@@ -321,6 +330,7 @@ fn prepare(common: &CommonArgs) -> Result<(Vec<PathBuf>, Config, RunOptions), Ex
         no_cache: common.no_cache,
         jobs: common.jobs,
         exclude: common.exclude.clone(),
+        force_exclude: common.force_exclude || config.force_exclude,
         explicit_config: common.config.is_some(),
         config_resolver: Some(resolver),
     };

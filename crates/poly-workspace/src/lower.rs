@@ -174,7 +174,7 @@ fn append_builtins(
             config_stage,
         )?
     {
-        let mut hook = Hook::run("lint", format!("{poly} lint --no-workspace"));
+        let mut hook = Hook::run("lint", format!("{poly} lint --no-workspace --force-exclude"));
         let (files, exclude) = builtin_globs(hooks.builtin.lint.files.as_ref(), hooks.builtin.lint.exclude.as_ref())?;
         hook.files = files;
         hook.exclude = exclude;
@@ -189,7 +189,7 @@ fn append_builtins(
             config_stage,
         )?
     {
-        let mut hook = Hook::run("fmt", format!("{poly} fmt --check"));
+        let mut hook = Hook::run("fmt", format!("{poly} fmt --check --force-exclude"));
         let (files, exclude) = builtin_globs(hooks.builtin.fmt.files.as_ref(), hooks.builtin.fmt.exclude.as_ref())?;
         hook.files = files;
         hook.exclude = exclude;

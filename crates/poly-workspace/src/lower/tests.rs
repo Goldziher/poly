@@ -112,7 +112,13 @@ fmt = true
     let HookCommand::Run(line) = &spec.hooks[0].command else {
         panic!("expected run command");
     };
-    assert!(line.ends_with(" lint --no-workspace"), "unexpected line: {line}");
+    // `--force-exclude` is not optional here: a hook is handed staged paths
+    // rather than deliberately named ones, so without it the repo's
+    // `[discovery] exclude` is silently inert in the one place it matters most.
+    assert!(
+        line.ends_with(" lint --no-workspace --force-exclude"),
+        "unexpected line: {line}"
+    );
     assert!(line.contains("/opt/poly/bin/poly"));
     assert!(spec.hooks[0].pass_filenames);
 }

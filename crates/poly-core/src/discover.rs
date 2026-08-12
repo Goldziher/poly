@@ -90,9 +90,34 @@ fn detect(path: &std::path::Path) -> Option<Language> {
 /// are pruned from the walk in addition to `.gitignore` and the built-in
 /// `PRUNED_DIRECTORIES` set.
 pub fn discover(paths: &[PathBuf], configs: &ConfigSet, extra: &[String]) -> Vec<DiscoveredFile> {
+    discover_with(paths, configs, extra, false)
+}
+
+/// [`discover`], with control over whether excludes also apply to explicitly
+/// named files.
+///
+/// A directory walk prunes excluded paths, but a file named directly on the
+/// command line was always kept — reasonable when a human names a file, wrong in
+/// a hook, which is *always* handed explicit staged paths and never names
+/// anything deliberately. A repo excluding `**/*.tf` from discovery therefore
+/// found the exclude silently inert in its pre-commit hook, and poly reformatted
+/// Terraform that `terraform fmt` then rejected.
+///
+/// `force_exclude` applies the exclude set to explicit paths too. It is on for
+/// the hook path and off for a direct CLI invocation, matching what ruff and
+/// black settled on for the same reason.
+pub fn discover_with(
+    paths: &[PathBuf],
+    configs: &ConfigSet,
+    extra: &[String],
+    force_exclude: bool,
+) -> Vec<DiscoveredFile> {
     let mut out = Vec::new();
     for root in paths {
         let exclude = configs.walk_excludes(root, extra);
+        if force_exclude && root.is_file() && is_excluded_file(root, &exclude) {
+            continue;
+        }
         let mut builder = WalkBuilder::new(root);
         builder
             .hidden(false)
@@ -120,6 +145,20 @@ pub fn discover(paths: &[PathBuf], configs: &ConfigSet, extra: &[String]) -> Vec
         }
     }
     out
+}
+
+/// Whether an explicitly named file matches the `[discovery] exclude` set.
+///
+/// The globs are written relative to the config's directory, so they are matched
+/// from the current directory — the same frame of reference a user writing
+/// `terraform/**` in `poly.toml` at the repo root is using. A file outside that
+/// frame simply does not match, which is the safe direction: it gets checked.
+fn is_excluded_file(path: &std::path::Path, exclude: &[String]) -> bool {
+    let base = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let Some(overrides) = build_excludes(&base, exclude) else {
+        return false;
+    };
+    overrides.matched(path, false).is_ignore()
 }
 
 /// Build an [`ignore::overrides::Override`] from `[discovery] exclude` globs,

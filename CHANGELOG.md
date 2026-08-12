@@ -29,6 +29,19 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   produced by the previous backend versions are invalidated rather than reused. The `version_audit`
   test enforces this contract and now passes against the refreshed lockfile.
 
+### Added
+
+- **`--force-exclude` / `[discovery] force_exclude`, applied automatically in the hook path.**
+  `[discovery] exclude` pruned the directory walk but never applied to a file named explicitly on
+  the command line. That is right when a human names a file and wrong in a hook, which is *always*
+  handed explicit staged paths — so a repo excluding `**/*.tf` found the exclude silently inert in
+  its own pre-commit hook, poly reformatted 519 lines of Terraform, and `terraform fmt` then
+  rejected the result, leaving the repo unable to be green under both tools.
+
+  The generated `lint` and `fmt` builtin hooks now pass `--force-exclude`, so a repo's excludes hold
+  where they matter without any config change. A direct CLI invocation is unchanged: naming a file
+  still checks it.
+
 ### Changed (behaviour)
 
 - **`poly lint <paths>` no longer runs the whole-project phase.** Explicit path arguments now scope

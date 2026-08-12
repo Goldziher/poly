@@ -76,6 +76,7 @@ pub fn lint_results(
     let resolved = resolve_paths(paths);
     let opts = RunOptions {
         exclude: exclude.to_vec(),
+        force_exclude: false,
         explicit_config,
         ..RunOptions::default()
     };
@@ -95,6 +96,7 @@ pub fn format_results(
     let resolved = resolve_paths(paths);
     let opts = RunOptions {
         exclude: exclude.to_vec(),
+        force_exclude: false,
         explicit_config,
         ..RunOptions::default()
     };

@@ -343,6 +343,7 @@ fn verify(dir: &Path) -> Result<()> {
         no_cache: true,
         jobs: None,
         exclude: Vec::new(),
+        force_exclude: false,
         explicit_config: false,
         config_resolver: None,
     };

@@ -20,6 +20,7 @@ fn lint_does_not_flag_trailing_whitespace() {
         no_cache: true,
         jobs: Some(1),
         exclude: Vec::new(),
+        force_exclude: false,
         explicit_config: true,
         config_resolver: None,
     };
@@ -41,6 +42,7 @@ fn format_check_does_not_write_but_reports_change() {
         no_cache: true,
         jobs: Some(1),
         exclude: Vec::new(),
+        force_exclude: false,
         explicit_config: true,
         config_resolver: None,
     };
@@ -60,6 +62,7 @@ fn format_write_is_idempotent() {
         no_cache: true,
         jobs: Some(1),
         exclude: Vec::new(),
+        force_exclude: false,
         explicit_config: true,
         config_resolver: None,
     };
@@ -86,6 +89,7 @@ fn format_write_preserves_the_executable_bit() {
         no_cache: true,
         jobs: Some(1),
         exclude: Vec::new(),
+        force_exclude: false,
         explicit_config: true,
         config_resolver: None,
     };
@@ -113,6 +117,7 @@ fn lint_fix_applies_autofixes_and_dry_run_does_not() {
         no_cache: true,
         jobs: Some(1),
         exclude: Vec::new(),
+        force_exclude: false,
         explicit_config: true,
         config_resolver: None,
     };
@@ -176,6 +181,7 @@ fn lint_json_output_schema_conforms_to_diagnostic_contract() {
         no_cache: true,
         jobs: Some(1),
         exclude: Vec::new(),
+        force_exclude: false,
         explicit_config: true,
         config_resolver: None,
     };
@@ -266,4 +272,44 @@ fn lint_json_output_schema_conforms_to_diagnostic_contract() {
         !d.contains_key("metadata"),
         "'metadata' must be absent when empty; got: {d:?}"
     );
+}
+
+/// A directory walk prunes excluded paths, but a file named on the command line
+/// was always kept. That is right when a human names a file and wrong in a hook,
+/// which is *always* handed explicit staged paths — so a repo excluding
+/// `**/*.tf` found the exclude silently inert in its pre-commit hook, and poly
+/// reformatted Terraform that `terraform fmt` then rejected.
+#[test]
+fn force_exclude_applies_the_exclude_set_to_explicitly_named_files() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    std::fs::write(root.join("poly.toml"), "[discovery]\nexclude = [\"**/*.tf\"]\n").expect("write config");
+    std::fs::create_dir_all(root.join("terraform")).expect("mkdir");
+    let excluded = root.join("terraform/main.tf");
+    std::fs::write(&excluded, "variable   \"a\"   {}\n").expect("write tf");
+    let kept = root.join("app.py");
+    std::fs::write(&kept, "x   =    1\n").expect("write py");
+
+    let config = poly_core::Config {
+        exclude: vec!["**/*.tf".to_string()],
+        ..poly_core::Config::default()
+    };
+    let run = |paths: &[std::path::PathBuf], force: bool| {
+        let opts = RunOptions {
+            no_cache: true,
+            force_exclude: force,
+            ..RunOptions::default()
+        };
+        poly_core::format(paths, &config, &opts, false, false).expect("format")
+    };
+
+    // Naming the file explicitly checks it by default — that behaviour stands.
+    assert_eq!(run(std::slice::from_ref(&excluded), false).len(), 1);
+
+    // Under force_exclude the same explicit path is excluded...
+    assert!(run(std::slice::from_ref(&excluded), true).is_empty());
+
+    // ...while a path the exclude set does not match is still checked, so this
+    // cannot be mistaken for "force_exclude drops everything".
+    assert_eq!(run(std::slice::from_ref(&kept), true).len(), 1);
 }

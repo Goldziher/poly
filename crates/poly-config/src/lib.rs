@@ -153,6 +153,13 @@ pub struct DiscoveryConfig {
     /// an array (`exclude = "test_apps/**"` or `exclude = ["a/**", "b/**"]`),
     /// matching the `files`/`exclude` shape used throughout `[hooks]`/`[tools]`.
     pub exclude: Patterns,
+    /// Apply `exclude` to explicitly named files too, not just to the walk.
+    ///
+    /// Off by default: naming a file on the command line should check it. The
+    /// hook path turns this on, because a hook is handed staged paths rather
+    /// than deliberate ones, and without it a repo's excludes are silently
+    /// inert exactly where they matter most.
+    pub force_exclude: bool,
 }
 
 impl PolyConfig {

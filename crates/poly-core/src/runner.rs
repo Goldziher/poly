@@ -10,7 +10,7 @@ use rustc_hash::FxHashSet;
 use serde::Serialize;
 
 use crate::config::{Config, Kind};
-use crate::discover::{DiscoveredFile, discover};
+use crate::discover::{DiscoveredFile, discover_with};
 use crate::engine::{Diagnostic, Edit, FormatOutput, SourceFile};
 use crate::filter::{PerFileIgnores, is_format_ignored, is_generated_lockfile, match_bases, relative_for_match};
 use crate::resolve::ConfigSet;
@@ -29,6 +29,12 @@ pub struct RunOptions {
     /// Extra gitignore-style exclude globs supplied at call time (CLI `--exclude`
     /// / MCP `exclude`), merged with the config's `[discovery] exclude`.
     pub exclude: Vec<String>,
+    /// Apply the exclude set to explicitly named files as well as to the walk.
+    ///
+    /// A hook is always handed explicit staged paths, so without this the
+    /// repo's `[discovery] exclude` is silently inert exactly where it matters
+    /// most. On for the hook path, off for a direct CLI invocation.
+    pub force_exclude: bool,
     /// When `true`, the caller supplied an explicit `--config <path>`: use that
     /// single config for every file and skip hierarchical (nested `poly.toml`)
     /// resolution (ADR 0018). Default `false` — scan for nested configs.
@@ -129,7 +135,7 @@ pub fn lint(
     configure_pool(opts.jobs);
     let cache = ResultCache::open_default(!opts.no_cache)?;
     let configs = build_config_set(paths, config, opts)?;
-    let files = discover(paths, &configs, &opts.exclude);
+    let files = discover_with(paths, &configs, &opts.exclude, opts.force_exclude);
     let plans = plan_by_config_language(&files, &configs, Kind::Lint);
     prefetch_tier2_grammars(&plans);
     let ignores: Vec<PerFileIgnores> = configs
@@ -180,7 +186,7 @@ pub fn format(
     let cache = ResultCache::open_default(!opts.no_cache)?;
     let explicit: FxHashSet<&std::path::Path> = paths.iter().map(PathBuf::as_path).collect();
     let configs = build_config_set(paths, config, opts)?;
-    let files: Vec<DiscoveredFile> = discover(paths, &configs, &opts.exclude)
+    let files: Vec<DiscoveredFile> = discover_with(paths, &configs, &opts.exclude, opts.force_exclude)
         .into_iter()
         .filter(|f| explicit.contains(f.path.as_path()) || !is_generated_lockfile(&f.path))
         .collect();

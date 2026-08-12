@@ -34,6 +34,9 @@ pub struct Config {
     /// `[discovery] exclude` — gitignore-style globs pruned from the file walk
     /// on direct `poly lint`/`poly fmt`/`poly cache` runs.
     pub exclude: Vec<String>,
+    /// `[discovery] force_exclude` — whether `exclude` also applies to files
+    /// named explicitly on the command line, not just to the walk.
+    pub force_exclude: bool,
     /// `[lint.<lang>.<tool>]` tables.
     pub lint: toml::Table,
     /// `[fmt.<lang>.<tool>]` tables.
@@ -292,6 +295,7 @@ impl From<poly_config::PolyConfig> for Config {
         Config {
             defaults: pc.defaults,
             exclude: pc.discovery.exclude.as_slice().to_vec(),
+            force_exclude: pc.discovery.force_exclude,
             lint: pc.lint,
             fmt: pc.fmt,
             tools: pc.tools,
