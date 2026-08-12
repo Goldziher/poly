@@ -19,6 +19,9 @@ impl ToolProbe for StubProbe {
     fn is_cargo_project(&self) -> bool {
         true
     }
+    fn guard_passes(&self, _command: &str) -> bool {
+        true
+    }
 }
 
 /// Like [`StubProbe`] but reports the repo is *not* a Cargo project, to
@@ -31,6 +34,9 @@ impl ToolProbe for NonCargoProbe {
     }
     fn is_cargo_project(&self) -> bool {
         false
+    }
+    fn guard_passes(&self, _command: &str) -> bool {
+        true
     }
 }
 

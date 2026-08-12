@@ -37,6 +37,9 @@ fn lower_stage(
         fn is_cargo_project(&self) -> bool {
             false
         }
+        fn guard_passes(&self, _command: &str) -> bool {
+            true
+        }
     }
     lower_stage_with_probe(
         hooks,
@@ -461,4 +464,111 @@ tags = ["slow"]
     );
     let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
     assert_eq!(ids(&spec), vec!["fast"]);
+}
+
+/// `lower_stage` over a probe whose `skip`/`only` guard conditions all resolve
+/// to `active`, so guard evaluation is deterministic without spawning a shell.
+fn lower_stage_with_guard(hooks: &HooksConfig, guard_result: bool) -> Result<StageSpec> {
+    struct GuardProbe(bool);
+    impl ToolProbe for GuardProbe {
+        fn is_available(&self, _tool: &str) -> bool {
+            false
+        }
+        fn is_cargo_project(&self) -> bool {
+            false
+        }
+        fn guard_passes(&self, _command: &str) -> bool {
+            self.0
+        }
+    }
+    lower_stage_with_probe(
+        hooks,
+        &poly(),
+        HookStage::PreCommit,
+        &[],
+        &HookCacheMode::Safe,
+        &GuardProbe(guard_result),
+        &poly_config::ToolsConfig::default(),
+    )
+}
+
+/// A job's `precondition`/`before` reach the runner model, so a prerequisite can
+/// be scoped to the hook it guards instead of the whole stage.
+#[test]
+fn job_precondition_and_before_lower_onto_the_hook() {
+    let hooks = hooks_from(
+        r#"
+[hooks.pre-commit.commands.kotlin]
+run = "./gradlew detekt"
+precondition = "test -f gradlew"
+before = ["./gradlew --version", "echo ready"]
+"#,
+    );
+    let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
+    let kotlin = spec.hooks.iter().find(|h| h.id == "kotlin").expect("kotlin job");
+    assert_eq!(kotlin.precondition.as_deref(), Some("test -f gradlew"));
+    assert_eq!(kotlin.before, vec!["./gradlew --version", "echo ready"]);
+    // The stage-wide steps stay empty — the prerequisite is scoped to one hook.
+    assert_eq!(spec.precondition, None);
+    assert!(spec.before.is_empty());
+}
+
+/// `only = [{ run = … }]` is evaluated, not ignored: an inactive condition drops
+/// the job.
+#[test]
+fn inactive_only_run_condition_drops_the_job() {
+    let hooks = hooks_from(
+        r#"
+[hooks.pre-commit.commands.kotlin]
+run = "./gradlew detekt"
+only = [{ run = "test -d /nonexistent" }]
+"#,
+    );
+    let spec = lower_stage_with_guard(&hooks, false).unwrap();
+    assert!(ids(&spec).is_empty(), "an inactive `only` guard must drop the job");
+}
+
+/// The same guard, active, keeps the job.
+#[test]
+fn active_only_run_condition_keeps_the_job() {
+    let hooks = hooks_from(
+        r#"
+[hooks.pre-commit.commands.kotlin]
+run = "./gradlew detekt"
+only = [{ run = "test -d ." }]
+"#,
+    );
+    let spec = lower_stage_with_guard(&hooks, true).unwrap();
+    assert_eq!(ids(&spec), vec!["kotlin"]);
+}
+
+/// An active `skip = [{ run = … }]` drops the job; inactive keeps it.
+#[test]
+fn skip_run_condition_is_evaluated_in_both_directions() {
+    let hooks = hooks_from(
+        r#"
+[hooks.pre-commit.commands.kotlin]
+run = "./gradlew detekt"
+skip = [{ run = "test -f .skip-kotlin" }]
+"#,
+    );
+    assert!(ids(&lower_stage_with_guard(&hooks, true).unwrap()).is_empty());
+    assert_eq!(ids(&lower_stage_with_guard(&hooks, false).unwrap()), vec!["kotlin"]);
+}
+
+/// A stage-level `only` condition is evaluated too — an inactive one empties the
+/// stage rather than being ignored.
+#[test]
+fn stage_level_only_run_condition_is_evaluated() {
+    let hooks = hooks_from(
+        r#"
+[hooks.pre-commit]
+only = [{ run = "test -d /nonexistent" }]
+[[hooks.pre-commit.jobs]]
+name = "j"
+run = "x"
+"#,
+    );
+    assert!(ids(&lower_stage_with_guard(&hooks, false).unwrap()).is_empty());
+    assert_eq!(ids(&lower_stage_with_guard(&hooks, true).unwrap()), vec!["j"]);
 }

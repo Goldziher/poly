@@ -1,4 +1,4 @@
-# 0019 — Staged Isolation for Whole-Workspace Hooks
+# 0019 — Staged Isolation for the Commit Gate
 
 - Status: Accepted
 - Date: 2026-07-05
@@ -9,6 +9,9 @@
   `poly lint` (on by default), against the **live worktree** — not the staged snapshot, since
   `poly lint` checks the working tree rather than gating a commit. See the "poly lint
   whole-project phase" note below.
+- Updated: 2026-08-12: isolation was extended from whole-workspace hooks to **every** hook in a
+  commit-gating run, closing a false-pass. See "Extension: every hook, not just the
+  whole-workspace ones" below.
 
 ## Context
 
@@ -70,6 +73,57 @@ autofix/stash conflict can lose uncommitted work. That failure mode is unaccepta
   builtin invokes `poly lint --no-workspace`, so a `poly hooks` run never double-runs these
   tools (the `cargo` group already covers them).
 
+## Extension: every hook, not just the whole-workspace ones (2026-08-12)
+
+The original decision isolated only `workspace = true` hooks and explicitly deferred the rest
+("Isolate every hook (including per-file formatters)" under *Alternatives considered*). That left
+the two tiers **disagreeing inside a single `poly hooks run pre-commit`**: a whole-workspace hook
+read the index while a per-file hook read the worktree, and nothing in the report said so. The
+consequence was a false pass — the most severe class of gate defect. Reproduced end to end: stage
+a file containing a violation, fix only the worktree copy, `git commit`; the per-file hook
+validated the clean worktree bytes, reported ✓, and the violating **staged** bytes landed in
+`HEAD`. The mirror case was just as wrong: an unstaged edit blocked a commit whose staged content
+was fine.
+
+- **One run, one tree.** When a run carries a staged snapshot, *every* hook executes from it —
+  per-file and whole-workspace alike. Whether a run is staged-scoped is unchanged and remains a
+  property of the run, not of the hook: the index stages (`pre-commit`, `pre-merge-commit`), not
+  `--all-files`, not non-index stages, `[hooks] isolate` overriding. `poly hooks run pre-commit
+  --all-files` is a question about the working tree and still answers it.
+- **The snapshot is built whenever the stage has hooks**, not only when one is `workspace = true`.
+  It is still built once per run and refreshed incrementally from index OIDs — never per file or
+  per hook.
+- **The report names the tree.** Every hook outcome records which tree produced its verdict, and
+  the stage banner renders it (`[stage] pre-commit — validated staged content`). Silence about
+  which bytes were checked was the underlying defect; a mixed run would render as such rather
+  than pick one.
+- **Partially-staged files** (`git add -p`) are judged by their staged version alone. An unstaged
+  hunk can neither pass nor fail the gate.
+- **Autofix write-back** (the case the original ADR left out of scope). A hook's rewrite lands in
+  the snapshot, so it must be carried back or it is lost. It is carried back **only where the
+  worktree copy is byte-identical to the index** — there, the worktree holds nothing the fix has
+  not already seen, so writing it destroys nothing and reproduces the pre-isolation result. Where
+  the worktree copy differs, the author holds unstaged work: overwriting it would destroy that
+  work and `git add`ing the file would stage hunks they deliberately left out. So the fix is
+  **withheld**, and for a `stage_fixed` hook that fails the run and blocks the commit — the only
+  outcome that loses nothing. Reconciliation happens once per priority group, because the hooks
+  in a group run concurrently and a per-hook pass would let one hook's write make another's
+  write-back look unsafe.
+- **Detection is content-based** (blake3 over each matched file before and after), not stat-based:
+  a formatter rewriting a file to the same length inside one mtime tick is ordinary, and a missed
+  rewrite means either a lost fix or a cached "passed" for content that never passed on its own.
+
+Accepted consequences of the wider scope:
+
+- A hook's **untracked side effects** (logs, generated files not in its matched set) are written
+  into the snapshot and discarded on the next refresh, where previously they appeared in the
+  worktree. Anything a hook is expected to *deliver* must be one of its matched files, which is
+  also what `stage_fixed` already required to be effective.
+- **Untracked or unstaged config is not visible to hooks** under the gate — notably a gitignored
+  `poly.local.toml`. For a commit gate this is arguably correct (local overrides should not weaken
+  a shared gate), but it is a behaviour change for anyone relying on them there. `[hooks] isolate
+  = false` restores worktree scoping.
+
 ## Consequences
 
 Positive:
@@ -127,7 +181,8 @@ Negative / risks:
   cargo already namespaces artifacts by source-path hash, so sharing the real `target/` reuses
   all dependency compilation and coexists with dev builds without thrash; a dedicated target
   would recompile every dependency on the first isolated run.
-- **Isolate every hook (including per-file formatters):** rejected for now — per-file hooks
-  already receive the staged file list; extending the snapshot to them buys partial-staging
-  correctness but drags in non-destructive autofix write-back into the index, a larger,
-  trickier change deferred until measured need.
+- **Isolate every hook (including per-file formatters):** originally rejected as "partial-staging
+  correctness at the cost of a trickier autofix write-back, deferred until measured need".
+  **Reversed on 2026-08-12** — the need was not marginal: receiving the staged *file list* while
+  reading *worktree bytes* is a false pass, not a partial-staging nicety. See the extension
+  section above for the write-back semantics that made it tractable.

@@ -200,20 +200,31 @@ fn hook_impl_commit_msg_enforces_conventional_commits() {
 fn run_pre_commit_caches_second_unchanged_run_and_no_cache_forces_rerun() {
     let repo = init_repo();
     let root = repo.path();
+    // The sentinel is written outside the repository on purpose: a `pre-commit`
+    // run is scoped to staged content, so a hook's working directory is the
+    // staged snapshot rather than the worktree. Counting executions through an
+    // absolute path keeps this test about caching and nothing else.
+    let log = tempfile::tempdir().expect("sentinel dir");
+    let log_path = log.path().join("runs.log");
     write(
         root,
         "poly.toml",
-        r#"
+        &format!(
+            r#"
 [hooks.pre-commit]
 [[hooks.pre-commit.jobs]]
 name = "sentinel"
-run = "printf x >> runs.log"
-cache = { inputs = ["tracked.txt"] }
+run = "printf x >> {}"
+cache = {{ inputs = ["tracked.txt"] }}
 "#,
+            log_path.display()
+        ),
     );
     write(root, "tracked.txt", "content");
     git(root, &["add", "tracked.txt"]);
     git(root, &["commit", "-qm", "init"]);
+
+    let runs = || std::fs::read_to_string(&log_path).unwrap_or_default();
 
     let first = poly_hooks(root, &["run", "pre-commit"]);
     assert!(
@@ -221,40 +232,41 @@ cache = { inputs = ["tracked.txt"] }
         "stderr: {}",
         String::from_utf8_lossy(&first.stderr)
     );
-    assert_eq!(std::fs::read_to_string(root.join("runs.log")).unwrap(), "x");
+    assert_eq!(runs(), "x");
 
     let second = poly_hooks(root, &["run", "pre-commit"]);
     assert!(second.status.success());
     let report = String::from_utf8_lossy(&second.stdout);
     assert!(report.contains("(cached)"), "second run not cached:\n{report}");
-    assert_eq!(
-        std::fs::read_to_string(root.join("runs.log")).unwrap(),
-        "x",
-        "cached hook must not re-execute"
-    );
+    assert_eq!(runs(), "x", "cached hook must not re-execute");
 
     let third = poly_hooks(root, &["run", "pre-commit", "--no-cache"]);
     assert!(third.status.success());
-    assert_eq!(
-        std::fs::read_to_string(root.join("runs.log")).unwrap(),
-        "xx",
-        "--no-cache must re-execute"
-    );
+    assert_eq!(runs(), "xx", "--no-cache must re-execute");
 }
 
 #[test]
 fn install_writes_a_shim_that_git_commit_triggers() {
     let repo = init_repo();
     let root = repo.path();
+    // Outside the repository on purpose: a real `git commit` gates on staged
+    // content, so the hook's working directory is the staged snapshot. An
+    // absolute sentinel proves the shim reached the runner without depending on
+    // which tree the hook ran in.
+    let sentinel_dir = tempfile::tempdir().expect("sentinel dir");
+    let sentinel = sentinel_dir.path().join("sentinel.created");
     write(
         root,
         "poly.toml",
-        r#"
+        &format!(
+            r#"
 [hooks.pre-commit]
 [[hooks.pre-commit.jobs]]
 name = "sentinel"
-run = "touch sentinel.created"
+run = "touch {}"
 "#,
+            sentinel.display()
+        ),
     );
 
     let installed = poly_hooks(root, &["install", "--hook-type", "pre-commit"]);
@@ -292,7 +304,7 @@ run = "touch sentinel.created"
     );
 
     assert!(
-        root.join("sentinel.created").exists(),
+        sentinel.exists(),
         "installed pre-commit shim did not trigger the native runner"
     );
 }

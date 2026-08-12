@@ -176,7 +176,7 @@ impl crate::process::OutputSink for CaptureSink {
 const SECS_DISPLAY_THRESHOLD: f64 = 1.0;
 
 /// Format a hook duration compactly: `1.2s` at or above a second, else `340ms`.
-fn format_duration(duration: Duration) -> String {
+pub(crate) fn format_duration(duration: Duration) -> String {
     let secs = duration.as_secs_f64();
     if secs >= SECS_DISPLAY_THRESHOLD {
         format!("{secs:.1}s")
@@ -381,13 +381,64 @@ impl HookRunReporter {
         for stage in &outcome.stages {
             Self::render_stage(&mut report, stage);
         }
+        Self::render_nothing_validated(&mut report, outcome);
+        Self::render_legend(&mut report, outcome);
         report
+    }
+
+    /// Explain every non-verdict marker the report actually used.
+    ///
+    /// `-`, `?` and `⧖` each mean something different and none of them is
+    /// guessable, so the report says so — but only when one of them appears,
+    /// since a run where every hook passed needs no key.
+    fn render_legend(report: &mut String, outcome: &crate::model::HookRunOutcome) {
+        use std::fmt::Write as _;
+
+        use crate::model::HookStatus;
+
+        let statuses = || outcome.stages.iter().flat_map(|stage| stage.hooks.iter());
+        let mut entries: Vec<String> = Vec::new();
+        if statuses().any(|hook| matches!(hook.status, HookStatus::Skipped(_))) {
+            entries.push(format!("{SKIPPED_MARKER} skipped (did not apply)"));
+        }
+        if statuses().any(|hook| matches!(hook.status, HookStatus::TimedOut(_))) {
+            entries.push(format!("{} killed by poly on timeout", timed_out_marker()));
+        }
+        if statuses().any(|hook| matches!(hook.status, HookStatus::Unknown(_))) {
+            entries.push(format!("{} not run (setup failed)", unknown_marker()));
+        }
+        if entries.is_empty() {
+            return;
+        }
+        let _ = writeln!(
+            report,
+            "  markers: {} passed  {} failed  {}",
+            project_status_marker(false),
+            project_status_marker(true),
+            entries.join("  ")
+        );
+    }
+
+    /// Spell out, in the report a human reads, that the run checked nothing —
+    /// the state that used to be indistinguishable from a clean pass.
+    fn render_nothing_validated(report: &mut String, outcome: &crate::model::HookRunOutcome) {
+        use std::fmt::Write as _;
+
+        if !outcome.validated_nothing() {
+            return;
+        }
+        let withheld = outcome.precondition_skipped_count();
+        let _ = writeln!(
+            report,
+            "  {NOTHING_VALIDATED_MARKER} nothing was validated: \
+             {withheld} configured hook(s) were withheld by a precondition and none ran"
+        );
     }
 
     fn render_stage(report: &mut String, stage: &crate::model::StageOutcome) {
         use std::fmt::Write as _;
 
-        use crate::model::{HookStatus, StageStatus};
+        use crate::model::StageStatus;
 
         // A stage that ran but bound no work emits nothing: with all ten shims
         // installed, unconfigured stages fire on ordinary git operations, and an
@@ -401,11 +452,10 @@ impl HookRunReporter {
             return;
         }
 
-        let _ = writeln!(report, "[stage] {}", stage.stage);
+        let _ = writeln!(report, "[stage] {}{}", stage.stage, validated_banner(stage));
         match &stage.status {
             StageStatus::Skipped(reason) => {
                 let _ = writeln!(report, "  skipped: {reason}");
-                return;
             }
             StageStatus::Aborted(reason) => {
                 let _ = writeln!(report, "  aborted: {reason}");
@@ -424,19 +474,7 @@ impl HookRunReporter {
         }
 
         for hook in &stage.hooks {
-            let marker = match &hook.status {
-                HookStatus::Skipped(_) => "-".to_string(),
-                status => project_status_marker(status.is_failure()),
-            };
-            let suffix = if hook.files_modified {
-                " (files modified)"
-            } else if hook.cached {
-                " (cached)"
-            } else {
-                ""
-            };
-            let _ = writeln!(report, "  {marker} {}{suffix}", hook.id);
-            append_failure_output(report, &hook.status, &hook.output);
+            Self::render_hook(report, hook);
         }
 
         for step in &stage.after {
@@ -448,6 +486,125 @@ impl HookRunReporter {
             );
             append_failure_output(report, &step.status, &step.output);
         }
+    }
+
+    /// Render one hook line. Every hook the runner knows about is rendered —
+    /// including ones that never executed — because a check that silently
+    /// vanishes from the report is how "nothing ran" stays invisible.
+    fn render_hook(report: &mut String, hook: &crate::model::HookOutcome) {
+        use std::fmt::Write as _;
+
+        use crate::model::HookStatus;
+
+        let (marker, note) = match &hook.status {
+            HookStatus::Skipped(reason) => (SKIPPED_MARKER.to_string(), format!(" ({reason})")),
+            HookStatus::Unknown(reason) => (unknown_marker(), format!(" (not run — {reason})")),
+            HookStatus::TimedOut(reason) => (timed_out_marker(), format!(" ({reason})")),
+            status => (project_status_marker(status.is_failure()), String::new()),
+        };
+        let suffix = if hook.files_modified {
+            " (files modified)"
+        } else if hook.cached {
+            " (cached)"
+        } else {
+            ""
+        };
+        let _ = writeln!(report, "  {marker} {}{suffix}{note}", hook.id);
+        for step in &hook.before {
+            if step.status.is_failure() {
+                let _ = writeln!(report, "      before: {}", step.command);
+                append_failure_output(report, &step.status, &step.output);
+            }
+        }
+        if let HookStatus::FixWithheld(paths) = &hook.status {
+            append_withheld_fix(report, paths);
+        }
+        append_failure_output(report, &hook.status, &hook.output);
+    }
+}
+
+/// The " — validated <tree>" suffix on a stage banner.
+///
+/// A gate that does not say which bytes it read cannot be trusted to have read
+/// the right ones, so the tree is always named. When hooks disagree — which the
+/// runner does not currently produce, but which a future scoping exception
+/// could — the banner says so instead of picking one, and
+/// [`HookRunReporter::render_hook`] is where the per-hook detail would go.
+fn validated_banner(stage: &crate::model::StageOutcome) -> String {
+    let mut trees = stage.hooks.iter().map(|hook| hook.validated);
+    let Some(first) = trees.next() else {
+        return String::new();
+    };
+    if trees.all(|tree| tree == first) {
+        format!(" — validated {first}")
+    } else {
+        " — validated MIXED trees (see each hook)".to_string()
+    }
+}
+
+/// Spell out a withheld fix: which files, and what the author has to do. The
+/// hook exited 0, so without this the report would show a failure with no
+/// output at all.
+fn append_withheld_fix(report: &mut String, paths: &[std::path::PathBuf]) {
+    use std::fmt::Write as _;
+
+    let _ = writeln!(
+        report,
+        "      fixed the staged content, but these files have unstaged changes, \
+         so the fix was not written:"
+    );
+    for path in paths {
+        let _ = writeln!(report, "        {}", path.display());
+    }
+    let _ = writeln!(
+        report,
+        "      re-run the fixer over your working tree and `git add` the result, \
+         or stash the unstaged changes first."
+    );
+}
+
+/// Marker for a hook a precondition (or an empty file set) withheld — benign.
+const SKIPPED_MARKER: &str = "-";
+
+/// Marker for the "nothing was validated" summary line.
+const NOTHING_VALIDATED_MARKER: &str = "!";
+
+/// Marker for a hook still executing, used by the live still-running notice.
+/// Never a final status — its whole job is to be distinguishable from
+/// [`SKIPPED_MARKER`], because "has not finished" and "did not apply" were the
+/// two facts a single `-` used to blur together.
+const RUNNING_MARKER: &str = "⋯";
+
+/// Marker for a hook poly killed for overrunning its budget.
+const TIMED_OUT_MARKER: &str = "⧖";
+
+/// Marker for a hook whose verdict is unknown because its setup failed. Distinct
+/// from both `✓/×` (a real verdict) and `-` (a benign skip).
+fn unknown_marker() -> String {
+    "?".yellow().to_string()
+}
+
+/// Marker for a hook poly killed — a failure, but not the tool's own.
+fn timed_out_marker() -> String {
+    TIMED_OUT_MARKER.red().to_string()
+}
+
+/// The line a hook prints while it is still running, so a hang names its
+/// culprit as it happens instead of leaving a silent terminal.
+///
+/// Written to stderr (or above the live spinners), never to the final report.
+/// Naming the budget alongside the elapsed time answers the reader's actual
+/// question — "is this thing ever going to stop?" — rather than only "it is
+/// slow".
+#[must_use]
+pub fn still_running_line(id: &str, elapsed: Duration, limit: Option<Duration>) -> String {
+    let elapsed = format_duration(elapsed);
+    match limit {
+        Some(limit) => format!(
+            "  {RUNNING_MARKER} still running: {id} ({elapsed} elapsed, killed at {})",
+            format_duration(limit)
+        ),
+        None => format!("  {RUNNING_MARKER} still running: {id} ({elapsed} elapsed, no timeout)"),
     }
 }
 
@@ -560,6 +717,119 @@ mod tests {
         assert_eq!(lines.next(), Some("clippy"));
         assert_eq!(lines.next(), Some("    => compiling"));
         assert_eq!(lines.next(), Some("    => linking"));
+    }
+
+    /// A finished hook outcome carrying `status`, for rendering assertions.
+    fn outcome_with(id: &str, status: crate::model::HookStatus) -> crate::model::HookOutcome {
+        crate::model::HookOutcome {
+            id: id.to_string(),
+            position: 0,
+            status,
+            before: Vec::new(),
+            files_modified: false,
+            output: Vec::new(),
+            duration: Duration::from_secs(1),
+            cached: false,
+            validated: crate::model::ValidatedTree::Worktree,
+        }
+    }
+
+    #[test]
+    fn timed_out_hook_renders_its_own_marker_and_says_poly_killed_it() {
+        use crate::model::{HookStatus, TimeoutReason};
+
+        let hook = outcome_with(
+            "ai-rulez:ai-rulez-validate",
+            HookStatus::TimedOut(TimeoutReason {
+                limit: Duration::from_mins(10),
+                elapsed: Duration::from_secs_f64(600.4),
+            }),
+        );
+        let mut report = String::new();
+        HookRunReporter::render_hook(&mut report, &hook);
+        assert_eq!(
+            report,
+            format!(
+                "  {} ai-rulez:ai-rulez-validate (timed out: poly killed it after 600.4s, limit 600.0s)\n",
+                timed_out_marker()
+            )
+        );
+    }
+
+    #[test]
+    fn skipped_and_timed_out_markers_are_not_the_same_glyph() {
+        assert_eq!(SKIPPED_MARKER, "-");
+        assert_eq!(TIMED_OUT_MARKER, "⧖");
+        assert_eq!(RUNNING_MARKER, "⋯");
+        assert_ne!(SKIPPED_MARKER, TIMED_OUT_MARKER);
+        assert_ne!(SKIPPED_MARKER, RUNNING_MARKER);
+    }
+
+    #[test]
+    fn still_running_line_names_the_hook_and_when_it_will_be_killed() {
+        assert_eq!(
+            still_running_line("clippy", Duration::from_secs(15), Some(Duration::from_mins(30))),
+            "  ⋯ still running: clippy (15.0s elapsed, killed at 1800.0s)"
+        );
+        assert_eq!(
+            still_running_line("clippy", Duration::from_millis(750), None),
+            "  ⋯ still running: clippy (750ms elapsed, no timeout)"
+        );
+    }
+
+    #[test]
+    fn legend_explains_only_the_markers_the_report_used() {
+        use crate::model::{HookRunOutcome, HookStatus, SkipReason, StageOutcome, StageStatus, TimeoutReason};
+        use crate::stage::Stage;
+
+        let outcome = HookRunOutcome {
+            stages: vec![StageOutcome {
+                stage: Stage::PreCommit,
+                status: StageStatus::Ran,
+                before: Vec::new(),
+                hooks: vec![
+                    outcome_with("a", HookStatus::Skipped(SkipReason::NoFiles)),
+                    outcome_with(
+                        "b",
+                        HookStatus::TimedOut(TimeoutReason {
+                            limit: Duration::from_mins(10),
+                            elapsed: Duration::from_secs(601),
+                        }),
+                    ),
+                ],
+                after: Vec::new(),
+            }],
+        };
+        let mut report = String::new();
+        HookRunReporter::render_legend(&mut report, &outcome);
+        assert_eq!(
+            report,
+            format!(
+                "  markers: {} passed  {} failed  - skipped (did not apply)  {} killed by poly on timeout\n",
+                project_status_marker(false),
+                project_status_marker(true),
+                timed_out_marker()
+            )
+        );
+    }
+
+    #[test]
+    fn legend_is_omitted_when_every_hook_reported_a_verdict() {
+        use crate::model::{HookRunOutcome, HookStatus, StageOutcome, StageStatus};
+        use crate::stage::Stage;
+
+        let outcome = HookRunOutcome {
+            stages: vec![StageOutcome {
+                stage: Stage::PreCommit,
+                status: StageStatus::Ran,
+                before: Vec::new(),
+                hooks: vec![outcome_with("a", HookStatus::Passed)],
+                after: Vec::new(),
+            }],
+        };
+        let mut report = String::new();
+        HookRunReporter::render_legend(&mut report, &outcome);
+        assert_eq!(report, "");
     }
 
     #[test]

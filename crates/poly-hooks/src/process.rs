@@ -14,6 +14,7 @@ use std::fmt::Display;
 use std::path::Path;
 use std::process::{Command, CommandArgs, CommandEnvs, ExitStatus, Output, Stdio};
 use std::sync::LazyLock;
+use std::time::Duration;
 
 use crate::consts::env_vars::EnvVars;
 use owo_colors::OwoColorize as _;
@@ -21,6 +22,8 @@ use thiserror::Error;
 use tracing::trace;
 
 use crate::git::GIT;
+use crate::supervise::Supervised;
+use crate::timeout::Budget;
 
 static LOG_TRUNCATE_LIMIT: LazyLock<usize> = LazyLock::new(|| {
     EnvVars::var(EnvVars::PREK_LOG_TRUNCATE_LIMIT)
@@ -111,6 +114,19 @@ fn write_trimmed_output_section(f: &mut std::fmt::Formatter<'_>, label: &str, ou
         used += line.chars().count();
     }
     Ok(())
+}
+
+/// Chunk size captured output is handed to a sink in.
+const OUTPUT_CHUNK: usize = 4096;
+
+/// Feed captured stdout then stderr to `sink` in [`OUTPUT_CHUNK`] pieces.
+fn feed(sink: &mut impl OutputSink, output: &Output) {
+    for chunk in output.stdout.chunks(OUTPUT_CHUNK) {
+        sink.write_chunk(chunk);
+    }
+    for chunk in output.stderr.chunks(OUTPUT_CHUNK) {
+        sink.write_chunk(chunk);
+    }
 }
 
 /// A receiver for command output chunks streamed during execution.
@@ -219,15 +235,36 @@ impl Cmd {
             cause,
         })?;
 
-        for chunk in output.stdout.chunks(4096) {
-            sink.write_chunk(chunk);
-        }
-        for chunk in output.stderr.chunks(4096) {
-            sink.write_chunk(chunk);
-        }
+        feed(&mut sink, &output);
 
         self.maybe_check_output(&output)?;
         Ok(output)
+    }
+
+    /// Like [`Cmd::output_with_sink`], but bounded: the child is killed once
+    /// `budget` elapses and `notify` is called while it is still running.
+    ///
+    /// See [`crate::supervise`] for what "killed" means (the whole process
+    /// group, `SIGTERM` then `SIGKILL`). The returned
+    /// [`Supervised::timed_out`] flag is the only way to tell a kill from the
+    /// tool's own non-zero exit, so callers must not read the exit status
+    /// alone.
+    pub fn output_with_sink_supervised<S: OutputSink>(
+        &mut self,
+        mut sink: S,
+        budget: Budget,
+        notify: &dyn Fn(Duration),
+    ) -> Result<Supervised, Error> {
+        self.log_command();
+        let supervised = crate::supervise::run(&mut self.inner, budget, notify).map_err(|cause| Error::Exec {
+            summary: self.summary.clone(),
+            cause,
+        })?;
+        feed(&mut sink, &supervised.output);
+        if !supervised.timed_out {
+            self.maybe_check_output(&supervised.output)?;
+        }
+        Ok(supervised)
     }
 
     /// Run the command under a PTY when colour is requested; otherwise fall

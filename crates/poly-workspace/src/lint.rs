@@ -212,9 +212,10 @@ fn color_enabled(to_stdout: bool) -> bool {
 ///   `files = "**/*.go"`) still runs against the whole project even though this
 ///   phase passes no candidate file list — otherwise it would be silently skipped
 ///   yet rendered as a pass;
-/// - drop the stage's `precondition` / `before` / `after` scaffolding: `poly lint`
-///   runs the tools, not the user's commit-time setup/teardown (a failing `before`
-///   would otherwise abort with no rendered explanation).
+/// - drop the **stage's** `precondition` / `before` / `after` scaffolding: `poly
+///   lint` runs the tools, not the user's commit-time setup/teardown. A hook's
+///   *own* `precondition`/`before` is kept — it belongs to the tool, not to the
+///   commit gate, and dropping it would run a tool whose prerequisite is unmet.
 fn retain_workspace_hooks(spec: &mut poly_hooks::StageSpec) {
     spec.hooks.retain(|hook| hook.workspace && !hook.skip_in_lint);
     for hook in &mut spec.hooks {

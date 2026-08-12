@@ -8,10 +8,11 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Duration;
 
 use poly_cache::ResultCache;
 use poly_hooks::filter::FilePattern;
-use poly_hooks::model::{HookCache, HookCommand, HookStatus, StageStatus};
+use poly_hooks::model::{HookCache, HookCommand, HookStatus, SetupScope, SkipReason, StageStatus, UnknownReason};
 use poly_hooks::{Hook, HookRunReporter, HookRunRequest, Stage, StageSpec, run};
 use tempfile::TempDir;
 
@@ -278,9 +279,22 @@ fn failing_precondition_skips_stage() {
     let outcome = run(request(root, stage)).expect("run");
 
     assert!(matches!(outcome.stages[0].status, StageStatus::Skipped(_)));
-    assert!(outcome.stages[0].hooks.is_empty());
     assert_eq!(read(root, "h.out"), "", "hook must not run when precondition fails");
+
+    // A precondition answers "does this apply here?", so a skip is a success —
+    // but every withheld hook is named with its reason, and the run reports that
+    // it validated nothing.
     assert!(outcome.success());
+    let hooks = &outcome.stages[0].hooks;
+    assert_eq!(hooks.len(), 1, "the withheld hook must still be named");
+    assert_eq!(hooks[0].id, "h");
+    assert_eq!(
+        hooks[0].status,
+        HookStatus::Skipped(SkipReason::StagePrecondition("exit 1".to_string()))
+    );
+    assert_eq!(outcome.verdict_count(), 0);
+    assert_eq!(outcome.precondition_skipped_count(), 1);
+    assert!(outcome.validated_nothing());
 }
 
 #[test]
@@ -315,8 +329,22 @@ fn failing_before_aborts_stage() {
 
     assert!(matches!(outcome.stages[0].status, StageStatus::Aborted(_)));
     assert!(!outcome.success());
-    assert!(outcome.stages[0].hooks.is_empty());
     assert_eq!(read(root, "h.out"), "", "hooks must not run after a failed before step");
+
+    // Setup broke, so the hook's verdict is unknown — not skipped. It is named,
+    // with the failing command and the tree it ran in.
+    let hooks = &outcome.stages[0].hooks;
+    assert_eq!(hooks.len(), 1, "the un-run hook must still be named");
+    assert_eq!(
+        hooks[0].status,
+        HookStatus::Unknown(UnknownReason {
+            scope: SetupScope::Stage,
+            command: "exit 3".to_string(),
+            root: root.to_path_buf(),
+        })
+    );
+    // "unknown" is a failure, not a benign skip, so it never looks like a pass.
+    assert!(!outcome.validated_nothing(), "a broken setup is a failure, not a skip");
 }
 
 #[test]
@@ -569,21 +597,20 @@ fn cache_none_bypasses_caching_entirely() {
     assert_eq!(read(root, "runs.log"), "xx", "cache=None must re-execute");
 }
 
-/// A `workspace` hook runs from `work_root` (the staged snapshot) while per-file
-/// hooks stay at `root`, and cargo is redirected at the real `target/`.
+/// Under a `work_root` (staged) run **every** hook runs from the snapshot —
+/// per-file and whole-workspace alike — and cargo is redirected at the real
+/// `target/`. Two hooks in one commit gate reading two different trees is the
+/// false-pass this collapses.
 #[test]
-fn workspace_hook_runs_in_work_root_with_cargo_target_dir() {
+fn every_hook_runs_in_work_root_with_cargo_target_dir() {
     let repo = init_repo();
     let root = repo.path();
     let snap = TempDir::new().expect("snapshot dir");
     let snap_path = snap.path();
 
-    let mut workspace_hook = cmd_hook(
-        "ws",
-        "echo ws > marker.txt && printf '%s' \"$CARGO_TARGET_DIR\" > ct.txt",
-    );
+    let mut workspace_hook = cmd_hook("ws", "echo ws > ws.txt && printf '%s' \"$CARGO_TARGET_DIR\" > ct.txt");
     workspace_hook.workspace = true;
-    let per_file_hook = cmd_hook("per_file", "echo pf > marker.txt");
+    let per_file_hook = cmd_hook("per_file", "echo pf > pf.txt");
 
     let req = HookRunRequest {
         root: root.to_path_buf(),
@@ -594,8 +621,13 @@ fn workspace_hook_runs_in_work_root_with_cargo_target_dir() {
     let outcome = run(req).expect("run");
     assert!(outcome.success());
 
-    assert_eq!(read(snap_path, "marker.txt").trim(), "ws");
-    assert_eq!(read(root, "marker.txt").trim(), "pf");
+    assert_eq!(read(snap_path, "ws.txt").trim(), "ws");
+    assert_eq!(
+        read(snap_path, "pf.txt").trim(),
+        "pf",
+        "a per-file hook must run in the staged tree too"
+    );
+    assert_eq!(read(root, "pf.txt"), "", "nothing may be written into the worktree");
     assert_eq!(read(snap_path, "ct.txt"), root.join("target").to_string_lossy());
 }
 
@@ -672,5 +704,418 @@ fn workspace_hook_cache_key_follows_staged_snapshot_not_worktree() {
         read(snap.path(), "runs.log").lines().count(),
         2,
         "staged change must invalidate"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Per-hook prerequisites: scoping a prerequisite to the hook it guards.
+// ---------------------------------------------------------------------------
+
+/// A hook's own failing `precondition` withholds **only that hook**. Its
+/// siblings still run and still report real verdicts, so the suite is not zeroed
+/// by one language's missing toolchain.
+#[test]
+fn hook_precondition_withholds_only_its_own_hook() {
+    let repo = init_repo();
+    let root = repo.path();
+
+    let mut kotlin = cmd_hook("kotlin", "printf x > kotlin.out");
+    kotlin.precondition = Some("test -f gradlew".to_string());
+    let rust = cmd_hook("rust", "printf x > rust.out");
+    let python = cmd_hook("python", "printf x > python.out");
+
+    let outcome = run(request(root, pre_commit(vec![kotlin, rust, python]))).expect("run");
+
+    // Not applicable is not a failure.
+    assert!(outcome.success());
+    assert_eq!(read(root, "kotlin.out"), "", "the guarded hook must not run");
+    assert_eq!(read(root, "rust.out"), "x", "siblings must still run");
+    assert_eq!(read(root, "python.out"), "x", "siblings must still run");
+
+    let hooks = &outcome.stages[0].hooks;
+    assert_eq!(
+        hooks[0].status,
+        HookStatus::Skipped(SkipReason::HookPrecondition("test -f gradlew".to_string()))
+    );
+    assert_eq!(hooks[1].status, HookStatus::Passed);
+    assert_eq!(hooks[2].status, HookStatus::Passed);
+
+    // Two hooks produced verdicts, so the run validated something.
+    assert_eq!(outcome.verdict_count(), 2);
+    assert_eq!(outcome.precondition_skipped_count(), 1);
+    assert!(!outcome.validated_nothing());
+}
+
+/// A hook's own failing `before` marks **that hook** unknown — a failure, since
+/// its verdict could not be determined — while siblings still report verdicts.
+#[test]
+fn hook_before_failure_is_scoped_to_that_hook_and_fails_the_run() {
+    let repo = init_repo();
+    let root = repo.path();
+
+    let mut kotlin = cmd_hook("kotlin", "printf x > kotlin.out");
+    kotlin.before = vec!["./gradlew --version".to_string()];
+    let rust = cmd_hook("rust", "printf x > rust.out");
+
+    let outcome = run(request(root, pre_commit(vec![kotlin, rust]))).expect("run");
+
+    assert!(!outcome.success(), "an undetermined verdict must fail the run");
+    assert_eq!(read(root, "kotlin.out"), "", "the guarded hook must not run");
+    assert_eq!(read(root, "rust.out"), "x", "the sibling must still run");
+
+    let hooks = &outcome.stages[0].hooks;
+    assert_eq!(
+        hooks[0].status,
+        HookStatus::Unknown(UnknownReason {
+            scope: SetupScope::Hook,
+            command: "./gradlew --version".to_string(),
+            root: root.to_path_buf(),
+        })
+    );
+    assert_eq!(hooks[1].status, HookStatus::Passed);
+
+    // The failing setup command's own output is retained for diagnosis.
+    assert_eq!(hooks[0].before.len(), 1);
+    assert!(
+        String::from_utf8_lossy(&hooks[0].before[0].output).contains("gradlew"),
+        "setup output must be captured: {:?}",
+        String::from_utf8_lossy(&hooks[0].before[0].output)
+    );
+
+    let report = HookRunReporter::new().render(&outcome);
+    assert!(report.contains("kotlin"), "the un-run hook must be named: {report}");
+}
+
+/// A hook's `before` steps run to completion in order when they pass, and the
+/// hook then executes normally.
+#[test]
+fn hook_before_runs_in_order_then_the_hook() {
+    let repo = init_repo();
+    let root = repo.path();
+
+    let mut hook = cmd_hook("h", "printf c >> order.txt");
+    hook.before = vec!["printf a >> order.txt".to_string(), "printf b >> order.txt".to_string()];
+
+    let outcome = run(request(root, pre_commit(vec![hook]))).expect("run");
+
+    assert!(outcome.success());
+    assert_eq!(read(root, "order.txt"), "abc");
+    assert_eq!(outcome.stages[0].hooks[0].before.len(), 2);
+}
+
+/// THE CASE THAT MOTIVATED THIS: a prerequisite satisfiable in the worktree and
+/// unsatisfiable in the staged snapshot must be evaluated against the snapshot —
+/// the tree the `workspace` hook actually runs in — and must say so.
+#[test]
+fn workspace_hook_prerequisite_is_evaluated_against_the_staged_snapshot() {
+    let repo = init_repo();
+    let root = repo.path();
+    let snap = TempDir::new().expect("snapshot dir");
+    let snap_path = snap.path();
+
+    // The wrapper exists in the worktree but is `.gitignore`d, so it is absent
+    // from the staged snapshot the workspace hook runs in.
+    std::fs::write(root.join("gradle-wrapper.jar"), "jar").unwrap();
+
+    let mut kotlin = cmd_hook("kotlin", "printf x > kotlin.out");
+    kotlin.workspace = true;
+    kotlin.before = vec!["test -f gradle-wrapper.jar".to_string()];
+
+    let req = HookRunRequest {
+        root: root.to_path_buf(),
+        work_root: Some(snap_path.to_path_buf()),
+        stages: vec![pre_commit(vec![kotlin])],
+        ..HookRunRequest::default()
+    };
+    let outcome = run(req).expect("run");
+
+    assert!(!outcome.success(), "the prerequisite fails in the tree that matters");
+    let status = &outcome.stages[0].hooks[0].status;
+    let HookStatus::Unknown(reason) = status else {
+        panic!("expected an unknown verdict, got {status:?}");
+    };
+    assert_eq!(
+        reason.root, snap_path,
+        "the prerequisite must be evaluated (and reported) against the staged snapshot, not the worktree"
+    );
+
+    // The report names the snapshot path, so nobody concludes "it works from my
+    // worktree, so the hook works".
+    let report = HookRunReporter::new().render(&outcome);
+    assert!(
+        report.contains(&snap_path.to_string_lossy().to_string()),
+        "report must name the tree the prerequisite failed in: {report}"
+    );
+}
+
+/// A per-hook `precondition` is evaluated before the result cache is consulted,
+/// so a hook that stopped applying is never served a stored "passed".
+#[test]
+fn hook_precondition_beats_a_cached_pass() {
+    let repo = init_repo();
+    let root = repo.path();
+    std::fs::write(root.join("in.rs"), "one").unwrap();
+    git(root, &["add", "in.rs"]);
+    let cache_dir = TempDir::new().expect("cache dir");
+
+    let make_request = |precondition: Option<&str>| {
+        let mut hook = Hook::run("h", "true");
+        hook.always_run = true;
+        hook.pass_filenames = false;
+        hook.cache = HookCache::MatchedFiles;
+        hook.files = Some(FilePattern::glob(vec!["*.rs".to_string()]).unwrap());
+        hook.precondition = precondition.map(str::to_string);
+        HookRunRequest {
+            root: root.to_path_buf(),
+            files: vec![PathBuf::from("in.rs")],
+            stages: vec![pre_commit(vec![hook])],
+            cache: Some(ResultCache::open(cache_dir.path().join("cache"), true).expect("cache")),
+            ..HookRunRequest::default()
+        }
+    };
+
+    let first = run(make_request(None)).expect("first run");
+    assert!(first.success());
+
+    // Same inputs — normally a cache hit — but the hook no longer applies.
+    let second = run(make_request(Some("false"))).expect("second run");
+    assert_eq!(
+        second.stages[0].hooks[0].status,
+        HookStatus::Skipped(SkipReason::HookPrecondition("false".to_string())),
+        "an inapplicable hook must not be reported as a cached pass"
+    );
+    assert!(!second.stages[0].hooks[0].cached);
+}
+
+/// A `NoFiles` skip is a complete verdict ("nothing relevant changed"), so it
+/// must never trip the "validated nothing" alarm — otherwise a commit touching
+/// only a README would be flagged.
+#[test]
+fn no_files_skips_do_not_count_as_validating_nothing() {
+    let repo = init_repo();
+    let root = repo.path();
+
+    let mut hook = Hook::run("rust", "true");
+    hook.files = Some(FilePattern::glob(vec!["*.rs".to_string()]).unwrap());
+
+    let req = HookRunRequest {
+        root: root.to_path_buf(),
+        files: vec![PathBuf::from("README.md")],
+        stages: vec![pre_commit(vec![hook])],
+        ..HookRunRequest::default()
+    };
+    let outcome = run(req).expect("run");
+
+    assert_eq!(
+        outcome.stages[0].hooks[0].status,
+        HookStatus::Skipped(SkipReason::NoFiles)
+    );
+    assert!(outcome.success());
+    assert_eq!(outcome.precondition_skipped_count(), 0);
+    assert!(!outcome.validated_nothing());
+}
+
+// ---------------------------------------------------------------------------
+// Per-hook timeouts
+// ---------------------------------------------------------------------------
+
+/// Poll `kill -0 <pid>` until the process is gone, up to `LIVENESS_GRACE`.
+///
+/// `kill -0` succeeds for any process the caller may signal, so this is the
+/// portable "is it still there?" probe on the platforms these tests run on.
+fn wait_until_gone(pid: &str) -> bool {
+    const LIVENESS_GRACE: std::time::Duration = std::time::Duration::from_secs(5);
+    let deadline = std::time::Instant::now() + LIVENESS_GRACE;
+    while std::time::Instant::now() < deadline {
+        let alive = Command::new("kill")
+            .args(["-0", pid])
+            .output()
+            .expect("kill -0")
+            .status
+            .success();
+        if !alive {
+            return true;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    false
+}
+
+/// A hook that never returns is killed at its budget and reported as a
+/// **timeout** — a distinct, named status, and a failure. A silent pass here
+/// would be the exact false-pass this runner exists to prevent.
+#[test]
+fn hook_exceeding_its_budget_is_killed_and_reported_as_a_timeout() {
+    let repo = init_repo();
+    let root = repo.path();
+
+    let mut slow = cmd_hook("wedged", "sleep 30");
+    slow.timeout = Some(Duration::from_millis(200));
+
+    let outcome = run(request(root, pre_commit(vec![slow]))).expect("run");
+
+    assert!(!outcome.success(), "a killed hook must fail the run");
+    let hook = &outcome.stages[0].hooks[0];
+    assert_eq!(hook.id, "wedged");
+    let HookStatus::TimedOut(reason) = &hook.status else {
+        panic!("expected a timeout status, got {:?}", hook.status);
+    };
+    assert_eq!(reason.limit, Duration::from_millis(200));
+    assert!(
+        reason.elapsed >= Duration::from_millis(200),
+        "elapsed {:?} must be at least the budget",
+        reason.elapsed
+    );
+    assert!(
+        hook.duration < Duration::from_secs(30),
+        "the run must not have waited for the hook to finish on its own"
+    );
+    assert!(!hook.status.is_verdict(), "a killed hook produced no verdict");
+    assert!(hook.status.is_failure());
+
+    let report = HookRunReporter::new().render(&outcome);
+    assert!(report.contains("wedged"), "the report must name the hook: {report}");
+    assert!(
+        report.contains("timed out: poly killed it after"),
+        "the report must say poly killed it: {report}"
+    );
+    assert!(
+        report.contains("limit 200ms"),
+        "the report must name the budget: {report}"
+    );
+}
+
+/// The kill must actually reap the process tree, not merely stop waiting on it:
+/// an orphan still holding a lock is worse than the hang it replaced.
+#[test]
+fn timed_out_hook_leaves_no_surviving_process() {
+    let repo = init_repo();
+    let root = repo.path();
+
+    // `$$` is the shell itself; `$!` is the backgrounded grandchild. Both must
+    // be gone once the runner reports the timeout.
+    let mut slow = cmd_hook(
+        "spawner",
+        "printf '%s' \"$$\" > shell.pid; sleep 30 & printf '%s' \"$!\" > child.pid; wait",
+    );
+    slow.timeout = Some(Duration::from_millis(200));
+
+    let outcome = run(request(root, pre_commit(vec![slow]))).expect("run");
+    assert!(!outcome.success());
+
+    let shell_pid = read(root, "shell.pid");
+    let child_pid = read(root, "child.pid");
+    assert!(!shell_pid.is_empty(), "the hook must have recorded its shell pid");
+    assert!(!child_pid.is_empty(), "the hook must have recorded its child pid");
+    assert!(
+        wait_until_gone(&shell_pid),
+        "the hook's shell (pid {shell_pid}) survived"
+    );
+    assert!(
+        wait_until_gone(&child_pid),
+        "the hook's child process (pid {child_pid}) survived the kill"
+    );
+}
+
+/// A hook that finishes inside its budget behaves exactly as before: it passes,
+/// its output is captured whole, and nothing extra is printed about it.
+#[test]
+fn hook_within_its_budget_is_unaffected() {
+    let repo = init_repo();
+    let root = repo.path();
+
+    let mut fast = cmd_hook("prompt", "printf 'hello world'");
+    fast.timeout = Some(Duration::from_secs(30));
+
+    let outcome = run(request(root, pre_commit(vec![fast]))).expect("run");
+
+    assert!(outcome.success());
+    let hook = &outcome.stages[0].hooks[0];
+    assert_eq!(hook.status, HookStatus::Passed);
+    assert_eq!(String::from_utf8_lossy(&hook.output), "hello world");
+
+    let report = HookRunReporter::new().render(&outcome);
+    assert!(!report.contains("timed out"), "no timeout noise: {report}");
+    assert!(!report.contains("still running"), "no still-running noise: {report}");
+    assert!(
+        !report.contains("markers:"),
+        "no legend when every hook has a verdict: {report}"
+    );
+}
+
+/// "Skipped" and "killed on timeout" are different facts, so they must not
+/// share a marker — and the report must say what each marker means.
+#[test]
+fn skipped_and_timed_out_hooks_render_with_distinct_markers() {
+    let repo = init_repo();
+    let root = repo.path();
+
+    let mut skipped = cmd_hook("inapplicable", "printf x > skipped.out");
+    skipped.precondition = Some("false".to_string());
+    let mut wedged = cmd_hook("wedged", "sleep 30");
+    wedged.timeout = Some(Duration::from_millis(200));
+
+    let outcome = run(request(root, pre_commit(vec![skipped, wedged]))).expect("run");
+    let report = HookRunReporter::new().render(&outcome);
+
+    assert!(
+        report.contains("- inapplicable (precondition not met: false)"),
+        "skipped hooks keep the `-` marker: {report}"
+    );
+    // The marker is colour-wrapped, so the glyph and the line are asserted
+    // apart; what matters is that it is not the skip marker.
+    assert!(report.contains('⧖'), "a killed hook gets its own marker: {report}");
+    assert!(
+        report.contains(" wedged (timed out: poly killed it after"),
+        "the killed hook is named with its kill: {report}"
+    );
+    assert!(
+        !report.contains("- wedged"),
+        "a killed hook must not share the skip marker: {report}"
+    );
+    assert!(
+        report.contains("markers:"),
+        "the report must explain its markers: {report}"
+    );
+    assert!(
+        report.contains("- skipped (did not apply)"),
+        "the legend must explain `-`: {report}"
+    );
+    assert!(
+        report.contains(" killed by poly on timeout"),
+        "the legend must explain the timeout marker: {report}"
+    );
+}
+
+/// The budget is resolved from the hook's shape when it declares none: a
+/// whole-project hook (a cold `cargo clippy`) gets a far longer default than a
+/// per-file one, so turning timeouts on does not break a working setup.
+#[test]
+fn default_budgets_differ_by_hook_shape() {
+    let per_file = Hook::run("fmt", "cargo fmt --check");
+    let mut whole_project = Hook::run("clippy", "cargo clippy");
+    whole_project.workspace = true;
+
+    assert_eq!(
+        poly_hooks::timeout::budget_for(&per_file).limit,
+        Some(poly_hooks::timeout::DEFAULT_HOOK_TIMEOUT)
+    );
+    assert_eq!(
+        poly_hooks::timeout::budget_for(&whole_project).limit,
+        Some(poly_hooks::timeout::DEFAULT_WORKSPACE_HOOK_TIMEOUT)
+    );
+    assert_eq!(poly_hooks::timeout::DEFAULT_HOOK_TIMEOUT, Duration::from_mins(10));
+    assert_eq!(
+        poly_hooks::timeout::DEFAULT_WORKSPACE_HOOK_TIMEOUT,
+        Duration::from_mins(30)
+    );
+
+    // An explicit per-hook budget wins over both defaults.
+    let mut explicit = Hook::run("slow", "sleep 1");
+    explicit.workspace = true;
+    explicit.timeout = Some(Duration::from_secs(5));
+    assert_eq!(
+        poly_hooks::timeout::budget_for(&explicit).limit,
+        Some(Duration::from_secs(5))
     );
 }

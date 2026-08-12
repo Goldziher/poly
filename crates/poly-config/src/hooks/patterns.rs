@@ -111,6 +111,74 @@ pub struct GuardMatch {
     pub run: Option<String>,
 }
 
+impl Guard {
+    /// Validate that every condition in this guard is one poly actually
+    /// evaluates, returning a message naming the first that is not.
+    ///
+    /// Only `{ run = "..." }` is implemented. The remaining lefthook condition
+    /// forms (`ref` branch globs, bare git-operation names) are **rejected at
+    /// config-parse time** rather than accepted and ignored: a guard that is
+    /// silently a no-op is worse than no guard, because the author believes the
+    /// item is scoped when it is not.
+    ///
+    /// # Errors
+    ///
+    /// Returns a human-readable message when a condition form is unsupported.
+    pub fn validate_supported(&self, key: &str) -> Result<(), String> {
+        let Self::Conditions(conditions) = self else {
+            return Ok(());
+        };
+        for condition in conditions {
+            match condition {
+                GuardCondition::Match(GuardMatch {
+                    run: Some(_),
+                    reference,
+                }) if reference.is_none() => {}
+                GuardCondition::Match(GuardMatch {
+                    reference: Some(reference),
+                    ..
+                }) => {
+                    return Err(format!(
+                        "`{key}` uses `ref = \"{reference}\"`, which poly does not evaluate; \
+                         use `{key} = [{{ run = \"<command>\" }}]` instead"
+                    ));
+                }
+                GuardCondition::Match(GuardMatch { .. }) => {
+                    return Err(format!(
+                        "`{key}` has a condition table with no `run` command; \
+                         write `{key} = [{{ run = \"<command>\" }}]`"
+                    ));
+                }
+                GuardCondition::Operation(operation) => {
+                    return Err(format!(
+                        "`{key}` uses the git-operation condition `\"{operation}\"`, which poly does not \
+                         evaluate; use `{key} = [{{ run = \"<command>\" }}]` instead"
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// The shell command lines this guard evaluates.
+    ///
+    /// Empty for [`Guard::Always`]. Callers run each with `sh -c`; the guard is
+    /// **active** when any of them exits 0, matching lefthook's any-match rule.
+    #[must_use]
+    pub fn shell_conditions(&self) -> Vec<&str> {
+        match self {
+            Self::Always(_) => Vec::new(),
+            Self::Conditions(conditions) => conditions
+                .iter()
+                .filter_map(|condition| match condition {
+                    GuardCondition::Match(GuardMatch { run: Some(run), .. }) => Some(run.as_str()),
+                    _ => None,
+                })
+                .collect(),
+        }
+    }
+}
+
 /// On-disk shape of [`Guard`]: a bare bool or a list of conditions.
 #[derive(Deserialize)]
 #[serde(untagged)]

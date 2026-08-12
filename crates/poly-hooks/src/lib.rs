@@ -21,6 +21,8 @@
 //! - [`model`] — the in-memory hook model ([`Hook`], [`StageSpec`], request/outcome types).
 //! - [`concurrency`] — rayon pool sizing + `ARG_MAX` file batching.
 //! - [`snapshot`] — staged-content snapshots for whole-workspace hook isolation.
+//! - [`timeout`] — per-hook time budgets and the still-running announce cadence.
+//! - [`supervise`] — deadline-bounded child execution that kills the process tree.
 //! - [`runner`] — the native rayon hook runner ([`run`]).
 //!
 //! # Entry point
@@ -28,6 +30,13 @@
 //! [`run`] executes a [`HookRunRequest`] (a set of [`StageSpec`]s) on a
 //! dedicated rayon pool and returns a [`HookRunOutcome`]. Per stage the order is
 //! precondition → before → hooks (rayon) → after.
+//!
+//! Every configured hook appears in the outcome even when it did not run —
+//! [`HookStatus::Skipped`] when a `precondition` declared it inapplicable,
+//! [`HookStatus::Unknown`] when its setup failed and its verdict is therefore
+//! undetermined, [`HookStatus::TimedOut`] when poly killed it for overrunning
+//! its [`timeout`] budget. [`HookRunOutcome::validated_nothing`] tells a machine
+//! consumer that the run completed without checking anything.
 
 #![allow(missing_docs)]
 
@@ -47,14 +56,16 @@ pub mod reporter;
 pub mod runner;
 pub mod snapshot;
 pub mod stage;
+pub mod supervise;
+pub mod timeout;
 
 #[cfg(unix)]
 pub mod pty;
 
 pub use hook_impl::{PushInfo, RunInputs};
 pub use model::{
-    Hook, HookCache, HookCommand, HookOutcome, HookRunOutcome, HookRunRequest, HookStatus, SccacheSettings, SkipReason,
-    StageOutcome, StageSpec, StageStatus, StepOutcome,
+    Hook, HookCache, HookCommand, HookOutcome, HookRunOutcome, HookRunRequest, HookStatus, SccacheSettings, SetupScope,
+    SkipReason, StageOutcome, StageSpec, StageStatus, StepOutcome, TimeoutReason, UnknownReason,
 };
 pub use process::{Cmd, OutputSink};
 pub use reporter::{CaptureSink, HookRunReporter};

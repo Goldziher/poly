@@ -103,7 +103,8 @@ pub fn lower_stage(
 /// [`lower_stage`] with an injectable capability [`ToolProbe`].
 ///
 /// `lower_stage` calls this with the production [`PathProbe`]; tests pass a stub
-/// so Cargo-builtin gating is deterministic regardless of the host toolchain.
+/// so Cargo-builtin gating and `skip`/`only` guard evaluation are deterministic
+/// regardless of the host toolchain.
 fn lower_stage_with_probe(
     hooks: &HooksConfig,
     poly_bin: &Path,
@@ -116,7 +117,7 @@ fn lower_stage_with_probe(
     let config_stage = from_hook_stage(stage);
     let stage_config = hooks.stage_configs.get(&config_stage);
 
-    if stage_config.is_some_and(|cfg| guard_skips(cfg.skip.as_ref(), cfg.only.as_ref())) {
+    if stage_config.is_some_and(|cfg| guard_skips(probe, cfg.skip.as_ref(), cfg.only.as_ref())) {
         return Ok(StageSpec {
             stage,
             ..StageSpec::default()
@@ -128,10 +129,10 @@ fn lower_stage_with_probe(
     builtins::append_catalog_tools(tools, config_stage, probe, &mut entries)?;
 
     if let Some(cfg) = stage_config {
-        append_jobs(hooks, stage, cfg, files, cache_mode, &mut entries)?;
+        append_jobs(hooks, stage, cfg, files, cache_mode, probe, &mut entries)?;
     }
     if let Some(always) = hooks.stage_configs.get(&ConfigStage::Always) {
-        append_jobs(hooks, stage, always, files, cache_mode, &mut entries)?;
+        append_jobs(hooks, stage, always, files, cache_mode, probe, &mut entries)?;
     }
 
     for hook in &mut entries {
@@ -243,10 +244,11 @@ fn append_jobs(
     cfg: &StageConfig,
     files: &[PathBuf],
     cache_mode: &HookCacheMode,
+    probe: &dyn ToolProbe,
     out: &mut Vec<Hook>,
 ) -> Result<()> {
     for (label, job) in cfg.labeled_jobs() {
-        if guard_skips(job.skip.as_ref(), job.only.as_ref()) {
+        if guard_skips(probe, job.skip.as_ref(), job.only.as_ref()) {
             continue;
         }
         if job_excluded_by_tags(job, &cfg.exclude_tags) {
@@ -291,6 +293,8 @@ fn job_to_hook(
         args: job.args.clone(),
         env,
         cwd: job.root.as_ref().map(std::path::PathBuf::from),
+        precondition: job.precondition.clone(),
+        before: job.before.as_ref().map(patterns_to_vec).unwrap_or_default(),
         files: files_pattern,
         exclude: exclude_pattern,
         types,
@@ -331,22 +335,33 @@ fn build_command(job: &Job, files: &[PathBuf]) -> Result<(HookCommand, bool)> {
     anyhow::bail!("hook job `{:?}` has neither `run` nor `script`", job.name)
 }
 
-/// Resolve `skip`/`only` guards to a skip decision.
+/// Resolve `skip`/`only` guards to a skip decision, evaluating any
+/// `{ run = … }` conditions through `probe`.
 ///
-/// Only the unconditional [`Guard::Always`] form is evaluated here: a
-/// conditional guard ([`Guard::Conditions`]) needs the live git-operation /
-/// branch context, which is not available at lowering, so it is **deferred**
-/// (treated as not-skipping). `skip = true` drops the item; `only = false`
-/// drops it (it would run only when active, and it is never unconditionally
-/// active).
-fn guard_skips(skip: Option<&Guard>, only: Option<&Guard>) -> bool {
-    if matches!(skip, Some(Guard::Always(true))) {
+/// A guard is **active** when it is `Always(true)` or when any of its `run`
+/// conditions exits 0 (lefthook's any-match rule). An active `skip` drops the
+/// item; an inactive `only` drops it. Condition forms poly does not evaluate
+/// (`ref`, bare git-operation names) never reach here — `HooksConfig::validate`
+/// rejects them at load time rather than let a guard be a silent no-op.
+fn guard_skips(probe: &dyn ToolProbe, skip: Option<&Guard>, only: Option<&Guard>) -> bool {
+    if skip.is_some_and(|guard| guard_active(probe, guard)) {
         return true;
     }
-    if matches!(only, Some(Guard::Always(false))) {
+    if only.is_some_and(|guard| !guard_active(probe, guard)) {
         return true;
     }
     false
+}
+
+/// Whether a guard is currently active.
+fn guard_active(probe: &dyn ToolProbe, guard: &Guard) -> bool {
+    match guard {
+        Guard::Always(value) => *value,
+        Guard::Conditions(_) => guard
+            .shell_conditions()
+            .into_iter()
+            .any(|command| probe.guard_passes(command)),
+    }
 }
 
 fn job_excluded_by_tags(job: &Job, exclude_tags: &[String]) -> bool {

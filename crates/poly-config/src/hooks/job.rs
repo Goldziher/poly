@@ -39,6 +39,20 @@ pub struct Job {
     pub skip: Option<Guard>,
     /// Only guard — the job runs *only* when active.
     pub only: Option<Guard>,
+    /// Applicability probe for this job alone: exit 0 runs it, non-zero reports
+    /// it **skipped** (visible, not a failure) while its siblings run normally.
+    ///
+    /// Prefer this to the stage-wide `[hooks.<stage>] precondition` whenever the
+    /// prerequisite belongs to one tool — a stage-wide guard withholds every
+    /// check in the stage. It is evaluated in the tree the job itself runs in,
+    /// which under staged isolation is the staged snapshot, not the worktree.
+    pub precondition: Option<String>,
+    /// Setup command(s) for this job alone, run sequentially before it.
+    ///
+    /// A failure marks **this job** as having an unknown verdict and fails the
+    /// stage, without preventing sibling jobs from reporting theirs. Same tree
+    /// as `precondition`.
+    pub before: Option<Patterns>,
     /// Tags for selective inclusion/exclusion.
     pub tags: Vec<String>,
     /// Per-job environment variables (merged over the global `[hooks].env`).
@@ -52,9 +66,12 @@ pub struct Job {
     pub stage_fixed: bool,
     /// Whole-workspace job: it compiles or analyses the entire project (e.g.
     /// `cargo clippy`, a type checker like `pyrefly`) rather than a per-file
-    /// set. When staged isolation is active such a job runs against a
-    /// non-destructive snapshot of the staged index, so it never sees unstaged
-    /// worktree edits or untracked files. Default `false` (per-file).
+    /// set. Default `false` (per-file).
+    ///
+    /// This decides whether the job receives filenames, **not** which tree it
+    /// runs in: under staged isolation every job — per-file included — runs
+    /// against the non-destructive snapshot of the staged index and so never
+    /// sees unstaged worktree edits or untracked files (ADR 0019).
     pub workspace: bool,
     /// The job needs an interactive terminal.
     pub interactive: bool,

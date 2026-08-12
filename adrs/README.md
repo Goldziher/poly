@@ -37,6 +37,7 @@ Context, Decision, Consequences (positive and negative/risks), and Alternatives 
 | [0020](0020-shared-remote-configuration.md) | Shared Configuration via `extends` (Local and Pinned Remote Bases) | Accepted |
 | [0021](0021-mcp-structured-output-toon-and-tasks.md) | MCP Structured Output, TOON, and Async Tasks | Accepted |
 | [0022](0022-plugin-marketplace-and-agent-distribution.md) | Plugin Marketplace and Agent Distribution | Accepted |
+| [0023](0023-hook-timeouts-and-liveness.md) | Hook Timeouts and Run Liveness | Accepted |
 
 ## Conventions
 

@@ -4887,6 +4887,7 @@ version = "0.19.7"
 dependencies = [
  "anstyle-query",
  "anyhow",
+ "blake3",
  "clap",
  "console",
  "dunce",

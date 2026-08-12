@@ -512,8 +512,7 @@ fn candidate_files(
     }
 }
 
-/// Whether whole-workspace hooks should be isolated to staged content for this
-/// run.
+/// Whether this run is gating a commit, and so must be scoped to staged content.
 ///
 /// The snapshot is a copy of the git **index**, so isolation only makes sense
 /// for the commit-gating stages (`pre-commit`, `pre-merge-commit`), where the
@@ -521,31 +520,60 @@ fn candidate_files(
 /// (which intentionally checks the whole tree) or to non-index stages such as
 /// `pre-push`. Within those bounds the `[hooks] isolate` override wins,
 /// defaulting to on.
+///
+/// The distinction is the whole point: `poly hooks run pre-commit --all-files`
+/// typed by a developer is a question about the working tree, while a real `git
+/// commit` is a question about the index. Answering the second with the first is
+/// how a commit passes a gate on bytes that were never staged.
 fn isolation_active(hooks: &poly_config::HooksConfig, all_files: bool, stage: poly_hooks::Stage) -> bool {
     let index_stage = matches!(stage, poly_hooks::Stage::PreCommit | poly_hooks::Stage::PreMergeCommit);
     index_stage && !all_files && hooks.isolate.unwrap_or(true)
 }
 
-/// Refresh the staged-content snapshot when isolation is active and `spec`
-/// actually contains a whole-workspace hook — otherwise there is nothing to
-/// isolate and the refresh is skipped.
+/// Refresh the staged-content snapshot when this run gates a commit and `spec`
+/// has any hook to run — otherwise there is nothing to isolate and the refresh
+/// is skipped.
+///
+/// Built once per run and shared by every hook: the snapshot is a
+/// per-repository cache refreshed incrementally from the index OIDs, never a
+/// per-file or per-hook copy. It is required for *every* hook, not just the
+/// whole-workspace ones, because a per-file hook reading the worktree is exactly
+/// the false pass this gate exists to prevent.
 fn maybe_staged_snapshot(isolate: bool, spec: &poly_hooks::StageSpec, root: &Path) -> Result<Option<StagedSnapshot>> {
-    if !isolate || !spec.hooks.iter().any(|hook| hook.workspace) {
+    if !isolate || spec.hooks.is_empty() {
         return Ok(None);
     }
     let snapshot = StagedSnapshot::create(root).context("failed to create the staged-content snapshot")?;
     Ok(Some(snapshot))
 }
 
+/// Exit code for a run that completed without validating anything: every
+/// configured hook was withheld by a `precondition`.
+///
+/// It is deliberately distinct from both `0` and `1`. A `precondition` answering
+/// "this does not apply here" is not a failure, so `1` would be wrong — but a CI
+/// job that reads only the exit status must still be able to tell "validated and
+/// clean" from "validated nothing", which `0` makes impossible. Anything that
+/// treats non-zero as failure (`set -e`, a git hook) therefore stops, which is
+/// the safe default when a gate checked nothing.
+///
+/// `2` specifically, because it is already poly's code for "the run did not
+/// verify" — `poly fmt`/`poly lint` use it for a file the engine could not parse
+/// (see `crate::run_fmt`). A gate that validated nothing is the same class of
+/// answer, so it gets the same code rather than a new one.
+const EXIT_VALIDATED_NOTHING: u8 = 2;
+
 fn run_and_report(request: poly_hooks::HookRunRequest) -> Result<ExitCode> {
     let outcome = poly_hooks::run(request)?;
     let report = poly_hooks::HookRunReporter::new().render(&outcome);
     print!("{report}");
-    Ok(if outcome.success() {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::FAILURE
-    })
+    if !outcome.success() {
+        return Ok(ExitCode::FAILURE);
+    }
+    if outcome.validated_nothing() {
+        return Ok(ExitCode::from(EXIT_VALIDATED_NOTHING));
+    }
+    Ok(ExitCode::SUCCESS)
 }
 
 pub(crate) fn load_config(explicit: Option<&Path>) -> Result<PolyConfig> {

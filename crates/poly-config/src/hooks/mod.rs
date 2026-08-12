@@ -44,8 +44,12 @@ pub struct HooksConfig {
     pub builtin: BuiltinHooks,
     /// Per-stage inline hook configuration, keyed by git [`Stage`].
     pub stage_configs: BTreeMap<Stage, StageConfig>,
-    /// Whether whole-workspace hooks (`cargo`, type checkers, …) run against a
-    /// non-destructive staged-content snapshot instead of the live worktree.
+    /// Whether hooks run against a non-destructive staged-content snapshot
+    /// instead of the live worktree.
+    ///
+    /// Applies to **every** hook in the run — per-file checks as much as
+    /// whole-workspace ones (`cargo`, type checkers, …) — so a commit gate never
+    /// reports on two different sets of bytes (ADR 0019).
     ///
     /// `None` (unset) uses the default: isolate when a real commit is being
     /// gated (the `pre-commit` git-hook path), but not for `--all-files` / CI
@@ -77,6 +81,7 @@ impl HooksConfig {
             if config.skip.is_some() && config.only.is_some() {
                 return Err(format!("stage `{stage}` sets both `skip` and `only`; choose one"));
             }
+            validate_guards(&format!("stage `{stage}`"), config.skip.as_ref(), config.only.as_ref())?;
             for (label, job) in config.labeled_jobs() {
                 validate_job(*stage, &label, job)?;
             }
@@ -106,6 +111,24 @@ fn validate_job(stage: Stage, label: &str, job: &Job) -> Result<(), String> {
     }
     if job.skip.is_some() && job.only.is_some() {
         return Err(format!("{location} sets both `skip` and `only`; choose one"));
+    }
+    validate_guards(&location, job.skip.as_ref(), job.only.as_ref())?;
+    Ok(())
+}
+
+/// Reject `skip`/`only` guard conditions poly does not evaluate.
+///
+/// A guard that parses but is never consulted reads as "this item is scoped"
+/// while the item runs unconditionally, which is how an author ends up reaching
+/// for a stage-wide `precondition` instead. Failing at load time is the only
+/// honest option.
+fn validate_guards(location: &str, skip: Option<&Guard>, only: Option<&Guard>) -> Result<(), String> {
+    for (key, guard) in [("skip", skip), ("only", only)] {
+        if let Some(guard) = guard {
+            guard
+                .validate_supported(key)
+                .map_err(|message| format!("{location}: {message}"))?;
+        }
     }
     Ok(())
 }
@@ -284,6 +307,79 @@ workspace = true
                 "repo key `{key}` rejected with guidance: {err}"
             );
         }
+    }
+
+    #[test]
+    fn job_accepts_a_scoped_precondition_and_before() {
+        let hooks = parse(
+            r#"
+[pre-commit.commands.kotlin]
+run = "./gradlew detekt"
+precondition = "test -f gradlew"
+before = ["./gradlew --version"]
+"#,
+        );
+        hooks.validate().expect("a scoped prerequisite is valid");
+        let job = &hooks.stage_configs[&Stage::PreCommit].commands["kotlin"];
+        assert_eq!(job.precondition.as_deref(), Some("test -f gradlew"));
+        assert_eq!(
+            job.before.as_ref().expect("before present").as_slice(),
+            &["./gradlew --version".to_string()]
+        );
+    }
+
+    /// A `{ run = … }` guard is the supported conditional form and must load.
+    #[test]
+    fn validate_accepts_a_run_guard_condition() {
+        let hooks = parse(
+            r#"
+[pre-commit]
+[[pre-commit.jobs]]
+name = "kotlin"
+run = "x"
+only = [{ run = "test -f gradlew" }]
+"#,
+        );
+        hooks.validate().expect("`run` conditions are evaluated");
+    }
+
+    /// Guard forms poly does not evaluate are rejected at load time — accepting
+    /// and ignoring them makes the author believe an item is scoped when it is
+    /// not, which is exactly how a stage-wide guard gets reached for instead.
+    #[test]
+    fn validate_rejects_guard_conditions_poly_does_not_evaluate() {
+        for (guard, expected) in [
+            (r#"only = [{ ref = "main" }]"#, "does not evaluate"),
+            (r#"skip = ["merge"]"#, "does not evaluate"),
+            (r#"skip = [{}]"#, "no `run` command"),
+        ] {
+            let hooks = parse(&format!(
+                r#"
+[pre-commit]
+[[pre-commit.jobs]]
+name = "j"
+run = "x"
+{guard}
+"#
+            ));
+            let err = hooks.validate().unwrap_err();
+            assert!(err.contains(expected), "guard `{guard}` rejected clearly: {err}");
+            assert!(err.contains("run = "), "the error names the supported form: {err}");
+        }
+    }
+
+    /// The same rejection applies to a stage-level guard.
+    #[test]
+    fn validate_rejects_unsupported_stage_level_guard_conditions() {
+        let hooks = parse(
+            r#"
+[pre-commit]
+skip = ["rebase"]
+"#,
+        );
+        let err = hooks.validate().unwrap_err();
+        assert!(err.contains("stage `pre-commit`"), "{err}");
+        assert!(err.contains("does not evaluate"), "{err}");
     }
 
     #[test]

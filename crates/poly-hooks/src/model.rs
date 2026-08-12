@@ -9,6 +9,7 @@
 //! (poly.toml → `Vec<StageSpec>`) is Workstream B3 and lives in `poly-cli`.
 
 use std::collections::BTreeMap;
+use std::fmt;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -119,11 +120,40 @@ pub struct Hook {
     /// when the run carries [`HookRunRequest::sccache`]; default `false`.
     pub compiler: bool,
     /// Whole-workspace hook: it compiles or analyses the entire project (e.g.
-    /// `cargo clippy`, a type checker) rather than the per-file set. When the
-    /// run carries a [`HookRunRequest::work_root`] staged snapshot, such a hook
-    /// runs from there instead of the live worktree, isolating it to staged
-    /// content. Per-file hooks (default `false`) are unaffected.
+    /// `cargo clippy`, a type checker) rather than the per-file set.
+    ///
+    /// This is a *shape* flag, not an isolation flag: it decides whether the
+    /// hook receives filenames, not which tree it runs in. Under a staged run
+    /// ([`HookRunRequest::work_root`]) **every** hook runs from the snapshot,
+    /// because a commit gate that judged two hooks against two different trees
+    /// would be reporting on bytes that are not the ones being committed.
     pub workspace: bool,
+    /// Applicability probe for **this hook only** (`sh -c`).
+    ///
+    /// Exit 0 runs the hook; non-zero (or a launch failure) marks it
+    /// [`SkipReason::HookPrecondition`] — a visible skip that does **not** fail
+    /// the stage, because a precondition answers "does this check apply here?".
+    /// It is evaluated in the same tree and working directory the hook itself
+    /// would run in (the staged snapshot for a [`Hook::workspace`] hook under
+    /// isolation, the worktree otherwise), so a prerequisite that is satisfiable
+    /// in the worktree but not in the staged tree is caught where it matters.
+    pub precondition: Option<String>,
+    /// Setup commands for **this hook only**, run sequentially before it.
+    ///
+    /// The first failure marks this hook — and only this hook —
+    /// [`HookStatus::Unknown`]: its setup did not complete, so its verdict is
+    /// unknown and the stage fails. Sibling hooks are unaffected. Like
+    /// [`Hook::precondition`], these run in the hook's own execution root.
+    pub before: Vec<String>,
+    /// How long this hook may run before poly kills it and reports
+    /// [`HookStatus::TimedOut`].
+    ///
+    /// `None` — the default — means "use the shape-derived default"
+    /// ([`crate::timeout::budget_for`]): a long budget for a per-file hook, a
+    /// far longer one for a [`Hook::workspace`] hook, since a cold `cargo
+    /// clippy` legitimately runs for many minutes. The budget applies to each
+    /// spawned process, so an `ARG_MAX`-batched hook gets it per batch.
+    pub timeout: Option<Duration>,
     /// Exclude this hook from the whole-project phase of `poly lint` while
     /// keeping it in git-hook runs. `poly lint`'s workspace phase drops every
     /// hook with this set (default `false` — participate in lint), so a tool can
@@ -158,9 +188,18 @@ impl Hook {
 pub struct StageSpec {
     /// The git stage.
     pub stage: Stage,
-    /// Guard command (`sh -c`); non-zero / missing → skip the stage.
+    /// Stage-wide applicability probe (`sh -c`); non-zero / missing → the whole
+    /// stage is skipped and every hook is reported
+    /// [`SkipReason::StagePrecondition`].
+    ///
+    /// Evaluated in the repository worktree ([`HookRunRequest::root`]), because
+    /// it is not tied to any one hook and so has no execution root of its own.
+    /// A prerequisite that only holds in the worktree therefore belongs on
+    /// [`Hook::precondition`], not here.
     pub precondition: Option<String>,
-    /// Setup commands run sequentially before the hooks; failure aborts.
+    /// Stage-wide setup commands run sequentially before the hooks; the first
+    /// failure aborts the stage and every hook is reported
+    /// [`HookStatus::Unknown`]. Also evaluated in the worktree.
     pub before: Vec<String>,
     /// Teardown commands run after the hooks succeed; failure aborts.
     pub after: Vec<String>,
@@ -191,13 +230,21 @@ pub struct HookRunRequest {
     /// Repository root; per-file hooks run with this as their working directory,
     /// and all git plumbing (staged files, re-staging fixes) targets it.
     pub root: PathBuf,
-    /// Staged-content snapshot root for whole-workspace hook isolation.
+    /// Staged-content snapshot root — the tree this run validates.
     ///
-    /// When `Some`, a [`Hook::workspace`] hook runs from here — a non-destructive
-    /// copy of the staged index (see [`crate::snapshot`]) — so it sees staged
-    /// content only, never unstaged worktree edits or untracked files. `None`
-    /// (e.g. `--all-files`, or a stage with no workspace hooks) runs every hook
-    /// from `root` as before.
+    /// When `Some`, **every** hook runs from here: a non-destructive copy of the
+    /// staged index (see [`crate::snapshot`]) holding exactly the bytes the
+    /// commit would capture, with unstaged worktree edits and untracked files
+    /// absent. This is what the git-hook / commit-gate path passes, because a
+    /// gate must judge the index, not the worktree.
+    ///
+    /// `None` means the run is *about* the worktree — a manual `poly hooks run`,
+    /// `--all-files`, a non-index stage, `poly lint`'s whole-project phase — and
+    /// every hook runs from [`Self::root`].
+    ///
+    /// The two are never mixed within a run: [`HookOutcome::validated`] records
+    /// the tree each hook was judged against so the report can say which bytes
+    /// were checked.
     pub work_root: Option<PathBuf>,
     /// Candidate file universe (paths relative to `root`), filtered per hook.
     pub files: Vec<PathBuf>,
@@ -232,10 +279,44 @@ pub struct HookRunOutcome {
 }
 
 impl HookRunOutcome {
-    /// `true` when every stage ran (or was skipped) and no hook failed.
+    /// `true` when every stage ran (or was skipped) and no hook failed or was
+    /// left without a verdict.
     #[must_use]
     pub fn success(&self) -> bool {
         self.stages.iter().all(StageOutcome::success)
+    }
+
+    /// How many hooks actually produced a pass/fail verdict.
+    ///
+    /// Skipped hooks (no matching files, or a precondition that declared them
+    /// inapplicable) and hooks whose setup failed produced no verdict and are
+    /// not counted.
+    #[must_use]
+    pub fn verdict_count(&self) -> usize {
+        self.stages.iter().map(StageOutcome::verdict_count).sum()
+    }
+
+    /// How many configured hooks were withheld because a `precondition` — the
+    /// stage's or their own — declared them inapplicable.
+    #[must_use]
+    pub fn precondition_skipped_count(&self) -> usize {
+        self.stages.iter().map(StageOutcome::precondition_skipped_count).sum()
+    }
+
+    /// `true` when the run finished without validating anything: a
+    /// `precondition` withheld at least one configured hook and **no** hook
+    /// anywhere produced a verdict.
+    ///
+    /// This is the machine-readable form of "the gate reported success but
+    /// checked nothing". A hook skipped for having no matching files does *not*
+    /// count — "no relevant files changed" is a complete, correct verdict — so
+    /// this never fires on an ordinary commit that misses every filter.
+    ///
+    /// The CLI maps it to a distinct exit code so a CI job reading only the exit
+    /// status can tell "validated and clean" from "validated nothing".
+    #[must_use]
+    pub fn validated_nothing(&self) -> bool {
+        self.precondition_skipped_count() > 0 && self.verdict_count() == 0
     }
 }
 
@@ -256,6 +337,13 @@ pub struct StageOutcome {
 
 impl StageOutcome {
     /// `true` when the stage was not aborted and no hook or step failed.
+    ///
+    /// A [`StageStatus::Skipped`] stage is a success: a `precondition` answers
+    /// "does this apply here?", and "no" is a legitimate answer, not a fault.
+    /// It is *not* silent, though — every withheld hook is listed in
+    /// [`Self::hooks`] with its reason, and
+    /// [`HookRunOutcome::validated_nothing`] gives a machine consumer the
+    /// signal that nothing was checked.
     #[must_use]
     pub fn success(&self) -> bool {
         if matches!(self.status, StageStatus::Aborted(_)) {
@@ -265,6 +353,21 @@ impl StageOutcome {
             && self.after.iter().all(|s| !s.status.is_failure())
             && self.hooks.iter().all(|h| !h.status.is_failure())
     }
+
+    /// How many of this stage's hooks produced a pass/fail verdict.
+    #[must_use]
+    pub fn verdict_count(&self) -> usize {
+        self.hooks.iter().filter(|hook| hook.status.is_verdict()).count()
+    }
+
+    /// How many of this stage's hooks a `precondition` withheld.
+    #[must_use]
+    pub fn precondition_skipped_count(&self) -> usize {
+        self.hooks
+            .iter()
+            .filter(|hook| matches!(&hook.status, HookStatus::Skipped(reason) if reason.is_precondition()))
+            .count()
+    }
 }
 
 /// Whether a stage ran, was skipped by its precondition, or aborted.
@@ -272,9 +375,12 @@ impl StageOutcome {
 pub enum StageStatus {
     /// The stage's hooks were executed.
     Ran,
-    /// The precondition failed; the stage was skipped (not an error).
+    /// The precondition failed; the stage was skipped (not an error). Every
+    /// configured hook is still listed, marked
+    /// [`SkipReason::StagePrecondition`].
     Skipped(String),
-    /// A `before`/`after` step failed; the stage was aborted.
+    /// A `before`/`after` step failed; the stage was aborted. Every configured
+    /// hook is still listed, marked [`HookStatus::Unknown`].
     Aborted(String),
 }
 
@@ -298,6 +404,9 @@ pub struct HookOutcome {
     pub position: usize,
     /// Pass/fail/skip status.
     pub status: HookStatus,
+    /// This hook's own `before` step outcomes, in order. Empty when the hook
+    /// declares no `before`, or when it never reached them.
+    pub before: Vec<StepOutcome>,
     /// Whether the hook modified files that were then re-staged (`stage_fixed`).
     pub files_modified: bool,
     /// Captured combined stdout+stderr, concatenated across `ARG_MAX` batches.
@@ -307,6 +416,35 @@ pub struct HookOutcome {
     /// Whether this outcome was served from the tier-1 result cache (the hook
     /// body was not executed).
     pub cached: bool,
+    /// The tree this hook's verdict was computed against.
+    ///
+    /// Recorded — and rendered — because a gate that does not say which bytes it
+    /// read cannot be trusted to have read the right ones.
+    pub validated: ValidatedTree,
+}
+
+/// Which tree a hook was evaluated against.
+///
+/// A commit gate and a manual whole-tree run answer different questions, and the
+/// answers can differ: a file can be valid in the index and broken in the
+/// worktree, or the reverse. Naming the tree in the outcome is what keeps the
+/// two apart in the report instead of leaving the reader to assume.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ValidatedTree {
+    /// The live working tree, including unstaged edits and untracked files.
+    #[default]
+    Worktree,
+    /// The staged-content snapshot — byte-for-byte what a commit would capture.
+    StagedIndex,
+}
+
+impl fmt::Display for ValidatedTree {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Worktree => formatter.write_str("worktree"),
+            Self::StagedIndex => formatter.write_str("staged content"),
+        }
+    }
 }
 
 /// Pass/fail/skip status shared by hooks and steps.
@@ -319,23 +457,174 @@ pub enum HookStatus {
         /// The process exit code, if available.
         code: Option<i32>,
     },
-    /// Not run (e.g. no matched files and not `always_run`).
+    /// Deliberately not run, and that is fine: the hook does not apply here.
+    /// Not a failure.
     Skipped(SkipReason),
+    /// Not run because the setup it depends on failed, so **whatever this hook
+    /// checks was not checked and its verdict is unknown**.
+    ///
+    /// Distinct from [`Self::Skipped`]: a skip says "does not apply", this says
+    /// "should have applied, could not tell". Counts as a failure, so a run
+    /// containing one never reports success.
+    Unknown(UnknownReason),
+    /// **poly killed the hook**: it was still running when its time budget
+    /// elapsed, so it never reported anything and its verdict is unknown.
+    ///
+    /// Deliberately distinct from [`Self::Failed`]. "this tool says your code is
+    /// wrong" and "poly stopped this tool after N seconds" call for different
+    /// actions — fix the code versus raise the budget or fix the wedged tool —
+    /// and collapsing them would put the reader back where the hang left them.
+    /// Counts as a failure: a hook that was killed checked nothing, and a run
+    /// that reported success on that basis would be a false pass.
+    TimedOut(TimeoutReason),
+    /// The hook exited 0 after fixing staged content, but the fix could **not**
+    /// be carried into the worktree: the listed paths have unstaged edits that
+    /// writing it would destroy.
+    ///
+    /// Counts as a failure so the commit is blocked. The alternatives are worse:
+    /// overwriting the author's unstaged work, staging hunks they deliberately
+    /// left out, or committing the unfixed staged bytes while reporting a pass.
+    /// Blocking hands the decision back to the author with nothing lost.
+    FixWithheld(Vec<PathBuf>),
     /// Failed to launch (binary not found, etc.).
     Error(String),
 }
 
 impl HookStatus {
-    /// `true` for [`HookStatus::Failed`] / [`HookStatus::Error`].
+    /// `true` for statuses that must fail the run: an explicit non-zero exit, a
+    /// launch error, a hook whose verdict could not be determined, a hook poly
+    /// killed for overrunning its budget, or a fix that could not be applied
+    /// without losing work.
     #[must_use]
     pub fn is_failure(&self) -> bool {
-        matches!(self, Self::Failed { .. } | Self::Error(_))
+        matches!(
+            self,
+            Self::Failed { .. } | Self::Error(_) | Self::Unknown(_) | Self::TimedOut(_) | Self::FixWithheld(_)
+        )
+    }
+
+    /// `true` when the hook actually ran and produced a pass/fail answer.
+    ///
+    /// [`Self::FixWithheld`] counts: the hook ran and judged the staged content,
+    /// and its answer was "this needed fixing". Only the delivery of the fix
+    /// failed. [`Self::TimedOut`] does **not**: a killed hook was interrupted
+    /// mid-check, so it answered nothing — same as [`Self::Unknown`].
+    #[must_use]
+    pub fn is_verdict(&self) -> bool {
+        matches!(
+            self,
+            Self::Passed | Self::Failed { .. } | Self::Error(_) | Self::FixWithheld(_)
+        )
     }
 }
 
-/// Why a hook was skipped.
+/// Why a hook was skipped — none of these are faults.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SkipReason {
     /// No files matched the hook's filter and the hook is not `always_run`.
     NoFiles,
+    /// The **stage's** `precondition` declared the whole stage inapplicable;
+    /// this hook was withheld along with every other hook in the stage.
+    StagePrecondition(String),
+    /// The **hook's own** `precondition` declared this hook inapplicable. Its
+    /// siblings are unaffected.
+    HookPrecondition(String),
+}
+
+impl SkipReason {
+    /// `true` when a `precondition` withheld the hook (as opposed to it simply
+    /// having no files to work on).
+    #[must_use]
+    pub fn is_precondition(&self) -> bool {
+        matches!(self, Self::StagePrecondition(_) | Self::HookPrecondition(_))
+    }
+}
+
+impl fmt::Display for SkipReason {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NoFiles => formatter.write_str("no matching files"),
+            Self::StagePrecondition(command) => {
+                write!(formatter, "stage precondition not met: {command}")
+            }
+            Self::HookPrecondition(command) => write!(formatter, "precondition not met: {command}"),
+        }
+    }
+}
+
+/// Whose setup failed, leaving a hook without a verdict.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SetupScope {
+    /// The stage's `before` list — every hook in the stage is affected.
+    Stage,
+    /// The hook's own `before` list — only this hook is affected.
+    Hook,
+}
+
+impl fmt::Display for SetupScope {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Stage => formatter.write_str("stage setup"),
+            Self::Hook => formatter.write_str("setup"),
+        }
+    }
+}
+
+/// Why a hook's verdict is unknown: the `before` step naming `command` failed
+/// in `root`, so the hook never executed.
+///
+/// `root` is recorded because it is the whole diagnosis in the case that
+/// motivated this type: a prerequisite can be satisfiable in the worktree and
+/// permanently unsatisfiable in the staged snapshot a `workspace` hook runs in
+/// (a `.gitignore`d `gradle-wrapper.jar`, say). Reporting the directory the
+/// command actually ran in stops the reader concluding "it works from my
+/// worktree, so the hook works".
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnknownReason {
+    /// Whether the stage's setup or the hook's own setup failed.
+    pub scope: SetupScope,
+    /// The `before` command line that failed.
+    pub command: String,
+    /// The directory that command ran in — the tree the hook would have been
+    /// evaluated against.
+    pub root: PathBuf,
+}
+
+/// Why a hook has no verdict: poly killed it after `elapsed` because it
+/// overran its `limit`.
+///
+/// Both numbers are recorded because the reader's next action depends on the
+/// gap between them: a hook killed at 600.0s having run 600.1s is a budget that
+/// is too tight for a legitimately slow tool, while one killed after a budget it
+/// blew past by orders of magnitude is a wedged tool. Neither is the same fact
+/// as "this tool found a problem".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TimeoutReason {
+    /// The budget the hook was given.
+    pub limit: Duration,
+    /// How long it actually ran before poly killed it.
+    pub elapsed: Duration,
+}
+
+impl fmt::Display for TimeoutReason {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "timed out: poly killed it after {}, limit {}",
+            crate::reporter::format_duration(self.elapsed),
+            crate::reporter::format_duration(self.limit)
+        )
+    }
+}
+
+impl fmt::Display for UnknownReason {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "{} failed in {}: {}",
+            self.scope,
+            self.root.display(),
+            self.command
+        )
+    }
 }

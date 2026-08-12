@@ -13,6 +13,7 @@ description = "Execution building blocks for poly's native git hook runner (sync
 [dependencies]
 anstyle-query = { workspace = true }
 anyhow = { workspace = true }
+blake3 = { workspace = true }
 clap = { workspace = true }
 console = { workspace = true }
 dunce = { workspace = true }

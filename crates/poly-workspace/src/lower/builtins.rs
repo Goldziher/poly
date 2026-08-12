@@ -64,6 +64,14 @@ pub(super) trait ToolProbe {
     /// `cargo clippy` in a non-Rust repo. An explicit `cargo = true` bypasses
     /// this — that is the user's deliberate choice.
     fn is_cargo_project(&self) -> bool;
+
+    /// Evaluate a `skip`/`only` guard's `{ run = "…" }` condition: `true` when
+    /// the command exits 0.
+    ///
+    /// Part of the probe so guard evaluation is injectable — a guard that is
+    /// never actually evaluated is the defect this method exists to prevent, and
+    /// a stub makes that testable without spawning a shell.
+    fn guard_passes(&self, command: &str) -> bool;
 }
 
 /// The production probe: resolves a tool against `PATH` (and Windows `PATHEXT`)
@@ -80,6 +88,27 @@ impl ToolProbe for PathProbe<'_> {
 
     fn is_cargo_project(&self) -> bool {
         self.root.join("Cargo.toml").is_file()
+    }
+
+    /// Run the condition from the repository root with `sh -c` (`cmd /C` on
+    /// Windows), discarding its output — a guard is a probe, not a check. A
+    /// command that cannot be launched counts as not matching, like a non-zero
+    /// exit.
+    fn guard_passes(&self, command: &str) -> bool {
+        #[cfg(windows)]
+        let (shell, shell_arg) = ("cmd", "/C");
+        #[cfg(not(windows))]
+        let (shell, shell_arg) = ("sh", "-c");
+
+        std::process::Command::new(shell)
+            .arg(shell_arg)
+            .arg(command)
+            .current_dir(self.root)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success())
     }
 }
 
