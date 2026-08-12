@@ -37,5 +37,6 @@ pub use language::Language;
 pub use report::Verbosity;
 pub use resolve::ConfigSet;
 pub use runner::{
-    EngineDebug, FormatResult, FormatRun, LintResult, LintRun, RunDebug, RunOptions, format, format_run, lint, lint_run,
+    EngineDebug, FormatResult, FormatRun, LintResult, LintRun, RunDebug, RunOptions, SkippedFile, format, format_run,
+    lint, lint_run,
 };

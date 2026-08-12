@@ -6,8 +6,10 @@
 
 use std::path::{Path, PathBuf};
 
+use poly_core::Config;
 use serde::Serialize;
 
+use super::excludes::{self, ExcludeReport};
 use super::probe::{Probe, probe_version};
 use super::shadow::{PathEntry, Resolution};
 
@@ -161,6 +163,8 @@ pub struct DoctorReport {
     pub config: ConfigReport,
     /// Cache location.
     pub cache: CacheReport,
+    /// `[discovery] exclude` globs that prune more of the tree than they name.
+    pub excludes: ExcludeReport,
     /// Everything diagnosed, worst first.
     pub findings: Vec<Finding>,
 }
@@ -180,14 +184,25 @@ pub fn collect(explicit_config: Option<&Path>) -> DoctorReport {
     let resolution = Resolution::detect();
     let running = RunningBinary::detect(resolution.running.clone());
     let path = build_path_report(&resolution);
-    let config = build_config_report(explicit_config);
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let loaded = load_config(explicit_config, &cwd);
+    let config = build_config_report(explicit_config, &cwd, &loaded);
     let cache = build_cache_report();
-    let findings = diagnose(&running, &resolution, &path, &config, &cache);
+    // The exclude scan needs the config that actually loaded, and the directory
+    // that config's globs are anchored to — the config file's own directory, not
+    // the working directory, so running `poly doctor` from a subdirectory still
+    // diagnoses the repo-root excludes.
+    let excludes = match &loaded {
+        Ok(loaded) => excludes::scan(config.path.as_deref().and_then(Path::parent), loaded),
+        Err(_) => ExcludeReport::default(),
+    };
+    let findings = diagnose(&running, &resolution, &path, &config, &cache, &excludes);
     DoctorReport {
         running,
         path,
         config,
         cache,
+        excludes,
         findings,
     }
 }
@@ -215,12 +230,17 @@ fn build_path_report(resolution: &Resolution) -> PathReport {
     }
 }
 
-/// Locate the config in effect and confirm it actually parses.
-fn build_config_report(explicit: Option<&Path>) -> ConfigReport {
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+/// Locate the config in effect and record whether it parsed.
+///
+/// `loaded` is the result of loading it through the resolver the real commands
+/// use, so a broken remote `extends` base surfaces here rather than on the next
+/// lint. It is passed in rather than loaded here because the loaded config is
+/// also what the exclude scan diagnoses, and loading it twice would double the
+/// only expensive part of `poly doctor`'s config work.
+fn build_config_report(explicit: Option<&Path>, cwd: &Path, loaded: &anyhow::Result<Config>) -> ConfigReport {
     let path = match explicit {
         Some(path) => Some(path.to_path_buf()),
-        None => poly_config::find_config(&cwd),
+        None => poly_config::find_config(cwd),
     };
     let local_override = path
         .as_ref()
@@ -232,11 +252,8 @@ fn build_config_report(explicit: Option<&Path>) -> ConfigReport {
         .map(|root| root.join("poly-config.lock"))
         .filter(|p| p.is_file());
 
-    // Load through the same resolver the real commands use, so a broken remote
-    // `extends` base surfaces here rather than on the next lint.
-    let loaded = load_config(explicit, &cwd);
     let (loaded_ok, error) = match loaded {
-        Ok(()) => (true, None),
+        Ok(_) => (true, None),
         Err(error) => (false, Some(format!("{error:#}"))),
     };
     ConfigReport {
@@ -248,15 +265,14 @@ fn build_config_report(explicit: Option<&Path>) -> ConfigReport {
     }
 }
 
-/// Load the config exactly as `poly lint` does, discarding the value — we only
-/// care whether it loads.
-fn load_config(explicit: Option<&Path>, cwd: &Path) -> anyhow::Result<()> {
+/// Load the config exactly as `poly lint` does.
+fn load_config(explicit: Option<&Path>, cwd: &Path) -> anyhow::Result<Config> {
     let resolver = crate::config_sources::resolver()?;
-    match explicit {
+    let loaded = match explicit {
         Some(path) => poly_config::PolyConfig::load_file_with(path, &resolver)?,
         None => poly_config::PolyConfig::load_with(cwd, &resolver)?,
     };
-    Ok(())
+    Ok(loaded.into())
 }
 
 /// Resolve the cache root the way `poly cache` does.
@@ -280,11 +296,13 @@ fn diagnose(
     path: &PathReport,
     config: &ConfigReport,
     cache: &CacheReport,
+    excludes: &ExcludeReport,
 ) -> Vec<Finding> {
     let mut findings = Vec::new();
     diagnose_running(running, &mut findings);
     diagnose_path(resolution, path, &mut findings);
     diagnose_config(config, &mut findings);
+    excludes::diagnose(excludes, &mut findings);
     if let Some(error) = &cache.error {
         findings.push(Finding {
             severity: Severity::Warning,
@@ -471,6 +489,7 @@ mod tests {
                 directory: None,
                 error: None,
             },
+            excludes: ExcludeReport::default(),
             findings: vec![Finding {
                 severity,
                 summary: "x".to_string(),

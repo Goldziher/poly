@@ -650,6 +650,75 @@ re-materialized only when its staged object id changed since the last snapshot (
 caches stay warm; files that left the tree are pruned while tool caches inside the snapshot are
 preserved. It self-heals and is purgeable like any cache (`poly cache clean`).
 
+#### Prerequisites: `precondition` and `before`
+
+A hook can declare what must be true before it runs. Both keys exist at **stage** scope
+(`[hooks.<stage>]`) and, preferably, at **hook** scope:
+
+```toml
+[hooks.pre-commit.commands.kotlin]
+run = "./gradlew detekt"
+workspace = true
+precondition = "test -f gradlew"        # not applicable here -> visible skip, not a failure
+before = "./gradlew --version"          # setup broke -> THIS hook's verdict is unknown
+```
+
+The two mean different things:
+
+| key            | on failure                                | scope of the damage             |
+| -------------- | ----------------------------------------- | ------------------------------- |
+| `precondition` | hook **skipped** — it does not apply here  | not a failure                   |
+| `before`       | hook's verdict is **unknown** — it did not run | fails the run                |
+
+**Prefer the hook-scoped form.** A stage-scoped `precondition` withholds *every* hook in the
+stage, and a stage-scoped `before` leaves every hook without a verdict. A hook-scoped one
+contains the damage to the tool it guards, so the rest of the suite still validates.
+
+Scope also decides **which tree** the prerequisite is evaluated against. A hook-scoped
+prerequisite runs in the hook's own execution root — the **staged snapshot** for a
+`workspace = true` hook under isolation, the worktree otherwise — so a prerequisite that
+holds in your worktree but not in the staged tree (a `.gitignore`d `gradle-wrapper.jar`, say)
+is caught, and the report names the directory it failed in. Stage-scoped steps are not tied
+to a hook and always run in the worktree.
+
+A hook that does not run is always listed in the report with its reason — never silently
+dropped:
+
+```text
+[stage] pre-commit
+  - kotlin-not-applicable (precondition not met: test -f settings.gradle)
+  ? kotlin-snippets (not run — setup failed in ~/.cache/poly/<key>/staged: ./gradlew --version)
+      before: ./gradlew --version
+      ERROR: Gradle wrapper jar missing
+  ✓ rust
+```
+
+#### Hook exit codes
+
+`poly hooks run` distinguishes three outcomes, so a CI job reading only the exit status can
+tell a clean run from one that checked nothing:
+
+| exit | meaning                                                                  |
+| ---- | ------------------------------------------------------------------------ |
+| `0`  | validated and clean (a hook with no matching files counts as validated)   |
+| `1`  | a hook failed, or a `before` left a hook's verdict unknown                |
+| `2`  | **validated nothing** — a `precondition` withheld every configured hook   |
+
+#### Conditional `skip` / `only`
+
+`skip`/`only` accept a bare boolean or a list of `{ run = "<command>" }` conditions; a
+condition is active when its command exits 0.
+
+```toml
+[hooks.pre-commit.commands.kotlin]
+run = "./gradlew detekt"
+only = [{ run = "test -f settings.gradle" }]
+```
+
+Only the `run` form is evaluated. Other lefthook condition forms (`ref = "..."`, bare
+git-operation names like `"merge"`) are **rejected at config load** rather than accepted and
+ignored — a guard that silently does nothing is worse than no guard.
+
 #### Hook caching
 
 Hook results are cached (`[cache.results] hooks = "safe"` by default): a hook is **skipped
@@ -1135,13 +1204,23 @@ poly fmt [PATHS]...
   --format <pretty|json|toon>  Output format. Default: pretty.
   --config <PATH>              Use an explicit config file.
   --exclude <GLOB>             Exclude paths from discovery (repeatable; merged
-                               with `[discovery] exclude`).
+                               with `[discovery] exclude`). An unanchored glob
+                               matches at any depth; lead with `/` to anchor it
+                               to the config directory.
+  --deny-skips                 Exit 2 if any file was skipped. Equivalent to
+                               `--max-skips 0`.
+  --max-skips <N>              Exit 2 if more than N files were skipped.
   --no-cache                   Bypass the result cache.
   -j, --jobs <N>               Parallel jobs. Default: logical cores.
   --no-color                   Disable colored output.
-  --verbose                    Pretty output includes descriptions, URLs, and metadata.
+  --verbose                    Pretty output includes descriptions, URLs, and metadata,
+                               and lists every skipped file rather than the first 20.
   --debug                      Include cache hit/miss and timing data.
 ```
+
+Skipped files — no matching engine, a generated file, an unreadable path — are always
+counted and their reasons summarized, so a run that checked nothing cannot look like a
+clean pass. `--deny-skips` / `--max-skips` turn that into a hard failure for CI.
 
 Exit codes:
 
@@ -1149,7 +1228,7 @@ Exit codes:
 |---:|---|
 | 0 | No issues, no formatting drift, or all writes succeeded |
 | 1 | Lint findings remain, or dry-run formatting would change files |
-| 2 | Internal error such as config or I/O failure |
+| 2 | Internal error such as config or I/O failure, or a skip budget was exceeded |
 
 </details>
 

@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use poly_core::report::{self, Verbosity};
-use poly_core::runner::{EngineDebug, FormatResult, FormatRun, LintResult, LintRun, RunDebug};
+use poly_core::runner::{EngineDebug, FormatResult, FormatRun, LintResult, LintRun, RunDebug, SkippedFile};
 use poly_core::{Diagnostic, DiscoveryReport, Edit, ExcludedRule, Severity, Span};
 
 fn sample_lint_results() -> Vec<LintResult> {
@@ -18,6 +18,8 @@ fn sample_lint_results() -> Vec<LintResult> {
         LintResult {
             path: PathBuf::from("src/main.py"),
             fix_withheld_generated: false,
+            fixed: 0,
+            skipped: None,
             diagnostics: vec![
                 Diagnostic {
                     engine: "ruff".to_string(),
@@ -57,6 +59,8 @@ fn sample_lint_results() -> Vec<LintResult> {
         LintResult {
             path: PathBuf::from("src/clean.py"),
             fix_withheld_generated: false,
+            fixed: 0,
+            skipped: None,
             diagnostics: vec![],
             debug: None,
         },
@@ -119,6 +123,8 @@ fn lint_pretty_reports_autofixable_count() {
     let results = vec![LintResult {
         path: PathBuf::from("src/main.py"),
         fix_withheld_generated: false,
+        fixed: 0,
+        skipped: None,
         diagnostics: vec![
             Diagnostic {
                 engine: "ruff".to_string(),
@@ -188,6 +194,8 @@ fn lint_pretty_reports_all_findings_fixable_when_every_diagnostic_has_a_fix() {
     let results = vec![LintResult {
         path: PathBuf::from("src/main.py"),
         fix_withheld_generated: false,
+        fixed: 0,
+        skipped: None,
         diagnostics: vec![fixable_diagnostic("F401"), fixable_diagnostic("F811")],
         debug: None,
     }];
@@ -278,6 +286,8 @@ fn lint_pretty_debug_renders_engine_timing_block() {
     let results = vec![LintResult {
         path: PathBuf::from("src/main.py"),
         fix_withheld_generated: false,
+        fixed: 0,
+        skipped: None,
         diagnostics: vec![Diagnostic {
             engine: "ruff".to_string(),
             code: Some("E501".to_string()),
@@ -402,11 +412,13 @@ fn sample_discovery() -> DiscoveryReport {
                 pattern: "test_apps/**".to_string(),
                 files: 0,
                 directories: 1,
+                ..ExcludedRule::default()
             },
             ExcludedRule {
                 pattern: "**/*.tf".to_string(),
                 files: 2,
                 directories: 0,
+                ..ExcludedRule::default()
             },
         ],
     }
@@ -421,6 +433,7 @@ fn sample_discovery() -> DiscoveryReport {
 fn format_summary_reports_what_discovery_excluded() {
     owo_colors::set_override(false);
     let run = FormatRun {
+        skipped: Vec::new(),
         errors: Vec::new(),
         results: vec![FormatResult {
             path: PathBuf::from("src/clean.py"),
@@ -456,6 +469,7 @@ fn format_summary_reports_what_discovery_excluded() {
 fn format_summary_explains_a_run_that_checked_nothing() {
     owo_colors::set_override(false);
     let run = FormatRun {
+        skipped: Vec::new(),
         errors: Vec::new(),
         results: Vec::new(),
         discovery: DiscoveryReport {
@@ -466,6 +480,7 @@ fn format_summary_explains_a_run_that_checked_nothing() {
                 pattern: "**/*.tf".to_string(),
                 files: 1,
                 directories: 0,
+                ..ExcludedRule::default()
             }],
         },
     };
@@ -491,6 +506,7 @@ fn format_summary_explains_a_run_that_checked_nothing() {
 fn format_summary_reports_exclusions_alongside_changed_files() {
     owo_colors::set_override(false);
     let run = FormatRun {
+        skipped: Vec::new(),
         errors: Vec::new(),
         results: sample_format_results(),
         discovery: sample_discovery(),
@@ -509,6 +525,7 @@ fn format_summary_reports_exclusions_alongside_changed_files() {
 fn lint_summary_reports_what_discovery_excluded() {
     owo_colors::set_override(false);
     let run = LintRun {
+        skipped: Vec::new(),
         results: Vec::new(),
         checked: 969,
         discovery: sample_discovery(),
@@ -532,6 +549,7 @@ fn lint_summary_reports_what_discovery_excluded() {
 fn lint_summary_explains_a_run_that_linted_nothing() {
     owo_colors::set_override(false);
     let run = LintRun {
+        skipped: Vec::new(),
         results: Vec::new(),
         checked: 0,
         discovery: sample_discovery(),
@@ -550,6 +568,7 @@ fn lint_summary_explains_a_run_that_linted_nothing() {
 fn summaries_stay_quiet_when_nothing_was_excluded() {
     owo_colors::set_override(false);
     let lint = LintRun {
+        skipped: Vec::new(),
         results: Vec::new(),
         checked: 12,
         discovery: DiscoveryReport::default(),
@@ -559,6 +578,7 @@ fn summaries_stay_quiet_when_nothing_was_excluded() {
     assert!(!text.contains("excluded"), "got: {text}");
 
     let format = FormatRun {
+        skipped: Vec::new(),
         errors: Vec::new(),
         results: sample_format_results(),
         discovery: DiscoveryReport::default(),
@@ -577,4 +597,187 @@ fn results_only_renderers_are_unchanged() {
 
     let (text, _) = report::render_format_pretty(&[], true, Verbosity::default());
     assert_eq!(text, "All formatted. (0 file(s) checked)\n");
+}
+
+/// A path named on the command line that no engine covers is the reported
+/// defect: `poly lint App.csproj` said `No issues found. (0 file(s) linted)` and
+/// exited 0. The count is now qualified and the path is named — the reporter's
+/// "'No issues found' is a false reassurance here; nothing was examined".
+#[test]
+fn lint_summary_names_paths_that_matched_no_engine() {
+    owo_colors::set_override(false);
+    let run = LintRun {
+        results: Vec::new(),
+        checked: 4,
+        skipped: vec![SkippedFile {
+            path: PathBuf::from("packages/csharp/App.csproj"),
+            reason: poly_core::runner::NO_ENGINE_SKIP.to_string(),
+        }],
+        discovery: DiscoveryReport::default(),
+    };
+
+    let (text, _) = report::render_lint_pretty_run(&run, Verbosity::default());
+
+    assert!(text.contains("4 file(s) linted"), "got: {text}");
+    assert!(
+        text.contains("1 skipped (no matching engine for this file type)"),
+        "the count must say what it skipped, got: {text}"
+    );
+    assert!(
+        text.contains("packages/csharp/App.csproj"),
+        "the path must be named, not left to bisection, got: {text}"
+    );
+}
+
+/// A run that reports drift used to drop the skip accounting entirely, so a run
+/// that both changed files and declined others said nothing about the second
+/// half.
+#[test]
+fn format_summary_reports_skips_alongside_changed_files() {
+    owo_colors::set_override(false);
+    let run = FormatRun {
+        errors: Vec::new(),
+        results: sample_format_results(),
+        skipped: vec![SkippedFile {
+            path: PathBuf::from("gen.py"),
+            reason: "hash-stamped generated file".to_string(),
+        }],
+        discovery: DiscoveryReport::default(),
+    };
+
+    let (text, changed) = report::render_format_pretty_run(&run, true, Verbosity::default());
+
+    assert_eq!(changed, 1);
+    assert!(text.contains("1 skipped (hash-stamped generated file)"), "got: {text}");
+    assert!(text.contains("skipped gen.py"), "got: {text}");
+}
+
+/// The listing is bounded by default so a repo with hundreds of generated files
+/// does not bury its findings, and `--verbose` lifts the cap for someone who
+/// wants the whole set without switching to JSON.
+#[test]
+fn skip_listing_is_capped_by_default_and_uncapped_under_verbose() {
+    owo_colors::set_override(false);
+    let skipped: Vec<SkippedFile> = (0..25)
+        .map(|i| SkippedFile {
+            path: PathBuf::from(format!("gen{i}.py")),
+            reason: "hash-stamped generated file".to_string(),
+        })
+        .collect();
+
+    let capped = report::render_skip_note(&skipped, false).expect("a note for 25 skips");
+    assert!(capped.contains("gen0.py"), "got: {capped}");
+    assert!(
+        !capped.contains("gen24.py"),
+        "the default view is capped, got: {capped}"
+    );
+    assert!(capped.contains("and 5 more skipped file(s)"), "got: {capped}");
+
+    let full = report::render_skip_note(&skipped, true).expect("a note for 25 skips");
+    assert!(full.contains("gen24.py"), "--verbose must list them all, got: {full}");
+    assert!(!full.contains("more skipped file(s)"), "got: {full}");
+}
+
+/// Nothing skipped, nothing said.
+#[test]
+fn skip_note_is_absent_when_nothing_was_skipped() {
+    assert!(report::render_skip_note(&[], true).is_none());
+}
+
+/// The reporter's stronger ask: assert on the skipped *set* structurally rather
+/// than reconstructing it from a heuristic and scraping the human summary. The
+/// document stays an array of per-file records, so existing consumers are
+/// unaffected — skipped files simply appear with an empty `diagnostics` list.
+#[test]
+fn lint_json_run_appends_skipped_paths_as_entries() {
+    let run = LintRun {
+        results: sample_lint_results(),
+        checked: 2,
+        skipped: vec![SkippedFile {
+            path: PathBuf::from("App.csproj"),
+            reason: poly_core::runner::NO_ENGINE_SKIP.to_string(),
+        }],
+        discovery: DiscoveryReport::default(),
+    };
+
+    let json = report::report_lint_json_run(&run);
+    let value: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+    let entries = value.as_array().expect("top level stays an array");
+    assert_eq!(entries.len(), 3, "two results plus the skipped path: {json}");
+    let skipped = entries.last().expect("the appended entry");
+    assert_eq!(skipped["path"], "App.csproj");
+    assert_eq!(skipped["skipped"], poly_core::runner::NO_ENGINE_SKIP);
+    assert_eq!(
+        skipped["diagnostics"].as_array().map(Vec::len),
+        Some(0),
+        "a skipped file has no findings to report: {json}"
+    );
+}
+
+/// A file a backend declined already has a `FormatResult` carrying its reason,
+/// so it must not be duplicated by the run-level skip list.
+#[test]
+fn format_json_run_does_not_duplicate_declined_files() {
+    let declined = FormatResult {
+        path: PathBuf::from("Taskfile.yaml"),
+        changed: false,
+        formatted: None,
+        skipped: Some("Go/Helm template syntax".to_string()),
+        debug: None,
+    };
+    let run = FormatRun {
+        errors: Vec::new(),
+        results: vec![declined],
+        skipped: vec![
+            SkippedFile {
+                path: PathBuf::from("Taskfile.yaml"),
+                reason: "Go/Helm template syntax".to_string(),
+            },
+            SkippedFile {
+                path: PathBuf::from("App.csproj"),
+                reason: poly_core::runner::NO_ENGINE_SKIP.to_string(),
+            },
+        ],
+        discovery: DiscoveryReport::default(),
+    };
+
+    let json = report::report_format_json_run(&run);
+    let value: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+    let entries = value.as_array().expect("top level stays an array");
+    assert_eq!(entries.len(), 2, "the declined file appears exactly once: {json}");
+    assert_eq!(entries[1]["path"], "App.csproj");
+    assert_eq!(entries[1]["skipped"], poly_core::runner::NO_ENGINE_SKIP);
+}
+
+/// The reporter's exact objection: "'No issues found' is a false reassurance
+/// here. Nothing was examined." A run whose only path was skipped examined
+/// nothing, so the headline must not read as a verified pass — regardless of
+/// whether the file set was emptied by the exclude rules or by the skip.
+#[test]
+fn a_run_whose_only_file_was_skipped_does_not_read_as_clean() {
+    owo_colors::set_override(false);
+    let skipped = vec![SkippedFile {
+        path: PathBuf::from("App.csproj"),
+        reason: poly_core::runner::NO_ENGINE_SKIP.to_string(),
+    }];
+
+    let lint = LintRun {
+        results: Vec::new(),
+        checked: 0,
+        skipped: skipped.clone(),
+        discovery: DiscoveryReport::default(),
+    };
+    let (text, _) = report::render_lint_pretty_run(&lint, Verbosity::default());
+    assert!(!text.contains("No issues found."), "got: {text}");
+    assert!(text.contains("Nothing was linted."), "got: {text}");
+
+    let format = FormatRun {
+        errors: Vec::new(),
+        results: Vec::new(),
+        skipped,
+        discovery: DiscoveryReport::default(),
+    };
+    let (text, _) = report::render_format_pretty_run(&format, true, Verbosity::default());
+    assert!(!text.contains("All formatted."), "got: {text}");
+    assert!(text.contains("Nothing was checked."), "got: {text}");
 }

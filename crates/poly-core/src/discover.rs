@@ -57,6 +57,28 @@ pub struct DiscoveredFile {
     pub config_id: usize,
 }
 
+/// How many distinct depths' worth of sample directories one rule keeps.
+///
+/// The samples exist to *show* a reader where a rule reached, so one per depth
+/// is the useful unit: a rule pruning five hundred directories all at depth four
+/// is doing one thing, while a rule pruning two at depths one and seven is
+/// almost certainly doing something its author did not intend. The cap bounds
+/// the memory a pathological glob can cost; no real exclude nests further.
+const MAX_SAMPLED_DEPTHS: usize = 8;
+
+/// One directory an exclude rule pruned, kept as evidence of where the rule
+/// actually reaches.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct ExcludedDirectory {
+    /// The directory, spelled the way the walk saw it (relative to the walk root
+    /// when the root itself was relative).
+    pub path: PathBuf,
+    /// Path components between the walk root and this directory. A top-level
+    /// `e2e/` is depth 1.
+    pub depth: usize,
+}
+
 /// One `[discovery] exclude` / `--exclude` glob together with what it actually
 /// pruned during a run.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
@@ -69,6 +91,27 @@ pub struct ExcludedRule {
     /// Directories this rule pruned. The walk never descended into them, so the
     /// files they contain are counted nowhere.
     pub directories: usize,
+    /// The first directory this rule pruned at each distinct depth, capped at
+    /// [`MAX_SAMPLED_DEPTHS`].
+    ///
+    /// An exclude glob with no `/` in it — including the bare directory name
+    /// poly derives from a `foo/**` pattern — matches at *any* depth, so a rule
+    /// meant for one top-level directory can quietly prune a same-named package
+    /// deep in a source tree. Recording one directory per depth is what lets
+    /// `poly doctor` name that directory instead of merely suspecting it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub directory_samples: Vec<ExcludedDirectory>,
+}
+
+impl ExcludedRule {
+    /// How many distinct depths this rule pruned directories at (saturating at
+    /// [`MAX_SAMPLED_DEPTHS`]).
+    ///
+    /// More than one is the signal that a pattern is broader than the single
+    /// directory its author was picturing.
+    pub fn distinct_directory_depths(&self) -> usize {
+        self.directory_samples.len()
+    }
 }
 
 /// What `[discovery] exclude` / `--exclude` removed from a run.
@@ -114,31 +157,69 @@ impl DiscoveryReport {
     }
 
     /// Fold one rule's tally into this report, accumulating across walk roots.
-    fn record_rule(&mut self, pattern: &str, files: usize, directories: usize) {
-        if files == 0 && directories == 0 {
+    fn record_rule(&mut self, pattern: &str, hits: &RuleHits) {
+        if hits.files == 0 && hits.directories == 0 {
             return;
         }
         match self.rules.iter_mut().find(|r| r.pattern == pattern) {
             Some(rule) => {
-                rule.files += files;
-                rule.directories += directories;
+                rule.files += hits.files;
+                rule.directories += hits.directories;
+                for sample in &hits.samples {
+                    push_sample(&mut rule.directory_samples, sample);
+                }
             }
             None => self.rules.push(ExcludedRule {
                 pattern: pattern.to_owned(),
-                files,
-                directories,
+                files: hits.files,
+                directories: hits.directories,
+                directory_samples: hits.samples.clone(),
             }),
         }
     }
 
-    /// Order rules by how much they pruned (then by pattern, for determinism).
+    /// Order rules by how much they pruned (then by pattern, for determinism),
+    /// and each rule's sampled directories shallowest-first — so a reader sees
+    /// the directory the rule was probably written for before the ones it
+    /// caught by accident.
     fn sort_rules(&mut self) {
         self.rules.sort_by(|a, b| {
             (b.files + b.directories)
                 .cmp(&(a.files + a.directories))
                 .then_with(|| a.pattern.cmp(&b.pattern))
         });
+        for rule in &mut self.rules {
+            rule.directory_samples.sort_by_key(|sample| sample.depth);
+        }
     }
+}
+
+/// Whether a directory at `depth` would be retained as a sample.
+///
+/// Checked *before* building an [`ExcludedDirectory`] on the walk path: a single
+/// walk can prune thousands of directories (one `node_modules` rule is enough),
+/// but only the first at each of [`MAX_SAMPLED_DEPTHS`] depths is ever kept.
+/// Asking first keeps the discarded majority free of a `PathBuf` allocation.
+fn wants_sample(samples: &[ExcludedDirectory], depth: usize) -> bool {
+    samples.len() < MAX_SAMPLED_DEPTHS && !samples.iter().any(|s| s.depth == depth)
+}
+
+/// Keep `sample` if this is the first directory seen at its depth and there is
+/// room left under [`MAX_SAMPLED_DEPTHS`].
+fn push_sample(samples: &mut Vec<ExcludedDirectory>, sample: &ExcludedDirectory) {
+    if !wants_sample(samples, sample.depth) {
+        return;
+    }
+    samples.push(sample.clone());
+}
+
+/// What one exclude rule pruned during one walk.
+#[derive(Debug, Default, Clone)]
+struct RuleHits {
+    files: usize,
+    directories: usize,
+    /// One pruned directory per distinct depth, capped at [`MAX_SAMPLED_DEPTHS`].
+    samples: Vec<ExcludedDirectory>,
 }
 
 /// Running tally of what one walk root's exclude set pruned.
@@ -147,9 +228,8 @@ struct ExcludeHits {
     files: usize,
     directories: usize,
     explicit: usize,
-    /// `(files, directories)` per rule, positionally parallel to
-    /// [`ExcludeMatcher::per_rule`].
-    per_rule: Vec<(usize, usize)>,
+    /// Per-rule tallies, positionally parallel to [`ExcludeMatcher::per_rule`].
+    per_rule: Vec<RuleHits>,
 }
 
 /// The compiled exclude set for one walk root, plus the tally of what it pruned.
@@ -222,16 +302,35 @@ impl ExcludeMatcher {
         }
         if let Some(index) = attributed {
             if hits.per_rule.is_empty() {
-                hits.per_rule = vec![(0, 0); self.patterns.len()];
+                hits.per_rule = vec![RuleHits::default(); self.patterns.len()];
             }
-            let (files, directories) = &mut hits.per_rule[index];
+            let rule = &mut hits.per_rule[index];
             if is_dir {
-                *directories += 1;
+                rule.directories += 1;
+                let depth = self.depth_of(path);
+                if wants_sample(&rule.samples, depth) {
+                    rule.samples.push(ExcludedDirectory {
+                        path: path.to_path_buf(),
+                        depth,
+                    });
+                }
             } else {
-                *files += 1;
+                rule.files += 1;
             }
         }
         true
+    }
+
+    /// How many path components separate `path` from the walk root. A directory
+    /// sitting directly in the root is depth 1. A path outside the root (the
+    /// `--force-exclude` explicit case, matched from the working directory)
+    /// falls back to its own component count, which keeps the number monotonic
+    /// rather than accurate — it is only ever compared against other depths from
+    /// the same matcher.
+    fn depth_of(&self, path: &Path) -> usize {
+        path.strip_prefix(&self.root)
+            .map(|relative| relative.components().count())
+            .unwrap_or_else(|_| path.components().count())
     }
 
     /// Fold this root's tally into the run-wide report.
@@ -240,8 +339,8 @@ impl ExcludeMatcher {
         report.excluded_files += hits.files;
         report.excluded_directories += hits.directories;
         report.excluded_explicit += hits.explicit;
-        for (pattern, (files, directories)) in self.patterns.iter().zip(&hits.per_rule) {
-            report.record_rule(pattern, *files, *directories);
+        for (pattern, rule) in self.patterns.iter().zip(&hits.per_rule) {
+            report.record_rule(pattern, rule);
         }
     }
 }
@@ -394,6 +493,21 @@ fn explicit_matcher(exclude: &[String]) -> Option<Arc<ExcludeMatcher>> {
 /// like a `.gitignore`: matched paths are pruned and everything else is kept.
 /// Returns `None` when there is nothing to exclude. An individual malformed
 /// glob is skipped with a warning rather than aborting discovery.
+///
+/// ## Anchoring
+///
+/// Gitignore rules apply verbatim: a glob with no `/` matches a file or
+/// directory of that name at **any** depth, while a leading `/` anchors it to
+/// `root`. The `foo/**` shape also gets a derived bare `foo` rule, without which
+/// the directory itself is never pruned (only its contents) and the walk
+/// descends into a tree the user asked to skip — but that derived rule carries
+/// no separator, so `e2e/**` prunes every directory named `e2e` at every depth.
+/// That is surprising when `e2e` is also a Java/Kotlin package name, and it is
+/// why [`ExcludedRule::directory_samples`] records where a rule actually
+/// reached: `poly doctor` reports any rule pruning at more than one depth.
+/// Anchoring (`/e2e/**`) is the fix, and is deliberately *not* applied
+/// automatically — silently re-interpreting an existing exclude would change
+/// which files a repo's gate covers without anyone editing anything.
 fn build_excludes(root: &std::path::Path, exclude: &[String]) -> Option<ignore::overrides::Override> {
     if exclude.is_empty() {
         return None;

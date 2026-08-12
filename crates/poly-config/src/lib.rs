@@ -155,6 +155,30 @@ pub struct DiscoveryConfig {
     /// Gitignore-style globs excluded from discovery. Accepts a single string or
     /// an array (`exclude = "test_apps/**"` or `exclude = ["a/**", "b/**"]`),
     /// matching the `files`/`exclude` shape used throughout `[hooks]`/`[tools]`.
+    ///
+    /// **The matching rule, in one sentence:** a glob that does not begin with
+    /// `/` matches a file or directory of that name at *any* depth below the
+    /// directory holding this config, while a leading `/` anchors it to that
+    /// directory.
+    ///
+    /// This is gitignore's rule, and it is the one thing about `exclude` worth
+    /// reading twice, because the unanchored form is what people write by
+    /// default:
+    ///
+    /// ```toml
+    /// [discovery]
+    /// # Prunes the top-level e2e/ AND src/test/java/io/xberg/e2e/, because
+    /// # `e2e` is also an ordinary Java/Kotlin package name.
+    /// exclude = ["e2e/**"]
+    ///
+    /// # Prunes only the top-level e2e/ directory.
+    /// exclude = ["/e2e/**"]
+    /// ```
+    ///
+    /// Nothing warns you when the unanchored form over-reaches — the extra files
+    /// are simply never discovered, and the run reports a clean pass over what is
+    /// left. `poly doctor` reports any rule that is pruning directories at more
+    /// than one depth, which is the symptom.
     pub exclude: Patterns,
     /// Apply `exclude` to explicitly named files too, not just to the walk.
     ///

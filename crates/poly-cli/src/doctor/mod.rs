@@ -12,7 +12,12 @@
 //! the running executable and its build identity, every `poly` on `PATH` with
 //! the version each one reports, the config in effect, and the cache directory —
 //! then exits non-zero when it finds something actively wrong.
+//!
+//! [`excludes`] extends that to the same disagreement one level up: a run whose
+//! `[discovery] exclude` quietly hides more of the tree than its author meant
+//! also reports success, over files it never looked at.
 
+pub mod excludes;
 pub mod probe;
 pub mod render;
 pub mod report;

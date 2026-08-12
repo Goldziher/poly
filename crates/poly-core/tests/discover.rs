@@ -181,6 +181,77 @@ fn discovery_report_counts_force_excluded_explicit_paths() {
     assert!(report.is_empty(), "{report:?}");
 }
 
+/// The semantics `exclude` actually has, pinned by example.
+///
+/// `e2e/**` reads like "the `e2e` directory at the top of the repo", but the
+/// pattern names no parent, so it prunes *every* directory called `e2e` at any
+/// depth — including `src/test/java/io/xberg/crawlberg/e2e`, where `e2e` is an
+/// ordinary Java package name. A consumer lost months of formatting coverage to
+/// exactly this, because the run still reported a green "all formatted".
+#[test]
+fn an_unanchored_exclude_prunes_directories_at_every_depth() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    let intended = root.join("e2e/smoke.py");
+    let java_package = root.join("test_apps/java/src/test/java/io/xberg/e2e/Bar.java");
+    let kept = root.join("test_apps/java/src/main/java/io/xberg/App.java");
+    write_file(&intended, "x = 1\n");
+    write_file(&java_package, "class Bar {}\n");
+    write_file(&kept, "class App {}\n");
+
+    let exclude = vec!["e2e/**".to_string()];
+    let cfg = ConfigSet::single(Config::default());
+    let (discovered, report) = discover_reporting(&[root.to_path_buf()], &cfg, &exclude, false);
+    let paths: Vec<_> = discovered.iter().map(|f| f.path.as_path()).collect();
+
+    assert_eq!(paths, vec![kept.as_path()], "both `e2e` directories were pruned");
+
+    let rule = &report.rules[0];
+    assert_eq!(rule.pattern, "e2e/**");
+    assert_eq!(rule.directories, 2, "one intended, one accidental: {report:?}");
+    assert_eq!(
+        rule.distinct_directory_depths(),
+        2,
+        "matching at two different depths is the signal the rule is broader than its author meant: {report:?}"
+    );
+    let matched: Vec<&Path> = rule.directory_samples.iter().map(|d| d.path.as_path()).collect();
+    assert!(
+        matched.contains(&root.join("e2e").as_path()),
+        "the intended directory is recorded: {matched:?}"
+    );
+    assert!(
+        matched.contains(&root.join("test_apps/java/src/test/java/io/xberg/e2e").as_path()),
+        "the accidental one is recorded too — naming it is the whole point: {matched:?}"
+    );
+}
+
+/// The way out: a leading slash anchors the pattern to the directory of the
+/// config that declared it, so only the top-level `e2e/` is pruned.
+#[test]
+fn a_leading_slash_anchors_an_exclude_to_the_config_directory() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    let intended = root.join("e2e/smoke.py");
+    let java_package = root.join("test_apps/java/src/test/java/io/xberg/e2e/Bar.java");
+    write_file(&intended, "x = 1\n");
+    write_file(&java_package, "class Bar {}\n");
+
+    let exclude = vec!["/e2e/**".to_string()];
+    let cfg = ConfigSet::single(Config::default());
+    let (discovered, report) = discover_reporting(&[root.to_path_buf()], &cfg, &exclude, false);
+    let paths: Vec<_> = discovered.iter().map(|f| f.path.as_path()).collect();
+
+    assert_eq!(paths, vec![java_package.as_path()], "the nested package survives");
+    assert_eq!(report.excluded_directories, 1);
+    assert_eq!(
+        report.rules[0].distinct_directory_depths(),
+        1,
+        "an anchored rule matches at exactly one depth: {report:?}"
+    );
+}
+
 #[test]
 fn explicitly_passed_path_is_unaffected_by_other_roots() {
     let dir = tempfile::tempdir().unwrap();

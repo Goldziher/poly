@@ -201,6 +201,72 @@ fn doctor_flags_an_install_that_cannot_report_its_version() {
     );
 }
 
+/// A repo whose top-level `e2e/` exclude also swallows a Java/Kotlin package
+/// named `e2e` — the shape that cost a consumer months of formatting coverage
+/// while every run still reported "all formatted".
+fn crawlberg_shaped_repo(exclude: &str) -> TempDir {
+    let repo = tempfile::tempdir().expect("tempdir");
+    let write = |relative: &str, contents: &str| {
+        let path = repo.path().join(relative);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, contents).unwrap();
+    };
+    std::fs::create_dir_all(repo.path().join(".git")).unwrap();
+    write("poly.toml", &format!("[discovery]\nexclude = [\"{exclude}\"]\n"));
+    write("e2e/smoke.py", "x = 1\n");
+    write("test_apps/java/src/test/java/io/xberg/e2e/Bar.java", "class Bar {}\n");
+    write("test_apps/java/src/main/java/io/xberg/App.java", "class App {}\n");
+    repo
+}
+
+fn doctor_json(repo: &TempDir) -> serde_json::Value {
+    let output = Command::new(POLY)
+        .args(["doctor", "--format", "json"])
+        .current_dir(repo.path())
+        .output()
+        .expect("run poly");
+    serde_json::from_str(&stdout(&output)).expect("doctor --format json is valid JSON")
+}
+
+#[test]
+fn doctor_names_the_directories_an_over_broad_exclude_is_hiding() {
+    let repo = crawlberg_shaped_repo("e2e/**");
+    let parsed = doctor_json(&repo);
+
+    let finding = parsed["findings"]
+        .as_array()
+        .expect("findings is an array")
+        .iter()
+        .find(|f| f["summary"].as_str().unwrap_or_default().contains("e2e/**"))
+        .unwrap_or_else(|| panic!("the over-broad rule is reported: {parsed}"));
+
+    assert_eq!(finding["severity"], "warning", "it is a papercut, not a broken install");
+    let summary = finding["summary"].as_str().unwrap();
+    assert!(summary.contains("2 depths"), "the depth count is named: {summary}");
+    assert!(
+        summary.contains("test_apps/java/src/test/java/io/xberg/e2e"),
+        "the directory the author did not know was hidden is named: {summary}"
+    );
+    assert!(
+        finding["remedy"].as_str().unwrap().contains("/e2e/**"),
+        "the remedy is the anchored pattern: {finding}"
+    );
+}
+
+#[test]
+fn doctor_is_silent_when_an_exclude_matches_a_single_depth() {
+    // Same tree, anchored pattern: exactly the directory the author named.
+    let repo = crawlberg_shaped_repo("/e2e/**");
+    let parsed = doctor_json(&repo);
+    assert!(
+        parsed["excludes"]["broad_rules"]
+            .as_array()
+            .expect("the exclude scan ran")
+            .is_empty(),
+        "an anchored rule is not reported: {parsed}"
+    );
+}
+
 #[test]
 fn a_conflicting_path_warns_on_stderr_even_for_bare_version() {
     let installs = Installs::new();

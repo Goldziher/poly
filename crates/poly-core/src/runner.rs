@@ -18,9 +18,14 @@ use crate::filter::{
 };
 use crate::resolve::ConfigSet;
 
+mod edits;
 mod plan;
+mod skips;
 
+use edits::apply_edits;
 use plan::{EnginePlan, PlanMap, plan_by_config_language, prefetch_tier2_grammars};
+use skips::unmatched_explicit_paths;
+pub use skips::{NO_ENGINE_SKIP, SkippedFile};
 
 /// Options controlling a lint/format run.
 #[derive(Debug, Clone, Default)]
@@ -78,6 +83,12 @@ pub struct RunDebug {
     pub engines: Vec<EngineDebug>,
 }
 
+/// Serde predicate: omit a zero count so a run that fixed nothing keeps exactly
+/// the JSON shape consumers already parse.
+fn is_zero(count: &usize) -> bool {
+    *count == 0
+}
+
 /// Per-file lint outcome.
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
@@ -90,6 +101,24 @@ pub struct LintResult {
     /// itself as machine-generated. The diagnostics are still reported.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub fix_withheld_generated: bool,
+    /// How many diagnostics `--fix` resolved by rewriting this file.
+    ///
+    /// A `--fix` run reports the diagnostics that *remain*, which for a fully
+    /// fixed file is none — so the run printed `No issues found.` while it was
+    /// rewriting files on disk, and a consumer whose autofix destroyed content
+    /// had nothing in the output pointing at the run that did it. This is the
+    /// count of what the run *did*, kept alongside what it found.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub fixed: usize,
+    /// Why nothing inspected this file, when nothing did.
+    ///
+    /// The per-file lint results only carry files that produced diagnostics, so
+    /// this is populated on the synthetic entries the JSON/TOON renderers append
+    /// for skipped paths (see [`crate::report::report_lint_json_run`]) — that is
+    /// what lets a consumer assert on the skipped *set* structurally instead of
+    /// scraping the human summary.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub skipped: Option<String>,
     /// Debug data (cache hit/miss + timing), present only under `--debug`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub debug: Option<RunDebug>,
@@ -130,6 +159,12 @@ pub struct LintRun {
     pub results: Vec<LintResult>,
     /// Files the per-file tier actually read and linted.
     pub checked: usize,
+    /// Files the run did not inspect, each with its reason — explicitly named
+    /// paths no engine covers, and files every routed backend declined.
+    ///
+    /// A count alone forced consumers to reconstruct the set from a heuristic
+    /// and parse it back out of the human summary, so the names travel with it.
+    pub skipped: Vec<SkippedFile>,
     /// What `[discovery] exclude` / `--exclude` pruned before any of that.
     pub discovery: DiscoveryReport,
 }
@@ -148,6 +183,12 @@ pub struct FormatRun {
     /// saying otherwise is a gate that passes without checking. Carried here so
     /// the caller can name the paths and fail.
     pub errors: Vec<FormatError>,
+    /// Files the run did not inspect, each with its reason — files every routed
+    /// backend declined, plus explicitly named paths no engine covers.
+    ///
+    /// The per-file [`FormatResult::skipped`] already carries the former; this
+    /// is the run-level union, so one strict-mode check covers both kinds.
+    pub skipped: Vec<SkippedFile>,
     /// What `[discovery] exclude` / `--exclude` pruned before any of that.
     pub discovery: DiscoveryReport,
 }
@@ -241,12 +282,20 @@ pub fn lint_run(
                 }
             }
         })
-        .filter(|r| !r.diagnostics.is_empty())
+        // A fully fixed file has no diagnostics left, but dropping it here is
+        // what made `--fix` silent about the files it rewrote: keep it so the
+        // summary — and the JSON payload — can report the fixes.
+        .filter(|r| !r.diagnostics.is_empty() || r.fixed > 0)
         .collect();
     results.sort_by(|a, b| a.path.cmp(&b.path));
+    let skipped = unmatched_explicit_paths(paths, &files, &plans, &configs, &opts.exclude, opts.force_exclude)
+        .iter()
+        .map(|path| SkippedFile::no_engine(path))
+        .collect();
     Ok(LintRun {
         results,
         checked: checked.into_inner(),
+        skipped,
         discovery,
     })
 }
@@ -315,9 +364,27 @@ pub fn format_run(
     for error in &errors {
         tracing::warn!(path = %error.path.display(), "format failed: {}", error.message);
     }
+    // Declined files first (they are already sorted by path), then the paths the
+    // caller named that no engine covers — one list, so a strict-mode check and
+    // the summary do not have to know which kind they are looking at.
+    let mut skipped: Vec<SkippedFile> = results
+        .iter()
+        .filter_map(|result| {
+            result.skipped.as_ref().map(|reason| SkippedFile {
+                path: result.path.clone(),
+                reason: reason.clone(),
+            })
+        })
+        .collect();
+    skipped.extend(
+        unmatched_explicit_paths(paths, &files, &plans, &configs, &opts.exclude, opts.force_exclude)
+            .iter()
+            .map(|path| SkippedFile::no_engine(path)),
+    );
     Ok(FormatRun {
         results,
         errors,
+        skipped,
         discovery,
     })
 }
@@ -355,6 +422,11 @@ fn lint_one(
         tracing::debug!(path = %f.path.display(), "skipping --fix on generated file");
     }
 
+    // Counted across passes rather than derived from the drop in diagnostic
+    // count: applying one fix can surface another, so a before/after delta would
+    // understate (or invert) what the run actually did. This is the number of
+    // diagnostics whose edits were committed to the file.
+    let mut fixed = 0usize;
     if fix && !generated {
         let mut content = original.clone();
         for _ in 0..MAX_FIX_PASSES {
@@ -364,8 +436,9 @@ fn lint_one(
                 .map(|d| d.fix.as_slice())
                 .collect();
             match apply_edits(&content, &edit_groups) {
-                Some(next) if next != content => {
+                Some((next, applied)) if next != content => {
                     content = next;
+                    fixed += applied;
                     let (next_diags, next_debug) = lint_content(f, plans, cache, &content, collect_debug)?;
                     diagnostics = next_diags;
                     suppress(&mut diagnostics);
@@ -383,6 +456,8 @@ fn lint_one(
         path: f.path.clone(),
         diagnostics,
         fix_withheld_generated: generated,
+        fixed,
+        skipped: None,
         debug,
     })
 }
@@ -463,76 +538,6 @@ fn push_engine_debug(debug: Option<&mut RunDebug>, plan: &EnginePlan, started: O
             cache_hit,
         });
     }
-}
-
-/// Apply autofix edit groups to `content`, one group per diagnostic.
-///
-/// Each group is the full `fix` vec of one [`Diagnostic`] and is applied
-/// **atomically**: all of its edits apply, or none do.
-///
-/// Selection rules (right-to-left):
-/// 1. Any group whose own edits overlap each other internally is discarded
-///    (prevents corrupted output from a malformed backend fix).
-/// 2. Groups are attempted rightmost-first.  If any edit in a group would
-///    reach into bytes already committed by a previously-applied group, the
-///    entire group is skipped; the convergence loop in [`lint_one`] will retry
-///    it on the next pass once those diagnostics have been re-evaluated.
-///
-/// Returns the rewritten text, or `None` if no edit was applied.
-fn apply_edits(content: &str, edit_groups: &[&[Edit]]) -> Option<String> {
-    let mut valid: Vec<&[Edit]> = edit_groups
-        .iter()
-        .copied()
-        .filter(|g| !g.is_empty() && !has_internal_overlap(g))
-        .collect();
-    valid.sort_by_key(|g| std::cmp::Reverse(g.iter().map(|e| e.end_byte).max().unwrap_or(0)));
-
-    let mut result = content.to_string();
-    let mut prev_start = usize::MAX;
-    let mut applied = false;
-
-    'groups: for group in &valid {
-        for e in *group {
-            if e.start_byte > e.end_byte || e.end_byte > result.len() || e.end_byte > prev_start {
-                continue 'groups;
-            }
-            if !result.is_char_boundary(e.start_byte) || !result.is_char_boundary(e.end_byte) {
-                continue 'groups;
-            }
-        }
-
-        if let [e] = *group {
-            result.replace_range(e.start_byte..e.end_byte, &e.replacement);
-        } else {
-            let mut ordered: Vec<&Edit> = group.iter().collect();
-            ordered.sort_by_key(|e| std::cmp::Reverse(e.start_byte));
-            for e in &ordered {
-                result.replace_range(e.start_byte..e.end_byte, &e.replacement);
-            }
-        }
-
-        prev_start = group.iter().map(|e| e.start_byte).min().unwrap_or(prev_start);
-        applied = true;
-    }
-
-    applied.then_some(result)
-}
-
-/// Returns `true` when any two edits in `group` have overlapping byte ranges.
-///
-/// O(n²) — acceptable because fix groups are tiny (1–4 edits in practice).
-fn has_internal_overlap(group: &[Edit]) -> bool {
-    for (i, a) in group.iter().enumerate() {
-        for b in group.iter().skip(i + 1) {
-            let intersects = a.start_byte < b.end_byte && b.start_byte < a.end_byte;
-            let same_point_insert =
-                a.start_byte == a.end_byte && b.start_byte == b.end_byte && a.start_byte == b.start_byte;
-            if intersects || same_point_insert {
-                return true;
-            }
-        }
-    }
-    false
 }
 
 fn format_one(
@@ -742,14 +747,6 @@ fn configure_pool(jobs: Option<usize>) {
 mod tests {
     use super::*;
 
-    fn edit(start: usize, end: usize, rep: &str) -> Edit {
-        Edit {
-            start_byte: start,
-            end_byte: end,
-            replacement: rep.to_owned(),
-        }
-    }
-
     /// A pass that is already at its fixed point runs exactly once — no wasted
     /// confirmation pass, and the content is returned unchanged.
     #[test]
@@ -812,58 +809,6 @@ mod tests {
         .unwrap();
         assert_eq!(calls.get(), MAX_FORMAT_PASSES, "oscillation is capped, not infinite");
         assert_eq!(&*result, "xyyyyy", "returns the last bounded pass output");
-    }
-
-    /// Two diagnostics, each with two non-overlapping edits; all four apply.
-    #[test]
-    fn multi_edit_two_groups_apply_atomically() {
-        let content = "hello world foo";
-        let group_a = vec![edit(6, 11, "earth"), edit(12, 15, "bar")];
-        let group_b = vec![edit(0, 5, "hey")];
-
-        let result = apply_edits(content, &[group_a.as_slice(), group_b.as_slice()]).expect("should produce output");
-        assert_eq!(result, "hey earth bar");
-    }
-
-    /// A diagnostic whose edits overlap each other is skipped entirely.
-    #[test]
-    fn overlapping_edits_within_group_are_skipped() {
-        let content = "abcdefgh";
-        let bad_group = vec![edit(2, 6, "X"), edit(4, 8, "Y")];
-
-        let result = apply_edits(content, &[bad_group.as_slice()]);
-        assert!(result.is_none(), "overlapping group must produce no output");
-    }
-
-    /// When two groups from different diagnostics conflict, the leftward group
-    /// is deferred (not corrupted).
-    #[test]
-    fn cross_group_conflict_defers_leftward_group() {
-        let content = "abcde";
-        let group_a = vec![edit(3, 5, "XX")];
-        let group_b = vec![edit(2, 4, "YY")];
-
-        let result = apply_edits(content, &[group_a.as_slice(), group_b.as_slice()])
-            .expect("should produce output from group A");
-        assert_eq!(result, "abcXX");
-    }
-
-    #[test]
-    fn non_overlapping_edits_pass_internal_check() {
-        let group = vec![edit(0, 5, "a"), edit(5, 10, "b")];
-        assert!(!has_internal_overlap(&group));
-    }
-
-    #[test]
-    fn adjacent_edits_are_not_overlapping() {
-        let group = vec![edit(0, 5, "a"), edit(5, 10, "b")];
-        assert!(!has_internal_overlap(&group));
-    }
-
-    #[test]
-    fn touching_edits_with_overlap_detected() {
-        let group = vec![edit(0, 6, "a"), edit(4, 10, "b")];
-        assert!(has_internal_overlap(&group));
     }
 
     /// Recurse `depth` frames, each pinning ~8 KiB of stack, returning the

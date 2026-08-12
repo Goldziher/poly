@@ -78,6 +78,10 @@ pub struct PathsParams {
     pub config: Option<String>,
     /// Gitignore-style globs to exclude from discovery, merged with the config's
     /// `[discovery] exclude`. Mirrors the CLI `--exclude` flag.
+    ///
+    /// A glob without a leading `/` matches a directory of that name at any
+    /// depth (`"e2e/**"` also prunes `src/test/java/io/xberg/e2e/`); a leading
+    /// `/` anchors it to the config directory (`"/e2e/**"`).
     #[serde(default)]
     pub exclude: Vec<String>,
     /// Text representation for the result's text content block (`structured_content`

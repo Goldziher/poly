@@ -15,7 +15,7 @@
 //! - **default** — one terse line per finding (`level  engine  code?  line:col?
 //!   title`). `description`, `url`, and `metadata` are hidden.
 //! - **`--verbose`** — additionally renders `description`, `url`, and any
-//!   `metadata` as indented lines.
+//!   `metadata` as indented lines, and lifts the cap on the skipped-file note.
 //! - **`--debug`** — additionally renders a dim per-file debug block (engine
 //!   version, cache hit/miss, timing).
 //!
@@ -29,7 +29,7 @@ use owo_colors::{OwoColorize, Stream::Stderr, Stream::Stdout};
 
 use crate::discover::DiscoveryReport;
 use crate::engine::Severity;
-use crate::runner::{FormatError, FormatResult, FormatRun, LintResult, LintRun, RunDebug};
+use crate::runner::{FormatError, FormatResult, FormatRun, LintResult, LintRun, RunDebug, SkippedFile};
 
 /// How much detail the human-oriented (`pretty`) renderers emit. `Copy` so it
 /// threads cheaply through the renderers.
@@ -211,13 +211,14 @@ fn strip_ansi(text: &str) -> String {
 /// The summary is unqualified: it can say "No issues found." but not how much was
 /// looked at. Prefer [`render_lint_pretty_run`], which does both.
 pub fn render_lint_pretty(results: &[LintResult], verbosity: Verbosity) -> (String, usize) {
-    render_lint_core(results, None, &DiscoveryReport::default(), verbosity)
+    render_lint_core(results, None, &[], &DiscoveryReport::default(), verbosity)
 }
 
 /// [`render_lint_pretty`] over a whole [`LintRun`], so the summary can state how
-/// many files were linted and what discovery excluded before them.
+/// many files were linted, which ones it skipped, and what discovery excluded
+/// before them.
 pub fn render_lint_pretty_run(run: &LintRun, verbosity: Verbosity) -> (String, usize) {
-    render_lint_core(&run.results, Some(run.checked), &run.discovery, verbosity)
+    render_lint_core(&run.results, Some(run.checked), &run.skipped, &run.discovery, verbosity)
 }
 
 /// Shared body of the lint renderers. `checked` is `None` when the caller has no
@@ -225,6 +226,7 @@ pub fn render_lint_pretty_run(run: &LintRun, verbosity: Verbosity) -> (String, u
 fn render_lint_core(
     results: &[LintResult],
     checked: Option<usize>,
+    skipped: &[SkippedFile],
     discovery: &DiscoveryReport,
     verbosity: Verbosity,
 ) -> (String, usize) {
@@ -286,20 +288,29 @@ fn render_lint_core(
         // "No issues found." on its own cannot distinguish a verified-clean repo
         // from one whose every file was excluded — qualify it with what was
         // looked at and what was pruned.
-        let mut tail: Vec<String> = Vec::with_capacity(2);
+        let mut tail: Vec<String> = Vec::with_capacity(3);
         if let Some(checked) = checked {
             tail.push(format!("{checked} file(s) linted"));
+        }
+        if let Some(clause) = skipped_clause(skipped) {
+            tail.push(clause);
         }
         if let Some(clause) = exclusion_clause(discovery) {
             tail.push(clause);
         }
-        let nothing_linted = checked == Some(0) && !discovery.is_empty();
-        let headline = if nothing_linted {
-            "Nothing was linted."
+        // "No issues found" over an empty file set is a false reassurance
+        // whether the files were excluded before the run or skipped during it —
+        // in both cases nothing was examined, which is not the same as clean.
+        let nothing_linted = checked == Some(0) && (!discovery.is_empty() || !skipped.is_empty());
+        // A `--fix` run that resolved everything has no diagnostics left to
+        // report, so "No issues found." was the summary of a run that had just
+        // rewritten files: true about the end state, silent about the act.
+        let headline = match (nothing_linted, fixed_clause(results)) {
+            (true, _) => "Nothing was linted."
                 .if_supports_color(Stdout, |t| t.yellow())
-                .to_string()
-        } else {
-            "No issues found.".if_supports_color(Stdout, |t| t.green()).to_string()
+                .to_string(),
+            (false, Some(fixed)) => fixed.if_supports_color(Stdout, |t| t.green()).to_string(),
+            (false, None) => "No issues found.".if_supports_color(Stdout, |t| t.green()).to_string(),
         };
         if tail.is_empty() {
             let _ = writeln!(out, "{headline}");
@@ -308,9 +319,12 @@ fn render_lint_core(
         }
     } else {
         let mut headline = format!("{total} issue(s) found.");
-        let mut tail: Vec<String> = Vec::with_capacity(2);
+        let mut tail: Vec<String> = Vec::with_capacity(3);
         if let Some(checked) = checked {
             tail.push(format!("{checked} file(s) linted"));
+        }
+        if let Some(clause) = skipped_clause(skipped) {
+            tail.push(clause);
         }
         if let Some(clause) = exclusion_clause(discovery) {
             tail.push(clause);
@@ -319,6 +333,11 @@ fn render_lint_core(
             let _ = write!(headline, " ({})", tail.join(", "));
         }
         let _ = writeln!(out, "\n{}", headline.if_supports_color(Stdout, |t| t.red()));
+        // A partially fixed run reports both halves: what it changed under the
+        // caller, and what it left for them.
+        if let Some(fixed) = fixed_clause(results) {
+            let _ = writeln!(out, "{}", fixed.if_supports_color(Stdout, |t| t.green()));
+        }
         if fixable > 0 {
             let _ = writeln!(
                 out,
@@ -330,6 +349,9 @@ fn render_lint_core(
     // What was never discovered is as load-bearing as what was: a finding list
     // is only as trustworthy as the file set behind it.
     push_discovery_note(&mut out, discovery);
+    // Same argument one step later in the pipeline: a file that was discovered
+    // but never inspected is not evidence of anything, so it is named.
+    push_skip_note(&mut out, skipped, verbosity.verbose);
     // Withholding a fix must be visible: an invisible skip is the same failure as
     // an invisible fix, just in the other direction.
     let withheld = results.iter().filter(|r| r.fix_withheld_generated).count();
@@ -374,11 +396,139 @@ pub fn report_lint_toon(results: &[LintResult]) -> String {
     serde_toon::to_string(&results).unwrap_or_else(|_| report_lint_json(results))
 }
 
-/// Summarise the distinct skip reasons across `results`, most frequent first, so
+/// The lint results of a run, with one entry appended per file the run skipped.
+///
+/// A skipped file produces no diagnostics, so it is filtered out of
+/// [`LintRun::results`] and used to be invisible to a machine consumer — which
+/// left `--format json` unable to answer "what did you not look at?" and forced
+/// one team to reconstruct the set from a heuristic and scrape the human
+/// summary for it. The appended entries carry `path` and `skipped` with an empty
+/// `diagnostics` list, so the document stays the same array of per-file records
+/// and existing consumers are unaffected.
+fn lint_results_with_skips(run: &LintRun) -> Vec<LintResult> {
+    let mut results = run.results.clone();
+    let known: std::collections::BTreeSet<&std::path::Path> = run.results.iter().map(|r| r.path.as_path()).collect();
+    results.extend(
+        run.skipped
+            .iter()
+            .filter(|entry| !known.contains(entry.path.as_path()))
+            .map(|entry| LintResult {
+                path: entry.path.clone(),
+                diagnostics: Vec::new(),
+                fix_withheld_generated: false,
+                fixed: 0,
+                skipped: Some(entry.reason.clone()),
+                debug: None,
+            }),
+    );
+    results
+}
+
+/// [`report_lint_json`] over a whole [`LintRun`], so the skipped set is carried
+/// structurally rather than left to the human summary.
+pub fn report_lint_json_run(run: &LintRun) -> String {
+    report_lint_json(&lint_results_with_skips(run))
+}
+
+/// [`report_lint_toon`] over a whole [`LintRun`], including the skipped set.
+pub fn report_lint_toon_run(run: &LintRun) -> String {
+    report_lint_toon(&lint_results_with_skips(run))
+}
+
+/// How many skipped files the note names before summarising the rest.
+///
+/// A run over a repo full of generated files can skip hundreds; naming every one
+/// by default would bury the finding list it is meant to qualify. `--verbose`
+/// lifts the cap, and `--format json` always carries the complete set.
+const MAX_LISTED_SKIPS: usize = 20;
+
+/// The per-file skips carried by a results slice, as run-level [`SkippedFile`]s.
+///
+/// Lets the results-only renderers produce the same summary as the run-level
+/// ones, which additionally know about explicitly named paths that no engine
+/// covers (those never reach a [`FormatResult`] at all).
+fn skips_from_results(results: &[FormatResult]) -> Vec<SkippedFile> {
+    results
+        .iter()
+        .filter_map(|r| {
+            r.skipped.as_ref().map(|reason| SkippedFile {
+                path: r.path.clone(),
+                reason: reason.clone(),
+            })
+        })
+        .collect()
+}
+
+/// The summary clause naming what the run skipped, or `None` when it skipped
+/// nothing — so the common path gains no new text.
+fn skipped_clause(skipped: &[SkippedFile]) -> Option<String> {
+    (!skipped.is_empty()).then(|| format!("{} skipped ({})", skipped.len(), skip_reason_summary(skipped)))
+}
+
+/// Render the follow-on detail lines naming each skipped file and its reason.
+///
+/// Returns `None` when nothing was skipped. A count without names is what forced
+/// one consumer to reconstruct the expected skip set from a heuristic and parse
+/// it back out of this very summary, so the names are the point; the reason
+/// travels with each so a reader knows whether to fix the file, the config, or
+/// their expectations. Capped at `MAX_LISTED_SKIPS` entries unless `verbose`.
+pub fn render_skip_note(skipped: &[SkippedFile], verbose: bool) -> Option<String> {
+    if skipped.is_empty() {
+        return None;
+    }
+    let limit = if verbose { skipped.len() } else { MAX_LISTED_SKIPS };
+    let mut out = String::new();
+    for entry in skipped.iter().take(limit) {
+        let _ = writeln!(out, "  skipped {}: {}", entry.path.display(), entry.reason);
+    }
+    if let Some(rest) = skipped.len().checked_sub(limit).filter(|n| *n > 0) {
+        let _ = writeln!(
+            out,
+            "  and {rest} more skipped file(s) — pass --verbose to list them, or --format json for the full set"
+        );
+    }
+    Some(out.if_supports_color(Stdout, |t| t.yellow()).to_string())
+}
+
+/// Append [`render_skip_note`] to `out`, if there is anything to say.
+fn push_skip_note(out: &mut String, skipped: &[SkippedFile], verbose: bool) {
+    if let Some(note) = render_skip_note(skipped, verbose) {
+        out.push_str(&note);
+    }
+}
+
+/// Print the skip note to **stderr**, for the `json`/`toon` formats.
+///
+/// Those formats already carry the skipped set structurally on stdout; this is
+/// the human-visible echo, on the stream that cannot corrupt the document — the
+/// same split [`eprint_discovery_note`] uses.
+pub fn eprint_skip_note(skipped: &[SkippedFile], verbose: bool) {
+    let Some(note) = render_skip_note(skipped, verbose) else {
+        return;
+    };
+    let plain = strip_ansi(&note);
+    eprint!("{}", plain.if_supports_color(Stderr, |t| t.yellow()));
+}
+
+/// The line reporting what `--fix` rewrote, or `None` when it rewrote nothing.
+///
+/// `--fix` reports the diagnostics that *remain*, so a run that fixed everything
+/// printed `No issues found.` while rewriting files on disk — reporting on what
+/// it found instead of on what it did. This states the second half.
+fn fixed_clause(results: &[LintResult]) -> Option<String> {
+    let issues: usize = results.iter().map(|r| r.fixed).sum();
+    if issues == 0 {
+        return None;
+    }
+    let files = results.iter().filter(|r| r.fixed > 0).count();
+    Some(format!("Fixed {issues} issue(s) in {files} file(s)."))
+}
+
+/// Summarise the distinct skip reasons across `skipped`, most frequent first, so
 /// the summary names *why* files were skipped rather than only how many.
-fn skip_summary(results: &[FormatResult]) -> String {
+fn skip_reason_summary(skipped: &[SkippedFile]) -> String {
     let mut counts: Vec<(&str, usize)> = Vec::new();
-    for reason in results.iter().filter_map(|r| r.skipped.as_deref()) {
+    for reason in skipped.iter().map(|s| s.reason.as_str()) {
         match counts.iter_mut().find(|(name, _)| *name == reason) {
             Some((_, count)) => *count += 1,
             None => counts.push((reason, 1)),
@@ -402,13 +552,20 @@ fn skip_summary(results: &[FormatResult]) -> String {
 /// debug block (engine version, cache hit/miss, timing). Returns the rendered
 /// text and the number of changed files.
 pub fn render_format_pretty(results: &[FormatResult], check: bool, verbosity: Verbosity) -> (String, usize) {
-    render_format_core(results, &DiscoveryReport::default(), check, verbosity)
+    render_format_core(
+        results,
+        &skips_from_results(results),
+        &DiscoveryReport::default(),
+        check,
+        verbosity,
+    )
 }
 
 /// [`render_format_pretty`] over a whole [`FormatRun`], so the summary can say
-/// what discovery excluded before the checked files were reached.
+/// what it skipped and what discovery excluded before the checked files were
+/// reached.
 pub fn render_format_pretty_run(run: &FormatRun, check: bool, verbosity: Verbosity) -> (String, usize) {
-    let (mut out, changed) = render_format_core(&run.results, &run.discovery, check, verbosity);
+    let (mut out, changed) = render_format_core(&run.results, &run.skipped, &run.discovery, check, verbosity);
     out.push_str(&render_format_errors(&run.errors));
     (out, changed)
 }
@@ -442,8 +599,14 @@ pub fn render_format_errors(errors: &[FormatError]) -> String {
 }
 
 /// Shared body of the format renderers.
+///
+/// `skipped` is the run-level skip set, which is a superset of the per-result
+/// [`FormatResult::skipped`] reasons: an explicitly named path that no engine
+/// covers never produces a [`FormatResult`] at all, so it can only be counted
+/// from here.
 fn render_format_core(
     results: &[FormatResult],
+    skipped: &[SkippedFile],
     discovery: &DiscoveryReport,
     check: bool,
     verbosity: Verbosity,
@@ -460,16 +623,16 @@ fn render_format_core(
         );
     }
     let scanned = results.len();
-    let skipped = results.iter().filter(|r| r.skipped.is_some()).count();
-    let checked = scanned - skipped;
+    let declined = results.iter().filter(|r| r.skipped.is_some()).count();
+    let checked = scanned - declined;
     let n = changed.len();
     if n == 0 {
         // `scanned` counted files that were discovered and routed, including
         // those every backend declined — so a skipped file read exactly like a
         // verified one. Report what was actually inspected, and name the skips.
         let mut tail = format!("{checked} file(s) checked");
-        if skipped > 0 {
-            let _ = write!(tail, ", {skipped} skipped ({})", skip_summary(results));
+        if let Some(clause) = skipped_clause(skipped) {
+            let _ = write!(tail, ", {clause}");
         }
         if let Some(clause) = exclusion_clause(discovery) {
             let _ = write!(tail, ", {clause}");
@@ -477,7 +640,7 @@ fn render_format_core(
         // A green "All formatted." over an empty file set is the reassuring lie
         // this feature exists to remove: when the exclude set is the reason
         // nothing was checked, say so instead.
-        let headline = if checked == 0 && !discovery.is_empty() {
+        let headline = if checked == 0 && (!discovery.is_empty() || !skipped.is_empty()) {
             "Nothing was checked."
                 .if_supports_color(Stdout, |t| t.yellow())
                 .to_string()
@@ -493,13 +656,23 @@ fn render_format_core(
         };
         let mut tail = format!("of {scanned} file(s)");
         // A partial result is no more trustworthy than a clean one: qualify it
-        // with the same exclusion accounting.
+        // with the same skip and exclusion accounting. Reporting drift used to
+        // drop the skip clause entirely, so a run that both changed files and
+        // declined others said nothing about the second half.
+        let mut qualifiers: Vec<String> = Vec::with_capacity(2);
+        if let Some(clause) = skipped_clause(skipped) {
+            qualifiers.push(clause);
+        }
         if let Some(clause) = exclusion_clause(discovery) {
-            let _ = write!(tail, " ({clause})");
+            qualifiers.push(clause);
+        }
+        if !qualifiers.is_empty() {
+            let _ = write!(tail, " ({})", qualifiers.join(", "));
         }
         let _ = writeln!(out, "\n{} {tail}", phrase.if_supports_color(Stdout, |t| t.yellow()));
     }
     push_discovery_note(&mut out, discovery);
+    push_skip_note(&mut out, skipped, verbosity.verbose);
     if verbosity.debug {
         for r in results {
             if let Some(debug) = &r.debug {
@@ -537,4 +710,41 @@ pub fn report_format_json(results: &[FormatResult]) -> String {
 /// fails so output is never silently dropped.
 pub fn report_format_toon(results: &[FormatResult]) -> String {
     serde_toon::to_string(&results).unwrap_or_else(|_| report_format_json(results))
+}
+
+/// The format results of a run, with one entry appended per skipped path that
+/// has no result of its own.
+///
+/// A file a backend declined already appears in [`FormatRun::results`] carrying
+/// its `skipped` reason; a path named on the command line that no engine covers
+/// never becomes a result at all, and is what this adds — so the JSON answer to
+/// "what did you not look at?" is complete.
+fn format_results_with_skips(run: &FormatRun) -> Vec<FormatResult> {
+    let mut results = run.results.clone();
+    let known: std::collections::BTreeSet<&std::path::Path> = run.results.iter().map(|r| r.path.as_path()).collect();
+    results.extend(
+        run.skipped
+            .iter()
+            .filter(|entry| !known.contains(entry.path.as_path()))
+            .map(|entry| FormatResult {
+                path: entry.path.clone(),
+                changed: false,
+                skipped: Some(entry.reason.clone()),
+                formatted: None,
+                debug: None,
+            }),
+    );
+    results
+}
+
+/// [`report_format_json`] over a whole [`FormatRun`], so every skipped path is
+/// carried structurally.
+pub fn report_format_json_run(run: &FormatRun) -> String {
+    report_format_json(&format_results_with_skips(run))
+}
+
+/// [`report_format_toon`] over a whole [`FormatRun`], including every skipped
+/// path.
+pub fn report_format_toon_run(run: &FormatRun) -> String {
+    report_format_toon(&format_results_with_skips(run))
 }

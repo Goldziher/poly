@@ -10,6 +10,44 @@
   `file_safety` — inherit `[discovery] exclude` instead of restating it, under the
   accumulate rule ADR 0020 defines for `exclude`; a hook opts out with
   `exclude_mode = "replace"` in its own table.)
+- Updated: 2026-08-12 (exclude anchoring is stated explicitly below and surfaced by
+  a `poly doctor` check; the matching semantics themselves are unchanged.)
+
+## Exclude anchoring
+
+`exclude` globs are gitignore patterns, so:
+
+> **A glob that does not begin with `/` matches a file or directory of that name at
+> any depth below the config that declared it; a leading `/` anchors it to that
+> config's directory.**
+
+The unanchored form is what people write by default, and it is the one that
+surprises:
+
+```toml
+[discovery]
+# The top-level e2e/ — and also src/test/java/io/xberg/e2e/, because `e2e` is an
+# ordinary Java/Kotlin package name.
+exclude = ["e2e/**"]
+
+# Only the top-level e2e/ directory.
+exclude = ["/e2e/**"]
+```
+
+Poly derives a bare `foo` rule from every `foo/**` pattern (without it the
+directory itself is not pruned and the walk descends into a tree the user asked to
+skip), and that derived rule carries no separator — which is what makes `e2e/**`
+reach every depth. Nothing fails when it over-reaches: the extra files are simply
+never discovered, and the run reports a clean pass over what remains. A consumer
+lost months of formatting coverage on two `test_apps/` trees this way.
+
+**The semantics are deliberately left alone.** Silently re-anchoring existing
+`exclude` entries would change which files a repository's gate covers without
+anyone editing a line, which is a worse failure than the papercut. Instead the rule
+is documented on `--exclude`, on `[discovery] exclude`, and on the MCP `exclude`
+parameter, and `poly doctor` warns when a rule prunes directories at more than one
+depth — naming the directories, since the whole value is showing the author the
+tree they did not know they were hiding.
 
 ## Context
 

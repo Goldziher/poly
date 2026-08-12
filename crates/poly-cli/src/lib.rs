@@ -95,6 +95,14 @@ pub struct CommonArgs {
 
     /// Gitignore-style glob to exclude from discovery (repeatable). Merged with
     /// the config's `[discovery] exclude`. Example: `--exclude 'test_apps/**'`.
+    ///
+    /// Matching is gitignore-style, which means a pattern that does not start
+    /// with `/` matches a directory of that name **at any depth**, not only at
+    /// the root: `--exclude 'e2e/**'` prunes the top-level `e2e/` and also
+    /// `src/test/java/io/xberg/e2e/`, where `e2e` is just a package name. Anchor
+    /// the pattern with a leading slash to mean only the top-level directory:
+    /// `--exclude '/e2e/**'`. Run `poly doctor` to see which rules are matching
+    /// at more than one depth.
     #[arg(long = "exclude", value_name = "GLOB")]
     pub exclude: Vec<String>,
 
@@ -108,7 +116,9 @@ pub struct CommonArgs {
     pub fix: bool,
 
     /// Show extra per-finding detail in `pretty` output: description, rule URL,
-    /// and metadata. No-op for `--format json`/`toon` (always fully structured).
+    /// and metadata, and list every skipped file instead of the first few. For
+    /// `--format json`/`toon` the findings are always fully structured, so this
+    /// only lifts the cap on the skip note printed to stderr.
     #[arg(long)]
     pub verbose: bool,
 
@@ -134,7 +144,33 @@ pub struct CommonArgs {
     /// attached to `json`/`toon`), and raise log verbosity to `debug` on stderr.
     #[arg(long)]
     pub debug: bool,
+
+    /// Fail the run (exit 2) if any file was skipped. Equivalent to
+    /// `--max-skips 0`.
+    ///
+    /// A skipped file is one nothing inspected: a path named on the command line
+    /// that no engine covers, or a file every routed backend declined. They are
+    /// always reported; this makes them fatal for a gate that needs coverage to
+    /// be total. The failure names every file it fired on.
+    #[arg(long, conflicts_with = "max_skips")]
+    pub deny_skips: bool,
+
+    /// Fail the run (exit 2) if more than N files were skipped.
+    ///
+    /// The budgeted form of `--deny-skips`, for a repo with a known, bounded set
+    /// of files poly cannot check: the gate holds the number steady instead of
+    /// letting it grow unnoticed.
+    #[arg(long, value_name = "N")]
+    pub max_skips: Option<usize>,
 }
+
+/// Exit code for a run that could not verify what it was asked to.
+///
+/// Shared with the missing-path and unparseable-file paths: 0 is clean, 1 is
+/// findings (or drift), and 2 is "this run did not check what you asked" —
+/// callers legitimately treat 1 as success for `--fix`, so a coverage failure
+/// must never land there.
+const EXIT_NOT_VERIFIED: u8 = 2;
 
 /// `poly lint` arguments.
 #[derive(Args)]
@@ -199,16 +235,22 @@ pub fn run_lint(args: LintArgs) -> ExitCode {
     let _ = match common.format {
         OutputFormat::Pretty => report::report_lint_pretty_run(&run, verbosity),
         OutputFormat::Json => {
-            println!("{}", report::report_lint_json(results));
+            println!("{}", report::report_lint_json_run(&run));
             report::eprint_discovery_note(&run.discovery);
+            report::eprint_skip_note(&run.skipped, common.verbose);
             results.iter().map(|r| r.diagnostics.len()).sum()
         }
         OutputFormat::Toon => {
-            println!("{}", report::report_lint_toon(results));
+            println!("{}", report::report_lint_toon_run(&run));
             report::eprint_discovery_note(&run.discovery);
+            report::eprint_skip_note(&run.skipped, common.verbose);
             results.iter().map(|r| r.diagnostics.len()).sum()
         }
     };
+
+    // Reported here, folded into the exit code at the end: a strictness flag
+    // must change the verdict, not what else the run does.
+    let skips_over_budget = report_skip_budget(&common, &run.skipped);
 
     // Explicit paths scope the run. Without this, `poly lint some/file.py` looks
     // like a sub-second operation but escalates to an unbounded whole-workspace
@@ -238,11 +280,37 @@ pub fn run_lint(args: LintArgs) -> ExitCode {
         }
     };
 
-    if lint_has_errors(results) || !workspace_ok {
+    if skips_over_budget {
+        ExitCode::from(EXIT_NOT_VERIFIED)
+    } else if lint_has_errors(results) || !workspace_ok {
         ExitCode::from(1)
     } else {
         ExitCode::SUCCESS
     }
+}
+
+/// Apply `--deny-skips` / `--max-skips`, naming every file that put the run over
+/// budget. Returns whether the caller must fail the run.
+///
+/// The names are the point. A gate that fails with "3 files were skipped" and no
+/// paths reproduces the defect the flag exists to fix, one level up: the
+/// consumer is again left reconstructing which files poly meant. Printed to
+/// stderr so it survives `--format json` piping.
+fn report_skip_budget(common: &CommonArgs, skipped: &[poly_core::SkippedFile]) -> bool {
+    let Some(budget) = (if common.deny_skips { Some(0) } else { common.max_skips }) else {
+        return false;
+    };
+    if skipped.len() <= budget {
+        return false;
+    }
+    for entry in skipped {
+        eprintln!("error: skipped {}: {}", entry.path.display(), entry.reason);
+    }
+    eprintln!(
+        "error: refusing to report success for {} skipped file(s) (limit {budget})",
+        skipped.len()
+    );
+    true
 }
 
 /// Run `poly lint`'s whole-project phase and render its report.
@@ -286,29 +354,32 @@ pub fn run_fmt(args: FmtArgs) -> ExitCode {
     };
 
     let write = common.fix;
-    let (changed, format_errors) = match poly_core::format_run(&paths, &config, &opts, write, common.debug) {
-        Ok(run) => {
-            let errors = run.errors.len();
-            let changed = match common.format {
-                OutputFormat::Pretty => report::report_format_pretty_run(&run, !write, verbosity),
-                OutputFormat::Json => {
-                    println!("{}", report::report_format_json(&run.results));
-                    report::eprint_discovery_note(&run.discovery);
-                    run.results.iter().filter(|r| r.changed).count()
-                }
-                OutputFormat::Toon => {
-                    println!("{}", report::report_format_toon(&run.results));
-                    report::eprint_discovery_note(&run.discovery);
-                    run.results.iter().filter(|r| r.changed).count()
-                }
-            };
-            (changed, errors)
-        }
-        Err(e) => {
-            eprintln!("error: {e:#}");
-            return ExitCode::from(2);
-        }
-    };
+    let (changed, format_errors, skips_over_budget) =
+        match poly_core::format_run(&paths, &config, &opts, write, common.debug) {
+            Ok(run) => {
+                let errors = run.errors.len();
+                let changed = match common.format {
+                    OutputFormat::Pretty => report::report_format_pretty_run(&run, !write, verbosity),
+                    OutputFormat::Json => {
+                        println!("{}", report::report_format_json_run(&run));
+                        report::eprint_discovery_note(&run.discovery);
+                        report::eprint_skip_note(&run.skipped, common.verbose);
+                        run.results.iter().filter(|r| r.changed).count()
+                    }
+                    OutputFormat::Toon => {
+                        println!("{}", report::report_format_toon_run(&run));
+                        report::eprint_discovery_note(&run.discovery);
+                        report::eprint_skip_note(&run.skipped, common.verbose);
+                        run.results.iter().filter(|r| r.changed).count()
+                    }
+                };
+                (changed, errors, report_skip_budget(common, &run.skipped))
+            }
+            Err(e) => {
+                eprintln!("error: {e:#}");
+                return ExitCode::from(2);
+            }
+        };
 
     // `poly fmt` is a pure formatter: it runs only the per-file formatting tier
     // above and never the whole-project lint phase (`cargo clippy`/`-sort`/
@@ -319,8 +390,10 @@ pub fn run_fmt(args: FmtArgs) -> ExitCode {
     // files changed (or would change), 2 = the run failed. A file the engine
     // could not parse belongs in 2, never in 0 — it was not verified — and
     // never in 1, which callers legitimately treat as success for `--fix`.
-    if format_errors > 0 {
-        ExitCode::from(2)
+    // A skip budget breach lands in 2 for the same reason a parse failure does:
+    // those files were not verified, and 1 is a code callers treat as success.
+    if format_errors > 0 || skips_over_budget {
+        ExitCode::from(EXIT_NOT_VERIFIED)
     } else if changed > 0 {
         ExitCode::from(1)
     } else {
@@ -446,6 +519,8 @@ mod tests {
             path: PathBuf::from("test.rs"),
             diagnostics,
             fix_withheld_generated: false,
+            fixed: 0,
+            skipped: None,
             debug: None,
         }
     }
