@@ -23,11 +23,16 @@ use poly_core::language::Language;
 
 // sqruff: exclude_rules silences the named rule
 
+/// An implicit table alias (`a b`), which trips AL02 — an *aliasing* rule, and
+/// so lint-owned. The fixture deliberately avoids capitalisation and layout
+/// violations: those groups are format-owned and suppressed from `lint`
+/// entirely (see `engines::sqruff`), which would make an assertion about them
+/// pass for the wrong reason.
 fn sqruff_src() -> SourceFile {
     SourceFile {
         path: PathBuf::from("check.sql"),
         language: Language::Sql,
-        content: "select id, name FROM users\n".into(),
+        content: "select a b from users\n".into(),
     }
 }
 
@@ -38,20 +43,20 @@ fn sqruff_honors_exclude_rules_option() {
     let default_cfg = Config::default().engine_config(&Language::Sql, "sqruff", Kind::Lint);
     let default_diags = engine.lint(&sqruff_src(), &default_cfg).unwrap();
     assert!(
-        default_diags.iter().any(|d| d.code.as_deref() == Some("CP01")),
-        "expected CP01 to fire on mixed-case SQL with default config; got: {default_diags:?}"
+        default_diags.iter().any(|d| d.code.as_deref() == Some("AL02")),
+        "expected AL02 to fire on an implicit alias with default config; got: {default_diags:?}"
     );
 
     let dir = tempfile::tempdir().unwrap();
     let toml_path = dir.path().join("poly.toml");
-    fs::write(&toml_path, "[lint.sql.sqruff]\nexclude_rules = [\"CP01\"]\n").unwrap();
+    fs::write(&toml_path, "[lint.sql.sqruff]\nexclude_rules = [\"AL02\"]\n").unwrap();
     let cfg = Config::load_file(&toml_path)
         .unwrap()
         .engine_config(&Language::Sql, "sqruff", Kind::Lint);
     let diags = engine.lint(&sqruff_src(), &cfg).unwrap();
     assert!(
-        !diags.iter().any(|d| d.code.as_deref() == Some("CP01")),
-        "CP01 should be suppressed by exclude_rules; remaining diags: {diags:?}"
+        !diags.iter().any(|d| d.code.as_deref() == Some("AL02")),
+        "AL02 should be suppressed by exclude_rules; remaining diags: {diags:?}"
     );
 }
 

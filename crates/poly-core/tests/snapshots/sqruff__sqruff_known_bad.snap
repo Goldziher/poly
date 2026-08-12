@@ -6,17 +6,37 @@ expression: diags
     Diagnostic {
         engine: "sqruff",
         code: Some(
-            "LT01",
+            "AL02",
         ),
         severity: Warning,
-        title: "Expected single whitespace between \",\" and \"name\".",
+        title: "Implicit/explicit aliasing of columns.",
         description: None,
         span: Some(
             Span {
                 start_line: 1,
-                start_col: 11,
+                start_col: 10,
                 end_line: 1,
-                end_col: 11,
+                end_col: 10,
+            },
+        ),
+        url: None,
+        fix: [],
+        metadata: {},
+    },
+    Diagnostic {
+        engine: "sqruff",
+        code: Some(
+            "CV05",
+        ),
+        severity: Warning,
+        title: "Relational operators should not be used to check for NULL values.",
+        description: None,
+        span: Some(
+            Span {
+                start_line: 1,
+                start_col: 41,
+                end_line: 1,
+                end_col: 41,
             },
         ),
         url: None,
