@@ -280,20 +280,24 @@ pub fn run_fmt(args: FmtArgs) -> ExitCode {
     };
 
     let write = common.fix;
-    let changed = match poly_core::format_run(&paths, &config, &opts, write, common.debug) {
-        Ok(run) => match common.format {
-            OutputFormat::Pretty => report::report_format_pretty_run(&run, !write, verbosity),
-            OutputFormat::Json => {
-                println!("{}", report::report_format_json(&run.results));
-                report::eprint_discovery_note(&run.discovery);
-                run.results.iter().filter(|r| r.changed).count()
-            }
-            OutputFormat::Toon => {
-                println!("{}", report::report_format_toon(&run.results));
-                report::eprint_discovery_note(&run.discovery);
-                run.results.iter().filter(|r| r.changed).count()
-            }
-        },
+    let (changed, format_errors) = match poly_core::format_run(&paths, &config, &opts, write, common.debug) {
+        Ok(run) => {
+            let errors = run.errors.len();
+            let changed = match common.format {
+                OutputFormat::Pretty => report::report_format_pretty_run(&run, !write, verbosity),
+                OutputFormat::Json => {
+                    println!("{}", report::report_format_json(&run.results));
+                    report::eprint_discovery_note(&run.discovery);
+                    run.results.iter().filter(|r| r.changed).count()
+                }
+                OutputFormat::Toon => {
+                    println!("{}", report::report_format_toon(&run.results));
+                    report::eprint_discovery_note(&run.discovery);
+                    run.results.iter().filter(|r| r.changed).count()
+                }
+            };
+            (changed, errors)
+        }
         Err(e) => {
             eprintln!("error: {e:#}");
             return ExitCode::from(2);
@@ -304,7 +308,14 @@ pub fn run_fmt(args: FmtArgs) -> ExitCode {
     // above and never the whole-project lint phase (`cargo clippy`/`-sort`/
     // `-machete`/`-deny`). Those are linting, not formatting — they belong to
     // `poly lint` (and the commit gate), never to `fmt`.
-    if changed > 0 {
+    //
+    // Exit codes are a contract consumers automate against: 0 = clean, 1 =
+    // files changed (or would change), 2 = the run failed. A file the engine
+    // could not parse belongs in 2, never in 0 — it was not verified — and
+    // never in 1, which callers legitimately treat as success for `--fix`.
+    if format_errors > 0 {
+        ExitCode::from(2)
+    } else if changed > 0 {
         ExitCode::from(1)
     } else {
         ExitCode::SUCCESS

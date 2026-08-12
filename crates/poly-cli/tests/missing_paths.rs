@@ -95,3 +95,46 @@ fn resolvable_paths_are_unaffected() {
     let directory = poly(dir.path(), &["fmt", "--check", "."]);
     assert_eq!(directory.status.code(), Some(1));
 }
+
+/// A file the formatter cannot parse has not been verified, so the run must not
+/// report success. It used to be logged at `warn`, dropped from the results, and
+/// reported as `All formatted.` with exit 0 — a gate passing on a file it failed
+/// to read. Exit 2, not 1: callers legitimately treat 1 as success for `--fix`.
+#[test]
+fn unparseable_file_fails_the_run_and_is_named() {
+    let dir = repo();
+    std::fs::write(dir.path().join("broken.py"), "def f(:\n").expect("write broken.py");
+
+    for subcommand in [
+        vec!["fmt", "--check", "--no-cache", "broken.py"],
+        vec!["fmt", "--fix", "--no-cache", "broken.py"],
+    ] {
+        let output = poly(dir.path(), &subcommand);
+
+        assert_eq!(
+            output.status.code(),
+            Some(2),
+            "{subcommand:?} must fail, not report a formatted tree"
+        );
+        let combined = format!("{}{}", String::from_utf8_lossy(&output.stdout), stderr(&output));
+        assert!(
+            combined.contains("broken.py"),
+            "the path must be named, got: {combined}"
+        );
+    }
+}
+
+/// The rest of the contract must not shift: consumers automate against it, and
+/// at least one treats 0 and 1 as success for `--fix`.
+#[test]
+fn format_exit_codes_keep_their_meanings() {
+    let dir = repo();
+
+    // ok.py is unformatted -> a rewrite happened -> 1, still success for --fix.
+    let rewrote = poly(dir.path(), &["fmt", "--fix", "--no-cache", "ok.py"]);
+    assert_eq!(rewrote.status.code(), Some(1));
+
+    // Second run has nothing to do -> 0.
+    let clean = poly(dir.path(), &["fmt", "--fix", "--no-cache", "ok.py"]);
+    assert_eq!(clean.status.code(), Some(0));
+}

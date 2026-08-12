@@ -421,6 +421,7 @@ fn sample_discovery() -> DiscoveryReport {
 fn format_summary_reports_what_discovery_excluded() {
     owo_colors::set_override(false);
     let run = FormatRun {
+        errors: Vec::new(),
         results: vec![FormatResult {
             path: PathBuf::from("src/clean.py"),
             changed: false,
@@ -455,6 +456,7 @@ fn format_summary_reports_what_discovery_excluded() {
 fn format_summary_explains_a_run_that_checked_nothing() {
     owo_colors::set_override(false);
     let run = FormatRun {
+        errors: Vec::new(),
         results: Vec::new(),
         discovery: DiscoveryReport {
             excluded_files: 1,
@@ -489,6 +491,7 @@ fn format_summary_explains_a_run_that_checked_nothing() {
 fn format_summary_reports_exclusions_alongside_changed_files() {
     owo_colors::set_override(false);
     let run = FormatRun {
+        errors: Vec::new(),
         results: sample_format_results(),
         discovery: sample_discovery(),
     };
@@ -556,6 +559,7 @@ fn summaries_stay_quiet_when_nothing_was_excluded() {
     assert!(!text.contains("excluded"), "got: {text}");
 
     let format = FormatRun {
+        errors: Vec::new(),
         results: sample_format_results(),
         discovery: DiscoveryReport::default(),
     };

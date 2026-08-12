@@ -138,8 +138,27 @@ pub struct LintRun {
 pub struct FormatRun {
     /// Per-file results, one per discovered file.
     pub results: Vec<FormatResult>,
+    /// Files whose formatter *errored* — a syntax error the engine could not
+    /// parse, an unreadable file, a bad engine config.
+    ///
+    /// These used to be logged at `warn` and dropped from the results, so the
+    /// run reported `All formatted.` and exited 0 on a file it had failed to
+    /// process. A formatter that cannot parse a file has not verified it, and
+    /// saying otherwise is a gate that passes without checking. Carried here so
+    /// the caller can name the paths and fail.
+    pub errors: Vec<FormatError>,
     /// What `[discovery] exclude` / `--exclude` pruned before any of that.
     pub discovery: DiscoveryReport,
+}
+
+/// One file the formatter could not process, and why.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct FormatError {
+    /// File that could not be formatted.
+    pub path: PathBuf,
+    /// The engine's error, already flattened to a message.
+    pub message: String,
 }
 
 /// Maximum autofix passes per file: applying a fix can surface or resolve
@@ -274,18 +293,29 @@ pub fn format_run(
         .collect();
     let plans = plan_by_config_language(&files, &configs, Kind::Format);
     prefetch_tier2_grammars(&plans);
-    let mut results: Vec<FormatResult> = files
+    // An engine error is carried, not swallowed: dropping the file here is what
+    // let `poly fmt --check` report success on a file it could not parse.
+    let (oks, errs): (Vec<_>, Vec<_>) = files
         .par_iter()
-        .filter_map(|f| match format_one(f, &plans, &cache, write, collect_debug) {
-            Ok(result) => Some(result),
-            Err(error) => {
-                tracing::warn!(path = %f.path.display(), "format failed: {error:#}");
-                None
-            }
+        .map(|f| {
+            format_one(f, &plans, &cache, write, collect_debug).map_err(|error| FormatError {
+                path: f.path.clone(),
+                message: format!("{error:#}"),
+            })
         })
-        .collect();
+        .partition(Result::is_ok);
+    let mut results: Vec<FormatResult> = oks.into_iter().map(Result::unwrap).collect();
+    let mut errors: Vec<FormatError> = errs.into_iter().map(Result::unwrap_err).collect();
     results.sort_by(|a, b| a.path.cmp(&b.path));
-    Ok(FormatRun { results, discovery })
+    errors.sort_by(|a, b| a.path.cmp(&b.path));
+    for error in &errors {
+        tracing::warn!(path = %error.path.display(), "format failed: {}", error.message);
+    }
+    Ok(FormatRun {
+        results,
+        errors,
+        discovery,
+    })
 }
 
 #[allow(clippy::too_many_arguments)]

@@ -29,7 +29,7 @@ use owo_colors::{OwoColorize, Stream::Stderr, Stream::Stdout};
 
 use crate::discover::DiscoveryReport;
 use crate::engine::Severity;
-use crate::runner::{FormatResult, FormatRun, LintResult, LintRun, RunDebug};
+use crate::runner::{FormatError, FormatResult, FormatRun, LintResult, LintRun, RunDebug};
 
 /// How much detail the human-oriented (`pretty`) renderers emit. `Copy` so it
 /// threads cheaply through the renderers.
@@ -408,7 +408,37 @@ pub fn render_format_pretty(results: &[FormatResult], check: bool, verbosity: Ve
 /// [`render_format_pretty`] over a whole [`FormatRun`], so the summary can say
 /// what discovery excluded before the checked files were reached.
 pub fn render_format_pretty_run(run: &FormatRun, check: bool, verbosity: Verbosity) -> (String, usize) {
-    render_format_core(&run.results, &run.discovery, check, verbosity)
+    let (mut out, changed) = render_format_core(&run.results, &run.discovery, check, verbosity);
+    out.push_str(&render_format_errors(&run.errors));
+    (out, changed)
+}
+
+/// Render the files the formatter could not process, naming each path.
+///
+/// A file whose engine errored has not been verified, so it must be visible and
+/// it must not be folded into the pass/fail count for *formatted* files — the
+/// caller exits 2 on these, distinct from exit 1 ("files changed").
+pub fn render_format_errors(errors: &[FormatError]) -> String {
+    if errors.is_empty() {
+        return String::new();
+    }
+    let mut out = String::new();
+    for error in errors {
+        let _ = writeln!(
+            out,
+            "{} {}: {}",
+            "error".if_supports_color(Stdout, |t| t.red()),
+            error.path.display(),
+            error.message
+        );
+    }
+    let _ = writeln!(
+        out,
+        "{}",
+        format!("{} file(s) could not be formatted and were NOT checked.", errors.len())
+            .if_supports_color(Stdout, |t| t.red())
+    );
+    out
 }
 
 /// Shared body of the format renderers.
