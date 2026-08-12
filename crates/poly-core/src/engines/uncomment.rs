@@ -35,14 +35,33 @@
 //! false-positives on machine-generated headers (`# alef:hash:…`), prose NOTE
 //! blocks and `key = value` directive comments. With `code_only = true` (the
 //! default) a removal is kept only when the comment looks like commented-out
-//! *code* (see `looks_like_commented_out_code`); set `code_only = false` to
+//! *code* (see [`looks_like_commented_out_code`]); set `code_only = false` to
 //! restore the strip-every-comment behaviour.
+//!
+//! # Comment *blocks*, not comment lines
+//!
+//! Tree-sitter reports one comment node per `//` / `#` line, so upstream returns
+//! one [`Removal`] per line. Judging each of those lines independently is how
+//! `--fix` came to delete the *interior* line of a three-line prose comment
+//! (`// … it always returns `Value::String`. …` — the `::` alone read as code),
+//! leaving the surrounding lines welded into a sentence the author never wrote.
+//! Removing one line from a block is worse than removing the block: nothing
+//! looks missing, so nobody reviews it.
+//!
+//! [`filter_code_only`] therefore works on **contiguous comment blocks**: a run
+//! of whole-line comments with no blank or code line between them. A block is
+//! removable only when *every* line in it is covered by a removal (a preserved
+//! `TODO` / `~keep` line in the middle vetoes the block) **and** every line reads
+//! as commented-out code. Otherwise the whole block is kept. A blank line ends a
+//! block — it separates paragraphs, and each paragraph is judged on its own. A
+//! trailing comment (`foo(); // note`) shares its line with code, so it is never
+//! part of a block and is judged alone.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
-use uncomment::Processor;
 use uncomment::config::ResolvedConfig;
+use uncomment::{Processor, Removal};
 
 use crate::config::EngineConfig;
 use crate::engine::{Capabilities, Diagnostic, Edit, Engine, Severity, SourceFile, Span};
@@ -51,7 +70,7 @@ use crate::language::Language;
 /// Cache-key version: the wrapped crate version plus a marker for this backend's
 /// own mapping logic. Bump whenever `uncomment` is updated OR the diagnostic/edit
 /// mapping below changes (either alters output and must bust the cache).
-const UNCOMMENT_VERSION: &str = "uncomment-3.5.2+map2-codeonly+prose2";
+const UNCOMMENT_VERSION: &str = "uncomment-3.5.2+map2-codeonly+prose3-blocks";
 
 thread_local! {
     /// One `Processor` per rayon worker thread. The processor owns a reusable
@@ -106,19 +125,11 @@ impl Engine for UncommentEngine {
         // machine-generated headers (`# alef:hash:…`), prose NOTE blocks and
         // `key = value` directive comments. `code_only = false` restores the
         // strip-every-comment behaviour for callers that want it.
-        let code_only = flag(cfg, "code_only", true);
-        let removals: Vec<_> = removals
-            .into_iter()
-            .filter(|removal| {
-                !code_only || {
-                    let text = src
-                        .content
-                        .get(removal.comment_start..removal.comment_end)
-                        .unwrap_or("");
-                    looks_like_commented_out_code(text)
-                }
-            })
-            .collect();
+        let removals = if flag(cfg, "code_only", true) {
+            filter_code_only(&src.content, removals)
+        } else {
+            removals
+        };
 
         let diagnostics = removals
             .into_iter()
@@ -159,6 +170,151 @@ fn enabled(cfg: &EngineConfig) -> bool {
 /// to `default` when it is absent or not a bool.
 fn flag(cfg: &EngineConfig, key: &str, default: bool) -> bool {
     cfg.options.get(key).and_then(toml::Value::as_bool).unwrap_or(default)
+}
+
+/// Keep only the removals that belong to a contiguous comment block reading as
+/// commented-out code, dropping every removal that would edit a block partially.
+///
+/// This is the guard described in the module docs: the unit of judgement is the
+/// block, never the line. Runs once per file, only when `code_only` is on and
+/// upstream found something, so the line index it builds is off the hot path for
+/// every file with no removable comment.
+fn filter_code_only(content: &str, removals: Vec<Removal>) -> Vec<Removal> {
+    if removals.is_empty() {
+        return removals;
+    }
+    let lines = index_lines(content);
+    // Unreachable (a removal implies a comment implies a line), but indexing an
+    // empty line table on the fix path would panic, so bail instead.
+    if lines.is_empty() {
+        return Vec::new();
+    }
+
+    let mut keep = vec![false; removals.len()];
+    let mut spans: Vec<(usize, usize)> = Vec::with_capacity(removals.len());
+    // Removal indices grouped by the (first line, last line) of their block.
+    let mut blocks: BTreeMap<(usize, usize), Vec<usize>> = BTreeMap::new();
+
+    for (index, removal) in removals.iter().enumerate() {
+        let first = line_of(&lines, removal.comment_start);
+        let last = line_of(&lines, removal.comment_end.saturating_sub(1).max(removal.comment_start));
+        spans.push((first, last));
+
+        let text = content
+            .get(removal.comment_start..removal.comment_end)
+            .unwrap_or_default();
+        let Some(marker) = text.chars().next() else {
+            continue;
+        };
+        if !starts_its_line(&lines, first, removal.comment_start) {
+            // A trailing comment sits on a line of code, so no comment block can
+            // contain it. Judge it on its own, as before.
+            keep[index] = looks_like_commented_out_code(text);
+            continue;
+        }
+        blocks
+            .entry(block_bounds(&lines, first, last, marker))
+            .or_default()
+            .push(index);
+    }
+
+    for ((first, last), members) in blocks {
+        if block_is_removable(content, &lines, &spans, &members, first, last) {
+            for index in members {
+                keep[index] = true;
+            }
+        }
+    }
+
+    removals
+        .into_iter()
+        .zip(keep)
+        .filter_map(|(removal, keep)| keep.then_some(removal))
+        .collect()
+}
+
+/// Whether the whole comment block spanning lines `first..=last` may be removed.
+///
+/// Both conditions bias towards keeping content: a block partially covered by
+/// removals (a preserved `TODO` line inside it) is left alone, and so is a block
+/// whose lines are not *unanimously* commented-out code.
+fn block_is_removable(
+    content: &str,
+    lines: &[(usize, &str)],
+    spans: &[(usize, usize)],
+    members: &[usize],
+    first: usize,
+    last: usize,
+) -> bool {
+    let mut covered = vec![false; last - first + 1];
+    for &index in members {
+        let (start, end) = spans[index];
+        for line in start.max(first)..=end.min(last) {
+            covered[line - first] = true;
+        }
+    }
+    if !covered.iter().all(|line| *line) {
+        return false;
+    }
+
+    let (block_start, _) = lines[first];
+    let (last_start, last_text) = lines[last];
+    let block = content
+        .get(block_start..last_start.saturating_add(last_text.len()))
+        .unwrap_or_default();
+    looks_like_commented_out_code(block)
+}
+
+/// Byte offset and newline-free text of every line of `content`, in order.
+fn index_lines(content: &str) -> Vec<(usize, &str)> {
+    let mut lines = Vec::new();
+    let mut start = 0usize;
+    for (index, byte) in content.bytes().enumerate() {
+        if byte == b'\n' {
+            let text = &content[start..index];
+            lines.push((start, text.strip_suffix('\r').unwrap_or(text)));
+            start = index.saturating_add(1);
+        }
+    }
+    if start < content.len() {
+        lines.push((start, &content[start..]));
+    }
+    lines
+}
+
+/// Index of the line containing `offset`. Saturates at the last line so a
+/// malformed offset can never panic on the fix path.
+fn line_of(lines: &[(usize, &str)], offset: usize) -> usize {
+    lines
+        .partition_point(|(start, _)| *start <= offset)
+        .saturating_sub(1)
+        .min(lines.len().saturating_sub(1))
+}
+
+/// Whether the comment at `offset` is the first non-whitespace thing on its
+/// line — i.e. a whole-line comment rather than a trailing one.
+fn starts_its_line(lines: &[(usize, &str)], line: usize, offset: usize) -> bool {
+    let (start, text) = lines[line];
+    text.get(..offset.saturating_sub(start))
+        .is_none_or(|prefix| prefix.trim().is_empty())
+}
+
+/// Grow `first..=last` outwards over adjacent whole-line comments sharing the
+/// same leading marker character, yielding the contiguous block's bounds.
+///
+/// Matching on the marker's first character (`/` for both `//` and `///`, `#`
+/// for `#` and `#!`) keeps the test language-agnostic and symmetric: two lines
+/// must agree on their block, or one of them could be removed alone.
+fn block_bounds(lines: &[(usize, &str)], first: usize, last: usize, marker: char) -> (usize, usize) {
+    let mut start = first;
+    while start > 0 && lines[start - 1].1.trim_start().starts_with(marker) {
+        start -= 1;
+    }
+    let mut end = last;
+    while end.saturating_add(1) < lines.len() && lines[end + 1].1.trim_start().starts_with(marker) {
+        end += 1;
+    }
+    (start, end)
 }
 
 /// Machine-generated / directive comment prefixes that must never be reported as
@@ -239,14 +395,28 @@ const CODE_OPERATORS: &[&str] = &[
     "::", "->", "=>", "&&", "||", "==", "!=", ">=", "<=", "+=", "-=", "*=", "/=",
 ];
 
-/// Whether a comment (marker included, possibly multi-line) looks like
+/// Whether a comment block (markers included, possibly multi-line) looks like
 /// commented-out *code* rather than prose, a machine-generated header, or a
-/// `key = value` directive. Conservative by design: a comment is reported only
-/// when at least one of its lines carries a strong code signal, so the opt-in
-/// lint under-flags rather than resurrecting the false positives it exists to
-/// remove.
+/// `key = value` directive.
+///
+/// **Unanimous**: every non-empty line must read as code, and there must be at
+/// least one. Requiring only *one* code-looking line meant a single `::` path in
+/// a prose paragraph condemned the paragraph; requiring all of them means a
+/// mixed block is kept. That trade is deliberate — a missed removal is cosmetic,
+/// a wrong removal silently destroys what the author wrote.
 fn looks_like_commented_out_code(comment: &str) -> bool {
-    comment.lines().any(|line| line_is_code(strip_comment_markers(line)))
+    let mut saw_content = false;
+    for line in comment.lines() {
+        let stripped = strip_comment_markers(line);
+        if stripped.is_empty() {
+            continue;
+        }
+        saw_content = true;
+        if !line_is_code(stripped) {
+            return false;
+        }
+    }
+    saw_content
 }
 
 /// Strip leading/trailing comment punctuation (`// # ; * <!-- --> /* */ -- %`)
@@ -260,9 +430,10 @@ fn strip_comment_markers(line: &str) -> &str {
 }
 
 /// Classify a single marker-stripped line. Rejects empties, machine headers and
-/// prose sentences up front, then requires a positive code signal.
+/// prose (both plain sentences and sentences quoting a `::` path) up front, then
+/// requires a positive code signal.
 fn line_is_code(line: &str) -> bool {
-    if line.is_empty() || is_machine_header(line) || is_prose_sentence(line) {
+    if line.is_empty() || is_machine_header(line) || is_prose_sentence(line) || is_prose_quoting_a_path(line) {
         return false;
     }
     has_code_signal(line)
@@ -311,6 +482,42 @@ fn is_prose_sentence(line: &str) -> bool {
 /// Words below this count are too short to judge as prose without terminal
 /// punctuation — `return nil, err` would otherwise qualify.
 const PROSE_MIN_WORDS: usize = 6;
+
+/// Plain English words a line must carry before a `::` path token in it is read
+/// as a *reference to* an item rather than as code. Two is enough to make a
+/// sentence (`returns Value::String here`) and still rejects a bare `a::b`.
+const PROSE_PATH_MIN_PLAIN_WORDS: usize = 2;
+
+/// Whether the line is an English sentence that happens to name a `::` path —
+/// `returns Value::String here`, `see HashMap::new for details`.
+///
+/// `::` is in [`CODE_OPERATORS`], and on its own that made every such sentence
+/// commented-out code: too short for [`is_prose_sentence`]'s word threshold and
+/// without the terminal full stop its shorter rule needs. The distinguishing
+/// feature is the company the path keeps — real code surrounds a path with
+/// brackets, operators or a leading keyword, whereas prose surrounds it with
+/// words. So: every token must read as a word (markdown backticks trimmed), at
+/// least [`PROSE_PATH_MIN_PLAIN_WORDS`] of them must be path-free, and the line
+/// must not open with a code keyword (which keeps `use std::io::Error;` code).
+fn is_prose_quoting_a_path(line: &str) -> bool {
+    let mut plain = 0usize;
+    let mut paths = 0usize;
+    for token in line.split_whitespace() {
+        let token = token.trim_matches('`');
+        if token.is_empty() {
+            continue;
+        }
+        if !is_wordish(token) {
+            return false;
+        }
+        if token.contains("::") {
+            paths = paths.saturating_add(1);
+        } else {
+            plain = plain.saturating_add(1);
+        }
+    }
+    paths > 0 && plain >= PROSE_PATH_MIN_PLAIN_WORDS && !first_token_is_keyword(line)
+}
 
 /// Whether a whitespace-delimited token reads as a natural-language word:
 /// letters plus the punctuation that legitimately attaches to one. Notably
@@ -477,10 +684,37 @@ mod tests {
         assert!(!looks_like_commented_out_code(comment));
     }
 
+    /// Policy reversal from the "any line is code" rule: a block that mixes
+    /// prose and code is kept whole. Flagging it meant `--fix` deleted the code
+    /// line out of the middle of the paragraph, which is the data loss this
+    /// backend was reported for.
     #[test]
-    fn keeps_code_inside_a_mostly_prose_block() {
-        // A block whose last line is real commented-out code must still be flagged.
+    fn rejects_a_block_that_mixes_prose_and_code() {
         let block = "# increment the counter before returning\n# counter += 1;";
-        assert!(looks_like_commented_out_code(block));
+        assert!(!looks_like_commented_out_code(block));
+    }
+
+    #[test]
+    fn flags_a_block_that_is_code_on_every_line() {
+        let block = "// let x = compute(a);\n//\n// println!(\"{x}\");";
+        assert!(
+            looks_like_commented_out_code(block),
+            "a blank comment line is neutral, not a veto"
+        );
+    }
+
+    #[test]
+    fn rejects_prose_quoting_a_path() {
+        assert!(!looks_like_commented_out_code("// returns Value::String here"));
+        assert!(!looks_like_commented_out_code("// returns `Value::String` here"));
+        assert!(!looks_like_commented_out_code("// we return std::io::Error on failure"));
+        assert!(!looks_like_commented_out_code("// see HashMap::new for details"));
+    }
+
+    #[test]
+    fn flags_bare_paths_and_statements() {
+        assert!(looks_like_commented_out_code("// a::b"));
+        assert!(looks_like_commented_out_code("// foo(bar); baz"));
+        assert!(looks_like_commented_out_code("// use std::io::Error;"));
     }
 }
