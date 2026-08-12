@@ -114,6 +114,44 @@ brew install Goldziher/tap/poly
 cargo binstall --git https://github.com/Goldziher/poly poly-cli
 ```
 
+### Pinning poly in a repository
+
+Lint and format output depends on the poly version, so a repository that does not pin one can see
+its results change underneath it. **Do not gate installation on poly merely being present:**
+
+```sh
+# Wrong: satisfied by ANY poly from ANY channel, so it never upgrades and drifts silently.
+command -v poly >/dev/null 2>&1 || brew install Goldziher/tap/poly
+```
+
+That check passes as soon as *some* `poly` exists, so the install never runs again and the version
+drifts with no signal. It also cannot see a `poly` from another channel shadowing the one it thinks
+it installed — `~/.cargo/bin` precedes `/opt/homebrew/bin` on a default macOS `PATH`, so a stray
+`cargo`-installed binary wins silently.
+
+Pin a version and verify the *resolved* binary instead:
+
+```sh
+POLY_VERSION=0.19.7
+
+resolved=$(poly --version 2>/dev/null | awk '{print $2}' || true)
+if [ "$resolved" != "$POLY_VERSION" ]; then
+  brew upgrade Goldziher/tap/poly || brew install Goldziher/tap/poly
+  resolved=$(poly --version 2>/dev/null | awk '{print $2}' || true)
+fi
+[ "$resolved" = "$POLY_VERSION" ] || {
+  echo "poly $POLY_VERSION required, but $(command -v poly) reports ${resolved:-none}" >&2
+  exit 1
+}
+```
+
+Three details matter: `brew install` no-ops on an already-installed-but-outdated formula (hence
+`brew upgrade ||`), the version is re-checked *after* installing rather than assumed, and the
+failure message names `command -v poly` so a shadowed binary is identifiable rather than baffling.
+
+In CI, prefer the GitHub Action with an explicit `version:` — it resolves and caches a specific
+release rather than whatever is already on the runner.
+
 ### Manual or Source Builds
 
 Download a release archive from
