@@ -4744,8 +4744,10 @@ dependencies = [
  "blake3",
  "dunce",
  "etcetera",
+ "poly-buildinfo",
  "tempfile",
  "toml 1.1.4+spec-1.1.0",
+ "tracing",
 ]
 
 [[package]]

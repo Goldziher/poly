@@ -8,6 +8,9 @@
   group caching; see ADR 0019)
 - Updated: 2026-07 (v0.9.0): the cache moved out of the repo into the per-user OS cache dir
   (`~/.cache/poly/<repo-key>`); the in-repo `.polylint/` directory is retired.
+- Updated: 2026-08-12: the running binary's **build identity** joins the key preamble, so
+  invalidation no longer depends on anyone remembering to bump a string; the key also folds
+  `CACHE_FORMAT_VERSION` (now `4`), and the run path sweeps stranded entries automatically.
 
 ## Context
 
@@ -42,11 +45,47 @@ an explicit root:
   these settings invalidate cached results.
 - **Value = the engine's or hook's output:** diagnostics for lint, formatted bytes /
   `Unchanged` for format, hook result + stdout/stderr for hooks.
-- **CACHE_FORMAT_VERSION:** included in the cache-dir structure to invalidate the entire
-  cache if the schema changes (e.g. adding new fields to result tuples).
+- **CACHE_FORMAT_VERSION:** written to the `VERSION` sentinel *and* folded into the key, so
+  a schema change both makes existing entries unreachable and reclaims their bytes.
 - **Atomic writes:** write to a sibling temp file then rename, guarded by `fd-lock`.
 - **Our cache supersedes each tool's internal cache:** engines disable/ignore upstream
   caches; we're the single source of incremental truth.
+
+**Key preamble: a layered identity (2026-08-12).**
+
+| Layer            | Source                             | Invalidates when                   |
+| ---------------- | ---------------------------------- | ---------------------------------- |
+| `format_version` | `CACHE_FORMAT_VERSION`             | what is *stored* changes shape     |
+| `build_identity` | `poly_buildinfo::cache_identity()` | the poly binary itself changes     |
+| `id` + `version` | `Engine::name` / `Engine::version` | a wrapped upstream crate is bumped |
+| `args`           | resolved engine config             | the user reconfigures the engine   |
+| `input_digest`   | file bytes (+ path for lint)       | the file changes                   |
+
+Only `build_identity` is **automatic**, and that is the point: `Engine::version()` is a
+hand-written string, and the `version_audit` test can only check that it tracks the *wrapped
+crate's* version. A change to poly's **own** logic — a heuristic, a default, a config
+mapping — moved no key component at all, so every previously cached file kept being served
+pre-change results. Two builds that both call themselves `0.19.7` (a dev build and the
+release, or two dev builds) produced identical keys and read each other's entries.
+
+The identity is scoped by build channel, which is the whole trade-off:
+
+- **Release** (release profile *and* a build id equal to `v<VERSION>`) → `release/<version>`.
+  Nothing machine-local participates, so `v0.19.7` on CI and on a laptop share entries. A
+  released version is immutable, so the version is a sufficient proof of sameness.
+- **Development / unknown** → channel, version, `git describe` id, profile **and a
+  stat-cheap fingerprint of the executable** (device, inode, size, mtime). `git describe`
+  separates commits but is blind to uncommitted work — the case an iterating developer hits
+  constantly — so the executable fingerprint is what separates two builds of one commit.
+  A development build therefore re-runs its work after every rebuild, which is the correct
+  price for never trusting a verdict produced by code that no longer exists.
+
+**Eviction.** Every invalidation strands a generation of entries that nothing will ever key
+again. `gc` existed but only ran when a human typed `poly cache gc`, so the cache grew
+without bound; with a per-rebuild identity it would grow faster. The run-path open now
+sweeps automatically, at most once per 24 h per repo cache (recorded by a `LAST_SWEEP`
+marker), evicting entries older than 14 days and then trimming oldest-first to a 1 GiB
+ceiling. A failed sweep is logged and ignored — losing disk space must not fail a lint run.
 
 **Tier 2: Opt-in compiler cache** (sccache)
 
@@ -82,6 +121,11 @@ Positive:
 - Atomic writes + `fd-lock` make the cache safe under the parallel runner (ADR 0009) and
   concurrent invocations.
 - Folding engine/hook `version` into the key means upgrades never serve stale results.
+- Folding the **build identity** into the key means no *build* ever serves another build's
+  results — the invalidation that used to depend on a remembered `version()` bump is now
+  correct by construction, including for changes to poly's own logic.
+- Stranded generations are reclaimed automatically instead of accumulating until someone
+  runs `poly cache gc`.
 - `CACHE_FORMAT_VERSION` allows non-breaking additions to the cache schema.
 - Hook-specific soundness rules (safe/aggressive, never cache tree-mutators) prevent
   silent correctness bugs.
@@ -90,7 +134,7 @@ Positive:
 
 Negative / risks:
 
-- Correctness hinges on the key capturing _every_ input that affects output; a hidden
+- Correctness hinges on the key capturing *every* input that affects output; a hidden
   input (e.g. an env var, a sibling file a tool reads) not in the key causes stale hits.
   Each backend and hook adapter must declare its real inputs — discipline required.
 - Disabling upstream tool caches may lose some intra-tool optimizations; we accept this for
@@ -109,3 +153,16 @@ Negative / risks:
 - **No cache:** rejected — pre-commit and CI on large repos would be needlessly slow.
 - **Single global version (not namespaced):** rejected — lint, format, and hooks have
   different versioning and cache-correctness models; namespacing decouples them.
+- **Hashing the executable to identify a development build:** rejected on measured cost —
+  blake3 over the 83 MiB release binary is ~45 ms (~55 ms with the read) and ~500 ms over
+  the 353 MiB debug binary, paid on *every* invocation including the three-file pre-commit
+  gate. It is the only scheme under which two byte-identical dev builds keep sharing a
+  cache; that benefit does not justify the fixed cost.
+- **`git describe --dirty`:** rejected — the build script only re-runs when `.git` moves, so
+  the dirty bit would itself be stale, and it is one bit: every distinct uncommitted state
+  would still collide.
+- **Hashing the workspace sources at build time:** rejected — it would force
+  `poly-buildinfo`, and therefore every crate above it, to rebuild on every source edit,
+  wrecking the development loop it is meant to protect.
+- **A per-build timestamp or nonce in the identity:** rejected — it would also invalidate
+  across two identical *release* builds, destroying cross-machine and CI cache reuse.

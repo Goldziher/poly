@@ -16,6 +16,7 @@
 //! ```
 
 use std::sync::LazyLock;
+use std::time::UNIX_EPOCH;
 
 /// The workspace version this binary was built from (e.g. `0.19.7`).
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -106,6 +107,105 @@ pub fn long_version() -> &'static str {
     LONG_VERSION.as_str()
 }
 
+/// The identity of this build as far as poly's **result cache** is concerned:
+/// two binaries that share this string are allowed to share cache entries.
+///
+/// The cache stores what an engine produced for a given input. Serving one
+/// binary's results to a *different* binary is only safe when the two provably
+/// behave the same, and the version number alone does not prove that — every
+/// unreleased build of `0.19.7` also calls itself `0.19.7`. That is how a stale
+/// "already formatted" verdict gets served for a file the current binary would
+/// actually rewrite, which is the worst outcome a format/lint gate can have.
+///
+/// The identity is therefore scoped per [`BuildChannel`]:
+///
+/// - **Release** — `release/<version>`. A tagged release-profile build is
+///   reproducible from its version alone, so every machine's `v0.19.7` shares
+///   one identity and CI cache reuse keeps working. Nothing machine-local
+///   (path, mtime) is folded in.
+/// - **Development / unknown** — channel, version, build id, profile **and a
+///   fingerprint of the executable file**. The build id (`git describe`)
+///   separates commits, but it deliberately ignores uncommitted work, so two
+///   builds of the same commit with different edits share it; the executable
+///   fingerprint is what separates those. A development build is expected to
+///   re-run work after a rebuild — that is the correct trade against serving a
+///   verdict computed by code that no longer exists.
+///
+/// Computed once per process and cached, so the per-file hot path only folds a
+/// borrowed `&'static str` into the cache key.
+pub fn cache_identity() -> &'static str {
+    static CACHE_IDENTITY: LazyLock<String> =
+        LazyLock::new(|| compose_cache_identity(channel(), VERSION, build_id(), profile(), &executable_fingerprint()));
+    CACHE_IDENTITY.as_str()
+}
+
+/// Assemble the [`cache_identity`] string from its parts.
+///
+/// Split out from [`cache_identity`] so the per-channel scoping rule can be
+/// tested directly, without a process whose build identity we cannot choose.
+fn compose_cache_identity(
+    channel: BuildChannel,
+    version: &str,
+    build_id: &str,
+    profile: &str,
+    executable_fingerprint: &str,
+) -> String {
+    if channel.is_release() {
+        return format!("{}/{version}", channel.as_str());
+    }
+    format!(
+        "{}/{version}/{build_id}/{profile}/{executable_fingerprint}",
+        channel.as_str()
+    )
+}
+
+/// A cheap fingerprint of the running executable: `<device>.<inode>-<size>-<mtime-nanos>`
+/// (the device/inode pair is `unknown` off unix, where size and mtime carry it).
+///
+/// This is the same file identity `poly mcp`'s `ExecutableWatch` uses to notice
+/// its own binary being replaced, plus the modification time — a linker writes a
+/// new file and renames it over the old one, so every one of those four fields
+/// moves on a rebuild.
+///
+/// The alternative, hashing the executable's bytes, is the only way two
+/// byte-identical development builds could keep sharing a cache — and it was
+/// measured and rejected: blake3 over the 83 MiB release binary costs ~45 ms
+/// (~55 ms including the read), and ~500 ms over the 353 MiB debug binary, on
+/// **every** invocation — including the three-file pre-commit gate poly exists
+/// to make instant. Over-invalidating a development build is the cheaper error.
+///
+/// Cost here is one `stat`, once per process. Falls back to [`UNKNOWN`] when
+/// the executable cannot be located or stat-ed — the identity is then coarser
+/// (build id + profile only) but never claims a provenance it does not have.
+fn executable_fingerprint() -> String {
+    let Ok(path) = std::env::current_exe() else {
+        return UNKNOWN.to_string();
+    };
+    let Ok(metadata) = std::fs::metadata(&path) else {
+        return UNKNOWN.to_string();
+    };
+    let modified = metadata
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .map_or_else(|| UNKNOWN.to_string(), |since_epoch| since_epoch.as_nanos().to_string());
+    format!("{}-{}-{modified}", file_identity(&metadata), metadata.len())
+}
+
+/// The `<device>.<inode>` pair identifying a file on unix.
+#[cfg(unix)]
+fn file_identity(metadata: &std::fs::Metadata) -> String {
+    use std::os::unix::fs::MetadataExt;
+    format!("{}.{}", metadata.dev(), metadata.ino())
+}
+
+/// Off unix there is no stable stat-cheap file id; size and mtime carry the
+/// fingerprint alone.
+#[cfg(not(unix))]
+fn file_identity(_metadata: &std::fs::Metadata) -> String {
+    UNKNOWN.to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -141,6 +241,124 @@ mod tests {
         if profile() == "debug" {
             assert_ne!(channel(), BuildChannel::Release);
         }
+    }
+
+    /// A release identity must depend on nothing but the channel and version, so
+    /// two machines building the same tag reuse each other's cache entries.
+    #[test]
+    fn release_cache_identity_ignores_everything_machine_local() {
+        let first = compose_cache_identity(BuildChannel::Release, "0.19.7", "v0.19.7", "release", "111-222");
+        let second = compose_cache_identity(BuildChannel::Release, "0.19.7", "v0.19.7", "release", "333-444");
+        assert_eq!(first, "release/0.19.7");
+        assert_eq!(first, second, "a release identity must not depend on the local binary");
+    }
+
+    #[test]
+    fn a_release_version_bump_changes_the_cache_identity() {
+        assert_ne!(
+            compose_cache_identity(BuildChannel::Release, "0.19.7", "v0.19.7", "release", ""),
+            compose_cache_identity(BuildChannel::Release, "0.19.8", "v0.19.8", "release", ""),
+        );
+    }
+
+    #[test]
+    fn a_development_build_never_shares_a_release_identity() {
+        assert_ne!(
+            compose_cache_identity(BuildChannel::Development, "0.19.7", "v0.19.7", "release", "111-222"),
+            compose_cache_identity(BuildChannel::Release, "0.19.7", "v0.19.7", "release", "111-222"),
+            "an unreleased 0.19.7 must not read the released 0.19.7's cache entries"
+        );
+    }
+
+    #[test]
+    fn development_builds_from_different_commits_get_different_identities() {
+        assert_ne!(
+            compose_cache_identity(
+                BuildChannel::Development,
+                "0.19.7",
+                "v0.19.7-1-gaaaaaaa",
+                "release",
+                "111-222"
+            ),
+            compose_cache_identity(
+                BuildChannel::Development,
+                "0.19.7",
+                "v0.19.7-2-gbbbbbbb",
+                "release",
+                "111-222"
+            ),
+        );
+    }
+
+    /// `git describe` cannot see uncommitted work, so two builds of one commit
+    /// share a build id; only the executable fingerprint separates them.
+    #[test]
+    fn development_builds_of_one_commit_get_different_identities_per_binary() {
+        assert_ne!(
+            compose_cache_identity(
+                BuildChannel::Development,
+                "0.19.7",
+                "v0.19.7-1-gaaaaaaa",
+                "release",
+                "111-222"
+            ),
+            compose_cache_identity(
+                BuildChannel::Development,
+                "0.19.7",
+                "v0.19.7-1-gaaaaaaa",
+                "release",
+                "111-333"
+            ),
+        );
+    }
+
+    #[test]
+    fn debug_and_release_profiles_of_one_commit_get_different_identities() {
+        assert_ne!(
+            compose_cache_identity(
+                BuildChannel::Development,
+                "0.19.7",
+                "v0.19.7-1-gaaaaaaa",
+                "debug",
+                "111-222"
+            ),
+            compose_cache_identity(
+                BuildChannel::Development,
+                "0.19.7",
+                "v0.19.7-1-gaaaaaaa",
+                "release",
+                "111-222"
+            ),
+        );
+    }
+
+    #[test]
+    fn an_unknown_provenance_build_gets_its_own_identity() {
+        assert_ne!(
+            compose_cache_identity(BuildChannel::Unknown, "0.19.7", UNKNOWN, "release", "111-222"),
+            compose_cache_identity(BuildChannel::Development, "0.19.7", UNKNOWN, "release", "111-222"),
+        );
+    }
+
+    #[test]
+    fn cache_identity_is_stable_within_a_process_and_names_the_channel() {
+        let identity = cache_identity();
+        assert_eq!(identity, cache_identity(), "the identity is computed once and reused");
+        assert!(
+            identity.starts_with(channel().as_str()),
+            "{identity} is scoped by channel"
+        );
+        assert!(identity.contains(VERSION), "{identity} carries the version");
+    }
+
+    #[test]
+    fn executable_fingerprint_is_stable_for_one_binary() {
+        assert_eq!(executable_fingerprint(), executable_fingerprint());
+        assert_ne!(
+            executable_fingerprint(),
+            UNKNOWN,
+            "the running test binary can be stat-ed, so the fingerprint must resolve"
+        );
     }
 
     #[test]

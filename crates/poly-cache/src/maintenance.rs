@@ -14,6 +14,29 @@ use anyhow::{Context, Result};
 
 use crate::{CACHE_FORMAT_VERSION, Namespace, ResultCache};
 
+/// Marker file in the cache root whose modification time records when the
+/// automatic sweep last ran.
+const LAST_SWEEP_MARKER: &str = "LAST_SWEEP";
+
+/// Minimum wall-clock gap between two automatic sweeps of one repo's cache.
+///
+/// A sweep stats every entry, so it must not run on every invocation; once a
+/// day amortises to nothing while still bounding growth.
+const AUTO_SWEEP_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
+
+/// Entries not rewritten within this window are evicted by the automatic sweep.
+///
+/// Every invalidation strands the previous generation of entries — a new poly
+/// release, a rebuilt development binary, a bumped engine. Nothing ever
+/// rewrites those keys again, so age is the only signal that they are dead.
+const AUTO_SWEEP_MAX_AGE: Duration = Duration::from_secs(14 * 24 * 60 * 60);
+
+/// Ceiling on one repo's cache; the sweep evicts oldest-first down to it.
+///
+/// The age rule alone cannot bound a large repository that is linted many times
+/// a day, so the size rule is the hard backstop.
+const AUTO_SWEEP_MAX_SIZE: u64 = 1 << 30;
+
 /// Per-namespace entry count and on-disk byte total.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NamespaceStats {
@@ -71,6 +94,48 @@ impl ResultCache {
             self.clean()?;
         }
         Ok(())
+    }
+
+    /// Run the automatic sweep if one is due, returning the bytes it freed.
+    ///
+    /// Called on every run-path open. Without it the cache only ever grew:
+    /// `gc` existed but nothing invoked it except `poly cache gc` typed by hand,
+    /// so each invalidated generation of entries stayed on disk forever. Folding
+    /// the build identity into the key strands a generation per rebuild, which
+    /// would turn a correctness fix into a disk leak.
+    pub(crate) fn sweep_if_due(&self) -> Result<u64> {
+        self.sweep(AUTO_SWEEP_INTERVAL, AUTO_SWEEP_MAX_AGE, AUTO_SWEEP_MAX_SIZE)
+    }
+
+    /// [`sweep_if_due`] with explicit budgets, so a test can drive the schedule
+    /// without waiting a day.
+    ///
+    /// [`sweep_if_due`]: ResultCache::sweep_if_due
+    fn sweep(&self, interval: Duration, max_age: Duration, max_size: u64) -> Result<u64> {
+        if !self.sweep_is_due(interval) {
+            return Ok(0);
+        }
+        // Recorded *before* the sweep: a sweep that dies half-way must not leave
+        // every subsequent invocation retrying the same expensive walk.
+        self.record_sweep()?;
+        self.gc(Some(max_age), Some(max_size))
+    }
+
+    /// Whether `interval` has elapsed since the last recorded sweep. A missing
+    /// or unreadable marker counts as due.
+    fn sweep_is_due(&self, interval: Duration) -> bool {
+        let last = std::fs::metadata(self.root().join(LAST_SWEEP_MARKER)).and_then(|meta| meta.modified());
+        match last {
+            Ok(when) => when.elapsed().is_ok_and(|elapsed| elapsed >= interval),
+            Err(_) => true,
+        }
+    }
+
+    /// Stamp the sweep marker with the current time.
+    fn record_sweep(&self) -> Result<()> {
+        let path = self.root().join(LAST_SWEEP_MARKER);
+        std::fs::write(&path, CACHE_FORMAT_VERSION)
+            .with_context(|| format!("failed to record the cache sweep marker {}", path.display()))
     }
 
     /// Rewrite the `VERSION` sentinel to [`CACHE_FORMAT_VERSION`].
@@ -365,6 +430,57 @@ mod tests {
         let freed = cache.gc(None, Some(4)).unwrap();
         assert_eq!(freed, 8);
         assert_eq!(cache.total_size().unwrap(), 4);
+    }
+
+    #[test]
+    fn the_automatic_sweep_evicts_a_stranded_generation_and_keeps_fresh_entries() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cache = cache_at(&tmp);
+        let stranded = put(&cache, Namespace::Fmt, "written-by-an-older-build", b"stale-bytes");
+        put(&cache, Namespace::Fmt, "written-by-this-build", b"live");
+        backdate(&cache, Namespace::Fmt, &stranded, Duration::from_secs(30 * 86_400));
+
+        let freed = cache
+            .sweep(Duration::ZERO, Duration::from_secs(14 * 86_400), 1 << 30)
+            .unwrap();
+
+        assert_eq!(freed, "stale-bytes".len() as u64);
+        assert_eq!(cache.total_size().unwrap(), "live".len() as u64);
+    }
+
+    #[test]
+    fn the_automatic_sweep_waits_out_its_interval_before_running_again() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cache = cache_at(&tmp);
+        let stranded = put(&cache, Namespace::Lint, "stranded", b"stale-bytes");
+        backdate(&cache, Namespace::Lint, &stranded, Duration::from_secs(30 * 86_400));
+
+        let first = cache
+            .sweep(Duration::ZERO, Duration::from_secs(365 * 86_400), 1 << 30)
+            .unwrap();
+        assert_eq!(first, 0, "nothing is old enough for the age budget yet");
+
+        let second = cache
+            .sweep(Duration::from_secs(86_400), Duration::from_secs(14 * 86_400), 1 << 30)
+            .unwrap();
+        assert_eq!(
+            second, 0,
+            "the marker written by the first sweep must suppress the second"
+        );
+        assert_eq!(cache.total_size().unwrap(), "stale-bytes".len() as u64);
+    }
+
+    #[test]
+    fn a_run_path_open_sweeps_at_most_once_per_interval() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("cache");
+        let cache = ResultCache::open(root.clone(), true).unwrap();
+        cache.sweep_if_due().unwrap();
+        assert!(
+            root.join(super::LAST_SWEEP_MARKER).exists(),
+            "the sweep marker records that the cache has been swept"
+        );
+        assert_eq!(cache.sweep_if_due().unwrap(), 0, "a second sweep is not yet due");
     }
 
     #[test]

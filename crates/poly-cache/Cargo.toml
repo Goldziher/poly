@@ -17,7 +17,9 @@ anyhow.workspace = true
 blake3.workspace = true
 dunce.workspace = true
 etcetera.workspace = true
+poly-buildinfo.workspace = true
 toml.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
