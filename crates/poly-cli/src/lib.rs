@@ -280,6 +280,7 @@ fn prepare(common: &CommonArgs) -> Result<(Vec<PathBuf>, Config, RunOptions), Ex
     } else {
         common.paths.clone()
     };
+    reject_missing_paths(&paths)?;
     // Build the remote `extends` resolver rooted at the repository so both the
     // top-level load and the runner's nested-config resolution honor shared bases.
     let resolver = match config_sources::repo_root().and_then(|root| RemoteExtendsResolver::new(&root)) {
@@ -304,6 +305,29 @@ fn prepare(common: &CommonArgs) -> Result<(Vec<PathBuf>, Config, RunOptions), Ex
         config_resolver: Some(resolver),
     };
     Ok((paths, config, opts))
+}
+
+/// Fail the run when a path argument does not exist.
+///
+/// A missing path used to be discarded silently by the walker, so
+/// `poly fmt --check typo.py` reported `All formatted. (0 file(s) scanned)` and
+/// exited 0 — a green result that verified nothing. Worse, a mix of real and
+/// missing paths checked only the real ones and still exited 0, so the file
+/// count looked plausible. A hook or CI step feeding poly a stale path list was
+/// indistinguishable from a passing gate.
+fn reject_missing_paths(paths: &[PathBuf]) -> Result<(), ExitCode> {
+    let missing: Vec<&PathBuf> = paths.iter().filter(|p| !p.exists()).collect();
+    if missing.is_empty() {
+        return Ok(());
+    }
+    for path in &missing {
+        eprintln!("error: path does not exist: {}", path.display());
+    }
+    eprintln!(
+        "error: refusing to report success for {} unreadable path argument(s)",
+        missing.len()
+    );
+    Err(ExitCode::from(2))
 }
 
 fn load_config(explicit: Option<&Path>, resolver: &dyn BaseConfigResolver) -> anyhow::Result<Config> {

@@ -31,6 +31,22 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ### Fixed
 
+- **A path argument that does not exist now fails the run instead of reporting success.**
+  `poly fmt --check typo.py` printed `All formatted. (0 file(s) scanned)` and exited 0 — a green
+  result that verified nothing. A mix of real and missing paths was worse: only the real ones were
+  checked, the run still exited 0, and the file count looked plausible, so a hook or CI step feeding
+  poly a stale path list was indistinguishable from a passing gate. Every unresolvable path is now
+  named on stderr and the run exits 2. Reported independently by `html-to-markdown` (13 paths,
+  0 scanned, exit 0) and arbitrated against `crawlberg`'s non-reproduction — the variable was path
+  existence, not how many paths were passed.
+
+- **A Rust inner attribute is no longer read as a shebang.** A `.rs` file starting with
+  `#![deny(...)]`, `#![allow(...)]` or `#![no_std]` was treated as a script, which flagged every
+  generated binding crate in `file_safety`'s shebang checks (~133 files in one reporting repo) and
+  mis-tagged files during hook file-type identification. Both call sites now look one byte past
+  `#!`; `[` is not a valid interpreter path in any language, so the check is applied generally
+  rather than special-cased to `.rs`.
+
 - Adapted the OXC backend to two upstream API changes in oxc `c42d639`:
   - `oxc_formatter::format` lost its trailing session argument; poly now calls the four-argument
     service-less form, which is the compatibility wrapper for exactly this use.

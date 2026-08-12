@@ -299,17 +299,25 @@ fn check_case_conflict(files: &[PathBuf]) -> Vec<Violation> {
     violations
 }
 
-/// Whether `path` begins with a `#!` shebang, reading only the first two bytes.
+/// Whether `path` begins with a `#!` shebang, reading only the first three bytes.
+///
+/// `#![` opens a Rust inner attribute (`#![deny(...)]`, `#![no_std]`), not a
+/// shebang — generated binding crates routinely start a whole file that way, and
+/// treating them as scripts produced a false positive per file. One byte of
+/// lookahead separates the two, since no interpreter path begins with `[`.
 ///
 /// Returns `false` when the file is unreadable or shorter than the prefix; never
 /// reads the whole file (a large committed binary is not buffered into memory).
 fn starts_with_shebang(path: &Path) -> bool {
     use std::io::Read as _;
 
-    let mut prefix = [0u8; 2];
-    std::fs::File::open(path)
-        .and_then(|mut file| file.read_exact(&mut prefix))
-        .is_ok_and(|()| prefix == *b"#!")
+    let mut prefix = Vec::with_capacity(3);
+    let read = std::fs::File::open(path).and_then(|file| file.take(3).read_to_end(&mut prefix));
+    if read.is_err() || !prefix.starts_with(b"#!") {
+        return false;
+    }
+    // A file of exactly `#!` has no third byte to disambiguate; treat it as a shebang.
+    prefix.get(2) != Some(&b'[')
 }
 
 /// Require executable files to begin with a `#!` shebang.
@@ -516,6 +524,29 @@ mod tests {
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].path, path);
         assert_eq!(violations[0].check, "check-shebang-scripts-are-executable");
+    }
+
+    /// A generated Rust binding crate starts with `#![deny(...)]`, which is an
+    /// inner attribute rather than a shebang. Flagging it as a non-executable
+    /// script produced one false positive per generated file.
+    #[test]
+    #[cfg(unix)]
+    fn rust_inner_attribute_is_not_treated_as_a_shebang() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        for (name, contents) in [
+            ("deny.rs", b"#![deny(missing_docs)]\nfn main() {}\n".as_slice()),
+            ("nostd.rs", b"#![no_std]\n".as_slice()),
+        ] {
+            let path = write(dir.path(), name, contents);
+            fs::set_permissions(dir.path().join(&path), fs::Permissions::from_mode(0o644)).unwrap();
+
+            assert!(
+                check_shebang_scripts_are_executable(dir.path(), std::slice::from_ref(&path)).is_empty(),
+                "{name} must not be treated as a shebang script"
+            );
+        }
     }
 
     #[test]

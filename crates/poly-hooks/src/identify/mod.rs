@@ -390,6 +390,14 @@ pub fn parse_shebang(path: &Path) -> Result<Vec<String>, ShebangError> {
         return Err(ShebangError::NoShebang);
     }
 
+    // `#![...]` opens a Rust inner attribute (`#![deny(...)]`), not a shebang.
+    // One byte of lookahead separates them: no interpreter path starts with `[`.
+    // Checked for every language rather than gated on `.rs`, since the sequence
+    // is never a valid shebang anywhere.
+    if line[2..].starts_with('[') {
+        return Err(ShebangError::NoShebang);
+    }
+
     if line
         .bytes()
         .any(|b| !(0x20..=0x7E).contains(&b) && !(0x09..=0x0D).contains(&b))
@@ -657,6 +665,37 @@ mod tests {
             err.to_string().contains("Type tag `not-a-real-tag` is not recognized"),
             "unexpected error: {err}"
         );
+    }
+
+    /// A Rust inner attribute opens with `#!` but is not a shebang. Generated
+    /// binding crates start whole files with `#![deny(...)]` / `#![allow(...)]`,
+    /// which were being tagged as shebang-carrying scripts.
+    #[test]
+    fn rust_inner_attribute_is_not_a_shebang() -> anyhow::Result<()> {
+        for attribute in ["#![deny(missing_docs)]", "#![allow(dead_code)]", "#![no_std]"] {
+            let mut file = tempfile::NamedTempFile::new()?;
+            writeln!(file, "{attribute}\nfn main() {{}}")?;
+            file.flush()?;
+
+            assert!(
+                matches!(super::parse_shebang(file.path()), Err(super::ShebangError::NoShebang)),
+                "{attribute} must not parse as a shebang"
+            );
+        }
+
+        Ok(())
+    }
+
+    /// The lookahead must not reject genuine shebangs.
+    #[test]
+    fn ordinary_shebang_still_parses() -> anyhow::Result<()> {
+        let mut file = tempfile::NamedTempFile::new()?;
+        writeln!(file, "#!/usr/bin/env python3\nprint(1)")?;
+        file.flush()?;
+
+        assert_eq!(super::parse_shebang(file.path())?, vec!["python3"]);
+
+        Ok(())
     }
 
     #[test]
