@@ -89,3 +89,32 @@ fn workspace_and_no_workspace_conflict() {
 
     assert_eq!(output.status.code(), Some(2), "clap usage error");
 }
+
+/// `poly lint .` is how people say "lint everything", so naming the root must
+/// behave like passing no paths at all.
+///
+/// Treating it as path-scoped meant a repo whose CI ran `poly lint .` quietly
+/// got the weaker check and reported itself clean on that basis for several
+/// sessions — silent under-checking, which is the expensive direction.
+#[test]
+fn naming_the_workspace_root_is_not_path_scoping() {
+    let dir = repo();
+
+    for form in [".", "./"] {
+        let output = poly(dir.path(), &["lint", form]);
+        assert!(
+            !stderr(&output).contains(NOTE),
+            "`poly lint {form}` must not be treated as path-scoped, got: {}",
+            stderr(&output)
+        );
+    }
+
+    // An absolute path to the same directory is the same request.
+    let absolute = dir.path().canonicalize().expect("canonicalize");
+    let output = poly(dir.path(), &["lint", absolute.to_str().expect("utf-8 path")]);
+    assert!(!stderr(&output).contains(NOTE));
+
+    // A file inside it is still a genuine narrowing.
+    let scoped = poly(dir.path(), &["lint", "ok.py"]);
+    assert!(stderr(&scoped).contains(NOTE), "naming a file must still scope");
+}

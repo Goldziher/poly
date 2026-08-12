@@ -214,7 +214,13 @@ pub fn run_lint(args: LintArgs) -> ExitCode {
     // like a sub-second operation but escalates to an unbounded whole-workspace
     // cargo build — which, when another process holds the cargo package lock,
     // blocks indefinitely with nothing in the argument list to suggest why.
-    let path_scoped = !common.paths.is_empty() && !force_workspace;
+    //
+    // But `poly lint .` is how people say "lint everything", so naming the root
+    // is a request for the whole project, not a narrowing of it. Treating it as
+    // path-scoped meant a repo whose CI ran `poly lint .` quietly got the weaker
+    // check for several sessions and reported itself clean on that basis —
+    // silent under-checking, the expensive failure direction.
+    let path_scoped = !common.paths.is_empty() && !force_workspace && !any_path_is_workspace_root(&common.paths);
     let workspace_ok = if no_workspace || path_scoped {
         // Only explain the skip when path scoping caused it. `--no-workspace` is
         // an explicit opt-out and needs no narration.
@@ -363,6 +369,24 @@ fn prepare(common: &CommonArgs) -> Result<(Vec<PathBuf>, Config, RunOptions), Ex
         config_resolver: Some(resolver),
     };
     Ok((paths, config, opts))
+}
+
+/// Whether any path argument names the directory poly is running in — i.e. the
+/// caller asked for the whole project rather than a subset of it.
+///
+/// `poly lint .` is the ordinary way to say "lint everything", so it must behave
+/// like `poly lint` with no arguments. Compared canonically so `.`, `./`, an
+/// absolute path to the same directory, and `$PWD` all agree; a path that cannot
+/// be canonicalized is simply not the root, which errs toward the narrower,
+/// cheaper run rather than silently escalating.
+fn any_path_is_workspace_root(paths: &[PathBuf]) -> bool {
+    let Ok(cwd) = std::env::current_dir().and_then(|p| p.canonicalize()) else {
+        return false;
+    };
+    paths
+        .iter()
+        .filter_map(|path| path.canonicalize().ok())
+        .any(|path| path == cwd)
 }
 
 /// Fail the run when a path argument does not exist.

@@ -77,6 +77,10 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   note: whole-project phase skipped for path-scoped run (pass --workspace to include it)
   ```
 
+  **Naming the root is not path scoping.** `poly lint .` (or `./`, or an absolute path to the same
+  directory) means "lint everything" and still runs the whole-project phase, exactly as `poly lint`
+  with no arguments does. Only a genuine narrowing — a file or subdirectory — scopes the run.
+
   **Action required for commit gates that pass staged paths and rely on clippy running:** add the
   new `--workspace` flag. `poly lint --workspace <paths>` restores the previous behaviour.
 
