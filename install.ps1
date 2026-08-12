@@ -25,6 +25,41 @@ function Info($msg) { Write-Host "✓ $msg" -ForegroundColor Green }
 function Warn($msg) { Write-Host "⚠ $msg" -ForegroundColor Yellow }
 function Die($msg) { Write-Host "✗ $msg" -ForegroundColor Red; exit 1 }
 
+# Install $Source at $Destination without ever leaving $Destination absent or
+# half-written: copy into a staging file beside it (same volume), then replace the
+# destination in one filesystem operation. poly's git hooks are installed per
+# repository but resolve `poly` from PATH globally and fail closed, so an upgrade
+# that deletes or truncates the destination blocks every commit on the machine for
+# as long as it runs.
+function Install-Binary($Source, $Destination) {
+    $staged = "$Destination.tmp.$PID"
+    try {
+        Copy-Item -LiteralPath $Source -Destination $staged -Force
+        if (Test-Path -LiteralPath $Destination) {
+            try {
+                # ReplaceFile: the destination is swapped for the staged copy in
+                # one step (no delete-then-move window).
+                [System.IO.File]::Replace($staged, $Destination, $null)
+            } catch {
+                # Windows refuses to overwrite a binary that is currently running,
+                # but it does allow renaming one out of the way. Park the old copy
+                # aside, move the new one in, and delete the old one afterwards
+                # (it stays until the running process exits).
+                $parked = "$Destination.old-$([System.Guid]::NewGuid().ToString('N'))"
+                Move-Item -LiteralPath $Destination -Destination $parked -Force
+                Move-Item -LiteralPath $staged -Destination $Destination -Force
+                Remove-Item -LiteralPath $parked -Force -ErrorAction SilentlyContinue
+            }
+        } else {
+            Move-Item -LiteralPath $staged -Destination $Destination -Force
+        }
+    } finally {
+        if (Test-Path -LiteralPath $staged) {
+            Remove-Item -LiteralPath $staged -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 $arch = switch ($env:PROCESSOR_ARCHITECTURE) {
     "AMD64" { "x86_64" }
     "ARM64" { "aarch64" }
@@ -86,10 +121,13 @@ try {
 
     Expand-Archive -Path $archive -DestinationPath $tmp -Force
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
+    # [System.IO.File] resolves relative paths against the process working
+    # directory, not PowerShell's location, so pin the install dir to a full path.
+    $InstallDir = (Resolve-Path -LiteralPath $InstallDir).Path
     foreach ($binary in $Binaries) {
         $src = Join-Path $tmp $binary
         if (-not (Test-Path $src)) { Die "Expected binary $binary missing from $asset" }
-        Copy-Item -Path $src -Destination (Join-Path $InstallDir $binary) -Force
+        Install-Binary $src (Join-Path $InstallDir $binary)
     }
     Info "Installed poly -> $InstallDir"
 } finally {

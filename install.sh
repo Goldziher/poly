@@ -119,7 +119,8 @@ else
 fi
 
 tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
+staged=""
+trap 'rm -rf "$tmp"; [ -z "$staged" ] || rm -f "$staged"' EXIT
 
 info "Downloading ${C_DIM}${base}/${asset}${C_OFF}"
 curl -fsSL -o "${tmp}/${asset}" "${base}/${asset}" ||
@@ -158,8 +159,23 @@ tar xzf "${tmp}/${asset}" -C "$tmp"
 mkdir -p "$INSTALL_DIR"
 for binary in $BINARIES; do
   [ -f "${tmp}/${binary}" ] || die "expected binary ${binary} missing from ${asset}"
-  install -m 0755 "${tmp}/${binary}" "${INSTALL_DIR}/${binary}" 2>/dev/null ||
-    { cp "${tmp}/${binary}" "${INSTALL_DIR}/${binary}" && chmod 0755 "${INSTALL_DIR}/${binary}"; }
+  # Stage inside the destination directory (same filesystem), finish every
+  # modification on the staged copy, then rename(2) it over the destination.
+  # `mv` within one filesystem is a rename, which is atomic: a concurrent reader
+  # sees either the old binary or the new one, never a truncated or absent file.
+  # That matters because poly's git hooks are installed per repository but resolve
+  # `poly` from PATH globally and fail closed — an upgrade that unlinks or
+  # truncates the destination blocks every commit on the machine for as long as it
+  # runs. Anything that must touch the binary (chmod here; on macOS a `codesign`
+  # or `xattr` step, should one ever be added) belongs before the rename, never
+  # after: an in-place edit of the live destination reopens exactly that window,
+  # and on macOS an unsigned or half-signed binary is SIGKILLed on exec.
+  staged="${INSTALL_DIR}/${binary}.tmp.$$"
+  rm -f "$staged"
+  cp "${tmp}/${binary}" "$staged" || die "failed to stage ${binary} in ${INSTALL_DIR}"
+  chmod 0755 "$staged" || die "failed to set the exec bit on ${staged}"
+  mv -f "$staged" "${INSTALL_DIR}/${binary}" || die "failed to install ${binary} into ${INSTALL_DIR}"
+  staged=""
 done
 info "Installed poly → ${INSTALL_DIR}"
 
