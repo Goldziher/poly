@@ -7,6 +7,8 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+## [0.19.7] - 2026-08-12
+
 ### Fixed
 
 - Tier-one formatters now retain exclusive ownership of their languages when an overlapping catalog
