@@ -174,6 +174,9 @@ const MAX_FIX_PASSES: usize = 5;
 /// --check` still reports as unformatted.
 const MAX_FORMAT_PASSES: usize = 5;
 
+/// Reason reported when `poly fmt` leaves a machine-generated file alone.
+const GENERATED_SKIP: &str = "generated (pass --fix-generated to format)";
+
 /// Lint all discovered files under `paths`. Returns one [`LintResult`] per file
 /// that still has at least one diagnostic. When `fix` is true, each file's
 /// available autofixes are applied in place (re-linting until stable) before
@@ -298,7 +301,7 @@ pub fn format_run(
     let (oks, errs): (Vec<_>, Vec<_>) = files
         .par_iter()
         .map(|f| {
-            format_one(f, &plans, &cache, write, collect_debug).map_err(|error| FormatError {
+            format_one(f, &plans, &cache, write, opts.fix_generated, collect_debug).map_err(|error| FormatError {
                 path: f.path.clone(),
                 message: format!("{error:#}"),
             })
@@ -536,6 +539,7 @@ fn format_one(
     plans: &PlanMap,
     cache: &ResultCache,
     write: bool,
+    fix_generated: bool,
     collect_debug: bool,
 ) -> anyhow::Result<FormatResult> {
     let original = std::fs::read_to_string(&f.path)?;
@@ -545,6 +549,24 @@ fn format_one(
             changed: false,
             formatted: None,
             skipped: None,
+            debug: None,
+        });
+    }
+    // A generated file is the generator's output, not the repo's source.
+    // Reformatting it is churn the next generation run reverts — and when the
+    // header carries a content hash (`alef:hash:`), the rewrite invalidates it,
+    // so a verify step reports drift on a file no human touched and the remedy
+    // is a regen that discards the formatting. One reporter had 110 of 123 files
+    // in that state.
+    //
+    // Skipped rather than reported as drift: poly will not fix these, so
+    // flagging them under `--check` would leave a gate that can never go green.
+    if !fix_generated && is_generated_source(&original) {
+        return Ok(FormatResult {
+            path: f.path.clone(),
+            changed: false,
+            formatted: None,
+            skipped: Some(GENERATED_SKIP.to_owned()),
             debug: None,
         });
     }
