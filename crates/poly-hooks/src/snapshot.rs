@@ -39,9 +39,21 @@
 //!   cache is stale, silently leaking the unstaged edit. Sourcing from the index
 //!   OID removes that dependency entirely.)
 //! - A path is (re)materialized only when its **index OID changed** since the
-//!   last snapshot (or its snapshot copy is missing), tracked by a manifest of
-//!   `path → OID`. Unchanged paths are left untouched, so their mtime is stable
-//!   across runs and a compiler sees "unchanged" and does not rebuild.
+//!   last snapshot, its snapshot copy is missing, or that copy's `(size, mtime)`
+//!   no longer matches what was observed right after it was written — tracked by
+//!   a manifest of `path → (OID, size, mtime)`. Unchanged paths are left
+//!   untouched, so their mtime is stable across runs and a compiler sees
+//!   "unchanged" and does not rebuild.
+//!
+//!   The stat check is what keeps the snapshot honest against writers other than
+//!   `git checkout-index`: a workspace hook that *rewrites* files in place (a
+//!   formatter, `cargo clippy --fix`) mutates the snapshot without changing any
+//!   index OID, and an OID-only comparison would then keep serving the mutated
+//!   content on every later run — silently gating on bytes that are not what is
+//!   staged. Comparing the stat we recorded at write time detects that and
+//!   re-materializes from the index. (Like git's own stat cache, a same-size
+//!   rewrite landing inside the filesystem's mtime granularity can still evade
+//!   detection; the OID check bounds the exposure to that narrow race.)
 //! - Files that are no longer tracked are pruned via the same manifest, so
 //!   tool-generated caches inside the snapshot are never removed.
 //!
@@ -69,6 +81,11 @@ const SNAPSHOT_SUBDIR: &str = "staged";
 /// Manifest recording the tracked paths materialized last run, so prune removes
 /// only files that fell out of the tree — never tool-generated caches.
 const MANIFEST_FILE: &str = ".poly-manifest";
+
+/// Manifest placeholder for a stat field that could not be read when the record
+/// was written. It never compares equal to a real stat, so the path is
+/// re-materialized on the next refresh while still taking part in the prune.
+const UNKNOWN_STAT: &str = "-";
 
 /// Errors returned while creating or refreshing a [`StagedSnapshot`].
 #[derive(Debug, thiserror::Error)]
@@ -132,8 +149,7 @@ fn refresh(root: &Path, dir: &Path) -> Result<(), Error> {
 
     let mut to_checkout: Vec<PathBuf> = Vec::new();
     for entry in &staged {
-        let up_to_date = previous.get(&entry.path) == Some(&entry.oid) && snapshot_present(&dir.join(&entry.path));
-        if !up_to_date {
+        if !is_up_to_date(dir, entry, &previous) {
             to_checkout.push(entry.path.clone());
         }
     }
@@ -239,16 +255,53 @@ fn symlink_dir(target: &Path, link: &Path) -> std::io::Result<()> {
     std::os::windows::fs::symlink_dir(target, link)
 }
 
-/// Whether a snapshot entry exists on disk. Uses `symlink_metadata` so a
-/// materialized symlink counts as present even if its target is absent.
-fn snapshot_present(path: &Path) -> bool {
-    std::fs::symlink_metadata(path).is_ok()
+/// What the manifest records for one materialized path: the index OID it was
+/// written from plus the `(size, mtime)` observed immediately afterwards.
+///
+/// The stat is `None` when it could not be read at write time, which never
+/// matches a later observation and so forces a re-materialization.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Record {
+    oid: String,
+    stat: Option<Stat>,
+}
+
+/// Size and modification time of a materialized snapshot file — the fingerprint
+/// that detects a write by anything other than `git checkout-index`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Stat {
+    size: u64,
+    mtime_nanos: u128,
+}
+
+impl Stat {
+    /// Read the fingerprint of `path`, or `None` when it is absent or its mtime
+    /// is unrepresentable. `symlink_metadata` is used so a materialized symlink
+    /// is fingerprinted as itself rather than as its target.
+    fn read(path: &Path) -> Option<Self> {
+        let meta = std::fs::symlink_metadata(path).ok()?;
+        let mtime = meta.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?;
+        Some(Self {
+            size: meta.len(),
+            mtime_nanos: mtime.as_nanos(),
+        })
+    }
+}
+
+/// Whether the snapshot copy of `entry` can be left untouched: the index OID is
+/// unchanged **and** the file on disk is still byte-for-byte the one we wrote
+/// for that OID, as far as its `(size, mtime)` can attest.
+fn is_up_to_date(dir: &Path, entry: &git::StagedEntry, previous: &HashMap<PathBuf, Record>) -> bool {
+    let Some(record) = previous.get(&entry.path) else {
+        return false;
+    };
+    record.oid == entry.oid && record.stat.is_some() && record.stat == Stat::read(&dir.join(&entry.path))
 }
 
 /// Remove snapshot files from the previous manifest that are no longer staged.
 /// Restricting deletion to the manifest means tool caches written into the
 /// snapshot (`target/`, `.mypy_cache`, …) are never touched.
-fn prune_stale(dir: &Path, staged: &[git::StagedEntry], previous: &HashMap<PathBuf, String>) {
+fn prune_stale(dir: &Path, staged: &[git::StagedEntry], previous: &HashMap<PathBuf, Record>) {
     let current: std::collections::HashSet<&PathBuf> = staged.iter().map(|entry| &entry.path).collect();
     for path in previous.keys() {
         if !current.contains(path) {
@@ -257,38 +310,100 @@ fn prune_stale(dir: &Path, staged: &[git::StagedEntry], previous: &HashMap<PathB
     }
 }
 
-/// Read the previous manifest into a `path → OID` map (NUL-separated
-/// `<oid> <path>` records). An absent or unreadable manifest yields an empty map
-/// (everything is treated as needing materialization).
-fn read_manifest(dir: &Path) -> HashMap<PathBuf, String> {
+/// Read the previous manifest into a path → [`Record`] map (NUL-separated
+/// `<oid> <size> <mtime> <path>` records). An absent or unreadable manifest
+/// yields an empty map, so everything is re-materialized once — the safe
+/// direction.
+fn read_manifest(dir: &Path) -> HashMap<PathBuf, Record> {
     std::fs::read(dir.join(MANIFEST_FILE))
         .map(|bytes| {
             bytes
                 .split(|&byte| byte == 0)
                 .filter(|slice| !slice.is_empty())
-                .filter_map(|record| {
-                    let space = record.iter().position(|&byte| byte == b' ')?;
-                    let oid = std::str::from_utf8(&record[..space]).ok()?.to_string();
-                    let path = git::path_from_git_bytes(&record[space + 1..]).ok()?;
-                    Some((path, oid))
-                })
+                .filter_map(parse_manifest_record)
                 .collect()
         })
         .unwrap_or_default()
 }
 
-/// Write the manifest of currently-staged `path → OID` pairs (NUL-separated
-/// `<oid> <path>` records; the OID has no spaces so the first space delimits it).
+/// Parse one `<oid> <size> <mtime> <path>` manifest record. The leading fields
+/// are space-free, so the path is whatever follows the third space and is taken
+/// verbatim (it may itself contain spaces).
+///
+/// A record written by an older poly carries no stat fields (`<oid> <path>`); it
+/// is accepted with `stat: None` so an upgrade keeps the prune ledger and merely
+/// re-materializes every path once.
+fn parse_manifest_record(record: &[u8]) -> Option<(PathBuf, Record)> {
+    let (oid, rest) = split_field(record)?;
+    let oid = std::str::from_utf8(oid).ok()?.to_string();
+    let (stat, path_bytes) = parse_stat_fields(rest).unwrap_or((None, rest));
+    let path = git::path_from_git_bytes(path_bytes).ok()?;
+    Some((path, Record { oid, stat }))
+}
+
+/// Split the leading space-delimited field off `record`, returning it and the
+/// remainder. `None` when the record has no space (so no path can follow).
+fn split_field(record: &[u8]) -> Option<(&[u8], &[u8])> {
+    let space = record.iter().position(|&byte| byte == b' ')?;
+    Some((&record[..space], &record[space + 1..]))
+}
+
+/// Parse the `<size> <mtime>` fields, returning them with the remaining path
+/// bytes. `None` when `rest` does not start with two such fields — i.e. it is a
+/// legacy stat-less record whose path begins right here.
+fn parse_stat_fields(rest: &[u8]) -> Option<(Option<Stat>, &[u8])> {
+    let (size, rest) = split_field(rest)?;
+    let (mtime, rest) = split_field(rest)?;
+    let size = std::str::from_utf8(size).ok()?;
+    let mtime = std::str::from_utf8(mtime).ok()?;
+    if (size, mtime) == (UNKNOWN_STAT, UNKNOWN_STAT) {
+        return Some((None, rest));
+    }
+    let stat = Stat {
+        size: size.parse().ok()?,
+        mtime_nanos: mtime.parse().ok()?,
+    };
+    Some((Some(stat), rest))
+}
+
+/// Write the manifest for the currently-staged paths, fingerprinting each
+/// materialized file as it goes (NUL-separated `<oid> <size> <mtime> <path>`
+/// records). A file whose stat cannot be read is recorded with [`UNKNOWN_STAT`]
+/// placeholders: it stays in the prune ledger but is re-materialized next run.
 fn write_manifest(dir: &Path, staged: &[git::StagedEntry]) -> Result<(), Error> {
     let mut bytes = Vec::new();
     for entry in staged {
+        let stat = Stat::read(&dir.join(&entry.path)).map_or_else(
+            || format!("{UNKNOWN_STAT} {UNKNOWN_STAT}"),
+            |stat| format!("{} {}", stat.size, stat.mtime_nanos),
+        );
         bytes.extend_from_slice(entry.oid.as_bytes());
         bytes.push(b' ');
-        bytes.extend_from_slice(entry.path.to_string_lossy().as_bytes());
+        bytes.extend_from_slice(stat.as_bytes());
+        bytes.push(b' ');
+        bytes.extend_from_slice(path_to_git_bytes(&entry.path).as_ref());
         bytes.push(0);
     }
     std::fs::write(dir.join(MANIFEST_FILE), bytes)?;
     Ok(())
+}
+
+/// Encode a repo-relative path for the manifest, byte-faithfully on unix so a
+/// non-UTF-8 path round-trips through [`git::path_from_git_bytes`] instead of
+/// being lossily mangled (which would re-materialize it on every run).
+#[cfg(unix)]
+fn path_to_git_bytes(path: &Path) -> std::borrow::Cow<'_, [u8]> {
+    use std::os::unix::ffi::OsStrExt as _;
+
+    std::borrow::Cow::Borrowed(path.as_os_str().as_bytes())
+}
+
+#[cfg(not(unix))]
+fn path_to_git_bytes(path: &Path) -> std::borrow::Cow<'_, [u8]> {
+    match path.to_string_lossy() {
+        std::borrow::Cow::Borrowed(text) => std::borrow::Cow::Borrowed(text.as_bytes()),
+        std::borrow::Cow::Owned(text) => std::borrow::Cow::Owned(text.into_bytes()),
+    }
 }
 
 #[cfg(test)]
@@ -312,6 +427,26 @@ mod tests {
         git(repo, &["config", "user.email", "t@t"]);
         git(repo, &["config", "user.name", "t"]);
         git(repo, &["config", "commit.gpgsign", "false"]);
+    }
+
+    /// The exact bytes git would commit for `path` — `git show :<path>` reads
+    /// the index blob, which is the ground truth the snapshot must equal.
+    fn index_blob(repo: &Path, path: &str) -> Vec<u8> {
+        let output = Command::new("git")
+            .args(["show", &format!(":{path}")])
+            .current_dir(repo)
+            .output()
+            .expect("run git show");
+        assert!(output.status.success(), "git show :{path} failed");
+        output.stdout
+    }
+
+    fn assert_matches_index(repo: &Path, snapshot: &Path, path: &str, context: &str) {
+        assert_eq!(
+            std::fs::read(snapshot.join(path)).expect("read snapshot copy"),
+            index_blob(repo, path),
+            "snapshot must equal the index blob after a refresh ({context})"
+        );
     }
 
     #[test]
@@ -402,6 +537,120 @@ mod tests {
             std::fs::read_to_string(snap.path().join("a.rs")).unwrap(),
             "// v2 changed\n",
             "a newly-staged OID must be re-materialized"
+        );
+    }
+
+    #[test]
+    fn refresh_restores_a_snapshot_file_mutated_out_of_band() {
+        let tmp = TempDir::new().expect("tmp repo");
+        let cache = TempDir::new().expect("cache home");
+        let repo = tmp.path();
+        init(repo);
+        std::fs::write(repo.join("a.rs"), "// staged\n").unwrap();
+        git(repo, &["add", "a.rs"]);
+        let snap = StagedSnapshot::create_in(cache.path(), repo).expect("first");
+        assert_matches_index(repo, snap.path(), "a.rs", "initial materialization");
+
+        // A workspace hook that rewrites files in place (a formatter, `clippy
+        // --fix`) mutates the snapshot without touching any index OID. The next
+        // refresh must not keep gating on those bytes.
+        std::fs::write(snap.path().join("a.rs"), "// MUTATED IN SNAPSHOT\n").unwrap();
+
+        StagedSnapshot::create_in(cache.path(), repo).expect("refresh");
+        assert_matches_index(repo, snap.path(), "a.rs", "after an out-of-band write");
+    }
+
+    #[test]
+    fn refresh_restores_a_snapshot_file_truncated_out_of_band() {
+        let tmp = TempDir::new().expect("tmp repo");
+        let cache = TempDir::new().expect("cache home");
+        let repo = tmp.path();
+        init(repo);
+        std::fs::write(repo.join("a.rs"), "// staged\n").unwrap();
+        git(repo, &["add", "a.rs"]);
+        let snap = StagedSnapshot::create_in(cache.path(), repo).expect("first");
+
+        std::fs::write(snap.path().join("a.rs"), b"").unwrap();
+        StagedSnapshot::create_in(cache.path(), repo).expect("refresh");
+
+        assert_matches_index(repo, snap.path(), "a.rs", "after truncation");
+    }
+
+    #[test]
+    fn snapshot_matches_the_index_across_successive_restages() {
+        let tmp = TempDir::new().expect("tmp repo");
+        let cache = TempDir::new().expect("cache home");
+        let repo = tmp.path();
+        init(repo);
+
+        for content in ["// v1\n", "// v2 longer content\n", "// v3\n"] {
+            std::fs::write(repo.join("a.rs"), content).unwrap();
+            git(repo, &["add", "a.rs"]);
+            let snap = StagedSnapshot::create_in(cache.path(), repo).expect("refresh");
+            assert_matches_index(repo, snap.path(), "a.rs", content);
+
+            // An unstaged edit on top must never reach the snapshot.
+            std::fs::write(repo.join("a.rs"), "// unstaged edit\n").unwrap();
+            let snap = StagedSnapshot::create_in(cache.path(), repo).expect("refresh");
+            assert_matches_index(repo, snap.path(), "a.rs", "unstaged edit present");
+        }
+    }
+
+    #[test]
+    fn manifest_records_round_trip_including_paths_with_spaces() {
+        let parsed = parse_manifest_record(b"abc123 42 7 dir/a file.rs").expect("parse");
+        assert_eq!(parsed.0, PathBuf::from("dir/a file.rs"));
+        assert_eq!(
+            parsed.1,
+            Record {
+                oid: "abc123".to_string(),
+                stat: Some(Stat {
+                    size: 42,
+                    mtime_nanos: 7
+                }),
+            }
+        );
+
+        let unknown = parse_manifest_record(b"abc123 - - a.rs").expect("parse unknown stat");
+        assert_eq!(unknown.1.stat, None, "an unknown stat must never match a real one");
+
+        // A manifest written by an older poly has no stat fields.
+        let legacy = parse_manifest_record(b"abc123 a.rs").expect("parse legacy");
+        assert_eq!(legacy.0, PathBuf::from("a.rs"));
+        assert_eq!(legacy.1.stat, None);
+    }
+
+    #[test]
+    fn legacy_manifest_still_prunes_files_that_left_the_tree() {
+        let tmp = TempDir::new().expect("tmp repo");
+        let cache = TempDir::new().expect("cache home");
+        let repo = tmp.path();
+        init(repo);
+        std::fs::write(repo.join("keep.rs"), "a\n").unwrap();
+        std::fs::write(repo.join("gone.rs"), "b\n").unwrap();
+        git(repo, &["add", "keep.rs", "gone.rs"]);
+        git(repo, &["commit", "-q", "-m", "init"]);
+        let snap = StagedSnapshot::create_in(cache.path(), repo).expect("first");
+
+        // Rewrite the manifest in the pre-stat format an older poly produced.
+        let legacy: Vec<u8> = ["keep.rs", "gone.rs"]
+            .iter()
+            .flat_map(|name| {
+                let mut record = b"0000000000000000000000000000000000000000 ".to_vec();
+                record.extend_from_slice(name.as_bytes());
+                record.push(0);
+                record
+            })
+            .collect();
+        std::fs::write(snap.path().join(MANIFEST_FILE), legacy).unwrap();
+
+        git(repo, &["rm", "-q", "gone.rs"]);
+        StagedSnapshot::create_in(cache.path(), repo).expect("refresh");
+
+        assert!(snap.path().join("keep.rs").exists(), "still-tracked file remains");
+        assert!(
+            !snap.path().join("gone.rs").exists(),
+            "a legacy manifest must still serve as the prune ledger"
         );
     }
 
