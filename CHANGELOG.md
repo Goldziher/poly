@@ -29,6 +29,25 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   produced by the previous backend versions are invalidated rather than reused. The `version_audit`
   test enforces this contract and now passes against the refreshed lockfile.
 
+### Changed (behaviour)
+
+- **`poly lint <paths>` no longer runs the whole-project phase.** Explicit path arguments now scope
+  the run to the per-file tier; `poly lint` with no paths is unchanged and still runs
+  `cargo clippy` and the other whole-project tools. Previously a path-scoped lint silently escalated
+  to an unbounded whole-workspace `cargo` build — nothing in the argument list distinguished
+  `poly lint some/file.py` from a full-repository run, and when another process held the cargo
+  package lock it blocked indefinitely with no output. Two agents in one reporting repo concluded
+  poly was broken; one was killed at 13 minutes.
+
+  A skipped phase is announced:
+
+  ```
+  note: whole-project phase skipped for path-scoped run (pass --workspace to include it)
+  ```
+
+  **Action required for commit gates that pass staged paths and rely on clippy running:** add the
+  new `--workspace` flag. `poly lint --workspace <paths>` restores the previous behaviour.
+
 ### Fixed
 
 - **A path argument that does not exist now fails the run instead of reporting success.**

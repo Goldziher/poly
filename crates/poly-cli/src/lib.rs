@@ -120,11 +120,20 @@ pub struct CommonArgs {
 #[derive(Args)]
 pub struct LintArgs {
     /// Skip the whole-project phase (`cargo clippy` and the other configured
-    /// whole-workspace tools). By default `poly lint` also runs the same
-    /// whole-project tools a `pre-commit` hook would; this checks only the
-    /// per-file tier. Equivalent to `[lint] workspace = false`.
+    /// whole-workspace tools). By default a whole-repository `poly lint` also
+    /// runs the same whole-project tools a `pre-commit` hook would; this checks
+    /// only the per-file tier. Equivalent to `[lint] workspace = false`.
     #[arg(long)]
     pub no_workspace: bool,
+
+    /// Run the whole-project phase even though explicit paths were given.
+    ///
+    /// A path-scoped `poly lint <paths>` runs only the per-file tier, because
+    /// naming a file should not silently escalate to an unbounded whole-workspace
+    /// `cargo` build. Pass this to opt back in — a commit gate that lints staged
+    /// paths and wants clippy should set it explicitly.
+    #[arg(long, conflicts_with = "no_workspace")]
+    pub workspace: bool,
 
     /// Flags shared with `poly fmt`.
     #[command(flatten)]
@@ -147,6 +156,7 @@ pub struct FmtArgs {
 /// Run the lint pipeline and map the outcome to a process exit code.
 pub fn run_lint(args: LintArgs) -> ExitCode {
     let no_workspace = args.no_workspace;
+    let force_workspace = args.workspace;
     let common = args.common;
     init_logging_with(common.debug);
     apply_color(&common);
@@ -177,7 +187,17 @@ pub fn run_lint(args: LintArgs) -> ExitCode {
         }
     };
 
-    let workspace_ok = if no_workspace {
+    // Explicit paths scope the run. Without this, `poly lint some/file.py` looks
+    // like a sub-second operation but escalates to an unbounded whole-workspace
+    // cargo build — which, when another process holds the cargo package lock,
+    // blocks indefinitely with nothing in the argument list to suggest why.
+    let path_scoped = !common.paths.is_empty() && !force_workspace;
+    let workspace_ok = if no_workspace || path_scoped {
+        // Only explain the skip when path scoping caused it. `--no-workspace` is
+        // an explicit opt-out and needs no narration.
+        if path_scoped && !no_workspace && pretty {
+            eprintln!("note: whole-project phase skipped for path-scoped run (pass --workspace to include it)");
+        }
         true
     } else {
         match run_workspace_phase(&common, pretty) {
