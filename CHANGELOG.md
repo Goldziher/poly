@@ -31,6 +31,67 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ### Added
 
+- **`poly doctor`** — the command to run before filing a bug. Reports the running executable and its
+  build identity, **every** `poly` on `PATH` with each one's version, the config files in effect, and
+  the cache directory; `--format json` for pasting into a report. It exits non-zero on a real defect,
+  such as one install shadowing another.
+
+  A shadow warning also fires from ordinary commands when a different `poly` earlier on `PATH` would
+  answer a bare `poly`. It is emitted before argument parsing, because the incident that motivated it
+  was `poly --version` — which prints and exits without reaching any command handler.
+
+- **`--deny-skips` and `--max-skips <N>` on `poly lint` and `poly fmt`.** A skipped file — no
+  matching engine, a generated file, an unreadable path — is now always counted and named with its
+  reason, so a run that checked nothing cannot look like a clean pass. A run emptied entirely by
+  skips reports `Nothing was linted.` rather than `No issues found.` The new flags turn a skip into
+  a hard failure for CI, exiting **2** — the class callers treat as an error, rather than the 1 that
+  is often treated as success. `--verbose` lists every skipped file instead of the first 20.
+
+- **`poly doctor` warns when an exclude rule prunes more than the directory it names.** `exclude`
+  patterns are gitignore rules: a glob with no `/` in it matches a directory of that name **at any
+  depth**, so `exclude = ["e2e/**"]` silently skips every nested `e2e` in the tree, not just the one
+  at the root. A consumer was checking two files where they expected five.
+
+  The semantics are unchanged and deliberately so — they are gitignore's, and anchoring is already
+  expressible with a leading slash (`exclude = ["/e2e/**"]`). What was missing was any way to notice.
+  `poly doctor` now reports each rule that pruned directories at two or more distinct depths, names
+  the directories, and suggests the anchored form. The behaviour is documented in the `--exclude`
+  help, the `[discovery] exclude` schema, the MCP parameter, and ADR 0017.
+
+- **Build identity in `--version`, and in every MCP response.**
+
+  ```
+  poly 0.19.7 (dev build v0.19.7-10-g361844a, debug)
+  ```
+
+  Two builds of the same version were previously indistinguishable. One consumer had to diff file
+  mtimes to tell a fixed poly from one that was corrupting their templates, and another reported a
+  status against the wrong binary. The id comes from `git describe` at compile time — no `--dirty`,
+  no timestamp — so it stays a pure function of the committed tree and does not disturb reproducible
+  builds. MCP callers get the same identity on every response, since they have no `--version` to
+  fall back on.
+
+- **`poly mcp` fails loudly once its own binary is replaced.** It fingerprints its executable at
+  startup and re-checks per request. Eight long-lived servers were found still answering from a
+  deleted inode with known-destructive semantics; upgrading poly left every running server stale
+  forever, with no expiry and no signal. The `version` tool stays exempt so it can explain why the
+  others stopped.
+
+- **Discovery now reports what it excluded, per rule**, so a summary can distinguish "everything is
+  clean" from "everything I chose to look at is clean". One repo carried formatting drift for weeks
+  because a top-level check reported an unqualified pass while an excluded directory held
+  unformatted files.
+
+  ```
+  All formatted. (260 file(s) checked, 2 skipped (Go/Helm template syntax), 2 file(s) and 8 director(ies) excluded by config)
+    excluded by [discovery] exclude / --exclude: **/identify/tags.rs (1 file(s)), .ai-rulez/** (1 dir(s)), and 5 more rule(s)
+    excluded directories were not walked, so the files inside them are not counted
+  ```
+
+  Files and directories are counted separately on purpose: an excluded directory is pruned at its
+  boundary and never walked, so the files inside it were never measured. Reporting a single total
+  would claim a precision nobody paid for.
+
 - **`--force-exclude` / `[discovery] force_exclude`, applied automatically in the hook path.**
   `[discovery] exclude` pruned the directory walk but never applied to a file named explicitly on
   the command line. That is right when a human names a file and wrong in a hook, which is *always*
@@ -43,6 +104,48 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   still checks it.
 
 ### Changed (behaviour)
+
+- **A file the formatter cannot process now fails the run (exit 2) instead of reporting success.**
+  `poly fmt` logged an engine error at `warn` and dropped the file from the results entirely, so an
+  unparseable file was erased from the accounting and reported as `All formatted. (0 file(s)
+  checked)` with exit 0 — a gate passing on a file it never read. Each affected path is now named
+  with the engine's own message.
+
+  Exit **2** specifically. Consumers automate against these codes and at least one treats `1` as
+  success for `--fix`, since `1` means "files were rewritten"; folding an unreadable file into
+  either `0` or `1` would be wrong in opposite ways. The full contract is now: `0` clean, `1` files
+  changed (or would change), `2` the run failed.
+
+- **`extends`: `exclude` lists accumulate instead of replacing.** Under `extends`, arrays previously
+  replaced wholesale, so a repo adding a single exclude had to restate the entire inherited array —
+  freezing a copy that later changes to the shared base never reached. The repos that most needed a
+  shared base were exactly the ones that silently stopped tracking it.
+
+  `hooks.builtin.{lint,fmt,file_safety}.exclude` now inherit `[discovery] exclude` by the same rule,
+  which is why poly's own `poly.toml` drops four duplicated exclude stanzas. Opt out per table with
+  `exclude_mode = "replace"`.
+
+  **This changes behaviour for anyone who restated `exclude` in order to *shrink* an inherited
+  list** — they now get the union. Non-`exclude` arrays (`select`, `stages`, `clippy_args`) still
+  replace, deliberately: those are values, not floors, and unioning them would make shrinking a rule
+  set impossible.
+
+- **The result cache now folds in the identity of the poly build that produced an entry**, and
+  **existing caches are discarded on first run** as a result of a cache-format bump.
+
+  Invalidation previously depended on an author remembering to bump a hand-written
+  `Engine::version()` string, and the audit test only enforced that it embedded the *wrapped crate's*
+  version — so a change to poly's own logic invalidated nothing. Worse, two builds reporting the same
+  version produced identical keys despite behaving differently, so one build was served the other's
+  results. That was reproduced: a binary whose formatter would rewrite a file read a cached entry
+  from a different build and reported `All formatted`, exit 0.
+
+  A **release** build's identity is `release/<version>` with nothing machine-local, so two release
+  builds of one version still share entries and CI caching is unaffected. Development builds include
+  an executable fingerprint, because `git describe` alone cannot see uncommitted work.
+
+  Cache eviction also now runs automatically (at most once per 24h per repo: entries older than 14
+  days, then oldest-first to a 1 GiB ceiling). It previously never ran unless invoked by hand.
 
 - **`poly lint --fix` no longer rewrites machine-generated files.** Files whose opening lines carry
   a `DO NOT EDIT` / `@generated` / `auto-generated` / `:hash:` marker are still **reported** on —
@@ -88,6 +191,152 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   new `--workspace` flag. `poly lint --workspace <paths>` restores the previous behaviour.
 
 ### Fixed
+
+- **`poly fmt` no longer changes which rows a SQL query returns.** It rewrote `where id = NULL` into
+  `where id is NULL`. Those are not equivalent: under three-valued logic `= NULL` evaluates to
+  UNKNOWN and matches nothing, while `IS NULL` matches every null — so a command whose job is
+  whitespace and casing silently changed a query's result set. Worse, `= NULL` is almost always a
+  real bug, and the "fix" destroyed the evidence of it. `AL05` deleting unused table aliases under
+  `fmt` is the same shape.
+
+  Same root cause as the Markdown heading fix below: `lint` and `format` did not own disjoint rule
+  sets, so `format` applied every rule that carried an autofix. The line is now **presentation
+  versus meaning**: `poly fmt` applies only the Layout and Capitalisation rule groups, which cannot
+  change what a query does. Aliasing, Ambiguous, Convention, Jinja, References and Structure are
+  reported by `poly lint` and never auto-applied. The format-side suppression is derived from
+  sqruff's own registry, so a rule group added upstream is excluded from `fmt` until it is
+  explicitly vetted in — an unreviewed rule can only make `fmt` do less.
+
+  `CV05` is still **reported**; poly just no longer applies it for you.
+
+- **Per-file hooks validated the worktree while workspace hooks validated staged content**, and
+  nothing in the report said which. Both failure directions were reproduced against the shipped
+  0.19.7 binary: a violation present only in the index was committed with exit 0, and a violation
+  present only in the worktree blocked a commit whose staged content was clean. Every hook now runs
+  from one execution root resolved once per run, and the stage banner names the tree it validated.
+
+  Because a hook's rewrite lands in the snapshot, it is carried back to the worktree **only** where
+  the worktree copy is byte-identical to the index. Where they differ the author is holding unstaged
+  work, so the fix is withheld and a `stage_fixed` hook fails the run naming the files — rather than
+  overwriting work the fix never saw, or `git add`ing hunks the author deliberately left out.
+
+- **A hook that never returns no longer hangs the commit silently.** One wedged a consumer's
+  pre-commit for 25 minutes with zero output, blocking four commits, with `--no-verify` the only way
+  through. Hooks now run under a budget — 10 minutes per-file, 30 minutes whole-project — chosen as
+  hang detectors rather than performance budgets, since killing a cold `cargo clippy` would be a
+  worse defect than the hang. On overrun the process group is signalled and the hook is reported as
+  **killed by poly**, which is a distinct fact from failing on its own merits. A liveness line names
+  the running hook after 15s, and skipped, killed and setup-failed hooks now render with distinct
+  markers — previously `-` meant both "skipped" and "still running".
+
+  Configurable via `POLY_HOOK_TIMEOUT` / `POLY_HOOK_WORKSPACE_TIMEOUT`. There is deliberately no
+  `poly.toml` key yet: one that parsed and was ignored would be a false promise.
+
+- **`poly lint --fix` no longer deletes single lines out of the middle of a prose comment block.**
+  The opt-in `[lint.uncomment]` backend judged each comment *line* independently, and tree-sitter
+  reports one comment node per `//` or `#` line — so one line of a paragraph could be classified as
+  dead code and removed while its neighbours survived, welding the remainder into a sentence the
+  author never wrote. `::` is a code operator, and the prose guard required six word-shaped tokens;
+  backticked and parenthesised words did not count, so ordinary technical prose scored just under the
+  bar.
+
+  The unit of judgement is now the contiguous comment **block**, never the line. A block is removable
+  only when every line in it is covered by a removal — a `TODO` or `~keep` line inside vetoes the
+  whole block — **and** every line reads as code. A partial-block edit is no longer merely unlikely,
+  it is unrepresentable. A separate guard covers the standalone case, where a one-line English comment
+  naming a `::` path has no block to belong to.
+
+  The deliberate trade: a block mixing prose and code is now kept whole, so poly will miss some real
+  commented-out code. A missed removal is cosmetic; a wrong removal destroys what the author wrote and
+  looks like nothing happened.
+
+- **`poly lint --fix` reported `No issues found.` while rewriting files.** The runner applied fixes,
+  re-linted, and summarised only what *remained* — discarding the fact that it had changed the file at
+  all. Check mode was always correct; only `--fix` was silent. This is why the comment deletion above
+  went unnoticed in a consumer repository: the tool reported doing nothing while doing something. The
+  summary now names what was fixed.
+
+- **Remote hook sources no longer duplicate the consumer's cargo builtins.** Each `[[hooks.sources]]`
+  entry was lowered through a synthetic config carrying `present = true`, and the cargo builtin group
+  is default-on whenever a `[hooks]` section exists — so every source re-emitted
+  `cargo-clippy`/`cargo-sort`/`cargo-machete`/`cargo-deny` under its own `{source}:` prefix. Each
+  configured source added a full redundant pass over the workspace. In this repository the pre-commit
+  stage went from 14 hooks to 10, and from 1m29s to 44s.
+
+  The duplication was `PATH`-probed, so a machine missing `cargo-sort` or `cargo-deny` saw fewer
+  duplicates than one with the full toolchain installed.
+
+- **`poly fmt` no longer rewrites a document's heading structure.** `lint` correctly filtered out the
+  formatting-category rules that `fmt` owns, but `format` ran the **entire** rule set through the fix
+  coordinator — so `poly fmt --fix` applied any rule that happened to carry an autofix, whatever it
+  changed. The two paths were never a clean partition.
+
+  Concretely, MD001 (heading increment) demoted `### Go` to `## Go` in a document beginning with an
+  `h1`, silently changing which sections nest under which. The violation is real, but the repair is
+  ambiguous — demote the `h3`, or insert the missing `h2` above — and those produce different
+  documents. Structural rules are now excluded from the format path, and their autofix is dropped from
+  `lint` as well, since `poly lint --fix` applies diagnostic edits and would otherwise restructure the
+  outline by the other route.
+
+  MD001 is still **reported** by `poly lint`; poly just no longer guesses the repair. Anyone relying on
+  `--fix` to normalise heading levels now gets an error to resolve by hand instead.
+
+- **A heading whose text ends in `#` no longer loses that `#`.** rumdl's MD020 treated a trailing run
+  of `#` as a closing sequence even with nothing separating it from the heading text, so `### C#`
+  became `### C #`; MD003 then normalised that to `### C` in any document whose dominant style is open
+  ATX. CommonMark §4.2 requires a closing sequence to be preceded by whitespace, so `### C#` is an
+  ordinary heading whose text is `C#` and there was never anything for MD020 to report.
+
+  Wider than the reported C# case: it fired on any ATX heading at any level ending in `#`, through
+  both `poly lint --fix` and `poly fmt --fix`. It also **self-reverted** — a docs pass would repair
+  the heading and the next `--fix` would undo the repair — which is why it survived unnoticed. Only
+  the `### C\#` escape avoided it, because rumdl's pattern excludes a preceding backslash.
+
+  The wrapped rule is now guarded for lines the author wrote verbatim, which keeps the legitimate
+  `##Foo##` → `## Foo ##` fix alive; the diagnostic is suppressed too, since the construct is valid
+  CommonMark and a permanent unfixable warning on every C# heading would just push people back to the
+  escape. An upstream patch is prepared — this guard is what makes consumers safe before it lands.
+
+- **Templates that do not render markup are no longer reformatted.** `poly fmt --fix` on a `.jinja`
+  template rendering Go rewrote
+
+  ```go
+  data, err := json.Marshal(r)
+  if err != nil {
+  ```
+
+  into `json.Marshal(r) if err != nil`, concatenated the closing braces, and emitted source that does
+  not compile — 30 sites in one consumer's Go binding, which broke a downstream build. markup_fmt
+  reflows on the assumption that whitespace is insignificant, which holds for HTML and not for most
+  other languages, and the extension `.jinja` names the *template syntax*, never the *rendered*
+  language.
+
+  Jinja, Vento and Mustache are now formatted only when the target is actually markup: a double
+  extension names it outright (`marshal.go.jinja` is not markup, `page.html.jinja` is), and otherwise
+  the body must contain a literal tag once `{{ … }}`, `{% … %}` and `{# … #}` constructs are
+  stripped — so a comparison inside a template expression is not mistaken for a tag. Declining is the
+  safe default: leaving a template unformatted costs nothing, reflowing one destroys it. Dedicated
+  markup languages (`.html`, `.vue`, `.svelte`, `.astro`, `.xml`) are unambiguous and unaffected.
+
+- **A staged-snapshot file rewritten out of band is repaired instead of served forever.** The
+  snapshot treated a path as current when its index OID was unchanged and the file existed, so
+  anything that rewrote a snapshot file in place without changing an OID — a `workspace = true` hook
+  running in fix mode, or a truncating crash — was served on every later run, permanently. That is a
+  false pass: the fix never reaches the index, and every subsequent check-only run passes on bytes
+  that are not staged. The manifest now records size and mtime alongside the OID.
+
+- **Upgrading poly no longer leaves a window where the binary is absent.** `install.sh` used
+  `install -m 0755` with a `cp` fallback; all of those keep the destination inode and rewrite in
+  place, so the binary was partial or non-executable for the duration. Because poly's git hooks are
+  installed globally and fail closed, that blocked **every commit in every repo on the machine**
+  while an upgrade ran. Both installers now stage to a temporary path and rename over the
+  destination, which is atomic within a filesystem.
+
+  The git-hook shim also no longer assumes a missing install when poly is being installed *right
+  now*: it looks for a staged or partially-written poly beside the destination and says so, and
+  separately detects an installed poly whose directory is not on the `PATH` the hook sees. It still
+  fails closed — a hook that silently skips when its binary is missing would be the exact failure
+  this release exists to remove.
 
 - **`uncomment --fix` no longer deletes prose that continues across lines.** A comment ending
   mid-clause — typically on `;` — was classified as commented-out code, so `poly lint --fix`
@@ -140,6 +389,15 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   mistagged files during hook file-type identification. Both call sites now look one byte past
   `#!`; `[` is not a valid interpreter path in any language, so the check is applied generally
   rather than special-cased to `.rs`.
+
+- **Documentation corrections that were themselves defects.** Every example in `ACTION_USAGE.md`
+  referenced `Goldziher/poly@v1`, which does not exist — only `v0` does — so anyone copying them got
+  a "ref not found" failure. The README also presented verify-after-the-fact as the general way to
+  pin poly, when in fact the installer (`POLY_VERSION`), the GitHub Action (`version:`) and
+  `cargo binstall` all support a true, checksum-verified pin; Homebrew is the only channel that
+  cannot, and the README now says so plainly. An unpinned-install one-liner had already been copied
+  verbatim into eight sibling repositories, so published examples are treated here as a defect
+  surface rather than prose.
 
 - Adapted the OXC backend to two upstream API changes in oxc `c42d639`:
   - `oxc_formatter::format` lost its trailing session argument; poly now calls the four-argument
