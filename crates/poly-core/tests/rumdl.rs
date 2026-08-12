@@ -140,6 +140,61 @@ fn canonical_select_and_extend_select_match_native_enable() {
     );
 }
 
+/// A document whose headings end in a literal `#` (`C#`, `F#`). Per CommonMark
+/// §4.2 a closing sequence of `#`s must be preceded by whitespace, so these are
+/// ordinary open ATX headings whose *text* ends in `#` — not malformed closed
+/// headings. rumdl's MD020 misreads them; poly guards the rule (see
+/// `engines::rumdl`), and this fixture is the regression.
+const HEADINGS_ENDING_IN_HASH: &str = "# Languages\n\n## Overview\n\n### C#\n\nText.\n\n### F#\n\nMore text.\n";
+
+#[test]
+fn heading_text_ending_in_hash_survives_format_byte_identically() {
+    let engine = RumdlEngine;
+    let src = md_src(HEADINGS_ENDING_IN_HASH);
+    match engine.format(&src, &default_cfg()).expect("format succeeded") {
+        FormatOutput::Unchanged => {}
+        FormatOutput::Formatted(out) => {
+            panic!("`### C#` must survive formatting byte-identically, but the content was rewritten:\n{out}")
+        }
+    }
+}
+
+#[test]
+fn heading_text_ending_in_hash_reports_no_md020() {
+    let engine = RumdlEngine;
+    let src = md_src(HEADINGS_ENDING_IN_HASH);
+    let diags = engine.lint(&src, &default_cfg()).expect("lint succeeded");
+    assert!(
+        !sorted_codes(&diags).contains(&"MD020".to_string()),
+        "`### C#` is a valid open ATX heading, MD020 must not fire; got: {diags:?}"
+    );
+}
+
+#[test]
+fn closed_atx_heading_with_missing_spaces_is_still_fixed() {
+    // `##Foo##` really is a closed ATX heading with both spaces missing — the
+    // guard must not disable MD020 wholesale.
+    let engine = RumdlEngine;
+    let src = md_src("##Foo##\n");
+    match engine.format(&src, &default_cfg()).expect("format succeeded") {
+        FormatOutput::Formatted(out) => assert_eq!(out, "## Foo ##\n", "MD020 must still fix a genuine `##Foo##`"),
+        FormatOutput::Unchanged => panic!("expected MD020 to fix `##Foo##`, got Unchanged"),
+    }
+}
+
+#[test]
+fn well_formed_closed_atx_headings_are_unchanged() {
+    let engine = RumdlEngine;
+    let src = md_src("# Foo #\n\nText.\n\n## Bar ##\n\nMore text.\n");
+    assert!(
+        matches!(
+            engine.format(&src, &default_cfg()).expect("format succeeded"),
+            FormatOutput::Unchanged
+        ),
+        "well-formed closed ATX headings must be left alone"
+    );
+}
+
 #[test]
 fn unformatted_md_formats_cleanly() {
     let engine = RumdlEngine;

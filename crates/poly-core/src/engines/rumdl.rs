@@ -14,12 +14,15 @@
 //! unioned with the canonical keys.
 
 use std::collections::HashSet;
+use std::sync::{Arc, LazyLock};
 
+use regex::Regex;
 use rumdl_lib::{
+    LintContext,
     config::{Config as RumdlConfig, MarkdownFlavor},
     fix_coordinator::FixCoordinator,
-    rule::{LintWarning, Rule, RuleCategory, Severity as RumdlSeverity},
-    rules::{all_rules, filter_rules},
+    rule::{FixCapability, LintError, LintResult, LintWarning, Rule, RuleCategory, Severity as RumdlSeverity},
+    rules::{MD020NoMissingSpaceClosedAtx, all_rules, filter_rules},
     types::LineLength,
 };
 
@@ -33,13 +36,14 @@ use crate::language::Language;
 pub struct RumdlEngine;
 
 /// Embedded crate version so the cache key changes whenever rumdl output could change.
-/// The `+defaults3` suffix marks the opinionated rule policy below: the
+/// The `+defaults5…` suffix marks the opinionated rule policy below: the
 /// default-disabled proprietary rules **and** the lint-mode suppression of the
 /// `Whitespace` (formatting) category, plus MDX-flavor routing, the MDX-only
-/// default-disabled rules (see [`MDX_DEFAULT_DISABLED_RULES`]), and the
-/// Go/Helm-template skip. Bump the suffix whenever any of these change so stale
-/// cached diagnostics are invalidated.
-const RUMDL_VERSION: &str = "0.2.54+defaults4-mdx-rules-tmplskip";
+/// default-disabled rules (see [`MDX_DEFAULT_DISABLED_RULES`]), the
+/// Go/Helm-template skip, and the MD020 guard ([`GuardedMd020`]). Bump the
+/// suffix whenever any of these change so stale cached diagnostics are
+/// invalidated.
+const RUMDL_VERSION: &str = "0.2.54+defaults5-mdx-rules-tmplskip-md020guard";
 
 /// rumdl-proprietary stylistic rules disabled by default.
 ///
@@ -103,7 +107,7 @@ impl Engine for RumdlEngine {
             return Ok(Vec::new());
         }
         let rumdl_cfg = build_rumdl_config(cfg, &src.language);
-        let rules = filter_rules(&all_rules(&rumdl_cfg), &rumdl_cfg.global);
+        let rules = guarded_rules(&rumdl_cfg, &src.content);
         let flavor = rumdl_cfg.markdown_flavor();
         let format_owned = format_owned_rules(&rules);
         rumdl_lib::lint(
@@ -129,7 +133,7 @@ impl Engine for RumdlEngine {
             return Ok(FormatOutput::Unchanged);
         }
         let rumdl_cfg = build_rumdl_config(cfg, &src.language);
-        let rules = filter_rules(&all_rules(&rumdl_cfg), &rumdl_cfg.global);
+        let rules = guarded_rules(&rumdl_cfg, &src.content);
         let coordinator = FixCoordinator::default();
         let mut content = src.content.to_string();
         coordinator
@@ -188,6 +192,160 @@ fn build_rumdl_config(cfg: &EngineConfig, language: &Language) -> RumdlConfig {
     config.global.disable = disable;
     config.global.enable = user_enable;
     config
+}
+
+/// Rule code of rumdl's "no space inside closed ATX heading" rule.
+const MD020: &str = "MD020";
+
+/// Matches an ATX heading line whose *text* ends in `#`, such as `### C#`.
+///
+/// Mirrors rumdl's own `CLOSED_ATX_NO_SPACE_END_PATTERN`
+/// (`rules/md020_no_missing_space_closed_atx.rs`) minus its capture groups: an
+/// opening hash run, a space, content whose last character is not `#`,
+/// whitespace or a backslash, then a trailing hash run and an optional
+/// `{#custom-id}`.
+///
+/// CommonMark §4.2 requires a heading's closing sequence of `#`s to be preceded
+/// by whitespace, so `### C#` has *no* closing sequence — it is an ordinary open
+/// ATX heading whose content is `C#`. MD020 reads the trailing `#` as a
+/// malformed closing sequence anyway and rewrites the line to `### C #`, which
+/// MD003 then normalises to `### C`, silently dropping the `#` from the rendered
+/// heading. [`GuardedMd020`] suppresses that branch.
+static HEADING_TEXT_ENDS_IN_HASH: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\s*#+\s.*?[^#\s\\]#+\s*(?:\{#[^}]+\})?\s*$").expect("valid regex"));
+
+/// rumdl's MD020 with its CommonMark-invalid branch neutralised.
+///
+/// MD020's other branches are legitimate and delegate untouched: `#Foo#` and
+/// `#Foo #` lack the space *after* the opening hashes, so they are not headings
+/// at all and rewriting them is correct. Only the "missing space before the
+/// closing hashes" branch is suppressed, because the construct it reports
+/// (`### C#`, `## F#`) is valid CommonMark and applying its fix corrupts the
+/// heading text.
+///
+/// A line is protected only when the author actually wrote it — it must match
+/// [`HEADING_TEXT_ENDS_IN_HASH`] *and* appear verbatim in the original document.
+/// Formatting is iterative, so `##Foo##` becomes `## Foo##` mid-run once MD018
+/// has inserted the opening space; that intermediate line was never authored and
+/// stays fixable, which keeps `##Foo##` → `## Foo ##` intact.
+///
+/// [`guarded_rules`] swaps this in for every lint and format run. Two narrow
+/// cases still escape the guard, both waiting on the upstream fix:
+///
+/// - A heading written *without* the mandatory space after the opening hashes
+///   (`###C#`) is not a heading at all, so MD018 rewrites it to `### C#` first;
+///   that line was never authored and is indistinguishable from a malformed
+///   closed heading, so MD020 still reaches it.
+/// - A document carrying an inline `rumdl-configure-file` override for MD020
+///   makes rumdl's fix coordinator recreate the rule straight from its registry.
+#[derive(Clone)]
+struct GuardedMd020 {
+    inner: MD020NoMissingSpaceClosedAtx,
+    /// The document as the author wrote it, before any fix pass.
+    original: Arc<str>,
+}
+
+impl GuardedMd020 {
+    fn new(original: Arc<str>) -> Self {
+        Self {
+            inner: MD020NoMissingSpaceClosedAtx::new(),
+            original,
+        }
+    }
+
+    /// Whether `line` is a heading MD020 must not touch — see
+    /// [`HEADING_TEXT_ENDS_IN_HASH`]. Accepts a line with or without its terminator.
+    fn is_guarded(&self, line: &str) -> bool {
+        let line = line.trim_end_matches(['\r', '\n']);
+        HEADING_TEXT_ENDS_IN_HASH.is_match(line) && self.original.lines().any(|authored| authored == line)
+    }
+}
+
+impl Rule for GuardedMd020 {
+    fn name(&self) -> &'static str {
+        self.inner.name()
+    }
+
+    fn description(&self) -> &'static str {
+        self.inner.description()
+    }
+
+    fn check(&self, ctx: &LintContext) -> LintResult {
+        let mut warnings = self.inner.check(ctx)?;
+        warnings.retain(|warning| !nth_line(ctx.content, warning.line).is_some_and(|line| self.is_guarded(line)));
+        Ok(warnings)
+    }
+
+    fn fix(&self, ctx: &LintContext) -> Result<String, LintError> {
+        let fixed = self.inner.fix(ctx)?;
+        Ok(self.restore_guarded_headings(ctx.content, fixed))
+    }
+
+    fn should_skip(&self, ctx: &LintContext) -> bool {
+        self.inner.should_skip(ctx)
+    }
+
+    fn category(&self) -> RuleCategory {
+        self.inner.category()
+    }
+
+    fn fix_capability(&self) -> FixCapability {
+        self.inner.fix_capability()
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self.inner.as_any()
+    }
+}
+
+/// The 1-indexed `line_number`th line of `content`, without its terminator.
+fn nth_line(content: &str, line_number: usize) -> Option<&str> {
+    content.lines().nth(line_number.checked_sub(1)?)
+}
+
+impl GuardedMd020 {
+    /// Put every guarded heading back the way the author wrote it.
+    ///
+    /// [`GuardedMd020::check`] already hides the guarded warnings, so the
+    /// coordinator only reaches `fix` when the document *also* holds a genuine
+    /// MD020 violation. MD020 rewrites lines in place, so the fixed content keeps
+    /// one line per input line; if that ever stops holding the whole fix is
+    /// dropped rather than splicing mismatched lines together.
+    fn restore_guarded_headings(&self, before_fix: &str, fixed: String) -> String {
+        if !before_fix.split_inclusive('\n').any(|line| self.is_guarded(line)) {
+            return fixed;
+        }
+        let before_lines: Vec<&str> = before_fix.split_inclusive('\n').collect();
+        let fixed_lines: Vec<&str> = fixed.split_inclusive('\n').collect();
+        if before_lines.len() != fixed_lines.len() {
+            return before_fix.to_owned();
+        }
+        before_lines
+            .into_iter()
+            .zip(fixed_lines)
+            .map(|(before_line, fixed_line)| {
+                if self.is_guarded(before_line) {
+                    before_line
+                } else {
+                    fixed_line
+                }
+            })
+            .collect()
+    }
+}
+
+/// Resolve the active rule set, with [`GuardedMd020`] standing in for MD020.
+fn guarded_rules(config: &RumdlConfig, original: &Arc<str>) -> Vec<Box<dyn Rule>> {
+    filter_rules(&all_rules(config), &config.global)
+        .into_iter()
+        .map(|rule| {
+            if rule.name() == MD020 {
+                Box::new(GuardedMd020::new(Arc::clone(original))) as Box<dyn Rule>
+            } else {
+                rule
+            }
+        })
+        .collect()
 }
 
 /// The set of rule codes (e.g. `"MD013"`) that belong to rumdl's `Whitespace`
@@ -406,6 +564,53 @@ mod tests {
             }
             FormatOutput::Unchanged => panic!("expected Formatted, got Unchanged"),
         }
+    }
+
+    #[test]
+    fn guard_protects_only_authored_headings_ending_in_hash() {
+        let original: Arc<str> = "### C#\n## F#\n### Foo ###\n### Foo #\n### C# and more\n### C\\#\n".into();
+        let guard = GuardedMd020::new(Arc::clone(&original));
+
+        for line in ["### C#", "## F#", "### C#\n"] {
+            assert!(guard.is_guarded(line), "{line:?} must be protected from MD020");
+        }
+        for line in [
+            "### Foo ###",     // genuine closed heading — nothing missing
+            "### Foo #",       // genuine closed heading with a one-hash closer
+            "### C# and more", // trailing text, not a hash run
+            "### C\\#",        // already escaped
+            "##Foo##",         // missing the opening space: a real MD020 violation
+            "## Foo##",        // never authored — an intermediate state of `##Foo##`
+        ] {
+            assert!(!guard.is_guarded(line), "{line:?} must stay fixable");
+        }
+    }
+
+    /// Pins the one residual gap documented on [`GuardedMd020`]: `###C#` is not a
+    /// heading (no space after the opening hashes), MD018 rewrites it to `### C#`
+    /// mid-run, and that synthesised line is still MD020's to mangle. Update this
+    /// test when the upstream MD020 fix lands and the guard can be dropped.
+    #[test]
+    fn known_residual_heading_missing_opening_space_still_loses_trailing_hash() {
+        let engine = RumdlEngine;
+        let src = source("###C#\n");
+        match engine.format(&src, &default_cfg()).expect("format succeeded") {
+            FormatOutput::Formatted(out) => assert_eq!(out, "### C #\n"),
+            FormatOutput::Unchanged => panic!("expected MD018 to rewrite `###C#`"),
+        }
+    }
+
+    #[test]
+    fn heading_text_ending_in_hash_is_not_rewritten_by_format() {
+        let engine = RumdlEngine;
+        let src = source("# Languages\n\n## Overview\n\n### C#\n\nText.\n");
+        assert!(
+            matches!(
+                engine.format(&src, &default_cfg()).expect("format succeeded"),
+                FormatOutput::Unchanged
+            ),
+            "`### C#` must survive formatting untouched"
+        );
     }
 
     #[test]
