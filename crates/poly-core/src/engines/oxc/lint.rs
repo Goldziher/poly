@@ -197,13 +197,16 @@ fn map_oxlint_message(msg: Message, content: &str) -> Diagnostic {
         OxcSeverity::Advice => Severity::Info,
     };
 
-    let code = msg.rule.as_ref().map(|r| {
-        if r.plugin_name == "eslint" {
-            r.rule_name.to_string()
-        } else {
-            format!("{}/{}", r.plugin_name, r.rule_name)
-        }
-    });
+    // oxlint carries the rule identity on the diagnostic's `OxcCode` — `scope` is
+    // the plugin display name, `number` the rule name (`with_error_code`). It
+    // replaced the old `Message::rule` field, whose `Display` (`scope(number)`)
+    // is not the form we report. ~keep
+    let code = match (&msg.error.code.scope, &msg.error.code.number) {
+        (Some(plugin), Some(rule)) if plugin == "eslint" => Some(rule.to_string()),
+        (Some(plugin), Some(rule)) => Some(format!("{plugin}/{rule}")),
+        (None, Some(rule)) => Some(rule.to_string()),
+        _ => None,
+    };
 
     let message_text = msg.error.to_string();
 

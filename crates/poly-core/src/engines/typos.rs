@@ -35,7 +35,7 @@ use crate::language::Language;
 /// Combined cache-key version: `typos` tokeniser + `typos-dict` word list,
 /// plus a marker for the noise-suppression guards below. Bump whenever either
 /// crate is updated OR the guard logic changes (it alters output).
-const TYPOS_VERSION: &str = "0.10.43+dict-0.14.0+guards1+cfg2+warn-noautofix+builtins1+rulecodes1";
+const TYPOS_VERSION: &str = "0.10.44+dict-0.14.0+guards1+cfg2+warn-noautofix+builtins1+rulecodes1";
 
 /// Skip spell-checking files at least this large: generated/minified bundles
 /// dominate by size and are pure noise word-by-word.

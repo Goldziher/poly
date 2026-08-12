@@ -30,7 +30,7 @@ pub(super) fn format_js(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<
     let source_type = source_type_for(&src.language);
     let options = build_js_options(cfg);
 
-    let formatted = match oxc_formatter::format(&allocator, &src.content, source_type, options, None) {
+    let formatted = match oxc_formatter::format(&allocator, &src.content, source_type, options) {
         Err(_) => return Ok(FormatOutput::Unchanged),
         Ok(f) => f,
     };

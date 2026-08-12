@@ -7,6 +7,41 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+### Changed
+
+- Refreshed the whole dependency tree. All pinned git backends move to their latest upstream
+  **release** commits, keeping the existing practice of pinning releases rather than arbitrary
+  `HEAD`:
+
+  | backend | from | to |
+  | --- | --- | --- |
+  | oxc (`oxc_formatter`, `oxc_linter`, …) | `65fe65d` — oxlint 1.76.0 / oxfmt 0.61.0 | `c42d639` — oxlint 1.78.0 / oxfmt 0.63.0 |
+  | ruff (`ruff_linter`, `ruff_python_formatter`, …) | `80790b3` — 0.16.1 | `5b48a04` — 0.16.2 |
+  | biome (`biome_css_analyze`, `biome_graphql_analyze`, …) | `1139f1c` | `6b8f09c` |
+  | rubyfmt | `b63fbaa` | `5185d3b` |
+
+  Registry dependencies were upgraded in the same pass, including the exact-pinned `mago` PHP family
+  (`=1.42.0` → `=1.43.0`, bumped as a set so the monorepo crates stay consistent), `rumdl` 0.2.42 →
+  0.2.54, `tree-sitter-language-pack` 1.14.0 → 1.14.3, `typos` 0.10.43 → 0.10.44, `uncomment` 3.5.1 →
+  3.5.2, `ast-grep-core` 0.44.1 → 0.45.1, and `hcl-rs` / `hcl-edit` 0.19.7 / 0.9.6 → 0.19.8 / 0.9.7.
+
+- Every affected engine's `version()` was bumped alongside its wrapped crate, so cached results
+  produced by the previous backend versions are invalidated rather than reused. The `version_audit`
+  test enforces this contract and now passes against the refreshed lockfile.
+
+### Fixed
+
+- Adapted the OXC backend to two upstream API changes in oxc `c42d639`:
+  - `oxc_formatter::format` lost its trailing session argument; poly now calls the four-argument
+    service-less form, which is the compatibility wrapper for exactly this use.
+  - `oxc_linter::Message::rule` was removed. The rule identity now travels on the diagnostic's
+    `OxcCode` (`scope` = plugin display name, `number` = rule name), so poly maps that instead.
+    Reported codes are unchanged in shape — bare `no-debugger` for `eslint` rules, `oxc/const-comparisons`
+    for plugin-scoped ones. Note that plugin-scoped codes now use oxlint's *normalized* plugin display
+    name, so the three plugins oxlint renames (`jsx_a11y` → `jsx-a11y`, `react_perf` → `react-perf`,
+    `nextjs` → `next`) report under the hyphenated form; adjust `[per-file-ignores]` entries keyed on
+    the old spelling.
+
 ## [0.19.7] - 2026-08-12
 
 ### Fixed

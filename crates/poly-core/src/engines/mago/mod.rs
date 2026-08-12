@@ -83,7 +83,7 @@ impl Engine for MagoEngine {
 
     /// Cache-key version: bump whenever mago output could change.
     fn version(&self) -> &str {
-        "mago-1.42.0"
+        "mago-1.43.0"
     }
 
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
