@@ -149,9 +149,20 @@ fn generic_formatter_superseded(kind: Kind, catalog: &[Box<dyn Engine>]) -> bool
 
 /// Resolve the engines (filtered to those with the requested capability) for a
 /// language, pre-resolving each one's config and serialising its args once.
+fn has_tier_one_formatter(engines: &[Box<dyn Engine>], kind: Kind) -> bool {
+    kind == Kind::Format
+        && engines
+            .iter()
+            .any(|engine| engine.name() != TREE_SITTER_ENGINE && engine.capabilities().format)
+}
+
 fn plan_engines(language: &Language, config: &Config, kind: Kind) -> Vec<EnginePlan> {
     let mut engines = engines_for(language);
-    let catalog = catalog_engines_for(language, config, kind);
+    let catalog = if has_tier_one_formatter(&engines, kind) {
+        Vec::new()
+    } else {
+        catalog_engines_for(language, config, kind)
+    };
     if generic_formatter_superseded(kind, &catalog) {
         engines.retain(|engine| engine.name() != TREE_SITTER_ENGINE);
     }
@@ -836,6 +847,34 @@ mod tests {
     #[test]
     fn no_catalog_engines_leaves_the_generic_formatter_in_place() {
         assert!(!generic_formatter_superseded(Kind::Format, &[]));
+    }
+
+    #[test]
+    fn tier_one_formatter_prevents_catalog_formatter_chaining() {
+        let config = Config {
+            tools: toml::from_str("[clang-format]\nenabled = true\n").expect("valid tool config"),
+            ..Config::default()
+        };
+        for language in [Language::JavaScript, Language::TypeScript, Language::Jsx, Language::Tsx] {
+            let engines = engines_for(&language);
+            assert!(
+                has_tier_one_formatter(&engines, Kind::Format),
+                "{language:?} must remain owned by its tier-one formatter"
+            );
+            let plan = plan_engines(&language, &config, Kind::Format);
+            assert!(plan.iter().any(|entry| entry.engine.name() == "oxc"));
+            assert!(!plan.iter().any(|entry| entry.engine.name() == "clang-format"));
+        }
+    }
+
+    #[test]
+    fn generic_language_allows_catalog_formatter() {
+        let config = Config {
+            tools: toml::from_str("[clang-format]\nenabled = true\n").expect("valid tool config"),
+            ..Config::default()
+        };
+        let plan = plan_engines(&Language::C, &config, Kind::Format);
+        assert!(plan.iter().any(|entry| entry.engine.name() == "clang-format"));
     }
 
     /// A pass that is already at its fixed point runs exactly once — no wasted

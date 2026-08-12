@@ -332,7 +332,7 @@ impl Language {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
     use super::Language;
 
@@ -343,6 +343,15 @@ mod tests {
             Language::from_path(Path::new("foo/dockerfile.rs")),
             Some(Language::Rust)
         );
+    }
+
+    #[test]
+    fn javascript_and_typescript_extensions_use_tier_one_languages() {
+        for extension in ["js", "mjs", "cjs"] {
+            let path = PathBuf::from(format!("fixture.{extension}"));
+            assert_eq!(Language::from_path(&path), Some(Language::JavaScript));
+        }
+        assert_eq!(Language::from_path(Path::new("fixture.ts")), Some(Language::TypeScript));
     }
 
     #[test]

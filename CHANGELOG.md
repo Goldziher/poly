@@ -7,6 +7,12 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+### Fixed
+
+- Tier-one formatters now retain exclusive ownership of their languages when an overlapping catalog
+  formatter is enabled. This prevents tools such as `clang-format`, enabled for C-family files, from
+  running after OXC and rewriting JavaScript, CJS, MJS, or TypeScript with C/C++ spacing rules.
+
 ## [0.19.6] - 2026-08-06
 
 ### Fixed
