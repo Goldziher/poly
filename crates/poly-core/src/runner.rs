@@ -86,6 +86,14 @@ pub struct FormatResult {
     pub path: PathBuf,
     /// Whether formatting changed (or would change) the file.
     pub changed: bool,
+    /// Why no backend inspected this file, when none did.
+    ///
+    /// A file routed to a backend that declines it — YAML carrying Go/Helm
+    /// template actions, a Jinja template rendering Go — was previously
+    /// indistinguishable in the report from one that was checked and found
+    /// clean. Carrying the reason lets the summary say so.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub skipped: Option<String>,
     /// Formatted contents when changed (not serialized).
     #[serde(skip)]
     pub formatted: Option<String>,
@@ -408,6 +416,7 @@ fn format_one(
             path: f.path.clone(),
             changed: false,
             formatted: None,
+            skipped: None,
             debug: None,
         });
     }
@@ -421,6 +430,10 @@ fn format_one(
         .get(&(f.config_id, f.language.clone()))
         .map(Vec::as_slice)
         .unwrap_or(&[]);
+
+    // When every engine routed to this file declines it, nothing inspected the
+    // content — report that rather than letting it read as "checked and clean".
+    let skipped = skip_reason_for(engine_plans, &src);
 
     // Run every format engine once over `input`, returning the chained output.
     // Debug records are collected on the first pass only (`record_debug`) so the
@@ -475,8 +488,30 @@ fn format_one(
         path: f.path.clone(),
         changed,
         formatted: if changed { Some(current.to_string()) } else { None },
+        skipped,
         debug,
     })
+}
+
+/// The reason no backend inspected `src`, when every engine routed to it
+/// declines.
+///
+/// Returns `None` when at least one engine will actually look at the file, so a
+/// file served by both a declining and a willing backend is not reported as
+/// skipped. An empty plan means no backend covers the language at all, which is
+/// ordinary coverage rather than a decline, and is likewise not reported here.
+fn skip_reason_for(plans: &[EnginePlan], src: &SourceFile) -> Option<String> {
+    if plans.is_empty() {
+        return None;
+    }
+    let mut reason = None;
+    for plan in plans {
+        // `?` short-circuits the moment any engine is willing to look at the
+        // file: one willing backend means the file was not skipped.
+        let why = plan.engine.skip_reason(src)?;
+        reason.get_or_insert_with(|| why.to_owned());
+    }
+    reason
 }
 
 /// Drive `run_pass` (one full format-engine chain over the content) to a fixed

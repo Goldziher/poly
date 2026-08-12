@@ -67,12 +67,14 @@ fn sample_format_results() -> Vec<FormatResult> {
             path: PathBuf::from("src/main.py"),
             changed: true,
             formatted: Some("formatted".to_string()),
+            skipped: None,
             debug: None,
         },
         FormatResult {
             path: PathBuf::from("src/clean.py"),
             changed: false,
             formatted: None,
+            skipped: None,
             debug: None,
         },
     ]
@@ -327,4 +329,58 @@ fn lint_pretty_debug_renders_engine_timing_block() {
     );
 
     insta::assert_snapshot!("lint_pretty_debug", text);
+}
+
+/// A file every backend declined used to be counted as scanned and reported
+/// exactly like one that was checked and found clean, so `All formatted.` could
+/// not distinguish "I verified everything" from "I declined to look". The
+/// summary now separates the two and names the reason.
+#[test]
+fn skipped_files_are_reported_separately_from_checked_ones() {
+    let results = vec![
+        FormatResult {
+            path: PathBuf::from("clean.yaml"),
+            changed: false,
+            formatted: None,
+            skipped: None,
+            debug: None,
+        },
+        FormatResult {
+            path: PathBuf::from("Taskfile.yaml"),
+            changed: false,
+            formatted: None,
+            skipped: Some("Go/Helm template syntax".to_string()),
+            debug: None,
+        },
+    ];
+
+    let (text, changed) = report::render_format_pretty(&results, true, Verbosity::default());
+
+    assert_eq!(changed, 0);
+    assert!(text.contains("1 file(s) checked"), "got: {text}");
+    assert!(text.contains("1 skipped (Go/Helm template syntax)"), "got: {text}");
+}
+
+/// With several distinct reasons each is counted, so one cause cannot hide
+/// behind another.
+#[test]
+fn distinct_skip_reasons_are_counted_individually() {
+    let skip = |path: &str, why: &str| FormatResult {
+        path: PathBuf::from(path),
+        changed: false,
+        formatted: None,
+        skipped: Some(why.to_string()),
+        debug: None,
+    };
+    let results = vec![
+        skip("a.yaml", "Go/Helm template syntax"),
+        skip("b.yaml", "Go/Helm template syntax"),
+        skip("c.jinja", "template does not render markup"),
+    ];
+
+    let (text, _) = report::render_format_pretty(&results, true, Verbosity::default());
+
+    assert!(text.contains("0 file(s) checked"), "got: {text}");
+    assert!(text.contains("2 Go/Helm template syntax"), "got: {text}");
+    assert!(text.contains("1 template does not render markup"), "got: {text}");
 }

@@ -29,7 +29,7 @@
 use pretty_yaml::config::{FormatOptions, LineBreak};
 use saphyr::{LoadableYamlNode, Yaml};
 
-use super::template::contains_go_template;
+use super::template::{GO_TEMPLATE_SKIP, contains_go_template};
 use crate::config::{EngineConfig, LineEnding};
 use crate::engine::{Capabilities, Diagnostic, Engine, FormatOutput, Severity, SourceFile, Span};
 use crate::language::Language;
@@ -60,9 +60,12 @@ impl Engine for YamlEngine {
         "0.0.8+pretty_yaml-0.6.0+tmplskip"
     }
 
+    fn skip_reason(&self, src: &SourceFile) -> Option<&'static str> {
+        contains_go_template(&src.content).then_some(GO_TEMPLATE_SKIP)
+    }
+
     fn lint(&self, src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
         if contains_go_template(&src.content) {
-            tracing::info!(path = %src.path.display(), "skipping file with Go/Helm template syntax");
             return Ok(Vec::new());
         }
         match Yaml::load_from_str(&src.content) {
@@ -93,7 +96,6 @@ impl Engine for YamlEngine {
 
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
         if contains_go_template(&src.content) {
-            tracing::info!(path = %src.path.display(), "skipping file with Go/Helm template syntax");
             return Ok(FormatOutput::Unchanged);
         }
         let options = build_format_options(cfg);

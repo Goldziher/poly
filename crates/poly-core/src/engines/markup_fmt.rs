@@ -55,6 +55,9 @@ pub struct MarkupFmtEngine;
 /// previously ignored — existing caches must be invalidated).
 const VERSION: &str = "0.27.3+opts-1+tmpltarget";
 
+/// Reason reported when a general-purpose template does not render markup.
+const NON_MARKUP_TEMPLATE_SKIP: &str = "template does not render markup";
+
 /// Languages handled by this backend.
 static LANGUAGES: &[Language] = &[
     Language::Html,
@@ -89,16 +92,17 @@ impl Engine for MarkupFmtEngine {
         VERSION
     }
 
+    fn skip_reason(&self, src: &SourceFile) -> Option<&'static str> {
+        (is_generic_template(&src.language) && !targets_markup(&src.path, &src.content))
+            .then_some(NON_MARKUP_TEMPLATE_SKIP)
+    }
+
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
         let Some(language) = markup_language(&src.language) else {
             return Ok(FormatOutput::Unchanged);
         };
 
-        if is_generic_template(&src.language) && !targets_markup(&src.path, &src.content) {
-            tracing::info!(
-                path = %src.path.display(),
-                "skipping template whose output is not markup"
-            );
+        if self.skip_reason(src).is_some() {
             return Ok(FormatOutput::Unchanged);
         }
 

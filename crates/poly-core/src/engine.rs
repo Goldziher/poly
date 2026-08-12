@@ -139,6 +139,25 @@ pub trait Engine: Send + Sync {
     /// upgrade invalidates stale cached results.
     fn version(&self) -> &str;
 
+    /// Why this backend declines to process `src`, if it does.
+    ///
+    /// Some content is routed to a backend that cannot safely handle it — YAML
+    /// carrying Go/Helm template actions is not valid YAML, and a Jinja template
+    /// rendering Go is not markup. Formatting either corrupts it, so the backend
+    /// declines.
+    ///
+    /// Declining is correct; doing it *invisibly* was the bug. A skipped file
+    /// used to be counted as scanned and reported identically to one that was
+    /// checked and found clean, so `All formatted.` could not distinguish "I
+    /// verified everything" from "I declined to look". Returning the reason here
+    /// — rather than bailing out inside [`Engine::lint`] / [`Engine::format`] —
+    /// lets the runner count skips and the report surface them.
+    ///
+    /// Defaults to `None`: the backend handles everything routed to it.
+    fn skip_reason(&self, _src: &SourceFile) -> Option<&'static str> {
+        None
+    }
+
     /// Lint a file, returning normalized diagnostics. Defaults to no findings.
     fn lint(&self, _src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
         Ok(Vec::new())

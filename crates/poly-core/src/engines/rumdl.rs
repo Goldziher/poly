@@ -24,7 +24,7 @@ use rumdl_lib::{
 };
 
 use super::rule_config::{RuleSelection, string_list, union_codes, warn_and_skip_blank};
-use super::template::contains_go_template;
+use super::template::{GO_TEMPLATE_SKIP, contains_go_template};
 use crate::config::EngineConfig;
 use crate::engine::{Capabilities, Diagnostic, Edit, Engine, FormatOutput, Severity, SourceFile, Span};
 use crate::language::Language;
@@ -94,9 +94,12 @@ impl Engine for RumdlEngine {
         RUMDL_VERSION
     }
 
+    fn skip_reason(&self, src: &SourceFile) -> Option<&'static str> {
+        contains_go_template(&src.content).then_some(GO_TEMPLATE_SKIP)
+    }
+
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
         if contains_go_template(&src.content) {
-            tracing::info!(path = %src.path.display(), "skipping file with Go/Helm template syntax");
             return Ok(Vec::new());
         }
         let rumdl_cfg = build_rumdl_config(cfg, &src.language);
@@ -123,7 +126,6 @@ impl Engine for RumdlEngine {
 
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
         if contains_go_template(&src.content) {
-            tracing::info!(path = %src.path.display(), "skipping file with Go/Helm template syntax");
             return Ok(FormatOutput::Unchanged);
         }
         let rumdl_cfg = build_rumdl_config(cfg, &src.language);

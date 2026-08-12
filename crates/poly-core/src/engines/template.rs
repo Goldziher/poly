@@ -28,6 +28,9 @@ const GO_TEMPLATE_KEYWORDS: &[&str] = &[
 /// (`{{ .` / `{{ $`), or one of [`GO_TEMPLATE_KEYWORDS`]. A `{{` immediately
 /// preceded by `$` (GitHub Actions `${{ }}`) is ignored, as is a bare `{{` with
 /// no action marker (MDX/JSX object literals).
+/// Reason reported when a file is skipped for carrying Go/Helm template actions.
+pub(crate) const GO_TEMPLATE_SKIP: &str = "Go/Helm template syntax";
+
 pub(crate) fn contains_go_template(content: &str) -> bool {
     let bytes = content.as_bytes();
     let mut search_from = 0;

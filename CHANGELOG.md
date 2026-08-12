@@ -50,6 +50,29 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ### Fixed
 
+- **`poly fmt` no longer reports a file it declined to inspect as one it verified.** The summary
+  counted every discovered file as "scanned", including files a backend skipped on purpose — YAML
+  carrying Go/Helm template actions, and (see below) templates that do not render markup. A skipped
+  file and a checked-and-clean file produced byte-identical output:
+
+  ```
+  $ poly fmt --check Taskfile.yaml     # skipped: contains {{.CLI_ARGS}}
+  All formatted. (1 file(s) scanned)
+  $ poly fmt --check plain.yaml        # actually checked
+  All formatted. (1 file(s) scanned)
+  ```
+
+  The only signal was an `INFO` log that is invisible at default verbosity *and* absent on a cache
+  hit, so a warm re-run had no signal at all. One consumer concluded from this that their templated
+  YAML was covered when it was being skipped. The summary now separates the two and names the cause:
+
+  ```
+  All formatted. (249 file(s) checked, 2 skipped (Go/Helm template syntax))
+  ```
+
+  Backends declare this through a new defaulted `Engine::skip_reason` hook, so the runner can count
+  skips rather than each backend silently returning `Unchanged`.
+
 - **A path argument that does not exist now fails the run instead of reporting success.**
   `poly fmt --check typo.py` printed `All formatted. (0 file(s) scanned)` and exited 0 — a green
   result that verified nothing. A mix of real and missing paths was worse: only the real ones were

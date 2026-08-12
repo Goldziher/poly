@@ -168,6 +168,29 @@ pub fn report_lint_toon(results: &[LintResult]) -> String {
     serde_toon::to_string(&results).unwrap_or_else(|_| report_lint_json(results))
 }
 
+/// Summarise the distinct skip reasons across `results`, most frequent first, so
+/// the summary names *why* files were skipped rather than only how many.
+fn skip_summary(results: &[FormatResult]) -> String {
+    let mut counts: Vec<(&str, usize)> = Vec::new();
+    for reason in results.iter().filter_map(|r| r.skipped.as_deref()) {
+        match counts.iter_mut().find(|(name, _)| *name == reason) {
+            Some((_, count)) => *count += 1,
+            None => counts.push((reason, 1)),
+        }
+    }
+    counts.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
+    // With a single reason the outer "N skipped" already carries the count, so
+    // repeating it reads as "1 skipped (1 …)".
+    if let [(reason, _)] = counts.as_slice() {
+        return (*reason).to_owned();
+    }
+    counts
+        .iter()
+        .map(|(reason, count)| format!("{count} {reason}"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// Build the human-oriented format report as a string. `check` selects
 /// "would reformat" vs "reformatted" phrasing. `--debug` appends a dim per-file
 /// debug block (engine version, cache hit/miss, timing). Returns the rendered
@@ -185,11 +208,20 @@ pub fn render_format_pretty(results: &[FormatResult], check: bool, verbosity: Ve
         );
     }
     let scanned = results.len();
+    let skipped = results.iter().filter(|r| r.skipped.is_some()).count();
+    let checked = scanned - skipped;
     let n = changed.len();
     if n == 0 {
+        // `scanned` counted files that were discovered and routed, including
+        // those every backend declined — so a skipped file read exactly like a
+        // verified one. Report what was actually inspected, and name the skips.
+        let mut tail = format!("{checked} file(s) checked");
+        if skipped > 0 {
+            let _ = write!(tail, ", {skipped} skipped ({})", skip_summary(results));
+        }
         let _ = writeln!(
             out,
-            "{} ({scanned} file(s) scanned)",
+            "{} ({tail})",
             "All formatted.".if_supports_color(Stdout, |t| t.green())
         );
     } else {
