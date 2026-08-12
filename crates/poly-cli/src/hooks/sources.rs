@@ -6,7 +6,10 @@ use std::process::Command;
 
 use anyhow::{Context, bail};
 use fs2::FileExt;
-use poly_config::{HookMachinePreferences, HookSource, HooksConfig, Job, Stage, StageConfig, load_hook_preferences};
+use poly_config::{
+    BuiltinHooks, CargoHooks, HookMachinePreferences, HookSource, HooksConfig, Job, Stage, StageConfig,
+    load_hook_preferences,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::remote::{
@@ -312,13 +315,7 @@ pub fn merge_stage(
         );
         let mut stage = StageConfig::default();
         stage.commands.insert(selected.manifest.id.clone(), job);
-        let mut config = HooksConfig {
-            present: true,
-            ..HooksConfig::default()
-        };
-        config
-            .stage_configs
-            .insert(super::lower::from_hook_stage(spec.stage), stage);
+        let config = synthetic_config(super::lower::from_hook_stage(spec.stage), stage);
         let mut lowered = super::lower::lower_stage(
             &config,
             poly_bin,
@@ -341,6 +338,34 @@ pub fn merge_stage(
     }
     spec.hooks.sort_by_key(|hook| hook.priority);
     Ok(())
+}
+
+/// The throwaway `[hooks]` config used to lower a single selected remote hook.
+///
+/// A remote catalog contributes only the hooks the consumer selected from it —
+/// it must never re-derive the consumer's own builtins. `lower_stage` emits
+/// `[hooks.builtin]` hooks alongside the stage's jobs, and the `cargo` group is
+/// default-on whenever a `[hooks]` section is present, so lowering through a
+/// `present = true` config duplicated `cargo-clippy`/`sort`/`machete`/`deny`
+/// under the `{source}:` prefix once per `[[hooks.sources]]` entry. Every
+/// builtin is therefore pinned off explicitly instead of being left to
+/// `HooksConfig::default()`, whose `cargo: None` means "on when a `[hooks]`
+/// section exists" rather than "off". Catalog tools are kept out the same way,
+/// by lowering against an empty `ToolsConfig`.
+fn synthetic_config(stage: Stage, stage_config: StageConfig) -> HooksConfig {
+    let mut config = HooksConfig {
+        present: false,
+        builtin: BuiltinHooks {
+            cargo: Some(CargoHooks {
+                enabled: false,
+                ..CargoHooks::default()
+            }),
+            ..BuiltinHooks::default()
+        },
+        ..HooksConfig::default()
+    };
+    config.stage_configs.insert(stage, stage_config);
+    config
 }
 
 fn provision_source(
@@ -668,6 +693,43 @@ run = "printf"
             spec.hooks[0].env.get("POLY_HOOK_SOURCE_ROOT"),
             Some(&producer.path().canonicalize().unwrap().to_string_lossy().into_owned())
         );
+    }
+
+    /// A remote source contributes exactly the hooks it selects — never the
+    /// consumer's builtins.
+    ///
+    /// `lower_stage` also emits `[hooks.builtin]` entries, and the `cargo` group
+    /// is default-on whenever a `[hooks]` section is present, so a synthetic
+    /// config carrying `present = true` re-emitted `cargo-clippy`/`sort`/
+    /// `machete`/`deny` once per source. The consumer root here carries a
+    /// `Cargo.toml` so that default-on gate is live (the group is additionally
+    /// `PATH`-probed, so the duplication only surfaces where the tools exist).
+    #[test]
+    fn remote_source_contributes_only_its_selected_hooks() {
+        let consumer = tempfile::tempdir().unwrap();
+        let producer = tempfile::tempdir().unwrap();
+        std::fs::write(consumer.path().join("Cargo.toml"), "[workspace]\n").unwrap();
+        write_catalog(producer.path());
+        preferences(consumer.path());
+        let config = write_consumer(consumer.path(), producer.path(), &["validate"]);
+        let selected = provision(consumer.path(), &config, false, true).unwrap();
+        let mut spec = poly_hooks::StageSpec {
+            stage: poly_hooks::Stage::PreCommit,
+            ..poly_hooks::StageSpec::default()
+        };
+
+        merge_stage(
+            &mut spec,
+            &selected,
+            Path::new("poly"),
+            &[],
+            &poly_config::HookCacheMode::Off,
+            consumer.path(),
+        )
+        .unwrap();
+
+        let ids: Vec<&str> = spec.hooks.iter().map(|hook| hook.id.as_str()).collect();
+        assert_eq!(ids, ["rules:validate"]);
     }
 
     #[test]
