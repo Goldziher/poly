@@ -130,3 +130,69 @@ fn format_honors_language_option() {
         "[fmt.yaml.yaml] quotes must reach pretty_yaml; got: {out}"
     );
 }
+
+// --- Go/Helm template detection stays byte-for-byte strict for YAML ----------
+//
+// The Markdown backend gained a code-block carve-out (template syntax inside a
+// fenced/indented block or an inline span is documentation, not a template).
+// YAML has no such construct, so its detection must be unchanged: anything that
+// looks like a Markdown fence or backtick span in a YAML file is just a scalar.
+
+/// The exact reason string the backends report for a Go/Helm template file.
+const TEMPLATE_SKIP: &str = "Go/Helm template syntax";
+
+/// A real Helm chart template — must always be skipped.
+const HELM_TEMPLATE: &str = "\
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include \"chart.fullname\" . }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+{{- if .Values.enabled }}
+  template:
+    metadata:
+      labels:
+{{ toYaml .Values.labels | nindent 8 }}
+{{- end }}
+";
+
+#[test]
+fn helm_yaml_is_still_skipped() {
+    let engine = YamlEngine;
+    let src = make_src("templates/deployment.yaml", HELM_TEMPLATE);
+    assert_eq!(engine.skip_reason(&src), Some(TEMPLATE_SKIP));
+    assert_eq!(engine.lint(&src, &engine_cfg()).unwrap().len(), 0);
+    assert!(matches!(
+        engine.format(&src, &engine_cfg()).unwrap(),
+        FormatOutput::Unchanged
+    ));
+}
+
+#[test]
+fn yaml_template_inside_backticks_or_fences_is_still_skipped() {
+    let engine = YamlEngine;
+    let fenced = make_src("notes.yaml", "notes: |\n  ```\n  image: {{ .Values.image }}\n  ```\n");
+    assert_eq!(
+        engine.skip_reason(&fenced),
+        Some(TEMPLATE_SKIP),
+        "a Markdown fence inside YAML is a plain scalar, not a code block"
+    );
+
+    let inline = make_src("notes.yaml", "note: \"see `{{ .Values.image }}`\"\n");
+    assert_eq!(
+        engine.skip_reason(&inline),
+        Some(TEMPLATE_SKIP),
+        "backticks inside YAML are plain characters, not an inline code span"
+    );
+}
+
+#[test]
+fn github_actions_expressions_are_still_not_templates() {
+    let engine = YamlEngine;
+    let src = make_src(
+        ".github/workflows/ci.yaml",
+        "jobs:\n  build:\n    if: ${{ github.event_name == 'push' }}\n",
+    );
+    assert_eq!(engine.skip_reason(&src), None);
+}

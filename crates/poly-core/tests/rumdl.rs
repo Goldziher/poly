@@ -279,3 +279,158 @@ fn unformatted_mdx_formats_cleanly() {
         ),
     }
 }
+
+// --- Go/Helm template detection is code-block aware (Markdown + MDX) ---------
+//
+// Markdown routinely *documents* template syntax inside code. poly's own
+// CHANGELOG does, and used to be skipped wholesale because of it. Template
+// actions inside a fenced block, an indented block, or an inline code span are
+// documentation; only actions in live prose mark the file as a real template.
+
+/// The exact reason string the backends report for a Go/Helm template file.
+const TEMPLATE_SKIP: &str = "Go/Helm template syntax";
+
+/// A CHANGELOG-shaped document: every template action sits inside code.
+const CHANGELOG_SHAPED: &str = "\
+# Changelog
+
+## 0.1.0
+
+- `poly fmt` no longer reports a file it declined to inspect as checked:
+
+  ```console
+  $ poly fmt --check Taskfile.yaml     # skipped: contains {{.CLI_ARGS}}
+  All formatted. (1 file(s) scanned)
+  ```
+
+- Templates are detected by scanning content for actions (`{{ .Values.x }}`,
+  `{{- if … }}`, `{{/* … */}}`), not by filename.
+";
+
+#[test]
+fn fenced_and_inline_template_syntax_does_not_skip_markdown() {
+    let engine = RumdlEngine;
+    let src = md_src(CHANGELOG_SHAPED);
+    assert_eq!(
+        engine.skip_reason(&src),
+        None,
+        "a changelog that only documents template syntax must be checked, not skipped"
+    );
+}
+
+#[test]
+fn a_documented_template_is_actually_formatted_not_bypassed() {
+    let engine = RumdlEngine;
+    // Trailing whitespace on the prose line is the observable proof that the
+    // formatter ran instead of short-circuiting on the template guard.
+    let content = format!("{CHANGELOG_SHAPED}\nTrailing whitespace here.   \n");
+    let src = md_src(&content);
+    assert_eq!(engine.skip_reason(&src), None);
+    let formatted = match engine.format(&src, &default_cfg()).expect("format succeeded") {
+        FormatOutput::Formatted(text) => text,
+        FormatOutput::Unchanged => panic!("expected the trailing whitespace to be fixed"),
+    };
+    assert!(
+        formatted.contains("Trailing whitespace here.\n"),
+        "trailing whitespace must be stripped; got: {formatted:?}"
+    );
+    assert!(
+        formatted.contains("{{.CLI_ARGS}}"),
+        "the documented template action must survive verbatim; got: {formatted:?}"
+    );
+}
+
+#[test]
+fn template_syntax_outside_a_code_block_still_skips_markdown() {
+    let engine = RumdlEngine;
+    let src = md_src("# {{ .Chart.Name }}\n\nRelease {{ .Release.Name }} is ready.\n");
+    assert_eq!(engine.skip_reason(&src), Some(TEMPLATE_SKIP));
+    assert_eq!(engine.lint(&src, &default_cfg()).unwrap().len(), 0);
+    assert!(matches!(
+        engine.format(&src, &default_cfg()).expect("format succeeded"),
+        FormatOutput::Unchanged
+    ));
+}
+
+#[test]
+fn template_syntax_after_a_closed_fence_still_skips_markdown() {
+    let engine = RumdlEngine;
+    let src = md_src("```\n{{ .Values.a }}\n```\n\nLive: {{ .Values.b }}\n");
+    assert_eq!(engine.skip_reason(&src), Some(TEMPLATE_SKIP));
+}
+
+#[test]
+fn longer_and_nested_fences_with_info_strings_are_code() {
+    let engine = RumdlEngine;
+    let src =
+        md_src("Docs:\n\n````markdown\n```yaml\nimage: {{ .Values.image }}\n```\n````\n\n~~~yaml\n{{- if .x }}\n~~~\n");
+    assert_eq!(
+        engine.skip_reason(&src),
+        None,
+        "a longer outer fence must swallow the inner fence and its info string"
+    );
+}
+
+#[test]
+fn a_short_fence_does_not_close_a_longer_one() {
+    let engine = RumdlEngine;
+    // The inner ``` must NOT close the ```` block, so the trailing action stays
+    // inside code and the file is still formatted.
+    let src = md_src("````\n```\n{{ .Values.x }}\n```\n````\n\nPlain prose.\n");
+    assert_eq!(engine.skip_reason(&src), None);
+}
+
+#[test]
+fn an_unterminated_fence_is_scanned_as_prose_and_still_skips() {
+    let engine = RumdlEngine;
+    // Conservative direction: declining to format costs nothing, reflowing a
+    // real template destroys it. An unclosed fence is a malformed document, so
+    // its remainder is re-scanned as live prose.
+    let src = md_src("Docs:\n\n```yaml\nimage: {{ .Values.image }}\n");
+    assert_eq!(engine.skip_reason(&src), Some(TEMPLATE_SKIP));
+}
+
+#[test]
+fn indented_code_blocks_are_code() {
+    let engine = RumdlEngine;
+    let src = md_src("Example:\n\n    image: {{ .Values.image }}\n\nDone.\n");
+    assert_eq!(engine.skip_reason(&src), None);
+}
+
+#[test]
+fn an_indented_line_continuing_a_paragraph_is_prose() {
+    let engine = RumdlEngine;
+    // CommonMark: an indented code block cannot interrupt a paragraph.
+    let src = md_src("A wrapped paragraph\n    image: {{ .Values.image }}\n");
+    assert_eq!(engine.skip_reason(&src), Some(TEMPLATE_SKIP));
+}
+
+#[test]
+fn an_unterminated_inline_span_is_prose() {
+    let engine = RumdlEngine;
+    let src = md_src("A stray backtick ` then {{ .Values.image }} live.\n");
+    assert_eq!(engine.skip_reason(&src), Some(TEMPLATE_SKIP));
+}
+
+#[test]
+fn mdx_gets_the_same_code_block_carve_out() {
+    let engine = RumdlEngine;
+    let mut src = md_src(CHANGELOG_SHAPED);
+    src.language = Language::Mdx;
+    src.path = PathBuf::from("test.mdx");
+    assert_eq!(engine.skip_reason(&src), None);
+
+    let mut live = md_src("Release {{ .Release.Name }}\n");
+    live.language = Language::Mdx;
+    live.path = PathBuf::from("live.mdx");
+    assert_eq!(engine.skip_reason(&live), Some(TEMPLATE_SKIP));
+}
+
+#[test]
+fn mdx_object_literals_are_still_not_templates() {
+    let engine = RumdlEngine;
+    let mut src = md_src("<Note style={{ color: \"red\" }}>hi</Note>\n");
+    src.language = Language::Mdx;
+    src.path = PathBuf::from("jsx.mdx");
+    assert_eq!(engine.skip_reason(&src), None);
+}

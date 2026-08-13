@@ -27,7 +27,7 @@ use rumdl_lib::{
 };
 
 use super::rule_config::{RuleSelection, string_list, union_codes, warn_and_skip_blank};
-use super::template::{GO_TEMPLATE_SKIP, contains_go_template};
+use super::template::{GO_TEMPLATE_SKIP, contains_go_template_markdown};
 use crate::config::EngineConfig;
 use crate::engine::{Capabilities, Diagnostic, Edit, Engine, FormatOutput, Severity, SourceFile, Span};
 use crate::language::Language;
@@ -40,10 +40,12 @@ pub struct RumdlEngine;
 /// default-disabled proprietary rules **and** the lint-mode suppression of the
 /// `Whitespace` (formatting) category, plus MDX-flavor routing, the MDX-only
 /// default-disabled rules (see [`MDX_DEFAULT_DISABLED_RULES`]), the
-/// Go/Helm-template skip, and the MD020 guard ([`GuardedMd020`]). Bump the
+/// code-block-aware Go/Helm-template skip (template syntax inside a fenced or
+/// indented code block or an inline span is documentation, not a template — see
+/// [`contains_go_template_markdown`]), and the MD020 guard ([`GuardedMd020`]). Bump the
 /// suffix whenever any of these change so stale cached diagnostics are
 /// invalidated.
-const RUMDL_VERSION: &str = "0.2.54+defaults5-mdx-rules-tmplskip-md020guard-nostructfmt";
+const RUMDL_VERSION: &str = "0.2.54+defaults5-mdx-rules-tmplskip-codeaware-md020guard-nostructfmt";
 
 /// rumdl-proprietary stylistic rules disabled by default.
 ///
@@ -99,11 +101,11 @@ impl Engine for RumdlEngine {
     }
 
     fn skip_reason(&self, src: &SourceFile) -> Option<&'static str> {
-        contains_go_template(&src.content).then_some(GO_TEMPLATE_SKIP)
+        contains_go_template_markdown(&src.content).then_some(GO_TEMPLATE_SKIP)
     }
 
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
-        if contains_go_template(&src.content) {
+        if contains_go_template_markdown(&src.content) {
             return Ok(Vec::new());
         }
         let rumdl_cfg = build_rumdl_config(cfg, &src.language);
@@ -137,7 +139,7 @@ impl Engine for RumdlEngine {
     }
 
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
-        if contains_go_template(&src.content) {
+        if contains_go_template_markdown(&src.content) {
             return Ok(FormatOutput::Unchanged);
         }
         let rumdl_cfg = build_rumdl_config(cfg, &src.language);
