@@ -244,8 +244,23 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   the package-cache or build-directory lock held by a process outside the run — a developer's
   own build, `rust-analyzer` — prints nothing while it waits, and was indistinguishable from a
   genuinely wedged hook: both said "still running". The liveness notice now says it is waiting
-  on a lock and names the resource. Note honestly: the time budget still counts during the
-  wait — poly does not own that queue and cannot pause it — and the notice says so.
+  on a lock and names the resource.
+
+- **A cargo hook is no longer charged for a package-cache lock held outside the run.** Before
+  spawning a hook in the `cargo` exclusion set, poly probes `$CARGO_HOME/.package-cache` and,
+  if a process outside the run holds it, waits for it to clear **before** starting the hook's
+  time budget — so a `cargo deny check` that takes seconds on its own can no longer be killed
+  at the whole-project budget for a wait it did not cause. The wait prints
+  `⏸ waiting to start: <hook> … the hook has not been spawned and its time budget has not
+  started`, is bounded by half the hook's own budget (no new configuration — a hook with
+  timeouts disabled never waits), and on expiry the hook is started anyway rather than
+  withheld: a check that did not run must never be reported as a pass.
+
+  This mitigates the common case, and says so rather than claiming a fix. The lock can still be
+  taken between the probe and the spawn, cargo re-acquires it mid-run, and the artifact-
+  directory lock (`<target-dir>/<profile>/.cargo-lock`) is not probed at all. For those, the
+  post-spawn notice above remains the report — and it says outright that the budget is still
+  counting, because poly cannot pause a queue it does not own.
 
 - **A hook that finished on its own is no longer reported as killed.** At the timeout boundary
   poly entered the kill path, reaped the child's real exit status, and then reported `TimedOut`

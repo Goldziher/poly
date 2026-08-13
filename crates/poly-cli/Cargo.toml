@@ -52,3 +52,4 @@ which.workspace = true
 
 [dev-dependencies]
 insta.workspace = true
+libc.workspace = true

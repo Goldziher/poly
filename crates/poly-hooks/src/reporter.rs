@@ -431,6 +431,28 @@ pub fn still_running_line(id: &str, elapsed: Duration, limit: Option<Duration>, 
     }
 }
 
+/// The line a hook prints while poly is holding it back, **before** it is
+/// spawned, because a process outside this run holds the lock it would block on
+/// (see [`crate::cargo_lock`]).
+///
+/// It mirrors [`still_running_line`]'s queued form — same marker, same "waiting"
+/// vocabulary, the same resource name — so the two lock waits read as one
+/// concept. What it must not share is the closing clause: this hook has not been
+/// spawned, so its budget has *not* started, and saying otherwise would describe
+/// the exact defect this wait exists to remove. It names the moment poly will
+/// give up and start the hook anyway, so the wait is bounded on screen and not
+/// only in the code.
+#[must_use]
+pub fn lock_wait_line(id: &str, waited: Duration, bound: Duration, resource: &str) -> String {
+    let waited = format_duration(waited);
+    let bound = format_duration(bound);
+    format!(
+        "  {LOCK_WAIT_MARKER} waiting to start: {id} ({waited} waited, starting anyway at {bound}) — \
+         cargo's {resource} lock is held by a process outside this run; \
+         the hook has not been spawned and its time budget has not started"
+    )
+}
+
 fn append_failure_output(report: &mut String, status: &crate::model::HookStatus, output: &[u8]) {
     use std::fmt::Write as _;
 
@@ -557,6 +579,58 @@ mod tests {
             still_running_line("cargo:clippy", Duration::from_secs(90), None, Some("build directory")),
             "  ⏸ waiting on a lock: cargo:clippy (90.0s elapsed, no timeout) — blocked on cargo's \
              build directory lock held by a process outside this run, doing no work; the time budget is still counting"
+        );
+    }
+
+    /// The pre-spawn wait is a fourth state, and it says the opposite of the
+    /// post-spawn one about the budget: the hook has not been spawned, so its
+    /// clock has not started. Reading these two lines the same way is the
+    /// misreport the wait exists to prevent.
+    #[test]
+    fn a_hook_held_back_before_it_is_spawned_says_its_budget_has_not_started() {
+        assert_eq!(
+            lock_wait_line(
+                "cargo:cargo-deny",
+                Duration::from_secs(4),
+                Duration::from_mins(15),
+                "package cache",
+            ),
+            "  ⏸ waiting to start: cargo:cargo-deny (4.0s waited, starting anyway at 900.0s) — cargo's \
+             package cache lock is held by a process outside this run; the hook has not been spawned and \
+             its time budget has not started"
+        );
+    }
+
+    /// Four states, four readings: queued before spawn, running, queued after
+    /// spawn, killed. No line may be mistaken for another.
+    #[test]
+    fn the_four_hook_states_are_never_mistakable_for_one_another() {
+        let elapsed = Duration::from_secs(45);
+        let limit = Duration::from_mins(30);
+        let before = lock_wait_line("cargo-deny", elapsed, limit / 2, "package cache");
+        let after = still_running_line("cargo-deny", elapsed, Some(limit), Some("package cache"));
+        let running = still_running_line("cargo-deny", elapsed, Some(limit), None);
+
+        assert!(
+            before.contains("its time budget has not started"),
+            "a hook that was never spawned has no clock running: {before}"
+        );
+        assert!(
+            after.contains("the time budget is still counting"),
+            "a spawned hook's clock keeps running whatever it is blocked on: {after}"
+        );
+        assert!(
+            !before.contains("still running") && !running.contains("waiting"),
+            "a held-back hook and a working hook must not read alike"
+        );
+        assert_ne!(before, after, "the two lock waits are different states");
+
+        // The fourth state is a final one and carries its own glyph; a wait must
+        // never be able to render as a kill.
+        assert_eq!(TIMED_OUT_MARKER, "⧖");
+        assert!(
+            !before.contains(TIMED_OUT_MARKER) && !after.contains(TIMED_OUT_MARKER),
+            "a hook that is waiting has not been killed"
         );
     }
 

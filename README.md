@@ -783,6 +783,24 @@ whoever is running the hooks on a machine the config author never saw, and becau
 killed. Disabling restores the previous behaviour exactly: no deadline, no liveness notice,
 no separate process group.
 
+A cargo hook gets one extra protection, and it needs no configuration. Cargo serialises on
+`$CARGO_HOME/.package-cache`, so a hook can sit blocked behind `rust-analyzer` or your own
+`cargo build` without doing any work — and be killed for waiting. Before starting a hook in the
+`cargo` exclusion set, poly checks that lock and, if somebody outside the run holds it, waits
+for it to clear **before** the hook's clock starts:
+
+```text
+  ⏸ waiting to start: cargo-deny (2.0s waited, starting anyway at 900.0s) — cargo's package
+    cache lock is held by a process outside this run; the hook has not been spawned and its
+    time budget has not started
+```
+
+The wait is bounded by half the hook's own budget (a hook with timeouts disabled never waits),
+and when that runs out the hook is started anyway rather than withheld. It mitigates the common
+case rather than eliminating it: the lock can be taken between the check and the start, and the
+artifact-directory lock a full `cargo build` holds is not checked at all. When that happens the
+hook is charged for the wait, and the `⏸ waiting on a lock: …` notice says so.
+
 #### Hook exit codes
 
 `poly hooks run` distinguishes three outcomes, so a CI job reading only the exit status can

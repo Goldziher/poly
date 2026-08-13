@@ -3,8 +3,9 @@
 - Status: Accepted
 - Date: 2026-08-12 (amended 2026-08-13: the two deferred gaps are closed; a killed hook's
   honesty now rests on the scheduling property in ADR 0024. Amended again 2026-08-13: the
-  output preview is fed while the hook runs, and the external-lock residual is re-examined
-  against a measured lock probe)
+  output preview is fed while the hook runs, the external-lock residual is re-examined against
+  a measured lock probe, and that probe is now wired — a cargo hook waits out cargo's
+  package-cache lock, bounded and reported, before its budget starts)
 
 ## Context
 
@@ -197,7 +198,9 @@ load-bearing for this one:
 
 What remains: a hook can still block on a lock held by a process **outside** the run — a
 `rust-analyzer` `cargo check`, a developer's own build, another repository's CI step sharing
-`CARGO_HOME`. poly cannot see that queue, so such a hook is still **charged** for the wait.
+`CARGO_HOME`. The common shape of that — the lock already held when the run reaches its cargo
+hooks — is now waited out before the hook is spawned (see "Probing cargo's lock before
+spawning" below); everything the probe cannot catch is still **charged** to the hook.
 It is no longer *misreported* as one, though: the supervisor watches the child's output for
 cargo's `Blocking waiting for file lock on <resource>` line, and while that is the last thing
 the hook said, the liveness notice reads `⏸ waiting on a lock: <id> … — blocked on cargo's
@@ -208,9 +211,9 @@ done — poly cannot verify a queue it does not own, and a hook that stops being
 strength of one line the child printed is a timeout that can be talked out of firing. The
 budget overrides remain the escape hatch.
 
-### Probing cargo's lock before spawning: measured, viable, not yet wired
+### Probing cargo's lock before spawning: measured, then wired
 
-*(added 2026-08-13)*
+*(added 2026-08-13; wired the same day)*
 
 The shape that *would* fix the residual honestly is the one the exclusion sets already use:
 move the wait to **before** the clock starts. If poly can tell that cargo's lock is held before
@@ -254,11 +257,51 @@ What it does **not** buy, and why it is a mitigation rather than a fix:
   (ADR 0024), which is the correct place to hang it — *not* the supervisor, which sees only an
   argv and would have to sniff `cargo` out of a shell line.
 
-Verdict: **viable, and the right eventual shape**, but it belongs to the hook runner and the
-exclusion-set machinery rather than to `supervise.rs`, and it must ship with its own bound and
-its own status so "queued on an external lock" is never conflated with "running" or "wedged".
-Until it does, the liveness notice naming the wait — and stating that the budget keeps
-counting — remains the honest report, and the budget overrides remain the escape hatch.
+#### What shipped
+
+`poly-hooks/src/cargo_lock.rs`, called from `runner::run_hook` immediately before the hook's
+batches are spawned and immediately before its clock starts:
+
+1. **Only cargo hooks wait.** The gate is `Hook::is_cargo()` — membership of the ADR 0024
+   `serial = "cargo"` exclusion set, decided during lowering where the command line is still
+   understood. The supervisor is not involved and never sniffs an argv for `cargo`.
+2. **Only the package-cache lock is probed.** `$CARGO_HOME/.package-cache`, opened `O_RDONLY`
+   with no `O_CREAT`, `flock(LOCK_EX|LOCK_NB)`, released immediately. A missing file, an
+   unreadable one, or a non-Unix build all read as "nothing to wait for": poly must never
+   withhold a hook because it could not see a lock. The artifact-directory lock is
+   **deliberately not probed** — see the unmitigated list below.
+3. **The bound is derived, not configured.** `WaitPlan::for_budget` gives the wait *half* the
+   hook's own resolved budget (`LOCK_WAIT_BUDGET_DIVISOR`). No new config key: the question
+   "how long is it worth delaying this hook?" is already answered by how long the hook may run,
+   and a knob nobody sets is protection nobody gets. Half rather than all, so a hook that waits
+   out the whole bound and then overruns is still killed within 1.5× its configured limit. A
+   hook whose budget is **disabled** does not wait at all — that escape hatch promises the
+   pre-timeout path exactly, and an unbounded hook has no clock to protect.
+4. **The wait is visible, and is its own state.** After two seconds (`LOCK_WAIT_ANNOUNCE_AFTER`,
+   far shorter than the 15-second still-running threshold, because poly deliberately holding a
+   hook back is not the normal case) the run prints `⏸ waiting to start: <id> (<n> waited,
+   starting anyway at <bound>) — cargo's package cache lock is held by a process outside this
+   run; the hook has not been spawned and its time budget has not started`. It shares the `⏸`
+   marker and the vocabulary of the post-spawn notice, and contradicts it on the one point that
+   differs: this hook has no clock running. Four states now read differently — queued before
+   spawn, running, queued after spawn, killed.
+5. **On expiry the hook is spawned anyway**, and the post-spawn notice takes over. Refusing to
+   run it would turn somebody else's `cargo build` into a failed commit, and a check that did
+   not run must never be reported as a pass; running late is the lesser harm. A `warn!` records
+   that the bound expired, so the late start is not silent.
+
+#### What remains unmitigated
+
+- **The probe/spawn race.** The lock can be taken in the window between the probe and the
+  spawn, and cargo re-acquires the package cache during a run, not only at startup.
+- **The artifact-directory lock** (`<target-dir>/<profile>/.cargo-lock`) — the one a whole
+  `cargo build` holds for its full duration — is not probed at all, because both the target
+  directory (poly may inject `CARGO_TARGET_DIR`) and the profile would have to be guessed from
+  a shell line, and guessing wrong is silent.
+
+For both, the post-spawn liveness notice remains the report, and the budget overrides remain
+the escape hatch. This is a **mitigation of the common case, not a fix**, and neither the code
+nor the report claims otherwise.
 
 ## Alternatives considered
 

@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 use indicatif::ProgressBar;
 use tracing::warn;
 
+use crate::cargo_lock::{self, PACKAGE_CACHE_RESOURCE, Wait, WaitPlan};
 use crate::model::{Hook, HookCommand, HookStatus, SccacheSettings, StepOutcome, TimeoutReason};
 use crate::process::{Cmd, Error as ProcessError, OutputSink};
 use crate::reporter::{CaptureSink, PreviewSink};
@@ -379,12 +380,50 @@ fn announce_still_running(
     limit: Option<Duration>,
     waiting_on: Option<&str>,
 ) {
-    let line = crate::reporter::still_running_line(id, elapsed, limit, waiting_on);
-    // A hidden bar swallows `println`, which is precisely the case that must not
-    // stay silent: progress requested, but nothing is drawing it.
+    announce(bar, crate::reporter::still_running_line(id, elapsed, limit, waiting_on));
+}
+
+/// Put `line` on screen above the live spinners, or on stderr when nothing is
+/// drawing them.
+///
+/// A hidden bar swallows `println`, which is precisely the case that must not
+/// stay silent: progress requested, but nothing is drawing it.
+fn announce(bar: Option<&ProgressBar>, line: String) {
     match bar.filter(|bar| !bar.is_hidden()) {
         Some(bar) => bar.println(line),
         None => eprintln!("{line}"),
+    }
+}
+
+/// Hold `id` back until cargo's package-cache lock is free, so a holder outside
+/// this run is not charged against the hook's budget.
+///
+/// Called only for a hook in the cargo exclusion set ([`Hook::is_cargo`]), and
+/// only from the runner, which knows what the hook is; the supervisor sees an
+/// argv it cannot classify and must not try.
+///
+/// This is a mitigation and not a fix — the lock can be taken between the probe
+/// and the spawn, and cargo re-takes it mid-run — so the hook is spawned when the
+/// bound expires rather than being withheld: a check that did not run must never
+/// be reported as a pass, and running late beats failing a commit for somebody
+/// else's `cargo build`. From that point the post-spawn notice, driven by the
+/// child's own `Blocking waiting for file lock` line, describes the rest.
+pub(super) fn await_cargo_package_cache(id: &str, budget: Budget, bar: Option<&ProgressBar>) {
+    let (Some(path), Some(plan)) = (cargo_lock::package_cache_lock(), WaitPlan::for_budget(budget)) else {
+        return;
+    };
+    let waited = cargo_lock::wait_until_free(&path, plan, &|waited| {
+        announce(
+            bar,
+            crate::reporter::lock_wait_line(id, waited, plan.bound, PACKAGE_CACHE_RESOURCE),
+        );
+    });
+    if let Wait::Expired(waited) = waited {
+        warn!(
+            hook = id,
+            "cargo's {PACKAGE_CACHE_RESOURCE} lock was still held after {waited:.1?}; starting the hook anyway — \
+             its budget now includes whatever is left of that wait"
+        );
     }
 }
 

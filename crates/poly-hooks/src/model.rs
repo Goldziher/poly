@@ -212,6 +212,20 @@ impl Hook {
     pub fn is_serial(&self) -> bool {
         self.require_serial || !self.parallel
     }
+
+    /// Whether this hook belongs to the cargo exclusion set — i.e. whether
+    /// running it means running `cargo`.
+    ///
+    /// The single classifier for that question. Membership is decided during
+    /// lowering, where the command line is still understood (an explicit
+    /// `serial = "cargo"`, or a `run` line whose program is `cargo` /
+    /// `cargo-*`), so everything downstream — the scheduler, and the
+    /// package-cache wait in [`crate::cargo_lock`] — reads one answer instead of
+    /// re-deriving it from an argv it cannot parse.
+    #[must_use]
+    pub fn is_cargo(&self) -> bool {
+        self.serial_group.as_deref() == Some(CARGO_SERIAL_GROUP)
+    }
 }
 
 /// The per-stage execution unit: precondition → before → hooks → after.

@@ -22,6 +22,8 @@
 //! - [`concurrency`] — rayon pool sizing + `ARG_MAX` file batching.
 //! - [`snapshot`] — staged-content snapshots for whole-workspace hook isolation.
 //! - [`timeout`] — per-hook time budgets and the still-running announce cadence.
+//! - [`cargo_lock`] — probing cargo's package-cache lock so a holder outside the
+//!   run is waited out before a cargo hook's budget starts.
 //! - [`supervise`] — deadline-bounded child execution that kills the process tree.
 //! - [`runner`] — the native rayon hook runner ([`run`]).
 //!
@@ -43,6 +45,7 @@
 pub mod consts;
 pub mod identify;
 
+pub mod cargo_lock;
 pub mod cleanup;
 pub mod concurrency;
 pub mod filter;

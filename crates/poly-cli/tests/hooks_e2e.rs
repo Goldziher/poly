@@ -308,3 +308,102 @@ run = "touch {}"
         "installed pre-commit shim did not trigger the native runner"
     );
 }
+
+/// A cargo job held back before it is spawned must **say so**, naming the lock
+/// and saying that its budget has not started.
+///
+/// The state it must not be confused with is "running": a hook waiting on
+/// cargo's package-cache lock is silent, and silence that looks like work is
+/// exactly the report this subsystem exists to prevent. The notice goes to
+/// stderr, so this runs the real binary and reads the real stream rather than
+/// asserting on a formatter in isolation.
+#[test]
+fn a_cargo_job_held_back_by_an_external_lock_reports_the_wait() {
+    use std::io::Write as _;
+    use std::os::fd::AsRawFd as _;
+
+    /// Longer than the pre-spawn announce threshold (2s), so exactly one notice
+    /// is due while the lock is held.
+    const HOLD: std::time::Duration = std::time::Duration::from_secs(3);
+
+    let repo = init_repo();
+    let root = repo.path();
+    write(
+        root,
+        "poly.toml",
+        r#"
+[hooks.pre-commit]
+parallel = true
+
+[[hooks.pre-commit.jobs]]
+name = "cargo-deny"
+run = "true"
+serial = "cargo"
+workspace = true
+"#,
+    );
+    write(root, "tracked.txt", "content");
+    git(root, &["add", "tracked.txt"]);
+
+    let cargo_home = TempDir::new().expect("cargo home");
+    // Load the binary before the clock starts. A cold `poly` — hundreds of
+    // megabytes unoptimised — can take seconds to map in, and that would burn
+    // the hold before the run ever reaches the probe, leaving a green test that
+    // proved nothing. It runs against the same empty `CARGO_HOME`, so the test
+    // never probes (or waits on) the developer's real package cache.
+    let warm = Command::new(POLY)
+        .args(["hooks", "run", "pre-commit"])
+        .current_dir(root)
+        .env("CARGO_HOME", cargo_home.path())
+        .output()
+        .expect("poly invocation");
+    assert!(warm.status.success(), "the warm-up run must pass with a free lock");
+
+    let lock = cargo_home.path().join(".package-cache");
+    let (ready, holding) = std::sync::mpsc::channel();
+    let holder = std::thread::spawn(move || {
+        let mut file = std::fs::File::create(&lock).expect("create the package-cache lock");
+        file.write_all(b"held").expect("write the package-cache lock");
+        // SAFETY: the descriptor is owned by `file`, which outlives the call.
+        let taken = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) };
+        assert_eq!(taken, 0, "the holder must actually acquire the lock");
+        ready.send(()).expect("signal that the lock is held");
+        std::thread::sleep(HOLD);
+        // SAFETY: as above.
+        unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_UN) };
+    });
+    // The run must not start before the lock is genuinely held, or it probes a
+    // free lock and the test proves nothing.
+    holding.recv().expect("wait until the lock is held");
+
+    let output = Command::new(POLY)
+        .args(["hooks", "run", "pre-commit"])
+        .current_dir(root)
+        .env("CARGO_HOME", cargo_home.path())
+        .output()
+        .expect("poly invocation");
+    holder.join().expect("the holder thread");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "the job must still run, late: {stderr}\n{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert!(
+        stderr.contains("⏸ waiting to start: cargo-deny"),
+        "a held-back job must name itself and its state:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("cargo's package cache lock is held by a process outside this run"),
+        "the notice must name what it is waiting on:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("its time budget has not started"),
+        "a job that has not been spawned has no clock running:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("still running: cargo-deny"),
+        "a job that has not been spawned must not be reported as running:\n{stderr}"
+    );
+}

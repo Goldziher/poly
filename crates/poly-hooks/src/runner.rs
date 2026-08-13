@@ -536,12 +536,27 @@ fn run_hook(
     matched: &[&Path],
     bar: Option<&ProgressBar>,
 ) -> HookOutcome {
-    let start = Instant::now();
     let base_len = exec::base_arg_len(hook);
     let batches = crate::concurrency::partition_files(matched, base_len);
     // Resolved once per hook, not per batch: the budget is a property of the
     // hook, and each spawned batch process gets the whole of it.
     let budget = crate::timeout::budget_for(hook);
+
+    // A cargo hook can be blocked before it does any work at all by a cargo
+    // process *outside* this run — rust-analyzer, a developer's own build —
+    // holding the package-cache lock. Poly's own cargo hooks never overlap —
+    // `exclusion_chains` sees to that — so such a holder is one poly cannot
+    // schedule around: wait it out here, un-charged, and start the clock only
+    // once the lock is free. Only the cargo set takes this path, decided by the
+    // same classifier the scheduler uses.
+    if hook.is_cargo() {
+        exec::await_cargo_package_cache(&hook.id, budget, bar);
+    }
+
+    // Started after the lock wait, deliberately: everything below is time the
+    // hook actually spent running, and the reported duration must not fold in
+    // poly queueing for a lock somebody else held.
+    let start = Instant::now();
 
     let results: Vec<(HookStatus, Vec<u8>)> = batches
         .into_par_iter()
