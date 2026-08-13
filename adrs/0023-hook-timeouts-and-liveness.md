@@ -2,7 +2,9 @@
 
 - Status: Accepted
 - Date: 2026-08-12 (amended 2026-08-13: the two deferred gaps are closed; a killed hook's
-  honesty now rests on the scheduling property in ADR 0024)
+  honesty now rests on the scheduling property in ADR 0024. Amended again 2026-08-13: the
+  output preview is fed while the hook runs, and the external-lock residual is re-examined
+  against a measured lock probe)
 
 ## Context
 
@@ -91,6 +93,37 @@ exactly the line that matters. The threshold form keeps a normal run silent whil
 that a hang leaves its hook id — and its kill deadline — on screen, repeatedly, for as long as
 it hangs.
 
+### 4a. The output preview is fed while the hook runs
+
+*(added 2026-08-13)*
+
+The spinner's rolling preview was fed from `Cmd::output_with_sink_supervised` **after** the
+child exited: the supervisor captured everything on its drain threads and handed the whole
+buffer to the sink in one pass at the end. A hook that runs for two minutes therefore showed an
+empty preview for two minutes and then all of its output at once — which is precisely the
+state this ADR exists to eliminate. The preview could not distinguish a hook doing work from a
+hook doing nothing, so it answered the same question the liveness notice had to be added to
+answer, and answered it wrongly.
+
+`supervise::run_streaming` now hands the sink every byte as it arrives. Two properties are
+load-bearing and are asserted by tests rather than assumed:
+
+- **The captured output is byte-identical.** The drain threads still accumulate each pipe in
+  full; the sink is given a view of what has arrived, never a copy that could diverge. Each
+  stream reaches the sink in its own order, once, with the two pipes interleaved by arrival —
+  the same interleaving a terminal would have shown. Nothing is dropped, repeated, or
+  reordered within a stream.
+- **The sink runs on the supervising thread, never on a drain thread.** The alternative —
+  calling the sink from the two drain threads — needs a lock around the sink, and that lock is
+  held across a terminal draw. A drain thread stalled behind a redraw is a pipe nobody is
+  emptying, and a full pipe blocks the child forever: the hang, reintroduced through the same
+  back door draining exists to close. The supervisor instead copies out whatever arrived on
+  each poll (10 ms) and feeds it with no pipe lock held. This also bounds the UI cost — a
+  torrential hook costs at most one sink call per pipe per poll, where the post-mortem burst
+  cost one per 4 KiB — and it lets a sink stay single-threaded, which is why `PreviewSink`
+  needs no synchronisation. The `run_streaming` signature carries no `Send` bound on the sink,
+  so the guarantee is enforced by the type system and not merely documented.
+
 ### 5. Distinct markers, plus a legend
 
 | Marker | Meaning |
@@ -175,6 +208,58 @@ done — poly cannot verify a queue it does not own, and a hook that stops being
 strength of one line the child printed is a timeout that can be talked out of firing. The
 budget overrides remain the escape hatch.
 
+### Probing cargo's lock before spawning: measured, viable, not yet wired
+
+*(added 2026-08-13)*
+
+The shape that *would* fix the residual honestly is the one the exclusion sets already use:
+move the wait to **before** the clock starts. If poly can tell that cargo's lock is held before
+it spawns a cargo hook, it can wait for the lock to clear un-charged, exactly as a hook queued
+behind a peer in its exclusion set waits un-charged. Unlike pausing the budget on the printed
+line, nothing about it can be induced by the child's own output.
+
+The question was whether poly can observe that lock without interfering with cargo's use of it.
+Measured on macOS with cargo 1.97.1:
+
+| What was tested | Result |
+|---|---|
+| Exclusive `flock` held on `$CARGO_HOME/.package-cache`, then `cargo metadata` | Blocked for the full 7.5 s hold, printed `Blocking waiting for file lock on package cache`, then proceeded. Reproduces with a dependency-free crate, so *any* cargo subcommand queues. |
+| **Shared** `flock` held on the same file, then `cargo metadata` | Also blocked, for the full hold. Cargo asks for the lock exclusively, so "any holder at all" is the right question to ask. |
+| Non-blocking exclusive probe (`flock(LOCK_EX\|LOCK_NB)`) while a lock was held | Reported held (`EWOULDBLOCK`) on every one of 120 samples. |
+| The same probe opened `O_RDONLY`, no `O_CREAT` | Works — `flock` ignores the open mode — so the probe neither creates `$CARGO_HOME` entries nor needs write access, and a missing file reads as "free". |
+| 2 380 probes at 400/s racing a real `cargo metadata --offline` on this repo | Observed the holder (181 samples held), and cargo completed cleanly, exit 0, with no blocking notice. |
+| Exclusive `flock` held on `<target-dir>/debug/.cargo-lock`, then `cargo build` | Blocked for the full hold and printed `Blocking waiting for file lock on artifact directory`. Same mechanism, second lock. |
+
+So the probe is **sound and safe**: `flock` is advisory and per-open-file-description, poly is a
+different process from the holder, and a read-only open/try/close cannot drop or corrupt
+anyone else's lock. The only cost is a microsecond-wide window in which poly itself holds the
+lock, which a concurrent cargo would see as a brief block — not observed once in 2 380
+attempts.
+
+What it does **not** buy, and why it is a mitigation rather than a fix:
+
+- **The wait moves, it does not vanish.** Between the probe and the spawn, an external cargo
+  can take the lock; and cargo takes the package-cache lock at several points in a run, not
+  only at startup, so a hook can still be charged for a wait that begins after it started.
+- **The pre-spawn wait needs its own bound.** Waiting indefinitely for a lock poly does not own
+  reintroduces the unbounded hang this ADR exists to bound. It needs a bound of its own and, on
+  expiry, the graceful degradation of spawning anyway — which is today's behaviour, so the
+  worst case is no worse.
+- **It needs to know which hooks and which locks.** The package cache is one file and is easy;
+  the artifact-directory lock is `<target-dir>/<profile>/.cargo-lock`, and both the target dir
+  (poly may inject `CARGO_TARGET_DIR`) and the profile have to be guessed from a shell line.
+  Guessing wrong is silent — no protection, no error.
+- **Only cargo hooks may take this path.** Making every hook wait on cargo's lock would be a
+  regression. The classification already exists as the `serial = "cargo"` exclusion set
+  (ADR 0024), which is the correct place to hang it — *not* the supervisor, which sees only an
+  argv and would have to sniff `cargo` out of a shell line.
+
+Verdict: **viable, and the right eventual shape**, but it belongs to the hook runner and the
+exclusion-set machinery rather than to `supervise.rs`, and it must ship with its own bound and
+its own status so "queued on an external lock" is never conflated with "running" or "wedged".
+Until it does, the liveness notice naming the wait — and stating that the budget keeps
+counting — remains the honest report, and the budget overrides remain the escape hatch.
+
 ## Alternatives considered
 
 - **Fold timeouts into `HookStatus::Failed`.** Rejected: the two facts prompt different
@@ -191,3 +276,12 @@ budget overrides remain the escape hatch.
   holding a lock is worse than the hang.
 - **A tighter default (30–60s).** Rejected outright: a cold `cargo clippy` would be killed on
   the first commit of the day, and a linter that breaks working setups gets uninstalled.
+- **Pause the budget when the child prints cargo's lock-wait line.** Rejected, and the
+  rejection stands after the probe measurements above. The signal is a line the supervised
+  process itself prints, so any hook could exempt itself from its timeout by echoing it, and a
+  tool that wedged immediately after printing it would never be killed. Verifying the claim
+  against a real `flock` probe removes the first objection but not the second, and the
+  pre-spawn wait gets the same benefit without either.
+- **Acquire cargo's lock and hand it to the child.** Rejected: cargo takes the lock itself, so
+  poly holding it would deadlock the very hook it was protecting. Only a *probe* — try, then
+  release immediately — is safe.

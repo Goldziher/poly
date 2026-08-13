@@ -5,7 +5,13 @@
 //!
 //! - `output_with_sink`: captures stdout+stderr via `Command::output()`, then
 //!   feeds the captured bytes to `sink` post-completion (spec: "capture then
-//!   feed sink").
+//!   feed sink"). This is the un-supervised path, taken only when a hook's
+//!   budget is disabled.
+//! - `output_with_sink_supervised`: the path every bounded hook takes. It feeds
+//!   `sink` **as the child writes**, via [`crate::supervise::run_streaming`] —
+//!   a preview that only appears once the hook has finished cannot tell a hook
+//!   that is working from one that is wedged, which is the whole reason there
+//!   is a preview.
 //!
 //! There is deliberately **no PTY execution path** here. One was ported
 //! (`pty_output_with_sink` / `run_on_pty`, a blocking read loop on the master
@@ -254,6 +260,12 @@ impl Cmd {
     /// `notify` receives the elapsed time and, when the child last reported
     /// itself queued behind a lock, the resource it is waiting for — see
     /// [`crate::supervise::LockWait`].
+    ///
+    /// Unlike [`Cmd::output_with_sink`], `sink` is fed **while the child runs**
+    /// — that is what makes a progress preview a preview rather than a
+    /// post-mortem, and it is the only thing that distinguishes a hook doing
+    /// work from one that is wedged. The sink is still only ever touched from
+    /// this thread; [`crate::supervise::run_streaming`] carries that guarantee.
     pub fn output_with_sink_supervised<S: OutputSink>(
         &mut self,
         mut sink: S,
@@ -261,11 +273,12 @@ impl Cmd {
         notify: &dyn Fn(Duration, Option<&str>),
     ) -> Result<Supervised, Error> {
         self.log_command();
-        let supervised = crate::supervise::run(&mut self.inner, budget, notify).map_err(|cause| Error::Exec {
-            summary: self.summary.clone(),
-            cause,
-        })?;
-        feed(&mut sink, &supervised.output);
+        let supervised =
+            crate::supervise::run_streaming(&mut self.inner, budget, &mut |chunk| sink.write_chunk(chunk), notify)
+                .map_err(|cause| Error::Exec {
+                    summary: self.summary.clone(),
+                    cause,
+                })?;
         if !supervised.timed_out {
             self.maybe_check_output(&supervised.output)?;
         }
@@ -505,7 +518,11 @@ impl Display for Cmd {
 
 #[cfg(all(test, not(windows)))]
 mod tests {
+    use std::path::PathBuf;
+    use std::time::Duration;
+
     use super::{Cmd, OutputSink};
+    use crate::timeout::Budget;
 
     #[derive(Default)]
     struct RecordingSink {
@@ -536,5 +553,59 @@ mod tests {
         assert!(stdout.contains("OUT\n"), "stdout: {stdout:?}");
         assert!(stderr.contains("ERR\n"), "stderr: {stderr:?}");
         assert_ne!(sink.count, 0, "sink should have received chunks");
+    }
+
+    /// A sink that answers the child: the moment it has seen `PING`, it creates
+    /// the file the child is blocking on. Nothing else in the test knows about
+    /// wall-clock time.
+    struct AnsweringSink {
+        flag: PathBuf,
+        seen: Vec<u8>,
+    }
+
+    impl OutputSink for AnsweringSink {
+        fn write_chunk(&mut self, chunk: &[u8]) {
+            self.seen.extend_from_slice(chunk);
+            if self.seen.starts_with(b"PING\n") && !self.flag.exists() {
+                std::fs::write(&self.flag, b"").expect("answer the child");
+            }
+        }
+    }
+
+    /// THE PREVIEW HAS TO BE LIVE. Fed only once the child exits, a long hook
+    /// shows an empty preview for its entire run and then everything at once —
+    /// leaving the reader exactly where the hang left them, unable to tell a
+    /// hook that is working from one that is wedged.
+    ///
+    /// A timing margin would only make that *likely*, so the child is made to
+    /// depend on it instead: it prints `PING` and then blocks until the sink
+    /// answers by creating a file. If the sink is fed post-mortem the answer
+    /// never comes, the child blocks until its budget kills it, and every
+    /// assertion below fails at once — no margin, no flake.
+    #[test]
+    fn a_supervised_sink_is_fed_while_the_child_is_still_running() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let flag = dir.path().join("answered");
+        let mut sink = AnsweringSink {
+            flag: flag.clone(),
+            seen: Vec::new(),
+        };
+
+        let supervised = Cmd::new("/bin/sh", "live sink test")
+            .arg("-c")
+            .arg(format!(
+                "printf 'PING\\n'; while [ ! -f '{}' ]; do sleep 0.02; done; printf 'PONG\\n'",
+                flag.display()
+            ))
+            .output_with_sink_supervised(&mut sink, Budget::bounded(Duration::from_secs(10)), &|_, _| {})
+            .expect("supervised run");
+
+        assert!(
+            !supervised.timed_out,
+            "the child was killed waiting for a sink that is only fed after it exits"
+        );
+        assert_eq!(supervised.output.status.code(), Some(0));
+        assert_eq!(supervised.output.stdout, b"PING\nPONG\n");
+        assert_eq!(sink.seen, b"PING\nPONG\n");
     }
 }

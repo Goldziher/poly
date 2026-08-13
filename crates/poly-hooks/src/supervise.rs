@@ -39,41 +39,32 @@
 //! is not optional — a child that fills the 64 KiB pipe buffer while nobody
 //! reads it blocks forever, which would reintroduce the hang through the back
 //! door.
+//!
+//! What the drain threads read is also handed onward *while the child runs*
+//! ([`run_streaming`]), which is what makes the progress preview a preview: fed
+//! only after exit, a long hook shows an empty window for its whole run and then
+//! everything at once — the same "is it working or is it wedged?" question the
+//! liveness notice exists to answer. The hand-off deliberately happens on the
+//! **supervising thread**, not on the drain threads; the `output` submodule owns
+//! that machinery and says why.
 
-use std::io::Read;
+mod output;
+
 use std::process::{Child, Command, ExitStatus, Output, Stdio};
-use std::sync::{Arc, Mutex, PoisonError};
-use std::thread::JoinHandle;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 #[cfg(not(unix))]
 use windows_sys::Win32::System::JobObjects::{AssignProcessToJobObject, CreateJobObjectW, TerminateJobObject};
+
+use output::Live;
+pub use output::LockWait;
 
 use crate::timeout::Budget;
 
 /// How often the supervisor checks whether the child has exited. Matches the
 /// existing bounded-wait probe elsewhere in the workspace.
 const POLL_INTERVAL: Duration = Duration::from_millis(10);
-
-/// Read granularity for the drain threads. Large enough that a chatty child is
-/// not read a syscall at a time, small enough that a lock notice is seen while
-/// it still matters.
-const DRAIN_CHUNK: usize = 8 * 1024;
-
-/// What cargo prints — and then says nothing else — while it is queued behind a
-/// lock held by another cargo process.
-///
-/// The full line is `Blocking waiting for file lock on <resource>` (`package
-/// cache`, `build directory`, …), styled and indented like every other cargo
-/// status line. Matching the stable prefix and taking the rest as the resource
-/// keeps poly from having to enumerate cargo's lock names.
-const LOCK_WAIT_PREFIX: &str = "Blocking waiting for file lock on ";
-
-/// The same notice with no resource named, for the older/degenerate form.
-const LOCK_WAIT_BARE: &str = "Blocking waiting for file lock";
-
-/// What poly reports as the resource when cargo names none.
-const LOCK_WAIT_UNNAMED: &str = "a file";
 
 /// How long a killed process group is given to exit on `SIGTERM` before it is
 /// sent `SIGKILL`. On Windows, how long the Job Object is given to die before
@@ -117,67 +108,8 @@ impl Supervised {
     }
 }
 
-/// A child's most recent word on whether it is *working* or *queued*.
-///
-/// A hook blocked on a lock held by a cargo process poly did not start — a
-/// developer's own build, rust-analyzer — prints one `Blocking waiting for file
-/// lock` line and then nothing at all. From the outside that is
-/// indistinguishable from a wedged tool, and the liveness notice used to report
-/// both as "still running". This records what the child last said so the notice
-/// can tell them apart.
-///
-/// It holds the **latest** answer, not a latch: once the lock is granted cargo
-/// resumes printing, and the next line clears the wait. A stale "waiting on a
-/// lock" would be its own false report.
-#[derive(Debug, Default)]
-pub struct LockWait {
-    /// The resource named by the last lock notice, cleared by any later output.
-    resource: Mutex<Option<String>>,
-}
-
-impl LockWait {
-    /// What the child is waiting for, if its most recent output said so.
-    #[must_use]
-    pub fn waiting_on(&self) -> Option<String> {
-        self.lock().clone()
-    }
-
-    /// Record one complete line of the child's output.
-    ///
-    /// Blank lines are ignored: cargo's notice is often followed by an empty
-    /// line, and treating that as progress would clear the wait a moment after
-    /// announcing it.
-    fn observe_line(&self, line: &str) {
-        let line = console::strip_ansi_codes(line);
-        let line = line.trim();
-        if line.is_empty() {
-            return;
-        }
-        *self.lock() = lock_wait_resource(line).map(str::to_owned);
-    }
-
-    /// A poisoned lock still holds a valid answer: the only writer replaces the
-    /// value wholesale, so there is no torn state to recover from — and a
-    /// liveness notice must never panic the supervisor it is reporting on.
-    fn lock(&self) -> std::sync::MutexGuard<'_, Option<String>> {
-        self.resource.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-}
-
-/// The resource `line` says a tool is blocked on, if it is a cargo lock notice.
-fn lock_wait_resource(line: &str) -> Option<&str> {
-    if let Some(index) = line.find(LOCK_WAIT_PREFIX) {
-        let resource = line[index + LOCK_WAIT_PREFIX.len()..].trim();
-        return Some(if resource.is_empty() {
-            LOCK_WAIT_UNNAMED
-        } else {
-            resource
-        });
-    }
-    line.contains(LOCK_WAIT_BARE).then_some(LOCK_WAIT_UNNAMED)
-}
-
-/// Spawn `command` and wait for it under `budget`, killing it if it overruns.
+/// Spawn `command` and wait for it under `budget`, killing it if it overruns,
+/// discarding its output as it arrives.
 ///
 /// `notify` is called on the supervising thread each time the announce cadence
 /// comes due, with the elapsed time and — when the child's last output said it
@@ -192,6 +124,34 @@ pub fn run(
     budget: Budget,
     notify: &dyn Fn(Duration, Option<&str>),
 ) -> std::io::Result<Supervised> {
+    run_streaming(command, budget, &mut |_| {}, notify)
+}
+
+/// [`run`], plus every byte the child produces handed to `stream` as it arrives.
+///
+/// `stream` is called only from the supervising thread — never from a drain
+/// thread — so an implementation needs no synchronisation of its own, and one
+/// that blocks (drawing to a terminal, say) cannot stall a drain and fill the
+/// child's pipe. That is enforced by this signature and not merely intended:
+/// `stream` carries no `Send` bound, so it cannot be handed to a drain thread
+/// without changing the contract here first. It is called at most once per pipe
+/// per [`POLL_INTERVAL`], with everything that arrived since the last call, so a
+/// torrential child costs the sink a bounded number of calls rather than one per
+/// read.
+///
+/// The bytes handed to `stream` are exactly the bytes of
+/// [`Supervised::output`] — each stream's own order preserved, nothing dropped
+/// and nothing repeated — interleaved between the two pipes in arrival order.
+///
+/// # Errors
+///
+/// As [`run`].
+pub fn run_streaming(
+    command: &mut Command,
+    budget: Budget,
+    stream: &mut dyn FnMut(&[u8]),
+    notify: &dyn Fn(Duration, Option<&str>),
+) -> std::io::Result<Supervised> {
     command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -202,10 +162,9 @@ pub fn run(
     let mut child = command.spawn()?;
     let tree = ProcessTree::of(&child);
     let lock_wait = Arc::new(LockWait::default());
-    let stdout = child.stdout.take().map(|pipe| drain(pipe, Arc::clone(&lock_wait)));
-    let stderr = child.stderr.take().map(|pipe| drain(pipe, Arc::clone(&lock_wait)));
+    let mut live = Live::start(child.stdout.take(), child.stderr.take(), &lock_wait, stream);
 
-    let waited = wait_within(&mut child, &tree, budget, started, &lock_wait, notify);
+    let waited = wait_within(&mut child, &tree, budget, started, &lock_wait, &mut live, notify);
     if waited.is_err() {
         // Nothing left to report the status to; the kill is for the child's
         // benefit, not the caller's.
@@ -213,13 +172,10 @@ pub fn run(
     }
     let (status, timed_out) = waited?;
     let elapsed = started.elapsed();
+    let (stdout, stderr) = live.finish();
 
     Ok(Supervised {
-        output: Output {
-            status,
-            stdout: join(stdout),
-            stderr: join(stderr),
-        },
+        output: Output { status, stdout, stderr },
         elapsed,
         timed_out,
     })
@@ -239,10 +195,16 @@ fn wait_within(
     budget: Budget,
     started: Instant,
     lock_wait: &LockWait,
+    live: &mut Live<'_>,
     notify: &dyn Fn(Duration, Option<&str>),
 ) -> std::io::Result<(ExitStatus, bool)> {
     let mut next_notice = budget.announce_after.map(|after| started + after);
     loop {
+        // Ahead of the exit check, so a child that ends between two polls has
+        // its last words handed on by the same pass that would have seen them
+        // had it lived. Whatever is left after the pipes close is flushed by
+        // `Live::finish`.
+        live.pump();
         if let Some(status) = child.try_wait()? {
             return Ok((status, false));
         }
@@ -476,53 +438,6 @@ fn exited_within(child: &mut Child, grace: Duration) -> bool {
     false
 }
 
-/// Drain a pipe to EOF on its own thread, so a chatty child never blocks on a
-/// full buffer while the supervisor is waiting on the clock.
-///
-/// Each complete line is handed to `lock_wait` on the way past. That has to
-/// happen here rather than in the sink: the sink is fed only once the child has
-/// exited, and the whole point of the observation is to describe a child that
-/// has *not* exited.
-fn drain<R: Read + Send + 'static>(mut reader: R, lock_wait: Arc<LockWait>) -> JoinHandle<Vec<u8>> {
-    std::thread::spawn(move || {
-        let mut buffer = Vec::new();
-        let mut scanned = 0usize;
-        let mut chunk = [0u8; DRAIN_CHUNK];
-        loop {
-            match reader.read(&mut chunk) {
-                Ok(0) => break,
-                Ok(read) => buffer.extend_from_slice(&chunk[..read]),
-                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
-                Err(_) => break,
-            }
-            scanned = observe_lines(&buffer, scanned, &lock_wait);
-        }
-        buffer
-    })
-}
-
-/// Hand every complete line in `buffer` after `scanned` to `lock_wait`,
-/// returning the offset just past the last one.
-///
-/// A partial trailing line is deliberately left unscanned — cargo's notice ends
-/// with a newline, and judging a half-arrived line would let "Blocking waiting
-/// for file lock" match text that turns out to be something else.
-fn observe_lines(buffer: &[u8], scanned: usize, lock_wait: &LockWait) -> usize {
-    let mut start = scanned;
-    while let Some(offset) = buffer[start..].iter().position(|&byte| byte == b'\n') {
-        let end = start + offset;
-        lock_wait.observe_line(&String::from_utf8_lossy(&buffer[start..end]));
-        start = end + 1;
-    }
-    start
-}
-
-/// Collect a drain thread's bytes; a panicked reader yields what a dead pipe
-/// would — nothing — rather than taking the run down with it.
-fn join(handle: Option<JoinHandle<Vec<u8>>>) -> Vec<u8> {
-    handle.and_then(|handle| handle.join().ok()).unwrap_or_default()
-}
-
 #[cfg(all(test, not(windows)))]
 mod tests {
     use std::num::NonZero;
@@ -530,9 +445,9 @@ mod tests {
     use std::sync::Mutex;
     use std::sync::atomic::AtomicUsize;
     use std::sync::atomic::Ordering::Relaxed;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
-    use super::{LockWait, observe_lines, run};
+    use super::{run, run_streaming};
     use crate::timeout::Budget;
 
     fn budget(limit: Option<Duration>) -> Budget {
@@ -676,33 +591,6 @@ mod tests {
         );
     }
 
-    /// The notice arrives ANSI-styled, indented, and split across reads. None of
-    /// that may hide it, and a half-arrived line may not be judged early.
-    #[test]
-    fn a_lock_notice_is_recognised_through_styling_and_chunk_boundaries() {
-        let watch = LockWait::default();
-        let mut buffer = Vec::new();
-        buffer.extend_from_slice(b"    \x1b[1;36mBlocking\x1b[0m waiting for file lock on package ca");
-        let mut scanned = observe_lines(&buffer, 0, &watch);
-        assert_eq!(watch.waiting_on(), None, "a partial line must not be judged");
-
-        buffer.extend_from_slice(b"che\n");
-        scanned = observe_lines(&buffer, scanned, &watch);
-        assert_eq!(watch.waiting_on().as_deref(), Some("package cache"));
-
-        buffer.extend_from_slice(b"\n");
-        scanned = observe_lines(&buffer, scanned, &watch);
-        assert_eq!(
-            watch.waiting_on().as_deref(),
-            Some("package cache"),
-            "a blank line is not progress"
-        );
-
-        buffer.extend_from_slice(b"    Checking poly-hooks v0.1.0\n");
-        observe_lines(&buffer, scanned, &watch);
-        assert_eq!(watch.waiting_on(), None, "real output means the lock was granted");
-    }
-
     #[test]
     fn a_child_that_says_nothing_is_never_reported_as_waiting_on_a_lock() {
         let seen: Mutex<Vec<Option<String>>> = Mutex::new(Vec::new());
@@ -807,6 +695,108 @@ mod tests {
             !supervised.timed_out,
             "the kill did not land and the child exited 0 on its own — reporting a timeout would discard \
              the tool's own verdict"
+        );
+    }
+
+    /// Streaming may not cost the caller a byte. Both pipes are driven well past
+    /// the pipe buffer at once, so the streamed bytes are interleaved; splitting
+    /// them back apart must reproduce each captured stream exactly — anything
+    /// dropped, repeated, or reordered *within* a stream shows up here.
+    #[test]
+    fn streamed_bytes_are_exactly_the_captured_bytes_once_each() {
+        /// 40 bytes doubled to 1000 in the shell, then written this many times
+        /// per stream — comfortably past any platform's pipe buffer.
+        const WRITES: usize = 200;
+        const PAYLOAD: usize = 1000;
+
+        let mut streamed = Vec::new();
+        let supervised = run_streaming(
+            &mut sh(
+                "a=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; a=$a$a$a$a$a; a=$a$a$a$a$a; \
+                 b=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb; b=$b$b$b$b$b; b=$b$b$b$b$b; \
+                 i=0; while [ $i -lt 200 ]; do printf '%s' \"$a\"; printf '%s' \"$b\" >&2; i=$((i+1)); done",
+            ),
+            budget(Some(Duration::from_secs(30))),
+            &mut |chunk| streamed.extend_from_slice(chunk),
+            &|_, _| {},
+        )
+        .expect("run");
+
+        assert!(!supervised.timed_out);
+        assert_eq!(supervised.output.stdout.len(), WRITES * PAYLOAD);
+        assert_eq!(supervised.output.stderr.len(), WRITES * PAYLOAD);
+        let (out, err): (Vec<u8>, Vec<u8>) = streamed.iter().copied().partition(|&byte| byte == b'a');
+        assert_eq!(out, supervised.output.stdout, "stdout was not streamed verbatim");
+        assert_eq!(err, supervised.output.stderr, "stderr was not streamed verbatim");
+        assert_eq!(
+            streamed.len(),
+            supervised.output.stdout.len() + supervised.output.stderr.len(),
+            "the sink saw bytes the caller did not, or the same bytes twice"
+        );
+    }
+
+    /// A hook that goes on to wedge is the case the preview matters most for:
+    /// what it printed before it stopped is the only clue about where it stuck,
+    /// and it is worthless if it only appears once poly has killed it. So the
+    /// bytes must reach the sink while the child is still alive, not merely by
+    /// the time the call returns.
+    ///
+    /// The child prints immediately and then blocks for the whole budget, so the
+    /// first chunk is due within a poll or two of the spawn — a post-mortem sink
+    /// cannot see it before the kill at 600 ms.
+    #[test]
+    fn a_wedged_child_reaches_the_sink_before_it_is_killed() {
+        const LIMIT: Duration = Duration::from_millis(600);
+        /// 20× the poll interval, and less than half the budget: comfortably
+        /// after a live sink's first chunk, comfortably before a post-mortem
+        /// one's.
+        const WHILE_ALIVE: Duration = Duration::from_millis(200);
+
+        let started = Instant::now();
+        let (mut streamed, mut first_at) = (Vec::new(), None);
+        let supervised = run_streaming(
+            &mut sh("printf 'BEFORE\\n'; sleep 30"),
+            budget(Some(LIMIT)),
+            &mut |chunk| {
+                first_at.get_or_insert_with(|| started.elapsed());
+                streamed.extend_from_slice(chunk);
+            },
+            &|_, _| {},
+        )
+        .expect("run");
+
+        assert!(supervised.timed_out);
+        assert_eq!(streamed, b"BEFORE\n");
+        assert_eq!(supervised.output.stdout, b"BEFORE\n");
+        assert!(supervised.elapsed >= LIMIT);
+        let first_at = first_at.expect("the sink was never called");
+        assert!(
+            first_at < WHILE_ALIVE,
+            "the child's output only reached the sink after it was killed, at {first_at:?}"
+        );
+    }
+
+    /// The tail of a hook's output can arrive after the process poly waited on
+    /// has already gone: a `sh -c` line that backgrounds a writer exits at once
+    /// while the writer keeps the pipe open. Those bytes are captured — they are
+    /// in the reported output either way — so the sink has to be given them too,
+    /// or the preview and the report disagree about what the hook said.
+    #[test]
+    fn output_arriving_after_the_child_exits_still_reaches_the_sink() {
+        let mut streamed = Vec::new();
+        let supervised = run_streaming(
+            &mut sh("{ sleep 0.3; printf 'LATE\\n'; } & printf 'EARLY\\n'; exit 0"),
+            budget(Some(Duration::from_secs(30))),
+            &mut |chunk| streamed.extend_from_slice(chunk),
+            &|_, _| {},
+        )
+        .expect("run");
+
+        assert!(!supervised.timed_out);
+        assert_eq!(supervised.output.stdout, b"EARLY\nLATE\n");
+        assert_eq!(
+            streamed, b"EARLY\nLATE\n",
+            "the sink lost what arrived after the supervised process exited"
         );
     }
 

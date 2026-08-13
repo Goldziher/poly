@@ -131,7 +131,12 @@ Bool-or-string mirrors the schema's existing habit (`timeout`, `Patterns`, `Guar
   wait — poly does not own that queue and cannot shorten it. It is no longer reported as "still
   running", though: the supervisor watches for cargo's `Blocking waiting for file lock` line
   and the liveness notice says the hook is queued on that lock rather than working (ADR 0023).
-  That is a reporting fix in the reporter/supervisor, not a scheduling one.
+  That is a reporting fix in the reporter/supervisor, not a scheduling one. The scheduling fix
+  — probing the lock before spawning, so the wait happens before the clock starts, exactly as
+  it does for a hook queued behind a peer in this set — has been measured and is viable; see
+  "Probing cargo's lock before spawning" in ADR 0023 for what it does and does not buy. It
+  belongs to this ADR's machinery, since only the exclusion set knows which hooks are cargo
+  hooks.
 
 ## Alternatives considered
 
@@ -140,9 +145,12 @@ Bool-or-string mirrors the schema's existing habit (`timeout`, `Patterns`, `Guar
   waiting on the mutex has already been spawned in the eyes of any future budget accounting.
 - **Raise the whole-project default above 30 minutes.** Treats the symptom. The tool was not
   slow; it was not running.
-- **Exclude lock-wait time from the budget.** Requires detecting the wait from inside a child
-  process poly did not write — `cargo deny` printed nothing at all while blocked, so there is
-  no signal to detect.
+- **Exclude lock-wait time from the budget.** Detecting the wait from inside a child poly did
+  not write is not possible in general — `cargo deny` printed nothing at all while blocked — and
+  detecting it from what the child *says* is worse than nothing, since a hook could then talk
+  itself out of its own timeout. poly can observe cargo's lock directly (a non-blocking `flock`
+  probe on `$CARGO_HOME/.package-cache`; measured in ADR 0023), but the sound use of that is to
+  wait **before** spawning, not to stop the clock on a process already running.
 - **Serialize all whole-project hooks.** Correct for cargo, wrong for everyone else: `tsc` and
   `pyrefly` share no lock with cargo or with each other.
 - **A global serial flag rather than named sets.** Would put an unrelated `serial = true` job
