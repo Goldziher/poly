@@ -112,7 +112,7 @@ rather than removing or overwriting the binary in place.
 # Pin a version (recommended for CI reproducibility):
 - uses: Goldziher/poly@v0
   with:
-    version: v0.20.1
+    version: v0.21.0
 
 # Latest release, cached (default when `version` is omitted):
 - uses: Goldziher/poly@v0
@@ -132,8 +132,8 @@ cargo binstall --git https://github.com/Goldziher/poly poly-cli
 ```
 
 `cargo binstall`'s `[package.metadata.binstall]` (`crates/poly-cli/Cargo.toml`) resolves against
-the same GitHub release archives as the installer scripts, so `--version 0.20.1` (or
-`poly-cli@0.20.1`) is also a true pin — it does not require a crates.io publish.
+the same GitHub release archives as the installer scripts, so `--version 0.21.0` (or
+`poly-cli@0.21.0`) is also a true pin — it does not require a crates.io publish.
 
 **Homebrew cannot pin today.** `Goldziher/tap/poly` is a single formula that the release
 pipeline rewrites in place on every release — there is no versioned alias (e.g. `poly@0.19`) to
@@ -157,8 +157,8 @@ drifts with no signal. It also cannot see a `poly` from another channel shadowin
 it installed — `~/.cargo/bin` precedes `/opt/homebrew/bin` on a default macOS `PATH`, so a stray
 `cargo`-installed binary wins silently.
 
-**Prefer a true pin:** the installer scripts (`POLY_VERSION=0.20.1 curl ... | sh`) or the GitHub
-Action (`version: v0.20.1`) install exactly the requested, checksum-verified release — no
+**Prefer a true pin:** the installer scripts (`POLY_VERSION=0.21.0 curl ... | sh`) or the GitHub
+Action (`version: v0.21.0`) install exactly the requested, checksum-verified release — no
 verify-after-the-fact needed, because there is nothing to drift.
 
 If Homebrew is the only option available (e.g. an interactive dev machine already standardized on
@@ -166,7 +166,7 @@ If Homebrew is the only option available (e.g. an interactive dev machine alread
 a specific version:
 
 ```sh
-POLY_VERSION=0.20.1
+POLY_VERSION=0.21.0
 
 resolved=$(poly --version 2>/dev/null | awk '{print $2}' || true)
 if [ "$resolved" != "$POLY_VERSION" ]; then
@@ -182,7 +182,7 @@ fi
 Three details matter: `brew install` no-ops on an already-installed-but-outdated formula (hence
 `brew upgrade ||`), the version is re-checked *after* installing rather than assumed, and the
 failure message names `command -v poly` so a shadowed binary is identifiable rather than baffling.
-Note this still only *verifies* the version post-install — it cannot request `0.20.1` specifically
+Note this still only *verifies* the version post-install — it cannot request `0.21.0` specifically
 if `brew upgrade` has already moved past it; see "Package Managers" above.
 
 In CI, prefer the GitHub Action or the installer script with an explicit version — both resolve
@@ -1392,8 +1392,8 @@ defect: a competing install on `PATH`, a `poly` that cannot report its own versi
 that fails to load. Each finding carries the concrete remedy, including the fact that a
 cargo-installed `~/.cargo/bin/poly` needs `rm`, not `cargo uninstall poly`.
 
-`poly --version` reports the build identifier too — `0.20.1 (release build v0.20.1, release)`
-versus `0.20.1 (dev build v0.20.1-8-g18aa5e8, debug)` — so a development build carrying
+`poly --version` reports the build identifier too — `0.21.0 (release build v0.21.0, release)`
+versus `0.21.0 (dev build v0.21.0-8-g18aa5e8, debug)` — so a development build carrying
 unreleased changes cannot be quoted as a release. The identifier comes from `git describe` at
 build time; outside a git checkout it reads `unknown` rather than guessing (packagers can set
 `POLY_BUILD_ID`).

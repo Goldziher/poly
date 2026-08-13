@@ -5,9 +5,20 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
-## [Unreleased]
+## [0.21.0] - 2026-08-13
 
 ### Fixed
+
+- **A hook that fails under staged isolation now says so.** Since 0.20.0 every hook in a
+  commit-gating run validates the staged snapshot, not the worktree — correct, and nobody wants it
+  back — but a failure gave no hint the content checked was not what is in the working tree. Two
+  consumers lost a debugging round to the same shape independently: a clippy error naming a field
+  that exists in their worktree, because the matching change sat in a file they had not staged, and
+  `cargo check` had passed locally seconds earlier. The stage banner already named the tree, but it
+  has scrolled off by the time a wall of compiler output ends. The failure now carries the reason
+  and the two ways out — stage the rest, or `[hooks] isolate = false`. Printed once per run at the
+  first qualifying failure, only under staged validation, and never for a timeout or a withheld
+  fix, which carry their own remedies.
 
 - **A language poly has no lint rules for is no longer counted as linted.** `poly lint .` over a
   tree holding `a.kt`, `c.xyz` and `d.py` reported `No issues found. (2 file(s) linted)` and
