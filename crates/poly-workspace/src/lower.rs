@@ -22,6 +22,7 @@ use poly_hooks::Stage as HookStage;
 use poly_hooks::filter::FilePattern;
 use poly_hooks::identify::TagSet;
 use poly_hooks::model::{Hook, HookCommand, StageSpec};
+use poly_hooks::timeout::{ACCEPTED_TIMEOUT_FORMS, HookTimeout, parse_timeout};
 
 use self::builtins::{PathProbe, ToolProbe};
 
@@ -285,6 +286,7 @@ fn job_to_hook(
 
     let cache = cache::job_cache(job, cache_mode)?;
     let compiler = job.cache.as_ref().is_some_and(|cache| cache.compiler);
+    let timeout = job_timeout(stage, label, job)?;
 
     Ok(Hook {
         id: label.to_string(),
@@ -309,7 +311,27 @@ fn job_to_hook(
         pass_filenames,
         workspace: job.workspace,
         fail_text: job.fail_text.clone(),
+        timeout,
         ..Hook::default()
+    })
+}
+
+/// Resolve a job's `timeout` key into the runner's [`HookTimeout`].
+///
+/// The value is parsed by `poly-hooks`, so the config key and the environment
+/// overrides accept exactly one grammar and can never drift apart. A value poly
+/// cannot read is a **hard error** rather than a warning: a budget the author
+/// believes is in force but which was silently discarded is the same false
+/// promise as a key that is never consulted, and the error names the job
+/// because "invalid timeout" in a repo with thirty hooks is not a diagnosis.
+fn job_timeout(stage: HookStage, label: &str, job: &Job) -> Result<HookTimeout> {
+    let Some(raw) = job.timeout.as_deref() else {
+        return Ok(HookTimeout::Default);
+    };
+    parse_timeout(raw).ok_or_else(|| {
+        anyhow::anyhow!(
+            "hook job `{label}` in stage `{stage}`: invalid `timeout` value `{raw}`; expected {ACCEPTED_TIMEOUT_FORMS}"
+        )
     })
 }
 

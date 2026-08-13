@@ -1,8 +1,10 @@
 //! The [`Job`] and [`JobCache`] types — one runnable unit within a stage.
 
 use std::collections::BTreeMap;
+use std::fmt;
 
-use serde::Deserialize;
+use serde::de::{self, Visitor};
+use serde::{Deserialize, Deserializer};
 
 use crate::HookCacheMode;
 use crate::hooks::patterns::{Guard, Patterns};
@@ -59,6 +61,20 @@ pub struct Job {
     pub env: BTreeMap<String, String>,
     /// Message printed when the job fails.
     pub fail_text: Option<String>,
+    /// How long this job may run before poly kills it and reports it as timed
+    /// out (rather than as having failed on its own merits).
+    ///
+    /// Accepts whole seconds (`timeout = 90`), a suffixed duration
+    /// (`"500ms"`, `"30s"`, `"10m"`, `"1h"`), or `0` / `"off"` / `"none"` to run
+    /// the job unbounded. Unset means the shape-derived default: a long budget
+    /// for a per-file job, a far longer one for a `workspace` job.
+    ///
+    /// Held as raw text and resolved during lowering, where the job's name is
+    /// known and a malformed value can name it. The environment overrides
+    /// (`POLY_HOOK_TIMEOUT` / `POLY_HOOK_WORKSPACE_TIMEOUT`) outrank this key —
+    /// see the `poly-hooks` `timeout` module for the full precedence chain.
+    #[serde(default, deserialize_with = "deserialize_timeout")]
+    pub timeout: Option<String>,
     /// Lower values run first within a stage (default `0`).
     pub priority: i64,
     /// When the job modifies files and exits 0, the runner `git add`s the
@@ -79,6 +95,47 @@ pub struct Job {
     pub use_stdin: bool,
     /// Per-job result-cache declaration.
     pub cache: Option<JobCache>,
+}
+
+/// Accept a `timeout` written as either a TOML string (`"30s"`) or a bare
+/// integer (`90`, whole seconds), normalising both to the raw text the lowering
+/// step parses.
+///
+/// Both spellings are natural — `timeout = 60` reads fine, and `timeout = "10m"`
+/// is what makes a long budget legible — and rejecting either on a type
+/// technicality would be a worse error than the one it prevents.
+fn deserialize_timeout<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<String>, D::Error> {
+    struct TimeoutVisitor;
+
+    impl<'de> Visitor<'de> for TimeoutVisitor {
+        type Value = Option<String>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            formatter.write_str("a duration string (`30s`, `10m`) or whole seconds as an integer")
+        }
+
+        fn visit_str<E: de::Error>(self, value: &str) -> Result<Self::Value, E> {
+            Ok(Some(value.to_string()))
+        }
+
+        fn visit_i64<E: de::Error>(self, value: i64) -> Result<Self::Value, E> {
+            Ok(Some(value.to_string()))
+        }
+
+        fn visit_u64<E: de::Error>(self, value: u64) -> Result<Self::Value, E> {
+            Ok(Some(value.to_string()))
+        }
+
+        fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_some<D: Deserializer<'de>>(self, deserializer: D) -> Result<Self::Value, D::Error> {
+            deserializer.deserialize_any(TimeoutVisitor)
+        }
+    }
+
+    deserializer.deserialize_option(TimeoutVisitor)
 }
 
 /// Per-job result-cache declaration.
@@ -135,6 +192,30 @@ inputs = ["**/*.rs", "Cargo.toml"]
         assert!(cache.compiler);
         assert_eq!(cache.inputs.len(), 2);
         assert_eq!(cache.inputs[0].as_slice(), &["**/*.rs".to_string()]);
+    }
+
+    /// Both spellings of a budget are accepted and kept verbatim for lowering
+    /// to resolve.
+    #[test]
+    fn parses_timeout_as_a_duration_string_or_whole_seconds() {
+        for (source, expected) in [
+            (r#"run = "x""#, None),
+            ("run = \"x\"\ntimeout = \"10m\"", Some("10m")),
+            ("run = \"x\"\ntimeout = \"off\"", Some("off")),
+            ("run = \"x\"\ntimeout = 90", Some("90")),
+            ("run = \"x\"\ntimeout = 0", Some("0")),
+        ] {
+            let job: Job = toml::from_str(source).expect("parse job");
+            assert_eq!(job.timeout.as_deref(), expected, "source: {source}");
+        }
+    }
+
+    /// The value is not validated here — the job's name lives one level up, and
+    /// an error that cannot name the job is not worth much.
+    #[test]
+    fn a_timeout_this_crate_cannot_interpret_still_parses() {
+        let job: Job = toml::from_str("run = \"x\"\ntimeout = \"soon\"").expect("parse job");
+        assert_eq!(job.timeout.as_deref(), Some("soon"));
     }
 
     #[test]

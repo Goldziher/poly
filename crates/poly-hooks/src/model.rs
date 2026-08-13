@@ -18,6 +18,7 @@ use poly_cache::ResultCache;
 use crate::filter::FilePattern;
 use crate::identify::TagSet;
 use crate::stage::Stage;
+use crate::timeout::HookTimeout;
 
 /// How a hook participates in tier-1 result caching.
 ///
@@ -148,12 +149,15 @@ pub struct Hook {
     /// How long this hook may run before poly kills it and reports
     /// [`HookStatus::TimedOut`].
     ///
-    /// `None` — the default — means "use the shape-derived default"
-    /// ([`crate::timeout::budget_for`]): a long budget for a per-file hook, a
-    /// far longer one for a [`Hook::workspace`] hook, since a cold `cargo
-    /// clippy` legitimately runs for many minutes. The budget applies to each
-    /// spawned process, so an `ARG_MAX`-batched hook gets it per batch.
-    pub timeout: Option<Duration>,
+    /// [`HookTimeout::Default`] — the default — means "use the shape-derived
+    /// default" ([`crate::timeout::budget_for`]): a long budget for a per-file
+    /// hook, a far longer one for a [`Hook::workspace`] hook, since a cold
+    /// `cargo clippy` legitimately runs for many minutes. The budget applies to
+    /// each spawned process, so an `ARG_MAX`-batched hook gets it per batch.
+    ///
+    /// Lowered from the `poly.toml` job's `timeout` key, and outranked by the
+    /// environment override — see [`crate::timeout`] for the whole chain.
+    pub timeout: HookTimeout,
     /// Exclude this hook from the whole-project phase of `poly lint` while
     /// keeping it in git-hook runs. `poly lint`'s workspace phase drops every
     /// hook with this set (default `false` — participate in lint), so a tool can
@@ -600,17 +604,60 @@ pub struct UnknownReason {
 /// as "this tool found a problem".
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TimeoutReason {
+    /// Which of the hook's processes poly killed.
+    pub phase: TimedOutPhase,
     /// The budget the hook was given.
     pub limit: Duration,
     /// How long it actually ran before poly killed it.
     pub elapsed: Duration,
 }
 
+impl TimeoutReason {
+    /// A killed hook body, or a killed `before` / `after` step.
+    #[must_use]
+    pub const fn command(limit: Duration, elapsed: Duration) -> Self {
+        Self {
+            phase: TimedOutPhase::Command,
+            limit,
+            elapsed,
+        }
+    }
+
+    /// A killed `precondition` probe — the hook itself never started.
+    #[must_use]
+    pub const fn precondition(limit: Duration, elapsed: Duration) -> Self {
+        Self {
+            phase: TimedOutPhase::Precondition,
+            limit,
+            elapsed,
+        }
+    }
+}
+
+/// Which process poly killed, so the reader is not left to assume it was the
+/// tool itself.
+///
+/// "the hook ran 60s and was killed" and "the hook never ran because its
+/// one-line probe hung" send the reader to different files, and the elapsed
+/// time alone cannot tell them apart.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum TimedOutPhase {
+    /// The hook's own command, or a `before` / `after` step.
+    #[default]
+    Command,
+    /// The applicability probe that decides whether the hook runs at all.
+    Precondition,
+}
+
 impl fmt::Display for TimeoutReason {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let subject = match self.phase {
+            TimedOutPhase::Command => "timed out",
+            TimedOutPhase::Precondition => "precondition timed out",
+        };
         write!(
             formatter,
-            "timed out: poly killed it after {}, limit {}",
+            "{subject}: poly killed it after {}, limit {}",
             crate::reporter::format_duration(self.elapsed),
             crate::reporter::format_duration(self.limit)
         )

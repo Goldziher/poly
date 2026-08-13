@@ -163,29 +163,51 @@ fn run_all(request: &HookRunRequest, ui: Option<&ProgressUi>) -> anyhow::Result<
 fn run_stage(request: &HookRunRequest, spec: &StageSpec, ui: Option<&ProgressUi>) -> anyhow::Result<StageOutcome> {
     let (_, tree) = execution_root(request);
     if let Some(precondition) = &spec.precondition {
-        if !exec::run_precondition(&request.root, precondition, &EMPTY_ENV) {
-            warn!(stage = %spec.stage, "precondition failed; skipping stage");
-            return Ok(StageOutcome {
-                stage: spec.stage,
-                status: StageStatus::Skipped(format!("precondition failed: {precondition}")),
-                before: Vec::new(),
-                hooks: withheld_hooks(spec, tree, |_| {
-                    HookStatus::Skipped(SkipReason::StagePrecondition(precondition.clone()))
-                }),
-                after: Vec::new(),
-            });
+        match exec::run_precondition(
+            &request.root,
+            precondition,
+            &EMPTY_ENV,
+            crate::timeout::precondition_budget(),
+        ) {
+            exec::Probe::Passed => {}
+            exec::Probe::Declined => {
+                warn!(stage = %spec.stage, "precondition failed; skipping stage");
+                return Ok(StageOutcome {
+                    stage: spec.stage,
+                    status: StageStatus::Skipped(format!("precondition failed: {precondition}")),
+                    before: Vec::new(),
+                    hooks: withheld_hooks(spec, tree, |_| {
+                        HookStatus::Skipped(SkipReason::StagePrecondition(precondition.clone()))
+                    }),
+                    after: Vec::new(),
+                });
+            }
+            // A killed probe is **not** a skip: it never answered, so whether
+            // these hooks applied is unknown and the run must fail rather than
+            // pass having validated nothing.
+            exec::Probe::TimedOut(reason) => {
+                warn!(stage = %spec.stage, "precondition timed out; aborting stage");
+                return Ok(StageOutcome {
+                    stage: spec.stage,
+                    status: StageStatus::Aborted(format!("precondition timed out: {precondition}")),
+                    before: Vec::new(),
+                    hooks: withheld_hooks(spec, tree, |_| HookStatus::TimedOut(reason)),
+                    after: Vec::new(),
+                });
+            }
         }
     }
 
     let mut before = Vec::new();
     for command in &spec.before {
-        let step = exec::run_step(&request.root, command, &EMPTY_ENV);
+        let step = exec::run_step(&request.root, command, &EMPTY_ENV, crate::timeout::step_budget());
         let failed = step.status.is_failure();
+        let killed = matches!(step.status, HookStatus::TimedOut(_));
         before.push(step);
         if failed {
             return Ok(StageOutcome {
                 stage: spec.stage,
-                status: StageStatus::Aborted(format!("before step failed: {command}")),
+                status: StageStatus::Aborted(abort_reason("before", killed, command)),
                 before,
                 hooks: withheld_hooks(spec, tree, |_| {
                     HookStatus::Unknown(UnknownReason {
@@ -206,13 +228,14 @@ fn run_stage(request: &HookRunRequest, spec: &StageSpec, ui: Option<&ProgressUi>
     let mut after = Vec::new();
     if !any_failed {
         for command in &spec.after {
-            let step = exec::run_step(&request.root, command, &EMPTY_ENV);
+            let step = exec::run_step(&request.root, command, &EMPTY_ENV, crate::timeout::step_budget());
             let failed = step.status.is_failure();
+            let killed = matches!(step.status, HookStatus::TimedOut(_));
             after.push(step);
             if failed {
                 return Ok(StageOutcome {
                     stage: spec.stage,
-                    status: StageStatus::Aborted(format!("after step failed: {command}")),
+                    status: StageStatus::Aborted(abort_reason("after", killed, command)),
                     before,
                     hooks,
                     after,
@@ -228,6 +251,14 @@ fn run_stage(request: &HookRunRequest, spec: &StageSpec, ui: Option<&ProgressUi>
         hooks,
         after,
     })
+}
+
+/// Why a stage aborted on a `before`/`after` step, keeping "poly killed it"
+/// apart from "the command said no" — the two send the reader to different
+/// places.
+fn abort_reason(label: &str, killed: bool, command: &str) -> String {
+    let verdict = if killed { "timed out" } else { "failed" };
+    format!("{label} step {verdict}: {command}")
 }
 
 /// Run the stage's hooks in priority-group order, landing rewrites and applying
@@ -329,9 +360,25 @@ fn run_group(
         // Applicability is decided before the cache is consulted: a hook that no
         // longer applies must not be served a stored "passed" from when it did.
         if let Some(precondition) = &hook.precondition {
-            if !exec::run_precondition(&hook_dir, precondition, &hook.env) {
-                let reason = SkipReason::HookPrecondition(precondition.clone());
-                return blank(skipped_outcome(hook, pos, tree, reason));
+            match exec::run_precondition(
+                &hook_dir,
+                precondition,
+                &hook.env,
+                crate::timeout::precondition_budget(),
+            ) {
+                exec::Probe::Passed => {}
+                exec::Probe::Declined => {
+                    let reason = SkipReason::HookPrecondition(precondition.clone());
+                    return blank(skipped_outcome(hook, pos, tree, reason));
+                }
+                // Scoped, like every other per-hook failure: this hook has no
+                // verdict, its siblings still report theirs.
+                exec::Probe::TimedOut(reason) => {
+                    return blank(HookOutcome {
+                        status: HookStatus::TimedOut(reason),
+                        ..blank_outcome(hook, pos, tree)
+                    });
+                }
             }
         }
 
@@ -397,7 +444,7 @@ fn run_group(
 fn run_hook_before(hook_dir: &Path, hook: &Hook) -> (Vec<StepOutcome>, Option<HookStatus>) {
     let mut steps = Vec::with_capacity(hook.before.len());
     for command in &hook.before {
-        let step = exec::run_step(hook_dir, command, &hook.env);
+        let step = exec::run_step(hook_dir, command, &hook.env, crate::timeout::step_budget());
         let failed = step.status.is_failure();
         steps.push(step);
         if failed {

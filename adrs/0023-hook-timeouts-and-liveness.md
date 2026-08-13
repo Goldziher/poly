@@ -1,7 +1,7 @@
 # 0023 — Hook Timeouts and Run Liveness
 
 - Status: Accepted
-- Date: 2026-08-12
+- Date: 2026-08-12 (amended 2026-08-13: the two deferred gaps below are closed)
 
 ## Context
 
@@ -32,20 +32,26 @@ kills the process, and the cadence at which a still-running hook announces itsel
 applies to each **spawned process**, so an `ARG_MAX`-batched hook gets the full budget per
 batch (batches run concurrently, so wall-clock is unchanged).
 
-Resolution order: `Hook::timeout` (per hook) → environment override → shape default.
+Resolution order: **environment override → explicit per-hook budget → shape default** (see
+"Precedence" below; the amendment reversed the first two).
 
 **Defaults are hang detectors, not performance budgets.** Too low a default converts a working
-setup into a broken one, which would be a worse defect than the hang, so they differ by hook
-shape:
+setup into a broken one, which would be a worse defect than the hang, so they differ by what is
+being run:
 
-| Hook shape | Default | Why |
+| Spawned process | Default | Why |
 |---|---|---|
-| per-file (`workspace = false`) | **10 minutes** | Formatters and linters over a file batch finish in milliseconds to seconds; ten minutes is orders of magnitude of headroom. |
-| whole-project (`workspace = true`) | **30 minutes** | `cargo clippy` on a cold `target/`, `tsc` on a large monorepo, a first `gradle` run — these legitimately run for many minutes, and killing a real cold build would be its own outage. |
+| per-file hook (`workspace = false`) | **10 minutes** | Formatters and linters over a file batch finish in milliseconds to seconds; ten minutes is orders of magnitude of headroom. |
+| whole-project hook (`workspace = true`) | **30 minutes** | `cargo clippy` on a cold `target/`, `tsc` on a large monorepo, a first `gradle` run — these legitimately run for many minutes, and killing a real cold build would be its own outage. |
+| `before` / `after` step (stage or hook scope) | **10 minutes** | Setup is bounded by dependency installation (`npm ci`, a wrapper download), not by compiling the workspace, so it takes the per-file number rather than the whole-project one. |
+| `precondition` probe | **60 seconds** | `test -f gradlew` / `command -v cargo` answer instantly; a probe that needs minutes is not a probe. 60s still covers a network-touching probe (`gh auth status`, `docker info`) on a bad link, while bounding a wedged one inside a minute — which matters most here, because a *stage* precondition gates every hook in the stage. |
 
-Both are overridable run-wide via `POLY_HOOK_TIMEOUT` / `POLY_HOOK_WORKSPACE_TIMEOUT` (whole
-seconds; `0`, `off`, or `none` disables the limit and restores the previous unbounded
-behaviour exactly, including the un-supervised execution path).
+Each is overridable run-wide via `POLY_HOOK_TIMEOUT`, `POLY_HOOK_WORKSPACE_TIMEOUT`,
+`POLY_HOOK_STEP_TIMEOUT`, and `POLY_HOOK_PRECONDITION_TIMEOUT`. Every timeout surface —
+these four variables and the `poly.toml` `timeout` key — accepts one grammar, parsed by one
+function: whole seconds (`90`), a suffixed duration (`500ms`, `30s`, `10m`, `1h`), or `0` /
+`off` / `none` to disable. Disabling restores the previous unbounded behaviour exactly,
+including the un-supervised execution path.
 
 ### 2. A killed hook is a distinct status, not a generic failure
 

@@ -13,6 +13,7 @@ use std::time::Duration;
 use poly_cache::ResultCache;
 use poly_hooks::filter::FilePattern;
 use poly_hooks::model::{HookCache, HookCommand, HookStatus, SetupScope, SkipReason, StageStatus, UnknownReason};
+use poly_hooks::timeout::HookTimeout;
 use poly_hooks::{Hook, HookRunReporter, HookRunRequest, Stage, StageSpec, run};
 use tempfile::TempDir;
 
@@ -950,7 +951,7 @@ fn hook_exceeding_its_budget_is_killed_and_reported_as_a_timeout() {
     let root = repo.path();
 
     let mut slow = cmd_hook("wedged", "sleep 30");
-    slow.timeout = Some(Duration::from_millis(200));
+    slow.timeout = HookTimeout::Limit(Duration::from_millis(200));
 
     let outcome = run(request(root, pre_commit(vec![slow]))).expect("run");
 
@@ -998,7 +999,7 @@ fn timed_out_hook_leaves_no_surviving_process() {
         "spawner",
         "printf '%s' \"$$\" > shell.pid; sleep 30 & printf '%s' \"$!\" > child.pid; wait",
     );
-    slow.timeout = Some(Duration::from_millis(200));
+    slow.timeout = HookTimeout::Limit(Duration::from_millis(200));
 
     let outcome = run(request(root, pre_commit(vec![slow]))).expect("run");
     assert!(!outcome.success());
@@ -1025,7 +1026,7 @@ fn hook_within_its_budget_is_unaffected() {
     let root = repo.path();
 
     let mut fast = cmd_hook("prompt", "printf 'hello world'");
-    fast.timeout = Some(Duration::from_secs(30));
+    fast.timeout = HookTimeout::Limit(Duration::from_secs(30));
 
     let outcome = run(request(root, pre_commit(vec![fast]))).expect("run");
 
@@ -1053,7 +1054,7 @@ fn skipped_and_timed_out_hooks_render_with_distinct_markers() {
     let mut skipped = cmd_hook("inapplicable", "printf x > skipped.out");
     skipped.precondition = Some("false".to_string());
     let mut wedged = cmd_hook("wedged", "sleep 30");
-    wedged.timeout = Some(Duration::from_millis(200));
+    wedged.timeout = HookTimeout::Limit(Duration::from_millis(200));
 
     let outcome = run(request(root, pre_commit(vec![skipped, wedged]))).expect("run");
     let report = HookRunReporter::new().render(&outcome);
@@ -1113,7 +1114,7 @@ fn default_budgets_differ_by_hook_shape() {
     // An explicit per-hook budget wins over both defaults.
     let mut explicit = Hook::run("slow", "sleep 1");
     explicit.workspace = true;
-    explicit.timeout = Some(Duration::from_secs(5));
+    explicit.timeout = HookTimeout::Limit(Duration::from_secs(5));
     assert_eq!(
         poly_hooks::timeout::budget_for(&explicit).limit,
         Some(Duration::from_secs(5))

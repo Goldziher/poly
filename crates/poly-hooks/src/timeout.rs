@@ -1,16 +1,18 @@
-//! Per-hook time budgets.
+//! Time budgets for everything a hook run spawns.
 //!
 //! A hook that never returns used to hang the commit forever with no output at
-//! all: no way to tell whether it was running, wedged, or skipped. Every hook
-//! therefore runs under a [`Budget`] — a limit past which poly kills it and
-//! reports [`crate::model::HookStatus::TimedOut`], plus the cadence at which a
-//! still-running hook announces itself so a hang names its culprit long before
-//! it is killed.
+//! all: no way to tell whether it was running, wedged, or skipped. Every
+//! process a run spawns — hook bodies, stage and hook `before`/`after` steps,
+//! and `precondition` probes — therefore runs under a [`Budget`]: a limit past
+//! which poly kills it and reports [`crate::model::HookStatus::TimedOut`], plus
+//! the cadence at which a still-running process announces itself so a hang
+//! names its culprit long before it is killed.
 //!
 //! # Choosing the defaults
 //!
 //! Too low a default turns a working setup into a broken one, so the defaults
-//! are hang detectors, not performance budgets, and they differ by hook shape:
+//! are hang detectors, not performance budgets, and they differ by what is
+//! being run:
 //!
 //! - A **per-file** hook is a formatter or linter over a file batch; those
 //!   finish in milliseconds to seconds. [`DEFAULT_HOOK_TIMEOUT`] (10 minutes)
@@ -22,11 +24,45 @@
 //!   [`DEFAULT_WORKSPACE_HOOK_TIMEOUT`] (30 minutes) is deliberately far
 //!   longer, because killing a real cold build would be a worse defect than the
 //!   hang it was meant to catch.
+//! - A **setup step** (`before` / `after`, stage-level or per-hook) installs or
+//!   prepares something — `npm ci`, `./gradlew --version`, a cache warm. That
+//!   is bounded by dependency installation, not by compiling the workspace, so
+//!   [`DEFAULT_STEP_TIMEOUT`] reuses the per-file hook's 10 minutes rather than
+//!   the whole-project 30.
+//! - A **precondition** is an applicability probe — `test -f gradlew`,
+//!   `command -v cargo`. It answers a question about the environment, and a
+//!   probe that needs minutes is not a probe. [`DEFAULT_PRECONDITION_TIMEOUT`]
+//!   (60 seconds) still leaves ~60× headroom over any local probe and covers a
+//!   network-touching one (`gh auth status`, `docker info`) on a slow link,
+//!   while bounding a wedged one inside a minute — which matters more here than
+//!   anywhere else, because a stage `precondition` gates *every* hook in the
+//!   stage.
 //!
-//! Both are overridable: [`Hook::timeout`] per hook, or the
-//! [`HOOK_TIMEOUT_ENV`] / [`WORKSPACE_HOOK_TIMEOUT_ENV`] environment variables
-//! run-wide (whole seconds; `0`, `off` or `none` disables the limit entirely and
-//! restores the old unbounded behaviour).
+//! # Precedence
+//!
+//! This is the one place the resolution order is defined; every other mention
+//! (the `poly.toml` `timeout` key, the ADR, the README) refers back to it.
+//!
+//! ```text
+//! environment override  →  explicit per-hook budget  →  shape default
+//! ```
+//!
+//! The **environment wins** over an explicitly configured budget. It is the
+//! escape hatch of whoever is actually running the hooks, and they are the only
+//! party who knows how fast that machine is; a config author cannot, and the
+//! operator frequently cannot edit the config at all (a CI checkout, a fork, a
+//! base config pulled in via `extends`). Decisively: the disable form has to be
+//! *total* — `POLY_HOOK_TIMEOUT=0` must restore unbounded behaviour for every
+//! hook, and it would fail exactly on the hook being killed if that hook's own
+//! budget outranked it. The cost is that a blanket override also flattens a
+//! budget somebody deliberately widened; the report always names the effective
+//! limit, so the reader can see which one applied.
+//!
+//! Accepted values are the same everywhere ([`ACCEPTED_TIMEOUT_FORMS`]): whole
+//! seconds, a suffixed duration (`500ms`, `30s`, `10m`, `1h`), or `0` / `off` /
+//! `none` to disable. Disabling is not "an enormous limit": it restores the
+//! previous, un-supervised execution path exactly — no deadline, no liveness
+//! notice, and no separate process group (so `Ctrl-C` reaches children again).
 
 use std::time::Duration;
 
@@ -41,28 +77,74 @@ pub const DEFAULT_HOOK_TIMEOUT: Duration = Duration::from_mins(10);
 /// Default budget for a whole-project ([`Hook::workspace`]) hook.
 pub const DEFAULT_WORKSPACE_HOOK_TIMEOUT: Duration = Duration::from_mins(30);
 
-/// How long a hook must run before it announces that it is still running.
+/// Default budget for a `before` / `after` setup step, stage-level or per-hook.
+pub const DEFAULT_STEP_TIMEOUT: Duration = Duration::from_mins(10);
+
+/// Default budget for a `precondition` probe (one minute).
+pub const DEFAULT_PRECONDITION_TIMEOUT: Duration = Duration::from_mins(1);
+
+/// How long a process must run before it announces that it is still running.
 ///
 /// Short enough that a hang names its culprit while the author is still
 /// watching, long enough that an ordinary run stays silent.
 pub const STILL_RUNNING_AFTER: Duration = Duration::from_secs(15);
 
-/// How often a still-running hook repeats its announcement after the first one.
+/// How often a still-running process repeats its announcement after the first.
 pub const STILL_RUNNING_EVERY: Duration = Duration::from_mins(1);
 
-/// Environment variable overriding [`DEFAULT_HOOK_TIMEOUT`] (whole seconds).
+/// Environment variable overriding the budget of a per-file hook.
 pub const HOOK_TIMEOUT_ENV: &str = "POLY_HOOK_TIMEOUT";
 
-/// Environment variable overriding [`DEFAULT_WORKSPACE_HOOK_TIMEOUT`] (whole
-/// seconds).
+/// Environment variable overriding the budget of a whole-project hook.
 pub const WORKSPACE_HOOK_TIMEOUT_ENV: &str = "POLY_HOOK_WORKSPACE_TIMEOUT";
 
-/// The time budget one hook process runs under.
+/// Environment variable overriding the budget of a `before` / `after` step.
+pub const STEP_TIMEOUT_ENV: &str = "POLY_HOOK_STEP_TIMEOUT";
+
+/// Environment variable overriding the budget of a `precondition` probe.
+pub const PRECONDITION_TIMEOUT_ENV: &str = "POLY_HOOK_PRECONDITION_TIMEOUT";
+
+/// The value forms every timeout surface accepts, phrased for an error message.
+///
+/// Shared by the environment-variable warning and the `poly.toml` lowering
+/// error so the two can never describe different grammars.
+pub const ACCEPTED_TIMEOUT_FORMS: &str =
+    "whole seconds (`90`), a duration (`500ms`, `30s`, `10m`, `1h`), or `0`/`off`/`none` to disable";
+
+/// A configured time budget: unset, explicitly unbounded, or an explicit limit.
+///
+/// The three states are distinct because "not configured" and "configured to be
+/// unbounded" resolve differently — the first falls through to the shape
+/// default, the second is the escape hatch and must survive it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum HookTimeout {
+    /// No explicit budget; use the default for this hook's shape.
+    #[default]
+    Default,
+    /// Explicitly unbounded (`0` / `off` / `none`).
+    Disabled,
+    /// An explicit limit.
+    Limit(Duration),
+}
+
+impl HookTimeout {
+    /// Resolve to a kill deadline, `fallback` supplying the shape default.
+    #[must_use]
+    pub fn limit(self, fallback: Duration) -> Option<Duration> {
+        match self {
+            Self::Default => Some(fallback),
+            Self::Disabled => None,
+            Self::Limit(limit) => Some(limit),
+        }
+    }
+}
+
+/// The time budget one spawned process runs under.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Budget {
     /// Kill the process once it has run this long; `None` never kills.
     pub limit: Option<Duration>,
-    /// Announce that the hook is still running after this long; `None` never
+    /// Announce that the process is still running after this long; `None` never
     /// announces.
     pub announce_after: Option<Duration>,
     /// Repeat the announcement at this interval.
@@ -71,7 +153,7 @@ pub struct Budget {
 
 impl Budget {
     /// A budget that neither kills nor announces — the pre-timeout behaviour,
-    /// used for stage `before`/`after` steps and preconditions.
+    /// which is what a disabled budget resolves to.
     #[must_use]
     pub const fn unlimited() -> Self {
         Self {
@@ -79,6 +161,27 @@ impl Budget {
             announce_after: None,
             announce_every: STILL_RUNNING_EVERY,
         }
+    }
+
+    /// A budget that kills at `limit` and announces on the standard cadence.
+    #[must_use]
+    pub const fn bounded(limit: Duration) -> Self {
+        Self {
+            limit: Some(limit),
+            announce_after: Some(STILL_RUNNING_AFTER),
+            announce_every: STILL_RUNNING_EVERY,
+        }
+    }
+
+    /// The budget for a resolved limit: bounded when there is one, fully
+    /// unlimited when there is not.
+    ///
+    /// Disabling drops the liveness notice as well as the deadline on purpose:
+    /// the promise is that the escape hatch restores the previous execution
+    /// path exactly, and [`Self::is_supervised`] is what routes back to it.
+    #[must_use]
+    fn from_limit(limit: Option<Duration>) -> Self {
+        limit.map_or_else(Self::unlimited, Self::bounded)
     }
 
     /// Whether this budget needs the supervised execution path at all.
@@ -97,57 +200,95 @@ impl Default for Budget {
     }
 }
 
-/// The budget `hook` runs under: its own [`Hook::timeout`] when it declares
-/// one, else the shape-derived default (possibly overridden by the environment).
+/// The budget `hook` runs under.
+///
+/// Resolution order is the module-level one: environment override, then the
+/// hook's own [`Hook::timeout`], then the shape default.
 #[must_use]
 pub fn budget_for(hook: &Hook) -> Budget {
-    let limit = match hook.timeout {
-        Some(explicit) => Some(explicit),
-        None => default_limit(hook.workspace),
-    };
-    Budget {
-        limit,
-        announce_after: Some(STILL_RUNNING_AFTER),
-        announce_every: STILL_RUNNING_EVERY,
-    }
-}
-
-/// The default budget for a hook of this shape, after the environment override.
-fn default_limit(workspace: bool) -> Option<Duration> {
-    let (name, fallback) = if workspace {
+    let (env, fallback) = if hook.workspace {
         (WORKSPACE_HOOK_TIMEOUT_ENV, DEFAULT_WORKSPACE_HOOK_TIMEOUT)
     } else {
         (HOOK_TIMEOUT_ENV, DEFAULT_HOOK_TIMEOUT)
     };
-    let Ok(raw) = EnvVars::var(name) else {
-        return Some(fallback);
-    };
-    if let Some(limit) = parse_limit(&raw) {
-        return limit;
-    }
-    warn!("ignoring {name}={raw}: expected whole seconds, or `0`/`off`/`none` to disable");
-    Some(fallback)
+    Budget::from_limit(resolve(env, hook.timeout, fallback))
 }
 
-/// Parse a configured budget: `Some(None)` disables the limit, `Some(Some(d))`
-/// sets it, `None` means the value was not understood.
+/// The budget a `before` / `after` step runs under.
+///
+/// Steps carry no per-step configuration: they are setup, not checks, and a
+/// per-step key would be schema surface for a knob nobody has needed. The
+/// environment override is the escape hatch.
 #[must_use]
-pub fn parse_limit(raw: &str) -> Option<Option<Duration>> {
+pub fn step_budget() -> Budget {
+    Budget::from_limit(resolve(STEP_TIMEOUT_ENV, HookTimeout::Default, DEFAULT_STEP_TIMEOUT))
+}
+
+/// The budget a `precondition` probe runs under.
+#[must_use]
+pub fn precondition_budget() -> Budget {
+    Budget::from_limit(resolve(
+        PRECONDITION_TIMEOUT_ENV,
+        HookTimeout::Default,
+        DEFAULT_PRECONDITION_TIMEOUT,
+    ))
+}
+
+/// Apply the precedence chain: `env` (when set and understood) wins over
+/// `configured`, which wins over `fallback`.
+fn resolve(env: &str, configured: HookTimeout, fallback: Duration) -> Option<Duration> {
+    env_timeout(env).unwrap_or(configured).limit(fallback)
+}
+
+/// The timeout an environment variable asks for, or `None` when it is unset or
+/// unreadable.
+///
+/// A value that cannot be parsed is **ignored with a warning**, never read as
+/// "disabled": failing open on a typo would silently reinstate the hang this
+/// whole mechanism exists to bound.
+fn env_timeout(name: &str) -> Option<HookTimeout> {
+    let raw = EnvVars::var(name).ok()?;
+    let parsed = parse_timeout(&raw);
+    if parsed.is_none() {
+        warn!("ignoring {name}={raw}: expected {ACCEPTED_TIMEOUT_FORMS}");
+    }
+    parsed
+}
+
+/// Parse a configured budget; `None` means the value was not understood.
+///
+/// Accepts a bare integer (seconds), an integer with a `ms` / `s` / `m` / `h`
+/// suffix, and `0` / `off` / `none` for [`HookTimeout::Disabled`]. Fractions are
+/// deliberately rejected: `1.5m` invites a rounding question no reader should
+/// have to ask, and `90s` says the same thing exactly.
+#[must_use]
+pub fn parse_timeout(raw: &str) -> Option<HookTimeout> {
     let raw = raw.trim();
     if raw.eq_ignore_ascii_case("off") || raw.eq_ignore_ascii_case("none") {
-        return Some(None);
+        return Some(HookTimeout::Disabled);
     }
-    let seconds: u64 = raw.parse().ok()?;
-    if seconds == 0 {
-        return Some(None);
+    let digits = raw.trim_end_matches(|c: char| c.is_ascii_alphabetic());
+    let unit = raw[digits.len()..].to_ascii_lowercase();
+    let value: u64 = digits.parse().ok()?;
+    if value == 0 {
+        return Some(HookTimeout::Disabled);
     }
-    Some(Some(Duration::from_secs(seconds)))
+    let duration = match unit.as_str() {
+        "ms" => Duration::from_millis(value),
+        "" | "s" => Duration::from_secs(value),
+        "m" => Duration::from_secs(value.checked_mul(60)?),
+        "h" => Duration::from_secs(value.checked_mul(3600)?),
+        _ => return None,
+    };
+    Some(HookTimeout::Limit(duration))
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        Budget, DEFAULT_HOOK_TIMEOUT, DEFAULT_WORKSPACE_HOOK_TIMEOUT, STILL_RUNNING_AFTER, budget_for, parse_limit,
+        Budget, DEFAULT_HOOK_TIMEOUT, DEFAULT_PRECONDITION_TIMEOUT, DEFAULT_STEP_TIMEOUT,
+        DEFAULT_WORKSPACE_HOOK_TIMEOUT, HookTimeout, STILL_RUNNING_AFTER, budget_for, parse_timeout,
+        precondition_budget, step_budget,
     };
     use crate::model::Hook;
     use std::time::Duration;
@@ -171,25 +312,55 @@ mod tests {
     fn explicit_hook_timeout_wins_over_the_shape_default() {
         let mut hook = Hook::run("clippy", "cargo clippy");
         hook.workspace = true;
-        hook.timeout = Some(Duration::from_secs(7));
+        hook.timeout = HookTimeout::Limit(Duration::from_secs(7));
         assert_eq!(budget_for(&hook).limit, Some(Duration::from_secs(7)));
     }
 
     #[test]
-    fn parse_limit_reads_seconds_and_disable_words() {
-        assert_eq!(parse_limit("90"), Some(Some(Duration::from_secs(90))));
-        assert_eq!(parse_limit(" 90 "), Some(Some(Duration::from_secs(90))));
-        assert_eq!(parse_limit("0"), Some(None));
-        assert_eq!(parse_limit("off"), Some(None));
-        assert_eq!(parse_limit("NONE"), Some(None));
+    fn a_disabled_hook_timeout_is_unbounded_and_unsupervised() {
+        let mut hook = Hook::run("slow", "sleep 30");
+        hook.timeout = HookTimeout::Disabled;
+        let budget = budget_for(&hook);
+        assert_eq!(budget.limit, None);
+        assert!(!budget.is_supervised(), "disabling restores the un-supervised path");
     }
 
     #[test]
-    fn parse_limit_rejects_values_it_cannot_understand() {
-        assert_eq!(parse_limit("soon"), None);
-        assert_eq!(parse_limit("-5"), None);
-        assert_eq!(parse_limit("1.5"), None);
-        assert_eq!(parse_limit(""), None);
+    fn setup_steps_and_probes_have_their_own_defaults() {
+        assert_eq!(step_budget().limit, Some(DEFAULT_STEP_TIMEOUT));
+        assert_eq!(precondition_budget().limit, Some(DEFAULT_PRECONDITION_TIMEOUT));
+        assert!(
+            DEFAULT_PRECONDITION_TIMEOUT < DEFAULT_STEP_TIMEOUT,
+            "a probe that needs minutes is not a probe"
+        );
+    }
+
+    #[test]
+    fn parse_timeout_reads_seconds_suffixes_and_disable_words() {
+        assert_eq!(parse_timeout("90"), Some(HookTimeout::Limit(Duration::from_secs(90))));
+        assert_eq!(parse_timeout(" 90 "), Some(HookTimeout::Limit(Duration::from_secs(90))));
+        assert_eq!(
+            parse_timeout("500ms"),
+            Some(HookTimeout::Limit(Duration::from_millis(500)))
+        );
+        assert_eq!(parse_timeout("30S"), Some(HookTimeout::Limit(Duration::from_secs(30))));
+        assert_eq!(parse_timeout("10m"), Some(HookTimeout::Limit(Duration::from_mins(10))));
+        assert_eq!(parse_timeout("1h"), Some(HookTimeout::Limit(Duration::from_hours(1))));
+        assert_eq!(parse_timeout("0"), Some(HookTimeout::Disabled));
+        assert_eq!(parse_timeout("0s"), Some(HookTimeout::Disabled));
+        assert_eq!(parse_timeout("off"), Some(HookTimeout::Disabled));
+        assert_eq!(parse_timeout("NONE"), Some(HookTimeout::Disabled));
+    }
+
+    #[test]
+    fn parse_timeout_rejects_values_it_cannot_understand() {
+        assert_eq!(parse_timeout("soon"), None);
+        assert_eq!(parse_timeout("-5"), None);
+        assert_eq!(parse_timeout("1.5"), None);
+        assert_eq!(parse_timeout("1.5m"), None);
+        assert_eq!(parse_timeout("30 s"), None);
+        assert_eq!(parse_timeout("30x"), None);
+        assert_eq!(parse_timeout(""), None);
     }
 
     #[test]

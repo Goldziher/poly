@@ -397,11 +397,25 @@ impl HookRunReporter {
         use crate::model::HookStatus;
 
         let statuses = || outcome.stages.iter().flat_map(|stage| stage.hooks.iter());
+        // Steps carry the same markers as hooks, so a run whose only casualty
+        // was a `before` step still needs the key that explains `⧖`.
+        let step_statuses = || {
+            outcome.stages.iter().flat_map(|stage| {
+                stage
+                    .before
+                    .iter()
+                    .chain(stage.after.iter())
+                    .chain(stage.hooks.iter().flat_map(|hook| hook.before.iter()))
+                    .map(|step| &step.status)
+            })
+        };
         let mut entries: Vec<String> = Vec::new();
         if statuses().any(|hook| matches!(hook.status, HookStatus::Skipped(_))) {
             entries.push(format!("{SKIPPED_MARKER} skipped (did not apply)"));
         }
-        if statuses().any(|hook| matches!(hook.status, HookStatus::TimedOut(_))) {
+        if statuses().any(|hook| matches!(hook.status, HookStatus::TimedOut(_)))
+            || step_statuses().any(|status| matches!(status, HookStatus::TimedOut(_)))
+        {
             entries.push(format!("{} killed by poly on timeout", timed_out_marker()));
         }
         if statuses().any(|hook| matches!(hook.status, HookStatus::Unknown(_))) {
@@ -464,13 +478,7 @@ impl HookRunReporter {
         }
 
         for step in &stage.before {
-            let _ = writeln!(
-                report,
-                "  {} before: {}",
-                project_status_marker(step.status.is_failure()),
-                step.command
-            );
-            append_failure_output(report, &step.status, &step.output);
+            Self::render_step(report, "before", step);
         }
 
         for hook in &stage.hooks {
@@ -478,14 +486,26 @@ impl HookRunReporter {
         }
 
         for step in &stage.after {
-            let _ = writeln!(
-                report,
-                "  {} after: {}",
-                project_status_marker(step.status.is_failure()),
-                step.command
-            );
-            append_failure_output(report, &step.status, &step.output);
+            Self::render_step(report, "after", step);
         }
+    }
+
+    /// Render one stage-level `before`/`after` step.
+    ///
+    /// A killed step gets the timeout marker and says so: "poly stopped this
+    /// setup command" and "this setup command said no" are different facts, and
+    /// a shared `×` would put the reader back to guessing.
+    fn render_step(report: &mut String, label: &str, step: &crate::model::StepOutcome) {
+        use std::fmt::Write as _;
+
+        let _ = writeln!(
+            report,
+            "  {} {label}: {}{}",
+            step_marker(&step.status),
+            step.command,
+            step_note(&step.status)
+        );
+        append_failure_output(report, &step.status, &step.output);
     }
 
     /// Render one hook line. Every hook the runner knows about is rendered —
@@ -512,7 +532,7 @@ impl HookRunReporter {
         let _ = writeln!(report, "  {marker} {}{suffix}{note}", hook.id);
         for step in &hook.before {
             if step.status.is_failure() {
-                let _ = writeln!(report, "      before: {}", step.command);
+                let _ = writeln!(report, "      before: {}{}", step.command, step_note(&step.status));
                 append_failure_output(report, &step.status, &step.output);
             }
         }
@@ -587,6 +607,24 @@ fn unknown_marker() -> String {
 /// Marker for a hook poly killed — a failure, but not the tool's own.
 fn timed_out_marker() -> String {
     TIMED_OUT_MARKER.red().to_string()
+}
+
+/// The marker a `before`/`after` step line carries: its own verdict, unless
+/// poly killed it.
+fn step_marker(status: &crate::model::HookStatus) -> String {
+    match status {
+        crate::model::HookStatus::TimedOut(_) => timed_out_marker(),
+        other => project_status_marker(other.is_failure()),
+    }
+}
+
+/// The parenthetical a step line carries. Only a kill needs one — every other
+/// step status is fully described by its marker and its captured output.
+fn step_note(status: &crate::model::HookStatus) -> String {
+    match status {
+        crate::model::HookStatus::TimedOut(reason) => format!(" ({reason})"),
+        _ => String::new(),
+    }
 }
 
 /// The line a hook prints while it is still running, so a hang names its
@@ -740,10 +778,10 @@ mod tests {
 
         let hook = outcome_with(
             "ai-rulez:ai-rulez-validate",
-            HookStatus::TimedOut(TimeoutReason {
-                limit: Duration::from_mins(10),
-                elapsed: Duration::from_secs_f64(600.4),
-            }),
+            HookStatus::TimedOut(TimeoutReason::command(
+                Duration::from_mins(10),
+                Duration::from_secs_f64(600.4),
+            )),
         );
         let mut report = String::new();
         HookRunReporter::render_hook(&mut report, &hook);
@@ -791,10 +829,10 @@ mod tests {
                     outcome_with("a", HookStatus::Skipped(SkipReason::NoFiles)),
                     outcome_with(
                         "b",
-                        HookStatus::TimedOut(TimeoutReason {
-                            limit: Duration::from_mins(10),
-                            elapsed: Duration::from_secs(601),
-                        }),
+                        HookStatus::TimedOut(TimeoutReason::command(
+                            Duration::from_mins(10),
+                            Duration::from_secs(601),
+                        )),
                     ),
                 ],
                 after: Vec::new(),

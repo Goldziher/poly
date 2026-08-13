@@ -215,10 +215,7 @@ fn capture<S: OutputSink>(
 /// describes poly's signal, not the tool's opinion of the code.
 fn status_of(run: &Supervised, budget: Budget) -> HookStatus {
     if run.timed_out {
-        return HookStatus::TimedOut(TimeoutReason {
-            limit: budget.limit.unwrap_or(run.elapsed),
-            elapsed: run.elapsed,
-        });
+        return HookStatus::TimedOut(TimeoutReason::command(budget.limit.unwrap_or(run.elapsed), run.elapsed));
     }
     if run.output.status.success() {
         HookStatus::Passed
@@ -245,15 +242,21 @@ fn announce_still_running(bar: Option<&ProgressBar>, id: &str, elapsed: Duration
     }
 }
 
-/// Run a `before`/`after` shell command from `root`, capturing its output.
+/// Run a `before`/`after` shell command from `root` under `budget`, capturing
+/// its output.
 ///
 /// `env` is layered over the inherited environment — empty for a stage-level
 /// step, the hook's own declared `env` for a per-hook one, so a hook's setup
 /// sees exactly what the hook will.
-pub(super) fn run_step(root: &Path, command: &str, env: &BTreeMap<String, String>) -> StepOutcome {
+///
+/// A step that overruns is killed exactly as a hook is, and reports
+/// [`HookStatus::TimedOut`]: a setup step that hangs blocks the commit just as
+/// completely as a hook that hangs, and the caller has to be able to tell that
+/// apart from a step that failed on its own merits.
+pub(super) fn run_step(root: &Path, command: &str, env: &BTreeMap<String, String>, budget: Budget) -> StepOutcome {
     let mut cmd = Cmd::new(SHELL, command.to_string());
     cmd.arg(SHELL_ARG).arg(command).current_dir(root).envs(env.iter());
-    let (status, output) = execute(cmd, None, command, Budget::unlimited());
+    let (status, output) = execute(cmd, None, command, budget);
     StepOutcome {
         command: command.to_string(),
         status,
@@ -261,20 +264,45 @@ pub(super) fn run_step(root: &Path, command: &str, env: &BTreeMap<String, String
     }
 }
 
-/// Evaluate a `precondition` guard from `root`: `true` when it exits 0.
+/// What a `precondition` probe answered.
+///
+/// [`Probe::TimedOut`] exists because the alternative is a false pass: reading
+/// a wedged probe as "does not apply" would withhold every hook it guards and
+/// let the run report success having validated nothing.
+pub(super) enum Probe {
+    /// Exit 0 — the guarded hooks apply.
+    Passed,
+    /// Non-zero, or the probe could not be launched — they do not apply.
+    Declined,
+    /// poly killed the probe; whether they apply is unknown.
+    TimedOut(TimeoutReason),
+}
+
+/// Evaluate a `precondition` guard from `root` under `budget`.
 ///
 /// Output is discarded — a precondition is a probe, not a check, so its chatter
 /// never reaches the report.
-pub(super) fn run_precondition(root: &Path, command: &str, env: &BTreeMap<String, String>) -> bool {
+pub(super) fn run_precondition(root: &Path, command: &str, env: &BTreeMap<String, String>, budget: Budget) -> Probe {
     let mut cmd = Cmd::new(SHELL, command.to_string());
-    cmd.arg(SHELL_ARG)
-        .arg(command)
-        .current_dir(root)
-        .envs(env.iter())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .check(false);
-    cmd.status().is_ok_and(|status| status.success())
+    cmd.arg(SHELL_ARG).arg(command).current_dir(root).envs(env.iter());
+
+    if !budget.is_supervised() {
+        // The un-supervised path is kept byte for byte: no pipes, no drain
+        // threads, output straight to /dev/null.
+        cmd.stdout(Stdio::null()).stderr(Stdio::null()).check(false);
+        return match cmd.status() {
+            Ok(status) if status.success() => Probe::Passed,
+            _ => Probe::Declined,
+        };
+    }
+
+    // Supervision needs pipes, so the output is captured and dropped rather
+    // than never produced — the same nothing, from the report's point of view.
+    match execute(cmd, None, command, budget).0 {
+        HookStatus::Passed => Probe::Passed,
+        HookStatus::TimedOut(reason) => Probe::TimedOut(TimeoutReason::precondition(reason.limit, reason.elapsed)),
+        _ => Probe::Declined,
+    }
 }
 
 /// Estimate the argv bytes consumed by everything except the matched files, so
