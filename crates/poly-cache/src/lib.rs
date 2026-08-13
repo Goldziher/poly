@@ -11,6 +11,11 @@
 //!
 //! # Storage layout
 //!
+//! Every directory below is created owner-only (`0700`) on Unix — the staged
+//! snapshot mirrors the repository's source, so the tree must not be left
+//! world-readable by an inherited umask. See [`permissions`] for the full
+//! rationale and for what poly deliberately leaves alone.
+//!
 //! ```text
 //! <platform-cache>/poly/<repo-key>/
 //!   VERSION              — format-version sentinel; bump CACHE_FORMAT_VERSION on
@@ -105,8 +110,10 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 mod maintenance;
+pub mod permissions;
 
 pub use maintenance::{CacheStats, NamespaceStats};
+pub use permissions::{create_dir_all_private, ensure_private_dir};
 
 /// On-disk format version written to the `VERSION` sentinel file.
 ///
@@ -236,9 +243,33 @@ pub fn repo_key(anchor: &Path) -> String {
 /// `<cache_home>/<repo-key>`. Result-cache entries live under `results/` here
 /// and the hook staged snapshot under `staged/`.
 ///
-/// Best-effort removes any legacy in-repo `.polylint/` directory as a side
-/// effect, so an upgrade cleans up after the previous layout.
+/// Two best-effort side effects, so callers get a directory that is safe to
+/// write into rather than a bare path:
+///
+/// - any legacy in-repo `.polylint/` directory is removed, so an upgrade cleans
+///   up after the previous layout;
+/// - the directory itself is created owner-only ([`ensure_private_dir`]). This
+///   is the choke point every consumer resolves through, including the hook
+///   staged snapshot, so creating it here means a snapshot of the repository's
+///   source can never land in a directory other local users can traverse — even
+///   when the result cache is disabled and never creates its own tree.
+///
+/// Creation failures are logged and ignored: this resolver has always returned
+/// a path, and the caller that actually writes reports the error with its own
+/// context.
 pub fn repo_cache_dir(start: &Path) -> anyhow::Result<PathBuf> {
+    let dir = resolve_repo_cache_dir(start)?;
+    if let Err(error) = permissions::ensure_private_dir(&dir) {
+        tracing::debug!(dir = %dir.display(), "could not pre-create the cache directory: {error}");
+    }
+    Ok(dir)
+}
+
+/// Resolve the per-repo cache directory without creating it.
+///
+/// The path half of [`repo_cache_dir`], for the paths that must not materialize
+/// a cache tree — a disabled cache creates nothing.
+fn resolve_repo_cache_dir(start: &Path) -> anyhow::Result<PathBuf> {
     let anchor = repo_anchor(start);
     remove_legacy_cache(&anchor);
     Ok(cache_home()?.join(repo_key(&anchor)))
@@ -421,26 +452,45 @@ impl ResultCache {
 
     /// Open the cache by walking upward from `start` to find the repo root.
     ///
-    /// Combines [`root_from`] with the self-healing [`open_healed`].
+    /// Combines [`root_from`] with the self-healing [`open_healed`]. An enabled
+    /// cache creates its root owner-only; a disabled one only resolves the path.
     ///
     /// [`open_healed`]: ResultCache::open_healed
     pub fn open_from(start: &Path, enabled: bool) -> anyhow::Result<Self> {
-        Self::open_healed(root_from(start)?, enabled)
+        Self::open_healed(Self::resolve_root(start, enabled)?, enabled)
+    }
+
+    /// Resolve the cache root for `start`, creating it only when the cache is
+    /// enabled — a disabled cache is a no-op that materializes nothing, so it
+    /// takes the non-creating half of [`repo_cache_dir`].
+    fn resolve_root(start: &Path, enabled: bool) -> anyhow::Result<PathBuf> {
+        if enabled {
+            root_from(start)
+        } else {
+            resolve_repo_cache_dir(start)
+        }
     }
 
     /// Open the cache by walking upward from the current working directory.
     ///
-    /// Combines [`root_from_cwd`] with the self-healing [`open_healed`].
+    /// [`open_from`] rooted at the current directory, so it inherits the same
+    /// self-healing open and the same "a disabled cache creates nothing" rule.
     ///
-    /// [`open_healed`]: ResultCache::open_healed
+    /// [`open_from`]: ResultCache::open_from
     pub fn open_default(enabled: bool) -> anyhow::Result<Self> {
-        Self::open_healed(root_from_cwd()?, enabled)
+        let cwd = std::env::current_dir().map_err(|e| anyhow::anyhow!("could not read current directory: {e}"))?;
+        Self::open_from(&cwd, enabled)
     }
 
     /// Create the full sub-directory tree and write the VERSION sentinel.
+    ///
+    /// Every directory is created owner-only on Unix (see [`permissions`]); an
+    /// existing one keeps whatever mode it has, and only earns a warning.
     fn init_dirs(root: &Path) -> anyhow::Result<()> {
+        permissions::ensure_private_dir(root)
+            .map_err(|e| anyhow::anyhow!("failed to create cache dir {}: {e}", root.display()))?;
         for sub in ["results/lint", "results/fmt", "results/hook"] {
-            std::fs::create_dir_all(root.join(sub))
+            permissions::create_dir_all_private(&root.join(sub))
                 .map_err(|e| anyhow::anyhow!("failed to create cache dir {}: {e}", root.join(sub).display()))?;
         }
         let version_path = root.join("VERSION");

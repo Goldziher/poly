@@ -7,6 +7,35 @@ use tempfile::TempDir;
 
 use super::*;
 
+/// The per-repo slot [`repo_cache_dir`] creates in the *real* per-user cache
+/// home for a temporary repository, removed again when the test ends.
+///
+/// `repo_cache_dir` creates the directory it resolves (that is what keeps the
+/// staged snapshot owner-only), and the tests below deliberately exercise the
+/// un-overridden cache home. The key is derived from a unique temp path, so the
+/// slot belongs to exactly one test and cleaning it up is race-free.
+struct RealCacheSlot {
+    dir: PathBuf,
+}
+
+impl RealCacheSlot {
+    fn of(repo: &Path) -> Self {
+        Self {
+            dir: repo_cache_dir(repo).expect("resolve cache dir"),
+        }
+    }
+
+    fn path(&self) -> &Path {
+        &self.dir
+    }
+}
+
+impl Drop for RealCacheSlot {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
+
 /// Open an enabled cache rooted at an explicit temporary directory, so
 /// tests are isolated from the process cwd and any real `.git` tree.
 fn cache_at(dir: &TempDir) -> ResultCache {
@@ -385,10 +414,13 @@ fn hook_sources_are_global_and_url_keyed() {
     std::fs::create_dir_all(&first_repo).unwrap();
     std::fs::create_dir_all(&second_repo).unwrap();
 
+    let first_slot = RealCacheSlot::of(&first_repo);
+    let second_slot = RealCacheSlot::of(&second_repo);
+
     let global = hook_sources_dir().unwrap();
     assert_eq!(global, cache_home().unwrap().join("hook-sources"));
-    assert!(!global.starts_with(repo_cache_dir(&first_repo).unwrap()));
-    assert!(!global.starts_with(repo_cache_dir(&second_repo).unwrap()));
+    assert!(!global.starts_with(first_slot.path()));
+    assert!(!global.starts_with(second_slot.path()));
     assert_ne!(
         hook_source_key("https://example.com/hooks.git/"),
         hook_source_key("https://example.com/hooks.git")
@@ -397,4 +429,101 @@ fn hook_sources_are_global_and_url_keyed() {
         hook_source_key("https://example.com/one"),
         hook_source_key("https://example.com/two")
     );
+}
+
+#[cfg(unix)]
+mod unix_permissions {
+    use std::os::unix::fs::PermissionsExt;
+    use std::path::Path;
+
+    use super::*;
+
+    const OWNER_ONLY: u32 = 0o700;
+
+    fn mode_of(path: &Path) -> u32 {
+        std::fs::metadata(path).expect("stat").permissions().mode() & 0o777
+    }
+
+    #[test]
+    fn open_creates_the_cache_tree_owner_only() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("cache");
+
+        ResultCache::open(root.clone(), true).expect("open cache");
+
+        assert_eq!(mode_of(&root), OWNER_ONLY, "the cache root must be owner-only");
+        for sub in ["results", "results/lint", "results/fmt", "results/hook"] {
+            assert_eq!(mode_of(&root.join(sub)), OWNER_ONLY, "{sub} must be created owner-only");
+        }
+    }
+
+    #[test]
+    fn cache_still_stores_and_reads_entries_with_owner_only_dirs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cache = cache_at(&tmp);
+        let digest = ResultCache::single_file_digest("content");
+        let key = ResultCache::key(Namespace::Lint, "eng", "1", &empty_args(), &digest);
+
+        cache.put(Namespace::Lint, &key, b"stored").unwrap();
+
+        assert_eq!(cache.get(Namespace::Lint, &key).as_deref(), Some(&b"stored"[..]));
+        assert_eq!(mode_of(cache.root()), OWNER_ONLY, "hardening must not break get/put");
+    }
+
+    #[test]
+    fn repo_cache_dir_creates_an_owner_only_slot_for_the_staged_snapshot() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("repo");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+
+        let slot = RealCacheSlot::of(&repo);
+
+        assert!(slot.path().is_dir(), "the per-repo slot must exist after resolution");
+        assert_eq!(
+            mode_of(slot.path()),
+            OWNER_ONLY,
+            "the slot holding the staged snapshot must not be traversable by other users"
+        );
+
+        // The staged snapshot is created by poly-hooks with a plain
+        // `create_dir_all`; an owner-only parent is what seals it, since Unix
+        // checks every path component.
+        let staged = slot.path().join("staged");
+        std::fs::create_dir_all(&staged).unwrap();
+        assert_eq!(mode_of(slot.path()), OWNER_ONLY, "the parent stays owner-only");
+    }
+
+    #[test]
+    fn disabled_open_from_creates_nothing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("repo");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+        let expected = cache_home().unwrap().join(repo_key(&repo));
+
+        let cache = ResultCache::open_from(&repo, false).expect("open disabled");
+
+        assert_eq!(cache.root(), expected);
+        assert!(!expected.exists(), "a disabled cache must not materialize a directory");
+    }
+
+    #[test]
+    fn an_existing_loose_directory_keeps_its_mode() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("shared-cache");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        ResultCache::open(root.clone(), true).expect("open cache");
+
+        assert_eq!(
+            mode_of(&root),
+            0o755,
+            "a pre-existing (possibly deliberately shared) cache dir must not be silently tightened"
+        );
+        assert_eq!(
+            mode_of(&root.join("results/lint")),
+            OWNER_ONLY,
+            "sub-directories poly creates itself are still owner-only"
+        );
+    }
 }
