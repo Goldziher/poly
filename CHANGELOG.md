@@ -7,28 +7,6 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
-### Changed
-
-- Refreshed the whole dependency tree. All pinned git backends move to their latest upstream
-  **release** commits, keeping the existing practice of pinning releases rather than arbitrary
-  `HEAD`:
-
-  | backend | from | to |
-  | --- | --- | --- |
-  | oxc (`oxc_formatter`, `oxc_linter`, …) | `65fe65d` — oxlint 1.76.0 / oxfmt 0.61.0 | `c42d639` — oxlint 1.78.0 / oxfmt 0.63.0 |
-  | ruff (`ruff_linter`, `ruff_python_formatter`, …) | `80790b3` — 0.16.1 | `5b48a04` — 0.16.2 |
-  | biome (`biome_css_analyze`, `biome_graphql_analyze`, …) | `1139f1c` | `6b8f09c` |
-  | rubyfmt | `b63fbaa` | `5185d3b` |
-
-  Registry dependencies were upgraded in the same pass, including the exact-pinned `mago` PHP family
-  (`=1.42.0` → `=1.43.0`, bumped as a set so the monorepo crates stay consistent), `rumdl` 0.2.42 →
-  0.2.54, `tree-sitter-language-pack` 1.14.0 → 1.14.3, `typos` 0.10.43 → 0.10.44, `uncomment` 3.5.1 →
-  3.5.2, `ast-grep-core` 0.44.1 → 0.45.1, and `hcl-rs` / `hcl-edit` 0.19.7 / 0.9.6 → 0.19.8 / 0.9.7.
-
-- Every affected engine's `version()` was bumped alongside its wrapped crate, so cached results
-  produced by the previous backend versions are invalidated rather than reused. The `version_audit`
-  test enforces this contract and now passes against the refreshed lockfile.
-
 ### Added
 
 - **`poly doctor`** — the command to run before filing a bug. Reports the running executable and its
@@ -103,7 +81,41 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   where they matter without any config change. A direct CLI invocation is unchanged: naming a file
   still checks it.
 
-### Changed (behaviour)
+### Changed
+
+- **Whole-project hooks now actually run in parallel.** A priority group ran under a single
+  boolean — if *any* hook in it could not run beside a peer, the *entire* group ran one hook at
+  a time — and the stage-level `parallel` key defaults to `false`, so in practice a repo with
+  even one inline job (poly's own `poly.toml` among them) ran every builtin hook serially on an
+  otherwise idle machine.
+
+  Replaced with named exclusion sets scheduled as chains (ADR 0024): hooks naming the same set
+  run sequentially in config order, everything else runs concurrently. New job key
+  `serial = true | "<name>" | false`. The cargo builtins (`clippy`/`sort`/`machete`/`deny`) join
+  a shared `cargo` set by default, because every cargo subcommand takes the package-cache lock
+  and a build takes the build-directory lock; a job whose `run` line invokes `cargo` anywhere
+  joins that set automatically. See `adrs/0024-hook-concurrency-exclusion-sets.md` for the model
+  and its trade-offs.
+
+- Refreshed the whole dependency tree. All pinned git backends move to their latest upstream
+  **release** commits, keeping the existing practice of pinning releases rather than arbitrary
+  `HEAD`:
+
+  | backend | from | to |
+  | --- | --- | --- |
+  | oxc (`oxc_formatter`, `oxc_linter`, …) | `65fe65d` — oxlint 1.76.0 / oxfmt 0.61.0 | `c42d639` — oxlint 1.78.0 / oxfmt 0.63.0 |
+  | ruff (`ruff_linter`, `ruff_python_formatter`, …) | `80790b3` — 0.16.1 | `5b48a04` — 0.16.2 |
+  | biome (`biome_css_analyze`, `biome_graphql_analyze`, …) | `1139f1c` | `6b8f09c` |
+  | rubyfmt | `b63fbaa` | `5185d3b` |
+
+  Registry dependencies were upgraded in the same pass, including the exact-pinned `mago` PHP family
+  (`=1.42.0` → `=1.43.0`, bumped as a set so the monorepo crates stay consistent), `rumdl` 0.2.42 →
+  0.2.54, `tree-sitter-language-pack` 1.14.0 → 1.14.3, `typos` 0.10.43 → 0.10.44, `uncomment` 3.5.1 →
+  3.5.2, `ast-grep-core` 0.44.1 → 0.45.1, and `hcl-rs` / `hcl-edit` 0.19.7 / 0.9.6 → 0.19.8 / 0.9.7.
+
+- Every affected engine's `version()` was bumped alongside its wrapped crate, so cached results
+  produced by the previous backend versions are invalidated rather than reused. The `version_audit`
+  test enforces this contract and now passes against the refreshed lockfile.
 
 - **A file the formatter cannot process now fails the run (exit 2) instead of reporting success.**
   `poly fmt` logged an engine error at `warn` and dropped the file from the results entirely, so an
@@ -190,7 +202,85 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   **Action required for commit gates that pass staged paths and rely on clippy running:** add the
   new `--workspace` flag. `poly lint --workspace <paths>` restores the previous behaviour.
 
+- Minor: `cargo deny` no longer carries a stale, unused OpenSSL license allowance; every
+  workspace crate now sets `publish = false`; `scripts/release-bump.sh` now asserts
+  `.codex-plugin/plugin.json`'s version alongside the Claude plugin manifests it already checked.
+
 ### Fixed
+
+- **Security: a hook's fix could be written to a file outside the repository.** A tracked
+  symlink (git mode `120000`) whose blob names an absolute path outside the repo was faithfully
+  recreated as a real symlink inside the staged snapshot `poly hooks` isolation builds, and
+  write-back then copied a hook's rewrite straight through it — the destination open follows
+  symlinks. Hook isolation is on by default and every routine `git commit` reaches the
+  write-back path, so cloning a hostile repository and committing to it was enough. Reproduced
+  end to end, not theorised.
+
+  Closed at both layers. The snapshot now removes, on every refresh, any materialized symlink
+  whose target does not lexically resolve inside it (checked right after `git checkout-index`).
+  Write-back separately checks the destination with `symlink_metadata` before ever opening it —
+  a symlink is refused, never followed — and rejects any index path carrying a `..`, an
+  absolute, or a drive/UNC component.
+
+- **Write-back no longer trusts `git diff-files` to decide a worktree file is safe to
+  overwrite.** That was its only gate before copying a staged-content fix over live worktree
+  bytes, and it is the same stat-based dirtiness probe this repo had already stopped trusting
+  elsewhere. Under a stale index stat cache — reproducible with
+  `git update-index --assume-unchanged` — it called a genuinely modified file clean, and poly
+  then destroyed the unstaged work. Write-back now compares blake3 of the worktree bytes against
+  the actual index blob (`git cat-file blob :0:<path>`) before writing. The write is also atomic
+  now — a sibling temp file plus rename, preserving the destination's permissions — so an
+  interrupt mid-copy can no longer truncate the author's source file.
+
+- **A withheld fix now names the actual reason it was withheld**, instead of always printing
+  "these files have unstaged changes" — which was false for the symlink and unreadable-path
+  cases above, and actively misleading in the security case: it told the author to stage their
+  work when the real cause was a symlink poly refused to follow. Five distinct reasons are now
+  reported per path (unstaged changes, worktree is a symlink, worktree is not a regular file,
+  the snapshot copy is unreadable, the path escapes the repository); the two security refusals
+  are marked as such and never offer the `git add` remedy.
+
+- **A hook queued behind a cargo lock is no longer reported as hung.** A cargo hook blocked on
+  the package-cache or build-directory lock held by a process outside the run — a developer's
+  own build, `rust-analyzer` — prints nothing while it waits, and was indistinguishable from a
+  genuinely wedged hook: both said "still running". The liveness notice now says it is waiting
+  on a lock and names the resource. Note honestly: the time budget still counts during the
+  wait — poly does not own that queue and cannot pause it — and the notice says so.
+
+- **A hook that finished on its own is no longer reported as killed.** At the timeout boundary
+  poly entered the kill path, reaped the child's real exit status, and then reported `TimedOut`
+  regardless — a hook that passed blocked the commit and told the author it had been killed.
+  Measured at 52–117 false reports per 8192 spawns under contention, so this was not theoretical.
+  A child's own exit status now wins: poly re-probes before signalling, and on Unix treats the
+  absence of a termination signal as proof it was not killed. One consequence worth knowing —
+  a hook that traps `SIGTERM`, overruns its budget, and then exits non-zero by itself is now
+  reported `Failed` with its exit code rather than `TimedOut`, because that is what happened.
+
+- **Killing a hook on Windows no longer leaves its grandchildren running.** The kill path
+  signalled only the direct child, so a hook that spawned its own processes — a shell running a
+  build, a test runner with workers — left them alive holding locks after poly reported the hook
+  killed. The child is now assigned to a Job Object at spawn and the whole tree is terminated,
+  matching the process-group behaviour Unix already had. The job carries no kill-on-close limit,
+  so a daemon a hook legitimately started still survives a normal run.
+
+- **Cache directories are created owner-only (`0700`) on Unix.** The per-repo cache slot holds
+  the hook staged snapshot — a full mirror of the source being committed — and was previously
+  created under the process umask, commonly world-readable. An existing directory is
+  deliberately never `chmod`'d, since a shared CI cache mode may be intentional; poly warns once
+  with the fix command instead.
+
+- **`poly fmt --format json` omitted a file it failed to process, instead of reporting the
+  error.** An errored file was simply absent from the output, indistinguishable from a file
+  checked and found clean; the only evidence was the exit code and a `WARN` log.
+  `poly lint --format json` never had this bug, so the two commands' JSON output was asymmetric.
+  `FormatResult` now carries an `error` field and the format reporter emits a record for every
+  errored file — a machine consumer must still check the exit code, not just the payload. Format
+  failures now also echo to stderr under `json`/`toon`, matching what lint already did.
+
+- **MCP consumers lost per-file errors.** The poly MCP server now carries a run-level `errors`
+  array, a per-file `error` distinct from `skipped`, and sets `isError` on any run with errors.
+  An empty findings list was previously not proof of a clean run — a file that failed to lint or
+  format could vanish from the result with no signal at all.
 
 - **`poly lint` no longer exits 0 for a file it could not lint.** A per-file engine failure was
   logged as a warning and the file was dropped from the results, so a run that failed to check
@@ -250,6 +340,15 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   the worktree copy is byte-identical to the index. Where they differ the author is holding unstaged
   work, so the fix is withheld and a `stage_fixed` hook fails the run naming the files — rather than
   overwriting work the fix never saw, or `git add`ing hunks the author deliberately left out.
+
+  Three accepted trade-offs ship with the wider scope (ADR 0019). A partially staged file (`git
+  add -p`) is judged on its staged hunks alone — an unstaged hunk in the same file can no longer
+  fail or pass the gate. A gitignored `poly.local.toml` is invisible to the snapshot, so local
+  overrides that loosen hooks stop applying under `git commit`; `poly hooks run --all-files` is
+  unaffected, and `[hooks] isolate = false` in the committed `poly.toml` restores worktree scoping.
+  And a hook's own untracked side effects — logs, generated files outside its matched set — land in
+  the snapshot and are discarded on the next refresh, so anything a hook is meant to deliver must be
+  a file its own `files`/glob actually matches.
 
 - **A hook that never returns no longer hangs the commit silently.** One wedged a consumer's
   pre-commit for 25 minutes with zero output, blocking four commits, with `--no-verify` the only way
@@ -439,6 +538,12 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   cannot, and the README now says so plainly. An unpinned-install one-liner had already been copied
   verbatim into eight sibling repositories, so published examples are treated here as a defect
   surface rather than prose.
+
+- **The Homebrew publish step no longer exits 0 when `HOMEBREW_TOKEN` is unset.** It silently
+  skipped the tap update, so the tap sat at `0.17.0` while the project shipped `0.19.7` and every
+  release reported success regardless — `brew install` served a build predating a set of
+  content-corrupting fixes. The step now fails the job with `HOMEBREW_TOKEN is not set`, so a
+  missing secret blocks the release instead of quietly leaving Homebrew behind.
 
 - Adapted the OXC backend to two upstream API changes in oxc `c42d639`:
   - `oxc_formatter::format` lost its trailing session argument; poly now calls the four-argument

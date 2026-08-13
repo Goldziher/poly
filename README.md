@@ -290,6 +290,12 @@ trim_trailing_whitespace = true
 # a repo states its excluded paths once.
 exclude = ["test_apps/**", "docs/snippets/**", "artifacts/**"]
 
+# Off by default: naming a file on the command line checks it regardless of
+# `exclude`. Turn this on so `exclude` also applies to explicitly named paths,
+# not just the directory walk. Equivalent to `--force-exclude`; a hook always
+# passes that flag, since it is handed staged paths rather than deliberate ones.
+force_exclude = false
+
 [fmt.python.ruff]
 docstring_code_format = true
 docstring_code_line_length = 120
@@ -628,17 +634,57 @@ workspace = true
 A `workspace = true` job takes no appended filenames (use a `{staged_files}` template to opt
 back in). The `cargo` builtin group is whole-workspace automatically.
 
+#### Hook concurrency: `serial`
+
+Hooks in a stage run **concurrently** on poly's rayon pool — whole-project hooks included,
+since overlapping `cargo clippy` with `tsc` is where a run's wall-clock is won. `serial` is
+the opt-out for a job that cannot tolerate a *peer* running at the same time:
+
+```toml
+[hooks.pre-commit.commands.migrate]
+run = "./bin/migrate --check"
+serial = true          # never beside another `serial = true` job
+
+[hooks.pre-commit.commands.tests]
+run = "cargo test --workspace"
+workspace = true
+serial = "cargo"       # never beside another member of the "cargo" set
+```
+
+`serial` names a **mutual-exclusion set**, not a stop-the-world: a serial job still runs
+alongside every hook outside its set. `serial = true` joins the shared set; `serial = "<name>"`
+joins a named one; `serial = false` opts out of both, overriding a stage-level
+`parallel = false`.
+
+The built-in **`cargo` group ships in the `"cargo"` set already** — nothing to configure.
+Cargo serializes its own subcommands on the package-cache lock, and anything that builds on
+the build-directory lock, so running `cargo clippy` / `sort` / `machete` / `deny` at once buys
+no wall-clock and costs the queue its visibility: a blocked subcommand prints nothing while
+its own timeout budget runs down (this is how a `cargo deny check` that takes 1.7s alone gets
+killed at the 30-minute whole-project budget). A job whose `run` line invokes cargo joins the
+set automatically; a **script** that shells out to cargo is invisible to poly and should name
+`serial = "cargo"` itself.
+
+A hook queued behind a set peer is not running, so its budget has not started — it can never
+be killed for another hook's build time.
+
 #### Staged isolation
 
-Whole-workspace hooks are **isolated to staged content**: they run against a non-destructive
-snapshot of the git index, so unstaged edits and untracked files never affect a pre-commit
-check — and, unlike `git stash`-based approaches, your working tree is never touched. On by
-default for the commit-gating stages (`pre-commit`, `pre-merge-commit`) and skipped for
-`--all-files`. Opt out with `isolate = false`:
+Every hook in a commit-gating run — per-file and whole-workspace alike — validates **one tree**:
+a non-destructive snapshot of the git index, not the live worktree. Unlike `git stash`-based
+approaches, your working tree is never touched. A run is staged-scoped or worktree-scoped as a
+whole, never a mix — a per-file hook reading the worktree while a whole-workspace hook in the same
+run reads the index is how a commit gate passes a commit whose staged content it never actually
+saw. Every hook outcome records which tree produced its verdict, and the stage banner renders it
+(`[stage] pre-commit — validated staged content`).
+
+On by default for the commit-gating stages (`pre-commit`, `pre-merge-commit`); skipped for
+`--all-files` and non-index stages, which check the worktree by design. Opt out for the whole run
+with `isolate = false`:
 
 ```toml
 [hooks]
-isolate = false   # run whole-workspace hooks against the live worktree instead
+isolate = false   # validate the live worktree instead of the staged snapshot
 ```
 
 The snapshot is a persistent cache in the per-user cache dir
@@ -649,6 +695,12 @@ re-materialized only when its staged object id changed since the last snapshot (
 `path → OID` manifest), so unchanged files are left untouched and cargo/pyrefly/`tsc` incremental
 caches stay warm; files that left the tree are pruned while tool caches inside the snapshot are
 preserved. It self-heals and is purgeable like any cache (`poly cache clean`).
+
+A `stage_fixed` hook that rewrites its matched files writes into the snapshot, so the fix is
+carried back to the worktree copy — but only where that copy is byte-identical to the index.
+Where it differs, the author holds unstaged work the write-back must not silently overwrite or
+stage; the fix is withheld instead, and for a `stage_fixed` hook that fails the run rather than
+losing the unstaged edit.
 
 #### Prerequisites: `precondition` and `before`
 
@@ -1238,13 +1290,26 @@ poly lint [PATHS]...
 poly fmt [PATHS]...
 
   --fix                        Apply lint fixes or formatting in place.
+  --fix-generated              Also rewrite machine-generated files under --fix. By default a
+                               file marked `DO NOT EDIT` / `@generated` is reported but left
+                               unwritten, since a rewrite is undone by the next generation run.
   --check                      Explicit fmt dry run. This is the default.
+  --workspace                  `poly lint` only. Run the whole-project phase even though
+                               explicit paths were given (normally a path-scoped run skips it).
+                               Conflicts with --no-workspace.
+  --no-workspace               `poly lint` only. Skip the whole-project phase (cargo
+                               clippy/-sort/-machete/-deny and any other configured
+                               whole-workspace tools). Equivalent to `[lint] workspace = false`.
   --format <pretty|json|toon>  Output format. Default: pretty.
   --config <PATH>              Use an explicit config file.
   --exclude <GLOB>             Exclude paths from discovery (repeatable; merged
                                with `[discovery] exclude`). An unanchored glob
                                matches at any depth; lead with `/` to anchor it
                                to the config directory.
+  --force-exclude              Apply `[discovery] exclude` to explicitly named files too, not
+                               just the directory walk. A hook is handed staged paths rather
+                               than deliberate ones, so it always passes this. Equivalent to
+                               `[discovery] force_exclude = true`.
   --deny-skips                 Exit 2 if any file was skipped. Equivalent to
                                `--max-skips 0`.
   --max-skips <N>              Exit 2 if more than N files were skipped.
