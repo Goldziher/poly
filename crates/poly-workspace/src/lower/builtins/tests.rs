@@ -658,8 +658,9 @@ fn cargo_fix_mode_rewrites_sort_machete_and_clippy_and_leaves_deny() {
 
     assert_eq!(
         run_line(&spec, "cargo-sort"),
-        "cargo sort --workspace",
-        "sort must drop --check to sort in place"
+        "cargo sort --workspace --no-format",
+        "sort must drop --check to sort in place, but keep --no-format so the fix run does not \
+         reintroduce the 4-space indentation that poly fmt reverts"
     );
     assert_eq!(
         run_line(&spec, "cargo-machete"),
@@ -694,11 +695,43 @@ fn cargo_check_commands_are_untouched_without_fix_mode() {
     // The git-hook / commit-gate path never calls apply_cargo_fix_mode, so the
     // lowered commands stay check-only.
     let spec = lower_all_cargo_tools("[hooks]\nstages = [\"pre-commit\"]\n");
-    assert_eq!(run_line(&spec, "cargo-sort"), "cargo sort --workspace --check");
+    assert_eq!(
+        run_line(&spec, "cargo-sort"),
+        "cargo sort --workspace --check --no-format"
+    );
     assert_eq!(run_line(&spec, "cargo-machete"), "cargo-machete");
     assert_eq!(
         run_line(&spec, "cargo-clippy"),
         "cargo clippy --workspace --all-targets -- -D warnings"
     );
     assert_eq!(run_line(&spec, "cargo-deny"), "cargo deny check");
+}
+
+/// Regression: `cargo sort --check` exits 0 on a manifest it considers badly
+/// formatted, emitting only `warning: Cargo.toml for <crate> is not formatted`.
+/// The cargo group gates on the exit code, so that warning was swallowed and
+/// the hook reported a pass for a check the tool had not passed. `--no-format`
+/// stops cargo-sort forming a formatting opinion at all, leaving the exit code
+/// a faithful signal for sort order — the one thing this hook gates on.
+///
+/// Pinned on both lowerings: dropping `--no-format` from the fix command would
+/// let a `--fix` run rewrite manifests to cargo-sort's 4-space indentation,
+/// which `poly fmt` (taplo, 2-space) immediately reverts.
+#[test]
+fn cargo_sort_suppresses_the_formatting_opinion_in_check_and_fix_modes() {
+    let spec = lower_all_cargo_tools("[hooks]\nstages = [\"pre-commit\"]\n");
+    assert_eq!(
+        run_line(&spec, "cargo-sort"),
+        "cargo sort --workspace --check --no-format",
+        "the check command must pass --no-format: without it cargo-sort exits 0 on an \
+         unformatted manifest and the hook renders a false pass"
+    );
+
+    let mut fixed = lower_all_cargo_tools("[hooks]\nstages = [\"pre-commit\"]\n");
+    super::apply_cargo_fix_mode(&mut fixed);
+    assert_eq!(
+        run_line(&fixed, "cargo-sort"),
+        "cargo sort --workspace --no-format",
+        "the fix command must keep --no-format so sorting never fights taplo over indentation"
+    );
 }

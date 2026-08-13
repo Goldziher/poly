@@ -188,6 +188,35 @@ fn clippy_command(cargo: &CargoHooks) -> String {
     }
 }
 
+/// The `cargo-sort` check command.
+///
+/// `--no-format` is load-bearing, not cosmetic. Under a bare `--check`,
+/// cargo-sort's exit code reflects **only** whether dependencies are sorted:
+/// a manifest it considers badly *formatted* is reported as
+/// `warning: Cargo.toml for <crate> is not formatted` and the process still
+/// exits 0. Because this group gates on the exit code, that warning was
+/// silently swallowed and the hook rendered a green check while the tool had
+/// complained — poly reporting a pass for a check the tool did not pass.
+///
+/// The formatting opinion is also one poly does not want. cargo-sort's
+/// formatter indents with 4 spaces (`indent_count`), while poly formats TOML
+/// with taplo at 2 spaces. Honouring cargo-sort's opinion (via
+/// `--check-format`) without suppressing it would deadlock poly's own hooks:
+/// cargo-sort would rewrite manifests to 4 spaces and `poly fmt` would rewrite
+/// them straight back to 2, so every commit would fail whatever the manifest
+/// looked like.
+///
+/// `--no-format` resolves both at once: cargo-sort stops emitting a formatting
+/// verdict entirely, so nothing is swallowed, and the exit code becomes a
+/// faithful signal for the one thing this hook exists to check — sort order.
+/// TOML formatting stays taplo's job.
+const CARGO_SORT_CHECK: &str = "cargo sort --workspace --check --no-format";
+
+/// The `cargo-sort` autofix command: sort in place, still leaving formatting
+/// to taplo. Dropping `--no-format` here would let the fix run reintroduce the
+/// 4-space indentation that `poly fmt` then reverts.
+const CARGO_SORT_FIX: &str = "cargo sort --workspace --no-format";
+
 /// The four Cargo builtins, paired with the group's per-tool enable toggles.
 fn cargo_tools(cargo: &CargoHooks) -> [CargoTool; 4] {
     [
@@ -202,7 +231,7 @@ fn cargo_tools(cargo: &CargoHooks) -> [CargoTool; 4] {
             enabled: cargo.sort,
             id: "cargo-sort",
             probe: "cargo-sort",
-            command: "cargo sort --workspace --check".to_string(),
+            command: CARGO_SORT_CHECK.to_string(),
             compiler: false,
         },
         CargoTool {
@@ -314,14 +343,15 @@ pub(crate) fn apply_cargo_fix_mode(spec: &mut StageSpec) {
 ///
 /// The transforms mirror the check commands built in [`cargo_tools`] — keep the
 /// two in sync:
-/// - `cargo-sort`: drop the trailing `--check` (sorts in place).
+/// - `cargo-sort`: drop `--check` so it sorts in place, keeping `--no-format`
+///   so the fix run does not fight taplo over indentation.
 /// - `cargo-machete`: append `--fix` (prunes unused deps).
 /// - `cargo-clippy`: insert `--fix --allow-dirty --allow-staged` (the worktree
 ///   is dirty by construction on a `--fix` run); the always-appended
 ///   `-- -D warnings` and any `clippy_args` override are preserved.
 fn cargo_fix_command(id: &str, check: &str) -> Option<String> {
     match id {
-        "cargo-sort" => check.strip_suffix(" --check").map(str::to_owned),
+        "cargo-sort" => (check == CARGO_SORT_CHECK).then(|| CARGO_SORT_FIX.to_string()),
         "cargo-machete" => Some(format!("{check} --fix")),
         "cargo-clippy" => check
             .strip_prefix("cargo clippy ")
