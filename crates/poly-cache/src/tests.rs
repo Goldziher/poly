@@ -36,6 +36,61 @@ impl Drop for RealCacheSlot {
     }
 }
 
+/// Run `action` and return the fields of every `WARN` event it emitted.
+///
+/// The permission policy's whole point is *which* situations warn, so "warned"
+/// and "stayed silent" have to be assertable. The subscriber is installed
+/// thread-locally via [`tracing::subscriber::with_default`], so a capturing test
+/// never steals events from — or loses events to — tests running in parallel.
+#[cfg(unix)]
+pub(crate) fn warnings_during(action: impl FnOnce()) -> Vec<String> {
+    use std::fmt::Write;
+    use std::sync::{Arc, Mutex};
+
+    /// Flattens an event's fields (message included) into one searchable line.
+    #[derive(Default)]
+    struct Fields(String);
+
+    impl tracing::field::Visit for Fields {
+        fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+            let _ = write!(self.0, " {}={value:?}", field.name());
+        }
+    }
+
+    struct Capture(Arc<Mutex<Vec<String>>>);
+
+    impl tracing::Subscriber for Capture {
+        fn enabled(&self, _metadata: &tracing::Metadata<'_>) -> bool {
+            true
+        }
+
+        fn new_span(&self, _span: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+            tracing::span::Id::from_u64(1)
+        }
+
+        fn record(&self, _span: &tracing::span::Id, _values: &tracing::span::Record<'_>) {}
+
+        fn record_follows_from(&self, _span: &tracing::span::Id, _follows: &tracing::span::Id) {}
+
+        fn event(&self, event: &tracing::Event<'_>) {
+            if *event.metadata().level() != tracing::Level::WARN {
+                return;
+            }
+            let mut fields = Fields::default();
+            event.record(&mut fields);
+            self.0.lock().expect("warning sink").push(fields.0);
+        }
+
+        fn enter(&self, _span: &tracing::span::Id) {}
+
+        fn exit(&self, _span: &tracing::span::Id) {}
+    }
+
+    let sink = Arc::new(Mutex::new(Vec::new()));
+    tracing::subscriber::with_default(Capture(Arc::clone(&sink)), action);
+    sink.lock().expect("warning sink").clone()
+}
+
 /// Open an enabled cache rooted at an explicit temporary directory, so
 /// tests are isolated from the process cwd and any real `.git` tree.
 fn cache_at(dir: &TempDir) -> ResultCache {
@@ -285,7 +340,7 @@ fn open_healed_wipes_when_sentinel_stale() {
     std::fs::write(root.join("results/lint/stale-entry"), b"cached").unwrap();
     std::fs::write(root.join("VERSION"), "0").unwrap();
 
-    ResultCache::open_healed(root.clone(), true).unwrap();
+    ResultCache::open_healed(root.clone(), true, DirOrigin::UserConfigured).unwrap();
 
     assert!(
         !root.join("results/lint/stale-entry").exists(),
@@ -308,7 +363,7 @@ fn open_healed_preserves_entries_when_sentinel_current() {
     std::fs::write(root.join("results/lint/entry"), b"cached").unwrap();
     std::fs::write(root.join("VERSION"), CACHE_FORMAT_VERSION).unwrap();
 
-    ResultCache::open_healed(root.clone(), true).unwrap();
+    ResultCache::open_healed(root.clone(), true, DirOrigin::UserConfigured).unwrap();
 
     assert!(
         root.join("results/lint/entry").exists(),
@@ -506,14 +561,18 @@ mod unix_permissions {
         assert!(!expected.exists(), "a disabled cache must not materialize a directory");
     }
 
+    /// An explicit root is `[cache] dir` / `--cache-dir`: the user named the
+    /// location, so its mode may be a deliberate choice and poly only reports it.
     #[test]
-    fn an_existing_loose_directory_keeps_its_mode() {
+    fn an_existing_loose_directory_at_a_configured_root_keeps_its_mode_and_warns() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().join("shared-cache");
         std::fs::create_dir_all(&root).unwrap();
         std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o755)).unwrap();
 
-        ResultCache::open(root.clone(), true).expect("open cache");
+        let warnings = warnings_during(|| {
+            ResultCache::open(root.clone(), true).expect("open cache");
+        });
 
         assert_eq!(
             mode_of(&root),
@@ -524,6 +583,69 @@ mod unix_permissions {
             mode_of(&root.join("results/lint")),
             OWNER_ONLY,
             "sub-directories poly creates itself are still owner-only"
+        );
+        assert_eq!(
+            warnings.len(),
+            1,
+            "the user must be told, since only they can decide: {warnings:?}"
+        );
+        assert!(
+            warnings[0].contains(&root.display().to_string()),
+            "the warning must name the directory: {}",
+            warnings[0]
+        );
+    }
+
+    /// The upgrade regression this split exists for: every slot an older poly
+    /// created in the default per-user cache home is `0755`, and 0.20.0 warned
+    /// about it on every single run forever. poly chose that location and
+    /// created it, so it repairs it instead of nagging.
+    #[test]
+    fn a_loose_slot_in_the_default_cache_home_is_tightened_silently() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("repo");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+
+        let slot = RealCacheSlot::of(&repo);
+        std::fs::set_permissions(slot.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let warnings = warnings_during(|| {
+            repo_cache_dir(&repo).expect("resolve cache dir");
+        });
+
+        assert_eq!(
+            mode_of(slot.path()),
+            OWNER_ONLY,
+            "a slot poly created in its own cache home must be tightened on the next run"
+        );
+        assert!(
+            warnings.is_empty(),
+            "there is nothing for the user to decide, so nothing to warn about: {warnings:?}"
+        );
+    }
+
+    /// The same repair reaches the run-path open, not just the bare resolver.
+    #[test]
+    fn opening_a_cache_in_the_default_cache_home_tightens_a_loose_slot() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("repo");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+
+        let slot = RealCacheSlot::of(&repo);
+        std::fs::set_permissions(slot.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let warnings = warnings_during(|| {
+            ResultCache::open_from(&repo, true).expect("open cache");
+        });
+
+        assert_eq!(
+            mode_of(slot.path()),
+            OWNER_ONLY,
+            "the cache root must end up owner-only"
+        );
+        assert!(
+            warnings.is_empty(),
+            "no warning on a directory poly fixed itself: {warnings:?}"
         );
     }
 }

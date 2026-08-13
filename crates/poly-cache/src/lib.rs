@@ -13,8 +13,9 @@
 //!
 //! Every directory below is created owner-only (`0700`) on Unix — the staged
 //! snapshot mirrors the repository's source, so the tree must not be left
-//! world-readable by an inherited umask. See [`permissions`] for the full
-//! rationale and for what poly deliberately leaves alone.
+//! world-readable by an inherited umask. A pre-existing loose directory is
+//! tightened when poly owns the location and only reported when the user chose
+//! it; see [`permissions`] for the full rationale and the [`DirOrigin`] split.
 //!
 //! ```text
 //! <platform-cache>/poly/<repo-key>/
@@ -113,7 +114,7 @@ mod maintenance;
 pub mod permissions;
 
 pub use maintenance::{CacheStats, NamespaceStats};
-pub use permissions::{create_dir_all_private, ensure_private_dir};
+pub use permissions::{DirOrigin, create_dir_all_private, ensure_private_dir};
 
 /// On-disk format version written to the `VERSION` sentinel file.
 ///
@@ -185,13 +186,23 @@ pub fn repo_anchor(start: &Path) -> PathBuf {
 /// directory via `etcetera` (`~/.cache` on Linux / `$XDG_CACHE_HOME`,
 /// `~/Library/Caches` on macOS, `%LOCALAPPDATA%` on Windows).
 pub fn cache_home() -> anyhow::Result<PathBuf> {
+    Ok(cache_home_with_origin()?.0)
+}
+
+/// [`cache_home`] plus who chose it.
+///
+/// This is the only place the distinction exists: once the override has been
+/// substituted for the platform default, the two are indistinguishable paths on
+/// disk. So the origin travels out with the path, to every caller that may
+/// harden the directory it names (see [`permissions`]).
+fn cache_home_with_origin() -> anyhow::Result<(PathBuf, DirOrigin)> {
     if let Some(dir) = std::env::var_os(CACHE_HOME_ENV) {
-        return Ok(PathBuf::from(dir));
+        return Ok((PathBuf::from(dir), DirOrigin::UserConfigured));
     }
     use etcetera::BaseStrategy;
     let strategy = etcetera::choose_base_strategy()
         .map_err(|e| anyhow::anyhow!("could not resolve the platform cache directory: {e}"))?;
-    Ok(strategy.cache_dir().join("poly"))
+    Ok((strategy.cache_dir().join("poly"), DirOrigin::PolyOwned))
 }
 
 /// Global cache root for shared Git hook sources.
@@ -248,31 +259,40 @@ pub fn repo_key(anchor: &Path) -> String {
 ///
 /// - any legacy in-repo `.polylint/` directory is removed, so an upgrade cleans
 ///   up after the previous layout;
-/// - the directory itself is created owner-only ([`ensure_private_dir`]). This
-///   is the choke point every consumer resolves through, including the hook
-///   staged snapshot, so creating it here means a snapshot of the repository's
-///   source can never land in a directory other local users can traverse — even
-///   when the result cache is disabled and never creates its own tree.
+/// - the directory itself is created owner-only, and an existing one poly owns
+///   is tightened to match ([`ensure_private_dir`]). This is the choke point
+///   every consumer resolves through, including the hook staged snapshot, so
+///   hardening here means a snapshot of the repository's source can never land
+///   in a directory other local users can traverse — even when the result cache
+///   is disabled and never creates its own tree.
 ///
 /// Creation failures are logged and ignored: this resolver has always returned
 /// a path, and the caller that actually writes reports the error with its own
 /// context.
 pub fn repo_cache_dir(start: &Path) -> anyhow::Result<PathBuf> {
-    let dir = resolve_repo_cache_dir(start)?;
-    if let Err(error) = permissions::ensure_private_dir(&dir) {
+    Ok(ensure_repo_cache_dir(start)?.0)
+}
+
+/// [`repo_cache_dir`] plus the origin of the location it resolved to, for the
+/// callers that go on to create more directories underneath and need the same
+/// answer to "is this poly's to harden?".
+fn ensure_repo_cache_dir(start: &Path) -> anyhow::Result<(PathBuf, DirOrigin)> {
+    let (dir, origin) = resolve_repo_cache_dir(start)?;
+    if let Err(error) = permissions::ensure_private_dir(&dir, origin) {
         tracing::debug!(dir = %dir.display(), "could not pre-create the cache directory: {error}");
     }
-    Ok(dir)
+    Ok((dir, origin))
 }
 
 /// Resolve the per-repo cache directory without creating it.
 ///
 /// The path half of [`repo_cache_dir`], for the paths that must not materialize
 /// a cache tree — a disabled cache creates nothing.
-fn resolve_repo_cache_dir(start: &Path) -> anyhow::Result<PathBuf> {
+fn resolve_repo_cache_dir(start: &Path) -> anyhow::Result<(PathBuf, DirOrigin)> {
     let anchor = repo_anchor(start);
     remove_legacy_cache(&anchor);
-    Ok(cache_home()?.join(repo_key(&anchor)))
+    let (home, origin) = cache_home_with_origin()?;
+    Ok((home.join(repo_key(&anchor)), origin))
 }
 
 /// Best-effort removal of a legacy in-repo `.polylint/` cache directory left by
@@ -420,10 +440,13 @@ impl ResultCache {
     ///
     /// [`open_from`]: ResultCache::open_from
     /// [`open_default`]: ResultCache::open_default
+    /// An explicit `root` is by definition a location the caller chose —
+    /// `[cache] dir`, `--cache-dir`, a test sandbox — so an existing directory
+    /// there keeps whatever mode it has ([`DirOrigin::UserConfigured`]).
     pub fn open(root: PathBuf, enabled: bool) -> anyhow::Result<Self> {
         let cache = Self { root, enabled };
         if enabled {
-            Self::init_dirs(&cache.root)?;
+            Self::init_dirs(&cache.root, DirOrigin::UserConfigured)?;
         }
         Ok(cache)
     }
@@ -436,11 +459,11 @@ impl ResultCache {
     ///
     /// A failed sweep is reported and ignored: eviction is hygiene, and losing
     /// disk space is not a reason to fail a lint run.
-    fn open_healed(root: PathBuf, enabled: bool) -> anyhow::Result<Self> {
+    fn open_healed(root: PathBuf, enabled: bool, origin: DirOrigin) -> anyhow::Result<Self> {
         let cache = Self { root, enabled };
         if enabled {
             cache.heal_stale_layout()?;
-            Self::init_dirs(&cache.root)?;
+            Self::init_dirs(&cache.root, origin)?;
             match cache.sweep_if_due() {
                 Ok(0) => {}
                 Ok(freed) => tracing::debug!(freed, "swept stranded result-cache entries"),
@@ -457,15 +480,17 @@ impl ResultCache {
     ///
     /// [`open_healed`]: ResultCache::open_healed
     pub fn open_from(start: &Path, enabled: bool) -> anyhow::Result<Self> {
-        Self::open_healed(Self::resolve_root(start, enabled)?, enabled)
+        let (root, origin) = Self::resolve_root(start, enabled)?;
+        Self::open_healed(root, enabled, origin)
     }
 
-    /// Resolve the cache root for `start`, creating it only when the cache is
-    /// enabled — a disabled cache is a no-op that materializes nothing, so it
-    /// takes the non-creating half of [`repo_cache_dir`].
-    fn resolve_root(start: &Path, enabled: bool) -> anyhow::Result<PathBuf> {
+    /// Resolve the cache root for `start` and the origin of its location,
+    /// creating the directory only when the cache is enabled — a disabled cache
+    /// is a no-op that materializes nothing, so it takes the non-creating half
+    /// of [`repo_cache_dir`].
+    fn resolve_root(start: &Path, enabled: bool) -> anyhow::Result<(PathBuf, DirOrigin)> {
         if enabled {
-            root_from(start)
+            ensure_repo_cache_dir(start)
         } else {
             resolve_repo_cache_dir(start)
         }
@@ -484,10 +509,12 @@ impl ResultCache {
 
     /// Create the full sub-directory tree and write the VERSION sentinel.
     ///
-    /// Every directory is created owner-only on Unix (see [`permissions`]); an
-    /// existing one keeps whatever mode it has, and only earns a warning.
-    fn init_dirs(root: &Path) -> anyhow::Result<()> {
-        permissions::ensure_private_dir(root)
+    /// Every directory is created owner-only on Unix (see [`permissions`]); what
+    /// happens to an existing `root` depends on `origin`. The sub-directories
+    /// below `root` are always poly's own, but an owner-only `root` already
+    /// seals them, so they need no repair pass of their own.
+    fn init_dirs(root: &Path, origin: DirOrigin) -> anyhow::Result<()> {
+        permissions::ensure_private_dir(root, origin)
             .map_err(|e| anyhow::anyhow!("failed to create cache dir {}: {e}", root.display()))?;
         for sub in ["results/lint", "results/fmt", "results/hook"] {
             permissions::create_dir_all_private(&root.join(sub))

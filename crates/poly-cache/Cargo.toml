@@ -8,6 +8,11 @@ authors.workspace = true
 description = "Unified result-cache (blake3, namespaced, file-set digest) for poly lint, poly fmt, and poly hooks"
 publish = false
 
+# Only for `geteuid`, to prove poly owns a cache directory before changing its
+# mode. Safe wrapper, so the crate keeps `unsafe_code = "forbid"`.
+[target.'cfg(unix)'.dependencies]
+rustix.workspace = true
+
 [lib]
 name = "poly_cache"
 path = "src/lib.rs"
