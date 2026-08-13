@@ -66,6 +66,19 @@ impl Default for HookCommand {
     }
 }
 
+/// The exclusion set a hook joins by setting [`Hook::require_serial`] (or
+/// `parallel = false`): "not concurrent with another serial hook", which is
+/// weaker than "alone in the run".
+pub const SHARED_SERIAL_GROUP: &str = "serial";
+
+/// The exclusion set every cargo invocation belongs to.
+///
+/// Cargo serializes its own subcommands on the package-cache lock and, for
+/// anything that builds, on the build-directory lock — so concurrent cargo hooks
+/// buy no wall-clock and cost the queue its visibility: a blocked hook prints
+/// nothing while its own budget runs down.
+pub const CARGO_SERIAL_GROUP: &str = "cargo";
+
 /// One runnable unit within a stage — a single subprocess invocation.
 ///
 /// Mirrors the poly.toml `Job` shape but carries only what the runner needs:
@@ -102,8 +115,22 @@ pub struct Hook {
     pub priority: i64,
     /// Whether this hook may run concurrently with its priority-group peers.
     pub parallel: bool,
-    /// Force the hook (and thus its whole priority group) to run serially.
+    /// Force the hook to run without a concurrent peer (see
+    /// [`Hook::serial_group`]; equivalent to joining [`SHARED_SERIAL_GROUP`]).
     pub require_serial: bool,
+    /// The mutual-exclusion set this hook belongs to, if any.
+    ///
+    /// Hooks in a priority group run concurrently. Two hooks naming the **same**
+    /// set never overlap; hooks in different sets — or in none — are unaffected.
+    /// This is the model for a shared resource poly does not own: every cargo
+    /// subcommand contends on cargo's package-cache and build-directory locks,
+    /// so [`CARGO_SERIAL_GROUP`] makes that queue explicit (and each member's
+    /// time budget start when it actually starts) instead of leaving four
+    /// processes to block invisibly inside cargo.
+    ///
+    /// `None` with [`Hook::require_serial`] (or `parallel = false`) set means
+    /// the shared set, [`SHARED_SERIAL_GROUP`].
+    pub serial_group: Option<String>,
     /// When this hook fails, abort the remaining (higher-priority) groups.
     pub fail_fast: bool,
     /// When the hook modifies files and exits 0, `git add` the matched files
@@ -482,14 +509,21 @@ pub enum HookStatus {
     /// that reported success on that basis would be a false pass.
     TimedOut(TimeoutReason),
     /// The hook exited 0 after fixing staged content, but the fix could **not**
-    /// be carried into the worktree: the listed paths have unstaged edits that
-    /// writing it would destroy.
+    /// be carried into the worktree — for one of several distinct reasons, each
+    /// carried per path in [`WithheldFix::reason`].
+    ///
+    /// The reasons are *not* interchangeable. "your unstaged work would have
+    /// been destroyed" tells the author to stage or stash; "poly refused to
+    /// write through this path" tells them a symlink or an escaping path is in
+    /// the tree, which is a security finding and no amount of staging will make
+    /// it land. Reporting one as the other sends the reader to fix something
+    /// that is not broken — see [`WithheldReason`].
     ///
     /// Counts as a failure so the commit is blocked. The alternatives are worse:
     /// overwriting the author's unstaged work, staging hunks they deliberately
     /// left out, or committing the unfixed staged bytes while reporting a pass.
     /// Blocking hands the decision back to the author with nothing lost.
-    FixWithheld(Vec<PathBuf>),
+    FixWithheld(Vec<WithheldFix>),
     /// Failed to launch (binary not found, etc.).
     Error(String),
 }
@@ -519,6 +553,88 @@ impl HookStatus {
             self,
             Self::Passed | Self::Failed { .. } | Self::Error(_) | Self::FixWithheld(_)
         )
+    }
+}
+
+/// One path a hook's fix could not be written to, and why.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WithheldFix {
+    /// The repo-relative path the fix was meant for.
+    pub path: PathBuf,
+    /// Why writing it was refused.
+    pub reason: WithheldReason,
+}
+
+impl WithheldFix {
+    /// A withheld fix for `path`.
+    #[must_use]
+    pub fn new(path: impl Into<PathBuf>, reason: WithheldReason) -> Self {
+        Self {
+            path: path.into(),
+            reason,
+        }
+    }
+}
+
+/// Why a fix computed from staged content was not written into the worktree.
+///
+/// Each variant sends the reader somewhere different, so they are kept apart
+/// rather than collapsed into one message. Two of them —
+/// [`Self::WorktreeIsSymlink`] and [`Self::PathEscapesRepository`] — are
+/// **security refusals**: the destination is not a file poly may write, and the
+/// write was declined rather than followed. Telling that author to "stage your
+/// changes" would be actively misleading, since staging changes nothing about a
+/// symlink pointing out of the repository.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WithheldReason {
+    /// The worktree copy differs from the index, so the author is holding
+    /// unstaged work the staged-content fix never saw. Writing it would destroy
+    /// that work; staging it would commit hunks they left out.
+    UnstagedChanges,
+    /// The worktree entry is a **symlink**. Its target is arbitrary — including
+    /// an absolute path outside the repository — so writing the fix through it
+    /// would be an arbitrary file write. Refused, never followed.
+    WorktreeIsSymlink,
+    /// The index path leaves the repository once joined onto the worktree root
+    /// (`..`, an absolute component). Refused rather than trusted.
+    PathEscapesRepository,
+    /// The worktree entry is neither a regular file nor a symlink — a
+    /// directory, a device, or nothing at all — so there is no file to write.
+    WorktreeNotRegularFile,
+    /// The **fixed copy** in poly's staged snapshot could not be read as a
+    /// regular file, so there was nothing to carry across. Nothing about the
+    /// author's worktree is implicated.
+    SnapshotUnreadable,
+}
+
+impl WithheldReason {
+    /// `true` when poly refused the write to avoid touching something it must
+    /// not — as opposed to declining so it would not clobber the author's work.
+    ///
+    /// The report leads with this, because a symlink or escaping path in a
+    /// tracked tree is a finding in its own right and no user action on the
+    /// index will change the outcome.
+    #[must_use]
+    pub fn is_security_refusal(&self) -> bool {
+        matches!(self, Self::WorktreeIsSymlink | Self::PathEscapesRepository)
+    }
+}
+
+impl fmt::Display for WithheldReason {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::UnstagedChanges => formatter.write_str("the worktree copy has unstaged changes the fix never saw"),
+            Self::WorktreeIsSymlink => {
+                formatter.write_str("the worktree entry is a symlink; poly refused to write through it")
+            }
+            Self::PathEscapesRepository => {
+                formatter.write_str("the path leaves the repository; poly refused to write outside it")
+            }
+            Self::WorktreeNotRegularFile => formatter.write_str("the worktree entry is not a regular file"),
+            Self::SnapshotUnreadable => {
+                formatter.write_str("the fixed copy in poly's staged snapshot could not be read")
+            }
+        }
     }
 }
 

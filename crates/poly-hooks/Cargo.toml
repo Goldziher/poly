@@ -8,6 +8,7 @@ authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
 documentation.workspace = true
+publish = false
 description = "Execution building blocks for poly's native git hook runner (sync, no tokio)."
 
 [dependencies]
@@ -39,6 +40,17 @@ which = { workspace = true }
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
 rustix = { workspace = true }
+
+# Pinned to the version already resolved transitively (~20 dependents), so
+# supervising a hook's process tree adds no distinct crate version to the build.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "=0.61.2", features = [
+  # Win32_Security is not optional here: `CreateJobObjectW` takes a
+  # `SECURITY_ATTRIBUTES` pointer, and the declaration will not resolve without it.
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_System_JobObjects",
+] }
 
 [dev-dependencies]
 indoc = { workspace = true }

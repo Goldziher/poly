@@ -26,7 +26,7 @@ use serde::de::{self, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 
 pub use builtin::{BuiltinHook, BuiltinHooks, CargoHooks, DEFAULT_MAX_ADDED_FILE_KB, FileSafetyHooks};
-pub use job::{Job, JobCache};
+pub use job::{Job, JobCache, Serial};
 pub use patterns::{Guard, GuardCondition, GuardMatch, Patterns};
 pub use stage::{ParseStageError, Stage};
 pub use stage_config::StageConfig;

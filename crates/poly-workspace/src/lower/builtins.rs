@@ -19,7 +19,7 @@ use poly_config::{
     CargoHooks, FileSafetyHooks, HookCacheMode, HooksConfig, Stage as ConfigStage, ToolConfig, ToolsConfig,
 };
 use poly_hooks::filter::FilePattern;
-use poly_hooks::model::{Hook, HookCache, HookCommand, StageSpec};
+use poly_hooks::model::{CARGO_SERIAL_GROUP, Hook, HookCache, HookCommand, StageSpec};
 use tracing::info;
 
 use super::{builtin_runs_on, shell_quote};
@@ -278,6 +278,13 @@ pub(super) fn append_cargo(
         hook.always_run = true;
         hook.compiler = tool.compiler;
         hook.workspace = true;
+        // Cargo already serializes these against each other — on the
+        // package-cache lock, and on the build-directory lock for anything that
+        // builds. Running them concurrently only hides the queue: a blocked
+        // subcommand prints nothing while its own timeout budget runs down.
+        // Naming the set makes the queue poly's, so each tool's budget starts
+        // when the tool does, while non-cargo hooks still run alongside.
+        hook.serial_group = Some(CARGO_SERIAL_GROUP.to_string());
         hook.skip_in_lint = !cargo.lint;
         hook.cache = cache.clone();
         out.push(hook);

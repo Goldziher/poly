@@ -47,6 +47,13 @@ pub enum Error {
         /// The `new` side of the requested range.
         new: String,
     },
+
+    /// An index path that would escape the tree it is joined onto.
+    #[error("refusing an index path that escapes its tree: {path}")]
+    UnsafePath {
+        /// The offending repo-relative path, as git reported it.
+        path: String,
+    },
 }
 
 /// Resolved path to the `git` binary (or the error from `which::which`).
@@ -97,6 +104,33 @@ pub fn git_cmd(summary: &str) -> Result<Cmd, Error> {
     let mut cmd = Cmd::new(GIT.as_ref().map_err(|&e| Error::GitNotFound(e))?, summary);
     cmd.arg("-c").arg("core.useBuiltinFSMonitor=false");
     Ok(cmd)
+}
+
+/// Whether `path` is a plain relative path that is safe to join onto a
+/// materialization root (the staged snapshot, the worktree).
+///
+/// Only `Normal` components are accepted: an absolute path, a Windows drive
+/// prefix, `.` or `..` would all let `root.join(path)` address a file outside
+/// `root`. Git's own `verify_path` already refuses to record such an entry, so
+/// a real repository never trips this — but the check must not be delegated to
+/// the installed git binary, because a handcrafted index is exactly the input
+/// an attacker controls, and every path we join comes from that index.
+#[must_use]
+pub fn is_safe_relative_path(path: &Path) -> bool {
+    !path.as_os_str().is_empty()
+        && path
+            .components()
+            .all(|component| matches!(component, std::path::Component::Normal(_)))
+}
+
+/// [`is_safe_relative_path`] as a guard, naming the path it rejected.
+fn reject_unsafe_path(path: &Path) -> Result<(), Error> {
+    if is_safe_relative_path(path) {
+        return Ok(());
+    }
+    Err(Error::UnsafePath {
+        path: path.display().to_string(),
+    })
 }
 
 fn zsplit(s: &[u8]) -> Result<Vec<PathBuf>, std::str::Utf8Error> {
@@ -249,6 +283,11 @@ pub fn list_staged_entries(root: &Path) -> Result<Vec<StagedEntry>, Error> {
 /// Parse `git ls-files -s -z` output: NUL-separated `<mode> <oid> <stage>\t<path>`
 /// records. Robust to 40- or 64-hex OIDs and to paths containing spaces (the
 /// path is taken verbatim after the tab).
+///
+/// A path that would escape the tree it is joined onto is a hard error, not a
+/// skip: every consumer joins these paths onto a directory, and an index that
+/// contains one is hostile rather than merely unusual (see
+/// [`is_safe_relative_path`]).
 fn parse_ls_files_stage(bytes: &[u8]) -> Result<Vec<StagedEntry>, Error> {
     let mut entries = Vec::new();
     for record in bytes.split(|&byte| byte == 0).filter(|slice| !slice.is_empty()) {
@@ -257,6 +296,7 @@ fn parse_ls_files_stage(bytes: &[u8]) -> Result<Vec<StagedEntry>, Error> {
         };
         let (meta, tab_and_path) = record.split_at(tab);
         let path = path_from_git_bytes(&tab_and_path[1..])?;
+        reject_unsafe_path(&path)?;
         let meta = std::str::from_utf8(meta)?;
         let mut fields = meta.split_whitespace();
         let mode = fields.next().unwrap_or_default();
@@ -304,7 +344,9 @@ fn parse_ls_files_gitlinks(bytes: &[u8]) -> Result<Vec<PathBuf>, Error> {
         let (meta, tab_and_path) = record.split_at(tab);
         let mode = std::str::from_utf8(meta)?.split_whitespace().next().unwrap_or_default();
         if mode == "160000" {
-            paths.push(path_from_git_bytes(&tab_and_path[1..])?);
+            let path = path_from_git_bytes(&tab_and_path[1..])?;
+            reject_unsafe_path(&path)?;
+            paths.push(path);
         }
     }
     Ok(paths)
@@ -414,59 +456,39 @@ pub fn add(root: &Path, paths: &[PathBuf]) -> Result<(), Error> {
     Ok(())
 }
 
-/// Return `true` if `path` has any unstaged modifications in the working tree.
-#[instrument(level = "trace")]
-pub fn has_worktree_diff(path: &Path) -> Result<bool, Error> {
-    let mut cmd = git_cmd("check worktree diff")?;
-    let status = cmd
-        .arg("diff-files")
-        .arg("--quiet")
-        .arg("--no-ext-diff")
-        .arg("--no-textconv")
-        .arg("--ignore-submodules")
-        .arg("--")
-        .arg(path)
-        .check(false)
-        .status()?;
-
-    if status.success() {
-        return Ok(false);
-    }
-    if status.code() == Some(1) {
-        return Ok(true);
-    }
-
-    cmd.check_status(status)?;
-    Ok(true)
-}
-
-/// Like [`has_worktree_diff`], but runs git inside `root` so the (repo-relative)
-/// `path` resolves correctly regardless of the process working directory.
+/// Read the staged (index) bytes of `path` — the content a commit would capture
+/// — or `None` when the path has no stage-0 entry.
 ///
-/// Used by the runner's `stage_fixed` boundary to detect files a hook rewrote.
+/// This is the **content** answer to "does the worktree still match the index?",
+/// and it deliberately replaces the `git diff-files` probes this module used to
+/// expose. `diff-files` is stat-based: it can report a genuinely-modified file
+/// as clean whenever the index stat cache is stale or has been suppressed
+/// (`--assume-unchanged`, `--skip-worktree`, a sparse checkout, coarse mtime
+/// granularity, a network filesystem, or any tool that rewrote the index
+/// outside a normal `git add`). [`list_staged_entries`] already stopped trusting
+/// it for the same reason; nothing that can lose a user's work may depend on it.
+///
+/// For a symlink entry the "blob" is the link target text, so a caller that must
+/// not follow links has to check the worktree entry type separately.
 #[instrument(level = "trace")]
-pub fn has_worktree_diff_in(root: &Path, path: &Path) -> Result<bool, Error> {
-    let mut cmd = git_cmd("check worktree diff")?;
-    let status = cmd
+pub fn staged_blob(root: &Path, path: &Path) -> Result<Option<Vec<u8>>, Error> {
+    reject_unsafe_path(path)?;
+    // `:0:<path>` names stage 0 of `path` in the index. The `:0:` prefix also
+    // makes the argument un-option-like whatever the path begins with.
+    let mut revision = std::ffi::OsString::from(":0:");
+    revision.push(path.as_os_str());
+    let output = git_cmd("read staged blob")?
         .current_dir(root)
-        .arg("diff-files")
-        .arg("--quiet")
-        .arg("--no-ext-diff")
-        .arg("--no-textconv")
-        .arg("--ignore-submodules")
-        .arg("--")
-        .arg(path)
+        .arg("cat-file")
+        .arg("blob")
+        .arg(revision)
         .check(false)
-        .status()?;
+        .output()?;
 
-    if status.success() {
-        return Ok(false);
+    if !output.status.success() {
+        return Ok(None);
     }
-    if status.code() == Some(1) {
-        return Ok(true);
-    }
-    cmd.check_status(status)?;
-    Ok(true)
+    Ok(Some(output.stdout))
 }
 
 /// Return the path to the `.git` directory (or git-dir for worktrees).
@@ -718,6 +740,78 @@ mod tests {
             paths,
             vec![PathBuf::from("vendor/sub"), PathBuf::from("test documents")],
             "only submodule gitlinks, paths verbatim (incl. spaces)"
+        );
+    }
+
+    #[test]
+    fn index_paths_that_escape_their_tree_are_rejected() {
+        assert!(is_safe_relative_path(Path::new("src/a.rs")));
+        assert!(is_safe_relative_path(Path::new("dir/a file.rs")));
+        assert!(!is_safe_relative_path(Path::new("")));
+        assert!(!is_safe_relative_path(Path::new("../outside.rs")));
+        assert!(!is_safe_relative_path(Path::new("src/../../outside.rs")));
+        assert!(!is_safe_relative_path(Path::new("./a.rs")));
+        assert!(!is_safe_relative_path(Path::new("/etc/passwd")));
+
+        // A handcrafted index is the attacker-controlled input here, so the
+        // parsers must reject rather than join the path onto a root.
+        let escaping = b"100644 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0\t../../.bashrc\0";
+        assert!(matches!(parse_ls_files_stage(escaping), Err(Error::UnsafePath { .. })));
+        let absolute = b"100644 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0\t/etc/passwd\0";
+        assert!(matches!(parse_ls_files_stage(absolute), Err(Error::UnsafePath { .. })));
+        let gitlink = b"160000 cccccccccccccccccccccccccccccccccccccccc 0\t../evil\0";
+        assert!(matches!(
+            parse_ls_files_gitlinks(gitlink),
+            Err(Error::UnsafePath { .. })
+        ));
+        assert!(matches!(
+            staged_blob(Path::new("."), Path::new("../escape")),
+            Err(Error::UnsafePath { .. })
+        ));
+    }
+
+    #[test]
+    fn staged_blob_reads_index_content_not_the_worktree() {
+        let repo = init_temp_repo();
+        let root = repo.path();
+        std::fs::write(root.join("a.txt"), "staged\n").expect("write");
+        git_run(root, &["add", "a.txt"]);
+        std::fs::write(root.join("a.txt"), "worktree edit\n").expect("write");
+
+        let blob = staged_blob(root, Path::new("a.txt")).expect("staged blob");
+        assert_eq!(blob.as_deref(), Some(&b"staged\n"[..]));
+        assert_eq!(
+            staged_blob(root, Path::new("absent.txt")).expect("absent path"),
+            None,
+            "a path with no stage-0 entry has no staged bytes"
+        );
+    }
+
+    /// The whole reason [`staged_blob`] exists: `git diff-files` under
+    /// `--assume-unchanged` calls a genuinely-modified file clean, while reading
+    /// the index content still sees the difference.
+    #[test]
+    fn staged_blob_sees_a_difference_the_stat_cache_hides() {
+        let repo = init_temp_repo();
+        let root = repo.path();
+        std::fs::write(root.join("a.txt"), "staged\n").expect("write");
+        git_run(root, &["add", "a.txt"]);
+        std::fs::write(root.join("a.txt"), "staged\nunstaged work\n").expect("write");
+        git_run(root, &["update-index", "--assume-unchanged", "a.txt"]);
+
+        let diff_files_clean = Command::new("git")
+            .args(["diff-files", "--quiet", "--", "a.txt"])
+            .current_dir(root)
+            .status()
+            .expect("git diff-files")
+            .success();
+        assert!(diff_files_clean, "precondition: the stat cache reports this file clean");
+
+        let blob = staged_blob(root, Path::new("a.txt")).expect("staged blob");
+        assert_eq!(
+            blob.as_deref(),
+            Some(&b"staged\n"[..]),
+            "the index content must be visible even when the stat cache lies"
         );
     }
 

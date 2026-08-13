@@ -572,3 +572,115 @@ run = "x"
     assert!(ids(&lower_stage_with_guard(&hooks, false).unwrap()).is_empty());
     assert_eq!(ids(&lower_stage_with_guard(&hooks, true).unwrap()), vec!["j"]);
 }
+
+/// The `serial` key resolves to an exclusion set: `true` joins the shared one,
+/// a string joins the named one, and `false` opts out of both — including out
+/// of a stage-level `parallel = false` and the automatic cargo grouping.
+#[test]
+fn serial_key_resolves_to_an_exclusion_set() {
+    let hooks = hooks_from(
+        r#"
+[hooks.pre-commit.commands.shared]
+run = "./slow-tool"
+serial = true
+
+[hooks.pre-commit.commands.named]
+run = "./other-tool"
+serial = "npm"
+
+[hooks.pre-commit.commands.opted-out]
+run = "cargo test"
+serial = false
+"#,
+    );
+    let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
+    let group = |id: &str| {
+        spec.hooks
+            .iter()
+            .find(|hook| hook.id == id)
+            .unwrap_or_else(|| panic!("hook {id} lowered"))
+            .serial_group
+            .clone()
+    };
+
+    assert_eq!(group("shared").as_deref(), Some(SHARED_SERIAL_GROUP));
+    assert_eq!(group("named").as_deref(), Some("npm"));
+    assert_eq!(
+        group("opted-out"),
+        None,
+        "`serial = false` opts out of the automatic cargo grouping too"
+    );
+    for hook in &spec.hooks {
+        assert!(hook.parallel, "{} must still run beside hooks outside its set", hook.id);
+    }
+}
+
+/// A job that invokes cargo joins the cargo set without being told to — the
+/// lock it would otherwise block on is not optional.
+#[test]
+fn a_job_invoking_cargo_joins_the_cargo_set() {
+    let hooks = hooks_from(
+        r#"
+[hooks.pre-commit.commands.tests]
+run = "cargo test --workspace"
+workspace = true
+
+[hooks.pre-commit.commands.piped]
+run = "make check && cargo build"
+workspace = true
+
+[hooks.pre-commit.commands.unrelated]
+run = "pnpm tsc --noEmit"
+workspace = true
+"#,
+    );
+    let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
+    let group = |id: &str| {
+        spec.hooks
+            .iter()
+            .find(|hook| hook.id == id)
+            .unwrap_or_else(|| panic!("hook {id} lowered"))
+            .serial_group
+            .clone()
+    };
+
+    assert_eq!(group("tests").as_deref(), Some(CARGO_SERIAL_GROUP));
+    assert_eq!(
+        group("piped").as_deref(),
+        Some(CARGO_SERIAL_GROUP),
+        "cargo behind a `&&` still takes the same lock"
+    );
+    assert_eq!(group("unrelated"), None, "a non-cargo tool is not constrained");
+}
+
+/// A whole-project job runs concurrently by default: overlapping whole-project
+/// tools is where a run's wall-clock is won, and the stage-level `parallel`
+/// flag (default `false`) was never about them.
+#[test]
+fn a_whole_project_job_is_concurrent_by_default() {
+    let hooks = hooks_from(
+        r#"
+[hooks.pre-commit.commands.types]
+run = "pyrefly check"
+workspace = true
+
+[hooks.pre-commit.commands.per-file]
+run = "./format-one"
+files = "**/*.py"
+"#,
+    );
+    let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
+    let hook = |id: &str| {
+        spec.hooks
+            .iter()
+            .find(|hook| hook.id == id)
+            .unwrap_or_else(|| panic!("hook {id} lowered"))
+    };
+
+    assert!(hook("types").parallel, "a whole-project job is concurrent by default");
+    assert!(hook("types").serial_group.is_none());
+    assert!(
+        !hook("per-file").parallel,
+        "a per-file job still follows the stage's `parallel` flag"
+    );
+}

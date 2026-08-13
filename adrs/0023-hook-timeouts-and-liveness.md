@@ -1,7 +1,8 @@
 # 0023 — Hook Timeouts and Run Liveness
 
 - Status: Accepted
-- Date: 2026-08-12 (amended 2026-08-13: the two deferred gaps below are closed)
+- Date: 2026-08-12 (amended 2026-08-13: the two deferred gaps are closed; a killed hook's
+  honesty now rests on the scheduling property in ADR 0024)
 
 ## Context
 
@@ -130,17 +131,49 @@ so a terminal without the glyph loses nothing.
 - **A legitimately slow hook can be killed** if a repo's cold build exceeds 30 minutes. The
   per-hook and environment overrides exist for this, and the 15-second heartbeat warns long
   before the kill.
-- **Stage-level `before` / `after` steps and preconditions are still unbounded.** They run
-  under `Budget::unlimited()`. A hang there is the same defect class and is deliberately left
-  as follow-up rather than widened into this change.
+- **A hook blocked on a lock held outside the run is still charged for the wait.** See
+  "A killed hook must really have been running" below.
 
-### Not yet wired: `poly.toml` per-hook `timeout`
+### Closed by the 2026-08-13 amendment
 
-The model carries `Hook::timeout`, but lowering `poly.toml` → `Hook` lives in
-`poly-workspace/src/lower.rs`, outside this change's scope. Until a `timeout` key is added to
-`poly-config`'s `Job` and lowered there, the configurable surfaces are the two environment
-variables and the programmatic `Hook::timeout`. A config key that parsed but was ignored would
-be a false promise, so none was added.
+Both gaps this ADR originally deferred now ship:
+
+- **Every spawned process is bounded.** Stage-level and per-hook `before` / `after` steps run
+  under `timeout::step_budget()`, and both stage-level and per-hook `precondition` probes
+  under `timeout::precondition_budget()` (`poly-hooks/src/runner.rs`). Nothing a run spawns is
+  left on `Budget::unlimited()` unless a budget was explicitly disabled.
+- **The `poly.toml` per-job `timeout` key is wired.** `poly-config`'s `Job::timeout` accepts a
+  duration string or whole seconds, and `lower::job_timeout` resolves it into
+  `Hook::timeout` — through the same parser as the environment overrides, so the two grammars
+  cannot drift. A malformed value is a hard error naming the job, never a silently discarded
+  budget.
+
+### A killed hook must really have been running
+
+`TimedOut` is only honest if a hook cannot be sitting in a queue while its clock runs. That is
+a **scheduling** property, and it is why ADR 0024 (hook concurrency and exclusion sets) is
+load-bearing for this one:
+
+- A hook waiting for a peer in its exclusion set is **not spawned**, so its budget has not
+  started and it announces nothing. Queueing that poly owns is free of charge.
+- The cargo builtins ship in one exclusion set for exactly this reason. Concurrent cargo
+  subcommands block on cargo's package-cache and build-directory locks — measurably, and in
+  the `cargo deny` case with **no output at all** while blocked — so before ADR 0024 a
+  1.7-second `cargo deny check` could be reported `TimedOut` at the 30-minute whole-project
+  budget without ever running.
+
+What remains: a hook can still block on a lock held by a process **outside** the run — a
+`rust-analyzer` `cargo check`, a developer's own build, another repository's CI step sharing
+`CARGO_HOME`. poly cannot see that queue, so such a hook is still **charged** for the wait.
+It is no longer *misreported* as one, though: the supervisor watches the child's output for
+cargo's `Blocking waiting for file lock on <resource>` line, and while that is the last thing
+the hook said, the liveness notice reads `⏸ waiting on a lock: <id> … — blocked on cargo's
+<resource> lock held by a process outside this run, doing no work; the time budget is still
+counting` instead of `⋯ still running`. The next line of real output clears it, so the notice
+never claims a wait that has ended. Pausing the budget for such a wait was deliberately **not**
+done — poly cannot verify a queue it does not own, and a hook that stops being charged on the
+strength of one line the child printed is a timeout that can be talked out of firing. The
+budget overrides remain the escape hatch.
 
 ## Alternatives considered
 

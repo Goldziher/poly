@@ -17,11 +17,13 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use poly_config::{Guard, HookCacheMode, HooksConfig, Job, Patterns, Stage as ConfigStage, StageConfig, ToolsConfig};
+use poly_config::{
+    Guard, HookCacheMode, HooksConfig, Job, Patterns, Serial, Stage as ConfigStage, StageConfig, ToolsConfig,
+};
 use poly_hooks::Stage as HookStage;
 use poly_hooks::filter::FilePattern;
 use poly_hooks::identify::TagSet;
-use poly_hooks::model::{Hook, HookCommand, StageSpec};
+use poly_hooks::model::{CARGO_SERIAL_GROUP, Hook, HookCommand, SHARED_SERIAL_GROUP, StageSpec};
 use poly_hooks::timeout::{ACCEPTED_TIMEOUT_FORMS, HookTimeout, parse_timeout};
 
 use self::builtins::{PathProbe, ToolProbe};
@@ -287,6 +289,7 @@ fn job_to_hook(
     let cache = cache::job_cache(job, cache_mode)?;
     let compiler = job.cache.as_ref().is_some_and(|cache| cache.compiler);
     let timeout = job_timeout(stage, label, job)?;
+    let (parallel, serial_group) = job_concurrency(cfg, job, &command);
 
     Ok(Hook {
         id: label.to_string(),
@@ -303,7 +306,8 @@ fn job_to_hook(
         priority: job.priority,
         cache,
         compiler,
-        parallel: cfg.parallel,
+        parallel,
+        serial_group,
         require_serial: cfg.piped,
         fail_fast: cfg.piped,
         stage_fixed: job.stage_fixed,
@@ -314,6 +318,57 @@ fn job_to_hook(
         timeout,
         ..Hook::default()
     })
+}
+
+/// Resolve a job's concurrency: whether it may run beside a peer, and which
+/// mutual-exclusion set it joins.
+///
+/// Precedence — the job's own `serial` key, then the stage, then the shape of
+/// the job:
+///
+/// 1. `serial = "<name>"` / `true` / `false` — explicit, and outranks
+///    everything below, including the automatic cargo grouping.
+/// 2. `piped` — the stage's jobs are an ordered pipeline; `require_serial`
+///    carries that (they share the shared set, in config order).
+/// 3. A `run` line invoking **cargo** joins [`CARGO_SERIAL_GROUP`]. Cargo's own
+///    package-cache and build-directory locks serialize these anyway; the set
+///    only makes the queue visible and keeps each job's timeout budget starting
+///    when the job does.
+/// 4. `workspace = true` — a whole-project job runs **concurrently by default**.
+///    Its peers are other whole-project tools, which is exactly the case that
+///    has a whole run's wall-clock to gain from overlapping.
+/// 5. Otherwise the stage's `parallel` flag decides, unchanged.
+fn job_concurrency(cfg: &StageConfig, job: &Job, command: &HookCommand) -> (bool, Option<String>) {
+    match &job.serial {
+        Serial::Named(name) => (true, Some(name.clone())),
+        Serial::Shared => (true, Some(SHARED_SERIAL_GROUP.to_string())),
+        Serial::Off => (true, None),
+        Serial::Unset if cfg.piped => (true, None),
+        Serial::Unset if invokes_cargo(command) => (true, Some(CARGO_SERIAL_GROUP.to_string())),
+        Serial::Unset if job.workspace => (true, None),
+        Serial::Unset => (cfg.parallel, None),
+    }
+}
+
+/// Whether a shell command line invokes `cargo` (or a `cargo-*` subcommand
+/// binary) anywhere in it — after a `&&`, inside a pipeline, or by absolute
+/// path.
+///
+/// Deliberately over-inclusive: the cost of a false positive is that one job
+/// waits for another cargo job instead of blocking invisibly inside cargo's own
+/// lock, and `serial = false` opts out. A script job is invisible here — poly
+/// cannot read what a script runs — so a script that shells out to cargo should
+/// name the set itself.
+fn invokes_cargo(command: &HookCommand) -> bool {
+    let HookCommand::Run(line) = command else {
+        return false;
+    };
+    line.split(|c: char| c.is_whitespace() || matches!(c, ';' | '&' | '|' | '(' | ')' | '`'))
+        .filter(|token| !token.is_empty())
+        .any(|token| {
+            let program = token.rsplit('/').next().unwrap_or(token);
+            program == "cargo" || program.starts_with("cargo-")
+        })
 }
 
 /// Resolve a job's `timeout` key into the runner's [`HookTimeout`].

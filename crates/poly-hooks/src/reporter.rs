@@ -2,32 +2,32 @@
 //!
 //! Ported from `polyhooks/src/cli/run/reporter.rs`. Two families live here:
 //!
-//! - **Final render** — [`HookRunReporter`] turns a completed
+//! - **Final render** (this module) — [`HookRunReporter`] turns a completed
 //!   [`HookRunOutcome`](crate::model::HookRunOutcome) into a deterministic,
 //!   non-interleaved report, with the standalone helpers
-//!   [`project_status_marker`], [`OutputPreview`], and [`truncate_to_width`].
-//! - **Live progress** — [`ProgressUi`] wraps an [`indicatif::MultiProgress`]:
-//!   each executing hook gets a spinner ([`HookBar`]) whose message shows a
-//!   rolling [`OutputPreview`] window fed by a [`PreviewSink`], collapsing to a
-//!   persistent `✓/× id (dur)` line on completion. It is enabled only when a run
-//!   requests progress (an interactive stderr) and self-hides on a non-terminal,
-//!   so the deterministic final report is unaffected.
+//!   [`project_status_marker`] and [`truncate_to_width`], plus the live
+//!   [`still_running_line`] notice.
+//! - **Live progress** ([`progress`]) — the spinner UI, the rolling
+//!   [`OutputPreview`] window, and the output sinks that feed them. Re-exported
+//!   here, so the module split is invisible to callers.
+//!
+//! The report's job is to keep distinct states distinct: a hook that was
+//! skipped, one poly killed, one whose setup failed, and one whose fix could not
+//! be delivered all get their own marker and their own sentence, because each
+//! asks the reader for something different.
 
 use std::borrow::Cow;
 use std::time::Duration;
 
 use console::strip_ansi_codes;
-use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
-use owo_colors::{OwoColorize as _, Stream::Stderr};
+use owo_colors::OwoColorize as _;
 use unicode_width::{UnicodeWidthChar as _, UnicodeWidthStr as _};
 
-use crate::process::OutputSink;
+pub mod progress;
 
-/// Maximum number of lines shown in the live output preview while a hook runs.
-pub const HOOK_OUTPUT_PREVIEW_LINES: usize = 3;
-
-/// Prefix rendered before each preview line in the progress UI.
-pub const HOOK_OUTPUT_PREVIEW_PREFIX: &str = "    => ";
+pub use progress::{
+    CaptureSink, HOOK_OUTPUT_PREVIEW_LINES, HOOK_OUTPUT_PREVIEW_PREFIX, HookBar, OutputPreview, PreviewSink, ProgressUi,
+};
 
 /// Return a coloured pass/fail status marker: "✓" (green) or "×" (red).
 #[must_use]
@@ -67,110 +67,6 @@ pub fn truncate_to_width(input: &str, width: usize) -> Cow<'_, str> {
     Cow::Owned(output)
 }
 
-/// Rolling text preview for a running hook's streamed output.
-///
-/// Maintains up to [`HOOK_OUTPUT_PREVIEW_LINES`] visible lines. ANSI escape
-/// codes are stripped. A pending carriage return is either joined with the
-/// next `\n` (CRLF) or clears the current line to emulate terminal overwrite
-/// output.
-#[derive(Debug, Default)]
-pub struct OutputPreview {
-    lines: Vec<String>,
-    line_open: bool,
-    pending_cr: bool,
-}
-
-impl OutputPreview {
-    /// Feed a raw output chunk into the preview state.
-    ///
-    /// `chunk` may contain partial lines, CRLF sequences, ANSI codes, and
-    /// arbitrary binary. Non-printable / non-whitespace control characters
-    /// are silently dropped.
-    pub fn push_chunk(&mut self, chunk: &[u8]) {
-        let text = String::from_utf8_lossy(chunk);
-        let text = strip_ansi_codes(&text);
-        for ch in text.chars().filter(|&c| is_preview_char(c)) {
-            if self.pending_cr {
-                if ch == '\n' {
-                    self.finish_line();
-                    self.pending_cr = false;
-                    continue;
-                }
-                self.current_line_mut().clear();
-                self.pending_cr = false;
-            }
-            match ch {
-                '\n' => self.finish_line(),
-                '\r' => self.pending_cr = true,
-                '\t' => self.current_line_mut().push(' '),
-                ch => self.current_line_mut().push(ch),
-            }
-        }
-    }
-
-    /// Return the current visible window of lines.
-    ///
-    /// Contains at most [`HOOK_OUTPUT_PREVIEW_LINES`] entries.
-    #[must_use]
-    pub fn visible_lines(&self) -> &[String] {
-        &self.lines
-    }
-
-    fn current_line_mut(&mut self) -> &mut String {
-        if !self.line_open {
-            self.lines.push(String::new());
-            self.line_open = true;
-            self.truncate();
-        }
-        let idx = self.lines.len() - 1;
-        &mut self.lines[idx]
-    }
-
-    fn finish_line(&mut self) {
-        if self.line_open {
-            self.line_open = false;
-        } else {
-            self.lines.push(String::new());
-            self.truncate();
-        }
-    }
-
-    fn truncate(&mut self) {
-        if self.lines.len() > HOOK_OUTPUT_PREVIEW_LINES {
-            let overflow = self.lines.len() - HOOK_OUTPUT_PREVIEW_LINES;
-            self.lines.drain(..overflow);
-        }
-    }
-}
-
-fn is_preview_char(ch: char) -> bool {
-    matches!(ch, '\n' | '\r' | '\t') || !ch.is_control()
-}
-
-/// An [`OutputSink`] that accumulates every chunk into a single buffer.
-///
-/// Each hook (and each `ARG_MAX` batch) executes with its own `CaptureSink`, so
-/// concurrently-running hooks never interleave their output. The runner renders
-/// the captured buffers sequentially afterwards (capture-then-render).
-#[derive(Debug, Default)]
-pub struct CaptureSink {
-    buffer: Vec<u8>,
-}
-
-impl CaptureSink {
-    /// Consume the sink and return the captured bytes.
-    #[must_use]
-    pub fn into_bytes(self) -> Vec<u8> {
-        self.buffer
-    }
-}
-
-impl crate::process::OutputSink for CaptureSink {
-    fn write_chunk(&mut self, chunk: &[u8]) {
-        self.buffer.extend_from_slice(chunk);
-    }
-}
-
 /// At or above this many seconds a duration renders as `s` (e.g. `1.2s`); below
 /// it, as whole milliseconds (e.g. `340ms`).
 const SECS_DISPLAY_THRESHOLD: f64 = 1.0;
@@ -182,178 +78,6 @@ pub(crate) fn format_duration(duration: Duration) -> String {
         format!("{secs:.1}s")
     } else {
         format!("{}ms", duration.as_millis())
-    }
-}
-
-/// The pass/fail marker for a live progress line, coloured against **stderr**
-/// (where progress is written) so it honours `NO_COLOR` and a non-TTY stderr —
-/// unlike [`project_status_marker`], which targets the stdout report.
-fn progress_marker(failed: bool) -> String {
-    if failed {
-        "×".if_supports_color(Stderr, |t| t.red()).to_string()
-    } else {
-        "✓".if_supports_color(Stderr, |t| t.green()).to_string()
-    }
-}
-
-/// Spinner redraw cadence. indicatif drives the animation from its own ticker
-/// thread, so a hook blocked in a subprocess still animates.
-const SPINNER_TICK_MS: u64 = 90;
-
-/// Braille spinner frames (trailing space is the "done" frame indicatif lands on
-/// after `finish`).
-const SPINNER_FRAMES: &str = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ ";
-
-/// Fallback preview width when the terminal size cannot be probed.
-const DEFAULT_PREVIEW_WIDTH: usize = 100;
-
-/// A live multi-line progress display for a hook run.
-///
-/// Wraps an [`indicatif::MultiProgress`] drawn to stderr. Each executing hook
-/// gets a spinner line (via [`Self::start`]) whose message is updated with a
-/// rolling [`OutputPreview`] window as the tool streams output; on completion
-/// [`Self::finish`] clears the spinner and prints a persistent `✓/× id (dur)`
-/// line above the still-running bars.
-///
-/// The draw target hides itself on a non-terminal stderr, so it is safe to
-/// construct whenever live progress is requested. `MultiProgress` is `Send +
-/// Sync`, so a shared `&ProgressUi` is used directly inside the rayon pool.
-#[derive(Debug)]
-pub struct ProgressUi {
-    multi: MultiProgress,
-}
-
-impl ProgressUi {
-    /// Create a stderr-backed progress display.
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            multi: MultiProgress::with_draw_target(ProgressDrawTarget::stderr()),
-        }
-    }
-
-    /// Start a spinner for a hook that is about to execute.
-    #[must_use]
-    pub fn start(&self, id: &str) -> HookBar {
-        let bar = self.multi.add(ProgressBar::new_spinner());
-        bar.set_style(spinner_style());
-        bar.enable_steady_tick(Duration::from_millis(SPINNER_TICK_MS));
-        bar.set_message(format!("{id} …"));
-        HookBar {
-            bar,
-            id: id.to_string(),
-        }
-    }
-
-    /// Finish a hook's spinner: clear the live line and print a persistent
-    /// `✓/× id (dur)` result above the remaining bars.
-    pub fn finish(&self, hook_bar: &HookBar, failed: bool, duration: Duration) {
-        hook_bar.bar.finish_and_clear();
-        let marker = progress_marker(failed);
-        let elapsed = format!("({})", format_duration(duration))
-            .if_supports_color(Stderr, |t| t.dimmed())
-            .to_string();
-        let _ = self.multi.println(format!("  {marker} {} {elapsed}", hook_bar.id));
-    }
-}
-
-impl Default for ProgressUi {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// A single hook's spinner handle, returned by [`ProgressUi::start`].
-#[derive(Debug)]
-pub struct HookBar {
-    bar: ProgressBar,
-    id: String,
-}
-
-impl HookBar {
-    /// The underlying spinner, so a [`PreviewSink`] can update its message.
-    #[must_use]
-    pub fn bar(&self) -> &ProgressBar {
-        &self.bar
-    }
-}
-
-/// The braille spinner style: a cyan spinner followed by the (possibly
-/// multi-line) preview message.
-fn spinner_style() -> ProgressStyle {
-    ProgressStyle::with_template("{spinner:.cyan} {msg}")
-        .unwrap_or_else(|_| ProgressStyle::default_spinner())
-        .tick_chars(SPINNER_FRAMES)
-}
-
-/// Probe the terminal width for truncating preview lines; falls back to a fixed
-/// width when stderr is not a sizeable terminal.
-fn preview_width() -> usize {
-    console::Term::stderr()
-        .size_checked()
-        .map_or(DEFAULT_PREVIEW_WIDTH, |(_, cols)| {
-            (cols as usize).saturating_sub(HOOK_OUTPUT_PREVIEW_PREFIX.len())
-        })
-}
-
-/// Build the spinner message: the hook id on the first line, then up to
-/// [`HOOK_OUTPUT_PREVIEW_LINES`] rolling preview lines, each truncated to the
-/// terminal width so the multi-line layout never wraps.
-fn preview_message(id: &str, preview: &OutputPreview, width: usize) -> String {
-    let lines = preview.visible_lines();
-    if lines.is_empty() {
-        return format!("{id} …");
-    }
-    let mut message = id.to_string();
-    for line in lines {
-        message.push('\n');
-        message.push_str(HOOK_OUTPUT_PREVIEW_PREFIX);
-        message.push_str(&truncate_to_width(line, width));
-    }
-    message
-}
-
-/// An [`OutputSink`] that captures every byte (for the deterministic final
-/// render) **and** drives a live [`OutputPreview`] into a spinner's message.
-///
-/// Each hook (and each `ARG_MAX` batch) owns its own sink; batches that share a
-/// hook's spinner update its message last-writer-wins, which is fine for a
-/// best-effort preview.
-#[derive(Debug)]
-pub struct PreviewSink<'a> {
-    buffer: Vec<u8>,
-    preview: OutputPreview,
-    bar: &'a ProgressBar,
-    width: usize,
-    id: &'a str,
-}
-
-impl<'a> PreviewSink<'a> {
-    /// Create a preview sink that updates `bar` with output streamed for `id`.
-    #[must_use]
-    pub fn new(bar: &'a ProgressBar, id: &'a str) -> Self {
-        Self {
-            buffer: Vec::new(),
-            preview: OutputPreview::default(),
-            bar,
-            width: preview_width(),
-            id,
-        }
-    }
-
-    /// Consume the sink and return the fully captured bytes.
-    #[must_use]
-    pub fn into_bytes(self) -> Vec<u8> {
-        self.buffer
-    }
-}
-
-impl OutputSink for PreviewSink<'_> {
-    fn write_chunk(&mut self, chunk: &[u8]) {
-        self.buffer.extend_from_slice(chunk);
-        self.preview.push_chunk(chunk);
-        self.bar
-            .set_message(preview_message(self.id, &self.preview, self.width));
     }
 }
 
@@ -536,8 +260,8 @@ impl HookRunReporter {
                 append_failure_output(report, &step.status, &step.output);
             }
         }
-        if let HookStatus::FixWithheld(paths) = &hook.status {
-            append_withheld_fix(report, paths);
+        if let HookStatus::FixWithheld(withheld) = &hook.status {
+            append_withheld_fix(report, withheld);
         }
         append_failure_output(report, &hook.status, &hook.output);
     }
@@ -562,29 +286,69 @@ fn validated_banner(stage: &crate::model::StageOutcome) -> String {
     }
 }
 
-/// Spell out a withheld fix: which files, and what the author has to do. The
-/// hook exited 0, so without this the report would show a failure with no
-/// output at all.
-fn append_withheld_fix(report: &mut String, paths: &[std::path::PathBuf]) {
+/// Spell out a withheld fix: which files, why each one was withheld, and what
+/// the author has to do about it. The hook exited 0, so without this the report
+/// would show a failure with no output at all.
+///
+/// Each path carries its own reason. Rendering them all as "unstaged changes"
+/// — as this used to — is wrong for every case but one, and for a security
+/// refusal it is worse than wrong: it sends the author to `git add` a symlink
+/// poly will never write through, when what the tree actually contains is a
+/// path that escapes the repository.
+fn append_withheld_fix(report: &mut String, withheld: &[crate::model::WithheldFix]) {
     use std::fmt::Write as _;
 
-    let _ = writeln!(
-        report,
-        "      fixed the staged content, but these files have unstaged changes, \
-         so the fix was not written:"
-    );
-    for path in paths {
-        let _ = writeln!(report, "        {}", path.display());
+    use crate::model::WithheldReason;
+
+    let _ = writeln!(report, "      fixed the staged content, but the fix was not written:");
+    for fix in withheld {
+        let marker = if fix.reason.is_security_refusal() {
+            format!("{SECURITY_REFUSAL_LABEL} ")
+        } else {
+            String::new()
+        };
+        let _ = writeln!(report, "        {marker}{} — {}", fix.path.display(), fix.reason);
     }
-    let _ = writeln!(
-        report,
-        "      re-run the fixer over your working tree and `git add` the result, \
-         or stash the unstaged changes first."
-    );
+    let reasons = |predicate: fn(&WithheldReason) -> bool| withheld.iter().any(|fix| predicate(&fix.reason));
+    if reasons(|reason| matches!(reason, WithheldReason::UnstagedChanges)) {
+        let _ = writeln!(
+            report,
+            "      re-run the fixer over your working tree and `git add` the result, \
+             or stash the unstaged changes first."
+        );
+    }
+    if reasons(WithheldReason::is_security_refusal) {
+        let _ = writeln!(
+            report,
+            "      poly will not write a fix through a symlink or to a path outside the repository. \
+             Staging changes nothing here — replace the tracked entry with a regular file inside \
+             the repository, and check where the existing one points."
+        );
+    }
+    if reasons(|reason| {
+        matches!(
+            reason,
+            WithheldReason::WorktreeNotRegularFile | WithheldReason::SnapshotUnreadable
+        )
+    }) {
+        let _ = writeln!(
+            report,
+            "      there was no readable file to write, so nothing was changed — \
+             check the path still exists as a regular file."
+        );
+    }
 }
 
 /// Marker for a hook a precondition (or an empty file set) withheld — benign.
 const SKIPPED_MARKER: &str = "-";
+
+/// Label leading a withheld-fix line poly declined for **safety**, not for the
+/// author's convenience: a symlink destination or a path leaving the repository.
+///
+/// Shouted, and never applied to the unstaged-changes case, because the two ask
+/// the reader for entirely different things and only one of them is a finding
+/// about the repository's contents.
+const SECURITY_REFUSAL_LABEL: &str = "SECURITY:";
 
 /// Marker for the "nothing was validated" summary line.
 const NOTHING_VALIDATED_MARKER: &str = "!";
@@ -597,6 +361,14 @@ const RUNNING_MARKER: &str = "⋯";
 
 /// Marker for a hook poly killed for overrunning its budget.
 const TIMED_OUT_MARKER: &str = "⧖";
+
+/// Marker for a hook that is quiet because it is **queued** behind a lock poly
+/// does not own, not because it is working.
+///
+/// Distinct from [`RUNNING_MARKER`] on purpose: a hook waiting on cargo's
+/// package-cache lock and a hook grinding through a build are both silent, and a
+/// shared glyph would leave the reader to guess which one they are watching.
+const LOCK_WAIT_MARKER: &str = "⏸";
 
 /// Marker for a hook whose verdict is unknown because its setup failed. Distinct
 /// from both `✓/×` (a real verdict) and `-` (a benign skip).
@@ -634,15 +406,28 @@ fn step_note(status: &crate::model::HookStatus) -> String {
 /// Naming the budget alongside the elapsed time answers the reader's actual
 /// question — "is this thing ever going to stop?" — rather than only "it is
 /// slow".
+///
+/// `waiting_on` is the resource the hook last reported being queued behind (see
+/// [`crate::supervise::LockWait`]). A hook blocked on cargo's package-cache or
+/// build-directory lock, held by a cargo process poly did not start, produces no
+/// output at all — so "still running" reads as *working* when the truth is
+/// *waiting its turn*. The two get different lines and different markers, and
+/// the notice says outright that the budget is still being charged, since poly
+/// does not pause it for a queue it cannot see.
 #[must_use]
-pub fn still_running_line(id: &str, elapsed: Duration, limit: Option<Duration>) -> String {
+pub fn still_running_line(id: &str, elapsed: Duration, limit: Option<Duration>, waiting_on: Option<&str>) -> String {
     let elapsed = format_duration(elapsed);
-    match limit {
-        Some(limit) => format!(
-            "  {RUNNING_MARKER} still running: {id} ({elapsed} elapsed, killed at {})",
-            format_duration(limit)
+    let deadline = match limit {
+        Some(limit) => format!("killed at {}", format_duration(limit)),
+        None => "no timeout".to_string(),
+    };
+    match waiting_on {
+        Some(resource) => format!(
+            "  {LOCK_WAIT_MARKER} waiting on a lock: {id} ({elapsed} elapsed, {deadline}) — \
+             blocked on cargo's {resource} lock held by a process outside this run, doing no work; \
+             the time budget is still counting"
         ),
-        None => format!("  {RUNNING_MARKER} still running: {id} ({elapsed} elapsed, no timeout)"),
+        None => format!("  {RUNNING_MARKER} still running: {id} ({elapsed} elapsed, {deadline})"),
     }
 }
 
@@ -694,69 +479,6 @@ mod tests {
         assert_eq!(truncate_to_width("hello", 0), "");
     }
 
-    #[test]
-    fn output_preview_collects_lines() {
-        let mut p = OutputPreview::default();
-        p.push_chunk(b"line1\nline2\nline3\n");
-        assert_eq!(p.visible_lines(), ["line1", "line2", "line3"]);
-    }
-
-    #[test]
-    fn output_preview_caps_at_max_lines() {
-        let mut p = OutputPreview::default();
-        for i in 0..10 {
-            p.push_chunk(format!("line{i}\n").as_bytes());
-        }
-        assert!(p.visible_lines().len() <= HOOK_OUTPUT_PREVIEW_LINES);
-    }
-
-    #[test]
-    fn output_preview_cr_clears_line() {
-        let mut p = OutputPreview::default();
-        p.push_chunk(b"old\rnew\n");
-        assert_eq!(p.visible_lines(), ["new"]);
-    }
-
-    #[test]
-    fn output_preview_crlf_treated_as_newline() {
-        let mut p = OutputPreview::default();
-        p.push_chunk(b"a\r\nb\n");
-        assert_eq!(p.visible_lines(), ["a", "b"]);
-    }
-
-    #[test]
-    fn output_preview_strips_ansi_codes() {
-        let mut p = OutputPreview::default();
-        p.push_chunk(b"\x1b[31mred\x1b[0m\n");
-        assert_eq!(p.visible_lines(), ["red"]);
-    }
-
-    #[test]
-    fn preview_sink_captures_every_byte_across_chunks() {
-        let bar = ProgressBar::hidden();
-        let mut sink = PreviewSink::new(&bar, "demo");
-        sink.write_chunk(b"first line\n");
-        sink.write_chunk(b"\x1b[32msecond\x1b[0m\n");
-        assert_eq!(sink.into_bytes(), b"first line\n\x1b[32msecond\x1b[0m\n");
-    }
-
-    #[test]
-    fn preview_message_shows_id_alone_before_any_output() {
-        let preview = OutputPreview::default();
-        assert_eq!(preview_message("clippy", &preview, 80), "clippy …");
-    }
-
-    #[test]
-    fn preview_message_appends_prefixed_rolling_lines() {
-        let mut preview = OutputPreview::default();
-        preview.push_chunk(b"compiling\nlinking\n");
-        let message = preview_message("clippy", &preview, 80);
-        let mut lines = message.lines();
-        assert_eq!(lines.next(), Some("clippy"));
-        assert_eq!(lines.next(), Some("    => compiling"));
-        assert_eq!(lines.next(), Some("    => linking"));
-    }
-
     /// A finished hook outcome carrying `status`, for rendering assertions.
     fn outcome_with(id: &str, status: crate::model::HookStatus) -> crate::model::HookOutcome {
         crate::model::HookOutcome {
@@ -806,13 +528,153 @@ mod tests {
     #[test]
     fn still_running_line_names_the_hook_and_when_it_will_be_killed() {
         assert_eq!(
-            still_running_line("clippy", Duration::from_secs(15), Some(Duration::from_mins(30))),
+            still_running_line("clippy", Duration::from_secs(15), Some(Duration::from_mins(30)), None),
             "  ⋯ still running: clippy (15.0s elapsed, killed at 1800.0s)"
         );
         assert_eq!(
-            still_running_line("clippy", Duration::from_millis(750), None),
+            still_running_line("clippy", Duration::from_millis(750), None, None),
             "  ⋯ still running: clippy (750ms elapsed, no timeout)"
         );
+    }
+
+    /// A queued hook and a wedged hook were the same line. The queued one now
+    /// says what it is waiting for, that it is doing no work, and — since poly
+    /// does not pause the budget for a queue it cannot see — that the clock is
+    /// still running.
+    #[test]
+    fn a_hook_queued_on_a_lock_says_so_instead_of_claiming_it_is_running() {
+        assert_eq!(
+            still_running_line(
+                "cargo:cargo-deny",
+                Duration::from_secs(45),
+                Some(Duration::from_mins(30)),
+                Some("package cache"),
+            ),
+            "  ⏸ waiting on a lock: cargo:cargo-deny (45.0s elapsed, killed at 1800.0s) — blocked on cargo's \
+             package cache lock held by a process outside this run, doing no work; the time budget is still counting"
+        );
+        assert_eq!(
+            still_running_line("cargo:clippy", Duration::from_secs(90), None, Some("build directory")),
+            "  ⏸ waiting on a lock: cargo:clippy (90.0s elapsed, no timeout) — blocked on cargo's \
+             build directory lock held by a process outside this run, doing no work; the time budget is still counting"
+        );
+    }
+
+    #[test]
+    fn the_lock_wait_notice_is_never_mistakable_for_the_still_running_notice() {
+        let elapsed = Duration::from_secs(45);
+        let limit = Some(Duration::from_mins(30));
+        let waiting = still_running_line("cargo-deny", elapsed, limit, Some("package cache"));
+        let running = still_running_line("cargo-deny", elapsed, limit, None);
+
+        assert_ne!(LOCK_WAIT_MARKER, RUNNING_MARKER);
+        assert_eq!(LOCK_WAIT_MARKER, "⏸");
+        assert!(
+            !waiting.contains("still running"),
+            "a queued hook must not claim to be running: {waiting}"
+        );
+        assert!(
+            !running.contains("waiting on a lock"),
+            "a working hook must not claim to be queued: {running}"
+        );
+    }
+
+    /// A withheld fix used to blame unstaged changes whatever the cause. Each
+    /// path now carries its own reason, and only the reasons present get their
+    /// remedy.
+    #[test]
+    fn a_withheld_fix_reports_each_path_with_its_own_reason() {
+        use crate::model::{HookStatus, WithheldFix, WithheldReason};
+
+        let hook = outcome_with(
+            "fmt",
+            HookStatus::FixWithheld(vec![
+                WithheldFix::new("src/lib.rs", WithheldReason::UnstagedChanges),
+                WithheldFix::new("evil.rs", WithheldReason::WorktreeIsSymlink),
+            ]),
+        );
+        let mut report = String::new();
+        HookRunReporter::render_hook(&mut report, &hook);
+
+        let expected = [
+            format!("  {} fmt\n", project_status_marker(true)),
+            "      fixed the staged content, but the fix was not written:\n".to_string(),
+            "        src/lib.rs — the worktree copy has unstaged changes the fix never saw\n".to_string(),
+            "        SECURITY: evil.rs — the worktree entry is a symlink; \
+             poly refused to write through it\n"
+                .to_string(),
+            "      re-run the fixer over your working tree and `git add` the result, \
+             or stash the unstaged changes first.\n"
+                .to_string(),
+            "      poly will not write a fix through a symlink or to a path outside the repository. \
+             Staging changes nothing here — replace the tracked entry with a regular file inside \
+             the repository, and check where the existing one points.\n"
+                .to_string(),
+        ]
+        .concat();
+        assert_eq!(report, expected);
+    }
+
+    /// THE MISLEADING MESSAGE. A path that escapes the repository is a security
+    /// refusal; telling that author to stage their work sends them to fix
+    /// something that is not broken and hides what is.
+    #[test]
+    fn a_security_refusal_never_blames_unstaged_changes() {
+        use crate::model::{HookStatus, WithheldFix, WithheldReason};
+
+        let hook = outcome_with(
+            "fmt",
+            HookStatus::FixWithheld(vec![WithheldFix::new(
+                "../../etc/shadow",
+                WithheldReason::PathEscapesRepository,
+            )]),
+        );
+        let mut report = String::new();
+        HookRunReporter::render_hook(&mut report, &hook);
+
+        assert!(
+            report.contains(
+                "        SECURITY: ../../etc/shadow — the path leaves the repository; \
+                 poly refused to write outside it\n"
+            ),
+            "the refusal must name the file and say poly refused it: {report}"
+        );
+        assert!(
+            !report.contains("unstaged"),
+            "a security refusal has nothing to do with unstaged work: {report}"
+        );
+        assert!(
+            !report.contains("git add"),
+            "staging cannot make this fix land, so the report must not suggest it: {report}"
+        );
+    }
+
+    #[test]
+    fn an_unreadable_path_is_neither_a_security_refusal_nor_unstaged_work() {
+        use crate::model::{HookStatus, WithheldFix, WithheldReason};
+
+        let hook = outcome_with(
+            "fmt",
+            HookStatus::FixWithheld(vec![
+                WithheldFix::new("gone.rs", WithheldReason::WorktreeNotRegularFile),
+                WithheldFix::new("snap.rs", WithheldReason::SnapshotUnreadable),
+            ]),
+        );
+        let mut report = String::new();
+        HookRunReporter::render_hook(&mut report, &hook);
+
+        let expected = [
+            format!("  {} fmt\n", project_status_marker(true)),
+            "      fixed the staged content, but the fix was not written:\n".to_string(),
+            "        gone.rs — the worktree entry is not a regular file\n".to_string(),
+            "        snap.rs — the fixed copy in poly's staged snapshot could not be read\n".to_string(),
+            "      there was no readable file to write, so nothing was changed — \
+             check the path still exists as a regular file.\n"
+                .to_string(),
+        ]
+        .concat();
+        assert_eq!(report, expected);
+        assert!(!report.contains(SECURITY_REFUSAL_LABEL), "not a refusal: {report}");
     }
 
     #[test]

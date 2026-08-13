@@ -77,6 +77,26 @@ pub struct Job {
     pub timeout: Option<String>,
     /// Lower values run first within a stage (default `0`).
     pub priority: i64,
+    /// Mutual-exclusion set this job belongs to.
+    ///
+    /// Hooks in a stage run concurrently; `serial` is the opt-out for a job that
+    /// cannot tolerate a *peer* running at the same time — a tool holding a
+    /// global lock, or two jobs writing the same output. It does **not** stop
+    /// the run: a serial job still runs alongside every hook outside its set.
+    ///
+    /// - `serial = true` — join the shared set (never concurrent with another
+    ///   `serial = true` job).
+    /// - `serial = "cargo"` — join a **named** set; only members of that name
+    ///   exclude each other. `"cargo"` is the set the built-in cargo group uses,
+    ///   so a job invoking cargo should name it (see [`crate::CargoHooks`]).
+    /// - `serial = false` — explicitly concurrent, overriding a stage-level
+    ///   `parallel = false` and the automatic cargo grouping.
+    ///
+    /// Unset lets the stage decide: `piped`/`parallel = false` serialize a
+    /// per-file job, a `run` line invoking cargo joins the `"cargo"` set, and a
+    /// `workspace = true` job otherwise runs concurrently.
+    #[serde(default, deserialize_with = "deserialize_serial")]
+    pub serial: Serial,
     /// When the job modifies files and exits 0, the runner `git add`s the
     /// matched files and continues; only a non-zero exit fails the stage.
     pub stage_fixed: bool,
@@ -95,6 +115,60 @@ pub struct Job {
     pub use_stdin: bool,
     /// Per-job result-cache declaration.
     pub cache: Option<JobCache>,
+}
+
+/// Which mutual-exclusion set a [`Job`] belongs to (the `serial` key).
+///
+/// Four states rather than a bool, because "not configured" and "configured
+/// concurrent" resolve differently: the first falls through to the stage
+/// default (and to the automatic cargo grouping), the second is the escape
+/// hatch and has to survive both.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum Serial {
+    /// No `serial` key; the stage default decides.
+    #[default]
+    Unset,
+    /// `serial = false` — run concurrently with everything, whatever the stage
+    /// or the automatic grouping would have said.
+    Off,
+    /// `serial = true` — join the shared exclusion set.
+    Shared,
+    /// `serial = "<name>"` — join the named exclusion set.
+    Named(String),
+}
+
+/// Accept `serial` written as either a bool (`true` / `false`) or a set name
+/// (`"cargo"`).
+///
+/// The bool is what most jobs want ("do not run me next to another serial
+/// job"); the string is what a *shared external resource* wants, and the two
+/// spellings say the same kind of thing, so rejecting either on a type
+/// technicality would be a worse error than the one it prevents — the same
+/// judgement as [`deserialize_timeout`].
+fn deserialize_serial<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Serial, D::Error> {
+    struct SerialVisitor;
+
+    impl<'de> Visitor<'de> for SerialVisitor {
+        type Value = Serial;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            formatter.write_str("a bool (`true` / `false`) or an exclusion-set name (`\"cargo\"`)")
+        }
+
+        fn visit_bool<E: de::Error>(self, value: bool) -> Result<Self::Value, E> {
+            Ok(if value { Serial::Shared } else { Serial::Off })
+        }
+
+        fn visit_str<E: de::Error>(self, value: &str) -> Result<Self::Value, E> {
+            let name = value.trim();
+            if name.is_empty() {
+                return Err(E::custom("`serial` set name must not be empty"));
+            }
+            Ok(Serial::Named(name.to_string()))
+        }
+    }
+
+    deserializer.deserialize_any(SerialVisitor)
 }
 
 /// Accept a `timeout` written as either a TOML string (`"30s"`) or a bare
@@ -216,6 +290,28 @@ inputs = ["**/*.rs", "Cargo.toml"]
     fn a_timeout_this_crate_cannot_interpret_still_parses() {
         let job: Job = toml::from_str("run = \"x\"\ntimeout = \"soon\"").expect("parse job");
         assert_eq!(job.timeout.as_deref(), Some("soon"));
+    }
+
+    /// Both spellings of an exclusion set are accepted, and the absent key stays
+    /// distinguishable from an explicit `false`.
+    #[test]
+    fn parses_serial_as_a_bool_or_a_set_name() {
+        for (source, expected) in [
+            (r#"run = "x""#, Serial::Unset),
+            ("run = \"x\"\nserial = true", Serial::Shared),
+            ("run = \"x\"\nserial = false", Serial::Off),
+            ("run = \"x\"\nserial = \"cargo\"", Serial::Named("cargo".to_string())),
+            ("run = \"x\"\nserial = \" cargo \"", Serial::Named("cargo".to_string())),
+        ] {
+            let job: Job = toml::from_str(source).expect("parse job");
+            assert_eq!(job.serial, expected, "source: {source}");
+        }
+    }
+
+    #[test]
+    fn an_empty_serial_set_name_is_rejected() {
+        let result: Result<Job, _> = toml::from_str("run = \"x\"\nserial = \"\"");
+        assert!(result.is_err(), "an unnamed exclusion set is not a set");
     }
 
     #[test]

@@ -13,10 +13,11 @@
 //!   stage. Every configured hook is listed as [`HookStatus::Unknown`] — its
 //!   verdict could not be determined, which fails the run.
 //! - hooks — grouped by `priority` (lower first). Groups run sequentially; the
-//!   hooks within a group run via rayon `par_iter` (unless any member forces a
-//!   serial group). Each hook's `ARG_MAX` file batches also run via `par_iter`.
-//!   Per-hook output is captured into its own buffer (no interleaving) and the
-//!   final hook list is sorted by position for deterministic rendering.
+//!   hooks within a group run concurrently, subject to the **exclusion sets**
+//!   described below. Each hook's `ARG_MAX` file batches also run via
+//!   `par_iter`. Per-hook output is captured into its own buffer (no
+//!   interleaving) and the final hook list is sorted by position for
+//!   deterministic rendering.
 //! - `after` — sequential teardown, only when no hook failed; aborts on
 //!   non-zero.
 //!
@@ -38,6 +39,29 @@
 //! sets of bytes, and can pass a commit whose staged content it never saw. The
 //! tree is recorded on every [`HookOutcome::validated`] and rendered in the
 //! report, so the answer is never left to assumption.
+//!
+//! # Exclusion sets: how a group is scheduled
+//!
+//! A priority group is partitioned into **chains** ([`exclusion_chains`]). Every
+//! hook naming the same exclusion set ([`Hook::serial_group`], or
+//! [`SHARED_SERIAL_GROUP`] for a `require_serial` / non-`parallel` hook) forms
+//! **one** chain, in group order; every unconstrained hook is a chain of its
+//! own. The group's `par_iter` runs over the *chains*, so members of a set never
+//! overlap while everything else still saturates the pool.
+//!
+//! That replaces the older rule, under which a single serial member made the
+//! whole group serial — one `parallel = false` job (the schema default for an
+//! inline job) was enough to serialize every builtin alongside it.
+//!
+//! The scheduling is also what keeps a queued hook's **budget honest**: a hook
+//! waiting for its chain predecessor is not spawned, so its clock has not
+//! started and it can neither be killed for a peer's build time nor announce
+//! itself as "still running" while it is not running. This matters most for the
+//! cargo set: `cargo` serializes its own subcommands on the package-cache and
+//! build-directory locks, so four concurrent cargo hooks queue *inside* cargo,
+//! silently, each burning its own budget while blocked (a `cargo deny check`
+//! that takes 1.7s alone has been killed at the 30-minute whole-project budget
+//! this way).
 //!
 //! A hook that does not run is **never** omitted from the outcome: it is listed
 //! with the reason it did not run, since a check that vanishes from the report is
@@ -64,8 +88,8 @@ use rayon::prelude::*;
 use tracing::warn;
 
 use crate::model::{
-    Hook, HookCache, HookOutcome, HookRunOutcome, HookRunRequest, HookStatus, SccacheSettings, SetupScope, SkipReason,
-    StageOutcome, StageSpec, StageStatus, StepOutcome, UnknownReason, ValidatedTree,
+    Hook, HookCache, HookOutcome, HookRunOutcome, HookRunRequest, HookStatus, SHARED_SERIAL_GROUP, SccacheSettings,
+    SetupScope, SkipReason, StageOutcome, StageSpec, StageStatus, StepOutcome, UnknownReason, ValidatedTree,
 };
 use crate::reporter::{HookBar, ProgressUi};
 
@@ -273,8 +297,7 @@ fn run_hooks(
     let mut any_failed = false;
 
     for group in prepare::group_by_priority(&spec.hooks) {
-        let serial = group.iter().any(|&pos| spec.hooks[pos].is_serial());
-        let mut runs = run_group(request, spec, prepared, &group, serial, ui);
+        let mut runs = run_group(request, spec, prepared, &group, ui);
 
         // Landing is a group-wide step: the hooks ran concurrently, so who
         // rewrote what has to be reconciled once, before any outcome is final.
@@ -326,13 +349,49 @@ fn run_hooks(
     Ok((collected, any_failed))
 }
 
-/// Run one priority group, returning each hook's [`HookRun`].
+/// The mutual-exclusion set `hook` belongs to, or `None` when it may run beside
+/// anything.
+///
+/// A named [`Hook::serial_group`] wins; the older `require_serial` /
+/// `parallel = false` spelling maps onto the shared set, so a hook that asked
+/// not to run beside a peer still does not.
+fn exclusion_key(hook: &Hook) -> Option<&str> {
+    hook.serial_group
+        .as_deref()
+        .or_else(|| hook.is_serial().then_some(SHARED_SERIAL_GROUP))
+}
+
+/// Partition a priority group into chains that may run concurrently with one
+/// another, each chain running its own members one at a time in group order.
+///
+/// Hooks sharing an exclusion set land in one chain; an unconstrained hook is a
+/// chain of one. Group order is preserved *within* a chain, which is what a
+/// `piped` stage and any ordered serial set rely on.
+fn exclusion_chains(hooks: &[Hook], group: &[usize]) -> Vec<Vec<usize>> {
+    let mut chains: Vec<Vec<usize>> = Vec::with_capacity(group.len());
+    let mut by_key: BTreeMap<&str, usize> = BTreeMap::new();
+    for &pos in group {
+        match exclusion_key(&hooks[pos]) {
+            Some(key) => {
+                if let Some(&chain) = by_key.get(key) {
+                    chains[chain].push(pos);
+                } else {
+                    by_key.insert(key, chains.len());
+                    chains.push(vec![pos]);
+                }
+            }
+            None => chains.push(vec![pos]),
+        }
+    }
+    chains
+}
+
+/// Run one priority group, returning each hook's [`HookRun`] in group order.
 fn run_group(
     request: &HookRunRequest,
     spec: &StageSpec,
     prepared: &[Prepared],
     group: &[usize],
-    serial: bool,
     ui: Option<&ProgressUi>,
 ) -> Vec<HookRun> {
     // Resolved once per group rather than per hook: the tree is a property of
@@ -340,7 +399,7 @@ fn run_group(
     let context = ExecContext::new(request);
     let (exec_root, tree) = (context.root, context.tree);
 
-    let run_one = |&pos: &usize| -> HookRun {
+    let run_one = |pos: usize| -> HookRun {
         let hook = &spec.hooks[pos];
         let blank = |outcome| HookRun {
             outcome,
@@ -429,11 +488,19 @@ fn run_group(
         }
     };
 
-    if serial {
-        group.iter().map(run_one).collect()
-    } else {
-        group.par_iter().map(run_one).collect()
-    }
+    // The parallelism unit is the *chain*, not the hook: chains run on the run's
+    // rayon pool, and a chain's own members run one after another on whichever
+    // worker picked the chain up.
+    let mut runs: Vec<(usize, HookRun)> = exclusion_chains(&spec.hooks, group)
+        .into_par_iter()
+        .flat_map_iter(|chain| chain.into_iter().map(|pos| (pos, run_one(pos))).collect::<Vec<_>>())
+        .collect();
+
+    // Chains finish in any order; the caller zips these against `group`, so put
+    // them back in group order before returning.
+    let rank: BTreeMap<usize, usize> = group.iter().enumerate().map(|(rank, &pos)| (pos, rank)).collect();
+    runs.sort_by_key(|(pos, _)| rank.get(pos).copied().unwrap_or(usize::MAX));
+    runs.into_iter().map(|(_, run)| run).collect()
 }
 
 /// Run a hook's own `before` steps in `hook_dir`, stopping at the first failure.

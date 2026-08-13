@@ -177,7 +177,9 @@ fn shell_command(line: &str, args: &[String], files: &[&Path], pass_filenames: b
 /// happening rather than only in hindsight.
 pub(super) fn execute(mut cmd: Cmd, bar: Option<&ProgressBar>, id: &str, budget: Budget) -> (HookStatus, Vec<u8>) {
     cmd.check(false);
-    let notify = |elapsed: Duration| announce_still_running(bar, id, elapsed, budget.limit);
+    let notify = |elapsed: Duration, waiting_on: Option<&str>| {
+        announce_still_running(bar, id, elapsed, budget.limit, waiting_on);
+    };
     let (result, bytes) = if let Some(bar) = bar {
         let mut sink = PreviewSink::new(bar, id);
         let result = capture(&mut cmd, &mut sink, budget, &notify);
@@ -200,7 +202,7 @@ fn capture<S: OutputSink>(
     cmd: &mut Cmd,
     sink: S,
     budget: Budget,
-    notify: &dyn Fn(Duration),
+    notify: &dyn Fn(Duration, Option<&str>),
 ) -> Result<Supervised, ProcessError> {
     if budget.is_supervised() {
         return cmd.output_with_sink_supervised(sink, budget, notify);
@@ -213,6 +215,13 @@ fn capture<S: OutputSink>(
 /// Classify a completed run. A killed process is reported as
 /// [`HookStatus::TimedOut`] and never as a plain failure: its exit status
 /// describes poly's signal, not the tool's opinion of the code.
+///
+/// Reading the kill flag ahead of the status is only sound because
+/// [`Supervised::timed_out`] means *the kill is what ended the child*, not
+/// merely that poly went to kill it — a child that finished on its own at the
+/// deadline arrives here with the flag clear and is classified on its own exit
+/// code, which is the difference between reporting a passing hook and blocking
+/// a commit on it.
 fn status_of(run: &Supervised, budget: Budget) -> HookStatus {
     if run.timed_out {
         return HookStatus::TimedOut(TimeoutReason::command(budget.limit.unwrap_or(run.elapsed), run.elapsed));
@@ -232,8 +241,18 @@ fn status_of(run: &Supervised, budget: Budget) -> HookStatus {
 /// live spinners instead of tearing them), and straight to stderr otherwise —
 /// which is the case that matters, because a non-interactive run has no spinner
 /// to reveal what is hanging.
-fn announce_still_running(bar: Option<&ProgressBar>, id: &str, elapsed: Duration, limit: Option<Duration>) {
-    let line = crate::reporter::still_running_line(id, elapsed, limit);
+///
+/// `waiting_on` names the lock the hook is queued behind, when it said so:
+/// "quiet because it is working" and "quiet because cargo will not let it start"
+/// are different diagnoses and the notice reports whichever one is true.
+fn announce_still_running(
+    bar: Option<&ProgressBar>,
+    id: &str,
+    elapsed: Duration,
+    limit: Option<Duration>,
+    waiting_on: Option<&str>,
+) {
+    let line = crate::reporter::still_running_line(id, elapsed, limit, waiting_on);
     // A hidden bar swallows `println`, which is precisely the case that must not
     // stay silent: progress requested, but nothing is drawing it.
     match bar.filter(|bar| !bar.is_hidden()) {
@@ -324,11 +343,104 @@ mod tests {
 
     use super::{Hook, SccacheSettings, build_command, cmd_quote};
 
+    /// `cmd.exe` interprets `&`, `|`, `<`, `>`, `(`, `)`, `^`, and whitespace as
+    /// syntax only *outside* a double-quoted region. `cmd_quote` neutralizes all
+    /// of them by wrapping in quotes, without needing to escape any of them
+    /// individually — so each one must survive the round trip unmodified,
+    /// sitting inside the pair of quotes `cmd_quote` adds.
     #[test]
-    fn cmd_quote_neutralizes_metacharacters() {
+    fn cmd_quote_wraps_metacharacters_dangerous_outside_quotes() {
+        let cases = [
+            ("foo&bar", "\"foo&bar\""),
+            ("foo|bar", "\"foo|bar\""),
+            ("foo<bar", "\"foo<bar\""),
+            ("foo>bar", "\"foo>bar\""),
+            ("foo(bar)", "\"foo(bar)\""),
+            ("foo^bar", "\"foo^bar\""),
+            ("foo bar", "\"foo bar\""),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(cmd_quote(input), expected, "input: {input:?}");
+        }
+    }
+
+    #[test]
+    fn cmd_quote_neutralizes_ampersand_command_chaining() {
         assert_eq!(cmd_quote("foo.rs & evil.exe"), "\"foo.rs & evil.exe\"");
+        assert_eq!(cmd_quote("foo & calc.exe"), "\"foo & calc.exe\"");
+    }
+
+    #[test]
+    fn cmd_quote_neutralizes_double_ampersand_chaining() {
+        assert_eq!(cmd_quote("foo && del /f /q C:\\"), "\"foo && del /f /q C:\\\"");
+    }
+
+    #[test]
+    fn cmd_quote_neutralizes_pipe_to_more() {
+        assert_eq!(cmd_quote("foo | more"), "\"foo | more\"");
+    }
+
+    #[test]
+    fn cmd_quote_neutralizes_output_redirection() {
+        assert_eq!(cmd_quote("a > out.txt"), "\"a > out.txt\"");
+    }
+
+    #[test]
+    fn cmd_quote_neutralizes_input_redirection() {
+        assert_eq!(cmd_quote("a < in.txt"), "\"a < in.txt\"");
+    }
+
+    /// Doubling every embedded `"` is what stops a value from closing the
+    /// quoted region early and resuming as bare (unneutralized) cmd.exe syntax
+    /// — the classic quote-breakout attempt.
+    #[test]
+    fn cmd_quote_doubles_embedded_quotes_to_prevent_breakout() {
         assert_eq!(cmd_quote("a\"b"), "\"a\"\"b\"");
+        let breakout_attempt = "foo\" & calc.exe & \"bar";
+        assert_eq!(cmd_quote(breakout_attempt), "\"foo\"\" & calc.exe & \"\"bar\"");
+    }
+
+    /// cmd.exe still expands `%VAR%` *inside* a double-quoted region (unlike
+    /// `&`/`|`/etc., which quoting alone neutralizes), so `cmd_quote` doubles
+    /// every `%` to turn it into a literal percent rather than a variable
+    /// reference.
+    #[test]
+    fn cmd_quote_escapes_percent_variable_expansion() {
         assert_eq!(cmd_quote("100%done"), "\"100%%done\"");
+        assert_eq!(cmd_quote("%PATH%"), "\"%%PATH%%\"");
+        assert_eq!(cmd_quote("%CD%"), "\"%%CD%%\"");
+    }
+
+    /// An already-doubled `%%` in the source value must still have *each* `%`
+    /// doubled independently — the replacement is per-character, not
+    /// pattern-aware, so two input percents become four output percents.
+    #[test]
+    fn cmd_quote_doubles_each_percent_in_already_doubled_input() {
+        assert_eq!(cmd_quote("100%%done"), "\"100%%%%done\"");
+    }
+
+    #[test]
+    fn cmd_quote_preserves_plain_filename_intact() {
+        let quoted = cmd_quote("foo.rs");
+        assert_eq!(quoted, "\"foo.rs\"");
+        assert_eq!(quoted.trim_matches('"'), "foo.rs");
+    }
+
+    #[test]
+    fn cmd_quote_preserves_windows_path_with_backslashes_intact() {
+        let quoted = cmd_quote("src\\main.rs");
+        assert_eq!(quoted, "\"src\\main.rs\"");
+        assert_eq!(quoted.trim_matches('"'), "src\\main.rs");
+    }
+
+    #[test]
+    fn cmd_quote_wraps_empty_string_in_a_pair_of_quotes() {
+        assert_eq!(cmd_quote(""), "\"\"");
+    }
+
+    #[test]
+    fn cmd_quote_wraps_whitespace_only_value_intact() {
+        assert_eq!(cmd_quote("   "), "\"   \"");
     }
 
     /// Collect the explicit environment overrides a built [`super::Cmd`] carries.

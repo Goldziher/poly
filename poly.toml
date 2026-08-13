@@ -48,6 +48,9 @@ script = "scripts/hooks/rustdoc-lint.sh"
 runner = "bash"
 files = "**/*.rs"
 workspace = true
+# The script runs `cargo doc --workspace`, which takes cargo's build-directory
+# lock — poly cannot see inside a script, so the set is named here.
+serial = "cargo"
 
 
 [lint.python.typos]

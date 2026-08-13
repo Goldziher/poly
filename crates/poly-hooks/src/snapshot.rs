@@ -21,6 +21,25 @@
 //! real checkout is both correct — the parent's hooks never lint the submodule's
 //! own sources — and cheap, avoiding a copy of a potentially large fixture tree.
 //!
+//! # Symlink entries
+//!
+//! `git checkout-index` reproduces a `120000` entry as a real symlink, and the
+//! blob it is built from is an arbitrary target string — including an absolute
+//! path outside the repository (`~/.ssh/authorized_keys`, a CI credentials
+//! file). Anyone who can get a commit staged chooses that string, and the
+//! commit gate runs by default, so a materialized escaping link turns any hook
+//! that writes to its matched files into an arbitrary file write.
+//!
+//! Each refresh therefore **removes** any materialized symlink whose target
+//! does not lexically resolve inside the snapshot ([`sanitize_symlinks`]).
+//! Escaping links are removed rather than all symlinks being skipped: a
+//! *relative, in-tree* link is ordinary repository content that a workspace
+//! build may legitimately follow (a shared config, a fixture), and dropping
+//! those would break real builds to defend against a target that never leaves
+//! the tree. The submodule links this module creates itself are deliberately
+//! outside that rule — they point at the live worktree's submodule checkout by
+//! design (above) and are created after the sanitizing pass.
+//!
 //! # Persistent, incremental cache
 //!
 //! The snapshot is a **persistent cache** at a stable path outside the repo
@@ -70,7 +89,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use tracing::debug;
+use tracing::{debug, warn};
 
 use crate::git;
 
@@ -122,10 +141,14 @@ impl StagedSnapshot {
         Self::create_in(&cache_dir, root)
     }
 
-    /// Create or refresh the snapshot under `cache_dir/staged`. Separated from
-    /// [`Self::create`] so tests can target an isolated cache dir rather than the
-    /// real per-user cache home.
-    fn create_in(cache_dir: &Path, root: &Path) -> Result<Self, Error> {
+    /// Create or refresh the snapshot under `cache_dir/staged`, for a caller
+    /// that chooses its own cache directory.
+    ///
+    /// Separated from [`Self::create`] so a test can target an isolated cache
+    /// dir rather than the real per-user cache home — and so it exercises this
+    /// exact materialization path rather than a hand-rolled `git checkout-index`
+    /// that would miss, for instance, the symlink sanitizing above.
+    pub fn create_in(cache_dir: &Path, root: &Path) -> Result<Self, Error> {
         let dir = cache_dir.join(SNAPSHOT_SUBDIR);
         std::fs::create_dir_all(&dir)?;
         refresh(root, &dir)?;
@@ -154,11 +177,62 @@ fn refresh(root: &Path, dir: &Path) -> Result<(), Error> {
         }
     }
     git::checkout_index_paths(root, dir, &to_checkout)?;
+    sanitize_symlinks(dir, &staged);
 
     materialize_submodules(root, dir)?;
 
     write_manifest(dir, &staged)?;
     Ok(())
+}
+
+/// Remove every materialized symlink whose target does not resolve inside the
+/// snapshot (see the module docs). Runs on every refresh, not just on the run
+/// that materialized the entry, so a link that survived an earlier poly is
+/// cleaned up too.
+fn sanitize_symlinks(dir: &Path, staged: &[git::StagedEntry]) {
+    for entry in staged.iter().filter(|entry| entry.is_symlink) {
+        let link = dir.join(&entry.path);
+        let Ok(target) = std::fs::read_link(&link) else {
+            continue;
+        };
+        if resolves_inside_tree(&entry.path, &target) {
+            continue;
+        }
+        warn!(
+            path = %entry.path.display(),
+            target = %target.display(),
+            "removing a staged symlink whose target escapes the snapshot"
+        );
+        // `remove_file` unlinks the symlink itself, never its target.
+        let _ = std::fs::remove_file(&link);
+    }
+}
+
+/// Whether a symlink staged at `link_path` (repo-relative) with content
+/// `target` resolves to somewhere inside the tree it was materialized into.
+///
+/// Purely lexical, and deliberately so: the answer must not depend on what
+/// happens to exist on this machine, and a canonicalizing check would itself
+/// follow the link it is meant to judge. An absolute target — or one whose `..`
+/// components climb past the root — escapes.
+fn resolves_inside_tree(link_path: &Path, target: &Path) -> bool {
+    use std::path::Component;
+
+    let mut depth = link_path.components().count().saturating_sub(1);
+    for component in target.components() {
+        match component {
+            Component::Normal(_) => depth += 1,
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if depth == 0 {
+                    return false;
+                }
+                depth -= 1;
+            }
+            Component::RootDir | Component::Prefix(_) => return false,
+        }
+    }
+    true
 }
 
 /// Expose each populated submodule in the snapshot as a symlink into the live
@@ -702,6 +776,83 @@ mod tests {
 
         StagedSnapshot::create_in(cache.path(), &parent).expect("refresh");
         assert_eq!(std::fs::read(&via_snapshot).unwrap(), b"FIXTURE");
+    }
+
+    #[test]
+    fn resolves_inside_tree_judges_targets_lexically() {
+        let inside = |link: &str, target: &str| resolves_inside_tree(Path::new(link), Path::new(target));
+
+        assert!(inside("a/link", "sibling.rs"));
+        assert!(inside("a/link", "../b/shared.rs"));
+        assert!(inside("a/b/link", "../../top.rs"));
+        assert!(inside("link", "./nested/file.rs"));
+
+        assert!(!inside("link", "/etc/passwd"), "an absolute target always escapes");
+        assert!(!inside("link", "../outside.rs"), "a top-level link may not climb out");
+        assert!(!inside("a/link", "../../outside.rs"));
+        assert!(!inside("a/b/link", "../../../outside.rs"));
+    }
+
+    /// THE ARBITRARY FILE WRITE. A tracked `120000` entry whose blob is an
+    /// absolute path outside the repository — chosen by whoever staged it —
+    /// would be recreated as a real symlink in the snapshot, and every hook that
+    /// rewrites its matched files would then write straight through it to that
+    /// path. The snapshot must not hand a hook a door out of the tree.
+    #[cfg(unix)]
+    #[test]
+    fn a_staged_symlink_pointing_outside_the_repository_is_not_materialized() {
+        let tmp = TempDir::new().expect("tmp repo");
+        let cache = TempDir::new().expect("cache home");
+        let outside = TempDir::new().expect("outside the repo");
+        let repo = tmp.path();
+        init(repo);
+
+        let victim = outside.path().join("authorized_keys");
+        std::fs::write(&victim, "ORIGINAL\n").unwrap();
+        std::os::unix::fs::symlink(&victim, repo.join("evil.rs")).unwrap();
+        git(repo, &["add", "evil.rs"]);
+
+        let snap = StagedSnapshot::create_in(cache.path(), repo).expect("snapshot");
+
+        let materialized = snap.path().join("evil.rs");
+        assert!(
+            std::fs::symlink_metadata(&materialized).is_err(),
+            "an escaping symlink must not exist in the snapshot at all"
+        );
+
+        // The proof, in the shape the auditor's PoC used: a hook writing to its
+        // matched path inside the snapshot must not reach outside the tree.
+        std::fs::write(&materialized, "PWNED\n").unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&victim).unwrap(),
+            "ORIGINAL\n",
+            "writing to the snapshot path must never reach the external target"
+        );
+    }
+
+    /// The complement: a relative link that stays inside the tree is ordinary
+    /// repository content a build may follow, and is kept.
+    #[cfg(unix)]
+    #[test]
+    fn a_staged_symlink_pointing_inside_the_repository_is_kept() {
+        let tmp = TempDir::new().expect("tmp repo");
+        let cache = TempDir::new().expect("cache home");
+        let repo = tmp.path();
+        init(repo);
+
+        std::fs::create_dir_all(repo.join("pkg")).unwrap();
+        std::fs::write(repo.join("shared.toml"), "shared = true\n").unwrap();
+        std::os::unix::fs::symlink("../shared.toml", repo.join("pkg/config.toml")).unwrap();
+        git(repo, &["add", "."]);
+
+        let snap = StagedSnapshot::create_in(cache.path(), repo).expect("snapshot");
+
+        let link = snap.path().join("pkg/config.toml");
+        assert!(
+            std::fs::symlink_metadata(&link).expect("link present").is_symlink(),
+            "an in-tree relative link is legitimate content and must survive"
+        );
+        assert_eq!(std::fs::read_to_string(&link).unwrap(), "shared = true\n");
     }
 
     #[test]

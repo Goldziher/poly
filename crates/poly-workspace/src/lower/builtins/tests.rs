@@ -198,6 +198,36 @@ fn cargo_defaults_on_when_a_hooks_section_is_present() {
     );
 }
 
+/// The cargo group is serial **among itself** out of the box — no user config —
+/// because cargo's package-cache and build-directory locks serialize these
+/// tools anyway, and a queue poly does not own is a queue nobody can see.
+#[test]
+fn cargo_builtins_join_the_cargo_exclusion_set_by_default() {
+    let hooks = hooks_from("[hooks]\nstages = [\"pre-commit\"]\n");
+    let probe = StubProbe(&["cargo-clippy", "cargo-sort", "cargo-machete", "cargo-deny"]);
+    let spec = lower_stage_with_probe(
+        &hooks,
+        &poly(),
+        HookStage::PreCommit,
+        &[],
+        &HookCacheMode::Safe,
+        &probe,
+        &ToolsConfig::default(),
+    )
+    .unwrap();
+
+    assert_eq!(spec.hooks.len(), 4);
+    for hook in &spec.hooks {
+        assert_eq!(
+            hook.serial_group.as_deref(),
+            Some(poly_hooks::model::CARGO_SERIAL_GROUP),
+            "{} must join the cargo exclusion set",
+            hook.id
+        );
+        assert!(hook.parallel, "{} still runs beside non-cargo hooks", hook.id);
+    }
+}
+
 #[test]
 fn cargo_does_not_default_on_outside_a_cargo_project() {
     let hooks = hooks_from("[hooks]\nstages = [\"pre-commit\"]\n");

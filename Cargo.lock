@@ -4913,6 +4913,7 @@ dependencies = [
  "tracing",
  "unicode-width 0.2.2",
  "which",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

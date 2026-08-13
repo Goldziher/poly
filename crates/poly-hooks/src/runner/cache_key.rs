@@ -9,11 +9,19 @@ use crate::filter::FilePattern;
 use crate::git;
 use crate::model::{Hook, HookCache, HookCommand};
 
+use super::fixes;
+
 /// The subset of `matched` whose worktree content differs from the index.
+///
+/// Compared byte-for-byte rather than via `git diff-files`: a stat-based "clean"
+/// for a file that really did change would let a passing run be cached under a
+/// key derived from content that never passed, and the next hit would replay
+/// that pass. Anything unreadable or not a regular file counts as modified — the
+/// conservative direction, which only ever suppresses a store.
 pub(super) fn modified_matched(root: &Path, matched: &[PathBuf]) -> anyhow::Result<Vec<PathBuf>> {
     let mut modified = Vec::new();
     for path in matched {
-        if git::has_worktree_diff_in(root, path)? {
+        if !fixes::worktree_matches_staged(root, path)? {
             modified.push(path.clone());
         }
     }

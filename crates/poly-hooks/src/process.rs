@@ -6,8 +6,15 @@
 //! - `output_with_sink`: captures stdout+stderr via `Command::output()`, then
 //!   feeds the captured bytes to `sink` post-completion (spec: "capture then
 //!   feed sink").
-//! - `pty_output_with_sink` / `run_on_pty` (Unix): single blocking `read` loop
-//!   on the PTY master fd; handles Linux `EIO`-as-EOF and fast-exit drain.
+//!
+//! There is deliberately **no PTY execution path** here. One was ported
+//! (`pty_output_with_sink` / `run_on_pty`, a blocking read loop on the master
+//! fd) but never wired to a call site, and it took no [`Budget`]: a hook run
+//! through it would have had no timeout at all, silently exempting itself from
+//! the kill subsystem every other path goes through. Rather than leave an
+//! unsupervised executor sitting one call away from being resurrected, it was
+//! removed — [`crate::pty`] still exists, so restoring colour means writing the
+//! loop on top of [`crate::supervise`], where the budget cannot be forgotten.
 
 use std::ffi::OsStr;
 use std::fmt::Display;
@@ -141,12 +148,6 @@ impl<S: OutputSink> OutputSink for &mut S {
     }
 }
 
-#[cfg(not(windows))]
-fn write_output_chunk(output: &mut Vec<u8>, sink: &mut impl OutputSink, chunk: &[u8]) {
-    output.extend_from_slice(chunk);
-    sink.write_chunk(chunk);
-}
-
 /// A synchronous command wrapper with structured error reporting.
 ///
 /// Wraps [`std::process::Command`] with logging, status checking, and optional
@@ -249,11 +250,15 @@ impl Cmd {
     /// [`Supervised::timed_out`] flag is the only way to tell a kill from the
     /// tool's own non-zero exit, so callers must not read the exit status
     /// alone.
+    ///
+    /// `notify` receives the elapsed time and, when the child last reported
+    /// itself queued behind a lock, the resource it is waiting for — see
+    /// [`crate::supervise::LockWait`].
     pub fn output_with_sink_supervised<S: OutputSink>(
         &mut self,
         mut sink: S,
         budget: Budget,
-        notify: &dyn Fn(Duration),
+        notify: &dyn Fn(Duration, Option<&str>),
     ) -> Result<Supervised, Error> {
         self.log_command();
         let supervised = crate::supervise::run(&mut self.inner, budget, notify).map_err(|cause| Error::Exec {
@@ -265,75 +270,6 @@ impl Cmd {
             self.maybe_check_output(&supervised.output)?;
         }
         Ok(supervised)
-    }
-
-    /// Run the command under a PTY when colour is requested; otherwise fall
-    /// back to [`Cmd::output_with_sink`].
-    #[cfg(windows)]
-    pub fn pty_output_with_sink<S: OutputSink>(&mut self, sink: S) -> Result<Output, Error> {
-        self.output_with_sink(sink)
-    }
-
-    /// Run the command under a PTY when colour is requested (Unix only).
-    ///
-    /// Sync conversion note: replaces `tokio::select!` with a single blocking
-    /// read loop on the PTY master fd. EIO is treated as EOF (Linux closes the
-    /// master with EIO once all slave handles are gone). The drain pass after
-    /// `wait()` is handled implicitly because the blocking read loop runs
-    /// until EOF/EIO before `wait()` is called.
-    #[cfg(not(windows))]
-    pub fn pty_output_with_sink<S: OutputSink>(&mut self, sink: S) -> Result<Output, Error> {
-        if !*USE_COLOR {
-            return self.output_with_sink(sink);
-        }
-        self.run_on_pty(sink)
-    }
-
-    #[cfg(not(windows))]
-    fn run_on_pty<S: OutputSink>(&mut self, mut sink: S) -> Result<Output, Error> {
-        use std::io::Read as _;
-
-        let (mut pty, pts) = crate::pty::open()?;
-        let (stdin_stdio, stdout_stdio, stderr_stdio) = pts.setup_subprocess()?;
-
-        self.inner.stdin(stdin_stdio);
-        self.inner.stdout(stdout_stdio);
-        self.inner.stderr(stderr_stdio);
-
-        let mut child = self.inner.spawn().map_err(|cause| Error::Exec {
-            summary: self.summary.clone(),
-            cause,
-        })?;
-
-        drop(pts);
-        self.inner.stdin(Stdio::null());
-        self.inner.stdout(Stdio::null());
-        self.inner.stderr(Stdio::null());
-
-        let mut buffer = [0u8; 4096];
-        let mut captured = Vec::new();
-
-        loop {
-            match pty.read(&mut buffer) {
-                Ok(0) => break,
-                Ok(n) => write_output_chunk(&mut captured, &mut sink, &buffer[..n]),
-                Err(err) if err.raw_os_error() == Some(libc::EIO) => break,
-                Err(err) => return Err(Error::PtySetup(err)),
-            }
-        }
-
-        let status = child.wait().map_err(|cause| Error::Exec {
-            summary: self.summary.clone(),
-            cause,
-        })?;
-
-        let output = Output {
-            status,
-            stdout: captured,
-            stderr: Vec::new(),
-        };
-        self.maybe_check_output(&output)?;
-        Ok(output)
     }
 
     /// Run the command, returning only the exit status.
@@ -600,24 +536,5 @@ mod tests {
         assert!(stdout.contains("OUT\n"), "stdout: {stdout:?}");
         assert!(stderr.contains("ERR\n"), "stderr: {stderr:?}");
         assert_ne!(sink.count, 0, "sink should have received chunks");
-    }
-
-    #[test]
-    #[cfg(unix)]
-    fn pty_output_captures_trailing_output_after_fast_exit() {
-        for _ in 0..5 {
-            let mut sink = RecordingSink::default();
-            let output = Cmd::new("/bin/sh", "pty trailing output test")
-                .arg("-c")
-                .arg("printf 'FINAL\\n'")
-                .check(false)
-                .run_on_pty(&mut sink)
-                .expect("pty command should succeed");
-
-            assert!(output.status.success());
-            let stdout = String::from_utf8_lossy(&output.stdout).replace("\r\n", "\n");
-            assert_eq!(stdout, "FINAL\n");
-            assert!(output.stderr.is_empty());
-        }
     }
 }
