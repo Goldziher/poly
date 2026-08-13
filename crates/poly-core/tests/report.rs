@@ -6,7 +6,9 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use poly_core::report::{self, Verbosity};
-use poly_core::runner::{EngineDebug, FormatResult, FormatRun, LintError, LintResult, LintRun, RunDebug, SkippedFile};
+use poly_core::runner::{
+    EngineDebug, FormatError, FormatResult, FormatRun, LintError, LintResult, LintRun, RunDebug, SkippedFile,
+};
 use poly_core::{Diagnostic, DiscoveryReport, Edit, ExcludedRule, Severity, Span};
 
 fn sample_lint_results() -> Vec<LintResult> {
@@ -76,6 +78,7 @@ fn sample_format_results() -> Vec<FormatResult> {
             changed: true,
             formatted: Some("formatted".to_string()),
             skipped: None,
+            error: None,
             debug: None,
         },
         FormatResult {
@@ -83,6 +86,7 @@ fn sample_format_results() -> Vec<FormatResult> {
             changed: false,
             formatted: None,
             skipped: None,
+            error: None,
             debug: None,
         },
     ]
@@ -363,6 +367,7 @@ fn skipped_files_are_reported_separately_from_checked_ones() {
             changed: false,
             formatted: None,
             skipped: None,
+            error: None,
             debug: None,
         },
         FormatResult {
@@ -370,6 +375,7 @@ fn skipped_files_are_reported_separately_from_checked_ones() {
             changed: false,
             formatted: None,
             skipped: Some("Go/Helm template syntax".to_string()),
+            error: None,
             debug: None,
         },
     ];
@@ -390,6 +396,7 @@ fn distinct_skip_reasons_are_counted_individually() {
         changed: false,
         formatted: None,
         skipped: Some(why.to_string()),
+        error: None,
         debug: None,
     };
     let results = vec![
@@ -445,6 +452,7 @@ fn format_summary_reports_what_discovery_excluded() {
             changed: false,
             formatted: None,
             skipped: None,
+            error: None,
             debug: None,
         }],
         discovery: sample_discovery(),
@@ -733,6 +741,7 @@ fn format_json_run_does_not_duplicate_declined_files() {
         changed: false,
         formatted: None,
         skipped: Some("Go/Helm template syntax".to_string()),
+        error: None,
         debug: None,
     };
     let run = FormatRun {
@@ -981,4 +990,221 @@ fn lint_error_note_names_every_failing_path() {
         )
     );
     assert_eq!(report::render_lint_errors(&[]), "", "no errors, no text");
+}
+
+/// The format side's counterpart of `lint_json_run_carries_errors_separately_from_skips`,
+/// and the regression this field exists for: a file the formatter *failed* on was
+/// omitted from `poly fmt --check --format json` entirely, so a machine consumer
+/// reading the array could not tell it from a file that was checked and found
+/// clean — the failure lived only in the exit code and a WARN log. The three
+/// outcomes must be distinguishable structurally: clean carries neither key,
+/// skipped carries `skipped`, errored carries `error`.
+#[test]
+fn format_json_run_carries_errors_separately_from_skips() {
+    let run = FormatRun {
+        results: vec![FormatResult {
+            path: PathBuf::from("ok.py"),
+            changed: false,
+            formatted: None,
+            skipped: None,
+            error: None,
+            debug: None,
+        }],
+        skipped: vec![SkippedFile {
+            path: PathBuf::from("App.csproj"),
+            reason: poly_core::runner::NO_ENGINE_SKIP.to_string(),
+        }],
+        errors: vec![FormatError {
+            path: PathBuf::from("bad.py"),
+            message: "stream did not contain valid UTF-8".to_string(),
+        }],
+        discovery: DiscoveryReport::default(),
+    };
+
+    let json = report::report_format_json_run(&run);
+    let value: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+    let entries = value.as_array().expect("top level stays an array");
+    assert_eq!(
+        entries.len(),
+        3,
+        "the checked file, the skipped path and the errored one: {json}"
+    );
+
+    let find = |name: &str| {
+        entries
+            .iter()
+            .find(|entry| entry["path"] == name)
+            .unwrap_or_else(|| panic!("no `{name}` entry in {json}"))
+    };
+
+    let clean = find("ok.py");
+    assert_eq!(
+        clean,
+        &serde_json::json!({ "path": "ok.py", "changed": false }),
+        "a healthy record gains no new key: {json}"
+    );
+
+    let skipped = find("App.csproj");
+    assert_eq!(skipped["skipped"], poly_core::runner::NO_ENGINE_SKIP);
+    assert!(skipped["error"].is_null(), "a skip is not an error: {json}");
+    assert_eq!(skipped["changed"], serde_json::Value::Bool(false));
+
+    let errored = find("bad.py");
+    assert_eq!(errored["error"], "stream did not contain valid UTF-8");
+    assert!(errored["skipped"].is_null(), "an error is not a skip: {json}");
+    assert_eq!(
+        errored["changed"],
+        serde_json::Value::Bool(false),
+        "a file that could not be read was not reformatted: {json}"
+    );
+}
+
+/// A path listed as both errored and skipped is reported as **errored**: the
+/// error entries are appended first, so a failure is never masked by a skip. The
+/// lint document has the same ordering discipline, for the same reason.
+#[test]
+fn format_json_run_never_downgrades_an_errored_file_to_a_skip() {
+    let run = FormatRun {
+        results: Vec::new(),
+        skipped: vec![SkippedFile {
+            path: PathBuf::from("bad.py"),
+            reason: poly_core::runner::NO_ENGINE_SKIP.to_string(),
+        }],
+        errors: vec![FormatError {
+            path: PathBuf::from("bad.py"),
+            message: "stream did not contain valid UTF-8".to_string(),
+        }],
+        discovery: DiscoveryReport::default(),
+    };
+
+    let json = report::report_format_json_run(&run);
+    let value: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+    let entries = value.as_array().expect("top level stays an array");
+    assert_eq!(entries.len(), 1, "the file appears exactly once: {json}");
+    assert_eq!(entries[0]["error"], "stream did not contain valid UTF-8");
+    assert!(
+        entries[0]["skipped"].is_null(),
+        "the failure wins over the skip: {json}"
+    );
+}
+
+/// The declined file still appears exactly once when it also has a result of its
+/// own, and an errored file added alongside it does not disturb that.
+#[test]
+fn format_json_run_does_not_duplicate_a_declined_file_when_a_file_also_errored() {
+    let run = FormatRun {
+        results: vec![FormatResult {
+            path: PathBuf::from("Taskfile.yaml"),
+            changed: false,
+            formatted: None,
+            skipped: Some("Go/Helm template syntax".to_string()),
+            error: None,
+            debug: None,
+        }],
+        skipped: vec![SkippedFile {
+            path: PathBuf::from("Taskfile.yaml"),
+            reason: "Go/Helm template syntax".to_string(),
+        }],
+        errors: vec![FormatError {
+            path: PathBuf::from("bad.py"),
+            message: "stream did not contain valid UTF-8".to_string(),
+        }],
+        discovery: DiscoveryReport::default(),
+    };
+
+    let json = report::report_format_json_run(&run);
+    let value: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+    let entries = value.as_array().expect("top level stays an array");
+    assert_eq!(
+        entries.len(),
+        2,
+        "the declined file appears once, plus the errored one: {json}"
+    );
+    assert_eq!(entries[0]["path"], "Taskfile.yaml");
+    assert_eq!(entries[0]["skipped"], "Go/Helm template syntax");
+    assert_eq!(entries[1]["path"], "bad.py");
+    assert_eq!(entries[1]["error"], "stream did not contain valid UTF-8");
+}
+
+/// The TOON rendering is built from the same record list, so a file the run
+/// failed on cannot be present in one machine format and missing from the other.
+#[test]
+fn format_toon_run_carries_the_errored_file_too() {
+    let run = FormatRun {
+        results: Vec::new(),
+        skipped: Vec::new(),
+        errors: vec![FormatError {
+            path: PathBuf::from("bad.py"),
+            message: "stream did not contain valid UTF-8".to_string(),
+        }],
+        discovery: DiscoveryReport::default(),
+    };
+
+    let toon = report::report_format_toon_run(&run);
+    assert!(
+        toon.contains("bad.py") && toon.contains("stream did not contain valid UTF-8"),
+        "the failure must survive the TOON rendering; got: {toon}"
+    );
+}
+
+/// A run with no errors renders exactly the document it always did — the clean
+/// path gains neither an entry nor a key.
+#[test]
+fn format_json_run_without_errors_is_unchanged() {
+    let run = FormatRun {
+        results: vec![FormatResult {
+            path: PathBuf::from("src/main.py"),
+            changed: true,
+            formatted: Some("formatted".to_string()),
+            skipped: None,
+            error: None,
+            debug: None,
+        }],
+        skipped: Vec::new(),
+        errors: Vec::new(),
+        discovery: DiscoveryReport::default(),
+    };
+
+    let value: serde_json::Value = serde_json::from_str(&report::report_format_json_run(&run)).expect("valid JSON");
+    assert_eq!(value, serde_json::json!([{ "path": "src/main.py", "changed": true }]));
+}
+
+/// The human format summary already names a file the formatter could not
+/// process; this pins the exact text so the JSON fix cannot regress it, and so
+/// the two output modes cannot drift apart again.
+#[test]
+fn format_summary_names_a_file_the_engine_could_not_process() {
+    owo_colors::set_override(false);
+    let run = FormatRun {
+        results: vec![FormatResult {
+            path: PathBuf::from("ok.py"),
+            changed: false,
+            formatted: None,
+            skipped: None,
+            error: None,
+            debug: None,
+        }],
+        skipped: vec![SkippedFile {
+            path: PathBuf::from("App.csproj"),
+            reason: poly_core::runner::NO_ENGINE_SKIP.to_string(),
+        }],
+        errors: vec![FormatError {
+            path: PathBuf::from("bad.py"),
+            message: "stream did not contain valid UTF-8".to_string(),
+        }],
+        discovery: DiscoveryReport::default(),
+    };
+
+    let (text, changed) = report::render_format_pretty_run(&run, true, Verbosity::default());
+
+    assert_eq!(changed, 0, "an unreadable file is not a reformatted one");
+    assert_eq!(
+        text,
+        concat!(
+            "All formatted. (1 file(s) checked, 1 skipped (no matching engine for this file type))\n",
+            "  skipped App.csproj: no matching engine for this file type\n",
+            "error bad.py: stream did not contain valid UTF-8\n",
+            "1 file(s) could not be formatted and were NOT checked.\n",
+        )
+    );
 }

@@ -370,12 +370,14 @@ pub fn run_fmt(args: FmtArgs) -> ExitCode {
                         println!("{}", report::report_format_json_run(&run));
                         report::eprint_discovery_note(&run.discovery);
                         report::eprint_skip_note(&run.skipped, common.verbose);
+                        report::eprint_format_errors(&run.errors);
                         run.results.iter().filter(|r| r.changed).count()
                     }
                     OutputFormat::Toon => {
                         println!("{}", report::report_format_toon_run(&run));
                         report::eprint_discovery_note(&run.discovery);
                         report::eprint_skip_note(&run.skipped, common.verbose);
+                        report::eprint_format_errors(&run.errors);
                         run.results.iter().filter(|r| r.changed).count()
                     }
                 };

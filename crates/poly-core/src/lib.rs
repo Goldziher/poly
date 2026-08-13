@@ -14,6 +14,12 @@
 //! in-crate integration tests but are not part of the stable public API.
 //! `registry` is crate-private. Downstream consumers use the curated re-exports
 //! below plus [`lint`] / [`format()`].
+//!
+//! [`lint`] and [`format()`] return only the per-file results and **drop** the
+//! per-file failures the run recorded, so a file an engine failed on is simply
+//! absent from what they return — indistinguishable from one that was checked
+//! and found clean. Any caller that gates on the outcome must use [`lint_run`] /
+//! [`format_run`] and inspect [`LintRun::errors`] / [`FormatRun::errors`].
 
 pub mod config;
 pub mod defaults;
@@ -37,6 +43,6 @@ pub use language::Language;
 pub use report::Verbosity;
 pub use resolve::ConfigSet;
 pub use runner::{
-    EngineDebug, FormatResult, FormatRun, LintError, LintResult, LintRun, RunDebug, RunOptions, SkippedFile, format,
-    format_run, lint, lint_run,
+    EngineDebug, FormatError, FormatResult, FormatRun, LintError, LintResult, LintRun, RunDebug, RunOptions,
+    SkippedFile, format, format_run, lint, lint_run,
 };

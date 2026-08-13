@@ -8,6 +8,7 @@ authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
 documentation.workspace = true
+publish = false
 description = "Core engine for the poly universal, zero-dependency linter & formatter"
 
 [package.metadata.cargo-machete]

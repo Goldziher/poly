@@ -431,3 +431,122 @@ fn fmt_skips_hash_stamped_files_but_not_banner_only_ones() {
         "a hash-stamped file must be skipped and reported as skipped"
     );
 }
+
+/// The template skip is decided once per file, by `Engine::skip_reason`, and that
+/// one answer now stands in for running the format chain. So the answer itself is
+/// what needs pinning: a live template stays out of the formatter, and a file that
+/// merely *documents* template syntax stays in it.
+#[test]
+fn fmt_skips_live_templates_but_still_formats_documented_template_syntax() {
+    let dir = tempfile::tempdir().expect("tempdir");
+
+    // Markdown whose template action is live prose: never reformatted.
+    write(dir.path(), "chart.md", "# {{ .Chart.Name }}\n\nDeployed.   \n");
+    // Markdown documenting the same syntax inside code: still formatted (the
+    // trailing whitespace below is real drift the formatter must report).
+    write(
+        dir.path(),
+        "docs.md",
+        "# Docs\n\nUse `{{ .Values.image }}` in a chart:   \n\n```yaml\nimage: {{ .Values.image }}\n```\n",
+    );
+    // Helm YAML: not valid YAML, so the backend declines it.
+    write(
+        dir.path(),
+        "deployment.yaml",
+        "{{- if .Values.enabled }}\nkind:   Deployment\n{{- end }}\n",
+    );
+
+    let opts = RunOptions {
+        no_cache: true,
+        explicit_config: true,
+        ..RunOptions::default()
+    };
+    let results =
+        poly_core::format(&[dir.path().to_path_buf()], &Config::default(), &opts, false, false).expect("format run");
+    let result = |name: &str| {
+        results
+            .iter()
+            .find(|r| r.path.file_name().is_some_and(|f| f == name))
+            .unwrap_or_else(|| panic!("no result for {name}, got {:?}", results))
+    };
+
+    for templated in ["chart.md", "deployment.yaml"] {
+        let result = result(templated);
+        assert_eq!(
+            result.skipped.as_deref(),
+            Some("Go/Helm template syntax"),
+            "{templated} must be reported as skipped"
+        );
+        assert!(!result.changed, "{templated} must not be reformatted");
+        assert!(result.formatted.is_none(), "{templated} must produce no output");
+    }
+
+    let documented = result("docs.md");
+    assert_eq!(
+        documented.skipped, None,
+        "documented template syntax must stay in the format gate"
+    );
+    assert!(
+        documented.changed,
+        "docs.md carries trailing whitespace and must be reported as drifting"
+    );
+}
+
+/// A path named on the command line is a request to check that path, so one that
+/// no engine covers has to be named back. The mixed invocation is the case that
+/// matters: reconciling one explicit argument against a whole discovered corpus
+/// must give the same answer as reconciling many.
+#[test]
+fn lint_names_unmatched_explicit_paths_alongside_a_directory() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    write(dir.path(), "app.py", "x = 1\n");
+    // Enough arguments to cross the threshold where the reconciliation switches
+    // from scanning the discovered set to indexing it — both paths must agree.
+    let unmatched: Vec<std::path::PathBuf> = (0..9)
+        .map(|i| {
+            write(
+                dir.path(),
+                &format!("notes{i}.unknownext"),
+                "not a language poly knows\n",
+            )
+        })
+        .collect();
+
+    let opts = RunOptions {
+        no_cache: true,
+        explicit_config: true,
+        ..RunOptions::default()
+    };
+    let skipped_for = |paths: &[std::path::PathBuf]| -> Vec<std::path::PathBuf> {
+        let mut paths: Vec<std::path::PathBuf> = poly_core::lint_run(paths, &Config::default(), &opts, false, false)
+            .expect("lint run")
+            .skipped
+            .into_iter()
+            .filter(|s| s.reason == poly_core::runner::NO_ENGINE_SKIP)
+            .map(|s| s.path)
+            .collect();
+        paths.sort();
+        paths
+    };
+
+    // A directory walk alone narrates nothing: what a walk does not match is not
+    // a skip.
+    assert_eq!(
+        skipped_for(&[dir.path().to_path_buf()]),
+        Vec::<std::path::PathBuf>::new()
+    );
+
+    // One explicit path plus a directory — the scanned branch.
+    assert_eq!(
+        skipped_for(&[unmatched[0].clone(), dir.path().to_path_buf()]),
+        vec![unmatched[0].clone()],
+        "a mixed invocation must still name the unmatched explicit path"
+    );
+
+    // Nine explicit paths plus a directory — the indexed branch, same answer.
+    let mut mixed = unmatched.clone();
+    mixed.push(dir.path().to_path_buf());
+    let mut expected = unmatched.clone();
+    expected.sort();
+    assert_eq!(skipped_for(&mixed), expected);
+}

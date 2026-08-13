@@ -57,6 +57,16 @@ impl SkippedFile {
     }
 }
 
+/// Number of explicitly named file arguments from which reconciling them against
+/// the discovered set is worth an index rather than a scan.
+///
+/// Building the index touches every byte of every discovered path (hashing it)
+/// and allocates a table; a scan compares paths and stops at the first match. So
+/// the index only pays off once several arguments share its cost — which is also
+/// the point at which the scans stop being a rounding error next to the run they
+/// belong to.
+const EXPLICIT_PATHS_INDEX_THRESHOLD: usize = 8;
+
 /// The explicitly named file arguments that no engine will look at.
 ///
 /// A path qualifies when it is a file (directories are walked, and what a walk
@@ -76,16 +86,25 @@ pub(super) fn unmatched_explicit_paths(
     force_exclude: bool,
 ) -> Vec<PathBuf> {
     // The overwhelmingly common invocation is `poly lint .` — no file arguments
-    // at all, so nothing to reconcile and no index worth building. One `is_file`
-    // stat per argument, never per discovered file.
+    // at all, so nothing to reconcile at all. One `is_file` stat per argument,
+    // never per discovered file.
     let explicit: Vec<&PathBuf> = paths.iter().filter(|path| path.is_file()).collect();
     if explicit.is_empty() {
         return Vec::new();
     }
-    let discovered: FxHashMap<&Path, &DiscoveredFile> = files.iter().map(|f| (f.path.as_path(), f)).collect();
+    // A mixed invocation (`poly lint src/foo.py .`) does reach here with a full
+    // corpus behind it, so the lookup is only indexed once enough arguments
+    // amortise building the index — below that a scan of `files` is cheaper than
+    // hashing every discovered path into a table used a handful of times.
+    let index: Option<FxHashMap<&Path, &DiscoveredFile>> = (explicit.len() >= EXPLICIT_PATHS_INDEX_THRESHOLD)
+        .then(|| files.iter().map(|f| (f.path.as_path(), f)).collect());
     let mut unmatched = Vec::new();
     for path in explicit {
-        match discovered.get(path.as_path()) {
+        let discovered = match &index {
+            Some(index) => index.get(path.as_path()).copied(),
+            None => files.iter().find(|file| file.path == **path),
+        };
+        match discovered {
             Some(file) => {
                 let routed = plans
                     .get(&(file.config_id, file.language.clone()))

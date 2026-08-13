@@ -440,6 +440,21 @@ pub fn eprint_lint_errors(errors: &[LintError]) {
     eprint!("{}", plain.if_supports_color(Stderr, |t| t.red()));
 }
 
+/// Echo format failures to stderr, so a machine-readable run still tells a
+/// human watching the terminal that files went unchecked.
+///
+/// The counterpart to [`eprint_lint_errors`]: under `--format json`/`--toon`
+/// stdout must stay a single valid document, so the failures go to stderr.
+/// Without this, a `poly fmt --format json` failure surfaced only as a tracing
+/// `WARN`, which the lint path has never relied on.
+pub fn eprint_format_errors(errors: &[FormatError]) {
+    if errors.is_empty() {
+        return;
+    }
+    let plain = strip_ansi(&render_format_errors(errors));
+    eprint!("{}", plain.if_supports_color(Stderr, |t| t.red()));
+}
+
 /// Print the human-oriented lint report to stdout. Returns the total
 /// diagnostic count.
 pub fn report_lint_pretty(results: &[LintResult], verbosity: Verbosity) -> usize {
@@ -798,39 +813,52 @@ pub fn report_format_toon(results: &[FormatResult]) -> String {
     serde_toon::to_string(&results).unwrap_or_else(|_| report_format_json(results))
 }
 
-/// The format results of a run, with one entry appended per skipped path that
-/// has no result of its own.
+/// The format results of a run, with one entry appended per file the run failed
+/// on and per skipped path that has no result of its own.
 ///
 /// A file a backend declined already appears in [`FormatRun::results`] carrying
 /// its `skipped` reason; a path named on the command line that no engine covers
-/// never becomes a result at all, and is what this adds — so the JSON answer to
-/// "what did you not look at?" is complete.
-fn format_results_with_skips(run: &FormatRun) -> Vec<FormatResult> {
+/// never becomes a result at all, and neither does a file the formatter *failed*
+/// on — that one used to be dropped from the document entirely, leaving it
+/// indistinguishable from a file that was checked and found clean, with the
+/// failure visible only in the exit code. Both are added here, so the JSON answer
+/// to "what did you not look at?" is complete and matches the lint side's
+/// (see [`lint_results_for_output`]).
+fn format_results_for_output(run: &FormatRun) -> Vec<FormatResult> {
     let mut results = run.results.clone();
-    let known: std::collections::BTreeSet<&std::path::Path> = run.results.iter().map(|r| r.path.as_path()).collect();
-    results.extend(
-        run.skipped
-            .iter()
-            .filter(|entry| !known.contains(entry.path.as_path()))
-            .map(|entry| FormatResult {
-                path: entry.path.clone(),
-                changed: false,
-                skipped: Some(entry.reason.clone()),
-                formatted: None,
-                debug: None,
-            }),
-    );
+    let mut known: std::collections::BTreeSet<&std::path::Path> =
+        run.results.iter().map(|r| r.path.as_path()).collect();
+    let synthetic = |path: &std::path::Path, skipped: Option<String>, error: Option<String>| FormatResult {
+        path: path.to_path_buf(),
+        changed: false,
+        skipped,
+        error,
+        formatted: None,
+        debug: None,
+    };
+    // Errors first: a file that failed is reported as failed even if some other
+    // stage also listed it, never downgraded to a skip.
+    for error in &run.errors {
+        if known.insert(error.path.as_path()) {
+            results.push(synthetic(&error.path, None, Some(error.message.clone())));
+        }
+    }
+    for entry in &run.skipped {
+        if known.insert(entry.path.as_path()) {
+            results.push(synthetic(&entry.path, Some(entry.reason.clone()), None));
+        }
+    }
     results
 }
 
-/// [`report_format_json`] over a whole [`FormatRun`], so every skipped path is
-/// carried structurally.
+/// [`report_format_json`] over a whole [`FormatRun`], so every errored and
+/// skipped path is carried structurally.
 pub fn report_format_json_run(run: &FormatRun) -> String {
-    report_format_json(&format_results_with_skips(run))
+    report_format_json(&format_results_for_output(run))
 }
 
-/// [`report_format_toon`] over a whole [`FormatRun`], including every skipped
-/// path.
+/// [`report_format_toon`] over a whole [`FormatRun`], including every errored and
+/// skipped path.
 pub fn report_format_toon_run(run: &FormatRun) -> String {
-    report_format_toon(&format_results_with_skips(run))
+    report_format_toon(&format_results_for_output(run))
 }

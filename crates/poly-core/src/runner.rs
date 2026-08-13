@@ -149,6 +149,17 @@ pub struct FormatResult {
     /// clean. Carrying the reason lets the summary say so.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub skipped: Option<String>,
+    /// The engine failure that stopped this file being formatted, when one did.
+    ///
+    /// Deliberately a separate field from [`FormatResult::skipped`], for the same
+    /// reason [`LintResult::error`] is: a skip is poly correctly declining a file,
+    /// an error is poly failing on one it accepted. Without it the format JSON
+    /// could not express an errored file at all, so `poly fmt --check --format
+    /// json` omitted it entirely and a file poly had failed to read was
+    /// indistinguishable from one checked and found clean. Populated on the
+    /// synthetic entries the JSON/TOON renderers append for [`FormatRun::errors`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
     /// Formatted contents when changed (not serialized).
     #[serde(skip)]
     pub formatted: Option<String>,
@@ -603,6 +614,7 @@ fn format_one(
             changed: false,
             formatted: None,
             skipped: None,
+            error: None,
             debug: None,
         });
     }
@@ -625,6 +637,7 @@ fn format_one(
             changed: false,
             formatted: None,
             skipped: Some(GENERATED_SKIP.to_owned()),
+            error: None,
             debug: None,
         });
     }
@@ -641,7 +654,25 @@ fn format_one(
 
     // When every engine routed to this file declines it, nothing inspected the
     // content — report that rather than letting it read as "checked and clean".
+    // Asking is the whole decision: a backend that declined here would only
+    // re-derive the same answer inside `format` — for the content-scanning ones
+    // (`rumdl`, `yaml`, `markup_fmt`) by scanning the file a second time — and
+    // then return `Unchanged`, so the chain below is skipped outright. That
+    // equivalence is the [`Engine::skip_reason`] contract: a backend that
+    // declines a file must not reformat it.
     let skipped = skip_reason_for(engine_plans, &src);
+    if skipped.is_some() {
+        return Ok(FormatResult {
+            path: f.path.clone(),
+            changed: false,
+            formatted: None,
+            skipped,
+            error: None,
+            // No engine ran, so there is nothing to time: the debug block
+            // reports engines that executed, as it does for the skips above.
+            debug: None,
+        });
+    }
 
     // Run every format engine once over `input`, returning the chained output.
     // Debug records are collected on the first pass only (`record_debug`) so the
@@ -697,6 +728,7 @@ fn format_one(
         changed,
         formatted: if changed { Some(current.to_string()) } else { None },
         skipped,
+        error: None,
         debug,
     })
 }
@@ -708,6 +740,10 @@ fn format_one(
 /// file served by both a declining and a willing backend is not reported as
 /// skipped. An empty plan means no backend covers the language at all, which is
 /// ordinary coverage rather than a decline, and is likewise not reported here.
+///
+/// A `Some` answer stands in for running the chain: every backend declined, and
+/// a backend that declines a file must not reformat it, so the format pass is
+/// skipped rather than asking each of them the same question a second time.
 fn skip_reason_for(plans: &[EnginePlan], src: &SourceFile) -> Option<String> {
     if plans.is_empty() {
         return None;
