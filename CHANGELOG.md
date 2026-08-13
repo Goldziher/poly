@@ -5,6 +5,64 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
+## [0.20.1] - 2026-08-13
+
+### Fixed
+
+- **A cargo hook is no longer charged for a package-cache lock held outside the run.** Before
+  spawning a hook in the `cargo` exclusion set, poly probes `$CARGO_HOME/.package-cache` and,
+  if a process outside the run holds it, waits for it to clear **before** starting the hook's
+  time budget — so a `cargo deny check` that takes seconds on its own can no longer be killed
+  at the whole-project budget for a wait it did not cause. The wait prints
+  `⏸ waiting to start: <hook> … the hook has not been spawned and its time budget has not
+  started`, is bounded by half the hook's own budget (no new configuration — a hook with
+  timeouts disabled never waits), and on expiry the hook is started anyway rather than
+  withheld: a check that did not run must never be reported as a pass.
+
+  This mitigates the common case, and says so rather than claiming a fix. The lock can still be
+  taken between the probe and the spawn, cargo re-acquires it mid-run, and the artifact-
+  directory lock (`<target-dir>/<profile>/.cargo-lock`) is not probed at all. For those, the
+  post-spawn notice above remains the report — and it says outright that the budget is still
+  counting, because poly cannot pause a queue it does not own.
+
+- **A hook's `run` line is no longer broken, or a source file truncated, by poly's appended
+  arguments.** Unix hook lines were built as `{line} "$@"`, so a line whose tail cannot take a
+  trailing word failed to parse — a compound command ending in `done`, `fi`, `esac` or `}` — and
+  the shell diagnostic named poly's appended text rather than the hook, reading as a poly bug.
+  Worse, a line ending in a dangling redirect operator (`cargo build >`) made the appended `"$@"`
+  the redirect **target**, so poly truncated one of the matched files. That is now refused.
+
+  A line that already forwards positionals with `"$@"` or `"$*"` no longer gets a second copy
+  appended, which is what makes script-shaped lines expressible: they read the arguments
+  themselves. The check deliberately does not key on `$1` — `grep -q TODO "$1" && shellcheck`
+  guards on the first file while relying on the append for the rest, and that works today.
+  `argv[0]` is now the hook id, so a shell diagnostic names the hook that produced it.
+
+- **`cmd_quote` no longer lets a trailing backslash escape its own closing quote** (Windows). It
+  doubled embedded quotes and escaped `%` but left backslashes alone, so a value ending in an odd
+  run of them stopped the quoting terminating where intended. Only the runs immediately before a
+  quote and before the closing quote are doubled; interior backslashes in ordinary paths are
+  untouched. Not reachable through tracked filenames, which cannot end in a backslash.
+
+- **A hook's output is shown while it runs, instead of all at once after it exits.** The progress
+  preview fed its sink only after the child exited, so a long-running hook showed nothing for its
+  whole run — a hook that was working and a hook that was wedged looked identical, which is what
+  the preview exists to tell apart. Output is now handed over as it arrives, from the
+  supervisor's poll loop rather than the drain threads: feeding from a drain thread would hold a
+  lock across a terminal draw, and a stalled drain is a pipe nobody empties, which blocks the
+  child forever. The combined stream is now interleaved by arrival rather than all stdout then
+  all stderr; captured stdout and stderr are byte-identical to before.
+
+- **`cargo sort` no longer reports a pass for a check it failed.** `cargo sort --check` exits 0
+  when it considers a manifest badly *formatted*, printing only a warning, and the cargo group
+  gates on the exit code — so the hook rendered a green check while the tool had complained. Both
+  the check and fix commands now pass `--no-format`, so the exit code is a faithful signal for
+  sort order, the one thing the hook exists to check. Suppressing rather than honouring that
+  opinion is deliberate: cargo-sort indents with four spaces and poly formats TOML with taplo at
+  two, so gating on its formatting verdict would deadlock poly's own hooks against each other.
+  The same flag on the fix command stops `poly lint --fix` churning manifests that `poly fmt`
+  then reverts.
+
 ## [0.20.0] - 2026-08-13
 
 ### Added
@@ -245,22 +303,6 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   own build, `rust-analyzer` — prints nothing while it waits, and was indistinguishable from a
   genuinely wedged hook: both said "still running". The liveness notice now says it is waiting
   on a lock and names the resource.
-
-- **A cargo hook is no longer charged for a package-cache lock held outside the run.** Before
-  spawning a hook in the `cargo` exclusion set, poly probes `$CARGO_HOME/.package-cache` and,
-  if a process outside the run holds it, waits for it to clear **before** starting the hook's
-  time budget — so a `cargo deny check` that takes seconds on its own can no longer be killed
-  at the whole-project budget for a wait it did not cause. The wait prints
-  `⏸ waiting to start: <hook> … the hook has not been spawned and its time budget has not
-  started`, is bounded by half the hook's own budget (no new configuration — a hook with
-  timeouts disabled never waits), and on expiry the hook is started anyway rather than
-  withheld: a check that did not run must never be reported as a pass.
-
-  This mitigates the common case, and says so rather than claiming a fix. The lock can still be
-  taken between the probe and the spawn, cargo re-acquires it mid-run, and the artifact-
-  directory lock (`<target-dir>/<profile>/.cargo-lock`) is not probed at all. For those, the
-  post-spawn notice above remains the report — and it says outright that the budget is still
-  counting, because poly cannot pause a queue it does not own.
 
 - **A hook that finished on its own is no longer reported as killed.** At the timeout boundary
   poly entered the kill path, reaped the child's real exit status, and then reported `TimedOut`

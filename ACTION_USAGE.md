@@ -62,7 +62,7 @@ checksum published in that release's `sha256sums.txt`. There is no "already inst
 Two independent things can be pinned, and both matter for reproducibility:
 
 - **`version:`** — which `poly` release gets installed. Pin this to an exact version
-  (`v0.20.0`, not `latest`) so lint/format output can't drift between runs.
+  (`v0.20.1`, not `latest`) so lint/format output can't drift between runs.
 - **The action reference itself** (`Goldziher/poly@v0`) — which cut of *this action's* code
   runs. `@v0` is a moving major-version tag (`update_major_tag` in `publish.yaml` re-points it
   at every non-prerelease release), so it tracks the newest `v0.x.y` action logic, not a fixed
