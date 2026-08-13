@@ -392,9 +392,17 @@ jobs:
           HOMEBREW_TOKEN: ${{ secrets.HOMEBREW_TOKEN }}
         run: |
           set -euo pipefail
+          # Fail rather than skip. This step silently exited 0 on a missing
+          # token for several releases, so the tap sat at 0.17.0 while the
+          # project shipped 0.19.7 — `brew install` handed users a build
+          # predating a set of content-corrupting fixes, and every release
+          # reported success while doing it. A distribution channel that did
+          # not update is a failed release, not a warning.
           if [ -z "${HOMEBREW_TOKEN:-}" ]; then
-            echo "HOMEBREW_TOKEN not set — skipping the Homebrew formula update."
-            exit 0
+            echo "::error::HOMEBREW_TOKEN is not set, so the Homebrew tap cannot be updated." >&2
+            echo "Set the secret, or re-run this job once it is configured; the tap will" >&2
+            echo "otherwise keep serving the previous release indefinitely." >&2
+            exit 1
           fi
           version="${{ needs.meta.outputs.version }}"
 

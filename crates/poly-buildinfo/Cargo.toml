@@ -8,6 +8,7 @@ authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
 documentation.workspace = true
+publish = false
 description = "Build identity (version, git describe, channel) for the poly binary, captured at compile time."
 keywords = ["build", "version", "provenance"]
 categories = ["development-tools"]

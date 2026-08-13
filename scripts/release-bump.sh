@@ -51,7 +51,7 @@ echo
 echo "Validating plugin manifest versions..."
 validation_failed=0
 
-for file in .claude-plugin/plugin.json .claude-plugin/marketplace.json; do
+for file in .claude-plugin/plugin.json .claude-plugin/marketplace.json .codex-plugin/plugin.json; do
 	if [[ ! -f "$file" ]]; then
 		echo "✗ $file: missing (generation did not emit it)"
 		validation_failed=1
@@ -71,6 +71,16 @@ if [[ -f .claude-plugin/marketplace.json ]]; then
 	marketplace_version="$(jq -r '.plugins[0].version' .claude-plugin/marketplace.json 2>/dev/null || echo '')"
 	if [[ "$marketplace_version" != "$VERSION" ]]; then
 		echo "✗ .claude-plugin/marketplace.json: expected $VERSION, got $marketplace_version"
+		validation_failed=1
+	fi
+fi
+
+# The codex surface ships alongside the claude one, so a stale version here is a
+# stale release artifact — assert it rather than trusting generation to have run.
+if [[ -f .codex-plugin/plugin.json ]]; then
+	codex_version="$(jq -r '.version' .codex-plugin/plugin.json 2>/dev/null || echo '')"
+	if [[ "$codex_version" != "$VERSION" ]]; then
+		echo "✗ .codex-plugin/plugin.json: expected $VERSION, got $codex_version"
 		validation_failed=1
 	fi
 fi
