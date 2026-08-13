@@ -4,250 +4,33 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Once};
 
-use poly_cache::{Namespace, ResultCache};
-use rayon::prelude::*;
-use rustc_hash::FxHashSet;
-use serde::Serialize;
-
 use crate::config::{Config, Kind};
-use crate::discover::{DiscoveredFile, DiscoveryReport, discover_reporting};
+use crate::discover::{DiscoveredFile, discover_reporting};
 use crate::engine::{Diagnostic, Edit, FormatOutput, SourceFile};
 use crate::filter::{
     PerFileIgnores, is_format_ignored, is_generated_lockfile, is_generated_source, is_hash_stamped_source, match_bases,
     relative_for_match,
 };
+use crate::language::Language;
 use crate::resolve::ConfigSet;
+use poly_cache::{Namespace, ResultCache};
+use rayon::prelude::*;
+use rustc_hash::FxHashSet;
 
 mod edits;
 mod plan;
 mod skips;
+mod types;
 
 use edits::apply_edits;
-use plan::{EnginePlan, PlanMap, plan_by_config_language, prefetch_tier2_grammars};
+use plan::{EnginePlan, PlanMap, plan_by_config_language, prefetch_tier2_grammars, provides_language_lint};
 use skips::unmatched_explicit_paths;
-pub use skips::{NO_ENGINE_SKIP, SkippedFile};
-
-/// Options controlling a lint/format run.
-#[derive(Debug, Clone, Default)]
-pub struct RunOptions {
-    /// Bypass the content-hash result cache.
-    pub no_cache: bool,
-    /// Number of worker threads; `None` => all logical cores.
-    pub jobs: Option<usize>,
-    /// Extra gitignore-style exclude globs supplied at call time (CLI `--exclude`
-    /// / MCP `exclude`), merged with the config's `[discovery] exclude`.
-    pub exclude: Vec<String>,
-    /// Apply the exclude set to explicitly named files as well as to the walk.
-    ///
-    /// A hook is always handed explicit staged paths, so without this the
-    /// repo's `[discovery] exclude` is silently inert exactly where it matters
-    /// most. On for the hook path, off for a direct CLI invocation.
-    pub force_exclude: bool,
-    /// Apply `--fix` to machine-generated files too. Off by default: a fix there
-    /// is reverted by the next generation run, and can silence the diagnostic
-    /// that was the only evidence of a generator bug.
-    pub fix_generated: bool,
-    /// When `true`, the caller supplied an explicit `--config <path>`: use that
-    /// single config for every file and skip hierarchical (nested `poly.toml`)
-    /// resolution (ADR 0018). Default `false` — scan for nested configs.
-    pub explicit_config: bool,
-    /// Resolver for `extends` bases (ADR 0020). When set, nested `poly.toml`
-    /// files resolve their `extends` list (local or pinned remote git bases)
-    /// through this resolver during the cascade. `None` => local-only resolution
-    /// via `LocalPathResolver` (the default; no remote fetch).
-    pub config_resolver: Option<Arc<dyn poly_config::BaseConfigResolver>>,
-}
-
-/// Per-engine debug record for one file. Collected only when debug output is
-/// requested (`--debug`); never built on the default hot path.
-#[derive(Debug, Clone, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-pub struct EngineDebug {
-    /// Backend that produced this record.
-    pub engine: String,
-    /// Wrapped tool/crate version (matches the cache-key component).
-    pub version: String,
-    /// Wall-clock time the engine spent on this file, in milliseconds. Zero for
-    /// a cache hit (the engine did not run).
-    pub duration_ms: f64,
-    /// Whether the result came from the content-hash cache.
-    pub cache_hit: bool,
-}
-
-/// Per-file debug data surfaced under `--debug`: cache hit/miss and timing for
-/// each engine that ran. Populated only when debug collection is enabled.
-#[derive(Debug, Clone, Serialize, Default)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-pub struct RunDebug {
-    /// One entry per engine evaluated for the file.
-    pub engines: Vec<EngineDebug>,
-}
-
-/// Serde predicate: omit a zero count so a run that fixed nothing keeps exactly
-/// the JSON shape consumers already parse.
-fn is_zero(count: &usize) -> bool {
-    *count == 0
-}
-
-/// Per-file lint outcome.
-#[derive(Debug, Clone, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-pub struct LintResult {
-    /// File that was linted.
-    pub path: PathBuf,
-    /// Diagnostics from all backends for this file.
-    pub diagnostics: Vec<Diagnostic>,
-    /// Set when `--fix` was requested but withheld because the file announces
-    /// itself as machine-generated. The diagnostics are still reported.
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
-    pub fix_withheld_generated: bool,
-    /// How many diagnostics `--fix` resolved by rewriting this file.
-    ///
-    /// A `--fix` run reports the diagnostics that *remain*, which for a fully
-    /// fixed file is none — so the run printed `No issues found.` while it was
-    /// rewriting files on disk, and a consumer whose autofix destroyed content
-    /// had nothing in the output pointing at the run that did it. This is the
-    /// count of what the run *did*, kept alongside what it found.
-    #[serde(skip_serializing_if = "is_zero")]
-    pub fixed: usize,
-    /// Why nothing inspected this file, when nothing did.
-    ///
-    /// The per-file lint results only carry files that produced diagnostics, so
-    /// this is populated on the synthetic entries the JSON/TOON renderers append
-    /// for skipped paths (see [`crate::report::report_lint_json_run`]) — that is
-    /// what lets a consumer assert on the skipped *set* structurally instead of
-    /// scraping the human summary.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub skipped: Option<String>,
-    /// The engine failure that stopped this file being linted, when one did.
-    ///
-    /// Deliberately a separate field from [`LintResult::skipped`]: a skip is poly
-    /// correctly declining a file, an error is poly failing on one it accepted,
-    /// and a consumer that cannot tell them apart is back to trusting a run that
-    /// checked less than it claimed. Populated on the synthetic entries the
-    /// JSON/TOON renderers append for [`LintRun::errors`].
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
-    /// Debug data (cache hit/miss + timing), present only under `--debug`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub debug: Option<RunDebug>,
-}
-
-/// Per-file format outcome.
-#[derive(Debug, Clone, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-pub struct FormatResult {
-    /// File that was formatted.
-    pub path: PathBuf,
-    /// Whether formatting changed (or would change) the file.
-    pub changed: bool,
-    /// Why no backend inspected this file, when none did.
-    ///
-    /// A file routed to a backend that declines it — YAML carrying Go/Helm
-    /// template actions, a Jinja template rendering Go — was previously
-    /// indistinguishable in the report from one that was checked and found
-    /// clean. Carrying the reason lets the summary say so.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub skipped: Option<String>,
-    /// The engine failure that stopped this file being formatted, when one did.
-    ///
-    /// Deliberately a separate field from [`FormatResult::skipped`], for the same
-    /// reason [`LintResult::error`] is: a skip is poly correctly declining a file,
-    /// an error is poly failing on one it accepted. Without it the format JSON
-    /// could not express an errored file at all, so `poly fmt --check --format
-    /// json` omitted it entirely and a file poly had failed to read was
-    /// indistinguishable from one checked and found clean. Populated on the
-    /// synthetic entries the JSON/TOON renderers append for [`FormatRun::errors`].
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
-    /// Formatted contents when changed (not serialized).
-    #[serde(skip)]
-    pub formatted: Option<String>,
-    /// Debug data (cache hit/miss + timing), present only under `--debug`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub debug: Option<RunDebug>,
-}
-
-/// A complete lint run: the per-file results plus the run-level accounting a
-/// summary needs to qualify itself.
-///
-/// [`lint`] returns only the results, which cannot express "I checked nothing,
-/// because everything was excluded" — the failure mode this type exists to fix.
-#[derive(Debug, Clone)]
-pub struct LintRun {
-    /// Per-file results, one per file that still has at least one diagnostic.
-    pub results: Vec<LintResult>,
-    /// Files whose lint *failed* — an unreadable file, a backend that returned
-    /// an error, a bad engine config.
-    ///
-    /// These used to be logged at `warn` and dropped from the results, so a file
-    /// the run had failed to process simply vanished from it and `poly lint`
-    /// reported `No issues found.` and exited 0. A backend that errored has not
-    /// checked the file, and saying otherwise is a gate that passes without
-    /// checking — the same defect [`FormatRun::errors`] exists to prevent.
-    ///
-    /// Kept apart from [`LintRun::skipped`] on purpose: a skip is poly declining
-    /// a file it does not handle, an error is poly failing on a file it took on.
-    pub errors: Vec<LintError>,
-    /// Files the per-file tier actually read and linted.
-    pub checked: usize,
-    /// Files the run did not inspect, each with its reason — explicitly named
-    /// paths no engine covers, and files every routed backend declined.
-    ///
-    /// A count alone forced consumers to reconstruct the set from a heuristic
-    /// and parse it back out of the human summary, so the names travel with it.
-    pub skipped: Vec<SkippedFile>,
-    /// What `[discovery] exclude` / `--exclude` pruned before any of that.
-    pub discovery: DiscoveryReport,
-}
-
-/// A complete format run: the per-file results plus what discovery pruned.
-#[derive(Debug, Clone)]
-pub struct FormatRun {
-    /// Per-file results, one per discovered file.
-    pub results: Vec<FormatResult>,
-    /// Files whose formatter *errored* — a syntax error the engine could not
-    /// parse, an unreadable file, a bad engine config.
-    ///
-    /// These used to be logged at `warn` and dropped from the results, so the
-    /// run reported `All formatted.` and exited 0 on a file it had failed to
-    /// process. A formatter that cannot parse a file has not verified it, and
-    /// saying otherwise is a gate that passes without checking. Carried here so
-    /// the caller can name the paths and fail.
-    pub errors: Vec<FormatError>,
-    /// Files the run did not inspect, each with its reason — files every routed
-    /// backend declined, plus explicitly named paths no engine covers.
-    ///
-    /// The per-file [`FormatResult::skipped`] already carries the former; this
-    /// is the run-level union, so one strict-mode check covers both kinds.
-    pub skipped: Vec<SkippedFile>,
-    /// What `[discovery] exclude` / `--exclude` pruned before any of that.
-    pub discovery: DiscoveryReport,
-}
-
-/// One file the formatter could not process, and why.
-#[derive(Debug, Clone, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-pub struct FormatError {
-    /// File that could not be formatted.
-    pub path: PathBuf,
-    /// The engine's error, already flattened to a message.
-    pub message: String,
-}
-
-/// One file the linter could not process, and why.
-///
-/// The lint counterpart of [`FormatError`], kept as its own type so each side
-/// documents the failure in its own terms and neither is silently reshaped by a
-/// change to the other.
-#[derive(Debug, Clone, Serialize)]
-#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
-pub struct LintError {
-    /// File that could not be linted.
-    pub path: PathBuf,
-    /// The engine's error, already flattened to a message.
-    pub message: String,
-}
+pub use skips::{NO_ENGINE_SKIP, NO_LINT_RULES_SKIP_PREFIX, SkippedFile};
+// Re-exported so `poly_core::runner::LintResult` keeps naming the same type it
+// always has: the split below is a file boundary, not an API one.
+pub use types::{
+    EngineDebug, FormatError, FormatResult, FormatRun, LintError, LintResult, LintRun, RunDebug, RunOptions,
+};
 
 /// Maximum autofix passes per file: applying a fix can surface or resolve
 /// others, so re-lint until stable, but cap to guarantee termination.
@@ -319,9 +102,15 @@ pub fn lint_run(
                 &configs,
                 &ignores,
                 &bases,
+                &opts.externally_linted_languages,
             ) {
                 Ok(result) => {
-                    checked.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    // A file no backend has rules for is not part of the linted
+                    // count: it was routed and read, but nothing in the run knew
+                    // its language, so counting it is the claim this fix removes.
+                    if result.skipped.is_none() {
+                        checked.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    }
                     Ok(result)
                 }
                 Err(error) => Err(LintError {
@@ -331,24 +120,37 @@ pub fn lint_run(
             }
         })
         .partition(Result::is_ok);
-    let mut results: Vec<LintResult> = oks
+    let mut linted: Vec<LintResult> = oks.into_iter().map(Result::unwrap).collect();
+    linted.sort_by(|a, b| a.path.cmp(&b.path));
+    // Taken before the filter below, which keeps only files with something to
+    // report: a skipped file has nothing to report and would be dropped, which
+    // is how it became invisible in the first place.
+    let mut skipped: Vec<SkippedFile> = linted
+        .iter()
+        .filter_map(|result| {
+            result.skipped.as_ref().map(|reason| SkippedFile {
+                path: result.path.clone(),
+                reason: reason.clone(),
+            })
+        })
+        .collect();
+    // A fully fixed file has no diagnostics left, but dropping it here is
+    // what made `--fix` silent about the files it rewrote: keep it so the
+    // summary — and the JSON payload — can report the fixes.
+    let results: Vec<LintResult> = linted
         .into_iter()
-        .map(Result::unwrap)
-        // A fully fixed file has no diagnostics left, but dropping it here is
-        // what made `--fix` silent about the files it rewrote: keep it so the
-        // summary — and the JSON payload — can report the fixes.
         .filter(|r| !r.diagnostics.is_empty() || r.fixed > 0)
         .collect();
     let mut errors: Vec<LintError> = errs.into_iter().map(Result::unwrap_err).collect();
-    results.sort_by(|a, b| a.path.cmp(&b.path));
     errors.sort_by(|a, b| a.path.cmp(&b.path));
     for error in &errors {
         tracing::warn!(path = %error.path.display(), "lint failed: {}", error.message);
     }
-    let skipped = unmatched_explicit_paths(paths, &files, &plans, &configs, &opts.exclude, opts.force_exclude)
-        .iter()
-        .map(|path| SkippedFile::no_engine(path))
-        .collect();
+    skipped.extend(
+        unmatched_explicit_paths(paths, &files, &plans, &configs, &opts.exclude, opts.force_exclude)
+            .iter()
+            .map(|path| SkippedFile::no_engine(path)),
+    );
     Ok(LintRun {
         results,
         errors,
@@ -458,6 +260,7 @@ fn lint_one(
     configs: &ConfigSet,
     ignores: &[PerFileIgnores],
     bases: &[PathBuf],
+    externally_linted: &[Language],
 ) -> anyhow::Result<LintResult> {
     let original = std::fs::read_to_string(&f.path)?;
     let this_ignores = &ignores[f.config_id];
@@ -468,8 +271,26 @@ fn lint_one(
             this_ignores.apply(rel, diagnostics);
         }
     };
+    // Resolved once per file rather than inside `lint_content`, which the fix
+    // loop below calls up to `MAX_FIX_PASSES` times — each of those was a hash
+    // lookup keyed on a freshly cloned `Language`.
+    let engine_plans = plans
+        .get(&(f.config_id, f.language.clone()))
+        .map(Vec::as_slice)
+        .unwrap_or(&[]);
+    // A language nothing holds rules for is not a clean file: the cross-cutting
+    // backends below still run and can still report findings, but no rule in
+    // this run knows the language, so the file must not be counted as linted.
+    //
+    // `externally_linted` is the caller's declaration that another phase of the
+    // *same* run does lint the language (`cargo clippy` over Rust). A linear
+    // scan is the right shape here: the list holds one entry per whole-project
+    // tool, so it is a handful of comparisons against a slice already in cache —
+    // cheaper than the hash it would take to avoid them.
+    let skipped = (!provides_language_lint(engine_plans) && !externally_linted.contains(&f.language))
+        .then(|| SkippedFile::no_lint_rules_reason(&f.language));
 
-    let (mut diagnostics, mut debug) = lint_content(f, plans, cache, &original, collect_debug)?;
+    let (mut diagnostics, mut debug) = lint_content(f, engine_plans, cache, &original, collect_debug)?;
     suppress(&mut diagnostics);
 
     // Report on generated files but never rewrite them. A fix there is churn the
@@ -497,7 +318,7 @@ fn lint_one(
                 Some((next, applied)) if next != content => {
                     content = next;
                     fixed += applied;
-                    let (next_diags, next_debug) = lint_content(f, plans, cache, &content, collect_debug)?;
+                    let (next_diags, next_debug) = lint_content(f, engine_plans, cache, &content, collect_debug)?;
                     diagnostics = next_diags;
                     suppress(&mut diagnostics);
                     debug = next_debug;
@@ -515,7 +336,7 @@ fn lint_one(
         diagnostics,
         fix_withheld_generated: generated,
         fixed,
-        skipped: None,
+        skipped,
         error: None,
         debug,
     })
@@ -527,7 +348,7 @@ fn lint_one(
 /// element is `None` and no timing instrumentation runs.
 fn lint_content(
     f: &DiscoveredFile,
-    plans: &PlanMap,
+    engine_plans: &[EnginePlan],
     cache: &ResultCache,
     content: &str,
     collect_debug: bool,
@@ -540,10 +361,6 @@ fn lint_content(
     let digest = ResultCache::single_file_digest_with_path(&f.path.to_string_lossy(), content);
     let mut all = Vec::new();
     let mut debug = collect_debug.then(RunDebug::default);
-    let engine_plans = plans
-        .get(&(f.config_id, f.language.clone()))
-        .map(Vec::as_slice)
-        .unwrap_or(&[]);
     for plan in engine_plans {
         let key = ResultCache::key_with_args(
             Namespace::Lint,

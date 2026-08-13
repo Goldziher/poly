@@ -101,6 +101,20 @@ pub enum Language {
 }
 
 impl Language {
+    /// Human-facing name for report text ("Kotlin", "TypeScript").
+    ///
+    /// Derived from the variant name rather than a second hand-written table:
+    /// the variants are already spelled the way users say the languages, and a
+    /// parallel table would silently drift the day someone adds a language to
+    /// one of them and not the other. [`Language::Other`] carries the
+    /// tree-sitter-language-pack id, which is the only name that language has.
+    pub fn display_name(&self) -> String {
+        match self {
+            Language::Other(name) => name.clone(),
+            named => format!("{named:?}"),
+        }
+    }
+
     /// Canonical lowercase id used in config tables and the tree-sitter pack.
     pub fn id(&self) -> &str {
         match self {
@@ -335,6 +349,21 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     use super::Language;
+
+    /// Report text names a language the way a person writes it, while `id()`
+    /// stays the lowercase config key. The two are different jobs and a message
+    /// built from `id()` reads as a config fragment rather than a sentence.
+    #[test]
+    fn display_name_is_the_human_spelling_not_the_config_key() {
+        assert_eq!(Language::Kotlin.display_name(), "Kotlin");
+        assert_eq!(Language::Kotlin.id(), "kotlin");
+        assert_eq!(Language::TypeScript.display_name(), "TypeScript");
+        assert_eq!(
+            Language::Other("elixir".to_owned()).display_name(),
+            "elixir",
+            "a tier-2 language has only its grammar id to go by"
+        );
+    }
 
     #[test]
     fn from_path_prefers_rs_extension_over_dockerfile_filename() {

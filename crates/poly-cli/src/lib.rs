@@ -17,6 +17,7 @@ pub mod hooks;
 pub mod migrate;
 pub mod remote;
 pub mod rules_cmd;
+pub mod workspace_coverage;
 
 pub use cache_cmd::{CacheArgs, run_cache};
 pub use config_cmd::{ConfigArgs, run_config};
@@ -217,9 +218,35 @@ pub fn run_lint(args: LintArgs) -> ExitCode {
     init_logging_with(common.debug);
     apply_color(&common);
     let verbosity = Verbosity::new(common.verbose, common.debug);
-    let (paths, config, opts) = match prepare(&common) {
+    let (paths, config, mut opts) = match prepare(&common) {
         Ok(triple) => triple,
         Err(code) => return code,
+    };
+
+    // Explicit paths scope the run. Without this, `poly lint some/file.py` looks
+    // like a sub-second operation but escalates to an unbounded whole-workspace
+    // cargo build — which, when another process holds the cargo package lock,
+    // blocks indefinitely with nothing in the argument list to suggest why.
+    //
+    // But `poly lint .` is how people say "lint everything", so naming the root
+    // is a request for the whole project, not a narrowing of it. Treating it as
+    // path-scoped meant a repo whose CI ran `poly lint .` quietly got the weaker
+    // check for several sessions and reported itself clean on that basis —
+    // silent under-checking, the expensive failure direction.
+    let path_scoped = !common.paths.is_empty() && !force_workspace && !any_path_is_workspace_root(&common.paths);
+    // Loaded *before* the per-file run, not after it: the per-file tier decides
+    // there and then whether a file's language went unlinted, and a run that is
+    // about to lint every `.rs` file with clippy must not first record them as
+    // `no lint rules for Rust`. The same value drives the phase itself below, so
+    // the coverage predicted here and the tools that run are read from one
+    // config. `None` means the phase does not run at all; a load failure is
+    // carried rather than raised, so the findings the per-file tier did produce
+    // are still reported before the run fails on it.
+    let workspace_config =
+        (!no_workspace && !path_scoped).then(|| hooks::commands::load_config(common.config.as_deref()));
+    opts.externally_linted_languages = match &workspace_config {
+        Some(Ok(config)) => workspace_coverage::workspace_lint_languages(config),
+        _ => Vec::new(),
     };
 
     let run = match poly_core::lint_run(&paths, &config, &opts, common.fix, common.debug) {
@@ -254,31 +281,25 @@ pub fn run_lint(args: LintArgs) -> ExitCode {
     // must change the verdict, not what else the run does.
     let skips_over_budget = report_skip_budget(&common, &run.skipped);
 
-    // Explicit paths scope the run. Without this, `poly lint some/file.py` looks
-    // like a sub-second operation but escalates to an unbounded whole-workspace
-    // cargo build — which, when another process holds the cargo package lock,
-    // blocks indefinitely with nothing in the argument list to suggest why.
-    //
-    // But `poly lint .` is how people say "lint everything", so naming the root
-    // is a request for the whole project, not a narrowing of it. Treating it as
-    // path-scoped meant a repo whose CI ran `poly lint .` quietly got the weaker
-    // check for several sessions and reported itself clean on that basis —
-    // silent under-checking, the expensive failure direction.
-    let path_scoped = !common.paths.is_empty() && !force_workspace && !any_path_is_workspace_root(&common.paths);
-    let workspace_ok = if no_workspace || path_scoped {
+    let workspace_ok = match &workspace_config {
         // Only explain the skip when path scoping caused it. `--no-workspace` is
         // an explicit opt-out and needs no narration.
-        if path_scoped && !no_workspace && pretty {
-            eprintln!("note: whole-project phase skipped for path-scoped run (pass --workspace to include it)");
+        None => {
+            if path_scoped && !no_workspace && pretty {
+                eprintln!("note: whole-project phase skipped for path-scoped run (pass --workspace to include it)");
+            }
+            true
         }
-        true
-    } else {
-        match run_workspace_phase(&common, pretty) {
+        Some(Ok(config)) => match run_workspace_phase(config, &common, pretty) {
             Ok(ok) => ok,
             Err(e) => {
                 eprintln!("error: whole-project lint phase failed: {e:#}");
                 return ExitCode::from(2);
             }
+        },
+        Some(Err(e)) => {
+            eprintln!("error: whole-project lint phase failed: {e:#}");
+            return ExitCode::from(2);
         }
     };
 
@@ -321,15 +342,17 @@ fn report_skip_budget(common: &CommonArgs, skipped: &[poly_core::SkippedFile]) -
 
 /// Run `poly lint`'s whole-project phase and render its report.
 ///
-/// Loads the poly config exactly as `poly hooks` does — honouring git-remote
-/// `extends` bases via the CLI's resolver — then delegates the orchestration to
-/// the shared [`poly_workspace`] crate and prints the outcome. Returns whether
-/// the phase passed (the caller folds a `false` into a non-zero exit code). The
-/// `--no-workspace` short-circuit is handled by the caller, before this runs.
-fn run_workspace_phase(common: &CommonArgs, pretty: bool) -> anyhow::Result<bool> {
-    let config = hooks::commands::load_config(common.config.as_deref())?;
+/// `config` is the poly config loaded exactly as `poly hooks` loads it —
+/// honouring git-remote `extends` bases via the CLI's resolver — and is the same
+/// value [`workspace_coverage::workspace_lint_languages`] was asked about before
+/// the per-file run, so the tool set predicted there is the tool set run here.
+/// Delegates the orchestration to the shared [`poly_workspace`] crate and prints
+/// the outcome. Returns whether the phase passed (the caller folds a `false`
+/// into a non-zero exit code). The `--no-workspace` short-circuit is handled by
+/// the caller, before this runs.
+fn run_workspace_phase(config: &poly_config::PolyConfig, common: &CommonArgs, pretty: bool) -> anyhow::Result<bool> {
     let outcome = poly_workspace::run_workspace_lint(
-        &config,
+        config,
         &poly_workspace::WorkspaceLintOptions {
             fix: common.fix,
             jobs: common.jobs,
@@ -448,6 +471,9 @@ fn prepare(common: &CommonArgs) -> Result<(Vec<PathBuf>, Config, RunOptions), Ex
         fix_generated: common.fix_generated,
         explicit_config: common.config.is_some(),
         config_resolver: Some(resolver),
+        // Filled in by `run_lint` once it knows whether the whole-project phase
+        // runs; `poly fmt` never runs that phase, so it keeps the empty default.
+        externally_linted_languages: Vec::new(),
     };
     Ok((paths, config, opts))
 }

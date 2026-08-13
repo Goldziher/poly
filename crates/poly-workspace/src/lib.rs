@@ -21,6 +21,7 @@ pub mod lower;
 mod support;
 
 pub use lint::{
-    WorkspaceLintOptions, WorkspaceLintOutcome, WorkspaceToolResult, render_workspace_outcome, run_workspace_lint,
+    WorkspaceLintOptions, WorkspaceLintOutcome, WorkspaceToolResult, planned_workspace_tool_ids,
+    render_workspace_outcome, run_workspace_lint,
 };
 pub use support::{open_result_cache, sccache_settings, show_progress};

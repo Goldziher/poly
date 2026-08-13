@@ -147,13 +147,58 @@ pub struct DiscoveryReport {
     /// Per-rule attribution, most-pruning first. Rules that matched nothing are
     /// omitted.
     pub rules: Vec<ExcludedRule>,
+    /// Files the walk saw and could not identify as any language — neither the
+    /// extension table nor the tree-sitter pack recognised them — so no engine
+    /// was ever offered them.
+    ///
+    /// ## Why a count and not a skip each
+    ///
+    /// A path *named* on the command line that no engine covers is a
+    /// [`crate::SkippedFile`]: naming it is a request to check it, and silently
+    /// dropping it is what made `poly lint App.csproj` exit 0 having done
+    /// nothing. A file a *walk* merely passed over is different in kind — poly's
+    /// own tree holds 83 of them out of 446 (snapshots, lockfiles, images,
+    /// `LICENSE`) — so listing each as a skip would fire `--deny-skips` in every
+    /// repository on earth and bury the skips that mean something. Reported as
+    /// one number instead, because "invisible" is the thing that is not allowed;
+    /// "not itemised" is a legitimate choice about what a summary is for.
+    pub unrecognized_files: usize,
+    /// The first few unrecognised paths, so the note can show what they are
+    /// rather than leaving the reader to guess at a bare number.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unrecognized_samples: Vec<PathBuf>,
 }
+
+/// How many unrecognised paths the note names before falling back to the count.
+///
+/// Enough to recognise a pattern ("they are all snapshots") without turning a
+/// clean run into a file listing.
+const MAX_UNRECOGNIZED_SAMPLES: usize = 3;
 
 impl DiscoveryReport {
     /// Whether discovery pruned nothing at all — the common case, where no
     /// qualification needs to be added to a summary.
     pub fn is_empty(&self) -> bool {
         self.excluded_files == 0 && self.excluded_directories == 0
+    }
+
+    /// Whether discovery has anything to say about the file set it produced —
+    /// what it pruned, or what it could not identify.
+    ///
+    /// Distinct from [`DiscoveryReport::is_empty`], which answers only the first
+    /// half: an unrecognised file was not *excluded* by anything, it simply is
+    /// not a language poly knows, and a summary that mentions neither reads as
+    /// full coverage of the directory.
+    pub fn has_notes(&self) -> bool {
+        !self.is_empty() || self.unrecognized_files > 0
+    }
+
+    /// Record a walked file that no language detection could identify.
+    fn record_unrecognized(&mut self, path: &Path) {
+        self.unrecognized_files += 1;
+        if self.unrecognized_samples.len() < MAX_UNRECOGNIZED_SAMPLES {
+            self.unrecognized_samples.push(path.to_path_buf());
+        }
     }
 
     /// Fold one rule's tally into this report, accumulating across walk roots.
@@ -454,18 +499,24 @@ pub fn discover_reporting(
                     None => true,
                 }
             });
+        // A file *named* by the caller that no engine covers is reported as a
+        // skip by `runner::skips`, so counting it here as well would report the
+        // same path twice under two different headings.
+        let root_is_named_file = root.is_file();
         let walker = builder.build();
         for entry in walker.flatten() {
             if !entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
                 continue;
             }
             let path = entry.path();
-            if let Some(language) = detect(path) {
-                out.push(DiscoveredFile {
+            match detect(path) {
+                Some(language) => out.push(DiscoveredFile {
                     path: path.to_path_buf(),
                     language,
                     config_id: configs.config_id_for(path),
-                });
+                }),
+                None if !root_is_named_file => report.record_unrecognized(path),
+                None => {}
             }
         }
         if let Some(matcher) = &matcher {

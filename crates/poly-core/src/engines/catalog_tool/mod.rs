@@ -295,6 +295,16 @@ impl Engine for CatalogToolEngine {
         !self.is_lint() && probe_binary(&self.tool.binary).is_some()
     }
 
+    /// A catalog engine is built for the specific language it was matched to, so
+    /// its empty [`Engine::languages`] does not mean "cross-cutting" here — a
+    /// linter enabled for Kotlin *is* Kotlin lint coverage. It only counts when
+    /// the binary is actually on `PATH`: an absent one is silently skipped at
+    /// lint time, and coverage claimed on a tool that never ran is the failure
+    /// this answer exists to report.
+    fn provides_language_lint(&self, _language: &Language, _cfg: &EngineConfig) -> bool {
+        self.is_lint() && probe_binary(&self.tool.binary).is_some()
+    }
+
     fn format(&self, src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
         if self.is_lint() {
             return Ok(FormatOutput::Unchanged);

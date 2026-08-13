@@ -30,6 +30,7 @@ fn opts() -> RunOptions {
         exclude: Vec::new(),
         explicit_config: true,
         config_resolver: None,
+        externally_linted_languages: Vec::new(),
     }
 }
 

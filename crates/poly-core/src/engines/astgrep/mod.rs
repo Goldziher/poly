@@ -88,6 +88,27 @@ impl Engine for AstGrepEngine {
         ENGINE_VERSION
     }
 
+    /// Cross-cutting by registration, but user rules are written *per language*,
+    /// so a repo whose only Kotlin rules are ast-grep rules genuinely has Kotlin
+    /// lint coverage. Answered by the same lookup [`Engine::lint`] performs —
+    /// rules loaded from the configured dirs, indexed by language id — rather
+    /// than by the weaker "some rule dirs are configured", which would claim
+    /// coverage of every language in the repo from a single TypeScript rule.
+    /// The rule map is cached by content hash, so this shares the load the
+    /// per-file pass is about to do.
+    fn provides_language_lint(&self, language: &Language, cfg: &EngineConfig) -> bool {
+        let dirs = dirs_from_options(&cfg.options);
+        if dirs.is_empty() {
+            return false;
+        }
+        let content_hash = cfg.options.get("rules_hash").and_then(|v| v.as_str()).unwrap_or("");
+        load_rules(&dirs, content_hash).is_ok_and(|rules| {
+            rules
+                .get(language.id())
+                .is_some_and(|for_language| !for_language.is_empty())
+        })
+    }
+
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
         let dirs = dirs_from_options(&cfg.options);
         if dirs.is_empty() {

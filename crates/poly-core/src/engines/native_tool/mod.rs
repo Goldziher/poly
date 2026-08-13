@@ -246,6 +246,15 @@ impl Engine for NativeToolEngine {
         }
     }
 
+    /// A native tool only lints its language when it is both switched on and
+    /// installed. `shellcheck` is opt-in and its [`Engine::lint`] returns no
+    /// diagnostics when either is false, so claiming coverage from the
+    /// capability alone would report an unexamined shell script as linted —
+    /// precisely the silent under-checking this hook exists to prevent.
+    fn provides_language_lint(&self, _language: &Language, cfg: &EngineConfig) -> bool {
+        self.capabilities().lint && self.is_enabled(cfg) && self.probed_version().is_some()
+    }
+
     /// Cache-key version string. Folds in BOTH the native tool version (or an
     /// `absent` sentinel) AND the tree-sitter engine version, because every
     /// disabled/absent path delegates to tier-2 — so a tier-2 upgrade must

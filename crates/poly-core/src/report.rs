@@ -90,6 +90,23 @@ fn exclusion_clause(discovery: &DiscoveryReport) -> Option<String> {
     }
 }
 
+/// The summary clause naming the files discovery could not identify as any
+/// language, or `None` when every walked file was identified.
+///
+/// Separate from [`exclusion_clause`] because nothing excluded these: they are
+/// files poly has no idea how to read. Kept out of the skipped set (see
+/// [`DiscoveryReport::unrecognized_files`]) but not out of the summary — a run
+/// that walked a directory and understood two thirds of it must not report the
+/// two thirds as if they were the whole.
+fn unrecognized_clause(discovery: &DiscoveryReport) -> Option<String> {
+    (discovery.unrecognized_files > 0).then(|| {
+        format!(
+            "{} file(s) of unrecognized type not checked",
+            discovery.unrecognized_files
+        )
+    })
+}
+
 /// How many exclude rules the detail line names before summarising the rest.
 ///
 /// Rules are ordered by how much they pruned, so the ones worth investigating
@@ -103,11 +120,14 @@ const MAX_LISTED_EXCLUDE_RULES: usize = 5;
 /// Returns `None` when discovery excluded nothing, so a clean run stays quiet.
 /// Every line is indented two spaces to read as a continuation of the summary.
 pub fn render_discovery_note(discovery: &DiscoveryReport) -> Option<String> {
-    if discovery.is_empty() {
+    if !discovery.has_notes() {
         return None;
     }
     let mut out = String::new();
-    if discovery.rules.is_empty() {
+    if discovery.is_empty() {
+        // Nothing was excluded; the only thing to report is what could not be
+        // identified, appended by the tail below.
+    } else if discovery.rules.is_empty() {
         let _ = writeln!(out, "  excluded from discovery by an exclude rule");
     } else {
         let mut rules = discovery
@@ -149,6 +169,27 @@ pub fn render_discovery_note(discovery: &DiscoveryReport) -> Option<String> {
             discovery.excluded_explicit
         );
     }
+    if discovery.unrecognized_files > 0 {
+        // Named, not merely counted: "4 unrecognized" reads as an oversight
+        // until you can see that they are PNGs. A caller who disagrees — a
+        // `.kt`-like file poly should have identified — can only tell from the
+        // names.
+        let samples: Vec<String> = discovery
+            .unrecognized_samples
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect();
+        let _ = writeln!(
+            out,
+            "  {} file(s) were not identified as any language and no engine saw them{}",
+            discovery.unrecognized_files,
+            if samples.is_empty() {
+                String::new()
+            } else {
+                format!(" (e.g. {})", samples.join(", "))
+            }
+        );
+    }
     Some(out.if_supports_color(Stdout, |t| t.yellow()).to_string())
 }
 
@@ -167,7 +208,7 @@ fn push_discovery_note(out: &mut String, discovery: &DiscoveryReport) {
 /// that is the stream it lands on: a piped stdout with a TTY stderr (the usual
 /// `poly lint --format json > out.json`) would otherwise lose the highlight.
 pub fn eprint_discovery_note(discovery: &DiscoveryReport) {
-    if discovery.is_empty() {
+    if !discovery.has_notes() {
         return;
     }
     let Some(note) = render_discovery_note(discovery) else {
@@ -296,7 +337,7 @@ fn render_lint_core(
         // "No issues found." on its own cannot distinguish a verified-clean repo
         // from one whose every file was excluded — qualify it with what was
         // looked at and what was pruned.
-        let mut tail: Vec<String> = Vec::with_capacity(3);
+        let mut tail: Vec<String> = Vec::with_capacity(4);
         if let Some(checked) = checked {
             tail.push(format!("{checked} file(s) linted"));
         }
@@ -306,10 +347,14 @@ fn render_lint_core(
         if let Some(clause) = exclusion_clause(discovery) {
             tail.push(clause);
         }
+        if let Some(clause) = unrecognized_clause(discovery) {
+            tail.push(clause);
+        }
         // "No issues found" over an empty file set is a false reassurance
-        // whether the files were excluded before the run or skipped during it —
-        // in both cases nothing was examined, which is not the same as clean.
-        let nothing_linted = checked == Some(0) && (!discovery.is_empty() || !skipped.is_empty());
+        // whether the files were excluded before the run, skipped during it, or
+        // never recognised as source at all — in every case nothing was
+        // examined, which is not the same as clean.
+        let nothing_linted = checked == Some(0) && (discovery.has_notes() || !skipped.is_empty());
         // A `--fix` run that resolved everything has no diagnostics left to
         // report, so "No issues found." was the summary of a run that had just
         // rewritten files: true about the end state, silent about the act.
@@ -341,7 +386,7 @@ fn render_lint_core(
         }
     } else {
         let mut headline = format!("{total} issue(s) found.");
-        let mut tail: Vec<String> = Vec::with_capacity(3);
+        let mut tail: Vec<String> = Vec::with_capacity(4);
         if let Some(checked) = checked {
             tail.push(format!("{checked} file(s) linted"));
         }
@@ -349,6 +394,9 @@ fn render_lint_core(
             tail.push(clause);
         }
         if let Some(clause) = exclusion_clause(discovery) {
+            tail.push(clause);
+        }
+        if let Some(clause) = unrecognized_clause(discovery) {
             tail.push(clause);
         }
         if !tail.is_empty() {
@@ -536,12 +584,19 @@ pub fn report_lint_toon_run(run: &LintRun) -> String {
     report_lint_toon(&lint_results_for_output(run))
 }
 
-/// How many skipped files the note names before summarising the rest.
+/// How many files one skip *reason* names before the note collapses it to a
+/// count plus a sample.
 ///
-/// A run over a repo full of generated files can skip hundreds; naming every one
-/// by default would bury the finding list it is meant to qualify. `--verbose`
-/// lifts the cap, and `--format json` always carries the complete set.
-const MAX_LISTED_SKIPS: usize = 20;
+/// The bound is per reason, not over the list as a whole. A flat cap looks the
+/// same until one reason dominates: poly's own repository emitted 229
+/// consecutive `no lint rules for Rust` lines, which pushed every *other* reason
+/// past the cap — so the rare skip that actually warranted attention was exactly
+/// the one dropped. Grouping bounds each reason independently, so a bulk reason
+/// costs two lines however many files it covers and can never crowd out a
+/// one-off. Groups at or under the bound keep the per-file form: naming three
+/// files says more than counting them. `--verbose` lists every file, and
+/// `--format json` always carries the complete set.
+const MAX_NAMED_SKIPS_PER_REASON: usize = 3;
 
 /// The per-file skips carried by a results slice, as run-level [`SkippedFile`]s.
 ///
@@ -566,29 +621,71 @@ fn skipped_clause(skipped: &[SkippedFile]) -> Option<String> {
     (!skipped.is_empty()).then(|| format!("{} skipped ({})", skipped.len(), skip_reason_summary(skipped)))
 }
 
-/// Render the follow-on detail lines naming each skipped file and its reason.
+/// Render the follow-on detail lines naming what the run skipped, grouped by
+/// reason.
 ///
 /// Returns `None` when nothing was skipped. A count without names is what forced
 /// one consumer to reconstruct the expected skip set from a heuristic and parse
 /// it back out of this very summary, so the names are the point; the reason
 /// travels with each so a reader knows whether to fix the file, the config, or
-/// their expectations. Capped at `MAX_LISTED_SKIPS` entries unless `verbose`.
+/// their expectations. A reason covering more than
+/// `MAX_NAMED_SKIPS_PER_REASON` files collapses to a count and a sample;
+/// `verbose` lists every file individually.
+///
+/// There is deliberately no cap on the *number of reasons*: reasons are bounded
+/// by the languages and decline conditions actually present, each costs at most
+/// two lines, and a cap there would reintroduce the very failure this grouping
+/// removes — a rare reason silently dropped because a common one filled the
+/// quota.
 pub fn render_skip_note(skipped: &[SkippedFile], verbose: bool) -> Option<String> {
     if skipped.is_empty() {
         return None;
     }
-    let limit = if verbose { skipped.len() } else { MAX_LISTED_SKIPS };
     let mut out = String::new();
-    for entry in skipped.iter().take(limit) {
-        let _ = writeln!(out, "  skipped {}: {}", entry.path.display(), entry.reason);
-    }
-    if let Some(rest) = skipped.len().checked_sub(limit).filter(|n| *n > 0) {
-        let _ = writeln!(
-            out,
-            "  and {rest} more skipped file(s) — pass --verbose to list them, or --format json for the full set"
-        );
+    if verbose {
+        for entry in skipped {
+            let _ = writeln!(out, "  skipped {}: {}", entry.path.display(), entry.reason);
+        }
+    } else {
+        for (reason, paths) in group_skips_by_reason(skipped) {
+            if paths.len() <= MAX_NAMED_SKIPS_PER_REASON {
+                for path in paths {
+                    let _ = writeln!(out, "  skipped {}: {reason}", path.display());
+                }
+                continue;
+            }
+            let samples: Vec<String> = paths
+                .iter()
+                .take(MAX_NAMED_SKIPS_PER_REASON)
+                .map(|path| path.display().to_string())
+                .collect();
+            let _ = writeln!(out, "  skipped {} file(s): {reason}", paths.len());
+            let _ = writeln!(
+                out,
+                "    e.g. {} — pass --verbose to list them, or --format json for the full set",
+                samples.join(", ")
+            );
+        }
     }
     Some(out.if_supports_color(Stdout, |t| t.yellow()).to_string())
+}
+
+/// The skipped files bucketed by reason, most files first with ties broken by
+/// reason text.
+///
+/// The same ordering [`skip_reason_summary`] uses, so the headline clause and
+/// the detail lines beneath it name the reasons in the same sequence — a reader
+/// matching one against the other should not have to search.
+fn group_skips_by_reason(skipped: &[SkippedFile]) -> Vec<(&str, Vec<&std::path::Path>)> {
+    let mut groups: Vec<(&str, Vec<&std::path::Path>)> = Vec::new();
+    for entry in skipped {
+        match groups.iter_mut().find(|(reason, _)| *reason == entry.reason) {
+            Some((_, paths)) => paths.push(entry.path.as_path()),
+            None => groups.push((entry.reason.as_str(), vec![entry.path.as_path()])),
+        }
+    }
+    groups.sort_by(|a, b| b.1.len().cmp(&a.1.len()).then_with(|| a.0.cmp(b.0)));
+    groups
 }
 
 /// Append [`render_skip_note`] to `out`, if there is anything to say.
@@ -738,10 +835,13 @@ fn render_format_core(
         if let Some(clause) = exclusion_clause(discovery) {
             let _ = write!(tail, ", {clause}");
         }
+        if let Some(clause) = unrecognized_clause(discovery) {
+            let _ = write!(tail, ", {clause}");
+        }
         // A green "All formatted." over an empty file set is the reassuring lie
         // this feature exists to remove: when the exclude set is the reason
         // nothing was checked, say so instead.
-        let headline = if checked == 0 && (!discovery.is_empty() || !skipped.is_empty()) {
+        let headline = if checked == 0 && (discovery.has_notes() || !skipped.is_empty()) {
             "Nothing was checked."
                 .if_supports_color(Stdout, |t| t.yellow())
                 .to_string()
@@ -760,11 +860,14 @@ fn render_format_core(
         // with the same skip and exclusion accounting. Reporting drift used to
         // drop the skip clause entirely, so a run that both changed files and
         // declined others said nothing about the second half.
-        let mut qualifiers: Vec<String> = Vec::with_capacity(2);
+        let mut qualifiers: Vec<String> = Vec::with_capacity(3);
         if let Some(clause) = skipped_clause(skipped) {
             qualifiers.push(clause);
         }
         if let Some(clause) = exclusion_clause(discovery) {
+            qualifiers.push(clause);
+        }
+        if let Some(clause) = unrecognized_clause(discovery) {
             qualifiers.push(clause);
         }
         if !qualifiers.is_empty() {

@@ -44,6 +44,7 @@ fn nested_per_file_ignores_apply_only_to_their_subtree() {
         fix_generated: false,
         explicit_config: false,
         config_resolver: None,
+        externally_linted_languages: Vec::new(),
     };
     let results = poly_core::lint(&[root.to_path_buf()], &config, &opts, false, false).unwrap();
 
@@ -89,6 +90,7 @@ fn single_root_repo_reports_unsuppressed_diagnostic() {
         fix_generated: false,
         explicit_config: false,
         config_resolver: None,
+        externally_linted_languages: Vec::new(),
     };
     let results = poly_core::lint(&[root.to_path_buf()], &config, &opts, false, false).unwrap();
 

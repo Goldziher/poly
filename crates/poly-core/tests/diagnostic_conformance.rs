@@ -66,6 +66,7 @@ fn run_and_group() -> HashMap<String, Vec<Diagnostic>> {
         fix_generated: false,
         explicit_config: true,
         config_resolver: None,
+        externally_linted_languages: Vec::new(),
     };
     let results = poly_core::lint(&[conformance_fixtures_dir()], &Config::default(), &opts, false, false)
         .expect("conformance lint run must not fail");

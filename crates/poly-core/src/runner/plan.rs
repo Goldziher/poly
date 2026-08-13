@@ -44,6 +44,11 @@ pub(super) struct EnginePlan {
     /// this plan's diagnostics only — never globally — so one engine's rule code
     /// cannot remap another engine's identically-named code.
     pub(super) severity_remap: SeverityRemap,
+    /// Whether this engine carries lint rules for the planned language
+    /// ([`Engine::provides_language_lint`]), resolved once here because the
+    /// answer can cost a `PATH` probe or a rule-pack load — neither of which
+    /// belongs in the per-file loop that asks it.
+    pub(super) provides_language_lint: bool,
 }
 
 /// Whether a catalog formatter takes over the language, displacing poly's generic
@@ -88,14 +93,29 @@ pub(super) fn plan_engines(language: &Language, config: &Config, kind: Kind) -> 
             let cfg = config.engine_config(language, engine.name(), kind);
             let serialized_args = ResultCache::serialize_args(&cache_args(&cfg));
             let severity_remap = build_severity_remap(&cfg);
+            // Only a lint plan can establish lint coverage; asking a formatter
+            // would answer a question nobody posed.
+            let provides_language_lint = kind == Kind::Lint && engine.provides_language_lint(language, &cfg);
             EnginePlan {
                 engine,
                 config: cfg,
                 serialized_args,
                 severity_remap,
+                provides_language_lint,
             }
         })
         .collect()
+}
+
+/// Whether anything in this plan knows how to lint the language it was built
+/// for.
+///
+/// `false` is the state the run must not report as clean: the file is routed,
+/// the cross-cutting backends (spell-check, comment removal) still run over it,
+/// but no backend holds a single rule for the language — so a green result says
+/// nothing about the code in it.
+pub(super) fn provides_language_lint(plans: &[EnginePlan]) -> bool {
+    plans.iter().any(|plan| plan.provides_language_lint)
 }
 
 /// Compile this engine's per-rule severity overrides from its resolved config:
@@ -327,6 +347,52 @@ mod tests {
             assert!(plan.iter().any(|entry| entry.engine.name() == "oxc"));
             assert!(!plan.iter().any(|entry| entry.engine.name() == "clang-format"));
         }
+    }
+
+    /// The routing fact behind the whole defect: a `.kt` lint plan is built
+    /// entirely from cross-cutting backends, so nothing in it holds a Kotlin
+    /// rule. Pinned here because it is invisible from the outside — the plan is
+    /// non-empty, the engines run, and the file was counted as linted on that
+    /// basis alone.
+    #[test]
+    fn a_language_with_no_backend_of_its_own_has_no_lint_coverage() {
+        let config = Config::default();
+        for language in [Language::Kotlin, Language::Swift, Language::Zig, Language::Rust] {
+            let plan = plan_engines(&language, &config, Kind::Lint);
+            assert!(
+                !plan.is_empty(),
+                "{language:?} is still routed to the cross-cutting backends"
+            );
+            assert!(
+                !provides_language_lint(&plan),
+                "{language:?} has no lint rules and must not claim coverage"
+            );
+        }
+    }
+
+    /// The other side of the same check: a language with a native backend does
+    /// carry coverage, so the common path gains nothing and reports nothing.
+    #[test]
+    fn a_language_with_a_native_backend_has_lint_coverage() {
+        let config = Config::default();
+        for language in [Language::Python, Language::Toml, Language::Yaml, Language::Markdown] {
+            assert!(
+                provides_language_lint(&plan_engines(&language, &config, Kind::Lint)),
+                "{language:?} is linted by its own backend"
+            );
+        }
+    }
+
+    /// Coverage is a lint question. A format plan is not asked it, so a
+    /// formatter can never be mistaken for evidence that a file was linted.
+    #[test]
+    fn a_format_plan_never_claims_lint_coverage() {
+        let config = Config::default();
+        assert!(!provides_language_lint(&plan_engines(
+            &Language::Python,
+            &config,
+            Kind::Format
+        )));
     }
 
     #[test]

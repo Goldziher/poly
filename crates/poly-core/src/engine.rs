@@ -139,6 +139,32 @@ pub trait Engine: Send + Sync {
     /// upgrade invalidates stale cached results.
     fn version(&self) -> &str;
 
+    /// Whether this backend carries lint rules **for the language of the files
+    /// routed to it**, under `cfg`.
+    ///
+    /// Consulted only on a lint plan, and only to answer one question: did
+    /// anything in this run actually know how to lint this file? A `.kt` file
+    /// routes to the cross-cutting backends (spell-check, ast-grep, comment
+    /// removal) and to nothing that knows Kotlin, yet it was counted in
+    /// `N file(s) linted` exactly like a `.py` file ruff had examined. A
+    /// consumer with Kotlin, Swift and Zig in the tree read a green
+    /// `poly lint .` as full coverage of languages poly has no rules for —
+    /// which is the one thing this project promises never to do.
+    ///
+    /// The default answers from [`Engine::languages`]: a backend registered for
+    /// specific languages lints those languages, and one that declares none is
+    /// cross-cutting (it applies to any file, so it never establishes coverage
+    /// of a *language*). Backends whose answer depends on the host or the
+    /// config — a native tool that must be installed, a rule engine that needs
+    /// rules — override this; a `true` here is a claim the run relies on, so it
+    /// must not be made speculatively.
+    ///
+    /// `language` is the language being planned, since a cross-cutting backend
+    /// can still hold rules for one specific language.
+    fn provides_language_lint(&self, _language: &Language, _cfg: &EngineConfig) -> bool {
+        !self.languages().is_empty()
+    }
+
     /// Why this backend declines to process `src`, if it does.
     ///
     /// Some content is routed to a backend that cannot safely handle it — YAML

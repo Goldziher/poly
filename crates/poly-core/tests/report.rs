@@ -433,6 +433,7 @@ fn sample_discovery() -> DiscoveryReport {
                 ..ExcludedRule::default()
             },
         ],
+        ..DiscoveryReport::default()
     }
 }
 
@@ -495,6 +496,7 @@ fn format_summary_explains_a_run_that_checked_nothing() {
                 directories: 0,
                 ..ExcludedRule::default()
             }],
+            ..DiscoveryReport::default()
         },
     };
 
@@ -669,30 +671,100 @@ fn format_summary_reports_skips_alongside_changed_files() {
     assert!(text.contains("skipped gen.py"), "got: {text}");
 }
 
-/// The listing is bounded by default so a repo with hundreds of generated files
-/// does not bury its findings, and `--verbose` lifts the cap for someone who
-/// wants the whole set without switching to JSON.
-#[test]
-fn skip_listing_is_capped_by_default_and_uncapped_under_verbose() {
-    owo_colors::set_override(false);
-    let skipped: Vec<SkippedFile> = (0..25)
+/// `n` skips sharing one reason, named `<stem>0` … `<stem>n-1`.
+fn skips_with(stem: &str, reason: &str, count: usize) -> Vec<SkippedFile> {
+    (0..count)
         .map(|i| SkippedFile {
-            path: PathBuf::from(format!("gen{i}.py")),
-            reason: "hash-stamped generated file".to_string(),
+            path: PathBuf::from(format!("{stem}{i}.py")),
+            reason: reason.to_string(),
         })
-        .collect();
+        .collect()
+}
 
-    let capped = report::render_skip_note(&skipped, false).expect("a note for 25 skips");
-    assert!(capped.contains("gen0.py"), "got: {capped}");
-    assert!(
-        !capped.contains("gen24.py"),
-        "the default view is capped, got: {capped}"
+/// A reason covering more files than the note names collapses to a count plus a
+/// sample, in exactly two lines — so a repo full of one kind of skip does not
+/// bury the findings the note is meant to qualify.
+#[test]
+fn a_bulk_skip_reason_collapses_to_a_count_and_a_sample() {
+    owo_colors::set_override(false);
+    let skipped = skips_with("gen", "hash-stamped generated file", 25);
+
+    let note = report::render_skip_note(&skipped, false).expect("a note for 25 skips");
+
+    assert_eq!(
+        note,
+        concat!(
+            "  skipped 25 file(s): hash-stamped generated file\n",
+            "    e.g. gen0.py, gen1.py, gen2.py — pass --verbose to list them, ",
+            "or --format json for the full set\n"
+        )
     );
-    assert!(capped.contains("and 5 more skipped file(s)"), "got: {capped}");
+}
+
+/// The reason grouping exists for this case. 25 files sharing one reason used to
+/// consume the whole flat cap, so the single skip that named a different reason
+/// — the one worth reading — was the line dropped. Each reason is now bounded on
+/// its own, and the rare one is named in full.
+#[test]
+fn a_bulk_reason_cannot_crowd_out_a_one_off() {
+    owo_colors::set_override(false);
+    let mut skipped = skips_with("gen", "hash-stamped generated file", 25);
+    skipped.push(SkippedFile {
+        path: PathBuf::from("packages/csharp/App.csproj"),
+        reason: poly_core::runner::NO_ENGINE_SKIP.to_string(),
+    });
+
+    let note = report::render_skip_note(&skipped, false).expect("a note for 26 skips");
+
+    assert_eq!(
+        note,
+        concat!(
+            "  skipped 25 file(s): hash-stamped generated file\n",
+            "    e.g. gen0.py, gen1.py, gen2.py — pass --verbose to list them, ",
+            "or --format json for the full set\n",
+            "  skipped packages/csharp/App.csproj: no matching engine for this file type\n"
+        )
+    );
+}
+
+/// A reason covering few enough files keeps naming them one by one: three paths
+/// tell a reader more than the number three does.
+#[test]
+fn a_small_reason_group_still_names_every_file() {
+    owo_colors::set_override(false);
+    let skipped = skips_with("gen", "hash-stamped generated file", 3);
+
+    let note = report::render_skip_note(&skipped, false).expect("a note for 3 skips");
+
+    assert_eq!(
+        note,
+        concat!(
+            "  skipped gen0.py: hash-stamped generated file\n",
+            "  skipped gen1.py: hash-stamped generated file\n",
+            "  skipped gen2.py: hash-stamped generated file\n"
+        )
+    );
+}
+
+/// `--verbose` is the escape hatch from the grouping: every file, one line each,
+/// for someone who wants the whole set without switching to JSON.
+#[test]
+fn verbose_lists_every_skipped_file_individually() {
+    owo_colors::set_override(false);
+    let skipped = skips_with("gen", "hash-stamped generated file", 25);
 
     let full = report::render_skip_note(&skipped, true).expect("a note for 25 skips");
-    assert!(full.contains("gen24.py"), "--verbose must list them all, got: {full}");
-    assert!(!full.contains("more skipped file(s)"), "got: {full}");
+
+    assert_eq!(full.lines().count(), 25, "one line per file, got:\n{full}");
+    assert_eq!(
+        full.lines().next(),
+        Some("  skipped gen0.py: hash-stamped generated file")
+    );
+    assert_eq!(
+        full.lines().last(),
+        Some("  skipped gen24.py: hash-stamped generated file")
+    );
+    assert!(!full.contains("e.g."), "verbose does not sample, got:\n{full}");
 }
 
 /// Nothing skipped, nothing said.

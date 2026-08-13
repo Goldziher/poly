@@ -21,6 +21,7 @@
 //! caller can serialize [`WorkspaceLintOutcome`] directly instead.
 
 use std::io::Write as _;
+use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use owo_colors::{OwoColorize as _, Stream};
@@ -122,28 +123,9 @@ impl WorkspaceLintOutcome {
 /// Returns `Err` if the project root or running binary cannot be resolved, the
 /// hooks config fails to lower, or the cache/runner setup fails.
 pub fn run_workspace_lint(config: &PolyConfig, opts: &WorkspaceLintOptions) -> Result<WorkspaceLintOutcome> {
-    if workspace_lint_disabled(&config.lint) {
+    let Some((root, mut spec)) = planned_workspace_stage(config)? else {
         return Ok(WorkspaceLintOutcome::skipped());
-    }
-
-    let root = poly_hooks::git::get_root()
-        .or_else(|_| std::env::current_dir())
-        .context("failed to resolve the project root")?;
-    let poly_bin = std::env::current_exe().context("failed to resolve the running poly binary")?;
-
-    let mut spec = lower::lower_stage(
-        &config.hooks,
-        &poly_bin,
-        poly_hooks::Stage::PreCommit,
-        &[],
-        &config.cache.results.hooks,
-        &root,
-        &config.tools,
-    )?;
-    retain_workspace_hooks(&mut spec);
-    if spec.hooks.is_empty() {
-        return Ok(WorkspaceLintOutcome::skipped());
-    }
+    };
     if opts.fix {
         lower::apply_cargo_fix_mode(&mut spec);
     }
@@ -172,6 +154,55 @@ pub fn run_workspace_lint(config: &PolyConfig, opts: &WorkspaceLintOptions) -> R
     };
     let outcome = poly_hooks::run(request)?;
     Ok(WorkspaceLintOutcome::from_hook_outcome(&outcome))
+}
+
+/// The ids of the whole-project tools this phase **would** run, without running
+/// any of them. Empty when the phase would not run at all.
+///
+/// `poly lint` renders its per-file report before the whole-project phase has
+/// executed, yet the per-file tier has to know which languages that phase covers
+/// *first* — otherwise it reports `no lint rules for Rust` against the very
+/// files `cargo clippy` is about to lint, and one run contradicts itself. This
+/// answers from the same lowering and the same retain filter
+/// [`run_workspace_lint`] uses, so the prediction and the run cannot drift into
+/// disagreeing about which tools are in play.
+///
+/// # Errors
+///
+/// Returns `Err` for the same reasons [`run_workspace_lint`] does: the project
+/// root or running binary cannot be resolved, or the hooks config fails to lower.
+pub fn planned_workspace_tool_ids(config: &PolyConfig) -> Result<Vec<String>> {
+    Ok(planned_workspace_stage(config)?
+        .map(|(_, spec)| spec.hooks.into_iter().map(|hook| hook.id).collect())
+        .unwrap_or_default())
+}
+
+/// Lower the `pre-commit` stage and reduce it to the whole-project tools that
+/// would run, paired with the project root they run against.
+///
+/// `None` means the phase does not run: `[lint] workspace = false`, or a repo
+/// that configures no whole-project tools at all. The root is resolved only once
+/// past the disabled check, so a repo that has turned the phase off never pays
+/// for the `git rev-parse` that finding it costs.
+fn planned_workspace_stage(config: &PolyConfig) -> Result<Option<(PathBuf, poly_hooks::StageSpec)>> {
+    if workspace_lint_disabled(&config.lint) {
+        return Ok(None);
+    }
+    let root = poly_hooks::git::get_root()
+        .or_else(|_| std::env::current_dir())
+        .context("failed to resolve the project root")?;
+    let poly_bin = std::env::current_exe().context("failed to resolve the running poly binary")?;
+    let mut spec = lower::lower_stage(
+        &config.hooks,
+        &poly_bin,
+        poly_hooks::Stage::PreCommit,
+        &[],
+        &config.cache.results.hooks,
+        &root,
+        &config.tools,
+    )?;
+    retain_workspace_hooks(&mut spec);
+    Ok((!spec.hooks.is_empty()).then_some((root, spec)))
 }
 
 /// Force colour from the captured whole-project tools by setting the standard

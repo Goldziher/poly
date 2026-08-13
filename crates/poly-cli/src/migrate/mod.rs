@@ -347,6 +347,7 @@ fn verify(dir: &Path) -> Result<()> {
         fix_generated: false,
         explicit_config: false,
         config_resolver: None,
+        externally_linted_languages: Vec::new(),
     };
     let paths = [dir.to_path_buf()];
     poly_core::lint(&paths, &config, &options, false, false).context("verify: poly lint failed")?;

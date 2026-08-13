@@ -67,6 +67,7 @@ fn bench_runner(c: &mut Criterion) {
         fix_generated: false,
         explicit_config: true,
         config_resolver: None,
+        externally_linted_languages: Vec::new(),
     };
 
     let mut group = c.benchmark_group("runner_e2e");

@@ -253,6 +253,147 @@ fn clean_run_gains_no_skip_narration() {
     assert!(!text.contains("no matching engine"), "got:\n{text}");
 }
 
+/// A repo whose languages poly routes but holds no lint rules for, beside one
+/// it does lint. `poly lint .` here reported `No issues found. (2 file(s)
+/// linted)` and exited 0 with nothing in the process knowing Kotlin.
+fn no_rules_repo() -> TempDir {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let write = |name: &str, body: &str| std::fs::write(dir.path().join(name), body).expect("write fixture");
+    write("a.kt", "fun main() {}\n");
+    write("d.py", "x = 1\n");
+    dir
+}
+
+/// The reported defect end to end: the Kotlin file leaves the linted count and
+/// arrives in the summary with the language named.
+#[test]
+fn language_with_no_lint_rules_leaves_the_linted_count_and_is_named() {
+    let dir = no_rules_repo();
+    let output = poly(dir.path(), &["lint", "--no-workspace", "--no-cache", "."]);
+    let text = combined(&output);
+
+    assert!(
+        text.contains("1 file(s) linted, 1 skipped (no lint rules for Kotlin)"),
+        "the count must exclude the language nothing lints, got:\n{text}"
+    );
+    assert!(
+        !text.contains("2 file(s) linted"),
+        "counting the Kotlin file is the defect itself, got:\n{text}"
+    );
+    assert!(text.contains("a.kt: no lint rules for Kotlin"), "got:\n{text}");
+}
+
+/// A language with no rules is ordinary coverage, not a failure: the default
+/// verdict stays 0 and the strictness flags are how a consumer opts into caring.
+#[test]
+fn language_with_no_lint_rules_keeps_exit_zero_by_default() {
+    let dir = no_rules_repo();
+    let output = poly(dir.path(), &["lint", "--no-workspace", "--no-cache", "."]);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "a language poly has no rules for must not fail a run: {}",
+        combined(&output)
+    );
+}
+
+/// The reporter's actual ask: a gate that fails when poly examined nothing.
+/// `--deny-skips` must fire on a no-rules language and name it — this is the
+/// whole reason the file has to be in the skipped set rather than merely
+/// mentioned somewhere.
+#[test]
+fn deny_skips_fails_on_a_language_with_no_lint_rules() {
+    let dir = no_rules_repo();
+    let output = poly(
+        dir.path(),
+        &["lint", "--no-workspace", "--no-cache", "--deny-skips", "."],
+    );
+    let text = combined(&output);
+
+    assert_eq!(output.status.code(), Some(2), "got:\n{text}");
+    assert!(
+        text.contains("error: skipped") && text.contains("a.kt: no lint rules for Kotlin"),
+        "the failure must name the file and the reason, got:\n{text}"
+    );
+    assert!(
+        text.contains("refusing to report success for 1 skipped file(s)"),
+        "got:\n{text}"
+    );
+}
+
+/// `--max-skips` budgets the same set, so a repo with a known set of unlintable
+/// languages can hold the number steady instead of letting it grow unnoticed.
+#[test]
+fn max_skips_budgets_languages_with_no_lint_rules() {
+    let dir = no_rules_repo();
+
+    let at_limit = poly(
+        dir.path(),
+        &["lint", "--no-workspace", "--no-cache", "--max-skips", "1", "."],
+    );
+    assert_eq!(at_limit.status.code(), Some(0), "got:\n{}", combined(&at_limit));
+
+    std::fs::write(dir.path().join("b.swift"), "let x = 1\n").expect("write b.swift");
+    let over_limit = poly(
+        dir.path(),
+        &["lint", "--no-workspace", "--no-cache", "--max-skips", "1", "."],
+    );
+    let text = combined(&over_limit);
+    assert_eq!(over_limit.status.code(), Some(2), "got:\n{text}");
+    assert!(text.contains("no lint rules for Swift"), "got:\n{text}");
+}
+
+/// The machine-readable path: the reason travels in the JSON document, so a
+/// consumer can assert on the uncovered set structurally.
+#[test]
+fn json_carries_the_no_lint_rules_reason() {
+    let dir = no_rules_repo();
+    let output = poly(
+        dir.path(),
+        &["lint", "--no-workspace", "--no-cache", "--format", "json", "."],
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let value: serde_json::Value = serde_json::from_str(&stdout).expect("stdout stays valid JSON");
+    let entries = value.as_array().expect("top level stays an array");
+    let entry = entries
+        .iter()
+        .find(|entry| entry["path"].as_str().is_some_and(|p| p.ends_with("a.kt")))
+        .unwrap_or_else(|| panic!("the uncovered file must be in the document: {stdout}"));
+    assert_eq!(entry["skipped"].as_str(), Some("no lint rules for Kotlin"));
+}
+
+/// A walked file poly cannot identify at all is counted and named, but it is not
+/// a skip: itemising every snapshot, lockfile and image a walk passes over would
+/// fire `--deny-skips` in every repository and bury the skips that mean
+/// something.
+#[test]
+fn unknown_extension_in_a_walk_is_counted_not_skipped() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(dir.path().join("c.xyz"), "zzz\n").expect("write c.xyz");
+    std::fs::write(dir.path().join("d.py"), "x = 1\n").expect("write d.py");
+
+    let output = poly(
+        dir.path(),
+        &["lint", "--no-workspace", "--no-cache", "--deny-skips", "."],
+    );
+    let text = combined(&output);
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "an unreadable file type in a walk is not a skip: {text}"
+    );
+    assert!(
+        text.contains("1 file(s) linted, 1 file(s) of unrecognized type not checked"),
+        "got:\n{text}"
+    );
+    assert!(
+        text.contains("were not identified as any language and no engine saw them"),
+        "got:\n{text}"
+    );
+    assert!(text.contains("c.xyz"), "the file must be named, got:\n{text}");
+}
+
 /// A path the exclude set dropped is already explained by the discovery note.
 /// Reporting it a second time as "no matching engine" would be a wrong reason
 /// for a right outcome, so the two are told apart.

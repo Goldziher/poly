@@ -1,7 +1,7 @@
 //! Accounting for files a run did **not** inspect.
 //!
-//! Two distinct things end up here, because a consumer cannot tell them apart
-//! from a summary that reports neither:
+//! Three distinct things end up here, because a consumer cannot tell them apart
+//! from a summary that reports none of them:
 //!
 //! - a backend routed the file and then declined it (Go-templated YAML, a
 //!   hash-stamped generated file) — surfaced by [`crate::engine::Engine::skip_reason`];
@@ -10,6 +10,12 @@
 //!   file(s) linted)` and exited 0: nothing was examined, and nothing said so.
 //!   The mixed case is the dangerous one — five explicit paths in, four linted
 //!   out, with no indication of which was dropped.
+//! - a file whose language **no backend in the run holds lint rules for**
+//!   ([`SkippedFile::no_lint_rules`]). This one *was* routed — the cross-cutting
+//!   backends run over it and can still report findings — so it looked exactly
+//!   like a checked file in the summary. `poly lint .` over a Kotlin/Swift/Zig
+//!   repo counted every file as linted and exited 0 with nothing holding a
+//!   Kotlin, Swift or Zig rule.
 //!
 //! Only *explicit* paths are accounted for. A directory walk legitimately
 //! contains files no engine handles; narrating those would make every run noisy
@@ -25,6 +31,7 @@ use serde::Serialize;
 
 use super::plan::PlanMap;
 use crate::discover::{DiscoveredFile, discover_with};
+use crate::language::Language;
 use crate::resolve::ConfigSet;
 
 /// Reason recorded for a path the caller named that no backend covers.
@@ -32,6 +39,17 @@ use crate::resolve::ConfigSet;
 /// Kept as one constant so the human summary, the JSON payload, and the
 /// `--deny-skips` failure all quote the same words.
 pub const NO_ENGINE_SKIP: &str = "no matching engine for this file type";
+
+/// Opening words of the reason recorded for a file whose language nothing in the
+/// run has lint rules for; completed with the language name.
+///
+/// Deliberately not [`NO_ENGINE_SKIP`]: "no matching engine for this file type"
+/// is false here — an engine *did* match, poly simply has no rules for the
+/// language, which is a different thing to act on. One says "poly does not know
+/// this file type"; the other says "poly knows this language and has nothing to
+/// say about it", and the fix for the second is a linter for that language
+/// (`[tools.<name>]`), not a rename or an exclude.
+pub const NO_LINT_RULES_SKIP_PREFIX: &str = "no lint rules for";
 
 /// One file the run did not inspect, and why.
 ///
@@ -54,6 +72,13 @@ impl SkippedFile {
             path: path.to_path_buf(),
             reason: NO_ENGINE_SKIP.to_owned(),
         }
+    }
+
+    /// The reason text for a file whose language nothing in the run lints,
+    /// naming the language so the reader knows what is missing rather than only
+    /// that something is.
+    pub(super) fn no_lint_rules_reason(language: &Language) -> String {
+        format!("{NO_LINT_RULES_SKIP_PREFIX} {}", language.display_name())
     }
 }
 
@@ -142,5 +167,30 @@ mod tests {
         let skipped = SkippedFile::no_engine(Path::new("App.csproj"));
         assert_eq!(skipped.path, PathBuf::from("App.csproj"));
         assert_eq!(skipped.reason, NO_ENGINE_SKIP);
+    }
+
+    /// The reason names the language, and names it the way a person writes it —
+    /// `no lint rules for Kotlin` is something a reader can act on, where a bare
+    /// `skipped` sends them to the source to find out what happened.
+    #[test]
+    fn no_lint_rules_reason_names_the_language() {
+        assert_eq!(
+            SkippedFile::no_lint_rules_reason(&Language::Kotlin),
+            "no lint rules for Kotlin"
+        );
+        assert_eq!(
+            SkippedFile::no_lint_rules_reason(&Language::Other("elixir".to_owned())),
+            "no lint rules for elixir",
+            "a tier-2 language is known only by its grammar id"
+        );
+    }
+
+    /// The two reasons must stay distinguishable: "no matching engine for this
+    /// file type" would be false for a routed language, and a consumer grepping
+    /// for one must not silently catch the other.
+    #[test]
+    fn the_two_uninspected_reasons_are_not_the_same_text() {
+        assert!(!SkippedFile::no_lint_rules_reason(&Language::Kotlin).contains(NO_ENGINE_SKIP));
+        assert!(!NO_ENGINE_SKIP.contains(NO_LINT_RULES_SKIP_PREFIX));
     }
 }
