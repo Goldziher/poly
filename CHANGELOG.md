@@ -539,11 +539,12 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   verbatim into eight sibling repositories, so published examples are treated here as a defect
   surface rather than prose.
 
-- **The Homebrew publish step no longer exits 0 when `HOMEBREW_TOKEN` is unset.** It silently
-  skipped the tap update, so the tap sat at `0.17.0` while the project shipped `0.19.7` and every
-  release reported success regardless — `brew install` served a build predating a set of
-  content-corrupting fixes. The step now fails the job with `HOMEBREW_TOKEN is not set`, so a
-  missing secret blocks the release instead of quietly leaving Homebrew behind.
+- **The Homebrew publish step no longer exits 0 when `HOMEBREW_TOKEN` is unset.** It skipped the
+  tap update and reported success, so an unset secret would have left `brew install` serving the
+  previous release indefinitely with nothing in the run to say so. The tap has in fact tracked
+  every release, so no published version was affected — this closes a latent hazard rather than a
+  live one. The step now fails the job with `HOMEBREW_TOKEN is not set`, so a missing secret
+  blocks the release instead of quietly leaving Homebrew behind.
 
 - Adapted the OXC backend to two upstream API changes in oxc `c42d639`:
   - `oxc_formatter::format` lost its trailing session argument; poly now calls the four-argument
