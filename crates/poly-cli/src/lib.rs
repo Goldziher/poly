@@ -238,12 +238,14 @@ pub fn run_lint(args: LintArgs) -> ExitCode {
             println!("{}", report::report_lint_json_run(&run));
             report::eprint_discovery_note(&run.discovery);
             report::eprint_skip_note(&run.skipped, common.verbose);
+            report::eprint_lint_errors(&run.errors);
             results.iter().map(|r| r.diagnostics.len()).sum()
         }
         OutputFormat::Toon => {
             println!("{}", report::report_lint_toon_run(&run));
             report::eprint_discovery_note(&run.discovery);
             report::eprint_skip_note(&run.skipped, common.verbose);
+            report::eprint_lint_errors(&run.errors);
             results.iter().map(|r| r.diagnostics.len()).sum()
         }
     };
@@ -280,7 +282,11 @@ pub fn run_lint(args: LintArgs) -> ExitCode {
         }
     };
 
-    if skips_over_budget {
+    // A file whose engine failed was not checked, so it belongs with the other
+    // coverage failures in 2 — never in 1, which callers treat as "findings to
+    // fix" and, under `--fix`, as success. The findings that *were* produced are
+    // still reported above; only the verdict changes.
+    if skips_over_budget || !run.errors.is_empty() {
         ExitCode::from(EXIT_NOT_VERIFIED)
     } else if lint_has_errors(results) || !workspace_ok {
         ExitCode::from(1)
@@ -521,6 +527,7 @@ mod tests {
             fix_withheld_generated: false,
             fixed: 0,
             skipped: None,
+            error: None,
             debug: None,
         }
     }

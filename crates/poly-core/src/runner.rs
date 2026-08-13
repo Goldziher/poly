@@ -119,6 +119,15 @@ pub struct LintResult {
     /// scraping the human summary.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub skipped: Option<String>,
+    /// The engine failure that stopped this file being linted, when one did.
+    ///
+    /// Deliberately a separate field from [`LintResult::skipped`]: a skip is poly
+    /// correctly declining a file, an error is poly failing on one it accepted,
+    /// and a consumer that cannot tell them apart is back to trusting a run that
+    /// checked less than it claimed. Populated on the synthetic entries the
+    /// JSON/TOON renderers append for [`LintRun::errors`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
     /// Debug data (cache hit/miss + timing), present only under `--debug`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub debug: Option<RunDebug>,
@@ -157,6 +166,18 @@ pub struct FormatResult {
 pub struct LintRun {
     /// Per-file results, one per file that still has at least one diagnostic.
     pub results: Vec<LintResult>,
+    /// Files whose lint *failed* — an unreadable file, a backend that returned
+    /// an error, a bad engine config.
+    ///
+    /// These used to be logged at `warn` and dropped from the results, so a file
+    /// the run had failed to process simply vanished from it and `poly lint`
+    /// reported `No issues found.` and exited 0. A backend that errored has not
+    /// checked the file, and saying otherwise is a gate that passes without
+    /// checking — the same defect [`FormatRun::errors`] exists to prevent.
+    ///
+    /// Kept apart from [`LintRun::skipped`] on purpose: a skip is poly declining
+    /// a file it does not handle, an error is poly failing on a file it took on.
+    pub errors: Vec<LintError>,
     /// Files the per-file tier actually read and linted.
     pub checked: usize,
     /// Files the run did not inspect, each with its reason — explicitly named
@@ -198,6 +219,20 @@ pub struct FormatRun {
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct FormatError {
     /// File that could not be formatted.
+    pub path: PathBuf,
+    /// The engine's error, already flattened to a message.
+    pub message: String,
+}
+
+/// One file the linter could not process, and why.
+///
+/// The lint counterpart of [`FormatError`], kept as its own type so each side
+/// documents the failure in its own terms and neither is silently reshaped by a
+/// change to the other.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct LintError {
+    /// File that could not be linted.
     pub path: PathBuf,
     /// The engine's error, already flattened to a message.
     pub message: String,
@@ -258,9 +293,11 @@ pub fn lint_run(
     // were genuinely linted rather than how many were handed to the pipeline.
     // Negligible next to reading and parsing the file it counts.
     let checked = std::sync::atomic::AtomicUsize::new(0);
-    let mut results: Vec<LintResult> = files
+    // An engine error is carried, not swallowed: dropping the file here is what
+    // let `poly lint` report success on a file it had failed to process.
+    let (oks, errs): (Vec<_>, Vec<_>) = files
         .par_iter()
-        .filter_map(|f| {
+        .map(|f| {
             match lint_one(
                 f,
                 &plans,
@@ -274,26 +311,36 @@ pub fn lint_run(
             ) {
                 Ok(result) => {
                     checked.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    Some(result)
+                    Ok(result)
                 }
-                Err(error) => {
-                    tracing::warn!(path = %f.path.display(), "lint failed: {error:#}");
-                    None
-                }
+                Err(error) => Err(LintError {
+                    path: f.path.clone(),
+                    message: format!("{error:#}"),
+                }),
             }
         })
+        .partition(Result::is_ok);
+    let mut results: Vec<LintResult> = oks
+        .into_iter()
+        .map(Result::unwrap)
         // A fully fixed file has no diagnostics left, but dropping it here is
         // what made `--fix` silent about the files it rewrote: keep it so the
         // summary — and the JSON payload — can report the fixes.
         .filter(|r| !r.diagnostics.is_empty() || r.fixed > 0)
         .collect();
+    let mut errors: Vec<LintError> = errs.into_iter().map(Result::unwrap_err).collect();
     results.sort_by(|a, b| a.path.cmp(&b.path));
+    errors.sort_by(|a, b| a.path.cmp(&b.path));
+    for error in &errors {
+        tracing::warn!(path = %error.path.display(), "lint failed: {}", error.message);
+    }
     let skipped = unmatched_explicit_paths(paths, &files, &plans, &configs, &opts.exclude, opts.force_exclude)
         .iter()
         .map(|path| SkippedFile::no_engine(path))
         .collect();
     Ok(LintRun {
         results,
+        errors,
         checked: checked.into_inner(),
         skipped,
         discovery,
@@ -458,6 +505,7 @@ fn lint_one(
         fix_withheld_generated: generated,
         fixed,
         skipped: None,
+        error: None,
         debug,
     })
 }

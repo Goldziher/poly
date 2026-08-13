@@ -29,7 +29,7 @@ use owo_colors::{OwoColorize, Stream::Stderr, Stream::Stdout};
 
 use crate::discover::DiscoveryReport;
 use crate::engine::Severity;
-use crate::runner::{FormatError, FormatResult, FormatRun, LintResult, LintRun, RunDebug, SkippedFile};
+use crate::runner::{FormatError, FormatResult, FormatRun, LintError, LintResult, LintRun, RunDebug, SkippedFile};
 
 /// How much detail the human-oriented (`pretty`) renderers emit. `Copy` so it
 /// threads cheaply through the renderers.
@@ -211,14 +211,21 @@ fn strip_ansi(text: &str) -> String {
 /// The summary is unqualified: it can say "No issues found." but not how much was
 /// looked at. Prefer [`render_lint_pretty_run`], which does both.
 pub fn render_lint_pretty(results: &[LintResult], verbosity: Verbosity) -> (String, usize) {
-    render_lint_core(results, None, &[], &DiscoveryReport::default(), verbosity)
+    render_lint_core(results, None, &[], &[], &DiscoveryReport::default(), verbosity)
 }
 
 /// [`render_lint_pretty`] over a whole [`LintRun`], so the summary can state how
-/// many files were linted, which ones it skipped, and what discovery excluded
-/// before them.
+/// many files were linted, which ones it skipped, which ones failed, and what
+/// discovery excluded before them.
 pub fn render_lint_pretty_run(run: &LintRun, verbosity: Verbosity) -> (String, usize) {
-    render_lint_core(&run.results, Some(run.checked), &run.skipped, &run.discovery, verbosity)
+    render_lint_core(
+        &run.results,
+        Some(run.checked),
+        &run.skipped,
+        &run.errors,
+        &run.discovery,
+        verbosity,
+    )
 }
 
 /// Shared body of the lint renderers. `checked` is `None` when the caller has no
@@ -227,6 +234,7 @@ fn render_lint_core(
     results: &[LintResult],
     checked: Option<usize>,
     skipped: &[SkippedFile],
+    errors: &[LintError],
     discovery: &DiscoveryReport,
     verbosity: Verbosity,
 ) -> (String, usize) {
@@ -305,17 +313,31 @@ fn render_lint_core(
         // A `--fix` run that resolved everything has no diagnostics left to
         // report, so "No issues found." was the summary of a run that had just
         // rewritten files: true about the end state, silent about the act.
-        let headline = match (nothing_linted, fixed_clause(results)) {
-            (true, _) => "Nothing was linted."
+        let fixed = fixed_clause(results);
+        // A file whose engine errored was accepted for linting and then not
+        // linted, so nothing here may read as a verdict on the repo — least of
+        // all `Fixed N issue(s)`, which is true about what the run did and silent
+        // about what it failed to do. The fix count still gets its own line
+        // below, where it cannot stand in for a pass.
+        let headline = match (!errors.is_empty(), nothing_linted, &fixed) {
+            (true, _, _) => "Lint did not complete."
+                .if_supports_color(Stdout, |t| t.red())
+                .to_string(),
+            (false, true, _) => "Nothing was linted."
                 .if_supports_color(Stdout, |t| t.yellow())
                 .to_string(),
-            (false, Some(fixed)) => fixed.if_supports_color(Stdout, |t| t.green()).to_string(),
-            (false, None) => "No issues found.".if_supports_color(Stdout, |t| t.green()).to_string(),
+            (false, false, Some(fixed)) => fixed.if_supports_color(Stdout, |t| t.green()).to_string(),
+            (false, false, None) => "No issues found.".if_supports_color(Stdout, |t| t.green()).to_string(),
         };
         if tail.is_empty() {
             let _ = writeln!(out, "{headline}");
         } else {
             let _ = writeln!(out, "{headline} ({})", tail.join(", "));
+        }
+        if !errors.is_empty()
+            && let Some(fixed) = &fixed
+        {
+            let _ = writeln!(out, "{}", fixed.if_supports_color(Stdout, |t| t.yellow()));
         }
     } else {
         let mut headline = format!("{total} issue(s) found.");
@@ -334,9 +356,15 @@ fn render_lint_core(
         }
         let _ = writeln!(out, "\n{}", headline.if_supports_color(Stdout, |t| t.red()));
         // A partially fixed run reports both halves: what it changed under the
-        // caller, and what it left for them.
+        // caller, and what it left for them. Never green once a file errored —
+        // the run is incomplete whatever it managed to fix.
         if let Some(fixed) = fixed_clause(results) {
-            let _ = writeln!(out, "{}", fixed.if_supports_color(Stdout, |t| t.green()));
+            let colored = if errors.is_empty() {
+                fixed.if_supports_color(Stdout, |t| t.green()).to_string()
+            } else {
+                fixed.if_supports_color(Stdout, |t| t.yellow()).to_string()
+            };
+            let _ = writeln!(out, "{colored}");
         }
         if fixable > 0 {
             let _ = writeln!(
@@ -363,7 +391,53 @@ fn render_lint_core(
                 .if_supports_color(Stdout, |t| t.yellow())
         );
     }
+    // Last, next to the exit code it drives: a file the linter could not process
+    // was not checked, and the run must name it rather than leave it out.
+    out.push_str(&render_lint_errors(errors));
     (out, total)
+}
+
+/// Render the files the linter could not process, naming each path.
+///
+/// A file whose engine errored has not been checked, so it must be visible and it
+/// must not be folded into the skipped set — a skip is poly correctly declining a
+/// file, an error is poly failing on one. The caller exits 2 on these, the same
+/// code `poly fmt` uses for a formatter failure, and distinct from exit 1
+/// ("findings remain").
+pub fn render_lint_errors(errors: &[LintError]) -> String {
+    if errors.is_empty() {
+        return String::new();
+    }
+    let mut out = String::new();
+    for error in errors {
+        let _ = writeln!(
+            out,
+            "{} {}: {}",
+            "error".if_supports_color(Stdout, |t| t.red()),
+            error.path.display(),
+            error.message
+        );
+    }
+    let _ = writeln!(
+        out,
+        "{}",
+        format!("{} file(s) could not be linted and were NOT checked.", errors.len())
+            .if_supports_color(Stdout, |t| t.red())
+    );
+    out
+}
+
+/// Print the lint error block to **stderr**, for the `json`/`toon` formats.
+///
+/// Those formats carry the failures structurally on stdout; this is the
+/// human-visible echo, on the stream that cannot corrupt the document — the same
+/// split [`eprint_skip_note`] uses.
+pub fn eprint_lint_errors(errors: &[LintError]) {
+    if errors.is_empty() {
+        return;
+    }
+    let plain = strip_ansi(&render_lint_errors(errors));
+    eprint!("{}", plain.if_supports_color(Stderr, |t| t.red()));
 }
 
 /// Print the human-oriented lint report to stdout. Returns the total
@@ -396,43 +470,55 @@ pub fn report_lint_toon(results: &[LintResult]) -> String {
     serde_toon::to_string(&results).unwrap_or_else(|_| report_lint_json(results))
 }
 
-/// The lint results of a run, with one entry appended per file the run skipped.
+/// The lint results of a run, with one entry appended per file the run skipped
+/// and per file whose engine failed.
 ///
-/// A skipped file produces no diagnostics, so it is filtered out of
+/// Neither produces diagnostics, so both are filtered out of
 /// [`LintRun::results`] and used to be invisible to a machine consumer — which
 /// left `--format json` unable to answer "what did you not look at?" and forced
 /// one team to reconstruct the set from a heuristic and scrape the human
-/// summary for it. The appended entries carry `path` and `skipped` with an empty
-/// `diagnostics` list, so the document stays the same array of per-file records
-/// and existing consumers are unaffected.
-fn lint_results_with_skips(run: &LintRun) -> Vec<LintResult> {
+/// summary for it. The appended entries carry `path` plus `skipped` *or*
+/// `error` — never both, since a file poly declined and a file poly failed on are
+/// different outcomes — with an empty `diagnostics` list, so the document stays
+/// the same array of per-file records and existing consumers are unaffected.
+fn lint_results_for_output(run: &LintRun) -> Vec<LintResult> {
     let mut results = run.results.clone();
-    let known: std::collections::BTreeSet<&std::path::Path> = run.results.iter().map(|r| r.path.as_path()).collect();
-    results.extend(
-        run.skipped
-            .iter()
-            .filter(|entry| !known.contains(entry.path.as_path()))
-            .map(|entry| LintResult {
-                path: entry.path.clone(),
-                diagnostics: Vec::new(),
-                fix_withheld_generated: false,
-                fixed: 0,
-                skipped: Some(entry.reason.clone()),
-                debug: None,
-            }),
-    );
+    let mut known: std::collections::BTreeSet<&std::path::Path> =
+        run.results.iter().map(|r| r.path.as_path()).collect();
+    let synthetic = |path: &std::path::Path, skipped: Option<String>, error: Option<String>| LintResult {
+        path: path.to_path_buf(),
+        diagnostics: Vec::new(),
+        fix_withheld_generated: false,
+        fixed: 0,
+        skipped,
+        error,
+        debug: None,
+    };
+    // Errors first: a file that failed is reported as failed even if some other
+    // stage also listed it, never downgraded to a skip.
+    for error in &run.errors {
+        if known.insert(error.path.as_path()) {
+            results.push(synthetic(&error.path, None, Some(error.message.clone())));
+        }
+    }
+    for entry in &run.skipped {
+        if known.insert(entry.path.as_path()) {
+            results.push(synthetic(&entry.path, Some(entry.reason.clone()), None));
+        }
+    }
     results
 }
 
-/// [`report_lint_json`] over a whole [`LintRun`], so the skipped set is carried
-/// structurally rather than left to the human summary.
+/// [`report_lint_json`] over a whole [`LintRun`], so the skipped and errored sets
+/// are carried structurally rather than left to the human summary.
 pub fn report_lint_json_run(run: &LintRun) -> String {
-    report_lint_json(&lint_results_with_skips(run))
+    report_lint_json(&lint_results_for_output(run))
 }
 
-/// [`report_lint_toon`] over a whole [`LintRun`], including the skipped set.
+/// [`report_lint_toon`] over a whole [`LintRun`], including the skipped and
+/// errored sets.
 pub fn report_lint_toon_run(run: &LintRun) -> String {
-    report_lint_toon(&lint_results_with_skips(run))
+    report_lint_toon(&lint_results_for_output(run))
 }
 
 /// How many skipped files the note names before summarising the rest.

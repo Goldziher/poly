@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use poly_core::report::{self, Verbosity};
-use poly_core::runner::{EngineDebug, FormatResult, FormatRun, LintResult, LintRun, RunDebug, SkippedFile};
+use poly_core::runner::{EngineDebug, FormatResult, FormatRun, LintError, LintResult, LintRun, RunDebug, SkippedFile};
 use poly_core::{Diagnostic, DiscoveryReport, Edit, ExcludedRule, Severity, Span};
 
 fn sample_lint_results() -> Vec<LintResult> {
@@ -20,6 +20,7 @@ fn sample_lint_results() -> Vec<LintResult> {
             fix_withheld_generated: false,
             fixed: 0,
             skipped: None,
+            error: None,
             diagnostics: vec![
                 Diagnostic {
                     engine: "ruff".to_string(),
@@ -61,6 +62,7 @@ fn sample_lint_results() -> Vec<LintResult> {
             fix_withheld_generated: false,
             fixed: 0,
             skipped: None,
+            error: None,
             diagnostics: vec![],
             debug: None,
         },
@@ -125,6 +127,7 @@ fn lint_pretty_reports_autofixable_count() {
         fix_withheld_generated: false,
         fixed: 0,
         skipped: None,
+        error: None,
         diagnostics: vec![
             Diagnostic {
                 engine: "ruff".to_string(),
@@ -196,6 +199,7 @@ fn lint_pretty_reports_all_findings_fixable_when_every_diagnostic_has_a_fix() {
         fix_withheld_generated: false,
         fixed: 0,
         skipped: None,
+        error: None,
         diagnostics: vec![fixable_diagnostic("F401"), fixable_diagnostic("F811")],
         debug: None,
     }];
@@ -288,6 +292,7 @@ fn lint_pretty_debug_renders_engine_timing_block() {
         fix_withheld_generated: false,
         fixed: 0,
         skipped: None,
+        error: None,
         diagnostics: vec![Diagnostic {
             engine: "ruff".to_string(),
             code: Some("E501".to_string()),
@@ -525,6 +530,7 @@ fn format_summary_reports_exclusions_alongside_changed_files() {
 fn lint_summary_reports_what_discovery_excluded() {
     owo_colors::set_override(false);
     let run = LintRun {
+        errors: Vec::new(),
         skipped: Vec::new(),
         results: Vec::new(),
         checked: 969,
@@ -549,6 +555,7 @@ fn lint_summary_reports_what_discovery_excluded() {
 fn lint_summary_explains_a_run_that_linted_nothing() {
     owo_colors::set_override(false);
     let run = LintRun {
+        errors: Vec::new(),
         skipped: Vec::new(),
         results: Vec::new(),
         checked: 0,
@@ -568,6 +575,7 @@ fn lint_summary_explains_a_run_that_linted_nothing() {
 fn summaries_stay_quiet_when_nothing_was_excluded() {
     owo_colors::set_override(false);
     let lint = LintRun {
+        errors: Vec::new(),
         skipped: Vec::new(),
         results: Vec::new(),
         checked: 12,
@@ -607,6 +615,7 @@ fn results_only_renderers_are_unchanged() {
 fn lint_summary_names_paths_that_matched_no_engine() {
     owo_colors::set_override(false);
     let run = LintRun {
+        errors: Vec::new(),
         results: Vec::new(),
         checked: 4,
         skipped: vec![SkippedFile {
@@ -691,6 +700,7 @@ fn skip_note_is_absent_when_nothing_was_skipped() {
 #[test]
 fn lint_json_run_appends_skipped_paths_as_entries() {
     let run = LintRun {
+        errors: Vec::new(),
         results: sample_lint_results(),
         checked: 2,
         skipped: vec![SkippedFile {
@@ -762,6 +772,7 @@ fn a_run_whose_only_file_was_skipped_does_not_read_as_clean() {
     }];
 
     let lint = LintRun {
+        errors: Vec::new(),
         results: Vec::new(),
         checked: 0,
         skipped: skipped.clone(),
@@ -780,4 +791,194 @@ fn a_run_whose_only_file_was_skipped_does_not_read_as_clean() {
     let (text, _) = report::render_format_pretty_run(&format, true, Verbosity::default());
     assert!(!text.contains("All formatted."), "got: {text}");
     assert!(text.contains("Nothing was checked."), "got: {text}");
+}
+
+/// A file whose engine *errored* is a third outcome, distinct from a finding and
+/// from a skip: it was accepted for linting and then not linted. The summary must
+/// say so rather than reporting the run as clean — the exact false pass the
+/// per-file `filter_map` used to produce.
+#[test]
+fn lint_summary_names_a_file_the_engine_could_not_process() {
+    owo_colors::set_override(false);
+    let run = LintRun {
+        results: Vec::new(),
+        checked: 1,
+        skipped: Vec::new(),
+        errors: vec![LintError {
+            path: PathBuf::from("bad.py"),
+            message: "stream did not contain valid UTF-8".to_string(),
+        }],
+        discovery: DiscoveryReport::default(),
+    };
+
+    let (text, total) = report::render_lint_pretty_run(&run, Verbosity::default());
+
+    assert_eq!(total, 0, "an unreadable file produces no diagnostics");
+    assert_eq!(
+        text,
+        concat!(
+            "Lint did not complete. (1 file(s) linted)\n",
+            "error bad.py: stream did not contain valid UTF-8\n",
+            "1 file(s) could not be linted and were NOT checked.\n",
+        )
+    );
+}
+
+/// An error and a skip are reported apart: the skip keeps its own note and its
+/// own count, and the errored file appears in neither. Folding one into the other
+/// would recreate the defect in a new costume — a skip is poly declining, an
+/// error is poly failing.
+#[test]
+fn lint_summary_keeps_errors_and_skips_apart() {
+    owo_colors::set_override(false);
+    let run = LintRun {
+        results: Vec::new(),
+        checked: 1,
+        skipped: vec![SkippedFile {
+            path: PathBuf::from("App.csproj"),
+            reason: poly_core::runner::NO_ENGINE_SKIP.to_string(),
+        }],
+        errors: vec![LintError {
+            path: PathBuf::from("bad.py"),
+            message: "stream did not contain valid UTF-8".to_string(),
+        }],
+        discovery: DiscoveryReport::default(),
+    };
+
+    let (text, _) = report::render_lint_pretty_run(&run, Verbosity::default());
+
+    assert_eq!(
+        text,
+        concat!(
+            "Lint did not complete. (1 file(s) linted, 1 skipped (no matching engine for this file type))\n",
+            "  skipped App.csproj: no matching engine for this file type\n",
+            "error bad.py: stream did not contain valid UTF-8\n",
+            "1 file(s) could not be linted and were NOT checked.\n",
+        )
+    );
+}
+
+/// `--fix` still reports what it rewrote — a run that both fixed and failed owes
+/// the caller both halves — but the headline no longer reads as a successful run.
+#[test]
+fn lint_summary_does_not_let_fixes_imply_success_when_a_file_errored() {
+    owo_colors::set_override(false);
+    let run = LintRun {
+        results: vec![LintResult {
+            path: PathBuf::from("ok.py"),
+            diagnostics: Vec::new(),
+            fix_withheld_generated: false,
+            fixed: 2,
+            skipped: None,
+            error: None,
+            debug: None,
+        }],
+        checked: 1,
+        skipped: Vec::new(),
+        errors: vec![LintError {
+            path: PathBuf::from("bad.py"),
+            message: "stream did not contain valid UTF-8".to_string(),
+        }],
+        discovery: DiscoveryReport::default(),
+    };
+
+    let (text, _) = report::render_lint_pretty_run(&run, Verbosity::default());
+
+    assert_eq!(
+        text,
+        concat!(
+            "Lint did not complete. (1 file(s) linted)\n",
+            "Fixed 2 issue(s) in 1 file(s).\n",
+            "error bad.py: stream did not contain valid UTF-8\n",
+            "1 file(s) could not be linted and were NOT checked.\n",
+        )
+    );
+}
+
+/// A run with no errors renders exactly as before — the clean path gains nothing.
+#[test]
+fn lint_summary_without_errors_is_unchanged() {
+    owo_colors::set_override(false);
+    let run = LintRun {
+        results: Vec::new(),
+        checked: 3,
+        skipped: Vec::new(),
+        errors: Vec::new(),
+        discovery: DiscoveryReport::default(),
+    };
+
+    let (text, _) = report::render_lint_pretty_run(&run, Verbosity::default());
+
+    assert_eq!(text, "No issues found. (3 file(s) linted)\n");
+}
+
+/// The error travels structurally too, in the same top-level array as everything
+/// else, and in its own field: a consumer must be able to tell an errored file
+/// from a skipped one without parsing prose.
+#[test]
+fn lint_json_run_carries_errors_separately_from_skips() {
+    let run = LintRun {
+        results: Vec::new(),
+        checked: 1,
+        skipped: vec![SkippedFile {
+            path: PathBuf::from("App.csproj"),
+            reason: poly_core::runner::NO_ENGINE_SKIP.to_string(),
+        }],
+        errors: vec![LintError {
+            path: PathBuf::from("bad.py"),
+            message: "stream did not contain valid UTF-8".to_string(),
+        }],
+        discovery: DiscoveryReport::default(),
+    };
+
+    let json = report::report_lint_json_run(&run);
+    let value: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+    let entries = value.as_array().expect("top level stays an array");
+    assert_eq!(entries.len(), 2, "the skipped path and the errored one: {json}");
+
+    let skipped = entries
+        .iter()
+        .find(|entry| entry["path"] == "App.csproj")
+        .unwrap_or_else(|| panic!("{json}"));
+    assert_eq!(skipped["skipped"], poly_core::runner::NO_ENGINE_SKIP);
+    assert!(skipped["error"].is_null(), "a skip is not an error: {json}");
+
+    let errored = entries
+        .iter()
+        .find(|entry| entry["path"] == "bad.py")
+        .unwrap_or_else(|| panic!("{json}"));
+    assert_eq!(errored["error"], "stream did not contain valid UTF-8");
+    assert!(errored["skipped"].is_null(), "an error is not a skip: {json}");
+    assert_eq!(
+        errored["diagnostics"].as_array().map(Vec::len),
+        Some(0),
+        "a file that was never read has no findings: {json}"
+    );
+}
+
+/// The stderr echo used under `--format json`, where stdout must stay a single
+/// valid document.
+#[test]
+fn lint_error_note_names_every_failing_path() {
+    owo_colors::set_override(false);
+    let errors = vec![
+        LintError {
+            path: PathBuf::from("a.py"),
+            message: "boom".to_string(),
+        },
+        LintError {
+            path: PathBuf::from("b.py"),
+            message: "bang".to_string(),
+        },
+    ];
+
+    assert_eq!(
+        report::render_lint_errors(&errors),
+        concat!(
+            "error a.py: boom\n",
+            "error b.py: bang\n",
+            "2 file(s) could not be linted and were NOT checked.\n",
+        )
+    );
+    assert_eq!(report::render_lint_errors(&[]), "", "no errors, no text");
 }

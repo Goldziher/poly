@@ -693,6 +693,44 @@ dropped:
   ✓ rust
 ```
 
+#### Hook timeouts
+
+Every process a run spawns — hook bodies, `before`/`after` steps, and `precondition` probes —
+runs under a time budget. A wedged tool is killed (the whole process group: `SIGTERM`, then
+`SIGKILL`) and reported as **killed**, which is deliberately not the same as failed: `×` means
+the tool judged your code and said no, `⧖` means poly stopped it before it judged anything.
+Either way the run fails — a hook that checked nothing must never report success.
+
+Defaults are hang detectors, not performance budgets: 10 minutes per-file, 30 minutes for a
+`workspace = true` hook (a cold `cargo clippy` is legitimately slow), 10 minutes for a
+`before`/`after` step, and 60 seconds for a `precondition` probe. A hook still running after
+15 seconds announces itself on stderr, then every minute, naming the hook and its kill
+deadline.
+
+Set a per-job budget with `timeout` — whole seconds, or a duration (`500ms`, `30s`, `10m`,
+`1h`), or `0`/`off`/`none` to run it unbounded:
+
+```toml
+[hooks.pre-commit.commands.ai-rulez-validate]
+run = "ai-rulez validate"
+timeout = "90s"          # this tool is known to wedge; bound it tightly
+```
+
+```text
+[stage] pre-commit — validated worktree
+  ⧖ ai-rulez-validate (timed out: poly killed it after 90.2s, limit 90.0s)
+  markers: ✓ passed  × failed  ⧖ killed by poly on timeout
+```
+
+Four environment variables override the budgets run-wide, taking the same values:
+`POLY_HOOK_TIMEOUT`, `POLY_HOOK_WORKSPACE_TIMEOUT`, `POLY_HOOK_STEP_TIMEOUT`,
+`POLY_HOOK_PRECONDITION_TIMEOUT`. Resolution is **environment override → `timeout` in
+`poly.toml` → shape default**: the environment wins, because it is the escape hatch of
+whoever is running the hooks on a machine the config author never saw, and because
+`POLY_HOOK_TIMEOUT=0` has to be able to unbound *every* hook — including the one being
+killed. Disabling restores the previous behaviour exactly: no deadline, no liveness notice,
+no separate process group.
+
 #### Hook exit codes
 
 `poly hooks run` distinguishes three outcomes, so a CI job reading only the exit status can
@@ -1228,7 +1266,7 @@ Exit codes:
 |---:|---|
 | 0 | No issues, no formatting drift, or all writes succeeded |
 | 1 | Lint findings remain, or dry-run formatting would change files |
-| 2 | Internal error such as config or I/O failure, or a skip budget was exceeded |
+| 2 | Internal error such as config or I/O failure, a file an engine could not lint or format, or a skip budget was exceeded |
 
 </details>
 
