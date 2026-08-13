@@ -30,25 +30,27 @@ fn fixture_with_defect() -> tempfile::TempDir {
 // ── Layer 1: ops behaviour ────────────────────────────────────────────────
 
 #[test]
-fn lint_results_carry_diagnostic_contract() {
+fn lint_run_carries_the_diagnostic_contract() {
     let dir = fixture_with_defect();
     let path = dir.path().join("bad.py");
-    let results = ops::lint_results(&[path.display().to_string()], &[], None, false).unwrap();
-    assert!(!results.is_empty(), "expected at least one lint result");
-    let diagnostics = &results[0].diagnostics;
+    let run = ops::lint_run(&[path.display().to_string()], &[], None, false).unwrap();
+    assert!(run.errors.is_empty(), "the fixture is readable: {:?}", run.errors);
+    assert!(!run.results.is_empty(), "expected at least one lint result");
+    let diagnostics = &run.results[0].diagnostics;
     assert!(!diagnostics.is_empty(), "the bad file has diagnostics");
     assert_eq!(diagnostics[0].engine, "ruff", "unused import is a ruff finding");
 }
 
 #[test]
-fn format_results_report_changed_without_writing() {
+fn format_run_reports_changed_without_writing() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("bad.rs");
     let original = "fn main() {}   \n";
     std::fs::write(&path, original).unwrap();
-    let results = ops::format_results(&[path.display().to_string()], &[], None, false).unwrap();
-    assert_eq!(results.len(), 1, "one file scanned");
-    assert!(results[0].changed, "trailing whitespace would be reformatted");
+    let run = ops::format_run(&[path.display().to_string()], &[], None, false).unwrap();
+    assert!(run.errors.is_empty(), "the fixture is readable: {:?}", run.errors);
+    assert_eq!(run.results.len(), 1, "one file scanned");
+    assert!(run.results[0].changed, "trailing whitespace would be reformatted");
     assert_eq!(
         std::fs::read_to_string(&path).unwrap(),
         original,
@@ -58,7 +60,7 @@ fn format_results_report_changed_without_writing() {
 
 #[test]
 fn explicit_missing_config_is_an_error() {
-    let result = ops::lint_results(&[".".to_string()], &[], Some("/nonexistent/poly.toml"), false);
+    let result = ops::lint_run(&[".".to_string()], &[], Some("/nonexistent/poly.toml"), false);
     assert!(result.is_err(), "missing explicit config should error");
 }
 

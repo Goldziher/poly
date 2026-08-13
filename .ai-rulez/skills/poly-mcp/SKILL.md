@@ -38,5 +38,30 @@ Results come back as structured JSON and compact TOON, matching the CLI `--forma
 Treat the read-only tools as safe to call freely; gate the mutating tools behind explicit
 intent since they change files.
 
+## Per-file outcomes: checked, skipped, error
+
+`lint` / `lint_fix` / `format_check` / `format_write` results tell three per-file outcomes
+apart, not two:
+
+- **Checked** — the file has a `results` entry with no `skipped`/`error` set (diagnostics may
+  still be empty; that's a clean file, not a missing one).
+- **Skipped** (`skipped` field) — poly correctly declined the file (e.g. a template dialect no
+  backend handles). Not a failure.
+- **Errored** (`error` field) — poly failed to process the file (unreadable file, backend
+  crash, bad engine config). Distinct from `skipped` on purpose: a skip is a deliberate
+  decision, an error is poly failing on a file it accepted.
+
+Each result also carries a run-level `errors` array — one entry per file poly failed on,
+duplicating the `error`-carrying records in `results` so a caller can gate on "did the run fail
+on anything" without scanning every record. When `errors` is non-empty, the tool result's
+`CallToolResult.is_error` (`isError` over the wire) is set `true`.
+
+**An MCP-driving agent must check `isError` before trusting any other part of the result.**
+Before this shape existed, a file poly failed to process was absent from the output
+entirely — indistinguishable from a file that was checked and found clean. An agent that
+gated on "no findings in `results`" was reading a run that had silently failed to check some
+files as a clean pass. Check `isError` (or the `errors` array) first; only then read
+`results` for diagnostics.
+
 (Exact tool names may shift slightly as the server stabilizes — the read-only/mutating split
 and the params above are the stable contract.)

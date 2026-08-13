@@ -8,6 +8,7 @@ authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
 documentation.workspace = true
+publish = false
 description = "MCP (Model Context Protocol) server over stdio that mirrors the poly CLI's lint/format/cache capabilities."
 keywords = ["mcp", "linter", "formatter", "lint", "format"]
 categories = ["development-tools"]

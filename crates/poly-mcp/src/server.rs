@@ -8,6 +8,11 @@
 //! via `#[tool(output_schema = …)]`), and a single text block carries the same
 //! data as JSON or compact **TOON** (`format` param). See [`crate::dto`].
 //!
+//! The lint/format tools report three distinct per-file outcomes — checked,
+//! skipped (`skipped`), and **failed** (`error`) — and set `isError` when any
+//! file failed. An MCP caller has no exit code, so a file poly could not process
+//! has to be visible in the payload itself or the caller reads the run as clean.
+//!
 //! ## Annotations
 //!
 //! Annotations are static per tool, so read-only and mutating variants are split
@@ -226,7 +231,8 @@ impl PolyMcpServer {
     }
 
     #[tool(
-        description = "Lint files and report diagnostics as structured JSON (plus JSON/TOON text). Never writes. Mirrors `poly lint`.",
+        description = "Lint files and report diagnostics as structured JSON (plus JSON/TOON text). Never writes. Mirrors `poly lint`. \
+                      A file poly could not process is reported with an `error` (never as clean) and sets `isError`.",
         annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false),
         output_schema = schema_for_output_with_identity::<LintReport>()
     )]
@@ -234,13 +240,13 @@ impl PolyMcpServer {
         let Parameters(args) = params;
         let config = effective_config(args.config, &self.config_override);
         let repr = args.format;
-        let results =
-            run_blocking(move || ops::lint_results(&args.paths, &args.exclude, config.as_deref(), false)).await?;
-        LintReport { results }.into_result(repr)
+        let run = run_blocking(move || ops::lint_run(&args.paths, &args.exclude, config.as_deref(), false)).await?;
+        LintReport::from_run(run).into_result(repr)
     }
 
     #[tool(
-        description = "Check formatting without writing; reports which files would change as structured JSON (plus JSON/TOON text). Mirrors `poly fmt --check`.",
+        description = "Check formatting without writing; reports which files would change as structured JSON (plus JSON/TOON text). Mirrors `poly fmt --check`. \
+                      A file poly could not process is reported with an `error` (never as clean) and sets `isError`.",
         annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false),
         output_schema = schema_for_output_with_identity::<FormatReport>()
     )]
@@ -248,13 +254,13 @@ impl PolyMcpServer {
         let Parameters(args) = params;
         let config = effective_config(args.config, &self.config_override);
         let repr = args.format;
-        let results =
-            run_blocking(move || ops::format_results(&args.paths, &args.exclude, config.as_deref(), false)).await?;
-        FormatReport { results }.into_result(repr)
+        let run = run_blocking(move || ops::format_run(&args.paths, &args.exclude, config.as_deref(), false)).await?;
+        FormatReport::from_run(run).into_result(repr)
     }
 
     #[tool(
-        description = "Lint files and apply available autofixes in place, then report remaining diagnostics. Writes files. Mirrors `poly lint --fix`.",
+        description = "Lint files and apply available autofixes in place, then report remaining diagnostics. Writes files. Mirrors `poly lint --fix`. \
+                      A file poly could not process is reported with an `error` (never as clean) and sets `isError`.",
         annotations(read_only_hint = false, destructive_hint = true, open_world_hint = false),
         output_schema = schema_for_output_with_identity::<LintReport>()
     )]
@@ -262,13 +268,13 @@ impl PolyMcpServer {
         let Parameters(args) = params;
         let config = effective_config(args.config, &self.config_override);
         let repr = args.format;
-        let results =
-            run_blocking(move || ops::lint_results(&args.paths, &args.exclude, config.as_deref(), true)).await?;
-        LintReport { results }.into_result(repr)
+        let run = run_blocking(move || ops::lint_run(&args.paths, &args.exclude, config.as_deref(), true)).await?;
+        LintReport::from_run(run).into_result(repr)
     }
 
     #[tool(
-        description = "Format files in place and report which files changed. Writes files. Mirrors `poly fmt --fix`.",
+        description = "Format files in place and report which files changed. Writes files. Mirrors `poly fmt --fix`. \
+                      A file poly could not process is reported with an `error` (never as clean) and sets `isError`.",
         annotations(read_only_hint = false, destructive_hint = true, open_world_hint = false),
         output_schema = schema_for_output_with_identity::<FormatReport>()
     )]
@@ -276,9 +282,8 @@ impl PolyMcpServer {
         let Parameters(args) = params;
         let config = effective_config(args.config, &self.config_override);
         let repr = args.format;
-        let results =
-            run_blocking(move || ops::format_results(&args.paths, &args.exclude, config.as_deref(), true)).await?;
-        FormatReport { results }.into_result(repr)
+        let run = run_blocking(move || ops::format_run(&args.paths, &args.exclude, config.as_deref(), true)).await?;
+        FormatReport::from_run(run).into_result(repr)
     }
 
     #[tool(
@@ -473,6 +478,8 @@ impl ServerHandler for PolyMcpServer {
                  run as async Tasks (poll tasks/get). Every tool returns structured JSON plus a JSON/TOON text \
                  block (`format`), and every result carries a `poly` block (version, build id, channel, \
                  executable, pid) identifying the binary that answered — check it before acting on a result. \
+                 lint/format results tell three per-file outcomes apart — checked, `skipped`, and `error` \
+                 (poly failed on the file, so it was NOT checked) — and set `isError` when any file failed. \
                  If this server's executable is replaced or deleted while it runs, every tool but `version` \
                  fails until the server is restarted.",
             )

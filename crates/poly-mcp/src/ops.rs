@@ -2,7 +2,8 @@
 //!
 //! These functions are deliberately free of any `rmcp`/`tokio` types: they run
 //! the same `poly-core` pipeline the CLI runs and return **typed** results — the
-//! `poly-core` report structs for lint/format, and the MCP-local DTOs in
+//! `poly-core` *run* structs for lint/format (results **plus** the files the run
+//! failed on or declined), and the MCP-local DTOs in
 //! [`crate::dto`] for cache/rules/config/workspace. The async tool handlers in
 //! [`crate::server`] serialize them to structured content and call these from a
 //! blocking task so the synchronous, rayon-driven engine never runs on a tokio
@@ -20,7 +21,7 @@ use poly_cache::{ResultCache, root_from_cwd};
 use poly_config::PolyConfig;
 use poly_core::engines::astgrep::rules::load_flat;
 use poly_core::engines::astgrep::test::{CaseKind, run_tests};
-use poly_core::{Config, FormatResult, LintResult, RunOptions};
+use poly_core::{Config, FormatRun, LintRun, RunOptions};
 
 use crate::dto::{
     CacheCleanReport, CacheNamespace, CacheStatsReport, ConfigDefaults, ConfigShowReport, RuleInfo, RuleTestOutcome,
@@ -62,47 +63,47 @@ fn resolve_paths(paths: &[String]) -> Vec<PathBuf> {
     }
 }
 
-/// Lint `paths`, returning the typed per-file results. When `fix` is true,
-/// available autofixes are applied in place before the remaining diagnostics are
-/// collected.
-pub fn lint_results(
-    paths: &[String],
-    exclude: &[String],
-    config: Option<&str>,
-    fix: bool,
-) -> anyhow::Result<Vec<LintResult>> {
-    let explicit_config = config.is_some();
-    let config = resolve_config(config.map(Path::new))?;
-    let resolved = resolve_paths(paths);
-    let opts = RunOptions {
+/// The run options every path-oriented tool uses, differing only in the caller's
+/// exclude globs and whether a config file was named explicitly.
+fn run_options(exclude: &[String], explicit_config: bool) -> RunOptions {
+    RunOptions {
         exclude: exclude.to_vec(),
         force_exclude: false,
         fix_generated: false,
         explicit_config,
         ..RunOptions::default()
-    };
-    poly_core::lint(&resolved, &config, &opts, fix, false)
+    }
 }
 
-/// Format `paths`, returning the typed per-file results. When `write` is true,
-/// changed files are rewritten in place; otherwise this is a dry run.
-pub fn format_results(
+/// Lint `paths`, returning the **whole run** — the per-file results plus the
+/// files the run failed on and the ones it declined. When `fix` is true,
+/// available autofixes are applied in place before the remaining diagnostics are
+/// collected.
+///
+/// Deliberately [`poly_core::lint_run`] rather than `poly_core::lint`: the
+/// latter returns only the results and drops [`LintRun::errors`], which for an
+/// MCP caller — who has no exit code to fall back on — turns a file poly failed
+/// to read into a clean-looking answer.
+pub fn lint_run(paths: &[String], exclude: &[String], config: Option<&str>, fix: bool) -> anyhow::Result<LintRun> {
+    let explicit_config = config.is_some();
+    let config = resolve_config(config.map(Path::new))?;
+    let resolved = resolve_paths(paths);
+    poly_core::lint_run(&resolved, &config, &run_options(exclude, explicit_config), fix, false)
+}
+
+/// Format `paths`, returning the **whole run** (see [`lint_run`] for why the
+/// run and not just the results). When `write` is true, changed files are
+/// rewritten in place; otherwise this is a dry run.
+pub fn format_run(
     paths: &[String],
     exclude: &[String],
     config: Option<&str>,
     write: bool,
-) -> anyhow::Result<Vec<FormatResult>> {
+) -> anyhow::Result<FormatRun> {
     let explicit_config = config.is_some();
     let config = resolve_config(config.map(Path::new))?;
     let resolved = resolve_paths(paths);
-    let opts = RunOptions {
-        exclude: exclude.to_vec(),
-        force_exclude: false,
-        fix_generated: false,
-        explicit_config,
-        ..RunOptions::default()
-    };
-    poly_core::format(&resolved, &config, &opts, write, false)
+    poly_core::format_run(&resolved, &config, &run_options(exclude, explicit_config), write, false)
 }
 
 /// Open the result cache the way `poly cache` does: honor `[cache] dir` from the
