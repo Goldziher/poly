@@ -60,7 +60,7 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 - **Build identity in `--version`, and in every MCP response.**
 
-  ```
+  ```text
   poly 0.19.7 (dev build v0.19.7-10-g361844a, debug)
   ```
 
@@ -82,7 +82,7 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   because a top-level check reported an unqualified pass while an excluded directory held
   unformatted files.
 
-  ```
+  ```text
   All formatted. (260 file(s) checked, 2 skipped (Go/Helm template syntax), 2 file(s) and 8 director(ies) excluded by config)
     excluded by [discovery] exclude / --exclude: **/identify/tags.rs (1 file(s)), .ai-rulez/** (1 dir(s)), and 5 more rule(s)
     excluded directories were not walked, so the files inside them are not counted
@@ -159,7 +159,7 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
   The withheld fix is reported rather than silent:
 
-  ```
+  ```text
   1 generated file(s) not fixed (pass `--fix-generated` to include them).
   ```
 
@@ -179,7 +179,7 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
   A skipped phase is announced:
 
-  ```
+  ```text
   note: whole-project phase skipped for path-scoped run (pass --workspace to include it)
   ```
 
@@ -191,6 +191,37 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   new `--workspace` flag. `poly lint --workspace <paths>` restores the previous behaviour.
 
 ### Fixed
+
+- **`poly lint` no longer exits 0 for a file it could not lint.** A per-file engine failure was
+  logged as a warning and the file was dropped from the results, so a run that failed to check
+  something reported success. `poly fmt` already handled this through `FormatError`; `lint` now
+  matches it.
+
+  An engine **error** is deliberately a third category, kept distinct from a **skip**: a skip is poly
+  correctly declining to act (no matching engine, a generated file), an error is poly failing.
+  Conflating them would have rebuilt the same false pass in a new shape, and would have made
+  `--deny-skips` fire on the wrong thing. Errored files do not count toward the skip budget, are
+  never counted as checked, and are named individually:
+
+  ```text
+  error bad.py: stream did not contain valid UTF-8
+  1 file(s) could not be linted and were NOT checked.
+  ```
+
+  Exit code is **2**, not 1: an errored file produced no findings, so it is an internal failure
+  rather than a lint result. When any file errored, the headline reads `Lint did not complete.` —
+  `Fixed N issue(s)` still reports what the run did, but no longer stands in as the verdict.
+
+- **Markdown that merely documents template syntax is no longer skipped.** The Go/Helm template guard
+  scanned raw file content, so any markdown containing `{{ … }}` — including inside a fenced code
+  block or an inline code span — was excluded from formatting entirely. poly could not format its own
+  CHANGELOG.
+
+  Template syntax inside fenced blocks, indented code blocks, and inline code spans is now treated as
+  documentation rather than as a template. Syntax outside them still triggers the skip, and YAML
+  detection is unchanged, so a genuine Go-templated `Taskfile.yaml` is still skipped. An unterminated
+  fence resolves toward skipping — leaving a template unformatted costs nothing, reflowing one
+  destroys it.
 
 - **`poly fmt` no longer changes which rows a SQL query returns.** It rewrote `where id = NULL` into
   `where id is NULL`. Those are not equivalent: under three-valued logic `= NULL` evaluates to
@@ -229,8 +260,18 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   the running hook after 15s, and skipped, killed and setup-failed hooks now render with distinct
   markers — previously `-` meant both "skipped" and "still running".
 
-  Configurable via `POLY_HOOK_TIMEOUT` / `POLY_HOOK_WORKSPACE_TIMEOUT`. There is deliberately no
-  `poly.toml` key yet: one that parsed and was ignored would be a false promise.
+  Set a per-job budget with `timeout` in `poly.toml` — whole seconds (`90`), a suffixed duration
+  (`500ms`, `30s`, `10m`, `1h`), or `0` / `off` / `none` to disable. Stage and hook `before` / `after`
+  steps and `precondition` probes are bounded too, at 10 minutes and 60 seconds respectively; an
+  unbounded stage `before` reproduced the same hang one level up. A malformed value names the hook
+  it came from — "invalid timeout" in a repo with thirty hooks is not a diagnosis.
+
+  Resolution is **environment override → `timeout` in config → shape default**. The environment wins
+  deliberately: it is the escape hatch of whoever is actually running the hooks, and they are the only
+  party who knows how fast that machine is — a config author cannot, and an operator often cannot edit
+  the config at all (a CI checkout, a fork). An unparseable environment value is ignored with a
+  warning rather than read as "disabled", since failing open on a typo would silently reinstate the
+  hang the mechanism exists to bound.
 
 - **`poly lint --fix` no longer deletes single lines out of the middle of a prose comment block.**
   The opt-in `[lint.uncomment]` backend judged each comment *line* independently, and tree-sitter
@@ -356,7 +397,7 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   carrying Go/Helm template actions, and (see below) templates that do not render markup. A skipped
   file and a checked-and-clean file produced byte-identical output:
 
-  ```
+  ```text
   $ poly fmt --check Taskfile.yaml     # skipped: contains {{.CLI_ARGS}}
   All formatted. (1 file(s) scanned)
   $ poly fmt --check plain.yaml        # actually checked
@@ -367,7 +408,7 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   hit, so a warm re-run had no signal at all. One consumer concluded from this that their templated
   YAML was covered when it was being skipped. The summary now separates the two and names the cause:
 
-  ```
+  ```text
   All formatted. (249 file(s) checked, 2 skipped (Go/Helm template syntax))
   ```
 
