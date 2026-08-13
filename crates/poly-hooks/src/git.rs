@@ -3,6 +3,13 @@
 //! Ported from `polyhooks/src/git.rs`. All `async`/`.await` removed; every
 //! call uses the blocking `Cmd::output()` / `Cmd::status()` methods.
 //!
+//! This file owns the shared plumbing — the error type, the resolved `git`
+//! binary and repository-root statics, the [`Cmd`] builder every helper starts
+//! from, the byte/path decoding of git's `-z` output, and the repository-layout
+//! queries. The helpers that share a distinct input are in submodules:
+//! `index` for the staging area (and the path-safety guard its results
+//! require), `revision` for anything that names a commit.
+//!
 //! The following upstream helpers are intentionally **not ported** (clone /
 //! fetch helpers, install shims, workspace helpers) — they belong to later
 //! phases or the polyhooks crate:
@@ -19,6 +26,19 @@ use tracing::{debug, instrument};
 
 use crate::fs::PathClean as _;
 use crate::process::{Cmd, Error as ProcessError, StatusError};
+
+mod index;
+mod revision;
+#[cfg(test)]
+mod testutil;
+
+pub use self::index::{
+    StagedEntry, add, checkout_index_paths, get_staged_files, is_safe_relative_path, list_files, list_staged_entries,
+    list_submodule_gitlinks, staged_blob,
+};
+pub use self::revision::{
+    get_ancestors_not_in_remote, get_changed_files, get_parent_commit, get_root_commits, is_ancestor, rev_exists,
+};
 
 /// Errors returned by git helpers in this module.
 #[derive(Debug, thiserror::Error)]
@@ -106,33 +126,6 @@ pub fn git_cmd(summary: &str) -> Result<Cmd, Error> {
     Ok(cmd)
 }
 
-/// Whether `path` is a plain relative path that is safe to join onto a
-/// materialization root (the staged snapshot, the worktree).
-///
-/// Only `Normal` components are accepted: an absolute path, a Windows drive
-/// prefix, `.` or `..` would all let `root.join(path)` address a file outside
-/// `root`. Git's own `verify_path` already refuses to record such an entry, so
-/// a real repository never trips this — but the check must not be delegated to
-/// the installed git binary, because a handcrafted index is exactly the input
-/// an attacker controls, and every path we join comes from that index.
-#[must_use]
-pub fn is_safe_relative_path(path: &Path) -> bool {
-    !path.as_os_str().is_empty()
-        && path
-            .components()
-            .all(|component| matches!(component, std::path::Component::Normal(_)))
-}
-
-/// [`is_safe_relative_path`] as a guard, naming the path it rejected.
-fn reject_unsafe_path(path: &Path) -> Result<(), Error> {
-    if is_safe_relative_path(path) {
-        return Ok(());
-    }
-    Err(Error::UnsafePath {
-        path: path.display().to_string(),
-    })
-}
-
 fn zsplit(s: &[u8]) -> Result<Vec<PathBuf>, std::str::Utf8Error> {
     s.split(|&b| b == b'\0')
         .filter(|slice| !slice.is_empty())
@@ -180,238 +173,6 @@ pub fn get_root() -> Result<PathBuf, Error> {
     Ok(PathBuf::from(String::from_utf8_lossy(&output.stdout).trim_ascii()))
 }
 
-/// List files that are staged in the index (excluding deleted files).
-#[instrument(level = "trace")]
-pub fn get_staged_files(root: &Path) -> Result<Vec<PathBuf>, Error> {
-    let output = git_cmd("get staged files")?
-        .current_dir(root)
-        .arg("diff")
-        .arg("--cached")
-        .arg("--name-only")
-        .arg("--diff-filter=ACMRTUXB")
-        .arg("--no-ext-diff")
-        .arg("-z")
-        .check(true)
-        .output()?;
-    Ok(zsplit(&output.stdout)?)
-}
-
-/// List every file tracked in the index (`git ls-files`).
-///
-/// Used by `poly hooks run --all-files` and by `pre-push` over a root-commit
-/// push, where the whole tracked tree is checked rather than a diff range.
-#[instrument(level = "trace")]
-pub fn list_files(root: &Path) -> Result<Vec<PathBuf>, Error> {
-    let output = git_cmd("list tracked files")?
-        .current_dir(root)
-        .arg("ls-files")
-        .arg("-z")
-        .check(true)
-        .output()?;
-    Ok(zsplit(&output.stdout)?)
-}
-
-/// Largest number of path arguments to pass to a single `git checkout-index`
-/// invocation. Batching keeps the argument vector well under the OS `ARG_MAX`
-/// limit on repositories with tens of thousands of files.
-const CHECKOUT_BATCH: usize = 1000;
-
-/// Materialize the staged (index) content of specific `paths` into `dest`.
-///
-/// Runs `git checkout-index -f --prefix=<dest>/ -- <paths>`, which writes each
-/// listed entry's **index blob** — i.e. exactly the staged content — beneath
-/// `dest`, recreating the repo-relative directory tree (leading directories are
-/// created, exec bits and symlinks are reproduced faithfully). Untracked files
-/// and unstaged worktree edits are never written, so the result is a
-/// byte-faithful, non-destructive copy of what a commit would capture; `dest`
-/// must already exist. This is how whole-workspace hooks (`cargo clippy`, type
-/// checkers, …) are isolated to staged content without touching the live
-/// worktree. A no-op for an empty `paths`; large lists are batched to stay under
-/// `ARG_MAX`.
-#[instrument(level = "trace", skip(paths))]
-pub fn checkout_index_paths(root: &Path, dest: &Path, paths: &[PathBuf]) -> Result<(), Error> {
-    for batch in paths.chunks(CHECKOUT_BATCH) {
-        let mut cmd = git_cmd("checkout staged paths")?;
-        cmd.current_dir(root)
-            .arg("-c")
-            .arg("core.autocrlf=false")
-            .arg("checkout-index")
-            .arg("-f")
-            .arg(prefix_arg(dest))
-            .arg("--");
-        for path in batch {
-            cmd.arg(path);
-        }
-        cmd.check(true).status()?;
-    }
-    Ok(())
-}
-
-/// A single index entry: its blob OID, repo-relative path, and whether it is a
-/// symlink — read straight from the index by [`list_staged_entries`].
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StagedEntry {
-    /// The staged blob's object id (the content a commit would capture).
-    pub oid: String,
-    /// Repo-relative path of the entry.
-    pub path: PathBuf,
-    /// `true` when the entry is a symlink (index mode `120000`).
-    pub is_symlink: bool,
-}
-
-/// List every entry staged in the index with its blob OID (`git ls-files -s`).
-///
-/// The OID is read directly from the index, so it is the authoritative record of
-/// "what a commit would capture" and is **independent of the worktree stat
-/// cache** — unlike `git diff-files`, which is stat-based and can under-report a
-/// genuinely-modified file as clean when the index stat cache is stale or
-/// inconsistent. The staged snapshot relies on this so that an unstaged worktree
-/// edit can never leak into the materialized content. Submodule gitlinks (mode
-/// `160000`) have no blob to materialize and are skipped.
-#[instrument(level = "trace")]
-pub fn list_staged_entries(root: &Path) -> Result<Vec<StagedEntry>, Error> {
-    let output = git_cmd("list staged entries")?
-        .current_dir(root)
-        .arg("ls-files")
-        .arg("-s")
-        .arg("-z")
-        .check(true)
-        .output()?;
-    parse_ls_files_stage(&output.stdout)
-}
-
-/// Parse `git ls-files -s -z` output: NUL-separated `<mode> <oid> <stage>\t<path>`
-/// records. Robust to 40- or 64-hex OIDs and to paths containing spaces (the
-/// path is taken verbatim after the tab).
-///
-/// A path that would escape the tree it is joined onto is a hard error, not a
-/// skip: every consumer joins these paths onto a directory, and an index that
-/// contains one is hostile rather than merely unusual (see
-/// [`is_safe_relative_path`]).
-fn parse_ls_files_stage(bytes: &[u8]) -> Result<Vec<StagedEntry>, Error> {
-    let mut entries = Vec::new();
-    for record in bytes.split(|&byte| byte == 0).filter(|slice| !slice.is_empty()) {
-        let Some(tab) = record.iter().position(|&byte| byte == b'\t') else {
-            continue;
-        };
-        let (meta, tab_and_path) = record.split_at(tab);
-        let path = path_from_git_bytes(&tab_and_path[1..])?;
-        reject_unsafe_path(&path)?;
-        let meta = std::str::from_utf8(meta)?;
-        let mut fields = meta.split_whitespace();
-        let mode = fields.next().unwrap_or_default();
-        let oid = fields.next().unwrap_or_default();
-        if mode == "160000" {
-            continue;
-        }
-        entries.push(StagedEntry {
-            oid: oid.to_string(),
-            path,
-            is_symlink: mode == "120000",
-        });
-    }
-    Ok(entries)
-}
-
-/// List every submodule gitlink path recorded in the index (`git ls-files -s`
-/// entries with mode `160000`).
-///
-/// Submodules have no blob to materialize, so [`list_staged_entries`] skips them
-/// — but whole-workspace compile hooks still need the submodule's checked-out
-/// files present (e.g. a test that `include_bytes!`es a fixture from a
-/// submodule), or the isolated sandbox fails to compile even though the real tree
-/// does. The staged snapshot materializes these paths separately.
-#[instrument(level = "trace")]
-pub fn list_submodule_gitlinks(root: &Path) -> Result<Vec<PathBuf>, Error> {
-    let output = git_cmd("list submodule gitlinks")?
-        .current_dir(root)
-        .arg("ls-files")
-        .arg("-s")
-        .arg("-z")
-        .check(true)
-        .output()?;
-    parse_ls_files_gitlinks(&output.stdout)
-}
-
-/// Parse `git ls-files -s -z` output, returning only the submodule gitlink paths
-/// (mode `160000`) — the complement of [`parse_ls_files_stage`], which skips them.
-fn parse_ls_files_gitlinks(bytes: &[u8]) -> Result<Vec<PathBuf>, Error> {
-    let mut paths = Vec::new();
-    for record in bytes.split(|&byte| byte == 0).filter(|slice| !slice.is_empty()) {
-        let Some(tab) = record.iter().position(|&byte| byte == b'\t') else {
-            continue;
-        };
-        let (meta, tab_and_path) = record.split_at(tab);
-        let mode = std::str::from_utf8(meta)?.split_whitespace().next().unwrap_or_default();
-        if mode == "160000" {
-            let path = path_from_git_bytes(&tab_and_path[1..])?;
-            reject_unsafe_path(&path)?;
-            paths.push(path);
-        }
-    }
-    Ok(paths)
-}
-
-/// Build the `--prefix=<dest>/` argument for `git checkout-index`.
-///
-/// The prefix is prepended verbatim to each index path, so it must carry a
-/// trailing separator or the first path component would be glued onto `dest`.
-fn prefix_arg(dest: &Path) -> std::ffi::OsString {
-    let mut prefix = dest.as_os_str().to_os_string();
-    prefix.push(std::path::MAIN_SEPARATOR_STR);
-    let mut arg = std::ffi::OsString::from("--prefix=");
-    arg.push(&prefix);
-    arg
-}
-
-/// Reject a revision that git would misinterpret as an option.
-///
-/// Revisions reaching us from untrusted input — notably the SHAs parsed from
-/// the pre-push hook's stdin — must never begin with `-`, or git parses them as
-/// a flag instead of an object name. That is an argument-injection vector even
-/// though we never route these values through a shell (`Cmd::arg`, not `sh -c`).
-fn validate_revision(rev: &str) -> Result<(), Error> {
-    if rev.starts_with('-') {
-        return Err(Error::InvalidRevision {
-            old: rev.to_string(),
-            new: String::new(),
-        });
-    }
-    Ok(())
-}
-
-/// List files changed between `old` and `new` (merge-base or direct range).
-#[instrument(level = "trace")]
-pub fn get_changed_files(old: &str, new: &str, root: &Path) -> Result<Vec<PathBuf>, Error> {
-    if old.starts_with('-') || new.starts_with('-') {
-        return Err(Error::InvalidRevision {
-            old: old.to_string(),
-            new: new.to_string(),
-        });
-    }
-
-    let build_cmd = |range: String| -> Result<Cmd, Error> {
-        let mut cmd = git_cmd("get changed files")?;
-        cmd.arg("diff")
-            .arg("--name-only")
-            .arg("--diff-filter=ACMRT")
-            .arg("--no-ext-diff")
-            .arg("-z")
-            .arg(range)
-            .arg("--")
-            .arg(root);
-        Ok(cmd)
-    };
-
-    let output = build_cmd(format!("{old}...{new}"))?.check(false).output()?;
-    if output.status.success() {
-        return Ok(zsplit(&output.stdout)?);
-    }
-
-    let output = build_cmd(format!("{old}..{new}"))?.check(true).output()?;
-    Ok(zsplit(&output.stdout)?)
-}
-
 /// Capture the `git diff` for `path` (worktree vs. index).
 ///
 /// Returns the raw diff bytes. On non-zero exit the diff is still returned
@@ -436,59 +197,6 @@ pub fn get_diff(path: &Path) -> Result<Vec<u8>, Error> {
         );
     }
     Ok(output.stdout)
-}
-
-/// Stage `paths` into the index (`git add -- <paths>`).
-///
-/// Used by `stage_fixed` to re-stage files a hook rewrote. A no-op when
-/// `paths` is empty.
-#[instrument(level = "trace", skip(paths))]
-pub fn add(root: &Path, paths: &[PathBuf]) -> Result<(), Error> {
-    if paths.is_empty() {
-        return Ok(());
-    }
-    let mut cmd = git_cmd("git add")?;
-    cmd.current_dir(root).arg("add").arg("--");
-    for path in paths {
-        cmd.arg(path);
-    }
-    cmd.check(true).status()?;
-    Ok(())
-}
-
-/// Read the staged (index) bytes of `path` — the content a commit would capture
-/// — or `None` when the path has no stage-0 entry.
-///
-/// This is the **content** answer to "does the worktree still match the index?",
-/// and it deliberately replaces the `git diff-files` probes this module used to
-/// expose. `diff-files` is stat-based: it can report a genuinely-modified file
-/// as clean whenever the index stat cache is stale or has been suppressed
-/// (`--assume-unchanged`, `--skip-worktree`, a sparse checkout, coarse mtime
-/// granularity, a network filesystem, or any tool that rewrote the index
-/// outside a normal `git add`). [`list_staged_entries`] already stopped trusting
-/// it for the same reason; nothing that can lose a user's work may depend on it.
-///
-/// For a symlink entry the "blob" is the link target text, so a caller that must
-/// not follow links has to check the worktree entry type separately.
-#[instrument(level = "trace")]
-pub fn staged_blob(root: &Path, path: &Path) -> Result<Option<Vec<u8>>, Error> {
-    reject_unsafe_path(path)?;
-    // `:0:<path>` names stage 0 of `path` in the index. The `:0:` prefix also
-    // makes the argument un-option-like whatever the path begins with.
-    let mut revision = std::ffi::OsString::from(":0:");
-    revision.push(path.as_os_str());
-    let output = git_cmd("read staged blob")?
-        .current_dir(root)
-        .arg("cat-file")
-        .arg("blob")
-        .arg(revision)
-        .check(false)
-        .output()?;
-
-    if !output.status.success() {
-        return Ok(None);
-    }
-    Ok(Some(output.stdout))
 }
 
 /// Return the path to the `.git` directory (or git-dir for worktrees).
@@ -533,287 +241,9 @@ pub fn get_git_hooks_dir() -> Result<PathBuf, Error> {
     Ok(hooks_dir.clean())
 }
 
-/// Return `true` if `rev` names an existing, valid git object in `root`.
-///
-/// Used by the pre-push shim to decide whether the remote tip it was handed on
-/// stdin is a commit this repository can reason about.
-#[instrument(level = "trace")]
-pub fn rev_exists(rev: &str, root: &Path) -> Result<bool, Error> {
-    validate_revision(rev)?;
-    let mut cmd = git_cmd("git cat-file")?;
-    let status = cmd
-        .current_dir(root)
-        .arg("cat-file")
-        .arg("-e")
-        .arg(rev)
-        .check(false)
-        .status()?;
-
-    if status.success() {
-        return Ok(true);
-    }
-    if status.code() == Some(1) {
-        return Ok(false);
-    }
-
-    cmd.check_status(status)?;
-    Ok(false)
-}
-
-/// Return `true` if `ancestor` is an ancestor of `commit` (via `merge-base`).
-///
-/// Exit code `0` means yes, `1` means no; any other status is propagated.
-#[instrument(level = "trace")]
-pub fn is_ancestor(ancestor: &str, commit: &str, root: &Path) -> Result<bool, Error> {
-    validate_revision(ancestor)?;
-    validate_revision(commit)?;
-    let mut cmd = git_cmd("check commit ancestry")?;
-    let status = cmd
-        .current_dir(root)
-        .arg("merge-base")
-        .arg("--is-ancestor")
-        .arg(ancestor)
-        .arg(commit)
-        .check(false)
-        .status()?;
-
-    if status.success() {
-        return Ok(true);
-    }
-    if status.code() == Some(1) {
-        return Ok(false);
-    }
-
-    cmd.check_status(status)?;
-    Ok(false)
-}
-
-/// Commits reachable from `local_sha` that no ref of `remote_name` can reach.
-///
-/// Ordered oldest-first (`--topo-order --reverse`), so the first element is the
-/// earliest commit the remote does not already have.
-#[instrument(level = "trace")]
-pub fn get_ancestors_not_in_remote(local_sha: &str, remote_name: &str, root: &Path) -> Result<Vec<String>, Error> {
-    validate_revision(local_sha)?;
-    let output = git_cmd("get ancestors not in remote")?
-        .current_dir(root)
-        .arg("rev-list")
-        .arg(local_sha)
-        .arg("--topo-order")
-        .arg("--reverse")
-        .arg("--not")
-        .arg(format!("--remotes={remote_name}"))
-        .check(true)
-        .output()?;
-    Ok(std::str::from_utf8(&output.stdout)?
-        .trim_ascii()
-        .lines()
-        .map(ToString::to_string)
-        .collect())
-}
-
-/// Root commits (commits with no parents) reachable from `local_sha`.
-#[instrument(level = "trace")]
-pub fn get_root_commits(local_sha: &str, root: &Path) -> Result<Vec<String>, Error> {
-    validate_revision(local_sha)?;
-    let output = git_cmd("get root commits")?
-        .current_dir(root)
-        .arg("rev-list")
-        .arg("--max-parents=0")
-        .arg(local_sha)
-        .check(true)
-        .output()?;
-    Ok(std::str::from_utf8(&output.stdout)?
-        .trim_ascii()
-        .lines()
-        .map(ToString::to_string)
-        .collect())
-}
-
-/// Resolve the first parent of `commit` (`<commit>^`), if any.
-///
-/// Returns `Ok(None)` when `commit` has no parent (e.g. a root commit).
-#[instrument(level = "trace")]
-pub fn get_parent_commit(commit: &str, root: &Path) -> Result<Option<String>, Error> {
-    validate_revision(commit)?;
-    let output = git_cmd("get parent commit")?
-        .current_dir(root)
-        .arg("rev-parse")
-        .arg(format!("{commit}^"))
-        .check(false)
-        .output()?;
-    if output.status.success() {
-        Ok(Some(std::str::from_utf8(&output.stdout)?.trim_ascii().to_string()))
-    } else {
-        Ok(None)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::process::Command;
-
-    use tempfile::TempDir;
-
-    fn git_run(repo: &Path, args: &[&str]) -> String {
-        let output = Command::new("git")
-            .args(args)
-            .current_dir(repo)
-            .output()
-            .expect("git invocation");
-        assert!(
-            output.status.success(),
-            "git {args:?} failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        String::from_utf8_lossy(&output.stdout).trim().to_string()
-    }
-
-    #[test]
-    fn revision_functions_reject_option_like_input() {
-        let dir = TempDir::new().expect("tempdir");
-        let root = dir.path();
-        let evil = "--upload-pack=touch /tmp/pwned";
-
-        assert!(matches!(rev_exists(evil, root), Err(Error::InvalidRevision { .. })));
-        assert!(matches!(
-            is_ancestor(evil, "HEAD", root),
-            Err(Error::InvalidRevision { .. })
-        ));
-        assert!(matches!(
-            is_ancestor("HEAD", evil, root),
-            Err(Error::InvalidRevision { .. })
-        ));
-        assert!(matches!(
-            get_ancestors_not_in_remote(evil, "origin", root),
-            Err(Error::InvalidRevision { .. })
-        ));
-        assert!(matches!(
-            get_root_commits(evil, root),
-            Err(Error::InvalidRevision { .. })
-        ));
-        assert!(matches!(
-            get_parent_commit(evil, root),
-            Err(Error::InvalidRevision { .. })
-        ));
-    }
-
-    fn init_temp_repo() -> TempDir {
-        let dir = TempDir::new().expect("tempdir");
-        let path = dir.path();
-        git_run(path, &["init", "-q"]);
-        git_run(path, &["config", "user.email", "test@example.com"]);
-        git_run(path, &["config", "user.name", "Test"]);
-        git_run(path, &["config", "commit.gpgsign", "false"]);
-        dir
-    }
-
-    fn commit_file(repo: &Path, name: &str) -> String {
-        std::fs::write(repo.join(name), name).expect("write file");
-        git_run(repo, &["add", name]);
-        git_run(repo, &["commit", "-q", "-m", name]);
-        git_run(repo, &["rev-parse", "HEAD"])
-    }
-
-    #[test]
-    fn parse_ls_files_stage_reads_oid_path_and_symlink() {
-        let input = b"100644 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0\tsrc/a b.rs\0\
-120000 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 0\tlink\0\
-160000 cccccccccccccccccccccccccccccccccccccccc 0\tvendored\0";
-        let entries = parse_ls_files_stage(input).expect("parse");
-        assert_eq!(entries.len(), 2, "submodule gitlink must be skipped");
-        assert_eq!(entries[0].oid, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
-        assert_eq!(entries[0].path, PathBuf::from("src/a b.rs"));
-        assert!(!entries[0].is_symlink);
-        assert_eq!(entries[1].path, PathBuf::from("link"));
-        assert!(entries[1].is_symlink, "mode 120000 is a symlink");
-    }
-
-    #[test]
-    fn parse_ls_files_gitlinks_returns_only_submodules() {
-        let input = b"100644 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0\tsrc/a.rs\0\
-160000 cccccccccccccccccccccccccccccccccccccccc 0\tvendor/sub\0\
-160000 dddddddddddddddddddddddddddddddddddddddd 0\ttest documents\0";
-        let paths = parse_ls_files_gitlinks(input).expect("parse");
-        assert_eq!(
-            paths,
-            vec![PathBuf::from("vendor/sub"), PathBuf::from("test documents")],
-            "only submodule gitlinks, paths verbatim (incl. spaces)"
-        );
-    }
-
-    #[test]
-    fn index_paths_that_escape_their_tree_are_rejected() {
-        assert!(is_safe_relative_path(Path::new("src/a.rs")));
-        assert!(is_safe_relative_path(Path::new("dir/a file.rs")));
-        assert!(!is_safe_relative_path(Path::new("")));
-        assert!(!is_safe_relative_path(Path::new("../outside.rs")));
-        assert!(!is_safe_relative_path(Path::new("src/../../outside.rs")));
-        assert!(!is_safe_relative_path(Path::new("./a.rs")));
-        assert!(!is_safe_relative_path(Path::new("/etc/passwd")));
-
-        // A handcrafted index is the attacker-controlled input here, so the
-        // parsers must reject rather than join the path onto a root.
-        let escaping = b"100644 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0\t../../.bashrc\0";
-        assert!(matches!(parse_ls_files_stage(escaping), Err(Error::UnsafePath { .. })));
-        let absolute = b"100644 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0\t/etc/passwd\0";
-        assert!(matches!(parse_ls_files_stage(absolute), Err(Error::UnsafePath { .. })));
-        let gitlink = b"160000 cccccccccccccccccccccccccccccccccccccccc 0\t../evil\0";
-        assert!(matches!(
-            parse_ls_files_gitlinks(gitlink),
-            Err(Error::UnsafePath { .. })
-        ));
-        assert!(matches!(
-            staged_blob(Path::new("."), Path::new("../escape")),
-            Err(Error::UnsafePath { .. })
-        ));
-    }
-
-    #[test]
-    fn staged_blob_reads_index_content_not_the_worktree() {
-        let repo = init_temp_repo();
-        let root = repo.path();
-        std::fs::write(root.join("a.txt"), "staged\n").expect("write");
-        git_run(root, &["add", "a.txt"]);
-        std::fs::write(root.join("a.txt"), "worktree edit\n").expect("write");
-
-        let blob = staged_blob(root, Path::new("a.txt")).expect("staged blob");
-        assert_eq!(blob.as_deref(), Some(&b"staged\n"[..]));
-        assert_eq!(
-            staged_blob(root, Path::new("absent.txt")).expect("absent path"),
-            None,
-            "a path with no stage-0 entry has no staged bytes"
-        );
-    }
-
-    /// The whole reason [`staged_blob`] exists: `git diff-files` under
-    /// `--assume-unchanged` calls a genuinely-modified file clean, while reading
-    /// the index content still sees the difference.
-    #[test]
-    fn staged_blob_sees_a_difference_the_stat_cache_hides() {
-        let repo = init_temp_repo();
-        let root = repo.path();
-        std::fs::write(root.join("a.txt"), "staged\n").expect("write");
-        git_run(root, &["add", "a.txt"]);
-        std::fs::write(root.join("a.txt"), "staged\nunstaged work\n").expect("write");
-        git_run(root, &["update-index", "--assume-unchanged", "a.txt"]);
-
-        let diff_files_clean = Command::new("git")
-            .args(["diff-files", "--quiet", "--", "a.txt"])
-            .current_dir(root)
-            .status()
-            .expect("git diff-files")
-            .success();
-        assert!(diff_files_clean, "precondition: the stat cache reports this file clean");
-
-        let blob = staged_blob(root, Path::new("a.txt")).expect("staged blob");
-        assert_eq!(
-            blob.as_deref(),
-            Some(&b"staged\n"[..]),
-            "the index content must be visible even when the stat cache lies"
-        );
-    }
 
     #[test]
     fn zsplit_splits_on_nul_and_filters_empty() {
@@ -831,41 +261,5 @@ mod tests {
     fn git_root_is_directory() {
         let root = get_root().expect("git root");
         assert!(root.is_dir(), "root is not a directory: {}", root.display());
-    }
-
-    #[test]
-    fn rev_exists_distinguishes_real_and_bogus_revisions() {
-        let repo = init_temp_repo();
-        let head = commit_file(repo.path(), "a.txt");
-        assert!(rev_exists(&head, repo.path()).expect("rev_exists"));
-        assert!(!rev_exists("0000000000000000000000000000000000000000", repo.path()).expect("rev_exists"));
-    }
-
-    #[test]
-    fn is_ancestor_reports_parentage() {
-        let repo = init_temp_repo();
-        let first = commit_file(repo.path(), "a.txt");
-        let second = commit_file(repo.path(), "b.txt");
-        assert!(is_ancestor(&first, &second, repo.path()).expect("is_ancestor"));
-        assert!(!is_ancestor(&second, &first, repo.path()).expect("is_ancestor"));
-    }
-
-    #[test]
-    fn get_parent_commit_resolves_first_parent() {
-        let repo = init_temp_repo();
-        let first = commit_file(repo.path(), "a.txt");
-        let second = commit_file(repo.path(), "b.txt");
-        let parent = get_parent_commit(&second, repo.path()).expect("parent");
-        assert_eq!(parent.as_deref(), Some(first.as_str()));
-        assert_eq!(get_parent_commit(&first, repo.path()).expect("parent"), None);
-    }
-
-    #[test]
-    fn get_root_commits_lists_only_the_root() {
-        let repo = init_temp_repo();
-        let first = commit_file(repo.path(), "a.txt");
-        let second = commit_file(repo.path(), "b.txt");
-        let roots = get_root_commits(&second, repo.path()).expect("roots");
-        assert_eq!(roots, vec![first]);
     }
 }

@@ -85,26 +85,30 @@
 //! any cache (`poly cache clean`, or remove the per-user cache dir). Single-writer
 //! is assumed, matching the result cache's posture; concurrent `poly hooks` runs
 //! on one repo are not locked yet.
+//!
+//! # Module layout
+//!
+//! This file owns the lifecycle — [`StagedSnapshot`], `refresh`, and the
+//! symlink sanitizing that must run immediately after the checkout. The two
+//! concerns a refresh delegates to live beside it: `manifest` (the incremental
+//! ledger that decides what to re-materialize and what to prune) and
+//! `submodule` (linking populated submodules into the snapshot).
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use tracing::{debug, warn};
 
 use crate::git;
 
+mod manifest;
+mod submodule;
+
+use self::manifest::{is_up_to_date, prune_stale, read_manifest, write_manifest};
+use self::submodule::materialize_submodules;
+
 /// Directory name for the snapshot under the per-repo cache dir
 /// (`<platform-cache>/poly/<repo-key>/staged`).
 const SNAPSHOT_SUBDIR: &str = "staged";
-
-/// Manifest recording the tracked paths materialized last run, so prune removes
-/// only files that fell out of the tree — never tool-generated caches.
-const MANIFEST_FILE: &str = ".poly-manifest";
-
-/// Manifest placeholder for a stat field that could not be read when the record
-/// was written. It never compares equal to a real stat, so the path is
-/// re-materialized on the next refresh while still taking part in the prune.
-const UNKNOWN_STAT: &str = "-";
 
 /// Errors returned while creating or refreshing a [`StagedSnapshot`].
 #[derive(Debug, thiserror::Error)]
@@ -235,256 +239,13 @@ fn resolves_inside_tree(link_path: &Path, target: &Path) -> bool {
     true
 }
 
-/// Expose each populated submodule in the snapshot as a symlink into the live
-/// worktree, so whole-workspace compile hooks can resolve files inside it (see
-/// the module docs). An uninitialized submodule (empty worktree directory) is
-/// skipped — there is nothing to link and the real build would fail on it too.
-fn materialize_submodules(root: &Path, dir: &Path) -> Result<(), Error> {
-    for subpath in git::list_submodule_gitlinks(root)? {
-        let source = root.join(&subpath);
-        if !is_populated_dir(&source) {
-            debug!(submodule = %subpath.display(), "skipping uninitialized submodule");
-            continue;
-        }
-        let target = std::fs::canonicalize(&source).unwrap_or(source);
-        ensure_symlink(&target, &dir.join(&subpath))?;
-    }
-    Ok(())
-}
-
-/// Whether `path` is a directory holding at least one entry — i.e. a checked-out,
-/// non-empty submodule (an uninitialized submodule is an empty directory).
-fn is_populated_dir(path: &Path) -> bool {
-    std::fs::read_dir(path).is_ok_and(|mut entries| entries.next().is_some())
-}
-
-/// Ensure `link` is a symlink to `target`. Idempotent: an already-correct symlink
-/// is left untouched (stable mtime keeps compilers warm); any other existing
-/// entry — a stale symlink or an empty `checkout-index` directory — is replaced.
-fn ensure_symlink(target: &Path, link: &Path) -> Result<(), Error> {
-    if is_symlink_to(link, target) {
-        return Ok(());
-    }
-    remove_existing_entry(link)?;
-    if let Some(parent) = link.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    symlink_dir(target, link)?;
-    Ok(())
-}
-
-/// Whether `link` is already a symlink that resolves to `target`.
-fn is_symlink_to(link: &Path, target: &Path) -> bool {
-    let is_symlink = std::fs::symlink_metadata(link).is_ok_and(|meta| meta.file_type().is_symlink());
-    is_symlink
-        && matches!(
-            (dunce::canonicalize(link), dunce::canonicalize(target)),
-            (Ok(resolved), Ok(want)) if resolved == want
-        )
-}
-
-/// Remove whatever currently occupies `link` — a symlink of any kind, a real
-/// directory, or a file — so a fresh symlink can replace it. Absent entries are
-/// a no-op.
-///
-/// A **directory** symlink on Windows must be removed with `remove_dir`, not
-/// `remove_file` (which fails on a directory reparse point); a real directory (a
-/// leftover empty `checkout-index` dir) is removed recursively.
-fn remove_existing_entry(link: &Path) -> Result<(), Error> {
-    let Ok(meta) = std::fs::symlink_metadata(link) else {
-        return Ok(());
-    };
-    if meta.file_type().is_symlink() {
-        remove_symlink(link)?;
-    } else if meta.is_dir() {
-        std::fs::remove_dir_all(link)?;
-    } else {
-        std::fs::remove_file(link)?;
-    }
-    Ok(())
-}
-
-/// Remove a symlink entry (not its target). On Unix `remove_file` unlinks it;
-/// on Windows a directory symlink needs `remove_dir`, with a `remove_file`
-/// fallback for a file symlink.
-#[cfg(unix)]
-fn remove_symlink(link: &Path) -> std::io::Result<()> {
-    std::fs::remove_file(link)
-}
-
-#[cfg(windows)]
-fn remove_symlink(link: &Path) -> std::io::Result<()> {
-    std::fs::remove_dir(link).or_else(|_| std::fs::remove_file(link))
-}
-
-/// Create a directory symlink at `link` pointing to `target` (platform-specific).
-#[cfg(unix)]
-fn symlink_dir(target: &Path, link: &Path) -> std::io::Result<()> {
-    std::os::unix::fs::symlink(target, link)
-}
-
-/// Create a directory symlink at `link` pointing to `target` (platform-specific).
-#[cfg(windows)]
-fn symlink_dir(target: &Path, link: &Path) -> std::io::Result<()> {
-    std::os::windows::fs::symlink_dir(target, link)
-}
-
-/// What the manifest records for one materialized path: the index OID it was
-/// written from plus the `(size, mtime)` observed immediately afterwards.
-///
-/// The stat is `None` when it could not be read at write time, which never
-/// matches a later observation and so forces a re-materialization.
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct Record {
-    oid: String,
-    stat: Option<Stat>,
-}
-
-/// Size and modification time of a materialized snapshot file — the fingerprint
-/// that detects a write by anything other than `git checkout-index`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Stat {
-    size: u64,
-    mtime_nanos: u128,
-}
-
-impl Stat {
-    /// Read the fingerprint of `path`, or `None` when it is absent or its mtime
-    /// is unrepresentable. `symlink_metadata` is used so a materialized symlink
-    /// is fingerprinted as itself rather than as its target.
-    fn read(path: &Path) -> Option<Self> {
-        let meta = std::fs::symlink_metadata(path).ok()?;
-        let mtime = meta.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?;
-        Some(Self {
-            size: meta.len(),
-            mtime_nanos: mtime.as_nanos(),
-        })
-    }
-}
-
-/// Whether the snapshot copy of `entry` can be left untouched: the index OID is
-/// unchanged **and** the file on disk is still byte-for-byte the one we wrote
-/// for that OID, as far as its `(size, mtime)` can attest.
-fn is_up_to_date(dir: &Path, entry: &git::StagedEntry, previous: &HashMap<PathBuf, Record>) -> bool {
-    let Some(record) = previous.get(&entry.path) else {
-        return false;
-    };
-    record.oid == entry.oid && record.stat.is_some() && record.stat == Stat::read(&dir.join(&entry.path))
-}
-
-/// Remove snapshot files from the previous manifest that are no longer staged.
-/// Restricting deletion to the manifest means tool caches written into the
-/// snapshot (`target/`, `.mypy_cache`, …) are never touched.
-fn prune_stale(dir: &Path, staged: &[git::StagedEntry], previous: &HashMap<PathBuf, Record>) {
-    let current: std::collections::HashSet<&PathBuf> = staged.iter().map(|entry| &entry.path).collect();
-    for path in previous.keys() {
-        if !current.contains(path) {
-            let _ = std::fs::remove_file(dir.join(path));
-        }
-    }
-}
-
-/// Read the previous manifest into a path → [`Record`] map (NUL-separated
-/// `<oid> <size> <mtime> <path>` records). An absent or unreadable manifest
-/// yields an empty map, so everything is re-materialized once — the safe
-/// direction.
-fn read_manifest(dir: &Path) -> HashMap<PathBuf, Record> {
-    std::fs::read(dir.join(MANIFEST_FILE))
-        .map(|bytes| {
-            bytes
-                .split(|&byte| byte == 0)
-                .filter(|slice| !slice.is_empty())
-                .filter_map(parse_manifest_record)
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-/// Parse one `<oid> <size> <mtime> <path>` manifest record. The leading fields
-/// are space-free, so the path is whatever follows the third space and is taken
-/// verbatim (it may itself contain spaces).
-///
-/// A record written by an older poly carries no stat fields (`<oid> <path>`); it
-/// is accepted with `stat: None` so an upgrade keeps the prune ledger and merely
-/// re-materializes every path once.
-fn parse_manifest_record(record: &[u8]) -> Option<(PathBuf, Record)> {
-    let (oid, rest) = split_field(record)?;
-    let oid = std::str::from_utf8(oid).ok()?.to_string();
-    let (stat, path_bytes) = parse_stat_fields(rest).unwrap_or((None, rest));
-    let path = git::path_from_git_bytes(path_bytes).ok()?;
-    Some((path, Record { oid, stat }))
-}
-
-/// Split the leading space-delimited field off `record`, returning it and the
-/// remainder. `None` when the record has no space (so no path can follow).
-fn split_field(record: &[u8]) -> Option<(&[u8], &[u8])> {
-    let space = record.iter().position(|&byte| byte == b' ')?;
-    Some((&record[..space], &record[space + 1..]))
-}
-
-/// Parse the `<size> <mtime>` fields, returning them with the remaining path
-/// bytes. `None` when `rest` does not start with two such fields — i.e. it is a
-/// legacy stat-less record whose path begins right here.
-fn parse_stat_fields(rest: &[u8]) -> Option<(Option<Stat>, &[u8])> {
-    let (size, rest) = split_field(rest)?;
-    let (mtime, rest) = split_field(rest)?;
-    let size = std::str::from_utf8(size).ok()?;
-    let mtime = std::str::from_utf8(mtime).ok()?;
-    if (size, mtime) == (UNKNOWN_STAT, UNKNOWN_STAT) {
-        return Some((None, rest));
-    }
-    let stat = Stat {
-        size: size.parse().ok()?,
-        mtime_nanos: mtime.parse().ok()?,
-    };
-    Some((Some(stat), rest))
-}
-
-/// Write the manifest for the currently-staged paths, fingerprinting each
-/// materialized file as it goes (NUL-separated `<oid> <size> <mtime> <path>`
-/// records). A file whose stat cannot be read is recorded with [`UNKNOWN_STAT`]
-/// placeholders: it stays in the prune ledger but is re-materialized next run.
-fn write_manifest(dir: &Path, staged: &[git::StagedEntry]) -> Result<(), Error> {
-    let mut bytes = Vec::new();
-    for entry in staged {
-        let stat = Stat::read(&dir.join(&entry.path)).map_or_else(
-            || format!("{UNKNOWN_STAT} {UNKNOWN_STAT}"),
-            |stat| format!("{} {}", stat.size, stat.mtime_nanos),
-        );
-        bytes.extend_from_slice(entry.oid.as_bytes());
-        bytes.push(b' ');
-        bytes.extend_from_slice(stat.as_bytes());
-        bytes.push(b' ');
-        bytes.extend_from_slice(path_to_git_bytes(&entry.path).as_ref());
-        bytes.push(0);
-    }
-    std::fs::write(dir.join(MANIFEST_FILE), bytes)?;
-    Ok(())
-}
-
-/// Encode a repo-relative path for the manifest, byte-faithfully on unix so a
-/// non-UTF-8 path round-trips through [`git::path_from_git_bytes`] instead of
-/// being lossily mangled (which would re-materialize it on every run).
-#[cfg(unix)]
-fn path_to_git_bytes(path: &Path) -> std::borrow::Cow<'_, [u8]> {
-    use std::os::unix::ffi::OsStrExt as _;
-
-    std::borrow::Cow::Borrowed(path.as_os_str().as_bytes())
-}
-
-#[cfg(not(unix))]
-fn path_to_git_bytes(path: &Path) -> std::borrow::Cow<'_, [u8]> {
-    match path.to_string_lossy() {
-        std::borrow::Cow::Borrowed(text) => std::borrow::Cow::Borrowed(text.as_bytes()),
-        std::borrow::Cow::Owned(text) => std::borrow::Cow::Owned(text.into_bytes()),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::process::Command;
     use tempfile::TempDir;
+
+    use super::manifest::MANIFEST_FILE;
 
     fn git(repo: &Path, args: &[&str]) {
         let ok = Command::new("git")
@@ -668,30 +429,6 @@ mod tests {
             let snap = StagedSnapshot::create_in(cache.path(), repo).expect("refresh");
             assert_matches_index(repo, snap.path(), "a.rs", "unstaged edit present");
         }
-    }
-
-    #[test]
-    fn manifest_records_round_trip_including_paths_with_spaces() {
-        let parsed = parse_manifest_record(b"abc123 42 7 dir/a file.rs").expect("parse");
-        assert_eq!(parsed.0, PathBuf::from("dir/a file.rs"));
-        assert_eq!(
-            parsed.1,
-            Record {
-                oid: "abc123".to_string(),
-                stat: Some(Stat {
-                    size: 42,
-                    mtime_nanos: 7
-                }),
-            }
-        );
-
-        let unknown = parse_manifest_record(b"abc123 - - a.rs").expect("parse unknown stat");
-        assert_eq!(unknown.1.stat, None, "an unknown stat must never match a real one");
-
-        // A manifest written by an older poly has no stat fields.
-        let legacy = parse_manifest_record(b"abc123 a.rs").expect("parse legacy");
-        assert_eq!(legacy.0, PathBuf::from("a.rs"));
-        assert_eq!(legacy.1.stat, None);
     }
 
     #[test]

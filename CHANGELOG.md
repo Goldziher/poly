@@ -5,6 +5,84 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
+## [Unreleased]
+
+### Fixed
+
+- **A language poly has no lint rules for is no longer counted as linted.** `poly lint .` over a
+  tree holding `a.kt`, `c.xyz` and `d.py` reported `No issues found. (2 file(s) linted)` and
+  exited 0. The Kotlin file was in that count: it routes to the cross-cutting backends
+  (spell-check, ast-grep, comment removal) and to nothing carrying a single Kotlin rule, so a
+  consumer with Kotlin, Swift and Zig as first-class languages read a green run as full coverage
+  of three languages nothing had examined. `--deny-skips` could not catch it either, because
+  none of it was reported as a skip.
+
+  Such a file now leaves the linted count and joins the skipped set with the language named —
+  `skipped a.kt: no lint rules for Kotlin` — which puts it in front of `--deny-skips` and
+  `--max-skips`, and in the `skipped` field of the `--format json` / `toon` document. The reason
+  is deliberately distinct from the existing `no matching engine for this file type`: an engine
+  *did* match, poly simply has nothing to say about the language, and the fix for that is a
+  linter for it (`[tools.<name>]`) rather than a rename or an exclude.
+
+  The cross-cutting backends still run over these files and their findings are still reported —
+  a Kotlin file can carry a typo finding and still be uncovered by any Kotlin rule. The same
+  accounting applies wherever a language's linter is opt-in or absent, so a shell script with no
+  `shellcheck` installed is reported rather than counted. **Default behaviour is unchanged: this
+  is coverage information, not a failure, and a run whose only skips are no-rules languages
+  still exits 0.** Only `--deny-skips` / `--max-skips` turn it into a gate.
+
+  **The whole-project phase counts as coverage.** `poly lint` is two halves, and the per-file
+  tier has no Rust rules — but the whole-project phase runs `cargo clippy`, so a plain
+  `poly lint .` over a Rust repository was printing hundreds of `no lint rules for Rust` lines a
+  few lines above the `✓ cargo-clippy` that contradicted them. `poly lint` now resolves which
+  languages its whole-project tool set covers *before* the per-file run and those files are not
+  recorded as skipped at all — so the linted count, the note, the JSON payload and
+  `--deny-skips` describe the same run rather than being reconciled at display time. The mapping
+  is keyed on the whole-project tool id: `cargo-clippy` establishes Rust coverage, while
+  `cargo-sort` / `cargo-machete` / `cargo-deny` deliberately do not (they read manifests and the
+  dependency graph, never `.rs` source). With the phase off — `--no-workspace`, `[lint]
+  workspace = false`, a path-scoped run, or a repo with no `[hooks]` section — nothing lints
+  Rust in that run, so the skip is accurate and still appears.
+
+- **The skipped-file note is grouped by reason instead of capped as a list.** A run could emit
+  229 consecutive identical lines, which both drowned the findings and pushed every *other*
+  reason past the old flat cap of 20 — so the rare skip worth reading was exactly the one
+  dropped. Each reason is now bounded on its own: a reason covering more than three files
+  collapses to `skipped N file(s): <reason>` plus three example paths, and a reason covering
+  three or fewer still names every file. A bulk reason therefore costs two lines however many
+  files it covers and can never crowd out a one-off. `--verbose` lists every file individually,
+  and `--format json` / `toon` carry the complete set as before.
+
+- **A walked file poly cannot identify is no longer invisible.** `c.xyz` above appeared nowhere
+  at all: it is neither a language poly knows nor a path the caller named. The run summary now
+  reports `N file(s) of unrecognized type not checked` and names the first few. They are
+  deliberately *not* itemised as skips — poly's own tree holds 83 unidentifiable files out of
+  446 (snapshots, lock files, images, `LICENSE`), and one skip each would fire `--deny-skips` in
+  every repository and bury the skips that mean something. A path named explicitly on the
+  command line is unaffected and remains a skip, since naming a path is a request to check it.
+
+- **The cache-permission warning no longer fires forever after an upgrade.** 0.20.0 began
+  creating cache directories `0700` but never changed one that already existed, so every user
+  upgrading from an older poly — whose slot was created under the usual `022` umask — saw
+  `cache directory is readable by other local users` on every single run, with no way to make
+  it stop short of a manual `chmod`. A warning that never goes away trains people to ignore
+  warnings, which is worse than the low-severity issue it reported.
+
+  The rule now splits on who chose the location. A directory resolved from the **default**
+  per-user OS cache home (`~/.cache/poly/…`, `~/Library/Caches/poly/…`) with no
+  `POLY_CACHE_HOME` and no `[cache] dir` override is poly's own: poly picked the path, created
+  it, and invited nobody to share it, so it is tightened to `0700` in place and silently — there
+  is nothing for the user to decide. A location named **explicitly** by `POLY_CACHE_HOME`,
+  `[cache] dir`, or `--cache-dir` keeps 0.20.0's behaviour exactly: its mode may encode a
+  deliberate choice (a shared CI cache, a team directory), so poly never changes it and warns
+  once with the `chmod 700` command.
+
+  Tightening is best-effort and Unix-only: poly checks that it owns the directory (`st_uid`
+  matches the effective uid) before changing the mode, and a chmod that fails anyway — read-only
+  mount, another account's directory — degrades to the same warning rather than failing the run.
+  The warning is now de-duplicated per directory rather than per process, so a run that meets two
+  different loose directories reports both.
+
 ## [0.20.1] - 2026-08-13
 
 ### Fixed

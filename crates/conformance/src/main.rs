@@ -241,6 +241,7 @@ fn poly_fmt_output(file: &Path) -> Result<String> {
         fix_generated: false,
         explicit_config: true,
         config_resolver: None,
+        externally_linted_languages: Vec::new(),
     };
     let results = poly_core::format(std::slice::from_ref(&target), &Config::default(), &opts, false, false)?;
     Ok(results

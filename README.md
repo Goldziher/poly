@@ -678,6 +678,14 @@ run reads the index is how a commit gate passes a commit whose staged content it
 saw. Every hook outcome records which tree produced its verdict, and the stage banner renders it
 (`[stage] pre-commit — validated staged content`).
 
+The banner is at the top of the run, though, and by the time a hook fails and prints its own
+output it can be scrolled well out of view — so a failure whose cause lives only in a file you
+have not staged (a multi-file change split across a staged and an unstaged hunk, say) can look
+like it contradicts a `cargo check` that just passed in your worktree. When that happens, the
+first staged-validated failure in the report carries its own one-line reminder immediately after
+its output, naming the tree it checked and what to do about a mismatch (`git add` the rest of the
+change, or `isolate = false` below) — printed once per run, not once per failing hook.
+
 On by default for the commit-gating stages (`pre-commit`, `pre-merge-commit`); skipped for
 `--all-files` and non-index stages, which check the worktree by design. Opt out for the whole run
 with `isolate = false`:
@@ -1339,9 +1347,25 @@ poly fmt [PATHS]...
   --debug                      Include cache hit/miss and timing data.
 ```
 
-Skipped files — no matching engine, a generated file, an unreadable path — are always
-counted and their reasons summarized, so a run that checked nothing cannot look like a
-clean pass. `--deny-skips` / `--max-skips` turn that into a hard failure for CI.
+Skipped files — a language poly has no lint rules for, no matching engine, a generated
+file, an unreadable path — are always counted and their reasons summarized, so a run that
+checked nothing cannot look like a clean pass. `--deny-skips` / `--max-skips` turn that
+into a hard failure for CI.
+
+`poly lint` reports a file whose language nothing in the run lints as
+`skipped a.kt: no lint rules for Kotlin`, and keeps it out of the `N file(s) linted` count.
+This covers the tier-2 languages (Kotlin, Swift, Zig, Java, C, …), which poly formats but
+has no rules for, and any language whose linter is opt-in or missing from `PATH` — a shell
+script with no `shellcheck` installed is reported rather than counted. It is coverage
+information, not a failure: the run still exits 0 unless you ask for `--deny-skips` /
+`--max-skips`. Cross-cutting checks (typos, ast-grep rules, comment removal) still run on
+these files and their findings are still reported.
+
+A file a directory walk could not identify as any language is counted separately —
+`N file(s) of unrecognized type not checked`, with the first few named — rather than
+itemised as a skip, since every repository is full of images, lock files and snapshots that
+no linter was ever going to read. A path you name on the command line is different: naming
+it is a request to check it, so it is reported as a skip.
 
 Exit codes:
 
