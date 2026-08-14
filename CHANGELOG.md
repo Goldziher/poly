@@ -5,6 +5,25 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
+## [Unreleased]
+
+## [0.21.1] - 2026-08-14
+
+### Fixed
+
+- **Bare Jinja, Vento, and Mustache templates now fail closed instead of being guessed from their
+  contents.** XML documentation in a C#-generating `.jinja` file looked like rendered markup, so
+  markup_fmt reflowed the template and produced invalid generated code. Generic templates are now
+  formatted only when a second extension names a markup target, such as `.html.jinja` or
+  `.xml.jinja`; `.cs.jinja` remains code, and ambiguous bare templates are preserved byte for byte
+  with an actionable skip reason.
+
+- **Explicit roots now honor configured exclusions consistently.** Naming a file no longer silently
+  bypasses `[discovery] exclude`, and a relative file preceding an excluded directory no longer
+  loses the directory's config anchor and exposes its files to formatting. Root count and argument
+  order now have the same result. `--include-excluded` is the deliberate one-off override for a
+  named file or directory; the existing `--force-exclude` flag remains accepted for compatibility.
+
 ## [0.21.0] - 2026-08-13
 
 ### Fixed
