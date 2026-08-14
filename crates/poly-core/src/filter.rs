@@ -240,6 +240,21 @@ const GENERATED_MARKERS: &[&str] = &[
 /// put the banner at the top; scanning further would start matching prose.
 const GENERATED_HEADER_LINES: usize = 5;
 
+fn generated_header_region(content: &str) -> Option<&str> {
+    let mut offset = 0;
+    for (index, line) in content.split_inclusive('\n').enumerate() {
+        let line_content = line.trim_end_matches(['\r', '\n']);
+        if index == 0 && line_content != "---" {
+            return Some(content);
+        }
+        offset += line.len();
+        if index > 0 && line_content == "---" {
+            return Some(&content[offset..]);
+        }
+    }
+    (!content.starts_with("---")).then_some(content)
+}
+
 /// Whether `content` announces itself as machine-generated.
 ///
 /// `poly lint` still *reports* on these files — that is how a generator bug gets
@@ -253,9 +268,11 @@ const GENERATED_HEADER_LINES: usize = 5;
 /// `--fix` rewrote it to `_` and turned a loud, correct diagnostic about a real
 /// upstream defect into a clean lint pass.
 pub(crate) fn is_generated_source(content: &str) -> bool {
-    content.lines().take(GENERATED_HEADER_LINES).any(|line| {
-        let lower = line.to_ascii_lowercase();
-        GENERATED_MARKERS.iter().any(|marker| lower.contains(marker)) || has_structured_hash_stamp(&lower)
+    generated_header_region(content).is_some_and(|header| {
+        header.lines().take(GENERATED_HEADER_LINES).any(|line| {
+            let lower = line.to_ascii_lowercase();
+            GENERATED_MARKERS.iter().any(|marker| lower.contains(marker)) || has_structured_hash_stamp(&lower)
+        })
     })
 }
 
@@ -299,9 +316,11 @@ fn has_structured_hash_stamp(line: &str) -> bool {
 /// consumer whose most user-facing code left the gate without anything failing.
 /// Formatting a banner-only file is harmless; silently not checking it is not.
 pub(crate) fn is_hash_stamped_source(content: &str) -> bool {
-    content.lines().take(GENERATED_HEADER_LINES).any(|line| {
-        let lower = line.to_ascii_lowercase();
-        CONTENT_HASH_MARKERS.iter().any(|marker| lower.contains(marker)) || has_structured_hash_stamp(&lower)
+    generated_header_region(content).is_some_and(|header| {
+        header.lines().take(GENERATED_HEADER_LINES).any(|line| {
+            let lower = line.to_ascii_lowercase();
+            CONTENT_HASH_MARKERS.iter().any(|marker| lower.contains(marker)) || has_structured_hash_stamp(&lower)
+        })
     })
 }
 
@@ -459,6 +478,37 @@ mod tests {
             assert!(is_generated_source(generated_header), "header: {generated_header:?}");
             assert!(is_hash_stamped_source(generated_header), "header: {generated_header:?}");
         }
+    }
+
+    #[test]
+    fn recognizes_generated_markers_after_yaml_frontmatter() {
+        let source = "---\r\nname: api\r\ndescription: generated API docs\r\n---\r\n\r\n\
+                      <!-- This file is auto-generated. DO NOT EDIT. -->\r\n\
+                      <!-- alef:hash:0123456789abcdef -->\r\n\
+                      # Heading\r\n";
+
+        assert!(
+            is_generated_source(source),
+            "generated banner below frontmatter was missed"
+        );
+        assert!(
+            is_hash_stamped_source(source),
+            "hash stamp below frontmatter was missed"
+        );
+    }
+
+    #[test]
+    fn unterminated_yaml_frontmatter_does_not_expand_marker_scan() {
+        let source = "---\nname: api\n# alef:hash:0123456789abcdef\n";
+        assert!(!is_generated_source(source));
+        assert!(!is_hash_stamped_source(source));
+    }
+
+    #[test]
+    fn marker_after_post_frontmatter_window_is_not_generated() {
+        let source = "---\nname: api\n---\n1\n2\n3\n4\n5\n# alef:hash:0123456789abcdef\n";
+        assert!(!is_generated_source(source));
+        assert!(!is_hash_stamped_source(source));
     }
 
     #[test]
