@@ -29,6 +29,7 @@ impl GlobPatterns {
     pub fn new(patterns: Vec<String>) -> Result<Self, globset::Error> {
         let mut builder = GlobSetBuilder::new();
         for pattern in &patterns {
+            let pattern = pattern.strip_prefix('/').unwrap_or(pattern);
             builder.add(Glob::new(pattern)?);
         }
         let set = builder.build()?;
@@ -324,6 +325,23 @@ mod tests {
         assert!(filter.matches(Path::new("src/lib/main.rs")));
         assert!(!filter.matches(Path::new("src/lib/ignored.rs")));
         assert!(!filter.matches(Path::new("tests/main.rs")));
+    }
+
+    #[test]
+    fn glob_patterns_should_anchor_leading_slash_to_repo_root() {
+        let pattern = glob("/e2e/**");
+
+        assert!(pattern.is_match(Path::new("e2e/cases/basic.rs")));
+        assert!(!pattern.is_match(Path::new("pkg/e2e/cases/basic.rs")));
+    }
+
+    #[test]
+    fn glob_patterns_should_preserve_recursive_unanchored_matches() {
+        let pattern = glob("**/target/**");
+
+        assert!(pattern.is_match(Path::new("target/debug/poly")));
+        assert!(pattern.is_match(Path::new("crates/poly/target/debug/poly")));
+        assert!(!pattern.is_match(Path::new("crates/poly/src/main.rs")));
     }
 
     #[test]
