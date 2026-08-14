@@ -414,3 +414,22 @@ fn force_excluded_path_is_not_reported_as_unmatched() {
         "an excluded path is not an unmatched one, got:\n{text}"
     );
 }
+
+#[test]
+fn bare_jinja_template_is_preserved_and_reports_how_to_opt_in() {
+    let dir = repo();
+    let template = dir.path().join("service.jinja");
+    let content = "{% if docs %}\n/// <summary>\n/// {{ docs }}\n/// </summary>\n{% endif %}\n";
+    std::fs::write(&template, content).expect("write template");
+
+    let output = poly(dir.path(), &["fmt", "--fix", "--no-cache", "service.jinja"]);
+    let text = combined(&output);
+
+    assert_eq!(output.status.code(), Some(0), "got:\n{text}");
+    assert!(text.contains("ambiguous template target"), "got:\n{text}");
+    assert!(
+        text.contains("add .html or .xml before the template extension"),
+        "got:\n{text}"
+    );
+    assert_eq!(std::fs::read_to_string(template).expect("read template"), content);
+}

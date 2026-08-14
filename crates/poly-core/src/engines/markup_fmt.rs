@@ -53,10 +53,19 @@ pub struct MarkupFmtEngine;
 /// any stale cached output.
 /// Bumped suffix to +opts-1 after exposing full LanguageOptions (options were
 /// previously ignored — existing caches must be invalidated).
-const VERSION: &str = "0.27.3+opts-1+tmpltarget";
+const VERSION: &str = "0.27.3+opts-1+tmpltarget-2";
 
 /// Reason reported when a general-purpose template does not render markup.
 const NON_MARKUP_TEMPLATE_SKIP: &str = "template does not render markup";
+/// Reason reported when a template does not name the language it renders.
+const AMBIGUOUS_TEMPLATE_SKIP: &str = "ambiguous template target; add .html or .xml before the template extension";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TemplateTarget {
+    Markup,
+    NonMarkup,
+    Ambiguous,
+}
 
 /// Languages handled by this backend.
 static LANGUAGES: &[Language] = &[
@@ -93,8 +102,14 @@ impl Engine for MarkupFmtEngine {
     }
 
     fn skip_reason(&self, src: &SourceFile) -> Option<&'static str> {
-        (is_generic_template(&src.language) && !targets_markup(&src.path, &src.content))
-            .then_some(NON_MARKUP_TEMPLATE_SKIP)
+        if !is_generic_template(&src.language) {
+            return None;
+        }
+        match template_target(&src.path) {
+            TemplateTarget::Markup => None,
+            TemplateTarget::NonMarkup => Some(NON_MARKUP_TEMPLATE_SKIP),
+            TemplateTarget::Ambiguous => Some(AMBIGUOUS_TEMPLATE_SKIP),
+        }
     }
 
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
@@ -129,7 +144,7 @@ fn is_generic_template(language: &Language) -> bool {
     matches!(language, Language::Jinja | Language::Vento | Language::Mustache)
 }
 
-/// Whether a general-purpose template appears to render markup.
+/// Classify the rendered language of a general-purpose template from its path.
 ///
 /// markup_fmt reflows on the assumption that whitespace is insignificant, which
 /// is true of HTML and false of most other languages. Applied to a template that
@@ -137,72 +152,27 @@ fn is_generic_template(language: &Language) -> bool {
 /// `data, err := json.Marshal(r)` followed by `if err != nil {` into
 /// `json.Marshal(r) if err != nil` and emitting source that does not compile.
 ///
-/// Two signals, cheapest first:
-///
-/// 1. A double extension names the target directly (`marshal.go.jinja`), so a
-///    non-markup target is decisive regardless of content.
-/// 2. Otherwise the body must contain a literal tag once template constructs are
-///    removed — `{{ ... }}` can hold a `<` that is not markup at all.
+/// A double extension names the target directly (`marshal.go.jinja`). A bare
+/// template is ambiguous: C# XML documentation, comparison operators, and
+/// literal output can all look like markup without rendering markup.
 ///
 /// Declining is the safe default here: leaving a template unformatted costs
 /// nothing, while reflowing one destroys it.
-fn targets_markup(path: &std::path::Path, content: &str) -> bool {
+fn template_target(path: &std::path::Path) -> TemplateTarget {
     if let Some(stem) = path.file_stem().and_then(|s| s.to_str())
         && let Some((_, inner)) = stem.rsplit_once('.')
     {
         let inner = inner.to_ascii_lowercase();
-        return matches!(
+        return if matches!(
             inner.as_str(),
             "html" | "htm" | "xhtml" | "xml" | "svg" | "vue" | "svelte" | "astro"
-        );
+        ) {
+            TemplateTarget::Markup
+        } else {
+            TemplateTarget::NonMarkup
+        };
     }
-    contains_markup_tag(content)
-}
-
-/// Whether `content` contains a literal markup tag outside template constructs.
-///
-/// Strips `{{ … }}`, `{% … %}` and `{# … #}` first so an expression such as
-/// `{% if a < b %}` is not mistaken for a tag, then looks for `<name` or
-/// `</name` with an ASCII-alphabetic tag name.
-fn contains_markup_tag(content: &str) -> bool {
-    let mut stripped = String::with_capacity(content.len());
-    let bytes = content.as_bytes();
-    let mut index = 0;
-    while index < bytes.len() {
-        let rest = &content[index..];
-        if let Some(close) = template_construct_end(rest) {
-            index += close;
-            continue;
-        }
-        let ch = rest.chars().next().unwrap_or('\0');
-        stripped.push(ch);
-        index += ch.len_utf8();
-    }
-
-    let bytes = stripped.as_bytes();
-    bytes.iter().enumerate().any(|(i, &b)| {
-        if b != b'<' {
-            return false;
-        }
-        let mut next = i + 1;
-        if bytes.get(next) == Some(&b'/') {
-            next += 1;
-        }
-        bytes.get(next).is_some_and(u8::is_ascii_alphabetic)
-    })
-}
-
-/// Length of the template construct starting at `rest`, if it starts with one.
-fn template_construct_end(rest: &str) -> Option<usize> {
-    for (open, close) in [("{{", "}}"), ("{%", "%}"), ("{#", "#}")] {
-        if let Some(body) = rest.strip_prefix(open) {
-            return Some(
-                body.find(close)
-                    .map_or(rest.len(), |end| open.len() + end + close.len()),
-            );
-        }
-    }
-    None
+    TemplateTarget::Ambiguous
 }
 
 /// Map a poly [`Language`] to the corresponding markup_fmt [`MarkupLanguage`].
@@ -288,11 +258,11 @@ mod tests {
         ));
     }
 
-    /// The guard must not cost genuine HTML templates their formatting.
+    /// A target-bearing extension opts a genuine HTML template into formatting.
     #[test]
     fn template_rendering_markup_is_still_formatted() {
         let src = make_src(
-            "page.jinja",
+            "page.html.jinja",
             Language::Jinja,
             "<div    class=\"a\">\n<p>{{ name }}</p>\n</div>\n",
         );
@@ -301,6 +271,32 @@ mod tests {
             MarkupFmtEngine.format(&src, &engine_cfg()).expect("format"),
             FormatOutput::Formatted(_)
         ));
+    }
+
+    /// Content sniffing cannot distinguish C# XML documentation from rendered
+    /// XML. A bare template therefore stays byte-for-byte intact and explains
+    /// how to opt into markup formatting.
+    #[test]
+    fn ambiguous_bare_template_with_markup_like_content_is_skipped() {
+        let content = concat!(
+            "{% if method.has_docs %}\n",
+            "/// <summary>\n",
+            "/// {{ method.docs }}\n",
+            "/// </summary>\n",
+            "{% endif %}\n",
+            "public void {{ method.name }}() {}\n",
+        );
+        let src = make_src("service_method.jinja", Language::Jinja, content);
+
+        assert_eq!(
+            MarkupFmtEngine.skip_reason(&src),
+            Some("ambiguous template target; add .html or .xml before the template extension")
+        );
+        assert!(matches!(
+            MarkupFmtEngine.format(&src, &engine_cfg()).expect("format"),
+            FormatOutput::Unchanged
+        ));
+        assert_eq!(src.content.as_ref(), content, "skipping must preserve every byte");
     }
 
     /// A double extension names the target outright and outranks content.
@@ -319,11 +315,33 @@ mod tests {
         ));
     }
 
-    /// `<` inside a template expression is a comparison, not a tag.
+    /// Bare templates are ambiguous regardless of markup-looking content.
     #[test]
-    fn angle_bracket_inside_template_expression_is_not_a_tag() {
-        assert!(!contains_markup_tag("{% if a < b %}\nvalue = {{ a }}\n{% endif %}\n"));
-        assert!(contains_markup_tag("{% if a < b %}<span>x</span>{% endif %}"));
+    fn bare_template_content_does_not_override_ambiguous_target() {
+        assert_eq!(
+            template_target(std::path::Path::new("service.jinja")),
+            TemplateTarget::Ambiguous
+        );
+        assert_eq!(
+            template_target(std::path::Path::new("service.xml.jinja")),
+            TemplateTarget::Markup
+        );
+        assert_eq!(
+            template_target(std::path::Path::new("service.cs.jinja")),
+            TemplateTarget::NonMarkup
+        );
+    }
+
+    #[test]
+    fn every_generic_template_language_requires_a_rendered_target() {
+        for (path, language) in [
+            ("page.jinja", Language::Jinja),
+            ("page.vto", Language::Vento),
+            ("page.mustache", Language::Mustache),
+        ] {
+            let src = make_src(path, language, "<summary>{{ docs }}</summary>\n");
+            assert_eq!(MarkupFmtEngine.skip_reason(&src), Some(AMBIGUOUS_TEMPLATE_SKIP));
+        }
     }
 
     /// Unambiguous markup languages skip the check entirely.

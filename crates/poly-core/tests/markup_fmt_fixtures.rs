@@ -115,7 +115,7 @@ const KNOWN_UNFORMATTED_JINJA: &str = "\
 fn markup_fmt_known_unformatted_jinja() {
     insta::assert_snapshot!(
         "markup_fmt_known_unformatted_jinja",
-        format_to_string("base.jinja2", Language::Jinja, KNOWN_UNFORMATTED_JINJA)
+        format_to_string("base.html.jinja2", Language::Jinja, KNOWN_UNFORMATTED_JINJA)
     );
 }
 
@@ -126,7 +126,7 @@ const KNOWN_UNFORMATTED_VENTO: &str = "\
 fn markup_fmt_known_unformatted_vento() {
     insta::assert_snapshot!(
         "markup_fmt_known_unformatted_vento",
-        format_to_string("layout.vto", Language::Vento, KNOWN_UNFORMATTED_VENTO)
+        format_to_string("layout.html.vto", Language::Vento, KNOWN_UNFORMATTED_VENTO)
     );
 }
 
@@ -137,7 +137,7 @@ const KNOWN_UNFORMATTED_MUSTACHE: &str = "\
 fn markup_fmt_known_unformatted_mustache() {
     insta::assert_snapshot!(
         "markup_fmt_known_unformatted_mustache",
-        format_to_string("list.mustache", Language::Mustache, KNOWN_UNFORMATTED_MUSTACHE)
+        format_to_string("list.html.mustache", Language::Mustache, KNOWN_UNFORMATTED_MUSTACHE)
     );
 }
 

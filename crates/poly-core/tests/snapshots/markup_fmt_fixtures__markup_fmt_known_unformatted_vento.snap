@@ -1,6 +1,6 @@
 ---
 source: crates/poly-core/tests/markup_fmt_fixtures.rs
-expression: "format_to_string(\"layout.vto\", Language::Vento, KNOWN_UNFORMATTED_VENTO)"
+expression: "format_to_string(\"layout.html.vto\", Language::Vento, KNOWN_UNFORMATTED_VENTO)"
 ---
 <html>
   <body>

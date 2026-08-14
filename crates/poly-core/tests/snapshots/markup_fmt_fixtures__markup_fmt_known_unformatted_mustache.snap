@@ -1,6 +1,6 @@
 ---
 source: crates/poly-core/tests/markup_fmt_fixtures.rs
-expression: "format_to_string(\"list.mustache\", Language::Mustache,\nKNOWN_UNFORMATTED_MUSTACHE)"
+expression: "format_to_string(\"list.html.mustache\", Language::Mustache,\nKNOWN_UNFORMATTED_MUSTACHE)"
 ---
 <html>
   <head><title>{{title}}</title></head>
