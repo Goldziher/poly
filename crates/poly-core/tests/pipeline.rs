@@ -490,7 +490,10 @@ fn fmt_skips_hash_stamp_below_yaml_frontmatter() {
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].path, source);
     assert!(!results[0].changed);
-    assert!(results[0].skipped.is_some(), "hash-stamped source must be skipped");
+    assert_eq!(
+        results[0].skipped.as_deref(),
+        Some("hash-stamped generated file (pass --fix-generated to format)")
+    );
 }
 
 /// The template skip is decided once per file, by `Engine::skip_reason`, and that
