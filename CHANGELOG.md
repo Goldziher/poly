@@ -7,6 +7,14 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+## [0.21.3] - 2026-08-14
+
+### Fixed
+
+- **Generated-file detection now requires a structured content-hash stamp.** Ordinary source such
+  as `use a::hash::b;` is formatted and lint-fixed normally instead of being mistaken for generated
+  code. Markers such as `alef:hash:<digest>` remain protected.
+
 ## [0.21.2] - 2026-08-14
 
 ### Fixed
