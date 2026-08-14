@@ -7,6 +7,8 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+## [0.21.4] - 2026-08-14
+
 ### Fixed
 
 - **Generated-file detection now scans below leading YAML frontmatter.** Hash stamps and generated
