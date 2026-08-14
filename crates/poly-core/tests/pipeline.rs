@@ -438,6 +438,30 @@ fn fmt_skips_hash_stamped_files_but_not_banner_only_ones() {
     );
 }
 
+#[test]
+fn fmt_checks_explicit_rust_hash_module_import() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let source = write(dir.path(), "hash_import.rs", "use a::hash::b;\n");
+    let options = RunOptions {
+        no_cache: true,
+        ..RunOptions::default()
+    };
+
+    let results = poly_core::format(
+        std::slice::from_ref(&source),
+        &Config::default(),
+        &options,
+        false,
+        false,
+    )
+    .expect("format explicit Rust source");
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].path, source);
+    assert_eq!(results[0].skipped, None);
+    assert_eq!(results[0].error, None);
+}
+
 /// The template skip is decided once per file, by `Engine::skip_reason`, and that
 /// one answer now stands in for running the format chain. So the answer itself is
 /// what needs pinning: a live template stays out of the formatter, and a file that
