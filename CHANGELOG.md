@@ -7,6 +7,15 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+## [0.21.2] - 2026-08-14
+
+### Fixed
+
+- **Hook exclusions now share discovery's repo-root anchoring syntax.** A leading slash is treated
+  as a repo-root anchor when hook globs are compiled, so `/e2e/**` excludes the root `e2e` tree
+  without excluding nested package directories. Recursive patterns such as `**/target/**` retain
+  their existing behavior.
+
 ## [0.21.1] - 2026-08-14
 
 ### Fixed
