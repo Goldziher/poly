@@ -124,13 +124,17 @@ pub struct CommonArgs {
     pub verbose: bool,
 
     /// Apply `[discovery] exclude` to explicitly named files as well as to the
-    /// directory walk.
-    ///
-    /// Naming a file normally checks it regardless of the exclude set. A hook is
-    /// always handed explicit staged paths, so it passes this to keep the repo's
-    /// excludes in force. Equivalent to `[discovery] force_exclude = true`.
-    #[arg(long)]
+    /// directory walk. This is the default and remains as a compatibility flag.
+    #[arg(long, conflicts_with = "include_excluded")]
     pub force_exclude: bool,
+
+    /// Check explicitly named files or directory roots even when they match the
+    /// exclude set.
+    ///
+    /// This is an explicit safety override for one-off inspection. Exclusions
+    /// below an included directory remain active.
+    #[arg(long, conflicts_with = "force_exclude")]
+    pub include_excluded: bool,
 
     /// Apply `--fix` to machine-generated files too.
     ///
@@ -467,7 +471,7 @@ fn prepare(common: &CommonArgs) -> Result<(Vec<PathBuf>, Config, RunOptions), Ex
         no_cache: common.no_cache,
         jobs: common.jobs,
         exclude: common.exclude.clone(),
-        force_exclude: common.force_exclude || config.force_exclude,
+        force_exclude: !common.include_excluded,
         fix_generated: common.fix_generated,
         explicit_config: common.config.is_some(),
         config_resolver: Some(resolver),

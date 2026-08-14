@@ -26,11 +26,11 @@ pub struct RunOptions {
     /// Extra gitignore-style exclude globs supplied at call time (CLI `--exclude`
     /// / MCP `exclude`), merged with the config's `[discovery] exclude`.
     pub exclude: Vec<String>,
-    /// Apply the exclude set to explicitly named files as well as to the walk.
+    /// Apply the exclude set to explicitly named roots as well as to the walk.
     ///
     /// A hook is always handed explicit staged paths, so without this the
     /// repo's `[discovery] exclude` is silently inert exactly where it matters
-    /// most. On for the hook path, off for a direct CLI invocation.
+    /// most. The CLI, hooks, and MCP turn this on by default.
     pub force_exclude: bool,
     /// Apply `--fix` to machine-generated files too. Off by default: a fix there
     /// is reverted by the next generation run, and can silence the diagnostic

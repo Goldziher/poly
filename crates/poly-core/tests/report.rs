@@ -510,7 +510,7 @@ fn format_summary_explains_a_run_that_checked_nothing() {
     assert!(text.contains("Nothing was checked."), "got: {text}");
     assert!(text.contains("0 file(s) checked"), "got: {text}");
     assert!(
-        text.contains("1 path(s) named on the command line were dropped by --force-exclude"),
+        text.contains("1 path(s) named on the command line matched exclusions (use --include-excluded to check them)"),
         "got: {text}"
     );
 }

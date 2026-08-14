@@ -34,8 +34,8 @@ pub struct Config {
     /// `[discovery] exclude` — gitignore-style globs pruned from the file walk
     /// on direct `poly lint`/`poly fmt`/`poly cache` runs.
     pub exclude: Vec<String>,
-    /// `[discovery] force_exclude` — whether `exclude` also applies to files
-    /// named explicitly on the command line, not just to the walk.
+    /// `[discovery] force_exclude` — require API callers to apply `exclude` to
+    /// explicitly named roots too. The CLI and MCP do so by default.
     pub force_exclude: bool,
     /// `[lint.<lang>.<tool>]` tables.
     pub lint: toml::Table,

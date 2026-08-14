@@ -165,7 +165,7 @@ pub fn render_discovery_note(discovery: &DiscoveryReport) -> Option<String> {
     if discovery.excluded_explicit > 0 {
         let _ = writeln!(
             out,
-            "  {} path(s) named on the command line were dropped by --force-exclude",
+            "  {} path(s) named on the command line matched exclusions (use --include-excluded to check them)",
             discovery.excluded_explicit
         );
     }

@@ -59,6 +59,50 @@ fn format_run_reports_changed_without_writing() {
 }
 
 #[test]
+fn explicit_mcp_paths_honor_exclusions() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("excluded.py");
+    std::fs::write(&path, "x   =    1\n").unwrap();
+
+    let run = ops::format_run(
+        &[path.display().to_string()],
+        &["**/excluded.py".to_string()],
+        None,
+        true,
+    )
+    .unwrap();
+
+    assert!(run.results.is_empty(), "excluded files must not be formatted");
+    assert_eq!(run.discovery.excluded_explicit, 1);
+    assert_eq!(std::fs::read_to_string(path).unwrap(), "x   =    1\n");
+}
+
+#[test]
+fn multiroot_mcp_run_honors_exclusions() {
+    let dir = tempfile::tempdir().unwrap();
+    let excluded = dir.path().join("docs/snippets/bad.py");
+    std::fs::create_dir_all(excluded.parent().unwrap()).unwrap();
+    std::fs::write(&excluded, "x   =    1\n").unwrap();
+    let included = dir.path().join("included.py");
+    std::fs::write(&included, "y   =    2\n").unwrap();
+
+    let run = ops::format_run(
+        &[
+            included.display().to_string(),
+            excluded.parent().unwrap().display().to_string(),
+        ],
+        &["**/snippets/**".to_string()],
+        None,
+        true,
+    )
+    .unwrap();
+
+    assert_eq!(run.results.len(), 1, "only the included file should be formatted");
+    assert_eq!(run.discovery.excluded_explicit, 1);
+    assert_eq!(std::fs::read_to_string(excluded).unwrap(), "x   =    1\n");
+}
+
+#[test]
 fn explicit_missing_config_is_an_error() {
     let result = ops::lint_run(&[".".to_string()], &[], Some("/nonexistent/poly.toml"), false);
     assert!(result.is_err(), "missing explicit config should error");

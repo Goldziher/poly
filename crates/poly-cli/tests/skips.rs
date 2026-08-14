@@ -406,12 +406,40 @@ fn force_excluded_path_is_not_reported_as_unmatched() {
     let text = combined(&output);
 
     assert!(
-        text.contains("dropped by --force-exclude"),
+        text.contains("matched exclusions (use --include-excluded to check them)"),
         "the exclusion must still be explained, got:\n{text}"
     );
     assert!(
         !text.contains("no matching engine"),
         "an excluded path is not an unmatched one, got:\n{text}"
+    );
+}
+
+#[test]
+fn explicit_paths_honor_excludes_unless_the_caller_overrides_them() {
+    let dir = repo();
+    std::fs::write(dir.path().join("poly.toml"), "[discovery]\nexclude = [\"a.py\"]\n").expect("write poly.toml");
+    let original = "x   =    1\n";
+    std::fs::write(dir.path().join("a.py"), original).expect("write excluded file");
+
+    let excluded = poly(dir.path(), &["fmt", "--fix", "--no-cache", "a.py"]);
+    assert!(
+        combined(&excluded).contains("matched exclusions (use --include-excluded to check them)"),
+        "explicit paths must honor excludes by default"
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("a.py")).expect("read excluded file"),
+        original
+    );
+
+    let included = poly(
+        dir.path(),
+        &["fmt", "--fix", "--no-cache", "--include-excluded", "a.py"],
+    );
+    assert_eq!(included.status.code(), Some(1), "got:\n{}", combined(&included));
+    assert_ne!(
+        std::fs::read_to_string(dir.path().join("a.py")).expect("read included file"),
+        original
     );
 }
 
@@ -432,4 +460,102 @@ fn bare_jinja_template_is_preserved_and_reports_how_to_opt_in() {
         "got:\n{text}"
     );
     assert_eq!(std::fs::read_to_string(template).expect("read template"), content);
+}
+
+fn multiroot_repo() -> (TempDir, std::path::PathBuf) {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(
+        dir.path().join("poly.toml"),
+        "[discovery]\nexclude = [\"docs/snippets/**\"]\n",
+    )
+    .expect("write config");
+    let excluded = dir.path().join("docs/snippets/bad.py");
+    std::fs::create_dir_all(excluded.parent().expect("excluded parent")).expect("create excluded tree");
+    std::fs::write(&excluded, "x   =    1\n").expect("write excluded file");
+    std::fs::write(dir.path().join("included.py"), "y   =    2\n").expect("write included file");
+    (dir, excluded)
+}
+
+#[test]
+fn excluded_directory_stays_excluded_in_every_multiroot_order() {
+    for paths in [["docs/snippets", "included.py"], ["included.py", "docs/snippets"]] {
+        let (dir, excluded) = multiroot_repo();
+        let output = poly(dir.path(), &["fmt", "--fix", "--no-cache", paths[0], paths[1]]);
+        let text = combined(&output);
+
+        assert_eq!(output.status.code(), Some(1), "order {paths:?} failed:\n{text}");
+        assert_eq!(
+            std::fs::read_to_string(excluded).expect("read excluded"),
+            "x   =    1\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("included.py")).unwrap(),
+            "y = 2\n"
+        );
+        assert!(
+            text.contains("matched exclusions (use --include-excluded to check them)"),
+            "order {paths:?} was not explained:\n{text}"
+        );
+    }
+}
+
+#[test]
+fn unanchored_rule_excludes_a_named_root_it_matches() {
+    let (dir, excluded) = multiroot_repo();
+    std::fs::write(
+        dir.path().join("poly.toml"),
+        "[discovery]\nexclude = [\"**/snippets/**\"]\n",
+    )
+    .unwrap();
+
+    let output = poly(
+        dir.path(),
+        &["fmt", "--fix", "--no-cache", "included.py", "docs/snippets"],
+    );
+    let text = combined(&output);
+
+    assert_eq!(output.status.code(), Some(1), "got:\n{text}");
+    assert_eq!(std::fs::read_to_string(excluded).unwrap(), "x   =    1\n");
+    assert!(text.contains("matched exclusions (use --include-excluded to check them)"));
+}
+
+#[test]
+fn include_excluded_overrides_an_explicit_excluded_directory() {
+    let (dir, excluded) = multiroot_repo();
+    let output = poly(
+        dir.path(),
+        &[
+            "fmt",
+            "--fix",
+            "--no-cache",
+            "--include-excluded",
+            "docs/snippets",
+            "included.py",
+        ],
+    );
+
+    assert_eq!(output.status.code(), Some(1), "got:\n{}", combined(&output));
+    assert_eq!(std::fs::read_to_string(excluded).unwrap(), "x = 1\n");
+}
+
+#[test]
+fn include_excluded_keeps_descendant_exclusions_active() {
+    let (dir, excluded) = multiroot_repo();
+    let private = dir.path().join("docs/snippets/private/secret.py");
+    std::fs::create_dir_all(private.parent().unwrap()).unwrap();
+    std::fs::write(&private, "secret   =    3\n").unwrap();
+    std::fs::write(
+        dir.path().join("poly.toml"),
+        "[discovery]\nexclude = [\"docs/snippets/**\", \"**/private/**\"]\n",
+    )
+    .unwrap();
+
+    let output = poly(
+        dir.path(),
+        &["fmt", "--fix", "--no-cache", "--include-excluded", "docs/snippets"],
+    );
+
+    assert_eq!(output.status.code(), Some(1), "got:\n{}", combined(&output));
+    assert_eq!(std::fs::read_to_string(excluded).unwrap(), "x = 1\n");
+    assert_eq!(std::fs::read_to_string(private).unwrap(), "secret   =    3\n");
 }

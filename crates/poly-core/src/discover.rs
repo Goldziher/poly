@@ -140,9 +140,9 @@ pub struct DiscoveryReport {
     /// Directories pruned by an exclude rule. Not descended into, so their
     /// contents are not reflected in `excluded_files`.
     pub excluded_directories: usize,
-    /// How many of `excluded_files` were named explicitly by the caller and
-    /// dropped by `--force-exclude`. This is the case where a run can check
-    /// nothing at all and still exit green, so it is called out separately.
+    /// How many excluded files or directories were named explicitly by the
+    /// caller. This is the case where a run can check nothing at all and still
+    /// exit green, so it is called out separately.
     pub excluded_explicit: usize,
     /// Per-rule attribution, most-pruning first. Rules that matched nothing are
     /// omitted.
@@ -438,9 +438,9 @@ pub fn discover(paths: &[PathBuf], configs: &ConfigSet, extra: &[String]) -> Vec
 /// found the exclude silently inert in its pre-commit hook, and poly reformatted
 /// Terraform that `terraform fmt` then rejected.
 ///
-/// `force_exclude` applies the exclude set to explicit paths too. It is on for
-/// the hook path and off for a direct CLI invocation, matching what ruff and
-/// black settled on for the same reason.
+/// `force_exclude` applies the exclude set to explicit roots too. The CLI,
+/// hooks, and MCP enable it by default; the CLI's `--include-excluded` override
+/// disables it for a deliberate one-off inspection.
 pub fn discover_with(
     paths: &[PathBuf],
     configs: &ConfigSet,
@@ -469,14 +469,13 @@ pub fn discover_reporting(
     let mut out = Vec::new();
     let mut report = DiscoveryReport::default();
     for root in paths {
-        let exclude = configs.walk_excludes(root, extra);
-        if force_exclude
-            && root.is_file()
-            && let Some(matcher) = explicit_matcher(&exclude)
-            && matcher.record_if_excluded(root, false, true)
-        {
-            matcher.merge_into(&mut report);
-            continue;
+        let exclude = configs.walk_excludes(root, extra, force_exclude);
+        if force_exclude && let Some(matcher) = explicit_matcher(&exclude) {
+            let root_is_directory = root.is_dir();
+            if matcher.record_if_excluded(root, root_is_directory, true) {
+                matcher.merge_into(&mut report);
+                continue;
+            }
         }
         let matcher = ExcludeMatcher::new(root, &exclude);
         let walk_matcher = matcher.clone();
@@ -527,7 +526,7 @@ pub fn discover_reporting(
     (out, report)
 }
 
-/// The matcher used for an explicitly named file under `--force-exclude`.
+/// The matcher used for an explicitly named root under `--force-exclude`.
 ///
 /// The globs are written relative to the config's directory, so they are matched
 /// from the current directory — the same frame of reference a user writing

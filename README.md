@@ -290,10 +290,9 @@ trim_trailing_whitespace = true
 # a repo states its excluded paths once.
 exclude = ["test_apps/**", "docs/snippets/**", "artifacts/**"]
 
-# Off by default: naming a file on the command line checks it regardless of
-# `exclude`. Turn this on so `exclude` also applies to explicitly named paths,
-# not just the directory walk. Equivalent to `--force-exclude`; a hook always
-# passes that flag, since it is handed staged paths rather than deliberate ones.
+# Explicitly named roots honor `exclude` by default. `force_exclude` remains
+# available for compatibility and for API callers that opt out of the CLI
+# default. Use `--include-excluded` for a deliberate one-off bypass.
 force_exclude = false
 
 [fmt.python.ruff]
@@ -1332,10 +1331,10 @@ poly fmt [PATHS]...
                                with `[discovery] exclude`). An unanchored glob
                                matches at any depth; lead with `/` to anchor it
                                to the config directory.
-  --force-exclude              Apply `[discovery] exclude` to explicitly named files too, not
-                               just the directory walk. A hook is handed staged paths rather
-                               than deliberate ones, so it always passes this. Equivalent to
-                               `[discovery] force_exclude = true`.
+  --force-exclude              Compatibility flag: explicitly named files already honor
+                               `[discovery] exclude` by default.
+  --include-excluded           Check explicitly named files or directory roots even when excluded.
+                               Exclusions below an included directory remain active.
   --deny-skips                 Exit 2 if any file was skipped. Equivalent to
                                `--max-skips 0`.
   --max-skips <N>              Exit 2 if more than N files were skipped.

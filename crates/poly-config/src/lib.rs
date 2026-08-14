@@ -180,12 +180,11 @@ pub struct DiscoveryConfig {
     /// left. `poly doctor` reports any rule that is pruning directories at more
     /// than one depth, which is the symptom.
     pub exclude: Patterns,
-    /// Apply `exclude` to explicitly named files too, not just to the walk.
+    /// Apply `exclude` to explicitly named roots too, not just to the walk.
     ///
-    /// Off by default: naming a file on the command line should check it. The
-    /// hook path turns this on, because a hook is handed staged paths rather
-    /// than deliberate ones, and without it a repo's excludes are silently
-    /// inert exactly where they matter most.
+    /// Retained for compatibility and non-CLI callers. The CLI, hooks, and MCP
+    /// apply exclusions to explicitly named files by default; the CLI's
+    /// `--include-excluded` flag is the deliberate one-off override.
     pub force_exclude: bool,
 }
 

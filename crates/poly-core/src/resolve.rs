@@ -71,7 +71,7 @@ impl ConfigSet {
     ) -> anyhow::Result<Self> {
         let primary = roots.first().cloned().unwrap_or_else(|| PathBuf::from("."));
         let root_dir = dir_of_root(&primary);
-        let root_config_dir = root_config_dir(&root_dir);
+        let root_config_dir = shared_root_config_dir(roots).or_else(|| root_config_dir(&root_dir));
 
         let mut configs = vec![root_config];
         let mut dirs: Vec<Option<PathBuf>> = vec![Some(root_dir.clone())];
@@ -135,10 +135,12 @@ impl ConfigSet {
     /// [`root_config_excludes`]), and every *nested* directory-backed config
     /// under `root` contributes its own globs prefixed by the config directory
     /// relative to `root` (so a nested config only prunes its own subtree),
-    /// unioned with `extra` (CLI `--exclude` / MCP globs, rooted at `root`).
+    /// unioned with `extra` (CLI `--exclude` / MCP globs, rooted at `root`). When
+    /// `exclude_root` is false, only a rule covering the named root itself is
+    /// removed; exclusions for descendants remain active.
     ///
     /// [`root_config_excludes`]: ConfigSet::root_config_excludes
-    pub fn walk_excludes(&self, root: &Path, extra: &[String]) -> Vec<String> {
+    pub fn walk_excludes(&self, root: &Path, extra: &[String], exclude_root: bool) -> Vec<String> {
         let mut out = self.root_config_excludes(root);
         for (config_dir, id) in &self.lookup {
             if *id == 0 {
@@ -151,6 +153,9 @@ impl ConfigSet {
             }
         }
         out.extend(extra.iter().cloned());
+        if !exclude_root {
+            out.retain(|glob| glob != "**" && glob != "/**");
+        }
         out
     }
 
@@ -206,12 +211,29 @@ impl ConfigSet {
 /// like) a directory, else its parent.
 fn dir_of_root(path: &Path) -> PathBuf {
     if path.is_file() {
-        path.parent()
-            .map(Path::to_path_buf)
-            .unwrap_or_else(|| path.to_path_buf())
+        nonempty_parent(path)
     } else {
         path.to_path_buf()
     }
+}
+
+fn nonempty_parent(path: &Path) -> PathBuf {
+    path.parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."))
+}
+
+fn shared_root_config_dir(roots: &[PathBuf]) -> Option<PathBuf> {
+    let root_dirs: Vec<PathBuf> = roots
+        .iter()
+        .filter_map(|root| std::fs::canonicalize(dir_of_root(root)).ok())
+        .collect();
+    root_dirs
+        .iter()
+        .filter_map(|root| root_config_dir(root))
+        .filter(|config_dir| root_dirs.iter().all(|root| root.starts_with(config_dir)))
+        .max_by_key(|config_dir| config_dir.components().count())
 }
 
 /// Prefix a gitignore-style glob by `rel` (a config dir relative to the walk
@@ -268,7 +290,12 @@ fn root_config_dir(walk_root: &Path) -> Option<PathBuf> {
 fn reanchor_glob(sub: &Path, glob: &str) -> Option<String> {
     let glob = glob.replace('\\', "/");
     // Un-anchored patterns apply at any depth, so they hold under the walk root.
-    if glob.starts_with("**") || !glob.contains('/') {
+    if glob.starts_with("**") {
+        return unanchored_pattern_covers_root(sub, &glob)
+            .then(|| "**".to_string())
+            .or(Some(glob));
+    }
+    if !glob.contains('/') {
         return Some(glob);
     }
     let sub = sub.to_string_lossy().replace('\\', "/");
@@ -291,6 +318,14 @@ fn reanchor_glob(sub: &Path, glob: &str) -> Option<String> {
         Some((_, rest)) if rest.is_empty() || rest == "**" => Some(glob),
         _ => None,
     }
+}
+
+fn unanchored_pattern_covers_root(sub: &Path, glob: &str) -> bool {
+    let Some(target) = glob.strip_prefix("**/") else {
+        return glob == "**";
+    };
+    let target = target.strip_suffix("/**").unwrap_or(target);
+    !target.contains(['*', '?', '[']) && sub.ends_with(Path::new(target))
 }
 
 /// Scan `roots` for every directory containing a config file, respecting
@@ -342,6 +377,11 @@ mod tests {
     }
 
     #[test]
+    fn relative_file_root_uses_the_current_directory_as_its_anchor() {
+        assert_eq!(nonempty_parent(Path::new("included.py")), PathBuf::from("."));
+    }
+
+    #[test]
     fn single_config_maps_every_file_to_zero() {
         let set = ConfigSet::single(Config::default());
         assert_eq!(set.config_id_for(Path::new("/any/where/foo.rs")), 0);
@@ -387,7 +427,7 @@ mod tests {
         let root_config: Config = poly_config::PolyConfig::resolve_for_dir(root.path()).unwrap().into();
         let set = ConfigSet::build(&[root.path().to_path_buf()], root_config).unwrap();
 
-        let excludes = set.walk_excludes(root.path(), &["extra/**".to_string()]);
+        let excludes = set.walk_excludes(root.path(), &["extra/**".to_string()], true);
         assert!(excludes.contains(&"target/**".to_string()), "root exclude unprefixed");
         assert!(
             excludes.contains(&"frontend/dist/**".to_string()),
@@ -417,7 +457,7 @@ mod tests {
         let root_config: Config = poly_config::PolyConfig::resolve_for_dir(&frontend).unwrap().into();
         let set = ConfigSet::build(std::slice::from_ref(&frontend), root_config).unwrap();
 
-        let excludes = set.walk_excludes(&frontend, &[]);
+        let excludes = set.walk_excludes(&frontend, &[], true);
         assert!(
             excludes.contains(&"src/data/benchmark/**".to_string()),
             "sub-anchored glob re-anchored to the walk root: {excludes:?}"
@@ -464,5 +504,17 @@ mod tests {
         );
         assert_eq!(reanchor_glob(sub, "services/api/**"), None);
         assert_eq!(reanchor_glob(sub, "crates/x-ffi/include/*.h"), None);
+
+        let snippets = Path::new("docs-site/src/snippets");
+        assert_eq!(reanchor_glob(snippets, "**/snippets/**").as_deref(), Some("**"));
+        assert_eq!(
+            reanchor_glob(snippets, "**/docs-site/src/snippets/**").as_deref(),
+            Some("**")
+        );
+        assert_eq!(
+            reanchor_glob(snippets, "**/generated/**").as_deref(),
+            Some("**/generated/**")
+        );
+        assert_eq!(reanchor_glob(snippets, "**/*.tmp").as_deref(), Some("**/*.tmp"));
     }
 }

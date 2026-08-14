@@ -68,7 +68,7 @@ fn resolve_paths(paths: &[String]) -> Vec<PathBuf> {
 fn run_options(exclude: &[String], explicit_config: bool) -> RunOptions {
     RunOptions {
         exclude: exclude.to_vec(),
-        force_exclude: false,
+        force_exclude: true,
         fix_generated: false,
         explicit_config,
         ..RunOptions::default()
