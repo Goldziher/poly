@@ -73,6 +73,33 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   indented. Suppressing there would strip protection from real stamps in order to catch documented
   ones, trading this false skip for a worse-shaped one, so indented blocks remain known-bad.
 
+- **`[discovery] exclude` is now honored for paths named explicitly on the command line.** A root
+  config's exclude globs were re-anchored onto the walk root, and that re-anchoring silently dropped
+  any glob that pruned an *ancestor* of the named path — so `exclude = ["packages/dart/**"]` pruned
+  correctly on `poly fmt .` and not at all on `poly fmt packages/dart/lib/two.py`. The excluded file
+  was formatted in place and the report did not mention it. A second hole applied when the named path
+  was a file: the file's own path was used as the anchoring subtree, so every glob written against its
+  parent directory was classified as a sibling and discarded.
+
+  This mattered most where it was least visible. The pre-commit hook never names a directory — it
+  passes explicit staged file paths — so a repository could watch `poly fmt --check .` honor its
+  exclusions and still have those same files rewritten at commit time. Unanchored globs
+  (`**/*.generated.ts`) survived both holes, which is why existing coverage never caught it.
+
+  Exclusions now match component-wise, so `packages/dart/**` prunes `packages/dart/lib` without
+  swallowing `packages/dartlang`. One cosmetic consequence: an exclusion firing through the new
+  ancestor rule is currently attributed to the re-anchored pattern rather than the authored glob.
+
+- **A `json` or `toon` report that cannot be serialized is no longer emitted as an empty document.**
+  Both renderers fell back to `[]`, which is byte-identical to a clean run over zero files — and the
+  exit code did not distinguish them either, since it is computed from the run rather than the render.
+  A total loss of output was indistinguishable from success on both channels at once, with nothing on
+  stderr. The `toon` path inherited the same fallback by degrading to JSON.
+
+  A serialization failure is now reported: nothing is written to stdout, the failure and its format
+  are named on stderr, and the process exits non-zero. The existing TOON-to-JSON degradation is kept —
+  that one preserves the data — but the empty-document floor beneath it is gone.
+
 - **`poly lint` no longer rewrites source files through a catalog tool.** A catalog tool whose lint
   command rewrites files in place was wired up as a linter, so `poly lint` mutated the file and then
   reported it clean. With `[tools.sqruff] enabled = true` — one line, no overrides — a `.sql` file was
