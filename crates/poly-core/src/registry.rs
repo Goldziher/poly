@@ -81,7 +81,7 @@ pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     //! Structural guard against the failure family described in
     //! `tests/version_audit.rs`: that test hand-lists which engines it checks
     //! against `Cargo.lock`, and `astgrep` was once left off that list —
@@ -105,7 +105,11 @@ mod tests {
     /// variant without adding it to both that match and this list fails to
     /// compile, rather than letting a newly registry-wired engine for the new
     /// language slip past this audit unnoticed.
-    fn all_known_languages() -> Vec<Language> {
+    ///
+    /// Shared with `runner::plan`'s tests, which walk the same list one level
+    /// up (registry engines *plus* catalog tools); a second hand-maintained copy
+    /// there could narrow without this file's compile-time guard noticing.
+    pub(crate) fn all_known_languages() -> Vec<Language> {
         vec![
             Language::Python,
             Language::JavaScript,
@@ -295,8 +299,12 @@ mod tests {
     /// If this fails, either give the colliding backends distinct names — and
     /// bump both `version()` strings, so entries cached under the old name are
     /// invalidated rather than silently reused — or keep their languages
-    /// disjoint. Catalog tools (ADR 0013) are out of scope: they are user-opted
-    /// per `[tools.<name>]` and named by the catalog, not by this registry.
+    /// disjoint.
+    ///
+    /// This checks the registry only. Catalog tools (ADR 0013) join the very
+    /// same list in `runner::plan::plan_engines`, so they can collide with a
+    /// registry backend by name too; the guard that covers both is
+    /// `runner::plan::tests::planned_engine_names_are_unique_per_language_and_kind`.
     #[test]
     fn registered_engine_names_are_unique_per_language() {
         let languages = all_known_languages()

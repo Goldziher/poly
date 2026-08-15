@@ -72,6 +72,79 @@ fn has_tier_one_formatter(engines: &[Box<dyn Engine>], kind: Kind) -> bool {
             .any(|engine| engine.name() != TREE_SITTER_ENGINE && engine.capabilities().format)
 }
 
+/// Drop the engines that lack the capability `kind` asks for, so the collision
+/// resolution below only ever compares backends that would actually run.
+fn retaining_capable(engines: Vec<Box<dyn Engine>>, kind: Kind) -> Vec<Box<dyn Engine>> {
+    engines
+        .into_iter()
+        .filter(|engine| match kind {
+            Kind::Lint => engine.capabilities().lint,
+            Kind::Format => engine.capabilities().format,
+        })
+        .collect()
+}
+
+/// Whether the registry backend `builtin` should displace a catalog tool that
+/// answers the same [`Engine::name`].
+///
+/// A catalog tool and a registry backend of the same name are the *same tool*
+/// wrapped twice — `[tools.shellcheck]` and the built-in `shellcheck` engine
+/// both run the `shellcheck` binary. The built-in is the higher-fidelity wrapper
+/// (structured spans and rule codes, against the catalog tier's file-level,
+/// exit-code-based finding), so it wins — but only when it is genuinely doing
+/// the work. An opt-in native tool that is switched off or missing from `PATH`
+/// lints nothing, and letting *that* displace the catalog engine would trade a
+/// duplicated diagnostic for no diagnostic at all.
+///
+/// Formatting never reaches this question with a real contender:
+/// [`has_tier_one_formatter`] already yields the whole catalog to a registry
+/// formatter, so a `Kind::Format` collision can only involve the generic tier,
+/// which the built-in rightly owns.
+fn builtin_displaces_catalog_tool(builtin: &dyn Engine, language: &Language, config: &Config, kind: Kind) -> bool {
+    match kind {
+        Kind::Format => true,
+        // Costs a `PATH` probe or a rule-pack load, but `plan_engines` runs once
+        // per (config, language) — never per file — so it stays out of the hot loop.
+        Kind::Lint => {
+            let cfg = config.engine_config(language, builtin.name(), kind);
+            builtin.provides_language_lint(language, &cfg)
+        }
+    }
+}
+
+/// Merge the catalog engines into the registry list, keeping **one engine per
+/// name**: everything downstream of a plan — the `[<kind>.<lang>.<name>]` config
+/// table, the compiled severity remap, and the `engine` field of every reported
+/// diagnostic — is keyed by name alone, so two entries sharing one would be
+/// indistinguishable to config, to a JSON consumer, and to the reader of a
+/// doubled finding.
+///
+/// The survivor is whichever of the pair actually does the work: the registry
+/// backend when [`builtin_displaces_catalog_tool`] holds, otherwise the catalog
+/// engine — and then the inert built-in is dropped, since keeping a backend that
+/// yields nothing would leave the collision in place for no gain.
+fn merge_catalog_engines(
+    language: &Language,
+    config: &Config,
+    kind: Kind,
+    mut engines: Vec<Box<dyn Engine>>,
+    mut catalog: Vec<Box<dyn Engine>>,
+) -> Vec<Box<dyn Engine>> {
+    catalog.retain(|tool| {
+        let Some(builtin) = engines.iter().find(|engine| engine.name() == tool.name()) else {
+            return true;
+        };
+        if !builtin_displaces_catalog_tool(builtin.as_ref(), language, config, kind) {
+            return true;
+        }
+        warn_catalog_tool_displaced_once(tool.name(), language);
+        false
+    });
+    engines.retain(|engine| !catalog.iter().any(|tool| tool.name() == engine.name()));
+    engines.extend(catalog);
+    engines
+}
+
 pub(super) fn plan_engines(language: &Language, config: &Config, kind: Kind) -> Vec<EnginePlan> {
     let mut engines = engines_for(language);
     let catalog = if has_tier_one_formatter(&engines, kind) {
@@ -82,13 +155,10 @@ pub(super) fn plan_engines(language: &Language, config: &Config, kind: Kind) -> 
     if generic_formatter_superseded(kind, &catalog) {
         engines.retain(|engine| engine.name() != TREE_SITTER_ENGINE);
     }
-    engines.extend(catalog);
-    engines
+    let engines = retaining_capable(engines, kind);
+    let catalog = retaining_capable(catalog, kind);
+    merge_catalog_engines(language, config, kind, engines, catalog)
         .into_iter()
-        .filter(|engine| match kind {
-            Kind::Lint => engine.capabilities().lint,
-            Kind::Format => engine.capabilities().format,
-        })
         .map(|engine| {
             let cfg = config.engine_config(language, engine.name(), kind);
             let serialized_args = ResultCache::serialize_args(&cache_args(&cfg));
@@ -162,6 +232,54 @@ fn cache_args(cfg: &EngineConfig) -> toml::Table {
     table
 }
 
+/// Whether `key` is being reported for the first time in this process.
+///
+/// Planning runs once per `(config, language)` pair — several times over in a
+/// monorepo with nested configs (ADR 0018) — so a warning raised from it would
+/// otherwise repeat for every one of them. Backs the once-per-key warnings below.
+fn first_report_of(key: String) -> bool {
+    use std::collections::HashSet;
+    use std::sync::{Mutex, OnceLock};
+    static REPORTED: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    REPORTED
+        .get_or_init(|| Mutex::new(HashSet::new()))
+        .lock()
+        .expect("report set poisoned")
+        .insert(key)
+}
+
+/// Emit a one-time `warn` that an enabled whole-project type-checker is being
+/// skipped in the per-file catalog lint tier.
+fn warn_whole_project_linter_once(name: &str) {
+    if first_report_of(format!("whole-project:{name}")) {
+        tracing::warn!(
+            tool = name,
+            "'{name}' is a whole-project type-checker and cannot run in poly's per-file lint tier; \
+             it is skipped. Run it as a dedicated whole-project step instead."
+        );
+    }
+}
+
+/// Emit a one-time `warn` that an enabled `[tools.<name>]` entry is not being
+/// run as a catalog tool because poly's own backend of the same name already
+/// covers this language.
+///
+/// Worth saying out loud rather than resolving silently: the tool still runs,
+/// but through the built-in wrapper, so any `command` / `args` / `env` the user
+/// set on the `[tools.<name>]` table has no effect here.
+fn warn_catalog_tool_displaced_once(name: &str, language: &Language) {
+    if first_report_of(format!("displaced:{name}:{language:?}")) {
+        tracing::warn!(
+            tool = name,
+            language = language.id(),
+            "'{name}' is already built into poly for this language, so the '[tools.{name}]' entry \
+             is not run a second time; its 'command'/'args'/'env' settings do not apply. Configure \
+             the built-in under '[lint.<language>.{name}]', or disable it there to run the \
+             catalog tool instead."
+        );
+    }
+}
+
 /// Build the catalog-driven engines (ADR 0013) for `language`: one
 /// [`CatalogToolEngine`] per enabled `[tools.<name>]` whose catalog tool both
 /// declares a language that maps to `language` and exposes a usable command for
@@ -173,27 +291,9 @@ fn cache_args(cfg: &EngineConfig) -> toml::Table {
 /// [`CatalogToolEngine::lint_engine`] skips it). Catalog linting is a
 /// best-effort, breadth-tier mechanism (file-level, exit-code based); structured
 /// per-tool diagnostics remain the curated native backends' job.
-/// Emit a one-time `warn` that an enabled whole-project type-checker is being
-/// skipped in the per-file catalog lint tier. `catalog_engines_for` runs once per
-/// `(config, language)` pair, so the warning is de-duplicated per tool name for
-/// the process lifetime to avoid repeating it for every Python file's config.
-fn warn_whole_project_linter_once(name: &str) {
-    use std::collections::HashSet;
-    use std::sync::{Mutex, OnceLock};
-    static WARNED: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
-    let mut warned = WARNED
-        .get_or_init(|| Mutex::new(HashSet::new()))
-        .lock()
-        .expect("warn set poisoned");
-    if warned.insert(name.to_string()) {
-        tracing::warn!(
-            tool = name,
-            "'{name}' is a whole-project type-checker and cannot run in poly's per-file lint tier; \
-             it is skipped. Run it as a dedicated whole-project step instead."
-        );
-    }
-}
-
+///
+/// A tool built here may still be dropped by [`merge_catalog_engines`] when
+/// poly's own backend of the same name already covers the language.
 fn catalog_engines_for(language: &Language, config: &Config, kind: Kind) -> Vec<Box<dyn Engine>> {
     let catalog = poly_catalog::Catalog::get();
     let mut engines: Vec<Box<dyn Engine>> = Vec::new();
@@ -271,6 +371,7 @@ pub(super) fn plan_by_config_language(files: &[DiscoveredFile], configs: &Config
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engines::catalog_tool::CATALOG_VERSION_PREFIX;
 
     /// Stand-in for a catalog engine, parameterised on whether its binary is present.
     struct StubEngine(bool);
@@ -395,6 +496,73 @@ mod tests {
         )));
     }
 
+    /// A [`Config`] with every catalog tool switched on — the widest plan any
+    /// user config can produce, so a name collision that is reachable at all is
+    /// reachable here.
+    fn every_catalog_tool_enabled() -> Config {
+        let mut source = String::new();
+        for tool in poly_catalog::Catalog::get().tools() {
+            source.push_str(&format!("[\"{}\"]\nenabled = true\n", tool.name));
+        }
+        Config {
+            tools: toml::from_str(&source).expect("catalog names are valid tool config keys"),
+            ..Config::default()
+        }
+    }
+
+    /// Every language a plan can be built for: the registry's own exhaustive
+    /// list plus every language any catalog tool claims, so the walk covers the
+    /// [`Language::Other`] arms a catalog-only language lands in.
+    fn every_plannable_language() -> Vec<Language> {
+        let mut languages = crate::registry::tests::all_known_languages();
+        for tool in poly_catalog::Catalog::get().tools() {
+            for name in &tool.languages {
+                let language = Language::from_catalog_name(name);
+                if !languages.contains(&language) {
+                    languages.push(language);
+                }
+            }
+        }
+        languages
+    }
+
+    /// The uniqueness guard, at the level that actually matters.
+    ///
+    /// `registry::tests::registered_engine_names_are_unique_per_language` walks
+    /// `engines_for` alone, but [`plan_engines`] appends the catalog engines to
+    /// that same `Vec` — same capability filter, same
+    /// `config.engine_config(language, engine.name(), kind)` lookup, same
+    /// `ResultCache` args. Two plans sharing a name therefore share one config
+    /// table, one severity remap, and one `Diagnostic::engine` label, and a
+    /// reader of `--format json` cannot tell which of the two produced a finding.
+    /// Checking only the registry left that reachable with documented config
+    /// (`[tools.shellcheck]` + `[lint.shell.shellcheck]` put two `"shellcheck"`
+    /// engines in one Shell lint plan, reporting every finding twice).
+    #[test]
+    fn planned_engine_names_are_unique_per_language_and_kind() {
+        let config = every_catalog_tool_enabled();
+        let mut collisions: Vec<String> = Vec::new();
+        for language in every_plannable_language() {
+            for kind in [Kind::Lint, Kind::Format] {
+                let mut seen: Vec<&'static str> = Vec::new();
+                for plan in plan_engines(&language, &config, kind) {
+                    let name = plan.engine.name();
+                    if seen.contains(&name) {
+                        collisions.push(format!("{kind:?} plan for {language:?}: {name:?}"));
+                    }
+                    seen.push(name);
+                }
+            }
+        }
+        assert!(
+            collisions.is_empty(),
+            "these plans place two engines under one name, so they share a \
+             [<kind>.<lang>.<name>] config table, a severity remap, and a diagnostic label, \
+             and report the same finding twice:\n  {}",
+            collisions.join("\n  "),
+        );
+    }
+
     #[test]
     fn generic_language_allows_catalog_formatter() {
         let config = Config {
@@ -403,5 +571,129 @@ mod tests {
         };
         let plan = plan_engines(&Language::C, &config, Kind::Format);
         assert!(plan.iter().any(|entry| entry.engine.name() == "clang-format"));
+    }
+
+    /// Build a config from a literal `poly.toml` body, so these tests exercise
+    /// the same parse path a user's file takes.
+    fn config_from(source: &str) -> Config {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("poly.toml");
+        std::fs::write(&path, source).expect("write poly.toml");
+        Config::load_file(&path).expect("load poly.toml")
+    }
+
+    /// The engines in `plan` answering `name`, so a test can assert both how
+    /// many there are and which tier each came from.
+    fn planned_versions(plan: &[EnginePlan], name: &str) -> Vec<String> {
+        plan.iter()
+            .filter(|entry| entry.engine.name() == name)
+            .map(|entry| entry.engine.version().to_owned())
+            .collect()
+    }
+
+    /// The collision the guard above now forbids, resolved: a `[tools.ruff]`
+    /// entry alongside poly's own `ruff` backend leaves **one** `ruff` in the
+    /// Python lint plan, and it is the built-in — the higher-fidelity wrapper,
+    /// which reports spans and rule codes where the catalog tier reports one
+    /// file-level pass/fail. The argv override is what makes the catalog lint
+    /// engine buildable at all: the catalog's own `check` command carries
+    /// `--fix`, which `lint_engine` rejects as mutating.
+    #[test]
+    fn an_active_builtin_displaces_the_catalog_tool_of_the_same_name() {
+        let config = config_from("[tools.ruff]\nenabled = true\nargs = [\"check\", \"--quiet\", \"$PATH\"]\n");
+        let plan = plan_engines(&Language::Python, &config, Kind::Lint);
+        let versions = planned_versions(&plan, "ruff");
+        assert_eq!(
+            versions.len(),
+            1,
+            "one tool, one engine: got {versions:?} — a second would report every finding twice",
+        );
+        assert!(
+            !versions[0].starts_with(CATALOG_VERSION_PREFIX),
+            "the built-in ruff must be the survivor, got the catalog engine: {versions:?}",
+        );
+    }
+
+    /// The other half of the rule, and the reason it is not a blanket "built-in
+    /// always wins": `shellcheck` is opt-in, so with `[lint.shell.shellcheck]`
+    /// off the built-in engine lints nothing. Letting it displace the catalog
+    /// tool would turn a duplicated diagnostic into no diagnostic at all, so the
+    /// catalog engine survives instead and the inert built-in is the one dropped.
+    #[test]
+    fn an_inactive_builtin_yields_to_the_catalog_tool_of_the_same_name() {
+        let config = config_from("[tools.shellcheck]\nenabled = true\n\n[lint.shell.shellcheck]\nenabled = false\n");
+        let plan = plan_engines(&Language::Shell, &config, Kind::Lint);
+        let versions = planned_versions(&plan, "shellcheck");
+        assert_eq!(
+            versions.len(),
+            1,
+            "expected exactly one shellcheck engine, got {versions:?}"
+        );
+        assert!(
+            versions[0].starts_with(CATALOG_VERSION_PREFIX),
+            "the catalog engine must survive when the built-in is switched off, got {versions:?}",
+        );
+    }
+
+    /// Displacing an engine must never cost lint coverage. With the built-in
+    /// `shellcheck` switched off, the surviving catalog engine is what keeps the
+    /// Shell plan claiming coverage — the property `provides_language_lint`
+    /// exists to report honestly.
+    #[test]
+    fn a_surviving_catalog_tool_still_carries_lint_coverage() {
+        if which::which("shellcheck").is_err() {
+            // Coverage is claimed only for a binary that is actually on PATH,
+            // so with none installed there is nothing to assert here.
+            return;
+        }
+        let config = config_from("[tools.shellcheck]\nenabled = true\n\n[lint.shell.shellcheck]\nenabled = false\n");
+        assert!(
+            provides_language_lint(&plan_engines(&Language::Shell, &config, Kind::Lint)),
+            "the catalog shellcheck engine must still establish Shell lint coverage",
+        );
+    }
+
+    /// The `catalog:` version prefix is load-bearing, not decorative.
+    ///
+    /// A cache key is `(namespace, engine name, engine version, args, digest)`.
+    /// A catalog tool and a registry backend can answer the same name and, for a
+    /// given file, the same args and digest — so `version()` is the only field
+    /// left to separate them, and it separates them only because every catalog
+    /// engine's version starts with a prefix no registry backend's version uses.
+    /// That was true by accident; this pins it, in both directions.
+    #[test]
+    fn catalog_and_builtin_cache_key_spaces_are_disjoint() {
+        for language in every_plannable_language() {
+            for engine in engines_for(&language) {
+                assert!(
+                    !engine.version().starts_with(CATALOG_VERSION_PREFIX),
+                    "registry backend {:?} reports a version starting with {CATALOG_VERSION_PREFIX:?} \
+                     ({:?}); that prefix is what keeps catalog results from being served to a \
+                     built-in engine under a shared name",
+                    engine.name(),
+                    engine.version(),
+                );
+            }
+        }
+
+        let config = every_catalog_tool_enabled();
+        let mut catalog_engines_seen = 0_usize;
+        for language in every_plannable_language() {
+            for kind in [Kind::Lint, Kind::Format] {
+                for engine in catalog_engines_for(&language, &config, kind) {
+                    catalog_engines_seen += 1;
+                    assert!(
+                        engine.version().starts_with(CATALOG_VERSION_PREFIX),
+                        "catalog engine {:?} must stamp its version with {CATALOG_VERSION_PREFIX:?}, got {:?}",
+                        engine.name(),
+                        engine.version(),
+                    );
+                }
+            }
+        }
+        assert!(
+            catalog_engines_seen > 0,
+            "built zero catalog engines; the traversal is broken, not the invariant",
+        );
     }
 }

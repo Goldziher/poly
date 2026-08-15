@@ -66,6 +66,17 @@ pub(crate) fn is_whole_project_linter(name: &str) -> bool {
 /// file-level diagnostic message, so a chatty tool cannot flood the report.
 const MAX_SNIPPET_LEN: usize = 2000;
 
+/// Prefix every [`CatalogToolEngine`] stamps on its [`Engine::version`].
+///
+/// A catalog tool and a registry backend can answer the same [`Engine::name`] —
+/// `[tools.shellcheck]` and poly's built-in `shellcheck` engine both do — and the
+/// cache key is built from `(namespace, name, version, args, digest)`. Name and
+/// args can be identical, so this prefix is the *only* thing keeping the two key
+/// spaces apart: no registry backend's `version()` starts with it, so no catalog
+/// result can ever be served to a built-in engine or the reverse. Asserted rather
+/// than assumed by `runner::plan`'s `catalog_and_builtin_cache_key_spaces_are_disjoint`.
+pub const CATALOG_VERSION_PREFIX: &str = "catalog:";
+
 /// Whether a catalog engine formats or lints. A single [`CatalogToolEngine`]
 /// serves exactly one role, selected at construction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -222,7 +233,7 @@ impl CatalogToolEngine {
             builder.build().ok()
         };
         let version = format!(
-            "catalog:{}:{}:mode={mode:?}:stdin={stdin}:args={arguments:?}:env={env:?}:root={root:?}:path_globs={path_globs:?}",
+            "{CATALOG_VERSION_PREFIX}{}:{}:mode={mode:?}:stdin={stdin}:args={arguments:?}:env={env:?}:root={root:?}:path_globs={path_globs:?}",
             tool.name,
             probe.as_deref().unwrap_or("absent"),
         );
