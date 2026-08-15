@@ -6,10 +6,20 @@
 //! from ancestors up to the workspace root), and maps each discovered file to
 //! the nearest config that governs it.
 //!
-//! The run's root config (loaded by the caller) is always `configs[0]`; nested
-//! configs found under the walked paths get subsequent ids. A repo with a single
-//! root `poly.toml` and no nested configs resolves every file to `configs[0]` —
-//! byte-for-byte the pre-hierarchical behavior.
+//! Which config governs a file is a property of **the file**, not of how the run
+//! was invoked: `poly fmt .`, `poly fmt packages/app`, and `poly fmt
+//! packages/app/src/x.py` must all apply `packages/app/poly.toml` to that file.
+//! So the config set registers configs found *below* the walked paths **and**
+//! the chain of configs *above* them ([`config_dirs_governing`]) — the latter
+//! being what a run rooted inside a sub-project, or a hook handed explicit
+//! staged paths, depends on entirely.
+//!
+//! The run's root config (loaded by the caller) is `configs[0]` and remains the
+//! fallback for any file no registered config directory covers. A repo with a
+//! single root `poly.toml` and no nested configs resolves every file to that one
+//! config — byte-for-byte the pre-hierarchical behavior — though it reaches it
+//! through the registered entry for the root directory rather than through
+//! `configs[0]`.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -68,7 +78,7 @@ fn verbatim_rules(globs: &[String]) -> Vec<ExcludeRule> {
 /// to associate each file with the nearest config that governs it.
 pub struct ConfigSet {
     /// Deduped resolved configs. `configs[0]` is the run's root config (loaded by
-    /// the caller) and the fallback for any file not under a nested config.
+    /// the caller) and the fallback for any file no entry of `lookup` covers.
     configs: Vec<Config>,
     /// The directory owning each config (parallel to `configs`). `None` only for
     /// the single-config (`--config`) bypass, which has no backing directory.
@@ -84,6 +94,11 @@ pub struct ConfigSet {
     /// re-anchored to the walk root. `None` for the single-config (`--config`)
     /// bypass and when no config file backs the run.
     root_config_dir: Option<PathBuf>,
+    /// Whether some entry of `lookup` sits at [`root_config_dir`], in which case
+    /// that entry already carries `configs[0]`'s `[discovery] exclude` globs.
+    /// Precomputed because `walk_excludes` runs once per root, and a hook run has
+    /// one root per staged file.
+    root_config_registered: bool,
 }
 
 impl ConfigSet {
@@ -95,13 +110,15 @@ impl ConfigSet {
             dirs: vec![None],
             lookup: Vec::new(),
             root_config_dir: None,
+            root_config_registered: false,
         }
     }
 
     /// Build the hierarchical config set for a run over `roots`, using
     /// `root_config` (already loaded by the caller) as `configs[0]`, then
-    /// scanning the roots for every nested `poly.toml` and
-    /// resolving each via the cascade.
+    /// registering every `poly.toml` that governs those roots — both the nested
+    /// ones found by scanning *below* them and the chain of ancestors *above*
+    /// them — resolving each via the cascade.
     pub fn build(roots: &[PathBuf], root_config: Config) -> anyhow::Result<Self> {
         Self::build_with(roots, root_config, &poly_config::LocalPathResolver)
     }
@@ -119,12 +136,12 @@ impl ConfigSet {
         let root_config_dir = shared_root_config_dir(roots).or_else(|| root_config_dir(&root_dir));
 
         let mut configs = vec![root_config];
-        let mut dirs: Vec<Option<PathBuf>> = vec![Some(root_dir.clone())];
-        let mut lookup: Vec<(PathBuf, usize)> = vec![(root_dir.clone(), 0)];
-        let mut seen: HashSet<PathBuf> = HashSet::from([root_dir]);
+        let mut dirs: Vec<Option<PathBuf>> = vec![Some(root_dir)];
+        let mut lookup: Vec<(PathBuf, usize)> = Vec::new();
+        let mut seen: HashSet<PathBuf> = HashSet::new();
 
-        for dir in scan_config_dirs(roots) {
-            if !seen.insert(dir.clone()) {
+        for dir in config_dirs_governing(roots, resolver)? {
+            if !seen.insert(canonical_key(&dir)) {
                 continue;
             }
             let resolved: Config = poly_config::PolyConfig::resolve_for_dir_with(&dir, resolver)?.into();
@@ -134,11 +151,16 @@ impl ConfigSet {
             lookup.push((dir, id));
         }
         lookup.sort_by_key(|(dir, _)| std::cmp::Reverse(dir.components().count()));
+        let root_config_registered = root_config_dir.as_ref().is_some_and(|root_config_dir| {
+            let key = canonical_key(root_config_dir);
+            lookup.iter().any(|(dir, _)| canonical_key(dir) == key)
+        });
         Ok(Self {
             configs,
             dirs,
             lookup,
             root_config_dir,
+            root_config_registered,
         })
     }
 
@@ -175,29 +197,80 @@ impl ConfigSet {
         self.configs.is_empty()
     }
 
-    /// Exclude globs for the walk rooted at `root`: the run's root config
-    /// contributes its `[discovery] exclude` globs re-anchored to `root` (see
-    /// [`root_config_excludes`]), and every *nested* directory-backed config
-    /// under `root` contributes its own globs prefixed by the config directory
-    /// relative to `root` (so a nested config only prunes its own subtree),
-    /// unioned with `extra` (CLI `--exclude` / MCP globs, rooted at `root`). When
-    /// `exclude_root` is false, only a rule covering the named root itself is
-    /// removed; exclusions for descendants remain active.
+    /// The directory an exclude glob for `root` is both *written in* and
+    /// *matched in* — the two must agree or a glob silently matches nothing.
+    ///
+    /// A walked directory is its own frame: the globs are relative to it and the
+    /// walk matcher is rooted there.
+    ///
+    /// An explicitly named **file** has no walk, so it is matched in one shot
+    /// against a frame that has to be wide enough to see every path component a
+    /// glob might name. That frame is the **outermost** config directory
+    /// governing the file — the workspace root — not the file's own directory: a
+    /// glob like `generated/**` names a directory *between* the two, which a
+    /// frame anchored at the file's parent has already consumed and can never
+    /// match. Every governing config then sits at or below the frame, so each
+    /// contributes by simple prefixing.
+    pub fn match_frame(&self, root: &Path) -> PathBuf {
+        let dir = dir_of_root(root);
+        if !root.is_file() {
+            return dir;
+        }
+        self.lookup
+            .iter()
+            .filter(|(config_dir, _)| relative_descent(&dir, config_dir).is_some())
+            .min_by_key(|(config_dir, _)| config_dir.components().count())
+            .map(|(config_dir, _)| config_dir.clone())
+            .or_else(|| std::env::current_dir().ok())
+            .unwrap_or(dir)
+    }
+
+    /// Exclude globs for the run rooted at `root`, expressed relative to its
+    /// [`match_frame`](ConfigSet::match_frame).
+    ///
+    /// Every directory-backed config that governs the frame contributes its own
+    /// `[discovery] exclude`, re-expressed in the frame:
+    ///
+    /// - a config *under* the frame is prefixed by its directory relative to the
+    ///   frame, so it prunes only its own subtree ([`prefix_glob`]);
+    /// - a config *above* the frame — the ancestor chain a walked sub-project
+    ///   directory sits inside — is re-anchored down to the frame
+    ///   ([`reanchor_glob`]), dropping globs that can never match under it.
+    ///
+    /// The run's root config ([`root_config_excludes`]) contributes only when no
+    /// registered config already sits at its directory, which is what keeps the
+    /// single-config repo from compiling every glob twice.
+    ///
+    /// `extra` (CLI `--exclude` / MCP globs, already in the frame) is unioned in
+    /// last. When `exclude_root` is false, only a rule covering the named root
+    /// itself is removed; exclusions for descendants remain active.
     ///
     /// Each rule carries the glob its author wrote alongside the matcher glob,
     /// so the report can name the former — see [`ExcludeRule`].
     ///
     /// [`root_config_excludes`]: ConfigSet::root_config_excludes
     pub fn walk_excludes(&self, root: &Path, extra: &[String], exclude_root: bool) -> Vec<ExcludeRule> {
-        let mut out = self.root_config_excludes(root);
+        let frame = self.match_frame(root);
+        let mut out = if self.root_config_registered {
+            Vec::new()
+        } else {
+            self.root_config_excludes(&frame)
+        };
         for (config_dir, id) in &self.lookup {
-            if *id == 0 {
+            let globs = &self.configs[*id].exclude;
+            if globs.is_empty() {
                 continue;
             }
-            if let Ok(rel) = config_dir.strip_prefix(root) {
-                for glob in &self.configs[*id].exclude {
-                    out.push(ExcludeRule::reanchored(prefix_glob(rel, glob), glob));
-                }
+            if let Some(rel) = relative_descent(config_dir, &frame) {
+                out.extend(
+                    globs
+                        .iter()
+                        .map(|glob| ExcludeRule::reanchored(prefix_glob(&rel, glob), glob)),
+                );
+            } else if let Some(sub) = relative_descent(&frame, config_dir) {
+                out.extend(globs.iter().filter_map(|glob| {
+                    reanchor_glob(&sub, glob).map(|matcher| ExcludeRule::reanchored(matcher, glob))
+                }));
             }
         }
         out.extend(extra.iter().map(ExcludeRule::verbatim));
@@ -208,27 +281,27 @@ impl ConfigSet {
     }
 
     /// The run root config's exclude globs, re-anchored from the directory where
-    /// its config file lives to the walk `root`.
+    /// its config file lives to the walk frame.
     ///
     /// When `poly` runs from a repo subdirectory, that config directory is an
-    /// *ancestor* of the walk root, so each glob is stripped of the subpath from
-    /// the config directory down to the walk root (globs targeting sibling
-    /// subtrees, which can never match under the walk root, are dropped — see
-    /// [`reanchor_glob`]). When the config directory *is* the walk root (the
-    /// common whole-repo run) the globs are emitted unchanged.
+    /// *ancestor* of the walk frame, so each glob is stripped of the subpath from
+    /// the config directory down to the frame (globs targeting sibling subtrees,
+    /// which can never match under the frame, are dropped — see
+    /// [`reanchor_glob`]). When the config directory *is* the frame (the common
+    /// whole-repo run) the globs are emitted unchanged.
     ///
-    /// The subpath is taken from the walk root's **directory**: a `root` naming a
-    /// file (every hook invocation, which is handed explicit staged paths) is
-    /// anchored at the directory containing it. Anchoring on the file itself made
+    /// The frame already resolves a `root` naming a file to a directory wide
+    /// enough to see every component a glob might name — see
+    /// [`match_frame`](ConfigSet::match_frame). Anchoring on the file itself made
     /// every glob written against its parent directory — `packages/dart/lib/*.py`
     /// for `packages/dart/lib/two.py` — look like a sibling subtree, so it was
     /// dropped and the excluded file was formatted.
-    fn root_config_excludes(&self, root: &Path) -> Vec<ExcludeRule> {
+    fn root_config_excludes(&self, frame: &Path) -> Vec<ExcludeRule> {
         let globs = &self.configs[0].exclude;
         let Some(config_dir) = &self.root_config_dir else {
             return verbatim_rules(globs);
         };
-        let Ok(abs_root) = std::fs::canonicalize(dir_of_root(root)) else {
+        let Ok(abs_root) = std::fs::canonicalize(frame) else {
             return verbatim_rules(globs);
         };
         match abs_root.strip_prefix(config_dir) {
@@ -267,7 +340,11 @@ impl ConfigSet {
 
 /// The directory that anchors a run root: the path itself when it is (or looks
 /// like) a directory, else its parent.
-fn dir_of_root(path: &Path) -> PathBuf {
+///
+/// This is the frame every exclude glob for that root is expressed in, so
+/// discovery resolves an explicitly named file against the same directory the
+/// config set anchored it to.
+pub(crate) fn dir_of_root(path: &Path) -> PathBuf {
     if path.is_file() {
         nonempty_parent(path)
     } else {
@@ -399,6 +476,77 @@ fn unanchored_pattern_covers_root(sub: &Path, glob: &str) -> bool {
     !target.contains(['*', '?', '[']) && sub.ends_with(Path::new(target))
 }
 
+/// Every directory whose `poly.toml` governs any part of `roots`: the configs
+/// *below* the roots (found by [`scan_config_dirs`]) plus, for each root, the
+/// chain of configs *above* it.
+///
+/// The ancestor half is what makes hierarchical resolution a property of the
+/// file rather than of the invocation. Scanning alone only ever finds configs at
+/// or below a walk root, so `poly fmt packages/app/src/x.py` — and every hook
+/// run, which is handed explicit staged paths — saw no nested config at all and
+/// fell back to the run's root config: the sub-project's `[discovery] exclude`,
+/// `[defaults]` and `[per-file-ignores]` were silently inert.
+///
+/// Ancestor chains are resolved once per distinct directory frame, not once per
+/// root, because a hook run passes one root per staged file and those collapse
+/// onto a handful of directories.
+fn config_dirs_governing(
+    roots: &[PathBuf],
+    resolver: &dyn poly_config::BaseConfigResolver,
+) -> anyhow::Result<Vec<PathBuf>> {
+    let mut dirs = Vec::new();
+    let mut frames = HashSet::new();
+    for root in roots {
+        let frame = dir_of_root(root);
+        if !frames.insert(frame.clone()) {
+            continue;
+        }
+        dirs.extend(
+            poly_config::config_chain_dirs_with(&frame, resolver)?
+                .into_iter()
+                .map(normalize_dir),
+        );
+    }
+    dirs.extend(scan_config_dirs(roots));
+    Ok(dirs)
+}
+
+/// Spell the current directory `.` rather than the empty path, which a relative
+/// upward walk bottoms out at. The two are the same directory, but only `.`
+/// composes with the path arithmetic in [`relative_descent`].
+fn normalize_dir(dir: PathBuf) -> PathBuf {
+    if dir.as_os_str().is_empty() {
+        PathBuf::from(".")
+    } else {
+        dir
+    }
+}
+
+/// A stable identity for a directory, so the same directory reached by different
+/// spellings (relative vs absolute, via a symlink) is registered once. Falls back
+/// to the path as written when it cannot be canonicalized.
+fn canonical_key(dir: &Path) -> PathBuf {
+    let dir = if dir.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        dir
+    };
+    std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf())
+}
+
+/// `descendant` expressed relative to `ancestor`, or `None` when it does not sit
+/// under it. Tries the paths as written first — the common case, where both come
+/// from the same run root and share a spelling — and only pays for
+/// canonicalization when that fails.
+fn relative_descent(descendant: &Path, ancestor: &Path) -> Option<PathBuf> {
+    if let Ok(relative) = descendant.strip_prefix(ancestor) {
+        return Some(relative.to_path_buf());
+    }
+    let descendant = std::fs::canonicalize(descendant).ok()?;
+    let ancestor = std::fs::canonicalize(ancestor).ok()?;
+    descendant.strip_prefix(ancestor).ok().map(Path::to_path_buf)
+}
+
 /// Scan `roots` for every directory containing a config file, respecting
 /// `.gitignore` and the same pruned-directory set as discovery.
 fn scan_config_dirs(roots: &[PathBuf]) -> Vec<PathBuf> {
@@ -493,8 +641,12 @@ mod tests {
 
         let front_id = set.config_id_for(&root.path().join("frontend/app.ts"));
         let root_id = set.config_id_for(&root.path().join("src/main.rs"));
-        assert_ne!(front_id, 0, "frontend file maps to the nested config");
-        assert_eq!(root_id, 0, "root file maps to the root config");
+        // Which *slot* a file lands in is an internal detail — the repo-root
+        // config is now registered in its own right (so that a run rooted below
+        // it still finds it), rather than being reachable only as `configs[0]`.
+        // What must hold is that the two subtrees resolve differently, and to
+        // the values their configs declare.
+        assert_ne!(front_id, root_id, "the two subtrees must resolve to different configs");
         assert_eq!(set.config(front_id).defaults.line_length, 80, "nested override");
         assert_eq!(set.config(root_id).defaults.line_length, 120, "root default");
     }
@@ -625,12 +777,21 @@ mod tests {
         assert_eq!(reanchor_glob(sub, "packages/dart/build.py"), None);
     }
 
-    /// A `root` naming a file is anchored at the directory holding it — the shape
-    /// every hook invocation takes, since hooks are handed staged file paths. When
-    /// the file itself was the anchor, a glob written against its parent directory
-    /// matched nothing and the excluded file was formatted.
+    /// A `root` naming a file — the shape every hook invocation takes, since
+    /// hooks are handed staged file paths — must still be pruned by a glob its
+    /// governing config wrote against an ancestor directory. Anchoring on the
+    /// file itself made such a glob look like a sibling subtree, so it was
+    /// dropped and the excluded file was formatted.
+    ///
+    /// Asserted as an *effect*: the rules are compiled in the frame they are
+    /// expressed in and matched against the file. The glob spellings are
+    /// deliberately not asserted — they are a function of where the frame lands,
+    /// which [`ConfigSet::match_frame`] is free to widen (and did, to fix a
+    /// separate case where a frame at the file's own parent had already consumed
+    /// the directory a glob names). A test pinned to the spelling fails on that
+    /// change while the behaviour it guards is intact.
     #[test]
-    fn walk_excludes_anchors_a_named_file_at_its_directory() {
+    fn walk_excludes_prunes_a_named_file_matched_by_an_ancestor_glob() {
         let root = tempdir().unwrap();
         write(
             &root.path().join("poly.toml"),
@@ -643,18 +804,19 @@ mod tests {
         let set = ConfigSet::build(std::slice::from_ref(&file), root_config).unwrap();
 
         let excludes = set.walk_excludes(&file, &[], true);
+        let frame = set.match_frame(&file);
+        let matcher_globs: Vec<String> = excludes.iter().map(|rule| rule.glob.clone()).collect();
+        let matcher = crate::discover::build_excludes(&frame, &matcher_globs).expect("the config's globs compile");
         assert!(
-            globs(&excludes).contains(&"*.py"),
-            "parent-anchored glob re-anchored to the file's directory: {excludes:?}"
+            matcher.matched(&file, false).is_ignore(),
+            "the named file must be pruned by its config's globs, in frame {frame:?}: {excludes:?}"
         );
-        assert!(
-            globs(&excludes).contains(&"**"),
-            "ancestor prune covers the named file: {excludes:?}"
-        );
-        // Both matched with a rewritten glob, so both are exactly the case where
-        // reporting the matcher would name a rule nobody wrote.
-        assert_eq!(authored_for(&excludes, "*.py"), "packages/dart/lib/*.py");
-        assert_eq!(authored_for(&excludes, "**"), "packages/dart/**");
+
+        // Whatever the frame, every rule still reports the text its author wrote
+        // — none of these globs appears in the config as poly matched it.
+        let authored: Vec<&str> = excludes.iter().map(|rule| rule.authored.as_str()).collect();
+        assert!(authored.contains(&"packages/dart/lib/*.py"), "{authored:?}");
+        assert!(authored.contains(&"packages/dart/**"), "{authored:?}");
     }
 
     #[test]

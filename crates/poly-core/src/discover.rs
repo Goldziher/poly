@@ -479,7 +479,7 @@ pub fn discover_reporting(
     let mut report = DiscoveryReport::default();
     for root in paths {
         let exclude = configs.walk_excludes(root, extra, force_exclude);
-        if force_exclude && let Some(matcher) = explicit_matcher(&exclude) {
+        if force_exclude && let Some(matcher) = explicit_matcher(root, configs, &exclude) {
             let root_is_directory = root.is_dir();
             if matcher.record_if_excluded(root, root_is_directory, true) {
                 matcher.merge_into(&mut report);
@@ -537,12 +537,22 @@ pub fn discover_reporting(
 
 /// The matcher used for an explicitly named root under `--force-exclude`.
 ///
-/// The globs are written relative to the config's directory, so they are matched
-/// from the current directory — the same frame of reference a user writing
-/// `terraform/**` in `poly.toml` at the repo root is using. A file outside that
+/// A named **file** is matched in the frame [`ConfigSet::match_frame`] chose —
+/// the outermost config directory governing it — which is the same frame
+/// [`ConfigSet::walk_excludes`] just expressed its globs in. Anything else and
+/// the two disagree: matching from the working directory is why a nested
+/// `[discovery] exclude` was inert for every path a hook named.
+///
+/// A named **directory** keeps the working directory as its frame: its globs are
+/// written relative to the walk root, the same frame of reference a user writing
+/// `terraform/**` in `poly.toml` at the repo root is using. A path outside the
 /// frame simply does not match, which is the safe direction: it gets checked.
-fn explicit_matcher(exclude: &[ExcludeRule]) -> Option<Arc<ExcludeMatcher>> {
-    let base = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+fn explicit_matcher(root: &Path, configs: &ConfigSet, exclude: &[ExcludeRule]) -> Option<Arc<ExcludeMatcher>> {
+    let base = if root.is_file() {
+        configs.match_frame(root)
+    } else {
+        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+    };
     ExcludeMatcher::new(&base, exclude)
 }
 
@@ -567,7 +577,7 @@ fn explicit_matcher(exclude: &[ExcludeRule]) -> Option<Arc<ExcludeMatcher>> {
 /// Anchoring (`/e2e/**`) is the fix, and is deliberately *not* applied
 /// automatically — silently re-interpreting an existing exclude would change
 /// which files a repo's gate covers without anyone editing anything.
-fn build_excludes(root: &std::path::Path, exclude: &[String]) -> Option<ignore::overrides::Override> {
+pub(crate) fn build_excludes(root: &std::path::Path, exclude: &[String]) -> Option<ignore::overrides::Override> {
     if exclude.is_empty() {
         return None;
     }

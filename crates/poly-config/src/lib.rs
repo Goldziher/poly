@@ -272,24 +272,7 @@ impl PolyConfig {
     /// `extends` bases (with a fresh cycle-detection set) before the ancestor
     /// chain is deep-merged.
     pub fn resolve_for_dir_with(dir: &Path, resolver: &dyn BaseConfigResolver) -> anyhow::Result<PolyConfig> {
-        let mut chain: Vec<(PathBuf, toml::Table)> = Vec::new();
-        let mut current = Some(dir.to_path_buf());
-        while let Some(d) = current {
-            if let Some(path) = config_file_in(&d) {
-                let mut visited = Vec::new();
-                let mut table = read_config_table(&path, resolver, &mut visited)?;
-                resolve_rules_dirs_in_table(&mut table, &d);
-                let is_root = table_marks_workspace_root(&table);
-                chain.push((d.clone(), table));
-                if is_root {
-                    break;
-                }
-            }
-            if d.join(".git").exists() {
-                break;
-            }
-            current = d.parent().map(Path::to_path_buf);
-        }
+        let chain = config_chain(dir, resolver)?;
 
         if chain.is_empty() {
             let mut config = PolyConfig {
@@ -473,6 +456,47 @@ fn finalize(mut table: toml::Table, typos_dir: &Path) -> anyhow::Result<PolyConf
         .validate()
         .map_err(|message| anyhow::anyhow!("invalid [tools] config: {message}"))?;
     Ok(config)
+}
+
+/// The ancestor chain of config files governing `dir`, nearest first, each paired
+/// with its (extends-resolved) raw table.
+///
+/// The upward walk stops at (and includes) the first config marked
+/// `[workspace] root = true`, at a directory containing `.git`, or at the
+/// filesystem root.
+fn config_chain(dir: &Path, resolver: &dyn BaseConfigResolver) -> anyhow::Result<Vec<(PathBuf, toml::Table)>> {
+    let mut chain: Vec<(PathBuf, toml::Table)> = Vec::new();
+    let mut current = Some(dir.to_path_buf());
+    while let Some(d) = current {
+        if let Some(path) = config_file_in(&d) {
+            let mut visited = Vec::new();
+            let mut table = read_config_table(&path, resolver, &mut visited)?;
+            resolve_rules_dirs_in_table(&mut table, &d);
+            let is_root = table_marks_workspace_root(&table);
+            chain.push((d.clone(), table));
+            if is_root {
+                break;
+            }
+        }
+        if d.join(".git").exists() {
+            break;
+        }
+        current = d.parent().map(Path::to_path_buf);
+    }
+    Ok(chain)
+}
+
+/// The directories whose `poly.toml` governs `dir`, **nearest first**, under the
+/// same boundary rules as [`PolyConfig::resolve_for_dir_with`].
+///
+/// Hierarchical resolution (ADR 0018) makes the governing config a property of
+/// the *file*, not of how a run was invoked. Walking down from a run root only
+/// ever finds configs at or below it, so a caller handed a path that sits inside
+/// a sub-project — an explicitly named file, or the sub-project directory
+/// itself — needs the chain *above* that path to resolve the same config a
+/// whole-repo walk would have applied. This is that chain.
+pub fn config_chain_dirs_with(dir: &Path, resolver: &dyn BaseConfigResolver) -> anyhow::Result<Vec<PathBuf>> {
+    Ok(config_chain(dir, resolver)?.into_iter().map(|(d, _)| d).collect())
 }
 
 /// Return the `poly.toml` in `dir`, if present (a single directory, no upward walk).
