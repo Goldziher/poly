@@ -55,7 +55,7 @@ const DEFAULT_GROUPS: &[&str] = &["correctness", "suspicious"];
 /// Cache-key version string.  Embeds the pinned biome rev so the blake3 cache
 /// is invalidated whenever the rev changes.  Bump the `+lint-vN` suffix when
 /// the diagnostic mapping logic changes output for identical input.
-const VERSION: &str = "biome_css_analyze+rev:6b8f09c+lint-v1";
+const VERSION: &str = "biome_css_analyze+rev:f34e15c+lint-v1";
 
 /// Map a poly [`Language`] to the biome [`CssFileSource`].
 ///

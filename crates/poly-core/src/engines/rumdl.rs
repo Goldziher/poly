@@ -45,7 +45,7 @@ pub struct RumdlEngine;
 /// [`contains_go_template_markdown`]), and the MD020 guard ([`GuardedMd020`]). Bump the
 /// suffix whenever any of these change so stale cached diagnostics are
 /// invalidated.
-const RUMDL_VERSION: &str = "0.2.54+defaults5-mdx-rules-tmplskip-codeaware-md020guard-nostructfmt";
+const RUMDL_VERSION: &str = "0.2.55+defaults5-mdx-rules-tmplskip-codeaware-md020guard-nostructfmt";
 
 /// rumdl-proprietary stylistic rules disabled by default.
 ///

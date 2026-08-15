@@ -2,7 +2,7 @@
 //! via `ruff_python_formatter`.
 //!
 //! Both depend on the astral-sh/ruff git monorepo, pinned to rev
-//! `5b48a040974781ba90b47c8df628f8fd9b6c95dd`. The `RUFF_REV` constant is
+//! `3b067a163e58614fd022c24f1274404a0f386179`. The `RUFF_REV` constant is
 //! folded into [`RuffEngine::version`] so that upgrading the pin automatically
 //! invalidates the poly cache.
 //!
@@ -297,7 +297,7 @@ impl Engine for RuffEngine {
     fn version(&self) -> &str {
         concat!(
             "git-ruff:",
-            "5b48a040974781ba90b47c8df628f8fd9b6c95dd",
+            "3b067a163e58614fd022c24f1274404a0f386179",
             "+pkgroot+plugins+isort+e501+tgtsrc+ignore-b008"
         )
     }

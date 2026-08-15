@@ -44,11 +44,19 @@ pub(super) fn build_js_options(cfg: &EngineConfig) -> JsFormatOptions {
         .and_then(|w| IndentWidth::try_from(w).ok())
         .unwrap_or_default();
 
+    // oxc dropped `impl FromStr for IndentStyle`; the other option enums below
+    // keep theirs. Spelled out here rather than parsed so the accepted values
+    // stay exactly what the table above documents — and match the `QuoteStyle`
+    // handling immediately below.
     let indent_style = cfg
         .options
         .get("indent_style")
         .and_then(|v| v.as_str())
-        .and_then(|s| s.parse::<IndentStyle>().ok())
+        .and_then(|s| match s {
+            "tab" => Some(IndentStyle::Tab),
+            "space" => Some(IndentStyle::Space),
+            _ => None,
+        })
         .unwrap_or_default();
 
     let quote_style = cfg
