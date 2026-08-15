@@ -19,6 +19,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use poly_core::engine::Engine;
+use poly_core::engines::astgrep::AstGrepEngine;
 use poly_core::engines::biome_css::BiomeCssEngine;
 use poly_core::engines::biome_graphql::BiomeGraphqlEngine;
 use poly_core::engines::dockerfile::DockerfileEngine;
@@ -182,6 +183,17 @@ fn engine_versions_track_cargo_lock() {
         check("ruff", RuffEngine.version(), vec![("ruff_linter", Git)]),
         check("rubyfmt", RubyfmtEngine.version(), vec![("rubyfmt", Git)]),
         check("uncomment", UncommentEngine.version(), vec![("uncomment", Registry)]),
+        // `astgrep` parses with the same grammar pack as `treesitter`, so both
+        // must embed the same `tree-sitter-language-pack` version — new grammars
+        // change what rules match. It was omitted from this list until the pack
+        // moved 1.14.3 -> 1.15.0 and the audit stayed green while astgrep still
+        // advertised the old pack, which is the exact stale-cache failure this
+        // test exists to prevent.
+        check(
+            "astgrep",
+            AstGrepEngine.version(),
+            vec![("ast-grep-core", Registry), ("tree-sitter-language-pack", Registry)],
+        ),
     ];
 
     for Check { engine, version, deps } in &checks {
