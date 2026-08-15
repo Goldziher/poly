@@ -257,8 +257,16 @@ const GENERATED_HEADER_LINES: usize = 5;
 /// skip exists to break. A consumer's vendored cgo and visitor bindings were the
 /// casualties.
 ///
-/// 10 matches what Alef's own reader accepts, so poly protects precisely the set
-/// the producer can stamp — no wider.
+/// **11 is derived from Alef, not chosen.** `generated_hash_line` in
+/// `alef/src/core/hash.rs` bounds the *marker* scan at index 0..=9 and then reads
+/// the line immediately after the marker, so the deepest stamp Alef can both
+/// write and read back is index 10 — eleven lines of window. This constant is
+/// pinned to that one, and when Alef moves it, poly silently under-protects the
+/// newly reachable depth with no test failing on either side. Treat a change to
+/// Alef's marker scan or its peek as requiring a change here.
+///
+/// (An earlier revision of Alef read only 0..=9, and poly matched it at 10. The
+/// contract moved; this is the second value, not the original.)
 ///
 /// Widening is safe *only* for the structured shape. `<project>:hash:<8+ hex>`
 /// (see [`has_structured_hash_stamp`]) cannot occur in prose. The loose banners
@@ -266,7 +274,7 @@ const GENERATED_HEADER_LINES: usize = 5;
 /// English words that appear further down real files, and a false skip there
 /// drops a hand-written file out of the format gate silently — the failure this
 /// module weighs as strictly worse than formatting a generated file.
-const HASH_STAMP_HEADER_LINES: usize = 10;
+const HASH_STAMP_HEADER_LINES: usize = 11;
 
 fn generated_header_region(content: &str) -> Option<&str> {
     let mut offset = 0;
@@ -553,19 +561,20 @@ mod tests {
 
     /// Both edges of the producer's reach, written as literals on purpose.
     ///
-    /// Alef accepts its banner at raw index 0..=9 and injects the stamp on the
-    /// following line, so the deepest stamp it can produce *and still read back*
-    /// is index 9. Deriving these fixtures from [`HASH_STAMP_HEADER_LINES`] would
-    /// make them move with the constant, so narrowing it back to 5 would leave
-    /// them green — the literals are what pin poly's window to the producer's.
+    /// Alef bounds its *marker* scan at index 0..=9 and reads the stamp on the
+    /// line immediately after the marker, so the deepest stamp it can both write
+    /// and read back is index **10**. Deriving these fixtures from
+    /// [`HASH_STAMP_HEADER_LINES`] would make them move with the constant, so
+    /// narrowing it would leave them green — the literals are what pin poly's
+    /// window to the producer's.
     #[test]
     fn should_honor_the_producer_stamp_window_exactly() {
-        let deepest_the_producer_can_reach = alef_stamped_source(8);
+        let deepest_the_producer_can_reach = alef_stamped_source(9);
         assert_eq!(
             deepest_the_producer_can_reach
                 .lines()
                 .position(|line| line.contains("alef:hash:")),
-            Some(9),
+            Some(10),
             "fixture must place the stamp at the producer's deepest reachable line"
         );
         assert!(
@@ -573,8 +582,8 @@ mod tests {
             "a stamp on the deepest line the producer can reach must be honored"
         );
 
-        let beyond = alef_stamped_source(9);
-        assert_eq!(beyond.lines().position(|line| line.contains("alef:hash:")), Some(10));
+        let beyond = alef_stamped_source(10);
+        assert_eq!(beyond.lines().position(|line| line.contains("alef:hash:")), Some(11));
         assert!(
             !is_hash_stamped_source(&beyond),
             "a stamp deeper than the producer's own reader accepts must not skip"
