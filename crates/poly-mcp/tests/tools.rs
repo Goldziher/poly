@@ -156,15 +156,7 @@ fn registered_tools_have_expected_names_and_annotations() {
         ]
     );
 
-    for tool in [
-        "lint",
-        "format_check",
-        "cache_stats",
-        "rules",
-        "config_show",
-        "version",
-        "workspace_lint",
-    ] {
+    for tool in ["lint", "format_check", "cache_stats", "rules", "config_show", "version"] {
         let (read_only, destructive) = server.tool_hints(tool).unwrap();
         assert_eq!(read_only, Some(true), "{tool} should be read-only");
         assert_eq!(destructive, Some(false), "{tool} should not be destructive");
@@ -174,6 +166,27 @@ fn registered_tools_have_expected_names_and_annotations() {
         assert_eq!(read_only, Some(false), "{tool} should not be read-only");
         assert_eq!(destructive, Some(true), "{tool} should be destructive");
     }
+}
+
+/// `workspace_lint` applies no fixes, but the phase executes cargo against the
+/// live worktree, so it is not read-only. Clients gate auto-approval on
+/// `read_only_hint`; a tool that can change the tree without a prompt is the
+/// exact case the hint exists to catch, so it is asserted separately from both
+/// the read-only set and the destructive set rather than folded into either.
+#[test]
+fn workspace_lint_is_not_annotated_read_only_because_its_tools_touch_the_tree() {
+    let server = PolyMcpServer::new(None);
+    let (read_only, destructive) = server.tool_hints("workspace_lint").unwrap();
+    assert_eq!(
+        read_only,
+        Some(false),
+        "workspace_lint executes cargo against the worktree"
+    );
+    assert_eq!(
+        destructive,
+        Some(false),
+        "workspace_lint deletes nothing and writes no output of its own"
+    );
 }
 
 #[test]

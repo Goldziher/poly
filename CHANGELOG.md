@@ -29,7 +29,15 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   longer) against docs, `--help`, and an MCP tool description that all said `poly lint` never
   writes. The README, `poly lint --help`, the `workspace_lint` MCP tool description, ADR 0019, and
   the bundled skills/commands now state it, and name `--no-workspace` / `[lint] workspace = false`
-  as the way to get a run that cannot touch the tree. No behaviour changed.
+  as the way to get a run that cannot touch the tree.
+
+  The one machine-readable claim is corrected too: the `workspace_lint` MCP tool was annotated
+  `readOnlyHint: true`, and clients gate auto-approval on that hint rather than on the description
+  beside it — so the single case the hint exists to catch, a tree that changes without a prompt, was
+  the case it waved through. It is now annotated as side-effecting: not read-only, still not
+  destructive, since poly deletes nothing and writes no output of its own there. **MCP clients that
+  auto-approve read-only tools will now prompt for `workspace_lint`.** That is the only behaviour
+  change in this entry; the CLI is documentation-only.
 
 ## [0.21.5] - 2026-08-15
 
