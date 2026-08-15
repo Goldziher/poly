@@ -648,7 +648,26 @@ fn workspace_hook_without_work_root_runs_in_root() {
     let outcome = run(request(root, pre_commit(vec![workspace_hook]))).expect("run");
     assert!(outcome.success());
     assert_eq!(read(root, "marker.txt").trim(), "ws");
-    assert_eq!(read(root, "ct.txt"), "unset");
+
+    // The invariant is that poly does not *inject* `CARGO_TARGET_DIR` without a
+    // `work_root` — not that the developer's environment is pristine. Asserting
+    // the literal "unset" made the suite fail for anyone who exports the
+    // variable (sharing a build cache across worktrees is ordinary), and because
+    // `cargo test` is fail-fast that single environment-dependent assertion
+    // truncated the run, reading as a large regression rather than one bad test.
+    let ambient = std::env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| "unset".to_owned());
+    assert_eq!(
+        read(root, "ct.txt"),
+        ambient,
+        "without a work_root the hook must see the ambient CARGO_TARGET_DIR, whatever it is"
+    );
+    // `root` is a fresh temp dir, so this can never be satisfied by the ambient
+    // value: it fails if the staged-run redirect leaks into an unstaged run.
+    assert_ne!(
+        read(root, "ct.txt"),
+        root.join("target").to_string_lossy(),
+        "the work_root cargo redirect must not apply when there is no work_root"
+    );
 }
 
 /// A workspace hook's result-cache key is derived from STAGED content (the
