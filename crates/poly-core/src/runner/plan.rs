@@ -13,7 +13,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use crate::config::{Config, EngineConfig, Kind};
 use crate::discover::DiscoveredFile;
 use crate::engine::Engine;
-use crate::engines::catalog_tool::CatalogToolEngine;
+use crate::engines::catalog_tool::{CatalogToolEngine, LintRefusal};
 use crate::engines::rule_config::RuleSelection;
 use crate::filter::SeverityRemap;
 use crate::language::Language;
@@ -280,6 +280,38 @@ fn warn_catalog_tool_displaced_once(name: &str, language: &Language) {
     }
 }
 
+/// Emit a one-time `warn` that an enabled `[tools.<name>]` entry cannot run as a
+/// catalog linter because the command it would run rewrites files.
+///
+/// The refusal itself is right — a fix command run as a lint pass overwrites the
+/// user's source and still exits zero — but staying quiet about it is its own
+/// false pass: the user asked for that linter, poly runs nothing, and the report
+/// comes back clean as though the file had been checked. So name the tool, the
+/// reason, and the remedy: `poly fmt` still runs these tools.
+fn warn_mutating_catalog_linter_once(name: &str, language: &Language, refusal: &LintRefusal) {
+    if !first_report_of(format!("mutating-lint:{name}:{language:?}")) {
+        return;
+    }
+    let language_id = language.id();
+    match refusal {
+        LintRefusal::MutatingCommand(argv) => tracing::warn!(
+            tool = name,
+            language = language_id,
+            "'{name}' is enabled but the lint command it would run rewrites files ('{argv}'), so it \
+             cannot run as a linter — it would overwrite your source and still report it clean. It \
+             is skipped for {language_id}; 'poly fmt' still runs it as a formatter. To lint with it, \
+             point '[tools.{name}]' 'command'/'args' at a check-only command."
+        ),
+        LintRefusal::AlwaysMutating => tracing::warn!(
+            tool = name,
+            language = language_id,
+            "'{name}' is enabled but rewrites every file it is given and has no check-only mode, so \
+             it cannot run as a linter — it would overwrite your source and still report it clean. \
+             It is skipped for {language_id}; 'poly fmt' still runs it as a formatter."
+        ),
+    }
+}
+
 /// Build the catalog-driven engines (ADR 0013) for `language`: one
 /// [`CatalogToolEngine`] per enabled `[tools.<name>]` whose catalog tool both
 /// declares a language that maps to `language` and exposes a usable command for
@@ -290,9 +322,11 @@ fn warn_catalog_tool_displaced_once(name: &str, language: &Language) {
 /// rewrites the file, whether through a flag (`--fix`, `--autocorrect`,
 /// `--in-place`, …) or a subcommand (`sqruff fix`, `ruff format`), would corrupt
 /// files if run as a linter, so [`CatalogToolEngine::lint_engine`] skips it.
-/// Catalog linting is a best-effort, breadth-tier mechanism (file-level,
-/// exit-code based); structured per-tool diagnostics remain the curated native
-/// backends' job.
+/// Such a refusal is reported ([`warn_mutating_catalog_linter_once`]) rather than
+/// resolved in silence, since from the outside it is indistinguishable from a
+/// linter that ran and found nothing. Catalog linting is a best-effort,
+/// breadth-tier mechanism (file-level, exit-code based); structured per-tool
+/// diagnostics remain the curated native backends' job.
 ///
 /// A tool built here may still be dropped by [`merge_catalog_engines`] when
 /// poly's own backend of the same name already covers the language.
@@ -319,6 +353,12 @@ fn catalog_engines_for(language: &Language, config: &Config, kind: Kind) -> Vec<
         }
         let command = tool_config.command.as_deref();
         let args = tool_config.args.as_deref();
+        if kind == Kind::Lint
+            && let Some(refusal) = crate::engines::catalog_tool::lint_refusal(tool, command, args)
+        {
+            warn_mutating_catalog_linter_once(name, language, &refusal);
+            continue;
+        }
         let env = tool_config.env.clone();
         let root = tool_config.root.as_ref().map(std::path::PathBuf::from);
         let engine = match kind {

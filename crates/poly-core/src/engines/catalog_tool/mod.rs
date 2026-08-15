@@ -117,6 +117,72 @@ pub(crate) fn is_whole_project_linter(name: &str) -> bool {
     WHOLE_PROJECT_LINTERS.contains(&name)
 }
 
+/// Why an enabled `[tools.<name>]` entry cannot be wired as a catalog linter,
+/// even though the tool exposes a lint command.
+///
+/// Returned by [`lint_refusal`] purely so the caller can *tell the user* what
+/// [`CatalogToolEngine::lint_engine`] already decided: a refusal that is never
+/// reported reads, from the outside, exactly like a linter that found nothing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum LintRefusal {
+    /// The tool rewrites every file it is handed whatever the argv
+    /// ([`ALWAYS_MUTATING_TOOLS`]), so no command could make it read-only.
+    AlwaysMutating,
+    /// The resolved lint argv would rewrite the file — a [`MUTATING_FLAGS`] flag
+    /// or a [`MUTATING_SUBCOMMANDS`] positional. Carries the argv as it would
+    /// have run, so the warning can quote the offending command.
+    MutatingCommand(String),
+}
+
+/// Why `tool`'s lint role is refused for this configuration, or `None` when it
+/// is accepted.
+///
+/// Answers exactly the question [`CatalogToolEngine::lint_engine`] asks itself —
+/// both consult [`resolved_lint_command`] and [`is_mutating`], so the reason
+/// reported can never drift from the decision taken. Whole-project type-checkers
+/// ([`WHOLE_PROJECT_LINTERS`]) are *not* covered here: they have their own
+/// refusal and their own warning.
+pub(crate) fn lint_refusal(
+    tool: &Tool,
+    command_name: Option<&str>,
+    args_override: Option<&[String]>,
+) -> Option<LintRefusal> {
+    if ALWAYS_MUTATING_TOOLS.contains(&tool.name.as_str()) {
+        return Some(LintRefusal::AlwaysMutating);
+    }
+    let (arguments, _) = resolved_lint_command(tool, command_name, args_override)?;
+    is_mutating(&arguments).then(|| LintRefusal::MutatingCommand(quoted_argv(tool, &arguments)))
+}
+
+/// The `(argv, stdin)` pair a catalog lint engine would run: the command named
+/// by `command_name` (else the tool's [`Tool::lint_command`]), with its argv
+/// replaced by `args_override` when the user set one.
+fn resolved_lint_command(
+    tool: &Tool,
+    command_name: Option<&str>,
+    args_override: Option<&[String]>,
+) -> Option<(Vec<String>, bool)> {
+    let command = match command_name {
+        Some(name) => tool.command(name)?,
+        None => tool.lint_command()?.1,
+    };
+    let arguments = args_override
+        .map(<[String]>::to_vec)
+        .unwrap_or_else(|| command.arguments.clone());
+    Some((arguments, command.stdin))
+}
+
+/// The command line as a user would recognise it — binary plus argv — for
+/// quoting back in a warning.
+fn quoted_argv(tool: &Tool, arguments: &[String]) -> String {
+    let mut line = tool.binary.clone();
+    for argument in arguments {
+        line.push(' ');
+        line.push_str(argument);
+    }
+    line
+}
+
 /// Maximum number of bytes of a failing linter's output surfaced in the
 /// file-level diagnostic message, so a chatty tool cannot flood the report.
 const MAX_SNIPPET_LEN: usize = 2000;
@@ -259,20 +325,11 @@ impl CatalogToolEngine {
         env: BTreeMap<String, String>,
         root: Option<PathBuf>,
     ) -> Option<Self> {
-        if is_whole_project_linter(&tool.name) || ALWAYS_MUTATING_TOOLS.contains(&tool.name.as_str()) {
+        if is_whole_project_linter(&tool.name) || lint_refusal(tool, command_name, args_override).is_some() {
             return None;
         }
-        let command = match command_name {
-            Some(name) => tool.command(name)?,
-            None => tool.lint_command()?.1,
-        };
-        let arguments = args_override
-            .map(<[String]>::to_vec)
-            .unwrap_or_else(|| command.arguments.clone());
-        if is_mutating(&arguments) {
-            return None;
-        }
-        Some(Self::build(tool, Mode::Lint, arguments, command.stdin, env, root))
+        let (arguments, stdin) = resolved_lint_command(tool, command_name, args_override)?;
+        Some(Self::build(tool, Mode::Lint, arguments, stdin, env, root))
     }
 
     /// Shared constructor for both roles: probes the binary and folds the role,
