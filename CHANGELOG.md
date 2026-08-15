@@ -7,6 +7,30 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+## [0.21.5] - 2026-08-15
+
+### Fixed
+
+- **Content-hash stamps are now found below a leading licence or build preamble.** The stamp scan
+  was capped at the same five lines as the generated banner, but generators place the stamp
+  directly beneath their header and accept that header anywhere in the first ten lines. Any
+  generated file carrying an SPDX block, copyright notice, or build-tag stanza ahead of the banner
+  was therefore stamped by its generator and invisible to poly, and `fmt --fix` reformatted it —
+  the generator's verify step then reported drift on a file no human had touched. Only the
+  structured `<project>:hash:<digest>` shape gets the wider window; the prose banners and the
+  bare-word `sourcehash` / `@checksum` markers keep the narrow one, so no additional file can be
+  dropped out of the format gate by a false match.
+
+### Changed
+
+- **Minimum supported Rust version is now 1.97**, required by the upgraded PHP backend crates.
+
+- **All dependencies upgraded**, including the pinned oxc, ruff, and biome revisions. The PHP
+  backend crates were held at an exact version that excluded every later release; they now track
+  minor versions so upgrades are picked up. Every affected backend's version marker was bumped
+  alongside its crate, so cached results from the previous release are invalidated rather than
+  reused — the first run after upgrading re-checks each file.
+
 ## [0.21.4] - 2026-08-14
 
 ### Fixed

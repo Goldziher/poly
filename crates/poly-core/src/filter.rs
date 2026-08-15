@@ -240,6 +240,34 @@ const GENERATED_MARKERS: &[&str] = &[
 /// put the banner at the top; scanning further would start matching prose.
 const GENERATED_HEADER_LINES: usize = 5;
 
+/// How many lines **of [`generated_header_region`]** are searched for a
+/// structured content-hash stamp. Like [`GENERATED_HEADER_LINES`] this is
+/// measured from the start of that region, i.e. *after* any YAML frontmatter
+/// block — not from byte 0 of the file. A frontmattered document therefore gets
+/// this many lines on top of its frontmatter.
+///
+/// Wider than [`GENERATED_HEADER_LINES`] because this window has to match the
+/// producer's, not ours. Alef — the generator that motivated this — accepts its
+/// header marker anywhere in the first 10 lines and writes the `alef:hash:<hex>`
+/// line directly beneath it, so a stamp legitimately lands well below line 5
+/// whenever a licence preamble, SPDX block, or build-tag stanza precedes the
+/// banner. Scanning only 5 left exactly those files unprotected: stamped by the
+/// generator, invisible to poly, reformatted by `fmt --fix` — and the reflow then
+/// reported as drift by the generator's own verify step, which is the loop the
+/// skip exists to break. A consumer's vendored cgo and visitor bindings were the
+/// casualties.
+///
+/// 10 matches what Alef's own reader accepts, so poly protects precisely the set
+/// the producer can stamp — no wider.
+///
+/// Widening is safe *only* for the structured shape. `<project>:hash:<8+ hex>`
+/// (see [`has_structured_hash_stamp`]) cannot occur in prose. The loose banners
+/// and the bare-word [`CONTENT_HASH_MARKERS`] keep the narrow window: those are
+/// English words that appear further down real files, and a false skip there
+/// drops a hand-written file out of the format gate silently — the failure this
+/// module weighs as strictly worse than formatting a generated file.
+const HASH_STAMP_HEADER_LINES: usize = 10;
+
 fn generated_header_region(content: &str) -> Option<&str> {
     let mut offset = 0;
     for (index, line) in content.split_inclusive('\n').enumerate() {
@@ -271,8 +299,8 @@ pub(crate) fn is_generated_source(content: &str) -> bool {
     generated_header_region(content).is_some_and(|header| {
         header.lines().take(GENERATED_HEADER_LINES).any(|line| {
             let lower = line.to_ascii_lowercase();
-            GENERATED_MARKERS.iter().any(|marker| lower.contains(marker)) || has_structured_hash_stamp(&lower)
-        })
+            GENERATED_MARKERS.iter().any(|marker| lower.contains(marker))
+        }) || has_content_hash_stamp(header)
     })
 }
 
@@ -297,6 +325,26 @@ fn has_structured_hash_stamp(line: &str) -> bool {
     digest.trim_start().chars().take_while(char::is_ascii_hexdigit).count() >= MINIMUM_HASH_DIGEST_LENGTH
 }
 
+/// Whether `header` carries a content-hash stamp over the body.
+///
+/// The two signal classes get different windows on purpose — see
+/// [`HASH_STAMP_HEADER_LINES`]. The structured `<project>:hash:<hex>` shape is
+/// searched to the producer's depth; the bare-word markers stay inside the
+/// narrow banner window, because a lone `sourcehash` is an identifier that
+/// occurs in ordinary code and a false positive here silently removes a
+/// hand-written file from the format gate.
+fn has_content_hash_stamp(header: &str) -> bool {
+    header
+        .lines()
+        .take(HASH_STAMP_HEADER_LINES)
+        .enumerate()
+        .any(|(index, line)| {
+            let lower = line.to_ascii_lowercase();
+            has_structured_hash_stamp(&lower)
+                || (index < GENERATED_HEADER_LINES && CONTENT_HASH_MARKERS.iter().any(|marker| lower.contains(marker)))
+        })
+}
+
 /// Whether the header stamps a content hash over the body.
 ///
 /// This is a strictly narrower question than [`is_generated_source`], and the
@@ -316,12 +364,7 @@ fn has_structured_hash_stamp(line: &str) -> bool {
 /// consumer whose most user-facing code left the gate without anything failing.
 /// Formatting a banner-only file is harmless; silently not checking it is not.
 pub(crate) fn is_hash_stamped_source(content: &str) -> bool {
-    generated_header_region(content).is_some_and(|header| {
-        header.lines().take(GENERATED_HEADER_LINES).any(|line| {
-            let lower = line.to_ascii_lowercase();
-            CONTENT_HASH_MARKERS.iter().any(|marker| lower.contains(marker)) || has_structured_hash_stamp(&lower)
-        })
-    })
+    generated_header_region(content).is_some_and(has_content_hash_stamp)
 }
 
 #[cfg(test)]
@@ -480,6 +523,104 @@ mod tests {
         }
     }
 
+    /// The exact header Alef writes: `hash::header(CommentStyle::DoubleSlash)`
+    /// followed by `hash::inject_hash_line`, which stamps the line *below* the
+    /// banner. Not a generic invented marker.
+    fn alef_stamped_source(preamble_lines: usize) -> String {
+        let mut source = "// Copyright 2026 xberg-io\n".repeat(preamble_lines);
+        source.push_str("// This file is auto-generated by alef — DO NOT EDIT.\n");
+        source.push_str("// alef:hash:a3f1c2d4e5b6a7980123456789abcdef0123456789abcdef0123456789abcdef\n");
+        source.push_str("// To regenerate: alef generate\n\npackage bridge\n");
+        source
+    }
+
+    /// Alef accepts its banner anywhere in the first 10 lines and stamps
+    /// directly beneath it, so a licence preamble pushes the stamp past the
+    /// banner window. Scanning only 5 lines left those files stamped by the
+    /// generator and unprotected in poly — `fmt --fix` reflowed a consumer's
+    /// vendored cgo and visitor bindings.
+    #[test]
+    fn should_skip_stamped_source_when_a_preamble_precedes_the_alef_banner() {
+        let source = alef_stamped_source(4);
+        assert_eq!(
+            source.lines().position(|line| line.contains("alef:hash:")),
+            Some(5),
+            "fixture must put the stamp past GENERATED_HEADER_LINES, or it proves nothing"
+        );
+        assert!(is_hash_stamped_source(&source), "fmt would reformat a stamped file");
+        assert!(is_generated_source(&source), "lint --fix would rewrite a stamped file");
+    }
+
+    /// Both edges of the producer's reach, written as literals on purpose.
+    ///
+    /// Alef accepts its banner at raw index 0..=9 and injects the stamp on the
+    /// following line, so the deepest stamp it can produce *and still read back*
+    /// is index 9. Deriving these fixtures from [`HASH_STAMP_HEADER_LINES`] would
+    /// make them move with the constant, so narrowing it back to 5 would leave
+    /// them green — the literals are what pin poly's window to the producer's.
+    #[test]
+    fn should_honor_the_producer_stamp_window_exactly() {
+        let deepest_the_producer_can_reach = alef_stamped_source(8);
+        assert_eq!(
+            deepest_the_producer_can_reach
+                .lines()
+                .position(|line| line.contains("alef:hash:")),
+            Some(9),
+            "fixture must place the stamp at the producer's deepest reachable line"
+        );
+        assert!(
+            is_hash_stamped_source(&deepest_the_producer_can_reach),
+            "a stamp on the deepest line the producer can reach must be honored"
+        );
+
+        let beyond = alef_stamped_source(9);
+        assert_eq!(beyond.lines().position(|line| line.contains("alef:hash:")), Some(10));
+        assert!(
+            !is_hash_stamped_source(&beyond),
+            "a stamp deeper than the producer's own reader accepts must not skip"
+        );
+    }
+
+    /// The wider window admits the structured shape only. Widening the loose
+    /// banners would drop hand-written files out of the format gate silently,
+    /// which this module treats as strictly worse than formatting a generated
+    /// one.
+    #[test]
+    fn should_not_widen_the_window_for_prose_banners_or_bare_word_markers() {
+        let banner_below_window = format!("{}// DO NOT EDIT.\nfn main() {{}}\n", "// filler\n".repeat(6));
+        assert!(!is_generated_source(&banner_below_window));
+        assert!(!is_hash_stamped_source(&banner_below_window));
+
+        let bare_word_below_window = format!("{}let sourcehash = compute();\n", "// filler\n".repeat(6));
+        assert!(
+            !is_hash_stamped_source(&bare_word_below_window),
+            "a `sourcehash` identifier below the banner window must not remove the file from the gate"
+        );
+
+        let bare_word_inside_window = "// sourcehash: abc\nfn main() {}\n";
+        assert!(
+            is_hash_stamped_source(bare_word_inside_window),
+            "the narrow-window behavior of the bare-word markers is unchanged"
+        );
+    }
+
+    /// The #10 fix must survive the wider window: the extra lines are exactly
+    /// where ordinary `use` statements live.
+    #[test]
+    fn should_still_reject_ordinary_paths_inside_the_wider_window() {
+        for ordinary in [
+            format!("{}use a::hash::b;\n", "// filler\n".repeat(6)),
+            format!("{}a:hash:b\n", "// filler\n".repeat(6)),
+            format!(
+                "{}// see example.com/alef/hash/deadbeef12345678\n",
+                "// filler\n".repeat(6)
+            ),
+        ] {
+            assert!(!is_generated_source(&ordinary), "source: {ordinary:?}");
+            assert!(!is_hash_stamped_source(&ordinary), "source: {ordinary:?}");
+        }
+    }
+
     #[test]
     fn recognizes_generated_markers_after_yaml_frontmatter() {
         let source = "---\r\nname: api\r\ndescription: generated API docs\r\n---\r\n\r\n\
@@ -504,11 +645,41 @@ mod tests {
         assert!(!is_hash_stamped_source(source));
     }
 
+    /// Both windows are measured from the end of the frontmatter block, not from
+    /// byte 0 — see [`generated_header_region`]. These fixtures are the ones that
+    /// tell the two models apart: the stamp sits at post-frontmatter line 5,
+    /// which is raw line 8, so a refactor that dropped the frontmatter stripping
+    /// and counted from byte 0 would report "outside the window" and fail here.
+    ///
+    /// Starlight/Astro reference pages are the live instance — frontmatter, a
+    /// blank line, the banner, then the stamp — and a consumer has 21 of them.
     #[test]
-    fn marker_after_post_frontmatter_window_is_not_generated() {
-        let source = "---\nname: api\n---\n1\n2\n3\n4\n5\n# alef:hash:0123456789abcdef\n";
-        assert!(!is_generated_source(source));
-        assert!(!is_hash_stamped_source(source));
+    fn windows_are_measured_after_the_frontmatter_block() {
+        let stamped = "---\nname: api\n---\n1\n2\n3\n4\n5\n# alef:hash:0123456789abcdef\n";
+        assert!(
+            is_hash_stamped_source(stamped),
+            "a stamp at post-frontmatter line 5 is inside the producer's reach and must be protected"
+        );
+
+        // The prose banners keep the narrow window, also measured post-frontmatter.
+        let banner = "---\nname: api\n---\n1\n2\n3\n4\n5\n# DO NOT EDIT\n";
+        assert!(
+            !is_generated_source(banner),
+            "a prose banner past the banner window must stay ordinary source"
+        );
+    }
+
+    /// The wider window is still bounded. A stamp deeper than the producer's own
+    /// reader accepts must not silently drop the file out of the format gate.
+    #[test]
+    fn structured_stamp_beyond_the_post_frontmatter_window_is_not_generated() {
+        let mut source = String::from("---\nname: api\n---\n");
+        for line in 1..=HASH_STAMP_HEADER_LINES {
+            source.push_str(&format!("{line}\n"));
+        }
+        source.push_str("# alef:hash:0123456789abcdef\n");
+        assert!(!is_generated_source(&source));
+        assert!(!is_hash_stamped_source(&source));
     }
 
     #[test]
