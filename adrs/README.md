@@ -39,6 +39,7 @@ Context, Decision, Consequences (positive and negative/risks), and Alternatives 
 | [0022](0022-plugin-marketplace-and-agent-distribution.md) | Plugin Marketplace and Agent Distribution | Accepted |
 | [0023](0023-hook-timeouts-and-liveness.md) | Hook Timeouts and Run Liveness | Accepted |
 | [0024](0024-hook-concurrency-exclusion-sets.md) | Hook Concurrency and Exclusion Sets | Accepted |
+| [0025](0025-build-path-equivalence.md) | Build Path Equivalence and Build Identity Across Distribution Channels | Proposed |
 
 ## Conventions
 
