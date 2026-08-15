@@ -9,7 +9,7 @@ use ignore::overrides::{Override, OverrideBuilder};
 use serde::Serialize;
 
 use crate::language::Language;
-use crate::resolve::ConfigSet;
+use crate::resolve::{ConfigSet, ExcludeRule};
 
 /// Directory names pruned from every walk regardless of git-tracking.
 ///
@@ -84,7 +84,10 @@ pub struct ExcludedDirectory {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ExcludedRule {
-    /// The glob exactly as written in config (or passed to `--exclude`).
+    /// The glob exactly as written in config (or passed to `--exclude`) — never
+    /// the re-anchored form discovery matched with (see
+    /// [`ExcludeRule`](crate::ExcludeRule)), which names no rule the reader
+    /// could find.
     pub pattern: String,
     /// Files this rule pruned. Exact — each was seen individually by the walk.
     pub files: usize,
@@ -293,9 +296,11 @@ struct ExcludeHits {
 #[derive(Debug)]
 struct ExcludeMatcher {
     root: PathBuf,
-    patterns: Vec<String>,
+    /// The rules in effect, each pairing the matcher glob with the text its
+    /// author wrote — the latter is what attribution reports.
+    rules: Vec<ExcludeRule>,
     combined: Override,
-    /// One matcher per entry of `patterns`, positionally aligned; `None` for a
+    /// One matcher per entry of `rules`, positionally aligned; `None` for a
     /// glob that failed to compile. Built on first exclusion.
     per_rule: std::sync::OnceLock<Vec<Option<Override>>>,
     hits: Mutex<ExcludeHits>,
@@ -304,11 +309,12 @@ struct ExcludeMatcher {
 impl ExcludeMatcher {
     /// Compile `exclude` relative to `root`. `None` when there is nothing to
     /// exclude, which lets the walk skip matching entirely.
-    fn new(root: &Path, exclude: &[String]) -> Option<Arc<Self>> {
-        let combined = build_excludes(root, exclude)?;
+    fn new(root: &Path, exclude: &[ExcludeRule]) -> Option<Arc<Self>> {
+        let globs: Vec<String> = exclude.iter().map(|rule| rule.glob.clone()).collect();
+        let combined = build_excludes(root, &globs)?;
         Some(Arc::new(Self {
             root: root.to_path_buf(),
-            patterns: exclude.to_vec(),
+            rules: exclude.to_vec(),
             combined,
             per_rule: std::sync::OnceLock::new(),
             hits: Mutex::new(ExcludeHits::default()),
@@ -318,9 +324,9 @@ impl ExcludeMatcher {
     /// The per-rule matchers, compiled on first use.
     fn per_rule(&self) -> &[Option<Override>] {
         self.per_rule.get_or_init(|| {
-            self.patterns
+            self.rules
                 .iter()
-                .map(|glob| build_excludes(&self.root, std::slice::from_ref(glob)))
+                .map(|rule| build_excludes(&self.root, std::slice::from_ref(&rule.glob)))
                 .collect()
         })
     }
@@ -347,7 +353,7 @@ impl ExcludeMatcher {
         }
         if let Some(index) = attributed {
             if hits.per_rule.is_empty() {
-                hits.per_rule = vec![RuleHits::default(); self.patterns.len()];
+                hits.per_rule = vec![RuleHits::default(); self.rules.len()];
             }
             let rule = &mut hits.per_rule[index];
             if is_dir {
@@ -384,8 +390,11 @@ impl ExcludeMatcher {
         report.excluded_files += hits.files;
         report.excluded_directories += hits.directories;
         report.excluded_explicit += hits.explicit;
-        for (pattern, rule) in self.patterns.iter().zip(&hits.per_rule) {
-            report.record_rule(pattern, rule);
+        for (rule, tally) in self.rules.iter().zip(&hits.per_rule) {
+            // Attribution is reported under the glob its author wrote, never the
+            // re-anchored matcher glob: a reader has to be able to find the rule
+            // in their config.
+            report.record_rule(&rule.authored, tally);
         }
     }
 }
@@ -532,7 +541,7 @@ pub fn discover_reporting(
 /// from the current directory — the same frame of reference a user writing
 /// `terraform/**` in `poly.toml` at the repo root is using. A file outside that
 /// frame simply does not match, which is the safe direction: it gets checked.
-fn explicit_matcher(exclude: &[String]) -> Option<Arc<ExcludeMatcher>> {
+fn explicit_matcher(exclude: &[ExcludeRule]) -> Option<Arc<ExcludeMatcher>> {
     let base = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     ExcludeMatcher::new(&base, exclude)
 }
