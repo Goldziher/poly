@@ -231,13 +231,13 @@ fn lint_pretty_omits_fixable_line_when_nothing_is_fixable() {
 
 #[test]
 fn lint_json_renders_full_envelope() {
-    let json = report::report_lint_json(&sample_lint_results());
+    let json = report::report_lint_json(&sample_lint_results()).expect("report must render");
     insta::assert_snapshot!("lint_json", json);
 }
 
 #[test]
 fn lint_toon_renders_full_envelope() {
-    let toon = report::report_lint_toon(&sample_lint_results());
+    let toon = report::report_lint_toon(&sample_lint_results()).expect("report must render");
     insta::assert_snapshot!("lint_toon", toon);
 }
 
@@ -267,14 +267,136 @@ fn format_pretty_dry_run_uses_future_tense() {
 
 #[test]
 fn format_json_lists_results() {
-    let json = report::report_format_json(&sample_format_results());
+    let json = report::report_format_json(&sample_format_results()).expect("report must render");
     insta::assert_snapshot!("format_json", json);
 }
 
 #[test]
 fn format_toon_lists_results() {
-    let toon = report::report_format_toon(&sample_format_results());
+    let toon = report::report_format_toon(&sample_format_results()).expect("report must render");
     insta::assert_snapshot!("format_toon", toon);
+}
+
+/// A path the operating system accepts but JSON cannot represent.
+///
+/// `serde_json` (and TOON in turn) rejects a non-UTF-8 `Path`, so this is the
+/// real trigger for a render failure rather than a hypothetical one: a Linux
+/// checkout may legally hold such a filename, and poly's own discovery walks it.
+#[cfg(unix)]
+fn unrenderable_path() -> PathBuf {
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt as _;
+
+    PathBuf::from(OsString::from_vec(vec![b'b', b'a', b'd', 0xff, b'.', b'p', b'y']))
+}
+
+#[cfg(unix)]
+fn unrenderable_lint_results() -> Vec<LintResult> {
+    vec![LintResult {
+        path: unrenderable_path(),
+        diagnostics: vec![Diagnostic {
+            engine: "ruff".to_string(),
+            code: Some("F401".to_string()),
+            severity: Severity::Warning,
+            title: "`os` imported but unused".to_string(),
+            description: None,
+            span: None,
+            url: None,
+            fix: vec![],
+            metadata: BTreeMap::new(),
+        }],
+        fix_withheld_generated: false,
+        fixed: 0,
+        skipped: None,
+        error: None,
+        debug: None,
+    }]
+}
+
+#[cfg(unix)]
+fn unrenderable_format_results() -> Vec<FormatResult> {
+    vec![FormatResult {
+        path: unrenderable_path(),
+        changed: true,
+        formatted: None,
+        skipped: None,
+        error: None,
+        debug: None,
+    }]
+}
+
+/// Assert a render failed rather than producing any document at all.
+///
+/// The old fallback returned `"[]"`, which a machine consumer cannot tell from a
+/// clean run over zero findings — so "did not render an empty array" is the
+/// property under test, and returning `Err` is the only way to satisfy it
+/// without inventing data.
+#[cfg(unix)]
+fn assert_render_failed(rendered: Result<String, report::RenderError>, format: &str) {
+    match rendered {
+        Ok(document) => panic!(
+            "the {format} renderer must not produce a document for an unserializable value; \
+             it returned {document:?}, which a consumer reads as a successful run"
+        ),
+        Err(error) => {
+            assert_eq!(error.format(), format, "the error must name the format that failed");
+            assert!(
+                error.to_string().contains("could not render"),
+                "the error must name the failure, got: {error}"
+            );
+        }
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn lint_json_reports_a_serialization_failure_instead_of_a_clean_document() {
+    assert_render_failed(report::report_lint_json(&unrenderable_lint_results()), "json");
+}
+
+#[cfg(unix)]
+#[test]
+fn lint_toon_reports_a_serialization_failure_instead_of_a_clean_document() {
+    assert_render_failed(report::report_lint_toon(&unrenderable_lint_results()), "toon");
+}
+
+#[cfg(unix)]
+#[test]
+fn format_json_reports_a_serialization_failure_instead_of_a_clean_document() {
+    assert_render_failed(report::report_format_json(&unrenderable_format_results()), "json");
+}
+
+#[cfg(unix)]
+#[test]
+fn format_toon_reports_a_serialization_failure_instead_of_a_clean_document() {
+    assert_render_failed(report::report_format_toon(&unrenderable_format_results()), "toon");
+}
+
+/// The whole-run wrappers must carry the failure too — they are what the CLI
+/// actually calls.
+#[cfg(unix)]
+#[test]
+fn lint_json_run_reports_a_serialization_failure_instead_of_a_clean_document() {
+    let run = LintRun {
+        results: unrenderable_lint_results(),
+        skipped: Vec::new(),
+        errors: Vec::new(),
+        checked: 1,
+        discovery: DiscoveryReport::default(),
+    };
+    assert_render_failed(report::report_lint_json_run(&run), "json");
+}
+
+#[cfg(unix)]
+#[test]
+fn format_json_run_reports_a_serialization_failure_instead_of_a_clean_document() {
+    let run = FormatRun {
+        results: unrenderable_format_results(),
+        skipped: Vec::new(),
+        errors: Vec::new(),
+        discovery: DiscoveryReport::default(),
+    };
+    assert_render_failed(report::report_format_json_run(&run), "json");
 }
 
 /// `--debug` pretty output: the dim `[debug] <engine> v<ver>  ran|cache hit
@@ -790,7 +912,7 @@ fn lint_json_run_appends_skipped_paths_as_entries() {
         discovery: DiscoveryReport::default(),
     };
 
-    let json = report::report_lint_json_run(&run);
+    let json = report::report_lint_json_run(&run).expect("report must render");
     let value: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
     let entries = value.as_array().expect("top level stays an array");
     assert_eq!(entries.len(), 3, "two results plus the skipped path: {json}");
@@ -832,7 +954,7 @@ fn format_json_run_does_not_duplicate_declined_files() {
         discovery: DiscoveryReport::default(),
     };
 
-    let json = report::report_format_json_run(&run);
+    let json = report::report_format_json_run(&run).expect("report must render");
     let value: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
     let entries = value.as_array().expect("top level stays an array");
     assert_eq!(entries.len(), 2, "the declined file appears exactly once: {json}");
@@ -1012,7 +1134,7 @@ fn lint_json_run_carries_errors_separately_from_skips() {
         discovery: DiscoveryReport::default(),
     };
 
-    let json = report::report_lint_json_run(&run);
+    let json = report::report_lint_json_run(&run).expect("report must render");
     let value: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
     let entries = value.as_array().expect("top level stays an array");
     assert_eq!(entries.len(), 2, "the skipped path and the errored one: {json}");
@@ -1093,7 +1215,7 @@ fn format_json_run_carries_errors_separately_from_skips() {
         discovery: DiscoveryReport::default(),
     };
 
-    let json = report::report_format_json_run(&run);
+    let json = report::report_format_json_run(&run).expect("report must render");
     let value: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
     let entries = value.as_array().expect("top level stays an array");
     assert_eq!(
@@ -1149,7 +1271,7 @@ fn format_json_run_never_downgrades_an_errored_file_to_a_skip() {
         discovery: DiscoveryReport::default(),
     };
 
-    let json = report::report_format_json_run(&run);
+    let json = report::report_format_json_run(&run).expect("report must render");
     let value: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
     let entries = value.as_array().expect("top level stays an array");
     assert_eq!(entries.len(), 1, "the file appears exactly once: {json}");
@@ -1184,7 +1306,7 @@ fn format_json_run_does_not_duplicate_a_declined_file_when_a_file_also_errored()
         discovery: DiscoveryReport::default(),
     };
 
-    let json = report::report_format_json_run(&run);
+    let json = report::report_format_json_run(&run).expect("report must render");
     let value: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
     let entries = value.as_array().expect("top level stays an array");
     assert_eq!(
@@ -1212,7 +1334,7 @@ fn format_toon_run_carries_the_errored_file_too() {
         discovery: DiscoveryReport::default(),
     };
 
-    let toon = report::report_format_toon_run(&run);
+    let toon = report::report_format_toon_run(&run).expect("report must render");
     assert!(
         toon.contains("bad.py") && toon.contains("stream did not contain valid UTF-8"),
         "the failure must survive the TOON rendering; got: {toon}"
@@ -1237,7 +1359,8 @@ fn format_json_run_without_errors_is_unchanged() {
         discovery: DiscoveryReport::default(),
     };
 
-    let value: serde_json::Value = serde_json::from_str(&report::report_format_json_run(&run)).expect("valid JSON");
+    let rendered = report::report_format_json_run(&run).expect("report must render");
+    let value: serde_json::Value = serde_json::from_str(&rendered).expect("valid JSON");
     assert_eq!(value, serde_json::json!([{ "path": "src/main.py", "changed": true }]));
 }
 

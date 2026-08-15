@@ -3,10 +3,12 @@
 //!
 //! Coloring goes through owo-colors' `if_supports_color`, which respects both
 //! TTY detection and the global override set by `--no-color`. The `toon`
-//! renderers fall back to JSON if TOON serialization fails so output is never
-//! lost. The `pretty` renderers split into a `render_*` core that produces the
-//! string and a `report_*` wrapper that prints it, so the rendered text can be
-//! snapshot-tested.
+//! renderers fall back to JSON if only the TOON encoder fails, so output is
+//! never lost; if the value cannot be serialized at all they return a
+//! [`RenderError`] rather than a document, because an empty array is
+//! indistinguishable from a clean run. The `pretty` renderers split into a
+//! `render_*` core that produces the string and a `report_*` wrapper that prints
+//! it, so the rendered text can be snapshot-tested.
 //!
 //! ## Verbosity contract
 //!
@@ -31,6 +33,7 @@
 mod format;
 mod lint;
 mod notes;
+mod render;
 mod shared;
 mod structured;
 
@@ -43,6 +46,7 @@ pub use lint::{
     report_lint_pretty_run,
 };
 pub use notes::{eprint_discovery_note, eprint_skip_note, render_discovery_note, render_skip_note};
+pub use render::RenderError;
 pub use shared::Verbosity;
 pub use structured::{
     report_format_json, report_format_json_run, report_format_toon, report_format_toon_run, report_lint_json,

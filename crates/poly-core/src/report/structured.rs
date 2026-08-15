@@ -3,19 +3,21 @@
 //! skipped and errored files so the document answers "what did you not look
 //! at?".
 
+use super::RenderError;
+use super::render::{render_json, render_toon};
 use crate::runner::{FormatResult, FormatRun, LintResult, LintRun};
 
 /// Render lint results as pretty-printed JSON. The full structured record is
 /// always emitted; serde omits `None`/empty fields. The `debug` field is present
 /// only when the run collected it (`--debug`).
-pub fn report_lint_json(results: &[LintResult]) -> String {
-    serde_json::to_string_pretty(results).unwrap_or_else(|_| "[]".to_string())
+pub fn report_lint_json(results: &[LintResult]) -> Result<String, RenderError> {
+    render_json(results)
 }
 
 /// Render lint results as TOON. Falls back to JSON if TOON serialization fails
 /// so output is never silently dropped.
-pub fn report_lint_toon(results: &[LintResult]) -> String {
-    serde_toon::to_string(&results).unwrap_or_else(|_| report_lint_json(results))
+pub fn report_lint_toon(results: &[LintResult]) -> Result<String, RenderError> {
+    render_toon(results)
 }
 
 /// The lint results of a run, with one entry appended per file the run skipped
@@ -59,25 +61,25 @@ fn lint_results_for_output(run: &LintRun) -> Vec<LintResult> {
 
 /// [`report_lint_json`] over a whole [`LintRun`], so the skipped and errored sets
 /// are carried structurally rather than left to the human summary.
-pub fn report_lint_json_run(run: &LintRun) -> String {
+pub fn report_lint_json_run(run: &LintRun) -> Result<String, RenderError> {
     report_lint_json(&lint_results_for_output(run))
 }
 
 /// [`report_lint_toon`] over a whole [`LintRun`], including the skipped and
 /// errored sets.
-pub fn report_lint_toon_run(run: &LintRun) -> String {
+pub fn report_lint_toon_run(run: &LintRun) -> Result<String, RenderError> {
     report_lint_toon(&lint_results_for_output(run))
 }
 
 /// Render format results as pretty-printed JSON.
-pub fn report_format_json(results: &[FormatResult]) -> String {
-    serde_json::to_string_pretty(results).unwrap_or_else(|_| "[]".to_string())
+pub fn report_format_json(results: &[FormatResult]) -> Result<String, RenderError> {
+    render_json(results)
 }
 
 /// Render format results as TOON. Falls back to JSON if TOON serialization
 /// fails so output is never silently dropped.
-pub fn report_format_toon(results: &[FormatResult]) -> String {
-    serde_toon::to_string(&results).unwrap_or_else(|_| report_format_json(results))
+pub fn report_format_toon(results: &[FormatResult]) -> Result<String, RenderError> {
+    render_toon(results)
 }
 
 /// The format results of a run, with one entry appended per file the run failed
@@ -120,12 +122,12 @@ fn format_results_for_output(run: &FormatRun) -> Vec<FormatResult> {
 
 /// [`report_format_json`] over a whole [`FormatRun`], so every errored and
 /// skipped path is carried structurally.
-pub fn report_format_json_run(run: &FormatRun) -> String {
+pub fn report_format_json_run(run: &FormatRun) -> Result<String, RenderError> {
     report_format_json(&format_results_for_output(run))
 }
 
 /// [`report_format_toon`] over a whole [`FormatRun`], including every errored and
 /// skipped path.
-pub fn report_format_toon_run(run: &FormatRun) -> String {
+pub fn report_format_toon_run(run: &FormatRun) -> Result<String, RenderError> {
     report_format_toon(&format_results_for_output(run))
 }

@@ -205,7 +205,7 @@ fn lint_json_output_schema_conforms_to_diagnostic_contract() {
         "expected diagnostics from the duplicate-key TOML fixture"
     );
 
-    let json = report_lint_json(&results);
+    let json = report_lint_json(&results).expect("report_lint_json must render");
     let value: serde_json::Value = serde_json::from_str(&json).expect("report_lint_json must produce valid JSON");
 
     let arr = value.as_array().expect("top-level JSON value must be an array");
