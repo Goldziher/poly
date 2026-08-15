@@ -5,11 +5,10 @@
 //! whose tree is tampered with is treated as invalid and rebuilt.
 
 use std::path::Path;
-use std::process::Command;
 
 use anyhow::Context;
 
-use super::git::{git_output, run_command, run_git};
+use super::git::{git_command, git_output, run_command};
 
 /// Materialize a detached checkout of `revision` from `mirror` at `checkout`.
 ///
@@ -35,13 +34,23 @@ pub fn materialize_checkout(mirror: &Path, checkout: &Path, revision: &str) -> a
         .with_context(|| format!("creating temporary source checkout in {}", parent.display()))?;
     let temporary_path = temporary.path().join("source");
     run_command(
-        Command::new("git")
+        git_command()
             .args(["clone", "--quiet", "--no-checkout", "--no-hardlinks"])
             .arg(mirror)
             .arg(&temporary_path),
         "clone source checkout",
     )?;
-    run_git(&temporary_path, &["checkout", "--quiet", "--detach", revision])?;
+    // Belt and braces on top of the `GIT_*` scrub in `git_command`: the detach
+    // checkout is the one command that would *write* through a leaked
+    // `GIT_INDEX_FILE`, so it names the fresh clone's own index explicitly.
+    run_command(
+        git_command()
+            .arg("-C")
+            .arg(&temporary_path)
+            .args(["checkout", "--quiet", "--detach", revision])
+            .env("GIT_INDEX_FILE", temporary_path.join(".git").join("index")),
+        "checkout source revision",
+    )?;
     std::fs::rename(&temporary_path, checkout)
         .with_context(|| format!("installing source checkout {}", checkout.display()))?;
     make_read_only(checkout)

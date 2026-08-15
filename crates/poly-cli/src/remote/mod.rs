@@ -30,7 +30,8 @@ use anyhow::Context;
 
 pub use checkout::{checkout_is_valid, make_read_only, make_writable, materialize_checkout};
 pub use git::{
-    ensure_commit, ensure_mirror, git_object_exists, git_output, run_command, run_git, validate_locked_revision,
+    ensure_commit, ensure_mirror, git_command, git_env_to_remove, git_object_exists, git_output, run_command, run_git,
+    validate_locked_revision,
 };
 
 /// Materialize a read-only checkout of `url` at `revision` under `cache_root`.

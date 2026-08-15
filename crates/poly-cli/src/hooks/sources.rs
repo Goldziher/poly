@@ -411,7 +411,7 @@ fn provision_source(
         }
         ensure_mirror(&mirror, url)?;
         ensure_commit(&mirror, url, &locked.revision)?;
-        materialize_checkout(&mirror, &checkout, &locked.revision)?;
+        materialize_source_checkout(&mirror, &checkout, &locked.revision, &source.id)?;
         return Ok((Some(locked.clone()), checkout));
     }
     let revision = source.revision.as_deref().expect("validated Git revision");
@@ -421,7 +421,7 @@ fn provision_source(
     let resolved = git_output(&mirror, &["rev-parse", "FETCH_HEAD^{commit}"])?;
     validate_locked_revision(&resolved)?;
     let checkout = source_cache.join("checkouts").join(&resolved);
-    materialize_checkout(&mirror, &checkout, &resolved)?;
+    materialize_source_checkout(&mirror, &checkout, &resolved, &source.id)?;
     let cache_path = format!("cache://hook-sources/{source_key}/{resolved}");
     Ok((
         Some(LockedSource {
@@ -432,6 +432,21 @@ fn provision_source(
         }),
         checkout,
     ))
+}
+
+/// Materialize a hook source's checkout, naming poly's own state on failure.
+///
+/// A git failure here is reported by git *about the cached repository*, so on
+/// its own the message describes files in a repository the reader never named.
+/// The context pins the failure to the hook source, revision, and cache path it
+/// actually belongs to.
+fn materialize_source_checkout(mirror: &Path, checkout: &Path, revision: &str, source_id: &str) -> anyhow::Result<()> {
+    materialize_checkout(mirror, checkout, revision).with_context(|| {
+        format!(
+            "provisioning hook source {source_id:?} at revision {revision} into {}",
+            checkout.display()
+        )
+    })
 }
 
 fn lock_source(source_cache: &Path) -> anyhow::Result<SourceLock> {

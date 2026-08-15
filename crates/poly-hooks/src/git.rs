@@ -93,6 +93,13 @@ pub static GIT_ROOT: LazyLock<Result<PathBuf, Error>> = LazyLock::new(|| {
 ///
 /// `GIT_INDEX_FILE` is intentionally kept so that `git write-tree` works
 /// correctly when called from inside a `git commit -a` / `-p` hook.
+///
+/// This is deliberately the **opposite** of the `remote` module's
+/// `git_env_to_remove` (`crates/poly-cli/src/remote/git.rs`), which *drops*
+/// `GIT_INDEX_FILE`. These commands act on the **consumer** repository and must
+/// see the index the in-flight commit is building; those act on **foreign**
+/// cached repositories, where the consumer's index corrupts an unrelated
+/// checkout. Same variable, opposing requirements: do not unify the two lists.
 pub static GIT_ENV_TO_REMOVE: LazyLock<Vec<String>> = LazyLock::new(|| {
     const KEEP: &[&str] = &[
         "GIT_EXEC_PATH",
