@@ -33,9 +33,32 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   Prose that mentions a stamp mid-sentence is unaffected — any space before `:hash:` disqualifies
   the line — as is a marker with no hex digest after it.
 
+- **Hook-source git commands no longer inherit the ambient `GIT_*` state a git hook exports.**
+  Running `poly hooks` from a real git hook leaked that state into the internal git commands that
+  operate on cached hook-source repositories. `GIT_INDEX_FILE` — which git sets to an absolute path
+  for `git commit -a`, `--include`, and pathspec commits — made the source checkout run against the
+  *consuming* repository's index, so provisioning aborted and printed an unrelated repository's file
+  list. `GIT_DIR` made the mirror's origin-URL verification read from the consuming repository as
+  well; that check exists to block a cache-poisoning source substitution, so it was answering from
+  the wrong repository. It failed closed, but a check redirectable by an inherited environment
+  variable is not a check.
+
+  Only the variables needed to reach a remote are now passed through. Provisioning failures name the
+  hook source, its revision, and the cache path instead of dumping foreign filenames.
+
 ### Changed
 
 - **Minimum supported Rust version is now 1.97**, required by the upgraded PHP backend crates.
+
+- **The engine version audit now enumerates the registry** rather than a hand-written list, so a
+  backend cannot be omitted from it silently — which had already happened once, leaving a backend
+  advertising a stale grammar-pack version while the audit stayed green. Backends that wrap no
+  pinned Rust crate are declared exempt in one visible place instead of being skipped.
+
+- **The generated-file skip's precedence over the result cache is now pinned by a test.** The skip
+  short-circuits before the cache is consulted, which is why upgrading to a fixed poly takes effect
+  on the first run rather than after a cache eviction; nothing previously stopped a refactor from
+  reversing that.
 
 - **All dependencies upgraded**, including the pinned oxc, ruff, and biome revisions. The PHP
   backend crates were held at an exact version that excluded every later release; they now track
