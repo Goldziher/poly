@@ -140,6 +140,15 @@ jobs:
     needs: [meta, create_release]
     if: needs.meta.outputs.release_assets_exist != 'true'
     runs-on: ${{ matrix.os }}
+    # Stamp the build id from the tag we are releasing rather than leaving
+    # build.rs to infer it from `git describe`. The release also force-moves the
+    # `v0` major tag onto this commit, so a later workflow_dispatch re-run — the
+    # only path that rebuilds — can have `git describe` resolve `v0`, whose
+    # stripped form is "0" rather than the version, silently stamping a release
+    # artifact as a `dev` build. An explicit id is what build.rs documents this
+    # variable for.
+    env:
+      POLY_BUILD_ID: ${{ needs.meta.outputs.tag }}
     strategy:
       fail-fast: false
       matrix:
@@ -199,6 +208,7 @@ jobs:
           docker run --rm -v "$PWD":/work -w /work \
             -e CARGO_TARGET_DIR=/work/target \
             -e LIBCLANG_PATH=/usr/lib \
+            -e POLY_BUILD_ID="$POLY_BUILD_ID" \
             -e RUSTFLAGS="-C target-feature=-crt-static" \
             rust:alpine sh -c '
               set -e

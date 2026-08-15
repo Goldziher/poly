@@ -61,11 +61,22 @@ class Poly < Formula
     # bindgen (via ruby-prism-sys) needs libclang; Homebrew Linux has no ambient
     # clang, so point it at the llvm build dependency.
     ENV["LIBCLANG_PATH"] = Formula["llvm"].opt_lib.to_s
+    # Homebrew compiles the GitHub source tarball, which carries no .git, so
+    # build.rs can derive no id from `git describe` and the binary reports an
+    # "unknown" channel. That is not cosmetic: the unknown channel falls back to
+    # a per-binary cache identity, so a Homebrew poly shares its result cache
+    # with nothing and redoes every file after each upgrade. Supplying the id is
+    # what build.rs documents this variable for.
+    ENV["POLY_BUILD_ID"] = "v#{version}"
     system "cargo", "install", *std_cargo_args(path: "crates/poly-cli")
   end
 
   test do
-    assert_match version.to_s, shell_output("#{bin}/poly --version")
+    # Assert the whole version line, not just the number: the bare `version`
+    # substring matched even when the build id was missing, which is why the
+    # unknown-channel build shipped unnoticed.
+    assert_match "poly #{version} (release build v#{version}, release)",
+                 shell_output("#{bin}/poly --version")
   end
 end
 EOF

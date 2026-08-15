@@ -11,6 +11,24 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ### Fixed
 
+- **A Homebrew-installed `poly` now reports its real build identity, and shares the result cache
+  again.** Homebrew builds from the GitHub source tarball, which carries no `.git`, so `build.rs`
+  could derive no id from `git describe` and the binary reported `unknown build unknown`. The
+  channel is folded into the cache identity, and only a `release` channel gets the
+  machine-independent `release/<version>` key — so every Homebrew install fell back to a
+  per-binary identity, shared cached results with nothing, and re-checked every file after each
+  upgrade. The formula now sets `POLY_BUILD_ID`, which is exactly what `build.rs` documents the
+  variable for.
+
+  The formula's own smoke test asserted only that the version *number* appeared somewhere in
+  `poly --version`; that substring matched the broken output too, which is why this shipped
+  unnoticed. It now asserts the whole version line.
+
+  The release workflow stamps the same variable rather than leaving `git describe` to infer it.
+  The release force-moves the `v0` major tag onto the release commit, so a `workflow_dispatch`
+  re-run — the one path that rebuilds — could have `git describe` resolve `v0`, whose stripped
+  form is `0` rather than the version, silently stamping a release artifact as a `dev` build.
+
 - **Content-hash stamps are now found below a leading licence or build preamble.** The stamp scan
   was capped at the same five lines as the generated banner, but generators place the stamp
   directly beneath their header and accept that header anywhere in the first ten lines. Any
