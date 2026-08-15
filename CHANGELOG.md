@@ -58,10 +58,20 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   block the token is genuinely bare and line-terminated, so unlike the inline-backtick case nothing
   about the line itself gave it away.
 
-  All four block-level shapes are now excluded: backtick fences, tilde fences, fences carrying an
-  info string, and indented code blocks. Inline code spans were already handled by the terminator
-  rule and are unchanged, as are the canonical digest widths, the header window, and the terminator
-  set.
+  Fenced code blocks are now excluded in every shape a consumer could measure: backtick and tilde
+  fences, either delimiter carrying an info string, fences longer than three characters, fences
+  indented or nested inside a list item or a blockquote, and a fence opening on the first line. Fence
+  state is tracked across the whole scanned header, so suppression is scoped to the block — a stamp
+  above a fence, or after one closes, still counts. Inline code spans were already handled by the
+  terminator rule and are unchanged, as are the canonical digest widths, the header window, and the
+  terminator set.
+
+  **Indented code blocks are deliberately not covered.** Treating a four-space indent as code is a
+  CommonMark rule, and it is the only change in this area that would *widen* the skip rather than
+  narrow it. Indentation is structural — not a code-block marker — in the languages that carry the
+  overwhelming majority of real stamps, and stamps written as block-comment continuations already sit
+  indented. Suppressing there would strip protection from real stamps in order to catch documented
+  ones, trading this false skip for a worse-shaped one, so indented blocks remain known-bad.
 
 - **Hook-source git commands no longer inherit the ambient `GIT_*` state a git hook exports.**
   Running `poly hooks` from a real git hook leaked that state into the internal git commands that

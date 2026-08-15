@@ -161,10 +161,46 @@ const DIGEST_TERMINATORS: &[&str] = &["-->", "*/", "#}", "--%>"];
 /// Backticks or tildes needed to open a code fence, and the indent at which a
 /// line becomes an indented code block instead.
 const MIN_FENCE_RUN: usize = 3;
-const INDENTED_CODE_BLOCK_COLUMN: usize = 4;
 
-/// Advances fenced-code-block state and reports whether `line` sits in a
-/// **block-level** code context.
+/// Strips the container prefixes a fence can be nested behind — blockquote
+/// markers and list bullets — so the fence itself is still recognized.
+///
+/// A fence opener inside a list item or a blockquote does not start at column 0;
+/// the line leads with `- ` or `> `. Keying fence detection on the raw line start
+/// left every nested fence undetected while the unnested shapes read as fixed.
+///
+/// Only used to decide whether a line *opens or closes a fence*. Over-stripping
+/// is therefore harmless unless the remainder is itself a fence, and a mis-read
+/// fence is the same class of miss as no fence at all.
+fn strip_container_prefix(line: &str) -> &str {
+    let mut rest = line.trim_start();
+    loop {
+        if let Some(stripped) = rest.strip_prefix('>') {
+            rest = stripped.trim_start();
+            continue;
+        }
+        // Bullet lists: the marker must be followed by space, or `-` in YAML and
+        // `*` in a block comment would be stripped from lines that are neither.
+        if let Some(stripped) = ["- ", "* ", "+ "].iter().find_map(|b| rest.strip_prefix(b)) {
+            rest = stripped.trim_start();
+            continue;
+        }
+        // Ordered lists: digits followed by `.` or `)` and a space.
+        let digits = rest.chars().take_while(char::is_ascii_digit).count();
+        if digits > 0
+            && let Some(stripped) = rest[digits..]
+                .strip_prefix(". ")
+                .or_else(|| rest[digits..].strip_prefix(") "))
+        {
+            rest = stripped.trim_start();
+            continue;
+        }
+        return rest;
+    }
+}
+
+/// Advances fenced-code-block state and reports whether `line` sits in a fenced
+/// code block.
 ///
 /// A hash token inside a code block is documentation *about* a stamp. This is
 /// the block-level twin of the inline-backtick case [`DIGEST_TERMINATORS`]
@@ -174,23 +210,30 @@ const INDENTED_CODE_BLOCK_COLUMN: usize = 4;
 /// document explaining the stamp format was skipped in its entirety — the same
 /// false-skip the terminator rule exists to prevent, one level up.
 ///
-/// All four block shapes count: backtick and tilde fences, fences carrying an
-/// info string, and indented code blocks. Indentation is what makes the last one
-/// detectable at all, and treating a deeply indented line as code costs nothing
-/// real — a generator writes its stamp flush, as a whole comment line.
+/// Covers backtick and tilde fences, any fence length, info strings, and fences
+/// nested in lists or blockquotes.
+///
+/// **Indented code blocks are deliberately not covered.** Treating a 4-space
+/// indent as code is a CommonMark rule, and it is the one rule here that could
+/// *widen* the skip rather than narrow it — every other shape removes a false
+/// skip. A consumer survey found 1236 of 1265 live stamps in languages where
+/// indentation is structural and carries no code-block meaning (Java, Kotlin,
+/// Python, Go, Zig), and 48 already sitting at one leading space — three from
+/// the threshold. Suppressing there would trade this false skip for a
+/// differently-shaped one, so indented blocks stay known-bad pending a ruling.
 fn is_in_code_block(fence: &mut Option<(char, usize)>, line: &str) -> bool {
-    let trimmed = line.trim_start_matches(' ');
-    let indent = line.len() - trimmed.len();
+    let content = strip_container_prefix(line);
 
-    if indent < INDENTED_CODE_BLOCK_COLUMN
-        && let Some(delimiter) = trimmed.chars().next().filter(|c| matches!(c, '`' | '~'))
-    {
-        let run = trimmed.chars().take_while(|character| *character == delimiter).count();
+    if let Some(delimiter) = content.chars().next().filter(|c| matches!(c, '`' | '~')) {
+        let run = content.chars().take_while(|character| *character == delimiter).count();
         if run >= MIN_FENCE_RUN {
             match *fence {
                 // A fence closes only on its own delimiter, at least as long as
-                // the opener; a shorter or foreign run is block content.
-                Some((open, open_run)) if delimiter == open && run >= open_run => *fence = None,
+                // the opener, and carrying no info string; anything else is
+                // content inside the block.
+                Some((open, open_run)) if delimiter == open && run >= open_run && content[run..].trim().is_empty() => {
+                    *fence = None;
+                }
                 Some(_) => {}
                 None => *fence = Some((delimiter, run)),
             }
@@ -198,7 +241,7 @@ fn is_in_code_block(fence: &mut Option<(char, usize)>, line: &str) -> bool {
         }
     }
 
-    fence.is_some() || indent >= INDENTED_CODE_BLOCK_COLUMN || line.starts_with('\t')
+    fence.is_some()
 }
 
 fn has_structured_hash_stamp(line: &str) -> bool {
@@ -475,31 +518,50 @@ mod tests {
     fn a_hash_token_inside_a_fenced_code_block_is_documentation_not_a_stamp() {
         let digest = "a1b2c3d4".repeat(8);
 
-        for fence in ["```", "~~~", "````", "   ```"] {
-            let documented =
-                format!("# Stamp format\n\nGenerators write:\n\n{fence}\nalef:hash:{digest}\n{fence}\n\nbody\n");
+        // Every block-code shape a consumer measured, run through BOTH arms: a
+        // raw file, and a file whose window is counted after a frontmatter
+        // block. The arms reach the scan through different call paths, and a fix
+        // landing in one of them satisfies half a table while reading as
+        // complete — which is how the first count of this defect came in low.
+        let shapes: [(&str, String); 10] = [
+            ("fence_backtick", format!("```\nalef:hash:{digest}\n```")),
+            ("fence_tilde", format!("~~~\nalef:hash:{digest}\n~~~")),
+            ("fence_info_string", format!("```text\nalef:hash:{digest}\n```")),
+            // A tilde fence carrying an info string is its own shape: it fails
+            // whenever info-string handling is written on the backtick path
+            // only, which is the natural way to write it.
+            ("fence_tilde_tagged", format!("~~~text\nalef:hash:{digest}\n~~~")),
+            ("fence_long", format!("`````\nalef:hash:{digest}\n`````")),
+            ("fence_indented", format!("   ```\nalef:hash:{digest}\n   ```")),
+            ("fence_in_list", format!("- item\n\n  ```\n  alef:hash:{digest}\n  ```")),
+            ("blockquote_fence", format!("> ```\n> alef:hash:{digest}\n> ```")),
+            (
+                "nested_blockquote_list",
+                format!("> - item\n>\n>   ```\n>   alef:hash:{digest}\n>   ```"),
+            ),
+            (
+                "ordered_list_fence",
+                format!("1. item\n\n   ```\n   alef:hash:{digest}\n   ```"),
+            ),
+        ];
+
+        for (name, block) in &shapes {
+            let raw = format!("# Doc\n\nGenerators write:\n\n{block}\n\nbody\n");
             assert!(
-                !is_hash_stamped_source(&documented),
-                "a token inside a {fence} fence documents a stamp, it is not one: {documented:?}"
+                !is_hash_stamped_source(&raw),
+                "{name}: a token inside a code block documents a stamp, it is not one: {raw:?}"
+            );
+
+            let framed = format!("---\ntitle: Doc\n---\n\n{block}\n\nbody\n");
+            assert!(
+                !is_hash_stamped_source(&framed),
+                "{name}: the post-frontmatter arm must suppress the same shape: {framed:?}"
             );
         }
 
-        // An info string on the opening fence is still a fence.
-        let annotated = format!("# Doc\n\n```text\nalef:hash:{digest}\n```\n\nbody\n");
-        assert!(
-            !is_hash_stamped_source(&annotated),
-            "an info string does not undo the fence"
-        );
-
-        // Indented code blocks are the other block-level code context, and they
-        // carry no delimiter to key off — only the indentation.
-        for indent in ["    ", "\t", "        "] {
-            let indented = format!("# Doc\n\nGenerators write:\n\n{indent}alef:hash:{digest}\n\nbody\n");
-            assert!(
-                !is_hash_stamped_source(&indented),
-                "an indented code block is a code context: {indented:?}"
-            );
-        }
+        // A fence opening on the very first line, with no preamble to displace it.
+        let first_line = format!("```\nalef:hash:{digest}\n```\n\nbody\n");
+        assert!(!is_hash_stamped_source(&first_line), "a fence may open on line 1");
 
         // An inline code span is *not* a block context; it is already rejected by
         // the terminator rule, and must stay rejected for that reason.
@@ -509,18 +571,58 @@ mod tests {
             "an inline span is prose quoting a hash"
         );
 
-        // The suppression must be scoped to the block, not to the whole file:
-        // a real stamp before a fence, or after one closes, still counts.
-        let before = format!("<!-- alef:hash:{digest} -->\n\n# Doc\n\n```\nsample\n```\n");
+        // Protect controls. Suppression is scoped to the block, so a real stamp
+        // outside one still counts — including the indented block-comment
+        // continuation shape that 48 live stamps actually use.
+        let protect: [(&str, String); 4] = [
+            (
+                "real_html_stamp",
+                format!("<!-- alef:hash:{digest} -->\n\n# Doc\n\n```\nsample\n```\n"),
+            ),
+            (
+                "stamp_after_fence_closes",
+                format!("# Doc\n\n```\nsample\n```\n\n<!-- alef:hash:{digest} -->\nbody\n"),
+            ),
+            (
+                "real_frontmatter_stamp",
+                format!("---\ntitle: Doc\n---\n<!-- alef:hash:{digest} -->\nbody\n"),
+            ),
+            (
+                "real_comment_continuation",
+                format!("/*\n * alef:hash:{digest}\n */\nbody\n"),
+            ),
+        ];
+        for (name, source) in &protect {
+            assert!(
+                is_hash_stamped_source(source),
+                "{name}: a real stamp must stay protected: {source:?}"
+            );
+        }
+    }
+
+    /// Indented code blocks are a known gap, asserted so it stays deliberate.
+    ///
+    /// Suppressing a 4-space indent is the one rule in this area that would
+    /// *widen* the skip instead of narrowing it, and indentation is structural —
+    /// not a code-block marker — in the languages carrying 1236 of 1265 live
+    /// stamps. Protecting the real indented stamp is worth more than catching the
+    /// documented one, so this stays known-bad until the policy is ruled on.
+    #[test]
+    fn an_indented_code_block_is_a_known_gap_and_a_real_indented_stamp_stays_protected() {
+        let digest = "a1b2c3d4".repeat(8);
+
+        let documented = format!("# Doc\n\nGenerators write:\n\n    alef:hash:{digest}\n\nbody\n");
         assert!(
-            is_hash_stamped_source(&before),
-            "a stamp above a fence is still a stamp"
+            is_hash_stamped_source(&documented),
+            "known gap: an indented block is not yet recognized as a code context"
         );
 
-        let after = format!("# Doc\n\n```\nsample\n```\n\n<!-- alef:hash:{digest} -->\nbody\n");
+        // The reason the gap is tolerable: the same rule that would close it also
+        // strips protection from stamps that really are indented.
+        let real = format!("<!--\n    alef:hash:{digest}\n-->\nbody\n");
         assert!(
-            is_hash_stamped_source(&after),
-            "a stamp after the fence closes is still a stamp"
+            is_hash_stamped_source(&real),
+            "an indented real stamp must stay protected"
         );
     }
 
