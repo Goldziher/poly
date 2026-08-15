@@ -14,6 +14,16 @@
 //! Catalog and native-toolchain backends are intentionally excluded: they wrap
 //! external processes, not a pinned Rust crate, so there is no lock entry to
 //! track.
+//!
+//! This file's `checks` list is hand-maintained, which is exactly how
+//! `astgrep` was once omitted while it silently advertised a stale
+//! `tree-sitter-language-pack` version. It cannot enumerate the registry
+//! itself (`registry::engines_for` is `pub(crate)`), so the companion guard
+//! `registry::tests::every_registered_engine_is_audited_or_declared_exempt`
+//! (`src/registry.rs`) walks every engine the registry actually wires up and
+//! asserts each one either has a `check(...)` entry in this file or is listed
+//! in that test's `NATIVE_TOOLCHAIN_ENGINES` exemption. Run it alongside this
+//! file: `cargo test -p poly-core --lib registry::tests`.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -140,12 +150,17 @@ fn engine_versions_track_cargo_lock() {
     };
 
     let checks = vec![
+        // `BiomeGraphqlEngine` and `BiomeCssEngine` both answer `Engine::name()
+        // == "biome"` (one config/cache namespace, two wrapped analyzer
+        // crates), so both checks below use the label `"biome"` — matching the
+        // real `name()` is what lets `registry::tests::
+        // every_registered_engine_is_audited_or_declared_exempt` find them.
         check(
-            "biome-graphql",
+            "biome",
             BiomeGraphqlEngine.version(),
             vec![("biome_graphql_analyze", Git)],
         ),
-        check("biome-css", BiomeCssEngine.version(), vec![("biome_css_analyze", Git)]),
+        check("biome", BiomeCssEngine.version(), vec![("biome_css_analyze", Git)]),
         check("sqruff", SqruffEngine.version(), vec![("sqruff-lib", Registry)]),
         check("malva", MalvaEngine.version(), vec![("malva", Registry)]),
         check("markup_fmt", MarkupFmtEngine.version(), vec![("markup_fmt", Registry)]),
@@ -166,7 +181,10 @@ fn engine_versions_track_cargo_lock() {
             DockerfileEngine.version(),
             vec![("dockerfile-parser", Registry)],
         ),
-        check("nixfmt", NixFmtEngine.version(), vec![("alejandra", Registry)]),
+        // `NixFmtEngine::name()` is `"alejandra"` (the wrapped formatter it is
+        // named after), not `"nixfmt"` — label matches the real name so the
+        // exhaustiveness guard above can find this check.
+        check("alejandra", NixFmtEngine.version(), vec![("alejandra", Registry)]),
         check("graphql", GraphQlEngine.version(), vec![("pretty_graphql", Registry)]),
         check("yaml", YamlEngine.version(), vec![("pretty_yaml", Registry)]),
         check(
