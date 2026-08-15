@@ -284,4 +284,36 @@ mod tests {
             );
         }
     }
+
+    /// Two engines may share a name only while they never serve the same
+    /// language. Everything that keys off `Engine::name()` — the
+    /// `[<kind>.<lang>.<engine>]` config table, the per-plan severity remap, the
+    /// cache id — is scoped by language first, so the shared `"biome"` name is
+    /// safe precisely because `BiomeCssEngine` (Css/Scss) and
+    /// `BiomeGraphqlEngine` (GraphQl) are disjoint.
+    ///
+    /// If this fails, either give the colliding backends distinct names — and
+    /// bump both `version()` strings, so entries cached under the old name are
+    /// invalidated rather than silently reused — or keep their languages
+    /// disjoint. Catalog tools (ADR 0013) are out of scope: they are user-opted
+    /// per `[tools.<name>]` and named by the catalog, not by this registry.
+    #[test]
+    fn registered_engine_names_are_unique_per_language() {
+        let languages = all_known_languages()
+            .into_iter()
+            .chain(std::iter::once(Language::Other("elm".to_owned())));
+        for language in languages {
+            let engines = engines_for(&language);
+            let mut seen: Vec<&'static str> = Vec::with_capacity(engines.len());
+            for engine in &engines {
+                let name = engine.name();
+                assert!(
+                    !seen.contains(&name),
+                    "two engines registered for {language:?} both answer the name {name:?}; \
+                     they would share one config table and one cache id",
+                );
+                seen.push(name);
+            }
+        }
+    }
 }

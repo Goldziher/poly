@@ -95,6 +95,12 @@ fn parse_cargo_lock() -> HashMap<String, LockEntry> {
 
 /// One engine's `version()` string and the wrapped crate(s) it must track.
 struct Check {
+    /// Human label for the failure message, derived from the backend module —
+    /// deliberately *not* `Engine::name()`, which is a per-language tool id and
+    /// is neither unique (`biome_css` and `biome_graphql` are both `"biome"`)
+    /// nor always the module name (`nixfmt` wraps, and is named, `alejandra`).
+    /// See the [`Engine::name`] contract; this list needs one distinct label per
+    /// *row*, which the tool ids cannot supply.
     engine: &'static str,
     version: String,
     deps: Vec<(&'static str, Source)>,

@@ -8,6 +8,15 @@
 //! nixpkgs-fmt was evaluated first but transitively pulls `ansi_term` and
 //! `atty`, both flagged unmaintained by `cargo deny` (RUSTSEC-2021-0139 /
 //! RUSTSEC-2024-0375). alejandra (UNLICENSE) has a clean advisory tree.
+//!
+//! # Engine name
+//!
+//! `"alejandra"`, not `"nixfmt"` — [`Engine::name`] names the tool a user
+//! configures (`[fmt.nix.alejandra]`) and reads in a report, and this backend
+//! wraps alejandra. `nixfmt` is a *different* formatter with different output,
+//! and is a separate catalog tool for `Language::Nix`, so borrowing its name
+//! here would both misreport the tool and collide with that tool. The Rust type
+//! keeps its historical name. Asserted in `tests/engine_identity.rs`.
 
 use alejandra::format::{Status, in_memory};
 

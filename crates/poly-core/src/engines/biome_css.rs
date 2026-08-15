@@ -27,6 +27,17 @@
 //!
 //! `"biome"` — matches the `[lint.css.biome]` config key and the
 //! `Diagnostic.engine` field surfaced in reports.
+//!
+//! [`BiomeGraphqlEngine`] deliberately answers the same name: it is the id of
+//! the *tool*, and both backends wrap one analyzer each of the same tool. That
+//! is safe because every name-keyed surface is resolved per language first —
+//! `[lint.css.biome]` cannot configure GraphQL, and the cache key folds in
+//! [`Engine::version`] (which differs) next to the name. The two never share a
+//! language, so they never meet in one file's engine plan. See
+//! `tests/engine_identity.rs`, which asserts each of those properties rather
+//! than leaving them to be re-derived.
+//!
+//! [`BiomeGraphqlEngine`]: crate::engines::biome_graphql::BiomeGraphqlEngine
 
 use biome_analyze::{AnalyzerOptions, ControlFlow, Never};
 use biome_css_analyze::CssAnalyzerServices;

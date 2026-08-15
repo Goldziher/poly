@@ -125,7 +125,26 @@ pub enum FormatOutput {
 /// [`lint`](crate::lint) / [`format`](crate::format) orchestrators; implementing
 /// it downstream is unsupported and may break without notice.
 pub trait Engine: Send + Sync {
-    /// Stable backend id (e.g. `"taplo"`, `"oxc"`), used in config + cache keys.
+    /// Stable id of the **tool** this backend wraps (e.g. `"taplo"`, `"oxc"`),
+    /// used as the `[<kind>.<lang>.<engine>]` config key, the `engine` field of
+    /// every [`Diagnostic`] it emits, and the id component of its cache key.
+    ///
+    /// It names the tool, not the Rust type: a backend is named for what a user
+    /// configures and reads in a report. `NixFmtEngine` is therefore
+    /// `"alejandra"` — the formatter it actually wraps — and two backends that
+    /// wrap two analyzers of one tool share that tool's name (`BiomeCssEngine`
+    /// and `BiomeGraphqlEngine` are both `"biome"`, matching `[lint.css.biome]`
+    /// and `[lint.graphql.biome]`).
+    ///
+    /// **Names are unique per language, not globally.** Every surface keyed by
+    /// the name is resolved per language first — config tables are
+    /// `[<kind>.<lang>.<engine>]`, severity remaps are compiled per engine plan,
+    /// and the cache key folds in [`Engine::version`] alongside the name — so two
+    /// backends may share a name only while they never serve the same language.
+    /// `registry::tests::registered_engine_names_are_unique_per_language` asserts
+    /// that, and `tests/engine_identity.rs` pins the rest for the `"biome"` pair.
+    /// Two backends that *do* need to serve one language must take distinct names
+    /// (and bump both `version()` strings so stale cache entries are invalidated).
     fn name(&self) -> &'static str;
 
     /// Tier-1 languages this backend explicitly handles. The generic tier may
