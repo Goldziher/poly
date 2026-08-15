@@ -168,12 +168,19 @@ impl ConfigSet {
     /// subtrees, which can never match under the walk root, are dropped — see
     /// [`reanchor_glob`]). When the config directory *is* the walk root (the
     /// common whole-repo run) the globs are emitted unchanged.
+    ///
+    /// The subpath is taken from the walk root's **directory**: a `root` naming a
+    /// file (every hook invocation, which is handed explicit staged paths) is
+    /// anchored at the directory containing it. Anchoring on the file itself made
+    /// every glob written against its parent directory — `packages/dart/lib/*.py`
+    /// for `packages/dart/lib/two.py` — look like a sibling subtree, so it was
+    /// dropped and the excluded file was formatted.
     fn root_config_excludes(&self, root: &Path) -> Vec<String> {
         let globs = &self.configs[0].exclude;
         let Some(config_dir) = &self.root_config_dir else {
             return globs.clone();
         };
-        let Ok(abs_root) = std::fs::canonicalize(root) else {
+        let Ok(abs_root) = std::fs::canonicalize(dir_of_root(root)) else {
             return globs.clone();
         };
         match abs_root.strip_prefix(config_dir) {
@@ -282,6 +289,11 @@ fn root_config_dir(walk_root: &Path) -> Option<PathBuf> {
 ///   `src/data/**`, so it matches files scanned relative to the walk root.
 /// - An un-anchored pattern (leading `**/`, or a bare name with no separator
 ///   such as `.secrets.baseline`) matches at any depth and is kept unchanged.
+/// - A recursive prune of an **ancestor** of the walk root (`packages/dart/**`
+///   with `sub` = `packages/dart/lib`) covers the walk root whole → `**`. Without
+///   this case such a glob fell through to the sibling rule below and was
+///   dropped, so pointing poly at any path *inside* an excluded tree checked —
+///   and, under `--fix`, rewrote — the very files the exclude names.
 /// - A single leading directory segment with a recursive wildcard
 ///   (`target/**`, `node_modules/**`) is a build/vendor prune that still applies
 ///   under the walk root, so it is kept.
@@ -311,6 +323,14 @@ fn reanchor_glob(sub: &Path, glob: &str) -> Option<String> {
         } else {
             rest.to_string()
         });
+    }
+    // A recursive prune of an ancestor directory excludes the walk root entirely,
+    // so everything under it is excluded too. Compared by path components, not by
+    // string prefix, so `packages/dart/**` does not swallow `packages/dartlang`.
+    if let Some(dir) = glob.strip_suffix("/**")
+        && Path::new(sub).starts_with(dir)
+    {
+        return Some("**".to_string());
     }
     // Anchored elsewhere: keep a single-directory recursive prune (applies under
     // the walk root too); drop a deeper concrete sibling path (cannot match).
@@ -482,6 +502,50 @@ mod tests {
         assert!(
             !excludes.iter().any(|glob| glob.starts_with("frontend/")),
             "no repo-root-anchored globs remain: {excludes:?}"
+        );
+    }
+
+    /// A glob pruning an ancestor of the walk root covers the walk root whole.
+    /// Classifying it as a sibling subtree (which is what a multi-segment prefix
+    /// used to fall through to) dropped it, and `poly fmt --fix packages/dart/lib`
+    /// then rewrote files that `packages/dart/**` excludes.
+    #[test]
+    fn reanchor_glob_treats_an_ancestor_prune_as_covering_the_root() {
+        let sub = Path::new("packages/dart/lib");
+        assert_eq!(reanchor_glob(sub, "packages/**").as_deref(), Some("**"));
+        assert_eq!(reanchor_glob(sub, "packages/dart/**").as_deref(), Some("**"));
+        assert_eq!(reanchor_glob(sub, "packages/dart/lib/**").as_deref(), Some("**"));
+        // A same-prefixed sibling is not an ancestor: components, not characters.
+        assert_eq!(reanchor_glob(sub, "packages/dartlang/**"), None);
+        // A non-recursive ancestor path is not a prune of the whole subtree.
+        assert_eq!(reanchor_glob(sub, "packages/dart/build.py"), None);
+    }
+
+    /// A `root` naming a file is anchored at the directory holding it — the shape
+    /// every hook invocation takes, since hooks are handed staged file paths. When
+    /// the file itself was the anchor, a glob written against its parent directory
+    /// matched nothing and the excluded file was formatted.
+    #[test]
+    fn walk_excludes_anchors_a_named_file_at_its_directory() {
+        let root = tempdir().unwrap();
+        write(
+            &root.path().join("poly.toml"),
+            "[workspace]\nroot = true\n[discovery]\nexclude = [\"packages/dart/lib/*.py\", \"packages/dart/**\"]\n",
+        );
+        let file = root.path().join("packages/dart/lib/two.py");
+        write(&file, "x = 1\n");
+
+        let root_config: Config = poly_config::PolyConfig::resolve_for_dir(root.path()).unwrap().into();
+        let set = ConfigSet::build(std::slice::from_ref(&file), root_config).unwrap();
+
+        let excludes = set.walk_excludes(&file, &[], true);
+        assert!(
+            excludes.contains(&"*.py".to_string()),
+            "parent-anchored glob re-anchored to the file's directory: {excludes:?}"
+        );
+        assert!(
+            excludes.contains(&"**".to_string()),
+            "ancestor prune covers the named file: {excludes:?}"
         );
     }
 
