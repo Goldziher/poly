@@ -19,6 +19,51 @@ use ignore::WalkBuilder;
 use crate::config::Config;
 use crate::discover::keep_walk_entry;
 
+/// One exclude rule in effect for a walk: the glob discovery matches paths
+/// with, paired with the text its author actually wrote.
+///
+/// The two diverge whenever a glob has to be re-anchored to the walk root. An
+/// ancestor config's `packages/dart/**` becomes `**` for a run rooted *inside*
+/// `packages/dart`, and a nested config's `gen/**` becomes `packages/gen/**`
+/// for a run rooted above it. Matching needs the re-anchored form; a reader
+/// needs the form they can find in their own config — `excluded by [discovery]
+/// exclude: **` reads as "everything is excluded" and sends them looking for a
+/// rule nobody wrote. So reports quote [`authored`](ExcludeRule::authored).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExcludeRule {
+    /// The glob to match against paths, anchored at the walk root.
+    pub glob: String,
+    /// The glob exactly as written in `[discovery] exclude` or passed to
+    /// `--exclude`. Reported instead of [`glob`](ExcludeRule::glob).
+    pub authored: String,
+}
+
+impl ExcludeRule {
+    /// A rule whose matcher glob *is* the text its author wrote: `--exclude`
+    /// globs, and a root config's globs when the config sits at the walk root.
+    pub fn verbatim(glob: impl Into<String>) -> Self {
+        let glob = glob.into();
+        Self {
+            authored: glob.clone(),
+            glob,
+        }
+    }
+
+    /// A rule whose matcher glob was rewritten from `authored` so it matches
+    /// paths relative to the walk root.
+    pub fn reanchored(glob: impl Into<String>, authored: &str) -> Self {
+        Self {
+            glob: glob.into(),
+            authored: authored.to_owned(),
+        }
+    }
+}
+
+/// Every glob in `globs` as a rule that needs no re-anchoring.
+fn verbatim_rules(globs: &[String]) -> Vec<ExcludeRule> {
+    globs.iter().map(ExcludeRule::verbatim).collect()
+}
+
 /// The resolved configs in effect for a run, plus the directory→config map used
 /// to associate each file with the nearest config that governs it.
 pub struct ConfigSet {
@@ -139,8 +184,11 @@ impl ConfigSet {
     /// `exclude_root` is false, only a rule covering the named root itself is
     /// removed; exclusions for descendants remain active.
     ///
+    /// Each rule carries the glob its author wrote alongside the matcher glob,
+    /// so the report can name the former — see [`ExcludeRule`].
+    ///
     /// [`root_config_excludes`]: ConfigSet::root_config_excludes
-    pub fn walk_excludes(&self, root: &Path, extra: &[String], exclude_root: bool) -> Vec<String> {
+    pub fn walk_excludes(&self, root: &Path, extra: &[String], exclude_root: bool) -> Vec<ExcludeRule> {
         let mut out = self.root_config_excludes(root);
         for (config_dir, id) in &self.lookup {
             if *id == 0 {
@@ -148,13 +196,13 @@ impl ConfigSet {
             }
             if let Ok(rel) = config_dir.strip_prefix(root) {
                 for glob in &self.configs[*id].exclude {
-                    out.push(prefix_glob(rel, glob));
+                    out.push(ExcludeRule::reanchored(prefix_glob(rel, glob), glob));
                 }
             }
         }
-        out.extend(extra.iter().cloned());
+        out.extend(extra.iter().map(ExcludeRule::verbatim));
         if !exclude_root {
-            out.retain(|glob| glob != "**" && glob != "/**");
+            out.retain(|rule| rule.glob != "**" && rule.glob != "/**");
         }
         out
     }
@@ -175,18 +223,21 @@ impl ConfigSet {
     /// every glob written against its parent directory — `packages/dart/lib/*.py`
     /// for `packages/dart/lib/two.py` — look like a sibling subtree, so it was
     /// dropped and the excluded file was formatted.
-    fn root_config_excludes(&self, root: &Path) -> Vec<String> {
+    fn root_config_excludes(&self, root: &Path) -> Vec<ExcludeRule> {
         let globs = &self.configs[0].exclude;
         let Some(config_dir) = &self.root_config_dir else {
-            return globs.clone();
+            return verbatim_rules(globs);
         };
         let Ok(abs_root) = std::fs::canonicalize(dir_of_root(root)) else {
-            return globs.clone();
+            return verbatim_rules(globs);
         };
         match abs_root.strip_prefix(config_dir) {
-            Ok(sub) if sub.as_os_str().is_empty() => globs.clone(),
-            Ok(sub) => globs.iter().filter_map(|glob| reanchor_glob(sub, glob)).collect(),
-            Err(_) => globs.clone(),
+            Ok(sub) if sub.as_os_str().is_empty() => verbatim_rules(globs),
+            Ok(sub) => globs
+                .iter()
+                .filter_map(|glob| reanchor_glob(sub, glob).map(|matcher| ExcludeRule::reanchored(matcher, glob)))
+                .collect(),
+            Err(_) => verbatim_rules(globs),
         }
     }
 
@@ -396,6 +447,21 @@ mod tests {
         fs::write(path, contents).unwrap();
     }
 
+    /// The matcher globs of a rule set, in order.
+    fn globs(rules: &[ExcludeRule]) -> Vec<&str> {
+        rules.iter().map(|rule| rule.glob.as_str()).collect()
+    }
+
+    /// The authored text carried by the rule matching with `glob`.
+    fn authored_for<'a>(rules: &'a [ExcludeRule], glob: &str) -> &'a str {
+        rules
+            .iter()
+            .find(|rule| rule.glob == glob)
+            .unwrap_or_else(|| panic!("no rule matching with {glob} in {rules:?}"))
+            .authored
+            .as_str()
+    }
+
     #[test]
     fn relative_file_root_uses_the_current_directory_as_its_anchor() {
         assert_eq!(nonempty_parent(Path::new("included.py")), PathBuf::from("."));
@@ -448,12 +514,18 @@ mod tests {
         let set = ConfigSet::build(&[root.path().to_path_buf()], root_config).unwrap();
 
         let excludes = set.walk_excludes(root.path(), &["extra/**".to_string()], true);
-        assert!(excludes.contains(&"target/**".to_string()), "root exclude unprefixed");
+        assert!(globs(&excludes).contains(&"target/**"), "root exclude unprefixed");
         assert!(
-            excludes.contains(&"frontend/dist/**".to_string()),
+            globs(&excludes).contains(&"frontend/dist/**"),
             "nested exclude rooted at its config dir: {excludes:?}"
         );
-        assert!(excludes.contains(&"extra/**".to_string()), "CLI extra passed through");
+        assert!(globs(&excludes).contains(&"extra/**"), "CLI extra passed through");
+
+        // Each rule remembers the glob its author wrote, which is what a report
+        // names: the nested config says `dist/**`, not `frontend/dist/**`.
+        assert_eq!(authored_for(&excludes, "frontend/dist/**"), "dist/**");
+        assert_eq!(authored_for(&excludes, "target/**"), "target/**");
+        assert_eq!(authored_for(&excludes, "extra/**"), "extra/**");
     }
 
     #[test]
@@ -479,30 +551,62 @@ mod tests {
 
         let excludes = set.walk_excludes(&frontend, &[], true);
         assert!(
-            excludes.contains(&"src/data/benchmark/**".to_string()),
+            globs(&excludes).contains(&"src/data/benchmark/**"),
             "sub-anchored glob re-anchored to the walk root: {excludes:?}"
         );
         assert!(
-            excludes.contains(&"src/types/api-schema.d.ts".to_string()),
+            globs(&excludes).contains(&"src/types/api-schema.d.ts"),
             "sub-anchored file re-anchored to the walk root: {excludes:?}"
         );
         assert!(
-            excludes.contains(&"**/*.min.js".to_string()),
+            globs(&excludes).contains(&"**/*.min.js"),
             "any-depth glob preserved: {excludes:?}"
         );
         assert!(
-            excludes.contains(&"target/**".to_string()),
+            globs(&excludes).contains(&"target/**"),
             "single-segment recursive prune preserved: {excludes:?}"
         );
         assert!(
-            !excludes.iter().any(|glob| glob.contains("services")),
+            !excludes.iter().any(|rule| rule.glob.contains("services")),
             "sibling-subtree glob dropped: {excludes:?}"
         );
-        // The un-re-anchored form must not leak through.
+        // The un-re-anchored form must not leak through *into matching*; it is
+        // exactly what the rule reports, so the reader can find it in config.
         assert!(
-            !excludes.iter().any(|glob| glob.starts_with("frontend/")),
+            !excludes.iter().any(|rule| rule.glob.starts_with("frontend/")),
             "no repo-root-anchored globs remain: {excludes:?}"
         );
+        assert_eq!(
+            authored_for(&excludes, "src/data/benchmark/**"),
+            "frontend/src/data/benchmark/**",
+            "the re-anchored rule remembers what its author wrote: {excludes:?}"
+        );
+        assert_eq!(
+            authored_for(&excludes, "src/types/api-schema.d.ts"),
+            "frontend/src/types/api-schema.d.ts"
+        );
+        assert_eq!(authored_for(&excludes, "**/*.min.js"), "**/*.min.js");
+    }
+
+    /// The ancestor-prune case: a walk root the exclude covers entirely
+    /// re-anchors to `**`, which is meaningless to a reader. The rule still
+    /// carries the glob that was written.
+    #[test]
+    fn a_rule_pruning_the_whole_walk_root_still_carries_its_authored_glob() {
+        let root = tempdir().unwrap();
+        write(
+            &root.path().join("poly.toml"),
+            "[workspace]\nroot = true\n[discovery]\nexclude = [\"packages/dart/**\"]\n",
+        );
+        let dart = root.path().join("packages/dart");
+        fs::create_dir_all(&dart).unwrap();
+
+        let root_config: Config = poly_config::PolyConfig::resolve_for_dir(&dart).unwrap().into();
+        let set = ConfigSet::build(std::slice::from_ref(&dart), root_config).unwrap();
+
+        let excludes = set.walk_excludes(&dart, &[], true);
+        assert_eq!(globs(&excludes), vec!["**"], "the matcher glob is unchanged");
+        assert_eq!(authored_for(&excludes, "**"), "packages/dart/**");
     }
 
     /// A glob pruning an ancestor of the walk root covers the walk root whole.

@@ -52,6 +52,17 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   auto-approve read-only tools will now prompt for `workspace_lint`.** That is the only behaviour
   change in this entry; the CLI is documentation-only.
 
+- **Exclusion notes name the glob you wrote, not the one poly matched with.** Discovery re-anchors
+  an exclude glob to the walk root — a repo-root `packages/dart/**` becomes `**` for a run rooted
+  inside `packages/dart`, and a nested config's `gen/**` becomes `packages/gen/**` for a run rooted
+  above it — and the report was quoting that rewritten form. `excluded by [discovery] exclude /
+  --exclude: **` reads as though everything is excluded, and sends the reader looking for a rule
+  that appears in no config file.
+
+  Each rule now carries its authored text alongside the matcher glob, and the note (and `poly
+  doctor`'s over-broad-exclude finding, with its `/`-anchoring remedy) quotes the authored text.
+  Nothing about which files are excluded changed: matching still uses the re-anchored glob.
+
 ## [0.21.5] - 2026-08-15
 
 ### Fixed

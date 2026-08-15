@@ -252,6 +252,119 @@ fn a_leading_slash_anchors_an_exclude_to_the_config_directory() {
     );
 }
 
+/// A run rooted *inside* a directory the exclude covers re-anchors
+/// `packages/dart/**` to `**` so it still matches paths seen relative to that
+/// walk root. That re-anchoring is a matcher detail: the report must name the
+/// glob its author wrote, because `**` reads as "everything is excluded" and
+/// sends the reader looking for a rule that is nowhere in their config.
+#[test]
+fn an_ancestor_config_rule_is_reported_as_the_glob_its_author_wrote() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    write_file(
+        &root.join("poly.toml"),
+        "[workspace]\nroot = true\n[discovery]\nexclude = [\"packages/dart/**\"]\n",
+    );
+    write_file(&root.join("packages/dart/a.py"), "x = 1\n");
+
+    let walk_root = root.join("packages/dart");
+    let config = Config {
+        exclude: vec!["packages/dart/**".to_string()],
+        ..Config::default()
+    };
+    let configs = ConfigSet::build(std::slice::from_ref(&walk_root), config).unwrap();
+    let (discovered, report) = discover_reporting(std::slice::from_ref(&walk_root), &configs, &[], true);
+
+    assert!(discovered.is_empty(), "the named root is excluded: {discovered:?}");
+    assert_eq!(report.excluded_explicit, 1, "{report:?}");
+    assert_eq!(report.rules.len(), 1, "{report:?}");
+    assert_eq!(
+        report.rules[0].pattern, "packages/dart/**",
+        "the note names the authored glob, not the re-anchored matcher: {report:?}"
+    );
+}
+
+/// The same re-anchoring, one level finer: the walk itself prunes the files, so
+/// the rule is attributed per file rather than through the explicit-root path.
+/// The reported pattern is still the authored one.
+#[test]
+fn a_reanchored_rule_pruning_files_is_reported_as_the_glob_its_author_wrote() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    write_file(
+        &root.join("poly.toml"),
+        "[workspace]\nroot = true\n[discovery]\nexclude = [\"packages/dart/**/*.py\"]\n",
+    );
+    write_file(&root.join("packages/dart/a.py"), "x = 1\n");
+    write_file(&root.join("packages/dart/b.py"), "y = 2\n");
+
+    let walk_root = root.join("packages/dart");
+    let config = Config {
+        exclude: vec!["packages/dart/**/*.py".to_string()],
+        ..Config::default()
+    };
+    let configs = ConfigSet::build(std::slice::from_ref(&walk_root), config).unwrap();
+    let (discovered, report) = discover_reporting(std::slice::from_ref(&walk_root), &configs, &[], false);
+
+    assert!(discovered.is_empty(), "both files are excluded: {discovered:?}");
+    assert_eq!(report.excluded_files, 2, "{report:?}");
+    assert_eq!(report.rules.len(), 1, "{report:?}");
+    assert_eq!(
+        report.rules[0].pattern, "packages/dart/**/*.py",
+        "the note names the authored glob, not the re-anchored matcher: {report:?}"
+    );
+}
+
+/// A nested `poly.toml`'s globs are prefixed by that config's directory so they
+/// only prune their own subtree — another matcher detail. The author wrote
+/// `gen/**` in `packages/poly.toml`, so that is what the note names.
+#[test]
+fn a_nested_config_rule_is_reported_as_the_glob_its_author_wrote() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    write_file(&root.join("poly.toml"), "[workspace]\nroot = true\n");
+    write_file(
+        &root.join("packages/poly.toml"),
+        "[discovery]\nexclude = [\"gen/**\"]\n",
+    );
+    write_file(&root.join("packages/gen/c.py"), "x = 1\n");
+    write_file(&root.join("packages/kept.py"), "y = 2\n");
+
+    let configs = ConfigSet::build(&[root.to_path_buf()], Config::default()).unwrap();
+    let (discovered, report) = discover_reporting(&[root.to_path_buf()], &configs, &[], false);
+
+    let paths: Vec<_> = discovered.iter().map(|f| f.path.as_path()).collect();
+    assert!(
+        paths.contains(&root.join("packages/kept.py").as_path()),
+        "the sibling source survives: {paths:?}"
+    );
+    assert!(
+        !paths.contains(&root.join("packages/gen/c.py").as_path()),
+        "the generated tree is pruned: {paths:?}"
+    );
+    assert_eq!(report.rules.len(), 1, "{report:?}");
+    assert_eq!(
+        report.rules[0].pattern, "gen/**",
+        "the note names the glob as written in the nested config: {report:?}"
+    );
+}
+
+/// A `--exclude` glob is authored at the walk root already, so it is reported
+/// verbatim — the guard that the carried-through text is the original one and
+/// not, say, the matcher glob under a new name.
+#[test]
+fn a_command_line_exclude_is_reported_verbatim() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    write_file(&root.join("gen/c.py"), "x = 1\n");
+
+    let cfg = ConfigSet::single(Config::default());
+    let (_, report) = discover_reporting(&[root.to_path_buf()], &cfg, &["gen/**".to_string()], false);
+
+    assert_eq!(report.rules.len(), 1, "{report:?}");
+    assert_eq!(report.rules[0].pattern, "gen/**", "{report:?}");
+}
+
 #[test]
 fn explicitly_passed_path_is_unaffected_by_other_roots() {
     let dir = tempfile::tempdir().unwrap();
