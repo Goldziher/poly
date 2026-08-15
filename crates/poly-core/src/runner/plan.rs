@@ -286,11 +286,13 @@ fn warn_catalog_tool_displaced_once(name: &str, language: &Language) {
 /// `kind`.
 ///
 /// [`Kind::Format`] wires the tool's format command; [`Kind::Lint`] wires its
-/// lint command — but only when that command is **non-mutating** (a `--fix` /
-/// `--write` / `-w` / `-i` command would corrupt files if run as a linter, so
-/// [`CatalogToolEngine::lint_engine`] skips it). Catalog linting is a
-/// best-effort, breadth-tier mechanism (file-level, exit-code based); structured
-/// per-tool diagnostics remain the curated native backends' job.
+/// lint command — but only when that command is **non-mutating**. A command that
+/// rewrites the file, whether through a flag (`--fix`, `--autocorrect`,
+/// `--in-place`, …) or a subcommand (`sqruff fix`, `ruff format`), would corrupt
+/// files if run as a linter, so [`CatalogToolEngine::lint_engine`] skips it.
+/// Catalog linting is a best-effort, breadth-tier mechanism (file-level,
+/// exit-code based); structured per-tool diagnostics remain the curated native
+/// backends' job.
 ///
 /// A tool built here may still be dropped by [`merge_catalog_engines`] when
 /// poly's own backend of the same name already covers the language.

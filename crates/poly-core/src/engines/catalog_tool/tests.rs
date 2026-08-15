@@ -111,6 +111,133 @@ fn lint_engine_rejects_a_mutating_command() {
 }
 
 #[test]
+fn lint_engine_rejects_a_mutating_subcommand() {
+    for subcommand in ["fix", "format", "fmt", "write"] {
+        let tool = leak_tool(
+            "fakesubfixer",
+            "true",
+            "linter",
+            vec![subcommand.to_string(), PATH_PLACEHOLDER.to_string()],
+        );
+        assert!(
+            lint_engine_default(tool, None, None).is_none(),
+            "mutating subcommand `{subcommand}` must be rejected as a linter"
+        );
+    }
+}
+
+/// An **independent** oracle for "this argv rewrites the file it is handed",
+/// deliberately spelled out here instead of delegating to the production
+/// [`is_mutating`]. A test that reused the production predicate would pass
+/// whenever production and test shared the same blind spot — which is precisely
+/// how `sqruff fix $PATH` shipped as a catalog lint command.
+fn argv_rewrites_the_file(arguments: &[String]) -> bool {
+    const REWRITES: &[&str] = &[
+        "--auto",
+        "--auto-correct",
+        "--autocorrect",
+        "--autofix",
+        "--edit",
+        "--fix",
+        "--fix-layout",
+        "--in-place",
+        "--reformat",
+        "--replace",
+        "--write",
+        "--write-changes",
+        "-fix",
+        "-i",
+        "-w",
+        "apply",
+        "fix",
+        "fmt",
+        "format",
+        "write",
+    ];
+    arguments.iter().any(|argument| REWRITES.contains(&argument.as_str()))
+}
+
+/// Nothing poly ships may wire as a catalog linter with an argv that rewrites
+/// the file. `poly lint` promises to report, never to edit; a mutating lint argv
+/// destroys the user's source *and* reports it clean, because a fix command
+/// exits zero once it has finished fixing.
+#[test]
+fn no_shipped_catalog_tool_wires_a_mutating_lint_command() {
+    let offenders: Vec<String> = Catalog::get()
+        .tools()
+        .iter()
+        .filter_map(|tool| lint_engine_default(tool, None, None).map(|engine| (tool, engine)))
+        .filter(|(_, engine)| argv_rewrites_the_file(&engine.arguments))
+        .map(|(tool, engine)| format!("{} -> {:?}", tool.name, engine.arguments))
+        .collect();
+    assert!(
+        offenders.is_empty(),
+        "catalog tools wired as linters with a file-rewriting argv: {offenders:#?}"
+    );
+}
+
+/// `pyupgrade` rewrites in place on every run and its catalog argv forces a
+/// zero exit (`--exit-zero-even-if-changed`), so no argv inspection can make it
+/// safe: it must be refused by name.
+#[test]
+fn lint_engine_rejects_always_mutating_tools() {
+    for name in ALWAYS_MUTATING_TOOLS {
+        let tool = Catalog::get().tool(name).unwrap_or_else(|| panic!("{name} in catalog"));
+        assert!(
+            lint_engine_default(tool, None, None).is_none(),
+            "{name} rewrites files on every run and must not wire as a catalog linter"
+        );
+    }
+}
+
+/// The end-to-end guarantee, asserted on the **effect** rather than on any
+/// particular mechanism: whatever a catalog tool's lint command looks like,
+/// running [`Engine::lint`] must leave the file on disk byte-identical.
+///
+/// The stand-in binary is a real in-place fixer — it truncates whatever path it
+/// is handed — wired with `sqruff`'s exact shipped argv shape (`<tool> fix
+/// $PATH`). Before the mutating-subcommand gate existed this engine wired, ran
+/// against the real on-disk file, and overwrote it.
+#[cfg(unix)]
+#[test]
+fn lint_leaves_the_file_on_disk_byte_identical() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let fixer = dir.path().join("fakefixer");
+    std::fs::write(
+        &fixer,
+        "#!/bin/sh\n[ \"$#\" -eq 2 ] && printf 'REWRITTEN\\n' > \"$2\"\nexit 0\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&fixer, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let file = dir.path().join("q.sql");
+    let original = "select a,b from t where a=1;\n";
+    std::fs::write(&file, original).unwrap();
+
+    let tool = leak_tool(
+        "fakefixer",
+        fixer.to_str().unwrap(),
+        "linter",
+        vec!["fix".to_string(), PATH_PLACEHOLDER.to_string()],
+    );
+
+    // Declining the capability is the expected outcome, but the invariant under
+    // test is the file's bytes — so a future fix that lints a throwaway copy
+    // instead would keep this test honest rather than break it.
+    if let Some(engine) = lint_engine_default(tool, None, None) {
+        let _ = engine.lint(&make_src(file.to_str().unwrap(), original), &cfg());
+    }
+
+    assert_eq!(
+        std::fs::read_to_string(&file).unwrap(),
+        original,
+        "poly lint must never rewrite the source file it is linting"
+    );
+}
+
+#[test]
 fn lint_engine_rejects_a_mutating_args_override() {
     let tool = leak_tool("fakelint", "true", "linter", vec![PATH_PLACEHOLDER.to_string()]);
     assert!(lint_engine_default(tool, None, Some(&["--fix".to_string()])).is_none());
