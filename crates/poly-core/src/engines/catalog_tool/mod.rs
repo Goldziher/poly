@@ -39,11 +39,66 @@ use crate::config::EngineConfig;
 use crate::engine::{Capabilities, Diagnostic, Engine, FormatOutput, Severity, SourceFile};
 use crate::language::Language;
 
-/// Argv flags that mutate the file rather than only reporting on it. A lint
+/// Argv **flags** that mutate the file rather than only reporting on it. A lint
 /// command carrying any of these is **rejected** by [`CatalogToolEngine::lint_engine`]:
 /// running a mutating command as a linter would silently rewrite the user's
 /// files, so such a tool is skipped (no lint engine) rather than run.
-const MUTATING_FLAGS: &[&str] = &["--fix", "--write", "-w", "-i"];
+///
+/// Every entry is a flag some shipped catalog tool uses to write its fixes back
+/// to the file it was handed — `rubocop --autocorrect`, `autoflake --in-place`,
+/// `deadnix --edit`, `codespell --write-changes`, `protolint -fix`, and so on.
+const MUTATING_FLAGS: &[&str] = &[
+    "--auto",
+    "--auto-correct",
+    "--autocorrect",
+    "--autofix",
+    "--edit",
+    "--fix",
+    "--fix-layout",
+    "--in-place",
+    "--reformat",
+    "--replace",
+    "--write",
+    "--write-changes",
+    "-fix",
+    "-i",
+    "-w",
+];
+
+/// Positional argv tokens naming a **mutating subcommand**.
+///
+/// A subcommand carries no leading `-`, so a flag-only scan misses it entirely —
+/// which is how `sqruff`'s catalog lint command (`sqruff fix $PATH`) came to
+/// rewrite source files during `poly lint` while the run reported "no issues".
+///
+/// Matched against *every* positional token, not just the first, so multi-level
+/// subcommands (`crystal tool format`, `dart fix --apply`) are caught too. The
+/// [`PATH_PLACEHOLDER`] cannot collide: substitution happens at invocation time,
+/// so the stored argv holds `$PATH`, never a real file name. A flag *value* that
+/// happens to spell one of these would be a false positive — that errs toward
+/// dropping lint coverage, never toward rewriting a file.
+const MUTATING_SUBCOMMANDS: &[&str] = &[
+    "apply",
+    "fix",
+    "fmt",
+    "format",
+    "format-in-place",
+    "inplace",
+    "overwrite",
+    "replace",
+    "rewrite",
+    "write",
+];
+
+/// Catalog tools with **no read-only mode at all**: they rewrite the file they
+/// are handed on every run, whatever the argv, so no argv inspection can make
+/// them safe to run as a linter.
+///
+/// `pyupgrade` is the shipped example — it always rewrites in place, and its
+/// catalog argv's `--exit-zero-even-if-changed` additionally forces a success
+/// exit, so running it as a linter would both corrupt the file and report it
+/// clean.
+const ALWAYS_MUTATING_TOOLS: &[&str] = &["pyupgrade"];
 
 /// Catalog tools that are **whole-project type-checkers**, not per-file linters.
 ///
@@ -168,13 +223,24 @@ impl CatalogToolEngine {
     /// replaces the command's argv when present. `env` and `root` are forwarded
     /// to the spawned process.
     ///
-    /// Returns `None` when the tool exposes no usable lint command, when the
-    /// resolved argv is mutating (contains any of [`MUTATING_FLAGS`]) — a command
-    /// that rewrites the file must never run as a linter, since the runner does
-    /// not expect a lint pass to touch the file — or when the tool is a
-    /// whole-project type-checker ([`WHOLE_PROJECT_LINTERS`]) that cannot run per
-    /// file. Such a tool is simply not registered as a linter (it can still be
-    /// wired as a formatter).
+    /// Returns `None` — the tool is simply not registered as a linter, though it
+    /// can still be wired as a formatter — when:
+    ///
+    /// - the tool exposes no usable lint command;
+    /// - the resolved argv is **mutating**, i.e. carries a [`MUTATING_FLAGS`]
+    ///   flag *or* a [`MUTATING_SUBCOMMANDS`] positional. A command that rewrites
+    ///   the file must never run as a linter: `poly lint` does not expect a lint
+    ///   pass to touch the file, so it would report "no issues" over source it
+    ///   had silently overwritten;
+    /// - the tool is [`ALWAYS_MUTATING_TOOLS`], with no read-only mode any argv
+    ///   could select;
+    /// - the tool is a whole-project type-checker ([`WHOLE_PROJECT_LINTERS`])
+    ///   that cannot run per file.
+    ///
+    /// Declining the capability is preferred over running the tool against a
+    /// throwaway copy: a fix command's exit code reports whether *fixing*
+    /// succeeded, so it would still answer "clean" for a file full of findings.
+    /// No lint coverage is an honest answer; a silent pass is not.
     pub fn lint_engine(
         tool: &'static Tool,
         command_name: Option<&str>,
@@ -182,7 +248,7 @@ impl CatalogToolEngine {
         env: BTreeMap<String, String>,
         root: Option<PathBuf>,
     ) -> Option<Self> {
-        if is_whole_project_linter(&tool.name) {
+        if is_whole_project_linter(&tool.name) || ALWAYS_MUTATING_TOOLS.contains(&tool.name.as_str()) {
             return None;
         }
         let command = match command_name {
@@ -564,12 +630,22 @@ fn real_path_if_matches(path: &std::path::Path, content: &str) -> Option<PathBuf
     std::fs::canonicalize(path).ok()
 }
 
-/// Whether `arguments` contain any [`MUTATING_FLAGS`] token — i.e. the command
-/// would rewrite the file rather than only report on it.
+/// Whether running `arguments` would rewrite the file rather than only report on
+/// it — either a flag-shaped [`MUTATING_FLAGS`] token or a positional
+/// [`MUTATING_SUBCOMMANDS`] token.
+///
+/// The two lists are matched against disjoint argument shapes so a flag never
+/// has to be spelled in the subcommand list (or vice versa): anything starting
+/// with `-` is a flag, everything else is a positional/subcommand.
 fn is_mutating(arguments: &[String]) -> bool {
-    arguments
-        .iter()
-        .any(|argument| MUTATING_FLAGS.contains(&argument.as_str()))
+    arguments.iter().any(|argument| {
+        let argument = argument.as_str();
+        if argument.starts_with('-') {
+            MUTATING_FLAGS.contains(&argument)
+        } else {
+            MUTATING_SUBCOMMANDS.contains(&argument)
+        }
+    })
 }
 
 /// `Unchanged` when `formatted` equals the source byte-for-byte, else
