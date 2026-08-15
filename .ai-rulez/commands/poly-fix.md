@@ -19,4 +19,6 @@ Report:
   rule and severity.
 - The final exit status (aim for `0`).
 
-For a read-only pass with no writes, use `/poly-check` instead.
+To apply no fixes, use `/poly-check` instead. (Even there poly's whole-project phase executes
+`cargo clippy` and friends against the live worktree; add `--no-workspace` if the tree must be
+left untouched.)

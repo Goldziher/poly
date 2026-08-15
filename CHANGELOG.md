@@ -7,6 +7,17 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+### Added
+
+- **A path-scoped `poly lint --workspace` now says the whole-project phase is repository-wide.**
+  `--workspace` opts a path-scoped run back into the phase, and the phase then ran the configured
+  whole-project tools over the entire repository — it passes no file list, and `[discovery]
+  exclude` filters poly's own discovery, not what such a tool reads. Nothing said so, so findings
+  from outside the named paths read as a dropped filter. The run now prints
+  `note: whole-project phase covers the entire repository, not just the named paths (and not
+  filtered by [discovery] exclude)` on stderr, mirroring the note the default path-scoped skip
+  already emits. Behaviour is unchanged; only the silence is.
+
 ### Fixed
 
 - **An enabled `[tools.<name>]` linter that poly refuses to run now says so.** A catalog tool whose
@@ -21,6 +32,25 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   `rubocop --autocorrect`, and the eleven other shipped tools), and a tool with no read-only mode at
   all (`pyupgrade`), which is refused by name. Which tools are refused, and how an argv is
   classified, are unchanged.
+
+- **Documented that plain `poly lint` is not read-only.** poly applies no fixes without `--fix` —
+  the per-file tier writes only under `--fix`, and the whole-project phase is asked for check
+  mode — but that phase *executes* the configured whole-project tools against the live worktree,
+  and their own side effects are outside poly's control: `cargo clippy` populates `target/` and
+  can refresh `Cargo.lock`, a `go` invocation can append to `go.work.sum`, a type checker writes
+  its cache. A consumer measured exactly that (a plain `poly lint` left `go.work.sum` a line
+  longer) against docs, `--help`, and an MCP tool description that all said `poly lint` never
+  writes. The README, `poly lint --help`, the `workspace_lint` MCP tool description, ADR 0019, and
+  the bundled skills/commands now state it, and name `--no-workspace` / `[lint] workspace = false`
+  as the way to get a run that cannot touch the tree.
+
+  The one machine-readable claim is corrected too: the `workspace_lint` MCP tool was annotated
+  `readOnlyHint: true`, and clients gate auto-approval on that hint rather than on the description
+  beside it — so the single case the hint exists to catch, a tree that changes without a prompt, was
+  the case it waved through. It is now annotated as side-effecting: not read-only, still not
+  destructive, since poly deletes nothing and writes no output of its own there. **MCP clients that
+  auto-approve read-only tools will now prompt for `workspace_lint`.** That is the only behaviour
+  change in this entry; the CLI is documentation-only.
 
 ## [0.21.5] - 2026-08-15
 

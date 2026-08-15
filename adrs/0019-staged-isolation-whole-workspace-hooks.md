@@ -72,6 +72,23 @@ autofix/stash conflict can lose uncommitted work. That failure mode is unaccepta
   On by default; `--no-workspace` (or `[lint] workspace = false`) opts out. The `lint` hook
   builtin invokes `poly lint --no-workspace`, so a `poly hooks` run never double-runs these
   tools (the `cargo` group already covers them).
+- **The phase makes plain `poly lint` non-read-only (2026-08-15).** Running the tools against
+  the live worktree means running *programs*, not evaluating a pure function. poly requests
+  check mode without `--fix` and writes nothing itself, but a tool's own side effects land in
+  the tree — `cargo clippy` populating `target/` or refreshing `Cargo.lock`, a `go` invocation
+  appending to `go.work.sum`, a type checker writing its cache. Measured in a consumer repo: a
+  plain `poly lint` left `go.work.sum` a line longer. This is accepted, not fixed: poly cannot
+  sandbox a tool it was configured to run, and running these tools is the point of the phase.
+  What it obliges is honesty — the documented contract says so, and `--no-workspace` /
+  `[lint] workspace = false` is the documented way to get a run that cannot touch the tree.
+  The commit-gate path is unaffected in practice for a second reason: the `lint` builtin passes
+  `--no-workspace`, so the phase never runs there.
+- **The phase is repository-wide, and says so (2026-08-15).** It passes no file list, so a
+  path-scoped `poly lint <paths> --workspace` runs the tools over the whole repository —
+  `[discovery] exclude` filters poly's own discovery, not what a whole-project tool reads. The
+  behaviour is inherent (a whole-project tool cannot be narrowed to a file); the defect was
+  saying nothing, which a consumer reasonably read as a dropped filter. Both branches are now
+  narrated: the default skip, and the `--workspace` opt-in.
 
 ## Extension: every hook, not just the whole-workspace ones (2026-08-12)
 

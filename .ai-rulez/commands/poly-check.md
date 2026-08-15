@@ -1,16 +1,22 @@
 ---
 priority: high
 usage: "/poly-check [paths]"
-description: "Lint and check formatting with poly — read-only, no writes; summarize findings and drift"
+description: "Lint and check formatting with poly — apply no fixes; summarize findings and drift"
 ---
 
 # poly Check
 
-Run poly as a read-only gate over `${1:-.}`. Make no changes to the tree.
+Run poly as a checking gate over `${1:-.}`. Apply no fixes.
 
 1. `poly fmt --check ${1:-.} --format json` — capture formatting drift.
 2. `poly lint ${1:-.} --format json` — capture lint findings (remember the whole-project
    section is on stderr under `--format json`; check the exit code).
+
+Step 2 applies no fixes, but it is not read-only: `poly lint`'s whole-project phase executes
+the configured whole-project tools (`cargo clippy` and friends) against the live worktree, and
+their own side effects — a refreshed lock file, a populated build or type-checker cache — are
+not poly's to control. Add `--no-workspace` when the tree must be left untouched; that drops
+the whole-project tools from the check, so say so in the report.
 
 Report:
 

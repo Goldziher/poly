@@ -207,6 +207,11 @@ pub struct LintArgs {
     /// whole-workspace tools). By default a whole-repository `poly lint` also
     /// runs the same whole-project tools a `pre-commit` hook would; this checks
     /// only the per-file tier. Equivalent to `[lint] workspace = false`.
+    ///
+    /// This is also what makes a run read-only. Without `--fix` poly applies no
+    /// fixes, but the whole-project phase still *executes* those tools against
+    /// the live worktree, and their own side effects (a refreshed lock file, a
+    /// populated build or type-checker cache) are not poly's to control.
     #[arg(long)]
     pub no_workspace: bool,
 
@@ -216,6 +221,10 @@ pub struct LintArgs {
     /// naming a file should not silently escalate to an unbounded whole-workspace
     /// `cargo` build. Pass this to opt back in — a commit gate that lints staged
     /// paths and wants clippy should set it explicitly.
+    ///
+    /// The phase itself is never path-scoped: the tools cover the whole
+    /// repository regardless of the named paths and of `[discovery] exclude`. The
+    /// run says so on stderr.
     #[arg(long, conflicts_with = "no_workspace")]
     pub workspace: bool,
 
@@ -260,7 +269,8 @@ pub fn run_lint(args: LintArgs) -> ExitCode {
     // path-scoped meant a repo whose CI ran `poly lint .` quietly got the weaker
     // check for several sessions and reported itself clean on that basis —
     // silent under-checking, the expensive failure direction.
-    let path_scoped = !common.paths.is_empty() && !force_workspace && !any_path_is_workspace_root(&common.paths);
+    let narrowed_to_paths = !common.paths.is_empty() && !any_path_is_workspace_root(&common.paths);
+    let path_scoped = narrowed_to_paths && !force_workspace;
     // Loaded *before* the per-file run, not after it: the per-file tier decides
     // there and then whether a file's language went unlinted, and a run that is
     // about to lint every `.rs` file with clippy must not first record them as
@@ -321,13 +331,29 @@ pub fn run_lint(args: LintArgs) -> ExitCode {
             }
             true
         }
-        Some(Ok(config)) => match run_workspace_phase(config, &common, pretty) {
-            Ok(ok) => ok,
-            Err(e) => {
-                eprintln!("error: whole-project lint phase failed: {e:#}");
-                return ExitCode::from(2);
+        Some(Ok(config)) => {
+            // The mirror of the skip note above: `--workspace` reverses the
+            // scoping the paths asked for, and the phase then covers the whole
+            // repository — a whole-project tool has no file list to narrow (the
+            // phase passes none) and `[discovery] exclude` filters poly's own
+            // discovery, not what such a tool reads. Silence about that read as a
+            // dropped filter to a consumer who saw findings from outside the paths
+            // they named. Printed to stderr in every format, like the other notes,
+            // so a `--format json` consumer sees it too.
+            if narrowed_to_paths {
+                eprintln!(
+                    "note: whole-project phase covers the entire repository, not just the named paths \
+                     (and not filtered by [discovery] exclude)"
+                );
             }
-        },
+            match run_workspace_phase(config, &common, pretty) {
+                Ok(ok) => ok,
+                Err(e) => {
+                    eprintln!("error: whole-project lint phase failed: {e:#}");
+                    return ExitCode::from(2);
+                }
+            }
+        }
         Some(Err(e)) => {
             eprintln!("error: whole-project lint phase failed: {e:#}");
             return ExitCode::from(2);

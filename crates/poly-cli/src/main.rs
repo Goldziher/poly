@@ -31,7 +31,14 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Lint files (report diagnostics; never writes).
+    /// Lint files (poly applies no fixes without --fix).
+    ///
+    /// Not read-only, though: the whole-project phase executes the configured
+    /// whole-project tools (cargo clippy and friends) against the live worktree
+    /// even without --fix. poly asks them for check mode, but their own side
+    /// effects — a refreshed lock file, a populated build or type-checker cache —
+    /// are not poly's to control. Pass --no-workspace, or set `[lint] workspace =
+    /// false`, for a run that leaves the tree untouched.
     Lint(LintArgs),
     /// Format files (dry-run by default; use --fix to write in place).
     Fmt(FmtArgs),

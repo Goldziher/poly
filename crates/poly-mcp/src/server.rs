@@ -61,7 +61,13 @@ use crate::dto::{
 use crate::identity::ExecutableWatch;
 use crate::ops;
 
-/// Tool name for the read-only whole-project lint Task.
+/// Tool name for the check-mode whole-project lint Task.
+///
+/// Check mode means poly requests no fixes, not that the worktree is untouched:
+/// the phase executes the configured tools, whose own side effects poly does not
+/// control (see [`poly_workspace::run_workspace_lint`]). It is therefore
+/// annotated [`side_effecting_annotations`] rather than read-only — the prose
+/// caveat is not what an auto-approving client reads.
 const WORKSPACE_LINT: &str = "workspace_lint";
 /// Tool name for the mutating whole-project lint Task.
 const WORKSPACE_LINT_FIX: &str = "workspace_lint_fix";
@@ -188,10 +194,17 @@ where
     }
 }
 
-/// Annotations for a read-only, idempotent, closed-world tool.
-fn read_only_annotations() -> ToolAnnotations {
+/// Annotations for a tool that applies no fixes of its own but still executes
+/// third-party tools against the live worktree.
+///
+/// `read_only` is false because the tree can change — a refreshed lock file, a
+/// populated build cache. It is not `destructive`: nothing is deleted or
+/// overwritten with poly's own output. Clients use `read_only_hint` for
+/// auto-approval, so claiming it here would let the one case that actually
+/// matters — a tree that changes without a prompt — through unannounced.
+fn side_effecting_annotations() -> ToolAnnotations {
     ToolAnnotations::new()
-        .read_only(true)
+        .read_only(false)
         .destructive(false)
         .idempotent(true)
         .open_world(false)
@@ -363,11 +376,13 @@ impl PolyMcpServer {
             Tool::new(
                 WORKSPACE_LINT,
                 "Run the whole-project lint phase (cargo clippy / cargo-sort / cargo-machete / cargo-deny and inline whole-project jobs) in check mode. \
-                 Long-running: exposed as an async Task — poll `tasks/get` for the structured result. Read-only.",
+                 Applies no fixes, but it executes those tools against the live worktree: their own side effects (a refreshed lock file, a populated \
+                 build or type-checker cache) are not poly's to control, so the tree can change. Covers the whole repository — it takes no path list. \
+                 Long-running: exposed as an async Task — poll `tasks/get` for the structured result.",
                 schema_for_workspace_params(),
             )
             .with_output_schema::<WorkspaceReport>()
-            .annotate(read_only_annotations()),
+            .annotate(side_effecting_annotations()),
             Tool::new(
                 WORKSPACE_LINT_FIX,
                 "Run the whole-project lint phase in fix mode (cargo sort in place, cargo-machete --fix, cargo clippy --fix). Writes files. \
