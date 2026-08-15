@@ -299,6 +299,22 @@ mod tests {
     }
 
     #[test]
+    fn a_directory_or_missing_path_is_not_a_path_entry() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(!is_executable_file(dir.path()), "a directory is not an install");
+        assert!(
+            !is_executable_file(&dir.path().join("absent")),
+            "a missing file is not an install"
+        );
+    }
+
+    /// Unix-only on purpose. Windows has no execute bit, so the non-unix
+    /// [`is_executable_file`] treats any regular file under the executable name
+    /// as an install — deliberately, and documented there. Asserting the
+    /// mode-644 case unconditionally made this fail on every Windows runner for
+    /// behaviour that is correct on that platform.
+    #[cfg(unix)]
+    #[test]
     fn a_non_executable_file_is_not_a_path_entry() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(EXECUTABLE_NAME);
@@ -306,11 +322,6 @@ mod tests {
         assert!(
             !is_executable_file(&path),
             "a mode-644 file named `poly` is not an install"
-        );
-        assert!(!is_executable_file(dir.path()), "a directory is not an install");
-        assert!(
-            !is_executable_file(&dir.path().join("absent")),
-            "a missing file is not an install"
         );
     }
 

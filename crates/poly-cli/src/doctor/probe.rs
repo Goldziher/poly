@@ -189,10 +189,18 @@ mod tests {
         );
     }
 
+    /// Uses a script rather than `/usr/bin/true`, which is not the same program
+    /// everywhere: GNU coreutils' `true --version` *prints a version*, so the
+    /// system binary only satisfies this test's premise on BSD/macOS and the
+    /// test failed on every Linux runner.
     #[cfg(unix)]
     #[test]
     fn a_binary_that_prints_nothing_is_a_failure_not_an_empty_version() {
-        let probe = probe_version(Path::new("/usr/bin/true"));
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("silent-poly");
+        std::fs::write(&path, "#!/bin/sh\nexit 0\n").unwrap();
+        make_executable(&path);
+        let probe = probe_version(&path);
         assert!(
             probe.is_failure(),
             "exit 0 with no output must not be read as a version"
