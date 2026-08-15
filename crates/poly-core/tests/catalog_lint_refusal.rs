@@ -150,14 +150,37 @@ fn an_accepted_lint_command_warns_about_nothing() {
         "echo hi\n",
     );
 
-    assert!(
-        run.engines.iter().any(|engine| engine == "shellcheck"),
-        "the catalog shellcheck linter must have run, got engines: {:?}",
-        run.engines
-    );
+    // The silence is asserted unconditionally, and it keeps its teeth with or
+    // without the binary: the refusal is decided from the resolved argv in
+    // `catalog_engines_for`, *before* `lint_engine` probes for the executable. So
+    // misclassifying shellcheck's read-only command as mutating would warn on
+    // every machine, installed or not — which is the regression this catches.
     assert!(
         !run.warnings.contains("cannot run as a linter"),
         "shellcheck lints without rewriting; nothing was refused, got: {:?}",
         run.warnings
     );
+
+    // The stronger half — that the engine actually ran, so the silence cannot be
+    // explained by the tool having been dropped for some other reason — needs the
+    // binary, which CI runners do not all carry. Asserted where it exists rather
+    // than dropped, and skipped loudly rather than silently, since a quiet skip
+    // is the same false pass this file exists to prevent.
+    if shellcheck_on_path() {
+        assert!(
+            run.engines.iter().any(|engine| engine == "shellcheck"),
+            "the catalog shellcheck linter must have run, got engines: {:?}",
+            run.engines
+        );
+    } else {
+        eprintln!("note: shellcheck is not on PATH; skipped the engine-ran half of this test");
+    }
+}
+
+/// Whether a `shellcheck` the catalog engine could probe is on `PATH`.
+fn shellcheck_on_path() -> bool {
+    std::process::Command::new("shellcheck")
+        .arg("--version")
+        .output()
+        .is_ok_and(|output| output.status.success())
 }

@@ -118,9 +118,15 @@ fn materialize_ignores_inherited_git_index_file() {
         pinned,
         "checkout HEAD must be the pinned revision"
     );
+    // Line endings are normalized before comparing: git's `core.autocrlf` is on
+    // by default on Windows, so a checkout there legitimately writes CRLF. This
+    // test is about which *revision* was checked out under a leaked
+    // GIT_INDEX_FILE, not about how git spells a newline.
     assert_eq!(
-        std::fs::read(checkout.join("catalog.txt")).expect("read checked-out file"),
-        b"origin v1\n",
+        std::fs::read_to_string(checkout.join("catalog.txt"))
+            .expect("read checked-out file")
+            .replace("\r\n", "\n"),
+        "origin v1\n",
         "checked-out tree must be the pinned revision's content"
     );
     assert!(
