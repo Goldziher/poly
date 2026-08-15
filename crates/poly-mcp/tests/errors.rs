@@ -119,7 +119,8 @@ fn format_run_carries_the_errored_file_instead_of_dropping_it() {
 fn the_lint_records_are_the_cli_records() {
     let dir = repo();
     let run = ops::lint_run(&paths(&dir), &[], None, false).unwrap();
-    let cli: Value = serde_json::from_str(&poly_core::report::report_lint_json_run(&run)).expect("CLI JSON");
+    let rendered = poly_core::report::report_lint_json_run(&run).expect("CLI report must render");
+    let cli: Value = serde_json::from_str(&rendered).expect("CLI JSON");
     let mcp = serde_json::to_value(LintReport::from_run(run).results).expect("MCP JSON");
     assert_eq!(mcp, cli, "the MCP lint records are exactly the CLI's");
 }
@@ -132,7 +133,8 @@ fn the_lint_records_are_the_cli_records() {
 fn the_format_records_are_the_cli_records() {
     let dir = repo();
     let run = ops::format_run(&paths(&dir), &[], None, false).unwrap();
-    let cli: Value = serde_json::from_str(&poly_core::report::report_format_json_run(&run)).expect("CLI JSON");
+    let rendered = poly_core::report::report_format_json_run(&run).expect("CLI report must render");
+    let cli: Value = serde_json::from_str(&rendered).expect("CLI JSON");
     let report = FormatReport::from_run(run);
     assert_eq!(
         report.results.iter().filter(|r| r.error.is_some()).count(),

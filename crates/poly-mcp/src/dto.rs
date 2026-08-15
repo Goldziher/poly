@@ -45,8 +45,11 @@ pub enum TextRepr {
     Toon,
 }
 
-/// Map an infallible serialization failure onto an MCP internal error.
-fn serialize_error(error: serde_json::Error) -> ErrorData {
+/// Map a serialization or render failure onto an MCP internal error.
+///
+/// Always an error, never a substitute payload: a caller that receives a
+/// well-formed but empty document cannot tell it from a clean run.
+fn serialize_error(error: impl std::fmt::Display) -> ErrorData {
     ErrorData::internal_error(format!("failed to serialize tool output: {error}"), None)
 }
 
@@ -220,8 +223,11 @@ impl LintReport {
     /// contract is unchanged while `structured_content` gains the object schema.
     pub fn into_result(self, repr: TextRepr) -> Result<CallToolResult, ErrorData> {
         let structured = serde_json::to_value(&self).map_err(serialize_error)?;
-        let json_text = poly_core::report::report_lint_json(&self.results);
-        let toon_text = poly_core::report::report_lint_toon(&self.results);
+        // A render failure is surfaced as a tool error, never as an empty
+        // document: an MCP caller has no other way to tell "clean" from "poly
+        // could not tell you".
+        let json_text = poly_core::report::report_lint_json(&self.results).map_err(serialize_error)?;
+        let toon_text = poly_core::report::report_lint_toon(&self.results).map_err(serialize_error)?;
         Ok(build_with_status(
             structured,
             json_text,
@@ -285,8 +291,10 @@ impl FormatReport {
     /// contract is unchanged while `structured_content` gains the object schema.
     pub fn into_result(self, repr: TextRepr) -> Result<CallToolResult, ErrorData> {
         let structured = serde_json::to_value(&self).map_err(serialize_error)?;
-        let json_text = poly_core::report::report_format_json(&self.results);
-        let toon_text = poly_core::report::report_format_toon(&self.results);
+        // As on the lint side: a render failure becomes a tool error rather
+        // than a clean-looking empty document.
+        let json_text = poly_core::report::report_format_json(&self.results).map_err(serialize_error)?;
+        let toon_text = poly_core::report::report_format_toon(&self.results).map_err(serialize_error)?;
         Ok(build_with_status(
             structured,
             json_text,

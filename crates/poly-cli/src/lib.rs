@@ -177,6 +177,29 @@ pub struct CommonArgs {
 /// must never land there.
 const EXIT_NOT_VERIFIED: u8 = 2;
 
+/// Print a machine-readable document to stdout, or turn a render failure into
+/// the not-verified exit code. Returns that code on failure, for the caller to
+/// propagate.
+///
+/// Nothing is printed on failure, deliberately. The renderers used to fall back
+/// to `[]`, which is byte-identical to a clean run over zero findings — and
+/// since the exit code is derived from the run rather than from the render, a
+/// warning-only run whose report failed to serialize exited `0` with an empty
+/// document. A gate reading either signal would have called that success.
+fn emit_structured(rendered: Result<String, report::RenderError>) -> Result<(), u8> {
+    match rendered {
+        Ok(document) => {
+            println!("{document}");
+            Ok(())
+        }
+        Err(error) => {
+            eprintln!("error: {error}");
+            eprintln!("error: no machine-readable report was written; this run verified nothing");
+            Err(EXIT_NOT_VERIFIED)
+        }
+    }
+}
+
 /// `poly lint` arguments.
 #[derive(Args)]
 pub struct LintArgs {
@@ -266,14 +289,18 @@ pub fn run_lint(args: LintArgs) -> ExitCode {
     let _ = match common.format {
         OutputFormat::Pretty => report::report_lint_pretty_run(&run, verbosity),
         OutputFormat::Json => {
-            println!("{}", report::report_lint_json_run(&run));
+            if let Err(code) = emit_structured(report::report_lint_json_run(&run)) {
+                return ExitCode::from(code);
+            }
             report::eprint_discovery_note(&run.discovery);
             report::eprint_skip_note(&run.skipped, common.verbose);
             report::eprint_lint_errors(&run.errors);
             results.iter().map(|r| r.diagnostics.len()).sum()
         }
         OutputFormat::Toon => {
-            println!("{}", report::report_lint_toon_run(&run));
+            if let Err(code) = emit_structured(report::report_lint_toon_run(&run)) {
+                return ExitCode::from(code);
+            }
             report::eprint_discovery_note(&run.discovery);
             report::eprint_skip_note(&run.skipped, common.verbose);
             report::eprint_lint_errors(&run.errors);
@@ -394,14 +421,18 @@ pub fn run_fmt(args: FmtArgs) -> ExitCode {
                 let changed = match common.format {
                     OutputFormat::Pretty => report::report_format_pretty_run(&run, !write, verbosity),
                     OutputFormat::Json => {
-                        println!("{}", report::report_format_json_run(&run));
+                        if let Err(code) = emit_structured(report::report_format_json_run(&run)) {
+                            return ExitCode::from(code);
+                        }
                         report::eprint_discovery_note(&run.discovery);
                         report::eprint_skip_note(&run.skipped, common.verbose);
                         report::eprint_format_errors(&run.errors);
                         run.results.iter().filter(|r| r.changed).count()
                     }
                     OutputFormat::Toon => {
-                        println!("{}", report::report_format_toon_run(&run));
+                        if let Err(code) = emit_structured(report::report_format_toon_run(&run)) {
+                            return ExitCode::from(code);
+                        }
                         report::eprint_discovery_note(&run.discovery);
                         report::eprint_skip_note(&run.skipped, common.verbose);
                         report::eprint_format_errors(&run.errors);
@@ -595,5 +626,60 @@ mod tests {
             result(vec![diag(Severity::Error)]),
         ];
         assert!(lint_has_errors(&results));
+    }
+
+    /// A `LintResult` whose path is valid to the OS but cannot be encoded as
+    /// JSON — the real trigger for a render failure, since a Linux checkout may
+    /// legally hold a non-UTF-8 filename and poly's discovery walks it.
+    #[cfg(unix)]
+    fn unrenderable_result() -> LintResult {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt as _;
+
+        LintResult {
+            path: PathBuf::from(OsString::from_vec(vec![b'b', b'a', b'd', 0xff, b'.', b'p', b'y'])),
+            diagnostics: vec![diag(Severity::Warning)],
+            fix_withheld_generated: false,
+            fixed: 0,
+            skipped: None,
+            error: None,
+            debug: None,
+        }
+    }
+
+    /// The false-pass this guards: the renderer used to swallow the failure and
+    /// return `[]`, and the exit code is computed from the run rather than the
+    /// render — so a warning-only run exited `0` with an empty document, which is
+    /// byte-identical to a clean run. The exit code must now say the run failed.
+    #[cfg(unix)]
+    #[test]
+    fn structured_render_failure_yields_the_not_verified_exit_code() {
+        let results = vec![unrenderable_result()];
+        assert!(
+            !lint_has_errors(&results),
+            "the run itself must be clean, so only the render can fail the process"
+        );
+
+        let rendered = report::report_lint_json(&results);
+        assert!(rendered.is_err(), "a non-UTF-8 path must fail to render as JSON");
+        assert_eq!(
+            emit_structured(rendered),
+            Err(EXIT_NOT_VERIFIED),
+            "a failed render must not report success"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn structured_toon_render_failure_yields_the_not_verified_exit_code() {
+        let rendered = report::report_lint_toon(&[unrenderable_result()]);
+        assert!(rendered.is_err(), "a non-UTF-8 path must fail to render as TOON");
+        assert_eq!(emit_structured(rendered), Err(EXIT_NOT_VERIFIED));
+    }
+
+    #[test]
+    fn a_rendered_document_is_emitted_and_reports_success() {
+        let rendered = report::report_lint_json(&[result(vec![diag(Severity::Warning)])]);
+        assert_eq!(emit_structured(rendered), Ok(()));
     }
 }
