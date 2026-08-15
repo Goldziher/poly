@@ -16,10 +16,20 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   directly beneath their header and accept that header anywhere in the first ten lines. Any
   generated file carrying an SPDX block, copyright notice, or build-tag stanza ahead of the banner
   was therefore stamped by its generator and invisible to poly, and `fmt --fix` reformatted it —
-  the generator's verify step then reported drift on a file no human had touched. Only the
-  structured `<project>:hash:<digest>` shape gets the wider window; the prose banners and the
-  bare-word `sourcehash` / `@checksum` markers keep the narrow one, so no additional file can be
-  dropped out of the format gate by a false match.
+  the generator's verify step then reported drift on a file no human had touched.
+
+  The scan now reaches ten lines instead of five. As before, both windows are counted from the end
+  of a leading YAML frontmatter block rather than from the start of the file, so a frontmattered
+  document gets the window on top of its frontmatter. Only the structured
+  `<project>:hash:<digest>` shape gets the wider window; the generated banners and the bare-word
+  `sourcehash` / `@checksum` markers keep the five-line one, because those are ordinary English and
+  a false match there drops a hand-written file out of the format gate entirely.
+
+  One consequence worth stating: a line that *begins* with `<project>:hash:<digest>` is treated as
+  a stamp, and that now holds through the tenth line rather than the fifth. A hand-written document
+  whose sixth-to-tenth line starts with such a token will be skipped where it previously was not.
+  Prose that mentions a stamp mid-sentence is unaffected — any space before `:hash:` disqualifies
+  the line — as is a marker with no hex digest after it.
 
 ### Changed
 
