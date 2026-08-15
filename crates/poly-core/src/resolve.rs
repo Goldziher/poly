@@ -644,13 +644,17 @@ mod tests {
 
         let excludes = set.walk_excludes(&file, &[], true);
         assert!(
-            excludes.contains(&"*.py".to_string()),
+            globs(&excludes).contains(&"*.py"),
             "parent-anchored glob re-anchored to the file's directory: {excludes:?}"
         );
         assert!(
-            excludes.contains(&"**".to_string()),
+            globs(&excludes).contains(&"**"),
             "ancestor prune covers the named file: {excludes:?}"
         );
+        // Both matched with a rewritten glob, so both are exactly the case where
+        // reporting the matcher would name a rule nobody wrote.
+        assert_eq!(authored_for(&excludes, "*.py"), "packages/dart/lib/*.py");
+        assert_eq!(authored_for(&excludes, "**"), "packages/dart/**");
     }
 
     #[test]
