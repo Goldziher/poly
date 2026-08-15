@@ -7,6 +7,21 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+### Fixed
+
+- **An enabled `[tools.<name>]` linter that poly refuses to run now says so.** A catalog tool whose
+  lint command rewrites files is not wired as a linter — correctly, since a fix command would
+  overwrite the source and still exit 0 — but the refusal was silent. The user asked for that
+  linter, poly ran nothing for it, and the run reported success: a green result standing in for work
+  never done, which is the same false pass the refusal was added to close.
+
+  `poly lint` now logs a warning, once per tool and language, naming the tool, quoting the mutating
+  command it declined to run, and pointing at `poly fmt`, which still runs the tool as a formatter.
+  Both refusal reasons are covered: a mutating flag or subcommand in the resolved argv (`sqruff fix`,
+  `rubocop --autocorrect`, and the eleven other shipped tools), and a tool with no read-only mode at
+  all (`pyupgrade`), which is refused by name. Which tools are refused, and how an argv is
+  classified, are unchanged.
+
 ## [0.21.5] - 2026-08-15
 
 ### Fixed

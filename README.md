@@ -937,6 +937,11 @@ enabled = true
 languages = ["javascript", "typescript"]
 ```
 
+A tool whose lint command rewrites files (`sqruff fix`, `rubocop --autocorrect`, `pyupgrade`) is not
+run by `poly lint` — a fix command would overwrite your source and still exit 0. Enabling one for
+linting logs a warning naming the tool and the command it refused; `poly fmt` still runs it as a
+formatter.
+
 <!-- BEGIN CATALOG -->
 
 <details>
