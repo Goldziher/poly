@@ -42,11 +42,14 @@ fn generated_skip_outcome_is_independent_of_cache_state() {
     }
 
     let dir = tempfile::tempdir().unwrap();
-    // A real structured hash stamp — `<project>:hash:<8+ hex>`, the exact
-    // shape `is_hash_stamped_source` (crates/poly-core/src/filter.rs) looks
-    // for — on a TOML file taplo will reformat (irregular spacing, blank
-    // trailing lines).
-    let stamped = "# alef:hash:0123456789abcdef\nx  =   1\n\n\n";
+    // A real structured hash stamp — `<project>:hash:<digest>` at a genuine
+    // digest length, the exact shape `is_hash_stamped_source`
+    // (crates/poly-core/src/filter.rs) looks for — on a TOML file taplo will
+    // reformat (irregular spacing, blank trailing lines).
+    //
+    // The digest length matters: a short hex run is no longer accepted, because
+    // "any 8+ hex characters" also matched tokens no generator ever wrote.
+    let stamped = "# alef:hash:a3f1c2d4e5b6a7980123456789abcdef0123456789abcdef0123456789abcdef\nx  =   1\n\n\n";
     let path = write(dir.path(), "a.toml", stamped);
     let cfg = Config::default();
     let warm_up_opts = RunOptions {

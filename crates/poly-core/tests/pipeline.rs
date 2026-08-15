@@ -402,7 +402,7 @@ fn fmt_skips_hash_stamped_files_but_not_banner_only_ones() {
     let hashed = dir.path().join("hashed.py");
     std::fs::write(
         &hashed,
-        "# Auto-generated — DO NOT EDIT.\n# alef:hash: deadbeef\ny   =    2\n",
+        "# Auto-generated — DO NOT EDIT.\n# alef:hash: a3f1c2d4e5b6a7980123456789abcdef0123456789abcdef0123456789abcdef\ny   =    2\n",
     )
     .expect("write");
 

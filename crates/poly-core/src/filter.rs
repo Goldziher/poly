@@ -315,7 +315,27 @@ pub(crate) fn is_generated_source(content: &str) -> bool {
 /// Markers that mean the header carries a **content hash** of the file body.
 const CONTENT_HASH_MARKERS: &[&str] = &["sourcehash", "@checksum"];
 const STRUCTURED_HASH_MARKER: &str = ":hash:";
-const MINIMUM_HASH_DIGEST_LENGTH: usize = 8;
+
+/// Hex lengths a real content hash can have: md5, sha1, sha224, sha256/blake3,
+/// sha384, sha512.
+///
+/// Checking membership rather than a minimum is what separates a stamp from a
+/// hex-looking token. A consumer measured the previous `>= 8` rule and found it
+/// accepted 8, 63 and 65 hex characters — no digest is 63 or 65 characters, and
+/// 8 is short enough to occur by accident — so each of those silently dropped a
+/// hand-written file out of the format gate.
+///
+/// Deliberately *not* pinned to 64. Poly's marker is generator-agnostic
+/// (`<project>:hash:<digest>`); 64 is only what one generator emits because it
+/// uses blake3. Pinning to it would drop every sha1- or md5-stamped generator
+/// out of the gate — the same defect aimed at a different producer.
+const HASH_DIGEST_LENGTHS: &[usize] = &[32, 40, 56, 64, 96, 128];
+
+/// What may legally follow the digest: nothing, whitespace, or a comment
+/// terminator. A stamp is a whole comment line, so a token wrapped in something
+/// else — markdown backticks being the case that was measured — is prose that
+/// happens to mention a hash, not a stamp.
+const DIGEST_TERMINATORS: &[&str] = &["-->", "*/", "#}", "--%>"];
 
 fn has_structured_hash_stamp(line: &str) -> bool {
     let header = line.trim_start_matches(|character: char| !character.is_ascii_alphanumeric());
@@ -330,7 +350,17 @@ fn has_structured_hash_stamp(line: &str) -> bool {
         return false;
     }
 
-    digest.trim_start().chars().take_while(char::is_ascii_hexdigit).count() >= MINIMUM_HASH_DIGEST_LENGTH
+    let digest = digest.trim_start();
+    let hex_length = digest.chars().take_while(char::is_ascii_hexdigit).count();
+    if !HASH_DIGEST_LENGTHS.contains(&hex_length) {
+        return false;
+    }
+
+    // Whatever follows the digest must close the line or close the comment.
+    // Anything else means the token was embedded in something — prose quoting a
+    // hash rather than a header stamping one.
+    let trailing = digest[hex_length..].trim();
+    trailing.is_empty() || DIGEST_TERMINATORS.contains(&trailing)
 }
 
 /// Whether `header` carries a content-hash stamp over the body.
@@ -525,7 +555,10 @@ mod tests {
             assert!(!is_hash_stamped_source(ordinary_source), "source: {ordinary_source:?}");
         }
 
-        for generated_header in ["# alef:hash: deadbeef\n", "// project_2:hash:0123456789abcdef\n"] {
+        for generated_header in [
+            "# alef:hash: a3f1c2d4e5b6a7980123456789abcdef0123456789abcdef0123456789abcdef\n",
+            "// project_2:hash:a3f1c2d4e5b6a7980123456789abcdef0123456789abcdef0123456789abcdef\n",
+        ] {
             assert!(is_generated_source(generated_header), "header: {generated_header:?}");
             assert!(is_hash_stamped_source(generated_header), "header: {generated_header:?}");
         }
@@ -613,6 +646,70 @@ mod tests {
         );
     }
 
+    /// A hex-looking token is not a digest. The previous rule accepted any run
+    /// of 8 or more hex characters, which a consumer measured as accepting 8, 63
+    /// and 65 — no digest is 63 or 65 characters long, and 8 is short enough to
+    /// occur by accident. Each accepted length silently dropped a hand-written
+    /// file out of the format gate.
+    #[test]
+    fn should_reject_digests_that_are_not_a_real_hash_length() {
+        for length in [1usize, 7, 8, 16, 31, 63, 65, 127] {
+            let source = format!("# alef:hash:{}\nbody\n", "a".repeat(length));
+            assert!(
+                !is_hash_stamped_source(&source),
+                "{length} hex characters is not a digest length and must not skip"
+            );
+        }
+
+        // Every real digest length a generator can emit still counts. Pinning
+        // this to 64 would drop sha1- or md5-stamped generators out of the gate.
+        for length in HASH_DIGEST_LENGTHS {
+            let source = format!("# alef:hash:{}\nbody\n", "a".repeat(*length));
+            assert!(
+                is_hash_stamped_source(&source),
+                "{length} hex characters is a real digest length and must skip"
+            );
+        }
+    }
+
+    /// A stamp is a whole comment line. A token wrapped in markdown backticks is
+    /// prose quoting a hash — the leading backtick is stripped as punctuation, so
+    /// only the *trailing* character distinguishes the two.
+    #[test]
+    fn should_reject_a_digest_that_is_wrapped_rather_than_terminated() {
+        let digest = "a".repeat(64);
+
+        for wrapped in [
+            format!("`alef:hash:{digest}`\nbody\n"),
+            format!("(alef:hash:{digest})\nbody\n"),
+            format!("\"alef:hash:{digest}\"\nbody\n"),
+        ] {
+            assert!(!is_hash_stamped_source(&wrapped), "wrapped token: {wrapped:?}");
+        }
+
+        // Bare, and every comment terminator a generator actually closes with.
+        for stamped in [
+            format!("// alef:hash:{digest}\nbody\n"),
+            format!("<!-- alef:hash:{digest} -->\nbody\n"),
+            format!(" * alef:hash:{digest} */\nbody\n"),
+        ] {
+            assert!(is_hash_stamped_source(&stamped), "real stamp: {stamped:?}");
+        }
+    }
+
+    /// Token shape and header depth are independent axes. Tightening the shape
+    /// must not narrow the window — the natural instinct when tightening a
+    /// matcher is to tighten everything at once, and that would silently undo
+    /// the generator-reach fix while every shape test still passed.
+    #[test]
+    fn tightening_the_digest_shape_must_not_move_the_depth_boundary() {
+        let deepest = alef_stamped_source(9);
+        assert!(is_hash_stamped_source(&deepest), "depth boundary narrowed");
+
+        let beyond = alef_stamped_source(10);
+        assert!(!is_hash_stamped_source(&beyond), "depth boundary widened");
+    }
+
     /// The #10 fix must survive the wider window: the extra lines are exactly
     /// where ordinary `use` statements live.
     #[test]
@@ -634,7 +731,7 @@ mod tests {
     fn recognizes_generated_markers_after_yaml_frontmatter() {
         let source = "---\r\nname: api\r\ndescription: generated API docs\r\n---\r\n\r\n\
                       <!-- This file is auto-generated. DO NOT EDIT. -->\r\n\
-                      <!-- alef:hash:0123456789abcdef -->\r\n\
+                      <!-- alef:hash:a3f1c2d4e5b6a7980123456789abcdef0123456789abcdef0123456789abcdef -->\r\n\
                       # Heading\r\n";
 
         assert!(
@@ -649,7 +746,7 @@ mod tests {
 
     #[test]
     fn unterminated_yaml_frontmatter_does_not_expand_marker_scan() {
-        let source = "---\nname: api\n# alef:hash:0123456789abcdef\n";
+        let source = "---\nname: api\n# alef:hash:a3f1c2d4e5b6a7980123456789abcdef0123456789abcdef0123456789abcdef\n";
         assert!(!is_generated_source(source));
         assert!(!is_hash_stamped_source(source));
     }
@@ -664,7 +761,7 @@ mod tests {
     /// blank line, the banner, then the stamp — and a consumer has 21 of them.
     #[test]
     fn windows_are_measured_after_the_frontmatter_block() {
-        let stamped = "---\nname: api\n---\n1\n2\n3\n4\n5\n# alef:hash:0123456789abcdef\n";
+        let stamped = "---\nname: api\n---\n1\n2\n3\n4\n5\n# alef:hash:a3f1c2d4e5b6a7980123456789abcdef0123456789abcdef0123456789abcdef\n";
         assert!(
             is_hash_stamped_source(stamped),
             "a stamp at post-frontmatter line 5 is inside the producer's reach and must be protected"
@@ -686,7 +783,7 @@ mod tests {
         for line in 1..=HASH_STAMP_HEADER_LINES {
             source.push_str(&format!("{line}\n"));
         }
-        source.push_str("# alef:hash:0123456789abcdef\n");
+        source.push_str("# alef:hash:a3f1c2d4e5b6a7980123456789abcdef0123456789abcdef0123456789abcdef\n");
         assert!(!is_generated_source(&source));
         assert!(!is_hash_stamped_source(&source));
     }
