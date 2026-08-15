@@ -38,7 +38,12 @@ const RAW_PROFILE: &str = env!("POLY_BUILD_PROFILE");
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BuildChannel {
     /// A release-profile build from the exact `v<VERSION>` tag — what the
-    /// installer, Homebrew, and the GitHub release ship.
+    /// `curl | sh` installer, the GitHub Action, and the GitHub release ship.
+    ///
+    /// A Homebrew source build reaches this channel **only** if the formula
+    /// sets `POLY_BUILD_ID`: it compiles the GitHub source tarball, which
+    /// carries no git checkout, so `build.rs` derives no id and the channel
+    /// falls to [`BuildChannel::Unknown`]. See ADR 0025.
     Release,
     /// Anything built from a git checkout that is *not* the matching release
     /// tag: a debug build, a branch, or commits past the tag. Its behaviour may
@@ -87,10 +92,20 @@ pub fn profile() -> &'static str {
 /// `v<VERSION>` tag; a debug build sitting on the tag is still a development
 /// build, because it is not the artifact that was shipped.
 pub fn channel() -> BuildChannel {
-    if RAW_BUILD_ID.is_empty() {
+    resolve_channel(RAW_BUILD_ID, RAW_PROFILE, VERSION)
+}
+
+/// Classify a build from its identity components.
+///
+/// Split out from [`channel`] for the same reason [`compose_cache_identity`] is
+/// split out of [`cache_identity`]: the packager case — a source tarball with no
+/// git checkout, which is how Homebrew builds — cannot be reproduced by a test
+/// process whose own build identity was fixed at compile time.
+fn resolve_channel(build_id: &str, profile: &str, version: &str) -> BuildChannel {
+    if build_id.is_empty() {
         return BuildChannel::Unknown;
     }
-    if RAW_PROFILE == "release" && RAW_BUILD_ID.strip_prefix('v') == Some(VERSION) {
+    if profile == "release" && build_id.strip_prefix('v') == Some(version) {
         BuildChannel::Release
     } else {
         BuildChannel::Development
@@ -232,6 +247,45 @@ mod tests {
         assert!(BuildChannel::Release.is_release());
         assert!(!BuildChannel::Development.is_release());
         assert!(!BuildChannel::Unknown.is_release());
+    }
+
+    /// A source tarball has no `.git`, so `build.rs` derives no id. The binary
+    /// must report that rather than claim the release it otherwise looks like —
+    /// this is what a Homebrew source build resolves to today (ADR 0025).
+    #[test]
+    fn a_build_without_a_git_checkout_is_unknown() {
+        assert_eq!(resolve_channel("", "release", "9.9.9"), BuildChannel::Unknown);
+    }
+
+    /// `POLY_BUILD_ID` is the escape hatch that lets such a packager restore an
+    /// honest release identity — and with it the shared `release/<version>`
+    /// cache identity.
+    #[test]
+    fn a_packager_supplied_build_id_restores_the_release_channel() {
+        assert_eq!(resolve_channel("v9.9.9", "release", "9.9.9"), BuildChannel::Release);
+        assert_eq!(
+            compose_cache_identity(
+                resolve_channel("v9.9.9", "release", "9.9.9"),
+                "9.9.9",
+                "v9.9.9",
+                "release",
+                "1-2"
+            ),
+            "release/9.9.9"
+        );
+    }
+
+    #[test]
+    fn a_build_past_the_tag_is_a_development_build() {
+        assert_eq!(
+            resolve_channel("v9.9.9-5-gabcdef123456", "release", "9.9.9"),
+            BuildChannel::Development
+        );
+    }
+
+    #[test]
+    fn a_debug_build_on_the_tag_is_not_a_release() {
+        assert_eq!(resolve_channel("v9.9.9", "debug", "9.9.9"), BuildChannel::Development);
     }
 
     #[test]
