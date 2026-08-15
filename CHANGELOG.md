@@ -7,6 +7,8 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+## [0.21.5] - 2026-08-15
+
 ### Added
 
 - **A path-scoped `poly lint --workspace` now says the whole-project phase is repository-wide.**
@@ -86,10 +88,6 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   a nested `[discovery] exclude` now prunes files named explicitly on the command line, so a path
   poly used to check may now be reported as excluded rather than checked
   (`--include-excluded` overrides this).
-
-## [0.21.5] - 2026-08-15
-
-### Fixed
 
 - **A Homebrew-installed `poly` now reports its real build identity, and shares the result cache
   again.** Homebrew builds from the GitHub source tarball, which carries no `.git`, so `build.rs`
