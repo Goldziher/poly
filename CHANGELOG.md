@@ -33,6 +33,18 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   Prose that mentions a stamp mid-sentence is unaffected — any space before `:hash:` disqualifies
   the line — as is a marker with no hex digest after it.
 
+- **A content-hash stamp now requires a real digest length and a terminated line.** The structured
+  `<project>:hash:<digest>` marker accepted any run of eight or more hex characters, so tokens of 8,
+  63 or 65 characters — lengths no hash function produces — counted as stamps, as did a token
+  wrapped in markdown backticks. Each silently dropped a hand-written file out of the format gate,
+  and the wider header window above doubled the depth over which that applied. The digest must now
+  be a canonical hash length (32, 40, 56, 64, 96 or 128 hex characters) and be followed only by
+  whitespace or a comment terminator.
+
+  The check is deliberately not pinned to 64 characters: the marker is generator-agnostic, and
+  requiring one generator's digest size would drop every sha1- or md5-stamped generator out of the
+  gate instead.
+
 - **Hook-source git commands no longer inherit the ambient `GIT_*` state a git hook exports.**
   Running `poly hooks` from a real git hook leaked that state into the internal git commands that
   operate on cached hook-source repositories. `GIT_INDEX_FILE` — which git sets to an absolute path
