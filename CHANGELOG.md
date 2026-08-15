@@ -73,6 +73,36 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   indented. Suppressing there would strip protection from real stamps in order to catch documented
   ones, trading this false skip for a worse-shaped one, so indented blocks remain known-bad.
 
+- **`poly lint` no longer rewrites source files through a catalog tool.** A catalog tool whose lint
+  command rewrites files in place was wired up as a linter, so `poly lint` mutated the file and then
+  reported it clean. With `[tools.sqruff] enabled = true` — one line, no overrides — a `.sql` file was
+  reformatted on disk while the run printed `No issues found.` and exited 0.
+
+  The mutating-command guard only recognized a fixed set of flags in a flat token list, so it missed
+  both mutating *subcommands* (`sqruff fix`, `ruff format`, `php-cs-fixer fix`) and the many rewrite
+  flags outside that set (`--autocorrect`, `--in-place`, `--write-changes`, `--reformat`, …). Thirteen
+  shipped tools wired a file-rewriting lint command; 85 more were reachable through a `command`
+  override. Arguments are now classified by shape — flags against the flag list, positionals against
+  a mutating-subcommand list — and a tool with no read-only mode at all is refused by name.
+
+  Such a tool now declines the lint capability rather than running. Linting a temporary copy was
+  considered and rejected: a fix command's exit code reports whether *fixing* succeeded, so it would
+  still have reported a findings-laden file clean — hiding the data loss while keeping the false
+  pass. Formatting is unaffected; `poly fmt` still runs every one of these tools.
+
+- **A catalog tool and a built-in backend no longer both run under the same name on one language.**
+  The engine-name uniqueness guard only walked the built-in registry, but catalog engines are
+  appended to the same plan — same capability filter, same `[<kind>.<lang>.<tool>]` config table, same
+  cache-key path. `[tools.shellcheck] enabled = true` alongside `[lint.shell.shellcheck] enabled =
+  true` produced four diagnostics for three real problems, all labelled `shellcheck`, with nothing in
+  the JSON naming the producer.
+
+  A name collision is now resolved as what it is — the same tool wrapped twice — by keeping whichever
+  half actually does the work: the built-in when it is enabled and present, the catalog tool
+  otherwise. Yielding to the built-in unconditionally would have removed lint coverage for anyone who
+  had enabled only `[tools.<name>]`, trading duplicate diagnostics for none. A displaced entry is
+  reported, since `command` / `args` / `env` set on that table stop applying.
+
 - **Hook-source git commands no longer inherit the ambient `GIT_*` state a git hook exports.**
   Running `poly hooks` from a real git hook leaked that state into the internal git commands that
   operate on cached hook-source repositories. `GIT_INDEX_FILE` — which git sets to an absolute path
