@@ -358,6 +358,49 @@ const HASH_DIGEST_LENGTHS: &[usize] = &[32, 40, 56, 64, 96, 128];
 /// happens to mention a hash, not a stamp.
 const DIGEST_TERMINATORS: &[&str] = &["-->", "*/", "#}", "--%>"];
 
+/// Backticks or tildes needed to open a code fence, and the indent at which a
+/// line becomes an indented code block instead.
+const MIN_FENCE_RUN: usize = 3;
+const INDENTED_CODE_BLOCK_COLUMN: usize = 4;
+
+/// Advances fenced-code-block state and reports whether `line` sits in a
+/// **block-level** code context.
+///
+/// A hash token inside a code block is documentation *about* a stamp. This is
+/// the block-level twin of the inline-backtick case [`DIGEST_TERMINATORS`]
+/// rejects: inline, the wrapping is on the same line, so the trailing character
+/// gives it away; inside a block the token is genuinely bare and
+/// line-terminated, so nothing about the line itself distinguishes it. A
+/// document explaining the stamp format was skipped in its entirety — the same
+/// false-skip the terminator rule exists to prevent, one level up.
+///
+/// All four block shapes count: backtick and tilde fences, fences carrying an
+/// info string, and indented code blocks. Indentation is what makes the last one
+/// detectable at all, and treating a deeply indented line as code costs nothing
+/// real — a generator writes its stamp flush, as a whole comment line.
+fn is_in_code_block(fence: &mut Option<(char, usize)>, line: &str) -> bool {
+    let trimmed = line.trim_start_matches(' ');
+    let indent = line.len() - trimmed.len();
+
+    if indent < INDENTED_CODE_BLOCK_COLUMN
+        && let Some(delimiter) = trimmed.chars().next().filter(|c| matches!(c, '`' | '~'))
+    {
+        let run = trimmed.chars().take_while(|character| *character == delimiter).count();
+        if run >= MIN_FENCE_RUN {
+            match *fence {
+                // A fence closes only on its own delimiter, at least as long as
+                // the opener; a shorter or foreign run is block content.
+                Some((open, open_run)) if delimiter == open && run >= open_run => *fence = None,
+                Some(_) => {}
+                None => *fence = Some((delimiter, run)),
+            }
+            return true;
+        }
+    }
+
+    fence.is_some() || indent >= INDENTED_CODE_BLOCK_COLUMN || line.starts_with('\t')
+}
+
 fn has_structured_hash_stamp(line: &str) -> bool {
     let header = line.trim_start_matches(|character: char| !character.is_ascii_alphanumeric());
     let Some((project, digest)) = header.split_once(STRUCTURED_HASH_MARKER) else {
@@ -393,11 +436,17 @@ fn has_structured_hash_stamp(line: &str) -> bool {
 /// occurs in ordinary code and a false positive here silently removes a
 /// hand-written file from the format gate.
 fn has_content_hash_stamp(header: &str) -> bool {
+    let mut fence = None;
     header
         .lines()
         .take(HASH_STAMP_HEADER_LINES)
         .enumerate()
         .any(|(index, line)| {
+            // Tracked over every scanned line, not just candidates, so the fence
+            // state is correct by the time a candidate appears.
+            if is_in_code_block(&mut fence, line) {
+                return false;
+            }
             let lower = line.to_ascii_lowercase();
             has_structured_hash_stamp(&lower)
                 || (index < GENERATED_HEADER_LINES && CONTENT_HASH_MARKERS.iter().any(|marker| lower.contains(marker)))
@@ -696,6 +745,113 @@ mod tests {
                 "{length} hex characters is a real digest length and must skip"
             );
         }
+    }
+
+    /// Stamp matching is case-insensitive, in the marker keyword, the project
+    /// name and the digest alike — [`has_content_hash_stamp`] folds the line to
+    /// lowercase before any of the shape checks run.
+    ///
+    /// This is a deliberate acceptance, recorded here because a consumer survey
+    /// found it undecided: across a 1265-stamp corpus every digest was lowercase,
+    /// so no generator observed today depends on it. Rejecting uppercase would
+    /// nonetheless be a gratuitous restriction on producers — hex is
+    /// case-insensitive by definition, and the marker is generator-agnostic, so
+    /// a generator emitting `SHA256`-style uppercase is stamping correctly. The
+    /// cost of accepting it is bounded by the same length and terminator rules
+    /// that bound the lowercase form.
+    ///
+    /// The rejection half of this test is the part that matters: it proves the
+    /// case folding happens *before* the shape checks rather than opening a
+    /// second, looser path around them.
+    #[test]
+    fn digest_matching_is_case_insensitive_without_loosening_the_shape_rules() {
+        let upper = "ABCDEF0123456789".repeat(4);
+        assert_eq!(upper.len(), 64, "fixture must be a canonical digest length");
+
+        for accepted in [
+            format!("# alef:hash:{upper}\nbody\n"),
+            format!("# ALEF:HASH:{upper}\nbody\n"),
+            format!("<!-- Alef:Hash:{upper} -->\nbody\n"),
+        ] {
+            assert!(
+                is_hash_stamped_source(&accepted),
+                "uppercase is a valid spelling of a canonical digest: {accepted:?}"
+            );
+        }
+
+        // Case folding must not become an escape hatch: an uppercase token still
+        // has to be a real digest length, and still has to terminate the line.
+        for rejected in [
+            format!("# alef:hash:{}\nbody\n", &upper[..63]),
+            format!("# ALEF:HASH:{}\nbody\n", &upper[..63]),
+            format!("`ALEF:HASH:{upper}`\nbody\n"),
+            format!("# ALEF:HASH:{upper} and then some prose\nbody\n"),
+        ] {
+            assert!(
+                !is_hash_stamped_source(&rejected),
+                "uppercase must not bypass the length and terminator rules: {rejected:?}"
+            );
+        }
+    }
+
+    /// A hash token inside a fenced code block is documentation *about* a stamp.
+    ///
+    /// This is the block-level twin of the inline-backtick case: there the
+    /// wrapping sits on the same line, so the trailing character rejects it, but
+    /// inside a fence the token is genuinely bare and line-terminated. A document
+    /// explaining the stamp format was therefore skipped in its entirety — the
+    /// exact false-skip the terminator rule exists to prevent.
+    #[test]
+    fn a_hash_token_inside_a_fenced_code_block_is_documentation_not_a_stamp() {
+        let digest = "a1b2c3d4".repeat(8);
+
+        for fence in ["```", "~~~", "````", "   ```"] {
+            let documented =
+                format!("# Stamp format\n\nGenerators write:\n\n{fence}\nalef:hash:{digest}\n{fence}\n\nbody\n");
+            assert!(
+                !is_hash_stamped_source(&documented),
+                "a token inside a {fence} fence documents a stamp, it is not one: {documented:?}"
+            );
+        }
+
+        // An info string on the opening fence is still a fence.
+        let annotated = format!("# Doc\n\n```text\nalef:hash:{digest}\n```\n\nbody\n");
+        assert!(
+            !is_hash_stamped_source(&annotated),
+            "an info string does not undo the fence"
+        );
+
+        // Indented code blocks are the other block-level code context, and they
+        // carry no delimiter to key off — only the indentation.
+        for indent in ["    ", "\t", "        "] {
+            let indented = format!("# Doc\n\nGenerators write:\n\n{indent}alef:hash:{digest}\n\nbody\n");
+            assert!(
+                !is_hash_stamped_source(&indented),
+                "an indented code block is a code context: {indented:?}"
+            );
+        }
+
+        // An inline code span is *not* a block context; it is already rejected by
+        // the terminator rule, and must stay rejected for that reason.
+        let inline = format!("# Doc\n\nWrites `alef:hash:{digest}` inline.\n\nbody\n");
+        assert!(
+            !is_hash_stamped_source(&inline),
+            "an inline span is prose quoting a hash"
+        );
+
+        // The suppression must be scoped to the block, not to the whole file:
+        // a real stamp before a fence, or after one closes, still counts.
+        let before = format!("<!-- alef:hash:{digest} -->\n\n# Doc\n\n```\nsample\n```\n");
+        assert!(
+            is_hash_stamped_source(&before),
+            "a stamp above a fence is still a stamp"
+        );
+
+        let after = format!("# Doc\n\n```\nsample\n```\n\n<!-- alef:hash:{digest} -->\nbody\n");
+        assert!(
+            is_hash_stamped_source(&after),
+            "a stamp after the fence closes is still a stamp"
+        );
     }
 
     /// A stamp is a whole comment line. A token wrapped in markdown backticks is

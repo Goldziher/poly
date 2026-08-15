@@ -45,6 +45,24 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   requiring one generator's digest size would drop every sha1- or md5-stamped generator out of the
   gate instead.
 
+  For the same reason the whole stamp — marker keyword, project name and digest alike — is matched
+  **case-insensitively**, so an uppercase digest is a valid stamp. A survey of a 1265-stamp corpus
+  found every digest lowercase, so no generator in use today depends on this; it is accepted because
+  hex is case-insensitive by definition and rejecting it would restrict producers for no benefit.
+  Case folding happens before the length and terminator checks, so an uppercase token gets no
+  latitude a lowercase one would not.
+
+- **A hash token inside a code block is documentation, not a stamp.** A file that *documents* the
+  stamp format — writing `<project>:hash:<digest>` inside a fenced or indented code block — was
+  classified as generated and skipped in its entirety, so nothing in it was ever formatted. Inside a
+  block the token is genuinely bare and line-terminated, so unlike the inline-backtick case nothing
+  about the line itself gave it away.
+
+  All four block-level shapes are now excluded: backtick fences, tilde fences, fences carrying an
+  info string, and indented code blocks. Inline code spans were already handled by the terminator
+  rule and are unchanged, as are the canonical digest widths, the header window, and the terminator
+  set.
+
 - **Hook-source git commands no longer inherit the ambient `GIT_*` state a git hook exports.**
   Running `poly hooks` from a real git hook leaked that state into the internal git commands that
   operate on cached hook-source repositories. `GIT_INDEX_FILE` — which git sets to an absolute path
