@@ -17,10 +17,22 @@ description: "Per-file tier vs the whole-project phase (--no-workspace), staged 
   code. On by default; disable with `--no-workspace` or `[lint] workspace = false`. A repo
   with no `[hooks]` section runs only the per-file tier.
 
+**Plain `poly lint` is not read-only.** poly applies no fixes without `--fix`, but the
+whole-project phase *executes* those tools against the live worktree, and their own side
+effects are not poly's to control (`cargo clippy` populating `target/` or refreshing
+`Cargo.lock`, a `go` invocation appending to `go.work.sum`, a type checker writing its cache).
+Only `--no-workspace` / `[lint] workspace = false` gives a run that cannot touch the tree.
+
+The phase is also **not path-scoped**: `poly lint <paths>` skips it for that reason, and
+`--workspace` opts back in with the tools covering the whole repository — regardless of the
+named paths and of `[discovery] exclude`, which filters poly's own discovery only. A note on
+stderr says which branch was taken.
+
 Under `--fix`, the whole-project phase runs the tools in fix mode (`cargo sort` in place,
 `cargo-machete --fix`, `cargo clippy --fix --allow-dirty --allow-staged`; `cargo deny` stays
-check-only). Only `poly lint --fix` runs it; the git-hook / commit-gate path is always
-check-only. `poly fmt` never runs this phase.
+check-only). Fix mode is what `--fix` adds — the phase runs either way, so `--no-workspace`,
+not the absence of `--fix`, is what skips it. The git-hook / commit-gate path never requests
+fix mode. `poly fmt` never runs this phase.
 
 ## Staged isolation (ADR 0019)
 

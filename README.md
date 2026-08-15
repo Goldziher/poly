@@ -867,14 +867,37 @@ lint = false   # runs in git hooks, excluded from `poly lint`'s whole-project ph
 This is the per-group counterpart to `[lint] workspace = false`, which disables the whole-project
 phase for **every** tool at once.
 
+#### The whole-project phase executes tools, so plain `poly lint` is not read-only
+
+`poly lint` without `--fix` applies no fixes of its own: poly's per-file tier only writes under
+`--fix`, and the whole-project phase is asked for check mode. But that phase **executes the
+configured tools against the live worktree**, and those tools are ordinary programs whose own
+side effects poly neither requests nor controls — `cargo clippy` populates `target/` and can
+refresh `Cargo.lock`, a `go` invocation can append to `go.work.sum`, a type checker can write its
+own cache. So a plain `poly lint` can leave the tree changed, even though poly itself changed
+nothing.
+
+Three consequences worth knowing:
+
+- **The phase is not path-scoped.** `poly lint <paths>` skips it entirely for that reason
+  (`--workspace` opts back in). Under `--workspace` the tools still see the whole repository,
+  regardless of the named paths and of `[discovery] exclude`; poly prints a note saying so.
+- **`[discovery] exclude` does not apply to it.** It filters poly's own file discovery, not what a
+  whole-project tool chooses to read.
+- **Opting out makes the run fully read-only** (poly's per-file tier writes nothing without
+  `--fix`): pass `--no-workspace`, or set `[lint] workspace = false`. Use one of them for a
+  checkout that must stay pristine — a CI job that diffs the tree afterwards, or a gate on a
+  read-only source tree.
+
 #### Applying whole-project fixes
 
 Under `--fix`, the whole-project phase runs its tools in **fix mode**: `cargo sort` sorts in place,
 `cargo-machete --fix` prunes unused dependencies, and `cargo clippy --fix --allow-dirty
---allow-staged` applies clippy autofixes (`cargo deny` has no autofix and stays check-only). Only
-`poly lint --fix` runs it — pass `--no-workspace` to skip it. `poly fmt` is a pure formatter and
-never runs the whole-project phase (that phase is linting, not formatting). The git-hook /
-commit-gate path always runs check-only, so a commit is never silently auto-rewritten.
+--allow-staged` applies clippy autofixes (`cargo deny` has no autofix and stays check-only). Fix
+mode is what `--fix` adds; the phase itself runs either way, so `--no-workspace` (not the absence
+of `--fix`) is what skips it. `poly fmt` is a pure formatter and never runs the whole-project phase
+(that phase is linting, not formatting). The git-hook / commit-gate path never requests fix mode,
+so a commit is never silently auto-rewritten by it.
 
 ---
 
@@ -1321,10 +1344,16 @@ poly fmt [PATHS]...
   --check                      Explicit fmt dry run. This is the default.
   --workspace                  `poly lint` only. Run the whole-project phase even though
                                explicit paths were given (normally a path-scoped run skips it).
-                               Conflicts with --no-workspace.
+                               The phase is never path-scoped: the tools cover the whole
+                               repository regardless of the named paths and of `[discovery]
+                               exclude`, and the run says so on stderr. Conflicts with
+                               --no-workspace.
   --no-workspace               `poly lint` only. Skip the whole-project phase (cargo
                                clippy/-sort/-machete/-deny and any other configured
                                whole-workspace tools). Equivalent to `[lint] workspace = false`.
+                               Also what makes a run read-only: without it, plain `poly lint`
+                               executes those tools against the live worktree, and their own
+                               side effects are not poly's to control.
   --format <pretty|json|toon>  Output format. Default: pretty.
   --config <PATH>              Use an explicit config file.
   --exclude <GLOB>             Exclude paths from discovery (repeatable; merged
@@ -1455,7 +1484,10 @@ explanation until the server is restarted.
 `workspace_lint` and `workspace_lint_fix` run the whole-project phase (`cargo clippy`/
 `cargo-sort`/`cargo-machete`/`cargo-deny` and any configured whole-project type checkers)
 against the live worktree — the same multi-minute operation `poly lint`'s whole-project phase
-runs. Because that can take minutes,
+runs. `workspace_lint` requests check mode and applies no fixes, but it still executes those
+tools, whose own side effects on the worktree are not poly's to control (see
+[the whole-project phase](#the-whole-project-phase-executes-tools-so-plain-poly-lint-is-not-read-only)).
+Because that can take minutes,
 both are exposed as async **Tasks**: the call returns a task handle immediately and the client
 polls `tasks/get` (or `tasks/cancel`) for the result. A client that doesn't declare the tasks
 capability gets a synchronous (blocking) result instead, so every client can use the tools.

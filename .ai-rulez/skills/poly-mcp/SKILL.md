@@ -26,6 +26,17 @@ Mutating (write to the tree):
 - `cache_clean` — clear the result cache.
 - `hooks` — run the configured hook stages.
 
+Whole-project (long-running async Tasks — poll `tasks/get`):
+
+- `workspace_lint` — the whole-project phase in check mode: `cargo clippy` / `cargo-sort` /
+  `cargo-machete` / `cargo-deny` and configured whole-project jobs, over the whole repository
+  (it takes no `paths`).
+- `workspace_lint_fix` — the same phase in fix mode; writes files.
+
+`workspace_lint` applies no fixes, but it is **not** in the never-touch-the-tree group: it
+executes those tools against the live worktree, and their own side effects — a refreshed lock
+file, a populated build or type-checker cache — are not poly's to control.
+
 ## Parameters
 
 The file-oriented tools take the same shape as the CLI:

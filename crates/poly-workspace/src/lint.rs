@@ -10,6 +10,14 @@
 //! `poly lint` checks the working tree, not the index) and returns the pass/fail
 //! plus the structured per-tool results.
 //!
+//! **Check mode is not read-only.** Without [`WorkspaceLintOptions::fix`] this
+//! phase asks each tool for its check mode and applies no fixes of its own — but
+//! it still *executes* them against the live worktree, and their own side effects
+//! are outside poly's control: `cargo clippy` populates `target/` and can refresh
+//! `Cargo.lock`, a `go` invocation can append to `go.work.sum`, a type checker
+//! writes its cache. A caller that must leave the tree untouched has to skip this
+//! phase entirely, not run it in check mode.
+//!
 //! The tool set and its toggles are the existing hooks config
 //! (`[hooks.builtin.cargo]` + inline `workspace = true` jobs) — a single source
 //! of truth, so `poly lint` runs the same whole-project tools a commit would.
@@ -42,6 +50,10 @@ pub struct WorkspaceLintOptions {
     /// `cargo-machete`, `cargo clippy`) in their fix mode rather than
     /// check-only. Set from `--fix`; the git-hook / commit-gate path never
     /// enables this.
+    ///
+    /// "Check-only" means poly requests no fixes — not that the tree is left
+    /// alone. The tools run either way and may write on their own (see the module
+    /// docs); only skipping the phase guarantees an untouched worktree.
     pub fix: bool,
     /// The `-j` concurrency override.
     pub jobs: Option<usize>,

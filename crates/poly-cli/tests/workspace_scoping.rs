@@ -17,6 +17,9 @@ use tempfile::TempDir;
 
 const POLY: &str = env!("CARGO_BIN_EXE_poly");
 const NOTE: &str = "whole-project phase skipped for path-scoped run";
+/// The complementary narration: the phase ran, and it did *not* honour the
+/// paths the run was otherwise scoped to.
+const WIDE: &str = "whole-project phase covers the entire repository";
 
 fn repo() -> TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -58,6 +61,63 @@ fn workspace_flag_opts_back_in() {
     let output = poly(dir.path(), &["lint", "--workspace", "ok.py"]);
 
     assert!(!stderr(&output).contains(NOTE));
+}
+
+/// Opting back in reverses the scoping the paths asked for, so it has to say so.
+///
+/// A consumer who ran `poly lint --workspace <paths>` and saw the phase report on
+/// files outside those paths — and outside `[discovery] exclude` — reasonably
+/// concluded poly had dropped a filter. The behaviour is correct in kind (a
+/// whole-project tool is not path-scoped); the silence was the defect.
+#[test]
+fn workspace_flag_on_scoped_paths_announces_repository_wide_coverage() {
+    let dir = repo();
+    let output = poly(dir.path(), &["lint", "--workspace", "ok.py"]);
+
+    assert!(
+        stderr(&output).contains(WIDE),
+        "expected the repository-wide note, got: {}",
+        stderr(&output)
+    );
+}
+
+/// Without paths to contradict, there is nothing to narrate: the run already
+/// asked for the whole repository.
+#[test]
+fn whole_repository_runs_are_not_narrated_as_repository_wide() {
+    let dir = repo();
+
+    for args in [
+        vec!["lint"],
+        vec!["lint", "."],
+        vec!["lint", "--workspace"],
+        vec!["lint", "--workspace", "."],
+    ] {
+        let output = poly(dir.path(), &args);
+        assert!(
+            !stderr(&output).contains(WIDE),
+            "`poly {}` must not emit the repository-wide note, got: {}",
+            args.join(" "),
+            stderr(&output)
+        );
+    }
+}
+
+/// A phase that does not run cannot widen anything — neither the default
+/// path-scoped skip nor the explicit opt-out may claim otherwise.
+#[test]
+fn a_phase_that_does_not_run_is_not_narrated_as_repository_wide() {
+    let dir = repo();
+
+    for args in [vec!["lint", "ok.py"], vec!["lint", "--no-workspace", "ok.py"]] {
+        let output = poly(dir.path(), &args);
+        assert!(
+            !stderr(&output).contains(WIDE),
+            "`poly {}` must not emit the repository-wide note, got: {}",
+            args.join(" "),
+            stderr(&output)
+        );
+    }
 }
 
 /// A whole-repository run is unchanged — this is the common CI invocation and

@@ -8,7 +8,12 @@ description: "Running poly lint / poly fmt — --fix, --format json|toon, --excl
 ## Commands
 
 - `poly lint [PATHS]…` — run the linters. `--fix` applies autofixes (and the whole-project
-  fix phase). `--no-workspace` restricts to the per-file tier.
+  fix phase). `--no-workspace` restricts to the per-file tier — and is also what makes a run
+  read-only: without it, plain `poly lint` still *executes* the configured whole-project tools
+  against the live worktree, and their own side effects (a refreshed lock file, a populated
+  build or type-checker cache) are not poly's to control. Naming `[PATHS]…` skips that phase by
+  default; `--workspace` opts back in, and the tools then cover the whole repository regardless
+  of the named paths and of `[discovery] exclude`.
 - `poly fmt [PATHS]…` — apply formatting. `--check` is a dry run that reports drift without
   writing. `--fix` writes changes. `poly fmt` is a pure formatter — it never runs the
   whole-project lint phase.

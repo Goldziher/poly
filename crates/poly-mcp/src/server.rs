@@ -61,7 +61,13 @@ use crate::dto::{
 use crate::identity::ExecutableWatch;
 use crate::ops;
 
-/// Tool name for the read-only whole-project lint Task.
+/// Tool name for the check-mode whole-project lint Task.
+///
+/// Check mode means poly requests no fixes, not that the worktree is untouched:
+/// the phase executes the configured tools, whose own side effects poly does not
+/// control (see [`poly_workspace::run_workspace_lint`]). The tool keeps its
+/// read-only annotation because it applies no fixes of its own; the description
+/// states the caveat.
 const WORKSPACE_LINT: &str = "workspace_lint";
 /// Tool name for the mutating whole-project lint Task.
 const WORKSPACE_LINT_FIX: &str = "workspace_lint_fix";
@@ -363,7 +369,9 @@ impl PolyMcpServer {
             Tool::new(
                 WORKSPACE_LINT,
                 "Run the whole-project lint phase (cargo clippy / cargo-sort / cargo-machete / cargo-deny and inline whole-project jobs) in check mode. \
-                 Long-running: exposed as an async Task — poll `tasks/get` for the structured result. Read-only.",
+                 Applies no fixes, but it executes those tools against the live worktree: their own side effects (a refreshed lock file, a populated \
+                 build or type-checker cache) are not poly's to control, so the tree can change. Covers the whole repository — it takes no path list. \
+                 Long-running: exposed as an async Task — poll `tasks/get` for the structured result.",
                 schema_for_workspace_params(),
             )
             .with_output_schema::<WorkspaceReport>()

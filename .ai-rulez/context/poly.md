@@ -26,12 +26,24 @@ per-file tier. With `--format json`/`toon` the whole-project section is written 
 stays a single valid document), so a machine consumer must check the **exit code** — not just the
 JSON payload — to detect a whole-project tool failure.
 
+**Plain `poly lint` is therefore not read-only.** poly applies no fixes without `--fix` — the
+per-file tier only writes under `--fix`, and the phase is asked for check mode — but the phase
+*executes* the configured tools against the live worktree, and their own side effects are not
+poly's to control (`cargo clippy` populates `target/` and can refresh `Cargo.lock`; a `go`
+invocation can append to `go.work.sum`; a type checker writes its cache). A run that must leave
+the tree untouched needs `--no-workspace` or `[lint] workspace = false`.
+
+The phase is also **not path-scoped**: `poly lint <paths>` skips it for that reason, and
+`--workspace` opts back in with the tools still covering the whole repository — regardless of the
+named paths and of `[discovery] exclude`, which filters poly's own discovery only. poly prints a
+note on both branches.
+
 Under `--fix`, this phase runs the tools in **fix mode**: `cargo sort` sorts in place,
 `cargo-machete --fix` prunes unused deps, and `cargo clippy --fix --allow-dirty --allow-staged`
-applies clippy autofixes (`cargo deny` has no autofix and stays check-only). Only `poly lint --fix`
-runs this phase (add `--no-workspace` to skip it). `poly fmt` is a pure formatter — it never runs
-the whole-project phase, since that phase is linting, not formatting. The git-hook / commit-gate
-path always runs check-only.
+applies clippy autofixes (`cargo deny` has no autofix and stays check-only). Fix mode is what
+`--fix` adds; the phase itself runs either way, so `--no-workspace` — not the absence of `--fix` —
+is what skips it. `poly fmt` is a pure formatter — it never runs the whole-project phase, since
+that phase is linting, not formatting. The git-hook / commit-gate path never requests fix mode.
 
 The orchestration itself lives in `crates/poly-workspace` (`run_workspace_lint`), shared by
 `poly-cli` and the `poly mcp` `workspace_lint`/`workspace_lint_fix` tools so both surfaces run
