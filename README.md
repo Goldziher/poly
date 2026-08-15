@@ -361,6 +361,10 @@ line_length = 100      # overrides the root; ruff select is inherited
 
 Resolution rules:
 
+- **Which config governs a file does not depend on how you invoked poly.** `poly fmt .`, `poly fmt
+  frontend`, and `poly fmt frontend/src/app.ts` all apply `frontend/poly.toml` to that file — so a
+  pre-commit hook, which is always handed explicit staged paths, gates on exactly what a whole-repo
+  run gates on.
 - **Rules and defaults cascade** (root → child, deep-merged; the nearest config wins).
 - **`[discovery] exclude` globs are additive** across the tree — each config's excludes prune its
   own subtree, so a parent exclude already covers its children.

@@ -7,6 +7,32 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A nested `poly.toml` now governs its files however the run was invoked.** Hierarchical
+  resolution (ADR 0018) discovered nested configs by walking *down* from the run root, so a run
+  rooted at or below a sub-project never found that sub-project's own config: `poly fmt .` honored
+  `packages/app/poly.toml`, while `poly fmt packages/app`, `poly fmt packages/app/src`, and `poly
+  fmt packages/app/src/x.py` all silently fell back to the repo-root config.
+
+  The explicit-path case is the damaging one, because the pre-commit hook path is *always* handed
+  explicit staged paths (`poly lint --no-workspace --force-exclude <files>`). A repo whose nested
+  config excluded generated output watched `poly fmt --check .` honor the exclusion and then had
+  those same files rewritten at commit time. The same gap made a sub-project's `[defaults]` and
+  `[per-file-ignores]` inert on that path, so the hook and the whole-repo run disagreed about both
+  formatting and findings.
+
+  The config set now also registers the chain of configs *above* each run root, so the governing
+  config is a property of the file rather than of the invocation.
+
+  Two consequences worth stating. A run rooted inside a sub-project now applies that sub-project's
+  rules — its `line_length`, its `[per-file-ignores]`, its engine config — where it previously
+  applied the repo root's; this is the ADR 0018 behavior, and it means such a run agrees with `poly
+  lint .` instead of contradicting it, but formatting and findings for those paths can change. And
+  a nested `[discovery] exclude` now prunes files named explicitly on the command line, so a path
+  poly used to check may now be reported as excluded rather than checked
+  (`--include-excluded` overrides this).
+
 ## [0.21.5] - 2026-08-15
 
 ### Fixed
