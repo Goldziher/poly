@@ -7,6 +7,39 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+## [0.21.6] - 2026-08-16
+
+**No functional change.** Every line changed since 0.21.5 sits inside a `#[cfg(test)]` module, and
+no dependency moved — the lockfile diff is ten lines, all of them this workspace's own version. This
+release exists so that a tagged commit has a green CI run behind it: the fixes below landed after
+`v0.21.5` was published, and a published tag is not worth force-moving.
+
+### Fixed
+
+- **The test suite no longer asserts the developer's platform.** Five tests had been failing on the
+  Linux and Windows runners, some since before 0.21.4, and each was hiding the next: CI runs without
+  `--no-fail-fast`, so the first failure in a test binary stopped everything behind it. None was a
+  product defect — in every case poly behaved correctly on the platform and the test encoded an
+  assumption that only held on macOS.
+
+  - A probe test used `/usr/bin/true` as "a binary that prints nothing", but GNU coreutils'
+    `true --version` prints a version; it now uses a temp script, as its two sibling tests already
+    did.
+  - A `PATH`-shadowing test asserted a mode-644 file is not an install. Windows has no execute bit,
+    and `is_executable_file` documents that explicitly for non-unix, so the assertion contradicted
+    correct behaviour. Split: the directory and missing-file cases stay cross-platform.
+  - A remote-checkout test compared bytes against an LF spelling; git's `core.autocrlf` is on by
+    default on Windows, and the test is about which revision was checked out, not how git spells a
+    newline.
+  - A catalog-linter test required `shellcheck` to be installed. The half that asserts *silence*
+    stays unconditional and keeps its force without the binary, because the refusal is decided from
+    the resolved argv before the executable is probed; the half that asserts the engine ran now runs
+    where the tool exists and prints an explicit skip otherwise.
+  - A hook-shell test asserted the Unix `"$@"` append unconditionally. `cmd.exe` has no positional
+    parameters, so poly appends the quoted file paths there instead — the decision to append is
+    shared between platforms, only its spelling differs, and Windows now has its own assertion for
+    that spelling rather than losing the coverage.
+
 ## [0.21.5] - 2026-08-15
 
 ### Added
