@@ -219,7 +219,14 @@ mod tests {
     /// A simple command cannot forward the matched files by itself, so poly
     /// appends `"$@"` — this is the pre-commit convention (`run = "shellcheck"`
     /// lints the matched files) and the reason the append cannot just be dropped.
+    ///
+    /// Unix-only, like the two `shell_argv` tests below: `cmd.exe` has no
+    /// positional parameters, so the Windows [`shell_command`] appends the
+    /// quoted file paths themselves rather than `"$@"`. The *decision* to append
+    /// is shared ([`appends_positionals`]); only its spelling differs, and the
+    /// Windows spelling is asserted separately.
     #[test]
+    #[cfg(not(windows))]
     fn simple_command_line_gets_the_positional_forward_appended() {
         let cases = [
             ("shellcheck", "shellcheck \"$@\""),
@@ -245,6 +252,23 @@ mod tests {
             let hook = Hook::run("hook-id", line);
             assert_eq!(shell_script(&hook, &[Path::new("a.sh")]), expected, "line: {line:?}");
         }
+    }
+
+    /// The Windows counterpart of the append test above. `cmd.exe` has no `$@`,
+    /// so poly appends the matched files themselves, quoted by [`cmd_quote`].
+    /// A line that opts out of the append is still left verbatim, because
+    /// [`appends_positionals`] is shared by both platforms.
+    #[test]
+    #[cfg(windows)]
+    fn simple_command_line_gets_the_matched_files_appended() {
+        let hook = Hook::run("hook-id", "shellcheck");
+        assert_eq!(shell_script(&hook, &[Path::new("a.sh")]), "shellcheck \"a.sh\"");
+
+        // Self-managing lines opt out on both platforms — with the caveat that
+        // on Windows `"$@"` expands to nothing, so such a line is genuinely on
+        // its own for its file list.
+        let managed = Hook::run("hook-id", "shellcheck \"$@\"");
+        assert_eq!(shell_script(&managed, &[Path::new("a.sh")]), "shellcheck \"$@\"");
     }
 
     /// #46: a `run` line that is a script rather than a simple command cannot
