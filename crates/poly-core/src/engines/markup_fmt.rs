@@ -4,12 +4,12 @@
 //! Capabilities: [`Capabilities::format`] only — markup_fmt is a formatter and
 //! does not report diagnostics.
 //!
-//! ## Embedded code (v1 limitation)
+//! ## Embedded code
 //!
 //! markup_fmt delegates embedded `<script>` / `<style>` blocks to an external
-//! formatter callback. poly passes a no-op callback for now, so embedded
-//! JS/CSS is left untouched; a later milestone can route those blocks through
-//! the oxc / malva backends.
+//! formatter callback. Astro JavaScript and TypeScript are routed through OXC
+//! to keep nested expressions stable; other embedded languages are left for
+//! their native backends.
 //!
 //! ## Angular detection
 //! Angular templates share the `.html` extension with plain HTML. poly
@@ -40,6 +40,8 @@
 use markup_fmt::Language as MarkupLanguage;
 use markup_fmt::config::FormatOptions;
 use markup_fmt::format_text;
+use oxc_allocator::Allocator;
+use std::borrow::Cow;
 
 use crate::config::EngineConfig;
 use crate::engine::{Capabilities, Engine, FormatOutput, SourceFile};
@@ -53,7 +55,7 @@ pub struct MarkupFmtEngine;
 /// any stale cached output.
 /// Bumped suffix to +opts-1 after exposing full LanguageOptions (options were
 /// previously ignored — existing caches must be invalidated).
-const VERSION: &str = "0.27.3+opts-1+tmpltarget-2";
+const VERSION: &str = "0.27.3+opts-1+tmpltarget-2+embedded-oxc-2+rev:288f9a5+syntax-skip-1";
 
 /// Reason reported when a general-purpose template does not render markup.
 const NON_MARKUP_TEMPLATE_SKIP: &str = "template does not render markup";
@@ -122,9 +124,26 @@ impl Engine for MarkupFmtEngine {
         }
 
         let options = build_options(cfg);
+        let embedded_allocator = (src.language == Language::Astro).then(Allocator::new);
+        let mut embedded_cfg = (src.language == Language::Astro).then(|| cfg.clone());
 
-        let formatted = format_text(&src.content, language, &options, |code, _| Ok(code.into()))
-            .map_err(|e| anyhow::anyhow!("markup_fmt error: {e}"))?;
+        let formatted = format_text(&src.content, language, &options, |code, hints| {
+            if src.language != Language::Astro || !matches!(hints.ext, "js" | "jsx" | "ts" | "tsx") {
+                return Ok(Cow::Borrowed(code));
+            }
+
+            let allocator = embedded_allocator
+                .as_ref()
+                .expect("Astro formatter allocator must exist");
+            let embedded_cfg = embedded_cfg.as_mut().expect("Astro formatter config must exist");
+            embedded_cfg.globals.line_length = hints.print_width;
+            super::oxc::format_embedded_js(allocator, code, hints.ext, embedded_cfg).map(Cow::Owned)
+        });
+        let formatted = match formatted {
+            Ok(formatted) => formatted,
+            Err(markup_fmt::FormatError::Syntax(_)) => return Ok(FormatOutput::Unchanged),
+            Err(error) => return Err(anyhow::anyhow!("markup_fmt error: {error}")),
+        };
 
         if formatted == *src.content {
             Ok(FormatOutput::Unchanged)

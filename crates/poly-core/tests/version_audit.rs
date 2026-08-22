@@ -169,7 +169,11 @@ fn engine_versions_track_cargo_lock() {
         check("biome", BiomeCssEngine.version(), vec![("biome_css_analyze", Git)]),
         check("sqruff", SqruffEngine.version(), vec![("sqruff-lib", Registry)]),
         check("malva", MalvaEngine.version(), vec![("malva", Registry)]),
-        check("markup_fmt", MarkupFmtEngine.version(), vec![("markup_fmt", Registry)]),
+        check(
+            "markup_fmt",
+            MarkupFmtEngine.version(),
+            vec![("markup_fmt", Registry), ("oxc_formatter", Git)],
+        ),
         check("taplo", TaploEngine.version(), vec![("taplo", Registry)]),
         check("rumdl", RumdlEngine.version(), vec![("rumdl", Registry)]),
         check(

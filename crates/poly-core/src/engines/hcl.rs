@@ -7,10 +7,12 @@
 //!   Only the first parse error is surfaced (acceptable, same as the taplo backend).
 //!   Clean files produce `vec![]`.
 //! - **Format**: two-path formatter keyed on comment presence.
+//!   Syntax-invalid input is left unchanged before either path runs.
 //!   - **No comments** — round-trip through `hcl-rs`: parse into `hcl::Body`
 //!     (which strips comments from the CST), then serialize with
-//!     `hcl::format::Formatter` using the configured indent width.  Returns
-//!     [`FormatOutput::Unchanged`] when the output is byte-identical.
+//!     `hcl::format::Formatter` using the configured indent width. The output
+//!     is reparsed before it can replace the source. Returns
+//!     [`FormatOutput::Unchanged`] when the output is unsafe or byte-identical.
 //!   - **Has comments** — delegate to the tier-2 [`TreeSitterEngine`] so that
 //!     `#`, `//`, and `/* */` comments are never silently dropped.
 //!
@@ -28,7 +30,7 @@ use crate::language::Language;
 /// Combined version string used as the Engine cache key.
 /// Encodes both `hcl-rs` and `hcl-edit` versions so that bumping either dep
 /// invalidates stale cached results.
-const ENGINE_VERSION: &str = "hcl-rs 0.19.8 + hcl-edit 0.9.7 + trailing-comments-v2";
+const ENGINE_VERSION: &str = "hcl-rs 0.19.8 + hcl-edit 0.9.7 + trailing-comments-v2 + syntax-skip-v3";
 
 static LANGUAGES: &[Language] = &[Language::Hcl];
 
@@ -91,6 +93,9 @@ impl Engine for HclEngine {
     }
 
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
+        if hcl_edit_parser::parse_body(&src.content).is_err() {
+            return Ok(FormatOutput::Unchanged);
+        }
         if has_comments(&src.content) {
             return TreeSitterEngine.format(src, cfg);
         }
@@ -148,10 +153,10 @@ fn has_comments(source: &str) -> bool {
 /// then returns [`FormatOutput::Unchanged`] when the result is byte-identical to
 /// the original.
 fn format_comment_free(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
-    let body: hcl::Body = src
-        .content
-        .parse()
-        .map_err(|e: hcl::Error| anyhow::anyhow!("hcl-rs parse error: {e}"))?;
+    let body: hcl::Body = match src.content.parse() {
+        Ok(body) => body,
+        Err(_) => return Ok(FormatOutput::Unchanged),
+    };
 
     let indent_width = indent_width_from_cfg(cfg);
     let indent_str = " ".repeat(indent_width);
@@ -167,6 +172,10 @@ fn format_comment_free(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<F
     drop(formatter);
 
     let formatted = String::from_utf8(buf).map_err(|e| anyhow::anyhow!("hcl-rs produced non-UTF-8: {e}"))?;
+
+    if formatted.parse::<hcl::Body>().is_err() || hcl_edit_parser::parse_body(&formatted).is_err() {
+        return Ok(FormatOutput::Unchanged);
+    }
 
     if formatted == src.content.as_ref() {
         Ok(FormatOutput::Unchanged)
@@ -299,6 +308,56 @@ mod tests {
         assert_eq!(diags[0].severity, Severity::Error);
         let span = diags[0].span.unwrap();
         assert!(span.start_line >= 1, "span should have a 1-based line");
+    }
+
+    #[test]
+    fn format_syntax_error_is_left_unchanged() {
+        let engine = HclEngine;
+        let src = make_src(
+            "bad.tf",
+            Language::Hcl,
+            "resource \"aws_instance\" \"web\" {\n  ami = \"ami-12345\"\n",
+        );
+        let output = engine
+            .format(&src, &default_cfg())
+            .expect("invalid HCL should be skipped without failing the repository run");
+
+        assert!(matches!(output, FormatOutput::Unchanged));
+    }
+
+    #[test]
+    fn format_syntax_error_with_comment_like_text_is_left_unchanged() {
+        let engine = HclEngine;
+        let src = make_src(
+            "bad.tf",
+            Language::Hcl,
+            r####"provisioner "local-exec" {
+  command = "curl https://${var.channel}/version.txt | sed -n 's/VERSION=\(.*\)$/{"version": "\1"}/p'"
+}
+"####,
+        );
+        let output = engine
+            .format(&src, &default_cfg())
+            .expect("invalid HCL containing comment-like text should be skipped");
+
+        assert!(matches!(output, FormatOutput::Unchanged));
+    }
+
+    #[test]
+    fn format_does_not_emit_invalid_escaped_string() {
+        let engine = HclEngine;
+        let src = make_src(
+            "main.tf",
+            Language::Hcl,
+            r####"data "external" "version" {
+  count   = "${var.release_version == "latest" ? 1 : 0}"
+  program = ["sh", "-c", "curl https://${var.release_channel}/version.txt | sed -n 's/VERSION=\\(.*\\)$/{\"version\": \"\\1\"}/p'"]
+}
+"####,
+        );
+        let output = engine.format(&src, &default_cfg()).unwrap();
+
+        assert!(matches!(output, FormatOutput::Unchanged));
     }
 
     #[test]

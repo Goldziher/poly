@@ -97,6 +97,67 @@ fn markup_fmt_known_unformatted_astro() {
     );
 }
 
+const NON_IDEMPOTENT_ASTRO_EXPRESSION: &str = r#"---
+const renderedEntries = [];
+---
+{renderedEntries.length === 0 ? (
+  <p>Empty</p>
+) : (
+  <Tabs>
+    {renderedEntries.map(({ language, label, rendered }) => (
+      <TabItem label={label} key={language}>
+        <rendered.Content />
+      </TabItem>
+    ))}
+  </Tabs>
+)}
+"#;
+
+#[test]
+fn markup_fmt_astro_expression_is_idempotent() {
+    let once = format_to_string(
+        "ApiSnippetGroup.astro",
+        Language::Astro,
+        NON_IDEMPOTENT_ASTRO_EXPRESSION,
+    );
+    let engine = MarkupFmtEngine;
+    let twice = engine
+        .format(
+            &make_src("ApiSnippetGroup.astro", Language::Astro, &once),
+            &engine_cfg(),
+        )
+        .unwrap();
+
+    assert!(
+        matches!(twice, FormatOutput::Unchanged),
+        "formatting an Astro expression twice must reach a fixed point; got another rewrite"
+    );
+}
+
+#[test]
+fn markup_fmt_malformed_markup_is_left_unchanged() {
+    let engine = MarkupFmtEngine;
+    let output = engine
+        .format(
+            &make_src("legacy.html", Language::Html, "<html><body><div>legacy</body></html>"),
+            &engine_cfg(),
+        )
+        .expect("malformed markup should be skipped without failing the repository run");
+
+    assert!(matches!(output, FormatOutput::Unchanged));
+}
+
+#[test]
+fn markup_fmt_astro_style_blocks_are_not_sent_to_js_formatter() {
+    let engine = MarkupFmtEngine;
+    let source =
+        "---\nconst title = \"Hello\";\n---\n<style>.title{color:red}</style>\n<h1 class=\"title\">{title}</h1>\n";
+
+    engine
+        .format(&make_src("styles.astro", Language::Astro, source), &engine_cfg())
+        .expect("Astro style blocks should not be parsed as JavaScript");
+}
+
 const KNOWN_UNFORMATTED_ANGULAR: &str = "\
 <div class=\"container\"><p [class]=\"active ? 'on' : 'off'\">Hello</p><button (click)=\"doIt()\">Click</button></div>";
 
