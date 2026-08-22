@@ -592,8 +592,6 @@ pub(crate) fn load_config(explicit: Option<&Path>) -> Result<PolyConfig> {
 
 #[cfg(test)]
 mod tests {
-    use clap::ValueEnum as _;
-
     use super::*;
 
     /// Load a [`PolyConfig`] from an inline `poly.toml` fixture.
