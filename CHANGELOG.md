@@ -7,6 +7,22 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+## [0.21.7] - 2026-08-22
+
+### Fixed
+
+- **Astro formatting is idempotent for nested expressions.** Embedded JavaScript and TypeScript
+  now pass through OXC instead of markup_fmt's unstable no-op path. Non-JavaScript blocks such as
+  `<style>` remain untouched by that callback.
+- **Malformed markup and HCL no longer abort repository-wide format checks.** Syntax-invalid files
+  are left unchanged, and HCL output is reparsed before it can replace valid source. This also
+  prevents hcl-rs from emitting invalid shell-command string escapes.
+
+### Changed
+
+- Updated compatible and incompatible Rust dependencies, including the pinned Biome, OXC, and Ruff
+  revisions. Engine cache identities track the new versions and OXC's direct Astro dependency.
+
 ## [0.21.6] - 2026-08-16
 
 **No functional change.** Every line changed since 0.21.5 sits inside a `#[cfg(test)]` module, and
