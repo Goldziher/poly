@@ -640,12 +640,19 @@ mod tests {
         /// supervising thread can lose the CPU between its probe and its kill,
         /// which needs far more runnable threads than cores.
         const OVERSUBSCRIBE: usize = 8;
+        /// Keep the child's stdin/stdout/stderr descriptors below macOS's
+        /// default per-process soft limit of 256 while retaining enough
+        /// oversubscription to open the race window.
+        #[cfg(target_os = "macos")]
+        const MAX_MACOS_WORKERS: usize = 48;
         /// A budget already spent by the time the child is spawned, so every run
         /// takes the deadline path on its first probe — right where the child's
         /// own exit lands.
         const SPENT: Duration = Duration::from_micros(500);
 
         let workers = std::thread::available_parallelism().map_or(4, NonZero::get) * OVERSUBSCRIBE;
+        #[cfg(target_os = "macos")]
+        let workers = workers.min(MAX_MACOS_WORKERS);
         let per_worker = RUNS.div_ceil(workers);
         let (false_reports, own_exit, killed) = (AtomicUsize::new(0), AtomicUsize::new(0), AtomicUsize::new(0));
 
