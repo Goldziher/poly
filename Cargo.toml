@@ -15,7 +15,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.21.7"
+version = "0.21.8"
 edition = "2024"
 rust-version = "1.97"
 license = "MIT"
@@ -37,16 +37,16 @@ assert_fs = "1.1.4"
 ast-grep-config = "0.45.1"
 ast-grep-core = "0.45.1"
 axoupdater = { version = "0.10.2", default-features = false, features = ["github_releases"] }
-biome_analyze = { git = "https://github.com/biomejs/biome", rev = "18883b7dafb8f9581534508fdd5b1e34632f2724" }
-biome_css_analyze = { git = "https://github.com/biomejs/biome", rev = "18883b7dafb8f9581534508fdd5b1e34632f2724" }
-biome_css_parser = { git = "https://github.com/biomejs/biome", rev = "18883b7dafb8f9581534508fdd5b1e34632f2724" }
-biome_diagnostics = { git = "https://github.com/biomejs/biome", rev = "18883b7dafb8f9581534508fdd5b1e34632f2724" }
-biome_graphql_analyze = { git = "https://github.com/biomejs/biome", rev = "18883b7dafb8f9581534508fdd5b1e34632f2724" }
-biome_graphql_parser = { git = "https://github.com/biomejs/biome", rev = "18883b7dafb8f9581534508fdd5b1e34632f2724" }
-biome_languages = { git = "https://github.com/biomejs/biome", rev = "18883b7dafb8f9581534508fdd5b1e34632f2724", features = [
+biome_analyze = { git = "https://github.com/biomejs/biome", rev = "fe61e214231c03fd550a03f3aca34471fd1e4251" }
+biome_css_analyze = { git = "https://github.com/biomejs/biome", rev = "fe61e214231c03fd550a03f3aca34471fd1e4251" }
+biome_css_parser = { git = "https://github.com/biomejs/biome", rev = "fe61e214231c03fd550a03f3aca34471fd1e4251" }
+biome_diagnostics = { git = "https://github.com/biomejs/biome", rev = "fe61e214231c03fd550a03f3aca34471fd1e4251" }
+biome_graphql_analyze = { git = "https://github.com/biomejs/biome", rev = "fe61e214231c03fd550a03f3aca34471fd1e4251" }
+biome_graphql_parser = { git = "https://github.com/biomejs/biome", rev = "fe61e214231c03fd550a03f3aca34471fd1e4251" }
+biome_languages = { git = "https://github.com/biomejs/biome", rev = "fe61e214231c03fd550a03f3aca34471fd1e4251", features = [
   "lang_css",
 ] }
-biome_rowan = { git = "https://github.com/biomejs/biome", rev = "18883b7dafb8f9581534508fdd5b1e34632f2724" }
+biome_rowan = { git = "https://github.com/biomejs/biome", rev = "fe61e214231c03fd550a03f3aca34471fd1e4251" }
 blake3 = "1"
 bstr = "1.13.1"
 cargo_metadata = "0.23.1"
@@ -92,13 +92,13 @@ markdown = "1.0.0"
 markup_fmt = "0.27"
 memchr = "2.8.3"
 owo-colors = { version = "4", features = ["supports-colors"] }
-oxc_allocator = { git = "https://github.com/oxc-project/oxc", rev = "288f9a5188b9409cd0dfa34c25a0419e5eb8443b" }
-oxc_diagnostics = { git = "https://github.com/oxc-project/oxc", rev = "288f9a5188b9409cd0dfa34c25a0419e5eb8443b" }
-oxc_formatter = { git = "https://github.com/oxc-project/oxc", rev = "288f9a5188b9409cd0dfa34c25a0419e5eb8443b" }
-oxc_formatter_core = { git = "https://github.com/oxc-project/oxc", rev = "288f9a5188b9409cd0dfa34c25a0419e5eb8443b" }
-oxc_formatter_json = { git = "https://github.com/oxc-project/oxc", rev = "288f9a5188b9409cd0dfa34c25a0419e5eb8443b" }
-oxc_linter = { git = "https://github.com/oxc-project/oxc", rev = "288f9a5188b9409cd0dfa34c25a0419e5eb8443b" }
-oxc_span = { git = "https://github.com/oxc-project/oxc", rev = "288f9a5188b9409cd0dfa34c25a0419e5eb8443b" }
+oxc_allocator = { git = "https://github.com/oxc-project/oxc", rev = "fd61cd860f2751ef0b27c3b64823a62b52b63aba" }
+oxc_diagnostics = { git = "https://github.com/oxc-project/oxc", rev = "fd61cd860f2751ef0b27c3b64823a62b52b63aba" }
+oxc_formatter = { git = "https://github.com/oxc-project/oxc", rev = "fd61cd860f2751ef0b27c3b64823a62b52b63aba" }
+oxc_formatter_core = { git = "https://github.com/oxc-project/oxc", rev = "fd61cd860f2751ef0b27c3b64823a62b52b63aba" }
+oxc_formatter_json = { git = "https://github.com/oxc-project/oxc", rev = "fd61cd860f2751ef0b27c3b64823a62b52b63aba" }
+oxc_linter = { git = "https://github.com/oxc-project/oxc", rev = "fd61cd860f2751ef0b27c3b64823a62b52b63aba" }
+oxc_span = { git = "https://github.com/oxc-project/oxc", rev = "fd61cd860f2751ef0b27c3b64823a62b52b63aba" }
 phf = { version = "0.14.0", default-features = false, features = ["macros"] }
 poly-buildinfo = { path = "crates/poly-buildinfo" }
 poly-cache = { path = "crates/poly-cache" }

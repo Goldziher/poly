@@ -55,7 +55,7 @@ pub struct MarkupFmtEngine;
 /// any stale cached output.
 /// Bumped suffix to +opts-1 after exposing full LanguageOptions (options were
 /// previously ignored — existing caches must be invalidated).
-const VERSION: &str = "0.27.3+opts-1+tmpltarget-2+embedded-oxc-2+rev:288f9a5+syntax-skip-2";
+const VERSION: &str = "0.27.3+opts-1+tmpltarget-2+embedded-oxc-2+rev:fd61cd8+syntax-skip-2";
 
 /// Reason reported when a general-purpose template does not render markup.
 const NON_MARKUP_TEMPLATE_SKIP: &str = "template does not render markup";
