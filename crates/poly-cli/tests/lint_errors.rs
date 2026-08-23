@@ -56,34 +56,33 @@ fn combined(output: &Output) -> String {
     )
 }
 
-/// The reported defect: the run failed on the only file it was given and said
-/// it had found nothing.
+/// Invalid text is accounted for as an actionable error without turning one
+/// file into a fatal run error.
 #[test]
-fn errored_file_is_named_and_fails_the_run() {
+fn invalid_utf8_is_named_and_fails_without_aborting_the_run() {
     let dir = repo();
     let output = poly(dir.path(), &["lint", "--no-workspace", "--no-cache", "bad.py"]);
     let text = combined(&output);
 
-    assert_eq!(
-        output.status.code(),
-        Some(2),
-        "a file the engine could not process was not verified, got:\n{text}"
-    );
+    assert_eq!(output.status.code(), Some(1), "got:\n{text}");
     assert!(text.contains("bad.py"), "the failing path must be named, got:\n{text}");
     assert!(
-        text.contains("1 file(s) could not be linted and were NOT checked."),
+        text.contains("error") && text.contains("invalid-utf8") && text.contains("byte 6"),
         "got:\n{text}"
     );
     assert!(
-        !text.contains("No issues found."),
-        "a run that failed on its only file found nothing because it looked at nothing, got:\n{text}"
+        text.contains("skipped bad.py: file is not valid UTF-8; text linting was skipped"),
+        "the file must remain explicitly accounted for as uninspected, got:\n{text}"
+    );
+    assert!(
+        !text.contains("could not be linted"),
+        "invalid UTF-8 is not a fatal error, got:\n{text}"
     );
 }
 
-/// An error is not a skip. The skipped file is reported as skipped, the errored
-/// file as an error, and neither borrows the other's wording or accounting.
+/// The decode error and the unrelated unmatched path remain distinct skips.
 #[test]
-fn an_engine_error_is_not_reported_as_a_skip() {
+fn invalid_utf8_and_unmatched_paths_keep_distinct_skip_reasons() {
     let dir = repo();
     let output = poly(
         dir.path(),
@@ -91,34 +90,29 @@ fn an_engine_error_is_not_reported_as_a_skip() {
     );
     let text = combined(&output);
 
-    assert_eq!(output.status.code(), Some(2), "got:\n{text}");
+    assert_eq!(output.status.code(), Some(1), "got:\n{text}");
     assert!(
         text.contains("skipped App.csproj: no matching engine for this file type"),
         "the unmatched path is still a skip, got:\n{text}"
     );
     assert!(
-        !text.contains("skipped bad.py"),
-        "an engine failure must not be laundered into a skip, got:\n{text}"
+        text.contains("skipped bad.py: file is not valid UTF-8; text linting was skipped"),
+        "the decode failure must explain why text linting was skipped, got:\n{text}"
     );
     assert!(
-        text.contains("1 skipped (no matching engine for this file type)"),
-        "the skip count must not absorb the errored file, got:\n{text}"
+        text.contains("no matching engine for this file type") && text.contains("file is not valid UTF-8"),
+        "the skip summary must preserve both reasons, got:\n{text}"
     );
     assert!(
         text.contains("1 file(s) linted"),
         "only the readable file was linted, got:\n{text}"
     );
-    assert!(
-        text.contains("1 file(s) could not be linted and were NOT checked."),
-        "got:\n{text}"
-    );
+    assert!(!text.contains("could not be linted"), "got:\n{text}");
 }
 
-/// The skip budget covers skips. An errored file fails the run on its own
-/// account, and must not be counted against `--max-skips`, or the two categories
-/// become indistinguishable to a consumer tuning the budget.
+/// A file explicitly marked uninspected remains subject to the skip budget.
 #[test]
-fn an_engine_error_does_not_consume_the_skip_budget() {
+fn invalid_utf8_consumes_the_skip_budget() {
     let dir = repo();
     let output = poly(
         dir.path(),
@@ -128,8 +122,8 @@ fn an_engine_error_does_not_consume_the_skip_budget() {
 
     assert_eq!(output.status.code(), Some(2), "got:\n{text}");
     assert!(
-        !text.contains("refusing to report success for"),
-        "the failure is an engine error, not a skip-budget breach, got:\n{text}"
+        text.contains("refusing to report success for"),
+        "the file was not inspected and must breach a zero skip budget, got:\n{text}"
     );
 }
 
@@ -146,8 +140,8 @@ fn a_clean_run_is_unaffected() {
     assert!(!text.contains("could not be linted"), "got:\n{text}");
 }
 
-/// Mixed run: one clean file, one skipped, one errored — all three reported,
-/// each as itself.
+/// Mixed run: one clean file, one unmatched file, and one decode error — each
+/// remains structurally distinguishable.
 #[test]
 fn mixed_run_reports_clean_skipped_and_errored_distinctly() {
     let dir = repo();
@@ -158,27 +152,29 @@ fn mixed_run_reports_clean_skipped_and_errored_distinctly() {
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
 
-    assert_eq!(output.status.code(), Some(2), "got:\n{stdout}{stderr}");
+    assert_eq!(output.status.code(), Some(1), "got:\n{stdout}{stderr}");
     let value: serde_json::Value =
         serde_json::from_str(&stdout).unwrap_or_else(|e| panic!("stdout must be JSON ({e}): {stdout}"));
     let entries = value.as_array().expect("top level stays an array");
 
-    let errored = entries
+    let invalid = entries
         .iter()
         .find(|entry| entry["path"].as_str().is_some_and(|p| p.ends_with("bad.py")))
-        .unwrap_or_else(|| panic!("the errored file must be carried structurally: {stdout}"));
+        .unwrap_or_else(|| panic!("the invalid UTF-8 file must be carried structurally: {stdout}"));
     assert!(
-        errored["error"].is_string(),
-        "the error must be machine-readable: {stdout}"
+        invalid["error"].is_null(),
+        "invalid UTF-8 is not a fatal engine error: {stdout}"
     );
     assert!(
-        errored["skipped"].is_null(),
-        "an errored file is not a skipped one: {stdout}"
+        invalid["skipped"]
+            .as_str()
+            .is_some_and(|reason| reason.contains("UTF-8")),
+        "the uninspected reason must be machine-readable: {stdout}"
     );
     assert_eq!(
-        errored["diagnostics"].as_array().map(Vec::len),
-        Some(0),
-        "a file that could not be read has no findings: {stdout}"
+        invalid["diagnostics"][0]["code"].as_str(),
+        Some("invalid-utf8"),
+        "the error must be machine-readable: {stdout}"
     );
 
     // A directory walk does not narrate unmatched files, so `App.csproj` is
@@ -199,10 +195,9 @@ fn mixed_run_reports_clean_skipped_and_errored_distinctly() {
     );
 }
 
-/// `--fix` must not report its fixes in a way that reads as a successful run
-/// when a file errored: the run is incomplete, whatever it managed to fix.
+/// `--fix` may repair readable files while preserving the invalid-text error.
 #[test]
-fn fix_does_not_imply_success_when_a_file_errored() {
+fn fix_preserves_invalid_utf8_error_while_fixing_readable_files() {
     let dir = repo();
     std::fs::write(dir.path().join("ok.py"), "import os\n\nprint(\"hi\")\n").expect("write ok.py");
 
@@ -212,14 +207,14 @@ fn fix_does_not_imply_success_when_a_file_errored() {
     );
     let text = combined(&output);
 
-    assert_eq!(output.status.code(), Some(2), "got:\n{text}");
+    assert_eq!(output.status.code(), Some(1), "got:\n{text}");
     assert!(
-        text.contains("Lint did not complete."),
-        "the headline must state the run is incomplete, got:\n{text}"
+        text.contains("invalid-utf8") && text.contains("bad.py"),
+        "the error must remain visible, got:\n{text}"
     );
     assert!(
         text.contains("Fixed 1 issue(s) in 1 file(s)."),
         "what the run did is still reported, got:\n{text}"
     );
-    assert!(!text.contains("No issues found."), "got:\n{text}");
+    assert!(!text.contains("Lint did not complete."), "got:\n{text}");
 }

@@ -158,6 +158,18 @@ fn markup_fmt_astro_style_blocks_are_not_sent_to_js_formatter() {
         .expect("Astro style blocks should not be parsed as JavaScript");
 }
 
+#[test]
+fn markup_fmt_astro_invalid_embedded_javascript_is_left_unchanged() {
+    let engine = MarkupFmtEngine;
+    let source = "<script>const broken = ;</script>\n<main>legacy</main>\n";
+
+    let output = engine
+        .format(&make_src("legacy.astro", Language::Astro, source), &engine_cfg())
+        .expect("invalid embedded JavaScript should not fail the repository format run");
+
+    assert!(matches!(output, FormatOutput::Unchanged));
+}
+
 const KNOWN_UNFORMATTED_ANGULAR: &str = "\
 <div class=\"container\"><p [class]=\"active ? 'on' : 'off'\">Hello</p><button (click)=\"doIt()\">Click</button></div>";
 

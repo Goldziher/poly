@@ -7,6 +7,22 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+## [0.21.8] - 2026-08-23
+
+### Fixed
+
+- **Malformed embedded JavaScript no longer aborts an Astro format run.** OXC parse failures now
+  leave the source unchanged, matching the existing handling for malformed markup, while unexpected
+  embedded-printer failures still fail the run instead of being reported as clean.
+- **Invalid UTF-8 now produces contextual lint and format results.** Lint emits a structured
+  diagnostic and explicit skip; format names the invalid byte offset and records that formatting was
+  skipped. Neither path mutates undecodable input or collapses it into an unexplained I/O failure.
+
+### Changed
+
+- Updated the pinned Biome and OXC revisions to their current upstream heads and upgraded
+  tree-sitter-language-pack to 1.15.7. Engine cache identities track each new parser/tool version.
+
 ## [0.21.7] - 2026-08-22
 
 ### Fixed

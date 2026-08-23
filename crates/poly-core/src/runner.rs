@@ -4,9 +4,11 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Once};
 
+use anyhow::Context;
+
 use crate::config::{Config, Kind};
 use crate::discover::{DiscoveredFile, discover_reporting};
-use crate::engine::{Diagnostic, Edit, FormatOutput, SourceFile};
+use crate::engine::{Diagnostic, Edit, FormatOutput, Severity, SourceFile};
 use crate::filter::{
     PerFileIgnores, is_format_ignored, is_generated_lockfile, is_generated_source, is_hash_stamped_source, match_bases,
     relative_for_match,
@@ -47,6 +49,9 @@ const MAX_FORMAT_PASSES: usize = 5;
 
 /// Reason reported when `poly fmt` leaves a machine-generated file alone.
 const GENERATED_SKIP: &str = "hash-stamped generated file (pass --fix-generated to format)";
+
+/// Reason recorded when a routed text file cannot be decoded for linting.
+const INVALID_UTF8_SKIP: &str = "file is not valid UTF-8; text linting was skipped";
 
 /// Lint all discovered files under `paths`. Returns one [`LintResult`] per file
 /// that still has at least one diagnostic. When `fix` is true, each file's
@@ -262,7 +267,11 @@ fn lint_one(
     bases: &[PathBuf],
     externally_linted: &[Language],
 ) -> anyhow::Result<LintResult> {
-    let original = std::fs::read_to_string(&f.path)?;
+    let bytes = std::fs::read(&f.path).with_context(|| format!("reading {}", f.path.display()))?;
+    let original = match String::from_utf8(bytes) {
+        Ok(content) => content,
+        Err(error) => return Ok(invalid_utf8_result(f, error.utf8_error())),
+    };
     let this_ignores = &ignores[f.config_id];
     let rel =
         (!this_ignores.is_empty()).then(|| relative_for_match(&f.path, &configs.ignore_bases(f.config_id, bases)));
@@ -340,6 +349,36 @@ fn lint_one(
         error: None,
         debug,
     })
+}
+
+fn invalid_utf8_result(f: &DiscoveredFile, error: std::str::Utf8Error) -> LintResult {
+    let invalid_at = error.valid_up_to();
+    let sequence = error.error_len().map_or_else(
+        || "an incomplete UTF-8 sequence reaches the end of the file".to_owned(),
+        |length| format!("{length} byte(s) do not form a valid UTF-8 sequence"),
+    );
+
+    LintResult {
+        path: f.path.clone(),
+        diagnostics: vec![Diagnostic {
+            engine: "poly".to_owned(),
+            code: Some("invalid-utf8".to_owned()),
+            severity: Severity::Error,
+            title: format!("file is not valid UTF-8 at byte {invalid_at}"),
+            description: Some(format!(
+                "text linting was skipped: {sequence}, starting at byte {invalid_at}"
+            )),
+            span: None,
+            url: None,
+            fix: Vec::new(),
+            metadata: std::collections::BTreeMap::new(),
+        }],
+        fix_withheld_generated: false,
+        fixed: 0,
+        skipped: Some(INVALID_UTF8_SKIP.to_owned()),
+        error: None,
+        debug: None,
+    }
 }
 
 /// Run every lint-capable engine for the file's language over `content`,
@@ -424,7 +463,21 @@ fn format_one(
     fix_generated: bool,
     collect_debug: bool,
 ) -> anyhow::Result<FormatResult> {
-    let original = std::fs::read_to_string(&f.path)?;
+    let bytes = std::fs::read(&f.path).with_context(|| format!("reading {}", f.path.display()))?;
+    let original = match String::from_utf8(bytes) {
+        Ok(content) => content,
+        Err(error) => {
+            let error = error.utf8_error();
+            let invalid_at = error.valid_up_to();
+            let sequence = error.error_len().map_or_else(
+                || "an incomplete UTF-8 sequence reaches the end of the file".to_owned(),
+                |length| format!("{length} byte(s) do not form a valid UTF-8 sequence"),
+            );
+            return Err(anyhow::anyhow!(
+                "file is not valid UTF-8 at byte {invalid_at}; text formatting was skipped: {sequence}, starting at byte {invalid_at}"
+            ));
+        }
+    };
     if is_format_ignored(&original, &f.language) {
         return Ok(FormatResult {
             path: f.path.clone(),

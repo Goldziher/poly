@@ -22,7 +22,7 @@ use crate::config::EngineConfig;
 use crate::engine::{Capabilities, Diagnostic, FormatOutput, SourceFile};
 use crate::language::Language;
 
-pub(crate) use self::format::format_embedded_js;
+pub(crate) use self::format::{format_embedded_js, is_embedded_js_parse_error};
 use self::format::{format_js, format_json};
 use self::lint::{lint_js, lint_json};
 
@@ -34,7 +34,7 @@ use self::lint::{lint_js, lint_json};
 ///               bracket_spacing, bracket_same_line, indent_style; JSON bracket_spacing
 ///               and trailing_commas now wired from `cfg.options`.
 const VERSION: &str =
-    "oxc_formatter:0.64.0+oxlint+parser:0.146.0+rev:288f9a5+json-fmt+rules-v2+fmt-opts+jsonc-trailing-comma";
+    "oxc_formatter:0.64.0+oxlint+parser:0.146.0+rev:fd61cd8+json-fmt+rules-v2+fmt-opts+jsonc-trailing-comma";
 
 static LANGUAGES: &[Language] = &[
     Language::JavaScript,

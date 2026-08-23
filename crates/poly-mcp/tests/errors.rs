@@ -8,8 +8,8 @@
 //!
 //! - **clean** — checked, nothing to report;
 //! - **skipped** — poly correctly declined the file (no engine covers it);
-//! - **errored** — poly failed on a file it accepted, so the file is *not*
-//!   verified and the tool result is not a success.
+//! - **invalid text** — lint reports a structured diagnostic and skip while
+//!   format reports a contextual error; neither operation verifies the file.
 //!
 //! The failure is induced with a `.py` file holding invalid UTF-8, matching the
 //! CLI-side precedent (`crates/poly-cli/tests/lint_errors.rs`): the runner reads
@@ -32,9 +32,8 @@ const INVALID_UTF8: &[u8] = b"x = 1\n\xff\xfe not utf-8\n";
 /// it is a *skip*, not an error.
 const CSPROJ: &str = "<Project Sdk=\"Microsoft.NET.Sdk\">\n  <PropertyGroup>\n  </PropertyGroup>\n</Project>\n";
 
-/// The message `std::fs::read_to_string` fails with on non-UTF-8 bytes, which is
-/// what the runner flattens into the per-file error.
-const UTF8_ERROR: &str = "stream did not contain valid UTF-8";
+const UTF8_FORMAT_ERROR: &str = "file is not valid UTF-8 at byte 6; text formatting was skipped: 1 byte(s) do not form a valid UTF-8 sequence, starting at byte 6";
+const UTF8_LINT_SKIP: &str = "file is not valid UTF-8; text linting was skipped";
 
 /// The reason recorded for an explicitly named path no backend covers.
 const NO_ENGINE: &str = "no matching engine for this file type";
@@ -74,21 +73,31 @@ fn entry<'a>(results: &'a [Value], name: &str) -> &'a Value {
 // ── ops layer: the run-level accounting reaches the caller ────────────────
 
 #[test]
-fn lint_run_carries_the_errored_file_instead_of_dropping_it() {
+fn lint_run_carries_invalid_utf8_as_a_structured_finding() {
     let dir = repo();
     let run = ops::lint_run(&paths(&dir), &[], None, false).unwrap();
 
-    assert_eq!(run.errors.len(), 1, "the unreadable file is reported, not dropped");
-    assert_eq!(run.errors[0].path, dir.path().join("bad.py"));
-    assert_eq!(run.errors[0].message, UTF8_ERROR);
+    assert!(
+        run.errors.is_empty(),
+        "invalid text is a finding, not an opaque run error"
+    );
     assert_eq!(
         run.skipped.len(),
-        1,
-        "the errored file must not be counted as a skip: {:?}",
+        2,
+        "both invalid text and an unmatched file remain explicitly unverified: {:?}",
         run.skipped
     );
-    assert_eq!(run.skipped[0].path, dir.path().join("App.csproj"));
-    assert_eq!(run.skipped[0].reason, NO_ENGINE);
+    assert!(
+        run.skipped
+            .iter()
+            .any(|skip| skip.path == dir.path().join("bad.py") && skip.reason == UTF8_LINT_SKIP)
+    );
+    let invalid = run
+        .results
+        .iter()
+        .find(|result| result.path == dir.path().join("bad.py"))
+        .expect("invalid text remains in structured results");
+    assert_eq!(invalid.diagnostics[0].code.as_deref(), Some("invalid-utf8"));
     assert_eq!(run.checked, 1, "only the readable file was linted");
 }
 
@@ -99,7 +108,7 @@ fn format_run_carries_the_errored_file_instead_of_dropping_it() {
 
     assert_eq!(run.errors.len(), 1, "the unreadable file is reported, not dropped");
     assert_eq!(run.errors[0].path, dir.path().join("bad.py"));
-    assert_eq!(run.errors[0].message, UTF8_ERROR);
+    assert_eq!(run.errors[0].message, UTF8_FORMAT_ERROR);
     assert_eq!(
         run.skipped.len(),
         1,
@@ -188,14 +197,14 @@ async fn call(tool: &str, dir: &TempDir) -> rmcp::model::CallToolResult {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn lint_names_the_errored_file_and_does_not_report_success() {
+async fn lint_names_invalid_utf8_as_a_structured_finding() {
     let dir = repo();
     let result = call("lint", &dir).await;
 
     assert_eq!(
         result.is_error,
-        Some(true),
-        "a file poly failed on must not present as a successful tool call"
+        Some(false),
+        "lint findings are returned successfully for the caller to evaluate"
     );
 
     let structured = result.structured_content.as_ref().expect("structured content");
@@ -203,15 +212,15 @@ async fn lint_names_the_errored_file_and_does_not_report_success() {
 
     let errored = entry(results, "bad.py");
     assert_eq!(
-        errored["error"],
-        Value::from(UTF8_ERROR),
-        "the error is machine-readable"
+        errored["skipped"],
+        Value::from(UTF8_LINT_SKIP),
+        "the uninspected file is machine-readable"
     );
-    assert_eq!(errored.get("skipped"), None, "an errored file is not a skipped one");
+    assert_eq!(errored.get("error"), None, "decode failure is not an opaque lint error");
     assert_eq!(
-        errored["diagnostics"],
-        Value::Array(vec![]),
-        "a file that could not be read has no findings"
+        errored["diagnostics"][0]["code"],
+        Value::from("invalid-utf8"),
+        "the decode failure is a proper diagnostic"
     );
 
     let skipped = entry(results, "App.csproj");
@@ -219,11 +228,9 @@ async fn lint_names_the_errored_file_and_does_not_report_success() {
     assert_eq!(skipped.get("error"), None, "a skip is not an error");
 
     let errors = structured["errors"].as_array().expect("errors array");
-    assert_eq!(errors.len(), 1, "the run-level error list names the file: {errors:?}");
-    assert_eq!(errors[0]["message"], Value::from(UTF8_ERROR));
     assert!(
-        errors[0]["path"].as_str().is_some_and(|path| path.ends_with("bad.py")),
-        "the run-level error names the path: {errors:?}"
+        errors.is_empty(),
+        "the structured finding replaces the opaque run error"
     );
 }
 
@@ -244,7 +251,7 @@ async fn format_check_names_the_errored_file_and_does_not_report_success() {
     let errored = entry(results, "bad.py");
     assert_eq!(
         errored["error"],
-        Value::from(UTF8_ERROR),
+        Value::from(UTF8_FORMAT_ERROR),
         "the error is machine-readable"
     );
     assert_eq!(errored.get("skipped"), None, "an errored file is not a skipped one");
@@ -264,7 +271,7 @@ async fn format_check_names_the_errored_file_and_does_not_report_success() {
 
     let errors = structured["errors"].as_array().expect("errors array");
     assert_eq!(errors.len(), 1, "the run-level error list names the file: {errors:?}");
-    assert_eq!(errors[0]["message"], Value::from(UTF8_ERROR));
+    assert_eq!(errors[0]["message"], Value::from(UTF8_FORMAT_ERROR));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -277,11 +284,13 @@ async fn the_text_block_carries_the_errored_file_too() {
         let records = parsed
             .as_array()
             .unwrap_or_else(|| panic!("{tool} text block stays the CLI array: {text}"));
-        assert_eq!(
-            entry(records, "bad.py")["error"],
-            Value::from(UTF8_ERROR),
-            "{tool}'s text block must not hide the failure: {text}"
-        );
+        let invalid = entry(records, "bad.py");
+        if tool == "lint" {
+            assert_eq!(invalid["diagnostics"][0]["code"], Value::from("invalid-utf8"));
+            assert_eq!(invalid["skipped"], Value::from(UTF8_LINT_SKIP));
+        } else {
+            assert_eq!(invalid["error"], Value::from(UTF8_FORMAT_ERROR));
+        }
         let structured = result.structured_content.as_ref().expect("structured content");
         assert_eq!(
             &parsed, &structured["results"],
