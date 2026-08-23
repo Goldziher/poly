@@ -55,7 +55,7 @@ pub struct MarkupFmtEngine;
 /// any stale cached output.
 /// Bumped suffix to +opts-1 after exposing full LanguageOptions (options were
 /// previously ignored — existing caches must be invalidated).
-const VERSION: &str = "0.27.3+opts-1+tmpltarget-2+embedded-oxc-2+rev:288f9a5+syntax-skip-1";
+const VERSION: &str = "0.27.3+opts-1+tmpltarget-2+embedded-oxc-2+rev:288f9a5+syntax-skip-2";
 
 /// Reason reported when a general-purpose template does not render markup.
 const NON_MARKUP_TEMPLATE_SKIP: &str = "template does not render markup";
@@ -137,12 +137,19 @@ impl Engine for MarkupFmtEngine {
                 .expect("Astro formatter allocator must exist");
             let embedded_cfg = embedded_cfg.as_mut().expect("Astro formatter config must exist");
             embedded_cfg.globals.line_length = hints.print_width;
-            super::oxc::format_embedded_js(allocator, code, hints.ext, embedded_cfg).map(Cow::Owned)
+            super::oxc::format_embedded_js(allocator, code, hints.ext, embedded_cfg)
+                .map(Cow::Owned)
+                .map_err(anyhow::Error::new)
         });
         let formatted = match formatted {
             Ok(formatted) => formatted,
             Err(markup_fmt::FormatError::Syntax(_)) => return Ok(FormatOutput::Unchanged),
-            Err(error) => return Err(anyhow::anyhow!("markup_fmt error: {error}")),
+            Err(markup_fmt::FormatError::External(errors))
+                if errors.iter().all(super::oxc::is_embedded_js_parse_error) =>
+            {
+                return Ok(FormatOutput::Unchanged);
+            }
+            Err(error) => return Err(error.into()),
         };
 
         if formatted == *src.content {

@@ -22,7 +22,7 @@ use crate::config::EngineConfig;
 use crate::engine::{Capabilities, Diagnostic, FormatOutput, SourceFile};
 use crate::language::Language;
 
-pub(crate) use self::format::format_embedded_js;
+pub(crate) use self::format::{format_embedded_js, is_embedded_js_parse_error};
 use self::format::{format_js, format_json};
 use self::lint::{lint_js, lint_json};
 

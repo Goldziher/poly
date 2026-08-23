@@ -10,6 +10,29 @@ use crate::language::Language;
 
 use super::config::{build_js_options, build_json_options};
 
+const EMBEDDED_PARSE_ERROR_PREFIX: &str = "oxc_formatter embedded parse error: ";
+
+#[derive(Debug)]
+pub(crate) enum EmbeddedJsFormatError {
+    Parse(String),
+    Print(String),
+}
+
+impl std::fmt::Display for EmbeddedJsFormatError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Parse(error) => write!(formatter, "{EMBEDDED_PARSE_ERROR_PREFIX}{error}"),
+            Self::Print(error) => write!(formatter, "oxc_formatter embedded print error: {error}"),
+        }
+    }
+}
+
+impl std::error::Error for EmbeddedJsFormatError {}
+
+pub(crate) fn is_embedded_js_parse_error(error: &anyhow::Error) -> bool {
+    error.to_string().starts_with(EMBEDDED_PARSE_ERROR_PREFIX)
+}
+
 fn source_type_for(lang: &Language) -> SourceType {
     match lang {
         Language::TypeScript => SourceType::ts(),
@@ -33,14 +56,14 @@ pub(crate) fn format_embedded_js(
     code: &str,
     extension: &str,
     cfg: &EngineConfig,
-) -> anyhow::Result<String> {
+) -> Result<String, EmbeddedJsFormatError> {
     let options = build_js_options(cfg);
     let formatted = oxc_formatter::format(allocator, code, source_type_for_extension(extension), options)
-        .map_err(|error| anyhow::anyhow!("oxc_formatter embedded parse error: {error:?}"))?;
+        .map_err(|error| EmbeddedJsFormatError::Parse(format!("{error:?}")))?;
 
     formatted
         .print()
-        .map_err(|error| anyhow::anyhow!("oxc_formatter embedded print error: {error}"))
+        .map_err(|error| EmbeddedJsFormatError::Print(error.to_string()))
         .map(|printed| printed.into_code())
 }
 
@@ -146,6 +169,18 @@ mod tests {
             matches!(second, FormatOutput::Unchanged),
             "second pass should be Unchanged; got: {second:?}"
         );
+    }
+
+    #[test]
+    fn embedded_js_classifies_parse_failures_separately() {
+        let error = format_embedded_js(&Allocator::new(), "const broken = ;", "js", &default_cfg())
+            .expect_err("invalid embedded JavaScript must fail parsing");
+
+        assert!(matches!(error, EmbeddedJsFormatError::Parse(_)));
+        assert!(is_embedded_js_parse_error(&anyhow::Error::new(error)));
+        assert!(!is_embedded_js_parse_error(&anyhow::anyhow!(
+            "unexpected embedded formatter failure"
+        )));
     }
 
     /// `quote_style = "single"` rewrites `"hello"` to `'hello'`.
