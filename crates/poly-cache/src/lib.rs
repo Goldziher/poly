@@ -107,8 +107,10 @@
 //! are implemented, add `fd-lock` or `fs2` to the workspace and open `.lock` with
 //! an exclusive `FileLock` before mutating the directory tree.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, RwLock};
 
 mod maintenance;
 pub mod permissions;
@@ -349,6 +351,83 @@ impl Namespace {
             Namespace::Hook => "hook",
         }
     }
+
+    fn slot(self) -> usize {
+        match self {
+            Namespace::Lint => 0,
+            Namespace::Fmt => 1,
+            Namespace::Hook => 2,
+        }
+    }
+}
+
+/// Open-time inventory of result files, plus entries written by this process.
+///
+/// Missing keys are rejected in memory instead of issuing a failing filesystem
+/// read for every file and engine. The inventory is deliberately a snapshot:
+/// writes from another process become visible on the next cache open. A stale
+/// positive is harmless because [`ResultCache::get`] still reads the file and
+/// treats deletion or corruption as a miss.
+#[derive(Debug)]
+struct PresenceIndex {
+    snapshot: [HashSet<String>; 3],
+    added: [RwLock<HashSet<String>>; 3],
+    any_added: AtomicBool,
+}
+
+impl PresenceIndex {
+    fn empty() -> Self {
+        Self {
+            snapshot: std::array::from_fn(|_| HashSet::new()),
+            added: std::array::from_fn(|_| RwLock::new(HashSet::new())),
+            any_added: AtomicBool::new(false),
+        }
+    }
+
+    fn scan(root: &Path) -> Self {
+        let mut index = Self::empty();
+        for namespace in Namespace::ALL {
+            let directory = root.join("results").join(namespace.as_dir());
+            let Ok(entries) = std::fs::read_dir(directory) else {
+                continue;
+            };
+            let present = &mut index.snapshot[namespace.slot()];
+            for entry in entries.flatten() {
+                let Ok(file_type) = entry.file_type() else {
+                    continue;
+                };
+                let name = entry.file_name();
+                let Some(name) = name.to_str() else {
+                    continue;
+                };
+                if file_type.is_file() && !name.starts_with('.') {
+                    present.insert(name.to_owned());
+                }
+            }
+        }
+        index
+    }
+
+    fn contains(&self, namespace: Namespace, key: &CacheKey) -> bool {
+        if self.snapshot[namespace.slot()].contains(key.as_str()) {
+            return true;
+        }
+        if !self.any_added.load(Ordering::Acquire) {
+            return false;
+        }
+        self.added[namespace.slot()]
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .contains(key.as_str())
+    }
+
+    fn record(&self, namespace: Namespace, key: &CacheKey) {
+        self.added[namespace.slot()]
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(key.as_str().to_owned());
+        self.any_added.store(true, Ordering::Release);
+    }
 }
 
 /// A blake3 digest over one or more input files, used as the content component
@@ -425,6 +504,7 @@ pub struct ResultCache {
     /// `<platform-cache>/poly/<repo-key>/`
     root: PathBuf,
     enabled: bool,
+    present: Arc<PresenceIndex>,
 }
 
 impl ResultCache {
@@ -444,11 +524,15 @@ impl ResultCache {
     /// `[cache] dir`, `--cache-dir`, a test sandbox — so an existing directory
     /// there keeps whatever mode it has ([`DirOrigin::UserConfigured`]).
     pub fn open(root: PathBuf, enabled: bool) -> anyhow::Result<Self> {
-        let cache = Self { root, enabled };
+        let cache = Self {
+            root,
+            enabled,
+            present: Arc::new(PresenceIndex::empty()),
+        };
         if enabled {
             Self::init_dirs(&cache.root, DirOrigin::UserConfigured)?;
         }
-        Ok(cache)
+        Ok(cache.with_scanned_presence())
     }
 
     /// Open the cache, first wiping the entry tree if the on-disk `VERSION`
@@ -460,7 +544,11 @@ impl ResultCache {
     /// A failed sweep is reported and ignored: eviction is hygiene, and losing
     /// disk space is not a reason to fail a lint run.
     fn open_healed(root: PathBuf, enabled: bool, origin: DirOrigin) -> anyhow::Result<Self> {
-        let cache = Self { root, enabled };
+        let cache = Self {
+            root,
+            enabled,
+            present: Arc::new(PresenceIndex::empty()),
+        };
         if enabled {
             cache.heal_stale_layout()?;
             Self::init_dirs(&cache.root, origin)?;
@@ -470,7 +558,14 @@ impl ResultCache {
                 Err(error) => tracing::warn!("automatic result-cache sweep failed: {error:#}"),
             }
         }
-        Ok(cache)
+        Ok(cache.with_scanned_presence())
+    }
+
+    fn with_scanned_presence(mut self) -> Self {
+        if self.enabled {
+            self.present = Arc::new(PresenceIndex::scan(&self.root));
+        }
+        self
     }
 
     /// Open the cache by walking upward from `start` to find the repo root.
@@ -692,7 +787,7 @@ impl ResultCache {
 
     /// Fetch a cached entry by key, or `None` on miss / when disabled.
     pub fn get(&self, namespace: Namespace, key: &CacheKey) -> Option<Vec<u8>> {
-        if !self.enabled {
+        if !self.enabled || !self.present.contains(namespace, key) {
             return None;
         }
         std::fs::read(self.entry_path(namespace, key)).ok()
@@ -715,6 +810,7 @@ impl ResultCache {
         ));
         std::fs::write(&tmp, bytes).map_err(|e| anyhow::anyhow!("cache write {}: {e}", tmp.display()))?;
         std::fs::rename(&tmp, &dest).map_err(|e| anyhow::anyhow!("cache rename to {}: {e}", dest.display()))?;
+        self.present.record(namespace, key);
         Ok(())
     }
 

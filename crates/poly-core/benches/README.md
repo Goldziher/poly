@@ -34,6 +34,11 @@ Rust corpus into a `tempfile::TempDir` and runs with the cache disabled.
 | `cache_key/single_file_digest/{1k,8k,64k}` | `ResultCache::single_file_digest` | blake3 hash (lint-cache cost) |
 | `cache_key/digest_plus_key/{1k,8k,64k}` | digest + `key_with_args` | per-file cache-key cost |
 | `cache_key/key_with_args_only` | `key_with_args` (digest precomputed) | fixed per-key preamble hash |
+| `cache_get/hit` | `ResultCache::get` (seeded entry) | cached filesystem read |
+| `cache_get/miss` | `ResultCache::get` (absent entry) | in-memory presence-index lookup |
+| `cache_get/miss_after_put` | miss after a session write | concurrent added-key lookup |
+| `cache_get/parallel_miss_after_put_1024` | 1,024 misses through rayon | contention guard |
+| `cache_open/10000_entries` | `ResultCache::open` with 10k entries | presence-index startup cost |
 | `runner_e2e/format_64_rust_files_dry_run` | `runner::format`, 64 files, `no_cache` | discover → rayon → tier-2 |
 
 ## Baseline (Apple Silicon, release profile, `--measurement-time 3`)

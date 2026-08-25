@@ -19,6 +19,11 @@ use std::sync::Mutex;
 
 use poly_core::{Config, RunOptions};
 
+/// Large enough that taplo crosses the runner's cache-write cost threshold on
+/// every supported CI target, keeping this specifically a warm-cache ordering
+/// test rather than a test of the cheap-result bypass.
+const CACHEABLE_ENTRY_COUNT: usize = 20_000;
+
 /// Serializes tests in this binary that mutate `POLY_CACHE_HOME` (a
 /// process-global environment variable); `cargo test` runs tests within one
 /// binary in parallel by default.
@@ -49,8 +54,12 @@ fn generated_skip_outcome_is_independent_of_cache_state() {
     //
     // The digest length matters: a short hex run is no longer accepted, because
     // "any 8+ hex characters" also matched tokens no generator ever wrote.
-    let stamped = "# alef:hash:a3f1c2d4e5b6a7980123456789abcdef0123456789abcdef0123456789abcdef\nx  =   1\n\n\n";
-    let path = write(dir.path(), "a.toml", stamped);
+    let mut stamped = String::from("# alef:hash:a3f1c2d4e5b6a7980123456789abcdef0123456789abcdef0123456789abcdef\n");
+    for index in 0..CACHEABLE_ENTRY_COUNT {
+        stamped.push_str(&format!("x_{index}  =   {index}\n"));
+    }
+    stamped.push_str("\n\n");
+    let path = write(dir.path(), "a.toml", &stamped);
     let cfg = Config::default();
     let warm_up_opts = RunOptions {
         no_cache: false,

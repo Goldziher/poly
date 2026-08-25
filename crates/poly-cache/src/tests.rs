@@ -113,6 +113,56 @@ fn get_returns_stored_bytes_on_hit() {
 }
 
 #[test]
+fn reopened_cache_indexes_entries_from_a_prior_process() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("cache");
+    let digest = ResultCache::single_file_digest("content");
+    let key = ResultCache::key(Namespace::Lint, "engine", "1", &empty_args(), &digest);
+
+    ResultCache::open(root.clone(), true)
+        .unwrap()
+        .put(Namespace::Lint, &key, b"cached")
+        .unwrap();
+
+    let reopened = ResultCache::open(root, true).unwrap();
+    assert_eq!(reopened.get(Namespace::Lint, &key), Some(b"cached".to_vec()));
+    assert!(reopened.present.contains(Namespace::Lint, &key));
+}
+
+#[test]
+fn put_updates_the_shared_presence_index() {
+    let dir = tempfile::tempdir().unwrap();
+    let cache = cache_at(&dir);
+    let clone = cache.clone();
+    let digest = ResultCache::single_file_digest("content");
+    let key = ResultCache::key(Namespace::Fmt, "engine", "1", &empty_args(), &digest);
+
+    assert!(!clone.present.contains(Namespace::Fmt, &key));
+    cache.put(Namespace::Fmt, &key, b"formatted").unwrap();
+
+    assert!(clone.present.contains(Namespace::Fmt, &key));
+    assert_eq!(clone.get(Namespace::Fmt, &key), Some(b"formatted".to_vec()));
+}
+
+#[test]
+fn presence_scan_ignores_temporary_files_and_directories() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("cache");
+    let cache = ResultCache::open(root.clone(), true).unwrap();
+    let digest = ResultCache::single_file_digest("content");
+    let key = ResultCache::key(Namespace::Hook, "hook", "1", &empty_args(), &digest);
+    let namespace = root.join("results/hook");
+
+    std::fs::write(namespace.join(format!(".{}.tmp", key.as_str())), b"partial").unwrap();
+    std::fs::create_dir(namespace.join(key.as_str())).unwrap();
+    drop(cache);
+
+    let reopened = ResultCache::open(root, true).unwrap();
+    assert!(!reopened.present.contains(Namespace::Hook, &key));
+    assert_eq!(reopened.get(Namespace::Hook, &key), None);
+}
+
+#[test]
 fn miss_when_content_changes() {
     let tmp = tempfile::tempdir().unwrap();
     let cache = cache_at(&tmp);

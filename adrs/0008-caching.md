@@ -11,6 +11,8 @@
 - Updated: 2026-08-12: the running binary's **build identity** joins the key preamble, so
   invalidation no longer depends on anyone remembering to bump a string; the key also folds
   `CACHE_FORMAT_VERSION` (now `4`), and the run path sweeps stranded entries automatically.
+- Updated: 2026-08-25: cache misses use an open-time presence index, engine results are
+  persisted only when computation takes at least 5 ms, and disabled caches skip key work.
 
 ## Context
 
@@ -48,6 +50,11 @@ an explicit root:
 - **CACHE_FORMAT_VERSION:** written to the `VERSION` sentinel *and* folded into the key, so
   a schema change both makes existing entries unreachable and reclaims their bytes.
 - **Atomic writes:** write to a sibling temp file then rename, guarded by `fd-lock`.
+- **Presence index:** scan persisted keys once when the cache opens. Absent keys are rejected
+  in memory instead of issuing a failed filesystem read per file and engine; successful writes
+  join a concurrent session index so rayon readers do not serialize.
+- **Cost-gated engine writes:** lint and format results are persisted only when the engine ran
+  for at least 5 ms. Cheaper work is faster to recompute than to serialize and atomically store.
 - **Our cache supersedes each tool's internal cache:** engines disable/ignore upstream
   caches; we're the single source of incremental truth.
 
@@ -108,7 +115,8 @@ ceiling. A failed sweep is logged and ignored — losing disk space must not fai
   commit touching no Rust skips `clippy`/`sort`/`machete`/`deny`; opt out with `cargo =
   { cache = false }`.
 
-**Bypass:** `--no-cache` disables caching for the run. `poly cache gc` / `poly cache
+**Bypass:** `--no-cache` disables caching for the run and skips content hashing and key
+construction. `poly cache gc` / `poly cache
 clean` / `poly cache stats` / `poly cache size` manage the cache directory.
 
 ## Consequences

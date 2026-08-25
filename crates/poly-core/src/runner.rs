@@ -38,6 +38,16 @@ pub use types::{
 /// others, so re-lint until stable, but cap to guarantee termination.
 const MAX_FIX_PASSES: usize = 5;
 
+/// Minimum engine runtime for which persisting and reloading a cache entry is
+/// expected to cost less than recomputing the result.
+const MIN_CACHE_DURATION: std::time::Duration = std::time::Duration::from_millis(5);
+
+/// Per-file engine runtimes at or above this threshold are useful diagnostic
+/// signals for pathological inputs or backend performance regressions.
+const SLOW_ENGINE_DEBUG: std::time::Duration = std::time::Duration::from_millis(250);
+const SLOW_ENGINE_WARN: std::time::Duration = std::time::Duration::from_secs(2);
+const GENERIC_TIER_ENGINE: &str = "treesitter";
+
 /// Maximum format passes per file. A formatter is not guaranteed to be
 /// idempotent — line-wrap/reflow can shift on a second run (observed with
 /// clang-format on `.h`, csharpier on `.cs`, google-java-format on `.java`) —
@@ -384,7 +394,8 @@ fn invalid_utf8_result(f: &DiscoveredFile, error: std::str::Utf8Error) -> LintRe
 /// Run every lint-capable engine for the file's language over `content`,
 /// content-hash caching each engine's diagnostics. When `collect_debug` is set,
 /// also returns per-engine cache hit/miss + timing; otherwise the second tuple
-/// element is `None` and no timing instrumentation runs.
+/// element is `None`. Engine runtime is always measured because the cache-write
+/// policy uses that cost to avoid persisting cheap results.
 fn lint_content(
     f: &DiscoveredFile,
     engine_plans: &[EnginePlan],
@@ -397,18 +408,23 @@ fn lint_content(
         language: f.language.clone(),
         content: Arc::from(content),
     };
-    let digest = ResultCache::single_file_digest_with_path(&f.path.to_string_lossy(), content);
+    let digest = digest_if_enabled(cache, || {
+        ResultCache::single_file_digest_with_path(&f.path.to_string_lossy(), content)
+    });
     let mut all = Vec::new();
     let mut debug = collect_debug.then(RunDebug::default);
     for plan in engine_plans {
-        let key = ResultCache::key_with_args(
-            Namespace::Lint,
-            plan.engine.name(),
-            plan.engine.version(),
-            &plan.serialized_args,
-            &digest,
-        );
-        if let Some(bytes) = cache.get(Namespace::Lint, &key)
+        let key = digest.as_ref().map(|digest| {
+            ResultCache::key_with_args(
+                Namespace::Lint,
+                plan.engine.name(),
+                plan.engine.version(),
+                &plan.serialized_args,
+                digest,
+            )
+        });
+        if let Some(key) = &key
+            && let Some(bytes) = cache.get(Namespace::Lint, key)
             && let Ok(mut diags) = serde_json::from_slice::<Vec<Diagnostic>>(&bytes)
         {
             push_engine_debug(debug.as_mut(), plan, None);
@@ -418,11 +434,17 @@ fn lint_content(
             all.extend(diags);
             continue;
         }
-        let started = collect_debug.then(std::time::Instant::now);
+        let started = std::time::Instant::now();
         let mut diags = plan.engine.lint(&src, &plan.config)?;
-        push_engine_debug(debug.as_mut(), plan, started);
-        if let Ok(bytes) = serde_json::to_vec(&diags)
-            && let Err(error) = cache.put(Namespace::Lint, &key, &bytes)
+        let elapsed = started.elapsed();
+        note_slow_engine(&f.path, content.len(), plan.engine.name(), elapsed);
+        push_engine_debug(debug.as_mut(), plan, Some(started));
+        // Cache raw severities so a later config-only remap can be applied
+        // identically on both hits and misses.
+        if let Some(key) = &key
+            && should_cache_result(elapsed)
+            && let Ok(bytes) = serde_json::to_vec(&diags)
+            && let Err(error) = cache.put(Namespace::Lint, key, &bytes)
         {
             tracing::warn!(
                 engine = plan.engine.name(),
@@ -435,6 +457,29 @@ fn lint_content(
         all.extend(diags);
     }
     Ok((all, debug))
+}
+
+fn digest_if_enabled<T>(cache: &ResultCache, compute: impl FnOnce() -> T) -> Option<T> {
+    cache.enabled().then(compute)
+}
+
+fn should_cache_result(elapsed: std::time::Duration) -> bool {
+    elapsed >= MIN_CACHE_DURATION
+}
+
+fn note_slow_engine(path: &std::path::Path, bytes: usize, engine: &str, elapsed: std::time::Duration) {
+    let bytes = bytes as u64;
+    let elapsed_ms = elapsed.as_millis() as u64;
+    let file = path.display();
+    if elapsed >= SLOW_ENGINE_WARN {
+        if engine == GENERIC_TIER_ENGINE {
+            tracing::warn!(%file, bytes, engine, elapsed_ms, "slow generic formatter run");
+        } else {
+            tracing::warn!(%file, bytes, engine, elapsed_ms, "slow backend run; consider reporting it upstream");
+        }
+    } else if elapsed >= SLOW_ENGINE_DEBUG {
+        tracing::debug!(%file, bytes, engine, elapsed_ms, "notable backend runtime");
+    }
 }
 
 /// Append one [`EngineDebug`] record when debug collection is active. `started`
@@ -550,15 +595,18 @@ fn format_one(
     let run_pass = |input: &Arc<str>, record_debug: bool| -> anyhow::Result<Arc<str>> {
         let mut current = Arc::clone(input);
         for plan in engine_plans {
-            let digest = ResultCache::single_file_digest(&current);
-            let key = ResultCache::key_with_args(
-                Namespace::Fmt,
-                plan.engine.name(),
-                plan.engine.version(),
-                &plan.serialized_args,
-                &digest,
-            );
-            if let Some(bytes) = cache.get(Namespace::Fmt, &key)
+            let key = digest_if_enabled(cache, || {
+                let digest = ResultCache::single_file_digest(&current);
+                ResultCache::key_with_args(
+                    Namespace::Fmt,
+                    plan.engine.name(),
+                    plan.engine.version(),
+                    &plan.serialized_args,
+                    &digest,
+                )
+            });
+            if let Some(key) = &key
+                && let Some(bytes) = cache.get(Namespace::Fmt, key)
                 && let Ok(text) = String::from_utf8(bytes)
             {
                 if record_debug {
@@ -568,15 +616,20 @@ fn format_one(
                 continue;
             }
             src.content = Arc::clone(&current);
-            let started = collect_debug.then(std::time::Instant::now);
+            let started = std::time::Instant::now();
             let out: Arc<str> = match plan.engine.format(&src, &plan.config)? {
                 FormatOutput::Unchanged => Arc::clone(&current),
                 FormatOutput::Formatted(s) => Arc::from(s),
             };
+            let elapsed = started.elapsed();
             if record_debug {
-                push_engine_debug(debug.as_mut(), plan, started);
+                push_engine_debug(debug.as_mut(), plan, Some(started));
             }
-            if let Err(error) = cache.put(Namespace::Fmt, &key, out.as_bytes()) {
+            note_slow_engine(&f.path, src.content.len(), plan.engine.name(), elapsed);
+            if let Some(key) = &key
+                && should_cache_result(elapsed)
+                && let Err(error) = cache.put(Namespace::Fmt, key, out.as_bytes())
+            {
                 tracing::warn!(
                     engine = plan.engine.name(),
                     "failed to store fmt cache entry: {error:#}"
@@ -700,6 +753,29 @@ fn configure_pool(jobs: Option<usize>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cache_write_policy_skips_cheap_results() {
+        assert!(!should_cache_result(
+            MIN_CACHE_DURATION - std::time::Duration::from_nanos(1)
+        ));
+        assert!(should_cache_result(MIN_CACHE_DURATION));
+    }
+
+    #[test]
+    fn disabled_cache_skips_digest_work() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let cache = ResultCache::open(tmp.path().join("cache"), false).expect("open disabled cache");
+        let digest_computed = std::cell::Cell::new(false);
+
+        let digest = digest_if_enabled(&cache, || {
+            digest_computed.set(true);
+            ResultCache::single_file_digest("content")
+        });
+
+        assert!(digest.is_none());
+        assert!(!digest_computed.get(), "disabled caching must not hash file contents");
+    }
 
     /// A pass that is already at its fixed point runs exactly once — no wasted
     /// confirmation pass, and the content is returned unchanged.
