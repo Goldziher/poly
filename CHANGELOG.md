@@ -7,6 +7,18 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+## [0.21.10] - 2026-08-25
+
+### Performance
+
+- **Whole-repository cache misses no longer issue one failed filesystem read per file and engine.**
+  The result cache inventories persisted keys once at open and resolves absent keys in memory, while
+  concurrent session writes remain visible without serializing rayon readers.
+- Results from engines that finish in under 5 ms are recomputed instead of paying serialization and
+  atomic-write costs. Disabled caches now skip content digests and cache-key construction entirely.
+- Slow single-file backend runs now emit structured timing events to identify pathological inputs,
+  and Criterion coverage tracks hit, miss, post-write contention, and index-open costs.
+
 ## [0.21.9] - 2026-08-25
 
 ### Fixed
