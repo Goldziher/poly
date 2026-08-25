@@ -34,7 +34,7 @@ use self::lint::{lint_js, lint_json};
 ///               bracket_spacing, bracket_same_line, indent_style; JSON bracket_spacing
 ///               and trailing_commas now wired from `cfg.options`.
 const VERSION: &str =
-    "oxc_formatter:0.64.0+oxlint+parser:0.146.0+rev:fd61cd8+json-fmt+rules-v2+fmt-opts+jsonc-trailing-comma";
+    "oxc_formatter:0.64.0+oxlint+parser:0.146.0+rev:3bbcea6+json-fmt+rules-v2+fmt-opts+jsonc-trailing-comma";
 
 static LANGUAGES: &[Language] = &[
     Language::JavaScript,

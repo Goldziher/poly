@@ -65,7 +65,7 @@ const DEFAULT_GROUPS: &[&str] = &["correctness", "suspicious"];
 /// Cache-key version string.  Embeds the pinned biome rev so the blake3 cache
 /// is invalidated whenever the rev changes.  Bump the `+lint-vN` suffix when
 /// the diagnostic mapping logic changes output for identical input.
-const VERSION: &str = "biome_graphql_analyze+rev:fe61e21+lint-v1";
+const VERSION: &str = "biome_graphql_analyze+rev:9743d0c+lint-v1";
 
 impl Engine for BiomeGraphqlEngine {
     fn name(&self) -> &'static str {

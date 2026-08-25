@@ -7,6 +7,19 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+## [0.21.9] - 2026-08-25
+
+### Fixed
+
+- **Kotlin Elvis-expression method chains keep their continuation indentation.** The generic
+  formatter now preserves intentional Kotlin alignment that cannot be inferred from brace depth,
+  preventing generated Gradle scripts from being de-indented on each format run.
+
+### Changed
+
+- Updated compatible and incompatible Rust dependencies and refreshed the pinned Biome, OXC, and
+  Ruff revisions to their current upstream heads. Engine cache identities track the new versions.
+
 ## [0.21.8] - 2026-08-23
 
 ### Fixed

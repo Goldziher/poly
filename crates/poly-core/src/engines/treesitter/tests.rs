@@ -337,6 +337,25 @@ fn kotlin_multiline_call_args_get_continuation_indent() {
 }
 
 #[test]
+fn kotlin_elvis_method_chain_preserves_continuation_indent() {
+    let engine = TreeSitterEngine;
+    let input = concat!(
+        "fun configure() {\n",
+        "    val manifest = configured?.let(::file) ?: generateSequence(projectDir) { it.parentFile }\n",
+        "        .map { it.resolve(\"Cargo.toml\") }\n",
+        "        .firstOrNull { it.isFile }\n",
+        "        ?: throw GradleException(\n",
+        "            \"Cannot locate manifest; \" +\n",
+        "                \"set the manifest path explicitly\"\n",
+        "        )\n",
+        "}\n",
+    );
+    let source = src("build.gradle.kts", Language::Other("kotlin".into()), input);
+    let text = formatted_text(engine.format(&source, &cfg(4)).unwrap(), input);
+    assert_eq!(text, input, "Kotlin Elvis method-chain continuation indentation");
+}
+
+#[test]
 fn go_multiline_signature_paren_then_brace_close() {
     let engine = TreeSitterEngine;
     let input = concat!("func Foo(\n", "arg int,\n", ") {\n", "x = arg\n", "}\n",);

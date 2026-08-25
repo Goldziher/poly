@@ -462,7 +462,12 @@ fn reindent(source: &str, grammar_name: &str, facts: &CstFacts, cfg: &EngineConf
         }
 
         let base = active_levels.len() as i32;
-        let level = (base + facts.case_adjustment(line_start)).max(0) as usize;
+        let structural_level = (base + facts.case_adjustment(line_start)).max(0) as usize;
+        let level = if grammar_name == "kotlin" {
+            structural_level.max(existing_indent_level(line, &unit))
+        } else {
+            structural_level
+        };
 
         if !first {
             out.push_str(line_ending);
@@ -500,6 +505,11 @@ fn reindent(source: &str, grammar_name: &str, facts: &CstFacts, cfg: &EngineConf
 
     apply_trailing_newline(&mut out, source, line_ending, cfg.globals.final_newline);
     out
+}
+
+fn existing_indent_level(line: &str, unit: &str) -> usize {
+    let leading_bytes = line.len() - line.trim_start_matches([' ', '\t']).len();
+    leading_bytes / unit.len()
 }
 
 /// Count consecutive closing-bracket CST tokens at the start of `line` (after
