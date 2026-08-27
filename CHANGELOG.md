@@ -7,6 +7,38 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+## [0.21.11] - 2026-08-27
+
+### Fixed
+
+- **Directories skipped by the built-in prune set are now reported instead of vanishing.** Discovery
+  prunes any directory named `build`, `dist`, `deps`, `vendor`, `target` and the like at any depth,
+  and said nothing about it — so a tracked `src/.../commands/build` holding first-party source was
+  dropped from every walk while the run reported a clean pass, and naming the same file explicitly
+  still reported findings. The summary now names what the built-in set removed, alongside the
+  exclusions it already reported. `.git` is pruned but not reported; the count stays out of the
+  "nothing was checked" headline, so a repository with a `node_modules` reads exactly as before.
+- **`[discovery] no_prune` keeps a directory the built-in set would have pruned**, for a repository
+  where `build` or `dist` is ordinary source rather than build output. Bare directory names, not
+  globs; read from the run's root config. Built-in defaults are unchanged.
+- **A hook-source provisioning failure no longer hard-blocks `git commit`.** `prepare-commit-msg`
+  exits non-zero on such a failure and git offers no `--no-verify` for that hook, so a commit could
+  not be made at all. It now warns and continues; every other stage still treats the failure as
+  fatal, so a `pre-commit` gate is never silently weakened.
+- **`poly.local.toml` is found from the main worktree.** It is gitignored by design, so it never
+  exists in a freshly created linked worktree — while poly's hooks fire there, because they live in
+  the shared `.git/hooks`. Provisioning searched only the worktree root and failed, taking
+  `poly hooks install` with it, so the shims could not even be reinstalled to escape.
+- **`POLY_SKIP_HOOKS=1` skips every poly hook for one invocation**, a poly-level escape that does
+  not require disabling every hook in the repository via `core.hooksPath`.
+
+### Changed
+
+- Refreshed the pinned Biome, OXC, and Ruff revisions to their current upstream heads (OXC brings
+  formatter 0.65.0 and parser 0.147.0). Engine cache identities track the new versions. The Ruff
+  identity had been recording a revision that never existed upstream — each bump replaced only its
+  leading characters — and now carries the short revision the other engines use.
+
 ## [0.21.10] - 2026-08-25
 
 ### Performance
