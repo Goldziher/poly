@@ -170,6 +170,24 @@ pub struct DiscoveryReport {
     /// rather than leaving the reader to guess at a bare number.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unrecognized_samples: Vec<PathBuf>,
+    /// Directories dropped by the built-in vendored/generated prune set rather
+    /// than by any rule the user wrote.
+    ///
+    /// Counted apart from [`excluded_directories`](Self::excluded_directories)
+    /// and deliberately kept out of [`is_empty`](Self::is_empty): almost every
+    /// repository prunes a `node_modules` or a `target`, so folding these in
+    /// would flip the "nothing was checked" headline everywhere. What issue #14
+    /// showed is that they must still be *visible* — a tracked `build/` holding
+    /// first-party source is pruned by the same rule, and a summary that never
+    /// mentions it reads as full coverage.
+    #[serde(default)]
+    pub pruned_directories: usize,
+    /// One example per distinct pruned directory name (see
+    /// [`MAX_PRUNED_NAMES`]). Named rather than merely counted, because
+    /// "26 directories pruned" is not actionable and
+    /// "src/cli/pipeline/commands/build" is.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pruned_samples: Vec<ExcludedDirectory>,
 }
 
 /// How many unrecognised paths the note names before falling back to the count.
@@ -193,7 +211,7 @@ impl DiscoveryReport {
     /// not a language poly knows, and a summary that mentions neither reads as
     /// full coverage of the directory.
     pub fn has_notes(&self) -> bool {
-        !self.is_empty() || self.unrecognized_files > 0
+        !self.is_empty() || self.unrecognized_files > 0 || self.pruned_directories > 0
     }
 
     /// Record a walked file that no language detection could identify.
@@ -404,13 +422,118 @@ impl ExcludeMatcher {
 /// are nested (`depth > 0`) and are directories — so an explicitly passed root
 /// such as `node_modules/foo.js` is still walked, and a plain file that happens
 /// to share one of these names is never dropped. Returns `true` to keep.
-pub(crate) fn keep_walk_entry(entry: &ignore::DirEntry) -> bool {
+///
+/// `no_prune` subtracts names from the built-in set (`[discovery] no_prune`),
+/// for a repo where `build` or `dist` is ordinary source rather than output.
+pub(crate) fn keep_walk_entry(entry: &ignore::DirEntry, no_prune: &[String]) -> bool {
     let is_directory = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
     if entry.depth() > 0 && is_directory {
         let name = entry.file_name();
+        if no_prune.iter().any(|kept| name == kept.as_str()) {
+            return true;
+        }
         return !PRUNED_DIRECTORIES.iter().any(|pruned| name == *pruned);
     }
     true
+}
+
+/// How many distinct pruned directory *names* the report keeps an example of.
+///
+/// Deliberately not [`push_sample`]'s one-per-depth rule. That rule exists to
+/// show an exclude glob firing at several depths; here the reader's question is
+/// "which names did poly drop?", and the answer that matters — a `build/` among
+/// forty `node_modules/` — is precisely the one a depth-keyed sample loses,
+/// since siblings share a depth. Keyed by name, `build` and `dist` both survive
+/// however much vendored noise surrounds them.
+const MAX_PRUNED_NAMES: usize = 6;
+
+/// The one pruned directory the report stays silent about — see
+/// [`PruneRecorder::keep`].
+const UNREPORTED_PRUNE: &str = ".git";
+
+/// Tally of directories the built-in prune set removed from one walk.
+///
+/// Separate from [`ExcludeHits`] because these are not attributable to any rule
+/// an author wrote — there is nothing to name but the directories themselves.
+#[derive(Debug, Default)]
+struct PruneHits {
+    directories: usize,
+    samples: Vec<ExcludedDirectory>,
+}
+
+/// Keep `sample` if no directory of the same name is recorded yet and there is
+/// room left under [`MAX_PRUNED_NAMES`].
+fn push_pruned_sample(samples: &mut Vec<ExcludedDirectory>, sample: &ExcludedDirectory) {
+    if samples.len() >= MAX_PRUNED_NAMES {
+        return;
+    }
+    if samples
+        .iter()
+        .any(|seen| seen.path.file_name() == sample.path.file_name())
+    {
+        return;
+    }
+    samples.push(sample.clone());
+}
+
+/// Records what [`keep_walk_entry`] pruned, so the built-in set is reportable
+/// rather than silent.
+///
+/// Shaped like [`ExcludeMatcher`] — `Arc` + `Mutex`, `&self` recording — because
+/// `WalkBuilder::filter_entry` takes an `Fn` closure that cannot hold a `&mut`.
+#[derive(Debug)]
+struct PruneRecorder {
+    root: PathBuf,
+    no_prune: Vec<String>,
+    hits: Mutex<PruneHits>,
+}
+
+impl PruneRecorder {
+    fn new(root: &Path, no_prune: &[String]) -> Arc<Self> {
+        Arc::new(Self {
+            root: root.to_path_buf(),
+            no_prune: no_prune.to_vec(),
+            hits: Mutex::new(PruneHits::default()),
+        })
+    }
+
+    /// Whether the walk should keep `entry`; tallies it first when it will not.
+    fn keep(&self, entry: &ignore::DirEntry) -> bool {
+        if keep_walk_entry(entry, &self.no_prune) {
+            return true;
+        }
+        let path = entry.path();
+        // `.git` is pruned like the rest but never reported: it is the one name
+        // on the list that is definitionally not source, so naming it adds a
+        // line to every run and a directory to every count while telling nobody
+        // anything. The point of this report is the surprising entry.
+        if entry.file_name() == UNREPORTED_PRUNE {
+            return false;
+        }
+        let depth = path
+            .strip_prefix(&self.root)
+            .map(|relative| relative.components().count())
+            .unwrap_or_else(|_| path.components().count());
+        let mut hits = self.hits.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        hits.directories += 1;
+        push_pruned_sample(
+            &mut hits.samples,
+            &ExcludedDirectory {
+                path: path.to_path_buf(),
+                depth,
+            },
+        );
+        false
+    }
+
+    /// Fold this root's tally into the run-wide report.
+    fn merge_into(&self, report: &mut DiscoveryReport) {
+        let hits = self.hits.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        report.pruned_directories += hits.directories;
+        for sample in &hits.samples {
+            push_pruned_sample(&mut report.pruned_samples, sample);
+        }
+    }
 }
 
 /// Detect a file's language: tier-1 extension mapping first, then the
@@ -488,6 +611,8 @@ pub fn discover_reporting(
         }
         let matcher = ExcludeMatcher::new(root, &exclude);
         let walk_matcher = matcher.clone();
+        let pruner = PruneRecorder::new(root, configs.no_prune());
+        let walk_pruner = Arc::clone(&pruner);
         let mut builder = WalkBuilder::new(root);
         builder
             .hidden(false)
@@ -496,7 +621,7 @@ pub fn discover_reporting(
             .git_exclude(true)
             .parents(true)
             .filter_entry(move |entry| {
-                if !keep_walk_entry(entry) {
+                if !walk_pruner.keep(entry) {
                     return false;
                 }
                 match &walk_matcher {
@@ -530,6 +655,7 @@ pub fn discover_reporting(
         if let Some(matcher) = &matcher {
             matcher.merge_into(&mut report);
         }
+        pruner.merge_into(&mut report);
     }
     report.sort_rules();
     (out, report)

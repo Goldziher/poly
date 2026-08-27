@@ -48,6 +48,21 @@ pub(super) fn unrecognized_clause(discovery: &DiscoveryReport) -> Option<String>
     })
 }
 
+/// The summary clause naming what the built-in vendored/generated prune set
+/// removed, or `None` when it pruned nothing.
+///
+/// Kept apart from [`exclusion_clause`] because nothing the user wrote caused
+/// it: these are poly's own heuristics, and a reader who sees a directory they
+/// did not expect to lose needs to know which of the two to go and change.
+pub(super) fn pruned_clause(discovery: &DiscoveryReport) -> Option<String> {
+    (discovery.pruned_directories > 0).then(|| {
+        format!(
+            "{} director(ies) skipped by the built-in prune set",
+            discovery.pruned_directories
+        )
+    })
+}
+
 /// How many exclude rules the detail line names before summarising the rest.
 ///
 /// Rules are ordered by how much they pruned, so the ones worth investigating
@@ -101,6 +116,31 @@ pub fn render_discovery_note(discovery: &DiscoveryReport) -> Option<String> {
         let _ = writeln!(
             out,
             "  excluded directories were not walked, so the files inside them are not counted"
+        );
+    }
+    if discovery.pruned_directories > 0 {
+        // Named, not merely counted: the whole failure this reports — a tracked
+        // `build/` of first-party source silently dropped — is invisible in a
+        // bare number and obvious in a path.
+        let names: Vec<String> = discovery
+            .pruned_samples
+            .iter()
+            .map(|sample| sample.path.display().to_string())
+            .collect();
+        let _ = writeln!(
+            out,
+            "  {} director(ies) skipped by the built-in prune set{}",
+            discovery.pruned_directories,
+            if names.is_empty() {
+                String::new()
+            } else {
+                format!(" (e.g. {})", names.join(", "))
+            }
+        );
+        let _ = writeln!(
+            out,
+            "  these were not walked, so the files inside them are not counted; \
+             keep one with [discovery] no_prune"
         );
     }
     if discovery.excluded_explicit > 0 {

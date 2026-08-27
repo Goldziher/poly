@@ -37,6 +37,9 @@ pub struct Config {
     /// `[discovery] force_exclude` — require API callers to apply `exclude` to
     /// explicitly named roots too. The CLI and MCP do so by default.
     pub force_exclude: bool,
+    /// `[discovery] no_prune` — directory names kept despite the built-in
+    /// vendored/generated prune set (see `discover::PRUNED_DIRECTORIES`).
+    pub no_prune: Vec<String>,
     /// `[lint.<lang>.<tool>]` tables.
     pub lint: toml::Table,
     /// `[fmt.<lang>.<tool>]` tables.
@@ -296,6 +299,7 @@ impl From<poly_config::PolyConfig> for Config {
             defaults: pc.defaults,
             exclude: pc.discovery.exclude.as_slice().to_vec(),
             force_exclude: pc.discovery.force_exclude,
+            no_prune: pc.discovery.no_prune.as_slice().to_vec(),
             lint: pc.lint,
             fmt: pc.fmt,
             tools: pc.tools,

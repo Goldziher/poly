@@ -135,12 +135,16 @@ impl ConfigSet {
         let root_dir = dir_of_root(&primary);
         let root_config_dir = shared_root_config_dir(roots).or_else(|| root_config_dir(&root_dir));
 
+        // Taken before `root_config` is moved: the scan below prunes with the
+        // same built-in set discovery uses, so a repo that un-pruned `build/`
+        // must have its nested configs found there too.
+        let no_prune = root_config.no_prune.clone();
         let mut configs = vec![root_config];
         let mut dirs: Vec<Option<PathBuf>> = vec![Some(root_dir)];
         let mut lookup: Vec<(PathBuf, usize)> = Vec::new();
         let mut seen: HashSet<PathBuf> = HashSet::new();
 
-        for dir in config_dirs_governing(roots, resolver)? {
+        for dir in config_dirs_governing(roots, resolver, &no_prune)? {
             if !seen.insert(canonical_key(&dir)) {
                 continue;
             }
@@ -162,6 +166,16 @@ impl ConfigSet {
             root_config_dir,
             root_config_registered,
         })
+    }
+
+    /// `[discovery] no_prune` from the run's root config: directory names the
+    /// built-in prune set must leave alone.
+    ///
+    /// Read from `configs[0]` only, not per-directory — a nested `poly.toml`
+    /// cannot un-prune the directory holding it, because that directory was
+    /// never walked to find the config in the first place.
+    pub fn no_prune(&self) -> &[String] {
+        &self.configs[0].no_prune
     }
 
     /// The id of the config governing `file`: the nearest ancestor config
@@ -493,6 +507,7 @@ fn unanchored_pattern_covers_root(sub: &Path, glob: &str) -> bool {
 fn config_dirs_governing(
     roots: &[PathBuf],
     resolver: &dyn poly_config::BaseConfigResolver,
+    no_prune: &[String],
 ) -> anyhow::Result<Vec<PathBuf>> {
     let mut dirs = Vec::new();
     let mut frames = HashSet::new();
@@ -507,7 +522,7 @@ fn config_dirs_governing(
                 .map(normalize_dir),
         );
     }
-    dirs.extend(scan_config_dirs(roots));
+    dirs.extend(scan_config_dirs(roots, no_prune));
     Ok(dirs)
 }
 
@@ -548,8 +563,13 @@ fn relative_descent(descendant: &Path, ancestor: &Path) -> Option<PathBuf> {
 }
 
 /// Scan `roots` for every directory containing a config file, respecting
-/// `.gitignore` and the same pruned-directory set as discovery.
-fn scan_config_dirs(roots: &[PathBuf]) -> Vec<PathBuf> {
+/// `.gitignore` and the same pruned-directory set as discovery — including the
+/// run's `[discovery] no_prune` opt-out, so the two walks agree on what exists.
+///
+/// A `poly.toml` inside a still-pruned directory remains undiscoverable, which
+/// is why `no_prune` is read from the run's root config rather than from a
+/// config nested inside the directory it would un-prune.
+fn scan_config_dirs(roots: &[PathBuf], no_prune: &[String]) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     let mut seen = HashSet::new();
     for root in roots {
@@ -560,7 +580,12 @@ fn scan_config_dirs(roots: &[PathBuf]) -> Vec<PathBuf> {
             .git_global(true)
             .git_exclude(true)
             .parents(true)
-            .filter_entry(keep_walk_entry);
+            .filter_entry({
+                // `filter_entry` demands a `'static` closure, and this walk runs
+                // once per root, so the opt-out list is cloned rather than borrowed.
+                let no_prune = no_prune.to_vec();
+                move |entry| keep_walk_entry(entry, &no_prune)
+            });
         for entry in builder.build().flatten() {
             if !entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
                 continue;

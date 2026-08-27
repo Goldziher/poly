@@ -186,6 +186,27 @@ pub struct DiscoveryConfig {
     /// apply exclusions to explicitly named files by default; the CLI's
     /// `--include-excluded` flag is the deliberate one-off override.
     pub force_exclude: bool,
+    /// Directory *names* to keep despite the built-in vendored/generated prune
+    /// set — the opt-out for a repo where one of those names is ordinary source.
+    ///
+    /// `build` and `dist` are build-output conventions in most ecosystems and
+    /// ordinary domain nouns in some (`commands/build/`, a Rust module named
+    /// `build`), so the built-in set cannot be right for everyone:
+    ///
+    /// ```toml
+    /// [discovery]
+    /// no_prune = ["build", "dist"]
+    /// ```
+    ///
+    /// These are bare directory names matched at any depth, not globs — the
+    /// built-in set is a name list, and this subtracts from it. To prune *more*
+    /// names, use `exclude`, which already does that.
+    ///
+    /// Unlike `exclude`, this replaces rather than accumulates across config
+    /// layers, matching every other array in `poly.toml`. It is read from the
+    /// run's root config only: a `poly.toml` *inside* a pruned directory cannot
+    /// un-prune it, because the directory holding it was never walked.
+    pub no_prune: Patterns,
 }
 
 impl PolyConfig {

@@ -295,6 +295,10 @@ exclude = ["test_apps/**", "docs/snippets/**", "artifacts/**"]
 # default. Use `--include-excluded` for a deliberate one-off bypass.
 force_exclude = false
 
+# Directory names to keep despite the built-in prune set below, for a repo where
+# one of those names is ordinary source rather than build output.
+no_prune = ["build", "dist"]
+
 [fmt.python.ruff]
 docstring_code_format = true
 docstring_code_line_length = 120
@@ -370,6 +374,41 @@ Resolution rules:
   own subtree, so a parent exclude already covers its children.
 - **`[per-file-ignores]` globs are relative** to the directory of the config that declares them.
 - `--config <path>` pins one config for the whole run and bypasses nested resolution.
+
+### The built-in prune set
+
+Independently of `exclude`, poly never walks into a directory with one of these names, at any depth:
+
+```text
+node_modules  vendor  deps    target  dist   build  .git
+.venv         venv    .tox    .gradle .next  .nuxt  coverage
+__pycache__   .mypy_cache      .ruff_cache    .pytest_cache  .polylint
+```
+
+These hold vendored code, build output, or tool caches, and they are frequently *tracked*, so
+`.gitignore` alone does not exclude them. Every run reports what this pruned, so a directory you did
+not expect to lose is visible rather than silently missing:
+
+```console
+$ poly fmt --check .
+All formatted. (2239 file(s) checked, 26 director(ies) skipped by the built-in prune set)
+  26 director(ies) skipped by the built-in prune set (e.g. src/cli/pipeline/commands/build, node_modules)
+  these were not walked, so the files inside them are not counted; keep one with [discovery] no_prune
+```
+
+`build` and `dist` are build-output conventions in most ecosystems and ordinary domain nouns in
+some. Where one of them is real source, name it in `no_prune`:
+
+```toml
+[discovery]
+no_prune = ["build", "dist"]
+```
+
+These are bare directory names, not globs — the built-in set is a name list and `no_prune` subtracts
+from it. To prune *more* paths, use `exclude`. Unlike `exclude`, `no_prune` replaces rather than
+accumulates across config layers, and it is read from the run's root config only: a `poly.toml`
+*inside* a pruned directory cannot un-prune it, because that directory was never walked to find the
+config in the first place.
 
 ### Sharing configuration
 

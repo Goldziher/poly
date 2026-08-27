@@ -6,7 +6,9 @@ use std::fmt::Write as _;
 
 use owo_colors::{OwoColorize, Stream::Stderr, Stream::Stdout};
 
-use super::notes::{exclusion_clause, push_discovery_note, push_skip_note, skipped_clause, unrecognized_clause};
+use super::notes::{
+    exclusion_clause, pruned_clause, push_discovery_note, push_skip_note, skipped_clause, unrecognized_clause,
+};
 use super::shared::{Verbosity, render_debug_block, severity_label, strip_ansi};
 use crate::discover::DiscoveryReport;
 use crate::runner::{LintError, LintResult, LintRun, SkippedFile};
@@ -114,6 +116,9 @@ fn render_lint_core(
         if let Some(clause) = exclusion_clause(discovery) {
             tail.push(clause);
         }
+        if let Some(clause) = pruned_clause(discovery) {
+            tail.push(clause);
+        }
         if let Some(clause) = unrecognized_clause(discovery) {
             tail.push(clause);
         }
@@ -161,6 +166,9 @@ fn render_lint_core(
             tail.push(clause);
         }
         if let Some(clause) = exclusion_clause(discovery) {
+            tail.push(clause);
+        }
+        if let Some(clause) = pruned_clause(discovery) {
             tail.push(clause);
         }
         if let Some(clause) = unrecognized_clause(discovery) {

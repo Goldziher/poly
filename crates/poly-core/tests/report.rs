@@ -9,7 +9,7 @@ use poly_core::report::{self, Verbosity};
 use poly_core::runner::{
     EngineDebug, FormatError, FormatResult, FormatRun, LintError, LintResult, LintRun, RunDebug, SkippedFile,
 };
-use poly_core::{Diagnostic, DiscoveryReport, Edit, ExcludedRule, Severity, Span};
+use poly_core::{Diagnostic, DiscoveryReport, Edit, ExcludedDirectory, ExcludedRule, Severity, Span};
 
 fn sample_lint_results() -> Vec<LintResult> {
     let mut metadata = BTreeMap::new();
@@ -1402,4 +1402,84 @@ fn format_summary_names_a_file_the_engine_could_not_process() {
             "1 file(s) could not be formatted and were NOT checked.\n",
         )
     );
+}
+
+/// Issue #14: the built-in prune set removed a tracked source directory and the
+/// summary said nothing, so a clean-looking pass and a pass that never looked
+/// were indistinguishable. The count alone is not enough — the directory has to
+/// be named, because "26 directories skipped" reads as vendored noise until you
+/// can see that one of them is `commands/build`.
+#[test]
+fn format_summary_names_directories_the_builtin_prune_set_skipped() {
+    owo_colors::set_override(false);
+    let discovery = DiscoveryReport {
+        pruned_directories: 3,
+        pruned_samples: vec![
+            ExcludedDirectory {
+                path: "src/cli/pipeline/commands/build".into(),
+                depth: 5,
+            },
+            ExcludedDirectory {
+                path: "node_modules".into(),
+                depth: 1,
+            },
+        ],
+        ..DiscoveryReport::default()
+    };
+    let format = FormatRun {
+        skipped: Vec::new(),
+        errors: Vec::new(),
+        results: sample_format_results(),
+        discovery: discovery.clone(),
+    };
+    let (text, _) = report::render_format_pretty_run(&format, true, Verbosity::default());
+    assert!(
+        text.contains("3 director(ies) skipped by the built-in prune set"),
+        "got: {text}"
+    );
+    assert!(text.contains("src/cli/pipeline/commands/build"), "got: {text}");
+    assert!(text.contains("[discovery] no_prune"), "got: {text}");
+
+    let lint = LintRun {
+        errors: Vec::new(),
+        skipped: Vec::new(),
+        results: Vec::new(),
+        checked: 12,
+        discovery,
+    };
+    let (text, _) = report::render_lint_pretty_run(&lint, Verbosity::default());
+    assert!(
+        text.contains("3 director(ies) skipped by the built-in prune set"),
+        "got: {text}"
+    );
+}
+
+/// A heuristic prune must not flip the headline. Nearly every repository has a
+/// `node_modules` or a `target`, so treating those as "something was excluded"
+/// would turn `All formatted.` into `Nothing was checked.` everywhere — the
+/// opposite failure, and just as untrustworthy.
+#[test]
+fn a_builtin_prune_does_not_change_the_headline_when_files_were_checked() {
+    owo_colors::set_override(false);
+    let discovery = DiscoveryReport {
+        pruned_directories: 2,
+        pruned_samples: vec![ExcludedDirectory {
+            path: "node_modules".into(),
+            depth: 1,
+        }],
+        ..DiscoveryReport::default()
+    };
+    assert!(discovery.is_empty(), "no user rule excluded anything");
+    assert!(discovery.has_notes(), "but there is still something to say");
+
+    let lint = LintRun {
+        errors: Vec::new(),
+        skipped: Vec::new(),
+        results: Vec::new(),
+        checked: 12,
+        discovery,
+    };
+    let (text, _) = report::render_lint_pretty_run(&lint, Verbosity::default());
+    assert!(text.contains("No issues found."), "got: {text}");
+    assert!(!text.contains("Nothing was linted."), "got: {text}");
 }

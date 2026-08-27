@@ -381,3 +381,89 @@ fn explicitly_passed_path_is_unaffected_by_other_roots() {
         "a directly walked path is not pruned by a repo-rooted exclude, got {paths:?}"
     );
 }
+
+/// The built-in prune set is invisible today: a tracked `build/` holding
+/// first-party source is dropped from the walk and nothing in the report says
+/// so, which is how a repo formatted `poly fmt --fix .` on every commit while an
+/// entire source directory drifted (issue #14). Pruning it is still the right
+/// default; pruning it *silently* is not.
+#[test]
+fn discovery_report_names_directories_pruned_by_the_builtin_set() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    write_file(&root.join("src/main.py"), "x = 1\n");
+    write_file(&root.join("src/probezone/build/probe.py"), "y = 2\n");
+    write_file(&root.join("src/probezone/dist/probe.py"), "z = 3\n");
+
+    let cfg = ConfigSet::single(Config::default());
+    let (discovered, report) = discover_reporting(&[root.to_path_buf()], &cfg, &[], false);
+
+    assert_eq!(discovered.len(), 1, "build/ and dist/ are still pruned: {discovered:?}");
+    assert_eq!(
+        report.pruned_directories, 2,
+        "both pruned directories must be reported: {report:?}"
+    );
+    let named: Vec<String> = report
+        .pruned_samples
+        .iter()
+        .map(|d| d.path.display().to_string())
+        .collect();
+    assert!(
+        named.iter().any(|p| p.ends_with("probezone/build")),
+        "the pruned directory must be named, not merely counted: {named:?}"
+    );
+
+    // A heuristic prune must not flip the headline from "All formatted." to
+    // "Nothing was checked." — every repo with a node_modules would trip it.
+    assert!(report.is_empty(), "no exclude rule matched: {report:?}");
+    assert!(report.has_notes(), "but the run has something to say: {report:?}");
+}
+
+/// The escape hatch for a repo whose `build/` is an ordinary source module.
+#[test]
+fn no_prune_keeps_a_directory_the_builtin_set_would_have_pruned() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    let kept = root.join("src/probezone/build/probe.py");
+    let still_pruned = root.join("src/probezone/dist/probe.py");
+    write_file(&kept, "y = 2\n");
+    write_file(&still_pruned, "z = 3\n");
+
+    let cfg = ConfigSet::single(Config {
+        no_prune: vec!["build".to_string()],
+        ..Config::default()
+    });
+    let (discovered, report) = discover_reporting(&[root.to_path_buf()], &cfg, &[], false);
+    let paths: Vec<_> = discovered.iter().map(|f| f.path.as_path()).collect();
+
+    assert!(
+        paths.contains(&kept.as_path()),
+        "no_prune must make build/ discoverable, got {paths:?}"
+    );
+    assert!(
+        !paths.contains(&still_pruned.as_path()),
+        "dist/ was not opted out and stays pruned, got {paths:?}"
+    );
+    assert_eq!(report.pruned_directories, 1, "only dist/ is still pruned: {report:?}");
+}
+
+/// Naming a path inside a pruned directory has always bypassed the prune — that
+/// asymmetry is what let issue #14's reporter get two contradictory verdicts for
+/// one unchanged file. Pin it, since it was documented only in a comment.
+#[test]
+fn an_explicitly_named_path_inside_a_pruned_directory_is_still_walked() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    let inside = root.join("src/probezone/build/probe.py");
+    write_file(&inside, "y = 2\n");
+
+    let cfg = ConfigSet::single(Config::default());
+    let named_file = discover(std::slice::from_ref(&inside), &cfg, &[]);
+    assert_eq!(named_file.len(), 1, "naming the file walks it: {named_file:?}");
+
+    let named_dir = discover(&[root.join("src/probezone/build")], &cfg, &[]);
+    assert_eq!(named_dir.len(), 1, "naming the directory walks it: {named_dir:?}");
+}

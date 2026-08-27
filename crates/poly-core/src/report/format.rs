@@ -7,7 +7,8 @@ use std::fmt::Write as _;
 use owo_colors::{OwoColorize, Stream::Stderr, Stream::Stdout};
 
 use super::notes::{
-    exclusion_clause, push_discovery_note, push_skip_note, skipped_clause, skips_from_results, unrecognized_clause,
+    exclusion_clause, pruned_clause, push_discovery_note, push_skip_note, skipped_clause, skips_from_results,
+    unrecognized_clause,
 };
 use super::shared::{Verbosity, render_debug_block, strip_ansi};
 use crate::discover::DiscoveryReport;
@@ -118,6 +119,9 @@ fn render_format_core(
         if let Some(clause) = exclusion_clause(discovery) {
             let _ = write!(tail, ", {clause}");
         }
+        if let Some(clause) = pruned_clause(discovery) {
+            let _ = write!(tail, ", {clause}");
+        }
         if let Some(clause) = unrecognized_clause(discovery) {
             let _ = write!(tail, ", {clause}");
         }
@@ -148,6 +152,9 @@ fn render_format_core(
             qualifiers.push(clause);
         }
         if let Some(clause) = exclusion_clause(discovery) {
+            qualifiers.push(clause);
+        }
+        if let Some(clause) = pruned_clause(discovery) {
             qualifiers.push(clause);
         }
         if let Some(clause) = unrecognized_clause(discovery) {
