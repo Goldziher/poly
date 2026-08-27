@@ -42,7 +42,7 @@ const ALEF_STAMP: &str = "// alef:hash:a3f1c2d4e5b6a7980123456789abcdef012345678
 /// An Alef-shaped generated JavaScript file whose stamp sits at 0-based
 /// `stamp_line`, reached by padding a licence preamble above the banner.
 ///
-/// The body is deliberately mis-formatted so that "poly did not skip it" is
+/// The body is deliberately malformatted so that "poly did not skip it" is
 /// observable as a real rewrite rather than as a no-op that would pass either
 /// way. JavaScript keeps this hermetic: the oxc backend is compiled in, so
 /// nothing here depends on a tool being installed on the host.

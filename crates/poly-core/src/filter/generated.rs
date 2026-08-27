@@ -170,7 +170,7 @@ const MIN_FENCE_RUN: usize = 3;
 /// left every nested fence undetected while the unnested shapes read as fixed.
 ///
 /// Only used to decide whether a line *opens or closes a fence*. Over-stripping
-/// is therefore harmless unless the remainder is itself a fence, and a mis-read
+/// is therefore harmless unless the remainder is itself a fence, and a misread
 /// fence is the same class of miss as no fence at all.
 fn strip_container_prefix(line: &str) -> &str {
     let mut rest = line.trim_start();
