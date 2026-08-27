@@ -407,3 +407,199 @@ workspace = true
         "a job that has not been spawned must not be reported as running:\n{stderr}"
     );
 }
+
+/// Write a local producer catalog and return a `poly.toml` selecting it.
+///
+/// A *local* source rather than a git one so provisioning runs for real without
+/// a network: it still has to get past the `hook_preferences.channels` gate,
+/// which is the code under test.
+fn local_source_config(catalog: &Path) -> String {
+    std::fs::write(
+        catalog.join("poly-hooks.toml"),
+        r#"
+version = 1
+[[hooks]]
+id = "validate"
+stages = ["pre-commit"]
+[[hooks.paths]]
+channel = "shell"
+check = "command -v true"
+run = "true"
+"#,
+    )
+    .expect("write catalog");
+    format!(
+        r#"
+[[hooks.sources]]
+id = "rules"
+path = {:?}
+hooks = ["validate"]
+"#,
+        catalog.to_string_lossy()
+    )
+}
+
+/// A `poly.toml` declaring an external hook source, with no `poly.local.toml`
+/// anywhere to supply `hook_preferences.channels` — the state every freshly
+/// created worktree is in, since `poly.local.toml` is gitignored.
+fn unprovisionable_source_config() -> &'static str {
+    r#"
+[[hooks.sources]]
+id = "example"
+git = "https://example.invalid/hooks.git"
+revision = "0000000000000000000000000000000000000000"
+hooks = ["something"]
+
+[hooks.builtin]
+commit = true
+"#
+}
+
+/// Issue #15: provisioning failed before any hook logic ran and exited non-zero
+/// from `prepare-commit-msg`, which git gives no `--no-verify` escape from — so
+/// `git commit` was hard-blocked with no supported way through. That hook only
+/// shapes the message; being unable to provision external sources must not
+/// invalidate the commit.
+#[test]
+fn prepare_commit_msg_survives_a_provisioning_failure() {
+    let repo = init_repo();
+    let root = repo.path();
+    write(root, "poly.toml", unprovisionable_source_config());
+    write(root, "msg.txt", "feat: a thing\n");
+
+    let output = poly_hooks(
+        root,
+        &[
+            "hook-impl",
+            "--hook-type=prepare-commit-msg",
+            "--",
+            "msg.txt",
+            "message",
+        ],
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "prepare-commit-msg must not block the commit; stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("provisioning hook sources"),
+        "the failure must still be reported, not swallowed; stderr: {stderr}"
+    );
+}
+
+/// The guard on the fix above: `pre-commit` has `--no-verify`, so a
+/// provisioning failure there stays fatal. Softening it everywhere would drop
+/// external hooks from a gate that exists to enforce them.
+#[test]
+fn pre_commit_still_fails_when_provisioning_fails() {
+    let repo = init_repo();
+    let root = repo.path();
+    write(root, "poly.toml", unprovisionable_source_config());
+    write(root, "tracked.txt", "content");
+    git(root, &["add", "tracked.txt"]);
+
+    let output = poly_hooks(root, &["hook-impl", "--hook-type=pre-commit", "--"]);
+    assert!(
+        !output.status.success(),
+        "pre-commit must stay fatal: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// A linked worktree gets the shared `.git/hooks`, so poly's hooks fire there —
+/// but it looked for `poly.local.toml` beside the worktree, where a gitignored
+/// file can never be. It must find the one beside the main worktree instead.
+#[test]
+fn hook_preferences_resolve_from_the_main_worktree() {
+    let repo = init_repo();
+    let root = repo.path();
+    let catalog = tempfile::tempdir().expect("catalog dir");
+    write(root, "poly.toml", &local_source_config(catalog.path()));
+    write(root, "poly.local.toml", "[hook_preferences]\nchannels = [\"shell\"]\n");
+    write(root, "seed.txt", "seed");
+    git(root, &["add", "seed.txt", "poly.toml"]);
+    git(root, &["commit", "-qm", "feat: seed"]);
+
+    let worktree = tempfile::tempdir().expect("worktree dir");
+    let linked = worktree.path().join("wt");
+    git(
+        root,
+        &["worktree", "add", "--detach", "-q", linked.to_str().expect("utf8 path")],
+    );
+    assert!(
+        !linked.join("poly.local.toml").exists(),
+        "the gitignored preferences file must be absent from the worktree"
+    );
+
+    write(&linked, "msg.txt", "feat: from the worktree\n");
+    let output = poly_hooks(&linked, &["hook-impl", "--hook-type=commit-msg", "--", "msg.txt"]);
+    assert!(
+        output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// `--no-verify` cannot bypass `prepare-commit-msg`, and disabling every hook
+/// via `core.hooksPath=/dev/null` is the wrong granularity. poly needs an
+/// escape it honors itself.
+#[test]
+fn poly_skip_hooks_bypasses_the_stage() {
+    let repo = init_repo();
+    let root = repo.path();
+    write(root, "poly.toml", &stage_fixed_config(true));
+    write(root, "fixed.txt", "orig");
+    git(root, &["add", "fixed.txt"]);
+
+    let output = Command::new(POLY)
+        .args(["hooks", "hook-impl", "--hook-type=pre-commit", "--"])
+        .env("POLY_SKIP_HOOKS", "1")
+        .current_dir(root)
+        .output()
+        .expect("poly invocation");
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("POLY_SKIP_HOOKS"),
+        "the bypass must announce itself; silence would leave a user unprotected \
+         without knowing it"
+    );
+    assert_eq!(
+        staged_blob(root, "fixed.txt"),
+        "orig",
+        "the skipped hook must not have run"
+    );
+}
+
+/// The self-blocking loop: `poly hooks install` provisions too, so a user in a
+/// worktree could not even re-install the shims to escape.
+#[test]
+fn hooks_install_succeeds_in_a_linked_worktree() {
+    let repo = init_repo();
+    let root = repo.path();
+    let catalog = tempfile::tempdir().expect("catalog dir");
+    write(root, "poly.toml", &local_source_config(catalog.path()));
+    write(root, "poly.local.toml", "[hook_preferences]\nchannels = [\"shell\"]\n");
+    write(root, "seed.txt", "seed");
+    git(root, &["add", "seed.txt", "poly.toml"]);
+    git(root, &["commit", "-qm", "feat: seed"]);
+
+    let worktree = tempfile::tempdir().expect("worktree dir");
+    let linked = worktree.path().join("wt");
+    git(
+        root,
+        &["worktree", "add", "--detach", "-q", linked.to_str().expect("utf8 path")],
+    );
+
+    let output = poly_hooks(&linked, &["install", "--hook-type", "pre-commit"]);
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}

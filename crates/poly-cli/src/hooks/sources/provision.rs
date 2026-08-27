@@ -14,13 +14,45 @@ use crate::remote::{
     validate_locked_revision,
 };
 
+/// Directories to search for `poly.local.toml`, nearest first.
+///
+/// `poly.local.toml` is gitignored by design, so it is never present in a freshly
+/// created linked worktree — while the hooks themselves *are*, because they live
+/// in the shared `.git/hooks`. Searching the worktree root alone therefore made
+/// every new worktree fail to provision (issue #15); the main worktree root is
+/// where the machine's real preferences live.
+fn preference_roots(root: &Path) -> Vec<PathBuf> {
+    let mut roots = vec![root.to_path_buf()];
+    if let Some(main) = main_worktree_root()
+        && main != root
+    {
+        roots.push(main);
+    }
+    roots
+}
+
+/// The directory holding the primary `.git` — the same as the worktree root for
+/// an ordinary checkout, and the main worktree for a linked one.
+///
+/// `--git-common-dir` is relative (`.git`) when git is run from the top level,
+/// so it is resolved against the working directory before taking its parent.
+fn main_worktree_root() -> Option<PathBuf> {
+    let common = poly_hooks::git::get_git_common_dir().ok()?;
+    let common = if common.is_absolute() {
+        common
+    } else {
+        std::env::current_dir().ok()?.join(common)
+    };
+    common.parent().map(Path::to_path_buf)
+}
+
 /// Resolve selected sources and choose one eligible path for every selected hook.
 pub fn provision(root: &Path, hooks: &HooksConfig, update: bool, install: bool) -> anyhow::Result<Vec<ResolvedHook>> {
     reject_legacy_consumer_file(root)?;
     if hooks.sources.is_empty() {
         return Ok(Vec::new());
     }
-    let preferences = load_hook_preferences(root, true)?;
+    let preferences = load_hook_preferences(&preference_roots(root), true)?;
     let cache_root = poly_cache::hook_sources_dir()?;
     std::fs::create_dir_all(&cache_root)
         .with_context(|| format!("creating hook source cache {}", cache_root.display()))?;

@@ -623,6 +623,13 @@ Machine-only preferences belong in gitignored `poly.local.toml`:
 channels = ["npx", "uvx", "system"]
 ```
 
+Because that file is gitignored it never exists in a freshly created linked worktree, so poly also
+looks for it beside the **main** worktree — the nearest file wins. To skip every poly hook for one
+invocation, set `POLY_SKIP_HOOKS=1`; this is the supported escape hatch, since `git commit
+--no-verify` bypasses `pre-commit` and `commit-msg` but never `prepare-commit-msg`. A
+`prepare-commit-msg` run that cannot provision its external hook sources warns and continues rather
+than blocking the commit; every other stage still treats that failure as fatal.
+
 `poly hooks install` validates every selected hook path before installing Git shims. Treat producer
 catalogs and their checks and commands as trusted code: they execute with your user permissions.
 Normal runs never resolve Git refs or modify the lock; review changes and run `poly hooks update`

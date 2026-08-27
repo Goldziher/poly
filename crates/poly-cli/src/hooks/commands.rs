@@ -138,8 +138,45 @@ pub struct HookImplArgs {
     pub git_args: Vec<OsString>,
 }
 
+/// Environment variable that skips every poly hook for one invocation.
+///
+/// `git commit --no-verify` bypasses `pre-commit` and `commit-msg` only —
+/// `prepare-commit-msg` still runs, by git's design — so without this the only
+/// way past a failing poly hook was `core.hooksPath=/dev/null`, which disables
+/// every hook in the repository rather than poly's (issue #15).
+///
+/// Deliberately not the `SKIP` / `PREK_SKIP` names declared in
+/// `poly_hooks::EnvVars`: in pre-commit and prek those name *which* hooks to
+/// skip, and quietly giving them a different meaning here would be its own trap.
+const SKIP_HOOKS_ENV: &str = "POLY_SKIP_HOOKS";
+
+/// Whether [`SKIP_HOOKS_ENV`] asks for a bypass.
+///
+/// `0` and `false` are treated as "do not skip" so that exporting the variable
+/// as off in a shell profile behaves the way it reads.
+fn skip_hooks_requested() -> bool {
+    match std::env::var(SKIP_HOOKS_ENV) {
+        Ok(value) => {
+            let value = value.trim();
+            !value.is_empty() && !value.eq_ignore_ascii_case("0") && !value.eq_ignore_ascii_case("false")
+        }
+        Err(_) => false,
+    }
+}
+
 /// Run `poly hooks`, mapping any error to exit code 2.
 pub fn run_hooks(args: HooksArgs) -> ExitCode {
+    // Announced rather than silent: a bypass nobody can see is how a repository
+    // ends up unprotected without anyone noticing.
+    if skip_hooks_requested()
+        && !matches!(
+            args.command,
+            Some(HooksCommand::Install(_) | HooksCommand::Uninstall(_))
+        )
+    {
+        eprintln!("poly hooks: skipped ({SKIP_HOOKS_ENV} is set)");
+        return ExitCode::SUCCESS;
+    }
     let result = match args.command {
         None => run_stage(RunArgs::default()),
         Some(HooksCommand::Run(run_args)) => run_stage(run_args),
@@ -433,10 +470,36 @@ fn relative_to_cwd(path: &Path) -> PathBuf {
         .unwrap_or_else(|| path.to_path_buf())
 }
 
+/// Provision external hook sources for one git hook, downgrading the failure to
+/// a warning for `prepare-commit-msg`.
+///
+/// Every other stage keeps the hard failure: a `pre-commit` that cannot provision
+/// the hooks it is meant to enforce must not pass. `prepare-commit-msg` is the
+/// exception because git offers no `--no-verify` for it — a non-zero exit there
+/// hard-blocks `git commit` with no supported escape (issue #15) — and because
+/// that hook only shapes the commit message, so failing to fetch external
+/// sources is not grounds for rejecting the commit.
+fn provision_for_hook(
+    hook_type: poly_hooks::HookType,
+    root: &Path,
+    hooks: &poly_config::HooksConfig,
+) -> Result<Vec<super::sources::ResolvedHook>> {
+    let result = super::sources::provision(root, hooks, false, false).context("provisioning hook sources");
+    match result {
+        Ok(sources) => Ok(sources),
+        Err(error) if matches!(hook_type, poly_hooks::HookType::PrepareCommitMsg) => {
+            eprintln!("poly hooks: warning: {error:#}");
+            eprintln!("poly hooks: continuing without external hook sources so the commit is not blocked");
+            Ok(Vec::new())
+        }
+        Err(error) => Err(error),
+    }
+}
+
 fn hook_impl(args: HookImplArgs) -> Result<ExitCode> {
     let root = poly_hooks::git::get_root().context("failed to resolve the git repository root")?;
     let config = load_config(args.config.as_deref())?;
-    let sources = super::sources::provision(&root, &config.hooks, false, false).context("provisioning hook sources")?;
+    let sources = provision_for_hook(args.hook_type, &root, &config.hooks)?;
     let Some(inputs) = poly_hooks::hook_impl::hook_impl(args.hook_type, &args.git_args, &root)? else {
         return Ok(ExitCode::SUCCESS);
     };

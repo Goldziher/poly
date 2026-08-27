@@ -1,6 +1,6 @@
 //! External hook sources declared under `[[hooks.sources]]` in `poly.toml`.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use anyhow::{Context, bail};
 use serde::Deserialize;
@@ -35,16 +35,28 @@ struct LocalPreferencesFile {
     hook_preferences: HookMachinePreferences,
 }
 
-/// Load and validate machine-local hook preferences.
-pub fn load_hook_preferences(root: &Path, has_sources: bool) -> anyhow::Result<HookMachinePreferences> {
-    let path = root.join(super::LOCAL_OVERRIDE_NAME);
-    let preferences = if path.is_file() {
-        let text = std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
-        toml::from_str::<LocalPreferencesFile>(&text)
-            .with_context(|| format!("parsing hook preferences in {}", path.display()))?
-            .hook_preferences
-    } else {
-        HookMachinePreferences::default()
+/// Load and validate machine-local hook preferences, searching `roots` in order
+/// and using the first that holds a `poly.local.toml`.
+///
+/// More than one root because `poly.local.toml` is gitignored by design: a
+/// linked worktree shares `.git` (so poly's hooks fire there) but can never hold
+/// the file itself, and searching only the worktree root left provisioning
+/// unable to find preferences that were sitting beside the main worktree all
+/// along — issue #15. Callers pass the worktree root first, then the main
+/// worktree root, so the nearest file still wins.
+pub fn load_hook_preferences(roots: &[PathBuf], has_sources: bool) -> anyhow::Result<HookMachinePreferences> {
+    let found = roots
+        .iter()
+        .map(|root| root.join(super::LOCAL_OVERRIDE_NAME))
+        .find(|path| path.is_file());
+    let preferences = match found {
+        Some(path) => {
+            let text = std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
+            toml::from_str::<LocalPreferencesFile>(&text)
+                .with_context(|| format!("parsing hook preferences in {}", path.display()))?
+                .hook_preferences
+        }
+        None => HookMachinePreferences::default(),
     };
     if has_sources && preferences.channels.is_empty() {
         bail!("external hook sources require nonempty hook_preferences.channels in poly.local.toml");
