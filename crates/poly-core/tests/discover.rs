@@ -404,14 +404,15 @@ fn discovery_report_names_directories_pruned_by_the_builtin_set() {
         report.pruned_directories, 2,
         "both pruned directories must be reported: {report:?}"
     );
-    let named: Vec<String> = report
-        .pruned_samples
-        .iter()
-        .map(|d| d.path.display().to_string())
-        .collect();
+    // `Path::ends_with` compares whole components and reads `/` as a separator on
+    // every platform; a string suffix would only match on Unix.
     assert!(
-        named.iter().any(|p| p.ends_with("probezone/build")),
-        "the pruned directory must be named, not merely counted: {named:?}"
+        report
+            .pruned_samples
+            .iter()
+            .any(|sample| sample.path.ends_with("probezone/build")),
+        "the pruned directory must be named, not merely counted: {:?}",
+        report.pruned_samples
     );
 
     // A heuristic prune must not flip the headline from "All formatted." to
