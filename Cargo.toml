@@ -165,7 +165,7 @@ uncomment = "3.5"
 unicase = "2"
 unicode-width = { version = "0.2.2", default-features = false }
 walkdir = "2.5.0"
-which = "8.0.5"
+which = "8.0.6"
 
 [profile.release]
 lto = "thin"
