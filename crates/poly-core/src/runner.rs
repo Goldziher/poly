@@ -10,8 +10,8 @@ use crate::config::{Config, Kind};
 use crate::discover::{DiscoveredFile, discover_reporting};
 use crate::engine::{Diagnostic, Edit, FormatOutput, Severity, SourceFile};
 use crate::filter::{
-    PerFileIgnores, is_format_ignored, is_generated_lockfile, is_generated_source, is_hash_stamped_source, match_bases,
-    relative_for_match,
+    PerFileIgnores, Suppressions, is_format_ignored, is_generated_lockfile, is_generated_source,
+    is_hash_stamped_source, match_bases, relative_for_match,
 };
 use crate::language::Language;
 use crate::resolve::ConfigSet;
@@ -285,7 +285,22 @@ fn lint_one(
     let this_ignores = &ignores[f.config_id];
     let rel =
         (!this_ignores.is_empty()).then(|| relative_for_match(&f.path, &configs.ignore_bases(f.config_id, bases)));
-    let suppress = |diagnostics: &mut Vec<Diagnostic>| {
+    // Inline `poly: allow[…]` directives (ADR 0028) are rebuilt from the content
+    // they are applied to: a fix pass rewrites the file, so directive and target
+    // line numbers shift. The gate inside `Suppressions::parse` is a single
+    // substring scan, so a file without a directive — nearly all of them — pays
+    // that and nothing else.
+    //
+    // Inline suppression runs before `[per-file-ignores]` so the `lazy-ignore`
+    // findings it appends are themselves silenceable by config while staying
+    // immune to the directives that produced them. The two filters are
+    // independent retains, so this order does not change which real diagnostics
+    // survive.
+    let suppress = |content: &str, diagnostics: &mut Vec<Diagnostic>| {
+        let suppressions = Suppressions::parse(content);
+        if !suppressions.is_empty() {
+            suppressions.apply(diagnostics);
+        }
         if let Some(rel) = &rel {
             this_ignores.apply(rel, diagnostics);
         }
@@ -310,7 +325,7 @@ fn lint_one(
         .then(|| SkippedFile::no_lint_rules_reason(&f.language));
 
     let (mut diagnostics, mut debug) = lint_content(f, engine_plans, cache, &original, collect_debug)?;
-    suppress(&mut diagnostics);
+    suppress(&original, &mut diagnostics);
 
     // Report on generated files but never rewrite them. A fix there is churn the
     // next generation run reverts, and it can silence the diagnostic that was the
@@ -339,7 +354,7 @@ fn lint_one(
                     fixed += applied;
                     let (next_diags, next_debug) = lint_content(f, engine_plans, cache, &content, collect_debug)?;
                     diagnostics = next_diags;
-                    suppress(&mut diagnostics);
+                    suppress(&content, &mut diagnostics);
                     debug = next_debug;
                 }
                 _ => break,

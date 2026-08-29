@@ -129,7 +129,10 @@ impl SeverityRemap {
 /// Whether `code` is suppressed by a per-file-ignore `rule`: exact match, or a
 /// prefix match where the next character is not alphabetic (ruff-style code
 /// families like `F` → `F401`, while `E` does not swallow `ERR_X`).
-fn code_matches_rule(code: &str, rule: &str) -> bool {
+///
+/// Shared with `filter::suppress` so an inline `poly: allow[…]` directive spells
+/// its rule codes exactly the way `[per-file-ignores]` does.
+pub(super) fn code_matches_rule(code: &str, rule: &str) -> bool {
     if code == rule {
         return true;
     }

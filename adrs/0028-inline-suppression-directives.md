@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-29
+- Updated: 2026-08-29 (see "Amendment" below)
 
 ## Context
 
@@ -80,3 +81,52 @@ Negative / risks:
   rejected it for file-level suppression — divergent syntax across ~15 backends the user would
   have to learn, and the new quality and ast-grep-pack tiers have no native suppression syntax
   of their own to reuse in the first place.
+
+## Amendment — 2026-08-29 (implementation)
+
+Two decisions taken while implementing the directive, both deviations from the letter of the
+Decision above.
+
+### 1. An unjustified directive does not suppress
+
+The Decision says a bare `allow` with no reason "trades one finding for another", which reads as
+*still suppressing* while adding a `lazy-ignore`. The implementation does **not** suppress: an
+unjustified directive is inert, the original rule still fires, and `lazy-ignore` is reported
+*in addition*.
+
+The trade as written would be a genuine CI bypass. `poly lint` exits non-zero only on
+error-severity findings, and `lazy-ignore` is a warning. So an unjustified directive over an
+`Error` would drop the failing finding and replace it with a non-failing one — turning an empty
+comment into a way to make CI green, which is precisely the outcome the mandatory-reason rule
+exists to prevent. Non-suppression keeps the guard rail load-bearing: writing the directive
+without a reason costs you a finding instead of buying you one.
+
+A reason counts as present when the text after the closing bracket contains at least one
+alphanumeric character (trailing `*/` and `-->` are stripped first, so `/* poly: allow[X] */` is
+correctly seen as reasonless).
+
+### 2. Comment detection is a prefix heuristic, not the `uncomment` token table
+
+The Decision says to reuse the `uncomment` engine's per-language comment-token table. The
+implementation instead tests whether the text immediately before the `poly:` marker ends with one
+of a small fixed set of comment openers — `//`, `#`, `--`, `;`, `/*`, `*`, `<!--`, `%`, `!`,
+`dnl`, case-insensitive `rem` — with quote characters deliberately excluded so a directive-shaped
+string literal never suppresses.
+
+The reason is the hot path. This check runs in `lint_one`, inside the rayon `par_iter` over every
+file in the repository. Resolving a language's token set and scanning per-language would cost work
+on every file; the union of openers is a superset that needs no language lookup at all, and the
+whole mechanism is gated behind a single substring test for `poly:` so a file without a directive
+— nearly all of them — pays one linear scan and allocates nothing. The residual imprecision (a
+comment opener appearing inside a string literal) is accepted: it can only cause an over-broad
+suppression in source nobody writes by accident, and the alternative is a parse per file.
+
+### Also settled while implementing
+
+- The bracketed rule list is **required**; `poly: allow F401` is not recognized and suppresses
+  nothing.
+- `[per-file-ignores]` is applied *after* the inline pass, so a `lazy-ignore` finding remains
+  silenceable by config while staying immune to the directive that produced it (and to every
+  other directive in the file).
+- Suppressions are rebuilt from the current file contents on each `--fix` pass, since applying a
+  fix shifts the line numbers both the directive and its target sit on.

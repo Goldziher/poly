@@ -392,6 +392,40 @@ with `extend_select` under `[lint.javascript.oxc]` / `[lint.typescript.oxc]`.
 take effect for the first time. A repo that previously set `mccabe_max_complexity = 10` and saw no
 effect now gets `C901` findings — at warning severity, so it won't fail CI unless promoted.
 
+### Suppressing a Rule Inline
+
+`[per-file-ignores]` is the right tool for a whole file or a class of files. For a *single*
+justified exception inside an otherwise-normal file, write the directive in the file itself, in
+that language's own comment syntax (see [ADR 0028](adrs/0028-inline-suppression-directives.md)):
+
+```python
+import os  # poly: allow[F401] re-exported for backwards compatibility
+```
+
+```typescript
+// poly: allow[no-debugger] deliberate breakpoint, stripped from the release bundle
+debugger;
+```
+
+- **`poly: allow[RULE, RULE2] reason`** — covers the line it trails. On a line that is *entirely*
+  a comment it covers the next non-blank line instead.
+- **`poly: allow-file[RULE] reason`** — covers the whole file, wherever in the file it appears.
+- Rule codes are comma-separated and matched exactly or as a code family prefix, the same way
+  `[per-file-ignores]` matches them: `allow[F]` covers `F401`, but not `FOO1`. `allow[*]` covers
+  every rule.
+- It works for every backend, because it is applied centrally by the runner — ruff, oxlint,
+  typos, the tree-sitter tier, and any backend added later, with no per-engine wiring.
+
+**A reason is mandatory.** A directive with nothing but whitespace or punctuation after the
+closing bracket does **not** suppress anything; the rule still fires and poly additionally reports
+a `lazy-ignore` warning on the directive line. This is the point of the mechanism: it is a guard
+rail, not a bypass, and it holds poly to the same standard its own `lazy-ignore` rule applies to
+`# noqa` and `// eslint-disable`.
+
+poly recognizes the directive after any of the comment openers `//`, `#`, `--`, `;`, `/*`, `*`,
+`<!--`, `%`, `!`, `dnl`, and `rem` — no per-language configuration. Quotes are deliberately not
+openers, so a directive-shaped string literal never suppresses.
+
 ### Nested config in a monorepo
 
 Run `poly` from a monorepo root and each sub-project's `poly.toml` cascades over the root, the
