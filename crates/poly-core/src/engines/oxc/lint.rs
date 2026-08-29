@@ -9,12 +9,12 @@ use oxc_allocator::Allocator;
 use oxc_diagnostics::Severity as OxcSeverity;
 use oxc_linter::{
     AllowWarnDeny, ConfigStore, ConfigStoreBuilder, ExternalPluginStore, LintFilter, LintOptions, LintService,
-    LintServiceOptions, Linter, Message, PossibleFixes, RuntimeFileSystem,
+    LintServiceOptions, Linter, Message, Oxlintrc, PossibleFixes, RuntimeFileSystem,
 };
 
 use crate::config::EngineConfig;
 use crate::engine::{Diagnostic, Edit, Severity, SourceFile, Span};
-use crate::engines::rule_config::RuleSelection;
+use crate::engines::rule_config::{RuleOptions, RuleSelection};
 use crate::language::Language;
 
 /// Byte offset → 1-based `(line, col)`.
@@ -135,15 +135,19 @@ const DEFAULT_ALLOWED_RULES: &[&str] = &[
     "max-classes-per-file",
 ];
 
-/// A [`ConfigStoreBuilder`] carrying oxlint's defaults, widened by
-/// [`DEFAULT_LINT_FILTERS`] and narrowed by [`DEFAULT_ALLOWED_RULES`].
+/// Layer [`DEFAULT_LINT_FILTERS`] (Warn) then [`DEFAULT_ALLOWED_RULES`] (Allow) onto
+/// `builder`, in that order so the allow-list wins for rules present in both.
+///
+/// Extracted so both [`opinionated_builder`] (the no-config fast path's base) and
+/// [`build_configured_service`] (which seeds its base from
+/// [`ConfigStoreBuilder::from_oxlintrc`] instead, to carry per-rule options) apply
+/// byte-for-byte the same opinionated layer — one source of truth for the defaults.
 ///
 /// # Panics
 /// Panics if a filter string in either constant is malformed. The strings are
 /// compile-time constants, so this is a build-time invariant; the companion
 /// test `default_filter_strings_are_all_parseable` proves it.
-fn opinionated_builder() -> ConfigStoreBuilder {
-    let mut builder = ConfigStoreBuilder::default();
+fn apply_default_filters(mut builder: ConfigStoreBuilder) -> ConfigStoreBuilder {
     for name in DEFAULT_LINT_FILTERS {
         let filter =
             LintFilter::new(AllowWarnDeny::Warn, *name).expect("DEFAULT_LINT_FILTERS entries are valid filters");
@@ -155,6 +159,12 @@ fn opinionated_builder() -> ConfigStoreBuilder {
         builder = builder.with_filter(&filter);
     }
     builder
+}
+
+/// A [`ConfigStoreBuilder`] carrying oxlint's defaults, widened by
+/// [`DEFAULT_LINT_FILTERS`] and narrowed by [`DEFAULT_ALLOWED_RULES`].
+fn opinionated_builder() -> ConfigStoreBuilder {
+    apply_default_filters(ConfigStoreBuilder::default())
 }
 
 /// Returns the lazily-initialised shared [`LintService`] configured with
@@ -195,6 +205,70 @@ fn run_with_service(service: &LintService, src: &SourceFile) -> Vec<Message> {
     service.run_source(&fs, vec![arc_path])
 }
 
+/// Build a minimal `{"rules": {...}}` oxlint config document carrying only the
+/// entries from `selection.rules` that specify tool-specific parameters (any
+/// `[rules.<code>]` key other than `level`) — e.g. `[rules.max-params] max = 6`.
+///
+/// Each entry is written in oxlint's own native ESLint-style shape,
+/// `"<code>": [<severity>, <params>]`, and handed to [`Oxlintrc::from_json_value`]
+/// so that plugin/rule-name splitting, aliasing, and per-rule option-shape
+/// validation all reuse oxlint's own logic rather than poly reimplementing it —
+/// `OxlintRules` (the type backing `Oxlintrc::rules`) is a private type of
+/// `oxc_linter`, so parsing through JSON is the *only* externally reachable way
+/// to construct one.
+///
+/// Severity defaults to `"warn"` when the entry has no explicit `level`: naming a
+/// rule under `[rules.<code>]` at all — even only to configure it — is poly's
+/// signal that the rule should be active, mirroring `extend_select`. An explicit
+/// `level` (handled separately, after this config is built) always wins.
+///
+/// Returns `None` when no entry in `selection.rules` carries params, so the
+/// caller can skip the `from_oxlintrc` path entirely and fall back to
+/// [`opinionated_builder`] unchanged.
+fn synthesized_rules_oxlintrc(selection: &RuleSelection) -> Option<Oxlintrc> {
+    let mut rules = serde_json::Map::new();
+    for (code, opts) in &selection.rules {
+        if opts.params.is_empty() {
+            continue;
+        }
+        let severity = rule_options_severity_str(opts);
+        let params = match serde_json::to_value(toml::Value::Table(opts.params.clone())) {
+            Ok(value) => value,
+            Err(error) => {
+                tracing::warn!(rule = %code, %error, "could not encode [rules.<id>] parameters as JSON; skipping");
+                continue;
+            }
+        };
+        rules.insert(
+            code.clone(),
+            serde_json::Value::Array(vec![serde_json::Value::String(severity.to_owned()), params]),
+        );
+    }
+    if rules.is_empty() {
+        return None;
+    }
+
+    let mut document = serde_json::Map::new();
+    document.insert("rules".to_owned(), serde_json::Value::Object(rules));
+    match Oxlintrc::from_json_value(&serde_json::Value::Object(document)) {
+        Ok(oxlintrc) => Some(oxlintrc),
+        Err(error) => {
+            tracing::warn!(%error, "could not build synthesized oxlint config for per-rule parameters; ignoring");
+            None
+        }
+    }
+}
+
+/// Map a [`RuleOptions::level`] to oxlint's JSON severity string, defaulting to
+/// `"warn"` when unset. Mirrors the `Severity::Error => Deny, _ => Warn` mapping
+/// used for the `with_filter`-based per-rule `level` override below.
+fn rule_options_severity_str(opts: &RuleOptions) -> &'static str {
+    match opts.level {
+        Some(Severity::Error) => "error",
+        _ => "warn",
+    }
+}
+
 /// Build a fresh [`LintService`] applying rule filters from `cfg.options`.
 ///
 /// Only called when `cfg.options` is non-empty; the empty-config fast path
@@ -207,10 +281,14 @@ fn run_with_service(service: &LintService, src: &SourceFile) -> Vec<Message> {
 /// * `ignore = ["rule", …]` — disable each named rule (Allow).
 /// * `[rules.<id>] level = "error"` — promote a rule to Error/Deny severity.
 /// * `[rules.<id>] level = "warning"|"info"|"hint"` — keep at Warn severity.
+/// * `[rules.<id>] <param> = <value>` — any other key is forwarded verbatim as a
+///   tool-specific option on that rule's oxlint configuration object (e.g.
+///   `[rules.max-params] max = 6`). See [`synthesized_rules_oxlintrc`].
 ///
 /// Per-rule level mapping: `"error"` → [`AllowWarnDeny::Deny`];
 /// `"warning"` / `"info"` / `"hint"` → [`AllowWarnDeny::Warn`].
-/// `None` level (table present, no `level` key) leaves the rule's default.
+/// `None` level (table present, no `level` key) leaves the rule's default,
+/// unless params are also present — see [`synthesized_rules_oxlintrc`].
 ///
 /// Unrecognised or malformed rule names are silently skipped so that a typo
 /// in the user's config does not prevent the other rules from running.
@@ -219,8 +297,23 @@ fn build_configured_service(cfg: &EngineConfig) -> anyhow::Result<LintService> {
 
     let mut plugin_store = ExternalPluginStore::default();
     // Same opinionated base as the no-config path; user filters layer on top,
-    // so an `ignore` entry can still turn any of them back off.
-    let mut builder = opinionated_builder();
+    // so an `ignore` entry can still turn any of them back off. When a rule
+    // carries params, seed it from a synthesized `Oxlintrc` via `from_oxlintrc`
+    // first — that is the only path that reaches `ESLintRule.config` — then layer
+    // the same opinionated filters on top. `with_filter`'s `upsert_where` only
+    // ever touches a rule's severity value in place when the rule is already
+    // configured (`RuleEnum` equality is by rule identity, not by its baked-in
+    // config), so every subsequent filter below preserves the seeded params.
+    let mut builder = match synthesized_rules_oxlintrc(&selection) {
+        Some(oxlintrc) => match ConfigStoreBuilder::from_oxlintrc(false, oxlintrc, None, &mut plugin_store, None) {
+            Ok(builder) => apply_default_filters(builder),
+            Err(error) => {
+                tracing::warn!(%error, "oxlint per-rule parameters could not be applied; falling back to defaults");
+                opinionated_builder()
+            }
+        },
+        None => opinionated_builder(),
+    };
 
     for name in &selection.select {
         if let Ok(filter) = LintFilter::new(AllowWarnDeny::Warn, name.to_owned()) {
@@ -701,6 +794,157 @@ level = "warning"
             d.severity,
             Severity::Warning,
             "level = 'warning' should stay Severity::Warning via AllowWarnDeny::Warn"
+        );
+    }
+
+    /// The silent-config defect: `[rules.max-params] max = 6` (no `level` key at
+    /// all) must actually reach oxlint's `max-params` rule, not just parse and get
+    /// discarded. Proves the *effective threshold*, not merely "some finding
+    /// changed": a 6-parameter function is exactly at the configured limit and
+    /// must be clean, while a 7-parameter function must fire. oxlint's own
+    /// default (`max: 3`) would flag both, so this also rules out the config
+    /// having been silently ignored and the default limit applying instead.
+    #[test]
+    fn per_rule_params_via_rules_table_change_the_effective_threshold() {
+        let cfg = EngineConfig {
+            globals: GlobalDefaults::default(),
+            indent_width: 2,
+            options: toml::from_str(
+                r#"
+[rules.max-params]
+max = 6
+"#,
+            )
+            .unwrap(),
+        };
+
+        let six_params = make_src(
+            "export function six(a, b, c, d, e, f) { return a + b + c + d + e + f; }\n",
+            Language::JavaScript,
+        );
+        let diags = lint_js(&six_params, &cfg).unwrap();
+        assert!(
+            !diags.iter().any(|d| d.code.as_deref() == Some("max-params")),
+            "6 params is exactly the configured max; expected no max-params finding, got: {diags:#?}"
+        );
+
+        let seven_params = make_src(
+            "export function seven(a, b, c, d, e, f, g) { return a + b + c + d + e + f + g; }\n",
+            Language::JavaScript,
+        );
+        let diags = lint_js(&seven_params, &cfg).unwrap();
+        assert!(
+            diags.iter().any(|d| d.code.as_deref() == Some("max-params")),
+            "7 params exceeds the configured max of 6; expected a max-params finding, got: {diags:#?}"
+        );
+    }
+
+    /// A four-parameter function must be clean under `max = 6` even though
+    /// oxlint's own default (`max: 3`) would flag it — the regression test named
+    /// in the fix's requirements, phrased directly against the reported defect.
+    #[test]
+    fn four_param_function_is_clean_under_configured_max_params_six() {
+        let cfg = EngineConfig {
+            globals: GlobalDefaults::default(),
+            indent_width: 2,
+            options: toml::from_str(
+                r#"
+[rules.max-params]
+max = 6
+"#,
+            )
+            .unwrap(),
+        };
+        let src = make_src(
+            "export function four(a, b, c, d) { return a + b + c + d; }\n",
+            Language::JavaScript,
+        );
+        let diags = lint_js(&src, &cfg).unwrap();
+        assert!(
+            !diags.iter().any(|d| d.code.as_deref() == Some("max-params")),
+            "4 params is under the configured max of 6; expected no max-params finding, got: {diags:#?}"
+        );
+    }
+
+    /// Combining `level` and other params on the same `[rules.<id>]` entry: the
+    /// param must still apply *and* the explicit level must win over the
+    /// tool-specific-parameter default of Warn.
+    #[test]
+    fn per_rule_level_and_params_together_apply_both() {
+        let cfg = EngineConfig {
+            globals: GlobalDefaults::default(),
+            indent_width: 2,
+            options: toml::from_str(
+                r#"
+[rules.max-params]
+level = "error"
+max = 6
+"#,
+            )
+            .unwrap(),
+        };
+        let src = make_src(
+            "export function seven(a, b, c, d, e, f, g) { return a + b + c + d + e + f + g; }\n",
+            Language::JavaScript,
+        );
+        let diags = lint_js(&src, &cfg).unwrap();
+        let d = diags
+            .iter()
+            .find(|d| d.code.as_deref() == Some("max-params"))
+            .expect("7 params exceeds the configured max of 6; expected a max-params finding");
+        assert_eq!(
+            d.severity,
+            Severity::Error,
+            "level = 'error' must win over the params-only default of Warn"
+        );
+    }
+
+    /// The opinionated defaults (here, `no-console`) must still fire on the
+    /// user-configured path, not just the no-config fast path — the per-rule
+    /// `[rules.<id>]` params machinery must not replace or bypass
+    /// [`opinionated_builder`]'s filters.
+    #[test]
+    fn opinionated_defaults_still_apply_on_the_configured_path() {
+        let cfg = EngineConfig {
+            globals: GlobalDefaults::default(),
+            indent_width: 2,
+            options: toml::from_str(
+                r#"
+[rules.max-params]
+max = 6
+"#,
+            )
+            .unwrap(),
+        };
+        let src = make_src("console.log(\"debug\");\n", Language::JavaScript);
+        let diags = lint_js(&src, &cfg).unwrap();
+        assert!(
+            diags.iter().any(|d| d.code.as_deref() == Some("no-console")),
+            "no-console is one of DEFAULT_LINT_FILTERS and must still fire on the configured path; got: {diags:#?}"
+        );
+    }
+
+    /// A rule referenced only via unrecognised/malformed config keys must not
+    /// abort the whole lint run for the file — the file's other diagnostics
+    /// (here, `no-console`) still come back.
+    #[test]
+    fn unknown_rule_with_params_does_not_break_the_rest_of_the_lint_run() {
+        let cfg = EngineConfig {
+            globals: GlobalDefaults::default(),
+            indent_width: 2,
+            options: toml::from_str(
+                r#"
+[rules."totally-not-a-real-rule"]
+max = 6
+"#,
+            )
+            .unwrap(),
+        };
+        let src = make_src("console.log(\"debug\");\n", Language::JavaScript);
+        let diags = lint_js(&src, &cfg).unwrap();
+        assert!(
+            diags.iter().any(|d| d.code.as_deref() == Some("no-console")),
+            "an unknown rule with params must not suppress unrelated diagnostics; got: {diags:#?}"
         );
     }
 }

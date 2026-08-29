@@ -35,8 +35,12 @@ use self::lint::{lint_js, lint_json};
 ///               and trailing_commas now wired from `cfg.options`.
 /// `+rules-v4`: `complexity` added to the default filters, `max-classes-per-file`
 ///              moved to the default allow list.
+/// `+rules-v5`: `[rules.<id>]` per-rule tool-specific parameters (e.g.
+///              `[rules.max-params] max = 6`) now reach the rule via a synthesized
+///              `Oxlintrc` built through `ConfigStoreBuilder::from_oxlintrc`,
+///              instead of being silently discarded.
 const VERSION: &str =
-    "oxc_formatter:0.65.0+oxlint+parser:0.147.0+rev:784e9fa+json-fmt+rules-v4+fmt-opts+jsonc-trailing-comma";
+    "oxc_formatter:0.65.0+oxlint+parser:0.147.0+rev:784e9fa+json-fmt+rules-v5+fmt-opts+jsonc-trailing-comma";
 
 static LANGUAGES: &[Language] = &[
     Language::JavaScript,
