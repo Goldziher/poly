@@ -40,6 +40,9 @@ Context, Decision, Consequences (positive and negative/risks), and Alternatives 
 | [0023](0023-hook-timeouts-and-liveness.md) | Hook Timeouts and Run Liveness | Accepted |
 | [0024](0024-hook-concurrency-exclusion-sets.md) | Hook Concurrency and Exclusion Sets | Accepted |
 | [0025](0025-build-path-equivalence.md) | Build Path Equivalence and Build Identity Across Distribution Channels | Proposed |
+| [0026](0026-cross-file-analysis-stages.md) | Cross-File Analysis Stages | Accepted |
+| [0027](0027-code-quality-tier.md) | The Code-Quality Tier | Accepted |
+| [0028](0028-inline-suppression-directives.md) | Inline Suppression Directives | Accepted |
 
 ## Conventions
 

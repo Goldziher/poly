@@ -12,6 +12,9 @@
   `exclude_mode = "replace"` in its own table.)
 - Updated: 2026-08-12 (exclude anchoring is stated explicitly below and surfaced by
   a `poly doctor` check; the matching semantics themselves are unchanged.)
+- Updated: 2026-08-29 (line-scoped suppression: `// poly: allow[rule-id] reason` inline
+  directives — see ADR 0028 — supplement these file-level globs for exceptions too narrow to
+  justify disabling a rule for a whole file.)
 
 ## Exclude anchoring
 

@@ -334,6 +334,64 @@ file_safety = true
 cargo = true
 ```
 
+### Default Rule Selection
+
+The Python (ruff) and JavaScript/TypeScript (oxlint) backends select rules beyond each tool's own
+out-of-the-box default, widening coverage while keeping an unconfigured run green.
+
+**Python (ruff)** selects `F`, `E4`, `E7`, `E9`, `W6`, `I`, `UP`, `B` (ruff's own default set) plus:
+
+| Category | Codes | Covers |
+|---|---|---|
+| Typing | `ANN` | Every function signature carries type annotations. |
+| Functional style | `SIM`, `C4`, `RET`, `FURB`, `PERF` | Comprehensions over map/filter, no needless else/assign-before-return, modern idioms, avoidable per-iteration work. |
+| Error handling | `TRY`, `BLE`, `S110` | raise/except discipline, bare `except Exception:`, silently swallowed `try/except/pass`. |
+| Complexity | `C90`, `PLR` | Cyclomatic complexity, Pylint's too-many-args/branches/returns/statements family. |
+| Hygiene | `T20`, `TC`, `PTH`, `RUF`, `ARG` | Stray `print()`, imports that belong behind `TYPE_CHECKING`, `os.path` calls pathlib does better, ruff's own rules, unused arguments. |
+
+**JavaScript/TypeScript (oxlint)** ran only the `correctness` category by default; it now also
+enables `suspicious`, `pedantic`, and three named rules: `typescript/no-explicit-any`,
+`typescript/no-non-null-assertion`, `no-console`.
+
+**The added rules are guard rails, not gates.** `poly lint` exits non-zero only on error-severity
+findings. The correctness core each tool always ran — ruff's `F`/`E4`/`E7`/`E9`/`W6`/`I`/`UP`/`B`
+and oxlint's `correctness` category — keeps error severity, so real defects still fail CI exactly
+as before. Every newly-added category reports at **warning** and never fails a run on its own.
+Promote one you want enforced with a per-rule override:
+
+```toml
+[lint.python.ruff.rules.ANN201]
+level = "error"
+```
+
+Measured across a six-repository corpus, the widened Python selection added roughly 1,146 findings
+and zero new CI-breaking ones.
+
+**Rules held back.** A handful of rules stay off even though their category is selected — each was
+measured against the same corpus and found to fire on legitimate code rather than a defect:
+
+| Rule | Category | Why it's off |
+|---|---|---|
+| `B008` | flake8-bugbear | Flags the FastAPI/typer `Depends(...)` pattern — a deliberate call in a default. |
+| `RUF100` | ruff | Fires on any `# noqa` code poly does not select; measures config distance, not code quality. |
+| `ANN002` / `ANN003` | flake8-annotations | Only `Any` ever satisfies them, which `ANN401` (on by default) then flags anyway. |
+| `ARG002` | flake8-unused-arguments | Fires on fixed-signature overrides/callbacks (`*args`/`**kwargs`). |
+| `PLR2004` | Pylint | Overwhelmingly HTTP status codes in test assertions. |
+| `TRY003` | tryceratops | Demands a dedicated exception subclass for every `raise ValueError("…")`. |
+
+Re-enable any of them with `extend_select = ["<code>"]` under `[lint.python.ruff]`. The `EM`
+category (exception message assigned to a variable before `raise`) is not selected at all.
+
+For oxlint, `no-underscore-dangle`, `max-lines-per-function`, and `max-lines` are turned back off
+for the same reason (a universal private-field convention, `describe()` blocks that always exceed
+the 50-line default, and a 300-line-per-file default poly does not endorse elsewhere); re-enable
+with `extend_select` under `[lint.javascript.oxc]` / `[lint.typescript.oxc]`.
+
+**Migration note.** Selecting `C90`/`PLR` makes the already-existing `mccabe_max_complexity`,
+`pylint_max_args`, `pylint_max_branches`, and `pylint_max_returns` options under `[lint.python.ruff]`
+take effect for the first time. A repo that previously set `mccabe_max_complexity = 10` and saw no
+effect now gets `C901` findings — at warning severity, so it won't fail CI unless promoted.
+
 ### Nested config in a monorepo
 
 Run `poly` from a monorepo root and each sub-project's `poly.toml` cascades over the root, the
@@ -977,6 +1035,8 @@ poly uses a tiered model:
 | GraphQL | graphql-parser + pretty_graphql (parse-error lint + format) + biome (rule lint) | yes | yes |
 | HCL / Terraform | hcl-edit + hcl-rs, tree-sitter for comment-preserving format fallback | yes | yes |
 | Dockerfile | dockerfile-parser hadolint-style rules | yes | no |
+| `.env` files (`.env`, `.env.*`, `*.env`) | dotenv-analyzer | yes | no |
+| INI and compatible (`.ini`, `.cfg`, `.desktop`, `.pypirc`, `.npmrc`, `.editorconfig`, …) | rust-ini | yes | no |
 | Nix | alejandra | no | yes |
 | Ruby | rubyfmt | no | yes |
 | PHP | mago | yes | yes |
@@ -994,6 +1054,24 @@ poly uses a tiered model:
 Unsupported or unknown file types are skipped unless `tree-sitter-language-pack` can identify them.
 Some whitespace-sensitive data, template, or patch grammars intentionally no-op rather than risk a
 destructive rewrite.
+
+**dotenv.** `.env` files autofix with `poly lint --fix`, and inline `# dotenv-linter:off <Check>` /
+`# dotenv-linter:on <Check>` comments suppress a check for the lines between them, the same
+directive syntax the standalone `dotenv-linter` CLI understands. Rules: `DuplicatedKey`,
+`EndingBlankLine`, `ExtraBlankLine`, `IncorrectDelimiter`, `KeyWithoutValue`, `LeadingCharacter`,
+`LowercaseKey`, `QuoteCharacter`, `SpaceCharacter`, `SubstitutionKey`, `TrailingWhitespace`,
+`UnorderedKey`, `ValueWithoutQuotes`, `SchemaViolation`.
+
+**INI is lint-only, by design.** `rust-ini`'s parser discards comments while parsing, so writing
+its model back out would silently delete every comment in the file — poly never does that, and INI
+formatting stays with the tree-sitter generic tier instead, which preserves comments structurally.
+Rules: `parse-error` (a real syntax error, with the parser's own line/column), `duplicate-key`,
+`duplicate-section`, `key-without-value`, `inconsistent-separator`, `trailing-whitespace`.
+
+Detection is deliberately narrow: `*.conf` (most are not INI — nginx, httpd, and friends use their
+own syntax), `*.properties` (Java's key=value syntax, not INI's), `.gitconfig` (quoted subsections
+`rust-ini` cannot parse), and systemd units (duplicate keys are legal there) are never treated as
+INI.
 
 Beyond the dedicated backends above, the generic tree-sitter tier identifies and best-effort
 formats hundreds of grammars — including first-class detection for Java, Kotlin, C/C++, Elixir,
