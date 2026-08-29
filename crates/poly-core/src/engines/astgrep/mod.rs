@@ -126,10 +126,25 @@ impl Engine for AstGrepEngine {
             return Ok(Vec::new());
         }
 
+        // Checked before parsing: a language whose only matching rules are all
+        // `severity: off` has nothing to scan, so there is no reason to pay for
+        // a parse first and discard it.
+        let rule_refs: Vec<_> = lang_rules
+            .iter()
+            .filter(|r| !matches!(r.severity, AsgSeverity::Off))
+            .collect();
+        if rule_refs.is_empty() {
+            return Ok(Vec::new());
+        }
+
         let Some(tslp_lang) = TslpLanguage::new(lang_name) else {
             return Ok(Vec::new());
         };
 
+        // `try_new` owns the parse, and `ast-grep-core` already pools the
+        // underlying `tree_sitter::Parser` per thread per language behind it
+        // (`PARSER_CACHE` in its `tree_sitter` module), so there is nothing for
+        // a pool of poly's own to save here.
         let root = match ast_grep_core::AstGrep::<StrDoc<TslpLanguage>>::try_new(&src.content, tslp_lang) {
             Ok(r) => r,
             Err(e) => {
@@ -142,13 +157,6 @@ impl Engine for AstGrepEngine {
             }
         };
 
-        let rule_refs: Vec<_> = lang_rules
-            .iter()
-            .filter(|r| !matches!(r.severity, AsgSeverity::Off))
-            .collect();
-        if rule_refs.is_empty() {
-            return Ok(Vec::new());
-        }
         let scan = CombinedScan::new(rule_refs);
 
         let result = scan.scan(&root, true);
