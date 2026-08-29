@@ -253,7 +253,9 @@ flowchart LR
 The default path does not require Python, Node, Go, a JVM, or a project-local toolchain. Most
 backends are Rust crates compiled into the binary. Two canonical native formatters are default-on
 when present: `gofmt` for Go and `rustfmt` for Rust. If either is missing, the language falls back to
-the generic tier. `zig fmt`, `shfmt`, `shellcheck`, and catalog tools are opt-in and are skipped when
+the generic tier. `shellcheck` is likewise default-on when present (ADR 0014's 2026-08-29
+amendment — shell has no first-party linter to defer to). `zig fmt`, `shfmt`, and catalog tools
+are opt-in and are skipped when
 absent.
 
 </details>
@@ -1160,7 +1162,7 @@ poly uses a tiered model:
 | Go | `gofmt` when present, tree-sitter fallback otherwise | no | yes |
 | Rust | `rustfmt` when present, tree-sitter fallback otherwise | no | yes |
 | Zig | opt-in `zig fmt`, tree-sitter fallback otherwise | no | yes |
-| Shell | opt-in `shellcheck` + `shfmt`, tree-sitter fallback otherwise | optional | optional |
+| Shell | `shellcheck` when present (default-on), opt-in `shfmt`, tree-sitter fallback otherwise | optional | optional |
 | All text files | typos spell-check | yes | no |
 | Any recognized language | opt-in `uncomment` comment removal (see [Comment Removal](#comment-removal-opt-in)) | opt-in | no |
 | Other identified grammars | tree-sitter generic tier | no | best effort |

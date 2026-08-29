@@ -142,8 +142,17 @@ pub(crate) static SHFMT_SPEC: ToolSpec = ToolSpec {
 };
 
 /// `shellcheck --format=json1 -`: reads shell source from stdin, emits a
-/// JSON1 object `{ "comments": [...] }` to stdout. Opt-in (off by default).
+/// JSON1 object `{ "comments": [...] }` to stdout.
 /// Exit 0 → no issues; exit 1 → issues found; exit 2+ → tool error.
+///
+/// **Default-on when present** (ADR 0014, 2026-08-29 amendment). Unlike the
+/// other opt-in entries this is a *linter*, and unlike `rustfmt`/`gofmt` it is
+/// not first-party — but shell has no first-party linter at all, so the
+/// first-party test would keep Shell permanently uncovered rather than
+/// deferring to something better. Measured over 48 repositories and 581 shell
+/// files before flipping: 55 findings total (41 info, 9 warning, 3 style, 2
+/// error), the two errors being a malformed `# shellcheck` directive in one
+/// file. See `SHELLCHECK_SPEC`'s ADR entry for the full reasoning.
 pub(crate) static SHELLCHECK_SPEC: ToolSpec = ToolSpec {
     engine_name: "shellcheck",
     format_binary: None,
@@ -153,7 +162,7 @@ pub(crate) static SHELLCHECK_SPEC: ToolSpec = ToolSpec {
     lint_args: &["--format=json1", "-"],
     version_binary: "shellcheck",
     version_args: &["--version"],
-    default_on: false,
+    default_on: true,
     edition_flag: false,
     rustfmt_config_flag: false,
     run_in_file_dir: false,

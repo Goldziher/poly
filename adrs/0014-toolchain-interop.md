@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-06-28
+- Updated: 2026-08-29 (shellcheck is default-on — see "Amendment — 2026-08-29")
 - Updated: 2026-07-05 (project-wide tools deferred here — `cargo clippy`, `pyrefly`,
   `golangci-lint` — now have a home as whole-workspace hooks under ADR 0019, not as
   per-file native-toolchain backends)
@@ -95,3 +96,58 @@ Negative / risks:
   caching (ADR 0019)**: `cargo clippy` ships as a `cargo` group builtin, and `pyrefly` /
   `golangci-lint` are inline `workspace = true` jobs. This supersedes the earlier "deferred /
   may become a hook builtin" note.
+
+## Amendment — 2026-08-29 (shellcheck is default-on when present)
+
+The 2026-06-28 amendment made `rustfmt` and `gofmt` default-on and kept everything else opt-in,
+on a **first-party** test: a canonical formatter shipped by the language's own toolchain earns
+the default; a third-party tool does not. `shellcheck` now joins them, and it fails that test on
+two counts — it is a **linter**, not a formatter, and it is **third-party**.
+
+The test is kept for every other tool. It is set aside here because **shell has no first-party
+linter to defer to.** For Rust or Go, "third-party, so opt-in" reserves the slot for the
+canonical tool. For shell there is no canonical tool coming: applying the rule would not defer
+the decision, it would make Shell permanently uncovered. Measured against the corpus, 528 files
+were reported `no lint rules for Shell` while `shellcheck` sat installed on the same machine and
+poly held a working backend for it — a skip that was true about poly's configuration and false
+about what poly could do.
+
+### Measured before flipping, because this one can fail a build
+
+`shellcheck_level_to_severity` maps shellcheck's `error` to `Severity::Error`, and `poly lint`
+exits non-zero on error severity. **This is the first default-on native-toolchain entry that can
+turn a passing CI red**, so it was measured rather than argued. Across 48 repositories and 581
+tracked shell files:
+
+| level | count |
+|---|---|
+| info | 41 |
+| warning | 9 |
+| style | 3 |
+| **error** | **2** |
+
+55 findings in total. The two errors are `SC1073` + `SC1072` on one line of one file — a
+malformed `# shellcheck` directive. For scale, the `quality` tier's `lazy-ignore` alone produces
+10,486 findings on the same corpus.
+
+**The error mapping is deliberately left alone.** SC1072/SC1073 mean shellcheck could not parse
+the script, so it analysed nothing — which is precisely the "this file was not actually checked"
+signal ADR 0027's coverage accounting exists to make loud. Downgrading it to a warning would
+reintroduce the silent-non-coverage problem inside a tool that reports it correctly.
+
+### What stays opt-in, and why the line moved rather than dissolved
+
+`shfmt` remains off by default. It is third-party *and* a formatter: enabling it rewrites every
+shell file in a repository, which is a far larger change than adding 55 warnings, and it has not
+been measured. The rule after this amendment is therefore **not** "third-party tools may be
+default-on" but: a tool may ship on when it is the only credible option for a language, its
+impact has been measured on a real corpus, and its absence degrades to tier-2 rather than
+erroring. All three held here; only the first holds for `shfmt`.
+
+The zero-system-dependency guarantee is unaffected: with `shellcheck` absent, Shell falls through
+to the generic tier exactly as before, and a missing toolchain is still never an error.
+`[lint.shell.shellcheck] enabled = false` opts out.
+
+`ToolSpec::default_on` is now folded into `NativeToolEngine::version()`, so flipping a shipped
+default invalidates cached results — without it, a run from before the flip would keep serving
+"no diagnostics" for files the tool had never seen.

@@ -91,6 +91,17 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   (arbitrary tool parameters by design), unknown language ids, and unknown tool names, which may
   come from an `extends` base. `[hooks]` and `[discovery]` are not covered yet.
 
+- **`shellcheck` now runs by default when it is installed.** Shell was poly's largest remaining
+  coverage gap — 528 files across the test corpus reported `no lint rules for Shell` while
+  shellcheck sat on the same machine and poly held a working backend for it. Opt out with
+  `[lint.shell.shellcheck] enabled = false`; with shellcheck absent, Shell falls through to the
+  generic tier exactly as before.
+
+  **This is the first default that can fail a build**, because shellcheck's `error` level maps to
+  error severity and `poly lint` exits non-zero on it. Measured before shipping: across 48
+  repositories and 581 shell files it adds 55 findings, of which two are errors — a malformed
+  `# shellcheck` directive in a single file. `shfmt` stays opt-in. See ADR 0014.
+
 - **A built-in ast-grep rule pack, on by default.** poly's ast-grep backend shipped with no
   rules at all — it matched a language only if a repository pointed `[rules] dirs` at YAML of its
   own, which nearly none do. It now embeds 26 curated rules across nine languages (C#, Elixir, Go,

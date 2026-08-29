@@ -104,8 +104,8 @@ fn default_policy_canonical_on_option_off() {
         "shfmt must be opt-in (third-party tool)"
     );
     assert!(
-        !NativeToolEngine::shell_lint().is_enabled(&default_cfg()),
-        "shellcheck must be opt-in"
+        NativeToolEngine::shell_lint().is_enabled(&default_cfg()),
+        "shellcheck is default-on when present (ADR 0014, 2026-08-29 amendment): shell has no          first-party linter to defer to, and enabling it was measured at 55 findings across 48          repositories"
     );
     assert!(
         !NativeToolEngine::for_language(Language::Java).is_enabled(&default_cfg()),
@@ -153,7 +153,25 @@ fn explicit_config_overrides_default_policy() {
     );
     assert!(
         NativeToolEngine::shell_lint().is_enabled(&enabled_cfg()),
-        "explicit enabled=true must opt shellcheck in"
+        "explicit enabled=true must keep shellcheck on"
+    );
+}
+
+/// The opt-out direction, which matters more now that shellcheck ships on: a
+/// repository that does not want it must be able to say so, and this is the
+/// only default-on native tool that can raise an error-severity diagnostic.
+#[test]
+fn shellcheck_can_be_turned_off_explicitly() {
+    let mut options = toml::Table::new();
+    options.insert("enabled".to_owned(), toml::Value::Boolean(false));
+    let cfg = EngineConfig {
+        globals: GlobalDefaults::default(),
+        indent_width: 4,
+        options,
+    };
+    assert!(
+        !NativeToolEngine::shell_lint().is_enabled(&cfg),
+        "[lint.shell.shellcheck] enabled = false must opt shellcheck out"
     );
 }
 

@@ -9,7 +9,7 @@
 //! | Rust     | `rustfmt`             | format | yes        |
 //! | Zig      | `zig fmt`             | format | no         |
 //! | Shell    | `shfmt`               | format | no         |
-//! | Shell    | `shellcheck`          | lint   | no         |
+//! | Shell    | `shellcheck`          | lint   | yes        |
 //! | Java     | `google-java-format`  | format | no         |
 //! | Kotlin   | `ktfmt`               | format | no         |
 //! | R        | `Rscript` (styler)    | format | no         |
@@ -28,16 +28,33 @@
 //! missing toolchain is never an error) while fixing the measured tier-2 churn
 //! against `rustfmt`.
 //!
-//! `shfmt` and `shellcheck` are **opt-in, off by default** because they are
-//! third-party tools (not part of a canonical language toolchain). Enable them
-//! via `poly.toml`:
+//! `shellcheck` is **also default-on when present**, and is the one entry that
+//! is neither first-party nor a formatter. The first-party test cannot be
+//! applied to shell: there is no first-party shell linter to defer to, so
+//! holding shellcheck to it would keep Shell permanently uncovered rather than
+//! reserving the slot for something better. It was flipped on evidence, not
+//! principle — measured across 48 repositories and 581 shell files, enabling it
+//! adds 55 findings in total, of which exactly two are error severity (a
+//! malformed `# shellcheck` directive in a single file). See ADR 0014's
+//! 2026-08-29 amendment.
+//!
+//! Note this is the first default-on entry that can raise an **error**-severity
+//! diagnostic, and `poly lint` exits non-zero on error. The mapping is
+//! deliberate: shellcheck's own `error` level means it could not parse the
+//! script, which is exactly the "this file was not actually checked" signal
+//! poly's coverage accounting exists to make loud.
+//!
+//! `shfmt` remains **opt-in, off by default**: it is a third-party *formatter*,
+//! and turning it on rewrites every shell file in a repository — a far larger
+//! change than adding warnings, and one that has not been measured. Enable
+//! either explicitly via `poly.toml`:
 //!
 //! ```toml
 //! [fmt.shell.shfmt]
 //! enabled = true
 //!
 //! [lint.shell.shellcheck]
-//! enabled = true
+//! enabled = false   # opt back out
 //! ```
 //!
 //! ## Registry slots
@@ -282,9 +299,17 @@ impl Engine for NativeToolEngine {
             } else {
                 ""
             };
+            // Folded in so flipping a tool's shipped default invalidates cached
+            // results: a run before the flip cached "no diagnostics" for files
+            // the tool never saw.
+            let default_marker = if self.role.spec().default_on {
+                " | default-on"
+            } else {
+                ""
+            };
             match self.probed_version() {
-                Some(tool) => format!("{tool} | ts:{ts}{edition_marker}{config_path_marker}"),
-                None => format!("native-tool:absent | ts:{ts}{edition_marker}{config_path_marker}"),
+                Some(tool) => format!("{tool} | ts:{ts}{edition_marker}{config_path_marker}{default_marker}"),
+                None => format!("native-tool:absent | ts:{ts}{edition_marker}{config_path_marker}{default_marker}"),
             }
         })
     }
