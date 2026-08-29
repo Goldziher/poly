@@ -7,6 +7,24 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+## [0.21.12] - 2026-08-29
+
+### Added
+
+- **The cache home now carries a `CACHEDIR.TAG`.** poly's cache — result entries, hook staged
+  snapshots and fetched remote sources — is entirely derived and regenerated on demand, but
+  nothing on disk said so, and on one machine it had grown to 21 GB that every backup dutifully
+  copied. The [cache directory tag](https://bford.info/cachedir/) is the cross-tool way to
+  declare that: `tar --exclude-caching`, `rsync --exclude-tag`, Borg, restic and cleanup tools
+  such as voom all skip a tree that carries one, without needing to know anything about poly.
+  Written once, when the cache directory is created, and never rewritten — once the file is on
+  your disk it is yours to edit.
+
+  **Only when poly owns the directory.** A `POLY_CACHE_HOME` you pointed somewhere of your own
+  may hold more than poly's cache, and a tag there would tell every backup tool on the machine
+  to skip whatever else is in it. That is the same distinction poly already draws before
+  tightening permissions.
+
 ## [0.21.11] - 2026-08-27
 
 ### Fixed
