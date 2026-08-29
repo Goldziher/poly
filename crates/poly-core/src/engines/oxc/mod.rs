@@ -19,7 +19,7 @@ mod format;
 mod lint;
 
 use crate::config::EngineConfig;
-use crate::engine::{Capabilities, Diagnostic, FormatOutput, SourceFile};
+use crate::engine::{Capabilities, Diagnostic, FormatOutput, OptionKeys, OptionTable, SourceFile};
 use crate::language::Language;
 
 pub(crate) use self::format::{format_embedded_js, is_embedded_js_parse_error};
@@ -70,6 +70,28 @@ impl crate::engine::Engine for OxcEngine {
             lint: true,
             format: true,
             fix: false,
+        }
+    }
+
+    /// `[lint.<lang>.oxc]` takes only the uniform rule vocabulary (oxlint's own
+    /// `.oxlintrc.json` keys are not accepted); `[fmt.<lang>.oxc]` takes the
+    /// formatter keys — the union of the JS and JSON paths, which share one
+    /// table name. `line_width` is not among them: it comes from
+    /// `[defaults] line_length`.
+    fn option_keys(&self, table: OptionTable) -> OptionKeys {
+        match table {
+            OptionTable::Lint => OptionKeys::declared(&[]).with_rule_selection(),
+            OptionTable::Format => OptionKeys::declared(&[
+                "indent_style",
+                "quote_style",
+                "jsx_quote_style",
+                "semicolons",
+                "trailing_commas",
+                "arrow_parentheses",
+                "bracket_spacing",
+                "bracket_same_line",
+            ]),
+            OptionTable::CrossCuttingLint => OptionKeys::UNCHECKED,
         }
     }
 

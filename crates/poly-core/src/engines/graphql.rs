@@ -37,7 +37,9 @@ use graphql_parser::schema::parse_schema;
 use pretty_graphql::config::FormatOptions;
 
 use crate::config::EngineConfig;
-use crate::engine::{Capabilities, Diagnostic, Engine, FormatOutput, Severity, SourceFile, Span};
+use crate::engine::{
+    Capabilities, Diagnostic, Engine, FormatOutput, OptionKeys, OptionTable, Severity, SourceFile, Span,
+};
 use crate::language::Language;
 
 /// GraphQL backend: `pretty_graphql` for formatting, `graphql-parser` for lint.
@@ -59,6 +61,18 @@ impl Engine for GraphQlEngine {
             lint: true,
             format: true,
             fix: false,
+        }
+    }
+
+    /// The whole table is deserialized into `pretty_graphql::config::FormatOptions`,
+    /// so the recognised keys are derived from that type instead of copied out
+    /// of it — the upstream option set is large, versioned, and would drift.
+    fn option_keys(&self, table: OptionTable) -> OptionKeys {
+        match table {
+            OptionTable::Format => OptionKeys::declared(&[]).with_derived(
+                crate::engines::config_keys::recognized_by_type_probe::<pretty_graphql::config::FormatOptions>,
+            ),
+            OptionTable::Lint | OptionTable::CrossCuttingLint => OptionKeys::declared(&[]),
         }
     }
 

@@ -52,7 +52,7 @@ use ini::{Ini, ParseOption};
 
 use super::rule_config::RuleSelection;
 use crate::config::EngineConfig;
-use crate::engine::{Capabilities, Diagnostic, Engine, Severity, SourceFile, Span};
+use crate::engine::{Capabilities, Diagnostic, Engine, OptionKeys, OptionTable, Severity, SourceFile, Span};
 use crate::language::Language;
 
 /// Cache-key version: the `rust-ini` crate version, plus a marker for this
@@ -87,6 +87,15 @@ impl Engine for IniEngine {
             lint: true,
             format: false,
             fix: false,
+        }
+    }
+
+    /// Rule selection only; the backend is lint-only, so every key in a `[fmt…]`
+    /// table of its own would be dead config.
+    fn option_keys(&self, table: OptionTable) -> OptionKeys {
+        match table {
+            OptionTable::Lint => OptionKeys::declared(&[]).with_rule_selection(),
+            OptionTable::Format | OptionTable::CrossCuttingLint => OptionKeys::declared(&[]),
         }
     }
 

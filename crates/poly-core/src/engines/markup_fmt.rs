@@ -48,7 +48,7 @@ use oxc_allocator::Allocator;
 use std::borrow::Cow;
 
 use crate::config::EngineConfig;
-use crate::engine::{Capabilities, Engine, FormatOutput, SourceFile};
+use crate::engine::{Capabilities, Engine, FormatOutput, OptionKeys, OptionTable, SourceFile};
 use crate::language::Language;
 
 /// markup_fmt HTML / Vue / Svelte / Astro / Angular / Jinja / Vento /
@@ -100,6 +100,18 @@ impl Engine for MarkupFmtEngine {
             lint: false,
             format: true,
             fix: false,
+        }
+    }
+
+    /// The whole table is deserialized into `markup_fmt::config::FormatOptions`,
+    /// so the recognised keys are derived from that type instead of copied out
+    /// of it — the upstream option set is large, versioned, and would drift.
+    fn option_keys(&self, table: OptionTable) -> OptionKeys {
+        match table {
+            OptionTable::Format => OptionKeys::declared(&["indent_style", "quote_style", "jsx_quote_style", "semicolons", "trailing_commas", "arrow_parentheses", "bracket_spacing", "bracket_same_line"])
+                .with_derived(crate::engines::config_keys::recognized_by_type_probe::<markup_fmt::config::FormatOptions>)
+                .with_note("Astro `<script>` blocks are formatted by the oxc backend from *this* table, so its format keys are read here too."),
+            OptionTable::Lint | OptionTable::CrossCuttingLint => OptionKeys::declared(&[]),
         }
     }
 

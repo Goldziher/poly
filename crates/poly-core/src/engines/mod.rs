@@ -7,6 +7,7 @@ pub mod biome_common;
 pub mod biome_css;
 pub mod biome_graphql;
 pub mod catalog_tool;
+pub mod config_keys;
 pub mod dockerfile;
 pub mod dotenv;
 pub mod graphql;

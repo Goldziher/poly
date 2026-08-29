@@ -40,7 +40,7 @@ use std::sync::{Arc, OnceLock};
 use mago_linter::registry::RuleRegistry;
 
 use crate::config::EngineConfig;
-use crate::engine::{Capabilities, Diagnostic, Engine, FormatOutput, SourceFile};
+use crate::engine::{Capabilities, Diagnostic, Engine, FormatOutput, OptionKeys, OptionTable, SourceFile};
 use crate::language::Language;
 
 /// PHP backend using the `mago` linter + formatter.
@@ -85,6 +85,20 @@ impl Engine for MagoEngine {
     ///
     /// `+advisory-sev1`: the `Maintainability` metric rules report `Warning`
     /// instead of mago's `Error` (see `lint::ADVISORY_RULE_CODES`).
+    /// `[fmt.php.mago]`'s keys are the fields of mago's own
+    /// `RawFormatSettings`, derived from that type rather than copied: the list
+    /// is 96 kebab-case entries that change with every mago release, and a
+    /// hand-written copy would drift on the first upgrade.
+    fn option_keys(&self, table: OptionTable) -> OptionKeys {
+        match table {
+            OptionTable::Lint => OptionKeys::declared(&["php_version", "integrations"]).with_rule_selection(),
+            OptionTable::Format => OptionKeys::declared(&["php_version"]).with_derived(
+                crate::engines::config_keys::recognized_by_deserialize::<mago_formatter::settings::RawFormatSettings>,
+            ),
+            OptionTable::CrossCuttingLint => OptionKeys::UNCHECKED,
+        }
+    }
+
     fn version(&self) -> &str {
         "mago-1.47.3+advisory-sev1"
     }

@@ -21,7 +21,7 @@
 use alejandra::format::{Status, in_memory};
 
 use crate::config::EngineConfig;
-use crate::engine::{Capabilities, Diagnostic, Engine, FormatOutput, SourceFile};
+use crate::engine::{Capabilities, Diagnostic, Engine, FormatOutput, OptionKeys, OptionTable, SourceFile};
 use crate::language::Language;
 
 /// alejandra Nix backend — format-only for `.nix` files.
@@ -50,6 +50,11 @@ impl Engine for NixFmtEngine {
             format: true,
             fix: false,
         }
+    }
+
+    /// alejandra is not configurable: it takes no options at all.
+    fn option_keys(&self, _table: OptionTable) -> OptionKeys {
+        OptionKeys::declared(&[])
     }
 
     fn version(&self) -> &str {

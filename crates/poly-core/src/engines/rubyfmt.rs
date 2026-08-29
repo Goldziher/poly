@@ -14,7 +14,7 @@
 use rubyfmt::{RichFormatError, format_buffer};
 
 use crate::config::EngineConfig;
-use crate::engine::{Capabilities, Diagnostic, Engine, FormatOutput, SourceFile};
+use crate::engine::{Capabilities, Diagnostic, Engine, FormatOutput, OptionKeys, OptionTable, SourceFile};
 use crate::language::Language;
 
 /// rubyfmt Ruby backend — format-only for `.rb` files.
@@ -44,6 +44,11 @@ impl Engine for RubyfmtEngine {
             format: true,
             fix: false,
         }
+    }
+
+    /// rubyfmt is not configurable: it takes no options at all.
+    fn option_keys(&self, _table: OptionTable) -> OptionKeys {
+        OptionKeys::declared(&[])
     }
 
     fn version(&self) -> &str {

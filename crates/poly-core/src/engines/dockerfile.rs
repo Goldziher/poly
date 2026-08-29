@@ -21,7 +21,9 @@ use dockerfile_parser::{Dockerfile, Instruction};
 
 use super::rule_config::RuleSelection;
 use crate::config::EngineConfig;
-use crate::engine::{Capabilities, Diagnostic, Engine, FormatOutput, Severity, SourceFile, Span as EngineSpan};
+use crate::engine::{
+    Capabilities, Diagnostic, Engine, FormatOutput, OptionKeys, OptionTable, Severity, SourceFile, Span as EngineSpan,
+};
 use crate::language::Language;
 
 // ---------------------------------------------------------------------------
@@ -77,6 +79,15 @@ impl Engine for DockerfileEngine {
             lint: true,
             format: false,
             fix: false,
+        }
+    }
+
+    /// Rule selection only; the backend is lint-only, so every key in a `[fmt…]`
+    /// table of its own would be dead config.
+    fn option_keys(&self, table: OptionTable) -> OptionKeys {
+        match table {
+            OptionTable::Lint => OptionKeys::declared(&[]).with_rule_selection(),
+            OptionTable::Format | OptionTable::CrossCuttingLint => OptionKeys::declared(&[]),
         }
     }
 

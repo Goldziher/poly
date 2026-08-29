@@ -26,6 +26,51 @@ pub const DEFAULT_LAW_OF_DEMETER: i64 = 3;
 /// Default `magic-number` allowlist.
 pub const DEFAULT_MAGIC_NUMBER_ALLOW: &[i64] = &[-1, 0, 1, 2, 10, 100];
 
+/// The boolean option keys `[lint.quality]` / `[lint.<lang>.quality]` accept.
+///
+/// One list, read twice: `Config::build_quality_options` merges exactly these
+/// keys out of the user's tables, and `QualityEngine::option_keys` declares them
+/// as what the backend reads. A key present in one place and absent from the
+/// other is the defect this file exists to make impossible.
+pub(crate) const BOOL_OPTION_KEYS: &[&str] = &[
+    "enabled",
+    "file_too_long",
+    "function_too_long",
+    "type_too_long",
+    "too_many_parameters",
+    "nesting_too_deep",
+    "cyclomatic_complexity",
+    "lazy_ignore",
+    "magic_number",
+    "law_of_demeter",
+];
+
+/// The integer (threshold) option keys, merged and declared like
+/// [`BOOL_OPTION_KEYS`].
+pub(crate) const INTEGER_OPTION_KEYS: &[&str] = &[
+    "file_too_long_lines",
+    "function_too_long_lines",
+    "type_too_long_lines",
+    "too_many_parameters_count",
+    "nesting_too_deep_depth",
+    "cyclomatic_complexity_max",
+    "law_of_demeter_depth",
+];
+
+/// The array-valued option keys, merged and declared like [`BOOL_OPTION_KEYS`].
+pub(crate) const ARRAY_OPTION_KEYS: &[&str] = &["magic_number_allow"];
+
+/// Every option key the quality backend reads, in one slice for
+/// `Engine::option_keys`.
+pub(crate) static OPTION_KEYS: std::sync::LazyLock<Vec<&'static str>> = std::sync::LazyLock::new(|| {
+    BOOL_OPTION_KEYS
+        .iter()
+        .chain(INTEGER_OPTION_KEYS)
+        .chain(ARRAY_OPTION_KEYS)
+        .copied()
+        .collect()
+});
+
 /// The fully resolved quality-engine configuration for one file.
 #[derive(Debug, Clone)]
 pub struct Settings {

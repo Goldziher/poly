@@ -58,7 +58,9 @@ use sqruff_lib_core::errors::SQLBaseError;
 
 use super::rule_config::{RuleSelection, string_list, union_codes, warn_and_skip_blank};
 use crate::config::EngineConfig;
-use crate::engine::{Capabilities, Diagnostic, Engine, FormatOutput, Severity, SourceFile, Span};
+use crate::engine::{
+    Capabilities, Diagnostic, Engine, FormatOutput, OptionKeys, OptionTable, Severity, SourceFile, Span,
+};
 use crate::language::Language;
 
 /// sqruff SQL backend — lint + format for SQL files.
@@ -185,6 +187,20 @@ impl Engine for SqruffEngine {
             lint: true,
             format: true,
             fix: false,
+        }
+    }
+
+    /// One key set for both phases: `build_fluff_config` is shared, and its
+    /// `mode` argument changes only which rule groups are suppressed.
+    /// `exclude_rules` / `rule_configs` are sqruff's native aliases, and `rules`
+    /// is accepted in both its array (allowlist) and table (per-rule params)
+    /// forms via the uniform vocabulary.
+    fn option_keys(&self, table: OptionTable) -> OptionKeys {
+        match table {
+            OptionTable::Lint | OptionTable::Format => {
+                OptionKeys::declared(&["dialect", "exclude_rules", "rule_configs"]).with_rule_selection()
+            }
+            OptionTable::CrossCuttingLint => OptionKeys::UNCHECKED,
         }
     }
 

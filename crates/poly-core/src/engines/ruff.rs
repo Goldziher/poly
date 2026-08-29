@@ -57,7 +57,9 @@ use ruff_text_size::Ranged;
 use rustc_hash::FxHashMap;
 
 use crate::config::EngineConfig;
-use crate::engine::{Capabilities, Diagnostic, Edit, Engine, FormatOutput, Severity, SourceFile, Span};
+use crate::engine::{
+    Capabilities, Diagnostic, Edit, Engine, FormatOutput, OptionKeys, OptionTable, Severity, SourceFile, Span,
+};
 use crate::language::Language;
 
 /// Opinionated rule selection: string codes resolved by [`RuleSelector::from_str`].
@@ -474,6 +476,32 @@ impl Engine for RuffEngine {
     /// upgrading it automatically invalidates any cached lint/format output.
     /// The suffix records poly's own resolved defaults, which change output
     /// independently of the ruff version.
+    /// `[lint.python.ruff]` takes the uniform rule vocabulary plus ruff's own
+    /// flat settings; `[fmt.python.ruff]` takes the three formatter keys
+    /// `build_format_options` reads. The two sets are **not** interchangeable —
+    /// `docstring_code_format` under `[lint…]` does nothing.
+    fn option_keys(&self, table: OptionTable) -> OptionKeys {
+        match table {
+            OptionTable::Lint => OptionKeys::declared(&[
+                "line_length",
+                "mccabe_max_complexity",
+                "pylint_max_args",
+                "pylint_max_branches",
+                "pylint_max_returns",
+                "pydocstyle_convention",
+                "target_version",
+                "src",
+                "known_first_party",
+                "known_third_party",
+            ])
+            .with_rule_selection(),
+            OptionTable::Format => {
+                OptionKeys::declared(&["line_length", "docstring_code_format", "docstring_code_line_length"])
+            }
+            OptionTable::CrossCuttingLint => OptionKeys::UNCHECKED,
+        }
+    }
+
     fn version(&self) -> &str {
         "ruff-0.16.5+pkgroot+plugins+isort+e501+tgtsrc+ignore-b008+rules-v3+advisory-sev1+fmtopts1"
     }

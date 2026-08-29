@@ -9,6 +9,176 @@ use serde::{Deserialize, Serialize};
 use crate::config::EngineConfig;
 use crate::language::Language;
 
+/// Which config table an [`OptionKeys`] declaration describes.
+///
+/// A backend that both lints and formats reads a *different* key set from each
+/// of its two tables — `[lint.python.ruff] select` and `[fmt.python.ruff]
+/// line_length` are not interchangeable — and the four cross-cutting backends
+/// have a third, language-agnostic table on top of that.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OptionTable {
+    /// `[lint.<lang>.<engine>]`.
+    Lint,
+    /// `[fmt.<lang>.<engine>]`.
+    Format,
+    /// The language-agnostic `[lint.<engine>]` table of a cross-cutting backend
+    /// (`typos`, `quality`, `uncomment`, `astgrep`). Backends without one leave
+    /// this [`OptionKeys::UNCHECKED`].
+    CrossCuttingLint,
+}
+
+/// The option keys a backend reads out of one of its config tables.
+///
+/// `[lint.*]` and `[fmt.*]` are raw `toml::Table`s with no schema, so **every**
+/// key a user writes parses by construction and a key that does nothing is
+/// indistinguishable from one that works. This is the declaration that makes the
+/// difference visible: `poly` warns about any key in an engine's table that the
+/// engine's own declaration does not cover (ADR 0016, amendment §4).
+///
+/// A declaration is a claim about behaviour, so it is checked rather than
+/// trusted: `engines::config_keys::tests` asserts that every declared key is one
+/// the backend actually reads, and that no backend leaves a table
+/// [`UNCHECKED`](OptionKeys::UNCHECKED) without being on an explicit,
+/// justified list.
+#[derive(Debug, Clone, Copy)]
+pub struct OptionKeys {
+    /// `false` for [`OptionKeys::UNCHECKED`]: no key in the table is reported.
+    checked: bool,
+    /// Keys the backend reads by name.
+    declared: &'static [&'static str],
+    /// The backend parses poly's uniform rule-selection vocabulary
+    /// ([`RULE_SELECTION_KEYS`]) out of this table.
+    rule_selection: bool,
+    /// Derives the recognised keys from the serde type the backend deserializes
+    /// the *whole* table into. `None` from the probe means "could not tell"
+    /// (a malformed table), which is treated as "everything is recognised" so a
+    /// type error never turns into a pile of unknown-key warnings.
+    derived: Option<DerivedOptionKeys>,
+    /// Extra guidance rendered as the diagnostic's description.
+    note: Option<&'static str>,
+}
+
+/// A probe deriving the option keys a serde type recognises out of the table it
+/// is offered. Returns `None` when the answer cannot be established. See
+/// `engines::config_keys::probe`.
+pub type DerivedOptionKeys = fn(&toml::Table) -> Option<Vec<String>>;
+
+/// poly's uniform rule-selection vocabulary (ADR 0016), accepted by every
+/// backend that declares [`OptionKeys::with_rule_selection`].
+pub const RULE_SELECTION_KEYS: &[&str] = &["select", "extend_select", "ignore", "rules"];
+
+/// Keys every per-language engine table accepts regardless of the backend.
+///
+/// `indent_width` is read for *any* engine by `Config::engine_config`, and the
+/// `rules` sub-table's `level` overrides are applied for any engine by the
+/// runner's post-lint severity remap — neither goes through the backend, so
+/// neither belongs in a backend's own declaration.
+pub const UNIVERSAL_OPTION_KEYS: &[&str] = &["indent_width", "rules"];
+
+impl OptionKeys {
+    /// The backend has not declared what it reads; nothing in the table is
+    /// reported. The fallback for engines outside the registry (test stubs, the
+    /// catalog tier, which is configured under `[tools.<name>]` instead).
+    pub const UNCHECKED: OptionKeys = OptionKeys {
+        checked: false,
+        declared: &[],
+        rule_selection: false,
+        derived: None,
+        note: None,
+    };
+
+    /// Declare the exact set of keys the backend reads from this table.
+    pub const fn declared(keys: &'static [&'static str]) -> OptionKeys {
+        OptionKeys {
+            checked: true,
+            declared: keys,
+            rule_selection: false,
+            derived: None,
+            note: None,
+        }
+    }
+
+    /// Additionally accept poly's uniform rule-selection vocabulary.
+    #[must_use]
+    pub const fn with_rule_selection(mut self) -> OptionKeys {
+        self.rule_selection = true;
+        self
+    }
+
+    /// Additionally accept whatever the serde type the backend deserializes the
+    /// whole table into recognises, as reported by `probe`.
+    #[must_use]
+    pub const fn with_derived(mut self, probe: DerivedOptionKeys) -> OptionKeys {
+        self.derived = Some(probe);
+        self
+    }
+
+    /// Attach guidance shown with each unknown-key warning for this table.
+    #[must_use]
+    pub const fn with_note(mut self, note: &'static str) -> OptionKeys {
+        self.note = Some(note);
+        self
+    }
+
+    /// The keys the backend declares by name for this table, excluding the
+    /// uniform vocabulary and anything a derived probe recognises.
+    pub fn declared_keys(&self) -> &'static [&'static str] {
+        self.declared
+    }
+
+    /// Whether this table's keys are checked at all.
+    pub fn is_checked(&self) -> bool {
+        self.checked
+    }
+
+    /// Guidance to render with an unknown-key warning for this table.
+    pub fn note(&self) -> Option<&'static str> {
+        self.note
+    }
+
+    /// Whether `key` is one this table accepts.
+    ///
+    /// `universal` adds [`UNIVERSAL_OPTION_KEYS`]; it is off for the
+    /// language-agnostic cross-cutting table, whose merge in
+    /// `Config::engine_config` drops both of those keys.
+    pub fn accepts(&self, key: &str, options: &toml::Table, universal: bool) -> bool {
+        if !self.checked {
+            return true;
+        }
+        if universal && UNIVERSAL_OPTION_KEYS.contains(&key) {
+            return true;
+        }
+        if self.rule_selection && RULE_SELECTION_KEYS.contains(&key) {
+            return true;
+        }
+        if self.declared.contains(&key) {
+            return true;
+        }
+        match self.derived {
+            // `None` means the probe could not tell — accept rather than
+            // invent a warning out of a parse failure.
+            Some(probe) => probe(options).is_none_or(|recognized| recognized.iter().any(|k| k == key)),
+            None => false,
+        }
+    }
+
+    /// Every key this table accepts, for the "recognized keys" hint on a
+    /// warning. Derived keys are excluded: they are whatever a serde type
+    /// accepts, which is not enumerable here.
+    pub fn known_keys(&self, universal: bool) -> Vec<&'static str> {
+        let mut keys: Vec<&'static str> = self.declared.to_vec();
+        if self.rule_selection {
+            keys.extend_from_slice(RULE_SELECTION_KEYS);
+        }
+        if universal {
+            keys.extend_from_slice(UNIVERSAL_OPTION_KEYS);
+        }
+        keys.sort_unstable();
+        keys.dedup();
+        keys
+    }
+}
+
 /// A single file to be linted or formatted.
 #[derive(Debug, Clone)]
 pub struct SourceFile {
@@ -153,6 +323,23 @@ pub trait Engine: Send + Sync {
 
     /// What this backend can do (lint/format/fix).
     fn capabilities(&self) -> Capabilities;
+
+    /// The option keys this backend reads from `table`.
+    ///
+    /// The declaration `poly.toml`'s unknown-key warning checks against (ADR
+    /// 0016, amendment §4). Defaults to [`OptionKeys::UNCHECKED`] so an engine
+    /// outside the registry — a test stub, the catalog tier — is simply not
+    /// checked; every registry backend overrides it, which
+    /// `engines::config_keys::tests::every_registry_engine_declares_its_option_keys`
+    /// enforces.
+    ///
+    /// Declaring a key the backend does not read is as much a defect as reading
+    /// one it does not declare: the first invents a warning, the second hides
+    /// the dead key the warning exists to expose. Both directions are asserted
+    /// against the backends' own sources in `engines::config_keys::tests`.
+    fn option_keys(&self, _table: OptionTable) -> OptionKeys {
+        OptionKeys::UNCHECKED
+    }
 
     /// Version of the wrapped tool/crate; folded into the cache key so a tool
     /// upgrade invalidates stale cached results.

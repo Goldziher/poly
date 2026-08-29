@@ -88,6 +88,7 @@ saphyr.workspace = true
 # derive JsonSchema on the public report types for MCP structured output.
 schemars = { workspace = true, optional = true }
 serde.workspace = true
+serde_ignored.workspace = true
 serde_json.workspace = true
 serde_toon_format.workspace = true
 sqruff-lib.workspace = true
@@ -95,6 +96,7 @@ sqruff-lib-core.workspace = true
 taplo.workspace = true
 tempfile.workspace = true
 toml.workspace = true
+toml_edit.workspace = true
 tracing.workspace = true
 tree-sitter.workspace = true
 tree-sitter-language-pack.workspace = true

@@ -61,7 +61,7 @@
 use tracing::info;
 
 use crate::config::EngineConfig;
-use crate::engine::{Capabilities, Diagnostic, Engine, FormatOutput, SourceFile};
+use crate::engine::{Capabilities, Diagnostic, Engine, FormatOutput, OptionKeys, OptionTable, SourceFile};
 use crate::engines::treesitter::TreeSitterEngine;
 use crate::language::Language;
 
@@ -259,6 +259,16 @@ impl Engine for NativeToolEngine {
     /// `absent` sentinel) AND the tree-sitter engine version, because every
     /// disabled/absent path delegates to tier-2 — so a tier-2 upgrade must
     /// invalidate cached native-tool results.
+    /// One key, uniform across every wrapped toolchain binary: `enabled`.
+    /// A native tool takes no poly-side options — it is the host's own
+    /// formatter, configured by the host's own config file.
+    fn option_keys(&self, table: OptionTable) -> OptionKeys {
+        match table {
+            OptionTable::Lint | OptionTable::Format => OptionKeys::declared(&["enabled"]),
+            OptionTable::CrossCuttingLint => OptionKeys::UNCHECKED,
+        }
+    }
+
     fn version(&self) -> &str {
         self.role.key_lock().get_or_init(|| {
             let ts = TreeSitterEngine.version();

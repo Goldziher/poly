@@ -8,6 +8,7 @@ use crate::engine::Engine;
 use crate::engines::astgrep::AstGrepEngine;
 use crate::engines::biome_css::BiomeCssEngine;
 use crate::engines::biome_graphql::BiomeGraphqlEngine;
+use crate::engines::config_keys::PolyConfigEngine;
 use crate::engines::dockerfile::DockerfileEngine;
 use crate::engines::dotenv::DotenvEngine;
 use crate::engines::graphql::GraphQlEngine;
@@ -40,7 +41,7 @@ pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
         | Language::Tsx
         | Language::Json
         | Language::Jsonc => vec![Box::new(OxcEngine)],
-        Language::Toml => vec![Box::new(TaploEngine::new())],
+        Language::Toml => vec![Box::new(TaploEngine::new()), Box::new(PolyConfigEngine)],
         Language::Markdown | Language::Mdx => vec![Box::new(RumdlEngine)],
         Language::Python => vec![Box::new(RuffEngine)],
         Language::Sql => vec![Box::new(SqruffEngine)],
@@ -86,6 +87,68 @@ pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
     engines
 }
 
+/// Every concrete (non-[`Language::Other`]) [`Language`] variant, used to
+/// walk every arm of [`engines_for`]. Kept from silently narrowing by
+/// `tests::assert_all_language_variants_listed`: adding a new `Language`
+/// variant without adding it to both that match and this list fails to
+/// compile, rather than letting a newly registry-wired engine for the new
+/// language slip past this audit unnoticed.
+///
+/// Shared with `runner::plan`'s tests, which walk the same list one level
+/// up (registry engines *plus* catalog tools); a second hand-maintained copy
+/// there could narrow without this file's compile-time guard noticing.
+pub(crate) fn all_languages() -> Vec<Language> {
+    vec![
+        Language::Python,
+        Language::JavaScript,
+        Language::TypeScript,
+        Language::Jsx,
+        Language::Tsx,
+        Language::Json,
+        Language::Jsonc,
+        Language::Yaml,
+        Language::Toml,
+        Language::Markdown,
+        Language::Mdx,
+        Language::Sql,
+        Language::Css,
+        Language::Scss,
+        Language::Less,
+        Language::Html,
+        Language::Vue,
+        Language::Svelte,
+        Language::Astro,
+        Language::Angular,
+        Language::Jinja,
+        Language::Vento,
+        Language::Mustache,
+        Language::Xml,
+        Language::GraphQl,
+        Language::Hcl,
+        Language::Nix,
+        Language::Shell,
+        Language::Dockerfile,
+        Language::Go,
+        Language::Java,
+        Language::Kotlin,
+        Language::Ruby,
+        Language::Php,
+        Language::R,
+        Language::Elixir,
+        Language::C,
+        Language::Cpp,
+        Language::Rust,
+        Language::Proto,
+        Language::Zig,
+        Language::Swift,
+        Language::Dart,
+        Language::Gleam,
+        Language::CSharp,
+        Language::Dotenv,
+        Language::Ini,
+    ]
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     //! Structural guard against the failure family described in
@@ -102,76 +165,20 @@ pub(crate) mod tests {
 
     use regex::Regex;
 
-    use super::engines_for;
+    use super::{all_languages, engines_for};
+
+    /// Test-module alias for [`all_languages`], kept because `runner::plan`'s
+    /// tests reach for it by this path.
+    pub(crate) fn all_known_languages() -> Vec<Language> {
+        all_languages()
+    }
     use crate::language::Language;
 
-    /// Every concrete (non-[`Language::Other`]) [`Language`] variant, used to
-    /// walk every arm of [`engines_for`]. Kept from silently narrowing by
-    /// `assert_all_language_variants_listed` below: adding a new `Language`
-    /// variant without adding it to both that match and this list fails to
-    /// compile, rather than letting a newly registry-wired engine for the new
-    /// language slip past this audit unnoticed.
-    ///
-    /// Shared with `runner::plan`'s tests, which walk the same list one level
-    /// up (registry engines *plus* catalog tools); a second hand-maintained copy
-    /// there could narrow without this file's compile-time guard noticing.
-    pub(crate) fn all_known_languages() -> Vec<Language> {
-        vec![
-            Language::Python,
-            Language::JavaScript,
-            Language::TypeScript,
-            Language::Jsx,
-            Language::Tsx,
-            Language::Json,
-            Language::Jsonc,
-            Language::Yaml,
-            Language::Toml,
-            Language::Markdown,
-            Language::Mdx,
-            Language::Sql,
-            Language::Css,
-            Language::Scss,
-            Language::Less,
-            Language::Html,
-            Language::Vue,
-            Language::Svelte,
-            Language::Astro,
-            Language::Angular,
-            Language::Jinja,
-            Language::Vento,
-            Language::Mustache,
-            Language::Xml,
-            Language::GraphQl,
-            Language::Hcl,
-            Language::Nix,
-            Language::Shell,
-            Language::Dockerfile,
-            Language::Go,
-            Language::Java,
-            Language::Kotlin,
-            Language::Ruby,
-            Language::Php,
-            Language::R,
-            Language::Elixir,
-            Language::C,
-            Language::Cpp,
-            Language::Rust,
-            Language::Proto,
-            Language::Zig,
-            Language::Swift,
-            Language::Dart,
-            Language::Gleam,
-            Language::CSharp,
-            Language::Dotenv,
-            Language::Ini,
-        ]
-    }
-
-    /// Compile-time companion to `all_known_languages`: an exhaustive match
+    /// Compile-time companion to `all_languages`: an exhaustive match
     /// (no wildcard arm) over every `Language` variant. Never called — its only
     /// purpose is that adding a variant to the enum without adding it here
     /// stops this file compiling, forcing whoever adds it to also decide
-    /// whether `all_known_languages` (and therefore this audit) needs it.
+    /// whether `all_languages` (and therefore this audit) needs it.
     #[allow(dead_code)]
     fn assert_all_language_variants_listed(language: &Language) {
         match language {
@@ -237,6 +244,11 @@ pub(crate) mod tests {
     /// never appear in `engines_for` at all (they are built from `poly.toml`
     /// in `runner/plan.rs`, not wired into the registry), so they cannot reach
     /// this traversal and need no entry here.
+    /// Backends that wrap nothing at all: their behaviour is poly's own code,
+    /// so there is no upstream version for `tests/version_audit.rs` to check.
+    /// `polyconfig`'s `version()` tracks poly's own config-key schema instead.
+    const POLY_OWNED_ENGINES: &[&str] = &["polyconfig"];
+
     const NATIVE_TOOLCHAIN_ENGINES: &[&str] = &[
         "gofmt",
         "rustfmt",
@@ -267,7 +279,7 @@ pub(crate) mod tests {
     #[test]
     fn every_registered_engine_is_audited_or_declared_exempt() {
         let mut registered: BTreeSet<&'static str> = BTreeSet::new();
-        for language in all_known_languages() {
+        for language in all_languages() {
             for engine in engines_for(&language) {
                 registered.insert(engine.name());
             }
@@ -285,7 +297,7 @@ pub(crate) mod tests {
         );
 
         for name in &registered {
-            let is_exempt = NATIVE_TOOLCHAIN_ENGINES.contains(name);
+            let is_exempt = NATIVE_TOOLCHAIN_ENGINES.contains(name) || POLY_OWNED_ENGINES.contains(name);
             let is_audited = audited.contains(*name);
             assert!(
                 is_exempt || is_audited,
@@ -294,7 +306,8 @@ pub(crate) mod tests {
                  registry::tests::NATIVE_TOOLCHAIN_ENGINES. If it wraps a pinned Rust crate, \
                  add a `check(\"{name}\", ...)` entry naming that crate; if it wraps an \
                  external CLI with no pinned crate, add \"{name}\" to \
-                 NATIVE_TOOLCHAIN_ENGINES instead.",
+                 NATIVE_TOOLCHAIN_ENGINES instead; if it wraps nothing, add it to \
+                 POLY_OWNED_ENGINES.",
             );
         }
     }
@@ -317,7 +330,7 @@ pub(crate) mod tests {
     /// `runner::plan::tests::planned_engine_names_are_unique_per_language_and_kind`.
     #[test]
     fn registered_engine_names_are_unique_per_language() {
-        let languages = all_known_languages()
+        let languages = all_languages()
             .into_iter()
             .chain(std::iter::once(Language::Other("elm".to_owned())));
         for language in languages {

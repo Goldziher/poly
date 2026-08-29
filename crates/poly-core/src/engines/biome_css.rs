@@ -45,7 +45,7 @@ use biome_css_parser::{CssParserOptions, parse_css};
 use biome_languages::CssFileSource;
 
 use crate::config::EngineConfig;
-use crate::engine::{Capabilities, Diagnostic, Engine, SourceFile};
+use crate::engine::{Capabilities, Diagnostic, Engine, OptionKeys, OptionTable, SourceFile};
 use crate::engines::biome_common::{build_lint_filter, map_biome_diag, rule_filter_strings, str_to_rule_filter};
 use crate::language::Language;
 
@@ -93,6 +93,14 @@ impl Engine for BiomeCssEngine {
             lint: true,
             format: false,
             fix: false,
+        }
+    }
+
+    /// Rule selection only: the backend reads nothing else from its table.
+    fn option_keys(&self, table: OptionTable) -> OptionKeys {
+        match table {
+            OptionTable::Lint => OptionKeys::declared(&[]).with_rule_selection(),
+            OptionTable::Format | OptionTable::CrossCuttingLint => OptionKeys::declared(&[]),
         }
     }
 

@@ -23,7 +23,9 @@
 use hcl_edit::parser as hcl_edit_parser;
 
 use crate::config::EngineConfig;
-use crate::engine::{Capabilities, Diagnostic, Engine, FormatOutput, Severity, SourceFile, Span};
+use crate::engine::{
+    Capabilities, Diagnostic, Engine, FormatOutput, OptionKeys, OptionTable, Severity, SourceFile, Span,
+};
 use crate::engines::treesitter::TreeSitterEngine;
 use crate::language::Language;
 
@@ -61,6 +63,11 @@ impl Engine for HclEngine {
 
     /// Cache key: encodes both upstream crate versions so a dep bump
     /// invalidates cached results.
+    /// The HCL formatter reads only `indent_width`, which every engine table accepts.
+    fn option_keys(&self, _table: OptionTable) -> OptionKeys {
+        OptionKeys::declared(&[])
+    }
+
     fn version(&self) -> &str {
         ENGINE_VERSION
     }

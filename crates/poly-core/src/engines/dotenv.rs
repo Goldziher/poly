@@ -36,7 +36,7 @@ use dotenv_core::LineEntry;
 
 use super::rule_config::RuleSelection;
 use crate::config::EngineConfig;
-use crate::engine::{Capabilities, Diagnostic, Edit, Engine, Severity, SourceFile, Span};
+use crate::engine::{Capabilities, Diagnostic, Edit, Engine, OptionKeys, OptionTable, Severity, SourceFile, Span};
 use crate::language::Language;
 
 /// Cache-key version: `dotenv-analyzer` + `dotenv-core` crate versions, plus a
@@ -83,6 +83,15 @@ impl Engine for DotenvEngine {
             lint: true,
             format: false,
             fix: true,
+        }
+    }
+
+    /// Rule selection only; the backend is lint-only, so every key in a `[fmt…]`
+    /// table of its own would be dead config.
+    fn option_keys(&self, table: OptionTable) -> OptionKeys {
+        match table {
+            OptionTable::Lint => OptionKeys::declared(&[]).with_rule_selection(),
+            OptionTable::Format | OptionTable::CrossCuttingLint => OptionKeys::declared(&[]),
         }
     }
 

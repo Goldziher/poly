@@ -37,7 +37,7 @@ use tree_sitter_language_pack::{Node, Parser, detect_language, get_parser};
 
 use crate::config::EngineConfig;
 use crate::defaults::normalize_whitespace;
-use crate::engine::{Capabilities, Engine, FormatOutput, SourceFile};
+use crate::engine::{Capabilities, Engine, FormatOutput, OptionKeys, OptionTable, SourceFile};
 use crate::language::Language;
 
 thread_local! {
@@ -124,6 +124,11 @@ impl Engine for TreeSitterEngine {
             format: true,
             fix: true,
         }
+    }
+
+    /// The generic tier is driven by `[defaults]` and `indent_width` alone.
+    fn option_keys(&self, _table: OptionTable) -> OptionKeys {
+        OptionKeys::declared(&[])
     }
 
     fn version(&self) -> &str {

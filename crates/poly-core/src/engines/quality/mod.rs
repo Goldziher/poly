@@ -66,7 +66,7 @@ use tree_sitter::Parser;
 use tree_sitter_language_pack::detect_language;
 
 use crate::config::EngineConfig;
-use crate::engine::{Capabilities, Diagnostic, Engine, SourceFile};
+use crate::engine::{Capabilities, Diagnostic, Engine, OptionKeys, OptionTable, SourceFile};
 use crate::language::Language;
 use family::Rule;
 use settings::Settings;
@@ -101,6 +101,18 @@ impl Engine for QualityEngine {
             lint: true,
             format: false,
             fix: false,
+        }
+    }
+
+    /// The per-rule toggles and thresholds, taken from the one list
+    /// `Config::build_quality_options` merges (see
+    /// [`settings::BOOL_OPTION_KEYS`]). The same set applies to the
+    /// language-agnostic `[lint.quality]` table and to the per-language
+    /// `[lint.<lang>.quality]` override.
+    fn option_keys(&self, table: OptionTable) -> OptionKeys {
+        match table {
+            OptionTable::Lint | OptionTable::CrossCuttingLint => OptionKeys::declared(&settings::OPTION_KEYS),
+            OptionTable::Format => OptionKeys::declared(&[]),
         }
     }
 

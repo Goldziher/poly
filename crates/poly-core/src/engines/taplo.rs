@@ -44,6 +44,8 @@ use taplo::{
 
 use crate::{
     config::EngineConfig,
+    engine::OptionKeys,
+    engine::OptionTable,
     engine::{Capabilities, Diagnostic, Engine, FormatOutput, Severity, SourceFile, Span},
     language::Language,
 };
@@ -91,6 +93,32 @@ impl Engine for TaploEngine {
     ///
     /// A bump to the `taplo` dep line must be reflected here so that cached
     /// results from the old version are invalidated.
+    /// The fields `build_options` maps by hand onto `taplo::formatter::Options`
+    /// (that type is not `Deserialize` without an upstream feature, so the
+    /// mapping — and this list — are manual). taplo's lint pass takes no
+    /// options.
+    fn option_keys(&self, table: OptionTable) -> OptionKeys {
+        match table {
+            OptionTable::Format => OptionKeys::declared(&[
+                "column_width",
+                "indent_width",
+                "allowed_blank_lines",
+                "align_entries",
+                "align_comments",
+                "reorder_keys",
+                "indent_tables",
+                "indent_entries",
+                "array_trailing_comma",
+                "array_auto_expand",
+                "array_auto_collapse",
+                "compact_arrays",
+                "compact_inline_tables",
+                "inline_table_expand",
+            ]),
+            OptionTable::Lint | OptionTable::CrossCuttingLint => OptionKeys::declared(&[]),
+        }
+    }
+
     fn version(&self) -> &str {
         TAPLO_VERSION
     }

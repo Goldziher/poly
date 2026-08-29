@@ -69,7 +69,7 @@ use ast_grep_core::tree_sitter::StrDoc;
 
 use super::rule_config::RuleSelection;
 use crate::config::EngineConfig;
-use crate::engine::{Capabilities, Diagnostic, Engine, FormatOutput, SourceFile};
+use crate::engine::{Capabilities, Diagnostic, Engine, FormatOutput, OptionKeys, OptionTable, SourceFile};
 use crate::language::Language;
 
 use language::TslpLanguage;
@@ -111,6 +111,22 @@ impl Engine for AstGrepEngine {
             lint: true,
             format: false,
             fix: true,
+        }
+    }
+
+    /// Rule selection, and only from the language-agnostic `[lint.astgrep]`
+    /// table: `Config::engine_config` builds this backend's options without
+    /// consulting `[lint.<lang>.astgrep]` at all, so every key written there is
+    /// dead and is reported as such. The rule *sources* live in the top-level
+    /// `[rules]` table, not here.
+    fn option_keys(&self, table: OptionTable) -> OptionKeys {
+        match table {
+            OptionTable::CrossCuttingLint => OptionKeys::declared(&[]).with_rule_selection(),
+            OptionTable::Lint => OptionKeys::declared(&[]).with_note(
+                "ast-grep is configured in the language-agnostic `[lint.astgrep]` table; \
+                 a per-language `[lint.<lang>.astgrep]` table is never read.",
+            ),
+            OptionTable::Format => OptionKeys::declared(&[]),
         }
     }
 

@@ -36,7 +36,7 @@ use globset::{Glob, GlobSet, GlobSetBuilder};
 use poly_catalog::{PATH_PLACEHOLDER, Tool};
 
 use crate::config::EngineConfig;
-use crate::engine::{Capabilities, Diagnostic, Engine, FormatOutput, Severity, SourceFile};
+use crate::engine::{Capabilities, Diagnostic, Engine, FormatOutput, OptionKeys, OptionTable, Severity, SourceFile};
 use crate::language::Language;
 
 /// Argv **flags** that mutate the file rather than only reporting on it. A lint
@@ -419,6 +419,14 @@ impl Engine for CatalogToolEngine {
             format: !self.is_lint(),
             fix: false,
         }
+    }
+
+    /// Unchecked: a catalog tool is configured under `[tools.<name>]`
+    /// (ADR 0013), which `poly_config::ToolConfig` already validates with
+    /// `deny_unknown_fields`, and it reads nothing from a `[lint.*]` / `[fmt.*]`
+    /// table of its own.
+    fn option_keys(&self, _table: OptionTable) -> OptionKeys {
+        OptionKeys::UNCHECKED
     }
 
     fn version(&self) -> &str {

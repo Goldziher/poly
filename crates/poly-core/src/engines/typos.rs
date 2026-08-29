@@ -29,7 +29,7 @@ use globset::{Glob, GlobSetBuilder};
 use unicase::UniCase;
 
 use crate::config::EngineConfig;
-use crate::engine::{Capabilities, Diagnostic, Engine, Severity, SourceFile, Span};
+use crate::engine::{Capabilities, Diagnostic, Engine, OptionKeys, OptionTable, Severity, SourceFile, Span};
 use crate::language::Language;
 
 /// Combined cache-key version: `typos` tokeniser + `typos-dict` word list,
@@ -120,6 +120,27 @@ static TOKENIZER: typos::tokens::Tokenizer = typos::tokens::Tokenizer::new();
 /// Cross-cutting spell-checker backed by the published `typos`/`typos-dict` crates.
 pub struct TyposEngine;
 
+/// The map-valued option keys `[lint.typos]` / `[lint.<lang>.typos]` accept.
+///
+/// One list, read twice: `Config::build_typos_options` merges exactly these keys
+/// out of the user's tables (layering them over any native `_typos.toml`), and
+/// `TyposEngine::option_keys` declares them as what the backend reads.
+pub(crate) const MAP_OPTION_KEYS: &[&str] = &["extend_words", "extend_identifiers"];
+
+/// The array-valued option keys, merged and declared like [`MAP_OPTION_KEYS`].
+pub(crate) const ARRAY_OPTION_KEYS: &[&str] = &[
+    "extend_exclude",
+    "extend_ignore_words",
+    "extend_ignore_re",
+    "extend_ignore_words_re",
+    "extend_ignore_identifiers_re",
+];
+
+/// Every option key the typos backend reads, in one slice for
+/// `Engine::option_keys`.
+pub(crate) static OPTION_KEYS: std::sync::LazyLock<Vec<&'static str>> =
+    std::sync::LazyLock::new(|| MAP_OPTION_KEYS.iter().chain(ARRAY_OPTION_KEYS).copied().collect());
+
 impl Engine for TyposEngine {
     fn name(&self) -> &'static str {
         "typos"
@@ -134,6 +155,18 @@ impl Engine for TyposEngine {
             lint: true,
             format: false,
             fix: false,
+        }
+    }
+
+    /// The dictionary and exclusion keys, taken from the one list
+    /// `Config::build_typos_options` merges (see [`MAP_OPTION_KEYS`]). The same
+    /// set applies to `[lint.typos]` and to the per-language
+    /// `[lint.<lang>.typos]` override; nothing else survives that merge, so
+    /// anything else written there is dead config.
+    fn option_keys(&self, table: OptionTable) -> OptionKeys {
+        match table {
+            OptionTable::Lint | OptionTable::CrossCuttingLint => OptionKeys::declared(&OPTION_KEYS),
+            OptionTable::Format => OptionKeys::declared(&[]),
         }
     }
 

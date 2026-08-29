@@ -169,33 +169,23 @@ impl Config {
         let global = self.lint.get("uncomment").and_then(toml::Value::as_table);
         let mut options = toml::Table::new();
 
-        for key in [
-            "enabled",
-            "remove_todos",
-            "remove_fixme",
-            "remove_docs",
-            "use_default_ignores",
-            "code_only",
-        ] {
+        for key in crate::engines::uncomment::BOOL_OPTION_KEYS {
             let value = lang_options
-                .get(key)
-                .or_else(|| global.and_then(|table| table.get(key)))
+                .get(*key)
+                .or_else(|| global.and_then(|table| table.get(*key)))
                 .and_then(toml::Value::as_bool);
             if let Some(value) = value {
-                options.insert(key.to_string(), toml::Value::Boolean(value));
+                options.insert((*key).to_string(), toml::Value::Boolean(value));
             }
         }
 
-        let mut preserve_patterns: Vec<String> = Vec::new();
-        if let Some(global) = global {
-            extend_string_array(&mut preserve_patterns, global, "preserve_patterns");
-        }
-        extend_string_array(&mut preserve_patterns, lang_options, "preserve_patterns");
-        if !preserve_patterns.is_empty() {
-            options.insert(
-                "preserve_patterns".to_string(),
-                toml::Value::Array(preserve_patterns.into_iter().map(toml::Value::String).collect()),
-            );
+        for key in crate::engines::uncomment::ARRAY_OPTION_KEYS {
+            let mut merged: Vec<String> = Vec::new();
+            if let Some(global) = global {
+                extend_string_array(&mut merged, global, key);
+            }
+            extend_string_array(&mut merged, lang_options, key);
+            insert_string_array(&mut options, key, merged);
         }
 
         options
@@ -213,52 +203,35 @@ impl Config {
         let global = self.lint.get("quality").and_then(toml::Value::as_table);
         let mut options = toml::Table::new();
 
-        for key in [
-            "enabled",
-            "file_too_long",
-            "function_too_long",
-            "type_too_long",
-            "too_many_parameters",
-            "nesting_too_deep",
-            "cyclomatic_complexity",
-            "lazy_ignore",
-            "magic_number",
-            "law_of_demeter",
-        ] {
+        for key in crate::engines::quality::settings::BOOL_OPTION_KEYS {
             let value = lang_options
-                .get(key)
-                .or_else(|| global.and_then(|table| table.get(key)))
+                .get(*key)
+                .or_else(|| global.and_then(|table| table.get(*key)))
                 .and_then(toml::Value::as_bool);
             if let Some(value) = value {
-                options.insert(key.to_string(), toml::Value::Boolean(value));
+                options.insert((*key).to_string(), toml::Value::Boolean(value));
             }
         }
 
-        for key in [
-            "file_too_long_lines",
-            "function_too_long_lines",
-            "type_too_long_lines",
-            "too_many_parameters_count",
-            "nesting_too_deep_depth",
-            "cyclomatic_complexity_max",
-            "law_of_demeter_depth",
-        ] {
+        for key in crate::engines::quality::settings::INTEGER_OPTION_KEYS {
             let value = lang_options
-                .get(key)
-                .or_else(|| global.and_then(|table| table.get(key)))
+                .get(*key)
+                .or_else(|| global.and_then(|table| table.get(*key)))
                 .and_then(toml::Value::as_integer);
             if let Some(value) = value {
-                options.insert(key.to_string(), toml::Value::Integer(value));
+                options.insert((*key).to_string(), toml::Value::Integer(value));
             }
         }
 
-        let allow = lang_options
-            .get("magic_number_allow")
-            .or_else(|| global.and_then(|table| table.get("magic_number_allow")))
-            .and_then(|v| v.as_array())
-            .cloned();
-        if let Some(allow) = allow {
-            options.insert("magic_number_allow".to_string(), toml::Value::Array(allow));
+        for key in crate::engines::quality::settings::ARRAY_OPTION_KEYS {
+            let values = lang_options
+                .get(*key)
+                .or_else(|| global.and_then(|table| table.get(*key)))
+                .and_then(|v| v.as_array())
+                .cloned();
+            if let Some(values) = values {
+                options.insert((*key).to_string(), toml::Value::Array(values));
+            }
         }
 
         options
@@ -274,57 +247,55 @@ impl Config {
     ///    override per key, the five arrays are unioned onto the global list so a
     ///    language adds entries without dropping the shared ones.
     fn build_typos_options(&self, lang_options: &toml::Table) -> toml::Table {
-        let mut extend_words: BTreeMap<String, String> = self.typos_native.extend_words.clone();
-        let mut extend_identifiers: BTreeMap<String, String> = self.typos_native.extend_identifiers.clone();
-        let mut extend_exclude: Vec<String> = self.typos_native.extend_exclude.clone();
-        let mut extend_ignore_words: Vec<String> = self.typos_native.extend_ignore_words.clone();
-        let mut extend_ignore_re: Vec<String> = self.typos_native.extend_ignore_re.clone();
-        let mut extend_ignore_words_re: Vec<String> = self.typos_native.extend_ignore_words_re.clone();
-        let mut extend_ignore_identifiers_re: Vec<String> = self.typos_native.extend_ignore_identifiers_re.clone();
+        let native = &self.typos_native;
+        let mut maps: Vec<(&&str, BTreeMap<String, String>)> = crate::engines::typos::MAP_OPTION_KEYS
+            .iter()
+            .map(|key| {
+                let seed = match *key {
+                    "extend_words" => native.extend_words.clone(),
+                    "extend_identifiers" => native.extend_identifiers.clone(),
+                    _ => BTreeMap::new(),
+                };
+                (key, seed)
+            })
+            .collect();
+        let mut arrays: Vec<(&&str, Vec<String>)> = crate::engines::typos::ARRAY_OPTION_KEYS
+            .iter()
+            .map(|key| {
+                let seed = match *key {
+                    "extend_exclude" => native.extend_exclude.clone(),
+                    "extend_ignore_words" => native.extend_ignore_words.clone(),
+                    "extend_ignore_re" => native.extend_ignore_re.clone(),
+                    "extend_ignore_words_re" => native.extend_ignore_words_re.clone(),
+                    "extend_ignore_identifiers_re" => native.extend_ignore_identifiers_re.clone(),
+                    _ => Vec::new(),
+                };
+                (key, seed)
+            })
+            .collect();
 
         let global = self.lint.get("typos").and_then(|v| v.as_table());
         for layer in global.into_iter().chain(std::iter::once(lang_options)) {
-            extend_string_map(&mut extend_words, layer, "extend_words");
-            extend_string_map(&mut extend_identifiers, layer, "extend_identifiers");
-            extend_string_array(&mut extend_exclude, layer, "extend_exclude");
-            extend_string_array(&mut extend_ignore_words, layer, "extend_ignore_words");
-            extend_string_array(&mut extend_ignore_re, layer, "extend_ignore_re");
-            extend_string_array(&mut extend_ignore_words_re, layer, "extend_ignore_words_re");
-            extend_string_array(&mut extend_ignore_identifiers_re, layer, "extend_ignore_identifiers_re");
+            for (key, dest) in &mut maps {
+                extend_string_map(dest, layer, key);
+            }
+            for (key, dest) in &mut arrays {
+                extend_string_array(dest, layer, key);
+            }
         }
 
         let mut options = toml::Table::new();
-        if !extend_words.is_empty() {
-            options.insert(
-                "extend_words".to_string(),
-                toml::Value::Table(
-                    extend_words
-                        .into_iter()
-                        .map(|(k, v)| (k, toml::Value::String(v)))
-                        .collect(),
-                ),
-            );
+        for (key, entries) in maps {
+            if !entries.is_empty() {
+                options.insert(
+                    (*key).to_string(),
+                    toml::Value::Table(entries.into_iter().map(|(k, v)| (k, toml::Value::String(v))).collect()),
+                );
+            }
         }
-        if !extend_identifiers.is_empty() {
-            options.insert(
-                "extend_identifiers".to_string(),
-                toml::Value::Table(
-                    extend_identifiers
-                        .into_iter()
-                        .map(|(k, v)| (k, toml::Value::String(v)))
-                        .collect(),
-                ),
-            );
+        for (key, values) in arrays {
+            insert_string_array(&mut options, key, values);
         }
-        insert_string_array(&mut options, "extend_exclude", extend_exclude);
-        insert_string_array(&mut options, "extend_ignore_words", extend_ignore_words);
-        insert_string_array(&mut options, "extend_ignore_re", extend_ignore_re);
-        insert_string_array(&mut options, "extend_ignore_words_re", extend_ignore_words_re);
-        insert_string_array(
-            &mut options,
-            "extend_ignore_identifiers_re",
-            extend_ignore_identifiers_re,
-        );
         options
     }
 

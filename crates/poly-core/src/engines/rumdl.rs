@@ -31,7 +31,9 @@ use rumdl_lib::{
 use super::rule_config::{RuleOptions, RuleSelection, string_list, union_codes, warn_and_skip_blank};
 use super::template::{GO_TEMPLATE_SKIP, contains_go_template_markdown};
 use crate::config::EngineConfig;
-use crate::engine::{Capabilities, Diagnostic, Edit, Engine, FormatOutput, Severity, SourceFile, Span};
+use crate::engine::{
+    Capabilities, Diagnostic, Edit, Engine, FormatOutput, OptionKeys, OptionTable, Severity, SourceFile, Span,
+};
 use crate::language::Language;
 
 /// rumdl Markdown lint + format backend.
@@ -96,6 +98,18 @@ impl Engine for RumdlEngine {
             lint: true,
             format: true,
             fix: true,
+        }
+    }
+
+    /// One key set for both phases (`build_rumdl_config` is shared).
+    /// `enable` / `extend_enable` / `disable` are rumdl's native aliases for
+    /// `select` / `extend_select` / `ignore`.
+    fn option_keys(&self, table: OptionTable) -> OptionKeys {
+        match table {
+            OptionTable::Lint | OptionTable::Format => {
+                OptionKeys::declared(&["line_length", "enable", "extend_enable", "disable"]).with_rule_selection()
+            }
+            OptionTable::CrossCuttingLint => OptionKeys::UNCHECKED,
         }
     }
 

@@ -64,7 +64,7 @@ use uncomment::config::ResolvedConfig;
 use uncomment::{Processor, Removal};
 
 use crate::config::EngineConfig;
-use crate::engine::{Capabilities, Diagnostic, Edit, Engine, Severity, SourceFile, Span};
+use crate::engine::{Capabilities, Diagnostic, Edit, Engine, OptionKeys, OptionTable, Severity, SourceFile, Span};
 use crate::language::Language;
 
 /// Cache-key version: the wrapped crate version plus a marker for this backend's
@@ -96,6 +96,17 @@ impl Engine for UncommentEngine {
             lint: true,
             format: false,
             fix: true,
+        }
+    }
+
+    /// The comment-removal toggles, taken from the one list
+    /// `Config::build_uncomment_options` merges (see [`BOOL_OPTION_KEYS`]). The
+    /// same set applies to `[lint.uncomment]` and to the per-language
+    /// `[lint.<lang>.uncomment]` override.
+    fn option_keys(&self, table: OptionTable) -> OptionKeys {
+        match table {
+            OptionTable::Lint | OptionTable::CrossCuttingLint => OptionKeys::declared(&OPTION_KEYS),
+            OptionTable::Format => OptionKeys::declared(&[]),
         }
     }
 
@@ -159,6 +170,29 @@ impl Engine for UncommentEngine {
         Ok(diagnostics)
     }
 }
+
+/// The boolean option keys `[lint.uncomment]` / `[lint.<lang>.uncomment]`
+/// accept.
+///
+/// One list, read twice: `Config::build_uncomment_options` merges exactly these
+/// keys out of the user's tables, and `UncommentEngine::option_keys` declares
+/// them as what the backend reads.
+pub(crate) const BOOL_OPTION_KEYS: &[&str] = &[
+    "enabled",
+    "remove_todos",
+    "remove_fixme",
+    "remove_docs",
+    "use_default_ignores",
+    "code_only",
+];
+
+/// The array-valued option keys, merged and declared like [`BOOL_OPTION_KEYS`].
+pub(crate) const ARRAY_OPTION_KEYS: &[&str] = &["preserve_patterns"];
+
+/// Every option key the uncomment backend reads, in one slice for
+/// `Engine::option_keys`.
+pub(crate) static OPTION_KEYS: std::sync::LazyLock<Vec<&'static str>> =
+    std::sync::LazyLock::new(|| BOOL_OPTION_KEYS.iter().chain(ARRAY_OPTION_KEYS).copied().collect());
 
 /// Whether `[lint.uncomment] enabled` (merged with the per-language override) is
 /// `true`. Defaults to `false` — the backend is opt-in.

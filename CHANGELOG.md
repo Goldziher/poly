@@ -63,6 +63,19 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   Dart, Gleam, Elixir, PHP, Nix, Scala, Lua, R — keep the skip: a line count is not
   knowledge of the language.
 
+- **Unknown configuration keys are now reported.** `[lint.*]` and `[fmt.*]` accepted any key at
+  all, so a typo — or a key a backend never supported — parsed silently and did nothing. This was
+  the root cause of a family of defects fixed earlier in this release, where documented keys had
+  no reader. Each backend now declares the keys it reads, and `poly lint` warns on anything else
+  in that backend's table, naming the key and listing what the table does accept. Where possible
+  the declaration is derived from the upstream option type rather than hand-maintained, so it
+  cannot drift; the rest is held in place by tests asserting that every key read is declared and
+  every key declared is read.
+
+  Deliberately not reported, to avoid false positives: the contents of `[rules.<id>]` sub-tables
+  (arbitrary tool parameters by design), unknown language ids, and unknown tool names, which may
+  come from an `extends` base. `[hooks]` and `[discovery]` are not covered yet.
+
 - **A built-in ast-grep rule pack, on by default.** poly's ast-grep backend shipped with no
   rules at all — it matched a language only if a repository pointed `[rules] dirs` at YAML of its
   own, which nearly none do. It now embeds 26 curated rules across nine languages (C#, Elixir, Go,
