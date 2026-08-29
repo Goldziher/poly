@@ -12,7 +12,7 @@ publish = false
 description = "Core engine for the poly universal, zero-dependency linter & formatter"
 
 [package.metadata.cargo-machete]
-ignored = ["rumdl", "serde_toon_format", "hcl-rs"]
+ignored = ["rumdl", "serde_toon_format", "hcl-rs", "rust-ini"]
 
 [lib]
 name = "poly_core"
@@ -39,6 +39,8 @@ biome_languages.workspace = true
 biome_rowan.workspace = true
 blake3.workspace = true
 dockerfile-parser.workspace = true
+dotenv-analyzer.workspace = true
+dotenv-core.workspace = true
 globset.workspace = true
 graphql-parser.workspace = true
 hcl-edit.workspace = true
@@ -79,6 +81,7 @@ ruff_python_ast.workspace = true
 ruff_python_formatter.workspace = true
 ruff_text_size.workspace = true
 rumdl.workspace = true
+rust-ini.workspace = true
 rustc-hash.workspace = true
 saphyr.workspace = true
 # Optional: only compiled when the `schemars` feature is enabled (by poly-mcp) to

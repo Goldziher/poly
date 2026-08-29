@@ -96,9 +96,29 @@ pub enum Language {
     Gleam,
     /// C#.
     CSharp,
+    /// dotenv (`.env` / `.env.*` files).
+    Dotenv,
+    /// INI (also covers INI-shaped dotfiles like `.npmrc`, `.editorconfig`).
+    Ini,
     /// Any other language, identified by its tree-sitter-language-pack id.
     Other(String),
 }
+
+/// Filenames (lowercased, no extension) detected as [`Language::Ini`].
+///
+/// Deliberately narrow — see `crates/poly-core/src/engines/ini.rs` module docs
+/// for what is excluded and why (`*.conf`, `*.properties`, `.gitconfig`,
+/// systemd units, `*.reg`).
+const INI_FILENAMES: &[&str] = &[
+    ".npmrc",
+    ".editorconfig",
+    ".coveragerc",
+    ".pylintrc",
+    "pylintrc",
+    ".flake8",
+    ".gitlint",
+    ".hgrc",
+];
 
 impl Language {
     /// Human-facing name for report text ("Kotlin", "TypeScript").
@@ -163,6 +183,8 @@ impl Language {
             Language::Dart => "dart",
             Language::Gleam => "gleam",
             Language::CSharp => "csharp",
+            Language::Dotenv => "dotenv",
+            Language::Ini => "ini",
             Language::Other(s) => s.as_str(),
         }
     }
@@ -183,6 +205,17 @@ impl Language {
             if lower == "dockerfile" || lower.starts_with("dockerfile.") || lower.ends_with(".dockerfile") {
                 return Some(Language::Dockerfile);
             }
+            // dotenv is detected by filename, not extension: `Path::extension()`
+            // treats a leading-dot file like `.env` or `.env.local` as having no
+            // extension (the whole name is the stem), so `.env`, every
+            // `.env.<suffix>` variant, and a trailing `*.env` all need an
+            // explicit filename check.
+            if lower == ".env" || lower.starts_with(".env.") || lower.ends_with(".env") {
+                return Some(Language::Dotenv);
+            }
+            if INI_FILENAMES.contains(&lower.as_str()) {
+                return Some(Language::Ini);
+            }
         }
         None
     }
@@ -191,6 +224,7 @@ impl Language {
     /// unknown extensions. `path` is used only to disambiguate `*.component.html`.
     fn from_extension(ext: &str, path: &Path) -> Option<Language> {
         let lang = match ext {
+            "ini" | "cfg" | "desktop" | "pypirc" => Language::Ini,
             "py" | "pyi" => Language::Python,
             "js" | "cjs" | "mjs" => Language::JavaScript,
             "jsx" => Language::Jsx,
@@ -304,6 +338,8 @@ impl Language {
             "swift" => Language::Swift,
             "dart" => Language::Dart,
             "gleam" => Language::Gleam,
+            // Matches the `dotenv-linter` catalog entry's `languages = ["env"]`.
+            "env" | "dotenv" => Language::Dotenv,
             "make" | "makefile" => Language::Other("make".to_string()),
             "vim" | "vimscript" => Language::Other("vim".to_string()),
             other => Language::Other(other.to_string()),

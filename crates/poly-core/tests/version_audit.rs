@@ -33,8 +33,10 @@ use poly_core::engines::astgrep::AstGrepEngine;
 use poly_core::engines::biome_css::BiomeCssEngine;
 use poly_core::engines::biome_graphql::BiomeGraphqlEngine;
 use poly_core::engines::dockerfile::DockerfileEngine;
+use poly_core::engines::dotenv::DotenvEngine;
 use poly_core::engines::graphql::GraphQlEngine;
 use poly_core::engines::hcl::HclEngine;
+use poly_core::engines::ini::IniEngine;
 use poly_core::engines::mago::MagoEngine;
 use poly_core::engines::malva::MalvaEngine;
 use poly_core::engines::markup_fmt::MarkupFmtEngine;
@@ -211,6 +213,12 @@ fn engine_versions_track_cargo_lock() {
         check("ruff", RuffEngine.version(), vec![("ruff_linter", Git)]),
         check("rubyfmt", RubyfmtEngine.version(), vec![("rubyfmt", Git)]),
         check("uncomment", UncommentEngine.version(), vec![("uncomment", Registry)]),
+        check(
+            "dotenv",
+            DotenvEngine.version(),
+            vec![("dotenv-analyzer", Registry), ("dotenv-core", Registry)],
+        ),
+        check("ini", IniEngine.version(), vec![("rust-ini", Registry)]),
         // `astgrep` parses with the same grammar pack as `treesitter`, so both
         // must embed the same `tree-sitter-language-pack` version — new grammars
         // change what rules match. It was omitted from this list until the pack

@@ -9,8 +9,10 @@ use crate::engines::astgrep::AstGrepEngine;
 use crate::engines::biome_css::BiomeCssEngine;
 use crate::engines::biome_graphql::BiomeGraphqlEngine;
 use crate::engines::dockerfile::DockerfileEngine;
+use crate::engines::dotenv::DotenvEngine;
 use crate::engines::graphql::GraphQlEngine;
 use crate::engines::hcl::HclEngine;
+use crate::engines::ini::IniEngine;
 use crate::engines::mago::MagoEngine;
 use crate::engines::malva::MalvaEngine;
 use crate::engines::markup_fmt::MarkupFmtEngine;
@@ -59,6 +61,8 @@ pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
         | Language::Xml => vec![Box::new(MarkupFmtEngine)],
         Language::Php => vec![Box::new(MagoEngine::default())],
         Language::Dockerfile => vec![Box::new(DockerfileEngine)],
+        Language::Dotenv => vec![Box::new(DotenvEngine)],
+        Language::Ini => vec![Box::new(IniEngine)],
         Language::Go => vec![Box::new(NativeToolEngine::for_language(Language::Go))],
         Language::Rust => vec![Box::new(NativeToolEngine::for_language(Language::Rust))],
         Language::Zig => vec![Box::new(NativeToolEngine::for_language(Language::Zig))],
@@ -156,6 +160,8 @@ pub(crate) mod tests {
             Language::Dart,
             Language::Gleam,
             Language::CSharp,
+            Language::Dotenv,
+            Language::Ini,
         ]
     }
 
@@ -212,6 +218,8 @@ pub(crate) mod tests {
             | Language::Dart
             | Language::Gleam
             | Language::CSharp
+            | Language::Dotenv
+            | Language::Ini
             | Language::Other(_) => {}
         }
     }

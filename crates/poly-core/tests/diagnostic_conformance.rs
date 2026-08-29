@@ -14,7 +14,7 @@
 //! # Covered backends
 //!
 //! **Structured** (contract: every real finding sets BOTH `code` and `span`):
-//!   `taplo`, `graphql`, `yaml`, `typos`, `hcl`, `dockerfile`
+//!   `taplo`, `graphql`, `yaml`, `typos`, `hcl`, `dockerfile`, `dotenv`, `ini`
 //!
 //! The `treesitter` tier-2 engine is format-only and emits no lint diagnostics,
 //! so it is not part of the lint-conformance set.
@@ -94,6 +94,8 @@ fn run_and_group() -> HashMap<String, Vec<Diagnostic>> {
 ///   `bad.tf`      → hcl (unclosed block body syntax error)
 ///   `bad.R`       → treesitter (tier-2, format-only; emits no lint diagnostics)
 ///   `Dockerfile`  → dockerfile (DL3006 FROM without tag)
+///   `bad.env`     → dotenv (duplicated key, unordered key)
+///   `bad.ini`     → ini (duplicate-key)
 ///   `trailing.go` → NativeToolEngine(gofmt), format-only; trailing whitespace
 ///                   is a `fmt` concern and is not surfaced under `lint`
 ///
@@ -121,7 +123,16 @@ fn diagnostic_contract_all_backends_conform() {
         );
     }
 
-    const STRUCTURED: &[&str] = &["taplo", "graphql", "yaml", "typos", "hcl", "dockerfile"];
+    const STRUCTURED: &[&str] = &[
+        "taplo",
+        "graphql",
+        "yaml",
+        "typos",
+        "hcl",
+        "dockerfile",
+        "dotenv",
+        "ini",
+    ];
     for backend in STRUCTURED {
         let diags = by_engine.get(*backend).unwrap_or_else(|| {
             panic!(
@@ -191,6 +202,8 @@ fn diagnostic_contract_all_backends_conform() {
         "typos",
         "hcl",
         "dockerfile",
+        "dotenv",
+        "ini",
         "ruff",
         "oxc",
         "rumdl",

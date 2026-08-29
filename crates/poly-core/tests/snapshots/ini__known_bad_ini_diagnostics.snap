@@ -1,0 +1,61 @@
+---
+source: crates/poly-core/tests/ini.rs
+expression: summary
+---
+[
+    (
+        "ini",
+        "duplicate-key",
+        "key `Host` is duplicated",
+        Some(
+            (
+                3,
+                1,
+            ),
+        ),
+    ),
+    (
+        "ini",
+        "duplicate-section",
+        "section `[server]` is duplicated",
+        Some(
+            (
+                5,
+                1,
+            ),
+        ),
+    ),
+    (
+        "ini",
+        "key-without-value",
+        "key `incomplete` has no value",
+        Some(
+            (
+                8,
+                1,
+            ),
+        ),
+    ),
+    (
+        "ini",
+        "trailing-whitespace",
+        "trailing whitespace",
+        Some(
+            (
+                9,
+                1,
+            ),
+        ),
+    ),
+    (
+        "ini",
+        "inconsistent-separator",
+        "uses `:` as a separator; the file otherwise uses `=`",
+        Some(
+            (
+                10,
+                1,
+            ),
+        ),
+    ),
+]

@@ -1,0 +1,94 @@
+---
+source: crates/poly-core/tests/dotenv.rs
+expression: summary
+---
+[
+    (
+        "dotenv",
+        "UnorderedKey",
+        "The BAR key should go before the FOO key",
+        Some(
+            (
+                2,
+                1,
+            ),
+        ),
+    ),
+    (
+        "dotenv",
+        "DuplicatedKey",
+        "The BAR key is duplicated",
+        Some(
+            (
+                3,
+                1,
+            ),
+        ),
+    ),
+    (
+        "dotenv",
+        "UnorderedKey",
+        "The BAR key should go before the BAR key",
+        Some(
+            (
+                3,
+                1,
+            ),
+        ),
+    ),
+    (
+        "dotenv",
+        "LowercaseKey",
+        "The lower_case key should be in uppercase",
+        Some(
+            (
+                4,
+                1,
+            ),
+        ),
+    ),
+    (
+        "dotenv",
+        "UnorderedKey",
+        "The UNQUOTED key should go before the lower_case key",
+        Some(
+            (
+                5,
+                1,
+            ),
+        ),
+    ),
+    (
+        "dotenv",
+        "ValueWithoutQuotes",
+        "This value needs to be surrounded in quotes",
+        Some(
+            (
+                5,
+                1,
+            ),
+        ),
+    ),
+    (
+        "dotenv",
+        "TrailingWhitespace",
+        "Trailing whitespace detected",
+        Some(
+            (
+                6,
+                1,
+            ),
+        ),
+    ),
+    (
+        "dotenv",
+        "UnorderedKey",
+        "The TRAILING key should go before the UNQUOTED key",
+        Some(
+            (
+                6,
+                1,
+            ),
+        ),
+    ),
+]

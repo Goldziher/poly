@@ -1,0 +1,10 @@
+---
+source: crates/poly-core/tests/dotenv.rs
+expression: corrected
+---
+BAR=baz
+# BAR=qux
+FOO=bar
+LOWER_CASE=value
+TRAILING=value
+UNQUOTED="has spaces"
