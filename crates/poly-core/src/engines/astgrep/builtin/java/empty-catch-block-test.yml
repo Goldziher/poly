@@ -1,0 +1,21 @@
+id: empty-catch-block
+valid:
+  - "class A {\n  void m() {\n    try { f(); } catch (Exception e) { log.warn(\"f failed\", e); }\n  }\n}"
+  - "class A {\n  void m() {\n    try { f(); } catch (Exception e) { throw new IllegalStateException(\"f failed\", e); }\n  }\n}"
+  - "class A {\n  void m() {\n    try { f(); } catch (Exception e) { /* the probe is best effort */ }\n  }\n}"
+  - "class A {\n  void m() {\n    try { f(); } catch (FileNotFoundException e) {\n      // absent config file means \"use the defaults\"\n    }\n  }\n}"
+  - "class A {\n  void m() {\n    try { f(); } catch (IOException | SQLException e) { report(e); }\n  }\n}"
+  - "class A {\n  void m() {\n    try { f(); } finally { g(); }\n  }\n}"
+  - "class A {\n  void m() {\n    try { f(); } catch (Exception e) { ; }\n  }\n}"
+  - "class A {\n  void m() {\n    try (Closer c = open()) { f(); } catch (Exception e) {\n      // closing already reported the real failure\n    }\n  }\n}"
+  - "class A {\n  void m() {\n    try { f(); } catch (java.io.IOException ignored) {}\n  }\n}"
+  - "class A {\n  void m() {\n    try { f(); } catch (Throwable ignore) {}\n  }\n}"
+  - "class A {\n  void m() {\n    try { f(); } catch (ClassNotFoundException ignoredBecauseOptional) {\n    }\n  }\n}"
+  - "class A {\n  void m() {\n    try { f(); } catch (IOException Ignored) {}\n  }\n}"
+invalid:
+  - "class A {\n  void m() {\n    try { f(); } catch (Exception e) { }\n  }\n}"
+  - "class A {\n  void m() {\n    try { f(); } catch (Exception e) {}\n  }\n}"
+  - "class A {\n  void m() {\n    try { f(); } catch (IOException e) {\n    }\n  }\n}"
+  - "class A {\n  void m() {\n    try { f(); } catch (IOException e) { log(e); } catch (RuntimeException e) { }\n  }\n}"
+  - "class A {\n  void m() {\n    try { f(); } catch (InterruptedException e) { } finally { g(); }\n  }\n}"
+  - "class A {\n  void m() {\n    try { f(); } catch (Exception unused) {}\n  }\n}"

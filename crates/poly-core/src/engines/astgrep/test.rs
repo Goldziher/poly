@@ -29,6 +29,7 @@
 //! the rule's applied autofix. This powers `poly rules test`.
 
 use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 use ast_grep_config::{CombinedScan, RuleConfig};
@@ -36,7 +37,7 @@ use ast_grep_core::tree_sitter::LanguageExt;
 use serde::Deserialize;
 
 use super::language::TslpLanguage;
-use super::rules::{collect_test_paths, load_flat};
+use super::rules::{collect_test_paths, load_flat_with_paths};
 use crate::engine::Edit;
 
 /// One `<name>-test.yml` file: snippets that assert a rule's behaviour.
@@ -229,39 +230,130 @@ pub fn verify(test: &RuleTest, rule: &RuleConfig<TslpLanguage>) -> Vec<CaseOutco
     outcomes
 }
 
+/// Identify a rule for test-file correlation by its **directory** plus `id`,
+/// not `id` alone.
+///
+/// poly's built-in pack deliberately ships the same id (`todo-marker`) once
+/// per language, each rule and its companion `<id>-test.yml` living in that
+/// language's own directory (`builtin/rust/todo-marker.yml` +
+/// `builtin/rust/todo-marker-test.yml`, `builtin/python/todo-marker.yml` +
+/// `builtin/python/todo-marker-test.yml`). Keying a lookup on `id` alone lets
+/// the second directory's rule/test pair shadow the first: `poly rules test
+/// builtin/` reported `373 passed, 3 failed` this way, while testing each
+/// language directory alone was green. Keying on `(directory, id)` instead
+/// resolves each test file against the rule(s) that actually live beside it.
+fn rule_key(path: &Path, id: &str) -> (PathBuf, String) {
+    (path.parent().map(Path::to_path_buf).unwrap_or_default(), id.to_string())
+}
+
 /// Load rules and their `*-test.yml` files from `dirs`, then verify every
 /// snippet. Returns a [`TestReport`]; see [`TestReport::is_ok`] for pass/fail.
 pub fn run_tests(dirs: &[String]) -> anyhow::Result<TestReport> {
-    let rules = load_flat(dirs)?;
-    let by_id: HashMap<&str, &RuleConfig<TslpLanguage>> = rules.iter().map(|r| (r.id.as_str(), r)).collect();
+    let rules = load_flat_with_paths(dirs)?;
+    let by_key: HashMap<(PathBuf, String), &RuleConfig<TslpLanguage>> = rules
+        .iter()
+        .map(|(path, rule)| (rule_key(path, &rule.id), rule))
+        .collect();
 
     let mut report = TestReport {
         total_rules: rules.len(),
         ..TestReport::default()
     };
-    let mut tested: HashSet<String> = HashSet::new();
+    let mut tested: HashSet<(PathBuf, String)> = HashSet::new();
 
     for path in collect_test_paths(dirs) {
         let yaml = std::fs::read_to_string(&path).with_context(|| format!("reading test file {}", path.display()))?;
         let test: RuleTest =
             ast_grep_config::from_str(&yaml).with_context(|| format!("parsing rule test {}", path.display()))?;
 
-        match by_id.get(test.id.as_str()) {
+        let key = rule_key(&path, &test.id);
+        match by_key.get(&key) {
             Some(rule) => {
-                tested.insert(test.id.clone());
+                tested.insert(key);
                 report.outcomes.extend(verify(&test, rule));
             }
             None => report.missing_rule_ids.push(test.id.clone()),
         }
     }
 
-    report.untested_rule_ids = rules
+    let mut untested_keys: Vec<(PathBuf, String)> = rules
         .iter()
-        .map(|r| r.id.clone())
-        .filter(|id| !tested.contains(id))
+        .map(|(path, rule)| rule_key(path, &rule.id))
+        .filter(|key| !tested.contains(key))
         .collect();
-    report.untested_rule_ids.sort();
-    report.untested_rule_ids.dedup();
+    untested_keys.sort();
+    untested_keys.dedup();
+    report.untested_rule_ids = untested_keys.into_iter().map(|(_, id)| id).collect();
 
     Ok(report)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Two rules sharing an id across different language directories — poly's
+    /// built-in pack's actual shape for `todo-marker` (Rust + Python) — must
+    /// both be tested independently, neither shadowing the other. Reverting
+    /// `rule_key` to key on `id` alone reproduces the historical defect: one
+    /// directory's rule/test pair silently absorbs the other's, and this test
+    /// fails (either a wrong-language snippet unexpectedly passes, or
+    /// `total_rules`/outcome counts drop from 4 to 2).
+    #[test]
+    fn same_id_rules_in_different_language_dirs_are_both_tested() {
+        let root = tempfile::tempdir().unwrap();
+        let rust_dir = root.path().join("rust");
+        let python_dir = root.path().join("python");
+        std::fs::create_dir_all(&rust_dir).unwrap();
+        std::fs::create_dir_all(&python_dir).unwrap();
+
+        std::fs::write(
+            rust_dir.join("todo-marker.yml"),
+            "id: todo-marker\nlanguage: rust\nseverity: off\nmessage: rust todo\nrule:\n  kind: line_comment\n  regex: RUST_MARKER\n",
+        )
+        .unwrap();
+        std::fs::write(
+            rust_dir.join("todo-marker-test.yml"),
+            "id: todo-marker\ninvalid:\n  - \"// RUST_MARKER\\nfn f() {}\"\nvalid:\n  - \"// PYTHON_MARKER\\nfn f() {}\"\n",
+        )
+        .unwrap();
+
+        std::fs::write(
+            python_dir.join("todo-marker.yml"),
+            "id: todo-marker\nlanguage: python\nseverity: off\nmessage: python todo\nrule:\n  kind: comment\n  regex: PYTHON_MARKER\n",
+        )
+        .unwrap();
+        std::fs::write(
+            python_dir.join("todo-marker-test.yml"),
+            "id: todo-marker\ninvalid:\n  - \"# PYTHON_MARKER\\ndef f():\\n    pass\"\nvalid:\n  - \"# RUST_MARKER\\ndef f():\\n    pass\"\n",
+        )
+        .unwrap();
+
+        let dirs = vec![root.path().to_string_lossy().into_owned()];
+        let report = run_tests(&dirs).unwrap();
+
+        assert_eq!(report.total_rules, 2, "expected both rules to be discovered");
+        assert!(
+            report.missing_rule_ids.is_empty(),
+            "neither test file should be orphaned: {:?}",
+            report.missing_rule_ids
+        );
+        assert!(
+            report.untested_rule_ids.is_empty(),
+            "neither rule should be reported untested: {:?}",
+            report.untested_rule_ids
+        );
+        // Each test file has one valid + one invalid case: 4 outcomes total.
+        // If the id-collision bug were still present, one directory's rule
+        // would win the lookup for both test files, and the "wrong" rule's
+        // pattern would make one snippet's expectation fail (its `valid`
+        // snippet actually matches the other language's rule, or vice versa).
+        assert_eq!(report.outcomes.len(), 4, "expected 2 outcomes per rule; got {report:?}");
+        assert_eq!(
+            report.failed(),
+            0,
+            "each rule must be verified against its own snippets, not the other language's: {:?}",
+            report.outcomes.iter().filter(|o| !o.passed).collect::<Vec<_>>()
+        );
+    }
 }

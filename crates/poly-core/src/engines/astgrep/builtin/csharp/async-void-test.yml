@@ -1,0 +1,14 @@
+id: async-void
+valid:
+  - "using System;\nclass C { async void Handler(object sender, EventArgs e) { await DoAsync(); } }"
+  - "using System;\nclass C { private async void Btn_Click(object sender, RoutedEventArgs e) { await DoAsync(); } }"
+  - "using System;\nclass C { protected async void OnElapsed(object sender, ElapsedEventArgs e) { await DoAsync(); } }"
+  - "using System;\nclass C { async Task DoWorkAsync() { await DoAsync(); } }"
+  - "using System;\nclass C { async Task<int> ReadAsync() { return await DoAsync(); } }"
+  - "using System;\nclass C { async ValueTask DoWorkAsync() { await DoAsync(); } }"
+  - "using System;\nclass C { void Sync() { } }"
+  - "using System;\nclass C { public void Dispose() { } }"
+invalid:
+  - "using System;\nclass C { async void DoWork() { await DoAsync(); } }"
+  - "using System;\nclass C { public async void Start() { } }"
+  - "using System;\nclass C { private static async void Fire(int n) { await DoAsync(n); } }"

@@ -1,0 +1,23 @@
+id: swallowed-error
+valid:
+  - "fn f() {\n    match r {\n        Ok(v) => v,\n        Err(e) => return Err(e),\n    }\n}"
+  - "fn f() {\n    match r {\n        Ok(v) => v,\n        Err(e) => tracing::warn!(?e, \"ignored\"),\n    }\n}"
+  - "fn f() {\n    match r {\n        Ok(v) => v,\n        Err(_) => {\n            // the receiver is gone; nothing to do on shutdown.\n        }\n    }\n}"
+  - "fn f() {\n    match r {\n        Ok(v) => v,\n        // the debouncer ticks on timeout; that is not a failure.\n        Err(RecvTimeoutError::Timeout) => {}\n        Err(e) => return Err(e),\n    }\n}"
+  - "fn f() {\n    match r {\n        Ok(v) => v,\n        Err(RecvTimeoutError::Timeout) => {}\n        Err(e) => return Err(e),\n    }\n}"
+  - "fn f() {\n    match std::fs::remove_file(&path) {\n        Ok(()) => {}\n        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}\n        Err(error) => tracing::debug!(%error),\n    }\n}"
+  - "fn f() {\n    match r {\n        Err(Error::InvalidPdf(_)) => {}, // correct\n        Err(other) => panic!(\"{other}\"),\n        Ok(v) => panic!(\"{v}\"),\n    }\n}"
+  - "fn f() {\n    match guard.check(p) {\n        Err(Refusal::Protected | Refusal::Symlink) => {}\n        other => panic!(\"{other:?}\"),\n    }\n}"
+  - "fn f() {\n    if let Err(e) = r {\n        tracing::error!(?e);\n    }\n}"
+  - "fn f() {\n    if let Err(_) = r {} else { done(); }\n}"
+  - "fn f() {\n    if let Ok(v) = r {}\n}"
+  - "fn f() { let _ = fallible(); }"
+  - "fn f() {\n    flush().ok();\n}"
+  - "async fn teardown(c: &Client) { c.batch_execute(\"DROP SCHEMA s CASCADE\").await.ok(); }"
+  - "fn main() { dotenvy::dotenv().ok(); }"
+  - "fn f() { let maybe = fallible().ok(); }"
+invalid:
+  - "fn f() {\n    match r {\n        Ok(v) => v,\n        Err(_) => {}\n    }\n}"
+  - "fn f() {\n    match r {\n        Ok(v) => v,\n        Err(e) => {}\n    }\n}"
+  - "fn f() {\n    match r {\n        Ok(v) => v,\n        Err(_) => (),\n    }\n}"
+  - "fn f() {\n    if let Err(e) = flush() {}\n}"

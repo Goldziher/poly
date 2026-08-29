@@ -1,0 +1,74 @@
+id: undocumented-unsafe-block
+language: rust
+severity: off
+message: "`unsafe` block without a `// SAFETY:` comment justifying its invariants."
+note: |
+  Every `unsafe` block moves a proof obligation from the compiler to the
+  author, so the proof has to be written down. poly wants the justification as
+  a `SAFETY` comment attached to the block or to the statement that contains
+  it - close enough that a reviewer reads the claim and the code together.
+
+  The comment may sit directly above the block, above the statement that
+  contains it, or as the first line inside the block. The search climbs no
+  further than the enclosing statement, so a `SAFETY` comment on some distant
+  ancestor does not silence a nested block.
+
+  Off by default: measured on poly's dry-run corpus, 6,756 raw findings, 5,475
+  after the test-path/generated-file exclusion. Classifying the residual by
+  origin (not by hand-reading each one - every instance genuinely lacks a
+  SAFETY comment, so a correctness read would say 0% false positive) found
+  94.4% sit in vendored FFI-binding code carried in-tree - `bindings/`
+  directories, `-ffi`/`ffi.rs`/`jni`/`c-api` files, language-binding leaf
+  crates, and one crate labeled a "maintained fork" of an upstream dependency,
+  copyright header intact - which the repository's own authors did not write
+  and cannot act on. Another 4.5% is `unsafe { std::env::set_var(..) }` /
+  `remove_var(..)` inside `#[cfg(test)]` modules - the mandatory Rust
+  2024-edition wrapper for env mutation, used purely for test setup, which
+  this rule (unlike `unwrap-used`) has no carve-out for. That leaves roughly
+  60 genuinely first-party, non-test findings out of 5,475 - about 1%, spread
+  thinly enough that no single file or repo dominates the remainder. A
+  correct-but-unactionable finding is not a reason to stay silent about being
+  correct, but it is a reason not to be on by default: most of what a first
+  run would show is code the reader cannot fix and test scaffolding the rule
+  was never meant to flag. Turn it on with `extend_select =
+  ["undocumented-unsafe-block"]` once vendored paths are excluded via
+  `[per-file-ignores]`.
+
+  The `#[cfg(test)]` gap is not a volume problem, it is a correctness one:
+  `unsafe { std::env::set_var(..) }` inside a test module is the *only* legal
+  way to write that statement under the 2024 edition, so the rule is wrong
+  about that code regardless of how often it occurs. Any future revival of
+  this rule needs an in-test-context carve-out (see `unwrap-used`'s `rule:`
+  for the shape of one) as a precondition, not an optional follow-up.
+
+  Idea origin: the Rust standard library's `// SAFETY:` convention, made
+  mandatory for `std` by the library team's safety-comment policy; the matching
+  and the enclosing-statement scope rule are poly's own.
+url: https://std-dev-guide.rust-lang.org/policy/safety-comments.html
+utils:
+  comment:
+    any:
+      - kind: line_comment
+      - kind: block_comment
+  preceded-by-safety-comment:
+    follows:
+      regex: "SAFETY"
+      stopBy: { not: { matches: comment } }
+rule:
+  kind: unsafe_block
+  not:
+    any:
+      - matches: preceded-by-safety-comment
+      - has:
+          kind: block
+          has:
+            nthChild: 1
+            matches: comment
+            regex: "SAFETY"
+      - inside:
+          stopBy:
+            any:
+              - kind: block
+              - kind: declaration_list
+              - kind: source_file
+          matches: preceded-by-safety-comment

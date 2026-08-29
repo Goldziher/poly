@@ -1,0 +1,11 @@
+id: todo-marker
+valid:
+  - "// wire the cache up next release (tracked in #421)\nfn f() {}"
+  - "fn f() { let todo = 1; }"
+  - "fn f() { let s = \"TODO: not a comment\"; }"
+  - "/// Returns the todo list.\nfn f() {}"
+invalid:
+  - "// TODO: handle the empty case\nfn f() {}"
+  - "// FIXME: leaks on the error path\nfn f() {}"
+  - "fn f() {\n    /* HACK: works around upstream bug 1234 */\n    g();\n}"
+  - "fn f() {} // XXX broken\n"

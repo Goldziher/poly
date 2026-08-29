@@ -27,7 +27,10 @@ use poly_core::{
 ///
 /// Injects `rules_hash` alongside `rules_dirs`, exactly as
 /// `Config::build_astgrep_options` does in production, so the content-addressed
-/// rule cache path is exercised (rather than the empty-hash bypass).
+/// rule cache path is exercised (rather than the empty-hash bypass). Explicitly
+/// disables the built-in pack: these fixtures test *user* rule behavior and
+/// must stay isolated from the pack's own (evolving) content — see
+/// `crates/poly-core/src/engines/astgrep/mod.rs` for pack-specific coverage.
 fn cfg_with_rules_dir(dir: &Path) -> EngineConfig {
     let dirs = vec![dir.to_string_lossy().into_owned()];
     let mut options = toml::Table::new();
@@ -39,6 +42,7 @@ fn cfg_with_rules_dir(dir: &Path) -> EngineConfig {
     if !hash.is_empty() {
         options.insert("rules_hash".to_string(), toml::Value::String(hash));
     }
+    options.insert("builtin_pack_enabled".to_string(), toml::Value::Boolean(false));
     EngineConfig {
         globals: GlobalDefaults::default(),
         indent_width: 4,
@@ -271,15 +275,49 @@ fn non_matching_fixed_case_reports_single_failure() {
 #[test]
 fn no_rules_dir_is_a_noop() {
     let engine = AstGrepEngine;
+    let mut options = toml::Table::new();
+    // The built-in pack is on by default (see `builtin_pack_fires_by_default`
+    // below); disabling it here isolates this test's original claim — no
+    // *user* rules configured, and no pack either, is a true no-op — from the
+    // pack's own (evolving) content.
+    options.insert("builtin_pack_enabled".to_string(), toml::Value::Boolean(false));
     let cfg = EngineConfig {
         globals: GlobalDefaults::default(),
         indent_width: 4,
-        options: toml::Table::new(),
+        options,
     };
     let src = make_src("m.py", Language::Python, "print(1)\n");
     let diags = engine.lint(&src, &cfg).unwrap();
     assert!(
         diags.is_empty(),
-        "no rules dir configured → no diagnostics; got: {diags:?}"
+        "no rules dir and no built-in pack → no diagnostics; got: {diags:?}"
+    );
+}
+
+/// With no config at all — no `[rules] dirs`, no explicit `builtin` toggle —
+/// the built-in pack is on by default: a Rust file whose `Err(_)` arm
+/// silently discards the error gets flagged with zero setup. Complements the
+/// unit test of the same shape in `engines::astgrep::tests` by exercising the
+/// public `Engine` trait object from outside the crate, the way the runner
+/// actually calls it. (`unwrap-used`, `allow-attribute-without-reason`, and
+/// `undocumented-unsafe-block`, the earlier exemplars here, all shipped `off`
+/// after this pack's default-on audit — see their YAML notes.)
+#[test]
+fn builtin_pack_fires_by_default() {
+    let engine = AstGrepEngine;
+    let cfg = EngineConfig {
+        globals: GlobalDefaults::default(),
+        indent_width: 4,
+        options: toml::Table::new(),
+    };
+    let src = make_src(
+        "m.rs",
+        Language::Rust,
+        "fn f(r: Result<(), ()>) {\n    match r {\n        Ok(_) => {}\n        Err(_) => {}\n    }\n}\n",
+    );
+    let diags = engine.lint(&src, &cfg).unwrap();
+    assert!(
+        diags.iter().any(|d| d.code.as_deref() == Some("swallowed-error")),
+        "expected the default-on built-in swallowed-error rule to fire with no config; got: {diags:?}"
     );
 }

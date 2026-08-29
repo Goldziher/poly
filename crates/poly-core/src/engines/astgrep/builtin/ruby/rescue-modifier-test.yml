@@ -1,0 +1,14 @@
+id: rescue-modifier
+valid:
+  - "begin\n  value = compute\nrescue KeyError => e\n  logger.warn(e.message)\n  value = fallback\nend\n"
+  - "def load\n  parse(read)\nrescue JSON::ParserError => e\n  report(e)\n  nil\nend\n"
+  - "class Reader\n  def call\n    fetch\n  rescue Timeout::Error => e\n    retry_later(e)\n  end\nend\n"
+  - "value = Integer(raw, exception: false) || 0\n"
+  - "value = hash.fetch(:key, default)\n"
+invalid:
+  - "value = compute rescue nil\n"
+  - "def load\n  parse(read) rescue {}\nend\n"
+  - "class Reader\n  def call\n    Integer(@raw) rescue 0\n  end\nend\n"
+  - "rows = CSV.parse(text) rescue []\n"
+  - "def teardown(pid)\n  Process.kill('TERM', pid) rescue nil\n  Process.wait(pid, 5) rescue nil\nend\n"
+  - "8.times do\n  line = stdout.readline.strip rescue break\n  puts line\nend\n"

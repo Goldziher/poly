@@ -1,0 +1,114 @@
+id: unused-operation
+language: elixir
+severity: warning
+message: "The result of this pure operation is discarded and it is not the block's return value, so the line does nothing."
+note: |
+  Elixir has no statements - every expression produces a value - so an
+  expression written on its own line only has an effect through what it
+  returns. When that expression is a pure operation (a `String.*`, `Map.*`,
+  `List.*`, `Keyword.*`, `MapSet.*` or `Tuple.*` call, a side-effect-free
+  `Enum` transformation, or a bare arithmetic/comparison/concatenation
+  operator) and its value is thrown away, the line is dead code. It is almost
+  always a dropped binding, a missing pipe into the next step, or an
+  `Enum.map/2` where `Enum.each/2` was meant.
+
+  Bind the result (`upcased = String.upcase(name)`), pipe it onward, or - if
+  the intent really was to iterate for effect - use `Enum.each/2`, which is
+  documented as returning `:ok`.
+
+  The last expression of a `do` block is the block's return value and is never
+  reported. `rescue`/`catch`/`after`/`else` clauses are taken into account when
+  working out which expression is last, so the final expression of a `try`
+  body is not flagged either. Code inside `quote`/`unquote` is skipped, since
+  there the expressions are data, not evaluated code.
+
+  Coverage is deliberately narrow. There is no type or alias resolution, so
+  only calls written against these known-pure standard-library module names are
+  considered, and only when they are a direct child of a `do` block -
+  expressions in `case`/`cond`/`fn` clause bodies are not examined.
+
+  Measured on poly's 49-repo corpus: zero findings. 60 expressions matched the
+  pure-operation shape, and all 60 were the last expression of their block -
+  that is, return values, correctly not reported. The rule is therefore
+  validated against planted positives rather than real hits.
+
+  Idea origin: the general "expression statement whose value is unused" check
+  found in many linters, adapted to Elixir where the last expression of a block
+  is the return value. Matcher, module lists and wording are poly's own.
+url: https://hexdocs.pm/elixir/Enum.html#each/2
+utils:
+  pure-module-call:
+    kind: call
+    has:
+      field: target
+      kind: dot
+      stopBy: neighbor
+      has:
+        field: left
+        kind: alias
+        stopBy: neighbor
+        regex: "^(String|Map|List|Keyword|MapSet|Tuple|Integer|Float|Atom)$"
+  pure-enum-call:
+    kind: call
+    has:
+      field: target
+      kind: dot
+      stopBy: neighbor
+      all:
+        - has:
+            field: left
+            kind: alias
+            stopBy: neighbor
+            regex: "^Enum$"
+        - has:
+            field: right
+            kind: identifier
+            stopBy: neighbor
+            regex: '^(map|filter|reject|sort|sort_by|reverse|uniq|uniq_by|join|to_list|concat|flat_map|take|drop|slice|chunk_every|group_by|zip|with_index|frequencies|dedup|intersperse|min_by|max_by|split|sum|product|count|at|member\?|empty\?|find|find_index|find_value|into|map_join|split_with|take_while|drop_while)$'
+  pure-operator:
+    any:
+      - pattern: $A ++ $B
+      - pattern: $A -- $B
+      - pattern: $A <> $B
+      - pattern: $A + $B
+      - pattern: $A - $B
+      - pattern: $A * $B
+      - pattern: $A == $B
+      - pattern: $A != $B
+      - pattern: $A === $B
+      - pattern: $A !== $B
+      - pattern: $A < $B
+      - pattern: $A > $B
+      - pattern: $A <= $B
+      - pattern: $A >= $B
+  in-quoted-code:
+    inside:
+      stopBy: end
+      kind: call
+      has:
+        field: target
+        kind: identifier
+        stopBy: neighbor
+        regex: "^(quote|unquote)$"
+rule:
+  all:
+    - any:
+        - matches: pure-module-call
+        - matches: pure-enum-call
+        - matches: pure-operator
+    - inside:
+        kind: do_block
+        stopBy: neighbor
+    - not:
+        nthChild:
+          position: 1
+          reverse: true
+          ofRule:
+            not:
+              any:
+                - kind: rescue_block
+                - kind: after_block
+                - kind: else_block
+                - kind: catch_block
+    - not:
+        matches: in-quoted-code

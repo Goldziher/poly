@@ -1,0 +1,21 @@
+id: not-null-assertion
+valid:
+  - "fun f(flag: Boolean): Boolean { return !!flag }"
+  - "fun f(flag: Boolean): Boolean { return !flag }"
+  - "fun f(x: A?) { val v = x?.y }"
+  - "fun f(x: String?) { val v = x ?: \"fallback\" }"
+  - "fun f(x: String?) { val v = requireNotNull(x) { \"x must be set\" } }"
+  - "fun f(x: String?) { val v = checkNotNull(x) }"
+  - "fun f(x: String?) { if (x != null) { println(x.length) } }"
+  - "fun f() { println(\"a!!b\") }"
+  - "fun f(n: Int) { var m = n; m++ }"
+  - "fun f(x: String?) { val v = x?.let { it.length } ?: 0 }"
+invalid:
+  - "fun f(x: String?) { val v = x!! }"
+  - "fun f(x: A?) { val v = x!!.foo() }"
+  - "fun f() { val v = build()!!.name }"
+  - "fun f(m: Map<String, Int>) { val v = m[\"k\"]!! }"
+  - "fun f(a: Int?, b: Int?) { val v = a!! + b!! }"
+  - "fun f(r: R) { check(r.data?.children!!.size >= 1) }"
+  - "fun f(r: R) { check(r.usage?.totalTokens!! == 23L) }"
+  - "fun f(r: R) { check(r.metadata.wordCount!! > 99) }"

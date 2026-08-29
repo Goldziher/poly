@@ -504,18 +504,24 @@ mod tests {
     }
 
     /// The routing fact behind the original defect, in the half that still
-    /// holds: a `.swift` or `.zig` lint plan is built entirely from
-    /// cross-cutting backends, and the one of those that reads structure
-    /// (`quality`) has no construct table for either grammar — so all it
-    /// contributes is a line count and an ignore-marker scan, which is exactly
-    /// what a `.txt` file gets. Counting lines is not knowledge of the
+    /// holds: a `.zig` or `.dart` lint plan is built entirely from
+    /// cross-cutting backends, and neither of the two that read structure
+    /// contributes language knowledge — `quality` has no construct table for
+    /// either grammar, and the built-in ast-grep pack ships no rule for them —
+    /// so all they leave is a line count and an ignore-marker scan, which is
+    /// exactly what a `.txt` file gets. Counting lines is not knowledge of the
     /// language, so the file must not be counted as linted. Pinned here
     /// because it is invisible from the outside: the plan is non-empty and the
     /// engines all run.
+    ///
+    /// Swift used to sit in this list and no longer can: the pack's
+    /// `force-cast` / `force-try` are genuine Swift rules, so its coverage is
+    /// now real. That is the expected direction of travel — a language leaves
+    /// this test when poly learns something about it, never the reverse.
     #[test]
     fn a_language_the_cross_cutting_tier_only_line_counts_has_no_lint_coverage() {
         let config = Config::default();
-        for language in [Language::Swift, Language::Zig, Language::Dart] {
+        for language in [Language::Zig, Language::Dart] {
             let plan = plan_engines(&language, &config, Kind::Lint);
             assert!(
                 !plan.is_empty(),
@@ -529,21 +535,43 @@ mod tests {
         }
     }
 
-    /// The other half, and the point of ADR 0027: Rust and Kotlin still have no
-    /// lint backend of their own, but the `quality` tier holds a genuine
-    /// structural model of both grammars — a definition query *and* a construct
-    /// table — so function size, nesting and complexity really are measured and
-    /// the run is right to count the file. Asserted by engine name, since
-    /// `quality` is the only thing standing between these languages and a skip.
+    /// The other half, and the point of ADR 0027: C and C++ have no lint
+    /// backend of their own and no built-in ast-grep rule, but the `quality`
+    /// tier holds a genuine structural model of both grammars — a definition
+    /// query *and* a construct table — so function size, nesting and
+    /// complexity really are measured and the run is right to count the file.
+    /// Asserted by engine name, since `quality` is the only thing standing
+    /// between these two languages and a skip; if a future pack rule covers
+    /// them, move them out rather than relaxing the assertion, or a regression
+    /// that drops `quality`'s coverage would hide behind the other engine.
     #[test]
     fn a_language_the_quality_tier_structurally_models_has_lint_coverage() {
         let config = Config::default();
-        for language in [Language::Rust, Language::Kotlin] {
+        for language in [Language::C, Language::Cpp] {
             let plan = plan_engines(&language, &config, Kind::Lint);
             assert_eq!(
                 covering_engines(&plan),
                 vec!["quality"],
                 "{language:?} is linted by the quality tier alone"
+            );
+        }
+    }
+
+    /// Rust and Kotlin are covered twice over, and by two different kinds of
+    /// knowledge: the built-in ast-grep pack holds hand-written rules for both
+    /// (`unwrap-used`, `not-null-assertion`, …) while `quality` measures their
+    /// structure. Asserted as the exact pair so that losing either one — a
+    /// pack rule set emptied, or a construct table dropped — fails here
+    /// instead of silently halving the coverage behind a still-true boolean.
+    #[test]
+    fn a_language_both_the_pack_and_the_quality_tier_cover_lists_both() {
+        let config = Config::default();
+        for language in [Language::Rust, Language::Kotlin] {
+            let plan = plan_engines(&language, &config, Kind::Lint);
+            assert_eq!(
+                covering_engines(&plan),
+                vec!["astgrep", "quality"],
+                "{language:?} is linted by the built-in pack and the quality tier"
             );
         }
     }

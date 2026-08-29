@@ -1,0 +1,71 @@
+id: defer-in-loop
+language: go
+severity: warning
+message: "Deferred `Close()` inside a loop releases at function exit, not iteration exit; close in a called function literal or a helper instead."
+note: |
+  A deferred call is queued on the *function* frame, so a `defer` written in a
+  loop body does not run when the iteration ends - it piles up and runs only
+  once the enclosing function returns. A loop over a thousand paths that says
+  `defer file.Close()` therefore holds a thousand descriptors open, and a
+  `defer mu.Unlock()` in a loop deadlocks on the second pass.
+
+  Write the per-iteration work as a function literal that is called
+  immediately (`func() { ... }()`) or as a named helper, so the `defer` has a
+  frame that ends with the iteration. Releasing explicitly at the end of the
+  body works too, but loses the panic safety `defer` gives you.
+
+  Scope: only `Close`/`Unlock`/`RUnlock` are reported, because those release a
+  resource the next iteration will re-acquire. Deferring anything else in a
+  loop - `cancel()`, `stop()`, `closeScope()`, `os.Remove(tmp)` - is usually
+  deliberate, since the thing must outlive the loop; measuring the general
+  form put its false-positive rate near 60%, so poly does not report it.
+
+  Two further carve-outs, both measured: a `defer` inside a function literal
+  that is itself in the loop is the correct workaround and is not reported;
+  and `defer C.free(...)` is exempt, because building an array of
+  `C.CString`s in a loop and freeing them when the function returns is the
+  documented cgo idiom. A `defer` whose very next statement is a `return` is
+  also skipped - the function exits there, so nothing accumulates.
+
+  The check is structural, with no control-flow analysis: a loop body where
+  every path after the `defer` returns is still reported, and that is the
+  residual false positive.
+
+  Idea origin: the "defer in loop" caveat in the Go language specification's
+  description of deferred calls and Effective Go's `defer` section; the
+  matcher, the scope carve-outs and the message are poly's own.
+url: https://go.dev/ref/spec#Defer_statements
+utils:
+  releases-a-resource:
+    has:
+      kind: call_expression
+      has:
+        nthChild: 1
+        kind: selector_expression
+        has:
+          kind: field_identifier
+          regex: "^(Close|Unlock|RUnlock)$"
+  cgo-call:
+    has:
+      kind: call_expression
+      has:
+        nthChild: 1
+        kind: selector_expression
+        regex: '^C\s*\.'
+rule:
+  kind: defer_statement
+  matches: releases-a-resource
+  inside:
+    kind: for_statement
+    stopBy:
+      any:
+        - kind: for_statement
+        - kind: func_literal
+        - kind: function_declaration
+        - kind: method_declaration
+  not:
+    any:
+      - matches: cgo-call
+      - precedes:
+          kind: return_statement
+          stopBy: neighbor

@@ -1,0 +1,20 @@
+id: implicit-switch-fallthrough
+valid:
+  - "class A {\n  void m(int x) {\n    switch (x) {\n      case 1:\n        f();\n        break;\n      default:\n        g();\n    }\n  }\n}"
+  - "class A {\n  void m(int x) {\n    switch (x) {\n      case 1:\n      case 2:\n        f();\n        break;\n      default:\n        g();\n    }\n  }\n}"
+  - "class A {\n  int m(int x) {\n    switch (x) {\n      case 1:\n        return 1;\n      case 2:\n        throw new IllegalStateException(\"two\");\n      default:\n        return 0;\n    }\n  }\n}"
+  - "class A {\n  void m(int x) {\n    switch (x) {\n      case 1: {\n        f();\n        break;\n      }\n      default:\n        g();\n    }\n  }\n}"
+  - "class A {\n  void m(int x) {\n    switch (x) {\n      case 1 -> f();\n      case 2 -> { g(); h(); }\n      default -> i();\n    }\n  }\n}"
+  - "class A {\n  int m(int x) {\n    return switch (x) {\n      case 1: yield 1;\n      default: yield 0;\n    };\n  }\n}"
+  - "class A {\n  void m(int x) {\n    switch (x) {\n      case 1:\n        f();\n        // falls through\n      case 2:\n        g();\n        break;\n      default:\n        h();\n    }\n  }\n}"
+  - "class A {\n  int m(int x) {\n    switch (x) {\n      case 1:\n        if (a) {\n          return 1;\n        } else {\n          return 2;\n        }\n      default:\n        return 0;\n    }\n  }\n}"
+  - "class A {\n  void m(int x) {\n    for (;;) {\n      switch (x) {\n        case 1:\n          continue;\n        default:\n          f();\n      }\n    }\n  }\n}"
+  - "class A {\n  void m(int x) {\n    switch (x) {\n      case 1:\n        while (true) { f(); }\n      default:\n        g();\n    }\n  }\n}"
+  - "class A {\n  void m(int x) {\n    switch (x) {\n      default:\n        f();\n    }\n  }\n}"
+  - "class A {\n  void m(int x) {\n    switch (x) {\n      case 1:\n        f();\n        break; // done with one\n      default:\n        g();\n    }\n  }\n}"
+invalid:
+  - "class A {\n  void m(int x) {\n    switch (x) {\n      case 1:\n        f();\n      case 2:\n        g();\n        break;\n      default:\n        h();\n    }\n  }\n}"
+  - "class A {\n  void m(int x) {\n    switch (x) {\n      case 1:\n        f();\n        g();\n      default:\n        h();\n    }\n  }\n}"
+  - "class A {\n  void m(int x) {\n    switch (x) {\n      case 1: {\n        f();\n      }\n      default:\n        g();\n    }\n  }\n}"
+  - "class A {\n  int m(int x) {\n    switch (x) {\n      case 1:\n        if (a) {\n          return 1;\n        }\n      default:\n        return 0;\n    }\n  }\n}"
+  - "class A {\n  void m(int x) {\n    switch (x) {\n      case 1:\n        f();\n        // TODO revisit\n      case 2:\n        g();\n        break;\n      default:\n        h();\n    }\n  }\n}"

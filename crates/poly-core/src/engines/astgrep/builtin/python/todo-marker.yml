@@ -1,0 +1,23 @@
+id: todo-marker
+language: python
+severity: off
+message: "Unresolved `TODO`/`FIXME`/`XXX`/`HACK` marker left in the source."
+note: |
+  A `TODO` / `FIXME` / `XXX` / `HACK` marker is a defect the author already
+  found and chose not to fix. Left in the tree it has no owner, no date, and no
+  way to fail a build, so it survives indefinitely. Move it to the issue
+  tracker and link the issue from the code, or fix it.
+
+  Off by default, deliberately: poly's `[lint.uncomment]` backend ships with
+  `remove_todos = false` precisely so these markers survive comment stripping,
+  and a repo that keeps them on purpose should not be told off for it every
+  run. Turn this on only if your team has decided markers do not belong in the
+  tree.
+
+  Idea origin: the "warning comment" check that most linters offer in some
+  form; the matching and the interaction note with `[lint.uncomment]` are
+  poly's own.
+url: https://github.com/Goldziher/poly
+rule:
+  kind: comment
+  regex: '\b(TODO|FIXME|XXX|HACK)\b'

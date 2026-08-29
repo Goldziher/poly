@@ -1,0 +1,56 @@
+id: eval-usage
+language: ruby
+severity: warning
+message: "`eval` on a string executes arbitrary code; use the block form of `instance_eval`/`class_eval`, `define_method`, or `public_send`."
+note: |
+  Passing a string to `eval`, `instance_eval`, `class_eval` or `module_eval`
+  compiles that string as Ruby at run time. If any part of the string comes
+  from configuration, a request or a file, this is remote code execution. Even
+  when the string is a literal, nothing checks it until the line runs: the
+  parser, the type-agnostic editors and the test coverage tools all see an
+  opaque string instead of code.
+
+  Nearly every use has a direct replacement. To define methods, use
+  `define_method(name) { ... }` or the block form `class_eval do ... end`. To
+  call a method chosen at run time, use `public_send(name, *args)`. To read an
+  attribute, use `instance_variable_get`.
+
+  Only the string-argument form is reported. The block forms
+  `instance_eval { ... }` and `class_eval do ... end` are the ordinary
+  metaprogramming idiom and are left alone - the grammar puts the block in a
+  separate field from the argument list, so the two are cleanly distinguished.
+  A block passed by reference, `instance_eval(&blk)`, is also left alone.
+
+  Because there is no type information, a call to a method named `eval` on an
+  unrelated receiver looks identical to `Kernel#eval` and will be reported.
+
+  Measured on poly's 49-repo corpus: zero findings. The corpus contains Ruby
+  (several hundred files are linted) but no string `eval` at all, so the rule
+  is validated against planted positives rather than real hits.
+
+  Idea origin: the security warning in Ruby's own `Kernel#eval` documentation
+  and the general "avoid eval" convention. Written from that concept for poly.
+url: https://docs.ruby-lang.org/en/master/Kernel.html#method-i-eval
+rule:
+  kind: call
+  all:
+    - has:
+        field: method
+        kind: identifier
+        stopBy: neighbor
+        regex: "^(eval|instance_eval|class_eval|module_eval)$"
+    - has:
+        field: arguments
+        kind: argument_list
+        stopBy: neighbor
+        not:
+          has:
+            kind: block_argument
+            stopBy: neighbor
+    - not:
+        has:
+          field: block
+          stopBy: neighbor
+          any:
+            - kind: block
+            - kind: do_block

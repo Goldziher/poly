@@ -1,0 +1,18 @@
+id: defer-in-loop
+valid:
+  - "package main\n\nfunc f() {\n\tdefer fh.Close()\n\tfor _, p := range paths {\n\t\tuse(p)\n\t}\n}\n"
+  - "package main\n\nfunc f() {\n\tfor _, p := range paths {\n\t\tfunc() {\n\t\t\tfh, _ := os.Open(p)\n\t\t\tdefer fh.Close()\n\t\t}()\n\t}\n}\n"
+  - "package main\n\nfunc f() {\n\tfor _, p := range paths {\n\t\tgo func() {\n\t\t\tdefer wg.Done()\n\t\t\twork(p)\n\t\t}()\n\t}\n}\n"
+  - "package main\n\nfunc f() {\n\tfor i := 0; i < n; i++ {\n\t\thandle(i)\n\t}\n\tdefer cleanup()\n}\n"
+  - "package main\n\nfunc f() {\n\tfor _, p := range paths {\n\t\tif err := each(p); err != nil {\n\t\t\treturn err\n\t\t}\n\t}\n}\n\nfunc each(p string) error {\n\tfh, err := os.Open(p)\n\tif err != nil {\n\t\treturn err\n\t}\n\tdefer fh.Close()\n\treturn nil\n}\n"
+  - "package main\n\nimport \"unsafe\"\n\nfunc Merge(paths []string) {\n\tcPaths := make([]*C.char, len(paths))\n\tfor i, p := range paths {\n\t\tcPaths[i] = C.CString(p)\n\t\tdefer C.free(unsafe.Pointer(cPaths[i]))\n\t}\n\tC.pdf_merge(&cPaths[0])\n}\n"
+  - "package main\n\nfunc f() {\n\tfor _, u := range urls {\n\t\tres, err := http.Get(u)\n\t\tif err != nil {\n\t\t\treturn err\n\t\t}\n\t\tdefer res.Body.Close()\n\t\treturn responseError(res)\n\t}\n}\n"
+  - "package main\n\nfunc f() {\n\tfor i := range n {\n\t\tctx, cancel := context.WithTimeout(octx, d)\n\t\tdefer cancel()\n\t\tuse(ctx)\n\t}\n}\n"
+  - "package main\n\nfunc (v *visitor) Visit(n Node) {\n\tfor _, spec := range n.Specs {\n\t\tv.openScope()\n\t\tdefer v.closeScope()\n\t\tv.walk(spec)\n\t}\n}\n"
+  - "package main\n\nfunc f() {\n\tfor i, c := range collections {\n\t\tnext[i], stop = iter.Pull(c)\n\t\tdefer stop()\n\t}\n}\n"
+invalid:
+  - "package main\n\nfunc f() {\n\tfor _, p := range paths {\n\t\tfh, _ := os.Open(p)\n\t\tdefer fh.Close()\n\t\tread(fh)\n\t}\n}\n"
+  - "package main\n\nfunc f() {\n\tfor i := 0; i < n; i++ {\n\t\tmu.Lock()\n\t\tdefer mu.Unlock()\n\t\ttouch(i)\n\t}\n}\n"
+  - "package main\n\nfunc f() {\n\tfor {\n\t\tconn := accept()\n\t\tdefer conn.Close()\n\t\tserve(conn)\n\t}\n}\n"
+  - "package main\n\nfunc geniana() error {\n\tfor _, r := range registries {\n\t\tresp, err := http.Get(r.url)\n\t\tif err != nil {\n\t\t\treturn err\n\t\t}\n\t\tdefer resp.Body.Close()\n\t\tif resp.StatusCode != 200 {\n\t\t\treturn fmt.Errorf(\"bad status\")\n\t\t}\n\t\tparse(resp.Body)\n\t}\n\treturn nil\n}\n"
+  - "package main\n\nfunc f() {\n\tfor _, p := range paths {\n\t\tif ok(p) {\n\t\t\tfh, _ := os.Open(p)\n\t\t\tdefer fh.Close()\n\t\t\tread(fh)\n\t\t}\n\t}\n}\n"

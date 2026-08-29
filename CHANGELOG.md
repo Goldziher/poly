@@ -63,6 +63,17 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   Dart, Gleam, Elixir, PHP, Nix, Scala, Lua, R — keep the skip: a line count is not
   knowledge of the language.
 
+- **A built-in ast-grep rule pack, on by default.** poly's ast-grep backend shipped with no
+  rules at all — it matched a language only if a repository pointed `[rules] dirs` at YAML of its
+  own, which nearly none do. It now embeds 26 curated rules across nine languages (C#, Elixir, Go,
+  Java, Kotlin, Python, Ruby, Rust, Swift), parsed through the same path as user rules and layered
+  beneath them, so a user rule sharing an `id` still wins. Thirteen ship enabled; the rest ship
+  `off` and are opt-in via `extend_select`. Disable the pack wholesale with `[rules] builtin =
+  false`. See ADR 0029.
+
+  Swift, Kotlin, Elixir and C# gain real lint coverage for the first time and leave the
+  `no lint rules for <language>` skip. Every rule reports at warning severity, so no CI turns red.
+
 - **Python analysis now builds from the published ruff crates** rather than a pinned git commit
   (`ruff_linter = "=0.16.5"`, the supporting crates `"=0.0.11"`). Astral began publishing the ruff
   workspace to crates.io in June 2026. Exact `=` pins are deliberate — these are private-by-intent

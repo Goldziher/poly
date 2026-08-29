@@ -1,0 +1,18 @@
+id: undocumented-unsafe-block
+valid:
+  - "fn f() {\n    // SAFETY: the pointer is non-null and aligned.\n    unsafe { g(); }\n}"
+  - "fn f() {\n    // SAFETY: len is checked above.\n    // The slice therefore stays in bounds.\n    unsafe { g(); }\n}"
+  - "fn f() {\n    /* SAFETY: upheld by the caller */\n    unsafe { g(); }\n}"
+  - "fn f() {\n    // SAFETY: valid for reads.\n    let x = unsafe { *p };\n}"
+  - "unsafe fn f() { g() }"
+  - "fn f() { g(); }"
+  - "fn f() -> String {\n    // SAFETY: caller guarantees a valid null-terminated C string.\n    unsafe { CStr::from_ptr(path) }.to_string_lossy().into_owned()\n}"
+  - "fn f() {\n    // SAFETY: owner was allocated by _new() and is valid until freed.\n    let inner = match unsafe { (*owner).inner.take() } {\n        Some(b) => *b,\n        None => return,\n    };\n}"
+  - "fn f() {\n    // SAFETY: registered before the first connection is opened.\n    INIT.call_once(|| unsafe {\n        register(cb);\n    });\n}"
+  - "fn f() {\n    let ok = unsafe {\n        // SAFETY: the four out-pointers are local and live for the call.\n        get_bbox(handle, &mut l, &mut t)\n    };\n}"
+invalid:
+  - "fn f() {\n    unsafe { g(); }\n}"
+  - "fn f() {\n    // just a note\n    unsafe { g(); }\n}"
+  - "fn f() {\n    let x = unsafe { *p };\n}"
+  - "fn f() -> String {\n    unsafe { CStr::from_ptr(path) }.to_string_lossy().into_owned()\n}"
+  - "fn f() {\n    // SAFETY: the outer call is fine.\n    outer(|| {\n        inner();\n        unsafe { g(); }\n    });\n}"

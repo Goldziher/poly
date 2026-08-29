@@ -1,0 +1,139 @@
+id: implicit-switch-fallthrough
+language: java
+severity: off
+message: "This `case` group runs off its end into the next case; end it with `break`/`return`/`throw`/`yield`, or write a `// falls through` comment if that is deliberate."
+note: |
+  In the colon form of `switch`, a case group that does not end in a control
+  transfer keeps executing into the group below it. That is occasionally what
+  the author meant and far more often a missing `break`: the bug is invisible at
+  the call site and only shows up as an extra side effect for one input value.
+
+  End every group with `break`, `return`, `throw`, `continue` or `yield`. If the
+  fall-through is intended, say so with a `// falls through` comment directly
+  after the group - this rule accepts that comment as the acknowledgement. Or
+  move the whole statement to the arrow form (`case X -> ...`), which cannot
+  fall through at all and is not checked here.
+
+  Two shapes are deliberately not reported: an empty group stacked above another
+  (`case A:` immediately followed by `case B:`), which is the normal way to share
+  one body between labels, and the final group of the switch, which has nothing
+  to fall into.
+
+  ast-grep has no control-flow analysis, so "does this group end" is decided
+  syntactically from the last statement: a terminator, a block ending in one, an
+  `if`/`else` whose arms both end in one, or an unconditional `while (true)` /
+  `for (;;)` loop. A group that ends some other way - a `try`/`finally` where
+  every path throws, a call to `System.exit`, a `synchronized` block ending in a
+  `return`, a method that never returns - is reported even though control cannot
+  actually reach the next case. That is an approximation, and it is why this
+  rule ships opt-in.
+
+  Enable it with `severity = "warning"` under `[rules]` if your codebase still
+  uses the colon form of `switch`.
+
+  Measured on poly's 50-repository corpus: the colon form has almost died out
+  there - only 20 case groups survive, in 3 files, and every one of them ends in
+  `break`/`return` or is the last group of its switch. The rule reported 0 of
+  the 20 (20/20 correct), so its precision on the shapes above is unmeasured
+  rather than proven, and there was no real fall-through to catch. It was
+  verified against a planted known-positive instead.
+
+  Idea origin: the fall-through hazard described in the Java Language
+  Specification's treatment of `switch` (and the `-Xlint:fallthrough` javac
+  warning). The matcher, the terminator set, the acknowledgement comment and the
+  message were authored independently for poly from that concept.
+url: https://docs.oracle.com/javase/specs/jls/se21/html/jls-14.html#jls-14.11
+utils:
+  comment:
+    any:
+      - kind: line_comment
+      - kind: block_comment
+  group-statement:
+    not:
+      any:
+        - matches: comment
+        - kind: switch_label
+        - regex: "^:$"
+  terminator:
+    any:
+      - kind: break_statement
+      - kind: return_statement
+      - kind: throw_statement
+      - kind: continue_statement
+      - kind: yield_statement
+  last-in-block:
+    nthChild:
+      position: 1
+      reverse: true
+      ofRule:
+        not:
+          matches: comment
+  unconditional-loop:
+    any:
+      - kind: while_statement
+        has:
+          field: condition
+          regex: '^\(\s*true\s*\)$'
+      - kind: for_statement
+        regex: '^for\s*\(\s*;\s*;'
+  terminating-inner:
+    any:
+      - matches: terminator
+      - matches: unconditional-loop
+      - kind: block
+        has:
+          stopBy: neighbor
+          all:
+            - matches: last-in-block
+            - any:
+                - matches: terminator
+                - matches: unconditional-loop
+  terminating-statement:
+    any:
+      - matches: terminating-inner
+      - kind: block
+        has:
+          stopBy: neighbor
+          all:
+            - matches: last-in-block
+            - matches: terminating-inner
+      - kind: if_statement
+        all:
+          - has:
+              field: consequence
+              matches: terminating-inner
+          - has:
+              field: alternative
+              matches: terminating-inner
+rule:
+  kind: switch_block_statement_group
+  all:
+    # non-empty: an empty group stacked above the next label is the intended idiom
+    - has:
+        stopBy: neighbor
+        matches: group-statement
+    # its last real statement does not transfer control away
+    - not:
+        has:
+          stopBy: neighbor
+          all:
+            - nthChild:
+                position: 1
+                reverse: true
+                ofRule:
+                  matches: group-statement
+            - matches: terminating-statement
+    # the last group of a switch falls out of the switch, not into another case
+    - not:
+        nthChild:
+          position: 1
+          reverse: true
+          ofRule:
+            kind: switch_block_statement_group
+    # an explicit "falls through" comment after the group is the acknowledgement
+    - not:
+        precedes:
+          stopBy: neighbor
+          all:
+            - matches: comment
+            - regex: "(?i)fall[[:space:]_-]*(s|ing)?[[:space:]_-]*(through|thru|thro)"

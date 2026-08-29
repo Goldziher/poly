@@ -1,0 +1,43 @@
+id: rethrow-loses-stack
+language: csharp
+severity: warning
+message: "`throw ex;` restarts the stack trace here; use a bare `throw;` to rethrow, or `throw new T(\"..\", ex)` to wrap."
+note: |
+  `throw ex;` is a *new* throw of an existing exception object. The runtime
+  overwrites the exception's stack trace with the rethrow site, so the frame
+  that actually failed disappears from the log and the report points at the
+  catch block instead of the bug.
+
+  A bare `throw;` inside a catch block rethrows the current exception with its
+  original trace intact. When the caller needs more context, wrap instead:
+  `throw new InvalidOperationException("loading config", ex)` keeps the
+  original as `InnerException`, which also preserves its trace. Both forms are
+  accepted by this rule; only rethrowing the caught variable by name is
+  reported.
+
+  The check binds the catch variable's name and requires the thrown identifier
+  to be exactly that name, so `throw someOtherException;` inside a catch is not
+  reported - poly has no dataflow analysis and cannot tell whether an unrelated
+  variable holds a freshly built exception or a captured one.
+
+  Idea origin: the .NET exception-handling guidance that a bare `throw;`
+  preserves stack details where `throw ex;` does not - the same observation
+  behind Roslyn's CA2200. The matcher, the catch-variable name binding and the
+  message are poly's own.
+url: https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/statements/exception-handling-statements#the-throw-statement
+rule:
+  kind: throw_statement
+  has:
+    kind: identifier
+    pattern: $EX
+    stopBy: neighbor
+  inside:
+    kind: catch_clause
+    stopBy: end
+    has:
+      kind: catch_declaration
+      stopBy: neighbor
+      has:
+        field: name
+        pattern: $EX
+        stopBy: neighbor

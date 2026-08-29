@@ -1,0 +1,50 @@
+id: expect-used
+language: rust
+severity: off
+message: "`.expect(..)` still panics; return the error instead."
+note: |
+  Opt-in companion to `unwrap-used`, for codebases that want no panicking
+  accessor at all in production paths. `.expect()` is strictly better than
+  `.unwrap()` - it names the invariant - but it is still an abort. Enable this
+  only in crates that have committed to returning every error.
+
+  Off by default: measured against poly's dry-run corpus, `.expect()` is the
+  documented escape hatch teams reach for after `unwrap-used` is turned on, so
+  reporting both at once mostly reports the fix.
+
+  Same test-context carve-out as `unwrap-used`, and the same limitation: the
+  rule cannot see the file path, so `tests/`, `benches/` and `tests.rs` must be
+  excluded by discovery config.
+
+  Idea origin: the same "no panicking accessors in library code" convention as
+  `unwrap-used`; matching and carve-outs authored for poly.
+url: https://doc.rust-lang.org/std/result/enum.Result.html#method.expect
+utils:
+  test-attribute:
+    kind: attribute_item
+    any:
+      - regex: '^#\s*\[\s*cfg\s*\(\s*(all\s*\(\s*)?test\b'
+      - regex: '^#\s*\[\s*([\w]+\s*::\s*)*((\w+_)?(test|bench)\w*|rstest|proptest|quickcheck)\b'
+  cfg-test-attribute:
+    kind: attribute_item
+    regex: '^#\s*\[\s*cfg\s*\(\s*(all\s*\(\s*)?test\b'
+  attribute-or-comment:
+    any:
+      - kind: attribute_item
+      - kind: line_comment
+      - kind: block_comment
+  in-test-context:
+    inside:
+      stopBy: end
+      any:
+        - kind: mod_item
+          follows:
+            matches: cfg-test-attribute
+            stopBy: { not: { matches: attribute-or-comment } }
+        - kind: function_item
+          follows:
+            matches: test-attribute
+            stopBy: { not: { matches: attribute-or-comment } }
+rule:
+  pattern: $RECEIVER.expect($MSG)
+  not: { matches: in-test-context }

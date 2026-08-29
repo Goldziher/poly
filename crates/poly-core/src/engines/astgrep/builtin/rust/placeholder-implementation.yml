@@ -1,0 +1,59 @@
+id: placeholder-implementation
+language: rust
+severity: off
+message: "Placeholder implementation: `todo!()` / `unimplemented!()` compiles but aborts at runtime."
+note: |
+  `todo!()` and `unimplemented!()` type-check as `!`, so a stub passes the
+  compiler, passes review, and ships. The failure only appears when the branch
+  is finally taken, in production, as a panic with no context.
+
+  Keep placeholders out of merged code: implement the branch, return a real
+  error, or gate the whole item behind `#[cfg(...)]` so it cannot be reached.
+  `unreachable!()` is not flagged - it asserts an invariant rather than
+  deferring work. Test code is exempt, because `unimplemented!()` in a mock's
+  never-called trait method is exactly what the macro is for.
+
+  Off by default, on measured evidence. On poly's dry-run corpus the rule
+  reports 324 findings, of which 320 sit in machine-generated FFI glue
+  (`frb_generated.rs`, where `_ => unimplemented!("")` is the generator's
+  spelling of an unreachable arm). Of the 4 in hand-written code, 3 are genuine
+  `todo!(..)` stubs and 1 is a mock in a `test_support.rs` the rule cannot
+  recognise as test scaffolding - a 25% false-positive rate on a sample far too
+  thin to justify default-on. An earlier version also matched
+  `panic!("..unimplemented..")` by message text; that was dropped after
+  measurement showed 6 of 7 such hits were deliberate refuse-to-emit guards,
+  not stubs.
+
+  Idea origin: the general "unfinished stub reached production" defect class;
+  the Rust-specific matching and the `unreachable!` carve-out are poly's own.
+url: https://doc.rust-lang.org/std/macro.todo.html
+utils:
+  test-attribute:
+    kind: attribute_item
+    any:
+      - regex: '^#\s*\[\s*cfg\s*\(\s*(all\s*\(\s*)?test\b'
+      - regex: '^#\s*\[\s*([\w]+\s*::\s*)*((\w+_)?(test|bench)\w*|rstest|proptest|quickcheck)\b'
+  cfg-test-attribute:
+    kind: attribute_item
+    regex: '^#\s*\[\s*cfg\s*\(\s*(all\s*\(\s*)?test\b'
+  attribute-or-comment:
+    any:
+      - kind: attribute_item
+      - kind: line_comment
+      - kind: block_comment
+  in-test-context:
+    inside:
+      stopBy: end
+      any:
+        - kind: mod_item
+          follows:
+            matches: cfg-test-attribute
+            stopBy: { not: { matches: attribute-or-comment } }
+        - kind: function_item
+          follows:
+            matches: test-attribute
+            stopBy: { not: { matches: attribute-or-comment } }
+rule:
+  kind: macro_invocation
+  regex: '^([\w]+\s*::\s*)*(todo|unimplemented)\s*!'
+  not: { matches: in-test-context }

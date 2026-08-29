@@ -1,0 +1,39 @@
+id: sync-over-async
+language: csharp
+severity: off
+message: "Blocking on a task (`.Result` / `.Wait()` / `.GetAwaiter().GetResult()`) ties up the calling thread and deadlocks under a synchronization context; `await` it instead."
+note: |
+  `task.Result`, `task.Wait()` and `task.GetAwaiter().GetResult()` all park the
+  calling thread until the task completes. On the thread pool that burns a
+  worker for the duration; on a thread with a synchronization context that only
+  resumes continuations on itself - a UI thread, a classic ASP.NET request
+  thread - it deadlocks outright, because the continuation the task needs to run
+  can never be scheduled onto the thread that is blocked waiting for it.
+
+  Make the caller `async` and `await` the task. `Task.Run(() =>
+  ...).GetAwaiter().GetResult()` escapes the deadlock by moving the work to a
+  context-free thread, but it still blocks the caller, so this rule reports it
+  too - treat it as a marker that a synchronous entry point needs an async one,
+  not as a solution.
+
+  `.Result` and `.Wait()` are also ordinary member names on types that have
+  nothing to do with tasks: a domain `Result` property, `SemaphoreSlim.Wait()`,
+  `ManualResetEventSlim.Wait()`. poly has no type information, so it cannot tell
+  those apart from a task, and this rule ships **opt-in** because that risk is
+  unmeasured. Enable it with `severity = "warning"` once you have looked at what
+  it reports in your own code.
+
+  Measured on poly's 2711-file C# corpus (2026-08-29): 2 findings, both the
+  `Task.Run(...).GetAwaiter().GetResult()` shape, both true positives, both in a
+  single repository - so the sample was far too small to establish a
+  false-positive rate for the `.Result` and `.Wait()` forms.
+
+  Idea origin: the long-standing .NET guidance against blocking on asynchronous
+  code, and the deadlock mechanism described in the task-based asynchronous
+  programming documentation. The matcher and message are poly's own.
+url: https://learn.microsoft.com/en-us/dotnet/csharp/asynchronous-programming/task-asynchronous-programming-model
+rule:
+  any:
+    - pattern: $TASK.GetAwaiter().GetResult()
+    - pattern: $TASK.Wait()
+    - pattern: $TASK.Result

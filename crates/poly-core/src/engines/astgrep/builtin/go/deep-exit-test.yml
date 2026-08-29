@@ -1,0 +1,22 @@
+id: deep-exit
+valid:
+  - "package main\n\nimport \"os\"\n\nfunc main() {\n\tif err := run(); err != nil {\n\t\tos.Exit(1)\n\t}\n}\n"
+  - "package main\n\nimport \"log\"\n\nfunc load() {\n\tlog.Fatalf(\"cannot read %s\", path)\n}\n"
+  - "package commands\n\nimport \"log\"\n\nfunc init() {\n\tlog.Fatalf(\"bad config: %v\", err)\n}\n"
+  - "package run\n\nfunc run() error {\n\treturn fmt.Errorf(\"nope\")\n}\n"
+  - "package run\n\nimport \"log\"\n\nfunc run() {\n\tlog.Printf(\"done\")\n}\n"
+  - "package run\n\nfunc must(v int, err error) int {\n\tif err != nil {\n\t\tpanic(err)\n\t}\n\treturn v\n}\n"
+  - "package harness\n\nimport (\n\t\"os\"\n\t\"testing\"\n)\n\nfunc TestMain(m *testing.M) {\n\tos.Exit(m.Run())\n}\n"
+  - "package harness\n\nimport (\n\t\"log\"\n\t\"testing\"\n)\n\nfunc setupFixture(t *testing.T) {\n\tif err := seed(); err != nil {\n\t\tlog.Fatal(err)\n\t}\n}\n"
+  - "package config\n\nimport \"log\"\n\nfunc must(err error) {\n\tif err != nil {\n\t\tlog.Fatal(err)\n\t}\n}\n"
+  - "package config\n\nimport \"log\"\n\nfunc MustLoad(p string) Config {\n\tc, err := Load(p)\n\tif err != nil {\n\t\tlog.Fatal(err)\n\t}\n\treturn c\n}\n"
+  - "package bio\n\nimport \"log\"\n\nfunc (w *Writer) MustSeek(offset int64) int64 {\n\tif err := w.Flush(); err != nil {\n\t\tlog.Fatalf(\"writing output: %v\", err)\n\t}\n\treturn 0\n}\n"
+  - "package singlechecker\n\nimport \"os\"\n\nfunc Main(a *Analyzer) {\n\tif len(flag.Args()) == 0 {\n\t\tos.Exit(1)\n\t}\n}\n"
+invalid:
+  - "package run\n\nimport \"os\"\n\nfunc run() {\n\tos.Exit(1)\n}\n"
+  - "package gen\n\nimport \"log\"\n\nfunc load() {\n\tlog.Fatalf(\"cannot read %s\", path)\n}\n"
+  - "package server\n\nimport \"log\"\n\nfunc (s *Server) Start() {\n\tlog.Panicln(\"unreachable\")\n}\n"
+  - "package lifecycle\n\nimport \"os\"\n\nvar shutdown = func() {\n\tos.Exit(3)\n}\n"
+  - "package app\n\nimport \"log\"\n\nfunc mainLoop() {\n\tlog.Fatal(err)\n}\n"
+  - "package commands\n\nimport (\n\t\"os\"\n\n\t\"github.com/spf13/cobra\"\n)\n\nfunc runAdd(cmd *cobra.Command, args []string) {\n\tif err := add(args[0]); err != nil {\n\t\tlogger.Error(\"failed\", \"error\", err)\n\t\tos.Exit(1)\n\t}\n}\n"
+  - "package viper\n\nimport \"os\"\n\nfunc (v *Viper) WatchConfig() {\n\twatcher, err := newWatcher()\n\tif err != nil {\n\t\tv.logger.Error(\"failed\")\n\t\tos.Exit(1)\n\t}\n\t_ = watcher\n}\n"

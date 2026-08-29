@@ -27,7 +27,7 @@ pub enum Kind {
 /// This is a thin projection of [`poly_config::PolyConfig`] onto the tables
 /// `poly-core` needs; the `[commit]` / `[hooks]` sections are intentionally
 /// dropped here and consumed elsewhere.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct Config {
     /// Global opinionated defaults.
     pub defaults: GlobalDefaults,
@@ -55,6 +55,30 @@ pub struct Config {
     /// Paths are relative to the config file root; resolved absolute paths are
     /// stored here after projection from [`poly_config::PolyConfig`].
     pub rules_dirs: Vec<String>,
+    /// `[rules] builtin` — whether poly's embedded built-in ast-grep rule pack
+    /// is loaded, layered beneath `rules_dirs` (a user rule wins on id
+    /// conflict). Defaults to `true`.
+    pub rules_builtin_pack: bool,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            defaults: Default::default(),
+            exclude: Default::default(),
+            force_exclude: Default::default(),
+            no_prune: Default::default(),
+            lint: Default::default(),
+            fmt: Default::default(),
+            tools: Default::default(),
+            per_file_ignores: Default::default(),
+            typos_native: Default::default(),
+            rules_dirs: Default::default(),
+            // Matches `poly_config::RulesConfig`'s own default: the pack is
+            // on unless a user explicitly turns it off.
+            rules_builtin_pack: true,
+        }
+    }
 }
 
 /// The slice of config handed to one engine for one file.
@@ -312,6 +336,15 @@ impl Config {
     /// not just changing the dirs list — invalidates the content-hash cache via
     /// `serialized_args`. `version()` is static, so this hash is what makes rule
     /// edits take effect.
+    ///
+    /// Also folds in `[rules] builtin` (`builtin_pack_enabled`, always present
+    /// so toggling it changes the cache key even though the pack's own content
+    /// is a compile-time constant tracked by `AstGrepEngine::version()`
+    /// instead) and, cross-cutting like `[lint.typos]`/`[lint.quality]`, the
+    /// language-agnostic `[lint.astgrep]` table's `select` / `extend_select` /
+    /// `ignore` / `rules` keys — poly's uniform rule-selection vocabulary
+    /// (ADR 0016), passed through verbatim for `RuleSelection::from_options` to
+    /// parse inside the engine.
     fn build_astgrep_options(&self) -> toml::Table {
         let mut options = toml::Table::new();
         if !self.rules_dirs.is_empty() {
@@ -319,6 +352,17 @@ impl Config {
             let hash = crate::engines::astgrep::rules::rules_hash(&self.rules_dirs);
             if !hash.is_empty() {
                 options.insert("rules_hash".to_string(), toml::Value::String(hash));
+            }
+        }
+        options.insert(
+            "builtin_pack_enabled".to_string(),
+            toml::Value::Boolean(self.rules_builtin_pack),
+        );
+        if let Some(astgrep_table) = self.lint.get("astgrep").and_then(|v| v.as_table()) {
+            for key in ["select", "extend_select", "ignore", "rules"] {
+                if let Some(value) = astgrep_table.get(key) {
+                    options.insert(key.to_string(), value.clone());
+                }
             }
         }
         options
@@ -369,6 +413,7 @@ impl From<poly_config::PolyConfig> for Config {
             tools: pc.tools,
             per_file_ignores: pc.per_file_ignores,
             typos_native: pc.typos_native,
+            rules_builtin_pack: pc.rules.builtin,
             rules_dirs: pc.rules.dirs,
         }
     }

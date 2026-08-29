@@ -1,0 +1,20 @@
+id: eval-usage
+valid:
+  - "obj.instance_eval { @count }\n"
+  - "Foo.class_eval do\n  def greet\n    \"hi\"\n  end\nend\n"
+  - "Foo.module_eval do\n  include Comparable\nend\n"
+  - "obj.instance_eval(&block)\n"
+  - "Foo.class_eval(&mixin)\n"
+  - "class Foo\n  define_method(:greet) { \"hi\" }\nend\n"
+  - "obj.public_send(name, *args)\n"
+  - "obj.instance_variable_get(:@count)\n"
+  - "value = evaluator.call(expr)\n"
+invalid:
+  - "eval(\"1 + 1\")\n"
+  - "eval source\n"
+  - "Kernel.eval(payload)\n"
+  - "obj.instance_eval(\"@count\")\n"
+  - "Foo.class_eval(\"def greet; 'hi'; end\")\n"
+  - "Foo.module_eval <<~RUBY\n  def greet\n    \"hi\"\n  end\nRUBY\n"
+  - "binding.eval(expr)\n"
+  - "class Builder\n  def build(name)\n    self.class.class_eval(\"attr_reader :#{name}\")\n  end\nend\n"

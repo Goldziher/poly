@@ -1,0 +1,10 @@
+id: expect-used
+valid:
+  - "fn f() -> Result<u8, E> { Ok(g()?) }"
+  - "fn f() { let x = g().unwrap_or_default(); }"
+  - "#[cfg(test)]\nmod tests {\n    #[test]\n    fn t() { g().expect(\"fixture is valid\"); }\n}"
+  - "#[test]\nfn t() { g().expect(\"ok\"); }"
+  - "#[wasm_bindgen_test]\nfn t() { build().expect(\"ok\"); }"
+invalid:
+  - "fn f() { let x = g().expect(\"cannot fail\"); }"
+  - "pub fn f() { CONFIG.get().expect(\"initialised in main\"); }"

@@ -1,0 +1,18 @@
+id: preserve-stack-trace
+valid:
+  - "class A {\n  void m() {\n    try { f(); } catch (Exception e) { throw new IllegalStateException(\"f failed\", e); }\n  }\n}"
+  - "class A {\n  void m() {\n    try { f(); } catch (Exception e) { throw new RuntimeException(e); }\n  }\n}"
+  - "class A {\n  void m() {\n    try { f(); } catch (Exception e) { throw e; }\n  }\n}"
+  - "class A {\n  void m() {\n    try { f(); } catch (IOException | SQLException e) { throw new UncheckedIOException(\"f\", e); }\n  }\n}"
+  - "class A {\n  void m() {\n    try { f(); } catch (Exception e) { throw new RuntimeException(String.format(\"%s\", e)); }\n  }\n}"
+  - "class A {\n  void m() {\n    try { f(); } catch (Exception e) { throw new RuntimeException(e.getMessage(), e.getCause()); }\n  }\n}"
+  - "class A {\n  void m() {\n    throw new IllegalArgumentException(\"not in a catch\");\n  }\n}"
+  - "class A {\n  void m() {\n    try { f(); } catch (Exception e) { log(e); }\n  }\n}"
+  - "class A {\n  void m() {\n    try { f(); } catch (Exception e) { throw wrap(\"f\", e); }\n  }\n}"
+invalid:
+  - "class A {\n  void m() {\n    try { f(); } catch (Exception e) { throw new RuntimeException(\"boom\"); }\n  }\n}"
+  - "class A {\n  void m() {\n    try { f(); } catch (NumberFormatException e) { throw new IllegalArgumentException(\"bad number: \" + raw); }\n  }\n}"
+  - "class A {\n  void m() {\n    try { f(); } catch (Exception e) { log(e); throw new IllegalStateException(\"gave up\"); }\n  }\n}"
+  - "class A {\n  void m() {\n    try { f(); } catch (Exception e) { if (fatal) { throw new RuntimeException(\"fatal\"); } }\n  }\n}"
+  - "class A {\n  void m() {\n    try { f(); } catch (IOException | SQLException e) { throw new RuntimeException(\"io\"); }\n  }\n}"
+  - "class A {\n  void m() {\n    try { f(); } catch (Exception outer) {\n      try { g(); } catch (Exception inner) { throw new RuntimeException(\"inner\"); }\n    }\n  }\n}"

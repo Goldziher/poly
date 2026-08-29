@@ -1,0 +1,44 @@
+id: async-void
+language: csharp
+severity: warning
+message: "`async void` swallows the caller's ability to observe failure; return `async Task` unless this is an event handler."
+note: |
+  An `async void` method has no awaitable to hand back, so the caller cannot
+  await it, cannot know when it finished, and - the part that hurts - cannot
+  catch anything it throws. An exception escaping an `async void` method is
+  raised on whatever synchronization context captured the continuation, which
+  in most hosts means an unhandled exception and a killed process.
+
+  Return `Task` instead: `async Task DoWorkAsync()`. Callers then await it, and
+  a `try`/`catch` around the await sees the failure. `Task` costs nothing extra
+  at the call site once the caller is itself async.
+
+  The one legitimate `async void` is an event handler, because the delegate
+  signature is fixed and returns `void`. This rule exempts any method whose
+  parameter list mentions an `EventArgs` type - the `(object sender,
+  SomethingEventArgs e)` shape - which covers the framework handler
+  conventions. It only inspects method declarations; an `async` lambda assigned
+  to a `void`-returning delegate has the same defect but is not reported,
+  because the delegate's return type is not visible in the syntax.
+
+  Idea origin: the .NET async guidance that `async void` should be reserved for
+  event handlers because its exceptions cannot be caught by the caller. The
+  matcher, the event-handler carve-out and the message are poly's own.
+url: https://learn.microsoft.com/en-us/dotnet/csharp/asynchronous-programming/async-return-types#void-return-type
+rule:
+  kind: method_declaration
+  all:
+    - has:
+        kind: modifier
+        regex: "^async$"
+        stopBy: neighbor
+    - has:
+        field: returns
+        kind: predefined_type
+        regex: "^void$"
+        stopBy: neighbor
+  not:
+    has:
+      kind: parameter_list
+      regex: "EventArgs"
+      stopBy: neighbor

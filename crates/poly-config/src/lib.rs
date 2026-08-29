@@ -98,12 +98,19 @@ pub struct RulesConfig {
     /// Directories (relative to the config file) containing custom ast-grep
     /// YAML rule files. Defaults to `[".poly/rules"]`.
     pub dirs: Vec<String>,
+    /// Whether poly's built-in ast-grep rule pack (curated, per-language lint
+    /// rules embedded in the binary — no `dirs` setup required) is loaded.
+    /// Defaults to `true`; set to `false` to lint with only the rules under
+    /// `dirs`. The pack is layered *beneath* `dirs`: a user rule with the same
+    /// `id` as a pack rule replaces it.
+    pub builtin: bool,
 }
 
 impl Default for RulesConfig {
     fn default() -> Self {
         RulesConfig {
             dirs: vec![".poly/rules".to_string()],
+            builtin: true,
         }
     }
 }

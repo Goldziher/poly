@@ -1,0 +1,36 @@
+id: not-null-assertion
+language: kotlin
+severity: warning
+message: "`!!` turns a null into an NPE far from where the null came from; use `?.`, `?:`, or `requireNotNull` with a message."
+note: |
+  The not-null assertion operator converts a nullable value to its non-null
+  type by throwing `NullPointerException` when it is actually null. The
+  resulting stack trace points at the `!!`, which is usually nowhere near the
+  code that produced the null, and the exception carries no explanation. It
+  discards exactly the information Kotlin's type system was tracking for you.
+
+  Handle the null instead. `?.` propagates it, `?:` supplies a fallback or an
+  early `return`, and a smart cast after an `if (x != null)` check removes the
+  nullability for the rest of the block. When the value really cannot be null
+  and you want a fast failure, `requireNotNull(x) { "config was not loaded" }`
+  or `checkNotNull(x)` throws with a message that names the invariant.
+
+  The check matches the postfix `!!` node in the grammar, so a doubled boolean
+  negation (`!!flag`, which parses as two nested prefix `!` operators) is never
+  reported. One grammar quirk is guarded explicitly: `return !!flag` is
+  mis-parsed as a postfix `!!` applied to the `return` keyword, so postfix
+  assertions whose operand is a jump expression are excluded. It cannot tell a genuinely unavoidable assertion from a lazy one -
+  there is no nullability analysis behind it - so it is a banned-style rule:
+  every use is flagged and the unavoidable ones are suppressed at the site.
+
+  Idea origin: the Kotlin null-safety documentation, which introduces `!!` as
+  the operator "for NPE-lovers" and lists `?.`, `?:` and the `requireNotNull` /
+  `checkNotNull` family as what to reach for instead. The matcher and message
+  are poly's own.
+url: https://kotlinlang.org/docs/null-safety.html#not-null-assertion-operator
+rule:
+  pattern: $EXPR!!
+  not:
+    has:
+      kind: jump_expression
+      stopBy: neighbor

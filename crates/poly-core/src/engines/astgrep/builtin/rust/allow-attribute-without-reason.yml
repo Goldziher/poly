@@ -1,0 +1,59 @@
+id: allow-attribute-without-reason
+language: rust
+severity: off
+message: "`#[allow(..)]` with no `reason = \"..\"` and no `//` comment saying why the lint is wrong here."
+note: |
+  Silencing a lint is a claim that the lint is wrong for this code. The claim
+  needs an argument attached to it, or the next reader cannot tell a considered
+  exemption from a drive-by mute. Attach `reason = "..."` (stable since Rust
+  1.81) or put a plain `//` comment directly above the attribute. A `///` doc
+  comment does not count: it documents the item, not the exemption. Prefer
+  `#[expect(..)]`, which fails once the lint stops firing.
+
+  Off by default: measured on poly's dry-run corpus this is the single
+  largest finding count of all 26 built-in rules - 13,622 raw, 13,254 after
+  the test-path carve-out other rules use - more than triple `unwrap-used`'s
+  and dwarfing every other rule in the pack. A hand read of the largest
+  contributing files found the volume is not drive-by lint silencing: it is
+  almost entirely `#[allow(non_snake_case)]` on FFI bindings named after a C
+  API (`FPDFPage_InsertClipPath`), `#[allow(unsafe_code)]` on FFI wrapper
+  functions, and `#[allow(clippy::redundant_closure, ..)]` on macro-generated
+  conversion glue (napi-rs, PyO3, wasm-bindgen) - every one syntactically
+  correct (no `reason=`, no comment) and every one self-explanatory from
+  context to any Rust reader, which is exactly the case this rule's own
+  design (a `///` doc comment does not count, only `reason=`/`//` do) cannot
+  distinguish from a genuine drive-by mute. This is poly's own house
+  convention (see the idea origin below), not a broadly-held Rust norm, so
+  applying it by default to a repository that has not opted into the
+  convention floods the first run with attributes no working Rust developer
+  would think twice about. Turn it on with `extend_select =
+  ["allow-attribute-without-reason"]` for a codebase that has adopted the
+  convention.
+
+  Idea origin: poly's own CLAUDE.md rule ("do not silence with `#[allow(...)]`
+  unless the warning is genuinely incorrect - and write a one-line `//` comment
+  explaining why"); authored from that convention.
+url: https://doc.rust-lang.org/reference/attributes/diagnostics.html#lint-check-attributes
+rule:
+  kind: attribute_item
+  regex: '^#\s*\[\s*allow\s*\('
+  not:
+    any:
+      - regex: '\breason\s*='
+      - follows:
+          kind: line_comment
+          regex: '^//(?:[^/!]|\s*$)'
+          stopBy:
+            not:
+              any:
+                - kind: line_comment
+                - kind: block_comment
+                - kind: attribute_item
+      - follows:
+          kind: block_comment
+          stopBy:
+            not:
+              any:
+                - kind: line_comment
+                - kind: block_comment
+                - kind: attribute_item

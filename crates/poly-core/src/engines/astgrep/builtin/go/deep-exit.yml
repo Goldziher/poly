@@ -1,0 +1,100 @@
+id: deep-exit
+language: go
+severity: off
+message: "Process-killing call in a library package; return an error to the caller and let the program's entry point decide to exit."
+note: |
+  `os.Exit` and `log.Fatal*` terminate the process immediately: no deferred
+  call runs, buffered writers are not flushed, and temporary files are left
+  behind. When an importable package does that, every program that imports it
+  inherits the behaviour and cannot recover, log, or test around it - the test
+  binary included, where the run dies mid-suite with no report.
+
+  Return an `error` instead and let the entry point translate it into an exit
+  status. A cobra `Run:` handler that calls `os.Exit` is the common shape;
+  switching it to `RunE` and returning the error fixes both the cleanup and
+  the testability.
+
+  Exempt, all four carve-outs measured against real Go code:
+
+  - Any file in `package main`. A `main` package is a program, not a library,
+    and `log.Fatal` in a one-shot generator or CLI helper is idiomatic there.
+    Including `package main` put the false-positive rate near 70%.
+  - `func main`, `func init`, and any function or method named `Main` - the
+    entry point a `main` package delegates to (`singlechecker.Main`).
+  - Anything inside a function taking a `*testing.T`/`*testing.B`/
+    `*testing.F`/`*testing.M` or `testing.TB` parameter, which covers
+    `TestMain`'s required `os.Exit(m.Run())`.
+  - Functions and methods whose name begins with `must`/`Must`, the Go
+    convention (`regexp.MustCompile`, `template.Must`) for a helper documented
+    to abort on failure.
+
+  `log.Panic*` is included because it is `log.Print` followed by `panic`: the
+  logging half is a side effect the caller cannot suppress. Bare `panic(...)`
+  is deliberately *not* matched - it is idiomatic in Go for genuinely
+  unreachable states and for `must`-style constructors, and folding it in
+  turned the check into noise.
+
+  The rule matches written call syntax, so it sees `os.Exit` and the standard
+  `log` package only; a wrapper such as `logrus.Fatal` or a project helper
+  named `fatalf` is not detected. It also cannot see the file path, so
+  `_test.go` helpers that take no `testing` parameter are still reported.
+
+  Off by default. Hand-read 50 findings from a 25,787-file third-party Go
+  corpus: 6 false positives (12%) - flag parsing under `ExitOnError`, blocking
+  `Serve` loops, and library-provided command entry points. On poly's own
+  727-file corpus it produced 90 findings, all 90 in one CLI repo. Both gates
+  say opt-in. Enable it with `severity = "warning"` in a project that wants
+  its library and command layers to return errors rather than exit.
+
+  Idea origin: the Go standard library documentation's warning that `os.Exit`
+  skips deferred functions and that `log.Fatal` is `Print` plus `os.Exit(1)`;
+  the matcher, the carve-outs and the message are poly's own.
+url: https://pkg.go.dev/os#Exit
+utils:
+  process-killing-call:
+    kind: call_expression
+    has:
+      nthChild: 1
+      kind: selector_expression
+      regex: '^(os\s*\.\s*Exit|log\s*\.\s*(Fatal|Fatalf|Fatalln|Panic|Panicf|Panicln))$'
+  in-entrypoint:
+    inside:
+      stopBy: end
+      any:
+        - kind: function_declaration
+        - kind: method_declaration
+      has:
+        field: name
+        any:
+          - kind: identifier
+          - kind: field_identifier
+        regex: "^(main|init|Main)$|^[Mm]ust"
+  in-test-function:
+    inside:
+      stopBy: end
+      any:
+        - kind: function_declaration
+        - kind: method_declaration
+        - kind: func_literal
+      has:
+        kind: parameter_list
+        has:
+          stopBy: end
+          kind: qualified_type
+          regex: '^testing\s*\.\s*(T|B|F|M|TB)$'
+  in-main-package:
+    inside:
+      stopBy: end
+      kind: source_file
+      has:
+        kind: package_clause
+        has:
+          kind: package_identifier
+          regex: "^main$"
+rule:
+  matches: process-killing-call
+  not:
+    any:
+      - matches: in-entrypoint
+      - matches: in-test-function
+      - matches: in-main-package

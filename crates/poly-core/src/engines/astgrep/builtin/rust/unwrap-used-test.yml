@@ -1,0 +1,19 @@
+id: unwrap-used
+valid:
+  - "fn f() -> Result<u8, E> { Ok(g()?) }"
+  - "fn f() { let x = g().expect(\"g is infallible for a const input\"); }"
+  - "fn f() { let x = g().unwrap_or_default(); }"
+  - "#[cfg(test)]\nmod tests {\n    #[test]\n    fn t() { let x = g().unwrap(); }\n}"
+  - "#[cfg(test)]\nmod tests {\n    fn helper() -> u8 { g().unwrap() }\n}"
+  - "#[test]\nfn t() { g().unwrap(); }"
+  - "#[tokio::test]\nasync fn t() { g().await.unwrap(); }"
+  - "#[test]\n#[should_panic]\nfn t() { g().unwrap(); }"
+  - "#[cfg(test)]\nfn helper() { g().unwrap(); }"
+  - "#[rstest]\nfn t(case: u8) { g().unwrap(); }"
+  - "#[cfg(test)]\nmod tests {\n    mod nested {\n        #[test]\n        fn t() { g().unwrap(); }\n    }\n}"
+  - "#[wasm_bindgen_test]\nfn t() { build().unwrap(); }"
+invalid:
+  - "fn f() { let x = g().unwrap(); }"
+  - "fn f() { let x = map.get(\"k\").unwrap(); }"
+  - "pub async fn f() { client.send().await.unwrap(); }"
+  - "#[cfg(feature = \"x\")]\nfn f() { g().unwrap(); }"

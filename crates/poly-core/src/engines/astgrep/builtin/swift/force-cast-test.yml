@@ -1,0 +1,13 @@
+id: force-cast
+valid:
+  - "func f(_ item: Any) { if let s = item as? String { use(s) } }"
+  - "func f(_ item: Any) { guard let s = item as? String else { return } }"
+  - "func f(_ n: Int) { let d = n as Double }"
+  - "func f(_ item: Any) { let s = item as? String ?? \"\" }"
+  - "func f(_ item: Any) { switch item { case let s as String: use(s); default: break } }"
+invalid:
+  - "func f(_ item: Any) { let s = item as! String }"
+  - "func f(_ item: Any) { use(item as! String) }"
+  - "class C {\n    func f(_ a: Any) {\n        self.model = a as! Model\n    }\n}"
+  - "func f(_ items: [Any]) { let strings = items as! [String] }"
+  - "class Model {\n    static func fromPointer(_ pointer: UnsafeMutableRawPointer?) -> Self? {\n        if pointer == nil {\n            return nil\n        } else {\n            return (Model(ptr: pointer!) as! Self)\n        }\n    }\n}"

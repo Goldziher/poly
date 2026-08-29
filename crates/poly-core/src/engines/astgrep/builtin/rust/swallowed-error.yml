@@ -1,0 +1,59 @@
+id: swallowed-error
+language: rust
+severity: warning
+message: "Error discarded with no handling and no explanation."
+note: |
+  A catch-all `Err(_)`/`Err(e)` arm with an empty body consumes a failure and
+  leaves nothing behind: no log line, no fallback, no comment. The program
+  continues as if the operation had succeeded, and the eventual bug report
+  points somewhere else.
+
+  Deliberate ignores are not reported. An arm that names a specific error
+  variant (`Err(RecvTimeoutError::Timeout) => {}`), an arm with a guard
+  (`Err(e) if e.kind() == NotFound => {}`), and an arm with a comment above it
+  or beside it all read as considered decisions and are left alone. Only the
+  unexplained catch-all is a finding.
+
+  A trailing `fallible().ok();` statement is deliberately NOT reported.
+  Measured on poly's dry-run corpus, 26 of 30 sampled `.ok();` statements were
+  intentional best-effort work (`dotenvy::dotenv().ok()`, teardown `DROP
+  SCHEMA`, `remove_file`) - in Rust that spelling *is* the "I know, I do not
+  care" idiom, the same as `let _ = ..`, so matching it would be 85% noise.
+
+  Idea origin: the "empty catch block" family that exists for most languages
+  (PMD, RuboCop and others catalogue it); Rust has no such lint, and this
+  rule's matching plus the specific-variant / guard / comment carve-outs are
+  poly's own.
+url: https://doc.rust-lang.org/book/ch09-02-recoverable-errors-with-result.html
+utils:
+  comment:
+    any:
+      - kind: line_comment
+      - kind: block_comment
+  empty-body:
+    any:
+      - regex: '^\{\s*\}$'
+      - regex: '^\(\s*\)$'
+  catch-all-err-pattern:
+    kind: match_pattern
+    regex: '^Err\s*\(\s*(_|[a-z_][A-Za-z0-9_]*)\s*\)$'
+  commented:
+    any:
+      - follows: { matches: comment }
+      - precedes: { matches: comment }
+rule:
+  any:
+    - kind: match_arm
+      all:
+        - has: { field: pattern, matches: catch-all-err-pattern }
+        - has: { field: value, matches: empty-body }
+        - not: { matches: commented }
+    - kind: if_expression
+      all:
+        - has:
+            field: condition
+            kind: let_condition
+            has: { field: pattern, regex: '^Err\s*\(\s*(_|[a-z_][A-Za-z0-9_]*)\s*\)$' }
+        - has: { field: consequence, matches: empty-body }
+        - not: { has: { field: alternative, regex: "." } }
+        - not: { matches: commented }

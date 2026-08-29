@@ -1,0 +1,22 @@
+id: force-type-assert
+valid:
+  - "package main\n\nfunc f(x any) {\n\tv, ok := x.(string)\n\tif !ok {\n\t\treturn\n\t}\n\tuse(v)\n}\n"
+  - "package main\n\nfunc f(x any) {\n\tif v, ok := x.(string); ok {\n\t\tuse(v)\n\t}\n}\n"
+  - "package main\n\nfunc f(x any) {\n\tswitch t := x.(type) {\n\tcase string:\n\t\tuse(t)\n\t}\n}\n"
+  - "package main\n\nfunc f(x any) {\n\tswitch x.(type) {\n\tcase string:\n\t}\n}\n"
+  - "package main\n\nfunc f(x any) {\n\tvar v string\n\tvar ok bool\n\tv, ok = x.(string)\n\t_ = v\n\t_ = ok\n}\n"
+  - "package main\n\nfunc f(x any) {\n\t_, ok := x.(string)\n\tif !ok {\n\t\treturn\n\t}\n}\n"
+  - "package main\n\nimport \"testing\"\n\nfunc TestDecode(t *testing.T) {\n\thooks := doc[\"hooks\"].(map[string]any)\n\t_ = hooks\n}\n"
+  - "package main\n\nimport \"testing\"\n\nfunc TestDecode(t *testing.T) {\n\tt.Run(\"case\", func(t *testing.T) {\n\t\trepos := config[\"repos\"].([]interface{})\n\t\t_ = repos\n\t})\n}\n"
+  - "package main\n\nimport \"testing\"\n\nfunc BenchmarkDecode(b *testing.B) {\n\t_ = doc[\"k\"].(string)\n}\n"
+  - "package main\n\nimport \"testing\"\n\nfunc assertShape(tb testing.TB, doc map[string]any) {\n\t_ = doc[\"k\"].(map[string]any)\n}\n"
+  - "package main\n\nimport \"testing\"\n\nfunc TestMain(m *testing.M) {\n\t_ = cfg[\"k\"].(string)\n}\n"
+invalid:
+  - "package main\n\nfunc f(x any) {\n\tv := x.(string)\n\tuse(v)\n}\n"
+  - "package main\n\nfunc f(x any) {\n\tuse(x.(string))\n}\n"
+  - "package main\n\nfunc f(x any) string {\n\treturn x.(string)\n}\n"
+  - "package main\n\nfunc f(x any) {\n\tvar v = x.(string)\n\t_ = v\n}\n"
+  - "package main\n\nfunc f(x any) {\n\ta, b = x.(T), 1\n\t_, _ = a, b\n}\n"
+  - "package main\n\nfunc f(x any) {\n\tc = x.(T)\n}\n"
+  - "package main\n\nfunc f(x any) {\n\tn := x.(*Node).Len()\n\t_ = n\n}\n"
+  - "package main\n\nfunc lookup(m map[string]any, k string) (Visitor, bool) {\n\tv, ok := m[k]\n\tif !ok {\n\t\treturn nil, false\n\t}\n\treturn v.(Visitor), true\n}\n"

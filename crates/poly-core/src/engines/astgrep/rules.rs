@@ -99,10 +99,15 @@ pub fn rules_hash(dirs: &[String]) -> String {
     }
 }
 
-/// Load every rule from `dirs` into a flat list (rule id order is the on-disk
-/// sort order). Test files (`*-test.yml`) are skipped. Used by the rule-test
-/// runner, which needs id → rule lookup rather than the language grouping.
-pub fn load_flat(dirs: &[String]) -> anyhow::Result<Vec<RuleConfig<TslpLanguage>>> {
+/// Load every rule from `dirs` into a flat list, paired with the file it came
+/// from (rule id order is the on-disk sort order). Test files (`*-test.yml`)
+/// are skipped.
+///
+/// The path lets a caller disambiguate rules that deliberately share an `id`
+/// across different rule files — poly's built-in pack ships `todo-marker`
+/// once per language, each in its own directory — which a bare `id` lookup
+/// cannot. See [`super::test::run_tests`], the one caller that needs this.
+pub fn load_flat_with_paths(dirs: &[String]) -> anyhow::Result<Vec<(PathBuf, RuleConfig<TslpLanguage>)>> {
     let globals = GlobalRules::default();
     let mut out = Vec::new();
     for dir in dirs {
@@ -110,10 +115,18 @@ pub fn load_flat(dirs: &[String]) -> anyhow::Result<Vec<RuleConfig<TslpLanguage>
             let yaml = fs::read_to_string(&path).with_context(|| format!("reading rule file {}", path.display()))?;
             let rules: Vec<RuleConfig<TslpLanguage>> = from_yaml_string(&yaml, &globals)
                 .with_context(|| format!("parsing ast-grep rules in {}", path.display()))?;
-            out.extend(rules);
+            out.extend(rules.into_iter().map(|rule| (path.clone(), rule)));
         }
     }
     Ok(out)
+}
+
+/// Load every rule from `dirs` into a flat list (rule id order is the on-disk
+/// sort order), discarding the source path. Used by callers (rule listing,
+/// language grouping) that only need id → rule, not the disambiguation
+/// [`load_flat_with_paths`] provides.
+pub fn load_flat(dirs: &[String]) -> anyhow::Result<Vec<RuleConfig<TslpLanguage>>> {
+    Ok(load_flat_with_paths(dirs)?.into_iter().map(|(_, rule)| rule).collect())
 }
 
 fn load_from_dirs(dirs: &[String]) -> anyhow::Result<RuleMap> {

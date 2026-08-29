@@ -255,26 +255,27 @@ fn clean_run_gains_no_skip_narration() {
 
 /// A repo whose languages poly routes but holds no lint rules for, beside one
 /// it does lint. `poly lint .` here reported `No issues found. (2 file(s)
-/// linted)` and exited 0 with nothing in the process knowing Kotlin.
+/// linted)` and exited 0 with nothing in the process knowing the language.
+///
+/// The uncovered language is Zig, and the choice is load-bearing: it must be
+/// one nothing in the cross-cutting tier knows, under poly's *real* defaults.
+/// Zig qualifies on every count — no tier-1 backend, no construct table in
+/// `quality` (ADR 0027), and no rule in the built-in ast-grep pack — so this
+/// fixture ships no `poly.toml` at all and exercises the shipped
+/// configuration rather than one bent until the gap reappears. Kotlin used to
+/// stand here and needed `[lint.quality] enabled = false` to keep the gap
+/// open; it since gained both a construct table and a pack rule, which is the
+/// point — as poly learns a language, the honest fixture moves on to one it
+/// has not learnt yet.
 fn no_rules_repo() -> TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
     let write = |name: &str, body: &str| std::fs::write(dir.path().join(name), body).expect("write fixture");
-    write("a.kt", "fun main() {}\n");
+    write("a.zig", "pub fn main() void {}\n");
     write("d.py", "x = 1\n");
-    // The cross-cutting `quality` engine (ADR 0027) now gives every language a
-    // baseline (file-too-long, lazy-ignore, …), which is the coverage gap this
-    // fixture exists to exercise the *reporting* of — so it must be disabled
-    // here for Kotlin to still have zero lint rules in this scenario. Exclude
-    // `poly.toml` itself from the walk so it does not become a third linted
-    // file and shift the counts this fixture asserts exactly.
-    write(
-        "poly.toml",
-        "[discovery]\nexclude = [\"poly.toml\"]\n\n[lint.quality]\nenabled = false\n",
-    );
     dir
 }
 
-/// The reported defect end to end: the Kotlin file leaves the linted count and
+/// The reported defect end to end: the Zig file leaves the linted count and
 /// arrives in the summary with the language named.
 #[test]
 fn language_with_no_lint_rules_leaves_the_linted_count_and_is_named() {
@@ -283,14 +284,14 @@ fn language_with_no_lint_rules_leaves_the_linted_count_and_is_named() {
     let text = combined(&output);
 
     assert!(
-        text.contains("1 file(s) linted, 1 skipped (no lint rules for Kotlin)"),
+        text.contains("1 file(s) linted, 1 skipped (no lint rules for Zig)"),
         "the count must exclude the language nothing lints, got:\n{text}"
     );
     assert!(
         !text.contains("2 file(s) linted"),
-        "counting the Kotlin file is the defect itself, got:\n{text}"
+        "counting the Zig file is the defect itself, got:\n{text}"
     );
-    assert!(text.contains("a.kt: no lint rules for Kotlin"), "got:\n{text}");
+    assert!(text.contains("a.zig: no lint rules for Zig"), "got:\n{text}");
 }
 
 /// A language with no rules is ordinary coverage, not a failure: the default
@@ -322,7 +323,7 @@ fn deny_skips_fails_on_a_language_with_no_lint_rules() {
 
     assert_eq!(output.status.code(), Some(2), "got:\n{text}");
     assert!(
-        text.contains("error: skipped") && text.contains("a.kt: no lint rules for Kotlin"),
+        text.contains("error: skipped") && text.contains("a.zig: no lint rules for Zig"),
         "the failure must name the file and the reason, got:\n{text}"
     );
     assert!(
@@ -343,14 +344,14 @@ fn max_skips_budgets_languages_with_no_lint_rules() {
     );
     assert_eq!(at_limit.status.code(), Some(0), "got:\n{}", combined(&at_limit));
 
-    std::fs::write(dir.path().join("b.swift"), "let x = 1\n").expect("write b.swift");
+    std::fs::write(dir.path().join("b.dart"), "void main() {}\n").expect("write b.dart");
     let over_limit = poly(
         dir.path(),
         &["lint", "--no-workspace", "--no-cache", "--max-skips", "1", "."],
     );
     let text = combined(&over_limit);
     assert_eq!(over_limit.status.code(), Some(2), "got:\n{text}");
-    assert!(text.contains("no lint rules for Swift"), "got:\n{text}");
+    assert!(text.contains("no lint rules for Dart"), "got:\n{text}");
 }
 
 /// The machine-readable path: the reason travels in the JSON document, so a
@@ -367,9 +368,9 @@ fn json_carries_the_no_lint_rules_reason() {
     let entries = value.as_array().expect("top level stays an array");
     let entry = entries
         .iter()
-        .find(|entry| entry["path"].as_str().is_some_and(|p| p.ends_with("a.kt")))
+        .find(|entry| entry["path"].as_str().is_some_and(|p| p.ends_with("a.zig")))
         .unwrap_or_else(|| panic!("the uncovered file must be in the document: {stdout}"));
-    assert_eq!(entry["skipped"].as_str(), Some("no lint rules for Kotlin"));
+    assert_eq!(entry["skipped"].as_str(), Some("no lint rules for Zig"));
 }
 
 /// A walked file poly cannot identify at all is counted and named, but it is not

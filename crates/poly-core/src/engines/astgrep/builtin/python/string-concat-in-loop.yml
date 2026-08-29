@@ -1,0 +1,39 @@
+id: string-concat-in-loop
+language: python
+severity: off
+message: "String built by `+=` inside a loop: each iteration copies the whole string. Collect into a list and `\"\".join(..)`."
+note: |
+  Python strings are immutable, so `s += chunk` allocates a new string and
+  copies everything accumulated so far. Inside a loop that turns linear work
+  quadratic - unnoticeable on ten items, a hang on a hundred thousand. Append
+  the pieces to a list and join once, or write to an `io.StringIO`.
+
+  Only the unambiguous case is reported: the right-hand side is a string
+  literal or f-string, so no type inference is involved. `+=` on a variable
+  that merely holds a string is not reported - ast-grep has no type
+  information, and guessing would flag every numeric accumulator in the
+  corpus.
+
+  Off by default: it is a performance smell, not a defect, and CPython's
+  in-place `+=` optimisation makes the small-loop case cheap in practice.
+
+  Idea origin: the classic quadratic-concatenation pitfall documented in
+  Python's own FAQ; the literal-only restriction is poly's own, to stay inside
+  what a type-free matcher can prove.
+url: https://docs.python.org/3/faq/programming.html#what-is-the-most-efficient-way-to-concatenate-many-strings-together
+rule:
+  kind: augmented_assignment
+  regex: '\+='
+  has:
+    field: right
+    kind: string
+  inside:
+    stopBy:
+      any:
+        - kind: for_statement
+        - kind: while_statement
+        - kind: function_definition
+        - kind: lambda
+    any:
+      - kind: for_statement
+      - kind: while_statement

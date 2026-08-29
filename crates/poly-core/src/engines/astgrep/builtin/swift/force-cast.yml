@@ -1,0 +1,34 @@
+id: force-cast
+language: swift
+severity: warning
+message: "`as!` traps when the value is not of that type; use `as?` with `if let`/`guard let` instead."
+note: |
+  `as!` is an unchecked downcast: when the dynamic type does not match, the
+  runtime traps and the process dies. Nothing about the failure is recoverable
+  and nothing describes what the value actually was.
+
+  Use the conditional cast `as?`, which yields `nil` on a mismatch, and bind it
+  with `guard let value = x as? T else { ... }` or `if let value = x as? T`.
+  That turns an unconditional crash into an explicit branch, and the compiler
+  forces you to say what happens when the cast does not hold.
+
+  This does not cover forced optional unwrapping (`x!`), which is a separate
+  concern. As with all ast-grep rules there is no path awareness, so exempting
+  test targets must be handled by discovery config.
+
+  Measured on poly's 49-repo corpus: 662 findings in 6 repositories and 12
+  files, 0/50 false positives in a hand-read sample. Every corpus hit is the
+  one `return (T(ptr: pointer!) as! Self)` line emitted by a Rust-Swift bridge
+  generator, so the volume reflects one repeated generated idiom rather than
+  662 independent defects.
+
+  Idea origin: the "conditional type cast operator" section of Apple's Swift
+  documentation, which contrasts `as?` with the trapping `as!`. Authored
+  independently for poly from that concept.
+url: https://docs.swift.org/swift-book/documentation/the-swift-programming-language/typecasting/#Downcasting
+rule:
+  kind: as_expression
+  has:
+    kind: as_operator
+    stopBy: neighbor
+    regex: "!"

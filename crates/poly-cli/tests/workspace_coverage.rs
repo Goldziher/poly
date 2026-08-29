@@ -1,6 +1,6 @@
 //! `poly lint` must not contradict itself about what it linted.
 //!
-//! The per-file tier holds no Rust rules, so a `.rs` file leaves it uncovered.
+//! The per-file tier held no Rust rules, so a `.rs` file left it uncovered.
 //! But `poly lint` also runs a whole-project phase, and that phase runs
 //! `cargo clippy`. The first release of the coverage accounting reported both:
 //! 229 lines of `skipped …: no lint rules for Rust`, and then, in the same
@@ -12,6 +12,24 @@
 //! The other half matters just as much: with the whole-project phase off
 //! (`--no-workspace`, or a repo that configures no whole-project tools) nothing
 //! lints Rust, so the skip is accurate and has to survive.
+//!
+//! # Why these fixtures switch the per-file Rust tier off
+//!
+//! They no longer *can* reach the contradicting state on poly's shipped
+//! defaults, and that is a coverage win rather than a problem with the
+//! mechanism. Rust now has two per-file lint sources — the `quality` tier's
+//! structural model (ADR 0027) and the built-in ast-grep pack's `unwrap-used`
+//! and friends — so a `.rs` file is covered before the whole-project phase is
+//! consulted at all, and there is no skip left for that phase to retract.
+//! `externally_linted_languages` is therefore inert under the defaults; the
+//! two languages it maps (Rust via clippy, Go via golangci-lint) are both
+//! covered per-file today.
+//!
+//! It is still live for a repo that turns those off, which is exactly what
+//! `[lint.quality] enabled = false` + `[rules] builtin = false` reconstructs
+//! below. The alternative — picking some other language for the fixtures — is
+//! not available: no language poly maps to a whole-project tool lacks per-file
+//! coverage any more.
 //!
 //! These shell out to the built binary because the contradiction only exists in
 //! the assembled output — both phases, one stream.
@@ -39,6 +57,9 @@ const WORKSPACE_HOOKS: &str = r#"
 [lint.quality]
 enabled = false
 
+[rules]
+builtin = false
+
 [hooks]
 stages = ["pre-commit"]
 
@@ -50,17 +71,23 @@ run = "true"
 workspace = true
 "#;
 
-/// The cross-cutting `quality` engine (ADR 0027) now gives every language a
-/// baseline (file-too-long, lazy-ignore, …), which would otherwise make Rust
-/// and Kotlin "covered" and defeat the whole point of these fixtures — they
-/// exist specifically to test the reporting of a language with *zero* lint
-/// rules. Disabled via an out-of-tree `--config` file (rather than a
-/// `poly.toml` written into the walked directory) so it cannot itself become
-/// a counted or excluded-and-noted file and shift the exact strings asserted
-/// below.
-fn disable_quality_config() -> TempDir {
+/// The two per-file sources of Rust lint coverage, switched off so a `.rs`
+/// file is genuinely uncovered by the per-file tier and the whole-project
+/// phase is the only thing that can lint it — the state these fixtures exist
+/// to test the reporting of (see the module docs). `quality` (ADR 0027)
+/// structurally models Rust, and the built-in ast-grep pack ships five
+/// default-on Rust rules; either alone would make the file covered.
+///
+/// Written to an out-of-tree `--config` file rather than a `poly.toml` inside
+/// the walked directory so it cannot itself become a counted or
+/// excluded-and-noted file and shift the exact strings asserted below.
+fn disable_per_file_rust_config() -> TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
-    std::fs::write(dir.path().join("poly.toml"), "[lint.quality]\nenabled = false\n").expect("write config");
+    std::fs::write(
+        dir.path().join("poly.toml"),
+        "[lint.quality]\nenabled = false\n\n[rules]\nbuiltin = false\n",
+    )
+    .expect("write config");
     dir
 }
 
@@ -85,15 +112,15 @@ fn repo_with_clippy() -> TempDir {
     dir
 }
 
-/// Run `poly` with `quality` disabled via an out-of-tree `--config` file (see
-/// [`disable_quality_config`]). `--config` *replaces* the normal config
-/// lookup rather than layering underneath it, so this is only for the two
-/// fixtures with no `poly.toml` of their own to begin with
-/// (`repo_without_workspace_phase`, `kotlin_repo`) — `repo_with_clippy`
-/// disables `quality` inline in its own `WORKSPACE_HOOKS` instead, since it
-/// already needs its `poly.toml` read for the whole-project `[hooks]`.
-fn poly_quality_disabled(root: &Path, args: &[&str]) -> Output {
-    let config_dir = disable_quality_config();
+/// Run `poly` with the per-file Rust tier disabled via an out-of-tree
+/// `--config` file (see [`disable_per_file_rust_config`]). `--config`
+/// *replaces* the normal config lookup rather than layering underneath it, so
+/// this is only for `repo_without_workspace_phase`, which has no `poly.toml`
+/// of its own — `repo_with_clippy` disables the same two inline in its own
+/// `WORKSPACE_HOOKS`, since it already needs its `poly.toml` read for the
+/// whole-project `[hooks]`.
+fn poly_per_file_rust_disabled(root: &Path, args: &[&str]) -> Output {
+    let config_dir = disable_per_file_rust_config();
     let config_path = config_dir.path().join("poly.toml");
     let config_path = config_path.to_str().expect("utf8 path").to_owned();
     // `--config` is a per-subcommand flag (`poly lint --config <path>`, not
@@ -219,7 +246,7 @@ fn no_workspace_keeps_the_rust_skip_because_nothing_lints_rust_then() {
 #[test]
 fn a_repo_with_no_hooks_config_keeps_the_rust_skip() {
     let dir = repo_without_workspace_phase();
-    let output = poly_quality_disabled(dir.path(), &["lint", "--no-cache", "--no-color", "."]);
+    let output = poly_per_file_rust_disabled(dir.path(), &["lint", "--no-cache", "--no-color", "."]);
     let text = combined(&output);
 
     assert_eq!(
@@ -262,18 +289,18 @@ fn deny_skips_still_fires_on_rust_without_the_whole_project_phase() {
 #[test]
 fn a_language_nothing_lints_keeps_its_skip_beside_a_covered_one() {
     let dir = repo_with_clippy();
-    write(&dir, "a.kt", "fun main() {}\n");
+    write(&dir, "a.zig", "pub fn main() void {}\n");
 
     let output = poly(dir.path(), &["lint", "--no-cache", "--no-color", "."]);
     let text = combined(&output);
 
     assert_eq!(
         text.lines().next(),
-        Some("No issues found. (2 file(s) linted, 1 skipped (no lint rules for Kotlin))"),
-        "Rust is covered, Kotlin is not, got:\n{text}"
+        Some("No issues found. (2 file(s) linted, 1 skipped (no lint rules for Zig))"),
+        "Rust is covered by the phase, Zig is covered by nothing, got:\n{text}"
     );
     assert!(
-        text.contains("  skipped ./a.kt: no lint rules for Kotlin"),
+        text.contains("  skipped ./a.zig: no lint rules for Zig"),
         "got:\n{text}"
     );
     assert!(!text.contains(NO_RUST_RULES), "got:\n{text}");
@@ -282,16 +309,16 @@ fn a_language_nothing_lints_keeps_its_skip_beside_a_covered_one() {
 /// …and `--deny-skips` still sees it, which is the whole reason an uncovered
 /// language has to stay in the skipped set rather than merely be mentioned.
 #[test]
-fn deny_skips_fires_on_kotlin_while_the_whole_project_phase_covers_rust() {
+fn deny_skips_fires_on_zig_while_the_whole_project_phase_covers_rust() {
     let dir = repo_with_clippy();
-    write(&dir, "a.kt", "fun main() {}\n");
+    write(&dir, "a.zig", "pub fn main() void {}\n");
 
     let output = poly(dir.path(), &["lint", "--no-cache", "--no-color", "--deny-skips", "."]);
     let text = combined(&output);
 
     assert_eq!(output.status.code(), Some(2), "got:\n{text}");
     assert!(
-        text.contains("error: skipped ./a.kt: no lint rules for Kotlin"),
+        text.contains("error: skipped ./a.zig: no lint rules for Zig"),
         "got:\n{text}"
     );
     assert!(
@@ -300,12 +327,14 @@ fn deny_skips_fires_on_kotlin_while_the_whole_project_phase_covers_rust() {
     );
 }
 
-/// Nine Kotlin files and nothing else, so the note has exactly one reason to
-/// report.
-fn kotlin_repo() -> TempDir {
+/// Nine Zig files and nothing else, so the note has exactly one reason to
+/// report. Zig needs no config to stay uncovered — it has no tier-1 backend,
+/// no construct table in `quality`, and no built-in ast-grep rule — so these
+/// two run against poly's shipped defaults.
+fn uncovered_repo() -> TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
     for i in 0..9 {
-        write(&dir, &format!("a{i}.kt"), "fun main() {}\n");
+        write(&dir, &format!("a{i}.zig"), "pub fn main() void {}\n");
     }
     dir
 }
@@ -314,16 +343,16 @@ fn kotlin_repo() -> TempDir {
 /// and a sample instead of one line each. 229 identical lines is not a report.
 #[test]
 fn a_bulk_reason_is_aggregated_in_the_end_to_end_note() {
-    let dir = kotlin_repo();
-    let output = poly_quality_disabled(dir.path(), &["lint", "--no-workspace", "--no-cache", "--no-color", "."]);
+    let dir = uncovered_repo();
+    let output = poly(dir.path(), &["lint", "--no-workspace", "--no-cache", "--no-color", "."]);
     let text = combined(&output);
 
     assert_eq!(
         text,
         concat!(
-            "Nothing was linted. (0 file(s) linted, 9 skipped (no lint rules for Kotlin))\n",
-            "  skipped 9 file(s): no lint rules for Kotlin\n",
-            "    e.g. ./a0.kt, ./a1.kt, ./a2.kt — pass --verbose to list them, ",
+            "Nothing was linted. (0 file(s) linted, 9 skipped (no lint rules for Zig))\n",
+            "  skipped 9 file(s): no lint rules for Zig\n",
+            "    e.g. ./a0.zig, ./a1.zig, ./a2.zig — pass --verbose to list them, ",
             "or --format json for the full set\n"
         )
     );
@@ -333,8 +362,8 @@ fn a_bulk_reason_is_aggregated_in_the_end_to_end_note() {
 /// view never becomes the only view.
 #[test]
 fn verbose_expands_the_aggregated_note() {
-    let dir = kotlin_repo();
-    let output = poly_quality_disabled(
+    let dir = uncovered_repo();
+    let output = poly(
         dir.path(),
         &["lint", "--no-workspace", "--no-cache", "--no-color", "--verbose", "."],
     );
@@ -346,7 +375,7 @@ fn verbose_expands_the_aggregated_note() {
         "one line per file under --verbose, got:\n{text}"
     );
     assert!(
-        text.contains("  skipped ./a8.kt: no lint rules for Kotlin"),
+        text.contains("  skipped ./a8.zig: no lint rules for Zig"),
         "got:\n{text}"
     );
 }

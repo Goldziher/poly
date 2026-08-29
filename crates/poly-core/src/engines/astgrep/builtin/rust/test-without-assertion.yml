@@ -1,0 +1,75 @@
+id: test-without-assertion
+language: rust
+severity: off
+message: "Test function with no assertion: it passes unless the code under test panics."
+note: |
+  A test that never asserts only checks that the code did not panic. It stays
+  green when the function returns the wrong answer, so it reports coverage it
+  does not have - which is worse than no test, because it is counted.
+
+  A test counts as asserting when it uses an `assert*!` / `panic!` /
+  `unreachable!` / `todo!` macro (including snapshot macros such as
+  `insta::assert_*!`), calls `.unwrap()` / `.expect()`, propagates with `?`, is
+  marked `#[should_panic]`, or calls a helper whose name contains `assert` /
+  `check` / `verify` / `valid` / `ensure` / `require`, or a `test_*` helper.
+  Method form counts too, so `cmd.assert().success()` and `logs_assert(..)` are
+  both recognised.
+
+  Off by default, on measured evidence. The shape it cannot see through is an
+  assertion hidden in a helper with an unrelated name (`run_docling_parity(..)`,
+  `run_structured(..)`) - ast-grep has no cross-function analysis - plus tests
+  whose whole content is a compile-time check. On poly's dry-run corpus the
+  rule reports 563 findings and a hand-read sample put the false-positive rate
+  at about 30% (5 of 16), which is over poly's 10% bar for a default-on rule.
+  Two rounds of narrowing had already cut it from 61%. Turn it on in a repo
+  whose test helpers are named `assert_*` / `check_*`, where it is close to
+  exact.
+
+  Idea origin: poly's own corpus measurement - 8,861 of 256,056 Rust `#[test]`
+  functions (3.5%) contain no assertion at all, and no mainstream linter checks
+  for it. Authored for poly from that observation.
+url: https://doc.rust-lang.org/book/ch11-01-writing-tests.html
+utils:
+  test-attribute:
+    kind: attribute_item
+    regex: '^#\s*\[\s*([\w]+\s*::\s*)*((\w+_)?(test|bench)\w*|rstest|proptest|quickcheck)\b'
+  should-panic-attribute:
+    kind: attribute_item
+    regex: '^#\s*\[\s*should_panic\b'
+  ignore-attribute:
+    kind: attribute_item
+    regex: '^#\s*\[\s*ignore\b'
+  attribute-or-comment:
+    any:
+      - kind: attribute_item
+      - kind: line_comment
+      - kind: block_comment
+  asserting-expression:
+    any:
+      - kind: macro_invocation
+        regex: '^([\w]+\s*::\s*)*(debug_assert|assert|panic|unreachable|todo|unimplemented|fail)\w*\s*!'
+      - kind: try_expression
+      - pattern: $RECEIVER.unwrap()
+      - pattern: $RECEIVER.expect($MESSAGE)
+      - pattern: $RECEIVER.unwrap_err()
+      - pattern: $RECEIVER.expect_err($MESSAGE)
+      - kind: call_expression
+        regex: '^([\w]+\s*::\s*)*\w*(assert|check|verify|valid|ensure|require)\w*\b'
+      - kind: call_expression
+        regex: '\.\s*\w*(assert|check|verify|valid|ensure|require)\w*\s*(::|\()'
+      - kind: call_expression
+        regex: '^([\w]+\s*::\s*)*test_\w+\b'
+rule:
+  kind: function_item
+  follows:
+    matches: test-attribute
+    stopBy: { not: { matches: attribute-or-comment } }
+  not:
+    any:
+      - has: { stopBy: end, matches: asserting-expression }
+      - follows:
+          matches: should-panic-attribute
+          stopBy: { not: { matches: attribute-or-comment } }
+      - follows:
+          matches: ignore-attribute
+          stopBy: { not: { matches: attribute-or-comment } }

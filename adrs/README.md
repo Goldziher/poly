@@ -43,6 +43,7 @@ Context, Decision, Consequences (positive and negative/risks), and Alternatives 
 | [0026](0026-cross-file-analysis-stages.md) | Cross-File Analysis Stages | Accepted |
 | [0027](0027-code-quality-tier.md) | The Code-Quality Tier | Accepted |
 | [0028](0028-inline-suppression-directives.md) | Inline Suppression Directives | Accepted |
+| [0029](0029-builtin-ast-grep-rule-pack.md) | The Built-In ast-grep Rule Pack | Accepted |
 
 ## Conventions
 

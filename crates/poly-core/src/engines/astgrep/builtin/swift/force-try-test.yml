@@ -1,0 +1,13 @@
+id: force-try
+valid:
+  - "func f() throws -> Int { return try compute() }"
+  - "func f() -> Int? { return try? compute() }"
+  - "func f() { do { let v = try compute() } catch { report(error) } }"
+  - "func f() async throws { let v = try await compute() }"
+  - "func f() { let v = tryHard() }"
+invalid:
+  - "func f() { let v = try! compute() }"
+  - "func f() { let d = try! JSONDecoder().decode(Model.self, from: data) }"
+  - "func f() async { let v = try! await compute() }"
+  - "class C {\n    func f() {\n        self.value = try! load()\n    }\n}"
+  - "func f(_ ctx: String) { let decoded: Context = (try? decode(ctx)) ?? (try! decode(\"{}\")) }"

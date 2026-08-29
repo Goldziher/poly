@@ -1,0 +1,79 @@
+id: force-type-assert
+language: go
+severity: off
+message: "Single-value type assertion panics when the value is not that type; use the `v, ok := x.(T)` form or a type switch."
+note: |
+  `x.(T)` in single-value position is a runtime panic waiting for the first
+  input whose dynamic type is not `T`. Because the panic unwinds from inside
+  whatever helper made the assertion, the resulting stack rarely names the
+  value that was actually wrong.
+
+  Use the two-value form and handle the failure - `v, ok := x.(T); if !ok {
+  ... }` - or a `switch x.(type)` when several types are expected. Both are
+  accepted by this rule; only the panicking single-value form is flagged.
+
+  The comma-ok form is distinguished structurally: the assertion is the sole
+  right-hand expression of an assignment or short variable declaration whose
+  left-hand side has exactly two targets. A type switch contains no assertion
+  node at all in the Go grammar, so it never matches. An assertion used as a
+  call argument, a return value, an operand, or the single value of a
+  one-target assignment is reported - all of those panic.
+
+  Test code is exempt: a panic in a test is a failing test, which is the
+  point. The rule skips any assertion inside a function - including a `t.Run`
+  closure - that takes a `*testing.T`/`*testing.B`/`*testing.F`/`*testing.M`
+  or `testing.TB` parameter. It cannot see the file path, so a `_test.go`
+  helper with no `testing` parameter is still reported.
+
+  Off by default, and unlikely ever to be otherwise. Idiomatic Go establishes
+  the dynamic type by dispatch rather than by a comma-ok check, and telling
+  the two apart needs dataflow this rule does not have. Hand-read 30
+  production findings from a 25,787-file third-party Go corpus: 26 were safe
+  by construction - `pool.Get().(*T)` on a `sync.Pool`, an assertion inside a
+  `case uint64:` branch, one already guarded by `Type().Implements(...)` on
+  the line above, and generated cloners and protobuf exporters. That is an
+  87% false-positive rate. On poly's own 727-file corpus the same rule
+  produced 77 findings, 75 of them decoding JSON inside table tests (now
+  exempt) and 2 genuine ones. Enable it with `severity = "warning"` only in a
+  codebase that has decided every assertion must be checked.
+
+  Idea origin: the Go language specification's own note that the single-value
+  form of a type assertion panics on failure, unlike the comma-ok form; the
+  matching, the test carve-out and the message are poly's own.
+url: https://go.dev/ref/spec#Type_assertions
+utils:
+  comma-ok-form:
+    inside:
+      kind: expression_list
+      nthChild: 2
+      not:
+        has:
+          nthChild: 2
+      inside:
+        any:
+          - kind: short_var_declaration
+          - kind: assignment_statement
+        has:
+          kind: expression_list
+          nthChild: 1
+          has:
+            nthChild: 2
+  in-test-function:
+    inside:
+      stopBy: end
+      any:
+        - kind: function_declaration
+        - kind: method_declaration
+        - kind: func_literal
+      has:
+        kind: parameter_list
+        has:
+          stopBy: end
+          kind: qualified_type
+          regex: '^testing\s*\.\s*(T|B|F|M|TB)$'
+rule:
+  kind: type_assertion_expression
+  not:
+    any:
+      - matches: comma-ok-form
+      - matches: in-test-function

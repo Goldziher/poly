@@ -1,0 +1,15 @@
+id: rethrow-loses-stack
+valid:
+  - "using System;\nclass C { void M() { try { Do(); } catch (Exception ex) { throw; } } }"
+  - "using System;\nclass C { void M() { try { Do(); } catch (Exception ex) { Log(ex); throw; } } }"
+  - "using System;\nclass C { void M() { try { Do(); } catch (Exception ex) { throw new InvalidOperationException(\"loading\", ex); } } }"
+  - "using System;\nclass C { void M() { try { Do(); } catch (IOException ex) { throw new Wrapper(ex); } } }"
+  - "using System;\nclass C { void M() { try { Do(); } catch (Exception ex) when (ex.HResult == 5) { throw; } } }"
+  - "using System;\nclass C { void M(Exception fresh) { throw fresh; } }"
+  - "using System;\nclass C { void M() { try { Do(); } catch (Exception ex) { throw Build(ex); } } }"
+  - "using System;\nclass C { void M() { try { Do(); } catch (Exception ex) { throw new AggregateException(ex.InnerExceptions); } } }"
+invalid:
+  - "using System;\nclass C { void M() { try { Do(); } catch (Exception ex) { throw ex; } } }"
+  - "using System;\nclass C { void M() { try { Do(); } catch (Exception ex) { Log(ex); throw ex; } } }"
+  - "using System;\nclass C { void M() { try { Do(); } catch (IOException io) { if (io.HResult == 5) { throw io; } } } }"
+  - "using System;\nclass C { async Task M() { try { await Do(); } catch (Exception e) { throw e; } } }"

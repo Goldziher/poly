@@ -1,0 +1,14 @@
+id: sync-over-async
+valid:
+  - "using System;\nclass C { async Task M() { var a = await GetAsync(); } }"
+  - "using System;\nclass C { async Task M() { await GetAsync().ConfigureAwait(false); } }"
+  - "using System;\nclass C { void M() { var s = \"call .Result here\"; } }"
+  - "using System;\nclass C { void M(object o) { Monitor.Wait(o); } }"
+  - "using System;\nclass C { void M() { sem.Wait(timeout); } }"
+  - "using System;\nclass C { async Task M() { var r = await GetAsync(); Use(r.Value); } }"
+invalid:
+  - "using System;\nclass C { void M() { var a = GetAsync().Result; } }"
+  - "using System;\nclass C { void M() { GetAsync().Wait(); } }"
+  - "using System;\nclass C { void M() { var b = GetAsync().GetAwaiter().GetResult(); } }"
+  - "using System;\nclass C { int M() { return _task.Result; } }"
+  - "using System;\nclass C { string M() { return Task.Run(async () => await GetAsync()).GetAwaiter().GetResult(); } }"

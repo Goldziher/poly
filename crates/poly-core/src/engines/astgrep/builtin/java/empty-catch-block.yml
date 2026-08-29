@@ -1,0 +1,62 @@
+id: empty-catch-block
+language: java
+severity: warning
+message: "Empty `catch` block swallows the exception; handle it, rethrow it, log it, or say the ignore is deliberate (a comment, or naming the variable `ignored`)."
+note: |
+  A `catch` block with no body discards the failure completely: the caller sees
+  success, nothing is logged, and the stack trace is gone. When the bug is
+  reported later there is no evidence left of what actually went wrong.
+
+  Do one of four things instead: recover (and say so), rethrow (wrapping with
+  the original as the cause), log at a level someone will read, or - if the
+  exception really is expected and irrelevant - mark the ignore as deliberate.
+  This rule accepts two ways of marking it, both drawn from what real Java code
+  already does:
+
+  - a comment in the block, e.g.
+    `catch (FileNotFoundException e) { // absent config means "use the defaults" }`;
+  - naming the caught variable `ignored` or `ignore` (any casing, and any
+    suffix such as `ignoredException`), the convention Java IDEs have long
+    treated as "this exception is intentionally dropped".
+
+  A bare `catch (IOException e) {}` matches neither and is reported.
+
+  The check is purely syntactic. It cannot tell a genuine justification from a
+  placeholder comment such as `// TODO`, and it does not look at the exception
+  type - a deliberately named `catch (InterruptedException ignored) {}` is
+  accepted even though swallowing an interrupt is usually its own bug.
+
+  Measured on poly's 49-root corpus: 205 `catch` bodies contain no code. Of
+  those, 20 hold an explanatory comment and 184 of the remaining 185 name the
+  caught variable `ignored` or `ignore`; every one of the 204 was hand-read and
+  every one is a deliberate, justified ignore. Both carve-outs are therefore in
+  the rule, which leaves the corpus a single finding - an unannotated
+  `catch (IOException e) {}` swallowing a stream-close failure in a vendored
+  Maven wrapper - a true positive. Without the carve-outs the rule would be 99%
+  noise on this corpus.
+
+  Idea origin: the long-standing Java guidance that an exception must never be
+  silently discarded (Effective Java's "don't ignore exceptions"), plus the
+  `ignored`-variable convention that Java IDEs popularised. The matcher, the
+  carve-outs and the message were authored independently for poly from those
+  concepts.
+url: https://docs.oracle.com/javase/tutorial/essential/exceptions/catch.html
+rule:
+  kind: catch_clause
+  all:
+    - has:
+        field: body
+        kind: block
+        not:
+          has:
+            stopBy: neighbor
+            not:
+              any:
+                - regex: '^\{$'
+                - regex: '^\}$'
+    - not:
+        has:
+          kind: catch_formal_parameter
+          has:
+            field: name
+            regex: "(?i)^ignor(e|ed)"

@@ -1,0 +1,14 @@
+id: allow-attribute-without-reason
+valid:
+  - "#[allow(dead_code, reason = \"kept for the C ABI\")]\nfn f() {}"
+  - "// upstream macro triggers this; the code is correct.\n#[allow(dead_code)]\nfn f() {}"
+  - "/* upstream macro triggers this */\n#[allow(dead_code)]\nfn f() {}"
+  - "/// Public docs.\n// clippy misfires on the generic bound here.\n#[allow(clippy::needless_lifetimes)]\npub fn f() {}"
+  - "#[expect(dead_code)]\nfn f() {}"
+  - "#![allow(dead_code)]"
+  - "#[derive(Debug)]\nstruct S;"
+invalid:
+  - "#[allow(dead_code)]\nfn f() {}"
+  - "#[allow(clippy::too_many_arguments)]\npub fn f() {}"
+  - "/// Public docs.\n#[allow(dead_code)]\npub fn f() {}"
+  - "#[cfg(unix)]\n#[allow(unused_imports)]\nuse std::os::unix::fs;"

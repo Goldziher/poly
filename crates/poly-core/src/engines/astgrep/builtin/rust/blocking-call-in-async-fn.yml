@@ -1,0 +1,86 @@
+id: blocking-call-in-async-fn
+language: rust
+severity: warning
+message: "Blocking call inside an `async` context: this parks the executor thread, and tokio's `blocking_*` helpers panic outright."
+note: |
+  An async function runs on a shared executor thread. A blocking call there
+  does not just slow one task down - it stalls every other task scheduled on
+  that thread, and under a current-thread runtime it deadlocks. tokio's own
+  `blocking_lock`/`blocking_recv`/`block_on` helpers detect the situation and
+  panic rather than corrupting the scheduler.
+
+  Use the async twin (`tokio::time::sleep`, `.lock().await`, `.recv().await`)
+  or move the work with `tokio::task::spawn_blocking`. Calls already inside a
+  `spawn_blocking` / `block_in_place` closure are exempt. So is any call whose
+  nearest enclosing body is an ordinary (non-async) closure - a `notify`
+  watcher callback that ends in `blocking_send` runs on the watcher's own
+  thread, not on the executor. So is test code: a `#[tokio::test]` poll loop
+  that sleeps blocks only its own test thread. This rule cannot see the file
+  path, so a test that carries no test attribute has to be excluded by
+  discovery config instead.
+
+  Idea origin: the tokio documentation's "async code should never spend a long
+  time without reaching an `.await`" guidance. No clippy lint covers this, and
+  no linter poly wraps reports it; the rule is poly's own.
+url: https://docs.rs/tokio/latest/tokio/task/index.html#blocking-and-yielding
+utils:
+  blocking-call:
+    any:
+      - pattern: std::thread::sleep($$$ARGS)
+      - pattern: thread::sleep($$$ARGS)
+      - pattern: $RECEIVER.blocking_lock()
+      - pattern: $RECEIVER.blocking_read()
+      - pattern: $RECEIVER.blocking_write()
+      - pattern: $RECEIVER.blocking_recv()
+      - pattern: $RECEIVER.blocking_send($$$ARGS)
+      - pattern: $RECEIVER.block_on($$$ARGS)
+      - pattern: block_on($$$ARGS)
+  async-context:
+    inside:
+      stopBy:
+        any:
+          - kind: function_item
+          - kind: closure_expression
+          - kind: async_block
+      any:
+        - kind: function_item
+          has:
+            kind: function_modifiers
+            regex: '\basync\b'
+        - kind: async_block
+  offloaded:
+    inside:
+      stopBy: end
+      kind: call_expression
+      regex: '^([\w]+\s*::\s*)*(spawn_blocking|block_in_place)\b'
+  test-attribute:
+    kind: attribute_item
+    any:
+      - regex: '^#\s*\[\s*cfg\s*\(\s*(all\s*\(\s*)?test\b'
+      - regex: '^#\s*\[\s*([\w]+\s*::\s*)*((\w+_)?(test|bench)\w*|rstest|proptest|quickcheck)\b'
+  cfg-test-attribute:
+    kind: attribute_item
+    regex: '^#\s*\[\s*cfg\s*\(\s*(all\s*\(\s*)?test\b'
+  attribute-or-comment:
+    any:
+      - kind: attribute_item
+      - kind: line_comment
+      - kind: block_comment
+  in-test-context:
+    inside:
+      stopBy: end
+      any:
+        - kind: mod_item
+          follows:
+            matches: cfg-test-attribute
+            stopBy: { not: { matches: attribute-or-comment } }
+        - kind: function_item
+          follows:
+            matches: test-attribute
+            stopBy: { not: { matches: attribute-or-comment } }
+rule:
+  matches: blocking-call
+  all:
+    - matches: async-context
+    - not: { matches: offloaded }
+    - not: { matches: in-test-context }

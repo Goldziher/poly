@@ -1,0 +1,67 @@
+id: unwrap-used
+language: rust
+severity: off
+message: "`.unwrap()` panics on `None`/`Err`; propagate with `?` or explain the invariant with `.expect(\"..\")`."
+note: |
+  `.unwrap()` turns a recoverable value into a process-killing panic and
+  discards the error on the way, so the crash message names the unwrap site
+  rather than the thing that actually failed. Return the error with `?`, or -
+  when the invariant really is local - state it with `.expect("why this cannot
+  fail")`.
+
+  Test code is exempt: a panic in a test is a failing test, which is the point.
+  This rule skips `.unwrap()` inside a `#[cfg(test)]` module and inside any
+  `#[test]`/`#[bench]`-style function. It cannot see the file path, so
+  `tests/`, `benches/` and `tests.rs` must be excluded by discovery config.
+  Measured on poly's dry-run corpus, the in-file carve-out alone leaves 3,842
+  findings, of which 1,320 are in test paths and 742 in generated FFI glue -
+  so the path exclusion is not optional decoration, it is a third of the noise.
+
+  Off by default, deliberately, despite the low residual count after path
+  exclusion (~1,780): a hand-read of 12 findings in full file context found 9
+  of 12 (75%) safe by local invariant or ecosystem idiom rather than a real
+  defect - `Mutex::lock().unwrap()` (poisoning-only), `Regex::new("<literal>")
+  .unwrap()` on a compile-time-constant pattern, `Captures::get(0).unwrap()`
+  (guaranteed present by the regex crate's own contract), `iter().next()
+  .unwrap()` immediately after a length guard, `writeln!(String, ..).unwrap()`
+  (`fmt::Write` for `String` is infallible), and `env::var("CARGO_MANIFEST_DIR")
+  .unwrap()` in a `build.rs` (cargo always sets it). That rate is in the same
+  range as `force-type-assert` (87% FP, also off), not the on-by-default
+  rules, and matches why clippy itself keeps `unwrap_used` in `restriction`
+  rather than any default group. Turn it on with `extend_select =
+  ["unwrap-used"]` if your team wants the stricter, "handle it explicitly
+  anyway" style regardless.
+
+  Idea origin: the "no unwrap in library code" convention that Rust error
+  handling guides (and clippy's allow-by-default `unwrap_used`) popularised;
+  the matching, the test-context carve-out and the message are poly's own.
+url: https://doc.rust-lang.org/std/option/enum.Option.html#method.unwrap
+utils:
+  test-attribute:
+    kind: attribute_item
+    any:
+      - regex: '^#\s*\[\s*cfg\s*\(\s*(all\s*\(\s*)?test\b'
+      - regex: '^#\s*\[\s*([\w]+\s*::\s*)*((\w+_)?(test|bench)\w*|rstest|proptest|quickcheck)\b'
+  cfg-test-attribute:
+    kind: attribute_item
+    regex: '^#\s*\[\s*cfg\s*\(\s*(all\s*\(\s*)?test\b'
+  attribute-or-comment:
+    any:
+      - kind: attribute_item
+      - kind: line_comment
+      - kind: block_comment
+  in-test-context:
+    inside:
+      stopBy: end
+      any:
+        - kind: mod_item
+          follows:
+            matches: cfg-test-attribute
+            stopBy: { not: { matches: attribute-or-comment } }
+        - kind: function_item
+          follows:
+            matches: test-attribute
+            stopBy: { not: { matches: attribute-or-comment } }
+rule:
+  pattern: $RECEIVER.unwrap()
+  not: { matches: in-test-context }

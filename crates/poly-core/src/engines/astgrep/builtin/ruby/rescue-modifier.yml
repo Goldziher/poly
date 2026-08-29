@@ -1,0 +1,36 @@
+id: rescue-modifier
+language: ruby
+severity: warning
+message: "The inline `rescue` modifier swallows every `StandardError`; use `begin ... rescue SpecificError => e ... end`."
+note: |
+  `value = expr rescue fallback` rescues `StandardError` - which is almost
+  everything, including `NoMethodError`, `TypeError` and a typo in `expr`
+  itself. The exception object is never bound, so nothing can be inspected,
+  logged or re-raised, and the fallback value makes the failure look like a
+  successful result. A bug introduced anywhere inside `expr` silently becomes
+  the fallback.
+
+  Write the block form and name the error you actually expect:
+
+      begin
+        value = expr
+      rescue KeyError => e
+        logger.warn("lookup failed: #{e.message}")
+        value = fallback
+      end
+
+  The rule flags the modifier form wherever it appears; the block form, and a
+  method-level `def ... rescue ... end`, are untouched.
+
+  Measured on poly's 49-repo corpus: 11 findings across 4 repositories, 0/11
+  false positives on a hand read of every one. They are `Process.kill(..)
+  rescue nil`, `conn.exec("DROP TABLE ..") rescue nil` and
+  `io.readline.strip rescue break` - each of which should name the error it
+  actually expects (`Errno::ESRCH`, `EOFError`, ...).
+
+  Idea origin: the long-standing Ruby community guidance against the inline
+  rescue modifier, recorded in the Ruby style guide and echoed by RuboCop's
+  `Style/RescueModifier`. The matcher, message and wording here are poly's own.
+url: https://docs.ruby-lang.org/en/master/syntax/exceptions_rdoc.html
+rule:
+  kind: rescue_modifier

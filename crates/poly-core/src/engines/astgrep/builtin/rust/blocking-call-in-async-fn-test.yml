@@ -1,0 +1,23 @@
+id: blocking-call-in-async-fn
+valid:
+  - "fn f() { std::thread::sleep(d); }"
+  - "async fn f() { tokio::time::sleep(d).await; }"
+  - "async fn f() { let g = m.lock().await; }"
+  - "async fn f() { tokio::task::spawn_blocking(move || std::thread::sleep(d)).await; }"
+  - "async fn f() { tokio::task::block_in_place(|| m.blocking_lock()); }"
+  - "fn f() { let h = std::thread::spawn(move || std::thread::sleep(d)); }"
+  - "fn main() { runtime.block_on(server()); }"
+  - "#[tokio::test]\nasync fn t() {\n    while !ready() {\n        std::thread::sleep(Duration::from_millis(50));\n    }\n}"
+  - "#[tokio::test(flavor = \"multi_thread\")]\nasync fn t() { std::thread::sleep(d); }"
+  - "#[cfg(test)]\nmod tests {\n    #[tokio::test]\n    async fn t() { std::thread::sleep(d); }\n}"
+  - "#[wasm_bindgen_test]\nasync fn t() { std::thread::sleep(d); }"
+  - "async fn f() {\n    let mut watcher = notify::recommended_watcher(move |res| {\n        let _ = event_tx.blocking_send(res);\n    })?;\n}"
+invalid:
+  - "impl S {\n    async fn process(&self) -> Result<u8, E> {\n        WORKER_RUNTIME.block_on(async { call().await })\n    }\n}"
+  - "async fn f() { std::thread::sleep(d); }"
+  - "pub async fn f() { thread::sleep(d); }"
+  - "async fn f() { let guard = m.blocking_lock(); }"
+  - "async fn f() { let v = rx.blocking_recv(); }"
+  - "pub(crate) async fn f() -> u8 { handle.block_on(other()) }"
+  - "fn f() { let fut = async move { std::thread::sleep(d); }; }"
+  - "impl S {\n    pub async fn f(&self) {\n        let g = self.lock.blocking_write();\n    }\n}"

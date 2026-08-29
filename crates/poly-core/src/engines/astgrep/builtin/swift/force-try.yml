@@ -1,0 +1,32 @@
+id: force-try
+language: swift
+severity: warning
+message: "`try!` crashes the process when the call throws; use `try` and propagate, or `try?` and handle `nil`."
+note: |
+  `try!` asserts that a throwing call cannot throw. When that assertion is
+  wrong the runtime traps and the process dies, and the trap message names the
+  `try!` site rather than the error that was actually thrown - so the one piece
+  of information the error carried is thrown away at the moment it is needed.
+
+  Write `try` and let the error propagate out of a `throws` function, wrap the
+  call in `do { ... } catch { ... }` to handle it locally, or use `try?` when
+  `nil` is a genuinely acceptable answer. Reserve `try!` for cases where a
+  throw really is a programmer error, and then say so in a comment.
+
+  The rule flags every `try!` including ones in test code; ast-grep cannot see
+  the file path, so excluding `Tests/` must be done through discovery config.
+
+  Measured on poly's 49-repo corpus: 40 findings, 0/40 false positives. All 40
+  are the same machine-generated line in a single code-generated Swift SDK
+  file, so the corpus gives the rule broad correctness but narrow evidence.
+
+  Idea origin: the "avoid force operators" convention in Apple's Swift error
+  handling documentation, which describes `try!` as a runtime-trapping
+  assertion. Authored independently for poly from that concept.
+url: https://docs.swift.org/swift-book/documentation/the-swift-programming-language/errorhandling/#Disabling-Error-Propagation
+rule:
+  kind: try_expression
+  has:
+    kind: try_operator
+    stopBy: neighbor
+    regex: "!"

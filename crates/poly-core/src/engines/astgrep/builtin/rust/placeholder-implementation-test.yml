@@ -1,0 +1,14 @@
+id: placeholder-implementation
+valid:
+  - "fn f() -> u8 { 1 }"
+  - "fn f() -> u8 { unreachable!(\"validated by the parser\") }"
+  - "fn f() -> u8 { panic!(\"index {i} out of range\") }"
+  - "fn f() { assert!(x); }"
+  - "#[cfg(test)]\nmod tests {\n    struct Fake;\n    impl Llm for Fake {\n        fn text(&self) -> String { unimplemented!(\"the pipeline only calls generate\") }\n    }\n}"
+  - "#[test]\nfn t() {\n    struct S;\n    impl Size for S {\n        fn size(&self, _c: &str) -> usize { unimplemented!() }\n    }\n}"
+  - "fn emit(f: &Fixture) -> Emission {\n    panic!(\"Gleam e2e generator: fixture `{}` requires a stub, but the emitter is unimplemented\", f.id);\n}"
+invalid:
+  - "fn f() -> u8 { todo!() }"
+  - "fn f() -> u8 { unimplemented!() }"
+  - "fn f() -> u8 { todo!(\"wire up the cache\") }"
+  - "impl T for S {\n    fn g(&self) -> u8 {\n        std::unimplemented!()\n    }\n}"

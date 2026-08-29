@@ -1,17 +1,20 @@
 //! What `N file(s) linted` is allowed to count.
 //!
-//! A `.swift` file routes to the cross-cutting backends (spell-check, ast-grep,
-//! comment removal, the `quality` metric tier) and to nothing that holds a Swift
+//! A `.zig` file routes to the cross-cutting backends (spell-check, ast-grep,
+//! comment removal, the `quality` metric tier) and to nothing that holds a Zig
 //! rule, yet the run counted it exactly like the `.py` file ruff had just
-//! examined: `poly lint .` over a Swift/Zig repository printed
+//! examined: `poly lint .` over such a repository printed
 //! `No issues found. (2 file(s) linted)` and exited 0 with no rule in the
-//! process knowing either language.
+//! process knowing the language.
 //!
-//! Kotlin used to be the third language in that list. ADR 0027's `quality` tier
-//! holds a real structural model of Kotlin (`engines/quality/coverage.rs`), so
-//! Kotlin is now linted and counted; Swift and Zig get only a line count and an
-//! ignore-marker scan, which is what a `.txt` file gets and is not knowledge of
-//! the language.
+//! The uncovered language in these fixtures has moved twice, and both moves are
+//! the system working. Kotlin left first: ADR 0027's `quality` tier holds a real
+//! structural model of it (`engines/quality/coverage.rs`). Swift left next: the
+//! built-in ast-grep pack ships `force-cast` / `force-try`
+//! (`engines/astgrep/builtin/swift/`). Zig has neither, so it still gets only a
+//! line count and an ignore-marker scan — what a `.txt` file gets, and not
+//! knowledge of the language. C stands in for the other half, structurally
+//! modelled by `quality` and covered by nothing else.
 //!
 //! These tests pin the two halves that make the difference visible — the count,
 //! and the reason attached to what the count leaves out — because a run that
@@ -55,45 +58,45 @@ fn skips(run: &LintRun) -> Vec<(String, String)> {
         .collect()
 }
 
-/// The reported defect, at the counting layer: one Swift file, nothing in poly
-/// holds a Swift rule, so nothing was linted — and the run says so instead of
+/// The reported defect, at the counting layer: one Zig file, nothing in poly
+/// holds a Zig rule, so nothing was linted — and the run says so instead of
 /// counting the file.
 #[test]
 fn language_with_no_lint_rules_is_not_counted_as_linted() {
     let dir = tempfile::tempdir().expect("tempdir");
-    write(dir.path(), "a.swift", "func main() {}\n");
+    write(dir.path(), "a.zig", "pub fn main() void {}\n");
 
     let run = lint(dir.path());
 
-    assert_eq!(run.checked, 0, "no rule in this run knows Swift");
+    assert_eq!(run.checked, 0, "no rule in this run knows Zig");
     assert_eq!(
         skips(&run),
-        vec![("a.swift".to_owned(), "no lint rules for Swift".to_owned())]
+        vec![("a.zig".to_owned(), "no lint rules for Zig".to_owned())]
     );
 }
 
-/// The other side of the same count, and the point of ADR 0027: Kotlin still has
-/// no lint backend of its own, but the `quality` tier structurally models it
-/// (definition query + construct table), so the file really is linted and the
-/// run counts it with no skip line.
+/// The other side of the same count, and the point of ADR 0027: C still has
+/// no lint backend of its own and no built-in ast-grep rule, but the `quality`
+/// tier structurally models it (definition query + construct table), so the file
+/// really is linted and the run counts it with no skip line.
 #[test]
 fn a_language_the_quality_tier_models_is_counted_as_linted() {
     let dir = tempfile::tempdir().expect("tempdir");
-    write(dir.path(), "a.kt", "fun main() {}\n");
+    write(dir.path(), "a.c", "int main(void) { return 0; }\n");
 
     let run = lint(dir.path());
 
-    assert_eq!(run.checked, 1, "the quality tier lints Kotlin");
+    assert_eq!(run.checked, 1, "the quality tier lints C");
     assert_eq!(skips(&run), Vec::new());
 }
 
 /// The mixed case is the dangerous one: with a linted file beside it, a wrong
-/// count still looks plausible. Python is linted, Swift is not, and the summary
+/// count still looks plausible. Python is linted, Zig is not, and the summary
 /// must split them one and one rather than reporting two.
 #[test]
 fn mixed_corpus_counts_only_the_files_a_rule_examined() {
     let dir = tempfile::tempdir().expect("tempdir");
-    write(dir.path(), "a.swift", "func main() {}\n");
+    write(dir.path(), "a.zig", "pub fn main() void {}\n");
     write(dir.path(), "d.py", "x = 1\n");
 
     let run = lint(dir.path());
@@ -101,32 +104,32 @@ fn mixed_corpus_counts_only_the_files_a_rule_examined() {
     assert_eq!(run.checked, 1, "only the Python file was linted");
     assert_eq!(
         skips(&run),
-        vec![("a.swift".to_owned(), "no lint rules for Swift".to_owned())]
+        vec![("a.zig".to_owned(), "no lint rules for Zig".to_owned())]
     );
 
     let (text, total) = render_lint_pretty_run(&run, Verbosity::default());
     assert_eq!(total, 0);
     assert_eq!(
         text.lines().next(),
-        Some("No issues found. (1 file(s) linted, 1 skipped (no lint rules for Swift))"),
+        Some("No issues found. (1 file(s) linted, 1 skipped (no lint rules for Zig))"),
         "got:\n{text}"
     );
 }
 
 /// The reason names the language, so the reader knows *what* poly cannot lint.
 /// Distinct wording from `no matching engine for this file type`, which would be
-/// false here — an engine matched, poly simply has no Swift rules, and the fix
-/// for that is a Swift linter rather than a rename or an exclude.
+/// false here — an engine matched, poly simply has no Zig rules, and the fix
+/// for that is a Zig linter rather than a rename or an exclude.
 #[test]
 fn the_reason_names_the_language_and_is_not_the_no_engine_reason() {
     let dir = tempfile::tempdir().expect("tempdir");
-    write(dir.path(), "app.swift", "let x = 1\n");
+    write(dir.path(), "app.zig", "const x = 1;\n");
 
     let run = lint(dir.path());
 
     assert_eq!(
         skips(&run),
-        vec![("app.swift".to_owned(), "no lint rules for Swift".to_owned())]
+        vec![("app.zig".to_owned(), "no lint rules for Zig".to_owned())]
     );
     assert!(
         !run.skipped.iter().any(|s| s.reason == poly_core::NO_ENGINE_SKIP),
@@ -216,14 +219,14 @@ fn an_explicitly_named_unknown_file_is_a_skip_and_is_not_double_counted() {
 #[test]
 fn cross_cutting_findings_survive_on_a_file_with_no_language_rules() {
     let dir = tempfile::tempdir().expect("tempdir");
-    write(dir.path(), "a.swift", "// teh quick brown fox\nfunc main() {}\n");
+    write(dir.path(), "a.zig", "// teh quick brown fox\npub fn main() void {}\n");
 
     let run = lint(dir.path());
 
     assert_eq!(run.checked, 0);
     assert_eq!(
         skips(&run),
-        vec![("a.swift".to_owned(), "no lint rules for Swift".to_owned())]
+        vec![("a.zig".to_owned(), "no lint rules for Zig".to_owned())]
     );
     let typos: Vec<&str> = run
         .results
@@ -233,10 +236,10 @@ fn cross_cutting_findings_survive_on_a_file_with_no_language_rules() {
         .collect();
     assert_eq!(typos, vec!["typos"], "the spell-check finding must survive the skip");
     let paths: Vec<PathBuf> = run.results.iter().map(|result| result.path.clone()).collect();
-    assert_eq!(paths, vec![dir.path().join("a.swift")]);
+    assert_eq!(paths, vec![dir.path().join("a.zig")]);
     assert_eq!(
         run.results[0].skipped.as_deref(),
-        Some("no lint rules for Swift"),
+        Some("no lint rules for Zig"),
         "the per-file record carries the reason alongside the finding"
     );
 }

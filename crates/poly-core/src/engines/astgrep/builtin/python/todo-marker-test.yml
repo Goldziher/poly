@@ -1,0 +1,9 @@
+id: todo-marker
+valid:
+  - "# wire the cache up next release (tracked in #421)\ndef f():\n    pass"
+  - "def f():\n    todo = 1"
+  - "def f():\n    s = \"TODO: not a comment\""
+invalid:
+  - "# TODO: handle the empty case\ndef f():\n    pass"
+  - "# FIXME: leaks on the error path\ndef f():\n    pass"
+  - "def f():\n    g()  # XXX broken"

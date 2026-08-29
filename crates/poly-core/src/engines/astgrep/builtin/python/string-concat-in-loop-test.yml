@@ -1,0 +1,10 @@
+id: string-concat-in-loop
+valid:
+  - "def f(items):\n    parts = []\n    for i in items:\n        parts.append(f\"{i},\")\n    return \"\".join(parts)"
+  - "def f():\n    s = \"\"\n    s += \"once\"\n    return s"
+  - "def f(items):\n    total = 0\n    for i in items:\n        total += 1\n    return total"
+  - "def f(items):\n    out = \"\"\n    for i in items:\n        out += str(i)\n    return out"
+invalid:
+  - "def f(items):\n    s = \"\"\n    for i in items:\n        s += f\"{i},\"\n    return s"
+  - "def f(items):\n    s = \"\"\n    for i in items:\n        s += \"x\"\n    return s"
+  - "def f(rows):\n    s = \"\"\n    n = 0\n    while n < rows:\n        s += \"-\"\n        n += 1\n    return s"
