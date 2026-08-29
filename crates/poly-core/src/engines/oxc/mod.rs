@@ -33,8 +33,10 @@ use self::lint::{lint_js, lint_json};
 /// `+fmt-opts`:  JS quote_style, semicolons, trailing_commas, arrow_parentheses,
 ///               bracket_spacing, bracket_same_line, indent_style; JSON bracket_spacing
 ///               and trailing_commas now wired from `cfg.options`.
+/// `+rules-v4`: `complexity` added to the default filters, `max-classes-per-file`
+///              moved to the default allow list.
 const VERSION: &str =
-    "oxc_formatter:0.65.0+oxlint+parser:0.147.0+rev:784e9fa+json-fmt+rules-v3+fmt-opts+jsonc-trailing-comma";
+    "oxc_formatter:0.65.0+oxlint+parser:0.147.0+rev:784e9fa+json-fmt+rules-v4+fmt-opts+jsonc-trailing-comma";
 
 static LANGUAGES: &[Language] = &[
     Language::JavaScript,

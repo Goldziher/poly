@@ -78,6 +78,16 @@ impl RuntimeFileSystem for MemoryFileSystem<'_> {
 ///   hatches out of the type system (`any`, `!`) and the debug `console` call
 ///   that should not have shipped. Named individually because enabling the
 ///   whole `restriction` category would bury them.
+/// * `complexity` — also `restriction`, but its default threshold is exactly
+///   20, the same cyclomatic-complexity budget poly's quality tier applies to
+///   every other language. Enabling it here is what lets JS/TS *defer*
+///   cyclomatic complexity to oxlint instead of reimplementing the metric.
+///   Measured at 21 findings on hand-written source across a 20-repository
+///   corpus (55 raw, of which 34 land in vendored/minified bundles that each
+///   repo's own `[discovery] exclude` already drops); every one names a
+///   genuinely branchy function — `optimizeDocument` at 43, `generateFromZodType`
+///   at 39, `getSearchResultAllProperties` at 35 — with no false positives in
+///   the hand-read set.
 ///
 /// Applied by both [`lint_service`] (the no-config fast path) and
 /// [`build_configured_service`] (the user-config path) so the two cannot drift.
@@ -88,6 +98,7 @@ const DEFAULT_LINT_FILTERS: &[&str] = &[
     "typescript/no-explicit-any",
     "typescript/no-non-null-assertion",
     "no-console",
+    "complexity",
 ];
 
 /// Members of the categories above that are turned back off by default.
@@ -103,7 +114,26 @@ const DEFAULT_LINT_FILTERS: &[&str] = &[
 ///   50-line default, which every `describe()` block in a test file exceeds.
 /// - **max-lines** — 51 findings at oxlint's 300-line-per-file default, a
 ///   threshold poly does not endorse anywhere else (its own cap is 1000).
-const DEFAULT_ALLOWED_RULES: &[&str] = &["no-underscore-dangle", "max-lines-per-function", "max-lines"];
+/// - **max-classes-per-file** — 27 findings across five repos (21 once each
+///   repo's own `[discovery] exclude` drops generated wasm-bindgen and minified
+///   bundles). All 27 were hand-read and **none** is a defect: they are error
+///   taxonomies (`errors.ts` with 5 and with 50 sibling `Error` subclasses),
+///   test files declaring their own mocks, `.d.ts` ambient stubs, and cohesive
+///   module groups (`SearchStream`/`ExtractionStream`/`MetadataStream`). The
+///   rule's default `max: 1` asserts one class per file — a position poly holds
+///   nowhere else, and one that splitting a 50-case error hierarchy across 50
+///   files would only make worse.
+///
+/// `max-nested-callbacks` (also `pedantic`, default 10) was measured the same
+/// way and stays **on**: 0 findings corpus-wide, and a synthetic 15-deep fixture
+/// confirms it is live rather than silently inert. A rule that costs nothing and
+/// catches real callback pyramids earns its place.
+const DEFAULT_ALLOWED_RULES: &[&str] = &[
+    "no-underscore-dangle",
+    "max-lines-per-function",
+    "max-lines",
+    "max-classes-per-file",
+];
 
 /// A [`ConfigStoreBuilder`] carrying oxlint's defaults, widened by
 /// [`DEFAULT_LINT_FILTERS`] and narrowed by [`DEFAULT_ALLOWED_RULES`].

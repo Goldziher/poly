@@ -341,3 +341,92 @@ fn oxc_widened_default_survives_unrelated_user_config() {
         "the opinionated base must apply on the user-config path too; got: {diags:?}"
     );
 }
+
+/// `complexity` is in `DEFAULT_LINT_FILTERS`: oxlint parks it in the (off)
+/// `restriction` category, but its default threshold is exactly 20 — the
+/// cyclomatic-complexity budget poly's quality tier applies everywhere else, so
+/// JS/TS defers the metric to oxlint rather than reimplementing it.
+#[test]
+fn oxc_complexity_fires_by_default_at_a_threshold_of_20() {
+    // 24 independent `if` arms in one function: complexity 25.
+    let branches = (1..=24)
+        .map(|n| format!("  if (n === {n}) {{\n    return {n};\n  }}\n"))
+        .collect::<String>();
+    let content = format!("export function f(n) {{\n{branches}  return 0;\n}}\n");
+
+    let codes = default_codes(&content, "cx.js", Language::JavaScript);
+    assert!(
+        codes.iter().any(|c| c == "complexity"),
+        "a complexity-25 function must trip `complexity`; got: {codes:?}"
+    );
+
+    // Below the threshold nothing fires, proving 20 really is the boundary.
+    let few = (1..=5)
+        .map(|n| format!("  if (n === {n}) {{\n    return {n};\n  }}\n"))
+        .collect::<String>();
+    let small = format!("export function g(n) {{\n{few}  return 0;\n}}\n");
+    let small_codes = default_codes(&small, "cx2.js", Language::JavaScript);
+    assert!(
+        !small_codes.iter().any(|c| c == "complexity"),
+        "a complexity-6 function must not trip `complexity`; got: {small_codes:?}"
+    );
+}
+
+/// `max-classes-per-file` is in `DEFAULT_ALLOWED_RULES`: it rides along with
+/// `pedantic` at `max: 1`, which would warn on every error-taxonomy module and
+/// every test file that declares its own mocks. Off by default, back with
+/// `extend_select`.
+#[test]
+fn oxc_max_classes_per_file_is_off_by_default_but_reenableable() {
+    let content = "export class A {}\nexport class B extends A {}\n";
+
+    let codes = default_codes(content, "two-classes.ts", Language::TypeScript);
+    assert!(
+        !codes.iter().any(|c| c == "max-classes-per-file"),
+        "max-classes-per-file must be off by default; got: {codes:?}"
+    );
+
+    let mut opts = toml::Table::new();
+    opts.insert(
+        "extend_select".to_owned(),
+        toml::Value::Array(vec![toml::Value::String("max-classes-per-file".to_owned())]),
+    );
+    let reenabled = OxcEngine
+        .lint(
+            &make_src(content, "two-classes.ts", Language::TypeScript),
+            &EngineConfig {
+                globals: GlobalDefaults::default(),
+                indent_width: 2,
+                options: opts,
+            },
+        )
+        .unwrap();
+    assert!(
+        reenabled
+            .iter()
+            .any(|d| d.code.as_deref() == Some("max-classes-per-file")),
+        "extend_select must bring max-classes-per-file back; got: {reenabled:?}"
+    );
+}
+
+/// `max-nested-callbacks` was measured at 0 findings corpus-wide, so it stays
+/// **on** rather than joining `DEFAULT_ALLOWED_RULES`. This pins that it is live
+/// and not silently inert — the reason the zero is trustworthy.
+#[test]
+fn oxc_max_nested_callbacks_stays_enabled_by_default() {
+    let mut content = String::from("a(function () {\n");
+    for _ in 0..14 {
+        content.push_str("  b(function () {\n");
+    }
+    content.push_str("    x();\n");
+    for _ in 0..14 {
+        content.push_str("  });\n");
+    }
+    content.push_str("});\n");
+
+    let codes = default_codes(&content, "nested.js", Language::JavaScript);
+    assert!(
+        codes.iter().any(|c| c == "max-nested-callbacks"),
+        "15 nested callbacks must trip max-nested-callbacks; got: {codes:?}"
+    );
+}
