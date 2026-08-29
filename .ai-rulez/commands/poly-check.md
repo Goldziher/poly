@@ -18,10 +18,19 @@ their own side effects — a refreshed lock file, a populated build or type-chec
 not poly's to control. Add `--no-workspace` when the tree must be left untouched; that drops
 the whole-project tools from the check, so say so in the report.
 
+That phase only runs when the argument is the repository root (the `.` default) or no path at
+all. Naming narrower paths makes the run **path-scoped** — the per-file tier only, with a note
+on stderr — so `poly lint src/` is already free of those side effects. Pass `--workspace` to
+opt back in; the phase then covers the whole repository regardless of the paths named.
+
 Report:
 
 - Which files have formatting drift.
 - Lint findings grouped by rule and severity (error vs warning).
-- The overall pass/fail from the exit codes (`0` clean, `1` findings/drift, `2` error).
+- The overall pass/fail from the exit codes: `0` clean; `1` findings or drift — for `lint`
+  only **error**-severity findings (or a failing whole-project tool) reach `1`, warnings
+  still exit `0`; `2` the run did not verify what it was asked to (a missing path, a file an
+  engine failed on, a `--deny-skips`/`--max-skips` breach, or the whole-project phase itself
+  erroring).
 
 Do not apply fixes here — if the user wants them applied, run `/poly-fix`.

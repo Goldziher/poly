@@ -4,15 +4,33 @@ priority: high
 
 # poly
 
-poly is a single-binary, multi-language linter and formatter. It bundles engines (ruff, oxc, taplo, rumdl) and delegates to native tools (cargo fmt/clippy, golangci-lint, actionlint, shellcheck, shfmt) when present.
+poly is a single-binary, multi-language linter and formatter. Tier-1 backends are compiled in as
+crate dependencies — ruff, oxc, biome (CSS/GraphQL), mago (PHP), taplo, rumdl, sqruff, malva,
+markup_fmt, rubyfmt, nixfmt, typos, and more under `crates/poly-core/src/engines/` — with a
+tree-sitter generic tier for the long tail. Two cross-cutting lint tiers run on top: the native
+`quality` metric engine and ast-grep with a built-in rule pack. Canonical first-party CLIs are
+used when found on `PATH` (`rustfmt` and `gofmt` are default-on; `zig fmt`, `shfmt`, `shellcheck`,
+`google-java-format`, `ktfmt`, `swift-format`, `dartfmt`, `styler`, `gleamfmt` are opt-in), and
+whole-project tools (`cargo clippy` / `cargo-sort` / `cargo-machete` / `cargo-deny`, plus opt-in
+catalog tools such as `golangci-lint` and `actionlint`) run in the whole-project phase, not the
+per-file tier.
 
 ## Commands
 
 - Lint: `poly lint .`
 - Lint, per-file tier only (skip whole-project tools): `poly lint --no-workspace .`
-- Check formatting (dry-run): `poly fmt --check .`
+- Check formatting (dry-run, the default): `poly fmt --check .`
 - Apply formatting only (no linting): `poly fmt --fix .`
 - Apply lint autofixes (and whole-project autofixes): `poly lint --fix .`
+
+Both `lint` and `fmt` share: `--format pretty|json|toon`, `--config <PATH>`, `--no-cache`,
+`-j/--jobs <N>`, `--exclude <GLOB>` (repeatable), `--no-color`, `--fix`, `--verbose`, `--debug`,
+`--force-exclude` / `--include-excluded`, `--fix-generated`, and `--deny-skips` / `--max-skips <N>`.
+`poly lint` adds `--no-workspace` and `--workspace`.
+
+The other subcommands: `poly hooks` (native git-hook runner over `[hooks]`), `poly commit`
+(commit-message lint, gitfluff), `poly rules test|list` (custom + built-in ast-grep rule packs),
+`poly config update|show`, `poly cache`, `poly migrate`, `poly mcp`, `poly doctor`.
 
 ## Whole-project lint phase
 
@@ -36,7 +54,8 @@ the tree untouched needs `--no-workspace` or `[lint] workspace = false`.
 The phase is also **not path-scoped**: `poly lint <paths>` skips it for that reason, and
 `--workspace` opts back in with the tools still covering the whole repository — regardless of the
 named paths and of `[discovery] exclude`, which filters poly's own discovery only. poly prints a
-note on both branches.
+note on both branches. Naming the workspace root is *not* path scoping: `poly lint .` is how
+people say "lint everything", so it runs the phase.
 
 Under `--fix`, this phase runs the tools in **fix mode**: `cargo sort` sorts in place,
 `cargo-machete --fix` prunes unused deps, and `cargo clippy --fix --allow-dirty --allow-staged`
@@ -68,12 +87,59 @@ result cache and hook staged snapshot live in the per-user OS cache dir (`~/.cac
 on Linux, `~/Library/Caches/poly/…` on macOS, `%LOCALAPPDATA%\poly\…` on Windows) — not in-repo.
 `POLY_CACHE_HOME` overrides the base; `[cache] dir` pins an explicit path.
 
-## Severity
+## Code-quality tier and rule packs
 
-`poly lint` exits non-zero only on error-severity findings; warnings don't fail CI.
+Beyond the per-language backends, two cross-cutting lint mechanisms run on by default at
+**warning** severity (ADR 0027), so adopting them does not redden CI:
+
+- **The native `quality` engine** — `file-too-long` (1000 lines), `function-too-long` (80),
+  `type-too-long` (300), `too-many-parameters` (6), `nesting-too-deep` (4),
+  `cyclomatic-complexity` (20) and `lazy-ignore`, plus opt-in `magic-number` and `law-of-demeter`.
+  Configured under `[lint.quality]` / `[lint.<lang>.quality]` with flat keys — a boolean toggle
+  plus a threshold, e.g. `file_too_long = false`, `file_too_long_lines = 800`,
+  `cyclomatic_complexity_max = 15`; `enabled = false` disables the tier. It never duplicates a
+  tier-1 backend: a per-language deferral table yields each metric to the existing rule (ruff
+  `C901`/`PLR0913`, oxlint `max-depth`/`max-params`). It claims lint *coverage* only for
+  languages whose control flow it
+  can model — Python, Rust, Go, JavaScript, TypeScript, TSX, Java, Kotlin, C, C++, C#, Ruby —
+  while others still get the line-counting floor without being counted as linted.
+- **The built-in ast-grep rule pack** (ADR 0029) — 26 rules across C#, Elixir, Go, Java, Kotlin,
+  Python, Ruby, Rust and Swift, embedded in the binary and loaded through the same parse path as
+  user rules. It sits *beneath* `[rules] dirs` (a user rule with the same `id` replaces a pack
+  rule). Each rule carries its own `severity:`, ten of them `off`. `[rules] builtin = false`
+  disables the pack wholesale; `[lint.astgrep]` `select`/`extend_select`/`ignore` and
+  `[lint.astgrep.rules.<id>] level` move individual rules. (`[rules]` — `dirs`, default
+  `[".poly/rules"]`, and `builtin` — is a separate top-level table from the per-rule overrides
+  that live under a backend's own `[lint.…]` table.)
+
+## Inline suppression
+
+`poly: allow[RULE] reason` and `poly: allow-file[RULE] reason` (ADR 0028), written in the host
+language's own comment syntax — detected by a heuristic over known comment openers, not a parse.
+An `allow` on a comment-only line covers the next non-blank line; trailing after code it covers
+that line; `allow-file` covers the whole file, and is the only form that can suppress a
+span-less diagnostic. `RULE` may be a list, or `*` for every rule. **A reason is mandatory**: a
+directive with no alphanumeric text after `]` does not suppress at all and reports `lazy-ignore`
+instead. The filter is applied centrally in the runner, so every engine inherits it. The file-glob
+mechanism `[per-file-ignores]` (ADR 0017) still exists for whole-file exemptions.
+
+## Exit codes
+
+- `0` — clean.
+- `1` — **error-severity** lint findings, a failing whole-project tool, or (for `poly fmt`)
+  files that would change. Warning-severity findings alone do not fail a run, so `typos` and the
+  quality tier don't redden CI.
+- `2` — the run verified less than it claims: a file poly failed on, a skip budget exceeded
+  (`--deny-skips` / `--max-skips`), a config/pipeline error, or a machine-readable report that
+  failed to serialize.
+
+A `--format json`/`toon` consumer must check the exit code, not just the payload.
 
 ## CI
 
-Validation runs via `uses: xberg-io/actions/.github/workflows/reusable-validate.yml@v1`.
+`.github/workflows/ci.yaml` runs four jobs on push/PR to `main`: `cargo fmt --all --check`;
+`cargo clippy --workspace --exclude conformance --all-targets -- -D warnings` and
+`cargo test --workspace --exclude conformance`, both on a Linux/macOS/Windows matrix; and
+`cargo-deny check`. `.github/workflows/publish.yaml` builds and uploads the release artifacts.
 
 Run `poly fmt --check .` and `poly lint .` after changes to verify compliance.

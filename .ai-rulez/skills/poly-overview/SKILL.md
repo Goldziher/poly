@@ -1,32 +1,58 @@
 ---
 priority: medium
-description: "What poly is — tier-1 in-process backends vs the tree-sitter generic tier, language coverage, and when to reach for it"
+description: "What poly is — the native, tree-sitter, native-toolchain, quality, and built-in-rule-pack tiers, language coverage, and when to reach for it"
 ---
 
 # poly Overview
 
 poly is a single pure-Rust binary that lints and formats a whole repository across
 languages. It wraps best-in-class tools as in-process crate backends and falls back to a
-tree-sitter generic tier for everything else — no subprocesses and no system dependencies by
-default, so it runs the same on any machine and in CI.
+tree-sitter generic tier for everything else, so it runs the same on any machine and in CI.
+No system tool is ever *required*; the one scoped exception is the native-toolchain tier
+below, which uses a language's canonical CLI when it happens to be installed.
 
-## Two coverage tiers
+## Per-language coverage tiers
 
 - **Tier 1 — native in-process backends.** Highest fidelity, compiled straight into the
-  binary: `ruff` (Python), `oxc` (JS/TS/JSX), `taplo` (TOML), `rumdl` (Markdown), plus
-  `sqruff`, `malva`, `markup_fmt`, `graphql`, `nixfmt`, `typos`, and YAML. Registered per
-  language in the engine registry.
-- **Tier 2 — tree-sitter generic tier.** The catch-all for the long tail (shell, Go, Java,
-  Kotlin, Ruby, PHP, C/C++, Dockerfile, protobuf, and 300+ grammars). CST-driven structural
-  reindent and whitespace normalization — best-effort, pure Rust, grammars fetched on demand.
-- **Native-toolchain backends (scoped exception).** A language's canonical first-party CLI
-  (`rustfmt`, `gofmt` default-on when present; `zig fmt` and lint tools opt-in) is invoked
-  per file over stdin/stdout when installed. When absent, the language falls through to
-  tier 2, so the zero-dependency guarantee always holds.
+  binary and registered per language in `registry.rs`: `ruff` (Python), `oxc`
+  (JS/TS/JSX/TSX/JSON/JSONC), `taplo` (TOML), `rumdl` (Markdown/MDX), `sqruff` (SQL), YAML,
+  `malva` (CSS/SCSS/LESS) + `biome` (CSS/SCSS), `markup_fmt` (HTML/Vue/Svelte/Astro/Angular/Jinja/
+  Vento/Mustache/XML), `mago` (PHP), `rubyfmt` (Ruby), `graphql` + `biome` (GraphQL),
+  `nixfmt` (Nix), `hcl`, Dockerfile, dotenv, and INI.
+- **Tier 2 — tree-sitter generic tier.** The catch-all for the long tail (Elixir, C/C++,
+  C#, protobuf, and the rest of 300+ grammars). CST-driven structural reindent for
+  brace-family grammars, whitespace normalization otherwise, and a `LEAVE_UNTOUCHED` list
+  for grammars where whitespace is significant. Best-effort, pure Rust, grammars loaded on
+  demand — never gofmt/rustfmt parity, by design.
+- **Native-toolchain tier (scoped exception).** A language's canonical first-party CLI run
+  per file over stdin/stdout when installed: `rustfmt` and `gofmt` are **on by default when
+  found on PATH**; `zig fmt`, `shfmt`, `shellcheck`, `google-java-format`, `ktfmt`, `styler`
+  (R), `swift-format`, `dart format`, and `gleam format` are opt-in via
+  `[fmt.<lang>.<tool>] enabled = true` / `[lint.<lang>.<tool>] enabled = true`. When the
+  tool is absent, formatting falls through to tier 2 with an info-level notice, so the
+  zero-dependency guarantee always holds.
+
+## Cross-cutting engines (every language)
+
+Four engines are appended to every language regardless of tier:
+
+- **`typos`** — spelling in identifiers, comments, and strings.
+- **`quality`** — structural code-quality metrics off the tree-sitter parse: file/function/
+  type length, nesting depth, cyclomatic complexity, parameter count, and `lazy-ignore`.
+  Warning severity, on by default. The structural rules need a verified node-kind table and
+  run for Python, Rust, Go, JavaScript, TypeScript, TSX, Java, Kotlin, C, C++, C#, and Ruby;
+  `magic-number` and `law-of-demeter` are opt-in. Configure under `[lint.quality]`.
+- **`astgrep`** — ast-grep pattern rules. poly embeds a **built-in rule pack** of 26 rules
+  across 9 languages (C#, Elixir, Go, Java, Kotlin, Python, Ruby, Rust, Swift), on by
+  default; 13 of them ship `severity: off`. User rules under `[rules] dirs` (default
+  `.poly/rules`) layer on top and replace a pack rule sharing its `id`. Disable the pack
+  wholesale with `[rules] builtin = false`.
+- **`uncomment`** — opt-in comment removal, off unless `[lint.uncomment] enabled = true`.
 
 ## When to use it
 
 Reach for poly as the single lint/format gate for any repo: local dev, git hooks, and CI.
-It replaces invoking ruff / eslint / rustfmt / prettier individually — one binary, one
-`poly.toml`, one report. A language with no native backend still gets tier-2 formatting, so
-poly covers the whole tree rather than only the languages you wired up by hand.
+It replaces invoking ruff / oxlint / rustfmt / prettier individually — one binary, one
+`poly.toml`, one report. A language with no native backend still gets tier-2 formatting
+plus the cross-cutting engines, so poly covers the whole tree rather than only the
+languages you wired up by hand.

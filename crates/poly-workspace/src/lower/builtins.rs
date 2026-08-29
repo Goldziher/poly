@@ -322,7 +322,10 @@ pub(super) fn append_cargo(
 }
 
 /// Rewrite the retained whole-project cargo hooks in `spec` to their autofix
-/// command lines, for `poly lint --fix` / `poly fmt --fix`.
+/// command lines, for `poly lint --fix`.
+///
+/// `poly fmt` is not a caller: it is a pure formatter and never reaches the
+/// whole-project phase at all, in `--fix` mode or any other.
 ///
 /// This is applied **only** on the fix paths, after
 /// [`super::super::workspace_lint`] has reduced the lowered stage to its

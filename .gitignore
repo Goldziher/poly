@@ -4,14 +4,6 @@
 
 poly.local.toml
 
-# BEGIN ai-rulez (DO NOT EDIT - managed by ai-rulez)
-.ai-rulez/.generated-manifest.json
-.claude/
-.codex/
-.mcp.json
-AGENTS.md
-CLAUDE.md
-# END ai-rulez
 
 # ai-rulez `generate --plugin` fans out plugin bundles to every harness it knows.
 # poly ships plugin surfaces for claude + codex only (.claude-plugin/, .codex-plugin/);
@@ -24,3 +16,12 @@ CLAUDE.md
 gemini-extension.json
 kimi.plugin.json
 /package.json
+
+# BEGIN ai-rulez (DO NOT EDIT - managed by ai-rulez)
+.ai-rulez/.generated-manifest.json
+.claude/
+.codex/
+.mcp.json
+AGENTS.md
+CLAUDE.md
+# END ai-rulez

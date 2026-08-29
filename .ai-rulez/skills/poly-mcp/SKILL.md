@@ -1,53 +1,83 @@
 ---
 priority: medium
-description: "The poly MCP server — read-only vs mutating tools, the paths/exclude/config params, and JSON/TOON output mirroring the CLI"
+description: "The poly MCP server — the eleven tools and which are read-only vs mutating, the paths/exclude/config/format params, async Tasks for the whole-project phase, and the isError contract"
 ---
 
 # poly MCP
 
-`poly mcp` is a stdio MCP server exposing poly's lint/format/cache surface as tools. Prefer
-it over shelling out to the CLI when working through MCP — the outputs mirror the CLI's
-`--format json`, and are also available as the compact TOON encoding.
+`poly mcp` is a stdio MCP server exposing poly's lint/format/cache/rules/config surface as
+tools. Prefer it over shelling out to the CLI when working through MCP — every tool returns
+typed `structured_content` (with a declared output schema) plus one text block that mirrors
+the CLI's `--format json`, or the compact TOON encoding when asked.
+
+`poly mcp --config <PATH>` pins a fallback config file for requests that do not name one.
 
 ## Tool surface
 
-Read-only (never touch the tree):
+Eleven tools, no more. Read-only (never touch the tree):
 
-- `lint` — run the linters and return diagnostics.
-- `format_check` — report formatting drift without writing.
-- `cache_stats` — result-cache statistics.
-- `rules` — the effective rule set.
-- `config_show` — the merged effective configuration.
+- `lint` — run the linters and return diagnostics. Mirrors `poly lint`.
+- `format_check` — report formatting drift without writing. Mirrors `poly fmt --check`.
+- `cache_stats` — result-cache footprint (entries, bytes, format version) per namespace.
+- `rules` — list the ast-grep rules resolved from `[rules] dirs`, and optionally run their
+  `*-test.yml` snippets. Mirrors `poly rules list` / `poly rules test`. It reports the
+  rules loaded from those directories only — poly's built-in rule pack is not listed.
+- `config_show` — the merged effective configuration. Mirrors `poly config show`, and is
+  **network-free**: remote `extends` bases are not fetched.
+- `version` — which poly binary is serving this session (version, build id, channel,
+  executable, pid, uptime) and whether that executable is still the file on disk. It answers
+  even when the binary has moved, which is what makes it the tool that explains why the
+  others stopped.
 
 Mutating (write to the tree):
 
-- `lint_fix` — apply lint autofixes.
-- `format_write` — format files in place.
-- `cache_clean` — clear the result cache.
-- `hooks` — run the configured hook stages.
+- `lint_fix` — apply lint autofixes. Mirrors `poly lint --fix`.
+- `format_write` — format files in place. Mirrors `poly fmt --fix`.
+- `cache_clean` — clear the result cache and report freed bytes.
 
-Whole-project (long-running async Tasks — poll `tasks/get`):
+Whole-project (long-running):
 
 - `workspace_lint` — the whole-project phase in check mode: `cargo clippy` / `cargo-sort` /
-  `cargo-machete` / `cargo-deny` and configured whole-project jobs, over the whole repository
-  (it takes no `paths`).
+  `cargo-machete` / `cargo-deny` and configured inline whole-project jobs, over the whole
+  repository (it takes no `paths`).
 - `workspace_lint_fix` — the same phase in fix mode; writes files.
 
+Both are exposed as async Tasks (SEP-2663): the call returns a task handle and the client
+polls `tasks/get`, optionally `tasks/cancel`, with an unlimited TTL. A client that does not
+declare the tasks capability gets a synchronous, blocking result from the same call instead,
+so the tools work either way.
+
 `workspace_lint` applies no fixes, but it is **not** in the never-touch-the-tree group: it
-executes those tools against the live worktree, and their own side effects — a refreshed lock
-file, a populated build or type-checker cache — are not poly's to control.
+executes those tools against the live worktree, and their own side effects — a refreshed
+lock file, a populated build or type-checker cache — are not poly's to control.
+
+There is no `hooks` tool: `poly hooks` is CLI-only.
 
 ## Parameters
 
-The file-oriented tools take the same shape as the CLI:
+- `lint` / `format_check` / `lint_fix` / `format_write`: `paths` (files or directories;
+  empty means the current directory), `exclude` (gitignore-style globs merged with
+  `[discovery] exclude` — unanchored globs match at any depth), `config` (path to a
+  `poly.toml`), `format` (`"json"` default, or `"toon"`).
+- `rules`: `dirs` (empty means `[rules] dirs` from the config), `config`, `test` (bool),
+  `format`.
+- `config_show`: `config`, `format`.
+- `cache_stats` / `cache_clean` / `version`: `format` only.
+- `workspace_lint` / `workspace_lint_fix`: `config`, `format`, `jobs`, `no_cache` — no
+  `paths`.
 
-- `paths` — files or directories to operate on (defaults to the repo root).
-- `exclude` — glob(s) to skip on top of `.gitignore`.
-- `config` — path to a specific `poly.toml`.
+`format` selects only the paired **text** block; `structured_content` is always JSON.
 
-Results come back as structured JSON and compact TOON, matching the CLI `--format` output.
 Treat the read-only tools as safe to call freely; gate the mutating tools behind explicit
 intent since they change files.
+
+## Every result identifies the binary that answered
+
+Each result carries a `poly` block (version, build id, channel, executable, pid) in
+`structured_content` and in `_meta`, because an MCP caller has no `poly --version` to fall
+back on. The server fingerprints its own executable at startup and re-checks it per request:
+if the binary is replaced or deleted underneath a long-lived server, every tool but
+`version` fails rather than answering with superseded behaviour.
 
 ## Per-file outcomes: checked, skipped, error
 
@@ -73,6 +103,3 @@ entirely — indistinguishable from a file that was checked and found clean. An 
 gated on "no findings in `results`" was reading a run that had silently failed to check some
 files as a clean pass. Check `isError` (or the `errors` array) first; only then read
 `results` for diagnostics.
-
-(Exact tool names may shift slightly as the server stabilizes — the read-only/mutating split
-and the params above are the stable contract.)
