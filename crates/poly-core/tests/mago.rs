@@ -310,3 +310,220 @@ fn non_numeric_php_version_component_returns_error() {
         "a non-numeric php_version component must produce an Err"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Advisory severity: maintainability metrics are guard rails, not gates.
+// ---------------------------------------------------------------------------
+
+/// Trips three `Maintainability` metric rules whose mago default level is
+/// `Level::Error` — `excessive-parameter-list` (7 params vs. a threshold of 5),
+/// `too-many-methods` (11 methods vs. 10), and `cyclomatic-complexity` (20
+/// branches vs. 15) — alongside `no-ffi`, a `Safety` rule that is also
+/// `Level::Error` and must stay a gate.
+const METRIC_HEAVY_PHP: &str = r#"<?php
+
+declare(strict_types=1);
+
+use FFI;
+
+final class Wide
+{
+    public function m1(int $a, int $b, int $c, int $d, int $e, int $f, int $g): int
+    {
+        return $a + $b + $c + $d + $e + $f + $g;
+    }
+
+    public function m2(): int { return 2; }
+    public function m3(): int { return 3; }
+    public function m4(): int { return 4; }
+    public function m5(): int { return 5; }
+    public function m6(): int { return 6; }
+    public function m7(): int { return 7; }
+    public function m8(): int { return 8; }
+    public function m9(): int { return 9; }
+    public function m10(): int { return 10; }
+    public function m11(): int { return 11; }
+
+    public function branchy(int $n): bool
+    {
+        if ($n === 1) {
+            return true;
+        }
+
+        if ($n === 2) {
+            return true;
+        }
+
+        if ($n === 3) {
+            return true;
+        }
+
+        if ($n === 4) {
+            return true;
+        }
+
+        if ($n === 5) {
+            return true;
+        }
+
+        if ($n === 6) {
+            return true;
+        }
+
+        if ($n === 7) {
+            return true;
+        }
+
+        if ($n === 8) {
+            return true;
+        }
+
+        if ($n === 9) {
+            return true;
+        }
+
+        if ($n === 10) {
+            return true;
+        }
+
+        if ($n === 11) {
+            return true;
+        }
+
+        if ($n === 12) {
+            return true;
+        }
+
+        if ($n === 13) {
+            return true;
+        }
+
+        if ($n === 14) {
+            return true;
+        }
+
+        if ($n === 15) {
+            return true;
+        }
+
+        if ($n === 16) {
+            return true;
+        }
+
+        if ($n === 17) {
+            return true;
+        }
+
+        if ($n === 18) {
+            return true;
+        }
+
+        if ($n === 19) {
+            return true;
+        }
+
+        if ($n === 20) {
+            return true;
+        }
+
+        return false;
+    }
+
+    public function unsafe(): void
+    {
+        FFI::cdef('int puts(const char *s);');
+    }
+}
+"#;
+
+/// Collect `(code, severity)` for every diagnostic carrying a rule code.
+fn coded(diags: &[poly_core::engine::Diagnostic]) -> Vec<(&str, poly_core::engine::Severity)> {
+    diags
+        .iter()
+        .filter_map(|d| d.code.as_deref().map(|c| (c, d.severity)))
+        .collect()
+}
+
+/// The `Maintainability` metric rules mago ships at `Level::Error` are reported
+/// as `Warning`, so a complexity budget never fails `poly lint`.
+#[test]
+fn maintainability_metrics_are_downgraded_to_warning() {
+    let engine = MagoEngine::default();
+    let src = make_src("metrics.php", METRIC_HEAVY_PHP);
+    let diags = engine.lint(&src, &engine_cfg()).unwrap();
+    let coded = coded(&diags);
+
+    for code in ["excessive-parameter-list", "too-many-methods", "cyclomatic-complexity"] {
+        let severities: Vec<_> = coded.iter().filter(|(c, _)| *c == code).map(|(_, s)| *s).collect();
+        assert!(!severities.is_empty(), "expected {code} to fire; got: {coded:?}");
+        assert!(
+            severities.iter().all(|s| *s == poly_core::engine::Severity::Warning),
+            "{code} must report Warning, not Error; got: {severities:?}"
+        );
+    }
+}
+
+/// The downgrade is scoped: `Safety` / `Security` rules mago ships at
+/// `Level::Error` keep `Severity::Error` and still fail the run.
+#[test]
+fn safety_rules_keep_error_severity() {
+    let engine = MagoEngine::default();
+    let src = make_src("metrics.php", METRIC_HEAVY_PHP);
+    let diags = engine.lint(&src, &engine_cfg()).unwrap();
+    let coded = coded(&diags);
+
+    let ffi: Vec<_> = coded.iter().filter(|(c, _)| *c == "no-ffi").map(|(_, s)| *s).collect();
+    assert!(!ffi.is_empty(), "expected no-ffi to fire; got: {coded:?}");
+    assert!(
+        ffi.iter().all(|s| *s == poly_core::engine::Severity::Error),
+        "no-ffi is a Safety rule and must stay Severity::Error; got: {ffi:?}"
+    );
+}
+
+/// `[rules.<code>] level = "error"` promotes a downgraded metric rule back to a
+/// gate — the user override is applied before the advisory downgrade.
+#[test]
+fn level_override_restores_error_on_a_downgraded_metric() {
+    let engine = MagoEngine::default();
+    let src = make_src("metrics.php", METRIC_HEAVY_PHP);
+    let cfg = cfg_from_str(
+        r#"
+[rules.cyclomatic-complexity]
+level = "error"
+"#,
+    );
+
+    let diags = engine.lint(&src, &cfg).unwrap();
+    let found: Vec<_> = diags
+        .iter()
+        .filter(|d| d.code.as_deref() == Some("cyclomatic-complexity"))
+        .map(|d| d.severity)
+        .collect();
+
+    assert!(!found.is_empty(), "expected cyclomatic-complexity to fire");
+    assert!(
+        found.iter().all(|s| *s == poly_core::engine::Severity::Error),
+        "an explicit level = \"error\" must win over the advisory downgrade; got: {found:?}"
+    );
+}
+
+/// A parse error is not a rule finding and keeps `Severity::Error` regardless of
+/// the advisory list.
+#[test]
+fn parse_errors_are_unaffected_by_the_advisory_downgrade() {
+    let engine = MagoEngine::default();
+    let src = make_src("known_bad.php", KNOWN_BAD);
+    let diags = engine.lint(&src, &engine_cfg()).unwrap();
+
+    let parse: Vec<_> = diags
+        .iter()
+        .filter(|d| matches!(d.code.as_deref(), Some("syntax" | "parse")))
+        .map(|d| d.severity)
+        .collect();
+
+    assert!(!parse.is_empty(), "expected a parse-error diagnostic");
+    assert!(
+        parse.iter().all(|s| *s == poly_core::engine::Severity::Error),
+        "parse errors must stay Severity::Error; got: {parse:?}"
+    );
+}

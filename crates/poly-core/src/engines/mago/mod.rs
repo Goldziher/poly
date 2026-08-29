@@ -82,8 +82,11 @@ impl Engine for MagoEngine {
     }
 
     /// Cache-key version: bump whenever mago output could change.
+    ///
+    /// `+advisory-sev1`: the `Maintainability` metric rules report `Warning`
+    /// instead of mago's `Error` (see `lint::ADVISORY_RULE_CODES`).
     fn version(&self) -> &str {
-        "mago-1.47.3"
+        "mago-1.47.3+advisory-sev1"
     }
 
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {

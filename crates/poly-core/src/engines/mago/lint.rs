@@ -8,6 +8,13 @@
 //!    [`mago_text_edit::TextEdit`] for the current file are wired as an
 //!    [`Edit`] fix.
 //!
+//! ## Severity
+//!
+//! Mago's [`Level`] maps straight through, except that the `Maintainability`
+//! metric rules listed in [`ADVISORY_RULE_CODES`] are downgraded from `Error`
+//! to [`Severity::Warning`] so a complexity budget never fails a run.  See that
+//! constant for the rationale and the escape hatch.
+//!
 //! ## Config keys (`[lint.php.mago]`)
 //!
 //! | Key | Type | Default |
@@ -197,16 +204,77 @@ fn build_only_list(
     Ok(active)
 }
 
+/// Rule codes reported at [`Severity::Warning`] rather than mago's own `Error`,
+/// so they never fail a run.
+///
+/// `poly lint` exits non-zero only on error-severity findings, so the severity a
+/// backend assigns decides whether a rule is a **gate** or a **guard rail**. Mago
+/// ships six default-enabled rules whose `Config::default()` is `Level::Error`
+/// but which measure a *metric* rather than detect a defect — all six live in
+/// [`mago_linter::category::Category::Maintainability`]. Passing them through
+/// verbatim means PHP is the one language where poly fails CI on a complexity
+/// budget, contradicting ADR 0027's "warning severity, on by default" posture.
+///
+/// The split follows what a finding *means*, not what mago calls it:
+///
+/// - **Error (not listed here)** — the other 21 default-enabled `Level::Error`
+///   rules: `Safety` (`no-eval`, `no-ffi`, `no-unsafe-finally`, …), `Security`
+///   (`no-literal-password`, `tainted-data-to-sink`, `sensitive-parameter`, …),
+///   `Correctness`, `Deprecation`, `BestPractices`, and `Clarity`'s `no-empty`.
+///   These report a real correctness or security problem, so they stay gates.
+///   `no-empty` is the closest call — an empty `catch` swallows an error — but
+///   it is defect detection rather than a metric, so it keeps `Error`.
+/// - **Warning (listed here)** — the `Maintainability` metric thresholds. Each
+///   is a threshold poly does not endorse as a build breaker: complexity 15,
+///   5 parameters, 10 methods, 10 properties, 20 enum cases, Kan defect 1.
+///
+/// A consumer opts back into failing on any of them with
+/// `[lint.php.mago.rules.<code>] level = "error"`, which [`issue_severity`]
+/// applies *before* this downgrade.
+///
+/// Verified against mago-linter 1.47.3: `src/rule/maintainability/`
+/// `cyclomatic_complexity.rs`, `excessive_parameter_list.rs`, `kan_defect.rs`,
+/// `too_many_enum_cases.rs`, `too_many_methods.rs`, `too_many_properties.rs`
+/// each declare `level: Level::Error` in their `impl Default for …Config`.
+static ADVISORY_RULE_CODES: &[&str] = &[
+    "cyclomatic-complexity",
+    "excessive-parameter-list",
+    "kan-defect",
+    "too-many-enum-cases",
+    "too-many-methods",
+    "too-many-properties",
+];
+
+/// Downgrade `severity` to [`Severity::Warning`] when `code` is one of the
+/// advisory maintainability metrics (see [`ADVISORY_RULE_CODES`]).
+///
+/// Only ever downgrades: a finding mago already reports below `Error` keeps its
+/// own level.
+fn advisory_severity(code: Option<&str>, severity: Severity) -> Severity {
+    if severity != Severity::Error {
+        return severity;
+    }
+    match code {
+        Some(code) if ADVISORY_RULE_CODES.contains(&code) => Severity::Warning,
+        _ => severity,
+    }
+}
+
 /// Determine the poly [`Severity`] for a lint issue, applying any
 /// per-rule level override from `selection.rules`.
+///
+/// The user override is consulted first and returns early, so
+/// `[rules.cyclomatic-complexity] level = "error"` still promotes an advisory
+/// rule back to a gate.
 fn issue_severity(issue: &mago_reporting::Issue, selection: &RuleSelection) -> Severity {
-    if let Some(code) = issue.code.as_deref()
+    let code = issue.code.as_deref();
+    if let Some(code) = code
         && let Some(opts) = selection.rules.get(code)
         && let Some(level) = opts.level
     {
         return level;
     }
-    map_level(issue.level)
+    advisory_severity(code, map_level(issue.level))
 }
 
 /// Convert a mago [`Level`] to a poly [`Severity`].
