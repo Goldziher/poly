@@ -160,6 +160,24 @@ pub const CACHE_HOME_ENV: &str = "POLY_CACHE_HOME";
 /// migration now that the cache lives under the per-user cache home.
 const LEGACY_CACHE_DIR: &str = ".polylint";
 
+/// The [cache directory tag](https://bford.info/cachedir/) poly drops at the
+/// root of its own cache home.
+///
+/// The first line is the signature the specification fixes; everything after it
+/// is free text. Tools that honour the tag — `tar --exclude-caching`, `rsync
+/// --exclude-tag`, Borg, restic, and cleanup tools such as voom — then skip the
+/// whole tree without needing to know anything about poly.
+const CACHEDIR_TAG_NAME: &str = "CACHEDIR.TAG";
+
+/// Contents of that file. The signature line must be byte-exact and first.
+const CACHEDIR_TAG: &str = "\
+Signature: 8985a1d0364e3d1e-cache-directory-tag
+# This directory holds poly's result cache, hook staged snapshots and fetched
+# remote sources. Everything in it is derived and poly regenerates it on demand,
+# so it is safe to delete and should not be backed up.
+# See https://bford.info/cachedir/
+";
+
 /// Return the nearest ancestor of `start` (inclusive) that contains a
 /// filesystem entry named `marker`, or `None` if no ancestor does.
 ///
@@ -283,7 +301,43 @@ fn ensure_repo_cache_dir(start: &Path) -> anyhow::Result<(PathBuf, DirOrigin)> {
     if let Err(error) = permissions::ensure_private_dir(&dir, origin) {
         tracing::debug!(dir = %dir.display(), "could not pre-create the cache directory: {error}");
     }
+    mark_cache_home();
     Ok((dir, origin))
+}
+
+/// Write the cache directory tag at the root of poly's cache home, once it
+/// exists.
+///
+/// Best-effort and silent, like the pre-creation above: a missing tag costs a
+/// backup some wasted space, and failing a lint run over it would be absurd.
+///
+/// **Only when poly owns the directory.** A `POLY_CACHE_HOME` the user pointed
+/// somewhere of their own may hold more than poly's cache, and a tag there would
+/// tell every backup tool on the machine to skip whatever else is in it —
+/// poly's mistake, the user's data. That is the same distinction
+/// [`DirOrigin`] already draws for permissions, for the same reason.
+fn mark_cache_home() {
+    let Ok((home, origin)) = cache_home_with_origin() else {
+        return;
+    };
+    write_cache_dir_tag(&home, origin);
+}
+
+/// The decision half of [`mark_cache_home`], with the home passed in so it can
+/// be tested against a `TempDir` rather than the real per-user cache directory.
+fn write_cache_dir_tag(home: &Path, origin: DirOrigin) {
+    if origin != DirOrigin::PolyOwned {
+        return;
+    }
+    let tag = home.join(CACHEDIR_TAG_NAME);
+    // Never rewritten: the contents are ours but the file is on the user's disk,
+    // and an edit of theirs is not poly's to undo.
+    if tag.exists() {
+        return;
+    }
+    if let Err(error) = std::fs::write(&tag, CACHEDIR_TAG) {
+        tracing::debug!(tag = %tag.display(), "could not write the cache directory tag: {error}");
+    }
 }
 
 /// Resolve the per-repo cache directory without creating it.

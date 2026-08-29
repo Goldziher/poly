@@ -329,6 +329,52 @@ fn repo_anchor_falls_back_to_poly_toml() {
     assert_eq!(repo_anchor(&deep), root);
 }
 
+/// The cache home advertises itself as a cache, so every tool that honours the
+/// [tag](https://bford.info/cachedir/) skips it: `tar --exclude-caching`, `rsync
+/// --exclude-tag`, Borg, restic, and cleanup tools such as voom.
+#[test]
+fn cache_home_is_marked_as_a_cache_directory() {
+    let tmp = tempfile::tempdir().unwrap();
+
+    write_cache_dir_tag(tmp.path(), DirOrigin::PolyOwned);
+
+    let tag = std::fs::read_to_string(tmp.path().join("CACHEDIR.TAG")).expect("the tag is written");
+    assert!(
+        tag.starts_with("Signature: 8985a1d0364e3d1e-cache-directory-tag\n"),
+        "the signature line must be byte-exact and first, got {tag:?}"
+    );
+}
+
+/// A `POLY_CACHE_HOME` the user pointed somewhere of their own may hold more
+/// than poly's cache, and a tag there would tell every backup tool on the
+/// machine to skip whatever else is in it.
+#[test]
+fn a_user_configured_cache_home_is_never_marked() {
+    let tmp = tempfile::tempdir().unwrap();
+
+    write_cache_dir_tag(tmp.path(), DirOrigin::UserConfigured);
+
+    assert!(
+        !tmp.path().join("CACHEDIR.TAG").exists(),
+        "poly must not tag a directory the user chose"
+    );
+}
+
+/// The file is on the user's disk. Once it exists it is theirs to edit.
+#[test]
+fn an_existing_cache_directory_tag_is_left_alone() {
+    let tmp = tempfile::tempdir().unwrap();
+    let tag = tmp.path().join("CACHEDIR.TAG");
+    std::fs::write(&tag, "Signature: 8985a1d0364e3d1e-cache-directory-tag\n# edited\n").unwrap();
+
+    write_cache_dir_tag(tmp.path(), DirOrigin::PolyOwned);
+
+    assert_eq!(
+        std::fs::read_to_string(&tag).unwrap(),
+        "Signature: 8985a1d0364e3d1e-cache-directory-tag\n# edited\n"
+    );
+}
+
 #[test]
 fn cache_root_lives_under_cache_home_not_in_repo() {
     let tmp = tempfile::tempdir().unwrap();
