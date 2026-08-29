@@ -25,9 +25,12 @@
 //! | `use_tabs` | false | false |
 //!
 //! `print_width` follows [`crate::config::GlobalDefaults::line_length`] (default 120) and can
-//! be further overridden via `[fmt.graphql.graphql]` in `poly.toml`. The
-//! `indent_width` comes from [`EngineConfig::indent_width`] (itself derived
-//! from [`Language::default_indent_width`], which is 2 for GraphQL).
+//! be further overridden via `[fmt.graphql.graphql]` in `poly.toml`; the same
+//! holds for `line_break`, which otherwise follows
+//! [`crate::config::GlobalDefaults::line_ending`]. The `indent_width` comes from
+//! [`EngineConfig::indent_width`] (itself derived from
+//! [`Language::default_indent_width`], which is 2 for GraphQL). `use_tabs` has
+//! no poly global and is user-controlled.
 
 use graphql_parser::query::parse_query;
 use graphql_parser::schema::parse_schema;
@@ -60,7 +63,7 @@ impl Engine for GraphQlEngine {
     }
 
     fn version(&self) -> &str {
-        "pretty_graphql-0.2.3+config"
+        "pretty_graphql-0.2.3+config2"
     }
 
     fn lint(&self, src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
@@ -134,12 +137,18 @@ fn build_format_options(cfg: &EngineConfig) -> FormatOptions {
                 FormatOptions::default()
             })
     };
-    options.layout.print_width = cfg.globals.line_length;
+    // The opinionated globals are a layer *under* the user's table, not over it
+    // (ADR 0006 / ADR 0007): they apply only where the user did not set the key.
+    if !super::rule_config::sets_any(cfg, &["print_width", "printWidth"]) {
+        options.layout.print_width = cfg.globals.line_length;
+    }
     options.layout.indent_width = cfg.indent_width;
-    options.layout.line_break = match cfg.globals.line_ending {
-        crate::config::LineEnding::Crlf => pretty_graphql::config::LineBreak::Crlf,
-        crate::config::LineEnding::Lf => pretty_graphql::config::LineBreak::Lf,
-    };
+    if !super::rule_config::sets_any(cfg, &["line_break", "lineBreak", "linebreak"]) {
+        options.layout.line_break = match cfg.globals.line_ending {
+            crate::config::LineEnding::Crlf => pretty_graphql::config::LineBreak::Crlf,
+            crate::config::LineEnding::Lf => pretty_graphql::config::LineBreak::Lf,
+        };
+    }
     options
 }
 

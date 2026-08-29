@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-07-01
+- Updated: 2026-08-29 (see "Amendment" below)
 
 ## Context
 
@@ -74,3 +75,62 @@ Negative / risks:
 - **Dynamic rule discovery (expose every tool's rules in the schema):** rejected — the schema
   would balloon with ~100+ tool-specific rule names, and it would be brittle when upstream tools
   add rules. The simple string-code approach is more stable and extensible.
+
+## Amendment — 2026-08-29 (conformance audit)
+
+An audit of every backend against this ADR found the model was **specified but only partly
+implemented**, and that two of its promises need narrowing to stay truthful.
+
+### 1. `[rules.<id>]` tool parameters were honoured by no backend at all
+
+The Decision above says a `[rules.<id>]` sub-table takes "a `level` key … and any other key is
+passed as a tool-specific parameter", with `threshold = 10` as the worked example. `level` was
+implemented — uniformly, in the runner's post-lint `SeverityRemap`, so it works even for engines
+that read no selection state of their own. **The parameter half was read by zero backends.** A
+user writing `[rules.max-params] max = 6` got a key that parsed, raised no error, and did
+nothing. Documentation, this ADR, and `poly migrate`'s own markdownlint importer all emitted
+per-rule parameters that were silently discarded.
+
+Now honoured by **oxlint**, **rumdl**, and **sqruff**. Still not honoured by **ruff** and
+**mago**, for reasons that are dependency-shaped rather than fundamental: ruff's option types
+(`mccabe::Settings`, `pylint::Settings`) are not `Deserialize` and `ruff_workspace` is not a
+dependency, so it would need a hand-written code→field map; mago's `RuleSettings` is a 1:1 fit
+but requires enabling mago-linter's `serde` feature, which changes the dependency and
+`cargo deny` surface. Both remain reachable through each engine's flat native keys
+(`mccabe_max_complexity`, …), which do work.
+
+### 2. `extend_select` meant the opposite of its name in three backends
+
+rumdl, ini and dockerfile implemented `extend_select` as **replace**, so
+`extend_select = ["X"]` silently disabled every other rule — the inverse of this ADR and of the
+documentation. ruff, mago and dotenv implemented it correctly, so poly was inconsistent with
+itself. A test asserted the inverted rumdl behaviour deliberately, putting the test in direct
+conflict with the ADR.
+
+**The ADR is the specification; the behaviour was the defect.** All three now extend, and the
+test was rewritten to pin the conformant semantics rather than the bug. Users who relied on the
+accidental replace semantics should switch to `select`, which has always meant replace.
+
+### 3. New limit: parameters whose native shape is positional cannot be expressed
+
+A `[rules.<id>]` TOML table can only ever produce **one JSON object**. Rules whose native
+configuration is positional — oxlint's `TupleRuleConfig` family (`eqeqeq`, `yoda`, `curly`,
+`func-names`, `object-shorthand`), which take `["error", "always", {…}]` with a bare enum in
+position 1 — therefore cannot be configured through this schema at all. This is a ceiling of the
+uniform model itself, not of any implementation, and it narrows the "any other key" promise:
+**arbitrary keys are forwarded, but only into a single options object.** Users needing a
+positional configuration must fall back to the backend's own native key where one exists.
+
+### 4. Root cause, and the change that would prevent a recurrence
+
+Every defect above survived because `[lint.*]` and `[fmt.*]` are raw `toml::Table` values with no
+schema, no `deny_unknown_fields`, and no unknown-key warning anywhere. **Every key parses by
+construction**, so a key that does nothing is indistinguishable from one that works — for the
+user *and* for us. The audit found the same class in the formatter surface (four documented
+`[fmt.python.ruff]` keys dead, four engines' layout overrides clobbered by globals) and in dead
+keys elsewhere (`[discovery] force_exclude`, several `[hooks]` keys).
+
+Warning on unrecognised keys under `[lint.*]` / `[fmt.*]` is therefore the highest-leverage
+follow-up this ADR implies. It requires each engine to declare its known option keys — or a
+generated schema to check against — and is recorded here as the intended direction rather than a
+decision already taken.

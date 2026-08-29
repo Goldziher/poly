@@ -52,7 +52,7 @@ const DL4001: &str = "DL4001";
 // ---------------------------------------------------------------------------
 
 /// dockerfile-parser crate version embedded into the cache key.
-const DOCKERFILE_PARSER_VERSION: &str = "0.9.0+parse-diag-v1";
+const DOCKERFILE_PARSER_VERSION: &str = "0.9.0+parse-diag-v1+extendsel2";
 
 /// Diagnostic code emitted when the Dockerfile cannot be parsed at all.
 const PARSE_ERROR: &str = "parse-error";
@@ -213,14 +213,21 @@ impl Engine for DockerfileEngine {
 
 /// Filter Dockerfile diagnostics by a `[lint.dockerfile]` rule selection.
 ///
-/// `select` / `extend_select` restrict output to the listed codes (an empty
-/// `select` means "all rules", the default); `ignore` removes them. A code
+/// Per ADR 0016, `select` *replaces* the default rule set — an empty `select`
+/// leaves every `DLxxxx` rule active (the default), a non-empty one narrows the
+/// output to the codes listed. `extend_select` *adds to* the defaults, so on its
+/// own it changes nothing here (every rule is already on) and it only widens a
+/// `select` allow-list. `ignore` removes codes from whatever is active. A code
 /// matches a pattern by exact string or prefix, so `DL30` covers `DL3009`.
 fn apply_rule_selection(diags: Vec<Diagnostic>, selection: &RuleSelection) -> Vec<Diagnostic> {
     if selection.is_empty() {
         return diags;
     }
-    let keep: Vec<&String> = selection.select.iter().chain(selection.extend_select.iter()).collect();
+    let keep: Vec<&String> = if selection.select.is_empty() {
+        Vec::new()
+    } else {
+        selection.select.iter().chain(selection.extend_select.iter()).collect()
+    };
     let matches = |code: &str, patterns: &[&String]| {
         patterns
             .iter()
@@ -491,6 +498,56 @@ mod tests {
         assert!(
             !diags.iter().any(|d| d.code.as_deref() == Some(DL3000)),
             "unselected rule must not fire: {diags:?}",
+        );
+    }
+
+    #[test]
+    fn extend_select_keeps_the_other_default_rules() {
+        // ADR 0016: `extend_select` *adds to* the default rule set. Every DLxxxx
+        // rule is on by default here, so naming one must leave the rest firing —
+        // it must never act as a silent allow-list.
+        let engine = DockerfileEngine;
+        let src = SourceFile {
+            path: "Dockerfile".into(),
+            language: Language::Dockerfile,
+            content: "FROM alpine:3.18\nWORKDIR app\nCMD echo hi\n".into(),
+        };
+        let diags = engine.lint(&src, &cfg_with(r#"extend_select = ["DL3025"]"#)).unwrap();
+        assert!(
+            diags.iter().any(|d| d.code.as_deref() == Some(DL3025)),
+            "extended rule must fire: {diags:?}",
+        );
+        assert!(
+            diags.iter().any(|d| d.code.as_deref() == Some(DL3000)),
+            "extend_select must not disable the other default rules: {diags:?}",
+        );
+    }
+
+    #[test]
+    fn extend_select_widens_a_select_allow_list() {
+        let engine = DockerfileEngine;
+        let src = SourceFile {
+            path: "Dockerfile".into(),
+            language: Language::Dockerfile,
+            content: "FROM alpine:3.18\nWORKDIR app\nCMD echo hi\nMAINTAINER me\n".into(),
+        };
+        let diags = engine
+            .lint(
+                &src,
+                &cfg_with(
+                    r#"
+select        = ["DL3025"]
+extend_select = ["DL3000"]
+"#,
+                ),
+            )
+            .unwrap();
+        let codes: Vec<_> = diags.iter().filter_map(|d| d.code.as_deref()).collect();
+        assert!(codes.contains(&DL3025), "select entry must fire: {codes:?}");
+        assert!(codes.contains(&DL3000), "extend_select entry must fire: {codes:?}");
+        assert!(
+            !codes.contains(&DL4000),
+            "a rule in neither list must stay suppressed: {codes:?}",
         );
     }
 

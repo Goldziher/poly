@@ -114,14 +114,25 @@ fn canonical_ignore_matches_native_disable() {
     );
 }
 
+/// A document that violates two independent default rules: MD018 (no space after
+/// the opening `#`) and MD033 (inline HTML).
+const TWO_DEFAULT_VIOLATIONS: &str = "#Title\n\n<div>hi</div>\n";
+
 #[test]
-fn canonical_select_and_extend_select_match_native_enable() {
+fn canonical_select_replaces_the_default_rule_set() {
+    // ADR 0016: `select` is an allow-list — it *replaces* the defaults, so the
+    // other default rules stop firing. That maps onto rumdl's native `enable`.
     let engine = RumdlEngine;
-    let src = md_src("#Title\n\nsome text with trailing spaces   \n");
+    let src = md_src(TWO_DEFAULT_VIOLATIONS);
+
+    let base = sorted_codes(&engine.lint(&src, &default_cfg()).unwrap());
+    assert!(
+        base.contains(&"MD018".to_string()) && base.contains(&"MD033".to_string()),
+        "fixture must violate both default rules; got: {base:?}"
+    );
 
     let native = engine.lint(&src, &cfg_with_codes("enable", &["MD018"])).unwrap();
     let via_select = engine.lint(&src, &cfg_with_codes("select", &["MD018"])).unwrap();
-    let via_extend = engine.lint(&src, &cfg_with_codes("extend_select", &["MD018"])).unwrap();
 
     assert_eq!(
         sorted_codes(&native),
@@ -129,14 +140,60 @@ fn canonical_select_and_extend_select_match_native_enable() {
         "canonical `select` must behave like native `enable`"
     );
     assert_eq!(
-        sorted_codes(&native),
-        sorted_codes(&via_extend),
-        "canonical `extend_select` must behave like native `enable`"
+        sorted_codes(&via_select),
+        vec!["MD018".to_string()],
+        "`select` must narrow the findings to MD018 only; got: {via_select:?}"
+    );
+}
+
+#[test]
+fn canonical_extend_select_keeps_the_other_default_rules() {
+    // ADR 0016: `extend_select` *adds to* the defaults. It must never act as a
+    // silent allow-list — a user adding one rule keeps every other default rule.
+    // rumdl's native `extend_enable` has exactly these semantics.
+    let engine = RumdlEngine;
+    let src = md_src(TWO_DEFAULT_VIOLATIONS);
+
+    let via_extend = sorted_codes(&engine.lint(&src, &cfg_with_codes("extend_select", &["MD018"])).unwrap());
+
+    assert!(
+        via_extend.contains(&"MD018".to_string()),
+        "`extend_select` must keep MD018 active; got: {via_extend:?}"
+    );
+    assert!(
+        via_extend.contains(&"MD033".to_string()),
+        "`extend_select` must not disable the other default rules; got: {via_extend:?}"
     );
     assert_eq!(
-        sorted_codes(&native),
-        vec!["MD018".to_string()],
-        "an `enable` allow-list of MD018 must narrow the findings to MD018 only; got: {native:?}"
+        via_extend,
+        sorted_codes(&engine.lint(&src, &default_cfg()).unwrap()),
+        "extending with an already-default rule must not change the findings; got: {via_extend:?}"
+    );
+}
+
+#[test]
+fn canonical_extend_select_reenables_a_default_disabled_rule() {
+    // MD082 (no-empty-sections) is off by default — it is opt-in upstream and sits
+    // in poly's opinionated default-disabled list. `extend_select` must switch it
+    // on *without* dropping the other default rules; that is the whole point of
+    // the key, and what `select` would not do.
+    let engine = RumdlEngine;
+    let src = md_src("# Title\n\n## Empty\n\n## Next\n\n<div>hi</div>\n");
+
+    let base = sorted_codes(&engine.lint(&src, &default_cfg()).unwrap());
+    assert!(
+        !base.contains(&"MD082".to_string()),
+        "MD082 must be off by default; got: {base:?}"
+    );
+
+    let codes = sorted_codes(&engine.lint(&src, &cfg_with_codes("extend_select", &["MD082"])).unwrap());
+    assert!(
+        codes.contains(&"MD082".to_string()),
+        "`extend_select` must switch MD082 on; got: {codes:?}"
+    );
+    assert!(
+        codes.contains(&"MD033".to_string()),
+        "`extend_select` must keep the other default rules; got: {codes:?}"
     );
 }
 

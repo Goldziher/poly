@@ -13,6 +13,7 @@
 //! | `ignore` | string array | Deny-list of rule codes/groups (canonical, ADR 0016) |
 //! | `exclude_rules` | string array | Deny-list alias for `ignore` (sqruff-native) |
 //! | `rule_configs` | table | Per-rule parameter overrides (see below) |
+//! | `[rules.<id>]` | table | Per-rule parameter overrides, canonical ADR-0016 spelling |
 //!
 //! The canonical and native keys are unioned when both are present. Blank codes
 //! are surfaced with a `tracing::warn` and skipped rather than forwarded.
@@ -29,9 +30,15 @@
 //! These forward directly into sqruff's `[sqruff:rules:<name>]` INI sections.
 //! Non-scalar values (nested tables, arrays) within a rule entry are ignored.
 //!
-//! **Note on `rule_configs` vs `rules`**: `rules` is an array of rule *codes*
-//! for allow-listing; `rule_configs` is a table of *per-rule parameters*.  They
-//! are separate keys and can coexist.
+//! The canonical ADR-0016 spelling, `[lint.sql.sqruff.rules.<id>]`, feeds the
+//! same INI sections. `<id>` may be the config section name
+//! (`layout.long_lines`) or the rule code (`LT05`), which is translated to the
+//! section name sqruff files config under.
+//!
+//! **Note on `rule_configs` vs `rules`**: as a *string array*, `rules` is an
+//! allow-list of rule codes; as a *table*, `[rules.<id>]` is the canonical
+//! per-rule parameter form. TOML makes the two spellings mutually exclusive in
+//! one table — use `rule_configs` alongside an array-valued `rules`.
 //!
 //! ## Lint / format partition
 //!
@@ -63,7 +70,7 @@ pub struct SqruffEngine;
 /// `-presentation-fmt` marks the lint/format partition below: `format` applies only
 /// [`FORMAT_OWNED_GROUPS`] and `lint` reports only the complement, so the same input
 /// yields different output for the same sqruff-lib version.
-const SQRUFF_VERSION: &str = "0.40.0+rule-configs-2-presentation-fmt";
+const SQRUFF_VERSION: &str = "0.40.0+rule-configs-3-presentation-fmt";
 
 /// The rule groups `poly fmt` applies — and, being the format-owned half of the
 /// partition, exactly the groups `poly lint` stays silent about.
@@ -260,7 +267,8 @@ fn build_fluff_config(cfg: &EngineConfig, mode: Mode) -> anyhow::Result<FluffCon
         ini.push_str(&format!("dialect = {dialect_str}\n"));
     }
 
-    let selection = RuleSelection::from_options(cfg);
+    let mut selection = RuleSelection::from_options(cfg);
+    let rule_params = std::mem::take(&mut selection.rules);
 
     let allow = warn_and_skip_blank(union_codes(string_list(cfg, "rules"), selection.select), "sqruff");
     if !allow.is_empty() {
@@ -280,18 +288,81 @@ fn build_fluff_config(cfg: &EngineConfig, mode: Mode) -> anyhow::Result<FluffCon
     if let Some(rule_configs) = cfg.options.get("rule_configs").and_then(|v| v.as_table()) {
         for (rule_name, rule_opts) in rule_configs {
             if let Some(opts_table) = rule_opts.as_table() {
-                ini.push_str(&format!("\n[sqruff:rules:{rule_name}]\n"));
-                for (key, val) in opts_table {
-                    let val_str = toml_val_to_ini_str(val);
-                    if !val_str.is_empty() {
-                        ini.push_str(&format!("{key} = {val_str}\n"));
-                    }
-                }
+                push_rule_section(&mut ini, rule_name, opts_table);
             }
         }
     }
 
+    // The canonical ADR-0016 spelling of the same thing: `[rules.<id>]` params
+    // land in the same INI sections. `level` is not emitted — severity is applied
+    // uniformly by the runner's post-lint remap for every backend.
+    for (id, opts) in &rule_params {
+        if !opts.params.is_empty() {
+            push_rule_section(&mut ini, config_section_for(id), &opts.params);
+        }
+    }
+
     Ok(FluffConfig::from_source(&ini, None))
+}
+
+/// Resolve a `[rules.<id>]` key to the section name sqruff files per-rule config
+/// under.
+///
+/// sqruff keys `[sqruff:rules:<…>]` by a rule's `config_ref()` — its *name*
+/// (`layout.long_lines`), never its code (`LT05`). Users reach for the code, so a
+/// known code is translated; anything else is passed through unchanged, which
+/// covers names written out in full.
+fn config_section_for(id: &str) -> &str {
+    RULE_CODE_TO_CONFIG_SECTION
+        .get(id.to_ascii_uppercase().as_str())
+        .copied()
+        .unwrap_or(id)
+}
+
+/// `rule code -> config section name`, built once from sqruff's own registry.
+///
+/// Instantiating the registry is expensive (see [`FORMAT_SUPPRESSED_GROUPS`]), so
+/// this is a process-wide `LazyLock` rather than per-file work.
+static RULE_CODE_TO_CONFIG_SECTION: LazyLock<std::collections::HashMap<&'static str, &'static str>> =
+    LazyLock::new(|| {
+        sqruff_lib::rules::rules()
+            .iter()
+            .map(|rule| (rule.code(), rule.config_ref()))
+            .collect()
+    });
+
+/// Append one `[sqruff:rules:<section>]` block to `ini`.
+///
+/// Section names and parameter keys are interpolated into an INI document, so a
+/// value carrying `[`, `]`, `=`, or a newline could close the section early or
+/// forge another one. Such names are dropped with a warning rather than emitted:
+/// sqruff has no rule or parameter that needs them, and `FluffConfig::from_source`
+/// panics rather than errors on a malformed document.
+fn push_rule_section(ini: &mut String, section: &str, params: &toml::Table) {
+    if !is_ini_safe(section) {
+        tracing::warn!(rule = %section, engine = "sqruff", "unusable rule config section name; skipping");
+        return;
+    }
+    ini.push_str(&format!("\n[sqruff:rules:{section}]\n"));
+    for (key, value) in params {
+        if !is_ini_safe(key) {
+            tracing::warn!(rule = %section, key = %key, engine = "sqruff", "unusable parameter name; skipping");
+            continue;
+        }
+        let rendered = toml_val_to_ini_str(value);
+        if !rendered.is_empty() {
+            ini.push_str(&format!("{key} = {rendered}\n"));
+        }
+    }
+}
+
+/// Whether `text` is safe to interpolate into an INI section header or key: no
+/// structural characters, no control characters, and not empty.
+fn is_ini_safe(text: &str) -> bool {
+    !text.is_empty()
+        && !text
+            .chars()
+            .any(|c| matches!(c, '[' | ']' | '=' | '#' | ';') || c.is_control())
 }
 
 /// Convert a scalar [`toml::Value`] into a bare string for an INI entry value.

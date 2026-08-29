@@ -26,7 +26,10 @@
 //! | `docstring-code-line-width` | 120 | dynamic |
 //!
 //! These defaults are overridden by any `[fmt.python.ruff]` or
-//! `[lint.python.ruff]` table in the user's `poly.toml`.
+//! `[lint.python.ruff]` table in the user's `poly.toml`. On the format side the
+//! recognized keys are `line_length`, `indent_width`, `docstring_code_format`,
+//! and `docstring_code_line_length` (an integer, or `"dynamic"`); see
+//! [`build_format_options`].
 
 use std::path::Path;
 use std::str::FromStr;
@@ -313,6 +316,58 @@ fn build_settings(cfg: &EngineConfig) -> LinterSettings {
     settings
 }
 
+/// Build [`PyFormatOptions`] from the `[fmt.python.ruff]` table layered over the
+/// opinionated defaults (line width from `[defaults] line_length`, docstring code
+/// formatting on at the same width).
+///
+/// Honors `line_length` (per-table override of the global, mirroring the lint
+/// side), `indent_width` (already resolved from the same table by
+/// [`crate::config::Config::engine_config`]), `docstring_code_format`, and
+/// `docstring_code_line_length` (an integer, or the string `"dynamic"` for
+/// ruff's dynamic width).
+fn build_format_options(src: &SourceFile, cfg: &EngineConfig) -> PyFormatOptions {
+    let width = |value: usize| {
+        u16::try_from(value)
+            .ok()
+            .and_then(|w| LineWidth::try_from(w).ok())
+            .unwrap_or_else(|| LineWidth::try_from(120_u16).expect("120 is a valid line width"))
+    };
+
+    let line_width = width(
+        cfg.options
+            .get("line_length")
+            .and_then(toml::Value::as_integer)
+            .and_then(|v| usize::try_from(v).ok())
+            .unwrap_or(cfg.globals.line_length),
+    );
+
+    let docstring_code = match cfg.options.get("docstring_code_format").and_then(toml::Value::as_bool) {
+        Some(false) => DocstringCode::Disabled,
+        _ => DocstringCode::Enabled,
+    };
+
+    let docstring_width = match cfg.options.get("docstring_code_line_length") {
+        Some(toml::Value::Integer(v)) => {
+            DocstringCodeLineWidth::Fixed(width(usize::try_from(*v).unwrap_or(cfg.globals.line_length)))
+        }
+        Some(toml::Value::String(s)) if s.eq_ignore_ascii_case("dynamic") => DocstringCodeLineWidth::Dynamic,
+        _ => DocstringCodeLineWidth::Fixed(line_width),
+    };
+
+    let mut options = PyFormatOptions::from_extension(&src.path)
+        .with_line_width(line_width)
+        .with_docstring_code(docstring_code)
+        .with_docstring_code_line_width(docstring_width);
+
+    if let Ok(indent_width) = u8::try_from(cfg.indent_width)
+        && let Ok(indent_width) = ruff_formatter::IndentWidth::try_from(indent_width)
+    {
+        options = options.with_indent_width(indent_width);
+    }
+
+    options
+}
+
 /// Parse a Python target version from either ruff's canonical `py310` spelling
 /// or the dotted `3.10` form. Returns `None` for anything unrecognised so the
 /// caller keeps ruff's default.
@@ -415,7 +470,7 @@ impl Engine for RuffEngine {
     /// Version string incorporates the pinned ruff git rev so that upgrading
     /// the rev automatically invalidates any cached lint/format output.
     fn version(&self) -> &str {
-        "git-ruff:700421c+pkgroot+plugins+isort+e501+tgtsrc+ignore-b008+rules-v3+advisory-sev1"
+        "git-ruff:700421c+pkgroot+plugins+isort+e501+tgtsrc+ignore-b008+rules-v3+advisory-sev1+fmtopts1"
     }
 
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
@@ -505,15 +560,7 @@ impl Engine for RuffEngine {
     }
 
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
-        let line_width = u16::try_from(cfg.globals.line_length)
-            .ok()
-            .and_then(|w| LineWidth::try_from(w).ok())
-            .unwrap_or_else(|| LineWidth::try_from(120_u16).unwrap());
-
-        let options = PyFormatOptions::from_extension(&src.path)
-            .with_line_width(line_width)
-            .with_docstring_code(DocstringCode::Enabled)
-            .with_docstring_code_line_width(DocstringCodeLineWidth::Fixed(line_width));
+        let options = build_format_options(src, cfg);
 
         match ruff_python_formatter::format_module_source(&src.content, options) {
             Ok(printed) => {

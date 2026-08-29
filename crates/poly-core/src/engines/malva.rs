@@ -9,9 +9,12 @@
 //!
 //! The user table is deserialized into [`malva::config::FormatOptions`] (via
 //! the `config_serde` feature).  All [`malva::config::LanguageOptions`] fields
-//! are exposed.  Layout fields (`print_width`, `indent_width`, `line_break`,
-//! `use_tabs`) are always taken from poly globals and override anything the
-//! user places in the options table.
+//! are exposed.  The layout fields poly has a global for — `print_width`
+//! (`[defaults] line_length`) and `line_break` (`[defaults] line_ending`) —
+//! default to that global and are overridden when the user sets the key, per
+//! the documented layering.  `indent_width` comes from
+//! [`EngineConfig::indent_width`], itself resolved from the same table's
+//! `indent_width` key.  `use_tabs` has no poly global and is user-controlled.
 
 use malva::Syntax;
 use malva::config::FormatOptions;
@@ -26,7 +29,7 @@ pub struct MalvaEngine;
 /// malva crate version — folded into the cache key so upgrades invalidate stale results.
 /// Bumped suffix to +opts-1 after exposing full LanguageOptions (options were previously
 /// ignored — existing caches must be invalidated).
-const MALVA_VERSION: &str = "0.16.0+opts-1";
+const MALVA_VERSION: &str = "0.16.0+opts-2";
 
 /// Languages handled by this backend.
 static LANGUAGES: &[Language] = &[Language::Css, Language::Scss, Language::Less];
@@ -87,12 +90,18 @@ fn language_to_syntax(lang: &Language) -> Option<Syntax> {
 fn build_options(cfg: &EngineConfig) -> FormatOptions {
     let mut options: FormatOptions = super::rule_config::deserialize_options(cfg, "[fmt.<css|scss|less>.malva]");
 
-    options.layout.print_width = cfg.globals.line_length;
+    // The opinionated globals are a layer *under* the user's table, not over it
+    // (ADR 0006 / ADR 0007): they apply only where the user did not set the key.
+    if !super::rule_config::sets_any(cfg, &["print_width", "printWidth"]) {
+        options.layout.print_width = cfg.globals.line_length;
+    }
     options.layout.indent_width = cfg.indent_width;
-    options.layout.line_break = match cfg.globals.line_ending {
-        crate::config::LineEnding::Crlf => malva::config::LineBreak::Crlf,
-        crate::config::LineEnding::Lf => malva::config::LineBreak::Lf,
-    };
+    if !super::rule_config::sets_any(cfg, &["line_break", "lineBreak", "linebreak"]) {
+        options.layout.line_break = match cfg.globals.line_ending {
+            crate::config::LineEnding::Crlf => malva::config::LineBreak::Crlf,
+            crate::config::LineEnding::Lf => malva::config::LineBreak::Lf,
+        };
+    }
     options
 }
 

@@ -290,9 +290,10 @@ trim_trailing_whitespace = true
 # a repo states its excluded paths once.
 exclude = ["test_apps/**", "docs/snippets/**", "artifacts/**"]
 
-# Explicitly named roots honor `exclude` by default. `force_exclude` remains
-# available for compatibility and for API callers that opt out of the CLI
-# default. Use `--include-excluded` for a deliberate one-off bypass.
+# Explicitly named roots honor `exclude` by default in the CLI, MCP and hooks.
+# Use `--include-excluded` for a deliberate one-off bypass. NOTE: this config
+# key is currently inert — every caller sets the behaviour itself — so it is
+# documented here only to explain the default, not as a working override.
 force_exclude = false
 
 # Directory names to keep despite the built-in prune set below, for a repo where
@@ -306,17 +307,26 @@ docstring_code_line_length = 120
 [lint.python.ruff]
 select = ["E", "F", "W"]
 
-# All tools support uniform `select`/`ignore` for rule filtering (rule codes or
-# category names). Some backends (mago, R) support per-rule overrides under
-# `[lint.<lang>.<tool>.rules.<id>]` for backend-specific configuration.
+# Every linter backend accepts uniform `select` / `extend_select` / `ignore`
+# (rule codes, and category names where the backend has them). `extend_select`
+# adds to the defaults; `select` replaces them.
 [lint.php.mago]
 select = ["correctness", "security"]   # categories or rule codes
 ignore = ["no-else-clause"]
 php_version = "8.2"
 
+# A per-rule `level` override works for every backend — poly applies it after
+# linting, so it does not depend on the tool having its own severity config.
 [lint.php.mago.rules.cyclomatic-complexity]
-level = "warning"   # error | warning | info | hint (mago, R only)
-threshold = 20
+level = "warning"   # error | warning | info | hint
+
+# Any *other* key in a `[rules.<id>]` table is forwarded to the backend as a
+# tool parameter, where the backend supports it — today oxlint, rumdl and
+# sqruff. ruff and mago accept `level` but ignore other per-rule keys; use their
+# flat native keys instead (e.g. `mccabe_max_complexity` under
+# `[lint.python.ruff]`). See ADR 0016.
+[lint.javascript.oxc.rules.max-params]
+max = 6
 
 # Suppress specific rules per path glob (lint-only), across every backend.
 [per-file-ignores]
@@ -397,6 +407,17 @@ defect). Re-enable with `extend_select` under `[lint.javascript.oxc]` / `[lint.t
 `pylint_max_args`, `pylint_max_branches`, and `pylint_max_returns` options under `[lint.python.ruff]`
 take effect for the first time. A repo that previously set `mccabe_max_complexity = 10` and saw no
 effect now gets `C901` findings — at warning severity, so it won't fail CI unless promoted.
+
+**Formatter layering.** For the CSS/SCSS/Less (malva), HTML/Vue/Svelte (markup_fmt), GraphQL and
+YAML backends, `[defaults] line_length` and `[defaults] line_ending` supply `print_width` and
+`line_break` only when you have not set those keys yourself in the engine's own table — your
+config is always the top layer. Some tools expose no such setting at all: Nix (alejandra) and
+Ruby (rubyfmt) are zero-configuration formatters, so `[fmt.nix.alejandra]` and
+`[fmt.ruby.rubyfmt]` have no effect beyond invalidating the cache; TOML (taplo) always trims
+trailing whitespace regardless of `[defaults] trim_trailing_whitespace`.
+
+**Unknown keys are not currently reported.** `[lint.*]` and `[fmt.*]` are untyped tables, so a
+misspelled key — or a key a backend does not support — parses without error and does nothing.
 
 **PHP (mago).** Mago ships six default-enabled rules at error level that measure a *metric* rather
 than detect a defect — `cyclomatic-complexity` (>15), `excessive-parameter-list` (>5),

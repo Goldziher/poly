@@ -8,25 +8,27 @@
 //! Config layering: rumdl defaults → opinionated override (line-length 120) → user
 //! `[lint.markdown.rumdl]` / `[fmt.markdown.rumdl]` table in `poly.toml`.
 //!
-//! Rule selection accepts the canonical vocabulary (ADR 0016): `select` /
-//! `extend_select` map onto rumdl's `enable`, and `ignore` maps onto `disable`.
-//! The native `enable` / `disable` keys remain accepted as aliases and are
-//! unioned with the canonical keys.
+//! Rule selection accepts the canonical vocabulary (ADR 0016): `select` maps onto
+//! rumdl's `enable` (an allow-list that *replaces* the default rule set),
+//! `extend_select` maps onto rumdl's `extend_enable` (which keeps the defaults and
+//! switches extra rules on), and `ignore` maps onto `disable`. The native
+//! `enable` / `extend_enable` / `disable` keys remain accepted as aliases and are
+//! unioned with their canonical counterparts.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::sync::{Arc, LazyLock};
 
 use regex::Regex;
 use rumdl_lib::{
     LintContext,
-    config::{Config as RumdlConfig, MarkdownFlavor},
+    config::{Config as RumdlConfig, MarkdownFlavor, resolve_rule_name},
     fix_coordinator::FixCoordinator,
     rule::{FixCapability, LintError, LintResult, LintWarning, Rule, RuleCategory, Severity as RumdlSeverity},
     rules::{MD020NoMissingSpaceClosedAtx, all_rules, filter_rules},
     types::LineLength,
 };
 
-use super::rule_config::{RuleSelection, string_list, union_codes, warn_and_skip_blank};
+use super::rule_config::{RuleOptions, RuleSelection, string_list, union_codes, warn_and_skip_blank};
 use super::template::{GO_TEMPLATE_SKIP, contains_go_template_markdown};
 use crate::config::EngineConfig;
 use crate::engine::{Capabilities, Diagnostic, Edit, Engine, FormatOutput, Severity, SourceFile, Span};
@@ -45,7 +47,8 @@ pub struct RumdlEngine;
 /// [`contains_go_template_markdown`]), and the MD020 guard ([`GuardedMd020`]). Bump the
 /// suffix whenever any of these change so stale cached diagnostics are
 /// invalidated.
-const RUMDL_VERSION: &str = "0.2.60+defaults5-mdx-rules-tmplskip-codeaware-md020guard-nostructfmt";
+const RUMDL_VERSION: &str =
+    "0.2.60+defaults5-mdx-rules-tmplskip-codeaware-md020guard-nostructfmt+ruleparams1+extendsel2";
 
 /// rumdl-proprietary stylistic rules disabled by default.
 ///
@@ -176,13 +179,17 @@ fn build_rumdl_config(cfg: &EngineConfig, language: &Language) -> RumdlConfig {
         .unwrap_or(cfg.globals.line_length);
     config.global.line_length = LineLength::new(line_length);
 
-    let selection = RuleSelection::from_options(cfg);
+    let mut selection = RuleSelection::from_options(cfg);
+    let selection_rules = std::mem::take(&mut selection.rules);
 
-    let user_enable = warn_and_skip_blank(
-        union_codes(
-            string_list(cfg, "enable"),
-            selection.select.into_iter().chain(selection.extend_select),
-        ),
+    // ADR 0016: `select` *replaces* the default rule set, `extend_select` *adds*
+    // to it. rumdl draws exactly the same distinction natively — `enable` is an
+    // allow-list that narrows the run to the listed rules, `extend_enable` keeps
+    // the defaults and switches extra rules on — so the two vocabularies map
+    // one-to-one and neither key needs emulating here.
+    let user_enable = warn_and_skip_blank(union_codes(string_list(cfg, "enable"), selection.select), "rumdl");
+    let user_extend_enable = warn_and_skip_blank(
+        union_codes(string_list(cfg, "extend_enable"), selection.extend_select),
         "rumdl",
     );
     let user_disable = warn_and_skip_blank(union_codes(string_list(cfg, "disable"), selection.ignore), "rumdl");
@@ -193,15 +200,49 @@ fn build_rumdl_config(cfg: &EngineConfig, language: &Language) -> RumdlConfig {
             .into_iter()
             .flatten(),
     );
+    // A rule the user asked for by any enabling key must not stay in poly's
+    // opinionated default-disabled list, or the disable would win over it.
     let mut disable: Vec<String> = default_disabled
-        .filter(|rule| !user_enable.iter().any(|e| e.eq_ignore_ascii_case(rule)))
+        .filter(|rule| {
+            !user_enable
+                .iter()
+                .chain(user_extend_enable.iter())
+                .any(|e| e.eq_ignore_ascii_case(rule))
+        })
         .map(|rule| (*rule).to_owned())
         .collect();
     disable.extend(user_disable);
 
     config.global.disable = disable;
     config.global.enable = user_enable;
+    config.global.extend_enable = user_extend_enable;
+    apply_rule_params(&mut config, &selection_rules);
     config
+}
+
+/// Forward the ADR-0016 `[rules.<id>]` tool-specific parameters onto rumdl's own
+/// per-rule config map.
+///
+/// rumdl's [`RuleConfig`] is the same shape as poly's [`RuleOptions`]: a severity
+/// plus a free-form `values` table that each rule deserializes itself (e.g. MD013's
+/// `line_length`, MD007's `indent`, MD044's `names`). The `[rules.<id>]` key is
+/// resolved through [`rumdl_lib::config::resolve_rule_name`] first, so a
+/// markdownlint alias (`line-length`) or a lower-case code lands on the canonical
+/// `MDxxx` key rumdl looks up. `level` is not forwarded — severity is applied
+/// uniformly by the runner's post-lint remap for every backend.
+///
+/// [`RuleOptions`]: super::rule_config::RuleOptions
+fn apply_rule_params(config: &mut RumdlConfig, rules: &BTreeMap<String, RuleOptions>) {
+    for (code, opts) in rules {
+        if opts.params.is_empty() {
+            continue;
+        }
+        let canonical = resolve_rule_name(code);
+        let entry = config.rules.entry(canonical).or_default();
+        for (key, value) in &opts.params {
+            entry.values.insert(key.clone(), value.clone());
+        }
+    }
 }
 
 /// Rule code of rumdl's "no space inside closed ATX heading" rule.

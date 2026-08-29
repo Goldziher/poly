@@ -245,7 +245,10 @@ impl Config {
     /// Precedence (lowest → highest):
     /// 1. Native `_typos.toml` / `.typos.toml` values (`typos_native`).
     /// 2. Language-agnostic `[lint.typos]` table from `poly.toml` (poly wins on conflict).
-    /// 3. Per-language `[lint.<lang>.typos]` `extend_ignore_words` (back-compat; unioned in).
+    /// 3. Per-language `[lint.<lang>.typos]` table — the same key set as (2),
+    ///    layered on top: the two maps (`extend_words` / `extend_identifiers`)
+    ///    override per key, the five arrays are unioned onto the global list so a
+    ///    language adds entries without dropping the shared ones.
     fn build_typos_options(&self, lang_options: &toml::Table) -> toml::Table {
         let mut extend_words: BTreeMap<String, String> = self.typos_native.extend_words.clone();
         let mut extend_identifiers: BTreeMap<String, String> = self.typos_native.extend_identifiers.clone();
@@ -255,33 +258,16 @@ impl Config {
         let mut extend_ignore_words_re: Vec<String> = self.typos_native.extend_ignore_words_re.clone();
         let mut extend_ignore_identifiers_re: Vec<String> = self.typos_native.extend_ignore_identifiers_re.clone();
 
-        if let Some(poly_typos) = self.lint.get("typos").and_then(|v| v.as_table()) {
-            if let Some(words) = poly_typos.get("extend_words").and_then(|v| v.as_table()) {
-                for (k, v) in words {
-                    if let Some(s) = v.as_str() {
-                        extend_words.insert(k.clone(), s.to_string());
-                    }
-                }
-            }
-            if let Some(idents) = poly_typos.get("extend_identifiers").and_then(|v| v.as_table()) {
-                for (k, v) in idents {
-                    if let Some(s) = v.as_str() {
-                        extend_identifiers.insert(k.clone(), s.to_string());
-                    }
-                }
-            }
-            extend_string_array(&mut extend_exclude, poly_typos, "extend_exclude");
-            extend_string_array(&mut extend_ignore_words, poly_typos, "extend_ignore_words");
-            extend_string_array(&mut extend_ignore_re, poly_typos, "extend_ignore_re");
-            extend_string_array(&mut extend_ignore_words_re, poly_typos, "extend_ignore_words_re");
-            extend_string_array(
-                &mut extend_ignore_identifiers_re,
-                poly_typos,
-                "extend_ignore_identifiers_re",
-            );
+        let global = self.lint.get("typos").and_then(|v| v.as_table());
+        for layer in global.into_iter().chain(std::iter::once(lang_options)) {
+            extend_string_map(&mut extend_words, layer, "extend_words");
+            extend_string_map(&mut extend_identifiers, layer, "extend_identifiers");
+            extend_string_array(&mut extend_exclude, layer, "extend_exclude");
+            extend_string_array(&mut extend_ignore_words, layer, "extend_ignore_words");
+            extend_string_array(&mut extend_ignore_re, layer, "extend_ignore_re");
+            extend_string_array(&mut extend_ignore_words_re, layer, "extend_ignore_words_re");
+            extend_string_array(&mut extend_ignore_identifiers_re, layer, "extend_ignore_identifiers_re");
         }
-
-        extend_string_array(&mut extend_ignore_words, lang_options, "extend_ignore_words");
 
         let mut options = toml::Table::new();
         if !extend_words.is_empty() {
@@ -336,6 +322,19 @@ impl Config {
             }
         }
         options
+    }
+}
+
+/// Merge the string entries of `table[key]` (a TOML table) into `dest`, with the
+/// incoming layer winning on a duplicate key. Non-table values and non-string
+/// entries are ignored.
+fn extend_string_map(dest: &mut BTreeMap<String, String>, table: &toml::Table, key: &str) {
+    if let Some(entries) = table.get(key).and_then(|v| v.as_table()) {
+        for (name, value) in entries {
+            if let Some(value) = value.as_str() {
+                dest.insert(name.clone(), value.to_string());
+            }
+        }
     }
 }
 

@@ -33,9 +33,13 @@
 //!
 //! The user table is deserialized into [`markup_fmt::config::FormatOptions`]
 //! (via the `config_serde` feature).  All
-//! [`markup_fmt::config::LanguageOptions`] fields are exposed.  Layout fields
-//! (`print_width`, `indent_width`, `line_break`, `use_tabs`) are always taken
-//! from poly globals and override anything in the options table.
+//! [`markup_fmt::config::LanguageOptions`] fields are exposed.  The layout
+//! fields poly has a global for — `print_width` (`[defaults] line_length`) and
+//! `line_break` (`[defaults] line_ending`) — default to that global and are
+//! overridden when the user sets the key, per the documented layering.
+//! `indent_width` comes from [`EngineConfig::indent_width`], itself resolved
+//! from the same table's `indent_width` key.  `use_tabs` has no poly global and
+//! is user-controlled.
 
 use markup_fmt::Language as MarkupLanguage;
 use markup_fmt::config::FormatOptions;
@@ -55,7 +59,7 @@ pub struct MarkupFmtEngine;
 /// any stale cached output.
 /// Bumped suffix to +opts-1 after exposing full LanguageOptions (options were
 /// previously ignored — existing caches must be invalidated).
-const VERSION: &str = "0.27.3+opts-1+tmpltarget-2+embedded-oxc-2+rev:784e9fa+syntax-skip-2";
+const VERSION: &str = "0.27.3+opts-2+tmpltarget-2+embedded-oxc-2+rev:784e9fa+syntax-skip-2";
 
 /// Reason reported when a general-purpose template does not render markup.
 const NON_MARKUP_TEMPLATE_SKIP: &str = "template does not render markup";
@@ -229,12 +233,18 @@ fn build_options(cfg: &EngineConfig) -> FormatOptions {
     let mut options: FormatOptions =
         super::rule_config::deserialize_options(cfg, "[fmt.<html|vue|svelte|…>.markup_fmt]");
 
-    options.layout.print_width = cfg.globals.line_length;
+    // The opinionated globals are a layer *under* the user's table, not over it
+    // (ADR 0006 / ADR 0007): they apply only where the user did not set the key.
+    if !super::rule_config::sets_any(cfg, &["print_width", "printWidth"]) {
+        options.layout.print_width = cfg.globals.line_length;
+    }
     options.layout.indent_width = cfg.indent_width;
-    options.layout.line_break = match cfg.globals.line_ending {
-        crate::config::LineEnding::Crlf => markup_fmt::config::LineBreak::Crlf,
-        crate::config::LineEnding::Lf => markup_fmt::config::LineBreak::Lf,
-    };
+    if !super::rule_config::sets_any(cfg, &["line_break", "lineBreak", "linebreak"]) {
+        options.layout.line_break = match cfg.globals.line_ending {
+            crate::config::LineEnding::Crlf => markup_fmt::config::LineBreak::Crlf,
+            crate::config::LineEnding::Lf => markup_fmt::config::LineBreak::Lf,
+        };
+    }
     options
 }
 

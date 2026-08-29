@@ -7,6 +7,46 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`extend_select` now extends instead of replacing** in the rumdl (Markdown), INI and
+  Dockerfile backends. These three treated it as an allow-list, so
+  `extend_select = ["MD013"]` silently disabled every other rule — the opposite of ADR 0016,
+  of the documented vocabulary, and of what ruff, mago and dotenv already did.
+
+  **Breaking for anyone relying on the old behaviour:** a config using `extend_select` under
+  `[lint.markdown.rumdl]`, `[lint.ini]` or `[lint.dockerfile]` will now also report findings
+  from the other default rules, which can fail a previously passing run. Rename the key to
+  `select` to keep the replace semantics. Cached results are invalidated automatically.
+
+- **Per-rule tool parameters under `[rules.<id>]` are honoured.** ADR 0016 promised that any key
+  other than `level` is passed to the backend as a tool parameter; no backend read them. Now
+  wired for oxlint (`[lint.javascript.oxc.rules.max-params] max = 6`), rumdl and sqruff. This
+  also fixes a data-loss path: `poly migrate` emits per-rule parameters when importing a
+  markdownlint config, and every one of them was being discarded.
+
+- **Documented formatter keys that did nothing now work.** `[fmt.python.ruff]`
+  `docstring_code_format`, `docstring_code_line_length`, `line_length` and `indent_width` were
+  documented but never read. The malva, markup_fmt, GraphQL and YAML backends clobbered a
+  user-set `print_width` / `line_break` with the global default; user config now wins.
+
+- **Six more per-language `[lint.<lang>.typos]` keys are honoured** — `extend_exclude`,
+  `extend_words`, `extend_identifiers` and the three `extend_ignore_*_re` patterns. Only
+  `extend_ignore_words` was read before.
+
+- **PHP maintainability metrics no longer fail CI.** mago reported six threshold rules
+  (`cyclomatic-complexity`, `excessive-parameter-list`, `too-many-methods`,
+  `too-many-properties`, `too-many-enum-cases`, `kan-defect`) at error severity; they are now
+  warnings, while mago's correctness, safety and security rules keep error severity.
+
+- **`eslint/max-classes-per-file` is off by default.** Widening the oxlint categories enabled it
+  as a member of `pedantic`; its default of one class per file is a position poly holds nowhere
+  else.
+
+- **A malformed sqruff rule name can no longer panic the run.** Per-rule config section names and
+  keys are interpolated into an INI document that `FluffConfig::from_source` panics on if
+  malformed; unusable names are now dropped with a warning.
+
 ### Added
 
 - **Code-quality metrics for twelve languages that had no lint rules at all.** A new
@@ -22,6 +62,14 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   counts toward `N file(s) linted`. Languages it cannot model structurally — Zig, Swift,
   Dart, Gleam, Elixir, PHP, Nix, Scala, Lua, R — keep the skip: a line count is not
   knowledge of the language.
+
+- **Inline suppression directives.** `// poly: allow[RULE] reason` and
+  `// poly: allow-file[RULE] reason`, written in the host language's comment syntax and applied
+  centrally so every backend honours them. A reason is mandatory: a directive without one does
+  not suppress and reports `lazy-ignore` instead. See ADR 0028.
+
+- **`eslint/complexity` is enabled by default** for JavaScript and TypeScript. Its own default
+  threshold is 20 — the same cyclomatic-complexity budget poly applies elsewhere.
 
 ## [0.21.12] - 2026-08-29
 

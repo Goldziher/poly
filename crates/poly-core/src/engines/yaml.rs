@@ -18,11 +18,12 @@
 //! pretty_yaml defaults → poly opinionated override (print_width=120,
 //! indent_width from language default, line_break from global line_ending) →
 //! user `[fmt.yaml.yaml]` table.  The user table is deserialized into
-//! [`pretty_yaml::config::FormatOptions`] (via the `config_serde` feature)
-//! then poly's layout fields are applied on top, so `print_width` and
-//! `indent_width` always come from poly globals regardless of what the user
-//! writes in the options table.  All [`pretty_yaml::config::LanguageOptions`]
-//! fields are user-controllable.
+//! [`pretty_yaml::config::FormatOptions`] (via the `config_serde` feature) and
+//! poly's globals fill in the layout fields the user did not set: `print_width`
+//! from `[defaults] line_length` and `line_break` from `[defaults]
+//! line_ending`.  `indent_width` comes from [`EngineConfig::indent_width`],
+//! itself resolved from the same table's `indent_width` key.  All
+//! [`pretty_yaml::config::LanguageOptions`] fields are user-controllable.
 //!
 //! Returns [`FormatOutput::Unchanged`] when the output equals the input.
 
@@ -57,7 +58,7 @@ impl Engine for YamlEngine {
     }
 
     fn version(&self) -> &str {
-        "0.0.8+pretty_yaml-0.6.0+tmplskip"
+        "0.0.9+pretty_yaml-0.6.0+tmplskip"
     }
 
     fn skip_reason(&self, src: &SourceFile) -> Option<&'static str> {
@@ -131,12 +132,18 @@ fn build_format_options(cfg: &EngineConfig) -> FormatOptions {
             })
     };
 
-    options.layout.print_width = cfg.globals.line_length;
+    // The opinionated globals are a layer *under* the user's table, not over it
+    // (ADR 0006 / ADR 0007): they apply only where the user did not set the key.
+    if !super::rule_config::sets_any(cfg, &["print_width", "printWidth"]) {
+        options.layout.print_width = cfg.globals.line_length;
+    }
     options.layout.indent_width = cfg.indent_width;
-    options.layout.line_break = match cfg.globals.line_ending {
-        LineEnding::Crlf => LineBreak::Crlf,
-        LineEnding::Lf => LineBreak::Lf,
-    };
+    if !super::rule_config::sets_any(cfg, &["line_break", "lineBreak", "linebreak"]) {
+        options.layout.line_break = match cfg.globals.line_ending {
+            LineEnding::Crlf => LineBreak::Crlf,
+            LineEnding::Lf => LineBreak::Lf,
+        };
+    }
     options
 }
 

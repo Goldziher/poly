@@ -94,6 +94,19 @@ pub(crate) fn deserialize_options<T: serde::de::DeserializeOwned + Default>(cfg:
         })
 }
 
+/// Whether the user's options table sets any of `keys`.
+///
+/// The tiny_pretty-family formatters (malva, markup_fmt, pretty_graphql,
+/// pretty_yaml) deserialize the *whole* upstream `FormatOptions`, so poly cannot
+/// tell a user-set layout field from the upstream default once it has been
+/// parsed. Consulting the raw table restores the documented layering — tool
+/// default → poly's opinionated global → user `poly.toml` — instead of letting
+/// the global unconditionally clobber a key the user set. `keys` carries every
+/// serde alias for the field (e.g. `print_width` and `printWidth`).
+pub(crate) fn sets_any(cfg: &EngineConfig, keys: &[&str]) -> bool {
+    keys.iter().any(|key| cfg.options.contains_key(*key))
+}
+
 /// Union two rule-code lists, preserving first-seen order and dropping exact
 /// duplicates.
 ///

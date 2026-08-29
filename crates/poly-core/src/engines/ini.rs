@@ -58,7 +58,7 @@ use crate::language::Language;
 /// Cache-key version: the `rust-ini` crate version, plus a marker for this
 /// backend's own scan/mapping logic. Bump whenever the crate is updated OR
 /// the scan logic changes.
-const INI_VERSION: &str = "rust-ini-0.21.3+map1";
+const INI_VERSION: &str = "rust-ini-0.21.3+map1+extendsel2";
 
 const PARSE_ERROR: &str = "parse-error";
 const DUPLICATE_KEY: &str = "duplicate-key";
@@ -265,11 +265,21 @@ fn make_diag(code: &str, severity: Severity, title: impl Into<String>, span: Spa
 /// Filter/relevel diagnostics per `[lint.ini] select` / `extend_select` /
 /// `ignore` / `[rules.<code>]`, mirroring `dockerfile.rs`'s
 /// `apply_rule_selection`.
+///
+/// Per ADR 0016, `select` *replaces* the default rule set — an empty `select`
+/// leaves all six rules active (the default), a non-empty one narrows the output
+/// to the codes listed. `extend_select` *adds to* the defaults, so on its own it
+/// changes nothing here (every rule is already on) and it only widens a `select`
+/// allow-list. `ignore` removes codes from whatever is active.
 fn apply_rule_selection(diags: Vec<Diagnostic>, selection: &RuleSelection) -> Vec<Diagnostic> {
     if selection.is_empty() {
         return diags;
     }
-    let keep: Vec<&String> = selection.select.iter().chain(selection.extend_select.iter()).collect();
+    let keep: Vec<&String> = if selection.select.is_empty() {
+        Vec::new()
+    } else {
+        selection.select.iter().chain(selection.extend_select.iter()).collect()
+    };
     let matches = |code: &str, patterns: &[&String]| patterns.iter().any(|p| code == p.as_str());
     let ignore: Vec<&String> = selection.ignore.iter().collect();
 
@@ -350,6 +360,90 @@ mod tests {
         let src = make_src("[a]\nfoo=1\n[b]\nfoo=2\n");
         let diags = engine.lint(&src, &engine_cfg()).unwrap();
         assert!(!diags.iter().any(|d| d.code.as_deref() == Some(DUPLICATE_KEY)));
+    }
+
+    /// Violates two independent default rules: `trailing-whitespace` on line 2 and
+    /// `duplicate-key` on line 3.
+    const TWO_DEFAULT_VIOLATIONS: &str = "[a]\nfoo=1 \nfoo=2\n";
+
+    fn cfg_with(toml_str: &str) -> EngineConfig {
+        EngineConfig {
+            globals: GlobalDefaults::default(),
+            indent_width: 4,
+            options: toml::from_str(toml_str).expect("valid TOML"),
+        }
+    }
+
+    fn codes(diags: &[Diagnostic]) -> Vec<&str> {
+        diags.iter().filter_map(|d| d.code.as_deref()).collect()
+    }
+
+    #[test]
+    fn select_replaces_the_default_rule_set() {
+        // ADR 0016: `select` is an allow-list — the rules it omits stop firing.
+        let engine = IniEngine;
+        let src = make_src(TWO_DEFAULT_VIOLATIONS);
+        let baseline = engine.lint(&src, &engine_cfg()).unwrap();
+        assert!(
+            codes(&baseline).contains(&DUPLICATE_KEY) && codes(&baseline).contains(&TRAILING_WHITESPACE),
+            "fixture must violate both default rules: {baseline:?}"
+        );
+
+        let diags = engine.lint(&src, &cfg_with(r#"select = ["duplicate-key"]"#)).unwrap();
+        assert_eq!(
+            codes(&diags),
+            vec![DUPLICATE_KEY],
+            "select must narrow the findings to duplicate-key: {diags:?}"
+        );
+    }
+
+    #[test]
+    fn extend_select_keeps_the_other_default_rules() {
+        // ADR 0016: `extend_select` *adds to* the defaults. All six INI rules are
+        // on by default, so naming one must leave the rest firing — it must never
+        // act as a silent allow-list.
+        let engine = IniEngine;
+        let src = make_src(TWO_DEFAULT_VIOLATIONS);
+        let diags = engine
+            .lint(&src, &cfg_with(r#"extend_select = ["duplicate-key"]"#))
+            .unwrap();
+        assert!(
+            codes(&diags).contains(&DUPLICATE_KEY),
+            "extended rule must fire: {diags:?}"
+        );
+        assert!(
+            codes(&diags).contains(&TRAILING_WHITESPACE),
+            "extend_select must not disable the other default rules: {diags:?}"
+        );
+    }
+
+    #[test]
+    fn extend_select_widens_a_select_allow_list() {
+        let engine = IniEngine;
+        let src = make_src("[a]\nfoo=1 \nfoo=2\nbare\n");
+        let diags = engine
+            .lint(
+                &src,
+                &cfg_with(
+                    r#"
+select        = ["duplicate-key"]
+extend_select = ["trailing-whitespace"]
+"#,
+                ),
+            )
+            .unwrap();
+        assert!(
+            codes(&diags).contains(&DUPLICATE_KEY),
+            "select entry must fire: {diags:?}"
+        );
+        assert!(
+            codes(&diags).contains(&TRAILING_WHITESPACE),
+            "extend_select entry must fire: {diags:?}"
+        );
+        assert!(
+            !codes(&diags).contains(&KEY_WITHOUT_VALUE),
+            "a rule in neither list must stay suppressed: {diags:?}"
+        );
     }
 
     #[test]
