@@ -72,6 +72,12 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   `[rules] builtin`, `select` / `extend_select` / `ignore` and per-rule `level`. `--format json`
   and `--format toon` carry the same fields, as does the MCP `rules` tool.
 
+- **`--force-exclude` and `[discovery] force_exclude` now work.** Both were parsed and never
+  read. Explicitly naming a path that matches an exclusion now honours the exclusion by default,
+  `[discovery] force_exclude = false` genuinely turns that off, and `--force-exclude` overrides
+  the config key. `--include-excluded` still wins over both. No behaviour changes for a repository
+  that sets neither.
+
 - **Unknown configuration keys are now reported.** `[lint.*]` and `[fmt.*]` accepted any key at
   all, so a typo — or a key a backend never supported — parsed silently and did nothing. This was
   the root cause of a family of defects fixed earlier in this release, where documented keys had

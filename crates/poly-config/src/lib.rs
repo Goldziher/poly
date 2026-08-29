@@ -156,7 +156,7 @@ pub struct WorkspaceConfig {
 /// the same reach. Globs are gitignore-style and compose with `.gitignore` and
 /// the built-in vendored/generated prune set — they never override an explicitly
 /// passed path argument.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct DiscoveryConfig {
     /// Gitignore-style globs excluded from discovery. Accepts a single string or
@@ -189,9 +189,31 @@ pub struct DiscoveryConfig {
     pub exclude: Patterns,
     /// Apply `exclude` to explicitly named roots too, not just to the walk.
     ///
-    /// Retained for compatibility and non-CLI callers. The CLI, hooks, and MCP
-    /// apply exclusions to explicitly named files by default; the CLI's
-    /// `--include-excluded` flag is the deliberate one-off override.
+    /// **Defaults to `true`**: a file or directory named on the command line
+    /// honors `exclude`, which is what a hook — always handed explicit staged
+    /// paths — needs for a repo's excludes to hold. Set it to `false` to restore
+    /// the older "an explicitly named path is always checked" behavior for every
+    /// run, rather than reaching for `--include-excluded` each time.
+    ///
+    /// ```toml
+    /// [discovery]
+    /// exclude = ["vendor/**"]
+    /// # `poly fmt vendor/x.py` checks the file; `poly fmt .` still skips it.
+    /// force_exclude = false
+    /// ```
+    ///
+    /// This governs only *explicitly named roots*; the directory walk applies
+    /// `exclude` either way. The CLI's `--force-exclude` / `--include-excluded`
+    /// flags override this key in either direction for a single run.
+    ///
+    /// Because the default is `true`, this field is the resolved value, not a
+    /// tri-state: "unset" and "set to `true`" are deliberately the same thing,
+    /// and the *flags* — not this key — carry the explicit-override signal.
+    ///
+    /// Like `no_prune`, and unlike `exclude`, this is read from the run's **root**
+    /// config only: the decision is made once per run, before any path is matched
+    /// to the nested config governing it, so a `poly.toml` in a subdirectory
+    /// cannot set it for its own subtree.
     pub force_exclude: bool,
     /// Directory *names* to keep despite the built-in vendored/generated prune
     /// set — the opt-out for a repo where one of those names is ordinary source.
@@ -214,6 +236,22 @@ pub struct DiscoveryConfig {
     /// run's root config only: a `poly.toml` *inside* a pruned directory cannot
     /// un-prune it, because the directory holding it was never walked.
     pub no_prune: Patterns,
+}
+
+impl Default for DiscoveryConfig {
+    /// Written out rather than derived because [`force_exclude`] defaults to
+    /// `true`, not to `bool::default()`. The container-level `#[serde(default)]`
+    /// fills missing keys from here, so a `poly.toml` with no `force_exclude`
+    /// and a repo with no `poly.toml` at all resolve to the same value.
+    ///
+    /// [`force_exclude`]: DiscoveryConfig::force_exclude
+    fn default() -> Self {
+        DiscoveryConfig {
+            exclude: Patterns::default(),
+            force_exclude: true,
+            no_prune: Patterns::default(),
+        }
+    }
 }
 
 impl PolyConfig {

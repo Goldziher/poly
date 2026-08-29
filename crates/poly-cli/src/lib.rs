@@ -124,15 +124,20 @@ pub struct CommonArgs {
     pub verbose: bool,
 
     /// Apply `[discovery] exclude` to explicitly named files as well as to the
-    /// directory walk. This is the default and remains as a compatibility flag.
+    /// directory walk.
+    ///
+    /// This is the default, so the flag matters only in a repo that turned it
+    /// off with `[discovery] force_exclude = false`: passing it pins the default
+    /// back on for this run. Mutually exclusive with `--include-excluded`.
     #[arg(long, conflicts_with = "include_excluded")]
     pub force_exclude: bool,
 
     /// Check explicitly named files or directory roots even when they match the
     /// exclude set.
     ///
-    /// This is an explicit safety override for one-off inspection. Exclusions
-    /// below an included directory remain active.
+    /// This is an explicit safety override for one-off inspection, and it beats
+    /// `[discovery] force_exclude`. Exclusions below an included directory remain
+    /// active. Mutually exclusive with `--force-exclude`.
     #[arg(long, conflicts_with = "force_exclude")]
     pub include_excluded: bool,
 
@@ -499,6 +504,36 @@ fn apply_color(common: &CommonArgs) {
     }
 }
 
+/// Decide whether `[discovery] exclude` applies to paths named on the command
+/// line, for this run.
+///
+/// This is the one place the question is answered; [`RunOptions`] carries the
+/// resolved `bool` from here down, so nothing below the CLI boundary has to know
+/// there was ever a choice. Precedence, highest first:
+///
+/// 1. **`--include-excluded`** — the explicit "check it anyway" override, for
+///    one-off inspection of a path the repo excludes.
+/// 2. **`--force-exclude`** — the explicit "honor the excludes" override, which
+///    is only distinguishable from the default in a repo that turned the default
+///    off. clap rejects the two flags together (`conflicts_with`), so the
+///    ordering between 1 and 2 is defensive, not reachable from the CLI.
+/// 3. **`[discovery] force_exclude`** — the repo's standing preference.
+/// 4. **The built-in default, force-exclude on** — the config key defaults to
+///    `true` in [`poly_config::DiscoveryConfig`], so case 3 already carries this;
+///    an unset key and `force_exclude = true` are the same value on purpose.
+///
+/// A flag beats the config because a flag is typed for one run and the config is
+/// written once for every run.
+fn resolve_force_exclude(common: &CommonArgs, config: &Config) -> bool {
+    if common.include_excluded {
+        return false;
+    }
+    if common.force_exclude {
+        return true;
+    }
+    config.force_exclude
+}
+
 /// Resolve paths, load config, and build run options; on config failure return
 /// the exit code to propagate.
 fn prepare(common: &CommonArgs) -> Result<(Vec<PathBuf>, Config, RunOptions), ExitCode> {
@@ -528,7 +563,7 @@ fn prepare(common: &CommonArgs) -> Result<(Vec<PathBuf>, Config, RunOptions), Ex
         no_cache: common.no_cache,
         jobs: common.jobs,
         exclude: common.exclude.clone(),
-        force_exclude: !common.include_excluded,
+        force_exclude: resolve_force_exclude(common, &config),
         fix_generated: common.fix_generated,
         explicit_config: common.config.is_some(),
         config_resolver: Some(resolver),

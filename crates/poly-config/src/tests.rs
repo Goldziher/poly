@@ -1113,3 +1113,37 @@ fn extends_in_local_override_is_rejected() {
     let error = PolyConfig::load_file(&path).unwrap_err();
     assert!(format!("{error:#}").contains("must not declare `extends`"), "{error:#}");
 }
+
+/// `[discovery] force_exclude` defaults to `true`, and it must default the same
+/// way whether the key is absent, the `[discovery]` table is absent, or no
+/// config file exists at all — otherwise the CLI's resolution reads a different
+/// default depending on how much of the config the repo happened to write.
+#[test]
+fn force_exclude_defaults_to_true_everywhere_it_can_be_missing() {
+    let dir = tempdir().unwrap();
+    assert!(PolyConfig::load(dir.path()).expect("no file").discovery.force_exclude);
+
+    let path = dir.path().join("poly.toml");
+    for body in ["[defaults]\nline_length = 100\n", "[discovery]\nexclude = [\"a.py\"]\n"] {
+        fs::write(&path, body).unwrap();
+        assert!(
+            PolyConfig::load_file(&path).expect("load").discovery.force_exclude,
+            "should default to true for:\n{body}"
+        );
+    }
+}
+
+/// The key is readable in both directions — the `false` case is the one that had
+/// no reader at all before, so it is the one worth pinning.
+#[test]
+fn force_exclude_reads_an_explicit_value() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("poly.toml");
+    for (value, expected) in [("false", false), ("true", true)] {
+        fs::write(&path, format!("[discovery]\nforce_exclude = {value}\n")).unwrap();
+        assert_eq!(
+            PolyConfig::load_file(&path).expect("load").discovery.force_exclude,
+            expected
+        );
+    }
+}

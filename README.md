@@ -290,11 +290,13 @@ trim_trailing_whitespace = true
 # a repo states its excluded paths once.
 exclude = ["test_apps/**", "docs/snippets/**", "artifacts/**"]
 
-# Explicitly named roots honor `exclude` by default in the CLI, MCP and hooks.
-# Use `--include-excluded` for a deliberate one-off bypass. NOTE: this config
-# key is currently inert — every caller sets the behaviour itself — so it is
-# documented here only to explain the default, not as a working override.
-force_exclude = false
+# Whether a file or directory named on the command line honors `exclude`.
+# Defaults to `true`, which is what a hook — always handed explicit staged
+# paths — needs. Set it to `false` to check named paths even when they match
+# `exclude`; the directory walk still prunes them either way. `--force-exclude`
+# and `--include-excluded` override this key for a single run, in either
+# direction (flag beats config; the two flags are mutually exclusive).
+force_exclude = true
 
 # Directory names to keep despite the built-in prune set below, for a repo where
 # one of those names is ordinary source rather than build output.
@@ -1607,10 +1609,12 @@ poly fmt [PATHS]...
                                with `[discovery] exclude`). An unanchored glob
                                matches at any depth; lead with `/` to anchor it
                                to the config directory.
-  --force-exclude              Compatibility flag: explicitly named files already honor
-                               `[discovery] exclude` by default.
+  --force-exclude              Apply `[discovery] exclude` to explicitly named files too.
+                               This is the default, so it only matters in a repo that
+                               set `[discovery] force_exclude = false`.
   --include-excluded           Check explicitly named files or directory roots even when excluded.
-                               Exclusions below an included directory remain active.
+                               Overrides `[discovery] force_exclude`. Exclusions below an
+                               included directory remain active.
   --deny-skips                 Exit 2 if any file was skipped. Equivalent to
                                `--max-skips 0`.
   --max-skips <N>              Exit 2 if more than N files were skipped.

@@ -160,6 +160,12 @@ fn lower_stage_with_probe(
 /// is skipped when the matched file set is empty. This differs from an inline
 /// job with no `files` filter (which sets `always_run = true`) — a deliberate
 /// distinction, since `poly lint`/`fmt` over zero files is a no-op anyway.
+///
+/// The `lint` and `fmt` lines pass `--force-exclude` deliberately. A hook is
+/// handed staged paths rather than deliberately named ones, so the repo's
+/// `[discovery] exclude` must apply to them; the flag pins that on even in a repo
+/// that set `[discovery] force_exclude = false`, which is a per-run convenience
+/// for the direct CLI and not something a commit gate should inherit.
 fn append_builtins(
     hooks: &HooksConfig,
     poly_bin: &Path,
