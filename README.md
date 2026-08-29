@@ -350,8 +350,12 @@ out-of-the-box default, widening coverage while keeping an unconfigured run gree
 | Hygiene | `T20`, `TC`, `PTH`, `RUF`, `ARG` | Stray `print()`, imports that belong behind `TYPE_CHECKING`, `os.path` calls pathlib does better, ruff's own rules, unused arguments. |
 
 **JavaScript/TypeScript (oxlint)** ran only the `correctness` category by default; it now also
-enables `suspicious`, `pedantic`, and three named rules: `typescript/no-explicit-any`,
-`typescript/no-non-null-assertion`, `no-console`.
+enables `suspicious`, `pedantic`, and four named rules: `typescript/no-explicit-any`,
+`typescript/no-non-null-assertion`, `no-console`, and `complexity`. The last sits in oxlint's
+(off) `restriction` category, but its default threshold is exactly 20 — the same cyclomatic-
+complexity budget poly applies to every other language — so JS/TS gets the metric from oxlint
+rather than a separate implementation. Measured at 21 findings on hand-written source across a
+20-repository corpus, with no false positives in the hand-read set.
 
 **The added rules are guard rails, not gates.** `poly lint` exits non-zero only on error-severity
 findings. The correctness core each tool always ran — ruff's `F`/`E4`/`E7`/`E9`/`W6`/`I`/`UP`/`B`
@@ -382,15 +386,30 @@ measured against the same corpus and found to fire on legitimate code rather tha
 Re-enable any of them with `extend_select = ["<code>"]` under `[lint.python.ruff]`. The `EM`
 category (exception message assigned to a variable before `raise`) is not selected at all.
 
-For oxlint, `no-underscore-dangle`, `max-lines-per-function`, and `max-lines` are turned back off
-for the same reason (a universal private-field convention, `describe()` blocks that always exceed
-the 50-line default, and a 300-line-per-file default poly does not endorse elsewhere); re-enable
-with `extend_select` under `[lint.javascript.oxc]` / `[lint.typescript.oxc]`.
+For oxlint, `no-underscore-dangle`, `max-lines-per-function`, `max-lines`, and
+`max-classes-per-file` are turned back off for the same reason (a universal private-field
+convention; `describe()` blocks that always exceed the 50-line default; a 300-line-per-file
+default poly does not endorse elsewhere; and a one-class-per-file rule whose 27 corpus findings
+were all error taxonomies, test mocks, `.d.ts` stubs, or cohesive module groups — not one a
+defect). Re-enable with `extend_select` under `[lint.javascript.oxc]` / `[lint.typescript.oxc]`.
 
 **Migration note.** Selecting `C90`/`PLR` makes the already-existing `mccabe_max_complexity`,
 `pylint_max_args`, `pylint_max_branches`, and `pylint_max_returns` options under `[lint.python.ruff]`
 take effect for the first time. A repo that previously set `mccabe_max_complexity = 10` and saw no
 effect now gets `C901` findings — at warning severity, so it won't fail CI unless promoted.
+
+**PHP (mago).** Mago ships six default-enabled rules at error level that measure a *metric* rather
+than detect a defect — `cyclomatic-complexity` (>15), `excessive-parameter-list` (>5),
+`too-many-methods` (>10), `too-many-properties` (>10), `too-many-enum-cases` (>20), and
+`kan-defect`. poly reports these at **warning**, so a complexity budget never fails CI, while
+mago's correctness, safety, and security rules (`no-ffi`, `no-eval`, `no-literal-password`,
+`tainted-data-to-sink`, `no-unsafe-finally`, `no-empty`, …) keep error severity. Across the corpus
+this moved 416 findings from error to warning and changed no other severity. Promote one back with:
+
+```toml
+[lint.php.mago.rules.cyclomatic-complexity]
+level = "error"
+```
 
 ### Suppressing a Rule Inline
 
