@@ -492,23 +492,58 @@ mod tests {
         }
     }
 
-    /// The routing fact behind the whole defect: a `.kt` lint plan is built
-    /// entirely from cross-cutting backends, so nothing in it holds a Kotlin
-    /// rule. Pinned here because it is invisible from the outside — the plan is
-    /// non-empty, the engines run, and the file was counted as linted on that
-    /// basis alone.
+    /// The engines in `plan` that claim to hold lint rules for the language it
+    /// was built for — the set `provides_language_lint` reduces to a boolean,
+    /// asserted by name so a test says *which* backend establishes coverage
+    /// rather than only that something did.
+    fn covering_engines(plan: &[EnginePlan]) -> Vec<&'static str> {
+        plan.iter()
+            .filter(|entry| entry.provides_language_lint)
+            .map(|entry| entry.engine.name())
+            .collect()
+    }
+
+    /// The routing fact behind the original defect, in the half that still
+    /// holds: a `.swift` or `.zig` lint plan is built entirely from
+    /// cross-cutting backends, and the one of those that reads structure
+    /// (`quality`) has no construct table for either grammar — so all it
+    /// contributes is a line count and an ignore-marker scan, which is exactly
+    /// what a `.txt` file gets. Counting lines is not knowledge of the
+    /// language, so the file must not be counted as linted. Pinned here
+    /// because it is invisible from the outside: the plan is non-empty and the
+    /// engines all run.
     #[test]
-    fn a_language_with_no_backend_of_its_own_has_no_lint_coverage() {
+    fn a_language_the_cross_cutting_tier_only_line_counts_has_no_lint_coverage() {
         let config = Config::default();
-        for language in [Language::Kotlin, Language::Swift, Language::Zig, Language::Rust] {
+        for language in [Language::Swift, Language::Zig, Language::Dart] {
             let plan = plan_engines(&language, &config, Kind::Lint);
             assert!(
                 !plan.is_empty(),
                 "{language:?} is still routed to the cross-cutting backends"
             );
-            assert!(
-                !provides_language_lint(&plan),
+            assert_eq!(
+                covering_engines(&plan),
+                Vec::<&str>::new(),
                 "{language:?} has no lint rules and must not claim coverage"
+            );
+        }
+    }
+
+    /// The other half, and the point of ADR 0027: Rust and Kotlin still have no
+    /// lint backend of their own, but the `quality` tier holds a genuine
+    /// structural model of both grammars — a definition query *and* a construct
+    /// table — so function size, nesting and complexity really are measured and
+    /// the run is right to count the file. Asserted by engine name, since
+    /// `quality` is the only thing standing between these languages and a skip.
+    #[test]
+    fn a_language_the_quality_tier_structurally_models_has_lint_coverage() {
+        let config = Config::default();
+        for language in [Language::Rust, Language::Kotlin] {
+            let plan = plan_engines(&language, &config, Kind::Lint);
+            assert_eq!(
+                covering_engines(&plan),
+                vec!["quality"],
+                "{language:?} is linted by the quality tier alone"
             );
         }
     }

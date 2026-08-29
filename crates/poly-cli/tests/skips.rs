@@ -261,6 +261,16 @@ fn no_rules_repo() -> TempDir {
     let write = |name: &str, body: &str| std::fs::write(dir.path().join(name), body).expect("write fixture");
     write("a.kt", "fun main() {}\n");
     write("d.py", "x = 1\n");
+    // The cross-cutting `quality` engine (ADR 0027) now gives every language a
+    // baseline (file-too-long, lazy-ignore, …), which is the coverage gap this
+    // fixture exists to exercise the *reporting* of — so it must be disabled
+    // here for Kotlin to still have zero lint rules in this scenario. Exclude
+    // `poly.toml` itself from the walk so it does not become a third linted
+    // file and shift the counts this fixture asserts exactly.
+    write(
+        "poly.toml",
+        "[discovery]\nexclude = [\"poly.toml\"]\n\n[lint.quality]\nenabled = false\n",
+    );
     dir
 }
 

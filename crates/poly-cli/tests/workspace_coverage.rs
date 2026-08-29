@@ -36,6 +36,9 @@ const NO_RUST_RULES: &str = "no lint rules for Rust";
 /// to prove nothing extra. `cargo = false` keeps the real cargo builtin group
 /// out, so the tool set is exactly the one written here.
 const WORKSPACE_HOOKS: &str = r#"
+[lint.quality]
+enabled = false
+
 [hooks]
 stages = ["pre-commit"]
 
@@ -46,6 +49,20 @@ cargo = false
 run = "true"
 workspace = true
 "#;
+
+/// The cross-cutting `quality` engine (ADR 0027) now gives every language a
+/// baseline (file-too-long, lazy-ignore, …), which would otherwise make Rust
+/// and Kotlin "covered" and defeat the whole point of these fixtures — they
+/// exist specifically to test the reporting of a language with *zero* lint
+/// rules. Disabled via an out-of-tree `--config` file (rather than a
+/// `poly.toml` written into the walked directory) so it cannot itself become
+/// a counted or excluded-and-noted file and shift the exact strings asserted
+/// below.
+fn disable_quality_config() -> TempDir {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(dir.path().join("poly.toml"), "[lint.quality]\nenabled = false\n").expect("write config");
+    dir
+}
 
 fn write(dir: &TempDir, name: &str, body: &str) {
     std::fs::write(dir.path().join(name), body).expect("write fixture");
@@ -66,6 +83,26 @@ fn repo_with_clippy() -> TempDir {
     let dir = repo_without_workspace_phase();
     write(&dir, "poly.toml", WORKSPACE_HOOKS);
     dir
+}
+
+/// Run `poly` with `quality` disabled via an out-of-tree `--config` file (see
+/// [`disable_quality_config`]). `--config` *replaces* the normal config
+/// lookup rather than layering underneath it, so this is only for the two
+/// fixtures with no `poly.toml` of their own to begin with
+/// (`repo_without_workspace_phase`, `kotlin_repo`) — `repo_with_clippy`
+/// disables `quality` inline in its own `WORKSPACE_HOOKS` instead, since it
+/// already needs its `poly.toml` read for the whole-project `[hooks]`.
+fn poly_quality_disabled(root: &Path, args: &[&str]) -> Output {
+    let config_dir = disable_quality_config();
+    let config_path = config_dir.path().join("poly.toml");
+    let config_path = config_path.to_str().expect("utf8 path").to_owned();
+    // `--config` is a per-subcommand flag (`poly lint --config <path>`, not
+    // `poly --config <path> lint`), so it must be inserted after `args[0]`
+    // (the subcommand) rather than prepended.
+    let (&subcommand, rest) = args.split_first().expect("at least a subcommand");
+    let mut full_args: Vec<&str> = vec![subcommand, "--config", &config_path];
+    full_args.extend_from_slice(rest);
+    poly(root, &full_args)
 }
 
 fn poly(root: &Path, args: &[&str]) -> Output {
@@ -182,7 +219,7 @@ fn no_workspace_keeps_the_rust_skip_because_nothing_lints_rust_then() {
 #[test]
 fn a_repo_with_no_hooks_config_keeps_the_rust_skip() {
     let dir = repo_without_workspace_phase();
-    let output = poly(dir.path(), &["lint", "--no-cache", "--no-color", "."]);
+    let output = poly_quality_disabled(dir.path(), &["lint", "--no-cache", "--no-color", "."]);
     let text = combined(&output);
 
     assert_eq!(
@@ -278,7 +315,7 @@ fn kotlin_repo() -> TempDir {
 #[test]
 fn a_bulk_reason_is_aggregated_in_the_end_to_end_note() {
     let dir = kotlin_repo();
-    let output = poly(dir.path(), &["lint", "--no-workspace", "--no-cache", "--no-color", "."]);
+    let output = poly_quality_disabled(dir.path(), &["lint", "--no-workspace", "--no-cache", "--no-color", "."]);
     let text = combined(&output);
 
     assert_eq!(
@@ -297,7 +334,7 @@ fn a_bulk_reason_is_aggregated_in_the_end_to_end_note() {
 #[test]
 fn verbose_expands_the_aggregated_note() {
     let dir = kotlin_repo();
-    let output = poly(
+    let output = poly_quality_disabled(
         dir.path(),
         &["lint", "--no-workspace", "--no-cache", "--no-color", "--verbose", "."],
     );

@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-29
+- Updated: 2026-08-29 (see "Amendment" below)
 
 ## Context
 
@@ -125,3 +126,51 @@ Negative / risks:
   complexity check for Python, duplicating ruff's `C901`): rejected — this doubles findings for
   no new coverage. Where the gap is that poly does not *select* an existing tier-1 rule, the
   fix belongs in that engine's defaults, not in this tier.
+
+## Amendment — 2026-08-29 (implementation)
+
+### Coverage is claimed only where the tier has a structural model
+
+`quality` is cross-cutting (`languages() == &[]`), so its first implementation answered
+`provides_language_lint` with `settings.enabled` — `true` for every language. That is an
+overclaim, and it silently changed user-visible output: `provides_language_lint` drives the
+`no lint rules for <language>` skip, the `checked` count, the JSON `skipped` payload, and
+`--deny-skips`. Adding a metric engine would have deleted the "no lint rules" skip for **every**
+language in poly as a side effect.
+
+For a language with no structural model the tier contributes only `file-too-long` (a line count)
+and `lazy-ignore` (a marker scan) — exactly what a plain text file gets. Counting such a file as
+linted asserts knowledge of the language that poly does not have. This repeats a principle
+already established for the ast-grep backend, whose `provides_language_lint` deliberately answers
+via the same per-language rule lookup `lint` performs so that a single TypeScript rule cannot
+claim coverage of every language in the repository.
+
+**The tier therefore claims a language only when it can model that language's control flow**,
+which is the conjunction of two independently-probed tables: a definition query
+(`definitions::has_query`) **and** a construct table (`kinds::has_table`). Those are not the same
+set. A grammar with only a definition query can measure how long a function is and how many
+parameters it takes, while every branch, loop and `switch` inside it is invisible, because
+`nesting-too-deep` and `cyclomatic-complexity` do not run at all.
+
+Modelled today: **Python, Rust, Go, JavaScript, TypeScript, TSX, Java, Kotlin, C, C++, C#,
+Ruby.** Query-only, and therefore *not* claimed: **Zig, Swift, Dart, Gleam, Elixir, PHP, Nix,
+Scala, Lua, R** — these still *report* the line-counting floor, in the same way a `typos` finding
+on an unlinted language has never constituted coverage.
+
+The predicate also subtracts the per-language deferral table: a language whose every live
+structural rule is deferred to an existing backend, or switched off by user config, claims
+nothing. No language reaches that state today, but it is computed rather than assumed so the
+answer changes with the table instead of silently overclaiming.
+
+Both the covered set and the deferrals are derived from the same data the lint path uses, not a
+parallel hand-maintained list — two lists that must agree is precisely how this defect returns.
+
+### Advisory severity is now enforced across backends, not just ruff
+
+ADR 0027's "warning severity, on by default" posture was not in fact uniform: mago passed
+`Level::Error` straight through, so PHP failed CI on six maintainability *metrics*
+(`cyclomatic-complexity` > 15, `excessive-parameter-list` > 5, `too-many-methods` > 10,
+`too-many-properties` > 10, `too-many-enum-cases` > 20, `kan-defect`). Those now report warning,
+mirroring ruff's existing advisory mapping, while mago's correctness, safety and security rules
+keep error severity. Measured effect: 416 findings moved from error to warning, no other severity
+changed.

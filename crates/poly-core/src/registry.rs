@@ -19,6 +19,7 @@ use crate::engines::markup_fmt::MarkupFmtEngine;
 use crate::engines::native_tool::NativeToolEngine;
 use crate::engines::nixfmt::NixFmtEngine;
 use crate::engines::oxc::OxcEngine;
+use crate::engines::quality::QualityEngine;
 use crate::engines::rubyfmt::RubyfmtEngine;
 use crate::engines::ruff::RuffEngine;
 use crate::engines::rumdl::RumdlEngine;
@@ -81,6 +82,7 @@ pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
     engines.push(Box::new(TyposEngine));
     engines.push(Box::new(AstGrepEngine));
     engines.push(Box::new(UncommentEngine));
+    engines.push(Box::new(QualityEngine));
     engines
 }
 

@@ -7,6 +7,22 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Code-quality metrics for twelve languages that had no lint rules at all.** A new
+  cross-cutting `quality` tier measures function, type and file length, parameter count,
+  nesting depth and cyclomatic complexity straight off the tree-sitter parse, and scans for
+  ignore markers written without a reason. Findings are warnings, so nothing new fails CI.
+  Covers Python, Rust, Go, JavaScript, TypeScript, TSX, Java, Kotlin, C, C++, C# and Ruby;
+  `magic-number` and `law-of-demeter` ship off and are opt-in. Each rule defers to a tier-1
+  backend that already reports the same thing, so Python keeps ruff's `C901` rather than
+  gaining a second complexity finding. See ADR 0027.
+
+  A language the tier can measure now leaves the `no lint rules for <language>` skip and
+  counts toward `N file(s) linted`. Languages it cannot model structurally — Zig, Swift,
+  Dart, Gleam, Elixir, PHP, Nix, Scala, Lua, R — keep the skip: a line count is not
+  knowledge of the language.
+
 ## [0.21.12] - 2026-08-29
 
 ### Added

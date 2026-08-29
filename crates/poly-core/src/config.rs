@@ -121,6 +121,8 @@ impl Config {
             self.build_astgrep_options()
         } else if engine_name == "uncomment" {
             self.build_uncomment_options(&lang_options)
+        } else if engine_name == "quality" {
+            self.build_quality_options(&lang_options)
         } else {
             lang_options
         };
@@ -170,6 +172,69 @@ impl Config {
                 "preserve_patterns".to_string(),
                 toml::Value::Array(preserve_patterns.into_iter().map(toml::Value::String).collect()),
             );
+        }
+
+        options
+    }
+
+    /// Build the merged `options` table for the `quality` engine.
+    ///
+    /// Like `uncomment`, `quality` is cross-cutting: its base config lives in
+    /// a language-agnostic `[lint.quality]` table, and the per-language
+    /// `[lint.<lang>.quality]` table (`lang_options`) overrides individual
+    /// keys on top. Every key is a plain bool/integer/array (never a nested
+    /// table), so the merge is a flat "per-language wins when present, else
+    /// fall back to the global value".
+    fn build_quality_options(&self, lang_options: &toml::Table) -> toml::Table {
+        let global = self.lint.get("quality").and_then(toml::Value::as_table);
+        let mut options = toml::Table::new();
+
+        for key in [
+            "enabled",
+            "file_too_long",
+            "function_too_long",
+            "type_too_long",
+            "too_many_parameters",
+            "nesting_too_deep",
+            "cyclomatic_complexity",
+            "lazy_ignore",
+            "magic_number",
+            "law_of_demeter",
+        ] {
+            let value = lang_options
+                .get(key)
+                .or_else(|| global.and_then(|table| table.get(key)))
+                .and_then(toml::Value::as_bool);
+            if let Some(value) = value {
+                options.insert(key.to_string(), toml::Value::Boolean(value));
+            }
+        }
+
+        for key in [
+            "file_too_long_lines",
+            "function_too_long_lines",
+            "type_too_long_lines",
+            "too_many_parameters_count",
+            "nesting_too_deep_depth",
+            "cyclomatic_complexity_max",
+            "law_of_demeter_depth",
+        ] {
+            let value = lang_options
+                .get(key)
+                .or_else(|| global.and_then(|table| table.get(key)))
+                .and_then(toml::Value::as_integer);
+            if let Some(value) = value {
+                options.insert(key.to_string(), toml::Value::Integer(value));
+            }
+        }
+
+        let allow = lang_options
+            .get("magic_number_allow")
+            .or_else(|| global.and_then(|table| table.get("magic_number_allow")))
+            .and_then(|v| v.as_array())
+            .cloned();
+        if let Some(allow) = allow {
+            options.insert("magic_number_allow".to_string(), toml::Value::Array(allow));
         }
 
         options
@@ -307,5 +372,62 @@ impl From<poly_config::PolyConfig> for Config {
             typos_native: pc.typos_native,
             rules_dirs: pc.rules.dirs,
         }
+    }
+}
+
+#[cfg(test)]
+mod quality_options_tests {
+    use super::{Config, Kind};
+    use crate::language::Language;
+
+    /// `quality` is cross-cutting like `uncomment`: a language-agnostic
+    /// `[lint.quality]` table supplies the base, and `[lint.<lang>.quality]`
+    /// overrides individual keys on top.
+    #[test]
+    fn global_quality_table_applies_when_no_per_language_override_exists() {
+        let mut global = toml::Table::new();
+        global.insert("function_too_long_lines".to_string(), toml::Value::Integer(40));
+        let mut lint = toml::Table::new();
+        lint.insert("quality".to_string(), toml::Value::Table(global));
+
+        let config = Config {
+            lint,
+            ..Config::default()
+        };
+        let resolved = config.engine_config(&Language::Go, "quality", Kind::Lint);
+        assert_eq!(
+            resolved
+                .options
+                .get("function_too_long_lines")
+                .and_then(|v| v.as_integer()),
+            Some(40),
+        );
+    }
+
+    #[test]
+    fn per_language_quality_table_overrides_the_global_one() {
+        let mut global = toml::Table::new();
+        global.insert("function_too_long_lines".to_string(), toml::Value::Integer(40));
+        let mut per_lang_quality = toml::Table::new();
+        per_lang_quality.insert("function_too_long_lines".to_string(), toml::Value::Integer(200));
+        let mut go_table = toml::Table::new();
+        go_table.insert("quality".to_string(), toml::Value::Table(per_lang_quality));
+
+        let mut lint = toml::Table::new();
+        lint.insert("quality".to_string(), toml::Value::Table(global));
+        lint.insert("go".to_string(), toml::Value::Table(go_table));
+
+        let config = Config {
+            lint,
+            ..Config::default()
+        };
+        let resolved = config.engine_config(&Language::Go, "quality", Kind::Lint);
+        assert_eq!(
+            resolved
+                .options
+                .get("function_too_long_lines")
+                .and_then(|v| v.as_integer()),
+            Some(200),
+        );
     }
 }
