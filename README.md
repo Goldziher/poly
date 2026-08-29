@@ -654,6 +654,43 @@ Run the checks with `poly rules test` (exits non-zero on any failed snippet), an
 discovered rules with `poly rules list`. Both default to the configured `[rules] dirs`, or accept
 explicit directories as arguments.
 
+### Code Quality Metrics
+
+`poly lint` measures a handful of structural properties straight off the tree-sitter parse, for
+languages that have no linter of their own as much as for those that do. Every finding is a
+**warning**, so none of them fail CI on their own.
+
+| Rule | Default | On by default |
+| --- | --- | --- |
+| `file-too-long` | 1000 lines | yes |
+| `function-too-long` | 80 lines | yes |
+| `type-too-long` | 300 lines | yes |
+| `too-many-parameters` | 6 | yes |
+| `nesting-too-deep` | 4 | yes |
+| `cyclomatic-complexity` | 20 | yes |
+| `lazy-ignore` | — | yes |
+| `magic-number` | allows `-1, 0, 1, 2, 10, 100` | no |
+| `law-of-demeter` | depth 3 | no |
+
+```toml
+[lint.quality]
+function_too_long_lines = 120      # raise the budget everywhere
+magic_number = true                # opt in to a rule that ships off
+
+[lint.go.quality]
+function_too_long_lines = 200      # per-language override wins
+```
+
+The structural rules need a grammar poly holds a construct table for: **Python, Rust, Go,
+JavaScript, TypeScript, TSX, Java, Kotlin, C, C++, C# and Ruby**. A language poly can parse but
+not model — Zig, Swift, Dart, Gleam, Elixir, PHP, Nix, Scala, Lua, R — gets the file-length and
+ignore-marker checks only, and still reports `no lint rules for <language>`: counting lines is
+not knowledge of a language, and poly will not claim it is.
+
+Where a backend already reports the same measurement, poly defers to it rather than reporting it
+twice — Python keeps ruff's `C901` for complexity, JavaScript and TypeScript keep oxlint's
+`max-depth`. See [ADR 0027](adrs/0027-code-quality-tier.md).
+
 ### Comment Removal (opt-in)
 
 The `uncomment` backend strips comments across every language it recognizes, guided by
