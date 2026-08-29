@@ -37,16 +37,16 @@ assert_fs = "1.1.4"
 ast-grep-config = "0.45.2"
 ast-grep-core = "0.45.2"
 axoupdater = { version = "0.10.2", default-features = false, features = ["github_releases"] }
-biome_analyze = { git = "https://github.com/biomejs/biome", rev = "6f40e8224afc58737626d997c0ea779e2b37baca" }
-biome_css_analyze = { git = "https://github.com/biomejs/biome", rev = "6f40e8224afc58737626d997c0ea779e2b37baca" }
-biome_css_parser = { git = "https://github.com/biomejs/biome", rev = "6f40e8224afc58737626d997c0ea779e2b37baca" }
-biome_diagnostics = { git = "https://github.com/biomejs/biome", rev = "6f40e8224afc58737626d997c0ea779e2b37baca" }
-biome_graphql_analyze = { git = "https://github.com/biomejs/biome", rev = "6f40e8224afc58737626d997c0ea779e2b37baca" }
-biome_graphql_parser = { git = "https://github.com/biomejs/biome", rev = "6f40e8224afc58737626d997c0ea779e2b37baca" }
-biome_languages = { git = "https://github.com/biomejs/biome", rev = "6f40e8224afc58737626d997c0ea779e2b37baca", features = [
+biome_analyze = { git = "https://github.com/biomejs/biome", rev = "f2a07aadedd47034dccffd941935c71481b4c354" }
+biome_css_analyze = { git = "https://github.com/biomejs/biome", rev = "f2a07aadedd47034dccffd941935c71481b4c354" }
+biome_css_parser = { git = "https://github.com/biomejs/biome", rev = "f2a07aadedd47034dccffd941935c71481b4c354" }
+biome_diagnostics = { git = "https://github.com/biomejs/biome", rev = "f2a07aadedd47034dccffd941935c71481b4c354" }
+biome_graphql_analyze = { git = "https://github.com/biomejs/biome", rev = "f2a07aadedd47034dccffd941935c71481b4c354" }
+biome_graphql_parser = { git = "https://github.com/biomejs/biome", rev = "f2a07aadedd47034dccffd941935c71481b4c354" }
+biome_languages = { git = "https://github.com/biomejs/biome", rev = "f2a07aadedd47034dccffd941935c71481b4c354", features = [
   "lang_css",
 ] }
-biome_rowan = { git = "https://github.com/biomejs/biome", rev = "6f40e8224afc58737626d997c0ea779e2b37baca" }
+biome_rowan = { git = "https://github.com/biomejs/biome", rev = "f2a07aadedd47034dccffd941935c71481b4c354" }
 blake3 = "1"
 bstr = "1.13.1"
 cargo_metadata = "0.23.1"
@@ -56,6 +56,8 @@ console = { version = "0.16", default-features = false, features = ["ansi-parsin
 criterion = "0.8"
 ctrlc = "3.5.2"
 dockerfile-parser = "0.9.0"
+dotenv-analyzer = "0.1"
+dotenv-core = "0.1"
 dunce = "1.0.5"
 etcetera = "0.11.0"
 fancy-regex = "0.19.0"
@@ -92,13 +94,13 @@ markdown = "1.0.0"
 markup_fmt = "0.27"
 memchr = "2.8.3"
 owo-colors = { version = "4", features = ["supports-colors"] }
-oxc_allocator = { git = "https://github.com/oxc-project/oxc", rev = "d86c1137c46288568b31c76b6e1da8fdf4e97432" }
-oxc_diagnostics = { git = "https://github.com/oxc-project/oxc", rev = "d86c1137c46288568b31c76b6e1da8fdf4e97432" }
-oxc_formatter = { git = "https://github.com/oxc-project/oxc", rev = "d86c1137c46288568b31c76b6e1da8fdf4e97432" }
-oxc_formatter_core = { git = "https://github.com/oxc-project/oxc", rev = "d86c1137c46288568b31c76b6e1da8fdf4e97432" }
-oxc_formatter_json = { git = "https://github.com/oxc-project/oxc", rev = "d86c1137c46288568b31c76b6e1da8fdf4e97432" }
-oxc_linter = { git = "https://github.com/oxc-project/oxc", rev = "d86c1137c46288568b31c76b6e1da8fdf4e97432" }
-oxc_span = { git = "https://github.com/oxc-project/oxc", rev = "d86c1137c46288568b31c76b6e1da8fdf4e97432" }
+oxc_allocator = { git = "https://github.com/oxc-project/oxc", rev = "784e9faad2a5e65e063f3e1f2f448203675909ec" }
+oxc_diagnostics = { git = "https://github.com/oxc-project/oxc", rev = "784e9faad2a5e65e063f3e1f2f448203675909ec" }
+oxc_formatter = { git = "https://github.com/oxc-project/oxc", rev = "784e9faad2a5e65e063f3e1f2f448203675909ec" }
+oxc_formatter_core = { git = "https://github.com/oxc-project/oxc", rev = "784e9faad2a5e65e063f3e1f2f448203675909ec" }
+oxc_formatter_json = { git = "https://github.com/oxc-project/oxc", rev = "784e9faad2a5e65e063f3e1f2f448203675909ec" }
+oxc_linter = { git = "https://github.com/oxc-project/oxc", rev = "784e9faad2a5e65e063f3e1f2f448203675909ec" }
+oxc_span = { git = "https://github.com/oxc-project/oxc", rev = "784e9faad2a5e65e063f3e1f2f448203675909ec" }
 phf = { version = "0.14.0", default-features = false, features = ["macros"] }
 poly-buildinfo = { path = "crates/poly-buildinfo" }
 poly-cache = { path = "crates/poly-cache" }
@@ -120,16 +122,17 @@ rayon = "1"
 regex = "1"
 rmcp = { version = "3.1.4", features = ["schemars"] }
 rubyfmt = { git = "https://github.com/fables-tales/rubyfmt", rev = "5185d3beb9b4b9052587292d7ac5bf374992e8fe", default-features = false }
-ruff_db = { git = "https://github.com/astral-sh/ruff", rev = "97060ba557e31ff2f3d75d32dc93ef48d0c7ffa2" }
-ruff_diagnostics = { git = "https://github.com/astral-sh/ruff", rev = "97060ba557e31ff2f3d75d32dc93ef48d0c7ffa2" }
-ruff_formatter = { git = "https://github.com/astral-sh/ruff", rev = "97060ba557e31ff2f3d75d32dc93ef48d0c7ffa2" }
-ruff_linter = { git = "https://github.com/astral-sh/ruff", rev = "97060ba557e31ff2f3d75d32dc93ef48d0c7ffa2" }
-ruff_python_ast = { git = "https://github.com/astral-sh/ruff", rev = "97060ba557e31ff2f3d75d32dc93ef48d0c7ffa2" }
-ruff_python_formatter = { git = "https://github.com/astral-sh/ruff", rev = "97060ba557e31ff2f3d75d32dc93ef48d0c7ffa2" }
-ruff_python_parser = { git = "https://github.com/astral-sh/ruff", rev = "97060ba557e31ff2f3d75d32dc93ef48d0c7ffa2" }
-ruff_source_file = { git = "https://github.com/astral-sh/ruff", rev = "97060ba557e31ff2f3d75d32dc93ef48d0c7ffa2" }
-ruff_text_size = { git = "https://github.com/astral-sh/ruff", rev = "97060ba557e31ff2f3d75d32dc93ef48d0c7ffa2" }
+ruff_db = { git = "https://github.com/astral-sh/ruff", rev = "700421c2ab58b99063d30eef79da653c52dca23c" }
+ruff_diagnostics = { git = "https://github.com/astral-sh/ruff", rev = "700421c2ab58b99063d30eef79da653c52dca23c" }
+ruff_formatter = { git = "https://github.com/astral-sh/ruff", rev = "700421c2ab58b99063d30eef79da653c52dca23c" }
+ruff_linter = { git = "https://github.com/astral-sh/ruff", rev = "700421c2ab58b99063d30eef79da653c52dca23c" }
+ruff_python_ast = { git = "https://github.com/astral-sh/ruff", rev = "700421c2ab58b99063d30eef79da653c52dca23c" }
+ruff_python_formatter = { git = "https://github.com/astral-sh/ruff", rev = "700421c2ab58b99063d30eef79da653c52dca23c" }
+ruff_python_parser = { git = "https://github.com/astral-sh/ruff", rev = "700421c2ab58b99063d30eef79da653c52dca23c" }
+ruff_source_file = { git = "https://github.com/astral-sh/ruff", rev = "700421c2ab58b99063d30eef79da653c52dca23c" }
+ruff_text_size = { git = "https://github.com/astral-sh/ruff", rev = "700421c2ab58b99063d30eef79da653c52dca23c" }
 rumdl = { version = "0.2", default-features = false }
+rust-ini = { version = "0.21", features = ["inline-comment"] }
 rustc-hash = "2.1.3"
 rustix = { version = "1.1.4", features = ["pty", "process", "fs", "termios"] }
 same-file = "1.0.6"

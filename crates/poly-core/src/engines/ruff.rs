@@ -2,7 +2,7 @@
 //! via `ruff_python_formatter`.
 //!
 //! Both depend on the astral-sh/ruff git monorepo, pinned to rev
-//! `97060ba` (see the workspace `Cargo.toml`). The pinned revision is
+//! `700421c` (see the workspace `Cargo.toml`). The pinned revision is
 //! folded into [`RuffEngine::version`] so that upgrading the pin automatically
 //! invalidates the poly cache.
 //!
@@ -295,7 +295,7 @@ impl Engine for RuffEngine {
     /// Version string incorporates the pinned ruff git rev so that upgrading
     /// the rev automatically invalidates any cached lint/format output.
     fn version(&self) -> &str {
-        "git-ruff:97060ba+pkgroot+plugins+isort+e501+tgtsrc+ignore-b008"
+        "git-ruff:700421c+pkgroot+plugins+isort+e501+tgtsrc+ignore-b008"
     }
 
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
