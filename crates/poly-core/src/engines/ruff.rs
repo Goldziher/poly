@@ -8,21 +8,14 @@
 //!
 //! # Opinionated rule selection
 //!
-//! The default selection extends ruff's built-in defaults (F + E4/E7/E9) with:
-//!
-//! | Code | Linter | Rationale |
-//! |------|--------|-----------|
-//! | `F`  | Pyflakes | undefined names, unused imports, etc. |
-//! | `E4` | pycodestyle | import errors (E401/E402) |
-//! | `E7` | pycodestyle | statement errors (E711…E743) |
-//! | `E9` | pycodestyle | runtime/syntax errors (E999) |
-//! | `W6` | pycodestyle | W605 — invalid escape sequence |
-//! | `I`  | isort | import sorting |
-//! | `UP` | pyupgrade | modernize Python syntax |
-//! | `B`  | flake8-bugbear | common bugs and design issues |
+//! The default selection extends ruff's built-in defaults (F + E4/E7/E9) into an
+//! opinionated modern-Python set — see [`RULE_CODES`] for the full list with a
+//! per-category rationale, and [`DEFAULT_IGNORED_RULES`] for the individual
+//! members held back because they fire on legitimate code.
 //!
 //! `E1`/`E2`/`E3`/`W1`/`W2`/`W3` are intentionally excluded — they overlap
 //! with the ruff formatter and would fire on every well-formatted file.
+//! Preview rules stay off ([`rules_for_codes`] uses `PreviewOptions::default()`).
 //!
 //! # Opinionated format defaults
 //!
@@ -63,22 +56,96 @@ use crate::language::Language;
 
 /// Opinionated rule selection: string codes resolved by [`RuleSelector::from_str`].
 ///
-/// Extends ruff's built-in defaults (F + E4/E7/E9) with W6 (invalid escape),
-/// I (isort), UP (pyupgrade), and B (flake8-bugbear). Omits E1/E2/E3/W1/W2/W3
-/// because the ruff formatter already handles those whitespace/blank-line rules.
-static RULE_CODES: &[&str] = &["F", "E4", "E7", "E9", "W6", "I", "UP", "B"];
+/// Extends ruff's built-in defaults (F + E4/E7/E9). Omits E1/E2/E3/W1/W2/W3
+/// because the ruff formatter already handles those whitespace/blank-line rules,
+/// and keeps `PreviewOptions::default()` in [`rules_for_codes`] so preview rules
+/// stay off.
+///
+/// Individual members of a selected category that fire on legitimate code are
+/// turned back off in [`DEFAULT_IGNORED_RULES`], each with the measurement that
+/// justifies it — "category on, one member off" is the mechanism, not a narrower
+/// prefix.
+static RULE_CODES: &[&str] = &[
+    // ── correctness (ruff's own default set, plus escapes and import order) ──
+    "F",  // Pyflakes: undefined names, unused imports
+    "E4", // pycodestyle: import errors (E401/E402)
+    "E7", // pycodestyle: statement errors (E711…E743) — includes E722 bare-except
+    "E9", // pycodestyle: runtime/syntax errors (E999)
+    "W6", // pycodestyle: W605 invalid escape sequence
+    "I",  // isort: import sorting
+    "UP", // pyupgrade: modernize Python syntax
+    "B",  // flake8-bugbear: common bugs and design issues
+    // ── typing: every function signature carries types ──
+    "ANN", // flake8-annotations (ANN101/ANN102 were removed upstream in ruff 0.8.0)
+    // ── functional style: prefer expressions and comprehensions over statements ──
+    "SIM",  // flake8-simplify: collapsible ifs, redundant bool conversions
+    "C4",   // flake8-comprehensions: comprehension over map/filter/list() round-trips
+    "RET",  // flake8-return: unnecessary else/assign before return
+    "FURB", // refurb: modern-Python idiom upgrades
+    "PERF", // perflint: avoidable per-iteration work in loops
+    // ── error handling: the best-evidenced AI defect class (CWE-248 / CWE-390) ──
+    "TRY",  // tryceratops: raise/except discipline
+    "BLE",  // flake8-blind-except: `except Exception:` with no re-raise
+    "S110", // flake8-bandit: `try: … except: pass` — a silently swallowed error
+    // ── complexity: makes the already-wired mccabe/pylint thresholds live ──
+    "C90", // mccabe: cyclomatic complexity (threshold: `mccabe_max_complexity`)
+    "PLR", // Pylint refactor, incl. PLR09xx too-many-args/branches/returns/statements
+    // ── hygiene ──
+    "T20", // flake8-print: stray print()/pprint() left in shipped code
+    "TC",  // flake8-type-checking: imports that belong in a TYPE_CHECKING block
+    "PTH", // flake8-use-pathlib: os.path calls that pathlib does better
+    "RUF", // ruff's own rules
+    "ARG", // flake8-unused-arguments
+];
 
 /// Rules disabled by default even though their category is selected above.
+///
+/// Every entry was measured against a six-repository Python/TypeScript corpus
+/// (151 Python files) and hand-read before being turned off; the finding count
+/// quoted for each is from that run.
+///
+/// Re-enable any of them with `extend_select = ["<code>"]` (or an explicit
+/// `select`) in `[lint.python.ruff]`.
 ///
 /// - **B008** (function-call in an argument default) fires on the idiomatic
 ///   FastAPI / typer / Click dependency-injection pattern
 ///   (`def handler(user = Depends(...))`, `x = Query(...)`, `arg = Argument(...)`),
 ///   where the call in the default is deliberate, not a bug. The rest of
 ///   flake8-bugbear (notably B006, mutable default arguments) catches real bugs
-///   and stays on; only this false-positive-prone member is off. Re-enable it
-///   with `extend_select = ["B008"]` (or an explicit `select`) in
-///   `[lint.python.ruff]`.
-static DEFAULT_IGNORED_RULES: &[&str] = &["B008"];
+///   and stays on; only this false-positive-prone member is off.
+/// - **RUF100** (unused `noqa`) fires on every `# noqa: X` whose code poly's
+///   default set does not select — it measures the distance between the file's
+///   own ruff config and poly's, not anything about the code. 11,570 findings,
+///   76 per Python file, and 99% of them read `(non-enabled: …)`.
+/// - **ANN002 / ANN003** (missing annotation for `*args` / `**kwargs`) — 2,247
+///   findings, ~7.4 per file. The only annotation that ever satisfies them is
+///   `Any`, which ANN401 (which *is* on) would then flag; the pair adds no type
+///   information, it just moves the finding.
+/// - **ARG002** (unused method argument) — 2,228 findings, every single sampled
+///   one a `*args`/`**kwargs` in an override or callback whose signature is
+///   fixed by its caller. ARG001/ARG003/ARG004/ARG005 stay on.
+/// - **PLR2004** (magic value in comparison) — 1,127 findings across all five
+///   Python repos, overwhelmingly HTTP status codes in tests
+///   (`assert response.status_code == 200`). Naming those is not an improvement.
+/// - **TRY003** (long message outside the exception class) — 77 findings across
+///   all five repos. Satisfying it means declaring an exception subclass for
+///   every `raise ValueError("…")`; no defect is detected either way.
+///
+/// **ANN401** (`Any` is disallowed) is deliberately *not* on this list. It was
+/// measured at 97 findings / 0.64 per Python file — an order of magnitude below
+/// everything above — and a hand-read of 20 random hits split 11 genuinely-
+/// correct `Any` (typing introspection: `annotation: Any`, `**kwargs: Any` in a
+/// passthrough) against 9 narrowable ones (`coro: Any` for a
+/// `Coroutine[Any, Any, T]`, `native: Any` for a binding object the `.pyi`
+/// already names). None was ruff's documented `MyAny = Any` type-alias false
+/// positive. It is also the direct Python analogue of the
+/// `typescript/no-explicit-any` poly enables for oxlint, so switching one off
+/// while shipping the other would be incoherent. Suppress it per-site.
+///
+/// The `EM` category (exception message assigned to a variable before the
+/// `raise`) was measured at 77 findings / 0.51 per file across all five repos
+/// and is not selected at all — see [`RULE_CODES`].
+static DEFAULT_IGNORED_RULES: &[&str] = &["B008", "RUF100", "ANN002", "ANN003", "ARG002", "PLR2004", "TRY003"];
 
 /// The effective default ignore set: [`DEFAULT_IGNORED_RULES`] minus any rule the
 /// user explicitly turned back on via `select` / `extend_select`.
@@ -270,6 +337,59 @@ fn map_severity(s: RuffSeverity) -> Severity {
     }
 }
 
+/// Rule-code prefixes reported at [`Severity::Warning`] rather than ruff's own
+/// `Error`, so they never fail a run.
+///
+/// `poly lint` exits non-zero only on error-severity findings, so the severity a
+/// backend assigns decides whether a rule is a **gate** or a **guard rail**. Ruff
+/// reports every violation at `Error`; adopting that verbatim for the opinionated
+/// categories would mean a repo that upgrades poly discovers its CI is red because
+/// its functions lack return annotations — a style opinion breaking a build.
+///
+/// So the split follows what a finding *means*, not what ruff calls it:
+///
+/// - **Error (not listed here)** — the correctness core poly has always shipped:
+///   `F` (undefined names), `E4`/`E7`/`E9` (import, statement, and syntax errors),
+///   `W6` (invalid escapes), `I` (import order), `UP` (pyupgrade), `B` (bugbear).
+///   These were already `Error` before the opinionated set was added, so their
+///   behaviour is unchanged.
+/// - **Warning (listed here)** — the categories added for typing, functional style,
+///   error handling, complexity, and hygiene. Real signal, but advisory: a
+///   consumer opts into failing on them with `[lint.python.ruff.rules.<code>]
+///   level = "error"`, which the per-rule remap applies after this mapping.
+///
+/// Matching is by prefix, the same `code_matches_rule` semantics the configured
+/// remap and `[per-file-ignores]` use, so `ANN` covers `ANN001`, `ANN201`, ….
+static ADVISORY_RULE_PREFIXES: &[&str] = &[
+    "ANN", // typing
+    "SIM", "C4", "RET", "FURB", "PERF", // functional style
+    "TRY", "BLE", "S110", // error handling
+    "C90", "PLR", // complexity
+    "T20", "TC", "PTH", "RUF", "ARG", // hygiene
+];
+
+/// Downgrade `severity` to [`Severity::Warning`] when `code` belongs to an
+/// advisory category (see [`ADVISORY_RULE_PREFIXES`]).
+///
+/// Only ever downgrades: a finding ruff already reports below `Error` keeps its
+/// own level.
+fn advisory_severity(code: Option<&str>, severity: Severity) -> Severity {
+    if severity != Severity::Error {
+        return severity;
+    }
+    let Some(code) = code else {
+        return severity;
+    };
+    if ADVISORY_RULE_PREFIXES
+        .iter()
+        .any(|prefix| code.starts_with(prefix) && code[prefix.len()..].bytes().all(|b| b.is_ascii_digit()))
+    {
+        Severity::Warning
+    } else {
+        severity
+    }
+}
+
 /// Ruff Python backend (lint + format).
 pub struct RuffEngine;
 
@@ -295,7 +415,7 @@ impl Engine for RuffEngine {
     /// Version string incorporates the pinned ruff git rev so that upgrading
     /// the rev automatically invalidates any cached lint/format output.
     fn version(&self) -> &str {
-        "git-ruff:700421c+pkgroot+plugins+isort+e501+tgtsrc+ignore-b008"
+        "git-ruff:700421c+pkgroot+plugins+isort+e501+tgtsrc+ignore-b008+rules-v3+advisory-sev1"
     }
 
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
@@ -339,7 +459,7 @@ impl Engine for RuffEngine {
             .into_iter()
             .map(|ruff_diag| {
                 let code = ruff_diag.secondary_code().map(|c| c.as_str().to_string());
-                let severity = map_severity(ruff_diag.severity());
+                let severity = advisory_severity(code.as_deref(), map_severity(ruff_diag.severity()));
                 let message = ruff_diag.concise_message().to_string();
 
                 let span = ruff_diag

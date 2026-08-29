@@ -4,6 +4,18 @@ expression: summary
 ---
 [
     (
+        "ANN001",
+        Some(
+            3,
+        ),
+    ),
+    (
+        "ANN201",
+        Some(
+            3,
+        ),
+    ),
+    (
         "E711",
         Some(
             4,

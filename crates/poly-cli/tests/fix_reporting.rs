@@ -92,7 +92,9 @@ fn fix_reports_both_what_it_fixed_and_what_remains() {
 #[test]
 fn fix_with_nothing_to_do_still_reports_a_clean_run() {
     let dir = repo();
-    std::fs::write(dir.path().join("unused.py"), "print(\"hi\")\n").expect("write unused.py");
+    // Must be clean under poly's *whole* default ruff selection — a bare
+    // `print(...)` stopped qualifying once `T20` joined the default set.
+    std::fs::write(dir.path().join("unused.py"), "x = 1\n").expect("write unused.py");
 
     let output = poly(
         dir.path(),

@@ -34,7 +34,9 @@ const INVALID_UTF8: &[u8] = b"x = 1\n\xff\xfe not utf-8\n";
 /// engine covers — the three outcomes that must stay distinguishable.
 fn repo() -> TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
-    std::fs::write(dir.path().join("ok.py"), "print(\"hi\")\n").expect("write ok.py");
+    // Clean under poly's *whole* default ruff selection — a bare `print(...)`
+    // stopped qualifying once `T20` joined the default set.
+    std::fs::write(dir.path().join("ok.py"), "x = 1\n").expect("write ok.py");
     std::fs::write(dir.path().join("bad.py"), INVALID_UTF8).expect("write bad.py");
     std::fs::write(dir.path().join("App.csproj"), CSPROJ).expect("write App.csproj");
     dir

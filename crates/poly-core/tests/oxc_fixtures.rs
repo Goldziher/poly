@@ -206,3 +206,138 @@ fn oxc_format_jsonc_preserves_comments() {
         "block comment must survive JSONC formatting; got:\n{text}"
     );
 }
+
+// ── Opinionated default rule set (Phase 3.0) ─────────────────────────────────
+//
+// `ConfigStoreBuilder::default()` upstream means the `correctness` category
+// only. These assert the widened default — `suspicious` + `pedantic` plus three
+// named `restriction` rules — actually fires with no engine config, and that the
+// three rules tuned back out stay silent. Each was verified to fail against the
+// previous correctness-only default.
+
+/// Returns every rule code the default (no-config) path reports for `content`.
+fn default_codes(content: &str, path: &str, lang: Language) -> Vec<String> {
+    OxcEngine
+        .lint(&make_src(content, path, lang), &default_cfg())
+        .unwrap()
+        .into_iter()
+        .filter_map(|d| d.code)
+        .collect()
+}
+
+/// The `restriction` rules named individually in `DEFAULT_LINT_FILTERS`:
+/// `any`, the non-null assertion `!`, and a shipped `console` call.
+#[test]
+fn oxc_named_restriction_rules_fire_by_default() {
+    let any_codes = default_codes(
+        "export function f(x: any): any {\n  return x;\n}\n",
+        "a.ts",
+        Language::TypeScript,
+    );
+    assert!(
+        any_codes.iter().any(|c| c == "typescript/no-explicit-any"),
+        "`: any` must trip typescript/no-explicit-any; got: {any_codes:?}"
+    );
+
+    let bang_codes = default_codes(
+        "export function f(x: string | null): number {\n  return x!.length;\n}\n",
+        "b.ts",
+        Language::TypeScript,
+    );
+    assert!(
+        bang_codes.iter().any(|c| c == "typescript/no-non-null-assertion"),
+        "`!.` must trip typescript/no-non-null-assertion; got: {bang_codes:?}"
+    );
+
+    let console_codes = default_codes(
+        "export function f() {\n  console.log('hi');\n}\n",
+        "c.js",
+        Language::JavaScript,
+    );
+    assert!(
+        console_codes.iter().any(|c| c == "no-console"),
+        "console.log must trip no-console; got: {console_codes:?}"
+    );
+}
+
+/// The `suspicious` and `pedantic` categories: `==` instead of `===` is the
+/// canonical member of the gap the correctness-only default left open.
+#[test]
+fn oxc_suspicious_and_pedantic_categories_fire_by_default() {
+    let codes = default_codes(
+        "export function f(a: number, b: string): boolean {\n  return a == b;\n}\n",
+        "d.ts",
+        Language::TypeScript,
+    );
+    assert!(
+        codes.iter().any(|c| c == "eqeqeq"),
+        "`==` must trip eqeqeq once suspicious/pedantic are on; got: {codes:?}"
+    );
+}
+
+/// `no-underscore-dangle` is in `DEFAULT_ALLOWED_RULES` — it rides along with
+/// `pedantic` but was measured at 3.0 findings per file on the corpus, almost
+/// all of them the deliberate `_private` convention. Off by default, back with
+/// `extend_select`.
+#[test]
+fn oxc_tuned_out_rule_is_off_by_default_but_reenableable() {
+    let content = "export function f() {\n  const _cached = 1;\n  return _cached;\n}\n";
+
+    let codes = default_codes(content, "e.js", Language::JavaScript);
+    assert!(
+        !codes.iter().any(|c| c == "no-underscore-dangle"),
+        "no-underscore-dangle must be off by default; got: {codes:?}"
+    );
+
+    let mut opts = toml::Table::new();
+    opts.insert(
+        "extend_select".to_owned(),
+        toml::Value::Array(vec![toml::Value::String("no-underscore-dangle".to_owned())]),
+    );
+    let reenabled = OxcEngine
+        .lint(
+            &make_src(content, "e.js", Language::JavaScript),
+            &EngineConfig {
+                globals: GlobalDefaults::default(),
+                indent_width: 2,
+                options: opts,
+            },
+        )
+        .unwrap();
+    assert!(
+        reenabled
+            .iter()
+            .any(|d| d.code.as_deref() == Some("no-underscore-dangle")),
+        "extend_select must bring no-underscore-dangle back; got: {reenabled:?}"
+    );
+}
+
+/// The widened default and the user-config path share one filter list, so a
+/// rule that fires with no config must still fire when an unrelated config key
+/// is present — the drift guard on `DEFAULT_LINT_FILTERS`.
+#[test]
+fn oxc_widened_default_survives_unrelated_user_config() {
+    let content = "export function f(x: any): any {\n  return x;\n}\n";
+
+    let mut opts = toml::Table::new();
+    opts.insert(
+        "ignore".to_owned(),
+        toml::Value::Array(vec![toml::Value::String("no-debugger".to_owned())]),
+    );
+    let diags = OxcEngine
+        .lint(
+            &make_src(content, "f.ts", Language::TypeScript),
+            &EngineConfig {
+                globals: GlobalDefaults::default(),
+                indent_width: 2,
+                options: opts,
+            },
+        )
+        .unwrap();
+    assert!(
+        diags
+            .iter()
+            .any(|d| d.code.as_deref() == Some("typescript/no-explicit-any")),
+        "the opinionated base must apply on the user-config path too; got: {diags:?}"
+    );
+}

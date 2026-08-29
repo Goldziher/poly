@@ -65,8 +65,70 @@ impl RuntimeFileSystem for MemoryFileSystem<'_> {
     }
 }
 
+/// The opinionated filters layered on top of oxlint's own default.
+///
+/// `ConfigStoreBuilder::default()` upstream means the **`correctness` category
+/// only**, which on real TypeScript reports almost nothing. These filters widen
+/// it, all at Warning severity:
+///
+/// * `suspicious` / `pedantic` — the two categories that hold the actual
+///   code-quality rules (`no-empty`, `eqeqeq`, `max-depth`, …). `restriction`,
+///   `style` and `nursery` stay off: they are opinion, not defect detection.
+/// * three named `restriction` rules that *are* defect detection — the escape
+///   hatches out of the type system (`any`, `!`) and the debug `console` call
+///   that should not have shipped. Named individually because enabling the
+///   whole `restriction` category would bury them.
+///
+/// Applied by both [`lint_service`] (the no-config fast path) and
+/// [`build_configured_service`] (the user-config path) so the two cannot drift.
+/// User filters are applied *after* these, so `ignore` still wins.
+const DEFAULT_LINT_FILTERS: &[&str] = &[
+    "suspicious",
+    "pedantic",
+    "typescript/no-explicit-any",
+    "typescript/no-non-null-assertion",
+    "no-console",
+];
+
+/// Members of the categories above that are turned back off by default.
+///
+/// Each was measured against a six-repository corpus (202 JS/TS files) and
+/// hand-read; the counts quoted are from that run. Re-enable any of them with
+/// `extend_select = ["<rule>"]` in the engine's config table.
+///
+/// - **no-underscore-dangle** — 608 findings, 3.0 per file, and 92% of the
+///   sampled ones in production code. `_privateField` is a deliberate,
+///   universal JavaScript convention; the rule detects no defect.
+/// - **max-lines-per-function** — 131 findings across four repos at oxlint's
+///   50-line default, which every `describe()` block in a test file exceeds.
+/// - **max-lines** — 51 findings at oxlint's 300-line-per-file default, a
+///   threshold poly does not endorse anywhere else (its own cap is 1000).
+const DEFAULT_ALLOWED_RULES: &[&str] = &["no-underscore-dangle", "max-lines-per-function", "max-lines"];
+
+/// A [`ConfigStoreBuilder`] carrying oxlint's defaults, widened by
+/// [`DEFAULT_LINT_FILTERS`] and narrowed by [`DEFAULT_ALLOWED_RULES`].
+///
+/// # Panics
+/// Panics if a filter string in either constant is malformed. The strings are
+/// compile-time constants, so this is a build-time invariant; the companion
+/// test `default_filter_strings_are_all_parseable` proves it.
+fn opinionated_builder() -> ConfigStoreBuilder {
+    let mut builder = ConfigStoreBuilder::default();
+    for name in DEFAULT_LINT_FILTERS {
+        let filter =
+            LintFilter::new(AllowWarnDeny::Warn, *name).expect("DEFAULT_LINT_FILTERS entries are valid filters");
+        builder = builder.with_filter(&filter);
+    }
+    for name in DEFAULT_ALLOWED_RULES {
+        let filter =
+            LintFilter::new(AllowWarnDeny::Allow, *name).expect("DEFAULT_ALLOWED_RULES entries are valid filters");
+        builder = builder.with_filter(&filter);
+    }
+    builder
+}
+
 /// Returns the lazily-initialised shared [`LintService`] configured with
-/// oxlint's default correctness rule set.
+/// oxlint's default rule set widened by [`DEFAULT_LINT_FILTERS`].
 ///
 /// Building the service (rule table + allocator pool) is expensive; the
 /// `OnceLock` ensures the cost is paid at most once per process.
@@ -78,9 +140,9 @@ fn lint_service() -> &'static LintService {
     static SERVICE: OnceLock<LintService> = OnceLock::new();
     SERVICE.get_or_init(|| {
         let mut plugin_store = ExternalPluginStore::default();
-        let config = ConfigStoreBuilder::default()
+        let config = opinionated_builder()
             .build(&mut plugin_store)
-            // SAFETY: ConfigStoreBuilder::default().build() with no external
+            // SAFETY: the builder has no external inputs, so the build cannot fail.
             .expect("oxc_linter default ConfigStore build is infallible");
         let config_store = ConfigStore::new(config, Default::default(), plugin_store);
         let linter = Linter::new(LintOptions::default(), config_store, None);
@@ -126,7 +188,9 @@ fn build_configured_service(cfg: &EngineConfig) -> anyhow::Result<LintService> {
     let selection = RuleSelection::from_options(cfg);
 
     let mut plugin_store = ExternalPluginStore::default();
-    let mut builder = ConfigStoreBuilder::default();
+    // Same opinionated base as the no-config path; user filters layer on top,
+    // so an `ignore` entry can still turn any of them back off.
+    let mut builder = opinionated_builder();
 
     for name in &selection.select {
         if let Ok(filter) = LintFilter::new(AllowWarnDeny::Warn, name.to_owned()) {
@@ -423,6 +487,29 @@ mod tests {
             indent_width: 2,
             options: toml::Table::new(),
         }
+    }
+
+    /// `opinionated_builder` `expect()`s on every entry of the two filter
+    /// constants; this asserts the invariant directly so a bad string fails a
+    /// test rather than panicking inside a rayon worker at run time.
+    #[test]
+    fn default_filter_strings_are_all_parseable() {
+        for name in DEFAULT_LINT_FILTERS {
+            assert!(
+                LintFilter::new(AllowWarnDeny::Warn, *name).is_ok(),
+                "DEFAULT_LINT_FILTERS entry {name:?} is not a valid oxlint filter"
+            );
+        }
+        for name in DEFAULT_ALLOWED_RULES {
+            assert!(
+                LintFilter::new(AllowWarnDeny::Allow, *name).is_ok(),
+                "DEFAULT_ALLOWED_RULES entry {name:?} is not a valid oxlint filter"
+            );
+        }
+        // Cheap smoke test that the whole builder resolves against the rule
+        // registry, not just that the strings parse.
+        let mut plugin_store = ExternalPluginStore::default();
+        assert!(opinionated_builder().build(&mut plugin_store).is_ok());
     }
 
     #[test]
