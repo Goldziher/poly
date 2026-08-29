@@ -121,15 +121,49 @@ fn config_show_reports_effective_defaults() {
     assert_eq!(report.defaults.line_length, 120, "opinionated default line length");
 }
 
+/// With no user rule dirs at all, the report still lists poly's built-in pack —
+/// the rules a `lint` run would actually apply — each carrying its source,
+/// declared default severity, effective severity, and enabled state.
 #[test]
-fn rules_report_lists_configured_dirs() {
+fn rules_report_lists_the_builtin_pack_with_no_user_dirs() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("poly.toml"), "[rules]\ndirs = []\n").unwrap();
     let config = dir.path().join("poly.toml");
     let report = ops::rules_report(&[], Some(&config.display().to_string()), false).unwrap();
     assert!(report.dirs.is_empty(), "empty rule dirs from config");
-    assert!(report.rules.is_empty(), "no rules discovered");
+    assert!(report.builtin_pack_enabled, "the pack is on by default");
     assert!(report.tests.is_none(), "no test report when test=false");
+
+    let rule = report
+        .rules
+        .iter()
+        .find(|rule| rule.id == "swallowed-error")
+        .expect("a built-in pack rule must be listed");
+    assert_eq!(rule.source, "builtin");
+    assert_eq!(rule.language, "rust");
+    assert_eq!(rule.default_severity, "warning");
+    assert_eq!(rule.severity, "warning");
+    assert!(rule.enabled);
+
+    let off_rule = report
+        .rules
+        .iter()
+        .find(|rule| rule.id == "unwrap-used")
+        .expect("an opt-in pack rule must be listed too, marked off");
+    assert_eq!(off_rule.default_severity, "off");
+    assert!(!off_rule.enabled);
+}
+
+/// `[rules] builtin = false` removes the pack from the report, exactly as it
+/// removes it from a scan.
+#[test]
+fn rules_report_omits_the_pack_when_builtin_is_disabled() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("poly.toml"), "[rules]\ndirs = []\nbuiltin = false\n").unwrap();
+    let config = dir.path().join("poly.toml");
+    let report = ops::rules_report(&[], Some(&config.display().to_string()), false).unwrap();
+    assert!(!report.builtin_pack_enabled, "the pack is disabled by config");
+    assert!(report.rules.is_empty(), "no rules left once the pack is off");
 }
 
 // ── Layer 2: registry introspection ───────────────────────────────────────
@@ -365,7 +399,16 @@ async fn rules_tool_lists_rules_structured() {
         .await
         .unwrap();
     let structured = result.structured_content.as_ref().expect("structured_content present");
-    assert_eq!(structured["rules"], serde_json::json!([]), "no rules discovered");
+    let rules = structured["rules"].as_array().expect("rules array");
+    let rule = rules
+        .iter()
+        .find(|rule| rule["id"] == "swallowed-error")
+        .expect("the built-in pack is listed over the wire");
+    assert_eq!(rule["source"], "builtin");
+    assert_eq!(rule["default_severity"], "warning");
+    assert_eq!(rule["severity"], "warning");
+    assert_eq!(rule["enabled"], serde_json::json!(true));
+    assert_eq!(structured["builtin_pack_enabled"], serde_json::json!(true));
     client.cancel().await.unwrap();
     let _ = server_task.await;
 }

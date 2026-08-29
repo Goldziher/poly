@@ -63,6 +63,15 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   Dart, Gleam, Elixir, PHP, Nix, Scala, Lua, R — keep the skip: a line count is not
   knowledge of the language.
 
+- **`poly rules list` now shows the built-in rule pack.** It previously enumerated only rules
+  loaded from `[rules] dirs`, so the 13 rules poly ships enabled were invisible to the one command
+  that lists rules — a user who hit a `force-cast` warning had no way to find where it came from.
+  The listing now covers built-in and user rules together, showing each rule's source, its
+  effective severity, and the default its author shipped. It is computed from the same resolution
+  path `poly lint` uses, so it cannot drift from what actually runs, and it reflects
+  `[rules] builtin`, `select` / `extend_select` / `ignore` and per-rule `level`. `--format json`
+  and `--format toon` carry the same fields, as does the MCP `rules` tool.
+
 - **Unknown configuration keys are now reported.** `[lint.*]` and `[fmt.*]` accepted any key at
   all, so a typo — or a key a backend never supported — parsed silently and did nothing. This was
   the root cause of a family of defects fixed earlier in this release, where documented keys had

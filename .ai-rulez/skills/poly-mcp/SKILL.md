@@ -19,9 +19,10 @@ Eleven tools, no more. Read-only (never touch the tree):
 - `lint` — run the linters and return diagnostics. Mirrors `poly lint`.
 - `format_check` — report formatting drift without writing. Mirrors `poly fmt --check`.
 - `cache_stats` — result-cache footprint (entries, bytes, format version) per namespace.
-- `rules` — list the ast-grep rules resolved from `[rules] dirs`, and optionally run their
-  `*-test.yml` snippets. Mirrors `poly rules list` / `poly rules test`. It reports the
-  rules loaded from those directories only — poly's built-in rule pack is not listed.
+- `rules` — list every ast-grep rule a run would apply — poly's built-in pack plus the user
+  rules from `[rules] dirs` — and optionally run their `*-test.yml` snippets. Mirrors `poly
+  rules list` / `poly rules test`. Each rule carries its language, `source` (`builtin`/`user`),
+  `default_severity`, the `severity` it reports at under the resolved config, and `enabled`.
 - `config_show` — the merged effective configuration. Mirrors `poly config show`, and is
   **network-free**: remote `extends` bases are not fetched.
 - `version` — which poly binary is serving this session (version, build id, channel,

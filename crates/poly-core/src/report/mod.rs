@@ -46,7 +46,7 @@ pub use lint::{
     report_lint_pretty_run,
 };
 pub use notes::{eprint_discovery_note, eprint_skip_note, render_discovery_note, render_skip_note};
-pub use render::RenderError;
+pub use render::{RenderError, render_json, render_toon};
 pub use shared::Verbosity;
 pub use structured::{
     report_format_json, report_format_json_run, report_format_toon, report_format_toon_run, report_lint_json,

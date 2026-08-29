@@ -19,9 +19,9 @@ use std::path::{Path, PathBuf};
 
 use poly_cache::{ResultCache, root_from_cwd};
 use poly_config::PolyConfig;
-use poly_core::engines::astgrep::rules::load_flat;
+use poly_core::engines::astgrep::list_rules;
 use poly_core::engines::astgrep::test::{CaseKind, run_tests};
-use poly_core::{Config, FormatRun, LintRun, RunOptions};
+use poly_core::{Config, FormatRun, Kind, Language, LintRun, RunOptions};
 
 use crate::dto::{
     CacheCleanReport, CacheNamespace, CacheStatsReport, ConfigDefaults, ConfigShowReport, RuleInfo, RuleTestOutcome,
@@ -145,27 +145,41 @@ pub fn cache_clean() -> anyhow::Result<CacheCleanReport> {
     Ok(CacheCleanReport { freed_bytes: freed })
 }
 
-/// List (and optionally test) the custom ast-grep rule packs (mirrors `poly
-/// rules`). `dirs` defaults to `[rules] dirs` from the resolved config when
-/// empty; when `test` is true the rule-test snippets are run too.
+/// List (and optionally test) the ast-grep rules a run would apply (mirrors
+/// `poly rules`): poly's **built-in rule pack** plus the user rules in `dirs`,
+/// which defaults to `[rules] dirs` from the resolved config when empty. When
+/// `test` is true the user rule-test snippets are run too.
+///
+/// The listing goes through `poly_core::engines::astgrep::list_rules`, the same
+/// merge + selection path `lint` runs, so it reflects `[rules] builtin` and the
+/// `[lint.astgrep]` `select` / `extend_select` / `ignore` / per-rule `level`
+/// keys rather than reporting a raw on-disk inventory.
 pub fn rules_report(dirs: &[String], config: Option<&str>, test: bool) -> anyhow::Result<RulesReport> {
+    let resolved = resolve_config(config.map(Path::new))?;
+    // `astgrep`'s options table is language-agnostic (built from `[rules]` +
+    // `[lint.astgrep]`), so the language here only has to be *some* language.
+    let engine_config = resolved.engine_config(&Language::Other("astgrep".to_string()), "astgrep", Kind::Lint);
     let dirs = if dirs.is_empty() {
-        resolve_poly_config(config.map(Path::new))?.rules.dirs
+        resolved.rules_dirs.clone()
     } else {
         dirs.to_vec()
     };
 
-    let rules = load_flat(&dirs)?
-        .iter()
+    let rules = list_rules(&dirs, &engine_config)?
+        .into_iter()
         .map(|rule| RuleInfo {
-            id: rule.id.clone(),
-            language: rule.language.name().to_string(),
-            severity: format!("{:?}", rule.severity),
+            id: rule.id,
+            language: rule.language,
+            source: rule.source.as_str().to_string(),
+            default_severity: rule.default_severity.to_string(),
+            severity: rule.severity.to_string(),
+            enabled: rule.enabled,
         })
         .collect();
 
     let mut report = RulesReport {
         dirs: dirs.clone(),
+        builtin_pack_enabled: resolved.rules_builtin_pack,
         rules,
         tests: None,
         missing_rule_ids: None,

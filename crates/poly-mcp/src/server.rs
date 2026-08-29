@@ -124,10 +124,13 @@ pub struct ConfigParams {
 /// Arguments for `rules`.
 #[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
 pub struct RulesParams {
-    /// Rule directories to search. Empty means `[rules] dirs` from the config.
+    /// User rule directories to search. Empty means `[rules] dirs` from the
+    /// config. The built-in pack is listed either way, unless the config sets
+    /// `[rules] builtin = false`.
     #[serde(default)]
     pub dirs: Vec<String>,
-    /// Optional path to a config file (used to resolve `[rules] dirs`).
+    /// Optional path to a config file (used to resolve `[rules] dirs`, `[rules]
+    /// builtin`, and the `[lint.astgrep]` rule selection).
     #[serde(default)]
     pub config: Option<String>,
     /// When true, also run each rule's `*-test.yml` snippets and report outcomes.
@@ -322,7 +325,10 @@ impl PolyMcpServer {
     }
 
     #[tool(
-        description = "List (and optionally test) the custom ast-grep rule packs. Read-only. Mirrors `poly rules list` / `poly rules test`.",
+        description = "List (and optionally test) the ast-grep rules a run would apply: poly's built-in rule pack plus \
+                      user rules from `[rules] dirs`. Each rule carries its language, source (`builtin`/`user`), declared \
+                      default severity, the severity it reports at under the resolved config, and whether it is enabled. \
+                      Read-only. Mirrors `poly rules list` / `poly rules test`.",
         annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false),
         output_schema = schema_for_output_with_identity::<crate::dto::RulesReport>()
     )]

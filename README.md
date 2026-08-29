@@ -651,8 +651,11 @@ invalid:
 ```
 
 Run the checks with `poly rules test` (exits non-zero on any failed snippet), and list the
-discovered rules with `poly rules list`. Both default to the configured `[rules] dirs`, or accept
-explicit directories as arguments.
+resolved rules with `poly rules list`. Both default to the configured `[rules] dirs`, or accept
+explicit directories as arguments. `poly rules list` covers poly's **built-in rule pack** as well
+as your own rules, marking each row `builtin` or `user`, and reflects the config that governs
+them — `[rules] builtin = false`, `[lint.astgrep]` `select` / `extend_select` / `ignore`, and
+`[lint.astgrep.rules.<id>] level`.
 
 ### Code Quality Metrics
 
@@ -1743,8 +1746,14 @@ capability gets a synchronous (blocking) result instead, so every client can use
 
 ```sh
 poly rules test [DIR]...    # verify rules against their *-test.yml snippets
-poly rules list [DIR]...    # list discovered rules (id, language, severity)
+poly rules list [DIR]...    # list every resolved rule (built-in pack + user rules)
+poly rules list --format json   # same rows as JSON (also: --format toon)
 ```
+
+`poly rules list` prints one row per rule — id, language, `builtin`/`user`, the severity it
+reports at under the current config, and the rule's own declared default (`off` for an opt-in
+rule) — so a warning you did not recognise can be traced to the rule that raised it and turned
+off. `--format json` / `--format toon` carry the same fields.
 
 With no `DIR`, both read `[rules] dirs` from the nearest `poly.toml`. `poly rules test` exits
 non-zero on any failed snippet (a `valid` snippet that matched, an `invalid` one that didn't, a

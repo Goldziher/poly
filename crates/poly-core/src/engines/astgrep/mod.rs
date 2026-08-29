@@ -62,14 +62,15 @@ pub mod pack;
 pub mod rules;
 pub mod test;
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 
 use ast_grep_config::{CombinedScan, RuleConfig, Severity as AsgSeverity};
 use ast_grep_core::tree_sitter::StrDoc;
+use serde::Serialize;
 
 use super::rule_config::RuleSelection;
 use crate::config::EngineConfig;
-use crate::engine::{Capabilities, Diagnostic, Engine, FormatOutput, OptionKeys, OptionTable, SourceFile};
+use crate::engine::{Capabilities, Diagnostic, Engine, FormatOutput, OptionKeys, OptionTable, Severity, SourceFile};
 use crate::language::Language;
 
 use language::TslpLanguage;
@@ -245,10 +246,26 @@ fn resolve_rules<'a>(
     user_rule_map: Option<&'a RuleMap>,
     cfg: &EngineConfig,
 ) -> (Vec<&'a RuleConfig<TslpLanguage>>, RuleSelection) {
+    let mut merged = merge_rules(lang_name, user_rule_map, cfg);
+    let selection = RuleSelection::from_options(cfg);
+    let keep = active_rule_ids(&merged, &selection);
+    merged.retain(|r| keep.contains(r.id.as_str()));
+    (merged, selection)
+}
+
+/// The merged, *unfiltered* rule set for one language: built-in pack rules
+/// (when enabled) with any user rule of the same `id` substituted in.
+///
+/// Split out of [`resolve_rules`] so [`list_rules`] can report the rules
+/// `select` / `extend_select` / `ignore` turned **off** — which
+/// [`resolve_rules`] has already dropped — without restating the merge.
+fn merge_rules<'a>(
+    lang_name: &str,
+    user_rule_map: Option<&'a RuleMap>,
+    cfg: &EngineConfig,
+) -> Vec<&'a RuleConfig<TslpLanguage>> {
     let user_lang_rules = user_rule_map.and_then(|m| m.get(lang_name)).map(Vec::as_slice);
-    let user_ids: HashSet<&str> = user_lang_rules
-        .map(|rules| rules.iter().map(|r| r.id.as_str()).collect())
-        .unwrap_or_default();
+    let user_ids = user_rule_ids(user_rule_map, lang_name);
 
     let mut merged: Vec<&'a RuleConfig<TslpLanguage>> = Vec::new();
     if builtin_pack_enabled(cfg)
@@ -261,11 +278,17 @@ fn resolve_rules<'a>(
     if let Some(user_rules) = user_lang_rules {
         merged.extend(user_rules.iter());
     }
+    merged
+}
 
-    let selection = RuleSelection::from_options(cfg);
-    let keep = active_rule_ids(&merged, &selection);
-    merged.retain(|r| keep.contains(r.id.as_str()));
-    (merged, selection)
+/// The ids of the user's own rules for `lang_name` — the ids that displace a
+/// pack rule in [`merge_rules`], and therefore also the ids [`list_rules`]
+/// reports as [`RuleSource::User`].
+fn user_rule_ids<'a>(user_rule_map: Option<&'a RuleMap>, lang_name: &str) -> HashSet<&'a str> {
+    user_rule_map
+        .and_then(|m| m.get(lang_name))
+        .map(|rules| rules.iter().map(|r| r.id.as_str()).collect())
+        .unwrap_or_default()
 }
 
 /// The set of rule ids that should participate in the scan: every rule whose
@@ -294,6 +317,136 @@ fn active_rule_ids(rules: &[&RuleConfig<TslpLanguage>], selection: &RuleSelectio
         keep.remove(id);
     }
     keep
+}
+
+/// Where a listed rule came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RuleSource {
+    /// A rule from poly's built-in pack ([`pack`]), embedded in the binary.
+    Builtin,
+    /// A user-authored rule loaded from a `[rules] dirs` directory.
+    User,
+}
+
+impl RuleSource {
+    /// Lowercase name (`builtin` / `user`), matching the serialized form.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Builtin => "builtin",
+            Self::User => "user",
+        }
+    }
+}
+
+/// One rule as the engine would resolve it for a given config — the row behind
+/// `poly rules list` and the MCP `rules` tool.
+#[derive(Debug, Clone, Serialize)]
+pub struct RuleListing {
+    /// The rule's `id`, as reported in a diagnostic's `code`.
+    pub id: String,
+    /// The language name the rule targets (`rust`, `swift`, …).
+    pub language: String,
+    /// Built-in pack rule, or user-authored rule.
+    pub source: RuleSource,
+    /// The severity the rule's own YAML declares: `error`, `warning`, `info`,
+    /// `hint`, or `off` for a rule that ships opt-in.
+    pub default_severity: &'static str,
+    /// The severity a finding is reported at under this config, or `off` when
+    /// the rule does not run at all.
+    pub severity: &'static str,
+    /// Whether the rule participates in a scan under this config.
+    pub enabled: bool,
+}
+
+/// Every ast-grep rule this config resolves to, built-in pack and user rules
+/// alike, whether or not each one is currently active.
+///
+/// The merge is `merge_rules` and the on/off decision is `active_rule_ids` —
+/// the exact functions `resolve_rules` uses — so a listing cannot drift from
+/// what [`Engine::lint`] runs. `dirs` are the user rule directories (the CLI
+/// lets a caller override `[rules] dirs`), and `cfg` supplies `[rules] builtin`
+/// plus the `[lint.astgrep]` selection keys.
+pub fn list_rules(dirs: &[String], cfg: &EngineConfig) -> anyhow::Result<Vec<RuleListing>> {
+    let user_rule_map = load_user_rule_map(dirs, &rules::rules_hash(dirs))?;
+    let user_rule_map = user_rule_map.as_deref();
+
+    let mut languages: BTreeSet<&str> = BTreeSet::new();
+    if builtin_pack_enabled(cfg) {
+        languages.extend(pack::builtin_pack().keys().map(String::as_str));
+    }
+    if let Some(map) = user_rule_map {
+        languages.extend(map.keys().map(String::as_str));
+    }
+
+    let selection = RuleSelection::from_options(cfg);
+    let mut listings = Vec::new();
+    for language in languages {
+        let merged = merge_rules(language, user_rule_map, cfg);
+        let active = active_rule_ids(&merged, &selection);
+        let user_ids = user_rule_ids(user_rule_map, language);
+        for rule in merged {
+            let enabled = active.contains(rule.id.as_str());
+            listings.push(RuleListing {
+                id: rule.id.clone(),
+                language: language.to_string(),
+                source: if user_ids.contains(rule.id.as_str()) {
+                    RuleSource::User
+                } else {
+                    RuleSource::Builtin
+                },
+                default_severity: declared_severity_name(&rule.severity),
+                severity: effective_severity_name(rule, &selection, enabled),
+                enabled,
+            });
+        }
+    }
+    listings.sort_by(|a, b| (&a.language, &a.id).cmp(&(&b.language, &b.id)));
+    Ok(listings)
+}
+
+/// A rule's own declared severity as a lowercase name — `off` included, which
+/// is why this is not [`Severity`] (poly's `Severity` has no "off" state; an
+/// off rule simply never reports).
+fn declared_severity_name(severity: &AsgSeverity) -> &'static str {
+    match severity {
+        AsgSeverity::Error => "error",
+        AsgSeverity::Warning => "warning",
+        AsgSeverity::Info => "info",
+        AsgSeverity::Hint => "hint",
+        AsgSeverity::Off => "off",
+    }
+}
+
+/// A poly [`Severity`] as a lowercase name, matching its serde representation.
+fn severity_name(severity: Severity) -> &'static str {
+    match severity {
+        Severity::Error => "error",
+        Severity::Warning => "warning",
+        Severity::Info => "info",
+        Severity::Hint => "hint",
+    }
+}
+
+/// The severity a finding from `rule` would carry under `selection`, or `off`
+/// when the rule is not active.
+///
+/// Mirrors `map::resolve_severity`, which is the authority for what a real
+/// diagnostic gets: an explicit `[lint.astgrep.rules.<id>] level` wins, and a
+/// rule declared `off` that was nonetheless selected reports at `warning`. The
+/// `listing_severity_matches_the_reported_diagnostic` test pins the two
+/// together so this cannot drift.
+fn effective_severity_name(rule: &RuleConfig<TslpLanguage>, selection: &RuleSelection, enabled: bool) -> &'static str {
+    if !enabled {
+        return "off";
+    }
+    if let Some(level) = selection.rules.get(&rule.id).and_then(|opts| opts.level) {
+        return severity_name(level);
+    }
+    if matches!(rule.severity, AsgSeverity::Off) {
+        return "warning";
+    }
+    declared_severity_name(&rule.severity)
 }
 
 /// Read `rules_dirs` string array from the engine's `options` table.
@@ -477,5 +630,201 @@ mod tests {
             "user's swallowed-error rule (which doesn't match `Err(_) => {{}}`) must \
              fully replace the built-in one, not run alongside it; got: {diags:?}"
         );
+    }
+    // ── `list_rules`: the rule-listing surface (`poly rules list`, MCP `rules`) ──
+
+    /// Look up one listed rule by (language, id) — an id alone is ambiguous,
+    /// since the pack ships `todo-marker` once per language.
+    fn listed<'a>(listings: &'a [RuleListing], language: &str, id: &str) -> &'a RuleListing {
+        listings
+            .iter()
+            .find(|listing| listing.language == language && listing.id == id)
+            .unwrap_or_else(|| panic!("expected {language}/{id} in the listing; got: {listings:?}"))
+    }
+
+    /// An options table pointing at a temp dir holding one user rule file.
+    fn user_rule_options(dir: &std::path::Path) -> (Vec<String>, toml::Table) {
+        let dirs = vec![dir.to_string_lossy().into_owned()];
+        let mut options = toml::Table::new();
+        options.insert(
+            "rules_dirs".to_string(),
+            toml::Value::Array(dirs.iter().cloned().map(toml::Value::String).collect()),
+        );
+        options.insert("rules_hash".to_string(), toml::Value::String(rules::rules_hash(&dirs)));
+        (dirs, options)
+    }
+
+    /// The built-in pack is listed with no config at all — the defect this
+    /// listing exists to close was a user who could not find out where a
+    /// `force-cast` warning came from.
+    #[test]
+    fn list_rules_includes_builtin_pack_rules() {
+        let listings = list_rules(&[], &cfg(toml::Table::new())).unwrap();
+        let rule = listed(&listings, "rust", "swallowed-error");
+        assert_eq!(rule.source, RuleSource::Builtin);
+        assert_eq!(rule.default_severity, "warning");
+        assert_eq!(rule.severity, "warning");
+        assert!(rule.enabled, "swallowed-error ships on by default");
+        assert_eq!(listed(&listings, "swift", "force-cast").source, RuleSource::Builtin);
+        assert_eq!(
+            listings.len(),
+            26,
+            "every pack rule must be listed, not only the active ones"
+        );
+    }
+
+    /// An opt-in (`severity: off`) rule is listed rather than hidden, and is
+    /// marked off in both the declared and the effective column.
+    #[test]
+    fn list_rules_lists_an_off_rule_and_marks_it_off() {
+        let listings = list_rules(&[], &cfg(toml::Table::new())).unwrap();
+        let rule = listed(&listings, "rust", "todo-marker");
+        assert_eq!(rule.default_severity, "off");
+        assert_eq!(rule.severity, "off");
+        assert!(!rule.enabled);
+    }
+
+    /// `[rules] builtin = false` removes the pack from the listing, exactly as
+    /// it removes it from a scan.
+    #[test]
+    fn list_rules_omits_the_pack_when_builtin_is_disabled() {
+        let mut options = toml::Table::new();
+        options.insert("builtin_pack_enabled".to_string(), toml::Value::Boolean(false));
+        let listings = list_rules(&[], &cfg(options)).unwrap();
+        assert!(
+            listings.is_empty(),
+            "builtin = false with no user dirs must list nothing; got: {listings:?}"
+        );
+    }
+
+    /// A user rule sharing a pack rule's id is listed **once**, as the user's —
+    /// the merge semantics `resolve_rules` applies, not two rows.
+    #[test]
+    fn list_rules_shows_a_user_override_once_and_as_the_users() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("swallowed-error.yml"),
+            "id: swallowed-error\nlanguage: rust\nseverity: error\nmessage: custom\nrule:\n  pattern: custom_pattern()\n",
+        )
+        .unwrap();
+        let (dirs, options) = user_rule_options(dir.path());
+
+        let listings = list_rules(&dirs, &cfg(options)).unwrap();
+        let matching: Vec<&RuleListing> = listings
+            .iter()
+            .filter(|listing| listing.id == "swallowed-error")
+            .collect();
+        assert_eq!(matching.len(), 1, "one row per id, not one per source: {matching:?}");
+        assert_eq!(matching[0].source, RuleSource::User);
+        assert_eq!(
+            matching[0].default_severity, "error",
+            "the user's severity, not the pack's"
+        );
+    }
+
+    /// `ignore` moves an on-by-default pack rule to off in the listing.
+    #[test]
+    fn list_rules_reflects_ignore() {
+        let mut options = toml::Table::new();
+        options.insert(
+            "ignore".to_string(),
+            toml::Value::Array(vec![toml::Value::String("swallowed-error".to_string())]),
+        );
+        let listings = list_rules(&[], &cfg(options)).unwrap();
+        let rule = listed(&listings, "rust", "swallowed-error");
+        assert!(!rule.enabled, "ignored rule must not read as enabled");
+        assert_eq!(rule.severity, "off");
+        assert_eq!(rule.default_severity, "warning", "the declared default is unchanged");
+    }
+
+    /// `extend_select` moves an off-by-default pack rule to on, reported at the
+    /// `warning` an opted-in rule actually fires at.
+    #[test]
+    fn list_rules_reflects_extend_select() {
+        let mut options = toml::Table::new();
+        options.insert(
+            "extend_select".to_string(),
+            toml::Value::Array(vec![toml::Value::String("todo-marker".to_string())]),
+        );
+        let listings = list_rules(&[], &cfg(options)).unwrap();
+        let rule = listed(&listings, "rust", "todo-marker");
+        assert!(rule.enabled);
+        assert_eq!(rule.severity, "warning");
+        assert_eq!(rule.default_severity, "off");
+    }
+
+    /// `select` replaces the default active set outright.
+    #[test]
+    fn list_rules_reflects_select_replacing_the_default_set() {
+        let mut options = toml::Table::new();
+        options.insert(
+            "select".to_string(),
+            toml::Value::Array(vec![toml::Value::String("todo-marker".to_string())]),
+        );
+        let listings = list_rules(&[], &cfg(options)).unwrap();
+        assert!(listed(&listings, "rust", "todo-marker").enabled);
+        assert!(
+            !listed(&listings, "rust", "swallowed-error").enabled,
+            "select replaces the default set, so an unselected on-by-default rule is off"
+        );
+    }
+
+    /// `[lint.astgrep.rules.<id>] level` moves a rule's reported severity.
+    #[test]
+    fn list_rules_reflects_a_level_override() {
+        let mut rule_opts = toml::Table::new();
+        rule_opts.insert("level".to_string(), toml::Value::String("error".to_string()));
+        let mut rules_table = toml::Table::new();
+        rules_table.insert("swallowed-error".to_string(), toml::Value::Table(rule_opts));
+        let mut options = toml::Table::new();
+        options.insert("rules".to_string(), toml::Value::Table(rules_table));
+
+        let listings = list_rules(&[], &cfg(options)).unwrap();
+        let rule = listed(&listings, "rust", "swallowed-error");
+        assert_eq!(rule.severity, "error", "the level override is the effective severity");
+        assert_eq!(rule.default_severity, "warning");
+    }
+
+    /// The listing's effective severity must equal the severity a real
+    /// diagnostic carries. `effective_severity_name` mirrors
+    /// `map::resolve_severity` (a private fn in another module); this is the
+    /// guard that keeps the two from drifting apart.
+    #[test]
+    fn listing_severity_matches_the_reported_diagnostic() {
+        let engine = AstGrepEngine;
+
+        let mut level_opts = toml::Table::new();
+        let mut rule_opts = toml::Table::new();
+        rule_opts.insert("level".to_string(), toml::Value::String("info".to_string()));
+        let mut rules_table = toml::Table::new();
+        rules_table.insert("swallowed-error".to_string(), toml::Value::Table(rule_opts));
+        level_opts.insert("rules".to_string(), toml::Value::Table(rules_table));
+
+        let mut opt_in_opts = toml::Table::new();
+        opt_in_opts.insert(
+            "extend_select".to_string(),
+            toml::Value::Array(vec![toml::Value::String("todo-marker".to_string())]),
+        );
+
+        for (options, id, source) in [
+            (toml::Table::new(), "swallowed-error", SWALLOWED_ERROR_SRC),
+            (level_opts, "swallowed-error", SWALLOWED_ERROR_SRC),
+            (opt_in_opts, "todo-marker", "// TODO: fix this\nfn f() {}\n"),
+        ] {
+            let config = cfg(options);
+            let listing = list_rules(&[], &config).unwrap();
+            let listed_rule = listed(&listing, "rust", id);
+            let src = make_src("m.rs", Language::Rust, source);
+            let diags = engine.lint(&src, &config).unwrap();
+            let diagnostic = diags
+                .iter()
+                .find(|d| d.code.as_deref() == Some(id))
+                .unwrap_or_else(|| panic!("expected {id} to fire; got: {diags:?}"));
+            assert_eq!(
+                listed_rule.severity,
+                severity_name(diagnostic.severity),
+                "listing severity for {id} must match the reported diagnostic"
+            );
+        }
     }
 }

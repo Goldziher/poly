@@ -337,15 +337,24 @@ pub struct CacheCleanReport {
     pub freed_bytes: u64,
 }
 
-/// One discovered custom ast-grep rule.
+/// One resolved ast-grep rule — from poly's built-in pack or a user rule dir.
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct RuleInfo {
-    /// Rule id.
+    /// Rule id (the `code` a diagnostic reports).
     pub id: String,
     /// Target language name.
     pub language: String,
-    /// Declared severity.
+    /// `builtin` for a rule from poly's embedded pack, `user` for a rule loaded
+    /// from `[rules] dirs`.
+    pub source: String,
+    /// The severity the rule's own definition declares: `error`, `warning`,
+    /// `info`, `hint`, or `off` for a rule that ships opt-in.
+    pub default_severity: String,
+    /// The severity a finding reports at under the resolved config, or `off`
+    /// when the rule does not run.
     pub severity: String,
+    /// Whether the rule participates in a scan under the resolved config.
+    pub enabled: bool,
 }
 
 /// One rule-test snippet outcome.
@@ -364,12 +373,15 @@ pub struct RuleTestOutcome {
     pub detail: Option<String>,
 }
 
-/// Custom rule inventory and optional test report (mirrors `poly rules`).
+/// Rule inventory and optional test report (mirrors `poly rules`).
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct RulesReport {
-    /// Rule directories that were searched.
+    /// Rule directories that were searched for user rules.
     pub dirs: Vec<String>,
-    /// Discovered rules.
+    /// Whether poly's built-in rule pack is enabled (`[rules] builtin`) — why a
+    /// listing may hold no `builtin` rules at all.
+    pub builtin_pack_enabled: bool,
+    /// Every resolved rule, built-in pack and user rules alike, active or not.
     pub rules: Vec<RuleInfo>,
     /// Per-snippet test outcomes, present only when `test` was requested.
     #[serde(skip_serializing_if = "Option::is_none")]

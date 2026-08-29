@@ -43,7 +43,7 @@ impl std::fmt::Display for RenderError {
 impl std::error::Error for RenderError {}
 
 /// Render a value as pretty-printed JSON.
-pub(crate) fn render_json<T: Serialize + ?Sized>(value: &T) -> Result<String, RenderError> {
+pub fn render_json<T: Serialize + ?Sized>(value: &T) -> Result<String, RenderError> {
     serde_json::to_string_pretty(value).map_err(|error| RenderError::new("json", error))
 }
 
@@ -54,7 +54,7 @@ pub(crate) fn render_json<T: Serialize + ?Sized>(value: &T) -> Result<String, Re
 /// *not* safe is the case below it: when the value cannot be serialized at all,
 /// there is no truthful document left to print, so the original TOON failure is
 /// reported instead of a clean-looking fallback.
-pub(crate) fn render_toon<T: Serialize + ?Sized>(value: &T) -> Result<String, RenderError> {
+pub fn render_toon<T: Serialize + ?Sized>(value: &T) -> Result<String, RenderError> {
     // `&value` because the TOON encoder needs a `Sized` argument; serializing a
     // reference forwards to the referent, so the encoding is unchanged.
     match serde_toon::to_string(&value) {
