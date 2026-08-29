@@ -54,6 +54,5 @@ unknown-git = "deny"
 allow-git = [
   "https://github.com/fables-tales/rubyfmt",
   "https://github.com/oxc-project/oxc",
-  "https://github.com/astral-sh/ruff",
   "https://github.com/biomejs/biome",
 ]

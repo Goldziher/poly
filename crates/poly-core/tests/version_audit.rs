@@ -211,7 +211,7 @@ fn engine_versions_track_cargo_lock() {
             vec![("mago-formatter", Registry)],
         ),
         check("oxc", OxcEngine.version(), vec![("oxc_formatter", Git)]),
-        check("ruff", RuffEngine.version(), vec![("ruff_linter", Git)]),
+        check("ruff", RuffEngine.version(), vec![("ruff_linter", Registry)]),
         check("rubyfmt", RubyfmtEngine.version(), vec![("rubyfmt", Git)]),
         check("uncomment", UncommentEngine.version(), vec![("uncomment", Registry)]),
         check(

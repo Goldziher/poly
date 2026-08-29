@@ -63,6 +63,14 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   Dart, Gleam, Elixir, PHP, Nix, Scala, Lua, R — keep the skip: a line count is not
   knowledge of the language.
 
+- **Python analysis now builds from the published ruff crates** rather than a pinned git commit
+  (`ruff_linter = "=0.16.5"`, the supporting crates `"=0.0.11"`). Astral began publishing the ruff
+  workspace to crates.io in June 2026. Exact `=` pins are deliberate — these are private-by-intent
+  internals that are not semvered, so a caret range would let `cargo update` walk into unannounced
+  breakage. No Python diagnostic or formatting output changed; the cache invalidates once because
+  the engine version string moved with the dependency. `oxc`, `biome` and `rubyfmt` remain git
+  pins for the reasons recorded in ADR 0003's amendment.
+
 - **Inline suppression directives.** `// poly: allow[RULE] reason` and
   `// poly: allow-file[RULE] reason`, written in the host language's comment syntax and applied
   centrally so every backend honours them. A reason is mandatory: a directive without one does

@@ -1,9 +1,12 @@
 //! Python backend: full rule-based linting via `ruff_linter` and formatting
 //! via `ruff_python_formatter`.
 //!
-//! Both depend on the astral-sh/ruff git monorepo, pinned to rev
-//! `700421c` (see the workspace `Cargo.toml`). The pinned revision is
-//! folded into [`RuffEngine::version`] so that upgrading the pin automatically
+//! Both come from the published ruff crates on crates.io, pinned exactly
+//! (`ruff_linter = "=0.16.5"`, the rest `=0.0.11`; see the workspace
+//! `Cargo.toml`). The `=` is deliberate: these are private-by-intent internals
+//! that ruff does not treat as a public API, so a caret range would let
+//! `cargo update` walk into unannounced breakage between releases. The version
+//! is folded into [`RuffEngine::version`] so that upgrading it automatically
 //! invalidates the poly cache.
 //!
 //! # Opinionated rule selection
@@ -467,10 +470,12 @@ impl Engine for RuffEngine {
         }
     }
 
-    /// Version string incorporates the pinned ruff git rev so that upgrading
-    /// the rev automatically invalidates any cached lint/format output.
+    /// Version string incorporates the pinned ruff crates.io version so that
+    /// upgrading it automatically invalidates any cached lint/format output.
+    /// The suffix records poly's own resolved defaults, which change output
+    /// independently of the ruff version.
     fn version(&self) -> &str {
-        "git-ruff:700421c+pkgroot+plugins+isort+e501+tgtsrc+ignore-b008+rules-v3+advisory-sev1+fmtopts1"
+        "ruff-0.16.5+pkgroot+plugins+isort+e501+tgtsrc+ignore-b008+rules-v3+advisory-sev1+fmtopts1"
     }
 
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
