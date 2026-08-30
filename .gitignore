@@ -4,6 +4,18 @@
 
 poly.local.toml
 
+# Wrapper-package build artifacts. The prebuilt binaries are staged into the npm
+# platform packages and the wheels at publish time from the release archives —
+# they are never committed, so a checkout can never carry a binary that
+# disagrees with the release it claims to be.
+npm-package/platforms/*/bin/
+npm-package/*.tgz
+npm-package/platforms/*/*.tgz
+npm-package/node_modules/
+pip-package/dist/
+pip-package/*.egg-info/
+__pycache__/
+
 
 # ai-rulez `generate --plugin` fans out plugin bundles to every harness it knows.
 # poly ships plugin surfaces for claude + codex only (.claude-plugin/, .codex-plugin/);

@@ -177,7 +177,30 @@ for binary in $BINARIES; do
   mv -f "$staged" "${INSTALL_DIR}/${binary}" || die "failed to install ${binary} into ${INSTALL_DIR}"
   staged=""
 done
-info "Installed poly → ${INSTALL_DIR}"
+
+# `polylint` is an alias for the same executable, not a second binary: the
+# package is published as `polylint` on PyPI and `@goldziher/polylint` on npm
+# (the unscoped `poly` name is taken on both), so someone who installed it under
+# that name will reasonably type `polylint`. A relative symlink keeps the two in
+# lock-step through an upgrade and survives the directory being moved. It is
+# staged and renamed for the same reason the binary is — replacing a live entry
+# in place opens a window where a git hook resolving it from PATH fails closed.
+staged="${INSTALL_DIR}/polylint.tmp.$$"
+rm -f "$staged"
+if ln -s poly "$staged" 2>/dev/null; then
+  mv -f "$staged" "${INSTALL_DIR}/polylint" || die "failed to install the polylint alias into ${INSTALL_DIR}"
+else
+  # A filesystem without symlinks (some network and Windows-hosted mounts).
+  # A copy is a worse alias — it goes stale on the next upgrade — so fall back
+  # to it only here, and say so rather than pretending the alias is a link.
+  cp "${INSTALL_DIR}/poly" "$staged" || die "failed to stage the polylint alias in ${INSTALL_DIR}"
+  chmod 0755 "$staged" || die "failed to set the exec bit on ${staged}"
+  mv -f "$staged" "${INSTALL_DIR}/polylint" || die "failed to install the polylint alias into ${INSTALL_DIR}"
+  warn "symlinks are unavailable here, so polylint was installed as a copy of poly"
+fi
+staged=""
+
+info "Installed poly (and the polylint alias) → ${INSTALL_DIR}"
 
 add_path_line='export PATH="'"${INSTALL_DIR}"':$PATH"'
 case ":${PATH}:" in

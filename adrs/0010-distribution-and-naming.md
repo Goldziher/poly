@@ -49,6 +49,18 @@ adding to it.
   > keeps its Homebrew-convention name `homebrew-tap`, but the formula is now `poly` (class
   > `Poly`). The GitHub repository was renamed `Goldziher/polylint` → `Goldziher/poly`.
 
+  > **Update (2026-08):** the npm and PyPI packages are **back**, as **`@goldziher/polylint`**
+  > and **`polylint`**, and **Scoop** (`Goldziher/scoop-bucket`) joins them. The 2026-07
+  > removal assumed the installer, the Action and Homebrew reached everyone; they do not reach
+  > the two ecosystems where a linter is pinned as a *project* dependency rather than installed
+  > per machine. The mechanism changed with the decision: instead of a `postinstall` /
+  > `setup.py` downloader, npm ships six `os`/`cpu`/`libc`-gated platform packages behind
+  > `optionalDependencies` and PyPI ships per-platform wheels, so nothing is fetched or executed
+  > at install time. Publishing is OIDC trusted publishing on both registries, from jobs that
+  > package the archives already attached to the release. The names carry `polylint` only
+  > because unscoped `poly` is taken on both registries — **the command is `poly` everywhere**,
+  > with `polylint` installed as an alias for the same executable on every channel.
+
 ## Consequences
 
 Positive:

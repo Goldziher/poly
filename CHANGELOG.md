@@ -5,6 +5,63 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
+## [Unreleased]
+
+### Added
+
+- **poly is on npm and PyPI again, as `@goldziher/polylint` and `polylint`.** They were dropped
+  in v0.9.0 on the reasoning that the installer, the Action and Homebrew covered everyone; that
+  turned out to be wrong for the two ecosystems where a linter is a project dependency rather
+  than a machine-level tool. A JavaScript repo pins its formatter in `package.json` and a Python
+  repo pins it in its lockfile, and neither can express "run this `curl | sh` on every developer
+  machine and in CI". The names differ from the command because unscoped `poly` is taken on both
+  registries — but the executable is `poly` on every channel, with `polylint` installed
+  alongside as an alias for the same binary so that whichever name you installed under, both
+  work.
+
+  Neither package downloads anything when you install it. npm ships six per-platform packages
+  gated on `os`/`cpu`/`libc` and pulled in through `optionalDependencies`; PyPI ships
+  per-platform wheels carrying the binary as package data. That is a deliberate move away from
+  the `postinstall`-downloader the old npm package used: installs now work offline and behind a
+  proxy, the binary is covered by the registry's own integrity hashes, and nothing runs a script
+  at install time. The glibc/musl split matters and is handled on both sides — the musl build is
+  dynamically linked against musl and will not start on glibc, so npm gates it with `libc` (and
+  the launcher re-checks at runtime, for package managers that ignore the field) and PyPI tags it
+  `musllinux_1_2` against `manylinux` for the others. The manylinux minor version is read out of
+  the ELF's own `GLIBC_2.x` references rather than hardcoded from the builder image, because a
+  tag claiming an older glibc than the binary needs installs happily and then dies on `exec`.
+
+  On a platform with no published binary, both wrappers say so and point at the source build
+  instead of failing with a stack trace: npm's launcher names the platform packages it looked
+  for, and PyPI publishes a `py3-none-any` fallback wheel that pip only ever resolves when no
+  platform wheel matches.
+
+- **Scoop is a distribution channel on Windows** — `scoop bucket add goldziher
+  https://github.com/Goldziher/scoop-bucket && scoop install poly`. The manifest points at the
+  same `x86_64-pc-windows-msvc` archive the installer uses and carries its hash straight from the
+  release's `sha256sums.txt`, so the bucket and the published archive cannot drift.
+
+### Changed
+
+- **The publish workflow packages the binaries it already released, rather than building its
+  own.** The npm, PyPI and Scoop jobs download the archives back off the GitHub release and
+  verify them against `sha256sums.txt` before packaging. A second build would almost always
+  produce equivalent output and occasionally not, and the failure would be a package whose
+  contents no published checksum describes.
+
+  All three jobs run after the release is live and are `continue-on-error`, with nothing
+  depending on them: a registry whose trusted publisher is missing or misconfigured shows up as
+  a red job on a green release run, and cannot put the release back into draft. Both registries
+  authenticate by OIDC — there is no npm or PyPI token in the workflow.
+
+- **`scripts/release-bump.sh` moves the npm and PyPI manifests with everything else**, and
+  asserts each substitution landed rather than trusting `sed` and `jq` to have matched. The npm
+  umbrella package carries the version in seven places — its own, plus one exact pin per platform
+  package — and a bump that moved six of them would publish a package that installs cleanly and
+  resolves the previous release's binary. It also checks that the pinned package names and the
+  `platforms/` directories describe the same set, so a target added to one and not the other
+  cannot silently drop a platform.
+
 ## [0.22.0] - 2026-08-30
 
 ### Changed

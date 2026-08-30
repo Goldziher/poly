@@ -60,6 +60,34 @@ function Install-Binary($Source, $Destination) {
     }
 }
 
+
+# Install `polylint.exe` beside `poly.exe` as an alias for the same tool, not a
+# second binary: the package is published as `polylint` on PyPI and
+# `@goldziher/polylint` on npm (the unscoped `poly` name is taken on both), so
+# someone who installed it under that name will reasonably type `polylint`.
+#
+# A hard link is preferred over a symlink because creating a symlink on Windows
+# needs either Developer Mode or an elevated shell, and over a `.cmd` shim
+# because a batch wrapper intercepts Ctrl-C with "Terminate batch job (Y/N)?"
+# and mangles argument quoting. A hard link costs nothing and behaves exactly
+# like the executable. Where the volume refuses one (FAT32, some network
+# shares), fall back to a copy — the installer rewrites the alias on every run,
+# so the copy cannot outlive the upgrade that replaced poly.exe.
+function Install-Alias($Target, $AliasPath) {
+    if (-not (Test-Path -LiteralPath $Target)) { Die "Cannot create the polylint alias: $Target is missing" }
+    Remove-Item -LiteralPath $AliasPath -Force -ErrorAction SilentlyContinue
+    try {
+        New-Item -ItemType HardLink -Path $AliasPath -Target $Target -ErrorAction Stop | Out-Null
+    } catch {
+        try {
+            Copy-Item -LiteralPath $Target -Destination $AliasPath -Force -ErrorAction Stop
+            Warn "hard links are unavailable here, so polylint.exe was installed as a copy of poly.exe"
+        } catch {
+            Die "Failed to install the polylint alias at ${AliasPath}: $_"
+        }
+    }
+}
+
 $arch = switch ($env:PROCESSOR_ARCHITECTURE) {
     "AMD64" { "x86_64" }
     "ARM64" { "aarch64" }
@@ -129,7 +157,8 @@ try {
         if (-not (Test-Path $src)) { Die "Expected binary $binary missing from $asset" }
         Install-Binary $src (Join-Path $InstallDir $binary)
     }
-    Info "Installed poly -> $InstallDir"
+    Install-Alias (Join-Path $InstallDir "poly.exe") (Join-Path $InstallDir "polylint.exe")
+    Info "Installed poly (and the polylint alias) -> $InstallDir"
 } finally {
     Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
 }
@@ -145,4 +174,4 @@ if (($userPath -split ';') -notcontains $InstallDir) {
     }
 }
 
-Write-Host "poly $ver is ready. Run 'poly --help' to get started." -ForegroundColor Green
+Write-Host "poly $ver is ready. Run 'poly --help' to get started (polylint is an alias for poly)." -ForegroundColor Green

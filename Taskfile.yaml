@@ -68,6 +68,17 @@ tasks:
       - task: lint
       - task: test
 
+  package:npm:
+    desc: "Stage a local poly build into the npm platform package and pack it (usage: task package:npm)"
+    cmds:
+      - ./npm-package/stage-binaries.sh --local "$PWD/target/debug/poly"
+      - cd npm-package && npm pack
+
+  package:wheels:
+    desc: "Build a platform wheel from a local poly build (usage: task package:wheels)"
+    cmds:
+      - uv run --no-project --with build --with hatchling python pip-package/build_wheels.py --local "$PWD/target/debug/poly"
+
   set-version:
     desc: "Set the release version in the workspace Cargo.toml (usage: task set-version -- 0.1.8)"
     cmds:

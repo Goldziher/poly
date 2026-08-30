@@ -15,6 +15,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Least privilege at the workflow level: only `contents: write`, which the
+# release-asset steps need. The npm and PyPI jobs additionally request
+# `id-token: write` on themselves, because trusted publishing (OIDC) mints its
+# token from that claim — granting it to every job would hand the whole matrix a
+# credential that can publish packages.
 permissions:
   contents: write
 
@@ -26,6 +31,8 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
       release_assets_exist: ${{ steps.release_assets.outputs.release_assets_exist }}
+      npm_bootstrapped: ${{ steps.registries.outputs.npm_bootstrapped }}
+      pypi_exists: ${{ steps.registries.outputs.pypi_exists }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -66,7 +73,78 @@ jobs:
             exit 1
           fi
 
-          echo "✓ Cargo version verified: $cargo_version"
+          # The wrapper packages ship in lock-step (scripts/release-bump.sh moves
+          # them with Cargo.toml). Check them here too: a package publishing the
+          # wrong version is not recoverable — npm and PyPI both refuse to
+          # overwrite a released version.
+          npm_version="$(jq -r '.version' npm-package/package.json)"
+          if [ "$npm_version" != "$target_version" ]; then
+            echo "::error::npm-package/package.json version mismatch: expected $target_version, got $npm_version"
+            exit 1
+          fi
+
+          for manifest in npm-package/platforms/*/package.json; do
+            platform_version="$(jq -r '.version' "$manifest")"
+            if [ "$platform_version" != "$target_version" ]; then
+              echo "::error::$manifest version mismatch: expected $target_version, got $platform_version"
+              exit 1
+            fi
+          done
+
+          # The main package pins its platform packages exactly; a stale pin here
+          # resolves to the previous release's binary under the new version.
+          while read -r pinned; do
+            if [ "$pinned" != "$target_version" ]; then
+              echo "::error::npm-package/package.json optionalDependencies pin mismatch: expected $target_version, got $pinned"
+              exit 1
+            fi
+          done < <(jq -r '.optionalDependencies[]' npm-package/package.json)
+
+          pypi_version="$(grep -E '^version = "' pip-package/pyproject.toml | head -1 | cut -d'"' -f2)"
+          if [ "$pypi_version" != "$target_version" ]; then
+            echo "::error::pip-package/pyproject.toml version mismatch: expected $target_version, got $pypi_version"
+            exit 1
+          fi
+
+          init_version="$(grep -E '^__version__ = "' pip-package/polylint/__init__.py | cut -d'"' -f2)"
+          if [ "$init_version" != "$target_version" ]; then
+            echo "::error::pip-package/polylint/__init__.py version mismatch: expected $target_version, got $init_version"
+            exit 1
+          fi
+
+          echo "✓ Version verified across Cargo + npm + PyPI: $cargo_version"
+
+      - name: Detect registry readiness
+        id: registries
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.version }}"
+
+          # npm can only name a trusted publisher for a package that already
+          # exists, so a package's first publish is always manual. The umbrella
+          # package was bootstrapped and has a trusted publisher configured; this
+          # check exists so that a *new* platform package added to the matrix
+          # skips the job with a notice rather than failing a release on a step
+          # that cannot yet succeed. See docs/INSTALL-PACKAGES.md.
+          npm_bootstrapped=false
+          if npm view "@goldziher/polylint" version >/dev/null 2>&1; then
+            npm_bootstrapped=true
+          else
+            echo "::notice::@goldziher/polylint is not on npm; skipping the npm publish. It needs a one-time manual publish before a trusted publisher can be configured for it (docs/INSTALL-PACKAGES.md)."
+          fi
+
+          # PyPI `polylint` already exists, so only the per-version check matters.
+          pypi_exists=false
+          if curl -fsS "https://pypi.org/pypi/polylint/${version}/json" >/dev/null 2>&1; then
+            pypi_exists=true
+          fi
+
+          {
+            echo "npm_bootstrapped=$npm_bootstrapped"
+            echo "pypi_exists=$pypi_exists"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "npm bootstrapped? $npm_bootstrapped   PyPI ${version} already published? $pypi_exists"
 
       - name: Detect existing GitHub release assets
         id: release_assets
@@ -438,6 +516,229 @@ jobs:
             git commit -m "poly ${version}"
             git push
           fi
+
+  publish_scoop:
+    name: Update Scoop bucket
+    needs: [meta, finalize_release]
+    if: needs.finalize_release.result == 'success' && !contains(needs.meta.outputs.version, '-rc') && !contains(needs.meta.outputs.version, '-beta') && !contains(needs.meta.outputs.version, '-alpha')
+    runs-on: ubuntu-latest
+    # Non-blocking: the bucket lives in another repository and its push needs a
+    # PAT this workflow does not control. A missing or under-scoped token is a
+    # channel that did not update — worth a red job — but it must not fail the
+    # release run, which by this point has already published the GitHub release
+    # every other channel is served from. Nothing depends on this job, so its
+    # failure cannot re-draft the release.
+    continue-on-error: true
+    permissions:
+      # Reads the release's sha256sums.txt; the bucket push uses a PAT, not this
+      # token, so the job never needs write access to this repository.
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || '' }}
+
+      - name: Update the bucket manifest
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The same PAT the Homebrew tap step uses; its access covers
+          # Goldziher/scoop-bucket as well, so there is one credential and one
+          # pattern in this workflow rather than two.
+          HOMEBREW_TOKEN: ${{ secrets.HOMEBREW_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="${{ needs.meta.outputs.version }}"
+          tag="${{ needs.meta.outputs.tag }}"
+
+          if [ -z "${HOMEBREW_TOKEN:-}" ]; then
+            echo "::error::HOMEBREW_TOKEN is not set, so Goldziher/scoop-bucket cannot be updated." >&2
+            echo "The bucket will otherwise keep serving the previous release indefinitely." >&2
+            exit 1
+          fi
+
+          # The hash comes from the release's own sha256sums.txt. Recomputing it
+          # from a locally downloaded copy would normally agree, but it is the one
+          # place the bucket and the published archive could come to disagree.
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern 'sha256sums.txt' --dir sums --clobber
+
+          git clone --depth 1 "https://x-access-token:${HOMEBREW_TOKEN}@github.com/Goldziher/scoop-bucket.git" bucket
+          ./scripts/update-scoop-manifest.sh "$version" sums/sha256sums.txt bucket/bucket/poly.json "$GITHUB_REPOSITORY" > poly.json
+          cp poly.json bucket/bucket/poly.json
+
+          cd bucket
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add bucket/poly.json
+          if git diff --cached --quiet; then
+            echo "Manifest already up to date."
+          else
+            git commit -m "poly ${version}"
+            git push
+          fi
+
+  publish_npm:
+    name: Publish npm (@goldziher/polylint)
+    needs: [meta, finalize_release]
+    # Gated on finalize_release because the packages carry the release archives'
+    # binaries: publishing before the release is live would ship bytes nobody can
+    # verify against sha256sums.txt. Gated on npm_bootstrapped because a package
+    # npm has never seen cannot have a trusted publisher, so there is nothing
+    # this job could succeed at — skipping with a notice is more honest than
+    # failing. Publishing is token-less: OIDC only, no NODE_AUTH_TOKEN.
+    if: needs.finalize_release.result == 'success' && needs.meta.outputs.npm_bootstrapped == 'true'
+    runs-on: ubuntu-latest
+    # Non-blocking, same reasoning as publish_scoop: a not-yet-configured trusted
+    # publisher must show up as a failed job, not as a failed release. The
+    # GitHub release is already published and un-drafted before this job starts,
+    # and nothing depends on it, so it cannot undo that.
+    continue-on-error: true
+    permissions:
+      contents: read
+      # Mints the OIDC token npm trusted publishing exchanges for a publish
+      # credential. No NODE_AUTH_TOKEN is set anywhere in this job.
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || '' }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Download the published release archives
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${{ needs.meta.outputs.tag }}"
+          # Fetch what is attached to the release rather than rebuilding, so the
+          # binaries inside the npm packages are byte-identical to the archives
+          # sha256sums.txt describes. A separate build would drift silently.
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" \
+            --pattern 'poly-*' --pattern 'sha256sums.txt' --dir artifacts --clobber
+          ls -l artifacts
+
+      - name: Verify the archives against the release checksums
+        run: |
+          set -euo pipefail
+          cd artifacts
+          # sha256sums.txt was generated from `find .`, so its paths carry a ./
+          # prefix that `sha256sum -c` resolves relative to this directory.
+          sha256sum -c sha256sums.txt
+          echo "✓ every downloaded archive matches the release checksums"
+
+      - name: Stage the release binaries into the platform packages
+        run: ./npm-package/stage-binaries.sh --artifacts artifacts
+
+      - name: Publish to npm
+        run: |
+          set -euo pipefail
+          # npm's OIDC trusted publishing (token-less registry auth) needs
+          # npm >= 11.5.1; the bundled npm on the setup-node image lags. Without
+          # the upgrade npm still signs provenance but publishes unauthenticated
+          # and the registry rejects the PUT.
+          npm install -g npm@latest
+          npm --version
+
+          version="${{ needs.meta.outputs.version }}"
+          # A real release claims `latest`. The 0.0.0 bootstrap publish sits under
+          # a `placeholder` dist-tag precisely so it never becomes what
+          # `npm install @goldziher/polylint` resolves to; nothing here should
+          # carry that tag forward.
+          case "$version" in
+            *-rc.* | *-beta* | *-alpha*) npm_tag="next" ;;
+            *) npm_tag="latest" ;;
+          esac
+
+          publish_one() {
+            local dir="$1"
+            local name
+            name="$(jq -r '.name' "$dir/package.json")"
+            if npm view "${name}@${version}" version >/dev/null 2>&1; then
+              echo "· ${name}@${version} is already published; skipping"
+              return 0
+            fi
+            echo "→ publishing ${name}@${version} (--tag ${npm_tag})"
+            # --provenance attaches a signed build-provenance attestation using
+            # the job's id-token.
+            ( cd "$dir" && npm publish --provenance --access public --tag "$npm_tag" )
+          }
+
+          # Platform packages first, and `set -e` means a failed one aborts the
+          # step before the umbrella is published. That ordering is what keeps a
+          # partial failure from producing the worst outcome: an umbrella package
+          # on `latest` whose pinned binaries do not exist, which installs
+          # cleanly and then has no `poly` to run.
+          for dir in npm-package/platforms/*/; do
+            publish_one "${dir%/}"
+          done
+          publish_one npm-package
+
+  publish_pypi:
+    name: Publish PyPI (polylint)
+    needs: [meta, finalize_release]
+    # Same gating as npm: the wheels embed the release archives' binaries, so the
+    # release has to be live first. PyPI `polylint` already exists, so the only
+    # per-version guard needed is "not already published".
+    if: needs.finalize_release.result == 'success' && needs.meta.outputs.pypi_exists != 'true'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    # PyPI's trusted publisher for this project names this environment; the two
+    # must agree or the OIDC exchange is refused.
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || '' }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Download the published release archives
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${{ needs.meta.outputs.tag }}"
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" \
+            --pattern 'poly-*' --pattern 'sha256sums.txt' --dir artifacts --clobber
+          ls -l artifacts
+
+      - name: Verify the archives against the release checksums
+        run: |
+          set -euo pipefail
+          cd artifacts
+          sha256sum -c sha256sums.txt
+          echo "✓ every downloaded archive matches the release checksums"
+
+      - name: Build the platform wheels
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip build hatchling
+          python pip-package/build_wheels.py --artifacts artifacts --out pip-package/dist
+          ls -l pip-package/dist
+
+      - name: Publish to PyPI
+        # Trusted publishing (OIDC) — no API token. skip-existing keeps a re-run
+        # of a partially uploaded release from failing on the files that landed.
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: pip-package/dist
+          skip-existing: true
 
   update_major_tag:
     name: Move the major version tag

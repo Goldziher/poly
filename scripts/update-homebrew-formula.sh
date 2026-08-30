@@ -69,6 +69,13 @@ class Poly < Formula
     # what build.rs documents this variable for.
     ENV["POLY_BUILD_ID"] = "v#{version}"
     system "cargo", "install", *std_cargo_args(path: "crates/poly-cli")
+    # `polylint` is an alias for the same executable, not a second binary. The
+    # tool is published as `polylint` on PyPI and `@goldziher/polylint` on npm
+    # (the unscoped `poly` name is taken on both registries), so someone who
+    # installed it under that name will reasonably type `polylint`. A symlink is
+    # relocatable and is captured in the bottle like any other file the formula
+    # installs, so it does not disturb the tap's auto-bottler.
+    bin.install_symlink bin/"poly" => "polylint"
   end
 
   test do
@@ -77,6 +84,10 @@ class Poly < Formula
     # unknown-channel build shipped unnoticed.
     assert_match "poly #{version} (release build v#{version}, release)",
                  shell_output("#{bin}/poly --version")
+    # The alias is part of the shipped surface, so prove it resolves to the same
+    # binary rather than trusting install_symlink to have run.
+    assert_match "poly #{version} (release build v#{version}, release)",
+                 shell_output("#{bin}/polylint --version")
   end
 end
 EOF

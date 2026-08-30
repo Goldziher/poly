@@ -1,0 +1,49 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "polylint"
+version = "0.22.0"
+description = "Universal zero-dependency linter & formatter. Installs the prebuilt poly binary and puts `poly` on PATH."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Na'aman Hirschfeld", email = "nhirschfeld@gmail.com" }]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Operating System :: MacOS",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Rust",
+  "Topic :: Software Development :: Quality Assurance",
+]
+keywords = ["linter", "formatter", "lint", "format", "polyglot", "poly"]
+requires-python = ">=3.9"
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/Goldziher/poly"
+Repository = "https://github.com/Goldziher/poly"
+Changelog = "https://github.com/Goldziher/poly/blob/main/CHANGELOG.md"
+Issues = "https://github.com/Goldziher/poly/issues"
+
+# `poly` is the canonical command; `polylint` is an alias onto the same callable,
+# so someone who installed the distribution by its PyPI name gets a working
+# command either way. Both exec the one binary — there is no second executable.
+[project.scripts]
+poly = "polylint.__main__:main"
+polylint = "polylint.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["polylint"]
+
+[tool.hatch.build.targets.wheel.hooks.custom]
+path = "hatch_build.py"
+
+# No sdist: the distribution's payload is a prebuilt binary that a source build
+# could not reproduce, so an sdist would install a package that cannot run.
+[tool.hatch.build.targets.sdist]
+exclude = ["*"]
