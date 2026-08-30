@@ -4,6 +4,12 @@ description: >-
   Universal zero-dependency linter and formatter. One pure-Rust binary, ~30 languages, no
   toolchain to install.
 template: splash
+# Starlight renders "{page title} | {site title}", which on the home page reads
+# "poly | poly". Override the tag so the tab and the search result say what the
+# project is.
+head:
+  - tag: title
+    content: poly — universal linter and formatter
 hero:
   title: One binary lints and formats the whole repository
   tagline: >-
