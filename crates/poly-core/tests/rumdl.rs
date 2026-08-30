@@ -227,23 +227,28 @@ fn heading_text_ending_in_hash_reports_no_md020() {
     );
 }
 
-/// An `h1` followed directly by an `h3` — MD001 (heading increment). The
-/// violation is real, but the repair is ambiguous: the author may have meant an
-/// `h2` here, or may have meant to add a missing `h2` above. rumdl picks one and
-/// demotes the heading, which rewrites the document outline.
+/// An `h1` followed directly by an `h3` — MD001 (heading increment).
+///
+/// This was once withheld from both fix paths on the grounds that the repair is
+/// ambiguous (demote the `h3`, or insert a missing `h2` above) and that a
+/// formatter must not rewrite a document's outline. The exemption was removed
+/// because it never held: MD025 rewrites the outline far more aggressively and
+/// was always applied — on a real changelog `poly fmt --fix` demoted 21 of 22
+/// top-level headings — so poly was withholding a one-line repair while
+/// performing a wholesale one. Markdown autofix is now uniform: every rule that
+/// carries a fix has it applied.
 const SKIPPED_HEADING_LEVEL: &str = "# Test\n\n### Go\n\ntext\n";
 
 #[test]
-fn format_does_not_restructure_heading_levels() {
-    // `poly fmt` is a formatter: it may not change a document's outline. MD001
-    // is reported by `lint` instead, where the author decides the repair.
+fn format_repairs_a_skipped_heading_level() {
     let engine = RumdlEngine;
     let src = md_src(SKIPPED_HEADING_LEVEL);
     match engine.format(&src, &default_cfg()).expect("format succeeded") {
-        FormatOutput::Unchanged => {}
-        FormatOutput::Formatted(out) => {
-            panic!("fmt must not demote `### Go` to `## Go`; the outline was rewritten:\n{out}")
-        }
+        FormatOutput::Formatted(out) => assert!(
+            out.contains("## Go"),
+            "MD001's fix must be applied like every other markdown fix; got:\n{out}"
+        ),
+        FormatOutput::Unchanged => panic!("MD001 must no longer be withheld from `poly fmt`"),
     }
 }
 
@@ -260,9 +265,9 @@ fn lint_still_reports_skipped_heading_level() {
 }
 
 #[test]
-fn lint_offers_no_autofix_for_a_skipped_heading_level() {
-    // `poly lint --fix` applies diagnostic edits, so carrying one here would
-    // restructure the outline by the other path — the guard has to cover both.
+fn lint_offers_an_autofix_for_a_skipped_heading_level() {
+    // `poly lint --fix` applies diagnostic edits. The fix must be carried here
+    // too, or the two fix paths disagree about the same rule.
     let engine = RumdlEngine;
     let src = md_src(SKIPPED_HEADING_LEVEL);
     let diags = engine.lint(&src, &default_cfg()).expect("lint succeeded");
@@ -271,9 +276,8 @@ fn lint_offers_no_autofix_for_a_skipped_heading_level() {
         .find(|d| d.code.as_deref() == Some("MD001"))
         .expect("MD001 is reported");
     assert!(
-        md001.fix.is_empty(),
-        "MD001 must be report-only: demoting the heading and inserting the missing level are both \
-         valid repairs, so the choice is the author's; got: {:?}",
+        !md001.fix.is_empty(),
+        "MD001 must carry its fix so `poly lint --fix` repairs it; got: {:?}",
         md001.fix
     );
 }
