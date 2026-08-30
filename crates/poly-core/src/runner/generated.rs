@@ -25,7 +25,6 @@
 use crate::discover::DiscoveredFile;
 use crate::resolve::ConfigSet;
 
-use super::skips::GENERATED_SKIP;
 use super::types::{FormatResult, LintResult};
 
 /// Resolve `[discovery] generated` once per config in the run.
@@ -48,9 +47,15 @@ pub(crate) fn acts_on_generated(configs: &ConfigSet, run_override: Option<bool>)
         .collect()
 }
 
-/// The lint record for a generated file the opt-out kept out of the run: no
-/// diagnostics, and a skip reason naming the key that produced it.
-pub(crate) fn lint_skip_result(file: &DiscoveredFile) -> LintResult {
+/// The lint record for a file the run never inspected, carrying `reason` — the
+/// generated opt-out or a binary artifact.
+///
+/// The reason is a parameter rather than a constant because the two skips are
+/// indistinguishable in structure and must stay distinguishable in report: one
+/// says the reader opted out in their own `poly.toml`, the other says the bytes
+/// were never text. Collapsing them to one wording would tell a reader looking
+/// at 1,263 skipped catalogs to go edit a key they never set.
+pub(crate) fn lint_skip_result(file: &DiscoveredFile, reason: &str) -> LintResult {
     LintResult {
         path: file.path.clone(),
         diagnostics: Vec::new(),
@@ -58,7 +63,7 @@ pub(crate) fn lint_skip_result(file: &DiscoveredFile) -> LintResult {
         // to hold back. The skip reason is the whole story here.
         fix_withheld_generated: false,
         fixed: 0,
-        skipped: Some(GENERATED_SKIP.to_owned()),
+        skipped: Some(reason.to_owned()),
         error: None,
         debug: None,
     }

@@ -70,6 +70,23 @@ pub const NO_LINT_RULES_SKIP_PREFIX: &str = "no lint rules for";
 /// withheld.
 pub const GENERATED_SKIP: &str = "machine-generated file ([discovery] generated = false)";
 
+/// Reason recorded for a file whose bytes are binary, so poly never opened it
+/// as text.
+///
+/// Deliberately not phrased as a decode failure. poly *does* report malformed
+/// text — an error-severity `invalid-utf8` diagnostic on the lint path, a
+/// per-file error on the format path — and that report is the point: a source
+/// file that lost a byte is a defect a reader must see. A compiled artifact is
+/// the opposite case. Nothing is wrong with it, poly simply had no business
+/// reading it, and reporting the two identically is what made `poly fmt
+/// --check` exit 2 over Django's 1,263 compiled `.mo` catalogs.
+///
+/// A skip rather than a silent drop, for the usual reason: the file is not in
+/// the `checked` count, it appears in the JSON `skipped` payload, and
+/// `--deny-skips` can still fail a run that stopped covering a tree because
+/// something in it turned out to be binary.
+pub const BINARY_SKIP: &str = "binary file";
+
 /// One file the run did not inspect, and why.
 ///
 /// The reason is what makes the entry actionable: a bare list of paths tells a

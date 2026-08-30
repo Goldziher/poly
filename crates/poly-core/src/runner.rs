@@ -11,7 +11,7 @@ use crate::discover::{DiscoveredFile, discover_reporting};
 use crate::engine::{Diagnostic, Edit, FormatOutput, Severity, SourceFile};
 use crate::engine_guard::guard_engine_panic;
 use crate::filter::{
-    PerFileIgnores, Suppressions, is_format_ignored, is_generated_lockfile, is_generated_source,
+    PerFileIgnores, Suppressions, is_binary, is_format_ignored, is_generated_lockfile, is_generated_source,
     is_hash_stamped_source, match_bases, relative_for_match,
 };
 use crate::language::Language;
@@ -30,7 +30,7 @@ use edits::apply_edits;
 use generated::{acts_on_generated, format_skip_result, lint_skip_result};
 use plan::{EnginePlan, PlanMap, plan_by_config_language, prefetch_tier2_grammars, provides_language_lint};
 use skips::unmatched_explicit_paths;
-pub use skips::{GENERATED_SKIP, NO_ENGINE_SKIP, NO_LINT_RULES_SKIP_PREFIX, SkippedFile};
+pub use skips::{BINARY_SKIP, GENERATED_SKIP, NO_ENGINE_SKIP, NO_LINT_RULES_SKIP_PREFIX, SkippedFile};
 // Re-exported so `poly_core::runner::LintResult` keeps naming the same type it
 // always has: the split below is a file boundary, not an API one.
 pub use types::{
@@ -304,6 +304,13 @@ fn lint_one(
     act_on_generated: &[bool],
 ) -> anyhow::Result<LintResult> {
     let bytes = std::fs::read(&f.path).with_context(|| format!("reading {}", f.path.display()))?;
+    // Asked before the decode, because the decode cannot tell the two apart:
+    // a compiled artifact and a corrupted source file both fail
+    // `String::from_utf8`, and only the second is something to report.
+    if is_binary(&bytes) {
+        tracing::debug!(path = %f.path.display(), "not linting binary file");
+        return Ok(lint_skip_result(f, BINARY_SKIP));
+    }
     let original = match String::from_utf8(bytes) {
         Ok(content) => content,
         Err(error) => return Ok(invalid_utf8_result(f, error.utf8_error())),
@@ -317,7 +324,7 @@ fn lint_one(
     // asking to fix more cannot opt the file back into being linted.
     if !act_on_generated[f.config_id] && is_generated_source(&original) {
         tracing::debug!(path = %f.path.display(), "not linting generated file");
-        return Ok(lint_skip_result(f));
+        return Ok(lint_skip_result(f, GENERATED_SKIP));
     }
     let this_ignores = &ignores[f.config_id];
     let rel =
@@ -567,6 +574,12 @@ fn format_one(
     act_on_generated: &[bool],
 ) -> anyhow::Result<FormatResult> {
     let bytes = std::fs::read(&f.path).with_context(|| format!("reading {}", f.path.display()))?;
+    // See the same guard on the lint path: a binary file is a skip, malformed
+    // text is an error, and only a pre-decode check can distinguish them.
+    if is_binary(&bytes) {
+        tracing::debug!(path = %f.path.display(), "not formatting binary file");
+        return Ok(format_skip_result(f, Some(BINARY_SKIP.to_owned())));
+    }
     let original = match String::from_utf8(bytes) {
         Ok(content) => content,
         Err(error) => {
