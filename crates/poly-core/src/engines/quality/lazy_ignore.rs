@@ -46,6 +46,7 @@
 //! without a per-language comment-syntax table or a parse on the hot path.
 
 use crate::engine::{Diagnostic, Severity, Span};
+use crate::language::Language;
 
 /// How a marker's trailing text must be read to decide whether it justifies
 /// the suppression.
@@ -96,6 +97,28 @@ const MIN_REASON_ALNUM: usize = 3;
 
 /// Scan `content` for unjustified suppression directives, returning one
 /// `lazy-ignore` diagnostic per offending line.
+/// Languages whose files are prose, where every marker is documentation.
+///
+/// A `# noqa` in Markdown is a sentence, a table cell, or a fenced example —
+/// never a directive, because nothing lints the prose it sits in. poly's own
+/// `docs/CONFIGURATION.md` describes what this rule does and was reported by it,
+/// which is the signal that the scan had outrun its evidence.
+///
+/// The same class was already fixed once for Go templates: `engines/template.rs`
+/// grew `contains_go_template_markdown` because prose documenting `{{ … }}`
+/// tripped rumdl, with poly's own `CHANGELOG.md` as the file that exposed it.
+///
+/// Deliberately a language check rather than a Markdown-aware parse of code
+/// spans and fences. A suppression inside a fenced block is *also* an example,
+/// so parsing to find it would only make the rule fire on the cases it most
+/// clearly should not.
+const PROSE_LANGUAGES: &[Language] = &[Language::Markdown, Language::Mdx];
+
+/// Whether `lazy-ignore` has anything to say about files in `language`.
+pub fn applies_to(language: &Language) -> bool {
+    !PROSE_LANGUAGES.contains(language)
+}
+
 pub fn scan(content: &str) -> Vec<Diagnostic> {
     let mut out = Vec::new();
     for (line_no, raw_line) in content.split('\n').enumerate() {
