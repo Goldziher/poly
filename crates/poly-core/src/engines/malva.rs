@@ -21,6 +21,7 @@ use malva::config::FormatOptions;
 
 use crate::config::EngineConfig;
 use crate::engine::{Capabilities, Engine, FormatOutput, OptionKeys, OptionTable, SourceFile};
+use crate::engines::css_hacks::{IE_PROPERTY_HACK_SKIP, has_ie_property_hack};
 use crate::language::Language;
 
 /// malva CSS / SCSS / Less formatter backend.
@@ -29,7 +30,7 @@ pub struct MalvaEngine;
 /// malva crate version — folded into the cache key so upgrades invalidate stale results.
 /// Bumped suffix to +opts-1 after exposing full LanguageOptions (options were previously
 /// ignored — existing caches must be invalidated).
-const MALVA_VERSION: &str = "0.16.0+opts-2";
+const MALVA_VERSION: &str = "0.16.0+opts-2+iehack-skip";
 
 /// Languages handled by this backend.
 static LANGUAGES: &[Language] = &[Language::Css, Language::Scss, Language::Less];
@@ -64,6 +65,14 @@ impl Engine for MalvaEngine {
 
     fn version(&self) -> &str {
         MALVA_VERSION
+    }
+
+    /// malva rejects the IE `*property` hack with a syntax error, so a legacy
+    /// stylesheet nobody intends to modernise reported as unformattable on
+    /// every run. A skip says the same thing without failing the check. See
+    /// [`has_ie_property_hack`](crate::engines::css_hacks::has_ie_property_hack).
+    fn skip_reason(&self, src: &SourceFile) -> Option<&'static str> {
+        has_ie_property_hack(&src.content).then_some(IE_PROPERTY_HACK_SKIP)
     }
 
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {

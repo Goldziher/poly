@@ -47,6 +47,7 @@ use biome_languages::CssFileSource;
 use crate::config::EngineConfig;
 use crate::engine::{Capabilities, Diagnostic, Engine, OptionKeys, OptionTable, SourceFile};
 use crate::engines::biome_common::{build_lint_filter, map_biome_diag, rule_filter_strings, str_to_rule_filter};
+use crate::engines::css_hacks::{IE_PROPERTY_HACK_SKIP, has_ie_property_hack};
 use crate::language::Language;
 
 /// Biome CSS lint engine.
@@ -66,7 +67,7 @@ const DEFAULT_GROUPS: &[&str] = &["correctness", "suspicious"];
 /// Cache-key version string.  Embeds the pinned biome rev so the blake3 cache
 /// is invalidated whenever the rev changes.  Bump the `+lint-vN` suffix when
 /// the diagnostic mapping logic changes output for identical input.
-const VERSION: &str = "biome_css_analyze+rev:7d54688+lint-v1";
+const VERSION: &str = "biome_css_analyze+rev:7d54688+lint-v1+iehack-skip";
 
 /// Map a poly [`Language`] to the biome [`CssFileSource`].
 ///
@@ -108,7 +109,24 @@ impl Engine for BiomeCssEngine {
         VERSION
     }
 
+    /// Both CSS backends fail on the IE `*property` hack, and this one fails
+    /// catastrophically: biome's parser error recovery is exponential in the
+    /// number of hacks, so a real stylesheet carrying 37 of them consumed 27 GB
+    /// and was OOM-killed rather than reporting anything. See
+    /// [`has_ie_property_hack`](crate::engines::css_hacks::has_ie_property_hack).
+    fn skip_reason(&self, src: &SourceFile) -> Option<&'static str> {
+        has_ie_property_hack(&src.content).then_some(IE_PROPERTY_HACK_SKIP)
+    }
+
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
+        // Asked again here, not only in `skip_reason`: the runner consults
+        // `skip_reason` on the format path alone, so a lint backend that must
+        // decline a file has to say so itself — the same shape `yaml` uses for
+        // Go-templated documents. Without this the parse below never returns.
+        if has_ie_property_hack(&src.content) {
+            tracing::debug!(path = %src.path.display(), "not linting a stylesheet of IE property hacks");
+            return Ok(Vec::new());
+        }
         let file_source = css_file_source(&src.language);
         let parsed = parse_css(&src.content, file_source, CssParserOptions::default());
         let root = parsed.tree();
