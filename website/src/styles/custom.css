@@ -1,0 +1,95 @@
+:root {
+  --sl-color-accent-low: #14294d;
+  --sl-color-accent: #5b8def;
+  --sl-color-accent-high: #c4d8ff;
+
+  --sl-color-white: #f2f5fa;
+  --sl-color-gray-1: #dfe5ee;
+  --sl-color-gray-2: #b3bdcc;
+  --sl-color-gray-3: #8b97a8;
+  --sl-color-gray-4: #5a6474;
+  --sl-color-gray-5: #333c4b;
+  --sl-color-gray-6: #1a2130;
+  --sl-color-black: #080b13;
+
+  --poly-blue: #5b8def;
+  --poly-green: #3ddc97;
+  --poly-muted: #8b97a8;
+}
+
+:root[data-theme="light"] {
+  --sl-color-accent-low: #dbe6ff;
+  --sl-color-accent: #2f63cf;
+  --sl-color-accent-high: #10254a;
+
+  --sl-color-white: #0f131c;
+  --sl-color-gray-1: #1d2431;
+  --sl-color-gray-2: #333c4b;
+  --sl-color-gray-3: #5a6474;
+  --sl-color-gray-4: #8b97a8;
+  --sl-color-gray-5: #c6cede;
+  --sl-color-gray-6: #e9eef6;
+  --sl-color-gray-7: #f4f7fb;
+  --sl-color-black: #ffffff;
+
+  --poly-blue: #2f63cf;
+  --poly-green: #128f5d;
+  --poly-muted: #5a6474;
+}
+
+[data-has-hero] .page {
+  background:
+    radial-gradient(60ch 40ch at 12% -10%, color-mix(in oklch, var(--poly-blue) 18%, transparent), transparent 70%),
+    radial-gradient(50ch 32ch at 90% -6%, color-mix(in oklch, var(--poly-green) 14%, transparent), transparent 70%);
+}
+
+.hero .stack a[data-variant="primary"] {
+  background: linear-gradient(120deg, var(--poly-blue), var(--poly-green));
+  border: none;
+  color: #041018;
+  font-weight: 600;
+  box-shadow: 0 8px 30px -12px color-mix(in oklch, var(--poly-blue) 80%, transparent);
+}
+
+.hero .stack a[data-variant="primary"]:hover {
+  filter: brightness(1.08);
+}
+
+.card {
+  background: color-mix(in oklch, var(--sl-color-gray-6) 60%, transparent);
+  border: 1px solid var(--sl-color-gray-5);
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+.card:hover {
+  border-color: color-mix(in oklch, var(--poly-blue) 60%, var(--sl-color-gray-5));
+  transform: translateY(-2px);
+}
+
+.card .icon {
+  color: var(--poly-blue);
+  background: color-mix(in oklch, var(--poly-blue) 12%, transparent);
+}
+
+.site-title img {
+  height: 1.6rem;
+  width: auto;
+}
+
+.hero > img,
+.hero .hero-html {
+  max-width: 220px;
+  margin-inline: auto;
+}
+
+.sl-markdown-content table {
+  font-size: var(--sl-text-sm);
+}
+
+.sl-markdown-content th {
+  color: var(--sl-color-white);
+}
+
+.sl-markdown-content details > summary {
+  color: var(--sl-color-white);
+}

@@ -107,7 +107,7 @@ Beyond the per-language backends, two cross-cutting lint mechanisms run on by de
 - **The built-in ast-grep rule pack** (ADR 0029) — 26 rules across C#, Elixir, Go, Java, Kotlin,
   Python, Ruby, Rust and Swift, embedded in the binary and loaded through the same parse path as
   user rules. It sits *beneath* `[rules] dirs` (a user rule with the same `id` replaces a pack
-  rule). Each rule carries its own `severity:`, ten of them `off`. `[rules] builtin = false`
+  rule). Each rule carries its own `severity:`, 13 of the 26 `off`. `[rules] builtin = false`
   disables the pack wholesale; `[lint.astgrep]` `select`/`extend_select`/`ignore` and
   `[lint.astgrep.rules.<id>] level` move individual rules. (`[rules]` — `dirs`, default
   `[".poly/rules"]`, and `builtin` — is a separate top-level table from the per-rule overrides

@@ -1,0 +1,155 @@
+---
+title: Quickstart
+description: >-
+  Lint a repository, check and apply formatting, write a first poly.toml, and wire the git hooks —
+  in about a minute.
+---
+
+import { Aside, Steps, Tabs, TabItem, Code, LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+poly needs no configuration to be useful. Point it at a repository and it works out what each file
+is and which backend should handle it.
+
+<Steps>
+
+1. ### Lint everything
+
+   ```console
+   $ poly lint
+   ./app.py
+     warning  ruff  T201  5:5  `print` found
+     warning  ruff  ANN201  4:5  Missing return type annotation for public function `main`
+     error  ruff  F401  1:8  `os` imported but unused
+
+   3 issues found.
+     2 files linted
+     1 issue fixable with the `--fix` option
+   ```
+
+   Only the `error` line fails the run. Warning-severity findings — the code-quality tier, `typos`,
+   and the widened rule selections — never redden CI on their own.
+
+2. ### Check formatting
+
+   ```console
+   $ poly fmt --check
+   would reformat ./src/main.rs
+
+   1 file will change.
+     2 files checked
+   ```
+
+   `poly fmt` is a **dry run by default**, which is what a CI job wants. `--check` is just the
+   explicit form of the default.
+
+3. ### Apply changes
+
+   <Tabs>
+   <TabItem label="Formatting">
+   <Code
+   code={`$ poly fmt --fix\nreformatted ./src/main.rs\n\n1 file reformatted.\n  2 files checked`}
+   lang="console"
+   />
+   </TabItem>
+   <TabItem label="Lint autofixes">
+   <Code code={`$ poly lint --fix`} lang="console" />
+   </TabItem>
+   </Tabs>
+
+4. ### Wire the git hooks
+
+   ```console
+   $ poly hooks install
+   ✓ Installed 2 git hooks in .git/hooks
+     › commit-msg
+     › pre-commit
+   ```
+
+   Lint, format and Conventional-Commit checks now run on every `git commit`, with no external
+   hook framework in between.
+
+</Steps>
+
+## A first `poly.toml`
+
+Everything above works with no config at all. Add one when you want to change poly's opinions:
+
+```toml title="poly.toml"
+[defaults]
+line_length = 120
+line_ending = "lf"
+final_newline = true
+trim_trailing_whitespace = true
+
+[discovery]
+exclude = ["vendor/**", "fixtures/**"]
+
+[lint.python.ruff]
+extend_select = ["D"]
+
+[hooks]
+stages = ["pre-commit", "commit-msg"]
+
+[hooks.builtin]
+lint = true
+fmt = true
+commit = { stages = ["commit-msg"] }
+file_safety = true
+```
+
+`poly.local.toml` layers machine-local overrides on top, and nested `poly.toml` files cascade in a
+monorepo. See [Configuration](/poly/guides/configuration/) for the full surface.
+
+<Aside type="tip" title="Already have a pile of tool configs?">
+    `poly migrate` reads your existing `ruff`, `taplo`, markdownlint and `typos` configs (including
+    `pyproject.toml`'s `[tool.ruff]` / `[tool.typos]` / `[tool.codespell]`) and folds what it can
+    honor into `poly.toml`. It is a dry-run report by default; `--write` applies it.
+</Aside>
+
+## Exit codes are a contract
+
+| Code | Meaning |
+| ---: | --- |
+| `0` | Clean. |
+| `1` | Error-severity findings, a failed whole-project tool, or (for `poly fmt`) files that would change. |
+| `2` | The run verified less than it claims — a file an engine failed on, a skip budget exceeded, a config error, or a report that failed to serialize. |
+
+<Aside type="caution" title="`poly fmt --fix` exits 1 when it rewrites">
+    In fix mode, `1` reports *that files were rewritten* — so a script running `poly fmt --fix`
+    should treat `1` as success, not failure.
+</Aside>
+
+A `--format json` or `--format toon` consumer must check the **exit code**, not just the payload:
+the whole-project phase's own pass/fail is written to stderr so that stdout stays a single valid
+document.
+
+## In CI
+
+```yaml title=".github/workflows/ci.yaml"
+name: lint
+on: [push, pull_request]
+
+jobs:
+  poly:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Goldziher/poly@v0
+      - run: poly fmt --check .
+      - run: poly lint --deny-skips .
+```
+
+`--deny-skips` turns any skipped file into an exit-2 failure, so the job cannot quietly stop
+covering part of the tree. Use `--max-skips <N>` if you have a known, budgeted set of skips.
+
+Add `-q` on a large repository to trim the per-file discovery detail; every count and reason still
+appears in the summary.
+
+## Next
+
+<CardGrid>
+    <LinkCard title="Configuration" href="/poly/guides/configuration/" description="Rule selection, inline suppression, monorepo cascade, quality metrics." />
+    <LinkCard title="Git hooks" href="/poly/guides/hooks/" description="Builtins, stages, staged isolation, timeouts, caching." />
+    <LinkCard title="CLI reference" href="/poly/reference/cli/" description="Every flag and every subcommand." />
+    <LinkCard title="Backend coverage" href="/poly/reference/backends/" description="Which backend handles which language." />
+</CardGrid>

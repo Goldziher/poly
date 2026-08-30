@@ -1,0 +1,107 @@
+---
+title: poly
+description: >-
+  Universal zero-dependency linter and formatter. One pure-Rust binary, ~30 languages, no
+  toolchain to install.
+template: splash
+hero:
+  title: One binary lints and formats the whole repository
+  tagline: >-
+    Curated Rust backends for the languages that matter, a tree-sitter tier for everything else,
+    and one poly.toml driving lint, format, git hooks and commit policy. No Node, no Python, no
+    Ruby, no JVM.
+  image:
+    file: ../../assets/logo.svg
+  actions:
+    - text: Install and run your first check
+      link: /poly/start/quickstart/
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/Goldziher/poly
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid, LinkCard, Tabs, TabItem, Code, Aside } from '@astrojs/starlight/components';
+
+poly wraps ruff, oxc, biome, mago, taplo, rumdl, sqruff, malva, `markup_fmt`, rubyfmt and more as
+**in-process Rust crates** — not subprocesses — and falls through to a tree-sitter generic tier for
+the long tail. Two cross-cutting lint tiers, a code-quality metrics engine and a 26-rule built-in
+ast-grep pack, run on top of every language.
+
+## What you get
+
+<CardGrid>
+    <Card title="Fast on real repositories" icon="rocket">
+        Django: 3,113 files in **0.82s**. home-assistant: 25,443 files in **3.5s**. Cold cache, on
+        Apple Silicon — a blake3 content hash skips unchanged work and rayon splits the rest across
+        cores.
+    </Card>
+    <Card title="No toolchain to install" icon="seti:rust">
+        Most backends are Rust crates compiled into the binary. `rustfmt`, `gofmt` and `shellcheck`
+        are used when found on `PATH`; everything else is opt-in. A missing tool lowers fidelity,
+        never fails a run.
+    </Card>
+    <Card title="One config file" icon="setting">
+        `poly.toml` drives linting, formatting, git hooks and commit-message policy. Nested configs
+        cascade in a monorepo; `extends` shares a baseline across repositories.
+    </Card>
+    <Card title="Built for agents" icon="comment">
+        A Claude/Codex plugin and a stdio MCP server ship in the box. An agent calls poly's eleven
+        tools directly instead of shelling out and parsing terminal text.
+    </Card>
+    <Card title="Git hooks without a framework" icon="approve-check">
+        `poly hooks install` wires lint, format, file-safety and Conventional-Commit checks into
+        git. Hooks validate a snapshot of the **index**, never the live worktree.
+    </Card>
+    <Card title="Honest coverage accounting" icon="warning">
+        Every skipped file is counted with its reason, so a run that checked nothing can never look
+        like a clean pass. `--deny-skips` turns that into a CI gate.
+    </Card>
+</CardGrid>
+
+## Install
+
+<Tabs syncKey="installer">
+    <TabItem label="Shell">
+        <Code code={`curl -fsSL https://raw.githubusercontent.com/Goldziher/poly/main/install.sh | sh`} lang="sh" />
+    </TabItem>
+    <TabItem label="PowerShell">
+        <Code code={`irm https://raw.githubusercontent.com/Goldziher/poly/main/install.ps1 | iex`} lang="powershell" />
+    </TabItem>
+    <TabItem label="Homebrew">
+        <Code code={`brew install Goldziher/tap/poly`} lang="sh" />
+    </TabItem>
+    <TabItem label="Scoop">
+        <Code code={`scoop bucket add goldziher https://github.com/Goldziher/scoop-bucket\nscoop install poly`} lang="powershell" />
+    </TabItem>
+    <TabItem label="npm">
+        <Code code={`npm install --global @goldziher/polylint`} lang="sh" />
+    </TabItem>
+    <TabItem label="pip">
+        <Code code={`pip install polylint`} lang="sh" />
+    </TabItem>
+    <TabItem label="Claude / Codex">
+        <Code code={`/plugin marketplace add Goldziher/poly\n/plugin install poly@poly`} lang="text" />
+    </TabItem>
+</Tabs>
+
+<Aside type="note" title="The command is always `poly`">
+    The npm and PyPI packages are named `polylint` only because the unscoped `poly` name belongs to
+    unrelated projects on both registries. Every channel installs the executable as `poly`, with
+    `polylint` as an alias for the same binary.
+</Aside>
+
+## Explore
+
+<CardGrid>
+    <LinkCard title="Introduction" href="/poly/start/introduction/" description="What poly is, how the tiers fit together, and when to reach for it." />
+    <LinkCard title="Quickstart" href="/poly/start/quickstart/" description="Lint, format, and wire the git hooks in about a minute." />
+    <LinkCard title="Configuration" href="/poly/guides/configuration/" description="poly.toml end to end: rule selection, suppression, monorepos, quality metrics." />
+    <LinkCard title="Git hooks" href="/poly/guides/hooks/" description="The native hook runner: stages, staged isolation, timeouts, concurrency, caching." />
+    <LinkCard title="Agents and MCP" href="/poly/guides/agents-and-mcp/" description="The plugin, the eleven MCP tools, and the async whole-project tasks." />
+    <LinkCard title="CLI reference" href="/poly/reference/cli/" description="Every flag, every subcommand, and the exit-code contract." />
+    <LinkCard title="Backend coverage" href="/poly/reference/backends/" description="Which backend handles which language, and at which tier." />
+    <LinkCard title="Tool catalog" href="/poly/reference/catalog/" description="All 348 opt-in catalog tools across 175 languages." />
+</CardGrid>

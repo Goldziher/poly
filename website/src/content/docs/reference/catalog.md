@@ -1,88 +1,12 @@
-# Backend coverage
+---
+title: Tool catalog
+description: >-
+  Every tool in poly's embedded mdsf catalog — 348 tools across 175 languages — each opt-in per
+  tool and probed on PATH.
+---
 
-poly uses a tiered model:
-
-1. Curated Rust backends for high-fidelity lint and format support.
-2. Native-toolchain backends for canonical first-party formatters — plus `shellcheck` — when configured or present.
-3. Tree-sitter generic formatting for identified languages without a dedicated backend.
-4. Optional catalog tools from the embedded mdsf registry.
-
-<!-- markdownlint-disable MD013 -->
-
-| Language or files | Backend | Lint | Format |
-|---|---|---:|---:|
-| JavaScript / TypeScript / JSX / TSX | oxc | yes | yes |
-| JSON / JSONC | oxc parse diagnostics + formatter | yes | yes |
-| Python | ruff internals | yes | yes |
-| TOML | taplo | yes | yes |
-| Markdown | rumdl | yes | yes |
-| SQL | sqruff | yes | yes |
-| YAML | saphyr + pretty_yaml | yes | yes |
-| CSS / SCSS | malva (format) + biome (lint) | yes | yes |
-| Less | malva | no | yes |
-| HTML / Vue / Svelte / Astro / Angular / templates / XML | markup_fmt | no | yes |
-| GraphQL | graphql-parser + pretty_graphql (parse-error lint + format) + biome (rule lint) | yes | yes |
-| HCL / Terraform | hcl-edit + hcl-rs, tree-sitter for comment-preserving format fallback | yes | yes |
-| Dockerfile | dockerfile-parser hadolint-style rules | yes | no |
-| `.env` files (`.env`, `.env.*`, `*.env`) | dotenv-analyzer | yes | no |
-| INI and compatible (`.ini`, `.cfg`, `.desktop`, `.npmrc`, `.editorconfig`, `.pylintrc`, `.coveragerc`, `.flake8`, …) | rust-ini | yes | no |
-| Nix | alejandra | no | yes |
-| Ruby | rubyfmt | no | yes |
-| PHP | mago | yes | yes |
-| R | opt-in `styler` (via `Rscript`), tree-sitter fallback otherwise | no | yes |
-| Go | `gofmt` when present (default-on), tree-sitter fallback otherwise | no | yes |
-| Rust | `rustfmt` when present (default-on), tree-sitter fallback otherwise | no | yes |
-| Zig | opt-in `zig fmt`, tree-sitter fallback otherwise | no | yes |
-| Java | opt-in `google-java-format`, tree-sitter fallback otherwise | no | yes |
-| Kotlin | opt-in `ktfmt`, tree-sitter fallback otherwise | no | yes |
-| Swift | opt-in `swift-format`, tree-sitter fallback otherwise | no | yes |
-| Dart | opt-in `dart format`, tree-sitter fallback otherwise | no | yes |
-| Gleam | opt-in `gleam format`, tree-sitter fallback otherwise | no | yes |
-| Shell | `shellcheck` when present (default-on), opt-in `shfmt`, tree-sitter fallback otherwise | optional | optional |
-| All text files | typos spell-check | yes | no |
-| Any recognized language | opt-in `uncomment` comment removal (see [Configuration reference](CONFIGURATION.md#comment-removal-opt-in)) | opt-in | no |
-| Other identified grammars | tree-sitter generic tier | no | best effort |
-
-<!-- markdownlint-enable MD013 -->
-
-Unsupported or unknown file types are skipped unless `tree-sitter-language-pack` can identify them.
-Some whitespace-sensitive data, template, or patch grammars intentionally no-op rather than risk a
-destructive rewrite.
-
-Beyond the dedicated backends above, two cross-cutting lint tiers run on every language: the
-native `quality` metric engine (file/function length, parameter count, nesting depth, cyclomatic
-complexity — see [Configuration reference](CONFIGURATION.md#code-quality-metrics)) and a built-in
-ast-grep rule pack of 26 rules across C#, Elixir, Go, Java, Kotlin, Python, Ruby, Rust and Swift
-(ADR 0029). Both run in-process alongside the backends in this table.
-
-**dotenv.** `.env` files autofix with `poly lint --fix`, and inline `# dotenv-linter:off <Check>` /
-`# dotenv-linter:on <Check>` comments suppress a check for the lines between them, the same
-directive syntax the standalone `dotenv-linter` CLI understands. Rules: `DuplicatedKey`,
-`EndingBlankLine`, `ExtraBlankLine`, `IncorrectDelimiter`, `KeyWithoutValue`, `LeadingCharacter`,
-`LowercaseKey`, `QuoteCharacter`, `SpaceCharacter`, `SubstitutionKey`, `TrailingWhitespace`,
-`UnorderedKey`, `ValueWithoutQuotes`, `SchemaViolation`.
-
-**INI is lint-only, by design.** `rust-ini`'s parser discards comments while parsing, so writing
-its model back out would silently delete every comment in the file — poly never does that, and INI
-formatting stays with the tree-sitter generic tier instead, which preserves comments structurally.
-Rules: `parse-error` (a real syntax error, with the parser's own line/column), `duplicate-key`,
-`duplicate-section`, `key-without-value`, `inconsistent-separator`, `trailing-whitespace`.
-
-Detection is deliberately narrow: `*.conf` (most are not INI — nginx, httpd, and friends use their
-own syntax), `*.properties` (Java's key=value syntax, not INI's), `.gitconfig` (quoted subsections
-`rust-ini` cannot parse), and systemd units (duplicate keys are legal there) are never treated as
-INI.
-
-Beyond the dedicated backends above, the generic tree-sitter tier identifies and best-effort
-formats hundreds of grammars — including first-class detection for C/C++, Elixir, Protobuf, and
-the long tail covered by `tree-sitter-language-pack`. Java and Kotlin reach it only as the
-fallback when their opt-in native formatter is absent; both, along with C, C++, C# and Ruby, are
-languages the cross-cutting code-quality tier lints in full.
-
-## Optional tool catalog
-
-For everything else, opt into tools from the embedded [mdsf](https://github.com/hougesen/mdsf)
-catalog. Entries are PATH-probed and skipped when absent, so enabling one never breaks a run:
+The catalog tier is poly's breadth mechanism. Opt in per tool with `[tools.<name>] enabled = true`;
+each command is probed on `PATH` and skipped when absent, so listing one never makes a run fail.
 
 ```toml
 [tools.prettier]
@@ -90,10 +14,13 @@ enabled = true
 files = "**/*.{js,ts}"
 ```
 
+Findings from a catalog tool are file-level: a lint failure maps to one diagnostic with no span and
+no rule code. Where fidelity matters, prefer the [native backends](/poly/reference/backends/) —
+poly runs those first and a catalog tool alongside them, not instead of them.
+
 A tool whose lint command rewrites files (`sqruff fix`, `rubocop --autocorrect`, `pyupgrade`) is not
-run by `poly lint` — a fix command would overwrite your source and still exit 0. Enabling one for
-linting logs a warning naming the tool and the command it refused; `poly fmt` still runs it as a
-formatter.
+run by `poly lint`; enabling one for linting logs a warning naming the command it refused, while
+`poly fmt` still runs it as a formatter.
 
 <!-- BEGIN CATALOG -->
 

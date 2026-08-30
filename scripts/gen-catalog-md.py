@@ -3,7 +3,7 @@
 
 Reads ``crates/poly-catalog/data/catalog.json`` (the embedded mdsf registry) and
 rewrites the block between the ``<!-- BEGIN CATALOG -->`` / ``<!-- END CATALOG -->``
-markers in ``docs/BACKENDS.md`` with a ``<details>`` table of every catalog tool.
+markers in ``website/src/content/docs/reference/catalog.md`` with a ``<details>`` table of every catalog tool.
 
 Run after the catalog is revendored::
 
@@ -18,7 +18,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 CATALOG = ROOT / "crates" / "poly-catalog" / "data" / "catalog.json"
-TARGET = ROOT / "docs" / "BACKENDS.md"
+TARGET = ROOT / "website" / "src" / "content" / "docs" / "reference" / "catalog.md"
 
 BEGIN = "<!-- BEGIN CATALOG -->"
 END = "<!-- END CATALOG -->"

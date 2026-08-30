@@ -1,0 +1,184 @@
+---
+title: Installation
+description: >-
+  Every channel that ships poly — installer scripts, GitHub Actions, Homebrew, Scoop, npm, PyPI,
+  and the agent plugin — and what each one actually installs.
+---
+
+import { Aside, Tabs, TabItem, Code, Steps } from '@astrojs/starlight/components';
+
+poly ships **one binary**. Every channel below installs that same prebuilt executable: none of
+them compiles anything, and none needs a Rust, Node or Python toolchain at run time.
+
+<Aside type="note" title="The command is `poly` everywhere">
+    The package is called `polylint` on PyPI and `@goldziher/polylint` on npm, because the unscoped
+    `poly` name belongs to unrelated projects on both registries. **The executable it installs is
+    `poly`.** `polylint` also works everywhere as an alias for the same binary, so whichever name
+    you install under, both commands run the same tool.
+</Aside>
+
+## Installer scripts
+
+<Tabs syncKey="installer">
+    <TabItem label="Shell">
+        <Code code={`curl -fsSL https://raw.githubusercontent.com/Goldziher/poly/main/install.sh | sh`} lang="sh" />
+    </TabItem>
+    <TabItem label="PowerShell">
+        <Code code={`irm https://raw.githubusercontent.com/Goldziher/poly/main/install.ps1 | iex`} lang="powershell" />
+    </TabItem>
+</Tabs>
+
+Both detect the platform, download the matching release archive, and verify it against the
+release's `sha256sums.txt`. Set `POLY_VERSION` to pin an exact release:
+
+```sh
+POLY_VERSION=0.23.1 curl -fsSL https://raw.githubusercontent.com/Goldziher/poly/main/install.sh | sh
+```
+
+## GitHub Actions
+
+```yaml title=".github/workflows/ci.yaml"
+- uses: Goldziher/poly@v0
+  with:
+    version: v0.23.1 # omit for the latest release
+
+- run: poly lint .
+- run: poly fmt --check .
+```
+
+The action forwards to the same `install.sh` and caches the installed binary by version and
+platform. Its full input/output reference lives in
+[`ACTION_USAGE.md`](https://github.com/Goldziher/poly/blob/main/ACTION_USAGE.md).
+
+## Homebrew
+
+```sh
+brew install Goldziher/tap/poly
+```
+
+<Aside type="caution">
+    The tap is a single rolling formula with no versioned alias yet — treat it as a get-latest
+    channel. Where a pinned version matters, use the installer script or the GitHub Action.
+</Aside>
+
+## Scoop (Windows)
+
+```powershell
+scoop bucket add goldziher https://github.com/Goldziher/scoop-bucket
+scoop install poly
+```
+
+## npm
+
+```sh
+npm install --global @goldziher/polylint
+# or, per project:
+npm install --save-dev @goldziher/polylint
+```
+
+The package pulls exactly one prebuilt binary through `optionalDependencies`, matched to your
+platform by npm's own `os`, `cpu` and `libc` fields. There is **no `postinstall` script** and
+nothing is downloaded at install time, so installs work offline and behind a proxy, and the binary
+is covered by the registry's integrity hashes like any other package content.
+
+| Platform                | Platform package                      |
+| ----------------------- | ------------------------------------- |
+| macOS (Apple silicon)   | `@goldziher/polylint-darwin-arm64`    |
+| macOS (Intel)           | `@goldziher/polylint-darwin-x64`      |
+| Linux arm64 (glibc)     | `@goldziher/polylint-linux-arm64-gnu` |
+| Linux x64 (glibc)       | `@goldziher/polylint-linux-x64-gnu`   |
+| Linux x64 (musl/Alpine) | `@goldziher/polylint-linux-x64-musl`  |
+| Windows x64             | `@goldziher/polylint-win32-x64`       |
+
+Installing with optional dependencies disabled (`--omit=optional`) is the one way to end up with
+the wrapper and no binary. `poly` then says so and tells you how to fix it, rather than failing
+with a stack trace.
+
+## PyPI
+
+```sh
+pip install polylint
+# or:
+uv tool install polylint
+```
+
+Each release publishes platform-specific wheels, each carrying one binary as package data plus the
+`poly` and `polylint` console scripts. Again: nothing downloaded at install time, no build step.
+
+A `py3-none-any` wheel is published alongside the platform wheels. pip ranks platform wheels above
+it, so a supported platform never resolves to it; an unsupported one gets a `poly` command that
+explains which platforms are published, instead of pip's bare "could not find a version that
+satisfies the requirement".
+
+## cargo binstall
+
+```sh
+cargo binstall --git https://github.com/Goldziher/poly poly-cli
+```
+
+This resolves the same GitHub release archives — it does not build from source.
+
+<Aside type="note" title="poly is not published to crates.io">
+    poly's crates depend on pinned git dependencies (oxc, biome, rubyfmt), which crates.io forbids
+    in published crates. The prebuilt binary is the only thing any channel ships, so `cargo install
+    poly` will not work.
+</Aside>
+
+## As an agent plugin
+
+poly ships its own Claude/Codex plugin, registering `poly mcp` as a stdio server plus 5 skills and
+2 slash commands (`/poly-check`, `/poly-fix`):
+
+```text
+/plugin marketplace add Goldziher/poly
+/plugin install poly@poly
+```
+
+For Codex, add the `Goldziher/poly` marketplace through your client's plugin manager; the manifest
+is at `.codex-plugin/plugin.json`.
+
+<Aside type="caution">
+    The plugin assumes `poly` is already on `PATH` — it does **not** bundle the binary. Install poly
+    through one of the channels above first. The plugin version tracks the binary version in
+    lock-step.
+</Aside>
+
+See [Agents and MCP](/poly/guides/agents-and-mcp/) for the tool surface.
+
+## As a plain MCP server
+
+Any MCP-capable client can run poly directly:
+
+```json title="mcp.json"
+{
+  "mcpServers": {
+    "poly": { "command": "poly", "args": ["mcp"] }
+  }
+}
+```
+
+## Verifying the install
+
+<Steps>
+
+1. Confirm which binary you got, and that nothing else shadows it:
+
+   ```sh
+   poly doctor
+   ```
+
+   It prints the resolved path of the running executable with its version and build identifier,
+   every `poly` on `PATH` in order, the config files in effect, and the cache directory — then
+   exits non-zero on a real defect.
+
+2. Check the version string carries a release build identifier:
+
+   ```console
+   $ poly --version
+   0.23.1 (release build v0.23.1, release)
+   ```
+
+   A development build reads `0.23.1 (dev build v0.23.1-8-g18aa5e8, debug)` instead, so an
+   unreleased build carrying local changes can never be quoted as a release.
+
+</Steps>

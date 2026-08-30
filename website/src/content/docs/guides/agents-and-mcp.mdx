@@ -1,0 +1,177 @@
+---
+title: Agents and MCP
+description: >-
+  The Claude/Codex plugin, poly's eleven MCP tools, the async whole-project tasks, and the isError
+  contract an agent must gate on.
+---
+
+import { Aside, Tabs, TabItem, Code, Steps } from '@astrojs/starlight/components';
+
+poly ships its own agent integration rather than expecting one to be bolted on: a Claude/Codex
+plugin and a stdio MCP server exposing the same lint, format, cache, rules and config surface as
+the CLI — with structured output an agent can consume directly instead of parsing terminal text.
+
+## The operating rule
+
+<Aside type="tip" title="poly first">
+    poly is one binary for both linting and formatting across every language in the repository.
+    Prefer `poly lint` and `poly fmt` over invoking ruff, oxlint, biome, `rustfmt` or `gofmt`
+    directly: poly wraps them in-process behind a single `poly.toml`, one report format, and one
+    exit-code contract. Over MCP, call the tools rather than shelling out.
+</Aside>
+
+## The plugin
+
+```text
+/plugin marketplace add Goldziher/poly
+/plugin install poly@poly
+```
+
+That registers `poly mcp` as a stdio server, plus **5 skills** and **2 slash commands**
+(`/poly-check`, `/poly-fix`) that teach an agent poly's tiered backend model and when to reach for
+lint versus format versus hooks.
+
+For Codex, add the `Goldziher/poly` marketplace through your client's plugin manager; the manifest
+is at `.codex-plugin/plugin.json`.
+
+The plugin assumes `poly` is already on `PATH` — it does not bundle the binary — and its version
+tracks the binary version in lock-step.
+
+## As a plain MCP server
+
+Any MCP-capable client can run poly directly:
+
+```json title="mcp.json"
+{
+  "mcpServers": {
+    "poly": { "command": "poly", "args": ["mcp"] }
+  }
+}
+```
+
+`poly mcp --config <PATH>` pins a fallback config file for requests that do not name one.
+
+## The eleven tools
+
+Every tool returns typed `structured_content` against a declared output schema, plus one text
+block mirroring the CLI's `--format json` — or the compact TOON encoding when asked for it.
+
+### Read-only — never touch the tree
+
+| Tool | Mirrors | Returns |
+| --- | --- | --- |
+| `lint` | `poly lint` | Diagnostics per file. |
+| `format_check` | `poly fmt --check` | Formatting drift, without writing. |
+| `cache_stats` | `poly cache stats` | Result-cache footprint per namespace: entries, bytes, format version. |
+| `rules` | `poly rules list` / `test` | Every ast-grep rule a run would apply — the built-in pack plus `[rules] dirs` — with language, `source` (`builtin`/`user`), `default_severity`, the `severity` under the resolved config, and `enabled`. Optionally runs the `*-test.yml` snippets. |
+| `config_show` | `poly config show` | The merged effective configuration. **Network-free**: remote `extends` bases are not fetched. |
+| `version` | `poly --version` | Which binary is serving this session — version, build id, channel, executable, pid, uptime — and whether that executable is still the file on disk. |
+
+### Mutating — writes to the tree
+
+| Tool | Mirrors |
+| --- | --- |
+| `lint_fix` | `poly lint --fix` |
+| `format_write` | `poly fmt --fix` |
+| `cache_clean` | `poly cache clean` |
+
+### Whole-project — long-running async tasks
+
+| Tool | Mirrors |
+| --- | --- |
+| `workspace_lint` | the whole-project phase, check mode |
+| `workspace_lint_fix` | the whole-project phase, fix mode |
+
+Both run `cargo clippy` / `cargo-sort` / `cargo-machete` / `cargo-deny` and any configured inline
+whole-project jobs over the whole repository — they take no `paths`. Because that is a multi-minute
+operation, both are exposed as async **Tasks**: the call returns a task handle and the client polls
+`tasks/get`, optionally `tasks/cancel`, with an unlimited TTL. A client that does not declare the
+tasks capability gets a synchronous, blocking result from the same call instead, so the tools work
+either way.
+
+<Aside type="caution" title="`workspace_lint` is not in the read-only group">
+    It applies no fixes, but it *executes* those tools against the live worktree, and their own side
+    effects — a refreshed lock file, a populated build or type-checker cache — are not poly's to
+    control.
+</Aside>
+
+There is no `hooks` tool: `poly hooks` is CLI-only.
+
+## Parameters
+
+- `lint` / `format_check` / `lint_fix` / `format_write` — `paths` (files or directories; empty
+  means the current directory), `exclude` (gitignore-style globs merged with `[discovery] exclude`;
+  unanchored globs match at any depth), `config` (path to a `poly.toml`), `format` (`"json"` by
+  default, or `"toon"`).
+- `rules` — `dirs` (empty means `[rules] dirs` from the config), `config`, `test` (bool), `format`.
+- `config_show` — `config`, `format`.
+- `cache_stats` / `cache_clean` / `version` — `format` only.
+- `workspace_lint` / `workspace_lint_fix` — `config`, `format`, `jobs`, `no_cache`. No `paths`.
+
+`format` selects only the paired **text** block; `structured_content` is always JSON.
+
+Treat the read-only tools as safe to call freely, and gate the mutating tools behind explicit
+intent since they change files.
+
+## Every result identifies the binary that answered
+
+Each result carries a `poly` block (version, build id, channel, executable, pid) in
+`structured_content` and in `_meta`, because an MCP caller has no `poly --version` to fall back on.
+The server fingerprints its own executable at startup and re-checks it per request: if the binary is
+replaced or deleted underneath a long-lived server, every tool but `version` fails rather than
+answering with superseded behaviour.
+
+## Three per-file outcomes, not two
+
+`lint` / `lint_fix` / `format_check` / `format_write` results tell three outcomes apart:
+
+- **Checked** — the file has a `results` entry with no `skipped` or `error` set. Diagnostics may
+  still be empty; that is a clean file, not a missing one.
+- **Skipped** (`skipped` field) — poly correctly declined the file, for example a template dialect
+  no backend handles. Not a failure.
+- **Errored** (`error` field) — poly failed to process a file it accepted: unreadable file, backend
+  crash, bad engine config. Deliberately distinct from a skip, which is a decision rather than a
+  failure.
+
+Each result also carries a run-level `errors` array — one entry per file poly failed on,
+duplicating the `error`-carrying records in `results`, so a caller can gate on "did the run fail on
+anything" without scanning every record. When `errors` is non-empty, the tool result's
+`CallToolResult.is_error` (`isError` over the wire) is set `true`.
+
+<Aside type="danger" title="Check `isError` before trusting the result">
+    Before this shape existed, a file poly failed to process was absent from the output entirely —
+    indistinguishable from a file that was checked and found clean. An agent that gated on "no
+    findings in `results`" was reading a run that had silently failed to check some files as a clean
+    pass. Check `isError` (or the `errors` array) **first**; only then read `results` for
+    diagnostics.
+</Aside>
+
+## Driving poly from the CLI instead
+
+If you are not going through MCP, the same discipline applies with `--format json` or
+`--format toon`:
+
+<Steps>
+
+1. Check, and read the machine-readable report:
+
+   ```sh
+   poly lint --format json --no-workspace . > findings.json
+   ```
+
+2. **Read the exit code, not just the payload.** `0` is clean, `1` means error-severity findings,
+   and `2` means the run verified less than it claims. The whole-project phase's own pass/fail is
+   written to stderr so stdout stays a single valid document.
+
+3. Fix, then re-check:
+
+   ```sh
+   poly lint --fix .
+   poly fmt --fix .
+   poly lint --format json --no-workspace .
+   ```
+
+</Steps>
+
+`--format toon` is compact enough to hand to an agent without burning its context window;
+`--format json` is there when you want a document to parse with a schema.

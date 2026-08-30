@@ -101,7 +101,7 @@ const MIN_REASON_ALNUM: usize = 3;
 ///
 /// A `# noqa` in Markdown is a sentence, a table cell, or a fenced example —
 /// never a directive, because nothing lints the prose it sits in. poly's own
-/// `docs/CONFIGURATION.md` describes what this rule does and was reported by it,
+/// The configuration guide describes what this rule does and was reported by it,
 /// which is the signal that the scan had outrun its evidence.
 ///
 /// The same class was already fixed once for Go templates: `engines/template.rs`

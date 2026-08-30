@@ -1,0 +1,275 @@
+---
+title: CLI reference
+description: >-
+  Every flag on poly lint and poly fmt, the exit-code contract, and the doctor, config, commit,
+  hooks, cache, mcp, migrate and rules subcommands.
+---
+
+import { Aside, Tabs, TabItem, Code } from '@astrojs/starlight/components';
+
+```text
+poly lint [PATHS]...
+poly fmt  [PATHS]...
+```
+
+## Shared flags
+
+Both `poly lint` and `poly fmt` accept every flag below unless the description says otherwise.
+
+### Writing changes
+
+| Flag | Effect |
+| --- | --- |
+| `--fix` | Apply lint fixes or formatting in place. |
+| `--check` | `poly fmt` only. Explicit dry run — **this is the default**. |
+
+### Generated files
+
+| Flag | Effect |
+| --- | --- |
+| `--fix-generated` | Also rewrite files whose header stamps a content hash over the body (`<project>:hash:<digest>`). |
+| `--skip-generated` | Do not lint or format machine-generated files at all (banner or stamp). Overrides `[discovery] generated` for this run. Conflicts with `--include-generated`. |
+| `--include-generated` | Lint and format machine-generated files. The default, so it only matters in a repo that set `[discovery] generated = false`. Conflicts with `--skip-generated`. |
+
+Hash-stamped files are the **only** generated files poly withholds a write from — `poly fmt` skips
+them and `poly lint --fix` reports without rewriting — because reformatting invalidates the hash
+and the generator's verify step then reports drift on a file nobody edited. A plain `DO NOT EDIT`
+or `@generated` banner does not hold poly back: those files are linted, formatted and fixed like
+any other, so `--fix-generated` has no effect on them.
+
+Under `--skip-generated` the files are *reported* as skipped, so they count against `--deny-skips`
+and `--max-skips`.
+
+### Discovery
+
+| Flag | Effect |
+| --- | --- |
+| `--config <PATH>` | Use an explicit config file. Bypasses nested config resolution. |
+| `--exclude <GLOB>` | Exclude paths from discovery. Repeatable; merged with `[discovery] exclude`. An unanchored glob matches at any depth — lead with `/` to anchor it to the config directory. |
+| `--force-exclude` | Apply `[discovery] exclude` to explicitly named files too. The default, so it only matters in a repo that set `[discovery] force_exclude = false`. |
+| `--include-excluded` | Check explicitly named files or directory roots even when excluded. Overrides `[discovery] force_exclude`. Exclusions below an included directory remain active. |
+
+### The whole-project phase (`poly lint` only)
+
+| Flag | Effect |
+| --- | --- |
+| `--workspace` | Run the whole-project phase even though explicit paths were given (a path-scoped run normally skips it). Conflicts with `--no-workspace`. |
+| `--no-workspace` | Skip the whole-project phase — `cargo clippy` / `sort` / `machete` / `deny` and any other configured whole-workspace tools. Equivalent to `[lint] workspace = false`. |
+
+The phase is never path-scoped: under `--workspace` the tools cover the whole repository regardless
+of the named paths and of `[discovery] exclude`, and the run says so on stderr.
+
+<Aside type="caution" title="`--no-workspace` is what makes a run read-only">
+    Without it, plain `poly lint` executes those tools against the live worktree, and their own side
+    effects are not poly's to control.
+</Aside>
+
+### Output
+
+| Flag | Effect |
+| --- | --- |
+| `--format <pretty\|json\|toon>` | Output format. Default: `pretty`. |
+| `--no-color` | Disable colored output. |
+| `-q`, `--quiet` | Trim pretty output to the findings and the summary. Conflicts with `--verbose` and `--debug`. |
+| `--verbose` | Pretty output includes descriptions, URLs and metadata, and names **every** skipped file rather than the first 3 per skip reason. Conflicts with `--quiet`. |
+| `--debug` | Include cache hit/miss and timing data. Implies `--verbose`. Conflicts with `--quiet`. |
+
+The levels are a ladder — quiet &lt; normal &lt; verbose &lt; debug — each a superset of the one
+below. `--quiet` drops the per-file discovery and skip detail printed beneath the findings; every
+count and reason stays in the summary, so nothing is hidden, only un-itemised. Findings still print
+and exit codes are unchanged. It has no effect on `--format json` / `toon`.
+
+### Coverage gates
+
+| Flag | Effect |
+| --- | --- |
+| `--deny-skips` | Exit 2 if any file was skipped. Equivalent to `--max-skips 0`. |
+| `--max-skips <N>` | Exit 2 if more than N files were skipped. |
+
+### Execution
+
+| Flag | Effect |
+| --- | --- |
+| `--no-cache` | Bypass the result cache. |
+| `-j`, `--jobs <N>` | Parallel jobs. Default: logical cores. |
+
+## Skips and coverage
+
+Skipped files — a language poly has no lint rules for, no matching engine, a generated file, an
+unreadable path — are always counted and their reasons summarized, so a run that checked nothing
+cannot look like a clean pass.
+
+`poly lint` reports a file whose language nothing in the run lints as:
+
+```console
+skipped main.zig: no lint rules for Zig
+```
+
+and keeps it out of the linted count. This covers the tier-2 languages the code-quality tier cannot
+model — Zig, Swift, Dart, Gleam, Elixir, Nix, Scala, Lua, R — and any language whose linter is
+opt-in or missing from `PATH`; a shell script with no `shellcheck` installed is reported rather
+than counted.
+
+<Aside type="note">
+    A skip is **coverage information, not a failure**. The run still exits 0 unless you ask for
+    `--deny-skips` / `--max-skips`. Cross-cutting checks — typos, ast-grep rules, comment removal —
+    still run on these files, and their findings are still reported.
+</Aside>
+
+A file a directory walk could not identify as any language is counted separately —
+`N file(s) of unrecognized type not checked`, with the first few named — rather than itemised as a
+skip, since every repository is full of images, lock files and snapshots no linter was ever going
+to read. A path you name on the command line is different: naming it is a request to check it, so
+it is reported as a skip.
+
+## Exit codes
+
+| Code | Meaning |
+| ---: | --- |
+| `0` | Clean: no lint findings, no formatting drift, or all writes succeeded. |
+| `1` | Error-severity lint findings remain, a whole-project tool failed, or (for `poly fmt`) files would change. Warning-severity findings alone never trigger this — typos and the quality tier don't redden CI. |
+| `2` | The run verified less than it claims: a file an engine failed on, a skip budget exceeded (`--deny-skips` / `--max-skips`), a config or pipeline error, or a machine-readable report that failed to serialize. |
+
+<Aside type="danger" title="Read the exit code, not just the payload">
+    A `--format json` / `toon` consumer must check the exit code: the whole-project phase's own
+    pass/fail is written to **stderr**, not the stdout document, so that stdout stays a single valid
+    document.
+</Aside>
+
+## `poly doctor` — which poly am I actually running?
+
+```sh
+poly doctor                  # human report; exits 1 when something is actively wrong
+poly doctor --format json    # the same report, for a bug report or a CI check
+```
+
+Run this before filing a bug. It prints the resolved path of the running executable with its
+version and **build identifier**, every `poly` on `PATH` in order with the version each one
+reports, the config files in effect, and the cache directory — then exits non-zero on a real
+defect: a competing install on `PATH`, a `poly` that cannot report its own version, or a config
+that fails to load. Each finding carries the concrete remedy, including the fact that a
+cargo-installed `~/.cargo/bin/poly` needs `rm`, not `cargo uninstall poly`.
+
+`poly --version` reports the build identifier too:
+
+```console
+$ poly --version
+0.23.1 (release build v0.23.1, release)
+```
+
+versus `0.23.1 (dev build v0.23.1-8-g18aa5e8, debug)` — so a development build carrying unreleased
+changes cannot be quoted as a release. The identifier comes from `git describe` at build time;
+outside a git checkout it reads `unknown` rather than guessing, and packagers can set
+`POLY_BUILD_ID`.
+
+When another `poly` on `PATH` differs from the running one, every command warns once on stderr and
+points at `poly doctor`. A correctly-installed poly finds a single entry and prints nothing;
+`POLY_NO_SHADOW_WARN=1` silences it regardless.
+
+## `poly config` — what did poly actually parse?
+
+```text
+poly config show   [--config <PATH>] [--format <toml|json|toon>]
+poly config update [--config <PATH>]
+```
+
+`poly config show` prints the **effective, fully-merged configuration** — every section and key
+poly resolved after `extends` bases, the nested `poly.toml` cascade and `poly.local.toml` have all
+been applied:
+
+```toml
+# poly effective configuration
+#
+# config:      /repo/poly.toml
+# merged from: /repo/poly.toml
+#              /repo/poly.local.toml
+# extends:     path ../baseline/poly.toml
+# hooks:       present
+
+[defaults]
+line_length = 120
+...
+
+[lint.python.ruff]
+mccabe_max_complexity = 3
+```
+
+The default output is a valid TOML document, so `diff` against your own `poly.toml` shows exactly
+what poly kept — including keys poly does not recognize, which are printed as written rather than
+dropped. `[defaults]`, `[discovery]`, `[rules]` and `[workspace]` are shown fully resolved, so a
+setting nobody wrote (`line_length = 120`) is still visible; every other section is shown exactly
+as merged.
+
+`--format json` / `--format toon` emit the same document as `{ "config": …, "resolution": … }`,
+where `resolution` carries the config path, the files that were merged, the resolved `extends`
+bases, and whether `[hooks]` is present — the facts the TOML form carries as comments.
+
+<Aside type="note">
+    The `merged from` list is **file-level attribution**: it names the files that could have
+    contributed a value, not which file each key came from.
+</Aside>
+
+`poly config update` resolves symbolic `extends` git refs to pinned object IDs and writes
+`poly-config.lock`. Config validation reports unknown top-level sections, unknown keys within a
+recognized section, and wrongly-typed values as warnings — a misspelled key no longer parses
+silently and does nothing.
+
+## `poly commit`, `poly hooks`, `poly cache`, `poly mcp`
+
+```sh
+poly commit --message "feat: add backend"   # or a path: poly commit .git/COMMIT_EDITMSG
+poly hooks install
+poly cache stats
+poly cache size
+poly cache gc
+poly cache clean
+poly mcp --config /path/to/poly.toml
+```
+
+See [Git hooks](/poly/guides/hooks/) for the full `[hooks]` surface, and
+[Agents and MCP](/poly/guides/agents-and-mcp/) for the MCP tool reference. In short: the MCP server
+is **stdio-only**; `lint`, `format_check`, `cache_stats`, `rules`, `config_show` and `version` are
+read-only; `lint_fix`, `format_write` and `cache_clean` are mutating; `workspace_lint` and
+`workspace_lint_fix` run the whole-project phase as async **Tasks** — the call returns a task handle
+and the client polls `tasks/get`, while a client without the tasks capability gets a synchronous
+result instead.
+
+## `poly migrate`
+
+```sh
+poly migrate               # dry-run: report what would move into poly.toml
+poly migrate --write       # absorb tool configs into poly.toml, remove redundant files
+```
+
+`poly migrate` folds settings from `ruff`, `taplo`, markdownlint and `typos` config files — and
+from `pyproject.toml`'s `[tool.ruff]` / `[tool.typos]` / `[tool.codespell]` — into `poly.toml`,
+then deletes or strips **only** the sources poly can fully honor. Files it delegates to
+(`rustfmt.toml`, `.golangci.yml`, `clippy.toml`, …) and anything not fully representable are kept.
+
+| Flag | Effect |
+| --- | --- |
+| `--report` | Say explicitly that this is a dry run. This is the default behaviour. |
+| `--write` | Apply the migration. |
+| `--recurse` | Walk nested projects. |
+| `--verify` | Re-run lint and format after writing. |
+| `--strip-superseded` | Additionally strip `pyproject.toml` `[tool.*]` sections for the Python tools ruff supersedes — black, isort, flake8, … |
+| `--allow-dirty` | Let it write into a repository with uncommitted changes. |
+
+It takes an optional path, defaulting to the current directory.
+
+## `poly rules` — custom rules
+
+```sh
+poly rules test [DIR]...          # verify rules against their *-test.yml snippets
+poly rules list [DIR]...          # list every resolved rule (built-in pack + user rules)
+poly rules list --format json     # same rows as JSON (also: --format toon)
+```
+
+`poly rules list` prints one row per rule — id, language, `builtin` or `user`, the severity it
+reports at under the current config, and the rule's own declared default (`off` for an opt-in
+rule) — so a warning you did not recognise can be traced to the rule that raised it, and turned
+off. `--format json` / `--format toon` carry the same fields.
+
+With no `DIR`, both read `[rules] dirs` from the nearest `poly.toml`. `poly rules test` exits
+non-zero on any failed snippet: a `valid` snippet that matched, an `invalid` one that didn't, a
+`fixed:` autofix that differed, or a test naming an unknown rule id.

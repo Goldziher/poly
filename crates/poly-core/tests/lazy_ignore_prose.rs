@@ -8,7 +8,7 @@
 //! lints the prose it sits in.
 //!
 //! poly's own documentation is the victim, which is the canonical signal that a
-//! rule has outrun its evidence: `docs/CONFIGURATION.md` describes what
+//! rule has outrun its evidence: the configuration guide describes what
 //! `lazy-ignore` does, and `poly lint` reported that description as a lazy
 //! ignore. The same class was already fixed once for Go templates —
 //! `engines/template.rs` grew `contains_go_template_markdown` because prose

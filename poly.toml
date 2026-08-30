@@ -4,6 +4,9 @@ exclude = [
   "node_modules/**",
   "target/**",
   "dist/**",
+  # A generated lockfile is not prose: typos reports every vendored package name
+  # in it, and the quality tier reports its length.
+  "**/package-lock.json",
   "vendor/**",
   "**/identify/tags.rs",
   ".ai-rulez/**",

@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://goldziher.github.io/poly/sitemap-index.xml

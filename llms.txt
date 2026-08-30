@@ -1,0 +1,68 @@
+# poly
+
+> Universal zero-dependency linter and formatter. One pure-Rust binary that lints and formats a
+> whole repository across ~30 languages in-process — ruff, oxc, biome, mago, taplo, rumdl, sqruff,
+> malva, markup_fmt and more compiled in — with a tree-sitter generic tier for the long tail. One
+> `poly.toml` drives linting, formatting, git hooks and commit-message policy, and `poly mcp`
+> exposes the same surface to agents over MCP.
+
+poly replaces a stack of per-language runners with a single binary. There is no Node, Python, Go
+or JVM to install: the backends are Rust crates linked into the executable, so a fresh checkout
+lints and formats with nothing but `poly` on `PATH`. Canonical first-party CLIs are used where no
+usable Rust library exists — `gofmt`, `rustfmt` and `shellcheck` run automatically when present,
+and eight more are opt-in — and a language with no dedicated backend falls through to the
+tree-sitter tier rather than being skipped.
+
+Two cross-cutting lint tiers run on every language on top of the per-language backends: a native
+code-quality engine (file/function/type length, parameter count, nesting depth, cyclomatic
+complexity) and a built-in ast-grep pack of 26 rules across nine languages, 13 of them on by
+default. Both report at **warning** severity, and warnings alone do not fail a run, so adopting
+poly does not redden an unconfigured CI.
+
+**Operating rule for agents: prefer `poly lint` and `poly fmt` over invoking ruff, oxlint,
+rustfmt, gofmt or biome directly.** One run covers every language in the tree, shares one config,
+and answers in structured JSON or TOON. Over MCP, prefer the `lint` / `format_check` tools over
+shelling out and parsing terminal text.
+
+## Documentation
+
+- [Documentation site](https://goldziher.github.io/poly/): guides, reference, and the tool catalog.
+- [Introduction](https://goldziher.github.io/poly/start/introduction/): what poly is and how the pipeline works.
+- [Installation](https://goldziher.github.io/poly/start/installation/): installer script, GitHub Action, Homebrew, Scoop, npm, PyPI.
+- [Quickstart](https://goldziher.github.io/poly/start/quickstart/): first run, first config, and the exit-code contract.
+- [Configuration](https://goldziher.github.io/poly/guides/configuration/): every `poly.toml` key, default rule selection, inline suppression, monorepo cascading, shared and remote config.
+- [Git hooks](https://goldziher.github.io/poly/guides/hooks/): `poly hooks install`, builtin hooks, staged isolation, timeouts, concurrency, caching.
+- [CLI reference](https://goldziher.github.io/poly/reference/cli/): every subcommand and flag.
+- [Backend coverage](https://goldziher.github.io/poly/reference/backends/): the per-language backend table and the tier model.
+- [Tool catalog](https://goldziher.github.io/poly/reference/catalog/): the 348 opt-in tools across 175 languages.
+- [Hosted llms.txt](https://goldziher.github.io/poly/llms.txt): always current, generated from the site (this repo-root file is the hand-curated map).
+- [llms-full.txt](https://goldziher.github.io/poly/llms-full.txt): the complete documentation as a single file, for ingestion.
+- [GitHub repository](https://github.com/Goldziher/poly): source, issues, and releases.
+- [CHANGELOG](https://github.com/Goldziher/poly/blob/main/CHANGELOG.md): release history.
+
+## Capabilities
+
+- [Lint](https://goldziher.github.io/poly/reference/cli/): `poly lint .` runs every backend registered for each discovered file, plus the cross-cutting typos, code-quality and ast-grep tiers. `--fix` applies autofixes.
+- [Format](https://goldziher.github.io/poly/reference/cli/): `poly fmt --check .` is a dry run by default; `--fix` writes. Formatting and linting are separate commands with separate exit semantics.
+- [Agents and MCP](https://goldziher.github.io/poly/guides/agents-and-mcp/): `poly mcp` is a stdio MCP server exposing eleven tools that mirror the CLI — `lint`, `format_check`, `rules`, `config_show`, `cache_stats`, `version` (read-only), `lint_fix`, `format_write`, `cache_clean` (mutating), and `workspace_lint` / `workspace_lint_fix` as async Tasks.
+- [Git hooks](https://goldziher.github.io/poly/guides/hooks/): a native hook runner driven by `[hooks]`, replacing a `.pre-commit-config.yaml` and its framework. Hooks validate a staged snapshot of the git index, run concurrently, and cache their own results.
+- [Code quality](https://goldziher.github.io/poly/guides/configuration/): tree-sitter metric rules on every language whose control flow poly can model, deferring to a tier-1 backend wherever one already covers the metric.
+- [Custom rules](https://goldziher.github.io/poly/guides/configuration/): ast-grep rule directories under `[rules] dirs`, layered above the built-in pack — a user rule replaces a pack rule with the same `id`.
+- [Inline suppression](https://goldziher.github.io/poly/guides/configuration/): `poly: allow[RULE] reason` in the host language's own comment syntax. A reason is mandatory; a bare directive reports `lazy-ignore` instead of suppressing.
+- [Caching](https://goldziher.github.io/poly/start/introduction/): a blake3 content-hash cache keyed by file bytes, engine name, engine version and resolved config, so a tool upgrade invalidates exactly the entries it affects.
+
+## Skills
+
+- [poly-overview](https://github.com/Goldziher/poly/blob/main/skills/poly-overview/SKILL.md): what poly is, its coverage tiers, and when to reach for it.
+- [poly-lint-and-format](https://github.com/Goldziher/poly/blob/main/skills/poly-lint-and-format/SKILL.md): running lint and fmt, output formats, exit codes, and the check-fix-recheck loop.
+- [poly-tiers-and-scope](https://github.com/Goldziher/poly/blob/main/skills/poly-tiers-and-scope/SKILL.md): the coverage tiers, the per-file tier vs the whole-project phase, staged isolation, and monorepo config.
+- [poly-mcp](https://github.com/Goldziher/poly/blob/main/skills/poly-mcp/SKILL.md): the eleven MCP tools, which mutate, and the `isError` contract.
+- [poly-orchestrator](https://github.com/Goldziher/poly/blob/main/skills/poly-orchestrator/SKILL.md): using poly as the single lint/format gate instead of invoking each tool directly.
+
+## Optional
+
+- [npm](https://www.npmjs.com/package/@goldziher/polylint): `npm i -g @goldziher/polylint` — ships the prebuilt binary, no download at install time.
+- [PyPI](https://pypi.org/project/polylint/): `pip install polylint` — per-platform wheels carrying the binary.
+- [GitHub Action](https://github.com/Goldziher/poly/blob/main/ACTION_USAGE.md): `Goldziher/poly@v0`, caching the installed binary by version and platform.
+- [Plugin marketplace](https://github.com/Goldziher/poly/blob/main/.claude-plugin/marketplace.json): the Claude/Codex plugin registering `poly mcp` plus five skills and two slash commands.
+- [ADRs](https://github.com/Goldziher/poly/tree/main/adrs): the architectural decisions behind the tier model, the rule pack, and the hook runner.
