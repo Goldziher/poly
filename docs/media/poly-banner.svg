@@ -4,17 +4,17 @@
   width="1200"
   height="340"
   role="img"
-  aria-label="poly - universal linter and formatter"
+  aria-label="poly"
 >
-  <title>poly - universal linter and formatter</title>
+  <title>poly</title>
   <defs>
     <radialGradient
       id="gb"
       gradientUnits="userSpaceOnUse"
       cx="450"
-      cy="150"
+      cy="149"
       r="430"
-      gradientTransform="translate(450 150) scale(1 0.5) translate(-450 -150)"
+      gradientTransform="translate(450 149) scale(1 0.5) translate(-450 -149)"
     >
       <stop offset="0%" stop-color="#5b8def" stop-opacity="0.14" />
       <stop offset="70%" stop-color="#5b8def" stop-opacity="0" />
@@ -23,9 +23,9 @@
       id="gg"
       gradientUnits="userSpaceOnUse"
       cx="750"
-      cy="150"
+      cy="149"
       r="430"
-      gradientTransform="translate(750 150) scale(1 0.5) translate(-750 -150)"
+      gradientTransform="translate(750 149) scale(1 0.5) translate(-750 -149)"
     >
       <stop offset="0%" stop-color="#3ddc97" stop-opacity="0.14" />
       <stop offset="70%" stop-color="#3ddc97" stop-opacity="0" />
@@ -41,15 +41,9 @@
       <stop offset="58%" stop-color="#05070d" stop-opacity="0" />
       <stop offset="100%" stop-color="#05070d" stop-opacity="0.62" />
     </radialGradient>
-    <linearGradient id="wordmark" gradientUnits="userSpaceOnUse" x1="238" y1="0" x2="594" y2="0">
+    <linearGradient id="wordmark" gradientUnits="userSpaceOnUse" x1="301" y1="0" x2="899" y2="0">
       <stop offset="0%" stop-color="#5b8def" />
       <stop offset="100%" stop-color="#3ddc97" />
-    </linearGradient>
-    <linearGradient id="rule" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="#5b8def" stop-opacity="0" />
-      <stop offset="48%" stop-color="#5b8def" stop-opacity="0.78" />
-      <stop offset="52%" stop-color="#3ddc97" stop-opacity="0.78" />
-      <stop offset="100%" stop-color="#3ddc97" stop-opacity="0" />
     </linearGradient>
     <clipPath id="clip"><rect width="1200" height="340" rx="18" /></clipPath>
   </defs>
@@ -58,21 +52,9 @@
     <rect width="1200" height="340" fill="url(#gb)" />
     <rect width="1200" height="340" fill="url(#gg)" />
     <rect width="1200" height="340" fill="url(#vg)" />
-    <g transform="translate(184 0)">
-      <path
-        d="M238 72h16v16h-16zM254 72h16v16h-16zM270 72h16v16h-16zM286 72h16v16h-16zM238 88h16v16h-16zM302 88h16v16h-16zM238 104h16v16h-16zM302 104h16v16h-16zM238 120h16v16h-16zM254 120h16v16h-16zM270 120h16v16h-16zM286 120h16v16h-16zM238 136h16v16h-16zM238 152h16v16h-16zM238 168h16v16h-16zM346 72h16v16h-16zM362 72h16v16h-16zM378 72h16v16h-16zM330 88h16v16h-16zM394 88h16v16h-16zM330 104h16v16h-16zM394 104h16v16h-16zM330 120h16v16h-16zM394 120h16v16h-16zM330 136h16v16h-16zM394 136h16v16h-16zM330 152h16v16h-16zM394 152h16v16h-16zM346 168h16v16h-16zM362 168h16v16h-16zM378 168h16v16h-16zM422 72h16v16h-16zM422 88h16v16h-16zM422 104h16v16h-16zM422 120h16v16h-16zM422 136h16v16h-16zM422 152h16v16h-16zM422 168h16v16h-16zM438 168h16v16h-16zM454 168h16v16h-16zM470 168h16v16h-16zM486 168h16v16h-16zM514 72h16v16h-16zM578 72h16v16h-16zM514 88h16v16h-16zM578 88h16v16h-16zM530 104h16v16h-16zM562 104h16v16h-16zM546 120h16v16h-16zM546 136h16v16h-16zM546 152h16v16h-16zM546 168h16v16h-16z"
-        fill="url(#wordmark)"
-      />
-    </g>
-    <rect x="420" y="220" width="360" height="4" fill="url(#rule)" />
-    <text
-      x="600"
-      y="276"
-      text-anchor="middle"
-      font-family="ui-monospace, Menlo, Consolas, monospace"
-      font-size="23"
-      font-weight="700"
-      fill="#8b97a8"
-    >LINT + FORMAT FROM ONE RUST PIPELINE</text>
+    <path
+      d="M301 57h26v26h-26zM327 57h26v26h-26zM353 57h26v26h-26zM379 57h26v26h-26zM405 57h26v26h-26zM665 57h26v26h-26zM301 83h26v26h-26zM405 83h26v26h-26zM665 83h26v26h-26zM301 109h26v26h-26zM405 109h26v26h-26zM509 109h26v26h-26zM535 109h26v26h-26zM561 109h26v26h-26zM665 109h26v26h-26zM769 109h26v26h-26zM873 109h26v26h-26zM301 135h26v26h-26zM327 135h26v26h-26zM353 135h26v26h-26zM379 135h26v26h-26zM405 135h26v26h-26zM483 135h26v26h-26zM587 135h26v26h-26zM665 135h26v26h-26zM769 135h26v26h-26zM873 135h26v26h-26zM301 161h26v26h-26zM483 161h26v26h-26zM587 161h26v26h-26zM665 161h26v26h-26zM769 161h26v26h-26zM873 161h26v26h-26zM301 187h26v26h-26zM483 187h26v26h-26zM587 187h26v26h-26zM665 187h26v26h-26zM795 187h26v26h-26zM847 187h26v26h-26zM301 213h26v26h-26zM509 213h26v26h-26zM535 213h26v26h-26zM561 213h26v26h-26zM665 213h26v26h-26zM691 213h26v26h-26zM821 213h26v26h-26zM821 239h26v26h-26zM821 265h26v26h-26z"
+      fill="url(#wordmark)"
+    />
   </g>
 </svg>

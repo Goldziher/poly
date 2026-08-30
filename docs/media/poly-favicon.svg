@@ -1,0 +1,24 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 256 256"
+  width="256"
+  height="256"
+  role="img"
+  aria-label="poly"
+>
+  <title>poly</title>
+  <defs>
+    <linearGradient id="wordmark" gradientUnits="userSpaceOnUse" x1="58" y1="30" x2="198" y2="226">
+      <stop offset="0%" stop-color="#5b8def" />
+      <stop offset="100%" stop-color="#3ddc97" />
+    </linearGradient>
+    <clipPath id="clip"><rect width="256" height="256" rx="52" /></clipPath>
+  </defs>
+  <g clip-path="url(#clip)">
+    <rect width="256" height="256" fill="#080b13" />
+    <path
+      d="M58 30h28v28h-28zM86 30h28v28h-28zM114 30h28v28h-28zM142 30h28v28h-28zM170 30h28v28h-28zM58 58h28v28h-28zM170 58h28v28h-28zM58 86h28v28h-28zM170 86h28v28h-28zM58 114h28v28h-28zM86 114h28v28h-28zM114 114h28v28h-28zM142 114h28v28h-28zM170 114h28v28h-28zM58 142h28v28h-28zM58 170h28v28h-28zM58 198h28v28h-28z"
+      fill="url(#wordmark)"
+    />
+  </g>
+</svg>

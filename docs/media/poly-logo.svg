@@ -1,0 +1,48 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 256 256"
+  width="256"
+  height="256"
+  role="img"
+  aria-label="poly"
+>
+  <title>poly</title>
+  <defs>
+    <radialGradient
+      id="gb"
+      gradientUnits="userSpaceOnUse"
+      cx="71"
+      cy="71"
+      r="184"
+      gradientTransform="translate(71 71) scale(1 1) translate(-71 -71)"
+    >
+      <stop offset="0%" stop-color="#5b8def" stop-opacity="0.3" />
+      <stop offset="70%" stop-color="#5b8def" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient
+      id="gg"
+      gradientUnits="userSpaceOnUse"
+      cx="199"
+      cy="204"
+      r="184"
+      gradientTransform="translate(199 204) scale(1 1) translate(-199 -204)"
+    >
+      <stop offset="0%" stop-color="#3ddc97" stop-opacity="0.28" />
+      <stop offset="70%" stop-color="#3ddc97" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="wordmark" gradientUnits="userSpaceOnUse" x1="63" y1="37" x2="193" y2="219">
+      <stop offset="0%" stop-color="#5b8def" />
+      <stop offset="100%" stop-color="#3ddc97" />
+    </linearGradient>
+    <clipPath id="clip"><rect width="256" height="256" rx="56" /></clipPath>
+  </defs>
+  <g clip-path="url(#clip)">
+    <rect width="256" height="256" fill="#080b13" />
+    <rect width="256" height="256" fill="url(#gb)" />
+    <rect width="256" height="256" fill="url(#gg)" />
+    <path
+      d="M63 37h26v26h-26zM89 37h26v26h-26zM115 37h26v26h-26zM141 37h26v26h-26zM167 37h26v26h-26zM63 63h26v26h-26zM167 63h26v26h-26zM63 89h26v26h-26zM167 89h26v26h-26zM63 115h26v26h-26zM89 115h26v26h-26zM115 115h26v26h-26zM141 115h26v26h-26zM167 115h26v26h-26zM63 141h26v26h-26zM63 167h26v26h-26zM63 193h26v26h-26z"
+      fill="url(#wordmark)"
+    />
+  </g>
+</svg>
