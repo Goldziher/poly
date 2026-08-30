@@ -49,15 +49,6 @@ expression: summary
         ),
     ),
     (
-        "lazy-ignore",
-        Some(
-            (
-                6,
-                1,
-            ),
-        ),
-    ),
-    (
         "nesting-too-deep",
         Some(
             (

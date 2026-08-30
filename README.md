@@ -679,6 +679,13 @@ languages that have no linter of their own as much as for those that do. Every f
 | `magic-number` | allows `-1, 0, 1, 2, 10, 100` | no |
 | `law-of-demeter` | depth 3 | no |
 
+`lazy-ignore` reports a suppression written for *another* tool with no reason attached — a bare
+`# noqa`, `// eslint-disable*`, `// oxlint-disable*` or `// biome-ignore` with nothing after the
+colon. Rust's `#[allow(..)]` is deliberately **not** among them: it belongs to the built-in
+ast-grep rule `allow-attribute-without-reason`, which reads `reason = "..."` and a preceding
+comment correctly and ships off by default. Opt in with
+`extend_select = ["allow-attribute-without-reason"]`.
+
 ```toml
 [lint.quality]
 function_too_long_lines = 120      # raise the budget everywhere

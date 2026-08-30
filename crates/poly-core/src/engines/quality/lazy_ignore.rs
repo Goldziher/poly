@@ -3,9 +3,9 @@
 //!
 //! `filter/suppress.rs` (ADR 0028) already reports `lazy-ignore` (engine
 //! `"poly"`) for an unjustified `poly: allow[…]`/`allow-file[…]` directive.
-//! This rule covers the directives *nothing else* covers: `#[allow(…)]`
-//! without a reason, bare `# noqa`, `// eslint-disable*`,
-//! `// oxlint-disable*`, and `// biome-ignore`. It must never re-report
+//! This rule covers the directives *nothing else* covers: bare `# noqa`,
+//! `// eslint-disable*`, `// oxlint-disable*`, and `// biome-ignore`. It
+//! must never re-report
 //! poly's own directive — the two scan for entirely different marker text
 //! (`poly:` vs. these tool-specific markers), so a file with only an
 //! unjustified `poly: allow[…]` produces exactly one `lazy-ignore` finding
@@ -15,6 +15,29 @@
 //! `@ts-expect-error`/`@ts-ignore`/`@ts-nocheck` are deliberately **not**
 //! scanned for: oxlint's `ban-ts-comment` (`pedantic`, on) already requires a
 //! ≥3-character description on every one of them.
+//!
+//! # Why Rust `#[allow(..)]` is **not** scanned here
+//!
+//! It was, and it was wrong twice over.
+//!
+//! *Wrong on correctness.* A line-oriented scan can only read the text after
+//! the attribute's closing `)]`, so it scored as unjustified both
+//! `#[allow(dead_code, reason = "…")]` — the spelling the language itself
+//! sanctions, stable since Rust 1.81 — and an explaining `//` comment on the
+//! line above, which is poly's own house convention for the same thing. Two
+//! false-positive classes, one of them the officially correct form.
+//!
+//! *Wrong on judgement.* The `allow-attribute-without-reason` rule in the
+//! built-in ast-grep pack already covers this, parses it properly (it accepts
+//! `reason =` and a preceding comment), and ships **`severity: off`** — a hand
+//! read of its 13,254 corpus findings concluded the population is overwhelmingly
+//! `#[allow(non_snake_case)]` on FFI bindings and macro-generated glue, not
+//! drive-by lint muting. Scanning the same population here, less accurately and
+//! on by default, contradicted that finding: it made `lazy-ignore` the loudest
+//! rule in poly at 10,486 corpus findings, ~95% of them these attributes.
+//!
+//! Rust `#[allow(..)]` therefore belongs to that pack rule, and to opting into
+//! it (`extend_select = ["allow-attribute-without-reason"]`), not here.
 //!
 //! # Detection, not parsing
 //!
@@ -37,10 +60,6 @@ enum ReasonPolicy {
     /// separator (`// eslint-disable-next-line no-console -- reason`) — the
     /// rule-name list before it is never itself read as a reason.
     AfterDoubleDash,
-    /// `#[allow(…)]`/`#![allow(…)]`: the lint names inside the parentheses
-    /// (e.g. `dead_code`) are never themselves a reason — only a trailing
-    /// same-line comment after the attribute's closing `)]` counts.
-    AfterAttributeClose,
 }
 
 /// One marker this rule recognizes, and how its "reason" text is read.
@@ -48,50 +67,24 @@ struct Marker {
     /// Literal substring that opens the directive.
     prefix: &'static str,
     reason: ReasonPolicy,
-    /// Whether `prefix` must be the very first thing on the trimmed line.
-    ///
-    /// A real `#[allow(…)]`/`#![allow(…)]` attribute is always the first
-    /// token on its line — it can never appear after a `//` line-comment
-    /// opener, because at that point it is inside the comment's text, not
-    /// real code. Without this, a doc comment that merely *mentions*
-    /// `#[allow(...)]` (exactly like this module's own docs and its
-    /// fixture) is misread as an actual unjustified attribute. The
-    /// comment-based markers (`noqa`, `eslint-disable`, …) do not get this
-    /// restriction: those legitimately appear as a trailing comment after
-    /// real code on the same line (`code(); // noqa`).
-    at_line_start: bool,
 }
 
 const MARKERS: &[Marker] = &[
     Marker {
-        prefix: "#[allow(",
-        reason: ReasonPolicy::AfterAttributeClose,
-        at_line_start: true,
-    },
-    Marker {
-        prefix: "#![allow(",
-        reason: ReasonPolicy::AfterAttributeClose,
-        at_line_start: true,
-    },
-    Marker {
         prefix: "# noqa",
         reason: ReasonPolicy::DescriptorThenReason,
-        at_line_start: false,
     },
     Marker {
         prefix: "// eslint-disable",
         reason: ReasonPolicy::AfterDoubleDash,
-        at_line_start: false,
     },
     Marker {
         prefix: "// oxlint-disable",
         reason: ReasonPolicy::AfterDoubleDash,
-        at_line_start: false,
     },
     Marker {
         prefix: "// biome-ignore",
         reason: ReasonPolicy::DescriptorThenReason,
-        at_line_start: false,
     },
 ];
 
@@ -119,12 +112,7 @@ fn scan_line(line: &str, line_no: usize) -> Option<Diagnostic> {
     let indent = line.len() - trimmed.len();
 
     for marker in MARKERS {
-        let found = if marker.at_line_start {
-            trimmed.strip_prefix(marker.prefix)
-        } else {
-            find_marker(trimmed, marker.prefix)
-        };
-        let Some(rest) = found else {
+        let Some(rest) = find_marker(trimmed, marker.prefix) else {
             continue;
         };
         if is_justified(rest, marker.reason) {
@@ -160,10 +148,6 @@ fn is_justified(rest: &str, policy: ReasonPolicy) -> bool {
             Some((_rule_names, reason)) => has_enough_alnum(reason),
             None => false,
         },
-        ReasonPolicy::AfterAttributeClose => match rest.split_once(")]") {
-            Some((_lint_names, trailing)) => has_enough_alnum(trailing),
-            None => false,
-        },
     }
 }
 
@@ -196,16 +180,22 @@ mod tests {
         diagnostics.iter().map(|d| d.code.as_deref().unwrap()).collect()
     }
 
+    /// Rust `#[allow(..)]` is owned by the `allow-attribute-without-reason`
+    /// pack rule, which parses it properly and ships `off`. This rule must not
+    /// score it at all — not even the bare form it once flagged, since a
+    /// partial reimplementation is exactly what produced the two
+    /// false-positive classes below.
     #[test]
-    fn flags_bare_rust_allow() {
-        let findings = scan("#[allow(dead_code)]\nfn f() {}\n");
-        assert_eq!(codes(&findings), vec!["lazy-ignore"]);
-    }
-
-    #[test]
-    fn does_not_flag_rust_allow_with_trailing_reason_comment() {
-        let findings = scan("#[allow(dead_code)] // used only in benchmark builds\nfn f() {}\n");
-        assert!(findings.is_empty());
+    fn defers_every_rust_allow_form_to_the_ast_grep_pack_rule() {
+        for source in [
+            "#[allow(dead_code)]\nfn f() {}\n",
+            "#![allow(dead_code)]\n",
+            "#[allow(dead_code)] // used only in benchmark builds\nfn f() {}\n",
+            "// See #[allow(dead_code)] for why this is kept.\nfn f() {}\n",
+        ] {
+            let findings = scan(source);
+            assert!(findings.is_empty(), "{source:?} produced {findings:?}");
+        }
     }
 
     #[test]
@@ -269,13 +259,24 @@ mod tests {
         assert!(findings.is_empty());
     }
 
-    /// A `//` comment that merely *mentions* `#[allow(...)]` in prose (this
-    /// module's own docs do exactly this) must not be misread as a real,
-    /// unjustified attribute — a real attribute can never appear after a
-    /// line-comment opener.
+    /// `reason = "..."` inside the attribute is the form the Rust language
+    /// itself sanctions (stable since 1.81) and the one `#[expect(..)]` users
+    /// are steered toward. Reading only the text *after* `)]` cannot see it,
+    /// so this rule scored the officially-correct spelling as unjustified.
     #[test]
-    fn does_not_flag_allow_mentioned_inside_a_prose_comment() {
-        let findings = scan("// See #[allow(dead_code)] for why this is kept.\nfn f() {}\n");
+    fn does_not_flag_rust_allow_carrying_the_official_reason_field() {
+        let findings = scan("#[allow(dead_code, reason = \"kept for the C ABI\")]\nfn f() {}\n");
+        assert!(findings.is_empty(), "{findings:?}");
+    }
+
+    /// A `//` comment on the line *above* the attribute is poly's own
+    /// documented house convention for justifying an `#[allow(..)]`, and the
+    /// form the `allow-attribute-without-reason` pack rule accepts. A
+    /// same-line-only reader scores it as unjustified.
+    #[test]
+    fn does_not_flag_rust_allow_justified_by_the_comment_above_it() {
+        let findings =
+            scan("// The lint is wrong here: the field is read through FFI.\n#[allow(dead_code)]\nfn f() {}\n");
         assert!(findings.is_empty(), "{findings:?}");
     }
 }

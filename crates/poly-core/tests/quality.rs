@@ -4,8 +4,14 @@
 //! - `known_bad_quality_diagnostics` — a Rust fixture (Rust has no tier-1
 //!   lint backend, so every rule in the OTHER family runs at its default or
 //!   near-default threshold) asserting the expected [`Diagnostic`]s:
-//!   `too-many-parameters`, `nesting-too-deep`, `cyclomatic-complexity`,
-//!   `function-too-long`, and `lazy-ignore`.
+//!   `too-many-parameters`, `nesting-too-deep`, `cyclomatic-complexity` and
+//!   `function-too-long`.
+//! - `known_bad_lazy_ignore_diagnostics` — a Python fixture for the one
+//!   remaining rule the Rust fixture cannot reach. Since the 2026-08-30
+//!   amendment to ADR 0027, `lazy-ignore` no longer scans Rust
+//!   `#[allow(..)]` (that belongs to the `allow-attribute-without-reason`
+//!   pack rule), and every marker it still scans for is another tool's
+//!   suppression syntax.
 //! - `clean_file_has_no_quality_diagnostics` — verifies clean input produces
 //!   no findings.
 //!
@@ -38,6 +44,7 @@ fn make_src(content: &str) -> SourceFile {
 }
 
 const KNOWN_BAD: &str = include_str!("fixtures/quality/known_bad.rs");
+const KNOWN_BAD_LAZY_IGNORE: &str = include_str!("fixtures/quality/known_bad_lazy_ignore.py");
 
 #[test]
 fn known_bad_quality_diagnostics() {
@@ -71,6 +78,32 @@ fn known_bad_quality_diagnostics() {
         .collect();
     summary.sort();
     insta::assert_debug_snapshot!("known_bad_quality_diagnostics", summary);
+}
+
+/// The `lazy-ignore` half of the known-bad bar. Asserted as an exact
+/// (code, line, column) list, not merely "something fired", so that a marker
+/// silently dropped from the scan — the change this fixture was split out
+/// for — fails here rather than passing as a smaller set.
+#[test]
+fn known_bad_lazy_ignore_diagnostics() {
+    let engine = QualityEngine;
+    let src = SourceFile {
+        path: "fixture.py".into(),
+        language: Language::Python,
+        content: KNOWN_BAD_LAZY_IGNORE.into(),
+    };
+    let diags = engine.lint(&src, &engine_cfg(toml::Table::new())).unwrap();
+
+    let summary: Vec<_> = diags
+        .iter()
+        .map(|d| {
+            (
+                d.code.as_deref().unwrap_or(""),
+                d.span.as_ref().map(|s| (s.start_line, s.start_col)),
+            )
+        })
+        .collect();
+    insta::assert_debug_snapshot!("known_bad_lazy_ignore_diagnostics", summary);
 }
 
 #[test]

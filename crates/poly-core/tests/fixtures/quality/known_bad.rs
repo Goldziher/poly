@@ -1,9 +1,9 @@
 // Known-bad fixture for the `quality` engine (see `tests/quality.rs`).
 // Deliberately triggers: too-many-parameters, nesting-too-deep,
-// cyclomatic-complexity, function-too-long (custom low threshold), and
-// lazy-ignore (an unjustified `#[allow(...)]`).
+// cyclomatic-complexity, and function-too-long (custom low threshold).
+// lazy-ignore lives in `known_bad_lazy_ignore.py`: its markers are other
+// tools' suppressions, none of which are Rust syntax.
 
-#[allow(dead_code)]
 fn many_parameters(a: i32, b: i32, c: i32, d: i32, e: i32, f: i32, g: i32) -> i32 {
     a + b + c + d + e + f + g
 }

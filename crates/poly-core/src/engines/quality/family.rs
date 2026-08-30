@@ -20,9 +20,17 @@
 //! | `nesting-too-deep` | JS/TS, PHP | oxlint `max-depth` (`pedantic`, on, default 4 — identical definition); mago `excessive-nesting` (default 7) |
 //! | `cyclomatic-complexity` | Python, PHP | ruff `C901` (`DEFAULT_MAX_COMPLEXITY` = 10, stricter than poly's 20); mago `cyclomatic-complexity` (default 15) |
 //!
-//! `file-too-long`, `function-too-long`, `type-too-long`, `lazy-ignore`,
-//! `magic-number` and `law-of-demeter` are never deferred: no tier-1 backend
-//! in this repo selects an equivalent rule for any language.
+//! `file-too-long`, `function-too-long`, `type-too-long`, `magic-number` and
+//! `law-of-demeter` are never deferred: no tier-1 backend in this repo selects
+//! an equivalent rule for any language.
+//!
+//! `lazy-ignore` is not deferred *by this table* either, because the table
+//! encodes deferral to a **tier-1 backend**, and the rule that overlaps it —
+//! `allow-attribute-without-reason` in the built-in ast-grep pack — is
+//! cross-cutting, not tier-1. The overlap is resolved in the rule itself:
+//! `lazy_ignore` no longer scans Rust `#[allow(..)]` at all. See that module's
+//! "Why Rust `#[allow(..)]` is **not** scanned here" for the two false-positive
+//! classes a line-oriented scan could not avoid.
 //!
 //! **Trap already found and pinned by a test below:** ruff's `PLR1702`
 //! (too-many-nested-blocks) sits in `RULE_CODES` but is preview-gated

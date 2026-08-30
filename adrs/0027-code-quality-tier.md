@@ -174,3 +174,37 @@ ADR 0027's "warning severity, on by default" posture was not in fact uniform: ma
 mirroring ruff's existing advisory mapping, while mago's correctness, safety and security rules
 keep error severity. Measured effect: 416 findings moved from error to warning, no other severity
 changed.
+
+## Amendment — 2026-08-30: `lazy-ignore` stops scanning Rust `#[allow(..)]`
+
+The rule shipped on by default without the corpus false-positive gate the built-in ast-grep pack
+rules were held to. Measured over the 48-root dry-run corpus it became **the loudest rule in
+poly — 10,486 findings**, ahead of every tier-1 backend's noisiest code. Roughly 95% of them were
+Rust `#[allow(..)]`/`#![allow(..)]` attributes.
+
+Two independent reasons to drop that marker, either of which is sufficient.
+
+**It was wrong.** `lazy_ignore` is a line-oriented text scan, so it could only read the text
+following the attribute's closing `)]`. That scored two correct spellings as unjustified:
+
+- `#[allow(dead_code, reason = "...")]` — the form the language itself sanctions, stable since
+  Rust 1.81.
+- an explaining `//` comment on the line *above* the attribute — poly's own house convention,
+  written into this repository's own contributor rules.
+
+**It duplicated a rule that had already been judged.** `allow-attribute-without-reason` in the
+built-in pack (ADR 0029) covers exactly this, parses it properly — it accepts both forms above —
+and ships `severity: off`. A hand read of its 13,254 corpus findings found the population is
+overwhelmingly `#[allow(non_snake_case)]` on FFI bindings named after a C API and
+`#[allow(clippy::...)]` on macro-generated glue: correct, self-evident, and not drive-by lint
+muting. Reporting the same population from the quality tier, less accurately and on by default,
+contradicted that decision.
+
+Rust `#[allow(..)]` therefore belongs to the pack rule and to opting into it
+(`extend_select = ["allow-attribute-without-reason"]`). `lazy-ignore` keeps the markers nothing
+else covers: `# noqa`, `// eslint-disable*`, `// oxlint-disable*`, `// biome-ignore`.
+
+This is a deferral in substance but **not** an entry in `family.rs`'s table, which encodes
+deferral to a *tier-1* backend; the pack is cross-cutting. It is resolved in the rule itself.
+
+`QUALITY_VERSION` moves to `quality-2+…` so the content cache cannot serve the old findings.

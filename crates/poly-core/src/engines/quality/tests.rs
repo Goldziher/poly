@@ -167,19 +167,40 @@ fn lazy_ignore_does_not_double_report_polys_own_directive() {
     );
 }
 
-/// A file whose *only* problem is an unjustified `#[allow(...)]` (nothing
-/// poly-specific) must be caught by `quality`'s own `lazy-ignore`, exactly
-/// once.
+/// A file whose *only* problem is an unjustified suppression for some other
+/// tool (nothing poly-specific) must be caught by `quality`'s own
+/// `lazy-ignore`, exactly once.
 #[test]
-fn lazy_ignore_catches_a_plain_rust_allow_with_no_poly_directive_involved() {
-    let content = "#[allow(dead_code)]\nfn f() {}\n";
-    let file = src("f.rs", Language::Rust, content);
+fn lazy_ignore_catches_a_plain_foreign_directive_with_no_poly_directive_involved() {
+    let content = "import os  # noqa\n";
+    let file = src("f.py", Language::Python, content);
     let diags = QualityEngine.lint(&file, &cfg(toml::Table::new())).unwrap();
     let lazy_ignore_count = diags
         .iter()
         .filter(|d| d.code.as_deref() == Some("lazy-ignore"))
         .count();
     assert_eq!(lazy_ignore_count, 1);
+}
+
+/// End-to-end counterpart to `lazy_ignore`'s unit tests: Rust `#[allow(..)]`
+/// belongs to the `allow-attribute-without-reason` pack rule, so the quality
+/// tier must stay silent on every spelling of it — including the bare form it
+/// used to report. Pinned here as well as in the unit tests because the
+/// regression that matters is what a *user running poly* sees.
+#[test]
+fn lazy_ignore_never_reports_a_rust_allow_attribute() {
+    for content in [
+        "#[allow(dead_code)]\nfn f() {}\n",
+        "#[allow(dead_code, reason = \"kept for the C ABI\")]\nfn f() {}\n",
+        "// the lint is wrong here\n#[allow(dead_code)]\nfn f() {}\n",
+    ] {
+        let file = src("f.rs", Language::Rust, content);
+        let diags = QualityEngine.lint(&file, &cfg(toml::Table::new())).unwrap();
+        assert!(
+            !codes(&diags).contains(&"lazy-ignore"),
+            "{content:?} produced {diags:?}"
+        );
+    }
 }
 
 #[test]

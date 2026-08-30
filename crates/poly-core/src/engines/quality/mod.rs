@@ -15,7 +15,7 @@
 //! | `too-many-parameters` | 6 | yes (deferred for Python, PHP) |
 //! | `nesting-too-deep` | 4 | yes (deferred for JS/TS, PHP) |
 //! | `cyclomatic-complexity` | 20 | yes (deferred for Python, PHP) |
-//! | `lazy-ignore` | — | yes |
+//! | `lazy-ignore` | — | yes (Rust `#[allow(..)]` deferred to the pack) |
 //! | `magic-number` | allow `-1,0,1,2,10,100` | **no** (opt-in) |
 //! | `law-of-demeter` | depth 3 | **no** (opt-in) |
 //!
@@ -74,7 +74,7 @@ use settings::Settings;
 /// Cache-key version. Bump whenever `tree-sitter-language-pack` is upgraded
 /// (grammars can change) or this engine's own detection/threshold logic
 /// changes in a way that alters output.
-const QUALITY_VERSION: &str = "quality-1+tslp1.15.7";
+const QUALITY_VERSION: &str = "quality-2+tslp1.15.7+no-rust-allow";
 
 thread_local! {
     /// Per-thread parser pool keyed by grammar name, shared by every

@@ -1,0 +1,15 @@
+---
+source: crates/poly-core/tests/quality.rs
+expression: summary
+---
+[
+    (
+        "lazy-ignore",
+        Some(
+            (
+                4,
+                12,
+            ),
+        ),
+    ),
+]
