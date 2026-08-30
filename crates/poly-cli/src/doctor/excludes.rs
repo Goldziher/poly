@@ -69,10 +69,10 @@ impl BroadRule {
         Finding {
             severity: Severity::Warning,
             summary: format!(
-                "exclude rule `{}` prunes {} director(ies) at {} depths, so it is hiding more than the one \
+                "exclude rule `{}` prunes {} at {} depths, so it is hiding more than the one \
                  directory it names: {}{more}",
                 self.pattern,
-                self.directories,
+                poly_core::report::directories(self.directories),
                 self.depths,
                 named.join(", ")
             ),

@@ -98,6 +98,12 @@ pub(crate) fn resolve_root(cache_dir: Option<&Path>) -> Result<PathBuf> {
     }
 }
 
+/// A cache entry count, grouped and pluralised the way every other poly count
+/// is: `1 entry`, `20,889 entries`.
+fn entries(count: u64) -> String {
+    poly_core::report::quantity(usize::try_from(count).unwrap_or(usize::MAX), "entry", "entries")
+}
+
 /// Render a [`CacheStats`] as a human-readable summary.
 fn print_stats(stats: &CacheStats) {
     println!("cache format version: {}", stats.format_version);
@@ -108,17 +114,21 @@ fn print_stats(stats: &CacheStats) {
         Some(version) => println!("on-disk version:      {version} (stale; gc will wipe)"),
         None => println!("on-disk version:      (none)"),
     }
-    for namespace in &stats.per_namespace {
+    // Width measured from the rows themselves: a fixed column silently
+    // collapses the moment one count outgrows it, which is how an aligned table
+    // turns into a ragged one on exactly the repositories big enough to need it.
+    let counts: Vec<String> = stats.per_namespace.iter().map(|n| entries(n.entries)).collect();
+    let column = counts.iter().map(|c| c.chars().count()).max().unwrap_or(0);
+    for (namespace, count) in stats.per_namespace.iter().zip(&counts) {
         println!(
-            "  {:<5} {:>6} entries  {:>10}",
+            "  {:<5} {count:>column$}  {:>10}",
             namespace.namespace.as_dir(),
-            namespace.entries,
             format_iec(namespace.bytes),
         );
     }
     println!(
-        "total: {} entries, {} ({} bytes)",
-        stats.per_namespace.iter().map(|n| n.entries).sum::<u64>(),
+        "total: {}, {} ({} bytes)",
+        entries(stats.per_namespace.iter().map(|n| n.entries).sum::<u64>()),
         format_iec(stats.total_bytes),
         stats.total_bytes,
     );

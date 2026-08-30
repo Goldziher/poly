@@ -4,13 +4,10 @@
 
 use std::fmt::Write as _;
 
-use owo_colors::{OwoColorize, Stream::Stderr, Stream::Stdout};
-
-use super::notes::{
-    exclusion_clause, pruned_clause, push_discovery_note, push_skip_note, skipped_clause, skips_from_results,
-    unrecognized_clause,
-};
+use super::layout::files;
+use super::notes::{push_discovery_note, push_skip_note, qualification_lines, skips_from_results};
 use super::shared::{Verbosity, render_debug_block, strip_ansi};
+use super::theme::Theme;
 use crate::discover::DiscoveryReport;
 use crate::runner::{FormatError, FormatResult, FormatRun, SkippedFile};
 
@@ -25,8 +22,7 @@ pub fn eprint_format_errors(errors: &[FormatError]) {
     if errors.is_empty() {
         return;
     }
-    let plain = strip_ansi(&render_format_errors(errors));
-    eprint!("{}", plain.if_supports_color(Stderr, |t| t.red()));
+    eprint!("{}", Theme::STDERR.failure(strip_ansi(&render_format_errors(errors))));
 }
 
 /// Build the human-oriented format report as a string. `check` selects
@@ -37,6 +33,7 @@ pub fn render_format_pretty(results: &[FormatResult], check: bool, verbosity: Ve
     render_format_core(
         results,
         &skips_from_results(results),
+        &[],
         &DiscoveryReport::default(),
         check,
         verbosity,
@@ -47,9 +44,14 @@ pub fn render_format_pretty(results: &[FormatResult], check: bool, verbosity: Ve
 /// what it skipped and what discovery excluded before the checked files were
 /// reached.
 pub fn render_format_pretty_run(run: &FormatRun, check: bool, verbosity: Verbosity) -> (String, usize) {
-    let (mut out, changed) = render_format_core(&run.results, &run.skipped, &run.discovery, check, verbosity);
-    out.push_str(&render_format_errors(&run.errors));
-    (out, changed)
+    render_format_core(
+        &run.results,
+        &run.skipped,
+        &run.errors,
+        &run.discovery,
+        check,
+        verbosity,
+    )
 }
 
 /// Render the files the formatter could not process, naming each path.
@@ -61,12 +63,13 @@ pub fn render_format_errors(errors: &[FormatError]) -> String {
     if errors.is_empty() {
         return String::new();
     }
+    let theme = Theme::STDOUT;
     let mut out = String::new();
     for error in errors {
         let _ = writeln!(
             out,
             "{} {}: {}",
-            "error".if_supports_color(Stdout, |t| t.red()),
+            theme.failure("error"),
             error.path.display(),
             error.message
         );
@@ -74,8 +77,11 @@ pub fn render_format_errors(errors: &[FormatError]) -> String {
     let _ = writeln!(
         out,
         "{}",
-        format!("{} file(s) could not be formatted and were NOT checked.", errors.len())
-            .if_supports_color(Stdout, |t| t.red())
+        theme.failure(format!(
+            "{} could not be formatted and {} NOT checked",
+            files(errors.len()),
+            if errors.len() == 1 { "was" } else { "were" }
+        ))
     );
     out
 }
@@ -89,91 +95,57 @@ pub fn render_format_errors(errors: &[FormatError]) -> String {
 fn render_format_core(
     results: &[FormatResult],
     skipped: &[SkippedFile],
+    errors: &[FormatError],
     discovery: &DiscoveryReport,
     check: bool,
     verbosity: Verbosity,
 ) -> (String, usize) {
+    let theme = Theme::STDOUT;
     let mut out = String::new();
     let changed: Vec<&FormatResult> = results.iter().filter(|r| r.changed).collect();
     for r in &changed {
         let verb = if check { "would reformat" } else { "reformatted" };
-        let _ = writeln!(
-            out,
-            "{} {}",
-            verb.if_supports_color(Stdout, |t| t.yellow()),
-            r.path.display()
-        );
+        let _ = writeln!(out, "{} {}", theme.skipped(verb), r.path.display());
     }
-    let scanned = results.len();
-    let declined = results.iter().filter(|r| r.skipped.is_some()).count();
-    let checked = scanned - declined;
-    let n = changed.len();
-    if n == 0 {
-        // `scanned` counted files that were discovered and routed, including
-        // those every backend declined — so a skipped file read exactly like a
-        // verified one. Report what was actually inspected, and name the skips.
-        let mut tail = format!("{checked} file(s) checked");
-        if let Some(clause) = skipped_clause(skipped) {
-            let _ = write!(tail, ", {clause}");
-        }
-        if let Some(clause) = exclusion_clause(discovery) {
-            let _ = write!(tail, ", {clause}");
-        }
-        if let Some(clause) = pruned_clause(discovery) {
-            let _ = write!(tail, ", {clause}");
-        }
-        if let Some(clause) = unrecognized_clause(discovery) {
-            let _ = write!(tail, ", {clause}");
-        }
-        // A green "All formatted." over an empty file set is the reassuring lie
-        // this feature exists to remove: when the exclude set is the reason
-        // nothing was checked, say so instead.
-        let headline = if checked == 0 && (discovery.has_notes() || !skipped.is_empty()) {
-            "Nothing was checked."
-                .if_supports_color(Stdout, |t| t.yellow())
-                .to_string()
-        } else {
-            "All formatted.".if_supports_color(Stdout, |t| t.green()).to_string()
-        };
-        let _ = writeln!(out, "{headline} ({tail})");
-    } else {
-        let phrase = if check {
-            format!("{n} file(s) will change")
-        } else {
-            format!("{n} changed")
-        };
-        let mut tail = format!("of {scanned} file(s)");
-        // A partial result is no more trustworthy than a clean one: qualify it
-        // with the same skip and exclusion accounting. Reporting drift used to
-        // drop the skip clause entirely, so a run that both changed files and
-        // declined others said nothing about the second half.
-        let mut qualifiers: Vec<String> = Vec::with_capacity(3);
-        if let Some(clause) = skipped_clause(skipped) {
-            qualifiers.push(clause);
-        }
-        if let Some(clause) = exclusion_clause(discovery) {
-            qualifiers.push(clause);
-        }
-        if let Some(clause) = pruned_clause(discovery) {
-            qualifiers.push(clause);
-        }
-        if let Some(clause) = unrecognized_clause(discovery) {
-            qualifiers.push(clause);
-        }
-        if !qualifiers.is_empty() {
-            let _ = write!(tail, " ({})", qualifiers.join(", "));
-        }
-        let _ = writeln!(out, "\n{} {tail}", phrase.if_supports_color(Stdout, |t| t.yellow()));
-    }
-    push_discovery_note(&mut out, discovery);
-    push_skip_note(&mut out, skipped, verbosity.verbose);
-    if verbosity.debug {
+    if verbosity.shows_debug_blocks() {
         for r in results {
             if let Some(debug) = &r.debug {
-                let _ = writeln!(out, "{}", r.path.display().if_supports_color(Stdout, |t| t.bold()));
+                let _ = writeln!(out, "{}", theme.heading(r.path.display()));
                 render_debug_block(&mut out, debug);
             }
         }
+    }
+    let scanned = results.len();
+    let declined = results.iter().filter(|r| r.skipped.is_some()).count();
+    // `scanned` counts files that were discovered and routed, including those
+    // every backend declined — so a skipped file read exactly like a verified
+    // one. Report what was actually inspected.
+    let checked = scanned - declined;
+    let n = changed.len();
+
+    // Failures first, then the qualification, then the verdict — the same
+    // reading order the lint report uses, so the answer is always the last thing
+    // on screen.
+    out.push_str(&render_format_errors(errors));
+    push_discovery_note(&mut out, discovery, verbosity);
+    push_skip_note(&mut out, skipped, verbosity);
+
+    // A green "All formatted." over an empty file set is the reassuring lie this
+    // accounting exists to remove: when the exclude set is the reason nothing was
+    // checked, say so instead.
+    let nothing_checked = checked == 0 && (discovery.has_notes() || !skipped.is_empty());
+    let headline = match (n > 0, nothing_checked) {
+        (true, _) if check => theme.skipped(format!("{} will change.", files(n))),
+        (true, _) => theme.skipped(format!("{} reformatted.", files(n))),
+        (false, true) => theme.skipped("Nothing was checked."),
+        (false, false) => theme.success("All formatted."),
+    };
+    if !out.is_empty() {
+        out.push('\n');
+    }
+    let _ = writeln!(out, "{headline}");
+    for line in qualification_lines(Some(checked), "checked", skipped, discovery) {
+        let _ = writeln!(out, "{line}");
     }
     (out, n)
 }

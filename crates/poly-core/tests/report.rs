@@ -170,9 +170,9 @@ fn lint_pretty_reports_autofixable_count() {
 
     let (text, total) = report::render_lint_pretty(&results, Verbosity::default());
     assert_eq!(total, 2, "two diagnostics in the result set");
-    assert!(text.contains("2 issue(s) found."), "missing total line, got:\n{text}");
+    assert!(text.contains("2 issues found."), "missing total line, got:\n{text}");
     assert!(
-        text.contains("1 fixable with the `--fix` option."),
+        text.contains("1 issue fixable with the `--fix` option"),
         "missing autofixable count, got:\n{text}"
     );
     insta::assert_snapshot!("lint_pretty_fixable", text);
@@ -210,9 +210,9 @@ fn lint_pretty_reports_all_findings_fixable_when_every_diagnostic_has_a_fix() {
 
     let (text, total) = report::render_lint_pretty(&results, Verbosity::default());
     assert_eq!(total, 2);
-    assert!(text.contains("2 issue(s) found."), "got:\n{text}");
+    assert!(text.contains("2 issues found."), "got:\n{text}");
     assert!(
-        text.contains("2 fixable with the `--fix` option."),
+        text.contains("2 issues fixable with the `--fix` option"),
         "every finding is fixable, so the count must equal the total; got:\n{text}"
     );
 }
@@ -505,8 +505,8 @@ fn skipped_files_are_reported_separately_from_checked_ones() {
     let (text, changed) = report::render_format_pretty(&results, true, Verbosity::default());
 
     assert_eq!(changed, 0);
-    assert!(text.contains("1 file(s) checked"), "got: {text}");
-    assert!(text.contains("1 skipped (Go/Helm template syntax)"), "got: {text}");
+    assert!(text.contains("1 file checked"), "got: {text}");
+    assert!(text.contains("1 file skipped: Go/Helm template syntax"), "got: {text}");
 }
 
 /// With several distinct reasons each is counted, so one cause cannot hide
@@ -529,7 +529,7 @@ fn distinct_skip_reasons_are_counted_individually() {
 
     let (text, _) = report::render_format_pretty(&results, true, Verbosity::default());
 
-    assert!(text.contains("0 file(s) checked"), "got: {text}");
+    assert!(text.contains("0 files checked"), "got: {text}");
     assert!(text.contains("2 Go/Helm template syntax"), "got: {text}");
     assert!(text.contains("1 template does not render markup"), "got: {text}");
 }
@@ -585,13 +585,13 @@ fn format_summary_reports_what_discovery_excluded() {
 
     assert_eq!(changed, 0);
     assert!(text.contains("All formatted."), "got: {text}");
-    assert!(text.contains("1 file(s) checked"), "got: {text}");
+    assert!(text.contains("1 file checked"), "got: {text}");
     assert!(
-        text.contains("2 file(s) and 1 director(ies) excluded by config"),
+        text.contains("2 files and 1 directory excluded by config"),
         "got: {text}"
     );
-    assert!(text.contains("test_apps/** (1 dir(s))"), "got: {text}");
-    assert!(text.contains("**/*.tf (2 file(s))"), "got: {text}");
+    assert!(text.contains("test_apps/** (1 directory)"), "got: {text}");
+    assert!(text.contains("**/*.tf (2 files)"), "got: {text}");
     assert!(
         text.contains("excluded directories were not walked"),
         "the count's limits must be stated, not implied; got: {text}"
@@ -630,9 +630,9 @@ fn format_summary_explains_a_run_that_checked_nothing() {
         "a run that checked nothing must not read as a verified pass; got: {text}"
     );
     assert!(text.contains("Nothing was checked."), "got: {text}");
-    assert!(text.contains("0 file(s) checked"), "got: {text}");
+    assert!(text.contains("0 files checked"), "got: {text}");
     assert!(
-        text.contains("1 path(s) named on the command line matched exclusions (use --include-excluded to check them)"),
+        text.contains("1 path named on the command line matched exclusions (use --include-excluded to check them)"),
         "got: {text}"
     );
 }
@@ -652,8 +652,9 @@ fn format_summary_reports_exclusions_alongside_changed_files() {
     let (text, changed) = report::render_format_pretty_run(&run, true, Verbosity::default());
 
     assert_eq!(changed, 1);
-    assert!(text.contains("1 file(s) will change of 2 file(s)"), "got: {text}");
-    assert!(text.contains("test_apps/** (1 dir(s))"), "got: {text}");
+    assert!(text.contains("1 file will change."), "got: {text}");
+    assert!(text.contains("2 files checked"), "got: {text}");
+    assert!(text.contains("test_apps/** (1 directory)"), "got: {text}");
 }
 
 /// `poly lint` carries the identical failure mode, and gets the identical
@@ -673,12 +674,12 @@ fn lint_summary_reports_what_discovery_excluded() {
 
     assert_eq!(total, 0);
     assert!(text.contains("No issues found."), "got: {text}");
-    assert!(text.contains("969 file(s) linted"), "got: {text}");
+    assert!(text.contains("969 files linted"), "got: {text}");
     assert!(
-        text.contains("2 file(s) and 1 director(ies) excluded by config"),
+        text.contains("2 files and 1 directory excluded by config"),
         "got: {text}"
     );
-    assert!(text.contains("**/*.tf (2 file(s))"), "got: {text}");
+    assert!(text.contains("**/*.tf (2 files)"), "got: {text}");
 }
 
 /// A lint run that excluded everything reports no issues over no files — which
@@ -698,7 +699,7 @@ fn lint_summary_explains_a_run_that_linted_nothing() {
 
     assert!(!text.contains("No issues found."), "got: {text}");
     assert!(text.contains("Nothing was linted."), "got: {text}");
-    assert!(text.contains("0 file(s) linted"), "got: {text}");
+    assert!(text.contains("0 files linted"), "got: {text}");
 }
 
 /// With nothing excluded the summaries are unchanged — no note, no
@@ -714,7 +715,7 @@ fn summaries_stay_quiet_when_nothing_was_excluded() {
         discovery: DiscoveryReport::default(),
     };
     let (text, _) = report::render_lint_pretty_run(&lint, Verbosity::default());
-    assert!(text.contains("No issues found. (12 file(s) linted)"), "got: {text}");
+    assert!(text.contains("No issues found.\n  12 files linted"), "got: {text}");
     assert!(!text.contains("excluded"), "got: {text}");
 
     let format = FormatRun {
@@ -736,7 +737,7 @@ fn results_only_renderers_are_unchanged() {
     assert_eq!(text, "No issues found.\n");
 
     let (text, _) = report::render_format_pretty(&[], true, Verbosity::default());
-    assert_eq!(text, "All formatted. (0 file(s) checked)\n");
+    assert_eq!(text, "All formatted.\n  0 files checked\n");
 }
 
 /// A path named on the command line that no engine covers is the reported
@@ -759,9 +760,9 @@ fn lint_summary_names_paths_that_matched_no_engine() {
 
     let (text, _) = report::render_lint_pretty_run(&run, Verbosity::default());
 
-    assert!(text.contains("4 file(s) linted"), "got: {text}");
+    assert!(text.contains("4 files linted"), "got: {text}");
     assert!(
-        text.contains("1 skipped (no matching engine for this file type)"),
+        text.contains("1 file skipped: no matching engine for this file type"),
         "the count must say what it skipped, got: {text}"
     );
     assert!(
@@ -789,7 +790,10 @@ fn format_summary_reports_skips_alongside_changed_files() {
     let (text, changed) = report::render_format_pretty_run(&run, true, Verbosity::default());
 
     assert_eq!(changed, 1);
-    assert!(text.contains("1 skipped (hash-stamped generated file)"), "got: {text}");
+    assert!(
+        text.contains("1 file skipped: hash-stamped generated file"),
+        "got: {text}"
+    );
     assert!(text.contains("skipped gen.py"), "got: {text}");
 }
 
@@ -811,14 +815,14 @@ fn a_bulk_skip_reason_collapses_to_a_count_and_a_sample() {
     owo_colors::set_override(false);
     let skipped = skips_with("gen", "hash-stamped generated file", 25);
 
-    let note = report::render_skip_note(&skipped, false).expect("a note for 25 skips");
+    let note = report::render_skip_note(&skipped, Verbosity::default()).expect("a note for 25 skips");
 
     assert_eq!(
         note,
         concat!(
-            "  skipped 25 file(s): hash-stamped generated file\n",
-            "    e.g. gen0.py, gen1.py, gen2.py — pass --verbose to list them, ",
-            "or --format json for the full set\n"
+            "  skipped 25 files: hash-stamped generated file\n",
+            "    e.g. gen0.py, gen1.py, gen2.py\n",
+            "  pass --verbose to list every skipped file, or --format json for the full set\n",
         )
     );
 }
@@ -836,15 +840,15 @@ fn a_bulk_reason_cannot_crowd_out_a_one_off() {
         reason: poly_core::runner::NO_ENGINE_SKIP.to_string(),
     });
 
-    let note = report::render_skip_note(&skipped, false).expect("a note for 26 skips");
+    let note = report::render_skip_note(&skipped, Verbosity::default()).expect("a note for 26 skips");
 
     assert_eq!(
         note,
         concat!(
-            "  skipped 25 file(s): hash-stamped generated file\n",
-            "    e.g. gen0.py, gen1.py, gen2.py — pass --verbose to list them, ",
-            "or --format json for the full set\n",
-            "  skipped packages/csharp/App.csproj: no matching engine for this file type\n"
+            "  skipped 25 files: hash-stamped generated file\n",
+            "    e.g. gen0.py, gen1.py, gen2.py\n",
+            "  skipped packages/csharp/App.csproj: no matching engine for this file type\n",
+            "  pass --verbose to list every skipped file, or --format json for the full set\n",
         )
     );
 }
@@ -856,7 +860,7 @@ fn a_small_reason_group_still_names_every_file() {
     owo_colors::set_override(false);
     let skipped = skips_with("gen", "hash-stamped generated file", 3);
 
-    let note = report::render_skip_note(&skipped, false).expect("a note for 3 skips");
+    let note = report::render_skip_note(&skipped, Verbosity::default()).expect("a note for 3 skips");
 
     assert_eq!(
         note,
@@ -875,7 +879,7 @@ fn verbose_lists_every_skipped_file_individually() {
     owo_colors::set_override(false);
     let skipped = skips_with("gen", "hash-stamped generated file", 25);
 
-    let full = report::render_skip_note(&skipped, true).expect("a note for 25 skips");
+    let full = report::render_skip_note(&skipped, Verbosity::Verbose).expect("a note for 25 skips");
 
     assert_eq!(full.lines().count(), 25, "one line per file, got:\n{full}");
     assert_eq!(
@@ -892,7 +896,7 @@ fn verbose_lists_every_skipped_file_individually() {
 /// Nothing skipped, nothing said.
 #[test]
 fn skip_note_is_absent_when_nothing_was_skipped() {
-    assert!(report::render_skip_note(&[], true).is_none());
+    assert!(report::render_skip_note(&[], Verbosity::Verbose).is_none());
 }
 
 /// The reporter's stronger ask: assert on the skipped *set* structurally rather
@@ -1020,9 +1024,11 @@ fn lint_summary_names_a_file_the_engine_could_not_process() {
     assert_eq!(
         text,
         concat!(
-            "Lint did not complete. (1 file(s) linted)\n",
             "error bad.py: stream did not contain valid UTF-8\n",
-            "1 file(s) could not be linted and were NOT checked.\n",
+            "1 file could not be linted and was NOT checked\n",
+            "\n",
+            "Lint did not complete.\n",
+            "  1 file linted\n",
         )
     );
 }
@@ -1053,10 +1059,13 @@ fn lint_summary_keeps_errors_and_skips_apart() {
     assert_eq!(
         text,
         concat!(
-            "Lint did not complete. (1 file(s) linted, 1 skipped (no matching engine for this file type))\n",
-            "  skipped App.csproj: no matching engine for this file type\n",
             "error bad.py: stream did not contain valid UTF-8\n",
-            "1 file(s) could not be linted and were NOT checked.\n",
+            "1 file could not be linted and was NOT checked\n",
+            "  skipped App.csproj: no matching engine for this file type\n",
+            "\n",
+            "Lint did not complete.\n",
+            "  1 file linted\n",
+            "  1 file skipped: no matching engine for this file type\n",
         )
     );
 }
@@ -1090,10 +1099,12 @@ fn lint_summary_does_not_let_fixes_imply_success_when_a_file_errored() {
     assert_eq!(
         text,
         concat!(
-            "Lint did not complete. (1 file(s) linted)\n",
-            "Fixed 2 issue(s) in 1 file(s).\n",
             "error bad.py: stream did not contain valid UTF-8\n",
-            "1 file(s) could not be linted and were NOT checked.\n",
+            "1 file could not be linted and was NOT checked\n",
+            "\n",
+            "Lint did not complete.\n",
+            "  1 file linted\n",
+            "  Fixed 2 issues in 1 file\n",
         )
     );
 }
@@ -1112,7 +1123,7 @@ fn lint_summary_without_errors_is_unchanged() {
 
     let (text, _) = report::render_lint_pretty_run(&run, Verbosity::default());
 
-    assert_eq!(text, "No issues found. (3 file(s) linted)\n");
+    assert_eq!(text, "No issues found.\n  3 files linted\n");
 }
 
 /// The error travels structurally too, in the same top-level array as everything
@@ -1180,7 +1191,7 @@ fn lint_error_note_names_every_failing_path() {
         concat!(
             "error a.py: boom\n",
             "error b.py: bang\n",
-            "2 file(s) could not be linted and were NOT checked.\n",
+            "2 files could not be linted and were NOT checked\n",
         )
     );
     assert_eq!(report::render_lint_errors(&[]), "", "no errors, no text");
@@ -1396,10 +1407,13 @@ fn format_summary_names_a_file_the_engine_could_not_process() {
     assert_eq!(
         text,
         concat!(
-            "All formatted. (1 file(s) checked, 1 skipped (no matching engine for this file type))\n",
-            "  skipped App.csproj: no matching engine for this file type\n",
             "error bad.py: stream did not contain valid UTF-8\n",
-            "1 file(s) could not be formatted and were NOT checked.\n",
+            "1 file could not be formatted and was NOT checked\n",
+            "  skipped App.csproj: no matching engine for this file type\n",
+            "\n",
+            "All formatted.\n",
+            "  1 file checked\n",
+            "  1 file skipped: no matching engine for this file type\n",
         )
     );
 }
@@ -1434,7 +1448,7 @@ fn format_summary_names_directories_the_builtin_prune_set_skipped() {
     };
     let (text, _) = report::render_format_pretty_run(&format, true, Verbosity::default());
     assert!(
-        text.contains("3 director(ies) skipped by the built-in prune set"),
+        text.contains("3 directories skipped by the built-in prune set"),
         "got: {text}"
     );
     assert!(text.contains("src/cli/pipeline/commands/build"), "got: {text}");
@@ -1449,7 +1463,7 @@ fn format_summary_names_directories_the_builtin_prune_set_skipped() {
     };
     let (text, _) = report::render_lint_pretty_run(&lint, Verbosity::default());
     assert!(
-        text.contains("3 director(ies) skipped by the built-in prune set"),
+        text.contains("3 directories skipped by the built-in prune set"),
         "got: {text}"
     );
 }

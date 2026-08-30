@@ -17,8 +17,8 @@ use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::{Args, Subcommand, ValueEnum as _};
-use owo_colors::{OwoColorize, Stream::Stdout};
 use poly_config::{PolyConfig, Stage as ConfigStage};
+use poly_core::report::theme::Theme;
 use poly_hooks::snapshot::StagedSnapshot;
 use poly_hooks::stage::RunInputMode;
 // Shared hook-run helpers, now owned by the `poly-workspace` crate (single source
@@ -436,27 +436,20 @@ fn uninstall(args: UninstallArgs) -> Result<ExitCode> {
 /// directory, printed once) so no absolute paths appear in the output.
 fn print_hook_summary(done: &str, verb: &str, hooks_dir: &Path, hooks: &[PathBuf]) {
     if hooks.is_empty() {
-        println!(
-            "{} no poly git hooks to {verb}.",
-            "·".if_supports_color(Stdout, |t| t.dimmed())
-        );
+        println!("{} no poly git hooks to {verb}.", Theme::STDOUT.secondary("·"));
         return;
     }
     let dir = relative_to_cwd(hooks_dir);
-    let plural = if hooks.len() == 1 { "" } else { "s" };
+    let theme = Theme::STDOUT;
     println!(
-        "{} {done} {} git hook{plural} in {}",
-        "✓".if_supports_color(Stdout, |t| t.green()),
-        hooks.len().if_supports_color(Stdout, |t| t.bold()),
-        dir.display().if_supports_color(Stdout, |t| t.cyan()),
+        "{} {done} {} in {}",
+        theme.success("✓"),
+        theme.heading(poly_core::report::quantity(hooks.len(), "git hook", "git hooks")),
+        theme.path(dir.display()),
     );
     for path in hooks {
         let name = path.file_name().map_or_else(|| path.as_os_str(), |n| n);
-        println!(
-            "  {} {}",
-            "›".if_supports_color(Stdout, |t| t.dimmed()),
-            name.to_string_lossy()
-        );
+        println!("  {} {}", Theme::STDOUT.secondary("›"), name.to_string_lossy());
     }
 }
 

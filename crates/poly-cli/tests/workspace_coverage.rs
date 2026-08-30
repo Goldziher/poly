@@ -177,9 +177,8 @@ fn a_rust_file_covered_by_the_whole_project_phase_is_counted_as_linted() {
     let output = poly(dir.path(), &["lint", "--no-cache", "--no-color", "."]);
     let text = combined(&output);
 
-    assert_eq!(
-        text.lines().next(),
-        Some("No issues found. (2 file(s) linted)"),
+    assert!(
+        text.starts_with("No issues found.\n  2 files linted\n"),
         "lib.rs and poly.toml, nothing skipped, got:\n{text}"
     );
 }
@@ -234,8 +233,11 @@ fn no_workspace_keeps_the_rust_skip_because_nothing_lints_rust_then() {
     assert_eq!(
         text,
         concat!(
-            "No issues found. (1 file(s) linted, 1 skipped (no lint rules for Rust))\n",
-            "  skipped ./lib.rs: no lint rules for Rust\n"
+            "  skipped ./lib.rs: no lint rules for Rust\n",
+            "\n",
+            "No issues found.\n",
+            "  1 file linted\n",
+            "  1 file skipped: no lint rules for Rust\n",
         )
     );
 }
@@ -252,8 +254,11 @@ fn a_repo_with_no_hooks_config_keeps_the_rust_skip() {
     assert_eq!(
         text,
         concat!(
-            "Nothing was linted. (0 file(s) linted, 1 skipped (no lint rules for Rust))\n",
-            "  skipped ./lib.rs: no lint rules for Rust\n"
+            "  skipped ./lib.rs: no lint rules for Rust\n",
+            "\n",
+            "Nothing was linted.\n",
+            "  0 files linted\n",
+            "  1 file skipped: no lint rules for Rust\n",
         )
     );
 }
@@ -294,9 +299,8 @@ fn a_language_nothing_lints_keeps_its_skip_beside_a_covered_one() {
     let output = poly(dir.path(), &["lint", "--no-cache", "--no-color", "."]);
     let text = combined(&output);
 
-    assert_eq!(
-        text.lines().next(),
-        Some("No issues found. (2 file(s) linted, 1 skipped (no lint rules for Zig))"),
+    assert!(
+        text.contains("No issues found.\n  2 files linted\n  1 file skipped: no lint rules for Zig"),
         "Rust is covered by the phase, Zig is covered by nothing, got:\n{text}"
     );
     assert!(
@@ -322,7 +326,7 @@ fn deny_skips_fires_on_zig_while_the_whole_project_phase_covers_rust() {
         "got:\n{text}"
     );
     assert!(
-        text.contains("refusing to report success for 1 skipped file(s)"),
+        text.contains("refusing to report success for 1 file skipped"),
         "the covered Rust file must not be in the failing set, got:\n{text}"
     );
 }
@@ -350,10 +354,13 @@ fn a_bulk_reason_is_aggregated_in_the_end_to_end_note() {
     assert_eq!(
         text,
         concat!(
-            "Nothing was linted. (0 file(s) linted, 9 skipped (no lint rules for Zig))\n",
-            "  skipped 9 file(s): no lint rules for Zig\n",
-            "    e.g. ./a0.zig, ./a1.zig, ./a2.zig — pass --verbose to list them, ",
-            "or --format json for the full set\n"
+            "  skipped 9 files: no lint rules for Zig\n",
+            "    e.g. ./a0.zig, ./a1.zig, ./a2.zig\n",
+            "  pass --verbose to list every skipped file, or --format json for the full set\n",
+            "\n",
+            "Nothing was linted.\n",
+            "  0 files linted\n",
+            "  9 files skipped: no lint rules for Zig\n",
         )
     );
 }

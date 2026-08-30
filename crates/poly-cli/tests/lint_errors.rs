@@ -2,7 +2,7 @@
 //!
 //! A per-file engine failure used to be logged at `warn` and dropped from the
 //! results, so the file vanished from the run and `poly lint` printed `No issues
-//! found. (1 file(s) linted)` and exited 0 on a file it had never read. That is a
+//! found. (1 file linted)` and exited 0 on a file it had never read. That is a
 //! gate that passes without checking — the same defect `poly fmt` already fixed
 //! with `FormatRun::errors`.
 //!
@@ -106,7 +106,7 @@ fn invalid_utf8_and_unmatched_paths_keep_distinct_skip_reasons() {
         "the skip summary must preserve both reasons, got:\n{text}"
     );
     assert!(
-        text.contains("1 file(s) linted"),
+        text.contains("1 file linted"),
         "only the readable file was linted, got:\n{text}"
     );
     assert!(!text.contains("could not be linted"), "got:\n{text}");
@@ -138,7 +138,7 @@ fn a_clean_run_is_unaffected() {
     let text = combined(&output);
 
     assert_eq!(output.status.code(), Some(0), "got:\n{text}");
-    assert!(text.contains("No issues found. (1 file(s) linted)"), "got:\n{text}");
+    assert!(text.contains("No issues found.\n  1 file linted"), "got:\n{text}");
     assert!(!text.contains("could not be linted"), "got:\n{text}");
 }
 
@@ -215,7 +215,7 @@ fn fix_preserves_invalid_utf8_error_while_fixing_readable_files() {
         "the error must remain visible, got:\n{text}"
     );
     assert!(
-        text.contains("Fixed 1 issue(s) in 1 file(s)."),
+        text.contains("Fixed 1 issue in 1 file"),
         "what the run did is still reported, got:\n{text}"
     );
     assert!(!text.contains("Lint did not complete."), "got:\n{text}");

@@ -15,6 +15,7 @@ pub mod config_sources;
 pub mod doctor;
 pub mod hooks;
 pub mod migrate;
+pub mod progress;
 pub mod remote;
 pub mod rules_cmd;
 pub mod workspace_coverage;
@@ -120,8 +121,20 @@ pub struct CommonArgs {
     /// and metadata, and list every skipped file instead of the first few. For
     /// `--format json`/`toon` the findings are always fully structured, so this
     /// only lifts the cap on the skip note printed to stderr.
-    #[arg(long)]
+    #[arg(long, conflicts_with = "quiet")]
     pub verbose: bool,
+
+    /// Trim `pretty` output to the findings and the summary: drop the per-file
+    /// discovery and skip detail printed beneath it.
+    ///
+    /// Every count and reason stays — the summary still reports how many files
+    /// were linted, how many were skipped and why, and what discovery excluded.
+    /// Only the itemised list of paths goes away. Findings still print (this is
+    /// not `--silent`) and exit codes are unchanged. No effect on the
+    /// `--format json`/`toon` document. Mutually exclusive with `--verbose` and
+    /// `--debug`.
+    #[arg(short = 'q', long)]
+    pub quiet: bool,
 
     /// Apply `[discovery] exclude` to explicitly named files as well as to the
     /// directory walk.
@@ -177,7 +190,10 @@ pub struct CommonArgs {
 
     /// Emit debug data: per-engine cache hit/miss and timing (shown in `pretty`,
     /// attached to `json`/`toon`), and raise log verbosity to `debug` on stderr.
-    #[arg(long)]
+    ///
+    /// The top of the verbosity ladder, so it implies `--verbose`. Mutually
+    /// exclusive with `--quiet`.
+    #[arg(long, conflicts_with = "quiet")]
     pub debug: bool,
 
     /// Fail the run (exit 2) if any file was skipped. Equivalent to
@@ -283,7 +299,7 @@ pub fn run_lint(args: LintArgs) -> ExitCode {
     let common = args.common;
     init_logging_with(common.debug);
     apply_color(&common);
-    let verbosity = Verbosity::new(common.verbose, common.debug);
+    let verbosity = Verbosity::from_flags(common.quiet, common.verbose, common.debug);
     let (paths, config, mut opts) = match prepare(&common) {
         Ok(triple) => triple,
         Err(code) => return code,
@@ -316,7 +332,13 @@ pub fn run_lint(args: LintArgs) -> ExitCode {
         _ => Vec::new(),
     };
 
-    let run = match poly_core::lint_run(&paths, &config, &opts, common.fix, common.debug) {
+    // A run over a large repository prints nothing for ten seconds or more,
+    // which reads as a hang. The indicator is transient, stderr-only, and never
+    // reaches the worker threads — see `progress`.
+    let spinner = progress::Progress::start("linting", animations_enabled(&common));
+    let run = poly_core::lint_run(&paths, &config, &opts, common.fix, common.debug);
+    spinner.finish();
+    let run = match run {
         Ok(run) => run,
         Err(e) => {
             eprintln!("error: {e:#}");
@@ -332,8 +354,8 @@ pub fn run_lint(args: LintArgs) -> ExitCode {
             if let Err(code) = emit_structured(report::report_lint_json_run(&run)) {
                 return ExitCode::from(code);
             }
-            report::eprint_discovery_note(&run.discovery);
-            report::eprint_skip_note(&run.skipped, common.verbose);
+            report::eprint_discovery_note(&run.discovery, verbosity);
+            report::eprint_skip_note(&run.skipped, verbosity);
             report::eprint_lint_errors(&run.errors);
             results.iter().map(|r| r.diagnostics.len()).sum()
         }
@@ -341,8 +363,8 @@ pub fn run_lint(args: LintArgs) -> ExitCode {
             if let Err(code) = emit_structured(report::report_lint_toon_run(&run)) {
                 return ExitCode::from(code);
             }
-            report::eprint_discovery_note(&run.discovery);
-            report::eprint_skip_note(&run.skipped, common.verbose);
+            report::eprint_discovery_note(&run.discovery, verbosity);
+            report::eprint_skip_note(&run.skipped, verbosity);
             report::eprint_lint_errors(&run.errors);
             results.iter().map(|r| r.diagnostics.len()).sum()
         }
@@ -421,8 +443,8 @@ fn report_skip_budget(common: &CommonArgs, skipped: &[poly_core::SkippedFile]) -
         eprintln!("error: skipped {}: {}", entry.path.display(), entry.reason);
     }
     eprintln!(
-        "error: refusing to report success for {} skipped file(s) (limit {budget})",
-        skipped.len()
+        "error: refusing to report success for {} skipped (limit {budget})",
+        report::files(skipped.len())
     );
     true
 }
@@ -438,6 +460,9 @@ fn report_skip_budget(common: &CommonArgs, skipped: &[poly_core::SkippedFile]) -
 /// into a non-zero exit code). The `--no-workspace` short-circuit is handled by
 /// the caller, before this runs.
 fn run_workspace_phase(config: &poly_config::PolyConfig, common: &CommonArgs, pretty: bool) -> anyhow::Result<bool> {
+    // `cargo clippy` over a cold target directory is the longest silence poly
+    // ever produces, and the phase renders only once every tool has finished.
+    let spinner = progress::Progress::start("running whole-project checks", animations_enabled(common));
     let outcome = poly_workspace::run_workspace_lint(
         config,
         &poly_workspace::WorkspaceLintOptions {
@@ -446,9 +471,21 @@ fn run_workspace_phase(config: &poly_config::PolyConfig, common: &CommonArgs, pr
             no_cache: common.no_cache,
             report_to_stdout: pretty,
         },
-    )?;
+    );
+    spinner.finish();
+    let outcome = outcome?;
     poly_workspace::render_workspace_outcome(&outcome, pretty);
     Ok(outcome.passed)
+}
+
+/// Whether this run may draw a progress indicator.
+///
+/// A user who turned colour off asked for plain output, and animation is
+/// decoration by the same argument; `NO_COLOR` says the same thing from the
+/// environment. Everything else — a pipe, a file, a CI log — is ruled out by
+/// [`progress::Progress::start`] itself, which draws only to a terminal.
+fn animations_enabled(common: &CommonArgs) -> bool {
+    !common.no_color && std::env::var_os("NO_COLOR").is_none()
 }
 
 /// Whether any diagnostic across all results is error-severity.
@@ -463,45 +500,47 @@ pub fn run_fmt(args: FmtArgs) -> ExitCode {
     let common = &args.common;
     init_logging_with(common.debug);
     apply_color(common);
-    let verbosity = Verbosity::new(common.verbose, common.debug);
+    let verbosity = Verbosity::from_flags(common.quiet, common.verbose, common.debug);
     let (paths, config, opts) = match prepare(common) {
         Ok(triple) => triple,
         Err(code) => return code,
     };
 
     let write = common.fix;
-    let (changed, format_errors, skips_over_budget) =
-        match poly_core::format_run(&paths, &config, &opts, write, common.debug) {
-            Ok(run) => {
-                let errors = run.errors.len();
-                let changed = match common.format {
-                    OutputFormat::Pretty => report::report_format_pretty_run(&run, !write, verbosity),
-                    OutputFormat::Json => {
-                        if let Err(code) = emit_structured(report::report_format_json_run(&run)) {
-                            return ExitCode::from(code);
-                        }
-                        report::eprint_discovery_note(&run.discovery);
-                        report::eprint_skip_note(&run.skipped, common.verbose);
-                        report::eprint_format_errors(&run.errors);
-                        run.results.iter().filter(|r| r.changed).count()
+    let spinner = progress::Progress::start("formatting", animations_enabled(common));
+    let formatted = poly_core::format_run(&paths, &config, &opts, write, common.debug);
+    spinner.finish();
+    let (changed, format_errors, skips_over_budget) = match formatted {
+        Ok(run) => {
+            let errors = run.errors.len();
+            let changed = match common.format {
+                OutputFormat::Pretty => report::report_format_pretty_run(&run, !write, verbosity),
+                OutputFormat::Json => {
+                    if let Err(code) = emit_structured(report::report_format_json_run(&run)) {
+                        return ExitCode::from(code);
                     }
-                    OutputFormat::Toon => {
-                        if let Err(code) = emit_structured(report::report_format_toon_run(&run)) {
-                            return ExitCode::from(code);
-                        }
-                        report::eprint_discovery_note(&run.discovery);
-                        report::eprint_skip_note(&run.skipped, common.verbose);
-                        report::eprint_format_errors(&run.errors);
-                        run.results.iter().filter(|r| r.changed).count()
+                    report::eprint_discovery_note(&run.discovery, verbosity);
+                    report::eprint_skip_note(&run.skipped, verbosity);
+                    report::eprint_format_errors(&run.errors);
+                    run.results.iter().filter(|r| r.changed).count()
+                }
+                OutputFormat::Toon => {
+                    if let Err(code) = emit_structured(report::report_format_toon_run(&run)) {
+                        return ExitCode::from(code);
                     }
-                };
-                (changed, errors, report_skip_budget(common, &run.skipped))
-            }
-            Err(e) => {
-                eprintln!("error: {e:#}");
-                return ExitCode::from(2);
-            }
-        };
+                    report::eprint_discovery_note(&run.discovery, verbosity);
+                    report::eprint_skip_note(&run.skipped, verbosity);
+                    report::eprint_format_errors(&run.errors);
+                    run.results.iter().filter(|r| r.changed).count()
+                }
+            };
+            (changed, errors, report_skip_budget(common, &run.skipped))
+        }
+        Err(e) => {
+            eprintln!("error: {e:#}");
+            return ExitCode::from(2);
+        }
+    };
 
     // `poly fmt` is a pure formatter: it runs only the per-file formatting tier
     // above and never the whole-project lint phase (`cargo clippy`/`-sort`/
@@ -653,8 +692,8 @@ fn reject_missing_paths(paths: &[PathBuf]) -> Result<(), ExitCode> {
         eprintln!("error: path does not exist: {}", path.display());
     }
     eprintln!(
-        "error: refusing to report success for {} unreadable path argument(s)",
-        missing.len()
+        "error: refusing to report success for {} that could not be read",
+        report::paths(missing.len())
     );
     Err(ExitCode::from(2))
 }

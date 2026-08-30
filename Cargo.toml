@@ -151,6 +151,7 @@ strum = { version = "0.28.0", features = ["derive"] }
 taplo = "0.14"
 target-lexicon = "0.13.5"
 tempfile = "3"
+terminal_size = "0.4.4"
 textwrap = "0.16.2"
 thiserror = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std"] }

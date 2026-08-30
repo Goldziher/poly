@@ -158,7 +158,10 @@ pub fn run_file_safety_checks(args: &CheckArgs) -> Result<ExitCode> {
     for violation in &violations {
         eprintln!("{violation}");
     }
-    eprintln!("file-safety: {} problem(s) found", violations.len());
+    eprintln!(
+        "file-safety: {} found",
+        poly_core::report::quantity(violations.len(), "problem", "problems")
+    );
     Ok(ExitCode::FAILURE)
 }
 

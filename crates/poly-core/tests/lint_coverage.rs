@@ -109,9 +109,8 @@ fn mixed_corpus_counts_only_the_files_a_rule_examined() {
 
     let (text, total) = render_lint_pretty_run(&run, Verbosity::default());
     assert_eq!(total, 0);
-    assert_eq!(
-        text.lines().next(),
-        Some("No issues found. (1 file(s) linted, 1 skipped (no lint rules for Zig))"),
+    assert!(
+        text.contains("No issues found.\n  1 file linted\n  1 file skipped: no lint rules for Zig"),
         "got:\n{text}"
     );
 }
@@ -150,7 +149,7 @@ fn a_language_with_rules_is_still_counted_and_silent() {
     assert_eq!(run.checked, 2);
     assert_eq!(skips(&run), Vec::new());
     let (text, _) = render_lint_pretty_run(&run, Verbosity::default());
-    assert_eq!(text, "No issues found. (2 file(s) linted)\n");
+    assert_eq!(text, "No issues found.\n  2 files linted\n");
 }
 
 /// A file the walk could not identify at all is not a skip — see
@@ -175,13 +174,12 @@ fn unknown_extension_is_counted_as_unrecognized_not_as_a_skip() {
     );
 
     let (text, _) = render_lint_pretty_run(&run, Verbosity::default());
-    assert_eq!(
-        text.lines().next(),
-        Some("No issues found. (1 file(s) linted, 1 file(s) of unrecognized type not checked)"),
+    assert!(
+        text.contains("No issues found.\n  1 file linted\n  1 file of unrecognized type not checked"),
         "got:\n{text}"
     );
     assert!(
-        text.contains("were not identified as any language and no engine saw them (e.g. "),
+        text.contains("1 file not identified as any language, so no engine saw them"),
         "got:\n{text}"
     );
 }

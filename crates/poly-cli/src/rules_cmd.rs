@@ -131,10 +131,10 @@ fn run_test(dirs: Vec<String>) -> Result<ExitCode> {
     }
 
     println!(
-        "\n{passed} passed, {failed} failed across {rules} rule(s) in {dirs}",
+        "\n{passed} passed, {failed} failed across {rules} in {dirs}",
         passed = report.passed(),
         failed = report.failed(),
-        rules = report.total_rules,
+        rules = poly_core::report::rules(report.total_rules),
         dirs = dirs.join(", "),
     );
 
@@ -243,8 +243,8 @@ fn print_pretty(document: &RulesListDocument<'_>) {
         .count();
     let enabled = document.rules.iter().filter(|rule| rule.enabled).count();
     println!(
-        "\n{total} rule(s): {builtin} built-in, {user} user (from {dirs}); {enabled} enabled",
-        total = document.rules.len(),
+        "\n{total}: {builtin} built-in, {user} user (from {dirs}); {enabled} enabled",
+        total = poly_core::report::rules(document.rules.len()),
         user = document.rules.len() - builtin,
     );
     if !document.builtin_pack_enabled {

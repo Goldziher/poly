@@ -104,7 +104,7 @@ fn five_paths_four_linted_names_the_fifth() {
     );
     let text = combined(&output);
 
-    assert!(text.contains("4 file(s) linted"), "got:\n{text}");
+    assert!(text.contains("4 files linted"), "got:\n{text}");
     assert!(
         text.contains("App.csproj"),
         "the dropped path must be named, not left to bisection, got:\n{text}"
@@ -284,11 +284,11 @@ fn language_with_no_lint_rules_leaves_the_linted_count_and_is_named() {
     let text = combined(&output);
 
     assert!(
-        text.contains("1 file(s) linted, 1 skipped (no lint rules for Zig)"),
+        text.contains("1 file linted") && text.contains("1 file skipped: no lint rules for Zig"),
         "the count must exclude the language nothing lints, got:\n{text}"
     );
     assert!(
-        !text.contains("2 file(s) linted"),
+        !text.contains("2 files linted"),
         "counting the Zig file is the defect itself, got:\n{text}"
     );
     assert!(text.contains("a.zig: no lint rules for Zig"), "got:\n{text}");
@@ -327,7 +327,7 @@ fn deny_skips_fails_on_a_language_with_no_lint_rules() {
         "the failure must name the file and the reason, got:\n{text}"
     );
     assert!(
-        text.contains("refusing to report success for 1 skipped file(s)"),
+        text.contains("refusing to report success for 1 file skipped"),
         "got:\n{text}"
     );
 }
@@ -395,11 +395,11 @@ fn unknown_extension_in_a_walk_is_counted_not_skipped() {
         "an unreadable file type in a walk is not a skip: {text}"
     );
     assert!(
-        text.contains("1 file(s) linted, 1 file(s) of unrecognized type not checked"),
+        text.contains("1 file linted") && text.contains("1 file of unrecognized type not checked"),
         "got:\n{text}"
     );
     assert!(
-        text.contains("were not identified as any language and no engine saw them"),
+        text.contains("not identified as any language, so no engine saw them"),
         "got:\n{text}"
     );
     assert!(text.contains("c.xyz"), "the file must be named, got:\n{text}");

@@ -10,4 +10,4 @@ src/main.py
       url=https://example.test/rules/E501
   error  ruff  1:1  syntax error
 
-2 issue(s) found.
+2 issues found.

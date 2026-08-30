@@ -9,6 +9,28 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ### Added
 
+- **A `poly.toml` that is wrong now says so, instead of running at its defaults.** Two shapes of
+  mistake were accepted in silence. A wrongly-typed value — `mccabe_max_complexity = "oops"` —
+  reports `invalid-config-value` naming the key, the type it wants, the type it got, and what
+  poly did instead. An unknown *top-level* section reports as `unknown-config-key`, which is the
+  most complete way for a config to do nothing: a misspelled `[discovry]` drops every exclusion
+  it holds, and the only symptom is poly checking more files than you expected — which reads as
+  poly being wrong rather than the config being wrong. This completes the work
+  `unknown-config-key` started for keys inside known tables in 0.22.0, and closes
+  [#16](https://github.com/Goldziher/poly/issues/16).
+
+  Keys whose set comes from an upstream serde type are deliberately not type-checked, since poly
+  has no type of its own to quote back; where a key is both hand-declared and recognised
+  upstream, upstream wins. `extends` and `exclude_mode` are exempt because both are consumed
+  before the typed schema sees the table, and reporting them would fire on correct configs.
+
+- **`poly config show` prints the effective merged config**, with `extends` bases, the
+  hierarchical cascade and `poly.local.toml` all applied. It used to print a summary that named
+  the section and stopped, so a discarded value was invisible and there was no way to ask poly
+  what it actually parsed. The body is valid TOML, so `diff <(poly config show) poly.toml` is the
+  whole workflow; resolution facts that are not config ride as leading comments, and
+  `--format json` / `--format toon` carry the same data for a machine reader.
+
 - **poly is on npm and PyPI again, as `@goldziher/polylint` and `polylint`.** They were dropped
   in v0.9.0 on the reasoning that the installer, the Action and Homebrew covered everyone; that
   turned out to be wrong for the two ecosystems where a linter is a project dependency rather
@@ -41,7 +63,61 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   same `x86_64-pc-windows-msvc` archive the installer uses and carries its hash straight from the
   release's `sha256sums.txt`, so the bucket and the published archive cannot drift.
 
+- **`poly lint` and `poly fmt` take `-q` / `--quiet`.** Verbosity only ever went up: a run over
+  Kubernetes printed its headline and then twenty-nine lines of discovery and skip detail on top
+  of it, so the last thing on screen was what poly declined to check rather than the 21,657 files
+  it checked in twelve seconds. `--quiet` drops the itemised notes and nothing else — every count
+  and every reason stays in the summary, because a skip poly stops reporting is the failure the
+  notes exist to prevent. Findings still print (it is not `--silent`), exit codes are unchanged,
+  and the `--format json` / `toon` document is untouched. It conflicts with `--verbose` and
+  `--debug` at parse time: asking for less and more at once is a mistake worth catching.
+
+- **A progress indicator on runs long enough to look like a hang.** `poly lint` over a large
+  repository produced no output at all until it finished. A spinner now names the phase and the
+  elapsed time, appearing only after 400ms so short runs stay silent. It draws on **stderr and
+  only when stderr is a terminal**, so a pipe, a file and a CI log see nothing; it never touches
+  stdout, so `--format json` is byte-identical with and without a terminal; it never hides the
+  cursor, which makes a Ctrl-C that leaves a terminal without one unreachable rather than merely
+  unlikely; and the worker threads are not told it exists, so the per-file hot path is unchanged.
+
 ### Changed
+
+- **The human report ends with its verdict.** Findings, then the files that failed, then the
+  qualification notes, then the summary — the earlier order printed the headline and buried it
+  under the notes. A reader's eye lands on the bottom of the output, which is now where the
+  answer is.
+
+- **Counts are grouped and nouns agree with them.** `41576 issue(s) found` reads as machine
+  output and makes the reader do both the digit-grouping and the grammar; it is now `41,576
+  issues found`, `1 file linted`, `6 directories skipped`. The summary's qualification moved from
+  a 380-character parenthesis onto its own indented lines, wrapped to the terminal at item
+  boundaries — an 80-column window used to shred it mid-path. The `pass --verbose to list them`
+  hint is said once at the end of the skip block instead of once per reason, where it was
+  printed twelve times in a single run.
+
+- **One palette, named by meaning.** Every surface reached for `.red()` / `.yellow()` inline, so
+  "what colour is a skip?" had as many answers as call sites. `poly_core::report::theme` now
+  defines the semantic set — severity, success, failure, skipped, secondary, path, code, heading
+  — and the report, `doctor`, `cache` and the hook summaries draw from it. Still the basic 16
+  ANSI colours (they respect the user's own terminal theme rather than assuming a background),
+  still through `if_supports_color`, and colour is never the only carrier of meaning: a
+  `--no-color` run loses decoration and nothing else. The severity mappings themselves are
+  unchanged.
+
+- **`--debug` now implies `--verbose`.** `Verbosity` became an ordered level —
+  `Quiet < Normal < Verbose < Debug` — rather than two independent booleans, so each step is a
+  superset of the one below and "less" is expressible at all. `Verbosity::new(verbose, debug)`
+  still exists and still means what it did.
+
+- **CI runs poly against poly, on Linux and Windows.** The repository dogfooded only through
+  local git hooks, so anything landing via `--no-verify` or from a fork was never checked by the
+  tool it ships. The new job is the only one that exercises discovery, the engine registry and
+  the report path end to end on a real polyglot tree rather than on fixtures. Windows is in the
+  matrix deliberately: path handling, line endings and the ignore walk are where a
+  cross-platform linter actually breaks, and the existing Windows job proved only that poly
+  compiles and its tests pass. The test job also gained `--no-fail-fast`, which this project's
+  own rules call not optional — cargo otherwise stops at the first failing test binary and the
+  rest are rediscovered one CI round at a time.
 
 - **The publish workflow packages the binaries it already released, rather than building its
   own.** The npm, PyPI and Scoop jobs download the archives back off the GitHub release and
@@ -61,6 +137,27 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   resolves the previous release's binary. It also checks that the pinned package names and the
   `platforms/` directories describe the same set, so a target added to one and not the other
   cannot silently drop a platform.
+
+### Fixed
+
+- **`.pypirc` is detected as INI.** It was mapped as an *extension*, but a leading-dot name with
+  no second dot has no extension, so the entry only ever matched a file literally named
+  `something.pypirc` — a shape nobody writes — while the `.pypirc` that exists in the wild
+  reached no INI detection at all. It now sits in the filename table beside `.npmrc` and
+  `.editorconfig`, where the other dotfile INI names already were.
+
+- **`lazy-ignore` no longer fires on prose that documents a suppression marker.** The rule scans
+  for `# noqa`, `// eslint-disable` and friends written without a justification, which is right
+  in source and wrong in Markdown: there, every occurrence is prose explaining the syntax, a
+  table cell naming it, or a fenced example showing it — never a directive, because nothing lints
+  the prose it sits in. poly's own documentation exposed it. `docs/CONFIGURATION.md` describes
+  what this rule does, and `poly lint` reported that description as a lazy ignore; a rule that
+  reports the sentence explaining it has outrun its evidence.
+
+  Deliberately a language check rather than a Markdown-aware parse of code spans and fences: a
+  suppression inside a fenced block is also an example, so parsing to find it would only make the
+  rule fire on the cases it most clearly should not. Source files are untouched — an unjustified
+  `# noqa` in Python is still reported and a justified one still is not, both pinned by tests.
 
 ## [0.22.0] - 2026-08-30
 

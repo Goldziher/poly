@@ -1,18 +1,25 @@
 //! The qualification notes that keep a summary honest: what discovery excluded
-//! or could not identify, and what the run skipped — as summary clauses, as the
-//! follow-on detail lines, and as the stderr echoes the `json` / `toon` formats
-//! use.
+//! or could not identify, and what the run skipped — as the summary's breakdown
+//! lines, as the follow-on detail block, and as the stderr echoes the `json` /
+//! `toon` formats use.
 
 use std::fmt::Write as _;
 
-use owo_colors::{OwoColorize, Stream::Stderr, Stream::Stdout};
-
-use super::shared::strip_ansi;
+use super::layout::{self, directories, files, paths, wrap_items};
+use super::shared::{Verbosity, strip_ansi};
+use super::theme::Theme;
 use crate::discover::DiscoveryReport;
 use crate::runner::{FormatResult, SkippedFile};
 
-/// The summary clause naming what `[discovery] exclude` / `--exclude` pruned, or
-/// `None` when discovery excluded nothing.
+/// Indent of a summary breakdown line, and of the detail block beneath it.
+const INDENT: &str = "  ";
+
+/// Indent of a continuation (`e.g.` / wrapped) line, one step further in than
+/// the line it continues.
+const CONTINUATION: &str = "    ";
+
+/// The summary's breakdown line naming what `[discovery] exclude` / `--exclude`
+/// pruned, or `None` when discovery excluded nothing.
 ///
 /// Files and directories are reported apart because only the file count is
 /// exact: an excluded directory is pruned at its boundary and never descended
@@ -23,16 +30,18 @@ use crate::runner::{FormatResult, SkippedFile};
 pub(super) fn exclusion_clause(discovery: &DiscoveryReport) -> Option<String> {
     match (discovery.excluded_files, discovery.excluded_directories) {
         (0, 0) => None,
-        (files, 0) => Some(format!("{files} file(s) excluded by config")),
-        (0, directories) => Some(format!("{directories} director(ies) excluded by config")),
-        (files, directories) => Some(format!(
-            "{files} file(s) and {directories} director(ies) excluded by config"
+        (count, 0) => Some(format!("{} excluded by config", files(count))),
+        (0, count) => Some(format!("{} excluded by config", directories(count))),
+        (file_count, directory_count) => Some(format!(
+            "{} and {} excluded by config",
+            files(file_count),
+            directories(directory_count)
         )),
     }
 }
 
-/// The summary clause naming the files discovery could not identify as any
-/// language, or `None` when every walked file was identified.
+/// The summary's breakdown line naming the files discovery could not identify as
+/// any language, or `None` when every walked file was identified.
 ///
 /// Separate from [`exclusion_clause`] because nothing excluded these: they are
 /// files poly has no idea how to read. Kept out of the skipped set (see
@@ -42,14 +51,14 @@ pub(super) fn exclusion_clause(discovery: &DiscoveryReport) -> Option<String> {
 pub(super) fn unrecognized_clause(discovery: &DiscoveryReport) -> Option<String> {
     (discovery.unrecognized_files > 0).then(|| {
         format!(
-            "{} file(s) of unrecognized type not checked",
-            discovery.unrecognized_files
+            "{} of unrecognized type not checked",
+            files(discovery.unrecognized_files)
         )
     })
 }
 
-/// The summary clause naming what the built-in vendored/generated prune set
-/// removed, or `None` when it pruned nothing.
+/// The summary's breakdown line naming what the built-in vendored/generated
+/// prune set removed, or `None` when it pruned nothing.
 ///
 /// Kept apart from [`exclusion_clause`] because nothing the user wrote caused
 /// it: these are poly's own heuristics, and a reader who sees a directory they
@@ -57,8 +66,8 @@ pub(super) fn unrecognized_clause(discovery: &DiscoveryReport) -> Option<String>
 pub(super) fn pruned_clause(discovery: &DiscoveryReport) -> Option<String> {
     (discovery.pruned_directories > 0).then(|| {
         format!(
-            "{} director(ies) skipped by the built-in prune set",
-            discovery.pruned_directories
+            "{} skipped by the built-in prune set",
+            directories(discovery.pruned_directories)
         )
     })
 }
@@ -73,10 +82,12 @@ const MAX_LISTED_EXCLUDE_RULES: usize = 5;
 /// Render the follow-on detail lines for an exclusion: which rules matched, what
 /// each pruned, and the caveat that excluded directories were never walked.
 ///
-/// Returns `None` when discovery excluded nothing, so a clean run stays quiet.
-/// Every line is indented two spaces to read as a continuation of the summary.
-pub fn render_discovery_note(discovery: &DiscoveryReport) -> Option<String> {
-    if !discovery.has_notes() {
+/// Returns `None` when discovery excluded nothing, so a clean run stays quiet —
+/// and `None` under [`Verbosity::Quiet`], which asks for the summary without the
+/// itemisation beneath it. The counts themselves are in the summary at every
+/// level, so nothing is hidden either way.
+pub fn render_discovery_note(discovery: &DiscoveryReport, verbosity: Verbosity) -> Option<String> {
+    if !discovery.has_notes() || !verbosity.shows_notes() {
         return None;
     }
     let mut out = String::new();
@@ -84,70 +95,75 @@ pub fn render_discovery_note(discovery: &DiscoveryReport) -> Option<String> {
         // Nothing was excluded; the only thing to report is what could not be
         // identified, appended by the tail below.
     } else if discovery.rules.is_empty() {
-        let _ = writeln!(out, "  excluded from discovery by an exclude rule");
+        let _ = writeln!(out, "{INDENT}excluded from discovery by an exclude rule");
     } else {
-        let mut rules = discovery
+        let mut rules: Vec<String> = discovery
             .rules
             .iter()
             .take(MAX_LISTED_EXCLUDE_RULES)
             .map(|rule| {
                 let mut counts: Vec<String> = Vec::with_capacity(2);
                 if rule.files > 0 {
-                    counts.push(format!("{} file(s)", rule.files));
+                    counts.push(files(rule.files));
                 }
                 if rule.directories > 0 {
-                    counts.push(format!("{} dir(s)", rule.directories));
+                    counts.push(directories(rule.directories));
                 }
                 format!("{} ({})", rule.pattern, counts.join(", "))
             })
-            .collect::<Vec<_>>()
-            .join(", ");
+            .collect();
         if let Some(rest) = discovery
             .rules
             .len()
             .checked_sub(MAX_LISTED_EXCLUDE_RULES)
             .filter(|n| *n > 0)
         {
-            let _ = write!(rules, ", and {rest} more rule(s)");
+            rules.push(format!("and {} more", layout::rules(rest)));
         }
-        let _ = writeln!(out, "  excluded by [discovery] exclude / --exclude: {rules}");
+        let _ = writeln!(
+            out,
+            "{}",
+            wrap_items(
+                &format!("{INDENT}excluded by [discovery] exclude / --exclude: "),
+                &rules,
+                CONTINUATION.len(),
+            )
+        );
     }
     if discovery.excluded_directories > 0 {
         let _ = writeln!(
             out,
-            "  excluded directories were not walked, so the files inside them are not counted"
+            "{INDENT}excluded directories were not walked, so the files inside them are not counted"
         );
     }
     if discovery.pruned_directories > 0 {
         // Named, not merely counted: the whole failure this reports — a tracked
         // `build/` of first-party source silently dropped — is invisible in a
         // bare number and obvious in a path.
+        let _ = writeln!(
+            out,
+            "{INDENT}{} skipped by the built-in prune set",
+            directories(discovery.pruned_directories)
+        );
         let names: Vec<String> = discovery
             .pruned_samples
             .iter()
             .map(|sample| sample.path.display().to_string())
             .collect();
+        if let Some(line) = layout::fit_samples(&format!("{CONTINUATION}e.g. "), &names) {
+            let _ = writeln!(out, "{line}");
+        }
         let _ = writeln!(
             out,
-            "  {} director(ies) skipped by the built-in prune set{}",
-            discovery.pruned_directories,
-            if names.is_empty() {
-                String::new()
-            } else {
-                format!(" (e.g. {})", names.join(", "))
-            }
-        );
-        let _ = writeln!(
-            out,
-            "  these were not walked, so the files inside them are not counted; \
+            "{INDENT}these were not walked, so the files inside them are not counted; \
              keep one with [discovery] no_prune"
         );
     }
     if discovery.excluded_explicit > 0 {
         let _ = writeln!(
             out,
-            "  {} path(s) named on the command line matched exclusions (use --include-excluded to check them)",
-            discovery.excluded_explicit
+            "{INDENT}{} named on the command line matched exclusions (use --include-excluded to check them)",
+            paths(discovery.excluded_explicit)
         );
     }
     if discovery.unrecognized_files > 0 {
@@ -155,28 +171,26 @@ pub fn render_discovery_note(discovery: &DiscoveryReport) -> Option<String> {
         // until you can see that they are PNGs. A caller who disagrees — a
         // `.kt`-like file poly should have identified — can only tell from the
         // names.
+        let _ = writeln!(
+            out,
+            "{INDENT}{} not identified as any language, so no engine saw them",
+            files(discovery.unrecognized_files)
+        );
         let samples: Vec<String> = discovery
             .unrecognized_samples
             .iter()
             .map(|path| path.display().to_string())
             .collect();
-        let _ = writeln!(
-            out,
-            "  {} file(s) were not identified as any language and no engine saw them{}",
-            discovery.unrecognized_files,
-            if samples.is_empty() {
-                String::new()
-            } else {
-                format!(" (e.g. {})", samples.join(", "))
-            }
-        );
+        if let Some(line) = layout::fit_samples(&format!("{CONTINUATION}e.g. "), &samples) {
+            let _ = writeln!(out, "{line}");
+        }
     }
-    Some(out.if_supports_color(Stdout, |t| t.yellow()).to_string())
+    Some(Theme::STDOUT.skipped(out))
 }
 
 /// Append [`render_discovery_note`] to `out`, if there is anything to say.
-pub(super) fn push_discovery_note(out: &mut String, discovery: &DiscoveryReport) {
-    if let Some(note) = render_discovery_note(discovery) {
+pub(super) fn push_discovery_note(out: &mut String, discovery: &DiscoveryReport, verbosity: Verbosity) {
+    if let Some(note) = render_discovery_note(discovery, verbosity) {
         out.push_str(&note);
     }
 }
@@ -188,17 +202,13 @@ pub(super) fn push_discovery_note(out: &mut String, discovery: &DiscoveryReport)
 /// already uses. Colour is resolved against stderr rather than stdout, because
 /// that is the stream it lands on: a piped stdout with a TTY stderr (the usual
 /// `poly lint --format json > out.json`) would otherwise lose the highlight.
-pub fn eprint_discovery_note(discovery: &DiscoveryReport) {
-    if !discovery.has_notes() {
-        return;
-    }
-    let Some(note) = render_discovery_note(discovery) else {
+pub fn eprint_discovery_note(discovery: &DiscoveryReport, verbosity: Verbosity) {
+    let Some(note) = render_discovery_note(discovery, verbosity) else {
         return;
     };
     // `render_discovery_note` resolves colour for stdout; strip that and re-apply
     // for stderr so the two streams cannot disagree.
-    let plain = strip_ansi(&note);
-    eprint!("{}", plain.if_supports_color(Stderr, |t| t.yellow()));
+    eprint!("{}", Theme::STDERR.skipped(strip_ansi(&note)));
 }
 
 /// How many files one skip *reason* names before the note collapses it to a
@@ -232,10 +242,60 @@ pub(super) fn skips_from_results(results: &[FormatResult]) -> Vec<SkippedFile> {
         .collect()
 }
 
-/// The summary clause naming what the run skipped, or `None` when it skipped
-/// nothing — so the common path gains no new text.
+/// The summary's breakdown line naming what the run skipped and why, or `None`
+/// when it skipped nothing — so the common path gains no new text.
+///
+/// Wrapped to the terminal, because a repository with a dozen distinct skip
+/// reasons produced a 300-character line that an 80-column terminal shredded
+/// mid-path.
 pub(super) fn skipped_clause(skipped: &[SkippedFile]) -> Option<String> {
-    (!skipped.is_empty()).then(|| format!("{} skipped ({})", skipped.len(), skip_reason_summary(skipped)))
+    if skipped.is_empty() {
+        return None;
+    }
+    let reasons = skip_reason_counts(skipped);
+    Some(wrap_items(
+        &format!("{INDENT}{} skipped: ", files(skipped.len())),
+        &reasons,
+        INDENT.len() + CONTINUATION.len(),
+    ))
+}
+
+/// The indented breakdown printed under a summary headline: what was inspected,
+/// and every reason the file set was smaller than the tree.
+///
+/// One builder for both `lint` and `format`, which had drifted into four copies
+/// of the same four clauses. `verb` is what happened to the checked files —
+/// `linted` or `checked` — and is the only difference between the two callers.
+///
+/// The lines carry their own indent and colour so a caller only has to print
+/// them. Every count here is reported at **every** verbosity including
+/// `--quiet`: what `--quiet` drops is the itemisation beneath, never the fact
+/// that files went unexamined.
+pub(super) fn qualification_lines(
+    checked: Option<usize>,
+    verb: &str,
+    skipped: &[SkippedFile],
+    discovery: &DiscoveryReport,
+) -> Vec<String> {
+    let theme = Theme::STDOUT;
+    let mut lines: Vec<String> = Vec::with_capacity(5);
+    if let Some(checked) = checked {
+        lines.push(theme.secondary(format!("{INDENT}{} {verb}", files(checked))));
+    }
+    if let Some(clause) = skipped_clause(skipped) {
+        lines.push(theme.skipped(clause));
+    }
+    for clause in [
+        exclusion_clause(discovery),
+        pruned_clause(discovery),
+        unrecognized_clause(discovery),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        lines.push(theme.skipped(format!("{INDENT}{clause}")));
+    }
+    lines
 }
 
 /// Render the follow-on detail lines naming what the run skipped, grouped by
@@ -247,50 +307,61 @@ pub(super) fn skipped_clause(skipped: &[SkippedFile]) -> Option<String> {
 /// travels with each so a reader knows whether to fix the file, the config, or
 /// their expectations. A reason covering more than
 /// `MAX_NAMED_SKIPS_PER_REASON` files collapses to a count and a sample;
-/// `verbose` lists every file individually.
+/// [`Verbosity::Verbose`] lists every file individually, and [`Verbosity::Quiet`]
+/// drops the block — the summary's count and reasons stay, so nothing is hidden,
+/// only un-itemised.
 ///
 /// There is deliberately no cap on the *number of reasons*: reasons are bounded
 /// by the languages and decline conditions actually present, each costs at most
 /// two lines, and a cap there would reintroduce the very failure this grouping
 /// removes — a rare reason silently dropped because a common one filled the
 /// quota.
-pub fn render_skip_note(skipped: &[SkippedFile], verbose: bool) -> Option<String> {
-    if skipped.is_empty() {
+pub fn render_skip_note(skipped: &[SkippedFile], verbosity: Verbosity) -> Option<String> {
+    if skipped.is_empty() || !verbosity.shows_notes() {
         return None;
     }
     let mut out = String::new();
-    if verbose {
+    if verbosity.shows_finding_detail() {
         for entry in skipped {
-            let _ = writeln!(out, "  skipped {}: {}", entry.path.display(), entry.reason);
+            let _ = writeln!(out, "{INDENT}skipped {}: {}", entry.path.display(), entry.reason);
         }
-    } else {
-        for (reason, paths) in group_skips_by_reason(skipped) {
-            if paths.len() <= MAX_NAMED_SKIPS_PER_REASON {
-                for path in paths {
-                    let _ = writeln!(out, "  skipped {}: {reason}", path.display());
-                }
-                continue;
+        return Some(Theme::STDOUT.skipped(out));
+    }
+    let mut collapsed = false;
+    for (reason, group) in group_skips_by_reason(skipped) {
+        if group.len() <= MAX_NAMED_SKIPS_PER_REASON {
+            for path in group {
+                let _ = writeln!(out, "{INDENT}skipped {}: {reason}", path.display());
             }
-            let samples: Vec<String> = paths
-                .iter()
-                .take(MAX_NAMED_SKIPS_PER_REASON)
-                .map(|path| path.display().to_string())
-                .collect();
-            let _ = writeln!(out, "  skipped {} file(s): {reason}", paths.len());
-            let _ = writeln!(
-                out,
-                "    e.g. {} — pass --verbose to list them, or --format json for the full set",
-                samples.join(", ")
-            );
+            continue;
+        }
+        collapsed = true;
+        let _ = writeln!(out, "{INDENT}skipped {}: {reason}", files(group.len()));
+        let samples: Vec<String> = group
+            .iter()
+            .take(MAX_NAMED_SKIPS_PER_REASON)
+            .map(|path| path.display().to_string())
+            .collect();
+        if let Some(line) = layout::fit_samples(&format!("{CONTINUATION}e.g. "), &samples) {
+            let _ = writeln!(out, "{line}");
         }
     }
-    Some(out.if_supports_color(Stdout, |t| t.yellow()).to_string())
+    // Said once, at the end of the block. Repeating it under every collapsed
+    // reason printed the same sentence twelve times in one run over Kubernetes,
+    // which is how a helpful hint turns into noise the reader learns to skip.
+    if collapsed {
+        let _ = writeln!(
+            out,
+            "{INDENT}pass --verbose to list every skipped file, or --format json for the full set"
+        );
+    }
+    Some(Theme::STDOUT.skipped(out))
 }
 
 /// The skipped files bucketed by reason, most files first with ties broken by
 /// reason text.
 ///
-/// The same ordering [`skip_reason_summary`] uses, so the headline clause and
+/// The same ordering [`skip_reason_counts`] uses, so the summary's breakdown and
 /// the detail lines beneath it name the reasons in the same sequence — a reader
 /// matching one against the other should not have to search.
 fn group_skips_by_reason(skipped: &[SkippedFile]) -> Vec<(&str, Vec<&std::path::Path>)> {
@@ -306,8 +377,8 @@ fn group_skips_by_reason(skipped: &[SkippedFile]) -> Vec<(&str, Vec<&std::path::
 }
 
 /// Append [`render_skip_note`] to `out`, if there is anything to say.
-pub(super) fn push_skip_note(out: &mut String, skipped: &[SkippedFile], verbose: bool) {
-    if let Some(note) = render_skip_note(skipped, verbose) {
+pub(super) fn push_skip_note(out: &mut String, skipped: &[SkippedFile], verbosity: Verbosity) {
+    if let Some(note) = render_skip_note(skipped, verbosity) {
         out.push_str(&note);
     }
 }
@@ -317,17 +388,17 @@ pub(super) fn push_skip_note(out: &mut String, skipped: &[SkippedFile], verbose:
 /// Those formats already carry the skipped set structurally on stdout; this is
 /// the human-visible echo, on the stream that cannot corrupt the document — the
 /// same split [`eprint_discovery_note`] uses.
-pub fn eprint_skip_note(skipped: &[SkippedFile], verbose: bool) {
-    let Some(note) = render_skip_note(skipped, verbose) else {
+pub fn eprint_skip_note(skipped: &[SkippedFile], verbosity: Verbosity) {
+    let Some(note) = render_skip_note(skipped, verbosity) else {
         return;
     };
-    let plain = strip_ansi(&note);
-    eprint!("{}", plain.if_supports_color(Stderr, |t| t.yellow()));
+    eprint!("{}", Theme::STDERR.skipped(strip_ansi(&note)));
 }
 
-/// Summarise the distinct skip reasons across `skipped`, most frequent first, so
-/// the summary names *why* files were skipped rather than only how many.
-fn skip_reason_summary(skipped: &[SkippedFile]) -> String {
+/// The distinct skip reasons across `skipped`, most frequent first, each with
+/// its count — so the summary names *why* files were skipped rather than only
+/// how many.
+fn skip_reason_counts(skipped: &[SkippedFile]) -> Vec<String> {
     let mut counts: Vec<(&str, usize)> = Vec::new();
     for reason in skipped.iter().map(|s| s.reason.as_str()) {
         match counts.iter_mut().find(|(name, _)| *name == reason) {
@@ -339,11 +410,10 @@ fn skip_reason_summary(skipped: &[SkippedFile]) -> String {
     // With a single reason the outer "N skipped" already carries the count, so
     // repeating it reads as "1 skipped (1 …)".
     if let [(reason, _)] = counts.as_slice() {
-        return (*reason).to_owned();
+        return vec![(*reason).to_owned()];
     }
     counts
         .iter()
-        .map(|(reason, count)| format!("{count} {reason}"))
-        .collect::<Vec<_>>()
-        .join(", ")
+        .map(|(reason, count)| format!("{} {reason}", layout::number(*count)))
+        .collect()
 }

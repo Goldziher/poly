@@ -59,7 +59,7 @@ fn lists_builtin_pack_rules_with_source_language_and_severity() {
         assert!(row.contains(field), "row `{row}` should carry `{field}`");
     }
     assert!(
-        stdout.contains("26 rule(s): 26 built-in, 0 user"),
+        stdout.contains("26 rules: 26 built-in, 0 user"),
         "the summary must count the pack: {stdout}"
     );
 }

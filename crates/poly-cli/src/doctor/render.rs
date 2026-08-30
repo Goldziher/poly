@@ -7,9 +7,12 @@
 //! Coloring goes through owo-colors' `if_supports_color`, matching the rest of
 //! poly's human output, so `--no-color`, a pipe, and `NO_COLOR` all strip it.
 
-use owo_colors::{OwoColorize, Stream::Stdout};
+use poly_core::report::theme::Theme;
 
 use super::report::{DoctorReport, Finding, PathReport, Severity};
+
+/// The palette, resolved against stdout — the stream `poly doctor` prints to.
+const THEME: Theme = Theme::STDOUT;
 
 /// Print the report in the human format.
 pub fn print_pretty(report: &DoctorReport) {
@@ -19,9 +22,14 @@ pub fn print_pretty(report: &DoctorReport) {
     print_findings(&report.findings);
 }
 
+/// `1 install` / `2 installs`, grouped like every other poly count.
+fn installs(count: usize) -> String {
+    poly_core::report::quantity(count, "install", "installs")
+}
+
 /// Section heading.
 fn heading(text: &str) -> String {
-    text.if_supports_color(Stdout, |t| t.bold()).to_string()
+    THEME.heading(text)
 }
 
 fn print_running(report: &DoctorReport) {
@@ -35,9 +43,9 @@ fn print_running(report: &DoctorReport) {
     println!("  path      {executable}");
     println!("  version   {}", running.version);
     let channel = match running.channel {
-        "release" => running.channel.if_supports_color(Stdout, |t| t.green()).to_string(),
-        "dev" => running.channel.if_supports_color(Stdout, |t| t.yellow()).to_string(),
-        _ => running.channel.if_supports_color(Stdout, |t| t.red()).to_string(),
+        "release" => THEME.success(running.channel),
+        "dev" => THEME.skipped(running.channel),
+        _ => THEME.failure(running.channel),
     };
     println!(
         "  build     {} ({channel}, {} profile)",
@@ -59,11 +67,7 @@ fn print_path(path: &PathReport) {
     for install in &path.installs {
         let marker = if install.running { "->" } else { "  " };
         let version = if install.probe.is_failure() {
-            install
-                .probe
-                .display()
-                .if_supports_color(Stdout, |t| t.red())
-                .to_string()
+            THEME.failure(install.probe.display())
         } else {
             install.probe.display().to_string()
         };
@@ -75,16 +79,16 @@ fn print_path(path: &PathReport) {
     }
     if path.shadowing > 0 {
         println!(
-            "  {} {} install(s) come earlier on PATH than the running one",
-            "shadowed:".if_supports_color(Stdout, |t| t.red()),
-            path.shadowing
+            "  {} {} earlier on PATH than the running one",
+            THEME.failure("shadowed:"),
+            installs(path.shadowing)
         );
     }
     if path.shadowed > 0 {
         println!(
-            "  {} the running executable hides {} other install(s)",
-            "shadowing:".if_supports_color(Stdout, |t| t.red()),
-            path.shadowed
+            "  {} the running executable hides {} other",
+            THEME.failure("shadowing:"),
+            installs(path.shadowed)
         );
     }
     if !path.running_on_path {
@@ -106,18 +110,12 @@ fn print_config(report: &DoctorReport) {
         println!("  lock      {}", lock.display());
     }
     match &report.config.error {
-        Some(error) => println!(
-            "  status    {} {error}",
-            "failed to load:".if_supports_color(Stdout, |t| t.red())
-        ),
+        Some(error) => println!("  status    {} {error}", THEME.failure("failed to load:")),
         None => println!("  status    loaded"),
     }
     match (&report.cache.directory, &report.cache.error) {
         (Some(directory), _) => println!("  cache     {}", directory.display()),
-        (None, Some(error)) => println!(
-            "  cache     {} {error}",
-            "unresolved:".if_supports_color(Stdout, |t| t.yellow())
-        ),
+        (None, Some(error)) => println!("  cache     {} {error}", THEME.skipped("unresolved:")),
         (None, None) => println!("  cache     (unresolved)"),
     }
     println!();
@@ -125,14 +123,14 @@ fn print_config(report: &DoctorReport) {
 
 fn print_findings(findings: &[Finding]) {
     if findings.is_empty() {
-        println!("{} no problems found", "ok:".if_supports_color(Stdout, |t| t.green()));
+        println!("{} no problems found", THEME.success("ok:"));
         return;
     }
     println!("{}", heading("findings"));
     for finding in findings {
         let label = match finding.severity {
-            Severity::Error => "error".if_supports_color(Stdout, |t| t.red()).to_string(),
-            Severity::Warning => "warning".if_supports_color(Stdout, |t| t.yellow()).to_string(),
+            Severity::Error => THEME.failure("error"),
+            Severity::Warning => THEME.skipped("warning"),
             Severity::Note => "note".to_string(),
         };
         println!("  {label}: {}", finding.summary);

@@ -63,7 +63,7 @@ fn fix_reports_what_it_rewrote_instead_of_claiming_nothing_was_found() {
         "a run that rewrote a file did not find nothing, got:\n{text}"
     );
     assert!(
-        text.contains("Fixed 2 issue(s) in 1 file(s)."),
+        text.contains("Fixed 2 issues in 1 file"),
         "the summary must name what was fixed, got:\n{text}"
     );
 }
@@ -83,8 +83,8 @@ fn fix_reports_both_what_it_fixed_and_what_remains() {
     );
     let text = stdout(&output);
 
-    assert!(text.contains("issue(s) found."), "got:\n{text}");
-    assert!(text.contains("Fixed 1 issue(s) in 1 file(s)."), "got:\n{text}");
+    assert!(text.contains("issues found."), "got:\n{text}");
+    assert!(text.contains("Fixed 1 issue in 1 file"), "got:\n{text}");
 }
 
 /// A `--fix` run with nothing to fix keeps the old summary exactly: no new
@@ -113,7 +113,10 @@ fn check_mode_reports_fixable_findings_not_fixed_ones() {
     let output = poly(dir.path(), &["lint", "--no-workspace", "--no-cache", "unused.py"]);
     let text = stdout(&output);
 
-    assert!(text.contains("2 fixable with the `--fix` option."), "got:\n{text}");
+    assert!(
+        text.contains("2 issues fixable with the `--fix` option"),
+        "got:\n{text}"
+    );
     assert!(!text.contains("Fixed"), "got:\n{text}");
 }
 

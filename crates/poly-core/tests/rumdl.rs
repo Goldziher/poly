@@ -361,7 +361,7 @@ const CHANGELOG_SHAPED: &str = "\
 
   ```console
   $ poly fmt --check Taskfile.yaml     # skipped: contains {{.CLI_ARGS}}
-  All formatted. (1 file(s) scanned)
+  All formatted. (1 file scanned)
   ```
 
 - Templates are detected by scanning content for actions (`{{ .Values.x }}`,
