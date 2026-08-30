@@ -1,47 +1,85 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# update-homebrew-formula.sh <version> [release-repo]  ~keep
+# update-homebrew-formula.sh <version> <sha256sums-file> [release-repo]  ~keep
 #
-# Emits a *source-build* Homebrew formula for poly to stdout. The tap
-# (Goldziher/homebrew-tap) runs a centralized bottle pipeline: its
-# `auto-bottle.yml` fires whenever a `Formula/*.rb` changes and only bottles
-# source-build formulae — those that match `system "cargo"` / `depends_on
-# "rust"`. It then dispatches `bottle.yml`, which builds bottles on
-# macOS/Linux runners and commits a `bottle do` block back into the formula.
+# Emits a *prebuilt-binary* Homebrew formula for poly to stdout, pointing at the
+# four release archives Homebrew can use (macOS and Linux, arm64 and x86_64).
+# The musl and Windows archives the release also carries are irrelevant here.
 #
-# So we deliberately emit a source build (no `bottle do` block — its absence is
-# the signal the formula still needs bottling) rather than a prebuilt-binary
-# formula. The prebuilt release archives are still produced by publish.yaml for
-# the curl|sh / PowerShell installers; only Homebrew now builds from source and
-# ships bottles.
+# Why binary rather than a source build. The release already publishes six
+# checksummed archives that the installer, the GitHub Action, Scoop, npm and
+# PyPI all serve; Homebrew was the only channel that ignored them and
+# recompiled. That cost users a full cargo build of ruff + oxc + biome + mago +
+# tree-sitter behind depends_on "rust"/"llvm", and the tap's bottle pipeline did
+# not cover it: its runner matrix has no Intel macOS, so those users compiled
+# every time, and each release left a ~25 minute window in which no bottle
+# existed at all. Six of the ten formulae in Goldziher/homebrew-tap already
+# install prebuilt binaries this way; poly now matches them.
+#
+# The tap's auto-bottle.yml skips formulae that carry neither system "cargo" nor
+# depends_on "rust", so this needs no change on the tap side.
+#
+# Hashes are read from the release's own sha256sums.txt and never recomputed
+# locally, for the same reason update-scoop-manifest.sh does it: recomputing is
+# the one way the formula and the published archive can come to disagree.
 
-if [ $# -lt 1 ] || [ $# -gt 2 ]; then
-  echo "Usage: $0 <version> [release-repo]" >&2
-  exit 1
+if [ $# -lt 2 ] || [ $# -gt 3 ]; then
+	echo "Usage: $0 <version> <sha256sums-file> [release-repo]" >&2
+	exit 1
 fi
 
 VERSION="$1"
-RELEASE_REPO="${2:-Goldziher/poly}"
+SUMS_FILE="$2"
+RELEASE_REPO="${3:-Goldziher/poly}"
 TAG="v${VERSION}"
-# GitHub's auto-generated source tarball for the tag. Stable in practice and the
-# standard source for Homebrew source-build formulae.  ~keep
-SOURCE_URL="https://github.com/${RELEASE_REPO}/archive/refs/tags/${TAG}.tar.gz"
+BASE_URL="https://github.com/${RELEASE_REPO}/releases/download/${TAG}"
 
-# Prefer sha256sum (Linux/CI); fall back to shasum -a 256 (macOS dev).  ~keep
-if command -v sha256sum >/dev/null 2>&1; then
-  hash_cmd="sha256sum"
-else
-  hash_cmd="shasum -a 256"
-fi
-SHA256="$(curl -fsSL "$SOURCE_URL" | $hash_cmd | awk '{print $1}')"
+[ -f "$SUMS_FILE" ] || {
+	echo "error: no such checksums file: $SUMS_FILE" >&2
+	exit 1
+}
 
-if [ -z "$SHA256" ]; then
-  echo "Failed to compute sha256 for ${SOURCE_URL}" >&2
-  exit 1
-fi
+# sha256sums.txt lines look like "<hash>  ./poly-<version>-<triple>.tar.gz" — the
+# leading ./ comes from the find-based generation in publish.yaml.
+hash_for() {
+	local asset="$1" hash
+	hash="$(awk -v asset="$asset" '{
+		name = $NF
+		sub(/^\*/, "", name)
+		sub(/^\.\//, "", name)
+		if (name == asset) print $1
+	}' "$SUMS_FILE" | head -1)"
 
-cat <<EOF
+	if [ -z "$hash" ]; then
+		echo "error: ${SUMS_FILE} has no entry for ${asset}" >&2
+		exit 1
+	fi
+	if [ "${#hash}" -ne 64 ]; then
+		echo "error: not a sha256 for ${asset}: ${hash}" >&2
+		exit 1
+	fi
+	printf '%s' "$hash"
+}
+
+MACOS_ARM_ASSET="poly-${VERSION}-aarch64-apple-darwin.tar.gz"
+MACOS_INTEL_ASSET="poly-${VERSION}-x86_64-apple-darwin.tar.gz"
+LINUX_ARM_ASSET="poly-${VERSION}-aarch64-unknown-linux-gnu.tar.gz"
+LINUX_INTEL_ASSET="poly-${VERSION}-x86_64-unknown-linux-gnu.tar.gz"
+
+MACOS_ARM_SHA="$(hash_for "$MACOS_ARM_ASSET")"
+MACOS_INTEL_SHA="$(hash_for "$MACOS_INTEL_ASSET")"
+LINUX_ARM_SHA="$(hash_for "$LINUX_ARM_ASSET")"
+LINUX_INTEL_SHA="$(hash_for "$LINUX_INTEL_ASSET")"
+
+# The template is a *quoted* heredoc, so nothing in it is expanded and the Ruby
+# #{version} interpolations survive verbatim. Placeholders are substituted
+# below. The previous version of this script used an unquoted heredoc, which
+# executed the backticks in its own comment text: `git describe` literally ran
+# on the release runner and its output was baked into the published formula,
+# while every other backticked word collapsed to an empty string.
+render() {
+	cat <<'EOF'
 # typed: false
 # frozen_string_literal: true
 
@@ -49,39 +87,46 @@ cat <<EOF
 class Poly < Formula
   desc "Universal zero-dependency linter and formatter"
   homepage "https://github.com/Goldziher/poly"
-  url "${SOURCE_URL}"
-  sha256 "${SHA256}"
+  version "@@VERSION@@"
   license "MIT"
 
-  depends_on "llvm" => :build
-  depends_on "pkg-config" => :build
-  depends_on "rust" => :build
+  on_macos do
+    on_arm do
+      url "@@BASE_URL@@/@@MACOS_ARM_ASSET@@"
+      sha256 "@@MACOS_ARM_SHA@@"
+    end
+    on_intel do
+      url "@@BASE_URL@@/@@MACOS_INTEL_ASSET@@"
+      sha256 "@@MACOS_INTEL_SHA@@"
+    end
+  end
+
+  on_linux do
+    on_arm do
+      url "@@BASE_URL@@/@@LINUX_ARM_ASSET@@"
+      sha256 "@@LINUX_ARM_SHA@@"
+    end
+    on_intel do
+      url "@@BASE_URL@@/@@LINUX_INTEL_ASSET@@"
+      sha256 "@@LINUX_INTEL_SHA@@"
+    end
+  end
 
   def install
-    # bindgen (via ruby-prism-sys) needs libclang; Homebrew Linux has no ambient
-    # clang, so point it at the llvm build dependency.
-    ENV["LIBCLANG_PATH"] = Formula["llvm"].opt_lib.to_s
-    # Homebrew compiles the GitHub source tarball, which carries no .git, so
-    # build.rs can derive no id from `git describe` and the binary reports an
-    # "unknown" channel. That is not cosmetic: the unknown channel falls back to
-    # a per-binary cache identity, so a Homebrew poly shares its result cache
-    # with nothing and redoes every file after each upgrade. Supplying the id is
-    # what build.rs documents this variable for.
-    ENV["POLY_BUILD_ID"] = "v#{version}"
-    system "cargo", "install", *std_cargo_args(path: "crates/poly-cli")
-    # `polylint` is an alias for the same executable, not a second binary. The
-    # tool is published as `polylint` on PyPI and `@goldziher/polylint` on npm
-    # (the unscoped `poly` name is taken on both registries), so someone who
-    # installed it under that name will reasonably type `polylint`. A symlink is
-    # relocatable and is captured in the bottle like any other file the formula
-    # installs, so it does not disturb the tap's auto-bottler.
+    bin.install "poly"
+    # polylint is an alias for the same executable, not a second binary. The
+    # tool is published as polylint on PyPI and @goldziher/polylint on npm (the
+    # unscoped poly name is taken on both registries), so someone who installed
+    # it under that name will reasonably type polylint.
     bin.install_symlink bin/"poly" => "polylint"
   end
 
   test do
-    # Assert the whole version line, not just the number: the bare `version`
-    # substring matched even when the build id was missing, which is why the
-    # unknown-channel build shipped unnoticed.
+    # Assert the whole version line, not just the number: the bare version
+    # substring matched even when the build id was missing, which is how an
+    # unknown-channel build once shipped unnoticed. The release archives are
+    # stamped with POLY_BUILD_ID by publish.yaml, so this holds for a prebuilt
+    # binary exactly as it did for a source build.
     assert_match "poly #{version} (release build v#{version}, release)",
                  shell_output("#{bin}/poly --version")
     # The alias is part of the shipped surface, so prove it resolves to the same
@@ -91,3 +136,43 @@ class Poly < Formula
   end
 end
 EOF
+}
+
+# `|` as the delimiter because the URLs contain slashes.
+FORMULA="$(render | sed \
+	-e "s|@@VERSION@@|${VERSION}|g" \
+	-e "s|@@BASE_URL@@|${BASE_URL}|g" \
+	-e "s|@@MACOS_ARM_ASSET@@|${MACOS_ARM_ASSET}|g" \
+	-e "s|@@MACOS_INTEL_ASSET@@|${MACOS_INTEL_ASSET}|g" \
+	-e "s|@@LINUX_ARM_ASSET@@|${LINUX_ARM_ASSET}|g" \
+	-e "s|@@LINUX_INTEL_ASSET@@|${LINUX_INTEL_ASSET}|g" \
+	-e "s|@@MACOS_ARM_SHA@@|${MACOS_ARM_SHA}|g" \
+	-e "s|@@MACOS_INTEL_SHA@@|${MACOS_INTEL_SHA}|g" \
+	-e "s|@@LINUX_ARM_SHA@@|${LINUX_ARM_SHA}|g" \
+	-e "s|@@LINUX_INTEL_SHA@@|${LINUX_INTEL_SHA}|g")"
+
+# Assert the substitutions landed rather than trusting sed's exit status, the
+# way update-scoop-manifest.sh does: a formula published with an unsubstituted
+# placeholder would install nothing, and a stale one would install the previous
+# release under the new version.
+if printf '%s' "$FORMULA" | grep -q '@@'; then
+	echo "error: unsubstituted placeholder left in the formula:" >&2
+	printf '%s' "$FORMULA" | grep -n '@@' >&2
+	exit 1
+fi
+
+for expected in "$VERSION" "$MACOS_ARM_SHA" "$MACOS_INTEL_SHA" "$LINUX_ARM_SHA" "$LINUX_INTEL_SHA"; do
+	printf '%s' "$FORMULA" | grep -qF "$expected" || {
+		echo "error: '${expected}' is missing from the generated formula" >&2
+		exit 1
+	}
+done
+
+# A source build would reintroduce the very cost this formula exists to remove,
+# so fail loudly if one ever creeps back into the template.
+if printf '%s' "$FORMULA" | grep -qE 'depends_on "rust"|system "cargo"'; then
+	echo "error: the formula declares a source build; it must install the prebuilt binary" >&2
+	exit 1
+fi
+
+printf '%s\n' "$FORMULA"

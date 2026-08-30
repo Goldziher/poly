@@ -45,12 +45,22 @@ lock-step surface, not a separately tracked version. So do the wrapper packages:
   linux gnu aarch64, macOS x86_64/aarch64, windows-msvc x86_64), verifies all six are present,
   then uploads `sha256sums.txt` and un-drafts the release. The installers and the GitHub Action
   fetch the archive matching the host.
-- **Homebrew does not use the prebuilt archives.** `scripts/update-homebrew-formula.sh` emits a
-  **source-build** formula pointing at the tag's source tarball (`depends_on "rust"`,
-  `system "cargo"`), pushed to `Goldziher/homebrew-tap`; the tap's own auto-bottle pipeline then
-  builds bottles and commits a `bottle do` block back. Until bottles land, `brew install` builds
-  from source. Do not "fix" the formula to fetch a release archive — the absence of a `bottle do`
-  block is the signal the tap's bottler keys off.
+- **Homebrew installs the prebuilt archives, like every other channel.**
+  `scripts/update-homebrew-formula.sh` emits a **binary** formula — `version` plus
+  `on_macos`/`on_linux` x `on_arm`/`on_intel` blocks naming the four archives Homebrew can use
+  (macOS and Linux, arm64 and x86_64), then `bin.install "poly"` and the `polylint` symlink. The
+  hashes are read from the release's own `sha256sums.txt` and never recomputed, for the same
+  reason the Scoop manifest does it. There is no `depends_on "rust"` and no `bottle do` block;
+  the tap's `auto-bottle.yml` skips any formula declaring neither `system "cargo"` nor
+  `depends_on "rust"`, so this needs nothing on the tap side.
+
+  This replaced a source-build formula, and the reasons are worth keeping: a source build meant a
+  full cargo compile of ruff + oxc + biome + mago + tree-sitter for every user the tap's bottler
+  did not cover, and its runner matrix has **no Intel macOS**, so those users compiled on every
+  install. Even where bottles did land they arrived ~25 minutes after the formula, leaving a
+  window in which `brew install` built from source anyway. Download and extract measures **2.2 s**
+  against that. Six of the ten formulae in `Goldziher/homebrew-tap` already worked this way, so
+  poly was the outlier, not the pattern.
 - **The wrapper packages ship the release's own binaries, never a rebuild.** npm publishes six
   per-platform packages (`os`/`cpu`/`libc`-gated, pulled in through `optionalDependencies` —
   no `postinstall` download) and PyPI publishes per-platform wheels carrying the binary as

@@ -478,6 +478,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TOKEN }}
           HOMEBREW_TOKEN: ${{ secrets.HOMEBREW_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           # Fail rather than skip. This step used to exit 0 on a missing token,
@@ -493,16 +494,19 @@ jobs:
             exit 1
           fi
           version="${{ needs.meta.outputs.version }}"
+          tag="${{ needs.meta.outputs.tag }}"
 
-          # Source-build formula: it points at the tag's source tarball and  ~keep
-          # compiles with cargo. Pushing it to the tap triggers the tap's
-          # centralized auto-bottle pipeline (auto-bottle.yml -> bottle.yml),
-          # which builds bottles on macOS/Linux and commits a `bottle do` block
-          # back into the formula. In the window before bottles land, `brew
-          # install` builds from source; afterwards it pours the bottle. The
-          # prebuilt release archives above are still used by the curl|sh /
-          # PowerShell installers.
-          ./scripts/update-homebrew-formula.sh "$version" "$GITHUB_REPOSITORY" > poly.rb
+          # Prebuilt-binary formula: it points at the same release archives every
+          # other channel serves, with the hashes read from the release's own
+          # sha256sums.txt rather than recomputed. Homebrew used to compile poly
+          # from source here, which meant a full cargo build of ruff + oxc +
+          # biome + mago + tree-sitter for anyone the tap's bottler did not
+          # cover — and its runner matrix has no Intel macOS, so those users
+          # compiled on every install. The tap's auto-bottle.yml skips formulae
+          # that declare no source build, so this needs nothing on the tap side.
+          GH_TOKEN="$GITHUB_TOKEN" gh release download "$tag" --repo "$GITHUB_REPOSITORY" \
+            --pattern 'sha256sums.txt' --dir sums --clobber
+          ./scripts/update-homebrew-formula.sh "$version" sums/sha256sums.txt "$GITHUB_REPOSITORY" > poly.rb
 
           git clone --depth 1 "https://x-access-token:${HOMEBREW_TOKEN}@github.com/Goldziher/homebrew-tap.git" tap
           cp poly.rb tap/Formula/poly.rb
