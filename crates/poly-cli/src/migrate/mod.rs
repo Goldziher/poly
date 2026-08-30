@@ -333,13 +333,37 @@ fn dir_has_source(dir: &Path) -> bool {
     MIGRATABLE_SOURCES.iter().any(|name| dir.join(name).is_file())
 }
 
-/// Opt-in verification: load the freshly written config and run lint + format
-/// (dry-run) to confirm every engine executes without error.
-fn verify(dir: &Path) -> Result<()> {
-    use poly_core::{Config, RunOptions};
-    let config = Config::load_with(dir, &crate::config_sources::resolver()?)
-        .with_context(|| format!("loading config in {}", dir.display()))?;
-    let options = RunOptions {
+/// The run options `--verify` re-runs lint and format under.
+///
+/// Most fields are the obvious choice for a one-off smoke test of a config that
+/// was just rewritten: no cache, no extra excludes, no `--fix`, no per-run
+/// generated-file override (`poly migrate` has no such flag, so the freshly
+/// written config decides), and no `extends` resolver (the caller hands `verify`
+/// an already-resolved config).
+///
+/// **`force_exclude: false` is a decision, not a leftover.** It reads as an
+/// inconsistency — the CLI, the hooks and the MCP surface all default to
+/// force-exclude *on* — so it is written down here rather than left to look like
+/// a call site somebody forgot. `verify` names exactly one root: the migration
+/// target the user pointed `poly migrate` at and that poly just wrote a
+/// `poly.toml` into. That is the deliberately-named, one-off inspection
+/// `--include-excluded` exists for, and `[discovery] force_exclude` — a standing
+/// preference about *discovery* — must not silence it.
+///
+/// The concrete failure that avoids: under `--recurse`, targets come from
+/// [`discover_dirs`], which prunes `RECURSE_SKIP` and never consults
+/// `[discovery] exclude` — so a monorepo whose root config excludes `sub/**`
+/// still gets a `poly.toml` written into `sub/`. With force-exclude on, the
+/// verify run's only root is itself excluded, the run reaches zero files, and
+/// `verify` prints "engines ran cleanly" having run no engine — same stdout,
+/// same exit code as a run that checked everything. `false` keeps the smoke test
+/// smoking; `verify_options_still_reach_a_directory_an_ancestor_config_excludes`
+/// pins it, since nothing else here can observe the difference.
+///
+/// This does not widen the run: only an exclusion covering the *root itself*
+/// stops applying, and every exclusion below it still prunes the walk.
+fn verify_options() -> poly_core::RunOptions {
+    poly_core::RunOptions {
         no_cache: true,
         jobs: None,
         exclude: Vec::new(),
@@ -348,7 +372,16 @@ fn verify(dir: &Path) -> Result<()> {
         explicit_config: false,
         config_resolver: None,
         externally_linted_languages: Vec::new(),
-    };
+    }
+}
+
+/// Opt-in verification: load the freshly written config and run lint + format
+/// (dry-run) to confirm every engine executes without error.
+fn verify(dir: &Path) -> Result<()> {
+    use poly_core::Config;
+    let config = Config::load_with(dir, &crate::config_sources::resolver()?)
+        .with_context(|| format!("loading config in {}", dir.display()))?;
+    let options = verify_options();
     let paths = [dir.to_path_buf()];
     poly_core::lint(&paths, &config, &options, false, false).context("verify: poly lint failed")?;
     poly_core::format(&paths, &config, &options, false, false).context("verify: poly fmt --check failed")?;
@@ -382,5 +415,61 @@ mod superseded_tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("pyproject.toml"), "[tool.mypy]\nstrict = true\n").unwrap();
         assert!(superseded_actions(dir.path()).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod verify_tests {
+    use super::*;
+
+    /// `--verify` must still reach the directory it was pointed at when an
+    /// ancestor config excludes that whole subtree — the `--recurse` monorepo
+    /// case, where the target walk ignores `[discovery] exclude` and writes a
+    /// `poly.toml` into an excluded directory anyway.
+    ///
+    /// The assertion is the **effect** — how many files the run actually
+    /// reached — because `verify` prints the same success line and returns the
+    /// same `Ok(())` whether it checked two files or none. The second arm is the
+    /// control: it runs the identical fixture with force-exclude on and shows
+    /// the run reaches nothing, so the first assertion cannot pass vacuously.
+    /// Flipping `verify_options().force_exclude` to `true` fails this test and
+    /// nothing else in the suite.
+    #[test]
+    fn verify_options_still_reach_a_directory_an_ancestor_config_excludes() {
+        let root = tempfile::tempdir().unwrap();
+        // The `poly.toml` cascade is bounded at the repository root, and
+        // `poly-config` looks only for a `.git` entry to find it.
+        std::fs::create_dir(root.path().join(".git")).unwrap();
+        std::fs::write(
+            root.path().join("poly.toml"),
+            "[workspace]\nroot = true\n[discovery]\nexclude = [\"sub/**\"]\n",
+        )
+        .unwrap();
+        let sub = root.path().join("sub");
+        std::fs::create_dir(&sub).unwrap();
+        std::fs::write(sub.join("poly.toml"), "[lint.python.ruff]\nselect = [\"E\"]\n").unwrap();
+        std::fs::write(sub.join("a.py"), "x   =    1\n").unwrap();
+
+        let config = poly_core::Config::load(&sub).unwrap();
+        let paths = [sub.clone()];
+
+        let reached = poly_core::format(&paths, &config, &verify_options(), false, false).unwrap();
+        assert!(
+            !reached.is_empty(),
+            "verify must check the directory it was pointed at even though `sub/**` is excluded, \
+             or it reports success having run no engine"
+        );
+
+        let control = poly_core::RunOptions {
+            force_exclude: true,
+            ..verify_options()
+        };
+        let silenced = poly_core::format(&paths, &config, &control, false, false).unwrap();
+        assert!(
+            silenced.is_empty(),
+            "control: force-exclude on drops the excluded root entirely, which is exactly the \
+             vacuous pass `verify_options` avoids — if this is non-empty the assertion above \
+             proves nothing"
+        );
     }
 }

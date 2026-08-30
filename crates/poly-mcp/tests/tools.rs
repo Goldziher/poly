@@ -102,6 +102,135 @@ fn multiroot_mcp_run_honors_exclusions() {
     assert_eq!(std::fs::read_to_string(excluded).unwrap(), "x   =    1\n");
 }
 
+// ── `[discovery] force_exclude` on the MCP surface ────────────────────────
+//
+// The MCP tools take no `--force-exclude` / `--include-excluded` flags, so the
+// only answer available to them is the repo's standing preference. `run_options`
+// hardcoded `true`, which made the key inert here while the CLI honored it: the
+// same `poly.toml` produced two different answers depending on which surface
+// asked.
+//
+// Every case below asserts the *effect* (was the file rewritten / did it get a
+// diagnostic?) and pairs the excluded file with a non-excluded one in the same
+// call, so a run that silently did nothing fails instead of passing vacuously —
+// the default is "exclude it", which makes it easy to pass for the wrong reason.
+
+/// Unformatted Python with an unused import: ruff both rewrites it (`x   =    1`
+/// → `x = 1`) and reports `F401`, so one fixture serves the format and lint
+/// cases and "was it checked?" is observable either way.
+const UNCHECKED_PY: &str = "import os\nx   =    1\n";
+const CHECKED_PY: &str = "import os\n\nx = 1\n";
+
+/// A repo excluding `a.py`, holding an identical non-excluded `b.py`, and
+/// varying only the `[discovery]` body under test.
+///
+/// Returns the temp dir plus the three strings the ops take: the two paths and
+/// the explicit config path. The config is passed explicitly rather than
+/// discovered, because `ops::resolve_config(None)` reads the *process* working
+/// directory and these tests run in parallel with every other test in the binary.
+fn force_exclude_repo(discovery: &str) -> (tempfile::TempDir, Vec<String>, String) {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("poly.toml");
+    std::fs::write(&config, format!("[discovery]\nexclude = [\"a.py\"]\n{discovery}")).unwrap();
+    std::fs::write(dir.path().join("a.py"), UNCHECKED_PY).unwrap();
+    std::fs::write(dir.path().join("b.py"), UNCHECKED_PY).unwrap();
+    let paths = vec![
+        dir.path().join("a.py").display().to_string(),
+        dir.path().join("b.py").display().to_string(),
+    ];
+    let config = config.display().to_string();
+    (dir, paths, config)
+}
+
+fn read(dir: &tempfile::TempDir, name: &str) -> String {
+    std::fs::read_to_string(dir.path().join(name)).unwrap()
+}
+
+/// The load-bearing case: `[discovery] force_exclude = false` must make an
+/// explicitly named excluded path checked again on the MCP surface too. With
+/// `force_exclude` hardcoded to `true` the file stayed excluded and this failed.
+#[test]
+fn mcp_format_honors_config_force_exclude_false() {
+    let (dir, paths, config) = force_exclude_repo("force_exclude = false\n");
+
+    let run = ops::format_run(&paths, &[], Some(&config), true).unwrap();
+
+    assert!(run.errors.is_empty(), "both fixtures are readable: {:?}", run.errors);
+    assert_eq!(
+        read(&dir, "b.py"),
+        CHECKED_PY,
+        "the non-excluded file must always be formatted — otherwise this call did nothing and \
+         the excluded-file assertion is vacuous"
+    );
+    assert_eq!(
+        read(&dir, "a.py"),
+        CHECKED_PY,
+        "[discovery] force_exclude = false must format the named excluded path"
+    );
+    assert_eq!(run.discovery.excluded_explicit, 0, "nothing was excluded");
+}
+
+/// The inverse, and the pre-existing default: with the key unset an explicitly
+/// named excluded path is dropped and reported as excluded.
+#[test]
+fn mcp_format_defaults_to_force_excluding_a_named_path() {
+    let (dir, paths, config) = force_exclude_repo("");
+
+    let run = ops::format_run(&paths, &[], Some(&config), true).unwrap();
+
+    assert_eq!(
+        read(&dir, "b.py"),
+        CHECKED_PY,
+        "the non-excluded file is still formatted"
+    );
+    assert_eq!(read(&dir, "a.py"), UNCHECKED_PY, "the default is force-exclude on");
+    assert_eq!(run.discovery.excluded_explicit, 1);
+}
+
+/// `lint` reaches the same resolution as `format` — both build their options
+/// from the resolved config, so neither can drift from the other.
+#[test]
+fn mcp_lint_honors_config_force_exclude_false() {
+    let (_dir, paths, config) = force_exclude_repo("force_exclude = false\n");
+
+    let run = ops::lint_run(&paths, &[], Some(&config), false).unwrap();
+
+    let linted: Vec<&str> = run
+        .results
+        .iter()
+        .filter(|result| result.diagnostics.iter().any(|d| d.code.as_deref() == Some("F401")))
+        .filter_map(|result| result.path.file_name().and_then(|n| n.to_str()))
+        .collect();
+    assert!(
+        linted.contains(&"b.py"),
+        "the non-excluded file must be linted: {linted:?}"
+    );
+    assert!(
+        linted.contains(&"a.py"),
+        "[discovery] force_exclude = false must lint the named excluded path: {linted:?}"
+    );
+}
+
+/// The inverse for `lint`.
+#[test]
+fn mcp_lint_defaults_to_force_excluding_a_named_path() {
+    let (_dir, paths, config) = force_exclude_repo("");
+
+    let run = ops::lint_run(&paths, &[], Some(&config), false).unwrap();
+
+    let linted: Vec<&str> = run
+        .results
+        .iter()
+        .filter_map(|result| result.path.file_name().and_then(|n| n.to_str()))
+        .collect();
+    assert!(
+        linted.contains(&"b.py"),
+        "the non-excluded file must be linted: {linted:?}"
+    );
+    assert!(!linted.contains(&"a.py"), "the default is force-exclude on: {linted:?}");
+    assert_eq!(run.discovery.excluded_explicit, 1);
+}
+
 #[test]
 fn explicit_missing_config_is_an_error() {
     let result = ops::lint_run(&[".".to_string()], &[], Some("/nonexistent/poly.toml"), false);

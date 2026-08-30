@@ -65,10 +65,21 @@ fn resolve_paths(paths: &[String]) -> Vec<PathBuf> {
 
 /// The run options every path-oriented tool uses, differing only in the caller's
 /// exclude globs and whether a config file was named explicitly.
-fn run_options(exclude: &[String], explicit_config: bool) -> RunOptions {
+///
+/// `force_exclude` is read from the resolved config rather than written as a
+/// literal. The CLI resolves the same question in one place — `--include-excluded`,
+/// then `--force-exclude`, then `[discovery] force_exclude`, then the built-in
+/// default — and this surface has no flags, so only the last two steps can apply.
+/// Reading the key *is* that resolution here: it defaults to `true` in
+/// [`poly_config::DiscoveryConfig`], so an unset key still yields the CLI's
+/// default and only a repo that deliberately turned it off sees a change.
+///
+/// It was previously hardcoded `true`, which made the key inert for every MCP
+/// caller: one `poly.toml` answered differently depending on which surface asked.
+fn run_options(config: &Config, exclude: &[String], explicit_config: bool) -> RunOptions {
     RunOptions {
         exclude: exclude.to_vec(),
-        force_exclude: true,
+        force_exclude: config.force_exclude,
         fix_generated: false,
         explicit_config,
         ..RunOptions::default()
@@ -88,7 +99,13 @@ pub fn lint_run(paths: &[String], exclude: &[String], config: Option<&str>, fix:
     let explicit_config = config.is_some();
     let config = resolve_config(config.map(Path::new))?;
     let resolved = resolve_paths(paths);
-    poly_core::lint_run(&resolved, &config, &run_options(exclude, explicit_config), fix, false)
+    poly_core::lint_run(
+        &resolved,
+        &config,
+        &run_options(&config, exclude, explicit_config),
+        fix,
+        false,
+    )
 }
 
 /// Format `paths`, returning the **whole run** (see [`lint_run`] for why the
@@ -103,7 +120,13 @@ pub fn format_run(
     let explicit_config = config.is_some();
     let config = resolve_config(config.map(Path::new))?;
     let resolved = resolve_paths(paths);
-    poly_core::format_run(&resolved, &config, &run_options(exclude, explicit_config), write, false)
+    poly_core::format_run(
+        &resolved,
+        &config,
+        &run_options(&config, exclude, explicit_config),
+        write,
+        false,
+    )
 }
 
 /// Open the result cache the way `poly cache` does: honor `[cache] dir` from the
