@@ -6,6 +6,8 @@
 
 use std::sync::{Once, OnceLock};
 
+use super::tool_config;
+
 // ---------------------------------------------------------------------------
 
 /// Static description of one native CLI tool's contract.
@@ -53,6 +55,19 @@ pub(crate) struct ToolSpec {
     /// Either way `poly fmt` agrees with `cargo fmt`; poly never imposes an
     /// opinionated width on Rust.
     pub(crate) rustfmt_config_flag: bool,
+    /// Config files the wrapped CLI reads **on its own** before it does any
+    /// work, hashed into the cache key by [`super::tool_config::fingerprint`].
+    ///
+    /// Empty for a tool that has no config file (`gofmt`, `zig fmt`) and for a
+    /// tool whose config file is inert under poly's argv (`shfmt` without
+    /// `--filename`, `dart format` over stdin). See
+    /// [`super::tool_config`] for the per-tool evidence and for the bounded
+    /// scope of the fingerprint.
+    ///
+    /// Adding a name here is what makes an edit to that file invalidate cached
+    /// results; a tool whose config poly does not list serves stale output
+    /// after the config changes.
+    pub(crate) config_files: &'static [&'static str],
     /// Whether to anchor the child process to the source file's directory.
     /// When `true`, `format_via_tool` sets `current_dir` to `src.path.parent()`
     /// so the tool can discover project-level config files by walking up from
@@ -87,6 +102,7 @@ pub(crate) static GOFMT_SPEC: ToolSpec = ToolSpec {
     edition_flag: false,
     rustfmt_config_flag: false,
     run_in_file_dir: false,
+    config_files: &[],
 };
 
 /// `rustfmt --emit=stdout`: reads stdin, writes to stdout. Canonical Rust
@@ -104,6 +120,7 @@ pub(crate) static RUSTFMT_SPEC: ToolSpec = ToolSpec {
     edition_flag: true,
     rustfmt_config_flag: true,
     run_in_file_dir: false,
+    config_files: tool_config::RUSTFMT_CONFIG_FILES,
 };
 
 /// `zig fmt --stdin`: reads stdin, writes to stdout. Opt-in (off by default).
@@ -120,6 +137,7 @@ pub(crate) static ZIGFMT_SPEC: ToolSpec = ToolSpec {
     edition_flag: false,
     rustfmt_config_flag: false,
     run_in_file_dir: false,
+    config_files: &[],
 };
 
 /// `shfmt -`: reads stdin, writes formatted shell source to stdout. Opt-in
@@ -139,6 +157,7 @@ pub(crate) static SHFMT_SPEC: ToolSpec = ToolSpec {
     edition_flag: false,
     rustfmt_config_flag: false,
     run_in_file_dir: false,
+    config_files: &[],
 };
 
 /// `shellcheck --format=json1 -`: reads shell source from stdin, emits a
@@ -166,6 +185,7 @@ pub(crate) static SHELLCHECK_SPEC: ToolSpec = ToolSpec {
     edition_flag: false,
     rustfmt_config_flag: false,
     run_in_file_dir: false,
+    config_files: tool_config::SHELLCHECK_CONFIG_FILES,
 };
 
 /// `google-java-format -`: reads stdin, writes formatted Java to stdout.
@@ -183,6 +203,7 @@ pub(crate) static JAVA_FMT_SPEC: ToolSpec = ToolSpec {
     edition_flag: false,
     rustfmt_config_flag: false,
     run_in_file_dir: false,
+    config_files: &[],
 };
 
 /// `ktfmt --kotlinlang-style -`: reads stdin, writes formatted Kotlin to stdout.
@@ -200,6 +221,7 @@ pub(crate) static KTFMT_SPEC: ToolSpec = ToolSpec {
     edition_flag: false,
     rustfmt_config_flag: false,
     run_in_file_dir: false,
+    config_files: &[],
 };
 
 /// `Rscript --vanilla -e 'styler::style_text(...)'`: reads R source from stdin
@@ -228,6 +250,7 @@ pub(crate) static RSTYLER_SPEC: ToolSpec = ToolSpec {
     edition_flag: false,
     rustfmt_config_flag: false,
     run_in_file_dir: false,
+    config_files: &[],
 };
 
 /// `swift-format -`: reads Swift source from stdin, writes formatted output to
@@ -246,6 +269,7 @@ pub(crate) static SWIFT_FORMAT_SPEC: ToolSpec = ToolSpec {
     edition_flag: false,
     rustfmt_config_flag: false,
     run_in_file_dir: true,
+    config_files: tool_config::SWIFT_FORMAT_CONFIG_FILES,
 };
 
 /// `dart format -o show`: reads Dart source from stdin (no filename argument →
@@ -263,6 +287,7 @@ pub(crate) static DARTFMT_SPEC: ToolSpec = ToolSpec {
     edition_flag: false,
     rustfmt_config_flag: false,
     run_in_file_dir: false,
+    config_files: &[],
 };
 
 /// `gleam format --stdin`: reads Gleam source from stdin, writes formatted
@@ -280,6 +305,7 @@ pub(crate) static GLEAMFMT_SPEC: ToolSpec = ToolSpec {
     edition_flag: false,
     rustfmt_config_flag: false,
     run_in_file_dir: false,
+    config_files: &[],
 };
 
 /// `Some(version)` = `gofmt` found on PATH; `None` = absent.

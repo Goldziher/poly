@@ -164,6 +164,7 @@ mod tests {
             edition_flag: false,
             rustfmt_config_flag: false,
             run_in_file_dir: false,
+            config_files: &[],
         };
 
         let size = 1 << 20; // 1 MiB — 16x the Linux pipe buffer, so both pipes fill.

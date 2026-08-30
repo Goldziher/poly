@@ -68,6 +68,17 @@
 //! `shellcheck` produces lint diagnostics; the format-only roles declare
 //! `lint: false`.
 //!
+//! ## The tool's own config files
+//!
+//! Three of these CLIs read a project config of their own before they do any
+//! work — `rustfmt` (`rustfmt.toml`), `shellcheck` (`.shellcheckrc`) and
+//! `swift-format` (`.swift-format`). That config is an input to the tool's
+//! output, so [`mod@tool_config`] hashes it into the cache key via
+//! [`Engine::version`]; without it, editing `rustfmt.toml` left the key
+//! unchanged and the next run served the previous run's formatting. See that
+//! module for the per-tool evidence (including the tools that read *nothing*
+//! under poly's argv) and for the fingerprint's bounded scope.
+//!
 //! ## Subprocess I/O safety
 //!
 //! A dedicated OS thread writes stdin while the main (rayon) worker thread
@@ -87,6 +98,8 @@ use self::lint::lint_via_shellcheck;
 use self::probe::probe_tool;
 use self::spec::NativeRole;
 
+#[cfg(test)]
+mod cache_key_tests;
 mod edition;
 mod format;
 mod lint;
@@ -94,6 +107,7 @@ mod probe;
 mod spec;
 #[cfg(test)]
 mod tests;
+mod tool_config;
 
 static GO_LANGUAGES: &[Language] = &[Language::Go];
 static RUST_LANGUAGES: &[Language] = &[Language::Rust];
@@ -272,10 +286,6 @@ impl Engine for NativeToolEngine {
         self.capabilities().lint && self.is_enabled(cfg) && self.probed_version().is_some()
     }
 
-    /// Cache-key version string. Folds in BOTH the native tool version (or an
-    /// `absent` sentinel) AND the tree-sitter engine version, because every
-    /// disabled/absent path delegates to tier-2 — so a tier-2 upgrade must
-    /// invalidate cached native-tool results.
     /// One key, uniform across every wrapped toolchain binary: `enabled`.
     /// A native tool takes no poly-side options — it is the host's own
     /// formatter, configured by the host's own config file.
@@ -286,6 +296,26 @@ impl Engine for NativeToolEngine {
         }
     }
 
+    /// Cache-key version string. Folds in BOTH the native tool version (or an
+    /// `absent` sentinel) AND the tree-sitter engine version, because every
+    /// disabled/absent path delegates to tier-2 — so a tier-2 upgrade must
+    /// invalidate cached native-tool results.
+    ///
+    /// It also folds in a **content fingerprint of the tool's own config
+    /// files** ([`mod@tool_config`]) for the tools that read one — `rustfmt`,
+    /// `shellcheck`, `swift-format`. Those files are inputs to the tool's
+    /// output but are invisible to every other component of the cache key: a
+    /// native tool takes no poly-side args beyond `enabled`, and the input
+    /// digest covers only the source file. Without the fingerprint, editing
+    /// `rustfmt.toml` and re-running served the previous run's formatting.
+    ///
+    /// The fingerprint is computed **once per process** — this whole string is
+    /// memoised in a `OnceLock` and [`Engine::version`] is called once per file
+    /// per engine inside the runner's rayon `par_iter`, so nothing here may
+    /// touch the filesystem per file. See [`mod@tool_config`] for the resulting
+    /// bounded scope.
+    ///
+    /// [`Engine::version`]: crate::engine::Engine::version
     fn version(&self) -> &str {
         self.role.key_lock().get_or_init(|| {
             let ts = TreeSitterEngine.version();
@@ -307,9 +337,16 @@ impl Engine for NativeToolEngine {
             } else {
                 ""
             };
+            // Empty for a tool with no config file of its own, so those roles
+            // keep a stable key and pay no filesystem cost.
+            let config_marker = match self.role.spec().config_files {
+                [] => String::new(),
+                names => format!(" | cfg:{}", tool_config::fingerprint(names)),
+            };
+            let markers = format!("{edition_marker}{config_path_marker}{default_marker}{config_marker}");
             match self.probed_version() {
-                Some(tool) => format!("{tool} | ts:{ts}{edition_marker}{config_path_marker}{default_marker}"),
-                None => format!("native-tool:absent | ts:{ts}{edition_marker}{config_path_marker}{default_marker}"),
+                Some(tool) => format!("{tool} | ts:{ts}{markers}"),
+                None => format!("native-tool:absent | ts:{ts}{markers}"),
             }
         })
     }
