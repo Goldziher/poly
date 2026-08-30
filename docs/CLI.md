@@ -118,8 +118,8 @@ defect: a competing install on `PATH`, a `poly` that cannot report its own versi
 that fails to load. Each finding carries the concrete remedy, including the fact that a
 cargo-installed `~/.cargo/bin/poly` needs `rm`, not `cargo uninstall poly`.
 
-`poly --version` reports the build identifier too — `0.22.0 (release build v0.22.0, release)`
-versus `0.22.0 (dev build v0.22.0-8-g18aa5e8, debug)` — so a development build carrying
+`poly --version` reports the build identifier too — `0.23.0 (release build v0.23.0, release)`
+versus `0.23.0 (dev build v0.23.0-8-g18aa5e8, debug)` — so a development build carrying
 unreleased changes cannot be quoted as a release. The identifier comes from `git describe` at
 build time; outside a git checkout it reads `unknown` rather than guessing (packagers can set
 `POLY_BUILD_ID`).
