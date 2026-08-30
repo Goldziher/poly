@@ -61,7 +61,37 @@ jobs:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test --workspace --exclude conformance
+        # --no-fail-fast is not optional: cargo stops at the first failing test
+        # binary, so a run with failures in three crates reports only the first
+        # and the rest are rediscovered one CI round at a time.
+      - run: cargo test --workspace --exclude conformance --no-fail-fast
+
+  dogfood:
+    # poly is a linter, and the repository is a real polyglot tree — Rust, TOML,
+    # Markdown, YAML, JSON, shell. Running the binary against its own repo is the
+    # only job here that exercises discovery, the engine registry and the report
+    # path end to end on real files; the unit suite drives them on fixtures.
+    #
+    # Windows is in the matrix deliberately: path handling, line endings and the
+    # ignore walk are where a cross-platform linter actually breaks, and none of
+    # that is reachable from a test that never touches a real tree.
+    name: dogfood / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # --no-workspace skips the whole-project phase: `cargo clippy` over this
+      # repo is already its own job above, and running it twice buys nothing.
+      - name: poly lint (self)
+        run: cargo run --locked -p poly-cli -- lint --no-workspace .
+      - name: poly fmt --check (self)
+        run: cargo run --locked -p poly-cli -- fmt --check .
 
   deny:
     name: cargo-deny
