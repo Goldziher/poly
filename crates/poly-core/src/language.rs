@@ -118,6 +118,7 @@ const INI_FILENAMES: &[&str] = &[
     ".flake8",
     ".gitlint",
     ".hgrc",
+    ".pypirc",
 ];
 
 impl Language {
@@ -457,6 +458,17 @@ mod tests {
         assert_eq!(Language::from_path(Path::new("docs/index.mdx")), Some(Language::Mdx));
         assert_eq!(Language::from_catalog_name("mdx"), Language::Mdx);
         assert_eq!(Language::Mdx.id(), "mdx");
+    }
+
+    /// A leading-dot name with no second dot has no extension in Rust, so the
+    /// `pypirc` entry in the extension table only ever matched a file literally
+    /// named `something.pypirc` — a shape nobody writes. The file that exists in
+    /// the wild is `.pypirc`, which reached no INI detection at all.
+    #[test]
+    fn dotfile_ini_names_are_detected_by_filename_not_extension() {
+        assert_eq!(Language::from_path(Path::new(".pypirc")), Some(Language::Ini));
+        assert_eq!(Language::from_path(Path::new("home/.pypirc")), Some(Language::Ini));
+        assert_eq!(Language::from_path(Path::new(".npmrc")), Some(Language::Ini));
     }
 
     #[test]
