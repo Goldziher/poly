@@ -106,6 +106,48 @@ fn known_bad_lazy_ignore_diagnostics() {
     insta::assert_debug_snapshot!("known_bad_lazy_ignore_diagnostics", summary);
 }
 
+/// Every threshold rule must name its ceiling in the message. A reader who
+/// disagrees with a finding has exactly one next step — change the number in
+/// `poly.toml` — and cannot take it if the message does not say what the
+/// number currently is, or how far over it they are. `nesting-too-deep` said
+/// "(max exceeded)" and `cyclomatic-complexity` said nothing at all until this
+/// was pinned.
+#[test]
+fn every_threshold_rule_reports_the_configured_maximum() {
+    let engine = QualityEngine;
+    let mut options = toml::Table::new();
+    options.insert("cyclomatic_complexity_max".to_owned(), toml::Value::Integer(3));
+    options.insert("function_too_long_lines".to_owned(), toml::Value::Integer(5));
+    let diags = engine.lint(&make_src(KNOWN_BAD), &engine_cfg(options)).unwrap();
+
+    let threshold_rules = [
+        "file-too-long",
+        "function-too-long",
+        "type-too-long",
+        "too-many-parameters",
+        "nesting-too-deep",
+        "cyclomatic-complexity",
+    ];
+    let mut seen: Vec<&str> = Vec::new();
+    for diag in &diags {
+        let code = diag.code.as_deref().unwrap_or("");
+        if !threshold_rules.contains(&code) {
+            continue;
+        }
+        seen.push(code);
+        assert!(
+            diag.title.contains("(max "),
+            "{code} must name its ceiling, got {:?}",
+            diag.title
+        );
+    }
+    // Guard against the assertion passing vacuously if the fixture stops
+    // triggering these rules.
+    for rule in ["nesting-too-deep", "cyclomatic-complexity"] {
+        assert!(seen.contains(&rule), "fixture no longer triggers {rule}: {diags:?}");
+    }
+}
+
 #[test]
 fn clean_file_has_no_quality_diagnostics() {
     let engine = QualityEngine;

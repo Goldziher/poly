@@ -115,12 +115,15 @@ pub fn check_definitions(
 /// `nesting::NestingFinding` only carries byte offsets (a whole-tree walk has
 /// no reason to track rows), so this converts to a 1-based [`Span`] against
 /// `content` the same way `engines/uncomment.rs::span_of` does.
-pub fn nesting_diagnostic(finding: &super::nesting::NestingFinding, content: &str) -> Diagnostic {
+///
+/// `max` is the configured ceiling, reported alongside the measured depth so
+/// the message names the threshold a reader would have to change.
+pub fn nesting_diagnostic(finding: &super::nesting::NestingFinding, content: &str, max: i64) -> Diagnostic {
     Diagnostic {
         engine: "quality".to_owned(),
         code: Some("nesting-too-deep".to_owned()),
         severity: crate::engine::Severity::Warning,
-        title: format!("nesting depth is {} (max exceeded)", finding.depth),
+        title: format!("nesting depth is {} (max {max})", finding.depth),
         description: Some("extract a helper function to flatten this branch".to_owned()),
         span: Some(span_of(content, finding.start_byte, finding.end_byte)),
         url: None,
@@ -129,12 +132,16 @@ pub fn nesting_diagnostic(finding: &super::nesting::NestingFinding, content: &st
     }
 }
 
-pub fn complexity_diagnostic(finding: &super::complexity::ComplexityFinding, content: &str) -> Diagnostic {
+/// Like [`nesting_diagnostic`], the configured ceiling is carried into the
+/// title. Every other rule in this tier reports `is N (max M)`; without `M` a
+/// reader is told their function is too complex but not what number to write
+/// in `poly.toml`, nor how far over it they are.
+pub fn complexity_diagnostic(finding: &super::complexity::ComplexityFinding, content: &str, max: i64) -> Diagnostic {
     Diagnostic {
         engine: "quality".to_owned(),
         code: Some("cyclomatic-complexity".to_owned()),
         severity: crate::engine::Severity::Warning,
-        title: format!("cyclomatic complexity is {}", finding.complexity),
+        title: format!("cyclomatic complexity is {} (max {max})", finding.complexity),
         description: Some("split this function into smaller pieces".to_owned()),
         span: Some(span_of(content, finding.start_byte, finding.end_byte)),
         url: None,

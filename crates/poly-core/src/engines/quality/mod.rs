@@ -74,7 +74,7 @@ use settings::Settings;
 /// Cache-key version. Bump whenever `tree-sitter-language-pack` is upgraded
 /// (grammars can change) or this engine's own detection/threshold logic
 /// changes in a way that alters output.
-const QUALITY_VERSION: &str = "quality-2+tslp1.15.7+no-rust-allow";
+const QUALITY_VERSION: &str = "quality-3+tslp1.15.7+no-rust-allow+max-in-title";
 
 thread_local! {
     /// Per-thread parser pool keyed by grammar name, shared by every
@@ -203,13 +203,21 @@ fn run_structural_rules(grammar: &str, src: &SourceFile, settings: &Settings, di
 
         if settings.nesting_too_deep.enabled && !family::is_deferred(Rule::NestingTooDeep, &src.language) {
             for finding in nesting::analyze(grammar, root, usize_threshold(settings.nesting_too_deep.threshold)) {
-                diagnostics.push(metrics::nesting_diagnostic(&finding, &src.content));
+                diagnostics.push(metrics::nesting_diagnostic(
+                    &finding,
+                    &src.content,
+                    settings.nesting_too_deep.threshold,
+                ));
             }
         }
         if settings.cyclomatic_complexity.enabled && !family::is_deferred(Rule::CyclomaticComplexity, &src.language) {
             for finding in complexity::analyze(grammar, root, usize_threshold(settings.cyclomatic_complexity.threshold))
             {
-                diagnostics.push(metrics::complexity_diagnostic(&finding, &src.content));
+                diagnostics.push(metrics::complexity_diagnostic(
+                    &finding,
+                    &src.content,
+                    settings.cyclomatic_complexity.threshold,
+                ));
             }
         }
         if settings.magic_number {
