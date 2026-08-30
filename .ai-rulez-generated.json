@@ -1,0 +1,84 @@
+{
+  "schema_version": "v1",
+  "source_hash": "blake3:261d9152e15dfdc66715216442e953f184ed7b10aacc8dd544b41b8dc501ec75",
+  "outputs": {
+    ".claude-plugin/marketplace.json": {
+      "content_hash": "blake3:abdf702ee21f6155450f06fcf23f89f4b69aad080d6a45f676aebd5f7cbab441"
+    },
+    ".claude-plugin/plugin.json": {
+      "content_hash": "blake3:9b2e769b72df25c18311fa785f03cf72a4c4857cc5eef9305fda9eb7cddc948f"
+    },
+    ".codex-plugin/plugin.json": {
+      "content_hash": "blake3:313833b8241b50500870278a24631f0cf470f138e348aabf68e7c4dcca0e7d6e"
+    },
+    ".cursor-plugin/commands/poly-check.md": {
+      "content_hash": "blake3:398b0bc3f158bfc94be00ad1e304f164e594c65546bdf55fb005b9889efee26b"
+    },
+    ".cursor-plugin/commands/poly-fix.md": {
+      "content_hash": "blake3:aefedcccf8e34cd75d79f5dfc885cdd00241b405b5e50461c42344db3c4d4a88"
+    },
+    ".cursor-plugin/plugin.json": {
+      "content_hash": "blake3:431e6cd3a0b910be598f7e2a05a586148e81e37cc243dbb7e54a70844c9cb7a3"
+    },
+    ".cursor-plugin/skills/poly-lint-and-format/SKILL.md": {
+      "content_hash": "blake3:0da868f1639e30d012db64d9dd6163493a6c1b94bf236d174133483dec1381d5"
+    },
+    ".cursor-plugin/skills/poly-mcp/SKILL.md": {
+      "content_hash": "blake3:d04865c1fa394bc0d18c18b339a39b0feb8ea6c7adb5fc1536bab189eb1cc80c"
+    },
+    ".cursor-plugin/skills/poly-orchestrator/SKILL.md": {
+      "content_hash": "blake3:836ebda1618aa88f1667d265eda1955c1bb6d5f2aa7142229fafe9e5b8bf392d"
+    },
+    ".cursor-plugin/skills/poly-overview/SKILL.md": {
+      "content_hash": "blake3:1caf5d0228e11f40e7960822a9f21f3505a2e1be5b0ebdda990eb92b91da3762"
+    },
+    ".cursor-plugin/skills/poly-tiers-and-scope/SKILL.md": {
+      "content_hash": "blake3:ecc6b9fd72aa7b536a36d3bcf2b185dc98db5bf4851d5297808f9006db9f77ca"
+    },
+    ".factory-plugin/plugin.json": {
+      "content_hash": "blake3:5e7cdbb2951fa7c42f096d3d1cca402f85c5c5b18d71fc17ce4c5da4f050eeee"
+    },
+    ".mcp.json": {
+      "content_hash": "blake3:1f48ad7a5c9b4d3cd0492e560670931680c92b238653e17bfa39225b56f91c9b"
+    },
+    ".opencode/plugins/poly.js": {
+      "content_hash": "blake3:008fb2a28c4f20dda976c37fde2658f6064a7584144ba575d038334827ebdfa9"
+    },
+    "agents/backend-author.md": {
+      "content_hash": "blake3:9644e45aee23beef19acf88e014b87ec3d5bb420c21d777b5e0080f13055fff3"
+    },
+    "agents/rust-perf-engineer.md": {
+      "content_hash": "blake3:850f315193aed7f9988fe7132cab372bccfc633681036bda204bc9b56ae04361"
+    },
+    "commands/poly-check.md": {
+      "content_hash": "blake3:398b0bc3f158bfc94be00ad1e304f164e594c65546bdf55fb005b9889efee26b"
+    },
+    "commands/poly-fix.md": {
+      "content_hash": "blake3:aefedcccf8e34cd75d79f5dfc885cdd00241b405b5e50461c42344db3c4d4a88"
+    },
+    "gemini-extension.json": {
+      "content_hash": "blake3:2efbb2a7111f2f50839d8da94b8b70f1baeed1e91f62294e2a356b361f4c885e"
+    },
+    "kimi.plugin.json": {
+      "content_hash": "blake3:5d69f1c100c313aea3f8258b509d1aed64fb947549e2dc6fedb192f20abcbd25"
+    },
+    "package.json": {
+      "content_hash": "blake3:e6d810f0daae72002a6453330bf490b9d7639e87b2127065ce43ab00f2104271"
+    },
+    "skills/poly-lint-and-format/SKILL.md": {
+      "content_hash": "blake3:0da868f1639e30d012db64d9dd6163493a6c1b94bf236d174133483dec1381d5"
+    },
+    "skills/poly-mcp/SKILL.md": {
+      "content_hash": "blake3:d04865c1fa394bc0d18c18b339a39b0feb8ea6c7adb5fc1536bab189eb1cc80c"
+    },
+    "skills/poly-orchestrator/SKILL.md": {
+      "content_hash": "blake3:836ebda1618aa88f1667d265eda1955c1bb6d5f2aa7142229fafe9e5b8bf392d"
+    },
+    "skills/poly-overview/SKILL.md": {
+      "content_hash": "blake3:1caf5d0228e11f40e7960822a9f21f3505a2e1be5b0ebdda990eb92b91da3762"
+    },
+    "skills/poly-tiers-and-scope/SKILL.md": {
+      "content_hash": "blake3:ecc6b9fd72aa7b536a36d3bcf2b185dc98db5bf4851d5297808f9006db9f77ca"
+    }
+  }
+}

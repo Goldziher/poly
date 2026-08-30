@@ -62,16 +62,19 @@ echo "→ .ai-rulez/config.toml [plugin] → $VERSION"
 VERSION="$VERSION" perl -0pi -e \
 	's/(\[plugin\][^\[]*?\nversion\s*=\s*")[^"]+(")/$1$ENV{VERSION}$2/s' .ai-rulez/config.toml
 # Confirm the [plugin] version now reads $VERSION before we regenerate from it.
-grep -qxF "version = \"$VERSION\"" .ai-rulez/config.toml ||
-	{ echo "error: .ai-rulez/config.toml [plugin] version bump did not apply" >&2; exit 1; }
+# Scoped to the [plugin] block: a bare `grep -qxF 'version = "X"'` passes on any
+# matching line in the file — including the top-level schema `version` — so it
+# would report success on a bump that never landed.
+plugin_block_version="$(awk '/^\[plugin\]/{inblock=1; next} /^\[/{inblock=0} inblock && /^version[[:space:]]*=/{gsub(/.*= *"|".*/, ""); print; exit}' .ai-rulez/config.toml)"
+[[ "$plugin_block_version" == "$VERSION" ]] ||
+	{ echo "error: .ai-rulez/config.toml [plugin] version is '$plugin_block_version', expected '$VERSION'" >&2; exit 1; }
 
 echo "→ regenerating ai-rulez plugin outputs"
 npx -y ai-rulez@latest generate --plugin
 
-# `--plugin` fans out to every harness; poly ships claude + codex plugin surfaces only.
-# Prune the out-of-scope bundles (also gitignored) so the tree stays claude/codex-scoped.
-rm -rf .cursor-plugin .factory-plugin .hermes .opencode gemini-extension.json \
-	kimi.plugin.json package.json .ai-rulez-generated.json
+# Every bundle `--plugin` emits is shipped, so nothing is pruned here. The set is
+# controlled by `[plugin] runtimes` in .ai-rulez/config.toml, which is the single
+# place a harness is added or dropped.
 
 echo
 echo "Validating wrapper-package versions..."
@@ -119,38 +122,55 @@ fi
 echo
 echo "Validating plugin manifest versions..."
 
-for file in .claude-plugin/plugin.json .claude-plugin/marketplace.json .codex-plugin/plugin.json; do
+# One entry per file `generate --plugin` emits that carries a version, and the
+# jq path to it. The set is driven by `[plugin] runtimes` in
+# .ai-rulez/config.toml; adding a runtime there means adding its manifest here,
+# or the lock-step guarantee quietly stops covering it — a stale manifest still
+# installs cleanly, which is the expensive way to find out.
+PLUGIN_MANIFESTS=(
+	".claude-plugin/plugin.json:.version"
+	".claude-plugin/marketplace.json:.plugins[0].version"
+	".codex-plugin/plugin.json:.version"
+	".cursor-plugin/plugin.json:.version"
+	".factory-plugin/plugin.json:.version"
+	"gemini-extension.json:.version"
+	"kimi.plugin.json:.version"
+	"package.json:.version"
+)
+
+for entry in "${PLUGIN_MANIFESTS[@]}"; do
+	file="${entry%%:*}"
+	path="${entry#*:}"
 	if [[ ! -f "$file" ]]; then
 		echo "✗ $file: missing (generation did not emit it)"
 		validation_failed=1
 		continue
 	fi
+	actual="$(jq -r "$path" "$file" 2>/dev/null || echo '')"
+	if [[ "$actual" != "$VERSION" ]]; then
+		echo "✗ $file ($path): expected $VERSION, got $actual"
+		validation_failed=1
+	fi
 done
 
-if [[ -f .claude-plugin/plugin.json ]]; then
-	plugin_version="$(jq -r '.version' .claude-plugin/plugin.json 2>/dev/null || echo '')"
-	if [[ "$plugin_version" != "$VERSION" ]]; then
-		echo "✗ .claude-plugin/plugin.json: expected $VERSION, got $plugin_version"
+# The plugin is worth nothing to a consumer without its skills and slash
+# commands, and it shipped without them for several releases: `content_root` was
+# set to "." so ai-rulez looked for them at the repository root, where poly has
+# none. Assert the payload, not just the version.
+for dir in skills commands; do
+	if [[ ! -d "$dir" ]] || [[ -z "$(ls -A "$dir" 2>/dev/null)" ]]; then
+		echo "✗ $dir/: empty or missing — the plugin would ship no $dir"
 		validation_failed=1
 	fi
-fi
+done
 
-if [[ -f .claude-plugin/marketplace.json ]]; then
-	marketplace_version="$(jq -r '.plugins[0].version' .claude-plugin/marketplace.json 2>/dev/null || echo '')"
-	if [[ "$marketplace_version" != "$VERSION" ]]; then
-		echo "✗ .claude-plugin/marketplace.json: expected $VERSION, got $marketplace_version"
-		validation_failed=1
-	fi
-fi
-
-# The codex surface ships alongside the claude one, so a stale version here is a
-# stale release artifact — assert it rather than trusting generation to have run.
-if [[ -f .codex-plugin/plugin.json ]]; then
-	codex_version="$(jq -r '.version' .codex-plugin/plugin.json 2>/dev/null || echo '')"
-	if [[ "$codex_version" != "$VERSION" ]]; then
-		echo "✗ .codex-plugin/plugin.json: expected $VERSION, got $codex_version"
-		validation_failed=1
-	fi
+skill_count="$(find skills -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')"
+command_count="$(find commands -mindepth 1 -maxdepth 1 -name '*.md' 2>/dev/null | wc -l | tr -d ' ')"
+if [[ "$skill_count" -lt 1 || "$command_count" -lt 1 ]]; then
+	echo "✗ plugin content: $skill_count skills, $command_count commands"
+	validation_failed=1
+else
+	echo "✓ Plugin content: $skill_count skills, $command_count slash commands"
 fi
 
 if [[ $validation_failed -eq 0 ]]; then

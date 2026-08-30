@@ -7,8 +7,21 @@ exclude = [
   "vendor/**",
   "**/identify/tags.rs",
   ".ai-rulez/**",
+  # Everything `ai-rulez generate --plugin` emits. These are generated bundles,
+  # not sources: poly reformatting them and the next generation reverting it is
+  # a loop, and the JS adapter is a template poly's own oxlint rules have no say
+  # over. The set follows `[plugin] runtimes` in .ai-rulez/config.toml.
   ".claude-plugin/**",
   ".codex-plugin/**",
+  ".cursor-plugin/**",
+  ".factory-plugin/**",
+  ".opencode/**",
+  "gemini-extension.json",
+  "kimi.plugin.json",
+  "/package.json",
+  "skills/**",
+  "commands/**",
+  "agents/**",
   "crates/*/tests/fixtures/**",
   "crates/poly-core/tests/typos.rs",
   "crates/conformance/corpus/**",

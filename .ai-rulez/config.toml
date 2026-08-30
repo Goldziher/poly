@@ -18,7 +18,19 @@ license = "MIT"
 category = "developer-tools"
 keywords = ["linter", "formatter", "mcp", "code-quality", "rust"]
 tags = ["mcp", "linter", "formatter", "tree-sitter", "git-hooks", "ci"]
-content_root = "."
+
+# Every plugin runtime ai-rulez supports except hermes. Hermes emits five
+# version-bearing files across TOML, YAML and Python under .hermes/, none of
+# which the release bump can check with jq, and it overlaps confusingly with the
+# pip-package/ wrapper poly already publishes. The other seven are a manifest
+# each and cost nothing to carry.
+#
+# `content_root` is deliberately absent: setting it to "." made ai-rulez look
+# for skills/, commands/ and agents/ at the repository root, where poly has
+# none — so the plugin shipped zero skills and zero slash commands while its
+# README and ADR 0022 both claimed five and two. Leaving it unset uses the
+# .ai-rulez governance tree, which is where poly's content actually lives.
+runtimes = ["claude", "cursor", "codex", "gemini", "kimi", "opencode", "factory"]
 
 [plugin.author]
 name = "Na'aman Hirschfeld"

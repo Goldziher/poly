@@ -17,17 +17,16 @@ pip-package/*.egg-info/
 __pycache__/
 
 
-# ai-rulez `generate --plugin` fans out plugin bundles to every harness it knows.
-# poly ships plugin surfaces for claude + codex only (.claude-plugin/, .codex-plugin/);
-# ignore the out-of-scope harness bundles and the plugin-mode manifest.
-.ai-rulez-generated.json
-.cursor-plugin/
-.factory-plugin/
+# `ai-rulez generate --plugin` emits one bundle per runtime named in
+# .ai-rulez/config.toml [plugin] runtimes. All seven are committed — a
+# marketplace install serves these files directly, so an ignored bundle is a
+# harness poly silently does not support. .ai-rulez-generated.json is the BLAKE3
+# provenance sidecar `ai-rulez verify --plugin` checks against, so it is
+# committed too.
+#
+# Hermes is deliberately not a runtime (see the comment on `runtimes`); ignore
+# its output so a stray generation cannot be committed by accident.
 .hermes/
-.opencode/
-gemini-extension.json
-kimi.plugin.json
-/package.json
 
 # BEGIN ai-rulez (DO NOT EDIT - managed by ai-rulez)
 .ai-rulez/.generated-manifest.json

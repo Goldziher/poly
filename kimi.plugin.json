@@ -8,7 +8,6 @@
     "url": "https://github.com/Goldziher"
   },
   "homepage": "https://github.com/Goldziher/poly",
-  "repository": "https://github.com/Goldziher/poly",
   "license": "MIT",
   "keywords": [
     "linter",
@@ -18,7 +17,14 @@
     "rust"
   ],
   "skills": "./skills/",
-  "mcpServers": "./.mcp.json",
+  "mcpServers": {
+    "poly": {
+      "command": "poly",
+      "args": [
+        "mcp"
+      ]
+    }
+  },
   "interface": {
     "displayName": "poly",
     "shortDescription": "Zero-dependency lint \u0026 format orchestrator over MCP",
