@@ -18,8 +18,8 @@ Five mechanisms decide what actually inspects a file (`crates/poly-core/src/regi
    coverage mechanism, not a fallback to avoid — but it is explicitly *not* gofmt/rustfmt
    parity.
 3. **Native-toolchain tier** (ADR 0014, `engines/native_tool/`) — the language's canonical
-   first-party CLI, run per file over stdin/stdout. `rustfmt` and `gofmt` are **on by
-   default whenever the tool is found on PATH**; `zig fmt`, `shfmt`, `shellcheck`,
+   first-party CLI, run per file over stdin/stdout. `rustfmt`, `gofmt` and `shellcheck` are
+   **on by default whenever the tool is found on PATH**; `zig fmt`, `shfmt`,
    `google-java-format`, `ktfmt`, `styler`, `swift-format`, `dart format`, and
    `gleam format` are opt-in via `[fmt.<lang>.<tool>] enabled = true` /
    `[lint.<lang>.<tool>] enabled = true`. Absent tool ⇒ the language falls through to

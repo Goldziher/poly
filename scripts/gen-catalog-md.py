@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Generate the README's catalog collapsible directly from the vendored catalog.
+"""Generate the backend reference's catalog collapsible from the vendored catalog.
 
 Reads ``crates/poly-catalog/data/catalog.json`` (the embedded mdsf registry) and
 rewrites the block between the ``<!-- BEGIN CATALOG -->`` / ``<!-- END CATALOG -->``
-markers in ``README.md`` with a ``<details>`` table of every catalog tool.
+markers in ``docs/BACKENDS.md`` with a ``<details>`` table of every catalog tool.
 
 Run after the catalog is revendored::
 
@@ -18,7 +18,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 CATALOG = ROOT / "crates" / "poly-catalog" / "data" / "catalog.json"
-README = ROOT / "README.md"
+TARGET = ROOT / "docs" / "BACKENDS.md"
 
 BEGIN = "<!-- BEGIN CATALOG -->"
 END = "<!-- END CATALOG -->"
@@ -66,15 +66,15 @@ def render() -> str:
 
 
 def main() -> int:
-    text = README.read_text()
+    text = TARGET.read_text()
     if BEGIN not in text or END not in text:
-        sys.stderr.write(f"markers {BEGIN!r} / {END!r} not found in {README}; add them first\n")
+        sys.stderr.write(f"markers {BEGIN!r} / {END!r} not found in {TARGET}; add them first\n")
         return 1
 
     head, _, rest = text.partition(BEGIN)
     _, _, tail = rest.partition(END)
-    README.write_text(head + render() + tail)
-    print(f"updated catalog block in {README.relative_to(ROOT)}")
+    TARGET.write_text(head + render() + tail)
+    print(f"updated catalog block in {TARGET.relative_to(ROOT)}")
     return 0
 
 

@@ -3,9 +3,10 @@
 poly ships one binary. Every channel below installs that same prebuilt binary — none of
 them compiles anything, and none needs a Rust, Node, or Python toolchain at run time.
 
-> **This content is README-bound.** It is written to be folded into `README.md`'s
-> installation section; it lives here only because `README.md` is being restructured
-> separately.
+> See the README's [Installation](../README.md#installation) section for the quickstart
+> version of this. This file is the deeper reference — per-platform package names, wheel
+> layout — plus the maintainer-only publishing notes below, which do not belong on a public
+> landing page.
 
 ## The command is `poly`
 
@@ -116,11 +117,11 @@ under a non-`latest` dist-tag (`npm publish --access public --tag placeholder`) 
 not become what `npm install @goldziher/polylint` resolves to — note that npm sets `latest`
 on a package's very first publish regardless, so the umbrella's `latest` has to be moved by
 the first real release. **This applies to every platform package too**, not just the
-umbrella: as of writing, `@goldziher/polylint` exists and the six platform packages do not.
-Until they do, `publish_npm` publishes the platform packages first, fails on the first one
-that has no trusted publisher, and never reaches the umbrella — which is the safe order,
-because an umbrella on `latest` whose pinned binaries do not exist installs cleanly and
-then has no `poly` to run.
+umbrella. All seven have had their bootstrap publish and exist on the registry; a new
+platform target added later needs the same manual first publish before CI can take it over.
+`publish_npm` publishes the platform packages before the umbrella either way, because an
+umbrella on `latest` whose pinned binaries do not exist installs cleanly and then has no
+`poly` to run.
 
 **PyPI** — one project, `polylint`, with a trusted publisher pointing at:
 

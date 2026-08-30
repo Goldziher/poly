@@ -3,54 +3,23 @@
 
 <img src="docs/media/poly-banner.svg" alt="poly - universal linter and formatter" width="820">
 
-**The polyglot lint and format pipeline for whole repositories.**
+**One binary. ~30 languages. No toolchain to install.**
 
-**poly** is a single CLI: one config, one Rust pipeline, curated in-process backends,
-tree-sitter fallback for everything else, and repo-wide cache + parallel execution. No language
-runtime is required for the default path; `gofmt` and `rustfmt` are used when present, and other
-external tools are opt-in.
+poly lints and formats whole repositories in seconds: curated Rust backends for the languages
+that matter, a tree-sitter fallback for everything else, and a Claude/Codex plugin plus an MCP
+server so agents can drive it directly instead of shelling out.
 
-Lint + format · one `poly.toml` · pure Rust default · blake3 cache · rayon parallelism · hooks +
-commit checks · JSON + TOON + MCP
+Lint + format · one `poly.toml` · pure Rust, zero deps · blake3 cache + rayon parallelism · git
+hooks & commit checks · MCP + Claude/Codex plugin
 
 [![CI](https://img.shields.io/github/actions/workflow/status/Goldziher/poly/ci.yaml?style=flat-square&cacheSeconds=300)](https://github.com/Goldziher/poly/actions/workflows/ci.yaml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 
-[Install](#installation) · [Quickstart](#quickstart) · [What You Get](#what-you-get) ·
-[How It Works](#how-it-works) · [Backends](#backend-coverage) · [CLI](#cli-reference)
+[Install](#installation) · [What You Get](#what-you-get) ·
+[AI Agents & MCP](#ai-agents--mcp) · [Performance](#performance) ·
+[Configuration](#configuration) · [CLI](#cli-reference) · [Contributing](#contributing)
 
 </div>
-
----
-
-## Quickstart
-
-```console
-$ poly fmt --check
-would reformat crates/example/src/main.rs
-
-1 file(s) will change of 1 file(s)
-
-$ poly fmt --fix
-reformatted crates/example/src/main.rs
-
-1 changed of 1 file(s)
-
-$ poly lint --format toon
-path: crates/example/src/main.rs
-diagnostics[0]: engine=ruff, code=F401, severity=warning, title="`os` imported but unused"
-
-$ poly hooks install
-✓ Installed 10 git hooks in .git/hooks
-  › commit-msg
-  › pre-commit
-  › pre-push
-  …
-```
-
-`poly fmt` is a dry run by default (CI-friendly); add `--fix` to write changes, and `poly lint
---fix` to apply lint autofixes. `poly hooks install` wires the git hooks once — lint, format, and
-commit checks then run on every `git commit`.
 
 ---
 
@@ -58,18 +27,16 @@ commit checks then run on every `git commit`.
 
 <!-- markdownlint-disable MD013 -->
 
-| Capability | What it does | Main surfaces |
-|---|---|---|
-| **Repo-wide lint + format** | Discovers files, routes each language to the best available backend, and reports normalized diagnostics and formatting drift. | `poly lint` · `poly fmt` |
-| **One config** | `poly.toml` drives linting, formatting, hooks, commit-message policy, cache settings, and optional tool catalog entries. | `[defaults]` · `[lint.*]` · `[fmt.*]` · `[hooks]` · `[tools]` |
-| **Curated Rust backends** | Wraps high-quality Rust libraries in-process: oxc, ruff internals, taplo, rumdl, sqruff, malva, markup_fmt, mago, and more. | Backend registry |
-| **Generic fallback** | Uses `tree-sitter-language-pack` for identified languages without a dedicated backend, reindenting supported grammars and normalizing whitespace where safe. | `treesitter` tier |
-| **Cache + parallelism** | Runs per file with rayon and skips unchanged work with a blake3 content-hash cache keyed by file bytes, engine, version, resolved config, and the identity of the poly build itself. | `poly cache` · `--no-cache` · `-j` |
-| **Git hooks** | Runs first-class builtins and inline hook jobs from `poly.toml`, with file-safety checks and Cargo tools as builtins. Whole-workspace hooks (`cargo`, type checkers) run isolated against staged content and skip when their inputs are unchanged. | `poly hooks install` · `poly hooks run` · `workspace` · `isolate` |
-| **Commit checks** | Enforces Conventional Commits and strips AI-attribution trailers through the bundled `gitfluff` engine. | `poly commit` |
-| **Agent-friendly output** | Emits structured JSON and compact TOON, and exposes lint/format/cache operations over an MCP stdio server. | `--format json` · `--format toon` · `poly mcp` |
-| **Optional breadth tier** | Enables tools from the embedded mdsf catalog only when you opt in; commands are PATH-probed and skipped when absent. | `[tools.<name>]` |
-| **Simple distribution** | Installs prebuilt release archives containing the `poly` binary, verified by release checksums. | Installer · GitHub Action · Homebrew |
+| Capability | What it does |
+|---|---|
+| **Fast on real repos** | Lints Django in 0.82s and home-assistant's 25,000 files in 3.5s, cold cache; see [Performance](#performance). |
+| **One binary, no toolchain** | ~30 languages with native Rust backends (ruff, oxc, biome, mago, taplo, rumdl, sqruff, malva, markup_fmt, rubyfmt, …) plus a tree-sitter tier for everything else. No Node, Python, or Ruby needed. |
+| **Built for agents** | A Claude/Codex plugin and a stdio MCP server ship in the box — an agent calls poly's tools directly instead of shelling out and parsing text. See [AI Agents & MCP](#ai-agents--mcp). |
+| **One config** | `poly.toml` drives linting, formatting, git hooks, and commit-message policy. |
+| **Cache + parallelism** | A blake3 content-hash cache skips unchanged work; rayon parallelizes the rest across cores. |
+| **Git hooks & commit checks** | `poly hooks install` wires lint, format, and Conventional-Commit checks into git — no external hook framework. |
+| **Two lint tiers on every language** | A code-quality metrics engine and a 26-rule built-in ast-grep pack run on top of the backends above, on by default at warning severity so they never redden an unconfigured CI. |
+| **Simple distribution** | Prebuilt binaries via a shell/PowerShell installer, a GitHub Action, Homebrew, Scoop, npm, and PyPI. |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -77,10 +44,7 @@ commit checks then run on every `git commit`.
 
 ## Installation
 
-poly is distributed like `ruff` or `biome`: prebuilt release artifacts plus a thin installer and a
-Homebrew tap. The workspace crates are not published to crates.io.
-
-### Installer Scripts
+### Quick install
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Goldziher/poly/main/install.sh | sh
@@ -92,134 +56,142 @@ Windows PowerShell:
 irm https://raw.githubusercontent.com/Goldziher/poly/main/install.ps1 | iex
 ```
 
-Both installers detect the platform, download the matching release archive, verify it against
-`sha256sums.txt`, and install `poly`. Set `POLY_VERSION=v0.5.0` to pin a version or
-`POLY_INSTALL_DIR=/path/to/bin` to choose the destination. This is a **true pin**: the installer
-downloads that exact tag's release archive and refuses to install it unless it matches the
-checksum published for that release — it never falls back to "already have some `poly`, skip".
-
-Re-run either installer to upgrade. Upgrades are **atomic**: the new binary is staged beside the
-destination and renamed over it, so `poly` is never momentarily missing or half-written. That
-matters because `poly hooks install` wires git hooks that resolve `poly` from `PATH` globally and
-**fail closed** — an upgrade that deletes or truncates the destination first blocks every commit in
-every repository on the machine until it finishes. If you install poly some other way, do the same
-(write `poly.tmp`, `chmod`, then `mv` it over the target; `cargo install` already works this way)
-rather than removing or overwriting the binary in place.
+Both detect the platform, download the matching release archive, and verify it against
+`sha256sums.txt`. Set `POLY_VERSION=0.22.0` to pin an exact release.
 
 ### GitHub Actions
 
 ```yaml
-# Pin a version (recommended for CI reproducibility):
 - uses: Goldziher/poly@v0
   with:
-    version: v0.21.0
-
-# Latest release, cached (default when `version` is omitted):
-- uses: Goldziher/poly@v0
+    version: v0.22.0 # omit for the latest release
 ```
 
-The action forwards `version:` verbatim to `install.sh`, so it is the **same true pin** as the
-installer scripts above — an exact release, checksum-verified, not a presence check. It caches the
-installed binary bundle by resolved version and platform, and adds `poly` to `PATH`. See
-[`ACTION_USAGE.md`](ACTION_USAGE.md) for the full input/output reference, including how to also
-pin the action's own code to a commit SHA independent of the `version:` input.
+Forwards to `install.sh` and caches the installed binary by version and platform. See
+[`ACTION_USAGE.md`](ACTION_USAGE.md) for the full input/output reference.
 
-### Package Managers
+### Package managers
 
 ```sh
 brew install Goldziher/tap/poly
-cargo binstall --git https://github.com/Goldziher/poly poly-cli
 ```
 
-`cargo binstall`'s `[package.metadata.binstall]` (`crates/poly-cli/Cargo.toml`) resolves against
-the same GitHub release archives as the installer scripts, so `--version 0.21.0` (or
-`poly-cli@0.21.0`) is also a true pin — it does not require a crates.io publish.
+```powershell
+scoop bucket add goldziher https://github.com/Goldziher/scoop-bucket
+scoop install poly
+```
 
-**Homebrew cannot pin today.** `Goldziher/tap/poly` is a single formula that the release
-pipeline rewrites in place on every release — there is no versioned alias (e.g. `poly@0.19`) to
-request an older release by name, so `brew install`/`brew upgrade` always resolve to whatever is
-currently at `HEAD` of the tap. Treat Homebrew as a get-latest channel and verify what you got
-after the fact (below); use the installer scripts, the GitHub Action, or `cargo binstall`, all of
-which support a true pin, wherever reproducibility matters.
+Homebrew's tap is a single rolling formula with no versioned alias yet — treat it as a
+get-latest channel and use the installer script or the GitHub Action where a pinned version
+matters. `cargo binstall --git https://github.com/Goldziher/poly poly-cli` also works, resolving
+the same GitHub release archives.
 
-### Pinning poly in a repository
-
-Lint and format output depends on the poly version, so a repository that does not pin one can see
-its results change underneath it. **Do not gate installation on poly merely being present:**
+### npm and PyPI
 
 ```sh
-# Wrong: satisfied by ANY poly from ANY channel, so it never upgrades and drifts silently.
-command -v poly >/dev/null 2>&1 || brew install Goldziher/tap/poly
+npm i -g @goldziher/polylint
+pip install polylint
 ```
 
-That check passes as soon as *some* `poly` exists, so the install never runs again and the version
-drifts with no signal. It also cannot see a `poly` from another channel shadowing the one it thinks
-it installed — `~/.cargo/bin` precedes `/opt/homebrew/bin` on a default macOS `PATH`, so a stray
-`cargo`-installed binary wins silently.
+Both install the same prebuilt `poly` binary. The package is named `polylint` (the unscoped
+`poly` name belongs to unrelated projects on both registries), but **the executable is `poly`
+on every channel** — `polylint` also works everywhere as an alias for the same binary. Full
+per-platform detail in [docs/INSTALL-PACKAGES.md](docs/INSTALL-PACKAGES.md).
 
-**Prefer a true pin:** the installer scripts (`POLY_VERSION=0.21.0 curl ... | sh`) or the GitHub
-Action (`version: v0.21.0`) install exactly the requested, checksum-verified release — no
-verify-after-the-fact needed, because there is nothing to drift.
+### As an agent plugin
 
-If Homebrew is the only option available (e.g. an interactive dev machine already standardized on
-`brew`), pin a version and verify the *resolved* binary instead, since brew itself cannot request
-a specific version:
-
-```sh
-POLY_VERSION=0.21.0
-
-resolved=$(poly --version 2>/dev/null | awk '{print $2}' || true)
-if [ "$resolved" != "$POLY_VERSION" ]; then
-  brew upgrade Goldziher/tap/poly || brew install Goldziher/tap/poly
-  resolved=$(poly --version 2>/dev/null | awk '{print $2}' || true)
-fi
-[ "$resolved" = "$POLY_VERSION" ] || {
-  echo "poly $POLY_VERSION required, but $(command -v poly) reports ${resolved:-none}" >&2
-  exit 1
-}
-```
-
-Three details matter: `brew install` no-ops on an already-installed-but-outdated formula (hence
-`brew upgrade ||`), the version is re-checked *after* installing rather than assumed, and the
-failure message names `command -v poly` so a shadowed binary is identifiable rather than baffling.
-Note this still only *verifies* the version post-install — it cannot request `0.21.0` specifically
-if `brew upgrade` has already moved past it; see "Package Managers" above.
-
-In CI, prefer the GitHub Action or the installer script with an explicit version — both resolve
-and install a specific release rather than whatever is already on the runner.
-
-### Manual or Source Builds
-
-Download a release archive from
-[GitHub Releases](https://github.com/Goldziher/poly/releases), or build from source:
-
-```sh
-git clone https://github.com/Goldziher/poly
-cd poly
-cargo build --release
-```
-
-Source builds place the binary at `target/release/poly`.
-
-### Install as a Plugin
-
-poly ships its own Claude/Codex plugin, registering `poly mcp` as a stdio MCP server plus
-5 skills and 2 slash commands that teach an agent to use poly as its lint/format
-orchestrator. The plugin assumes `poly` is already on `PATH` (installer, Homebrew, or a
-source build above) — it does not bundle the binary.
-
-Claude Code:
+poly ships its own Claude/Codex plugin, registering `poly mcp` as a stdio server plus 5 skills
+and 2 slash commands (`/poly-check`, `/poly-fix`):
 
 ```text
 /plugin marketplace add Goldziher/poly
 /plugin install poly@poly
 ```
 
-Codex: add the `Goldziher/poly` marketplace through your Codex client's plugin manager and
-install the `poly` plugin from it — the manifest lives at `.codex-plugin/plugin.json`.
+Codex: add the `Goldziher/poly` marketplace through your client's plugin manager (manifest at
+`.codex-plugin/plugin.json`). The plugin assumes `poly` is already on `PATH` — it does not
+bundle the binary — and its version tracks the `poly` binary version lock-step. See
+[AI Agents & MCP](#ai-agents--mcp).
 
-The plugin version is lock-step with the `poly` binary version (`poly --version` and the
-installed plugin version always match).
+### As an MCP server
+
+Any MCP-capable client can run poly directly:
+
+```json
+{
+  "mcpServers": {
+    "poly": { "command": "poly", "args": ["mcp"] }
+  }
+}
+```
+
+---
+
+## Quickstart
+
+```console
+$ poly lint
+./app.py
+  warning  ruff  T201  5:5  `print` found
+  warning  ruff  ANN201  4:5  Missing return type annotation for public function `main`
+  error  ruff  F401  1:8  `os` imported but unused
+
+3 issues found.
+  2 files linted
+  1 issue fixable with the `--fix` option
+
+$ poly fmt --check
+would reformat ./src/main.rs
+
+1 file will change.
+  2 files checked
+
+$ poly fmt --fix
+reformatted ./src/main.rs
+
+1 file reformatted.
+  2 files checked
+
+$ poly hooks install
+✓ Installed 2 git hooks in .git/hooks
+  › commit-msg
+  › pre-commit
+```
+
+`poly fmt` is a dry run by default (CI-friendly); add `--fix` to write changes, and `poly lint
+--fix` to apply lint autofixes. `poly hooks install` wires the git hooks once — lint, format, and
+commit checks then run on every `git commit`.
+
+Exit codes are a contract: `0` is clean, `2` means the run verified less than it claims, and `1`
+means findings — which for `poly fmt --fix` reports *that files were rewritten*, so a script
+running it in fix mode should treat `1` as success. Add `-q` to trim the per-file detail on a
+large repository; the summary keeps every count and reason.
+
+---
+
+## Demos
+
+Real recordings, not mockups — `vhs` runs each command live, so the timings on screen are the
+timings you get. Tapes are in [`docs/media/tapes/`](docs/media/tapes/).
+
+**Kubernetes: 31,303 files, one binary, no Go toolchain.**
+
+![poly linting the Kubernetes repository](docs/media/scale.gif)
+
+**Django is not a Python repo** — it is Python, JavaScript, CSS, HTML, TOML, YAML and Markdown.
+One tool, one config, one pass.
+
+![poly formatting and linting Django](docs/media/polyglot.gif)
+
+**Every report has a machine-readable form.** `--format toon` is compact enough to hand to an
+agent without burning its context; `--format json` is there when you want a document to parse.
+
+![poly emitting TOON output](docs/media/toon.gif)
+
+**And an agent can skip the terminal entirely.** `poly mcp` speaks MCP over stdio and advertises
+the same eleven tools the CLI exposes.
+
+![the poly MCP server listing its tools](docs/media/agent.gif)
 
 ---
 
@@ -228,9 +200,9 @@ installed plugin version always match).
 <details open>
 <summary><strong>Pipeline</strong></summary>
 
-`poly` discovers files once, plans engines once per language, prefetches the generic tier's
-tree-sitter grammars, and then runs the per-file work in parallel. Each backend returns the same
-`Diagnostic` and `FormatOutput` shapes, so reporting, cache behavior, and MCP output stay uniform.
+poly discovers files once, plans engines once per language, and runs the per-file work in
+parallel on a rayon pool. Every backend returns the same `Diagnostic` / `FormatOutput` shapes, so
+reporting, caching, and MCP output stay uniform.
 
 ```mermaid
 flowchart LR
@@ -250,32 +222,112 @@ flowchart LR
 <details>
 <summary><strong>Zero-dependency default</strong></summary>
 
-The default path does not require Python, Node, Go, a JVM, or a project-local toolchain. Most
-backends are Rust crates compiled into the binary. Two canonical native formatters are default-on
-when present: `gofmt` for Go and `rustfmt` for Rust. If either is missing, the language falls back to
-the generic tier. `shellcheck` is likewise default-on when present (ADR 0014's 2026-08-29
-amendment — shell has no first-party linter to defer to). `zig fmt`, `shfmt`, and catalog tools
-are opt-in and are skipped when
-absent.
+The default path needs no Python, Node, Go, JVM, or project-local toolchain — most backends are
+Rust crates compiled into the binary. `gofmt`, `rustfmt`, and `shellcheck` run automatically when
+present on `PATH`; every other native-toolchain wrapper (`zig fmt`, `shfmt`, …) and every catalog
+tool is opt-in. A language with no dedicated backend falls through to a tree-sitter generic tier —
+still pure Rust, still zero system deps.
 
 </details>
 
 <details>
-<summary><strong>Cache and debug data</strong></summary>
+<summary><strong>Cache</strong></summary>
 
-The result cache is keyed by file bytes, engine name, engine `version()`, and resolved engine
-configuration. A tool upgrade or config change invalidates stale entries. `--debug` reports per-file
-engine timing and cache hit/miss data in pretty output and attaches it to JSON/TOON output.
+The result cache is keyed by file bytes, engine name, engine version, and resolved engine config —
+a tool upgrade or config change invalidates exactly the entries it affects. `--debug` reports
+per-file engine timing and cache hit/miss data.
 
 </details>
 
 ---
 
+## AI Agents & MCP
+
+poly ships its own agent integration rather than expecting one to be bolted on: a Claude/Codex
+plugin and a stdio MCP server exposing the same lint/format/cache surface as the CLI, with
+structured output an agent can consume directly.
+
+### Plugin
+
+```text
+/plugin marketplace add Goldziher/poly
+/plugin install poly@poly
+```
+
+Installs 5 skills and 2 slash commands (`/poly-check`, `/poly-fix`) that teach an agent poly's
+tiered backend model and when to reach for lint vs. format vs. hooks.
+
+### MCP tool surface
+
+Eleven tools, mirroring the CLI 1:1:
+
+<!-- markdownlint-disable MD013 -->
+
+| Tool | Mirrors | Kind |
+|---|---|---|
+| `lint` | `poly lint` | read-only |
+| `format_check` | `poly fmt --check` | read-only |
+| `rules` | `poly rules list` / `test` | read-only |
+| `config_show` | `poly config show` | read-only |
+| `cache_stats` | `poly cache stats` | read-only |
+| `version` | `poly --version` (plus build id, channel, pid) | read-only |
+| `lint_fix` | `poly lint --fix` | mutating |
+| `format_write` | `poly fmt --fix` | mutating |
+| `cache_clean` | `poly cache clean` | mutating |
+| `workspace_lint` | the whole-project phase, check mode | async task |
+| `workspace_lint_fix` | the whole-project phase, fix mode | async task |
+
+<!-- markdownlint-enable MD013 -->
+
+`workspace_lint` / `workspace_lint_fix` run `cargo clippy` / `cargo-sort` / `cargo-machete` /
+`cargo-deny` and any configured whole-project checkers — a multi-minute operation — so both are
+exposed as async **Tasks**: the call returns a handle and the client polls `tasks/get`. A client
+that doesn't declare the tasks capability gets a synchronous result from the same call instead.
+
+Every result carries a `poly` identity block (version, build id, channel, executable, pid), so an
+agent knows which binary answered — an MCP caller has no `poly --version` to fall back on.
+Results also distinguish three per-file outcomes: **checked**, **skipped** (poly correctly
+declined the file), and **errored** (poly failed on a file it accepted) — `isError` is set
+whenever anything errored, so an agent can gate on it before trusting the rest of the payload.
+
+Full parameter reference: [`.ai-rulez/skills/poly-mcp/SKILL.md`](.ai-rulez/skills/poly-mcp/SKILL.md).
+
+---
+
+## Performance
+
+Release build, Apple Silicon, cold cache (`--no-cache`), best of three runs on an idle machine.
+`poly lint --no-workspace` and `poly fmt --check` over the whole repository, counting the files
+poly actually inspected. These are poly's own numbers — **not** a comparison against ruff,
+oxlint, biome or anything else; no such benchmark was run.
+
+<!-- markdownlint-disable MD013 -->
+
+| Project | `poly lint` | Findings | Peak RSS | `poly fmt --check` |
+|---|---|---|---|---|
+| Django | 3,113 files in **0.82s** | 66,839 | 0.21 GB | 5,539 files in 0.30s |
+| home-assistant | 25,443 files in **3.5s** | 376,829 | 0.48 GB | 25,559 files in 1.2s |
+| Kubernetes | 21,657 files in **6.8s** | 41,576 | 0.40 GB | 21,824 files in 12.9s |
+| prettier | 7,057 files in **1.9s** | 19,373 | 0.40 GB | 7,450 files in 0.44s |
+| TypeScript | 32,606 files in **13.3s** | 179,586 | 0.52 GB | 40,012 files in 4.0s |
+
+<!-- markdownlint-enable MD013 -->
+
+Kubernetes is the one repository where formatting costs more than linting: its Go files go
+through `gofmt`, the one backend that is a subprocess rather than a linked-in crate, and ~20,000
+process spawns dominate the run.
+
+The blake3 cache and rayon parallelism (see [How It Works](#how-it-works)) are what keep repeat
+runs fast — Django re-lints in 0.71s warm against 0.82s cold: a cache hit skips the engine
+entirely, and everything else is split across cores.
+
+---
+
 ## Configuration
 
-poly discovers the nearest `poly.toml`, and `poly.local.toml` can layer local overrides over the
-primary config. In a monorepo, nested `poly.toml` files cascade — see
-[Nested config in a monorepo](#nested-config-in-a-monorepo).
+A single `poly.toml` at the repo root drives linting, formatting, hooks, and commit policy;
+`poly.local.toml` layers local overrides on top, and nested `poly.toml` files cascade in a
+monorepo.
 
 ```toml
 [defaults]
@@ -284,1605 +336,113 @@ line_ending = "lf"
 final_newline = true
 trim_trailing_whitespace = true
 
-[discovery]
-# Gitignore-style globs pruned from the file walk on every direct
-# `poly lint` / `poly fmt` run (the CI and GitHub Action path), on top of
-# `.gitignore` and the built-in vendored/generated prune set. The file-scoped
-# `[hooks.builtin]` hooks (`lint`, `fmt`, `file_safety`) inherit these globs, so
-# a repo states its excluded paths once.
-exclude = ["test_apps/**", "docs/snippets/**", "artifacts/**"]
-
-# Whether a file or directory named on the command line honors `exclude`.
-# Defaults to `true`, which is what a hook — always handed explicit staged
-# paths — needs. Set it to `false` to check named paths even when they match
-# `exclude`; the directory walk still prunes them either way. `--force-exclude`
-# and `--include-excluded` override this key for a single run, in either
-# direction (flag beats config; the two flags are mutually exclusive).
-force_exclude = true
-
-# Directory names to keep despite the built-in prune set below, for a repo where
-# one of those names is ordinary source rather than build output.
-no_prune = ["build", "dist"]
-
-# Whether poly lints and formats machine-generated files — those whose opening
-# lines carry a `DO NOT EDIT` / `@generated` banner or a `<project>:hash:<digest>`
-# stamp. Defaults to `true`: they are checked like any other file, which is how a
-# generator bug gets noticed. Set it to `false` for a repo whose generated output
-# is not its to fix; poly then reports each one as *skipped* rather than dropping
-# it silently, so the count, the JSON payload and `--deny-skips` all still see it.
-# `--skip-generated` / `--include-generated` override this for a single run.
-generated = true
-
-[fmt.python.ruff]
-docstring_code_format = true
-docstring_code_line_length = 120
-
 [lint.python.ruff]
 select = ["E", "F", "W"]
 
-# Every linter backend accepts uniform `select` / `extend_select` / `ignore`
-# (rule codes, and category names where the backend has them). `extend_select`
-# adds to the defaults; `select` replaces them.
-[lint.php.mago]
-select = ["correctness", "security"]   # categories or rule codes
-ignore = ["no-else-clause"]
-php_version = "8.2"
-
-# A per-rule `level` override works for every backend — poly applies it after
-# linting, so it does not depend on the tool having its own severity config.
-[lint.php.mago.rules.cyclomatic-complexity]
-level = "warning"   # error | warning | info | hint
-
-# Any *other* key in a `[rules.<id>]` table is forwarded to the backend as a
-# tool parameter, where the backend supports it — today oxlint, rumdl and
-# sqruff. ruff and mago accept `level` but ignore other per-rule keys; use their
-# flat native keys instead (e.g. `mccabe_max_complexity` under
-# `[lint.python.ruff]`). See ADR 0016.
 [lint.javascript.oxc.rules.max-params]
 max = 6
 
-# Suppress specific rules per path glob (lint-only), across every backend.
 [per-file-ignores]
 "tests/**" = ["F401"]
-"**/*.generated.php" = ["correctness"]
 
 [hooks]
-stages = ["pre-commit", "commit-msg"]
+stages = ["pre-commit"]
 
 [hooks.builtin]
 lint = true
 fmt = true
 commit = { stages = ["commit-msg"] }
-file_safety = true
-cargo = true
 ```
 
-### Default Rule Selection
-
-The Python (ruff) and JavaScript/TypeScript (oxlint) backends select rules beyond each tool's own
-out-of-the-box default, widening coverage while keeping an unconfigured run green.
-
-**Python (ruff)** selects `F`, `E4`, `E7`, `E9`, `W6`, `I`, `UP`, `B` (ruff's own default set) plus:
-
-| Category | Codes | Covers |
-|---|---|---|
-| Typing | `ANN` | Every function signature carries type annotations. |
-| Functional style | `SIM`, `C4`, `RET`, `FURB`, `PERF` | Comprehensions over map/filter, no needless else/assign-before-return, modern idioms, avoidable per-iteration work. |
-| Error handling | `TRY`, `BLE`, `S110` | raise/except discipline, bare `except Exception:`, silently swallowed `try/except/pass`. |
-| Complexity | `C90`, `PLR` | Cyclomatic complexity, Pylint's too-many-args/branches/returns/statements family. |
-| Hygiene | `T20`, `TC`, `PTH`, `RUF`, `ARG` | Stray `print()`, imports that belong behind `TYPE_CHECKING`, `os.path` calls pathlib does better, ruff's own rules, unused arguments. |
-
-**JavaScript/TypeScript (oxlint)** ran only the `correctness` category by default; it now also
-enables `suspicious`, `pedantic`, and four named rules: `typescript/no-explicit-any`,
-`typescript/no-non-null-assertion`, `no-console`, and `complexity`. The last sits in oxlint's
-(off) `restriction` category, but its default threshold is exactly 20 — the same cyclomatic-
-complexity budget poly applies to every other language — so JS/TS gets the metric from oxlint
-rather than a separate implementation. Measured at 21 findings on hand-written source across a
-20-repository corpus, with no false positives in the hand-read set.
-
-**The added rules are guard rails, not gates.** `poly lint` exits non-zero only on error-severity
-findings. The correctness core each tool always ran — ruff's `F`/`E4`/`E7`/`E9`/`W6`/`I`/`UP`/`B`
-and oxlint's `correctness` category — keeps error severity, so real defects still fail CI exactly
-as before. Every newly-added category reports at **warning** and never fails a run on its own.
-Promote one you want enforced with a per-rule override:
-
-```toml
-[lint.python.ruff.rules.ANN201]
-level = "error"
-```
-
-Measured across a six-repository corpus, the widened Python selection added roughly 1,146 findings
-and zero new CI-breaking ones.
-
-**Rules held back.** A handful of rules stay off even though their category is selected — each was
-measured against the same corpus and found to fire on legitimate code rather than a defect:
-
-| Rule | Category | Why it's off |
-|---|---|---|
-| `B008` | flake8-bugbear | Flags the FastAPI/typer `Depends(...)` pattern — a deliberate call in a default. |
-| `RUF100` | ruff | Fires on any `# noqa` code poly does not select; measures config distance, not code quality. |
-| `ANN002` / `ANN003` | flake8-annotations | Only `Any` ever satisfies them, which `ANN401` (on by default) then flags anyway. |
-| `ARG002` | flake8-unused-arguments | Fires on fixed-signature overrides/callbacks (`*args`/`**kwargs`). |
-| `PLR2004` | Pylint | Overwhelmingly HTTP status codes in test assertions. |
-| `TRY003` | tryceratops | Demands a dedicated exception subclass for every `raise ValueError("…")`. |
-
-Re-enable any of them with `extend_select = ["<code>"]` under `[lint.python.ruff]`. The `EM`
-category (exception message assigned to a variable before `raise`) is not selected at all.
-
-For oxlint, `no-underscore-dangle`, `max-lines-per-function`, `max-lines`, and
-`max-classes-per-file` are turned back off for the same reason (a universal private-field
-convention; `describe()` blocks that always exceed the 50-line default; a 300-line-per-file
-default poly does not endorse elsewhere; and a one-class-per-file rule whose 27 corpus findings
-were all error taxonomies, test mocks, `.d.ts` stubs, or cohesive module groups — not one a
-defect). Re-enable with `extend_select` under `[lint.javascript.oxc]` / `[lint.typescript.oxc]`.
-
-**Migration note.** Selecting `C90`/`PLR` makes the already-existing `mccabe_max_complexity`,
-`pylint_max_args`, `pylint_max_branches`, and `pylint_max_returns` options under `[lint.python.ruff]`
-take effect for the first time. A repo that previously set `mccabe_max_complexity = 10` and saw no
-effect now gets `C901` findings — at warning severity, so it won't fail CI unless promoted.
-
-**Formatter layering.** For the CSS/SCSS/Less (malva), HTML/Vue/Svelte (markup_fmt), GraphQL and
-YAML backends, `[defaults] line_length` and `[defaults] line_ending` supply `print_width` and
-`line_break` only when you have not set those keys yourself in the engine's own table — your
-config is always the top layer. Some tools expose no such setting at all: Nix (alejandra) and
-Ruby (rubyfmt) are zero-configuration formatters, so `[fmt.nix.alejandra]` and
-`[fmt.ruby.rubyfmt]` have no effect beyond invalidating the cache; TOML (taplo) always trims
-trailing whitespace regardless of `[defaults] trim_trailing_whitespace`.
-
-**Unknown keys are not currently reported.** `[lint.*]` and `[fmt.*]` are untyped tables, so a
-misspelled key — or a key a backend does not support — parses without error and does nothing.
-
-**PHP (mago).** Mago ships six default-enabled rules at error level that measure a *metric* rather
-than detect a defect — `cyclomatic-complexity` (>15), `excessive-parameter-list` (>5),
-`too-many-methods` (>10), `too-many-properties` (>10), `too-many-enum-cases` (>20), and
-`kan-defect`. poly reports these at **warning**, so a complexity budget never fails CI, while
-mago's correctness, safety, and security rules (`no-ffi`, `no-eval`, `no-literal-password`,
-`tainted-data-to-sink`, `no-unsafe-finally`, `no-empty`, …) keep error severity. Across the corpus
-this moved 416 findings from error to warning and changed no other severity. Promote one back with:
-
-```toml
-[lint.php.mago.rules.cyclomatic-complexity]
-level = "error"
-```
-
-### Suppressing a Rule Inline
-
-`[per-file-ignores]` is the right tool for a whole file or a class of files. For a *single*
-justified exception inside an otherwise-normal file, write the directive in the file itself, in
-that language's own comment syntax (see [ADR 0028](adrs/0028-inline-suppression-directives.md)):
-
-```python
-import os  # poly: allow[F401] re-exported for backwards compatibility
-```
-
-```typescript
-// poly: allow[no-debugger] deliberate breakpoint, stripped from the release bundle
-debugger;
-```
-
-- **`poly: allow[RULE, RULE2] reason`** — covers the line it trails. On a line that is *entirely*
-  a comment it covers the next non-blank line instead.
-- **`poly: allow-file[RULE] reason`** — covers the whole file, wherever in the file it appears.
-- Rule codes are comma-separated and matched exactly or as a code family prefix, the same way
-  `[per-file-ignores]` matches them: `allow[F]` covers `F401`, but not `FOO1`. `allow[*]` covers
-  every rule.
-- It works for every backend, because it is applied centrally by the runner — ruff, oxlint,
-  typos, the tree-sitter tier, and any backend added later, with no per-engine wiring.
-
-**A reason is mandatory.** A directive with nothing but whitespace or punctuation after the
-closing bracket does **not** suppress anything; the rule still fires and poly additionally reports
-a `lazy-ignore` warning on the directive line. This is the point of the mechanism: it is a guard
-rail, not a bypass, and it holds poly to the same standard its own `lazy-ignore` rule applies to
-`# noqa` and `// eslint-disable`.
-
-poly recognizes the directive after any of the comment openers `//`, `#`, `--`, `;`, `/*`, `*`,
-`<!--`, `%`, `!`, `dnl`, and `rem` — no per-language configuration. Quotes are deliberately not
-openers, so a directive-shaped string literal never suppresses.
-
-### Nested config in a monorepo
-
-Run `poly` from a monorepo root and each sub-project's `poly.toml` cascades over the root, the
-way ruff and eslint resolve config (see [ADR 0018](adrs/0018-hierarchical-configuration.md)). A
-nested config declares **only the diff** — it inherits `[defaults]`, the `[lint.*]`/`[fmt.*]` rule
-tables, and `[per-file-ignores]` from its ancestors, up to the workspace root:
-
-```toml
-# repo/poly.toml — the workspace root
-[workspace]
-root = true            # stops the upward cascade here (a repo's `.git` dir is
-                       # an implicit boundary too, so this is optional in a repo)
-
-[defaults]
-line_length = 120
-
-[lint.python.ruff]
-select = ["E", "F", "W"]
-```
-
-```toml
-# repo/frontend/poly.toml — governs repo/frontend/** only
-[defaults]
-line_length = 100      # overrides the root; ruff select is inherited
-
-[per-file-ignores]
-"*.spec.ts" = ["no-console"]   # glob is relative to repo/frontend/
-```
-
-Resolution rules:
-
-- **Which config governs a file does not depend on how you invoked poly.** `poly fmt .`, `poly fmt
-  frontend`, and `poly fmt frontend/src/app.ts` all apply `frontend/poly.toml` to that file — so a
-  pre-commit hook, which is always handed explicit staged paths, gates on exactly what a whole-repo
-  run gates on.
-- **Rules and defaults cascade** (root → child, deep-merged; the nearest config wins).
-- **`[discovery] exclude` globs are additive** across the tree — each config's excludes prune its
-  own subtree, so a parent exclude already covers its children.
-- **`[per-file-ignores]` globs are relative** to the directory of the config that declares them.
-- `--config <path>` pins one config for the whole run and bypasses nested resolution.
-
-### The built-in prune set
-
-Independently of `exclude`, poly never walks into a directory with one of these names, at any depth:
-
-```text
-node_modules  vendor  deps    target  dist   build  .git
-.venv         venv    .tox    .gradle .next  .nuxt  coverage
-__pycache__   .mypy_cache      .ruff_cache    .pytest_cache  .polylint
-```
-
-These hold vendored code, build output, or tool caches, and they are frequently *tracked*, so
-`.gitignore` alone does not exclude them. Every run reports what this pruned, so a directory you did
-not expect to lose is visible rather than silently missing:
-
-```console
-$ poly fmt --check .
-All formatted. (2239 file(s) checked, 26 director(ies) skipped by the built-in prune set)
-  26 director(ies) skipped by the built-in prune set (e.g. src/cli/pipeline/commands/build, node_modules)
-  these were not walked, so the files inside them are not counted; keep one with [discovery] no_prune
-```
-
-`build` and `dist` are build-output conventions in most ecosystems and ordinary domain nouns in
-some. Where one of them is real source, name it in `no_prune`:
-
-```toml
-[discovery]
-no_prune = ["build", "dist"]
-```
-
-These are bare directory names, not globs — the built-in set is a name list and `no_prune` subtracts
-from it. To prune *more* paths, use `exclude`. Unlike `exclude`, `no_prune` replaces rather than
-accumulates across config layers, and it is read from the run's root config only: a `poly.toml`
-*inside* a pruned directory cannot un-prune it, because that directory was never walked to find the
-config in the first place.
-
-### Machine-generated files
-
-A file whose opening lines carry a `DO NOT EDIT`, `@generated` or `Code generated …` banner is
-**linted, formatted and fixed like any other file**. That is deliberate: a generator can emit a
-defect, and poly reporting it is how anyone finds out. All three phases agree — there is no shape
-of file that `poly fmt` reformats but `poly lint --fix` refuses to touch.
-
-The one exception is narrower than a banner and is a correctness guard, not a preference. When the
-header stamps a **content hash** over the body — `<project>:hash:<digest>`, the shape a generator
-later verifies — poly still reports on the file but never writes to it. Reformatting the body
-invalidates the hash, so the generator's verify step reports drift on a file no human touched and
-the only remedy is a regen that throws the change away. `poly fmt` reports those as
-`skipped … hash-stamped generated file`, `poly lint --fix` reports the diagnostics and says how
-many fixes it withheld, and `--fix-generated` opts back in.
-
-To keep generated files out of poly entirely — the repo whose generated output is not its to fix —
-turn them off once, for both phases:
-
-```toml
-[discovery]
-generated = false
-```
-
-They are then **reported as skipped**, not silently dropped: they stay out of the `N file(s) linted`
-count, they appear in the `--format json`/`toon` payload, and they count against `--deny-skips` /
-`--max-skips`, so a gate cannot quietly stop covering a tree.
-
-```console
-$ poly lint --verbose .
-Nothing was linted. (0 file(s) linted, 1 skipped (machine-generated file ([discovery] generated = false)))
-  skipped bindings/api.py: machine-generated file ([discovery] generated = false)
-```
-
-The key is read from the config nearest each file, so a nested `poly.toml` (see
-[Nested config in a monorepo](#nested-config-in-a-monorepo)) can opt out one subtree without touching the
-rest. `--skip-generated` and `--include-generated` override it in either direction for a single
-run, and beat every config in the tree.
-
-### Sharing configuration
-
-A top-level `extends` list inherits any section of `poly.toml` — `[defaults]`,
-`[lint.*]`/`[fmt.*]`, `[tools.*]`, `[per-file-ignores]`, `[hooks.*]`, and so on — from local
-or pinned remote base configs, so an org can maintain one baseline instead of copy-pasting
-it into every repo (see [ADR 0020](adrs/0020-shared-remote-configuration.md)). Entries use
-the same `path`/`git`/`revision` vocabulary as `[[hooks.sources]]`:
-
-```toml
-extends = [
-  { git = "https://github.com/acme/poly-baseline", revision = "<40-hex-oid>", file = "poly.toml" },
-  "./poly.overrides.toml",   # later entry = higher precedence
-]
-```
-
-Bases are deep-merged underneath this file, in listed order; this `poly.toml` and then
-`poly.local.toml` always win on top.
-
-**`exclude` lists accumulate; every other key replaces.** A repo that adds one glob of its own
-keeps every glob it inherited — and keeps receiving later changes to the base — instead of having
-to restate the base's list and freeze a copy of it:
-
-```toml
-# base: [discovery] exclude = ["vendor/**", "target/**"]
-extends = ["../baseline/poly.toml"]
-
-[discovery]
-exclude = ["generated/**"]   # effective: vendor/**, target/**, generated/**
-```
-
-To drop what you inherited and state the whole list yourself, add `exclude_mode = "replace"` next
-to the `exclude` in that table. The same rule governs `[discovery] exclude` → `[hooks.builtin.*]`
-inheritance, and it applies to `exclude` only — rule selections, `[rules] dirs`, `clippy_args` and
-every other array still replace.
-
-A `git` base pinned to a full commit OID needs no lock;
-a branch or tag ref requires running `poly config update` first, which resolves it into
-`poly-config.lock` and prints the `[hooks]`/`[tools]` the base introduces. `extends` is
-forbidden in `poly.local.toml`. Extending a remote base means trusting that repository to
-run code on your machine — treat it like any other dependency.
-
-`poly config show` prints the effective, fully-merged result as a TOML document — every layer
-applied, every key as poly resolved it — so `diff`ing it against your own `poly.toml` answers
-"what did poly actually keep?".
-
-### Optional Catalog Tools
-
-Opt into tools from the embedded mdsf catalog only when you want them:
-
-```toml
-[tools.prettier]
-enabled = true
-languages = ["javascript", "typescript"]
-
-[tools.black]
-enabled = true
-languages = ["python"]
-```
-
-Catalog tools are capability-probed on `PATH`; a missing binary is skipped instead of making the
-whole run fail.
-
-### Custom Rules
-
-Write your own lint rules — and codemods — as [ast-grep](https://ast-grep.github.io) YAML,
-in any of the 300+ languages poly can parse. Custom rules run in-process alongside the native
-backends on every `poly lint`, and `poly lint --fix` applies any `fix:` rewrites they declare.
-No plugin, no fork, no extra toolchain: rules run on the same tree-sitter grammars poly already
-bundles.
-
-Point `[rules] dirs` at one or more directories of rule files (paths are resolved relative to the
-`poly.toml` that declares them, so a rule set works from any working directory):
-
-```toml
-[rules]
-dirs = [".poly/rules"]   # default; set to [] to disable custom rules
-```
-
-Each rule is a standard ast-grep YAML document. The `language:` field names a tree-sitter
-grammar; any metavariable used in `fix:` must be bound by the `rule:` pattern:
-
-```yaml
-# .poly/rules/python/use-is-none.yml
-id: use-is-none
-language: python
-severity: warning
-message: Use `is None` rather than `== None`.
-rule:
-  pattern: $X == None
-fix: $X is None
-```
-
-For languages where a bare fragment is not valid at file top level (e.g. Go), use ast-grep's
-`context`/`selector` pattern form.
-
-#### Testing rules
-
-A rule may ship a companion `<name>-test.yml` holding `valid` snippets (must **not** match) and
-`invalid` snippets (must match). An `invalid` entry can also assert the rule's **autofix output**
-by giving `code` + `fixed` instead of a bare string:
-
-```yaml
-# .poly/rules/python/use-is-none-test.yml
-id: use-is-none
-valid:
-  - x is None
-invalid:
-  - x == None                 # must match; fix output unchecked
-  - code: result == None      # must match AND autofix to `result is None`
-    fixed: result is None
-```
-
-Run the checks with `poly rules test` (exits non-zero on any failed snippet), and list the
-resolved rules with `poly rules list`. Both default to the configured `[rules] dirs`, or accept
-explicit directories as arguments. `poly rules list` covers poly's **built-in rule pack** as well
-as your own rules, marking each row `builtin` or `user`, and reflects the config that governs
-them — `[rules] builtin = false`, `[lint.astgrep]` `select` / `extend_select` / `ignore`, and
-`[lint.astgrep.rules.<id>] level`.
-
-### Code Quality Metrics
-
-`poly lint` measures a handful of structural properties straight off the tree-sitter parse, for
-languages that have no linter of their own as much as for those that do. Every finding is a
-**warning**, so none of them fail CI on their own.
-
-| Rule | Default | On by default |
-| --- | --- | --- |
-| `file-too-long` | 1000 lines | yes |
-| `function-too-long` | 80 lines | yes |
-| `type-too-long` | 300 lines | yes |
-| `too-many-parameters` | 6 | yes |
-| `nesting-too-deep` | 4 | yes |
-| `cyclomatic-complexity` | 20 | yes |
-| `lazy-ignore` | — | yes |
-| `magic-number` | allows `-1, 0, 1, 2, 10, 100` | no |
-| `law-of-demeter` | depth 3 | no |
-
-`lazy-ignore` reports a suppression written for *another* tool with no reason attached — a bare
-`# noqa`, `// eslint-disable*`, `// oxlint-disable*` or `// biome-ignore` with nothing after the
-colon. Rust's `#[allow(..)]` is deliberately **not** among them: it belongs to the built-in
-ast-grep rule `allow-attribute-without-reason`, which reads `reason = "..."` and a preceding
-comment correctly and ships off by default. Opt in with
-`extend_select = ["allow-attribute-without-reason"]`.
-
-```toml
-[lint.quality]
-function_too_long_lines = 120      # raise the budget everywhere
-magic_number = true                # opt in to a rule that ships off
-
-[lint.go.quality]
-function_too_long_lines = 200      # per-language override wins
-```
-
-The structural rules need a grammar poly holds a construct table for: **Python, Rust, Go,
-JavaScript, TypeScript, TSX, Java, Kotlin, C, C++, C# and Ruby**. A language poly can parse but
-not model — Zig, Swift, Dart, Gleam, Elixir, PHP, Nix, Scala, Lua, R — gets the file-length and
-ignore-marker checks only, and still reports `no lint rules for <language>`: counting lines is
-not knowledge of a language, and poly will not claim it is.
-
-Where a backend already reports the same measurement, poly defers to it rather than reporting it
-twice — Python keeps ruff's `C901` for complexity, JavaScript and TypeScript keep oxlint's
-`max-depth`. See [ADR 0027](adrs/0027-code-quality-tier.md).
-
-### Comment Removal (opt-in)
-
-The `uncomment` backend strips comments across every language it recognizes, guided by
-tree-sitter and a set of preservation rules (shebangs, `~keep`, TODO/FIXME, documentation, and
-your own patterns). It is a **lint** backend: `poly lint` reports each removable comment as a
-warning (which never fails CI), and `poly lint --fix` removes them.
-
-It is **off by default**. Enable it, and tune what it keeps, with a language-agnostic
-`[lint.uncomment]` block plus optional per-language overrides:
-
-```toml
-[lint.uncomment]
-enabled = true              # required — the backend is opt-in
-remove_todos = false        # keep TODO comments (default)
-remove_fixme = false        # keep FIXME comments (default)
-remove_docs = false         # keep documentation comments / docstrings (default)
-use_default_ignores = true  # keep the built-in directive allow-list (default)
-preserve_patterns = ["HACK", "NOTE"]  # keep comments containing these substrings
-
-# Per-language override: strip Python docstrings but keep them elsewhere.
-[lint.python.uncomment]
-remove_docs = true
-```
-
-Per-language booleans override the global value; `preserve_patterns` are unioned with the global
-list. A language `uncomment` does not recognize is simply left untouched.
-
-### Hooks
-
-Install poly's git hooks once — they then run on every `git commit`:
-
-```sh
-poly hooks install
-```
-
-Hooks come from `poly.toml`: builtins, inline jobs, and optional local or Git producer catalogs.
-Git refs are resolved into `poly-hooks.lock`; normal runs stay on the locked commit and
-`poly hooks update` refreshes configured branches or tags.
-
-Git catalogs share a global cache under `$XDG_CACHE_HOME/poly/hook-sources` (or the
-platform cache directory). Poly keeps one URL-keyed bare mirror and immutable checkouts
-keyed by commit. A per-source lock serializes fetch and materialization, so different
-repositories can safely use the same catalog concurrently without duplicate clones.
-Catalog hooks always execute from the consumer repository; the read-only producer checkout is
-available through `POLY_HOOK_SOURCE_ROOT`. Local path sources bypass the global cache.
-
-```toml
-[[hooks.sources]]
-id = "ai-rulez"
-git = "https://github.com/acme/poly-hooks.git"
-revision = "v4.9.0"
-hooks = ["ai-rulez-validate"]
-
-[[hooks.sources]]
-id = "ai-rulez-dev"
-path = "../ai-rulez"
-hooks = ["ai-rulez-validate"]
-```
-
-Exactly one of `git` or `path` is required. Git sources require a revision and a committed lock;
-local sources accept relative, parent-relative, or absolute paths, remain unlocked, and reload on
-every run. The `hooks` list explicitly selects producer hook IDs, so new producer hooks never become
-active without a consumer configuration change.
-
-The producer alone owns `poly-hooks.toml`. It can publish multiple hooks and multiple guarded
-execution paths for each hook:
-
-```toml
-version = 1
-
-[[hooks]]
-id = "ai-rulez-validate"
-stages = ["pre-commit"]
-args = ["generate", "--dry-run"]
-files = [".ai-rulez/**", "**/.ai-rulez/**"]
-workspace = true
-pass_filenames = false
-
-[[hooks.paths]]
-channel = "npx"
-check = "command -v npx"
-run = "npx -y ai-rulez@latest"
-
-[[hooks.paths]]
-channel = "uvx"
-check = "command -v uvx"
-install = "uv tool install ai-rulez"
-run = "uvx ai-rulez"
-```
-
-Every hook requires at least one path. Poly checks paths in the machine preference order and uses
-the first whose `check` exits zero. An optional `install` command runs only during explicit
-`poly hooks install`; ordinary hook runs use `run` directly, allowing commands such as `npx -y` or
-`uvx` to self-provision. Poly does not fall through if installation or the selected command fails.
-Machine-only preferences belong in gitignored `poly.local.toml`:
-
-```toml
-[hook_preferences]
-channels = ["npx", "uvx", "system"]
-```
-
-Because that file is gitignored it never exists in a freshly created linked worktree, so poly also
-looks for it beside the **main** worktree — the nearest file wins. To skip every poly hook for one
-invocation, set `POLY_SKIP_HOOKS=1`; this is the supported escape hatch, since `git commit
---no-verify` bypasses `pre-commit` and `commit-msg` but never `prepare-commit-msg`. A
-`prepare-commit-msg` run that cannot provision its external hook sources warns and continues rather
-than blocking the commit; every other stage still treats that failure as fatal.
-
-`poly hooks install` validates every selected hook path before installing Git shims. Treat producer
-catalogs and their checks and commands as trusted code: they execute with your user permissions.
-Normal runs never resolve Git refs or modify the lock; review changes and run `poly hooks update`
-explicitly.
-
-<details>
-<summary><strong>Builtin hooks</strong></summary>
-
-| Builtin | Runs |
-|---|---|
-| `lint` | `poly lint` over the staged files |
-| `fmt` | `poly fmt --check` over the staged files |
-| `commit` | Conventional Commit + AI-trailer check on the commit message (`gitfluff`) |
-| `file_safety` | Pure-Rust checks: merge-conflict markers, added large files, private keys, case conflicts, and shebang/executable parity |
-| `cargo` | Whole-workspace `cargo clippy`, `cargo sort`, `cargo machete`, and `cargo deny` — each PATH-probed and skipped when absent |
-
-The three file-scoped builtins (`lint`, `fmt`, `file_safety`) **inherit `[discovery] exclude`** —
-a repo's excluded paths are stated once, not restated per hook. A hook's own `exclude` adds to
-the inherited globs; `exclude_mode = "replace"` in the hook's table opts out and keeps only its
-own:
-
-```toml
-[hooks.builtin.lint]
-exclude = ["**/tags.rs"]      # effective: [discovery] exclude + **/tags.rs
-```
-
-</details>
-
-Add an inline job for anything else — it wraps an existing script or task target, no plugin needed:
-
-```toml
-[hooks.pre-commit.scripts.docs]
-script = "scripts/check-docs.sh"
-runner = "bash"
-files = "**/*.md"
-```
-
-#### Per-file vs. whole-workspace hooks
-
-Most hooks are **per-file**: they receive the staged file list and run on it. But some
-tools analyze the *whole project* at once — `cargo clippy`, a type checker like `pyrefly`,
-`mypy`, `tsc` — and can't be scoped to a file list. Mark those `workspace = true`:
-
-```toml
-[hooks.pre-commit.commands.pyrefly]
-run = "pyrefly check packages/python"   # whole-package; no staged files appended
-files = "packages/python/**/*.py"        # gate: only run when a Python file is staged
-workspace = true
-```
-
-A `workspace = true` job takes no appended filenames (use a `{staged_files}` template to opt
-back in). The `cargo` builtin group is whole-workspace automatically.
-
-#### Hook concurrency: `serial`
-
-Hooks in a stage run **concurrently** on poly's rayon pool — whole-project hooks included,
-since overlapping `cargo clippy` with `tsc` is where a run's wall-clock is won. `serial` is
-the opt-out for a job that cannot tolerate a *peer* running at the same time:
-
-```toml
-[hooks.pre-commit.commands.migrate]
-run = "./bin/migrate --check"
-serial = true          # never beside another `serial = true` job
-
-[hooks.pre-commit.commands.tests]
-run = "cargo test --workspace"
-workspace = true
-serial = "cargo"       # never beside another member of the "cargo" set
-```
-
-`serial` names a **mutual-exclusion set**, not a stop-the-world: a serial job still runs
-alongside every hook outside its set. `serial = true` joins the shared set; `serial = "<name>"`
-joins a named one; `serial = false` opts out of both, overriding a stage-level
-`parallel = false`.
-
-The built-in **`cargo` group ships in the `"cargo"` set already** — nothing to configure.
-Cargo serializes its own subcommands on the package-cache lock, and anything that builds on
-the build-directory lock, so running `cargo clippy` / `sort` / `machete` / `deny` at once buys
-no wall-clock and costs the queue its visibility: a blocked subcommand prints nothing while
-its own timeout budget runs down (this is how a `cargo deny check` that takes 1.7s alone gets
-killed at the 30-minute whole-project budget). A job whose `run` line invokes cargo joins the
-set automatically; a **script** that shells out to cargo is invisible to poly and should name
-`serial = "cargo"` itself.
-
-A hook queued behind a set peer is not running, so its budget has not started — it can never
-be killed for another hook's build time.
-
-#### Staged isolation
-
-Every hook in a commit-gating run — per-file and whole-workspace alike — validates **one tree**:
-a non-destructive snapshot of the git index, not the live worktree. Unlike `git stash`-based
-approaches, your working tree is never touched. A run is staged-scoped or worktree-scoped as a
-whole, never a mix — a per-file hook reading the worktree while a whole-workspace hook in the same
-run reads the index is how a commit gate passes a commit whose staged content it never actually
-saw. Every hook outcome records which tree produced its verdict, and the stage banner renders it
-(`[stage] pre-commit — validated staged content`).
-
-The banner is at the top of the run, though, and by the time a hook fails and prints its own
-output it can be scrolled well out of view — so a failure whose cause lives only in a file you
-have not staged (a multi-file change split across a staged and an unstaged hunk, say) can look
-like it contradicts a `cargo check` that just passed in your worktree. When that happens, the
-first staged-validated failure in the report carries its own one-line reminder immediately after
-its output, naming the tree it checked and what to do about a mismatch (`git add` the rest of the
-change, or `isolate = false` below) — printed once per run, not once per failing hook.
-
-On by default for the commit-gating stages (`pre-commit`, `pre-merge-commit`); skipped for
-`--all-files` and non-index stages, which check the worktree by design. Opt out for the whole run
-with `isolate = false`:
-
-```toml
-[hooks]
-isolate = false   # validate the live worktree instead of the staged snapshot
-```
-
-The snapshot is a persistent cache in the per-user cache dir
-(`<platform-cache>/poly/<repo-key>/staged`, outside the repo), refreshed in place each run.
-Content is sourced straight from the git **index blob** (never copied from the worktree),
-so an unstaged edit can never leak in regardless of git's stat-cache state. A file is
-re-materialized only when its staged object id changed since the last snapshot (tracked by a
-`path → OID` manifest), so unchanged files are left untouched and cargo/pyrefly/`tsc` incremental
-caches stay warm; files that left the tree are pruned while tool caches inside the snapshot are
-preserved. It self-heals and is purgeable like any cache (`poly cache clean`).
-
-A `stage_fixed` hook that rewrites its matched files writes into the snapshot, so the fix is
-carried back to the worktree copy — but only where that copy is byte-identical to the index.
-Where it differs, the author holds unstaged work the write-back must not silently overwrite or
-stage; the fix is withheld instead, and for a `stage_fixed` hook that fails the run rather than
-losing the unstaged edit.
-
-#### Prerequisites: `precondition` and `before`
-
-A hook can declare what must be true before it runs. Both keys exist at **stage** scope
-(`[hooks.<stage>]`) and, preferably, at **hook** scope:
-
-```toml
-[hooks.pre-commit.commands.kotlin]
-run = "./gradlew detekt"
-workspace = true
-precondition = "test -f gradlew"        # not applicable here -> visible skip, not a failure
-before = "./gradlew --version"          # setup broke -> THIS hook's verdict is unknown
-```
-
-The two mean different things:
-
-| key            | on failure                                | scope of the damage             |
-| -------------- | ----------------------------------------- | ------------------------------- |
-| `precondition` | hook **skipped** — it does not apply here  | not a failure                   |
-| `before`       | hook's verdict is **unknown** — it did not run | fails the run                |
-
-**Prefer the hook-scoped form.** A stage-scoped `precondition` withholds *every* hook in the
-stage, and a stage-scoped `before` leaves every hook without a verdict. A hook-scoped one
-contains the damage to the tool it guards, so the rest of the suite still validates.
-
-Scope also decides **which tree** the prerequisite is evaluated against. A hook-scoped
-prerequisite runs in the hook's own execution root — the **staged snapshot** for a
-`workspace = true` hook under isolation, the worktree otherwise — so a prerequisite that
-holds in your worktree but not in the staged tree (a `.gitignore`d `gradle-wrapper.jar`, say)
-is caught, and the report names the directory it failed in. Stage-scoped steps are not tied
-to a hook and always run in the worktree.
-
-A hook that does not run is always listed in the report with its reason — never silently
-dropped:
-
-```text
-[stage] pre-commit
-  - kotlin-not-applicable (precondition not met: test -f settings.gradle)
-  ? kotlin-snippets (not run — setup failed in ~/.cache/poly/<key>/staged: ./gradlew --version)
-      before: ./gradlew --version
-      ERROR: Gradle wrapper jar missing
-  ✓ rust
-```
-
-#### Hook timeouts
-
-Every process a run spawns — hook bodies, `before`/`after` steps, and `precondition` probes —
-runs under a time budget. A wedged tool is killed (the whole process group: `SIGTERM`, then
-`SIGKILL`) and reported as **killed**, which is deliberately not the same as failed: `×` means
-the tool judged your code and said no, `⧖` means poly stopped it before it judged anything.
-Either way the run fails — a hook that checked nothing must never report success.
-
-Defaults are hang detectors, not performance budgets: 10 minutes per-file, 30 minutes for a
-`workspace = true` hook (a cold `cargo clippy` is legitimately slow), 10 minutes for a
-`before`/`after` step, and 60 seconds for a `precondition` probe. A hook still running after
-15 seconds announces itself on stderr, then every minute, naming the hook and its kill
-deadline.
-
-Set a per-job budget with `timeout` — whole seconds, or a duration (`500ms`, `30s`, `10m`,
-`1h`), or `0`/`off`/`none` to run it unbounded:
-
-```toml
-[hooks.pre-commit.commands.ai-rulez-validate]
-run = "ai-rulez validate"
-timeout = "90s"          # this tool is known to wedge; bound it tightly
-```
-
-```text
-[stage] pre-commit — validated worktree
-  ⧖ ai-rulez-validate (timed out: poly killed it after 90.2s, limit 90.0s)
-  markers: ✓ passed  × failed  ⧖ killed by poly on timeout
-```
-
-Four environment variables override the budgets run-wide, taking the same values:
-`POLY_HOOK_TIMEOUT`, `POLY_HOOK_WORKSPACE_TIMEOUT`, `POLY_HOOK_STEP_TIMEOUT`,
-`POLY_HOOK_PRECONDITION_TIMEOUT`. Resolution is **environment override → `timeout` in
-`poly.toml` → shape default**: the environment wins, because it is the escape hatch of
-whoever is running the hooks on a machine the config author never saw, and because
-`POLY_HOOK_TIMEOUT=0` has to be able to unbound *every* hook — including the one being
-killed. Disabling restores the previous behaviour exactly: no deadline, no liveness notice,
-no separate process group.
-
-A cargo hook gets one extra protection, and it needs no configuration. Cargo serialises on
-`$CARGO_HOME/.package-cache`, so a hook can sit blocked behind `rust-analyzer` or your own
-`cargo build` without doing any work — and be killed for waiting. Before starting a hook in the
-`cargo` exclusion set, poly checks that lock and, if somebody outside the run holds it, waits
-for it to clear **before** the hook's clock starts:
-
-```text
-  ⏸ waiting to start: cargo-deny (2.0s waited, starting anyway at 900.0s) — cargo's package
-    cache lock is held by a process outside this run; the hook has not been spawned and its
-    time budget has not started
-```
-
-The wait is bounded by half the hook's own budget (a hook with timeouts disabled never waits),
-and when that runs out the hook is started anyway rather than withheld. It mitigates the common
-case rather than eliminating it: the lock can be taken between the check and the start, and the
-artifact-directory lock a full `cargo build` holds is not checked at all. When that happens the
-hook is charged for the wait, and the `⏸ waiting on a lock: …` notice says so.
-
-#### Hook exit codes
-
-`poly hooks run` distinguishes three outcomes, so a CI job reading only the exit status can
-tell a clean run from one that checked nothing:
-
-| exit | meaning                                                                  |
-| ---- | ------------------------------------------------------------------------ |
-| `0`  | validated and clean (a hook with no matching files counts as validated)   |
-| `1`  | a hook failed, or a `before` left a hook's verdict unknown                |
-| `2`  | **validated nothing** — a `precondition` withheld every configured hook   |
-
-#### Conditional `skip` / `only`
-
-`skip`/`only` accept a bare boolean or a list of `{ run = "<command>" }` conditions; a
-condition is active when its command exits 0.
-
-```toml
-[hooks.pre-commit.commands.kotlin]
-run = "./gradlew detekt"
-only = [{ run = "test -f settings.gradle" }]
-```
-
-Only the `run` form is evaluated. Other lefthook condition forms (`ref = "..."`, bare
-git-operation names like `"merge"`) are **rejected at config load** rather than accepted and
-ignored — a guard that silently does nothing is worse than no guard.
-
-#### Hook caching
-
-Hook results are cached (`[cache.results] hooks = "safe"` by default): a hook is **skipped
-entirely** when its declared inputs are unchanged since the last passing run. The `cargo` group
-is keyed on the Rust source/manifest set out of the box, so a commit touching no Rust skips
-`clippy`/`sort`/`machete`/`deny` (opt out with `cargo = { cache = false }`). Give a custom
-whole-workspace job the same treatment by declaring its inputs:
-
-```toml
-[hooks.pre-commit.commands.pyrefly]
-run = "pyrefly check packages/python"
-files = "packages/python/**/*.py"
-workspace = true
-cache = { inputs = ["packages/python/**/*.py", "pyproject.toml"] }
-```
-
-For workspace hooks the cache key is derived from **staged** content, so it stays correct under
-isolation. For Rust compile times, enable `[cache.sccache]` to content-cache `rustc` output.
-
-#### Excluding the cargo group from `poly lint`
-
-`poly lint` runs the `cargo` group as its whole-project phase (see above). To keep it as a
-`pre-commit` gate but skip it in `poly lint` — e.g. a CI `validate` job whose plain checkout
-cannot compile the workspace, while a dedicated job runs clippy — set `lint = false`:
-
-```toml
-[hooks.builtin.cargo]
-lint = false   # runs in git hooks, excluded from `poly lint`'s whole-project phase
-```
-
-This is the per-group counterpart to `[lint] workspace = false`, which disables the whole-project
-phase for **every** tool at once.
-
-#### The whole-project phase executes tools, so plain `poly lint` is not read-only
-
-`poly lint` without `--fix` applies no fixes of its own: poly's per-file tier only writes under
-`--fix`, and the whole-project phase is asked for check mode. But that phase **executes the
-configured tools against the live worktree**, and those tools are ordinary programs whose own
-side effects poly neither requests nor controls — `cargo clippy` populates `target/` and can
-refresh `Cargo.lock`, a `go` invocation can append to `go.work.sum`, a type checker can write its
-own cache. So a plain `poly lint` can leave the tree changed, even though poly itself changed
-nothing.
-
-Three consequences worth knowing:
-
-- **The phase is not path-scoped.** `poly lint <paths>` skips it entirely for that reason
-  (`--workspace` opts back in). Under `--workspace` the tools still see the whole repository,
-  regardless of the named paths and of `[discovery] exclude`; poly prints a note saying so.
-- **`[discovery] exclude` does not apply to it.** It filters poly's own file discovery, not what a
-  whole-project tool chooses to read.
-- **Opting out makes the run fully read-only** (poly's per-file tier writes nothing without
-  `--fix`): pass `--no-workspace`, or set `[lint] workspace = false`. Use one of them for a
-  checkout that must stay pristine — a CI job that diffs the tree afterwards, or a gate on a
-  read-only source tree.
-
-#### Applying whole-project fixes
-
-Under `--fix`, the whole-project phase runs its tools in **fix mode**: `cargo sort` sorts in place,
-`cargo-machete --fix` prunes unused dependencies, and `cargo clippy --fix --allow-dirty
---allow-staged` applies clippy autofixes (`cargo deny` has no autofix and stays check-only). Fix
-mode is what `--fix` adds; the phase itself runs either way, so `--no-workspace` (not the absence
-of `--fix`) is what skips it. `poly fmt` is a pure formatter and never runs the whole-project phase
-(that phase is linting, not formatting). The git-hook / commit-gate path never requests fix mode,
-so a commit is never silently auto-rewritten by it.
+`poly config show` prints the effective, fully-merged configuration (`--format toml|json|toon`)
+after `extends` bases, the monorepo cascade, and `poly.local.toml` have all been applied — and
+poly reports unknown keys, unknown sections, and wrongly-typed values as warnings rather than
+silently ignoring them.
+
+The full reference — default rule selection, inline suppression, monorepo cascading, shared and
+remote config, custom ast-grep rules, code-quality metrics, and comment removal — lives in
+[docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 
 ---
 
 ## Backend Coverage
 
-poly uses a tiered model:
-
-1. Curated Rust backends for high-fidelity lint and format support.
-2. Native-toolchain backends for canonical first-party formatters when configured or present.
-3. Tree-sitter generic formatting for identified languages without a dedicated backend.
-4. Optional catalog tools from the embedded mdsf registry.
+poly resolves each file through a tiered model: a curated Rust backend where one exists (ruff,
+oxc, biome, mago, taplo, rumdl, sqruff, malva, markup_fmt, rubyfmt, and more), a native-toolchain
+CLI where no viable Rust library exists (`gofmt`, `rustfmt` and `shellcheck` run automatically
+when present; `zig fmt`, `shfmt`, `ktfmt`, `google-java-format`, `swift-format`, `dart format`,
+`styler` and `gleam format` are opt-in), and a tree-sitter generic tier for everything else. An opt-in catalog of 348 tools
+across 175 languages covers the long tail beyond that.
 
 <!-- markdownlint-disable MD013 -->
 
-| Language or files | Backend | Lint | Format |
+| Language | Backend | Lint | Format |
 |---|---|---:|---:|
-| JavaScript / TypeScript / JSX / TSX | oxc | yes | yes |
-| JSON / JSONC | oxc parse diagnostics + formatter | yes | yes |
+| JavaScript / TypeScript / JSON | oxc | yes | yes |
 | Python | ruff internals | yes | yes |
 | TOML | taplo | yes | yes |
 | Markdown | rumdl | yes | yes |
 | SQL | sqruff | yes | yes |
 | YAML | saphyr + pretty_yaml | yes | yes |
-| CSS / SCSS | malva (format) + biome (lint) | yes | yes |
-| Less | malva | no | yes |
-| HTML / Vue / Svelte / Astro / Angular / templates / XML | markup_fmt | no | yes |
-| GraphQL | graphql-parser + pretty_graphql (parse-error lint + format) + biome (rule lint) | yes | yes |
-| HCL / Terraform | hcl-edit + hcl-rs, tree-sitter for comment-preserving format fallback | yes | yes |
-| Dockerfile | dockerfile-parser hadolint-style rules | yes | no |
-| `.env` files (`.env`, `.env.*`, `*.env`) | dotenv-analyzer | yes | no |
-| INI and compatible (`.ini`, `.cfg`, `.desktop`, `.pypirc`, `.npmrc`, `.editorconfig`, …) | rust-ini | yes | no |
-| Nix | alejandra | no | yes |
-| Ruby | rubyfmt | no | yes |
+| CSS / SCSS / Less | malva + biome | yes | yes |
+| HTML / Vue / Svelte / Astro | markup_fmt | no | yes |
 | PHP | mago | yes | yes |
-| R | tree-sitter generic tier | no | best effort |
-| Go | `gofmt` when present, tree-sitter fallback otherwise | no | yes |
-| Rust | `rustfmt` when present, tree-sitter fallback otherwise | no | yes |
-| Zig | opt-in `zig fmt`, tree-sitter fallback otherwise | no | yes |
-| Shell | `shellcheck` when present (default-on), opt-in `shfmt`, tree-sitter fallback otherwise | optional | optional |
-| All text files | typos spell-check | yes | no |
-| Any recognized language | opt-in `uncomment` comment removal (see [Comment Removal](#comment-removal-opt-in)) | opt-in | no |
-| Other identified grammars | tree-sitter generic tier | no | best effort |
+| Ruby | rubyfmt | no | yes |
+| Nix | alejandra | no | yes |
+| Go | `gofmt` (default-on) | no | yes |
+| Rust | `rustfmt` (default-on) | no | yes |
+| Shell | `shellcheck` (default-on), opt-in `shfmt` | yes | optional |
+| Everything else identified | tree-sitter generic tier | no | best effort |
 
 <!-- markdownlint-enable MD013 -->
 
-Unsupported or unknown file types are skipped unless `tree-sitter-language-pack` can identify them.
-Some whitespace-sensitive data, template, or patch grammars intentionally no-op rather than risk a
-destructive rewrite.
+Full table (~30 languages with dedicated backends) plus the 348-tool catalog:
+[docs/BACKENDS.md](docs/BACKENDS.md).
 
-**dotenv.** `.env` files autofix with `poly lint --fix`, and inline `# dotenv-linter:off <Check>` /
-`# dotenv-linter:on <Check>` comments suppress a check for the lines between them, the same
-directive syntax the standalone `dotenv-linter` CLI understands. Rules: `DuplicatedKey`,
-`EndingBlankLine`, `ExtraBlankLine`, `IncorrectDelimiter`, `KeyWithoutValue`, `LeadingCharacter`,
-`LowercaseKey`, `QuoteCharacter`, `SpaceCharacter`, `SubstitutionKey`, `TrailingWhitespace`,
-`UnorderedKey`, `ValueWithoutQuotes`, `SchemaViolation`.
+---
 
-**INI is lint-only, by design.** `rust-ini`'s parser discards comments while parsing, so writing
-its model back out would silently delete every comment in the file — poly never does that, and INI
-formatting stays with the tree-sitter generic tier instead, which preserves comments structurally.
-Rules: `parse-error` (a real syntax error, with the parser's own line/column), `duplicate-key`,
-`duplicate-section`, `key-without-value`, `inconsistent-separator`, `trailing-whitespace`.
+## Hooks
 
-Detection is deliberately narrow: `*.conf` (most are not INI — nginx, httpd, and friends use their
-own syntax), `*.properties` (Java's key=value syntax, not INI's), `.gitconfig` (quoted subsections
-`rust-ini` cannot parse), and systemd units (duplicate keys are legal there) are never treated as
-INI.
-
-Beyond the dedicated backends above, the generic tree-sitter tier identifies and best-effort
-formats hundreds of grammars — including first-class detection for Java, Kotlin, C/C++, Elixir,
-Protobuf, and the long tail covered by `tree-sitter-language-pack`.
-
-### Optional Tool Catalog
-
-For everything else, opt into tools from the embedded [mdsf](https://github.com/hougesen/mdsf)
-catalog. Entries are PATH-probed and skipped when absent, so enabling one never breaks a run:
-
-```toml
-[tools.prettier]
-enabled = true
-languages = ["javascript", "typescript"]
+```sh
+poly hooks install
 ```
 
-A tool whose lint command rewrites files (`sqruff fix`, `rubocop --autocorrect`, `pyupgrade`) is not
-run by `poly lint` — a fix command would overwrite your source and still exit 0. Enabling one for
-linting logs a warning naming the tool and the command it refused; `poly fmt` still runs it as a
-formatter.
+wires `poly.toml`'s `[hooks]` into native git hooks — lint, format, commit-message, and
+file-safety checks, plus whole-workspace tools like `cargo clippy` — replacing a
+`.pre-commit-config.yaml` and its external framework dependency. Hooks validate a staged
+snapshot of the git index by default, run concurrently, and cache their own results.
 
-<!-- BEGIN CATALOG -->
-
-<details>
-<summary><strong>Embedded tool catalog (348 tools across 175 languages)</strong></summary>
-
-<!-- markdownlint-disable MD013 -->
-
-Opt in per tool with `[tools.<name>] enabled = true`. Each command is probed on `PATH` and skipped when absent, so listing one never makes a run fail.
-
-| Tool | Type | Languages |
-|---|---|---|
-| [action-validator](https://github.com/mpalmer/action-validator) | linter | yaml |
-| [actionlint](https://github.com/rhysd/actionlint) | linter | yaml |
-| [air](https://github.com/posit-dev/air) | formatter | r |
-| [alejandra](https://github.com/kamadorueda/alejandra) | formatter | nix |
-| [alex](https://github.com/get-alex/alex) | spell-check | markdown |
-| [ameba](https://github.com/crystal-ameba/ameba) | linter | crystal |
-| [ansible-lint](https://github.com/ansible/ansible-lint) | linter | ansible |
-| [api-linter](https://github.com/googleapis/api-linter) | linter | protobuf |
-| [asmfmt](https://github.com/klauspost/asmfmt) | formatter | go |
-| [astyle](https://gitlab.com/saalen/astyle) | formatter | c, c#, c++, java, objective-c |
-| [atlas](https://github.com/ariga/atlas) | formatter | hcl |
-| [auto-optional](https://github.com/luttik/auto-optional) | formatter | python |
-| [autocorrect](https://github.com/huacnlee/autocorrect) | spell-check |  |
-| [autoflake](https://github.com/pycqa/autoflake) | linter | python |
-| [autopep8](https://github.com/hhatto/autopep8) | formatter | python |
-| [bashate](https://github.com/openstack/bashate) | formatter | bash |
-| [beancount-black](https://github.com/launchplatform/beancount-black) | formatter | beancount |
-| [beautysh](https://github.com/lovesegfault/beautysh) | formatter | bash, shell |
-| [bibtex-tidy](https://github.com/flamingtempura/bibtex-tidy) | formatter | bibtex |
-| [bicep](https://github.com/azure/bicep) | formatter | bicep |
-| [biome](https://github.com/biomejs/biome) | formatter, linter | javascript, json, typescript, vue |
-| [black](https://github.com/psf/black) | formatter | python |
-| [blade-formatter](https://github.com/shufo/blade-formatter) | formatter | blade, laravel, php |
-| [blue](https://github.com/grantjenks/blue) | formatter | python |
-| [bpfmt](https://source.android.com/docs/setup/reference/androidbp#formatter) | formatter | blueprint |
-| [brighterscript-formatter](https://github.com/rokucommunity/brighterscript-formatter) | formatter | brighterscript, brightscript |
-| [brittany](https://github.com/lspitzner/brittany) | formatter | haskell |
-| [brunette](https://pypi.org/project/brunette) | formatter | python |
-| [bslint](https://github.com/rokucommunity/bslint) | linter | brightscript, brightscripter |
-| [buf](https://buf.build/docs/reference/cli/buf) | formatter | protobuf |
-| [buildifier](https://github.com/bazelbuild/buildtools) | formatter | bazel |
-| [c3fmt](https://github.com/lmichaudel/c3fmt) | formatter | c3 |
-| [cabal](https://www.haskell.org/cabal) | formatter | cabal |
-| [cabal-fmt](https://github.com/phadej/cabal-fmt) | formatter | cabal |
-| [cabal-gild](https://github.com/tfausak/cabal-gild) | formatter | cabal, haskell |
-| [cabal-prettify](https://github.com/kindaro/cabal-prettify) | formatter | cabal |
-| [caddy](https://caddyserver.com/docs/command-line#caddy-fmt) | formatter | caddy |
-| [caramel](https://caramel.run) | formatter | caramel |
-| [cedar](https://github.com/cedar-policy/cedar) | formatter | cedar |
-| [cfn-lint](https://github.com/aws-cloudformation/cfn-lint) | linter | cloudformation, json, yaml |
-| [checkmake](https://github.com/mrtazz/checkmake) | linter | makefile |
-| [clang-format](https://clang.llvm.org/docs/ClangFormat.html) | formatter | c, c#, c++, java, javascript, json, objective-c, protobuf |
-| [clang-tidy](https://clang.llvm.org/extra/clang-tidy) | linter | c++ |
-| [clj-kondo](https://github.com/clj-kondo/clj-kondo) | linter | clojure, clojurescript |
-| [cljfmt](https://github.com/weavejester/cljfmt) | formatter | clojure |
-| [cljstyle](https://github.com/greglook/cljstyle) | formatter | clojure |
-| [cmake-format](https://cmake-format.readthedocs.io/en/latest/cmake-format.html) | formatter | cmake |
-| [cmake-lint](https://cmake-format.readthedocs.io/en/latest/lint-usage.html) | linter | cmake |
-| [codeql](https://docs.github.com/en/code-security/codeql-cli/codeql-cli-manual) | formatter | codeql |
-| [codespell](https://github.com/codespell-project/codespell) | spell-check |  |
-| [coffeelint](https://github.com/coffeelint/coffeelint) | linter | coffeescript |
-| [cppcheck](https://cppcheck.sourceforge.io) | linter | c, c++ |
-| [cpplint](https://github.com/cpplint/cpplint) | linter | c++ |
-| [crlfmt](https://github.com/cockroachdb/crlfmt) | formatter | go |
-| [crystal](https://crystal-lang.org) | formatter | crystal |
-| [csharpier](https://github.com/belav/csharpier) | formatter | c# |
-| [css-beautify](https://github.com/beautifier/js-beautify) | formatter | css |
-| [csscomb](https://github.com/csscomb/csscomb.js) | formatter | css |
-| [csslint](https://github.com/csslint/csslint) | linter | css |
-| [cue](https://github.com/cue-lang/cue) | formatter | cue |
-| [cueimports](https://github.com/asdine/cueimports) | formatter | cue |
-| [curlylint](https://github.com/thibaudcolas/curlylint) | linter | django, html, jinja, liquid, nunjucks, twig |
-| [d2](https://d2lang.com) | formatter | d2 |
-| [dart](https://dart.dev/tools) | formatter, linter | dart, flutter |
-| [dcm](https://dcm.dev) | formatter, linter | dart, flutter |
-| [deadnix](https://github.com/astro/deadnix) | linter | nix |
-| [deno](https://docs.deno.com/runtime/reference/cli) | formatter, linter | javascript, json, typescript |
-| [dfmt](https://github.com/dlang-community/dfmt) | formatter | d |
-| [dhall](https://dhall-lang.org) | formatter | dhall |
-| [djade](https://github.com/adamchainz/djade) | formatter | django, python |
-| [djangofmt](https://github.com/unknownplatypus/djangofmt) | formatter | django, html, python |
-| [djlint](https://www.djlint.com) | formatter, linter | handlebars, html, jinja, mustache, nunjucks, twig |
-| [docformatter](https://github.com/pycqa/docformatter) | formatter | python |
-| [dockerfmt](https://github.com/reteps/dockerfmt) | formatter | docker |
-| [dockfmt](https://github.com/jessfraz/dockfmt) | formatter | docker |
-| [docstrfmt](https://github.com/lilspazjoekp/docstrfmt) | formatter | python, restructuredtext, sphinx |
-| [doctoc](https://github.com/thlorenz/doctoc) | formatter | markdown |
-| [dotenv-linter](https://github.com/dotenv-linter/dotenv-linter) | linter | env |
-| [dprint](https://dprint.dev) | formatter |  |
-| [dscanner](https://github.com/dlang-community/d-scanner) | linter | d |
-| [dune](https://github.com/ocaml/dune) | formatter | dune, ocaml, reasonml |
-| [duster](https://github.com/tighten/duster) | formatter, linter | php |
-| [dx](https://github.com/dioxuslabs/dioxus) | formatter | rsx, rust |
-| [easy-coding-standard](https://github.com/easy-coding-standard/easy-coding-standard) | formatter, linter | php |
-| [efmt](https://github.com/sile/efmt) | formatter | erlang |
-| [elm-format](https://github.com/avh4/elm-format) | formatter | elm |
-| [eradicate](https://github.com/pycqa/eradicate) | linter | python |
-| [erb-formatter](https://github.com/nebulab/erb-formatter) | formatter | erb, ruby |
-| [erg](https://github.com/erg-lang/erg) | linter | erg |
-| [erlfmt](https://github.com/whatsapp/erlfmt) | formatter | erlang |
-| [eslint](https://github.com/eslint/eslint) | linter | javascript, typescript |
-| [fantomas](https://github.com/fsprojects/fantomas) | formatter | f# |
-| [fish_indent](https://fishshell.com/docs/current/cmds/fish_indent.html) | formatter | fish |
-| [fixjson](https://github.com/rhysd/fixjson) | formatter, linter | json, json5 |
-| [floskell](https://github.com/ennocramer/floskell) | formatter | haskell |
-| [flynt](https://github.com/ikamensh/flynt) | formatter | python |
-| [fnlfmt](https://git.sr.ht/~technomancy/fnlfmt) | formatter | fennel |
-| [forge](https://github.com/foundry-rs/foundry) | formatter | solidity |
-| [fortitude](https://github.com/plasmafair/fortitude) | linter | fortran |
-| [fortran-linter](https://github.com/cphyc/fortran-linter) | formatter, linter | fortran |
-| [fourmolu](https://github.com/fourmolu/fourmolu) | formatter | haskell |
-| [fprettify](https://github.com/fortran-lang/fprettify) | formatter | fortran |
-| [futhark](https://futhark.readthedocs.io/en/latest/man/futhark-fmt.html) | formatter | futhark |
-| [fvm](https://github.com/leoafarias/fvm) | formatter, linter | dart, flutter |
-| [gci](https://github.com/daixiang0/gci) | formatter | go |
-| [gdformat](https://github.com/scony/godot-gdscript-toolkit) | formatter | gdscript |
-| [gdlint](https://github.com/scony/godot-gdscript-toolkit) | linter | gdscript |
-| [gersemi](https://github.com/blankspruce/gersemi) | formatter | cmake |
-| [ghokin](https://github.com/antham/ghokin) | formatter | behat, cucumber, gherkin |
-| [gleam](https://gleam.run) | formatter | gleam |
-| [gluon](https://github.com/gluon-lang/gluon) | formatter | gluon |
-| [gofmt](https://pkg.go.dev/cmd/gofmt) | formatter | go |
-| [gofumpt](https://github.com/mvdan/gofumpt) | formatter | go |
-| [goimports](https://pkg.go.dev/golang.org/x/tools/cmd/goimports) | formatter | go |
-| [goimports-reviser](https://github.com/incu6us/goimports-reviser) | formatter | go |
-| [golangci-lint](https://github.com/golangci/golangci-lint) | formatter, linter | go |
-| [golines](https://github.com/golangci/golines) | formatter | go |
-| [google-java-format](https://github.com/google/google-java-format) | formatter | java |
-| [gospel](https://github.com/kortschak/gospel) | spell-check | go |
-| [grafbase](https://github.com/grafbase/grafbase) | linter | graphql |
-| [grain](https://grain-lang.org/docs/tooling/grain_cli) | formatter | grain |
-| [hadolint](https://github.com/hadolint/hadolint) | linter | dockerfile |
-| [haml-lint](https://github.com/sds/haml-lint) | linter | haml |
-| [hclfmt](https://github.com/hashicorp/hcl) | formatter | hcl |
-| [hfmt](https://github.com/danstiner/hfmt) | formatter | haskell |
-| [hindent](https://github.com/mihaimaruseac/hindent) | formatter | haskell |
-| [hledger-fmt](https://github.com/mondeja/hledger-fmt) | formatter | hledger |
-| [hlint](https://github.com/ndmitchell/hlint) | linter | haskell |
-| [hongdown](https://github.com/dahlia/hongdown) | formatter | markdown |
-| [html-beautify](https://github.com/beautifier/js-beautify) | formatter | html |
-| [htmlbeautifier](https://github.com/threedaymonk/htmlbeautifier) | formatter | erb, html, ruby |
-| [htmlhint](https://github.com/htmlhint/htmlhint) | linter | html |
-| [hurlfmt](https://hurl.dev) | formatter | hurl |
-| [imba](https://imba.io) | formatter | imba |
-| [inko](https://github.com/inko-lang/inko) | formatter | inko |
-| [isort](https://github.com/timothycrosley/isort) | formatter | python |
-| [janet-format](https://github.com/janet-lang/spork) | formatter | janet |
-| [joker](https://github.com/candid82/joker) | formatter, linter | clojure |
-| [jq](https://github.com/jqlang/jq) | formatter | json |
-| [jqfmt](https://github.com/noperator/jqfmt) | formatter | jq |
-| [js-beautify](https://github.com/beautifier/js-beautify) | formatter | javascript |
-| [json5format](https://github.com/google/json5format) | formatter | json, json5 |
-| [json_repair](https://github.com/mangiucugna/json_repair) | linter | json |
-| [jsona](https://github.com/jsona/jsona) | formatter, linter | jsona |
-| [jsonlint](https://github.com/zaach/jsonlint) | formatter, linter | json |
-| [jsonnet-lint](https://jsonnet.org/learning/tools.html) | linter | jsonnet |
-| [jsonnetfmt](https://jsonnet.org/learning/tools.html) | formatter | jsonnet |
-| [jsonpp](https://github.com/jmhodges/jsonpp) | formatter | json |
-| [juliaformatter_jl](https://github.com/domluna/juliaformatter.jl) | formatter | julia |
-| [just](https://github.com/casey/just) | formatter | just |
-| [kcl](https://www.kcl-lang.io/docs/tools/cli/kcl/fmt) | formatter | kcl |
-| [kdlfmt](https://github.com/hougesen/kdlfmt) | formatter | kdl |
-| [kdoc-formatter](https://github.com/tnorbye/kdoc-formatter) | formatter | kotlin |
-| [keep-sorted](https://github.com/google/keep-sorted) | formatter |  |
-| [ktfmt](https://github.com/facebook/ktfmt) | formatter | kotlin |
-| [ktlint](https://github.com/pinterest/ktlint) | linter | kotlin |
-| [kube-linter](https://github.com/stackrox/kube-linter) | linter | kubernetes, yaml |
-| [kulala-fmt](https://github.com/mistweaverco/kulala-fmt) | formatter | http |
-| [leptosfmt](https://github.com/bram209/leptosfmt) | formatter | rust |
-| [liquidsoap-prettier](https://github.com/savonet/liquidsoap-prettier) | formatter | liquidsoap |
-| [luacheck](https://github.com/lunarmodules/luacheck) | formatter | lua |
-| [luaformatter](https://github.com/koihik/luaformatter) | formatter | lua |
-| [luau-analyze](https://luau.org) | linter | luau |
-| [mado](https://github.com/akiomik/mado) | linter | markdown |
-| [mago](https://github.com/carthage-software/mago) | formatter, linter | php |
-| [markdownfmt](https://github.com/shurcool/markdownfmt) | formatter | markdown |
-| [markdownlint](https://github.com/davidanson/markdownlint) | linter | markdown |
-| [markdownlint-cli2](https://github.com/davidanson/markdownlint-cli2) | linter | markdown |
-| [markuplint](https://markuplint.dev) | linter | html |
-| [mbake](https://github.com/ebodshojaei/bake) | formatter, linter | make |
-| [md-padding](https://github.com/harttle/md-padding) | formatter | markdown |
-| [mdformat](https://github.com/executablebooks/mdformat) | formatter | markdwon |
-| [mdsf](https://github.com/hougesen/mdsf) | formatter | markdown |
-| [mdslw](https://github.com/razziel89/mdslw) | formatter | markdown |
-| [meson](https://mesonbuild.com) | formatter | meson |
-| [mh_lint](https://github.com/florianschanda/miss_hit) | linter | matlab |
-| [mh_style](https://github.com/florianschanda/miss_hit) | formatter | matlab |
-| [mise](https://github.com/jdx/mise) | tool |  |
-| [misspell](https://github.com/client9/misspell) | spell-check |  |
-| [mix](https://hexdocs.pm/mix/main/Mix.Tasks.Format.html) | formatter | elixir |
-| [mojo](https://docs.modular.com/mojo/cli/format) | formatter | mojo |
-| [muon](https://github.com/muon-build/muon) | formatter, linter | meson |
-| [mypy](https://github.com/python/mypy) | linter | python |
-| [nasmfmt](https://github.com/yamnikov-oleg/nasmfmt) | formatter | assembly |
-| [nginxbeautifier](https://github.com/vasilevich/nginxbeautifier) | formatter | nginx |
-| [nginxfmt](https://github.com/slomkowski/nginx-config-formatter) | formatter | nginx |
-| [nickel](https://nickel-lang.org) | formatter | nickel |
-| [nimpretty](https://github.com/nim-lang/nim) | formatter | nim |
-| [nixfmt](https://github.com/nixos/nixfmt) | formatter | nix |
-| [nixpkgs-fmt](https://github.com/nix-community/nixpkgs-fmt) | formatter | nix |
-| [nomad](https://developer.hashicorp.com/nomad/docs/commands) | formatter | hcl |
-| [nph](https://github.com/arnetheduck/nph) | formatter | nim |
-| [npm-groovy-lint](https://github.com/nvuillam/npm-groovy-lint) | formatter, linter | groovy |
-| [nufmt](https://github.com/nushell/nufmt) | formatter | nushell |
-| [ocamlformat](https://github.com/ocaml-ppx/ocamlformat) | formatter | ocaml |
-| [ocp-indent](https://github.com/ocamlpro/ocp-indent) | formatter | ocaml |
-| [odinfmt](https://github.com/danielgavin/ols) | formatter | odin |
-| [oelint-adv](https://github.com/priv-kweihmann/oelint-adv) | linter | bitbake |
-| [opa](https://www.openpolicyagent.org/docs/latest/cli) | formatter | rego |
-| [openapi-format](https://github.com/thim81/openapi-format) | formatter | json, openapi, yaml |
-| [ormolu](https://github.com/tweag/ormolu) | formatter | haskell |
-| [oxfmt](https://oxc.rs/docs/guide/usage/formatter.html) | formatter | javascript, typescript |
-| [oxlint](https://oxc.rs/docs/guide/usage/linter.html) | linter | javascript, typescript |
-| [packer](https://developer.hashicorp.com/packer/docs/commands) | formatter | hcl |
-| [panache](https://github.com/jolars/panache) | formatter | markdown, pandoc, quarto, rmarkdown |
-| [pasfmt](https://github.com/integrated-application-development/pasfmt) | formatter | delphi, pascal |
-| [perflint](https://github.com/tonybaloney/perflint) | linter | python |
-| [perltidy](https://github.com/perltidy/perltidy) | formatter | perl |
-| [pg_format](https://github.com/darold/pgformatter) | formatter | sql |
-| [php-cs-fixer](https://github.com/php-cs-fixer/php-cs-fixer) | formatter, linter | php |
-| [phpcbf](https://github.com/phpcsstandards/php_codesniffer) | formatter | php |
-| [phpinsights](https://github.com/nunomaduro/phpinsights) | linter | php |
-| [pint](https://github.com/laravel/pint) | formatter, linter | php |
-| [pkl](https://github.com/apple/pkl) | formatter | pkl |
-| [prettier](https://github.com/prettier/prettier) | formatter | angular, css, ember, graphql, handlebars, html, javascript, json, less, markdown, scss, typescript, vue |
-| [prettierd](https://github.com/fsouza/prettierd) | formatter | angular, css, ember, graphql, handlebars, html, javascript, json, less, markdown, scss, typescript, vue |
-| [pretty-php](https://github.com/lkrms/pretty-php) | formatter | php |
-| [prettypst](https://github.com/antonwetzel/prettypst) | formatter | typst |
-| [prisma](https://www.prisma.io/docs/orm/tools/prisma-cli) | formatter | prisma |
-| [proselint](https://github.com/amperser/proselint) | spell-check |  |
-| [protolint](https://github.com/yoheimuta/protolint) | linter | protobuf |
-| [ptop](https://www.freepascal.org/tools/ptop.html) | formatter | pascal |
-| [pug-lint](https://github.com/pugjs/pug-lint) | linter | pug |
-| [puppet-lint](https://github.com/puppetlabs/puppet-lint) | linter | puppet |
-| [purs-tidy](https://github.com/natefaubion/purescript-tidy) | formatter | purescript |
-| [purty](https://gitlab.com/joneshf/purty) | formatter | purescript |
-| [pycln](https://github.com/hadialqattan/pycln) | formatter | python |
-| [pycodestyle](https://github.com/pycqa/pycodestyle) | linter | python |
-| [pydoclint](https://github.com/jsh9/pydoclint) | linter | python |
-| [pydocstringformatter](https://github.com/danielnoord/pydocstringformatter) | formatter | python |
-| [pydocstyle](https://github.com/pycqa/pydocstyle) | formatter | python |
-| [pyflakes](https://github.com/pycqa/pyflakes) | linter | python |
-| [pyink](https://github.com/google/pyink) | formatter | python |
-| [pylint](https://github.com/pylint-dev/pylint) | linter | python |
-| [pymarkdownlnt](https://github.com/jackdewinter/pymarkdown) | formatter, linter | markdown |
-| [pyment](https://github.com/dadadel/pyment) | formatter | python |
-| [pyrefly](https://github.com/facebook/pyrefly) | linter | python |
-| [pyupgrade](https://github.com/asottile/pyupgrade) | linter | python |
-| [qmlfmt](https://github.com/jesperhh/qmlfmt) | formatter | qml |
-| [qmlformat](https://doc.qt.io/qt-6/qtqml-tooling-qmlformat.html) | formatter | qml |
-| [qmllint](https://doc.qt.io/qt-6/qtqml-tooling-qmllint.html) | linter | qml |
-| [quick-lint-js](https://github.com/quick-lint/quick-lint-js) | linter | javascript |
-| [raco](https://docs.racket-lang.org/fmt) | formatter | racket |
-| [reek](https://github.com/troessner/reek) | linter | ruby |
-| [refmt](https://reasonml.github.io/docs/en/refmt) | formatter | reason |
-| [reformat-gherkin](https://github.com/ducminh-phan/reformat-gherkin) | formatter | gherkin |
-| [refurb](https://github.com/dosisod/refurb) | linter | python |
-| [regal](https://github.com/styrainc/regal) | linter | rego |
-| [reorder-python-imports](https://github.com/asottile/reorder-python-imports) | formatter | python |
-| [rescript](https://github.com/rescript-lang/rescript) | formatter | rescript |
-| [revive](https://github.com/mgechev/revive) | linter | go |
-| [roc](https://github.com/roc-lang/roc) | formatter | roc |
-| [rstfmt](https://github.com/dzhu/rstfmt) | formatter | restructuredtext |
-| [rubocop](https://github.com/rubocop/rubocop) | formatter, linter | ruby |
-| [rubyfmt](https://github.com/fables-tales/rubyfmt) | formatter | ruby |
-| [ruff](https://github.com/astral-sh/ruff) | formatter, linter | python |
-| [rufo](https://github.com/ruby-formatter/rufo) | formatter | ruby |
-| [rumdl](https://github.com/rvben/rumdl) | formatter, linter | markdown |
-| [rune](https://github.com/rune-rs/rune) | formatter | rune |
-| [runic](https://github.com/fredrikekre/runic.jl) | formatter | julia |
-| [rustfmt](https://github.com/rust-lang/rustfmt) | formatter | rust |
-| [rustywind](https://github.com/avencera/rustywind) | formatter | html |
-| [salt-lint](https://github.com/warpnet/salt-lint) | linter | salt |
-| [scala](https://www.scala-lang.org) | formatter | scala |
-| [scalafmt](https://github.com/scalameta/scalafmt) | formatter | scala |
-| [scalariform](https://github.com/scala-ide/scalariform) | formatter | scala |
-| [selene](https://github.com/kampfkarren/selene) | linter | lua |
-| [semistandard](https://github.com/standard/semistandard) | formatter, linter | javascript |
-| [shellcheck](https://github.com/koalaman/shellcheck) | linter | bash, shell |
-| [shellharden](https://github.com/anordal/shellharden) | linter | bash, shell |
-| [shfmt](https://github.com/mvdan/sh) | formatter | shell |
-| [sleek](https://github.com/nrempel/sleek) | formatter | sql |
-| [slim-lint](https://github.com/sds/slim-lint) | linter | slim |
-| [smlfmt](https://github.com/shwestrick/smlfmt) | formatter | standard-ml |
-| [snakefmt](https://github.com/snakemake/snakefmt) | formatter | snakemake |
-| [solhint](https://github.com/protofire/solhint) | linter | solidity |
-| [sphinx-lint](https://github.com/sphinx-contrib/sphinx-lint) | linter | python, restructredtext |
-| [sql-formatter](https://github.com/sql-formatter-org/sql-formatter) | formatter | sql |
-| [sqlfluff](https://github.com/sqlfluff/sqlfluff) | formatter, linter | sql |
-| [sqlfmt](https://github.com/tconbeer/sqlfmt) | formatter | sql |
-| [sqlint](https://github.com/purcell/sqlint) | linter | sql |
-| [sqruff](https://github.com/quarylabs/sqruff) | formatter, linter | sql |
-| [squawk](https://github.com/sbdchd/squawk) | linter | postgresql, sql |
-| [standardjs](https://github.com/standard/standard) | formatter, linter | javascript |
-| [standardrb](https://github.com/standardrb/standard) | formatter, linter | ruby |
-| [statix](https://github.com/oppiliappan/statix) | linter | nix |
-| [stylefmt](https://github.com/matype/stylefmt) | formatter | css, scss |
-| [stylelint](https://github.com/stylelint/stylelint) | linter | css, scss |
-| [stylish-haskell](https://github.com/haskell/stylish-haskell) | formatter | haskell |
-| [stylua](https://github.com/johnnymorganz/stylua) | formatter | lua |
-| [superhtml](https://github.com/kristoff-it/superhtml) | formatter | html |
-| [svlint](https://github.com/dalance/svlint) | linter | systemverilog |
-| [swift-format](https://github.com/swiftlang/swift-format) | formatter | swift |
-| [swiftformat](https://github.com/nicklockwood/swiftformat) | formatter | swift |
-| [swiftlint](https://github.com/realm/swiftlint) | linter | swift |
-| [taplo](https://github.com/tamasfe/taplo) | formatter | toml |
-| [tclfmt](https://github.com/nmoroze/tclint) | linter | tcl |
-| [tclint](https://github.com/nmoroze/tclint) | linter | tcl |
-| [templ](https://github.com/a-h/templ) | formatter | go, templ |
-| [terraform](https://www.terraform.io/docs/cli/commands/fmt.html) | formatter | terraform |
-| [terragrunt](https://terragrunt.gruntwork.io/docs/reference/cli-options/#hclfmt) | formatter | hcl |
-| [tex-fmt](https://github.com/wgunderwood/tex-fmt) | formatter | latex |
-| [textlint](https://github.com/textlint/textlint) | spell-check |  |
-| [tlint](https://github.com/tighten/tlint) | linter | php |
-| [tofu](https://opentofu.org/docs/cli/commands/fmt) | formatter | terraform, tofu |
-| [tombi](https://github.com/tombi-toml/tombi) | formatter, linter | toml |
-| [toml-sort](https://github.com/pappasam/toml-sort) | formatter | toml |
-| [topiary](https://github.com/tweag/topiary) | formatter |  |
-| [tryceratops](https://github.com/guilatrova/tryceratops) | linter | python |
-| [ts-standard](https://github.com/standard/ts-standard) | formatter, linter | typescript |
-| [tsp](https://github.com/microsoft/typespec) | formatter | typespec |
-| [tsqllint](https://github.com/tsqllint/tsqllint) | linter | sql |
-| [twig-cs-fixer](https://github.com/vincentlanglet/twig-cs-fixer) | formatter, linter | twig |
-| [twigcs](https://github.com/friendsoftwig/twigcs) | linter | php, twig |
-| [txtpbfmt](https://github.com/protocolbuffers/txtpbfmt) | formatter | protobuf |
-| [ty](https://github.com/astral-sh/ty) | linter | python |
-| [typos](https://github.com/crate-ci/typos) | spell-check |  |
-| [typstfmt](https://github.com/astrale-sharp/typstfmt) | formatter | typst |
-| [typstyle](https://github.com/enter-tainer/typstyle) | formatter | typst |
-| [ufmt](https://github.com/omnilib/ufmt) | formatter | python |
-| [uiua](https://github.com/uiua-lang/uiua) | formatter | uiua |
-| [unimport](https://github.com/hakancelikdev/unimport) | formatter | python |
-| [usort](https://github.com/facebook/usort) | formatter | python |
-| [v](https://vlang.io) | formatter | v |
-| [vacuum](https://github.com/daveshanley/vacuum) | linter | json, openapi, yaml |
-| [verusfmt](https://github.com/verus-lang/verusfmt) | formatter | rust, verus |
-| [veryl](https://github.com/veryl-lang/veryl) | formatter | veryl |
-| [vhdl-style-guide](https://github.com/jeremiah-c-leary/vhdl-style-guide) | formatter | vhdl |
-| [vint](https://github.com/vimjas/vint) | linter | vimscript |
-| [wa](https://github.com/wa-lang/wa) | formatter | wa |
-| [wfindent](https://github.com/wvermin/findent) | formatter | fortran |
-| [write-good](https://github.com/btford/write-good) | linter |  |
-| [xmlformat](https://github.com/pamoller/xmlformatter) | formatter | xml |
-| [xmllint](https://gnome.pages.gitlab.gnome.org/libxml2/xmllint.html) | linter | xml |
-| [xo](https://github.com/xojs/xo) | linter | javascript, typescript |
-| [xq](https://github.com/sibprogrammer/xq) | formatter | html, xml |
-| [yamlfix](https://github.com/lyz-code/yamlfix) | formatter | yaml |
-| [yamlfmt](https://github.com/google/yamlfmt) | formatter | yaml |
-| [yamllint](https://github.com/adrienverge/yamllint) | linter | yaml |
-| [yapf](https://github.com/google/yapf) | formatter | python |
-| [yard-lint](https://github.com/mensfeld/yard-lint) | linter | ruby |
-| [yew-fmt](https://github.com/its-the-shrimp/yew-fmt) | formatter | rust |
-| [yq](https://github.com/mikefarah/yq) | formatter | yaml |
-| [zig](https://ziglang.org) | formatter | zig |
-| [ziggy](https://ziggy-lang.io) | formatter | ziggy |
-| [zprint](https://github.com/kkinnear/zprint) | formatter | clojure, clojurescript |
-| [zsweep](https://github.com/psprint/zsh-sweep) | linter | zsh |
-| [zuban](https://github.com/zubanls/zuban) | linter | python |
-
-<!-- markdownlint-enable MD013 -->
-
-</details>
-
-<!-- END CATALOG -->
+Full reference — builtin hooks, staged isolation, timeouts, concurrency, caching, and
+git-hosted hook catalogs: [docs/HOOKS.md](docs/HOOKS.md).
 
 ---
 
 ## CLI Reference
 
-<details>
-<summary><strong>lint and format</strong></summary>
-
 ```text
-poly lint [PATHS]...
-poly fmt [PATHS]...
-
-  --fix                        Apply lint fixes or formatting in place.
-  --fix-generated              Also rewrite files whose header stamps a content hash over the
-                               body (`<project>:hash:<digest>`). Those are the only generated
-                               files poly withholds a write from — `poly fmt` skips them and
-                               `poly lint --fix` reports without rewriting — because
-                               reformatting invalidates the hash and the generator's verify
-                               step then reports drift on a file nobody edited. A plain
-                               `DO NOT EDIT` / `@generated` banner does not hold poly back:
-                               those files are linted, formatted and fixed like any other, so
-                               this flag has no effect on them.
-  --skip-generated             Do not lint or format machine-generated files at all (banner or
-                               stamp). Overrides `[discovery] generated` for this run; the
-                               files are reported as skipped, so they count against
-                               --deny-skips / --max-skips. Conflicts with --include-generated.
-  --include-generated          Lint and format machine-generated files. This is the default,
-                               so it only matters in a repo that set
-                               `[discovery] generated = false`. Conflicts with --skip-generated.
-  --check                      Explicit fmt dry run. This is the default.
-  --workspace                  `poly lint` only. Run the whole-project phase even though
-                               explicit paths were given (normally a path-scoped run skips it).
-                               The phase is never path-scoped: the tools cover the whole
-                               repository regardless of the named paths and of `[discovery]
-                               exclude`, and the run says so on stderr. Conflicts with
-                               --no-workspace.
-  --no-workspace               `poly lint` only. Skip the whole-project phase (cargo
-                               clippy/-sort/-machete/-deny and any other configured
-                               whole-workspace tools). Equivalent to `[lint] workspace = false`.
-                               Also what makes a run read-only: without it, plain `poly lint`
-                               executes those tools against the live worktree, and their own
-                               side effects are not poly's to control.
-  --format <pretty|json|toon>  Output format. Default: pretty.
-  --config <PATH>              Use an explicit config file.
-  --exclude <GLOB>             Exclude paths from discovery (repeatable; merged
-                               with `[discovery] exclude`). An unanchored glob
-                               matches at any depth; lead with `/` to anchor it
-                               to the config directory.
-  --force-exclude              Apply `[discovery] exclude` to explicitly named files too.
-                               This is the default, so it only matters in a repo that
-                               set `[discovery] force_exclude = false`.
-  --include-excluded           Check explicitly named files or directory roots even when excluded.
-                               Overrides `[discovery] force_exclude`. Exclusions below an
-                               included directory remain active.
-  --deny-skips                 Exit 2 if any file was skipped. Equivalent to
-                               `--max-skips 0`.
-  --max-skips <N>              Exit 2 if more than N files were skipped.
-  --no-cache                   Bypass the result cache.
-  -j, --jobs <N>               Parallel jobs. Default: logical cores.
-  --no-color                   Disable colored output.
-  --verbose                    Pretty output includes descriptions, URLs, and metadata,
-                               and lists every skipped file rather than the first 20.
-  --debug                      Include cache hit/miss and timing data.
+poly lint [PATHS]...   --fix --format pretty|json|toon --no-cache -j <N> --exclude <GLOB>
+poly fmt [PATHS]...    --check (default) --fix
 ```
 
-Skipped files — a language poly has no lint rules for, no matching engine, a generated
-file, an unreadable path — are always counted and their reasons summarized, so a run that
-checked nothing cannot look like a clean pass. `--deny-skips` / `--max-skips` turn that
-into a hard failure for CI.
+Both share `--config <PATH>`, `--no-color`, `-q` / `--quiet`, `--verbose`, `--debug`,
+`--force-exclude` / `--include-excluded`, `--fix-generated`, and `--deny-skips` /
+`--max-skips <N>`. `poly lint` adds `--no-workspace` / `--workspace` to control the
+whole-project phase.
 
-`poly lint` reports a file whose language nothing in the run lints as
-`skipped a.kt: no lint rules for Kotlin`, and keeps it out of the `N file(s) linted` count.
-This covers the tier-2 languages (Kotlin, Swift, Zig, Java, C, …), which poly formats but
-has no rules for, and any language whose linter is opt-in or missing from `PATH` — a shell
-script with no `shellcheck` installed is reported rather than counted. It is coverage
-information, not a failure: the run still exits 0 unless you ask for `--deny-skips` /
-`--max-skips`. Cross-cutting checks (typos, ast-grep rules, comment removal) still run on
-these files and their findings are still reported.
+`--quiet` trims pretty output to the findings and the summary — every count and reason stays,
+only the itemised per-file list goes away. Runs longer than 400 ms draw a progress indicator on
+stderr, but only when stderr is a terminal, so pipes, files and CI logs see nothing.
 
-A file a directory walk could not identify as any language is counted separately —
-`N file(s) of unrecognized type not checked`, with the first few named — rather than
-itemised as a skip, since every repository is full of images, lock files and snapshots that
-no linter was ever going to read. A path you name on the command line is different: naming
-it is a request to check it, so it is reported as a skip.
-
-Exit codes:
-
-| Code | Meaning |
+| Exit code | Meaning |
 |---:|---|
-| 0 | No issues, no formatting drift, or all writes succeeded |
-| 1 | Lint findings remain, or dry-run formatting would change files |
-| 2 | Internal error such as config or I/O failure, a file an engine could not lint or format, or a skip budget was exceeded |
+| 0 | Clean. |
+| 1 | Error-severity lint findings, a failing whole-project tool, or (`poly fmt`) files that would change. |
+| 2 | The run verified less than it claims — a file poly failed on, a skip budget exceeded, a config error, or a report that failed to serialize. |
 
-</details>
+Other subcommands: `poly hooks`, `poly commit`, `poly rules test|list`, `poly config
+update|show`, `poly cache`, `poly migrate`, `poly mcp`, `poly doctor`.
 
-<details>
-<summary><strong>doctor — which poly am I actually running?</strong></summary>
-
-```sh
-poly doctor                  # human report; exits 1 when something is actively wrong
-poly doctor --format json    # the same report, for a bug report or a CI check
-```
-
-Run this before filing a bug. It prints the resolved path of the running executable with its
-version and **build identifier**, every `poly` on `PATH` in order with the version each one
-reports, the config files in effect, and the cache directory — then exits non-zero on a real
-defect: a competing install on `PATH`, a `poly` that cannot report its own version, or a config
-that fails to load. Each finding carries the concrete remedy, including the fact that a
-cargo-installed `~/.cargo/bin/poly` needs `rm`, not `cargo uninstall poly`.
-
-`poly --version` reports the build identifier too — `0.21.0 (release build v0.21.0, release)`
-versus `0.21.0 (dev build v0.21.0-8-g18aa5e8, debug)` — so a development build carrying
-unreleased changes cannot be quoted as a release. The identifier comes from `git describe` at
-build time; outside a git checkout it reads `unknown` rather than guessing (packagers can set
-`POLY_BUILD_ID`).
-
-When another `poly` on `PATH` differs from the running one, every command warns once on stderr
-and points at `poly doctor`. A correctly-installed poly finds a single entry and prints nothing;
-`POLY_NO_SHADOW_WARN=1` silences it regardless.
-
-</details>
-
-<details>
-<summary><strong>config — what did poly actually parse?</strong></summary>
-
-```text
-poly config show [--config <PATH>] [--format <toml|json|toon>]
-poly config update [--config <PATH>]
-```
-
-`poly config show` prints the **effective, fully-merged configuration** — every section and
-key poly resolved after `extends` bases, the nested `poly.toml` cascade and `poly.local.toml`
-have all been applied:
-
-```toml
-# poly effective configuration
-#
-# config:      /repo/poly.toml
-# merged from: /repo/poly.toml
-#              /repo/poly.local.toml
-# extends:     path ../baseline/poly.toml
-# hooks:       present
-
-[defaults]
-line_length = 120
-...
-
-[lint.python.ruff]
-mccabe_max_complexity = 3
-```
-
-The default output is a valid TOML document, so `diff` against your own `poly.toml` shows
-exactly what poly kept — including keys poly does not recognize, which are printed as written
-rather than dropped. `[defaults]`, `[discovery]`, `[rules]` and `[workspace]` are shown fully
-resolved, so a setting nobody wrote (`line_length = 120`) is still visible; every other section
-is shown exactly as merged.
-
-`--format json` / `--format toon` emit the same document as
-`{ "config": …, "resolution": … }`, where `resolution` carries the config path, the files that
-were merged, the resolved `extends` bases, and whether `[hooks]` is present — the facts the TOML
-form carries as comments. The `merged from` list is file-level attribution: it names the files
-that could have contributed a value, not which file each key came from.
-
-`poly config update` resolves symbolic `extends` git refs to pinned object IDs and writes
-`poly-config.lock`.
-
-</details>
-
-<details>
-<summary><strong>commit, hooks, cache, and MCP</strong></summary>
-
-```sh
-poly commit "feat: add backend"
-poly hooks install
-poly cache stats
-poly cache size
-poly cache gc
-poly cache clean
-poly mcp --config /path/to/poly.toml
-poly doctor                # which poly is running, what's on PATH, config + cache
-poly migrate               # dry-run: report what would move into poly.toml
-poly migrate --write       # absorb tool configs into poly.toml, remove redundant files
-```
-
-`poly migrate` folds settings from `ruff`/`taplo`/markdownlint/`typos` config files
-(and `pyproject.toml` `[tool.ruff]`/`[tool.typos]`/`[tool.codespell]`) into `poly.toml`,
-then deletes or strips only the sources poly can fully honor — files it delegates to
-(`rustfmt.toml`, `.golangci.yml`, `clippy.toml`, …) and anything not fully representable
-are kept. It is a dry-run report by default; `--write` applies, `--recurse` walks nested
-projects, and `--verify` re-runs lint/format after writing.
-
-The MCP server is **stdio-only**. Read-only tools are `lint`, `format_check`, `cache_stats`,
-`rules`, `config_show`, and `version`; mutating tools are `lint_fix`, `format_write`, and
-`cache_clean`.
-The lint/format tools accept `paths`, `exclude` (gitignore-style glob patterns, merged with
-config), and `config` (explicit config file path) parameters for full feature parity with the
-CLI. Every tool sets `read_only_hint`/`destructive_hint`/`idempotent_hint`/`open_world_hint`
-annotations so a client can reason about a call before making it.
-
-Every tool returns **structured content**: a typed, schema-described payload in
-`CallToolResult.structured_content`, plus a text block in JSON (default) or compact
-[TOON](https://github.com/toon-format/spec) — pick per request with the `format` parameter.
-The JSON/TOON text reproduces the CLI's `--format json`/`--format toon` output exactly.
-
-Every response also carries a **`poly` identity block** — version, build id, channel,
-executable path, and pid — in both `structured_content` and `_meta`. An MCP caller has no
-`poly --version` to fall back on, so a result that doesn't say which binary produced it is
-indistinguishable from one produced by a superseded build. The `version` tool reports the same
-identity plus whether the executable is still the file on disk, and how long the server has
-been running.
-
-MCP servers are long-lived and outlive an upgrade: the running process keeps its (possibly
-deleted) executable alive, so it would otherwise serve the pre-upgrade build forever. `poly
-mcp` fingerprints its own executable at startup and re-checks it on every request — if the
-binary is replaced or deleted underneath it, every tool except `version` fails with an
-explanation until the server is restarted.
-
-`workspace_lint` and `workspace_lint_fix` run the whole-project phase (`cargo clippy`/
-`cargo-sort`/`cargo-machete`/`cargo-deny` and any configured whole-project type checkers)
-against the live worktree — the same multi-minute operation `poly lint`'s whole-project phase
-runs. `workspace_lint` requests check mode and applies no fixes, but it still executes those
-tools, whose own side effects on the worktree are not poly's to control (see
-[the whole-project phase](#the-whole-project-phase-executes-tools-so-plain-poly-lint-is-not-read-only)).
-Because that can take minutes,
-both are exposed as async **Tasks**: the call returns a task handle immediately and the client
-polls `tasks/get` (or `tasks/cancel`) for the result. A client that doesn't declare the tasks
-capability gets a synchronous (blocking) result instead, so every client can use the tools.
-
-</details>
-
-<details>
-<summary><strong>custom rules</strong></summary>
-
-```sh
-poly rules test [DIR]...    # verify rules against their *-test.yml snippets
-poly rules list [DIR]...    # list every resolved rule (built-in pack + user rules)
-poly rules list --format json   # same rows as JSON (also: --format toon)
-```
-
-`poly rules list` prints one row per rule — id, language, `builtin`/`user`, the severity it
-reports at under the current config, and the rule's own declared default (`off` for an opt-in
-rule) — so a warning you did not recognise can be traced to the rule that raised it and turned
-off. `--format json` / `--format toon` carry the same fields.
-
-With no `DIR`, both read `[rules] dirs` from the nearest `poly.toml`. `poly rules test` exits
-non-zero on any failed snippet (a `valid` snippet that matched, an `invalid` one that didn't, a
-`fixed:` autofix that differed, or a test naming an unknown rule id).
-
-</details>
+Full flag-by-flag reference: [docs/CLI.md](docs/CLI.md).
 
 ---
 
@@ -1890,7 +450,7 @@ non-zero on any failed snippet (a `valid` snippet that matched, an `invalid` one
 
 ```text
 crates/
-├── poly-core/   # Engine trait, registry, discovery, runner, reports
+├── poly-core/       # Engine trait, registry, discovery, runner, reports
 ├── poly-config/     # poly.toml schema and config loading
 ├── poly-cli/        # poly umbrella CLI
 ├── gitfluff/        # Conventional Commit linter
@@ -1899,6 +459,7 @@ crates/
 ├── poly-workspace/  # whole-project lint orchestration (shared by poly-cli and poly-mcp)
 ├── poly-cache/      # blake3 result cache
 ├── poly-catalog/    # embedded mdsf tool catalog
+├── poly-buildinfo/  # build identity folded into the cache key
 └── conformance/     # differential test harness
 ```
 
@@ -1906,13 +467,13 @@ crates/
 
 ## Contributing
 
-Keep changes small and test-backed. New or changed backends should include representative known-bad
-and known-unformatted fixtures under `crates/poly-core/tests/`, and should preserve the uniform
-`Engine` boundary. Before committing, run:
+Keep changes small and test-backed. A new or changed backend needs known-bad and
+known-unformatted fixtures under `crates/poly-core/tests/`, and must preserve the uniform
+`Engine` boundary. Before committing:
 
 ```sh
 poly hooks install   # wires lint/format/cargo checks into git; they run on every commit
-cargo test --workspace
+cargo test --workspace --no-fail-fast
 ```
 
 ---

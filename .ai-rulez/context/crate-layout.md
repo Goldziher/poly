@@ -122,8 +122,8 @@ prebuilt release artifacts plus an installer (see release-versioning).
     whitespace is significant. Parsers are pooled thread-locally, never built per file.
   - `native_tool/` — the **native-toolchain backend** (table-driven, `spec.rs`): wraps a
     language's canonical first-party CLI as a stdin→stdout subprocess when present and
-    enabled. Eleven specs today — `gofmt` and `rustfmt` (default-on), plus `zig fmt`, `shfmt`,
-    `shellcheck`, `google-java-format`, `ktfmt`, `Rscript`/styler, `swift-format`,
+    enabled. Eleven specs today — `gofmt`, `rustfmt` and `shellcheck` (default-on), plus
+    `zig fmt`, `shfmt`, `google-java-format`, `ktfmt`, `Rscript`/styler, `swift-format`,
     `dart format`, `gleam format` (all opt-in). One directory, one table — not one file per
     tool.
   - `catalog_tool/` — the opt-in **catalog tier** (ADR 0013): runs any `poly-catalog` tool a

@@ -25,8 +25,8 @@ below, which uses a language's canonical CLI when it happens to be installed.
   for grammars where whitespace is significant. Best-effort, pure Rust, grammars loaded on
   demand — never gofmt/rustfmt parity, by design.
 - **Native-toolchain tier (scoped exception).** A language's canonical first-party CLI run
-  per file over stdin/stdout when installed: `rustfmt` and `gofmt` are **on by default when
-  found on PATH**; `zig fmt`, `shfmt`, `shellcheck`, `google-java-format`, `ktfmt`, `styler`
+  per file over stdin/stdout when installed: `rustfmt`, `gofmt` and `shellcheck` are **on by
+  default when found on PATH**; `zig fmt`, `shfmt`, `google-java-format`, `ktfmt`, `styler`
   (R), `swift-format`, `dart format`, and `gleam format` are opt-in via
   `[fmt.<lang>.<tool>] enabled = true` / `[lint.<lang>.<tool>] enabled = true`. When the
   tool is absent, formatting falls through to tier 2 with an info-level notice, so the

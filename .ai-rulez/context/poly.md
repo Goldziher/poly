@@ -9,8 +9,9 @@ crate dependencies — ruff, oxc, biome (CSS/GraphQL), mago (PHP), taplo, rumdl,
 markup_fmt, rubyfmt, nixfmt, typos, and more under `crates/poly-core/src/engines/` — with a
 tree-sitter generic tier for the long tail. Two cross-cutting lint tiers run on top: the native
 `quality` metric engine and ast-grep with a built-in rule pack. Canonical first-party CLIs are
-used when found on `PATH` (`rustfmt` and `gofmt` are default-on; `zig fmt`, `shfmt`, `shellcheck`,
-`google-java-format`, `ktfmt`, `swift-format`, `dartfmt`, `styler`, `gleamfmt` are opt-in), and
+used when found on `PATH` (`rustfmt`, `gofmt` and `shellcheck` are default-on; `zig fmt`,
+`shfmt`, `google-java-format`, `ktfmt`, `swift-format`, `dartfmt`, `styler`, `gleamfmt` are
+opt-in), and
 whole-project tools (`cargo clippy` / `cargo-sort` / `cargo-machete` / `cargo-deny`, plus opt-in
 catalog tools such as `golangci-lint` and `actionlint`) run in the whole-project phase, not the
 per-file tier.
