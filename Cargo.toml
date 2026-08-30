@@ -37,16 +37,16 @@ assert_fs = "1.1.4"
 ast-grep-config = "0.45.2"
 ast-grep-core = "0.45.2"
 axoupdater = { version = "0.10.2", default-features = false, features = ["github_releases"] }
-biome_analyze = { git = "https://github.com/biomejs/biome", rev = "f2a07aadedd47034dccffd941935c71481b4c354" }
-biome_css_analyze = { git = "https://github.com/biomejs/biome", rev = "f2a07aadedd47034dccffd941935c71481b4c354" }
-biome_css_parser = { git = "https://github.com/biomejs/biome", rev = "f2a07aadedd47034dccffd941935c71481b4c354" }
-biome_diagnostics = { git = "https://github.com/biomejs/biome", rev = "f2a07aadedd47034dccffd941935c71481b4c354" }
-biome_graphql_analyze = { git = "https://github.com/biomejs/biome", rev = "f2a07aadedd47034dccffd941935c71481b4c354" }
-biome_graphql_parser = { git = "https://github.com/biomejs/biome", rev = "f2a07aadedd47034dccffd941935c71481b4c354" }
-biome_languages = { git = "https://github.com/biomejs/biome", rev = "f2a07aadedd47034dccffd941935c71481b4c354", features = [
+biome_analyze = { git = "https://github.com/biomejs/biome", rev = "7d54688ee89244af3b287402295340d1d35ca96e" }
+biome_css_analyze = { git = "https://github.com/biomejs/biome", rev = "7d54688ee89244af3b287402295340d1d35ca96e" }
+biome_css_parser = { git = "https://github.com/biomejs/biome", rev = "7d54688ee89244af3b287402295340d1d35ca96e" }
+biome_diagnostics = { git = "https://github.com/biomejs/biome", rev = "7d54688ee89244af3b287402295340d1d35ca96e" }
+biome_graphql_analyze = { git = "https://github.com/biomejs/biome", rev = "7d54688ee89244af3b287402295340d1d35ca96e" }
+biome_graphql_parser = { git = "https://github.com/biomejs/biome", rev = "7d54688ee89244af3b287402295340d1d35ca96e" }
+biome_languages = { git = "https://github.com/biomejs/biome", rev = "7d54688ee89244af3b287402295340d1d35ca96e", features = [
   "lang_css",
 ] }
-biome_rowan = { git = "https://github.com/biomejs/biome", rev = "f2a07aadedd47034dccffd941935c71481b4c354" }
+biome_rowan = { git = "https://github.com/biomejs/biome", rev = "7d54688ee89244af3b287402295340d1d35ca96e" }
 blake3 = "1"
 bstr = "1.13.1"
 cargo_metadata = "0.23.1"
@@ -94,13 +94,13 @@ markdown = "1.0.0"
 markup_fmt = "0.27"
 memchr = "2.8.3"
 owo-colors = { version = "4", features = ["supports-colors"] }
-oxc_allocator = { git = "https://github.com/oxc-project/oxc", rev = "784e9faad2a5e65e063f3e1f2f448203675909ec" }
-oxc_diagnostics = { git = "https://github.com/oxc-project/oxc", rev = "784e9faad2a5e65e063f3e1f2f448203675909ec" }
-oxc_formatter = { git = "https://github.com/oxc-project/oxc", rev = "784e9faad2a5e65e063f3e1f2f448203675909ec" }
-oxc_formatter_core = { git = "https://github.com/oxc-project/oxc", rev = "784e9faad2a5e65e063f3e1f2f448203675909ec" }
-oxc_formatter_json = { git = "https://github.com/oxc-project/oxc", rev = "784e9faad2a5e65e063f3e1f2f448203675909ec" }
-oxc_linter = { git = "https://github.com/oxc-project/oxc", rev = "784e9faad2a5e65e063f3e1f2f448203675909ec" }
-oxc_span = { git = "https://github.com/oxc-project/oxc", rev = "784e9faad2a5e65e063f3e1f2f448203675909ec" }
+oxc_allocator = { git = "https://github.com/oxc-project/oxc", rev = "db66f5821d40e3d851e61571430185682cd4179d" }
+oxc_diagnostics = { git = "https://github.com/oxc-project/oxc", rev = "db66f5821d40e3d851e61571430185682cd4179d" }
+oxc_formatter = { git = "https://github.com/oxc-project/oxc", rev = "db66f5821d40e3d851e61571430185682cd4179d" }
+oxc_formatter_core = { git = "https://github.com/oxc-project/oxc", rev = "db66f5821d40e3d851e61571430185682cd4179d" }
+oxc_formatter_json = { git = "https://github.com/oxc-project/oxc", rev = "db66f5821d40e3d851e61571430185682cd4179d" }
+oxc_linter = { git = "https://github.com/oxc-project/oxc", rev = "db66f5821d40e3d851e61571430185682cd4179d" }
+oxc_span = { git = "https://github.com/oxc-project/oxc", rev = "db66f5821d40e3d851e61571430185682cd4179d" }
 phf = { version = "0.14.0", default-features = false, features = ["macros"] }
 poly-buildinfo = { path = "crates/poly-buildinfo" }
 poly-cache = { path = "crates/poly-cache" }
@@ -162,7 +162,7 @@ tree-sitter = "0.26"
 tree-sitter-language-pack = "1.15"
 typos = "0.10"
 typos-dict = "0.14"
-uncomment = "3.5"
+uncomment = "3.6"
 unicase = "2"
 unicode-width = { version = "0.2.2", default-features = false }
 walkdir = "2.5.0"

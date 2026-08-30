@@ -86,7 +86,7 @@ use rules::{RuleMap, load_rules};
 /// render as their literal `$NAME` text instead of silently vanishing (see
 /// `map::render_message`), and the built-in pack ([`pack`]) is now merged in —
 /// both change what a file with no matching user rule can report.
-const ENGINE_VERSION: &str = "ast-grep-core-0.45.2-engine-2+tslp1.15.7+builtin-pack-1";
+const ENGINE_VERSION: &str = "ast-grep-core-0.45.2-engine-2+tslp1.15.12+builtin-pack-1";
 
 /// Cross-cutting custom-rule engine backed by ast-grep + TSLP grammars.
 ///

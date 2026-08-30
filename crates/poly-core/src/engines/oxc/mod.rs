@@ -40,7 +40,7 @@ use self::lint::{lint_js, lint_json};
 ///              `Oxlintrc` built through `ConfigStoreBuilder::from_oxlintrc`,
 ///              instead of being silently discarded.
 const VERSION: &str =
-    "oxc_formatter:0.65.0+oxlint+parser:0.147.0+rev:784e9fa+json-fmt+rules-v5+fmt-opts+jsonc-trailing-comma";
+    "oxc_formatter:0.65.0+oxlint+parser:0.147.0+rev:db66f58+json-fmt+rules-v5+fmt-opts+jsonc-trailing-comma";
 
 static LANGUAGES: &[Language] = &[
     Language::JavaScript,
