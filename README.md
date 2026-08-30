@@ -57,14 +57,14 @@ irm https://raw.githubusercontent.com/Goldziher/poly/main/install.ps1 | iex
 ```
 
 Both detect the platform, download the matching release archive, and verify it against
-`sha256sums.txt`. Set `POLY_VERSION=0.23.0` to pin an exact release.
+`sha256sums.txt`. Set `POLY_VERSION=0.23.1` to pin an exact release.
 
 ### GitHub Actions
 
 ```yaml
 - uses: Goldziher/poly@v0
   with:
-    version: v0.23.0 # omit for the latest release
+    version: v0.23.1 # omit for the latest release
 ```
 
 Forwards to `install.sh` and caches the installed binary by version and platform. See

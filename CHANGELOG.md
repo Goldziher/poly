@@ -5,6 +5,23 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
+## [0.23.1] - 2026-08-30
+
+### Fixed
+
+- **The npm packages publish again.** `npm-package/stage-binaries.sh` changed into the package
+  directory before it resolved its `--artifacts` argument, so the workflow's relative
+  `--artifacts artifacts` — relative to the repository root — was reinterpreted as
+  `npm-package/artifacts` and the script reported `error: not a directory: artifacts`. Every step
+  before it had passed: the six archives were downloaded off the release and verified against
+  `sha256sums.txt`. v0.23.0 therefore shipped its GitHub release, Homebrew formula, Scoop
+  manifest and PyPI wheels, and no npm package at all — `@goldziher/polylint` stayed on the
+  `0.0.0` bootstrap placeholder, which is what `npm install` would have fetched.
+
+  The argument is now resolved against the invocation directory before the `cd`, so a relative
+  and an absolute path both mean what the caller meant. `pip-package/build_wheels.py` takes the
+  same argument and never changes directory, which is why PyPI was unaffected.
+
 ## [0.23.0] - 2026-08-30
 
 ### Added

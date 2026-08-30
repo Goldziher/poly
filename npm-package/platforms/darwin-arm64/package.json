@@ -1,6 +1,6 @@
 {
   "name": "@goldziher/polylint-darwin-arm64",
-  "version": "0.23.0",
+  "version": "0.23.1",
   "description": "The macOS (Apple silicon) poly binary for @goldziher/polylint. Not useful on its own.",
   "homepage": "https://github.com/Goldziher/poly#readme",
   "bugs": {
