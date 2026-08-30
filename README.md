@@ -1,7 +1,7 @@
 <!-- markdownlint-disable MD033 MD041 -->
 <div align="center">
 
-<img src="docs/media/poly-banner.svg" alt="poly - universal linter and formatter" width="820">
+<img src="docs/media/poly-banner.svg" alt="poly" width="820">
 
 **One binary. ~30 languages. No toolchain to install.**
 
@@ -14,10 +14,11 @@ hooks & commit checks · MCP + Claude/Codex plugin
 
 [![CI](https://img.shields.io/github/actions/workflow/status/Goldziher/poly/ci.yaml?style=flat-square&cacheSeconds=300)](https://github.com/Goldziher/poly/actions/workflows/ci.yaml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
+[![Docs](https://img.shields.io/badge/docs-goldziher.github.io%2Fpoly-blue?style=flat-square)](https://goldziher.github.io/poly)
 
-[Install](#installation) · [What You Get](#what-you-get) ·
+[Install](#installation) · [What You Get](#what-you-get) · [What Runs Out of the Box](#what-runs-out-of-the-box) ·
 [AI Agents & MCP](#ai-agents--mcp) · [Performance](#performance) ·
-[Configuration](#configuration) · [CLI](#cli-reference) · [Contributing](#contributing)
+[Docs](https://goldziher.github.io/poly) · [Contributing](#contributing)
 
 </div>
 
@@ -35,7 +36,7 @@ hooks & commit checks · MCP + Claude/Codex plugin
 | **One config** | `poly.toml` drives linting, formatting, git hooks, and commit-message policy. |
 | **Cache + parallelism** | A blake3 content-hash cache skips unchanged work; rayon parallelizes the rest across cores. |
 | **Git hooks & commit checks** | `poly hooks install` wires lint, format, and Conventional-Commit checks into git — no external hook framework. |
-| **Two lint tiers on every language** | A code-quality metrics engine and a 26-rule built-in ast-grep pack run on top of the backends above, on by default at warning severity so they never redden an unconfigured CI. |
+| **Two lint tiers on every language** | A code-quality metrics engine and a built-in 26-rule ast-grep pack (13 rules on by default) run on top of the backends above, at warning severity so they never redden an unconfigured CI. |
 | **Simple distribution** | Prebuilt binaries via a shell/PowerShell installer, a GitHub Action, Homebrew, Scoop, npm, and PyPI. |
 
 <!-- markdownlint-enable MD013 -->
@@ -197,12 +198,9 @@ the same eleven tools the CLI exposes.
 
 ## How It Works
 
-<details open>
-<summary><strong>Pipeline</strong></summary>
-
-poly discovers files once, plans engines once per language, and runs the per-file work in
-parallel on a rayon pool. Every backend returns the same `Diagnostic` / `FormatOutput` shapes, so
-reporting, caching, and MCP output stay uniform.
+poly discovers files once (respecting `.gitignore`), plans the engine list once per language, and runs the per-file
+work in parallel on a rayon pool. Every backend — a linked-in Rust crate, the tree-sitter tier, or a wrapped CLI —
+returns the same `Diagnostic` and `FormatOutput` shapes, so reporting, caching, and MCP output stay uniform.
 
 ```mermaid
 flowchart LR
@@ -217,78 +215,127 @@ flowchart LR
   D --> F
 ```
 
-</details>
+The default path needs no Python, Node, Go, or JVM — the backends are Rust crates compiled into the binary, and a
+language without a dedicated backend falls through to a tree-sitter generic tier that is still pure Rust. The result
+cache is keyed by file bytes, engine name, engine version, and resolved engine config, so a tool upgrade or a config
+change invalidates exactly the entries it affects. `--debug` prints per-file engine timing and cache hit/miss data.
 
-<details>
-<summary><strong>Zero-dependency default</strong></summary>
+---
 
-The default path needs no Python, Node, Go, JVM, or project-local toolchain — most backends are
-Rust crates compiled into the binary. `gofmt`, `rustfmt`, and `shellcheck` run automatically when
-present on `PATH`; every other native-toolchain wrapper (`zig fmt`, `shfmt`, …) and every catalog
-tool is opt-in. A language with no dedicated backend falls through to a tree-sitter generic tier —
-still pure Rust, still zero system deps.
+## What Runs Out of the Box
 
-</details>
+poly is useful with an empty `poly.toml`. This is what a run with no configuration actually does; anything opt-in is
+marked as such.
 
-<details>
-<summary><strong>Cache</strong></summary>
+<!-- markdownlint-disable MD013 -->
 
-The result cache is keyed by file bytes, engine name, engine version, and resolved engine config —
-a tool upgrade or config change invalidates exactly the entries it affects. `--debug` reports
-per-file engine timing and cache hit/miss data.
+| Backend | What it enables by default |
+|---|---|
+| **ruff** (Python) | 22 selector groups: ruff's own `F`, `E4`, `E7`, `E9`, plus `W6`, `I`, `UP`, `B`, `ANN`, `SIM`, `C4`, `RET`, `FURB`, `PERF`, `TRY`, `BLE`, `S110`, `C90`, `PLR`, `T20`, `TC`, `PTH`, `RUF`, `ARG`. `E1`/`E2`/`E3`/`W1`/`W2`/`W3` stay off because the formatter owns them, and seven noisy members are turned back off: `B008`, `RUF100`, `ANN002`, `ANN003`, `ARG002`, `PLR2004`, `TRY003`. Line length 120, docstring code formatted at width 120. |
+| **oxlint** (JS/TS) | oxlint's own default is `correctness` only. poly adds `suspicious`, `pedantic`, `complexity`, `typescript/no-explicit-any`, `typescript/no-non-null-assertion` and `no-console`, all at warning. `restriction`, `style` and `nursery` stay off; `no-underscore-dangle`, `max-lines-per-function`, `max-lines` and `max-classes-per-file` are turned back off. |
+| **mago** (PHP) | PHP 8.4, with six maintainability metrics downgraded from error to warning: `cyclomatic-complexity` (15), `excessive-parameter-list` (5), `too-many-methods` (10), `too-many-properties` (10), `too-many-enum-cases` (20), `kan-defect` (1). |
+| **rumdl** (Markdown) | Five rumdl-proprietary stylistic rules disabled, plus four more for MDX. Line length 120. |
+| **biome** (CSS/SCSS, GraphQL) | The `correctness` and `suspicious` rule groups. Accessibility, style, complexity, performance and security are opt-in. |
 
-</details>
+<!-- markdownlint-enable MD013 -->
+
+### Three tiers that run on every language
+
+- **`typos`** — spell-checks identifiers, comments and strings. Always on; it has no enable key.
+- **The code-quality engine** — tree-sitter metric rules, listed below.
+- **The built-in ast-grep pack** — 26 rules across C#, Elixir, Go, Java, Kotlin, Python, Ruby, Rust and Swift. **13
+  are on by default**; the other 13 ship `severity: off` and are one config line away. Your own rules under
+  `[rules] dirs` sit above the pack — a rule with the same `id` replaces the built-in one outright.
+
+A fourth cross-cutting engine, `uncomment` (comment removal), is off by default.
+
+| Quality rule | Default |
+|---|---|
+| `file-too-long` | 1000 lines |
+| `function-too-long` | 80 lines |
+| `type-too-long` | 300 lines |
+| `too-many-parameters` | 6 |
+| `nesting-too-deep` | 4 |
+| `cyclomatic-complexity` | 20 |
+| `lazy-ignore` | on |
+| `magic-number` | opt-in — allows −1, 0, 1, 2, 10, 100 |
+| `law-of-demeter` | opt-in — chain depth 3 |
+
+The quality engine never duplicates a backend rule: where ruff or oxlint already covers a metric, it defers. It counts
+as lint *coverage* only for languages whose control flow it can model — Python, Rust, Go, JavaScript, JSX, TypeScript,
+TSX, Java, Kotlin, C, C++, C# and Ruby — while other languages still get the line-count rules.
+
+Everything these three tiers report is **warning** severity, and warnings alone do not fail a run, so turning poly on
+does not redden an unconfigured CI.
+
+### Native toolchain CLIs
+
+`gofmt`, `rustfmt` and `shellcheck` run automatically when found on `PATH`; `shellcheck` is the only one of the three
+that lints. `zig fmt`, `shfmt`, `google-java-format`, `ktfmt`, `styler` (R), `swift-format`, `dart format` and
+`gleam format` are opt-in. When a tool is absent the language falls through to the tree-sitter tier, so the
+zero-dependency promise holds either way.
+
+---
+
+## Backend Coverage
+
+<!-- markdownlint-disable MD013 -->
+
+| Language | Backend | Lint | Format |
+|---|---|---:|---:|
+| Python | ruff | yes | yes |
+| JavaScript / TypeScript / JSX / TSX / JSON | oxc | yes | yes |
+| TOML | taplo | yes | yes |
+| YAML | saphyr + pretty_yaml | yes | yes |
+| Markdown / MDX | rumdl | yes | yes |
+| SQL | sqruff | yes | yes |
+| CSS / SCSS | malva + biome | yes | yes |
+| Less | malva | no | yes |
+| GraphQL | graphql + biome | yes | yes |
+| PHP | mago | yes | yes |
+| HCL / Terraform | hcl | yes | yes |
+| HTML / Vue / Svelte / Astro / XML | markup_fmt | no | yes |
+| Dockerfile | dockerfile | yes | no |
+| `.env` | dotenv | yes | no |
+| INI | ini | yes | no |
+| Ruby | rubyfmt | no | yes |
+| Nix | alejandra | no | yes |
+| Go | `gofmt`, automatic when installed | no | yes |
+| Rust | `rustfmt`, automatic when installed | no | yes |
+| Shell | `shellcheck` automatic, `shfmt` opt-in | yes | opt-in |
+| Zig / Java / Kotlin / R / Swift / Dart / Gleam | first-party CLI, opt-in | no | opt-in |
+| Everything else identified | tree-sitter generic tier | no | best effort |
+
+<!-- markdownlint-enable MD013 -->
+
+The `Lint` column is the language's own backend; the three cross-cutting tiers add findings on top, including where
+that column says `no`. Beyond this table, an opt-in catalog of 348 tools across 175 languages covers the long tail.
+Full per-language reference: [Backends](https://goldziher.github.io/poly/reference/backends/).
 
 ---
 
 ## AI Agents & MCP
 
-poly ships its own agent integration rather than expecting one to be bolted on: a Claude/Codex
-plugin and a stdio MCP server exposing the same lint/format/cache surface as the CLI, with
-structured output an agent can consume directly.
-
-### Plugin
+poly ships its agent integration in the box rather than expecting one to be bolted on.
 
 ```text
 /plugin marketplace add Goldziher/poly
 /plugin install poly@poly
 ```
 
-Installs 5 skills and 2 slash commands (`/poly-check`, `/poly-fix`) that teach an agent poly's
-tiered backend model and when to reach for lint vs. format vs. hooks.
+That installs 5 skills and 2 slash commands (`/poly-check`, `/poly-fix`) that teach an agent poly's tiered backend
+model and when to reach for lint vs. format vs. hooks. Codex clients add the same marketplace through their own
+plugin manager.
 
-### MCP tool surface
+`poly mcp` is a stdio MCP server exposing eleven tools that mirror the CLI 1:1 — `lint`, `format_check`, `rules`,
+`config_show`, `cache_stats` and `version` (read-only), `lint_fix`, `format_write` and `cache_clean` (mutating), and
+`workspace_lint` / `workspace_lint_fix`. The last two run the multi-minute whole-project phase (`cargo clippy`,
+`cargo-sort`, `cargo-machete`, `cargo-deny`) and are exposed as async **Tasks**: the call returns a handle the client
+polls with `tasks/get`, falling back to a synchronous result for clients that do not declare the capability.
 
-Eleven tools, mirroring the CLI 1:1:
-
-<!-- markdownlint-disable MD013 -->
-
-| Tool | Mirrors | Kind |
-|---|---|---|
-| `lint` | `poly lint` | read-only |
-| `format_check` | `poly fmt --check` | read-only |
-| `rules` | `poly rules list` / `test` | read-only |
-| `config_show` | `poly config show` | read-only |
-| `cache_stats` | `poly cache stats` | read-only |
-| `version` | `poly --version` (plus build id, channel, pid) | read-only |
-| `lint_fix` | `poly lint --fix` | mutating |
-| `format_write` | `poly fmt --fix` | mutating |
-| `cache_clean` | `poly cache clean` | mutating |
-| `workspace_lint` | the whole-project phase, check mode | async task |
-| `workspace_lint_fix` | the whole-project phase, fix mode | async task |
-
-<!-- markdownlint-enable MD013 -->
-
-`workspace_lint` / `workspace_lint_fix` run `cargo clippy` / `cargo-sort` / `cargo-machete` /
-`cargo-deny` and any configured whole-project checkers — a multi-minute operation — so both are
-exposed as async **Tasks**: the call returns a handle and the client polls `tasks/get`. A client
-that doesn't declare the tasks capability gets a synchronous result from the same call instead.
-
-Every result carries a `poly` identity block (version, build id, channel, executable, pid), so an
-agent knows which binary answered — an MCP caller has no `poly --version` to fall back on.
-Results also distinguish three per-file outcomes: **checked**, **skipped** (poly correctly
-declined the file), and **errored** (poly failed on a file it accepted) — `isError` is set
-whenever anything errored, so an agent can gate on it before trusting the rest of the payload.
+Every result carries a `poly` identity block (version, build id, channel, executable, pid) and separates three
+per-file outcomes — **checked**, **skipped** (poly declined the file) and **errored** (poly failed on a file it
+accepted). `isError` is set whenever anything errored, so an agent can gate on it before trusting the payload.
 
 Full parameter reference: [`.ai-rulez/skills/poly-mcp/SKILL.md`](.ai-rulez/skills/poly-mcp/SKILL.md).
 
@@ -323,153 +370,27 @@ entirely, and everything else is split across cores.
 
 ---
 
-## Configuration
+## Documentation
 
-A single `poly.toml` at the repo root drives linting, formatting, hooks, and commit policy;
-`poly.local.toml` layers local overrides on top, and nested `poly.toml` files cascade in a
-monorepo.
+A single `poly.toml` drives linting, formatting, git hooks, and commit-message policy; `poly.local.toml` layers local
+overrides on top, nested files cascade in a monorepo, and `poly config show` prints the effective merged result.
+Unknown keys, unknown sections and wrongly-typed values are reported as warnings, never silently ignored.
 
-```toml
-[defaults]
-line_length = 120
-line_ending = "lf"
-final_newline = true
-trim_trailing_whitespace = true
-
-[lint.python.ruff]
-select = ["E", "F", "W"]
-
-[lint.javascript.oxc.rules.max-params]
-max = 6
-
-[per-file-ignores]
-"tests/**" = ["F401"]
-
-[hooks]
-stages = ["pre-commit"]
-
-[hooks.builtin]
-lint = true
-fmt = true
-commit = { stages = ["commit-msg"] }
-```
-
-`poly config show` prints the effective, fully-merged configuration (`--format toml|json|toon`)
-after `extends` bases, the monorepo cascade, and `poly.local.toml` have all been applied — and
-poly reports unknown keys, unknown sections, and wrongly-typed values as warnings rather than
-silently ignoring them.
-
-The full reference — default rule selection, inline suppression, monorepo cascading, shared and
-remote config, custom ast-grep rules, code-quality metrics, and comment removal — lives in
-[docs/CONFIGURATION.md](docs/CONFIGURATION.md).
-
----
-
-## Backend Coverage
-
-poly resolves each file through a tiered model: a curated Rust backend where one exists (ruff,
-oxc, biome, mago, taplo, rumdl, sqruff, malva, markup_fmt, rubyfmt, and more), a native-toolchain
-CLI where no viable Rust library exists (`gofmt`, `rustfmt` and `shellcheck` run automatically
-when present; `zig fmt`, `shfmt`, `ktfmt`, `google-java-format`, `swift-format`, `dart format`,
-`styler` and `gleam format` are opt-in), and a tree-sitter generic tier for everything else. An opt-in catalog of 348 tools
-across 175 languages covers the long tail beyond that.
-
-<!-- markdownlint-disable MD013 -->
-
-| Language | Backend | Lint | Format |
-|---|---|---:|---:|
-| JavaScript / TypeScript / JSON | oxc | yes | yes |
-| Python | ruff internals | yes | yes |
-| TOML | taplo | yes | yes |
-| Markdown | rumdl | yes | yes |
-| SQL | sqruff | yes | yes |
-| YAML | saphyr + pretty_yaml | yes | yes |
-| CSS / SCSS / Less | malva + biome | yes | yes |
-| HTML / Vue / Svelte / Astro | markup_fmt | no | yes |
-| PHP | mago | yes | yes |
-| Ruby | rubyfmt | no | yes |
-| Nix | alejandra | no | yes |
-| Go | `gofmt` (default-on) | no | yes |
-| Rust | `rustfmt` (default-on) | no | yes |
-| Shell | `shellcheck` (default-on), opt-in `shfmt` | yes | optional |
-| Everything else identified | tree-sitter generic tier | no | best effort |
-
-<!-- markdownlint-enable MD013 -->
-
-Full table (~30 languages with dedicated backends) plus the 348-tool catalog:
-[docs/BACKENDS.md](docs/BACKENDS.md).
-
----
-
-## Hooks
-
-```sh
-poly hooks install
-```
-
-wires `poly.toml`'s `[hooks]` into native git hooks — lint, format, commit-message, and
-file-safety checks, plus whole-workspace tools like `cargo clippy` — replacing a
-`.pre-commit-config.yaml` and its external framework dependency. Hooks validate a staged
-snapshot of the git index by default, run concurrently, and cache their own results.
-
-Full reference — builtin hooks, staged isolation, timeouts, concurrency, caching, and
-git-hosted hook catalogs: [docs/HOOKS.md](docs/HOOKS.md).
-
----
-
-## CLI Reference
-
-```text
-poly lint [PATHS]...   --fix --format pretty|json|toon --no-cache -j <N> --exclude <GLOB>
-poly fmt [PATHS]...    --check (default) --fix
-```
-
-Both share `--config <PATH>`, `--no-color`, `-q` / `--quiet`, `--verbose`, `--debug`,
-`--force-exclude` / `--include-excluded`, `--fix-generated`, and `--deny-skips` /
-`--max-skips <N>`. `poly lint` adds `--no-workspace` / `--workspace` to control the
-whole-project phase.
-
-`--quiet` trims pretty output to the findings and the summary — every count and reason stays,
-only the itemised per-file list goes away. Runs longer than 400 ms draw a progress indicator on
-stderr, but only when stderr is a terminal, so pipes, files and CI logs see nothing.
-
-| Exit code | Meaning |
-|---:|---|
-| 0 | Clean. |
-| 1 | Error-severity lint findings, a failing whole-project tool, or (`poly fmt`) files that would change. |
-| 2 | The run verified less than it claims — a file poly failed on, a skip budget exceeded, a config error, or a report that failed to serialize. |
-
-Other subcommands: `poly hooks`, `poly commit`, `poly rules test|list`, `poly config
-update|show`, `poly cache`, `poly migrate`, `poly mcp`, `poly doctor`.
-
-Full flag-by-flag reference: [docs/CLI.md](docs/CLI.md).
-
----
-
-## Workspace Layout
-
-```text
-crates/
-├── poly-core/       # Engine trait, registry, discovery, runner, reports
-├── poly-config/     # poly.toml schema and config loading
-├── poly-cli/        # poly umbrella CLI
-├── gitfluff/        # Conventional Commit linter
-├── poly-hooks/      # git-hook runner
-├── poly-mcp/        # MCP stdio server
-├── poly-workspace/  # whole-project lint orchestration (shared by poly-cli and poly-mcp)
-├── poly-cache/      # blake3 result cache
-├── poly-catalog/    # embedded mdsf tool catalog
-├── poly-buildinfo/  # build identity folded into the cache key
-└── conformance/     # differential test harness
-```
+- [Quickstart](https://goldziher.github.io/poly/start/quickstart/) — install, first run, first config.
+- [Configuration](https://goldziher.github.io/poly/guides/configuration/) — every key, rule selection, inline
+  suppression, monorepo cascading, shared and remote config.
+- [Hooks](https://goldziher.github.io/poly/guides/hooks/) — `poly hooks install`, builtin hooks, staged isolation,
+  timeouts, concurrency, caching.
+- [CLI reference](https://goldziher.github.io/poly/reference/cli/) — every subcommand and flag, and the exit-code
+  contract.
+- [Backends](https://goldziher.github.io/poly/reference/backends/) — full language table and the tool catalog.
 
 ---
 
 ## Contributing
 
-Keep changes small and test-backed. A new or changed backend needs known-bad and
-known-unformatted fixtures under `crates/poly-core/tests/`, and must preserve the uniform
-`Engine` boundary. Before committing:
+Keep changes small and test-backed. A new or changed backend needs known-bad and known-unformatted fixtures under
+`crates/poly-core/tests/`, and must preserve the uniform `Engine` boundary. Before committing:
 
 ```sh
 poly hooks install   # wires lint/format/cargo checks into git; they run on every commit
