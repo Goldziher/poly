@@ -9,6 +9,7 @@ use anyhow::Context;
 use crate::config::{Config, Kind};
 use crate::discover::{DiscoveredFile, discover_reporting};
 use crate::engine::{Diagnostic, Edit, FormatOutput, Severity, SourceFile};
+use crate::engine_guard::guard_engine_panic;
 use crate::filter::{
     PerFileIgnores, Suppressions, is_format_ignored, is_generated_lockfile, is_generated_source,
     is_hash_stamped_source, match_bases, relative_for_match,
@@ -491,7 +492,7 @@ fn lint_content(
             continue;
         }
         let started = std::time::Instant::now();
-        let mut diags = plan.engine.lint(&src, &plan.config)?;
+        let mut diags = guard_engine_panic(plan.engine.name(), &f.path, || plan.engine.lint(&src, &plan.config))?;
         let elapsed = started.elapsed();
         note_slow_engine(&f.path, content.len(), plan.engine.name(), elapsed);
         push_engine_debug(debug.as_mut(), plan, Some(started));
@@ -658,7 +659,8 @@ fn format_one(
             }
             src.content = Arc::clone(&current);
             let started = std::time::Instant::now();
-            let out: Arc<str> = match plan.engine.format(&src, &plan.config)? {
+            let formatted = guard_engine_panic(plan.engine.name(), &f.path, || plan.engine.format(&src, &plan.config))?;
+            let out: Arc<str> = match formatted {
                 FormatOutput::Unchanged => Arc::clone(&current),
                 FormatOutput::Formatted(s) => Arc::from(s),
             };

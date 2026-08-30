@@ -26,6 +26,7 @@ pub mod defaults;
 #[doc(hidden)]
 pub mod discover;
 pub mod engine;
+pub(crate) mod engine_guard;
 #[doc(hidden)]
 pub mod engines;
 pub(crate) mod filter;
