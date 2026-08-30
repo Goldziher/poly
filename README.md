@@ -634,6 +634,10 @@ a branch or tag ref requires running `poly config update` first, which resolves 
 forbidden in `poly.local.toml`. Extending a remote base means trusting that repository to
 run code on your machine — treat it like any other dependency.
 
+`poly config show` prints the effective, fully-merged result as a TOML document — every layer
+applied, every key as poly resolved it — so `diff`ing it against your own `poly.toml` answers
+"what did poly actually keep?".
+
 ### Optional Catalog Tools
 
 Opt into tools from the embedded mdsf catalog only when you want them:
@@ -1749,6 +1753,52 @@ build time; outside a git checkout it reads `unknown` rather than guessing (pack
 When another `poly` on `PATH` differs from the running one, every command warns once on stderr
 and points at `poly doctor`. A correctly-installed poly finds a single entry and prints nothing;
 `POLY_NO_SHADOW_WARN=1` silences it regardless.
+
+</details>
+
+<details>
+<summary><strong>config — what did poly actually parse?</strong></summary>
+
+```text
+poly config show [--config <PATH>] [--format <toml|json|toon>]
+poly config update [--config <PATH>]
+```
+
+`poly config show` prints the **effective, fully-merged configuration** — every section and
+key poly resolved after `extends` bases, the nested `poly.toml` cascade and `poly.local.toml`
+have all been applied:
+
+```toml
+# poly effective configuration
+#
+# config:      /repo/poly.toml
+# merged from: /repo/poly.toml
+#              /repo/poly.local.toml
+# extends:     path ../baseline/poly.toml
+# hooks:       present
+
+[defaults]
+line_length = 120
+...
+
+[lint.python.ruff]
+mccabe_max_complexity = 3
+```
+
+The default output is a valid TOML document, so `diff` against your own `poly.toml` shows
+exactly what poly kept — including keys poly does not recognize, which are printed as written
+rather than dropped. `[defaults]`, `[discovery]`, `[rules]` and `[workspace]` are shown fully
+resolved, so a setting nobody wrote (`line_length = 120`) is still visible; every other section
+is shown exactly as merged.
+
+`--format json` / `--format toon` emit the same document as
+`{ "config": …, "resolution": … }`, where `resolution` carries the config path, the files that
+were merged, the resolved `extends` bases, and whether `[hooks]` is present — the facts the TOML
+form carries as comments. The `merged from` list is file-level attribution: it names the files
+that could have contributed a value, not which file each key came from.
+
+`poly config update` resolves symbolic `extends` git refs to pinned object IDs and writes
+`poly-config.lock`.
 
 </details>
 

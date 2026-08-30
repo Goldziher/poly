@@ -2,14 +2,18 @@
 //! (`poly config update`) and inspect the effective, fully-resolved config
 //! (`poly config show`).
 
+mod effective;
+
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use anyhow::{Context, Result, bail};
-use clap::{Args, Subcommand};
-use poly_config::PolyConfig;
+use anyhow::{Result, bail};
+use clap::{Args, Subcommand, ValueEnum};
+use poly_core::report::{render_json, render_toon};
 
 use crate::config_sources::{self, RemoteExtendsResolver};
+
+pub use effective::EffectiveConfig;
 
 /// `poly config` argument surface.
 #[derive(Args)]
@@ -30,21 +34,46 @@ enum ConfigCommand {
         #[arg(long, value_name = "PATH")]
         config: Option<PathBuf>,
     },
-    /// Load the fully-resolved effective config (fetching pinned remote bases)
-    /// and print a concise summary.
+    /// Print the effective, fully-merged config — every section and key poly
+    /// resolved, after `extends` bases, the `poly.toml` cascade and
+    /// `poly.local.toml` were applied.
+    ///
+    /// The default TOML output is a valid config document, so diffing it
+    /// against your own `poly.toml` shows exactly what poly kept.
     #[command(alias = "resolve")]
     Show {
         /// Config file to resolve (defaults to the discovered `poly.toml`).
         #[arg(long, value_name = "PATH")]
         config: Option<PathBuf>,
+
+        /// Output format (`pretty` is an alias for `toml`).
+        #[arg(long, value_enum, default_value_t = ConfigFormat::Toml)]
+        format: ConfigFormat,
     },
+}
+
+/// Output format for `poly config show`.
+///
+/// TOML is the default because the input is TOML: the printed document parses
+/// as a `poly.toml`, which is what makes "diff what you wrote against what poly
+/// kept" a one-liner. The machine formats wrap the same config in a `config`
+/// key alongside the `resolution` block that TOML carries as comments.
+#[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum ConfigFormat {
+    /// The effective config as a TOML document, with resolution notes as comments.
+    #[value(alias = "pretty")]
+    Toml,
+    /// JSON: `{ "config": …, "resolution": … }`.
+    Json,
+    /// TOON (Token-Oriented Object Notation), same shape as JSON.
+    Toon,
 }
 
 /// Run `poly config`, mapping any error to exit code 2.
 pub fn run_config(args: ConfigArgs) -> ExitCode {
     let result = match args.command {
         ConfigCommand::Update { config } => update(config.as_deref()),
-        ConfigCommand::Show { config } => show(config.as_deref()),
+        ConfigCommand::Show { config, format } => show(config.as_deref(), format),
     };
     match result {
         Ok(code) => code,
@@ -72,88 +101,15 @@ fn update(explicit: Option<&Path>) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-fn show(explicit: Option<&Path>) -> Result<ExitCode> {
+fn show(explicit: Option<&Path>, format: ConfigFormat) -> Result<ExitCode> {
     let root = config_sources::repo_root()?;
     let resolver = RemoteExtendsResolver::new(&root)?;
-    let (config, config_path) = match explicit {
-        Some(path) => (PolyConfig::load_file_with(path, &resolver)?, path.to_path_buf()),
-        None => {
-            let cwd = std::env::current_dir().context("resolving the working directory")?;
-            (
-                PolyConfig::load_with(&cwd, &resolver)?,
-                config_sources::root_config_path(&root),
-            )
-        }
+    let document = EffectiveConfig::resolve(explicit, &resolver)?;
+    let rendered = match format {
+        ConfigFormat::Toml => document.to_toml()?,
+        ConfigFormat::Json => render_json(&document)?,
+        ConfigFormat::Toon => render_toon(&document)?,
     };
-    print_summary(&config, &config_path, &resolver);
+    println!("{}", rendered.trim_end());
     Ok(ExitCode::SUCCESS)
-}
-
-fn print_summary(config: &PolyConfig, config_path: &Path, resolver: &RemoteExtendsResolver) {
-    let defaults = &config.defaults;
-    println!("[defaults]");
-    println!("    line_length            = {}", defaults.line_length);
-    println!("    line_ending            = {:?}", defaults.line_ending);
-    println!("    final_newline          = {}", defaults.final_newline);
-    println!("    trim_trailing_whitespace = {}", defaults.trim_trailing_whitespace);
-
-    // The effective exclude list is worth printing in full: it accumulates across
-    // `extends` bases and `poly.local.toml`, so no single file shows it.
-    print!("[discovery]  exclude = ");
-    if config.discovery.exclude.is_empty() {
-        println!("(none)");
-    } else {
-        let globs: Vec<&str> = config.discovery.exclude.iter().map(String::as_str).collect();
-        println!("{}", globs.join(", "));
-    }
-
-    print_section_keys("lint", &config.lint);
-    print_section_keys("fmt", &config.fmt);
-
-    print!("[tools]  ");
-    if config.tools.is_empty() {
-        println!("(none)");
-    } else {
-        let names: Vec<&str> = config.tools.iter().map(|(name, _)| name.as_str()).collect();
-        println!("{}", names.join(", "));
-    }
-
-    println!("[hooks]  present = {}", config.hooks.present);
-
-    print_extends(config_path, resolver);
-}
-
-fn print_section_keys(label: &str, table: &toml::Table) {
-    print!("[{label}]  ");
-    if table.is_empty() {
-        println!("(none)");
-    } else {
-        let keys: Vec<&str> = table.keys().map(String::as_str).collect();
-        println!("{}", keys.join(", "));
-    }
-}
-
-fn print_extends(config_path: &Path, resolver: &RemoteExtendsResolver) {
-    let sources = match config_sources::declared_extends(config_path) {
-        Ok(sources) => sources,
-        Err(error) => {
-            println!("[extends]  <unavailable: {error}>");
-            return;
-        }
-    };
-    if sources.is_empty() {
-        println!("[extends]  (none)");
-        return;
-    }
-    println!("[extends]");
-    for source in &sources {
-        if source.git.is_some() {
-            let oid = resolver
-                .resolved_oid(source)
-                .unwrap_or_else(|| "<unlocked>".to_string());
-            println!("    git  {} -> {oid}", source.display_id());
-        } else {
-            println!("    path {}", source.display_id());
-        }
-    }
 }
