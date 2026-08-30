@@ -10,9 +10,9 @@
 set -euo pipefail
 
 PACKAGE_DIR="$(cd "$(dirname "$0")" && pwd)"
-cd "$PACKAGE_DIR"
+INVOCATION_DIR="$PWD"
 
-VERSION="$(node -p 'require("./package.json").version')"
+VERSION="$(node -p "require('$PACKAGE_DIR/package.json').version")"
 
 # platform-package-name:release-triple
 TARGETS=(
@@ -38,6 +38,16 @@ case "${1:-}" in
 		;;
 	*) usage ;;
 esac
+
+# Resolve the caller's path against the directory the script was *invoked* from,
+# before moving into the package directory. The publish workflow passes
+# `--artifacts artifacts`, relative to the repository root; resolving it after
+# the `cd` reinterprets it as `npm-package/artifacts`, which does not exist. That
+# is how v0.23.0 shipped with every archive downloaded and verified and the npm
+# publish never reached: `error: not a directory: artifacts`.
+[[ "$ARG" == /* ]] || ARG="$INVOCATION_DIR/$ARG"
+
+cd "$PACKAGE_DIR"
 
 stage_from_archive() {
 	local name="$1" triple="$2" archive_dir="$3"
