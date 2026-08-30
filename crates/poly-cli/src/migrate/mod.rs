@@ -369,6 +369,7 @@ fn verify_options() -> poly_core::RunOptions {
         exclude: Vec::new(),
         force_exclude: false,
         fix_generated: false,
+        generated: None,
         explicit_config: false,
         config_resolver: None,
         externally_linted_languages: Vec::new(),

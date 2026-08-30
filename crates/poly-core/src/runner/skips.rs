@@ -51,6 +51,25 @@ pub const NO_ENGINE_SKIP: &str = "no matching engine for this file type";
 /// (`[tools.<name>]`), not a rename or an exclude.
 pub const NO_LINT_RULES_SKIP_PREFIX: &str = "no lint rules for";
 
+/// Reason recorded for a machine-generated file that `[discovery] generated =
+/// false` kept out of the run — the same words from `poly lint` and `poly fmt`,
+/// because it is the same decision.
+///
+/// Naming the key is the point. The other two reasons describe a limit of poly
+/// (no engine, no rules); this one describes a choice the reader made in their
+/// own `poly.toml`, and a reader who has forgotten making it needs to be told
+/// *which line to delete*, not merely that something was generated.
+///
+/// The file is reported as skipped rather than dropped because it was never
+/// examined: it does not belong in the `checked` count, it must appear in the
+/// JSON `skipped` payload, and `--deny-skips` / `--max-skips` must be able to
+/// fail a run that quietly stopped covering 900 files.
+///
+/// Distinct from the hash-stamp reason in `runner.rs`, which names
+/// `--fix-generated`: that file *was* checked, and only its rewrite was
+/// withheld.
+pub const GENERATED_SKIP: &str = "machine-generated file ([discovery] generated = false)";
+
 /// One file the run did not inspect, and why.
 ///
 /// The reason is what makes the entry actionable: a bare list of paths tells a
@@ -183,6 +202,14 @@ mod tests {
             "no lint rules for elixir",
             "a tier-2 language is known only by its grammar id"
         );
+    }
+
+    /// The generated-file reason names the config key that produced it, so a
+    /// reader who did not write the line can still find it. A reason that said
+    /// only "generated file" would send them to the source.
+    #[test]
+    fn generated_skip_reason_names_the_config_key() {
+        assert_eq!(GENERATED_SKIP, "machine-generated file ([discovery] generated = false)");
     }
 
     /// The two reasons must stay distinguishable: "no matching engine for this

@@ -20,14 +20,16 @@ use rayon::prelude::*;
 use rustc_hash::FxHashSet;
 
 mod edits;
+mod generated;
 mod plan;
 mod skips;
 mod types;
 
 use edits::apply_edits;
+use generated::{acts_on_generated, format_skip_result, lint_skip_result};
 use plan::{EnginePlan, PlanMap, plan_by_config_language, prefetch_tier2_grammars, provides_language_lint};
 use skips::unmatched_explicit_paths;
-pub use skips::{NO_ENGINE_SKIP, NO_LINT_RULES_SKIP_PREFIX, SkippedFile};
+pub use skips::{GENERATED_SKIP, NO_ENGINE_SKIP, NO_LINT_RULES_SKIP_PREFIX, SkippedFile};
 // Re-exported so `poly_core::runner::LintResult` keeps naming the same type it
 // always has: the split below is a file boundary, not an API one.
 pub use types::{
@@ -57,8 +59,15 @@ const GENERIC_TIER_ENGINE: &str = "treesitter";
 /// --check` still reports as unformatted.
 const MAX_FORMAT_PASSES: usize = 5;
 
-/// Reason reported when `poly fmt` leaves a machine-generated file alone.
-const GENERATED_SKIP: &str = "hash-stamped generated file (pass --fix-generated to format)";
+/// Reason reported when a phase declines to rewrite a file whose header stamps
+/// a content hash over its body.
+///
+/// Narrower than [`GENERATED_SKIP`], and a different kind of decision: that one
+/// is the reader's opt-out, this one is a correctness guard poly applies on its
+/// own — reformatting a stamped body invalidates the hash, so the generator's
+/// verify step reports drift on a file no human touched and the remedy is a
+/// regen that discards the formatting. `--fix-generated` is the way out.
+const HASH_STAMPED_SKIP: &str = "hash-stamped generated file (pass --fix-generated to format)";
 
 /// Reason recorded when a routed text file cannot be decoded for linting.
 const INVALID_UTF8_SKIP: &str = "file is not valid UTF-8; text linting was skipped";
@@ -98,6 +107,9 @@ pub fn lint_run(
         .map(|c| PerFileIgnores::compile(&c.per_file_ignores))
         .collect();
     let bases = match_bases(paths);
+    // `[discovery] generated`, resolved once per config and once per run rather
+    // than per file. See `generated::acts_on_generated`.
+    let act_on_generated = acts_on_generated(&configs, opts.generated);
     // One relaxed increment per file, so the summary can state how many files
     // were genuinely linted rather than how many were handed to the pipeline.
     // Negligible next to reading and parsing the file it counts.
@@ -118,6 +130,7 @@ pub fn lint_run(
                 &ignores,
                 &bases,
                 &opts.externally_linted_languages,
+                &act_on_generated,
             ) {
                 Ok(result) => {
                     // A file no backend has rules for is not part of the linted
@@ -221,12 +234,23 @@ pub fn format_run(
         .collect();
     let plans = plan_by_config_language(&files, &configs, Kind::Format);
     prefetch_tier2_grammars(&plans);
+    // Same key, same resolution, same phase-agnostic answer as `lint_run`.
+    let act_on_generated = acts_on_generated(&configs, opts.generated);
     // An engine error is carried, not swallowed: dropping the file here is what
     // let `poly fmt --check` report success on a file it could not parse.
     let (oks, errs): (Vec<_>, Vec<_>) = files
         .par_iter()
         .map(|f| {
-            format_one(f, &plans, &cache, write, opts.fix_generated, collect_debug).map_err(|error| FormatError {
+            format_one(
+                f,
+                &plans,
+                &cache,
+                write,
+                opts.fix_generated,
+                collect_debug,
+                &act_on_generated,
+            )
+            .map_err(|error| FormatError {
                 path: f.path.clone(),
                 message: format!("{error:#}"),
             })
@@ -276,12 +300,24 @@ fn lint_one(
     ignores: &[PerFileIgnores],
     bases: &[PathBuf],
     externally_linted: &[Language],
+    act_on_generated: &[bool],
 ) -> anyhow::Result<LintResult> {
     let bytes = std::fs::read(&f.path).with_context(|| format!("reading {}", f.path.display()))?;
     let original = match String::from_utf8(bytes) {
         Ok(content) => content,
         Err(error) => return Ok(invalid_utf8_result(f, error.utf8_error())),
     };
+    // `[discovery] generated = false` (opt-out; the default is `true`). The bool
+    // is tested first so the default path pays one indexed load and never scans
+    // the header.
+    //
+    // It wins over `--fix-generated`, which governs only whether a file poly did
+    // check may be rewritten: with the opt-out on there is nothing to fix, so
+    // asking to fix more cannot opt the file back into being linted.
+    if !act_on_generated[f.config_id] && is_generated_source(&original) {
+        tracing::debug!(path = %f.path.display(), "not linting generated file");
+        return Ok(lint_skip_result(f));
+    }
     let this_ignores = &ignores[f.config_id];
     let rel =
         (!this_ignores.is_empty()).then(|| relative_for_match(&f.path, &configs.ignore_bases(f.config_id, bases)));
@@ -327,10 +363,15 @@ fn lint_one(
     let (mut diagnostics, mut debug) = lint_content(f, engine_plans, cache, &original, collect_debug)?;
     suppress(&original, &mut diagnostics);
 
-    // Report on generated files but never rewrite them. A fix there is churn the
-    // next generation run reverts, and it can silence the diagnostic that was the
-    // only evidence of a generator bug — `--fix-generated` opts back in.
-    let generated = fix && !fix_generated && is_generated_source(&original);
+    // Report on a hash-stamped file but never rewrite it — the same question
+    // `format_one` asks, deliberately, so the two phases cannot disagree about
+    // one file. A bare `DO NOT EDIT` banner is *not* enough: it announces
+    // provenance, not a checksum, so a fix there breaks no verify step, and
+    // withholding it left a file `poly fmt` reformats unfixable by `poly lint
+    // --fix` in the same repository. A stamp is a claim about the bytes, and
+    // reformatting them puts the generator's verify step into a regen loop.
+    // `--fix-generated` opts back in.
+    let generated = fix && !fix_generated && is_hash_stamped_source(&original);
     if generated {
         tracing::debug!(path = %f.path.display(), "skipping --fix on generated file");
     }
@@ -522,6 +563,7 @@ fn format_one(
     write: bool,
     fix_generated: bool,
     collect_debug: bool,
+    act_on_generated: &[bool],
 ) -> anyhow::Result<FormatResult> {
     let bytes = std::fs::read(&f.path).with_context(|| format!("reading {}", f.path.display()))?;
     let original = match String::from_utf8(bytes) {
@@ -539,14 +581,14 @@ fn format_one(
         }
     };
     if is_format_ignored(&original, &f.language) {
-        return Ok(FormatResult {
-            path: f.path.clone(),
-            changed: false,
-            formatted: None,
-            skipped: None,
-            error: None,
-            debug: None,
-        });
+        return Ok(format_skip_result(f, None));
+    }
+    // `[discovery] generated = false`, checked before the hash stamp below so
+    // the reader's own opt-out is the reason they are shown. Bool first: the
+    // default path never scans the header.
+    if !act_on_generated[f.config_id] && is_generated_source(&original) {
+        tracing::debug!(path = %f.path.display(), "not formatting generated file");
+        return Ok(format_skip_result(f, Some(GENERATED_SKIP.to_owned())));
     }
     // Skip only when the header stamps a **content hash** over the body:
     // reformatting invalidates it, so a verify step reports drift on a file no
@@ -562,14 +604,7 @@ fn format_one(
     // Skipped rather than reported as drift: poly will not fix these, so
     // flagging them under `--check` would leave a gate that can never go green.
     if !fix_generated && is_hash_stamped_source(&original) {
-        return Ok(FormatResult {
-            path: f.path.clone(),
-            changed: false,
-            formatted: None,
-            skipped: Some(GENERATED_SKIP.to_owned()),
-            error: None,
-            debug: None,
-        });
+        return Ok(format_skip_result(f, Some(HASH_STAMPED_SKIP.to_owned())));
     }
     let mut debug = collect_debug.then(RunDebug::default);
     let mut src = SourceFile {
@@ -592,16 +627,7 @@ fn format_one(
     // declines a file must not reformat it.
     let skipped = skip_reason_for(engine_plans, &src);
     if skipped.is_some() {
-        return Ok(FormatResult {
-            path: f.path.clone(),
-            changed: false,
-            formatted: None,
-            skipped,
-            error: None,
-            // No engine ran, so there is nothing to time: the debug block
-            // reports engines that executed, as it does for the skips above.
-            debug: None,
-        });
+        return Ok(format_skip_result(f, skipped));
     }
 
     // Run every format engine once over `input`, returning the chained output.

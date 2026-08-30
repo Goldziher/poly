@@ -15,6 +15,9 @@
 - Updated: 2026-08-29 (line-scoped suppression: `// poly: allow[rule-id] reason` inline
   directives — see ADR 0028 — supplement these file-level globs for exceptions too narrow to
   justify disabling a rule for a whole file.)
+- Updated: 2026-08-30 (machine-generated files: one `[discovery] generated` opt-out spanning
+  `lint`, `fmt` and `--fix`, and `lint --fix` aligned with `fmt` on which files it declines to
+  rewrite — see the amendment below.)
 
 ## Exclude anchoring
 
@@ -144,3 +147,63 @@ Negative / risks:
   different rules in different runs (e.g. after a refactor); post-lint filtering lets users
   suppress by rule, not by file. Path `exclude` does match at discovery time (the fast path),
   and that is the right choice for whole-file skips.
+
+## Amendment — 2026-08-30: machine-generated files
+
+Generated files were the one whole-file skip ADR 0017 named (§Context, item 1) and never gave a
+lever for, so three code paths had grown three different answers to "is this file poly's to act
+on?":
+
+| phase | question it asked | effect |
+| --- | --- | --- |
+| `lint` | none | always reported |
+| `fmt` | is there a **content-hash stamp**? | skipped only if stamped |
+| `lint --fix` | is there **any generated marker**? | rewrite withheld on a bare banner too |
+
+The third is the one that was wrong. A `DO NOT EDIT` banner announces provenance; it makes no
+claim about the bytes. `poly fmt` therefore reformatted a banner-only generated file — correctly,
+since not checking a file is worse than formatting one — while `poly lint --fix` refused a
+one-character autofix in the same file in the same repository, and reported a "generated file(s)
+not fixed" line for it. Nothing justified the split, and the asymmetry read as a bug in whichever
+command the user ran second.
+
+**`lint --fix` now asks the same question `fmt` does.** A rewrite is withheld only from a header
+that stamps `<project>:hash:<digest>` over the body. That guard stays, in both phases, and is not
+a noise preference: reformatting a stamped body invalidates the hash, the generator's verify step
+then reports drift on a file no human touched, and the remedy is a regen that discards the
+formatting — a loop, in which one reporter had 110 of 123 files. `--fix-generated` remains the way
+out of it, and is now *only* that; it has nothing left to say about banner-only files, since those
+are rewritten by default.
+
+**`[discovery] generated`** (default `true`) is the opt-out, for a repository whose generated
+output is not its to fix. It is one key covering `lint`, `fmt` and `--fix`, because "is this file
+mine to check?" has one answer per file; two keys under `[lint]` and `[fmt]` would be two things a
+reader has to keep in agreement to get the behaviour they asked for. It sits in `[discovery]`
+alongside `exclude`, `force_exclude` and `no_prune` — the table that already answers *which files
+poly acts on*, and already carries the built-in vendored/**generated** prune set that `no_prune`
+opts out of.
+
+Rejected placements: `[lint] generated` (lint-only namespace — `fmt` reads `[fmt]`, so a key
+governing both phases cannot live in either); a paired `[lint] generated` + `[fmt] generated` (two
+keys that must agree, and silently diverge when only one is set); a new top-level `[generated]`
+table (a whole section for one boolean, inviting `markers = [...]` scope creep that the narrow,
+deliberately un-tunable marker list in `filter/generated.rs` exists to avoid); `[defaults]` (style
+values, not file selection).
+
+Unlike its neighbours in `[discovery]`, this one **cannot prune the walk** — a banner is content,
+so the file must be read before the question can be answered. It is a skip, not an exclusion, and
+that is load-bearing: an opted-out file is reported through the existing `SkippedFile` machinery
+(`machine-generated file ([discovery] generated = false)`), so it stays out of the `checked` count,
+appears in the `json`/`toon` payload, and counts against `--deny-skips` / `--max-skips`. Dropping
+those files silently would let a gate stop covering a tree with nothing going red — the failure
+mode this ADR's own skip accounting exists to prevent.
+
+Per-config, not root-only (unlike `force_exclude` and `no_prune`): a nested `poly.toml` may opt out
+its own subtree. No per-language form — the marker scan is language-agnostic, and `[lint.<lang>]`
+holds only `<tool>` sub-tables, so a scalar written there would be read by nothing.
+`--skip-generated` / `--include-generated` override the key in either direction for one run, and
+beat every config in the tree; an override a nested config could veto would not be an override.
+
+Cost on the default path is one indexed `bool` load per file: the flag is resolved once per config
+before the `par_iter`, and tested before the content scan, so a run that has not opted out never
+looks at a file header for this.

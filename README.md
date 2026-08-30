@@ -304,6 +304,15 @@ force_exclude = true
 # one of those names is ordinary source rather than build output.
 no_prune = ["build", "dist"]
 
+# Whether poly lints and formats machine-generated files — those whose opening
+# lines carry a `DO NOT EDIT` / `@generated` banner or a `<project>:hash:<digest>`
+# stamp. Defaults to `true`: they are checked like any other file, which is how a
+# generator bug gets noticed. Set it to `false` for a repo whose generated output
+# is not its to fix; poly then reports each one as *skipped* rather than dropping
+# it silently, so the count, the JSON payload and `--deny-skips` all still see it.
+# `--skip-generated` / `--include-generated` override this for a single run.
+generated = true
+
 [fmt.python.ruff]
 docstring_code_format = true
 docstring_code_line_length = 120
@@ -545,6 +554,44 @@ from it. To prune *more* paths, use `exclude`. Unlike `exclude`, `no_prune` repl
 accumulates across config layers, and it is read from the run's root config only: a `poly.toml`
 *inside* a pruned directory cannot un-prune it, because that directory was never walked to find the
 config in the first place.
+
+### Machine-generated files
+
+A file whose opening lines carry a `DO NOT EDIT`, `@generated` or `Code generated …` banner is
+**linted, formatted and fixed like any other file**. That is deliberate: a generator can emit a
+defect, and poly reporting it is how anyone finds out. All three phases agree — there is no shape
+of file that `poly fmt` reformats but `poly lint --fix` refuses to touch.
+
+The one exception is narrower than a banner and is a correctness guard, not a preference. When the
+header stamps a **content hash** over the body — `<project>:hash:<digest>`, the shape a generator
+later verifies — poly still reports on the file but never writes to it. Reformatting the body
+invalidates the hash, so the generator's verify step reports drift on a file no human touched and
+the only remedy is a regen that throws the change away. `poly fmt` reports those as
+`skipped … hash-stamped generated file`, `poly lint --fix` reports the diagnostics and says how
+many fixes it withheld, and `--fix-generated` opts back in.
+
+To keep generated files out of poly entirely — the repo whose generated output is not its to fix —
+turn them off once, for both phases:
+
+```toml
+[discovery]
+generated = false
+```
+
+They are then **reported as skipped**, not silently dropped: they stay out of the `N file(s) linted`
+count, they appear in the `--format json`/`toon` payload, and they count against `--deny-skips` /
+`--max-skips`, so a gate cannot quietly stop covering a tree.
+
+```console
+$ poly lint --verbose .
+Nothing was linted. (0 file(s) linted, 1 skipped (machine-generated file ([discovery] generated = false)))
+  skipped bindings/api.py: machine-generated file ([discovery] generated = false)
+```
+
+The key is read from the config nearest each file, so a nested `poly.toml` (see
+[Nested config in a monorepo](#nested-config-in-a-monorepo)) can opt out one subtree without touching the
+rest. `--skip-generated` and `--include-generated` override it in either direction for a single
+run, and beat every config in the tree.
 
 ### Sharing configuration
 
@@ -1596,9 +1643,22 @@ poly lint [PATHS]...
 poly fmt [PATHS]...
 
   --fix                        Apply lint fixes or formatting in place.
-  --fix-generated              Also rewrite machine-generated files under --fix. By default a
-                               file marked `DO NOT EDIT` / `@generated` is reported but left
-                               unwritten, since a rewrite is undone by the next generation run.
+  --fix-generated              Also rewrite files whose header stamps a content hash over the
+                               body (`<project>:hash:<digest>`). Those are the only generated
+                               files poly withholds a write from — `poly fmt` skips them and
+                               `poly lint --fix` reports without rewriting — because
+                               reformatting invalidates the hash and the generator's verify
+                               step then reports drift on a file nobody edited. A plain
+                               `DO NOT EDIT` / `@generated` banner does not hold poly back:
+                               those files are linted, formatted and fixed like any other, so
+                               this flag has no effect on them.
+  --skip-generated             Do not lint or format machine-generated files at all (banner or
+                               stamp). Overrides `[discovery] generated` for this run; the
+                               files are reported as skipped, so they count against
+                               --deny-skips / --max-skips. Conflicts with --include-generated.
+  --include-generated          Lint and format machine-generated files. This is the default,
+                               so it only matters in a repo that set
+                               `[discovery] generated = false`. Conflicts with --skip-generated.
   --check                      Explicit fmt dry run. This is the default.
   --workspace                  `poly lint` only. Run the whole-project phase even though
                                explicit paths were given (normally a path-scoped run skips it).

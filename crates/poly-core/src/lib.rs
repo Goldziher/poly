@@ -43,6 +43,6 @@ pub use language::Language;
 pub use report::Verbosity;
 pub use resolve::{ConfigSet, ExcludeRule};
 pub use runner::{
-    EngineDebug, FormatError, FormatResult, FormatRun, LintError, LintResult, LintRun, NO_ENGINE_SKIP,
+    EngineDebug, FormatError, FormatResult, FormatRun, GENERATED_SKIP, LintError, LintResult, LintRun, NO_ENGINE_SKIP,
     NO_LINT_RULES_SKIP_PREFIX, RunDebug, RunOptions, SkippedFile, format, format_run, lint, lint_run,
 };

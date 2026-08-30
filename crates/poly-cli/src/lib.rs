@@ -141,14 +141,39 @@ pub struct CommonArgs {
     #[arg(long, conflicts_with = "force_exclude")]
     pub include_excluded: bool,
 
-    /// Apply `--fix` to machine-generated files too.
+    /// Rewrite hash-stamped generated files too.
     ///
-    /// By default `--fix` reports on a file marked `DO NOT EDIT` / `@generated`
-    /// but does not rewrite it: the change is reverted by the next generation
-    /// run, and it can silence the diagnostic that was the only evidence of a
-    /// generator bug.
+    /// A `DO NOT EDIT` / `@generated` banner does **not** hold poly back: those
+    /// files are linted, formatted and fixed like any other. What this flag
+    /// overrides is narrower — a header that stamps a content hash over the file
+    /// body (`<project>:hash:<digest>`). Reformatting one invalidates the hash,
+    /// so the generator's verify step reports drift on a file nobody edited and
+    /// the remedy is a regen that throws the change away. `poly fmt` skips those
+    /// files and `poly lint --fix` reports on them without rewriting; this opts
+    /// back in.
+    ///
+    /// Unrelated to `--skip-generated`, which decides whether poly looks at
+    /// generated files at all.
     #[arg(long)]
     pub fix_generated: bool,
+
+    /// Skip machine-generated files: do not lint or format anything whose header
+    /// carries a `DO NOT EDIT` / `@generated` banner or a content-hash stamp.
+    ///
+    /// Overrides `[discovery] generated` for this run. Skipped files are
+    /// reported as skipped — they are not counted as checked, they appear in the
+    /// `json`/`toon` `skipped` payload, and they count against `--deny-skips` /
+    /// `--max-skips`. Mutually exclusive with `--include-generated`.
+    #[arg(long, conflicts_with = "include_generated")]
+    pub skip_generated: bool,
+
+    /// Lint and format machine-generated files.
+    ///
+    /// This is the default, so the flag matters only in a repository that turned
+    /// it off with `[discovery] generated = false`: passing it pins the default
+    /// back on for this run. Mutually exclusive with `--skip-generated`.
+    #[arg(long, conflicts_with = "skip_generated")]
+    pub include_generated: bool,
 
     /// Emit debug data: per-engine cache hit/miss and timing (shown in `pretty`,
     /// attached to `json`/`toon`), and raise log verbosity to `debug` on stderr.
@@ -565,6 +590,7 @@ fn prepare(common: &CommonArgs) -> Result<(Vec<PathBuf>, Config, RunOptions), Ex
         exclude: common.exclude.clone(),
         force_exclude: resolve_force_exclude(common, &config),
         fix_generated: common.fix_generated,
+        generated: resolve_generated(common),
         explicit_config: common.config.is_some(),
         config_resolver: Some(resolver),
         // Filled in by `run_lint` once it knows whether the whole-project phase
@@ -572,6 +598,24 @@ fn prepare(common: &CommonArgs) -> Result<(Vec<PathBuf>, Config, RunOptions), Ex
         externally_linted_languages: Vec::new(),
     };
     Ok((paths, config, opts))
+}
+
+/// The run-level override of `[discovery] generated`, or `None` to defer to the
+/// config governing each file.
+///
+/// Deliberately *not* resolved against the root config the way
+/// [`resolve_force_exclude`] is: `generated` is read per config, so a nested
+/// `poly.toml` (ADR 0018) can set it for its own subtree. Folding the root
+/// config's value in here would flatten that back out and silently override
+/// every nested config with the root's answer.
+fn resolve_generated(common: &CommonArgs) -> Option<bool> {
+    if common.include_generated {
+        return Some(true);
+    }
+    if common.skip_generated {
+        return Some(false);
+    }
+    None
 }
 
 /// Whether any path argument names the directory poly is running in — i.e. the

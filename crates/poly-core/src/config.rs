@@ -40,6 +40,15 @@ pub struct Config {
     /// `[discovery] no_prune` — directory names kept despite the built-in
     /// vendored/generated prune set (see `discover::PRUNED_DIRECTORIES`).
     pub no_prune: Vec<String>,
+    /// `[discovery] generated` — whether poly lints and formats machine-generated
+    /// files (those carrying a `DO NOT EDIT` / `@generated` banner or a
+    /// `<project>:hash:<digest>` stamp).
+    ///
+    /// **Defaults to `true`**, so both phases act on them; `generated = false`
+    /// keeps them out of the run and reports each as skipped
+    /// ([`crate::runner::GENERATED_SKIP`]). See
+    /// [`poly_config::DiscoveryConfig::generated`] for the full rationale.
+    pub generated: bool,
     /// `[lint.<lang>.<tool>]` tables.
     pub lint: toml::Table,
     /// `[fmt.<lang>.<tool>]` tables.
@@ -68,6 +77,9 @@ impl Default for Config {
             exclude: Default::default(),
             force_exclude: Default::default(),
             no_prune: Default::default(),
+            // Matches `poly_config::DiscoveryConfig`'s own default: poly acts on
+            // generated files unless a user explicitly opts out.
+            generated: true,
             lint: Default::default(),
             fmt: Default::default(),
             tools: Default::default(),
@@ -379,6 +391,7 @@ impl From<poly_config::PolyConfig> for Config {
             exclude: pc.discovery.exclude.as_slice().to_vec(),
             force_exclude: pc.discovery.force_exclude,
             no_prune: pc.discovery.no_prune.as_slice().to_vec(),
+            generated: pc.discovery.generated,
             lint: pc.lint,
             fmt: pc.fmt,
             tools: pc.tools,

@@ -236,20 +236,57 @@ pub struct DiscoveryConfig {
     /// run's root config only: a `poly.toml` *inside* a pruned directory cannot
     /// un-prune it, because the directory holding it was never walked.
     pub no_prune: Patterns,
+    /// Whether poly acts on machine-generated files — those whose opening lines
+    /// carry a `DO NOT EDIT` / `@generated` / `Code generated …` banner, or a
+    /// `<project>:hash:<digest>` content stamp.
+    ///
+    /// **Defaults to `true`**: a generated file is linted and formatted like any
+    /// other, which is how a generator bug gets noticed. Set it to `false` for a
+    /// repository whose generated output is not its to fix, and whose findings
+    /// there are therefore noise:
+    ///
+    /// ```toml
+    /// [discovery]
+    /// generated = false
+    /// ```
+    ///
+    /// One key for both phases on purpose. "Is this file mine to check?" has a
+    /// single answer per file, and splitting it into `[lint]` and `[fmt]` halves
+    /// would be two keys a reader must keep in agreement to get the behaviour
+    /// they asked for.
+    ///
+    /// Those files are then reported as **skipped**, never silently dropped: the
+    /// skip feeds the `checked` count, the JSON `skipped` payload, and
+    /// `--deny-skips` / `--max-skips`, so a gate cannot quietly stop covering
+    /// them.
+    ///
+    /// Unlike `exclude`, this cannot prune the walk — a banner is content, so
+    /// the file must be read before the question can be answered. It is a skip,
+    /// not an exclusion, and the resolved value is per-config: a nested
+    /// `poly.toml` (ADR 0018) may set it for its own subtree.
+    ///
+    /// This governs whether poly *acts on* the file at all. Whether a generated
+    /// file poly did act on may be **rewritten** is a separate, narrower
+    /// question that only a content-hash stamp can answer `no` to — see
+    /// `--fix-generated`.
+    pub generated: bool,
 }
 
 impl Default for DiscoveryConfig {
-    /// Written out rather than derived because [`force_exclude`] defaults to
-    /// `true`, not to `bool::default()`. The container-level `#[serde(default)]`
-    /// fills missing keys from here, so a `poly.toml` with no `force_exclude`
-    /// and a repo with no `poly.toml` at all resolve to the same value.
+    /// Written out rather than derived because [`force_exclude`] and
+    /// [`generated`] default to `true`, not to `bool::default()`. The
+    /// container-level `#[serde(default)]` fills missing keys from here, so a
+    /// `poly.toml` with no `force_exclude` and a repo with no `poly.toml` at all
+    /// resolve to the same value.
     ///
     /// [`force_exclude`]: DiscoveryConfig::force_exclude
+    /// [`generated`]: DiscoveryConfig::generated
     fn default() -> Self {
         DiscoveryConfig {
             exclude: Patterns::default(),
             force_exclude: true,
             no_prune: Patterns::default(),
+            generated: true,
         }
     }
 }

@@ -1147,3 +1147,59 @@ fn force_exclude_reads_an_explicit_value() {
         );
     }
 }
+
+/// `[discovery] generated` defaults to `true` wherever it can be missing, for
+/// the same reason `force_exclude` does: a default that depends on how much of
+/// the `[discovery]` table a repository happened to write is not a default.
+#[test]
+fn generated_defaults_to_true_everywhere_it_can_be_missing() {
+    let dir = tempdir().unwrap();
+    assert!(PolyConfig::load(dir.path()).expect("no file").discovery.generated);
+
+    let path = dir.path().join("poly.toml");
+    for body in ["[defaults]\nline_length = 100\n", "[discovery]\nexclude = [\"a.py\"]\n"] {
+        fs::write(&path, body).unwrap();
+        assert!(
+            PolyConfig::load_file(&path).expect("load").discovery.generated,
+            "should default to true for:\n{body}"
+        );
+    }
+}
+
+/// The opt-out is the whole point of the key, so `false` is the case worth
+/// pinning: it has to survive deserialization to reach the runner at all.
+#[test]
+fn generated_reads_an_explicit_value() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("poly.toml");
+    for (value, expected) in [("false", false), ("true", true)] {
+        fs::write(&path, format!("[discovery]\ngenerated = {value}\n")).unwrap();
+        assert_eq!(
+            PolyConfig::load_file(&path).expect("load").discovery.generated,
+            expected
+        );
+    }
+}
+
+/// A nested `poly.toml` may opt its own subtree out, and a root that says
+/// nothing must not force the default back on. This is what makes the key
+/// per-config rather than root-only, and it is the half a cascade regression
+/// would silently take away.
+#[test]
+fn generated_cascades_from_the_nearest_config() {
+    let dir = tempdir().unwrap();
+    fs::create_dir_all(dir.path().join(".git")).unwrap();
+    fs::write(dir.path().join("poly.toml"), "[defaults]\nline_length = 100\n").unwrap();
+    let nested = dir.path().join("bindings");
+    fs::create_dir_all(&nested).unwrap();
+    fs::write(nested.join("poly.toml"), "[discovery]\ngenerated = false\n").unwrap();
+
+    assert!(
+        PolyConfig::load(dir.path()).expect("root").discovery.generated,
+        "the root config keeps the default"
+    );
+    assert!(
+        !PolyConfig::load(&nested).expect("nested").discovery.generated,
+        "the nested config governs its own subtree"
+    );
+}

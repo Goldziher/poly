@@ -37,6 +37,7 @@ fn opts() -> RunOptions {
         exclude: Vec::new(),
         force_exclude: false,
         fix_generated: false,
+        generated: None,
         explicit_config: true,
         config_resolver: None,
         externally_linted_languages: Vec::new(),

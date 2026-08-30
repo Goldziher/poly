@@ -32,10 +32,30 @@ pub struct RunOptions {
     /// repo's `[discovery] exclude` is silently inert exactly where it matters
     /// most. The CLI, hooks, and MCP turn this on by default.
     pub force_exclude: bool,
-    /// Apply `--fix` to machine-generated files too. Off by default: a fix there
-    /// is reverted by the next generation run, and can silence the diagnostic
-    /// that was the only evidence of a generator bug.
+    /// Rewrite **hash-stamped** generated files too — the `--fix-generated`
+    /// escape hatch.
+    ///
+    /// Off by default, and deliberately narrow. A file whose header stamps a
+    /// `<project>:hash:<digest>` over its body is left alone by `poly fmt` and
+    /// by `poly lint --fix` alike, because reformatting it invalidates the hash
+    /// and the generator's verify step then reports drift on a file no human
+    /// touched — a regen loop. A bare `DO NOT EDIT` banner makes no such claim,
+    /// so it is rewritten like any other file; this flag has nothing to say
+    /// about those.
+    ///
+    /// Orthogonal to [`generated`](RunOptions::generated), which decides whether
+    /// poly examines the file at all. That one wins: there is nothing to rewrite
+    /// in a file the run never checked.
     pub fix_generated: bool,
+    /// Per-run override of `[discovery] generated` (`--skip-generated` /
+    /// `--include-generated`).
+    ///
+    /// `None` — the default — defers to each config in the run, so a nested
+    /// `poly.toml` (ADR 0018) governs its own subtree. `Some(false)` keeps
+    /// machine-generated files out of both `lint` and `fmt`, reporting each as
+    /// skipped; `Some(true)` forces them back in for a repository whose config
+    /// opted out.
+    pub generated: Option<bool>,
     /// When `true`, the caller supplied an explicit `--config <path>`: use that
     /// single config for every file and skip hierarchical (nested `poly.toml`)
     /// resolution (ADR 0018). Default `false` — scan for nested configs.

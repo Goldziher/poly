@@ -25,6 +25,7 @@ fn opts() -> RunOptions {
     RunOptions {
         force_exclude: false,
         fix_generated: false,
+        generated: None,
         no_cache: true,
         jobs: Some(1),
         exclude: Vec::new(),
