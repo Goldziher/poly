@@ -32,7 +32,8 @@ use super::rule_config::{RuleOptions, RuleSelection, string_list, union_codes, w
 use super::template::{GO_TEMPLATE_SKIP, contains_go_template_markdown};
 use crate::config::EngineConfig;
 use crate::engine::{
-    Capabilities, Diagnostic, Edit, Engine, FormatOutput, OptionKeys, OptionTable, Severity, SourceFile, Span,
+    Capabilities, Diagnostic, Edit, Engine, FormatOutput, OptionKeys, OptionTable, OptionType, Severity, SourceFile,
+    Span,
 };
 use crate::language::Language;
 
@@ -105,9 +106,13 @@ impl Engine for RumdlEngine {
     /// `select` / `extend_select` / `ignore`.
     fn option_keys(&self, table: OptionTable) -> OptionKeys {
         match table {
-            OptionTable::Lint | OptionTable::Format => {
-                OptionKeys::declared(&["line_length", "enable", "extend_enable", "disable"]).with_rule_selection()
-            }
+            OptionTable::Lint | OptionTable::Format => OptionKeys::declared(&[
+                ("line_length", OptionType::INTEGER),
+                ("enable", OptionType::ARRAY),
+                ("extend_enable", OptionType::ARRAY),
+                ("disable", OptionType::ARRAY),
+            ])
+            .with_rule_selection(),
             OptionTable::CrossCuttingLint => OptionKeys::UNCHECKED,
         }
     }

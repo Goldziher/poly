@@ -19,8 +19,24 @@ mod format;
 mod lint;
 
 use crate::config::EngineConfig;
-use crate::engine::{Capabilities, Diagnostic, FormatOutput, OptionKeys, OptionTable, SourceFile};
+use crate::engine::{Capabilities, Diagnostic, FormatOutput, OptionKeys, OptionTable, OptionType, SourceFile};
 use crate::language::Language;
+
+/// The formatter keys `[fmt.<lang>.oxc]` reads, with the type each is read as.
+///
+/// Shared with the markup_fmt backend rather than copied: an Astro `<script>`
+/// block is formatted by `oxc::config` out of markup_fmt's *own* table, so the
+/// two tables read the same keys and a second list would drift.
+pub(crate) const JS_FORMAT_OPTION_KEYS: &[(&str, OptionType)] = &[
+    ("indent_style", OptionType::STRING),
+    ("quote_style", OptionType::STRING),
+    ("jsx_quote_style", OptionType::STRING),
+    ("semicolons", OptionType::STRING),
+    ("trailing_commas", OptionType::STRING),
+    ("arrow_parentheses", OptionType::STRING),
+    ("bracket_spacing", OptionType::BOOLEAN),
+    ("bracket_same_line", OptionType::BOOLEAN),
+];
 
 pub(crate) use self::format::{format_embedded_js, is_embedded_js_parse_error};
 use self::format::{format_js, format_json};
@@ -81,16 +97,7 @@ impl crate::engine::Engine for OxcEngine {
     fn option_keys(&self, table: OptionTable) -> OptionKeys {
         match table {
             OptionTable::Lint => OptionKeys::declared(&[]).with_rule_selection(),
-            OptionTable::Format => OptionKeys::declared(&[
-                "indent_style",
-                "quote_style",
-                "jsx_quote_style",
-                "semicolons",
-                "trailing_commas",
-                "arrow_parentheses",
-                "bracket_spacing",
-                "bracket_same_line",
-            ]),
+            OptionTable::Format => OptionKeys::declared(JS_FORMAT_OPTION_KEYS),
             OptionTable::CrossCuttingLint => OptionKeys::UNCHECKED,
         }
     }

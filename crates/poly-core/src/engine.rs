@@ -27,25 +27,125 @@ pub enum OptionTable {
     CrossCuttingLint,
 }
 
-/// The option keys a backend reads out of one of its config tables.
+/// The TOML value types an option key can usefully be given.
+///
+/// A backend reads its options with a *typed* accessor — `as_integer`,
+/// `as_bool`, `as_array` — which answers `None` for a value of any other type
+/// and leaves the backend on its default. Nothing about that is visible from
+/// outside, so `mccabe_max_complexity = "oops"` reads exactly like a working
+/// setting (issue #16). Declaring the type alongside the key is what makes the
+/// difference reportable.
+///
+/// The variants are a bit set so a key that genuinely accepts more than one
+/// shape can say so — ruff's `docstring_code_line_length` takes an integer *or*
+/// the string `"dynamic"` — via [`OptionType::or`]. Widening is the safe
+/// direction: an accepted type left out of a declaration is a false warning,
+/// which is the one outcome worse than a missed one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OptionType(u8);
+
+impl OptionType {
+    /// `key = true`.
+    pub const BOOLEAN: OptionType = OptionType(1 << 0);
+    /// `key = 10`.
+    pub const INTEGER: OptionType = OptionType(1 << 1);
+    /// `key = 1.5`.
+    pub const FLOAT: OptionType = OptionType(1 << 2);
+    /// `key = "text"`.
+    pub const STRING: OptionType = OptionType(1 << 3);
+    /// `key = ["a", "b"]`.
+    pub const ARRAY: OptionType = OptionType(1 << 4);
+    /// `key = { a = 1 }`, or the `[table.key]` sub-table form.
+    pub const TABLE: OptionType = OptionType(1 << 5);
+    /// `key = 1979-05-27T07:32:00Z`. No option declares it; it exists so every
+    /// TOML value maps to exactly one bit and a datetime is therefore reported
+    /// rather than silently unclassifiable.
+    const DATETIME: OptionType = OptionType(1 << 6);
+
+    /// A key that accepts either shape.
+    #[must_use]
+    pub const fn or(self, other: OptionType) -> OptionType {
+        OptionType(self.0 | other.0)
+    }
+
+    /// Whether `value` is one of the shapes this declaration accepts.
+    ///
+    /// An integer is accepted where a float is expected — TOML spells `1` and
+    /// `1.0` differently but `serde` widens the former, so rejecting it would be
+    /// a false warning.
+    pub fn accepts(self, value: &toml::Value) -> bool {
+        let found = OptionType::of(value);
+        if self.0 & found.0 != 0 {
+            return true;
+        }
+        found == OptionType::INTEGER && self.0 & OptionType::FLOAT.0 != 0
+    }
+
+    /// The single type `value` has.
+    fn of(value: &toml::Value) -> OptionType {
+        match value {
+            toml::Value::Boolean(_) => OptionType::BOOLEAN,
+            toml::Value::Integer(_) => OptionType::INTEGER,
+            toml::Value::Float(_) => OptionType::FLOAT,
+            toml::Value::String(_) => OptionType::STRING,
+            toml::Value::Array(_) => OptionType::ARRAY,
+            toml::Value::Table(_) => OptionType::TABLE,
+            toml::Value::Datetime(_) => OptionType::DATETIME,
+        }
+    }
+
+    /// This type as an English noun phrase with its article, e.g. `an integer`
+    /// or `an integer or a string`, for a diagnostic message.
+    pub fn describe(self) -> String {
+        let names = [
+            (OptionType::BOOLEAN, "a boolean"),
+            (OptionType::INTEGER, "an integer"),
+            (OptionType::FLOAT, "a number"),
+            (OptionType::STRING, "a string"),
+            (OptionType::ARRAY, "an array"),
+            (OptionType::TABLE, "a table"),
+            (OptionType::DATETIME, "a datetime"),
+        ];
+        let described: Vec<&str> = names
+            .iter()
+            .filter(|(bit, _)| self.0 & bit.0 != 0)
+            .map(|(_, name)| *name)
+            .collect();
+        if described.is_empty() {
+            return "no value".to_string();
+        }
+        described.join(" or ")
+    }
+
+    /// The type of `value` as the same noun phrase [`OptionType::describe`]
+    /// produces, so a message can name both sides in one vocabulary.
+    pub fn describe_value(value: &toml::Value) -> String {
+        OptionType::of(value).describe()
+    }
+}
+
+/// The option keys a backend reads out of one of its config tables, each with
+/// the value type the backend reads it as.
 ///
 /// `[lint.*]` and `[fmt.*]` are raw `toml::Table`s with no schema, so **every**
 /// key a user writes parses by construction and a key that does nothing is
 /// indistinguishable from one that works. This is the declaration that makes the
 /// difference visible: `poly` warns about any key in an engine's table that the
-/// engine's own declaration does not cover (ADR 0016, amendment §4).
+/// engine's own declaration does not cover (ADR 0016, amendment §4), and about
+/// any declared key whose value the backend's own accessor cannot use (issue
+/// #16).
 ///
 /// A declaration is a claim about behaviour, so it is checked rather than
 /// trusted: `engines::config_keys::tests` asserts that every declared key is one
-/// the backend actually reads, and that no backend leaves a table
-/// [`UNCHECKED`](OptionKeys::UNCHECKED) without being on an explicit,
+/// the backend actually reads *at the declared type*, and that no backend leaves
+/// a table [`UNCHECKED`](OptionKeys::UNCHECKED) without being on an explicit,
 /// justified list.
 #[derive(Debug, Clone, Copy)]
 pub struct OptionKeys {
     /// `false` for [`OptionKeys::UNCHECKED`]: no key in the table is reported.
     checked: bool,
-    /// Keys the backend reads by name.
-    declared: &'static [&'static str],
+    /// Keys the backend reads by name, with the type it reads each one as.
+    declared: &'static [(&'static str, OptionType)],
     /// The backend parses poly's uniform rule-selection vocabulary
     /// ([`RULE_SELECTION_KEYS`]) out of this table.
     rule_selection: bool,
@@ -65,7 +165,15 @@ pub type DerivedOptionKeys = fn(&toml::Table) -> Option<Vec<String>>;
 
 /// poly's uniform rule-selection vocabulary (ADR 0016), accepted by every
 /// backend that declares [`OptionKeys::with_rule_selection`].
-pub const RULE_SELECTION_KEYS: &[&str] = &["select", "extend_select", "ignore", "rules"];
+///
+/// `rules` carries two readers: as an array it is an allow-list of rule codes,
+/// as a table it is the per-rule parameter form, and backends accept both.
+pub const RULE_SELECTION_KEYS: &[(&str, OptionType)] = &[
+    ("select", OptionType::ARRAY),
+    ("extend_select", OptionType::ARRAY),
+    ("ignore", OptionType::ARRAY),
+    ("rules", OptionType::ARRAY.or(OptionType::TABLE)),
+];
 
 /// Keys every per-language engine table accepts regardless of the backend.
 ///
@@ -73,7 +181,10 @@ pub const RULE_SELECTION_KEYS: &[&str] = &["select", "extend_select", "ignore", 
 /// `rules` sub-table's `level` overrides are applied for any engine by the
 /// runner's post-lint severity remap — neither goes through the backend, so
 /// neither belongs in a backend's own declaration.
-pub const UNIVERSAL_OPTION_KEYS: &[&str] = &["indent_width", "rules"];
+pub const UNIVERSAL_OPTION_KEYS: &[(&str, OptionType)] = &[
+    ("indent_width", OptionType::INTEGER),
+    ("rules", OptionType::ARRAY.or(OptionType::TABLE)),
+];
 
 impl OptionKeys {
     /// The backend has not declared what it reads; nothing in the table is
@@ -87,8 +198,9 @@ impl OptionKeys {
         note: None,
     };
 
-    /// Declare the exact set of keys the backend reads from this table.
-    pub const fn declared(keys: &'static [&'static str]) -> OptionKeys {
+    /// Declare the exact set of keys the backend reads from this table, each
+    /// paired with the value type the backend's own accessor reads it as.
+    pub const fn declared(keys: &'static [(&'static str, OptionType)]) -> OptionKeys {
         OptionKeys {
             checked: true,
             declared: keys,
@@ -120,9 +232,9 @@ impl OptionKeys {
         self
     }
 
-    /// The keys the backend declares by name for this table, excluding the
-    /// uniform vocabulary and anything a derived probe recognises.
-    pub fn declared_keys(&self) -> &'static [&'static str] {
+    /// The keys the backend declares by name for this table, with their types,
+    /// excluding the uniform vocabulary and anything a derived probe recognises.
+    pub fn declared_keys(&self) -> &'static [(&'static str, OptionType)] {
         self.declared
     }
 
@@ -145,13 +257,7 @@ impl OptionKeys {
         if !self.checked {
             return true;
         }
-        if universal && UNIVERSAL_OPTION_KEYS.contains(&key) {
-            return true;
-        }
-        if self.rule_selection && RULE_SELECTION_KEYS.contains(&key) {
-            return true;
-        }
-        if self.declared.contains(&key) {
+        if self.expected_type(key, universal).is_some() {
             return true;
         }
         match self.derived {
@@ -162,16 +268,62 @@ impl OptionKeys {
         }
     }
 
+    /// The type this table reads `key` as, or `None` when the answer cannot be
+    /// established from the declaration alone.
+    ///
+    /// `None` covers both "no such key" and "the key is recognised by a derived
+    /// serde probe", whose expected type is a property of an upstream type
+    /// rather than anything declared here.
+    pub fn expected_type(&self, key: &str, universal: bool) -> Option<OptionType> {
+        if !self.checked {
+            return None;
+        }
+        let lookup = |table: &[(&str, OptionType)]| {
+            table
+                .iter()
+                .find(|(name, _)| *name == key)
+                .map(|(_, option_type)| *option_type)
+        };
+        // Declaration order matters only if a backend re-declares a universal
+        // key (taplo's `indent_width`); the backend's own reading wins.
+        lookup(self.declared)
+            .or_else(|| self.rule_selection.then(|| lookup(RULE_SELECTION_KEYS)).flatten())
+            .or_else(|| universal.then(|| lookup(UNIVERSAL_OPTION_KEYS)).flatten())
+    }
+
+    /// The type `key` should have been given, when `value` is one this table
+    /// cannot use — and `None` when there is nothing to report.
+    ///
+    /// Silent when the expected type is unknown, and silent when a derived
+    /// serde probe recognises the key as well: the upstream type is then the
+    /// authority on what it accepts, not poly's hand-written declaration.
+    pub fn value_problem(&self, key: &str, value: &toml::Value, universal: bool) -> Option<OptionType> {
+        let expected = self.expected_type(key, universal)?;
+        if expected.accepts(value) {
+            return None;
+        }
+        if let Some(probe) = self.derived {
+            let mut single = toml::Table::new();
+            single.insert(key.to_string(), value.clone());
+            // `None` — the probe could not tell — counts as "recognised", for
+            // the same reason it does in `accepts`.
+            if probe(&single).is_none_or(|recognized| recognized.iter().any(|k| k == key)) {
+                return None;
+            }
+        }
+        Some(expected)
+    }
+
     /// Every key this table accepts, for the "recognized keys" hint on a
     /// warning. Derived keys are excluded: they are whatever a serde type
     /// accepts, which is not enumerable here.
     pub fn known_keys(&self, universal: bool) -> Vec<&'static str> {
-        let mut keys: Vec<&'static str> = self.declared.to_vec();
+        let mut keys: Vec<&'static str> = self.declared.iter().map(|(name, _)| *name).collect();
         if self.rule_selection {
-            keys.extend_from_slice(RULE_SELECTION_KEYS);
+            keys.extend(RULE_SELECTION_KEYS.iter().map(|(name, _)| *name));
         }
         if universal {
-            keys.extend_from_slice(UNIVERSAL_OPTION_KEYS);
+            keys.extend(UNIVERSAL_OPTION_KEYS.iter().map(|(name, _)| *name));
         }
         keys.sort_unstable();
         keys.dedup();

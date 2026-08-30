@@ -29,7 +29,9 @@ use globset::{Glob, GlobSetBuilder};
 use unicase::UniCase;
 
 use crate::config::EngineConfig;
-use crate::engine::{Capabilities, Diagnostic, Engine, OptionKeys, OptionTable, Severity, SourceFile, Span};
+use crate::engine::{
+    Capabilities, Diagnostic, Engine, OptionKeys, OptionTable, OptionType, Severity, SourceFile, Span,
+};
 use crate::language::Language;
 
 /// Combined cache-key version: `typos` tokeniser + `typos-dict` word list,
@@ -136,10 +138,18 @@ pub(crate) const ARRAY_OPTION_KEYS: &[&str] = &[
     "extend_ignore_identifiers_re",
 ];
 
-/// Every option key the typos backend reads, in one slice for
-/// `Engine::option_keys`.
-pub(crate) static OPTION_KEYS: std::sync::LazyLock<Vec<&'static str>> =
-    std::sync::LazyLock::new(|| MAP_OPTION_KEYS.iter().chain(ARRAY_OPTION_KEYS).copied().collect());
+/// Every option key the typos backend reads, paired with the type it is read
+/// as, in one slice for `Engine::option_keys`.
+///
+/// Built from the two typed lists above rather than restated, so a key can
+/// never be declared under a type the merge does not read it as.
+pub(crate) static OPTION_KEYS: std::sync::LazyLock<Vec<(&'static str, OptionType)>> = std::sync::LazyLock::new(|| {
+    MAP_OPTION_KEYS
+        .iter()
+        .map(|key| (*key, OptionType::TABLE))
+        .chain(ARRAY_OPTION_KEYS.iter().map(|key| (*key, OptionType::ARRAY)))
+        .collect()
+});
 
 impl Engine for TyposEngine {
     fn name(&self) -> &'static str {

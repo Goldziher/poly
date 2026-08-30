@@ -40,7 +40,7 @@ use std::sync::{Arc, OnceLock};
 use mago_linter::registry::RuleRegistry;
 
 use crate::config::EngineConfig;
-use crate::engine::{Capabilities, Diagnostic, Engine, FormatOutput, OptionKeys, OptionTable, SourceFile};
+use crate::engine::{Capabilities, Diagnostic, Engine, FormatOutput, OptionKeys, OptionTable, OptionType, SourceFile};
 use crate::language::Language;
 
 /// PHP backend using the `mago` linter + formatter.
@@ -91,8 +91,11 @@ impl Engine for MagoEngine {
     /// hand-written copy would drift on the first upgrade.
     fn option_keys(&self, table: OptionTable) -> OptionKeys {
         match table {
-            OptionTable::Lint => OptionKeys::declared(&["php_version", "integrations"]).with_rule_selection(),
-            OptionTable::Format => OptionKeys::declared(&["php_version"]).with_derived(
+            OptionTable::Lint => {
+                OptionKeys::declared(&[("php_version", OptionType::STRING), ("integrations", OptionType::ARRAY)])
+                    .with_rule_selection()
+            }
+            OptionTable::Format => OptionKeys::declared(&[("php_version", OptionType::STRING)]).with_derived(
                 crate::engines::config_keys::recognized_by_deserialize::<mago_formatter::settings::RawFormatSettings>,
             ),
             OptionTable::CrossCuttingLint => OptionKeys::UNCHECKED,

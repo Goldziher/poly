@@ -7,6 +7,7 @@
 //! these invalidates cached results automatically.
 
 use crate::config::EngineConfig;
+use crate::engine::OptionType;
 
 /// Default `file-too-long` threshold (lines). Matches the retired
 /// `scripts/hooks/rust-max-lines.sh` cap.
@@ -60,14 +61,17 @@ pub(crate) const INTEGER_OPTION_KEYS: &[&str] = &[
 /// The array-valued option keys, merged and declared like [`BOOL_OPTION_KEYS`].
 pub(crate) const ARRAY_OPTION_KEYS: &[&str] = &["magic_number_allow"];
 
-/// Every option key the quality backend reads, in one slice for
-/// `Engine::option_keys`.
-pub(crate) static OPTION_KEYS: std::sync::LazyLock<Vec<&'static str>> = std::sync::LazyLock::new(|| {
+/// Every option key the quality backend reads, paired with the type it is read
+/// as, in one slice for `Engine::option_keys`.
+///
+/// Built from the three typed lists above rather than restated, so a key can
+/// never be declared under a type the merge does not read it as.
+pub(crate) static OPTION_KEYS: std::sync::LazyLock<Vec<(&'static str, OptionType)>> = std::sync::LazyLock::new(|| {
     BOOL_OPTION_KEYS
         .iter()
-        .chain(INTEGER_OPTION_KEYS)
-        .chain(ARRAY_OPTION_KEYS)
-        .copied()
+        .map(|key| (*key, OptionType::BOOLEAN))
+        .chain(INTEGER_OPTION_KEYS.iter().map(|key| (*key, OptionType::INTEGER)))
+        .chain(ARRAY_OPTION_KEYS.iter().map(|key| (*key, OptionType::ARRAY)))
         .collect()
 });
 

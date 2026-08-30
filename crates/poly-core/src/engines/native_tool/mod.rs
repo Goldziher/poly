@@ -89,7 +89,7 @@
 use tracing::info;
 
 use crate::config::EngineConfig;
-use crate::engine::{Capabilities, Diagnostic, Engine, FormatOutput, OptionKeys, OptionTable, SourceFile};
+use crate::engine::{Capabilities, Diagnostic, Engine, FormatOutput, OptionKeys, OptionTable, OptionType, SourceFile};
 use crate::engines::treesitter::TreeSitterEngine;
 use crate::language::Language;
 
@@ -291,7 +291,7 @@ impl Engine for NativeToolEngine {
     /// formatter, configured by the host's own config file.
     fn option_keys(&self, table: OptionTable) -> OptionKeys {
         match table {
-            OptionTable::Lint | OptionTable::Format => OptionKeys::declared(&["enabled"]),
+            OptionTable::Lint | OptionTable::Format => OptionKeys::declared(&[("enabled", OptionType::BOOLEAN)]),
             OptionTable::CrossCuttingLint => OptionKeys::UNCHECKED,
         }
     }

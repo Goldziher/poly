@@ -50,6 +50,37 @@ pub const CONFIG_FILE_NAMES: [&str; 1] = ["poly.toml"];
 /// override replace the base; tables are merged recursively.
 pub const LOCAL_OVERRIDE_NAME: &str = "poly.local.toml";
 
+/// Every key `poly.toml` recognises at the **top level**.
+///
+/// Two groups, and the second is why this cannot simply be "the fields of the
+/// typed schema":
+///
+/// - the sections deserialized into [`PolyConfig`];
+/// - `extends`, consumed by the `extends` resolver, and `exclude_mode`, a merge
+///   directive stripped before deserialization. Neither is a field of the typed
+///   schema, and both are valid in a file — so deriving this list from the
+///   schema alone would report correct configs, including every config that uses
+///   ADR 0020 shared bases.
+///
+/// Held to the schema by `top_level_keys_cover_the_typed_schema` in this crate's
+/// tests, which deserializes a table of all of them and asserts serde ignored
+/// nothing outside the second group.
+pub const TOP_LEVEL_KEYS: &[&str] = &[
+    "cache",
+    "commit",
+    "defaults",
+    "discovery",
+    "exclude_mode",
+    "extends",
+    "fmt",
+    "hooks",
+    "lint",
+    "per-file-ignores",
+    "rules",
+    "tools",
+    "workspace",
+];
+
 /// The fully parsed `poly.toml`.
 ///
 /// `lint` and `fmt` are left as raw [`toml::Table`]s here; `poly-core`
@@ -335,6 +366,45 @@ impl PolyConfig {
         }
     }
 
+    /// The fully-merged **effective config table** for `start` — the raw
+    /// [`toml::Table`] that [`load_with`](PolyConfig::load_with) deserializes.
+    ///
+    /// Every layer has already been applied: `extends` bases, the hierarchical
+    /// `poly.toml` cascade (ADR 0018), the sibling `poly.local.toml`, and the
+    /// `[discovery] exclude` inheritance that `[hooks.builtin]` performs. Merge
+    /// directives are stripped, since they are not part of the schema.
+    ///
+    /// This is what `poly config show` prints: keys are preserved exactly as
+    /// they were written, including ones no typed field claims, so a user can
+    /// diff their `poly.toml` against what poly actually resolved. An empty
+    /// table means no config file governs `start`.
+    pub fn effective_table_with(start: &Path, resolver: &dyn BaseConfigResolver) -> anyhow::Result<toml::Table> {
+        let dir = if start.is_file() {
+            start.parent().unwrap_or(start)
+        } else {
+            start
+        };
+        let mut table = if git_root(dir).is_some() {
+            cascade_table(dir, resolver)?.map_or_else(toml::Table::new, |(table, _)| table)
+        } else {
+            match find_config(dir) {
+                Some(path) => read_config_table(&path, resolver, &mut Vec::new())?,
+                None => toml::Table::new(),
+            }
+        };
+        normalize_effective_table(&mut table);
+        Ok(table)
+    }
+
+    /// [`effective_table_with`](PolyConfig::effective_table_with) for an explicit
+    /// config file path — the table [`load_file_with`](PolyConfig::load_file_with)
+    /// deserializes.
+    pub fn effective_file_table_with(path: &Path, resolver: &dyn BaseConfigResolver) -> anyhow::Result<toml::Table> {
+        let mut table = read_config_table(path, resolver, &mut Vec::new())?;
+        normalize_effective_table(&mut table);
+        Ok(table)
+    }
+
     /// Load config from an explicit file path.
     ///
     /// If a [`LOCAL_OVERRIDE_NAME`] file sits next to `path`, it is deep-merged
@@ -375,26 +445,42 @@ impl PolyConfig {
     /// `extends` bases (with a fresh cycle-detection set) before the ancestor
     /// chain is deep-merged.
     pub fn resolve_for_dir_with(dir: &Path, resolver: &dyn BaseConfigResolver) -> anyhow::Result<PolyConfig> {
-        let chain = config_chain(dir, resolver)?;
-
-        if chain.is_empty() {
+        let Some((merged, nearest_dir)) = cascade_table(dir, resolver)? else {
             let mut config = PolyConfig {
                 typos_native: resolve_typos_native(dir),
                 ..PolyConfig::default()
             };
             config.rules.resolve_relative_to(dir);
             return Ok(config);
-        }
-
-        let mut iter = chain.into_iter().rev();
-        let (mut nearest_dir, mut merged) = iter.next().expect("chain is non-empty");
-        for (d, table) in iter {
-            merge_tables(&mut merged, table);
-            nearest_dir = d;
-        }
-
+        };
         finalize(merged, &nearest_dir)
     }
+}
+
+/// Deep-merge the ancestor chain of config files governing `dir` into one raw
+/// table — the workspace root as the base, the nearest config as the final
+/// override (ADR 0018) — paired with the nearest config's directory, which
+/// anchors relative paths.
+///
+/// `None` when no config file governs `dir`.
+fn cascade_table(dir: &Path, resolver: &dyn BaseConfigResolver) -> anyhow::Result<Option<(toml::Table, PathBuf)>> {
+    let chain = config_chain(dir, resolver)?;
+    let mut iter = chain.into_iter().rev();
+    let Some((mut nearest_dir, mut merged)) = iter.next() else {
+        return Ok(None);
+    };
+    for (d, table) in iter {
+        merge_tables(&mut merged, table);
+        nearest_dir = d;
+    }
+    Ok(Some((merged, nearest_dir)))
+}
+
+/// Apply the raw-table passes [`finalize`] performs before deserialization, so a
+/// caller inspecting the table sees what the typed config was built from.
+fn normalize_effective_table(table: &mut toml::Table) {
+    merge::inherit_discovery_excludes(table);
+    merge::strip_directives(table);
 }
 
 /// Maximum depth of a transitive `extends` chain, a backstop against runaway
@@ -544,8 +630,7 @@ fn resolve_rules_dirs_in_table(table: &mut toml::Table, dir: &Path) {
 /// the merge directives that drove all of it are stripped — they are not part of
 /// the typed schema.
 fn finalize(mut table: toml::Table, typos_dir: &Path) -> anyhow::Result<PolyConfig> {
-    merge::inherit_discovery_excludes(&mut table);
-    merge::strip_directives(&mut table);
+    normalize_effective_table(&mut table);
     let raw: RawPolyConfig = table.try_into()?;
     let mut config: PolyConfig = raw.into();
     config.rules.resolve_relative_to(typos_dir);

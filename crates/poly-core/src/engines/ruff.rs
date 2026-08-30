@@ -58,9 +58,22 @@ use rustc_hash::FxHashMap;
 
 use crate::config::EngineConfig;
 use crate::engine::{
-    Capabilities, Diagnostic, Edit, Engine, FormatOutput, OptionKeys, OptionTable, Severity, SourceFile, Span,
+    Capabilities, Diagnostic, Edit, Engine, FormatOutput, OptionKeys, OptionTable, OptionType, Severity, SourceFile,
+    Span,
 };
 use crate::language::Language;
+
+/// The keys `[fmt.python.ruff]` reads, with the type each is read as.
+///
+/// A named const rather than an inline literal because
+/// `docstring_code_line_length` takes a `const fn` union, and rustc does not
+/// promote a temporary array holding one to `'static`.
+const FORMAT_OPTION_KEYS: &[(&str, OptionType)] = &[
+    ("line_length", OptionType::INTEGER),
+    ("docstring_code_format", OptionType::BOOLEAN),
+    // `"dynamic"` is the documented alternative to a fixed width.
+    ("docstring_code_line_length", OptionType::INTEGER.or(OptionType::STRING)),
+];
 
 /// Opinionated rule selection: string codes resolved by [`RuleSelector::from_str`].
 ///
@@ -483,21 +496,19 @@ impl Engine for RuffEngine {
     fn option_keys(&self, table: OptionTable) -> OptionKeys {
         match table {
             OptionTable::Lint => OptionKeys::declared(&[
-                "line_length",
-                "mccabe_max_complexity",
-                "pylint_max_args",
-                "pylint_max_branches",
-                "pylint_max_returns",
-                "pydocstyle_convention",
-                "target_version",
-                "src",
-                "known_first_party",
-                "known_third_party",
+                ("line_length", OptionType::INTEGER),
+                ("mccabe_max_complexity", OptionType::INTEGER),
+                ("pylint_max_args", OptionType::INTEGER),
+                ("pylint_max_branches", OptionType::INTEGER),
+                ("pylint_max_returns", OptionType::INTEGER),
+                ("pydocstyle_convention", OptionType::STRING),
+                ("target_version", OptionType::STRING),
+                ("src", OptionType::ARRAY),
+                ("known_first_party", OptionType::ARRAY),
+                ("known_third_party", OptionType::ARRAY),
             ])
             .with_rule_selection(),
-            OptionTable::Format => {
-                OptionKeys::declared(&["line_length", "docstring_code_format", "docstring_code_line_length"])
-            }
+            OptionTable::Format => OptionKeys::declared(FORMAT_OPTION_KEYS),
             OptionTable::CrossCuttingLint => OptionKeys::UNCHECKED,
         }
     }

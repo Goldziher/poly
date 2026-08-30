@@ -108,7 +108,7 @@ impl Engine for MarkupFmtEngine {
     /// of it — the upstream option set is large, versioned, and would drift.
     fn option_keys(&self, table: OptionTable) -> OptionKeys {
         match table {
-            OptionTable::Format => OptionKeys::declared(&["indent_style", "quote_style", "jsx_quote_style", "semicolons", "trailing_commas", "arrow_parentheses", "bracket_spacing", "bracket_same_line"])
+            OptionTable::Format => OptionKeys::declared(crate::engines::oxc::JS_FORMAT_OPTION_KEYS)
                 .with_derived(crate::engines::config_keys::recognized_by_type_probe::<markup_fmt::config::FormatOptions>)
                 .with_note("Astro `<script>` blocks are formatted by the oxc backend from *this* table, so its format keys are read here too."),
             OptionTable::Lint | OptionTable::CrossCuttingLint => OptionKeys::declared(&[]),

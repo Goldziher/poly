@@ -1203,3 +1203,88 @@ fn generated_cascades_from_the_nearest_config() {
         "the nested config governs its own subtree"
     );
 }
+
+/// [`TOP_LEVEL_KEYS`] is hand-written, so it is held to the typed schema here
+/// rather than trusted. Both directions are load-bearing and they fail
+/// differently:
+///
+/// - a key listed that the schema does not recognise makes poly report a
+///   *correct* config as containing an unknown key;
+/// - a schema section **missing** from the list does the same, and is the easier
+///   mistake — you add a field to `RawPolyConfig` and nothing reminds you.
+///
+/// The second direction cannot be checked by offering serde a table built from
+/// the list (a missing key is simply never offered, so nothing notices), which
+/// is why the field names are read out of the struct definition itself.
+#[test]
+fn top_level_keys_cover_the_typed_schema() {
+    const CONSUMED_BEFORE_DESERIALIZATION: &[&str] = &["extends", "exclude_mode"];
+
+    // Direction 1: nothing listed is unknown to the schema, except the two keys
+    // whose consumers run before deserialization.
+    let mut table = toml::Table::new();
+    for key in crate::TOP_LEVEL_KEYS {
+        let value = match *key {
+            "extends" => toml::Value::Array(Vec::new()),
+            "exclude_mode" => toml::Value::String("replace".to_owned()),
+            _ => toml::Value::Table(toml::Table::new()),
+        };
+        table.insert((*key).to_owned(), value);
+    }
+    let mut ignored: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let parsed: Result<crate::RawPolyConfig, _> = serde_ignored::deserialize(toml::Value::Table(table), |path| {
+        ignored.insert(path.to_string());
+    });
+    parsed.expect("a table of only recognised top-level keys must deserialize");
+    let exempt: std::collections::BTreeSet<String> = CONSUMED_BEFORE_DESERIALIZATION
+        .iter()
+        .map(|key| (*key).to_owned())
+        .collect();
+    assert_eq!(
+        ignored, exempt,
+        "TOP_LEVEL_KEYS lists a key the typed schema does not recognise; poly would report it as \
+         unknown in a config that works"
+    );
+
+    // Direction 2: every field of `RawPolyConfig` is listed. Read from the
+    // struct definition, honouring `#[serde(rename = "...")]` — `per-file-ignores`
+    // is spelled differently in TOML than in Rust.
+    let source = include_str!("lib.rs");
+    let body = source
+        .split_once("struct RawPolyConfig {")
+        .expect("RawPolyConfig must exist")
+        .1
+        .split_once("\n}")
+        .expect("struct must be closed")
+        .0;
+
+    let mut rename: Option<String> = None;
+    let mut fields: Vec<String> = Vec::new();
+    for line in body.lines() {
+        let line = line.trim();
+        if let Some(rest) = line.strip_prefix("#[serde(rename = \"")
+            && let Some((name, _)) = rest.split_once('"')
+        {
+            rename = Some(name.to_owned());
+            continue;
+        }
+        if line.starts_with('#') || line.is_empty() || line.starts_with("//") {
+            continue;
+        }
+        if let Some((ident, _)) = line.split_once(':') {
+            fields.push(rename.take().unwrap_or_else(|| ident.trim().to_owned()));
+        }
+    }
+    assert!(
+        fields.len() > 5,
+        "field extraction found only {fields:?} — the parser has drifted from the struct's shape"
+    );
+
+    for field in &fields {
+        assert!(
+            crate::TOP_LEVEL_KEYS.contains(&field.as_str()),
+            "`{field}` is a section of the typed schema but is missing from TOP_LEVEL_KEYS, so a \
+             config using it would be reported as containing an unknown key"
+        );
+    }
+}

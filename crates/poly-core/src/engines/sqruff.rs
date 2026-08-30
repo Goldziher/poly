@@ -59,7 +59,7 @@ use sqruff_lib_core::errors::SQLBaseError;
 use super::rule_config::{RuleSelection, string_list, union_codes, warn_and_skip_blank};
 use crate::config::EngineConfig;
 use crate::engine::{
-    Capabilities, Diagnostic, Engine, FormatOutput, OptionKeys, OptionTable, Severity, SourceFile, Span,
+    Capabilities, Diagnostic, Engine, FormatOutput, OptionKeys, OptionTable, OptionType, Severity, SourceFile, Span,
 };
 use crate::language::Language;
 
@@ -197,9 +197,12 @@ impl Engine for SqruffEngine {
     /// forms via the uniform vocabulary.
     fn option_keys(&self, table: OptionTable) -> OptionKeys {
         match table {
-            OptionTable::Lint | OptionTable::Format => {
-                OptionKeys::declared(&["dialect", "exclude_rules", "rule_configs"]).with_rule_selection()
-            }
+            OptionTable::Lint | OptionTable::Format => OptionKeys::declared(&[
+                ("dialect", OptionType::STRING),
+                ("exclude_rules", OptionType::ARRAY),
+                ("rule_configs", OptionType::TABLE),
+            ])
+            .with_rule_selection(),
             OptionTable::CrossCuttingLint => OptionKeys::UNCHECKED,
         }
     }

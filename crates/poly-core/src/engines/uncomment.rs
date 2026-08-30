@@ -64,7 +64,9 @@ use uncomment::config::ResolvedConfig;
 use uncomment::{Processor, Removal};
 
 use crate::config::EngineConfig;
-use crate::engine::{Capabilities, Diagnostic, Edit, Engine, OptionKeys, OptionTable, Severity, SourceFile, Span};
+use crate::engine::{
+    Capabilities, Diagnostic, Edit, Engine, OptionKeys, OptionTable, OptionType, Severity, SourceFile, Span,
+};
 use crate::language::Language;
 
 /// Cache-key version: the wrapped crate version plus a marker for this backend's
@@ -189,10 +191,18 @@ pub(crate) const BOOL_OPTION_KEYS: &[&str] = &[
 /// The array-valued option keys, merged and declared like [`BOOL_OPTION_KEYS`].
 pub(crate) const ARRAY_OPTION_KEYS: &[&str] = &["preserve_patterns"];
 
-/// Every option key the uncomment backend reads, in one slice for
-/// `Engine::option_keys`.
-pub(crate) static OPTION_KEYS: std::sync::LazyLock<Vec<&'static str>> =
-    std::sync::LazyLock::new(|| BOOL_OPTION_KEYS.iter().chain(ARRAY_OPTION_KEYS).copied().collect());
+/// Every option key the uncomment backend reads, paired with the type it is
+/// read as, in one slice for `Engine::option_keys`.
+///
+/// Built from the two typed lists above rather than restated, so a key can
+/// never be declared under a type the merge does not read it as.
+pub(crate) static OPTION_KEYS: std::sync::LazyLock<Vec<(&'static str, OptionType)>> = std::sync::LazyLock::new(|| {
+    BOOL_OPTION_KEYS
+        .iter()
+        .map(|key| (*key, OptionType::BOOLEAN))
+        .chain(ARRAY_OPTION_KEYS.iter().map(|key| (*key, OptionType::ARRAY)))
+        .collect()
+});
 
 /// Whether `[lint.uncomment] enabled` (merged with the per-language override) is
 /// `true`. Defaults to `false` — the backend is opt-in.
