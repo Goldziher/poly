@@ -5,9 +5,83 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
-## [Unreleased]
+## [0.22.0] - 2026-08-30
+
+### Changed
+
+- **Dependencies upgraded across the board.** `oxc` and `biome` move to current upstream revisions,
+  `uncomment` to 3.6, and `rumdl` (0.2.62), `tree-sitter-language-pack` (1.15.12), `mago` (1.47.4)
+  and `typos-dict` (0.14.1) move with the lockfile. Every affected engine's `version()` moved with
+  its dependency, so no warm cache can serve output computed by the previous parser — the audit
+  test that enforces this caught five engines that would otherwise have gone stale. The `oxc`,
+  `biome` and `rubyfmt` git pins were re-checked against crates.io and all three remain necessary:
+  `oxc_linter`, `oxc_formatter_core`, `oxc_formatter_json` and `biome_graphql_parser` are still
+  unpublished, crates.io `oxc_formatter` is a `0.0.0` name reservation from 2023, `biome_analyze`
+  there is 2024 code under the version number of our 2026 pin, and `rubyfmt` is `0.0.0-wip`.
+  GitHub Actions were updated too (`checkout` v7, `upload-artifact` v7, `download-artifact` v8).
 
 ### Fixed
+
+- **A stylesheet of IE `*property` hacks no longer hangs the run.** `biome_css`'s parser recovers
+  from the hack in time exponential in how many the file contains — ten cost 0.46 s and twelve
+  cost 8.88 s, roughly fourfold per additional hack. YUI's `reset-fonts-grids.css`, vendored into
+  thousands of projects and into Django's own documentation theme, carries 37: `poly lint` on
+  Django grew to **27 GB** and was OOM-killed after five minutes having reported nothing at all.
+  The whole run died, not just the file. Both CSS backends now decline a stylesheet carrying the
+  hack — malva rejected it with a syntax error anyway — and Django lints in 2.4 s using 0.2 GB.
+
+  The check requires the `*` to sit in declaration position, so the universal selector (`* {…}`,
+  `.a > *`) is untouched; across 487 stylesheets in the test corpus it matches two files, both of
+  which genuinely carry the hack.
+
+- **Binary files are skipped instead of reported as broken text.** poly discovers files by path,
+  and a path is a weak claim about content, so a compiled artifact reached the runner like any
+  other file and the first thing done with it was to decode it as UTF-8. That decode fails, and
+  the failure was reported as *malformed text* — an error-severity `invalid-utf8` finding from
+  `poly lint`, a per-file error from `poly fmt`. Django's 1,263 compiled `.mo` catalogs therefore
+  made `poly fmt --check` exit 2 on a repository with nothing wrong in it, and no exclude could
+  fix it without also excluding real files. Content carrying a NUL byte is now skipped before the
+  decode is attempted.
+
+  Malformed *text* still errors, and deliberately so: a source file that lost a byte is a defect
+  a reader must see. The carve-out requires a NUL byte rather than merely invalid UTF-8, so
+  Latin-1 source and truncated sequences keep reporting. Skipped rather than dropped, so the file
+  stays out of the `checked` count, appears in the JSON `skipped` payload, and remains visible to
+  `--deny-skips`.
+
+- **A backend panic no longer takes the whole run down.** poly compiles roughly twenty
+  third-party parsers in-process; their APIs return `Result` but their internals assert, and
+  engines run inside a rayon `par_iter`, which propagates a worker panic to the process. One
+  file could therefore destroy an entire run: `biome`'s GraphQL parser asserts on a *fragment
+  description* — a real language feature, not malformed input — and a single three-line
+  `.graphql` file made `poly lint` over a 63 MB repository produce a **zero-byte report** and
+  exit 101. Not a partial report; nothing at all, including every finding from the other 20,000
+  files. A panic is now contained per file and reported as the ordinary "poly failed on this
+  file" error that already existed, so the run continues and exits 2. The same repository now
+  reports 19,399 findings.
+
+- **Each native tool's own config file is part of the cache key.** `rustfmt` reads
+  `rustfmt.toml`, `shellcheck` reads `.shellcheckrc` and `swift-format` reads `.swift-format`,
+  none of which were hashed. Editing one and re-running served the previous run's output —
+  formatting at `max_width = 120`, changing it to `40`, and running again reported "All
+  formatted" and left the file unchanged. Silent wrong output, not a missed invalidation.
+
+- **The MCP surface honours `[discovery] force_exclude`.** It was hardcoded, so one `poly.toml`
+  answered differently depending on whether the CLI or `poly mcp` asked.
+
+- **`quality/lazy-ignore` no longer scans Rust `#[allow(..)]`.** It was poly's loudest rule at
+  10,486 corpus findings, roughly 95% of them allow-attributes, and it was wrong on both counts.
+  A line-oriented scan can only read text after the closing `)]`, so it flagged
+  `#[allow(dead_code, reason = "...")]` — the form the language itself sanctions since Rust 1.81
+  — and an explaining `//` comment on the line above. It also duplicated the built-in
+  `allow-attribute-without-reason` pack rule, which parses the construct properly and ships
+  `off` after a hand read of its 13,254 findings found FFI bindings and macro-generated glue
+  rather than drive-by lint muting. Opt in with
+  `extend_select = ["allow-attribute-without-reason"]`.
+
+- **Every quality threshold rule names its ceiling.** `nesting-too-deep` said "(max exceeded)"
+  and `cyclomatic-complexity` said nothing at all, leaving a reader who disagreed with a finding
+  unable to tell what number to change in `poly.toml`.
 
 - **`extend_select` now extends instead of replacing** in the rumdl (Markdown), INI and
   Dockerfile backends. These three treated it as an allow-list, so
@@ -98,9 +172,13 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   generic tier exactly as before.
 
   **This is the first default that can fail a build**, because shellcheck's `error` level maps to
-  error severity and `poly lint` exits non-zero on it. Measured before shipping: across 48
-  repositories and 581 shell files it adds 55 findings, of which two are errors — a malformed
-  `# shellcheck` directive in a single file. `shfmt` stays opt-in. See ADR 0014.
+  error severity and `poly lint` exits non-zero on it. Measured across 48 repositories: it adds
+  1,215 findings, of which three are errors. 1,118 of those findings are a single true-positive
+  pattern — `SC2188`, a redirection with no command — concentrated in one repository's generated
+  test stubs, whose function bodies are a bare `>/dev/null`, so the tests do nothing. Excluding
+  that repository, the other 47 contribute 97 findings between them. The three errors are a
+  malformed `# shellcheck` directive, a second diagnostic on the same line, and a missing shebang
+  in a husky-generated hook. `shfmt` stays opt-in. See ADR 0014.
 
 - **A built-in ast-grep rule pack, on by default.** poly's ast-grep backend shipped with no
   rules at all — it matched a language only if a repository pointed `[rules] dirs` at YAML of its
@@ -128,6 +206,26 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 - **`eslint/complexity` is enabled by default** for JavaScript and TypeScript. Its own default
   threshold is 20 — the same cyclomatic-complexity budget poly applies elsewhere.
+
+- **`[discovery] generated` aligns how machine-generated files are treated.** poly handled them
+  three different ways: `lint` reported on them, `fmt` skipped only files carrying a content-hash
+  stamp, and `lint --fix` withheld on any "DO NOT EDIT" banner. `lint --fix` now matches `fmt`, so
+  a banner-only generated file is fixed like any other, and one key opts out of all three at once.
+  An opted-out file is reported as *skipped*, not silently dropped, so it stays out of the
+  `checked` count and remains visible to `--deny-skips`.
+
+  The hash-stamp guard is unchanged and deliberately so: reformatting a hash-stamped body
+  invalidates the hash, the generator's own verify step then reports drift on a file nobody
+  touched, and the remedy is a regeneration that discards the formatting. `--fix-generated` keeps
+  working and now governs exactly that case; `--skip-generated` / `--include-generated` are new.
+
+- **Markdown fixes that rewrite document structure are applied.** `MD001` (heading increment) was
+  withheld from both fix paths on the grounds that a formatter must not change a document's
+  outline. The exemption did not hold: `MD025` rewrites the outline far more aggressively and was
+  always applied — on a real changelog `poly fmt --fix` demoted 21 of 22 top-level headings — so
+  poly declined a one-line repair while performing a wholesale one. Markdown autofix is now
+  uniform. The `MD020` guard stays, because it prevents *corruption* rather than restructuring:
+  `### C#` is a valid open ATX heading under CommonMark and rumdl's fix silently drops the `#`.
 
 ## [0.21.12] - 2026-08-29
 
