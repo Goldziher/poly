@@ -1,6 +1,14 @@
 id: not-null-assertion
 language: kotlin
 severity: warning
+ignores:
+  # 100% of this rule's corpus exposure (103/103) sat under Kotlin test source
+  # sets, where `!!` after an assertion is a standing convention, not the
+  # "banned in production code" case the rule exists for. Defaults only - a
+  # `[per-file-ignores]` entry naming this rule replaces them outright.
+  - "**/test/**"
+  - "**/androidTest/**"
+  - "**/*Test.kt"
 message: "`!!` turns a null into an NPE far from where the null came from; use `?.`, `?:`, or `requireNotNull` with a message."
 note: |
   The not-null assertion operator converts a nullable value to its non-null

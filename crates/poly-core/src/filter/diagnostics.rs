@@ -1,16 +1,45 @@
 //! Post-lint diagnostic filtering: `[per-file-ignores]` suppression and
 //! per-rule severity remapping, both applied to the normalized `Diagnostic.code`
 //! so they work uniformly across engines.
+//!
+//! # Two layers, and why one replaces the other
+//!
+//! [`PerFileIgnores`] holds two kinds of entry. A **user** entry comes from the
+//! resolved `poly.toml`'s `[per-file-ignores]` table. A **default** entry comes
+//! from a lint rule that declares its own path exclusions next to the rule it
+//! belongs to — poly's built-in ast-grep pack ships several, as `ignores:` in
+//! the rule YAML (see [`crate::engines::astgrep::exclusions`]).
+//!
+//! A user entry naming a rule **replaces** that rule's declared defaults rather
+//! than unioning with them, matching the layering the pack already follows for
+//! rules themselves: a user rule with a pack rule's `id` replaces it outright.
+//! Union would leave a reader unable to *narrow* a default — writing the entry
+//! they wanted would only ever add to a set they could not see — and that
+//! inability to opt back in is exactly the limitation the pack's hardcoded
+//! exclusion table was called out for.
 
 use std::collections::BTreeMap;
 
+use super::suppressed::{SuppressedDiagnostic, SuppressionReason};
 use crate::engine::{Diagnostic, Severity};
+
+/// Path exclusions a rule declares for itself: `(rule_id, globs)`, already
+/// parsed so an unusable glob fails where it is written rather than per run.
+pub(crate) type DefaultPathIgnores = Vec<(String, Vec<globset::Glob>)>;
+
+/// One compiled ignore entry: a path glob, the rule codes it suppresses for a
+/// matching file, and which layer it came from.
+struct Entry {
+    matcher: globset::GlobMatcher,
+    rules: Vec<String>,
+    reason: SuppressionReason,
+}
 
 /// Compiled `[per-file-ignores]`: each path glob paired with the rule codes to
 /// suppress for files it matches. Built once per run, applied as a post-lint
 /// filter on the normalized `Diagnostic.code` so it is engine-agnostic.
 pub(crate) struct PerFileIgnores {
-    entries: Vec<(globset::GlobMatcher, Vec<String>)>,
+    entries: Vec<Entry>,
 }
 
 impl PerFileIgnores {
@@ -29,7 +58,11 @@ impl PerFileIgnores {
                     return None;
                 }
                 match globset::Glob::new(glob) {
-                    Ok(compiled) => Some((compiled.compile_matcher(), rules)),
+                    Ok(compiled) => Some(Entry {
+                        matcher: compiled.compile_matcher(),
+                        rules,
+                        reason: SuppressionReason::PerFileIgnore,
+                    }),
                     Err(error) => {
                         tracing::warn!(%glob, %error, "skipping invalid [per-file-ignores] glob");
                         None
@@ -40,25 +73,67 @@ impl PerFileIgnores {
         Self { entries }
     }
 
+    /// [`compile`](Self::compile), plus the rule-declared `defaults` for every
+    /// rule the user's own table does **not** speak about.
+    ///
+    /// "Speaks about" is the same exact-or-prefix test suppression itself uses
+    /// ([`code_matches_rule`]), so a reader who writes `["placeholder"]` has
+    /// taken over `placeholder-implementation` just as surely as one who spells
+    /// the id out — the alternative is a config entry that appears to govern a
+    /// rule while a default the reader cannot see keeps suppressing alongside it.
+    pub(crate) fn compile_with_defaults(map: &BTreeMap<String, Vec<String>>, defaults: &DefaultPathIgnores) -> Self {
+        let mut compiled = Self::compile(map);
+        let user_rules: Vec<&str> = map
+            .values()
+            .flatten()
+            .map(String::as_str)
+            .filter(|rule| !rule.trim().is_empty())
+            .collect();
+        for (rule_id, globs) in defaults {
+            if user_rules.iter().any(|rule| code_matches_rule(rule_id, rule)) {
+                tracing::debug!(%rule_id, "[per-file-ignores] replaces this rule's declared default exclusions");
+                continue;
+            }
+            compiled.entries.extend(globs.iter().map(|glob| Entry {
+                matcher: glob.compile_matcher(),
+                rules: vec![rule_id.clone()],
+                reason: SuppressionReason::DefaultPathExclusion,
+            }));
+        }
+        compiled
+    }
+
     pub(crate) fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 
     /// Drop diagnostics whose `code` matches a rule listed for a glob the file
-    /// matches. `rel` is the file path relative to the run root, forward-slash
-    /// normalized (per-file-ignore globs are repo-rooted). Each glob is evaluated
-    /// once per file (not once per diagnostic).
+    /// matches, recording each drop in `suppressed`. `rel` is the file path
+    /// relative to the run root, forward-slash normalized (per-file-ignore
+    /// globs are repo-rooted). Each glob is evaluated once per file (not once
+    /// per diagnostic).
     ///
     /// Matching is exact, or a ruff-style prefix where the boundary character is
     /// non-alphabetic — so `"F"` suppresses `F401` but not `FOO`, and
     /// `"too-many"` suppresses `too-many-methods`. This keeps a short prefix from
     /// silently swallowing an unrelated code from another engine.
-    pub(crate) fn apply(&self, rel: &str, diagnostics: &mut Vec<Diagnostic>) {
-        let matched: Vec<&[String]> = self
+    pub(crate) fn apply(
+        &self,
+        rel: &str,
+        path: &std::path::Path,
+        diagnostics: &mut Vec<Diagnostic>,
+        suppressed: &mut Vec<SuppressedDiagnostic>,
+    ) {
+        // Nothing to filter is the common case now that rule-declared defaults
+        // make this set non-empty on almost every run: a clean file must not
+        // pay for the glob sweep below.
+        if diagnostics.is_empty() {
+            return;
+        }
+        let matched: Vec<&Entry> = self
             .entries
             .iter()
-            .filter(|(matcher, _)| matcher.is_match(rel))
-            .map(|(_, rules)| rules.as_slice())
+            .filter(|entry| entry.matcher.is_match(rel))
             .collect();
         if matched.is_empty() {
             return;
@@ -67,9 +142,16 @@ impl PerFileIgnores {
             let Some(code) = diagnostic.code.as_deref() else {
                 return true;
             };
-            !matched
+            let hit = matched
                 .iter()
-                .any(|rules| rules.iter().any(|rule| code_matches_rule(code, rule)))
+                .find(|entry| entry.rules.iter().any(|rule| code_matches_rule(code, rule)));
+            match hit {
+                Some(entry) => {
+                    suppressed.push(SuppressedDiagnostic::new(path, diagnostic, entry.reason));
+                    false
+                }
+                None => true,
+            }
         });
     }
 }
@@ -146,6 +228,12 @@ pub(super) fn code_matches_rule(code: &str, rule: &str) -> bool {
 mod tests {
     use super::*;
 
+    /// The file every unit test below reports against; the path only has to be
+    /// carried through to the suppression record, not matched.
+    fn path() -> &'static std::path::Path {
+        std::path::Path::new("src/foo.py")
+    }
+
     fn diag(code: Option<&str>) -> Diagnostic {
         Diagnostic {
             engine: "test".to_string(),
@@ -175,13 +263,95 @@ mod tests {
             diag(Some("E501")),
             diag(None),
         ];
-        ignores.apply("tests/unit/foo.py", &mut diags);
+        let mut suppressed = Vec::new();
+        ignores.apply("tests/unit/foo.py", path(), &mut diags, &mut suppressed);
         let codes: Vec<_> = diags.iter().map(|d| d.code.clone()).collect();
         assert_eq!(codes, vec![Some("E501".to_string()), None]);
+        assert_eq!(
+            suppressed
+                .iter()
+                .map(|s| (s.code.clone(), s.reason))
+                .collect::<Vec<_>>(),
+            vec![
+                (Some("F401".to_string()), SuppressionReason::PerFileIgnore),
+                (Some("too-many-methods".to_string()), SuppressionReason::PerFileIgnore),
+            ],
+            "every dropped diagnostic is recorded, and names the mechanism"
+        );
 
         let mut diags = vec![diag(Some("F401"))];
-        ignores.apply("src/foo.py", &mut diags);
+        let mut suppressed = Vec::new();
+        ignores.apply("src/foo.py", path(), &mut diags, &mut suppressed);
         assert_eq!(diags.len(), 1, "non-matching path is untouched");
+        assert!(suppressed.is_empty(), "and nothing is recorded as suppressed");
+    }
+
+    /// A rule's own declared exclusions apply with no user config at all, and
+    /// say which layer dropped the finding.
+    #[test]
+    fn a_rule_declared_default_suppresses_and_names_itself() {
+        let defaults = vec![(
+            "placeholder-implementation".to_string(),
+            vec![globset::Glob::new("**/*_generated.rs").unwrap()],
+        )];
+        let ignores = PerFileIgnores::compile_with_defaults(&BTreeMap::new(), &defaults);
+
+        let mut diags = vec![diag(Some("placeholder-implementation"))];
+        let mut suppressed = Vec::new();
+        ignores.apply("crates/foo/src/frb_generated.rs", path(), &mut diags, &mut suppressed);
+        assert!(diags.is_empty(), "the declared glob suppresses");
+        assert_eq!(suppressed.len(), 1);
+        assert_eq!(suppressed[0].reason, SuppressionReason::DefaultPathExclusion);
+
+        let mut diags = vec![diag(Some("placeholder-implementation"))];
+        let mut suppressed = Vec::new();
+        ignores.apply("crates/foo/src/lib.rs", path(), &mut diags, &mut suppressed);
+        assert_eq!(diags.len(), 1, "ordinary source is untouched");
+        assert!(suppressed.is_empty());
+    }
+
+    /// Precedence is replace, not union: a user entry naming the rule takes the
+    /// declared defaults out of force entirely.
+    #[test]
+    fn a_user_entry_replaces_a_rules_declared_defaults() {
+        let defaults = vec![(
+            "placeholder-implementation".to_string(),
+            vec![globset::Glob::new("**/*_generated.rs").unwrap()],
+        )];
+        let mut map = BTreeMap::new();
+        map.insert("vendor/**".to_string(), vec!["placeholder-implementation".to_string()]);
+        let ignores = PerFileIgnores::compile_with_defaults(&map, &defaults);
+
+        let mut diags = vec![diag(Some("placeholder-implementation"))];
+        let mut suppressed = Vec::new();
+        ignores.apply("crates/foo/src/frb_generated.rs", path(), &mut diags, &mut suppressed);
+        assert_eq!(diags.len(), 1, "the replaced default no longer suppresses");
+        assert!(suppressed.is_empty());
+
+        let mut diags = vec![diag(Some("placeholder-implementation"))];
+        let mut suppressed = Vec::new();
+        ignores.apply("vendor/thing.rs", path(), &mut diags, &mut suppressed);
+        assert!(diags.is_empty(), "the user's own glob is what suppresses now");
+        assert_eq!(suppressed[0].reason, SuppressionReason::PerFileIgnore);
+    }
+
+    /// A user entry that only *prefix*-matches the rule id still takes it over:
+    /// a rule the reader has spoken about is a rule they own.
+    #[test]
+    fn a_prefix_user_entry_also_replaces_the_default() {
+        let defaults = vec![(
+            "placeholder-implementation".to_string(),
+            vec![globset::Glob::new("**/*_generated.rs").unwrap()],
+        )];
+        let mut map = BTreeMap::new();
+        map.insert("vendor/**".to_string(), vec!["placeholder".to_string()]);
+        let ignores = PerFileIgnores::compile_with_defaults(&map, &defaults);
+
+        let mut diags = vec![diag(Some("placeholder-implementation"))];
+        let mut suppressed = Vec::new();
+        ignores.apply("crates/foo/src/frb_generated.rs", path(), &mut diags, &mut suppressed);
+        assert_eq!(diags.len(), 1, "the prefix entry replaced the default");
+        assert!(suppressed.is_empty());
     }
 
     #[test]
@@ -200,8 +370,10 @@ mod tests {
         let ignores = PerFileIgnores::compile(&map);
         assert!(ignores.is_empty(), "an entry with only blank codes is skipped entirely");
         let mut diags = vec![diag(Some("F401")), diag(None)];
-        ignores.apply("anything.py", &mut diags);
+        let mut suppressed = Vec::new();
+        ignores.apply("anything.py", path(), &mut diags, &mut suppressed);
         assert_eq!(diags.len(), 2, "nothing is suppressed");
+        assert!(suppressed.is_empty());
     }
 
     #[test]

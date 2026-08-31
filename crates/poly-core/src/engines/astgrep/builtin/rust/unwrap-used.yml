@@ -1,6 +1,17 @@
 id: unwrap-used
 language: rust
 severity: off
+ignores:
+  # Test and generated code, where `.unwrap()` is the idiom rather than the
+  # defect: 1,320 of the rule's raw corpus findings sat under `tests/*.rs` and
+  # 742 more in generated FFI glue. The rule ships `off`; these keep a repo
+  # that opts back in via `extend_select` off the raw, unfiltered count.
+  # Defaults only - a `[per-file-ignores]` entry naming this rule replaces them.
+  - "**/tests/**"
+  - "**/benches/**"
+  - "**/tests.rs"
+  - "**/test_support.rs"
+  - "**/*_generated.rs"
 message: "`.unwrap()` panics on `None`/`Err`; propagate with `?` or explain the invariant with `.expect(\"..\")`."
 note: |
   `.unwrap()` turns a recoverable value into a process-killing panic and

@@ -37,6 +37,10 @@ pub use skips::{
     BINARY_SKIP, DISABLED_SKIP_PREFIX, FILTERED_SKIP, GENERATED_SKIP, NO_ENGINE_SKIP, NO_LINT_RULES_SKIP_PREFIX,
     SkippedFile, is_withdrawal_reason,
 };
+// The suppression record lives beside the filters that produce it; re-exported
+// here so a consumer reaches it next to `SkippedFile`, the accounting it
+// completes.
+pub use crate::filter::suppressed::{SuppressedDiagnostic, SuppressionReason};
 // Re-exported so `poly_core::runner::LintResult` keeps naming the same type it
 // always has: the split below is a file boundary, not an API one.
 pub use types::{
@@ -111,11 +115,23 @@ pub fn lint_run(
     let (files, discovery) = discover_reporting(paths, &configs, &opts.exclude, opts.force_exclude);
     let plan = plan_by_config_language(&files, &configs, Kind::Lint, selection);
     prefetch_tier2_grammars(&plan);
+    // Rule-declared `ignores:` globs (the built-in ast-grep pack's, plus any a
+    // user rule file declares) layer in beneath the config's own
+    // `[per-file-ignores]`, resolved once per config rather than per file.
     let ignores: Vec<PerFileIgnores> = configs
         .iter()
-        .map(|c| PerFileIgnores::compile(&c.per_file_ignores))
+        .map(|c| {
+            let defaults =
+                crate::engines::astgrep::exclusions::default_path_ignores(&c.rules_dirs, c.rules_builtin_pack);
+            PerFileIgnores::compile_with_defaults(&c.per_file_ignores, &defaults)
+        })
         .collect();
-    let bases = match_bases(paths);
+    // Resolved once per config rather than once per file: `ignore_bases` clones
+    // a `PathBuf` per run root, and the answer depends only on the config id.
+    let run_bases = match_bases(paths);
+    let ignore_bases: Vec<Vec<PathBuf>> = (0..configs.len())
+        .map(|config_id| configs.ignore_bases(config_id, &run_bases))
+        .collect();
     // `[discovery] generated`, resolved once per config and once per run rather
     // than per file. See `generated::acts_on_generated`.
     let act_on_generated = acts_on_generated(&configs, opts.generated);
@@ -135,9 +151,8 @@ pub fn lint_run(
                 fix,
                 opts.fix_generated,
                 collect_debug,
-                &configs,
                 &ignores,
-                &bases,
+                &ignore_bases,
                 &opts.externally_linted_languages,
                 &act_on_generated,
             ) {
@@ -171,6 +186,13 @@ pub fn lint_run(
             })
         })
         .collect();
+    // Taken here for the same reason `skipped` is: a file whose every finding
+    // was suppressed has nothing left to report and is dropped by the filter
+    // below, which is exactly the file whose suppressions a reader most needs.
+    let suppressed: Vec<SuppressedDiagnostic> = linted
+        .iter()
+        .flat_map(|result| result.suppressed.iter().cloned())
+        .collect();
     // A fully fixed file has no diagnostics left, but dropping it here is
     // what made `--fix` silent about the files it rewrote: keep it so the
     // summary — and the JSON payload — can report the fixes.
@@ -197,6 +219,7 @@ pub fn lint_run(
         errors,
         checked: checked.into_inner(),
         skipped,
+        suppressed,
         discovery,
     })
 }
@@ -330,9 +353,8 @@ fn lint_one(
     fix: bool,
     fix_generated: bool,
     collect_debug: bool,
-    configs: &ConfigSet,
     ignores: &[PerFileIgnores],
-    bases: &[PathBuf],
+    ignore_bases: &[Vec<PathBuf>],
     externally_linted: &[Language],
     act_on_generated: &[bool],
 ) -> anyhow::Result<LintResult> {
@@ -360,8 +382,7 @@ fn lint_one(
         return Ok(lint_skip_result(f, GENERATED_SKIP));
     }
     let this_ignores = &ignores[f.config_id];
-    let rel =
-        (!this_ignores.is_empty()).then(|| relative_for_match(&f.path, &configs.ignore_bases(f.config_id, bases)));
+    let rel = (!this_ignores.is_empty()).then(|| relative_for_match(&f.path, &ignore_bases[f.config_id]));
     // Inline `poly: allow[…]` directives (ADR 0028) are rebuilt from the content
     // they are applied to: a fix pass rewrites the file, so directive and target
     // line numbers shift. The gate inside `Suppressions::parse` is a single
@@ -373,13 +394,18 @@ fn lint_one(
     // immune to the directives that produced them. The two filters are
     // independent retains, so this order does not change which real diagnostics
     // survive.
-    let suppress = |content: &str, diagnostics: &mut Vec<Diagnostic>| {
+    //
+    // `out` is cleared rather than appended to, because the fix loop calls this
+    // once per pass over freshly re-linted diagnostics: appending would report
+    // one suppression per pass for a finding that was suppressed once.
+    let suppress = |content: &str, diagnostics: &mut Vec<Diagnostic>, out: &mut Vec<SuppressedDiagnostic>| {
+        out.clear();
         let suppressions = Suppressions::parse(content);
         if !suppressions.is_empty() {
-            suppressions.apply(diagnostics);
+            suppressions.apply(&f.path, diagnostics, out);
         }
         if let Some(rel) = &rel {
-            this_ignores.apply(rel, diagnostics);
+            this_ignores.apply(rel, &f.path, diagnostics, out);
         }
     };
     // Resolved once per file rather than inside `lint_content`, which the fix
@@ -408,7 +434,8 @@ fn lint_one(
         });
 
     let (mut diagnostics, mut debug) = lint_content(f, engine_plans, cache, &original, collect_debug)?;
-    suppress(&original, &mut diagnostics);
+    let mut suppressed: Vec<SuppressedDiagnostic> = Vec::new();
+    suppress(&original, &mut diagnostics, &mut suppressed);
 
     // Report on a hash-stamped file but never rewrite it — the same question
     // `format_one` asks, deliberately, so the two phases cannot disagree about
@@ -442,7 +469,7 @@ fn lint_one(
                     fixed += applied;
                     let (next_diags, next_debug) = lint_content(f, engine_plans, cache, &content, collect_debug)?;
                     diagnostics = next_diags;
-                    suppress(&content, &mut diagnostics);
+                    suppress(&content, &mut diagnostics, &mut suppressed);
                     debug = next_debug;
                 }
                 _ => break,
@@ -457,6 +484,7 @@ fn lint_one(
         path: f.path.clone(),
         config: f.config_id,
         diagnostics,
+        suppressed,
         fix_withheld_generated: generated,
         fixed,
         skipped,
@@ -475,6 +503,7 @@ fn invalid_utf8_result(f: &DiscoveredFile, error: std::str::Utf8Error) -> LintRe
     LintResult {
         path: f.path.clone(),
         config: f.config_id,
+        suppressed: Vec::new(),
         diagnostics: vec![Diagnostic {
             engine: "poly".to_owned(),
             code: Some("invalid-utf8".to_owned()),

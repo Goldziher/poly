@@ -12,7 +12,9 @@
 //!
 //! The pack is layered *beneath* user rules: a user rule with the same `id`
 //! as a pack rule replaces it. See [`pack`] for the pack's own docs (parsing,
-//! layering, and the path-exclusion problem for a handful of noisy rules).
+//! layering, and the path-exclusion problem for a handful of noisy rules), and
+//! [`exclusions`] for the per-rule `ignores:` globs that solve it — collected
+//! here, applied by the runner, and overridable from `[per-file-ignores]`.
 //!
 //! ## Rule format
 //!
@@ -56,6 +58,7 @@
 //! `serialized_args` into the content-hash cache key without requiring
 //! `version()` to change dynamically.
 
+pub(crate) mod exclusions;
 pub mod language;
 pub mod map;
 pub mod pack;
@@ -86,7 +89,16 @@ use rules::{RuleMap, load_rules};
 /// render as their literal `$NAME` text instead of silently vanishing (see
 /// `map::render_message`), and the built-in pack ([`pack`]) is now merged in —
 /// both change what a file with no matching user rule can report.
-const ENGINE_VERSION: &str = "ast-grep-core-0.45.2-engine-2+tslp1.15.12+builtin-pack-1";
+///
+/// `builtin-pack-2` marks a third: the pack's default path exclusions used to
+/// be applied *inside* this engine, so the cached payload was already
+/// filtered. They are now declared as `ignores:` in each rule's own YAML and
+/// applied by the runner alongside `[per-file-ignores]` (see
+/// [`exclusions`]), which means this engine now returns the **unfiltered**
+/// diagnostics for a path a pack rule excludes. A cache written by the old
+/// binary would serve the filtered set as if it were the raw one, and the
+/// run's `suppressed` list would then be empty on a file that did suppress.
+const ENGINE_VERSION: &str = "ast-grep-core-0.45.2-engine-2+tslp1.15.12+builtin-pack-2";
 
 /// Cross-cutting custom-rule engine backed by ast-grep + TSLP grammars.
 ///
@@ -202,8 +214,6 @@ impl Engine for AstGrepEngine {
                 diagnostics.push(match_to_diagnostic(self.name(), rule, node_match, &selection));
             }
         }
-
-        pack::apply_noisy_path_exclusions(&src.path, &mut diagnostics);
 
         Ok(diagnostics)
     }

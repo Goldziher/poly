@@ -60,6 +60,9 @@ pub(crate) fn lint_skip_result(file: &DiscoveredFile, reason: &str) -> LintResul
         path: file.path.clone(),
         config: file.config_id,
         diagnostics: Vec::new(),
+        // Nothing was filtered either: no engine ran, so no finding existed to
+        // suppress.
+        suppressed: Vec::new(),
         // Nothing was withheld: the file was never linted, so there was no fix
         // to hold back. The skip reason is the whole story here.
         fix_withheld_generated: false,

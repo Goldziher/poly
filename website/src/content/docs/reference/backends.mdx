@@ -73,6 +73,14 @@ Beyond the dedicated backends above, two lint tiers run on **every** language:
   Rust and Swift. **13 are on by default**; the other 13 author their own `severity: off` and are
   one `extend_select` away.
 
+A pack rule whose findings are concentrated in generated or test code declares those paths in its
+own YAML, with the standard ast-grep `ignores:` key — `placeholder-implementation` excludes
+`**/*_generated.rs`, `force-cast` excludes `**/RustBridge/**`, `not-null-assertion` excludes Kotlin
+test source sets, and `unwrap-used` excludes test and generated paths. Those are **defaults**: a
+`[per-file-ignores]` entry naming the rule replaces them, and every finding they drop is listed in
+the run's `suppressed` array. See
+[per-file ignores](/poly/guides/configuration/#suppressing-a-rule-inline).
+
 Both run in-process alongside the backends in the table, at warning severity — so neither fails an
 unconfigured CI on its own.
 

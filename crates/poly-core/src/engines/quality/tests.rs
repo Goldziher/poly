@@ -155,7 +155,7 @@ fn lazy_ignore_does_not_double_report_polys_own_directive() {
     let mut diags = QualityEngine.lint(&file, &cfg(toml::Table::new())).unwrap();
 
     let suppressions = Suppressions::parse(content);
-    suppressions.apply(&mut diags);
+    suppressions.apply(std::path::Path::new("src/app.rs"), &mut diags, &mut Vec::new());
 
     let lazy_ignore_count = diags
         .iter()

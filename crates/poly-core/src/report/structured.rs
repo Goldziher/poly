@@ -40,6 +40,7 @@ pub(super) fn lint_results_for_output(run: &LintRun) -> Vec<LintResult> {
     let mut known: std::collections::BTreeSet<&std::path::Path> =
         run.results.iter().map(|r| r.path.as_path()).collect();
     let synthetic = |path: &std::path::Path, skipped: Option<String>, error: Option<String>| LintResult {
+        suppressed: Vec::new(),
         path: path.to_path_buf(),
         // A run-level error or skip carries no per-file routing, so it is
         // attributed to the run's root config rather than guessed at.

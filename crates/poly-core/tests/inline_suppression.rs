@@ -12,6 +12,7 @@ use std::fs;
 use std::path::Path;
 
 use poly_core::engine::Severity;
+use poly_core::runner::SuppressionReason;
 use poly_core::{Config, RunOptions, lint};
 
 fn opts() -> RunOptions {
@@ -242,5 +243,84 @@ fn fix_respects_a_directive_and_survives_the_line_shift_it_causes() {
         fs::read_to_string(&path).unwrap(),
         "import sys  # poly: allow[F401] re-exported for the plugin loader\n",
         "the unsuppressed import is removed; the suppressed one survives the shift to line 1"
+    );
+}
+
+/// An inline directive is a caller instruction, and by the rule the reporting
+/// surface follows it must name itself rather than dropping a finding in
+/// silence. The suppressed entry carries the file, the rule, and the mechanism.
+#[test]
+fn an_inline_directive_names_itself_in_the_suppressed_list() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("unused.py");
+    write(
+        &path,
+        "import os  # poly: allow[F401] re-exported for the plugin loader\n",
+    );
+
+    let run = poly_core::lint_run(&[dir.path().to_path_buf()], &Config::default(), &opts(), false, false).unwrap();
+
+    let entries: Vec<_> = run
+        .suppressed
+        .iter()
+        .filter(|s| s.code.as_deref() == Some("F401"))
+        .collect();
+    assert_eq!(entries.len(), 1, "one suppressed finding, got {:?}", run.suppressed);
+    assert_eq!(entries[0].path, path);
+    assert_eq!(entries[0].reason, SuppressionReason::InlineSuppression);
+}
+
+/// `raw == reported + suppressed` for the inline mechanism: the same file
+/// without its directive reports exactly what the directive-carrying run
+/// reports plus what it recorded as suppressed.
+#[test]
+fn reported_plus_suppressed_reconstructs_the_findings_a_directive_hid() {
+    let with = "import os  # poly: allow[F401] re-exported for the plugin loader\n";
+    let without = "import os\n";
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("unused.py");
+    write(&path, with);
+    let run = poly_core::lint_run(&[dir.path().to_path_buf()], &Config::default(), &opts(), false, false).unwrap();
+
+    let mut reconstructed: Vec<String> = run
+        .results
+        .iter()
+        .flat_map(|r| r.diagnostics.iter())
+        .filter_map(|d| d.code.clone())
+        .collect();
+    reconstructed.extend(run.suppressed.iter().filter_map(|s| s.code.clone()));
+    reconstructed.sort();
+
+    let mut raw = codes_for("unused.py", without);
+    raw.sort();
+
+    assert_eq!(reconstructed, raw, "the unfiltered set is reconstructible from one run");
+}
+
+/// A `--fix` run re-runs the suppression filters once per fix pass; the
+/// suppressed list must describe the final state, not accumulate a copy per
+/// pass.
+#[test]
+fn a_fix_run_does_not_double_count_a_suppression() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("imports.py");
+    write(
+        &path,
+        "import os\nimport sys  # poly: allow[F401] re-exported for the plugin loader\n",
+    );
+
+    let run = poly_core::lint_run(&[dir.path().to_path_buf()], &Config::default(), &opts(), true, false).unwrap();
+
+    let entries: Vec<_> = run
+        .suppressed
+        .iter()
+        .filter(|s| s.code.as_deref() == Some("F401"))
+        .collect();
+    assert_eq!(
+        entries.len(),
+        1,
+        "exactly one suppression survives the fix passes, got {:?}",
+        run.suppressed
     );
 }

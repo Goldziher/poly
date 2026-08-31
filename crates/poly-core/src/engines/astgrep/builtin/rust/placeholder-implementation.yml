@@ -1,6 +1,12 @@
 id: placeholder-implementation
 language: rust
 severity: off
+ignores:
+  # 320 of this rule's 324 corpus findings sat in flutter_rust_bridge's
+  # generated FFI glue, where `_ => unimplemented!("")` is the generator's
+  # spelling of an unreachable arm - see the note below. Defaults only: a
+  # `[per-file-ignores]` entry naming this rule replaces them outright.
+  - "**/*_generated.rs"
 message: "Placeholder implementation: `todo!()` / `unimplemented!()` compiles but aborts at runtime."
 note: |
   `todo!()` and `unimplemented!()` type-check as `!`, so a stub passes the

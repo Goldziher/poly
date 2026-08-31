@@ -10,9 +10,10 @@ mod diagnostics;
 mod generated;
 mod paths;
 mod suppress;
+pub(crate) mod suppressed;
 
 pub(crate) use binary::is_binary;
-pub(crate) use diagnostics::{PerFileIgnores, SeverityRemap};
+pub(crate) use diagnostics::{DefaultPathIgnores, PerFileIgnores, SeverityRemap};
 pub(crate) use generated::{is_format_ignored, is_generated_source, is_hash_stamped_source};
 pub(crate) use paths::{is_generated_lockfile, match_bases, relative_for_match};
 pub(crate) use suppress::Suppressions;

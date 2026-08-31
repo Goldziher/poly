@@ -26,9 +26,9 @@
 //!
 //! # The path-exclusion problem
 //!
-//! An ast-grep rule matches AST nodes, not file paths, so it cannot itself
-//! express "skip this finding in `tests/`". Measured against the xberg-io
-//! corpus (48 roots — see the crate's `poly rules test` corpus notes):
+//! An ast-grep rule matches AST nodes, not file paths, so its `rule:` matcher
+//! cannot itself express "skip this finding in `tests/`". Measured against the
+//! xberg-io corpus (48 roots — see the crate's `poly rules test` corpus notes):
 //! `placeholder-implementation` had 320 of its 324 (99%) findings in
 //! `frb_generated.rs` (flutter_rust_bridge's generated FFI glue). `force-cast`
 //! had 662 of 662 (100%) inside `packages/swift/Sources/RustBridge/*-swift.swift`
@@ -36,24 +36,22 @@
 //! `swift-bridge` code generator's own convention. `not-null-assertion` had
 //! 103 of 103 (100%) under Kotlin test source sets. (`unwrap-used`,
 //! `allow-attribute-without-reason`, and `undocumented-unsafe-block` also had
-//! large path-shaped noise components, but each shipped `off` after the
-//! default-on audit below rather than growing this table further — see their
+//! large path-shaped noise components; `unwrap-used` carries its exclusions,
+//! the other two shipped `off` after the default-on audit below — see their
 //! own YAML notes.)
 //!
-//! poly's general path-exclusion mechanism is `[per-file-ignores]`
-//! (`crate::filter::diagnostics::PerFileIgnores`), but it is user-config
-//! only — there is no channel today for a pack to ship a *default* entry
-//! there without threading pack-owned defaults through
-//! `poly-config`/`Config` construction, which is out of scope for this pass.
-//! [`NOISY_PATH_EXCLUSIONS`] is the honest, narrowly-scoped stand-in: a
-//! hardcoded default that applies only to the rule ids named below,
-//! regardless of which rule dir they came from. It is not a general
-//! mechanism and a user cannot yet opt back in for these ids on these paths —
-//! a real limitation. The rule this pass held to: a rule may lean on this
-//! table only while a *minority* of its corpus exposure is unaddressable
+//! Each such rule declares those paths **in its own YAML**, as the standard
+//! ast-grep `ignores:` key, next to the `note:` that justifies them. See
+//! [`super::exclusions`] for why that key rather than a poly-specific one, and
+//! for how the globs reach the runner. They are *defaults*: a
+//! `[per-file-ignores]` entry naming the rule replaces them, so a reader can
+//! opt back in — which the hardcoded Rust table this replaced could not do,
+//! and said so.
+//!
+//! The rule this pass held to still applies: a rule may lean on a path
+//! exclusion only while a *minority* of its corpus exposure is unaddressable
 //! noise; a rule where path exclusion alone cannot get it under control ships
-//! `off` instead of growing the table further (`undocumented-unsafe-block`
-//! is the example — see below).
+//! `off` instead (`undocumented-unsafe-block` is the example — see below).
 //!
 //! # Default-on audit (per-rule corpus exposure and FP rate)
 //!
@@ -86,14 +84,12 @@
 //! is not the same question as whether the reader can act on it.
 
 use std::collections::HashMap;
-use std::path::Path;
 use std::sync::OnceLock;
 
 use ast_grep_config::{GlobalRules, RuleConfig, from_yaml_string};
 
 use super::language::TslpLanguage;
 use super::rules::RuleMap;
-use crate::engine::Diagnostic;
 
 /// Every built-in rule's YAML source, embedded at compile time. Order does
 /// not matter — [`builtin_pack`] groups by `language:` regardless.
@@ -155,86 +151,6 @@ pub(super) fn builtin_pack() -> &'static RuleMap {
     })
 }
 
-/// Default path-exclusion globs for specific built-in-pack rule ids. See the
-/// module doc's "path-exclusion problem" section for the measured rationale
-/// behind each entry and the scope of this mechanism.
-const TEST_AND_GENERATED_PATHS: &[&str] = &[
-    "**/tests/**",
-    "**/benches/**",
-    "**/tests.rs",
-    "**/test_support.rs",
-    "**/*_generated.rs",
-];
-
-const NOISY_PATH_EXCLUSIONS: &[(&str, &[&str])] = &[
-    // Kept even though `unwrap-used` ships `off`: a repo that opts back in
-    // via `extend_select = ["unwrap-used"]` (see its YAML note) still gets
-    // the test-path/generated-file exclusion rather than the raw, unfiltered
-    // count.
-    ("unwrap-used", TEST_AND_GENERATED_PATHS),
-    ("placeholder-implementation", &["**/*_generated.rs"]),
-    // 100% of this rule's corpus exposure (662/662) sat in `swift-bridge`'s
-    // own generated glue: files named `*-swift.swift` under `RustBridge/`,
-    // each stamped `// swift-format-ignore-file`.
-    ("force-cast", &["**/RustBridge/**"]),
-    // 100% of this rule's corpus exposure (103/103) sat under Kotlin test
-    // source sets, where `!!` after an assertion is a standing convention
-    // (`androidTest`/`src/test` and files named `*Test.kt`), not the "banned
-    // in production code" case the rule exists for.
-    (
-        "not-null-assertion",
-        &["**/test/**", "**/androidTest/**", "**/*Test.kt"],
-    ),
-];
-
-struct CompiledExclusion {
-    rule_id: &'static str,
-    matchers: Vec<globset::GlobMatcher>,
-}
-
-static COMPILED_EXCLUSIONS: OnceLock<Vec<CompiledExclusion>> = OnceLock::new();
-
-fn compiled_exclusions() -> &'static [CompiledExclusion] {
-    COMPILED_EXCLUSIONS.get_or_init(|| {
-        NOISY_PATH_EXCLUSIONS
-            .iter()
-            .map(|(rule_id, globs)| CompiledExclusion {
-                rule_id,
-                matchers: globs
-                    .iter()
-                    .filter_map(|glob| globset::Glob::new(glob).ok())
-                    .map(|glob| glob.compile_matcher())
-                    .collect(),
-            })
-            .collect()
-    })
-}
-
-/// Drop diagnostics whose `code` names a rule in [`NOISY_PATH_EXCLUSIONS`] and
-/// whose file path matches one of that rule's excluded globs.
-///
-/// Matching is on the raw `path` (backslash-normalized to `/`), not a
-/// repo-root-relative path: the engine has no access to the run's discovery
-/// bases, only the `SourceFile` it was handed. Every glob here is a `**`
-/// wildcard, so this is a suffix/substring-style match regardless of what
-/// precedes it — sufficient for "is this under a `tests/` dir" or "is this
-/// file named `*_generated.rs`" without needing repo-root relativity.
-pub(super) fn apply_noisy_path_exclusions(path: &Path, diagnostics: &mut Vec<Diagnostic>) {
-    if diagnostics.is_empty() {
-        return;
-    }
-    let normalized = path.to_string_lossy().replace('\\', "/");
-    diagnostics.retain(|diagnostic| {
-        let Some(code) = diagnostic.code.as_deref() else {
-            return true;
-        };
-        !compiled_exclusions()
-            .iter()
-            .filter(|entry| entry.rule_id == code)
-            .any(|entry| entry.matchers.iter().any(|matcher| matcher.is_match(&normalized)))
-    });
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -256,63 +172,6 @@ mod tests {
     fn builtin_pack_has_26_rules() {
         let total: usize = builtin_pack().values().map(Vec::len).sum();
         assert_eq!(total, 26, "expected 26 built-in rules across 9 languages");
-    }
-
-    #[test]
-    fn noisy_path_exclusion_matches_generated_ffi_glue() {
-        let mut diags = vec![Diagnostic {
-            engine: "astgrep".to_string(),
-            code: Some("placeholder-implementation".to_string()),
-            severity: crate::engine::Severity::Warning,
-            title: "placeholder".to_string(),
-            description: None,
-            span: None,
-            url: None,
-            fix: Vec::new(),
-            metadata: std::collections::BTreeMap::new(),
-        }];
-        apply_noisy_path_exclusions(Path::new("crates/foo/src/frb_generated.rs"), &mut diags);
-        assert!(diags.is_empty(), "generated FFI glue must be excluded");
-    }
-
-    /// `unwrap-used` excludes integration-test paths, not just generated
-    /// files — measured on the corpus at 1,320 of 3,842 raw findings sitting
-    /// under `tests/*.rs` (see the module doc and the rule's own YAML note).
-    #[test]
-    fn noisy_path_exclusion_covers_integration_test_files() {
-        let mut diags = vec![Diagnostic {
-            engine: "astgrep".to_string(),
-            code: Some("unwrap-used".to_string()),
-            severity: crate::engine::Severity::Warning,
-            title: "unwrap".to_string(),
-            description: None,
-            span: None,
-            url: None,
-            fix: Vec::new(),
-            metadata: std::collections::BTreeMap::new(),
-        }];
-        apply_noisy_path_exclusions(Path::new("crates/foo/tests/some_integration_test.rs"), &mut diags);
-        assert!(
-            diags.is_empty(),
-            "an integration-test file under tests/ must be excluded"
-        );
-    }
-
-    #[test]
-    fn noisy_path_exclusion_leaves_ordinary_source_alone() {
-        let mut diags = vec![Diagnostic {
-            engine: "astgrep".to_string(),
-            code: Some("unwrap-used".to_string()),
-            severity: crate::engine::Severity::Warning,
-            title: "unwrap".to_string(),
-            description: None,
-            span: None,
-            url: None,
-            fix: Vec::new(),
-            metadata: std::collections::BTreeMap::new(),
-        }];
-        apply_noisy_path_exclusions(Path::new("crates/foo/src/lib.rs"), &mut diags);
-        assert_eq!(diags.len(), 1, "ordinary source must not be excluded");
     }
 
     /// The Rust rules that carve test code out of their matches each define the

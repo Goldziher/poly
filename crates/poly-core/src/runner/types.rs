@@ -14,7 +14,7 @@ use serde::Serialize;
 use crate::discover::DiscoveryReport;
 use crate::engine::Diagnostic;
 use crate::language::Language;
-use crate::runner::SkippedFile;
+use crate::runner::{SkippedFile, SuppressedDiagnostic};
 
 /// Options controlling a lint/format run.
 #[derive(Debug, Clone, Default)]
@@ -134,6 +134,17 @@ pub struct LintResult {
     pub path: PathBuf,
     /// Diagnostics from all backends for this file.
     pub diagnostics: Vec<Diagnostic>,
+    /// Diagnostics this file produced and a suppression mechanism then dropped.
+    ///
+    /// Not serialized per file: every entry already names its own `path`, so
+    /// the run-level [`LintRun::suppressed`] list carries the same information
+    /// without repeating the record's path on each one. This field is the
+    /// per-file carrier the runner aggregates that list from — a file whose
+    /// every finding was suppressed has nothing left to report and is dropped
+    /// from `results` entirely, which is exactly the file whose suppressions a
+    /// reader most needs.
+    #[serde(skip)]
+    pub suppressed: Vec<SuppressedDiagnostic>,
     /// Set when `--fix` was requested but withheld because the file announces
     /// itself as machine-generated. The diagnostics are still reported.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
@@ -264,6 +275,16 @@ pub struct LintRun {
     /// A count alone forced consumers to reconstruct the set from a heuristic
     /// and parse it back out of the human summary, so the names travel with it.
     pub skipped: Vec<SkippedFile>,
+    /// Every diagnostic the run found and then dropped, with the mechanism
+    /// that dropped it: a rule's own declared path exclusions, a
+    /// `[per-file-ignores]` glob, or an in-source `poly: allow[…]` directive.
+    ///
+    /// None of these is charged to the coverage budget — each is something the
+    /// caller asked for — but each has to name itself, or a report is quietly
+    /// smaller than what poly found. `results` plus this list is the
+    /// unfiltered finding set, reconstructible from **one** run rather than by
+    /// re-running poly with the filters off.
+    pub suppressed: Vec<SuppressedDiagnostic>,
     /// The configuration each file was governed by, indexed by
     /// [`LintResult::config`] / [`FormatResult::config`].
     ///

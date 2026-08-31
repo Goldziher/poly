@@ -293,8 +293,12 @@ Two of them carry poly's lint coverage for languages no tier-1 backend reaches:
   including `off`; 13 of the 26 ship `off`. `[lint.astgrep]` `select`/`extend_select`/`ignore`
   and `[lint.astgrep.rules.<id>] level` move any of them; the *top-level* `[rules] builtin =
   false` disables the pack wholesale. (Two tables named `rules`: top-level `[rules]` holds
-  `dirs` and `builtin`; the per-rule override table is nested inside the engine's own table.) A hardcoded `NOISY_PATH_EXCLUSIONS` table (four rule ids today) is a stand-in for
-  engine-supplied `[per-file-ignores]` defaults, which do not exist yet.
+  `dirs` and `builtin`; the per-rule override table is nested inside the engine's own table.) A
+  rule whose findings concentrate in generated or test code declares its own default path
+  exclusions with the standard ast-grep `ignores:` key in its YAML (four rules do today);
+  `engines/astgrep/exclusions.rs` collects them per config and the runner merges them into
+  `PerFileIgnores` as **defaults** — a `[per-file-ignores]` entry naming the rule replaces them
+  outright. Every finding they drop appears in the run's `suppressed` list.
 
 Both answer `provides_language_lint` from the same lookup their `lint` performs, never from "the
 engine is switched on".

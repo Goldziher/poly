@@ -45,6 +45,19 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ### Changed
 
+- **A built-in rule declares its default path exclusions in its own YAML, and a user can now
+  override them.** The pack's four noisy rules were filtered by a hardcoded `NOISY_PATH_EXCLUSIONS`
+  table in Rust, which its own docs called a stand-in: a reader could not see the exclusion next to
+  the rule, and could not opt back in. Each rule now declares its globs with the standard ast-grep
+  `ignores:` key, beside the `note:` that justifies them — the same key a user's own rule file can
+  use, through the identical parse path, with no poly-specific schema. The globs are unchanged, so
+  the four rules exclude exactly the paths they did.
+
+  They are now **defaults**: a `[per-file-ignores]` entry naming a rule **replaces** its declared
+  globs rather than unioning with them, matching how a user rule with a pack rule's `id` replaces
+  it outright. This does not change any rule's default severity — it makes the exclusions auditable,
+  which is the prerequisite for that decision, not the decision.
+
 - **BREAKING — `poly lint --format json` / `--format toon` now emit an object, not an array.**
   The payload gains three things a consumer previously had to reconstruct by walking every record:
   a top-level `skipped` list, a top-level `errors` list, and a `summary` of
@@ -89,6 +102,31 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   are still counted and still fail the gate.
 
 ### Added
+
+- **Every suppressed diagnostic is now reported, in a `suppressed` array.** Three mechanisms
+  removed findings from a report with nothing anywhere saying so: a rule's default path exclusions,
+  a `[per-file-ignores]` glob match, and an in-source `poly: allow[…]` directive. Each dropped
+  finding is now one entry in a top-level `suppressed` list carrying the file, the rule code, and
+  which mechanism dropped it (`default-path-exclusion` / `per-file-ignore` / `inline-suppression`),
+  so **`results` plus `suppressed` is the unfiltered finding set from a single run** — no second
+  run with the filters off. None of these counts against `--deny-skips`: each is something the
+  caller asked for, and the rule the reporting surface follows is that a caller instruction is
+  never charged and always names itself. The array is omitted when empty, so a run that suppressed
+  nothing keeps exactly the JSON shape consumers already parse. The MCP `lint` / `lint_fix` tools
+  return the same document and inherit it. Closes
+  [#21](https://github.com/Goldziher/poly/issues/21).
+
+  ```json
+  {
+    "suppressed": [
+      {
+        "path": "crates/app/src/frb_generated.rs",
+        "code": "placeholder-implementation",
+        "reason": "default-path-exclusion"
+      }
+    ]
+  }
+  ```
 
 - **A hardening harness that runs poly over real third-party code.** poly's own fixtures are small,
   hand-written and chosen to exercise a known path, so they cannot answer the questions that decide

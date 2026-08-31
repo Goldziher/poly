@@ -777,6 +777,7 @@ mod tests {
 
     fn result(diagnostics: Vec<Diagnostic>) -> LintResult {
         LintResult {
+            suppressed: Vec::new(),
             path: PathBuf::from("test.rs"),
             config: 0,
             diagnostics,
@@ -830,6 +831,7 @@ mod tests {
         use std::os::unix::ffi::OsStringExt as _;
 
         LintResult {
+            suppressed: Vec::new(),
             path: PathBuf::from(OsString::from_vec(vec![b'b', b'a', b'd', 0xff, b'.', b'p', b'y'])),
             config: 0,
             diagnostics: vec![diag(Severity::Warning)],

@@ -1,6 +1,12 @@
 id: force-cast
 language: swift
 severity: warning
+ignores:
+  # 100% of this rule's corpus exposure (662/662) sat in `swift-bridge`'s own
+  # generated glue: files named `*-swift.swift` under `RustBridge/`, each
+  # stamped `// swift-format-ignore-file`. Defaults only - a
+  # `[per-file-ignores]` entry naming this rule replaces them outright.
+  - "**/RustBridge/**"
 message: "`as!` traps when the value is not of that type; use `as?` with `if let`/`guard let` instead."
 note: |
   `as!` is an unchecked downcast: when the dynamic type does not match, the

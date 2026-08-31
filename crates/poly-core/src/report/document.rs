@@ -17,7 +17,9 @@
 use serde::Serialize;
 
 use crate::ConfigFingerprint;
-use crate::runner::{FormatError, FormatResult, FormatRun, LintError, LintResult, LintRun, SkippedFile};
+use crate::runner::{
+    FormatError, FormatResult, FormatRun, LintError, LintResult, LintRun, SkippedFile, SuppressedDiagnostic,
+};
 
 /// What a run actually did, in three numbers.
 ///
@@ -59,6 +61,23 @@ pub struct LintDocument {
     /// Files nothing inspected, each with the reason. Redundant with the
     /// `skipped`-carrying entries in `results` for the same reason `errors` is.
     pub skipped: Vec<SkippedFile>,
+    /// Diagnostics the run found and then dropped, one entry per finding, each
+    /// naming the mechanism responsible.
+    ///
+    /// The three suppression mechanisms — a rule's own declared path
+    /// exclusions, a `[per-file-ignores]` glob, and an in-source
+    /// `poly: allow[…]` directive — used to remove findings with nothing
+    /// anywhere saying so. None of them is a coverage limitation, so none is
+    /// charged to `--deny-skips`; but a caller instruction still has to name
+    /// itself. **`results` plus `suppressed` is the unfiltered finding set**,
+    /// from a single run.
+    ///
+    /// Unlike `errors` and `skipped`, this is **omitted when empty**. Those two
+    /// are coverage claims a consumer must be able to test unconditionally;
+    /// this is additive detail, and omitting it keeps the document a run
+    /// suppressed nothing in byte-identical to what consumers already parse.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub suppressed: Vec<SuppressedDiagnostic>,
     /// The run's own account of what it covered.
     pub summary: RunSummary,
     /// The configurations that governed this run, indexed by each result's
@@ -81,6 +100,7 @@ impl LintDocument {
             results: super::structured::lint_results_for_output(run),
             errors: run.errors.clone(),
             skipped: run.skipped.clone(),
+            suppressed: run.suppressed.clone(),
             summary: RunSummary {
                 checked: run.checked,
                 skipped: run.skipped.len(),

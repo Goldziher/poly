@@ -24,6 +24,16 @@
 //! is coverage information, not a failure, so it deliberately does not set
 //! `isError`.
 //!
+//! A lint document additionally carries `suppressed` — one entry per diagnostic
+//! the run found and then dropped, naming the file, the rule, and which
+//! mechanism dropped it (`default-path-exclusion`, `per-file-ignore`,
+//! `inline-suppression`). None of those is a coverage limitation, so like a
+//! skip none sets `isError`; but `results` plus `suppressed` is the unfiltered
+//! finding set, so a caller can see what a `poly.toml` or an in-source
+//! directive removed without re-running with the filters off. It is omitted
+//! when empty, unlike `errors`/`skipped`, which are always present because a
+//! consumer must be able to test them unconditionally.
+//!
 //! The cache/rules/config/workspace DTOs are MCP-local because their CLI
 //! counterparts print prose rather than a serializable value.
 

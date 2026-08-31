@@ -286,6 +286,43 @@ poly recognizes the directive after any of the comment openers `//`, `#`, `--`, 
 `<!--`, `%`, `!`, `dnl` and `rem` — no per-language configuration. Quotes are deliberately not
 openers, so a directive-shaped string literal never suppresses.
 
+## Every suppression names itself
+
+A rule can also ship its **own** default path exclusions. poly's built-in ast-grep rule pack uses
+the standard ast-grep `ignores:` key for rules whose findings are concentrated in generated or test
+code — `placeholder-implementation` excludes `**/*_generated.rs`, `force-cast` excludes
+`**/RustBridge/**`, `not-null-assertion` excludes Kotlin test source sets, and `unwrap-used`
+excludes test and generated paths. The same key works in your own rule files.
+
+Those are **defaults, and `[per-file-ignores]` replaces them** — it does not add to them. Naming a
+rule id in `[per-file-ignores]` takes the rule's declared globs out of force entirely, so the entry
+you wrote is the only one governing it:
+
+```toml
+# `placeholder-implementation` no longer excludes **/*_generated.rs — only this glob applies.
+[per-file-ignores]
+"crates/**/generated/**" = ["placeholder-implementation"]
+```
+
+All three suppression mechanisms — a rule's declared exclusions, `[per-file-ignores]`, and inline
+`poly: allow[…]` directives — are reported. `poly lint --format json` carries a `suppressed` array
+alongside `results`, one entry per dropped finding:
+
+```json
+{
+  "suppressed": [
+    { "path": "crates/app/src/frb_generated.rs", "code": "placeholder-implementation", "reason": "default-path-exclusion" },
+    { "path": "tests/unused.py", "code": "F401", "reason": "per-file-ignore" },
+    { "path": "src/loader.py", "code": "F401", "reason": "inline-suppression" }
+  ]
+}
+```
+
+**`results` plus `suppressed` is the unfiltered finding set**, so you can audit what a config or a
+comment removed without re-running with the filters off. The array is omitted when nothing was
+suppressed, and none of these counts against `--deny-skips`: each is something you asked for, and
+saying so is the whole point.
+
 ## Nested config in a monorepo
 
 Run poly from a monorepo root and each sub-project's `poly.toml` cascades over the root, the way

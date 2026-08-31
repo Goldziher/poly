@@ -39,6 +39,7 @@
 use std::collections::BTreeMap;
 
 use super::diagnostics::code_matches_rule;
+use super::suppressed::{SuppressedDiagnostic, SuppressionReason};
 use crate::engine::{Diagnostic, Severity, Span};
 
 /// Literal that gates the whole mechanism. Every directive contains it, so a
@@ -164,16 +165,36 @@ impl Suppressions {
         self.file.is_empty() && self.lines.is_empty() && self.lazy.is_empty()
     }
 
-    /// Drop suppressed diagnostics, then append the `lazy-ignore` findings.
+    /// Drop suppressed diagnostics — recording each in `suppressed` — then
+    /// append the `lazy-ignore` findings.
     ///
     /// Appending after the retain is what keeps a directive from suppressing the
     /// very finding it produced — or any other directive's. The runner applies
     /// `[per-file-ignores]` *after* this call so a `lazy-ignore` is still
     /// silenceable by config; the two retains are independent filters, so their
     /// relative order does not change which real diagnostics survive.
-    pub(crate) fn apply(&self, diagnostics: &mut Vec<Diagnostic>) {
+    ///
+    /// A `lazy-ignore` is appended, not suppressed, so it never appears in
+    /// `suppressed`: the directive that produced it is inert by definition and
+    /// dropped nothing.
+    pub(crate) fn apply(
+        &self,
+        path: &std::path::Path,
+        diagnostics: &mut Vec<Diagnostic>,
+        suppressed: &mut Vec<SuppressedDiagnostic>,
+    ) {
         if !self.file.is_empty() || !self.lines.is_empty() {
-            diagnostics.retain(|diagnostic| !self.suppresses(diagnostic));
+            diagnostics.retain(|diagnostic| {
+                if self.suppresses(diagnostic) {
+                    suppressed.push(SuppressedDiagnostic::new(
+                        path,
+                        diagnostic,
+                        SuppressionReason::InlineSuppression,
+                    ));
+                    return false;
+                }
+                true
+            });
         }
         diagnostics.extend(self.lazy.iter().cloned());
     }
@@ -358,12 +379,18 @@ mod tests {
         diagnostics.iter().map(|d| d.code.as_deref()).collect()
     }
 
+    /// The file these unit tests report against. Only carried through to the
+    /// suppression record; nothing here matches on it.
+    fn test_path() -> &'static std::path::Path {
+        std::path::Path::new("src/app.py")
+    }
+
     #[test]
     fn a_file_without_the_marker_parses_to_an_empty_set() {
         let suppressions = Suppressions::parse("fn main() {}\n");
         assert!(suppressions.is_empty());
         let mut diagnostics = vec![diag(Some("F401"), Some(1))];
-        suppressions.apply(&mut diagnostics);
+        suppressions.apply(test_path(), &mut diagnostics, &mut Vec::new());
         assert_eq!(codes(&diagnostics), vec![Some("F401")]);
     }
 
@@ -371,7 +398,7 @@ mod tests {
     fn trailing_directive_suppresses_its_own_line() {
         let suppressions = Suppressions::parse("import os  # poly: allow[F401] kept for re-export\n");
         let mut diagnostics = vec![diag(Some("F401"), Some(1)), diag(Some("E501"), Some(1))];
-        suppressions.apply(&mut diagnostics);
+        suppressions.apply(test_path(), &mut diagnostics, &mut Vec::new());
         assert_eq!(
             codes(&diagnostics),
             vec![Some("E501")],
@@ -384,7 +411,7 @@ mod tests {
         let source = "# poly: allow[F401] re-exported on purpose\n\n\nimport os\n";
         let suppressions = Suppressions::parse(source);
         let mut diagnostics = vec![diag(Some("F401"), Some(4)), diag(Some("F401"), Some(1))];
-        suppressions.apply(&mut diagnostics);
+        suppressions.apply(test_path(), &mut diagnostics, &mut Vec::new());
         assert_eq!(
             codes(&diagnostics),
             vec![Some("F401")],
@@ -397,7 +424,7 @@ mod tests {
     fn comment_only_directive_at_end_of_file_targets_nothing() {
         let suppressions = Suppressions::parse("import os\n# poly: allow[F401] nothing follows\n\n");
         let mut diagnostics = vec![diag(Some("F401"), Some(1))];
-        suppressions.apply(&mut diagnostics);
+        suppressions.apply(test_path(), &mut diagnostics, &mut Vec::new());
         assert_eq!(codes(&diagnostics), vec![Some("F401")]);
     }
 
@@ -405,7 +432,7 @@ mod tests {
     fn allow_file_suppresses_a_diagnostic_with_no_span() {
         let suppressions = Suppressions::parse("// poly: allow-file[no-console] debug entrypoint\ncode();\n");
         let mut diagnostics = vec![diag(Some("no-console"), None), diag(Some("no-console"), Some(2))];
-        suppressions.apply(&mut diagnostics);
+        suppressions.apply(test_path(), &mut diagnostics, &mut Vec::new());
         assert!(diagnostics.is_empty(), "span-less and spanned alike are suppressed");
     }
 
@@ -413,7 +440,7 @@ mod tests {
     fn a_line_scoped_directive_never_suppresses_a_span_less_diagnostic() {
         let suppressions = Suppressions::parse("code(); // poly: allow[no-console] intentional\n");
         let mut diagnostics = vec![diag(Some("no-console"), None)];
-        suppressions.apply(&mut diagnostics);
+        suppressions.apply(test_path(), &mut diagnostics, &mut Vec::new());
         assert_eq!(codes(&diagnostics), vec![Some("no-console")]);
     }
 
@@ -421,7 +448,7 @@ mod tests {
     fn an_unjustified_directive_does_not_suppress_and_reports_lazy_ignore() {
         let suppressions = Suppressions::parse("import os  # poly: allow[F401]\n");
         let mut diagnostics = vec![diag(Some("F401"), Some(1))];
-        suppressions.apply(&mut diagnostics);
+        suppressions.apply(test_path(), &mut diagnostics, &mut Vec::new());
 
         assert_eq!(
             codes(&diagnostics),
@@ -438,7 +465,7 @@ mod tests {
     fn an_empty_block_comment_reason_is_unjustified() {
         let suppressions = Suppressions::parse("code(); /* poly: allow[no-console] */\n");
         let mut diagnostics = vec![diag(Some("no-console"), Some(1))];
-        suppressions.apply(&mut diagnostics);
+        suppressions.apply(test_path(), &mut diagnostics, &mut Vec::new());
         assert_eq!(codes(&diagnostics), vec![Some("no-console"), Some("lazy-ignore")]);
     }
 
@@ -446,7 +473,7 @@ mod tests {
     fn a_block_comment_reason_survives_its_terminator() {
         let suppressions = Suppressions::parse("code(); /* poly: allow[no-console] debug shim */\n");
         let mut diagnostics = vec![diag(Some("no-console"), Some(1))];
-        suppressions.apply(&mut diagnostics);
+        suppressions.apply(test_path(), &mut diagnostics, &mut Vec::new());
         assert!(diagnostics.is_empty(), "a real reason justifies the directive");
     }
 
@@ -454,7 +481,7 @@ mod tests {
     fn punctuation_alone_is_not_a_reason() {
         let suppressions = Suppressions::parse("code(); // poly: allow[no-console] ---\n");
         let mut diagnostics = vec![diag(Some("no-console"), Some(1))];
-        suppressions.apply(&mut diagnostics);
+        suppressions.apply(test_path(), &mut diagnostics, &mut Vec::new());
         assert_eq!(codes(&diagnostics), vec![Some("no-console"), Some("lazy-ignore")]);
     }
 
@@ -464,7 +491,7 @@ mod tests {
         let suppressions = Suppressions::parse(source);
         assert!(suppressions.is_empty(), "a quote is not a comment opener");
         let mut diagnostics = vec![diag(Some("no-console"), Some(1)), diag(Some("no-console"), Some(2))];
-        suppressions.apply(&mut diagnostics);
+        suppressions.apply(test_path(), &mut diagnostics, &mut Vec::new());
         assert_eq!(diagnostics.len(), 2, "nothing is suppressed");
     }
 
@@ -476,7 +503,7 @@ mod tests {
             diag(None, Some(1)),
             diag(Some("x"), Some(2)),
         ];
-        suppressions.apply(&mut diagnostics);
+        suppressions.apply(test_path(), &mut diagnostics, &mut Vec::new());
         assert_eq!(codes(&diagnostics), vec![Some("x")], "only line 1 is covered");
     }
 
@@ -488,7 +515,7 @@ mod tests {
             diag(Some("no-console"), Some(1)),
             diag(Some("E501"), Some(1)),
         ];
-        suppressions.apply(&mut diagnostics);
+        suppressions.apply(test_path(), &mut diagnostics, &mut Vec::new());
         assert_eq!(codes(&diagnostics), vec![Some("E501")]);
     }
 
@@ -496,7 +523,7 @@ mod tests {
     fn rule_matching_is_prefix_bounded_like_per_file_ignores() {
         let suppressions = Suppressions::parse("code(); # poly: allow[F] the whole F family\n");
         let mut diagnostics = vec![diag(Some("F401"), Some(1)), diag(Some("FOO1"), Some(1))];
-        suppressions.apply(&mut diagnostics);
+        suppressions.apply(test_path(), &mut diagnostics, &mut Vec::new());
         assert_eq!(
             codes(&diagnostics),
             vec![Some("FOO1")],
@@ -508,7 +535,7 @@ mod tests {
     fn an_empty_rule_list_is_not_a_wildcard() {
         let suppressions = Suppressions::parse("code(); // poly: allow[] a reason but no rules\n");
         let mut diagnostics = vec![diag(Some("F401"), Some(1))];
-        suppressions.apply(&mut diagnostics);
+        suppressions.apply(test_path(), &mut diagnostics, &mut Vec::new());
         assert_eq!(codes(&diagnostics), vec![Some("F401")]);
     }
 
@@ -526,7 +553,7 @@ mod tests {
         for opener in openers {
             let source = format!("code(); {opener} poly: allow[X] because\n");
             let mut diagnostics = vec![diag(Some("X"), Some(1))];
-            Suppressions::parse(&source).apply(&mut diagnostics);
+            Suppressions::parse(&source).apply(test_path(), &mut diagnostics, &mut Vec::new());
             assert!(diagnostics.is_empty(), "opener {opener:?} must be recognized");
         }
     }
@@ -535,7 +562,7 @@ mod tests {
     fn allow_file_applies_wherever_it_appears() {
         let source = "code();\ncode();\n-- poly: allow-file[LT01] vendored SQL\n";
         let mut diagnostics = vec![diag(Some("LT01"), Some(1)), diag(Some("LT01"), Some(2))];
-        Suppressions::parse(source).apply(&mut diagnostics);
+        Suppressions::parse(source).apply(test_path(), &mut diagnostics, &mut Vec::new());
         assert!(diagnostics.is_empty());
     }
 
@@ -543,7 +570,7 @@ mod tests {
     fn an_unjustified_allow_file_reports_exactly_one_lazy_ignore() {
         let suppressions = Suppressions::parse("# poly: allow-file[F401]\nimport os\n");
         let mut diagnostics = vec![diag(Some("F401"), Some(2))];
-        suppressions.apply(&mut diagnostics);
+        suppressions.apply(test_path(), &mut diagnostics, &mut Vec::new());
         assert_eq!(codes(&diagnostics), vec![Some("F401"), Some("lazy-ignore")]);
         assert_eq!(
             diagnostics
@@ -558,7 +585,7 @@ mod tests {
     fn a_lazy_ignore_is_not_suppressible_by_another_directive() {
         let source = "# poly: allow-file[lazy-ignore] trying to silence the guard rail\ncode(); // poly: allow[X]\n";
         let mut diagnostics = Vec::new();
-        Suppressions::parse(source).apply(&mut diagnostics);
+        Suppressions::parse(source).apply(test_path(), &mut diagnostics, &mut Vec::new());
         assert_eq!(codes(&diagnostics), vec![Some("lazy-ignore")]);
     }
 }
