@@ -742,11 +742,23 @@ fn format_one(
         Ok(current)
     };
 
-    let current = format_to_fixed_point(Arc::from(original.as_str()), run_pass)?;
+    let (current, settled) = format_to_fixed_point(Arc::from(original.as_str()), run_pass)?;
 
     let changed = *current != *original;
     if changed && write {
         write_atomic(&f.path, &current)?;
+    }
+    // The content is written first — the passes did real work and throwing it
+    // away would leave the file worse — but the run must not then call the file
+    // formatted. It is still changing, so a following `poly fmt --check` reports
+    // it as unformatted no matter how many times `--fix` is run, and saying
+    // "formatted" here is the false pass this whole surface exists to avoid.
+    if !settled {
+        anyhow::bail!(
+            "formatting did not settle after {MAX_FORMAT_PASSES} passes; the file is still changing, \
+             so `poly fmt --check` will keep reporting it. This is a backend that does not converge \
+             on this input, not a problem with the file"
+        );
     }
     Ok(FormatResult {
         path: f.path.clone(),
@@ -793,7 +805,12 @@ fn skip_reason_for(plans: &[EnginePlan], src: &SourceFile) -> Option<String> {
 /// stable costs exactly one pass; each additional pass only happens when the
 /// previous one changed the content (so `poly fmt --fix` is a fixed point and a
 /// following `poly fmt --check` is clean).
-fn format_to_fixed_point<F>(initial: Arc<str>, mut run_pass: F) -> anyhow::Result<Arc<str>>
+///
+/// Returns the content and **whether it actually settled**. Exhausting the cap
+/// is not a detail to swallow: it means the file was left still changing, so the
+/// `--fix`-then-`--check` guarantee above does not hold for it, and reporting
+/// the file as formatted would be claiming something the run did not do.
+fn format_to_fixed_point<F>(initial: Arc<str>, mut run_pass: F) -> anyhow::Result<(Arc<str>, bool)>
 where
     F: FnMut(&Arc<str>, bool) -> anyhow::Result<Arc<str>>,
 {
@@ -803,10 +820,10 @@ where
         let stable = *next == *current;
         current = next;
         if stable {
-            break;
+            return Ok((current, true));
         }
     }
-    Ok(current)
+    Ok((current, false))
 }
 
 fn write_atomic(path: &std::path::Path, contents: &str) -> anyhow::Result<()> {
@@ -854,124 +871,4 @@ fn configure_pool(jobs: Option<usize>) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn cache_write_policy_skips_cheap_results() {
-        assert!(!should_cache_result(
-            MIN_CACHE_DURATION - std::time::Duration::from_nanos(1)
-        ));
-        assert!(should_cache_result(MIN_CACHE_DURATION));
-    }
-
-    #[test]
-    fn disabled_cache_skips_digest_work() {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        let cache = ResultCache::open(tmp.path().join("cache"), false).expect("open disabled cache");
-        let digest_computed = std::cell::Cell::new(false);
-
-        let digest = digest_if_enabled(&cache, || {
-            digest_computed.set(true);
-            ResultCache::single_file_digest("content")
-        });
-
-        assert!(digest.is_none());
-        assert!(!digest_computed.get(), "disabled caching must not hash file contents");
-    }
-
-    /// A pass that is already at its fixed point runs exactly once — no wasted
-    /// confirmation pass, and the content is returned unchanged.
-    #[test]
-    fn format_to_fixed_point_stable_input_runs_once() {
-        let calls = std::cell::Cell::new(0);
-        let result = format_to_fixed_point(Arc::from("stable"), |content, _record| {
-            calls.set(calls.get() + 1);
-            Ok(Arc::clone(content))
-        })
-        .unwrap();
-        assert_eq!(&*result, "stable");
-        assert_eq!(calls.get(), 1, "an already-stable input needs a single pass");
-    }
-
-    /// A non-idempotent pass (strips one trailing '!' per run) converges within
-    /// the bound, and the driver stops as soon as a pass makes no change — so the
-    /// result is a genuine fixed point, mirroring the `fmt --fix` then `--check`
-    /// invariant.
-    #[test]
-    fn format_to_fixed_point_converges_on_non_idempotent_pass() {
-        let calls = std::cell::Cell::new(0);
-        let result = format_to_fixed_point(Arc::from("a!!!"), |content, _record| {
-            calls.set(calls.get() + 1);
-            let stripped = content.strip_suffix('!').unwrap_or(content);
-            Ok(Arc::from(stripped))
-        })
-        .unwrap();
-        assert_eq!(&*result, "a", "trailing markers fully removed");
-        // "a!!!"->"a!!"->"a!"->"a" is 3 changing passes plus 1 no-op that proves
-        // stability = 4 calls. ~keep
-        assert_eq!(calls.get(), 4);
-    }
-
-    /// Only the first pass records debug so per-engine timing counts are not
-    /// inflated by the convergence retries.
-    #[test]
-    fn format_to_fixed_point_records_debug_on_first_pass_only() {
-        let recorded: std::cell::RefCell<Vec<bool>> = std::cell::RefCell::new(Vec::new());
-        format_to_fixed_point(Arc::from("a!!"), |content, record| {
-            recorded.borrow_mut().push(record);
-            Ok(Arc::from(content.strip_suffix('!').unwrap_or(content)))
-        })
-        .unwrap();
-        assert_eq!(
-            recorded.into_inner(),
-            vec![true, false, false],
-            "debug is recorded on the first pass, never on a retry"
-        );
-    }
-
-    /// A backend that never stabilizes is bounded to `MAX_FORMAT_PASSES` runs
-    /// rather than looping forever.
-    #[test]
-    fn format_to_fixed_point_bounds_a_never_stable_pass() {
-        let calls = std::cell::Cell::new(0);
-        let result = format_to_fixed_point(Arc::from("x"), |content, _record| {
-            calls.set(calls.get() + 1);
-            Ok(Arc::from(format!("{content}y")))
-        })
-        .unwrap();
-        assert_eq!(calls.get(), MAX_FORMAT_PASSES, "oscillation is capped, not infinite");
-        assert_eq!(&*result, "xyyyyy", "returns the last bounded pass output");
-    }
-
-    /// Recurse `depth` frames, each pinning ~8 KiB of stack, returning the
-    /// accumulated depth. `black_box` keeps the per-frame buffer from being
-    /// optimised away, so the stack actually grows.
-    fn recurse_pinning_stack(depth: usize) -> usize {
-        let mut frame = [0u8; 8 * 1024];
-        frame[0] = (depth & 0xff) as u8;
-        std::hint::black_box(&frame);
-        if depth == 0 {
-            frame[0] as usize
-        } else {
-            recurse_pinning_stack(depth - 1).wrapping_add(1)
-        }
-    }
-
-    /// A worker thread sized at [`WORKER_STACK_SIZE`] must accommodate recursion
-    /// far deeper than the 2 MiB default rayon stack — the regression that made
-    /// per-file engines abort the whole run on nested real-world files
-    /// (spikard corpus). ~640 frames × 8 KiB ≈ 5 MiB of pinned stack overflows
-    /// the old 2 MiB default but fits comfortably in 16 MiB.
-    #[test]
-    fn worker_stack_accommodates_deep_recursion() {
-        const FRAMES: usize = 640;
-        let pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(1)
-            .stack_size(WORKER_STACK_SIZE)
-            .build()
-            .expect("build local pool");
-        let result = pool.install(|| recurse_pinning_stack(FRAMES));
-        assert_eq!(result, FRAMES);
-    }
-}
+mod tests;

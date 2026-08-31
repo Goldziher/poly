@@ -9,6 +9,14 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ### Fixed
 
+- **A file the formatter cannot settle is now reported instead of called formatted.** `poly fmt`
+  re-runs the engine chain until the content stops changing, capped at five passes so an
+  oscillating backend still terminates — but exhausting that cap was silent, so poly wrote the file,
+  reported success, and a following `poly fmt --check` reported drift forever with nothing to
+  explain why. Real HTML has been observed where `poly fmt --fix` produced different bytes on seven
+  successive runs. Such a file is now a per-file error naming the pass cap, so the run exits 2 and
+  says it verified less than it claims.
+
 - **`undocumented-unsafe-block` no longer flags `unsafe` in test code.** Under the 2024 edition
   `unsafe { std::env::set_var(..) }` inside a test module is the *only* legal way to write that
   statement, so demanding a `SAFETY` comment for it was the rule being wrong about the code. The
