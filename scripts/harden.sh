@@ -80,15 +80,24 @@ run_root() {
 
 acquire() {
 	local name="$1" url="$2" ref="$3" dest="${WORK}/${CORPUS}/${1}"
-	if [ -d "${dest}/.git" ]; then
+	# Reuse only a *complete* checkout. A `.git` directory alone proves nothing:
+	# a fetch that died half way leaves one behind, and treating that as a hit
+	# would measure an empty tree and report it as a pass.
+	if [ -d "${dest}/.git" ] && git -C "${dest}" rev-parse --verify -q HEAD >/dev/null 2>&1; then
 		echo "==> reusing ${dest}"
 		return 0
 	fi
+	rm -rf "${dest}"
 	mkdir -p "${dest}"
 	# Depth 1 at an exact ref: poly reads no git history, so depth is pure cost.
 	# Retried, because one GitHub hiccup must not look like a poly failure.
 	local attempt
 	for attempt in 1 2 3; do
+		# Each attempt starts from a clean directory. Re-running `git remote add`
+		# over an existing `origin` fails, and an `&&` chain would turn that into
+		# a permanent failure — the retries would only ever repeat the same error.
+		rm -rf "${dest}"
+		mkdir -p "${dest}"
 		if git init -q "${dest}" 2>/dev/null &&
 			git -C "${dest}" remote add origin "${url}" 2>/dev/null &&
 			git -C "${dest}" fetch -q --depth=1 origin "${ref}" 2>/dev/null &&
@@ -118,7 +127,13 @@ b | c)
 	while IFS=$'\t' read -r name url ref licence languages tier; do
 		case "${name}" in \#* | "") continue ;; esac
 		wanted "${name}" || continue
-		[ "${TIER}" = "extended" ] || [ "${tier}" = "core" ] || continue
+		# The tier filter is a default, not an override: naming a root on the
+		# command line selects it whatever tier it sits in. Applying the tier
+		# first meant `harden.sh django` matched nothing and exited 0 having
+		# measured nothing, which is the failure this harness exists to catch.
+		if [ "${#selected[@]}" -eq 0 ]; then
+			[ "${TIER}" = "extended" ] || [ "${tier}" = "core" ] || continue
+		fi
 		if ! licence_allowed "${licence}"; then
 			echo "refusing ${name}: licence ${licence} is not in the allow-list" >&2
 			exit 2

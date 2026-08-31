@@ -11,20 +11,21 @@
 # orchestrator refuses anything else, because a CI artifact derived from a copyleft
 # tree is a redistribution question we have no reason to take on.
 #
-# The `ref` column holds a branch name until someone resolves it to a commit.
-# `harden.sh` records `pinned: false` for a non-sha ref and refuses to gate
-# per-rule counts on that root — a count measured against a moving branch is not
-# reproducible, and a gate built on one fires on somebody else's merge. Resolve
-# with `git ls-remote <url> <branch>` and commit the sha.
+# Every row below is pinned to a commit (resolved 2026-08-31). A newly added row
+# may carry a branch name for one commit: `harden.sh` records `pinned: false` for
+# a non-sha ref and refuses to gate per-rule counts on that root, because a count
+# measured against a moving branch is not reproducible and a gate built on one
+# fires on somebody else's merge. Resolve with `git ls-remote <url> <branch>` and
+# commit the sha before relying on its numbers.
 #
 # name	url	ref	licence	languages	tier
-ripgrep	https://github.com/BurntSushi/ripgrep.git	master	MIT	rust,toml,markdown	core
-gin	https://github.com/gin-gonic/gin.git	master	MIT	go,markdown,yaml	core
-requests	https://github.com/psf/requests.git	main	Apache-2.0	python,markdown	core
-bootstrap	https://github.com/twbs/bootstrap.git	main	MIT	scss,css,javascript,markdown	core
-bats-core	https://github.com/bats-core/bats-core.git	master	MIT	shell,markdown	core
-django	https://github.com/django/django.git	main	BSD-3-Clause	python,html,javascript,css	extended
-react	https://github.com/facebook/react.git	main	MIT	javascript,jsx,markdown	extended
-vite	https://github.com/vitejs/vite.git	main	MIT	typescript,javascript,json	extended
-helm	https://github.com/helm/helm.git	main	Apache-2.0	go,yaml,dockerfile	extended
-jekyll	https://github.com/jekyll/jekyll.git	master	MIT	ruby,markdown,scss	extended
+ripgrep	https://github.com/BurntSushi/ripgrep.git	3fce3b5bb0236da2df6d99672afb8a719642eca7	MIT	rust,toml,markdown	core
+gin	https://github.com/gin-gonic/gin.git	dcaa4296d111981ffb31ac3eba90bb63e1eb5ab9	MIT	go,markdown,yaml	core
+requests	https://github.com/psf/requests.git	5460f467b02e49471c0fd6cfc9ca0adab6351f98	Apache-2.0	python,markdown	core
+bootstrap	https://github.com/twbs/bootstrap.git	b66d3437bdb8a1a19ca7bcfee285a34ce7d960cd	MIT	scss,css,javascript,markdown	core
+bats-core	https://github.com/bats-core/bats-core.git	ae4b94d7cc35f62468297791aa4ab8c3af7377ba	MIT	shell,markdown	core
+django	https://github.com/django/django.git	189136c2a3e166c59a49cca2444aa6a1d77aa136	BSD-3-Clause	python,html,javascript,css	extended
+react	https://github.com/facebook/react.git	065bc84eb50914fa1bc60983eac0b0b717186d74	MIT	javascript,jsx,markdown	extended
+vite	https://github.com/vitejs/vite.git	238ad811c7fb9e4730cbd317d0657867ed3447b3	MIT	typescript,javascript,json	extended
+helm	https://github.com/helm/helm.git	d2de64e64bc64cbef584a0ccb13eb8cb0c96bded	Apache-2.0	go,yaml,dockerfile	extended
+jekyll	https://github.com/jekyll/jekyll.git	74d751339d3e534aa51d5d7b0640e9bd743509e4	MIT	ruby,markdown,scss	extended

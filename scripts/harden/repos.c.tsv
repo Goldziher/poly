@@ -22,13 +22,14 @@
 # the query and date here alongside the shas. Publishing the query is what makes
 # the corpus auditable; publishing a list of repositories is not.
 #
-# The `ref` column holds a branch name until someone resolves it to a commit.
-# `harden.sh` records `pinned: false` for a non-sha ref and refuses to gate
-# per-rule counts on that root — a count measured against a moving branch is not
-# reproducible, and a gate built on one fires on somebody else's merge. Resolve
-# with `git ls-remote <url> <branch>` and commit the sha.
+# Every row below is pinned to a commit (resolved 2026-08-31). A newly added row
+# may carry a branch name for one commit: `harden.sh` records `pinned: false` for
+# a non-sha ref and refuses to gate per-rule counts on that root, because a count
+# measured against a moving branch is not reproducible and a gate built on one
+# fires on somebody else's merge. Resolve with `git ls-remote <url> <branch>` and
+# commit the sha before relying on its numbers.
 #
 # name	url	ref	licence	languages	tier
-openapi-generator	https://github.com/OpenAPITools/openapi-generator.git	master	Apache-2.0	java,kotlin,csharp,php,ruby,go,python,typescript	core
-google-cloud-python	https://github.com/googleapis/google-cloud-python.git	main	Apache-2.0	python	extended
-aws-sdk-js-v3	https://github.com/aws/aws-sdk-js-v3.git	main	Apache-2.0	typescript	extended
+openapi-generator	https://github.com/OpenAPITools/openapi-generator.git	4242641f766d500f3ffb48a5481e1f63866a1f1c	Apache-2.0	java,kotlin,csharp,php,ruby,go,python,typescript	core
+google-cloud-python	https://github.com/googleapis/google-cloud-python.git	f5de310eec70f2675082f469e3843d8dc422af4b	Apache-2.0	python	extended
+aws-sdk-js-v3	https://github.com/aws/aws-sdk-js-v3.git	e53a25aafbdd772c90d26471dc271e383f1daf71	Apache-2.0	typescript	extended
