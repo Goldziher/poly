@@ -104,7 +104,7 @@ fn relativize_rule_dirs(table: &mut toml::Table, dir: &Path) {
         let Some(path) = entry.as_str() else { continue };
         let relative = Path::new(path)
             .strip_prefix(dir)
-            .map_or_else(|_| path.to_owned(), |rest| rest.display().to_string());
+            .map_or_else(|_| path.to_owned(), portable);
         *entry = toml::Value::String(relative);
     }
 }
@@ -123,5 +123,41 @@ fn relative_to_run(dir: &Path, configs: &ConfigSet) -> String {
     let canonical = |path: &Path| std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
     canonical(dir)
         .strip_prefix(canonical(anchor))
-        .map_or_else(|_| dir.display().to_string(), |rest| rest.display().to_string())
+        .map_or_else(|_| dir.display().to_string(), portable)
+}
+
+/// Render a **relative** path with `/` separators, whatever the host uses.
+///
+/// Both values this module derives from a `strip_prefix` — the reported `root`
+/// and the relativized `[rules] dirs` entries that feed the hash — are
+/// identities a consumer compares *across machines*. `Path::display` emits the
+/// host separator, so the same commit would describe itself as `packages/api`
+/// on Linux and `packages\api` on Windows, and its hash would differ for any
+/// config carrying a nested `rules.dirs`. That is the same checkout-independence
+/// this module already relativizes for, one step further out; `resolve.rs` and
+/// `filter/paths.rs` normalize separators for the same reason.
+fn portable(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The separator normalization both identities depend on.
+    ///
+    /// Load-bearing **only on Windows** — on a `/` host the assertion is
+    /// trivially true, because `Path::display` already produces the expected
+    /// string. It is worth keeping regardless: CI runs the Windows matrix leg,
+    /// which is where a regression here would surface, and the alternative is
+    /// no assertion at all on the helper two cross-machine identities share.
+    #[test]
+    fn a_relative_path_renders_with_forward_slashes() {
+        let nested = Path::new("packages").join("api").join(".poly").join("rules");
+        assert_eq!(
+            portable(&nested),
+            "packages/api/.poly/rules",
+            "the reported root and the hashed rules.dirs must not carry a host separator"
+        );
+    }
 }
