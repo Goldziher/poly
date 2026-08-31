@@ -13,6 +13,16 @@ or whether a lint rule can be on by default:
 _which_ real code, and why the three corpora are allowed to assert different
 things.
 
+It is a tool you run, not a job that runs itself. There is no CI schedule: the
+harness clones several large third-party trees, and the output that justifies
+that cost — the per-rule counts — is the part that cannot fail a build on its
+own. A nightly job whose realistic failures are "GitHub was slow" and "a pinned
+tree moved shape" gets muted, and the invariants that _can_ gate would be muted
+with it. `cargo test --workspace` compiles the `#[ignore]`d harness on every PR
+so it cannot rot, and the `dogfood` CI job already answers "does poly survive a
+real tree" per commit. Run this before a release, or when a rule's default
+severity is in question.
+
 ## The rule that splits them
 
 **An invariant can be asserted on any input. A count needs a pinned one.**
@@ -29,7 +39,6 @@ takes the invariants with it.
 | Acquisition | none | `git fetch --depth=1 <sha>` | same |
 | Stability | unstable, may be dirty | pinned | pinned, but the population is a judgement |
 | Written to | **never** | disposable | disposable |
-| Runs in CI | no — private trees | nightly | `workflow_dispatch` |
 | Invariants | gate | gate | gate |
 | Per-rule counts | trend only | **gate** | audit input |
 
@@ -70,7 +79,7 @@ A `ref` that is not a 40-character sha is a branch. The orchestrator says so and
 that root's counts are not reproducible.
 
 Licences are checked against an allow-list before anything is cloned. Nothing
-copyleft: not a linking question, since nothing is linked, but a CI artifact
+copyleft: not a linking question, since nothing is linked, but an artifact
 derived from a tree is a redistribution one, and the cheap answer is to not have
 the content. Relatedly, **the record types have no field that can hold source
 text** — findings are carried as `path:line` and as counts. Keep it that way.

@@ -11,7 +11,7 @@ on by default: does poly error on anything in a large tree nobody wrote for us; 
 converge, or do two backends fight over the same file; does the cache ever serve a wrong answer;
 how many findings does a rule actually produce on code we did not write. ADR 0027's amendment and
 ADR 0029's default-on audit both needed exactly that last question answered against real code, and
-answered it ad hoc each time — a repeatable harness, run the same way in CI, was the missing piece.
+answered it ad hoc each time, differently each time. A repeatable harness was the missing piece.
 
 The harness (`scripts/harden.sh`) needs real code to run against, and not all real code can answer
 the same question. A count taken against a tree that changes underneath the harness is not
@@ -30,7 +30,6 @@ what they are allowed to assert rather than by any other property:
 | Acquisition | none | `git fetch --depth=1 <sha>` | same |
 | Stability | unstable, may be dirty | pinned to a commit | pinned, population is a judgement |
 | Written to | never | disposable | disposable |
-| Runs in CI | no — private trees | nightly | `workflow_dispatch` |
 | Invariants | gate | gate | gate |
 | Per-rule counts | trend only | **gate** | audit input |
 
@@ -39,16 +38,16 @@ what they are allowed to assert rather than by any other property:
   whole-project phase would execute `cargo` against the worktree), formatting runs against a
   disposable copy, and the result cache is redirected under `POLY_HARDEN_ROOT`. Unstable by
   construction — a sibling can be mid-edit or absent — so its per-rule counts are trend data only,
-  never a gate; only the invariants gate here, and they may run outside CI since the trees are
-  private.
+  never a gate; only the invariants gate here.
 - **Corpus B — pinned third-party trees**, fetched at `git fetch --depth=1` against an exact 40-hex
   commit sha, never a branch. This is the only corpus whose **counts** may gate a rule's default
   severity or a release, because a pinned input is the only input where a count taken today and a
   count taken from the same manifest tomorrow describe the same code. Bumping a sha is a deliberate
   commit, which is the review moment a change in the numbers gets looked at. Licences are checked
-  against an allow-list before anything is cloned (nothing copyleft — a CI artifact derived from a
-  tree is a redistribution question even though nothing is linked), and findings are carried only
-  as `path:line` and counts — the record type has no field that can hold source text.
+  against an allow-list before anything is cloned — the same line `deny.toml` draws for poly's own
+  dependencies — and findings are carried only as `path:line` and counts: the record type has no
+  field that can hold source text, so a result can be shared without shipping somebody's source
+  with it.
 - **Corpus C — generated code**, today codegen output (SDKs and clients emitted by a generator).
   Pinned like B, but the *population* the manifest names is a judgement call in a way a commit sha
   is not, so its counts are audit input, not a gate. A green result over corpus C says nothing about
@@ -56,6 +55,16 @@ what they are allowed to assert rather than by any other property:
   acquisition procedure (identify by agent artifacts, corroborate from commit-trailer history,
   filter, hand-verify a sample, publish the query) — deliberately left unfilled until that procedure
   is followed, rather than filled with a plausible-looking guess.
+
+**It is a local tool, not a CI job, and that is deliberate.** Nothing here belongs on the PR path,
+and putting it on a nightly schedule would have been worse than leaving it out: it clones several
+large third-party trees per run, and the output that justifies the cost — the per-rule counts — is
+the part that cannot fail a build on its own. A scheduled job whose only failure modes are "GitHub
+was slow" and "a pinned tree moved" gets muted within a month, and the invariants that *can* gate
+would be muted along with it. `cargo test --workspace` still compiles the `#[ignore]`d harness on
+every PR, so it cannot rot into a build error between runs, and the `dogfood` job already answers
+"does poly survive a real tree" per commit. The harness is run deliberately — before a release, or
+when a rule's severity is in question — by whoever is making that decision.
 
 Each root runs as its own process, so a panic in one repository cannot take the rest of the run
 with it, and each root appends its NDJSON record to the results file **before** its own assertions

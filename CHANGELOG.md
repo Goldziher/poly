@@ -151,9 +151,11 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   disabled in the gated run, since `rustfmt`/`gofmt`/`shellcheck` are default-on when present and
   would otherwise make the result depend on the runner image.
 
-  Runs nightly in CI, never on the PR path. See `docs/harden-corpus.md`, which also records the
-  procedure for extending the generated-code corpus — publishing the query is what makes a corpus
-  auditable, and a list of repositories is not.
+  Not a CI job: it clones large third-party trees, and the output that justifies the cost is the
+  part that cannot fail a build by itself. `cargo test --workspace` still compiles it on every PR,
+  so it cannot rot between runs. See `docs/harden-corpus.md`, which also records the procedure for
+  extending the generated-code corpus — publishing the query is what makes a corpus auditable, and
+  a list of repositories is not.
 
 - **`[hooks] snapshot_include` lets a build read a file git does not track.** The staged snapshot
   holds exactly the index content, which is what makes a commit gate check the bytes a commit would

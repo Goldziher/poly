@@ -28,9 +28,11 @@ CORPUS="${POLY_HARDEN_CORPUS:-b}"
 TIER="${POLY_HARDEN_TIER:-core}"
 
 # Licences whose trees we are willing to clone and derive a CI artifact from.
-# Nothing copyleft: this is not a linking question — nothing is linked — but a
-# published artifact derived from a tree is a redistribution one, and the cheap
-# answer is to not have the content.
+# The same line `deny.toml` draws for poly's own dependencies: permissive plus
+# MPL-2.0, and no GPL or AGPL. Nothing here is linked, so this is not a linking
+# question — but an artifact published from a run is a redistribution one, and
+# the cheap answer is to not hold the content in the first place. Every row's
+# licence is asserted against this list before its tree is fetched.
 ALLOWED_LICENCES="MIT Apache-2.0 BSD-2-Clause BSD-3-Clause ISC Unlicense MPL-2.0"
 
 mkdir -p "${WORK}"

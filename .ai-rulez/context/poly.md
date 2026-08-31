@@ -162,10 +162,11 @@ A `--format json`/`toon` consumer must check the exit code, not just the payload
 `cargo clippy --workspace --exclude conformance --all-targets -- -D warnings` and
 `cargo test --workspace --exclude conformance --no-fail-fast`, both on a Linux/macOS/Windows
 matrix; `dogfood`, which runs the binary against poly's own repo (`poly lint --no-workspace .`
-then `poly fmt --check .`) on Linux and Windows; and `cargo-deny check`. A sixth job,
-`hardening`, runs poly against real third-party trees (`scripts/harden.sh`) but only on the
-nightly schedule or a manual `workflow_dispatch` — never on push/PR, since its per-rule counts
-feed a ship-this-rule-on-by-default decision rather than a per-commit verdict.
+then `poly fmt --check .`) on Linux and Windows; and `cargo-deny check`.
 `.github/workflows/publish.yaml` builds and uploads the release artifacts.
+
+The hardening harness (`task harden`, `scripts/harden.sh`) is **not** a CI job. It clones large
+third-party trees and its per-rule counts inform a decision rather than pass or fail a commit, so
+it is run deliberately — before a release, or when a rule's severity is in question.
 
 Run `poly fmt --check .` and `poly lint .` after changes to verify compliance.

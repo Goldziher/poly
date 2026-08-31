@@ -26,8 +26,12 @@ proposal's, written before the decision, and left that way deliberately.
 | `placeholder-implementation` | python | 47 | 21.6 | 14/14 residual (100%) | **drop** |
 | `todo-marker` (existing, python) | python | 82 | 38.5 | 0/20 (0%) | **keep `off`** |
 
-Drafts: `draft-rules/<language>/<id>.yml` with companion `-test.yml` fixtures.
-Each rule's `note:` carries its own measurement and verdict.
+The drafts themselves are **not** in the repository. Four were dropped and the
+fifth is not shipping, so committing them would leave five rules nobody runs
+sitting next to twenty-six that everybody does — and this repo deletes dead code
+rather than parking it. Each rule is described below precisely enough to
+re-author, and `git log` for this document points at the work that produced
+them. What is worth keeping is the measurement, not the YAML.
 
 ---
 
@@ -85,7 +89,7 @@ changes, both in `pack.rs`, neither touching the rule schema:
    silent-no-coverage hole for the user-rule path.
 
 Until (1) lands, the drafts here are three physical copies per rule, generated
-from one source in `src-rules/`.
+from a single source, since the three grammars need three files.
 
 ## Question 2 — test-context detection
 
@@ -588,7 +592,7 @@ human-authored controls. Full table with URLs, SHAs and licences in
 `scripts/harden/repos.c.tsv`.
 
 Runs used `poly lint --no-workspace --no-cache --config <measure-poly.toml>
---format json`, with `[rules] dirs` pointed at `draft-rules`, `[rules] builtin
+--format json`, with `[rules] dirs` pointed at the draft directory, `[rules] builtin
 = false`, and `[lint.astgrep] extend_select` naming the three ids (the drafts
 ship `off`, so they need opting in). Findings were filtered to
 `engine == "astgrep"` and the three rule ids. "Per 1000 files" is per 1000

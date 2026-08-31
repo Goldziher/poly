@@ -27,8 +27,8 @@ priority: high
     runs automatically on `git commit`.
   - `task harden` (`scripts/harden.sh`, `docs/harden-corpus.md`) runs poly over real
     third-party repositories instead of fixtures; its per-rule counts feed a
-    ship-this-rule-on-by-default decision. It never runs on the PR path — only nightly CI
-    (the `hardening` job in `ci.yaml`) or manually via `task harden -- <roots>`.
+    ship-this-rule-on-by-default decision. It is **not** a CI job — run it deliberately,
+    before a release or when a rule's severity is in question.
 
 ## What a green `cargo fmt` + `cargo clippy` does NOT prove
 
