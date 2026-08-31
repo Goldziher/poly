@@ -10,6 +10,12 @@ valid:
   - "fn f() {\n    // SAFETY: owner was allocated by _new() and is valid until freed.\n    let inner = match unsafe { (*owner).inner.take() } {\n        Some(b) => *b,\n        None => return,\n    };\n}"
   - "fn f() {\n    // SAFETY: registered before the first connection is opened.\n    INIT.call_once(|| unsafe {\n        register(cb);\n    });\n}"
   - "fn f() {\n    let ok = unsafe {\n        // SAFETY: the four out-pointers are local and live for the call.\n        get_bbox(handle, &mut l, &mut t)\n    };\n}"
+  # Test code: `unsafe { env::set_var(..) }` is the only legal way to write that
+  # statement under the 2024 edition, so demanding a SAFETY comment for it is the
+  # rule being wrong rather than the code. Both shapes the carve-out covers.
+  - "#[cfg(test)]\nmod tests {\n    #[test]\n    fn t() {\n        unsafe { std::env::set_var(\"K\", \"v\") };\n    }\n}"
+  - "#[test]\nfn t() {\n    unsafe { std::env::set_var(\"K\", \"v\") };\n}"
+  - "#[tokio::test]\nasync fn t() {\n    unsafe { g(); }\n}"
 invalid:
   - "fn f() {\n    unsafe { g(); }\n}"
   - "fn f() {\n    // just a note\n    unsafe { g(); }\n}"

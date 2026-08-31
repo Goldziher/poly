@@ -9,6 +9,14 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ### Fixed
 
+- **`undocumented-unsafe-block` no longer flags `unsafe` in test code.** Under the 2024 edition
+  `unsafe { std::env::set_var(..) }` inside a test module is the *only* legal way to write that
+  statement, so demanding a `SAFETY` comment for it was the rule being wrong about the code. The
+  rule's own note had recorded this as a precondition for ever enabling it; it now carries the same
+  `in-test-context` carve-out the other Rust rules use, covering both `#[cfg(test)] mod` and
+  attribute-marked test functions. It stays `off` pending a corpus audit of what remains. Part of
+  [#22](https://github.com/Goldziher/poly/issues/22).
+
 - **Switching an engine off no longer removes a language from the run.** Two shapes of that, both
   found by review before release. `[fmt.rust.rustfmt] enabled = false` dropped the engine from the
   plan — but Go, Rust, Zig, Java, Kotlin, R, Swift, Dart and Gleam have no separately registered

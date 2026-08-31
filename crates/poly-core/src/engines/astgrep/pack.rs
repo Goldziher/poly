@@ -314,4 +314,114 @@ mod tests {
         apply_noisy_path_exclusions(Path::new("crates/foo/src/lib.rs"), &mut diags);
         assert_eq!(diags.len(), 1, "ordinary source must not be excluded");
     }
+
+    /// The Rust rules that carve test code out of their matches each define the
+    /// same four helpers, and they must stay identical.
+    ///
+    /// Extraction into ast-grep *global* utils is the real fix (issue #22), and
+    /// it is blocked on a deserializer poly-core does not have: a relational-only
+    /// predicate is legal as a `utils:` entry and illegal as a top-level `rule:`,
+    /// so registering one needs `parse_global_utils`, which needs
+    /// `SerializableGlobalRule` deserialized from YAML. `serde_yaml` — what
+    /// ast-grep itself uses — is unmaintained, and swapping in a different YAML
+    /// deserializer for types this dependent on `#[serde(flatten)]` and untagged
+    /// enums is not a change to make casually inside the pack's single-parse-path
+    /// invariant.
+    ///
+    /// So the copies stay, and this makes the thing that actually hurts —
+    /// *silent* divergence between them — a test failure instead. Four copies is
+    /// four chances to drift, and drift here is invisible until someone
+    /// hand-reads several thousand findings.
+    #[test]
+    fn the_shared_rust_test_context_helpers_have_not_drifted() {
+        const SHARED_HELPERS: &[&str] = &[
+            "  test-attribute:",
+            "  cfg-test-attribute:",
+            "  attribute-or-comment:",
+            "  in-test-context:",
+        ];
+        const CARRIERS: &[(&str, &str)] = &[
+            ("unwrap-used", include_str!("builtin/rust/unwrap-used.yml")),
+            ("expect-used", include_str!("builtin/rust/expect-used.yml")),
+            (
+                "placeholder-implementation",
+                include_str!("builtin/rust/placeholder-implementation.yml"),
+            ),
+            (
+                "blocking-call-in-async-fn",
+                include_str!("builtin/rust/blocking-call-in-async-fn.yml"),
+            ),
+            (
+                "undocumented-unsafe-block",
+                include_str!("builtin/rust/undocumented-unsafe-block.yml"),
+            ),
+        ];
+
+        let (reference_id, reference_yaml) = CARRIERS[0];
+        let reference = extract_helpers(reference_yaml);
+        assert_eq!(
+            reference.len(),
+            SHARED_HELPERS.len(),
+            "{reference_id} must define every shared helper"
+        );
+        for (id, yaml) in &CARRIERS[1..] {
+            assert_eq!(
+                extract_helpers(yaml),
+                reference,
+                "`{id}` defines the shared test-context helpers differently from `{reference_id}`; \
+                 they must stay identical while the definition is duplicated"
+            );
+        }
+    }
+
+    /// Pull each shared helper's block out of a rule's `utils:` section, keyed by
+    /// name so a rule that also defines helpers of its own (as
+    /// `blocking-call-in-async-fn` does) still compares equal on the shared ones.
+    fn extract_helpers(yaml: &str) -> std::collections::BTreeMap<String, Vec<String>> {
+        const SHARED: &[&str] = &[
+            "test-attribute",
+            "cfg-test-attribute",
+            "attribute-or-comment",
+            "in-test-context",
+        ];
+        let mut helpers = std::collections::BTreeMap::new();
+        let mut current: Option<String> = None;
+        let mut body: Vec<String> = Vec::new();
+        let mut in_utils = false;
+        for line in yaml.lines() {
+            if line == "utils:" {
+                in_utils = true;
+                continue;
+            }
+            if !in_utils {
+                continue;
+            }
+            // A column-0 key ends the `utils:` block.
+            let ends_block = !line.is_empty() && !line.starts_with(' ');
+            let starts_helper = line.starts_with("  ") && !line.starts_with("   ") && line.trim_end().ends_with(':');
+            if ends_block || starts_helper {
+                if let Some(name) = current.take()
+                    && SHARED.contains(&name.as_str())
+                {
+                    helpers.insert(name, std::mem::take(&mut body));
+                } else {
+                    body.clear();
+                }
+                if ends_block {
+                    break;
+                }
+                current = Some(line.trim().trim_end_matches(':').to_string());
+                continue;
+            }
+            if current.is_some() {
+                body.push(line.to_string());
+            }
+        }
+        if let Some(name) = current
+            && SHARED.contains(&name.as_str())
+        {
+            helpers.insert(name, body);
+        }
+        helpers
+    }
 }

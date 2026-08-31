@@ -34,12 +34,13 @@ note: |
   ["undocumented-unsafe-block"]` once vendored paths are excluded via
   `[per-file-ignores]`.
 
-  The `#[cfg(test)]` gap is not a volume problem, it is a correctness one:
+  The `#[cfg(test)]` gap was not a volume problem, it was a correctness one:
   `unsafe { std::env::set_var(..) }` inside a test module is the *only* legal
-  way to write that statement under the 2024 edition, so the rule is wrong
-  about that code regardless of how often it occurs. Any future revival of
-  this rule needs an in-test-context carve-out (see `unwrap-used`'s `rule:`
-  for the shape of one) as a precondition, not an optional follow-up.
+  way to write that statement under the 2024 edition, so the rule was wrong
+  about that code regardless of how often it occurred. That carve-out is now in
+  place (`in-test-context`, the same definition the other Rust rules use), which
+  was the stated precondition for reviving this rule. It remains `off` pending a
+  fresh corpus audit of what is left after the exclusion.
 
   Idea origin: the Rust standard library's `// SAFETY:` convention, made
   mandatory for `std` by the library team's safety-comment policy; the matching
@@ -54,10 +55,36 @@ utils:
     follows:
       regex: "SAFETY"
       stopBy: { not: { matches: comment } }
+  test-attribute:
+    kind: attribute_item
+    any:
+      - regex: '^#\s*\[\s*cfg\s*\(\s*(all\s*\(\s*)?test\b'
+      - regex: '^#\s*\[\s*([\w]+\s*::\s*)*((\w+_)?(test|bench)\w*|rstest|proptest|quickcheck)\b'
+  cfg-test-attribute:
+    kind: attribute_item
+    regex: '^#\s*\[\s*cfg\s*\(\s*(all\s*\(\s*)?test\b'
+  attribute-or-comment:
+    any:
+      - kind: attribute_item
+      - kind: line_comment
+      - kind: block_comment
+  in-test-context:
+    inside:
+      stopBy: end
+      any:
+        - kind: mod_item
+          follows:
+            matches: cfg-test-attribute
+            stopBy: { not: { matches: attribute-or-comment } }
+        - kind: function_item
+          follows:
+            matches: test-attribute
+            stopBy: { not: { matches: attribute-or-comment } }
 rule:
   kind: unsafe_block
   not:
     any:
+      - matches: in-test-context
       - matches: preceded-by-safety-comment
       - has:
           kind: block
