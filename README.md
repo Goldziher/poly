@@ -397,6 +397,21 @@ poly hooks install   # wires lint/format/cargo checks into git; they run on ever
 cargo test --workspace --no-fail-fast
 ```
 
+For anything touching the runner, an engine, or the rule pack, also run the hardening harness. poly's
+own fixtures are small and chosen to exercise a known path; the harness runs poly over real
+third-party trees and checks the things fixtures cannot — that no file errored, that formatting
+converges in two passes, that the cache never serves a different answer than a cold run, and that no
+language poly claims to lint reports `no lint rules for` it:
+
+```sh
+task harden          # pinned third-party repositories
+task harden:local    # the sibling working trees next door, read-only
+```
+
+It also reports per-rule finding counts per repository, which is how a pack rule earns a default
+severity. See [`docs/harden-corpus.md`](docs/harden-corpus.md) for what each corpus is allowed to
+assert, and why a count needs a pinned input while an invariant does not.
+
 ---
 
 ## License

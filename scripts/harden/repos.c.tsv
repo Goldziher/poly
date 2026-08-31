@@ -1,0 +1,34 @@
+# Corpus C — machine-generated code.
+#
+# Corpus B is idiomatic, reviewed, hand-written OSS. It systematically
+# under-reports exactly the patterns the AI-quality rules exist for —
+# `placeholder-implementation`, `todo-marker`, `test-without-assertion`,
+# `swallowed-error` — because a maintained project does not leave `todo!()` in
+# `main`. A rule audited only against B is audited against the population least
+# likely to trip it.
+#
+# What is here is **codegen** output: SDKs and clients emitted by a generator.
+# That is directly relevant to the path-exclusion question (issue #21) — it is
+# the `frb_generated.rs` failure mode at scale — and it says close to nothing
+# about LLM-authored *application* code, which is what issues #23 and #24 are
+# actually about. A green result here must not be read as covering that.
+#
+# The LLM-authored half is deliberately empty rather than filled with plausible
+# guesses. Adding to it means following the procedure in
+# `docs/harden-corpus.md`: identify candidates by the artifacts agents leave
+# (CLAUDE.md, AGENTS.md, .cursor/rules/, copilot-instructions.md), corroborate
+# from commit trailers on at least 30% of the last 200 commits, filter to a
+# permissive licence and a real project, hand-verify sampled files, and record
+# the query and date here alongside the shas. Publishing the query is what makes
+# the corpus auditable; publishing a list of repositories is not.
+#
+# The `ref` column holds a branch name until someone resolves it to a commit.
+# `harden.sh` records `pinned: false` for a non-sha ref and refuses to gate
+# per-rule counts on that root — a count measured against a moving branch is not
+# reproducible, and a gate built on one fires on somebody else's merge. Resolve
+# with `git ls-remote <url> <branch>` and commit the sha.
+#
+# name	url	ref	licence	languages	tier
+openapi-generator	https://github.com/OpenAPITools/openapi-generator.git	master	Apache-2.0	java,kotlin,csharp,php,ruby,go,python,typescript	core
+google-cloud-python	https://github.com/googleapis/google-cloud-python.git	main	Apache-2.0	python	extended
+aws-sdk-js-v3	https://github.com/aws/aws-sdk-js-v3.git	main	Apache-2.0	typescript	extended

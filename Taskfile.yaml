@@ -61,6 +61,21 @@ tasks:
     cmds:
       - cargo test -p conformance
 
+  harden:
+    desc: "Run poly against pinned third-party trees (usage: task harden -- django ripgrep)"
+    cmds:
+      - ./scripts/harden.sh {{.CLI_ARGS}}
+
+  harden:local:
+    desc: Run the harness against the sibling working trees next door — read-only
+    cmds:
+      - POLY_HARDEN_CORPUS=a ./scripts/harden.sh {{.CLI_ARGS}}
+
+  harden:generated:
+    desc: Run the harness against generated-code repositories (rule-audit input)
+    cmds:
+      - POLY_HARDEN_CORPUS=c ./scripts/harden.sh {{.CLI_ARGS}}
+
   check:
     desc: Full local gate (format check, lint, test) — run before pushing
     cmds:

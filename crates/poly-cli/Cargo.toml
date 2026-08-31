@@ -54,3 +54,9 @@ which.workspace = true
 [dev-dependencies]
 insta.workspace = true
 libc.workspace = true
+
+[[test]]
+# One process per root, driven by `scripts/harden.sh`. Declared explicitly so the
+# harness can be several files without each becoming its own test binary.
+name = "harden"
+path = "tests/harden/main.rs"

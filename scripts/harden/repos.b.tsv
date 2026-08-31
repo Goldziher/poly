@@ -1,0 +1,30 @@
+# Corpus B — third-party trees, pinned to a commit.
+#
+# Pinned because this is the only corpus whose per-rule counts may gate: a count
+# is a property of the tree, so it is reproducible only against a fixed one.
+# Bumping a sha is a deliberate re-baselining commit, which is the review moment
+# where a change in the numbers gets looked at.
+#
+# Fetched at depth 1 — poly reads no git history, so depth is pure cost.
+#
+# Licences are all permissive (MIT / Apache-2.0 / BSD / ISC / Unlicense); the
+# orchestrator refuses anything else, because a CI artifact derived from a copyleft
+# tree is a redistribution question we have no reason to take on.
+#
+# The `ref` column holds a branch name until someone resolves it to a commit.
+# `harden.sh` records `pinned: false` for a non-sha ref and refuses to gate
+# per-rule counts on that root — a count measured against a moving branch is not
+# reproducible, and a gate built on one fires on somebody else's merge. Resolve
+# with `git ls-remote <url> <branch>` and commit the sha.
+#
+# name	url	ref	licence	languages	tier
+ripgrep	https://github.com/BurntSushi/ripgrep.git	master	MIT	rust,toml,markdown	core
+gin	https://github.com/gin-gonic/gin.git	master	MIT	go,markdown,yaml	core
+requests	https://github.com/psf/requests.git	main	Apache-2.0	python,markdown	core
+bootstrap	https://github.com/twbs/bootstrap.git	main	MIT	scss,css,javascript,markdown	core
+bats-core	https://github.com/bats-core/bats-core.git	master	MIT	shell,markdown	core
+django	https://github.com/django/django.git	main	BSD-3-Clause	python,html,javascript,css	extended
+react	https://github.com/facebook/react.git	main	MIT	javascript,jsx,markdown	extended
+vite	https://github.com/vitejs/vite.git	main	MIT	typescript,javascript,json	extended
+helm	https://github.com/helm/helm.git	main	Apache-2.0	go,yaml,dockerfile	extended
+jekyll	https://github.com/jekyll/jekyll.git	master	MIT	ruby,markdown,scss	extended

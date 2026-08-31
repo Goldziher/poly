@@ -90,6 +90,33 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ### Added
 
+- **A hardening harness that runs poly over real third-party code.** poly's own fixtures are small,
+  hand-written and chosen to exercise a known path, so they cannot answer the questions that decide
+  whether a release is safe: does poly error on anything in a large tree nobody wrote for us, does
+  formatting converge, does the cache ever serve a different answer than a cold run, and how many
+  findings does a rule actually produce on code we did not write.
+
+  `task harden` runs it, one process per repository so a panic in one cannot take the rest of the
+  run with it. Each root appends an NDJSON record **before** its assertions run, so a failing root
+  still leaves its measurement behind, and every threshold it was judged against is written into its
+  own record so a result read months later is self-describing. It gates on invariants — any errored
+  file, a second format pass that still changes something, a warm or `--no-cache` run that disagrees
+  with the cold one, and any `no lint rules for <language>` skip for a language poly claims to lint
+  — and reports per-rule finding counts per repository, which is how a pack rule earns a default
+  severity.
+
+  Three corpora, allowed to assert different things, because **an invariant holds regardless of what
+  a tree contains and a count does not**. The sibling working trees next door are never written to
+  (formatting runs against a disposable copy, and the cache is redirected out of the tree) and their
+  counts are trend data only. Pinned third-party clones are the only corpus whose counts may gate.
+  Generated-code repositories are audit input for the rule severities. Native toolchains are
+  disabled in the gated run, since `rustfmt`/`gofmt`/`shellcheck` are default-on when present and
+  would otherwise make the result depend on the runner image.
+
+  Runs nightly in CI, never on the PR path. See `docs/harden-corpus.md`, which also records the
+  procedure for extending the generated-code corpus — publishing the query is what makes a corpus
+  auditable, and a list of repositories is not.
+
 - **`[hooks] snapshot_include` lets a build read a file git does not track.** The staged snapshot
   holds exactly the index content, which is what makes a commit gate check the bytes a commit would
   capture — but a `workspace` hook whose build reads a gitignored input then fails under the gate

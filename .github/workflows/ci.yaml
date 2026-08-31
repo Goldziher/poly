@@ -5,7 +5,23 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-  workflow_dispatch: {}
+  schedule:
+    # Nightly, for the hardening harness only.
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+    inputs:
+      corpus:
+        description: "Hardening corpus: b (pinned OSS) or c (generated code)"
+        default: "b"
+        type: string
+      tier:
+        description: "core or extended"
+        default: "core"
+        type: string
+      roots:
+        description: "Space-separated subset; empty runs the whole tier"
+        default: ""
+        type: string
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -103,3 +119,45 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check
+
+  hardening:
+    # Real third-party trees, not poly's own fixtures. Not on the PR path: it
+    # clones ~5 repositories and its per-rule counts feed a
+    # ship-this-rule-on-by-default decision rather than a per-commit verdict.
+    # `dogfood` above already covers "poly survives a real tree" on every PR.
+    #
+    # Corpus A is local-only — those trees are not on a runner and some are
+    # private — so the harness refuses it here.
+    name: hardening harness (nightly)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /usr/local/.ghcup /usr/share/swift "${AGENT_TOOLSDIRECTORY:-}" || true
+          df -h /
+
+      # Native toolchains stay off. rustfmt/gofmt/shellcheck are default-on when
+      # present, so leaving them enabled would make the result depend on the
+      # runner image rather than on poly.
+      - name: run harden.sh
+        env:
+          POLY_HARDEN_CORPUS: ${{ inputs.corpus || 'b' }}
+          POLY_HARDEN_TIER: ${{ inputs.tier || 'core' }}
+        run: ./scripts/harden.sh ${{ inputs.roots }}
+
+      # `if: always()` is what makes a red run diagnosable — without it the
+      # failing run is the one with no data.
+      - name: upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: harden-results
+          path: /tmp/poly-harden/results.ndjson
+          retention-days: 30
