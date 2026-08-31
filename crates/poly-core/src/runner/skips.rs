@@ -29,7 +29,7 @@ use std::path::{Path, PathBuf};
 use rustc_hash::FxHashMap;
 use serde::Serialize;
 
-use super::plan::{NarrowedSet, PlanMap};
+use super::plan::RunPlan;
 use crate::discover::{DiscoveredFile, discover_with};
 use crate::language::Language;
 use crate::resolve::ConfigSet;
@@ -45,11 +45,56 @@ pub const NO_ENGINE_SKIP: &str = "no matching engine for this file type";
 ///
 /// Deliberately neither [`NO_ENGINE_SKIP`] nor [`NO_LINT_RULES_SKIP_PREFIX`]:
 /// both of those describe a limit of poly, and this describes a choice the
-/// caller made in the invocation they are reading the output of. It is also why
-/// this reason is not charged to the `--deny-skips` budget — that budget exists
-/// to catch files a run failed to verify without saying so, and a narrowing the
-/// caller asked for says so by definition.
+/// caller made in the invocation they are reading the output of.
 pub const FILTERED_SKIP: &str = "no engine selected by --only/--skip for this file";
+
+/// Opening words of the reason recorded for a file whose every engine the
+/// *config* switched off; completed with the table that did it.
+///
+/// The companion of [`FILTERED_SKIP`], and named apart from it because the fix
+/// is in a different place: one is an argument on this invocation, the other is
+/// a key in a `poly.toml` the reader may have forgotten writing.
+pub const DISABLED_SKIP_PREFIX: &str = "every engine disabled by config:";
+
+/// Why a run stopped covering a `(config, language)` pair that it otherwise
+/// would have — always because the caller said so, never because poly ran out
+/// of engines.
+///
+/// Kept apart from the plain skip reasons because of the rule the whole
+/// reporting surface follows: **a limit of poly is charged to the coverage
+/// budget and names the limit; an instruction from the caller is never charged,
+/// and names itself.** Both variants here are instructions, so neither is
+/// charged — but each has to say which instruction, or the reader is left
+/// looking for a poly bug that is not there.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum Withdrawal {
+    /// `--only` / `--skip` removed every engine that covered the language.
+    Selection,
+    /// `enabled = false` did, in the named table (e.g. `[lint.python.ruff]`).
+    Disabled(String),
+}
+
+impl Withdrawal {
+    /// The reason string a reader sees, naming the instruction responsible.
+    pub(super) fn reason(&self) -> String {
+        match self {
+            Self::Selection => FILTERED_SKIP.to_owned(),
+            Self::Disabled(table) => format!("{DISABLED_SKIP_PREFIX} {table}"),
+        }
+    }
+}
+
+/// Whether a skip reason was produced by an instruction from the caller —
+/// `--only` / `--skip`, or `enabled = false` — rather than by a limit of poly.
+///
+/// Such a skip must not be charged to the `--deny-skips` budget. That budget
+/// exists to catch files a run failed to verify *without saying so*, and an
+/// instruction the caller wrote says so by definition; charging it would make
+/// the flag unusable under the very gate that most wants it, and would fail a
+/// user's own gate for a line in their own `poly.toml`.
+pub fn is_withdrawal_reason(reason: &str) -> bool {
+    reason == FILTERED_SKIP || reason.starts_with(DISABLED_SKIP_PREFIX)
+}
 
 /// Opening words of the reason recorded for a file whose language nothing in the
 /// run has lint rules for; completed with the language name.
@@ -124,11 +169,11 @@ impl SkippedFile {
     /// The reason text for a file whose language nothing in the run lints,
     /// naming the language so the reader knows what is missing rather than only
     /// that something is.
-    /// A file whose every engine the caller deselected.
-    pub(super) fn filtered(path: &Path) -> Self {
+    /// A file whose every engine an instruction from the caller withdrew.
+    pub(super) fn withdrawn(path: &Path, withdrawal: &Withdrawal) -> Self {
         Self {
             path: path.to_path_buf(),
-            reason: FILTERED_SKIP.to_owned(),
+            reason: withdrawal.reason(),
         }
     }
 
@@ -160,8 +205,7 @@ const EXPLICIT_PATHS_INDEX_THRESHOLD: usize = 8;
 pub(super) fn unmatched_explicit_paths(
     paths: &[PathBuf],
     files: &[DiscoveredFile],
-    plans: &PlanMap,
-    narrowed: &NarrowedSet,
+    plan: &RunPlan,
     configs: &ConfigSet,
     exclude: &[String],
     force_exclude: bool,
@@ -187,19 +231,16 @@ pub(super) fn unmatched_explicit_paths(
         };
         match discovered {
             Some(file) => {
-                let key = (file.config_id, file.language.clone());
-                let routed = plans.get(&key).is_some_and(|plans| !plans.is_empty());
-                if !routed {
-                    unmatched.push(if narrowed.contains(&key) {
-                        SkippedFile::filtered(path)
-                    } else {
-                        SkippedFile::no_engine(path)
+                if !plan.routes(file.config_id, &file.language) {
+                    unmatched.push(match plan.withdrawal(file.config_id, &file.language) {
+                        Some(withdrawal) => SkippedFile::withdrawn(path, withdrawal),
+                        None => SkippedFile::no_engine(path),
                     });
                 }
             }
             None if excluded_rather_than_unmatched(path, configs, exclude, force_exclude) => {}
-            // Never discovered at all, so no plan and no language: the selection
-            // cannot be the reason, whatever it says.
+            // Never discovered at all, so no plan and no language: a withdrawal
+            // cannot be the reason, whatever the invocation said.
             None => unmatched.push(SkippedFile::no_engine(path)),
         }
     }

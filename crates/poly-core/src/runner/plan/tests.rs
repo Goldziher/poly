@@ -82,7 +82,7 @@ fn tier_one_formatter_prevents_catalog_formatter_chaining() {
             has_tier_one_formatter(&engines, Kind::Format),
             "{language:?} must remain owned by its tier-one formatter"
         );
-        let plan = plan_engines(&language, &config, Kind::Format, unrestricted(), &mut false);
+        let plan = plan_engines(&language, &config, Kind::Format, unrestricted(), &mut None);
         assert!(plan.iter().any(|entry| entry.engine.name() == "oxc"));
         assert!(!plan.iter().any(|entry| entry.engine.name() == "clang-format"));
     }
@@ -118,7 +118,7 @@ fn covering_engines(plan: &[EnginePlan]) -> Vec<&'static str> {
 fn a_language_the_cross_cutting_tier_only_line_counts_has_no_lint_coverage() {
     let config = Config::default();
     for language in [Language::Zig, Language::Dart] {
-        let plan = plan_engines(&language, &config, Kind::Lint, unrestricted(), &mut false);
+        let plan = plan_engines(&language, &config, Kind::Lint, unrestricted(), &mut None);
         assert!(
             !plan.is_empty(),
             "{language:?} is still routed to the cross-cutting backends"
@@ -144,7 +144,7 @@ fn a_language_the_cross_cutting_tier_only_line_counts_has_no_lint_coverage() {
 fn a_language_the_quality_tier_structurally_models_has_lint_coverage() {
     let config = Config::default();
     for language in [Language::C, Language::Cpp] {
-        let plan = plan_engines(&language, &config, Kind::Lint, unrestricted(), &mut false);
+        let plan = plan_engines(&language, &config, Kind::Lint, unrestricted(), &mut None);
         assert_eq!(
             covering_engines(&plan),
             vec!["quality"],
@@ -163,7 +163,7 @@ fn a_language_the_quality_tier_structurally_models_has_lint_coverage() {
 fn a_language_both_the_pack_and_the_quality_tier_cover_lists_both() {
     let config = Config::default();
     for language in [Language::Rust, Language::Kotlin] {
-        let plan = plan_engines(&language, &config, Kind::Lint, unrestricted(), &mut false);
+        let plan = plan_engines(&language, &config, Kind::Lint, unrestricted(), &mut None);
         assert_eq!(
             covering_engines(&plan),
             vec!["astgrep", "quality"],
@@ -179,13 +179,7 @@ fn a_language_with_a_native_backend_has_lint_coverage() {
     let config = Config::default();
     for language in [Language::Python, Language::Toml, Language::Yaml, Language::Markdown] {
         assert!(
-            provides_language_lint(&plan_engines(
-                &language,
-                &config,
-                Kind::Lint,
-                unrestricted(),
-                &mut false
-            )),
+            provides_language_lint(&plan_engines(&language, &config, Kind::Lint, unrestricted(), &mut None)),
             "{language:?} is linted by its own backend"
         );
     }
@@ -201,7 +195,7 @@ fn a_format_plan_never_claims_lint_coverage() {
         &config,
         Kind::Format,
         unrestricted(),
-        &mut false
+        &mut None
     )));
 }
 
@@ -254,7 +248,7 @@ fn planned_engine_names_are_unique_per_language_and_kind() {
     for language in every_plannable_language() {
         for kind in [Kind::Lint, Kind::Format] {
             let mut seen: Vec<&'static str> = Vec::new();
-            for plan in plan_engines(&language, &config, kind, unrestricted(), &mut false) {
+            for plan in plan_engines(&language, &config, kind, unrestricted(), &mut None) {
                 let name = plan.engine.name();
                 if seen.contains(&name) {
                     collisions.push(format!("{kind:?} plan for {language:?}: {name:?}"));
@@ -278,7 +272,7 @@ fn generic_language_allows_catalog_formatter() {
         tools: toml::from_str("[clang-format]\nenabled = true\n").expect("valid tool config"),
         ..Config::default()
     };
-    let plan = plan_engines(&Language::C, &config, Kind::Format, unrestricted(), &mut false);
+    let plan = plan_engines(&Language::C, &config, Kind::Format, unrestricted(), &mut None);
     assert!(plan.iter().any(|entry| entry.engine.name() == "clang-format"));
 }
 
@@ -310,7 +304,7 @@ fn planned_versions(plan: &[EnginePlan], name: &str) -> Vec<String> {
 #[test]
 fn an_active_builtin_displaces_the_catalog_tool_of_the_same_name() {
     let config = config_from("[tools.ruff]\nenabled = true\nargs = [\"check\", \"--quiet\", \"$PATH\"]\n");
-    let plan = plan_engines(&Language::Python, &config, Kind::Lint, unrestricted(), &mut false);
+    let plan = plan_engines(&Language::Python, &config, Kind::Lint, unrestricted(), &mut None);
     let versions = planned_versions(&plan, "ruff");
     assert_eq!(
         versions.len(),
@@ -331,7 +325,7 @@ fn an_active_builtin_displaces_the_catalog_tool_of_the_same_name() {
 #[test]
 fn an_inactive_builtin_yields_to_the_catalog_tool_of_the_same_name() {
     let config = config_from("[tools.shellcheck]\nenabled = true\n\n[lint.shell.shellcheck]\nenabled = false\n");
-    let plan = plan_engines(&Language::Shell, &config, Kind::Lint, unrestricted(), &mut false);
+    let plan = plan_engines(&Language::Shell, &config, Kind::Lint, unrestricted(), &mut None);
     let versions = planned_versions(&plan, "shellcheck");
     assert_eq!(
         versions.len(),
@@ -362,7 +356,7 @@ fn a_surviving_catalog_tool_still_carries_lint_coverage() {
             &config,
             Kind::Lint,
             unrestricted(),
-            &mut false
+            &mut None
         )),
         "the catalog shellcheck engine must still establish Shell lint coverage",
     );
@@ -424,6 +418,37 @@ fn planned_names(plan: &[EnginePlan]) -> Vec<&'static str> {
     plan.iter().map(|entry| entry.engine.name()).collect()
 }
 
+/// `has_tier_one_formatter` decides whether the catalog tier is consulted at
+/// all, so asking it before the `enabled` filter let a **switched-off** tier-one
+/// formatter go on suppressing the catalog list. Disabling `gofmt` to reach for
+/// a catalog formatter then produced neither, and the language lost formatting
+/// with nothing in the report to say why.
+///
+/// Pinned at this level rather than through a full plan because the catalog tier
+/// is capability-probed: whether a catalog engine actually materializes depends
+/// on a binary being on PATH, and this invariant does not.
+#[test]
+fn a_disabled_tier_one_formatter_stops_suppressing_the_catalog_tier() {
+    let enabled = Config::default();
+    let disabled = Config {
+        fmt: toml::from_str("[javascript.oxc]\nenabled = false\n").expect("valid fmt config"),
+        ..Config::default()
+    };
+    let capable = || retaining_capable(engines_for(&Language::JavaScript), Kind::Format);
+
+    let on = retaining_enabled(capable(), &Language::JavaScript, &enabled, Kind::Format, &mut None);
+    assert!(
+        has_tier_one_formatter(&on, Kind::Format),
+        "oxc owns JavaScript formatting while it is on"
+    );
+
+    let off = retaining_enabled(capable(), &Language::JavaScript, &disabled, Kind::Format, &mut None);
+    assert!(
+        !has_tier_one_formatter(&off, Kind::Format),
+        "a disabled formatter is not a tier-one formatter, and must not keep the catalog tier out"
+    );
+}
+
 /// The universal `enabled` key disables *any* engine, including a tier-one
 /// backend that never declared the key for itself. Before this existed,
 /// `[lint.python.ruff] enabled = false` was reported as an unknown key and
@@ -431,7 +456,7 @@ fn planned_names(plan: &[EnginePlan]) -> Vec<&'static str> {
 #[test]
 fn a_universally_disabled_engine_is_dropped_from_the_plan() {
     let config = lint_config("[python.ruff]\nenabled = false\n");
-    let plan = plan_engines(&Language::Python, &config, Kind::Lint, unrestricted(), &mut false);
+    let plan = plan_engines(&Language::Python, &config, Kind::Lint, unrestricted(), &mut None);
     assert!(
         !planned_names(&plan).contains(&"ruff"),
         "ruff must not be planned once it is disabled, got {:?}",
@@ -450,7 +475,7 @@ fn an_explicitly_enabled_engine_stays_planned() {
             &config,
             Kind::Lint,
             unrestricted(),
-            &mut false
+            &mut None
         ))
         .contains(&"ruff")
     );
@@ -467,7 +492,7 @@ fn an_absent_enabled_key_leaves_the_plan_untouched() {
             &config,
             Kind::Lint,
             unrestricted(),
-            &mut false
+            &mut None
         ))
         .contains(&"ruff")
     );
@@ -479,13 +504,7 @@ fn an_absent_enabled_key_leaves_the_plan_untouched() {
 fn a_cross_cutting_engine_is_disabled_from_its_language_agnostic_table() {
     let config = lint_config("[typos]\nenabled = false\n");
     for language in [Language::Python, Language::Rust, Language::Toml] {
-        let names = planned_names(&plan_engines(
-            &language,
-            &config,
-            Kind::Lint,
-            unrestricted(),
-            &mut false,
-        ));
+        let names = planned_names(&plan_engines(&language, &config, Kind::Lint, unrestricted(), &mut None));
         assert!(!names.contains(&"typos"), "{language:?} still plans typos: {names:?}");
     }
 }
@@ -502,7 +521,7 @@ fn a_cross_cutting_engine_is_disabled_per_language() {
         &config,
         Kind::Lint,
         unrestricted(),
-        &mut false,
+        &mut None,
     ));
     assert!(!rust.contains(&"astgrep"), "rust still plans astgrep: {rust:?}");
     let python = planned_names(&plan_engines(
@@ -510,7 +529,7 @@ fn a_cross_cutting_engine_is_disabled_per_language() {
         &config,
         Kind::Lint,
         unrestricted(),
-        &mut false,
+        &mut None,
     ));
     assert!(
         python.contains(&"astgrep"),
@@ -530,7 +549,7 @@ fn an_opt_in_engine_is_still_planned_when_the_key_is_absent() {
             &config,
             Kind::Lint,
             unrestricted(),
-            &mut false
+            &mut None
         ))
         .contains(&"uncomment")
     );
@@ -542,7 +561,7 @@ fn an_opt_in_engine_is_still_planned_when_the_key_is_absent() {
 #[test]
 fn disabling_the_language_backend_withdraws_its_lint_coverage() {
     let config = lint_config("[python.ruff]\nenabled = false\n");
-    let plan = plan_engines(&Language::Python, &config, Kind::Lint, unrestricted(), &mut false);
+    let plan = plan_engines(&Language::Python, &config, Kind::Lint, unrestricted(), &mut None);
     assert!(
         !covering_engines(&plan).contains(&"ruff"),
         "a disabled engine must not claim coverage"

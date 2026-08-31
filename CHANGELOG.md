@@ -7,6 +7,37 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Switching an engine off no longer removes a language from the run.** Two shapes of that, both
+  found by review before release. `[fmt.rust.rustfmt] enabled = false` dropped the engine from the
+  plan — but Go, Rust, Zig, Java, Kotlin, R, Swift, Dart and Gleam have no separately registered
+  tree-sitter entry, and their one engine is the thing that *hands the file to* the tier-2
+  reindenter when the native tool is off. Removing it left those languages entirely unformatted.
+  The `Engine` trait grew a `self_manages_enabled` predicate so a backend that degrades on its own
+  terms stays in the plan; `enabled = false` means "do not shell out to the native tool", never
+  "stop formatting this language".
+
+  The second shape was quieter: an emptied format plan was treated as "no backend covers this
+  language", which had been unreachable and is not any more, so `poly fmt --only ruff .` printed
+  `All formatted` over files nothing had touched. Walked files now get the same accounting named
+  files already had.
+
+- **A disabled tier-one formatter no longer suppresses the catalog tier.** The check that decides
+  whether catalog tools are consulted ran *before* the `enabled` filter, so switching off `gofmt`
+  to reach for a catalog formatter produced neither.
+
+### Changed
+
+- **A coverage gate no longer fails on your own configuration.** poly now draws one line across
+  every mechanism that withdraws coverage: **a limit of poly is charged to `--deny-skips` and names
+  the limit; an instruction you wrote is never charged, and names itself.** So a file left
+  unchecked by `--only`/`--skip` or by `enabled = false` is reported with the flag or the exact
+  config table that did it — `every engine disabled by config: [lint.toml.taplo]` — instead of
+  `no lint rules for TOML`, which read as a poly limitation and sent readers looking for a backend
+  that was sitting right there, switched off in their own file. Files poly genuinely cannot check
+  are still counted and still fail the gate.
+
 ### Added
 
 - **Every engine table now accepts `enabled`, and `poly lint --only` / `--skip` restrict a run to

@@ -24,6 +24,17 @@ pub enum Kind {
     Format,
 }
 
+impl Kind {
+    /// The `poly.toml` section this phase reads, for quoting a table path back
+    /// to a reader (`[lint.python.ruff]`).
+    pub fn section(self) -> &'static str {
+        match self {
+            Self::Lint => "lint",
+            Self::Format => "fmt",
+        }
+    }
+}
+
 /// The fully normalized configuration for the lint/format surfaces.
 ///
 /// This is a thin projection of [`poly_config::PolyConfig`] onto the tables

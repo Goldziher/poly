@@ -271,6 +271,24 @@ pub(crate) mod tests {
     /// `polyconfig`'s `version()` tracks poly's own config-key schema instead.
     const POLY_OWNED_ENGINES: &[&str] = &["polyconfig"];
 
+    /// `Config::engine_config` resolves a cross-cutting engine's global
+    /// `enabled` by reading `[<kind>.<engine>]` out of the same table that holds
+    /// the per-language subtables keyed by `Language::id()`. That is only
+    /// unambiguous while no language shares a name with a cross-cutting engine —
+    /// an assumption nothing enforced until this test, and one a new language
+    /// (or a renamed engine) could quietly break.
+    #[test]
+    fn no_language_id_collides_with_a_cross_cutting_engine_name() {
+        for language in all_languages() {
+            assert!(
+                !super::CROSS_CUTTING_ENGINES.contains(&language.id()),
+                "language id {:?} collides with a cross-cutting engine name; \
+                 `Config::engine_config` would read one table as the other",
+                language.id(),
+            );
+        }
+    }
+
     /// [`CROSS_CUTTING_ENGINES`] is a hand-written list, so derive the same set
     /// from the property that actually defines it — an engine claiming no
     /// languages — and compare. A backend added to the append block without a

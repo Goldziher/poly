@@ -239,6 +239,15 @@ impl Engine for NativeToolEngine {
         }
     }
 
+    /// Reads `enabled` itself and falls back to the tier-2 reindenter when it
+    /// is `false` (see [`Engine::format`](crate::engine::Engine::format) below),
+    /// so the runner must leave it in the plan. Go, Rust, Zig, Java, Kotlin, R,
+    /// Swift, Dart and Gleam have no separately registered tree-sitter entry —
+    /// dropping this engine would leave them with no formatter at all.
+    fn self_manages_enabled(&self) -> bool {
+        true
+    }
+
     /// Capability declaration:
     ///
     /// - Go/Rust/Zig/… format engines: `format` only. These wrap format-only

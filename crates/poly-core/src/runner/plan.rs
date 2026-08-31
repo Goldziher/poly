@@ -20,20 +20,58 @@ use crate::language::Language;
 use crate::registry::engines_for;
 use crate::resolve::ConfigSet;
 use crate::runner::selection::{self, EngineSelection};
+use crate::runner::skips::Withdrawal;
 
 /// A per-file engine plan map, keyed by `(config_id, language)` so a monorepo's
 /// nested configs each get their own plans (ADR 0018). In a single-config repo
 /// every file shares `config_id == 0`, collapsing to one plan per language.
 pub(super) type PlanMap = FxHashMap<(usize, Language), Vec<EnginePlan>>;
 
-/// The `(config, language)` pairs whose engines were all removed by `--only` /
-/// `--skip`, when the unfiltered plan was not empty.
+/// The `(config, language)` pairs a caller instruction withdrew coverage from,
+/// and which instruction did it.
 ///
 /// Kept beside [`PlanMap`] rather than folded into it because it answers a
 /// different question: not "what runs" but "why does nothing run". An empty
 /// plan already meant "poly has no engine for this file type", and reporting
-/// that about a file the caller deselected on purpose is false.
-pub(super) type NarrowedSet = FxHashSet<(usize, Language)>;
+/// that about a file the caller switched off on purpose is false.
+pub(super) type WithdrawnMap = FxHashMap<(usize, Language), Withdrawal>;
+
+/// A run's engine plans, and why any `(config, language)` pair has none.
+///
+/// The two maps are keyed identically and are always read together — "what runs
+/// on this file" and "why does nothing" are the same lookup asked twice — so
+/// they travel as one value rather than as a pair of parameters threaded
+/// through every per-file signature.
+pub(super) struct RunPlan {
+    plans: PlanMap,
+    withdrawn: WithdrawnMap,
+}
+
+impl RunPlan {
+    /// The engines planned for a file, or an empty slice when nothing is.
+    pub(super) fn engines(&self, config_id: usize, language: &Language) -> &[EnginePlan] {
+        self.plans
+            .get(&(config_id, language.clone()))
+            .map_or(&[], Vec::as_slice)
+    }
+
+    /// The instruction that withdrew this pair's engines, if one did.
+    pub(super) fn withdrawal(&self, config_id: usize, language: &Language) -> Option<&Withdrawal> {
+        self.withdrawn.get(&(config_id, language.clone()))
+    }
+
+    /// Whether anything is planned for this pair — the question
+    /// `unmatched_explicit_paths` asks of a path named on the command line.
+    pub(super) fn routes(&self, config_id: usize, language: &Language) -> bool {
+        !self.engines(config_id, language).is_empty()
+    }
+
+    /// The `(config, language)` pairs with at least one planned engine, for the
+    /// tier-2 grammar prefetch.
+    pub(super) fn iter(&self) -> impl Iterator<Item = (&(usize, Language), &Vec<EnginePlan>)> {
+        self.plans.iter()
+    }
+}
 
 /// Name of the generic tree-sitter engine — the tier-2 formatting fallback for
 /// languages with no dedicated backend. Matched by name so it can be dropped
@@ -173,14 +211,52 @@ fn retaining_enabled(
     language: &Language,
     config: &Config,
     kind: Kind,
+    disabled: &mut Option<Disabled>,
 ) -> Vec<Box<dyn Engine>> {
     engines
         .into_iter()
         .filter(|engine| {
+            // A backend that reads the key itself degrades on its own terms —
+            // `native_tool` hands its language to the tier-2 reindenter — and
+            // dropping it here would skip that fallback entirely, leaving the
+            // language with no engine rather than a lower-fidelity one.
+            if engine.self_manages_enabled() {
+                return true;
+            }
             let cfg = config.engine_config(language, engine.name(), kind);
-            cfg.options.get(ENABLED_OPTION_KEY).and_then(toml::Value::as_bool) != Some(false)
+            if cfg.options.get(ENABLED_OPTION_KEY).and_then(toml::Value::as_bool) != Some(false) {
+                return true;
+            }
+            // The same question `selection::apply` asks, for the same reason:
+            // "did this withdrawal take away the engines that knew the
+            // language", not merely "did it take away an engine".
+            let dropped_coverage = kind == Kind::Lint && engine.provides_language_lint(language, &cfg);
+            let table = format!("[{}.{}.{}]", kind.section(), language.id(), engine.name());
+            match disabled {
+                // First one wins the naming, but any of them dropping coverage
+                // counts — otherwise disabling two engines would report the
+                // first and forget that the second held the rules.
+                Some(existing) => existing.dropped_coverage |= dropped_coverage,
+                None => {
+                    *disabled = Some(Disabled {
+                        table,
+                        dropped_coverage,
+                    })
+                }
+            }
+            false
         })
         .collect()
+}
+
+/// What an `enabled = false` removed from one language's plan.
+struct Disabled {
+    /// The config table that did it, quoted back to the reader.
+    table: String,
+    /// Whether any engine it removed was one that held lint rules for the
+    /// language — the difference between "one fewer check" and "nothing lints
+    /// this language any more".
+    dropped_coverage: bool,
 }
 
 pub(super) fn plan_engines(
@@ -188,23 +264,34 @@ pub(super) fn plan_engines(
     config: &Config,
     kind: Kind,
     selection: EngineSelection<'_>,
-    narrowed_away: &mut bool,
+    withdrawal: &mut Option<Withdrawal>,
 ) -> Vec<EnginePlan> {
-    let mut engines = engines_for(language);
+    let mut disabled = None;
+    let engines = retaining_capable(engines_for(language), kind);
+    let mut engines = retaining_enabled(engines, language, config, kind, &mut disabled);
+    // Asked *after* the enabled filter, not before: a disabled tier-one
+    // formatter is not a tier-one formatter, and asking first discarded the
+    // catalog list on its behalf — so switching off `gofmt` to reach for a
+    // catalog formatter produced neither.
     let catalog = if has_tier_one_formatter(&engines, kind) {
         Vec::new()
     } else {
-        catalog_engines_for(language, config, kind)
+        retaining_capable(catalog_engines_for(language, config, kind), kind)
     };
     if generic_formatter_superseded(kind, &catalog) {
         engines.retain(|engine| engine.name() != TREE_SITTER_ENGINE);
     }
-    let engines = retaining_capable(engines, kind);
-    let engines = retaining_enabled(engines, language, config, kind);
-    let catalog = retaining_capable(catalog, kind);
     let merged = merge_catalog_engines(language, config, kind, engines, catalog);
     let (merged, selection_emptied) = selection::apply(selection, merged, language, config, kind);
-    *narrowed_away = selection_emptied;
+    // Selection is reported ahead of config: it names this invocation, which is
+    // the thing the reader is looking at.
+    *withdrawal = if selection_emptied {
+        Some(Withdrawal::Selection)
+    } else {
+        disabled
+            .filter(|disabled| disabled.dropped_coverage || merged.is_empty())
+            .map(|disabled| Withdrawal::Disabled(disabled.table))
+    };
     merged
         .into_iter()
         .map(|engine| {
@@ -426,7 +513,7 @@ fn catalog_engines_for(language: &Language, config: &Config, kind: Kind) -> Vec<
 /// routed to the `treesitter` engine are prefetched (tier-1 languages handled by
 /// a native backend never touch the pack). A failure is non-fatal: the per-file
 /// path still lazily loads each grammar on first use.
-pub(super) fn prefetch_tier2_grammars(plans: &PlanMap) {
+pub(super) fn prefetch_tier2_grammars(plans: &RunPlan) {
     let grammars: FxHashSet<&str> = plans
         .iter()
         .filter(|(_, engine_plans)| engine_plans.iter().any(|plan| plan.engine.name() == "treesitter"))
@@ -453,28 +540,28 @@ pub(super) fn plan_by_config_language(
     configs: &ConfigSet,
     kind: Kind,
     selection: EngineSelection<'_>,
-) -> (PlanMap, NarrowedSet) {
+) -> RunPlan {
     let mut plans: PlanMap = FxHashMap::default();
-    let mut narrowed: NarrowedSet = FxHashSet::default();
+    let mut withdrawn: WithdrawnMap = FxHashMap::default();
     for f in files {
         let key = (f.config_id, f.language.clone());
         if plans.contains_key(&key) {
             continue;
         }
-        let mut narrowed_away = false;
+        let mut withdrawal = None;
         let plan = plan_engines(
             &f.language,
             configs.config(f.config_id),
             kind,
             selection,
-            &mut narrowed_away,
+            &mut withdrawal,
         );
-        if narrowed_away {
-            narrowed.insert(key.clone());
+        if let Some(withdrawal) = withdrawal {
+            withdrawn.insert(key.clone(), withdrawal);
         }
         plans.insert(key, plan);
     }
-    (plans, narrowed)
+    RunPlan { plans, withdrawn }
 }
 
 #[cfg(test)]

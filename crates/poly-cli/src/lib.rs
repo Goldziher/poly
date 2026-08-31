@@ -472,14 +472,15 @@ fn report_skip_budget(common: &CommonArgs, skipped: &[poly_core::SkippedFile]) -
     let Some(budget) = (if common.deny_skips { Some(0) } else { common.max_skips }) else {
         return false;
     };
-    // A file left unchecked because the caller narrowed the run with
-    // `--only`/`--skip` is not charged. The budget exists to catch coverage this
-    // run lost without saying so; a restriction named in the invocation is the
-    // opposite of that, and charging it would make `--only` unusable under the
-    // very gate that most wants it.
+    // A file left unchecked by an instruction the caller wrote — `--only` /
+    // `--skip`, or `enabled = false` — is not charged. The budget exists to
+    // catch coverage this run lost *without saying so*, and an instruction that
+    // names itself in the report is the opposite of that. Charging it would make
+    // `--only` unusable under the very gate that most wants it, and would fail a
+    // user's own gate for a line in their own `poly.toml`.
     let skipped: Vec<&poly_core::SkippedFile> = skipped
         .iter()
-        .filter(|entry| entry.reason != poly_core::FILTERED_SKIP)
+        .filter(|entry| !poly_core::is_withdrawal_reason(&entry.reason))
         .collect();
     if skipped.len() <= budget {
         return false;

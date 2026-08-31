@@ -111,3 +111,116 @@ fn disabling_typos_leaves_the_language_backend_running() {
         run.results
     );
 }
+
+// --- Formatting: switching a formatter off must not remove the file from the run ---
+
+fn format_run_with(dir: &Path, config: &Config) -> poly_core::FormatRun {
+    poly_core::format_run(&[dir.to_path_buf()], config, &options(), false, false).expect("format run")
+}
+
+/// Go, Rust, Zig, Java, Kotlin, R, Swift, Dart and Gleam hold **one** registry
+/// slot each — `NativeToolEngine` — with no separately registered tree-sitter
+/// entry. That engine's `format` capability is unconditionally `true` for
+/// exactly this reason, and its `format` delegates to the tier-2 reindenter when
+/// it is switched off. So `enabled = false` means "do not shell out to the
+/// native tool", never "stop formatting this language" — otherwise one config
+/// key silently removes a language from every format run.
+#[test]
+fn disabling_a_native_tool_formatter_falls_back_to_tier_two() {
+    let dir = tempfile::tempdir().expect("tmp");
+    std::fs::write(dir.path().join("main.rs"), "fn main() {\nlet x = 1;\n}\n").expect("write");
+    let config = Config {
+        fmt: toml::from_str("[rust.rustfmt]\nenabled = false\n").expect("valid fmt config"),
+        ..Config::default()
+    };
+    let run = format_run_with(dir.path(), &config);
+    let result = run
+        .results
+        .iter()
+        .find(|r| r.path.file_name().is_some_and(|f| f == "main.rs"))
+        .expect("main.rs is in the run");
+    assert!(result.error.is_none(), "unexpected error: {:?}", result.error);
+    assert!(
+        result.changed,
+        "the tier-2 reindenter must still format the file: {result:?}"
+    );
+}
+
+/// The other half: when a withdrawal *does* leave a file with no formatter, the
+/// run says so. An empty format plan used to be unreachable, so it was treated
+/// as ordinary coverage and reported nothing — which turns a narrowed run into
+/// "All formatted" over files nothing touched.
+#[test]
+fn a_file_left_with_no_formatter_is_reported_rather_than_passed_over() {
+    let dir = tempfile::tempdir().expect("tmp");
+    std::fs::write(dir.path().join("app.py"), "x = 1\n").expect("write");
+    std::fs::write(dir.path().join("style.css"), "a{color:red}\n").expect("write");
+    let run = poly_core::format_run(
+        &[dir.path().to_path_buf()],
+        &Config::default(),
+        &RunOptions {
+            only: vec!["ruff".to_string()],
+            ..options()
+        },
+        false,
+        false,
+    )
+    .expect("format run");
+    let skipped: Vec<String> = run
+        .skipped
+        .iter()
+        .map(|s| s.path.file_name().expect("named").to_string_lossy().into_owned())
+        .collect();
+    assert!(
+        skipped.contains(&"style.css".to_string()),
+        "the deselected file must be reported, got {skipped:?}"
+    );
+}
+
+/// Withdrawing a language's only lint backend by config names **the config**,
+/// not poly. Before this, a user who switched off their own linter was told
+/// `no lint rules for TOML` — which reads as a poly limitation and sends them
+/// looking for a backend that is right there, switched off in their own file.
+///
+/// TOML is the clean case: `taplo` is its only source of lint rules, so
+/// disabling it genuinely removes the language's coverage rather than one check
+/// among several.
+#[test]
+fn disabling_a_language_s_only_linter_names_the_config_table() {
+    let dir = tempfile::tempdir().expect("tmp");
+    std::fs::write(dir.path().join("pyproject.toml"), "[tool.x]\na = 1\n").expect("write");
+    let run = lint(dir.path(), &config("[toml.taplo]\nenabled = false\n"));
+    let reason = run
+        .skipped
+        .iter()
+        .find(|s| s.path.file_name().is_some_and(|f| f == "pyproject.toml"))
+        .map(|s| s.reason.clone())
+        .expect("the file is reported as skipped");
+    assert!(
+        reason.contains("[lint.toml.taplo]"),
+        "the reason must quote the table that did it, got {reason:?}"
+    );
+    assert!(
+        poly_core::is_withdrawal_reason(&reason),
+        "a caller instruction must not be charged to the skip budget: {reason:?}"
+    );
+}
+
+/// The counterpart: a limitation of poly stays charged, so the exemption above
+/// cannot be reached by accident.
+#[test]
+fn a_language_poly_has_no_rules_for_is_still_charged() {
+    let dir = tempfile::tempdir().expect("tmp");
+    std::fs::write(dir.path().join("main.zig"), "pub fn main() void {}\n").expect("write");
+    let run = lint(dir.path(), &Config::default());
+    let reason = run
+        .skipped
+        .iter()
+        .find(|s| s.path.file_name().is_some_and(|f| f == "main.zig"))
+        .map(|s| s.reason.clone())
+        .expect("the file is reported as skipped");
+    assert!(
+        !poly_core::is_withdrawal_reason(&reason),
+        "a poly limitation must stay charged: {reason:?}"
+    );
+}

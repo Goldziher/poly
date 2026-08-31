@@ -17,6 +17,7 @@ use crate::config::{Config, Kind};
 use crate::engine::Engine;
 use crate::language::Language;
 use crate::registry::all_engine_names;
+use crate::resolve::ConfigSet;
 
 /// The engines a run was restricted to, if any.
 ///
@@ -100,16 +101,23 @@ pub(super) fn apply(
 /// exactly like a clean run: every plan is emptied, nothing is checked, no
 /// diagnostic is produced, and the exit code is 0.
 ///
-/// The recognised set is every registry engine plus the catalog tools this
-/// config configures. A catalog tool the config does not mention is rejected
+/// The recognised set is every registry engine plus the catalog tools any
+/// config in this run configures. A catalog tool no config mentions is rejected
 /// even though the catalog knows the name, because naming it would restrict the
 /// run to an engine that cannot run.
-pub(super) fn validate_selection(config: &Config, only: &[String], skip: &[String]) -> anyhow::Result<()> {
+pub(super) fn validate_selection(configs: &ConfigSet, only: &[String], skip: &[String]) -> anyhow::Result<()> {
     if only.is_empty() && skip.is_empty() {
         return Ok(());
     }
     let mut known: BTreeSet<&str> = all_engine_names();
-    known.extend(config.tools.iter().map(|(name, _)| name.as_str()));
+    // Every resolved config, not just the root one: a monorepo (ADR 0018) can
+    // enable a catalog tool in a nested `poly.toml`, and naming it is a
+    // legitimate selection for the files that config governs.
+    known.extend(
+        configs
+            .iter()
+            .flat_map(|config| config.tools.iter().map(|(name, _)| name.as_str())),
+    );
 
     let unknown: Vec<&str> = only
         .iter()
@@ -165,16 +173,18 @@ mod tests {
         assert!(!selection.selects("typos"));
     }
 
+    fn set(config: Config) -> ConfigSet {
+        ConfigSet::single(config)
+    }
+
     #[test]
     fn a_recognized_selection_validates() {
-        let config = Config::default();
-        assert!(validate_selection(&config, &names(&["ruff", "typos"]), &names(&["oxc"])).is_ok());
+        assert!(validate_selection(&set(Config::default()), &names(&["ruff", "typos"]), &names(&["oxc"])).is_ok());
     }
 
     #[test]
     fn an_unknown_name_is_rejected_and_quoted_back() {
-        let config = Config::default();
-        let error = validate_selection(&config, &names(&["ruffs"]), &[]).expect_err("must reject");
+        let error = validate_selection(&set(Config::default()), &names(&["ruffs"]), &[]).expect_err("must reject");
         let message = error.to_string();
         assert!(message.contains("ruffs"), "{message}");
         assert!(
@@ -191,7 +201,7 @@ mod tests {
             tools: toml::from_str("[golangci-lint]\nenabled = true\n").expect("valid tool config"),
             ..Config::default()
         };
-        assert!(validate_selection(&config, &names(&["golangci-lint"]), &[]).is_ok());
-        assert!(validate_selection(&Config::default(), &names(&["golangci-lint"]), &[]).is_err());
+        assert!(validate_selection(&set(config), &names(&["golangci-lint"]), &[]).is_ok());
+        assert!(validate_selection(&set(Config::default()), &names(&["golangci-lint"]), &[]).is_err());
     }
 }

@@ -570,6 +570,24 @@ pub trait Engine: Send + Sync {
         Ok(FormatOutput::Unchanged)
     }
 
+    /// Whether this backend reads [`ENABLED_OPTION_KEY`] itself and degrades
+    /// gracefully when it is `false`, rather than expecting the runner to drop
+    /// it from the plan.
+    ///
+    /// The runner honours `enabled = false` by removing an engine before the
+    /// file loop, which is right for a backend whose absence simply means one
+    /// less check. It is wrong for a backend that *is* its language's only
+    /// registry slot and hands the work to the tier-2 reindenter when switched
+    /// off: removing it there leaves the language with no formatter at all, so
+    /// one config key silently drops every file of that language from the run.
+    ///
+    /// A backend answering `true` takes on the whole contract — it must read the
+    /// key in every method that acts, and must do something defensible with a
+    /// `false`.
+    fn self_manages_enabled(&self) -> bool {
+        false
+    }
+
     /// Whether this backend is the authoritative formatter for its language and
     /// should displace poly's generic tree-sitter reindenter.
     ///

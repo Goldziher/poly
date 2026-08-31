@@ -29,12 +29,13 @@ mod types;
 
 use edits::apply_edits;
 use generated::{acts_on_generated, format_skip_result, lint_skip_result};
-use plan::{
-    EnginePlan, NarrowedSet, PlanMap, plan_by_config_language, prefetch_tier2_grammars, provides_language_lint,
-};
+use plan::{EnginePlan, RunPlan, plan_by_config_language, prefetch_tier2_grammars, provides_language_lint};
 use selection::{EngineSelection, validate_selection};
 use skips::unmatched_explicit_paths;
-pub use skips::{BINARY_SKIP, FILTERED_SKIP, GENERATED_SKIP, NO_ENGINE_SKIP, NO_LINT_RULES_SKIP_PREFIX, SkippedFile};
+pub use skips::{
+    BINARY_SKIP, DISABLED_SKIP_PREFIX, FILTERED_SKIP, GENERATED_SKIP, NO_ENGINE_SKIP, NO_LINT_RULES_SKIP_PREFIX,
+    SkippedFile, is_withdrawal_reason,
+};
 // Re-exported so `poly_core::runner::LintResult` keeps naming the same type it
 // always has: the split below is a file boundary, not an API one.
 pub use types::{
@@ -105,10 +106,10 @@ pub fn lint_run(
     let cache = ResultCache::open_default(!opts.no_cache)?;
     let configs = build_config_set(paths, config, opts)?;
     let selection = EngineSelection::new(&opts.only, &opts.skip);
-    validate_selection(config, &opts.only, &opts.skip)?;
+    validate_selection(&configs, &opts.only, &opts.skip)?;
     let (files, discovery) = discover_reporting(paths, &configs, &opts.exclude, opts.force_exclude);
-    let (plans, narrowed) = plan_by_config_language(&files, &configs, Kind::Lint, selection);
-    prefetch_tier2_grammars(&plans);
+    let plan = plan_by_config_language(&files, &configs, Kind::Lint, selection);
+    prefetch_tier2_grammars(&plan);
     let ignores: Vec<PerFileIgnores> = configs
         .iter()
         .map(|c| PerFileIgnores::compile(&c.per_file_ignores))
@@ -128,8 +129,7 @@ pub fn lint_run(
         .map(|f| {
             match lint_one(
                 f,
-                &plans,
-                &narrowed,
+                &plan,
                 &cache,
                 fix,
                 opts.fix_generated,
@@ -185,8 +185,7 @@ pub fn lint_run(
     skipped.extend(unmatched_explicit_paths(
         paths,
         &files,
-        &plans,
-        &narrowed,
+        &plan,
         &configs,
         &opts.exclude,
         opts.force_exclude,
@@ -240,14 +239,14 @@ pub fn format_run(
     let explicit: FxHashSet<&std::path::Path> = paths.iter().map(PathBuf::as_path).collect();
     let configs = build_config_set(paths, config, opts)?;
     let selection = EngineSelection::new(&opts.only, &opts.skip);
-    validate_selection(config, &opts.only, &opts.skip)?;
+    validate_selection(&configs, &opts.only, &opts.skip)?;
     let (discovered, discovery) = discover_reporting(paths, &configs, &opts.exclude, opts.force_exclude);
     let files: Vec<DiscoveredFile> = discovered
         .into_iter()
         .filter(|f| explicit.contains(f.path.as_path()) || !is_generated_lockfile(&f.path))
         .collect();
-    let (plans, narrowed) = plan_by_config_language(&files, &configs, Kind::Format, selection);
-    prefetch_tier2_grammars(&plans);
+    let plan = plan_by_config_language(&files, &configs, Kind::Format, selection);
+    prefetch_tier2_grammars(&plan);
     // Same key, same resolution, same phase-agnostic answer as `lint_run`.
     let act_on_generated = acts_on_generated(&configs, opts.generated);
     // An engine error is carried, not swallowed: dropping the file here is what
@@ -257,7 +256,7 @@ pub fn format_run(
         .map(|f| {
             format_one(
                 f,
-                &plans,
+                &plan,
                 &cache,
                 write,
                 opts.fix_generated,
@@ -292,8 +291,7 @@ pub fn format_run(
     skipped.extend(unmatched_explicit_paths(
         paths,
         &files,
-        &plans,
-        &narrowed,
+        &plan,
         &configs,
         &opts.exclude,
         opts.force_exclude,
@@ -309,8 +307,7 @@ pub fn format_run(
 #[allow(clippy::too_many_arguments)]
 fn lint_one(
     f: &DiscoveredFile,
-    plans: &PlanMap,
-    narrowed: &NarrowedSet,
+    plan: &RunPlan,
     cache: &ResultCache,
     fix: bool,
     fix_generated: bool,
@@ -370,10 +367,7 @@ fn lint_one(
     // Resolved once per file rather than inside `lint_content`, which the fix
     // loop below calls up to `MAX_FIX_PASSES` times — each of those was a hash
     // lookup keyed on a freshly cloned `Language`.
-    let engine_plans = plans
-        .get(&(f.config_id, f.language.clone()))
-        .map(Vec::as_slice)
-        .unwrap_or(&[]);
+    let engine_plans = plan.engines(f.config_id, &f.language);
     // A language nothing holds rules for is not a clean file: the cross-cutting
     // backends below still run and can still report findings, but no rule in
     // this run knows the language, so the file must not be counted as linted.
@@ -387,13 +381,13 @@ fn lint_one(
     // A caller who narrowed the run with `--only` gets their own reason
     // instead: nothing linted the file, but "no lint rules for Rust" would
     // blame poly for a restriction the invocation asked for.
-    let skipped = (!provides_language_lint(engine_plans) && !externally_linted.contains(&f.language)).then(|| {
-        if narrowed.contains(&(f.config_id, f.language.clone())) {
-            FILTERED_SKIP.to_owned()
-        } else {
-            SkippedFile::no_lint_rules_reason(&f.language)
-        }
-    });
+    let skipped =
+        (!provides_language_lint(engine_plans) && !externally_linted.contains(&f.language)).then(|| {
+            match plan.withdrawal(f.config_id, &f.language) {
+                Some(withdrawal) => withdrawal.reason(),
+                None => SkippedFile::no_lint_rules_reason(&f.language),
+            }
+        });
 
     let (mut diagnostics, mut debug) = lint_content(f, engine_plans, cache, &original, collect_debug)?;
     suppress(&original, &mut diagnostics);
@@ -593,7 +587,7 @@ fn push_engine_debug(debug: Option<&mut RunDebug>, plan: &EnginePlan, started: O
 
 fn format_one(
     f: &DiscoveredFile,
-    plans: &PlanMap,
+    plan: &RunPlan,
     cache: &ResultCache,
     write: bool,
     fix_generated: bool,
@@ -624,6 +618,14 @@ fn format_one(
     if is_format_ignored(&original, &f.language) {
         return Ok(format_skip_result(f, None));
     }
+    // A caller instruction that withdrew every formatter for this language is
+    // reported here, for walked files as well as named ones. Before this, an
+    // emptied format plan fell through `skip_reason_for`'s "ordinary coverage"
+    // branch and the file was silently passed over, so `poly fmt --only ruff .`
+    // printed "All formatted" over files nothing had touched.
+    if let Some(withdrawal) = plan.withdrawal(f.config_id, &f.language) {
+        return Ok(format_skip_result(f, Some(withdrawal.reason())));
+    }
     // `[discovery] generated = false`, checked before the hash stamp below so
     // the reader's own opt-out is the reason they are shown. Bool first: the
     // default path never scans the header.
@@ -653,10 +655,7 @@ fn format_one(
         language: f.language.clone(),
         content: Arc::from(original.as_str()),
     };
-    let engine_plans = plans
-        .get(&(f.config_id, f.language.clone()))
-        .map(Vec::as_slice)
-        .unwrap_or(&[]);
+    let engine_plans = plan.engines(f.config_id, &f.language);
 
     // When every engine routed to this file declines it, nothing inspected the
     // content — report that rather than letting it read as "checked and clean".
