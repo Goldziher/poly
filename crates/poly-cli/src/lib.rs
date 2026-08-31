@@ -196,6 +196,27 @@ pub struct CommonArgs {
     #[arg(long, conflicts_with = "quiet")]
     pub debug: bool,
 
+    /// Restrict the run to the named engines, by the tool id you configure them
+    /// under (`ruff`, `typos`, `oxc`, …). Repeatable and comma-separated.
+    ///
+    /// Narrows and never widens: an engine your config leaves off stays off when
+    /// you name it here, so this cannot switch a backend on. A name no engine
+    /// answers to fails the run (exit 2) rather than quietly checking nothing.
+    ///
+    /// Engine ids are unique per language, not globally, so `--only biome`
+    /// selects every engine answering to that name — the CSS one and the GraphQL
+    /// one both.
+    ///
+    /// Naming any engine also skips the whole-project phase, which is made of
+    /// tools rather than engines; `poly lint` prints a note saying so.
+    #[arg(long, value_name = "ENGINE", value_delimiter = ',', conflicts_with = "skip")]
+    pub only: Vec<String>,
+
+    /// Drop the named engines from the run, keeping every other routed engine.
+    /// The complement of `--only`, and subject to the same rules.
+    #[arg(long, value_name = "ENGINE", value_delimiter = ',')]
+    pub skip: Vec<String>,
+
     /// Fail the run (exit 2) if any file was skipped. Equivalent to
     /// `--max-skips 0`.
     ///
@@ -325,8 +346,19 @@ pub fn run_lint(args: LintArgs) -> ExitCode {
     // config. `None` means the phase does not run at all; a load failure is
     // carried rather than raised, so the findings the per-file tier did produce
     // are still reported before the run fails on it.
-    let workspace_config =
-        (!no_workspace && !path_scoped).then(|| hooks::commands::load_config(common.config.as_deref()));
+    // Naming engines scopes the run to the per-file tier. The whole-project
+    // phase is made of tools (`cargo clippy`, `cargo-deny`), not engines, so
+    // there is nothing there for `--only ruff` to select — and running it anyway
+    // is exactly the cost the flag exists to avoid.
+    //
+    // The bypass has to reach `externally_linted_languages` too, and does so by
+    // construction: that value is derived from `workspace_config` below. Were
+    // the phase merely skipped later, the per-file tier would still have been
+    // told Rust was linted elsewhere and would have suppressed the skip for
+    // every `.rs` file nothing looked at.
+    let engines_selected = !common.only.is_empty() || !common.skip.is_empty();
+    let workspace_config = (!no_workspace && !path_scoped && !engines_selected)
+        .then(|| hooks::commands::load_config(common.config.as_deref()));
     opts.externally_linted_languages = match &workspace_config {
         Some(Ok(config)) => workspace_coverage::workspace_lint_languages(config),
         _ => Vec::new(),
@@ -378,7 +410,11 @@ pub fn run_lint(args: LintArgs) -> ExitCode {
         // Only explain the skip when path scoping caused it. `--no-workspace` is
         // an explicit opt-out and needs no narration.
         None => {
-            if path_scoped && !no_workspace && pretty {
+            if engines_selected && !no_workspace && pretty {
+                eprintln!(
+                    "note: whole-project phase skipped because --only/--skip names engines, and that phase runs tools"
+                );
+            } else if path_scoped && !no_workspace && pretty {
                 eprintln!("note: whole-project phase skipped for path-scoped run (pass --workspace to include it)");
             }
             true
@@ -436,10 +472,19 @@ fn report_skip_budget(common: &CommonArgs, skipped: &[poly_core::SkippedFile]) -
     let Some(budget) = (if common.deny_skips { Some(0) } else { common.max_skips }) else {
         return false;
     };
+    // A file left unchecked because the caller narrowed the run with
+    // `--only`/`--skip` is not charged. The budget exists to catch coverage this
+    // run lost without saying so; a restriction named in the invocation is the
+    // opposite of that, and charging it would make `--only` unusable under the
+    // very gate that most wants it.
+    let skipped: Vec<&poly_core::SkippedFile> = skipped
+        .iter()
+        .filter(|entry| entry.reason != poly_core::FILTERED_SKIP)
+        .collect();
     if skipped.len() <= budget {
         return false;
     }
-    for entry in skipped {
+    for entry in &skipped {
         eprintln!("error: skipped {}: {}", entry.path.display(), entry.reason);
     }
     eprintln!(
@@ -635,6 +680,8 @@ fn prepare(common: &CommonArgs) -> Result<(Vec<PathBuf>, Config, RunOptions), Ex
         // Filled in by `run_lint` once it knows whether the whole-project phase
         // runs; `poly fmt` never runs that phase, so it keeps the empty default.
         externally_linted_languages: Vec::new(),
+        only: common.only.clone(),
+        skip: common.skip.clone(),
     };
     Ok((paths, config, opts))
 }

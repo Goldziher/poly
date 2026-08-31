@@ -82,6 +82,17 @@ pub struct RunOptions {
     /// and `poly lint --no-workspace`, where nothing else does lint Rust — keeps
     /// the accurate skip.
     pub externally_linted_languages: Vec<Language>,
+    /// `--only` — restrict the run to engines with these names, by
+    /// [`crate::engine::Engine::name`]. Empty means every routed engine.
+    ///
+    /// Narrows and never widens: an engine that the resolved config leaves off
+    /// stays off when named here, so this cannot become a second way to enable
+    /// a backend. A name no engine answers to fails the run rather than
+    /// silently checking nothing.
+    pub only: Vec<String>,
+    /// `--skip` — drop engines with these names from the run. Empty drops
+    /// nothing. Mutually exclusive with [`RunOptions::only`] at the CLI.
+    pub skip: Vec<String>,
 }
 
 /// Per-engine debug record for one file. Collected only when debug output is

@@ -24,6 +24,8 @@ fn options() -> RunOptions {
         explicit_config: false,
         config_resolver: None,
         externally_linted_languages: Vec::new(),
+        only: Vec::new(),
+        skip: Vec::new(),
     }
 }
 

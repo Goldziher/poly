@@ -5,6 +5,44 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
+## [Unreleased]
+
+### Added
+
+- **Every engine table now accepts `enabled`, and `poly lint --only` / `--skip` restrict a run to
+  named engines.** Only three backends read an `enabled` key before this, each out of its own
+  options table, so `[lint.python.ruff] enabled = false` was reported as an unknown key *and* ruff
+  ran anyway — a setting that reads as honoured and does nothing. It is now a key every engine
+  table accepts, read by the runner's plan rather than by any backend, in both the per-language
+  `[lint.<lang>.<engine>]` and the language-agnostic `[lint.<engine>]` form. That makes
+  "spell-check off for this one language" expressible: `[lint.typos] enabled = false` with
+  `[lint.python.typos] enabled = true` re-enables it for Python alone.
+
+  An absent key still means *the engine's own default*, which is not the same as `false` — most
+  backends are on, `uncomment` is opt-in, and each native-toolchain tool carries its own — so only
+  an explicit `false` withdraws an engine.
+
+  `--only ruff` / `--skip typos` apply the same overlay for one invocation, which is what makes it
+  possible to prove what a single backend did: with every engine running at once, a comment
+  surviving an `uncomment` pass cannot be told apart from `uncomment` never having examined it.
+  Closes [#17](https://github.com/Goldziher/poly/issues/17).
+
+  Three properties keep the flag from becoming a way to under-check without saying so:
+
+  - It **narrows and never widens**, so an engine the config leaves off stays off when named.
+  - An **unrecognized name fails the run** (exit 2, listing what is recognized) rather than
+    emptying every plan, checking nothing, and exiting 0.
+  - A file left with no selected engine reports its own skip reason instead of borrowing
+    `no matching engine for this file type`, which would be false — and that reason is **not**
+    charged to `--deny-skips`, since the budget exists to catch coverage a run lost without saying
+    so, and a restriction named in the invocation is the opposite.
+
+  Naming engines also skips the whole-project phase, which is built from tools (`cargo clippy`,
+  `cargo-deny`) rather than engines — running one cheap engine without paying for a `cargo` build
+  is half of what the flag is for. The bypass reaches the phase's coverage prediction by
+  construction, so the per-file tier is never told Rust was linted elsewhere by a phase that did
+  not run.
+
 ## [0.23.1] - 2026-08-30
 
 ### Fixed

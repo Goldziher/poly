@@ -23,14 +23,18 @@ use rustc_hash::FxHashSet;
 mod edits;
 mod generated;
 mod plan;
+mod selection;
 mod skips;
 mod types;
 
 use edits::apply_edits;
 use generated::{acts_on_generated, format_skip_result, lint_skip_result};
-use plan::{EnginePlan, PlanMap, plan_by_config_language, prefetch_tier2_grammars, provides_language_lint};
+use plan::{
+    EnginePlan, NarrowedSet, PlanMap, plan_by_config_language, prefetch_tier2_grammars, provides_language_lint,
+};
+use selection::{EngineSelection, validate_selection};
 use skips::unmatched_explicit_paths;
-pub use skips::{BINARY_SKIP, GENERATED_SKIP, NO_ENGINE_SKIP, NO_LINT_RULES_SKIP_PREFIX, SkippedFile};
+pub use skips::{BINARY_SKIP, FILTERED_SKIP, GENERATED_SKIP, NO_ENGINE_SKIP, NO_LINT_RULES_SKIP_PREFIX, SkippedFile};
 // Re-exported so `poly_core::runner::LintResult` keeps naming the same type it
 // always has: the split below is a file boundary, not an API one.
 pub use types::{
@@ -100,8 +104,10 @@ pub fn lint_run(
     configure_pool(opts.jobs);
     let cache = ResultCache::open_default(!opts.no_cache)?;
     let configs = build_config_set(paths, config, opts)?;
+    let selection = EngineSelection::new(&opts.only, &opts.skip);
+    validate_selection(config, &opts.only, &opts.skip)?;
     let (files, discovery) = discover_reporting(paths, &configs, &opts.exclude, opts.force_exclude);
-    let plans = plan_by_config_language(&files, &configs, Kind::Lint);
+    let (plans, narrowed) = plan_by_config_language(&files, &configs, Kind::Lint, selection);
     prefetch_tier2_grammars(&plans);
     let ignores: Vec<PerFileIgnores> = configs
         .iter()
@@ -123,6 +129,7 @@ pub fn lint_run(
             match lint_one(
                 f,
                 &plans,
+                &narrowed,
                 &cache,
                 fix,
                 opts.fix_generated,
@@ -175,11 +182,15 @@ pub fn lint_run(
     for error in &errors {
         tracing::warn!(path = %error.path.display(), "lint failed: {}", error.message);
     }
-    skipped.extend(
-        unmatched_explicit_paths(paths, &files, &plans, &configs, &opts.exclude, opts.force_exclude)
-            .iter()
-            .map(|path| SkippedFile::no_engine(path)),
-    );
+    skipped.extend(unmatched_explicit_paths(
+        paths,
+        &files,
+        &plans,
+        &narrowed,
+        &configs,
+        &opts.exclude,
+        opts.force_exclude,
+    ));
     Ok(LintRun {
         results,
         errors,
@@ -228,12 +239,14 @@ pub fn format_run(
     let cache = ResultCache::open_default(!opts.no_cache)?;
     let explicit: FxHashSet<&std::path::Path> = paths.iter().map(PathBuf::as_path).collect();
     let configs = build_config_set(paths, config, opts)?;
+    let selection = EngineSelection::new(&opts.only, &opts.skip);
+    validate_selection(config, &opts.only, &opts.skip)?;
     let (discovered, discovery) = discover_reporting(paths, &configs, &opts.exclude, opts.force_exclude);
     let files: Vec<DiscoveredFile> = discovered
         .into_iter()
         .filter(|f| explicit.contains(f.path.as_path()) || !is_generated_lockfile(&f.path))
         .collect();
-    let plans = plan_by_config_language(&files, &configs, Kind::Format);
+    let (plans, narrowed) = plan_by_config_language(&files, &configs, Kind::Format, selection);
     prefetch_tier2_grammars(&plans);
     // Same key, same resolution, same phase-agnostic answer as `lint_run`.
     let act_on_generated = acts_on_generated(&configs, opts.generated);
@@ -276,11 +289,15 @@ pub fn format_run(
             })
         })
         .collect();
-    skipped.extend(
-        unmatched_explicit_paths(paths, &files, &plans, &configs, &opts.exclude, opts.force_exclude)
-            .iter()
-            .map(|path| SkippedFile::no_engine(path)),
-    );
+    skipped.extend(unmatched_explicit_paths(
+        paths,
+        &files,
+        &plans,
+        &narrowed,
+        &configs,
+        &opts.exclude,
+        opts.force_exclude,
+    ));
     Ok(FormatRun {
         results,
         errors,
@@ -293,6 +310,7 @@ pub fn format_run(
 fn lint_one(
     f: &DiscoveredFile,
     plans: &PlanMap,
+    narrowed: &NarrowedSet,
     cache: &ResultCache,
     fix: bool,
     fix_generated: bool,
@@ -365,8 +383,17 @@ fn lint_one(
     // scan is the right shape here: the list holds one entry per whole-project
     // tool, so it is a handful of comparisons against a slice already in cache —
     // cheaper than the hash it would take to avoid them.
-    let skipped = (!provides_language_lint(engine_plans) && !externally_linted.contains(&f.language))
-        .then(|| SkippedFile::no_lint_rules_reason(&f.language));
+    //
+    // A caller who narrowed the run with `--only` gets their own reason
+    // instead: nothing linted the file, but "no lint rules for Rust" would
+    // blame poly for a restriction the invocation asked for.
+    let skipped = (!provides_language_lint(engine_plans) && !externally_linted.contains(&f.language)).then(|| {
+        if narrowed.contains(&(f.config_id, f.language.clone())) {
+            FILTERED_SKIP.to_owned()
+        } else {
+            SkippedFile::no_lint_rules_reason(&f.language)
+        }
+    });
 
     let (mut diagnostics, mut debug) = lint_content(f, engine_plans, cache, &original, collect_debug)?;
     suppress(&original, &mut diagnostics);

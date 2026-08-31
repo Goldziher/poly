@@ -29,7 +29,7 @@ use std::path::{Path, PathBuf};
 use rustc_hash::FxHashMap;
 use serde::Serialize;
 
-use super::plan::PlanMap;
+use super::plan::{NarrowedSet, PlanMap};
 use crate::discover::{DiscoveredFile, discover_with};
 use crate::language::Language;
 use crate::resolve::ConfigSet;
@@ -39,6 +39,17 @@ use crate::resolve::ConfigSet;
 /// Kept as one constant so the human summary, the JSON payload, and the
 /// `--deny-skips` failure all quote the same words.
 pub const NO_ENGINE_SKIP: &str = "no matching engine for this file type";
+
+/// Reason recorded for a file every engine of which the caller deselected with
+/// `--only` / `--skip`.
+///
+/// Deliberately neither [`NO_ENGINE_SKIP`] nor [`NO_LINT_RULES_SKIP_PREFIX`]:
+/// both of those describe a limit of poly, and this describes a choice the
+/// caller made in the invocation they are reading the output of. It is also why
+/// this reason is not charged to the `--deny-skips` budget — that budget exists
+/// to catch files a run failed to verify without saying so, and a narrowing the
+/// caller asked for says so by definition.
+pub const FILTERED_SKIP: &str = "no engine selected by --only/--skip for this file";
 
 /// Opening words of the reason recorded for a file whose language nothing in the
 /// run has lint rules for; completed with the language name.
@@ -113,6 +124,14 @@ impl SkippedFile {
     /// The reason text for a file whose language nothing in the run lints,
     /// naming the language so the reader knows what is missing rather than only
     /// that something is.
+    /// A file whose every engine the caller deselected.
+    pub(super) fn filtered(path: &Path) -> Self {
+        Self {
+            path: path.to_path_buf(),
+            reason: FILTERED_SKIP.to_owned(),
+        }
+    }
+
     pub(super) fn no_lint_rules_reason(language: &Language) -> String {
         format!("{NO_LINT_RULES_SKIP_PREFIX} {}", language.display_name())
     }
@@ -142,10 +161,11 @@ pub(super) fn unmatched_explicit_paths(
     paths: &[PathBuf],
     files: &[DiscoveredFile],
     plans: &PlanMap,
+    narrowed: &NarrowedSet,
     configs: &ConfigSet,
     exclude: &[String],
     force_exclude: bool,
-) -> Vec<PathBuf> {
+) -> Vec<SkippedFile> {
     // The overwhelmingly common invocation is `poly lint .` — no file arguments
     // at all, so nothing to reconcile at all. One `is_file` stat per argument,
     // never per discovered file.
@@ -167,15 +187,20 @@ pub(super) fn unmatched_explicit_paths(
         };
         match discovered {
             Some(file) => {
-                let routed = plans
-                    .get(&(file.config_id, file.language.clone()))
-                    .is_some_and(|plans| !plans.is_empty());
+                let key = (file.config_id, file.language.clone());
+                let routed = plans.get(&key).is_some_and(|plans| !plans.is_empty());
                 if !routed {
-                    unmatched.push(path.clone());
+                    unmatched.push(if narrowed.contains(&key) {
+                        SkippedFile::filtered(path)
+                    } else {
+                        SkippedFile::no_engine(path)
+                    });
                 }
             }
             None if excluded_rather_than_unmatched(path, configs, exclude, force_exclude) => {}
-            None => unmatched.push(path.clone()),
+            // Never discovered at all, so no plan and no language: the selection
+            // cannot be the reason, whatever it says.
+            None => unmatched.push(SkippedFile::no_engine(path)),
         }
     }
     unmatched

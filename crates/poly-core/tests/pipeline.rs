@@ -26,6 +26,8 @@ fn lint_does_not_flag_trailing_whitespace() {
         explicit_config: true,
         config_resolver: None,
         externally_linted_languages: Vec::new(),
+        only: Vec::new(),
+        skip: Vec::new(),
     };
     let results = poly_core::lint(&[dir.path().to_path_buf()], &cfg, &opts, false, false).unwrap();
     assert!(
@@ -51,6 +53,8 @@ fn format_check_does_not_write_but_reports_change() {
         explicit_config: true,
         config_resolver: None,
         externally_linted_languages: Vec::new(),
+        only: Vec::new(),
+        skip: Vec::new(),
     };
 
     let results = poly_core::format(&[dir.path().to_path_buf()], &cfg, &opts, false, false).unwrap();
@@ -74,6 +78,8 @@ fn format_write_is_idempotent() {
         explicit_config: true,
         config_resolver: None,
         externally_linted_languages: Vec::new(),
+        only: Vec::new(),
+        skip: Vec::new(),
     };
 
     let first = poly_core::format(&[dir.path().to_path_buf()], &cfg, &opts, true, false).unwrap();
@@ -104,6 +110,8 @@ fn format_write_preserves_the_executable_bit() {
         explicit_config: true,
         config_resolver: None,
         externally_linted_languages: Vec::new(),
+        only: Vec::new(),
+        skip: Vec::new(),
     };
 
     let results = poly_core::format(&[dir.path().to_path_buf()], &cfg, &opts, true, false).unwrap();
@@ -135,6 +143,8 @@ fn lint_fix_applies_autofixes_and_dry_run_does_not() {
         explicit_config: true,
         config_resolver: None,
         externally_linted_languages: Vec::new(),
+        only: Vec::new(),
+        skip: Vec::new(),
     };
 
     poly_core::lint(&[dir.path().to_path_buf()], &cfg, &opts, false, false).unwrap();
@@ -202,6 +212,8 @@ fn lint_json_output_schema_conforms_to_diagnostic_contract() {
         explicit_config: true,
         config_resolver: None,
         externally_linted_languages: Vec::new(),
+        only: Vec::new(),
+        skip: Vec::new(),
     };
 
     let results = poly_core::lint(&[dir.path().to_path_buf()], &cfg, &opts, false, false).unwrap();

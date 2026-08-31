@@ -87,6 +87,19 @@ pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
     engines
 }
 
+/// Every engine name the registry can plan, across every language.
+///
+/// Walks [`all_languages`] rather than holding a second hand-maintained list,
+/// so a backend wired into [`engines_for`] is reachable here the moment it is
+/// registered. Callers that also accept catalog tools must add those
+/// themselves — the catalog tier is configured, not registered.
+pub(crate) fn all_engine_names() -> std::collections::BTreeSet<&'static str> {
+    all_languages()
+        .iter()
+        .flat_map(|language| engines_for(language).into_iter().map(|engine| engine.name()))
+        .collect()
+}
+
 /// The backends [`engines_for`] appends to *every* language, named.
 ///
 /// These are the only engines configurable from a language-agnostic

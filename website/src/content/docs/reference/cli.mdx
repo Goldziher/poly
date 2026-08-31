@@ -49,6 +49,40 @@ and `--max-skips`.
 | `--force-exclude` | Apply `[discovery] exclude` to explicitly named files too. The default, so it only matters in a repo that set `[discovery] force_exclude = false`. |
 | `--include-excluded` | Check explicitly named files or directory roots even when excluded. Overrides `[discovery] force_exclude`. Exclusions below an included directory remain active. |
 
+### Selecting engines
+
+| Flag | Effect |
+| --- | --- |
+| `--only <ENGINE>` | Run only the named engines. Repeatable and comma-separated (`--only ruff,typos`). Conflicts with `--skip`. |
+| `--skip <ENGINE>` | Run every routed engine except the named ones. |
+
+Engines are named by the id you configure them under — `ruff`, `oxc`, `typos`, `rumdl`, `quality`,
+`astgrep`. `poly config show` lists the ones your config touches.
+
+Three things worth knowing before you reach for it:
+
+- **It narrows, it never widens.** An engine your config leaves off stays off when you name it.
+  `--only uncomment` on a repo without `[lint.uncomment] enabled = true` selects nothing rather than
+  switching the backend on, so the flag can never become a second, invisible way to enable a tool.
+- **Engine ids are unique per language, not globally.** `--only biome` selects every engine
+  answering to that name — the CSS one and the GraphQL one both.
+- **A name no engine answers to fails the run** with exit 2 and a list of what is recognized. A
+  typo'd `--only ruffs` would otherwise empty every plan, check nothing, and exit 0.
+
+Naming engines also skips the whole-project phase, which is built from tools (`cargo clippy`,
+`cargo-deny`) rather than engines; `poly lint` prints a note saying so. That is usually the point —
+running one cheap engine without paying for a `cargo` build is half of what the flag is for.
+
+Files left with no selected engine are reported as skipped with their own reason, and are **not**
+charged to `--deny-skips` / `--max-skips`:
+
+```console
+skipped main.rs: no engine selected by --only/--skip for this file
+```
+
+To turn an engine off for every run rather than one invocation, use
+[`enabled`](/guides/configuration/#turning-one-engine-off) in `poly.toml` instead.
+
 ### The whole-project phase (`poly lint` only)
 
 | Flag | Effect |
