@@ -436,16 +436,21 @@ async fn lint_returns_structured_content_and_json_text() {
         .await
         .unwrap();
 
-    // Structured content is the typed LintReport object.
+    // Structured content is the typed LintDocument object.
     let structured = result.structured_content.as_ref().expect("structured_content present");
     let results = structured["results"].as_array().expect("results array");
     assert_eq!(results.len(), 1, "one file linted");
     assert_eq!(results[0]["diagnostics"][0]["engine"], "ruff");
 
-    // The default text block stays the CLI JSON array (backward-compatible).
+    // The text block carries the same document the CLI prints, so a reader of
+    // either surface can answer "what was checked" the same way.
     let text = result.content[0].as_text().expect("text content").text.clone();
     let parsed: Value = serde_json::from_str(&text).unwrap();
-    assert!(parsed.is_array(), "json text block is the CLI array");
+    assert_eq!(
+        parsed["results"], structured["results"],
+        "json text block is the CLI document"
+    );
+    assert_eq!(parsed["summary"]["checked"], 1, "the document states its coverage");
 
     client.cancel().await.unwrap();
     let _ = server_task.await;
@@ -688,14 +693,19 @@ async fn adding_identity_does_not_disturb_the_existing_payload() {
         .await
         .unwrap();
 
-    // The `results` array and the CLI-identical text block are unchanged; the
-    // identity is purely additive.
+    // The document and the CLI-identical text block are unchanged; the identity
+    // is purely additive, and lives only in `structured_content`.
     let structured = result.structured_content.as_ref().unwrap();
     assert_eq!(structured["results"].as_array().unwrap().len(), 1);
     let text = result.content[0].as_text().unwrap().text.clone();
+    let parsed: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(
+        parsed["results"], structured["results"],
+        "the text block is still the CLI document"
+    );
     assert!(
-        serde_json::from_str::<Value>(&text).unwrap().is_array(),
-        "the text block is still the CLI array"
+        parsed.get("poly").is_none(),
+        "the identity block belongs to structured_content, not the document"
     );
 
     client.cancel().await.unwrap();

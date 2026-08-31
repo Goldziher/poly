@@ -139,7 +139,9 @@ fn json_output_carries_the_fixed_count_per_file() {
     );
     let text = stdout(&output);
     let value: serde_json::Value = serde_json::from_str(&text).expect("valid JSON");
-    let entries = value.as_array().expect("top level stays an array");
+    let entries = value["results"]
+        .as_array()
+        .expect("the document carries a results array");
     let entry = entries
         .iter()
         .find(|entry| entry["path"] == "unused.py")

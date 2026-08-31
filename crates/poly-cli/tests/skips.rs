@@ -217,7 +217,9 @@ fn json_output_carries_skipped_paths_structurally() {
         let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
         let value: serde_json::Value = serde_json::from_str(&stdout)
             .unwrap_or_else(|e| panic!("{subcommand:?} stdout must be JSON ({e}): {stdout}"));
-        let entries = value.as_array().expect("top level stays an array");
+        let entries = value["results"]
+            .as_array()
+            .expect("the document carries a results array");
         let skipped = entries
             .iter()
             .find(|entry| entry["path"].as_str().is_some_and(|p| p.ends_with("App.csproj")))
@@ -365,7 +367,9 @@ fn json_carries_the_no_lint_rules_reason() {
     );
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     let value: serde_json::Value = serde_json::from_str(&stdout).expect("stdout stays valid JSON");
-    let entries = value.as_array().expect("top level stays an array");
+    let entries = value["results"]
+        .as_array()
+        .expect("the document carries a results array");
     let entry = entries
         .iter()
         .find(|entry| entry["path"].as_str().is_some_and(|p| p.ends_with("a.zig")))

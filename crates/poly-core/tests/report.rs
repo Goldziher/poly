@@ -391,6 +391,7 @@ fn lint_json_run_reports_a_serialization_failure_instead_of_a_clean_document() {
 #[test]
 fn format_json_run_reports_a_serialization_failure_instead_of_a_clean_document() {
     let run = FormatRun {
+        checked: 0,
         results: unrenderable_format_results(),
         skipped: Vec::new(),
         errors: Vec::new(),
@@ -568,6 +569,7 @@ fn sample_discovery() -> DiscoveryReport {
 fn format_summary_reports_what_discovery_excluded() {
     owo_colors::set_override(false);
     let run = FormatRun {
+        checked: 0,
         skipped: Vec::new(),
         errors: Vec::new(),
         results: vec![FormatResult {
@@ -605,6 +607,7 @@ fn format_summary_reports_what_discovery_excluded() {
 fn format_summary_explains_a_run_that_checked_nothing() {
     owo_colors::set_override(false);
     let run = FormatRun {
+        checked: 0,
         skipped: Vec::new(),
         errors: Vec::new(),
         results: Vec::new(),
@@ -643,6 +646,7 @@ fn format_summary_explains_a_run_that_checked_nothing() {
 fn format_summary_reports_exclusions_alongside_changed_files() {
     owo_colors::set_override(false);
     let run = FormatRun {
+        checked: 0,
         skipped: Vec::new(),
         errors: Vec::new(),
         results: sample_format_results(),
@@ -719,6 +723,7 @@ fn summaries_stay_quiet_when_nothing_was_excluded() {
     assert!(!text.contains("excluded"), "got: {text}");
 
     let format = FormatRun {
+        checked: 0,
         skipped: Vec::new(),
         errors: Vec::new(),
         results: sample_format_results(),
@@ -778,6 +783,7 @@ fn lint_summary_names_paths_that_matched_no_engine() {
 fn format_summary_reports_skips_alongside_changed_files() {
     owo_colors::set_override(false);
     let run = FormatRun {
+        checked: 0,
         errors: Vec::new(),
         results: sample_format_results(),
         skipped: vec![SkippedFile {
@@ -918,7 +924,9 @@ fn lint_json_run_appends_skipped_paths_as_entries() {
 
     let json = report::report_lint_json_run(&run).expect("report must render");
     let value: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
-    let entries = value.as_array().expect("top level stays an array");
+    let entries = value["results"]
+        .as_array()
+        .expect("the document carries a results array");
     assert_eq!(entries.len(), 3, "two results plus the skipped path: {json}");
     let skipped = entries.last().expect("the appended entry");
     assert_eq!(skipped["path"], "App.csproj");
@@ -943,6 +951,7 @@ fn format_json_run_does_not_duplicate_declined_files() {
         debug: None,
     };
     let run = FormatRun {
+        checked: 0,
         errors: Vec::new(),
         results: vec![declined],
         skipped: vec![
@@ -960,7 +969,9 @@ fn format_json_run_does_not_duplicate_declined_files() {
 
     let json = report::report_format_json_run(&run).expect("report must render");
     let value: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
-    let entries = value.as_array().expect("top level stays an array");
+    let entries = value["results"]
+        .as_array()
+        .expect("the document carries a results array");
     assert_eq!(entries.len(), 2, "the declined file appears exactly once: {json}");
     assert_eq!(entries[1]["path"], "App.csproj");
     assert_eq!(entries[1]["skipped"], poly_core::runner::NO_ENGINE_SKIP);
@@ -990,6 +1001,7 @@ fn a_run_whose_only_file_was_skipped_does_not_read_as_clean() {
     assert!(text.contains("Nothing was linted."), "got: {text}");
 
     let format = FormatRun {
+        checked: 0,
         errors: Vec::new(),
         results: Vec::new(),
         skipped,
@@ -1147,7 +1159,9 @@ fn lint_json_run_carries_errors_separately_from_skips() {
 
     let json = report::report_lint_json_run(&run).expect("report must render");
     let value: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
-    let entries = value.as_array().expect("top level stays an array");
+    let entries = value["results"]
+        .as_array()
+        .expect("the document carries a results array");
     assert_eq!(entries.len(), 2, "the skipped path and the errored one: {json}");
 
     let skipped = entries
@@ -1207,6 +1221,7 @@ fn lint_error_note_names_every_failing_path() {
 #[test]
 fn format_json_run_carries_errors_separately_from_skips() {
     let run = FormatRun {
+        checked: 0,
         results: vec![FormatResult {
             path: PathBuf::from("ok.py"),
             changed: false,
@@ -1228,7 +1243,9 @@ fn format_json_run_carries_errors_separately_from_skips() {
 
     let json = report::report_format_json_run(&run).expect("report must render");
     let value: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
-    let entries = value.as_array().expect("top level stays an array");
+    let entries = value["results"]
+        .as_array()
+        .expect("the document carries a results array");
     assert_eq!(
         entries.len(),
         3,
@@ -1270,6 +1287,7 @@ fn format_json_run_carries_errors_separately_from_skips() {
 #[test]
 fn format_json_run_never_downgrades_an_errored_file_to_a_skip() {
     let run = FormatRun {
+        checked: 0,
         results: Vec::new(),
         skipped: vec![SkippedFile {
             path: PathBuf::from("bad.py"),
@@ -1284,7 +1302,9 @@ fn format_json_run_never_downgrades_an_errored_file_to_a_skip() {
 
     let json = report::report_format_json_run(&run).expect("report must render");
     let value: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
-    let entries = value.as_array().expect("top level stays an array");
+    let entries = value["results"]
+        .as_array()
+        .expect("the document carries a results array");
     assert_eq!(entries.len(), 1, "the file appears exactly once: {json}");
     assert_eq!(entries[0]["error"], "stream did not contain valid UTF-8");
     assert!(
@@ -1298,6 +1318,7 @@ fn format_json_run_never_downgrades_an_errored_file_to_a_skip() {
 #[test]
 fn format_json_run_does_not_duplicate_a_declined_file_when_a_file_also_errored() {
     let run = FormatRun {
+        checked: 0,
         results: vec![FormatResult {
             path: PathBuf::from("Taskfile.yaml"),
             changed: false,
@@ -1319,7 +1340,9 @@ fn format_json_run_does_not_duplicate_a_declined_file_when_a_file_also_errored()
 
     let json = report::report_format_json_run(&run).expect("report must render");
     let value: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
-    let entries = value.as_array().expect("top level stays an array");
+    let entries = value["results"]
+        .as_array()
+        .expect("the document carries a results array");
     assert_eq!(
         entries.len(),
         2,
@@ -1336,6 +1359,7 @@ fn format_json_run_does_not_duplicate_a_declined_file_when_a_file_also_errored()
 #[test]
 fn format_toon_run_carries_the_errored_file_too() {
     let run = FormatRun {
+        checked: 0,
         results: Vec::new(),
         skipped: Vec::new(),
         errors: vec![FormatError {
@@ -1355,8 +1379,9 @@ fn format_toon_run_carries_the_errored_file_too() {
 /// A run with no errors renders exactly the document it always did — the clean
 /// path gains neither an entry nor a key.
 #[test]
-fn format_json_run_without_errors_is_unchanged() {
+fn format_json_run_emits_the_document_shape() {
     let run = FormatRun {
+        checked: 1,
         results: vec![FormatResult {
             path: PathBuf::from("src/main.py"),
             changed: true,
@@ -1372,7 +1397,17 @@ fn format_json_run_without_errors_is_unchanged() {
 
     let rendered = report::report_format_json_run(&run).expect("report must render");
     let value: serde_json::Value = serde_json::from_str(&rendered).expect("valid JSON");
-    assert_eq!(value, serde_json::json!([{ "path": "src/main.py", "changed": true }]));
+    assert_eq!(
+        value,
+        serde_json::json!({
+            "results": [{ "path": "src/main.py", "changed": true }],
+            "errors": [],
+            "skipped": [],
+            "summary": { "checked": 1, "skipped": 0, "errored": 0 },
+        }),
+        "the whole document contract, pinned: a consumer reads coverage from `summary` \
+         and the empty `errors`/`skipped` lists rather than inferring it from `results`",
+    );
 }
 
 /// The human format summary already names a file the formatter could not
@@ -1382,6 +1417,7 @@ fn format_json_run_without_errors_is_unchanged() {
 fn format_summary_names_a_file_the_engine_could_not_process() {
     owo_colors::set_override(false);
     let run = FormatRun {
+        checked: 0,
         results: vec![FormatResult {
             path: PathBuf::from("ok.py"),
             changed: false,
@@ -1441,6 +1477,7 @@ fn format_summary_names_directories_the_builtin_prune_set_skipped() {
         ..DiscoveryReport::default()
     };
     let format = FormatRun {
+        checked: 0,
         skipped: Vec::new(),
         errors: Vec::new(),
         results: sample_format_results(),

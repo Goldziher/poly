@@ -157,7 +157,9 @@ fn mixed_run_reports_clean_skipped_and_errored_distinctly() {
     assert_eq!(output.status.code(), Some(1), "got:\n{stdout}{stderr}");
     let value: serde_json::Value =
         serde_json::from_str(&stdout).unwrap_or_else(|e| panic!("stdout must be JSON ({e}): {stdout}"));
-    let entries = value.as_array().expect("top level stays an array");
+    let entries = value["results"]
+        .as_array()
+        .expect("the document carries a results array");
 
     let invalid = entries
         .iter()

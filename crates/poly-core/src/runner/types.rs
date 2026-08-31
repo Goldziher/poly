@@ -264,6 +264,15 @@ pub struct FormatRun {
     /// saying otherwise is a gate that passes without checking. Carried here so
     /// the caller can name the paths and fail.
     pub errors: Vec<FormatError>,
+    /// Files the formatter actually inspected.
+    ///
+    /// The counterpart of [`LintRun::checked`], and computed the same way: a
+    /// file every routed backend declined was read but not inspected, so it is
+    /// in [`FormatRun::skipped`] rather than in this count. Carried on the run
+    /// rather than derived at display time, because the display-time formula
+    /// subtracts declines but not *failures* — which would count a file the
+    /// formatter could not parse as one it checked.
+    pub checked: usize,
     /// Files the run did not inspect, each with its reason — files every routed
     /// backend declined, plus explicitly named paths no engine covers.
     ///

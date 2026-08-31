@@ -8,22 +8,29 @@
 //! machine-readable structured JSON *and* a human/compact text view from one
 //! call.
 //!
-//! The lint/format DTOs wrap the `poly-core` report types (their `JsonSchema`
-//! derives are gated behind the crate's `schemars` feature, enabled by this
-//! crate), so each per-file record is exactly the CLI's `--format json` record.
-//! They are built from the whole *run*, not just its results: a file the run
-//! **failed** on is carried as a record with an `error` — never omitted, which
-//! would make it indistinguishable from a file that was checked and found clean
-//! — and repeated in a run-level `errors` list that also flips the tool result's
-//! `isError`, the MCP stand-in for the CLI's exit code 2. The
-//! cache/rules/config/workspace DTOs are MCP-local because their CLI
+//! Lint and format return `poly-core`'s own [`LintDocument`] / [`FormatDocument`]
+//! — the exact value `poly lint --format json` prints, with its `JsonSchema`
+//! derive gated behind the `schemars` feature this crate enables. There is no
+//! MCP-local copy, so the two surfaces cannot answer the same question
+//! differently.
+//!
+//! The document is built from the whole *run*, not just its results, and states
+//! three things a caller would otherwise have to reconstruct by walking every
+//! record: files the run **failed** on (also flipping `isError`, the MCP
+//! stand-in for the CLI's exit code 2), files nothing **inspected**, and how
+//! many files were actually **checked**. A run where everything was skipped
+//! reports no diagnostics and is not an error — without those fields it is
+//! indistinguishable from a clean pass, which is the defect they close. A skip
+//! is coverage information, not a failure, so it deliberately does not set
+//! `isError`.
+//!
+//! The cache/rules/config/workspace DTOs are MCP-local because their CLI
 //! counterparts print prose rather than a serializable value.
 
-use std::collections::BTreeSet;
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use poly_core::{FormatError, FormatResult, FormatRun, LintError, LintResult, LintRun};
+use poly_core::report::{FormatDocument, LintDocument};
+use poly_core::{FormatRun, LintRun};
 use rmcp::ErrorData;
 use rmcp::model::{CallToolResult, ContentBlock, JsonObject, MetaObject};
 use schemars::JsonSchema;
@@ -157,152 +164,33 @@ pub fn dto_result<T: Serialize>(value: &T, repr: TextRepr) -> Result<CallToolRes
     Ok(build(structured, json_text, toon_text, repr))
 }
 
-/// The set of paths already represented by a results list, used to append the
-/// synthetic error/skip records without ever listing a file twice.
-fn known_paths<'a>(paths: impl Iterator<Item = &'a std::path::Path>) -> BTreeSet<PathBuf> {
-    paths.map(Path::to_path_buf).collect()
+/// Build the tool result for a whole lint run.
+///
+/// The payload is `poly-core`'s own [`LintDocument`] — the same value
+/// `poly lint --format json` prints — so `structured_content` and the text block
+/// carry one shape, and the CLI and this server cannot answer "what did you
+/// actually check" differently.
+pub fn lint_result(run: LintRun, repr: TextRepr) -> Result<CallToolResult, ErrorData> {
+    let document = LintDocument::from_run(&run);
+    let is_error = !document.errors.is_empty();
+    let structured = serde_json::to_value(&document).map_err(serialize_error)?;
+    // A render failure is surfaced as a tool error, never as an empty document:
+    // an MCP caller has no other way to tell "clean" from "poly could not tell
+    // you".
+    let json_text = poly_core::report::report_lint_json_run(&run).map_err(serialize_error)?;
+    let toon_text = poly_core::report::report_lint_toon_run(&run).map_err(serialize_error)?;
+    Ok(build_with_status(structured, json_text, toon_text, repr, is_error))
 }
 
-/// Structured lint results (mirrors `poly lint --format json`). Wraps the
-/// `poly-core` per-file results so `structured_content` is a self-describing
-/// object with a stable output schema.
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct LintReport {
-    /// Per-file lint outcome, identical to the CLI JSON records — including the
-    /// synthetic entries for files the run failed on (`error`) and files it
-    /// declined (`skipped`), which carry no diagnostics of their own.
-    pub results: Vec<LintResult>,
-    /// Files the run **failed** on, so a caller can gate on the run having
-    /// checked what it was given without scanning every record.
-    ///
-    /// Redundant with the `error`-carrying entries in `results` on purpose: the
-    /// whole defect this exists to close is a consumer reading a clean-looking
-    /// list and concluding the files are fine.
-    pub errors: Vec<LintError>,
-}
-
-impl LintReport {
-    /// Build the report from a whole run, mirroring the CLI's
-    /// `report_lint_json_run`: results first, then one synthetic entry per file
-    /// the run failed on, then one per file it skipped.
-    ///
-    /// Errors are appended before skips so a file that failed is reported as
-    /// failed and never downgraded to a skip.
-    pub fn from_run(run: LintRun) -> Self {
-        let LintRun {
-            mut results,
-            errors,
-            skipped,
-            ..
-        } = run;
-        let mut known = known_paths(results.iter().map(|r| r.path.as_path()));
-        let synthetic = |path: &Path, skipped: Option<String>, error: Option<String>| LintResult {
-            path: path.to_path_buf(),
-            diagnostics: Vec::new(),
-            fix_withheld_generated: false,
-            fixed: 0,
-            skipped,
-            error,
-            debug: None,
-        };
-        for error in &errors {
-            if known.insert(error.path.clone()) {
-                results.push(synthetic(&error.path, None, Some(error.message.clone())));
-            }
-        }
-        for entry in &skipped {
-            if known.insert(entry.path.clone()) {
-                results.push(synthetic(&entry.path, Some(entry.reason.clone()), None));
-            }
-        }
-        Self { results, errors }
-    }
-
-    /// Build the structured result. The JSON/TOON text blocks reproduce the CLI
-    /// array exactly (`report_lint_json` / `report_lint_toon`), so the text
-    /// contract is unchanged while `structured_content` gains the object schema.
-    pub fn into_result(self, repr: TextRepr) -> Result<CallToolResult, ErrorData> {
-        let structured = serde_json::to_value(&self).map_err(serialize_error)?;
-        // A render failure is surfaced as a tool error, never as an empty
-        // document: an MCP caller has no other way to tell "clean" from "poly
-        // could not tell you".
-        let json_text = poly_core::report::report_lint_json(&self.results).map_err(serialize_error)?;
-        let toon_text = poly_core::report::report_lint_toon(&self.results).map_err(serialize_error)?;
-        Ok(build_with_status(
-            structured,
-            json_text,
-            toon_text,
-            repr,
-            !self.errors.is_empty(),
-        ))
-    }
-}
-
-/// Structured format results (mirrors `poly fmt --format json`).
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct FormatReport {
-    /// Per-file format outcome, identical to the CLI JSON records — including
-    /// the synthetic entries for files the run failed on (`error`) and files it
-    /// declined (`skipped`).
-    pub results: Vec<FormatResult>,
-    /// Files the run **failed** on — the format counterpart of
-    /// [`LintReport::errors`], and for the same reason.
-    pub errors: Vec<FormatError>,
-}
-
-impl FormatReport {
-    /// Build the report from a whole run, mirroring the CLI's
-    /// `report_format_json_run`: results first, then one synthetic entry per file
-    /// the run failed on, then one per file it skipped.
-    ///
-    /// Errors are appended before skips so a file that failed is reported as
-    /// failed and never downgraded to a skip.
-    pub fn from_run(run: FormatRun) -> Self {
-        let FormatRun {
-            mut results,
-            errors,
-            skipped,
-            ..
-        } = run;
-        let mut known = known_paths(results.iter().map(|r| r.path.as_path()));
-        let synthetic = |path: &Path, skipped: Option<String>, error: Option<String>| FormatResult {
-            path: path.to_path_buf(),
-            changed: false,
-            skipped,
-            error,
-            formatted: None,
-            debug: None,
-        };
-        for error in &errors {
-            if known.insert(error.path.clone()) {
-                results.push(synthetic(&error.path, None, Some(error.message.clone())));
-            }
-        }
-        for entry in &skipped {
-            if known.insert(entry.path.clone()) {
-                results.push(synthetic(&entry.path, Some(entry.reason.clone()), None));
-            }
-        }
-        Self { results, errors }
-    }
-
-    /// Build the structured result. The JSON/TOON text blocks reproduce the CLI
-    /// array exactly (`report_format_json` / `report_format_toon`), so the text
-    /// contract is unchanged while `structured_content` gains the object schema.
-    pub fn into_result(self, repr: TextRepr) -> Result<CallToolResult, ErrorData> {
-        let structured = serde_json::to_value(&self).map_err(serialize_error)?;
-        // As on the lint side: a render failure becomes a tool error rather
-        // than a clean-looking empty document.
-        let json_text = poly_core::report::report_format_json(&self.results).map_err(serialize_error)?;
-        let toon_text = poly_core::report::report_format_toon(&self.results).map_err(serialize_error)?;
-        Ok(build_with_status(
-            structured,
-            json_text,
-            toon_text,
-            repr,
-            !self.errors.is_empty(),
-        ))
-    }
+/// Build the tool result for a whole format run — the counterpart of
+/// [`lint_result`], and for the same reasons.
+pub fn format_result(run: FormatRun, repr: TextRepr) -> Result<CallToolResult, ErrorData> {
+    let document = FormatDocument::from_run(&run);
+    let is_error = !document.errors.is_empty();
+    let structured = serde_json::to_value(&document).map_err(serialize_error)?;
+    let json_text = poly_core::report::report_format_json_run(&run).map_err(serialize_error)?;
+    let toon_text = poly_core::report::report_format_toon_run(&run).map_err(serialize_error)?;
+    Ok(build_with_status(structured, json_text, toon_text, repr, is_error))
 }
 
 /// One result-cache namespace's footprint.

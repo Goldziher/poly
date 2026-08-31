@@ -296,8 +296,12 @@ pub fn format_run(
         &opts.exclude,
         opts.force_exclude,
     ));
+    // Mirrors the lint side: a file every backend declined was read, not
+    // inspected, so it is not part of what the run claims to have formatted.
+    let checked = results.iter().filter(|result| result.skipped.is_none()).count();
     Ok(FormatRun {
         results,
+        checked,
         errors,
         skipped,
         discovery,

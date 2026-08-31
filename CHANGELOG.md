@@ -29,6 +29,40 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ### Changed
 
+- **BREAKING — `poly lint --format json` / `--format toon` now emit an object, not an array.**
+  The payload gains three things a consumer previously had to reconstruct by walking every record:
+  a top-level `skipped` list, a top-level `errors` list, and a `summary` of
+  `checked` / `skipped` / `errored` counts.
+
+  ```json
+  // before
+  [{ "path": "src/main.py", "diagnostics": [] }]
+
+  // after
+  {
+    "results": [{ "path": "src/main.py", "diagnostics": [] }],
+    "errors": [],
+    "skipped": [],
+    "summary": { "checked": 1, "skipped": 0, "errored": 0 }
+  }
+  ```
+
+  `errors` was already promoted to the top level of the MCP payload precisely so a caller could
+  gate on coverage without scanning; `skipped` was not, and there was no count of what had been
+  checked. A run where every file was skipped produced an empty diagnostic list, set no error flag,
+  and read exactly like a clean pass — which an agent told to "lint the changed files and fix what
+  it finds" is right to treat as done. Closes
+  [#19](https://github.com/Goldziher/poly/issues/19).
+
+  **Gate on `summary.checked`, not on an empty `results`.** The three counts are not a partition of
+  `results` and cannot be derived from it: a file checked and found clean produces no record at all,
+  and a file whose language poly has no rules for can be *both* a skip and a result, since the
+  cross-cutting backends still run over it.
+
+  The CLI and the MCP server now serialize the same `poly-core` type, so the two surfaces cannot
+  answer "what did you actually check" differently. A skip still does not set `isError` — it is
+  coverage information, not a failure.
+
 - **A coverage gate no longer fails on your own configuration.** poly now draws one line across
   every mechanism that withdraws coverage: **a limit of poly is charged to `--deny-skips` and names
   the limit; an instruction you wrote is never charged, and names itself.** So a file left

@@ -55,9 +55,10 @@ use rmcp::{ErrorData, RoleServer, ServerHandler, tool, tool_router};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::dto::{
-    FormatReport, LintReport, TextRepr, VersionReport, WorkspaceReport, dto_result, schema_for_output_with_identity,
-};
+use crate::dto;
+use poly_core::report::{FormatDocument, LintDocument};
+
+use crate::dto::{TextRepr, VersionReport, WorkspaceReport, dto_result, schema_for_output_with_identity};
 use crate::identity::ExecutableWatch;
 use crate::ops;
 
@@ -248,58 +249,66 @@ impl PolyMcpServer {
 
     #[tool(
         description = "Lint files and report diagnostics as structured JSON (plus JSON/TOON text). Never writes. Mirrors `poly lint`. \
-                      A file poly could not process is reported with an `error` (never as clean) and sets `isError`.",
+                      A file poly could not process is reported with an `error` (never as clean) and sets `isError`. \
+                      The result carries `skipped` and a `summary` of checked/skipped/errored counts: check those, not just \
+                      an empty `results`, since a run that skipped everything reports no diagnostics and is not an error.",
         annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false),
-        output_schema = schema_for_output_with_identity::<LintReport>()
+        output_schema = schema_for_output_with_identity::<LintDocument>()
     )]
     async fn lint(&self, params: Parameters<PathsParams>) -> Result<CallToolResult, ErrorData> {
         let Parameters(args) = params;
         let config = effective_config(args.config, &self.config_override);
         let repr = args.format;
         let run = run_blocking(move || ops::lint_run(&args.paths, &args.exclude, config.as_deref(), false)).await?;
-        LintReport::from_run(run).into_result(repr)
+        dto::lint_result(run, repr)
     }
 
     #[tool(
         description = "Check formatting without writing; reports which files would change as structured JSON (plus JSON/TOON text). Mirrors `poly fmt --check`. \
-                      A file poly could not process is reported with an `error` (never as clean) and sets `isError`.",
+                      A file poly could not process is reported with an `error` (never as clean) and sets `isError`. \
+                      The result carries `skipped` and a `summary` of checked/skipped/errored counts: check those, not just \
+                      an empty `results`, since a run that skipped everything reports no diagnostics and is not an error.",
         annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false),
-        output_schema = schema_for_output_with_identity::<FormatReport>()
+        output_schema = schema_for_output_with_identity::<FormatDocument>()
     )]
     async fn format_check(&self, params: Parameters<PathsParams>) -> Result<CallToolResult, ErrorData> {
         let Parameters(args) = params;
         let config = effective_config(args.config, &self.config_override);
         let repr = args.format;
         let run = run_blocking(move || ops::format_run(&args.paths, &args.exclude, config.as_deref(), false)).await?;
-        FormatReport::from_run(run).into_result(repr)
+        dto::format_result(run, repr)
     }
 
     #[tool(
         description = "Lint files and apply available autofixes in place, then report remaining diagnostics. Writes files. Mirrors `poly lint --fix`. \
-                      A file poly could not process is reported with an `error` (never as clean) and sets `isError`.",
+                      A file poly could not process is reported with an `error` (never as clean) and sets `isError`. \
+                      The result carries `skipped` and a `summary` of checked/skipped/errored counts: check those, not just \
+                      an empty `results`, since a run that skipped everything reports no diagnostics and is not an error.",
         annotations(read_only_hint = false, destructive_hint = true, open_world_hint = false),
-        output_schema = schema_for_output_with_identity::<LintReport>()
+        output_schema = schema_for_output_with_identity::<LintDocument>()
     )]
     async fn lint_fix(&self, params: Parameters<PathsParams>) -> Result<CallToolResult, ErrorData> {
         let Parameters(args) = params;
         let config = effective_config(args.config, &self.config_override);
         let repr = args.format;
         let run = run_blocking(move || ops::lint_run(&args.paths, &args.exclude, config.as_deref(), true)).await?;
-        LintReport::from_run(run).into_result(repr)
+        dto::lint_result(run, repr)
     }
 
     #[tool(
         description = "Format files in place and report which files changed. Writes files. Mirrors `poly fmt --fix`. \
-                      A file poly could not process is reported with an `error` (never as clean) and sets `isError`.",
+                      A file poly could not process is reported with an `error` (never as clean) and sets `isError`. \
+                      The result carries `skipped` and a `summary` of checked/skipped/errored counts: check those, not just \
+                      an empty `results`, since a run that skipped everything reports no diagnostics and is not an error.",
         annotations(read_only_hint = false, destructive_hint = true, open_world_hint = false),
-        output_schema = schema_for_output_with_identity::<FormatReport>()
+        output_schema = schema_for_output_with_identity::<FormatDocument>()
     )]
     async fn format_write(&self, params: Parameters<PathsParams>) -> Result<CallToolResult, ErrorData> {
         let Parameters(args) = params;
         let config = effective_config(args.config, &self.config_override);
         let repr = args.format;
         let run = run_blocking(move || ops::format_run(&args.paths, &args.exclude, config.as_deref(), true)).await?;
-        FormatReport::from_run(run).into_result(repr)
+        dto::format_result(run, repr)
     }
 
     #[tool(
@@ -501,6 +510,11 @@ impl ServerHandler for PolyMcpServer {
                  executable, pid) identifying the binary that answered — check it before acting on a result. \
                  lint/format results tell three per-file outcomes apart — checked, `skipped`, and `error` \
                  (poly failed on the file, so it was NOT checked) — and set `isError` when any file failed. \
+                 They also carry top-level `errors` and `skipped` lists and a `summary` of \
+                 checked/skipped/errored counts. Gate on `summary.checked`, not on an empty `results`: a run \
+                 that skipped every file reports no diagnostics and is not an error, so it is otherwise \
+                 indistinguishable from a clean pass. The counts are not a partition of `results` — a file \
+                 checked and found clean produces no record at all. \
                  If this server's executable is replaced or deleted while it runs, every tool but `version` \
                  fails until the server is restarted.",
             )

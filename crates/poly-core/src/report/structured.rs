@@ -1,9 +1,13 @@
 //! The machine-readable renderers: `json` (`serde_json`) and `toon`
-//! (Token-Oriented Object Notation), plus the run-level variants that append the
-//! skipped and errored files so the document answers "what did you not look
-//! at?".
+//! (Token-Oriented Object Notation).
+//!
+//! The `*_run` variants render a whole [`LintDocument`] / [`FormatDocument`] —
+//! results, errors, skips and the coverage summary. The bare-slice variants
+//! render just the per-file records, and exist for callers that already hold a
+//! result set rather than a run.
 
 use super::RenderError;
+use super::document::{FormatDocument, LintDocument};
 use super::render::{render_json, render_toon};
 use crate::runner::{FormatResult, FormatRun, LintResult, LintRun};
 
@@ -29,9 +33,9 @@ pub fn report_lint_toon(results: &[LintResult]) -> Result<String, RenderError> {
 /// one team to reconstruct the set from a heuristic and scrape the human
 /// summary for it. The appended entries carry `path` plus `skipped` *or*
 /// `error` — never both, since a file poly declined and a file poly failed on are
-/// different outcomes — with an empty `diagnostics` list, so the document stays
-/// the same array of per-file records and existing consumers are unaffected.
-fn lint_results_for_output(run: &LintRun) -> Vec<LintResult> {
+/// different outcomes — with an empty `diagnostics` list, so every file the run
+/// touched has a record whether or not it produced findings.
+pub(super) fn lint_results_for_output(run: &LintRun) -> Vec<LintResult> {
     let mut results = run.results.clone();
     let mut known: std::collections::BTreeSet<&std::path::Path> =
         run.results.iter().map(|r| r.path.as_path()).collect();
@@ -59,16 +63,16 @@ fn lint_results_for_output(run: &LintRun) -> Vec<LintResult> {
     results
 }
 
-/// [`report_lint_json`] over a whole [`LintRun`], so the skipped and errored sets
-/// are carried structurally rather than left to the human summary.
+/// A whole [`LintRun`] as JSON: results, errors, skips and the coverage summary,
+/// so the skipped set and the checked count are answerable without walking every
+/// record.
 pub fn report_lint_json_run(run: &LintRun) -> Result<String, RenderError> {
-    report_lint_json(&lint_results_for_output(run))
+    render_json(&LintDocument::from_run(run))
 }
 
-/// [`report_lint_toon`] over a whole [`LintRun`], including the skipped and
-/// errored sets.
+/// [`report_lint_json_run`] as TOON.
 pub fn report_lint_toon_run(run: &LintRun) -> Result<String, RenderError> {
-    report_lint_toon(&lint_results_for_output(run))
+    render_toon(&LintDocument::from_run(run))
 }
 
 /// Render format results as pretty-printed JSON.
@@ -93,7 +97,7 @@ pub fn report_format_toon(results: &[FormatResult]) -> Result<String, RenderErro
 /// failure visible only in the exit code. Both are added here, so the JSON answer
 /// to "what did you not look at?" is complete and matches the lint side's
 /// (see [`lint_results_for_output`]).
-fn format_results_for_output(run: &FormatRun) -> Vec<FormatResult> {
+pub(super) fn format_results_for_output(run: &FormatRun) -> Vec<FormatResult> {
     let mut results = run.results.clone();
     let mut known: std::collections::BTreeSet<&std::path::Path> =
         run.results.iter().map(|r| r.path.as_path()).collect();
@@ -120,14 +124,13 @@ fn format_results_for_output(run: &FormatRun) -> Vec<FormatResult> {
     results
 }
 
-/// [`report_format_json`] over a whole [`FormatRun`], so every errored and
-/// skipped path is carried structurally.
+/// A whole [`FormatRun`] as JSON — the format counterpart of
+/// [`report_lint_json_run`].
 pub fn report_format_json_run(run: &FormatRun) -> Result<String, RenderError> {
-    report_format_json(&format_results_for_output(run))
+    render_json(&FormatDocument::from_run(run))
 }
 
-/// [`report_format_toon`] over a whole [`FormatRun`], including every errored and
-/// skipped path.
+/// [`report_format_json_run`] as TOON.
 pub fn report_format_toon_run(run: &FormatRun) -> Result<String, RenderError> {
-    report_format_toon(&format_results_for_output(run))
+    render_toon(&FormatDocument::from_run(run))
 }

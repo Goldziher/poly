@@ -196,7 +196,10 @@ fn json_carries_no_rust_skip_when_the_whole_project_phase_covers_it() {
     let value: serde_json::Value = serde_json::from_str(&stdout).expect("stdout stays valid JSON");
 
     assert_eq!(
-        value.as_array().expect("top level stays an array").len(),
+        value["results"]
+            .as_array()
+            .expect("the document carries a results array")
+            .len(),
         0,
         "a covered file with no findings is not an entry: {stdout}"
     );

@@ -18,7 +18,7 @@
 
 use std::path::Path;
 
-use poly_mcp::dto::{FormatReport, LintReport};
+use poly_core::report::{FormatDocument, LintDocument};
 use poly_mcp::{PolyMcpServer, ops};
 use rmcp::ServiceExt;
 use rmcp::model::{CallToolRequestParams, ClientCapabilities, ClientInfo};
@@ -121,17 +121,18 @@ fn format_run_carries_the_errored_file_instead_of_dropping_it() {
 
 // ── CLI parity: the per-file records are the CLI's ────────────────────────
 
-/// The MCP lint records must stay the CLI's, or the documented "mirrors the
-/// CLI" contract quietly stops being true — this is the drift guard on the
-/// synthetic error/skip entries, which both sides build independently.
+/// The MCP lint payload must stay the CLI's, or the documented "mirrors the
+/// CLI" contract quietly stops being true. Both sides now serialize the same
+/// `LintDocument`, so this guards that the CLI renders it unmodified — results,
+/// errors, skips and the coverage summary alike.
 #[test]
 fn the_lint_records_are_the_cli_records() {
     let dir = repo();
     let run = ops::lint_run(&paths(&dir), &[], None, false).unwrap();
     let rendered = poly_core::report::report_lint_json_run(&run).expect("CLI report must render");
     let cli: Value = serde_json::from_str(&rendered).expect("CLI JSON");
-    let mcp = serde_json::to_value(LintReport::from_run(run).results).expect("MCP JSON");
-    assert_eq!(mcp, cli, "the MCP lint records are exactly the CLI's");
+    let mcp = serde_json::to_value(LintDocument::from_run(&run)).expect("MCP JSON");
+    assert_eq!(mcp, cli, "the MCP lint document is exactly the CLI's");
 }
 
 /// Same for format. The CLI's format document used to have no `error` field and
@@ -144,14 +145,18 @@ fn the_format_records_are_the_cli_records() {
     let run = ops::format_run(&paths(&dir), &[], None, false).unwrap();
     let rendered = poly_core::report::report_format_json_run(&run).expect("CLI report must render");
     let cli: Value = serde_json::from_str(&rendered).expect("CLI JSON");
-    let report = FormatReport::from_run(run);
+    let document = FormatDocument::from_run(&run);
     assert_eq!(
-        report.results.iter().filter(|r| r.error.is_some()).count(),
+        document.results.iter().filter(|r| r.error.is_some()).count(),
         1,
         "the errored file is one of the records, not an omission"
     );
-    let mcp = serde_json::to_value(&report.results).expect("MCP JSON");
-    assert_eq!(mcp, cli, "the MCP format records are exactly the CLI's");
+    assert_eq!(
+        document.summary.errored, 1,
+        "and the summary states it, so a consumer need not scan for it"
+    );
+    let mcp = serde_json::to_value(&document).expect("MCP JSON");
+    assert_eq!(mcp, cli, "the MCP format document is exactly the CLI's");
 }
 
 // ── round-trips: the serialized MCP payload ───────────────────────────────
@@ -281,9 +286,9 @@ async fn the_text_block_carries_the_errored_file_too() {
         let result = call(tool, &dir).await;
         let text = result.content[0].as_text().expect("text content").text.clone();
         let parsed: Value = serde_json::from_str(&text).unwrap_or_else(|e| panic!("{tool} text is JSON ({e}): {text}"));
-        let records = parsed
+        let records = parsed["results"]
             .as_array()
-            .unwrap_or_else(|| panic!("{tool} text block stays the CLI array: {text}"));
+            .unwrap_or_else(|| panic!("{tool} text block carries the CLI document: {text}"));
         let invalid = entry(records, "bad.py");
         if tool == "lint" {
             assert_eq!(invalid["diagnostics"][0]["code"], Value::from("invalid-utf8"));
@@ -292,10 +297,14 @@ async fn the_text_block_carries_the_errored_file_too() {
             assert_eq!(invalid["error"], Value::from(UTF8_FORMAT_ERROR));
         }
         let structured = result.structured_content.as_ref().expect("structured content");
-        assert_eq!(
-            &parsed, &structured["results"],
-            "{tool}'s text block and structured results are the same records"
-        );
+        // The identity block is added to `structured_content` only, so compare
+        // the document fields rather than the whole value.
+        for field in ["results", "errors", "skipped", "summary"] {
+            assert_eq!(
+                &parsed[field], &structured[field],
+                "{tool}'s text block and structured content are the same document ({field})"
+            );
+        }
     }
 }
 

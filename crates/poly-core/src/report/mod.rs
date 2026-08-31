@@ -45,6 +45,7 @@
 //! goes — the earlier layout printed the headline and then buried it under
 //! twenty-nine lines of skip detail.
 
+mod document;
 mod format;
 mod layout;
 mod lint;
@@ -54,6 +55,7 @@ mod shared;
 mod structured;
 pub mod theme;
 
+pub use document::{FormatDocument, LintDocument, RunSummary};
 pub use format::{
     eprint_format_errors, render_format_errors, render_format_pretty, render_format_pretty_run, report_format_pretty,
     report_format_pretty_run,
