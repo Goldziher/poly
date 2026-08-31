@@ -6,8 +6,8 @@ description: "Lint and check formatting with poly — apply no fixes; summarize 
 
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-Content-Hash: blake3:398b0bc3f158bfc94be00ad1e304f164e594c65546bdf55fb005b9889efee26b
-Source-Hash: blake3:261d9152e15dfdc66715216442e953f184ed7b10aacc8dd544b41b8dc501ec75
+Content-Hash: blake3:21ec175c4236b9a5ccb8f54769bf0ae41734faf8eb9b4010734c295f379bdb18
+Source-Hash: blake3:ebf7b5b943d6520ecdcd09cd009836c9a016f0a4fff807c44b0b40cd7370b62d
 Schema-Version: v1
 -->
 
@@ -37,7 +37,9 @@ Report:
 - The overall pass/fail from the exit codes: `0` clean; `1` findings or drift — for `lint`
   only **error**-severity findings (or a failing whole-project tool) reach `1`, warnings
   still exit `0`; `2` the run did not verify what it was asked to (a missing path, a file an
-  engine failed on, a `--deny-skips`/`--max-skips` breach, or the whole-project phase itself
+  engine failed on — including a `poly fmt --check` file that cannot reach a fixed point
+  within poly's five-pass cap, reported as an error rather than clean since a fix would leave
+  it still drifting — a `--deny-skips`/`--max-skips` breach, or the whole-project phase itself
   erroring).
 
 Do not apply fixes here — if the user wants them applied, run `/poly-fix`.

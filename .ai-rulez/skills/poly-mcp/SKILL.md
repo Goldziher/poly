@@ -26,9 +26,9 @@ Eleven tools, no more. Read-only (never touch the tree):
 - `config_show` — the merged effective configuration. Mirrors `poly config show`, and is
   **network-free**: remote `extends` bases are not fetched.
 - `version` — which poly binary is serving this session (version, build id, channel,
-  executable, pid, uptime) and whether that executable is still the file on disk. It answers
-  even when the binary has moved, which is what makes it the tool that explains why the
-  others stopped.
+  executable, pid, uptime), the full compiled-in engine → wrapped-tool-version map, and
+  whether that executable is still the file on disk. It answers even when the binary has
+  moved, which is what makes it the tool that explains why the others stopped.
 
 Mutating (write to the tree):
 
@@ -74,33 +74,40 @@ intent since they change files.
 
 ## Every result identifies the binary that answered
 
-Each result carries a `poly` block (version, build id, channel, executable, pid) in
-`structured_content` and in `_meta`, because an MCP caller has no `poly --version` to fall
-back on. The server fingerprints its own executable at startup and re-checks it per request:
-if the binary is replaced or deleted underneath a long-lived server, every tool but
+Each result carries a `poly` block (version, build id, channel, executable, pid, and an
+`engines` digest — a blake3 hash over the sorted compiled-in engine name + version pairs,
+excluding native-toolchain and catalog engines since those depend on the host and on config)
+in `structured_content` and in `_meta`, because an MCP caller has no `poly --version` to fall
+back on. The digest is what distinguishes two builds sharing one version number (a `dev`
+build, or two builds of one tag) when their wrapped crates differ; the full engine map is on
+the `version` tool. The server fingerprints its own executable at startup and re-checks it per
+request: if the binary is replaced or deleted underneath a long-lived server, every tool but
 `version` fails rather than answering with superseded behaviour.
 
 ## Per-file outcomes: checked, skipped, error
 
-`lint` / `lint_fix` / `format_check` / `format_write` results tell three per-file outcomes
-apart, not two:
+The result object is `{results, errors, skipped, summary, configs}`, not a bare array.
+`summary` is `{checked, skipped, errored}` — the run's own count of what it did, and the field
+to gate on. It cannot be derived from `results`: `results` holds only files with something to
+report, so a file that was checked and found clean produces **no** `results` entry at all — a
+present entry does not mean checked, either, since `results` also carries a synthetic entry
+(empty `diagnostics`, `skipped` or `error` set) for every file the run declined or failed on.
+The skipped/error sets and `results` overlap on purpose:
 
-- **Checked** — the file has a `results` entry with no `skipped`/`error` set (diagnostics may
-  still be empty; that's a clean file, not a missing one).
-- **Skipped** (`skipped` field) — poly correctly declined the file (e.g. a template dialect no
-  backend handles). Not a failure.
-- **Errored** (`error` field) — poly failed to process the file (unreadable file, backend
-  crash, bad engine config). Distinct from `skipped` on purpose: a skip is a deliberate
-  decision, an error is poly failing on a file it accepted.
+- **Checked** — counted in `summary.checked`. Not derivable from `results`.
+- **Skipped** (`skipped` field, and the top-level `skipped` array) — poly correctly declined the
+  file (e.g. a template dialect no backend handles). Not a failure.
+- **Errored** (`error` field, and the top-level `errors` array) — poly failed to process the
+  file (unreadable file, backend crash, bad engine config). Distinct from `skipped` on purpose:
+  a skip is a deliberate decision, an error is poly failing on a file it accepted.
 
-Each result also carries a run-level `errors` array — one entry per file poly failed on,
-duplicating the `error`-carrying records in `results` so a caller can gate on "did the run fail
-on anything" without scanning every record. When `errors` is non-empty, the tool result's
-`CallToolResult.is_error` (`isError` over the wire) is set `true`.
+The top-level `errors` array duplicates the `error`-carrying records in `results` so a caller
+can gate on "did the run fail on anything" without scanning every record. When `errors` is
+non-empty, the tool result's `CallToolResult.is_error` (`isError` over the wire) is set `true`.
 
-**An MCP-driving agent must check `isError` before trusting any other part of the result.**
-Before this shape existed, a file poly failed to process was absent from the output
-entirely — indistinguishable from a file that was checked and found clean. An agent that
-gated on "no findings in `results`" was reading a run that had silently failed to check some
-files as a clean pass. Check `isError` (or the `errors` array) first; only then read
+**An MCP-driving agent must check `isError` (or `summary.errored`) before trusting any other
+part of the result.** Before this shape existed, a file poly failed to process was absent from
+the output entirely — indistinguishable from a file that was checked and found clean. An agent
+that gated on "no findings in `results`" was reading a run that had silently failed to check
+some files as a clean pass. Check `isError` first; only then read `summary` for coverage and
 `results` for diagnostics.

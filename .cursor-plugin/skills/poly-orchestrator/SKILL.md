@@ -5,8 +5,8 @@ description: "Use poly as the single lint/format gate instead of invoking ruff/o
 
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-Content-Hash: blake3:836ebda1618aa88f1667d265eda1955c1bb6d5f2aa7142229fafe9e5b8bf392d
-Source-Hash: blake3:261d9152e15dfdc66715216442e953f184ed7b10aacc8dd544b41b8dc501ec75
+Content-Hash: blake3:ce64425c68bd166984a77c3c6cdb8f222d917393034061549e1cecfc7db9f65e
+Source-Hash: blake3:ebf7b5b943d6520ecdcd09cd009836c9a016f0a4fff807c44b0b40cd7370b62d
 Schema-Version: v1
 -->
 
@@ -55,4 +55,8 @@ runs agree — with one caveat: the native-toolchain tier means `rustfmt` and `g
 automatically whenever they are on `PATH`, and formatting output then depends on that tool's
 version. A machine without them silently falls through to the lower-fidelity tree-sitter
 tier. Pin the Rust/Go toolchain in CI (and expect drift otherwise), or set
-`[fmt.rust.rustfmt] enabled = false` / `[fmt.go.gofmt] enabled = false` to opt out entirely.
+`[fmt.rust.rustfmt] enabled = false` / `[fmt.go.gofmt] enabled = false` to stop the subprocess.
+That does not leave the language unformatted: `rustfmt`/`gofmt` are the one pair of backends
+that read `enabled` themselves and hand the file to the tier-2 reindenter when disabled, rather
+than expecting the runner to drop them from the plan — so the file is still formatted, just at
+lower fidelity than the native tool.

@@ -48,4 +48,8 @@ runs agree — with one caveat: the native-toolchain tier means `rustfmt` and `g
 automatically whenever they are on `PATH`, and formatting output then depends on that tool's
 version. A machine without them silently falls through to the lower-fidelity tree-sitter
 tier. Pin the Rust/Go toolchain in CI (and expect drift otherwise), or set
-`[fmt.rust.rustfmt] enabled = false` / `[fmt.go.gofmt] enabled = false` to opt out entirely.
+`[fmt.rust.rustfmt] enabled = false` / `[fmt.go.gofmt] enabled = false` to stop the subprocess.
+That does not leave the language unformatted: `rustfmt`/`gofmt` are the one pair of backends
+that read `enabled` themselves and hand the file to the tier-2 reindenter when disabled, rather
+than expecting the runner to drop them from the plan — so the file is still formatted, just at
+lower fidelity than the native tool.

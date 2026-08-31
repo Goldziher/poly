@@ -82,20 +82,32 @@ prebuilt release artifacts plus an installer (see release-versioning).
   Layering is **tool default → opinionated override → user `poly.toml`**.
 - `resolve.rs` — hierarchical, monorepo-aware config resolution (ADR 0018): discovers every
   in-tree `poly.toml` and maps each discovered file to the nearest config governing it.
+- `fingerprint.rs` — `ConfigFingerprint`, a stable digest of the configuration governing a run,
+  one per directory-scoped config (ADR 0018 again). Feeds `LintDocument`/`FormatDocument`'s
+  `configs` list, so two clean reports are only comparable when their fingerprints match.
 - `discover.rs` — file walk via the `ignore` crate (respects `.gitignore`).
 - `runner.rs` + `runner/` — the pipeline: discover → cache → engine → report, parallelized with
   **rayon `par_iter` over files**. Split by concern: `runner/plan.rs` (per-language engine plan,
   catalog merge, `provides_language_lint`), `runner/edits.rs` (atomic autofix application),
-  `runner/skips.rs` (`SkippedFile`, `NO_ENGINE_SKIP`, `NO_LINT_RULES_SKIP_PREFIX`),
-  `runner/types.rs` (`LintRun`/`FormatRun`/`RunOptions` and friends).
+  `runner/skips.rs` (`SkippedFile` and its reasons — `NO_ENGINE_SKIP`, `NO_LINT_RULES_SKIP_PREFIX`,
+  `FILTERED_SKIP` / `DISABLED_SKIP_PREFIX` for `--only`/`--skip`/`enabled = false`,
+  `GENERATED_SKIP`, `BINARY_SKIP`), `runner/selection.rs` (`--only`/`--skip`: narrows an
+  already-planned engine set and never enables one that config left off; rejects an unknown
+  engine name before the run starts), `runner/generated.rs` (whether the run acts on
+  machine-generated files at all vs. whether it may rewrite one it did check),
+  `runner/types.rs` (`LintRun`/`FormatRun`/`RunOptions` and friends), and `runner/tests.rs`
+  (split out because `runner.rs` sits at the 1000-line cap).
 - `filter/` — result and discovery filtering, one question per file: `diagnostics.rs`
   (`PerFileIgnores`, `SeverityRemap`), `paths.rs`, `generated.rs` (generated-source detection),
   `suppress.rs` (in-source `poly: allow[…]` directives).
 - `report/` — three formats: `pretty` (colored via `owo-colors`' `if_supports_color`), `json`
   (`serde_json`), and `toon`. `report/shared.rs` holds `Verbosity`, `notes.rs` the
   discovery/skip notes, `lint.rs`/`format.rs` the human renderers, `structured.rs` the
-  machine-readable ones, `render.rs` the `RenderError` a failed serialization must surface
-  rather than emit an empty document.
+  machine-readable ones, `document.rs` the `LintDocument`/`FormatDocument` object shape
+  (`results` + `errors` + `skipped` + `summary` + `configs`) both renderers serialize,
+  `render.rs` the `RenderError` a failed serialization must surface rather than emit an empty
+  document, `theme.rs` the named ANSI palette, and `layout.rs` the grouped-number/pluralized/
+  width-aware typography the human renderers share.
 - `language.rs` — `Language` enum + detection **by filename and extension**; an unrecognized
   extension becomes `Language::Other(name)`, and it is the tier-2 engine — not this module —
   that hands that name to `tree-sitter-language-pack`.
@@ -169,6 +181,7 @@ pub trait Engine: Send + Sync {
     fn skip_reason(&self, src: &SourceFile) -> Option<&'static str>;
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>>;
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput>;
+    fn self_manages_enabled(&self) -> bool;
     fn supersedes_generic_formatter(&self) -> bool;
 }
 pub enum FormatOutput { Unchanged, Formatted(String) }
@@ -188,7 +201,7 @@ rather than globally: it keys `[<kind>.<lang>.<engine>]`, the `engine` field of 
 `Diagnostic`, and the cache key. Hence `NixFmtEngine` is `"alejandra"`, and `BiomeCssEngine` /
 `BiomeGraphqlEngine` are both `"biome"`.
 
-The three defaulted predicates carry the coverage and skip accounting:
+The four defaulted predicates carry the coverage, skip and enablement accounting:
 
 - `provides_language_lint(language, cfg)` — "did anything in this run know how to lint this
   file?" It drives the `no lint rules for <language>` skip, the `checked` count, the JSON
@@ -201,6 +214,12 @@ The three defaulted predicates carry the coverage and skip accounting:
 - `skip_reason(src)` — why a backend declines a specific file (templated YAML is not YAML).
   Returning the reason, rather than bailing out inside `lint`/`format`, is what lets the runner
   count and report the skip instead of silently passing the file off as checked.
+- `self_manages_enabled()` — whether this backend reads `enabled` itself and degrades
+  gracefully with it `false`, rather than expecting the runner to drop it from the plan before
+  the file loop. `false` (the default) is right for a backend whose absence means one less
+  check; only `native_tool` answers `true` — it is its language's only registry slot and hands
+  the file to the tier-2 reindenter itself when disabled, so dropping it from the plan instead
+  would leave that language with no formatter at all.
 - `supersedes_generic_formatter()` — whether a configured, runnable formatter should displace
   the tier-2 reindenter, so the two do not fight over indentation and prevent convergence.
 

@@ -5,8 +5,8 @@ description: "Running poly lint / poly fmt — --fix, --format pretty|json|toon,
 
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-Content-Hash: blake3:0da868f1639e30d012db64d9dd6163493a6c1b94bf236d174133483dec1381d5
-Source-Hash: blake3:261d9152e15dfdc66715216442e953f184ed7b10aacc8dd544b41b8dc501ec75
+Content-Hash: blake3:d208bf5eb2480ca8f2fe2cafa779945b1dd2ca529962d3f1bdebf1f32ee1c94d
+Source-Hash: blake3:ebf7b5b943d6520ecdcd09cd009836c9a016f0a4fff807c44b0b40cd7370b62d
 Schema-Version: v1
 -->
 
@@ -53,18 +53,24 @@ Schema-Version: v1
   it otherwise reports on but leaves alone.
 - `--deny-skips` / `--max-skips <N>` — strict coverage. A **skipped** file is one nothing
   inspected: a path named on the command line that no engine covers (`App.csproj`), or a
-  file every routed backend declined (Go-templated YAML, a hash-stamped generated file).
-  Skips are always reported and named; these flags make them fail the run (exit `2`),
-  naming every file they fired on. `--verbose` lists every skip in `pretty` output;
-  `--format json`/`toon` always carries the full set as entries with a `skipped` reason, so
-  a consumer can assert on the set instead of parsing the summary.
+  file every routed backend declined (Go-templated YAML, a hash-stamped generated file). A
+  skip the caller instructed — `--only`/`--skip` narrowing an engine out, or `enabled = false`
+  in config — is **not** charged against the budget, since it names itself in the report
+  rather than losing coverage silently; only a poly limitation counts. Skips are always
+  reported and named; these flags make a chargeable skip fail the run (exit `2`), naming
+  every file it fired on. `--verbose` lists every skip in `pretty` output; `--format
+  json`/`toon` carries the full set both as a top-level `skipped` array and as synthetic
+  `results` entries — `summary.skipped` is the authoritative count, so read it first and use
+  the set only to name the files.
 
 ## Exit codes
 
 - `0` — clean (no findings, no drift).
 - `1` — error-severity findings, formatting drift, or a failing whole-project tool.
 - `2` — an error (bad config, tool failure), or work the run could not verify: a missing
-  path argument, a file an engine failed on, or a `--deny-skips`/`--max-skips` breach.
+  path argument, a file an engine failed on — including a `poly fmt` file that could not
+  reach a fixed point within its five-pass cap, now reported as an error rather than
+  silently claimed as formatted — or a `--deny-skips`/`--max-skips` breach.
 
 `poly lint` exits non-zero only on **error-severity** findings; warnings do not fail CI —
 which is why the on-by-default `quality` and built-in ast-grep rules (all warnings) never

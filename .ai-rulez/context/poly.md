@@ -25,13 +25,27 @@ per-file tier.
 - Apply lint autofixes (and whole-project autofixes): `poly lint --fix .`
 
 Both `lint` and `fmt` share: `--format pretty|json|toon`, `--config <PATH>`, `--no-cache`,
-`-j/--jobs <N>`, `--exclude <GLOB>` (repeatable), `--no-color`, `--fix`, `--verbose`, `--debug`,
-`--force-exclude` / `--include-excluded`, `--fix-generated`, and `--deny-skips` / `--max-skips <N>`.
-`poly lint` adds `--no-workspace` and `--workspace`.
+`-j/--jobs <N>`, `--exclude <GLOB>` (repeatable), `--no-color`, `--fix`, `--verbose` /
+`-q/--quiet`, `--debug`, `--force-exclude` / `--include-excluded`, `--fix-generated`,
+`--skip-generated` / `--include-generated`, `--only <ENGINE>` / `--skip <ENGINE>` (restrict the
+per-file tier to named engines, comma-separated and repeatable — narrows only, never enables a
+backend config left off, and skips the whole-project phase since it is tools, not engines), and
+`--deny-skips` / `--max-skips <N>`. `poly lint` adds `--no-workspace` and `--workspace`.
 
 The other subcommands: `poly hooks` (native git-hook runner over `[hooks]`), `poly commit`
 (commit-message lint, gitfluff), `poly rules test|list` (custom + built-in ast-grep rule packs),
 `poly config update|show`, `poly cache`, `poly migrate`, `poly mcp`, `poly doctor`.
+
+## Machine-readable output
+
+`--format json`/`toon` renders an object, not a bare array: `{results, errors, skipped, summary,
+configs}`. `summary` is `{checked, skipped, errored}` — the run's own account of what it did,
+and the field to gate on. The counts do not sum to `results.len()`: a file that was checked and
+found clean produces no `results` entry at all, and a file can appear in both `results` (as a
+synthetic entry with empty diagnostics) and in the top-level `skipped`/`errors` arrays — those
+top-level arrays are redundant with `results` on purpose, so a consumer scanning either one
+cannot miss what the other names. `configs` holds one `ConfigFingerprint` per directory-scoped
+config that governed the run, indexed by each result's `config` field.
 
 ## Whole-project lint phase
 
@@ -86,7 +100,10 @@ beneath the file, `poly.local.toml` wins on top; `poly config update` locks a sy
 ref into `poly-config.lock`, and `poly config show` prints the effective merged config. The
 result cache and hook staged snapshot live in the per-user OS cache dir (`~/.cache/poly/<repo-key>`
 on Linux, `~/Library/Caches/poly/…` on macOS, `%LOCALAPPDATA%\poly\…` on Windows) — not in-repo.
-`POLY_CACHE_HOME` overrides the base; `[cache] dir` pins an explicit path.
+`POLY_CACHE_HOME` overrides the base; `[cache] dir` pins an explicit path. `[hooks]
+snapshot_include` symlinks named, git-untracked paths into that staged snapshot for a
+`workspace` hook whose build needs to read a gitignored input; an included file's fixes are
+withheld and it is never a per-file hook's own input.
 
 ## Code-quality tier and rule packs
 
@@ -130,17 +147,25 @@ mechanism `[per-file-ignores]` (ADR 0017) still exists for whole-file exemptions
 - `1` — **error-severity** lint findings, a failing whole-project tool, or (for `poly fmt`)
   files that would change. Warning-severity findings alone do not fail a run, so `typos` and the
   quality tier don't redden CI.
-- `2` — the run verified less than it claims: a file poly failed on, a skip budget exceeded
-  (`--deny-skips` / `--max-skips`), a config/pipeline error, or a machine-readable report that
-  failed to serialize.
+- `2` — the run verified less than it claims: a file poly failed on — including a `poly fmt`
+  file that did not converge to a fixed point within its five-pass cap, reported as an error
+  rather than as formatted, since a following `poly fmt --check` would keep reporting drift on
+  it — a skip budget exceeded (`--deny-skips` / `--max-skips`), a config/pipeline error, or a
+  machine-readable report that failed to serialize.
 
-A `--format json`/`toon` consumer must check the exit code, not just the payload.
+A `--format json`/`toon` consumer must check the exit code, not just the payload — and gate on
+`summary.checked`, not on `results.len()`.
 
 ## CI
 
-`.github/workflows/ci.yaml` runs four jobs on push/PR to `main`: `cargo fmt --all --check`;
+`.github/workflows/ci.yaml` runs five jobs on push/PR to `main`: `cargo fmt --all --check`;
 `cargo clippy --workspace --exclude conformance --all-targets -- -D warnings` and
-`cargo test --workspace --exclude conformance`, both on a Linux/macOS/Windows matrix; and
-`cargo-deny check`. `.github/workflows/publish.yaml` builds and uploads the release artifacts.
+`cargo test --workspace --exclude conformance --no-fail-fast`, both on a Linux/macOS/Windows
+matrix; `dogfood`, which runs the binary against poly's own repo (`poly lint --no-workspace .`
+then `poly fmt --check .`) on Linux and Windows; and `cargo-deny check`. A sixth job,
+`hardening`, runs poly against real third-party trees (`scripts/harden.sh`) but only on the
+nightly schedule or a manual `workflow_dispatch` — never on push/PR, since its per-rule counts
+feed a ship-this-rule-on-by-default decision rather than a per-commit verdict.
+`.github/workflows/publish.yaml` builds and uploads the release artifacts.
 
 Run `poly fmt --check .` and `poly lint .` after changes to verify compliance.

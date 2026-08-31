@@ -6,8 +6,8 @@ model: sonnet
 
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-Content-Hash: blake3:9644e45aee23beef19acf88e014b87ec3d5bb420c21d777b5e0080f13055fff3
-Source-Hash: blake3:261d9152e15dfdc66715216442e953f184ed7b10aacc8dd544b41b8dc501ec75
+Content-Hash: blake3:b48b9a40d39bfcb2dd80ef869e55fe4cb3ea92e95ec694b438370de0f8a6c3de
+Source-Hash: blake3:ebf7b5b943d6520ecdcd09cd009836c9a016f0a4fff807c44b0b40cd7370b62d
 Schema-Version: v1
 -->
 
@@ -55,6 +55,12 @@ your lane: one backend, with worktree isolation when run in parallel with siblin
      silently inside `lint`/`format`.
    - `lint` / `format` — `format` returns `FormatOutput::Unchanged` rather than echoing
      input. Both default to no-ops, so implement only what you declared.
+   - `self_manages_enabled()` — leave `false` (the default) unless this backend is its
+     language's **only** registry slot and hands the file to the tier-2 reindenter itself when
+     `enabled = false` (see `native_tool`). Getting this wrong is silent: the runner drops a
+     `false`-answering engine from the plan before the file loop, so an `enabled = false` on
+     a backend that should have answered `true` leaves that language with no formatter at all
+     and every one of its files unformatted, with nothing in the report to say so.
    - `supersedes_generic_formatter()` — return `true` only when the backend is both
      configured and actually runnable, so it displaces the generic reindenter instead of
      fighting it.

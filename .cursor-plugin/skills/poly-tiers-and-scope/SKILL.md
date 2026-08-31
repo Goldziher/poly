@@ -5,8 +5,8 @@ description: "poly's coverage tiers (native / tree-sitter / native-toolchain / q
 
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-Content-Hash: blake3:ecc6b9fd72aa7b536a36d3bcf2b185dc98db5bf4851d5297808f9006db9f77ca
-Source-Hash: blake3:261d9152e15dfdc66715216442e953f184ed7b10aacc8dd544b41b8dc501ec75
+Content-Hash: blake3:4f049de71c0c76f12b0a0733a8856b5e7521c18178ff6270462a4545b710cd6b
+Source-Hash: blake3:ebf7b5b943d6520ecdcd09cd009836c9a016f0a4fff807c44b0b40cd7370b62d
 Schema-Version: v1
 -->
 
@@ -46,6 +46,14 @@ Five mechanisms decide what actually inspects a file (`crates/poly-core/src/regi
 
 `typos` (spelling) and the opt-in `uncomment` engine are the other two cross-cutting
 backends appended to every language.
+
+**Every engine table also accepts a universal `enabled` key**, read by the runner's plan
+rather than by any backend. Whether narrowing a file out of a run charges against
+`--deny-skips` / `--max-skips` follows one rule: **a poly limitation is charged and names the
+limitation; a caller instruction is never charged and always names itself.** `--only`/`--skip`
+and `enabled = false` are caller instructions, so a file they remove is reported as skipped but
+not charged; `no matching engine for this file type`, `no lint rules for <language>`, and a
+generated-file skip are poly's own limitations, and are charged.
 
 ## Per-file tier vs whole-project phase
 
@@ -97,6 +105,13 @@ failures. Details that matter:
   in-repo, and is refreshed incrementally by index OID so tool caches stay warm.
 - `poly lint`'s whole-project phase is a *different* path: it runs against the live
   worktree, so no snapshot is built.
+- `[hooks] snapshot_include` opts named, git-untracked, repo-relative paths into the snapshot
+  by symlinking them in from the live worktree, so a `workspace` hook whose build reads a
+  gitignored input (a generated file, a local type-checker config, a downloaded fixture
+  directory) does not fail under the gate for a reason the error message doesn't name. Three
+  consequences follow from the symlink: a fix to an included file is withheld (there is no
+  staged blob to write it into), an included file is never a per-file hook's own input (only
+  index content is), and the symlink lets a hook write through into the live worktree.
 
 ## Hierarchical poly.toml in monorepos (ADR 0018)
 

@@ -30,7 +30,9 @@ Report:
 - The overall pass/fail from the exit codes: `0` clean; `1` findings or drift — for `lint`
   only **error**-severity findings (or a failing whole-project tool) reach `1`, warnings
   still exit `0`; `2` the run did not verify what it was asked to (a missing path, a file an
-  engine failed on, a `--deny-skips`/`--max-skips` breach, or the whole-project phase itself
+  engine failed on — including a `poly fmt --check` file that cannot reach a fixed point
+  within poly's five-pass cap, reported as an error rather than clean since a fix would leave
+  it still drifting — a `--deny-skips`/`--max-skips` breach, or the whole-project phase itself
   erroring).
 
 Do not apply fixes here — if the user wants them applied, run `/poly-fix`.

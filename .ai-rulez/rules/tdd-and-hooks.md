@@ -25,6 +25,10 @@ priority: high
     pure-Rust file-safety checks, cargo clippy / sort / machete / deny, rustdoc-lint, and
     rust-max-lines (the 1000-line cap). `poly hooks install` wires the git-hook shims so this
     runs automatically on `git commit`.
+  - `task harden` (`scripts/harden.sh`, `docs/harden-corpus.md`) runs poly over real
+    third-party repositories instead of fixtures; its per-rule counts feed a
+    ship-this-rule-on-by-default decision. It never runs on the PR path — only nightly CI
+    (the `hardening` job in `ci.yaml`) or manually via `task harden -- <roots>`.
 
 ## What a green `cargo fmt` + `cargo clippy` does NOT prove
 
@@ -58,7 +62,9 @@ Links to **private** items are warnings only and do not block.
   materialized from the git **index** with `git checkout-index` into the per-user cache dir, so
   unstaged edits and untracked files are invisible to the check. That is what makes a split
   commit checkable on its own content — and it means a fix you forgot to `git add` does not
-  count.
+  count. `[hooks] snapshot_include` is the one opt-in exception: it symlinks named untracked
+  paths into the snapshot for a `workspace` hook's build to read, but a fix to an included file
+  is withheld (there is no staged blob to write into) and it is never a per-file hook's input.
 - **Never pipe `git commit` through `tail` / `head`.** A pipeline reports the *filter's* exit
   code, so a rejected commit looks like success and silently does not land. Run it unpiped and
   read the exit code.
