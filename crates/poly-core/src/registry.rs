@@ -87,6 +87,15 @@ pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
     engines
 }
 
+/// The backends [`engines_for`] appends to *every* language, named.
+///
+/// These are the only engines configurable from a language-agnostic
+/// `[<kind>.<engine>]` table, so `Config::engine_config` needs them by name to
+/// know where a global setting for one of them may live. Kept honest by
+/// `tests::cross_cutting_engines_are_the_ones_claiming_no_languages`, which
+/// derives the same set from `languages()` rather than trusting this list.
+pub(crate) const CROSS_CUTTING_ENGINES: &[&str] = &["typos", "astgrep", "uncomment", "quality"];
+
 /// Every concrete (non-[`Language::Other`]) [`Language`] variant, used to
 /// walk every arm of [`engines_for`]. Kept from silently narrowing by
 /// `tests::assert_all_language_variants_listed`: adding a new `Language`
@@ -248,6 +257,21 @@ pub(crate) mod tests {
     /// so there is no upstream version for `tests/version_audit.rs` to check.
     /// `polyconfig`'s `version()` tracks poly's own config-key schema instead.
     const POLY_OWNED_ENGINES: &[&str] = &["polyconfig"];
+
+    /// [`CROSS_CUTTING_ENGINES`] is a hand-written list, so derive the same set
+    /// from the property that actually defines it — an engine claiming no
+    /// languages — and compare. A backend added to the append block without a
+    /// name here would otherwise be silently unreachable from a global
+    /// `[lint.<engine>]` table.
+    #[test]
+    fn cross_cutting_engines_are_the_ones_claiming_no_languages() {
+        let derived: Vec<&str> = engines_for(&Language::Python)
+            .iter()
+            .filter(|engine| engine.languages().is_empty())
+            .map(|engine| engine.name())
+            .collect();
+        assert_eq!(derived, super::CROSS_CUTTING_ENGINES);
+    }
 
     const NATIVE_TOOLCHAIN_ENGINES: &[&str] = &[
         "gofmt",

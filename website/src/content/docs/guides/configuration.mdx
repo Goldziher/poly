@@ -184,6 +184,35 @@ formatters, so `[fmt.nix.alejandra]` and `[fmt.ruby.rubyfmt]` declare no keys â€
 there is reported as `unknown-config-key`. TOML (taplo) always trims trailing whitespace regardless
 of `[defaults] trim_trailing_whitespace`.
 
+## Turning one engine off
+
+Every engine table accepts `enabled`, whether or not the backend it configures reads the key
+itself:
+
+```toml
+[lint.python.ruff]
+enabled = false      # this language keeps its other backends, but ruff does not run
+
+[lint.typos]
+enabled = false      # a cross-cutting backend, off for every language
+
+[lint.rust.astgrep]
+enabled = false      # ...or off for one language only
+```
+
+An absent `enabled` means *the engine's own default*, which is not the same as `false`: most
+backends are on, `uncomment` is opt-in, and each native-toolchain tool carries its own default
+(`rustfmt` and `gofmt` run when present, `zig fmt` does not). Only an explicit `false` withdraws
+an engine.
+
+Switching off the only backend that holds rules for a language withdraws that language's lint
+coverage too, so its files are reported as `no lint rules for <language>` rather than silently
+counted as checked. That is deliberate: a run must not claim to have linted what nothing linted.
+
+Catalog tools (see [Optional catalog tools](#optional-catalog-tools)) have their own switch in
+`[tools.<name>]`. Where a catalog tool shares a name with a built-in backend, `enabled = false` in
+the `[lint.<lang>.<name>]` table names the *built-in* â€” the catalog tool keeps running.
+
 ## Suppressing a rule inline
 
 `[per-file-ignores]` is the right tool for a whole file or a class of files. For a *single*

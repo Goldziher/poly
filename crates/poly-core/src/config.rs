@@ -11,7 +11,9 @@ use std::path::Path;
 
 pub use poly_config::{GlobalDefaults, LineEnding};
 
+use crate::engine::ENABLED_OPTION_KEY;
 use crate::language::Language;
+use crate::registry::CROSS_CUTTING_ENGINES;
 
 /// Which phase a config slice is for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -151,7 +153,13 @@ impl Config {
             .and_then(|v| usize::try_from(v).ok())
             .filter(|&v| v > 0)
             .unwrap_or_else(|| lang.default_indent_width());
-        let options = if engine_name == "typos" {
+        // Read before the merge below, not after: a cross-cutting builder
+        // assembles its own option set from a fixed key list, and
+        // `build_astgrep_options` never looks at `lang_options` at all, so a
+        // key carried by the engine rather than by any backend has to be
+        // lifted out here or it silently does nothing.
+        let enabled = self.resolve_enabled(tables, engine_name, &lang_options);
+        let mut options = if engine_name == "typos" {
             self.build_typos_options(&lang_options)
         } else if engine_name == "astgrep" {
             self.build_astgrep_options()
@@ -162,11 +170,34 @@ impl Config {
         } else {
             lang_options
         };
+        if let Some(enabled) = enabled {
+            options.insert(ENABLED_OPTION_KEY.to_string(), toml::Value::Boolean(enabled));
+        }
         EngineConfig {
             globals: self.defaults.clone(),
             indent_width,
             options,
         }
+    }
+
+    /// The engine's resolved `enabled` setting, or `None` when nothing named it.
+    ///
+    /// `None` is not `false`: absent means "whatever this engine's own default
+    /// is", which is on for most backends, off for `uncomment`, and the
+    /// per-tool `default_on` for `native_tool`. Only an explicit `false`
+    /// withdraws an engine from the plan.
+    ///
+    /// A per-language `[<kind>.<lang>.<engine>]` value wins over the
+    /// language-agnostic `[<kind>.<engine>]` one, which only the cross-cutting
+    /// backends have.
+    fn resolve_enabled(&self, tables: &toml::Table, engine_name: &str, lang_options: &toml::Table) -> Option<bool> {
+        let flag = |table: &toml::Table| table.get(ENABLED_OPTION_KEY).and_then(toml::Value::as_bool);
+        flag(lang_options).or_else(|| {
+            CROSS_CUTTING_ENGINES
+                .contains(&engine_name)
+                .then(|| tables.get(engine_name).and_then(toml::Value::as_table).and_then(flag))
+                .flatten()
+        })
     }
 
     /// Build the merged `options` table for the uncomment engine.

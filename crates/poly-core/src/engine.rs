@@ -181,10 +181,26 @@ pub const RULE_SELECTION_KEYS: &[(&str, OptionType)] = &[
 /// `rules` sub-table's `level` overrides are applied for any engine by the
 /// runner's post-lint severity remap — neither goes through the backend, so
 /// neither belongs in a backend's own declaration.
+///
+/// Kept apart from [`ALWAYS_OPTION_KEYS`] because these two are dropped by the
+/// cross-cutting merge in `Config::engine_config`, so they are accepted only in
+/// a per-language table.
 pub const UNIVERSAL_OPTION_KEYS: &[(&str, OptionType)] = &[
     ("indent_width", OptionType::INTEGER),
     ("rules", OptionType::ARRAY.or(OptionType::TABLE)),
 ];
+
+/// Keys every engine table accepts, per-language and cross-cutting alike.
+///
+/// `enabled` is read by the runner's plan (`runner::plan::plan_engines`) rather
+/// than by any backend, so no backend declares it and every backend honours it.
+/// Three backends — `native_tool`, `uncomment`, `quality` — additionally read it
+/// themselves to pick their own default, and re-declaring it there is harmless:
+/// [`OptionKeys::known_keys`] dedups.
+pub const ALWAYS_OPTION_KEYS: &[(&str, OptionType)] = &[(ENABLED_OPTION_KEY, OptionType::BOOLEAN)];
+
+/// The key that switches any engine off, in any table that configures one.
+pub const ENABLED_OPTION_KEY: &str = "enabled";
 
 impl OptionKeys {
     /// The backend has not declared what it reads; nothing in the table is
@@ -289,6 +305,7 @@ impl OptionKeys {
         lookup(self.declared)
             .or_else(|| self.rule_selection.then(|| lookup(RULE_SELECTION_KEYS)).flatten())
             .or_else(|| universal.then(|| lookup(UNIVERSAL_OPTION_KEYS)).flatten())
+            .or_else(|| lookup(ALWAYS_OPTION_KEYS))
     }
 
     /// The type `key` should have been given, when `value` is one this table
@@ -325,6 +342,7 @@ impl OptionKeys {
         if universal {
             keys.extend(UNIVERSAL_OPTION_KEYS.iter().map(|(name, _)| *name));
         }
+        keys.extend(ALWAYS_OPTION_KEYS.iter().map(|(name, _)| *name));
         keys.sort_unstable();
         keys.dedup();
         keys

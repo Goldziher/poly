@@ -135,6 +135,26 @@ fn the_universal_keys_are_accepted_in_any_per_language_table() {
     assert!(found.is_empty(), "unexpected warnings: {:?}", titles(&found));
 }
 
+/// `enabled` is read by the runner's plan rather than by any backend, so no
+/// backend declares it — and every table that configures an engine must still
+/// accept it. Before it was universal, `[lint.python.ruff] enabled = false`
+/// was reported as an unknown key *and* ruff ran anyway.
+#[test]
+fn enabled_is_accepted_in_every_engine_table() {
+    let found = warnings(
+        "[lint.python.ruff]\nenabled = false\n\n[lint.typos]\nenabled = false\n\n[lint.python.astgrep]\nenabled = false\n",
+    );
+    assert!(found.is_empty(), "unexpected warnings: {:?}", titles(&found));
+}
+
+/// It is a boolean everywhere, so a non-boolean is still reported — an
+/// always-accepted key must not become an unchecked one.
+#[test]
+fn enabled_given_a_non_boolean_is_reported() {
+    let found = warnings("[lint.python.ruff]\nenabled = \"yes\"\n");
+    assert_eq!(found.len(), 1, "{:?}", titles(&found));
+}
+
 #[test]
 fn an_unknown_key_in_a_cross_cutting_table_is_reported() {
     let found = warnings("[lint.typos]\nextend_word = { teh = \"the\" }\n");

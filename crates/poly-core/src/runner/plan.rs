@@ -12,7 +12,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::config::{Config, EngineConfig, Kind};
 use crate::discover::DiscoveredFile;
-use crate::engine::Engine;
+use crate::engine::{ENABLED_OPTION_KEY, Engine};
 use crate::engines::catalog_tool::{CatalogToolEngine, LintRefusal};
 use crate::engines::rule_config::RuleSelection;
 use crate::filter::SeverityRemap;
@@ -145,6 +145,34 @@ fn merge_catalog_engines(
     engines
 }
 
+/// Drop every registry engine explicitly switched off with `enabled = false`.
+///
+/// Only an explicit `false` counts. An absent key means "this engine's own
+/// default", which differs per backend — `uncomment` is opt-in, `quality` is
+/// on, and each `native_tool` spec carries its own `default_on` — so reading
+/// absence as `false` would withdraw every engine that never declared the key.
+///
+/// Applied to the registry engines **before** the catalog merge, not to the
+/// merged set, because a built-in and a catalog tool can share a `name()` and
+/// therefore share a `[<kind>.<lang>.<name>]` table. `enabled = false` there
+/// names the built-in; the catalog tool has its own switch in `[tools.<name>]`.
+/// Filtering first is also what lets a switched-off built-in yield to the
+/// catalog tool of the same name rather than taking it down too.
+fn retaining_enabled(
+    engines: Vec<Box<dyn Engine>>,
+    language: &Language,
+    config: &Config,
+    kind: Kind,
+) -> Vec<Box<dyn Engine>> {
+    engines
+        .into_iter()
+        .filter(|engine| {
+            let cfg = config.engine_config(language, engine.name(), kind);
+            cfg.options.get(ENABLED_OPTION_KEY).and_then(toml::Value::as_bool) != Some(false)
+        })
+        .collect()
+}
+
 pub(super) fn plan_engines(language: &Language, config: &Config, kind: Kind) -> Vec<EnginePlan> {
     let mut engines = engines_for(language);
     let catalog = if has_tier_one_formatter(&engines, kind) {
@@ -156,6 +184,7 @@ pub(super) fn plan_engines(language: &Language, config: &Config, kind: Kind) -> 
         engines.retain(|engine| engine.name() != TREE_SITTER_ENGINE);
     }
     let engines = retaining_capable(engines, kind);
+    let engines = retaining_enabled(engines, language, config, kind);
     let catalog = retaining_capable(catalog, kind);
     merge_catalog_engines(language, config, kind, engines, catalog)
         .into_iter()
@@ -799,6 +828,98 @@ mod tests {
         assert!(
             catalog_engines_seen > 0,
             "built zero catalog engines; the traversal is broken, not the invariant",
+        );
+    }
+
+    /// Build a `Config` whose `[lint]` section is `toml`.
+    fn lint_config(toml_src: &str) -> Config {
+        Config {
+            lint: toml::from_str(toml_src).expect("valid lint config"),
+            ..Config::default()
+        }
+    }
+
+    fn planned_names(plan: &[EnginePlan]) -> Vec<&'static str> {
+        plan.iter().map(|entry| entry.engine.name()).collect()
+    }
+
+    /// The universal `enabled` key disables *any* engine, including a tier-one
+    /// backend that never declared the key for itself. Before this existed,
+    /// `[lint.python.ruff] enabled = false` was reported as an unknown key and
+    /// ruff ran anyway — a setting that reads as honoured and does nothing.
+    #[test]
+    fn a_universally_disabled_engine_is_dropped_from_the_plan() {
+        let config = lint_config("[python.ruff]\nenabled = false\n");
+        let plan = plan_engines(&Language::Python, &config, Kind::Lint);
+        assert!(
+            !planned_names(&plan).contains(&"ruff"),
+            "ruff must not be planned once it is disabled, got {:?}",
+            planned_names(&plan)
+        );
+    }
+
+    /// The same key set to `true` is a no-op on an engine that was already on:
+    /// the flag narrows, it never re-orders the plan.
+    #[test]
+    fn an_explicitly_enabled_engine_stays_planned() {
+        let config = lint_config("[python.ruff]\nenabled = true\n");
+        assert!(planned_names(&plan_engines(&Language::Python, &config, Kind::Lint)).contains(&"ruff"));
+    }
+
+    /// Absent means "the engine's own default", never "off" — otherwise every
+    /// engine that does not declare the key would vanish from every plan.
+    #[test]
+    fn an_absent_enabled_key_leaves_the_plan_untouched() {
+        let config = Config::default();
+        assert!(planned_names(&plan_engines(&Language::Python, &config, Kind::Lint)).contains(&"ruff"));
+    }
+
+    /// A cross-cutting backend is disabled from its language-agnostic table,
+    /// which is the only place a user can name it globally.
+    #[test]
+    fn a_cross_cutting_engine_is_disabled_from_its_language_agnostic_table() {
+        let config = lint_config("[typos]\nenabled = false\n");
+        for language in [Language::Python, Language::Rust, Language::Toml] {
+            let names = planned_names(&plan_engines(&language, &config, Kind::Lint));
+            assert!(!names.contains(&"typos"), "{language:?} still plans typos: {names:?}");
+        }
+    }
+
+    /// ...and from a per-language table, which overrides the global one. This
+    /// is the case `build_astgrep_options` could not express: it never reads
+    /// `lang_options` at all, so the key is carried by `engine_config` itself
+    /// rather than by each cross-cutting builder.
+    #[test]
+    fn a_cross_cutting_engine_is_disabled_per_language() {
+        let config = lint_config("[rust.astgrep]\nenabled = false\n");
+        let rust = planned_names(&plan_engines(&Language::Rust, &config, Kind::Lint));
+        assert!(!rust.contains(&"astgrep"), "rust still plans astgrep: {rust:?}");
+        let python = planned_names(&plan_engines(&Language::Python, &config, Kind::Lint));
+        assert!(
+            python.contains(&"astgrep"),
+            "another language must be unaffected: {python:?}"
+        );
+    }
+
+    /// An opt-in engine keeps its own default when the key is absent: the
+    /// universal check must not promote "not configured" into "off" and drop
+    /// `uncomment` from the plan before it can read its own setting.
+    #[test]
+    fn an_opt_in_engine_is_still_planned_when_the_key_is_absent() {
+        let config = Config::default();
+        assert!(planned_names(&plan_engines(&Language::Python, &config, Kind::Lint)).contains(&"uncomment"));
+    }
+
+    /// Disabling the only backend that holds rules for a language withdraws
+    /// the language's lint coverage too — the run must not keep claiming it
+    /// linted Python once ruff is off.
+    #[test]
+    fn disabling_the_language_backend_withdraws_its_lint_coverage() {
+        let config = lint_config("[python.ruff]\nenabled = false\n");
+        let plan = plan_engines(&Language::Python, &config, Kind::Lint);
+        assert!(
+            !covering_engines(&plan).contains(&"ruff"),
+            "a disabled engine must not claim coverage"
         );
     }
 }
