@@ -139,8 +139,12 @@ jobs:
       - run: poly lint --deny-skips .
 ```
 
-`--deny-skips` turns any skipped file into an exit-2 failure, so the job cannot quietly stop
-covering part of the tree. Use `--max-skips <N>` if you have a known, budgeted set of skips.
+`--deny-skips` turns a skip that is a limit of poly — no matching engine, no lint rules for the
+language, a generated-file skip, a binary file — into an exit-2 failure, so the job cannot quietly
+stop covering part of the tree. A skip that names a caller instruction (`--only`/`--skip`,
+`enabled = false`) is never charged; see
+[Coverage and withdrawal](/poly/guides/configuration/#coverage-and-withdrawal). Use
+`--max-skips <N>` if you have a known, budgeted set of charged skips.
 
 Add `-q` on a large repository to trim the per-file discovery detail; every count and reason still
 appears in the summary.

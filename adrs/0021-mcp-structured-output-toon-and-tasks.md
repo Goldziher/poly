@@ -2,6 +2,9 @@
 
 - Status: Accepted
 - Date: 2026-08-01
+- Updated: 2026-08-31: the lint/format payload moved from a bare array to an object (`{results,
+  errors, skipped, summary, configs}`), and the `LintReport`/`FormatReport` wrapper DTOs this ADR
+  described no longer exist — see "Amendment — 2026-08-31" below and ADR 0030.
 
 ## Context
 
@@ -31,10 +34,11 @@ from this server:
   `rmcp::handler::server::wrapper::Json<T>` for a typed result DTO
   (`#[derive(Serialize, JsonSchema)]`, defined in `crates/poly-mcp/src/dto.rs`), so
   `CallToolResult.structured_content` carries the typed payload and the tool definition carries a
-  derived output JSON schema (`#[tool(output_schema = …)]`). The lint/format DTOs
-  (`LintReport`/`FormatReport`) wrap the `poly-core` report types verbatim so the schema matches
-  the CLI's `--format json` shape exactly; the cache/rules/config/workspace DTOs are MCP-local
-  because their CLI counterparts print prose rather than a serializable value.
+  derived output JSON schema (`#[tool(output_schema = …)]`). The lint/format DTOs wrap the
+  `poly-core` report types verbatim so the schema matches the CLI's `--format json` shape exactly
+  (see the 2026-08-31 amendment: this pairing is now `poly_core::report::{LintDocument,
+  FormatDocument}` directly, not a wrapper struct); the cache/rules/config/workspace DTOs are
+  MCP-local because their CLI counterparts print prose rather than a serializable value.
 - **A JSON or TOON text block alongside structured content, chosen per request.** Every
   path-taking tool accepts a `format: "json" | "toon"` parameter (`TextRepr`, default `json`).
   `structured_content` is always JSON regardless of `format` — `format` only selects the paired
@@ -120,3 +124,22 @@ Negative / risks:
   sanctioned deployment path (plugin, editor, agent harness) and avoids a distinct security
   surface (auth, exposure, CORS) that a network transport would require designing. Revisit only if
   a concrete deployment need for a networked poly-mcp server emerges.
+
+## Amendment — 2026-08-31: the payload became an object, and the DTOs became the report types
+
+This ADR described `LintReport`/`FormatReport` as MCP-local structs that "wrap the `poly-core`
+report types verbatim", and its Context section named the CLI's `--format json` payload "the same
+array" both surfaces printed. Neither is accurate any more.
+
+- **`poly lint`/`poly fmt --format json`/`toon` moved from a bare array to an object** —
+  `{results, errors, skipped, summary, configs}` — on both the CLI and the MCP server, in one step,
+  so the two could not answer "what did this run check" differently. This is a breaking change to
+  the CLI's own JSON output, taken deliberately; see ADR 0030 for the full rationale.
+- **The wrapper DTOs are gone.** `LintReport`/`FormatReport` never diverged from the `poly-core`
+  types they wrapped, so the wrapper was a structural type with nothing of its own to say. The
+  `lint`/`format_check`/`lint_fix`/`format_write` tools now return
+  `poly_core::report::{LintDocument, FormatDocument}` directly — the identical values `poly-core`
+  builds for the CLI — rather than a same-shaped MCP-local copy.
+
+Nothing else in this ADR's Decision changed: structured content, the JSON/TOON text-block choice,
+the async Task model, and the annotation split are all unaffected.

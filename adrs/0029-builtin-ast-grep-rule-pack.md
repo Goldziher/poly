@@ -2,6 +2,9 @@
 
 - Status: Accepted
 - Date: 2026-08-29
+- Updated: 2026-08-31: `undocumented-unsafe-block`'s `#[cfg(test)]` carve-out (commit 3ca3f34)
+  meets the precondition recorded below; the rule still ships `off` (see the amendment at the
+  end).
 
 ## Context
 
@@ -129,7 +132,12 @@ Two findings from that pass generalise beyond these rules.
 slice is `unsafe { std::env::set_var(..) }` in test modules — under the 2024 edition that wrapper
 is the *only* legal way to mutate the environment, so the rule fires on code the language forces
 the author to write. That is a carve-out gap (`#[cfg(test)]`), and it would remain a defect at a
-tenth the volume. Its YAML records the carve-out as a precondition for any future revival.
+tenth the volume. Its YAML records the carve-out as a precondition for any future revival. **That
+precondition is now met** (commit 3ca3f34 added the `#[cfg(test)]` exclusion); the rule still
+ships `off` — meeting the carve-out precondition clears the defect this passage names, not the
+94.4% vendored-FFI slice above it, which is a separate, larger reason the rule has not been
+revisited. See the amendment below for the mechanism that keeps five near-identical copies of the
+carve-out's test-context predicate in sync.
 
 **Vendored third-party source carried in-tree is a distinct noise class from generated code**, and
 no path glob reaches it: it sits at first-party paths under first-party names. One case was
@@ -160,3 +168,27 @@ its author wrote.
 - **Put the rules in tier-2 (`treesitter.rs`) instead.** Rejected: tier-2 is deliberately
   grammar-generic, and per-language patterns are exactly what it is not. ast-grep already provides
   the per-language matching layer.
+
+## Amendment — 2026-08-31: the shared test-context helpers cannot be extracted, so they are guarded
+
+Five Rust rules — `unwrap-used`, `expect-used`, `placeholder-implementation`,
+`blocking-call-in-async-fn`, and `undocumented-unsafe-block` — each carve test code out of their
+matches with the same four `utils:` helpers (`test-attribute`, `cfg-test-attribute`,
+`attribute-or-comment`, `in-test-context`), defined identically in every rule's own YAML rather
+than once.
+
+**Extraction into ast-grep's *global* `utils:` (one definition, five references) is the real fix,
+and it is blocked on a deserializer poly-core does not have.** The helpers are relational-only
+predicates, legal as a `utils:` entry and illegal as a top-level `rule:` — registering one as a
+global util needs `parse_global_utils`, which needs `SerializableGlobalRule` deserialized from
+YAML. `serde_yaml`, the deserializer ast-grep itself uses for that type, is unmaintained, and
+swapping in a different YAML deserializer for types this dependent on `#[serde(flatten)]` and
+untagged enums is not a change to make casually inside the pack's single-parse-path invariant (this
+ADR's "One parse path" property).
+
+So the five copies stay, as a known limitation rather than an oversight. What the pack does
+instead is make the failure mode that actually matters — *silent* divergence between the five —
+a test failure: `the_shared_rust_test_context_helpers_have_not_drifted`
+(`crates/poly-core/src/engines/astgrep/pack.rs`) extracts each rule's `utils:` block and asserts
+all five are byte-identical to the first. Four chances to drift, each turned into a build failure
+instead of a corpus that quietly stops excluding test code in one of the five rules.

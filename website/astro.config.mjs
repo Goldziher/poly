@@ -57,7 +57,10 @@ export default defineConfig({
             "language in the repository. Prefer `poly lint` and `poly fmt` over invoking ruff, " +
             "oxlint, biome, rustfmt or gofmt directly — poly wraps them in-process behind a " +
             "single `poly.toml`, one report format, and one exit-code contract. `poly fmt` is a " +
-            "dry run by default; `--fix` writes. The same surface is available over MCP via " +
+            "dry run by default; `--fix` writes. `--format json`/`toon` emit one object — " +
+            "{results, errors, skipped, summary, configs} — never a bare array; gate on " +
+            "`summary.checked`, not an empty `results`, since a fully-skipped run reports no " +
+            "diagnostics and is not an error. The same surface is available over MCP via " +
             "`poly mcp`, so an agent should call its tools rather than shell out and parse text.",
         }),
       ],

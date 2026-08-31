@@ -12,6 +12,9 @@
 - Updated: 2026-08-12: isolation was extended from whole-workspace hooks to **every** hook in a
   commit-gating run, closing a false-pass. See "Extension: every hook, not just the
   whole-workspace ones" below.
+- Updated: 2026-08-31: `[hooks] snapshot_include` gives a narrow, opt-in escape from "untracked
+  content is invisible to the gate" for a named path git does not track. See "Amendment:
+  `snapshot_include`" below.
 
 ## Context
 
@@ -139,7 +142,39 @@ Accepted consequences of the wider scope:
 - **Untracked or unstaged config is not visible to hooks** under the gate — notably a gitignored
   `poly.local.toml`. For a commit gate this is arguably correct (local overrides should not weaken
   a shared gate), but it is a behaviour change for anyone relying on them there. `[hooks] isolate
-  = false` restores worktree scoping.
+  = false` restores worktree scoping; `[hooks] snapshot_include` (2026-08-31, below) is the narrow
+  per-path escape for exactly this case.
+
+## Amendment: `snapshot_include` (2026-08-31)
+
+A `workspace = true` hook whose build reads a gitignored input — a generated file, a local config a
+type checker loads, a downloaded fixture directory — fails under the gate while passing in the
+worktree, and the error names the missing file rather than the isolation that removed it. The prior
+text above named `[hooks] isolate = false` as the only escape, which drops isolation for the whole
+run to unblock one path.
+
+**`[hooks] snapshot_include`** names repository-relative paths, one at a time, opt-in and
+version-controlled in `poly.toml`: each entry is **symlinked** into the staged snapshot after the
+parent's symlink-sanitizing pass, not copied. Despite the config type's name (`Patterns`), entries
+are not glob-expanded — each literal string is joined onto the snapshot root and stat'd.
+
+Consequences that follow from linking rather than copying:
+
+- The snapshot has nothing to materialize an included path *from* — the index holds no blob for
+  it — so linking is the only option; a copy would need content the checkout step never has.
+- An included path stays out of the OID manifest, so `manifest::prune_stale` never deletes it on
+  refresh; an unlinked, unrecorded copy would instead go stale forever, since pruning only ever
+  touches manifest paths. A link is re-established every refresh and is always current.
+- **A fix to an included file is withheld.** The autofix write-back path (see the Extension section
+  above) reconciles against the index; an included path has no index entry to reconcile against, so
+  a hook's rewrite of it is never carried anywhere.
+- **An included path is not a per-file hook input.** The staged *file list* still comes from the
+  index; a workspace hook sees the linked path only if its own build reads it directly, the same
+  way it would read any other file under the snapshot root.
+- **The link is a real symlink, so a hook writing through it writes into the worktree.** This is the
+  one place isolation's "the worktree is never mutated" guarantee does not hold — accepted because
+  the alternative is no escape hatch at all for a hook that genuinely needs the file, and because
+  the entry is something the repository named on purpose, not content a hook discovered on its own.
 
 ## Consequences
 

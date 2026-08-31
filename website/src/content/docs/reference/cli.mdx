@@ -119,10 +119,11 @@ and exit codes are unchanged. It has no effect on `--format json` / `toon`.
 
 ```json
 {
-  "results": [{ "path": "src/main.py", "diagnostics": [] }],
+  "results": [{ "path": "src/main.py", "diagnostics": [], "config": 0 }],
   "errors": [],
   "skipped": [{ "path": "main.zig", "reason": "no lint rules for Zig" }],
-  "summary": { "checked": 1, "skipped": 1, "errored": 0 }
+  "summary": { "checked": 1, "skipped": 1, "errored": 0 },
+  "configs": [{ "hash": "1/9f2c4a1b7e3d05f8" }]
 }
 ```
 
@@ -139,6 +140,13 @@ The three counts are **not** a partition of `results`, and cannot be derived fro
 `errors` and `skipped` repeat what the corresponding records already carry, deliberately: the defect
 they exist to close is a consumer reading a clean-looking list and concluding the files are fine.
 
+`configs` is the fingerprint of every configuration that governed the run — `root`, the nearest
+governing `poly.toml` directory **relative to the run root** (omitted entirely at the root, and
+under `--config`, which bypasses the cascade), and `hash`, a version-framed blake3 digest of the
+fully merged table. Each result's `config` field indexes into `configs` (omitted when `0`), so two clean reports
+are only comparable when their `configs` entries match: a `poly.toml`, a `poly.local.toml`, a
+nested config or an `extends` base can move underneath an otherwise-identical run.
+
 The MCP server returns this same document, so both surfaces answer the coverage question identically.
 
 <Aside type="caution" title="Changed in 0.24.0">
@@ -150,8 +158,8 @@ The MCP server returns this same document, so both surfaces answer the coverage 
 
 | Flag | Effect |
 | --- | --- |
-| `--deny-skips` | Exit 2 if any file was skipped. Equivalent to `--max-skips 0`. |
-| `--max-skips <N>` | Exit 2 if more than N files were skipped. |
+| `--deny-skips` | Exit 2 if any *charged* file was skipped (see below). Equivalent to `--max-skips 0`. |
+| `--max-skips <N>` | Exit 2 if more than N charged files were skipped. |
 
 ### Execution
 
@@ -162,9 +170,15 @@ The MCP server returns this same document, so both surfaces answer the coverage 
 
 ## Skips and coverage
 
-Skipped files — a language poly has no lint rules for, no matching engine, a generated file, an
-unreadable path — are always counted and their reasons summarized, so a run that checked nothing
-cannot look like a clean pass.
+Skipped files — a language poly has no lint rules for, no matching engine, a generated file, a
+binary file, an engine every backend disabled by config, or an engine `--only`/`--skip` deselected
+— are always counted and their reasons summarized, so a run that checked nothing cannot look like a
+clean pass.
+
+Only some of those reasons count against `--deny-skips` / `--max-skips`: a reason that names a
+limit of poly is charged, a reason that names an instruction the caller gave (`--only`/`--skip`,
+`enabled = false`) is not. See
+[Coverage and withdrawal](/poly/guides/configuration/#coverage-and-withdrawal) for the full split.
 
 `poly lint` reports a file whose language nothing in the run lints as:
 
@@ -195,7 +209,14 @@ it is reported as a skip.
 | ---: | --- |
 | `0` | Clean: no lint findings, no formatting drift, or all writes succeeded. |
 | `1` | Error-severity lint findings remain, a whole-project tool failed, or (for `poly fmt`) files would change. Warning-severity findings alone never trigger this — typos and the quality tier don't redden CI. |
-| `2` | The run verified less than it claims: a file an engine failed on, a skip budget exceeded (`--deny-skips` / `--max-skips`), a config or pipeline error, or a machine-readable report that failed to serialize. |
+| `2` | The run verified less than it claims: a file an engine failed on, a formatter that did not converge within its pass cap, a skip budget exceeded (`--deny-skips` / `--max-skips`), a config or pipeline error, or a machine-readable report that failed to serialize. |
+
+<Aside type="caution" title="Changed in 0.24.0: non-convergence is now an error">
+    `poly fmt` runs each formatter to a fixed point, capped at five passes. A file still changing
+    after five passes is now a **per-file error**, exiting `2`. Previously it was silent success,
+    with every following `poly fmt --check` reporting drift on that file forever — this is the one
+    change in this release that turns a previously-green file red.
+</Aside>
 
 <Aside type="danger" title="Read the exit code, not just the payload">
     A `--format json` / `toon` consumer must check the exit code: the whole-project phase's own

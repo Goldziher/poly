@@ -206,12 +206,44 @@ backends are on, `uncomment` is opt-in, and each native-toolchain tool carries i
 an engine.
 
 Switching off the only backend that holds rules for a language withdraws that language's lint
-coverage too, so its files are reported as `no lint rules for <language>` rather than silently
-counted as checked. That is deliberate: a run must not claim to have linted what nothing linted.
+coverage too, so its files are reported as `every engine disabled by config: [lint.<lang>.<engine>]`
+rather than silently counted as checked. That is deliberate: a run must not claim to have linted
+what nothing linted. Unlike `no lint rules for <language>` (a limit of poly), this reason names a
+config line the reader wrote, so it is **not** charged to `--deny-skips` / `--max-skips` — see
+[Coverage and withdrawal](#coverage-and-withdrawal).
 
 Catalog tools (see [Optional catalog tools](#optional-catalog-tools)) have their own switch in
 `[tools.<name>]`. Where a catalog tool shares a name with a built-in backend, `enabled = false` in
 the `[lint.<lang>.<name>]` table names the *built-in* — the catalog tool keeps running.
+
+## Coverage and withdrawal
+
+Every file a run does not check ends up in the `skipped` list with a reason, and `--deny-skips` /
+`--max-skips` (see [CLI reference](/poly/reference/cli/#coverage-gates)) decide whether that fails
+the run. The rule that decides which reasons count:
+
+**A limit of poly is charged to the coverage budget and names the limit; an instruction the caller
+gave is never charged, and names itself.**
+
+Charged (a limit of poly — poly does not know what to do with this file):
+
+- `no matching engine for this file type` — no backend claims the file at all.
+- `no lint rules for <language>` — something routed the file, but nothing in the run holds lint
+  rules for its language.
+- `machine-generated file ([discovery] generated = false)` — the config opted the file out.
+- `binary file` — poly never opened it as text.
+
+Not charged (a caller instruction — the run is doing exactly what it was told):
+
+- `no engine selected by --only/--skip for this file` — `--only` / `--skip` removed every engine
+  that covered the file for this invocation.
+- `every engine disabled by config: [lint.<lang>.<engine>]` — `enabled = false` removed every
+  engine that covered the language in `poly.toml`.
+
+The split follows what would fix the reader's problem: a poly-charged reason means the reader needs
+a linter, a rename, or an exclude; a caller-instruction reason means the reader is looking at their
+own `--only`/`--skip` flag or their own config line, and `--deny-skips` failing on it would make
+the flag unusable under the very gate that most wants it.
 
 ## Suppressing a rule inline
 

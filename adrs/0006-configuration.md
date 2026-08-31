@@ -1,4 +1,4 @@
-# 0006 — Configuration: Canonical poly.toml, YAML Auto-Detected
+# 0006 — Configuration: Canonical poly.toml
 
 - Status: Accepted
 - Date: 2026-06-26
@@ -9,6 +9,10 @@
   still forces a single config and now also bypasses nesting.)
 - Updated: 2026-07 (v0.9.0): clean break — `polylint.toml` is no longer read; `poly.toml`
   is the only accepted config name. The local override is `poly.local.toml`.
+- Updated: 2026-08-31: the title and the passages below describing YAML as an alternate,
+  auto-detected input format were never implemented and are corrected in place. `CONFIG_FILE_NAMES`
+  has always had exactly one entry, `poly.toml`, parsed as TOML; there is no YAML form and never
+  was one shipped.
 
 ## Context
 
@@ -52,9 +56,6 @@ Positive:
 
 Negative / risks:
 
-- Two accepted input formats (`poly.toml` and auto-detected YAML) means two parse
-  paths to keep in sync; the precedence rule must be applied consistently and surfaced
-  clearly to avoid confusion when multiple files exist.
 - The clean break means repos still on `polylint.toml` must rename to `poly.toml`; the old
   name is ignored rather than honored.
 - A unified schema must map onto each tool's (and hook runner's) native option
@@ -68,7 +69,8 @@ Negative / risks:
 - **Reuse each tool's native config files:** rejected — defeats the "one config" goal and
   reintroduces the fragmentation we are removing.
 - **YAML or JSON as canonical:** rejected — TOML is the Rust ecosystem norm, is
-  comment-friendly, and `toml_edit` gives best-in-class round-tripping; YAML stays a
-  convenience input only.
+  comment-friendly, and `toml_edit` gives best-in-class round-tripping. A YAML convenience
+  input was considered in Context but never shipped: `poly.toml`, parsed as TOML, has been the
+  only accepted config name and format from the first `poly-config` implementation.
 - **No config / fully hard-coded defaults:** rejected — defaults are opinionated
   (ADR 0007) but users still need an override layer.

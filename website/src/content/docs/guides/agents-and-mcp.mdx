@@ -65,7 +65,7 @@ block mirroring the CLI's `--format json` — or the compact TOON encoding when 
 | `cache_stats` | `poly cache stats` | Result-cache footprint per namespace: entries, bytes, format version. |
 | `rules` | `poly rules list` / `test` | Every ast-grep rule a run would apply — the built-in pack plus `[rules] dirs` — with language, `source` (`builtin`/`user`), `default_severity`, the `severity` under the resolved config, and `enabled`. Optionally runs the `*-test.yml` snippets. |
 | `config_show` | `poly config show` | The merged effective configuration. **Network-free**: remote `extends` bases are not fetched. |
-| `version` | `poly --version` | Which binary is serving this session — version, build id, channel, executable, pid, uptime — and whether that executable is still the file on disk. |
+| `version` | `poly --version` | Which binary is serving this session — version, build id, channel, executable, pid, uptime — whether that executable is still the file on disk, and the full engine→version map (host-toolchain backends excluded). |
 
 ### Mutating — writes to the tree
 
@@ -115,8 +115,10 @@ intent since they change files.
 
 ## Every result identifies the binary that answered
 
-Each result carries a `poly` block (version, build id, channel, executable, pid) in
+Each result carries a `poly` block (version, build id, channel, executable, pid, `engines` — a
+blake3 digest of every compiled-in backend and the upstream version it wraps) in
 `structured_content` and in `_meta`, because an MCP caller has no `poly --version` to fall back on.
+The `version` tool returns the full engine→version map the digest summarizes.
 The server fingerprints its own executable at startup and re-checks it per request: if the binary is
 replaced or deleted underneath a long-lived server, every tool but `version` fails rather than
 answering with superseded behaviour.
@@ -140,9 +142,15 @@ Each result also carries run-level `errors` and `skipped` arrays and a `summary`
   "results": [...],
   "errors": [],
   "skipped": [{ "path": "main.zig", "reason": "no lint rules for Zig" }],
-  "summary": { "checked": 12, "skipped": 1, "errored": 0 }
+  "summary": { "checked": 12, "skipped": 1, "errored": 0 },
+  "configs": [{ "hash": "1/9f2c4a1b7e3d05f8" }]
 }
 ```
+
+`configs` fingerprints every configuration that governed the run; each result's `config` field
+indexes into it (omitted when `0`). It is what tells a caller whether two clean reports from
+different calls are actually comparable — a `poly.toml`, a `poly.local.toml`, a nested config or an
+`extends` base can move underneath an identical-looking request.
 
 `errors` and `skipped` duplicate the corresponding records in `results` on purpose, so a caller can
 gate on "did this run actually check what I gave it" without scanning every record. When `errors` is

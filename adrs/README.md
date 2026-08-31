@@ -2,9 +2,9 @@
 
 This directory is the **source of truth** for the architectural decisions behind **poly** —
 a single self-contained, zero-dependency Rust binary (subcommands `lint`, `fmt`, `hooks`,
-`commit`, `rules`, `cache`, `mcp`, `migrate`) that replaces a repository's entire toolchain:
-linters, formatters, git-hooks, and commit-message linters, all driven by one `poly.toml`
-config.
+`commit`, `rules`, `cache`, `config`, `mcp`, `migrate`, `doctor`) that replaces a repository's
+entire toolchain: linters, formatters, git-hooks, and commit-message linters, all driven by one
+`poly.toml` config.
 
 These ADRs are authoritative. When code, plans, or memory disagree with an accepted ADR,
 the ADR wins; changing a decision means adding or superseding an ADR here, not editing code
@@ -16,11 +16,11 @@ Context, Decision, Consequences (positive and negative/risks), and Alternatives 
 | ADR | Title | Status |
 |-----|-------|--------|
 | [0001](0001-mission-and-scope.md) | Mission and Scope: Two Binaries Replace the Toolchain | Accepted |
-| [0002](0002-pure-rust-no-subprocess.md) | Pure-Rust, No-Subprocess: Two Scoped Exceptions | Accepted |
-| [0003](0003-dependency-policy.md) | Dependency Policy: Pinned Git Deps, Prebuilt Distribution | Accepted |
+| [0002](0002-pure-rust-no-subprocess.md) | Pure-Rust, No-Subprocess, No-System-Dependency Constraint | Accepted |
+| [0003](0003-dependency-policy.md) | Dependency Policy: Wrap First, Vendor Only When Forced | Accepted |
 | [0004](0004-two-tier-coverage-architecture.md) | Two-Tier Coverage Architecture | Accepted |
 | [0005](0005-backend-selections.md) | Native Backend (Tier-1) Selections | Accepted |
-| [0006](0006-configuration.md) | Configuration: Canonical poly.toml, YAML Auto-Detected | Accepted |
+| [0006](0006-configuration.md) | Configuration: Canonical poly.toml | Accepted |
 | [0007](0007-opinionated-defaults.md) | Opinionated Defaults: Tool Defaults Plus a Thin Override Layer | Accepted |
 | [0008](0008-caching.md) | Caching: blake3 Content-Hash, Two-Tier, CACHE_FORMAT_VERSION | Accepted |
 | [0009](0009-parallelism.md) | Parallelism: rayon Over Files, Saturate All Cores | Accepted |
@@ -33,7 +33,7 @@ Context, Decision, Consequences (positive and negative/risks), and Alternatives 
 | [0016](0016-uniform-rule-selection.md) | Uniform Per-Tool Rule-Selection Model | Accepted |
 | [0017](0017-path-excludes-per-file-ignores.md) | Path Exclusions and Per-File Rule Ignores | Accepted |
 | [0018](0018-hierarchical-configuration.md) | Hierarchical Configuration Resolution for Monorepos | Accepted |
-| [0019](0019-staged-isolation-whole-workspace-hooks.md) | Staged Isolation for Whole-Workspace Hooks | Accepted |
+| [0019](0019-staged-isolation-whole-workspace-hooks.md) | Staged Isolation for the Commit Gate | Accepted |
 | [0020](0020-shared-remote-configuration.md) | Shared Configuration via `extends` (Local and Pinned Remote Bases) | Accepted |
 | [0021](0021-mcp-structured-output-toon-and-tasks.md) | MCP Structured Output, TOON, and Async Tasks | Accepted |
 | [0022](0022-plugin-marketplace-and-agent-distribution.md) | Plugin Marketplace and Agent Distribution | Accepted |
@@ -44,6 +44,9 @@ Context, Decision, Consequences (positive and negative/risks), and Alternatives 
 | [0027](0027-code-quality-tier.md) | The Code-Quality Tier | Accepted |
 | [0028](0028-inline-suppression-directives.md) | Inline Suppression Directives | Accepted |
 | [0029](0029-builtin-ast-grep-rule-pack.md) | The Built-In ast-grep Rule Pack | Accepted |
+| [0030](0030-lint-format-document.md) | The Lint/Format Document | Accepted |
+| [0031](0031-run-coverage-and-withdrawal.md) | Run Coverage and Withdrawal | Accepted |
+| [0032](0032-hardening-corpora.md) | The Hardening Corpora | Accepted |
 
 ## Conventions
 

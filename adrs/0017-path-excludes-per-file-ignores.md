@@ -18,6 +18,9 @@
 - Updated: 2026-08-30 (machine-generated files: one `[discovery] generated` opt-out spanning
   `lint`, `fmt` and `--fix`, and `lint --fix` aligned with `fmt` on which files it declines to
   rewrite — see the amendment below.)
+- Updated: 2026-08-31 (cross-reference: the generated-file skip counting against `--deny-skips`
+  below is the file-limitation half of ADR 0031's charged/uncharged split — see the note after
+  the amendment.)
 
 ## Exclude anchoring
 
@@ -197,6 +200,16 @@ that is load-bearing: an opted-out file is reported through the existing `Skippe
 appears in the `json`/`toon` payload, and counts against `--deny-skips` / `--max-skips`. Dropping
 those files silently would let a gate stop covering a tree with nothing going red — the failure
 mode this ADR's own skip accounting exists to prevent.
+
+**Cross-reference (2026-08-31):** the generated-file skip counting against `--deny-skips` /
+`--max-skips` above is a claim about a *file* poly declined, not about the *config key* that
+declined it — `[discovery] generated = false` is written by the repository on purpose, exactly
+like `enabled = false` on an engine, yet the skip it produces is charged. Read next to ADR 0031's
+engine-level `enabled = false` (never charged), the two can look like they contradict: both are
+instructions the caller wrote. They do not — ADR 0031 charges by what the reason is *about*, not by
+who wrote the config line. A charged reason names a file poly could not verify (generated, binary,
+no engine, no rules); an uncharged reason names an *engine* the caller withdrew (`--only`/`--skip`,
+`enabled = false`) from a file poly could otherwise have checked. See ADR 0031 for the full split.
 
 Per-config, not root-only (unlike `force_exclude` and `no_prune`): a nested `poly.toml` may opt out
 its own subtree. No per-language form — the marker scan is language-agnostic, and `[lint.<lang>]`

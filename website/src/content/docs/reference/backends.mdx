@@ -55,6 +55,13 @@ Unsupported or unknown file types are skipped unless `tree-sitter-language-pack`
 Some whitespace-sensitive data, template or patch grammars intentionally no-op rather than risk a
 destructive rewrite.
 
+<Aside type="note" title="Enablement is a universal key, not a per-backend property">
+    "opt-in" and "default-on" above describe each backend's *own* default. Every engine table also
+    accepts an explicit `enabled`, which always wins over that default — `[fmt.zig.zigfmt] enabled =
+    true` turns on an opt-in formatter, and `[lint.python.ruff] enabled = false` turns off a
+    default-on one. See [Turning one engine off](/poly/guides/configuration/#turning-one-engine-off).
+</Aside>
+
 ## The two cross-cutting lint tiers
 
 Beyond the dedicated backends above, two lint tiers run on **every** language:

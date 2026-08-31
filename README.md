@@ -333,9 +333,10 @@ plugin manager.
 `cargo-sort`, `cargo-machete`, `cargo-deny`) and are exposed as async **Tasks**: the call returns a handle the client
 polls with `tasks/get`, falling back to a synchronous result for clients that do not declare the capability.
 
-Every result carries a `poly` identity block (version, build id, channel, executable, pid) and separates three
-per-file outcomes — **checked**, **skipped** (poly declined the file) and **errored** (poly failed on a file it
-accepted). `isError` is set whenever anything errored, so an agent can gate on it before trusting the payload.
+Every result carries a `poly` identity block (version, build id, channel, executable, pid, `engines` — a blake3
+digest of every compiled-in backend's version) and separates three per-file outcomes — **checked**, **skipped**
+(poly declined the file) and **errored** (poly failed on a file it accepted). `isError` is set whenever anything
+errored, so an agent can gate on it before trusting the payload.
 
 Full parameter reference: [`.ai-rulez/skills/poly-mcp/SKILL.md`](.ai-rulez/skills/poly-mcp/SKILL.md).
 
@@ -404,8 +405,9 @@ converges in two passes, that the cache never serves a different answer than a c
 language poly claims to lint reports `no lint rules for` it:
 
 ```sh
-task harden          # pinned third-party repositories
-task harden:local    # the sibling working trees next door, read-only
+task harden           # pinned third-party repositories
+task harden:local     # the sibling working trees next door, read-only
+task harden:generated # machine-generated code (corpus C)
 ```
 
 It also reports per-rule finding counts per repository, which is how a pack rule earns a default

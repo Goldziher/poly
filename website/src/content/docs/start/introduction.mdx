@@ -95,10 +95,13 @@ $ poly lint --verbose .
 skipped main.zig: no lint rules for Zig
 ```
 
-Skips have three sources: a language nothing in the run lints, no matching engine, or a file poly
-deliberately withholds a write from. All of them appear in the summary, in the `--format json`
-payload, and in the `--deny-skips` / `--max-skips` budget. A run that verified less than it claims
-exits **2**, distinct from the **1** that means real findings.
+Skips have several sources: a language nothing in the run lints, no matching engine, a file poly
+deliberately withholds a write from, a binary file, or an engine the caller withdrew with
+`--only`/`--skip` or `enabled = false`. All of them appear in the summary and the `--format json`
+payload, but only the ones naming a limit of poly count against `--deny-skips` / `--max-skips` — a
+caller instruction never does, since it already says so in its own name (see
+[Coverage and withdrawal](/poly/guides/configuration/#coverage-and-withdrawal)). A run that verified
+less than it claims exits **2**, distinct from the **1** that means real findings.
 
 <Aside type="caution" title="`poly lint` is not read-only by default">
     After the per-file tier, `poly lint` runs a **whole-project phase** that executes the configured
