@@ -151,6 +151,40 @@ validated* rather than inferred clean. A rule silent because its pattern is wron
 indistinguishable from a clean corpus, and the fixture test only proves it fires on the one case
 its author wrote.
 
+## Amendment — 2026-08-31: JS/TS and Python were audited and no rule was added
+
+Issues #23 and #24 asked for JavaScript/TypeScript rules — the largest agent-written surface, and
+the one the pack does not reach at all — and for the two `off` Python rules to earn a default. Five
+candidates were drafted and measured against ten pinned repositories, four of them with LLM-authored
+histories by commit trailer and two human-authored controls. `docs/pack-rule-audit.md` holds the
+per-rule numbers and the hand-read false-positive rates; the corpus is the C2 section of
+`scripts/harden/repos.c.tsv`, recorded as a selection *procedure* rather than a list, because a list
+goes stale and a procedure can be re-run.
+
+**None of the five shipped, and that is the finding rather than a failure to deliver.** Three fail
+for one semantic reason: the construct they match is usually deliberate. `throw new
+Error("Method not implemented.")` is what TypeScript's own quick fix writes and means "unsupported
+here"; `raise NotImplementedError` spells "abstract" or "this backend does not do that"; `.catch(()
+=> {})` is overwhelmingly best-effort cleanup that *prevents* an unhandled rejection. Path exclusion
+rescues none of them — the residual outside test paths measured 75%, 100% and 85% wrong.
+
+Two checks changed the outcome and are worth recording, because both looked safe enough to skip:
+oxlint's `eslint/no-warning-comments` is `pedantic`, which poly enables, so a JS/TS `todo-marker`
+would have been a straight duplicate of a rule already firing; and oxlint *implements*
+`expect-expect` for jest and vitest, framework-aware and with an `assertFunctionNames` escape hatch
+— strictly better than the pack rule proposed for the same job, whose false-positive rate measured
+12/20. poly simply could not enable the plugin. The answer to #23 is therefore a `plugins` key on
+the oxc engine, not a pack rule.
+
+Python's `todo-marker` stays `off` despite measuring 0/20 false positives. Correctness was never the
+objection: 38.5 findings per 1000 files, overwhelmingly deliberate tracked notes, and poly's own
+`[lint.uncomment]` ships `remove_todos = false` precisely so they survive. Promoting it would redden
+a well-maintained repository for documenting its own deprecation plan.
+
+This sets the bar for the next candidate: a corpus row and a hand-read false-positive rate reported
+as a fraction, before a severity, and the check that the tier-1 backend for that language does not
+already cover it — run, not assumed.
+
 ## Alternatives considered
 
 - **Ship the pack off by default, opt in via `[rules] builtin = true`.** Rejected: an empty

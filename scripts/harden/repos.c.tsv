@@ -33,3 +33,45 @@
 openapi-generator	https://github.com/OpenAPITools/openapi-generator.git	4242641f766d500f3ffb48a5481e1f63866a1f1c	Apache-2.0	java,kotlin,csharp,php,ruby,go,python,typescript	core
 google-cloud-python	https://github.com/googleapis/google-cloud-python.git	f5de310eec70f2675082f469e3843d8dc422af4b	Apache-2.0	python	extended
 aws-sdk-js-v3	https://github.com/aws/aws-sdk-js-v3.git	e53a25aafbdd772c90d26471dc271e383f1daf71	Apache-2.0	typescript	extended
+
+# ---------------------------------------------------------------------------
+# C2 — LLM-authored application code (added 2026-08-31)
+#
+# The rows above are *codegen*: a generator emitted them, and they say close to
+# nothing about code an LLM wrote while a person watched. These ten are the
+# other population, and they are the one issues #23 and #24 are actually about.
+#
+# The selection procedure, which matters more than the list — a list goes stale
+# and a procedure can be re-run:
+#
+#   1. Identify by committed agent artifacts: CLAUDE.md, AGENTS.md,
+#      .cursor/rules/, .github/copilot-instructions.md, .aider.conf.yml.
+#   2. Corroborate from history, which is harder to stage than a file:
+#      `Co-Authored-By: Claude`, `Co-authored-by: Copilot`, `aider:` trailers
+#      across recent commits. Recorded per repo below as a fraction, because a
+#      squash-merging project hides trailers and a low fraction is evidence
+#      about the merge strategy, not about the authorship.
+#   3. Filter: permissive licence, substantial size in the target language,
+#      real history, not a fork or a template.
+#   4. Keep human-authored controls in the same set — `astro` and `vercel-ai`
+#      here — or there is nothing to compare against.
+#
+# Trailer evidence at the pinned shas: spec-kit 42/50, crewai 25/50,
+# openhands 19/50, aider 22/103, copilot-chat 8/50 plus committed Copilot
+# instructions, vercel-ai 6/50, astro 6/50, stagehand 5/50, pydantic-ai 2/50,
+# opencode 2/63. Seven of the ten commit a CLAUDE.md or an AGENTS.md.
+#
+# Our own agent-written repos are deliberately absent: they are corpus A, and
+# using them here would be measuring the rules against the code they were
+# written while looking at.
+# ---------------------------------------------------------------------------
+aider	https://github.com/Aider-AI/aider.git	5dc9490bb35f9729ef2c95d00a19ccd30c26339c	Apache-2.0	python	core
+spec-kit	https://github.com/github/spec-kit.git	eb5870085f675a236496352e7af3b81939e79f31	MIT	python	core
+crewai	https://github.com/crewAIInc/crewAI.git	bf56bb13bd09ad5cd87e3c8d17f951982f97c176	MIT	python	core
+openhands	https://github.com/All-Hands-AI/OpenHands.git	ca4024e3ae793b022ac680fad054f5776236794e	MIT	python,typescript	core
+copilot-chat	https://github.com/microsoft/vscode-copilot-chat.git	5863f5a7088958050792b5dccbe8b46c6e13eccc	MIT	typescript	core
+pydantic-ai	https://github.com/pydantic/pydantic-ai.git	6246795faf941937e1759f51b0dfc65d82a4667b	MIT	python	extended
+opencode	https://github.com/sst/opencode.git	26ff3ed3d3e28830190ef53f2ff4b261852139a4	MIT	typescript	extended
+stagehand	https://github.com/browserbase/stagehand.git	537604af0e0eb2f4ee5d0cff55d7b00ae91d2a82	MIT	typescript,python	extended
+vercel-ai	https://github.com/vercel/ai.git	62f481f2e52fa78d0172412097a97e8e61b9abff	Apache-2.0	typescript	extended
+astro	https://github.com/withastro/astro.git	76eff3d5fbc5f940acb1dcb341d4b1c9d95fa2a3	MIT	typescript	extended
