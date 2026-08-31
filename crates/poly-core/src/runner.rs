@@ -27,6 +27,7 @@ mod selection;
 mod skips;
 mod types;
 
+use crate::fingerprint::{ConfigFingerprint, fingerprints};
 use edits::apply_edits;
 use generated::{acts_on_generated, format_skip_result, lint_skip_result};
 use plan::{EnginePlan, RunPlan, plan_by_config_language, prefetch_tier2_grammars, provides_language_lint};
@@ -192,6 +193,7 @@ pub fn lint_run(
     ));
     Ok(LintRun {
         results,
+        configs: config_fingerprints(&configs, opts),
         errors,
         checked: checked.into_inner(),
         skipped,
@@ -202,6 +204,17 @@ pub fn lint_run(
 /// Build the run's [`ConfigSet`]: a single explicit config (`--config`) bypasses
 /// hierarchical resolution; otherwise `config` is the root and the walked paths
 /// are scanned for nested `poly.toml` files (ADR 0018).
+/// Fingerprint every config this run resolved, using the caller's `extends`
+/// resolver when it supplied one and the network-free local resolver otherwise
+/// — the same resolver the configs themselves were built with, so the hash
+/// describes what actually governed the run.
+fn config_fingerprints(configs: &ConfigSet, opts: &RunOptions) -> Vec<ConfigFingerprint> {
+    match &opts.config_resolver {
+        Some(resolver) => fingerprints(configs, resolver.as_ref()),
+        None => fingerprints(configs, &poly_config::LocalPathResolver),
+    }
+}
+
 fn build_config_set(paths: &[PathBuf], config: &Config, opts: &RunOptions) -> anyhow::Result<ConfigSet> {
     if opts.explicit_config {
         Ok(ConfigSet::single(config.clone()))
@@ -302,6 +315,7 @@ pub fn format_run(
     Ok(FormatRun {
         results,
         checked,
+        configs: config_fingerprints(&configs, opts),
         errors,
         skipped,
         discovery,
@@ -441,6 +455,7 @@ fn lint_one(
 
     Ok(LintResult {
         path: f.path.clone(),
+        config: f.config_id,
         diagnostics,
         fix_withheld_generated: generated,
         fixed,
@@ -459,6 +474,7 @@ fn invalid_utf8_result(f: &DiscoveredFile, error: std::str::Utf8Error) -> LintRe
 
     LintResult {
         path: f.path.clone(),
+        config: f.config_id,
         diagnostics: vec![Diagnostic {
             engine: "poly".to_owned(),
             code: Some("invalid-utf8".to_owned()),
@@ -734,6 +750,7 @@ fn format_one(
     }
     Ok(FormatResult {
         path: f.path.clone(),
+        config: f.config_id,
         changed,
         formatted: if changed { Some(current.to_string()) } else { None },
         skipped,

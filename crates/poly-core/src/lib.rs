@@ -30,6 +30,7 @@ pub(crate) mod engine_guard;
 #[doc(hidden)]
 pub mod engines;
 pub(crate) mod filter;
+mod fingerprint;
 pub mod language;
 pub(crate) mod registry;
 pub mod report;
@@ -40,6 +41,7 @@ pub mod runner;
 pub use config::{Config, Kind};
 pub use discover::{DiscoveryReport, ExcludedDirectory, ExcludedRule};
 pub use engine::{Capabilities, Diagnostic, Edit, Engine, FormatOutput, Severity, SourceFile, Span};
+pub use fingerprint::ConfigFingerprint;
 pub use language::Language;
 pub use registry::engine_versions;
 pub use report::Verbosity;

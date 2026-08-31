@@ -16,6 +16,7 @@
 
 use serde::Serialize;
 
+use crate::ConfigFingerprint;
 use crate::runner::{FormatError, FormatResult, FormatRun, LintError, LintResult, LintRun, SkippedFile};
 
 /// What a run actually did, in three numbers.
@@ -60,6 +61,17 @@ pub struct LintDocument {
     pub skipped: Vec<SkippedFile>,
     /// The run's own account of what it covered.
     pub summary: RunSummary,
+    /// The configurations that governed this run, indexed by each result's
+    /// `config` field.
+    ///
+    /// Two runs of an identical binary can enforce different rules — a
+    /// `poly.toml`, a `poly.local.toml`, a nested config or an `extends` base
+    /// can move underneath it — and both report clean. This is what tells a
+    /// consumer whether two clean reports are comparable at all. A monorepo run
+    /// legitimately carries several entries, each naming the directory it
+    /// resolved from, so a difference between sibling packages is attributable
+    /// rather than anomalous.
+    pub configs: Vec<ConfigFingerprint>,
 }
 
 impl LintDocument {
@@ -74,6 +86,7 @@ impl LintDocument {
                 skipped: run.skipped.len(),
                 errored: run.errors.len(),
             },
+            configs: run.configs.clone(),
         }
     }
 }
@@ -92,6 +105,17 @@ pub struct FormatDocument {
     pub skipped: Vec<SkippedFile>,
     /// The run's own account of what it covered.
     pub summary: RunSummary,
+    /// The configurations that governed this run, indexed by each result's
+    /// `config` field.
+    ///
+    /// Two runs of an identical binary can enforce different rules — a
+    /// `poly.toml`, a `poly.local.toml`, a nested config or an `extends` base
+    /// can move underneath it — and both report clean. This is what tells a
+    /// consumer whether two clean reports are comparable at all. A monorepo run
+    /// legitimately carries several entries, each naming the directory it
+    /// resolved from, so a difference between sibling packages is attributable
+    /// rather than anomalous.
+    pub configs: Vec<ConfigFingerprint>,
 }
 
 impl FormatDocument {
@@ -106,6 +130,7 @@ impl FormatDocument {
                 skipped: run.skipped.len(),
                 errored: run.errors.len(),
             },
+            configs: run.configs.clone(),
         }
     }
 }

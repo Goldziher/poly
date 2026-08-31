@@ -171,6 +171,15 @@ pub struct LintResult {
     /// JSON/TOON renderers append for [`LintRun::errors`].
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// Index into the run's `configs` list: which resolved configuration
+    /// governed this file.
+    ///
+    /// Omitted when it is `0`, which is the run's root config and the answer for
+    /// every file outside a monorepo — the same treatment `fixed` gets, and for
+    /// the same reason: a field repeated identically on every record is bytes a
+    /// reader pays for and learns nothing from.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub config: usize,
     /// Debug data (cache hit/miss + timing), present only under `--debug`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub debug: Option<RunDebug>,
@@ -206,6 +215,15 @@ pub struct FormatResult {
     /// Formatted contents when changed (not serialized).
     #[serde(skip)]
     pub formatted: Option<String>,
+    /// Index into the run's `configs` list: which resolved configuration
+    /// governed this file.
+    ///
+    /// Omitted when it is `0`, which is the run's root config and the answer for
+    /// every file outside a monorepo — the same treatment `fixed` gets, and for
+    /// the same reason: a field repeated identically on every record is bytes a
+    /// reader pays for and learns nothing from.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub config: usize,
     /// Debug data (cache hit/miss + timing), present only under `--debug`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub debug: Option<RunDebug>,
@@ -246,6 +264,14 @@ pub struct LintRun {
     /// A count alone forced consumers to reconstruct the set from a heuristic
     /// and parse it back out of the human summary, so the names travel with it.
     pub skipped: Vec<SkippedFile>,
+    /// The configuration each file was governed by, indexed by
+    /// [`LintResult::config`] / [`FormatResult::config`].
+    ///
+    /// A run can span several configs (ADR 0018), and two of them can enforce
+    /// different rules while the binary is byte-identical — so a consumer
+    /// comparing two clean reports needs this to know whether they are
+    /// comparable at all.
+    pub configs: Vec<crate::ConfigFingerprint>,
     /// What `[discovery] exclude` / `--exclude` pruned before any of that.
     pub discovery: DiscoveryReport,
 }
@@ -279,6 +305,10 @@ pub struct FormatRun {
     /// The per-file [`FormatResult::skipped`] already carries the former; this
     /// is the run-level union, so one strict-mode check covers both kinds.
     pub skipped: Vec<SkippedFile>,
+    /// The configuration each file was governed by, indexed by
+    /// [`FormatResult::config`]. The lint side's [`LintRun::configs`], for the
+    /// same reason.
+    pub configs: Vec<crate::ConfigFingerprint>,
     /// What `[discovery] exclude` / `--exclude` pruned before any of that.
     pub discovery: DiscoveryReport,
 }

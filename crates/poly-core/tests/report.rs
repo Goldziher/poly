@@ -18,6 +18,7 @@ fn sample_lint_results() -> Vec<LintResult> {
 
     vec![
         LintResult {
+            config: 0,
             path: PathBuf::from("src/main.py"),
             fix_withheld_generated: false,
             fixed: 0,
@@ -60,6 +61,7 @@ fn sample_lint_results() -> Vec<LintResult> {
             debug: None,
         },
         LintResult {
+            config: 0,
             path: PathBuf::from("src/clean.py"),
             fix_withheld_generated: false,
             fixed: 0,
@@ -74,6 +76,7 @@ fn sample_lint_results() -> Vec<LintResult> {
 fn sample_format_results() -> Vec<FormatResult> {
     vec![
         FormatResult {
+            config: 0,
             path: PathBuf::from("src/main.py"),
             changed: true,
             formatted: Some("formatted".to_string()),
@@ -82,6 +85,7 @@ fn sample_format_results() -> Vec<FormatResult> {
             debug: None,
         },
         FormatResult {
+            config: 0,
             path: PathBuf::from("src/clean.py"),
             changed: false,
             formatted: None,
@@ -127,6 +131,7 @@ fn lint_pretty_verbose_shows_description_url_and_metadata() {
 fn lint_pretty_reports_autofixable_count() {
     owo_colors::set_override(false);
     let results = vec![LintResult {
+        config: 0,
         path: PathBuf::from("src/main.py"),
         fix_withheld_generated: false,
         fixed: 0,
@@ -199,6 +204,7 @@ fn lint_pretty_reports_all_findings_fixable_when_every_diagnostic_has_a_fix() {
         metadata: BTreeMap::new(),
     };
     let results = vec![LintResult {
+        config: 0,
         path: PathBuf::from("src/main.py"),
         fix_withheld_generated: false,
         fixed: 0,
@@ -293,6 +299,7 @@ fn unrenderable_path() -> PathBuf {
 #[cfg(unix)]
 fn unrenderable_lint_results() -> Vec<LintResult> {
     vec![LintResult {
+        config: 0,
         path: unrenderable_path(),
         diagnostics: vec![Diagnostic {
             engine: "ruff".to_string(),
@@ -316,6 +323,7 @@ fn unrenderable_lint_results() -> Vec<LintResult> {
 #[cfg(unix)]
 fn unrenderable_format_results() -> Vec<FormatResult> {
     vec![FormatResult {
+        config: 0,
         path: unrenderable_path(),
         changed: true,
         formatted: None,
@@ -378,6 +386,7 @@ fn format_toon_reports_a_serialization_failure_instead_of_a_clean_document() {
 #[test]
 fn lint_json_run_reports_a_serialization_failure_instead_of_a_clean_document() {
     let run = LintRun {
+        configs: Vec::new(),
         results: unrenderable_lint_results(),
         skipped: Vec::new(),
         errors: Vec::new(),
@@ -391,6 +400,7 @@ fn lint_json_run_reports_a_serialization_failure_instead_of_a_clean_document() {
 #[test]
 fn format_json_run_reports_a_serialization_failure_instead_of_a_clean_document() {
     let run = FormatRun {
+        configs: Vec::new(),
         checked: 0,
         results: unrenderable_format_results(),
         skipped: Vec::new(),
@@ -415,6 +425,7 @@ fn lint_pretty_debug_renders_engine_timing_block() {
     owo_colors::set_override(false);
 
     let results = vec![LintResult {
+        config: 0,
         path: PathBuf::from("src/main.py"),
         fix_withheld_generated: false,
         fixed: 0,
@@ -486,6 +497,7 @@ fn lint_pretty_debug_renders_engine_timing_block() {
 fn skipped_files_are_reported_separately_from_checked_ones() {
     let results = vec![
         FormatResult {
+            config: 0,
             path: PathBuf::from("clean.yaml"),
             changed: false,
             formatted: None,
@@ -494,6 +506,7 @@ fn skipped_files_are_reported_separately_from_checked_ones() {
             debug: None,
         },
         FormatResult {
+            config: 0,
             path: PathBuf::from("Taskfile.yaml"),
             changed: false,
             formatted: None,
@@ -515,6 +528,7 @@ fn skipped_files_are_reported_separately_from_checked_ones() {
 #[test]
 fn distinct_skip_reasons_are_counted_individually() {
     let skip = |path: &str, why: &str| FormatResult {
+        config: 0,
         path: PathBuf::from(path),
         changed: false,
         formatted: None,
@@ -569,10 +583,12 @@ fn sample_discovery() -> DiscoveryReport {
 fn format_summary_reports_what_discovery_excluded() {
     owo_colors::set_override(false);
     let run = FormatRun {
+        configs: Vec::new(),
         checked: 0,
         skipped: Vec::new(),
         errors: Vec::new(),
         results: vec![FormatResult {
+            config: 0,
             path: PathBuf::from("src/clean.py"),
             changed: false,
             formatted: None,
@@ -608,6 +624,7 @@ fn format_summary_explains_a_run_that_checked_nothing() {
     owo_colors::set_override(false);
     let run = FormatRun {
         checked: 0,
+        configs: Vec::new(),
         skipped: Vec::new(),
         errors: Vec::new(),
         results: Vec::new(),
@@ -646,6 +663,7 @@ fn format_summary_explains_a_run_that_checked_nothing() {
 fn format_summary_reports_exclusions_alongside_changed_files() {
     owo_colors::set_override(false);
     let run = FormatRun {
+        configs: Vec::new(),
         checked: 0,
         skipped: Vec::new(),
         errors: Vec::new(),
@@ -667,6 +685,7 @@ fn format_summary_reports_exclusions_alongside_changed_files() {
 fn lint_summary_reports_what_discovery_excluded() {
     owo_colors::set_override(false);
     let run = LintRun {
+        configs: Vec::new(),
         errors: Vec::new(),
         skipped: Vec::new(),
         results: Vec::new(),
@@ -692,6 +711,7 @@ fn lint_summary_reports_what_discovery_excluded() {
 fn lint_summary_explains_a_run_that_linted_nothing() {
     owo_colors::set_override(false);
     let run = LintRun {
+        configs: Vec::new(),
         errors: Vec::new(),
         skipped: Vec::new(),
         results: Vec::new(),
@@ -712,6 +732,7 @@ fn lint_summary_explains_a_run_that_linted_nothing() {
 fn summaries_stay_quiet_when_nothing_was_excluded() {
     owo_colors::set_override(false);
     let lint = LintRun {
+        configs: Vec::new(),
         errors: Vec::new(),
         skipped: Vec::new(),
         results: Vec::new(),
@@ -723,6 +744,7 @@ fn summaries_stay_quiet_when_nothing_was_excluded() {
     assert!(!text.contains("excluded"), "got: {text}");
 
     let format = FormatRun {
+        configs: Vec::new(),
         checked: 0,
         skipped: Vec::new(),
         errors: Vec::new(),
@@ -753,6 +775,7 @@ fn results_only_renderers_are_unchanged() {
 fn lint_summary_names_paths_that_matched_no_engine() {
     owo_colors::set_override(false);
     let run = LintRun {
+        configs: Vec::new(),
         errors: Vec::new(),
         results: Vec::new(),
         checked: 4,
@@ -783,6 +806,7 @@ fn lint_summary_names_paths_that_matched_no_engine() {
 fn format_summary_reports_skips_alongside_changed_files() {
     owo_colors::set_override(false);
     let run = FormatRun {
+        configs: Vec::new(),
         checked: 0,
         errors: Vec::new(),
         results: sample_format_results(),
@@ -912,6 +936,7 @@ fn skip_note_is_absent_when_nothing_was_skipped() {
 #[test]
 fn lint_json_run_appends_skipped_paths_as_entries() {
     let run = LintRun {
+        configs: Vec::new(),
         errors: Vec::new(),
         results: sample_lint_results(),
         checked: 2,
@@ -943,6 +968,7 @@ fn lint_json_run_appends_skipped_paths_as_entries() {
 #[test]
 fn format_json_run_does_not_duplicate_declined_files() {
     let declined = FormatResult {
+        config: 0,
         path: PathBuf::from("Taskfile.yaml"),
         changed: false,
         formatted: None,
@@ -951,6 +977,7 @@ fn format_json_run_does_not_duplicate_declined_files() {
         debug: None,
     };
     let run = FormatRun {
+        configs: Vec::new(),
         checked: 0,
         errors: Vec::new(),
         results: vec![declined],
@@ -990,6 +1017,7 @@ fn a_run_whose_only_file_was_skipped_does_not_read_as_clean() {
     }];
 
     let lint = LintRun {
+        configs: Vec::new(),
         errors: Vec::new(),
         results: Vec::new(),
         checked: 0,
@@ -1001,6 +1029,7 @@ fn a_run_whose_only_file_was_skipped_does_not_read_as_clean() {
     assert!(text.contains("Nothing was linted."), "got: {text}");
 
     let format = FormatRun {
+        configs: Vec::new(),
         checked: 0,
         errors: Vec::new(),
         results: Vec::new(),
@@ -1020,6 +1049,7 @@ fn a_run_whose_only_file_was_skipped_does_not_read_as_clean() {
 fn lint_summary_names_a_file_the_engine_could_not_process() {
     owo_colors::set_override(false);
     let run = LintRun {
+        configs: Vec::new(),
         results: Vec::new(),
         checked: 1,
         skipped: Vec::new(),
@@ -1053,6 +1083,7 @@ fn lint_summary_names_a_file_the_engine_could_not_process() {
 fn lint_summary_keeps_errors_and_skips_apart() {
     owo_colors::set_override(false);
     let run = LintRun {
+        configs: Vec::new(),
         results: Vec::new(),
         checked: 1,
         skipped: vec![SkippedFile {
@@ -1088,7 +1119,9 @@ fn lint_summary_keeps_errors_and_skips_apart() {
 fn lint_summary_does_not_let_fixes_imply_success_when_a_file_errored() {
     owo_colors::set_override(false);
     let run = LintRun {
+        configs: Vec::new(),
         results: vec![LintResult {
+            config: 0,
             path: PathBuf::from("ok.py"),
             diagnostics: Vec::new(),
             fix_withheld_generated: false,
@@ -1126,6 +1159,7 @@ fn lint_summary_does_not_let_fixes_imply_success_when_a_file_errored() {
 fn lint_summary_without_errors_is_unchanged() {
     owo_colors::set_override(false);
     let run = LintRun {
+        configs: Vec::new(),
         results: Vec::new(),
         checked: 3,
         skipped: Vec::new(),
@@ -1144,6 +1178,7 @@ fn lint_summary_without_errors_is_unchanged() {
 #[test]
 fn lint_json_run_carries_errors_separately_from_skips() {
     let run = LintRun {
+        configs: Vec::new(),
         results: Vec::new(),
         checked: 1,
         skipped: vec![SkippedFile {
@@ -1221,8 +1256,10 @@ fn lint_error_note_names_every_failing_path() {
 #[test]
 fn format_json_run_carries_errors_separately_from_skips() {
     let run = FormatRun {
+        configs: Vec::new(),
         checked: 0,
         results: vec![FormatResult {
+            config: 0,
             path: PathBuf::from("ok.py"),
             changed: false,
             formatted: None,
@@ -1287,6 +1324,7 @@ fn format_json_run_carries_errors_separately_from_skips() {
 #[test]
 fn format_json_run_never_downgrades_an_errored_file_to_a_skip() {
     let run = FormatRun {
+        configs: Vec::new(),
         checked: 0,
         results: Vec::new(),
         skipped: vec![SkippedFile {
@@ -1318,8 +1356,10 @@ fn format_json_run_never_downgrades_an_errored_file_to_a_skip() {
 #[test]
 fn format_json_run_does_not_duplicate_a_declined_file_when_a_file_also_errored() {
     let run = FormatRun {
+        configs: Vec::new(),
         checked: 0,
         results: vec![FormatResult {
+            config: 0,
             path: PathBuf::from("Taskfile.yaml"),
             changed: false,
             formatted: None,
@@ -1359,6 +1399,7 @@ fn format_json_run_does_not_duplicate_a_declined_file_when_a_file_also_errored()
 #[test]
 fn format_toon_run_carries_the_errored_file_too() {
     let run = FormatRun {
+        configs: Vec::new(),
         checked: 0,
         results: Vec::new(),
         skipped: Vec::new(),
@@ -1381,8 +1422,10 @@ fn format_toon_run_carries_the_errored_file_too() {
 #[test]
 fn format_json_run_emits_the_document_shape() {
     let run = FormatRun {
+        configs: Vec::new(),
         checked: 1,
         results: vec![FormatResult {
+            config: 0,
             path: PathBuf::from("src/main.py"),
             changed: true,
             formatted: Some("formatted".to_string()),
@@ -1404,6 +1447,7 @@ fn format_json_run_emits_the_document_shape() {
             "errors": [],
             "skipped": [],
             "summary": { "checked": 1, "skipped": 0, "errored": 0 },
+            "configs": [],
         }),
         "the whole document contract, pinned: a consumer reads coverage from `summary` \
          and the empty `errors`/`skipped` lists rather than inferring it from `results`",
@@ -1417,8 +1461,10 @@ fn format_json_run_emits_the_document_shape() {
 fn format_summary_names_a_file_the_engine_could_not_process() {
     owo_colors::set_override(false);
     let run = FormatRun {
+        configs: Vec::new(),
         checked: 0,
         results: vec![FormatResult {
+            config: 0,
             path: PathBuf::from("ok.py"),
             changed: false,
             formatted: None,
@@ -1477,6 +1523,7 @@ fn format_summary_names_directories_the_builtin_prune_set_skipped() {
         ..DiscoveryReport::default()
     };
     let format = FormatRun {
+        configs: Vec::new(),
         checked: 0,
         skipped: Vec::new(),
         errors: Vec::new(),
@@ -1492,6 +1539,7 @@ fn format_summary_names_directories_the_builtin_prune_set_skipped() {
     assert!(text.contains("[discovery] no_prune"), "got: {text}");
 
     let lint = LintRun {
+        configs: Vec::new(),
         errors: Vec::new(),
         skipped: Vec::new(),
         results: Vec::new(),
@@ -1524,6 +1572,7 @@ fn a_builtin_prune_does_not_change_the_headline_when_files_were_checked() {
     assert!(discovery.has_notes(), "but there is still something to say");
 
     let lint = LintRun {
+        configs: Vec::new(),
         errors: Vec::new(),
         skipped: Vec::new(),
         results: Vec::new(),

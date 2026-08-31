@@ -778,6 +778,7 @@ mod tests {
     fn result(diagnostics: Vec<Diagnostic>) -> LintResult {
         LintResult {
             path: PathBuf::from("test.rs"),
+            config: 0,
             diagnostics,
             fix_withheld_generated: false,
             fixed: 0,
@@ -830,6 +831,7 @@ mod tests {
 
         LintResult {
             path: PathBuf::from(OsString::from_vec(vec![b'b', b'a', b'd', 0xff, b'.', b'p', b'y'])),
+            config: 0,
             diagnostics: vec![diag(Severity::Warning)],
             fix_withheld_generated: false,
             fixed: 0,

@@ -74,6 +74,26 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ### Added
 
+- **Every lint/format result now says which engines and which configuration produced it.** A poly
+  version does not move when a wrapped crate does, and a `poly.toml`, `poly.local.toml`, nested
+  config or `extends` base can change underneath a byte-identical binary. Two runs then both report
+  clean with nothing to say they are not comparable — so a consumer memoizing results on the
+  binary's identity alone is wrong the moment either moves. Closes
+  [#18](https://github.com/Goldziher/poly/issues/18).
+
+  The MCP identity block gains an `engines` digest over the compiled-in backends and the versions
+  they wrap; the `version` tool returns the full map. Host-toolchain backends (`rustfmt`, `gofmt`,
+  `shellcheck`, …) are deliberately excluded, because their version depends on the machine and the
+  checkout rather than on the binary — folding them in would make a binary identity that changes
+  when the binary did not.
+
+  The document gains a `configs` list, one entry per configuration that governed the run, each with
+  the directory it resolved from and a hash of the fully merged config. A monorepo carries several,
+  and each result names the one that governed it, so a difference between sibling packages is
+  attributable rather than anomalous. The hash ignores comments and formatting, and is independent
+  of where the repository is checked out — the resolver rewrites `[rules] dirs` to absolute paths,
+  which would otherwise have meant two identical commits never agreeing.
+
 - **Every engine table now accepts `enabled`, and `poly lint --only` / `--skip` restrict a run to
   named engines.** Only three backends read an `enabled` key before this, each out of its own
   options table, so `[lint.python.ruff] enabled = false` was reported as an unknown key *and* ruff

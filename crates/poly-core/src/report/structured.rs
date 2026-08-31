@@ -41,6 +41,9 @@ pub(super) fn lint_results_for_output(run: &LintRun) -> Vec<LintResult> {
         run.results.iter().map(|r| r.path.as_path()).collect();
     let synthetic = |path: &std::path::Path, skipped: Option<String>, error: Option<String>| LintResult {
         path: path.to_path_buf(),
+        // A run-level error or skip carries no per-file routing, so it is
+        // attributed to the run's root config rather than guessed at.
+        config: 0,
         diagnostics: Vec::new(),
         fix_withheld_generated: false,
         fixed: 0,
@@ -103,6 +106,8 @@ pub(super) fn format_results_for_output(run: &FormatRun) -> Vec<FormatResult> {
         run.results.iter().map(|r| r.path.as_path()).collect();
     let synthetic = |path: &std::path::Path, skipped: Option<String>, error: Option<String>| FormatResult {
         path: path.to_path_buf(),
+        // As on the lint side: no per-file routing, so the run's root config.
+        config: 0,
         changed: false,
         skipped,
         error,

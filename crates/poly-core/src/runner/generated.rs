@@ -58,6 +58,7 @@ pub(crate) fn acts_on_generated(configs: &ConfigSet, run_override: Option<bool>)
 pub(crate) fn lint_skip_result(file: &DiscoveredFile, reason: &str) -> LintResult {
     LintResult {
         path: file.path.clone(),
+        config: file.config_id,
         diagnostics: Vec::new(),
         // Nothing was withheld: the file was never linted, so there was no fix
         // to hold back. The skip reason is the whole story here.
@@ -78,6 +79,7 @@ pub(crate) fn lint_skip_result(file: &DiscoveredFile, reason: &str) -> LintResul
 pub(crate) fn format_skip_result(file: &DiscoveredFile, reason: Option<String>) -> FormatResult {
     FormatResult {
         path: file.path.clone(),
+        config: file.config_id,
         changed: false,
         formatted: None,
         skipped: reason,

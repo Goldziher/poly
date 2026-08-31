@@ -191,6 +191,19 @@ impl ConfigSet {
     }
 
     /// Borrow the config with the given id.
+    /// The directory the config with this id resolved from, or `None` for the
+    /// run's fallback config (an explicit `--config`, or a run with no
+    /// directory-backed config at all).
+    pub fn config_dir(&self, id: usize) -> Option<&Path> {
+        self.dirs.get(id).and_then(Option::as_deref)
+    }
+
+    /// The directory the run's root config resolved from, used to report every
+    /// other config's directory relative to it.
+    pub fn root_dir(&self) -> Option<&Path> {
+        self.root_config_dir.as_deref()
+    }
+
     pub fn config(&self, id: usize) -> &Config {
         &self.configs[id]
     }
