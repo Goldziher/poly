@@ -13,16 +13,8 @@
     "url": "git+https://github.com/Goldziher/poly.git",
     "directory": "npm-package/platforms/darwin-arm64"
   },
-  "os": [
-    "darwin"
-  ],
-  "cpu": [
-    "arm64"
-  ],
-  "files": [
-    "LICENSE",
-    "README.md",
-    "bin/"
-  ],
+  "os": ["darwin"],
+  "cpu": ["arm64"],
+  "files": ["LICENSE", "README.md", "bin/"],
   "preferUnplugged": true
 }

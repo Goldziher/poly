@@ -13,19 +13,9 @@
     "url": "git+https://github.com/Goldziher/poly.git",
     "directory": "npm-package/platforms/linux-x64-gnu"
   },
-  "os": [
-    "linux"
-  ],
-  "cpu": [
-    "x64"
-  ],
-  "libc": [
-    "glibc"
-  ],
-  "files": [
-    "LICENSE",
-    "README.md",
-    "bin/"
-  ],
+  "os": ["linux"],
+  "cpu": ["x64"],
+  "libc": ["glibc"],
+  "files": ["LICENSE", "README.md", "bin/"],
   "preferUnplugged": true
 }

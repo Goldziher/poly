@@ -13,16 +13,8 @@
     "url": "git+https://github.com/Goldziher/poly.git",
     "directory": "npm-package/platforms/win32-x64"
   },
-  "os": [
-    "win32"
-  ],
-  "cpu": [
-    "x64"
-  ],
-  "files": [
-    "LICENSE",
-    "README.md",
-    "bin/"
-  ],
+  "os": ["win32"],
+  "cpu": ["x64"],
+  "files": ["LICENSE", "README.md", "bin/"],
   "preferUnplugged": true
 }

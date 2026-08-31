@@ -479,7 +479,9 @@ fn oxc_plugins_key_enables_a_plugin_rule_extend_select_cannot_reach() {
         )
         .unwrap();
     assert!(
-        enabled.iter().any(|d| d.code.as_deref() == Some("vitest/expect-expect")),
+        enabled
+            .iter()
+            .any(|d| d.code.as_deref() == Some("vitest/expect-expect")),
         "`plugins = [\"vitest\"]` must make the plugin's correctness rules reachable; got: {enabled:?}"
     );
 }
@@ -501,7 +503,9 @@ fn oxc_unknown_plugin_name_is_an_error() {
             options: opts,
         },
     );
-    let error = result.expect_err("an unknown plugin name must fail the engine").to_string();
+    let error = result
+        .expect_err("an unknown plugin name must fail the engine")
+        .to_string();
     assert!(
         error.contains("vitesst"),
         "the error must name the offending plugin; got: {error}"

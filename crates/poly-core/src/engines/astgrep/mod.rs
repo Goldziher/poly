@@ -170,11 +170,7 @@ impl Engine for AstGrepEngine {
             Ok(map) => map,
             Err(_) => return false,
         };
-        let (rule_refs, _) = resolve_rules(
-            grammar_for_language_id(language.id()),
-            user_rule_map.as_deref(),
-            cfg,
-        );
+        let (rule_refs, _) = resolve_rules(grammar_for_language_id(language.id()), user_rule_map.as_deref(), cfg);
         !rule_refs.is_empty()
     }
 

@@ -52,6 +52,19 @@ for manifest in npm-package/platforms/*/package.json; do
 	mv "$npm_tmp" "$manifest"
 done
 
+# jq re-prints the whole document in its own style, so a structural rewrite also
+# reformats the parts it did not change — it expands the inlined arrays these
+# manifests keep, which poly's own formatter then wants to collapse again. Left
+# alone, every release commit failed the dogfood job on a file the bump itself
+# had just touched. Reformat here rather than after the fact: `poly fmt` is the
+# authority on this repo's formatting and this repo dogfoods it.
+if command -v poly > /dev/null 2>&1; then
+	poly fmt --fix npm-package > /dev/null ||
+		echo "warn: poly fmt over npm-package failed; run it before committing"
+else
+	echo "warn: poly not on PATH; run 'poly fmt --fix npm-package' before committing"
+fi
+
 echo "→ pip-package → $VERSION"
 sed -i.bak -E "s/^version = \"[^\"]+\"$/version = \"$VERSION\"/" pip-package/pyproject.toml
 rm pip-package/pyproject.toml.bak
