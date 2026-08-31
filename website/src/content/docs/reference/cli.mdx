@@ -113,6 +113,39 @@ below. `--quiet` drops the per-file discovery and skip detail printed beneath th
 count and reason stays in the summary, so nothing is hidden, only un-itemised. Findings still print
 and exit codes are unchanged. It has no effect on `--format json` / `toon`.
 
+#### The `json` / `toon` document
+
+`poly lint` and `poly fmt` emit one object, not a bare array of per-file records:
+
+```json
+{
+  "results": [{ "path": "src/main.py", "diagnostics": [] }],
+  "errors": [],
+  "skipped": [{ "path": "main.zig", "reason": "no lint rules for Zig" }],
+  "summary": { "checked": 1, "skipped": 1, "errored": 0 }
+}
+```
+
+**Gate on `summary.checked`, not on an empty `results`.** A run that skipped every file reports no
+diagnostics and is not an error, so without the summary it is indistinguishable from a clean pass.
+
+The three counts are **not** a partition of `results`, and cannot be derived from it:
+
+- a file that was checked and found clean produces **no record at all** — `results` holds only files
+  with something to report;
+- a file whose language poly has no lint rules for can be **both** a skip and a result, because the
+  cross-cutting backends (typos, ast-grep, the quality tier) still run over it.
+
+`errors` and `skipped` repeat what the corresponding records already carry, deliberately: the defect
+they exist to close is a consumer reading a clean-looking list and concluding the files are fine.
+
+The MCP server returns this same document, so both surfaces answer the coverage question identically.
+
+<Aside type="caution" title="Changed in 0.24.0">
+    This was previously a bare JSON array. A consumer that read the top level as a list should read
+    `results` instead.
+</Aside>
+
 ### Coverage gates
 
 | Flag | Effect |

@@ -133,17 +133,40 @@ answering with superseded behaviour.
   crash, bad engine config. Deliberately distinct from a skip, which is a decision rather than a
   failure.
 
-Each result also carries a run-level `errors` array — one entry per file poly failed on,
-duplicating the `error`-carrying records in `results`, so a caller can gate on "did the run fail on
-anything" without scanning every record. When `errors` is non-empty, the tool result's
-`CallToolResult.is_error` (`isError` over the wire) is set `true`.
+Each result also carries run-level `errors` and `skipped` arrays and a `summary`:
+
+```json
+{
+  "results": [...],
+  "errors": [],
+  "skipped": [{ "path": "main.zig", "reason": "no lint rules for Zig" }],
+  "summary": { "checked": 12, "skipped": 1, "errored": 0 }
+}
+```
+
+`errors` and `skipped` duplicate the corresponding records in `results` on purpose, so a caller can
+gate on "did this run actually check what I gave it" without scanning every record. When `errors` is
+non-empty the tool result's `CallToolResult.is_error` (`isError` over the wire) is set `true`.
+**`skipped` deliberately does not set it** — a skip is coverage information, not a failure, and
+flagging it would make the error signal useless.
+
+That is exactly why `summary` matters: a run where everything was skipped reports no diagnostics and
+is not an error, so `isError` alone cannot tell it apart from a clean pass. **Gate on
+`summary.checked`.**
+
+The counts are not a partition of `results` and cannot be derived from it — a file checked and found
+clean produces no record at all, and a file poly has no rules for can be both a skip and a result,
+since the cross-cutting backends still run over it.
+
+This is the same document `poly lint --format json` prints, so an agent and a CI script read
+coverage the same way.
 
 <Aside type="danger" title="Check `isError` before trusting the result">
     Before this shape existed, a file poly failed to process was absent from the output entirely —
     indistinguishable from a file that was checked and found clean. An agent that gated on "no
     findings in `results`" was reading a run that had silently failed to check some files as a clean
-    pass. Check `isError` (or the `errors` array) **first**; only then read `results` for
-    diagnostics.
+    pass. Check `isError` (or the `errors` array) **first**, then `summary.checked` to confirm the
+    run covered what you gave it; only then read `results` for diagnostics.
 </Aside>
 
 ## Driving poly from the CLI instead
