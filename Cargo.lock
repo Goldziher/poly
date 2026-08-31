@@ -5088,6 +5088,7 @@ name = "poly-mcp"
 version = "0.23.1"
 dependencies = [
  "anyhow",
+ "blake3",
  "poly-buildinfo",
  "poly-cache",
  "poly-config",

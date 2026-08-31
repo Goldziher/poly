@@ -20,6 +20,9 @@ ignored = ["serde_toon_format"]
 
 [dependencies]
 anyhow.workspace = true
+# Folds the compiled-in engine versions into one digest on the identity block,
+# framed the way the result cache frames its key.
+blake3.workspace = true
 # The build identity every tool response carries, so an MCP caller can tell
 # which binary answered (an MCP caller cannot run `poly --version`).
 poly-buildinfo.workspace = true

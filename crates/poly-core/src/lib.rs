@@ -41,6 +41,7 @@ pub use config::{Config, Kind};
 pub use discover::{DiscoveryReport, ExcludedDirectory, ExcludedRule};
 pub use engine::{Capabilities, Diagnostic, Edit, Engine, FormatOutput, Severity, SourceFile, Span};
 pub use language::Language;
+pub use registry::engine_versions;
 pub use report::Verbosity;
 pub use resolve::{ConfigSet, ExcludeRule};
 pub use runner::{

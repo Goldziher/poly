@@ -378,6 +378,10 @@ impl PolyMcpServer {
                 None => "the executable serving this session is still the file on disk".to_string(),
             },
             uptime_seconds: self.executable.uptime_seconds(),
+            engines: poly_core::engine_versions()
+                .iter()
+                .map(|(name, version)| ((*name).to_string(), version.clone()))
+                .collect(),
         };
         dto_result(&report, args.format)
     }

@@ -46,6 +46,16 @@ pub struct PolyIdentity {
     /// PID of the serving process, so a caller can correlate a stale server
     /// with the process it needs to kill.
     pub pid: u32,
+    /// Digest of the compiled-in engines and the upstream versions they wrap,
+    /// e.g. `engines/1/9f2c…`.
+    ///
+    /// The binary's version does not move when a wrapped crate does — a `dev`
+    /// build, or two builds of one tag, can carry different backends. This is
+    /// what distinguishes them. Host-toolchain backends are deliberately not
+    /// folded in (see [`poly_core::engine_versions`]), so the digest is the same
+    /// on every machine running the same binary. The full map is available from
+    /// the `version` tool.
+    pub engines: String,
 }
 
 impl PolyIdentity {
@@ -59,8 +69,38 @@ impl PolyIdentity {
             commit: poly_buildinfo::commit().map(str::to_string),
             executable: std::env::current_exe().ok().map(|path| path.display().to_string()),
             pid: std::process::id(),
+            engines: engines_digest(poly_core::engine_versions()),
         }
     }
+}
+
+/// Schema version of [`engines_digest`]'s input framing.
+///
+/// Folded into the digest so a change to *what* is hashed cannot be mistaken for
+/// a change to the engines themselves — the same reason the cache key carries a
+/// format version.
+const ENGINES_DIGEST_VERSION: &str = "1";
+
+/// Fold an engine map into one short, stable digest.
+///
+/// Split from the caller so the composition rule can be tested without
+/// controlling which engines the process was built with — the same split
+/// `poly_buildinfo::compose_cache_identity` makes, and for the same reason.
+///
+/// Framing follows `ResultCache::key_with_build_identity`: NUL-separated fields,
+/// so no pair of `(name, version)` values can collide by concatenation. The map
+/// is a `BTreeMap`, so iteration order is the sorted order and the digest is
+/// stable across runs.
+fn engines_digest(versions: &std::collections::BTreeMap<&'static str, String>) -> String {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(ENGINES_DIGEST_VERSION.as_bytes());
+    for (name, version) in versions {
+        hasher.update(b"\0");
+        hasher.update(name.as_bytes());
+        hasher.update(b"\0");
+        hasher.update(version.as_bytes());
+    }
+    format!("engines/{ENGINES_DIGEST_VERSION}/{}", &hasher.finalize().to_hex()[..16])
 }
 
 /// The identity of this process, computed once.
@@ -267,5 +307,34 @@ mod tests {
             "the caller needs the pid: {message}"
         );
         assert!(message.contains("Restart the MCP server"), "{message}");
+    }
+
+    /// The composition rule, tested without controlling which engines this
+    /// build actually has.
+    #[test]
+    fn the_engines_digest_is_stable_and_framed() {
+        let map = |pairs: &[(&'static str, &str)]| -> std::collections::BTreeMap<&'static str, String> {
+            pairs.iter().map(|(k, v)| (*k, (*v).to_string())).collect()
+        };
+        let base = map(&[("oxc", "1.0"), ("ruff", "0.16.5")]);
+        assert_eq!(engines_digest(&base), engines_digest(&base), "stable across calls");
+        assert!(engines_digest(&base).starts_with("engines/1/"));
+
+        assert_ne!(
+            engines_digest(&base),
+            engines_digest(&map(&[("oxc", "1.0"), ("ruff", "0.16.6")])),
+            "a wrapped-crate bump must move the digest — that is the whole point"
+        );
+        assert_ne!(
+            engines_digest(&base),
+            engines_digest(&map(&[("oxc", "1.0")])),
+            "dropping an engine must move it too"
+        );
+        // NUL framing: without it `("ab", "c")` and `("a", "bc")` would hash the
+        // same bytes and two different binaries would claim one identity.
+        assert_ne!(
+            engines_digest(&map(&[("ab", "c")])),
+            engines_digest(&map(&[("a", "bc")]))
+        );
     }
 }

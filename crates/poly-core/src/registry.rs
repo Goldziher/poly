@@ -4,6 +4,9 @@
 //! claimed (structural reindent for brace grammars, whitespace normalization
 //! otherwise).
 
+use std::collections::BTreeMap;
+use std::sync::LazyLock;
+
 use crate::engine::Engine;
 use crate::engines::astgrep::AstGrepEngine;
 use crate::engines::biome_css::BiomeCssEngine;
@@ -98,6 +101,52 @@ pub(crate) fn all_engine_names() -> std::collections::BTreeSet<&'static str> {
         .iter()
         .flat_map(|language| engines_for(language).into_iter().map(|engine| engine.name()))
         .collect()
+}
+
+/// Engines that wrap a **host** toolchain rather than a compiled-in crate.
+///
+/// Their `version()` probes `PATH` and fingerprints repo-local tool config, so
+/// it differs between machines *and* between checkouts on one machine. Anything
+/// that reports a process-constant identity must leave them out, and the
+/// stale-cache audit skips them because there is no lock entry to track.
+pub(crate) const NATIVE_TOOLCHAIN_ENGINES: &[&str] = &[
+    "gofmt",
+    "rustfmt",
+    "zigfmt",
+    "shfmt",
+    "shellcheck",
+    "google-java-format",
+    "ktfmt",
+    "styler",
+    "swift-format",
+    "dartfmt",
+    "gleamfmt",
+];
+
+/// Every compiled-in engine's name paired with its `version()` string.
+///
+/// Built once per process. This is the identity of what poly *is* — the set of
+/// backends baked into the binary and the upstream versions they wrap — which a
+/// caller needs to tell two clean reports apart when the binary is the same but
+/// its engines are not.
+///
+/// **Deliberately partial, in two ways that matter.** Native-toolchain backends
+/// ([`NATIVE_TOOLCHAIN_ENGINES`]) are excluded because their `version()` probes
+/// `PATH` and fingerprints repo-local config, so it is neither process-constant
+/// nor machine-independent — folding it in would make this identity change
+/// between two checkouts on one machine. Catalog-tier engines are absent because
+/// they do not exist until a config enables them, so they are not a property of
+/// the binary at all.
+pub fn engine_versions() -> &'static BTreeMap<&'static str, String> {
+    static VERSIONS: LazyLock<BTreeMap<&'static str, String>> = LazyLock::new(|| {
+        all_languages()
+            .iter()
+            .flat_map(|language| engines_for(language))
+            .filter(|engine| !NATIVE_TOOLCHAIN_ENGINES.contains(&engine.name()))
+            .map(|engine| (engine.name(), engine.version().to_owned()))
+            .collect()
+    });
+    &VERSIONS
 }
 
 /// The backends [`engines_for`] appends to *every* language, named.
@@ -304,19 +353,7 @@ pub(crate) mod tests {
         assert_eq!(derived, super::CROSS_CUTTING_ENGINES);
     }
 
-    const NATIVE_TOOLCHAIN_ENGINES: &[&str] = &[
-        "gofmt",
-        "rustfmt",
-        "zigfmt",
-        "shfmt",
-        "shellcheck",
-        "google-java-format",
-        "ktfmt",
-        "styler",
-        "swift-format",
-        "dartfmt",
-        "gleamfmt",
-    ];
+    use super::NATIVE_TOOLCHAIN_ENGINES;
 
     /// Engine names `tests/version_audit.rs` declares via `check("name", ...)`.
     /// Read from the sibling file's source text rather than duplicating the

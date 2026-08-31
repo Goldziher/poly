@@ -27,6 +27,7 @@
 //! The cache/rules/config/workspace DTOs are MCP-local because their CLI
 //! counterparts print prose rather than a serializable value.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use poly_core::report::{FormatDocument, LintDocument};
@@ -336,6 +337,14 @@ pub struct VersionReport {
     /// Seconds this server process has been running. A server older than your
     /// last upgrade is serving the pre-upgrade build.
     pub uptime_seconds: u64,
+    /// Every compiled-in backend and the upstream version it wraps.
+    ///
+    /// The identity block on every response carries a *digest* of this, which is
+    /// enough to tell two binaries apart but not to say how. This is the
+    /// expansion, returned only here so the map is not repeated on every result.
+    /// Host-toolchain backends are excluded: their version depends on the
+    /// machine and the checkout, not on the binary.
+    pub engines: BTreeMap<String, String>,
 }
 
 /// One whole-project tool's outcome.

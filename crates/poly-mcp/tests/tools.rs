@@ -824,3 +824,55 @@ async fn get_task_for_unknown_id_is_an_error() {
     client.cancel().await.unwrap();
     let _ = server_task.await;
 }
+
+/// The identity block answers "which binary served this", and the binary's
+/// version alone does not: a `dev` build, or two builds of the same tag, can
+/// carry different wrapped-crate versions. The engines digest is what tells
+/// them apart, and it must be on every response for a caller that never calls
+/// `version`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn every_response_identifies_the_engines_it_was_built_with() {
+    let dir = fixture_with_defect();
+    let path = dir.path().join("bad.py");
+    let (client, server_task) = connect().await;
+    let result = client
+        .call_tool(
+            CallToolRequestParams::new("lint")
+                .with_arguments(arguments(&[("paths", Value::from(vec![path.display().to_string()]))])),
+        )
+        .await
+        .unwrap();
+
+    let identity = &result.structured_content.as_ref().unwrap()["poly"];
+    let digest = identity["engines"].as_str().expect("the engines digest is a string");
+    assert!(
+        digest.starts_with("engines/"),
+        "the digest names its own framing so a later change to what is hashed is visible: {digest}"
+    );
+
+    client.cancel().await.unwrap();
+    let _ = server_task.await;
+}
+
+/// The digest is deliberately not expandable on its own, so `version` carries
+/// the map it summarizes — otherwise a caller that noticed a difference would
+/// have no way to find out what differed.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn version_expands_the_engines_digest_into_a_map() {
+    let (client, server_task) = connect().await;
+    let result = client
+        .call_tool(CallToolRequestParams::new("version").with_arguments(arguments(&[])))
+        .await
+        .unwrap();
+
+    let structured = result.structured_content.as_ref().unwrap();
+    let engines = structured["engines"].as_object().expect("engines map");
+    assert!(engines.contains_key("ruff"), "a compiled-in backend is listed");
+    assert!(
+        !engines.contains_key("rustfmt"),
+        "a host toolchain is not part of the binary's identity"
+    );
+
+    client.cancel().await.unwrap();
+    let _ = server_task.await;
+}
