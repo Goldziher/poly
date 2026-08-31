@@ -6,7 +6,7 @@ description: "Use poly as the single lint/format gate instead of invoking ruff/o
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
 Content-Hash: blake3:ce64425c68bd166984a77c3c6cdb8f222d917393034061549e1cecfc7db9f65e
-Source-Hash: blake3:ebf7b5b943d6520ecdcd09cd009836c9a016f0a4fff807c44b0b40cd7370b62d
+Source-Hash: blake3:0adf16213f8c0f77e494fd60f9136dd61420c257778d9df38c0bbca19b5f83e9
 Schema-Version: v1
 -->
 

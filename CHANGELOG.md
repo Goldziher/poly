@@ -5,7 +5,15 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
-## [Unreleased]
+## [0.24.0] - 2026-08-31
+
+This release is mostly one theme: **a report that reads as clean now has to have earned it.**
+Coverage that a run withdrew is named and accounted for, every suppressed finding is reported,
+a formatter that cannot converge says so instead of claiming success, and the machine-readable
+document answers "what did you not look at?" without scraping a human summary.
+
+**Breaking:** `poly lint --format json` / `--format toon` and their `poly fmt` counterparts emit
+an object rather than a bare array. See the entry under Changed.
 
 ### Fixed
 

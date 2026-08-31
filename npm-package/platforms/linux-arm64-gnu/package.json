@@ -1,6 +1,6 @@
 {
   "name": "@goldziher/polylint-linux-arm64-gnu",
-  "version": "0.23.1",
+  "version": "0.24.0",
   "description": "The Linux arm64 (glibc) poly binary for @goldziher/polylint. Not useful on its own.",
   "homepage": "https://github.com/Goldziher/poly#readme",
   "bugs": {
@@ -13,9 +13,19 @@
     "url": "git+https://github.com/Goldziher/poly.git",
     "directory": "npm-package/platforms/linux-arm64-gnu"
   },
-  "os": ["linux"],
-  "cpu": ["arm64"],
-  "libc": ["glibc"],
-  "files": ["LICENSE", "README.md", "bin/"],
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "libc": [
+    "glibc"
+  ],
+  "files": [
+    "LICENSE",
+    "README.md",
+    "bin/"
+  ],
   "preferUnplugged": true
 }

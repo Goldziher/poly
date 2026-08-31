@@ -127,6 +127,28 @@ Promote one you want enforced with a per-rule override:
 level = "error"
 ```
 
+#### Enabling an oxlint plugin
+
+oxlint groups its rules into plugins, and runs only `unicorn`, `typescript` and `oxc` unless told
+otherwise. Rules from any other plugin — `vitest`, `jest`, `react`, `promise`, `import`, `jsdoc`,
+`jsx-a11y`, `nextjs`, `react-perf`, `node`, `vue` — are compiled into the binary but unreachable
+until the plugin is on, and **rule selection cannot turn one on**: `extend_select =
+["vitest/expect-expect"]` on its own is a no-op, because a filter only resolves against the rules
+of already-enabled plugins. Name the plugin instead:
+
+```toml
+[lint.typescript.oxc]
+plugins = ["vitest"]                      # the plugin's correctness rules now run
+
+[lint.typescript.oxc.rules.expect-expect]
+assertFunctionNames = ["expect", "expectTypeOf", "assert"]
+```
+
+Enabling a plugin brings on its `correctness` rules, plus whatever poly's own default categories
+(`suspicious`, `pedantic`, `complexity`) select from it — the same thing enabling it in an
+`.oxlintrc.json` would do. `ignore` and `[rules.<id>] level` then work on those rules like any
+other. An unrecognised plugin name is an error, not a silent no-op.
+
 ### Rules held back
 
 A handful of rules stay off even though their category is selected. Each was measured against a

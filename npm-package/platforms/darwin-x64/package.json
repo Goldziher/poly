@@ -1,6 +1,6 @@
 {
   "name": "@goldziher/polylint-darwin-x64",
-  "version": "0.23.1",
+  "version": "0.24.0",
   "description": "The macOS (Intel) poly binary for @goldziher/polylint. Not useful on its own.",
   "homepage": "https://github.com/Goldziher/poly#readme",
   "bugs": {
@@ -13,8 +13,16 @@
     "url": "git+https://github.com/Goldziher/poly.git",
     "directory": "npm-package/platforms/darwin-x64"
   },
-  "os": ["darwin"],
-  "cpu": ["x64"],
-  "files": ["LICENSE", "README.md", "bin/"],
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "LICENSE",
+    "README.md",
+    "bin/"
+  ],
   "preferUnplugged": true
 }
