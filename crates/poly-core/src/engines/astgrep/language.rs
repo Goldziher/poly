@@ -5,6 +5,12 @@
 //! satisfies both `ast-grep-core`'s `Language` + `LanguageExt` traits by
 //! delegating to TSLP's [`get_language`] — so ast-grep can parse any grammar
 //! that poly's tier-2 formatter already ships, without a second grammar bundle.
+//!
+//! [`grammar_for_language_id`] is the other half of the bridge: poly's own
+//! language vocabulary is not TSLP's, so a file's [`Language::id`] has to be
+//! translated to the grammar that parses it before any rule can be looked up.
+//!
+//! [`Language::id`]: crate::language::Language::id
 
 use std::borrow::Cow;
 
@@ -13,6 +19,57 @@ use ast_grep_core::matcher::{Pattern, PatternBuilder, PatternError};
 use ast_grep_core::tree_sitter::{LanguageExt, StrDoc, TSLanguage};
 use serde::{Deserialize, Serialize};
 use tree_sitter_language_pack::get_language;
+
+/// poly language ids that are **not** `tree-sitter-language-pack` grammar
+/// names, paired with the grammar that parses that language.
+///
+/// [`Language::id`](crate::language::Language::id) is poly's own vocabulary: it
+/// keys `[lint.<lang>.<tool>]` config tables, the `engine`/language fields of a
+/// report, and the cache key, so it cannot be redefined to whatever TSLP happens
+/// to call a grammar. Five ids differ from any grammar name, and ast-grep needs
+/// the grammar — for the rule-map lookup as much as for parsing, since a rule's
+/// `language:` deserializes to a *validated* [`TslpLanguage`] and is therefore
+/// always stored under a grammar name.
+///
+/// Without the mapping those five languages have no ast-grep coverage that any
+/// configuration can restore: no rule can be keyed to `jsx` (`language: jsx`
+/// fails to deserialize), and a rule keyed `javascript` is never looked up for a
+/// `.jsx` file.
+///
+/// Each entry, and why that grammar:
+///
+/// * `jsx` → `javascript` — TSLP's own manifest lists `jsx` as an extension of
+///   the `javascript` grammar, which parses JSX elements natively.
+/// * `jsonc` → `json` — `tree-sitter-json` carries `comment` in its `extras`,
+///   so JSON-with-comments parses without error.
+/// * `mdx` → `markdown` — MDX is Markdown plus ESM/JSX; the `markdown` grammar
+///   parses the Markdown structure and treats the JSX as an HTML block, so
+///   Markdown rules apply and JSX-shaped rules simply never match.
+/// * `jinja` → `jinja2` — the same language under TSLP's longer spelling.
+/// * `mustache` → `glimmer` — `glimmer` is TSLP's Handlebars grammar (its
+///   declared extension is `hbs`), and Handlebars is a superset of Mustache.
+///
+/// A poly id that *is* a grammar name (or a TSLP alias, such as `shell` →
+/// `bash`) must not be listed here; `every_language_id_resolves_to_a_grammar`
+/// is the guard that the list stays complete.
+const GRAMMAR_FOR_LANGUAGE_ID: &[(&str, &str)] = &[
+    ("jsx", "javascript"),
+    ("jsonc", "json"),
+    ("mdx", "markdown"),
+    ("jinja", "jinja2"),
+    ("mustache", "glimmer"),
+];
+
+/// The TSLP grammar name that parses poly's `language_id`.
+///
+/// The identity for every id TSLP already knows; see
+/// [`GRAMMAR_FOR_LANGUAGE_ID`] for the five that differ and why.
+pub fn grammar_for_language_id(language_id: &str) -> &str {
+    GRAMMAR_FOR_LANGUAGE_ID
+        .iter()
+        .find(|(id, _)| *id == language_id)
+        .map_or(language_id, |(_, grammar)| *grammar)
+}
 
 /// A TSLP-backed language value for ast-grep.
 ///
@@ -132,5 +189,55 @@ fn rewrite_sigils(expando: char, query: &str) -> Cow<'_, str> {
 impl LanguageExt for TslpLanguage {
     fn get_ts_language(&self) -> TSLanguage {
         get_language(&self.name).expect("TslpLanguage grammar was validated at construction; get_language must succeed")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::registry::all_languages;
+
+    /// The guard on [`GRAMMAR_FOR_LANGUAGE_ID`]: every language poly can detect
+    /// must reach a grammar ast-grep can parse with, or that language silently
+    /// has no custom-rule coverage at all. `all_languages` is itself held
+    /// exhaustive by a compile-time match in `registry`, so a newly added
+    /// `Language` variant reaches this assertion.
+    #[test]
+    fn every_language_id_resolves_to_a_grammar() {
+        for language in all_languages() {
+            let grammar = grammar_for_language_id(language.id());
+            assert!(
+                TslpLanguage::new(grammar).is_some(),
+                "{} maps to grammar {grammar:?}, which tree-sitter-language-pack does not ship",
+                language.id()
+            );
+        }
+    }
+
+    /// The inverse guard: an entry whose id TSLP *does* know would silently
+    /// redirect a language away from its own grammar.
+    #[test]
+    fn no_mapping_shadows_a_real_grammar() {
+        for (id, grammar) in GRAMMAR_FOR_LANGUAGE_ID {
+            assert!(
+                TslpLanguage::new(id).is_none(),
+                "{id:?} is a grammar name in its own right; mapping it to {grammar:?} hides it"
+            );
+        }
+    }
+
+    /// The mapping is applied to the *file's* language, so it must be the
+    /// identity for every id that already names a grammar.
+    #[test]
+    fn a_known_grammar_name_maps_to_itself() {
+        assert_eq!(grammar_for_language_id("python"), "python");
+        assert_eq!(grammar_for_language_id("typescript"), "typescript");
+        assert_eq!(grammar_for_language_id("tsx"), "tsx");
+        assert_eq!(grammar_for_language_id("shell"), "shell", "TSLP aliases `shell` itself");
+    }
+
+    #[test]
+    fn jsx_maps_to_the_javascript_grammar() {
+        assert_eq!(grammar_for_language_id("jsx"), "javascript");
     }
 }

@@ -8,10 +8,11 @@ use std::sync::{Arc, OnceLock};
 use oxc_allocator::Allocator;
 use oxc_diagnostics::Severity as OxcSeverity;
 use oxc_linter::{
-    AllowWarnDeny, ConfigStore, ConfigStoreBuilder, ExternalPluginStore, LintFilter, LintOptions, LintService,
-    LintServiceOptions, Linter, Message, Oxlintrc, PossibleFixes, RuntimeFileSystem,
+    AllowWarnDeny, ConfigStore, ConfigStoreBuilder, ExternalPluginStore, LintFilter, LintOptions, LintPlugins,
+    LintService, LintServiceOptions, Linter, Message, Oxlintrc, PossibleFixes, RuntimeFileSystem,
 };
 
+use super::plugins::extra_lint_plugins;
 use crate::config::EngineConfig;
 use crate::engine::{Diagnostic, Edit, Severity, SourceFile, Span};
 use crate::engines::rule_config::{RuleOptions, RuleSelection};
@@ -167,6 +168,29 @@ fn opinionated_builder() -> ConfigStoreBuilder {
     apply_default_filters(ConfigStoreBuilder::default())
 }
 
+/// Turn `extra` on alongside oxlint's default plugin set and warn the
+/// `correctness` rules the newly enabled plugins bring with them.
+///
+/// The category filter is what makes the key mean something. A plugin's rules
+/// are absent from a builder that was seeded before the plugin was enabled
+/// (`ConfigStoreBuilder::default` seeds `warn_correctness` over the *default*
+/// plugins), so without it `plugins = ["vitest"]` would enable a plugin and
+/// leave every one of its rules off — the same dead end the key exists to fix.
+/// `correctness` is the baseline oxlint itself applies to the plugins named in
+/// an `.oxlintrc.json` `"plugins"` array; poly's own categories are layered on
+/// afterwards by [`apply_default_filters`].
+///
+/// # Panics
+/// Panics if `"correctness"` stops being a valid oxlint category filter. It is
+/// a compile-time constant string naming a `RuleCategory` variant.
+fn enable_extra_plugins(builder: ConfigStoreBuilder, extra: LintPlugins) -> ConfigStoreBuilder {
+    if extra.is_empty() {
+        return builder;
+    }
+    let filter = LintFilter::new(AllowWarnDeny::Warn, "correctness").expect("`correctness` is a valid category filter");
+    builder.and_builtin_plugins(extra, true).with_filter(&filter)
+}
+
 /// Returns the lazily-initialised shared [`LintService`] configured with
 /// oxlint's default rule set widened by [`DEFAULT_LINT_FILTERS`].
 ///
@@ -304,16 +328,21 @@ fn build_configured_service(cfg: &EngineConfig) -> anyhow::Result<LintService> {
     // ever touches a rule's severity value in place when the rule is already
     // configured (`RuleEnum` equality is by rule identity, not by its baked-in
     // config), so every subsequent filter below preserves the seeded params.
-    let mut builder = match synthesized_rules_oxlintrc(&selection) {
+    let base = match synthesized_rules_oxlintrc(&selection) {
         Some(oxlintrc) => match ConfigStoreBuilder::from_oxlintrc(false, oxlintrc, None, &mut plugin_store, None) {
-            Ok(builder) => apply_default_filters(builder),
+            Ok(builder) => builder,
             Err(error) => {
                 tracing::warn!(%error, "oxlint per-rule parameters could not be applied; falling back to defaults");
-                opinionated_builder()
+                ConfigStoreBuilder::default()
             }
         },
-        None => opinionated_builder(),
+        None => ConfigStoreBuilder::default(),
     };
+    // Plugins first: a filter only reaches rules belonging to an already-enabled
+    // plugin, so the opinionated categories below must be applied to the final
+    // plugin set — otherwise `plugins` would enable a plugin whose `suspicious`
+    // and `pedantic` rules stay off, which is not what enabling it means.
+    let mut builder = apply_default_filters(enable_extra_plugins(base, extra_lint_plugins(cfg)?));
 
     for name in &selection.select {
         if let Ok(filter) = LintFilter::new(AllowWarnDeny::Warn, name.to_owned()) {

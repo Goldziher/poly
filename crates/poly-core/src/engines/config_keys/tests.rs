@@ -386,7 +386,16 @@ fn a_declared_key_an_upstream_type_also_recognizes_defers_to_the_upstream_type()
 /// both drift checks.
 const ENGINE_SOURCES: &[(&str, &[&str])] = &[
     ("ruff", &["ruff.rs"]),
-    ("oxc", &["oxc/mod.rs", "oxc/config.rs", "oxc/lint.rs", "oxc/format.rs"]),
+    (
+        "oxc",
+        &[
+            "oxc/mod.rs",
+            "oxc/config.rs",
+            "oxc/lint.rs",
+            "oxc/format.rs",
+            "oxc/plugins.rs",
+        ],
+    ),
     (
         "mago",
         &["mago/mod.rs", "mago/lint.rs", "mago/format.rs", "mago/rules.rs"],

@@ -92,6 +92,24 @@ unconfigured CI on its own.
 
 ## Backend notes
 
+### Reaching an oxlint plugin
+
+oxlint compiles in whole plugins that its default set (`unicorn`, `typescript`, `oxc`) leaves
+switched off — `vitest`, `jest`, `jsx-a11y`, `promise`, `import`, `node`, `vue` and others. Rule
+selection cannot turn one on: a filter resolves only against the rules of plugins that are already
+enabled, so `extend_select = ["vitest/expect-expect"]` on its own does nothing at all. Name the
+plugin instead:
+
+```toml
+[lint.typescript.oxc]
+plugins = ["vitest"]
+```
+
+The plugin's `correctness` rules come on with it, and poly's own categories are layered on top, so
+the rules then behave like any other. An unrecognised plugin name fails the run rather than being
+ignored — a dropped name would leave you believing a rule set is live over a run that checks
+nothing of the kind.
+
 ### dotenv
 
 `.env` files autofix with `poly lint --fix`, and inline `# dotenv-linter:off <Check>` /

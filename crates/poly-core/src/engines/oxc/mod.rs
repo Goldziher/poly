@@ -13,14 +13,24 @@
 //! * `lint` — oxlint diagnostics (JS/TS) + strict JSON/JSONC validation.
 //! * `format` — `oxc_formatter` (JS/TS) and `oxc_formatter_json` (JSON/JSONC).
 //! * `config` — building the formatter option structs from [`EngineConfig`].
+//! * `plugins` — the oxlint plugin set `[lint.<lang>.oxc] plugins` enables.
 
 mod config;
 mod format;
 mod lint;
+mod plugins;
 
 use crate::config::EngineConfig;
 use crate::engine::{Capabilities, Diagnostic, FormatOutput, OptionKeys, OptionTable, OptionType, SourceFile};
 use crate::language::Language;
+
+/// The lint keys `[lint.<lang>.oxc]` reads beyond the uniform rule vocabulary.
+///
+/// `plugins` names oxlint plugins to enable on top of its default set
+/// (`unicorn | typescript | oxc`) — the only way to reach a rule from a plugin
+/// that ships disabled, since rule selection cannot enable one. See
+/// `plugins::extra_lint_plugins`.
+const JS_LINT_OPTION_KEYS: &[(&str, OptionType)] = &[("plugins", OptionType::ARRAY)];
 
 /// The formatter keys `[fmt.<lang>.oxc]` reads, with the type each is read as.
 ///
@@ -55,8 +65,12 @@ use self::lint::{lint_js, lint_json};
 ///              `[rules.max-params] max = 6`) now reach the rule via a synthesized
 ///              `Oxlintrc` built through `ConfigStoreBuilder::from_oxlintrc`,
 ///              instead of being silently discarded.
-const VERSION: &str =
-    "oxc_formatter:0.65.0+oxlint+parser:0.147.0+rev:db66f58+json-fmt+rules-v5+fmt-opts+jsonc-trailing-comma";
+/// `+plugins-v1`: `[lint.<lang>.oxc] plugins` enables oxlint plugins outside the
+///                default set, so a file can now report rules (e.g.
+///                `vitest/expect-expect`) that no configuration could reach
+///                before.
+const VERSION: &str = "oxc_formatter:0.65.0+oxlint+parser:0.147.0+rev:db66f58+json-fmt+rules-v5+fmt-opts+\
+                       jsonc-trailing-comma+plugins-v1";
 
 static LANGUAGES: &[Language] = &[
     Language::JavaScript,
@@ -89,14 +103,14 @@ impl crate::engine::Engine for OxcEngine {
         }
     }
 
-    /// `[lint.<lang>.oxc]` takes only the uniform rule vocabulary (oxlint's own
-    /// `.oxlintrc.json` keys are not accepted); `[fmt.<lang>.oxc]` takes the
-    /// formatter keys — the union of the JS and JSON paths, which share one
-    /// table name. `line_width` is not among them: it comes from
-    /// `[defaults] line_length`.
+    /// `[lint.<lang>.oxc]` takes the uniform rule vocabulary plus `plugins`
+    /// (oxlint's other `.oxlintrc.json` keys are not accepted);
+    /// `[fmt.<lang>.oxc]` takes the formatter keys — the union of the JS and
+    /// JSON paths, which share one table name. `line_width` is not among them:
+    /// it comes from `[defaults] line_length`.
     fn option_keys(&self, table: OptionTable) -> OptionKeys {
         match table {
-            OptionTable::Lint => OptionKeys::declared(&[]).with_rule_selection(),
+            OptionTable::Lint => OptionKeys::declared(JS_LINT_OPTION_KEYS).with_rule_selection(),
             OptionTable::Format => OptionKeys::declared(JS_FORMAT_OPTION_KEYS),
             OptionTable::CrossCuttingLint => OptionKeys::UNCHECKED,
         }

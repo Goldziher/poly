@@ -430,3 +430,94 @@ fn oxc_max_nested_callbacks_stays_enabled_by_default() {
         "15 nested callbacks must trip max-nested-callbacks; got: {codes:?}"
     );
 }
+
+/// oxlint compiles in whole plugins that its default plugin set
+/// (`unicorn | typescript | oxc`) leaves switched off, and a rule from a
+/// disabled plugin cannot be reached by `extend_select`: `with_filter` only
+/// upserts rules belonging to an *enabled* plugin, and `build()` filters the
+/// rule list by the enabled plugins a second time. `plugins` is the key that
+/// turns one on.
+#[test]
+fn oxc_plugins_key_enables_a_plugin_rule_extend_select_cannot_reach() {
+    let content = "import { it } from \"vitest\";\n\nit(\"does nothing\", () => {\n  const value = 1 + 1;\n  doSomething(value);\n});\n";
+
+    let mut without = toml::Table::new();
+    without.insert(
+        "extend_select".to_owned(),
+        toml::Value::Array(vec![toml::Value::String("vitest/expect-expect".to_owned())]),
+    );
+    let unreachable = OxcEngine
+        .lint(
+            &make_src(content, "sample.test.ts", Language::TypeScript),
+            &EngineConfig {
+                globals: GlobalDefaults::default(),
+                indent_width: 2,
+                options: without,
+            },
+        )
+        .unwrap();
+    assert!(
+        !unreachable
+            .iter()
+            .any(|d| d.code.as_deref() == Some("vitest/expect-expect")),
+        "extend_select alone cannot enable a rule from a disabled plugin; got: {unreachable:?}"
+    );
+
+    let mut with = toml::Table::new();
+    with.insert(
+        "plugins".to_owned(),
+        toml::Value::Array(vec![toml::Value::String("vitest".to_owned())]),
+    );
+    let enabled = OxcEngine
+        .lint(
+            &make_src(content, "sample.test.ts", Language::TypeScript),
+            &EngineConfig {
+                globals: GlobalDefaults::default(),
+                indent_width: 2,
+                options: with,
+            },
+        )
+        .unwrap();
+    assert!(
+        enabled.iter().any(|d| d.code.as_deref() == Some("vitest/expect-expect")),
+        "`plugins = [\"vitest\"]` must make the plugin's correctness rules reachable; got: {enabled:?}"
+    );
+}
+
+/// An unknown plugin name is a hard error, not a silent no-op: a typo in
+/// `plugins` would otherwise leave the user believing a rule set is live.
+#[test]
+fn oxc_unknown_plugin_name_is_an_error() {
+    let mut opts = toml::Table::new();
+    opts.insert(
+        "plugins".to_owned(),
+        toml::Value::Array(vec![toml::Value::String("vitesst".to_owned())]),
+    );
+    let result = OxcEngine.lint(
+        &make_src("const a = 1;\n", "a.ts", Language::TypeScript),
+        &EngineConfig {
+            globals: GlobalDefaults::default(),
+            indent_width: 2,
+            options: opts,
+        },
+    );
+    let error = result.expect_err("an unknown plugin name must fail the engine").to_string();
+    assert!(
+        error.contains("vitesst"),
+        "the error must name the offending plugin; got: {error}"
+    );
+}
+
+/// `plugins` must be a declared option key, or the unknown-key check reports
+/// the very key the engine reads.
+#[test]
+fn oxc_declares_the_plugins_option_key() {
+    use poly_core::engine::{OptionTable, OptionType};
+
+    let keys = OxcEngine.option_keys(OptionTable::Lint);
+    assert_eq!(
+        keys.expected_type("plugins", true),
+        Some(OptionType::ARRAY),
+        "the oxc lint table must declare `plugins` as an array"
+    );
+}

@@ -321,3 +321,76 @@ fn builtin_pack_fires_by_default() {
         "expected the default-on built-in swallowed-error rule to fire with no config; got: {diags:?}"
     );
 }
+
+/// A `.jsx` file must be reachable by ast-grep rules.
+///
+/// `Language::Jsx.id()` is `"jsx"`, which `tree-sitter-language-pack` does not
+/// ship as a grammar (it declares `.jsx` an extension of `javascript`). Before
+/// the grammar mapping, this meant `.jsx` had **no** ast-grep coverage from any
+/// source: a rule declaring `language: jsx` failed to deserialize, and a rule
+/// declaring `language: javascript` was keyed `"javascript"` and never looked
+/// up for a `jsx` file. No configuration could fix it.
+#[test]
+fn javascript_rule_fires_on_a_jsx_file() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join("no-console.yml"),
+        "id: no-console-log\nlanguage: javascript\nseverity: warning\nmessage: drop the console call\nrule:\n  pattern: console.log($$$ARGS)\n",
+    )
+    .unwrap();
+
+    let engine = AstGrepEngine;
+    let cfg = cfg_with_rules_dir(dir.path());
+    let source = "const App = () => <div>{value}</div>;\nconsole.log(App);\n";
+    let src = make_src("App.jsx", Language::Jsx, source);
+
+    let diags = engine.lint(&src, &cfg).unwrap();
+    assert!(
+        diags.iter().any(|d| d.code.as_deref() == Some("no-console-log")),
+        "a `language: javascript` rule must fire on a .jsx file; got: {diags:?}"
+    );
+}
+
+/// Coverage accounting must agree with what `lint` actually runs: with a
+/// JavaScript rule loaded, JSX is linted, so the run may not report
+/// `no lint rules for Jsx`.
+#[test]
+fn jsx_claims_lint_coverage_from_a_javascript_rule() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join("no-console.yml"),
+        "id: no-console-log\nlanguage: javascript\nseverity: warning\nmessage: drop the console call\nrule:\n  pattern: console.log($$$ARGS)\n",
+    )
+    .unwrap();
+
+    let engine = AstGrepEngine;
+    let cfg = cfg_with_rules_dir(dir.path());
+    assert!(
+        engine.provides_language_lint(&Language::Jsx, &cfg),
+        "a JavaScript rule gives JSX ast-grep lint coverage"
+    );
+}
+
+/// The other poly language ids that are not themselves grammar names resolve
+/// through the same mapping: a rule written for the grammar that parses the
+/// language fires on files of that language.
+#[test]
+fn json_rule_fires_on_a_jsonc_file() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(
+        dir.path().join("no-todo-key.yml"),
+        "id: no-todo-key\nlanguage: json\nseverity: warning\nmessage: placeholder key\nrule:\n  pattern: \"\\\"todo\\\"\"\n",
+    )
+    .unwrap();
+
+    let engine = AstGrepEngine;
+    let cfg = cfg_with_rules_dir(dir.path());
+    let source = "{\n  // a comment\n  \"todo\": 1\n}\n";
+    let src = make_src("tsconfig.jsonc", Language::Jsonc, source);
+
+    let diags = engine.lint(&src, &cfg).unwrap();
+    assert!(
+        diags.iter().any(|d| d.code.as_deref() == Some("no-todo-key")),
+        "a `language: json` rule must fire on a .jsonc file; got: {diags:?}"
+    );
+}

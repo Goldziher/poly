@@ -17,6 +17,18 @@ an object rather than a bare array. See the entry under Changed.
 
 ### Fixed
 
+- **ast-grep reaches five languages it could never see.** A file's language was handed to the rule
+  lookup as poly's own id, but a rule's `language:` deserializes to a validated
+  tree-sitter-language-pack grammar and is therefore always stored under a *grammar* name. For the
+  five poly ids that are not grammar names — `jsx`, `jsonc`, `mdx`, `jinja`, `mustache` — the two
+  never met, and no configuration could make them: `language: jsx` fails to deserialize, so no rule
+  could be keyed to it, and a `language: javascript` rule was never looked up for a `.jsx` file.
+  A `.jsx` file therefore had **no** ast-grep coverage at all, from the built-in pack or from a
+  user's own rules, and nothing said so. The id is now resolved to the grammar that parses it, and
+  a hardcoded table is guarded by a test asserting every poly language id resolves to a real
+  grammar. `ENGINE_VERSION` moves to `engine-3`, since a cache written by the old binary holds the
+  empty result those files used to get.
+
 - **A file the formatter cannot settle is now reported instead of called formatted.** `poly fmt`
   re-runs the engine chain until the content stops changing, capped at five passes so an
   oscillating backend still terminates — but exhausting that cap was silent, so poly wrote the file,
@@ -135,6 +147,19 @@ an object rather than a bare array. See the entry under Changed.
     ]
   }
   ```
+
+- **`[lint.<lang>.oxc] plugins` enables an oxlint plugin.** oxlint compiles in whole plugins its
+  default set (`unicorn | typescript | oxc`) leaves switched off, and rule selection cannot reach
+  them: a filter resolves only against the rules of already-enabled plugins, so
+  `extend_select = ["vitest/expect-expect"]` was a no-op that read like a configuration. The key
+  turns the plugin on, and the rules then behave like any other. An unknown plugin name fails the
+  run rather than being dropped — silently ignoring it would leave a user believing a rule set was
+  live over a run that checked nothing of the kind.
+
+  This is how poly answers "the pack has no JavaScript rules": for the case that prompted it,
+  oxlint's own `expect-expect` is framework-aware and takes an `assertFunctionNames` option, which
+  is exactly the escape hatch a hand-written pack rule for the same job measured 12/20 false
+  positives for wanting. See `docs/pack-rule-audit.md`.
 
 - **A hardening harness that runs poly over real third-party code.** poly's own fixtures are small,
   hand-written and chosen to exercise a known path, so they cannot answer the questions that decide

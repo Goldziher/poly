@@ -76,7 +76,7 @@ use crate::config::EngineConfig;
 use crate::engine::{Capabilities, Diagnostic, Engine, FormatOutput, OptionKeys, OptionTable, Severity, SourceFile};
 use crate::language::Language;
 
-use language::TslpLanguage;
+use language::{TslpLanguage, grammar_for_language_id};
 use map::{diff_to_diagnostic, match_to_diagnostic};
 use rules::{RuleMap, load_rules};
 
@@ -98,7 +98,13 @@ use rules::{RuleMap, load_rules};
 /// diagnostics for a path a pack rule excludes. A cache written by the old
 /// binary would serve the filtered set as if it were the raw one, and the
 /// run's `suppressed` list would then be empty on a file that did suppress.
-const ENGINE_VERSION: &str = "ast-grep-core-0.45.2-engine-2+tslp1.15.12+builtin-pack-2";
+///
+/// `engine-3` marks a fourth: a file's language is now resolved to the grammar
+/// that parses it (`language::grammar_for_language_id`) before rules are looked
+/// up, so five languages whose poly id is not a grammar name — `jsx`, `jsonc`,
+/// `mdx`, `jinja`, `mustache` — reach rules for the first time. A cache written
+/// by the old binary holds the empty result those files used to get.
+const ENGINE_VERSION: &str = "ast-grep-core-0.45.2-engine-3+tslp1.15.12+builtin-pack-2";
 
 /// Cross-cutting custom-rule engine backed by ast-grep + TSLP grammars.
 ///
@@ -164,7 +170,11 @@ impl Engine for AstGrepEngine {
             Ok(map) => map,
             Err(_) => return false,
         };
-        let (rule_refs, _) = resolve_rules(language.id(), user_rule_map.as_deref(), cfg);
+        let (rule_refs, _) = resolve_rules(
+            grammar_for_language_id(language.id()),
+            user_rule_map.as_deref(),
+            cfg,
+        );
         !rule_refs.is_empty()
     }
 
@@ -173,15 +183,19 @@ impl Engine for AstGrepEngine {
         let content_hash = cfg.options.get("rules_hash").and_then(|v| v.as_str()).unwrap_or("");
         let user_rule_map = load_user_rule_map(&dirs, content_hash)?;
 
-        let lang_name = src.language.id();
+        let lang_name = grammar_for_language_id(src.language.id());
         let (rule_refs, selection) = resolve_rules(lang_name, user_rule_map.as_deref(), cfg);
-        if rule_refs.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let Some(tslp_lang) = TslpLanguage::new(lang_name) else {
+        let Some(first_rule) = rule_refs.first() else {
             return Ok(Vec::new());
         };
+
+        // The grammar comes from a rule rather than from a second
+        // `TslpLanguage::new(lang_name)` lookup. Every rule in `rule_refs` is
+        // keyed under `lang_name` *because* its own `language:` deserialized to
+        // that already-validated grammar, so this cannot fail — where the
+        // lookup could, silently returning no diagnostics for a file poly had
+        // just counted as linted.
+        let tslp_lang = first_rule.language.clone();
 
         // `try_new` owns the parse, and `ast-grep-core` already pools the
         // underlying `tree_sitter::Parser` per thread per language behind it
