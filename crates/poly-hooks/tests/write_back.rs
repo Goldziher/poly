@@ -106,7 +106,7 @@ fn write_back_is_withheld_when_the_stat_cache_calls_a_modified_file_clean() {
         "precondition: the primitive this gate used to trust reports this file clean"
     );
 
-    let snapshot = StagedSnapshot::create_in(cache.path(), root).expect("snapshot");
+    let snapshot = StagedSnapshot::create_in(cache.path(), root, &[]).expect("snapshot");
     let outcome = run_isolated(root, snapshot.path(), fixer("f.txt", "formatted\\n"), &["f.txt"]);
 
     assert_eq!(
@@ -156,7 +156,7 @@ fn write_back_never_writes_through_a_tracked_symlink_pointing_outside_the_reposi
         "precondition: the index holds a symlink entry"
     );
 
-    let snapshot = StagedSnapshot::create_in(cache.path(), root).expect("snapshot");
+    let snapshot = StagedSnapshot::create_in(cache.path(), root, &[]).expect("snapshot");
     let outcome = run_isolated(root, snapshot.path(), fixer("evil.rs", "PWNED\\n"), &["evil.rs"]);
 
     assert_eq!(
@@ -206,7 +206,7 @@ fn a_tracked_symlink_inside_the_repository_is_never_a_write_back_destination() {
     std::os::unix::fs::symlink("real.txt", root.join("link.txt")).unwrap();
     git(root, &["add", "."]);
 
-    let snapshot = StagedSnapshot::create_in(cache.path(), root).expect("snapshot");
+    let snapshot = StagedSnapshot::create_in(cache.path(), root, &[]).expect("snapshot");
     run_isolated(root, snapshot.path(), fixer("link.txt", "fixed\\n"), &["link.txt"]);
 
     assert!(
@@ -235,7 +235,7 @@ fn write_back_lands_and_preserves_permissions_when_the_worktree_matches_the_inde
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
     git(root, &["add", "hook.sh"]);
 
-    let snapshot = StagedSnapshot::create_in(cache.path(), root).expect("snapshot");
+    let snapshot = StagedSnapshot::create_in(cache.path(), root, &[]).expect("snapshot");
     let outcome = run_isolated(
         root,
         snapshot.path(),
@@ -265,4 +265,47 @@ fn write_back_lands_and_preserves_permissions_when_the_worktree_matches_the_inde
         leftovers.is_empty(),
         "the atomic write must leave no temp file: {leftovers:?}"
     );
+}
+
+/// A file pulled in by `[hooks] snapshot_include` is a **live window into the
+/// worktree**, not a copy — so a hook that writes to it writes the real file,
+/// and the write-back gate never sees the change.
+///
+/// This is the cost of linking rather than copying, and it is pinned rather than
+/// left to be discovered because it is the one place the snapshot's
+/// "non-destructive" guarantee does not hold. Two things bound it: the entry has
+/// to be named in `poly.toml` on purpose, and per-file hooks never receive these
+/// paths at all — `candidate_files` builds its list from the staged set, which
+/// by definition excludes them. Reaching this therefore takes a `workspace`
+/// hook that writes to an allowlisted path deliberately, which is the same hook
+/// that asked for the file to be there.
+#[test]
+fn a_write_to_an_included_entry_reaches_the_live_worktree() {
+    let tmp = init_repo();
+    let cache = TempDir::new().unwrap();
+    let root = tmp.path();
+    std::fs::write(root.join("tracked.txt"), "tracked\n").unwrap();
+    git(root, &["add", "tracked.txt"]);
+    std::fs::write(root.join("build.env"), "unformatted\n").unwrap();
+
+    let includes = vec!["build.env".to_string()];
+    let snapshot = StagedSnapshot::create_in(cache.path(), root, &includes).expect("snapshot");
+    run_isolated(root, snapshot.path(), fixer("build.env", "formatted\n"), &["build.env"]);
+
+    assert_eq!(
+        std::fs::read_to_string(root.join("build.env")).unwrap(),
+        "formatted\n",
+        "the link is a window onto the real file, so the hook wrote it directly"
+    );
+    assert!(
+        std::fs::symlink_metadata(snapshot.path().join("build.env"))
+            .unwrap()
+            .file_type()
+            .is_symlink(),
+        "and it is still a link afterwards, not a copy the write replaced"
+    );
+
+    // The tracked file is untouched, so this is scoped to allowlisted paths and
+    // is not a general hole in the snapshot's isolation.
+    assert_eq!(std::fs::read_to_string(root.join("tracked.txt")).unwrap(), "tracked\n");
 }

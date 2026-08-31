@@ -113,6 +113,41 @@ Where it differs, the author holds unstaged work the write-back must not silentl
 stage; the fix is withheld instead, and for a `stage_fixed` hook that fails the run rather than
 losing the unstaged edit.
 
+### Letting a build read an untracked file
+
+Because the snapshot holds exactly the staged content, a `workspace = true` hook whose build reads
+something git does not track — a generated file, a gitignored local config a type checker loads, a
+downloaded fixture directory — fails under the commit gate while passing in the worktree, and the
+tool's error names the missing file rather than the isolation that removed it.
+
+Name those paths, one at a time:
+
+```toml
+[hooks]
+snapshot_include = ["config/local.json", ".env.build", "vendor/fixtures"]
+```
+
+Entries are repository-relative; an absolute path or one containing `..` is rejected when the
+config loads. An entry that simply does not exist is skipped with a warning, never a hard failure —
+the whole point is a file git does not track. `poly hooks` prints a note naming the entries on every
+run, green ones included, because an allowlist is a deliberate exception to "these are the bytes a
+commit would capture" and a reader who does not know it is in force cannot judge what the run proved.
+
+<Aside type="caution" title="An included entry is a live window, not a copy">
+    Entries are **linked** into the snapshot rather than copied, so a hook that writes to one writes
+    the real file in your worktree — the write-back rules above do not apply to it. This is the one
+    place the snapshot's non-destructive guarantee does not hold.
+
+    Two things bound it: the path has to be named in `poly.toml` on purpose, and **per-file hooks
+    never receive these paths at all**, because the matched file list is built from the staged set.
+    Reaching it takes a `workspace` hook that writes to an allowlisted path deliberately.
+
+    Linking is what keeps the entry current and correct. A copy would have to be tracked in the
+    snapshot manifest, which is pruned against the index — and the index never holds these paths, so
+    a recorded entry would be deleted on the next refresh while an unrecorded one would go stale
+    forever.
+</Aside>
+
 ## Hook concurrency: `serial`
 
 Hooks in a stage run **concurrently** on poly's rayon pool — whole-project hooks included, since

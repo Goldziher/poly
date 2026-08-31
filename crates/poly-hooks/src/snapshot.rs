@@ -100,9 +100,11 @@ use tracing::{debug, warn};
 
 use crate::git;
 
+mod include;
 mod manifest;
 mod submodule;
 
+use self::include::materialize_includes;
 use self::manifest::{is_up_to_date, prune_stale, read_manifest, write_manifest};
 use self::submodule::materialize_submodules;
 
@@ -140,9 +142,9 @@ impl StagedSnapshot {
     /// Lives at `<platform-cache>/poly/<repo-key>/staged`, outside the repo tree.
     /// The first call materializes the whole staged tree; later calls only touch
     /// what changed (see the module docs).
-    pub fn create(root: &Path) -> Result<Self, Error> {
+    pub fn create(root: &Path, includes: &[String]) -> Result<Self, Error> {
         let cache_dir = poly_cache::repo_cache_dir(root).map_err(|e| Error::CacheDir(e.to_string()))?;
-        Self::create_in(&cache_dir, root)
+        Self::create_in(&cache_dir, root, includes)
     }
 
     /// Create or refresh the snapshot under `cache_dir/staged`, for a caller
@@ -152,10 +154,10 @@ impl StagedSnapshot {
     /// dir rather than the real per-user cache home — and so it exercises this
     /// exact materialization path rather than a hand-rolled `git checkout-index`
     /// that would miss, for instance, the symlink sanitizing above.
-    pub fn create_in(cache_dir: &Path, root: &Path) -> Result<Self, Error> {
+    pub fn create_in(cache_dir: &Path, root: &Path, includes: &[String]) -> Result<Self, Error> {
         let dir = cache_dir.join(SNAPSHOT_SUBDIR);
         std::fs::create_dir_all(&dir)?;
-        refresh(root, &dir)?;
+        refresh(root, &dir, includes)?;
         debug!(snapshot = %dir.display(), "refreshed staged snapshot");
         Ok(Self { dir })
     }
@@ -168,7 +170,7 @@ impl StagedSnapshot {
 }
 
 /// Refresh `dir` so it mirrors the current staged (index) content of `root`.
-fn refresh(root: &Path, dir: &Path) -> Result<(), Error> {
+fn refresh(root: &Path, dir: &Path, includes: &[String]) -> Result<(), Error> {
     let staged = git::list_staged_entries(root)?;
     let previous = read_manifest(dir);
 
@@ -184,6 +186,9 @@ fn refresh(root: &Path, dir: &Path) -> Result<(), Error> {
     sanitize_symlinks(dir, &staged);
 
     materialize_submodules(root, dir)?;
+    // After the sanitizing pass and outside the manifest, for the reasons the
+    // `include` module documents.
+    materialize_includes(root, dir, includes)?;
 
     write_manifest(dir, &staged)?;
     Ok(())
@@ -296,7 +301,7 @@ mod tests {
         std::fs::write(repo.join("unstaged.txt"), "v1\nDIRTY\n").unwrap();
         std::fs::write(repo.join("untracked.txt"), "nope\n").unwrap();
 
-        let snap = StagedSnapshot::create_in(cache.path(), repo).expect("snapshot");
+        let snap = StagedSnapshot::create_in(cache.path(), repo, &[]).expect("snapshot");
 
         assert_eq!(
             std::fs::read_to_string(snap.path().join("committed.txt")).unwrap(),
@@ -327,7 +332,7 @@ mod tests {
         )
         .unwrap();
 
-        let snap = StagedSnapshot::create_in(cache.path(), repo).expect("snapshot");
+        let snap = StagedSnapshot::create_in(cache.path(), repo, &[]).expect("snapshot");
 
         assert_eq!(
             std::fs::read_to_string(snap.path().join("big.h")).unwrap(),
@@ -345,10 +350,10 @@ mod tests {
         std::fs::write(repo.join("a.rs"), "fn main() {}\n").unwrap();
         git(repo, &["add", "a.rs"]);
 
-        let snap = StagedSnapshot::create_in(cache.path(), repo).expect("first");
+        let snap = StagedSnapshot::create_in(cache.path(), repo, &[]).expect("first");
         let first = std::fs::metadata(snap.path().join("a.rs")).unwrap().modified().unwrap();
 
-        StagedSnapshot::create_in(cache.path(), repo).expect("refresh");
+        StagedSnapshot::create_in(cache.path(), repo, &[]).expect("refresh");
         let second = std::fs::metadata(snap.path().join("a.rs")).unwrap().modified().unwrap();
 
         assert_eq!(first, second, "unchanged staged OID must not be rewritten on refresh");
@@ -362,12 +367,12 @@ mod tests {
         init(repo);
         std::fs::write(repo.join("a.rs"), "// v1\n").unwrap();
         git(repo, &["add", "a.rs"]);
-        let snap = StagedSnapshot::create_in(cache.path(), repo).expect("first");
+        let snap = StagedSnapshot::create_in(cache.path(), repo, &[]).expect("first");
         assert_eq!(std::fs::read_to_string(snap.path().join("a.rs")).unwrap(), "// v1\n");
 
         std::fs::write(repo.join("a.rs"), "// v2 changed\n").unwrap();
         git(repo, &["add", "a.rs"]);
-        StagedSnapshot::create_in(cache.path(), repo).expect("refresh");
+        StagedSnapshot::create_in(cache.path(), repo, &[]).expect("refresh");
         assert_eq!(
             std::fs::read_to_string(snap.path().join("a.rs")).unwrap(),
             "// v2 changed\n",
@@ -383,7 +388,7 @@ mod tests {
         init(repo);
         std::fs::write(repo.join("a.rs"), "// staged\n").unwrap();
         git(repo, &["add", "a.rs"]);
-        let snap = StagedSnapshot::create_in(cache.path(), repo).expect("first");
+        let snap = StagedSnapshot::create_in(cache.path(), repo, &[]).expect("first");
         assert_matches_index(repo, snap.path(), "a.rs", "initial materialization");
 
         // A workspace hook that rewrites files in place (a formatter, `clippy
@@ -391,7 +396,7 @@ mod tests {
         // refresh must not keep gating on those bytes.
         std::fs::write(snap.path().join("a.rs"), "// MUTATED IN SNAPSHOT\n").unwrap();
 
-        StagedSnapshot::create_in(cache.path(), repo).expect("refresh");
+        StagedSnapshot::create_in(cache.path(), repo, &[]).expect("refresh");
         assert_matches_index(repo, snap.path(), "a.rs", "after an out-of-band write");
     }
 
@@ -403,10 +408,10 @@ mod tests {
         init(repo);
         std::fs::write(repo.join("a.rs"), "// staged\n").unwrap();
         git(repo, &["add", "a.rs"]);
-        let snap = StagedSnapshot::create_in(cache.path(), repo).expect("first");
+        let snap = StagedSnapshot::create_in(cache.path(), repo, &[]).expect("first");
 
         std::fs::write(snap.path().join("a.rs"), b"").unwrap();
-        StagedSnapshot::create_in(cache.path(), repo).expect("refresh");
+        StagedSnapshot::create_in(cache.path(), repo, &[]).expect("refresh");
 
         assert_matches_index(repo, snap.path(), "a.rs", "after truncation");
     }
@@ -421,12 +426,12 @@ mod tests {
         for content in ["// v1\n", "// v2 longer content\n", "// v3\n"] {
             std::fs::write(repo.join("a.rs"), content).unwrap();
             git(repo, &["add", "a.rs"]);
-            let snap = StagedSnapshot::create_in(cache.path(), repo).expect("refresh");
+            let snap = StagedSnapshot::create_in(cache.path(), repo, &[]).expect("refresh");
             assert_matches_index(repo, snap.path(), "a.rs", content);
 
             // An unstaged edit on top must never reach the snapshot.
             std::fs::write(repo.join("a.rs"), "// unstaged edit\n").unwrap();
-            let snap = StagedSnapshot::create_in(cache.path(), repo).expect("refresh");
+            let snap = StagedSnapshot::create_in(cache.path(), repo, &[]).expect("refresh");
             assert_matches_index(repo, snap.path(), "a.rs", "unstaged edit present");
         }
     }
@@ -441,7 +446,7 @@ mod tests {
         std::fs::write(repo.join("gone.rs"), "b\n").unwrap();
         git(repo, &["add", "keep.rs", "gone.rs"]);
         git(repo, &["commit", "-q", "-m", "init"]);
-        let snap = StagedSnapshot::create_in(cache.path(), repo).expect("first");
+        let snap = StagedSnapshot::create_in(cache.path(), repo, &[]).expect("first");
 
         // Rewrite the manifest in the pre-stat format an older poly produced.
         let legacy: Vec<u8> = ["keep.rs", "gone.rs"]
@@ -456,7 +461,7 @@ mod tests {
         std::fs::write(snap.path().join(MANIFEST_FILE), legacy).unwrap();
 
         git(repo, &["rm", "-q", "gone.rs"]);
-        StagedSnapshot::create_in(cache.path(), repo).expect("refresh");
+        StagedSnapshot::create_in(cache.path(), repo, &[]).expect("refresh");
 
         assert!(snap.path().join("keep.rs").exists(), "still-tracked file remains");
         assert!(
@@ -495,7 +500,7 @@ mod tests {
         std::fs::write(parent.join("main.rs"), "fn main() {}\n").unwrap();
         git(&parent, &["add", "."]);
 
-        let snap = StagedSnapshot::create_in(cache.path(), &parent).expect("snapshot");
+        let snap = StagedSnapshot::create_in(cache.path(), &parent, &[]).expect("snapshot");
 
         let via_snapshot = snap.path().join("vendor/fixtures/data.bin");
         assert!(
@@ -511,7 +516,7 @@ mod tests {
             "submodule must be exposed as a symlink, not copied"
         );
 
-        StagedSnapshot::create_in(cache.path(), &parent).expect("refresh");
+        StagedSnapshot::create_in(cache.path(), &parent, &[]).expect("refresh");
         assert_eq!(std::fs::read(&via_snapshot).unwrap(), b"FIXTURE");
     }
 
@@ -549,7 +554,7 @@ mod tests {
         std::os::unix::fs::symlink(&victim, repo.join("evil.rs")).unwrap();
         git(repo, &["add", "evil.rs"]);
 
-        let snap = StagedSnapshot::create_in(cache.path(), repo).expect("snapshot");
+        let snap = StagedSnapshot::create_in(cache.path(), repo, &[]).expect("snapshot");
 
         let materialized = snap.path().join("evil.rs");
         assert!(
@@ -582,7 +587,7 @@ mod tests {
         std::os::unix::fs::symlink("../shared.toml", repo.join("pkg/config.toml")).unwrap();
         git(repo, &["add", "."]);
 
-        let snap = StagedSnapshot::create_in(cache.path(), repo).expect("snapshot");
+        let snap = StagedSnapshot::create_in(cache.path(), repo, &[]).expect("snapshot");
 
         let link = snap.path().join("pkg/config.toml");
         assert!(
@@ -602,19 +607,142 @@ mod tests {
         std::fs::write(repo.join("gone.rs"), "b\n").unwrap();
         git(repo, &["add", "keep.rs", "gone.rs"]);
         git(repo, &["commit", "-q", "-m", "init"]);
-        let snap = StagedSnapshot::create_in(cache.path(), repo).expect("first");
+        let snap = StagedSnapshot::create_in(cache.path(), repo, &[]).expect("first");
 
         std::fs::create_dir_all(snap.path().join("target")).unwrap();
         std::fs::write(snap.path().join("target/cache.bin"), "artifact").unwrap();
 
         git(repo, &["rm", "-q", "gone.rs"]);
-        StagedSnapshot::create_in(cache.path(), repo).expect("refresh");
+        StagedSnapshot::create_in(cache.path(), repo, &[]).expect("refresh");
 
         assert!(snap.path().join("keep.rs").exists(), "still-tracked file remains");
         assert!(!snap.path().join("gone.rs").exists(), "untracked file is pruned");
         assert!(
             snap.path().join("target/cache.bin").exists(),
             "tool cache must survive the prune"
+        );
+    }
+
+    /// The default is unchanged: an untracked file stays out.
+    ///
+    /// This is the sibling of `snapshot_contains_staged_not_unstaged_or_untracked`
+    /// — that one pins the exclusion, this one pins that opting in is what
+    /// changes it, so neither can drift without the other noticing.
+    #[test]
+    fn an_untracked_file_appears_only_when_it_is_named() {
+        let tmp = TempDir::new().expect("tmp repo");
+        let cache = TempDir::new().expect("cache home");
+        let repo = tmp.path();
+        init(repo);
+        std::fs::write(repo.join("committed.txt"), "staged\n").unwrap();
+        git(repo, &["add", "committed.txt"]);
+        std::fs::write(repo.join("build.env"), "TOKEN=local\n").unwrap();
+
+        let without = StagedSnapshot::create_in(cache.path(), repo, &[]).expect("snapshot");
+        assert!(
+            !without.path().join("build.env").exists(),
+            "untracked stays out by default"
+        );
+
+        let with = StagedSnapshot::create_in(cache.path(), repo, &["build.env".to_string()]).expect("snapshot");
+        assert_eq!(
+            std::fs::read_to_string(with.path().join("build.env")).unwrap(),
+            "TOKEN=local\n",
+            "a named entry is readable from inside the snapshot"
+        );
+    }
+
+    /// Linked, not copied — which is what keeps it out of the manifest and
+    /// therefore out of `prune_stale`'s reach, and what makes it always current.
+    #[test]
+    fn an_included_entry_is_a_symlink_and_survives_a_refresh() {
+        let tmp = TempDir::new().expect("tmp repo");
+        let cache = TempDir::new().expect("cache home");
+        let repo = tmp.path();
+        init(repo);
+        std::fs::write(repo.join("committed.txt"), "staged\n").unwrap();
+        git(repo, &["add", "committed.txt"]);
+        std::fs::write(repo.join("build.env"), "one\n").unwrap();
+        let includes = vec!["build.env".to_string()];
+
+        let snap = StagedSnapshot::create_in(cache.path(), repo, &includes).expect("snapshot");
+        let link = snap.path().join("build.env");
+        assert!(
+            std::fs::symlink_metadata(&link).unwrap().file_type().is_symlink(),
+            "the entry is linked, not copied"
+        );
+
+        // A worktree edit is visible without a refresh, because it is a link.
+        std::fs::write(repo.join("build.env"), "two\n").unwrap();
+        assert_eq!(std::fs::read_to_string(&link).unwrap(), "two\n");
+
+        // And a refresh — which prunes anything the manifest lists and the index
+        // no longer holds — leaves it alone.
+        StagedSnapshot::create_in(cache.path(), repo, &includes).expect("refresh");
+        assert!(std::fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
+        assert_eq!(std::fs::read_to_string(&link).unwrap(), "two\n");
+    }
+
+    /// Removing the entry from config removes the link, so the snapshot does not
+    /// keep serving an exception the repository has withdrawn.
+    #[test]
+    fn dropping_an_entry_from_config_removes_the_link() {
+        let tmp = TempDir::new().expect("tmp repo");
+        let cache = TempDir::new().expect("cache home");
+        let repo = tmp.path();
+        init(repo);
+        std::fs::write(repo.join("committed.txt"), "staged\n").unwrap();
+        git(repo, &["add", "committed.txt"]);
+        std::fs::write(repo.join("build.env"), "one\n").unwrap();
+
+        let snap = StagedSnapshot::create_in(cache.path(), repo, &["build.env".to_string()]).expect("snapshot");
+        assert!(snap.path().join("build.env").exists());
+
+        let snap = StagedSnapshot::create_in(cache.path(), repo, &[]).expect("refresh");
+        assert!(
+            std::fs::symlink_metadata(snap.path().join("build.env")).is_err(),
+            "the link is gone once the entry is"
+        );
+    }
+
+    /// A gitignored file that simply is not there must not turn a lint gate into
+    /// a hard error — the whole feature is about files git does not track.
+    #[test]
+    fn a_missing_entry_is_skipped_rather_than_fatal() {
+        let tmp = TempDir::new().expect("tmp repo");
+        let cache = TempDir::new().expect("cache home");
+        let repo = tmp.path();
+        init(repo);
+        std::fs::write(repo.join("committed.txt"), "staged\n").unwrap();
+        git(repo, &["add", "committed.txt"]);
+
+        let snap = StagedSnapshot::create_in(cache.path(), repo, &["never-generated.json".to_string()])
+            .expect("a missing entry must not fail the snapshot");
+        assert!(!snap.path().join("never-generated.json").exists());
+        assert_eq!(
+            std::fs::read_to_string(snap.path().join("committed.txt")).unwrap(),
+            "staged\n",
+            "and the rest of the snapshot is unaffected"
+        );
+    }
+
+    /// Defense in depth: config-time validation already rejects these, but the
+    /// join happens here, so an entry that escaped is dropped rather than
+    /// writing outside the snapshot.
+    #[test]
+    fn an_escaping_entry_is_refused_at_the_join() {
+        let tmp = TempDir::new().expect("tmp repo");
+        let cache = TempDir::new().expect("cache home");
+        let repo = tmp.path();
+        init(repo);
+        std::fs::write(repo.join("committed.txt"), "staged\n").unwrap();
+        git(repo, &["add", "committed.txt"]);
+        std::fs::write(tmp.path().join("outside.txt"), "secret\n").unwrap();
+
+        let snap = StagedSnapshot::create_in(cache.path(), repo, &["../outside.txt".to_string()]).expect("snapshot");
+        assert!(
+            std::fs::symlink_metadata(snap.path().join("../outside.txt")).is_err(),
+            "an escaping entry must not be materialized"
         );
     }
 }

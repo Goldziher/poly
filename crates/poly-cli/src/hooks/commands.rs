@@ -223,7 +223,12 @@ fn run_stage(args: RunArgs) -> Result<ExitCode> {
         &root,
     )?;
 
-    let snapshot = maybe_staged_snapshot(isolation_active(&config.hooks, args.all_files, stage), &spec, &root)?;
+    let snapshot = maybe_staged_snapshot(
+        isolation_active(&config.hooks, args.all_files, stage),
+        &spec,
+        &root,
+        config.hooks.snapshot_include.as_slice(),
+    )?;
     let work_root = snapshot.as_ref().map(|snapshot| snapshot.path().to_path_buf());
 
     let request = poly_hooks::HookRunRequest {
@@ -525,7 +530,12 @@ fn hook_impl(args: HookImplArgs) -> Result<ExitCode> {
         &root,
     )?;
 
-    let snapshot = maybe_staged_snapshot(isolation_active(&config.hooks, inputs.all_files, stage), &spec, &root)?;
+    let snapshot = maybe_staged_snapshot(
+        isolation_active(&config.hooks, inputs.all_files, stage),
+        &spec,
+        &root,
+        config.hooks.snapshot_include.as_slice(),
+    )?;
     let work_root = snapshot.as_ref().map(|snapshot| snapshot.path().to_path_buf());
 
     let request = poly_hooks::HookRunRequest {
@@ -595,11 +605,28 @@ fn isolation_active(hooks: &poly_config::HooksConfig, all_files: bool, stage: po
 /// per-file or per-hook copy. It is required for *every* hook, not just the
 /// whole-workspace ones, because a per-file hook reading the worktree is exactly
 /// the false pass this gate exists to prevent.
-fn maybe_staged_snapshot(isolate: bool, spec: &poly_hooks::StageSpec, root: &Path) -> Result<Option<StagedSnapshot>> {
+fn maybe_staged_snapshot(
+    isolate: bool,
+    spec: &poly_hooks::StageSpec,
+    root: &Path,
+    includes: &[String],
+) -> Result<Option<StagedSnapshot>> {
     if !isolate || spec.hooks.is_empty() {
         return Ok(None);
     }
-    let snapshot = StagedSnapshot::create(root).context("failed to create the staged-content snapshot")?;
+    let snapshot = StagedSnapshot::create(root, includes).context("failed to create the staged-content snapshot")?;
+    // Stated on every run, green ones included. The gate's whole claim is "these
+    // are the bytes a commit would capture", and an allowlist is a deliberate
+    // exception to it — a reader who does not know it is in force cannot judge
+    // what the run proved. Named rather than counted, and quoting the key, for
+    // the same reason the discovery note names pruned directories (#14).
+    if !includes.is_empty() {
+        eprintln!(
+            "note: staged snapshot also includes {} untracked from [hooks] snapshot_include: {}",
+            poly_core::report::files(includes.len()),
+            includes.join(", ")
+        );
+    }
     Ok(Some(snapshot))
 }
 

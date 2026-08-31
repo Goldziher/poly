@@ -46,7 +46,7 @@ fn is_populated_dir(path: &Path) -> bool {
 /// Ensure `link` is a symlink to `target`. Idempotent: an already-correct symlink
 /// is left untouched (stable mtime keeps compilers warm); any other existing
 /// entry — a stale symlink or an empty `checkout-index` directory — is replaced.
-fn ensure_symlink(target: &Path, link: &Path) -> Result<(), Error> {
+pub(super) fn ensure_symlink(target: &Path, link: &Path) -> Result<(), Error> {
     if is_symlink_to(link, target) {
         return Ok(());
     }
@@ -54,7 +54,11 @@ fn ensure_symlink(target: &Path, link: &Path) -> Result<(), Error> {
     if let Some(parent) = link.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    symlink_dir(target, link)?;
+    if target.is_dir() {
+        symlink_dir(target, link)?;
+    } else {
+        symlink_file(target, link)?;
+    }
     Ok(())
 }
 
@@ -106,6 +110,21 @@ fn remove_symlink(link: &Path) -> std::io::Result<()> {
 #[cfg(unix)]
 fn symlink_dir(target: &Path, link: &Path) -> std::io::Result<()> {
     std::os::unix::fs::symlink(target, link)
+}
+
+/// Create a **file** symlink at `link` pointing to `target`.
+///
+/// Unix does not distinguish the two; Windows does, and picking the wrong one
+/// yields a link that resolves to nothing.
+#[cfg(unix)]
+pub(super) fn symlink_file(target: &Path, link: &Path) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(target, link)
+}
+
+/// Create a **file** symlink at `link` pointing to `target`.
+#[cfg(windows)]
+pub(super) fn symlink_file(target: &Path, link: &Path) -> std::io::Result<()> {
+    std::os::windows::fs::symlink_file(target, link)
 }
 
 /// Create a directory symlink at `link` pointing to `target` (platform-specific).

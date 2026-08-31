@@ -44,6 +44,19 @@ pub struct HooksConfig {
     pub builtin: BuiltinHooks,
     /// Per-stage inline hook configuration, keyed by git [`Stage`].
     pub stage_configs: BTreeMap<Stage, StageConfig>,
+    /// Paths pulled into the staged snapshot from the live worktree even though
+    /// git does not track them.
+    ///
+    /// The snapshot is byte-faithful to the index, which is what makes a commit
+    /// gate check the bytes being committed. A `workspace` hook whose build
+    /// reads a gitignored input therefore fails under the gate while passing in
+    /// the worktree, and the error names the missing file rather than the
+    /// isolation that removed it.
+    ///
+    /// Opt-in and named one path at a time, so the default stays honest and any
+    /// deviation from "these are the bytes being committed" is something the
+    /// repository wrote down on purpose.
+    pub snapshot_include: Patterns,
     /// Whether hooks run against a non-destructive staged-content snapshot
     /// instead of the live worktree.
     ///
@@ -72,11 +85,13 @@ impl HooksConfig {
     ///   applies to every inline job without exception).
     /// - `runner` is only meaningful with `script`.
     /// - `skip` and `only` are not both set on the same stage or job.
+    /// - Each `snapshot_include` entry is a repository-relative path.
     ///
     /// Unknown stage keys and imported-repo keys are already rejected during
     /// deserialization, so they never reach this method.
     pub fn validate(&self) -> Result<(), String> {
         crate::hook_sources::validate_sources(&self.sources)?;
+        validate_snapshot_include(&self.snapshot_include)?;
         for (stage, config) in &self.stage_configs {
             if config.skip.is_some() && config.only.is_some() {
                 return Err(format!("stage `{stage}` sets both `skip` and `only`; choose one"));
@@ -122,6 +137,35 @@ fn validate_job(stage: Stage, label: &str, job: &Job) -> Result<(), String> {
 /// while the item runs unconditionally, which is how an author ends up reaching
 /// for a stage-wide `precondition` instead. Failing at load time is the only
 /// honest option.
+/// Reject a `snapshot_include` entry that is not a repository-relative path.
+///
+/// Inspected as a string rather than through `std::path`, because `Path` parses
+/// per host: `C:\\x` is one component on Unix and an absolute path on Windows,
+/// so a `Path`-based check would accept on one platform what it rejects on
+/// another. The `extends` `file` key is validated the same way, for the same
+/// reason.
+///
+/// The entry is joined onto the snapshot root, so an absolute path or a `..`
+/// segment would write outside it.
+fn validate_snapshot_include(patterns: &Patterns) -> Result<(), String> {
+    for entry in patterns.iter() {
+        let reject = |why: &str| Err(format!("[hooks] snapshot_include entry `{entry}` {why}"));
+        if entry.trim().is_empty() {
+            return reject("is empty");
+        }
+        if entry.starts_with('/') || entry.starts_with('\\') {
+            return reject("is absolute; entries are relative to the repository root");
+        }
+        if entry.len() >= 2 && entry.as_bytes()[1] == b':' {
+            return reject("names a drive; entries are relative to the repository root");
+        }
+        if entry.split(['/', '\\']).any(|segment| segment == "..") {
+            return reject("escapes the repository with `..`");
+        }
+    }
+    Ok(())
+}
+
 fn validate_guards(location: &str, skip: Option<&Guard>, only: Option<&Guard>) -> Result<(), String> {
     for (key, guard) in [("skip", skip), ("only", only)] {
         if let Some(guard) = guard {
@@ -153,6 +197,7 @@ impl<'de> Visitor<'de> for HooksConfigVisitor {
         let mut env: Option<BTreeMap<String, String>> = None;
         let mut builtin: Option<BuiltinHooks> = None;
         let mut isolate: Option<bool> = None;
+        let mut snapshot_include: Option<Patterns> = None;
         let mut sources: Option<Vec<HookSource>> = None;
         let mut stage_configs: BTreeMap<Stage, StageConfig> = BTreeMap::new();
 
@@ -176,6 +221,11 @@ impl<'de> Visitor<'de> for HooksConfigVisitor {
                 "isolate" => {
                     if isolate.replace(map.next_value()?).is_some() {
                         return Err(de::Error::duplicate_field("isolate"));
+                    }
+                }
+                "snapshot_include" => {
+                    if snapshot_include.replace(map.next_value()?).is_some() {
+                        return Err(de::Error::duplicate_field("snapshot_include"));
                     }
                 }
                 "sources" => {
@@ -209,6 +259,7 @@ impl<'de> Visitor<'de> for HooksConfigVisitor {
             builtin: builtin.unwrap_or_default(),
             stage_configs,
             isolate,
+            snapshot_include: snapshot_include.unwrap_or_default(),
             present: true,
         })
     }
@@ -449,5 +500,39 @@ only = ["merge"]
         );
         let err = hooks.validate().unwrap_err();
         assert!(err.contains("both `skip` and `only`"), "{err}");
+    }
+
+    fn hooks_from(toml_src: &str) -> HooksConfig {
+        toml::from_str(toml_src).expect("valid hooks config")
+    }
+
+    #[test]
+    fn snapshot_include_accepts_repository_relative_paths() {
+        let hooks = hooks_from("snapshot_include = [\"config/local.json\", \"vendor/fixtures\"]\n");
+        assert_eq!(hooks.snapshot_include.len(), 2);
+        assert!(hooks.validate().is_ok());
+    }
+
+    /// Every entry is joined onto the snapshot root, so anything that escapes it
+    /// is refused at config load rather than at the join — the reader gets the
+    /// error next to the line they wrote.
+    #[test]
+    fn snapshot_include_refuses_paths_that_escape_the_repository() {
+        for entry in [
+            "/etc/passwd",
+            "../outside.txt",
+            "a/../../b",
+            "C:/Windows",
+            "\\\\server\\share",
+        ] {
+            let hooks = hooks_from(&format!("snapshot_include = [\"{}\"]\n", entry.replace('\\', "\\\\")));
+            let err = hooks.validate().expect_err(&format!("`{entry}` must be refused"));
+            assert!(err.contains("snapshot_include"), "{err}");
+        }
+    }
+
+    #[test]
+    fn snapshot_include_defaults_to_empty() {
+        assert!(hooks_from("isolate = true\n").snapshot_include.is_empty());
     }
 }

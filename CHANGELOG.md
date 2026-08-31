@@ -74,6 +74,30 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ### Added
 
+- **`[hooks] snapshot_include` lets a build read a file git does not track.** The staged snapshot
+  holds exactly the index content, which is what makes a commit gate check the bytes a commit would
+  capture — but a `workspace` hook whose build reads a gitignored input then fails under the gate
+  while passing in the worktree, and the tool's error names the missing file rather than the
+  isolation that removed it. Closes [#20](https://github.com/Goldziher/poly/issues/20).
+
+  ```toml
+  [hooks]
+  snapshot_include = ["config/local.json", ".env.build", "vendor/fixtures"]
+  ```
+
+  Opt-in and named one path at a time, so the default stays honest. Entries must be
+  repository-relative — an absolute path or a `..` segment is refused when the config loads — and an
+  entry that does not exist is skipped with a warning rather than failing the gate. Every run prints
+  a note naming the entries, green runs included, because an allowlist is a deliberate exception to
+  what the gate claims to have checked.
+
+  Entries are **linked**, not copied, which has one consequence worth knowing: a hook that writes to
+  one writes the real file in your worktree, outside the usual write-back rules. Per-file hooks never
+  receive these paths (the matched list comes from the staged set), so reaching it takes a
+  `workspace` hook writing to an allowlisted path on purpose. Linking is also what keeps the entry
+  correct — the snapshot manifest is pruned against the index, which never holds these paths, so a
+  recorded copy would be deleted on the next refresh and an unrecorded one would go stale forever.
+
 - **Every lint/format result now says which engines and which configuration produced it.** A poly
   version does not move when a wrapped crate does, and a `poly.toml`, `poly.local.toml`, nested
   config or `extends` base can change underneath a byte-identical binary. Two runs then both report
