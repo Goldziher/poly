@@ -30,8 +30,38 @@ fn options(no_cache: bool) -> RunOptions {
     }
 }
 
+/// The configuration every measurement runs under: `scripts/harden/poly.toml`,
+/// or its `poly.native-tools.toml` sibling when `POLY_HARDEN_NATIVE_TOOLS` asks
+/// for the non-gating leg.
+///
+/// Not `Config::default()`. Two things that would silently make the measurement
+/// worthless: the thirteen pack rules that ship `off` would never run, so the
+/// per-rule yield the audit consumes would be empty for exactly the rules that
+/// need the evidence; and `rustfmt` / `gofmt` / `shellcheck` are default-on when
+/// present, so the result would depend on which versions the host happens to
+/// have rather than on poly.
+///
+/// A panic here is correct. A harness that fell back to the default config on a
+/// missing or malformed file would keep running and produce numbers that look
+/// exactly like the real ones.
 fn config() -> Config {
-    Config::default()
+    let path = measurement_config_path();
+    Config::load_file(&path)
+        .unwrap_or_else(|e| panic!("loading the harden measurement config {}: {e:#}", path.display()))
+}
+
+/// Path to the measurement config, resolved from this crate's manifest
+/// directory so the harness does not depend on the working directory it was
+/// launched from.
+fn measurement_config_path() -> PathBuf {
+    let file = if std::env::var_os("POLY_HARDEN_NATIVE_TOOLS").is_some() {
+        "poly.native-tools.toml"
+    } else {
+        "poly.toml"
+    };
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../scripts/harden")
+        .join(file)
 }
 
 /// Summarize a lint run into the phase record, including the skip breakdown that

@@ -77,24 +77,30 @@ pub fn check(record: &RootRecord) -> Vec<String> {
         ));
     }
 
-    // A tree that changed under the measurement invalidates every comparison it
-    // made, so the cache checks are not asserted — reporting a disagreement
-    // there would be blaming poly for somebody saving a file.
-    let tree_moved = record.dirty != record.dirty_after;
+    // A tree that changed under the measurement invalidates the checks that
+    // compare two reads of it, so those — and only those — are withheld.
+    // Reporting a disagreement there would be blaming poly for somebody saving a
+    // file. Everything else still gates: a coverage regression or a file poly
+    // errored on is true of the bytes poly was handed whatever the tree did
+    // afterwards, and skipping those was how a dirty checkout turned into a run
+    // that asserted almost nothing and still passed.
+    let tree_moved = record.tree_state != record.tree_state_after;
     if tree_moved {
-        return failures;
-    }
-
-    // A warm run that disagrees with a cold one means the cache is not a cache.
-    if !record.cache.warm_output_identical {
-        failures.push("a warm run disagreed with the cold run: the cache key is unstable".to_string());
-    }
-    if !record.cache.nocache_output_identical {
         failures.push(
-            "a --no-cache run disagreed with the cached one: the cache is serving results \
-             computed under different inputs"
-                .to_string(),
+            "the working tree changed during the measurement; the cache comparisons were not asserted".to_string(),
         );
+    } else {
+        // A warm run that disagrees with a cold one means the cache is not a cache.
+        if !record.cache.warm_output_identical {
+            failures.push("a warm run disagreed with the cold run: the cache key is unstable".to_string());
+        }
+        if !record.cache.nocache_output_identical {
+            failures.push(
+                "a --no-cache run disagreed with the cached one: the cache is serving results \
+                 computed under different inputs"
+                    .to_string(),
+            );
+        }
     }
 
     // Losing lint coverage for a language poly claims is a regression in the

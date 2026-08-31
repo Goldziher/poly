@@ -1,0 +1,60 @@
+# The configuration every harden run measures under.
+#
+# Passed instead of the target repository's own `poly.toml`, so a number means
+# the same thing across every root. A repo that had silenced a rule would
+# otherwise be measured as "the rule finds nothing there", which is the reading
+# an audit must not be able to reach by accident.
+#
+# Three things it does, and why:
+#
+# 1. It turns on every pack rule that ships `off`. You cannot audit a rule you
+#    did not run, and 13 of the 26 ship off precisely because nobody has the
+#    evidence to turn them on yet — evidence this run exists to produce. Only
+#    `select` / `extend_select` activate an `off` rule; a per-rule `level`
+#    overrides the severity of a rule that already runs and will not wake one up
+#    (`active_rule_ids` in `engines/astgrep/mod.rs`).
+#
+# 2. It turns on the two opt-in quality rules, for the same reason.
+#
+# 3. It disables the three native-toolchain backends that are default-on when
+#    present — `rustfmt`, `gofmt`, `shellcheck`. Their output depends on which
+#    version happens to be installed, so leaving them on would make the result a
+#    property of the runner image rather than of poly. The non-gating
+#    `POLY_HARDEN_NATIVE_TOOLS` leg uses `poly.native-tools.toml`, which extends
+#    this file and switches them back on; the two legs are reported under
+#    distinct keys so they can never be compared by accident.
+#
+# There is deliberately no `[per-file-ignores]` here: this file measures the raw
+# yield, and the suppression a rule ships with is what the run is auditing.
+
+[lint.astgrep]
+# The pack rules whose own YAML declares `severity: off`. Keep this list in step
+# with the pack — a rule added `off` and forgotten here is a rule that ships
+# unaudited, which is the failure mode this whole file exists to prevent.
+extend_select = [
+  "allow-attribute-without-reason",
+  "deep-exit",
+  "expect-used",
+  "force-type-assert",
+  "implicit-switch-fallthrough",
+  "placeholder-implementation",
+  "string-concat-in-loop",
+  "sync-over-async",
+  "test-without-assertion",
+  "todo-marker",
+  "undocumented-unsafe-block",
+  "unwrap-used",
+]
+
+[lint.quality]
+magic_number = true
+law_of_demeter = true
+
+[fmt.rust.rustfmt]
+enabled = false
+
+[fmt.go.gofmt]
+enabled = false
+
+[lint.shell.shellcheck]
+enabled = false

@@ -12,6 +12,8 @@ pub struct Root {
     pub corpus: Corpus,
     pub commit: Option<String>,
     pub dirty: bool,
+    /// See [`tree_state`]; taken before the measurement starts.
+    pub tree_state: Option<String>,
 }
 
 /// Read the root to measure out of the environment, the way `scripts/harden.sh`
@@ -33,24 +35,50 @@ pub fn from_env() -> Option<Root> {
     };
     let commit = git(&path, &["rev-parse", "HEAD"]);
     let dirty = is_dirty(&path);
+    let tree_state = tree_state(&path);
     Some(Root {
         name,
         path,
         corpus,
         commit,
         dirty,
+        tree_state,
     })
 }
 
-/// Whether the tree has uncommitted changes *right now*.
-///
-/// Checked again after the measurement, not only before it: a live working tree
-/// can change while the harness reads it, and a cache comparison that spans that
-/// change reports a disagreement that is a fact about the tree rather than about
-/// poly. Without this the two are indistinguishable, and the harness would
-/// invent a cache defect out of somebody saving a file.
+/// Whether the tree has uncommitted changes *right now*. Reported so a reader
+/// knows the root's counts are not comparable with anything.
 pub fn is_dirty(root: &Path) -> bool {
     git(root, &["status", "--porcelain"]).is_some_and(|out| !out.trim().is_empty())
+}
+
+/// A cheap fingerprint of the tree's uncommitted state.
+///
+/// Taken before and after the measurement, because a live working tree can
+/// change while the harness reads it, and a cache comparison that spans that
+/// change reports a disagreement that is a fact about the tree rather than about
+/// poly. Without this the two are indistinguishable and the harness would invent
+/// a cache defect out of somebody saving a file.
+///
+/// A boolean "is it dirty" is not enough: a tree that was dirty before and after
+/// but changed in between reads as unmoved, which is the likeliest case of all —
+/// somebody is working in it. `--numstat` is what catches that, since editing a
+/// tracked file moves its line counts while its porcelain status line stays
+/// `` M ``.
+///
+/// `None` on a root that is not a git checkout. Movement is undetectable there,
+/// which is a limit of the corpus and not something to paper over: the two
+/// `None`s compare equal, so such a root is treated as unmoved and its cache
+/// assertions still run.
+pub fn tree_state(root: &Path) -> Option<String> {
+    use std::hash::{DefaultHasher, Hash, Hasher};
+
+    let status = git(root, &["status", "--porcelain"])?;
+    let numstat = git(root, &["diff", "HEAD", "--numstat"]).unwrap_or_default();
+    let mut hasher = DefaultHasher::new();
+    status.hash(&mut hasher);
+    numstat.hash(&mut hasher);
+    Some(format!("{:016x}", hasher.finish()))
 }
 
 fn git(root: &Path, args: &[&str]) -> Option<String> {

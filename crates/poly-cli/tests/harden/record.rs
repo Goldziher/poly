@@ -98,11 +98,13 @@ pub struct RootRecord {
     /// Whether the tree had uncommitted changes when the run started. A dirty
     /// root's counts are not comparable with anything.
     pub dirty: bool,
-    /// Whether it had them when the run finished. Different from `dirty` means
-    /// the tree moved *during* the measurement, which invalidates every
-    /// comparison the run made — the cache checks especially, since they compare
-    /// two reads of the same tree.
-    pub dirty_after: bool,
+    /// A fingerprint of the uncommitted state before and after the measurement.
+    /// Two different values mean the tree moved *during* it, which invalidates
+    /// the checks that compare two reads of the same tree. `None` on a root that
+    /// is not a git checkout, where movement cannot be detected at all.
+    pub tree_state: Option<String>,
+    /// The same fingerprint taken after the run. See [`RootRecord::tree_state`].
+    pub tree_state_after: Option<String>,
     pub poly_version: String,
     pub native_tools_enabled: bool,
     pub lint: PhaseRecord,
