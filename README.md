@@ -31,7 +31,7 @@ hooks & commit checks · MCP + Claude/Codex plugin
 | Capability | What it does |
 |---|---|
 | **Fast on real repos** | Lints Django in 0.82s and home-assistant's 25,000 files in 3.5s, cold cache; see [Performance](#performance). |
-| **One binary, no toolchain** | ~30 languages with native Rust backends (ruff, oxc, biome, mago, taplo, rumdl, sqruff, malva, markup_fmt, rubyfmt, …) plus a tree-sitter tier for everything else. No Node, Python, or Ruby needed. |
+| **One binary, no toolchain** | Compiled-in Rust backends for Python, JavaScript, TypeScript, JSX, TSX, JSON, YAML, TOML, Markdown, MDX, CSS, SCSS, Less, HTML, Vue, Svelte, Astro, Angular, XML, PHP, Ruby, SQL, GraphQL, Nix, HCL, Dockerfile, INI and `.env`. Go, Rust, Zig, Java, Kotlin, Swift, Dart, R, Gleam and shell use their own toolchain when it is installed, and a tree-sitter tier covers everything else. No Node, Python, or Ruby runtime needed. See the [language table](https://goldziher.github.io/poly/reference/backends/). |
 | **Built for agents** | A Claude/Codex plugin and a stdio MCP server ship in the box — an agent calls poly's tools directly instead of shelling out and parsing text. See [AI Agents & MCP](#ai-agents--mcp). |
 | **One config** | `poly.toml` drives linting, formatting, git hooks, and commit-message policy. |
 | **Cache + parallelism** | A blake3 content-hash cache skips unchanged work; rayon parallelizes the rest across cores. |
