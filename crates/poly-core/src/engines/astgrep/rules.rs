@@ -9,9 +9,13 @@
 //!
 //! ## Limitations
 //!
-//! - **No cross-file `refers:`.** Each YAML file is parsed with its own
-//!   [`GlobalRules`], so a rule cannot reference a `utils`/global rule defined
-//!   in a *different* file. Keep a rule and the utils it refers to in one file.
+//! - **Cross-file `matches:` goes through `utils.yml`.** A file named
+//!   `utils.yml` / `utils.yaml` in a rule directory is not a rule file: it
+//!   declares *global* utility rules (a YAML list, each with an `id` and a
+//!   `language`) that any rule in the same load may reference by `matches:`.
+//!   Every such file in the searched dirs is merged into one [`GlobalRules`],
+//!   so utils may reference each other across files — ast-grep topologically
+//!   sorts them. A per-file `utils:` block still works and stays file-local.
 //!   (Project-level ast-grep `sgconfig.yml` utils are not wired in.)
 //! - **Symlinked rule files are skipped.** Discovery uses `file_type()`
 //!   (`lstat`), so a symlink — whether to a file or a directory — is neither
@@ -23,7 +27,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock, RwLock};
 
 use anyhow::Context;
-use ast_grep_config::{GlobalRules, RuleConfig, from_yaml_string};
+use ast_grep_config::{DeserializeEnv, GlobalRules, RuleConfig, SerializableGlobalRule, from_yaml_string};
 
 use super::language::TslpLanguage;
 
@@ -81,7 +85,16 @@ pub fn rules_hash(dirs: &[String]) -> String {
     let mut hasher = blake3::Hasher::new();
     let mut had_any = false;
 
-    let mut paths: Vec<PathBuf> = dirs.iter().flat_map(|d| collect_rule_paths(Path::new(d))).collect();
+    // Utils files are inputs to the parse, so an edit to one must invalidate
+    // the cache exactly as a rule edit does — hash the rule files *and* the
+    // `utils.yml` they resolve against, not just the former.
+    let mut paths: Vec<PathBuf> = dirs
+        .iter()
+        .flat_map(|d| {
+            let dir = Path::new(d);
+            collect_rule_paths(dir).into_iter().chain(collect_utils_paths(dir))
+        })
+        .collect();
     paths.sort();
 
     for path in paths {
@@ -108,7 +121,17 @@ pub fn rules_hash(dirs: &[String]) -> String {
 /// once per language, each in its own directory — which a bare `id` lookup
 /// cannot. See [`super::test::run_tests`], the one caller that needs this.
 pub fn load_flat_with_paths(dirs: &[String]) -> anyhow::Result<Vec<(PathBuf, RuleConfig<TslpLanguage>)>> {
-    let globals = GlobalRules::default();
+    let utils_paths: Vec<PathBuf> = dirs
+        .iter()
+        .flat_map(|dir| collect_utils_paths(Path::new(dir)))
+        .collect();
+    let mut sources = Vec::with_capacity(utils_paths.len());
+    for path in &utils_paths {
+        let yaml = fs::read_to_string(path).with_context(|| format!("reading utils file {}", path.display()))?;
+        sources.push((path.clone(), yaml));
+    }
+    let globals = parse_global_utils(&sources)?;
+
     let mut out = Vec::new();
     for dir in dirs {
         for path in collect_rule_paths(Path::new(dir)) {
@@ -119,6 +142,31 @@ pub fn load_flat_with_paths(dirs: &[String]) -> anyhow::Result<Vec<(PathBuf, Rul
         }
     }
     Ok(out)
+}
+
+/// Merge every `utils.yml` into one [`GlobalRules`] the whole load shares.
+///
+/// One registration rather than one per file is what makes a util referenceable
+/// across files; ast-grep topologically sorts the merged set, so a util may
+/// refer to one declared in a different file regardless of read order.
+///
+/// # Errors
+/// A malformed utils file is an error rather than a skip: silently dropping it
+/// would leave every `matches:` that referenced it unresolvable, and the rule
+/// carrying that reference would fail with an error naming the *rule* instead
+/// of the file that actually broke.
+pub(super) fn parse_global_utils(sources: &[(PathBuf, String)]) -> anyhow::Result<GlobalRules> {
+    let mut all = Vec::new();
+    for (path, yaml) in sources {
+        let utils: Vec<SerializableGlobalRule<TslpLanguage>> = ast_grep_config::from_str(yaml)
+            .with_context(|| format!("parsing ast-grep global utils in {}", path.display()))?;
+        all.extend(utils);
+    }
+    if all.is_empty() {
+        return Ok(GlobalRules::default());
+    }
+    DeserializeEnv::parse_global_utils(all)
+        .map_err(|error| anyhow::anyhow!("registering ast-grep global utils: {error}"))
 }
 
 /// Load every rule from `dirs` into a flat list (rule id order is the on-disk
@@ -177,11 +225,30 @@ fn collect_yaml_rec(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// Rule files under `dir` (recursive) — every `*.yml`/`*.yaml` except test files.
+/// A YAML file declares *global utils* when it is named `utils.yml` /
+/// `utils.yaml`. Such a file holds a list of utility rules, not rule configs,
+/// so it must never reach `from_yaml_string`.
+fn is_utils_file(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .map(|n| n == "utils.yml" || n == "utils.yaml")
+        .unwrap_or(false)
+}
+
+/// Rule files under `dir` (recursive) — every `*.yml`/`*.yaml` except test
+/// files and `utils.yml`.
 fn collect_rule_paths(dir: &Path) -> Vec<PathBuf> {
     collect_yaml_paths(dir)
         .into_iter()
-        .filter(|p| !is_test_file(p))
+        .filter(|p| !is_test_file(p) && !is_utils_file(p))
+        .collect()
+}
+
+/// Global-utils files under `dir` (recursive), sorted.
+fn collect_utils_paths(dir: &Path) -> Vec<PathBuf> {
+    collect_yaml_paths(dir)
+        .into_iter()
+        .filter(|p| is_utils_file(p))
         .collect()
 }
 

@@ -47,32 +47,6 @@ note: |
   handling guides (and clippy's allow-by-default `unwrap_used`) popularised;
   the matching, the test-context carve-out and the message are poly's own.
 url: https://doc.rust-lang.org/std/option/enum.Option.html#method.unwrap
-utils:
-  test-attribute:
-    kind: attribute_item
-    any:
-      - regex: '^#\s*\[\s*cfg\s*\(\s*(all\s*\(\s*)?test\b'
-      - regex: '^#\s*\[\s*([\w]+\s*::\s*)*((\w+_)?(test|bench)\w*|rstest|proptest|quickcheck)\b'
-  cfg-test-attribute:
-    kind: attribute_item
-    regex: '^#\s*\[\s*cfg\s*\(\s*(all\s*\(\s*)?test\b'
-  attribute-or-comment:
-    any:
-      - kind: attribute_item
-      - kind: line_comment
-      - kind: block_comment
-  in-test-context:
-    inside:
-      stopBy: end
-      any:
-        - kind: mod_item
-          follows:
-            matches: cfg-test-attribute
-            stopBy: { not: { matches: attribute-or-comment } }
-        - kind: function_item
-          follows:
-            matches: test-attribute
-            stopBy: { not: { matches: attribute-or-comment } }
 rule:
   pattern: $RECEIVER.unwrap()
-  not: { matches: in-test-context }
+  not: { matches: rust-in-test-context }

@@ -557,6 +557,51 @@ fix: $X is None
 For languages where a bare fragment is not valid at file top level (Go, for instance), use
 ast-grep's `context` / `selector` pattern form.
 
+### Sharing a predicate between rules
+
+A rule can define helper matchers in its own `utils:` block, but those are file-local. To share one
+across rules, put it in a file named **`utils.yml`** in a rule directory. That file is not a rule
+file — nothing in it reports a diagnostic — and it holds a list of utility rules, each with an `id`
+and a `language`:
+
+```yaml title=".poly/rules/utils.yml"
+- id: py-in-test-function
+  language: python
+  rule:
+    inside:
+      stopBy: end
+      kind: function_definition
+      has:
+        field: name
+        regex: '^test_'
+```
+
+Any rule in the same load may then reference it by `matches:`, from any file:
+
+```yaml title=".poly/rules/python/no-print.yml"
+id: no-print
+language: python
+severity: warning
+message: Use logging rather than `print`.
+rule:
+  pattern: print($$$ARGS)
+  not: { matches: py-in-test-function }
+```
+
+Every `utils.yml` under the configured directories is merged into one namespace, so a util may
+reference another util declared in a different file — poly leaves the ordering to ast-grep, which
+sorts them topologically. Ids are global to that namespace, so prefix them if a collision is
+plausible; poly's own pack prefixes by language (`rust-in-test-context`).
+
+A util is a *predicate*, so it may be relational-only — `inside:`, `follows:` and friends with no
+pattern of its own — which a top-level `rule:` is generally not written as.
+
+<Aside type="note">
+    Editing a `utils.yml` invalidates the rule cache exactly as editing a rule file does. The
+    built-in pack uses the same mechanism for its own shared helpers, but its namespace is
+    separate: a user rule cannot reference a pack util, or vice versa.
+</Aside>
+
 ### Testing rules
 
 A rule may ship a companion `<name>-test.yml` holding `valid` snippets (must **not** match) and

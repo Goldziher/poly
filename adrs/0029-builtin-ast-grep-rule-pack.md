@@ -226,3 +226,47 @@ a test failure: `the_shared_rust_test_context_helpers_have_not_drifted`
 (`crates/poly-core/src/engines/astgrep/pack.rs`) extracts each rule's `utils:` block and asserts
 all five are byte-identical to the first. Four chances to drift, each turned into a build failure
 instead of a corpus that quietly stops excluding test code in one of the five rules.
+
+## Amendment — 2026-09-01: extraction was not blocked; the helpers are now global utils
+
+The amendment above is **wrong on its central claim**, and it is worth recording why rather than
+quietly deleting it.
+
+Two premises were asserted from reading, not from checking:
+
+1. *"A relational-only predicate is legal as a `utils:` entry and illegal as a top-level `rule:`."*
+   It is legal as both. `deserialize_rule` raises `MissPositiveMatcher` only when a rule
+   deserializes to **no** matcher at all; a relational rule (`inside:`, `follows:`) is itself a
+   matcher and is pushed onto that list like any other.
+2. *"Registering a global util needs a YAML deserializer poly-core does not have."* It needs
+   exactly the one poly already used. `ast_grep_config` re-exports **`from_str`** — the same
+   `serde_yaml`-backed entry point behind `from_yaml_string` — precisely so callers can deserialize
+   its own types. poly had been calling it since the rule-test harness was written
+   (`astgrep/test.rs`). No dependency was added, none swapped, and `serde_yaml` remains where it
+   always was: a transitive dependency of ast-grep, accepted under the `RUSTSEC-2024-0436` entry in
+   `deny.toml`, not something poly selects.
+
+The generalisable error is that "unmaintained upstream dependency" was allowed to stand in for
+"upstream API is unavailable to us". They are unrelated questions, and only the second one blocks.
+
+**What ships instead.** The four helpers live once in
+`crates/poly-core/src/engines/astgrep/builtin/utils.yml` and are referenced as
+`rust-in-test-context`. The mechanism is general rather than pack-specific: a file named `utils.yml`
+in *any* rule directory declares global utils, so a user rule set gets the same sharing the pack
+does — which was the open request in the issue. Every `utils.yml` in a load merges into one
+registration, so utils may cross-reference; ast-grep orders them topologically. Namespaces stay
+separate: pack utils resolve only for pack rules, user utils only for user rules, so neither can
+shadow the other. Rule-specific helpers (`blocking-call`, `preceded-by-safety-comment`) stay in
+their rule's own `utils:` block, since sharing them would buy nothing.
+
+**Why the drift guard was replaced rather than kept.** It compared five copies for equality; there
+is now one definition, so equality is structural. What replaces it asserts the copies do not come
+*back* — a reintroduced file-local `test-attribute:` would silently shadow the global for that one
+rule, which is the same class of defect the original guard existed to catch.
+
+**The verification gap this exposed.** The pack's own `*-test.yml` corpora were run only by hand,
+via `poly rules test` against the builtin directory — so nothing in CI checked the semantics of the
+26 rules a default `poly lint` runs. That is now `builtin_pack_passes_its_own_test_corpora`, landed
+*before* the refactor so its result is a baseline rather than a claim. `ENGINE_VERSION` moves to
+`builtin-pack-3`: the refactor is intended to preserve matching exactly, but a cache may not rely on
+an intention, and the rules now compile through a different registration than any cached payload.

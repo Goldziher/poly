@@ -104,7 +104,15 @@ use rules::{RuleMap, load_rules};
 /// up, so five languages whose poly id is not a grammar name — `jsx`, `jsonc`,
 /// `mdx`, `jinja`, `mustache` — reach rules for the first time. A cache written
 /// by the old binary holds the empty result those files used to get.
-const ENGINE_VERSION: &str = "ast-grep-core-0.45.2-engine-3+tslp1.15.12+builtin-pack-2";
+///
+/// `builtin-pack-3` marks a fifth: the four Rust test-context helpers moved
+/// out of five per-file `utils:` blocks into `builtin/utils.yml` and are now
+/// registered as ast-grep *global* utils. The refactor is intended to preserve
+/// every rule's matching exactly — the pack's own `*-test.yml` corpora assert
+/// that — but "intended" is not a property a cache may rely on: the rules are
+/// compiled through a different registration than the cached payload was, so
+/// the entry is invalidated rather than trusted.
+const ENGINE_VERSION: &str = "ast-grep-core-0.45.2-engine-3+tslp1.15.12+builtin-pack-3";
 
 /// Cross-cutting custom-rule engine backed by ast-grep + TSLP grammars.
 ///

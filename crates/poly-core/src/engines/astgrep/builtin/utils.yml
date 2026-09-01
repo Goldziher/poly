@@ -1,0 +1,55 @@
+# Global utility rules shared by poly's built-in ast-grep pack.
+#
+# A `utils.yml` in a rule directory declares rules that other rules reference
+# by `matches:`, across files. It is not itself a rule file: nothing here
+# reports a diagnostic.
+#
+# Ids are prefixed with their language because global utils share one
+# namespace across the whole pack, unlike a per-file `utils:` block.
+#
+# Five Rust rules previously each carried a byte-identical copy of the four
+# helpers below. Four copies is four chances to drift, and drift here is
+# invisible until someone hand-reads several thousand findings — which is how
+# `undocumented-unsafe-block` ended up with no test carve-out at all while the
+# rules around it had one.
+
+- id: rust-test-attribute
+  language: rust
+  rule:
+    kind: attribute_item
+    any:
+      - regex: '^#\s*\[\s*cfg\s*\(\s*(all\s*\(\s*)?test\b'
+      - regex: '^#\s*\[\s*([\w]+\s*::\s*)*((\w+_)?(test|bench)\w*|rstest|proptest|quickcheck)\b'
+
+- id: rust-cfg-test-attribute
+  language: rust
+  rule:
+    kind: attribute_item
+    regex: '^#\s*\[\s*cfg\s*\(\s*(all\s*\(\s*)?test\b'
+
+- id: rust-attribute-or-comment
+  language: rust
+  rule:
+    any:
+      - kind: attribute_item
+      - kind: line_comment
+      - kind: block_comment
+
+# A node is in test context when it sits inside a `#[cfg(test)]` module or
+# inside a `#[test]`/`#[bench]`-style function. Relational-only on purpose:
+# it is a predicate other rules negate with `not: { matches: ... }`, never a
+# rule that reports on its own.
+- id: rust-in-test-context
+  language: rust
+  rule:
+    inside:
+      stopBy: end
+      any:
+        - kind: mod_item
+          follows:
+            matches: rust-cfg-test-attribute
+            stopBy: { not: { matches: rust-attribute-or-comment } }
+        - kind: function_item
+          follows:
+            matches: rust-test-attribute
+            stopBy: { not: { matches: rust-attribute-or-comment } }

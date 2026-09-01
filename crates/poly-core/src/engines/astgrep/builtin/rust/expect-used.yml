@@ -19,32 +19,6 @@ note: |
   Idea origin: the same "no panicking accessors in library code" convention as
   `unwrap-used`; matching and carve-outs authored for poly.
 url: https://doc.rust-lang.org/std/result/enum.Result.html#method.expect
-utils:
-  test-attribute:
-    kind: attribute_item
-    any:
-      - regex: '^#\s*\[\s*cfg\s*\(\s*(all\s*\(\s*)?test\b'
-      - regex: '^#\s*\[\s*([\w]+\s*::\s*)*((\w+_)?(test|bench)\w*|rstest|proptest|quickcheck)\b'
-  cfg-test-attribute:
-    kind: attribute_item
-    regex: '^#\s*\[\s*cfg\s*\(\s*(all\s*\(\s*)?test\b'
-  attribute-or-comment:
-    any:
-      - kind: attribute_item
-      - kind: line_comment
-      - kind: block_comment
-  in-test-context:
-    inside:
-      stopBy: end
-      any:
-        - kind: mod_item
-          follows:
-            matches: cfg-test-attribute
-            stopBy: { not: { matches: attribute-or-comment } }
-        - kind: function_item
-          follows:
-            matches: test-attribute
-            stopBy: { not: { matches: attribute-or-comment } }
 rule:
   pattern: $RECEIVER.expect($MSG)
-  not: { matches: in-test-context }
+  not: { matches: rust-in-test-context }

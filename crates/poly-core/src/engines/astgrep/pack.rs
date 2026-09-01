@@ -8,6 +8,10 @@
 //! Every pack rule is compiled through the exact same
 //! `ast_grep_config::from_yaml_string` call [`super::rules::load_flat`] uses
 //! for user rules — there is no separate pack-specific YAML schema or parser.
+//! That extends to the shared helpers in `builtin/utils.yml`: they are
+//! registered by [`super::rules::parse_global_utils`], the same function a user
+//! rule directory's own `utils.yml` goes through, deserialized with
+//! ast-grep's re-exported `from_str` rather than a YAML parser of poly's own.
 //! The only difference is *where* the YAML text comes from: `include_str!`
 //! (a compile-time constant) instead of `std::fs::read_to_string` (re-read
 //! per content hash). That is also why the pack is cached forever in a
@@ -84,15 +88,21 @@
 //! is not the same question as whether the reader can act on it.
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::OnceLock;
 
-use ast_grep_config::{GlobalRules, RuleConfig, from_yaml_string};
+use ast_grep_config::{RuleConfig, from_yaml_string};
 
 use super::language::TslpLanguage;
 use super::rules::RuleMap;
 
 /// Every built-in rule's YAML source, embedded at compile time. Order does
 /// not matter — [`builtin_pack`] groups by `language:` regardless.
+/// Global utility rules the pack's own rules reference by `matches:`, shared
+/// across pack files rather than copied into each one. Loaded through the same
+/// `utils.yml` mechanism a user rule directory uses.
+const PACK_UTILS: &str = include_str!("builtin/utils.yml");
+
 const PACK_RULES: &[&str] = &[
     include_str!("builtin/csharp/async-void.yml"),
     include_str!("builtin/csharp/rethrow-loses-stack.yml"),
@@ -128,12 +138,19 @@ static BUILTIN_PACK: OnceLock<RuleMap> = OnceLock::new();
 /// the same shape [`super::rules::load_rules`] returns for user rules, so
 /// callers merge the two uniformly.
 ///
-/// Each pack YAML file is parsed with its own fresh [`GlobalRules`], matching
-/// [`super::rules::load_flat`]'s "no cross-file `refers:`" limitation for user
-/// rules: every pack rule is self-contained.
+/// Every pack file is parsed against one shared registration built from
+/// `builtin/utils.yml`, the same way [`super::rules::load_flat_with_paths`]
+/// resolves a user rule directory's own `utils.yml`. Rule-specific helpers
+/// still live in the rule's own `utils:` block.
 pub(super) fn builtin_pack() -> &'static RuleMap {
     BUILTIN_PACK.get_or_init(|| {
-        let globals = GlobalRules::default();
+        let globals = super::rules::parse_global_utils(&[(PathBuf::from("builtin/utils.yml"), PACK_UTILS.to_string())])
+            .unwrap_or_else(|error| {
+                panic!(
+                    "poly's built-in ast-grep global utils failed to parse ({error}); this is a \
+                     poly release defect, not a user-fixable error"
+                )
+            });
         let mut map: RuleMap = HashMap::new();
         for yaml in PACK_RULES {
             let rules: Vec<RuleConfig<TslpLanguage>> = from_yaml_string(yaml, &globals).unwrap_or_else(|error| {
@@ -174,30 +191,25 @@ mod tests {
         assert_eq!(total, 26, "expected 26 built-in rules across 9 languages");
     }
 
-    /// The Rust rules that carve test code out of their matches each define the
-    /// same four helpers, and they must stay identical.
+    /// The shared Rust test-context helpers live in exactly one place.
     ///
-    /// Extraction into ast-grep *global* utils is the real fix (issue #22), and
-    /// it is blocked on a deserializer poly-core does not have: a relational-only
-    /// predicate is legal as a `utils:` entry and illegal as a top-level `rule:`,
-    /// so registering one needs `parse_global_utils`, which needs
-    /// `SerializableGlobalRule` deserialized from YAML. `serde_yaml` — what
-    /// ast-grep itself uses — is unmaintained, and swapping in a different YAML
-    /// deserializer for types this dependent on `#[serde(flatten)]` and untagged
-    /// enums is not a change to make casually inside the pack's single-parse-path
-    /// invariant.
+    /// They used to be copied verbatim into five rule files, guarded by a test
+    /// that compared the copies — because extraction was believed to need a
+    /// YAML deserializer poly-core did not have. It does not: `ast_grep_config`
+    /// re-exports its own `from_str`, so the pack deserializes
+    /// `SerializableGlobalRule` with the same parser it already uses for rules,
+    /// and adds no dependency.
     ///
-    /// So the copies stay, and this makes the thing that actually hurts —
-    /// *silent* divergence between them — a test failure instead. Four copies is
-    /// four chances to drift, and drift here is invisible until someone
-    /// hand-reads several thousand findings.
+    /// What remains worth asserting is that no copy comes back. A reintroduced
+    /// per-file `test-attribute:` would silently shadow the global for that one
+    /// rule, which is the drift the old guard existed to catch.
     #[test]
-    fn the_shared_rust_test_context_helpers_have_not_drifted() {
-        const SHARED_HELPERS: &[&str] = &[
-            "  test-attribute:",
-            "  cfg-test-attribute:",
-            "  attribute-or-comment:",
-            "  in-test-context:",
+    fn the_shared_test_context_helpers_are_not_copied_back_into_rule_files() {
+        const SHARED_IDS: &[&str] = &[
+            "rust-test-attribute",
+            "rust-cfg-test-attribute",
+            "rust-attribute-or-comment",
+            "rust-in-test-context",
         ];
         const CARRIERS: &[(&str, &str)] = &[
             ("unwrap-used", include_str!("builtin/rust/unwrap-used.yml")),
@@ -216,71 +228,47 @@ mod tests {
             ),
         ];
 
-        let (reference_id, reference_yaml) = CARRIERS[0];
-        let reference = extract_helpers(reference_yaml);
-        assert_eq!(
-            reference.len(),
-            SHARED_HELPERS.len(),
-            "{reference_id} must define every shared helper"
-        );
-        for (id, yaml) in &CARRIERS[1..] {
-            assert_eq!(
-                extract_helpers(yaml),
-                reference,
-                "`{id}` defines the shared test-context helpers differently from `{reference_id}`; \
-                 they must stay identical while the definition is duplicated"
+        for (id, yaml) in CARRIERS {
+            for helper in [
+                "  test-attribute:",
+                "  cfg-test-attribute:",
+                "  attribute-or-comment:",
+                "  in-test-context:",
+            ] {
+                assert!(
+                    !yaml.contains(helper),
+                    "{id} redefines `{}` locally; it is a global util in builtin/utils.yml",
+                    helper.trim().trim_end_matches(':')
+                );
+            }
+        }
+
+        for id in SHARED_IDS {
+            assert!(
+                PACK_UTILS.contains(&format!("id: {id}")),
+                "builtin/utils.yml must declare {id}"
             );
         }
     }
 
-    /// Pull each shared helper's block out of a rule's `utils:` section, keyed by
-    /// name so a rule that also defines helpers of its own (as
-    /// `blocking-call-in-async-fn` does) still compares equal on the shared ones.
-    fn extract_helpers(yaml: &str) -> std::collections::BTreeMap<String, Vec<String>> {
-        const SHARED: &[&str] = &[
-            "test-attribute",
-            "cfg-test-attribute",
-            "attribute-or-comment",
-            "in-test-context",
-        ];
-        let mut helpers = std::collections::BTreeMap::new();
-        let mut current: Option<String> = None;
-        let mut body: Vec<String> = Vec::new();
-        let mut in_utils = false;
-        for line in yaml.lines() {
-            if line == "utils:" {
-                in_utils = true;
-                continue;
-            }
-            if !in_utils {
-                continue;
-            }
-            // A column-0 key ends the `utils:` block.
-            let ends_block = !line.is_empty() && !line.starts_with(' ');
-            let starts_helper = line.starts_with("  ") && !line.starts_with("   ") && line.trim_end().ends_with(':');
-            if ends_block || starts_helper {
-                if let Some(name) = current.take()
-                    && SHARED.contains(&name.as_str())
-                {
-                    helpers.insert(name, std::mem::take(&mut body));
-                } else {
-                    body.clear();
-                }
-                if ends_block {
-                    break;
-                }
-                current = Some(line.trim().trim_end_matches(':').to_string());
-                continue;
-            }
-            if current.is_some() {
-                body.push(line.to_string());
-            }
+    /// The pack's rules resolve against the shared globals, so a reference that
+    /// no longer exists is a load failure rather than a rule that quietly stops
+    /// carving test code out.
+    #[test]
+    fn the_pack_loads_with_its_global_utils_resolved() {
+        let pack = builtin_pack();
+        let rust = pack.get("rust").expect("rust rules load");
+        for id in [
+            "unwrap-used",
+            "expect-used",
+            "placeholder-implementation",
+            "blocking-call-in-async-fn",
+            "undocumented-unsafe-block",
+        ] {
+            assert!(
+                rust.iter().any(|rule| rule.id == id),
+                "{id} must survive the global-utils load"
+            );
         }
-        if let Some(name) = current
-            && SHARED.contains(&name.as_str())
-        {
-            helpers.insert(name, body);
-        }
-        helpers
     }
 }

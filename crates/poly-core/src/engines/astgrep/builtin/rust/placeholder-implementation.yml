@@ -33,33 +33,7 @@ note: |
   Idea origin: the general "unfinished stub reached production" defect class;
   the Rust-specific matching and the `unreachable!` carve-out are poly's own.
 url: https://doc.rust-lang.org/std/macro.todo.html
-utils:
-  test-attribute:
-    kind: attribute_item
-    any:
-      - regex: '^#\s*\[\s*cfg\s*\(\s*(all\s*\(\s*)?test\b'
-      - regex: '^#\s*\[\s*([\w]+\s*::\s*)*((\w+_)?(test|bench)\w*|rstest|proptest|quickcheck)\b'
-  cfg-test-attribute:
-    kind: attribute_item
-    regex: '^#\s*\[\s*cfg\s*\(\s*(all\s*\(\s*)?test\b'
-  attribute-or-comment:
-    any:
-      - kind: attribute_item
-      - kind: line_comment
-      - kind: block_comment
-  in-test-context:
-    inside:
-      stopBy: end
-      any:
-        - kind: mod_item
-          follows:
-            matches: cfg-test-attribute
-            stopBy: { not: { matches: attribute-or-comment } }
-        - kind: function_item
-          follows:
-            matches: test-attribute
-            stopBy: { not: { matches: attribute-or-comment } }
 rule:
   kind: macro_invocation
   regex: '^([\w]+\s*::\s*)*(todo|unimplemented)\s*!'
-  not: { matches: in-test-context }
+  not: { matches: rust-in-test-context }

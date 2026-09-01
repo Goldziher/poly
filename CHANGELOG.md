@@ -5,6 +5,41 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
+## [Unreleased]
+
+### Changed
+
+- **ast-grep rule directories support a shared `utils.yml`.** A file by that name in a rule
+  directory declares *global* utility rules — predicates other rules reference by `matches:` —
+  instead of every rule carrying its own copy in a file-local `utils:` block. Every `utils.yml`
+  under the configured directories merges into one namespace, so a util may reference one declared
+  in another file; ast-grep sorts them topologically. Editing one invalidates the rule cache exactly
+  as editing a rule does.
+
+  poly's built-in pack now uses the same mechanism for its own helpers: the four Rust test-context
+  predicates that were copied verbatim into five rule files live in `builtin/utils.yml` and are
+  referenced as `rust-in-test-context`. The refactor preserves every rule's matching — the pack's
+  `*-test.yml` corpora assert it — but `ENGINE_VERSION` moves to `builtin-pack-3` regardless, since
+  the rules compile through a different registration than any cached payload did.
+
+  This was previously reported as blocked on the unmaintained `serde_yaml`. It was not:
+  `ast_grep_config` re-exports its own `from_str`, so the pack deserializes `SerializableGlobalRule`
+  with the parser it already used for rules, and no dependency was added or swapped.
+
+### Fixed
+
+- **The config fingerprint no longer depends on the host path separator.** `ConfigFingerprint`
+  built both the reported `root` and the relativized `[rules] dirs` with `Path::display`, so the
+  same commit described itself as `packages/api` on Linux and `packages\api` on Windows — and, for
+  any config with a nested rules directory, hashed differently on the two. The field is new in
+  0.24.0, so no released fingerprint was affected.
+
+### Testing
+
+- The built-in pack's `*-test.yml` corpora now run under `cargo test`. They previously executed only
+  when someone ran `poly rules test` against that directory by hand, so nothing in CI verified the
+  semantics of the 26 rules a default `poly lint` runs.
+
 ## [0.24.0] - 2026-08-31
 
 This release is mostly one theme: **a report that reads as clean now has to have earned it.**
