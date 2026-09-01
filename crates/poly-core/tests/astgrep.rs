@@ -394,3 +394,44 @@ fn json_rule_fires_on_a_jsonc_file() {
         "a `language: json` rule must fire on a .jsonc file; got: {diags:?}"
     );
 }
+
+/// The **built-in pack** must pass its own `*-test.yml` corpora.
+///
+/// `shipped_rule_library_passes_its_tests` covers the repo's top-level
+/// `rules/` directory; the pack embedded in the binary had no equivalent, so
+/// its 26 rules were verified only when someone remembered to run
+/// `poly rules test crates/poly-core/src/engines/astgrep/builtin/` by hand.
+/// That is the pack a default `poly lint` actually runs, and a refactor of how
+/// its rules resolve — extracting shared `utils:` into global rules, say —
+/// could change what they match with nothing failing.
+///
+/// The pack is loaded here as an ordinary rule directory, which is the same
+/// path `poly rules test` takes, so this also pins that the pack's YAML stays
+/// loadable by the user-rule loader rather than depending on `builtin_pack`'s
+/// own parse.
+#[test]
+fn builtin_pack_passes_its_own_test_corpora() {
+    let root = concat!(env!("CARGO_MANIFEST_DIR"), "/src/engines/astgrep/builtin").to_string();
+    let report = poly_core::engines::astgrep::test::run_tests(&[root]).unwrap();
+
+    assert!(
+        report.missing_rule_ids.is_empty(),
+        "pack test files name unknown rule ids: {:?}",
+        report.missing_rule_ids
+    );
+    assert!(
+        report.passed() > 0,
+        "expected the built-in pack to run some snippet checks"
+    );
+    assert_eq!(
+        report.failed(),
+        0,
+        "built-in pack has failing snippets: {:?}",
+        report
+            .outcomes
+            .iter()
+            .filter(|o| !o.passed)
+            .map(|o| (&o.rule_id, o.kind, o.index))
+            .collect::<Vec<_>>()
+    );
+}
