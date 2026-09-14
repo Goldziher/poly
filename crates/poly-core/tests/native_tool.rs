@@ -477,3 +477,72 @@ fn rustfmt_uses_own_default_without_config() {
          100-column default; got Unchanged — poly may still be forcing max_width = 120"
     );
 }
+
+/// Known-unformatted Shell: an over-indented function body, indented with
+/// neither of the two conventions poly can emit, so each fixture below has to
+/// reindent it and the two cannot pass on the same output.
+const SHELL_UNFORMATTED: &str = "greet() {\n      echo hi\n}\n";
+
+fn shell_cfg(indent_width: usize, use_tabs: bool) -> EngineConfig {
+    let mut options = toml::Table::new();
+    options.insert("enabled".to_string(), toml::Value::Boolean(true));
+    if use_tabs {
+        options.insert("use_tabs".to_string(), toml::Value::Boolean(true));
+    }
+    EngineConfig {
+        globals: GlobalDefaults::default(),
+        indent_width,
+        options,
+    }
+}
+
+fn format_shell(cfg: &EngineConfig) -> String {
+    let engine = NativeToolEngine::shell_format();
+    let src = make_src("script.sh", Language::Shell, SHELL_UNFORMATTED);
+    match engine.format(&src, cfg).unwrap() {
+        FormatOutput::Formatted(s) => s,
+        FormatOutput::Unchanged => panic!("expected shfmt to reformat the unformatted source"),
+    }
+}
+
+#[test]
+fn shell_indents_with_spaces_by_default() {
+    let engine = NativeToolEngine::shell_format();
+    if !engine.is_available() {
+        eprintln!("shfmt not found on PATH — skipping shell_indents_with_spaces_by_default");
+        return;
+    }
+
+    assert_eq!(format_shell(&shell_cfg(2, false)), "greet() {\n  echo hi\n}\n");
+}
+
+/// `use_tabs` must reach shfmt as `-i 0`.
+///
+/// poly's shared `indent_width` cannot express this: `Config::engine_config`
+/// filters `0` out as "unset" for every engine. Without a key of its own, a
+/// tab-indented shell tree could not adopt poly's formatter without a
+/// whole-tree reindent, which is the reason such repos leave it off. ~keep
+#[test]
+fn shell_indents_with_tabs_when_configured() {
+    let engine = NativeToolEngine::shell_format();
+    if !engine.is_available() {
+        eprintln!("shfmt not found on PATH — skipping shell_indents_with_tabs_when_configured");
+        return;
+    }
+
+    assert_eq!(format_shell(&shell_cfg(2, true)), "greet() {\n\techo hi\n}\n");
+}
+
+/// The indent width must still be honoured when tabs are off, or the option
+/// would read as "tabs vs. two spaces" rather than "tabs vs. the configured
+/// width" and a four-space repo would be silently reindented. ~keep
+#[test]
+fn shell_honours_a_non_default_indent_width() {
+    let engine = NativeToolEngine::shell_format();
+    if !engine.is_available() {
+        eprintln!("shfmt not found on PATH — skipping shell_honours_a_non_default_indent_width");
+        return;
+    }
+
+    assert_eq!(format_shell(&shell_cfg(4, false)), "greet() {\n    echo hi\n}\n");
+}

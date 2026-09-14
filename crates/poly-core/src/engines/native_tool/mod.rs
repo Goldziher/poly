@@ -171,6 +171,19 @@ impl NativeToolEngine {
         }
     }
 
+    /// Whether this tool should indent with tabs rather than spaces.
+    ///
+    /// Only meaningful for tools carrying `format_indent_flag`; shfmt is the
+    /// one such tool today, and tab-indented shell is common enough that the
+    /// alternative — a whole-tree reformat on adoption — is what keeps repos
+    /// from turning the formatter on at all. Off unless the user asks. ~keep
+    fn use_tabs(&self, cfg: &EngineConfig) -> bool {
+        cfg.options
+            .get("use_tabs")
+            .and_then(toml::Value::as_bool)
+            .unwrap_or(false)
+    }
+
     /// Whether the native tool is *wanted* for this run: the explicit
     /// `enabled = …` from user config if present, otherwise the tool's
     /// `default_on` policy.
@@ -401,7 +414,7 @@ impl Engine for NativeToolEngine {
                     self.notify_tier2_fallback(cfg);
                     return TreeSitterEngine.format(src, cfg);
                 }
-                format_via_tool(self.role.spec(), src, cfg.indent_width)
+                format_via_tool(self.role.spec(), src, cfg.indent_width, self.use_tabs(cfg))
             }
             NativeRole::Shellcheck => Ok(FormatOutput::Unchanged),
         }

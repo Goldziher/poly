@@ -15,7 +15,11 @@ use super::spec::ToolSpec;
 /// (stdin → stdout).
 ///
 /// `indent_width` is injected as `-i {indent_width}` when
-/// `spec.format_indent_flag` is true (used by shfmt).
+/// `spec.format_indent_flag` is true (used by shfmt). `use_tabs` overrides it
+/// with `-i 0`, which is how shfmt spells "indent with tabs": poly's shared
+/// `indent_width` cannot carry that value, because `Config::engine_config`
+/// filters `0` out as "unset" for every engine, so the tab convention needs a
+/// key of its own rather than a magic width. ~keep
 ///
 /// For rustfmt (`spec.rustfmt_config_flag`), the child runs in the source
 /// file's directory so rustfmt discovers the governing `rustfmt.toml` itself;
@@ -38,7 +42,12 @@ use super::spec::ToolSpec;
 /// draining — would wedge both processes forever. Writing stdin inline on this
 /// thread (a former fast path for small inputs) is unsound for exactly that
 /// reason and must not be reintroduced.
-pub(crate) fn format_via_tool(spec: &ToolSpec, src: &SourceFile, indent_width: usize) -> anyhow::Result<FormatOutput> {
+pub(crate) fn format_via_tool(
+    spec: &ToolSpec,
+    src: &SourceFile,
+    indent_width: usize,
+    use_tabs: bool,
+) -> anyhow::Result<FormatOutput> {
     let format_binary = spec
         .format_binary
         .expect("format_via_tool called on a lint-only ToolSpec");
@@ -47,7 +56,11 @@ pub(crate) fn format_via_tool(spec: &ToolSpec, src: &SourceFile, indent_width: u
 
     if spec.format_indent_flag {
         cmd.arg("-i");
-        cmd.arg(indent_width.to_string());
+        cmd.arg(if use_tabs {
+            "0".to_string()
+        } else {
+            indent_width.to_string()
+        });
     }
     if spec.edition_flag {
         cmd.arg("--edition");
@@ -179,7 +192,7 @@ mod tests {
         // of hanging the whole suite.
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
-            let _ = tx.send(format_via_tool(&TR_SPEC, &src, 4));
+            let _ = tx.send(format_via_tool(&TR_SPEC, &src, 4, false));
         });
         let result = rx
             .recv_timeout(Duration::from_secs(30))

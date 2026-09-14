@@ -7,6 +7,18 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+### Added
+
+- **`use_tabs` for shfmt, so tab-indented shell trees can adopt the formatter.** poly injects
+  `-i <indent_width>` for shfmt, and `Config::engine_config` filters `0` out as "unset" for every
+  engine — so the one value shfmt uses to mean "indent with tabs" was the one value poly could not
+  send. A repo whose shell is tab-indented therefore had to accept a whole-tree reindent as the
+  price of turning shfmt on, which in practice meant leaving it off. `[fmt.shell.shfmt] use_tabs =
+  true` emits `-i 0` instead. Measured on a 65-file tab-indented repo: 61 files reformatted before,
+  zero after, with the formatter genuinely running in both cases.
+
+  Off by default, and `indent_width` still governs the width when it is off.
+
 ### Changed
 
 - **ast-grep rule directories support a shared `utils.yml`.** A file by that name in a rule

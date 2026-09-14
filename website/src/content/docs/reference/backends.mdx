@@ -62,6 +62,13 @@ destructive rewrite.
     default-on one. See [Turning one engine off](/poly/guides/configuration/#turning-one-engine-off).
 </Aside>
 
+<Aside type="tip" title="Tab-indented shell">
+    `shfmt` receives `-i <indent_width>`, and `indent_width` cannot be `0` — the value shfmt uses to
+    mean "indent with tabs". Set `[fmt.shell.shfmt] use_tabs = true` for a tree that indents shell
+    with tabs; otherwise turning the formatter on reindents every file in it. `indent_width` still
+    sets the width when `use_tabs` is off.
+</Aside>
+
 ## The two cross-cutting lint tiers
 
 Beyond the dedicated backends above, two lint tiers run on **every** language:
