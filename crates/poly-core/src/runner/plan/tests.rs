@@ -79,7 +79,7 @@ fn tier_one_formatter_prevents_catalog_formatter_chaining() {
     for language in [Language::JavaScript, Language::TypeScript, Language::Jsx, Language::Tsx] {
         let engines = engines_for(&language);
         assert!(
-            has_tier_one_formatter(&engines, Kind::Format),
+            has_tier_one_formatter(&engines, &language, &config, Kind::Format),
             "{language:?} must remain owned by its tier-one formatter"
         );
         let plan = plan_engines(&language, &config, Kind::Format, unrestricted(), &mut None);
@@ -438,15 +438,73 @@ fn a_disabled_tier_one_formatter_stops_suppressing_the_catalog_tier() {
 
     let on = retaining_enabled(capable(), &Language::JavaScript, &enabled, Kind::Format, &mut None);
     assert!(
-        has_tier_one_formatter(&on, Kind::Format),
+        has_tier_one_formatter(&on, &Language::JavaScript, &enabled, Kind::Format),
         "oxc owns JavaScript formatting while it is on"
     );
 
     let off = retaining_enabled(capable(), &Language::JavaScript, &disabled, Kind::Format, &mut None);
     assert!(
-        !has_tier_one_formatter(&off, Kind::Format),
+        !has_tier_one_formatter(&off, &Language::JavaScript, &disabled, Kind::Format),
         "a disabled formatter is not a tier-one formatter, and must not keep the catalog tier out"
     );
+}
+
+/// The same hazard, one step further out: an opt-in native tool that was never
+/// switched on at all.
+///
+/// `retaining_enabled` drops only an explicit `enabled = false`, so shfmt --
+/// and zig fmt, ktfmt, swift-format, styler, and the rest, all of which default
+/// to off -- survived that filter and still counted as a tier-one formatter.
+/// The catalog tier was withdrawn on behalf of a backend that formats nothing,
+/// and `[tools.shfmt] enabled = true` did nothing at all while `poly fmt`
+/// reported "All formatted" over shell it had never handed to shfmt.
+///
+/// Default config, no `[fmt.shell.shfmt]` anywhere: exactly the state every
+/// consumer is in until they opt in.
+#[test]
+fn an_opt_in_formatter_that_was_never_enabled_does_not_suppress_the_catalog_tier() {
+    let config = Config::default();
+    let engines = retaining_enabled(
+        retaining_capable(engines_for(&Language::Shell), Kind::Format),
+        &Language::Shell,
+        &config,
+        Kind::Format,
+        &mut None,
+    );
+
+    assert!(
+        !has_tier_one_formatter(&engines, &Language::Shell, &config, Kind::Format),
+        "shfmt is off by default, so it must not withdraw the catalog tier on shell's behalf"
+    );
+}
+
+/// And the enabled case still holds, or the fix above would simply have turned
+/// the suppression off for everyone and let a catalog tool run alongside the
+/// built-in that already owns the language.
+#[test]
+fn an_enabled_opt_in_formatter_still_suppresses_the_catalog_tier() {
+    let config = Config {
+        fmt: toml::from_str("[shell.shfmt]\nenabled = true\n").expect("valid fmt config"),
+        ..Config::default()
+    };
+    let engines = retaining_enabled(
+        retaining_capable(engines_for(&Language::Shell), Kind::Format),
+        &Language::Shell,
+        &config,
+        Kind::Format,
+        &mut None,
+    );
+
+    // Only meaningful where shfmt is installed: the predicate also probes PATH,
+    // and on a host without it the honest answer is "not a tier-one formatter".
+    if crate::engines::native_tool::NativeToolEngine::shell_format().is_available() {
+        assert!(
+            has_tier_one_formatter(&engines, &Language::Shell, &config, Kind::Format),
+            "an enabled and installed shfmt owns shell formatting"
+        );
+    } else {
+        eprintln!("shfmt not found on PATH — skipping the enabled half of the assertion");
+    }
 }
 
 /// The universal `enabled` key disables *any* engine, including a tier-one

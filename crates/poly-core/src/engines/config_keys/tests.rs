@@ -424,11 +424,15 @@ const ENGINE_SOURCES: &[(&str, &[&str])] = &[
     ("quality", &["quality/settings.rs"]),
     ("uncomment", &["uncomment.rs"]),
     ("astgrep", &["astgrep/mod.rs"]),
-    // Every wrapped toolchain binary shares one implementation and one key.
+    // Every wrapped toolchain binary shares one implementation and one key —
+    // except shfmt, which also takes `use_tabs`. That read is sited in its own
+    // module precisely so this scan attributes it to shfmt alone; siting it in
+    // the shared mod.rs would force the key to be declared on ten tools that
+    // ignore it.
     ("gofmt", &["native_tool/mod.rs"]),
     ("rustfmt", &["native_tool/mod.rs"]),
     ("zigfmt", &["native_tool/mod.rs"]),
-    ("shfmt", &["native_tool/mod.rs"]),
+    ("shfmt", &["native_tool/mod.rs", "native_tool/tabs.rs"]),
     ("shellcheck", &["native_tool/mod.rs"]),
     ("google-java-format", &["native_tool/mod.rs"]),
     ("ktfmt", &["native_tool/mod.rs"]),

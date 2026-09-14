@@ -113,11 +113,12 @@ fn generic_formatter_superseded(kind: Kind, catalog: &[Box<dyn Engine>]) -> bool
 
 /// Resolve the engines (filtered to those with the requested capability) for a
 /// language, pre-resolving each one's config and serialising its args once.
-fn has_tier_one_formatter(engines: &[Box<dyn Engine>], kind: Kind) -> bool {
+fn has_tier_one_formatter(engines: &[Box<dyn Engine>], language: &Language, config: &Config, kind: Kind) -> bool {
     kind == Kind::Format
-        && engines
-            .iter()
-            .any(|engine| engine.name() != TREE_SITTER_ENGINE && engine.capabilities().format)
+        && engines.iter().any(|engine| {
+            engine.name() != TREE_SITTER_ENGINE
+                && engine.provides_language_format(language, &config.engine_config(language, engine.name(), kind))
+        })
 }
 
 /// Drop the engines that lack the capability `kind` asks for, so the collision
@@ -144,19 +145,22 @@ fn retaining_capable(engines: Vec<Box<dyn Engine>>, kind: Kind) -> Vec<Box<dyn E
 /// lints nothing, and letting *that* displace the catalog engine would trade a
 /// duplicated diagnostic for no diagnostic at all.
 ///
-/// Formatting never reaches this question with a real contender:
-/// [`has_tier_one_formatter`] already yields the whole catalog to a registry
-/// formatter, so a `Kind::Format` collision can only involve the generic tier,
-/// which the built-in rightly owns.
+/// Both kinds ask the same question, of the capability being planned. Format
+/// used to answer an unconditional `true` on the reasoning that
+/// [`has_tier_one_formatter`] had already yielded the catalog to any registry
+/// formatter — true only while that predicate counted disabled opt-in tools as
+/// formatters. Now that it asks whether the backend would really format, a
+/// `Kind::Format` collision can reach here with a built-in that does nothing,
+/// and displacing the catalog tool with it would trade a working formatter for
+/// none — the same trade the lint arm has always refused.
+///
+/// Costs a `PATH` probe or a rule-pack load, but `plan_engines` runs once per
+/// (config, language) — never per file — so it stays out of the hot loop.
 fn builtin_displaces_catalog_tool(builtin: &dyn Engine, language: &Language, config: &Config, kind: Kind) -> bool {
+    let cfg = config.engine_config(language, builtin.name(), kind);
     match kind {
-        Kind::Format => true,
-        // Costs a `PATH` probe or a rule-pack load, but `plan_engines` runs once
-        // per (config, language) — never per file — so it stays out of the hot loop.
-        Kind::Lint => {
-            let cfg = config.engine_config(language, builtin.name(), kind);
-            builtin.provides_language_lint(language, &cfg)
-        }
+        Kind::Format => builtin.provides_language_format(language, &cfg),
+        Kind::Lint => builtin.provides_language_lint(language, &cfg),
     }
 }
 
@@ -273,7 +277,16 @@ pub(super) fn plan_engines(
     // formatter is not a tier-one formatter, and asking first discarded the
     // catalog list on its behalf — so switching off `gofmt` to reach for a
     // catalog formatter produced neither.
-    let catalog = if has_tier_one_formatter(&engines, kind) {
+    //
+    // Ordering alone was not enough. `retaining_enabled` drops only an explicit
+    // `enabled = false`, so an opt-in native tool that was never switched on —
+    // shfmt, zig fmt, ktfmt, swift-format and the rest default to off — survived
+    // it and still counted as tier one. `[tools.shfmt] enabled = true` was
+    // therefore discarded here on behalf of a formatter that does nothing, with
+    // no diagnostic: `poly fmt` reported "All formatted" over shell it had never
+    // given to shfmt. The question is now whether the backend would actually
+    // format, which is what the lint side has always asked. ~keep
+    let catalog = if has_tier_one_formatter(&engines, language, config, kind) {
         Vec::new()
     } else {
         retaining_capable(catalog_engines_for(language, config, kind), kind)

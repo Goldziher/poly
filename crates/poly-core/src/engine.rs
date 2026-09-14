@@ -541,6 +541,22 @@ pub trait Engine: Send + Sync {
         !self.languages().is_empty()
     }
 
+    /// Whether this backend would actually **format** `language` under `cfg`.
+    ///
+    /// The format-side counterpart of [`Engine::provides_language_lint`], and it
+    /// exists for the same reason: an opt-in native tool that is switched off or
+    /// missing from `PATH` formats nothing, and a planner that counts it as a
+    /// working formatter withdraws the catalog tier on its behalf — leaving the
+    /// language with no formatter at all while the config reads as though one
+    /// were configured.
+    ///
+    /// Defaults to the declared capability. Backends whose answer depends on the
+    /// host or the config override it; as with the lint side, a `true` here is a
+    /// claim the run relies on and must not be made speculatively.
+    fn provides_language_format(&self, _language: &Language, _cfg: &EngineConfig) -> bool {
+        self.capabilities().format
+    }
+
     /// Why this backend declines to process `src`, if it does.
     ///
     /// Some content is routed to a backend that cannot safely handle it — YAML

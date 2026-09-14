@@ -105,6 +105,7 @@ mod format;
 mod lint;
 mod probe;
 mod spec;
+mod tabs;
 #[cfg(test)]
 mod tests;
 mod tool_config;
@@ -169,19 +170,6 @@ impl NativeToolEngine {
         NativeToolEngine {
             role: NativeRole::Shellcheck,
         }
-    }
-
-    /// Whether this tool should indent with tabs rather than spaces.
-    ///
-    /// Only meaningful for tools carrying `format_indent_flag`; shfmt is the
-    /// one such tool today, and tab-indented shell is common enough that the
-    /// alternative — a whole-tree reformat on adoption — is what keeps repos
-    /// from turning the formatter on at all. Off unless the user asks. ~keep
-    fn use_tabs(&self, cfg: &EngineConfig) -> bool {
-        cfg.options
-            .get("use_tabs")
-            .and_then(toml::Value::as_bool)
-            .unwrap_or(false)
     }
 
     /// Whether the native tool is *wanted* for this run: the explicit
@@ -308,12 +296,27 @@ impl Engine for NativeToolEngine {
         self.capabilities().lint && self.is_enabled(cfg) && self.probed_version().is_some()
     }
 
-    /// One key, uniform across every wrapped toolchain binary: `enabled`.
-    /// A native tool takes no poly-side options — it is the host's own
-    /// formatter, configured by the host's own config file.
+    fn provides_language_format(&self, _language: &Language, cfg: &EngineConfig) -> bool {
+        self.capabilities().format && self.is_enabled(cfg) && self.probed_version().is_some()
+    }
+
+    /// `enabled` is uniform across every wrapped toolchain binary — a native
+    /// tool otherwise takes no poly-side options, being the host's own formatter
+    /// configured by the host's own config file.
+    ///
+    /// `use_tabs` is the one exception, and only for the tools that take an
+    /// indent flag. It exists because poly sends `-i <indent_width>` and the
+    /// shared `indent_width` cannot be `0`, the value shfmt reads as "tabs".
     fn option_keys(&self, table: OptionTable) -> OptionKeys {
         match table {
-            OptionTable::Lint | OptionTable::Format => OptionKeys::declared(&[("enabled", OptionType::BOOLEAN)]),
+            OptionTable::Lint => OptionKeys::declared(&[("enabled", OptionType::BOOLEAN)]),
+            OptionTable::Format => {
+                if self.role.spec().format_indent_flag {
+                    OptionKeys::declared(&[("enabled", OptionType::BOOLEAN), ("use_tabs", OptionType::BOOLEAN)])
+                } else {
+                    OptionKeys::declared(&[("enabled", OptionType::BOOLEAN)])
+                }
+            }
             OptionTable::CrossCuttingLint => OptionKeys::UNCHECKED,
         }
     }
@@ -414,7 +417,7 @@ impl Engine for NativeToolEngine {
                     self.notify_tier2_fallback(cfg);
                     return TreeSitterEngine.format(src, cfg);
                 }
-                format_via_tool(self.role.spec(), src, cfg.indent_width, self.use_tabs(cfg))
+                format_via_tool(self.role.spec(), src, cfg.indent_width, tabs::use_tabs(cfg))
             }
             NativeRole::Shellcheck => Ok(FormatOutput::Unchanged),
         }

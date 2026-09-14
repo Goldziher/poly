@@ -7,6 +7,33 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+### Fixed
+
+- **An opt-in formatter that was never turned on no longer suppresses the catalog tier.** Whether
+  poly consults `[tools.<name>]` formatters at all is decided by "does this language already have a
+  tier-one formatter?", and that question was answered from declared *capability* rather than from
+  whether the backend would actually run. Every native formatter that defaults to off — `shfmt`,
+  `zig fmt`, `ktfmt`, `google-java-format`, `swift-format`, `styler`, `dart format`, `gleam format`
+  — therefore counted as a working formatter while doing nothing, and withdrew the catalog tier on
+  the language's behalf.
+
+  The visible result: `[tools.shfmt] enabled = true` did nothing whatsoever, and `poly fmt --check`
+  reported `All formatted.` over shell files `shfmt -l` flags. Nothing was logged; the catalog list
+  was discarded before reaching the code that warns about a displaced tool. Measured across a
+  nine-repository estate, seven repositories carried that setting and none of them had ever had a
+  shell file formatted.
+
+  An earlier fix moved this question after the `enabled` filter so an explicitly disabled formatter
+  would stop suppressing the catalog. That was the same bug one step in: the filter drops only an
+  explicit `enabled = false`, so a formatter that was never switched on at all sailed past it. Both
+  paths now ask `Engine::provides_language_format` — the counterpart of the `provides_language_lint`
+  the lint side has always asked.
+
+  **Behaviour change on upgrade:** a config that enables a catalog formatter for a language whose
+  built-in formatter is off now formats those files, because that is what it asked for. Enable the
+  built-in instead (`[fmt.shell.shfmt] enabled = true`) to keep poly's own wrapper, which still
+  takes precedence whenever it is on.
+
 ### Added
 
 - **`use_tabs` for shfmt, so tab-indented shell trees can adopt the formatter.** poly injects
