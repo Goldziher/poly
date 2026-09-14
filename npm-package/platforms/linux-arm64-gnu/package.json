@@ -1,6 +1,6 @@
 {
   "name": "@goldziher/polylint-linux-arm64-gnu",
-  "version": "0.24.0",
+  "version": "0.25.0",
   "description": "The Linux arm64 (glibc) poly binary for @goldziher/polylint. Not useful on its own.",
   "homepage": "https://github.com/Goldziher/poly#readme",
   "bugs": {
