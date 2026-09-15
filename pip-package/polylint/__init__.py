@@ -5,6 +5,6 @@ shims; the tool itself is the `poly` executable, documented at
 https://github.com/Goldziher/poly.
 """
 
-__version__ = "0.25.0"
+__version__ = "0.26.0"
 
 __all__ = ["__version__"]

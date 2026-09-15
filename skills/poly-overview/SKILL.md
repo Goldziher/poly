@@ -6,7 +6,7 @@ description: "What poly is — the native, tree-sitter, native-toolchain, qualit
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
 Content-Hash: blake3:1caf5d0228e11f40e7960822a9f21f3505a2e1be5b0ebdda990eb92b91da3762
-Source-Hash: blake3:5ba27b74b68925b4f6b719c3a0bdc7620afc2e4054412d1599e4897f76acb4a5
+Source-Hash: blake3:b0fbdd459a2f14c765bb72bb51e4541aec552d2bd3b84d6497457dbd68012c24
 Schema-Version: v1
 -->
 

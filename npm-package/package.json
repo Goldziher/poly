@@ -1,6 +1,6 @@
 {
   "name": "@goldziher/polylint",
-  "version": "0.25.0",
+  "version": "0.26.0",
   "description": "Universal zero-dependency linter & formatter. Installs the prebuilt poly binary and puts `poly` on PATH.",
   "keywords": ["linter", "formatter", "lint", "format", "polyglot", "poly", "rust"],
   "homepage": "https://github.com/Goldziher/poly#readme",
@@ -21,12 +21,12 @@
   "main": "index.js",
   "files": ["LICENSE", "README.md", "index.js", "bin/poly.js"],
   "optionalDependencies": {
-    "@goldziher/polylint-darwin-arm64": "0.25.0",
-    "@goldziher/polylint-darwin-x64": "0.25.0",
-    "@goldziher/polylint-linux-arm64-gnu": "0.25.0",
-    "@goldziher/polylint-linux-x64-gnu": "0.25.0",
-    "@goldziher/polylint-linux-x64-musl": "0.25.0",
-    "@goldziher/polylint-win32-x64": "0.25.0"
+    "@goldziher/polylint-darwin-arm64": "0.26.0",
+    "@goldziher/polylint-darwin-x64": "0.26.0",
+    "@goldziher/polylint-linux-arm64-gnu": "0.26.0",
+    "@goldziher/polylint-linux-x64-gnu": "0.26.0",
+    "@goldziher/polylint-linux-x64-musl": "0.26.0",
+    "@goldziher/polylint-win32-x64": "0.26.0"
   },
   "engines": {
     "node": ">=18"

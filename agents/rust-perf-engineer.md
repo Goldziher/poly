@@ -7,7 +7,7 @@ model: sonnet
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
 Content-Hash: blake3:850f315193aed7f9988fe7132cab372bccfc633681036bda204bc9b56ae04361
-Source-Hash: blake3:5ba27b74b68925b4f6b719c3a0bdc7620afc2e4054412d1599e4897f76acb4a5
+Source-Hash: blake3:b0fbdd459a2f14c765bb72bb51e4541aec552d2bd3b84d6497457dbd68012c24
 Schema-Version: v1
 -->
 
