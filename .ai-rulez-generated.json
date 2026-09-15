@@ -1,15 +1,15 @@
 {
   "schema_version": "v1",
-  "source_hash": "blake3:b0fbdd459a2f14c765bb72bb51e4541aec552d2bd3b84d6497457dbd68012c24",
+  "source_hash": "blake3:36d4c950730ab85998eb30a861fcd61d2a72661d2d8f71867e7bf819d01b40fd",
   "outputs": {
     ".claude-plugin/marketplace.json": {
-      "content_hash": "blake3:0d809d00f8f61d1223227781dc3a3a600f7085bd4f412548cfc5e259c1070222"
+      "content_hash": "blake3:6b75bc18fb438c0bc1494719052759e6c5e54068909467ddc0d5a6b98f7bc5ee"
     },
     ".claude-plugin/plugin.json": {
-      "content_hash": "blake3:053e6af1bf2f4fbfa2169797ea672a230eb8e90bed8d907f4d942418864afda7"
+      "content_hash": "blake3:9650acebadf7fd411d47e5d7f270d4aad817b0af436a49254f0602da9ff611a9"
     },
     ".codex-plugin/plugin.json": {
-      "content_hash": "blake3:7732e3fb25ed05dba3820efcdc30bc1b26673497b86514bba2842d016665548c"
+      "content_hash": "blake3:9ceea9e3d951b138c89bb9c9aed95c9b5d5a7dbc70c17cfb2906360f5741eac3"
     },
     ".cursor-plugin/commands/poly-check.md": {
       "content_hash": "blake3:21ec175c4236b9a5ccb8f54769bf0ae41734faf8eb9b4010734c295f379bdb18"
@@ -18,7 +18,7 @@
       "content_hash": "blake3:aefedcccf8e34cd75d79f5dfc885cdd00241b405b5e50461c42344db3c4d4a88"
     },
     ".cursor-plugin/plugin.json": {
-      "content_hash": "blake3:e1ef74db768867f5495cb8338cde4ee86816eb2cda2718d8dd307683f947835b"
+      "content_hash": "blake3:64b89c53e8659632568d2fedb476662dca5840bb424607ac5f82ef5893da1105"
     },
     ".cursor-plugin/skills/poly-lint-and-format/SKILL.md": {
       "content_hash": "blake3:d208bf5eb2480ca8f2fe2cafa779945b1dd2ca529962d3f1bdebf1f32ee1c94d"
@@ -36,7 +36,7 @@
       "content_hash": "blake3:4f049de71c0c76f12b0a0733a8856b5e7521c18178ff6270462a4545b710cd6b"
     },
     ".factory-plugin/plugin.json": {
-      "content_hash": "blake3:b7205df4d12927a6f04be7e633813a89f326b1a87ec1ea647b65e8d62983b690"
+      "content_hash": "blake3:31d3f6afb06d4f1710f12f91ca258389b6adcc360e72edb3d3cd50697d9c8263"
     },
     ".mcp.json": {
       "content_hash": "blake3:1f48ad7a5c9b4d3cd0492e560670931680c92b238653e17bfa39225b56f91c9b"
@@ -57,13 +57,13 @@
       "content_hash": "blake3:aefedcccf8e34cd75d79f5dfc885cdd00241b405b5e50461c42344db3c4d4a88"
     },
     "gemini-extension.json": {
-      "content_hash": "blake3:a5f7ea13ba8617d22f194312dc84b32cac0a40dfc15f55d5ae7e4dda84ef8d48"
+      "content_hash": "blake3:d7ab59f611ebd9c96768ecadcaeafa3d718afcf2f4196935c30785314064e888"
     },
     "kimi.plugin.json": {
-      "content_hash": "blake3:57fe0503e82c608e336d715391684fe8707ff031357a687bcd6f0537fb5943cc"
+      "content_hash": "blake3:7f5056d1ef38ea2b8435930b208c69ddb7e83eff50cd3b9c3e10cf84bd275a1e"
     },
     "package.json": {
-      "content_hash": "blake3:fa9ec02872758b5d1477099212f80a66e094f3870e118bbacd0bc11ff92fa2c3"
+      "content_hash": "blake3:d946ea051821a173337e2e05878f1dac4c7d41397498f87359895ba99fcea76d"
     },
     "skills/poly-lint-and-format/SKILL.md": {
       "content_hash": "blake3:d208bf5eb2480ca8f2fe2cafa779945b1dd2ca529962d3f1bdebf1f32ee1c94d"

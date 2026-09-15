@@ -6,7 +6,7 @@ description: "The poly MCP server — the eleven tools and which are read-only v
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
 Content-Hash: blake3:2ceee64a619ac4d86ebeb8badbeeb50cd33bc1c277ba3d00765558a1202b7194
-Source-Hash: blake3:b0fbdd459a2f14c765bb72bb51e4541aec552d2bd3b84d6497457dbd68012c24
+Source-Hash: blake3:36d4c950730ab85998eb30a861fcd61d2a72661d2d8f71867e7bf819d01b40fd
 Schema-Version: v1
 -->
 
