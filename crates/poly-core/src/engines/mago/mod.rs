@@ -103,7 +103,7 @@ impl Engine for MagoEngine {
     }
 
     fn version(&self) -> &str {
-        "mago-1.47.4+advisory-sev1"
+        "mago-1.48.1+advisory-sev1"
     }
 
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {

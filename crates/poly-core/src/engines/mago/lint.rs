@@ -232,7 +232,7 @@ fn build_only_list(
 /// `[lint.php.mago.rules.<code>] level = "error"`, which [`issue_severity`]
 /// applies *before* this downgrade.
 ///
-/// Verified against mago-linter 1.47.3: `src/rule/maintainability/`
+/// Verified against mago-linter 1.48.1: `src/rule/maintainability/`
 /// `cyclomatic_complexity.rs`, `excessive_parameter_list.rs`, `kan_defect.rs`,
 /// `too_many_enum_cases.rs`, `too_many_methods.rs`, `too_many_properties.rs`
 /// each declare `level: Level::Error` in their `impl Default for …Config`.
