@@ -6,7 +6,7 @@ description: "poly's coverage tiers (native / tree-sitter / native-toolchain / q
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
 Content-Hash: blake3:4f049de71c0c76f12b0a0733a8856b5e7521c18178ff6270462a4545b710cd6b
-Source-Hash: blake3:36d4c950730ab85998eb30a861fcd61d2a72661d2d8f71867e7bf819d01b40fd
+Source-Hash: blake3:f9a65b603cd06e8276fdeb68ca9a2f8fa5b9d69bb5af1250f5c00753f78a2bee
 Schema-Version: v1
 -->
 

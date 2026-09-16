@@ -5,7 +5,7 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
-## [Unreleased]
+## [0.28.0] - 2026-09-16
 
 ### Added
 
@@ -75,6 +75,11 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   token (no `if x\nthen` → `if x; then`, no `b|c)` → `b | c)`). It is the zero-dependency floor,
   and `shfmt` still supersedes it when present.
 
+  One known divergence: for a `cmd ||` continuation followed by a `{ … }` block, `shfmt` indents
+  the block relative to the continuation line's own indent, while tier-2 counts levels from column
+  0. A file written that way is a fixed point for one formatter and not the other, so it reports as
+  unformatted on hosts that disagree. Writing the guard as `if ! cmd; then … fi` avoids it.
+
   Measured over 488 real third-party shell files (Homebrew, `/usr/share`, the corpus B trees):
   **204 reformatted, a second pass changed nothing, no file went from syntactically valid to
   invalid, no non-whitespace byte changed, and all 2,023 heredoc body/terminator lines — located
@@ -99,6 +104,24 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   `tables[<language>][<engine>]`, so `[fmt.shell] indent_width = 4` parses without complaint and
   silently does nothing. No cache invalidation is needed by hand — `__indent_width` is already
   folded into the cache key (`runner/plan.rs:376`), so changed output re-runs on its own.
+
+## [0.27.0] - 2026-09-15
+
+### Changed
+
+- Moved the `biome` and `oxc` git pins to upstream head (both had been pinned at 2026-08-29):
+  biome `7d54688` → `99c7049`, oxc `db66f58` → `827fdbd`; `rubyfmt` was already at head. The oxc
+  workspace moved `oxc_formatter` 0.65.0 → 0.68.0 and `oxc_parser` 0.147.0 → 0.150.0.
+
+## [0.26.0] - 2026-09-15
+
+### Changed
+
+- Upgraded dependencies and the engine cache keys that track them: mago 1.47 → 1.48.1, rumdl
+  0.2.62 → 0.2.73, tree-sitter-language-pack 1.15 → 1.18, rmcp 3.1 → 3.3, serde-saphyr 1.1 → 1.2,
+  plus in-range bumps. The affected `Engine::version()` strings move with them — they key the
+  result cache, so a wrapped crate that changes while `version()` does not would leave stale output
+  cached.
 
 ## [0.25.0] - 2026-09-14
 
