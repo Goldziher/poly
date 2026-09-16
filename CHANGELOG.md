@@ -5,6 +5,27 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
+## [Unreleased]
+
+### Changed
+
+- **Shell now defaults to two-space indentation, not four.** `Language::Shell` was never in
+  `default_indent_width`'s two-space list, so it fell through the `_ => 4` catch-all — the fallback
+  firing, not a decision about shell. Two spaces is what modern shell is actually written in and
+  what the Google Shell Style Guide prescribes, and it is the width poly hands to `shfmt -i`.
+
+  Measured over the pinned corpus B trees (10 repositories, 97 `.sh`/`.bash` files, none
+  unparseable): formatting at four spaces rewrites **61 of 97** files and 3,332 diff lines, where
+  two spaces rewrites **19** files and 424 lines. **87% of that churn was the width alone**, not
+  shfmt's structural opinions — 42 files changed for no reason other than poly's own default.
+
+  This affects anyone who had opted into `[fmt.shell.shfmt]`. To keep the old output, set the width
+  on the **engine** table — `[fmt.shell.shfmt] indent_width = 4`. It has to go there and not on the
+  language table: `Config::engine_config` reads `indent_width` from
+  `tables[<language>][<engine>]`, so `[fmt.shell] indent_width = 4` parses without complaint and
+  silently does nothing. No cache invalidation is needed by hand — `__indent_width` is already
+  folded into the cache key (`runner/plan.rs:376`), so changed output re-runs on its own.
+
 ## [0.25.0] - 2026-09-14
 
 ### Fixed

@@ -1,8 +1,8 @@
 ---
-source: crates/poly-core/src/engines/native_tool/mod.rs
+source: crates/poly-core/src/engines/native_tool/tests.rs
 expression: formatted
 ---
 #!/bin/bash
 if [ "$1" = "hello" ]; then
-    echo "world"
+  echo "world"
 fi

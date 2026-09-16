@@ -395,6 +395,13 @@ fn zig_native_formats_unformatted_source() {
 
 /// Known-unformatted shell: shfmt should add consistent indentation.
 /// Skipped when `shfmt` is not on PATH.
+///
+/// The width comes from [`Language::default_indent_width`] rather than the
+/// shared `bool_cfg` helper's hard-coded `4`. Reading it from the language is
+/// what makes this a test of what poly actually emits: pinning the literal here
+/// let the fixture keep asserting four-space output long after the default was
+/// two, which is a snapshot that passes while describing a run nobody can
+/// reproduce. ~keep
 #[test]
 fn shfmt_formats_unformatted_shell() {
     let engine = NativeToolEngine::shell_format();
@@ -404,8 +411,11 @@ fn shfmt_formats_unformatted_shell() {
     }
 
     const UNFORMATTED: &str = "#!/bin/bash\nif [ \"$1\" = \"hello\" ]; then\necho \"world\"\nfi\n";
+    let width = Language::Shell.default_indent_width();
+    let mut cfg = enabled_cfg();
+    cfg.indent_width = width;
     let src = make_src("script.sh", Language::Shell, UNFORMATTED);
-    let result = engine.format(&src, &enabled_cfg()).unwrap();
+    let result = engine.format(&src, &cfg).unwrap();
 
     let formatted = match result {
         FormatOutput::Formatted(s) => s,
@@ -414,9 +424,10 @@ fn shfmt_formats_unformatted_shell() {
         }
     };
 
+    let expected_indent = " ".repeat(width);
     assert!(
-        formatted.contains("    echo"),
-        "shfmt output should use 4-space indentation; got:\n{formatted}"
+        formatted.contains(&format!("{expected_indent}echo")),
+        "shfmt output should use poly's {width}-space default for shell; got:\n{formatted}"
     );
 
     insta::assert_snapshot!("shell_shfmt_known_unformatted", formatted);
