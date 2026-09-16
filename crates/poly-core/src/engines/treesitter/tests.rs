@@ -649,12 +649,41 @@ fn elixir_anonymous_function_body_indented() {
     assert_eq!(text, expected, "fn ... end body must be indented");
 }
 
+/// A grammar with neither a bundled nor a built-in indents query still reaches
+/// whitespace normalization: trailing whitespace is stripped and nothing is
+/// reindented. This is the guarantee `non_member_grammar_still_gets_whitespace_
+/// normalization` used to encode with bash as its example; bash is now a
+/// `BUILTIN_QUERIES` member, so the guarantee is restated here against a grammar
+/// the pack cannot resolve at all.
 #[test]
 fn non_member_grammar_still_gets_whitespace_normalization() {
     let engine = TreeSitterEngine;
+    let input = "alpha   \n    beta\t\n";
+    let s = src("notes.unknownext", Language::Other("no-such-grammar".into()), input);
+    let out = engine.format(&s, &cfg(4)).unwrap();
+    match out {
+        FormatOutput::Formatted(text) => {
+            assert_eq!(
+                text, "alpha\n    beta\n",
+                "trailing whitespace must be stripped and leading indentation left alone"
+            );
+        }
+        FormatOutput::Unchanged => {
+            panic!("trailing whitespace must be Formatted (whitespace stripped), not Unchanged")
+        }
+    }
+}
+
+/// bash now has a built-in indents query, but a flat script contains no block
+/// construct for it to capture. `try_reindent_builtin` returns `None` on an
+/// empty capture set, so the file still lands on whitespace normalization
+/// rather than being flattened to column 0.
+#[test]
+fn bash_script_without_blocks_still_gets_whitespace_normalization() {
+    let engine = TreeSitterEngine;
     let input = "#!/bin/bash   \necho hello   \n";
     let s = src("script.sh", Language::Other("bash".into()), input);
-    let out = engine.format(&s, &cfg(4)).unwrap();
+    let out = engine.format(&s, &cfg(2)).unwrap();
     match out {
         FormatOutput::Formatted(text) => {
             assert_eq!(
@@ -666,4 +695,456 @@ fn non_member_grammar_still_gets_whitespace_normalization() {
             panic!("bash with trailing whitespace must be Formatted (whitespace stripped), not Unchanged")
         }
     }
+}
+
+/// Reindent `input` as bash at two-space width and return the resulting text.
+fn bash(input: &str) -> String {
+    let engine = TreeSitterEngine;
+    let s = src("script.sh", Language::Other("bash".into()), input);
+    formatted_text(engine.format(&s, &cfg(2)).unwrap(), input)
+}
+
+#[test]
+fn bash_if_then_elif_else_fi_reindents_each_branch_body() {
+    let input = concat!(
+        "if [ -n \"$1\" ]; then\n",
+        "echo yes\n",
+        "elif test -f x; then\n",
+        "echo maybe\n",
+        "else\n",
+        "echo no\n",
+        "fi\n",
+    );
+    let expected = concat!(
+        "if [ -n \"$1\" ]; then\n",
+        "  echo yes\n",
+        "elif test -f x; then\n",
+        "  echo maybe\n",
+        "else\n",
+        "  echo no\n",
+        "fi\n",
+    );
+    assert_eq!(
+        bash(input),
+        expected,
+        "if/elif/else bodies indent one level; the branch keywords and `fi` stay at the `if` level"
+    );
+}
+
+#[test]
+fn bash_while_and_for_do_done_reindent_bodies() {
+    let input = concat!(
+        "while read -r line; do\n",
+        "echo \"$line\"\n",
+        "done\n",
+        "\n",
+        "for i in 1 2 3; do\n",
+        "echo \"$i\"\n",
+        "done\n",
+        "\n",
+        "until false; do\n",
+        "echo loop\n",
+        "done\n",
+    );
+    let expected = concat!(
+        "while read -r line; do\n",
+        "  echo \"$line\"\n",
+        "done\n",
+        "\n",
+        "for i in 1 2 3; do\n",
+        "  echo \"$i\"\n",
+        "done\n",
+        "\n",
+        "until false; do\n",
+        "  echo loop\n",
+        "done\n",
+    );
+    assert_eq!(bash(input), expected, "do...done bodies indent one level");
+}
+
+/// `case` patterns sit at the `case` level and their bodies — including the
+/// `;;` terminator — one level in, matching `shfmt`'s default (switch-case
+/// indentation off).
+#[test]
+fn bash_case_item_bodies_and_terminators_indent_one_level() {
+    let input = concat!(
+        "case \"$1\" in\n",
+        "a)\n",
+        "echo a\n",
+        ";;\n",
+        "b|c)\n",
+        "echo bc\n",
+        ";;\n",
+        "*)\n",
+        "echo other\n",
+        ";;\n",
+        "esac\n",
+    );
+    let expected = concat!(
+        "case \"$1\" in\n",
+        "a)\n",
+        "  echo a\n",
+        "  ;;\n",
+        "b|c)\n",
+        "  echo bc\n",
+        "  ;;\n",
+        "*)\n",
+        "  echo other\n",
+        "  ;;\n",
+        "esac\n",
+    );
+    assert_eq!(
+        bash(input),
+        expected,
+        "case patterns stay at the `case` level; bodies and `;;` indent one level"
+    );
+}
+
+#[test]
+fn bash_function_body_and_brace_group_reindent() {
+    let input = concat!(
+        "myfunc() {\n",
+        "local x=1\n",
+        "echo \"$x\"\n",
+        "}\n",
+        "\n",
+        "function other {\n",
+        "echo hi\n",
+        "}\n",
+        "\n",
+        "{\n",
+        "echo group\n",
+        "}\n",
+    );
+    let expected = concat!(
+        "myfunc() {\n",
+        "  local x=1\n",
+        "  echo \"$x\"\n",
+        "}\n",
+        "\n",
+        "function other {\n",
+        "  echo hi\n",
+        "}\n",
+        "\n",
+        "{\n",
+        "  echo group\n",
+        "}\n",
+    );
+    assert_eq!(
+        bash(input),
+        expected,
+        "compound-statement bodies indent one level and the closing brace returns to the opening level"
+    );
+}
+
+#[test]
+fn bash_subshell_and_command_substitution_reindent() {
+    let input = concat!("(\n", "echo sub\n", ")\n", "\n", "x=$(\n", "echo cmd\n", ")\n");
+    let expected = concat!("(\n", "  echo sub\n", ")\n", "\n", "x=$(\n", "  echo cmd\n", ")\n",);
+    assert_eq!(bash(input), expected, "subshell and $( ) interiors indent one level");
+}
+
+/// Process substitution — `done < <( … )` — is a bracket-delimited block like
+/// a subshell, and leaving it out of the model does not merely fail to indent
+/// it: the interior is *de*-indented to column 0.
+#[test]
+fn bash_process_substitution_interior_reindents() {
+    let input = concat!(
+        "while read -r line; do\n",
+        "echo \"$line\"\n",
+        "done < <(\n",
+        "find . -type f\n",
+        "find bin -type f\n",
+        ")\n",
+    );
+    let expected = concat!(
+        "while read -r line; do\n",
+        "  echo \"$line\"\n",
+        "done < <(\n",
+        "  find . -type f\n",
+        "  find bin -type f\n",
+        ")\n",
+    );
+    assert_eq!(
+        bash(input),
+        expected,
+        "the process-substitution body indents one level and its `)` returns to the opening level"
+    );
+}
+
+#[test]
+fn bash_array_literal_elements_indent_one_level() {
+    let input = concat!("arr=(\n", "one\n", "two\n", ")\n");
+    let expected = concat!("arr=(\n", "  one\n", "  two\n", ")\n");
+    assert_eq!(bash(input), expected, "array elements indent one level");
+}
+
+/// The single most dangerous construct: a heredoc body is literal stdin and its
+/// terminator must stay exactly where the author put it (column 0 for `<<`).
+/// Reindenting either corrupts the script, so the whole heredoc — body and
+/// terminator — is emitted verbatim even when the `cat` line itself moves.
+#[test]
+fn bash_heredoc_body_and_terminator_are_emitted_verbatim() {
+    let input = concat!(
+        "f() {\n",
+        "cat <<EOT\n",
+        "  two leading spaces\n",
+        "no leading spaces\n",
+        "EOT\n",
+        "echo done\n",
+        "}\n",
+    );
+    let expected = concat!(
+        "f() {\n",
+        "  cat <<EOT\n",
+        "  two leading spaces\n",
+        "no leading spaces\n",
+        "EOT\n",
+        "  echo done\n",
+        "}\n",
+    );
+    assert_eq!(
+        bash(input),
+        expected,
+        "heredoc body lines and the `EOT` terminator must be byte-identical; only the `cat` line reindents"
+    );
+}
+
+#[test]
+fn bash_dash_heredoc_body_and_terminator_are_emitted_verbatim() {
+    let input = concat!("f() {\n", "cat <<-'EOD'\n", "\ttabbed body\n", "\tEOD\n", "}\n",);
+    let expected = concat!("f() {\n", "  cat <<-'EOD'\n", "\ttabbed body\n", "\tEOD\n", "}\n",);
+    assert_eq!(
+        bash(input),
+        expected,
+        "a <<- heredoc keeps its tab-indented body and terminator byte-for-byte"
+    );
+}
+
+/// A backslash continuation is not a block, and poly cannot tell an aligned
+/// continuation from an indented one. Every line after the first of a
+/// multi-line command is emitted verbatim so poly never fights an author's (or
+/// `shfmt`'s) chosen continuation alignment.
+#[test]
+fn bash_line_continuation_lines_are_left_verbatim() {
+    let input = concat!("f() {\n", "foo \\\n", "    --bar \\\n", "    --baz\n", "}\n");
+    let expected = concat!("f() {\n", "  foo \\\n", "    --bar \\\n", "    --baz\n", "}\n");
+    assert_eq!(
+        bash(input),
+        expected,
+        "the command's first line reindents; its continuation lines are untouched"
+    );
+}
+
+#[test]
+fn bash_and_or_list_and_pipeline_continuations_are_left_verbatim() {
+    let input = concat!("foo &&\n", "  bar &&\n", "  baz\n", "\n", "a |\n", "  b |\n", "  c\n",);
+    assert_eq!(
+        bash(input),
+        input,
+        "`&&`/`||` list and pipeline continuation lines keep their existing alignment"
+    );
+}
+
+/// `then` written on its own line is a real shell style. It belongs at the
+/// `if` level, not one level in, so it dedents — but only because it starts its
+/// line.
+#[test]
+fn bash_then_on_its_own_line_stays_at_the_if_level() {
+    let input = concat!("if [ x ]\n", "then\n", "echo t\n", "fi\n");
+    let expected = concat!("if [ x ]\n", "then\n", "  echo t\n", "fi\n");
+    assert_eq!(bash(input), expected, "a leading `then` sits at the `if` level");
+}
+
+/// A closer that is *not* the first token on its line must not dedent that
+/// line: `if ...; then ...; fi` written inline inside a function body is one
+/// statement at the function's body level, and the trailing `fi` is incidental.
+#[test]
+fn bash_inline_fi_does_not_dedent_the_enclosing_block() {
+    let input = concat!("f() {\n", "if [ y ]; then echo inline; fi\n", "}\n");
+    let expected = concat!("f() {\n", "  if [ y ]; then echo inline; fi\n", "}\n");
+    assert_eq!(
+        bash(input),
+        expected,
+        "an inline `fi` is not at line start and must not pull the line out of the function body"
+    );
+}
+
+/// A block opening inside a continuation shape beats the `@indent.keep` that
+/// shape carries. `cmd | while …; do` is a `pipeline` spanning every line of
+/// the loop, and keeping all of them verbatim would leave the loop body at
+/// whatever indentation it arrived with while the pipeline's own line moved —
+/// a file half-reindented in two different units.
+#[test]
+fn bash_block_opened_inside_a_pipeline_still_reindents() {
+    let input = concat!(
+        "f() {\n",
+        "\tgit rev-parse | while read -r d; do\n",
+        "\t\techo \"$d\"\n",
+        "\tdone\n",
+        "}\n",
+    );
+    let expected = concat!(
+        "f() {\n",
+        "  git rev-parse | while read -r d; do\n",
+        "    echo \"$d\"\n",
+        "  done\n",
+        "}\n",
+    );
+    assert_eq!(
+        bash(input),
+        expected,
+        "the do...done body inside a pipeline must reindent, not stay verbatim"
+    );
+}
+
+/// Two blocks that open on the *same* line are one indent level, not two — the
+/// same level-keyed-by-open-line rule the bracket path uses. Here a `case`
+/// pattern and a `{ … }` group both open on the pattern line, and counting them
+/// separately would indent the group's body two levels past a pattern that is
+/// itself at column 0.
+#[test]
+fn bash_two_blocks_opening_on_one_line_are_one_level() {
+    let input = concat!(
+        "case \"$h\" in\n",
+        "[0-9]*) [ \"${#h}\" -eq 64 ] || {\n",
+        "echo bad >&2\n",
+        "exit 1\n",
+        "} ;;\n",
+        "esac\n",
+    );
+    let expected = concat!(
+        "case \"$h\" in\n",
+        "[0-9]*) [ \"${#h}\" -eq 64 ] || {\n",
+        "  echo bad >&2\n",
+        "  exit 1\n",
+        "} ;;\n",
+        "esac\n",
+    );
+    assert_eq!(
+        bash(input),
+        expected,
+        "the case item and the brace group share an opening line, so they contribute one level"
+    );
+}
+
+/// The complement: the continuation lines *before* a block opens are still
+/// kept, so only the part of the range the block actually covers is surrendered.
+#[test]
+fn bash_continuation_before_an_inner_block_is_still_kept() {
+    let input = concat!(
+        "f() {\n",
+        "foo --a \\\n",
+        "    --b | while read -r d; do\n",
+        "echo \"$d\"\n",
+        "done\n",
+        "}\n",
+    );
+    let expected = concat!(
+        "f() {\n",
+        "  foo --a \\\n",
+        "    --b | while read -r d; do\n",
+        "    echo \"$d\"\n",
+        "  done\n",
+        "}\n",
+    );
+    assert_eq!(
+        bash(input),
+        expected,
+        "the backslash continuation keeps its alignment while the loop body reindents"
+    );
+}
+
+#[test]
+fn bash_nested_blocks_indent_cumulatively() {
+    let input = concat!(
+        "f() {\n",
+        "for i in 1 2; do\n",
+        "if [ \"$i\" = 1 ]; then\n",
+        "echo one\n",
+        "fi\n",
+        "done\n",
+        "}\n",
+    );
+    let expected = concat!(
+        "f() {\n",
+        "  for i in 1 2; do\n",
+        "    if [ \"$i\" = 1 ]; then\n",
+        "      echo one\n",
+        "    fi\n",
+        "  done\n",
+        "}\n",
+    );
+    assert_eq!(bash(input), expected, "nested blocks accumulate one level each");
+}
+
+#[test]
+fn bash_already_two_space_indented_script_is_unchanged() {
+    let engine = TreeSitterEngine;
+    let already_correct = concat!(
+        "#!/usr/bin/env bash\n",
+        "set -euo pipefail\n",
+        "\n",
+        "main() {\n",
+        "  local target=$1\n",
+        "  if [ -d \"$target\" ]; then\n",
+        "    for f in \"$target\"/*; do\n",
+        "      echo \"$f\"\n",
+        "    done\n",
+        "  else\n",
+        "    cat <<EOT\n",
+        "missing: $target\n",
+        "EOT\n",
+        "  fi\n",
+        "  case \"$target\" in\n",
+        "  a)\n",
+        "    echo a\n",
+        "    ;;\n",
+        "  *)\n",
+        "    echo other\n",
+        "    ;;\n",
+        "  esac\n",
+        "}\n",
+        "\n",
+        "main \"$@\"\n",
+    );
+    let s = src("script.sh", Language::Other("bash".into()), already_correct);
+    let out = engine.format(&s, &cfg(2)).unwrap();
+    assert!(
+        matches!(out, FormatOutput::Unchanged),
+        "an already two-space-indented script must come out byte-identical, got {:?}",
+        formatted_text(engine.format(&s, &cfg(2)).unwrap(), already_correct)
+    );
+}
+
+#[test]
+fn bash_reindent_is_idempotent() {
+    let input = concat!(
+        "f() {\n",
+        "case $1 in\n",
+        "a)\n",
+        "cat <<EOT\n",
+        "raw\n",
+        "EOT\n",
+        ";;\n",
+        "esac\n",
+        "}\n",
+    );
+    let once = bash(input);
+    let twice = bash(&once);
+    assert_eq!(once, twice, "a second reindent pass must be a no-op");
+}
+
+/// A file the bash grammar cannot parse yields a tree full of `ERROR` nodes
+/// whose ranges do not describe the real structure — most dangerously, a
+/// heredoc inside one is no longer recognized as protected. Fall back to
+/// whitespace normalization instead of reindenting from a broken tree.
+#[test]
+fn bash_unparsable_source_falls_back_to_whitespace_normalization() {
+    let input = "f() {\n  esac fi done )   \n}\n";
+    assert_eq!(
+        bash(input),
+        "f() {\n  esac fi done )\n}\n",
+        "a tree with errors must only get whitespace normalization, leaving indentation alone"
+    );
 }

@@ -1,0 +1,33 @@
+---
+source: crates/poly-core/tests/treesitter.rs
+expression: formatted
+---
+#!/usr/bin/env bash
+set -euo pipefail
+
+main() {
+  if [ -d "$1" ]; then
+    for f in "$1"/*; do
+      echo "$f"
+    done
+  else
+    cat <<EOT
+missing: $1
+EOT
+  fi
+
+  case "$2" in
+  run)
+    echo run
+    ;;
+  *)
+    echo other
+    ;;
+  esac
+
+  printf '%s\n' \
+    one \
+    two
+}
+
+main "$@"

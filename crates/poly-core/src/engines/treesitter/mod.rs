@@ -22,6 +22,10 @@
 //!   spaces otherwise). Per-language switch/case adjustments apply for Swift
 //!   (case labels align with `switch`), Dart, and C# (case bodies get an
 //!   extra indent level).
+//! - **Query-driven reindent** for grammars with a bundled `indents.scm` or a
+//!   poly built-in indents query (`indent.rs`: Elixir and bash today). This is
+//!   how keyword-delimited block languages — `do`/`end`, `if`/`fi`,
+//!   `case`/`esac` — are reindented, since they have no brackets to count.
 //! - **Whitespace normalization** for every other grammar, and whenever the
 //!   grammar is unavailable or the source fails to parse. This never corrupts
 //!   unparsable input (it only trims trailing whitespace and fixes line
@@ -132,7 +136,7 @@ impl Engine for TreeSitterEngine {
     }
 
     fn version(&self) -> &str {
-        "8+tslp1.18.0"
+        "9+tslp1.18.0"
     }
 
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {

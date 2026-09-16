@@ -11,6 +11,9 @@
 //!   tier: known-unformatted fixture asserting exact formatted output.
 //! - `r_lint_emits_no_trailing_whitespace_diagnostic` — the generic tier is
 //!   format-only, so trailing whitespace never surfaces as a lint diagnostic.
+//! - `generic_reindents_bash` — the built-in bash indents query: keyword blocks
+//!   reindent while heredoc bodies/terminators and backslash continuations are
+//!   emitted verbatim.
 
 use poly_core::{
     Language,
@@ -121,6 +124,70 @@ fn generic_elixir_already_formatted_is_unchanged() {
     assert!(
         matches!(out, FormatOutput::Unchanged),
         "already-indented Elixir must be Unchanged, got Formatted"
+    );
+}
+
+/// Known-unformatted bash: every block body at column 0, a heredoc whose body
+/// and terminator must survive byte-for-byte, and a backslash continuation
+/// whose alignment poly must not touch. The built-in bash indents query
+/// (`BASH_INDENTS` in `indent.rs`) applies the structural reindent — this is
+/// what a shell file gets with no `shfmt` on the host.
+const BASH_UNFORMATTED: &str = "\
+#!/usr/bin/env bash
+set -euo pipefail
+
+main() {
+if [ -d \"$1\" ]; then
+for f in \"$1\"/*; do
+echo \"$f\"
+done
+else
+cat <<EOT
+missing: $1
+EOT
+fi
+
+case \"$2\" in
+run)
+echo run
+;;
+*)
+echo other
+;;
+esac
+
+printf '%s\\n' \\
+    one \\
+    two
+}
+
+main \"$@\"
+";
+
+#[test]
+fn generic_reindents_bash() {
+    let engine = TreeSitterEngine;
+    let src = make_src("script.sh", Language::Shell, BASH_UNFORMATTED);
+    let formatted = match engine.format(&src, &engine_cfg(2)).unwrap() {
+        FormatOutput::Formatted(text) => text,
+        FormatOutput::Unchanged => BASH_UNFORMATTED.to_string(),
+    };
+    insta::assert_snapshot!("generic_reindents_bash", formatted);
+}
+
+/// Idempotency guard: the reindented output above is a fixed point.
+#[test]
+fn generic_bash_reindent_is_a_fixed_point() {
+    let engine = TreeSitterEngine;
+    let src = make_src("script.sh", Language::Shell, BASH_UNFORMATTED);
+    let once = match engine.format(&src, &engine_cfg(2)).unwrap() {
+        FormatOutput::Formatted(text) => text,
+        FormatOutput::Unchanged => BASH_UNFORMATTED.to_string(),
+    };
+    let again = make_src("script.sh", Language::Shell, &once);
+    assert!(
+        matches!(engine.format(&again, &engine_cfg(2)).unwrap(), FormatOutput::Unchanged),
+        "a second pass over reindented bash must be Unchanged"
     );
 }
 

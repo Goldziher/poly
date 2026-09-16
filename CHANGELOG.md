@@ -52,6 +52,35 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   before; the zero-system-dependency guarantee is unchanged. Opt out with
   `[fmt.shell.shfmt] enabled = false`.
 
+- **The tree-sitter tier now structurally reindents shell, with no `shfmt` installed.** Flipping
+  `shfmt` on by default only helps hosts that have it; without it a shell file got
+  `normalize_whitespace` and nothing else, so **indentation was never touched**. bash now ships a
+  poly built-in indents query (`BASH_INDENTS`, `engines/treesitter/indent.rs`) alongside the
+  existing Elixir one, so a shell file comes out consistently indented on a machine with no shell
+  toolchain at all.
+
+  The model deliberately matches `shfmt`'s default layout, since both can act on the same file:
+  `if`/`fi`, `do`/`done`, `{ … }`, `( … )`, `$( … )`, `<( … )` and array literals indent their
+  interiors one level; `case` patterns stay at the `case` level with each item's body and its `;;`
+  one level in; the closing keywords dedent only when they start their line, so an inline
+  `if x; then y; fi` inside a function body keeps the body's indent.
+
+  What it deliberately does **not** touch: heredoc bodies **and terminators** (reindenting a
+  `<<EOT` terminator stops it terminating the heredoc), and continuation lines — backslash line
+  joins, `&&`/`||` lists and pipelines — whose alignment poly cannot distinguish from an author's
+  intent. A file the bash grammar cannot parse falls back to whitespace normalization rather than
+  being reindented from a broken tree.
+
+  This is **not** shfmt-equivalent: poly's tier-2 only moves leading whitespace, it never moves a
+  token (no `if x\nthen` → `if x; then`, no `b|c)` → `b | c)`). It is the zero-dependency floor,
+  and `shfmt` still supersedes it when present.
+
+  Measured over 488 real third-party shell files (Homebrew, `/usr/share`, the corpus B trees):
+  **204 reformatted, a second pass changed nothing, no file went from syntactically valid to
+  invalid, no non-whitespace byte changed, and all 2,023 heredoc body/terminator lines — located
+  with `shfmt`'s own parser — came through byte-identical.** Agreement with `shfmt -i 2` rose from
+  178/480 files already at a fixed point to 204/480.
+
 ### Changed
 
 - **Shell now defaults to two-space indentation, not four.** `Language::Shell` was never in

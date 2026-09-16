@@ -17,8 +17,12 @@
 //!      `@indent.dedent` / `@outdent` → **closer**: the line that contains this
 //!      token receives −1 indent (multiple captures on the same byte deduplicate
 //!      to one −1).
+//!    - `@dedent.line_start` → **closer, conditionally**: −1 on the line, but
+//!      only when the captured token is the first non-whitespace on it.
 //!    - `@auto` / `@indent.auto` / `@ignore` / `@indent.ignore` → **auto**: the
 //!      strictly interior lines of the node's range are emitted verbatim.
+//!    - `@indent.keep` → **keep**: every line of the node's range after the
+//!      first is emitted verbatim, truncated where an inner block opens.
 //!    - All other capture names are ignored.
 //! 4. For each line `L`:  `level = max(0, openers_covering_L − closers_on_L)`.
 //! 5. Re-emit each non-empty line as `indent_unit.repeat(level) + trimmed`.
@@ -41,7 +45,7 @@ thread_local! {
         RefCell::new(HashMap::new());
 }
 
-static BUILTIN_QUERIES: &[(&str, &str)] = &[("elixir", ELIXIR_INDENTS)];
+static BUILTIN_QUERIES: &[(&str, &str)] = &[("elixir", ELIXIR_INDENTS), ("bash", BASH_INDENTS)];
 
 /// Minimal Elixir indents query for tier-2 structural reindentation.
 ///
@@ -88,6 +92,82 @@ const ELIXIR_INDENTS: &str = r#"
 (bitstring) @indent.auto
 "#;
 
+/// Minimal bash indents query for tier-2 structural reindentation.
+///
+/// Shell blocks are keyword-delimited (`if`/`fi`, `do`/`done`, `case`/`esac`)
+/// rather than brace-delimited, and bash emits *unbalanced* bracket tokens — a
+/// lone `)` closes a `case` pattern, while `$(`, `((`, `${` and `[[` are single
+/// multi-character tokens. The bracket-counting `BRACE_FAMILY` path would both
+/// flatten every keyword block to column 0 and pop a stack nothing pushed, so
+/// bash is modelled here instead.
+///
+/// The model deliberately matches `shfmt`'s default layout, because both can
+/// run over the same file (`shfmt` is default-on when installed and supersedes
+/// this tier; without it this query is what a shell file gets):
+///
+/// - `(if_statement)` / `(do_group)` / `(compound_statement)` / `(subshell)` /
+///   `(command_substitution)` / `(process_substitution)` / `(array)` as
+///   `@indent`: interiors take one level. `while`/`until`/`for`/`select` are
+///   covered through their shared `do_group` child, so the loop header itself
+///   is never double-counted.
+/// - `(case_item)` as `@indent` — and `(case_statement)` deliberately *not*:
+///   `shfmt`'s default (switch-case indentation off) leaves the patterns at the
+///   `case` level and indents only each item's body and its `;;` terminator.
+/// - Closing keywords and brackets as `@dedent.line_start`: `fi`, `done`, `}`,
+///   `)`, plus the `then` / `elif` / `else` branch keywords, which sit at the
+///   opening construct's level. The line-start condition is load-bearing —
+///   `if [ y ]; then echo; fi` written inline inside a function body must keep
+///   the body's indent, and an unconditional `-1` on its trailing `fi` would
+///   pull the whole line out of the block.
+/// - `(command)` / `(list)` / `(pipeline)` / `(test_command)` /
+///   `(arithmetic_expansion)` as `@indent.keep`: these are the multi-line
+///   *continuation* shapes (`\` line joins, `&&`/`||` lists, `|` pipelines).
+///   A level-counting model cannot tell an aligned continuation from an
+///   indented one, and bash's `list` nodes nest left-recursively so treating
+///   them as openers would indent `a && \n b && \n c` by a growing amount.
+///   Every line after the first is emitted verbatim instead, so poly never
+///   fights the author's — or `shfmt`'s — chosen continuation alignment.
+///
+/// Heredocs are not handled here: their bodies *and* terminators are protected
+/// wholesale by [`collect_protected_ranges`], because a `<<EOT` terminator that
+/// is reindented no longer terminates the heredoc.
+const BASH_INDENTS: &str = r#"
+; Keyword- and bracket-delimited blocks whose interiors take one level.
+(if_statement) @indent
+(do_group) @indent
+(compound_statement) @indent
+(subshell) @indent
+(command_substitution) @indent
+(process_substitution) @indent
+(array) @indent
+
+; `case` patterns stay at the `case` level (shfmt's default); only each item's
+; body and its `;;` terminator indent, so the item — not the statement — opens.
+(case_item) @indent
+
+; Closing keywords/brackets return their own line to the opening level, but only
+; when they start that line: a trailing `fi`/`}` on a one-line statement is
+; incidental and must not dedent the statement.
+(if_statement "fi" @dedent.line_start)
+(if_statement "then" @dedent.line_start)
+(elif_clause "elif" @dedent.line_start)
+(elif_clause "then" @dedent.line_start)
+(else_clause "else" @dedent.line_start)
+(do_group "done" @dedent.line_start)
+(compound_statement "}" @dedent.line_start)
+(subshell ")" @dedent.line_start)
+(command_substitution ")" @dedent.line_start)
+(process_substitution ")" @dedent.line_start)
+(array ")" @dedent.line_start)
+
+; Continuation shapes: every line after the first is emitted byte-for-byte.
+(command) @indent.keep
+(list) @indent.keep
+(pipeline) @indent.keep
+(test_command) @indent.keep
+(arithmetic_expansion) @indent.keep
+"#;
+
 thread_local! {
     static BUILTIN_STATE: RefCell<HashMap<String, (RawParser, QueryCursor, Query)>> =
         RefCell::new(HashMap::new());
@@ -102,7 +182,7 @@ thread_local! {
 pub fn try_reindent_builtin(name: &str, src: &SourceFile, cfg: &EngineConfig) -> Option<String> {
     let query_src = BUILTIN_QUERIES.iter().find(|(n, _)| *n == name).map(|(_, q)| *q)?;
 
-    let (openers, closers, auto_ranges, protected) = BUILTIN_STATE.with(|cell| {
+    let (adjustments, protected) = BUILTIN_STATE.with(|cell| {
         let mut pool = cell.borrow_mut();
         if !pool.contains_key(name) {
             let language = get_language(name).ok()?;
@@ -113,29 +193,27 @@ pub fn try_reindent_builtin(name: &str, src: &SourceFile, cfg: &EngineConfig) ->
         }
         let entry = pool.get_mut(name)?;
         let tree = entry.0.parse(src.content.as_bytes(), None)?;
-        let (openers, closers, auto_ranges) =
-            collect_adjustments(&entry.2, &mut entry.1, &tree, src.content.as_bytes());
-        let protected = collect_protected_ranges(&tree);
-        Some((openers, closers, auto_ranges, protected))
+        // ~keep A tree containing ERROR/MISSING nodes does not describe the file's real
+        // structure, and the damage is not merely cosmetic: a heredoc swallowed by an error
+        // node is no longer collected as a protected range, so its body and terminator would
+        // be reindented and the script silently broken. Decline the whole file instead.
+        if tree.root_node().has_error() {
+            return None;
+        }
+        let adjustments = collect_adjustments(&entry.2, &mut entry.1, &tree, src.content.as_bytes());
+        let protected = collect_protected_ranges(&tree, src.content.as_bytes());
+        Some((adjustments, protected))
     })?;
 
     // ~keep A query that captured nothing means poly has no structural model of this file, and
     // `emit_reindented` trims every line and re-emits it at the computed level — which is 0 when
     // there are no openers. Falling through to whitespace normalization keeps an unmodeled file
     // intact instead of flattening it to column 0.
-    if openers.is_empty() && closers.is_empty() && auto_ranges.is_empty() {
+    if adjustments.is_empty() {
         return None;
     }
 
-    Some(emit_reindented(
-        src,
-        cfg,
-        name,
-        &openers,
-        &closers,
-        &auto_ranges,
-        &protected,
-    ))
+    Some(emit_reindented(src, cfg, name, &adjustments, &protected))
 }
 
 /// Attempt query-driven reindentation for the given grammar and source.
@@ -148,7 +226,7 @@ pub fn try_reindent_query(name: &str, src: &SourceFile, cfg: &EngineConfig) -> O
 
     let query = get_query(name, QueryKind::Indents).ok()??;
 
-    let (openers, closers, auto_ranges, protected) = QUERY_STATE.with(|cell| {
+    let (adjustments, protected) = QUERY_STATE.with(|cell| {
         let mut pool = cell.borrow_mut();
         if !pool.contains_key(name) {
             let language = get_language(name).ok()?;
@@ -158,20 +236,12 @@ pub fn try_reindent_query(name: &str, src: &SourceFile, cfg: &EngineConfig) -> O
         }
         let entry = pool.get_mut(name)?;
         let tree = entry.0.parse(src.content.as_bytes(), None)?;
-        let (openers, closers, auto_ranges) = collect_adjustments(&query, &mut entry.1, &tree, src.content.as_bytes());
-        let protected = collect_protected_ranges(&tree);
-        Some((openers, closers, auto_ranges, protected))
+        let adjustments = collect_adjustments(&query, &mut entry.1, &tree, src.content.as_bytes());
+        let protected = collect_protected_ranges(&tree, src.content.as_bytes());
+        Some((adjustments, protected))
     })?;
 
-    Some(emit_reindented(
-        src,
-        cfg,
-        name,
-        &openers,
-        &closers,
-        &auto_ranges,
-        &protected,
-    ))
+    Some(emit_reindented(src, cfg, name, &adjustments, &protected))
 }
 
 /// Classification of a query capture name for indentation purposes.
@@ -188,9 +258,22 @@ enum CaptureKind {
     /// Many grammars tag both `{` and `}` as `@branch`; the −1 only makes sense
     /// for the *closing* half so that `values: [` stays at its correct depth.
     CloserIfNotOpen,
+    /// `@dedent.line_start` — the line gets −1 only when the captured token is
+    /// the first non-whitespace on its line. A poly-specific capture: a
+    /// keyword-delimited grammar closes blocks with words (`fi`, `done`, `}`)
+    /// that also appear mid-line in single-line forms (`if x; then y; fi`),
+    /// where an unconditional −1 would pull the whole statement out of its
+    /// enclosing block.
+    CloserIfLineStart,
     /// `@auto` / `@indent.auto` / `@ignore` / `@indent.ignore` — strictly
     /// interior lines of the node range are emitted verbatim (no reindent).
     Auto,
+    /// `@indent.keep` — every line of the node's range *after the first* is
+    /// emitted verbatim. A poly-specific capture for continuation shapes
+    /// (backslash line joins, `&&`/`||` lists, pipelines) whose trailing line
+    /// carries meaning [`CaptureKind::Auto`]'s strictly-interior rule would
+    /// miss.
+    Keep,
     /// All other capture names — no effect on indentation.
     Other,
 }
@@ -200,7 +283,9 @@ fn classify_capture(name: &str) -> CaptureKind {
         "indent" | "indent.begin" | "aligned_indent" | "indent.align" => CaptureKind::Opener,
         "indent_end" | "indent.end" => CaptureKind::CloserAlways,
         "branch" | "indent.branch" | "indent.dedent" | "outdent" => CaptureKind::CloserIfNotOpen,
+        "dedent.line_start" => CaptureKind::CloserIfLineStart,
         "auto" | "indent.auto" | "ignore" | "indent.ignore" => CaptureKind::Auto,
+        "indent.keep" => CaptureKind::Keep,
         _ => CaptureKind::Other,
     }
 }
@@ -220,21 +305,51 @@ struct Opener {
 /// Closer tokens per row (row, start_byte) — deduplicated.
 type CloserList = Vec<(usize, usize)>;
 
-/// Walk every query match and sort captures into openers, closers, and auto ranges.
-///
-/// Returns:
-/// - `openers`: `(start_row, end_row)` for each opener node.
-/// - `closers`: deduplicated `(row, start_byte)` pairs for closer tokens.
-/// - `auto_ranges`: `(start_row, end_row)` for verbatim regions.
+/// Everything one query run contributes to the indent computation.
+struct Adjustments {
+    /// `(start_row, end_row)` for each opener node.
+    openers: Vec<Opener>,
+    /// Deduplicated `(row, start_byte)` pairs for closer tokens.
+    closers: CloserList,
+    /// `(start_row, end_row)` for regions whose *strictly interior* lines are
+    /// emitted verbatim.
+    auto_ranges: Vec<(usize, usize)>,
+    /// `(start_row, end_row)` for regions whose lines *after the first* are
+    /// emitted verbatim. Single-row nodes are dropped at collection time: they
+    /// cover no line, and the capture that produces them (`@indent.keep` on a
+    /// `command`) fires on nearly every statement in a shell script.
+    keep_ranges: Vec<(usize, usize)>,
+}
+
+impl Adjustments {
+    /// True when the query captured nothing the emitter could act on.
+    fn is_empty(&self) -> bool {
+        self.openers.is_empty() && self.closers.is_empty() && self.auto_ranges.is_empty() && self.keep_ranges.is_empty()
+    }
+}
+
+/// Whether `byte` is preceded on its line only by spaces and tabs, i.e. the
+/// token starting there is the first non-whitespace on that line.
+fn starts_line(source: &[u8], byte: usize) -> bool {
+    source[..byte.min(source.len())]
+        .iter()
+        .rev()
+        .take_while(|&&b| b != b'\n')
+        .all(|&b| b == b' ' || b == b'\t')
+}
+
+/// Walk every query match and sort captures into openers, closers, auto ranges
+/// and keep ranges.
 fn collect_adjustments(
     query: &tree_sitter::Query,
     cursor: &mut QueryCursor,
     tree: &tree_sitter::Tree,
     source: &[u8],
-) -> (Vec<Opener>, CloserList, Vec<(usize, usize)>) {
+) -> Adjustments {
     let mut openers = Vec::new();
     let mut closer_bytes: Vec<(usize, usize)> = Vec::new();
     let mut auto_ranges: Vec<(usize, usize)> = Vec::new();
+    let mut keep_ranges: Vec<(usize, usize)> = Vec::new();
 
     let mut matches = cursor.matches(query, tree.root_node(), source);
     while let Some(m) = matches.next() {
@@ -256,8 +371,19 @@ fn collect_adjustments(
                         closer_bytes.push((node.start_position().row, node.start_byte()));
                     }
                 }
+                CaptureKind::CloserIfLineStart => {
+                    if starts_line(source, node.start_byte()) {
+                        closer_bytes.push((node.start_position().row, node.start_byte()));
+                    }
+                }
                 CaptureKind::Auto => {
                     auto_ranges.push((node.start_position().row, node.end_position().row));
+                }
+                CaptureKind::Keep => {
+                    let (start_row, end_row) = (node.start_position().row, node.end_position().row);
+                    if start_row < end_row {
+                        keep_ranges.push((start_row, end_row));
+                    }
                 }
                 CaptureKind::Other => {}
             }
@@ -266,27 +392,106 @@ fn collect_adjustments(
 
     closer_bytes.sort_unstable();
     closer_bytes.dedup();
+    let openers = coalesce_openers_by_start_row(openers);
+    truncate_keeps_at_inner_openers(&openers, &mut keep_ranges);
 
-    (openers, closer_bytes, auto_ranges)
+    Adjustments {
+        openers,
+        closers: closer_bytes,
+        auto_ranges,
+        keep_ranges,
+    }
+}
+
+/// Collapse openers that begin on the same source line into one indent level —
+/// the level-keyed-by-open-line rule the bracket path already documents.
+///
+/// Two nodes sharing a start row are always nested (one contains the other), so
+/// the group keeps the widest end row and the lines they both cover earn a
+/// single level. Counting them separately indents a body once per construct
+/// that happened to open on the header line — `pattern) [ … ] || {` would put
+/// its statements two levels past a pattern sitting at column 0.
+fn coalesce_openers_by_start_row(openers: Vec<Opener>) -> Vec<Opener> {
+    let mut widest: HashMap<usize, usize> = HashMap::with_capacity(openers.len());
+    for opener in &openers {
+        widest
+            .entry(opener.start_row)
+            .and_modify(|end| *end = (*end).max(opener.end_row))
+            .or_insert(opener.end_row);
+    }
+    let mut coalesced: Vec<Opener> = widest
+        .into_iter()
+        .map(|(start_row, end_row)| Opener { start_row, end_row })
+        .collect();
+    // A HashMap drain has no defined order; sort so the emitted output cannot
+    // depend on it. (The level is a count, so order does not change the result
+    // today — this keeps that independent of how the count is taken.)
+    coalesced.sort_unstable_by_key(|o| (o.start_row, o.end_row));
+    coalesced
+}
+
+/// End every keep range at the first opener that begins inside it.
+///
+/// A continuation shape can span a real block: `cmd | while …; do … done` is one
+/// `pipeline` covering the whole loop. Keeping all of it verbatim would leave
+/// the loop body at whatever indentation it arrived with while the pipeline's
+/// own line reindented, producing a file indented in two different units. The
+/// lines *before* the inner block opens are still genuine continuations, so the
+/// range is truncated rather than dropped.
+fn truncate_keeps_at_inner_openers(openers: &[Opener], keep_ranges: &mut Vec<(usize, usize)>) {
+    if keep_ranges.is_empty() || openers.is_empty() {
+        return;
+    }
+    let mut starts: Vec<usize> = openers.iter().map(|o| o.start_row).collect();
+    starts.sort_unstable();
+    for range in keep_ranges.iter_mut() {
+        let index = starts.partition_point(|&row| row < range.0);
+        if let Some(&first_inner) = starts.get(index)
+            && first_inner <= range.1
+        {
+            range.1 = first_inner;
+        }
+    }
+    keep_ranges.retain(|&(start, end)| start < end);
 }
 
 /// Walk the parsed tree once, collecting `[start_byte, end_byte)` ranges of
-/// string-literal and comment nodes. Leading whitespace inside a multi-line
-/// string, heredoc, raw string, or block comment is semantically significant,
-/// so any line whose start falls inside such a range must be emitted verbatim
-/// rather than reindented (mirrors the brace path's protected-range guard).
+/// string-literal, comment, and heredoc nodes. Leading whitespace inside a
+/// multi-line string, heredoc, raw string, or block comment is semantically
+/// significant, so any line whose start falls inside such a range must be
+/// emitted verbatim rather than reindented (mirrors the brace path's
+/// protected-range guard).
+///
+/// Heredocs are collected differently from strings. A string opens mid-line, so
+/// its own opening byte is excluded and the line that starts it is still
+/// reindented as code; a heredoc's *entire remainder* — body lines and the
+/// terminator line — is literal. The terminator matters most: reindenting a
+/// `<<EOT` terminator stops it terminating the heredoc and silently breaks the
+/// script. So a heredoc contributes the range from the first newline inside it
+/// through its last byte, which covers every body line and the terminator line
+/// while leaving the `cat <<EOT` line itself free to reindent.
 ///
 /// The walk does not descend into a protected node's subtree — the whole node
-/// is treated as one opaque range. Ranges are returned sorted by start byte so
-/// [`is_interior`] can binary-search them.
-fn collect_protected_ranges(tree: &tree_sitter::Tree) -> Vec<(usize, usize)> {
+/// is treated as one opaque range. Ranges are returned sorted by start byte and
+/// with overlaps merged, so [`is_interior`] can binary-search them: without the
+/// merge, a range nested inside or straddling another would be shadowed by the
+/// `partition_point` lookup and its lines reindented.
+fn collect_protected_ranges(tree: &tree_sitter::Tree, source: &[u8]) -> Vec<(usize, usize)> {
     let mut ranges: Vec<(usize, usize)> = Vec::new();
     let mut cursor = tree.root_node().walk();
     'walk: loop {
         let node = cursor.node();
         let kind = node.kind();
-        let is_protected = kind.contains("string") || kind.contains("comment");
-        if is_protected {
+        let is_heredoc = kind.contains("heredoc");
+        let is_protected = is_heredoc || kind.contains("string") || kind.contains("comment");
+        if is_heredoc {
+            if let Some(offset) = source[node.start_byte()..node.end_byte()]
+                .iter()
+                .position(|&b| b == b'\n')
+            {
+                ranges.push((node.start_byte() + offset, node.end_byte()));
+            }
+        } else if is_protected {
             ranges.push((node.start_byte(), node.end_byte()));
         }
         if !is_protected && cursor.goto_first_child() {
@@ -302,7 +507,23 @@ fn collect_protected_ranges(tree: &tree_sitter::Tree) -> Vec<(usize, usize)> {
         }
     }
     ranges.sort_unstable_by_key(|r| r.0);
-    ranges
+    merge_overlapping(ranges)
+}
+
+/// Collapse strictly overlapping `[start, end)` ranges, preserving the input
+/// order (which must already be sorted by start byte). Ranges that merely abut
+/// (`next.start == previous.end`) are left separate: merging them would pull
+/// the second range's opening byte inside the first, and that byte is
+/// deliberately excluded by [`is_interior`].
+fn merge_overlapping(ranges: Vec<(usize, usize)>) -> Vec<(usize, usize)> {
+    let mut merged: Vec<(usize, usize)> = Vec::with_capacity(ranges.len());
+    for (start, end) in ranges {
+        match merged.last_mut() {
+            Some(last) if start < last.1 => last.1 = last.1.max(end),
+            _ => merged.push((start, end)),
+        }
+    }
+    merged
 }
 
 /// Whether `byte` falls strictly inside any protected range (`start < byte <
@@ -323,11 +544,15 @@ fn emit_reindented(
     src: &SourceFile,
     cfg: &EngineConfig,
     grammar: &str,
-    openers: &[Opener],
-    closers: &CloserList,
-    auto_ranges: &[(usize, usize)],
+    adjustments: &Adjustments,
     protected: &[(usize, usize)],
 ) -> String {
+    let Adjustments {
+        openers,
+        closers,
+        auto_ranges,
+        keep_ranges,
+    } = adjustments;
     let unit = super::indent_unit(grammar, cfg.indent_width);
     let line_ending = cfg.globals.line_ending.as_str();
 
@@ -354,6 +579,11 @@ fn emit_reindented(
         first = false;
 
         if is_interior(protected, line_start) {
+            out.push_str(line);
+            continue;
+        }
+
+        if keep_ranges.iter().any(|&(s, e)| s < line_idx && line_idx <= e) {
             out.push_str(line);
             continue;
         }
