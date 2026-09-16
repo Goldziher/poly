@@ -34,22 +34,22 @@ usage() {
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    -h | --help) usage ;;
-    --no-modify-path) NO_MODIFY_PATH=1 ;;
-    --version)
-      shift
-      [ $# -gt 0 ] || die "--version needs an argument"
-      VERSION="$1"
-      ;;
-    --version=*) VERSION="${1#*=}" ;;
-    --bin-dir)
-      shift
-      [ $# -gt 0 ] || die "--bin-dir needs an argument"
-      INSTALL_DIR="$1"
-      ;;
-    --bin-dir=*) INSTALL_DIR="${1#*=}" ;;
-    -*) die "unknown option: $1 (try --help)" ;;
-    *) VERSION="$1" ;;
+  -h | --help) usage ;;
+  --no-modify-path) NO_MODIFY_PATH=1 ;;
+  --version)
+    shift
+    [ $# -gt 0 ] || die "--version needs an argument"
+    VERSION="$1"
+    ;;
+  --version=*) VERSION="${1#*=}" ;;
+  --bin-dir)
+    shift
+    [ $# -gt 0 ] || die "--bin-dir needs an argument"
+    INSTALL_DIR="$1"
+    ;;
+  --bin-dir=*) INSTALL_DIR="${1#*=}" ;;
+  -*) die "unknown option: $1 (try --help)" ;;
+  *) VERSION="$1" ;;
   esac
   shift
 done
@@ -61,26 +61,26 @@ uname_s=$(uname -s)
 uname_m=$(uname -m)
 
 case "$uname_m" in
-  x86_64 | amd64) arch="x86_64" ;;
-  aarch64 | arm64) arch="aarch64" ;;
-  *) die "unsupported architecture: $uname_m" ;;
+x86_64 | amd64) arch="x86_64" ;;
+aarch64 | arm64) arch="aarch64" ;;
+*) die "unsupported architecture: $uname_m" ;;
 esac
 
 ext="tar.gz"
 case "$uname_s" in
-  Darwin) target="${arch}-apple-darwin" ;;
-  Linux)
-    if (ldd --version 2>&1 | grep -qi musl) || [ -e /lib/ld-musl-"${uname_m}".so.1 ]; then
-      target="${arch}-unknown-linux-musl"
-    else
-      target="${arch}-unknown-linux-gnu"
-    fi
-    ;;
-  MINGW* | MSYS* | CYGWIN* | Windows_NT)
-    die "Windows detected. Use the PowerShell installer:
+Darwin) target="${arch}-apple-darwin" ;;
+Linux)
+  if (ldd --version 2>&1 | grep -qi musl) || [ -e /lib/ld-musl-"${uname_m}".so.1 ]; then
+    target="${arch}-unknown-linux-musl"
+  else
+    target="${arch}-unknown-linux-gnu"
+  fi
+  ;;
+MINGW* | MSYS* | CYGWIN* | Windows_NT)
+  die "Windows detected. Use the PowerShell installer:
   irm https://raw.githubusercontent.com/${REPO}/main/install.ps1 | iex"
-    ;;
-  *) die "unsupported OS: $uname_s" ;;
+  ;;
+*) die "unsupported OS: $uname_s" ;;
 esac
 
 info "Platform: ${C_DIM}${target}${C_OFF}"
@@ -90,11 +90,11 @@ if [ "$VERSION" = "latest" ]; then
   effective=$(curl -fsSL -o /dev/null -w '%{url_effective}' \
     "https://github.com/${REPO}/releases/latest" 2>/dev/null || true)
   case "$effective" in
-    */releases/tag/*) VERSION="${effective##*/tag/}" ;;
-    *)
-      VERSION=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null |
-        grep -o '"tag_name"[^,]*' | head -1 | cut -d'"' -f4)
-      ;;
+  */releases/tag/*) VERSION="${effective##*/tag/}" ;;
+  *)
+    VERSION=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null |
+      grep -o '"tag_name"[^,]*' | head -1 | cut -d'"' -f4)
+    ;;
   esac
   [ -n "$VERSION" ] || die "could not resolve the latest release"
 fi
@@ -204,33 +204,33 @@ info "Installed poly (and the polylint alias) → ${INSTALL_DIR}"
 
 add_path_line='export PATH="'"${INSTALL_DIR}"':$PATH"'
 case ":${PATH}:" in
-  *":${INSTALL_DIR}:"*)
-    :
-    ;;
-  *)
-    if [ -n "$NO_MODIFY_PATH" ]; then
+*":${INSTALL_DIR}:"*)
+  :
+  ;;
+*)
+  if [ -n "$NO_MODIFY_PATH" ]; then
+    warn "${INSTALL_DIR} is not on your PATH. Add it with:"
+    printf '    %s\n' "$add_path_line"
+  else
+    modified=""
+    for rc in "${HOME}/.profile" "${HOME}/.bashrc" "${HOME}/.zshrc"; do
+      [ -e "$rc" ] || continue
+      if ! grep -qF "$INSTALL_DIR" "$rc" 2>/dev/null; then
+        {
+          printf '\n# added by the poly installer\n%s\n' "$add_path_line"
+        } >>"$rc"
+        modified="${modified} ${rc##*/}"
+      fi
+    done
+    if [ -n "$modified" ]; then
+      info "Added ${INSTALL_DIR} to PATH in:${modified}"
+      warn "Restart your shell or run: ${add_path_line}"
+    else
       warn "${INSTALL_DIR} is not on your PATH. Add it with:"
       printf '    %s\n' "$add_path_line"
-    else
-      modified=""
-      for rc in "${HOME}/.profile" "${HOME}/.bashrc" "${HOME}/.zshrc"; do
-        [ -e "$rc" ] || continue
-        if ! grep -qF "$INSTALL_DIR" "$rc" 2>/dev/null; then
-          {
-            printf '\n# added by the poly installer\n%s\n' "$add_path_line"
-          } >>"$rc"
-          modified="${modified} ${rc##*/}"
-        fi
-      done
-      if [ -n "$modified" ]; then
-        info "Added ${INSTALL_DIR} to PATH in:${modified}"
-        warn "Restart your shell or run: ${add_path_line}"
-      else
-        warn "${INSTALL_DIR} is not on your PATH. Add it with:"
-        printf '    %s\n' "$add_path_line"
-      fi
     fi
-    ;;
+  fi
+  ;;
 esac
 
 printf '%s\n' "${C_GREEN}poly ${version} is ready.${C_OFF} Run 'poly --help' to get started."

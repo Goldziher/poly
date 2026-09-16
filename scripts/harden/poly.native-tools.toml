@@ -1,9 +1,9 @@
-# The non-gating leg: everything `poly.toml` measures, with the three default-on
+# The non-gating leg: everything `poly.toml` measures, with the four default-on
 # native-toolchain backends switched back on.
 #
 # It exists because those backends need real-world exercise too, and disabling
 # them everywhere would mean they are never run over third-party code at all.
-# It cannot gate: `rustfmt`, `gofmt` and `shellcheck` produce different output
+# It cannot gate: `rustfmt`, `gofmt`, `shfmt` and `shellcheck` produce different output
 # from different installed versions, so a count from this leg is a property of
 # the host. Records from it carry `native_tools_enabled: true` and are reported
 # separately for exactly that reason.
@@ -15,6 +15,9 @@ extends = ["poly.toml"]
 enabled = true
 
 [fmt.go.gofmt]
+enabled = true
+
+[fmt.shell.shfmt]
 enabled = true
 
 [lint.shell.shellcheck]

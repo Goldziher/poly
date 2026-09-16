@@ -452,17 +452,85 @@ fn a_disabled_tier_one_formatter_stops_suppressing_the_catalog_tier() {
 /// The same hazard, one step further out: an opt-in native tool that was never
 /// switched on at all.
 ///
-/// `retaining_enabled` drops only an explicit `enabled = false`, so shfmt --
-/// and zig fmt, ktfmt, swift-format, styler, and the rest, all of which default
-/// to off -- survived that filter and still counted as a tier-one formatter.
-/// The catalog tier was withdrawn on behalf of a backend that formats nothing,
-/// and `[tools.shfmt] enabled = true` did nothing at all while `poly fmt`
-/// reported "All formatted" over shell it had never handed to shfmt.
+/// `retaining_enabled` drops only an explicit `enabled = false`, so an opt-in
+/// backend -- zig fmt, ktfmt, swift-format, styler, and the rest, all of which
+/// default to off -- survived that filter and still counted as a tier-one
+/// formatter. The catalog tier was withdrawn on behalf of a backend that
+/// formats nothing, and `[tools.<name>] enabled = true` did nothing at all
+/// while `poly fmt` reported "All formatted" over files it had never handed to
+/// the tool.
 ///
-/// Default config, no `[fmt.shell.shfmt]` anywhere: exactly the state every
-/// consumer is in until they opt in.
+/// Zig, not shell: `shfmt` was this test's original subject and became
+/// default-on in ADR 0014's 2026-09-15 amendment, which makes it the wrong
+/// example for an opt-in tool. The hazard is unchanged and still has plenty of
+/// subjects; the shell side of the flip is covered by
+/// [`a_default_on_installed_formatter_suppresses_the_catalog_tier`] below.
+///
+/// Default config, no `[fmt.zig.zigfmt]` anywhere: exactly the state every
+/// consumer is in until they opt in. ~keep
 #[test]
 fn an_opt_in_formatter_that_was_never_enabled_does_not_suppress_the_catalog_tier() {
+    let config = Config::default();
+    let engines = retaining_enabled(
+        retaining_capable(engines_for(&Language::Zig), Kind::Format),
+        &Language::Zig,
+        &config,
+        Kind::Format,
+        &mut None,
+    );
+
+    assert!(
+        !has_tier_one_formatter(&engines, &Language::Zig, &config, Kind::Format),
+        "zig fmt is off by default, so it must not withdraw the catalog tier on zig's behalf"
+    );
+}
+
+/// And the enabled case still holds, or the fix above would simply have turned
+/// the suppression off for everyone and let a catalog tool run alongside the
+/// built-in that already owns the language.
+#[test]
+fn an_enabled_opt_in_formatter_still_suppresses_the_catalog_tier() {
+    let config = Config {
+        fmt: toml::from_str("[zig.zigfmt]\nenabled = true\n").expect("valid fmt config"),
+        ..Config::default()
+    };
+    let engines = retaining_enabled(
+        retaining_capable(engines_for(&Language::Zig), Kind::Format),
+        &Language::Zig,
+        &config,
+        Kind::Format,
+        &mut None,
+    );
+
+    // Only meaningful where zig is installed: the predicate also probes PATH,
+    // and on a host without it the honest answer is "not a tier-one formatter".
+    if crate::engines::native_tool::NativeToolEngine::for_language(Language::Zig).is_available() {
+        assert!(
+            has_tier_one_formatter(&engines, &Language::Zig, &config, Kind::Format),
+            "an enabled and installed zig fmt owns zig formatting"
+        );
+    } else {
+        eprintln!("zig not found on PATH — skipping the enabled half of the assertion");
+    }
+}
+
+/// The other side of the same predicate, and the one ADR 0014's 2026-09-15
+/// amendment moved: a **default-on** formatter suppresses the catalog tier with
+/// no config at all.
+///
+/// This is the behaviour change the flip buys, and it is worth pinning
+/// separately from the opt-in case above. `has_tier_one_formatter` asks whether
+/// the backend would actually run -- capability AND enabled AND present on
+/// PATH -- so with `shfmt` installed and nothing configured, shell now has a
+/// tier-one formatter where before it had none, and a `[tools.shfmt]` catalog
+/// entry no longer gets to run alongside it. ~keep
+#[test]
+fn a_default_on_installed_formatter_suppresses_the_catalog_tier() {
+    if !crate::engines::native_tool::NativeToolEngine::shell_format().is_available() {
+        eprintln!("shfmt not found on PATH — skipping a_default_on_installed_formatter_...");
+        return;
+    }
+
     let config = Config::default();
     let engines = retaining_enabled(
         retaining_capable(engines_for(&Language::Shell), Kind::Format),
@@ -473,38 +541,9 @@ fn an_opt_in_formatter_that_was_never_enabled_does_not_suppress_the_catalog_tier
     );
 
     assert!(
-        !has_tier_one_formatter(&engines, &Language::Shell, &config, Kind::Format),
-        "shfmt is off by default, so it must not withdraw the catalog tier on shell's behalf"
+        has_tier_one_formatter(&engines, &Language::Shell, &config, Kind::Format),
+        "shfmt is default-on when installed, so it owns shell formatting with no config"
     );
-}
-
-/// And the enabled case still holds, or the fix above would simply have turned
-/// the suppression off for everyone and let a catalog tool run alongside the
-/// built-in that already owns the language.
-#[test]
-fn an_enabled_opt_in_formatter_still_suppresses_the_catalog_tier() {
-    let config = Config {
-        fmt: toml::from_str("[shell.shfmt]\nenabled = true\n").expect("valid fmt config"),
-        ..Config::default()
-    };
-    let engines = retaining_enabled(
-        retaining_capable(engines_for(&Language::Shell), Kind::Format),
-        &Language::Shell,
-        &config,
-        Kind::Format,
-        &mut None,
-    );
-
-    // Only meaningful where shfmt is installed: the predicate also probes PATH,
-    // and on a host without it the honest answer is "not a tier-one formatter".
-    if crate::engines::native_tool::NativeToolEngine::shell_format().is_available() {
-        assert!(
-            has_tier_one_formatter(&engines, &Language::Shell, &config, Kind::Format),
-            "an enabled and installed shfmt owns shell formatting"
-        );
-    } else {
-        eprintln!("shfmt not found on PATH — skipping the enabled half of the assertion");
-    }
 }
 
 /// The universal `enabled` key disables *any* engine, including a tier-one

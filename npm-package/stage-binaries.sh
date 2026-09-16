@@ -16,27 +16,27 @@ VERSION="$(node -p "require('$PACKAGE_DIR/package.json').version")"
 
 # platform-package-name:release-triple
 TARGETS=(
-	"darwin-arm64:aarch64-apple-darwin"
-	"darwin-x64:x86_64-apple-darwin"
-	"linux-arm64-gnu:aarch64-unknown-linux-gnu"
-	"linux-x64-gnu:x86_64-unknown-linux-gnu"
-	"linux-x64-musl:x86_64-unknown-linux-musl"
-	"win32-x64:x86_64-pc-windows-msvc"
+  "darwin-arm64:aarch64-apple-darwin"
+  "darwin-x64:x86_64-apple-darwin"
+  "linux-arm64-gnu:aarch64-unknown-linux-gnu"
+  "linux-x64-gnu:x86_64-unknown-linux-gnu"
+  "linux-x64-musl:x86_64-unknown-linux-musl"
+  "win32-x64:x86_64-pc-windows-msvc"
 )
 
 usage() {
-	echo "usage: $0 --artifacts <dir> | --local <path-to-poly>" >&2
-	exit 2
+  echo "usage: $0 --artifacts <dir> | --local <path-to-poly>" >&2
+  exit 2
 }
 
 MODE=""
 ARG=""
 case "${1:-}" in
-	--artifacts | --local)
-		MODE="$1"
-		ARG="${2:?$(usage)}"
-		;;
-	*) usage ;;
+--artifacts | --local)
+  MODE="$1"
+  ARG="${2:?$(usage)}"
+  ;;
+*) usage ;;
 esac
 
 # Resolve the caller's path against the directory the script was *invoked* from,
@@ -50,42 +50,63 @@ esac
 cd "$PACKAGE_DIR"
 
 stage_from_archive() {
-	local name="$1" triple="$2" archive_dir="$3"
-	local dest="$PACKAGE_DIR/platforms/$name/bin"
-	rm -rf "$dest"
-	mkdir -p "$dest"
+  local name="$1" triple="$2" archive_dir="$3"
+  local dest="$PACKAGE_DIR/platforms/$name/bin"
+  rm -rf "$dest"
+  mkdir -p "$dest"
 
-	if [[ "$triple" == *windows* ]]; then
-		local archive="$archive_dir/poly-$VERSION-$triple.zip"
-		[[ -f "$archive" ]] || { echo "error: missing archive $archive" >&2; return 1; }
-		unzip -q -o "$archive" poly.exe -d "$dest"
-		[[ -f "$dest/poly.exe" ]] || { echo "error: $archive contained no poly.exe" >&2; return 1; }
-	else
-		local archive="$archive_dir/poly-$VERSION-$triple.tar.gz"
-		[[ -f "$archive" ]] || { echo "error: missing archive $archive" >&2; return 1; }
-		tar xzf "$archive" -C "$dest" poly
-		[[ -x "$dest/poly" ]] || { echo "error: $archive contained no executable poly" >&2; return 1; }
-	fi
-	echo "  ✓ $name ← poly-$VERSION-$triple"
+  if [[ "$triple" == *windows* ]]; then
+    local archive="$archive_dir/poly-$VERSION-$triple.zip"
+    [[ -f "$archive" ]] || {
+      echo "error: missing archive $archive" >&2
+      return 1
+    }
+    unzip -q -o "$archive" poly.exe -d "$dest"
+    [[ -f "$dest/poly.exe" ]] || {
+      echo "error: $archive contained no poly.exe" >&2
+      return 1
+    }
+  else
+    local archive="$archive_dir/poly-$VERSION-$triple.tar.gz"
+    [[ -f "$archive" ]] || {
+      echo "error: missing archive $archive" >&2
+      return 1
+    }
+    tar xzf "$archive" -C "$dest" poly
+    [[ -x "$dest/poly" ]] || {
+      echo "error: $archive contained no executable poly" >&2
+      return 1
+    }
+  fi
+  echo "  ✓ $name ← poly-$VERSION-$triple"
 }
 
 if [[ "$MODE" == "--artifacts" ]]; then
-	[[ -d "$ARG" ]] || { echo "error: not a directory: $ARG" >&2; exit 1; }
-	echo "Staging poly $VERSION binaries from $ARG"
-	for target in "${TARGETS[@]}"; do
-		stage_from_archive "${target%%:*}" "${target##*:}" "$(cd "$ARG" && pwd)"
-	done
-	exit 0
+  [[ -d "$ARG" ]] || {
+    echo "error: not a directory: $ARG" >&2
+    exit 1
+  }
+  echo "Staging poly $VERSION binaries from $ARG"
+  for target in "${TARGETS[@]}"; do
+    stage_from_archive "${target%%:*}" "${target##*:}" "$(cd "$ARG" && pwd)"
+  done
+  exit 0
 fi
 
 # --local: one binary, for testing the packaging end to end without a release.
-[[ -x "$ARG" ]] || { echo "error: not an executable: $ARG" >&2; exit 1; }
+[[ -x "$ARG" ]] || {
+  echo "error: not an executable: $ARG" >&2
+  exit 1
+}
 case "$(uname -s)/$(uname -m)" in
-	Darwin/arm64) name="darwin-arm64" ;;
-	Darwin/x86_64) name="darwin-x64" ;;
-	Linux/aarch64) name="linux-arm64-gnu" ;;
-	Linux/x86_64) name="linux-x64-gnu" ;;
-	*) echo "error: --local has no platform package for $(uname -s)/$(uname -m)" >&2; exit 1 ;;
+Darwin/arm64) name="darwin-arm64" ;;
+Darwin/x86_64) name="darwin-x64" ;;
+Linux/aarch64) name="linux-arm64-gnu" ;;
+Linux/x86_64) name="linux-x64-gnu" ;;
+*)
+  echo "error: --local has no platform package for $(uname -s)/$(uname -m)" >&2
+  exit 1
+  ;;
 esac
 dest="$PACKAGE_DIR/platforms/$name/bin"
 rm -rf "$dest"

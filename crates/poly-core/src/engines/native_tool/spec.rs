@@ -140,10 +140,26 @@ pub(crate) static ZIGFMT_SPEC: ToolSpec = ToolSpec {
     config_files: &[],
 };
 
-/// `shfmt -`: reads stdin, writes formatted shell source to stdout. Opt-in
-/// (off by default). Third-party tool (mvdan.cc/sh) — not a first-party
-/// canonical toolchain — so it mirrors zig fmt's opt-in policy rather than
-/// gofmt/rustfmt's default-on policy.
+/// `shfmt -`: reads stdin, writes formatted shell source to stdout. **Default-on
+/// when present** (ADR 0014, 2026-09-15 amendment).
+///
+/// It is third-party (mvdan.cc/sh) *and* a formatter, so it fails the
+/// first-party test that keeps `zig fmt` opt-in — and it is admitted for the
+/// same reason `shellcheck` was: **shell has no first-party formatter to defer
+/// to.** For Go or Rust, "third-party, so opt-in" reserves the slot for the
+/// canonical tool. For shell there is no canonical tool coming, so applying the
+/// rule would not defer the decision, it would leave Shell permanently
+/// unformatted by anything but whitespace normalization.
+///
+/// Measured before flipping, because a formatter rewrites files rather than
+/// adding warnings. Across the pinned corpus B trees (10 repositories, 97
+/// `.sh`/`.bash` files, none unparseable), at poly's two-space default:
+/// **19 files changed, 424 diff lines, and a second pass changed nothing.**
+/// The earlier objection — "enabling it rewrites every shell file" — was
+/// measured at *four* spaces, where the same corpus moves 61 files and 3,332
+/// lines; 87% of that churn was `Language::Shell` falling through
+/// `default_indent_width`'s `_ => 4` catch-all, not shfmt's own opinions. The
+/// width was corrected first; this flip rests on the corrected number.
 pub(crate) static SHFMT_SPEC: ToolSpec = ToolSpec {
     engine_name: "shfmt",
     format_binary: Some("shfmt"),
@@ -153,7 +169,7 @@ pub(crate) static SHFMT_SPEC: ToolSpec = ToolSpec {
     lint_args: &[],
     version_binary: "shfmt",
     version_args: &["--version"],
-    default_on: false,
+    default_on: true,
     edition_flag: false,
     rustfmt_config_flag: false,
     run_in_file_dir: false,

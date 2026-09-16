@@ -17,7 +17,7 @@
 # 2. It turns on the two opt-in quality rules, for the same reason.
 #
 # 3. It disables the three native-toolchain backends that are default-on when
-#    present — `rustfmt`, `gofmt`, `shellcheck`. Their output depends on which
+#    present — `rustfmt`, `gofmt`, `shfmt`, `shellcheck`. Their output depends on which
 #    version happens to be installed, so leaving them on would make the result a
 #    property of the runner image rather than of poly. The non-gating
 #    `POLY_HARDEN_NATIVE_TOOLS` leg uses `poly.native-tools.toml`, which extends
@@ -54,6 +54,9 @@ law_of_demeter = true
 enabled = false
 
 [fmt.go.gofmt]
+enabled = false
+
+[fmt.shell.shfmt]
 enabled = false
 
 [lint.shell.shellcheck]

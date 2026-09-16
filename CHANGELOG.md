@@ -7,6 +7,24 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+### Added
+
+- **`shfmt` now runs by default when it is installed** (ADR 0014, 2026-09-15 amendment). Shell was
+  the one language poly formatted with nothing but whitespace normalization: `shfmt` was opt-in,
+  and the tree-sitter tier does not reindent `bash` (it is in neither `BRACE_FAMILY` nor
+  `LEAVE_UNTOUCHED`, and no bash indents query ships). Holding a third-party formatter to the
+  first-party test did not reserve the slot for a better tool — there is no first-party shell
+  formatter coming — it just left shell unformatted.
+
+  Measured before flipping, across the pinned corpus B trees (10 repositories, 97 `.sh`/`.bash`
+  files, none unparseable): **19 files changed, 424 diff lines, and a second pass changed
+  nothing.** Unlike the shellcheck flip, this cannot redden a build on lint severity — `shfmt` is
+  format-only, so what you see is a formatting diff.
+
+  With `shfmt` absent, shell falls through to the generic tier with an info notice, exactly as
+  before; the zero-system-dependency guarantee is unchanged. Opt out with
+  `[fmt.shell.shfmt] enabled = false`.
+
 ### Changed
 
 - **Shell now defaults to two-space indentation, not four.** `Language::Shell` was never in

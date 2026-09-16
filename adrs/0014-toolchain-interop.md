@@ -151,3 +151,69 @@ to the generic tier exactly as before, and a missing toolchain is still never an
 `ToolSpec::default_on` is now folded into `NativeToolEngine::version()`, so flipping a shipped
 default invalidates cached results — without it, a run from before the flip would keep serving
 "no diagnostics" for files the tool had never seen.
+
+## Amendment — 2026-09-15 (shfmt is default-on when present)
+
+The 2026-08-29 amendment admitted `shellcheck` against the first-party test, on the grounds that
+**shell has no first-party linter to defer to**, so applying the rule would not reserve the slot
+for a better tool — it would make Shell permanently uncovered. It then named `shfmt` as the tool
+that stays opt-in, for two reasons: it is a formatter, so enabling it "rewrites every shell file
+in a repository", and **it had not been measured**.
+
+The first reason is the same argument that admitted shellcheck, one step further: shell has no
+first-party *formatter* to defer to either. With `shfmt` off, a shell file poly formats gets
+`normalize_whitespace` and nothing else — trailing spaces, line endings, a final newline. The
+tier-2 reindenter never touches it, because `bash` is in neither `BRACE_FAMILY` nor
+`LEAVE_UNTOUCHED` and neither the language pack nor poly ships a bash indents query. So the rule
+was not deferring the decision; it was declining to format shell at all.
+
+The second reason has now been discharged, and discharging it surfaced a separate bug.
+
+### The measurement, and the bug it found
+
+Measured across the pinned corpus B trees — 10 repositories, **97** `.sh`/`.bash` files, **none
+unparseable** — `poly fmt --fix` with `[fmt.shell.shfmt] enabled = true`:
+
+| indent width | files changed | diff lines |
+| --- | ---: | ---: |
+| 4 (the old default) | 61 / 97 (63%) | 3,332 |
+| **2 (the corrected default)** | **19 / 97 (20%)** | **424** |
+
+A second pass changed **0** files: formatting converges.
+
+`Language::Shell` was never in `default_indent_width`'s two-space list, so it fell through the
+`_ => 4` catch-all — the fallback firing, not a decision about shell. Two spaces is the
+convention modern shell is written in, what the Google Shell Style Guide prescribes, and what
+poly hands to `shfmt -i`. **87% of the churn the old objection described was that default, not
+shfmt's structural opinions**: 42 of the 61 files changed for no reason other than poly's own
+width. The width was corrected first; this amendment rests on the corrected number.
+
+This is the shape the "rewrites every shell file" objection should always have been tested in.
+The claim was true, and it was true about poly.
+
+### Why this one cannot redden CI the way shellcheck could
+
+The 2026-08-29 amendment flagged shellcheck as the first default-on native entry that can raise
+an **error**-severity diagnostic, since `poly lint` exits non-zero on error. `shfmt` carries no
+such risk: it is format-only (`capabilities().lint == false`), and `poly fmt` already exits
+non-zero for files that would change. A repository adopting poly sees a formatting diff, which is
+what a formatter is for — not a lint failure.
+
+The zero-system-dependency guarantee is unaffected: with `shfmt` absent, Shell falls through to
+the generic tier and an info-level notice is emitted once per language per run, exactly as
+before. `[fmt.shell.shfmt] enabled = false` opts out; `[fmt.shell.shfmt] indent_width = 4` keeps
+the previous width. Both keys belong on the **engine** table — `Config::engine_config` reads
+`indent_width` from `tables[<language>][<engine>]`, so the `[fmt.shell]` spelling parses without
+complaint and does nothing.
+
+### The rule after this amendment
+
+Unchanged in substance from 2026-08-29, with the formatter case now exercised: a tool may ship on
+when it is **the only credible option for its language**, **its impact has been measured on a
+real corpus**, and **its absence degrades to tier-2 rather than erroring**. All three hold here.
+`zig fmt` and the rest stay opt-in because the first clause fails for them — their languages have
+a first-party tool, or a plausible one coming.
+
+Both harden measurement legs move with the flip: `scripts/harden/poly.toml` pins `shfmt` off so a
+gating count cannot depend on the host's installed version, and
+`scripts/harden/poly.native-tools.toml` switches it back on for the non-gating leg.

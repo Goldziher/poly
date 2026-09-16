@@ -25,8 +25,8 @@ set -euo pipefail
 # the one way the formula and the published archive can come to disagree.
 
 if [ $# -lt 2 ] || [ $# -gt 3 ]; then
-	echo "Usage: $0 <version> <sha256sums-file> [release-repo]" >&2
-	exit 1
+  echo "Usage: $0 <version> <sha256sums-file> [release-repo]" >&2
+  exit 1
 fi
 
 VERSION="$1"
@@ -36,30 +36,30 @@ TAG="v${VERSION}"
 BASE_URL="https://github.com/${RELEASE_REPO}/releases/download/${TAG}"
 
 [ -f "$SUMS_FILE" ] || {
-	echo "error: no such checksums file: $SUMS_FILE" >&2
-	exit 1
+  echo "error: no such checksums file: $SUMS_FILE" >&2
+  exit 1
 }
 
 # sha256sums.txt lines look like "<hash>  ./poly-<version>-<triple>.tar.gz" — the
 # leading ./ comes from the find-based generation in publish.yaml.
 hash_for() {
-	local asset="$1" hash
-	hash="$(awk -v asset="$asset" '{
+  local asset="$1" hash
+  hash="$(awk -v asset="$asset" '{
 		name = $NF
 		sub(/^\*/, "", name)
 		sub(/^\.\//, "", name)
 		if (name == asset) print $1
 	}' "$SUMS_FILE" | head -1)"
 
-	if [ -z "$hash" ]; then
-		echo "error: ${SUMS_FILE} has no entry for ${asset}" >&2
-		exit 1
-	fi
-	if [ "${#hash}" -ne 64 ]; then
-		echo "error: not a sha256 for ${asset}: ${hash}" >&2
-		exit 1
-	fi
-	printf '%s' "$hash"
+  if [ -z "$hash" ]; then
+    echo "error: ${SUMS_FILE} has no entry for ${asset}" >&2
+    exit 1
+  fi
+  if [ "${#hash}" -ne 64 ]; then
+    echo "error: not a sha256 for ${asset}: ${hash}" >&2
+    exit 1
+  fi
+  printf '%s' "$hash"
 }
 
 MACOS_ARM_ASSET="poly-${VERSION}-aarch64-apple-darwin.tar.gz"
@@ -79,7 +79,7 @@ LINUX_INTEL_SHA="$(hash_for "$LINUX_INTEL_ASSET")"
 # on the release runner and its output was baked into the published formula,
 # while every other backticked word collapsed to an empty string.
 render() {
-	cat <<'EOF'
+  cat <<'EOF'
 # typed: false
 # frozen_string_literal: true
 
@@ -140,39 +140,39 @@ EOF
 
 # `|` as the delimiter because the URLs contain slashes.
 FORMULA="$(render | sed \
-	-e "s|@@VERSION@@|${VERSION}|g" \
-	-e "s|@@BASE_URL@@|${BASE_URL}|g" \
-	-e "s|@@MACOS_ARM_ASSET@@|${MACOS_ARM_ASSET}|g" \
-	-e "s|@@MACOS_INTEL_ASSET@@|${MACOS_INTEL_ASSET}|g" \
-	-e "s|@@LINUX_ARM_ASSET@@|${LINUX_ARM_ASSET}|g" \
-	-e "s|@@LINUX_INTEL_ASSET@@|${LINUX_INTEL_ASSET}|g" \
-	-e "s|@@MACOS_ARM_SHA@@|${MACOS_ARM_SHA}|g" \
-	-e "s|@@MACOS_INTEL_SHA@@|${MACOS_INTEL_SHA}|g" \
-	-e "s|@@LINUX_ARM_SHA@@|${LINUX_ARM_SHA}|g" \
-	-e "s|@@LINUX_INTEL_SHA@@|${LINUX_INTEL_SHA}|g")"
+  -e "s|@@VERSION@@|${VERSION}|g" \
+  -e "s|@@BASE_URL@@|${BASE_URL}|g" \
+  -e "s|@@MACOS_ARM_ASSET@@|${MACOS_ARM_ASSET}|g" \
+  -e "s|@@MACOS_INTEL_ASSET@@|${MACOS_INTEL_ASSET}|g" \
+  -e "s|@@LINUX_ARM_ASSET@@|${LINUX_ARM_ASSET}|g" \
+  -e "s|@@LINUX_INTEL_ASSET@@|${LINUX_INTEL_ASSET}|g" \
+  -e "s|@@MACOS_ARM_SHA@@|${MACOS_ARM_SHA}|g" \
+  -e "s|@@MACOS_INTEL_SHA@@|${MACOS_INTEL_SHA}|g" \
+  -e "s|@@LINUX_ARM_SHA@@|${LINUX_ARM_SHA}|g" \
+  -e "s|@@LINUX_INTEL_SHA@@|${LINUX_INTEL_SHA}|g")"
 
 # Assert the substitutions landed rather than trusting sed's exit status, the
 # way update-scoop-manifest.sh does: a formula published with an unsubstituted
 # placeholder would install nothing, and a stale one would install the previous
 # release under the new version.
 if printf '%s' "$FORMULA" | grep -q '@@'; then
-	echo "error: unsubstituted placeholder left in the formula:" >&2
-	printf '%s' "$FORMULA" | grep -n '@@' >&2
-	exit 1
+  echo "error: unsubstituted placeholder left in the formula:" >&2
+  printf '%s' "$FORMULA" | grep -n '@@' >&2
+  exit 1
 fi
 
 for expected in "$VERSION" "$MACOS_ARM_SHA" "$MACOS_INTEL_SHA" "$LINUX_ARM_SHA" "$LINUX_INTEL_SHA"; do
-	printf '%s' "$FORMULA" | grep -qF "$expected" || {
-		echo "error: '${expected}' is missing from the generated formula" >&2
-		exit 1
-	}
+  printf '%s' "$FORMULA" | grep -qF "$expected" || {
+    echo "error: '${expected}' is missing from the generated formula" >&2
+    exit 1
+  }
 done
 
 # A source build would reintroduce the very cost this formula exists to remove,
 # so fail loudly if one ever creeps back into the template.
 if printf '%s' "$FORMULA" | grep -qE 'depends_on "rust"|system "cargo"'; then
-	echo "error: the formula declares a source build; it must install the prebuilt binary" >&2
-	exit 1
+  echo "error: the formula declares a source build; it must install the prebuilt binary" >&2
+  exit 1
 fi
 
 printf '%s\n' "$FORMULA"

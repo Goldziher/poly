@@ -100,8 +100,11 @@ fn default_policy_canonical_on_option_off() {
         "zig fmt must stay opt-in"
     );
     assert!(
-        !NativeToolEngine::shell_format().is_enabled(&default_cfg()),
-        "shfmt must be opt-in (third-party tool)"
+        NativeToolEngine::shell_format().is_enabled(&default_cfg()),
+        "shfmt is default-on when present (ADR 0014, 2026-09-15 amendment): shell has no \
+         first-party formatter to defer to, and at poly's two-space default enabling it was \
+         measured at 19 of 97 files and 424 diff lines across the pinned corpus B trees, \
+         converging on the second pass"
     );
     assert!(
         NativeToolEngine::shell_lint().is_enabled(&default_cfg()),
@@ -391,6 +394,39 @@ fn zig_native_formats_unformatted_source() {
     };
 
     insta::assert_snapshot!("zig_native_known_unformatted", formatted);
+}
+
+/// Every default-on role stamps `default-on` into its cache key.
+///
+/// `ToolSpec::default_on` decides whether a tool runs for a user who configured
+/// nothing, so flipping it changes what a no-config run produces — and the
+/// result cache would happily serve the pre-flip answer under the post-flip
+/// binary. `version()` is folded into the cache key, so the marker is what
+/// forces the re-check. Asserting on the rendered string rather than on the
+/// `default_on` field is the point: the field being `true` proves nothing about
+/// whether the key moved. ~keep
+#[test]
+fn default_on_roles_stamp_the_marker_into_their_cache_key() {
+    for engine in [
+        NativeToolEngine::shell_format(),
+        NativeToolEngine::shell_lint(),
+        NativeToolEngine::for_language(Language::Rust),
+        NativeToolEngine::for_language(Language::Go),
+    ] {
+        assert!(
+            engine.version().contains(" | default-on"),
+            "{} is default-on, so its cache key must say so; got: {}",
+            engine.name(),
+            engine.version()
+        );
+    }
+
+    let opt_in = NativeToolEngine::for_language(Language::Zig);
+    assert!(
+        !opt_in.version().contains(" | default-on"),
+        "zig fmt is opt-in; got: {}",
+        opt_in.version()
+    );
 }
 
 /// Known-unformatted shell: shfmt should add consistent indentation.

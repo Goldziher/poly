@@ -44,18 +44,39 @@
 //! script, which is exactly the "this file was not actually checked" signal
 //! poly's coverage accounting exists to make loud.
 //!
-//! `shfmt` remains **opt-in, off by default**: it is a third-party *formatter*,
-//! and turning it on rewrites every shell file in a repository — a far larger
-//! change than adding warnings, and one that has not been measured. Enable
-//! either explicitly via `poly.toml`:
+//! `shfmt` is **default-on when present** as of ADR 0014's 2026-09-15
+//! amendment, on the same reasoning and the same kind of evidence. It is
+//! third-party *and* a formatter, so it fails the first-party test twice over —
+//! but shell has no first-party formatter to defer to either, so applying the
+//! test would not reserve the slot for a better tool, it would leave Shell
+//! formatted by nothing but whitespace normalization.
+//!
+//! It had previously been held back as "rewrites every shell file … and has not
+//! been measured". Measured, across the pinned corpus B trees (10 repositories,
+//! 97 `.sh`/`.bash` files, none unparseable): **19 files changed, 424 diff
+//! lines, and a second pass changed nothing.** The old objection was true of
+//! the old default — at four spaces the same corpus moves 61 files and 3,332
+//! lines — but 87% of that was `Language::Shell` falling through
+//! `default_indent_width`'s `_ => 4` catch-all rather than shfmt's own
+//! opinions. The width was corrected to two spaces first; this flip rests on
+//! the corrected number.
+//!
+//! Unlike `shellcheck`, this one cannot fail a build on its own: `poly fmt`
+//! exits non-zero for files that *would* change, so a repository adopting poly
+//! sees a formatting diff, not a lint error. Opt back out per language:
 //!
 //! ```toml
 //! [fmt.shell.shfmt]
-//! enabled = true
+//! enabled = false      # opt back out entirely, or instead:
+//! indent_width = 4     # keep it on at the pre-2026-09-15 width
 //!
 //! [lint.shell.shellcheck]
-//! enabled = false   # opt back out
+//! enabled = false      # opt back out
 //! ```
+//!
+//! `indent_width` belongs on the **engine** table above, not on `[fmt.shell]`:
+//! `Config::engine_config` reads it from `tables[<language>][<engine>]`, so the
+//! language-table spelling parses without complaint and does nothing.
 //!
 //! ## Registry slots
 //!
