@@ -27,11 +27,10 @@ sed -i.bak -E "s/^version = \"[^\"]+\"$/version = \"$VERSION\"/" Cargo.toml
 rm Cargo.toml.bak
 # Fail loudly if the substitution did not take: a silent no-op (moved key, added
 # comment, changed quoting) would otherwise ship a binary reporting the old version.
-grep -qxF "version = \"$VERSION\"" Cargo.toml ||
-  {
-    echo "error: Cargo.toml [workspace.package] version bump did not apply" >&2
-    exit 1
-  }
+if ! grep -qxF "version = \"$VERSION\"" Cargo.toml; then
+  echo "error: Cargo.toml [workspace.package] version bump did not apply" >&2
+  exit 1
+fi
 
 # Refresh the workspace lockfile so the tagged build is reproducible. Optional here to keep
 # the bump offline-friendly — drop the guard to force it.
@@ -82,11 +81,10 @@ VERSION="$VERSION" perl -0pi -e \
 # matching line in the file — including the top-level schema `version` — so it
 # would report success on a bump that never landed.
 plugin_block_version="$(awk '/^\[plugin\]/{inblock=1; next} /^\[/{inblock=0} inblock && /^version[[:space:]]*=/{gsub(/.*= *"|".*/, ""); print; exit}' .ai-rulez/config.toml)"
-[[ "$plugin_block_version" == "$VERSION" ]] ||
-  {
-    echo "error: .ai-rulez/config.toml [plugin] version is '$plugin_block_version', expected '$VERSION'" >&2
-    exit 1
-  }
+if [[ "$plugin_block_version" != "$VERSION" ]]; then
+  echo "error: .ai-rulez/config.toml [plugin] version is '$plugin_block_version', expected '$VERSION'" >&2
+  exit 1
+fi
 
 echo "→ regenerating ai-rulez plugin outputs"
 npx -y ai-rulez@latest generate --plugin
