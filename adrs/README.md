@@ -47,7 +47,7 @@ Context, Decision, Consequences (positive and negative/risks), and Alternatives 
 | [0030](0030-lint-format-document.md) | The Lint/Format Document | Accepted |
 | [0031](0031-run-coverage-and-withdrawal.md) | Run Coverage and Withdrawal | Accepted |
 | [0032](0032-hardening-corpora.md) | The Hardening Corpora | Accepted |
-| [0033](0033-batch-engine-execution.md) | Batch Engine Execution for Native-Toolchain Backends | Proposed |
+| [0033](0033-batch-engine-execution.md) | Batch Engine Execution for Native-Toolchain Backends | Accepted |
 
 ## Conventions
 

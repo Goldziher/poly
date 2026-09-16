@@ -32,9 +32,11 @@ pub(crate) struct ToolSpec {
     pub(crate) version_binary: &'static str,
     /// Arguments for the version probe command.
     pub(crate) version_args: &'static [&'static str],
-    /// Whether the tool is **default-on** when detected on `PATH`. The
-    /// canonical first-party formatters (`rustfmt`, `gofmt`) set this; other
-    /// tools (e.g. `zig fmt`, `shfmt`, `shellcheck`) stay opt-in (`false`).
+    /// Whether the tool is **default-on** when detected on `PATH`. Four tools
+    /// set this: the canonical first-party formatters `rustfmt` and `gofmt`,
+    /// plus `shfmt` and `shellcheck` (ADR 0014's 2026-08-29 and 2026-09-15
+    /// amendments). Everything else — `zig fmt`, the JVM formatters, `styler`,
+    /// `swift-format`, `dart`, `gleam` — stays opt-in (`false`).
     pub(crate) default_on: bool,
     /// Whether the tool accepts an `--edition <year>` flag whose value is
     /// resolved from the file's `Cargo.toml`. Only `rustfmt` sets this: without
@@ -76,6 +78,40 @@ pub(crate) struct ToolSpec {
     /// covers tools that need directory anchoring without any config-flag
     /// injection. Set to `false` on all tools that do not need it.
     pub(crate) run_in_file_dir: bool,
+    /// Arguments that make the tool rewrite **named files in place**, or `None`
+    /// when this tool cannot be batched.
+    ///
+    /// Batching materializes N files into a scratch mirror poly owns and lets
+    /// the tool rewrite them there (see [`super::batch`]). That only works for
+    /// a tool which takes file paths and edits them; it is deliberately `None`
+    /// for two groups:
+    ///
+    /// - **Tools with their own config files** (`rustfmt`, `swift-format`).
+    ///   They discover config by walking *up* from the file, and a scratch
+    ///   mirror does not reproduce the repository's ancestors — so batching
+    ///   them would silently change which config governs the run. Doing it
+    ///   properly means resolving the config per group and passing it
+    ///   explicitly; that is a separate decision.
+    /// - **`styler`**, whose argv is a poly-authored `Rscript -e` program that
+    ///   would have to be rewritten to take a vector of paths.
+    ///
+    /// The arguments exclude the stdin placeholder the per-file path uses
+    /// (`-`, `--stdin`): a batch names real paths instead.
+    ///
+    /// Declaring arguments here makes batching *available*, not *active*: it is
+    /// opt-in per tool via `[fmt.<lang>.<tool>] batch = true`. Whether it pays
+    /// is genuinely environment-dependent, and cannot be predicted from startup
+    /// cost alone — `gofmt` and `shfmt` both start in ~20 ms, and on one
+    /// measurement `gofmt` was 3x faster batched while `shfmt` was 4x slower.
+    /// The reason is that the per-file path pipes content over **stdin**, so the
+    /// tool touches no files, whereas a batch adds a scratch mirror to write and
+    /// read back. Whether that trade wins depends on file sizes and on how
+    /// contended the machine is — under heavy load, spawns get expensive and
+    /// batching wins everywhere; on an idle machine the runner's own
+    /// `par_iter` already hides most startup and the extra I/O can dominate.
+    ///
+    /// So: measure in your environment, then switch it on where it helps.
+    pub(crate) batch_format_args: Option<&'static [&'static str]>,
 }
 
 impl ToolSpec {
@@ -102,6 +138,7 @@ pub(crate) static GOFMT_SPEC: ToolSpec = ToolSpec {
     edition_flag: false,
     rustfmt_config_flag: false,
     run_in_file_dir: false,
+    batch_format_args: Some(&["-w"]),
     config_files: &[],
 };
 
@@ -120,6 +157,7 @@ pub(crate) static RUSTFMT_SPEC: ToolSpec = ToolSpec {
     edition_flag: true,
     rustfmt_config_flag: true,
     run_in_file_dir: false,
+    batch_format_args: None,
     config_files: tool_config::RUSTFMT_CONFIG_FILES,
 };
 
@@ -137,6 +175,7 @@ pub(crate) static ZIGFMT_SPEC: ToolSpec = ToolSpec {
     edition_flag: false,
     rustfmt_config_flag: false,
     run_in_file_dir: false,
+    batch_format_args: Some(&["fmt"]),
     config_files: &[],
 };
 
@@ -173,6 +212,7 @@ pub(crate) static SHFMT_SPEC: ToolSpec = ToolSpec {
     edition_flag: false,
     rustfmt_config_flag: false,
     run_in_file_dir: false,
+    batch_format_args: Some(&["-w"]),
     config_files: &[],
 };
 
@@ -201,6 +241,7 @@ pub(crate) static SHELLCHECK_SPEC: ToolSpec = ToolSpec {
     edition_flag: false,
     rustfmt_config_flag: false,
     run_in_file_dir: false,
+    batch_format_args: None,
     config_files: tool_config::SHELLCHECK_CONFIG_FILES,
 };
 
@@ -219,6 +260,7 @@ pub(crate) static JAVA_FMT_SPEC: ToolSpec = ToolSpec {
     edition_flag: false,
     rustfmt_config_flag: false,
     run_in_file_dir: false,
+    batch_format_args: Some(&["-i"]),
     config_files: &[],
 };
 
@@ -237,6 +279,7 @@ pub(crate) static KTFMT_SPEC: ToolSpec = ToolSpec {
     edition_flag: false,
     rustfmt_config_flag: false,
     run_in_file_dir: false,
+    batch_format_args: Some(&["--kotlinlang-style"]),
     config_files: &[],
 };
 
@@ -266,6 +309,7 @@ pub(crate) static RSTYLER_SPEC: ToolSpec = ToolSpec {
     edition_flag: false,
     rustfmt_config_flag: false,
     run_in_file_dir: false,
+    batch_format_args: None,
     config_files: &[],
 };
 
@@ -285,6 +329,7 @@ pub(crate) static SWIFT_FORMAT_SPEC: ToolSpec = ToolSpec {
     edition_flag: false,
     rustfmt_config_flag: false,
     run_in_file_dir: true,
+    batch_format_args: None,
     config_files: tool_config::SWIFT_FORMAT_CONFIG_FILES,
 };
 
@@ -303,6 +348,7 @@ pub(crate) static DARTFMT_SPEC: ToolSpec = ToolSpec {
     edition_flag: false,
     rustfmt_config_flag: false,
     run_in_file_dir: false,
+    batch_format_args: Some(&["format"]),
     config_files: &[],
 };
 
@@ -321,6 +367,7 @@ pub(crate) static GLEAMFMT_SPEC: ToolSpec = ToolSpec {
     edition_flag: false,
     rustfmt_config_flag: false,
     run_in_file_dir: false,
+    batch_format_args: Some(&["format"]),
     config_files: &[],
 };
 

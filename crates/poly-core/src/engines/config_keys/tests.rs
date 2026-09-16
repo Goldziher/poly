@@ -425,21 +425,26 @@ const ENGINE_SOURCES: &[(&str, &[&str])] = &[
     ("uncomment", &["uncomment.rs"]),
     ("astgrep", &["astgrep/mod.rs"]),
     // Every wrapped toolchain binary shares one implementation and one key —
-    // except shfmt, which also takes `use_tabs`. That read is sited in its own
-    // module precisely so this scan attributes it to shfmt alone; siting it in
-    // the shared mod.rs would force the key to be declared on ten tools that
-    // ignore it.
-    ("gofmt", &["native_tool/mod.rs"]),
+    // except shfmt, which also takes `use_tabs`, and the batch-capable tools,
+    // which also take `batch`. Both reads are sited in their own modules
+    // precisely so this scan attributes them to the right tools; siting them in
+    // the shared mod.rs would force each key to be declared on tools that
+    // ignore it. `batch.rs` is listed for exactly the tools whose spec declares
+    // `batch_format_args`, which is the same set `option_keys` declares it for.
+    ("gofmt", &["native_tool/mod.rs", "native_tool/batch.rs"]),
     ("rustfmt", &["native_tool/mod.rs"]),
-    ("zigfmt", &["native_tool/mod.rs"]),
-    ("shfmt", &["native_tool/mod.rs", "native_tool/tabs.rs"]),
+    ("zigfmt", &["native_tool/mod.rs", "native_tool/batch.rs"]),
+    (
+        "shfmt",
+        &["native_tool/mod.rs", "native_tool/tabs.rs", "native_tool/batch.rs"],
+    ),
     ("shellcheck", &["native_tool/mod.rs"]),
-    ("google-java-format", &["native_tool/mod.rs"]),
-    ("ktfmt", &["native_tool/mod.rs"]),
+    ("google-java-format", &["native_tool/mod.rs", "native_tool/batch.rs"]),
+    ("ktfmt", &["native_tool/mod.rs", "native_tool/batch.rs"]),
     ("styler", &["native_tool/mod.rs"]),
     ("swift-format", &["native_tool/mod.rs"]),
-    ("dartfmt", &["native_tool/mod.rs"]),
-    ("gleamfmt", &["native_tool/mod.rs"]),
+    ("dartfmt", &["native_tool/mod.rs", "native_tool/batch.rs"]),
+    ("gleamfmt", &["native_tool/mod.rs", "native_tool/batch.rs"]),
 ];
 
 /// Keys a backend reads that no user ever writes: `Config` injects them into the

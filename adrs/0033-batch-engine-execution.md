@@ -1,7 +1,10 @@
 # 0033 — Batch Engine Execution for Native-Toolchain Backends
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-16
+- Updated: 2026-09-16 — implemented; see "Amendment — 2026-09-16 (as built)" below.
+  The gate this ADR set on itself was measured and passed, and four decisions
+  changed in contact with the tools.
 
 ## Context
 
@@ -471,3 +474,179 @@ Stated plainly, because the whole case rests on measurement:
   threshold is correct for in-process engines, where recomputation genuinely is cheaper than a disk
   round trip. The distinction is not how long the work took but whether repeating it costs a process
   spawn, so the exemption belongs to the batch path rather than to the constant.
+
+## Amendment — 2026-09-16 (as built, and a partly negative result)
+
+Implemented — and the headline premise of this ADR did **not** survive
+measurement. The mechanism works, produces byte-identical output, and is a large
+win for one class of tool. For the class this ADR was written about, it is a
+**regression**, and it ships disabled there.
+
+### What the Context section got wrong
+
+The Context section argues from "~90% of per-file time is startup". That figure
+is real but it is a **per-file, serial** statistic, and poly's runner is not
+serial — it is a rayon `par_iter` across every core. Startup is therefore already
+overlapped before batching does anything, so the share of *wall-clock* it can
+recover is far smaller than 90%.
+
+Worse, the comparison is not like-for-like. The per-file path pipes content over
+**stdin**: the tool opens no files at all. A batch necessarily adds file I/O —
+poly writes a scratch mirror, the tool reads and rewrites it, poly reads it back.
+That is new work in exchange for a saved spawn, and for a tool that starts
+quickly the trade is bad.
+
+Measured end-to-end, `poly fmt --check --no-cache` over 400 real shell files,
+same binary, batching the only variable (three runs each):
+
+| | wall |
+| --- | ---: |
+| per-file | 0.39 / 0.49 / 0.50 s |
+| batched | 1.93 / 2.00 / 2.27 s |
+
+**Batching `shfmt` is roughly 4x slower.** CPU accounting shows exactly the
+predicted trade: user time falls 1.01 s -> 0.67 s (the saved Go-runtime starts)
+while system time rises 1.85 s -> 2.30 s (the mirror's syscalls).
+
+### What is nonetheless true
+
+- **Correctness is unaffected.** Output is byte-identical across 400 files, and
+  the one file that differs from a single `shfmt -i 2` pass differs because
+  poly's fixed-point loop runs a second pass and reaches `shfmt`'s own fixed
+  point — pre-existing behaviour, and a direct demonstration that pass 2
+  correctly falls through to the per-file path.
+- **The mechanism does what it claims.** Instrumented spawn counting over the
+  same corpus: **684 -> 413** invocations, exactly the 285 pass-one spawns
+  replaced by 14 shard spawns. The shards are genuinely concurrent (14 starts
+  within 148 ms).
+- **It is a large win where startup dominates.** 60 files, `xargs -P14`
+  per-file against the same files in shards. Read these as indicative only: the
+  `xargs` per-file arm re-reads each file, whereas poly's real per-file path
+  pipes content over stdin and reads nothing — so these ratios **flatter
+  batching** relative to what poly actually does.
+
+  | tool | startup | per-file | batched | speedup |
+  | --- | ---: | ---: | ---: | ---: |
+  | `ktfmt` | 211 ms | 10.82 s | 1.69 s | **6.4x** |
+  | `google-java-format` | 316 ms | 3.33 s | 0.93 s | **3.6x** |
+  | `zig fmt` | 45 ms | 0.71 s | 0.25 s | 2.9x |
+  | `gofmt` | 18 ms | 0.16 s | 0.05 s | 3.2x (synthetic) |
+  | `shfmt` | 20 ms | 0.35 s | 0.34 s | none |
+
+### The decision that follows: opt-in, per tool
+
+**Batching is off unless a tool's config asks for it** —
+`[fmt.<lang>.<tool>] batch = true`. It is implemented for `gofmt`, `shfmt`,
+`zig fmt`, `ktfmt`, `google-java-format`, `dart format` and `gleam format`, and
+inert until switched on.
+
+A hardcoded default was tried first — gate on the tool's startup cost — and
+abandoned, because the data does not support any fixed rule:
+
+- **Startup does not predict the outcome.** `gofmt` and `shfmt` both start in
+  ~20 ms. On the same machine, `gofmt` measured 3x *faster* batched and `shfmt`
+  4x *slower*.
+- **Neither does the tool.** Re-measured later at load average ~200, `shfmt`
+  measured 4-7x **faster** batched — the opposite sign from the same tool on the
+  same machine hours earlier.
+
+Both observations have the same cause. Batching does not remove work, it
+*substitutes* work: one process spawn for a mirror write, a tool-side read and
+write, and a read back. Which side is cheaper depends on file sizes and on how
+contended the machine is. On a busy machine spawns are expensive and batching
+wins everywhere; on an idle one the runner's `par_iter` already overlaps startup
+across cores and the added I/O dominates.
+
+There is no default that is right in every environment, so poly does not pick
+one. The measurements below say where to look; the config key says what to do
+about it.
+
+`rustfmt`, `swift-format` and `styler` cannot be switched on at all. Their
+exclusion is about **correctness**, not speed: the first two discover config by
+walking up from the file, which a scratch mirror does not reproduce, and
+`styler`'s argv is a poly-authored `Rscript -e` program taking a single path.
+
+### 1. A malformed member does **not** abort the batch — and that is the danger
+
+Section 9 anticipated "a tool that aborts the whole invocation because one member
+is malformed". Neither `shfmt` nor `gofmt` does that. Given a directory
+containing one unparseable file, both **formatted every valid file, left the
+broken one byte-identical, and exited non-zero**.
+
+That is worse than aborting, because it makes the exit code the *only* usable
+signal. A tool rejecting a bad **flag** also exits non-zero — having done
+nothing, leaving every file byte-identical. After the fact those two states are
+indistinguishable from the files alone, and reading them back in the second case
+reports every file "unchanged", i.e. **clean**: a false pass, reached without any
+formatter having looked at the source.
+
+**As built: any non-zero exit discards the entire batch and falls back to the
+per-file path.** This has a consequence worth stating, because it was observed:
+the larger the shard, the likelier it contains a malformed file, and the more
+work one bad file discards. With every candidate in a single shard the entire
+prefill was lost. The fallback is still correct — those files are simply
+formatted per-file — but the batch work is wasted, so shard size is a
+reliability parameter and not only a parallelism one.
+
+### 2. Explicit paths, not directories — section 8's first defence is withdrawn
+
+Section 8 preferred passing the shard's *directory* so argv limits stop existing,
+while naming the hazard: the tool then decides what is in it, so a file it
+silently declines "comes back unchanged and reads as clean". That hazard is the
+same false pass as above and is not worth an argv optimisation.
+
+**As built: every file is named explicitly**, split into as many invocations as
+the 30,000-byte budget requires (section 8's third defence). The budget never
+truncates, it only splits.
+
+### 3. A prefill, not a restructuring
+
+Section 2 proposed hoisting read-and-filter out of the per-file closure. As
+built, `format_one` is **not restructured**. The batch runs as a pre-pass that
+computes what pass one would produce and hands the results to the loop as a
+lookup table (`runner/batch.rs`).
+
+This makes both error directions harmless by construction: over-inclusion
+(batching a file the loop later skips) leaves an entry nobody reads, and
+under-inclusion leaves the file on the per-file path. Every filter — binary,
+UTF-8, format-ignored, withdrawn, generated, hash-stamped — stays in one place,
+in one order, unchanged. Batched files are **read twice**, which is part of why
+the trade is bad for cheap tools, but it buys the property that a bug in this
+module cannot change *which* files the run checks.
+
+A lookup is honoured only when the entry's stored input equals the content in
+hand. That confines the prefill to pass one and makes a permuted or stale result
+impossible to apply to the wrong file — the "new class of bug" the Consequences
+section warns about, closed by comparison rather than by ordering discipline.
+
+### 4. Scratch tree: `tempfile`, not the cache directory
+
+Section 5 placed the mirror under `<platform-cache>/poly/<repo-key>/batch/<pid>/`.
+As built it is a `tempfile::TempDir`: created `0700` on Unix — the property
+section 5 wanted — and **removed on drop, including on panic and early return**,
+which a pid-named cache subdirectory is not. Section 5's objection to
+`catalog_tool`'s temp dir is about *flatness* losing config discovery, which does
+not apply here because every batched tool has an empty `config_files`.
+
+### Also as built
+
+- **Memory is bounded.** `MAX_PREFILL_BYTES` (64 MiB) caps what the prefill holds
+  live; past it the remaining files take the per-file path. Candidates are sorted
+  by path first, so which files get batched is deterministic rather than a
+  function of the order rayon finished them in. Unchanged files cost their
+  content once — an entry's input and output are two handles on one `Arc`.
+- **The `MIN_CACHE_DURATION` bypass landed as specified** (section 4).
+- **`Engine::batch_support` carries only `format`.** The `lint` half was dropped
+  until `shellcheck` is actually decided (section 6): declaring a field nothing
+  consults would suggest setting it does something.
+- **EditorConfig does not leak in.** Giving `shfmt` a real path normally enables
+  EditorConfig lookup, which stdin mode does not do — but an explicit `-i` (which
+  poly always passes) overrides it, and the mirror lives in a temp directory
+  where no project config is reachable. Verified rather than assumed.
+
+### Still not verified
+
+- **Nothing here was measured on an idle machine.** Ratios only.
+- `dart format`'s batching is enabled on its 234 ms startup, by analogy with the
+  two JVM tools; it was not itself benchmarked batched-vs-per-file.
+- `styler` (982 ms startup, the largest prize in the tier) is still unimplemented.

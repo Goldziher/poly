@@ -373,6 +373,26 @@ pub struct Capabilities {
     pub fix: bool,
 }
 
+/// Which operations a backend can perform over a whole batch in one call.
+///
+/// Batching exists for one reason: a backend whose per-file cost is dominated
+/// by **process startup**. Measured on the development host, `shfmt` spends
+/// ~17 ms of its ~18 ms per-file time starting the Go runtime, and the JVM
+/// tools are an order of magnitude worse again — so amortizing one spawn across
+/// many files is most of the available win. It buys nothing for an in-process
+/// engine, which is why this defaults to off and every tier-1 backend leaves it
+/// there.
+///
+/// Only `format` exists today. Lint batching is deferred: `shellcheck` is the
+/// one lint backend worth batching, and giving it real paths changes *what it
+/// reports* (`source` directives start resolving), which is a behaviour change
+/// needing its own decision rather than a performance change. See ADR 0033 §6.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct BatchSupport {
+    /// The backend implements [`Engine::format_batch`].
+    pub format: bool,
+}
+
 /// Severity of a [`Diagnostic`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
@@ -584,6 +604,48 @@ pub trait Engine: Send + Sync {
     /// Format a file. Defaults to [`FormatOutput::Unchanged`].
     fn format(&self, _src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
         Ok(FormatOutput::Unchanged)
+    }
+
+    /// Which operations this backend can perform over a whole batch at once,
+    /// given the config governing this file.
+    ///
+    /// Defaults to none, so every backend that does not opt in keeps the
+    /// per-file path untouched.
+    ///
+    /// `cfg` is passed because batching is both a capability *and* a policy:
+    /// whether a tool can rewrite named files is static, but whether doing so
+    /// is faster than spawning per file depends on the environment, so it is
+    /// opt-in. A backend answering `true` here is claiming both.
+    fn batch_support(&self, _cfg: &EngineConfig) -> BatchSupport {
+        BatchSupport::default()
+    }
+
+    /// Format every member of `batch` in one call.
+    ///
+    /// # Contract
+    ///
+    /// The returned vector **must** have the same length as `batch`, and
+    /// element `i` **must** describe `batch[i]`. A caller is entitled to treat a
+    /// length mismatch as a failure of the batch mechanism rather than as a
+    /// short answer, because the alternative — trusting a ragged vector — is
+    /// what would attribute one file's formatting to another.
+    ///
+    /// The outer `Err` means *the batch as a whole failed* (the spawn failed,
+    /// the output was unusable). It is never an error for the files involved:
+    /// the caller re-runs them through the per-file path, so a batch failure
+    /// costs time and not correctness. An inner `Err` is a genuine per-file
+    /// failure and is attributed to that one file.
+    ///
+    /// Implementations receive **content**, never a list of paths to go and
+    /// read. `SourceFile::path` travels for naming and config discovery only;
+    /// the bytes handed over are authoritative, and may not correspond to
+    /// what is currently on disk at that path.
+    fn format_batch(
+        &self,
+        _batch: &[SourceFile],
+        _cfg: &EngineConfig,
+    ) -> anyhow::Result<Vec<anyhow::Result<FormatOutput>>> {
+        anyhow::bail!("this backend does not implement batch formatting")
     }
 
     /// Whether this backend reads [`ENABLED_OPTION_KEY`] itself and degrades

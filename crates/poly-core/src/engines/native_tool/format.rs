@@ -118,7 +118,7 @@ pub(crate) fn format_via_tool(
 /// would make output platform-dependent and diverge from poly's LF default.
 /// Collapsing `\r\n` to `\n` keeps formatted output identical across hosts; it is
 /// a no-op on Unix, where the tool already emits LF, so no allocation happens.
-fn normalize_newlines(formatted: String) -> String {
+pub(crate) fn normalize_newlines(formatted: String) -> String {
     if formatted.contains('\r') {
         formatted.replace("\r\n", "\n")
     } else {
@@ -178,6 +178,7 @@ mod tests {
             rustfmt_config_flag: false,
             run_in_file_dir: false,
             config_files: &[],
+            batch_format_args: None,
         };
 
         let size = 1 << 20; // 1 MiB — 16x the Linux pipe buffer, so both pipes fill.

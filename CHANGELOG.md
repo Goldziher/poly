@@ -9,6 +9,33 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ### Added
 
+- **Native formatters can now run in batches, opt-in per tool** (ADR 0033). A tool whose per-file
+  cost is dominated by process startup can be handed many files in one invocation instead of one
+  process per file. Switch it on with `[fmt.<lang>.<tool>] batch = true`; implemented for `gofmt`,
+  `shfmt`, `zig fmt`, `ktfmt`, `google-java-format`, `dart format` and `gleam format`.
+
+  poly writes each file's in-memory content into a scratch tree it owns, lets the tool rewrite it
+  there, and reads the results back. Output is byte-identical to the per-file path — verified over
+  400 real shell files — and a batch that cannot prove its answer falls back to per-file rather than
+  guessing.
+
+  **It is off by default because there is no default that is right everywhere.** Batching does not
+  remove work, it substitutes it: one process spawn for a mirror write, a tool-side read and write,
+  and a read back. Measured on one machine, `gofmt` came out 3x faster batched while `shfmt` — which
+  starts in almost exactly the same time — came out 4x slower; re-measured under heavy load, `shfmt`
+  came out 4-7x faster. The sign depends on file sizes and machine contention, so poly does not
+  guess. Where it pays, it pays a lot: `ktfmt` measured 6.4x and `google-java-format` 3.6x.
+
+  `rustfmt`, `swift-format` and `styler` cannot be batched at all. That exclusion is about
+  correctness rather than speed: the first two discover their own config by walking up from the
+  file, which a scratch mirror does not reproduce, so batching them would quietly change which
+  config governs the run.
+
+  The real worktree is never handed to a tool: poly's atomic write remains the only thing that
+  touches it, so `poly fmt --check` stays a true dry run. Passing content rather than paths also
+  keeps the commit gate honest — a batched tool cannot re-resolve a path back into the worktree or
+  follow a `snapshot_include` symlink out of the staged snapshot (ADR 0019).
+
 - **`shfmt` now runs by default when it is installed** (ADR 0014, 2026-09-15 amendment). Shell was
   the one language poly formatted with nothing but whitespace normalization: `shfmt` was opt-in,
   and the tree-sitter tier does not reindent `bash` (it is in neither `BRACE_FAMILY` nor

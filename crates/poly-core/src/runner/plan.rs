@@ -357,6 +357,11 @@ fn build_severity_remap(cfg: &EngineConfig) -> SeverityRemap {
 /// read those from globals rather than their own options table.
 fn cache_args(cfg: &EngineConfig) -> toml::Table {
     let mut table = cfg.options.clone();
+    // Batching changes how a formatter is invoked, never what it produces —
+    // output is byte-identical either way. Leaving it in the key would throw
+    // away every cached result on a toggle, and make a batched and an
+    // unbatched run unable to share a cache for no reason at all.
+    table.remove("batch");
     table.insert(
         "__globals_line_length".to_string(),
         toml::Value::Integer(cfg.globals.line_length as i64),

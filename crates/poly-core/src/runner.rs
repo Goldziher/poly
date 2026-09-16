@@ -20,6 +20,7 @@ use poly_cache::{Namespace, ResultCache};
 use rayon::prelude::*;
 use rustc_hash::FxHashSet;
 
+mod batch;
 mod edits;
 mod generated;
 mod plan;
@@ -28,6 +29,7 @@ mod skips;
 mod types;
 
 use crate::fingerprint::{ConfigFingerprint, fingerprints};
+use batch::{BatchPrefill, prefill};
 use edits::apply_edits;
 use generated::{acts_on_generated, format_skip_result, lint_skip_result};
 use plan::{EnginePlan, RunPlan, plan_by_config_language, prefetch_tier2_grammars, provides_language_lint};
@@ -285,6 +287,15 @@ pub fn format_run(
     prefetch_tier2_grammars(&plan);
     // Same key, same resolution, same phase-agnostic answer as `lint_run`.
     let act_on_generated = acts_on_generated(&configs, opts.generated);
+    // Batch-capable formatters run once over many files here, before the loop.
+    // Whatever this produces is an accelerator only: every filter below still
+    // runs, and a file with no entry simply takes the per-file path (ADR 0033).
+    let prefilled = prefill(&files, &plan, &cache);
+    tracing::debug!(
+        prefilled = prefilled.len(),
+        files = files.len(),
+        "batch prefill complete"
+    );
     // An engine error is carried, not swallowed: dropping the file here is what
     // let `poly fmt --check` report success on a file it could not parse.
     let (oks, errs): (Vec<_>, Vec<_>) = files
@@ -298,6 +309,7 @@ pub fn format_run(
                 opts.fix_generated,
                 collect_debug,
                 &act_on_generated,
+                &prefilled,
             )
             .map_err(|error| FormatError {
                 path: f.path.clone(),
@@ -634,6 +646,7 @@ fn push_engine_debug(debug: Option<&mut RunDebug>, plan: &EnginePlan, started: O
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn format_one(
     f: &DiscoveredFile,
     plan: &RunPlan,
@@ -642,6 +655,7 @@ fn format_one(
     fix_generated: bool,
     collect_debug: bool,
     act_on_generated: &[bool],
+    prefilled: &BatchPrefill,
 ) -> anyhow::Result<FormatResult> {
     let bytes = std::fs::read(&f.path).with_context(|| format!("reading {}", f.path.display()))?;
     // See the same guard on the lint path: a binary file is a skip, malformed
@@ -743,6 +757,31 @@ fn format_one(
                     push_engine_debug(debug.as_mut(), plan, None);
                 }
                 current = Arc::from(text);
+                continue;
+            }
+            // A batch already computed this engine's answer for this exact
+            // content. `take` compares the content rather than trusting the
+            // path, so a stale or mismatched entry falls through to the tool.
+            if let Some(out) = prefilled.take(&f.path, plan.engine.name(), &current) {
+                if record_debug {
+                    push_engine_debug(debug.as_mut(), plan, None);
+                }
+                // Persisted unconditionally, bypassing `should_cache_result`.
+                // That guard refuses results cheaper than 5 ms because an
+                // in-process engine can recompute faster than the disk can
+                // answer — but recomputing *this* costs a process spawn, so the
+                // guard is exactly inverted here. Without the bypass poly would
+                // decline to cache precisely the results worth caching, and
+                // re-batch the whole corpus on every run (ADR 0033 §4).
+                if let Some(key) = &key
+                    && let Err(error) = cache.put(Namespace::Fmt, key, out.as_bytes())
+                {
+                    tracing::warn!(
+                        engine = plan.engine.name(),
+                        "failed to store batched fmt cache entry: {error:#}"
+                    );
+                }
+                current = out;
                 continue;
             }
             src.content = Arc::clone(&current);

@@ -110,15 +110,19 @@
 use tracing::info;
 
 use crate::config::EngineConfig;
-use crate::engine::{Capabilities, Diagnostic, Engine, FormatOutput, OptionKeys, OptionTable, OptionType, SourceFile};
+use crate::engine::{
+    BatchSupport, Capabilities, Diagnostic, Engine, FormatOutput, OptionKeys, OptionTable, OptionType, SourceFile,
+};
 use crate::engines::treesitter::TreeSitterEngine;
 use crate::language::Language;
 
+use self::batch::format_batch_via_tool;
 use self::format::format_via_tool;
 use self::lint::lint_via_shellcheck;
 use self::probe::probe_tool;
 use self::spec::NativeRole;
 
+mod batch;
 #[cfg(test)]
 mod cache_key_tests;
 mod edition;
@@ -331,13 +335,20 @@ impl Engine for NativeToolEngine {
     fn option_keys(&self, table: OptionTable) -> OptionKeys {
         match table {
             OptionTable::Lint => OptionKeys::declared(&[("enabled", OptionType::BOOLEAN)]),
-            OptionTable::Format => {
-                if self.role.spec().format_indent_flag {
+            OptionTable::Format => match (self.role.spec().format_indent_flag, self.role.spec().batch_format_args) {
+                (true, Some(_)) => OptionKeys::declared(&[
+                    ("enabled", OptionType::BOOLEAN),
+                    ("use_tabs", OptionType::BOOLEAN),
+                    ("batch", OptionType::BOOLEAN),
+                ]),
+                (true, None) => {
                     OptionKeys::declared(&[("enabled", OptionType::BOOLEAN), ("use_tabs", OptionType::BOOLEAN)])
-                } else {
-                    OptionKeys::declared(&[("enabled", OptionType::BOOLEAN)])
                 }
-            }
+                (false, Some(_)) => {
+                    OptionKeys::declared(&[("enabled", OptionType::BOOLEAN), ("batch", OptionType::BOOLEAN)])
+                }
+                (false, None) => OptionKeys::declared(&[("enabled", OptionType::BOOLEAN)]),
+            },
             OptionTable::CrossCuttingLint => OptionKeys::UNCHECKED,
         }
     }
@@ -442,6 +453,42 @@ impl Engine for NativeToolEngine {
             }
             NativeRole::Shellcheck => Ok(FormatOutput::Unchanged),
         }
+    }
+
+    /// Whether this backend batches: the tool must be able to rewrite named
+    /// files *and* the config must ask for it.
+    ///
+    /// "Can batch" and "should batch" are different questions. The per-file path
+    /// pipes content over stdin and the tool touches no files, while a batch
+    /// adds a scratch mirror to write and read back — so which is faster depends
+    /// on file sizes and machine contention, and poly does not guess. See
+    /// [`batch::wants_batch`].
+    ///
+    /// This answers from the static spec alone. Whether the tool is *enabled*
+    /// and *present* is settled inside
+    /// [`format_batch`](crate::engine::Engine::format_batch), which fails the
+    /// batch so the caller falls back to the per-file path — the same path that
+    /// owns the tier-2 delegation.
+    fn batch_support(&self, cfg: &EngineConfig) -> BatchSupport {
+        BatchSupport {
+            format: self.role.spec().batch_format_args.is_some() && batch::wants_batch(cfg),
+        }
+    }
+
+    fn format_batch(
+        &self,
+        batch: &[SourceFile],
+        cfg: &EngineConfig,
+    ) -> anyhow::Result<Vec<anyhow::Result<FormatOutput>>> {
+        // Not runnable: fail the batch rather than answering for these files.
+        // The per-file path then runs and delegates to the tier-2 reindenter,
+        // which is the behaviour a disabled or absent tool must keep. Answering
+        // `Unchanged` here instead would report every file clean without any
+        // formatter having looked at it.
+        if !self.is_enabled(cfg) || self.probed_version().is_none() {
+            anyhow::bail!("{} is not enabled or not installed; not batching", self.name());
+        }
+        format_batch_via_tool(self.role.spec(), batch, cfg.indent_width, tabs::use_tabs(cfg))
     }
 }
 
