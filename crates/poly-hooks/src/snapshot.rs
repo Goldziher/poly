@@ -290,6 +290,68 @@ mod tests {
     }
 
     #[test]
+    fn sparse_snapshot_materializes_index_entries_without_changing_live_checkout() {
+        let tmp = TempDir::new().expect("tmp repo");
+        let cache = TempDir::new().expect("cache home");
+        let repo = tmp.path();
+        init(repo);
+        std::fs::create_dir(repo.join("included")).expect("included directory");
+        std::fs::create_dir(repo.join("omitted")).expect("omitted directory");
+        std::fs::write(repo.join("included/staged.txt"), "initial\n").expect("write");
+        std::fs::write(repo.join("included/unrelated.txt"), "initial\n").expect("write");
+        std::fs::write(repo.join("omitted/tracked.txt"), "omitted index bytes\n").expect("write");
+        git(repo, &["add", "."]);
+        git(repo, &["commit", "-q", "-m", "fixture"]);
+        git(repo, &["sparse-checkout", "init", "--cone"]);
+        git(repo, &["sparse-checkout", "set", "included"]);
+        std::fs::write(repo.join("included/unrelated.txt"), "unrelated live edit\n").expect("write");
+        assert!(
+            index_flags(repo)
+                .lines()
+                .any(|line| line.starts_with("S ") && line.ends_with("\tomitted/tracked.txt")),
+            "fixture must omit an index entry"
+        );
+        assert!(!repo.join("omitted/tracked.txt").exists());
+
+        for (staged, unstaged) in [
+            ("staged bytes\n", "later unstaged bytes\n"),
+            ("restaged bytes\n", "new live bytes\n"),
+        ] {
+            std::fs::write(repo.join("included/staged.txt"), staged).expect("write staged bytes");
+            git(repo, &["add", "included/staged.txt"]);
+            std::fs::write(repo.join("included/staged.txt"), unstaged).expect("write unstaged bytes");
+            let before = index_flags(repo);
+            let snapshot = StagedSnapshot::create_in(cache.path(), repo, &[]).expect("sparse snapshot");
+            for path in ["included/staged.txt", "included/unrelated.txt", "omitted/tracked.txt"] {
+                assert_matches_index(repo, snapshot.path(), path, "sparse checkout");
+            }
+            assert!(
+                !repo.join("omitted/tracked.txt").exists(),
+                "snapshot must not expand live checkout"
+            );
+            assert_eq!(index_flags(repo), before, "snapshot must preserve index OIDs and flags");
+            assert_eq!(
+                std::fs::read(repo.join("included/staged.txt")).unwrap(),
+                unstaged.as_bytes()
+            );
+            assert_eq!(
+                std::fs::read(repo.join("included/unrelated.txt")).unwrap(),
+                b"unrelated live edit\n"
+            );
+        }
+    }
+
+    fn index_flags(repo: &Path) -> String {
+        let output = Command::new("git")
+            .args(["ls-files", "-v", "--stage"])
+            .current_dir(repo)
+            .output()
+            .expect("read index flags");
+        assert!(output.status.success());
+        String::from_utf8(output.stdout).expect("fixture paths are UTF-8")
+    }
+
+    #[test]
     fn snapshot_contains_staged_not_unstaged_or_untracked() {
         let tmp = TempDir::new().expect("tmp repo");
         let cache = TempDir::new().expect("cache home");

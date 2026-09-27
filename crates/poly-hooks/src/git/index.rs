@@ -80,13 +80,14 @@ const CHECKOUT_BATCH: usize = 1000;
 
 /// Materialize the staged (index) content of specific `paths` into `dest`.
 ///
-/// Runs `git checkout-index -f --prefix=<dest>/ -- <paths>`, which writes each
+/// Runs `git checkout-index -f --ignore-skip-worktree-bits --prefix=<dest>/ -- <paths>`, which writes each
 /// listed entry's **index blob** — i.e. exactly the staged content — beneath
 /// `dest`, recreating the repo-relative directory tree (leading directories are
 /// created, exec bits and symlinks are reproduced faithfully). Untracked files
 /// and unstaged worktree edits are never written, so the result is a
 /// byte-faithful, non-destructive copy of what a commit would capture; `dest`
-/// must already exist. This is how whole-workspace hooks (`cargo clippy`, type
+/// must already exist. Omitted sparse entries materialize only under `dest`,
+/// without expanding the live checkout. This is how whole-workspace hooks (`cargo clippy`, type
 /// checkers, …) are isolated to staged content without touching the live
 /// worktree. A no-op for an empty `paths`; large lists are batched to stay under
 /// `ARG_MAX`.
@@ -99,6 +100,7 @@ pub fn checkout_index_paths(root: &Path, dest: &Path, paths: &[PathBuf]) -> Resu
             .arg("core.autocrlf=false")
             .arg("checkout-index")
             .arg("-f")
+            .arg("--ignore-skip-worktree-bits")
             .arg(prefix_arg(dest))
             .arg("--");
         for path in batch {
