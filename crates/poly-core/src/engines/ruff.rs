@@ -2,7 +2,7 @@
 //! via `ruff_python_formatter`.
 //!
 //! Both come from the published ruff crates on crates.io, pinned exactly
-//! (`ruff_linter = "=0.16.5"`, the rest `=0.0.11`; see the workspace
+//! (`ruff_linter = "=0.16.9"`, the rest `=0.0.15`; see the workspace
 //! `Cargo.toml`). The `=` is deliberate: these are private-by-intent internals
 //! that ruff does not treat as a public API, so a caret range would let
 //! `cargo update` walk into unannounced breakage between releases. The version
@@ -514,7 +514,7 @@ impl Engine for RuffEngine {
     }
 
     fn version(&self) -> &str {
-        "ruff-0.16.5+pkgroot+plugins+isort+e501+tgtsrc+ignore-b008+rules-v3+advisory-sev1+fmtopts1"
+        "ruff-0.16.9+pkgroot+plugins+isort+e501+tgtsrc+ignore-b008+rules-v3+advisory-sev1+fmtopts1"
     }
 
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {

@@ -1,16 +1,16 @@
 // AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-// Content-Hash: blake3:008fb2a28c4f20dda976c37fde2658f6064a7584144ba575d038334827ebdfa9
-// Source-Hash: blake3:f9a65b603cd06e8276fdeb68ca9a2f8fa5b9d69bb5af1250f5c00753f78a2bee
+// Content-Hash: blake3:2f9d5fc4d5d2b42544fd79fbf0b940465f6d70b056a4c3569e5c887613f23775
+// Source-Hash: blake3:50c5aae2a919e52ef1216e799f10c78ca94cae41feba4aefe048570157d928cf
 // Schema-Version: v1
 
 /**
- * OpenCode adapter for poly.
+ * OpenCode v2 adapter for poly.
  *
  * This generated no-op keeps the plugin loadable without inventing runtime behavior.
  * To add OpenCode-specific tools or hooks:
  *
  * 1. Create .ai-rulez/opencode/index.js.
- * 2. Export an OpenCode plugin function from that source file.
+ * 2. Default-export Plugin.define({ id, setup }) from that source file.
  * 3. Run ai-rulez generate --plugin --dry-run.
  * 4. Run ai-rulez generate --plugin.
  *
@@ -18,6 +18,11 @@
  * .ai-rulez sources. Validate all external input and never interpolate untrusted
  * values into shell commands.
  */
-const OpenCodePlugin = async () => ({});
+import { Plugin } from "@opencode/plugin"
 
-export default OpenCodePlugin;
+export default Plugin.define({
+  id: "poly",
+  async setup(ctx) {
+    // Register hooks, transforms, tools, or subscriptions on ctx here.
+  },
+})

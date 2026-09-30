@@ -136,7 +136,7 @@ impl Engine for TreeSitterEngine {
     }
 
     fn version(&self) -> &str {
-        "9+tslp1.18.0"
+        "9+tslp1.20.0"
     }
 
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {

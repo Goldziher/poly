@@ -46,7 +46,7 @@ use rmcp::handler::server::tool::ToolCallContext;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{
     CallToolRequestParams, CallToolResponse, CallToolResult, CancelTaskParams, GetTaskParams, GetTaskResult,
-    Implementation, ListToolsResult, PaginatedRequestParams, ResultType, ServerCapabilities, ServerInfo, Tool,
+    Implementation, ListToolsResult, PaginatedRequestParams, ResultType, ServerCapabilities, ServerConfig, Tool,
     ToolAnnotations, UpdateTaskParams,
 };
 use rmcp::service::RequestContext;
@@ -502,8 +502,8 @@ fn parse_arguments<T: for<'de> Deserialize<'de>>(arguments: Option<rmcp::model::
 }
 
 impl ServerHandler for PolyMcpServer {
-    fn get_info(&self) -> ServerInfo {
-        ServerInfo::new(ServerCapabilities::builder().enable_tools().enable_tasks().build())
+    fn get_info(&self) -> ServerConfig {
+        ServerConfig::new(ServerCapabilities::builder().enable_tools().enable_tasks().build())
             .with_server_info(Implementation::new("poly-mcp", env!("CARGO_PKG_VERSION")))
             .with_instructions(
                 "Universal zero-dependency linter & formatter. Tools mirror the `poly` CLI. Read-only: \

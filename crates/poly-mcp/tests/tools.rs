@@ -13,7 +13,7 @@ use std::time::Duration;
 use poly_mcp::identity::ExecutableWatch;
 use poly_mcp::{PolyMcpServer, ops};
 use rmcp::model::{
-    CallToolRequestParams, CallToolResponse, CallToolResult, ClientCapabilities, ClientInfo, GetTaskParams,
+    CallToolRequestParams, CallToolResponse, CallToolResult, ClientCapabilities, ClientConfig, GetTaskParams,
     Implementation, TaskPayload, TaskStatus,
 };
 use rmcp::{ServerHandler, ServiceExt};
@@ -385,7 +385,7 @@ fn server_constructs_with_config_override() {
 /// Wire an in-process server to a duplex transport, returning the client and the
 /// server's join handle. The client declares the tasks extension capability.
 async fn connect() -> (
-    rmcp::service::RunningService<rmcp::RoleClient, ClientInfo>,
+    rmcp::service::RunningService<rmcp::RoleClient, ClientConfig>,
     tokio::task::JoinHandle<()>,
 ) {
     let (server_io, client_io) = tokio::io::duplex(1 << 16);
@@ -400,7 +400,7 @@ async fn connect() -> (
         service.waiting().await.unwrap();
     });
 
-    let client_info = ClientInfo::new(
+    let client_info = ClientConfig::new(
         ClientCapabilities::builder().enable_tasks().build(),
         Implementation::new("poly-mcp-test", "0.0.0"),
     );
@@ -717,7 +717,7 @@ async fn adding_identity_does_not_disturb_the_existing_payload() {
 async fn connect_watching(
     executable: PathBuf,
 ) -> (
-    rmcp::service::RunningService<rmcp::RoleClient, ClientInfo>,
+    rmcp::service::RunningService<rmcp::RoleClient, ClientConfig>,
     tokio::task::JoinHandle<()>,
 ) {
     let (server_io, client_io) = tokio::io::duplex(1 << 16);
@@ -733,7 +733,7 @@ async fn connect_watching(
         let _ = service.waiting().await;
     });
 
-    let client_info = ClientInfo::new(
+    let client_info = ClientConfig::new(
         ClientCapabilities::builder().enable_tasks().build(),
         Implementation::new("poly-mcp-test", "0.0.0"),
     );

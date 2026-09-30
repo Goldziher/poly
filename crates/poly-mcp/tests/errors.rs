@@ -21,7 +21,7 @@ use std::path::Path;
 use poly_core::report::{FormatDocument, LintDocument};
 use poly_mcp::{PolyMcpServer, ops};
 use rmcp::ServiceExt;
-use rmcp::model::{CallToolRequestParams, ClientCapabilities, ClientInfo};
+use rmcp::model::{CallToolRequestParams, ClientCapabilities, ClientConfig};
 use serde_json::Value;
 use tempfile::TempDir;
 
@@ -164,7 +164,7 @@ fn the_format_records_are_the_cli_records() {
 /// Wire an in-process server to a duplex transport, returning the client and the
 /// server's join handle.
 async fn connect() -> (
-    rmcp::service::RunningService<rmcp::RoleClient, ClientInfo>,
+    rmcp::service::RunningService<rmcp::RoleClient, ClientConfig>,
     tokio::task::JoinHandle<()>,
 ) {
     let (server_io, client_io) = tokio::io::duplex(1 << 16);
@@ -179,7 +179,7 @@ async fn connect() -> (
         service.waiting().await.unwrap();
     });
 
-    let client_info = ClientInfo::new(
+    let client_info = ClientConfig::new(
         ClientCapabilities::builder().build(),
         rmcp::model::Implementation::new("poly-mcp-test", "0.0.0"),
     );

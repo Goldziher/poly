@@ -15,7 +15,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.28.0"
+version = "0.28.1"
 edition = "2024"
 rust-version = "1.97"
 license = "MIT"
@@ -34,26 +34,24 @@ anstyle-query = "1.1.5"
 anyhow = "1"
 assert_cmd = "2"
 assert_fs = "1.1.4"
-# Held with the tree-sitter pin below: ast-grep-core 0.45.3 moved to tree-sitter ^0.27.0,
-# which the `links = "tree-sitter"` single-copy rule makes unresolvable here. ~keep
-ast-grep-config = "0.45.2"
-ast-grep-core = "0.45.2"
+ast-grep-config = "0.45.3"
+ast-grep-core = "0.45.3"
 axoupdater = { version = "0.10.2", default-features = false, features = ["github_releases"] }
-biome_analyze = { git = "https://github.com/biomejs/biome", rev = "99c704908566b40eec4516046e250620b51de44d" }
-biome_css_analyze = { git = "https://github.com/biomejs/biome", rev = "99c704908566b40eec4516046e250620b51de44d" }
-biome_css_parser = { git = "https://github.com/biomejs/biome", rev = "99c704908566b40eec4516046e250620b51de44d" }
-biome_diagnostics = { git = "https://github.com/biomejs/biome", rev = "99c704908566b40eec4516046e250620b51de44d" }
-biome_graphql_analyze = { git = "https://github.com/biomejs/biome", rev = "99c704908566b40eec4516046e250620b51de44d" }
-biome_graphql_parser = { git = "https://github.com/biomejs/biome", rev = "99c704908566b40eec4516046e250620b51de44d" }
-biome_languages = { git = "https://github.com/biomejs/biome", rev = "99c704908566b40eec4516046e250620b51de44d", features = [
+biome_analyze = { git = "https://github.com/biomejs/biome", rev = "f5af19346f43e56e5189d422d32e6080d283bd09" }
+biome_css_analyze = { git = "https://github.com/biomejs/biome", rev = "f5af19346f43e56e5189d422d32e6080d283bd09" }
+biome_css_parser = { git = "https://github.com/biomejs/biome", rev = "f5af19346f43e56e5189d422d32e6080d283bd09" }
+biome_diagnostics = { git = "https://github.com/biomejs/biome", rev = "f5af19346f43e56e5189d422d32e6080d283bd09" }
+biome_graphql_analyze = { git = "https://github.com/biomejs/biome", rev = "f5af19346f43e56e5189d422d32e6080d283bd09" }
+biome_graphql_parser = { git = "https://github.com/biomejs/biome", rev = "f5af19346f43e56e5189d422d32e6080d283bd09" }
+biome_languages = { git = "https://github.com/biomejs/biome", rev = "f5af19346f43e56e5189d422d32e6080d283bd09", features = [
   "lang_css",
 ] }
-biome_rowan = { git = "https://github.com/biomejs/biome", rev = "99c704908566b40eec4516046e250620b51de44d" }
+biome_rowan = { git = "https://github.com/biomejs/biome", rev = "f5af19346f43e56e5189d422d32e6080d283bd09" }
 blake3 = "1"
 bstr = "1.13.1"
 cargo_metadata = "0.23.1"
 clap = { version = "4", features = ["derive"] }
-clap_complete = { version = "4.6.10", features = ["unstable-dynamic"] }
+clap_complete = { version = "4.6.11", features = ["unstable-dynamic"] }
 console = { version = "0.16", default-features = false, features = ["ansi-parsing", "std"] }
 criterion = "0.8"
 ctrlc = "3.5.2"
@@ -81,28 +79,28 @@ itertools = "0.15.0"
 json5 = "1.3.1"
 libc = "0.2.189"
 liblzma = { version = "0.4.8", features = ["static"] }
-mago-allocator = { version = "1.48" }
-mago-database = { version = "1.48" }
-mago-formatter = { version = "1.48", features = ["serde"] }
-mago-linter = { version = "1.48" }
-mago-names = { version = "1.48" }
-mago-php-version = { version = "1.48" }
-mago-reporting = { version = "1.48" }
-mago-span = { version = "1.48" }
-mago-syntax = { version = "1.48" }
-mago-text-edit = { version = "1.48" }
+mago-allocator = { version = "1.50" }
+mago-database = { version = "1.50" }
+mago-formatter = { version = "1.50", features = ["serde"] }
+mago-linter = { version = "1.50" }
+mago-names = { version = "1.50" }
+mago-php-version = { version = "1.50" }
+mago-reporting = { version = "1.50" }
+mago-span = { version = "1.50" }
+mago-syntax = { version = "1.50" }
+mago-text-edit = { version = "1.50" }
 malva = "0.16"
 markdown = "1.0.0"
 markup_fmt = "0.27"
 memchr = "2.8.3"
 owo-colors = { version = "4", features = ["supports-colors"] }
-oxc_allocator = { git = "https://github.com/oxc-project/oxc", rev = "827fdbdf52558db556f2a00da44e02864f416c0a" }
-oxc_diagnostics = { git = "https://github.com/oxc-project/oxc", rev = "827fdbdf52558db556f2a00da44e02864f416c0a" }
-oxc_formatter = { git = "https://github.com/oxc-project/oxc", rev = "827fdbdf52558db556f2a00da44e02864f416c0a" }
-oxc_formatter_core = { git = "https://github.com/oxc-project/oxc", rev = "827fdbdf52558db556f2a00da44e02864f416c0a" }
-oxc_formatter_json = { git = "https://github.com/oxc-project/oxc", rev = "827fdbdf52558db556f2a00da44e02864f416c0a" }
-oxc_linter = { git = "https://github.com/oxc-project/oxc", rev = "827fdbdf52558db556f2a00da44e02864f416c0a" }
-oxc_span = { git = "https://github.com/oxc-project/oxc", rev = "827fdbdf52558db556f2a00da44e02864f416c0a" }
+oxc_allocator = { git = "https://github.com/oxc-project/oxc", rev = "7d28a666f133148fb8b95e1901940723bdfa3e20" }
+oxc_diagnostics = { git = "https://github.com/oxc-project/oxc", rev = "7d28a666f133148fb8b95e1901940723bdfa3e20" }
+oxc_formatter = { git = "https://github.com/oxc-project/oxc", rev = "7d28a666f133148fb8b95e1901940723bdfa3e20" }
+oxc_formatter_core = { git = "https://github.com/oxc-project/oxc", rev = "7d28a666f133148fb8b95e1901940723bdfa3e20" }
+oxc_formatter_json = { git = "https://github.com/oxc-project/oxc", rev = "7d28a666f133148fb8b95e1901940723bdfa3e20" }
+oxc_linter = { git = "https://github.com/oxc-project/oxc", rev = "7d28a666f133148fb8b95e1901940723bdfa3e20" }
+oxc_span = { git = "https://github.com/oxc-project/oxc", rev = "7d28a666f133148fb8b95e1901940723bdfa3e20" }
 phf = { version = "0.14.0", default-features = false, features = ["macros"] }
 poly-buildinfo = { path = "crates/poly-buildinfo" }
 poly-cache = { path = "crates/poly-cache" }
@@ -119,32 +117,32 @@ pretty_assertions = "1.4.1"
 pretty_graphql = "0.2.3"
 pretty_yaml = "0.6"
 quick-xml = "0.42"
-rand = "0.10.2"
+rand = "0.10.3"
 rayon = "1"
 regex = "1"
-rmcp = { version = "3.3.0", features = ["schemars"] }
-rubyfmt = { git = "https://github.com/fables-tales/rubyfmt", rev = "5185d3beb9b4b9052587292d7ac5bf374992e8fe", default-features = false }
-ruff_db = "=0.0.11"
-ruff_formatter = "=0.0.11"
-ruff_linter = "=0.16.5"
-ruff_python_ast = "=0.0.11"
-ruff_python_formatter = "=0.0.11"
-ruff_text_size = "=0.0.11"
+rmcp = { version = "3.5.0", features = ["schemars"] }
+rubyfmt = { git = "https://github.com/fables-tales/rubyfmt", rev = "094cdc86abcb7ad0b089989fe77cd2a987b053de", default-features = false }
+ruff_db = "=0.0.15"
+ruff_formatter = "=0.0.15"
+ruff_linter = "=0.16.9"
+ruff_python_ast = "=0.0.15"
+ruff_python_formatter = "=0.0.15"
+ruff_text_size = "=0.0.15"
 rumdl = { version = "0.2", default-features = false }
 rust-ini = { version = "0.21", features = ["inline-comment"] }
 rustc-hash = "2.1.3"
-rustix = { version = "1.1.4", features = ["pty", "process", "fs", "termios"] }
+rustix = { version = "1.1.5", features = ["pty", "process", "fs", "termios"] }
 same-file = "1.0.6"
-saphyr = "0.0.12"
+saphyr = "0.1.0"
 schemars = "1.2.2"
 seahash = "4.1.0"
 semver = { version = "1.0.28", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
-serde-saphyr = { version = "1.2.0", default-features = false, features = ["deserialize", "serialize"] }
+serde-saphyr = { version = "1.3.0", default-features = false, features = ["deserialize", "serialize"] }
 serde_ignored = "0.1"
 serde_json = { version = "1", features = ["preserve_order"] }
 serde_stacker = "0.1.14"
-serde_toon_format = "0.1"
+serde_toon_format = "0.2"
 shlex = "2.0.1"
 similar = "3.2.0"
 sqruff-lib = "0.40"
@@ -161,16 +159,11 @@ toml = "1.1"
 toml_edit = "0.25"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
-# Held at 0.26: `uncomment` 3.6.0 (the newest release) requires tree-sitter ^0.26.13, and
-# tree-sitter sets `links = "tree-sitter"`, so cargo permits exactly one copy in the graph.
-# Bumping this to 0.27 makes the workspace unresolvable until uncomment ships 0.27 support. ~keep
-tree-sitter = "0.26"
-# 1.18 is the newest release still on tree-sitter ^0.26; 1.19.0 moved to ^0.27. Coupled to the
-# pin above -- raise both together once uncomment allows 0.27. ~keep
-tree-sitter-language-pack = "1.18"
+tree-sitter = "0.27"
+tree-sitter-language-pack = "1.20"
 typos = "0.10"
 typos-dict = "0.14"
-uncomment = "3.6"
+uncomment = "3.10"
 unicase = "2"
 unicode-width = { version = "0.2.2", default-features = false }
 walkdir = "2.5.0"

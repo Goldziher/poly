@@ -32,6 +32,7 @@ __pycache__/
 .ai-rulez/.generated-manifest.json
 .claude/agents/
 .claude/plugins.json
+.claude/rules/
 .claude/settings.json
 .claude/skills/
 .codex/agents/
@@ -43,4 +44,5 @@ __pycache__/
 .opencode/skills/
 AGENTS.md
 CLAUDE.md
+opencode.json
 # END ai-rulez

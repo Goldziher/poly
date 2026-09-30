@@ -144,3 +144,24 @@ time*, not a permanent property. Re-check the pins when touching dependencies. T
 — query `https://crates.io/api/v1/crates/<name>` and compare the published version against the
 version the crate declares at our pinned rev — and a name existing on crates.io is not enough:
 verify it is not a placeholder, a yanked squat, or the same version number over far older code.
+
+## Amendment — 2026-09-30 (dependency refresh for v0.28.1)
+
+`cargo upgrade --incompatible`, plus advancing the three git pins to their remotes' current HEADs,
+moved the git-backed dependencies forward and pulled the ruff pins with them.
+
+- **ruff moved `0.16.5`/`0.0.11` → `0.16.9`/`0.0.15`, as one set.** The bump was forced, not
+  cosmetic: biome at its new HEAD depends on `salsa ^0.28.5`, while `ruff_db 0.0.11` resolves
+  `salsa` to `0.28.2`, so the two could not coexist in one graph. `ruff_db 0.0.15` takes
+  `salsa ^0.28.5`, and `RuffEngine::version()` moved to `ruff-0.16.9+…`. The `0.16.x` line is the
+  same weekly series; the diff across the crates touched no API poly calls.
+- **The git pins advanced to the remotes' HEADs:** biome `99c7049` → `f5af193`, oxc `827fdbd` →
+  `7d28a66`, rubyfmt `5185d3b` → `094cdc8`. Every engine whose output they feed had its
+  `version()` bumped with it — `biome_css`, `biome_graphql`, `oxc`, `markup_fmt` (embedded oxc) and
+  `rubyfmt` — along with `mago` (1.50), `quality` and `treesitter`.
+- **The three-way tree-sitter hold lifted.** `uncomment 3.10.2`, `ast-grep-core 0.45.3` and
+  `tree-sitter-language-pack 1.20` all now take `tree-sitter ^0.27`, so `tree-sitter` moved from
+  0.26 to 0.27 and the `ast-grep`/`uncomment` pins with it. `uncomment`'s word-tag preservation is
+  now case-insensitive as a *substring* match, so a comment containing `bug` — including inside
+  `debug` — is preserved by its default ignores; pinned by a test in
+  `crates/poly-core/tests/uncomment.rs`.

@@ -353,7 +353,7 @@ fn collect_adjustments(
 
     let mut matches = cursor.matches(query, tree.root_node(), source);
     while let Some(m) = matches.next() {
-        for cap in m.captures {
+        for cap in m.captures() {
             let cap_name = query.capture_names()[cap.index as usize];
             let node = cap.node;
             match classify_capture(cap_name) {

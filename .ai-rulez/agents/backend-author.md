@@ -15,7 +15,7 @@ your lane: one backend, with worktree isolation when run in parallel with siblin
 1. **Verify the crate API empirically.** Clone the upstream tool to `/tmp` at the exact
    version/rev you intend to depend on and confirm it externalizes lint/format the way you
    need. Then add it as a workspace dep and **wrap** it: crates.io when the library is
-   published (`ruff_linter = "=0.16.5"`), otherwise a **pinned git `rev`** of the upstream
+   published (`ruff_linter = "=0.16.9"`), otherwise a **pinned git `rev`** of the upstream
    repo (oxc, biome, rubyfmt). Crates from one monorepo share a single `rev`. **Never
    vendor** — there is no `vendor/` directory and a forked copy is not maintained here.
    Confirm `cargo deny` still passes (no GPL/AGPL).

@@ -72,7 +72,7 @@ impl Engine for YamlEngine {
     }
 
     fn version(&self) -> &str {
-        "0.0.9+pretty_yaml-0.6.0+tmplskip"
+        "0.0.10+saphyr-0.1.0+pretty_yaml-0.6.0+tmplskip"
     }
 
     fn skip_reason(&self, src: &SourceFile) -> Option<&'static str> {

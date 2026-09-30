@@ -153,7 +153,7 @@ fn run(grammar: &str, query: &Query, cursor: &mut QueryCursor, root: Node, sourc
 
     let mut matches = cursor.matches(query, root, source);
     while let Some(m) = matches.next() {
-        for capture in m.captures {
+        for capture in m.captures() {
             let capture_name = query.capture_names()[capture.index as usize];
             let Some(def_kind) = classify_capture(capture_name) else {
                 continue;
@@ -347,7 +347,7 @@ fn count_parameters(list: Node) -> usize {
 /// shapes without a per-grammar special case.
 fn names_in(node: Node) -> usize {
     let mut names = 0u32;
-    for index in 0..node.child_count() as u32 {
+    for index in 0..node.child_count() {
         if node.field_name_for_child(index) == Some("name") {
             names += 1;
         }

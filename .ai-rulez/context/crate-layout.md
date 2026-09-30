@@ -13,8 +13,8 @@ tier, and the `poly hooks` engine — see Coverage tiers below).
 
 A tool is consumed as a crate dependency, **from crates.io whenever a usable version is
 published**. That includes ruff, which moved off its git pin on 2026-08-29: `ruff_linter =
-"=0.16.5"` and `ruff_db` / `ruff_formatter` / `ruff_python_ast` / `ruff_python_formatter` /
-`ruff_text_size` = `"=0.0.11"`. The `=` is deliberate — these are unsemvered internals, and an
+"=0.16.9"` and `ruff_db` / `ruff_formatter` / `ruff_python_ast` / `ruff_python_formatter` /
+`ruff_text_size` = `"=0.0.15"`. The `=` is deliberate — these are unsemvered internals, and an
 exact pin preserves the property the git `rev` had. The only remaining **pinned git `rev`** deps
 are **oxc**, **biome**, and **rubyfmt**, each for a reason recorded in ADR 0003's 2026-08-29
 amendment: four of oxc's crates are `publish = false` and a partial migration is a hard compile

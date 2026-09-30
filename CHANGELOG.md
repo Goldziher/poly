@@ -5,6 +5,23 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
+## [0.28.1] - 2026-09-30
+
+### Changed
+
+- **Dependency refresh.** `cargo upgrade --incompatible`, plus advancing all three git pins to
+  their remotes' HEADs: biome `99c7049` → `f5af193`, oxc `827fdbd` → `7d28a66`, rubyfmt `5185d3b`
+  → `094cdc8`. The ruff crates moved in lockstep `0.16.5`/`0.0.11` → `0.16.9`/`0.0.15` — biome's
+  new HEAD needs `salsa ^0.28.5`, which the old ruff pin could not resolve. `tree-sitter` moved
+  0.26 → 0.27, lifting the `uncomment` / `ast-grep` / `tree-sitter-language-pack` hold; those
+  advanced to 3.10.2 / 0.45.3 / 1.20, and `mago` to 1.50. Every engine `version()` value that a
+  bumped dependency feeds was moved with it, so cached results are invalidated rather than reused
+  across the change.
+
+- **`uncomment`'s default ignores now match tag words case-insensitively as substrings**, so a
+  commented-out line whose text contains `bug` — including inside `debug` — is preserved rather
+  than reported for removal. That is upstream's behavior in 3.10; poly pins it with a test.
+
 ## [0.28.0] - 2026-09-16
 
 ### Added

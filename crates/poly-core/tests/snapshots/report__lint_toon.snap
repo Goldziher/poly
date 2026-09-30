@@ -28,4 +28,4 @@ expression: toon
           end_line: 1
           end_col: 1
   - path: src/clean.py
-    diagnostics[0]:
+    diagnostics: []

@@ -25,7 +25,7 @@ Project-specific conventions baked into context so they ship into every AI tool'
   version + resolved config. **When an engine's dependency source changes, `Engine::version()`
   must change with it** — otherwise the cache serves results computed by the old dependency under
   the new one, a stale-cache correctness bug no test run reveals. (`RuffEngine::version()`
-  embedded the git rev and now embeds `ruff-0.16.5+…`; ADR 0003's 2026-08-29 amendment.)
+  embedded the git rev and now embeds `ruff-0.16.9+…`; ADR 0003's dependency-refresh amendment.)
 - Reuse tree-sitter parsers via a pool — never construct one per file.
 - Avoid `.clone()` in inner loops; prefer `&str` / `&[u8]`. Defer ownership to the boundary.
 
@@ -43,9 +43,9 @@ Project-specific conventions baked into context so they ship into every AI tool'
   hooks`/polyhooks is a separate, pre-existing exception, since running foreign hooks inherently
   shells out.)
 - **Prefer crates.io, at an exact `=` version; use a pinned git `rev` only when the library we
-  need isn't published.** Since 2026-08-29 ruff comes from the registry: `ruff_linter = "=0.16.5"`
+  need isn't published.** Since 2026-08-29 ruff comes from the registry: `ruff_linter = "=0.16.9"`
   and `ruff_db` / `ruff_formatter` / `ruff_python_ast` / `ruff_python_formatter` /
-  `ruff_text_size` = `"=0.0.11"`.
+  `ruff_text_size` = `"=0.0.15"`.
 - **The `=` is deliberate.** These upstream internals are private-by-intent APIs their authors do
   not semver. A caret range on such a crate lets `cargo update` walk into unannounced breakage
   between releases — exactly the failure the git `rev` used to prevent. An exact pin keeps that

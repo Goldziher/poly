@@ -251,12 +251,26 @@ fn code_only_still_flags_commented_out_rust_code() {
 
 #[test]
 fn code_only_still_flags_commented_out_python_code() {
-    let python = "def f():\n    # print(\"debug\")\n    return 1\n";
+    let python = "def f():\n    # print(\"hello\")\n    return 1\n";
     let previews = code_only_previews("module.py", Language::Python, python);
     assert_eq!(
         previews,
-        vec!["# print(\"debug\")".to_owned()],
+        vec!["# print(\"hello\")".to_owned()],
         "a commented-out Python call is still reported"
+    );
+}
+
+/// `uncomment` made its word-tag preservation case-insensitive as a *substring*
+/// match, so its default `BUG` rule now keeps any comment containing `bug` —
+/// including inside `debug`. That happens inside the crate, before poly's
+/// `code_only` filter runs, so this commented-out `print` is preserved. Pinned
+/// here so a future bump that widens or narrows the default ignores is noticed.
+#[test]
+fn code_only_keeps_a_comment_containing_a_preserved_tag_word() {
+    let python = "def f():\n    # print(\"debug\")\n    return 1\n";
+    assert!(
+        code_only_previews("module.py", Language::Python, python).is_empty(),
+        "a comment whose text contains a default-ignored tag word is preserved upstream"
     );
 }
 

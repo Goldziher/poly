@@ -6,8 +6,8 @@ model: sonnet
 
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-Content-Hash: blake3:b48b9a40d39bfcb2dd80ef869e55fe4cb3ea92e95ec694b438370de0f8a6c3de
-Source-Hash: blake3:f9a65b603cd06e8276fdeb68ca9a2f8fa5b9d69bb5af1250f5c00753f78a2bee
+Content-Hash: blake3:c5271061a0c553629dc6b1a8fb3cff900937e77effcf814a228ccb93e4382e36
+Source-Hash: blake3:50c5aae2a919e52ef1216e799f10c78ca94cae41feba4aefe048570157d928cf
 Schema-Version: v1
 -->
 
@@ -22,7 +22,7 @@ your lane: one backend, with worktree isolation when run in parallel with siblin
 1. **Verify the crate API empirically.** Clone the upstream tool to `/tmp` at the exact
    version/rev you intend to depend on and confirm it externalizes lint/format the way you
    need. Then add it as a workspace dep and **wrap** it: crates.io when the library is
-   published (`ruff_linter = "=0.16.5"`), otherwise a **pinned git `rev`** of the upstream
+   published (`ruff_linter = "=0.16.9"`), otherwise a **pinned git `rev`** of the upstream
    repo (oxc, biome, rubyfmt). Crates from one monorepo share a single `rev`. **Never
    vendor** — there is no `vendor/` directory and a forked copy is not maintained here.
    Confirm `cargo deny` still passes (no GPL/AGPL).
