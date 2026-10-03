@@ -69,7 +69,7 @@ use self::lint::{lint_js, lint_json};
 ///                default set, so a file can now report rules (e.g.
 ///                `vitest/expect-expect`) that no configuration could reach
 ///                before.
-const VERSION: &str = "oxc_formatter:0.71.0+oxlint+parser:0.152.0+rev:7d28a66+json-fmt+rules-v5+fmt-opts+\
+const VERSION: &str = "oxc_formatter:0.71.0+oxlint+parser:0.152.0+rev:4dce2c2+json-fmt+rules-v5+fmt-opts+\
                        jsonc-trailing-comma+plugins-v1";
 
 static LANGUAGES: &[Language] = &[
