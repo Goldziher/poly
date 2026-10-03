@@ -149,7 +149,7 @@ mod tests {
     fn empty_files_yields_single_empty_batch() {
         let batches = partition_files(&[], 0);
         assert_eq!(batches.len(), 1);
-        assert!(batches[0].is_empty());
+        assert_eq!(batches[0], [] as [&Path; 0]);
     }
 
     #[test]

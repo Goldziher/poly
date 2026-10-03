@@ -605,7 +605,7 @@ mod tests {
         .expect("run");
 
         let notices = seen.into_inner().expect("notices");
-        assert!(!notices.is_empty());
+        assert_ne!(notices, Vec::<Option<String>>::new());
         assert!(
             notices.iter().all(Option::is_none),
             "a genuinely wedged hook must not be excused as queued: {notices:?}"

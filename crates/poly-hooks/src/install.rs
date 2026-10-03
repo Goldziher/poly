@@ -519,7 +519,7 @@ mod tests {
         std::fs::write(&pre_commit, original).expect("write");
 
         let removed = uninstall(&hooks, &[HookType::PreCommit]).expect("uninstall");
-        assert!(removed.is_empty());
+        assert_eq!(removed, Vec::<std::path::PathBuf>::new());
         assert_eq!(std::fs::read_to_string(&pre_commit).expect("read"), original);
     }
 }
