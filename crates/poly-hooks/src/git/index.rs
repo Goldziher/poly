@@ -91,6 +91,10 @@ const CHECKOUT_BATCH: usize = 1000;
 /// checkers, …) are isolated to staged content without touching the live
 /// worktree. A no-op for an empty `paths`; large lists are batched to stay under
 /// `ARG_MAX`.
+///
+/// `--ignore-skip-worktree-bits` requires git ≥ 2.6 (released 2015); it is the
+/// only way to materialize a `skip-worktree` entry without expanding the live
+/// checkout, so a sparse-checkout worktree depends on it.
 #[instrument(level = "trace", skip(paths))]
 pub fn checkout_index_paths(root: &Path, dest: &Path, paths: &[PathBuf]) -> Result<(), Error> {
     for batch in paths.chunks(CHECKOUT_BATCH) {
@@ -106,7 +110,10 @@ pub fn checkout_index_paths(root: &Path, dest: &Path, paths: &[PathBuf]) -> Resu
         for path in batch {
             cmd.arg(path);
         }
-        cmd.check(true).status()?;
+        // `.output()` rather than `.status()` so a failure carries git's stderr
+        // (missing blob, unreachable partial-clone remote, unsupported git) into
+        // the error the user sees, instead of an empty captured-output block.
+        cmd.check(true).output()?;
     }
     Ok(())
 }
@@ -165,7 +172,14 @@ fn parse_ls_files_stage(bytes: &[u8]) -> Result<Vec<StagedEntry>, Error> {
         let mut fields = meta.split_whitespace();
         let mode = fields.next().unwrap_or_default();
         let oid = fields.next().unwrap_or_default();
-        if mode == "160000" {
+        // Only regular files (`100644`), executables (`100755`) and symlinks
+        // (`120000`) have a blob to materialize. A submodule gitlink (`160000`)
+        // is handled separately, and a sparse-index directory entry (`040000`)
+        // is a tree rather than a blob — `list_staged_entries` does not pass
+        // `--sparse`, so git expands those away, but treating one as a file
+        // would hand `checkout-index` a tree OID. Skip anything non-blob rather
+        // than trust the current invocation to keep them out.
+        if !matches!(mode, "100644" | "100755" | "120000") {
             continue;
         }
         entries.push(StagedEntry {
@@ -300,6 +314,55 @@ mod tests {
         assert!(!entries[0].is_symlink);
         assert_eq!(entries[1].path, PathBuf::from("link"));
         assert!(entries[1].is_symlink, "mode 120000 is a symlink");
+    }
+
+    #[test]
+    fn parse_ls_files_stage_skips_directory_entries() {
+        // A sparse index (`index.sparse=true`) answers `ls-files -s --sparse`
+        // with collapsed `040000 <tree-oid>` directory records. poly does not
+        // pass `--sparse`, so git expands them away — but treating one as a file
+        // would hand `checkout-index` a tree OID, so the parser must skip it.
+        let input = b"100644 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0\tsrc/a.rs\0\
+040000 cccccccccccccccccccccccccccccccccccccccc 0\tomitted\0";
+        let entries = parse_ls_files_stage(input).expect("parse");
+        assert_eq!(entries.len(), 1, "a 040000 directory entry must be skipped");
+        assert_eq!(entries[0].path, PathBuf::from("src/a.rs"));
+    }
+
+    #[test]
+    fn checkout_failure_carries_gits_stderr() {
+        // A missing blob (a partial clone with no reachable remote) is the
+        // failure a user is most likely to hit, and the actionable text —
+        // which path, which remedy — is git's, not poly's. The error must carry
+        // it rather than an empty captured-output block.
+        let repo = init_temp_repo();
+        let root = repo.path();
+        std::fs::write(root.join("a.rs"), "fn main() {}\n").expect("write");
+        git_run(root, &["add", "a.rs"]);
+        // Point the index at an OID no object store has, so the checkout must
+        // fail reading the blob. `update-index` does not verify object
+        // existence, so this is a faithful stand-in for a pruned/missing blob.
+        let missing = Command::new("git")
+            .args([
+                "update-index",
+                "--cacheinfo",
+                "100644",
+                "1111111111111111111111111111111111111111",
+                "a.rs",
+            ])
+            .current_dir(root)
+            .output()
+            .expect("git update-index");
+        assert!(missing.status.success(), "fixture setup failed");
+
+        let dest = tempfile::TempDir::new().expect("dest");
+        let error =
+            checkout_index_paths(root, dest.path(), &[PathBuf::from("a.rs")]).expect_err("a missing blob must fail");
+        let rendered = error.to_string();
+        assert!(
+            rendered.contains("unable to read") || rendered.contains("a.rs"),
+            "checkout error must surface git's own message, got: {rendered}"
+        );
     }
 
     #[test]
