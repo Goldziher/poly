@@ -77,18 +77,18 @@ insta = "1"
 insta-cmd = "0.7.0"
 itertools = "0.15.0"
 json5 = "1.3.1"
-libc = "0.2.189"
+libc = "0.2.190"
 liblzma = { version = "0.4.8", features = ["static"] }
-mago-allocator = { version = "1.50" }
-mago-database = { version = "1.50" }
-mago-formatter = { version = "1.50", features = ["serde"] }
-mago-linter = { version = "1.50" }
-mago-names = { version = "1.50" }
-mago-php-version = { version = "1.50" }
-mago-reporting = { version = "1.50" }
-mago-span = { version = "1.50" }
-mago-syntax = { version = "1.50" }
-mago-text-edit = { version = "1.50" }
+mago-allocator = { version = "1.51" }
+mago-database = { version = "1.51" }
+mago-formatter = { version = "1.51", features = ["serde"] }
+mago-linter = { version = "1.51" }
+mago-names = { version = "1.51" }
+mago-php-version = { version = "1.51" }
+mago-reporting = { version = "1.51" }
+mago-span = { version = "1.51" }
+mago-syntax = { version = "1.51" }
+mago-text-edit = { version = "1.51" }
 malva = "0.16"
 markdown = "1.0.0"
 markup_fmt = "0.27"
