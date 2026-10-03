@@ -15,6 +15,10 @@
 - Updated: 2026-08-31: `[hooks] snapshot_include` gives a narrow, opt-in escape from "untracked
   content is invisible to the gate" for a named path git does not track. See "Amendment:
   `snapshot_include`" below.
+- Updated: 2026-10-03: the snapshot survives a sparse-checkout worktree — `git checkout-index`
+  now passes `--ignore-skip-worktree-bits`, so an entry omitted from the live checkout
+  (`skip-worktree`) materializes into the snapshot instead of failing the step. See "Amendment:
+  sparse checkouts" below.
 
 ## Context
 
@@ -175,6 +179,49 @@ Consequences that follow from linking rather than copying:
   one place isolation's "the worktree is never mutated" guarantee does not hold — accepted because
   the alternative is no escape hatch at all for a hook that genuinely needs the file, and because
   the entry is something the repository named on purpose, not content a hook discovered on its own.
+
+## Amendment: sparse checkouts (2026-10-03)
+
+The snapshot step ran `git checkout-index -f --prefix=<dest>/ -- <paths>`. In a sparse-checkout
+worktree — cone or non-cone, or a manual `git update-index --skip-worktree` — an omitted tracked
+entry carries git's `skip-worktree` bit, and `checkout-index` *refuses* to write it:
+
+```text
+error: omitted/tracked.txt has skip-worktree enabled;
+       use '--ignore-skip-worktree-bits' to checkout
+```
+
+`list_staged_entries` reads `git ls-files -s`, which still returns omitted entries (poly does not
+pass `--sparse`), so the omitted path is an ordinary input to the checkout — and its presence made
+the **whole snapshot step fail** before any hook ran. Every commit in a sparse worktree was
+blocked, with an error naming the snapshot rather than the sparse flag.
+
+**The fix** is one option on the existing invocation: `--ignore-skip-worktree-bits`. It is scoped
+to the checkout's effect and closes the gap at its source:
+
+- **The live checkout is not expanded.** The option makes `checkout-index` write the skipped
+  entry under the `--prefix` directory; it does not clear the `skip-worktree` bit, change any index
+  OID, or materialize anything in the worktree. The regression test asserts the index OIDs and
+  flags are byte-identical before and after (a full `git ls-files -v --stage` comparison) and that
+  the omitted path still does not exist in the live tree.
+- **A non-sparse repository is unaffected.** No entry carries the bit there, so the option is a
+  no-op; the checkout output is byte-identical with and without it.
+- **`assume-unchanged` was never the problem.** That bit is a stat-cache hint in a different
+  field, and `checkout-index` already wrote those entries; only `skip-worktree` needed the flag.
+- **The flag requires git ≥ 2.6** (2015). poly does not otherwise pin a minimum git version, and
+  the flag is the only way to materialize a skipped entry without touching the worktree, so a
+  sparse checkout depends on it. On an ancient git the invocation fails on the unknown option
+  rather than on the skip bit — a narrow regression, documented on
+  `git::index::checkout_index_paths`.
+
+Two adjacent hardening changes landed with it. The parser now **skips any non-blob mode**
+(`list_staged_entries` accepts only `100644`/`100755`/`120000`): a sparse index
+(`index.sparse=true`) can answer `ls-files -s --sparse` with a collapsed `040000` directory
+record, and treating one as a file would hand `checkout-index` a tree OID. poly does not pass
+`--sparse`, so git expands those away today; the guard keeps that from being the only line of
+defense. And the checkout now runs via `.output()` rather than `.status()`, so a residual failure
+— a missing blob in a partial clone, an unreachable promisor remote, an unsupported git — carries
+git's own message into the poly error instead of an empty captured-output block.
 
 ## Consequences
 

@@ -62,9 +62,12 @@ Links to **private** items are warnings only and do not block.
   materialized from the git **index** with `git checkout-index` into the per-user cache dir, so
   unstaged edits and untracked files are invisible to the check. That is what makes a split
   commit checkable on its own content — and it means a fix you forgot to `git add` does not
-  count. `[hooks] snapshot_include` is the one opt-in exception: it symlinks named untracked
-  paths into the snapshot for a `workspace` hook's build to read, but a fix to an included file
-  is withheld (there is no staged blob to write into) and it is never a per-file hook's input.
+  count. A **sparse-checkout** worktree is supported: the checkout passes
+  `--ignore-skip-worktree-bits`, so an omitted `skip-worktree` entry is materialized into the
+  snapshot without expanding the live checkout (`git ≥ 2.6`). `[hooks] snapshot_include` is the
+  one opt-in exception: it symlinks named untracked paths into the snapshot for a `workspace`
+  hook's build to read, but a fix to an included file is withheld (there is no staged blob to
+  write into) and it is never a per-file hook's input.
 - **Never pipe `git commit` through `tail` / `head`.** A pipeline reports the *filter's* exit
   code, so a rejected commit looks like success and silently does not land. Run it unpiped and
   read the exit code.

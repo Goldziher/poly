@@ -32,7 +32,7 @@ Both detect the platform, download the matching release archive, and verify it a
 release's `sha256sums.txt`. Set `POLY_VERSION` to pin an exact release:
 
 ```sh
-POLY_VERSION=0.23.1 curl -fsSL https://raw.githubusercontent.com/Goldziher/poly/main/install.sh | sh
+POLY_VERSION=0.28.2 curl -fsSL https://raw.githubusercontent.com/Goldziher/poly/main/install.sh | sh
 ```
 
 ## GitHub Actions
@@ -40,7 +40,7 @@ POLY_VERSION=0.23.1 curl -fsSL https://raw.githubusercontent.com/Goldziher/poly/
 ```yaml title=".github/workflows/ci.yaml"
 - uses: Goldziher/poly@v0
   with:
-    version: v0.23.1 # omit for the latest release
+    version: v0.28.2 # omit for the latest release
 
 - run: poly lint .
 - run: poly fmt --check .
@@ -175,10 +175,10 @@ Any MCP-capable client can run poly directly:
 
    ```console
    $ poly --version
-   0.23.1 (release build v0.23.1, release)
+   0.28.2 (release build v0.28.2, release)
    ```
 
-   A development build reads `0.23.1 (dev build v0.23.1-8-g18aa5e8, debug)` instead, so an
+   A development build reads `0.28.2 (dev build v0.28.2-8-g18aa5e8, debug)` instead, so an
    unreleased build carrying local changes can never be quoted as a release.
 
 </Steps>

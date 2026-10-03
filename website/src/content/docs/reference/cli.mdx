@@ -242,10 +242,10 @@ cargo-installed `~/.cargo/bin/poly` needs `rm`, not `cargo uninstall poly`.
 
 ```console
 $ poly --version
-0.23.1 (release build v0.23.1, release)
+0.28.2 (release build v0.28.2, release)
 ```
 
-versus `0.23.1 (dev build v0.23.1-8-g18aa5e8, debug)` — so a development build carrying unreleased
+versus `0.28.2 (dev build v0.28.2-8-g18aa5e8, debug)` — so a development build carrying unreleased
 changes cannot be quoted as a release. The identifier comes from `git describe` at build time;
 outside a git checkout it reads `unknown` rather than guessing, and packagers can set
 `POLY_BUILD_ID`.
