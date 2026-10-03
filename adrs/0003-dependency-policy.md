@@ -165,3 +165,25 @@ moved the git-backed dependencies forward and pulled the ruff pins with them.
   now case-insensitive as a *substring* match, so a comment containing `bug` — including inside
   `debug` — is preserved by its default ignores; pinned by a test in
   `crates/poly-core/tests/uncomment.rs`.
+
+## Amendment — 2026-10-03 (dependency refresh for v0.28.2)
+
+The pins were re-checked against their remotes' HEADs and the registry refresh the user staged was
+carried to its engine `version()` strings. One pin had moved; biome and oxc advanced, rubyfmt was
+already at head.
+
+- **The git pins advanced:** biome `f5af193` → `dd96b11`, oxc `7d28a66` → `4dce2c2`; rubyfmt
+  `094cdc8` was already the remote's HEAD, so it did not move. The biome workspace crates moved
+  `0.5.7` → `0.7.0`; the oxc crates poly calls were version-stable (`oxc_formatter 0.71.0`,
+  `oxc_parser 0.152.0`), so only the rev changed there.
+- **`mago` moved `1.50` → `1.51`** in the staged registry refresh. Its engine `version()` embeds
+  the crate version, so it moved to `mago-1.51.0+advisory-sev1` with it — the staged `Cargo.toml`
+  bump alone would have left cached results keyed by the old string.
+- **Every engine whose output a moved pin feeds had its `version()` bumped:** `biome_css`,
+  `biome_graphql`, `oxc` and `markup_fmt` (embedded oxc) carry the new short rev; `rubyfmt` is
+  unchanged because its pin did not move. The `version_audit` guard
+  (`crates/poly-core/tests/version_audit.rs`) passes against the refreshed `Cargo.lock`.
+- **The re-check held:** biome's crates.io `biome_analyze` is still `0.5.7` from **2024-03-12** —
+  now two minor versions behind the pinned `0.7.0` git tree; crates.io `oxc_formatter` is the
+  abandoned `0.0.0` from 2023-12-08; crates.io `rubyfmt` is still the `0.0.0-wip` name
+  reservation. All three stay pinned on a git `rev`.

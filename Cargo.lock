@@ -1527,7 +1527,7 @@ checksum = "031ad3d167622974ed636505ae4556267ed4aa2aea0464122fa6bc9698a32825"
 
 [[package]]
 name = "conformance"
-version = "0.28.1"
+version = "0.28.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -5119,11 +5119,11 @@ dependencies = [
 
 [[package]]
 name = "poly-buildinfo"
-version = "0.28.1"
+version = "0.28.2"
 
 [[package]]
 name = "poly-cache"
-version = "0.28.1"
+version = "0.28.2"
 dependencies = [
  "anyhow",
  "blake3",
@@ -5138,7 +5138,7 @@ dependencies = [
 
 [[package]]
 name = "poly-catalog"
-version = "0.28.1"
+version = "0.28.2"
 dependencies = [
  "anyhow",
  "serde",
@@ -5147,7 +5147,7 @@ dependencies = [
 
 [[package]]
 name = "poly-cli"
-version = "0.28.1"
+version = "0.28.2"
 dependencies = [
  "aho-corasick",
  "anyhow",
@@ -5179,7 +5179,7 @@ dependencies = [
 
 [[package]]
 name = "poly-config"
-version = "0.28.1"
+version = "0.28.2"
 dependencies = [
  "anyhow",
  "poly-catalog",
@@ -5191,7 +5191,7 @@ dependencies = [
 
 [[package]]
 name = "poly-core"
-version = "0.28.1"
+version = "0.28.2"
 dependencies = [
  "alejandra",
  "anyhow",
@@ -5279,7 +5279,7 @@ dependencies = [
 
 [[package]]
 name = "poly-hooks"
-version = "0.28.1"
+version = "0.28.2"
 dependencies = [
  "anstyle-query",
  "anyhow",
@@ -5314,7 +5314,7 @@ dependencies = [
 
 [[package]]
 name = "poly-mcp"
-version = "0.28.1"
+version = "0.28.2"
 dependencies = [
  "anyhow",
  "blake3",
@@ -5334,7 +5334,7 @@ dependencies = [
 
 [[package]]
 name = "poly-workspace"
-version = "0.28.1"
+version = "0.28.2"
 dependencies = [
  "anyhow",
  "clap",

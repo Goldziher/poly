@@ -5,6 +5,27 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
+## [0.28.2] - 2026-10-03
+
+### Fixed
+
+- **Staged-content snapshots no longer fail in a sparse worktree.** `git checkout-index` is now
+  invoked with `--ignore-skip-worktree-bits`, so an omitted tracked entry (mode flag `S`, a
+  `skip-worktree` path) is materialized into the staged snapshot instead of failing the whole
+  snapshot step. The live checkout is never expanded, unrelated unstaged edits are preserved, and
+  the index OIDs and flags are left untouched. Fixes [Goldziher/poly#29], which blocked normal
+  (non-bypassed) commit hooks in a sparse checkout.
+
+### Changed
+
+- **Dependency refresh.** biome `f5af193` → `dd96b11`, oxc `7d28a66` → `4dce2c2` (rubyfmt was
+  already at its remote's HEAD); the biome crates moved `0.5.7` → `0.7.0`, and `mago` moved
+  `1.50` → `1.51`. Every engine `version()` fed by a bumped dependency moved with it —
+  `biome_css`, `biome_graphql`, `oxc`, `markup_fmt` (embedded oxc) and `mago` — so cached results
+  are invalidated rather than reused across the change.
+
+[Goldziher/poly#29]: https://github.com/Goldziher/poly/issues/29
+
 ## [0.28.1] - 2026-09-30
 
 ### Changed
