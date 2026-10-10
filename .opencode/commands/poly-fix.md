@@ -1,17 +1,8 @@
 ---
-priority: high
-usage: "/poly-fix [paths]"
-description: "Apply poly lint --fix and fmt --fix, then re-check and report what changed and what remains"
+description: Apply poly lint --fix and fmt --fix, then re-check and report what changed and what remains
+# Content-Hash: blake3:dedef5f8c734e970cef13d456fabb26f50c3a2186fbf86ba332f3e8dc3856d7e
+# Source-Hash: blake3:fb718ce3b30ece077045399507f8cd9b953739a66b05931b814fbfc8f7201e15
 ---
-
-<!--
-AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-Content-Hash: blake3:aefedcccf8e34cd75d79f5dfc885cdd00241b405b5e50461c42344db3c4d4a88
-Source-Hash: blake3:82f0197f031687bab44822403a251f7c17c1b8cf7259673f61abd9f692bb9ef8
-Schema-Version: v1
--->
-
-# poly Fix
 
 Apply poly's autofixes over `${1:-.}`, then verify.
 

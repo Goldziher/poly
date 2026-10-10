@@ -1,7 +1,13 @@
 ---
-priority: high
-usage: "/poly-check [paths]"
-description: "Lint and check formatting with poly — apply no fixes; summarize findings and drift"
+type: Reference
+title: Poly Check
+description: Lint and check formatting with poly — apply no fixes; summarize findings and drift
+x-ai-rulez:
+  kind: command
+  id: poly-check
+  metadata:
+    priority: high
+    usage: /poly-check [paths]
 ---
 
 # poly Check

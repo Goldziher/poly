@@ -84,7 +84,7 @@ extend_ignore_words = ["teh", "inh", "te", "tha"]
 extend_exclude = ["crates/poly-core/tests/typos.rs"]
 
 [lint.markdown.rumdl]
-disable = ["MD013", "MD024", "MD033", "MD036", "MD041"]
+disable = ["MD025", "MD013", "MD024", "MD033", "MD036", "MD041"]
 
 
 [lint.uncomment]
@@ -126,7 +126,7 @@ preserve_patterns = [
   "limitations under the license",
 ]
 [fmt.markdown.rumdl]
-disable = ["MD013", "MD024", "MD033", "MD036", "MD041"]
+disable = ["MD025", "MD013", "MD024", "MD033", "MD036", "MD041"]
 
 [per-file-ignores]
 "e2e/**" = ["comment", "doc-comment"]

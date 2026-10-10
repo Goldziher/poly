@@ -1,7 +1,13 @@
 ---
-name: backend-author
+type: Reference
+title: Backend Author
 description: Implements a new poly engine backend end-to-end — empirically checks the upstream crate API, wraps it as a crates.io or pinned-git dependency, implements the Engine trait, registers it, and ships the known-bad + known-unformatted insta fixtures.
-model: sonnet
+x-ai-rulez:
+  kind: agent
+  id: backend-author
+  metadata:
+    model: sonnet
+    name: backend-author
 ---
 
 # backend-author

@@ -1,7 +1,13 @@
 ---
-name: rust-perf-engineer
+type: Reference
+title: Rust Perf Engineer
 description: Reviews diffs touching poly's per-file runner / discovery / cache / engine paths for hot-path regressions — needless allocations/clones, missed borrows, parser-pool misuse, and non-rayon parallelism.
-model: sonnet
+x-ai-rulez:
+  kind: agent
+  id: rust-perf-engineer
+  metadata:
+    model: sonnet
+    name: rust-perf-engineer
 ---
 
 # rust-perf-engineer

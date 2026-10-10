@@ -1,5 +1,11 @@
 ---
-priority: critical
+type: Concept
+title: Basemind Usage
+x-ai-rulez:
+  kind: context
+  id: basemind-usage
+  metadata:
+    priority: critical
 ---
 
 # basemind-first: required tooling for this repo

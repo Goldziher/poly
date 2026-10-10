@@ -1,6 +1,12 @@
 ---
-priority: medium
-description: "The poly MCP server — the eleven tools and which are read-only vs mutating, the paths/exclude/config/format params, async Tasks for the whole-project phase, and the isError contract"
+type: Playbook
+title: Poly Mcp
+description: The poly MCP server — the eleven tools and which are read-only vs mutating, the paths/exclude/config/format params, async Tasks for the whole-project phase, and the isError contract
+x-ai-rulez:
+  kind: skill
+  id: poly-mcp
+  metadata:
+    priority: medium
 ---
 
 # poly MCP

@@ -1,5 +1,11 @@
 ---
-priority: high
+type: Decision
+title: Tdd And Hooks
+x-ai-rulez:
+  kind: rule
+  id: tdd-and-hooks
+  metadata:
+    priority: high
 ---
 
 # TDD + Hooks Workflow
