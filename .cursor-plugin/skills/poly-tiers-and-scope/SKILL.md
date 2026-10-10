@@ -1,12 +1,18 @@
 ---
-priority: medium
-description: "poly's coverage tiers (native / tree-sitter / native-toolchain / quality / built-in ast-grep pack), the per-file tier vs the whole-project phase (--no-workspace), staged isolation (ADR 0019), and hierarchical poly.toml in monorepos (ADR 0018)"
+type: Playbook
+title: Poly Tiers And Scope
+description: poly's coverage tiers (native / tree-sitter / native-toolchain / quality / built-in ast-grep pack), the per-file tier vs the whole-project phase (--no-workspace), staged isolation (ADR 0019), and hierarchical poly.toml in monorepos (ADR 0018)
+x-ai-rulez:
+  kind: skill
+  id: poly-tiers-and-scope
+  metadata:
+    priority: medium
 ---
 
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-Content-Hash: blake3:4f049de71c0c76f12b0a0733a8856b5e7521c18178ff6270462a4545b710cd6b
-Source-Hash: blake3:82f0197f031687bab44822403a251f7c17c1b8cf7259673f61abd9f692bb9ef8
+Content-Hash: blake3:f5e1e896a51f54ec2e2a1341644e17f946e80c93ec214492cc0f45bc4668d869
+Source-Hash: blake3:22b7594ca621e7a730f0c0028402ce7cc9e030e6cfb4dc9cf9e46e3f3d2165b4
 Schema-Version: v1
 -->
 

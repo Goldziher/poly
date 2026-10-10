@@ -19,6 +19,8 @@ exclude = [
   ".cursor-plugin/**",
   ".factory-plugin/**",
   ".opencode/**",
+  ".pi/skills/**",
+  ".pi/prompts/**",
   "gemini-extension.json",
   "kimi.plugin.json",
   "/package.json",

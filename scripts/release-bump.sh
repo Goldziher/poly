@@ -87,7 +87,9 @@ if [[ "$plugin_block_version" != "$VERSION" ]]; then
 fi
 
 echo "→ regenerating ai-rulez plugin outputs"
-npx -y ai-rulez@latest generate --plugin
+AI_RULEZ="${AI_RULEZ:-ai-rulez}"
+"$AI_RULEZ" generate --plugin
+"$AI_RULEZ" verify --plugin
 
 # Every bundle `--plugin` emits is shipped, so nothing is pruned here. The set is
 # controlled by `[plugin] runtimes` in .ai-rulez/config.toml, which is the single
@@ -174,7 +176,7 @@ done
 # commands, and it shipped without them for several releases: `content_root` was
 # set to "." so ai-rulez looked for them at the repository root, where poly has
 # none. Assert the payload, not just the version.
-for dir in skills commands; do
+for dir in skills commands .pi/skills .pi/prompts; do
   if [[ ! -d "$dir" ]] || [[ -z "$(ls -A "$dir" 2>/dev/null)" ]]; then
     echo "✗ $dir/: empty or missing — the plugin would ship no $dir"
     validation_failed=1
@@ -188,6 +190,18 @@ if [[ "$skill_count" -lt 1 || "$command_count" -lt 1 ]]; then
   validation_failed=1
 else
   echo "✓ Plugin content: $skill_count skills, $command_count slash commands"
+fi
+
+pi_skill_count="$(jq '.pi.skills | length' package.json)"
+pi_prompt_count="$(jq '.pi.prompts | length' package.json)"
+while read -r skill; do
+  [[ -f "$skill/SKILL.md" ]] || fail "Pi skill missing: $skill/SKILL.md"
+done < <(jq -r '.pi.skills[]' package.json)
+while read -r prompt; do
+  [[ -f "$prompt" ]] || fail "Pi prompt missing: $prompt"
+done < <(jq -r '.pi.prompts[]' package.json)
+if [[ "$pi_skill_count" != "$skill_count" || "$pi_prompt_count" != "$command_count" ]]; then
+  fail "Pi payload differs: $pi_skill_count skills/$pi_prompt_count prompts; expected $skill_count/$command_count"
 fi
 
 if [[ $validation_failed -eq 0 ]]; then

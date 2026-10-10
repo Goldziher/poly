@@ -1,7 +1,7 @@
 ---
 title: Agents and MCP
 description: >-
-  The Claude/Codex plugin, poly's eleven MCP tools, the async whole-project tasks, and the isError
+  The Claude/Codex and Pi plugins, poly's eleven MCP tools, the async whole-project tasks, and the isError
   contract an agent must gate on.
 ---
 
@@ -36,6 +36,21 @@ is at `.codex-plugin/plugin.json`.
 
 The plugin assumes `poly` is already on `PATH` — it does not bundle the binary — and its version
 tracks the binary version in lock-step.
+
+### Pi
+
+Install the `poly` binary first, then install the Pi package from Git:
+
+```sh
+pi install git:github.com/Goldziher/poly
+```
+
+The package contains 5 skills and the `/poly-check` and `/poly-fix` prompt templates.
+Pi runs `poly` through its shell tool; this package does not register an MCP server or install the binary.
+Use `pi install -l git:github.com/Goldziher/poly` to save the package in the current project's configuration.
+
+The same bundle targets `@goldziher/opencode-poly` for OpenCode and Pi. After its first npm release,
+`pi install npm:@goldziher/opencode-poly` provides the registry installation path and Pi catalog discovery.
 
 ## As a plain MCP server
 

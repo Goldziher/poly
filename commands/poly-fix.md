@@ -1,13 +1,19 @@
 ---
-priority: high
-usage: "/poly-fix [paths]"
-description: "Apply poly lint --fix and fmt --fix, then re-check and report what changed and what remains"
+type: Reference
+title: Poly Fix
+description: Apply poly lint --fix and fmt --fix, then re-check and report what changed and what remains
+x-ai-rulez:
+  kind: command
+  id: poly-fix
+  metadata:
+    priority: high
+    usage: /poly-fix [paths]
 ---
 
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-Content-Hash: blake3:aefedcccf8e34cd75d79f5dfc885cdd00241b405b5e50461c42344db3c4d4a88
-Source-Hash: blake3:82f0197f031687bab44822403a251f7c17c1b8cf7259673f61abd9f692bb9ef8
+Content-Hash: blake3:52cf993901f4a7f0cc945574593cbe08e1600f50ff49237d267a4c16992d0b34
+Source-Hash: blake3:22b7594ca621e7a730f0c0028402ce7cc9e030e6cfb4dc9cf9e46e3f3d2165b4
 Schema-Version: v1
 -->
 

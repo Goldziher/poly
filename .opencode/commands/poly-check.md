@@ -1,8 +1,23 @@
 ---
+type: Reference
+title: Poly Check
 description: Lint and check formatting with poly — apply no fixes; summarize findings and drift
-# Content-Hash: blake3:4881a36e07fd66534abc1df6c582cc274103c5fb465ec3e08b7767953af8f084
-# Source-Hash: blake3:fb718ce3b30ece077045399507f8cd9b953739a66b05931b814fbfc8f7201e15
+x-ai-rulez:
+  kind: command
+  id: poly-check
+  metadata:
+    priority: high
+    usage: /poly-check [paths]
 ---
+
+<!--
+AI-RULEZ :: GENERATED FILE — DO NOT EDIT
+Content-Hash: blake3:c9e036f46bc08a172166f5259105f345e13481c65db9c32a239e924951f1b81d
+Source-Hash: blake3:22b7594ca621e7a730f0c0028402ce7cc9e030e6cfb4dc9cf9e46e3f3d2165b4
+Schema-Version: v1
+-->
+
+# poly Check
 
 Run poly as a checking gate over `${1:-.}`. Apply no fixes.
 

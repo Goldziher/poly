@@ -73,6 +73,12 @@ jobs:
             exit 1
           fi
 
+          plugin_version="$(jq -r '.version' package.json)"
+          if [ "$plugin_version" != "$target_version" ]; then
+            echo "::error::Agent plugin version mismatch: expected $target_version, got $plugin_version"
+            exit 1
+          fi
+
           # The wrapper packages ship in lock-step (scripts/release-bump.sh moves
           # them with Cargo.toml). Check them here too: a package publishing the
           # wrong version is not recoverable — npm and PyPI both refuse to
@@ -684,6 +690,87 @@ jobs:
             publish_one "${dir%/}"
           done
           publish_one npm-package
+
+  publish_plugin_npm:
+    name: Publish npm agent plugin (OpenCode and Pi)
+    needs: [meta, finalize_release]
+    if: needs.finalize_release.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || '' }}
+
+      - name: Checkout Pi-capable ai-rulez
+        uses: actions/checkout@v7
+        with:
+          repository: Goldziher/ai-rulez
+          ref: 8dfebd2b8b3700ff134f86886d5b44dca82abc18
+          path: .release-tools/ai-rulez
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: .release-tools/ai-rulez/go.mod
+          cache-dependency-path: .release-tools/ai-rulez/go.sum
+
+      - name: Build and verify the plugin generator
+        run: |
+          set -euo pipefail
+          generator_dir="$PWD/.release-tools/ai-rulez"
+          (
+            cd "$generator_dir"
+            eval "$(bash scripts/setup-liter-llm.sh)"
+            go build -o "$RUNNER_TEMP/ai-rulez" ./cmd/ai-rulez
+          )
+          "$RUNNER_TEMP/ai-rulez" verify --plugin
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Verify packed Pi and OpenCode resources
+        run: |
+          set -euo pipefail
+          npm pack --json --pack-destination "$RUNNER_TEMP" > "$RUNNER_TEMP/plugin-pack.json"
+          node - "$RUNNER_TEMP/plugin-pack.json" <<'JS'
+          const fs = require('node:fs');
+          const files = JSON.parse(fs.readFileSync(process.argv[2]))[0].files.map((file) => file.path);
+          const skills = files.filter((file) => /^\.pi\/skills\/[^/]+\/SKILL\.md$/.test(file));
+          const prompts = files.filter((file) => /^\.pi\/prompts\/[^/]+\.md$/.test(file));
+          if (skills.length !== 5 || prompts.length !== 2 || !files.includes('.opencode/plugins/poly.js')) {
+            throw new Error(`Incomplete plugin: ${skills.length} skills, ${prompts.length} prompts`);
+          }
+          console.log(`Packed ${skills.length} Pi skills, ${prompts.length} prompts, and the OpenCode adapter`);
+          JS
+
+      - name: Publish the agent package
+        run: |
+          set -euo pipefail
+          npm install -g npm@11
+          name="$(jq -r '.name' package.json)"
+          version="${{ needs.meta.outputs.version }}"
+          if ! npm view "$name" version >/dev/null 2>&1; then
+            echo "::notice::$name needs a first manual publish and trusted publisher setup; Git Pi installation remains available."
+            exit 0
+          fi
+          if npm view "$name@$version" version >/dev/null 2>&1; then
+            echo "$name@$version already published; skipping"
+            exit 0
+          fi
+          case "$version" in
+            *-rc.* | *-beta* | *-alpha*) npm_tag=next ;;
+            *) npm_tag=latest ;;
+          esac
+          unset NODE_AUTH_TOKEN
+          archive="$(jq -r '.[0].filename' "$RUNNER_TEMP/plugin-pack.json")"
+          npm publish "$RUNNER_TEMP/$archive" --provenance --access public --tag "$npm_tag"
 
   publish_pypi:
     name: Publish PyPI (polylint)

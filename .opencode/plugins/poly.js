@@ -1,28 +1,30 @@
 // AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-// Content-Hash: blake3:2f9d5fc4d5d2b42544fd79fbf0b940465f6d70b056a4c3569e5c887613f23775
-// Source-Hash: blake3:82f0197f031687bab44822403a251f7c17c1b8cf7259673f61abd9f692bb9ef8
+// Content-Hash: blake3:057210c54cbd2413e51ed54258c4b7b8b7de1ea9d8bf499281ac6874156d7f56
+// Source-Hash: blake3:22b7594ca621e7a730f0c0028402ce7cc9e030e6cfb4dc9cf9e46e3f3d2165b4
 // Schema-Version: v1
 
 /**
  * OpenCode v2 adapter for poly.
  *
- * This generated no-op keeps the plugin loadable without inventing runtime behavior.
  * To add OpenCode-specific tools or hooks:
  *
  * 1. Create .ai-rulez/opencode/index.js.
- * 2. Default-export Plugin.define({ id, setup }) from that source file.
- * 3. Run ai-rulez generate --plugin --dry-run.
- * 4. Run ai-rulez generate --plugin.
+ * 2. Default-export { id, setup(ctx) } from that source file. OpenCode v2 does not
+ *    run v1 plugins (an exported function returning hooks).
+ * 3. If the plugin bundles skills, commands, or agents, call
+ *    registerBundledContent(ctx) from ../ai-rulez-content.js in setup.
+ * 4. Run ai-rulez generate --plugin --dry-run, then ai-rulez generate --plugin.
  *
  * Keep shared skills, commands, agents, and MCP configuration in their normal
  * .ai-rulez sources. Validate all external input and never interpolate untrusted
  * values into shell commands.
  */
-import { Plugin } from "@opencode/plugin"
+import { registerBundledContent } from "../ai-rulez-content.js"
 
-export default Plugin.define({
+/** @type {import("@opencode/plugin").Plugin.Plugin} */
+export default {
   id: "poly",
   async setup(ctx) {
-    // Register hooks, transforms, tools, or subscriptions on ctx here.
+    await registerBundledContent(ctx)
   },
-})
+}

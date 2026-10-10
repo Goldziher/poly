@@ -53,6 +53,23 @@ poly, no manual MCP config required.
   `mcpServers` registration; no separate poly-specific installer is introduced for the plugin
   itself.
 
+## Runtime expansion (2026-10-10)
+
+The v5 `[plugin].runtimes` list now controls eight committed bundles: Claude, Cursor,
+Codex, Gemini, Kimi, OpenCode, Factory, and Pi. Contributor presets do not control
+plugin generation, and release scripts no longer prune other runtime outputs.
+
+Pi reuses the five authored skills and renders the two commands as prompt templates.
+It uses the separately installed `poly` CLI, with no generated MCP bridge or extension.
+The root `package.json` serves both OpenCode and Pi under `@goldziher/opencode-poly`;
+Git installation requires only the committed bundle, while npm publishing enables
+registry installation and discovery through the `pi-package` keyword.
+
+The release workflow verifies generated provenance and packed resources before npm
+publication. Until an ai-rulez release includes Pi support, CI builds the generator
+from the pinned implementation commit; local release bumps use `AI_RULEZ` or the
+installed `ai-rulez` binary.
+
 ## Consequences
 
 Positive:

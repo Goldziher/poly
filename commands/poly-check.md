@@ -1,13 +1,19 @@
 ---
-priority: high
-usage: "/poly-check [paths]"
-description: "Lint and check formatting with poly — apply no fixes; summarize findings and drift"
+type: Reference
+title: Poly Check
+description: Lint and check formatting with poly — apply no fixes; summarize findings and drift
+x-ai-rulez:
+  kind: command
+  id: poly-check
+  metadata:
+    priority: high
+    usage: /poly-check [paths]
 ---
 
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-Content-Hash: blake3:21ec175c4236b9a5ccb8f54769bf0ae41734faf8eb9b4010734c295f379bdb18
-Source-Hash: blake3:82f0197f031687bab44822403a251f7c17c1b8cf7259673f61abd9f692bb9ef8
+Content-Hash: blake3:c9e036f46bc08a172166f5259105f345e13481c65db9c32a239e924951f1b81d
+Source-Hash: blake3:22b7594ca621e7a730f0c0028402ce7cc9e030e6cfb4dc9cf9e46e3f3d2165b4
 Schema-Version: v1
 -->
 

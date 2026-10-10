@@ -1,12 +1,18 @@
 ---
-priority: medium
-description: "Running poly lint / poly fmt — --fix, --format pretty|json|toon, --exclude, --config, exit codes, inline suppression, and the check → read-json → fix → re-check loop"
+type: Playbook
+title: Poly Lint And Format
+description: Running poly lint / poly fmt — --fix, --format pretty|json|toon, --exclude, --config, exit codes, inline suppression, and the check → read-json → fix → re-check loop
+x-ai-rulez:
+  kind: skill
+  id: poly-lint-and-format
+  metadata:
+    priority: medium
 ---
 
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-Content-Hash: blake3:d208bf5eb2480ca8f2fe2cafa779945b1dd2ca529962d3f1bdebf1f32ee1c94d
-Source-Hash: blake3:82f0197f031687bab44822403a251f7c17c1b8cf7259673f61abd9f692bb9ef8
+Content-Hash: blake3:e4f8dfa8973dc0b9ae090f51ab23fef5bc6a6a6ece60a3caa54c0735f35d96ba
+Source-Hash: blake3:22b7594ca621e7a730f0c0028402ce7cc9e030e6cfb4dc9cf9e46e3f3d2165b4
 Schema-Version: v1
 -->
 

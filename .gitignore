@@ -18,7 +18,7 @@ __pycache__/
 
 
 # `ai-rulez generate --plugin` emits one bundle per runtime named in
-# .ai-rulez/config.toml [plugin] runtimes. All seven are committed — a
+# .ai-rulez/config.toml [plugin] runtimes. All eight are committed — a
 # marketplace install serves these files directly, so an ignored bundle is a
 # harness poly silently does not support. .ai-rulez-generated.json is the BLAKE3
 # provenance sidecar `ai-rulez verify --plugin` checks against, so it is
@@ -47,3 +47,10 @@ __pycache__/
 AGENTS.md
 CLAUDE.md
 # END ai-rulez
+
+# Distributable Pi prompts override the contributor-output ignore above. ~keep
+!.pi/prompts/
+.pi/prompts/*
+!.pi/prompts/poly-check.md
+!.pi/prompts/poly-fix.md
+/*.tgz

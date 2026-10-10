@@ -1,12 +1,18 @@
 ---
-priority: medium
-description: "Use poly as the single lint/format gate instead of invoking ruff/oxlint/rustfmt directly — one poly.toml, poly hooks install, poly migrate, CI via the Goldziher/poly setup Action"
+type: Playbook
+title: Poly Orchestrator
+description: Use poly as the single lint/format gate instead of invoking ruff/oxlint/rustfmt directly — one poly.toml, poly hooks install, poly migrate, CI via the Goldziher/poly setup Action
+x-ai-rulez:
+  kind: skill
+  id: poly-orchestrator
+  metadata:
+    priority: medium
 ---
 
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-Content-Hash: blake3:ce64425c68bd166984a77c3c6cdb8f222d917393034061549e1cecfc7db9f65e
-Source-Hash: blake3:82f0197f031687bab44822403a251f7c17c1b8cf7259673f61abd9f692bb9ef8
+Content-Hash: blake3:c7c56591acac423955aaab54ad2b4d0cc01db799259c0440f42d04c7766e3bf6
+Source-Hash: blake3:22b7594ca621e7a730f0c0028402ce7cc9e030e6cfb4dc9cf9e46e3f3d2165b4
 Schema-Version: v1
 -->
 

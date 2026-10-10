@@ -1,12 +1,18 @@
 ---
-priority: medium
-description: "The poly MCP server — the eleven tools and which are read-only vs mutating, the paths/exclude/config/format params, async Tasks for the whole-project phase, and the isError contract"
+type: Playbook
+title: Poly Mcp
+description: The poly MCP server — the eleven tools and which are read-only vs mutating, the paths/exclude/config/format params, async Tasks for the whole-project phase, and the isError contract
+x-ai-rulez:
+  kind: skill
+  id: poly-mcp
+  metadata:
+    priority: medium
 ---
 
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-Content-Hash: blake3:2ceee64a619ac4d86ebeb8badbeeb50cd33bc1c277ba3d00765558a1202b7194
-Source-Hash: blake3:82f0197f031687bab44822403a251f7c17c1b8cf7259673f61abd9f692bb9ef8
+Content-Hash: blake3:73aee59ac62c5690855553ec6d8ddaa82ee2837104a6ce611e652f0a5b249f6a
+Source-Hash: blake3:22b7594ca621e7a730f0c0028402ce7cc9e030e6cfb4dc9cf9e46e3f3d2165b4
 Schema-Version: v1
 -->
 

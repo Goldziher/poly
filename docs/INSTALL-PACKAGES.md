@@ -157,3 +157,16 @@ release's binary under the new version, which installs cleanly and is wrong.
 task package:npm       # stage target/debug/poly into the host platform package, then npm pack
 task package:wheels    # build a platform wheel from target/debug/poly
 ```
+
+### Agent plugin package
+
+The root `package.json` is the combined OpenCode/Pi package, `@goldziher/opencode-poly`,
+separate from the `@goldziher/polylint` binary wrapper. `publish_plugin_npm` checks
+the tagged manifest version, ai-rulez provenance, and the packed five Pi skills,
+two Pi prompts, and OpenCode adapter before publishing.
+
+Configure its npm trusted publisher for `Goldziher/poly`, workflow `publish.yaml`,
+with no environment. The workflow skips an unbootstrapped package with a notice;
+its first publication requires `npm publish --access public` from the repository
+root after generation and verification. Git-based Pi installation needs no npm
+publication. The plugin package does not contain the `poly` binary.

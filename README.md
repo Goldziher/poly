@@ -327,6 +327,21 @@ That installs 5 skills and 2 slash commands (`/poly-check`, `/poly-fix`) that te
 model and when to reach for lint vs. format vs. hooks. Codex clients add the same marketplace through their own
 plugin manager.
 
+### Pi
+
+Install the `poly` binary first, then install the Pi package from Git:
+
+```sh
+pi install git:github.com/Goldziher/poly
+```
+
+The package contains 5 skills and the `/poly-check` and `/poly-fix` prompt templates.
+Pi runs `poly` through its shell tool; this package does not register an MCP server or install the binary.
+Use `pi install -l git:github.com/Goldziher/poly` to save the package in the current project's configuration.
+
+The same bundle targets `@goldziher/opencode-poly` for OpenCode and Pi. After its first npm release,
+`pi install npm:@goldziher/opencode-poly` provides the registry installation path and Pi catalog discovery.
+
 `poly mcp` is a stdio MCP server exposing eleven tools that mirror the CLI 1:1 — `lint`, `format_check`, `rules`,
 `config_show`, `cache_stats` and `version` (read-only), `lint_fix`, `format_write` and `cache_clean` (mutating), and
 `workspace_lint` / `workspace_lint_fix`. The last two run the multi-minute whole-project phase (`cargo clippy`,
