@@ -195,16 +195,33 @@ run again. **One stale-cache regression the previous `chore: updated deps` commi
 was found and fixed as a rider** — the refresh is the reason the `version_audit` guard was
 consulted, and it was red.
 
-- **The git pins advanced:** biome `dd96b11` → `e26a76b`, oxc `4dce2c2` → `98573d2`, rubyfmt
-  `094cdc8` → `f765808`. The moving oxc rev carried its workspace versions with it —
-  `oxc_formatter*` `0.71.0` → `0.72.0`, `oxc_linter` `1.86.0` → `1.87.0`, the shared
+- **Two git pins advanced, one could not:** oxc `4dce2c2` → `98573d2` and rubyfmt `094cdc8` →
+  `f765808`. The moving oxc rev carried its workspace versions with it — `oxc_formatter*` `0.71.0`
+  → `0.72.0`, `oxc_linter` `1.86.0` → `1.87.0`, the shared
   `oxc_allocator`/`oxc_span`/`oxc_diagnostics`/… `0.152.0` → `0.153.0` — and pulled four new
   transitive crates (`bitvec`, `funty`, `radium`, `tap`, `wyz`). No board API poly calls changed;
-  `cargo check --workspace --all-targets` and the oxc/biome/rubyfmt/markup_fmt fixtures pass
-  against the new revs unchanged.
-- **Every engine whose output a moved pin feeds had its `version()` bumped:** `biome_css`,
-  `biome_graphql`, `oxc` and `markup_fmt` (embedded oxc) carry the new short rev `e26a76b` /
-  `98573d2`; `rubyfmt` moved to `f765808`.
+  `cargo check --workspace --all-targets` and the oxc/rubyfmt/markup_fmt fixtures pass against the
+  new revs unchanged.
+- **The biome pin stays at `dd96b11` — advancing it breaks the Windows build, and the cause is
+  upstream in cargo.** biome's HEAD (`e26a76b`) added a test fixture whose relative path is **205
+  characters** long:
+  `crates/biome_json_analyze/tests/…/noUntrustedLicenses/ignore_deprecated/package.expected.json/Users/ema/www/biome/…/package.json.snap`
+  (a snapshot filename that is itself a `/`-joined path). Cargo checks a git dependency out under
+  `C:\Users\<runner>\.cargo\git\checkouts\biome-<hash>\<rev>\`, a **73-character** prefix, so the
+  checkout path is **278 characters** — past Windows' 260-char `MAX_PATH` — and the build fails at
+  `failed to load source for dependency biome_analyze`. The previous `dd96b11` fixture tops out at
+  184 relative chars (257 total); oxc `98573d2` is 187 + 71 = 258, rubyfmt 80. Cargo's own
+  maintainers confirmed in [rust-lang/cargo#7420] that `[net] git-fetch-with-cli` does **not** help:
+  cargo still extracts the repo with libgit2, which ignores `core.longpaths` and the OS long-path
+  registry setting ([libgit2/libgit2#3053], open since 2015). No project-side fix exists, so the pin
+  holds at the last biome rev whose fixtures fit, and this is re-checked when biome is next touched.
+- **Every engine whose output a moved pin feeds had its `version()` bumped:** `oxc` and `markup_fmt`
+  (embedded oxc) carry `98573d2`; `rubyfmt` moved to `f765808`. `biome_css` and `biome_graphql`
+  stay at `rev:dd96b11` with their pin.
+
+[rust-lang/cargo#7420]: https://github.com/rust-lang/cargo/issues/7420
+[libgit2/libgit2#3053]: https://github.com/libgit2/libgit2/issues/3053
+
 - **The registry re-check held, with one new fact.** crates.io `oxc_formatter` is still the
   abandoned, fully-yanked 2023 `0.0.0`; `oxc_formatter_core`, `oxc_formatter_json` and
   `oxc_linter` are still unpublished, so the same-`rev` rule binds the oxc monorepo even though

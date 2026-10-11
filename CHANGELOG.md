@@ -31,11 +31,15 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ### Changed
 
-- **Dependency refresh.** The three git pins advanced to their remotes' HEADs: oxc `4dce2c2` →
-  `98573d2`, biome `dd96b11` → `e26a76b`, rubyfmt `094cdc8` → `f765808`. Every engine `version()`
-  fed by a moved pin moved with it — `biome_css`, `biome_graphql`, `oxc`, `markup_fmt` (embedded
-  oxc) and `rubyfmt`. The publishing-posture re-check held: all three crates remain unpublishable
-  and stay on a git `rev` (ADR 0003 amendment).
+- **Dependency refresh.** The oxc (`4dce2c2` → `98573d2`) and rubyfmt (`094cdc8` → `f765808`)
+  git pins advanced to their remotes' HEADs; every engine `version()` fed by a moved pin moved with
+  it — `oxc`, `markup_fmt` (embedded oxc) and `rubyfmt`. **The biome pin holds at `dd96b11`**:
+  biome's HEAD added a test fixture whose relative path is 205 characters, and cargo's 73-character
+  checkout prefix pushes it past Windows' 260-char `MAX_PATH`. Cargo extracts git dependencies with
+  libgit2, which ignores `core.longpaths` ([rust-lang/cargo#7420],
+  [libgit2/libgit2#3053]), so no project-side fix exists; the pin stays at the last biome rev whose
+  fixtures fit. The publishing-posture re-check held: all three crates remain unpublishable and stay
+  on a git `rev` (ADR 0003 amendment).
 
 - **The Go ast-grep test predicate moved to the shared global utils** (`go-in-test-function`),
   replacing a byte-identical file-local copy in `deep-exit` and `force-type-assert`. Matching is
@@ -53,6 +57,8 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 [Goldziher/poly#26]: https://github.com/Goldziher/poly/issues/26
 [Goldziher/poly#27]: https://github.com/Goldziher/poly/issues/27
 [Goldziher/poly#28]: https://github.com/Goldziher/poly/issues/28
+[rust-lang/cargo#7420]: https://github.com/rust-lang/cargo/issues/7420
+[libgit2/libgit2#3053]: https://github.com/libgit2/libgit2/issues/3053
 
 ## [0.28.2] - 2026-10-03
 

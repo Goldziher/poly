@@ -37,16 +37,16 @@ assert_fs = "1.1.4"
 ast-grep-config = "0.50.0"
 ast-grep-core = "0.50.0"
 axoupdater = { version = "0.10.2", default-features = false, features = ["github_releases"] }
-biome_analyze = { git = "https://github.com/biomejs/biome", rev = "e26a76bd989e57d7c44f38cb89a39637de7fee6a" }
-biome_css_analyze = { git = "https://github.com/biomejs/biome", rev = "e26a76bd989e57d7c44f38cb89a39637de7fee6a" }
-biome_css_parser = { git = "https://github.com/biomejs/biome", rev = "e26a76bd989e57d7c44f38cb89a39637de7fee6a" }
-biome_diagnostics = { git = "https://github.com/biomejs/biome", rev = "e26a76bd989e57d7c44f38cb89a39637de7fee6a" }
-biome_graphql_analyze = { git = "https://github.com/biomejs/biome", rev = "e26a76bd989e57d7c44f38cb89a39637de7fee6a" }
-biome_graphql_parser = { git = "https://github.com/biomejs/biome", rev = "e26a76bd989e57d7c44f38cb89a39637de7fee6a" }
-biome_languages = { git = "https://github.com/biomejs/biome", rev = "e26a76bd989e57d7c44f38cb89a39637de7fee6a", features = [
+biome_analyze = { git = "https://github.com/biomejs/biome", rev = "dd96b119a5011ebf8c952aeb001a836e700db614" }
+biome_css_analyze = { git = "https://github.com/biomejs/biome", rev = "dd96b119a5011ebf8c952aeb001a836e700db614" }
+biome_css_parser = { git = "https://github.com/biomejs/biome", rev = "dd96b119a5011ebf8c952aeb001a836e700db614" }
+biome_diagnostics = { git = "https://github.com/biomejs/biome", rev = "dd96b119a5011ebf8c952aeb001a836e700db614" }
+biome_graphql_analyze = { git = "https://github.com/biomejs/biome", rev = "dd96b119a5011ebf8c952aeb001a836e700db614" }
+biome_graphql_parser = { git = "https://github.com/biomejs/biome", rev = "dd96b119a5011ebf8c952aeb001a836e700db614" }
+biome_languages = { git = "https://github.com/biomejs/biome", rev = "dd96b119a5011ebf8c952aeb001a836e700db614", features = [
   "lang_css",
 ] }
-biome_rowan = { git = "https://github.com/biomejs/biome", rev = "e26a76bd989e57d7c44f38cb89a39637de7fee6a" }
+biome_rowan = { git = "https://github.com/biomejs/biome", rev = "dd96b119a5011ebf8c952aeb001a836e700db614" }
 blake3 = "1"
 bstr = "1.13.1"
 cargo_metadata = "0.23.1"
