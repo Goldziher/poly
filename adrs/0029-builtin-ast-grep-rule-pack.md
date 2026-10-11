@@ -270,3 +270,23 @@ via `poly rules test` against the builtin directory — so nothing in CI checked
 *before* the refactor so its result is a baseline rather than a claim. `ENGINE_VERSION` moves to
 `builtin-pack-3`: the refactor is intended to preserve matching exactly, but a cache may not rely on
 an intention, and the rules now compile through a different registration than any cached payload.
+
+## Amendment — 2026-10-11: `string-concat-in-loop` was audited and stays `off`
+
+Issue #27 recorded the one gap the 2026-08-31 audit left: `string-concat-in-loop`, a Python pack rule
+shipping `severity: off`, was never measured. It fell inside #24's premise — "both Python rules
+default off, so the pack contributes nothing to a default Python run" — and stays `off` on its
+pre-existing rationale that it flags a performance smell rather than a defect. It now has the
+evidence the premise assumed.
+
+Measured against the same ten-repository corpus and the same harden config as the rest, waking the
+rule through `[lint.astgrep] extend_select`. **93 findings over 2,586 Python files (36.0/1000)**, and
+a hand-read of 20 gave **8/20 (40%) false positives** — double the rate `test-without-assertion`
+ships `off` at, and every false positive is the normalization-or-dedup idiom (`original += "\n"`,
+`method += "_"`, `while name in seen: name += "_2"`) that a type-free matcher cannot tell from a
+quadratic build. Ruff is confirmed not to cover the rule: the enabled `PERF` rules are list/dict
+comprehension and `try-except-in-loop`, and `ISC` is about adjacent literals. Numbers and per-repo
+paths in `docs/pack-rule-audit.md`; the rule's `off` default is unchanged, so the pack's shipped set
+and each rule's severity are exactly as before.
+
+This closes #27.

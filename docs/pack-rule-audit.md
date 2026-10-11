@@ -25,6 +25,7 @@ proposal's, written before the decision, and left that way deliberately.
 | `test-without-assertion` | python | 141 | 64.8 | 16/20 (80%) | **drop** |
 | `placeholder-implementation` | python | 47 | 21.6 | 14/14 residual (100%) | **drop** |
 | `todo-marker` (existing, python) | python | 82 | 38.5 | 0/20 (0%) | **keep `off`** |
+| `string-concat-in-loop` (existing, python) | python | 93 | 36.0 | 8/20 (40%) | **keep `off`** |
 
 The drafts themselves are **not** in the repository. Four were dropped and the
 fifth is not shipping, so committing them would leave five rules nobody runs
@@ -576,6 +577,94 @@ plus the interaction the rule's own note already records — poly's
 `[lint.uncomment]` ships `remove_todos = false` precisely so these survive —
 keeps it `off`. Promoting it would redden a well-maintained repo for
 documenting its own deprecation plan.
+
+### `string-concat-in-loop` — python — **keep `off`**
+
+Catches `s += "<literal>"` (or an f-string) inside a `for`/`while`, with the
+right-hand side restricted to a string literal so no type inference is involved.
+The `off` rule left over from issue #24 that had not been re-audited; measured
+here against the same corpus and config as the rest.
+
+**Why ruff does not cover it.** No ruff rule flags a growing string accumulator.
+Of the 22 selectors poly enables, `PERF` is present and its rules are
+`PERF401`/`PERF402` (manual list/dict comprehension), `PERF101`/`PERF102`
+(`unnecessary-list-cast`/`incorrect-dict-iterator`) and `PERF203`
+(`try-except-in-loop`) — none touches `+=` on a `str`. `ISC`
+(flake8-implicit-str-concat, not enabled) is about *adjacent literals*
+(`"a" "b"`, `"a" + "b"`), not a variable accumulator. Verified by running poly's
+ruff backend over the shape: it reports nothing.
+
+Run: `poly lint --only astgrep --config scripts/harden/poly.toml --no-workspace
+--no-cache --format json <repo>`, with the rule woken by the harden config's
+`[lint.astgrep] extend_select`. Denominators are Python files under the pinned
+checkout (excluding `.venv`, `node_modules`, `site-packages`).
+
+```text
+
+aider: 52 findings, 147 py files, 353.7/1000 py files
+     15  aider/coders/base_coder.py
+      7  scripts/homepage.py
+      4  aider/coders/editblock_coder.py
+      4  aider/coders/search_replace.py
+      2  aider/coders/editblock_func_coder.py
+      2  aider/coders/single_wholefile_func_coder.py
+      2  aider/commands.py
+      2  aider/help.py
+      2  aider/history.py
+      2  aider/io.py
+
+crewai: 31 findings, 1325 py files, 23.4/1000 py files
+     13  lib/crewai/src/crewai/experimental/evaluation/metrics/tools_metrics.py
+      6  lib/crewai/src/crewai/a2a/wrapper.py
+      2  lib/cli/src/crewai_cli/checkpoint_tui.py
+      2  lib/cli/src/crewai_cli/create_json_crew.py
+      2  lib/crewai/src/crewai/experimental/evaluation/base_evaluator.py
+      2  lib/crewai/src/crewai/knowledge/source/json_knowledge_source.py
+      1  lib/cli/src/crewai_cli/crew_run_tui.py
+      1  lib/crewai/src/crewai/llms/providers/anthropic/completion.py
+
+pydantic-ai: 9 findings, 739 py files, 12.2/1000 py files
+      2  pydantic_evals/pydantic_evals/reporting/__init__.py
+      2  pydantic_graph/pydantic_graph/graph_builder.py
+      1  .github/scripts/feature_digest.py
+      1  examples/pydantic_ai_examples/weather_agent_gradio.py
+      1  pydantic_ai_slim/pydantic_ai/_output.py
+      1  pydantic_ai_slim/pydantic_ai/models/test.py
+      1  tests/test_examples.py
+
+spec-kit: 1 findings, 297 py files, 3.4/1000 py files
+      1  src/specify_cli/integrations/_query_commands.py
+
+openhands: 0 findings, 10 py files, 0.0/1000 py files
+
+stagehand: 0 findings, 68 py files, 0.0/1000 py files
+```
+
+93 findings over 2,586 Python files, 36.0/1000. The distribution is the first
+signal: one repository (`aider`, 353.7/1000) supplies 56% of them and one file
+(`base_coder.py`, 15) supplies 29% of that repository's.
+
+Hand-read of 20 sites (10 aider, 8 crewai, 2 pydantic-ai): **8/20 (40%) FP**. The
+eight false positives are all the same failure — the match cannot see whether the
+target survives across iterations — and split into two sub-shapes. A per-iteration
+local rebuilt each pass and appended to once: `original += "\n"` and
+`content_to_write += "\n"` to normalize one trailing newline, `method += "_"` to
+compose a strategy name, `short += "…"`/`entity_title += …`/`error += f" {code}"`
+each appending a single trailing token, and `gr_message['content'] += …` on one
+chat message. And the idiomatic dedup suffix loop
+`while name_default in existing_names: name_default += "_2"`, whose collision
+count is 0–2 — technically an accumulator, but bounded far below where the
+quadratic cost it warns about could matter. The twelve true positives are genuine
+accumulators over a loop: `prompt += "\n"` per file in `base_coder.get_files_content`,
+`res += f"…"` per command, a recursive `text += …` JSON printer, and a
+tool-description builder.
+
+**Keep `off`.** It is a performance smell, not a defect, and 40% of what it
+reports is the normalization and dedup idioms that a type-free matcher cannot
+distinguish from a quadratic build. The rule's own note already restricts the
+right-hand side to a literal to stay provable; that restriction does not reach
+the *target*, which is where every false positive here lives. Promoting it would
+redden a repository for appending a newline once.
 
 ---
 
