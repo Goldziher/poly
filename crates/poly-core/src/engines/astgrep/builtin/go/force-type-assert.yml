@@ -58,22 +58,9 @@ utils:
           nthChild: 1
           has:
             nthChild: 2
-  in-test-function:
-    inside:
-      stopBy: end
-      any:
-        - kind: function_declaration
-        - kind: method_declaration
-        - kind: func_literal
-      has:
-        kind: parameter_list
-        has:
-          stopBy: end
-          kind: qualified_type
-          regex: '^testing\s*\.\s*(T|B|F|M|TB)$'
 rule:
   kind: type_assertion_expression
   not:
     any:
       - matches: comma-ok-form
-      - matches: in-test-function
+      - matches: go-in-test-function

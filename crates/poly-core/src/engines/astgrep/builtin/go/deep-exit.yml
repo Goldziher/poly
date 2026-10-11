@@ -69,19 +69,6 @@ utils:
           - kind: identifier
           - kind: field_identifier
         regex: "^(main|init|Main)$|^[Mm]ust"
-  in-test-function:
-    inside:
-      stopBy: end
-      any:
-        - kind: function_declaration
-        - kind: method_declaration
-        - kind: func_literal
-      has:
-        kind: parameter_list
-        has:
-          stopBy: end
-          kind: qualified_type
-          regex: '^testing\s*\.\s*(T|B|F|M|TB)$'
   in-main-package:
     inside:
       stopBy: end
@@ -96,5 +83,5 @@ rule:
   not:
     any:
       - matches: in-entrypoint
-      - matches: in-test-function
+      - matches: go-in-test-function
       - matches: in-main-package

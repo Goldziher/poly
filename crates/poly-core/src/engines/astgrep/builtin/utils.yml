@@ -53,3 +53,23 @@
           follows:
             matches: rust-test-attribute
             stopBy: { not: { matches: rust-attribute-or-comment } }
+
+# A node is in Go test context when it sits inside a function, method or
+# `func` literal whose parameters include a `*testing.T`/`B`/`F`/`M` or
+# `testing.TB`. `deep-exit` and `force-type-assert` carried a byte-identical
+# copy of this before it moved here. Relational-only, like its Rust sibling.
+- id: go-in-test-function
+  language: go
+  rule:
+    inside:
+      stopBy: end
+      any:
+        - kind: function_declaration
+        - kind: method_declaration
+        - kind: func_literal
+      has:
+        kind: parameter_list
+        has:
+          stopBy: end
+          kind: qualified_type
+          regex: '^testing\s*\.\s*(T|B|F|M|TB)$'

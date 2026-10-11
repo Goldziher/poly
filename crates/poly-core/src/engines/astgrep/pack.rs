@@ -210,8 +210,9 @@ mod tests {
             "rust-cfg-test-attribute",
             "rust-attribute-or-comment",
             "rust-in-test-context",
+            "go-in-test-function",
         ];
-        const CARRIERS: &[(&str, &str)] = &[
+        const RUST_CARRIERS: &[(&str, &str)] = &[
             ("unwrap-used", include_str!("builtin/rust/unwrap-used.yml")),
             ("expect-used", include_str!("builtin/rust/expect-used.yml")),
             (
@@ -227,8 +228,15 @@ mod tests {
                 include_str!("builtin/rust/undocumented-unsafe-block.yml"),
             ),
         ];
+        // Go's test predicate was a byte-identical pair of file-local copies
+        // (`deep-exit`, `force-type-assert`) until it moved to the shared
+        // `go-in-test-function`, the same drift seam the Rust helpers had.
+        const GO_CARRIERS: &[(&str, &str)] = &[
+            ("deep-exit", include_str!("builtin/go/deep-exit.yml")),
+            ("force-type-assert", include_str!("builtin/go/force-type-assert.yml")),
+        ];
 
-        for (id, yaml) in CARRIERS {
+        for (id, yaml) in RUST_CARRIERS {
             for helper in [
                 "  test-attribute:",
                 "  cfg-test-attribute:",
@@ -241,6 +249,16 @@ mod tests {
                     helper.trim().trim_end_matches(':')
                 );
             }
+        }
+
+        for (id, yaml) in GO_CARRIERS {
+            // The two-space prefix is load-bearing: a `matches: go-in-test-function`
+            // reference contains `in-test-function:` but not `  in-test-function:`.
+            assert!(
+                !yaml.contains("  in-test-function:"),
+                "{id} redefines `in-test-function` locally; it is the global util \
+                 `go-in-test-function` in builtin/utils.yml"
+            );
         }
 
         for id in SHARED_IDS {
