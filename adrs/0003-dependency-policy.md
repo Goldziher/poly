@@ -238,3 +238,21 @@ consulted, and it was red.
   embeds the resolved version — `0.41.0`, `ast-grep-core-0.50.0+tslp1.21.1`, `tslp1.21.1`,
   `tslp1.21.1` — which is what the guard exists to force: a stale string would have served
   results computed by the old crates under the new ones.
+
+## Amendment — 2026-10-11 (ruff moved to the 0.17 line)
+
+With the rest of the tree already current, the only crates behind their latest were the six
+`=`-pinned ruff crates. They moved as **one set**, since the policy requires it: `ruff_linter
+=0.16.9` → `=0.17.0`, and `ruff_db` / `ruff_formatter` / `ruff_python_ast` /
+`ruff_python_formatter` / `ruff_text_size` `=0.0.15` → `=0.0.17`. `0.17.0` is the next unsemvered
+weekly line, not a patch on `0.16.x`, so this is exactly the case the `=` exists for.
+
+The API poly calls did not change: `cargo check --workspace --all-targets` is clean, and the
+`ruff_engine` and full `poly-core` suites pass with no fixture drift. `RuffEngine::version()`
+moved to `ruff-0.17.0+…` with it, because the content-hash cache key must invalidate on the
+dependency, not merely on the rev label (ADR 0008). Whatever `ruff-0.16.9` cached is now ignored.
+`version_audit` confirms the string tracks the resolved `ruff_linter` version.
+
+`cargo upgrade --dry-run --incompatible` reports nothing else behind: every remaining crates.io
+dependency already resolves to its latest compatible version, and the three git pins are at their
+HEADs (biome held at `dd96b11` for the Windows reason recorded above).

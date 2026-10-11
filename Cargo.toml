@@ -122,12 +122,12 @@ rayon = "1"
 regex = "1"
 rmcp = { version = "3.5.1", features = ["schemars"] }
 rubyfmt = { git = "https://github.com/fables-tales/rubyfmt", rev = "f7658081e074a17fda5d9270ef4636d1a27848c1", default-features = false }
-ruff_db = "=0.0.15"
-ruff_formatter = "=0.0.15"
-ruff_linter = "=0.16.9"
-ruff_python_ast = "=0.0.15"
-ruff_python_formatter = "=0.0.15"
-ruff_text_size = "=0.0.15"
+ruff_db = "=0.0.17"
+ruff_formatter = "=0.0.17"
+ruff_linter = "=0.17.0"
+ruff_python_ast = "=0.0.17"
+ruff_python_formatter = "=0.0.17"
+ruff_text_size = "=0.0.17"
 rumdl = { version = "0.2", default-features = false }
 rust-ini = { version = "0.21", features = ["inline-comment"] }
 rustc-hash = "2.1.3"
