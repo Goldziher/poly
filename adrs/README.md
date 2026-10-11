@@ -48,6 +48,7 @@ Context, Decision, Consequences (positive and negative/risks), and Alternatives 
 | [0031](0031-run-coverage-and-withdrawal.md) | Run Coverage and Withdrawal | Accepted |
 | [0032](0032-hardening-corpora.md) | The Hardening Corpora | Accepted |
 | [0033](0033-batch-engine-execution.md) | Batch Engine Execution for Native-Toolchain Backends | Accepted |
+| [0034](0034-test-context.md) | Test Context: Two Mechanisms, One Per-Language Predicate Each | Accepted |
 
 ## Conventions
 
