@@ -28,7 +28,7 @@ pub const DEFAULT_BASE_FILE: &str = "poly.toml";
 /// `path` (local, mutually exclusive with `git`) or `git` (repository URL) must
 /// be set; a `git` source requires a nonempty `revision`; a `path` source must
 /// not set `revision`.
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq, Default, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ExtendsSource {
     /// Optional stable identifier used in diagnostics and the config lock file.

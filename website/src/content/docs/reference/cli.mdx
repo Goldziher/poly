@@ -259,6 +259,7 @@ points at `poly doctor`. A correctly-installed poly finds a single entry and pri
 ```text
 poly config show   [--config <PATH>] [--format <toml|json|toon>]
 poly config update [--config <PATH>]
+poly config schema [--output <PATH>]
 ```
 
 `poly config show` prints the **effective, fully-merged configuration** — every section and key
@@ -301,6 +302,12 @@ bases, and whether `[hooks]` is present — the facts the TOML form carries as c
 `poly-config.lock`. Config validation reports unknown top-level sections, unknown keys within a
 recognized section, and wrongly-typed values as warnings — a misspelled key no longer parses
 silently and does nothing.
+
+`poly config schema` prints the JSON Schema for `poly.toml` — derived from the same config types
+the parser uses, with each backend's declared `[lint]` / `[fmt]` option keys included. Use it for
+editor validation and autocomplete; the schema is also published at
+`https://goldziher.github.io/poly/poly.schema.json`. `--output <PATH>` writes it to a file. See the
+[configuration reference](/poly/reference/configuration/#editor-setup-json-schema).
 
 ## `poly commit`, `poly hooks`, `poly cache`, `poly mcp`
 

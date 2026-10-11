@@ -13,7 +13,7 @@ use crate::hooks::patterns::{Guard, Patterns};
 /// the ordered `jobs` array-of-tables, then the named `commands` map, then the
 /// named `scripts` map. For a map entry the key supplies the job `name` when
 /// the job omits its own.
-#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct StageConfig {
     /// Run this stage's jobs concurrently.

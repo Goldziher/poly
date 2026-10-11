@@ -1,0 +1,4116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "poly.toml",
+  "description": "The poly.toml configuration document for poly's lint, format, hooks and commit surfaces.",
+  "type": "object",
+  "properties": {
+    "extends": {
+      "$ref": "#/$defs/Extends"
+    },
+    "exclude_mode": {
+      "description": "`\"replace\"` makes `[discovery] exclude` replace inherited globs instead\nof accumulating them; any other value accumulates.",
+      "type": ["string", "null"]
+    },
+    "defaults": {
+      "$ref": "#/$defs/RawDefaults"
+    },
+    "discovery": {
+      "$ref": "#/$defs/DiscoveryConfig"
+    },
+    "lint": {
+      "type": "object",
+      "description": "Per-language linter configuration, keyed by language id then engine name.",
+      "properties": {
+        "python": {
+          "type": "object",
+          "description": "Backends that handle python files.",
+          "properties": {
+            "ruff": {
+              "$ref": "#/$defs/lint_ruff"
+            },
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "javascript": {
+          "type": "object",
+          "description": "Backends that handle javascript files.",
+          "properties": {
+            "oxc": {
+              "$ref": "#/$defs/lint_oxc"
+            },
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "typescript": {
+          "type": "object",
+          "description": "Backends that handle typescript files.",
+          "properties": {
+            "oxc": {
+              "$ref": "#/$defs/lint_oxc"
+            },
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "jsx": {
+          "type": "object",
+          "description": "Backends that handle jsx files.",
+          "properties": {
+            "oxc": {
+              "$ref": "#/$defs/lint_oxc"
+            },
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "tsx": {
+          "type": "object",
+          "description": "Backends that handle tsx files.",
+          "properties": {
+            "oxc": {
+              "$ref": "#/$defs/lint_oxc"
+            },
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "json": {
+          "type": "object",
+          "description": "Backends that handle json files.",
+          "properties": {
+            "oxc": {
+              "$ref": "#/$defs/lint_oxc"
+            },
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "jsonc": {
+          "type": "object",
+          "description": "Backends that handle jsonc files.",
+          "properties": {
+            "oxc": {
+              "$ref": "#/$defs/lint_oxc"
+            },
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "yaml": {
+          "type": "object",
+          "description": "Backends that handle yaml files.",
+          "properties": {
+            "yaml": {
+              "$ref": "#/$defs/lint_yaml"
+            },
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "toml": {
+          "type": "object",
+          "description": "Backends that handle toml files.",
+          "properties": {
+            "taplo": {
+              "$ref": "#/$defs/lint_taplo"
+            },
+            "polyconfig": {
+              "$ref": "#/$defs/lint_polyconfig"
+            },
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "markdown": {
+          "type": "object",
+          "description": "Backends that handle markdown files.",
+          "properties": {
+            "rumdl": {
+              "$ref": "#/$defs/lint_rumdl"
+            },
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "mdx": {
+          "type": "object",
+          "description": "Backends that handle mdx files.",
+          "properties": {
+            "rumdl": {
+              "$ref": "#/$defs/lint_rumdl"
+            },
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "sql": {
+          "type": "object",
+          "description": "Backends that handle sql files.",
+          "properties": {
+            "sqruff": {
+              "$ref": "#/$defs/lint_sqruff"
+            },
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "css": {
+          "type": "object",
+          "description": "Backends that handle css files.",
+          "properties": {
+            "biome": {
+              "$ref": "#/$defs/lint_biome"
+            },
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "scss": {
+          "type": "object",
+          "description": "Backends that handle scss files.",
+          "properties": {
+            "biome": {
+              "$ref": "#/$defs/lint_biome"
+            },
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "less": {
+          "type": "object",
+          "description": "Backends that handle less files.",
+          "properties": {
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "html": {
+          "type": "object",
+          "description": "Backends that handle html files.",
+          "properties": {
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "vue": {
+          "type": "object",
+          "description": "Backends that handle vue files.",
+          "properties": {
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "svelte": {
+          "type": "object",
+          "description": "Backends that handle svelte files.",
+          "properties": {
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "astro": {
+          "type": "object",
+          "description": "Backends that handle astro files.",
+          "properties": {
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "angular": {
+          "type": "object",
+          "description": "Backends that handle angular files.",
+          "properties": {
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "jinja": {
+          "type": "object",
+          "description": "Backends that handle jinja files.",
+          "properties": {
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "vento": {
+          "type": "object",
+          "description": "Backends that handle vento files.",
+          "properties": {
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "mustache": {
+          "type": "object",
+          "description": "Backends that handle mustache files.",
+          "properties": {
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "xml": {
+          "type": "object",
+          "description": "Backends that handle xml files.",
+          "properties": {
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "graphql": {
+          "type": "object",
+          "description": "Backends that handle graphql files.",
+          "properties": {
+            "graphql": {
+              "$ref": "#/$defs/lint_graphql"
+            },
+            "biome": {
+              "$ref": "#/$defs/lint_biome"
+            },
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "hcl": {
+          "type": "object",
+          "description": "Backends that handle hcl files.",
+          "properties": {
+            "hcl": {
+              "$ref": "#/$defs/lint_hcl"
+            },
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "nix": {
+          "type": "object",
+          "description": "Backends that handle nix files.",
+          "properties": {
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "shell": {
+          "type": "object",
+          "description": "Backends that handle shell files.",
+          "properties": {
+            "shellcheck": {
+              "$ref": "#/$defs/lint_shellcheck"
+            },
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "dockerfile": {
+          "type": "object",
+          "description": "Backends that handle dockerfile files.",
+          "properties": {
+            "dockerfile": {
+              "$ref": "#/$defs/lint_dockerfile"
+            },
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "go": {
+          "type": "object",
+          "description": "Backends that handle go files.",
+          "properties": {
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "java": {
+          "type": "object",
+          "description": "Backends that handle java files.",
+          "properties": {
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "kotlin": {
+          "type": "object",
+          "description": "Backends that handle kotlin files.",
+          "properties": {
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "ruby": {
+          "type": "object",
+          "description": "Backends that handle ruby files.",
+          "properties": {
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "php": {
+          "type": "object",
+          "description": "Backends that handle php files.",
+          "properties": {
+            "mago": {
+              "$ref": "#/$defs/lint_mago"
+            },
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "r": {
+          "type": "object",
+          "description": "Backends that handle r files.",
+          "properties": {
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "elixir": {
+          "type": "object",
+          "description": "Backends that handle elixir files.",
+          "properties": {
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "c": {
+          "type": "object",
+          "description": "Backends that handle c files.",
+          "properties": {
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "cpp": {
+          "type": "object",
+          "description": "Backends that handle cpp files.",
+          "properties": {
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "rust": {
+          "type": "object",
+          "description": "Backends that handle rust files.",
+          "properties": {
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "proto": {
+          "type": "object",
+          "description": "Backends that handle proto files.",
+          "properties": {
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "zig": {
+          "type": "object",
+          "description": "Backends that handle zig files.",
+          "properties": {
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "swift": {
+          "type": "object",
+          "description": "Backends that handle swift files.",
+          "properties": {
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "dart": {
+          "type": "object",
+          "description": "Backends that handle dart files.",
+          "properties": {
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "gleam": {
+          "type": "object",
+          "description": "Backends that handle gleam files.",
+          "properties": {
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "csharp": {
+          "type": "object",
+          "description": "Backends that handle csharp files.",
+          "properties": {
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "dotenv": {
+          "type": "object",
+          "description": "Backends that handle dotenv files.",
+          "properties": {
+            "dotenv": {
+              "$ref": "#/$defs/lint_dotenv"
+            },
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "ini": {
+          "type": "object",
+          "description": "Backends that handle ini files.",
+          "properties": {
+            "ini": {
+              "$ref": "#/$defs/lint_ini"
+            },
+            "typos": {
+              "$ref": "#/$defs/lint_typos"
+            },
+            "astgrep": {
+              "$ref": "#/$defs/lint_astgrep"
+            },
+            "uncomment": {
+              "$ref": "#/$defs/lint_uncomment"
+            },
+            "quality": {
+              "$ref": "#/$defs/lint_quality"
+            }
+          },
+          "additionalProperties": true
+        },
+        "typos": {
+          "$ref": "#/$defs/lint_cross_typos"
+        },
+        "astgrep": {
+          "$ref": "#/$defs/lint_cross_astgrep"
+        },
+        "uncomment": {
+          "$ref": "#/$defs/lint_cross_uncomment"
+        },
+        "quality": {
+          "$ref": "#/$defs/lint_cross_quality"
+        }
+      },
+      "additionalProperties": true
+    },
+    "fmt": {
+      "type": "object",
+      "description": "Per-language formatter configuration, keyed by language id then engine name.",
+      "properties": {
+        "python": {
+          "type": "object",
+          "description": "Backends that handle python files.",
+          "properties": {
+            "ruff": {
+              "$ref": "#/$defs/fmt_ruff"
+            }
+          },
+          "additionalProperties": true
+        },
+        "javascript": {
+          "type": "object",
+          "description": "Backends that handle javascript files.",
+          "properties": {
+            "oxc": {
+              "$ref": "#/$defs/fmt_oxc"
+            }
+          },
+          "additionalProperties": true
+        },
+        "typescript": {
+          "type": "object",
+          "description": "Backends that handle typescript files.",
+          "properties": {
+            "oxc": {
+              "$ref": "#/$defs/fmt_oxc"
+            }
+          },
+          "additionalProperties": true
+        },
+        "jsx": {
+          "type": "object",
+          "description": "Backends that handle jsx files.",
+          "properties": {
+            "oxc": {
+              "$ref": "#/$defs/fmt_oxc"
+            }
+          },
+          "additionalProperties": true
+        },
+        "tsx": {
+          "type": "object",
+          "description": "Backends that handle tsx files.",
+          "properties": {
+            "oxc": {
+              "$ref": "#/$defs/fmt_oxc"
+            }
+          },
+          "additionalProperties": true
+        },
+        "json": {
+          "type": "object",
+          "description": "Backends that handle json files.",
+          "properties": {
+            "oxc": {
+              "$ref": "#/$defs/fmt_oxc"
+            }
+          },
+          "additionalProperties": true
+        },
+        "jsonc": {
+          "type": "object",
+          "description": "Backends that handle jsonc files.",
+          "properties": {
+            "oxc": {
+              "$ref": "#/$defs/fmt_oxc"
+            }
+          },
+          "additionalProperties": true
+        },
+        "yaml": {
+          "type": "object",
+          "description": "Backends that handle yaml files.",
+          "properties": {
+            "yaml": {
+              "$ref": "#/$defs/fmt_yaml"
+            }
+          },
+          "additionalProperties": true
+        },
+        "toml": {
+          "type": "object",
+          "description": "Backends that handle toml files.",
+          "properties": {
+            "taplo": {
+              "$ref": "#/$defs/fmt_taplo"
+            }
+          },
+          "additionalProperties": true
+        },
+        "markdown": {
+          "type": "object",
+          "description": "Backends that handle markdown files.",
+          "properties": {
+            "rumdl": {
+              "$ref": "#/$defs/fmt_rumdl"
+            }
+          },
+          "additionalProperties": true
+        },
+        "mdx": {
+          "type": "object",
+          "description": "Backends that handle mdx files.",
+          "properties": {
+            "rumdl": {
+              "$ref": "#/$defs/fmt_rumdl"
+            }
+          },
+          "additionalProperties": true
+        },
+        "sql": {
+          "type": "object",
+          "description": "Backends that handle sql files.",
+          "properties": {
+            "sqruff": {
+              "$ref": "#/$defs/fmt_sqruff"
+            }
+          },
+          "additionalProperties": true
+        },
+        "css": {
+          "type": "object",
+          "description": "Backends that handle css files.",
+          "properties": {
+            "malva": {
+              "$ref": "#/$defs/fmt_malva"
+            }
+          },
+          "additionalProperties": true
+        },
+        "scss": {
+          "type": "object",
+          "description": "Backends that handle scss files.",
+          "properties": {
+            "malva": {
+              "$ref": "#/$defs/fmt_malva"
+            }
+          },
+          "additionalProperties": true
+        },
+        "less": {
+          "type": "object",
+          "description": "Backends that handle less files.",
+          "properties": {
+            "malva": {
+              "$ref": "#/$defs/fmt_malva"
+            }
+          },
+          "additionalProperties": true
+        },
+        "html": {
+          "type": "object",
+          "description": "Backends that handle html files.",
+          "properties": {
+            "markup_fmt": {
+              "$ref": "#/$defs/fmt_markup_fmt"
+            }
+          },
+          "additionalProperties": true
+        },
+        "vue": {
+          "type": "object",
+          "description": "Backends that handle vue files.",
+          "properties": {
+            "markup_fmt": {
+              "$ref": "#/$defs/fmt_markup_fmt"
+            }
+          },
+          "additionalProperties": true
+        },
+        "svelte": {
+          "type": "object",
+          "description": "Backends that handle svelte files.",
+          "properties": {
+            "markup_fmt": {
+              "$ref": "#/$defs/fmt_markup_fmt"
+            }
+          },
+          "additionalProperties": true
+        },
+        "astro": {
+          "type": "object",
+          "description": "Backends that handle astro files.",
+          "properties": {
+            "markup_fmt": {
+              "$ref": "#/$defs/fmt_markup_fmt"
+            }
+          },
+          "additionalProperties": true
+        },
+        "angular": {
+          "type": "object",
+          "description": "Backends that handle angular files.",
+          "properties": {
+            "markup_fmt": {
+              "$ref": "#/$defs/fmt_markup_fmt"
+            }
+          },
+          "additionalProperties": true
+        },
+        "jinja": {
+          "type": "object",
+          "description": "Backends that handle jinja files.",
+          "properties": {
+            "markup_fmt": {
+              "$ref": "#/$defs/fmt_markup_fmt"
+            }
+          },
+          "additionalProperties": true
+        },
+        "vento": {
+          "type": "object",
+          "description": "Backends that handle vento files.",
+          "properties": {
+            "markup_fmt": {
+              "$ref": "#/$defs/fmt_markup_fmt"
+            }
+          },
+          "additionalProperties": true
+        },
+        "mustache": {
+          "type": "object",
+          "description": "Backends that handle mustache files.",
+          "properties": {
+            "markup_fmt": {
+              "$ref": "#/$defs/fmt_markup_fmt"
+            }
+          },
+          "additionalProperties": true
+        },
+        "xml": {
+          "type": "object",
+          "description": "Backends that handle xml files.",
+          "properties": {
+            "markup_fmt": {
+              "$ref": "#/$defs/fmt_markup_fmt"
+            }
+          },
+          "additionalProperties": true
+        },
+        "graphql": {
+          "type": "object",
+          "description": "Backends that handle graphql files.",
+          "properties": {
+            "graphql": {
+              "$ref": "#/$defs/fmt_graphql"
+            }
+          },
+          "additionalProperties": true
+        },
+        "hcl": {
+          "type": "object",
+          "description": "Backends that handle hcl files.",
+          "properties": {
+            "hcl": {
+              "$ref": "#/$defs/fmt_hcl"
+            }
+          },
+          "additionalProperties": true
+        },
+        "nix": {
+          "type": "object",
+          "description": "Backends that handle nix files.",
+          "properties": {
+            "alejandra": {
+              "$ref": "#/$defs/fmt_alejandra"
+            }
+          },
+          "additionalProperties": true
+        },
+        "shell": {
+          "type": "object",
+          "description": "Backends that handle shell files.",
+          "properties": {
+            "shfmt": {
+              "$ref": "#/$defs/fmt_shfmt"
+            }
+          },
+          "additionalProperties": true
+        },
+        "go": {
+          "type": "object",
+          "description": "Backends that handle go files.",
+          "properties": {
+            "gofmt": {
+              "$ref": "#/$defs/fmt_gofmt"
+            }
+          },
+          "additionalProperties": true
+        },
+        "java": {
+          "type": "object",
+          "description": "Backends that handle java files.",
+          "properties": {
+            "google-java-format": {
+              "$ref": "#/$defs/fmt_google-java-format"
+            }
+          },
+          "additionalProperties": true
+        },
+        "kotlin": {
+          "type": "object",
+          "description": "Backends that handle kotlin files.",
+          "properties": {
+            "ktfmt": {
+              "$ref": "#/$defs/fmt_ktfmt"
+            }
+          },
+          "additionalProperties": true
+        },
+        "ruby": {
+          "type": "object",
+          "description": "Backends that handle ruby files.",
+          "properties": {
+            "rubyfmt": {
+              "$ref": "#/$defs/fmt_rubyfmt"
+            }
+          },
+          "additionalProperties": true
+        },
+        "php": {
+          "type": "object",
+          "description": "Backends that handle php files.",
+          "properties": {
+            "mago": {
+              "$ref": "#/$defs/fmt_mago"
+            }
+          },
+          "additionalProperties": true
+        },
+        "r": {
+          "type": "object",
+          "description": "Backends that handle r files.",
+          "properties": {
+            "styler": {
+              "$ref": "#/$defs/fmt_styler"
+            }
+          },
+          "additionalProperties": true
+        },
+        "elixir": {
+          "type": "object",
+          "description": "Backends that handle elixir files.",
+          "properties": {
+            "treesitter": {
+              "$ref": "#/$defs/fmt_treesitter"
+            }
+          },
+          "additionalProperties": true
+        },
+        "c": {
+          "type": "object",
+          "description": "Backends that handle c files.",
+          "properties": {
+            "treesitter": {
+              "$ref": "#/$defs/fmt_treesitter"
+            }
+          },
+          "additionalProperties": true
+        },
+        "cpp": {
+          "type": "object",
+          "description": "Backends that handle cpp files.",
+          "properties": {
+            "treesitter": {
+              "$ref": "#/$defs/fmt_treesitter"
+            }
+          },
+          "additionalProperties": true
+        },
+        "rust": {
+          "type": "object",
+          "description": "Backends that handle rust files.",
+          "properties": {
+            "rustfmt": {
+              "$ref": "#/$defs/fmt_rustfmt"
+            }
+          },
+          "additionalProperties": true
+        },
+        "proto": {
+          "type": "object",
+          "description": "Backends that handle proto files.",
+          "properties": {
+            "treesitter": {
+              "$ref": "#/$defs/fmt_treesitter"
+            }
+          },
+          "additionalProperties": true
+        },
+        "zig": {
+          "type": "object",
+          "description": "Backends that handle zig files.",
+          "properties": {
+            "zigfmt": {
+              "$ref": "#/$defs/fmt_zigfmt"
+            }
+          },
+          "additionalProperties": true
+        },
+        "swift": {
+          "type": "object",
+          "description": "Backends that handle swift files.",
+          "properties": {
+            "swift-format": {
+              "$ref": "#/$defs/fmt_swift-format"
+            }
+          },
+          "additionalProperties": true
+        },
+        "dart": {
+          "type": "object",
+          "description": "Backends that handle dart files.",
+          "properties": {
+            "dartfmt": {
+              "$ref": "#/$defs/fmt_dartfmt"
+            }
+          },
+          "additionalProperties": true
+        },
+        "gleam": {
+          "type": "object",
+          "description": "Backends that handle gleam files.",
+          "properties": {
+            "gleamfmt": {
+              "$ref": "#/$defs/fmt_gleamfmt"
+            }
+          },
+          "additionalProperties": true
+        },
+        "csharp": {
+          "type": "object",
+          "description": "Backends that handle csharp files.",
+          "properties": {
+            "treesitter": {
+              "$ref": "#/$defs/fmt_treesitter"
+            }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "commit": {
+      "$ref": "#/$defs/CommitConfig"
+    },
+    "hooks": {
+      "$ref": "#/$defs/HooksConfig"
+    },
+    "cache": {
+      "$ref": "#/$defs/CacheConfig"
+    },
+    "tools": {
+      "$ref": "#/$defs/ToolsConfig"
+    },
+    "per-file-ignores": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "default": {}
+    },
+    "workspace": {
+      "$ref": "#/$defs/WorkspaceConfig"
+    },
+    "rules": {
+      "$ref": "#/$defs/RulesConfig"
+    }
+  },
+  "required": ["extends"],
+  "$defs": {
+    "Extends": {
+      "description": "Base configs to inherit from (ADR 0020): a local path or a pinned remote git file, as a single entry or an array.",
+      "oneOf": [
+        {
+          "oneOf": [
+            {
+              "description": "A local path to a base config.",
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/ExtendsSource"
+            }
+          ]
+        },
+        {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "description": "A local path to a base config.",
+                "type": "string"
+              },
+              {
+                "$ref": "#/$defs/ExtendsSource"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "ExtendsSource": {
+      "description": "One local or pinned-remote base config that a `poly.toml` `extends`.\n\nField vocabulary mirrors [`crate::HookSource`] for consistency: exactly one of\n`path` (local, mutually exclusive with `git`) or `git` (repository URL) must\nbe set; a `git` source requires a nonempty `revision`; a `path` source must\nnot set `revision`.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "Optional stable identifier used in diagnostics and the config lock file.",
+          "type": ["string", "null"],
+          "default": null
+        },
+        "path": {
+          "description": "Local base path (a file, or a directory joined with `file`); XOR `git`.",
+          "type": ["string", "null"],
+          "default": null
+        },
+        "git": {
+          "description": "Git repository URL; XOR `path`.",
+          "type": ["string", "null"],
+          "default": null
+        },
+        "revision": {
+          "description": "Pinned git revision; required (and nonempty) for a `git` source.",
+          "type": ["string", "null"],
+          "default": null
+        },
+        "file": {
+          "description": "Path to the config file within the repository/directory. Defaults to\n[`DEFAULT_BASE_FILE`] (`poly.toml`).",
+          "type": ["string", "null"],
+          "default": null
+        }
+      },
+      "additionalProperties": false
+    },
+    "RawDefaults": {
+      "description": "On-disk representation of `[defaults]`. `line_ending` is a string so the TOML\nstays human-friendly; it is normalized into [`LineEnding`] on load.",
+      "type": "object",
+      "properties": {
+        "line_length": {
+          "description": "Target maximum line length, applied wherever a tool exposes the setting.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0,
+          "default": 120
+        },
+        "final_newline": {
+          "description": "Whether to enforce a single trailing newline.",
+          "type": "boolean",
+          "default": true
+        },
+        "trim_trailing_whitespace": {
+          "description": "Whether to strip trailing whitespace on each line.",
+          "type": "boolean",
+          "default": true
+        },
+        "line_ending": {
+          "description": "Line-ending style to enforce: `\"lf\"` (default) or `\"crlf\"`.",
+          "type": "string",
+          "default": "lf"
+        }
+      }
+    },
+    "DiscoveryConfig": {
+      "description": "`[discovery]` — tunes the file walk that direct `poly lint` / `poly fmt` /\n`poly cache` runs (the CI / GitHub Action path).\n\nThe hooks path already excludes per-builtin; this gives the direct-CLI path\nthe same reach. Globs are gitignore-style and compose with `.gitignore` and\nthe built-in vendored/generated prune set — they never override an explicitly\npassed path argument.",
+      "type": "object",
+      "properties": {
+        "exclude": {
+          "description": "Gitignore-style globs excluded from discovery. Accepts a single string or\nan array (`exclude = \"test_apps/**\"` or `exclude = [\"a/**\", \"b/**\"]`),\nmatching the `files`/`exclude` shape used throughout `[hooks]`/`[tools]`.\n\n**The matching rule, in one sentence:** a glob that does not begin with\n`/` matches a file or directory of that name at *any* depth below the\ndirectory holding this config, while a leading `/` anchors it to that\ndirectory.\n\nThis is gitignore's rule, and it is the one thing about `exclude` worth\nreading twice, because the unanchored form is what people write by\ndefault:\n\n```toml\n[discovery]\n# Prunes the top-level e2e/ AND src/test/java/io/xberg/e2e/, because\n# `e2e` is also an ordinary Java/Kotlin package name.\nexclude = [\"e2e/**\"]\n\n# Prunes only the top-level e2e/ directory.\nexclude = [\"/e2e/**\"]\n```\n\nNothing warns you when the unanchored form over-reaches — the extra files\nare simply never discovered, and the run reports a clean pass over what is\nleft. `poly doctor` reports any rule that is pruning directories at more\nthan one depth, which is the symptom.",
+          "$ref": "#/$defs/Patterns"
+        },
+        "force_exclude": {
+          "description": "Apply `exclude` to explicitly named roots too, not just to the walk.\n\n**Defaults to `true`**: a file or directory named on the command line\nhonors `exclude`, which is what a hook — always handed explicit staged\npaths — needs for a repo's excludes to hold. Set it to `false` to restore\nthe older \"an explicitly named path is always checked\" behavior for every\nrun, rather than reaching for `--include-excluded` each time.\n\n```toml\n[discovery]\nexclude = [\"vendor/**\"]\n# `poly fmt vendor/x.py` checks the file; `poly fmt .` still skips it.\nforce_exclude = false\n```\n\nThis governs only *explicitly named roots*; the directory walk applies\n`exclude` either way. The CLI's `--force-exclude` / `--include-excluded`\nflags override this key in either direction for a single run.\n\nBecause the default is `true`, this field is the resolved value, not a\ntri-state: \"unset\" and \"set to `true`\" are deliberately the same thing,\nand the *flags* — not this key — carry the explicit-override signal.\n\nLike `no_prune`, and unlike `exclude`, this is read from the run's **root**\nconfig only: the decision is made once per run, before any path is matched\nto the nested config governing it, so a `poly.toml` in a subdirectory\ncannot set it for its own subtree.",
+          "type": "boolean",
+          "default": true
+        },
+        "no_prune": {
+          "description": "Directory *names* to keep despite the built-in vendored/generated prune\nset — the opt-out for a repo where one of those names is ordinary source.\n\n`build` and `dist` are build-output conventions in most ecosystems and\nordinary domain nouns in some (`commands/build/`, a Rust module named\n`build`), so the built-in set cannot be right for everyone:\n\n```toml\n[discovery]\nno_prune = [\"build\", \"dist\"]\n```\n\nThese are bare directory names matched at any depth, not globs — the\nbuilt-in set is a name list, and this subtracts from it. To prune *more*\nnames, use `exclude`, which already does that.\n\nUnlike `exclude`, this replaces rather than accumulates across config\nlayers, matching every other array in `poly.toml`. It is read from the\nrun's root config only: a `poly.toml` *inside* a pruned directory cannot\nun-prune it, because the directory holding it was never walked.",
+          "$ref": "#/$defs/Patterns"
+        },
+        "generated": {
+          "description": "Whether poly acts on machine-generated files — those whose opening lines\ncarry a `DO NOT EDIT` / `@generated` / `Code generated …` banner, or a\n`<project>:hash:<digest>` content stamp.\n\n**Defaults to `true`**: a generated file is linted and formatted like any\nother, which is how a generator bug gets noticed. Set it to `false` for a\nrepository whose generated output is not its to fix, and whose findings\nthere are therefore noise:\n\n```toml\n[discovery]\ngenerated = false\n```\n\nOne key for both phases on purpose. \"Is this file mine to check?\" has a\nsingle answer per file, and splitting it into `[lint]` and `[fmt]` halves\nwould be two keys a reader must keep in agreement to get the behaviour\nthey asked for.\n\nThose files are then reported as **skipped**, never silently dropped: the\nskip feeds the `checked` count, the JSON `skipped` payload, and\n`--deny-skips` / `--max-skips`, so a gate cannot quietly stop covering\nthem.\n\nUnlike `exclude`, this cannot prune the walk — a banner is content, so\nthe file must be read before the question can be answered. It is a skip,\nnot an exclusion, and the resolved value is per-config: a nested\n`poly.toml` (ADR 0018) may set it for its own subtree.\n\nThis governs whether poly *acts on* the file at all. Whether a generated\nfile poly did act on may be **rewritten** is a separate, narrower\nquestion that only a content-hash stamp can answer `no` to — see\n`--fix-generated`.",
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "Patterns": {
+      "description": "A single glob string, or an array of glob strings.",
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "FreeTable": {
+      "description": "A table of per-language, per-engine configuration keys (`[lint.<lang>.<engine>]` / `[fmt.<lang>.<engine>]`).",
+      "type": "object",
+      "additionalProperties": true
+    },
+    "CommitConfig": {
+      "description": "`[commit]` table.",
+      "type": "object",
+      "properties": {
+        "preset": {
+          "description": "Named preset to seed the rules from (e.g. `\"conventional\"`).",
+          "type": ["string", "null"],
+          "default": null
+        },
+        "write": {
+          "description": "Whether the cleaner rewrites the commit message in place.",
+          "type": ["boolean", "null"],
+          "default": null
+        },
+        "rules": {
+          "description": "Individual lint/cleanup rules.",
+          "$ref": "#/$defs/CommitRules"
+        }
+      }
+    },
+    "CommitRules": {
+      "description": "`[commit.rules]` table.",
+      "type": "object",
+      "properties": {
+        "message": {
+          "description": "Require the subject to match a pattern.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MessageRule"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "excludes": {
+          "description": "Subjects matching any of these patterns skip linting (e.g. `^WIP`).",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ExcludeRule"
+          }
+        },
+        "cleanup": {
+          "description": "Find/replace cleanups applied to the message body.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CleanupRule"
+          }
+        },
+        "single_line": {
+          "description": "Reject multi-line subjects.",
+          "type": ["boolean", "null"],
+          "default": null
+        },
+        "require_body": {
+          "description": "Require a non-empty body.",
+          "type": ["boolean", "null"],
+          "default": null
+        },
+        "exit_nonzero_on_rewrite": {
+          "description": "Exit non-zero when the cleaner rewrote the message.",
+          "type": ["boolean", "null"],
+          "default": null
+        },
+        "no_emojis": {
+          "description": "Reject emojis in the message.",
+          "type": ["boolean", "null"],
+          "default": null
+        },
+        "ascii_only": {
+          "description": "Require ASCII-only content.",
+          "type": ["boolean", "null"],
+          "default": null
+        },
+        "title_prefix": {
+          "description": "Required subject prefix.",
+          "type": ["string", "null"],
+          "default": null
+        },
+        "title_prefix_separator": {
+          "description": "Separator between the title prefix and the subject.",
+          "type": ["string", "null"],
+          "default": null
+        },
+        "title_suffix": {
+          "description": "Required subject suffix.",
+          "type": ["string", "null"],
+          "default": null
+        },
+        "title_suffix_separator": {
+          "description": "Separator between the subject and the title suffix.",
+          "type": ["string", "null"],
+          "default": null
+        }
+      }
+    },
+    "MessageRule": {
+      "description": "A subject-pattern requirement (`[commit.rules.message]`).",
+      "type": "object",
+      "properties": {
+        "pattern": {
+          "description": "Regular expression the subject must match.",
+          "type": "string"
+        },
+        "description": {
+          "description": "Human-readable description shown when the rule fails.",
+          "type": ["string", "null"]
+        }
+      },
+      "required": ["pattern"]
+    },
+    "ExcludeRule": {
+      "description": "A subject-pattern exclusion (`[[commit.rules.excludes]]`).",
+      "type": "object",
+      "properties": {
+        "pattern": {
+          "description": "Regular expression; matching subjects skip linting.",
+          "type": "string"
+        },
+        "message": {
+          "description": "Optional note explaining the exclusion.",
+          "type": ["string", "null"]
+        }
+      },
+      "required": ["pattern"]
+    },
+    "CleanupRule": {
+      "description": "A find/replace cleanup (`[[commit.rules.cleanup]]`).",
+      "type": "object",
+      "properties": {
+        "find": {
+          "description": "Regular expression to find.",
+          "type": "string"
+        },
+        "replace": {
+          "description": "Replacement text.",
+          "type": "string"
+        },
+        "description": {
+          "description": "Human-readable description of the cleanup.",
+          "type": ["string", "null"]
+        }
+      },
+      "required": ["find", "replace"]
+    },
+    "HooksConfig": {
+      "description": "Git-hook configuration: the reserved keys below, plus one key per git stage (`[hooks.pre-commit]`, `[hooks.commit-msg]`, …).",
+      "type": "object",
+      "properties": {
+        "sources": {
+          "description": "Local or pinned-Git hook producer catalogs.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HookSource"
+          }
+        },
+        "stages": {
+          "description": "Default stages applied to builtin hooks that do not set their own.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "env": {
+          "description": "Environment variables merged into every job.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "builtin": {
+          "$ref": "#/$defs/BuiltinHooks"
+        },
+        "snapshot_include": {
+          "$ref": "#/$defs/Patterns"
+        },
+        "isolate": {
+          "description": "Whether hooks run against the staged-content snapshot instead of the live worktree (ADR 0019). Unset uses the per-invocation default.",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/StageConfig"
+      }
+    },
+    "StageConfig": {
+      "description": "Configuration for a single git stage (`[hooks.pre-commit]`, etc.).\n\nJobs come from three places, run in this order within the stage:\nthe ordered `jobs` array-of-tables, then the named `commands` map, then the\nnamed `scripts` map. For a map entry the key supplies the job `name` when\nthe job omits its own.",
+      "type": "object",
+      "properties": {
+        "parallel": {
+          "description": "Run this stage's jobs concurrently.",
+          "type": "boolean",
+          "default": false
+        },
+        "piped": {
+          "description": "Run jobs sequentially, aborting on the first failure (lefthook \"piped\").",
+          "type": "boolean",
+          "default": false
+        },
+        "follow": {
+          "description": "Stream job output as it is produced.",
+          "type": "boolean",
+          "default": false
+        },
+        "exclude_tags": {
+          "description": "Tags whose jobs are excluded from this stage.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "files": {
+          "description": "Stage-level file include glob(s).",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Patterns"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "exclude": {
+          "description": "Stage-level file exclude glob(s).",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Patterns"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "skip": {
+          "description": "Skip guard — when active, the whole stage is skipped.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Guard"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "only": {
+          "description": "Only guard — the stage runs *only* when active.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Guard"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fail_on_changes": {
+          "description": "Fail the stage if its jobs dirty the working tree.",
+          "type": "boolean",
+          "default": false
+        },
+        "precondition": {
+          "description": "Guard command: exit 0 runs the stage, non-zero (or missing tool) **skips\nit with a warning** rather than aborting.",
+          "type": ["string", "null"],
+          "default": null
+        },
+        "before": {
+          "description": "Command(s) run after `precondition` passes and before the jobs;\nfailure aborts the stage. Run sequentially.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Patterns"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "after": {
+          "description": "Command(s) run after the stage's jobs succeed; non-zero aborts.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Patterns"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "jobs": {
+          "description": "Ordered jobs (`[[hooks.<stage>.jobs]]`).",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Job"
+          }
+        },
+        "commands": {
+          "description": "Named command jobs (`[hooks.<stage>.commands.<name>]`).",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Job"
+          }
+        },
+        "scripts": {
+          "description": "Named script jobs (`[hooks.<stage>.scripts.<name>]`).",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Job"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "Guard": {
+      "description": "A bare boolean (unconditional), or a list of guard conditions.",
+      "oneOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GuardCondition"
+          }
+        }
+      ]
+    },
+    "GuardCondition": {
+      "description": "One entry in a [`Guard::Conditions`] list.\n\nPragmatic subset of lefthook's model: either a bare git-operation name\n(`\"merge\"`, `\"rebase\"`) / branch name, or a `{ ref = \"...\", run = \"...\" }`\nmatch table.",
+      "anyOf": [
+        {
+          "description": "A git operation or branch name (e.g. `\"merge\"`, `\"rebase\"`).",
+          "type": "string"
+        },
+        {
+          "description": "A `{ ref, run }` match table.",
+          "$ref": "#/$defs/GuardMatch"
+        }
+      ]
+    },
+    "GuardMatch": {
+      "description": "A `{ ref = \"...\", run = \"...\" }` guard match table.",
+      "type": "object",
+      "properties": {
+        "ref": {
+          "description": "Branch-ref glob the guard applies to (lefthook `ref`).",
+          "type": ["string", "null"],
+          "default": null
+        },
+        "run": {
+          "description": "Shell command whose exit status decides the guard (lefthook `run`).",
+          "type": ["string", "null"],
+          "default": null
+        }
+      },
+      "additionalProperties": false
+    },
+    "Job": {
+      "description": "One runnable unit within a stage (lefthook \"command\" or \"script\").\n\nA job runs exactly one of `run` (a shell command) **xor** `script` (a script\nfile interpreted by `runner`); [`super::HooksConfig::validate`] enforces this.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Display name; defaults to the map key when defined under\n`[hooks.<stage>.commands.<name>]` / `.scripts.<name>`.",
+          "type": ["string", "null"],
+          "default": null
+        },
+        "run": {
+          "description": "Shell command to run. Mutually exclusive with `script`.",
+          "type": ["string", "null"],
+          "default": null
+        },
+        "script": {
+          "description": "Script file to run. Mutually exclusive with `run`; requires `runner`.",
+          "type": ["string", "null"],
+          "default": null
+        },
+        "runner": {
+          "description": "Interpreter used to execute `script` (e.g. `bash`, `python`).",
+          "type": ["string", "null"],
+          "default": null
+        },
+        "args": {
+          "description": "Extra arguments appended to the invocation.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "glob": {
+          "description": "Glob(s) selecting which changed files this job receives.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Patterns"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "files": {
+          "description": "File include glob(s) (alias-style scoping alongside `glob`).",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Patterns"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "exclude": {
+          "description": "File exclude glob(s).",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Patterns"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "file_types": {
+          "description": "File-type filters (e.g. `text`, `executable`).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "root": {
+          "description": "Run the job from this subdirectory.",
+          "type": ["string", "null"],
+          "default": null
+        },
+        "skip": {
+          "description": "Skip guard — when active, the job does not run.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Guard"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "only": {
+          "description": "Only guard — the job runs *only* when active.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Guard"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "precondition": {
+          "description": "Applicability probe for this job alone: exit 0 runs it, non-zero reports\nit **skipped** (visible, not a failure) while its siblings run normally.\n\nPrefer this to the stage-wide `[hooks.<stage>] precondition` whenever the\nprerequisite belongs to one tool — a stage-wide guard withholds every\ncheck in the stage. It is evaluated in the tree the job itself runs in,\nwhich under staged isolation is the staged snapshot, not the worktree.",
+          "type": ["string", "null"],
+          "default": null
+        },
+        "before": {
+          "description": "Setup command(s) for this job alone, run sequentially before it.\n\nA failure marks **this job** as having an unknown verdict and fails the\nstage, without preventing sibling jobs from reporting theirs. Same tree\nas `precondition`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Patterns"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tags": {
+          "description": "Tags for selective inclusion/exclusion.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "env": {
+          "description": "Per-job environment variables (merged over the global `[hooks].env`).",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {}
+        },
+        "fail_text": {
+          "description": "Message printed when the job fails.",
+          "type": ["string", "null"],
+          "default": null
+        },
+        "timeout": {
+          "description": "How long this job may run before poly kills it and reports it as timed\nout (rather than as having failed on its own merits).\n\nAccepts whole seconds (`timeout = 90`), a suffixed duration\n(`\"500ms\"`, `\"30s\"`, `\"10m\"`, `\"1h\"`), or `0` / `\"off\"` / `\"none\"` to run\nthe job unbounded. Unset means the shape-derived default: a long budget\nfor a per-file job, a far longer one for a `workspace` job.\n\nHeld as raw text and resolved during lowering, where the job's name is\nknown and a malformed value can name it. The environment overrides\n(`POLY_HOOK_TIMEOUT` / `POLY_HOOK_WORKSPACE_TIMEOUT`) outrank this key —\nsee the `poly-hooks` `timeout` module for the full precedence chain.",
+          "$ref": "#/$defs/Timeout",
+          "default": null
+        },
+        "priority": {
+          "description": "Lower values run first within a stage (default `0`).",
+          "type": "integer",
+          "format": "int64",
+          "default": 0
+        },
+        "serial": {
+          "description": "Mutual-exclusion set this job belongs to.\n\nHooks in a stage run concurrently; `serial` is the opt-out for a job that\ncannot tolerate a *peer* running at the same time — a tool holding a\nglobal lock, or two jobs writing the same output. It does **not** stop\nthe run: a serial job still runs alongside every hook outside its set.\n\n- `serial = true` — join the shared set (never concurrent with another\n  `serial = true` job).\n- `serial = \"cargo\"` — join a **named** set; only members of that name\n  exclude each other. `\"cargo\"` is the set the built-in cargo group uses,\n  so a job invoking cargo should name it (see [`crate::CargoHooks`]).\n- `serial = false` — explicitly concurrent, overriding a stage-level\n  `parallel = false` and the automatic cargo grouping.\n\nUnset lets the stage decide: `piped`/`parallel = false` serialize a\nper-file job, a `run` line invoking cargo joins the `\"cargo\"` set, and a\n`workspace = true` job otherwise runs concurrently.",
+          "$ref": "#/$defs/Serial"
+        },
+        "stage_fixed": {
+          "description": "When the job modifies files and exits 0, the runner `git add`s the\nmatched files and continues; only a non-zero exit fails the stage.",
+          "type": "boolean",
+          "default": false
+        },
+        "workspace": {
+          "description": "Whole-workspace job: it compiles or analyses the entire project (e.g.\n`cargo clippy`, a type checker like `pyrefly`) rather than a per-file\nset. Default `false` (per-file).\n\nThis decides whether the job receives filenames, **not** which tree it\nruns in: under staged isolation every job — per-file included — runs\nagainst the non-destructive snapshot of the staged index and so never\nsees unstaged worktree edits or untracked files (ADR 0019).",
+          "type": "boolean",
+          "default": false
+        },
+        "interactive": {
+          "description": "The job needs an interactive terminal.",
+          "type": "boolean",
+          "default": false
+        },
+        "use_stdin": {
+          "description": "Feed matched file contents to the job on stdin.",
+          "type": "boolean",
+          "default": false
+        },
+        "cache": {
+          "description": "Per-job result-cache declaration.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/JobCache"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "Timeout": {
+      "description": "Whole seconds (`90`), a duration string (`\"500ms\"`, `\"30s\"`, `\"10m\"`, `\"1h\"`), or `0` / `\"off\"` / `\"none\"` to run unbounded.",
+      "oneOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "Serial": {
+      "description": "`true` joins the shared exclusion set, `false` forces concurrency, and a string joins a named set (`\"cargo\"`).",
+      "oneOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "JobCache": {
+      "description": "Per-job result-cache declaration.\n\n`mode` reuses the crate-wide [`HookCacheMode`]; `inputs` lists glob sets the\ncommand depends on; `compiler` opts the job into tier-2 sccache env\ninjection.",
+      "type": "object",
+      "properties": {
+        "mode": {
+          "description": "Override the cache mode for this job; `None` inherits `[cache.results]`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HookCacheMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "inputs": {
+          "description": "Glob sets the command's output depends on (e.g.\n`[\"**/*.rs\", \"Cargo.toml\", \"rust-toolchain.toml\"]`).",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Patterns"
+          }
+        },
+        "compiler": {
+          "description": "Opt into tier-2 sccache env injection (`RUSTC_WRAPPER`, …).",
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "HookCacheMode": {
+      "description": "Controls when hook results are served from the result cache.\n\nThe default is [`Safe`] — hook results are cached only when the hook\nexplicitly declares its inputs via `cache = { inputs = [...] }` in the\njob definition.\n\n[`Safe`]: HookCacheMode::Safe",
+      "oneOf": [
+        {
+          "description": "Never cache hook results.",
+          "type": "string",
+          "const": "off"
+        },
+        {
+          "description": "Cache hook results only when the hook declares its inputs (default).\n\nBuiltins (`lint`/`fmt`) are always cached by matched files\nbecause their footprint equals their input set.  An inline command is\ncached only when it carries a `cache = { inputs = [...] }` declaration;\notherwise it always reruns.",
+          "type": "string",
+          "const": "safe"
+        },
+        {
+          "description": "Cache based on matched files only, regardless of declared inputs.\n\nMay produce stale results for commands whose behaviour depends on\ninputs outside the matched file set (e.g. environment variables,\ngenerated files).  **Use with care.**",
+          "type": "string",
+          "const": "aggressive"
+        }
+      ]
+    },
+    "BuiltinHooks": {
+      "description": "`[hooks.builtin]` — poly's first-class in-process hooks.",
+      "type": "object",
+      "properties": {
+        "lint": {
+          "description": "The `lint` linter hook.",
+          "$ref": "#/$defs/BuiltinHook"
+        },
+        "fmt": {
+          "description": "The `fmt` formatter hook.",
+          "$ref": "#/$defs/BuiltinHook"
+        },
+        "commit": {
+          "description": "The `poly commit` message-lint hook.",
+          "$ref": "#/$defs/BuiltinHook"
+        },
+        "file_safety": {
+          "description": "The pure-Rust file-safety check group (`file_safety`).",
+          "$ref": "#/$defs/FileSafetyHooks"
+        },
+        "cargo": {
+          "description": "The whole-workspace Cargo tool group (`cargo`).\n\n`None` when the `cargo` key is absent — distinct from an explicit\n`cargo = false`. With a `[hooks]` section present, an absent key means\nthe group runs by default (capability-probed); an explicit value wins.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CargoHooks"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "BuiltinHook": {
+      "description": "`true`/`false`, or a table. A table without `enabled` is enabled.",
+      "oneOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "stages": {
+              "description": "Stages this hook runs in; empty inherits the `[hooks] stages` default.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "files": {
+              "$ref": "#/$defs/Patterns"
+            },
+            "exclude": {
+              "description": "File include/exclude glob(s) for this hook.",
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "FileSafetyHooks": {
+      "description": "`true`/`false`, or a table tuning the file-safety checks. A table without `enabled` is enabled; each member check defaults on.",
+      "oneOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "stages": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "files": {
+              "$ref": "#/$defs/Patterns"
+            },
+            "exclude": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ]
+            },
+            "max_added_file_kb": {
+              "description": "Size ceiling, in kibibytes, for the large-file check.",
+              "type": "integer",
+              "minimum": 0
+            },
+            "merge_conflict": {
+              "type": "boolean"
+            },
+            "added_large_files": {
+              "type": "boolean"
+            },
+            "private_key": {
+              "type": "boolean"
+            },
+            "case_conflict": {
+              "type": "boolean"
+            },
+            "executables_have_shebangs": {
+              "type": "boolean"
+            },
+            "shebang_scripts_are_executable": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "CargoHooks": {
+      "description": "`true`/`false`, or a table tuning the whole-workspace Cargo tools. A table without `enabled` is enabled; each member tool defaults on.",
+      "oneOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "stages": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "clippy": {
+              "type": "boolean"
+            },
+            "sort": {
+              "type": "boolean"
+            },
+            "machete": {
+              "type": "boolean"
+            },
+            "deny": {
+              "type": "boolean"
+            },
+            "clippy_args": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "cache": {
+              "type": "boolean"
+            },
+            "lint": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "HookSource": {
+      "description": "One local or pinned Git hook catalog.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "Stable source identifier used in the lock file and cache path.",
+          "type": "string"
+        },
+        "path": {
+          "description": "Local catalog directory, mutually exclusive with `git`.",
+          "type": ["string", "null"]
+        },
+        "git": {
+          "description": "Git repository URL, mutually exclusive with `path`.",
+          "type": ["string", "null"]
+        },
+        "revision": {
+          "description": "Git ref resolved by `poly hooks update`.",
+          "type": ["string", "null"]
+        },
+        "hooks": {
+          "description": "Explicit producer hook identifiers to enable.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": ["id", "hooks"]
+    },
+    "CacheConfig": {
+      "description": "Configuration for the `[cache]` table in `poly.toml`.\n\nAll fields default so `[cache]` is entirely optional.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "description": "Master enable/disable switch for both cache tiers (default `true`).\n\nEquivalent to `--no-cache` on the CLI.",
+          "type": "boolean",
+          "default": true
+        },
+        "dir": {
+          "description": "Override the cache root directory.\n\nWhen absent the cache lives in the per-user cache home (see\n`poly_cache::root_from`): `<platform-cache>/poly/<repo-key>`, keyed by the\nnearest `.git` / `poly.toml` ancestor.",
+          "type": ["string", "null"],
+          "default": null
+        },
+        "results": {
+          "description": "Tier-1 result-cache configuration.",
+          "$ref": "#/$defs/ResultsCacheConfig"
+        },
+        "sccache": {
+          "description": "Tier-2 sccache configuration.",
+          "$ref": "#/$defs/SccacheConfig"
+        }
+      }
+    },
+    "ResultsCacheConfig": {
+      "description": "Configuration for the tier-1 result cache.",
+      "type": "object",
+      "properties": {
+        "hooks": {
+          "description": "Cache mode for hook results.",
+          "$ref": "#/$defs/HookCacheMode"
+        }
+      }
+    },
+    "SccacheConfig": {
+      "description": "Configuration for the tier-2 sccache integration (opt-in, off by default).\n\nWhen enabled, `poly hooks` starts the shared sccache server (idempotent,\nlong-lived) before running hooks, and injects `RUSTC_WRAPPER` /\n`SCCACHE_DIR` / `SCCACHE_CACHE_SIZE` only into hooks that declare\n`cache.compiler = true`.\n\nSccache is **not implemented in this crate** — this is only the config\nsurface.  Wire-up happens in `crates/poly-hooks` (Workstream B/C).",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "description": "Enable sccache for compiler hooks (default `false`).",
+          "type": "boolean",
+          "default": false
+        },
+        "bin": {
+          "description": "Path to the `sccache` binary.  When absent, `$PATH` is searched.",
+          "type": ["string", "null"],
+          "default": null
+        },
+        "dir": {
+          "description": "Override sccache storage directory.",
+          "type": ["string", "null"],
+          "default": null
+        },
+        "max_size": {
+          "description": "Maximum cache size string understood by sccache (e.g. `\"10G\"`).",
+          "type": ["string", "null"],
+          "default": null
+        }
+      }
+    },
+    "ToolsConfig": {
+      "description": "`[tools]` — a map from catalog tool name to its [`ToolConfig`].\n\nDeserializes transparently from the `[tools.<name>]` tables. Empty by\ndefault (no tools enabled).",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/ToolConfig"
+      }
+    },
+    "ToolConfig": {
+      "description": "Configuration for a single catalog tool under `[tools.<name>]`.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "description": "Whether this tool is active. **Off by default** — declaring the table\nis not enough; `enabled = true` is required.",
+          "type": "boolean",
+          "default": false
+        },
+        "command": {
+          "description": "Which catalog command to invoke (`\"\"` is the tool's default command,\n`\"format\"`, `\"check\"`, …). `None` lets poly pick by intent.",
+          "type": ["string", "null"],
+          "default": null
+        },
+        "args": {
+          "description": "When present, **replaces** the catalog command's argument vector\nentirely; when `None`, the catalog command's own argv is used.",
+          "type": ["array", "null"],
+          "items": {
+            "type": "string"
+          },
+          "default": null
+        },
+        "stages": {
+          "description": "Git stages this tool runs in; empty means it is not bound to a stage.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Stage"
+          },
+          "default": []
+        },
+        "files": {
+          "description": "File include glob(s); `None` matches every candidate file.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Patterns"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "exclude": {
+          "description": "File exclude glob(s) filtered from the matched set before the tool runs.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Patterns"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "env": {
+          "description": "Environment variables injected on top of the inherited environment when\nthe tool runs. Applied on both the direct-engine path and the hooks-lowering\npath.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {}
+        },
+        "root": {
+          "description": "Working directory the tool runs in, relative to the config/repo root.\n`None` means the repo root. Applied on both the direct-engine path and the\nhooks-lowering path.",
+          "type": ["string", "null"],
+          "default": null
+        }
+      },
+      "additionalProperties": false
+    },
+    "Stage": {
+      "description": "A git hook stage. The legacy aliases `commit`, `push` and `merge-commit` are also accepted where a stage is named.",
+      "type": "string",
+      "enum": [
+        "pre-commit",
+        "pre-merge-commit",
+        "prepare-commit-msg",
+        "commit-msg",
+        "post-commit",
+        "pre-rebase",
+        "post-checkout",
+        "post-merge",
+        "pre-push",
+        "post-rewrite",
+        "manual",
+        "always"
+      ]
+    },
+    "WorkspaceConfig": {
+      "description": "`[workspace]` — marks a config as the cascade boundary for hierarchical\nresolution (ADR 0018).\n\nIn a monorepo, `poly` resolves the config for a file by deep-merging the\nchain of `poly.toml` files from the nearest one up to the workspace root.\nSetting `root = true` stops that upward walk at this config, so a project\nnever inherits configuration from a `poly.toml` above its own root (e.g. one\nin `$HOME`). A directory containing `.git` is treated as an implicit boundary\neven without this marker.",
+      "type": "object",
+      "properties": {
+        "root": {
+          "description": "When `true`, upward cascade resolution stops here — this config is the\nbase of the merge chain.",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "RulesConfig": {
+      "description": "`[rules]` — user-defined ast-grep YAML custom-rule directories.\n\nDirectories listed here are scanned for `*.yml` / `*.yaml` rule files on\nevery lint run. Paths are interpreted relative to the config file's directory.\nThe default is `[\".poly/rules\"]`; set to an empty array `dirs = []` to\ndisable custom rules entirely.",
+      "type": "object",
+      "properties": {
+        "dirs": {
+          "description": "Directories (relative to the config file) containing custom ast-grep\nYAML rule files. Defaults to `[\".poly/rules\"]`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [".poly/rules"]
+        },
+        "builtin": {
+          "description": "Whether poly's built-in ast-grep rule pack (curated, per-language lint\nrules embedded in the binary — no `dirs` setup required) is loaded.\nDefaults to `true`; set to `false` to lint with only the rules under\n`dirs`. The pack is layered *beneath* `dirs`: a user rule with the same\n`id` as a pack rule replaces it.",
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "lint_ruff": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "extend_select": {
+          "type": "array"
+        },
+        "ignore": {
+          "type": "array"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "known_first_party": {
+          "type": "array"
+        },
+        "known_third_party": {
+          "type": "array"
+        },
+        "line_length": {
+          "type": "integer"
+        },
+        "mccabe_max_complexity": {
+          "type": "integer"
+        },
+        "pydocstyle_convention": {
+          "type": "string"
+        },
+        "pylint_max_args": {
+          "type": "integer"
+        },
+        "pylint_max_branches": {
+          "type": "integer"
+        },
+        "pylint_max_returns": {
+          "type": "integer"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        },
+        "select": {
+          "type": "array"
+        },
+        "src": {
+          "type": "array"
+        },
+        "target_version": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "lint_typos": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "extend_exclude": {
+          "type": "array"
+        },
+        "extend_identifiers": {
+          "type": "object"
+        },
+        "extend_ignore_identifiers_re": {
+          "type": "array"
+        },
+        "extend_ignore_re": {
+          "type": "array"
+        },
+        "extend_ignore_words": {
+          "type": "array"
+        },
+        "extend_ignore_words_re": {
+          "type": "array"
+        },
+        "extend_words": {
+          "type": "object"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "lint_astgrep": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "lint_uncomment": {
+      "type": "object",
+      "properties": {
+        "code_only": {
+          "type": "boolean"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "preserve_patterns": {
+          "type": "array"
+        },
+        "remove_docs": {
+          "type": "boolean"
+        },
+        "remove_fixme": {
+          "type": "boolean"
+        },
+        "remove_todos": {
+          "type": "boolean"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        },
+        "use_default_ignores": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true
+    },
+    "lint_quality": {
+      "type": "object",
+      "properties": {
+        "cyclomatic_complexity": {
+          "type": "boolean"
+        },
+        "cyclomatic_complexity_max": {
+          "type": "integer"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "file_too_long": {
+          "type": "boolean"
+        },
+        "file_too_long_lines": {
+          "type": "integer"
+        },
+        "function_too_long": {
+          "type": "boolean"
+        },
+        "function_too_long_lines": {
+          "type": "integer"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "law_of_demeter": {
+          "type": "boolean"
+        },
+        "law_of_demeter_depth": {
+          "type": "integer"
+        },
+        "lazy_ignore": {
+          "type": "boolean"
+        },
+        "magic_number": {
+          "type": "boolean"
+        },
+        "magic_number_allow": {
+          "type": "array"
+        },
+        "nesting_too_deep": {
+          "type": "boolean"
+        },
+        "nesting_too_deep_depth": {
+          "type": "integer"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        },
+        "too_many_parameters": {
+          "type": "boolean"
+        },
+        "too_many_parameters_count": {
+          "type": "integer"
+        },
+        "type_too_long": {
+          "type": "boolean"
+        },
+        "type_too_long_lines": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": true
+    },
+    "lint_oxc": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "extend_select": {
+          "type": "array"
+        },
+        "ignore": {
+          "type": "array"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "plugins": {
+          "type": "array"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        },
+        "select": {
+          "type": "array"
+        }
+      },
+      "additionalProperties": true
+    },
+    "lint_yaml": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "lint_taplo": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "lint_polyconfig": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "lint_rumdl": {
+      "type": "object",
+      "properties": {
+        "disable": {
+          "type": "array"
+        },
+        "enable": {
+          "type": "array"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "extend_enable": {
+          "type": "array"
+        },
+        "extend_select": {
+          "type": "array"
+        },
+        "ignore": {
+          "type": "array"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "line_length": {
+          "type": "integer"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        },
+        "select": {
+          "type": "array"
+        }
+      },
+      "additionalProperties": true
+    },
+    "lint_sqruff": {
+      "type": "object",
+      "properties": {
+        "dialect": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "exclude_rules": {
+          "type": "array"
+        },
+        "extend_select": {
+          "type": "array"
+        },
+        "ignore": {
+          "type": "array"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "rule_configs": {
+          "type": "object"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        },
+        "select": {
+          "type": "array"
+        }
+      },
+      "additionalProperties": true
+    },
+    "lint_biome": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "extend_select": {
+          "type": "array"
+        },
+        "ignore": {
+          "type": "array"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        },
+        "select": {
+          "type": "array"
+        }
+      },
+      "additionalProperties": true
+    },
+    "lint_graphql": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "lint_hcl": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "lint_shellcheck": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "lint_dockerfile": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "extend_select": {
+          "type": "array"
+        },
+        "ignore": {
+          "type": "array"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        },
+        "select": {
+          "type": "array"
+        }
+      },
+      "additionalProperties": true
+    },
+    "lint_mago": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "extend_select": {
+          "type": "array"
+        },
+        "ignore": {
+          "type": "array"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "integrations": {
+          "type": "array"
+        },
+        "php_version": {
+          "type": "string"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        },
+        "select": {
+          "type": "array"
+        }
+      },
+      "additionalProperties": true
+    },
+    "lint_dotenv": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "extend_select": {
+          "type": "array"
+        },
+        "ignore": {
+          "type": "array"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        },
+        "select": {
+          "type": "array"
+        }
+      },
+      "additionalProperties": true
+    },
+    "lint_ini": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "extend_select": {
+          "type": "array"
+        },
+        "ignore": {
+          "type": "array"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        },
+        "select": {
+          "type": "array"
+        }
+      },
+      "additionalProperties": true
+    },
+    "lint_cross_typos": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "extend_exclude": {
+          "type": "array"
+        },
+        "extend_identifiers": {
+          "type": "object"
+        },
+        "extend_ignore_identifiers_re": {
+          "type": "array"
+        },
+        "extend_ignore_re": {
+          "type": "array"
+        },
+        "extend_ignore_words": {
+          "type": "array"
+        },
+        "extend_ignore_words_re": {
+          "type": "array"
+        },
+        "extend_words": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": true
+    },
+    "lint_cross_astgrep": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "extend_select": {
+          "type": "array"
+        },
+        "ignore": {
+          "type": "array"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        },
+        "select": {
+          "type": "array"
+        }
+      },
+      "additionalProperties": true
+    },
+    "lint_cross_uncomment": {
+      "type": "object",
+      "properties": {
+        "code_only": {
+          "type": "boolean"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "preserve_patterns": {
+          "type": "array"
+        },
+        "remove_docs": {
+          "type": "boolean"
+        },
+        "remove_fixme": {
+          "type": "boolean"
+        },
+        "remove_todos": {
+          "type": "boolean"
+        },
+        "use_default_ignores": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true
+    },
+    "lint_cross_quality": {
+      "type": "object",
+      "properties": {
+        "cyclomatic_complexity": {
+          "type": "boolean"
+        },
+        "cyclomatic_complexity_max": {
+          "type": "integer"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "file_too_long": {
+          "type": "boolean"
+        },
+        "file_too_long_lines": {
+          "type": "integer"
+        },
+        "function_too_long": {
+          "type": "boolean"
+        },
+        "function_too_long_lines": {
+          "type": "integer"
+        },
+        "law_of_demeter": {
+          "type": "boolean"
+        },
+        "law_of_demeter_depth": {
+          "type": "integer"
+        },
+        "lazy_ignore": {
+          "type": "boolean"
+        },
+        "magic_number": {
+          "type": "boolean"
+        },
+        "magic_number_allow": {
+          "type": "array"
+        },
+        "nesting_too_deep": {
+          "type": "boolean"
+        },
+        "nesting_too_deep_depth": {
+          "type": "integer"
+        },
+        "too_many_parameters": {
+          "type": "boolean"
+        },
+        "too_many_parameters_count": {
+          "type": "integer"
+        },
+        "type_too_long": {
+          "type": "boolean"
+        },
+        "type_too_long_lines": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": true
+    },
+    "fmt_ruff": {
+      "type": "object",
+      "properties": {
+        "docstring_code_format": {
+          "type": "boolean"
+        },
+        "docstring_code_line_length": {
+          "oneOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "line_length": {
+          "type": "integer"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "fmt_oxc": {
+      "type": "object",
+      "properties": {
+        "arrow_parentheses": {
+          "type": "string"
+        },
+        "bracket_same_line": {
+          "type": "boolean"
+        },
+        "bracket_spacing": {
+          "type": "boolean"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "indent_style": {
+          "type": "string"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "jsx_quote_style": {
+          "type": "string"
+        },
+        "quote_style": {
+          "type": "string"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        },
+        "semicolons": {
+          "type": "string"
+        },
+        "trailing_commas": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "fmt_yaml": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "fmt_taplo": {
+      "type": "object",
+      "properties": {
+        "align_comments": {
+          "type": "boolean"
+        },
+        "align_entries": {
+          "type": "boolean"
+        },
+        "allowed_blank_lines": {
+          "type": "integer"
+        },
+        "array_auto_collapse": {
+          "type": "boolean"
+        },
+        "array_auto_expand": {
+          "type": "boolean"
+        },
+        "array_trailing_comma": {
+          "type": "boolean"
+        },
+        "column_width": {
+          "type": "integer"
+        },
+        "compact_arrays": {
+          "type": "boolean"
+        },
+        "compact_inline_tables": {
+          "type": "boolean"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "indent_entries": {
+          "type": "boolean"
+        },
+        "indent_tables": {
+          "type": "boolean"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "inline_table_expand": {
+          "type": "boolean"
+        },
+        "reorder_keys": {
+          "type": "boolean"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "fmt_rumdl": {
+      "type": "object",
+      "properties": {
+        "disable": {
+          "type": "array"
+        },
+        "enable": {
+          "type": "array"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "extend_enable": {
+          "type": "array"
+        },
+        "extend_select": {
+          "type": "array"
+        },
+        "ignore": {
+          "type": "array"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "line_length": {
+          "type": "integer"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        },
+        "select": {
+          "type": "array"
+        }
+      },
+      "additionalProperties": true
+    },
+    "fmt_sqruff": {
+      "type": "object",
+      "properties": {
+        "dialect": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "exclude_rules": {
+          "type": "array"
+        },
+        "extend_select": {
+          "type": "array"
+        },
+        "ignore": {
+          "type": "array"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "rule_configs": {
+          "type": "object"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        },
+        "select": {
+          "type": "array"
+        }
+      },
+      "additionalProperties": true
+    },
+    "fmt_malva": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "fmt_markup_fmt": {
+      "type": "object",
+      "properties": {
+        "arrow_parentheses": {
+          "type": "string"
+        },
+        "bracket_same_line": {
+          "type": "boolean"
+        },
+        "bracket_spacing": {
+          "type": "boolean"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "indent_style": {
+          "type": "string"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "jsx_quote_style": {
+          "type": "string"
+        },
+        "quote_style": {
+          "type": "string"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        },
+        "semicolons": {
+          "type": "string"
+        },
+        "trailing_commas": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "fmt_graphql": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "fmt_hcl": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "fmt_alejandra": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "fmt_shfmt": {
+      "type": "object",
+      "properties": {
+        "batch": {
+          "type": "boolean"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        },
+        "use_tabs": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true
+    },
+    "fmt_gofmt": {
+      "type": "object",
+      "properties": {
+        "batch": {
+          "type": "boolean"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "fmt_google-java-format": {
+      "type": "object",
+      "properties": {
+        "batch": {
+          "type": "boolean"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "fmt_ktfmt": {
+      "type": "object",
+      "properties": {
+        "batch": {
+          "type": "boolean"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "fmt_rubyfmt": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "fmt_mago": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "php_version": {
+          "type": "string"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "fmt_styler": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "fmt_treesitter": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "fmt_rustfmt": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "fmt_zigfmt": {
+      "type": "object",
+      "properties": {
+        "batch": {
+          "type": "boolean"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "fmt_swift-format": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "fmt_dartfmt": {
+      "type": "object",
+      "properties": {
+        "batch": {
+          "type": "boolean"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "fmt_gleamfmt": {
+      "type": "object",
+      "properties": {
+        "batch": {
+          "type": "boolean"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "indent_width": {
+          "type": "integer"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

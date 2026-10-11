@@ -1288,3 +1288,41 @@ fn top_level_keys_cover_the_typed_schema() {
         );
     }
 }
+
+/// The generated `poly.toml` JSON Schema must describe every top-level key the
+/// parser recognises, or an editor would flag a valid key the config actually
+/// supports. This is the schema's half of `top_level_keys_cover_the_typed_schema`:
+/// that test pins the key list to the parser, this one pins the schema to the
+/// key list.
+#[test]
+fn config_schema_declares_every_top_level_key() {
+    let schema = serde_json::to_value(crate::config_schema()).expect("schema serializes to JSON");
+    let properties = schema
+        .get("properties")
+        .and_then(serde_json::Value::as_object)
+        .expect("the root schema exposes `properties`");
+    for key in crate::TOP_LEVEL_KEYS {
+        assert!(
+            properties.contains_key(*key),
+            "the JSON Schema omits top-level key `{key}`, so an editor would flag a valid config"
+        );
+    }
+}
+
+/// A few nested keys that a derive would get wrong if a hand-written impl drifted:
+/// `[hooks.builtin]`'s toggles, the `[discovery] exclude` string-or-array shape,
+/// and the stage keys under `[hooks]`.
+#[test]
+fn config_schema_reaches_the_hand_written_sections() {
+    let schema = serde_json::to_value(crate::config_schema()).expect("schema serializes to JSON");
+    let text = serde_json::to_string(&schema).expect("schema to text");
+    for needle in [
+        "\"builtin\"",
+        "\"snapshot_include\"",
+        "\"exclude\"",
+        "\"per-file-ignores\"",
+        "oneOf",
+    ] {
+        assert!(text.contains(needle), "schema is missing `{needle}`");
+    }
+}

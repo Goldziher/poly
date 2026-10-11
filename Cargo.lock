@@ -5203,8 +5203,10 @@ version = "0.28.2"
 dependencies = [
  "anyhow",
  "poly-catalog",
+ "schemars 1.2.2",
  "serde",
  "serde_ignored",
+ "serde_json",
  "tempfile",
  "toml 1.1.8+spec-1.1.0",
 ]

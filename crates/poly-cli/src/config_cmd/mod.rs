@@ -7,7 +7,7 @@ mod effective;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use anyhow::{Result, bail};
+use anyhow::{Context as _, Result, bail};
 use clap::{Args, Subcommand, ValueEnum};
 use poly_core::report::{render_json, render_toon};
 
@@ -50,6 +50,17 @@ enum ConfigCommand {
         #[arg(long, value_enum, default_value_t = ConfigFormat::Toml)]
         format: ConfigFormat,
     },
+    /// Print the JSON Schema for `poly.toml`.
+    ///
+    /// Editors use it for validation and autocomplete — point them at it with a
+    /// `#:schema <path-or-url>` first line in `poly.toml`, or the `taplo` schema
+    /// association. The schema covers every typed section; the per-engine
+    /// `[lint]` / `[fmt]` tables list each backend's declared keys.
+    Schema {
+        /// Write the schema to this file instead of stdout.
+        #[arg(long, value_name = "PATH")]
+        output: Option<PathBuf>,
+    },
 }
 
 /// Output format for `poly config show`.
@@ -74,6 +85,7 @@ pub fn run_config(args: ConfigArgs) -> ExitCode {
     let result = match args.command {
         ConfigCommand::Update { config } => update(config.as_deref()),
         ConfigCommand::Show { config, format } => show(config.as_deref(), format),
+        ConfigCommand::Schema { output } => schema(output.as_deref()),
     };
     match result {
         Ok(code) => code,
@@ -111,5 +123,20 @@ fn show(explicit: Option<&Path>, format: ConfigFormat) -> Result<ExitCode> {
         ConfigFormat::Toon => render_toon(&document)?,
     };
     println!("{}", rendered.trim_end());
+    Ok(ExitCode::SUCCESS)
+}
+
+/// Print — or write — the `poly.toml` JSON Schema.
+fn schema(output: Option<&Path>) -> Result<ExitCode> {
+    let value = poly_core::config_schema::poly_toml_schema();
+    let mut text = serde_json::to_string_pretty(&value).context("serializing the config schema")?;
+    text.push('\n');
+    match output {
+        Some(path) => {
+            std::fs::write(path, text).with_context(|| format!("writing the schema to {}", path.display()))?;
+            println!("Wrote the poly.toml schema to {}.", path.display());
+        }
+        None => print!("{text}"),
+    }
     Ok(ExitCode::SUCCESS)
 }

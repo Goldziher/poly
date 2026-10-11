@@ -32,7 +32,7 @@ pub const DEFAULT_SCCACHE_BIN: &str = "sccache";
 /// job definition.
 ///
 /// [`Safe`]: HookCacheMode::Safe
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Default, schemars::JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum HookCacheMode {
     /// Never cache hook results.
@@ -54,7 +54,7 @@ pub enum HookCacheMode {
 }
 
 /// Configuration for the tier-1 result cache.
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, Default, schemars::JsonSchema)]
 #[serde(default)]
 pub struct ResultsCacheConfig {
     /// Cache mode for hook results.
@@ -70,7 +70,7 @@ pub struct ResultsCacheConfig {
 ///
 /// Sccache is **not implemented in this crate** — this is only the config
 /// surface.  Wire-up happens in `crates/poly-hooks` (Workstream B/C).
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, Default, schemars::JsonSchema)]
 #[serde(default)]
 pub struct SccacheConfig {
     /// Enable sccache for compiler hooks (default `false`).
@@ -128,7 +128,7 @@ fn default_cache_enabled() -> bool {
 /// Configuration for the `[cache]` table in `poly.toml`.
 ///
 /// All fields default so `[cache]` is entirely optional.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 #[serde(default)]
 pub struct CacheConfig {
     /// Master enable/disable switch for both cache tiers (default `true`).

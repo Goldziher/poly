@@ -85,6 +85,7 @@ export default defineConfig({
           label: "Reference",
           items: [
             { label: "CLI", slug: "reference/cli" },
+            { label: "Configuration", slug: "reference/configuration" },
             { label: "Backend coverage", slug: "reference/backends" },
             { label: "Tool catalog", slug: "reference/catalog" },
           ],

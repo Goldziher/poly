@@ -24,7 +24,7 @@ use super::patterns::Patterns;
 pub const DEFAULT_MAX_ADDED_FILE_KB: u64 = 500;
 
 /// `[hooks.builtin]` — poly's first-class in-process hooks.
-#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct BuiltinHooks {
     /// The `lint` linter hook.
@@ -305,6 +305,121 @@ impl<'de> Deserialize<'de> for CargoHooks {
                 lint: table.lint.unwrap_or(true),
             }),
         }
+    }
+}
+
+/// A bare boolean or a `{ enabled, stages, files, exclude }` table — the wire
+/// form [`BuiltinHook`] accepts. Hand-written because the type's `Deserialize`
+/// is an untagged toggle-or-table.
+impl schemars::JsonSchema for BuiltinHook {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "BuiltinHook".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        let patterns = generator.subschema_for::<Patterns>();
+        schemars::json_schema!({
+            "description": "`true`/`false`, or a table. A table without `enabled` is enabled.",
+            "oneOf": [
+                { "type": "boolean" },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "enabled": { "type": "boolean" },
+                        "stages": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Stages this hook runs in; empty inherits the `[hooks] stages` default."
+                        },
+                        "files": patterns,
+                        "exclude": {
+                            "oneOf": [
+                                { "type": "string" },
+                                { "type": "array", "items": { "type": "string" } }
+                            ],
+                            "description": "File include/exclude glob(s) for this hook."
+                        }
+                    }
+                }
+            ]
+        })
+    }
+}
+
+/// A bare boolean or a tuned table — the wire form [`FileSafetyHooks`] accepts.
+impl schemars::JsonSchema for FileSafetyHooks {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "FileSafetyHooks".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        let patterns = generator.subschema_for::<Patterns>();
+        schemars::json_schema!({
+            "description": "`true`/`false`, or a table tuning the file-safety checks. A table without \
+                            `enabled` is enabled; each member check defaults on.",
+            "oneOf": [
+                { "type": "boolean" },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "enabled": { "type": "boolean" },
+                        "stages": { "type": "array", "items": { "type": "string" } },
+                        "files": patterns,
+                        "exclude": {
+                            "oneOf": [
+                                { "type": "string" },
+                                { "type": "array", "items": { "type": "string" } }
+                            ]
+                        },
+                        "max_added_file_kb": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "description": "Size ceiling, in kibibytes, for the large-file check."
+                        },
+                        "merge_conflict": { "type": "boolean" },
+                        "added_large_files": { "type": "boolean" },
+                        "private_key": { "type": "boolean" },
+                        "case_conflict": { "type": "boolean" },
+                        "executables_have_shebangs": { "type": "boolean" },
+                        "shebang_scripts_are_executable": { "type": "boolean" }
+                    }
+                }
+            ]
+        })
+    }
+}
+
+/// A bare boolean or a tuned table — the wire form [`CargoHooks`] accepts.
+impl schemars::JsonSchema for CargoHooks {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "CargoHooks".into()
+    }
+
+    fn json_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "description": "`true`/`false`, or a table tuning the whole-workspace Cargo tools. A table \
+                            without `enabled` is enabled; each member tool defaults on.",
+            "oneOf": [
+                { "type": "boolean" },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "enabled": { "type": "boolean" },
+                        "stages": { "type": "array", "items": { "type": "string" } },
+                        "clippy": { "type": "boolean" },
+                        "sort": { "type": "boolean" },
+                        "machete": { "type": "boolean" },
+                        "deny": { "type": "boolean" },
+                        "clippy_args": { "type": "array", "items": { "type": "string" } },
+                        "cache": { "type": "boolean" },
+                        "lint": { "type": "boolean" }
+                    }
+                }
+            ]
+        })
     }
 }
 

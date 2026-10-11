@@ -265,6 +265,54 @@ impl<'de> Visitor<'de> for HooksConfigVisitor {
     }
 }
 
+/// The `[hooks]` table: reserved keys at this level, plus one key per git stage
+/// whose value is a [`StageConfig`]. Hand-written because the type's
+/// `Deserialize` is a custom map visitor that partitions keys into reserved
+/// keys and stage tables — a derive would describe the internal
+/// `stage_configs` map instead of the on-disk shape.
+impl schemars::JsonSchema for HooksConfig {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "HooksConfig".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        let stage_config = generator.subschema_for::<StageConfig>();
+        let patterns = generator.subschema_for::<Patterns>();
+        let builtin = generator.subschema_for::<BuiltinHooks>();
+        let source = generator.subschema_for::<HookSource>();
+        schemars::json_schema!({
+            "description": "Git-hook configuration: the reserved keys below, plus one key per git \
+                            stage (`[hooks.pre-commit]`, `[hooks.commit-msg]`, …).",
+            "type": "object",
+            "properties": {
+                "sources": {
+                    "type": "array",
+                    "items": source,
+                    "description": "Local or pinned-Git hook producer catalogs."
+                },
+                "stages": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Default stages applied to builtin hooks that do not set their own."
+                },
+                "env": {
+                    "type": "object",
+                    "additionalProperties": { "type": "string" },
+                    "description": "Environment variables merged into every job."
+                },
+                "builtin": builtin,
+                "snapshot_include": patterns,
+                "isolate": {
+                    "type": "boolean",
+                    "description": "Whether hooks run against the staged-content snapshot instead of \
+                                    the live worktree (ADR 0019). Unset uses the per-invocation default."
+                }
+            },
+            "additionalProperties": stage_config
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

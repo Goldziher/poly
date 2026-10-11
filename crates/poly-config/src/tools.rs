@@ -35,7 +35,7 @@ use crate::hooks::{Patterns, Stage};
 ///
 /// Deserializes transparently from the `[tools.<name>]` tables. Empty by
 /// default (no tools enabled).
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, schemars::JsonSchema)]
 #[serde(transparent)]
 pub struct ToolsConfig(BTreeMap<String, ToolConfig>);
 
@@ -93,7 +93,7 @@ impl From<BTreeMap<String, ToolConfig>> for ToolsConfig {
 }
 
 /// Configuration for a single catalog tool under `[tools.<name>]`.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct ToolConfig {
     /// Whether this tool is active. **Off by default** — declaring the table

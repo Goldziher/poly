@@ -1,0 +1,242 @@
+---
+title: Configuration reference
+description: >-
+  Every poly.toml section and key, its type and default — plus the published JSON Schema and
+  editor setup. For the narrative version, see the Configuration guide.
+---
+
+import { Aside, LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+poly reads a single `poly.toml`. This page is the key-by-key reference; the
+[Configuration guide](/poly/guides/configuration/) explains how the pieces fit
+together.
+
+## Editor setup (JSON Schema)
+
+poly publishes a [JSON Schema](https://json-schema.org) for `poly.toml` at:
+
+```text
+https://goldziher.github.io/poly/poly.schema.json
+```
+
+Point your editor at it for validation and autocomplete. The simplest way is the
+`schema` directive as the **first line** of `poly.toml`:
+
+```toml title="poly.toml"
+#:schema https://goldziher.github.io/poly/poly.schema.json
+
+[defaults]
+line_length = 120
+```
+
+poly's own TOML formatter is [taplo](https://taplo.tamasfe.dev/), which honors
+that directive, so `poly fmt` leaves it in place. You can also generate the
+schema locally — it is derived from the same types the parser uses:
+
+```console
+poly config schema --output poly.schema.json
+```
+
+The per-engine `[lint]` / `[fmt]` tables are **autocomplete hints**: each backend
+lists the keys it declares, but the tables stay open because a language id may be
+any tree-sitter grammar and some backends derive their key set from an upstream
+type. `poly lint` remains the authority — it reports `unknown-config-key` for any
+key no engine reads.
+
+## Top-level sections
+
+| Section | Purpose |
+| --- | --- |
+| [`[defaults]`](#defaults) | Line width, line endings, whitespace — the base every formatter layers on. |
+| [`[discovery]`](#discovery) | The file walk: excludes, the prune set, generated files. |
+| [`[lint]` / `[fmt]`](#lint-and-fmt) | Per-language, per-engine rule and formatter configuration. |
+| [`[workspace]`](#workspace) | Monorepo cascade boundary. |
+| [`[per-file-ignores]`](#per-file-ignores) | Suppress rules by path glob. |
+| [`[rules]`](#rules) | Custom ast-grep rule directories and the built-in pack toggle. |
+| [`[tools]`](#tools) | Opt into catalog tools. |
+| [`[cache]`](#cache) | Result-cache and sccache configuration. |
+| [`[commit]`](#commit) | `poly commit` message linting and cleanup. |
+| [`[hooks]`](#hooks) | Git-hook stages, builtins and inline jobs. |
+| [`extends`](#extends) | Share configuration from local or pinned-remote bases. |
+
+## `[defaults]`
+
+The opinionated base layer. Each key is applied wherever a tool exposes the
+setting.
+
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `line_length` | integer | `120` | Target maximum line length. |
+| `line_ending` | string | `"lf"` | `"lf"` or `"crlf"`. |
+| `final_newline` | boolean | `true` | Enforce a single trailing newline. |
+| `trim_trailing_whitespace` | boolean | `true` | Strip trailing whitespace. |
+
+## `[discovery]`
+
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `exclude` | string or array | `[]` | Gitignore-style globs pruned from the walk. A leading `/` anchors to the config directory; otherwise it matches at any depth. Accumulates across `extends` (use `exclude_mode = "replace"` to opt out). |
+| `force_exclude` | boolean | `true` | Apply `exclude` to explicitly named paths too. |
+| `no_prune` | string or array | `[]` | Directory **names** to keep despite the built-in prune set (`build`, `dist`, …). |
+| `generated` | boolean | `true` | Whether poly lints and formats machine-generated files. |
+
+## `[lint]` and `[fmt]`
+
+Per-language, per-engine tables: `[lint.<lang>.<engine>]` and
+`[fmt.<lang>.<engine>]`. See the [Backend coverage](/poly/reference/backends/)
+page for which engine serves each language.
+
+Every engine table accepts `enabled` (boolean; an absent key means the engine's
+own default). Linter backends that participate in rule selection accept the
+uniform triple:
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `select` | array | Replace the default rule set with these codes / categories. |
+| `extend_select` | array | Add to the default rule set. |
+| `ignore` | array | Remove from the selected set. |
+| `rules` | array or table | As an array, rule codes; as a table, per-rule parameters, including `[lint.<lang>.<engine>.rules.<id>] level = "error" \| "warning" \| "info" \| "hint"`. |
+
+Each engine also reads its own keys (`[lint.python.ruff] line_length`,
+`[lint.php.mago] php_version`, `[fmt.toml.taplo] …`). `poly lint` reports a key
+that no engine reads as `unknown-config-key` with a source span. Cross-cutting
+backends (`typos`, `quality`, `uncomment`, `astgrep`) are also configurable
+language-agnostically at `[lint.<engine>]`.
+
+## `[workspace]`
+
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `root` | boolean | `false` | Stop the upward config cascade here (a `.git` directory is an implicit boundary). |
+
+## `[per-file-ignores]`
+
+A table of path glob → rule codes to suppress for files matching the glob. Globs
+are relative to the config that declares them.
+
+```toml
+[per-file-ignores]
+"tests/**" = ["F401"]
+```
+
+## `[rules]`
+
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `dirs` | array | `[".poly/rules"]` | Directories of custom ast-grep `*.yml` rule files, relative to the config. Set to `[]` to disable. |
+| `builtin` | boolean | `true` | Load poly's built-in ast-grep rule pack. |
+
+## `[tools]`
+
+Opt into tools from the vendored catalog, keyed by catalog name
+(`[tools.<name>]`). Every entry is inert until `enabled = true`.
+
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `enabled` | boolean | `false` | Whether the tool runs. |
+| `command` | string | — | Which catalog command to invoke. |
+| `args` | array | — | Replace the catalog command's argv entirely. |
+| `stages` | array | `[]` | Git stages the tool runs in. |
+| `files` | string or array | — | Include glob(s). |
+| `exclude` | string or array | — | Exclude glob(s). |
+| `env` | table | `{}` | Environment variables injected when running the tool. |
+| `root` | string | — | Working directory, relative to the config root. |
+
+## `[cache]`
+
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `enabled` | boolean | `true` | Master switch for both cache tiers. |
+| `dir` | string | — | Override the cache root directory. |
+| `[cache.results] hooks` | string | `"safe"` | `"off"`, `"safe"` or `"aggressive"`. |
+| `[cache.sccache] enabled` | boolean | `false` | Enable tier-2 sccache for compiler hooks. |
+| `[cache.sccache] bin` | string | — | `sccache` binary (bare name or absolute path). |
+| `[cache.sccache] dir` | string | — | sccache storage directory. |
+| `[cache.sccache] max_size` | string | — | Maximum cache size (e.g. `"10G"`). |
+
+## `[commit]`
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `preset` | string | Named preset to seed the rules from (e.g. `"conventional"`). |
+| `write` | boolean | Whether the cleaner rewrites the message in place. |
+| `[commit.rules] message` | table | `{ pattern, description }` — a required subject pattern. |
+| `[commit.rules] excludes` | array of tables | `{ pattern, message }` — subjects that skip linting. |
+| `[commit.rules] cleanup` | array of tables | `{ find, replace, description }` — find/replace cleanups. |
+| `[commit.rules] single_line` | boolean | Reject multi-line subjects. |
+| `[commit.rules] require_body` | boolean | Require a non-empty body. |
+| `[commit.rules] exit_nonzero_on_rewrite` | boolean | Exit non-zero when the cleaner rewrote the message. |
+| `[commit.rules] no_emojis` | boolean | Reject emojis. |
+| `[commit.rules] ascii_only` | boolean | Require ASCII-only content. |
+| `[commit.rules] title_prefix` | string | Required subject prefix. |
+| `[commit.rules] title_prefix_separator` | string | Separator after the prefix. |
+| `[commit.rules] title_suffix` | string | Required subject suffix. |
+| `[commit.rules] title_suffix_separator` | string | Separator before the suffix. |
+
+## `[hooks]`
+
+The `[hooks]` table holds reserved keys plus one key per git stage
+(`[hooks.pre-commit]`, `[hooks.commit-msg]`, …).
+
+Reserved keys:
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `stages` | array | Default stages for builtin hooks that do not set their own. |
+| `env` | table | Environment merged into every job. |
+| `sources` | array of tables | `[[hooks.sources]]` producer catalogs: `{ id, path \| git, revision, hooks }`. |
+| `snapshot_include` | string or array | Untracked paths pulled into the staged snapshot (ADR 0019). |
+| `isolate` | boolean | Force hooks onto the staged snapshot (unset uses the per-invocation default). |
+| `builtin` | table | See below. |
+
+`[hooks.builtin]` — poly's in-process hooks. Each of `lint`, `fmt`, `commit` is a
+bare boolean or a table; `file_safety` and `cargo` are a boolean or a tuned
+group table.
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `lint` / `fmt` / `commit` | boolean or table | `{ enabled, stages, files, exclude }`. |
+| `file_safety` | boolean or table | `{ enabled, stages, files, exclude, max_added_file_kb, merge_conflict, added_large_files, private_key, case_conflict, executables_have_shebangs, shebang_scripts_are_executable }`. |
+| `cargo` | boolean or table | `{ enabled, stages, clippy, sort, machete, deny, clippy_args, cache, lint }`. |
+
+A **stage** table (`[hooks.pre-commit]`) accepts:
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `parallel` / `piped` / `follow` | boolean | Concurrency and output-streaming behaviour. |
+| `exclude_tags` | array | Tags whose jobs are excluded. |
+| `files` / `exclude` | string or array | Stage-level include/exclude globs. |
+| `skip` / `only` | boolean or array | Guard: a bare bool or `[{ run = "<command>" }]`. |
+| `fail_on_changes` | boolean | Fail if jobs dirty the working tree. |
+| `precondition` | string | Guard command; non-zero skips the stage with a warning. |
+| `before` / `after` | string or array | Commands run before/after the jobs. |
+| `jobs` | array of tables | Ordered jobs (`[[hooks.pre-commit.jobs]]`). |
+| `commands` / `scripts` | tables | Named jobs (`[hooks.pre-commit.commands.<name>]`). |
+
+A **job** accepts `name`, `run` **xor** `script`, `runner`, `args`, `glob`,
+`files`, `exclude`, `file_types`, `root`, `skip`, `only`, `precondition`,
+`before`, `tags`, `env`, `fail_text`, `timeout`, `priority`, `serial`,
+`stage_fixed`, `workspace`, `interactive`, `use_stdin` and `cache`.
+
+## `extends`
+
+A top-level list of base configs to inherit from (ADR 0020). Each entry is a
+local path string or a `{ path | git, revision, file }` table; a single entry may
+be given without the array.
+
+```toml
+extends = [
+  { git = "https://github.com/acme/poly-baseline", revision = "<40-hex-oid>", file = "poly.toml" },
+  "./poly.overrides.toml",   # later entry = higher precedence
+]
+```
+
+`exclude_mode = "replace"` in a table next to an `exclude` list makes that list
+replace the inherited one rather than accumulate. A symbolic (branch/tag) `git`
+ref must be locked with `poly config update` first.
+
+<Aside type="tip" title="What did poly actually resolve?">
+    `poly config show` prints the effective, fully-merged config after `extends`,
+    the cascade and `poly.local.toml`. `poly config --help` lists every `poly
+    config` subcommand, including `schema`.
+</Aside>

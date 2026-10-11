@@ -147,6 +147,22 @@ impl<'de> Deserialize<'de> for Stage {
     }
 }
 
+impl schemars::JsonSchema for Stage {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "Stage".into()
+    }
+
+    fn json_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        let names: Vec<&str> = Stage::ALL.iter().map(|stage| stage.as_str()).collect();
+        schemars::json_schema!({
+            "description": "A git hook stage. The legacy aliases `commit`, `push` and \
+                            `merge-commit` are also accepted where a stage is named.",
+            "type": "string",
+            "enum": names
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

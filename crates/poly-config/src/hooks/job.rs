@@ -13,7 +13,7 @@ use crate::hooks::patterns::{Guard, Patterns};
 ///
 /// A job runs exactly one of `run` (a shell command) **xor** `script` (a script
 /// file interpreted by `runner`); [`super::HooksConfig::validate`] enforces this.
-#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct Job {
     /// Display name; defaults to the map key when defined under
@@ -74,6 +74,7 @@ pub struct Job {
     /// (`POLY_HOOK_TIMEOUT` / `POLY_HOOK_WORKSPACE_TIMEOUT`) outrank this key —
     /// see the `poly-hooks` `timeout` module for the full precedence chain.
     #[serde(default, deserialize_with = "deserialize_timeout")]
+    #[schemars(with = "TimeoutSchema")]
     pub timeout: Option<String>,
     /// Lower values run first within a stage (default `0`).
     pub priority: i64,
@@ -212,12 +213,52 @@ fn deserialize_timeout<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Opt
     deserializer.deserialize_option(TimeoutVisitor)
 }
 
+/// Schema for the `timeout` key: whole seconds or a duration string. Hand-written
+/// because the field's `deserialize_with` accepts an integer as well as a string.
+struct TimeoutSchema;
+
+impl schemars::JsonSchema for TimeoutSchema {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "Timeout".into()
+    }
+
+    fn json_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "description": "Whole seconds (`90`), a duration string (`\"500ms\"`, `\"30s\"`, `\"10m\"`, \
+                            `\"1h\"`), or `0` / `\"off\"` / `\"none\"` to run unbounded.",
+            "oneOf": [
+                { "type": "integer" },
+                { "type": "string" }
+            ]
+        })
+    }
+}
+
+/// The `serial` key: a bare bool or an exclusion-set name. Hand-written because
+/// the field's `deserialize_with` accepts both spellings.
+impl schemars::JsonSchema for Serial {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "Serial".into()
+    }
+
+    fn json_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "description": "`true` joins the shared exclusion set, `false` forces concurrency, and a \
+                            string joins a named set (`\"cargo\"`).",
+            "oneOf": [
+                { "type": "boolean" },
+                { "type": "string" }
+            ]
+        })
+    }
+}
+
 /// Per-job result-cache declaration.
 ///
 /// `mode` reuses the crate-wide [`HookCacheMode`]; `inputs` lists glob sets the
 /// command depends on; `compiler` opts the job into tier-2 sccache env
 /// injection.
-#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct JobCache {
     /// Override the cache mode for this job; `None` inherits `[cache.results]`.

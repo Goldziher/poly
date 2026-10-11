@@ -74,3 +74,27 @@ Negative / risks:
   only accepted config name and format from the first `poly-config` implementation.
 - **No config / fully hard-coded defaults:** rejected — defaults are opinionated
   (ADR 0007) but users still need an override layer.
+
+## Amendment — 2026-10-11: a published JSON Schema for `poly.toml`
+
+A single unified config is only as good as a reader's ability to know what it accepts.
+`poly lint` already reports unknown keys in `[lint]` / `[fmt]` (ADR 0016's amendment §4), but that
+runs after the fact; nothing told an editor what a valid `poly.toml` looks like as it was written.
+
+`poly config schema` now emits a JSON Schema for the whole document, published at
+`https://goldziher.github.io/poly/poly.schema.json` and documented on the configuration-reference
+page. It is **generated, not hand-maintained**, and from two sources of truth that already exist:
+
+- the typed config sections are derived with `schemars` from the types `poly-config` deserializes
+  into (the manually-deserialized types — `Patterns`, `Guard`, `Stage`, `HooksConfig` and the
+  builtin groups — carry hand-written `JsonSchema` impls matching their wire form);
+- the per-language `[lint.<lang>.<engine>]` / `[fmt.<lang>.<engine>]` tables are built in
+  `poly-core` from each backend's [`Engine::option_keys`] declaration — the same declaration the
+  `unknown-config-key` check uses, so the schema and the runtime check cannot drift.
+
+Engine tables are emitted with `additionalProperties: true` even though their known keys are
+listed: a backend that derives its keys from a serde type (the `serde(flatten)` formatters) cannot
+enumerate them statically, and a language id may be any tree-sitter grammar. The listed keys are
+autocomplete hints; `poly lint` remains the authority. A whole-repo test asserts the published file
+matches what the binary generates, so a changed type or engine key is a build failure rather than a
+stale published schema.

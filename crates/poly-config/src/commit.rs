@@ -8,7 +8,7 @@
 use serde::Deserialize;
 
 /// `[commit]` table.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, schemars::JsonSchema)]
 #[serde(default)]
 pub struct CommitConfig {
     /// Named preset to seed the rules from (e.g. `"conventional"`).
@@ -20,7 +20,7 @@ pub struct CommitConfig {
 }
 
 /// `[commit.rules]` table.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, schemars::JsonSchema)]
 #[serde(default)]
 pub struct CommitRules {
     /// Require the subject to match a pattern.
@@ -50,7 +50,7 @@ pub struct CommitRules {
 }
 
 /// A subject-pattern requirement (`[commit.rules.message]`).
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct MessageRule {
     /// Regular expression the subject must match.
     pub pattern: String,
@@ -59,7 +59,7 @@ pub struct MessageRule {
 }
 
 /// A subject-pattern exclusion (`[[commit.rules.excludes]]`).
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct ExcludeRule {
     /// Regular expression; matching subjects skip linting.
     pub pattern: String,
@@ -68,7 +68,7 @@ pub struct ExcludeRule {
 }
 
 /// A find/replace cleanup (`[[commit.rules.cleanup]]`).
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 pub struct CleanupRule {
     /// Regular expression to find.
     pub find: String,

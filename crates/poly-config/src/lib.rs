@@ -123,7 +123,7 @@ pub struct PolyConfig {
 /// every lint run. Paths are interpreted relative to the config file's directory.
 /// The default is `[".poly/rules"]`; set to an empty array `dirs = []` to
 /// disable custom rules entirely.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 #[serde(default)]
 pub struct RulesConfig {
     /// Directories (relative to the config file) containing custom ast-grep
@@ -172,7 +172,7 @@ impl RulesConfig {
 /// never inherits configuration from a `poly.toml` above its own root (e.g. one
 /// in `$HOME`). A directory containing `.git` is treated as an implicit boundary
 /// even without this marker.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, schemars::JsonSchema)]
 #[serde(default)]
 pub struct WorkspaceConfig {
     /// When `true`, upward cascade resolution stops here — this config is the
@@ -187,7 +187,7 @@ pub struct WorkspaceConfig {
 /// the same reach. Globs are gitignore-style and compose with `.gitignore` and
 /// the built-in vendored/generated prune set — they never override an explicitly
 /// passed path argument.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 #[serde(default)]
 pub struct DiscoveryConfig {
     /// Gitignore-style globs excluded from discovery. Accepts a single string or
@@ -738,12 +738,14 @@ pub fn find_config(start: &Path) -> Option<PathBuf> {
     }
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Default, schemars::JsonSchema)]
 #[serde(default)]
 struct RawPolyConfig {
     defaults: defaults::RawDefaults,
     discovery: DiscoveryConfig,
+    #[schemars(with = "FreeTable")]
     lint: toml::Table,
+    #[schemars(with = "FreeTable")]
     fmt: toml::Table,
     commit: CommitConfig,
     hooks: HooksConfig,
@@ -753,6 +755,88 @@ struct RawPolyConfig {
     per_file_ignores: BTreeMap<String, Vec<String>>,
     workspace: WorkspaceConfig,
     rules: RulesConfig,
+}
+
+/// A free-form table — `[lint]` / `[fmt]`.
+///
+/// The per-language, per-engine keys are resolved at runtime (`poly-core`
+/// derives them from each engine's declared option set), so the schema describes
+/// the container and leaves the engine tables open. Unknown keys inside them are
+/// reported as `unknown-config-key` findings by `poly lint`.
+struct FreeTable;
+
+impl schemars::JsonSchema for FreeTable {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "FreeTable".into()
+    }
+
+    fn json_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "type": "object",
+            "additionalProperties": true,
+            "description": "A table of per-language, per-engine configuration keys \
+                            (`[lint.<lang>.<engine>]` / `[fmt.<lang>.<engine>]`)."
+        })
+    }
+}
+
+/// The on-disk shape of the top-level `extends` key: a single entry or an array
+/// of entries, each a local path string or a `{ path | git, revision, file }`
+/// table. `extends` and `exclude_mode` are consumed by the merge layer before
+/// typed deserialization, so they are not fields of [`RawPolyConfig`].
+struct ExtendsSchema;
+
+impl schemars::JsonSchema for ExtendsSchema {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "Extends".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        let table = generator.subschema_for::<extends::ExtendsSource>();
+        let entry = schemars::json_schema!({
+            "oneOf": [
+                { "type": "string", "description": "A local path to a base config." },
+                table.clone()
+            ]
+        });
+        schemars::json_schema!({
+            "description": "Base configs to inherit from (ADR 0020): a local path or a pinned remote \
+                            git file, as a single entry or an array.",
+            "oneOf": [
+                entry.clone(),
+                { "type": "array", "items": entry }
+            ]
+        })
+    }
+}
+
+/// The full `poly.toml` document schema, assembled from the typed sections plus
+/// the two merge-layer keys (`extends`, `exclude_mode`).
+// The fields exist only to describe the schema; the derive reads their types,
+// not their values, so nothing bytecode-visible ever reads them.
+#[allow(dead_code)]
+#[derive(schemars::JsonSchema)]
+#[schemars(
+    title = "poly.toml",
+    description = "The poly.toml configuration document for poly's lint, format, hooks and commit \
+                   surfaces."
+)]
+struct PolyTomlSchema {
+    #[schemars(with = "ExtendsSchema")]
+    extends: Option<()>,
+    /// `"replace"` makes `[discovery] exclude` replace inherited globs instead
+    /// of accumulating them; any other value accumulates.
+    #[serde(rename = "exclude_mode")]
+    exclude_mode: Option<String>,
+    #[serde(flatten)]
+    config: RawPolyConfig,
+}
+
+/// The JSON Schema for `poly.toml`, for editor validation/autocomplete and for
+/// publication. Served by `poly config schema`.
+#[must_use]
+pub fn config_schema() -> schemars::Schema {
+    schemars::schema_for!(PolyTomlSchema)
 }
 
 impl From<RawPolyConfig> for PolyConfig {

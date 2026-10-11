@@ -6,7 +6,7 @@ use anyhow::{Context, bail};
 use serde::Deserialize;
 
 /// One local or pinned Git hook catalog.
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct HookSource {
     /// Stable source identifier used in the lock file and cache path.

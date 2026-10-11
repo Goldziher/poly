@@ -22,6 +22,7 @@
 //! [`format_run`] and inspect [`LintRun::errors`] / [`FormatRun::errors`].
 
 pub mod config;
+pub mod config_schema;
 pub mod defaults;
 #[doc(hidden)]
 pub mod discover;

@@ -91,7 +91,7 @@ pub enum Guard {
 /// Pragmatic subset of lefthook's model: either a bare git-operation name
 /// (`"merge"`, `"rebase"`) / branch name, or a `{ ref = "...", run = "..." }`
 /// match table.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, schemars::JsonSchema)]
 #[serde(untagged)]
 pub enum GuardCondition {
     /// A git operation or branch name (e.g. `"merge"`, `"rebase"`).
@@ -101,7 +101,7 @@ pub enum GuardCondition {
 }
 
 /// A `{ ref = "...", run = "..." }` guard match table.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct GuardMatch {
     /// Branch-ref glob the guard applies to (lefthook `ref`).
@@ -192,6 +192,44 @@ impl<'de> Deserialize<'de> for Guard {
         Ok(match GuardRepr::deserialize(deserializer)? {
             GuardRepr::Bool(value) => Guard::Always(value),
             GuardRepr::Conditions(conditions) => Guard::Conditions(conditions),
+        })
+    }
+}
+
+/// A single glob string or an array of glob strings — the on-disk shape
+/// [`Patterns`] accepts. Hand-written because the type's own `Deserialize` is
+/// untagged, so a derive would describe the private newtype, not the wire form.
+impl schemars::JsonSchema for Patterns {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "Patterns".into()
+    }
+
+    fn json_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "description": "A single glob string, or an array of glob strings.",
+            "oneOf": [
+                { "type": "string" },
+                { "type": "array", "items": { "type": "string" } }
+            ]
+        })
+    }
+}
+
+/// A bare boolean or a list of conditions — the on-disk shape [`Guard`]
+/// accepts. Hand-written for the same reason as [`Patterns`].
+impl schemars::JsonSchema for Guard {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "Guard".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        let condition = generator.subschema_for::<GuardCondition>();
+        schemars::json_schema!({
+            "description": "A bare boolean (unconditional), or a list of guard conditions.",
+            "oneOf": [
+                { "type": "boolean" },
+                { "type": "array", "items": condition }
+            ]
         })
     }
 }
