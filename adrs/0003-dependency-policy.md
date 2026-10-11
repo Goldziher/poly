@@ -187,3 +187,37 @@ already at head.
   now two minor versions behind the pinned `0.7.0` git tree; crates.io `oxc_formatter` is the
   abandoned `0.0.0` from 2023-12-08; crates.io `rubyfmt` is still the `0.0.0-wip` name
   reservation. All three stay pinned on a git `rev`.
+
+## Amendment — 2026-10-11 (dependency refresh for v0.29.0)
+
+The three git pins were advanced to their remotes' HEADs and the publishing-posture re-check was
+run again. **One stale-cache regression the previous `chore: updated deps` commit left on `main`
+was found and fixed as a rider** — the refresh is the reason the `version_audit` guard was
+consulted, and it was red.
+
+- **The git pins advanced:** biome `dd96b11` → `e26a76b`, oxc `4dce2c2` → `98573d2`, rubyfmt
+  `094cdc8` → `f765808`. The moving oxc rev carried its workspace versions with it —
+  `oxc_formatter*` `0.71.0` → `0.72.0`, `oxc_linter` `1.86.0` → `1.87.0`, the shared
+  `oxc_allocator`/`oxc_span`/`oxc_diagnostics`/… `0.152.0` → `0.153.0` — and pulled four new
+  transitive crates (`bitvec`, `funty`, `radium`, `tap`, `wyz`). No board API poly calls changed;
+  `cargo check --workspace --all-targets` and the oxc/biome/rubyfmt/markup_fmt fixtures pass
+  against the new revs unchanged.
+- **Every engine whose output a moved pin feeds had its `version()` bumped:** `biome_css`,
+  `biome_graphql`, `oxc` and `markup_fmt` (embedded oxc) carry the new short rev `e26a76b` /
+  `98573d2`; `rubyfmt` moved to `f765808`.
+- **The registry re-check held, with one new fact.** crates.io `oxc_formatter` is still the
+  abandoned, fully-yanked 2023 `0.0.0`; `oxc_formatter_core`, `oxc_formatter_json` and
+  `oxc_linter` are still unpublished, so the same-`rev` rule binds the oxc monorepo even though
+  the *shared* crates (`oxc_allocator`, `oxc_span`, `oxc_diagnostics`) are now published weekly at
+  `0.153.0` — a partial migration is still a hard compile error against the git `oxc_formatter`.
+  Biome's `biome_css_analyze`/`biome_graphql_analyze`/`biome_languages` remain unpublished and
+  `biome_analyze` is still the **2024-03-12** `0.5.7` tarball. crates.io `rubyfmt` is still the
+  `0.0.0-wip` reservation. All three stay pinned on a git `rev`.
+- **Stale `version()` strings from `b693941` (`chore: updated deps`) were fixed.** That commit
+  bumped `sqruff-lib` `0.40` → `0.41`, `ast-grep-core` `0.45.3` → `0.50.0` and
+  `tree-sitter-language-pack` `1.20` → `1.21.1` in `Cargo.toml`/`Cargo.lock` without touching the
+  engine strings, so `version_audit` failed for `sqruff` (`0.40.0`), `astgrep`
+  (`ast-grep-core-0.45.3`), `treesitter` (`tslp1.20.0`) and `quality` (`tslp1.20.0`). Each now
+  embeds the resolved version — `0.41.0`, `ast-grep-core-0.50.0+tslp1.21.1`, `tslp1.21.1`,
+  `tslp1.21.1` — which is what the guard exists to force: a stale string would have served
+  results computed by the old crates under the new ones.
