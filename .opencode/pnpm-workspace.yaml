@@ -1,0 +1,6 @@
+# pnpm settings for the OpenCode plugin bundle. Same build-script policy as the
+# repository root: `@opencode-ai/plugin` pulls `msgpackr-extract` transitively,
+# and its optional native build is denied (msgpackr falls back to JS) rather than
+# approved — otherwise `pnpm install` fails with ERR_PNPM_IGNORED_BUILDS.
+allowBuilds:
+  msgpackr-extract: false

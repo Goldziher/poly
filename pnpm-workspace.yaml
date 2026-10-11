@@ -1,0 +1,11 @@
+# pnpm settings for the repository root (the `@goldziher/opencode-poly` agent-plugin
+# package). Since pnpm 11 the build-script policy is `allowBuilds`; the older
+# `ignoredBuiltDependencies` / `onlyBuiltDependencies` keys are no-ops and leave
+# `pnpm install` failing with ERR_PNPM_IGNORED_BUILDS (strictDepBuilds defaults on).
+#
+# `msgpackr-extract` is an optional native accelerator pulled in transitively by
+# `@opencode/plugin` (via `effect` -> `msgpackr`). msgpackr falls back to its JS
+# implementation when the native build is absent, so its build is denied rather
+# than approved.
+allowBuilds:
+  msgpackr-extract: false

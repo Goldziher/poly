@@ -5,8 +5,10 @@ exclude = [
   "target/**",
   "dist/**",
   # A generated lockfile is not prose: typos reports every vendored package name
-  # in it, and the quality tier reports its length.
+  # in it, and the quality tier reports its length. pnpm writes these in its own
+  # YAML style, so reformatting them is a loop the next `pnpm install` reverts.
   "**/package-lock.json",
+  "**/pnpm-lock.yaml",
   "vendor/**",
   "**/identify/tags.rs",
   ".ai-rulez/**",
