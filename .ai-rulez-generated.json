@@ -1,6 +1,6 @@
 {
   "schema_version": "v1",
-  "source_hash": "blake3:f020dd9419097f9e5b1c3e3c8544f9a538950073a85c20aeb10be575fad787b2",
+  "source_hash": "blake3:0cf7fb45f47033f0f2a58b8f804bd7bb9ae38fab2522eae786839c0e012b4bed",
   "outputs": {
     ".claude-plugin/marketplace.json": {
       "content_hash": "blake3:e1ee9c269f7e6b3dee2c8f13563666d61f7e6e4fb2f7d0ed112b49e31708d16e"
@@ -54,7 +54,7 @@
       "content_hash": "blake3:83192eef4e9b74261d330c784fb8e982872f0b0d228fcec609e57be4d73891dd"
     },
     ".mcp.json": {
-      "content_hash": "blake3:a559aa4b47e8ab5f78bb524caa8c8141629874ff8d948681239b79e908c0ba79"
+      "content_hash": "blake3:ae52be5403bd4ff87d8c331ac90e87892ab784965fec77d125fdd2bfd5620528"
     },
     ".opencode/agents/backend-author.md": {
       "content_hash": "blake3:196070a076dbddf9e62505b36de2caf5f94ceec164a3ae9a07ce6446c745670b"
