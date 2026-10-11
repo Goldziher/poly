@@ -1,8 +1,13 @@
 ---
 description: Lint and check formatting with poly — apply no fixes; summarize findings and drift
-# Content-Hash: blake3:65143e36f8332a4723338a856121a97f9ebdd7fff1d3b92841e2377ca317e198
-# Source-Hash: blake3:fb718ce3b30ece077045399507f8cd9b953739a66b05931b814fbfc8f7201e15
 ---
+
+<!--
+AI-RULEZ :: GENERATED FILE — DO NOT EDIT
+Content-Hash: blake3:ca04479267bd3d5d00b63dff7e8fe3b8690a21ef45d020733a057ee6f72ef102
+Source-Hash: blake3:f020dd9419097f9e5b1c3e3c8544f9a538950073a85c20aeb10be575fad787b2
+Schema-Version: v1
+-->
 
 # poly Check
 

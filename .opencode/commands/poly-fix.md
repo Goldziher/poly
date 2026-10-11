@@ -1,8 +1,23 @@
 ---
+type: Reference
+title: Poly Fix
 description: Apply poly lint --fix and fmt --fix, then re-check and report what changed and what remains
-# Content-Hash: blake3:dedef5f8c734e970cef13d456fabb26f50c3a2186fbf86ba332f3e8dc3856d7e
-# Source-Hash: blake3:fb718ce3b30ece077045399507f8cd9b953739a66b05931b814fbfc8f7201e15
+x-ai-rulez:
+  kind: command
+  id: poly-fix
+  metadata:
+    priority: high
+    usage: /poly-fix [paths]
 ---
+
+<!--
+AI-RULEZ :: GENERATED FILE — DO NOT EDIT
+Content-Hash: blake3:52cf993901f4a7f0cc945574593cbe08e1600f50ff49237d267a4c16992d0b34
+Source-Hash: blake3:f020dd9419097f9e5b1c3e3c8544f9a538950073a85c20aeb10be575fad787b2
+Schema-Version: v1
+-->
+
+# poly Fix
 
 Apply poly's autofixes over `${1:-.}`, then verify.
 

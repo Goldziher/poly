@@ -1,8 +1,13 @@
 ---
 description: Apply poly lint --fix and fmt --fix, then re-check and report what changed and what remains
-# Content-Hash: blake3:b950e84618be38bfe577a925093e666897e5a36b3e7d1c632900468e25865fac
-# Source-Hash: blake3:fb718ce3b30ece077045399507f8cd9b953739a66b05931b814fbfc8f7201e15
 ---
+
+<!--
+AI-RULEZ :: GENERATED FILE — DO NOT EDIT
+Content-Hash: blake3:d89cffeeb7446bb81aae22c301ef50c768d8284f0f9f7ec6cab08e16270e04de
+Source-Hash: blake3:f020dd9419097f9e5b1c3e3c8544f9a538950073a85c20aeb10be575fad787b2
+Schema-Version: v1
+-->
 
 # poly Fix
 

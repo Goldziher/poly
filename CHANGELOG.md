@@ -5,6 +5,55 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
+## [0.29.0] - 2026-10-11
+
+### Added
+
+- **A published JSON Schema for `poly.toml`, and `poly config schema`** (ADR 0006 amendment). The
+  schema is generated from the config types plus each backend's declared option keys, so editor
+  autocomplete and the runtime `unknown-config-key` check share one source of truth. It is served
+  at `https://goldziher.github.io/poly/poly.schema.json` and documented on the new
+  [configuration reference](https://goldziher.github.io/poly/reference/configuration/) page, with
+  a whole-repo test that fails if the published file drifts from the binary.
+
+### Fixed
+
+- **`quality`'s `too-many-parameters` no longer counts a parameter's attribute as a parameter**
+  ([Goldziher/poly#28]). tree-sitter-rust attaches `#[cfg(..)]` / `#[string]` to a parameter as a
+  sibling of the parameter, so a six-parameter function whose last parameter carried `#[cfg]`
+  measured as seven. Attribute and comment nodes are now skipped when counting.
+
+- **Four engine `version()` strings left stale by the previous dependency update** (`sqruff`,
+  `astgrep`, `treesitter`, `quality`). The `chore: updated deps` commit bumped `sqruff-lib`
+  `0.40` → `0.41`, `ast-grep-core` `0.45.3` → `0.50.0` and `tree-sitter-language-pack` `1.20` →
+  `1.21.1` without moving the strings folded into cache keys, so `version_audit` was red on `main`.
+  Cached output is now invalidated correctly rather than served under the old keys.
+
+### Changed
+
+- **Dependency refresh.** The three git pins advanced to their remotes' HEADs: oxc `4dce2c2` →
+  `98573d2`, biome `dd96b11` → `e26a76b`, rubyfmt `094cdc8` → `f765808`. Every engine `version()`
+  fed by a moved pin moved with it — `biome_css`, `biome_graphql`, `oxc`, `markup_fmt` (embedded
+  oxc) and `rubyfmt`. The publishing-posture re-check held: all three crates remain unpublishable
+  and stay on a git `rev` (ADR 0003 amendment).
+
+- **The Go ast-grep test predicate moved to the shared global utils** (`go-in-test-function`),
+  replacing a byte-identical file-local copy in `deep-exit` and `force-type-assert`. Matching is
+  unchanged.
+
+### Documentation
+
+- **ADR 0034** decides that test context stays two mechanisms — a per-language syntactic predicate
+  and a path glob — with one predicate per language declared in the global utils
+  ([Goldziher/poly#26]).
+- **`string-concat-in-loop` audited** against the C2 corpus: 93 findings over 2,586 Python files,
+  8/20 hand-read false positives, and confirmed not covered by ruff. It stays `off`
+  ([Goldziher/poly#27]).
+
+[Goldziher/poly#26]: https://github.com/Goldziher/poly/issues/26
+[Goldziher/poly#27]: https://github.com/Goldziher/poly/issues/27
+[Goldziher/poly#28]: https://github.com/Goldziher/poly/issues/28
+
 ## [0.28.2] - 2026-10-03
 
 ### Fixed
