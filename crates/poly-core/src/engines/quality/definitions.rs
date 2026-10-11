@@ -327,7 +327,7 @@ fn count_parameters(list: Node) -> usize {
     if cursor.goto_first_child() {
         loop {
             let child = cursor.node();
-            if child.is_named() && !child.kind().to_ascii_lowercase().contains("self") {
+            if child.is_named() && is_parameter_entry(child) {
                 count += names_in(child);
             }
             if !cursor.goto_next_sibling() {
@@ -336,6 +336,27 @@ fn count_parameters(list: Node) -> usize {
         }
     }
     count
+}
+
+/// Whether a named child of a parameter list is itself a parameter binding.
+///
+/// A parameter list's named children are not all arguments. tree-sitter-rust
+/// attaches `#[cfg(…)]` / `#[string]` attributes to a parameter as an
+/// `attribute_item` **sibling** *of* the parameter inside `parameters`, and
+/// most grammars permit comments there too. Neither is an argument, so counting
+/// one inflates the arity — a six-parameter function whose last parameter
+/// carries `#[cfg(…)]` measured as seven (issue #28). Receiver parameters
+/// (`self`/`this`) are excluded here for the same reason: they are syntax, not
+/// an argument the caller passes.
+fn is_parameter_entry(node: Node) -> bool {
+    let kind = node.kind().to_ascii_lowercase();
+    if kind.contains("self") || kind.contains("comment") {
+        return false;
+    }
+    !matches!(
+        node.kind(),
+        "attribute_item" | "outer_attribute_item" | "inner_attribute_item" | "attribute_item_attributes"
+    )
 }
 
 /// How many parameters one parameter-list entry declares. Almost every
@@ -442,6 +463,55 @@ mod tests {
             1,
             "rust tags emits both @definition.method and @definition.function for one node"
         );
+    }
+
+    /// Issue #28: tree-sitter-rust attaches an attribute on a parameter as an
+    /// `attribute_item` *sibling* of the parameter inside `parameters`, so a
+    /// naive walk over named children counts it as an extra argument.
+    #[test]
+    fn rust_parameter_attribute_is_not_counted_as_a_parameter() {
+        let source = "pub fn six_with_cfg(a: u8, b: u8, c: u8, d: u8, e: u8, \
+                      #[cfg(feature = \"x\")] f: u8) -> u8 {\n    a\n}\n";
+        let tree = parse("rust", source);
+        let defs = collect("rust", tree.root_node(), source.as_bytes()).expect("rust has a tags query");
+        assert_eq!(defs.len(), 1);
+        assert_eq!(
+            defs[0].param_count,
+            Some(6),
+            "a parameter attribute must not be counted as a parameter"
+        );
+    }
+
+    /// The shape `deno_core`'s `op2` macro produces: several parameters each
+    /// carrying an attribute. Before the fix a four-parameter function with
+    /// three `#[string]` attributes measured as seven.
+    #[test]
+    fn several_rust_parameter_attributes_stay_uncounted() {
+        let source = "fn op(a: i32, #[string] b: String, #[string] c: String, #[string] d: String) {}\n";
+        let tree = parse("rust", source);
+        let defs = collect("rust", tree.root_node(), source.as_bytes()).expect("rust has a tags query");
+        assert_eq!(defs.len(), 1);
+        assert_eq!(defs[0].param_count, Some(4));
+    }
+
+    /// Negative control: the attribute fix must not hide genuinely
+    /// over-limit signatures — six plain parameters stay six, seven stay seven.
+    #[test]
+    fn plain_parameter_counts_are_unchanged() {
+        for (n, source) in [
+            (
+                6usize,
+                "pub fn six(a: u8, b: u8, c: u8, d: u8, e: u8, f: u8) -> u8 { a }\n",
+            ),
+            (
+                7usize,
+                "pub fn seven(a: u8, b: u8, c: u8, d: u8, e: u8, f: u8, g: u8) -> u8 { a }\n",
+            ),
+        ] {
+            let tree = parse("rust", source);
+            let defs = collect("rust", tree.root_node(), source.as_bytes()).expect("rust has a tags query");
+            assert_eq!(defs[0].param_count, Some(n));
+        }
     }
 
     #[test]

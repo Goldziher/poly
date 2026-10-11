@@ -159,6 +159,32 @@ fn clean_file_has_no_quality_diagnostics() {
     );
 }
 
+/// Issue #28, at the engine surface and with a negative control. tree-sitter-rust
+/// attaches a parameter's `#[cfg(…)]` / `#[string]` attribute as a sibling of the
+/// parameter inside `parameters`, so the arity walk counted each attribute as an
+/// extra argument. Six parameters with one attribute must stay clean; seven plain
+/// parameters must still fire.
+#[test]
+fn parameter_attributes_do_not_inflate_the_parameter_count() {
+    let engine = QualityEngine;
+    let cfg = engine_cfg(toml::Table::new());
+
+    let six_with_cfg = "pub fn six_with_cfg(a: u8, b: u8, c: u8, d: u8, e: u8, \
+                        #[cfg(feature = \"x\")] f: u8) -> u8 {\n    a\n}\n";
+    let diags = engine.lint(&make_src(six_with_cfg), &cfg).unwrap();
+    assert!(
+        !diags.iter().any(|d| d.code.as_deref() == Some("too-many-parameters")),
+        "six parameters with a parameter attribute must not fire too-many-parameters: {diags:?}"
+    );
+
+    let seven = "pub fn seven(a: u8, b: u8, c: u8, d: u8, e: u8, f: u8, g: u8) -> u8 {\n    a\n}\n";
+    let diags = engine.lint(&make_src(seven), &cfg).unwrap();
+    assert!(
+        diags.iter().any(|d| d.code.as_deref() == Some("too-many-parameters")),
+        "seven plain parameters must still fire too-many-parameters: {diags:?}"
+    );
+}
+
 /// `quality` is lint-only (`capabilities().format == false`); `format`
 /// always returns `Unchanged` rather than echoing input, matching the
 /// `Engine` trait contract.
