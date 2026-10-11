@@ -53,3 +53,5 @@ CLAUDE.md
 /*.tgz
 
 opencode.json
+
+node_modules/

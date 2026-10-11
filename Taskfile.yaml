@@ -87,7 +87,7 @@ tasks:
     desc: "Stage a local poly build into the npm platform package and pack it (usage: task package:npm)"
     cmds:
       - ./npm-package/stage-binaries.sh --local "$PWD/target/debug/poly"
-      - cd npm-package && npm pack
+      - cd npm-package && pnpm pack
 
   package:wheels:
     desc: "Build a platform wheel from a local poly build (usage: task package:wheels)"

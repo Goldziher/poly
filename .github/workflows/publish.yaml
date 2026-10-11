@@ -133,10 +133,10 @@ jobs:
           # skips the job with a notice rather than failing a release on a step
           # that cannot yet succeed. See docs/INSTALL-PACKAGES.md.
           npm_bootstrapped=false
-          if npm view "@goldziher/polylint" version >/dev/null 2>&1; then
+          if pnpm view "@goldziher/polylint" version >/dev/null 2>&1; then
             npm_bootstrapped=true
           else
-            echo "::notice::@goldziher/polylint is not on npm; skipping the npm publish. It needs a one-time manual publish before a trusted publisher can be configured for it (docs/INSTALL-PACKAGES.md)."
+            echo "::notice::@goldziher/polylint is not on npm; skipping the pnpm publish --no-git-checks. It needs a one-time manual publish before a trusted publisher can be configured for it (docs/INSTALL-PACKAGES.md)."
           fi
 
           # PyPI `polylint` already exists, so only the per-version check matters.
@@ -616,6 +616,10 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || '' }}
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.11.2
+
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
@@ -629,7 +633,7 @@ jobs:
           set -euo pipefail
           tag="${{ needs.meta.outputs.tag }}"
           # Fetch what is attached to the release rather than rebuilding, so the
-          # binaries inside the npm packages are byte-identical to the archives
+          # binaries inside the pnpm packages are byte-identical to the archives
           # sha256sums.txt describes. A separate build would drift silently.
           gh release download "$tag" --repo "$GITHUB_REPOSITORY" \
             --pattern 'poly-*' --pattern 'sha256sums.txt' --dir artifacts --clobber
@@ -650,17 +654,10 @@ jobs:
       - name: Publish to npm
         run: |
           set -euo pipefail
-          # npm's OIDC trusted publishing (token-less registry auth) needs
-          # npm >= 11.5.1; the bundled npm on the setup-node image lags. Without
-          # the upgrade npm still signs provenance but publishes unauthenticated
-          # and the registry rejects the PUT.
-          npm install -g npm@latest
-          npm --version
-
           version="${{ needs.meta.outputs.version }}"
           # A real release claims `latest`. The 0.0.0 bootstrap publish sits under
           # a `placeholder` dist-tag precisely so it never becomes what
-          # `npm install @goldziher/polylint` resolves to; nothing here should
+          # `pnpm add @goldziher/polylint` resolves to; nothing here should
           # carry that tag forward.
           case "$version" in
             *-rc.* | *-beta* | *-alpha*) npm_tag="next" ;;
@@ -671,14 +668,14 @@ jobs:
             local dir="$1"
             local name
             name="$(jq -r '.name' "$dir/package.json")"
-            if npm view "${name}@${version}" version >/dev/null 2>&1; then
+            if pnpm view "${name}@${version}" version >/dev/null 2>&1; then
               echo "· ${name}@${version} is already published; skipping"
               return 0
             fi
             echo "→ publishing ${name}@${version} (--tag ${npm_tag})"
             # --provenance attaches a signed build-provenance attestation using
             # the job's id-token.
-            ( cd "$dir" && npm publish --provenance --access public --tag "$npm_tag" )
+            ( cd "$dir" && pnpm publish --no-git-checks --provenance --access public --tag "$npm_tag" )
           }
 
           # Platform packages first, and `set -e` means a failed one aborts the
@@ -729,6 +726,10 @@ jobs:
           )
           "$RUNNER_TEMP/ai-rulez" verify --plugin
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.11.2
+
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
@@ -738,10 +739,10 @@ jobs:
       - name: Verify packed Pi and OpenCode resources
         run: |
           set -euo pipefail
-          npm pack --json --pack-destination "$RUNNER_TEMP" > "$RUNNER_TEMP/plugin-pack.json"
+          pnpm pack --json --pack-destination "$RUNNER_TEMP" > "$RUNNER_TEMP/plugin-pack.json"
           node - "$RUNNER_TEMP/plugin-pack.json" <<'JS'
           const fs = require('node:fs');
-          const files = JSON.parse(fs.readFileSync(process.argv[2]))[0].files.map((file) => file.path);
+          const files = JSON.parse(fs.readFileSync(process.argv[2])).files.map((file) => file.path);
           const skills = files.filter((file) => /^\.pi\/skills\/[^/]+\/SKILL\.md$/.test(file));
           const prompts = files.filter((file) => /^\.pi\/prompts\/[^/]+\.md$/.test(file));
           if (skills.length !== 5 || prompts.length !== 2 || !files.includes('.opencode/plugins/poly.js')) {
@@ -753,14 +754,13 @@ jobs:
       - name: Publish the agent package
         run: |
           set -euo pipefail
-          npm install -g npm@11
           name="$(jq -r '.name' package.json)"
           version="${{ needs.meta.outputs.version }}"
-          if ! npm view "$name" version >/dev/null 2>&1; then
+          if ! pnpm view "$name" version >/dev/null 2>&1; then
             echo "::notice::$name needs a first manual publish and trusted publisher setup; Git Pi installation remains available."
             exit 0
           fi
-          if npm view "$name@$version" version >/dev/null 2>&1; then
+          if pnpm view "$name@$version" version >/dev/null 2>&1; then
             echo "$name@$version already published; skipping"
             exit 0
           fi
@@ -769,8 +769,8 @@ jobs:
             *) npm_tag=latest ;;
           esac
           unset NODE_AUTH_TOKEN
-          archive="$(jq -r '.[0].filename' "$RUNNER_TEMP/plugin-pack.json")"
-          npm publish "$RUNNER_TEMP/$archive" --provenance --access public --tag "$npm_tag"
+          archive="$(jq -r '.filename' "$RUNNER_TEMP/plugin-pack.json")"
+          pnpm publish --no-git-checks "$RUNNER_TEMP/$archive" --provenance --access public --tag "$npm_tag"
 
   publish_pypi:
     name: Publish PyPI (polylint)

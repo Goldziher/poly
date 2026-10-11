@@ -4,16 +4,16 @@
 formatter: one pure-Rust binary that wraps best-in-class tools as in-process backends,
 with a tree-sitter generic tier for everything else.
 
-> **The command is `poly`, not `polylint`.** The npm package is named
+> **The command is `poly`, not `polylint`.** The pnpm package is named
 > `@goldziher/polylint` because the unscoped `poly` name is taken; the executable it puts
 > on your `PATH` is `poly`.
 
 ## Install
 
 ```sh
-npm install --global @goldziher/polylint
+pnpm add --global @goldziher/polylint
 # or, per project
-npm install --save-dev @goldziher/polylint
+pnpm add --save-dev @goldziher/polylint
 ```
 
 Then:

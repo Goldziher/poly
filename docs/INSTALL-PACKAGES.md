@@ -18,7 +18,7 @@ whichever name you install under, both commands run the same tool.
 ## npm
 
 ```sh
-npm install --global @goldziher/polylint   # or: npm install --save-dev @goldziher/polylint
+pnpm add --global @goldziher/polylint   # or: pnpm add --save-dev @goldziher/polylint
 poly lint .
 ```
 
@@ -112,9 +112,9 @@ a trusted publisher pointing at:
 - Environment: _(leave blank)_
 
 npm can only configure a trusted publisher for a package that already exists, so each
-package needs one manual `npm publish` before CI can take over. Publish that first version
-under a non-`latest` dist-tag (`npm publish --access public --tag placeholder`) so it does
-not become what `npm install @goldziher/polylint` resolves to — note that npm sets `latest`
+package needs one manual `pnpm publish` before CI can take over. Publish that first version
+under a non-`latest` dist-tag (`pnpm publish --access public --tag placeholder`) so it does
+not become what `pnpm add @goldziher/polylint` resolves to — note that npm sets `latest`
 on a package's very first publish regardless, so the umbrella's `latest` has to be moved by
 the first real release. **This applies to every platform package too**, not just the
 umbrella. All seven have had their bootstrap publish and exist on the registry; a new
@@ -154,7 +154,7 @@ release's binary under the new version, which installs cleanly and is wrong.
 ### Building the packages locally
 
 ```sh
-task package:npm       # stage target/debug/poly into the host platform package, then npm pack
+task package:npm       # stage target/debug/poly into the host platform package, then pnpm pack
 task package:wheels    # build a platform wheel from target/debug/poly
 ```
 
@@ -167,6 +167,6 @@ two Pi prompts, and OpenCode adapter before publishing.
 
 Configure its npm trusted publisher for `Goldziher/poly`, workflow `publish.yaml`,
 with no environment. The workflow skips an unbootstrapped package with a notice;
-its first publication requires `npm publish --access public` from the repository
+its first publication requires `pnpm publish --access public` from the repository
 root after generation and verification. Git-based Pi installation needs no npm
 publication. The plugin package does not contain the `poly` binary.

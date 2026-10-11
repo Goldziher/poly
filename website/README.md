@@ -5,10 +5,10 @@ The [poly](https://github.com/Goldziher/poly) documentation, built with
 Pages at <https://goldziher.github.io/poly/>.
 
 ```sh
-npm install
-npm run dev      # local dev server
-npm run build    # static build into dist/
-npm run preview  # serve the built site
+pnpm install
+pnpm run dev      # local dev server
+pnpm run build    # static build into dist/
+pnpm run preview  # serve the built site
 ```
 
 Because the site is hosted on a GitHub Pages *project* page, `astro.config.mjs` sets

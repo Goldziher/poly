@@ -7,5 +7,5 @@ can pull exactly one platform binary through `optionalDependencies`. Install tha
 package instead — it is what puts the `poly` command on your `PATH`:
 
 ```sh
-npm install --global @goldziher/polylint
+pnpm add --global @goldziher/polylint
 ```

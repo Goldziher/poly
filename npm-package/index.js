@@ -106,9 +106,9 @@ function unsupportedPlatformMessage() {
     : `poly: the platform package for ${host} is not installed.\n\n` +
         `Expected one of: ${expected.join(", ")}\n\n` +
         `This usually means the install ran with optional dependencies disabled\n` +
-        `(npm install --no-optional, --omit=optional, or an offline cache that\n` +
+        `(pnpm install --no-optional, or an offline cache that\n` +
         `predates this version). Reinstall with optional dependencies enabled:\n\n` +
-        `  npm install --include=optional @goldziher/polylint\n\n` +
+        `  pnpm add @goldziher/polylint\n\n` +
         `Or install poly directly: https://github.com/Goldziher/poly#installation`;
 }
 

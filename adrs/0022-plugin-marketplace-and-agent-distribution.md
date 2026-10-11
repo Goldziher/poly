@@ -62,7 +62,7 @@ plugin generation, and release scripts no longer prune other runtime outputs.
 Pi reuses the five authored skills and renders the two commands as prompt templates.
 It uses the separately installed `poly` CLI, with no generated MCP bridge or extension.
 The root `package.json` serves both OpenCode and Pi under `@goldziher/opencode-poly`;
-Git installation requires only the committed bundle, while npm publishing enables
+Git installation requires only the committed bundle, while pnpm publishing enables
 registry installation and discovery through the `pi-package` keyword.
 
 The release workflow verifies generated provenance and packed resources before npm

@@ -358,9 +358,9 @@ workspace = true
 pass_filenames = false
 
 [[hooks.paths]]
-channel = "npx"
-check = "command -v npx"
-run = "npx -y ai-rulez@latest"
+channel = "pnpm"
+check = "command -v pnpm"
+run = "pnpm dlx ai-rulez@latest"
 
 [[hooks.paths]]
 channel = "uvx"
@@ -371,7 +371,7 @@ run = "uvx ai-rulez"
 
 Every hook requires at least one path. poly checks paths in the machine preference order and uses
 the first whose `check` exits zero. An optional `install` command runs only during explicit
-`poly hooks install`; ordinary hook runs use `run` directly, allowing commands such as `npx -y` or
+`poly hooks install`; ordinary hook runs use `run` directly, allowing commands such as `pnpm dlx` or
 `uvx` to self-provision. poly does **not** fall through if installation or the selected command
 fails.
 
@@ -379,7 +379,7 @@ Machine-only preferences belong in gitignored `poly.local.toml`:
 
 ```toml title="poly.local.toml"
 [hook_preferences]
-channels = ["npx", "uvx", "system"]
+channels = ["pnpm", "uvx", "system"]
 ```
 
 Because that file is gitignored it never exists in a freshly created linked worktree, so poly also

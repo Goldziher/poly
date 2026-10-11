@@ -110,7 +110,7 @@ npm_version="$(jq -r '.version' npm-package/package.json)"
 
 # Every pin must move with the package it points at. A pin left behind resolves
 # to the previous release's binary under the new version — a fault no test run
-# and no `npm install` surfaces, because the install still succeeds.
+# and no `pnpm install` surfaces, because the install still succeeds.
 while read -r pin; do
   [[ "$pin" == "$VERSION" ]] ||
     fail "npm-package/package.json optionalDependencies: expected $VERSION, got $pin"

@@ -67,7 +67,7 @@ lock-step surface, not a separately tracked version. So do the wrapper packages:
   window in which `brew install` built from source anyway. Download and extract measures **2.2 s**
   against that. Six of the ten formulae in `Goldziher/homebrew-tap` already worked this way, so
   poly was the outlier, not the pattern.
-- **The wrapper packages ship the release's own binaries, never a rebuild.** npm publishes six
+- **The wrapper packages ship the release's own binaries, never a rebuild.** pnpm publishes six
   per-platform packages (`os`/`cpu`/`libc`-gated, pulled in through `optionalDependencies` —
   no `postinstall` download) and PyPI publishes per-platform wheels carrying the binary as
   package data, plus a `py3-none-any` fallback whose only job is to explain itself on an
@@ -75,10 +75,9 @@ lock-step surface, not a separately tracked version. So do the wrapper packages:
   verify them against `sha256sums.txt` before packaging; a separate build would produce bytes
   the published checksums do not cover.
 - **Both registries authenticate with OIDC trusted publishing** — no `NPM_TOKEN`, no PyPI API
-  token. The jobs carry `permissions: id-token: write` and upgrade npm (`npm install -g
-  npm@latest`) because token-less publishing needs npm >= 11.5.1; without it npm still signs
-  provenance but publishes unauthenticated. npm can only configure a trusted publisher for a
-  package that *already exists*, so every new package needs one manual publish first (under a
+  token. The jobs carry `permissions: id-token: write` and publish using pnpm 12.11.2, which
+  supports token-less publishing and provenance. npm can only configure a trusted publisher for
+  a package that *already exists*, so every new package needs one manual publish first (under a
   non-`latest` dist-tag).
 - **A publish job must never fail the release.** `publish_npm`, `publish_pypi` and
   `publish_scoop` are `continue-on-error: true`, run after `finalize_release`, and have nothing

@@ -16,5 +16,6 @@
   "os": ["darwin"],
   "cpu": ["x64"],
   "files": ["LICENSE", "README.md", "bin/"],
-  "preferUnplugged": true
+  "preferUnplugged": true,
+  "packageManager": "pnpm@12.11.2"
 }
