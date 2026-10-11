@@ -72,7 +72,7 @@ pub struct SqruffEngine;
 /// `-presentation-fmt` marks the lint/format partition below: `format` applies only
 /// [`FORMAT_OWNED_GROUPS`] and `lint` reports only the complement, so the same input
 /// yields different output for the same sqruff-lib version.
-const SQRUFF_VERSION: &str = "0.40.0+rule-configs-3-presentation-fmt";
+const SQRUFF_VERSION: &str = "0.41.0+rule-configs-3-presentation-fmt";
 
 /// The rule groups `poly fmt` applies — and, being the format-owned half of the
 /// partition, exactly the groups `poly lint` stays silent about.
