@@ -43,10 +43,13 @@ fn prepare_one(request: &HookRunRequest, hook: &Hook, all_paths: &[&Path], tag_c
                 hook.exclude_types.as_ref(),
             );
             let has_tag_filter = hook.types.is_some() || hook.types_or.is_some() || hook.exclude_types.is_some();
+            let execution_root = request.work_root.as_deref().unwrap_or(&request.root);
             let matched: Vec<PathBuf> = all_paths
                 .iter()
                 .filter(|path| {
-                    filter.matches_filename(path) && (!has_tag_filter || filter.matches_tags(tag_cache.tags_for(path)))
+                    filter.matches_filename(path)
+                        && (!hook.pass_filenames || std::fs::symlink_metadata(execution_root.join(path)).is_ok())
+                        && (!has_tag_filter || filter.matches_tags(tag_cache.tags_for(path)))
                 })
                 .map(|path| path.to_path_buf())
                 .collect();

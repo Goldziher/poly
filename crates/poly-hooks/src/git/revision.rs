@@ -42,9 +42,10 @@ pub fn get_changed_files(old: &str, new: &str, root: &Path) -> Result<Vec<PathBu
 
     let build_cmd = |range: String| -> Result<Cmd, Error> {
         let mut cmd = git_cmd("get changed files")?;
-        cmd.arg("diff")
+        cmd.current_dir(root)
+            .arg("diff")
             .arg("--name-only")
-            .arg("--diff-filter=ACMRT")
+            .arg("--diff-filter=ACDMRT")
             .arg("--no-ext-diff")
             .arg("-z")
             .arg(range)

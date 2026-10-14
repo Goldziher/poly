@@ -26,6 +26,11 @@ tasks:
     cmds:
       - cargo test --workspace --exclude conformance
 
+  test:hooks:
+    desc: Run native hook tests (task test:hooks -- [cargo test arguments])
+    cmds:
+      - cargo test -p poly-hooks {{.CLI_ARGS}}
+
   lint:
     desc: Clippy (deny warnings) plus poly's own lint over the repo
     cmds:

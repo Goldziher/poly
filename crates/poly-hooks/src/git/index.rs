@@ -42,7 +42,7 @@ fn reject_unsafe_path(path: &Path) -> Result<(), Error> {
     })
 }
 
-/// List files that are staged in the index (excluding deleted files).
+/// List changed paths staged in the index, including deletions used to trigger workspace hooks.
 #[instrument(level = "trace")]
 pub fn get_staged_files(root: &Path) -> Result<Vec<PathBuf>, Error> {
     let output = git_cmd("get staged files")?
@@ -50,7 +50,7 @@ pub fn get_staged_files(root: &Path) -> Result<Vec<PathBuf>, Error> {
         .arg("diff")
         .arg("--cached")
         .arg("--name-only")
-        .arg("--diff-filter=ACMRTUXB")
+        .arg("--diff-filter=ACDMRTUXB")
         .arg("--no-ext-diff")
         .arg("-z")
         .check(true)
