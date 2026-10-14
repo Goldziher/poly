@@ -135,3 +135,25 @@ fn dangling_symlink_is_still_a_per_file_hook_input() {
     assert_eq!(outcome.stages[0].hooks.len(), 1);
     assert_eq!(outcome.stages[0].hooks[0].output, b"dangling.toml");
 }
+
+#[test]
+fn entry_lookup_errors_are_reported_by_hooks_instead_of_skipped() {
+    let repo = deletion_repo();
+    let root = repo.path();
+    std::fs::write(root.join("parent"), "not a directory").unwrap();
+    let path = PathBuf::from("parent/input.toml");
+    let error = std::fs::symlink_metadata(root.join(&path)).unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::NotADirectory);
+    let outcome = run(HookRunRequest {
+        root: root.to_path_buf(),
+        files: vec![path],
+        stages: vec![StageSpec {
+            hooks: vec![Hook::run("per-file", "test -e")],
+            ..StageSpec::default()
+        }],
+        ..HookRunRequest::default()
+    })
+    .unwrap();
+    assert!(!outcome.success());
+    assert!(matches!(outcome.stages[0].hooks[0].status, HookStatus::Failed { .. }));
+}

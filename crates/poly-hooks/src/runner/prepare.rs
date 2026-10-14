@@ -48,7 +48,7 @@ fn prepare_one(request: &HookRunRequest, hook: &Hook, all_paths: &[&Path], tag_c
                 .iter()
                 .filter(|path| {
                     filter.matches_filename(path)
-                        && (!hook.pass_filenames || std::fs::symlink_metadata(execution_root.join(path)).is_ok())
+                        && (!hook.pass_filenames || !missing_entry(execution_root, path))
                         && (!has_tag_filter || filter.matches_tags(tag_cache.tags_for(path)))
                 })
                 .map(|path| path.to_path_buf())
@@ -61,6 +61,13 @@ fn prepare_one(request: &HookRunRequest, hook: &Hook, all_paths: &[&Path], tag_c
             Prepared { matched, skip }
         }
     }
+}
+
+fn missing_entry(root: &Path, path: &Path) -> bool {
+    matches!(
+        std::fs::symlink_metadata(root.join(path)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound
+    )
 }
 
 /// Group hook positions by `priority` (ascending), preserving original order
