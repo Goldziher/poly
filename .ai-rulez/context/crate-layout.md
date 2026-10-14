@@ -51,11 +51,10 @@ prebuilt release artifacts plus an installer (see release-versioning).
   cycle: the crate never loads config itself, the caller injects an already-resolved
   `poly_config::PolyConfig` (the CLI keeps its git-remote `extends` resolver, the MCP server
   keeps its network-free one).
-- `.ai-rulez/`, `.claude-plugin/`, `.codex-plugin/` — the generated plugin/marketplace surface
-  (ADR 0022): hand-written source lives under `.ai-rulez/rules/`, `.ai-rulez/context/`,
-  `.ai-rulez/skills/`, `.ai-rulez/commands/`, `.ai-rulez/agents/`, and `.ai-rulez/config.toml`;
-  the generated `CLAUDE.md` / `AGENTS.md`, `.claude-plugin/*.json`, and
-  `.codex-plugin/plugin.json` are output and must never be hand-edited.
+- `.ai-rulez/` holds contributor rules, context and agents. The curated product source is
+  `plugin/.ai-rulez/`, including its `skills/`, `commands/` and `config.plugins.toml`.
+  Generated `CLAUDE.md` / `AGENTS.md`, repository marketplace indexes, and manifests under
+  `plugin/` must never be hand-edited. Root indexes resolve the public member bundle and
+  keep maintainer content out of installs.
   `scripts/release-bump.sh <version>` bumps the workspace and plugin versions together,
   regenerates the plugin outputs, and asserts the generated manifests match before finishing.
-

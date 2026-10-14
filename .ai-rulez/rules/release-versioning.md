@@ -34,9 +34,10 @@ console scripts, the Homebrew formula does `bin.install_symlink bin/"poly" => "p
 
 Versioning is **lock-step**: bump all surfaces to the same `X.Y.Z` in one change. The single
 source of truth is the workspace `[workspace.package] version` in the root `Cargo.toml`; member
-crates inherit it via `version.workspace = true`. `.ai-rulez/config.toml [plugin] version` and
-the generated `.claude-plugin/plugin.json` / `.claude-plugin/marketplace.json` /
-`.codex-plugin/plugin.json` plugin manifests move with it — the plugin (ADR 0022) is one more
+crates inherit it via `version.workspace = true`. `plugin/.ai-rulez/config.plugins.toml`
+`[plugin].version` and generated manifests such as `plugin/.claude-plugin/plugin.json` and
+`plugin/.codex-plugin/plugin.json` move with it. The root marketplace resolves that member
+bundle. The plugin (ADR 0022) is one more
 lock-step surface, not a separately tracked version. So do the wrapper packages:
 `npm-package/package.json` **and each of its six exact `optionalDependencies` pins**, the six
 `npm-package/platforms/*/package.json` files, `pip-package/pyproject.toml`, and

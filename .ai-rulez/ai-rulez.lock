@@ -4,7 +4,7 @@
 version = 1
 ai_rulez_version = '5.3.0'
 scope = 'all'
-tree = 'sha256:b549e22807837d501bfe4f1338e66fe5f7febf734e2f06dda52761430c0d3420'
+tree = 'sha256:50fc986c7062323e2954d715c004a4f7a0cab3ebe15f7c0467dff8da446019d3'
 
 [[served]]
 name = 'code-quality-standards'
@@ -106,7 +106,7 @@ digest = 'sha256:2dfce88443cf44a501f646579d214bc7a7d554adb1761b63ec39e251937e7d5
 kind = 'context'
 id = 'crate-layout'
 path = 'context/crate-layout.md'
-digest = 'sha256:4a4bb15df753e66c1290b6aa3cecbecefb32ba11a3e9efce1aa0bd9dac62d5b5'
+digest = 'sha256:06692692273edbccc44fd1790d5f7a1ca01351b3a08013b4fafe54b7833da7a6'
 
 [[item]]
 kind = 'context'
@@ -154,7 +154,7 @@ digest = 'sha256:41455a4e517597d307bf36eb9a437078377e8dd1b474640dc223400319bf8de
 kind = 'rule'
 id = 'release-versioning'
 path = 'rules/release-versioning.md'
-digest = 'sha256:a3faa6cc863789dbb62e2803ff21a914f21646c862b0ed2dc1997530df728539'
+digest = 'sha256:4fcafd9aa3d87834f20c33b8266470a32a5e4be24427e3242f0e686f134798f4'
 
 [[item]]
 kind = 'rule'
