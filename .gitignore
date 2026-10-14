@@ -58,3 +58,6 @@ CLAUDE.md
 opencode.json
 
 node_modules/
+
+# Contributor MCP preferences stay local even when they contain unowned fields. ~keep
+/.pi/mcp.json
