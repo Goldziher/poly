@@ -6,9 +6,14 @@ build-backend = 'hatchling.build'
 name = 'poly-hermes-plugin'
 version = '0.29.0'
 description = 'Zero-dependency lint & format orchestrator over MCP — one pure-Rust binary wrapping ruff/oxc/taplo/rumdl and more as in-process backends, plus a tree-sitter generic tier for everything else. Exposes lint/format/cache tools with structured JSON output.'
+license = 'MIT'
 requires-python = '>=3.11'
 dependencies = ['mcp==1.28.1', 'PyYAML==6.0.3']
 keywords = ['linter', 'formatter', 'mcp', 'code-quality', 'rust']
+
+[project.readme]
+content-type = 'text/markdown'
+text = "# poly Hermes plugin\n\nZero-dependency lint & format orchestrator over MCP — one pure-Rust binary wrapping ruff/oxc/taplo/rumdl and more as in-process backends, plus a tree-sitter generic tier for everything else. Exposes lint/format/cache tools with structured JSON output.\n\nInstall this package in the same Python environment as Hermes Agent:\n\n```sh\npython -m pip install poly-hermes-plugin\n```\n\nEnable the plugin through Hermes Agent's plugin configuration. Available registrations depend on the plugin's authored Hermes adapter.\n"
 
 [project.entry-points]
 [project.entry-points.'hermes_agent.plugins']

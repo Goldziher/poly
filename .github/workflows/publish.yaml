@@ -706,7 +706,7 @@ jobs:
         uses: xberg-io/actions/setup-ai-rulez@98adf87f1ed4c62a57ff56f9010d62faf42d4db6
         with:
           ai-rulez-version: "5.3.0"
-          source-revision: "1dd46d774f156f3d170ecd1b702598b12d1eaf5b"
+          source-revision: "12aa1103ddfb1baf1a439df5b479b0129bba27c1"
 
       - name: Verify generated product bundles and public skills
         run: |
@@ -742,7 +742,8 @@ jobs:
       - name: Verify exact packaged Pi and OpenCode resource bytes
         run: |
           archive="$(jq -r '.filename' "$RUNNER_TEMP/plugin-pack.json")"
-          python3 scripts/verify_plugin_distribution.py npm "$RUNNER_TEMP/$archive"
+          case "$archive" in /*) ;; *) archive="$RUNNER_TEMP/$archive" ;; esac
+          python3 scripts/verify_plugin_distribution.py npm "$archive"
 
       - name: Publish the agent package
         run: |
@@ -763,8 +764,9 @@ jobs:
           esac
           unset NODE_AUTH_TOKEN
           archive="$(jq -r '.filename' "$RUNNER_TEMP/plugin-pack.json")"
+          case "$archive" in /*) ;; *) archive="$RUNNER_TEMP/$archive" ;; esac
           for attempt in 1 2 3; do
-            if pnpm publish --no-git-checks "$RUNNER_TEMP/$archive" --provenance --access public --tag "$npm_tag"; then
+            if pnpm publish --no-git-checks "$archive" --provenance --access public --tag "$npm_tag"; then
               break
             fi
             if pnpm view "$name@$version" version >/dev/null 2>&1; then
@@ -792,7 +794,7 @@ jobs:
         uses: xberg-io/actions/setup-ai-rulez@98adf87f1ed4c62a57ff56f9010d62faf42d4db6
         with:
           ai-rulez-version: "5.3.0"
-          source-revision: "1dd46d774f156f3d170ecd1b702598b12d1eaf5b"
+          source-revision: "12aa1103ddfb1baf1a439df5b479b0129bba27c1"
       - name: Verify public skill exports
         run: python3 scripts/sync_public_skills.py --check
       - name: Package all supported plugin runtimes
@@ -840,7 +842,7 @@ jobs:
         uses: xberg-io/actions/setup-ai-rulez@98adf87f1ed4c62a57ff56f9010d62faf42d4db6
         with:
           ai-rulez-version: "5.3.0"
-          source-revision: "1dd46d774f156f3d170ecd1b702598b12d1eaf5b"
+          source-revision: "12aa1103ddfb1baf1a439df5b479b0129bba27c1"
       - name: Verify plugin versions and generated resources before publishing
         env:
           VERSION: ${{ needs.meta.outputs.version }}

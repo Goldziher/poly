@@ -47,7 +47,7 @@ Their source is `plugin/.ai-rulez/skills`; `scripts/sync_public_skills.py --chec
 repository's `skills/` mirror, including resource bytes, namespaces and ownership.
 
 Generation and verification use ai-rulez 5.3.0 based on reviewed source
-`1dd46d774f156f3d170ecd1b702598b12d1eaf5b`. CI pins that source because the initial 5.3.0
+`12aa1103ddfb1baf1a439df5b479b0129bba27c1`. CI pins that source because the initial 5.3.0
 release lacks several required plugin fixes. Run `task plugin:generate`, `task plugin:verify`
 and `task plugin:test`. Native package artifacts and marketplace indexes attach to tagged
 releases. The manual plugin artifact workflow packages its selected checkout after checking
