@@ -50,4 +50,7 @@ Generation and verification use ai-rulez 5.3.0 based on reviewed source
 `1dd46d774f156f3d170ecd1b702598b12d1eaf5b`. CI pins that source because the initial 5.3.0
 release lacks several required plugin fixes. Run `task plugin:generate`, `task plugin:verify`
 and `task plugin:test`. Native package artifacts and marketplace indexes attach to tagged
-releases; the manual plugin artifact workflow can regenerate an existing tag's source bundle.
+releases. The manual plugin artifact workflow packages its selected checkout after checking
+that the core and plugin versions match an existing release tag. Marketplace indexes pin the
+checkout's immutable commit, and the verified archive attaches to that release; the workflow
+does not create a product tag or publish registry packages.
