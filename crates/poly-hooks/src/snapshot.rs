@@ -58,7 +58,8 @@
 //!   cache is stale, silently leaking the unstaged edit. Sourcing from the index
 //!   OID removes that dependency entirely.)
 //! - A path is (re)materialized only when its **index OID changed** since the
-//!   last snapshot, its snapshot copy is missing, or that copy's `(size, mtime)`
+//!   last snapshot, its snapshot copy is missing, its file type or executable
+//!   bit differs from the staged mode, or that copy's `(size, mtime)`
 //!   no longer matches what was observed right after it was written — tracked by
 //!   a manifest of `path → (OID, size, mtime)`. Unchanged paths are left
 //!   untouched, so their mtime is stable across runs and a compiler sees
@@ -419,6 +420,61 @@ mod tests {
         let second = std::fs::metadata(snap.path().join("a.rs")).unwrap().modified().unwrap();
 
         assert_eq!(first, second, "unchanged staged OID must not be rewritten on refresh");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn staged_executable_mode_changes_are_rematerialized_without_blob_changes() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let tmp = TempDir::new().expect("tmp repo");
+        let cache = TempDir::new().expect("cache home");
+        let repo = tmp.path();
+        init(repo);
+        let script = repo.join("launch.sh");
+        std::fs::write(&script, "#!/bin/sh\nexit 0\n").unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o644)).unwrap();
+        git(repo, &["add", "launch.sh"]);
+        let blob = index_blob(repo, "launch.sh");
+        let snap = StagedSnapshot::create_in(cache.path(), repo, &[]).expect("first");
+
+        for mode in [0o644, 0o755, 0o644] {
+            std::fs::set_permissions(&script, std::fs::Permissions::from_mode(mode)).unwrap();
+            git(repo, &["add", "launch.sh"]);
+            assert_eq!(index_blob(repo, "launch.sh"), blob, "only the staged mode changes");
+            StagedSnapshot::create_in(cache.path(), repo, &[]).expect("refresh");
+            let permissions = std::fs::metadata(snap.path().join("launch.sh")).unwrap().permissions();
+            assert_eq!(
+                permissions.mode() & 0o111,
+                mode & 0o111,
+                "snapshot must reflect index mode"
+            );
+            assert_matches_index(repo, snap.path(), "launch.sh", "mode-only staged change");
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn refresh_restores_executable_permissions_mutated_out_of_band() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let tmp = TempDir::new().expect("tmp repo");
+        let cache = TempDir::new().expect("cache home");
+        let repo = tmp.path();
+        init(repo);
+        let script = repo.join("launch.sh");
+        std::fs::write(&script, "#!/bin/sh\nexit 0\n").unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        git(repo, &["add", "launch.sh"]);
+        let snap = StagedSnapshot::create_in(cache.path(), repo, &[]).expect("first");
+        let copy = snap.path().join("launch.sh");
+        let modified = std::fs::metadata(&copy).unwrap().modified().unwrap();
+        std::fs::set_permissions(&copy, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert_eq!(std::fs::metadata(&copy).unwrap().modified().unwrap(), modified);
+
+        StagedSnapshot::create_in(cache.path(), repo, &[]).expect("refresh");
+        assert_eq!(std::fs::metadata(&copy).unwrap().permissions().mode() & 0o111, 0o111);
+        assert_matches_index(repo, snap.path(), "launch.sh", "snapshot permissions changed");
     }
 
     #[test]

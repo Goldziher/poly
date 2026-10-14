@@ -128,6 +128,8 @@ pub struct StagedEntry {
     pub path: PathBuf,
     /// `true` when the entry is a symlink (index mode `120000`).
     pub is_symlink: bool,
+    /// `true` when the entry is an executable regular file (index mode `100755`).
+    pub is_executable: bool,
 }
 
 /// List every entry staged in the index with its blob OID (`git ls-files -s`).
@@ -186,6 +188,7 @@ fn parse_ls_files_stage(bytes: &[u8]) -> Result<Vec<StagedEntry>, Error> {
             oid: oid.to_string(),
             path,
             is_symlink: mode == "120000",
+            is_executable: mode == "100755",
         });
     }
     Ok(entries)

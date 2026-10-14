@@ -56,6 +56,10 @@ impl Stat {
     /// is fingerprinted as itself rather than as its target.
     fn read(path: &Path) -> Option<Self> {
         let meta = std::fs::symlink_metadata(path).ok()?;
+        Self::from_metadata(&meta)
+    }
+
+    fn from_metadata(meta: &std::fs::Metadata) -> Option<Self> {
         let mtime = meta.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?;
         Some(Self {
             size: meta.len(),
@@ -71,7 +75,28 @@ pub(super) fn is_up_to_date(dir: &Path, entry: &git::StagedEntry, previous: &Has
     let Some(record) = previous.get(&entry.path) else {
         return false;
     };
-    record.oid == entry.oid && record.stat.is_some() && record.stat == Stat::read(&dir.join(&entry.path))
+    let Ok(metadata) = std::fs::symlink_metadata(dir.join(&entry.path)) else {
+        return false;
+    };
+    record.oid == entry.oid
+        && record.stat.is_some()
+        && record.stat == Stat::from_metadata(&metadata)
+        && matches_staged_mode(&metadata, entry)
+}
+
+fn matches_staged_mode(metadata: &std::fs::Metadata, entry: &git::StagedEntry) -> bool {
+    if metadata.file_type().is_symlink() != entry.is_symlink {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        if !entry.is_symlink {
+            return (metadata.permissions().mode() & 0o111 != 0) == entry.is_executable;
+        }
+    }
+    true
 }
 
 /// Remove snapshot files from the previous manifest that are no longer staged.
