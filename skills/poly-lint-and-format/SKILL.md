@@ -1,18 +1,16 @@
 ---
-type: Playbook
-title: Poly Lint And Format
 description: Running poly lint / poly fmt — --fix, --format pretty|json|toon, --exclude, --config, exit codes, inline suppression, and the check → read-json → fix → re-check loop
-x-ai-rulez:
-  kind: skill
-  id: poly-lint-and-format
-  metadata:
-    priority: medium
+name: poly-lint-and-format
+license: MIT
+metadata:
+    author: Goldziher
+    repository: https://github.com/Goldziher/poly
 ---
 
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-Content-Hash: blake3:e4f8dfa8973dc0b9ae090f51ab23fef5bc6a6a6ece60a3caa54c0735f35d96ba
-Source-Hash: blake3:0cf7fb45f47033f0f2a58b8f804bd7bb9ae38fab2522eae786839c0e012b4bed
+Content-Hash: blake3:697a8913634eec72ba2340417d11f811af8d9fcd390f25ccdc09ed4689695209
+Source-Hash: blake3:dfded972ef643f6aecba82394701f76b7c824d3336dc8724b562e8a185d85fc9
 Schema-Version: v1
 -->
 

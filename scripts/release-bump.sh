@@ -7,7 +7,7 @@
 #   npm-package/platforms/*/package.json  version (one per release target)
 #   pip-package/pyproject.toml            [project] version
 #   pip-package/polylint/__init__.py      __version__
-#   .ai-rulez/config.toml                 [plugin] version
+#   plugin/.ai-rulez/config.plugins.toml                 [plugin] version
 #   .claude-plugin/*.json                 generated — asserted to match
 
 set -euo pipefail
@@ -73,16 +73,16 @@ rm pip-package/pyproject.toml.bak
 sed -i.bak -E "s/^__version__ = \"[^\"]+\"$/__version__ = \"$VERSION\"/" pip-package/polylint/__init__.py
 rm pip-package/polylint/__init__.py.bak
 
-echo "→ .ai-rulez/config.toml [plugin] → $VERSION"
+echo "→ plugin/.ai-rulez/config.plugins.toml [plugin] → $VERSION"
 VERSION="$VERSION" perl -0pi -e \
-  's/(\[plugin\][^\[]*?\nversion\s*=\s*")[^"]+(")/$1$ENV{VERSION}$2/s' .ai-rulez/config.toml
+  's/(\[plugin\][^\[]*?\nversion\s*=\s*")[^"]+(")/$1$ENV{VERSION}$2/s' plugin/.ai-rulez/config.plugins.toml
 # Confirm the [plugin] version now reads $VERSION before we regenerate from it.
 # Scoped to the [plugin] block: a bare `grep -qxF 'version = "X"'` passes on any
 # matching line in the file — including the top-level schema `version` — so it
 # would report success on a bump that never landed.
-plugin_block_version="$(awk '/^\[plugin\]/{inblock=1; next} /^\[/{inblock=0} inblock && /^version[[:space:]]*=/{gsub(/.*= *"|".*/, ""); print; exit}' .ai-rulez/config.toml)"
+plugin_block_version="$(awk '/^\[plugin\]/{inblock=1; next} /^\[/{inblock=0} inblock && /^version[[:space:]]*=/{gsub(/.*= *"|".*/, ""); print; exit}' plugin/.ai-rulez/config.plugins.toml)"
 if [[ "$plugin_block_version" != "$VERSION" ]]; then
-  echo "error: .ai-rulez/config.toml [plugin] version is '$plugin_block_version', expected '$VERSION'" >&2
+  echo "error: plugin/.ai-rulez/config.plugins.toml [plugin] version is '$plugin_block_version', expected '$VERSION'" >&2
   exit 1
 fi
 
@@ -90,9 +90,10 @@ echo "→ regenerating ai-rulez plugin outputs"
 AI_RULEZ="${AI_RULEZ:-ai-rulez}"
 "$AI_RULEZ" generate --plugin
 "$AI_RULEZ" verify --plugin
+python3 scripts/sync_public_skills.py
 
 # Every bundle `--plugin` emits is shipped, so nothing is pruned here. The set is
-# controlled by `[plugin] runtimes` in .ai-rulez/config.toml, which is the single
+# controlled by `[plugin] runtimes` in plugin/.ai-rulez/config.plugins.toml, which is the single
 # place a harness is added or dropped.
 
 echo
@@ -143,18 +144,18 @@ echo "Validating plugin manifest versions..."
 
 # One entry per file `generate --plugin` emits that carries a version, and the
 # jq path to it. The set is driven by `[plugin] runtimes` in
-# .ai-rulez/config.toml; adding a runtime there means adding its manifest here,
+# plugin/.ai-rulez/config.plugins.toml; adding a runtime there means adding its manifest here,
 # or the lock-step guarantee quietly stops covering it — a stale manifest still
 # installs cleanly, which is the expensive way to find out.
 PLUGIN_MANIFESTS=(
-  ".claude-plugin/plugin.json:.version"
-  ".claude-plugin/marketplace.json:.plugins[0].version"
-  ".codex-plugin/plugin.json:.version"
-  ".cursor-plugin/plugin.json:.version"
-  ".factory-plugin/plugin.json:.version"
-  "gemini-extension.json:.version"
-  "kimi.plugin.json:.version"
-  "package.json:.version"
+  "plugin/.claude-plugin/plugin.json:.version"
+  "plugin/.codex-plugin/plugin.json:.version"
+  "plugin/plugin.json:.version"
+  "plugin/.cursor-plugin/plugin.json:.version"
+  "plugin/.factory-plugin/plugin.json:.version"
+  "plugin/gemini-extension.json:.version"
+  "plugin/kimi.plugin.json:.version"
+  "plugin/package.json:.version"
 )
 
 for entry in "${PLUGIN_MANIFESTS[@]}"; do
@@ -172,11 +173,16 @@ for entry in "${PLUGIN_MANIFESTS[@]}"; do
   fi
 done
 
+if ! jq -e '.plugins | map(select(.name == "poly" and .source == "./plugin")) | length == 1' \
+  .claude-plugin/marketplace.json >/dev/null; then
+  fail "Claude marketplace must resolve the generated poly member bundle"
+fi
+
 # The plugin is worth nothing to a consumer without its skills and slash
 # commands, and it shipped without them for several releases: `content_root` was
 # set to "." so ai-rulez looked for them at the repository root, where poly has
 # none. Assert the payload, not just the version.
-for dir in skills commands .pi/skills .pi/prompts; do
+for dir in skills plugin/commands plugin/.pi/skills plugin/.pi/prompts; do
   if [[ ! -d "$dir" ]] || [[ -z "$(ls -A "$dir" 2>/dev/null)" ]]; then
     echo "✗ $dir/: empty or missing — the plugin would ship no $dir"
     validation_failed=1
@@ -184,7 +190,7 @@ for dir in skills commands .pi/skills .pi/prompts; do
 done
 
 skill_count="$(find skills -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')"
-command_count="$(find commands -mindepth 1 -maxdepth 1 -name '*.md' 2>/dev/null | wc -l | tr -d ' ')"
+command_count="$(find plugin/commands -mindepth 1 -maxdepth 1 -name '*.md' 2>/dev/null | wc -l | tr -d ' ')"
 if [[ "$skill_count" -lt 1 || "$command_count" -lt 1 ]]; then
   echo "✗ plugin content: $skill_count skills, $command_count commands"
   validation_failed=1
@@ -192,14 +198,14 @@ else
   echo "✓ Plugin content: $skill_count skills, $command_count slash commands"
 fi
 
-pi_skill_count="$(jq '.pi.skills | length' package.json)"
-pi_prompt_count="$(jq '.pi.prompts | length' package.json)"
+pi_skill_count="$(jq '.pi.skills | length' plugin/package.json)"
+pi_prompt_count="$(jq '.pi.prompts | length' plugin/package.json)"
 while read -r skill; do
-  [[ -f "$skill/SKILL.md" ]] || fail "Pi skill missing: $skill/SKILL.md"
-done < <(jq -r '.pi.skills[]' package.json)
+  [[ -f "plugin/$skill/SKILL.md" ]] || fail "Pi skill missing: $skill/SKILL.md"
+done < <(jq -r '.pi.skills[]' plugin/package.json)
 while read -r prompt; do
-  [[ -f "$prompt" ]] || fail "Pi prompt missing: $prompt"
-done < <(jq -r '.pi.prompts[]' package.json)
+  [[ -f "plugin/$prompt" ]] || fail "Pi prompt missing: $prompt"
+done < <(jq -r '.pi.prompts[]' plugin/package.json)
 if [[ "$pi_skill_count" != "$skill_count" || "$pi_prompt_count" != "$command_count" ]]; then
   fail "Pi payload differs: $pi_skill_count skills/$pi_prompt_count prompts; expected $skill_count/$command_count"
 fi

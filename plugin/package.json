@@ -1,0 +1,76 @@
+{
+  "author": {
+    "email": "nhirschfeld@gmail.com",
+    "name": "Na'aman Hirschfeld",
+    "url": "https://github.com/Goldziher"
+  },
+  "dependencies": {
+    "@opencode/plugin": "^2.0.26"
+  },
+  "description": "Zero-dependency lint & format orchestrator over MCP — one pure-Rust binary wrapping ruff/oxc/taplo/rumdl and more as in-process backends, plus a tree-sitter generic tier for everything else. Exposes lint/format/cache tools with structured JSON output.",
+  "exports": {
+    ".": "./.opencode/plugins/poly.js"
+  },
+  "files": [
+    ".opencode/ai-rulez-bundle.json",
+    ".opencode/ai-rulez-content.js",
+    ".opencode/commands/poly-check.md",
+    ".opencode/commands/poly-fix.md",
+    ".opencode/plugins/poly.js",
+    ".opencode/skills/poly-lint-and-format/SKILL.md",
+    ".opencode/skills/poly-lint-and-format/index.md",
+    ".opencode/skills/poly-mcp/SKILL.md",
+    ".opencode/skills/poly-mcp/index.md",
+    ".opencode/skills/poly-orchestrator/SKILL.md",
+    ".opencode/skills/poly-orchestrator/index.md",
+    ".opencode/skills/poly-overview/SKILL.md",
+    ".opencode/skills/poly-overview/index.md",
+    ".opencode/skills/poly-tiers-and-scope/SKILL.md",
+    ".opencode/skills/poly-tiers-and-scope/index.md",
+    ".pi/prompts/poly-check.md",
+    ".pi/prompts/poly-fix.md",
+    ".pi/skills/poly-lint-and-format/SKILL.md",
+    ".pi/skills/poly-lint-and-format/index.md",
+    ".pi/skills/poly-mcp/SKILL.md",
+    ".pi/skills/poly-mcp/index.md",
+    ".pi/skills/poly-orchestrator/SKILL.md",
+    ".pi/skills/poly-orchestrator/index.md",
+    ".pi/skills/poly-overview/SKILL.md",
+    ".pi/skills/poly-overview/index.md",
+    ".pi/skills/poly-tiers-and-scope/SKILL.md",
+    ".pi/skills/poly-tiers-and-scope/index.md",
+    "README.md",
+    "assets/"
+  ],
+  "homepage": "https://github.com/Goldziher/poly",
+  "keywords": [
+    "code-quality",
+    "formatter",
+    "linter",
+    "mcp",
+    "pi-package",
+    "rust"
+  ],
+  "license": "MIT",
+  "main": ".opencode/plugins/poly.js",
+  "name": "@goldziher/opencode-poly",
+  "pi": {
+    "prompts": [
+      "./.pi/prompts/poly-check.md",
+      "./.pi/prompts/poly-fix.md"
+    ],
+    "skills": [
+      "./.pi/skills/poly-lint-and-format",
+      "./.pi/skills/poly-mcp",
+      "./.pi/skills/poly-orchestrator",
+      "./.pi/skills/poly-overview",
+      "./.pi/skills/poly-tiers-and-scope"
+    ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Goldziher/poly"
+  },
+  "type": "module",
+  "version": "0.29.0"
+}

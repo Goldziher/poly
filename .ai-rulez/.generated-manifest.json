@@ -1,0 +1,217 @@
+{
+  "version": "1",
+  "files": [
+    ".agents/skills/code-quality-standards/SKILL.md",
+    ".agents/skills/dependency-awareness/SKILL.md",
+    ".agents/skills/error-handling/SKILL.md",
+    ".agents/skills/incremental-approach/SKILL.md",
+    ".agents/skills/observability-standards/SKILL.md",
+    ".agents/skills/owasp-quick-reference/SKILL.md",
+    ".agents/skills/rust-conventions/SKILL.md",
+    ".agents/skills/task-runner/SKILL.md",
+    ".agents/skills/tdd-workflow/SKILL.md",
+    ".agents/skills/testing-conventions/SKILL.md",
+    ".claude/agents/backend-author.md",
+    ".claude/agents/code-reviewer.md",
+    ".claude/agents/devops-engineer.md",
+    ".claude/agents/docs-writer.md",
+    ".claude/agents/release-engineer.md",
+    ".claude/agents/rust-perf-engineer.md",
+    ".claude/agents/security-auditor.md",
+    ".claude/agents/test-writer.md",
+    ".claude/skills/code-quality-standards/SKILL.md",
+    ".claude/skills/dependency-awareness/SKILL.md",
+    ".claude/skills/error-handling/SKILL.md",
+    ".claude/skills/incremental-approach/SKILL.md",
+    ".claude/skills/iterate/SKILL.md",
+    ".claude/skills/observability-standards/SKILL.md",
+    ".claude/skills/owasp-quick-reference/SKILL.md",
+    ".claude/skills/parallelize/SKILL.md",
+    ".claude/skills/rust-conventions/SKILL.md",
+    ".claude/skills/task-runner/SKILL.md",
+    ".claude/skills/tdd-workflow/SKILL.md",
+    ".claude/skills/testing-conventions/SKILL.md",
+    ".codex/agents/backend-author.toml",
+    ".codex/agents/code-reviewer.toml",
+    ".codex/agents/devops-engineer.toml",
+    ".codex/agents/docs-writer.toml",
+    ".codex/agents/release-engineer.toml",
+    ".codex/agents/rust-perf-engineer.toml",
+    ".codex/agents/security-auditor.toml",
+    ".codex/agents/test-writer.toml",
+    ".cursor/agents/backend-author.md",
+    ".cursor/agents/code-reviewer.md",
+    ".cursor/agents/devops-engineer.md",
+    ".cursor/agents/docs-writer.md",
+    ".cursor/agents/release-engineer.md",
+    ".cursor/agents/rust-perf-engineer.md",
+    ".cursor/agents/security-auditor.md",
+    ".cursor/agents/test-writer.md",
+    ".cursor/commands/iterate.md",
+    ".cursor/commands/parallelize.md",
+    ".cursor/mcp.json",
+    ".factory/commands/iterate.md",
+    ".factory/commands/parallelize.md",
+    ".factory/droids/backend-author.md",
+    ".factory/droids/code-reviewer.md",
+    ".factory/droids/devops-engineer.md",
+    ".factory/droids/docs-writer.md",
+    ".factory/droids/release-engineer.md",
+    ".factory/droids/rust-perf-engineer.md",
+    ".factory/droids/security-auditor.md",
+    ".factory/droids/test-writer.md",
+    ".factory/mcp.json",
+    ".factory/skills/code-quality-standards/SKILL.md",
+    ".factory/skills/dependency-awareness/SKILL.md",
+    ".factory/skills/error-handling/SKILL.md",
+    ".factory/skills/incremental-approach/SKILL.md",
+    ".factory/skills/observability-standards/SKILL.md",
+    ".factory/skills/owasp-quick-reference/SKILL.md",
+    ".factory/skills/rust-conventions/SKILL.md",
+    ".factory/skills/task-runner/SKILL.md",
+    ".factory/skills/tdd-workflow/SKILL.md",
+    ".factory/skills/testing-conventions/SKILL.md",
+    ".gemini/agents/backend-author.md",
+    ".gemini/agents/code-reviewer.md",
+    ".gemini/agents/devops-engineer.md",
+    ".gemini/agents/docs-writer.md",
+    ".gemini/agents/release-engineer.md",
+    ".gemini/agents/rust-perf-engineer.md",
+    ".gemini/agents/security-auditor.md",
+    ".gemini/agents/test-writer.md",
+    ".gemini/settings.json",
+    ".github/agents/backend-author.agent.md",
+    ".github/agents/code-reviewer.agent.md",
+    ".github/agents/devops-engineer.agent.md",
+    ".github/agents/docs-writer.agent.md",
+    ".github/agents/release-engineer.agent.md",
+    ".github/agents/rust-perf-engineer.agent.md",
+    ".github/agents/security-auditor.agent.md",
+    ".github/agents/test-writer.agent.md",
+    ".github/prompts/iterate.prompt.md",
+    ".github/prompts/parallelize.prompt.md",
+    ".kimi-code/agents/backend-author.md",
+    ".kimi-code/agents/code-reviewer.md",
+    ".kimi-code/agents/devops-engineer.md",
+    ".kimi-code/agents/docs-writer.md",
+    ".kimi-code/agents/release-engineer.md",
+    ".kimi-code/agents/rust-perf-engineer.md",
+    ".kimi-code/agents/security-auditor.md",
+    ".kimi-code/agents/test-writer.md",
+    ".kimi-code/mcp.json",
+    ".mcp.json",
+    ".opencode/agents/backend-author.md",
+    ".opencode/agents/code-reviewer.md",
+    ".opencode/agents/devops-engineer.md",
+    ".opencode/agents/docs-writer.md",
+    ".opencode/agents/release-engineer.md",
+    ".opencode/agents/rust-perf-engineer.md",
+    ".opencode/agents/security-auditor.md",
+    ".opencode/agents/test-writer.md",
+    ".opencode/commands/iterate.md",
+    ".opencode/commands/parallelize.md",
+    ".pi/agents/backend-author.md",
+    ".pi/agents/code-reviewer.md",
+    ".pi/agents/devops-engineer.md",
+    ".pi/agents/docs-writer.md",
+    ".pi/agents/release-engineer.md",
+    ".pi/agents/rust-perf-engineer.md",
+    ".pi/agents/security-auditor.md",
+    ".pi/agents/test-writer.md",
+    ".pi/prompts/iterate.md",
+    ".pi/prompts/parallelize.md",
+    ".vscode/mcp.json",
+    "AGENTS.md",
+    "CLAUDE.md"
+  ],
+  "merged": {
+    ".cursor/mcp.json": [],
+    ".factory/mcp.json": [],
+    ".gemini/settings.json": [],
+    ".kimi-code/mcp.json": [],
+    ".mcp.json": [],
+    ".vscode/mcp.json": []
+  },
+  "servers": {
+    ".codex/config.toml": [
+      [
+        "mcp_servers",
+        "ai-rulez"
+      ],
+      [
+        "mcp_servers",
+        "poly"
+      ]
+    ],
+    ".cursor/mcp.json": [
+      [
+        "mcpServers",
+        "ai-rulez"
+      ],
+      [
+        "mcpServers",
+        "poly"
+      ]
+    ],
+    ".factory/mcp.json": [
+      [
+        "mcpServers",
+        "ai-rulez"
+      ],
+      [
+        "mcpServers",
+        "poly"
+      ]
+    ],
+    ".gemini/settings.json": [
+      [
+        "mcpServers",
+        "ai-rulez"
+      ],
+      [
+        "mcpServers",
+        "poly"
+      ]
+    ],
+    ".kimi-code/mcp.json": [
+      [
+        "mcpServers",
+        "ai-rulez"
+      ],
+      [
+        "mcpServers",
+        "poly"
+      ]
+    ],
+    ".mcp.json": [
+      [
+        "mcpServers",
+        "ai-rulez"
+      ],
+      [
+        "mcpServers",
+        "poly"
+      ]
+    ],
+    ".pi/mcp.json": [
+      [
+        "mcpServers",
+        "ai-rulez"
+      ],
+      [
+        "mcpServers",
+        "poly"
+      ]
+    ],
+    "opencode.json": [
+      [
+        "mcp",
+        "ai-rulez"
+      ],
+      [
+        "mcp",
+        "poly"
+      ]
+    ]
+  }
+}

@@ -91,12 +91,12 @@ identical behavior against the live worktree.
 
 ## Agent distribution
 
-poly publishes its own Claude/Codex plugin (`Goldziher/poly` marketplace) registering `poly mcp`
-as a stdio server plus 5 skills and 2 slash commands — generated from `.ai-rulez/` into
-`.claude-plugin/`/`.codex-plugin/` (never hand-edit the generated files). Install with
-`/plugin marketplace add Goldziher/poly` then `/plugin install poly@poly`. The plugin assumes
-`poly` is already on `PATH`; it does not bundle a binary. Bump the lock-step version with
-`scripts/release-bump.sh <version>`.
+Public plugin content lives in `plugin/.ai-rulez/`; contributor rules, context and agents remain
+in the root `.ai-rulez/`. `ai-rulez generate --plugin` emits eleven runtime profiles under
+`plugin/` and repository marketplace indexes. `scripts/sync_public_skills.py` mirrors the
+five native public skills to `skills/`, with an ownership manifest and resource checks.
+The MCP command is `poly mcp`; Pi uses CLI workflows. Release versions track the Cargo
+workspace through `scripts/release-bump.sh` and `scripts/sync_plugin_version.py`.
 
 ## Configuration
 
@@ -162,17 +162,3 @@ mechanism `[per-file-ignores]` (ADR 0017) still exists for whole-file exemptions
 A `--format json`/`toon` consumer must check the exit code, not just the payload — and gate on
 `summary.checked`, not on `results.len()`.
 
-## CI
-
-`.github/workflows/ci.yaml` runs five jobs on push/PR to `main`: `cargo fmt --all --check`;
-`cargo clippy --workspace --exclude conformance --all-targets -- -D warnings` and
-`cargo test --workspace --exclude conformance --no-fail-fast`, both on a Linux/macOS/Windows
-matrix; `dogfood`, which runs the binary against poly's own repo (`poly lint --no-workspace .`
-then `poly fmt --check .`) on Linux and Windows; and `cargo-deny check`.
-`.github/workflows/publish.yaml` builds and uploads the release artifacts.
-
-The hardening harness (`task harden`, `scripts/harden.sh`) is **not** a CI job. It clones large
-third-party trees and its per-rule counts inform a decision rather than pass or fail a commit, so
-it is run deliberately — before a release, or when a rule's severity is in question.
-
-Run `poly fmt --check .` and `poly lint .` after changes to verify compliance.

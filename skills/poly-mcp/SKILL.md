@@ -1,18 +1,16 @@
 ---
-type: Playbook
-title: Poly Mcp
 description: The poly MCP server — the eleven tools and which are read-only vs mutating, the paths/exclude/config/format params, async Tasks for the whole-project phase, and the isError contract
-x-ai-rulez:
-  kind: skill
-  id: poly-mcp
-  metadata:
-    priority: medium
+name: poly-mcp
+license: MIT
+metadata:
+    author: Goldziher
+    repository: https://github.com/Goldziher/poly
 ---
 
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-Content-Hash: blake3:73aee59ac62c5690855553ec6d8ddaa82ee2837104a6ce611e652f0a5b249f6a
-Source-Hash: blake3:0cf7fb45f47033f0f2a58b8f804bd7bb9ae38fab2522eae786839c0e012b4bed
+Content-Hash: blake3:3e891f0be46a80c56b06b9a9683a91b16c293cdb33edb5aebefaa7c680be3b3c
+Source-Hash: blake3:dfded972ef643f6aecba82394701f76b7c824d3336dc8724b562e8a185d85fc9
 Schema-Version: v1
 -->
 

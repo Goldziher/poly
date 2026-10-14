@@ -1,0 +1,18 @@
+[[marketplaces]]
+name = "basemind"
+source = "Goldziher/basemind"
+type = "github"
+
+[[marketplaces]]
+name = "poly"
+source = "Goldziher/poly"
+type = "github"
+
+[marketplace]
+name = "poly"
+description = "Poly lint and format tools for coding agents."
+members = ["plugin"]
+
+[marketplace.owner]
+name = "Na'aman Hirschfeld"
+email = "nhirschfeld@gmail.com"

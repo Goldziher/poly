@@ -3,93 +3,30 @@ name = "poly"
 description = "Universal zero-dependency linter & formatter — a single pure-Rust binary (poly) wrapping best-in-class tools as in-process backends, with a tree-sitter generic tier for everything else."
 gitignore = true
 
-presets = ["claude", "codex", "opencode", "pi"]
+default_layers = ["plugins"]
+presets = ["claude", "cursor", "codex", "gemini", "kimi", "opencode", "factory", "hermes", "pi", "copilot"]
 
 builtins = ["rust", "cicd", "documentation", "observability", "default-commands"]
 
-[plugin]
-name = "poly"
-version = "0.29.0"
-display_name = "poly"
-description = "Zero-dependency lint & format orchestrator over MCP — one pure-Rust binary wrapping ruff/oxc/taplo/rumdl and more as in-process backends, plus a tree-sitter generic tier for everything else. Exposes lint/format/cache tools with structured JSON output."
-homepage = "https://github.com/Goldziher/poly"
-repository = "https://github.com/Goldziher/poly"
-license = "MIT"
-category = "developer-tools"
-keywords = ["linter", "formatter", "mcp", "code-quality", "rust"]
-tags = ["mcp", "linter", "formatter", "tree-sitter", "git-hooks", "ci"]
-
-# Hermes is deliberately excluded: its Python package overlaps the binary wrapper. ~keep
-# Pi shares the OpenCode npm package and uses the CLI through skills and prompts. ~keep
-#
-# `content_root` is deliberately absent: setting it to "." made ai-rulez look
-# for skills/, commands/ and agents/ at the repository root, where poly has
-# none — so the plugin shipped zero skills and zero slash commands while its
-# README and ADR 0022 both claimed five and two. Leaving it unset uses the
-# .ai-rulez governance tree, which is where poly's content actually lives.
-runtimes = ["claude", "cursor", "codex", "gemini", "kimi", "opencode", "factory", "pi"]
-
-[plugin.author]
-name = "Na'aman Hirschfeld"
-email = "nhirschfeld@gmail.com"
-url = "https://github.com/Goldziher"
-
-[plugin.interface]
-display_name = "poly"
-short_description = "Zero-dependency lint & format orchestrator over MCP"
-long_description = "poly is a single pure-Rust binary that lints and formats a whole repository across languages — wrapping ruff/oxc/taplo/rumdl and more as in-process backends, with a tree-sitter generic tier for everything else. Its MCP server exposes lint/format/cache tools with structured JSON output, no subprocesses and no system dependencies by default."
-developer_name = "Na'aman Hirschfeld"
-category = "Developer Tools"
-capabilities = ["Interactive", "Read"]
-default_prompt = [
-    "Lint this repository with poly and summarize the findings.",
-    "Check formatting drift with poly and list the affected files.",
-    "Apply poly's lint and format autofixes, then report what remains.",
-    "Show poly's effective configuration for this repo.",
-]
-website_url = "https://github.com/Goldziher/poly"
-brand_color = "#F97316"
-
-
-# The distributed plugin registers only poly's own server. ai-rulez is a
-# repo-authoring tool, not something a poly consumer should have spawned for
-# them, so it is intentionally not listed here (add it to a local, non-generated
-# MCP config if you author rules in this repo).
 [[mcp_servers]]
 name = "poly"
-description = "Lint, format, and cache over MCP — the poly binary's stdio server."
+description = "Lint, format, and cache over MCP."
 command = "poly"
 args = ["mcp"]
 
-[[marketplaces]]
-name = "basemind"
-source = "Goldziher/basemind"
-type = "github"
-
-[[marketplaces]]
-name = "poly"
-source = "Goldziher/poly"
-type = "github"
-
-[[plugins]]
-marketplace = "basemind"
-name = "basemind"
-scope = "project"
-enabled = true
-
-[[plugins]]
-marketplace = "poly"
-name = "poly"
-scope = "project"
-enabled = true
-
-# Pinned by `ai-rulez migrate v5`: the 4.x default. Remove this line to take the v5 default.
-[header]
-text = """AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-Source: .ai-rulez/config.toml
-Regenerate: pnpm dlx ai-rulez@5.0.1 generate
-Use MCP server: pnpm dlx ai-rulez@5.0.1 mcp"""
-hashes = "full"
+[[mcp_servers]]
+name = "ai-rulez"
+command = "ai-rulez"
+args = ["mcp"]
 
 [mcp]
-self_server_command = ["pnpm", "dlx", "ai-rulez@5.0.1", "mcp"]
+self_server_command = ["ai-rulez", "mcp"]
+
+[codex]
+project_doc_max_bytes = 131072
+
+[lock]
+include_outputs = false
+
+[lint.load_budgets]
+"codex-agents-chain" = 131072

@@ -1,0 +1,60 @@
+[plugin]
+name = "poly"
+version = "0.29.0"
+include = ["assets/**"]
+display_name = "poly"
+description = "Zero-dependency lint & format orchestrator over MCP — one pure-Rust binary wrapping ruff/oxc/taplo/rumdl and more as in-process backends, plus a tree-sitter generic tier for everything else. Exposes lint/format/cache tools with structured JSON output."
+homepage = "https://github.com/Goldziher/poly"
+repository = "https://github.com/Goldziher/poly"
+license = "MIT"
+category = "developer-tools"
+keywords = ["linter", "formatter", "mcp", "code-quality", "rust"]
+tags = ["mcp", "linter", "formatter", "tree-sitter", "git-hooks", "ci"]
+
+runtimes = ["claude", "cursor", "codex", "gemini", "kimi", "opencode", "factory", "hermes", "pi", "agent-plugins", "copilot"]
+
+[plugin.author]
+name = "Na'aman Hirschfeld"
+email = "nhirschfeld@gmail.com"
+url = "https://github.com/Goldziher"
+
+[plugin.interface]
+display_name = "poly"
+short_description = "Zero-dependency lint & format orchestrator over MCP"
+long_description = "poly is a single pure-Rust binary that lints and formats a whole repository across languages — wrapping ruff/oxc/taplo/rumdl and more as in-process backends, with a tree-sitter generic tier for everything else. Its MCP server exposes lint/format/cache tools with structured JSON output. Per-file engines run in-process; optional native and workspace toolchains can run subprocesses."
+developer_name = "Na'aman Hirschfeld"
+category = "Developer Tools"
+capabilities = ["Read", "Write"]
+default_prompt = [
+    "Lint this repository with poly and summarize the findings.",
+    "Check formatting drift with poly and list the affected files.",
+    "Apply poly's lint and format autofixes, then report what remains.",
+    "Show poly's effective configuration for this repo.",
+]
+website_url = "https://github.com/Goldziher/poly"
+brand_color = "#F97316"
+
+
+
+[[plugin.mcp]]
+name = "poly"
+command = "poly"
+args = ["mcp"]
+
+[plugin.codex]
+manifest = "both"
+marketplace = true
+
+[plugin.cursor]
+marketplace = true
+
+[plugin.gemini]
+commands = true
+context_file_name = "assets/GEMINI.md"
+
+[plugin.pi]
+package_json = "merge"
+package_name = "@goldziher/opencode-poly"
+
+[plugin.hermes]
+dependencies = ["mcp==1.28.1", "PyYAML==6.0.3"]

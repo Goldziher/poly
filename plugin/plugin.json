@@ -1,0 +1,44 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "poly",
+  "version": "0.29.0",
+  "description": "Zero-dependency lint & format orchestrator over MCP — one pure-Rust binary wrapping ruff/oxc/taplo/rumdl and more as in-process backends, plus a tree-sitter generic tier for everything else. Exposes lint/format/cache tools with structured JSON output.",
+  "author": {
+    "name": "Na'aman Hirschfeld",
+    "email": "nhirschfeld@gmail.com",
+    "url": "https://github.com/Goldziher"
+  },
+  "homepage": "https://github.com/Goldziher/poly",
+  "repository": "https://github.com/Goldziher/poly",
+  "license": "MIT",
+  "keywords": [
+    "linter",
+    "formatter",
+    "mcp",
+    "code-quality",
+    "rust"
+  ],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "brandColor": "#F97316",
+        "capabilities": [
+          "Read",
+          "Write"
+        ],
+        "category": "Developer Tools",
+        "defaultPrompt": [
+          "Lint this repository with poly and summarize the findings.",
+          "Check formatting drift with poly and list the affected files.",
+          "Apply poly's lint and format autofixes, then report what remains.",
+          "Show poly's effective configuration for this repo."
+        ],
+        "developerName": "Na'aman Hirschfeld",
+        "displayName": "poly",
+        "longDescription": "poly is a single pure-Rust binary that lints and formats a whole repository across languages — wrapping ruff/oxc/taplo/rumdl and more as in-process backends, with a tree-sitter generic tier for everything else. Its MCP server exposes lint/format/cache tools with structured JSON output. Per-file engines run in-process; optional native and workspace toolchains can run subprocesses.",
+        "shortDescription": "Zero-dependency lint & format orchestrator over MCP",
+        "websiteURL": "https://github.com/Goldziher/poly"
+      }
+    }
+  }
+}

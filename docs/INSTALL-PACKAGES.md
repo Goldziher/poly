@@ -145,7 +145,7 @@ be silent — `scoop install` would still succeed and produce no command.
 `scripts/release-bump.sh <version>` moves every surface at once: `Cargo.toml`, the npm
 umbrella package **and each of its six exact `optionalDependencies` pins**, the six
 platform `package.json` files, `pip-package/pyproject.toml`,
-`pip-package/polylint/__init__.py`, and `.ai-rulez/config.toml`. It then asserts each
+`pip-package/polylint/__init__.py`, and `plugin/.ai-rulez/config.plugins.toml`. It then asserts each
 substitution actually landed, and that the pinned package names and the `platforms/`
 directories describe the same set — a pin left behind would resolve to the previous
 release's binary under the new version, which installs cleanly and is wrong.
@@ -160,13 +160,22 @@ task package:wheels    # build a platform wheel from target/debug/poly
 
 ### Agent plugin package
 
-The root `package.json` is the combined OpenCode/Pi package, `@goldziher/opencode-poly`,
+`plugin/package.json` is the combined OpenCode/Pi package, `@goldziher/opencode-poly`,
 separate from the `@goldziher/polylint` binary wrapper. `publish_plugin_npm` checks
 the tagged manifest version, ai-rulez provenance, and the packed five Pi skills,
 two Pi prompts, and OpenCode adapter before publishing.
 
 Configure its npm trusted publisher for `Goldziher/poly`, workflow `publish.yaml`,
-with no environment. The workflow skips an unbootstrapped package with a notice;
-its first publication requires `pnpm publish --access public` from the repository
-root after generation and verification. Git-based Pi installation needs no npm
+with no environment. The workflow rejects an unbootstrapped package with an actionable error;
+its first publication requires publishing from the repository
+root using `pnpm --dir plugin publish --access public` after generation and verification.
+The private root `package.json` aliases this bundle for Git-based Pi installs, which need no npm
 publication. The plugin package does not contain the `poly` binary.
+
+The generated Hermes wheel is `poly-hermes-plugin`. Its PyPI trusted or pending publisher
+must name owner `Goldziher`, repository `poly`, workflow `publish.yaml`, environment `pypi`.
+Configure that account-side publisher before the next release. Neither plugin package is
+currently available on its registry; local bundles and Git Pi installation work now.
+The release pipeline validates exact wheel/npm resource bytes before registry idempotency
+checks, then requires all three plugin distribution jobs to succeed. No registry release
+is created by this migration.

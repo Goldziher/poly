@@ -17,39 +17,42 @@ pip-package/*.egg-info/
 __pycache__/
 
 
-# `ai-rulez generate --plugin` emits one bundle per runtime named in
-# .ai-rulez/config.toml [plugin] runtimes. All eight are committed — a
-# marketplace install serves these files directly, so an ignored bundle is a
-# harness poly silently does not support. .ai-rulez-generated.json is the BLAKE3
-# provenance sidecar `ai-rulez verify --plugin` checks against, so it is
-# committed too.
-#
-# Hermes is deliberately not a runtime (see the comment on `runtimes`); ignore
-# its output so a stray generation cannot be committed by accident.
-.hermes/
+# Product bundles under plugin/ are committed for direct marketplace installs. ~keep
+# Root Hermes outputs describe contributor governance and remain local. ~keep
+/.hermes/
 
 # BEGIN ai-rulez (DO NOT EDIT - managed by ai-rulez)
 .agents/skills/
 .ai-rulez/.generated-manifest.json
 .ai-rulez/.generated-manifest.local.json
-.ai-rulez/config.local.*
 .ai-rulez/local/
-.claude/
-.codex/
+.claude/agents/
+.claude/skills/
+.codex/agents/
+.cursor/agents/
+.cursor/commands/
+.cursor/mcp.json
+.factory/commands/
+.factory/droids/
+.factory/mcp.json
+.factory/skills/
+.gemini/agents/
+.gemini/settings.json
+.github/agents/
+.github/prompts/iterate.prompt.md
+.github/prompts/parallelize.prompt.md
+.kimi-code/agents/
+.kimi-code/mcp.json
 .mcp.json
 .opencode/agents/
 .opencode/commands/
 .pi/agents/
-.pi/mcp.json
+.pi/prompts/
+.vscode/mcp.json
 AGENTS.md
 CLAUDE.md
 # END ai-rulez
 
-# Distributable Pi prompts override the contributor-output ignore above. ~keep
-!.pi/prompts/
-.pi/prompts/*
-!.pi/prompts/poly-check.md
-!.pi/prompts/poly-fix.md
 /*.tgz
 
 opencode.json

@@ -1,0 +1,9 @@
+project_doc_max_bytes = 131072
+
+[mcp_servers.poly]
+args = ["mcp"]
+command = "poly"
+
+[mcp_servers.ai-rulez]
+args = ["mcp"]
+command = "ai-rulez"

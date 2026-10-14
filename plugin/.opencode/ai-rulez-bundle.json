@@ -1,0 +1,42 @@
+{
+  "plugin": "poly",
+  "mcp": {
+    "poly": {
+      "type": "local",
+      "command": [
+        "poly",
+        "mcp"
+      ]
+    }
+  },
+  "skills": {
+    "poly-lint-and-format": {
+      "name": "poly-lint-and-format",
+      "description": "Running poly lint / poly fmt — --fix, --format pretty|json|toon, --exclude, --config, exit codes, inline suppression, and the check → read-json → fix → re-check loop"
+    },
+    "poly-mcp": {
+      "name": "poly-mcp",
+      "description": "The poly MCP server — the eleven tools and which are read-only vs mutating, the paths/exclude/config/format params, async Tasks for the whole-project phase, and the isError contract"
+    },
+    "poly-orchestrator": {
+      "name": "poly-orchestrator",
+      "description": "Use poly as the single lint/format gate instead of invoking ruff/oxlint/rustfmt directly — one poly.toml, poly hooks install, poly migrate, CI via the Goldziher/poly setup Action"
+    },
+    "poly-overview": {
+      "name": "poly-overview",
+      "description": "What poly is — the native, tree-sitter, native-toolchain, quality, and built-in-rule-pack tiers, language coverage, and when to reach for it"
+    },
+    "poly-tiers-and-scope": {
+      "name": "poly-tiers-and-scope",
+      "description": "poly's coverage tiers (native / tree-sitter / native-toolchain / quality / built-in ast-grep pack), the per-file tier vs the whole-project phase (--no-workspace), staged isolation (ADR 0019), and hierarchical poly.toml in monorepos (ADR 0018)"
+    }
+  },
+  "commands": {
+    "poly-check": {
+      "description": "Lint and check formatting with poly — apply no fixes; summarize findings and drift"
+    },
+    "poly-fix": {
+      "description": "Apply poly lint --fix and fmt --fix, then re-check and report what changed and what remains"
+    }
+  }
+}

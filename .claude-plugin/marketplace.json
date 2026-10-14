@@ -1,40 +1,15 @@
 {
   "name": "poly",
-  "description": "Zero-dependency lint \u0026 format orchestrator over MCP — one pure-Rust binary wrapping ruff/oxc/taplo/rumdl and more as in-process backends, plus a tree-sitter generic tier for everything else. Exposes lint/format/cache tools with structured JSON output.",
+  "description": "Poly lint and format tools for coding agents.",
   "owner": {
     "name": "Na'aman Hirschfeld",
-    "email": "nhirschfeld@gmail.com",
-    "url": "https://github.com/Goldziher"
+    "email": "nhirschfeld@gmail.com"
   },
   "plugins": [
     {
       "name": "poly",
-      "description": "Zero-dependency lint \u0026 format orchestrator over MCP — one pure-Rust binary wrapping ruff/oxc/taplo/rumdl and more as in-process backends, plus a tree-sitter generic tier for everything else. Exposes lint/format/cache tools with structured JSON output.",
-      "version": "0.29.0",
-      "source": "./",
-      "category": "developer-tools",
-      "license": "MIT",
-      "homepage": "https://github.com/Goldziher/poly",
-      "keywords": [
-        "linter",
-        "formatter",
-        "mcp",
-        "code-quality",
-        "rust"
-      ],
-      "tags": [
-        "mcp",
-        "linter",
-        "formatter",
-        "tree-sitter",
-        "git-hooks",
-        "ci"
-      ],
-      "author": {
-        "name": "Na'aman Hirschfeld",
-        "email": "nhirschfeld@gmail.com",
-        "url": "https://github.com/Goldziher"
-      }
+      "description": "Zero-dependency lint & format orchestrator over MCP — one pure-Rust binary wrapping ruff/oxc/taplo/rumdl and more as in-process backends, plus a tree-sitter generic tier for everything else. Exposes lint/format/cache tools with structured JSON output.",
+      "source": "./plugin"
     }
   ]
 }

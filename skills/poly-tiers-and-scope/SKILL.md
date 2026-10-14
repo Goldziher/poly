@@ -1,18 +1,16 @@
 ---
-type: Playbook
-title: Poly Tiers And Scope
 description: poly's coverage tiers (native / tree-sitter / native-toolchain / quality / built-in ast-grep pack), the per-file tier vs the whole-project phase (--no-workspace), staged isolation (ADR 0019), and hierarchical poly.toml in monorepos (ADR 0018)
-x-ai-rulez:
-  kind: skill
-  id: poly-tiers-and-scope
-  metadata:
-    priority: medium
+name: poly-tiers-and-scope
+license: MIT
+metadata:
+    author: Goldziher
+    repository: https://github.com/Goldziher/poly
 ---
 
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-Content-Hash: blake3:f5e1e896a51f54ec2e2a1341644e17f946e80c93ec214492cc0f45bc4668d869
-Source-Hash: blake3:0cf7fb45f47033f0f2a58b8f804bd7bb9ae38fab2522eae786839c0e012b4bed
+Content-Hash: blake3:ad140ec77b0aed2a08b9c7261e16d5f9cde428c88e6e249a9891a24e6f35b964
+Source-Hash: blake3:dfded972ef643f6aecba82394701f76b7c824d3336dc8724b562e8a185d85fc9
 Schema-Version: v1
 -->
 

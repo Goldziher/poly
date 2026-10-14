@@ -73,7 +73,7 @@ jobs:
             exit 1
           fi
 
-          plugin_version="$(jq -r '.version' package.json)"
+          plugin_version="$(jq -r '.version' plugin/package.json)"
           if [ "$plugin_version" != "$target_version" ]; then
             echo "::error::Agent plugin version mismatch: expected $target_version, got $plugin_version"
             exit 1
@@ -702,29 +702,17 @@ jobs:
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || '' }}
 
-      - name: Checkout Pi-capable ai-rulez
-        uses: actions/checkout@v7
+      - name: Install reviewed ai-rulez
+        uses: xberg-io/actions/setup-ai-rulez@98adf87f1ed4c62a57ff56f9010d62faf42d4db6
         with:
-          repository: Goldziher/ai-rulez
-          ref: 8dfebd2b8b3700ff134f86886d5b44dca82abc18
-          path: .release-tools/ai-rulez
+          ai-rulez-version: "5.3.0"
+          source-revision: "1dd46d774f156f3d170ecd1b702598b12d1eaf5b"
 
-      - name: Setup Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: .release-tools/ai-rulez/go.mod
-          cache-dependency-path: .release-tools/ai-rulez/go.sum
-
-      - name: Build and verify the plugin generator
+      - name: Verify generated product bundles and public skills
         run: |
-          set -euo pipefail
-          generator_dir="$PWD/.release-tools/ai-rulez"
-          (
-            cd "$generator_dir"
-            eval "$(bash scripts/setup-liter-llm.sh)"
-            go build -o "$RUNNER_TEMP/ai-rulez" ./cmd/ai-rulez
-          )
-          "$RUNNER_TEMP/ai-rulez" verify --plugin
+          ai-rulez verify --plugin
+          python3 scripts/sync_public_skills.py --check
+          python3 scripts/sync_plugin_version.py --check
 
       - uses: pnpm/action-setup@v4
         with:
@@ -733,13 +721,13 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: "22"
+          node-version: "24"
           registry-url: "https://registry.npmjs.org"
 
       - name: Verify packed Pi and OpenCode resources
         run: |
           set -euo pipefail
-          pnpm pack --json --pack-destination "$RUNNER_TEMP" > "$RUNNER_TEMP/plugin-pack.json"
+          pnpm --dir plugin pack --json --pack-destination "$RUNNER_TEMP" > "$RUNNER_TEMP/plugin-pack.json"
           node - "$RUNNER_TEMP/plugin-pack.json" <<'JS'
           const fs = require('node:fs');
           const files = JSON.parse(fs.readFileSync(process.argv[2])).files.map((file) => file.path);
@@ -751,14 +739,19 @@ jobs:
           console.log(`Packed ${skills.length} Pi skills, ${prompts.length} prompts, and the OpenCode adapter`);
           JS
 
+      - name: Verify exact packaged Pi and OpenCode resource bytes
+        run: |
+          archive="$(jq -r '.filename' "$RUNNER_TEMP/plugin-pack.json")"
+          python3 scripts/verify_plugin_distribution.py npm "$RUNNER_TEMP/$archive"
+
       - name: Publish the agent package
         run: |
           set -euo pipefail
-          name="$(jq -r '.name' package.json)"
+          name="$(jq -r '.name' plugin/package.json)"
           version="${{ needs.meta.outputs.version }}"
           if ! pnpm view "$name" version >/dev/null 2>&1; then
-            echo "::notice::$name needs a first manual publish and trusted publisher setup; Git Pi installation remains available."
-            exit 0
+            echo "::error::$name needs a first manual publish and trusted publisher setup; see docs/INSTALL-PACKAGES.md."
+            exit 1
           fi
           if pnpm view "$name@$version" version >/dev/null 2>&1; then
             echo "$name@$version already published; skipping"
@@ -770,7 +763,118 @@ jobs:
           esac
           unset NODE_AUTH_TOKEN
           archive="$(jq -r '.filename' "$RUNNER_TEMP/plugin-pack.json")"
-          pnpm publish --no-git-checks "$RUNNER_TEMP/$archive" --provenance --access public --tag "$npm_tag"
+          for attempt in 1 2 3; do
+            if pnpm publish --no-git-checks "$RUNNER_TEMP/$archive" --provenance --access public --tag "$npm_tag"; then
+              break
+            fi
+            if pnpm view "$name@$version" version >/dev/null 2>&1; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+            sleep 5
+          done
+
+  publish_plugin_artifacts:
+    name: Publish all agent runtime archives and marketplaces
+    needs: [meta, finalize_release]
+    if: needs.finalize_release.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.meta.outputs.tag }}
+          fetch-depth: 0
+      - name: Install ai-rulez
+        uses: xberg-io/actions/setup-ai-rulez@98adf87f1ed4c62a57ff56f9010d62faf42d4db6
+        with:
+          ai-rulez-version: "5.3.0"
+          source-revision: "1dd46d774f156f3d170ecd1b702598b12d1eaf5b"
+      - name: Verify public skill exports
+        run: python3 scripts/sync_public_skills.py --check
+      - name: Package all supported plugin runtimes
+        uses: xberg-io/actions/package-ai-rulez-plugin@66e9a172c28ae7e57496fe92de1ab74f2a604194
+        with:
+          cursor-marketplace: "true"
+          tag: ${{ needs.meta.outputs.tag }}
+          config-directory: .ai-rulez
+          version-sync-script: scripts/sync_plugin_version.py
+      - name: Archive verified runtime bundles and marketplace indexes
+        shell: bash
+        env:
+          PLUGIN_TAG: ${{ needs.meta.outputs.tag }}
+          PLUGIN_PRODUCT: poly
+        run: |
+          set -euo pipefail
+          test -n "$PLUGIN_TAG"
+          bundle="dist/${PLUGIN_PRODUCT}-plugins-${PLUGIN_TAG//\//-}.tar.gz"
+          tar --sort=name --mtime="@$(git show -s --format=%ct HEAD)" \
+            --owner=0 --group=0 --numeric-owner -cf - -C dist/plugin . | gzip -n > "$bundle"
+          (cd dist && sha256sum "$(basename "$bundle")") > "$bundle.sha256"
+      - name: Attach verified plugin archive and metadata
+        uses: xberg-io/actions/upload-release-assets@v1
+        with:
+          tag: ${{ needs.meta.outputs.tag }}
+          assets: |
+            dist/*-plugins-*.tar.gz
+            dist/*-plugins-*.tar.gz.sha256
+
+  publish_plugin_hermes:
+    name: Publish Hermes plugin to PyPI
+    needs: [meta, finalize_release]
+    if: needs.finalize_release.result == 'success'
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.meta.outputs.tag }}
+          fetch-depth: 0
+      - name: Install ai-rulez
+        uses: xberg-io/actions/setup-ai-rulez@98adf87f1ed4c62a57ff56f9010d62faf42d4db6
+        with:
+          ai-rulez-version: "5.3.0"
+          source-revision: "1dd46d774f156f3d170ecd1b702598b12d1eaf5b"
+      - name: Verify plugin versions and generated resources before publishing
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          python3 scripts/sync_plugin_version.py --expect "$VERSION"
+          python3 scripts/sync_public_skills.py --check
+          ai-rulez verify --plugin
+      - uses: astral-sh/setup-uv@v10.3.0
+        with:
+          python-version: "3.13"
+      - name: Read the verified Hermes package version
+        id: wheel-version
+        run: |
+          python3 - <<'PY'
+          import os
+          import tomllib
+          from pathlib import Path
+
+          project = tomllib.loads(Path('plugin/.hermes/package/pyproject.toml').read_text())['project']
+          if project['name'] != 'poly-hermes-plugin' or not project['version']:
+              raise SystemExit('Missing or unexpected Hermes package identity')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f"version={project['version']}\n")
+          PY
+      - name: Build Hermes wheel
+        run: uv build --wheel --out-dir dist-hermes plugin/.hermes/package
+      - name: Verify every packaged Hermes runtime resource
+        run: python3 scripts/verify_plugin_distribution.py wheel dist-hermes/*.whl
+      - name: Publish verified Hermes wheel
+        uses: xberg-io/actions/publish-pypi@v1
+        with:
+          expected-version: ${{ steps.wheel-version.outputs.version }}
+          packages-dir: dist-hermes
 
   publish_pypi:
     name: Publish PyPI (polylint)
@@ -857,3 +961,17 @@ jobs:
           git tag -f "$major" "$sha"
           git push -f origin "refs/tags/${major}"
           echo "Moved ${major} → ${tag} (${sha})"
+
+  plugin_release_report:
+    name: Verify all plugin distribution jobs succeeded
+    needs: [publish_plugin_artifacts, publish_plugin_npm, publish_plugin_hermes]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || '' }}
+      - name: Reject failed or skipped plugin distribution jobs
+        env:
+          RESULTS_JSON: ${{ toJSON(needs) }}
+        run: python3 scripts/verify_plugin_release_results.py

@@ -1,18 +1,16 @@
 ---
-type: Playbook
-title: Poly Overview
 description: What poly is — the native, tree-sitter, native-toolchain, quality, and built-in-rule-pack tiers, language coverage, and when to reach for it
-x-ai-rulez:
-  kind: skill
-  id: poly-overview
-  metadata:
-    priority: medium
+name: poly-overview
+license: MIT
+metadata:
+    author: Goldziher
+    repository: https://github.com/Goldziher/poly
 ---
 
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-Content-Hash: blake3:5910923920c9788c67c741a5484a1c8d10ab320519389c475b361a84ff2c072b
-Source-Hash: blake3:0cf7fb45f47033f0f2a58b8f804bd7bb9ae38fab2522eae786839c0e012b4bed
+Content-Hash: blake3:273b80b1cc5f091780eac739023a29774686024091327f99c639532e042d2ff6
+Source-Hash: blake3:dfded972ef643f6aecba82394701f76b7c824d3336dc8724b562e8a185d85fc9
 Schema-Version: v1
 -->
 

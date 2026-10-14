@@ -52,7 +52,10 @@ classes of failure it catches that nothing else does: an **undocumented public i
 practice:
 
 - `` [`super::lint`] `` for a **trait method** — a method is not a module item; use
-  `` [`Engine::lint`](crate::engine::Engine::lint) ``.
+
+  ```rust
+  [`Engine::lint`](crate::engine::Engine::lint)
+  ```
 - A name that lives in a **sibling module and is not in scope** — use the full `crate::…` path.
 - `` [`super::mod@super`] `` — the `mod@` disambiguator goes **before** the path
   (`` [`mod@super`] ``), not inside it.

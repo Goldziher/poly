@@ -1,0 +1,26 @@
+[build-system]
+requires = ['hatchling>=1.27']
+build-backend = 'hatchling.build'
+
+[project]
+name = 'poly-hermes-plugin'
+version = '0.29.0'
+description = 'Zero-dependency lint & format orchestrator over MCP — one pure-Rust binary wrapping ruff/oxc/taplo/rumdl and more as in-process backends, plus a tree-sitter generic tier for everything else. Exposes lint/format/cache tools with structured JSON output.'
+requires-python = '>=3.11'
+dependencies = ['mcp==1.28.1', 'PyYAML==6.0.3']
+keywords = ['linter', 'formatter', 'mcp', 'code-quality', 'rust']
+
+[project.entry-points]
+[project.entry-points.'hermes_agent.plugins']
+poly = 'poly_hermes_plugin'
+
+[project.urls]
+Homepage = 'https://github.com/Goldziher/poly'
+Repository = 'https://github.com/Goldziher/poly'
+
+[tool]
+[tool.hatch]
+[tool.hatch.build]
+[tool.hatch.build.targets]
+[tool.hatch.build.targets.wheel]
+packages = ['src/poly_hermes_plugin']

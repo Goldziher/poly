@@ -1,0 +1,49 @@
+# ai-rulez.lock: pins remote includes, installed skills and authored content. Commit this file.
+# Refresh it with `ai-rulez lock`; `ai-rulez generate --locked` fails when it is stale.
+
+version = 1
+ai_rulez_version = '5.3.0'
+scope = 'all'
+tree = 'sha256:64a6f8f534e140a2aa562531dbd8507f2a380496e397336c898666b49bf0cd86'
+
+[[item]]
+kind = 'command'
+id = 'poly-check'
+path = 'commands/poly-check.md'
+digest = 'sha256:ad4e43faab7bcec5df93867e184df34d71dd2f0b355b7744ba1e2505f60afaa2'
+
+[[item]]
+kind = 'command'
+id = 'poly-fix'
+path = 'commands/poly-fix.md'
+digest = 'sha256:30d1715e687da06d556450d8ccf67a99839a3fd4995e977f95855121ef345d8b'
+
+[[item]]
+kind = 'skill'
+id = 'poly-lint-and-format'
+path = 'skills/poly-lint-and-format'
+digest = 'sha256:97d127d99645291cb72e5d0d0fcfeacf163062c0653f1d0b8096a0c20cc17f53'
+
+[[item]]
+kind = 'skill'
+id = 'poly-mcp'
+path = 'skills/poly-mcp'
+digest = 'sha256:99a877e6f3c057ac9d737bdb9f06c38cb7ee6fed0b87b99905c68891b1c42786'
+
+[[item]]
+kind = 'skill'
+id = 'poly-orchestrator'
+path = 'skills/poly-orchestrator'
+digest = 'sha256:191a3fdc0f068bdded49077dbf26cfa20cf0aaed5ebf1555c84680150f4b4479'
+
+[[item]]
+kind = 'skill'
+id = 'poly-overview'
+path = 'skills/poly-overview'
+digest = 'sha256:aacc6c0a6e58598ce9ecce421fdd769c5dff5ad4b9ffaccee610f6158ef2e6f5'
+
+[[item]]
+kind = 'skill'
+id = 'poly-tiers-and-scope'
+path = 'skills/poly-tiers-and-scope'
+digest = 'sha256:19e6813d811c81fe508ddc4a7a1730375724b51b2d125be48226f7209e38f1d5'

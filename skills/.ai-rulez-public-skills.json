@@ -1,0 +1,16 @@
+{
+  "source": "plugin/skills",
+  "skill_count": 5,
+  "files": {
+    "poly-lint-and-format/SKILL.md": "69a560ac048c0cb9fd04cd82bf3f525f681045bba71a4039a75eaa65c0a0db3a",
+    "poly-lint-and-format/index.md": "b1eacddd2bfa5f6d969a0cc435cec094d2da5668659f66652bdda5d2119b043b",
+    "poly-mcp/SKILL.md": "9859eda2814518b4628aef8775f66406a5c071efab7af4aab5289ac697847611",
+    "poly-mcp/index.md": "99db4d2622f29d769e75ef2a8ff8517ac1f56bcaad3dba1643024a895c936336",
+    "poly-orchestrator/SKILL.md": "3cec1ea68be8b48143ccbe1be02c585e59fafc9ed734cf7bc3c365ad9125a21f",
+    "poly-orchestrator/index.md": "e0314d1f6bd00fb0a39c2e2bba3da86b6f6e78de8a0802585a64929d6b8dbc25",
+    "poly-overview/SKILL.md": "e7a2ec7d4e36ac9665c16fa56146cc1735e5b8de3f05b649ee161fa75e1dba47",
+    "poly-overview/index.md": "9b9dc01a9ed3a83e61f8b9e6022bfa545402f7fc1797ff2b4a53b046ec8b1201",
+    "poly-tiers-and-scope/SKILL.md": "7733103c5c2fcdc0a9179fdd61d697ecce04ade36bc7ba5bc6e306d0d34fb1af",
+    "poly-tiers-and-scope/index.md": "c0cd0435b6d7bfa028d50ff5403f9fb2a644f4efe8d77e4278666bd06e781660"
+  }
+}

@@ -6,11 +6,11 @@
 **One binary. ~30 languages. No toolchain to install.**
 
 poly lints and formats whole repositories in seconds: curated Rust backends for the languages
-that matter, a tree-sitter fallback for everything else, and a Claude/Codex plugin plus an MCP
+that matter, a tree-sitter fallback for everything else, and eleven coding-agent plugin profiles plus an MCP
 server so agents can drive it directly instead of shelling out.
 
 Lint + format · one `poly.toml` · pure Rust, zero deps · blake3 cache + rayon parallelism · git
-hooks & commit checks · MCP + Claude/Codex plugin
+hooks & commit checks · MCP + coding-agent plugins
 
 [![CI](https://img.shields.io/github/actions/workflow/status/Goldziher/poly/ci.yaml?style=flat-square&cacheSeconds=300)](https://github.com/Goldziher/poly/actions/workflows/ci.yaml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
@@ -32,7 +32,7 @@ hooks & commit checks · MCP + Claude/Codex plugin
 |---|---|
 | **Fast on real repos** | Lints Django in 0.82s and home-assistant's 25,000 files in 3.5s, cold cache; see [Performance](#performance). |
 | **One binary, no toolchain** | Compiled-in Rust backends for Python, JavaScript, TypeScript, JSX, TSX, JSON, YAML, TOML, Markdown, MDX, CSS, SCSS, Less, HTML, Vue, Svelte, Astro, Angular, XML, PHP, Ruby, SQL, GraphQL, Nix, HCL, Dockerfile, INI and `.env`. Go, Rust, Zig, Java, Kotlin, Swift, Dart, R, Gleam and shell use their own toolchain when it is installed, and a tree-sitter tier covers everything else. No Node, Python, or Ruby runtime needed. See the [language table](https://goldziher.github.io/poly/reference/backends/). |
-| **Built for agents** | A Claude/Codex plugin and a stdio MCP server ship in the box — an agent calls poly's tools directly instead of shelling out and parsing text. See [AI Agents & MCP](#ai-agents--mcp). |
+| **Built for agents** | Coding-agent plugin profiles and a stdio MCP server ship in the box — an agent calls poly's tools directly instead of shelling out and parsing text. See [AI Agents & MCP](#ai-agents--mcp). |
 | **One config** | `poly.toml` drives linting, formatting, git hooks, and commit-message policy. |
 | **Cache + parallelism** | A blake3 content-hash cache skips unchanged work; rayon parallelizes the rest across cores. |
 | **Git hooks & commit checks** | `poly hooks install` wires lint, format, and Conventional-Commit checks into git — no external hook framework. |
@@ -101,7 +101,8 @@ per-platform detail in [docs/INSTALL-PACKAGES.md](docs/INSTALL-PACKAGES.md).
 
 ### As an agent plugin
 
-poly ships its own Claude/Codex plugin, registering `poly mcp` as a stdio server plus 5 skills
+poly ships eleven runtime profiles under `plugin/`, with five public skills and
+two prompts. MCP-capable profiles register `poly mcp`; Pi uses the CLI. The Claude profile includes 5 skills
 and 2 slash commands (`/poly-check`, `/poly-fix`):
 
 ```text
@@ -110,7 +111,7 @@ and 2 slash commands (`/poly-check`, `/poly-fix`):
 ```
 
 Codex: add the `Goldziher/poly` marketplace through your client's plugin manager (manifest at
-`.codex-plugin/plugin.json`). The plugin assumes `poly` is already on `PATH` — it does not
+`plugin/plugin.json`). The plugin assumes `poly` is already on `PATH` — it does not
 bundle the binary — and its version tracks the `poly` binary version lock-step. See
 [AI Agents & MCP](#ai-agents--mcp).
 
@@ -353,7 +354,11 @@ digest of every compiled-in backend's version) and separates three per-file outc
 (poly declined the file) and **errored** (poly failed on a file it accepted). `isError` is set whenever anything
 errored, so an agent can gate on it before trusting the payload.
 
-Full parameter reference: [`.ai-rulez/skills/poly-mcp/SKILL.md`](.ai-rulez/skills/poly-mcp/SKILL.md).
+Full parameter reference: [`poly-mcp`](skills/poly-mcp/SKILL.md).
+
+See [all runtime installation instructions](plugin/README.md) for Claude, Cursor, Codex, Gemini,
+Kimi, OpenCode, Factory, Hermes, Pi, Agent Plugins and Copilot. Public skills can be installed
+individually with `npx skills add Goldziher/poly --skill poly-mcp`.
 
 ---
 

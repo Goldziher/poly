@@ -103,3 +103,22 @@ tasks:
     desc: "Set the release version in the workspace Cargo.toml (usage: task set-version -- 0.1.8)"
     cmds:
       - "./scripts/release-bump.sh {{.CLI_ARGS}}"
+
+  plugin:generate:
+    desc: Generate all coding-agent plugin profiles and public skills
+    cmds:
+      - ai-rulez generate --plugin --no-local --strict-config
+      - python3 scripts/sync_public_skills.py
+
+  plugin:verify:
+    desc: Verify native plugin bundles, versions, and public exports
+    cmds:
+      - ai-rulez verify --plugin
+      - python3 scripts/sync_plugin_version.py --check
+      - python3 scripts/sync_public_skills.py --check
+
+  plugin:test:
+    desc: Verify OpenCode, Hermes protocol, and public skill contracts
+    cmds:
+      - node --test scripts/tests/opencode-plugin.test.mjs
+      - uv run --no-project --with mcp==1.28.1 --with PyYAML==6.0.3 python -m unittest discover -s scripts/tests
