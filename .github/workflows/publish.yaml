@@ -6,14 +6,18 @@ on:
       - v[0-9]+.*
   workflow_dispatch:
     inputs:
+      plugins-only:
+        description: "Publish current main plugin packages only; skip existing versions"
+        type: boolean
+        default: false
       tag:
         description: "Release tag to publish (e.g., v0.1.0)"
-        required: true
+        required: false
         type: string
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 # Least privilege at the workflow level: only `contents: write`, which the
 # release-asset steps need. The npm and PyPI jobs additionally request
@@ -24,7 +28,41 @@ permissions:
   contents: write
 
 jobs:
+  plugin-meta:
+    name: Verify plugin-only dispatch metadata
+    if: inputs.plugins-only
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+      - name: Read consistent current plugin versions
+        id: version
+        env:
+          DISPATCH_REF: ${{ github.ref }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import tomllib
+          from pathlib import Path
+
+          if os.environ['DISPATCH_REF'] != 'refs/heads/main':
+              raise SystemExit('Plugin-only publishing requires main')
+          cargo = tomllib.loads(Path('Cargo.toml').read_text())
+          core = cargo.get('workspace', {}).get('package', cargo.get('package', {}))['version']
+          npm = json.loads(Path('plugin/package.json').read_text())['version']
+          hermes = tomllib.loads(Path('plugin/.hermes/package/pyproject.toml').read_text())['project']['version']
+          if not core or core != npm or core != hermes:
+              raise SystemExit(f'Plugin versions disagree: core={core}, npm={npm}, Hermes={hermes}')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'version={core}\n')
+          PY
+
   meta:
+    if: ${{ !inputs.plugins-only }}
     name: Resolve release metadata
     runs-on: ubuntu-latest
     outputs:
@@ -174,7 +212,8 @@ jobs:
   create_release:
     name: Create GitHub release
     needs: meta
-    if: needs.meta.outputs.release_assets_exist != 'true'
+    if: >-
+      !inputs.plugins-only && (needs.meta.outputs.release_assets_exist != 'true')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -222,7 +261,8 @@ jobs:
   build-binaries:
     name: Build binaries / ${{ matrix.triple }}
     needs: [meta, create_release]
-    if: needs.meta.outputs.release_assets_exist != 'true'
+    if: >-
+      !inputs.plugins-only && (needs.meta.outputs.release_assets_exist != 'true')
     runs-on: ${{ matrix.os }}
     # Stamp the build id from the tag we are releasing rather than leaving
     # build.rs to infer it from `git describe`. The release also force-moves the
@@ -365,6 +405,7 @@ jobs:
           if-no-files-found: ignore
 
   checksums:
+    if: ${{ !inputs.plugins-only }}
     name: Generate and upload checksums
     needs: [meta, build-binaries]
     runs-on: ubuntu-latest
@@ -428,7 +469,8 @@ jobs:
   finalize_release:
     name: Publish GitHub release
     needs: [meta, checksums]
-    if: always() && needs.meta.result == 'success'
+    if: >-
+      !inputs.plugins-only && (always() && needs.meta.result == 'success')
     runs-on: ubuntu-latest
     steps:
       - name: Promote draft to published release once complete
@@ -471,7 +513,8 @@ jobs:
   publish_homebrew:
     name: Update Homebrew formula
     needs: [meta, finalize_release]
-    if: needs.finalize_release.result == 'success' && !contains(needs.meta.outputs.version, '-rc') && !contains(needs.meta.outputs.version, '-beta') && !contains(needs.meta.outputs.version, '-alpha')
+    if: >-
+      !inputs.plugins-only && (needs.finalize_release.result == 'success' && !contains(needs.meta.outputs.version, '-rc') && !contains(needs.meta.outputs.version, '-beta') && !contains(needs.meta.outputs.version, '-alpha'))
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -530,7 +573,8 @@ jobs:
   publish_scoop:
     name: Update Scoop bucket
     needs: [meta, finalize_release]
-    if: needs.finalize_release.result == 'success' && !contains(needs.meta.outputs.version, '-rc') && !contains(needs.meta.outputs.version, '-beta') && !contains(needs.meta.outputs.version, '-alpha')
+    if: >-
+      !inputs.plugins-only && (needs.finalize_release.result == 'success' && !contains(needs.meta.outputs.version, '-rc') && !contains(needs.meta.outputs.version, '-beta') && !contains(needs.meta.outputs.version, '-alpha'))
     runs-on: ubuntu-latest
     # Non-blocking: the bucket lives in another repository and its push needs a
     # PAT this workflow does not control. A missing or under-scoped token is a
@@ -597,7 +641,8 @@ jobs:
     # npm has never seen cannot have a trusted publisher, so there is nothing
     # this job could succeed at — skipping with a notice is more honest than
     # failing. Publishing is token-less: OIDC only, no NODE_AUTH_TOKEN.
-    if: needs.finalize_release.result == 'success' && needs.meta.outputs.npm_bootstrapped == 'true'
+    if: >-
+      !inputs.plugins-only && (needs.finalize_release.result == 'success' && needs.meta.outputs.npm_bootstrapped == 'true')
     runs-on: ubuntu-latest
     # Non-blocking, same reasoning as publish_scoop: a not-yet-configured trusted
     # publisher must show up as a failed job, not as a failed release. The
@@ -690,8 +735,10 @@ jobs:
 
   publish_plugin_npm:
     name: Publish npm agent plugin (OpenCode and Pi)
-    needs: [meta, finalize_release]
-    if: needs.finalize_release.result == 'success'
+    needs: [plugin-meta, meta, finalize_release]
+    if: >-
+      always() && ((inputs.plugins-only && needs.plugin-meta.result == 'success')
+      || (!inputs.plugins-only && needs.finalize_release.result == 'success'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -700,7 +747,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || '' }}
+          ref: ${{ inputs.plugins-only && github.sha || needs.meta.outputs.tag }}
 
       - name: Install reviewed ai-rulez
         uses: xberg-io/actions/setup-ai-rulez@98adf87f1ed4c62a57ff56f9010d62faf42d4db6
@@ -745,43 +792,49 @@ jobs:
           case "$archive" in /*) ;; *) archive="$RUNNER_TEMP/$archive" ;; esac
           python3 scripts/verify_plugin_distribution.py npm "$archive"
 
-      - name: Publish the agent package
+      - name: Check the exact npm plugin version
+        id: npm-version
         run: |
-          set -euo pipefail
-          name="$(jq -r '.name' plugin/package.json)"
-          version="${{ needs.meta.outputs.version }}"
-          if ! pnpm view "$name" version >/dev/null 2>&1; then
-            echo "::error::$name needs a first manual publish and trusted publisher setup; see docs/INSTALL-PACKAGES.md."
-            exit 1
-          fi
-          if pnpm view "$name@$version" version >/dev/null 2>&1; then
-            echo "$name@$version already published; skipping"
-            exit 0
-          fi
-          case "$version" in
-            *-rc.* | *-beta* | *-alpha*) npm_tag=next ;;
-            *) npm_tag=latest ;;
-          esac
-          unset NODE_AUTH_TOKEN
-          archive="$(jq -r '.filename' "$RUNNER_TEMP/plugin-pack.json")"
-          case "$archive" in /*) ;; *) archive="$RUNNER_TEMP/$archive" ;; esac
-          for attempt in 1 2 3; do
-            if pnpm publish --no-git-checks "$archive" --provenance --access public --tag "$npm_tag"; then
-              break
-            fi
-            if pnpm view "$name@$version" version >/dev/null 2>&1; then
-              break
-            fi
-            if [ "$attempt" -eq 3 ]; then
-              exit 1
-            fi
-            sleep 5
-          done
+          python3 - <<'PY'
+          import json
+          import os
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+          from pathlib import Path
+
+          package = json.loads(Path('plugin/package.json').read_text())
+          name = urllib.parse.quote(package['name'], safe='@')
+          version = urllib.parse.quote(package['version'], safe='')
+          try:
+              with urllib.request.urlopen(f'https://registry.npmjs.org/{name}/{version}', timeout=30) as response:
+                  metadata = json.load(response)
+              if metadata['name'] != package['name'] or metadata['version'] != package['version']:
+                  raise SystemExit('npm registry returned an unexpected version')
+              exists = True
+          except urllib.error.HTTPError as error:
+              if error.code != 404:
+                  raise
+              exists = False
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'exists={str(exists).lower()}\n')
+          print(f"npm {package['name']}@{package['version']}: {'already published; skipping' if exists else 'missing'}")
+          PY
+      - name: Publish verified agent package
+        if: steps.npm-version.outputs.exists != 'true'
+        uses: xberg-io/actions/publish-npm@v1
+        with:
+          expected-version: ${{ needs.plugin-meta.outputs.version || needs.meta.outputs.version }}
+          package-dir: plugin
+          access: public
+          npm-tag: ${{ contains(needs.plugin-meta.outputs.version || needs.meta.outputs.version, '-') && 'next' || 'latest' }}
+          provenance: "true"
 
   publish_plugin_artifacts:
     name: Publish all agent runtime archives and marketplaces
     needs: [meta, finalize_release]
-    if: needs.finalize_release.result == 'success'
+    if: >-
+      !inputs.plugins-only && (needs.finalize_release.result == 'success')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -826,8 +879,10 @@ jobs:
 
   publish_plugin_hermes:
     name: Publish Hermes plugin to PyPI
-    needs: [meta, finalize_release]
-    if: needs.finalize_release.result == 'success'
+    needs: [plugin-meta, meta, finalize_release]
+    if: >-
+      always() && ((inputs.plugins-only && needs.plugin-meta.result == 'success')
+      || (!inputs.plugins-only && needs.finalize_release.result == 'success'))
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -836,7 +891,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.meta.outputs.tag }}
+          ref: ${{ inputs.plugins-only && github.sha || needs.meta.outputs.tag }}
           fetch-depth: 0
       - name: Install ai-rulez
         uses: xberg-io/actions/setup-ai-rulez@98adf87f1ed4c62a57ff56f9010d62faf42d4db6
@@ -845,7 +900,7 @@ jobs:
           source-revision: "bdabc8a6e9211de60ca1e4ad76225ac92fcf218f"
       - name: Verify plugin versions and generated resources before publishing
         env:
-          VERSION: ${{ needs.meta.outputs.version }}
+          VERSION: ${{ needs.plugin-meta.outputs.version || needs.meta.outputs.version }}
         run: |
           set -euo pipefail
           python3 scripts/sync_plugin_version.py --expect "$VERSION"
@@ -884,7 +939,8 @@ jobs:
     # Same gating as npm: the wheels embed the release archives' binaries, so the
     # release has to be live first. PyPI `polylint` already exists, so the only
     # per-version guard needed is "not already published".
-    if: needs.finalize_release.result == 'success' && needs.meta.outputs.pypi_exists != 'true'
+    if: >-
+      !inputs.plugins-only && (needs.finalize_release.result == 'success' && needs.meta.outputs.pypi_exists != 'true')
     runs-on: ubuntu-latest
     continue-on-error: true
     # PyPI's trusted publisher for this project names this environment; the two
@@ -940,7 +996,8 @@ jobs:
   update_major_tag:
     name: Move the major version tag
     needs: [meta, finalize_release]
-    if: needs.finalize_release.result == 'success' && !contains(needs.meta.outputs.version, '-rc') && !contains(needs.meta.outputs.version, '-beta') && !contains(needs.meta.outputs.version, '-alpha')
+    if: >-
+      !inputs.plugins-only && (needs.finalize_release.result == 'success' && !contains(needs.meta.outputs.version, '-rc') && !contains(needs.meta.outputs.version, '-beta') && !contains(needs.meta.outputs.version, '-alpha'))
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -965,15 +1022,27 @@ jobs:
           echo "Moved ${major} → ${tag} (${sha})"
 
   plugin_release_report:
-    name: Verify all plugin distribution jobs succeeded
+    name: Verify requested plugin distribution jobs succeeded
     needs: [publish_plugin_artifacts, publish_plugin_npm, publish_plugin_hermes]
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || '' }}
-      - name: Reject failed or skipped plugin distribution jobs
+      - name: Reject incomplete plugin distribution
         env:
           RESULTS_JSON: ${{ toJSON(needs) }}
-        run: python3 scripts/verify_plugin_release_results.py
+          PLUGINS_ONLY: ${{ inputs.plugins-only }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+
+          results = json.loads(os.environ['RESULTS_JSON'])
+          expected = {'publish_plugin_artifacts', 'publish_plugin_npm', 'publish_plugin_hermes'}
+          if set(results) != expected:
+              raise SystemExit('Expected exactly three plugin distribution jobs')
+          for name, job in results.items():
+              wanted = 'skipped' if name == 'publish_plugin_artifacts' and os.environ['PLUGINS_ONLY'] == 'true' else 'success'
+              if job['result'] != wanted:
+                  raise SystemExit(f"Incomplete plugin distribution: {name}={job['result']}, expected {wanted}")
+          print('Verified all three requested plugin job outcomes')
+          PY
