@@ -15,8 +15,7 @@
 //! in flight or unreachable from this hook's `PATH` — see [`HOOK_TMPL`].
 //!
 //! The store/workspace/provisioning machinery, the `core.hooksPath` refusal
-//! logic, legacy-hook *execution* chaining (migration mode), and
-//! `init_template_dir` are intentionally **not** ported — they are out of scope
+//! logic, and `init_template_dir` are intentionally **not** ported — they are out of scope
 //! for the crate-side shims (and `polyhooks` is removed in B4). The caller
 //! (`poly-cli`) resolves the hooks directory via [`crate::git::get_git_hooks_dir`]
 //! and passes it in.
@@ -136,6 +135,20 @@ if ! command -v poly >/dev/null 2>&1; then
     exit 1
 fi
 
+# A hook that was already installed when `poly hooks install` ran is kept beside
+# this shim as `[HOOK_TYPE].legacy` and runs first, pre-commit style, with the same
+# arguments and stdin. A lefthook shim is the exception: poly replaces lefthook,
+# and running both would run every check twice.
+legacy="$(dirname -- "$0")/[HOOK_TYPE].legacy"
+if [ -x "$legacy" ] && ! grep -qi lefthook "$legacy" 2>/dev/null; then
+    stdin_copy=$(mktemp "${TMPDIR:-/tmp}/poly-hook-stdin.XXXXXX") || exit 1
+    trap 'rm -f "$stdin_copy"' EXIT
+    cat > "$stdin_copy"
+    "$legacy" "$@" < "$stdin_copy" || exit $?
+    poly hooks hook-impl --hook-type=[HOOK_TYPE] -- "$@" < "$stdin_copy"
+    exit $?
+fi
+
 exec poly hooks hook-impl --hook-type=[HOOK_TYPE] -- "$@"
 "#;
 
@@ -209,8 +222,49 @@ fn write_shim(path: &Path, script: &str) -> Result<()> {
     Ok(())
 }
 
+/// Whether `path` is a lefthook-generated hook script.
+fn is_lefthook_hook(path: &Path) -> bool {
+    std::fs::read_to_string(path).is_ok_and(|content| content.to_ascii_lowercase().contains("lefthook"))
+}
+
+/// What `install` did with a hook that was already there.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Preserved {
+    /// A foreign hook kept as `<name>.legacy`; the new shim runs it before poly.
+    Chained(PathBuf),
+    /// A lefthook hook kept as `<name>.legacy` but never run: poly replaces
+    /// lefthook, and running both would run every check twice.
+    LefthookKept(PathBuf),
+    /// A lefthook hook discarded by [`InstallOptions::replace_lefthook`].
+    LefthookReplaced(PathBuf),
+}
+
+/// Knobs for [`install_with`].
+#[derive(Debug, Clone, Copy, Default)]
+pub struct InstallOptions {
+    /// Overwrite an existing hook and discard any preserved legacy hook.
+    pub overwrite: bool,
+    /// Discard an existing lefthook hook instead of preserving it as `.legacy`.
+    pub replace_lefthook: bool,
+}
+
+/// The result of [`install_with`].
+#[derive(Debug, Default)]
+pub struct InstallReport {
+    /// The shims that were written.
+    pub written: Vec<PathBuf>,
+    /// Pre-existing hooks that were kept or discarded, with what became of them.
+    pub preserved: Vec<Preserved>,
+}
+
 /// Install a single hook shim, preserving any pre-existing foreign hook.
-fn install_one(hooks_dir: &Path, hook_type: HookType, overwrite: bool) -> Result<PathBuf> {
+fn install_one(
+    hooks_dir: &Path,
+    hook_type: HookType,
+    options: InstallOptions,
+    report: &mut InstallReport,
+) -> Result<()> {
+    let overwrite = options.overwrite;
     let hook_path = hooks_dir.join(hook_type.as_ref());
     let legacy = legacy_path(hooks_dir, hook_type);
 
@@ -219,6 +273,9 @@ fn install_one(hooks_dir: &Path, hook_type: HookType, overwrite: bool) -> Result
             if legacy.try_exists()? {
                 std::fs::remove_file(&legacy).with_context(|| format!("failed to remove `{}`", legacy.display()))?;
             }
+        } else if !is_our_shim(&hook_path)? && options.replace_lefthook && is_lefthook_hook(&hook_path) {
+            std::fs::remove_file(&hook_path).with_context(|| format!("failed to remove `{}`", hook_path.display()))?;
+            report.preserved.push(Preserved::LefthookReplaced(hook_path.clone()));
         } else if !is_our_shim(&hook_path)? {
             if legacy.try_exists()? {
                 anyhow::bail!(
@@ -235,11 +292,17 @@ fn install_one(hooks_dir: &Path, hook_type: HookType, overwrite: bool) -> Result
                     legacy.display()
                 )
             })?;
+            report.preserved.push(if is_lefthook_hook(&legacy) {
+                Preserved::LefthookKept(legacy)
+            } else {
+                Preserved::Chained(legacy)
+            });
         }
     }
 
     write_shim(&hook_path, &render_shim(hook_type))?;
-    Ok(hook_path)
+    report.written.push(hook_path);
+    Ok(())
 }
 
 /// Install poly git-hook shims into `hooks_dir`.
@@ -250,15 +313,29 @@ fn install_one(hooks_dir: &Path, hook_type: HookType, overwrite: bool) -> Result
 /// (unless `overwrite` is set, which discards it). Returns the paths of the
 /// shims that were written.
 pub fn install(hooks_dir: &Path, hook_types: &[HookType], overwrite: bool) -> Result<Vec<PathBuf>> {
+    let options = InstallOptions {
+        overwrite,
+        ..InstallOptions::default()
+    };
+    Ok(install_with(hooks_dir, hook_types, options)?.written)
+}
+
+/// [`install`] with the full option set, reporting what became of any hook that
+/// was already installed.
+///
+/// A foreign hook is kept as `<name>.legacy` and the new shim runs it before
+/// poly, with the same arguments and stdin. A lefthook hook is kept but not run
+/// (poly is its replacement), unless [`InstallOptions::replace_lefthook`]
+/// discards it.
+pub fn install_with(hooks_dir: &Path, hook_types: &[HookType], options: InstallOptions) -> Result<InstallReport> {
     std::fs::create_dir_all(hooks_dir)
         .with_context(|| format!("failed to create hooks dir `{}`", hooks_dir.display()))?;
 
-    let types = resolve_types(hook_types);
-    let mut installed = Vec::with_capacity(types.len());
-    for hook_type in types {
-        installed.push(install_one(hooks_dir, hook_type, overwrite)?);
+    let mut report = InstallReport::default();
+    for hook_type in resolve_types(hook_types) {
+        install_one(hooks_dir, hook_type, options, &mut report)?;
     }
-    Ok(installed)
+    Ok(report)
 }
 
 /// Uninstall poly git-hook shims from `hooks_dir`, restoring any preserved

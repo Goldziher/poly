@@ -17,6 +17,12 @@ poly hooks install
 
 That wires the git shims once; the configured stages then run on every `git commit`.
 
+A hook that already exists is not lost: it is kept as `<hook>.legacy` and the poly shim runs it
+**before** poly, with the same arguments and stdin; if it fails, poly does not run. A **lefthook**
+hook is the exception. poly replaces lefthook, and running both would run every check twice, so it
+is kept (for `poly hooks uninstall` to restore) but never run, and `install` says so. Pass
+`--replace-lefthook` to discard it instead.
+
 By default only a failing job's output is printed. Set `show_output = true` on a job, or run
 `poly hooks run -v`, to see the output of jobs that passed too.
 

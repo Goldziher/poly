@@ -314,6 +314,8 @@ editor validation and autocomplete; the schema is also published at
 
 ```sh
 poly commit --message "feat: add backend"   # or a path: poly commit .git/COMMIT_EDITMSG
+poly hooks install                  # a foreign hook is kept as <hook>.legacy and runs before poly
+poly hooks install --replace-lefthook   # discard a lefthook hook instead of keeping it inert
 poly hooks run pre-commit -v        # also show the output of jobs that passed
 poly cache stats
 poly cache size

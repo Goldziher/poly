@@ -105,6 +105,16 @@ pub struct InstallArgs {
     /// Overwrite an existing hook, discarding any preserved legacy hook.
     #[arg(long)]
     pub overwrite: bool,
+
+    /// Discard an existing lefthook hook instead of keeping it as
+    /// `<hook>.legacy`.
+    ///
+    /// A foreign hook that is not lefthook's is kept as `<hook>.legacy` and run
+    /// before poly. A lefthook hook is kept but never run, because poly replaces
+    /// lefthook and running both would run every check twice; this flag removes it
+    /// outright. `poly hooks uninstall` restores whichever was kept.
+    #[arg(long)]
+    pub replace_lefthook: bool,
 }
 
 /// `poly hooks uninstall` arguments.
@@ -298,8 +308,16 @@ fn install(args: InstallArgs) -> Result<ExitCode> {
     } else {
         args.hook_types.clone()
     };
-    let written = poly_hooks::install::install(&hooks_dir, &hook_types, args.overwrite)?;
-    print_hook_summary("Installed", "install", &hooks_dir, &written);
+    let report = poly_hooks::install::install_with(
+        &hooks_dir,
+        &hook_types,
+        poly_hooks::install::InstallOptions {
+            overwrite: args.overwrite,
+            replace_lefthook: args.replace_lefthook,
+        },
+    )?;
+    print_hook_summary("Installed", "install", &hooks_dir, &report.written);
+    print_preserved_hooks(&report.preserved);
 
     // When the shim set is derived from config, prune any leftover poly shims for
     // stages the config no longer binds — so a repo that previously installed all
@@ -446,6 +464,30 @@ fn uninstall(args: UninstallArgs) -> Result<ExitCode> {
 /// bare infinitive used in the empty-set notice ("install" / "remove"). Paths
 /// are shown relative to the current directory (the hooks live under a single
 /// directory, printed once) so no absolute paths appear in the output.
+fn print_preserved_hooks(preserved: &[poly_hooks::install::Preserved]) {
+    use poly_hooks::install::Preserved;
+
+    let theme = Theme::STDOUT;
+    for entry in preserved {
+        let note = match entry {
+            Preserved::Chained(path) => format!(
+                "kept existing hook as {}; it runs before poly",
+                relative_to_cwd(path).display()
+            ),
+            Preserved::LefthookKept(path) => format!(
+                "kept existing lefthook hook as {} but it is NOT run (poly replaces lefthook; running both would \
+                 duplicate every check). Re-run with --replace-lefthook to discard it, or `poly hooks uninstall` \
+                 to restore it",
+                relative_to_cwd(path).display()
+            ),
+            Preserved::LefthookReplaced(path) => {
+                format!("replaced the lefthook hook {}", relative_to_cwd(path).display())
+            }
+        };
+        println!("{} {note}", theme.secondary("·"));
+    }
+}
+
 fn print_hook_summary(done: &str, verb: &str, hooks_dir: &Path, hooks: &[PathBuf]) {
     if hooks.is_empty() {
         println!("{} no poly git hooks to {verb}.", Theme::STDOUT.secondary("·"));
