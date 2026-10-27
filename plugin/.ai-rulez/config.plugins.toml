@@ -57,4 +57,4 @@ package_json = "merge"
 package_name = "@goldziher/opencode-poly"
 
 [plugin.hermes]
-dependencies = ["mcp==1.28.1", "PyYAML==6.0.3"]
+dependencies = ["mcp==1.30.0", "PyYAML==6.0.3"]

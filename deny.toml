@@ -46,7 +46,16 @@ wildcards = "allow"
 
 [advisories]
 version = 2
-ignore = ["RUSTSEC-2024-0436", "RUSTSEC-2026-0173"]
+ignore = [
+  "RUSTSEC-2024-0436",
+  # `zip` 8.x is pinned by ruff_db (`zip = "8"`); the fix is in zip 9. poly never calls
+  # `ZipArchive::extract`, the entry point all three advisories concern.
+  "RUSTSEC-2026-0367",
+  "RUSTSEC-2026-0368",
+  "RUSTSEC-2026-0369",
+  # `serde_yaml` (-> `unsafe-libyaml`) is a dependency of rumdl and sqruff-lib-dialects.
+  "RUSTSEC-2024-0449",
+]
 
 [sources]
 unknown-registry = "deny"

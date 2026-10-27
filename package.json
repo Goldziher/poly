@@ -21,6 +21,6 @@
     ".": "./plugin/.opencode/plugins/poly.js"
   },
   "dependencies": {
-    "@opencode/plugin": "^2.0.26"
+    "@opencode/plugin": "^2.1.4"
   }
 }
