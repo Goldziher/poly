@@ -8,7 +8,7 @@ use crate::config::EngineConfig;
 use crate::engine::{FormatOutput, SourceFile};
 use crate::language::Language;
 
-use super::config::{build_js_options, build_json_options};
+use super::config::{build_js_options, build_json_options, sorted_package_json};
 
 const EMBEDDED_PARSE_ERROR_PREFIX: &str = "oxc_formatter embedded parse error: ";
 
@@ -102,8 +102,10 @@ pub(super) fn format_js(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<
 pub(super) fn format_json(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
     let allocator = Allocator::new();
     let options = build_json_options(src, cfg);
+    let sorted = sorted_package_json(src, cfg);
+    let text = sorted.as_deref().unwrap_or(&src.content);
 
-    let formatted = match oxc_formatter_json::format(&allocator, &src.content, options) {
+    let formatted = match oxc_formatter_json::format(&allocator, text, options) {
         Err(_) => return Ok(FormatOutput::Unchanged),
         Ok(f) => f,
     };
@@ -181,6 +183,43 @@ mod tests {
         assert!(!is_embedded_js_parse_error(&anyhow::anyhow!(
             "unexpected embedded formatter failure"
         )));
+    }
+
+    fn package_json(content: &str, options: &str) -> String {
+        let src = SourceFile {
+            path: PathBuf::from("pkg/package.json"),
+            language: Language::Json,
+            content: content.into(),
+        };
+        let cfg = EngineConfig {
+            globals: GlobalDefaults::default(),
+            indent_width: 2,
+            options: toml::from_str(options).unwrap(),
+        };
+        match format_json(&src, &cfg).unwrap() {
+            FormatOutput::Formatted(text) => text,
+            FormatOutput::Unchanged => content.to_string(),
+        }
+    }
+
+    /// `package.json` is written with `JSON.stringify`, so arrays are never collapsed onto one
+    /// line; plain JSON keeps short arrays inline.
+    #[test]
+    fn package_json_arrays_stay_expanded() {
+        assert_eq!(
+            package_json("{\"files\": [\"dist\"]}\n", ""),
+            "{\n  \"files\": [\n    \"dist\"\n  ]\n}\n"
+        );
+        let plain = make_src("{ \"files\": [\"dist\"] }\n", Language::Json);
+        assert!(matches!(format_json(&plain, &default_cfg()).unwrap(), FormatOutput::Unchanged));
+    }
+
+    #[test]
+    fn package_json_keys_are_sorted_only_when_asked() {
+        let unsorted = "{\"version\": \"1.0.0\", \"name\": \"x\"}\n";
+        assert!(package_json(unsorted, "").find("version") < package_json(unsorted, "").find("name"));
+        let sorted = package_json(unsorted, "sort_package_json = true");
+        assert!(sorted.find("name") < sorted.find("version"), "{sorted}");
     }
 
     /// `quote_style = "single"` rewrites `"hello"` to `'hello'`.

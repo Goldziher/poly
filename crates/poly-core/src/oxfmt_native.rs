@@ -223,7 +223,7 @@ fn translate(family: Family, options: &Map<String, Value>) -> toml::Table {
             if let Some(single) = flag("singleAttributePerLine") {
                 put("single_attribute_per_line", toml::Value::Boolean(single));
             }
-            if let Some(sort) = options.get("sortImports").and_then(|value| snake_case_keys(value)) {
+            if let Some(sort) = options.get("sortImports").and_then(snake_case_keys) {
                 put("sort_imports", sort);
             }
         }
@@ -245,6 +245,9 @@ fn translate(family: Family, options: &Map<String, Value>) -> toml::Table {
             }
             if let Some(props) = text("quoteProps") {
                 put("quote_properties", toml::Value::String(props.to_owned()));
+            }
+            if let Some(sort) = options.get("sortPackageJson").and_then(snake_case_keys) {
+                put("sort_package_json", sort);
             }
         }
         Family::Yaml => {
@@ -477,6 +480,14 @@ mod tests {
         assert_eq!(sort["newlines_between"].as_bool(), Some(true));
         assert_eq!(sort["internal_pattern"].as_array().unwrap().len(), 1);
         assert_eq!(sort["groups"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn sort_package_json_reaches_the_json_engine_only() {
+        let rc = native(r#"{"sortPackageJson":{"sortScripts":true}}"#);
+        let table = engine_defaults(&rc, &Language::Json, "oxc");
+        assert_eq!(table["sort_package_json"]["sort_scripts"].as_bool(), Some(true));
+        assert!(!engine_defaults(&rc, &Language::TypeScript, "oxc").contains_key("sort_package_json"));
     }
 
     #[test]

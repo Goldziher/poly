@@ -145,6 +145,7 @@ serde_stacker = "0.1.14"
 serde_toon_format = "0.2"
 shlex = "2.0.1"
 similar = "3.2.1"
+sort-package-json = "1.0.0"
 sqruff-lib = "0.43"
 sqruff-lib-core = "0.43"
 strum = { version = "0.28.0", features = ["derive"] }

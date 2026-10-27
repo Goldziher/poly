@@ -62,6 +62,7 @@ pub(crate) const JS_FORMAT_OPTION_KEYS: &[(&str, OptionType)] = &[
     ("single_attribute_per_line", OptionType::BOOLEAN),
     ("single_quote", OptionType::BOOLEAN),
     ("sort_imports", OptionType::TABLE.or(OptionType::BOOLEAN)),
+    ("sort_package_json", OptionType::TABLE.or(OptionType::BOOLEAN)),
 ];
 
 pub(crate) use self::format::{format_embedded_js, is_embedded_js_parse_error};
@@ -85,11 +86,13 @@ use self::lint::{lint_js, lint_json};
 ///                default set, so a file can now report rules (e.g.
 ///                `vitest/expect-expect`) that no configuration could reach
 ///                before.
+/// `+package-json-v1`: `package.json`, `composer.json` and import maps use the
+///                     `json-stringify` variant; `sort_package_json` sorts `package.json` keys.
 /// `+oxfmtrc-v1`: `line_width`, `line_ending`, `quote_properties`, `object_wrap`,
 ///                `operator_position`, `single_attribute_per_line` and `sort_imports`
 ///                reach the formatters, and `.oxfmtrc.json[c]` supplies them by default.
 const VERSION: &str = "oxc_formatter:0.75.0+oxlint+parser:0.156.0+rev:e2be72d+json-fmt+rules-v5+fmt-opts+\
-                       jsonc-trailing-comma+plugins-v1+minified-skip+oxfmtrc-v1";
+                       jsonc-trailing-comma+plugins-v1+minified-skip+oxfmtrc-v1+package-json-v1";
 
 static LANGUAGES: &[Language] = &[
     Language::JavaScript,

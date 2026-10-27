@@ -164,10 +164,7 @@ pub(super) fn build_json_options(src: &SourceFile, cfg: &EngineConfig) -> JsonFo
         TrailingCommas as JsonTc,
     };
 
-    let variant = match src.language {
-        Language::Jsonc => JsonVariant::Jsonc,
-        _ => JsonVariant::Json,
-    };
+    let variant = json_variant(src);
 
     let line_width = resolve_line_width(cfg);
     let indent_width = resolve_indent_width(cfg);
@@ -212,4 +209,37 @@ pub(super) fn build_json_options(src: &SourceFile, cfg: &EngineConfig) -> JsonFo
         trailing_commas,
         ..JsonFormatOptions::default()
     }
+}
+
+/// The JSON dialect for `src`: `package.json`, `composer.json` and import maps are written by
+/// tooling with `JSON.stringify` (every array expanded), which is what keeps `npm install` from
+/// rewriting them; JSON with comments is its own variant; everything else is plain JSON.
+fn json_variant(src: &SourceFile) -> JsonVariant {
+    let name = src.path.file_name().and_then(|name| name.to_str()).unwrap_or_default();
+    if matches!(name, "package.json" | "composer.json") || name.ends_with(".importmap") {
+        return JsonVariant::JsonStringify;
+    }
+    match src.language {
+        Language::Jsonc => JsonVariant::Jsonc,
+        _ => JsonVariant::Json,
+    }
+}
+
+/// `package.json` content with its keys put in `sort-package-json` order, when
+/// `[fmt.json.oxc] sort_package_json` asks for it (`true`, or a table with `sort_scripts`).
+/// `None` leaves the file as is — including when it is not valid JSON, which the formatter
+/// then reports on its own.
+pub(super) fn sorted_package_json(src: &SourceFile, cfg: &EngineConfig) -> Option<String> {
+    if src.path.file_name().and_then(|name| name.to_str()) != Some("package.json") {
+        return None;
+    }
+    let sort_scripts = match cfg.options.get("sort_package_json")? {
+        toml::Value::Boolean(true) => false,
+        toml::Value::Table(table) => table.get("sort_scripts").and_then(toml::Value::as_bool).unwrap_or(false),
+        _ => return None,
+    };
+    let options = sort_package_json::SortOptions::new()
+        .with_sort_scripts(sort_scripts)
+        .with_pretty(false);
+    sort_package_json::sort_package_json_with_options(&src.content, &options).ok()
 }
