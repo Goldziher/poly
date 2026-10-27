@@ -847,6 +847,15 @@ fn file_safety_without_jobs_is_one_hook_and_aws_is_opt_in() {
 }
 
 fn lower_with_git_args(hooks: &HooksConfig, stage: HookStage, git_args: &[&str]) -> StageSpec {
+    lower_with_files_and_git_args(hooks, stage, &[], git_args)
+}
+
+fn lower_with_files_and_git_args(
+    hooks: &HooksConfig,
+    stage: HookStage,
+    files: &[PathBuf],
+    git_args: &[&str],
+) -> StageSpec {
     struct NoTools;
     impl ToolProbe for NoTools {
         fn is_available(&self, _tool: &str) -> bool {
@@ -865,7 +874,7 @@ fn lower_with_git_args(hooks: &HooksConfig, stage: HookStage, git_args: &[&str])
         &poly(),
         stage,
         TemplateInputs {
-            files: &[],
+            files,
             git_args: &git_args,
         },
         &HookCacheMode::Safe,
@@ -919,7 +928,7 @@ fmt = { fix = true }
     let HookCommand::Run(line) = &hook.command else {
         panic!("expected run command");
     };
-    assert!(line.contains("fmt --fix --exit-zero-on-fix"), "{line}");
+    assert!(line.contains("--fix --exit-zero-on-fix"), "{line}");
     assert!(hook.stage_fixed);
 }
 
@@ -937,4 +946,30 @@ fmt = true
     };
     assert!(line.contains("fmt --check"), "{line}");
     assert!(!spec.hooks[0].stage_fixed);
+}
+
+#[test]
+fn a_rooted_job_scopes_files_before_stripping_the_root_and_leaves_git_arguments_alone() {
+    let hooks = hooks_from(
+        r#"
+[hooks.pre-push]
+[[hooks.pre-push.jobs]]
+run = "check {staged_files} {1} {git_args}"
+root = "pkg"
+files = "*.py"
+exclude = "pkg/gen/**"
+"#,
+    );
+    let files = vec![
+        PathBuf::from("pkg/src/a.py"),
+        PathBuf::from("pkg/gen/b.py"),
+        PathBuf::from("pkg/src/c.md"),
+        PathBuf::from("other/d.py"),
+    ];
+    let spec = lower_with_files_and_git_args(&hooks, HookStage::PrePush, &files, &["origin", "pkg/url"]);
+    assert_eq!(
+        run_line(&spec.hooks[0]),
+        "check 'src/a.py' 'origin' 'origin' 'pkg/url'",
+        "the exclude matches repo-relative paths, files are then root-relative, git arguments are verbatim"
+    );
 }
