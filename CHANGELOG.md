@@ -5,6 +5,31 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
+## [Unreleased]
+
+### Changed
+
+- **Dependency refresh.** `cargo upgrade --incompatible --pinned`, plus advancing all three git
+  pins to their remotes' HEADs: biome `dd96b11` → `e2e5a36`, oxc `98573d2` → `e2be72d`, rubyfmt
+  `f765808` → `884b9fd`. The ruff crates moved `0.0.17`/`0.17.0` → `0.0.20`/`0.17.3`, `rumdl`
+  0.2 → 0.3, `sqruff` 0.41 → 0.43, `ast-grep` 0.50 → 0.51, `saphyr` 0.1 → 0.3, `serde-saphyr`
+  1 → 2, `rmcp` 3.5 → 3.8, `fancy-regex` 0.19 → 0.20 and `tree-sitter-language-pack` 1.21 → 1.22.
+  **The workspace `rust-version` is now 1.99** (was 1.97): `mago` 1.51 → 1.59 requires it. Every
+  engine `version()` value fed by a bumped dependency moved with it, so cached results are
+  invalidated rather than reused. rumdl 0.3 now reports `MD041` for a file that does not start
+  with a level-1 heading; the `rumdl` diagnostics snapshot records it. **The biome pin is back at
+  HEAD although ADR 0003 held it at `dd96b11`**: HEAD still carries the fixture whose checkout
+  path exceeds Windows' `MAX_PATH`, so the Windows build must be watched. `psm` stays at 0.1.24
+  because `pest_stack_guard` pins it exactly.
+
+- **Tooling refresh.** pnpm 12.11.2 → 12.15.0, `@opencode/plugin` 2.0.26 → 2.1.4, the OpenCode
+  `@opencode-ai/plugin` 1.18.35 → 1.19.4, Astro 7.3.8 → 7.4.2, Starlight 0.42.6 → 0.42.7, the
+  Hermes adapter's `mcp` pin 1.28.1 → 1.30.0 (mcp 2.x removed `McpError`, so it is not taken),
+  `astral-sh/setup-uv` v10.3.2, `pnpm/action-setup` v6, `actions/deploy-pages` and
+  `actions/upload-pages-artifact` v5. `deny.toml` ignores the `zip` 8.x extraction advisories
+  (pinned by `ruff_db`; poly never extracts archives with it) and the `serde_yaml` unmaintained
+  notice.
+
 ## [0.29.0] - 2026-10-11
 
 ### Added
