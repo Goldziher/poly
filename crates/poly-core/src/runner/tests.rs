@@ -130,3 +130,186 @@ fn worker_stack_accommodates_deep_recursion() {
     let result = pool.install(|| recurse_pinning_stack(FRAMES));
     assert_eq!(result, FRAMES);
 }
+
+mod panic_containment {
+    //! The runner turns a panic inside an in-process parser into a per-file
+    //! error instead of letting rayon carry it out of the worker and kill the run
+    //! (see `engine_guard`).
+    //!
+    //! The containment used to be pinned by feeding a real parser an input that
+    //! made it panic. That is not a stable fixture: the upstream bug in use was
+    //! fixed by a dependency upgrade and the tests silently stopped testing
+    //! anything. The engine here panics on demand, so they cannot.
+    use super::*;
+    use crate::config::GlobalDefaults;
+    use crate::engine::{Capabilities, Engine};
+    use crate::filter::SeverityRemap;
+
+    const TRIGGER: &str = "PANIC-HERE";
+
+    /// An engine that panics, the way a parser asserting on valid input does,
+    /// for any source containing [`TRIGGER`] and otherwise behaves normally.
+    struct PanickingParser;
+
+    impl Engine for PanickingParser {
+        fn name(&self) -> &'static str {
+            "panicking-parser"
+        }
+
+        fn languages(&self) -> &'static [Language] {
+            &[Language::Python]
+        }
+
+        fn capabilities(&self) -> Capabilities {
+            Capabilities {
+                lint: true,
+                format: true,
+                fix: false,
+            }
+        }
+
+        fn version(&self) -> &str {
+            "test"
+        }
+
+        fn lint(&self, src: &SourceFile, _cfg: &crate::config::EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
+            assert!(!src.content.contains(TRIGGER), "parser invariant violated at offset 7");
+            Ok(vec![finding()])
+        }
+
+        fn format(&self, src: &SourceFile, _cfg: &crate::config::EngineConfig) -> anyhow::Result<FormatOutput> {
+            assert!(!src.content.contains(TRIGGER), "parser invariant violated at offset 7");
+            Ok(FormatOutput::Formatted(src.content.to_uppercase()))
+        }
+    }
+
+    fn finding() -> Diagnostic {
+        Diagnostic {
+            engine: "panicking-parser".to_owned(),
+            code: Some("T001".to_owned()),
+            severity: Severity::Warning,
+            title: "a real finding".to_owned(),
+            description: None,
+            url: None,
+            span: None,
+            fix: Vec::new(),
+            metadata: std::collections::BTreeMap::new(),
+        }
+    }
+
+    fn plans() -> Vec<EnginePlan> {
+        vec![EnginePlan {
+            engine: Box::new(PanickingParser),
+            config: crate::config::EngineConfig {
+                globals: GlobalDefaults::default(),
+                indent_width: 4,
+                options: toml::Table::new(),
+            },
+            serialized_args: ResultCache::serialize_args(&toml::Table::new()),
+            severity_remap: SeverityRemap::new(Vec::new()),
+            provides_language_lint: true,
+        }]
+    }
+
+    fn discovered(path: &std::path::Path) -> DiscoveredFile {
+        DiscoveredFile {
+            path: path.to_path_buf(),
+            language: Language::Python,
+            config_id: 0,
+        }
+    }
+
+    fn disabled_cache(directory: &std::path::Path) -> ResultCache {
+        ResultCache::open(directory.join("cache"), false).expect("open disabled cache")
+    }
+
+    #[test]
+    fn a_lint_panic_becomes_an_error_naming_the_backend_and_the_file() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let bad = directory.path().join("bad.py");
+        let error = lint_content(
+            &discovered(&bad),
+            &plans(),
+            &disabled_cache(directory.path()),
+            TRIGGER,
+            false,
+        )
+        .expect_err("a panicking backend must surface as an error, not unwind");
+
+        let message = format!("{error:#}");
+        assert!(message.contains("panicked"), "{message}");
+        assert!(message.contains("panicking-parser"), "{message}");
+        assert!(
+            message.contains("parser invariant violated"),
+            "the upstream message is what makes the report actionable: {message}"
+        );
+    }
+
+    #[test]
+    fn a_format_panic_becomes_an_error_instead_of_killing_the_run() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let bad = directory.path().join("bad.py");
+        std::fs::write(&bad, TRIGGER).expect("write fixture");
+        let plan = RunPlan::serving(0, Language::Python, plans());
+
+        let error = format_one(
+            &discovered(&bad),
+            &plan,
+            &disabled_cache(directory.path()),
+            false,
+            false,
+            false,
+            &[true],
+            &BatchPrefill::default(),
+        )
+        .expect_err("a panicking backend must surface as an error, not unwind");
+
+        let message = format!("{error:#}");
+        assert!(message.contains("panicked"), "{message}");
+        assert!(message.contains("panicking-parser"), "{message}");
+    }
+
+    /// The failure that costs a user: everything else in the repository
+    /// disappearing. Run through rayon, which is what propagates a worker panic
+    /// to the caller — and asserted on a neighbour with a real finding, so a run
+    /// that returned nothing cannot pass.
+    #[test]
+    fn files_beside_a_panicking_one_are_still_linted() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let cache = disabled_cache(directory.path());
+        let plans = plans();
+        let inputs = [("bad.py", TRIGGER), ("good.py", "x = 1\n")];
+
+        let outcomes: Vec<_> = inputs
+            .par_iter()
+            .map(|(name, content)| {
+                lint_content(
+                    &discovered(&directory.path().join(name)),
+                    &plans,
+                    &cache,
+                    content,
+                    false,
+                )
+            })
+            .collect();
+
+        assert!(outcomes[0].is_err(), "the panicking file is reported as a failure");
+        let (diagnostics, _) = outcomes[1].as_ref().expect("the neighbour must still be linted");
+        assert_eq!(diagnostics.len(), 1, "the neighbour's finding must survive");
+    }
+
+    #[test]
+    fn input_nested_deeply_enough_to_overflow_a_stack_is_refused_before_any_backend_runs() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let content = "[".repeat(10_000);
+        let error = lint_content(
+            &discovered(&directory.path().join("deep.py")),
+            &plans(),
+            &disabled_cache(directory.path()),
+            &content,
+            false,
+        )
+        .expect_err("a stack overflow aborts the process and cannot be caught, so the input is refused");
+        assert!(format!("{error:#}").contains("nests brackets"), "{error:#}");
+    }
+}

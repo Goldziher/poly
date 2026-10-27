@@ -9,7 +9,7 @@ use anyhow::Context;
 use crate::config::{Config, Kind};
 use crate::discover::{DiscoveredFile, discover_reporting};
 use crate::engine::{Diagnostic, Edit, FormatOutput, Severity, SourceFile};
-use crate::engine_guard::guard_engine_panic;
+use crate::engine_guard::{guard_engine_panic, refuse_pathological_nesting};
 use crate::filter::{
     PerFileIgnores, Suppressions, is_binary, is_format_ignored, is_generated_lockfile, is_generated_source,
     is_hash_stamped_source, match_bases, relative_for_match,
@@ -551,6 +551,7 @@ fn lint_content(
     content: &str,
     collect_debug: bool,
 ) -> anyhow::Result<(Vec<Diagnostic>, Option<RunDebug>)> {
+    refuse_pathological_nesting(&f.path, content)?;
     let src = SourceFile {
         path: f.path.clone(),
         language: f.language.clone(),
@@ -722,6 +723,7 @@ fn format_one(
     if !fix_generated && is_hash_stamped_source(&original) {
         return Ok(format_skip_result(f, Some(HASH_STAMPED_SKIP.to_owned())));
     }
+    refuse_pathological_nesting(&f.path, &original)?;
     let mut debug = collect_debug.then(RunDebug::default);
     let mut src = SourceFile {
         path: f.path.clone(),
