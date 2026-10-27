@@ -36,6 +36,10 @@ pub struct Job {
     /// File-type filters (e.g. `text`, `executable`).
     pub file_types: Vec<String>,
     /// Run the job from this subdirectory.
+    ///
+    /// File arguments (and `{staged_files}` / `{all_files}`) are passed relative
+    /// to it, as lefthook and pre-commit do, and files outside it are not passed;
+    /// a job none of whose files are under `root` is skipped.
     pub root: Option<String>,
     /// Skip guard — when active, the job does not run.
     pub skip: Option<Guard>,

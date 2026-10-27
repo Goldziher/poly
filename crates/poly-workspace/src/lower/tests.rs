@@ -378,6 +378,24 @@ run = "prettier --write {staged_files}"
 }
 
 #[test]
+fn template_paths_are_relative_to_the_job_root() {
+    let hooks = hooks_from(
+        r#"
+[hooks.pre-commit]
+[[hooks.pre-commit.jobs]]
+run = "echo {staged_files}"
+root = "pkg"
+"#,
+    );
+    let files = vec![PathBuf::from("pkg/src/a.py"), PathBuf::from("other/b.py")];
+    let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &files, &HookCacheMode::Safe).unwrap();
+    let HookCommand::Run(line) = &spec.hooks[0].command else {
+        panic!("expected run command");
+    };
+    assert_eq!(line, "echo 'src/a.py'");
+}
+
+#[test]
 fn template_substitution_is_scoped_by_the_job_glob() {
     let hooks = hooks_from(
         r#"

@@ -603,3 +603,24 @@ fn hooks_install_succeeds_in_a_linked_worktree() {
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+fn commit_all(repo: &Path) {
+    git(repo, &["add", "-A"]);
+    git(repo, &["commit", "-qm", "init"]);
+}
+
+#[test]
+fn rooted_job_receives_root_relative_file_arguments() {
+    let repo = init_repo();
+    let root = repo.path();
+    std::fs::create_dir_all(root.join("pkg/src")).unwrap();
+    write(root, "pkg/src/x.py", "x = 1\n");
+    write(
+        root,
+        "poly.toml",
+        r#"
+[[hooks.pre-commit.jobs]]
+name = "rooted"
+root = "pkg"
+glob = "**/*.py"
+run = "echo ARGS: \"$@\"; test -f \"$1\""

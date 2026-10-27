@@ -1139,3 +1139,48 @@ fn default_budgets_differ_by_hook_shape() {
         Some(Duration::from_secs(5))
     );
 }
+
+#[test]
+fn rooted_hook_receives_root_relative_paths_and_ignores_files_outside() {
+    let repo = init_repo();
+    let root = repo.path();
+    std::fs::create_dir_all(root.join("pkg/src")).unwrap();
+    std::fs::create_dir_all(root.join("other")).unwrap();
+    std::fs::write(root.join("pkg/src/x.py"), "").unwrap();
+    std::fs::write(root.join("other/y.py"), "").unwrap();
+
+    let mut hook = Hook::run("rooted", "echo ARGS: \"$@\" > args.out");
+    hook.cwd = Some(PathBuf::from("pkg"));
+    let mut req = request(root, pre_commit(vec![hook]));
+    req.files = vec![PathBuf::from("pkg/src/x.py"), PathBuf::from("other/y.py")];
+
+    let outcome = run(req).expect("run");
+
+    assert!(outcome.success());
+    assert_eq!(
+        std::fs::read_to_string(root.join("pkg/args.out")).unwrap(),
+        "ARGS: src/x.py\n"
+    );
+}
+
+#[test]
+fn rooted_hook_is_skipped_when_no_file_is_under_its_root() {
+    let repo = init_repo();
+    let root = repo.path();
+    std::fs::create_dir_all(root.join("pkg")).unwrap();
+    std::fs::create_dir_all(root.join("other")).unwrap();
+    std::fs::write(root.join("other/y.py"), "").unwrap();
+
+    let mut hook = Hook::run("rooted", "exit 1");
+    hook.cwd = Some(PathBuf::from("pkg"));
+    let mut req = request(root, pre_commit(vec![hook]));
+    req.files = vec![PathBuf::from("other/y.py")];
+
+    let outcome = run(req).expect("run");
+
+    assert!(outcome.success());
+    assert!(matches!(
+        outcome.stages[0].hooks[0].status,
+        HookStatus::Skipped(SkipReason::NoFiles)
+    ));
+}
