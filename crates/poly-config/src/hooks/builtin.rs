@@ -56,6 +56,10 @@ pub struct BuiltinHook {
     pub files: Option<Patterns>,
     /// File exclude glob(s) filtered from the matched set before the hook runs.
     pub exclude: Option<Patterns>,
+    /// Apply fixes instead of only checking (`lint` and `fmt` only): the hook
+    /// runs `--fix`, never fails on a file it rewrote, and re-stages what it
+    /// changed, so no wrapper script is needed.
+    pub fix: bool,
 }
 
 /// On-disk form of a builtin hook: bare toggle or a table.
@@ -73,6 +77,7 @@ struct BuiltinHookTable {
     stages: Vec<String>,
     files: Option<Patterns>,
     exclude: Option<Patterns>,
+    fix: bool,
 }
 
 impl<'de> Deserialize<'de> for BuiltinHook {
@@ -83,12 +88,14 @@ impl<'de> Deserialize<'de> for BuiltinHook {
                 stages: Vec::new(),
                 files: None,
                 exclude: None,
+                fix: false,
             }),
             BuiltinHookRepr::Table(table) => Ok(BuiltinHook {
                 enabled: table.enabled.unwrap_or(true),
                 stages: table.stages,
                 files: table.files,
                 exclude: table.exclude,
+                fix: table.fix,
             }),
         }
     }
@@ -339,6 +346,10 @@ impl schemars::JsonSchema for BuiltinHook {
                                 { "type": "array", "items": { "type": "string" } }
                             ],
                             "description": "File include/exclude glob(s) for this hook."
+                        },
+                        "fix": {
+                            "type": "boolean",
+                            "description": "`lint`/`fmt` only: apply fixes and re-stage them instead of only checking."
                         }
                     }
                 }

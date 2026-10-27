@@ -22,6 +22,7 @@ Both `poly lint` and `poly fmt` accept every flag below unless the description s
 | --- | --- |
 | `--fix` | Apply lint fixes or formatting in place. |
 | `--check` | `poly fmt` only. Explicit dry run — **this is the default**. |
+| `--exit-zero-on-fix` | `poly fmt --fix` only. Exit `0` after rewriting files instead of `1` (errors still exit `2`). For callers that treat non-zero as failure, such as a `stage_fixed` hook. |
 
 ### Generated files
 

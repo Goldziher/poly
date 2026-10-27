@@ -117,7 +117,9 @@ A `stage_fixed` hook that rewrites its matched files writes into the snapshot, s
 carried back to the worktree copy — but **only where that copy is byte-identical to the index**.
 Where it differs, the author holds unstaged work the write-back must not silently overwrite or
 stage; the fix is withheld instead, and for a `stage_fixed` hook that fails the run rather than
-losing the unstaged edit.
+
+A `stage_fixed` job running `poly fmt --fix` should add `--exit-zero-on-fix` (otherwise `fmt` exits
+1 after rewriting). The `fmt` and `lint` builtins do this for you with `fmt = { fix = true }`.
 
 ### Letting a build read an untracked file
 

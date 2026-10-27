@@ -308,6 +308,13 @@ pub struct FmtArgs {
     #[arg(long, conflicts_with = "fix")]
     pub check: bool,
 
+    /// With `--fix`, exit 0 when files were rewritten (errors still exit 2).
+    ///
+    /// Without it `--fix` exits 1 after rewriting, like `--check`. The flag is for
+    /// callers such as `stage_fixed` hooks that treat a non-zero exit as failure.
+    #[arg(long, requires = "fix")]
+    pub exit_zero_on_fix: bool,
+
     /// Flags shared with `poly lint`.
     #[command(flatten)]
     pub common: CommonArgs,
@@ -601,7 +608,7 @@ pub fn run_fmt(args: FmtArgs) -> ExitCode {
     // those files were not verified, and 1 is a code callers treat as success.
     if format_errors > 0 || skips_over_budget {
         ExitCode::from(EXIT_NOT_VERIFIED)
-    } else if changed > 0 {
+    } else if changed > 0 && !(write && args.exit_zero_on_fix) {
         ExitCode::from(1)
     } else {
         ExitCode::SUCCESS

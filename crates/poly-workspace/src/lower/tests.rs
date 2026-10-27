@@ -702,3 +702,36 @@ files = "**/*.py"
         "a per-file job still follows the stage's `parallel` flag"
     );
 }
+
+#[test]
+fn builtin_fmt_fix_runs_fix_mode_and_restages_without_failing() {
+    let hooks = hooks_from(
+        r#"
+[hooks.builtin]
+fmt = { fix = true }
+"#,
+    );
+    let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
+    let hook = &spec.hooks[0];
+    let HookCommand::Run(line) = &hook.command else {
+        panic!("expected run command");
+    };
+    assert!(line.contains("fmt --fix --exit-zero-on-fix"), "{line}");
+    assert!(hook.stage_fixed);
+}
+
+#[test]
+fn builtin_fmt_defaults_to_check_only() {
+    let hooks = hooks_from(
+        r#"
+[hooks.builtin]
+fmt = true
+"#,
+    );
+    let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
+    let HookCommand::Run(line) = &spec.hooks[0].command else {
+        panic!("expected run command");
+    };
+    assert!(line.contains("fmt --check"), "{line}");
+    assert!(!spec.hooks[0].stage_fixed);
+}

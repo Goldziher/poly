@@ -195,7 +195,7 @@ group table.
 
 | Key | Type | Meaning |
 | --- | --- | --- |
-| `lint` / `fmt` / `commit` | boolean or table | `{ enabled, stages, files, exclude }`. |
+| `lint` / `fmt` / `commit` | boolean or table | `{ enabled, stages, files, exclude, fix }`. `fix = true` (`lint`, `fmt`) runs `--fix`, never fails on a file it rewrote, and re-stages it — no wrapper script. |
 | `file_safety` | boolean or table | `{ enabled, stages, files, exclude, max_added_file_kb, merge_conflict, added_large_files, private_key, case_conflict, executables_have_shebangs, shebang_scripts_are_executable }`. |
 | `cargo` | boolean or table | `{ enabled, stages, clippy, sort, machete, deny, clippy_args, cache, lint }`. |
 
