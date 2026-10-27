@@ -180,6 +180,13 @@ fn format_comment_free(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<F
 
     let formatted = String::from_utf8(buf).map_err(|e| anyhow::anyhow!("hcl-rs produced non-UTF-8: {e}"))?;
 
+    // A body with no attributes or blocks serializes to nothing at all, so a
+    // file holding only whitespace would be rewritten to zero bytes. There is
+    // nothing in it to format, and emptying it is not formatting.
+    if formatted.is_empty() {
+        return Ok(FormatOutput::Unchanged);
+    }
+
     if formatted.parse::<hcl::Body>().is_err() || hcl_edit_parser::parse_body(&formatted).is_err() {
         return Ok(FormatOutput::Unchanged);
     }
@@ -260,6 +267,18 @@ mod tests {
     #[test]
     fn has_comments_detects_trailing_slash_slash() {
         assert!(has_comments("x = 1 // trailing comment\n"));
+    }
+
+    #[test]
+    fn a_whitespace_only_file_is_never_emptied() {
+        let engine = HclEngine;
+        for content in ["\n", "\n\n", "  \n"] {
+            let src = make_src("output.tf", Language::Hcl, content);
+            assert!(
+                matches!(engine.format(&src, &default_cfg()).unwrap(), FormatOutput::Unchanged),
+                "{content:?} has nothing to format and must not be rewritten to zero bytes"
+            );
+        }
     }
 
     #[test]
