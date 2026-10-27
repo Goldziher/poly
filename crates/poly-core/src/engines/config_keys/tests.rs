@@ -50,6 +50,48 @@ fn titles(diagnostics: &[Diagnostic]) -> Vec<String> {
 // ---------------------------------------------------------------- behaviour
 
 #[test]
+fn a_misspelled_language_id_is_reported_with_the_likely_language() {
+    let found = warnings("[fmt.pyhton.ruff]\nline_length = 100\n");
+    assert_eq!(found.len(), 1, "got {:?}", titles(&found));
+    assert_eq!(
+        found[0].title,
+        "unknown language `pyhton` in `[fmt]`: did you mean `python`?"
+    );
+    assert_eq!(found[0].code.as_deref(), Some("unknown-config-key"));
+}
+
+#[test]
+fn a_common_language_alias_is_reported_with_its_canonical_id() {
+    let found = warnings("[fmt.yml.yaml]\nsingle_quote = true\n[lint.js.oxc]\n");
+    assert_eq!(
+        titles(&found),
+        [
+            "unknown language `js` in `[lint]`: did you mean `javascript`?",
+            "unknown language `yml` in `[fmt]`: did you mean `yaml`?",
+        ]
+    );
+}
+
+#[test]
+fn an_unrelated_unknown_language_is_left_alone() {
+    let found = warnings("[fmt.fortranesque.somefmt]\nwidth = 1\n");
+    assert!(found.is_empty(), "got {:?}", titles(&found));
+}
+
+#[test]
+fn a_known_language_is_never_reported_as_a_typo() {
+    let found = warnings("[fmt.go.gofmt]\nenabled = true\n[fmt.yaml.yaml]\nsingle_quote = true\n");
+    assert!(found.is_empty(), "got {:?}", titles(&found));
+}
+
+#[test]
+fn sub_tables_of_the_yaml_formatter_that_it_never_reads_are_reported() {
+    let found = warnings("[fmt.yaml.yaml.language]\nquotes = \"prefer_single\"\n[fmt.yaml.yaml.layout]\nprint_width = 80\n");
+    assert_eq!(found.len(), 2, "got {:?}", titles(&found));
+    assert!(found.iter().all(|d| d.title.starts_with("unknown option")));
+}
+
+#[test]
 fn a_misspelled_key_is_reported_once_naming_the_key_and_the_engine() {
     let found = warnings("[lint.python.ruff]\nmccabe_max_complexit = 10\n");
     assert_eq!(found.len(), 1, "expected exactly one warning, got {:?}", titles(&found));
