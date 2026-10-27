@@ -256,3 +256,13 @@ dependency, not merely on the rev label (ADR 0008). Whatever `ruff-0.16.9` cache
 `cargo upgrade --dry-run --incompatible` reports nothing else behind: every remaining crates.io
 dependency already resolves to its latest compatible version, and the three git pins are at their
 HEADs (biome held at `dd96b11` for the Windows reason recorded above).
+
+## Update 2026-10-27: the biome pin moved to HEAD and the Windows build is accepted as broken
+
+The biome, oxc and rubyfmt pins moved to their HEADs (`e2e5a36`, `e2be72d`, `884b9fd`) as part of a
+full dependency refresh. This supersedes the "biome stays at `dd96b11`" decision above. biome's
+fixture path is still past Windows' `MAX_PATH` once cargo's checkout prefix is added, so Windows
+builds that resolve the biome git dependency fail until upstream shortens the path or cargo/libgit2
+supports long paths. The maintainers chose that over holding the pin; the Windows CI job is expected
+to be red and is not a regression to chase. Revisit when biome next touches that fixture or when
+[libgit2/libgit2#3053] closes.
