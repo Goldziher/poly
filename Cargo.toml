@@ -17,7 +17,7 @@ members = [
 [workspace.package]
 version = "0.29.0"
 edition = "2024"
-rust-version = "1.97"
+rust-version = "1.99"
 license = "MIT"
 authors = ["Na'aman Hirschfeld <nhirschfeld@gmail.com>"]
 repository = "https://github.com/Goldziher/poly"
@@ -79,16 +79,16 @@ itertools = "0.15.0"
 json5 = "1.3.4"
 libc = "0.2.191"
 liblzma = { version = "0.4.9", features = ["static"] }
-mago-allocator = { version = "1.51" }
-mago-database = { version = "1.51" }
-mago-formatter = { version = "1.51", features = ["serde"] }
-mago-linter = { version = "1.51" }
-mago-names = { version = "1.51" }
-mago-php-version = { version = "1.51" }
-mago-reporting = { version = "1.51" }
-mago-span = { version = "1.51" }
-mago-syntax = { version = "1.51" }
-mago-text-edit = { version = "1.51" }
+mago-allocator = { version = "1.59" }
+mago-database = { version = "1.59" }
+mago-formatter = { version = "1.59", features = ["serde"] }
+mago-linter = { version = "1.59" }
+mago-names = { version = "1.59" }
+mago-php-version = { version = "1.59" }
+mago-reporting = { version = "1.59" }
+mago-span = { version = "1.59" }
+mago-syntax = { version = "1.59" }
+mago-text-edit = { version = "1.59" }
 malva = "0.16"
 markdown = "1.0.0"
 markup_fmt = "0.27"
