@@ -41,11 +41,19 @@ pub(super) fn append_withheld_fix(report: &mut String, withheld: &[crate::model:
         let _ = writeln!(report, "        {marker}{} — {}", fix.path.display(), fix.reason);
     }
     let reasons = |predicate: fn(&WithheldReason) -> bool| withheld.iter().any(|fix| predicate(&fix.reason));
-    if reasons(|reason| matches!(reason, WithheldReason::UnstagedChanges)) {
+    let unstaged: Vec<String> = withheld
+        .iter()
+        .filter(|fix| matches!(fix.reason, WithheldReason::UnstagedChanges))
+        .map(|fix| fix.path.display().to_string())
+        .collect();
+    if !unstaged.is_empty() {
+        let listed = unstaged.join(" ");
         let _ = writeln!(
             report,
-            "      re-run the fixer over your working tree and `git add` the result, \
-             or stash the unstaged changes first."
+            "      poly will not overwrite your unstaged edits or stage them for you. Pick one:\n\
+             \x20       git add -- {listed}   (stage everything, then commit again)\n\
+             \x20       git stash push --keep-index -- {listed}   (set the edits aside, commit, `git stash pop`)\n\
+             \x20       [hooks] partial_stage = \"restage\"   (stage only the fix, keep your edits; set once in poly.toml)"
         );
     }
     if reasons(WithheldReason::is_security_refusal) {
@@ -137,8 +145,10 @@ mod tests {
             "        SECURITY: evil.rs — the worktree entry is a symlink; \
              poly refused to write through it\n"
                 .to_string(),
-            "      re-run the fixer over your working tree and `git add` the result, \
-             or stash the unstaged changes first.\n"
+            "      poly will not overwrite your unstaged edits or stage them for you. Pick one:\n\
+             \x20       git add -- src/lib.rs   (stage everything, then commit again)\n\
+             \x20       git stash push --keep-index -- src/lib.rs   (set the edits aside, commit, `git stash pop`)\n\
+             \x20       [hooks] partial_stage = \"restage\"   (stage only the fix, keep your edits; set once in poly.toml)\n"
                 .to_string(),
             "      poly will not write a fix through a symlink or to a path outside the repository. \
              Staging changes nothing here — replace the tracked entry with a regular file inside \

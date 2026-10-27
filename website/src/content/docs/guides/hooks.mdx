@@ -137,6 +137,9 @@ A `stage_fixed` hook that rewrites its matched files writes into the snapshot, s
 carried back to the worktree copy — but **only where that copy is byte-identical to the index**.
 Where it differs, the author holds unstaged work the write-back must not silently overwrite or
 stage; the fix is withheld instead, and for a `stage_fixed` hook that fails the run rather than
+losing the unstaged edit. The failure names the files and the commands that resolve it (`git add`
+them, or `git stash push --keep-index`). To have poly stage just the fixed content and leave your
+unstaged edits in the worktree, set `partial_stage = "restage"` under `[hooks]`.
 
 A `stage_fixed` job running `poly fmt --fix` should add `--exit-zero-on-fix` (otherwise `fmt` exits
 1 after rewriting). The `fmt` and `lint` builtins do this for you with `fmt = { fix = true }`.

@@ -319,6 +319,10 @@ pub struct HookRunRequest {
     pub progress: bool,
     /// Show the captured output of every hook, passing ones included.
     pub verbose: bool,
+    /// When a `stage_fixed` hook fixes a staged file whose worktree copy holds
+    /// unstaged edits, stage just the fixed content (leaving the worktree alone)
+    /// instead of withholding the fix and failing the hook.
+    pub restage_partial: bool,
 }
 
 /// The result of running all requested stages.

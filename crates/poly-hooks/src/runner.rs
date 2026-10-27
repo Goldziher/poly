@@ -314,7 +314,13 @@ fn run_hooks(
         // Landing is a group-wide step: the hooks ran concurrently, so who
         // rewrote what has to be reconciled once, before any outcome is final.
         let stage_fixed: Vec<bool> = group.iter().map(|&pos| spec.hooks[pos].stage_fixed).collect();
-        fixes::land_group_rewrites(&request.root, request.work_root.as_deref(), &stage_fixed, &mut runs)?;
+        fixes::land_group_rewrites(
+            &request.root,
+            request.work_root.as_deref(),
+            &stage_fixed,
+            request.restage_partial,
+            &mut runs,
+        )?;
 
         let mut abort = false;
         for (&pos, run) in group.iter().zip(runs) {

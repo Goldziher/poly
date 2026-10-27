@@ -135,6 +135,7 @@ pub(super) fn land_group_rewrites(
     root: &Path,
     snapshot: Option<&Path>,
     stage_fixed: &[bool],
+    restage_partial: bool,
     runs: &mut [HookRun],
 ) -> anyhow::Result<()> {
     let rewritten: BTreeSet<PathBuf> = runs
@@ -159,10 +160,19 @@ pub(super) fn land_group_rewrites(
     };
 
     let paths: Vec<PathBuf> = rewritten.into_iter().collect();
-    let withheld: BTreeMap<PathBuf, WithheldReason> = write_back(root, snapshot, &paths)?
-        .into_iter()
-        .map(|fix| (fix.path, fix.reason))
-        .collect();
+    // Only a `stage_fixed` hook asked for its fix to reach the index, so only its
+    // paths may be restaged over unstaged edits.
+    let restageable: BTreeSet<PathBuf> = if restage_partial {
+        runs.iter()
+            .zip(stage_fixed)
+            .filter(|(run, fixed)| **fixed && passed(run))
+            .flat_map(|(run, _)| run.modified.iter().cloned())
+            .collect()
+    } else {
+        BTreeSet::new()
+    };
+    let WriteBack { withheld, restaged } = write_back(root, snapshot, &paths, &restageable)?;
+    let withheld: BTreeMap<PathBuf, WithheldReason> = withheld.into_iter().map(|fix| (fix.path, fix.reason)).collect();
 
     let mut to_stage: BTreeSet<PathBuf> = BTreeSet::new();
     for (index, run) in runs.iter_mut().enumerate() {
@@ -186,7 +196,7 @@ pub(super) fn land_group_rewrites(
             .collect();
         if stage_fixed[index] {
             run.outcome.files_modified = !mine_applied.is_empty();
-            to_stage.extend(mine_applied);
+            to_stage.extend(mine_applied.into_iter().filter(|path| !restaged.contains(path)));
         }
         // Reported whether or not the hook stages its fixes. Without
         // `stage_fixed` the fix was only ever going to land unstaged, but a fix
@@ -229,24 +239,50 @@ fn passed(run: &HookRun) -> bool {
 /// Each refusal is returned **with its reason**. The unstaged-work case and the
 /// symlink / escaping-path case are not the same event and must not reach the
 /// reader as the same sentence.
-fn write_back(root: &Path, snapshot: &Path, modified: &[PathBuf]) -> anyhow::Result<Vec<WithheldFix>> {
-    let mut withheld = Vec::new();
+fn write_back(
+    root: &Path,
+    snapshot: &Path,
+    modified: &[PathBuf],
+    restageable: &BTreeSet<PathBuf>,
+) -> anyhow::Result<WriteBack> {
+    let mut outcome = WriteBack::default();
     for path in modified {
-        if let Some(reason) = withhold_reason(root, path)? {
-            withheld.push(WithheldFix::new(path.clone(), reason));
-            continue;
+        match withhold_reason(root, path)? {
+            Some(WithheldReason::UnstagedChanges) if restageable.contains(path) => {
+                // The author's unstaged edits stay in the worktree; only the fixed
+                // content goes into the index, so the commit carries the fix.
+                git::stage_contents_from(root, path, &snapshot.join(path))?;
+                outcome.restaged.insert(path.clone());
+                continue;
+            }
+            Some(reason) => {
+                outcome.withheld.push(WithheldFix::new(path.clone(), reason));
+                continue;
+            }
+            None => {}
         }
         // The source is inside poly's own snapshot, but it is read with the same
         // guard: `git checkout-index` reproduces symlink entries, so "a path in
         // the snapshot" is not by itself a promise of a regular file.
         let source = snapshot.join(path);
         let Some(bytes) = read_regular_file(&source) else {
-            withheld.push(WithheldFix::new(path.clone(), WithheldReason::SnapshotUnreadable));
+            outcome
+                .withheld
+                .push(WithheldFix::new(path.clone(), WithheldReason::SnapshotUnreadable));
             continue;
         };
         write_atomic(&root.join(path), &bytes)?;
     }
-    Ok(withheld)
+    Ok(outcome)
+}
+
+/// What [`write_back`] did with each rewritten path.
+#[derive(Default)]
+struct WriteBack {
+    /// Paths it refused to touch, with the reason.
+    withheld: Vec<WithheldFix>,
+    /// Paths whose fix went into the index only, over unstaged worktree edits.
+    restaged: BTreeSet<PathBuf>,
 }
 
 /// Why the fix for `path` may **not** be written into the worktree at `root`, or

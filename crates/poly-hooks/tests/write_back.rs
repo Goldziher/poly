@@ -131,8 +131,12 @@ fn write_back_is_withheld_when_the_stat_cache_calls_a_modified_file_clean() {
         "the report must name the file and say why: {report}"
     );
     assert!(
-        report.contains("or stash the unstaged changes first."),
-        "this is the case where staging is the remedy, so the report must say so: {report}"
+        report.contains("git add -- f.txt") && report.contains("git stash push --keep-index -- f.txt"),
+        "this is the case where staging is the remedy, so the report must give the commands: {report}"
+    );
+    assert!(
+        report.contains("partial_stage = \"restage\""),
+        "the report must name the opt-in that stages only the fix: {report}"
     );
 }
 
@@ -308,4 +312,70 @@ fn a_write_to_an_included_entry_reaches_the_live_worktree() {
     // The tracked file is untouched, so this is scoped to allowlisted paths and
     // is not a general hole in the snapshot's isolation.
     assert_eq!(std::fs::read_to_string(root.join("tracked.txt")).unwrap(), "tracked\n");
+}
+
+/// `restage_partial` is the opt-in that answers "stash/restage": the fix lands in
+/// the index, the author's unstaged edits stay exactly where they were.
+#[test]
+fn restage_partial_stages_only_the_fix_and_keeps_unstaged_edits() {
+    let repo = init_repo();
+    let cache = TempDir::new().expect("cache home");
+    let root = repo.path();
+    std::fs::write(root.join("f.txt"), "unformatted\n").unwrap();
+    git(root, &["add", "f.txt"]);
+    std::fs::write(root.join("f.txt"), "unformatted\nprecious unstaged work\n").unwrap();
+
+    let snapshot = StagedSnapshot::create_in(cache.path(), root, &[]).expect("snapshot");
+    let outcome = run(HookRunRequest {
+        root: root.to_path_buf(),
+        work_root: Some(snapshot.path().to_path_buf()),
+        files: vec![PathBuf::from("f.txt")],
+        restage_partial: true,
+        stages: vec![StageSpec {
+            stage: Stage::PreCommit,
+            hooks: vec![fixer("f.txt", "formatted\\n")],
+            ..StageSpec::default()
+        }],
+        ..HookRunRequest::default()
+    })
+    .expect("run");
+
+    assert!(outcome.success(), "{}", report_of(&outcome));
+    assert!(outcome.stages[0].hooks[0].files_modified);
+    assert_eq!(staged_blob(root, "f.txt"), "formatted\n", "the commit carries the fix");
+    assert_eq!(
+        std::fs::read_to_string(root.join("f.txt")).unwrap(),
+        "unformatted\nprecious unstaged work\n",
+        "the unstaged edits are untouched"
+    );
+}
+
+#[test]
+fn restage_partial_does_not_apply_to_a_hook_that_is_not_stage_fixed() {
+    let repo = init_repo();
+    let cache = TempDir::new().expect("cache home");
+    let root = repo.path();
+    std::fs::write(root.join("f.txt"), "unformatted\n").unwrap();
+    git(root, &["add", "f.txt"]);
+    std::fs::write(root.join("f.txt"), "unformatted\nprecious unstaged work\n").unwrap();
+
+    let snapshot = StagedSnapshot::create_in(cache.path(), root, &[]).expect("snapshot");
+    let mut hook = fixer("f.txt", "formatted\\n");
+    hook.stage_fixed = false;
+    let outcome = run(HookRunRequest {
+        root: root.to_path_buf(),
+        work_root: Some(snapshot.path().to_path_buf()),
+        files: vec![PathBuf::from("f.txt")],
+        restage_partial: true,
+        stages: vec![StageSpec {
+            stage: Stage::PreCommit,
+            hooks: vec![hook],
+            ..StageSpec::default()
+        }],
+        ..HookRunRequest::default()
+    })
+    .expect("run");
+
+    assert!(!outcome.success());
+    assert_eq!(staged_blob(root, "f.txt"), "unformatted\n", "the index is not touched");
 }

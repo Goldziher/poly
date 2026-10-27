@@ -34,7 +34,7 @@ mod testutil;
 
 pub use self::index::{
     StagedEntry, add, checkout_index_paths, get_staged_files, is_safe_relative_path, list_files, list_staged_entries,
-    list_submodule_gitlinks, staged_blob,
+    list_submodule_gitlinks, stage_contents_from, staged_blob,
 };
 pub use self::revision::{
     get_ancestors_not_in_remote, get_changed_files, get_parent_commit, get_root_commits, is_ancestor, rev_exists,

@@ -188,6 +188,7 @@ Reserved keys:
 | `snapshot_include` | string or array | Untracked paths pulled into the staged snapshot (ADR 0019). |
 | `isolate` | boolean | Force hooks onto the staged snapshot (unset uses the per-invocation default). |
 | `snapshot` | `"auto"` \| `"full"` | `auto` (default) materializes only the staged files and their directory context unless a `workspace` or cargo job will run; `full` always materializes the whole index. |
+| `partial_stage` | `"fail"` \| `"restage"` | What a `stage_fixed` job does when its fix lands on a file that also has unstaged edits. `fail` (default) withholds the fix and names the commands to resolve it; `restage` stages only the fixed content and leaves the edits in the worktree. |
 | `builtin` | table | See below. |
 
 `[hooks.builtin]` — poly's in-process hooks. Each of `lint`, `fmt`, `commit` is a

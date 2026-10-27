@@ -258,6 +258,7 @@ fn run_stage(args: RunArgs) -> Result<ExitCode> {
         sccache: sccache_settings(&config, args.no_sccache)?,
         progress: show_progress(),
         verbose: args.verbose,
+        restage_partial: config.hooks.partial_stage == poly_config::PartialStage::Restage,
     };
     run_and_report(request)
 }
@@ -599,6 +600,7 @@ fn hook_impl(args: HookImplArgs) -> Result<ExitCode> {
         sccache: sccache_settings(&config, args.no_sccache)?,
         progress: show_progress(),
         verbose: false,
+        restage_partial: config.hooks.partial_stage == poly_config::PartialStage::Restage,
     };
     run_and_report(request)
 }

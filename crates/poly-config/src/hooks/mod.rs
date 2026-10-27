@@ -70,6 +70,9 @@ pub struct HooksConfig {
     pub isolate: Option<bool>,
     /// How much of the index the staged snapshot materializes.
     pub snapshot: SnapshotMode,
+    /// What a `stage_fixed` hook does with a fix for a file that also holds
+    /// unstaged edits.
+    pub partial_stage: PartialStage,
     /// Whether a `[hooks]` section was present in the source config (vs this
     /// being the default produced when no `[hooks]` table exists). Gates the
     /// default-on builtins (e.g. the `cargo` group) so repos that have not
@@ -119,6 +122,17 @@ pub enum SnapshotMode {
     /// Always materialize the whole index.
     Full,
 }
+
+/// `[hooks] partial_stage` — how a `stage_fixed` fix lands on a partially staged file.
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum PartialStage {
+    /// Withhold the fix and fail the hook, naming the file and the commands to
+    /// resolve it. Nothing of the author's is overwritten or staged.
+    #[default]
+    Fail,
+    /// Stage the fixed content only, leaving the unstaged edits in the worktree.
+    Restage,
 }
 
 /// Validate a single inline job within a stage.
@@ -214,6 +228,7 @@ impl<'de> Visitor<'de> for HooksConfigVisitor {
         let mut builtin: Option<BuiltinHooks> = None;
         let mut isolate: Option<bool> = None;
         let mut snapshot: Option<SnapshotMode> = None;
+        let mut partial_stage: Option<PartialStage> = None;
         let mut snapshot_include: Option<Patterns> = None;
         let mut sources: Option<Vec<HookSource>> = None;
         let mut stage_configs: BTreeMap<Stage, StageConfig> = BTreeMap::new();
@@ -240,6 +255,14 @@ impl<'de> Visitor<'de> for HooksConfigVisitor {
                         return Err(de::Error::duplicate_field("isolate"));
                     }
                 }
+                "partial_stage" => {
+                    if partial_stage.replace(map.next_value()?).is_some() {
+                        return Err(de::Error::duplicate_field("partial_stage"));
+                    }
+                }
+                "snapshot" => {
+                    if snapshot.replace(map.next_value()?).is_some() {
+                        return Err(de::Error::duplicate_field("snapshot"));
                     }
                 }
                 "snapshot_include" => {
@@ -279,6 +302,7 @@ impl<'de> Visitor<'de> for HooksConfigVisitor {
             stage_configs,
             isolate,
             snapshot: snapshot.unwrap_or_default(),
+            partial_stage: partial_stage.unwrap_or_default(),
             snapshot_include: snapshot_include.unwrap_or_default(),
             present: true,
         })
@@ -301,6 +325,7 @@ impl schemars::JsonSchema for HooksConfig {
         let builtin = generator.subschema_for::<BuiltinHooks>();
         let source = generator.subschema_for::<HookSource>();
         let snapshot_mode = generator.subschema_for::<SnapshotMode>();
+        let partial_stage = generator.subschema_for::<PartialStage>();
         schemars::json_schema!({
             "description": "Git-hook configuration: the reserved keys below, plus one key per git \
                             stage (`[hooks.pre-commit]`, `[hooks.commit-msg]`, …).",
@@ -324,6 +349,7 @@ impl schemars::JsonSchema for HooksConfig {
                 "builtin": builtin,
                 "snapshot_include": patterns,
                 "snapshot": snapshot_mode,
+                "partial_stage": partial_stage,
                 "isolate": {
                     "type": "boolean",
                     "description": "Whether hooks run against the staged-content snapshot instead of \

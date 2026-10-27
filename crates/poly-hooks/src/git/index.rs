@@ -263,6 +263,45 @@ pub fn add(root: &Path, paths: &[PathBuf]) -> Result<(), Error> {
     Ok(())
 }
 
+/// Replace the index entry for `path` with the contents of `source`, leaving the
+/// worktree untouched, and keeping the entry's existing mode.
+///
+/// This is how a fix computed from staged content is committed when the worktree
+/// copy holds unstaged edits: `git add` would stage those edits too, so the
+/// fixed bytes go in through `hash-object` + `update-index --cacheinfo`
+/// instead. Requires `path` to have a stage-0 entry.
+#[instrument(level = "trace")]
+pub fn stage_contents_from(root: &Path, path: &Path, source: &Path) -> Result<(), Error> {
+    reject_unsafe_path(path)?;
+    let entries = list_staged_entries(root)?;
+    let Some(entry) = entries.iter().find(|entry| entry.path == path) else {
+        return Err(Error::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("`{}` has no staged entry to replace", path.display()),
+        )));
+    };
+    let mode = if entry.is_executable { "100755" } else { "100644" };
+    let hashed = git_cmd("hash fixed content")?
+        .current_dir(root)
+        .arg("hash-object")
+        .arg("-w")
+        .arg("--path")
+        .arg(path)
+        .arg("--")
+        .arg(source)
+        .check(true)
+        .output()?;
+    let oid = String::from_utf8_lossy(&hashed.stdout).trim().to_string();
+    git_cmd("update index entry")?
+        .current_dir(root)
+        .arg("update-index")
+        .arg("--cacheinfo")
+        .arg(format!("{mode},{oid},{}", path.display()))
+        .check(true)
+        .status()?;
+    Ok(())
+}
+
 /// Read the staged (index) bytes of `path` — the content a commit would capture
 /// — or `None` when the path has no stage-0 entry.
 ///
