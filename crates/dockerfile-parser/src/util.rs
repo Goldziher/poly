@@ -6,8 +6,6 @@ use crate::error::*;
 use crate::parser::*;
 use crate::splicer::Span;
 
-use enquote::unquote;
-
 /// Given a node ostensibly containing a string array, returns an unescaped
 /// array of strings
 pub(crate) fn parse_string_array(array: Pair) -> Result<StringArray> {
@@ -17,7 +15,10 @@ pub(crate) fn parse_string_array(array: Pair) -> Result<StringArray> {
     for field in array.into_inner() {
         match field.as_rule() {
             Rule::string => {
-                elements.push(parse_string(&field)?);
+                elements.push(SpannedString {
+                    span: Span::from_pair(&field),
+                    content: unquote_exec(field.as_str())?,
+                });
             }
             Rule::comment => continue,
             _ => return Err(unexpected_token(field)),
@@ -27,14 +28,54 @@ pub(crate) fn parse_string_array(array: Pair) -> Result<StringArray> {
     Ok(StringArray { span, elements })
 }
 
+/// Strips the quotes from a shell-style quoted string, resolving the escapes Docker's shell lexer recognises.
+///
+/// Escaped line breaks are removed. Inside double quotes (and backticks) a backslash escapes only the quote, another
+/// backslash and `$`; any other backslash is kept literally. Inside single quotes only `\'` and `\\` are escapes.
+/// Text that does not start with a quote is returned unchanged.
+pub(crate) fn unquote_shell(s: &str) -> Result<String> {
+    let cleaned = clean_escaped_breaks(s);
+    let Some(quote) = cleaned.chars().next().filter(|c| matches!(c, '"' | '\'' | '`')) else {
+        return Ok(cleaned);
+    };
+
+    let inner = cleaned
+        .get(1..)
+        .and_then(|rest| rest.strip_suffix(quote))
+        .ok_or_else(|| Error::UnescapeError {
+            message: format!("unterminated {quote} quote"),
+        })?;
+
+    let mut unescaped = String::with_capacity(inner.len());
+    let mut chars = inner.chars();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            unescaped.push(c);
+            continue;
+        }
+
+        match chars.clone().next() {
+            Some(next) if next == quote || next == '\\' || (next == '$' && quote != '\'') => {
+                unescaped.push(next);
+                chars.next();
+            }
+            _ => unescaped.push('\\'),
+        }
+    }
+
+    Ok(unescaped)
+}
+
+/// Strips the quotes from a JSON-style (exec form) string, resolving C-style escapes.
+fn unquote_exec(s: &str) -> Result<String> {
+    enquote::unquote(s).map_err(|error| Error::UnescapeError {
+        message: error.to_string(),
+    })
+}
+
 pub(crate) fn parse_string(field: &Pair) -> Result<SpannedString> {
     let str_span = Span::from_pair(field);
-    let field_str = field.as_str();
-    let content = if matches!(field_str.chars().next(), Some('"' | '\'' | '`')) {
-        unquote(field_str)?
-    } else {
-        field_str.to_string()
-    };
+    let content = unquote_shell(field.as_str())?;
 
     Ok(SpannedString {
         span: str_span,
@@ -46,7 +87,7 @@ pub(crate) fn parse_string(field: &Pair) -> Result<SpannedString> {
 ///
 /// This should be used to clean any input from the any_breakable rule
 pub(crate) fn clean_escaped_breaks(s: &str) -> String {
-    s.replace("\\\n", "")
+    s.replace("\\\r\n", "").replace("\\\n", "")
 }
 
 /// A string that may be broken across many lines or an array of strings.

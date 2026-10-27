@@ -54,7 +54,7 @@ const DL4001: &str = "DL4001";
 // ---------------------------------------------------------------------------
 
 /// dockerfile-parser crate version embedded into the cache key.
-const DOCKERFILE_PARSER_VERSION: &str = "0.9.0+parse-diag-v1+extendsel2";
+const DOCKERFILE_PARSER_VERSION: &str = "0.10.0+vendored1+parse-diag-v1+extendsel2";
 
 /// Diagnostic code emitted when the Dockerfile cannot be parsed at all.
 const PARSE_ERROR: &str = "parse-error";

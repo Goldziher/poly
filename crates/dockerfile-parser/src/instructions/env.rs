@@ -8,8 +8,6 @@ use crate::error::*;
 use crate::parser::{Pair, Rule};
 use crate::util::*;
 
-use enquote::unquote;
-
 /// An environment variable key/value pair
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct EnvVar {
@@ -56,7 +54,7 @@ fn parse_env_pair(record: Pair) -> Result<EnvVar> {
                 value = Some(BreakableString::new(&field).add_string(&field, field.as_str()));
             }
             Rule::env_pair_quoted_value => {
-                let v = unquote(field.as_str())?;
+                let v = unquote_shell(field.as_str())?;
 
                 value = Some(BreakableString::new(&field).add_string(&field, v));
             }
@@ -110,7 +108,7 @@ impl EnvInstruction {
                 Rule::env_name => key = Some(parse_string(&field)?),
                 Rule::env_single_value => value = Some(parse_any_breakable(field)?),
                 Rule::env_single_quoted_value => {
-                    let v = unquote(field.as_str())?;
+                    let v = unquote_shell(field.as_str())?;
 
                     value = Some(BreakableString::new(&field).add_string(&field, v));
                 }

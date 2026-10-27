@@ -10,8 +10,10 @@ pub use crate::error::*;
 pub use crate::image::*;
 pub use crate::instructions::*;
 pub use crate::parser::*;
+use crate::preprocess::{Heredoc, prepare};
 pub use crate::splicer::*;
 pub use crate::stage::*;
+use crate::util::SpannedString;
 
 /// A single Dockerfile instruction.
 ///
@@ -319,10 +321,14 @@ pub struct Dockerfile {
 
     /// An ordered list of all parsed instructions, including global_args
     pub instructions: Vec<Instruction>,
+
+    /// The heredocs (`RUN <<EOF ... EOF`) found in the file, in order of appearance
+    pub heredocs: Vec<Heredoc>,
 }
 
 fn parse_dockerfile(input: &str) -> Result<Dockerfile> {
-    let dockerfile = DockerfileParser::parse(Rule::dockerfile, input)
+    let prepared = prepare(input);
+    let dockerfile = DockerfileParser::parse(Rule::dockerfile, &prepared.masked)
         .map_err(|error| Error::ParseError {
             source: Box::new(error),
         })?
@@ -335,39 +341,59 @@ fn parse_dockerfile(input: &str) -> Result<Dockerfile> {
     let mut from_index = 0;
 
     for record in dockerfile.into_inner() {
-        if let Rule::EOI = record.as_rule() {
+        // TODO: consider exposing comments in the parse result
+        if matches!(record.as_rule(), Rule::EOI | Rule::comment) {
             continue;
         }
 
-        // TODO: consider exposing comments in the parse result
-        if let Rule::comment = record.as_rule() {
+        if record.as_rule() == Rule::arg {
+            for arg in ArgInstruction::all_from_record(record)? {
+                // args preceding the first FROM instruction may be substituted into
+                // all subsequent FROM image refs
+                if !from_found {
+                    global_args.push(arg.clone());
+                }
+                instructions.push(arg.into());
+            }
             continue;
         }
 
         let mut instruction = Instruction::try_from(record)?;
-        match &mut instruction {
-            Instruction::From(from) => {
-                // fix the from index since we can't know that in parse_instruction()
-                from.index = from_index;
-                from_index += 1;
-                from_found = true;
-            }
-            Instruction::Arg(arg)
-                // args preceding the first FROM instruction may be substituted into
-                // all subsequent FROM image refs
-                if !from_found => {
-                    global_args.push(arg.clone());
-                }
-            _ => (),
-        };
+        if let Instruction::From(from) = &mut instruction {
+            // fix the from index since we can't know that in parse_instruction()
+            from.index = from_index;
+            from_index += 1;
+            from_found = true;
+        }
 
         instructions.push(instruction);
     }
+
+    let heredocs = prepared
+        .heredocs
+        .into_iter()
+        .map(|raw| Heredoc {
+            // the instruction that opened a heredoc is the last one starting before its body
+            instruction: instructions
+                .iter()
+                .rposition(|instruction| instruction.span().start < raw.span.start)
+                .unwrap_or(0),
+            body: SpannedString {
+                span: raw.body,
+                content: input[raw.body.start..raw.body.end].to_string(),
+            },
+            delimiter: raw.delimiter,
+            strip_tabs: raw.strip_tabs,
+            quoted: raw.quoted,
+            span: raw.span,
+        })
+        .collect();
 
     Ok(Dockerfile {
         content: input.into(),
         global_args,
         instructions,
+        heredocs,
     })
 }
 

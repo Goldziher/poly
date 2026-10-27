@@ -22,12 +22,11 @@ pub enum Error {
         message: String,
     },
 
-    #[error("error unescaping string: {source:?}")]
+    #[error("error unescaping string: {message}")]
     /// A quoted string could not be unquoted.
     UnescapeError {
-        /// The underlying unquoting error.
-        #[from]
-        source: enquote::Error,
+        /// A description of why the string could not be unquoted.
+        message: String,
     },
 
     #[error("unable to parse Dockerfile")]

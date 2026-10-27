@@ -1,21 +1,40 @@
-# This project has been deprecated and will no longer be updated
+# dockerfile-parser
 
-## dockerfile-parser-rs
+A pure Rust library for parsing and inspecting Dockerfiles, useful for performing static analysis, writing linters,
+and creating automated tooling around Dockerfiles. It uses a proper grammar and can provide useful syntax errors in
+addition to a full syntax tree.
 
-[![docs.rs](https://docs.rs/dockerfile-parser/badge.svg)](https://docs.rs/dockerfile-parser/)
+## Provenance
 
-A pure Rust library for parsing and inspecting Dockerfiles, useful for
-performing static analysis, writing linters, and creating automated tooling
-around Dockerfiles. It uses a proper grammar and can provide useful syntax
-errors in addition to a full syntax tree.
+This crate is vendored from [HewlettPackard/dockerfile-parser-rs](https://github.com/HewlettPackard/dockerfile-parser-rs),
+which is archived. It was imported at upstream commit `08f37891c84d4162daa8d05918e1fdd8f1528624` (`v0.9.0` plus the
+image-digest change) and is maintained inside poly from there. It is `publish = false`; poly consumes it as a workspace
+path dependency. The original MIT license and copyright notice are in [`LICENSE`](./LICENSE).
+
+Changes relative to upstream:
+
+* Rust edition 2024, workspace dependency versions, `thiserror` instead of `snafu`, `LazyLock` instead of
+  `lazy_static`, and documentation on every public item.
+* Heredocs (`RUN <<EOF`, `COPY <<EOF`) are recognised and exposed as `Dockerfile::heredocs`; their bodies are no
+  longer parsed as instructions.
+* `ARG A=1 B` yields one `ArgInstruction` per name; `ARG A=` and `ENV A=` accept empty values.
+* Comment lines and blank lines inside a `\` continuation are skipped, as Docker does, and a shell `#` after `RUN`
+  no longer swallows the following instruction.
+* Quoted values use Docker's escaping (`\$`, `\"`, `\\`; other backslashes are literal) instead of C-style escapes
+  that failed on valid input such as `"\$HOME"`. Exec-form arrays keep JSON-style escapes.
+* `COPY ["src", "dst"]` (exec form), a leading byte order mark, and the `` # escape=` `` directive are handled.
+* `FROM image@sha256:...` digests are validated as 64 hexadecimal characters (upstream accepted any 64 characters
+  containing a hex digit).
+* `BreakableString::add` was renamed `with_component`, and `Error::UnescapeError` carries a message.
 
 ## Limitations
 
- * Buildkit parser directives are not handled at all.
- * Unknown instructions are parsed as `MiscInstruction` rather than producing
-   an explicit error. A number of valid but less interesting Docker instructions
-   are handled this way, e.g. `ONBUILD`, `MAINTAINER`, etc. See notes in
-   [the grammar](./src/dockerfile_parser.pest) for details.
+* Only the `escape` parser directive is honoured; other BuildKit directives are ordinary comments. Under
+  `` # escape=` ``, a trailing backslash that cannot continue a line is reported one byte shorter in spans.
+* Heredoc bodies are exposed as text; `RUN` and `COPY` spans cover only the instruction line.
+* Unknown instructions are parsed as `MiscInstruction` rather than producing an explicit error. A number of valid but
+  less interesting Docker instructions are handled this way, e.g. `ONBUILD`, `MAINTAINER`, etc. See notes in
+  [the grammar](./src/dockerfile_parser.pest) for details.
 
 ## Usage
 
@@ -83,24 +102,3 @@ versions, or to provide automated fixes for detected lints.
 
 See [`examples/splice.rs`](./examples/splice.rs) for an example that rewrites
 image references.
-
-## Contributing
-
-Bug reports, feature requests, and pull requests are welcome! Be sure to read
-though the [code of conduct] for some pointers to get started.
-
-Note that - as mentioned in the code of conduct - code contributions must
-indicate that you accept the [Developer Certificate of Origin][dco],
-essentially asserting you have the necessary rights to submit the code you're
-contributing under the project's license (MIT). If you agree, simply pass `-s`
-to `git commit`:
-
-```bash
-git commit -s [...]
-```
-
-... and Git will automatically append the required `Signed-off-by: ...` to the
-end of your commit message.
-
-[code of conduct]: ./CODE_OF_CONDUCT.md
-[dco]: https://developercertificate.org/

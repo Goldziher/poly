@@ -11,6 +11,9 @@ use crate::splicer::Span;
 
 /// A Dockerfile [`ARG` instruction][arg].
 ///
+/// An `ARG` line declaring several arguments (`ARG A=1 B`) yields one `ArgInstruction` per argument, all sharing the
+/// span of the whole line.
+///
 /// [arg]: https://docs.docker.com/engine/reference/builder/#arg
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArgInstruction {
@@ -30,31 +33,55 @@ pub struct ArgInstruction {
 }
 
 impl ArgInstruction {
-    pub(crate) fn from_record(record: Pair) -> Result<ArgInstruction> {
-        let span = Span::from_pair(&record);
+    /// Parses a single `arg_pair` (`NAME` or `NAME=value`) belonging to an instruction spanning `span`.
+    fn from_pair(span: Span, pair: Pair) -> Result<ArgInstruction> {
         let mut name = None;
         let mut value = None;
 
-        for field in record.into_inner() {
+        for field in pair.into_inner() {
             match field.as_rule() {
                 Rule::arg_name => name = Some(parse_string(&field)?),
-                Rule::arg_quoted_value => value = Some(parse_string(&field)?),
-                Rule::arg_value => value = Some(parse_string(&field)?),
+                Rule::arg_quoted_value | Rule::arg_value => value = Some(parse_string(&field)?),
                 Rule::comment => continue,
                 _ => return Err(unexpected_token(field)),
             }
         }
 
-        let name = match name {
-            Some(name) => name,
-            _ => {
-                return Err(Error::GenericParseError {
-                    message: "arg name is required".into(),
-                });
-            }
-        };
+        let name = name.ok_or_else(|| Error::GenericParseError {
+            message: "arg name is required".into(),
+        })?;
 
         Ok(ArgInstruction { span, name, value })
+    }
+
+    /// Parses every argument of an `ARG` instruction.
+    ///
+    /// `ARG A=1 B` declares two arguments; each becomes its own `ArgInstruction` sharing the span of the whole line.
+    pub(crate) fn all_from_record(record: Pair) -> Result<Vec<ArgInstruction>> {
+        let span = Span::from_pair(&record);
+        let mut args = Vec::new();
+
+        for field in record.into_inner() {
+            match field.as_rule() {
+                Rule::arg_pair => args.push(ArgInstruction::from_pair(span, field)?),
+                Rule::comment => continue,
+                _ => return Err(unexpected_token(field)),
+            }
+        }
+
+        if args.is_empty() {
+            return Err(Error::GenericParseError {
+                message: "arg name is required".into(),
+            });
+        }
+
+        Ok(args)
+    }
+
+    /// Parses the first argument of an `ARG` instruction.
+    pub(crate) fn from_record(record: Pair) -> Result<ArgInstruction> {
+        let mut args = ArgInstruction::all_from_record(record)?;
+        Ok(args.swap_remove(0))
     }
 }
 

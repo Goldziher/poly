@@ -36,11 +36,13 @@ mod error;
 mod image;
 mod instructions;
 mod parser;
+mod preprocess;
 mod splicer;
 mod stage;
 mod util;
 
 pub use crate::dockerfile_parser::*;
+pub use preprocess::Heredoc;
 pub use util::*;
 
 #[cfg(test)]

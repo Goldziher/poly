@@ -6,6 +6,7 @@ use crate::SpannedString;
 use crate::dockerfile_parser::Instruction;
 use crate::error::*;
 use crate::parser::{Pair, Rule};
+use crate::util::parse_string_array;
 use crate::{Span, parse_string};
 
 /// A key/value pair passed to a `COPY` instruction as a flag.
@@ -72,6 +73,7 @@ impl CopyInstruction {
             match field.as_rule() {
                 Rule::copy_flag => flags.push(CopyFlag::from_record(field)?),
                 Rule::copy_pathspec => paths.push(parse_string(&field)?),
+                Rule::copy_exec => paths.extend(parse_string_array(field)?.elements),
                 Rule::comment => continue,
                 _ => return Err(unexpected_token(field)),
             }
