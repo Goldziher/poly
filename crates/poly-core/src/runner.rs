@@ -36,11 +36,11 @@ use engine_clock::{EngineClock, EngineTime};
 use generated::{acts_on_generated, format_skip_result, lint_skip_result};
 use plan::{EnginePlan, RunPlan, plan_by_config_language, prefetch_tier2_grammars, provides_language_lint};
 use selection::{EngineSelection, validate_selection};
-use skips::unmatched_explicit_paths;
 pub use skips::{
-    BINARY_SKIP, DISABLED_SKIP_PREFIX, FILTERED_SKIP, GENERATED_SKIP, NO_ENGINE_SKIP, NO_LINT_RULES_SKIP_PREFIX,
-    SkippedFile, is_withdrawal_reason,
+    BINARY_SKIP, DISABLED_SKIP_PREFIX, FILTERED_SKIP, GENERATED_SKIP, LOCKFILE_SKIP, NO_ENGINE_SKIP,
+    NO_LINT_RULES_SKIP_PREFIX, SkippedFile, is_withdrawal_reason,
 };
+use skips::{is_lock_file, unmatched_explicit_paths};
 // The suppression record lives beside the filters that produce it; re-exported
 // here so a consumer reaches it next to `SkippedFile`, the accounting it
 // completes.
@@ -372,6 +372,9 @@ fn lint_one(
     externally_linted: &[Language],
     act_on_generated: &[bool],
 ) -> anyhow::Result<LintResult> {
+    if is_lock_file(&f.path) {
+        return Ok(lint_skip_result(f, LOCKFILE_SKIP));
+    }
     let bytes = std::fs::read(&f.path).with_context(|| format!("reading {}", f.path.display()))?;
     // Asked before the decode, because the decode cannot tell the two apart:
     // a compiled artifact and a corrupted source file both fail
@@ -667,6 +670,9 @@ fn format_one(
     act_on_generated: &[bool],
     prefilled: &BatchPrefill,
 ) -> anyhow::Result<FormatResult> {
+    if is_lock_file(&f.path) {
+        return Ok(format_skip_result(f, Some(LOCKFILE_SKIP.to_owned())));
+    }
     let bytes = std::fs::read(&f.path).with_context(|| format!("reading {}", f.path.display()))?;
     // See the same guard on the lint path: a binary file is a skip, malformed
     // text is an error, and only a pre-decode check can distinguish them.
