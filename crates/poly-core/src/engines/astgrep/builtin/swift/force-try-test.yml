@@ -10,4 +10,4 @@ invalid:
   - "func f() { let d = try! JSONDecoder().decode(Model.self, from: data) }"
   - "func f() async { let v = try! await compute() }"
   - "class C {\n    func f() {\n        self.value = try! load()\n    }\n}"
-  - "func f(_ ctx: String) { let decoded: Context = (try? decode(ctx)) ?? (try! decode(\"{}\")) }"
+  - 'func f(_ ctx: String) { let decoded: Context = (try? decode(ctx)) ?? (try! decode("{}")) }'

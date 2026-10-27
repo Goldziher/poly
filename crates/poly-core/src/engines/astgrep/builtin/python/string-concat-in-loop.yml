@@ -1,7 +1,7 @@
 id: string-concat-in-loop
 language: python
 severity: off
-message: "String built by `+=` inside a loop: each iteration copies the whole string. Collect into a list and `\"\".join(..)`."
+message: 'String built by `+=` inside a loop: each iteration copies the whole string. Collect into a list and `"".join(..)`.'
 note: |
   Python strings are immutable, so `s += chunk` allocates a new string and
   copies everything accumulated so far. Inside a loop that turns linear work

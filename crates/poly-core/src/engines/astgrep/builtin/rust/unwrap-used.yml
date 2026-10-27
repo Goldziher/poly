@@ -12,7 +12,7 @@ ignores:
   - "**/tests.rs"
   - "**/test_support.rs"
   - "**/*_generated.rs"
-message: "`.unwrap()` panics on `None`/`Err`; propagate with `?` or explain the invariant with `.expect(\"..\")`."
+message: '`.unwrap()` panics on `None`/`Err`; propagate with `?` or explain the invariant with `.expect("..")`.'
 note: |
   `.unwrap()` turns a recoverable value into a process-killing panic and
   discards the error on the way, so the crash message names the unwrap site

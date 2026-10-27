@@ -13,7 +13,7 @@ valid:
   - "fn f() {\n    if let Ok(v) = r {}\n}"
   - "fn f() { let _ = fallible(); }"
   - "fn f() {\n    flush().ok();\n}"
-  - "async fn teardown(c: &Client) { c.batch_execute(\"DROP SCHEMA s CASCADE\").await.ok(); }"
+  - 'async fn teardown(c: &Client) { c.batch_execute("DROP SCHEMA s CASCADE").await.ok(); }'
   - "fn main() { dotenvy::dotenv().ok(); }"
   - "fn f() { let maybe = fallible().ok(); }"
 invalid:
