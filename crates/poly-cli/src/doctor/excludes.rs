@@ -50,6 +50,19 @@ pub struct BroadRule {
 }
 
 impl BroadRule {
+    /// Whether the rule pruned a directory directly under the config root, the one place an
+    /// anchored rule would also have matched.
+    fn matches_at_root(&self) -> bool {
+        self.matched.iter().any(|path| path.components().count() == 1)
+    }
+
+    /// Whether the pattern is a wildcard, which names no single directory. A trailing `/**` only
+    /// says "everything inside", so `e2e/**` still names one directory.
+    fn is_wildcard(&self) -> bool {
+        let directory = self.pattern.strip_suffix("/**").unwrap_or(&self.pattern);
+        directory.contains(['*', '?', '['])
+    }
+
     /// The finding this rule produces: a warning, because the exclude is doing
     /// what it was written to do — it is the author's intent, not poly's
     /// behaviour, that is wrong.
@@ -66,11 +79,20 @@ impl BroadRule {
         } else {
             String::new()
         };
+        let reach = if self.is_wildcard() {
+            "the root-level entries it was probably written for"
+        } else {
+            "the one directory it names"
+        };
+        let location = if self.matches_at_root() {
+            ""
+        } else {
+            " (none of them at the config root)"
+        };
         Finding {
             severity: Severity::Warning,
             summary: format!(
-                "exclude rule `{}` prunes {} at {} depths, so it is hiding more than the one \
-                 directory it names: {}{more}",
+                "exclude rule `{}` prunes {} at {} depths, so it is hiding more than {reach}: {}{more}{location}",
                 self.pattern,
                 poly_core::report::directories(self.directories),
                 self.depths,
@@ -212,6 +234,30 @@ mod tests {
             "the unintended directory is named, not merely counted: {}",
             finding.summary
         );
+    }
+
+    #[test]
+    fn a_wildcard_rule_matching_only_below_the_root_says_so() {
+        let rule = BroadRule {
+            pattern: "bazel-*".to_string(),
+            depths: 2,
+            directories: 2,
+            matched: vec![
+                PathBuf::from("util/build_tools/bazel-buildtools"),
+                PathBuf::from("dev_tools/skills/bazel-operations"),
+            ],
+        };
+        let summary = rule.finding().summary;
+        assert!(!summary.contains("the one directory it names"), "{summary}");
+        assert!(summary.contains("root-level entries it was probably written for"), "{summary}");
+        assert!(summary.contains("(none of them at the config root)"), "{summary}");
+    }
+
+    #[test]
+    fn a_rule_that_also_matches_at_the_root_is_not_told_it_misses_it() {
+        let summary = broad_rule().finding().summary;
+        assert!(!summary.contains("none of them at the config root"), "{summary}");
+        assert!(summary.contains("the one directory it names"), "{summary}");
     }
 
     #[test]
