@@ -21,6 +21,7 @@ use malva::config::FormatOptions;
 
 use crate::config::EngineConfig;
 use crate::engine::{Capabilities, Engine, FormatOutput, OptionKeys, OptionTable, SourceFile};
+use crate::engine_guard::{deep_unbalanced_nesting, refuse_pathological_nesting};
 use crate::engines::css_hacks::{IE_PROPERTY_HACK_SKIP, has_ie_property_hack};
 use crate::language::Language;
 
@@ -78,6 +79,15 @@ impl Engine for MalvaEngine {
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
         let syntax = language_to_syntax(&src.language)
             .ok_or_else(|| anyhow::anyhow!("malva: unsupported language {:?}", src.language))?;
+        // The SCSS parser backtracks exponentially on unclosed parentheses: 26 take
+        // 25 s and 100 never return, wedging a worker for the whole run.
+        refuse_pathological_nesting(&src.path, &src.content)?;
+        if deep_unbalanced_nesting(&src.content, MAX_UNCLOSED_NESTING) {
+            anyhow::bail!(
+                "malva: brackets nested more than {MAX_UNCLOSED_NESTING} levels deep are left unclosed; \
+                 not parsed, because the parser takes exponential time on that"
+            );
+        }
         let options = build_options(cfg);
         let formatted = malva::format_text(&src.content, syntax, &options)
             .map_err(|e| anyhow::anyhow!("malva format error: {e}"))?;
@@ -88,6 +98,10 @@ impl Engine for MalvaEngine {
         }
     }
 }
+
+/// Unclosed nesting deeper than this is refused rather than parsed; closed
+/// nesting is unaffected, and 18 unclosed levels still parse in about a second.
+const MAX_UNCLOSED_NESTING: usize = 12;
 
 /// Map a poly [`Language`] to the corresponding malva [`Syntax`].
 fn language_to_syntax(lang: &Language) -> Option<Syntax> {
@@ -178,5 +192,33 @@ mod tests {
             matches!(result, FormatOutput::Unchanged),
             "already-canonical CSS should be Unchanged"
         );
+    }
+
+    #[test]
+    fn unclosed_deep_nesting_is_refused_instead_of_wedging_the_parser() {
+        let engine = MalvaEngine;
+        let src = make_src(
+            "broken.scss",
+            Language::Scss,
+            &format!("a {{ b: {}1 }}\n", "(".repeat(60)),
+        );
+        let error = engine
+            .format(&src, &engine_cfg())
+            .expect_err("unclosed nesting this deep must be refused, not parsed");
+        assert!(error.to_string().contains("exponential"), "{error}");
+    }
+
+    #[test]
+    fn nesting_deep_enough_to_overflow_the_parser_stack_is_refused_not_parsed() {
+        let engine = MalvaEngine;
+        let src = make_src(
+            "deep.scss",
+            Language::Scss,
+            &format!("a {{ b: {}1{} }}\n", "(".repeat(1500), ")".repeat(1500)),
+        );
+        let error = engine
+            .format(&src, &engine_cfg())
+            .expect_err("too deep to parse safely");
+        assert!(error.to_string().contains("nests brackets"), "{error}");
     }
 }

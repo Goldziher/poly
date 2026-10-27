@@ -29,7 +29,11 @@
 //! parsers recurse once per nesting level (`hcl-rs`, `malva`) and overflow the
 //! worker stack on input a few thousand brackets deep, which fuzzing produced
 //! from truncated files. [`refuse_pathological_nesting`] turns that input into
-//! the same per-file error before any engine sees it.
+//! the same per-file error before those engines see it. It is called by the
+//! engines that need it rather than by the runner for every file, because a
+//! bracket count is only meaningful where brackets are syntax: a shell script
+//! printing ANSI escapes (`\e[97m`) has hundreds of unclosed `[` and nothing
+//! nested at all.
 //!
 //! # What this does not do
 //!
@@ -89,8 +93,9 @@ const MAX_NESTING_DEPTH: usize = 400;
 /// Refuse `content` when its bracket nesting would exhaust an engine's stack.
 ///
 /// Counts `(`, `[` and `{` against their closers without regard to quoting, so
-/// a balanced run of brackets inside a string never accumulates; only unclosed
-/// or genuinely nested input reaches the limit.
+/// it is for engines whose language makes brackets syntax. A balanced run
+/// inside a string never accumulates; only unclosed or genuinely nested input
+/// reaches the limit.
 pub(crate) fn refuse_pathological_nesting(path: &Path, content: &str) -> anyhow::Result<()> {
     let mut depth = 0usize;
     for byte in content.bytes() {
@@ -110,6 +115,32 @@ pub(crate) fn refuse_pathological_nesting(path: &Path, content: &str) -> anyhow:
         }
     }
     Ok(())
+}
+
+/// Whether `content` nests more than `depth` brackets deep and leaves some
+/// unclosed.
+///
+/// For parsers that backtrack exponentially on unclosed nesting — a few dozen
+/// levels take minutes and a few more never return, wedging a worker and with
+/// it the run — where the same depth *closed* parses in linear time. Like
+/// [`refuse_pathological_nesting`] it ignores quoting; a false positive costs
+/// one file's formatting, a false negative costs the run.
+pub(crate) fn deep_unbalanced_nesting(content: &str, depth: usize) -> bool {
+    let (mut open, mut deepest, mut underflowed) = (0usize, 0usize, false);
+    for byte in content.bytes() {
+        match byte {
+            b'(' | b'[' | b'{' => {
+                open += 1;
+                deepest = deepest.max(open);
+            }
+            b')' | b']' | b'}' => match open.checked_sub(1) {
+                Some(remaining) => open = remaining,
+                None => underflowed = true,
+            },
+            _ => {}
+        }
+    }
+    deepest > depth && (open != 0 || underflowed)
 }
 
 /// Best-effort recovery of a panic payload's message.
@@ -173,6 +204,24 @@ mod tests {
         let error = refuse_pathological_nesting(Path::new("deep.tf"), &content).expect_err("too deep");
         assert!(error.to_string().contains("deep.tf"), "{error}");
         assert!(error.to_string().contains("not checked"), "{error}");
+    }
+
+    #[test]
+    fn deep_nesting_is_only_suspect_when_something_is_left_open() {
+        let closed = format!("{}1{}", "(".repeat(30), ")".repeat(30));
+        assert!(
+            !deep_unbalanced_nesting(&closed, 12),
+            "closed nesting parses in linear time"
+        );
+        assert!(deep_unbalanced_nesting(&format!("{}1", "(".repeat(30)), 12));
+        assert!(
+            !deep_unbalanced_nesting(&format!("{}1", "(".repeat(5)), 12),
+            "shallow input is never suspect"
+        );
+        assert!(deep_unbalanced_nesting(
+            &format!("){}1{}", "(".repeat(30), ")".repeat(30)),
+            12
+        ));
     }
 
     #[test]
