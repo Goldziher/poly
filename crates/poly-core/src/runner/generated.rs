@@ -23,6 +23,7 @@
 //! --fix` in the same repository.
 
 use crate::discover::DiscoveredFile;
+use crate::engine::{Diagnostic, Severity};
 use crate::resolve::ConfigSet;
 
 use super::types::{FormatResult, LintResult};
@@ -89,6 +90,38 @@ pub(crate) fn format_skip_result(file: &DiscoveredFile, reason: Option<String>) 
         error: None,
         // No engine ran, so there is nothing to time: the debug block reports
         // engines that executed.
+        debug: None,
+    }
+}
+
+pub(super) fn invalid_utf8_result(f: &DiscoveredFile, error: std::str::Utf8Error) -> LintResult {
+    let invalid_at = error.valid_up_to();
+    let sequence = error.error_len().map_or_else(
+        || "an incomplete UTF-8 sequence reaches the end of the file".to_owned(),
+        |length| format!("{length} byte(s) do not form a valid UTF-8 sequence"),
+    );
+
+    LintResult {
+        path: f.path.clone(),
+        config: f.config_id,
+        suppressed: Vec::new(),
+        diagnostics: vec![Diagnostic {
+            engine: "poly".to_owned(),
+            code: Some("invalid-utf8".to_owned()),
+            severity: Severity::Error,
+            title: format!("file is not valid UTF-8 at byte {invalid_at}"),
+            description: Some(format!(
+                "text linting was skipped: {sequence}, starting at byte {invalid_at}"
+            )),
+            span: None,
+            url: None,
+            fix: Vec::new(),
+            metadata: std::collections::BTreeMap::new(),
+        }],
+        fix_withheld_generated: false,
+        fixed: 0,
+        skipped: Some(super::INVALID_UTF8_SKIP.to_owned()),
+        error: None,
         debug: None,
     }
 }

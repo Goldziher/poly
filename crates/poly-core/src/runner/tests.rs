@@ -142,7 +142,7 @@ mod panic_containment {
     //! anything. The engine here panics on demand, so they cannot.
     use super::*;
     use crate::config::GlobalDefaults;
-    use crate::engine::{Capabilities, Engine};
+    use crate::engine::{Capabilities, Engine, Severity};
     use crate::filter::SeverityRemap;
 
     const TRIGGER: &str = "PANIC-HERE";
@@ -230,8 +230,9 @@ mod panic_containment {
         let error = lint_content(
             &discovered(&bad),
             &plans(),
-            &disabled_cache(directory.path()),
             TRIGGER,
+            false,
+            &[],
             false,
             &LintPrefill::default(),
         )
@@ -262,6 +263,7 @@ mod panic_containment {
             false,
             &[true],
             &BatchPrefill::default(),
+            (None, Resolution::Unavailable),
         )
         .expect_err("a panicking backend must surface as an error, not unwind");
 
@@ -277,7 +279,6 @@ mod panic_containment {
     #[test]
     fn files_beside_a_panicking_one_are_still_linted() {
         let directory = tempfile::tempdir().expect("tempdir");
-        let cache = disabled_cache(directory.path());
         let plans = plans();
         let inputs = [("bad.py", TRIGGER), ("good.py", "x = 1\n")];
 
@@ -287,8 +288,9 @@ mod panic_containment {
                 lint_content(
                     &discovered(&directory.path().join(name)),
                     &plans,
-                    &cache,
                     content,
+                    false,
+                    &[],
                     false,
                     &LintPrefill::default(),
                 )
@@ -296,8 +298,8 @@ mod panic_containment {
             .collect();
 
         assert!(outcomes[0].is_err(), "the panicking file is reported as a failure");
-        let (diagnostics, _) = outcomes[1].as_ref().expect("the neighbour must still be linted");
-        assert_eq!(diagnostics.len(), 1, "the neighbour's finding must survive");
+        let pass = outcomes[1].as_ref().expect("the neighbour must still be linted");
+        assert_eq!(pass.diagnostics.len(), 1, "the neighbour's finding must survive");
     }
 }
 
@@ -311,7 +313,7 @@ mod lint_batching {
 
     use super::*;
     use crate::config::{EngineConfig, GlobalDefaults};
-    use crate::engine::{BatchSupport, Capabilities, Engine};
+    use crate::engine::{BatchSupport, Capabilities, Engine, Severity};
     use crate::filter::SeverityRemap;
 
     /// Answers `batched` through [`Engine::lint_batch`] and `per-file` through
@@ -417,7 +419,6 @@ mod lint_batching {
     #[test]
     fn a_batch_answers_for_the_files_it_covered_and_declined_members_take_the_per_file_path() {
         let directory = tempfile::tempdir().expect("tempdir");
-        let cache = ResultCache::open(directory.path().join("cache"), false).expect("open disabled cache");
         let contents = [("a.sh", "echo a\n"), ("b.sh", "echo b\n"), ("c.sh", "REFUSED\n")];
         let files: Vec<DiscoveredFile> = contents
             .iter()
@@ -429,7 +430,8 @@ mod lint_batching {
             .collect();
         let batches = Arc::new(AtomicUsize::new(0));
         let plan = RunPlan::serving(0, Language::Shell, plans(&batches));
-        let prefilled = prefill_lint(&files, &plan, &cache);
+        let pending: Vec<PendingLint> = files.iter().map(|file| (file, None)).collect();
+        let prefilled = prefill_lint(&pending, &plan);
 
         assert_eq!(
             batches.load(Ordering::SeqCst),
@@ -439,16 +441,17 @@ mod lint_batching {
         assert_eq!(prefilled.len(), 2, "the declined member must not get an entry");
 
         let lint = |index: usize| {
-            let (diagnostics, _) = lint_content(
+            lint_content(
                 &files[index],
                 &plans(&batches),
-                &cache,
                 contents[index].1,
+                false,
+                &[],
                 false,
                 &prefilled,
             )
-            .expect("lint");
-            diagnostics
+            .expect("lint")
+            .diagnostics
         };
         assert_eq!(titles(&lint(0)), ["batched"]);
         assert_eq!(titles(&lint(1)), ["batched"]);
@@ -461,7 +464,6 @@ mod lint_batching {
     #[test]
     fn an_entry_is_not_applied_to_different_content() {
         let directory = tempfile::tempdir().expect("tempdir");
-        let cache = ResultCache::open(directory.path().join("cache"), false).expect("open disabled cache");
         let files: Vec<DiscoveredFile> = ["a.sh", "b.sh"]
             .iter()
             .map(|name| {
@@ -472,10 +474,19 @@ mod lint_batching {
             .collect();
         let batches = Arc::new(AtomicUsize::new(0));
         let plan = RunPlan::serving(0, Language::Shell, plans(&batches));
-        let prefilled = prefill_lint(&files, &plan, &cache);
+        let pending: Vec<PendingLint> = files.iter().map(|file| (file, None)).collect();
+        let prefilled = prefill_lint(&pending, &plan);
 
-        let (diagnostics, _) =
-            lint_content(&files[0], &plans(&batches), &cache, "echo \"$1\"\n", false, &prefilled).expect("lint");
-        assert_eq!(titles(&diagnostics), ["per-file"]);
+        let pass = lint_content(
+            &files[0],
+            &plans(&batches),
+            "echo \"$1\"\n",
+            false,
+            &[],
+            false,
+            &prefilled,
+        )
+        .expect("lint");
+        assert_eq!(titles(&pass.diagnostics), ["per-file"]);
     }
 }

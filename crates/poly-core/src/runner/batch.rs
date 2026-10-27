@@ -33,6 +33,7 @@ use poly_cache::{Namespace, ResultCache};
 use rayon::prelude::*;
 use rustc_hash::FxHashMap;
 
+use super::fast::Probe;
 use super::plan::{EnginePlan, RunPlan};
 use crate::discover::DiscoveredFile;
 use crate::engine::{Diagnostic, FormatOutput, SourceFile};
@@ -336,15 +337,20 @@ impl LintPrefill {
     }
 }
 
+/// A file the stat index could not answer outright, with what it still knows.
+pub(super) type PendingLint<'a> = (&'a DiscoveredFile, Option<&'a Probe<'a>>);
+
 /// Compute lint results for every file a batching lint engine serves.
 ///
-/// Files already answered by the result cache are excluded, as for formatting:
-/// the per-file loop answers them without spawning anything. Every failure mode
-/// returns nothing for the shard, which leaves its files to the per-file path.
-pub(super) fn prefill_lint(files: &[DiscoveredFile], plan: &RunPlan, cache: &ResultCache) -> LintPrefill {
+/// Callers pass only files the stat index did not answer, as for formatting:
+/// the per-file loop answers the rest without spawning anything. An engine
+/// whose output the index already holds for these exact bytes is excluded too,
+/// since the per-file path reuses it. Every failure mode returns nothing for
+/// the shard, which leaves its files to the per-file path.
+pub(super) fn prefill_lint(files: &[PendingLint], plan: &RunPlan) -> LintPrefill {
     let mut candidates: Vec<(usize, Candidate)> = files
         .par_iter()
-        .flat_map_iter(|file| lint_candidates_for(file, plan, cache))
+        .flat_map_iter(|(file, probe)| lint_candidates_for(file, *probe, plan))
         .collect();
     if candidates.len() < MIN_BATCH {
         return LintPrefill::default();
@@ -383,9 +389,9 @@ pub(super) fn prefill_lint(files: &[DiscoveredFile], plan: &RunPlan, cache: &Res
 }
 
 /// The `(engine index, candidate)` pairs one file contributes: one per planned
-/// engine that batches, none when the file cannot be read as text or the cache
-/// already holds that engine's answer.
-fn lint_candidates_for(file: &DiscoveredFile, plan: &RunPlan, cache: &ResultCache) -> Vec<(usize, Candidate)> {
+/// engine that batches, none when the file cannot be read as text or the stat
+/// index already holds that engine's answer for these bytes.
+fn lint_candidates_for(file: &DiscoveredFile, probe: Option<&Probe>, plan: &RunPlan) -> Vec<(usize, Candidate)> {
     let engines = plan.engines(file.config_id, &file.language);
     let batching: Vec<usize> = engines
         .iter()
@@ -408,25 +414,11 @@ fn lint_candidates_for(file: &DiscoveredFile, plan: &RunPlan, cache: &ResultCach
         return Vec::new();
     };
     let content: Arc<str> = Arc::from(text.as_str());
-    let digest = cache
-        .enabled()
-        .then(|| ResultCache::single_file_digest_with_path(&file.path.to_string_lossy(), &content));
+    let reusable = probe.map_or_else(Vec::new, |probe| probe.reusable(content.as_bytes()));
 
     batching
         .into_iter()
-        .filter(|&index| {
-            let engine_plan = &engines[index];
-            digest.as_ref().is_none_or(|digest| {
-                let key = ResultCache::key_with_args(
-                    Namespace::Lint,
-                    engine_plan.engine.name(),
-                    engine_plan.engine.version(),
-                    &engine_plan.serialized_args,
-                    digest,
-                );
-                cache.get(Namespace::Lint, &key).is_none()
-            })
-        })
+        .filter(|&index| reusable.get(index).is_none_or(Option::is_none))
         .map(|index| {
             (
                 index,
