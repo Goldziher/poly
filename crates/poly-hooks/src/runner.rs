@@ -500,7 +500,12 @@ fn run_group(
     // them back in group order before returning.
     let rank: BTreeMap<usize, usize> = group.iter().enumerate().map(|(rank, &pos)| (pos, rank)).collect();
     runs.sort_by_key(|(pos, _)| rank.get(pos).copied().unwrap_or(usize::MAX));
-    runs.into_iter().map(|(_, run)| run).collect()
+    runs.into_iter()
+        .map(|(_, mut run)| {
+            run.outcome.show_output |= request.verbose;
+            run
+        })
+        .collect()
 }
 
 /// Run a hook's own `before` steps in `hook_dir`, stopping at the first failure.
@@ -590,6 +595,7 @@ fn run_hook(
         output,
         duration: start.elapsed(),
         cached: false,
+        show_output: hook.show_output,
         validated: context.tree,
     }
 }
@@ -626,6 +632,7 @@ fn blank_outcome(hook: &Hook, position: usize, tree: ValidatedTree) -> HookOutco
         output: Vec::new(),
         duration: Duration::ZERO,
         cached: false,
+        show_output: hook.show_output,
         validated: tree,
     }
 }

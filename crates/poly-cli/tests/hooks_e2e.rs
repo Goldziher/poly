@@ -624,3 +624,54 @@ name = "rooted"
 root = "pkg"
 glob = "**/*.py"
 run = "echo ARGS: \"$@\"; test -f \"$1\""
+show_output = true
+"#,
+    );
+    commit_all(root);
+
+    let output = poly_hooks(root, &["run", "pre-commit", "--all-files", "--no-cache"]);
+    let report = String::from_utf8_lossy(&output.stdout);
+
+    assert!(
+        output.status.success(),
+        "{report}\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(report.contains("ARGS: src/x.py"), "{report}");
+}
+
+#[test]
+fn passing_job_output_is_hidden_unless_show_output_or_verbose() {
+    let repo = init_repo();
+    let root = repo.path();
+    write(
+        root,
+        "poly.toml",
+        r#"
+[[hooks.pre-commit.jobs]]
+name = "warns"
+run = "echo stale-lock-warning"
+
+[[hooks.pre-commit.jobs]]
+name = "chatty"
+run = "echo chatty-output"
+show_output = true
+"#,
+    );
+    commit_all(root);
+
+    let quiet = poly_hooks(root, &["run", "pre-commit", "--all-files", "--no-cache"]);
+    let quiet = String::from_utf8_lossy(&quiet.stdout);
+    assert!(!quiet.contains("stale-lock-warning"), "{quiet}");
+    assert!(quiet.contains("chatty-output"), "{quiet}");
+
+    let verbose = poly_hooks(root, &["run", "pre-commit", "--all-files", "--no-cache", "-v"]);
+    let verbose = String::from_utf8_lossy(&verbose.stdout);
+    assert!(verbose.contains("stale-lock-warning"), "{verbose}");
+}
+show_output = true
+"#,
+    );
+    commit_all(root);
+
+    let output = poly_hooks(root, &["run", "pre-commit", "--all-files", "--no-cache"]);

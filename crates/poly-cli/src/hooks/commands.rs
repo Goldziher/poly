@@ -88,6 +88,11 @@ pub struct RunArgs {
     /// Disable tier-2 sccache env injection for compiler hooks this run.
     #[arg(long)]
     pub no_sccache: bool,
+
+    /// Show every job's output, including jobs that passed (warnings printed by
+    /// a successful job are otherwise dropped).
+    #[arg(short = 'v', long)]
+    pub verbose: bool,
 }
 
 /// `poly hooks install` arguments.
@@ -241,6 +246,7 @@ fn run_stage(args: RunArgs) -> Result<ExitCode> {
         cache,
         sccache: sccache_settings(&config, args.no_sccache)?,
         progress: show_progress(),
+        verbose: args.verbose,
     };
     run_and_report(request)
 }
@@ -548,6 +554,7 @@ fn hook_impl(args: HookImplArgs) -> Result<ExitCode> {
         cache,
         sccache: sccache_settings(&config, args.no_sccache)?,
         progress: show_progress(),
+        verbose: false,
     };
     run_and_report(request)
 }

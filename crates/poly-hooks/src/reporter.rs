@@ -274,6 +274,9 @@ impl HookRunReporter {
         if let HookStatus::FixWithheld(withheld) = &hook.status {
             append_withheld_fix(report, withheld);
         }
+        if hook.show_output && matches!(hook.status, HookStatus::Passed) {
+            append_output(report, &hook.output);
+        }
         append_failure_output(report, &hook.status, &hook.output);
         if !*isolation_hint_shown && is_isolation_hint_eligible(hook) {
             append_isolation_hint(report);
@@ -320,11 +323,15 @@ fn step_note(status: &crate::model::HookStatus) -> String {
 }
 
 fn append_failure_output(report: &mut String, status: &crate::model::HookStatus, output: &[u8]) {
-    use std::fmt::Write as _;
-
     if !status.is_failure() {
         return;
     }
+    append_output(report, output);
+}
+
+fn append_output(report: &mut String, output: &[u8]) {
+    use std::fmt::Write as _;
+
     let text = String::from_utf8_lossy(output);
     let text = strip_ansi_codes(&text);
     for line in text.lines() {
@@ -370,8 +377,26 @@ mod tests {
             output: Vec::new(),
             duration: Duration::from_secs(1),
             cached: false,
+            show_output: false,
             validated: crate::model::ValidatedTree::Worktree,
         }
+    }
+
+    #[test]
+    fn passing_hook_output_is_rendered_only_when_show_output_is_set() {
+        use crate::model::HookStatus;
+
+        let mut hook = outcome_with("lock", HookStatus::Passed);
+        hook.output = b"warning: stale lock\n".to_vec();
+
+        let mut quiet = String::new();
+        HookRunReporter::render_hook(&mut quiet, &hook, &mut false);
+        assert!(!quiet.contains("stale lock"), "{quiet}");
+
+        hook.show_output = true;
+        let mut shown = String::new();
+        HookRunReporter::render_hook(&mut shown, &hook, &mut false);
+        assert!(shown.contains("      warning: stale lock"), "{shown}");
     }
 
     #[test]

@@ -216,11 +216,16 @@ A **stage** table (`[hooks.pre-commit]`) accepts:
 A **job** accepts `name`, `run` **xor** `script`, `runner`, `args`, `glob`,
 `files`, `exclude`, `file_types`, `root`, `skip`, `only`, `precondition`,
 `before`, `tags`, `env`, `fail_text`, `timeout`, `priority`, `serial`,
+`stage_fixed`, `show_output`, `workspace`, `interactive`, `use_stdin` and `cache`.
 
 `root` runs the job from a subdirectory **and passes file arguments relative to it** (as lefthook
 and pre-commit do): a job with `root = "products/em/backend"` receives `src/x.py`, not
 `products/em/backend/src/x.py`, in `"$@"` and in `{staged_files}` / `{all_files}`. Files outside
 `root` are not passed, and a job none of whose files are under `root` is skipped.
+
+`show_output = true` prints the job's output even when it passes; by default only a failing job's
+output is shown, so a warning from a job that exits 0 is otherwise dropped.
+`poly hooks run --verbose` (`-v`) does the same for every job.
 
 ## `extends`
 

@@ -1184,3 +1184,23 @@ fn rooted_hook_is_skipped_when_no_file_is_under_its_root() {
         HookStatus::Skipped(SkipReason::NoFiles)
     ));
 }
+
+#[test]
+fn verbose_request_marks_passing_hooks_to_show_their_output() {
+    let repo = init_repo();
+    let root = repo.path();
+
+    let quiet = run(request(root, pre_commit(vec![cmd_hook("warn", "echo careful")]))).expect("run");
+    assert!(!quiet.stages[0].hooks[0].show_output);
+
+    let mut shown_hook = cmd_hook("own", "echo careful");
+    shown_hook.show_output = true;
+    let own = run(request(root, pre_commit(vec![shown_hook]))).expect("run");
+    assert!(own.stages[0].hooks[0].show_output);
+
+    let mut verbose = request(root, pre_commit(vec![cmd_hook("warn", "echo careful")]));
+    verbose.verbose = true;
+    let outcome = run(verbose).expect("run");
+    assert!(outcome.stages[0].hooks[0].show_output);
+    assert_eq!(String::from_utf8_lossy(&outcome.stages[0].hooks[0].output), "careful\n");
+}

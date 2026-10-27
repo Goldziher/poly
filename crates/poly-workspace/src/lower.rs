@@ -315,6 +315,7 @@ fn job_to_hook(
         args: job.args.clone(),
         env,
         cwd: job.root.as_ref().map(std::path::PathBuf::from),
+        show_output: job.show_output,
         precondition: job.precondition.clone(),
         before: job.before.as_ref().map(patterns_to_vec).unwrap_or_default(),
         files: files_pattern,

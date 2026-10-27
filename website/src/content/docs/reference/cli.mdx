@@ -314,7 +314,7 @@ editor validation and autocomplete; the schema is also published at
 
 ```sh
 poly commit --message "feat: add backend"   # or a path: poly commit .git/COMMIT_EDITMSG
-poly hooks install
+poly hooks run pre-commit -v        # also show the output of jobs that passed
 poly cache stats
 poly cache size
 poly cache gc

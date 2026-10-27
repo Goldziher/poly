@@ -17,6 +17,9 @@ poly hooks install
 
 That wires the git shims once; the configured stages then run on every `git commit`.
 
+By default only a failing job's output is printed. Set `show_output = true` on a job, or run
+`poly hooks run -v`, to see the output of jobs that passed too.
+
 ## Builtin hooks
 
 | Builtin | Runs |

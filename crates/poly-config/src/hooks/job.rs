@@ -41,6 +41,10 @@ pub struct Job {
     /// to it, as lefthook and pre-commit do, and files outside it are not passed;
     /// a job none of whose files are under `root` is skipped.
     pub root: Option<String>,
+    /// Show the job's output in the report even when it passes (default: only a
+    /// failing job's output is shown). Use it for a check that prints warnings
+    /// and exits 0. `poly hooks run --verbose` does this for every job.
+    pub show_output: bool,
     /// Skip guard — when active, the job does not run.
     pub skip: Option<Guard>,
     /// Only guard — the job runs *only* when active.
