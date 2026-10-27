@@ -3561,6 +3561,21 @@
         "jsx_quote_style": {
           "type": "string"
         },
+        "line_ending": {
+          "type": "string"
+        },
+        "line_width": {
+          "type": "integer"
+        },
+        "object_wrap": {
+          "type": "string"
+        },
+        "operator_position": {
+          "type": "string"
+        },
+        "quote_properties": {
+          "type": "string"
+        },
         "quote_style": {
           "type": "string"
         },
@@ -3577,6 +3592,32 @@
         "semicolons": {
           "type": "string"
         },
+        "single_attribute_per_line": {
+          "type": "boolean"
+        },
+        "single_quote": {
+          "type": "boolean"
+        },
+        "sort_imports": {
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        },
+        "sort_package_json": {
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        },
         "trailing_commas": {
           "type": "string"
         }
@@ -3586,11 +3627,26 @@
     "fmt_yaml": {
       "type": "object",
       "properties": {
+        "bracket_spacing": {
+          "type": "boolean"
+        },
         "enabled": {
           "type": "boolean"
         },
+        "indent_style": {
+          "type": "string"
+        },
         "indent_width": {
           "type": "integer"
+        },
+        "line_ending": {
+          "type": "string"
+        },
+        "line_width": {
+          "type": "integer"
+        },
+        "prose_wrap": {
+          "type": "string"
         },
         "rules": {
           "oneOf": [
@@ -3601,6 +3657,12 @@
               "type": "object"
             }
           ]
+        },
+        "single_quote": {
+          "type": "boolean"
+        },
+        "trailing_commas": {
+          "type": "string"
         }
       },
       "additionalProperties": true
@@ -3641,6 +3703,9 @@
         "indent_entries": {
           "type": "boolean"
         },
+        "indent_style": {
+          "type": "string"
+        },
         "indent_tables": {
           "type": "boolean"
         },
@@ -3649,6 +3714,12 @@
         },
         "inline_table_expand": {
           "type": "boolean"
+        },
+        "line_ending": {
+          "type": "string"
+        },
+        "line_width": {
+          "type": "integer"
         },
         "reorder_keys": {
           "type": "boolean"
@@ -3662,6 +3733,9 @@
               "type": "object"
             }
           ]
+        },
+        "trailing_commas": {
+          "type": "string"
         }
       },
       "additionalProperties": true
@@ -3687,11 +3761,23 @@
         "ignore": {
           "type": "array"
         },
+        "indent_style": {
+          "type": "string"
+        },
         "indent_width": {
           "type": "integer"
         },
+        "line_ending": {
+          "type": "string"
+        },
         "line_length": {
           "type": "integer"
+        },
+        "line_width": {
+          "type": "integer"
+        },
+        "prose_wrap": {
+          "type": "string"
         },
         "rules": {
           "oneOf": [
@@ -3705,6 +3791,9 @@
         },
         "select": {
           "type": "array"
+        },
+        "single_quote": {
+          "type": "boolean"
         }
       },
       "additionalProperties": true
@@ -3755,7 +3844,16 @@
         "enabled": {
           "type": "boolean"
         },
+        "indent_style": {
+          "type": "string"
+        },
         "indent_width": {
+          "type": "integer"
+        },
+        "line_ending": {
+          "type": "string"
+        },
+        "line_width": {
           "type": "integer"
         },
         "rules": {
@@ -3767,6 +3865,12 @@
               "type": "object"
             }
           ]
+        },
+        "single_quote": {
+          "type": "boolean"
+        },
+        "trailing_commas": {
+          "type": "string"
         }
       },
       "additionalProperties": true
@@ -3795,6 +3899,21 @@
         "jsx_quote_style": {
           "type": "string"
         },
+        "line_ending": {
+          "type": "string"
+        },
+        "line_width": {
+          "type": "integer"
+        },
+        "object_wrap": {
+          "type": "string"
+        },
+        "operator_position": {
+          "type": "string"
+        },
+        "quote_properties": {
+          "type": "string"
+        },
         "quote_style": {
           "type": "string"
         },
@@ -3810,6 +3929,32 @@
         },
         "semicolons": {
           "type": "string"
+        },
+        "single_attribute_per_line": {
+          "type": "boolean"
+        },
+        "single_quote": {
+          "type": "boolean"
+        },
+        "sort_imports": {
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        },
+        "sort_package_json": {
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "object"
+            }
+          ]
         },
         "trailing_commas": {
           "type": "string"
