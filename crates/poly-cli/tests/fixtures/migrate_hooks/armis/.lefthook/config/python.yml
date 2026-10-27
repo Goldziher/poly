@@ -1,0 +1,26 @@
+pre-commit:
+  jobs:
+    - name: fix
+      group:
+        jobs:
+          - name: format
+            group:
+              jobs:
+                - name: python
+                  group:
+                    jobs:
+                      - name: ruff-format
+                        glob: '*.{py,pyi}'
+                        stage_fixed: true
+                        run: ruff format {staged_files}
+                      - name: ruff-check
+                        glob: '*.{py,pyi}'
+                        stage_fixed: true
+                        run: ruff check --fix --unsafe-fixes {staged_files}
+          - name: pyproject-format
+            glob:
+              - 'pyproject.toml'
+              - '**/pyproject.toml'
+            exclude: 'armis/public_sdks/python/public/pyproject\.toml'
+            stage_fixed: true
+            run: pyproject-fmt --keep-full-version {staged_files}

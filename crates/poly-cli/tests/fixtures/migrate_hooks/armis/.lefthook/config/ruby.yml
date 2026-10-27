@@ -1,0 +1,12 @@
+pre-commit:
+  jobs:
+    - name: fix
+      group:
+        jobs:
+          - name: format
+            group:
+              jobs:
+                - name: ruby-format
+                  glob: '*.rb'
+                  stage_fixed: true
+                  run: rubyfmt --in-place {staged_files}

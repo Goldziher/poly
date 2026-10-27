@@ -1,0 +1,34 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: |
+          (?x)(
+              ^armis/pipeline/ios_like_ssh/test_files/.*\.log$|
+              \.(tar|gz|svg|snap|zip)$
+          )
+      - id: check-yaml
+        exclude: |
+          (?x)(
+              ^armis/service_charts/.*/templates/|
+              ^deploy/manifests/jenkins_k8s_plugin\.yaml$
+          )
+      - id: check-added-large-files
+        args: [--maxkb=1000]
+        exclude: ^(demo/data/|vmlinux(_arm64)?\.h$)
+      - id: check-ast
+        exclude: ^products/em/backend/
+      - id: check-ast
+        name: check python ast (em/backend, py3.12)
+        files: ^products/em/backend/
+      - id: detect-private-key
+      - id: detect-aws-credentials
+        args: [--allow-missing-credentials]
+  - repo: https://github.com/keith/pre-commit-buildifier
+    rev: 8.5.1
+    hooks:
+      - id: buildifier
+        args:
+          - '--warnings=-native-build'
+        files: (BUILD|BUILD\.bazel|\.BUILD|\.bzl)$

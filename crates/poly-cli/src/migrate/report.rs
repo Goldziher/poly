@@ -30,12 +30,21 @@ fn render_tools(out: &mut String, plan: &MigrationPlan) {
     let _ = writeln!(out, "\nAbsorbed configs:");
     for result in absorbed {
         let sources: Vec<String> = result.sources.iter().map(|p| p.display().to_string()).collect();
-        let verdict = match &result.absorb {
-            Absorb::Full => "FULL".to_string(),
-            Absorb::Partial(keys) => format!("PARTIAL (unrepresented: {})", keys.join(", ")),
-            Absorb::None => "NONE".to_string(),
+        let inline = match &result.absorb {
+            Absorb::Partial(keys) if keys.iter().map(String::len).sum::<usize>() > 120 => None,
+            Absorb::Partial(keys) => Some(format!("PARTIAL (unrepresented: {})", keys.join(", "))),
+            Absorb::Full => Some("FULL".to_string()),
+            Absorb::None => Some("NONE".to_string()),
         };
+        let verdict = inline.clone().unwrap_or_else(|| "PARTIAL".to_string());
         let _ = writeln!(out, "  {:<12} {verdict}  <- {}", result.tool, sources.join(", "));
+        if inline.is_none()
+            && let Absorb::Partial(keys) = &result.absorb
+        {
+            for key in keys {
+                let _ = writeln!(out, "      unrepresented: {key}");
+            }
+        }
         for note in &result.notes {
             let _ = writeln!(out, "      note: {note}");
         }

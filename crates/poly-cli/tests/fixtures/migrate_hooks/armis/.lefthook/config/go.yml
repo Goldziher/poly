@@ -1,0 +1,18 @@
+pre-commit:
+  jobs:
+    - name: fix
+      group:
+        jobs:
+          - name: format
+            group:
+              jobs:
+                - name: go-format
+                  glob: '*.go'
+                  stage_fixed: true
+                  run: golangci-lint fmt -c .golangci.yml {staged_files}
+    - name: check
+      group:
+        jobs:
+          - name: go-lint
+            glob: '*.go'
+            run: bash dev_tools/go/lint_changed.sh {staged_files}

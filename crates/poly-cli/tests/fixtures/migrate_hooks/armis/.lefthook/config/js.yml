@@ -1,0 +1,48 @@
+pre-commit:
+  jobs:
+    - name: fix
+      group:
+        jobs:
+          - name: format
+            group:
+              jobs:
+                - name: js
+                  group:
+                    jobs:
+                      - name: oxlint
+                        glob: '*.{js,jsx,ts,tsx,mjs,cjs}'
+                        stage_fixed: true
+                        run: oxlint --fix --no-error-on-unmatched-pattern {staged_files}
+                      - name: oxfmt
+                        glob: '*.{js,jsx,ts,tsx,json,jsonc,mjs,cjs,toml,yml,yaml,md,mdx}'
+                        stage_fixed: true
+                        run: bash .lefthook/oxfmt.sh {staged_files}
+
+    - name: check
+      group:
+        jobs:
+          - name: va-check
+            glob: 'products/va/*.{ts,tsx,json}'
+            run: bash .lefthook/pnpm_gate.sh products/va "run type-check"
+          - name: va-visual
+            glob: 'products/va/src/views/*.tsx'
+            run: bash .lefthook/pnpm_gate.sh products/va "run test:visual"
+          - name: rms-check
+            glob: 'products/rms/*.{js,jsx,ts,tsx,json}'
+            exclude: 'products/rms/dev_tools/**'
+            run: bash .lefthook/pnpm_gate.sh products/rms "run type-check" "run test"
+          - name: ui-check
+            glob: 'products/packages/ui/*.{js,jsx,ts,tsx,json}'
+            run: bash .lefthook/pnpm_gate.sh products/packages/ui "run type-check" "run test:run"
+          - name: icons-check
+            glob: 'products/packages/icons/*.{js,jsx,ts,tsx,svg,json}'
+            run: bash .lefthook/pnpm_gate.sh products/packages/icons "run type-check" "run validate-svgs"
+          - name: uikit-check
+            glob: 'armis/common/js/packages/uikit/*.{js,jsx,ts,tsx,json}'
+            run: bash .lefthook/pnpm_gate.sh armis/common/js/packages/uikit "tsc --noEmit"
+          - name: sra-check
+            glob: 'armis/services/sra_app_web/*.{js,jsx,ts,tsx,json}'
+            run: bash .lefthook/pnpm_gate.sh armis/services/sra_app_web "run typecheck" "run test"
+          - name: armis-assistant-check
+            glob: 'products/platform/armis-assistant/*.{js,jsx,ts,tsx,json}'
+            run: bash .lefthook/pnpm_gate.sh products/platform/armis-assistant "run type-check" "run test"

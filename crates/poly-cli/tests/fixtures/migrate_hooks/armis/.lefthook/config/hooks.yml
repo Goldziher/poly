@@ -1,0 +1,14 @@
+prepare-commit-msg:
+  scripts:
+    custom_prepare_commit_msg.sh:
+      runner: bash
+
+post-checkout:
+  jobs:
+    - name: check-env-lock
+      run: bash .lefthook/check_env_lock.sh {0}
+
+post-merge:
+  jobs:
+    - name: check-env-lock
+      run: bash .lefthook/check_env_lock.sh {0}

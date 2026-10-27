@@ -1,0 +1,150 @@
+---
+source: crates/poly-cli/tests/migrate_hooks.rs
+expression: rendered
+---
+[hooks.builtin]
+fmt = true
+lint = { files = ["*.{js,jsx,ts,tsx,mjs,cjs}", "*.{py,pyi}", "*.{yml,yaml}", "products/em/backend/*"] }
+file_safety = { max_added_file_kb = 1000, merge_conflict = false, case_conflict = false, executables_have_shebangs = false, shebang_scripts_are_executable = false }
+[hooks.pre-commit]
+parallel = true
+[hooks.pre-commit.scripts.oxfmt]
+script = ".lefthook/oxfmt.sh"
+runner = "bash"
+files = ["*.{js,jsx,ts,tsx,json,jsonc,mjs,cjs,toml,yml,yaml,md,mdx}"]
+stage_fixed = true
+priority = 1
+[hooks.pre-commit.scripts.java-format]
+script = "dev_tools/checkstyle/run_palantir_format.sh"
+runner = "bash"
+args = ["--replace"]
+files = ["*.java"]
+exclude = ["playground/**"]
+stage_fixed = true
+[hooks.pre-commit.scripts.va-check]
+script = ".lefthook/pnpm_gate.sh"
+runner = "bash"
+args = ["products/va", "run type-check"]
+files = ["products/va/*.{ts,tsx,json}"]
+workspace = true
+priority = 4
+[hooks.pre-commit.scripts.va-visual]
+script = ".lefthook/pnpm_gate.sh"
+runner = "bash"
+args = ["products/va", "run test:visual"]
+files = ["products/va/src/views/*.tsx"]
+workspace = true
+priority = 4
+[hooks.pre-commit.scripts.rms-check]
+script = ".lefthook/pnpm_gate.sh"
+runner = "bash"
+args = ["products/rms", "run type-check", "run test"]
+files = ["products/rms/*.{js,jsx,ts,tsx,json}"]
+exclude = ["products/rms/dev_tools/**"]
+workspace = true
+priority = 4
+[hooks.pre-commit.scripts.ui-check]
+script = ".lefthook/pnpm_gate.sh"
+runner = "bash"
+args = ["products/packages/ui", "run type-check", "run test:run"]
+files = ["products/packages/ui/*.{js,jsx,ts,tsx,json}"]
+workspace = true
+priority = 4
+[hooks.pre-commit.scripts.icons-check]
+script = ".lefthook/pnpm_gate.sh"
+runner = "bash"
+args = ["products/packages/icons", "run type-check", "run validate-svgs"]
+files = ["products/packages/icons/*.{js,jsx,ts,tsx,svg,json}"]
+workspace = true
+priority = 4
+[hooks.pre-commit.scripts.uikit-check]
+script = ".lefthook/pnpm_gate.sh"
+runner = "bash"
+args = ["armis/common/js/packages/uikit", "tsc --noEmit"]
+files = ["armis/common/js/packages/uikit/*.{js,jsx,ts,tsx,json}"]
+workspace = true
+priority = 4
+[hooks.pre-commit.scripts.sra-check]
+script = ".lefthook/pnpm_gate.sh"
+runner = "bash"
+args = ["armis/services/sra_app_web", "run typecheck", "run test"]
+files = ["armis/services/sra_app_web/*.{js,jsx,ts,tsx,json}"]
+workspace = true
+priority = 4
+[hooks.pre-commit.scripts.armis-assistant-check]
+script = ".lefthook/pnpm_gate.sh"
+runner = "bash"
+args = ["products/platform/armis-assistant", "run type-check", "run test"]
+files = ["products/platform/armis-assistant/*.{js,jsx,ts,tsx,json}"]
+workspace = true
+priority = 4
+[hooks.pre-commit.scripts.go-lint]
+script = "dev_tools/go/lint_changed.sh"
+runner = "bash"
+files = ["*.go"]
+priority = 4
+[hooks.pre-commit.scripts.java-checkstyle]
+script = "dev_tools/checkstyle/run_checkstyle.sh"
+runner = "bash"
+args = ["-c", "checkstyle.xml", "-p", "checkstyle.properties"]
+files = ["*.java"]
+exclude = ["playground/**"]
+priority = 4
+[hooks.pre-commit.scripts.helm-check]
+script = "dev_tools/helm/check_charts.sh"
+runner = "bash"
+files = ["**/{Chart.yaml,Chart.lock,requirements.yaml,requirements.lock,values.yaml,values.schema.json,templates/**}"]
+priority = 4
+[hooks.pre-commit.scripts.test-file-names]
+script = "dev_tools/validate_test_names/check_names.sh"
+runner = "bash"
+files = ["*.{py,js,jsx,mjs,cjs,ts,tsx,mts,cts,go,java,rs,sh,bash,bats}"]
+exclude = ["playground/**", "armis/tenant_server/fe/qa_tests/**"]
+priority = 4
+[hooks.pre-commit.commands.groovy-lint]
+run = "dev_tools/groovy/run_groovy_lint.sh --no-insight --fix --failon=info {staged_files}"
+files = ["*.groovy"]
+exclude = ["playground/**"]
+stage_fixed = true
+[hooks.pre-commit.commands.groovy-format]
+run = "dev_tools/groovy/run_groovy_lint.sh --no-insight --format {staged_files}"
+files = ["*.groovy"]
+exclude = ["playground/**"]
+stage_fixed = true
+priority = 1
+[hooks.pre-commit.commands.pyproject-format]
+run = "pyproject-fmt --keep-full-version {staged_files}"
+files = ["pyproject.toml", "**/pyproject.toml"]
+exclude = ["*armis/public_sdks/python/public/pyproject.toml*"]
+stage_fixed = true
+priority = 2
+[hooks.pre-commit.commands.actionlint]
+run = "actionlint -ignore 'SC2129' -ignore 'SC2016' {staged_files}"
+files = [".github/workflows/*.{yml,yaml}"]
+exclude = [".github/workflows/*/*"]
+priority = 4
+[hooks.pre-commit.commands.buf-lint]
+run = "buf lint $(printf -- '--path %s ' {staged_files})"
+files = ["**/*.proto"]
+priority = 4
+[hooks.pre-commit.commands.env-lock-check]
+run = "acli lock-env"
+files = ["Brewfile", "pyproject.toml", ".python-version", ".nvmrc", "package.json", ".java-version", ".checkstyle-version", "dev_tools/acli/acli/commands/doctor_subscriptions/checkstyle.py", ".palantir-java-format-version", "dev_tools/acli/acli/commands/doctor_subscriptions/palantir_format.py", "pnpm-lock.yaml", "go.work", "dev_tools/acli/acli/commands/doctor.py", "dev_tools/acli/acli/commands/doctor_subscriptions/dependencies.py", "dev_tools/acli/acli/commands/doctor_subscriptions/nvm.py", ".lefthook/check_env_lock.sh", "acli.lock"]
+workspace = true
+priority = 4
+[hooks.pre-commit.commands.prek-hooks]
+run = "prek run --hook-stage pre-commit --files {staged_files}"
+priority = 3
+[hooks.prepare-commit-msg.scripts.custom_prepare_commit_msg]
+script = ".lefthook/prepare-commit-msg/custom_prepare_commit_msg.sh"
+runner = "bash"
+workspace = true
+[tools.buf]
+enabled = true
+files = ["**/*.proto"]
+[tools.buildifier]
+enabled = true
+files = ["*BUILD", "*BUILD.bazel", "*.BUILD", "*.bzl"]
+[tools.golangci-lint]
+enabled = true
+files = ["*.go"]

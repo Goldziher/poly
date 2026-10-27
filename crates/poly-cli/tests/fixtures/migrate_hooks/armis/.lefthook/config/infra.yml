@@ -1,0 +1,27 @@
+pre-commit:
+  jobs:
+    - name: fix
+      group:
+        jobs:
+          - name: format
+            group:
+              jobs:
+                - name: buf-format
+                  glob: '**/*.proto'
+                  stage_fixed: true
+                  run: buf format -w $(printf -- '--path %s ' {staged_files})
+    - name: check
+      group:
+        jobs:
+          - name: actionlint
+            glob: '.github/workflows/*.{yml,yaml}'
+            exclude: '.github/workflows/*/*'
+            run: actionlint -ignore 'SC2129' -ignore 'SC2016' {staged_files}
+
+          - name: helm-check
+            glob: '**/{Chart.yaml,Chart.lock,requirements.yaml,requirements.lock,values.yaml,values.schema.json,templates/**}'
+            run: bash dev_tools/helm/check_charts.sh {staged_files}
+
+          - name: buf-lint
+            glob: '**/*.proto'
+            run: buf lint $(printf -- '--path %s ' {staged_files})

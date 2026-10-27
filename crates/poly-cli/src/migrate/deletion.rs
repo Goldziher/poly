@@ -109,10 +109,18 @@ pub fn action_for_source(source: &Path, tool: &str, absorb: &Absorb) -> Action {
     let is_pyproject = source.file_name().is_some_and(|n| n == "pyproject.toml");
 
     match absorb {
-        Absorb::Partial(keys) => Action::Keep {
-            path,
-            reason: format!("partial absorb — poly cannot represent: {}", keys.join(", ")),
-        },
+        Absorb::Partial(keys) => {
+            let listed = keys.join(", ");
+            let reason = if listed.len() > 120 {
+                format!(
+                    "partial absorb — {} construct(s) poly cannot represent (listed above)",
+                    keys.len()
+                )
+            } else {
+                format!("partial absorb — poly cannot represent: {listed}")
+            };
+            Action::Keep { path, reason }
+        }
         Absorb::None => Action::Keep {
             path,
             reason: "nothing absorbed".to_string(),
@@ -153,7 +161,7 @@ pub fn plan_actions(results: &[ImportResult]) -> Vec<Action> {
     actions
 }
 
-/// Scan `dir` for always-keep files and the report-only `.pre-commit-config.yaml`.
+/// Scan `dir` for always-keep files.
 pub fn scan_kept(dir: &Path) -> Vec<Action> {
     let mut actions = Vec::new();
     for (name, reason) in KEEP_FILES {
@@ -164,13 +172,6 @@ pub fn scan_kept(dir: &Path) -> Vec<Action> {
                 reason: (*reason).to_string(),
             });
         }
-    }
-    let precommit = dir.join(".pre-commit-config.yaml");
-    if precommit.is_file() {
-        actions.push(Action::ReportOnly {
-            path: precommit,
-            note: "review hooks manually — poly does not auto-migrate .pre-commit-config.yaml".to_string(),
-        });
     }
     actions
 }

@@ -1,0 +1,21 @@
+pre-commit:
+  jobs:
+    - name: fix
+      group:
+        jobs:
+          - name: format
+            group:
+              jobs:
+                - name: groovy
+                  group:
+                    jobs:
+                      - name: groovy-lint
+                        glob: '*.groovy'
+                        exclude: 'playground/**'
+                        stage_fixed: true
+                        run: dev_tools/groovy/run_groovy_lint.sh --no-insight --fix --failon=info {staged_files}
+                      - name: groovy-format
+                        glob: '*.groovy'
+                        exclude: 'playground/**'
+                        stage_fixed: true
+                        run: dev_tools/groovy/run_groovy_lint.sh --no-insight --format {staged_files}

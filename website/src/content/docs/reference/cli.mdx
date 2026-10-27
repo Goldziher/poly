@@ -341,6 +341,29 @@ from `pyproject.toml`'s `[tool.ruff]` / `[tool.typos]` / `[tool.codespell]` — 
 then deletes or strips **only** the sources poly can fully honor. Files it delegates to
 (`rustfmt.toml`, `.golangci.yml`, `clippy.toml`, …) and anything not fully representable are kept.
 
+It also absorbs **git-hook configs** into `[hooks]`: `lefthook.yml` (with every file it `extends`,
+merged the way lefthook merges them) and `.pre-commit-config.yaml`.
+
+- A direct call to a tool poly runs itself — `ruff format` / `ruff check`, `oxlint`, `oxfmt`,
+  `rubyfmt`, `golangci-lint`, `buf format`, `actionlint` — becomes the `fmt` / `lint` builtin, and
+  the catalog tool it needs is enabled under `[tools]`. These builtins only *check*; a job that
+  rewrote and re-staged files is reported as a behavior change. A call whose flags poly cannot
+  reproduce (`actionlint -ignore …`) stays a command.
+- Every other job becomes `[hooks.<stage>.commands.<name>]` (keeping `{staged_files}`) or, for
+  `bash path/to/script.sh …`, `[hooks.<stage>.scripts.<name>]`. A job with no `{staged_files}`
+  becomes `workspace = true`. `glob` and `exclude` (including regex-style excludes, where they can
+  be translated) become `files` / `exclude`, and `stage_fixed` is kept.
+- Nested `group:` trees become `priority` bands: lower bands finish first, and jobs sharing a band
+  run together. Builtins always run at priority 0.
+- pre-commit hooks with a known id map to the `fmt`, `lint` and `file_safety` builtins;
+  `repo: local` hooks become commands. A `prek run` job is dropped once the pre-commit config is
+  fully absorbed.
+
+Anything it cannot map — `{0}` and other lefthook placeholders, `skip` / `only` git-operation
+conditions, an unknown pre-commit hook, an `exclude` that cannot be translated, an exclusion that a
+shared builtin cannot scope to one job — is listed as `unrepresented` in the plan, and the source
+file is kept.
+
 | Flag | Effect |
 | --- | --- |
 | `--report` | Say explicitly that this is a dry run. This is the default behaviour. |

@@ -1,0 +1,23 @@
+pre-commit:
+  jobs:
+    - name: fix
+      group:
+        jobs:
+          - name: format
+            group:
+              jobs:
+                - name: java
+                  group:
+                    jobs:
+                      - name: java-format
+                        glob: '*.java'
+                        exclude: 'playground/**'
+                        stage_fixed: true
+                        run: bash dev_tools/checkstyle/run_palantir_format.sh --replace {staged_files}
+    - name: check
+      group:
+        jobs:
+          - name: java-checkstyle
+            glob: '*.java'
+            exclude: 'playground/**'
+            run: bash dev_tools/checkstyle/run_checkstyle.sh -c checkstyle.xml -p checkstyle.properties {staged_files}

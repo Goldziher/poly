@@ -1,0 +1,11 @@
+extends:
+  - .lefthook/config/pre-commit.yml
+  - .lefthook/config/js.yml
+  - .lefthook/config/python.yml
+  - .lefthook/config/go.yml
+  - .lefthook/config/java.yml
+  - .lefthook/config/ruby.yml
+  - .lefthook/config/groovy.yml
+  - .lefthook/config/infra.yml
+  - .lefthook/config/repo.yml
+  - .lefthook/config/hooks.yml

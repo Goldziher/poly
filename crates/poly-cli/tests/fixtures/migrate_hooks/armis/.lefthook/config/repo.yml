@@ -1,0 +1,36 @@
+pre-commit:
+  jobs:
+    - name: fix
+      group:
+        jobs:
+          - name: prek-hooks
+            run: prek run --hook-stage pre-commit --files {staged_files}
+
+    - name: check
+      group:
+        jobs:
+          - name: test-file-names
+            glob: '*.{py,js,jsx,mjs,cjs,ts,tsx,mts,cts,go,java,rs,sh,bash,bats}'
+            exclude: ['playground/**', 'armis/tenant_server/fe/qa_tests/**']
+            run: bash dev_tools/validate_test_names/check_names.sh {staged_files}
+
+          - name: env-lock-check
+            glob:
+              - 'Brewfile'
+              - 'pyproject.toml'
+              - '.python-version'
+              - '.nvmrc'
+              - 'package.json'
+              - '.java-version'
+              - '.checkstyle-version'
+              - 'dev_tools/acli/acli/commands/doctor_subscriptions/checkstyle.py'
+              - '.palantir-java-format-version'
+              - 'dev_tools/acli/acli/commands/doctor_subscriptions/palantir_format.py'
+              - 'pnpm-lock.yaml'
+              - 'go.work'
+              - 'dev_tools/acli/acli/commands/doctor.py'
+              - 'dev_tools/acli/acli/commands/doctor_subscriptions/dependencies.py'
+              - 'dev_tools/acli/acli/commands/doctor_subscriptions/nvm.py'
+              - '.lefthook/check_env_lock.sh'
+              - 'acli.lock'
+            run: acli lock-env

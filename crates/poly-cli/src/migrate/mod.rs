@@ -39,6 +39,13 @@ const MIGRATABLE_SOURCES: &[&str] = &[
     ".markdownlint.jsonc",
     ".markdownlint.yaml",
     ".markdownlint.yml",
+    "lefthook.yml",
+    "lefthook.yaml",
+    "lefthook.json",
+    ".lefthook.yml",
+    ".lefthook.yaml",
+    ".lefthook.json",
+    ".pre-commit-config.yaml",
 ];
 
 /// `poly migrate` arguments.
@@ -200,6 +207,7 @@ pub fn build_plan(dir: &Path) -> Result<MigrationPlan> {
             results.push(result);
         }
     }
+    results.extend(importers::hooks::import(dir));
 
     let mut conflicts = Vec::new();
     for result in &results {
