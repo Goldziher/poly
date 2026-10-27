@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 
 use toml_edit::{Array, DocumentMut, InlineTable, Item, Table, Value};
 
+pub mod hooks;
 pub mod markdownlint;
 pub mod ruff;
 pub mod taplo;

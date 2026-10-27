@@ -56,6 +56,8 @@ use ruff_python_formatter::{DocstringCode, DocstringCodeLineWidth, PyFormatOptio
 use ruff_text_size::Ranged;
 use rustc_hash::FxHashMap;
 
+mod plugins;
+
 use crate::config::EngineConfig;
 use crate::engine::{
     Capabilities, Diagnostic, Edit, Engine, FormatOutput, OptionKeys, OptionTable, OptionType, Severity, SourceFile,
@@ -331,6 +333,8 @@ fn build_settings(cfg: &EngineConfig) -> LinterSettings {
         );
     }
 
+    plugins::apply(&mut settings, cfg);
+
     settings
 }
 
@@ -506,6 +510,31 @@ impl Engine for RuffEngine {
                 ("src", OptionType::ARRAY),
                 ("known_first_party", OptionType::ARRAY),
                 ("known_third_party", OptionType::ARRAY),
+                ("fixable", OptionType::ARRAY),
+                ("unfixable", OptionType::ARRAY),
+                ("external", OptionType::ARRAY),
+                ("dummy_variable_rgx", OptionType::STRING),
+                ("pycodestyle_max_line_length", OptionType::INTEGER),
+                ("pycodestyle_max_doc_length", OptionType::INTEGER),
+                ("pycodestyle_ignore_overlong_task_comments", OptionType::BOOLEAN),
+                ("pep8_naming_ignore_names", OptionType::ARRAY),
+                ("pep8_naming_extend_ignore_names", OptionType::ARRAY),
+                ("pep8_naming_classmethod_decorators", OptionType::ARRAY),
+                ("pep8_naming_staticmethod_decorators", OptionType::ARRAY),
+                ("flake8_quotes_inline_quotes", OptionType::STRING),
+                ("flake8_quotes_multiline_quotes", OptionType::STRING),
+                ("flake8_quotes_docstring_quotes", OptionType::STRING),
+                ("flake8_quotes_avoid_escape", OptionType::BOOLEAN),
+                ("flake8_type_checking_strict", OptionType::BOOLEAN),
+                ("flake8_type_checking_quote_annotations", OptionType::BOOLEAN),
+                ("flake8_type_checking_exempt_modules", OptionType::ARRAY),
+                ("flake8_type_checking_runtime_evaluated_base_classes", OptionType::ARRAY),
+                ("flake8_type_checking_runtime_evaluated_decorators", OptionType::ARRAY),
+                ("flake8_pytest_style_fixture_parentheses", OptionType::BOOLEAN),
+                ("flake8_pytest_style_mark_parentheses", OptionType::BOOLEAN),
+                ("flake8_pytest_style_parametrize_names_type", OptionType::STRING),
+                ("flake8_pytest_style_parametrize_values_type", OptionType::STRING),
+                ("flake8_pytest_style_parametrize_values_row_type", OptionType::STRING),
             ])
             .with_rule_selection(),
             OptionTable::Format => OptionKeys::declared(FORMAT_OPTION_KEYS),
@@ -514,7 +543,7 @@ impl Engine for RuffEngine {
     }
 
     fn version(&self) -> &str {
-        "ruff-0.17.0+pkgroot+plugins+isort+e501+tgtsrc+ignore-b008+rules-v3+advisory-sev1+fmtopts1"
+        "ruff-0.17.0+pkgroot+plugins+isort+e501+tgtsrc+ignore-b008+rules-v3+advisory-sev1+fmtopts1+plugopts1"
     }
 
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {

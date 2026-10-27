@@ -1,0 +1,12 @@
+pre-commit:
+  jobs:
+    - name: fix
+      group:
+        parallel: false
+        jobs:
+          - name: format
+            group:
+              parallel: true
+    - name: check
+      group:
+        parallel: true

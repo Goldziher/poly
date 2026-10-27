@@ -11,5 +11,8 @@ ignore = ["E501"]
 extend_identifiers = { HASHs = "HASHs" }
 extend_ignore_words = ["ba", "crate"]
 
+[fmt.python.ruff]
+line_length = 100
+
 [per-file-ignores]
 "tests/**" = ["S101"]
