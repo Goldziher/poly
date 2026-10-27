@@ -2292,11 +2292,77 @@
                   }
                 }
               ]
+            },
+            "fix": {
+              "description": "Apply fixes and re-stage them instead of only checking.",
+              "type": "boolean"
+            },
+            "priority": {
+              "type": "integer"
+            },
+            "jobs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/BuiltinJob"
+              }
             }
           },
           "additionalProperties": false
         }
       ]
+    },
+    "BuiltinJob": {
+      "description": "One scoped run of the `lint` or `fmt` builtin.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Hook name shown in the report; defaults to `<tool>-<n>`.",
+          "type": ["string", "null"],
+          "default": null
+        },
+        "stages": {
+          "description": "Stages this job runs in; empty inherits the builtin's `stages`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "files": {
+          "description": "File include glob(s); unset inherits the builtin's `files`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Patterns"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "exclude": {
+          "description": "File exclude glob(s); unset inherits the builtin's `exclude`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Patterns"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fix": {
+          "description": "Apply fixes and re-stage them; unset inherits the builtin's `fix`.",
+          "type": ["boolean", "null"],
+          "default": null
+        },
+        "priority": {
+          "description": "Lower values run first; unset inherits the builtin's `priority`.",
+          "type": ["integer", "null"],
+          "format": "int64",
+          "default": null
+        }
+      },
+      "additionalProperties": false
     },
     "FileSafetyHooks": {
       "description": "`true`/`false`, or a table tuning the file-safety checks. A table without `enabled` is enabled; each member check defaults on.",
@@ -2354,11 +2420,80 @@
             },
             "shebang_scripts_are_executable": {
               "type": "boolean"
+            },
+            "aws_credentials": {
+              "description": "Reject files containing an AWS secret from the environment or credentials files. Off by default.",
+              "type": "boolean"
+            },
+            "priority": {
+              "type": "integer"
+            },
+            "jobs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/FileSafetyJob"
+              }
             }
           },
           "additionalProperties": false
         }
       ]
+    },
+    "FileSafetyJob": {
+      "description": "One scoped run of a subset of the `file_safety` checks.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Hook name shown in the report; defaults to `file-safety-<n>`.",
+          "type": ["string", "null"],
+          "default": null
+        },
+        "stages": {
+          "description": "Stages this job runs in; empty inherits the group's `stages`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "checks": {
+          "description": "The member checks this job runs (`merge_conflict`, `private_key`, ...).\nEmpty runs every enabled member. A listed member must be enabled.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "files": {
+          "description": "File include glob(s); unset inherits the group's `files`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Patterns"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "exclude": {
+          "description": "File exclude glob(s); unset inherits the group's `exclude`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Patterns"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "priority": {
+          "description": "Lower values run first; unset inherits the group's `priority`.",
+          "type": ["integer", "null"],
+          "format": "int64",
+          "default": null
+        }
+      },
+      "additionalProperties": false
     },
     "CargoHooks": {
       "description": "`true`/`false`, or a table tuning the whole-workspace Cargo tools. A table without `enabled` is enabled; each member tool defaults on.",
@@ -2630,14 +2765,32 @@
         "enabled": {
           "type": "boolean"
         },
+        "explicit_preview_rules": {
+          "type": "boolean"
+        },
         "extend_select": {
           "type": "array"
         },
         "external": {
           "type": "array"
         },
+        "extra_standard_library": {
+          "type": "array"
+        },
         "fixable": {
           "type": "array"
+        },
+        "flake8_import_conventions_aliases": {
+          "type": "object"
+        },
+        "flake8_import_conventions_banned_aliases": {
+          "type": "object"
+        },
+        "flake8_import_conventions_banned_from": {
+          "type": "array"
+        },
+        "flake8_import_conventions_extend_aliases": {
+          "type": "object"
         },
         "flake8_pytest_style_fixture_parentheses": {
           "type": "boolean"
@@ -2687,8 +2840,89 @@
         "indent_width": {
           "type": "integer"
         },
+        "isort_case_sensitive": {
+          "type": "boolean"
+        },
+        "isort_classes": {
+          "type": "array"
+        },
+        "isort_combine_as_imports": {
+          "type": "boolean"
+        },
+        "isort_constants": {
+          "type": "array"
+        },
+        "isort_default_section": {
+          "type": "string"
+        },
+        "isort_detect_same_package": {
+          "type": "boolean"
+        },
+        "isort_force_single_line": {
+          "type": "boolean"
+        },
+        "isort_force_sort_within_sections": {
+          "type": "boolean"
+        },
+        "isort_force_to_top": {
+          "type": "array"
+        },
+        "isort_force_wrap_aliases": {
+          "type": "boolean"
+        },
+        "isort_forced_separate": {
+          "type": "array"
+        },
+        "isort_from_first": {
+          "type": "boolean"
+        },
+        "isort_import_heading": {
+          "type": "object"
+        },
+        "isort_length_sort": {
+          "type": "boolean"
+        },
+        "isort_length_sort_straight": {
+          "type": "boolean"
+        },
+        "isort_lines_after_imports": {
+          "type": "integer"
+        },
+        "isort_lines_between_types": {
+          "type": "integer"
+        },
+        "isort_no_lines_before": {
+          "type": "array"
+        },
+        "isort_no_sections": {
+          "type": "boolean"
+        },
+        "isort_order_by_type": {
+          "type": "boolean"
+        },
+        "isort_relative_imports_order": {
+          "type": "string"
+        },
+        "isort_section_order": {
+          "type": "array"
+        },
+        "isort_single_line_exclusions": {
+          "type": "array"
+        },
+        "isort_split_on_trailing_comma": {
+          "type": "boolean"
+        },
+        "isort_variables": {
+          "type": "array"
+        },
         "known_first_party": {
           "type": "array"
+        },
+        "known_local_folder": {
+          "type": "array"
+        },
+        "known_section": {
+          "type": "object"
         },
         "known_third_party": {
           "type": "array"
@@ -2711,6 +2945,9 @@
         "pep8_naming_staticmethod_decorators": {
           "type": "array"
         },
+        "preview": {
+          "type": "boolean"
+        },
         "pycodestyle_ignore_overlong_task_comments": {
           "type": "boolean"
         },
@@ -2726,10 +2963,25 @@
         "pylint_max_args": {
           "type": "integer"
         },
+        "pylint_max_bool_expr": {
+          "type": "integer"
+        },
         "pylint_max_branches": {
           "type": "integer"
         },
+        "pylint_max_locals": {
+          "type": "integer"
+        },
+        "pylint_max_nested_blocks": {
+          "type": "integer"
+        },
+        "pylint_max_public_methods": {
+          "type": "integer"
+        },
         "pylint_max_returns": {
+          "type": "integer"
+        },
+        "pylint_max_statements": {
           "type": "integer"
         },
         "rules": {
@@ -2753,6 +3005,9 @@
         },
         "unfixable": {
           "type": "array"
+        },
+        "unsafe_fixes": {
+          "type": "boolean"
         }
       },
       "additionalProperties": true
@@ -3518,11 +3773,20 @@
         "enabled": {
           "type": "boolean"
         },
+        "indent_style": {
+          "type": "string"
+        },
         "indent_width": {
           "type": "integer"
         },
+        "line_ending": {
+          "type": "string"
+        },
         "line_length": {
           "type": "integer"
+        },
+        "quote_style": {
+          "type": "string"
         },
         "rules": {
           "oneOf": [
@@ -3533,6 +3797,9 @@
               "type": "object"
             }
           ]
+        },
+        "skip_magic_trailing_comma": {
+          "type": "boolean"
         }
       },
       "additionalProperties": true

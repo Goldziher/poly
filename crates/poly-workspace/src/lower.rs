@@ -18,7 +18,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use poly_config::{
-    Guard, HookCacheMode, HooksConfig, Job, Patterns, Serial, Stage as ConfigStage, StageConfig, ToolsConfig,
+    BuiltinHook, BuiltinJob, Guard, HookCacheMode, HooksConfig, Job, Patterns, Serial, Stage as ConfigStage,
+    StageConfig, ToolsConfig,
 };
 use poly_hooks::Stage as HookStage;
 use poly_hooks::filter::FilePattern;
@@ -100,7 +101,36 @@ pub fn lower_stage(
     root: &Path,
     tools: &ToolsConfig,
 ) -> Result<StageSpec> {
-    lower_stage_with_probe(hooks, poly_bin, stage, files, cache_mode, &PathProbe { root }, tools)
+    lower_stage_with_git_args(hooks, poly_bin, stage, files, &[], cache_mode, root, tools)
+}
+
+/// [`lower_stage`] for a git-triggered run: `git_args` are the arguments git
+/// passed to the hook, substituted into `{0}` / `{1}` / `{git_args}` in a job's
+/// `run` line.
+///
+/// # Errors
+///
+/// Same as [`lower_stage`].
+#[allow(clippy::too_many_arguments)]
+pub fn lower_stage_with_git_args(
+    hooks: &HooksConfig,
+    poly_bin: &Path,
+    stage: HookStage,
+    files: &[PathBuf],
+    git_args: &[String],
+    cache_mode: &HookCacheMode,
+    root: &Path,
+    tools: &ToolsConfig,
+) -> Result<StageSpec> {
+    let inputs = TemplateInputs { files, git_args };
+    lower_stage_with_inputs(hooks, poly_bin, stage, inputs, cache_mode, &PathProbe { root }, tools)
+}
+
+/// What a `run` line's `{...}` placeholders are substituted from.
+#[derive(Clone, Copy)]
+struct TemplateInputs<'a> {
+    files: &'a [PathBuf],
+    git_args: &'a [String],
 }
 
 /// [`lower_stage`] with an injectable capability [`ToolProbe`].
@@ -108,11 +138,27 @@ pub fn lower_stage(
 /// `lower_stage` calls this with the production [`PathProbe`]; tests pass a stub
 /// so Cargo-builtin gating and `skip`/`only` guard evaluation are deterministic
 /// regardless of the host toolchain.
+#[cfg(test)]
 fn lower_stage_with_probe(
     hooks: &HooksConfig,
     poly_bin: &Path,
     stage: HookStage,
     files: &[PathBuf],
+    cache_mode: &HookCacheMode,
+    probe: &dyn ToolProbe,
+    tools: &ToolsConfig,
+) -> Result<StageSpec> {
+    let inputs = TemplateInputs { files, git_args: &[] };
+    lower_stage_with_inputs(hooks, poly_bin, stage, inputs, cache_mode, probe, tools)
+}
+
+/// Lowering proper: [`lower_stage`] and [`lower_stage_with_git_args`] with an
+/// injectable capability [`ToolProbe`].
+fn lower_stage_with_inputs(
+    hooks: &HooksConfig,
+    poly_bin: &Path,
+    stage: HookStage,
+    inputs: TemplateInputs<'_>,
     cache_mode: &HookCacheMode,
     probe: &dyn ToolProbe,
     tools: &ToolsConfig,
@@ -132,10 +178,10 @@ fn lower_stage_with_probe(
     builtins::append_catalog_tools(tools, config_stage, probe, &mut entries)?;
 
     if let Some(cfg) = stage_config {
-        append_jobs(hooks, stage, cfg, files, cache_mode, probe, &mut entries)?;
+        append_jobs(hooks, stage, cfg, inputs, cache_mode, probe, &mut entries)?;
     }
     if let Some(always) = hooks.stage_configs.get(&ConfigStage::Always) {
-        append_jobs(hooks, stage, always, files, cache_mode, probe, &mut entries)?;
+        append_jobs(hooks, stage, always, inputs, cache_mode, probe, &mut entries)?;
     }
 
     for hook in &mut entries {
@@ -176,35 +222,10 @@ fn append_builtins(
 ) -> Result<()> {
     let poly = shell_quote(&poly_bin.to_string_lossy());
 
-    if hooks.builtin.lint.enabled
-        && builtin_runs_on(
-            &hooks.builtin.lint.stages,
-            &hooks.stages,
-            ConfigStage::PreCommit,
-            config_stage,
-        )?
-    {
-        let mut hook = Hook::run("lint", format!("{poly} lint --no-workspace --force-exclude"));
-        let (files, exclude) = builtin_globs(hooks.builtin.lint.files.as_ref(), hooks.builtin.lint.exclude.as_ref())?;
-        hook.files = files;
-        hook.exclude = exclude;
-        hook.cache = cache::builtin_cache(cache_mode);
-        out.push(hook);
-    }
-    if hooks.builtin.fmt.enabled
-        && builtin_runs_on(
-            &hooks.builtin.fmt.stages,
-            &hooks.stages,
-            ConfigStage::PreCommit,
-            config_stage,
-        )?
-    {
-        let mut hook = Hook::run("fmt", format!("{poly} fmt --check --force-exclude"));
-        let (files, exclude) = builtin_globs(hooks.builtin.fmt.files.as_ref(), hooks.builtin.fmt.exclude.as_ref())?;
-        hook.files = files;
-        hook.exclude = exclude;
-        hook.cache = cache::builtin_cache(cache_mode);
-        out.push(hook);
+    for (tool, builtin) in [(Tool::Lint, &hooks.builtin.lint), (Tool::Fmt, &hooks.builtin.fmt)] {
+        if builtin.enabled {
+            append_scoped_tool(tool, builtin, &poly, hooks, config_stage, cache_mode, out)?;
+        }
     }
     if hooks.builtin.commit.enabled
         && builtin_runs_on(
@@ -247,11 +268,90 @@ pub(super) fn builtin_runs_on(
     Ok(false)
 }
 
+/// The exclusion set every fix-mode builtin joins: two of them rewriting the same
+/// file at once would race, so they run one at a time within a priority group.
+const FIX_SERIAL_GROUP: &str = "fix";
+
+#[derive(Clone, Copy)]
+enum Tool {
+    Lint,
+    Fmt,
+}
+
+impl Tool {
+    fn id(self) -> &'static str {
+        match self {
+            Tool::Lint => "lint",
+            Tool::Fmt => "fmt",
+        }
+    }
+
+    fn command(self, poly: &str, fix: bool) -> String {
+        match (self, fix) {
+            (Tool::Lint, false) => format!("{poly} lint --no-workspace --force-exclude"),
+            (Tool::Lint, true) => format!("{poly} lint --no-workspace --force-exclude --fix"),
+            (Tool::Fmt, false) => format!("{poly} fmt --check --force-exclude"),
+            (Tool::Fmt, true) => format!("{poly} fmt --force-exclude --fix"),
+        }
+    }
+}
+
+/// Lower one `lint` / `fmt` builtin: a single hook, or one per `jobs` entry.
+///
+/// A job's own `files` / `exclude` / `fix` / `priority` / `stages` replace the
+/// builtin's. In fix mode the hook rewrites files and `stage_fixed` re-stages
+/// them; otherwise it only checks.
+fn append_scoped_tool(
+    tool: Tool,
+    builtin: &BuiltinHook,
+    poly: &str,
+    hooks: &HooksConfig,
+    config_stage: ConfigStage,
+    cache_mode: &HookCacheMode,
+    out: &mut Vec<Hook>,
+) -> Result<()> {
+    let jobs = if builtin.jobs.is_empty() {
+        vec![BuiltinJob::default()]
+    } else {
+        builtin.jobs.clone()
+    };
+    let scoped = !builtin.jobs.is_empty();
+    for (index, job) in jobs.iter().enumerate() {
+        let stages = if job.stages.is_empty() {
+            &builtin.stages
+        } else {
+            &job.stages
+        };
+        if !builtin_runs_on(stages, &hooks.stages, ConfigStage::PreCommit, config_stage)? {
+            continue;
+        }
+        let fix = job.fix.unwrap_or(builtin.fix);
+        let id = match (&job.name, scoped) {
+            (Some(name), _) => name.clone(),
+            (None, true) => format!("{}-{}", tool.id(), index + 1),
+            (None, false) => tool.id().to_string(),
+        };
+        let mut hook = Hook::run(id, tool.command(poly, fix));
+        let (files, exclude) = builtin_globs(
+            job.files.as_ref().or(builtin.files.as_ref()),
+            job.exclude.as_ref().or(builtin.exclude.as_ref()),
+        )?;
+        hook.files = files;
+        hook.exclude = exclude;
+        hook.priority = job.priority.unwrap_or(builtin.priority);
+        hook.stage_fixed = fix;
+        hook.serial_group = fix.then(|| FIX_SERIAL_GROUP.to_string());
+        hook.cache = cache::builtin_cache(cache_mode);
+        out.push(hook);
+    }
+    Ok(())
+}
+
 fn append_jobs(
     hooks: &HooksConfig,
     stage: HookStage,
     cfg: &StageConfig,
-    files: &[PathBuf],
+    inputs: TemplateInputs<'_>,
     cache_mode: &HookCacheMode,
     probe: &dyn ToolProbe,
     out: &mut Vec<Hook>,
@@ -263,7 +363,7 @@ fn append_jobs(
         if job_excluded_by_tags(job, &cfg.exclude_tags) {
             continue;
         }
-        out.push(job_to_hook(hooks, stage, cfg, &label, job, files, cache_mode)?);
+        out.push(job_to_hook(hooks, stage, cfg, &label, job, inputs, cache_mode)?);
     }
     Ok(())
 }
@@ -274,7 +374,7 @@ fn job_to_hook(
     cfg: &StageConfig,
     label: &str,
     job: &Job,
-    files: &[PathBuf],
+    inputs: TemplateInputs<'_>,
     cache_mode: &HookCacheMode,
 ) -> Result<Hook> {
     let mut env: BTreeMap<String, String> = hooks.env.clone();
@@ -288,8 +388,8 @@ fn job_to_hook(
 
     let types = (!job.file_types.is_empty()).then(|| TagSet::from_tags(&job.file_types));
 
-    let scoped = filter_files(files, files_pattern.as_ref(), exclude_pattern.as_ref());
-    let (command, template_pass_filenames) = build_command(job, &scoped)?;
+    let scoped = filter_files(inputs.files, files_pattern.as_ref(), exclude_pattern.as_ref());
+    let (command, template_pass_filenames) = build_command(job, &scoped, inputs.git_args)?;
     let pass_filenames = template_pass_filenames && !job.workspace;
 
     let cache = cache::job_cache(job, cache_mode)?;
@@ -397,12 +497,13 @@ fn job_timeout(stage: HookStage, label: &str, job: &Job) -> Result<HookTimeout> 
 }
 
 /// Build the [`HookCommand`] and resolve whether the runner should append the
-/// matched files. A `run` command containing `{staged_files}` / `{all_files}`
-/// has those tokens substituted here and does **not** receive appended files.
-fn build_command(job: &Job, files: &[PathBuf]) -> Result<(HookCommand, bool)> {
+/// matched files. A `run` command containing `{staged_files}` / `{all_files}` /
+/// `{git_args}` / `{N}` has those tokens substituted here and does **not**
+/// receive appended files.
+fn build_command(job: &Job, files: &[PathBuf], git_args: &[String]) -> Result<(HookCommand, bool)> {
     if let Some(run) = &job.run {
         if has_template(run) {
-            return Ok((HookCommand::Run(substitute_templates(run, files)), false));
+            return Ok((HookCommand::Run(substitute_templates(run, files, git_args)), false));
         }
         return Ok((HookCommand::Run(run.clone()), true));
     }
@@ -496,23 +597,57 @@ fn filter_files(files: &[PathBuf], include: Option<&FilePattern>, exclude: Optio
 }
 
 fn has_template(run: &str) -> bool {
-    run.contains("{staged_files}") || run.contains("{all_files}")
+    placeholders(run).next().is_some()
 }
 
-/// Substitute `{staged_files}` / `{all_files}` with the shell-quoted, space-
-/// joined candidate file set.
+/// The `{name}` placeholders poly substitutes in `run`, as `(start, end, name)`.
 ///
-/// Both tokens resolve to the same resolved set (the caller decides whether that
-/// is the staged or whole-tree set via `--all-files`). Deferred: per-job glob
-/// filtering of the substituted list and other lefthook tokens
-/// (`{push_files}`, `{cmd}`, …).
-fn substitute_templates(run: &str, files: &[PathBuf]) -> String {
-    let joined = files
-        .iter()
-        .map(|path| shell_quote(&path.to_string_lossy()))
-        .collect::<Vec<_>>()
-        .join(" ");
-    run.replace("{staged_files}", &joined).replace("{all_files}", &joined)
+/// The names are the file lists (`staged_files`, `all_files`), the joined git
+/// arguments (`0`, `git_args`) and a single git argument (`1`, `2`, ...). A
+/// `${VAR}` / `${1}` shell expansion is not a placeholder.
+fn placeholders(run: &str) -> impl Iterator<Item = (usize, usize, &str)> {
+    run.match_indices('{').filter_map(move |(start, _)| {
+        if run[..start].ends_with('$') {
+            return None;
+        }
+        let len = run[start + 1..].find('}')?;
+        let name = &run[start + 1..start + 1 + len];
+        let numeric = !name.is_empty() && name.bytes().all(|b| b.is_ascii_digit());
+        (numeric || matches!(name, "staged_files" | "all_files" | "git_args")).then_some((start, start + len + 2, name))
+    })
+}
+
+/// Substitute the placeholders in `run`.
+///
+/// `{staged_files}` / `{all_files}` resolve to the same shell-quoted, space-joined
+/// candidate set (the caller decides whether that is the staged or whole-tree set
+/// via `--all-files`). `{0}` and `{git_args}` are every git hook argument,
+/// quoted and space-joined; `{N}` is the N-th (1-based) or empty when git passed
+/// fewer.
+fn substitute_templates(run: &str, files: &[PathBuf], git_args: &[String]) -> String {
+    let quote_all = |items: Vec<String>| items.iter().map(|item| shell_quote(item)).collect::<Vec<_>>().join(" ");
+    let joined_files = quote_all(files.iter().map(|path| path.to_string_lossy().into_owned()).collect());
+    let joined_args = quote_all(git_args.to_vec());
+    let mut out = String::with_capacity(run.len());
+    let mut cursor = 0;
+    for (start, end, name) in placeholders(run) {
+        let replacement = match name {
+            "staged_files" | "all_files" => joined_files.clone(),
+            "0" | "git_args" => joined_args.clone(),
+            index => index
+                .parse::<usize>()
+                .ok()
+                .and_then(|n| n.checked_sub(1))
+                .and_then(|n| git_args.get(n))
+                .map(|arg| shell_quote(arg))
+                .unwrap_or_default(),
+        };
+        out.push_str(&run[cursor..start]);
+        out.push_str(&replacement);
+        cursor = end;
+    }
+    out.push_str(&run[cursor..]);
+    out
 }
 
 fn stage_steps(cfg: Option<&StageConfig>) -> (Option<String>, Vec<String>, Vec<String>) {

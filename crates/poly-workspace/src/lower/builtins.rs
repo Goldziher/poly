@@ -16,7 +16,8 @@ use std::path::Path;
 use anyhow::{Context as _, Result};
 use poly_catalog::{Catalog, Command as CatalogCommand, PATH_PLACEHOLDER};
 use poly_config::{
-    CargoHooks, FileSafetyHooks, HookCacheMode, HooksConfig, Stage as ConfigStage, ToolConfig, ToolsConfig,
+    CargoHooks, FileSafetyHooks, FileSafetyJob, HookCacheMode, HooksConfig, Stage as ConfigStage, ToolConfig,
+    ToolsConfig,
 };
 use poly_hooks::filter::FilePattern;
 use poly_hooks::model::{CARGO_SERIAL_GROUP, Hook, HookCache, HookCommand, StageSpec};
@@ -112,11 +113,14 @@ impl ToolProbe for PathProbe<'_> {
     }
 }
 
-/// Append the `file_safety` builtin as a single hidden `poly hooks check …`
-/// invocation carrying a flag per enabled member check.
+/// Append the `file_safety` builtin as hidden `poly hooks check …` invocations,
+/// each carrying a flag per member check it runs.
 ///
-/// `poly` is the shell-quoted path to the running `poly` binary. The hook
-/// passes filenames (the runner appends the matched files) and is never
+/// Without `jobs` that is one hook over every enabled member. With `jobs` it is
+/// one hook per job, so each job keeps its own `files` / `exclude`.
+///
+/// `poly` is the shell-quoted path to the running `poly` binary. The hooks pass
+/// filenames (the runner appends the matched files) and are never
 /// result-cached: the executable-bit and case-conflict checks depend on state
 /// outside the content digest, and the checks are cheap regardless.
 pub(super) fn append_file_safety(
@@ -126,43 +130,73 @@ pub(super) fn append_file_safety(
     out: &mut Vec<Hook>,
 ) -> Result<()> {
     let safety = &hooks.builtin.file_safety;
-    if !safety.enabled || !builtin_runs_on(&safety.stages, &hooks.stages, ConfigStage::PreCommit, config_stage)? {
+    if !safety.enabled {
         return Ok(());
     }
-    let Some(flags) = file_safety_flags(safety) else {
-        return Ok(());
+    let jobs = if safety.jobs.is_empty() {
+        vec![FileSafetyJob::default()]
+    } else {
+        safety.jobs.clone()
     };
-    let mut hook = Hook::run("file-safety", format!("{poly} hooks check {flags}"));
-    let (files, exclude) = super::builtin_globs(safety.files.as_ref(), safety.exclude.as_ref())?;
-    hook.files = files;
-    hook.exclude = exclude;
-    hook.cache = HookCache::Disabled;
-    out.push(hook);
+    let scoped = !safety.jobs.is_empty();
+    for (index, job) in jobs.iter().enumerate() {
+        let stages = if job.stages.is_empty() {
+            &safety.stages
+        } else {
+            &job.stages
+        };
+        if !builtin_runs_on(stages, &hooks.stages, ConfigStage::PreCommit, config_stage)? {
+            continue;
+        }
+        let Some(flags) = file_safety_flags(safety, &job.checks) else {
+            continue;
+        };
+        let id = match (&job.name, scoped) {
+            (Some(name), _) => name.clone(),
+            (None, true) => format!("file-safety-{}", index + 1),
+            (None, false) => "file-safety".to_string(),
+        };
+        let mut hook = Hook::run(id, format!("{poly} hooks check {flags}"));
+        let (files, exclude) = super::builtin_globs(
+            job.files.as_ref().or(safety.files.as_ref()),
+            job.exclude.as_ref().or(safety.exclude.as_ref()),
+        )?;
+        hook.files = files;
+        hook.exclude = exclude;
+        hook.priority = job.priority.unwrap_or(safety.priority);
+        hook.cache = HookCache::Disabled;
+        out.push(hook);
+    }
     Ok(())
 }
 
-/// Build the `poly hooks check` flag string for the enabled member checks, or
-/// `None` when no check is enabled.
-fn file_safety_flags(safety: &FileSafetyHooks) -> Option<String> {
+/// Build the `poly hooks check` flag string for `checks` (every enabled member
+/// when empty), or `None` when none is enabled.
+fn file_safety_flags(safety: &FileSafetyHooks, checks: &[String]) -> Option<String> {
+    let wanted =
+        |name: &str| safety.check_enabled(name) && (checks.is_empty() || checks.iter().any(|check| check == name));
     let mut flags: Vec<String> = Vec::new();
-    if safety.merge_conflict {
+    if wanted("merge_conflict") {
         flags.push("--merge-conflict".to_string());
     }
-    if safety.added_large_files {
+    if wanted("added_large_files") {
         flags.push("--added-large-files".to_string());
         flags.push(format!("--max-added-kb {}", safety.max_added_file_kb));
     }
-    if safety.private_key {
+    if wanted("private_key") {
         flags.push("--private-key".to_string());
     }
-    if safety.case_conflict {
+    if wanted("case_conflict") {
         flags.push("--case-conflict".to_string());
     }
-    if safety.executables_have_shebangs {
+    if wanted("executables_have_shebangs") {
         flags.push("--executables-have-shebangs".to_string());
     }
-    if safety.shebang_scripts_are_executable {
+    if wanted("shebang_scripts_are_executable") {
         flags.push("--shebang-scripts-are-executable".to_string());
+    }
+    if wanted("aws_credentials") {
+        flags.push("--aws-credentials".to_string());
     }
     (!flags.is_empty()).then(|| flags.join(" "))
 }

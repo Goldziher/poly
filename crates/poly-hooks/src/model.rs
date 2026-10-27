@@ -295,6 +295,15 @@ pub struct HookRunRequest {
     pub files: Vec<PathBuf>,
     /// Commit-message file path (for `commit-msg` / `prepare-commit-msg`).
     pub message_file: Option<PathBuf>,
+    /// The arguments git passed to the hook, in order.
+    ///
+    /// A hook that takes no file list (`post-checkout`, `post-merge`,
+    /// `post-rewrite`, `pre-rebase`, `post-commit`) receives them as its
+    /// positional arguments (`$1`, `$2`, ...), and a message-file hook receives
+    /// them in place of the bare message file, so `prepare-commit-msg` sees the
+    /// message source and commit object too. Every hook also sees them as
+    /// `POLY_GIT_ARG_COUNT` and `POLY_GIT_ARG_<n>` in its environment.
+    pub git_args: Vec<String>,
     /// Stages to run, in order.
     pub stages: Vec<StageSpec>,
     /// Explicit concurrency override (`-j`); `None` → env / CPU count.

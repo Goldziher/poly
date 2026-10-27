@@ -603,3 +603,60 @@ fn hooks_install_succeeds_in_a_linked_worktree() {
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+#[test]
+fn hook_impl_post_checkout_hands_git_arguments_to_jobs() {
+    let repo = init_repo();
+    write(
+        repo.path(),
+        "poly.toml",
+        r#"
+[hooks.post-checkout.commands.positional]
+run = "printf '%s|' \"$@\" > positional.txt"
+
+[hooks.post-checkout.commands.templated]
+run = "printf '%s|' {2} {0} > templated.txt"
+workspace = true
+
+[hooks.post-checkout.commands.environment]
+run = "printf '%s %s' \"$POLY_GIT_ARG_COUNT\" \"$POLY_GIT_ARG_3\" > environment.txt"
+workspace = true
+"#,
+    );
+    let output = poly_hooks(
+        repo.path(),
+        &["hook-impl", "--hook-type", "post-checkout", "--", "abc", "def", "1"],
+    );
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let read = |name: &str| std::fs::read_to_string(repo.path().join(name)).unwrap();
+    assert_eq!(read("positional.txt"), "abc|def|1|");
+    assert_eq!(read("templated.txt"), "def|abc|def|1|");
+    assert_eq!(read("environment.txt"), "3 1");
+}
+
+#[test]
+fn hook_impl_prepare_commit_msg_hands_every_argument_to_jobs() {
+    let repo = init_repo();
+    write(
+        repo.path(),
+        "poly.toml",
+        "[hooks.prepare-commit-msg.commands.args]\nrun = \"printf '%s|' \\\"$@\\\" > args.txt\"\n",
+    );
+    let output = poly_hooks(
+        repo.path(),
+        &[
+            "hook-impl",
+            "--hook-type",
+            "prepare-commit-msg",
+            "--",
+            "MSG",
+            "commit",
+            "deadbeef",
+        ],
+    );
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(
+        std::fs::read_to_string(repo.path().join("args.txt")).unwrap(),
+        "MSG|commit|deadbeef|"
+    );
+}

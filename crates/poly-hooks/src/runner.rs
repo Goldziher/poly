@@ -133,6 +133,8 @@ struct ExecContext<'a> {
     /// the repository's own `target/` so the snapshot does not force a cold
     /// rebuild (ADR 0019); in a worktree run cargo already has it.
     cargo_target_dir: Option<PathBuf>,
+    /// The arguments git passed to the hook, exported to every hook's environment.
+    git_args: &'a [String],
 }
 
 impl<'a> ExecContext<'a> {
@@ -143,6 +145,7 @@ impl<'a> ExecContext<'a> {
             tree,
             sccache: request.sccache.as_ref(),
             cargo_target_dir: matches!(tree, ValidatedTree::StagedIndex).then(|| request.root.join("target")),
+            git_args: &request.git_args,
         }
     }
 }
@@ -561,13 +564,14 @@ fn run_hook(
     let results: Vec<(HookStatus, Vec<u8>)> = batches
         .into_par_iter()
         .map(|batch| {
-            let cmd = exec::build_command(
+            let mut cmd = exec::build_command(
                 hook,
                 context.root,
                 batch,
                 context.sccache,
                 context.cargo_target_dir.as_deref(),
             );
+            exec::export_git_args(&mut cmd, context.git_args);
             exec::execute(cmd, bar, &hook.id, budget)
         })
         .collect();
