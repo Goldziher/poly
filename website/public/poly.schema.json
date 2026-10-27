@@ -2624,11 +2624,62 @@
     "lint_ruff": {
       "type": "object",
       "properties": {
+        "dummy_variable_rgx": {
+          "type": "string"
+        },
         "enabled": {
           "type": "boolean"
         },
         "extend_select": {
           "type": "array"
+        },
+        "external": {
+          "type": "array"
+        },
+        "fixable": {
+          "type": "array"
+        },
+        "flake8_pytest_style_fixture_parentheses": {
+          "type": "boolean"
+        },
+        "flake8_pytest_style_mark_parentheses": {
+          "type": "boolean"
+        },
+        "flake8_pytest_style_parametrize_names_type": {
+          "type": "string"
+        },
+        "flake8_pytest_style_parametrize_values_row_type": {
+          "type": "string"
+        },
+        "flake8_pytest_style_parametrize_values_type": {
+          "type": "string"
+        },
+        "flake8_quotes_avoid_escape": {
+          "type": "boolean"
+        },
+        "flake8_quotes_docstring_quotes": {
+          "type": "string"
+        },
+        "flake8_quotes_inline_quotes": {
+          "type": "string"
+        },
+        "flake8_quotes_multiline_quotes": {
+          "type": "string"
+        },
+        "flake8_type_checking_exempt_modules": {
+          "type": "array"
+        },
+        "flake8_type_checking_quote_annotations": {
+          "type": "boolean"
+        },
+        "flake8_type_checking_runtime_evaluated_base_classes": {
+          "type": "array"
+        },
+        "flake8_type_checking_runtime_evaluated_decorators": {
+          "type": "array"
+        },
+        "flake8_type_checking_strict": {
+          "type": "boolean"
         },
         "ignore": {
           "type": "array"
@@ -2646,6 +2697,27 @@
           "type": "integer"
         },
         "mccabe_max_complexity": {
+          "type": "integer"
+        },
+        "pep8_naming_classmethod_decorators": {
+          "type": "array"
+        },
+        "pep8_naming_extend_ignore_names": {
+          "type": "array"
+        },
+        "pep8_naming_ignore_names": {
+          "type": "array"
+        },
+        "pep8_naming_staticmethod_decorators": {
+          "type": "array"
+        },
+        "pycodestyle_ignore_overlong_task_comments": {
+          "type": "boolean"
+        },
+        "pycodestyle_max_doc_length": {
+          "type": "integer"
+        },
+        "pycodestyle_max_line_length": {
           "type": "integer"
         },
         "pydocstyle_convention": {
@@ -2678,6 +2750,9 @@
         },
         "target_version": {
           "type": "string"
+        },
+        "unfixable": {
+          "type": "array"
         }
       },
       "additionalProperties": true
