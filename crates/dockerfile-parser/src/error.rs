@@ -1,31 +1,55 @@
 // (C) Copyright 2019-2020 Hewlett Packard Enterprise Development LP
 
 use pest::iterators::Pair;
-use snafu::Snafu;
+use thiserror::Error;
 
 use crate::parser::*;
 
 /// A Dockerfile parsing error.
-#[derive(Debug, Snafu)]
-#[snafu(visibility(pub(crate)))]
+#[derive(Debug, Error)]
 pub enum Error {
-    #[snafu(display("could not parse Dockerfile: {}", source))]
-    ParseError { source: pest::error::Error<Rule> },
+    #[error("could not parse Dockerfile: {source}")]
+    /// The input is not syntactically valid.
+    ParseError {
+        /// The underlying pest syntax error.
+        source: Box<pest::error::Error<Rule>>,
+    },
 
-    #[snafu(display("unable to parse Dockerfile: {}", message))]
-    GenericParseError { message: String },
+    #[error("unable to parse Dockerfile: {message}")]
+    /// The input parsed but contained an invalid construct.
+    GenericParseError {
+        /// A description of what could not be parsed.
+        message: String,
+    },
 
-    #[snafu(display("error unescaping string: {:?}", source))]
-    UnescapeError { source: enquote::Error },
+    #[error("error unescaping string: {source:?}")]
+    /// A quoted string could not be unquoted.
+    UnescapeError {
+        /// The underlying unquoting error.
+        #[from]
+        source: enquote::Error,
+    },
 
-    #[snafu(display("unable to parse Dockerfile"))]
+    #[error("unable to parse Dockerfile")]
+    /// The parser produced no result.
     UnknownParseError,
 
-    #[snafu(display("could not read Dockerfile: {}", source))]
-    ReadError { source: std::io::Error },
+    #[error("could not read Dockerfile: {source}")]
+    /// The input could not be read.
+    ReadError {
+        /// The underlying I/O error.
+        #[from]
+        source: std::io::Error,
+    },
 
-    #[snafu(display("could not convert instruction '{:?}' to desired type '{}'", from, to))]
-    ConversionError { from: String, to: String },
+    #[error("could not convert instruction '{from:?}' to desired type '{to}'")]
+    /// An instruction could not be converted to the requested type.
+    ConversionError {
+        /// The instruction that was being converted.
+        from: String,
+        /// The name of the requested instruction type.
+        to: String,
+    },
 }
 
 /// A Dockerfile parsing Result.

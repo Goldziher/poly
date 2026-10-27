@@ -59,6 +59,7 @@ ctrlc = "3.5.2"
 dockerfile-parser = { path = "crates/dockerfile-parser" }
 dotenv-analyzer = "0.1"
 dotenv-core = "0.1"
+enquote = "1.1.0"
 dunce = "1.0.5"
 etcetera = "0.11.0"
 fancy-regex = "0.20.0"
@@ -102,6 +103,8 @@ oxc_formatter_core = { git = "https://github.com/oxc-project/oxc", rev = "e2be72
 oxc_formatter_json = { git = "https://github.com/oxc-project/oxc", rev = "e2be72dfea8dff8ff7d6416fd21a1d8866ded4e4" }
 oxc_linter = { git = "https://github.com/oxc-project/oxc", rev = "e2be72dfea8dff8ff7d6416fd21a1d8866ded4e4" }
 oxc_span = { git = "https://github.com/oxc-project/oxc", rev = "e2be72dfea8dff8ff7d6416fd21a1d8866ded4e4" }
+pest = "2.9.5"
+pest_derive = "2.9.5"
 phf = { version = "0.14.0", default-features = false, features = ["macros"] }
 poly-buildinfo = { path = "crates/poly-buildinfo" }
 poly-cache = { path = "crates/poly-cache" }
@@ -118,6 +121,7 @@ pretty_assertions = "1.4.1"
 pretty_graphql = "0.2.3"
 pretty_yaml = "0.6"
 quick-xml = "0.42"
+proptest = "1.12.0"
 rand = "0.10.3"
 rayon = "1"
 regex = "1"

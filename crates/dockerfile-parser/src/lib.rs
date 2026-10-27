@@ -1,6 +1,7 @@
 // (C) Copyright 2019-2020 Hewlett Packard Enterprise Development LP
 
 #![forbid(unsafe_code)]
+#![warn(missing_docs)]
 
 //! # Rust parser for Dockerfile syntax
 //!
@@ -30,9 +31,6 @@
 //! }
 //! ```
 
-#[macro_use]
-extern crate pest_derive;
-
 mod dockerfile_parser;
 mod error;
 mod image;
@@ -43,12 +41,6 @@ mod stage;
 mod util;
 
 pub use crate::dockerfile_parser::*;
-pub use error::*;
-pub use image::*;
-pub use instructions::*;
-pub use parser::*;
-pub use splicer::*;
-pub use stage::*;
 pub use util::*;
 
 #[cfg(test)]

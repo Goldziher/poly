@@ -2,28 +2,31 @@
 
 use std::convert::TryFrom;
 
+use crate::Span;
 use crate::dockerfile_parser::Instruction;
 use crate::error::*;
 use crate::parser::{Pair, Rule};
 use crate::util::*;
-use crate::Span;
 
 use enquote::unquote;
-use snafu::ResultExt;
 
 /// An environment variable key/value pair
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct EnvVar {
+    /// The span of this node in the original input.
     pub span: Span,
+    /// The variable name.
     pub key: SpannedString,
+    /// The value of the key.
     pub value: BreakableString,
 }
 
 impl EnvVar {
+    /// Creates a new value.
     pub fn new(span: Span, key: SpannedString, value: impl Into<BreakableString>) -> Self {
         EnvVar {
             span,
-            key: key,
+            key,
             value: value.into(),
         }
     }
@@ -34,7 +37,9 @@ impl EnvVar {
 /// [env]: https://docs.docker.com/engine/reference/builder/#env
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct EnvInstruction {
+    /// The span of this node in the original input.
     pub span: Span,
+    /// The variables defined by this instruction.
     pub vars: Vec<EnvVar>,
 }
 
@@ -51,7 +56,7 @@ fn parse_env_pair(record: Pair) -> Result<EnvVar> {
                 value = Some(BreakableString::new(&field).add_string(&field, field.as_str()));
             }
             Rule::env_pair_quoted_value => {
-                let v = unquote(field.as_str()).context(UnescapeError)?;
+                let v = unquote(field.as_str())?;
 
                 value = Some(BreakableString::new(&field).add_string(&field, v));
             }
@@ -105,7 +110,7 @@ impl EnvInstruction {
                 Rule::env_name => key = Some(parse_string(&field)?),
                 Rule::env_single_value => value = Some(parse_any_breakable(field)?),
                 Rule::env_single_quoted_value => {
-                    let v = unquote(field.as_str()).context(UnescapeError)?;
+                    let v = unquote(field.as_str())?;
 
                     value = Some(BreakableString::new(&field).add_string(&field, v));
                 }
@@ -154,8 +159,8 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
-    use crate::test_util::*;
     use crate::Dockerfile;
+    use crate::test_util::*;
 
     #[test]
     fn env() -> Result<()> {

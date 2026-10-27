@@ -2,24 +2,27 @@
 
 use std::convert::TryFrom;
 
+use crate::Span;
 use crate::dockerfile_parser::Instruction;
 use crate::error::*;
 use crate::parser::{Pair, Rule};
 use crate::util::*;
-use crate::Span;
 
 use enquote::unquote;
-use snafu::ResultExt;
 
 /// A single label key/value pair.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Label {
+    /// The span of this node in the original input.
     pub span: Span,
+    /// The name of the key.
     pub name: SpannedString,
+    /// The value of the key.
     pub value: SpannedString,
 }
 
 impl Label {
+    /// Creates a new value.
     pub fn new(span: Span, name: SpannedString, value: SpannedString) -> Label {
         Label { span, name, value }
     }
@@ -34,7 +37,7 @@ impl Label {
                 Rule::label_name | Rule::label_single_name => name = Some(parse_string(&field)?),
                 Rule::label_quoted_name | Rule::label_single_quoted_name => {
                     // label seems to be uniquely able to span multiple lines when quoted
-                    let v = unquote(&clean_escaped_breaks(field.as_str())).context(UnescapeError)?;
+                    let v = unquote(&clean_escaped_breaks(field.as_str()))?;
 
                     name = Some(SpannedString {
                         content: v,
@@ -44,7 +47,7 @@ impl Label {
 
                 Rule::label_value => value = Some(parse_string(&field)?),
                 Rule::label_quoted_value => {
-                    let v = unquote(&clean_escaped_breaks(field.as_str())).context(UnescapeError)?;
+                    let v = unquote(&clean_escaped_breaks(field.as_str()))?;
 
                     value = Some(SpannedString {
                         content: v,
@@ -75,7 +78,9 @@ impl Label {
 /// [label]: https://docs.docker.com/engine/reference/builder/#label
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct LabelInstruction {
+    /// The span of this node in the original input.
     pub span: Span,
+    /// The labels defined by this instruction.
     pub labels: Vec<Label>,
 }
 

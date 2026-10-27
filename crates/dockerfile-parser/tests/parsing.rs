@@ -229,15 +229,17 @@ fn parse_label() -> Result<(), dockerfile_parser::Error> {
     );
 
     // ambiguous line continuation is an error
-    assert!(Dockerfile::parse(
-        r#"
+    assert!(
+        Dockerfile::parse(
+            r#"
     LABEL foo="bar\
           baz"\
 
     RUN foo
   "#
-    )
-    .is_err());
+        )
+        .is_err()
+    );
 
     Ok(())
 }

@@ -2,11 +2,11 @@
 
 use std::convert::TryFrom;
 
+use crate::Span;
 use crate::dockerfile_parser::Instruction;
 use crate::error::*;
 use crate::parser::*;
 use crate::util::*;
-use crate::Span;
 
 /// A Dockerfile [`ENTRYPOINT` instruction][entrypoint].
 ///
@@ -16,7 +16,9 @@ use crate::Span;
 /// [entrypoint]: https://docs.docker.com/engine/reference/builder/#entrypoint
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct EntrypointInstruction {
+    /// The span of this node in the original input.
     pub span: Span,
+    /// The command in shell or exec form.
     pub expr: ShellOrExecExpr,
 }
 
@@ -84,8 +86,8 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
-    use crate::test_util::*;
     use crate::Span;
+    use crate::test_util::*;
 
     #[test]
     fn entrypoint_basic() -> Result<()> {

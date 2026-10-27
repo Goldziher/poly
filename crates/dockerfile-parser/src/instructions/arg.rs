@@ -2,18 +2,19 @@
 
 use std::convert::TryFrom;
 
+use crate::SpannedString;
 use crate::dockerfile_parser::Instruction;
 use crate::error::*;
 use crate::parse_string;
 use crate::parser::{Pair, Rule};
 use crate::splicer::Span;
-use crate::SpannedString;
 
 /// A Dockerfile [`ARG` instruction][arg].
 ///
 /// [arg]: https://docs.docker.com/engine/reference/builder/#arg
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArgInstruction {
+    /// The span of this node in the original input.
     pub span: Span,
 
     /// The argument key
@@ -49,7 +50,7 @@ impl ArgInstruction {
             _ => {
                 return Err(Error::GenericParseError {
                     message: "arg name is required".into(),
-                })
+                });
             }
         };
 
@@ -77,8 +78,8 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
-    use crate::test_util::*;
     use crate::Dockerfile;
+    use crate::test_util::*;
 
     #[test]
     fn arg_strings() -> Result<()> {

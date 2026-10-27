@@ -2,11 +2,11 @@
 
 use std::convert::TryFrom;
 
+use crate::Span;
 use crate::dockerfile_parser::Instruction;
 use crate::error::*;
 use crate::parser::*;
 use crate::util::*;
-use crate::Span;
 
 /// A miscellaneous (unsupported) Dockerfile instruction.
 ///
@@ -17,8 +17,11 @@ use crate::Span;
 /// `USER`, `WORKDIR`, `ONBUILD`, `STOPSIGNAL`, `HEALTHCHECK`, `SHELL`
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct MiscInstruction {
+    /// The span of this node in the original input.
     pub span: Span,
+    /// The instruction keyword.
     pub instruction: SpannedString,
+    /// The raw, possibly multi-line arguments.
     pub arguments: BreakableString,
 }
 

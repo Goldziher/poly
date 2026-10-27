@@ -7,7 +7,6 @@ use crate::parser::*;
 use crate::splicer::Span;
 
 use enquote::unquote;
-use snafu::ResultExt;
 
 /// Given a node ostensibly containing a string array, returns an unescaped
 /// array of strings
@@ -32,7 +31,7 @@ pub(crate) fn parse_string(field: &Pair) -> Result<SpannedString> {
     let str_span = Span::from_pair(field);
     let field_str = field.as_str();
     let content = if matches!(field_str.chars().next(), Some('"' | '\'' | '`')) {
-        unquote(field_str).context(UnescapeError)?
+        unquote(field_str)?
     } else {
         field_str.to_string()
     };
@@ -53,7 +52,9 @@ pub(crate) fn clean_escaped_breaks(s: &str) -> String {
 /// A string that may be broken across many lines or an array of strings.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum ShellOrExecExpr {
+    /// Shell form, a single possibly multi-line string.
     Shell(BreakableString),
+    /// Exec form, a JSON-style string array.
     Exec(StringArray),
 }
 
@@ -102,11 +103,14 @@ impl ShellOrExecExpr {
 /// A string array (ex. ["executable", "param1", "param2"])
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Clone)]
 pub struct StringArray {
+    /// The span of this node in the original input.
     pub span: Span,
+    /// The unquoted elements.
     pub elements: Vec<SpannedString>,
 }
 
 impl StringArray {
+    /// Returns the unquoted elements as string slices.
     pub fn as_str_vec(&self) -> Vec<&str> {
         self.elements.iter().map(|c| c.as_ref()).collect()
     }
@@ -115,14 +119,18 @@ impl StringArray {
 /// A comment with a character span.
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Clone)]
 pub struct SpannedComment {
+    /// The span of this node in the original input.
     pub span: Span,
+    /// The text content.
     pub content: String,
 }
 
 /// A string with a character span.
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Clone)]
 pub struct SpannedString {
+    /// The span of this node in the original input.
     pub span: Span,
+    /// The text content.
     pub content: String,
 }
 
@@ -141,7 +149,9 @@ impl fmt::Display for SpannedString {
 /// A component of a breakable string.
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Clone)]
 pub enum BreakableStringComponent {
+    /// A piece of string content.
     String(SpannedString),
+    /// An interleaved comment.
     Comment(SpannedComment),
 }
 
@@ -182,7 +192,9 @@ impl From<SpannedComment> for BreakableStringComponent {
 /// continuation-stripping behavior in the `Display` implementation.
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Clone)]
 pub struct BreakableString {
+    /// The span of this node in the original input.
     pub span: Span,
+    /// The strings and comments making up the value.
     pub components: Vec<BreakableStringComponent>,
 }
 
@@ -201,6 +213,7 @@ impl fmt::Display for BreakableString {
 }
 
 impl BreakableString {
+    /// Creates a new value.
     pub fn new(span: impl Into<Span>) -> Self {
         BreakableString {
             span: span.into(),
@@ -208,12 +221,14 @@ impl BreakableString {
         }
     }
 
-    pub fn add(mut self, c: impl Into<BreakableStringComponent>) -> Self {
+    /// Appends a component and returns the builder.
+    pub fn with_component(mut self, c: impl Into<BreakableStringComponent>) -> Self {
         self.components.push(c.into());
 
         self
     }
 
+    /// Appends a string component and returns the builder.
     pub fn add_string(mut self, s: impl Into<Span>, c: impl Into<String>) -> Self {
         self.components.push(
             SpannedString {
@@ -226,6 +241,7 @@ impl BreakableString {
         self
     }
 
+    /// Appends a comment component and returns the builder.
     pub fn add_comment(mut self, s: impl Into<Span>, c: impl Into<String>) -> Self {
         self.components.push(
             SpannedComment {
@@ -238,6 +254,7 @@ impl BreakableString {
         self
     }
 
+    /// Iterates over the components in order.
     pub fn iter_components(&self) -> impl Iterator<Item = &BreakableStringComponent> {
         self.components.iter()
     }

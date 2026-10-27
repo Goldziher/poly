@@ -4,7 +4,8 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::iter::FromIterator;
 
-use lazy_static::lazy_static;
+use std::sync::LazyLock;
+
 use regex::Regex;
 
 use crate::{Dockerfile, Span, Splicer};
@@ -52,15 +53,14 @@ fn is_registry(token: &str) -> bool {
 /// 16.
 /// If None is returned, substitution was impossible, either because a
 /// referenced variable did not exist, or recursion depth was exceeded.
-pub fn substitute<'a, 'b>(
-    s: &'a str,
+pub fn substitute<'b>(
+    s: &str,
     vars: &'b HashMap<&'b str, &'b str>,
     used_vars: &mut HashSet<String>,
     max_recursion_depth: u8,
 ) -> Option<String> {
-    lazy_static! {
-        static ref VAR: Regex = Regex::new(r"\$(?:([A-Za-z0-9_]+)|\{([A-Za-z0-9_]+)\})").unwrap();
-    }
+    static VAR: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"\$(?:([A-Za-z0-9_]+)|\{([A-Za-z0-9_]+)\})").expect("static regex is valid"));
 
     // note: docker also allows defaults in FROMs, e.g.
     //   ARG tag
@@ -151,19 +151,16 @@ impl ImageRef {
     /// excessively recursive, returns None; otherwise, returns the
     /// fully-substituted string.
     pub fn resolve_vars_with_context<'a>(&self, dockerfile: &'a Dockerfile) -> Option<(ImageRef, HashSet<String>)> {
-        let vars: HashMap<&'a str, &'a str> =
-            HashMap::from_iter(dockerfile.global_args.iter().filter_map(|a| match a.value.as_ref() {
-                Some(v) => Some((a.name.as_ref(), v.as_ref())),
-                None => None,
-            }));
+        let vars: HashMap<&'a str, &'a str> = HashMap::from_iter(
+            dockerfile
+                .global_args
+                .iter()
+                .filter_map(|a| a.value.as_ref().map(|v| (a.name.as_ref(), v.as_ref()))),
+        );
 
         let mut used_vars = HashSet::new();
 
-        if let Some(s) = substitute(&self.to_string(), &vars, &mut used_vars, 16) {
-            Some((ImageRef::parse(&s), used_vars))
-        } else {
-            None
-        }
+        substitute(&self.to_string(), &vars, &mut used_vars, 16).map(|s| (ImageRef::parse(&s), used_vars))
     }
 
     /// Given a Dockerfile (and its global `ARG`s), perform any necessary
@@ -609,7 +606,7 @@ mod tests {
         ))
         .unwrap();
 
-        let from: &FromInstruction = d.instructions.get(0).unwrap().try_into().unwrap();
+        let from: &FromInstruction = d.instructions.first().unwrap().try_into().unwrap();
 
         assert_eq!(from.image_parsed.resolve_vars(&d), None);
     }

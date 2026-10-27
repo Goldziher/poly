@@ -2,8 +2,6 @@
 
 use std::fs::File;
 
-use snafu::ErrorCompat;
-
 use dockerfile_parser::{Dockerfile, Instruction, Result};
 
 fn wrap() -> Result<()> {
@@ -30,8 +28,10 @@ fn main() {
         Ok(()) => std::process::exit(0),
         Err(e) => {
             eprintln!("An error occurred: {}", e);
-            if let Some(backtrace) = ErrorCompat::backtrace(&e) {
-                eprintln!("{}", backtrace);
+            let mut source = std::error::Error::source(&e);
+            while let Some(cause) = source {
+                eprintln!("caused by: {cause}");
+                source = cause.source();
             }
 
             std::process::exit(1);

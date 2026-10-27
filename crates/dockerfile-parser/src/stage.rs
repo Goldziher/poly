@@ -71,7 +71,7 @@ impl<'a> Ord for Stage<'a> {
 
 impl<'a> PartialOrd for Stage<'a> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(&other))
+        Some(self.cmp(other))
     }
 }
 
@@ -120,10 +120,12 @@ impl<'a> Stage<'a> {
 /// ```
 #[derive(Debug)]
 pub struct Stages<'a> {
+    /// The stages in order of appearance.
     pub stages: Vec<Stage<'a>>,
 }
 
 impl<'a> Stages<'a> {
+    /// Creates a new value.
     pub fn new(dockerfile: &'a Dockerfile) -> Stages<'a> {
         // note: instructions before the first FROM are not part of any stage and
         // are not included in the first stage's instruction list

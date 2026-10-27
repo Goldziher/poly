@@ -2,24 +2,24 @@
 
 use std::convert::TryFrom;
 
+use crate::SpannedString;
 use crate::dockerfile_parser::Instruction;
 use crate::error::*;
 use crate::image::ImageRef;
 use crate::parse_string;
 use crate::parser::{Pair, Rule};
 use crate::splicer::*;
-use crate::SpannedString;
-
-use lazy_static::lazy_static;
-use regex::Regex;
 
 /// A key/value pair passed to a `FROM` instruction as a flag.
 ///
 /// Examples include: `FROM --platform=linux/amd64 node:lts-alpine`
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct FromFlag {
+    /// The span of this node in the original input.
     pub span: Span,
+    /// The name of the key.
     pub name: SpannedString,
+    /// The value of the key.
     pub value: SpannedString,
 }
 
@@ -57,21 +57,23 @@ impl FromFlag {
 /// [from]: https://docs.docker.com/engine/reference/builder/#from
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct FromInstruction {
+    /// The span of this node in the original input.
     pub span: Span,
+    /// Flags passed before the arguments.
     pub flags: Vec<FromFlag>,
+    /// The image reference exactly as written.
     pub image: SpannedString,
+    /// The image reference parsed into components.
     pub image_parsed: ImageRef,
 
+    /// The zero-based index of this `FROM` among all `FROM` instructions.
     pub index: usize,
+    /// The stage alias given with `AS`, if any.
     pub alias: Option<SpannedString>,
 }
 
 impl FromInstruction {
     pub(crate) fn from_record(record: Pair, index: usize) -> Result<FromInstruction> {
-        lazy_static! {
-            static ref HEX: Regex = Regex::new(r"[0-9a-fA-F]+").unwrap();
-        }
-
         let span = Span::from_pair(&record);
         let mut image_field = None;
         let mut alias_field = None;
@@ -95,12 +97,12 @@ impl FromInstruction {
             });
         };
 
-        let image_parsed = ImageRef::parse(&image.as_ref());
+        let image_parsed = ImageRef::parse(image.as_ref());
 
         if let Some(hash) = &image_parsed.hash {
             let parts: Vec<&str> = hash.split(":").collect();
             if let ["sha256", hexdata] = parts[..] {
-                if !HEX.is_match(hexdata) || hexdata.len() != 64 {
+                if hexdata.len() != 64 || !hexdata.bytes().all(|byte| byte.is_ascii_hexdigit()) {
                     return Err(Error::GenericParseError {
                         message: "image reference digest is invalid".into(),
                     });
@@ -165,6 +167,9 @@ mod tests {
             "from alpine@sha256:ca5a2eb9b7917e542663152b04c0",
             "from alpine@sha257:ca5a2eb9b7917e542663152b04c0ad0572e0522fcf80ff080156377fc08ea8f8",
             "from alpine@ca5a2eb9b7917e542663152b04c0ad0572e0522fcf80ff080156377fc08ea8f8",
+            // 64 characters, but not all of them hexadecimal
+            "from alpine@sha256:zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzza",
+            "from alpine@sha256:ca5a2eb9b7917e542663152b04c0ad0572e0522fcf80ff080156377fc08ea8g8",
         ];
 
         for case in cases {

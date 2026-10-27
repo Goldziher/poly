@@ -2,21 +2,22 @@
 
 use std::convert::TryFrom;
 
-use snafu::ensure;
-
+use crate::SpannedString;
 use crate::dockerfile_parser::Instruction;
 use crate::error::*;
 use crate::parser::{Pair, Rule};
-use crate::SpannedString;
-use crate::{parse_string, Span};
+use crate::{Span, parse_string};
 
 /// A key/value pair passed to a `COPY` instruction as a flag.
 ///
 /// Examples include: `COPY --from=foo /to /from`
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct CopyFlag {
+    /// The span of this node in the original input.
     pub span: Span,
+    /// The name of the key.
     pub name: SpannedString,
+    /// The value of the key.
     pub value: SpannedString,
 }
 
@@ -51,9 +52,13 @@ impl CopyFlag {
 /// [copy]: https://docs.docker.com/engine/reference/builder/#copy
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct CopyInstruction {
+    /// The span of this node in the original input.
     pub span: Span,
+    /// Flags passed before the arguments.
     pub flags: Vec<CopyFlag>,
+    /// The source paths.
     pub sources: Vec<SpannedString>,
+    /// The destination path.
     pub destination: SpannedString,
 }
 
@@ -72,15 +77,14 @@ impl CopyInstruction {
             }
         }
 
-        ensure!(
-            paths.len() >= 2,
-            GenericParseError {
-                message: "copy requires at least one source and a destination"
+        let destination = match paths.pop() {
+            Some(destination) if !paths.is_empty() => destination,
+            _ => {
+                return Err(Error::GenericParseError {
+                    message: "copy requires at least one source and a destination".into(),
+                });
             }
-        );
-
-        // naughty unwrap, but we know there's something to pop
-        let destination = paths.pop().unwrap();
+        };
 
         Ok(CopyInstruction {
             span,
@@ -268,7 +272,6 @@ mod tests {
                     content: "/tmp/".into(),
                 },
             }
-            .into()
         );
 
         Ok(())

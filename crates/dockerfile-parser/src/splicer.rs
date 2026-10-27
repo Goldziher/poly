@@ -16,11 +16,14 @@ struct SpliceOffset {
 /// A byte-index tuple representing a span of characters in a string
 #[derive(PartialEq, Eq, Clone, Ord, PartialOrd, Copy)]
 pub struct Span {
+    /// The byte offset of the first byte of the span.
     pub start: usize,
+    /// The byte offset one past the last byte of the span.
     pub end: usize,
 }
 
 impl Span {
+    /// Creates a new value.
     pub fn new(start: usize, end: usize) -> Span {
         Span { start, end }
     }
@@ -88,7 +91,7 @@ impl From<(usize, usize)> for Span {
 
 impl From<&Pair<'_>> for Span {
     fn from(pair: &Pair<'_>) -> Self {
-        Span::from_pair(&pair)
+        Span::from_pair(pair)
     }
 }
 

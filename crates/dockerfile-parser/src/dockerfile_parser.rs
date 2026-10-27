@@ -5,7 +5,6 @@ use std::io::{BufReader, Read};
 use std::str::FromStr;
 
 use pest::Parser;
-use snafu::ResultExt;
 
 pub use crate::error::*;
 pub use crate::image::*;
@@ -34,14 +33,23 @@ pub use crate::stage::*;
 /// ```
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Instruction {
+    /// A `FROM` instruction.
     From(FromInstruction),
+    /// An `ARG` instruction.
     Arg(ArgInstruction),
+    /// A `LABEL` instruction.
     Label(LabelInstruction),
+    /// A `RUN` instruction.
     Run(RunInstruction),
+    /// An `ENTRYPOINT` instruction.
     Entrypoint(EntrypointInstruction),
+    /// A `CMD` instruction.
     Cmd(CmdInstruction),
+    /// A `COPY` instruction.
     Copy(CopyInstruction),
+    /// An `ENV` instruction.
     Env(EnvInstruction),
+    /// Any instruction without a dedicated type.
     Misc(MiscInstruction),
 }
 
@@ -315,7 +323,9 @@ pub struct Dockerfile {
 
 fn parse_dockerfile(input: &str) -> Result<Dockerfile> {
     let dockerfile = DockerfileParser::parse(Rule::dockerfile, input)
-        .context(ParseError)?
+        .map_err(|error| Error::ParseError {
+            source: Box::new(error),
+        })?
         .next()
         .ok_or(Error::UnknownParseError)?;
 
@@ -336,19 +346,18 @@ fn parse_dockerfile(input: &str) -> Result<Dockerfile> {
 
         let mut instruction = Instruction::try_from(record)?;
         match &mut instruction {
-            Instruction::From(ref mut from) => {
+            Instruction::From(from) => {
                 // fix the from index since we can't know that in parse_instruction()
                 from.index = from_index;
                 from_index += 1;
                 from_found = true;
             }
-            Instruction::Arg(ref arg) => {
+            Instruction::Arg(arg)
                 // args preceding the first FROM instruction may be substituted into
                 // all subsequent FROM image refs
-                if !from_found {
+                if !from_found => {
                     global_args.push(arg.clone());
                 }
-            }
             _ => (),
         };
 
@@ -375,16 +384,17 @@ impl Dockerfile {
     {
         let mut buf = String::new();
         let mut buf_reader = BufReader::new(reader);
-        buf_reader.read_to_string(&mut buf).context(ReadError)?;
+        buf_reader.read_to_string(&mut buf)?;
 
         Dockerfile::parse(&buf)
     }
 
     /// Returns a `Stages`, which splits this Dockerfile into its build stages.
-    pub fn stages(&self) -> Stages {
+    pub fn stages(&self) -> Stages<'_> {
         Stages::new(self)
     }
 
+    /// Returns an iterator over the build stages of this Dockerfile.
     pub fn iter_stages(&self) -> std::vec::IntoIter<Stage<'_>> {
         self.stages().into_iter()
     }
