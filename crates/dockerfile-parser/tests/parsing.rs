@@ -357,18 +357,13 @@ fn parse_from_sha256_digest() -> Result<(), dockerfile_parser::Error> {
             span: (5, 95).into(),
             image: SpannedString {
                 span: Span { start: 10, end: 88 },
-                content:
-                    "alpine@sha256:074d3636ebda6dd446d0d00304c4454f468237fdacf08fb0eeac90bdbfa1bac7"
-                        .into(),
+                content: "alpine@sha256:074d3636ebda6dd446d0d00304c4454f468237fdacf08fb0eeac90bdbfa1bac7".into(),
             },
             image_parsed: ImageRef {
                 registry: None,
                 image: "alpine".into(),
                 tag: None,
-                hash: Some(
-                    "sha256:074d3636ebda6dd446d0d00304c4454f468237fdacf08fb0eeac90bdbfa1bac7"
-                        .into()
-                ),
+                hash: Some("sha256:074d3636ebda6dd446d0d00304c4454f468237fdacf08fb0eeac90bdbfa1bac7".into()),
             },
             alias: Some(SpannedString {
                 span: Span { start: 92, end: 95 },

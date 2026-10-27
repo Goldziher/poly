@@ -15,22 +15,22 @@ use crate::parser::{DockerfileParser, Pair, Rule};
 /// instruction using `Rule::step`, however doing so isn't ideal for
 /// per-instruction unit tests.
 pub fn parse_single(input: &str, rule: Rule) -> Result<Instruction> {
-  let record = DockerfileParser::parse(rule, input)
-    .context(ParseError)?
-    .next()
-    .ok_or(Error::UnknownParseError)?;
+    let record = DockerfileParser::parse(rule, input)
+        .context(ParseError)?
+        .next()
+        .ok_or(Error::UnknownParseError)?;
 
-  Instruction::try_from(record)
+    Instruction::try_from(record)
 }
 
 pub fn parse_direct<T, F>(input: &str, rule: Rule, func: F) -> Result<T>
 where
-  F: Fn(Pair) -> Result<T>
+    F: Fn(Pair) -> Result<T>,
 {
-  let pair = DockerfileParser::parse(rule, input)
-    .context(ParseError)?
-    .next()
-    .ok_or(Error::UnknownParseError)?;
+    let pair = DockerfileParser::parse(rule, input)
+        .context(ParseError)?
+        .next()
+        .ok_or(Error::UnknownParseError)?;
 
-  func(pair)
+    func(pair)
 }

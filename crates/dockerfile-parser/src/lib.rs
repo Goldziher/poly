@@ -30,24 +30,26 @@
 //! }
 //! ```
 
-#[macro_use] extern crate pest_derive;
+#[macro_use]
+extern crate pest_derive;
 
+mod dockerfile_parser;
 mod error;
-mod parser;
-mod util;
 mod image;
 mod instructions;
+mod parser;
 mod splicer;
 mod stage;
-mod dockerfile_parser;
+mod util;
 
-pub use image::*;
+pub use crate::dockerfile_parser::*;
 pub use error::*;
-pub use parser::*;
+pub use image::*;
 pub use instructions::*;
+pub use parser::*;
 pub use splicer::*;
 pub use stage::*;
 pub use util::*;
-pub use crate::dockerfile_parser::*;
 
-#[cfg(test)] mod test_util;
+#[cfg(test)]
+mod test_util;
