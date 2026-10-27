@@ -1,24 +1,22 @@
-//! HCL / Terraform backend — wraps `hcl-edit` (MIT OR Apache-2.0) for in-process
-//! parse-error linting and `hcl-rs` (MIT OR Apache-2.0) for formatting.
+//! HCL / Terraform backend — `hcl-edit` (MIT OR Apache-2.0) for parse-error linting and a
+//! port of `hclwrite.Format` for formatting.
 //!
 //! ## Capabilities
 //! - **Lint**: first syntax error from `hcl-edit`'s parser, reported as a
 //!   `syntax-error` diagnostic at the 1-based line / column the parser provides.
-//!   Only the first parse error is surfaced (acceptable, same as the taplo backend).
 //!   Clean files produce `vec![]`.
-//! - **Format**: two-path formatter keyed on comment presence.
-//!   Syntax-invalid input is left unchanged before either path runs.
-//!   - **No comments** — round-trip through `hcl-rs`: parse into `hcl::Body`
-//!     (which strips comments from the CST), then serialize with
-//!     `hcl::format::Formatter` using the configured indent width. The output
-//!     is reparsed before it can replace the source. Returns
-//!     [`FormatOutput::Unchanged`] when the output is unsafe or byte-identical.
-//!   - **Has comments** — delegate to the tier-2 [`TreeSitterEngine`] so that
-//!     `#`, `//`, and `/* */` comments are never silently dropped.
+//! - **Format**: a token-level port of `hclwrite.Format` (what `terraform fmt` and
+//!   `terragrunt hclfmt` run), so `.tf`, `.tfvars` and `.hcl` files that are already canonical
+//!   stay byte-identical. It re-indents by bracket depth, normalises intra-line spacing and
+//!   aligns `=` and trailing comments across consecutive lines; blank lines, comments, list
+//!   and object layout are never rewritten. Syntax-invalid input is left unchanged.
 //!
 //! ## Config layering
 //! Tool default → opinionated override (indent width 2, matching the Terraform
 //! style convention) → user `[fmt.hcl.hcl]` table (`indent_width` only).
+
+mod format;
+mod lex;
 
 use hcl_edit::parser as hcl_edit_parser;
 
@@ -26,22 +24,14 @@ use crate::config::EngineConfig;
 use crate::engine::{
     Capabilities, Diagnostic, Engine, FormatOutput, OptionKeys, OptionTable, Severity, SourceFile, Span,
 };
-use crate::engines::treesitter::TreeSitterEngine;
 use crate::language::Language;
 
-/// Combined version string used as the Engine cache key.
-/// Encodes both `hcl-rs` and `hcl-edit` versions so that bumping either dep
-/// invalidates stale cached results.
-const ENGINE_VERSION: &str = "hcl-rs 0.19.9 + hcl-edit 0.9.8 + trailing-comments-v2 + syntax-skip-v3";
+/// Version string used as the Engine cache key; bump the suffix whenever formatter output changes.
+const ENGINE_VERSION: &str = "hcl-edit 0.9.8 + hclwrite-format-v1";
 
 static LANGUAGES: &[Language] = &[Language::Hcl];
 
-/// Tier-1 HCL / Terraform backend.
-///
-/// Lint uses `hcl-edit` (comment-preserving CST parser); format uses `hcl-rs`
-/// when there are no comments in the file, and delegates to the generic
-/// [`TreeSitterEngine`] tier when comments are present (to avoid silently
-/// stripping them via the `hcl-rs` AST path).
+/// Tier-1 HCL / Terraform backend: `hcl-edit` lint plus the `hclwrite` formatting port.
 pub struct HclEngine;
 
 impl Engine for HclEngine {
@@ -103,90 +93,12 @@ impl Engine for HclEngine {
         if hcl_edit_parser::parse_body(&src.content).is_err() {
             return Ok(FormatOutput::Unchanged);
         }
-        if has_comments(&src.content) {
-            return TreeSitterEngine.format(src, cfg);
+        let Some(formatted) = format::format(&src.content, indent_width_from_cfg(cfg)) else {
+            return Ok(FormatOutput::Unchanged);
+        };
+        if formatted == src.content.as_ref() || hcl_edit_parser::parse_body(&formatted).is_err() {
+            return Ok(FormatOutput::Unchanged);
         }
-        format_comment_free(src, cfg)
-    }
-}
-
-/// Detect whether `source` contains any HCL comment syntax.
-///
-/// Scans each line character-by-character, tracking double-quoted string state
-/// (respecting `\"` escape sequences), so that `#` or `//` inside a string
-/// value are not mistaken for comments.  Examples:
-///
-/// - `url = "https://example.com"` → **false** (`//` is inside a string)
-/// - `x = 1 # trailing comment` → **true**
-/// - `x = 1 // trailing comment` → **true**
-/// - `/* block */` anywhere in source → **true** (fast-path check)
-///
-/// Note: `/*` inside a string literal is a pre-existing false-positive;
-/// block comments in practice never appear inside string values.
-fn has_comments(source: &str) -> bool {
-    if source.contains("/*") {
-        return true;
-    }
-    for line in source.lines() {
-        let bytes = line.as_bytes();
-        let mut in_string = false;
-        let mut i = 0;
-        while i < bytes.len() {
-            if in_string {
-                if bytes[i] == b'\\' {
-                    i += 2;
-                    continue;
-                }
-                if bytes[i] == b'"' {
-                    in_string = false;
-                }
-            } else {
-                match bytes[i] {
-                    b'"' => in_string = true,
-                    b'#' => return true,
-                    b'/' if i + 1 < bytes.len() && bytes[i + 1] == b'/' => return true,
-                    _ => {}
-                }
-            }
-            i += 1;
-        }
-    }
-    false
-}
-
-/// Format a comment-free HCL file via `hcl-rs`.
-///
-/// Parses into `hcl::Body`, serialises with a custom-indent [`hcl::format::Formatter`],
-/// then returns [`FormatOutput::Unchanged`] when the result is byte-identical to
-/// the original.
-fn format_comment_free(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
-    let body: hcl::Body = match src.content.parse() {
-        Ok(body) => body,
-        Err(_) => return Ok(FormatOutput::Unchanged),
-    };
-
-    let indent_width = indent_width_from_cfg(cfg);
-    let indent_str = " ".repeat(indent_width);
-
-    let mut buf = Vec::<u8>::new();
-    let mut formatter = hcl::format::Formatter::builder()
-        .indent(indent_str.as_bytes())
-        .build(&mut buf);
-
-    use hcl::format::Format as _;
-    body.format(&mut formatter)
-        .map_err(|e| anyhow::anyhow!("hcl-rs format error: {e}"))?;
-    drop(formatter);
-
-    let formatted = String::from_utf8(buf).map_err(|e| anyhow::anyhow!("hcl-rs produced non-UTF-8: {e}"))?;
-
-    if formatted.parse::<hcl::Body>().is_err() || hcl_edit_parser::parse_body(&formatted).is_err() {
-        return Ok(FormatOutput::Unchanged);
-    }
-
-    if formatted == src.content.as_ref() {
-        Ok(FormatOutput::Unchanged)
-    } else {
         Ok(FormatOutput::Formatted(formatted))
     }
 }
@@ -226,43 +138,6 @@ mod tests {
     }
 
     #[test]
-    fn has_comments_detects_hash() {
-        assert!(has_comments("# a comment\nfoo = 1\n"));
-    }
-
-    #[test]
-    fn has_comments_detects_slash_slash() {
-        assert!(has_comments("// a comment\nfoo = 1\n"));
-    }
-
-    #[test]
-    fn has_comments_detects_block_comment() {
-        assert!(has_comments("foo = /* inline */ 1\n"));
-    }
-
-    #[test]
-    fn has_comments_clean_file_false() {
-        assert!(!has_comments(
-            "resource \"aws_s3_bucket\" \"bucket\" {\n  bucket = \"my-bucket\"\n}\n"
-        ));
-    }
-
-    #[test]
-    fn has_comments_slash_in_string_is_safe() {
-        assert!(!has_comments("url = \"https://example.com/path\"\n"));
-    }
-
-    #[test]
-    fn has_comments_detects_trailing_hash() {
-        assert!(has_comments("x = 1 # trailing comment\n"));
-    }
-
-    #[test]
-    fn has_comments_detects_trailing_slash_slash() {
-        assert!(has_comments("x = 1 // trailing comment\n"));
-    }
-
-    #[test]
     fn format_trailing_comment_preserved() {
         let engine = HclEngine;
         let src = make_src(
@@ -282,10 +157,9 @@ mod tests {
     }
 
     #[test]
-    fn version_encodes_both_crates() {
+    fn version_encodes_parser_crate() {
         let engine = HclEngine;
         let v = engine.version();
-        assert!(v.contains("hcl-rs"), "version should mention hcl-rs: {v}");
         assert!(v.contains("hcl-edit"), "version should mention hcl-edit: {v}");
     }
 
@@ -388,7 +262,7 @@ mod tests {
     }
 
     #[test]
-    fn format_commented_file_delegates_to_tier2() {
+    fn format_commented_file_keeps_comments() {
         let engine = HclEngine;
         let src = make_src(
             "main.tf",
@@ -403,6 +277,64 @@ mod tests {
         assert!(
             output.contains("# keep this comment"),
             "comment must be preserved after format: {output}"
+        );
+    }
+
+    fn formatted(content: &str) -> String {
+        let src = make_src("main.tf", Language::Hcl, content);
+        match HclEngine.format(&src, &default_cfg()).unwrap() {
+            FormatOutput::Unchanged => content.to_string(),
+            FormatOutput::Formatted(out) => out,
+        }
+    }
+
+    #[test]
+    fn aligns_equals_across_consecutive_attributes() {
+        assert_eq!(
+            formatted("module \"m\" {\n  source=\"x\"\n  name   =   \"y\"\n  a_long_key = 1\n}\n"),
+            "module \"m\" {\n  source     = \"x\"\n  name       = \"y\"\n  a_long_key = 1\n}\n"
+        );
+    }
+
+    #[test]
+    fn blank_line_breaks_alignment_group_and_is_kept() {
+        let canonical = "locals {\n  a = 1\n\n  long_name = 2\n}\n";
+        assert_eq!(formatted(canonical), canonical);
+    }
+
+    #[test]
+    fn multiline_lists_and_objects_are_not_collapsed() {
+        let canonical = "locals {\n  ports = [\n    80,\n    443,\n  ]\n  tags = {\n    a = \"b\"\n  }\n}\n";
+        assert_eq!(formatted(canonical), canonical);
+    }
+
+    #[test]
+    fn trailing_comments_are_aligned() {
+        assert_eq!(
+            formatted("locals {\n  a = 1 # one\n  long_name = 2 # two\n}\n"),
+            "locals {\n  a         = 1 # one\n  long_name = 2 # two\n}\n"
+        );
+    }
+
+    #[test]
+    fn heredoc_bodies_are_untouched() {
+        let canonical = "locals {\n  script = <<-EOT\n      echo   \"${var.x}\"\n  EOT\n}\n";
+        assert_eq!(formatted(canonical), canonical);
+    }
+
+    #[test]
+    fn interpolation_and_operator_spacing_is_normalised() {
+        assert_eq!(
+            formatted("locals {\n  a = \"${ var.x }\"\n  b = var.a?1:-2\n  c = [for k in var.l: upper(k)]\n}\n"),
+            "locals {\n  a = \"${var.x}\"\n  b = var.a ? 1 : -2\n  c = [for k in var.l : upper(k)]\n}\n"
+        );
+    }
+
+    #[test]
+    fn dedents_misindented_blocks() {
+        assert_eq!(
+            formatted("resource \"a\" \"b\"{\n        x = 1\n    }\n"),
+            "resource \"a\" \"b\" {\n  x = 1\n}\n"
         );
     }
 }

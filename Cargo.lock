@@ -2573,24 +2573,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bd662a8afeca01b5b5318f35baed70017b9f854bfa38bdcdadb87de946a49071"
 dependencies = [
  "itoa",
- "kstring",
  "ryu",
  "serde",
  "unicode-ident",
-]
-
-[[package]]
-name = "hcl-rs"
-version = "0.19.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3602c1962a1e872d121b8703211cfa7a92e064dc92fe7be558b1f738417c523e"
-dependencies = [
- "hcl-edit",
- "hcl-primitives",
- "indexmap 2.14.2",
- "itoa",
- "serde",
- "vecmap-rs",
 ]
 
 [[package]]
@@ -3188,16 +3173,6 @@ checksum = "07293a4e297ac234359b510362495713f75ea345d5307140414f20c69ffeb087"
 dependencies = [
  "bitflags 2.13.2",
  "libc",
-]
-
-[[package]]
-name = "kstring"
-version = "2.0.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a09b82a7f771ed02dc0dd9b27130a0fa5499fa15ed3027116c1e5e4e591bd9e"
-dependencies = [
- "serde",
- "static_assertions",
 ]
 
 [[package]]
@@ -5162,7 +5137,6 @@ dependencies = [
  "globset",
  "graphql-parser",
  "hcl-edit",
- "hcl-rs",
  "ignore",
  "insta",
  "libc",
@@ -8052,9 +8026,6 @@ name = "vecmap-rs"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "58c1dc449b873236909c7f325adf395071c209047737d831183e95c692413adf"
-dependencies = [
- "serde",
-]
 
 [[package]]
 name = "version-ranges"

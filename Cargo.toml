@@ -67,7 +67,6 @@ gitfluff = { path = "crates/gitfluff" }
 globset = "0.4.20"
 graphql-parser = "0.4"
 hcl-edit = "0.9.8"
-hcl-rs = "0.19.9"
 hex = "0.4.3"
 http = "1.5.0"
 ignore = "0.4"

@@ -187,7 +187,7 @@ fn engine_versions_track_cargo_lock() {
         check(
             "hcl",
             HclEngine.version(),
-            vec![("hcl-rs", Registry), ("hcl-edit", Registry)],
+            vec![("hcl-edit", Registry)],
         ),
         check(
             "dockerfile",

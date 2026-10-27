@@ -3,10 +3,10 @@
 //! Three fixtures:
 //! - `known_bad_lint_snapshot` — a `.tf` file with a syntax error asserts the
 //!   expected `syntax-error` [`Diagnostic`] at the correct line.
-//! - `known_unformatted_snapshot` — a comment-free messy `.tf` file asserts
-//!   exact normalized output produced by the `hcl-rs` formatter.
+//! - `known_unformatted_snapshot` — a messy `.tf` file asserts the exact
+//!   `terraform fmt` layout.
 //! - `commented_file_preserves_comments` — a `.tf` file with comments asserts
-//!   that comments survive the format pass (tier-2 delegation safety guarantee).
+//!   that comments survive the format pass.
 
 use poly_core::{
     Language,
@@ -67,7 +67,7 @@ fn known_bad_lint_snapshot() {
     insta::assert_debug_snapshot!("hcl_known_bad_diagnostics", summary);
 }
 
-/// Messy Terraform that hcl-rs should normalize: inconsistent spacing around
+/// Messy Terraform that the formatter should normalize: inconsistent spacing around
 /// `=`, mixed attribute alignment.
 const KNOWN_UNFORMATTED: &str = "\
 resource   \"aws_s3_bucket\"   \"example\" {
@@ -104,9 +104,8 @@ fn known_unformatted_snapshot() {
 }
 
 /// A `.tf` file with both a leading comment and an inline `//` comment.
-/// After formatting via the tier-2 delegation path, every comment must still
-/// be present in the output — byte-identical when tier-2 is a no-op, or at
-/// minimum comment-preserving when it reindents.
+/// After formatting, every comment must still
+/// be present in the output — 
 const WITH_COMMENTS: &str = "\
 # This is a leading comment
 resource \"aws_instance\" \"web\" {

@@ -12,7 +12,7 @@ publish = false
 description = "Core engine for the poly universal, zero-dependency linter & formatter"
 
 [package.metadata.cargo-machete]
-ignored = ["rumdl", "serde_toon_format", "hcl-rs", "rust-ini"]
+ignored = ["rumdl", "serde_toon_format", "rust-ini"]
 
 [lib]
 name = "poly_core"
@@ -44,7 +44,6 @@ dotenv-core.workspace = true
 globset.workspace = true
 graphql-parser.workspace = true
 hcl-edit.workspace = true
-hcl-rs.workspace = true
 ignore.workspace = true
 mago-allocator.workspace = true
 mago-database.workspace = true

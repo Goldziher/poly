@@ -412,7 +412,7 @@ const ENGINE_SOURCES: &[(&str, &[&str])] = &[
     ("biome", &["biome_css.rs", "biome_graphql.rs", "biome_common.rs"]),
     ("alejandra", &["nixfmt.rs"]),
     ("rubyfmt", &["rubyfmt.rs"]),
-    ("hcl", &["hcl.rs"]),
+    ("hcl", &["hcl/mod.rs"]),
     ("dockerfile", &["dockerfile.rs"]),
     ("dotenv", &["dotenv.rs"]),
     ("ini", &["ini.rs"]),
