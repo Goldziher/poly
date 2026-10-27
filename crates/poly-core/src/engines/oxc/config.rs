@@ -207,7 +207,6 @@ pub(super) fn build_json_options(src: &SourceFile, cfg: &EngineConfig) -> JsonFo
         single_quote: option_bool(cfg, "single_quote").unwrap_or_default().into(),
         bracket_spacing,
         trailing_commas,
-        ..JsonFormatOptions::default()
     }
 }
 

@@ -17,6 +17,7 @@
 
 mod config;
 mod format;
+mod json_lint;
 mod lint;
 mod native_lint;
 mod plugins;
@@ -74,7 +75,8 @@ pub(crate) const JS_FORMAT_OPTION_KEYS: &[(&str, OptionType)] = &[
 
 pub(crate) use self::format::{format_embedded_js, is_embedded_js_parse_error};
 use self::format::{format_js, format_json};
-use self::lint::{lint_js, lint_json};
+use self::json_lint::lint_json;
+use self::lint::lint_js;
 
 /// Version string folded into the blake3 cache key.
 /// Bump whenever the output of `lint` or `format` could change.
