@@ -447,10 +447,10 @@ const ENGINE_SOURCES: &[(&str, &[&str])] = &[
         &["mago/mod.rs", "mago/lint.rs", "mago/format.rs", "mago/rules.rs"],
     ),
     ("sqruff", &["sqruff.rs"]),
-    ("rumdl", &["rumdl.rs"]),
+    ("rumdl", &["rumdl.rs", "markdown_fmt.rs", "core_options.rs"]),
     ("taplo", &["taplo.rs", "core_options.rs"]),
     ("yaml", &["yaml.rs", "core_options.rs"]),
-    ("malva", &["malva.rs"]),
+    ("malva", &["malva.rs", "core_options.rs"]),
     // oxc/config.rs: markup_fmt hands *its* table to the oxc formatter for
     // Astro `<script>` blocks, so those keys are read from this table too.
     (

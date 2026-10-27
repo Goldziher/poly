@@ -377,6 +377,7 @@ impl Language {
             | Language::Dart
             | Language::Gleam
             | Language::Proto
+            | Language::Markdown
             | Language::Shell => 2,
             _ => 4,
         }

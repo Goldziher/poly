@@ -171,7 +171,11 @@ fn engine_versions_track_cargo_lock() {
         ),
         check("biome", BiomeCssEngine.version(), vec![("biome_css_analyze", Git)]),
         check("sqruff", SqruffEngine.version(), vec![("sqruff-lib", Registry)]),
-        check("malva", MalvaEngine.version(), vec![("malva", Registry)]),
+        check(
+            "malva",
+            MalvaEngine.version(),
+            vec![("malva", Registry), ("oxc_formatter_css", Git)],
+        ),
         check(
             "markup_fmt",
             MarkupFmtEngine.version(),
@@ -182,7 +186,11 @@ fn engine_versions_track_cargo_lock() {
             TaploEngine.version(),
             vec![("taplo", Registry), ("oxc_formatter_toml", Git)],
         ),
-        check("rumdl", RumdlEngine.version(), vec![("rumdl", Registry)]),
+        check(
+            "rumdl",
+            RumdlEngine.version(),
+            vec![("rumdl", Registry), ("oxc_formatter_markdown", Git)],
+        ),
         check(
             "typos",
             TyposEngine.version(),

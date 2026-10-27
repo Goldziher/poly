@@ -28,6 +28,8 @@ enum Family {
     Json,
     Yaml,
     Toml,
+    Markdown,
+    Css,
 }
 
 /// The languages oxfmt formats (and therefore owns `ignorePatterns` for).
@@ -59,6 +61,8 @@ fn family(language: &Language, engine: &str) -> Option<Family> {
         ("oxc", Language::Json | Language::Jsonc) => Some(Family::Json),
         ("yaml", Language::Yaml) => Some(Family::Yaml),
         ("taplo", Language::Toml) => Some(Family::Toml),
+        ("rumdl", Language::Markdown) => Some(Family::Markdown),
+        ("malva", Language::Css | Language::Scss | Language::Less) => Some(Family::Css),
         _ => None,
     }
 }
@@ -262,6 +266,22 @@ fn translate(family: Family, options: &Map<String, Value>) -> toml::Table {
                     "trailing_commas",
                     toml::Value::String(if comma == "none" { "never" } else { "always" }.into()),
                 );
+            }
+            if let Some(wrap) = text("proseWrap") {
+                put("prose_wrap", toml::Value::String(wrap.to_owned()));
+            }
+        }
+        Family::Css => {
+            if let Some(single) = flag("singleQuote") {
+                put("single_quote", toml::Value::Boolean(single));
+            }
+            if let Some(comma) = comma {
+                put("trailing_commas", toml::Value::String(if comma == "none" { "never" } else { "always" }.into()));
+            }
+        }
+        Family::Markdown => {
+            if let Some(single) = flag("singleQuote") {
+                put("single_quote", toml::Value::Boolean(single));
             }
             if let Some(wrap) = text("proseWrap") {
                 put("prose_wrap", toml::Value::String(wrap.to_owned()));

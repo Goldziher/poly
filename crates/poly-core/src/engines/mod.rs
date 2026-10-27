@@ -19,6 +19,7 @@ pub mod ini;
 pub(crate) mod line_index;
 pub mod mago;
 pub mod malva;
+mod markdown_fmt;
 pub mod markup_fmt;
 pub mod native_tool;
 pub mod nixfmt;

@@ -2,8 +2,12 @@
 //!
 //! Wraps [`rumdl_lib`](https://crates.io/crates/rumdl) in-process — no subprocess, no system
 //! dependency. Capabilities: lint (standard markdownlint rules; rumdl-proprietary stylistic
-//! extensions off by default — see the `DEFAULT_DISABLED_RULES` constant) + format (apply all
-//! auto-fixable rules iteratively until convergence).
+//! extensions off by default — see the `DEFAULT_DISABLED_RULES` constant) + format.
+//!
+//! Markdown *formatting* goes through `oxc_formatter_markdown` (what oxfmt uses; see
+//! [`super::markdown_fmt`]) unless the `[fmt.markdown.rumdl]` table sets one of rumdl's own rule
+//! keys, which selects the rule-based formatter (apply all auto-fixable rules iteratively until
+//! convergence). MDX always uses the rule-based formatter.
 //!
 //! Config layering: rumdl defaults → opinionated override (line-length 120) → user
 //! `[lint.markdown.rumdl]` / `[fmt.markdown.rumdl]` table in `poly.toml`.
@@ -28,6 +32,7 @@ use rumdl_lib::{
     types::LineLength,
 };
 
+use super::markdown_fmt;
 use super::rule_config::{RuleOptions, RuleSelection, string_list, union_codes, warn_and_skip_blank};
 use super::template::{GO_TEMPLATE_SKIP, contains_go_template_markdown};
 use crate::config::EngineConfig;
@@ -50,7 +55,7 @@ pub struct RumdlEngine;
 /// [`contains_go_template_markdown`]), and the MD020 guard ([`GuardedMd020`]). Bump the
 /// suffix whenever any of these change so stale cached diagnostics are
 /// invalidated.
-const RUMDL_VERSION: &str = "0.3.0+defaults5-mdx-rules-tmplskip-codeaware-md020guard-structfix+ruleparams1+extendsel2";
+const RUMDL_VERSION: &str = "0.3.0+defaults5-mdx-rules-tmplskip-codeaware-md020guard-structfix+ruleparams1+extendsel2+oxc_formatter_markdown-e2be72d";
 
 /// rumdl-proprietary stylistic rules disabled by default.
 ///
@@ -106,11 +111,23 @@ impl Engine for RumdlEngine {
     /// `select` / `extend_select` / `ignore`.
     fn option_keys(&self, table: OptionTable) -> OptionKeys {
         match table {
-            OptionTable::Lint | OptionTable::Format => OptionKeys::declared(&[
+            OptionTable::Lint => OptionKeys::declared(&[
                 ("line_length", OptionType::INTEGER),
                 ("enable", OptionType::ARRAY),
                 ("extend_enable", OptionType::ARRAY),
                 ("disable", OptionType::ARRAY),
+            ])
+            .with_rule_selection(),
+            OptionTable::Format => OptionKeys::declared(&[
+                ("line_length", OptionType::INTEGER),
+                ("enable", OptionType::ARRAY),
+                ("extend_enable", OptionType::ARRAY),
+                ("disable", OptionType::ARRAY),
+                ("line_width", OptionType::INTEGER),
+                ("line_ending", OptionType::STRING),
+                ("indent_style", OptionType::STRING),
+                ("single_quote", OptionType::BOOLEAN),
+                ("prose_wrap", OptionType::STRING),
             ])
             .with_rule_selection(),
             OptionTable::CrossCuttingLint => OptionKeys::UNCHECKED,
@@ -154,6 +171,9 @@ impl Engine for RumdlEngine {
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
         if contains_go_template_markdown(&src.content) {
             return Ok(FormatOutput::Unchanged);
+        }
+        if src.language == Language::Markdown && !markdown_fmt::uses_rumdl_formatter(cfg) {
+            return markdown_fmt::format(src, cfg);
         }
         let rumdl_cfg = build_rumdl_config(cfg, &src.language);
         let rules = guarded_rules(&rumdl_cfg, &src.content);
@@ -472,11 +492,15 @@ mod tests {
     use super::*;
     use crate::config::{EngineConfig, GlobalDefaults};
 
+    /// A config that selects rumdl's own rule-based formatter: setting any rumdl rule key does,
+    /// and `line_length` is the one that changes nothing here (120 is the default).
     fn default_cfg() -> EngineConfig {
+        let mut options = toml::Table::new();
+        options.insert("line_length".to_string(), toml::Value::Integer(120));
         EngineConfig {
             globals: GlobalDefaults::default(),
             indent_width: 4,
-            options: toml::Table::new(),
+            options,
         }
     }
 
