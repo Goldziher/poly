@@ -6,8 +6,23 @@
 //! invocation or equivalent to what poly does by default; anything else stays a
 //! command job so its flags keep their effect.
 
-/// Placeholders poly substitutes in a `run` line.
-const SUPPORTED_PLACEHOLDERS: &[&str] = &["staged_files", "all_files"];
+/// File-list placeholders poly substitutes in a `run` line.
+const FILE_PLACEHOLDERS: &[&str] = &["staged_files", "all_files"];
+
+/// Whether poly substitutes `{name}` in a `run` line: the file lists, the git hook
+/// arguments joined (`{0}`, `{git_args}`) and one git hook argument (`{1}`, ...).
+pub(super) fn is_supported_placeholder(name: &str) -> bool {
+    FILE_PLACEHOLDERS.contains(&name)
+        || name == "git_args"
+        || (!name.is_empty() && name.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// Whether `token` references the git hook arguments.
+pub(super) fn uses_git_args(token: &str) -> bool {
+    placeholders(token)
+        .iter()
+        .any(|name| name == "git_args" || name.bytes().all(|b| b.is_ascii_digit()))
+}
 
 /// Which poly builtin a recognized tool invocation maps onto.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -22,9 +37,25 @@ pub(super) struct Recognized {
     pub target: Target,
     /// Catalog tools to enable under `[tools.<name>]`; empty for native engines.
     pub catalog_tools: &'static [&'static str],
-    /// Flags that were dropped because poly's own invocation has no equivalent.
-    pub dropped_flags: Vec<String>,
+    /// Whether the command rewrites the files it is given, so the builtin must run
+    /// in fix mode to behave the same.
+    pub fixes: bool,
+    /// Engine options the command's flags map onto.
+    pub options: Vec<EngineOption>,
 }
+
+/// A boolean engine option switched on by a command-line flag.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct EngineOption {
+    /// The `poly.toml` table, e.g. `["lint", "python", "ruff"]`.
+    pub table: &'static [&'static str],
+    pub key: &'static str,
+}
+
+pub(super) const RUFF_UNSAFE_FIXES: EngineOption = EngineOption {
+    table: &["lint", "python", "ruff"],
+    key: "unsafe_fixes",
+};
 
 /// Outcome of looking at a command line.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -120,7 +151,7 @@ pub(super) fn placeholders(run: &str) -> Vec<String> {
 pub(super) fn unsupported_placeholders(run: &str) -> Vec<String> {
     let mut names: Vec<String> = placeholders(run)
         .into_iter()
-        .filter(|name| !SUPPORTED_PLACEHOLDERS.contains(&name.as_str()))
+        .filter(|name| !is_supported_placeholder(name))
         .collect();
     names.dedup();
     names
@@ -128,7 +159,7 @@ pub(super) fn unsupported_placeholders(run: &str) -> Vec<String> {
 
 /// Whether `token` passes the staged file list.
 pub(super) fn is_file_list(token: &str) -> bool {
-    SUPPORTED_PLACEHOLDERS
+    FILE_PLACEHOLDERS
         .iter()
         .any(|name| token.contains(&format!("{{{name}}}")))
 }
@@ -193,7 +224,28 @@ pub(super) fn recognize(run: &str) -> Recognition {
     };
     match recognition {
         Recognition::Unknown => no_equivalent(run).map_or(Recognition::Unknown, Recognition::NoEquivalent),
+        Recognition::Builtin(mut recognized) => {
+            recognized.fixes = rewrites_files(program, &args);
+            Recognition::Builtin(recognized)
+        }
         other => other,
+    }
+}
+
+/// Whether `program args` rewrites the files it is given rather than only
+/// reporting on them.
+fn rewrites_files(program: &str, args: &[&str]) -> bool {
+    let has = |flags: &[&str]| args.iter().any(|arg| flags.contains(arg));
+    match (program, args.first().copied()) {
+        ("ruff", Some("format")) | ("golangci-lint", Some("fmt")) => true,
+        ("ruff", _) => has(&["--fix", "--fix-only"]),
+        ("oxlint", _) => has(&["--fix"]),
+        ("oxfmt", _) => has(&["--write"]),
+        ("rubyfmt", _) => has(&["--in-place", "-i"]),
+        ("golangci-lint", _) => has(&["--fix"]),
+        ("buf", _) => has(&["-w", "--write"]),
+        ("npm-groovy-lint", _) => has(&["--fix", "--format"]),
+        _ => false,
     }
 }
 
@@ -205,11 +257,12 @@ pub(super) fn no_equivalent(run: &str) -> Option<&'static str> {
         .map(|(_, reason)| *reason)
 }
 
-fn builtin(target: Target, catalog_tools: &'static [&'static str], dropped_flags: Vec<String>) -> Recognition {
+fn builtin(target: Target, catalog_tools: &'static [&'static str], options: Vec<EngineOption>) -> Recognition {
     Recognition::Builtin(Recognized {
         target,
         catalog_tools,
-        dropped_flags,
+        fixes: false,
+        options,
     })
 }
 
@@ -252,11 +305,9 @@ fn ruff(args: &[&str]) -> Recognition {
     };
     match simple("ruff", target, &[], rest, benign) {
         Recognition::Builtin(mut recognized) => {
-            recognized.dropped_flags = rest
-                .iter()
-                .filter(|flag| **flag == "--unsafe-fixes")
-                .map(|flag| (*flag).to_string())
-                .collect();
+            if rest.contains(&"--unsafe-fixes") {
+                recognized.options.push(RUFF_UNSAFE_FIXES);
+            }
             Recognition::Builtin(recognized)
         }
         other => other,
@@ -369,11 +420,32 @@ mod tests {
     }
 
     #[test]
-    fn unsafe_fixes_is_reported_as_dropped() {
+    fn unsafe_fixes_maps_onto_the_ruff_engine_option() {
         let Recognition::Builtin(r) = recognize("ruff check --fix --unsafe-fixes {staged_files}") else {
             panic!("ruff check must map to a builtin");
         };
-        assert_eq!(r.dropped_flags, ["--unsafe-fixes"]);
+        assert_eq!(r.options, [RUFF_UNSAFE_FIXES]);
+        assert!(r.fixes);
+    }
+
+    fn fixes(run: &str) -> bool {
+        match recognize(run) {
+            Recognition::Builtin(r) => r.fixes,
+            other => panic!("{run} must map to a builtin, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rewriting_invocations_are_fix_mode_and_reporting_ones_are_not() {
+        assert!(fixes("ruff format {staged_files}"));
+        assert!(fixes("ruff check --fix {staged_files}"));
+        assert!(!fixes("ruff check {staged_files}"));
+        assert!(fixes("oxfmt --write {staged_files}"));
+        assert!(fixes("rubyfmt --in-place {staged_files}"));
+        assert!(fixes("golangci-lint fmt -c .golangci.yml {staged_files}"));
+        assert!(!fixes("golangci-lint run {staged_files}"));
+        assert!(!fixes("actionlint {staged_files}"));
+        assert!(fixes("npm-groovy-lint --format {staged_files}"));
     }
 
     #[test]
@@ -433,8 +505,16 @@ mod tests {
     fn placeholder_scan_ignores_shell_expansions() {
         assert_eq!(placeholders("echo ${HOME} {staged_files} {0}"), ["staged_files", "0"]);
         assert_eq!(
-            unsupported_placeholders("a {staged_files} {0} {push_files}"),
-            ["0", "push_files"]
+            unsupported_placeholders("a {staged_files} {0} {push_files} {git_args} {2}"),
+            ["push_files"]
         );
+    }
+
+    #[test]
+    fn git_argument_placeholders_are_recognised() {
+        assert!(uses_git_args("{0}"));
+        assert!(uses_git_args("{2}"));
+        assert!(uses_git_args("{git_args}"));
+        assert!(!uses_git_args("{staged_files}"));
     }
 }

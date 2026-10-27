@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 use poly_config::Stage;
 use serde_json::Value;
 
-use super::acc::{Body, HookAcc, JobSpec};
-use super::command::Target;
+use super::acc::{Body, BuiltinUse, HookAcc, JobSpec, Shape};
+use super::command::{EngineOption, RUFF_UNSAFE_FIXES, Target};
 use super::filters::regex_to_globs;
 use crate::migrate::importers::load_yaml;
 
@@ -68,6 +68,10 @@ const KNOWN: &[Known] = &[
     ),
     known("check-merge-conflict", Mapping::FileSafety("merge_conflict"), None),
     known("detect-private-key", Mapping::FileSafety("private_key"), None),
+    Known {
+        benign_args: &[ALLOW_MISSING_CREDENTIALS],
+        ..known("detect-aws-credentials", Mapping::FileSafety("aws_credentials"), None)
+    },
     known("check-case-conflict", Mapping::FileSafety("case_conflict"), None),
     known(
         "check-executables-have-shebangs",
@@ -80,11 +84,11 @@ const KNOWN: &[Known] = &[
         None,
     ),
     Known {
-        benign_args: &["--fix", "--exit-non-zero-on-fix", "--force-exclude"],
+        benign_args: &["--fix", "--unsafe-fixes", "--exit-non-zero-on-fix", "--force-exclude"],
         ..known("ruff", Mapping::Builtin(Target::Lint, &[]), None).scoped(&["*.{py,pyi}"])
     },
     Known {
-        benign_args: &["--fix", "--exit-non-zero-on-fix", "--force-exclude"],
+        benign_args: &["--fix", "--unsafe-fixes", "--exit-non-zero-on-fix", "--force-exclude"],
         ..known("ruff-check", Mapping::Builtin(Target::Lint, &[]), None).scoped(&["*.{py,pyi}"])
     },
     known("ruff-format", Mapping::Builtin(Target::Fmt, &[]), None).scoped(&["*.{py,pyi}"]),
@@ -151,10 +155,25 @@ const fn known(id: &'static str, mapping: Mapping, approximation: Option<&'stati
     }
 }
 
-const NO_EQUIVALENT: &[(&str, &str)] = &[
-    ("detect-aws-credentials", "poly has no AWS credential scanner"),
-    ("requirements-txt-fixer", "poly does not sort requirements files"),
+/// Hooks that rewrite the files they are given.
+const FIXERS: &[&str] = &[
+    "trailing-whitespace",
+    "end-of-file-fixer",
+    "mixed-line-ending",
+    "ruff-format",
+    "black",
+    "isort",
+    "terraform_fmt",
+    "taplo-format",
+    "buildifier",
 ];
+
+/// Linters that only rewrite files when given `--fix`.
+const FIXES_WITH_FLAG: &[&str] = &["ruff", "ruff-check"];
+
+const NO_EQUIVALENT: &[(&str, &str)] = &[("requirements-txt-fixer", "poly does not sort requirements files")];
+
+const ALLOW_MISSING_CREDENTIALS: &str = "--allow-missing-credentials";
 
 /// What the pre-commit importer read.
 #[derive(Debug)]
@@ -303,11 +322,35 @@ fn remote_hook(acc: &mut HookAcc, context: &Context, repo: &str, hook: &Value) {
             acc.diag.lossy(format!("{label}: `{key}` filter is not applied"));
         }
     }
+    let fix = FIXERS.contains(&entry.id) || (FIXES_WITH_FLAG.contains(&entry.id) && args.iter().any(|a| a == "--fix"));
+    let shape = Shape {
+        files,
+        exclude,
+        fix,
+        priority: 0,
+    };
+    let options: &[EngineOption] = if args.iter().any(|a| a == "--unsafe-fixes") {
+        &[RUFF_UNSAFE_FIXES]
+    } else {
+        &[]
+    };
     for stage in hook_stages(context, hook) {
         match entry.mapping {
-            Mapping::Builtin(target, tools) => acc.add_builtin(target, &stage, &label, &files, &exclude, tools),
-            Mapping::FileSafety(member) => acc.add_file_safety(member, &stage, &label, &files, &exclude),
+            Mapping::Builtin(target, tools) => acc.add_builtin(BuiltinUse {
+                target,
+                stage: &stage,
+                label: &label,
+                shape: shape.clone(),
+                catalog_tools: tools,
+                options,
+            }),
+            Mapping::FileSafety(member) => acc.add_file_safety(member, &stage, &label, shape.clone()),
         }
+    }
+    if entry.id == "detect-aws-credentials" && !args.iter().any(|a| a == ALLOW_MISSING_CREDENTIALS) {
+        acc.diag.lossy(format!(
+            "{label}: approximated - pre-commit fails when no AWS credentials are configured; poly's check passes"
+        ));
     }
     if entry.id == "check-added-large-files" {
         apply_maxkb(acc, &label, &mut args);

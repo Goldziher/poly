@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use poly_config::Stage;
 use serde_json::{Map, Value};
 
-use super::acc::{Body, Guard, HookAcc, JobSpec};
+use super::acc::{Body, BuiltinUse, Guard, HookAcc, JobSpec, Shape};
 use super::command::{self, Recognition, Recognized, Target};
 use super::filters::filter_to_globs;
 use super::tree::{self, Mode, Node};
@@ -106,8 +106,8 @@ pub(super) fn import(dir: &Path, acc: &mut HookAcc) -> Option<Outcome> {
             .unwrap_or(".lefthook")
             .to_string(),
         pre_commit_jobs: Vec::new(),
-        rewriting_builtins: Vec::new(),
-        unordered_builtins: Vec::new(),
+        fixing_builtins: Vec::new(),
+        unstaged_fixers: Vec::new(),
         inline_jobs: 0,
     };
     importer.run(&merged);
@@ -234,8 +234,8 @@ struct Importer<'a> {
     acc: &'a mut HookAcc,
     source_dir: String,
     pre_commit_jobs: Vec<PreCommitJob>,
-    rewriting_builtins: Vec<String>,
-    unordered_builtins: Vec<String>,
+    fixing_builtins: Vec<String>,
+    unstaged_fixers: Vec<String>,
     inline_jobs: usize,
 }
 
@@ -271,17 +271,18 @@ impl Importer<'_> {
     }
 
     fn summary_notes(&mut self) {
-        if !self.rewriting_builtins.is_empty() {
+        if !self.fixing_builtins.is_empty() {
             self.acc.diag.note(format!(
-                "behavior change: the fmt/lint builtins only check (`poly fmt --check`, `poly lint`); these jobs \
-                 rewrote files and re-staged them: {}",
-                self.rewriting_builtins.join(", ")
+                "these jobs rewrote files, so their builtins run in fix mode (`poly fmt --fix`, `poly lint --fix`) \
+                 and re-stage what they rewrite: {}",
+                self.fixing_builtins.join(", ")
             ));
         }
-        if !self.unordered_builtins.is_empty() {
+        if !self.unstaged_fixers.is_empty() {
             self.acc.diag.note(format!(
-                "builtins run at the default priority (0); lefthook's ordering is not reproduced for: {}",
-                self.unordered_builtins.join(", ")
+                "behavior change: lefthook left the fixes of these jobs unstaged (no `stage_fixed`); the fix-mode \
+                 builtin re-stages them: {}",
+                self.unstaged_fixers.join(", ")
             ));
         }
         if self.inline_jobs > 0 {
@@ -592,14 +593,19 @@ impl Importer<'_> {
 
     fn builtin(&mut self, scope: &Scope, recognized: &Recognized, job: &Map<String, Value>, inherit: &Inherit) {
         let label = scope.label;
-        self.acc.add_builtin(
-            recognized.target,
-            scope.stage,
+        self.acc.add_builtin(BuiltinUse {
+            target: recognized.target,
+            stage: scope.stage,
             label,
-            scope.files,
-            scope.exclude,
-            recognized.catalog_tools,
-        );
+            shape: Shape {
+                files: scope.files.to_vec(),
+                exclude: scope.exclude.to_vec(),
+                fix: recognized.fixes,
+                priority: if scope.deepest > 0 { scope.layer } else { 0 },
+            },
+            catalog_tools: recognized.catalog_tools,
+            options: &recognized.options,
+        });
         let tool = match recognized.target {
             Target::Fmt => "fmt",
             Target::Lint => "lint",
@@ -608,17 +614,11 @@ impl Importer<'_> {
         self.acc
             .diag
             .note(format!("{label}: `{}` -> [hooks.builtin] {tool}", run.trim()));
-        for flag in &recognized.dropped_flags {
-            self.acc.diag.lossy(format!(
-                "{label}: {flag} has no poly equivalent; the lint builtin applies no fixes"
-            ));
-        }
-        let rewrites = truthy(job.get("stage_fixed")) || run.split_whitespace().any(|t| t == "--fix");
-        if rewrites {
-            self.rewriting_builtins.push(label.to_string());
-        }
-        if scope.deepest > 0 {
-            self.unordered_builtins.push(format!("{label} (layer {})", scope.layer));
+        if recognized.fixes {
+            self.fixing_builtins.push(label.to_string());
+            if !truthy(job.get("stage_fixed")) {
+                self.unstaged_fixers.push(label.to_string());
+            }
         }
         let guarded = ["skip", "only"].iter().any(|key| job.contains_key(*key))
             || inherit.skip.is_some()
@@ -705,7 +705,7 @@ impl Importer<'_> {
         }
         if rest
             .iter()
-            .any(|t| command::is_file_list(t) || t.contains(['$', '`', '*', '?', '~']))
+            .any(|t| command::is_file_list(t) || command::uses_git_args(t) || t.contains(['$', '`', '*', '?', '~']))
         {
             return None;
         }

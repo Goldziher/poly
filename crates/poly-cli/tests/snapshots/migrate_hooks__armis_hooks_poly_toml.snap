@@ -3,9 +3,31 @@ source: crates/poly-cli/tests/migrate_hooks.rs
 expression: rendered
 ---
 [hooks.builtin]
-fmt = true
-lint = { files = ["*.{js,jsx,ts,tsx,mjs,cjs}", "*.{py,pyi}", "*.{yml,yaml}", "products/em/backend/*"] }
-file_safety = { max_added_file_kb = 1000, merge_conflict = false, case_conflict = false, executables_have_shebangs = false, shebang_scripts_are_executable = false }
+fmt = { jobs = [
+  { exclude = ["armis/pipeline/ios_like_ssh/test_files/*.log", "*.tar", "*.gz", "*.svg", "*.snap", "*.zip"], fix = true },
+  { files = ["**/*.proto"], fix = true },
+  { files = ["*.go"], fix = true },
+  { files = ["*.rb"], fix = true },
+  { files = ["*.{py,pyi}"], fix = true },
+  { files = ["*BUILD", "*BUILD.bazel", "*.BUILD", "*.bzl"], fix = true },
+] }
+lint = { jobs = [
+  { files = ["*.{js,jsx,ts,tsx,mjs,cjs}"], fix = true },
+  { files = ["*.{py,pyi}"], fix = true, priority = 1 },
+  { files = ["*.{py,pyi}"], exclude = ["products/em/backend/*"] },
+  { files = ["*.{yml,yaml}"], exclude = ["armis/service_charts/*/templates/*", "deploy/manifests/jenkins_k8s_plugin.yaml"] },
+  { files = ["products/em/backend/*"] },
+] }
+file_safety = { jobs = [
+  { checks = ["aws_credentials", "private_key"] },
+  { checks = ["added_large_files"], exclude = ["demo/data/*", "vmlinux_arm64.h", "vmlinux.h"] },
+], max_added_file_kb = 1000, merge_conflict = false, case_conflict = false, executables_have_shebangs = false, shebang_scripts_are_executable = false, aws_credentials = true }
+[hooks.post-checkout.commands.check-env-lock]
+run = "bash .lefthook/check_env_lock.sh {0}"
+workspace = true
+[hooks.post-merge.commands.check-env-lock]
+run = "bash .lefthook/check_env_lock.sh {0}"
+workspace = true
 [hooks.pre-commit]
 parallel = true
 [hooks.pre-commit.scripts.oxfmt]
@@ -148,3 +170,5 @@ files = ["*BUILD", "*BUILD.bazel", "*.BUILD", "*.bzl"]
 [tools.golangci-lint]
 enabled = true
 files = ["*.go"]
+[lint.python.ruff]
+unsafe_fixes = true

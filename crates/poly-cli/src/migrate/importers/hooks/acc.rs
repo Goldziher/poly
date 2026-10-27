@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use toml_edit::{Array, InlineTable, Item, Value};
 
-use super::command::Target;
+use super::command::{EngineOption, Target};
 use crate::migrate::importers::{Fragment, bool_item, inline_map, int_item, str_array, str_item};
 
 /// Which source file a diagnostic belongs to.
@@ -46,8 +46,8 @@ impl Diagnostics {
         self.lossy.len()
     }
 
-    fn shared_lossy(&mut self, messages: impl IntoIterator<Item = String>) {
-        self.lossy.extend(messages.into_iter().map(|m| (Origin::Shared, m)));
+    pub fn shared_notes(&mut self, messages: impl IntoIterator<Item = String>) {
+        self.notes.extend(messages.into_iter().map(|m| (Origin::Shared, m)));
     }
 
     /// Notes visible to `origin` (its own plus shared).
@@ -144,26 +144,43 @@ pub(super) struct StageAcc {
     pub jobs: Vec<JobSpec>,
 }
 
-/// File scope contributed by one source job to a builtin or catalog tool.
+/// What distinguishes one run of a builtin from another.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) struct Shape {
+    pub files: Vec<String>,
+    pub exclude: Vec<String>,
+    pub fix: bool,
+    pub priority: i64,
+}
+
+/// One source job's use of a builtin or catalog tool.
 #[derive(Debug, Clone)]
 struct Scope {
     label: String,
-    files: Vec<String>,
-    exclude: Vec<String>,
+    stage: String,
+    shape: Shape,
+}
+
+/// A source job that maps onto a poly builtin.
+pub(super) struct BuiltinUse<'a> {
+    pub target: Target,
+    pub stage: &'a str,
+    pub label: &'a str,
+    pub shape: Shape,
+    pub catalog_tools: &'a [&'a str],
+    pub options: &'a [EngineOption],
 }
 
 #[derive(Debug, Default)]
-struct BuiltinAcc {
+struct ToolAcc {
     stages: BTreeSet<String>,
     scopes: Vec<Scope>,
 }
 
 #[derive(Debug, Default)]
 struct FileSafetyAcc {
-    stages: BTreeSet<String>,
-    members: BTreeSet<&'static str>,
+    scopes: Vec<(Scope, &'static str)>,
     max_added_file_kb: Option<i64>,
-    scopes: Vec<Scope>,
 }
 
 /// The `file_safety` members poly implements, in the order poly documents them.
@@ -174,16 +191,29 @@ pub(super) const FILE_SAFETY_MEMBERS: &[&str] = &[
     "case_conflict",
     "executables_have_shebangs",
     "shebang_scripts_are_executable",
+    "aws_credentials",
 ];
+
+/// Members that are off unless named, rather than on unless disabled.
+const OPT_IN_MEMBERS: &[&str] = &["aws_credentials"];
 
 /// Accumulates hook configuration from every source in one directory.
 #[derive(Debug, Default)]
 pub(super) struct HookAcc {
     stages: BTreeMap<String, StageAcc>,
-    builtins: BTreeMap<Target, BuiltinAcc>,
+    builtins: BTreeMap<Target, Vec<Scope>>,
     file_safety: FileSafetyAcc,
-    tools: BTreeMap<String, BuiltinAcc>,
+    tools: BTreeMap<String, ToolAcc>,
+    engine_options: BTreeMap<Vec<String>, BTreeSet<&'static str>>,
     pub diag: Diagnostics,
+}
+
+/// One run of a builtin: where it runs, on what, and which checks it carries.
+#[derive(Debug)]
+struct Group {
+    stages: BTreeSet<String>,
+    shape: Shape,
+    members: BTreeSet<&'static str>,
 }
 
 impl HookAcc {
@@ -203,86 +233,80 @@ impl HookAcc {
         jobs.push(candidate);
     }
 
-    pub fn add_builtin(
-        &mut self,
-        target: Target,
-        stage: &str,
-        label: &str,
-        files: &[String],
-        exclude: &[String],
-        catalog_tools: &[&str],
-    ) {
+    pub fn add_builtin(&mut self, usage: BuiltinUse<'_>) {
         let scope = Scope {
-            label: label.to_string(),
-            files: files.to_vec(),
-            exclude: exclude.to_vec(),
+            label: usage.label.to_string(),
+            stage: usage.stage.to_string(),
+            shape: usage.shape,
         };
-        let builtin = self.builtins.entry(target).or_default();
-        builtin.stages.insert(stage.to_string());
-        builtin.scopes.push(scope.clone());
-        for tool in catalog_tools {
+        for tool in usage.catalog_tools {
             let entry = self.tools.entry((*tool).to_string()).or_default();
-            entry.stages.insert(stage.to_string());
+            entry.stages.insert(usage.stage.to_string());
             entry.scopes.push(scope.clone());
         }
+        for option in usage.options {
+            let table = option.table.iter().map(|segment| (*segment).to_string()).collect();
+            self.engine_options.entry(table).or_default().insert(option.key);
+        }
+        self.builtins.entry(usage.target).or_default().push(scope);
     }
 
-    pub fn add_file_safety(
-        &mut self,
-        member: &'static str,
-        stage: &str,
-        label: &str,
-        files: &[String],
-        exclude: &[String],
-    ) {
-        self.file_safety.stages.insert(stage.to_string());
-        self.file_safety.members.insert(member);
-        self.file_safety.scopes.push(Scope {
+    pub fn add_file_safety(&mut self, member: &'static str, stage: &str, label: &str, shape: Shape) {
+        let scope = Scope {
             label: label.to_string(),
-            files: files.to_vec(),
-            exclude: exclude.to_vec(),
-        });
+            stage: stage.to_string(),
+            shape,
+        };
+        self.file_safety.scopes.push((scope, member));
     }
 
     pub fn set_max_added_file_kb(&mut self, kb: i64) {
         self.file_safety.max_added_file_kb = Some(kb);
     }
 
-    /// Record the exclusions that had to be dropped when several jobs shared one
-    /// builtin. Call once, after every importer has run.
+    /// Report what a shared catalog tool could not keep. A builtin's scope lives
+    /// on its own hook, so nothing is lost there; the `[tools.<name>]` table has
+    /// one `exclude` for every use, which only matters outside the hooks.
     pub fn settle(&mut self) {
-        let mut lost = Vec::new();
-        for (target, builtin) in &self.builtins {
-            let kind = match target {
-                Target::Fmt => "builtin fmt",
-                Target::Lint => "builtin lint",
-            };
-            lost.extend(merge_scopes(kind, &builtin.scopes).2);
-        }
-        if !self.file_safety.members.is_empty() {
-            lost.extend(merge_scopes("builtin file_safety", &self.file_safety.scopes).2);
-        }
+        let mut notes = Vec::new();
         for (name, tool) in &self.tools {
-            lost.extend(merge_scopes(&format!("tools.{name}"), &tool.scopes).2);
+            let (_, _, dropped) = merge_tool_scopes(&tool.scopes);
+            if !dropped.is_empty() {
+                let owners: Vec<&str> = tool.scopes.iter().map(|scope| scope.label.as_str()).collect();
+                notes.push(format!(
+                    "tools.{name}: {} exclude pattern(s) are not in [tools.{name}] because the jobs using it ({}) \
+                     exclude different paths; each job keeps its own exclude on its hook, but a direct `poly lint` \
+                     run uses only the shared set; not in [tools.{name}]: {}",
+                    dropped.len(),
+                    owners.join(", "),
+                    dropped.join(", ")
+                ));
+            }
         }
-        self.diag.shared_lossy(lost);
+        self.diag.shared_notes(notes);
     }
 
     /// Render the accumulated configuration into `poly.toml` fragments.
     pub fn into_fragments(self) -> (Vec<Fragment>, Diagnostics) {
         let mut fragments = Vec::new();
         let mut builtin_entries: Vec<(String, Item)> = Vec::new();
-        for (target, builtin) in &self.builtins {
+        for (target, scopes) in &self.builtins {
             let key = match target {
                 Target::Fmt => "fmt",
                 Target::Lint => "lint",
             };
-            builtin_entries.push((key.to_string(), render_builtin(builtin, &[])));
+            let groups = groups(scopes.iter().map(|scope| (scope, None)));
+            builtin_entries.push((key.to_string(), render_groups(&groups, false, &[])));
         }
-        if !self.file_safety.members.is_empty() {
+        if !self.file_safety.scopes.is_empty() {
+            let groups = groups(
+                self.file_safety
+                    .scopes
+                    .iter()
+                    .map(|(scope, member)| (scope, Some(*member))),
+            );
             let extra = file_safety_entries(&self.file_safety);
-            let item = render_builtin(&as_builtin(&self.file_safety), &extra);
-            builtin_entries.push(("file_safety".to_string(), item));
+            builtin_entries.push(("file_safety".to_string(), render_groups(&groups, true, &extra)));
         }
         if !builtin_entries.is_empty() {
             fragments.push(Fragment::new(&["hooks", "builtin"], builtin_entries));
@@ -293,25 +317,43 @@ impl HookAcc {
         for (name, tool) in &self.tools {
             fragments.push(Fragment::new(&["tools", name], tool_entries(tool)));
         }
+        for (table, keys) in &self.engine_options {
+            let path: Vec<&str> = table.iter().map(String::as_str).collect();
+            let entries = keys.iter().map(|key| ((*key).to_string(), bool_item(true))).collect();
+            fragments.push(Fragment::new(&path, entries));
+        }
         (fragments, self.diag)
     }
 }
 
-fn as_builtin(file_safety: &FileSafetyAcc) -> BuiltinAcc {
-    BuiltinAcc {
-        stages: file_safety.stages.clone(),
-        scopes: file_safety.scopes.clone(),
+/// Split uses of a builtin into the distinct runs poly needs: one per scope, with
+/// the stages and checks that share it combined.
+fn groups<'a>(entries: impl Iterator<Item = (&'a Scope, Option<&'static str>)>) -> Vec<Group> {
+    let mut per_stage: BTreeMap<(Shape, String), BTreeSet<&'static str>> = BTreeMap::new();
+    for (scope, member) in entries {
+        let members = per_stage.entry((scope.shape.clone(), scope.stage.clone())).or_default();
+        members.extend(member);
     }
+    let mut merged: BTreeMap<(Shape, BTreeSet<&'static str>), BTreeSet<String>> = BTreeMap::new();
+    for ((shape, stage), members) in per_stage {
+        merged.entry((shape, members)).or_default().insert(stage);
+    }
+    merged
+        .into_iter()
+        .map(|((shape, members), stages)| Group { stages, shape, members })
+        .collect()
 }
 
 fn file_safety_entries(file_safety: &FileSafetyAcc) -> Vec<(&'static str, Value)> {
+    let used: BTreeSet<&str> = file_safety.scopes.iter().map(|(_, member)| *member).collect();
     let mut entries = Vec::new();
     if let Some(kb) = file_safety.max_added_file_kb {
         entries.push(("max_added_file_kb", Value::from(kb)));
     }
     for member in FILE_SAFETY_MEMBERS {
-        if !file_safety.members.contains(member) {
-            entries.push((*member, Value::from(false)));
+        let opt_in = OPT_IN_MEMBERS.contains(member);
+        if used.contains(member) == opt_in {
+            entries.push((*member, Value::from(opt_in)));
         }
     }
     entries
@@ -325,33 +367,85 @@ fn string_array(items: &[String]) -> Value {
     Value::Array(array)
 }
 
-/// Merge scopes into one `files` / `exclude` pair. `files` is the union (or
-/// absent when any contributor is unscoped); `exclude` is the intersection, so a
-/// path one contributor still wanted checked is never hidden. The second value
-/// lists the exclusions that had to be dropped.
-fn merge_scopes(kind: &str, scopes: &[Scope]) -> (Vec<String>, Vec<String>, Option<String>) {
-    let files = if scopes.iter().any(|s| s.files.is_empty()) {
+fn str_list<'a>(items: impl IntoIterator<Item = &'a str>) -> Value {
+    let mut array = Array::new();
+    for item in items {
+        array.push(item);
+    }
+    Value::Array(array)
+}
+
+/// The keys of one run, as they appear either on the builtin or in a `jobs` entry.
+fn group_table(group: &Group, with_checks: bool) -> InlineTable {
+    let mut table = InlineTable::new();
+    let default_stage = group.stages.len() == 1 && group.stages.contains("pre-commit");
+    if !default_stage {
+        table.insert("stages", str_list(group.stages.iter().map(String::as_str)));
+    }
+    if with_checks {
+        table.insert("checks", str_list(group.members.iter().copied()));
+    }
+    if !group.shape.files.is_empty() {
+        table.insert("files", string_array(&group.shape.files));
+    }
+    if !group.shape.exclude.is_empty() {
+        table.insert("exclude", string_array(&group.shape.exclude));
+    }
+    if group.shape.fix {
+        table.insert("fix", Value::from(true));
+    }
+    if group.shape.priority != 0 {
+        table.insert("priority", Value::from(group.shape.priority));
+    }
+    table
+}
+
+/// A builtin with one run is a bare `true` or a flat table; with several, a
+/// `jobs` list so every run keeps its own `files` / `exclude` / `fix`.
+fn render_groups(groups: &[Group], with_checks: bool, extra: &[(&'static str, Value)]) -> Item {
+    let mut table = match groups {
+        [only] => group_table(only, false),
+        many => {
+            let mut array = Array::new();
+            for group in many {
+                let mut entry = Value::InlineTable(group_table(group, with_checks));
+                entry.decor_mut().set_prefix("\n  ");
+                array.push_formatted(entry);
+            }
+            array.set_trailing("\n");
+            array.set_trailing_comma(true);
+            let mut table = InlineTable::new();
+            table.insert("jobs", Value::Array(array));
+            table
+        }
+    };
+    if table.is_empty() && extra.is_empty() {
+        return bool_item(true);
+    }
+    for (key, value) in extra {
+        table.insert(*key, value.clone());
+    }
+    Item::Value(Value::InlineTable(table))
+}
+
+/// Merge a catalog tool's uses into the single `files` / `exclude` its table
+/// holds: `files` is the union (absent when any use is unscoped), `exclude` the
+/// intersection, so a path one use still wanted checked is never hidden. The last
+/// value lists the exclusions the intersection dropped.
+fn merge_tool_scopes(scopes: &[Scope]) -> (Vec<String>, Vec<String>, Vec<String>) {
+    let files = if scopes.iter().any(|s| s.shape.files.is_empty()) {
         Vec::new()
     } else {
-        union(scopes.iter().map(|s| s.files.as_slice()))
+        union(scopes.iter().map(|s| s.shape.files.as_slice()))
     };
-    let all_excludes = union(scopes.iter().map(|s| s.exclude.as_slice()));
+    let all_excludes = union(scopes.iter().map(|s| s.shape.exclude.as_slice()));
     let exclude: Vec<String> = all_excludes
         .iter()
-        .filter(|pattern| scopes.iter().all(|s| s.exclude.contains(pattern)))
+        .filter(|pattern| scopes.iter().all(|s| s.shape.exclude.contains(pattern)))
         .cloned()
         .collect();
-    let dropped: Vec<&String> = all_excludes.iter().filter(|p| !exclude.contains(p)).collect();
-    let lost = (!dropped.is_empty()).then(|| {
-        let owners: Vec<&str> = scopes.iter().map(|s| s.label.as_str()).collect();
-        format!(
-            "{kind}: {} exclude pattern(s) dropped because one `exclude` serves every contributing job ({}); dropped: {}",
-            dropped.len(),
-            owners.join(", "),
-            dropped.iter().map(|p| p.as_str()).collect::<Vec<_>>().join(", ")
-        )
-    });
-    (files, exclude, lost)
+    let dropped = all_excludes.iter().filter(|p| !exclude.contains(p)).cloned().collect();
+    (files, exclude, dropped)
 }
 
 fn union<'a>(lists: impl Iterator<Item = &'a [String]>) -> Vec<String> {
@@ -366,31 +460,8 @@ fn union<'a>(lists: impl Iterator<Item = &'a [String]>) -> Vec<String> {
     out
 }
 
-fn render_builtin(builtin: &BuiltinAcc, extra: &[(&'static str, Value)]) -> Item {
-    let (files, exclude, _) = merge_scopes("", &builtin.scopes);
-    let stages: Vec<String> = builtin.stages.iter().cloned().collect();
-    let default_stage = stages == ["pre-commit"];
-    if default_stage && files.is_empty() && exclude.is_empty() && extra.is_empty() {
-        return bool_item(true);
-    }
-    let mut table = InlineTable::new();
-    if !default_stage {
-        table.insert("stages", string_array(&stages));
-    }
-    if !files.is_empty() {
-        table.insert("files", string_array(&files));
-    }
-    if !exclude.is_empty() {
-        table.insert("exclude", string_array(&exclude));
-    }
-    for (key, value) in extra {
-        table.insert(*key, value.clone());
-    }
-    Item::Value(Value::InlineTable(table))
-}
-
-fn tool_entries(tool: &BuiltinAcc) -> Vec<(String, Item)> {
-    let (files, exclude, _) = merge_scopes("", &tool.scopes);
+fn tool_entries(tool: &ToolAcc) -> Vec<(String, Item)> {
+    let (files, exclude, _) = merge_tool_scopes(&tool.scopes);
     let mut entries = vec![("enabled".to_string(), bool_item(true))];
     if !files.is_empty() {
         entries.push(("files".to_string(), str_array(&files)));
