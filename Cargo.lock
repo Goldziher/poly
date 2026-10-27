@@ -5204,6 +5204,7 @@ dependencies = [
  "serde_ignored",
  "serde_json",
  "serde_toon_format",
+ "sha2",
  "sqruff-lib",
  "sqruff-lib-core",
  "taplo",
@@ -5219,6 +5220,7 @@ dependencies = [
  "typos-dict",
  "uncomment",
  "unicase",
+ "ureq",
  "which",
 ]
 

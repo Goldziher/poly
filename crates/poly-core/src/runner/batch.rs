@@ -173,7 +173,7 @@ pub(super) fn prefill(files: &[DiscoveredFile], plan: &RunPlan, cache: &ResultCa
             Some((engine_plan, group))
         })
         .flat_map(|(engine_plan, group)| {
-            shard_sizes(group.len())
+            shard_sizes(group.len(), engine_plan.engine.batch_shard_floor())
                 .into_iter()
                 .scan(0usize, |offset, size| {
                     let start = *offset;
@@ -363,7 +363,7 @@ pub(super) fn prefill_lint(files: &[DiscoveredFile], plan: &RunPlan, cache: &Res
         .filter(|(_, group)| group.len() >= MIN_BATCH)
         .flat_map(|((config_id, language, engine_index), group)| {
             let engine_plan = &plan.engines(*config_id, language)[*engine_index];
-            shard_sizes(group.len())
+            shard_sizes(group.len(), engine_plan.engine.batch_shard_floor())
                 .into_iter()
                 .scan(0usize, |offset, size| {
                     let start = *offset;
@@ -412,6 +412,11 @@ fn lint_candidates_for(file: &DiscoveredFile, plan: &RunPlan, cache: &ResultCach
         .enabled()
         .then(|| ResultCache::single_file_digest_with_path(&file.path.to_string_lossy(), &content));
 
+    let src = SourceFile {
+        path: file.path.clone(),
+        language: file.language.clone(),
+        content: Arc::clone(&content),
+    };
     batching
         .into_iter()
         .filter(|&index| {
@@ -420,7 +425,7 @@ fn lint_candidates_for(file: &DiscoveredFile, plan: &RunPlan, cache: &ResultCach
                 let key = ResultCache::key_with_args(
                     Namespace::Lint,
                     engine_plan.engine.name(),
-                    engine_plan.engine.version(),
+                    &engine_plan.engine.lint_cache_version(&src),
                     &engine_plan.serialized_args,
                     digest,
                 );
@@ -557,10 +562,12 @@ fn budget_prefix(candidates: &[Candidate]) -> Option<usize> {
 }
 
 /// Split `total` files into at most one shard per worker, as evenly as possible
-/// and never smaller than [`MIN_BATCH`].
-fn shard_sizes(total: usize) -> Vec<usize> {
+/// and never smaller than `floor` (at least [`MIN_BATCH`]). The floor is the
+/// engine's own ([`crate::engine::Engine::batch_shard_floor`]): a JVM tool pays
+/// seconds of start-up per shard, so a small group stays one invocation.
+fn shard_sizes(total: usize, floor: usize) -> Vec<usize> {
     let workers = rayon::current_num_threads().max(1);
-    let shards = (total / MIN_BATCH).clamp(1, workers);
+    let shards = (total / floor.max(MIN_BATCH)).clamp(1, workers);
     let base = total / shards;
     let remainder = total % shards;
     (0..shards).map(|i| base + usize::from(i < remainder)).collect()
@@ -575,7 +582,7 @@ mod tests {
     #[test]
     fn shard_sizes_partition_the_group() {
         for total in 0..500usize {
-            let sizes = shard_sizes(total);
+            let sizes = shard_sizes(total, MIN_BATCH);
             assert_eq!(
                 sizes.iter().sum::<usize>(),
                 total,
@@ -627,11 +634,21 @@ mod tests {
         assert_eq!(budget_prefix(&huge), Some(1));
     }
 
+    /// A raised floor keeps a small group in one invocation: splitting 30 files
+    /// across the pool for a tool that costs a second to start would spend more
+    /// on start-up than on the files.
+    #[test]
+    fn a_high_shard_floor_keeps_a_small_group_whole() {
+        assert_eq!(shard_sizes(30, 25), vec![30]);
+        assert_eq!(shard_sizes(30, MIN_BATCH).iter().sum::<usize>(), 30);
+        assert!(shard_sizes(30, MIN_BATCH).len() > 1 || rayon::current_num_threads() == 1);
+    }
+
     /// Shards should be balanced — an uneven split leaves workers idle while one
     /// process does most of the work.
     #[test]
     fn shards_are_balanced_within_one_file() {
-        let sizes = shard_sizes(1000);
+        let sizes = shard_sizes(1000, MIN_BATCH);
         let min = sizes.iter().min().copied().unwrap_or(0);
         let max = sizes.iter().max().copied().unwrap_or(0);
         assert!(max - min <= 1, "shards differ by more than one file: {sizes:?}");

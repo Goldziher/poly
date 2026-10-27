@@ -301,7 +301,13 @@ pub(super) fn plan_engines(
     // given to shfmt. The question is now whether the backend would actually
     // format, which is what the lint side has always asked. ~keep
     let catalog = if has_tier_one_formatter(&engines, language, config, kind) {
-        Vec::new()
+        // A catalog formatter confined to named files (`pyproject-fmt` on
+        // `pyproject.toml`) supplements the tier-one formatter rather than
+        // competing with it for the whole language.
+        retaining_capable(catalog_engines_for(language, config, kind), kind)
+            .into_iter()
+            .filter(|engine| engine.supplements_tier_one())
+            .collect()
     } else {
         retaining_capable(catalog_engines_for(language, config, kind), kind)
     };
@@ -514,23 +520,22 @@ fn catalog_engines_for(language: &Language, config: &Config, kind: Kind) -> Vec<
         if !serves_language {
             continue;
         }
-        if kind == Kind::Lint && crate::engines::catalog_tool::is_whole_project_linter(name) {
+        if kind == Kind::Lint && tool.recipe.is_none() && crate::engines::catalog_tool::is_whole_project_linter(name) {
             warn_whole_project_linter_once(name);
             continue;
         }
         let command = tool_config.command.as_deref();
         let args = tool_config.args.as_deref();
         if kind == Kind::Lint
+            && (tool.recipe.is_none() || args.is_some())
             && let Some(refusal) = crate::engines::catalog_tool::lint_refusal(tool, command, args)
         {
             warn_mutating_catalog_linter_once(name, language, &refusal);
             continue;
         }
-        let env = tool_config.env.clone();
-        let root = tool_config.root.as_ref().map(std::path::PathBuf::from);
         let engine = match kind {
-            Kind::Format => CatalogToolEngine::format_engine(tool, command, args, env, root),
-            Kind::Lint => CatalogToolEngine::lint_engine(tool, command, args, env, root),
+            Kind::Format => CatalogToolEngine::format_engine_for(tool, tool_config),
+            Kind::Lint => CatalogToolEngine::lint_engine_for(tool, tool_config),
         };
         if let Some(engine) = engine {
             engines.push(Box::new(engine));

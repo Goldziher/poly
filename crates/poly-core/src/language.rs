@@ -217,6 +217,9 @@ impl Language {
             if INI_FILENAMES.contains(&lower.as_str()) {
                 return Some(Language::Ini);
             }
+            if is_starlark_name(&lower) {
+                return Some(Language::Other("starlark".to_string()));
+            }
         }
         None
     }
@@ -382,6 +385,18 @@ impl Language {
     }
 }
 
+/// Bazel's extensionless and dot-suffixed Starlark files, which no extension
+/// table can name: `BUILD`, `WORKSPACE`, `MODULE.bazel`, `BUILD.bazel`, `*.BUILD`.
+fn is_starlark_name(lower: &str) -> bool {
+    matches!(
+        lower,
+        "build" | "workspace" | "build.bazel" | "workspace.bazel" | "module.bazel"
+    ) || lower.ends_with(".bazel")
+        || lower.ends_with(".bzl")
+        || lower.ends_with(".build")
+        || lower.ends_with(".sky")
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::{Path, PathBuf};
@@ -493,5 +508,22 @@ mod tests {
             Language::from_path(std::path::Path::new("Foo.cs")),
             Some(Language::CSharp)
         );
+    }
+
+    #[test]
+    fn bazel_files_are_starlark_by_name_and_extension() {
+        let starlark = Some(Language::Other("starlark".to_string()));
+        for name in [
+            "BUILD",
+            "BUILD.bazel",
+            "WORKSPACE",
+            "MODULE.bazel",
+            "foo.BUILD",
+            "pkg/defs.bzl",
+            "deps.bazel",
+        ] {
+            assert_eq!(Language::from_path(Path::new(name)), starlark, "{name}");
+        }
+        assert_eq!(Language::from_path(Path::new("builder.txt")), None);
     }
 }

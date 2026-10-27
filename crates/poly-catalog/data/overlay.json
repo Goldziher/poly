@@ -1,0 +1,668 @@
+[
+  {
+    "name": "checkstyle",
+    "binary": "checkstyle",
+    "categories": [
+      "linter"
+    ],
+    "languages": [
+      "java"
+    ],
+    "homepage": "https://checkstyle.org",
+    "commands": {
+      "lint": {
+        "arguments": [
+          "-f",
+          "xml",
+          "$FILES"
+        ],
+        "stdin": false
+      }
+    },
+    "recipe": {
+      "output": "checkstyle_xml",
+      "config_flags": [
+        "-c",
+        "-p"
+      ],
+      "java": true,
+      "shard_floor": 25,
+      "install": {
+        "hint": "brew install checkstyle, or set [tools.checkstyle] version to a pinned release poly can download",
+        "releases": {
+          "12.3.1": {
+            "kind": "jar",
+            "assets": {
+              "any": {
+                "url": "https://github.com/checkstyle/checkstyle/releases/download/checkstyle-12.3.1/checkstyle-12.3.1-all.jar",
+                "sha256": "4ecdfa8504452e1557d2e2c364085f0ae5703b67ec9c759976ca378d41cb8f7a"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "palantir-java-format",
+    "binary": "palantir-java-format",
+    "categories": [
+      "formatter"
+    ],
+    "languages": [
+      "java"
+    ],
+    "homepage": "https://github.com/palantir/palantir-java-format",
+    "commands": {
+      "format": {
+        "arguments": [
+          "--palantir",
+          "--replace",
+          "$FILES"
+        ],
+        "stdin": false
+      },
+      "aosp": {
+        "arguments": [
+          "--aosp",
+          "--skip-sorting-imports",
+          "--replace",
+          "$FILES"
+        ],
+        "stdin": false,
+        "then": [
+          {
+            "arguments": [
+              "--palantir",
+              "--fix-imports-only",
+              "--replace",
+              "$FILES"
+            ],
+            "stdin": false
+          }
+        ]
+      }
+    },
+    "recipe": {
+      "install": {
+        "hint": "download palantir-java-format-native from Maven Central, or set [tools.palantir-java-format] version to a pinned release poly can download",
+        "releases": {
+          "2.102.0": {
+            "kind": "binary",
+            "assets": {
+              "darwin-aarch64": {
+                "url": "https://repo1.maven.org/maven2/com/palantir/javaformat/palantir-java-format-native/2.102.0/palantir-java-format-native-2.102.0-nativeImage-macos_aarch64.bin",
+                "sha256": "24a984105fe95594bbb360b7799ada7db13dddeb9fce69640df471061040b5a4"
+              },
+              "linux-x86_64": {
+                "url": "https://repo1.maven.org/maven2/com/palantir/javaformat/palantir-java-format-native/2.102.0/palantir-java-format-native-2.102.0-nativeImage-linux-glibc_x86-64.bin",
+                "sha256": "0e8e4d55b6d7cd4803279437c364463cff117f136a7750e78f295a7570e54450"
+              },
+              "linux-aarch64": {
+                "url": "https://repo1.maven.org/maven2/com/palantir/javaformat/palantir-java-format-native/2.102.0/palantir-java-format-native-2.102.0-nativeImage-linux-glibc_aarch64.bin",
+                "sha256": "1bfa7a0a983237c539dfcf4078f28468696059b5a2049fcb20181009aa44bf2d"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "buildifier",
+    "binary": "buildifier",
+    "categories": [
+      "formatter",
+      "linter"
+    ],
+    "languages": [
+      "starlark"
+    ],
+    "homepage": "https://github.com/bazelbuild/buildtools",
+    "commands": {
+      "format": {
+        "arguments": [
+          "-mode=fix",
+          "$FILES"
+        ],
+        "stdin": false
+      },
+      "lint": {
+        "arguments": [
+          "-mode=check",
+          "-lint=warn",
+          "-format=json",
+          "$FILES"
+        ],
+        "stdin": false
+      },
+      "fix": {
+        "arguments": [
+          "-mode=fix",
+          "-lint=fix",
+          "$FILES"
+        ],
+        "stdin": false
+      }
+    },
+    "recipe": {
+      "output": "buildifier_json",
+      "fix": "fix",
+      "config_flags": [
+        "-add_tables",
+        "-tables",
+        "-config"
+      ],
+      "config_files": [
+        ".buildifier.json"
+      ],
+      "install": {
+        "hint": "brew install buildifier, or set [tools.buildifier] version to a pinned release poly can download",
+        "releases": {
+          "8.5.1": {
+            "kind": "binary",
+            "assets": {
+              "darwin-aarch64": {
+                "url": "https://github.com/bazelbuild/buildtools/releases/download/v8.5.1/buildifier-darwin-arm64",
+                "sha256": "62836a9667fa0db309b0d91e840f0a3f2813a9c8ea3e44b9cd58187c90bc88ba"
+              },
+              "darwin-x86_64": {
+                "url": "https://github.com/bazelbuild/buildtools/releases/download/v8.5.1/buildifier-darwin-amd64",
+                "sha256": "31de189e1a3fe53aa9e8c8f74a0309c325274ad19793393919e1ca65163ca1a4"
+              },
+              "linux-x86_64": {
+                "url": "https://github.com/bazelbuild/buildtools/releases/download/v8.5.1/buildifier-linux-amd64",
+                "sha256": "887377fc64d23a850f4d18a077b5db05b19913f4b99b270d193f3c7334b5a9a7"
+              },
+              "linux-aarch64": {
+                "url": "https://github.com/bazelbuild/buildtools/releases/download/v8.5.1/buildifier-linux-arm64",
+                "sha256": "947bf6700d708026b2057b09bea09abbc3cafc15d9ecea35bb3885c4b09ccd04"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "buf",
+    "binary": "buf",
+    "categories": [
+      "formatter",
+      "linter"
+    ],
+    "languages": [
+      "protobuf"
+    ],
+    "homepage": "https://buf.build/docs/reference/cli/buf",
+    "commands": {
+      "format": {
+        "arguments": [
+          "format",
+          "--write",
+          "$FILES:--path"
+        ],
+        "stdin": false
+      },
+      "lint": {
+        "arguments": [
+          "lint",
+          "--error-format=json",
+          "$FILES:--path"
+        ],
+        "stdin": false
+      }
+    },
+    "recipe": {
+      "output": "buf_json",
+      "group": {
+        "marker": [
+          "buf.yaml",
+          "buf.work.yaml"
+        ]
+      },
+      "dependencies": [
+        "**/*.proto",
+        "buf.yaml",
+        "buf.lock",
+        "buf.work.yaml"
+      ],
+      "config_files": [
+        "buf.yaml"
+      ],
+      "install": {
+        "hint": "brew install bufbuild/buf/buf"
+      }
+    }
+  },
+  {
+    "name": "actionlint",
+    "binary": "actionlint",
+    "categories": [
+      "linter"
+    ],
+    "languages": [
+      "yaml"
+    ],
+    "homepage": "https://github.com/rhysd/actionlint",
+    "path_globs": [
+      "**/.github/workflows/*.yml",
+      "**/.github/workflows/*.yaml"
+    ],
+    "commands": {
+      "lint": {
+        "arguments": [
+          "-format",
+          "{{json .}}",
+          "$FILES"
+        ],
+        "stdin": false
+      }
+    },
+    "recipe": {
+      "output": "actionlint_json",
+      "config_files": [
+        ".github/actionlint.yaml",
+        ".github/actionlint.yml"
+      ],
+      "ok_exits": [
+        1
+      ],
+      "install": {
+        "hint": "brew install actionlint"
+      }
+    }
+  },
+  {
+    "name": "hadolint",
+    "binary": "hadolint",
+    "categories": [
+      "linter"
+    ],
+    "languages": [
+      "dockerfile"
+    ],
+    "homepage": "https://github.com/hadolint/hadolint",
+    "commands": {
+      "lint": {
+        "arguments": [
+          "--format",
+          "json",
+          "$FILES"
+        ],
+        "stdin": false
+      }
+    },
+    "recipe": {
+      "output": "hadolint_json",
+      "config_files": [
+        ".hadolint.yaml",
+        ".hadolint.yml"
+      ],
+      "ok_exits": [
+        1
+      ],
+      "install": {
+        "hint": "brew install hadolint"
+      }
+    }
+  },
+  {
+    "name": "golangci-lint",
+    "binary": "golangci-lint",
+    "categories": [
+      "formatter",
+      "linter"
+    ],
+    "languages": [
+      "go"
+    ],
+    "homepage": "https://github.com/golangci/golangci-lint",
+    "commands": {
+      "format": {
+        "arguments": [
+          "fmt",
+          "$FILES"
+        ],
+        "stdin": false
+      },
+      "lint": {
+        "arguments": [
+          "run",
+          "--output.json.path=stdout",
+          "--output.text.path=",
+          "$DIR"
+        ],
+        "stdin": false
+      },
+      "fix": {
+        "arguments": [
+          "run",
+          "--fix",
+          "--output.json.path=stdout",
+          "--output.text.path=",
+          "$DIR"
+        ],
+        "stdin": false
+      }
+    },
+    "recipe": {
+      "output": "golangci_json",
+      "group": {
+        "marker": [
+          "go.mod"
+        ]
+      },
+      "target": "dir",
+      "serial": true,
+      "dependencies": [
+        "**/*.go",
+        "go.mod",
+        "go.sum"
+      ],
+      "config_flags": [
+        "-c",
+        "--config"
+      ],
+      "config_files": [
+        ".golangci.yml",
+        ".golangci.yaml",
+        ".golangci.toml",
+        ".golangci.json"
+      ],
+      "ok_exits": [
+        1
+      ],
+      "install": {
+        "hint": "brew install golangci-lint"
+      }
+    }
+  },
+  {
+    "name": "helm",
+    "binary": "helm",
+    "categories": [
+      "linter"
+    ],
+    "languages": [
+      "yaml",
+      "json"
+    ],
+    "homepage": "https://helm.sh",
+    "path_globs": [
+      "**/Chart.yaml",
+      "**/Chart.lock",
+      "**/requirements.yaml",
+      "**/requirements.lock",
+      "**/values.yaml",
+      "**/values.schema.json",
+      "**/templates/**"
+    ],
+    "commands": {
+      "lint": {
+        "arguments": [
+          "lint",
+          "$ROOT"
+        ],
+        "stdin": false
+      }
+    },
+    "recipe": {
+      "output": "helm_text",
+      "group": {
+        "marker": [
+          "Chart.yaml"
+        ]
+      },
+      "target": "root",
+      "findings": "all",
+      "dependencies": [
+        "**"
+      ],
+      "install": {
+        "hint": "brew install helm"
+      }
+    }
+  },
+  {
+    "name": "helm-template",
+    "binary": "helm",
+    "categories": [
+      "linter"
+    ],
+    "languages": [
+      "yaml",
+      "json"
+    ],
+    "homepage": "https://helm.sh/docs/helm/helm_template/",
+    "path_globs": [
+      "**/Chart.yaml",
+      "**/Chart.lock",
+      "**/requirements.yaml",
+      "**/requirements.lock",
+      "**/values.yaml",
+      "**/values.schema.json",
+      "**/templates/**"
+    ],
+    "commands": {
+      "lint": {
+        "arguments": [
+          "template",
+          "$ROOT"
+        ],
+        "stdin": false
+      }
+    },
+    "recipe": {
+      "output": "helm_text",
+      "group": {
+        "marker": [
+          "Chart.yaml"
+        ]
+      },
+      "target": "root",
+      "findings": "all",
+      "dependencies": [
+        "**"
+      ],
+      "install": {
+        "hint": "brew install helm"
+      }
+    }
+  },
+  {
+    "name": "tflint",
+    "binary": "tflint",
+    "categories": [
+      "linter"
+    ],
+    "languages": [
+      "terraform"
+    ],
+    "homepage": "https://github.com/terraform-linters/tflint",
+    "path_globs": [
+      "**/*.tf",
+      "**/*.tfvars"
+    ],
+    "commands": {
+      "lint": {
+        "arguments": [
+          "--format=json",
+          "--chdir=$DIR"
+        ],
+        "stdin": false
+      }
+    },
+    "recipe": {
+      "output": "tflint_json",
+      "group": "dir",
+      "target": "dir",
+      "dependencies": [
+        "*.tf",
+        "*.tfvars",
+        ".tflint.hcl"
+      ],
+      "ok_exits": [
+        2
+      ],
+      "install": {
+        "hint": "brew install tflint"
+      }
+    }
+  },
+  {
+    "name": "terraform",
+    "binary": "terraform",
+    "categories": [
+      "formatter"
+    ],
+    "languages": [
+      "terraform"
+    ],
+    "homepage": "https://www.terraform.io/docs/cli/commands/fmt.html",
+    "commands": {
+      "format": {
+        "arguments": [
+          "fmt",
+          "-"
+        ],
+        "stdin": true,
+        "batch": [
+          "fmt",
+          "-list=false",
+          "-write=true",
+          "$FILES"
+        ]
+      }
+    },
+    "recipe": {
+      "install": {
+        "hint": "brew install hashicorp/tap/terraform"
+      }
+    }
+  },
+  {
+    "name": "tofu",
+    "binary": "tofu",
+    "categories": [
+      "formatter"
+    ],
+    "languages": [
+      "terraform"
+    ],
+    "homepage": "https://opentofu.org/docs/cli/commands/fmt",
+    "commands": {
+      "format": {
+        "arguments": [
+          "fmt",
+          "-"
+        ],
+        "stdin": true,
+        "batch": [
+          "fmt",
+          "-list=false",
+          "-write=true",
+          "$FILES"
+        ]
+      }
+    },
+    "recipe": {
+      "install": {
+        "hint": "brew install opentofu"
+      }
+    }
+  },
+  {
+    "name": "pyproject-fmt",
+    "binary": "pyproject-fmt",
+    "categories": [
+      "formatter"
+    ],
+    "languages": [
+      "toml"
+    ],
+    "homepage": "https://github.com/tox-dev/pyproject-fmt",
+    "path_globs": [
+      "**/pyproject.toml",
+      "pyproject.toml"
+    ],
+    "commands": {
+      "format": {
+        "arguments": [
+          "-"
+        ],
+        "stdin": true,
+        "batch": [
+          "$FILES"
+        ]
+      }
+    },
+    "recipe": {
+      "ok_exits": [
+        1
+      ],
+      "install": {
+        "hint": "uv tool install pyproject-fmt"
+      }
+    }
+  },
+  {
+    "name": "npm-groovy-lint",
+    "binary": "npm-groovy-lint",
+    "categories": [
+      "formatter",
+      "linter"
+    ],
+    "languages": [
+      "groovy"
+    ],
+    "homepage": "https://github.com/nvuillam/npm-groovy-lint",
+    "commands": {
+      "format": {
+        "arguments": [
+          "--no-insight",
+          "--format",
+          "--failon",
+          "none",
+          "$FILES"
+        ],
+        "stdin": false
+      },
+      "lint": {
+        "arguments": [
+          "--no-insight",
+          "--output",
+          "json",
+          "--failon",
+          "none",
+          "$FILES"
+        ],
+        "stdin": false
+      },
+      "fix": {
+        "arguments": [
+          "--no-insight",
+          "--fix",
+          "--failon",
+          "none",
+          "$FILES"
+        ],
+        "stdin": false
+      }
+    },
+    "recipe": {
+      "output": "groovy_json",
+      "fix": "fix",
+      "java": false,
+      "shard_floor": 25,
+      "config_files": [
+        ".groovylintrc.json",
+        ".groovylintrc.js",
+        ".groovylintrc.cjs"
+      ],
+      "install": {
+        "hint": "npm install --global npm-groovy-lint"
+      }
+    }
+  }
+]

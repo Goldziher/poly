@@ -664,6 +664,47 @@ pub trait Engine: Send + Sync {
         anyhow::bail!("this backend does not implement batch linting")
     }
 
+    /// Bytes, beyond the file's own, that decide this backend's lint answer for
+    /// `src`, folded into the file's result-cache key.
+    ///
+    /// The cache key is `(engine, version, args, path + content)`. That is
+    /// complete for a backend that judges a file alone and wrong for one that
+    /// judges it in context: `helm lint` of one template is a function of the
+    /// whole chart, and a buf lint of one proto of every proto it imports. Such a
+    /// backend answers here with a digest of that context, so editing a sibling
+    /// invalidates the cached verdict of the files that depend on it.
+    ///
+    /// Defaults to `None`: the file alone decides.
+    fn lint_cache_salt(&self, _src: &SourceFile) -> Option<String> {
+        None
+    }
+
+    /// The version string to key `src`'s lint result under: [`Engine::version`],
+    /// extended with [`Engine::lint_cache_salt`] when the backend has one.
+    fn lint_cache_version(&self, src: &SourceFile) -> std::borrow::Cow<'_, str> {
+        match self.lint_cache_salt(src) {
+            Some(salt) => std::borrow::Cow::Owned(format!("{}+{salt}", self.version())),
+            None => std::borrow::Cow::Borrowed(self.version()),
+        }
+    }
+
+    /// Fewest files worth a separate [`Engine::lint_batch`] / [`Engine::format_batch`]
+    /// call when the runner shards a group across the thread pool.
+    ///
+    /// The runner splits a group into up to one shard per core. That is right
+    /// for a tool with a small start-up and wrong for a JVM tool, where each
+    /// extra shard buys another second of start-up and nothing else; such a
+    /// backend raises the floor so a small group stays one invocation.
+    fn batch_shard_floor(&self) -> usize {
+        2
+    }
+
+    /// Whether this catalog backend, confined to named files, may run in
+    /// addition to the language's tier-one formatter.
+    fn supplements_tier_one(&self) -> bool {
+        false
+    }
+
     /// Whether this backend reads [`ENABLED_OPTION_KEY`] itself and degrades
     /// gracefully when it is `false`, rather than expecting the runner to drop
     /// it from the plan.

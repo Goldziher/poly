@@ -578,7 +578,7 @@ fn lint_content(
             ResultCache::key_with_args(
                 Namespace::Lint,
                 plan.engine.name(),
-                plan.engine.version(),
+                &plan.engine.lint_cache_version(&src),
                 &plan.serialized_args,
                 digest,
             )

@@ -2569,6 +2569,54 @@
           "description": "Working directory the tool runs in, relative to the config/repo root.\n`None` means the repo root. Applied on both the direct-engine path and the\nhooks-lowering path.",
           "type": ["string", "null"],
           "default": null
+        },
+        "extra_args": {
+          "description": "Arguments added to the tool's argv for every role, immediately before the\nfile list. Unlike `args` this keeps the catalog's own flags (the ones the\nreport parser depends on), so it is the place for configuration:\n`[\"-c\", \"checkstyle.xml\", \"-p\", \"checkstyle.properties\"]`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "format_extra_args": {
+          "description": "`extra_args` for the formatting role only.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "lint_extra_args": {
+          "description": "`extra_args` for the linting role only.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "bin": {
+          "description": "Executable to run instead of the catalog's `binary` looked up on `PATH`.\nFor a JVM tool this is the `java` to launch the jar with.",
+          "type": ["string", "null"],
+          "default": null
+        },
+        "version": {
+          "description": "Release of the tool to use. Looked up in the catalog's pinned releases;\na version the catalog does not know needs `url` and `sha256` too.",
+          "type": ["string", "null"],
+          "default": null
+        },
+        "url": {
+          "description": "Download URL for `version` when the catalog has no such pinned release.",
+          "type": ["string", "null"],
+          "default": null
+        },
+        "sha256": {
+          "description": "Lower-case hex SHA-256 the download for `version` must have.",
+          "type": ["string", "null"],
+          "default": null
+        },
+        "install": {
+          "description": "Whether poly may download the pinned release when the tool is missing.",
+          "$ref": "#/$defs/InstallPolicy"
         }
       },
       "additionalProperties": false
@@ -2589,6 +2637,21 @@
         "post-rewrite",
         "manual",
         "always"
+      ]
+    },
+    "InstallPolicy": {
+      "description": "What poly does when a tool's executable cannot be found.",
+      "oneOf": [
+        {
+          "description": "Say so, with the command that installs it. The default: poly never\ndownloads an executable the config did not ask for.",
+          "type": "string",
+          "const": "never"
+        },
+        {
+          "description": "Download the pinned release ([`ToolConfig::version`]) into poly's tool\ncache, verify its SHA-256, and use it.",
+          "type": "string",
+          "const": "auto"
+        }
       ]
     },
     "WorkspaceConfig": {

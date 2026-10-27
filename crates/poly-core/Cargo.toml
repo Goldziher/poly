@@ -91,6 +91,7 @@ serde.workspace = true
 serde_ignored.workspace = true
 serde_json.workspace = true
 serde_toon_format.workspace = true
+sha2.workspace = true
 sqruff-lib.workspace = true
 sqruff-lib-core.workspace = true
 taplo.workspace = true
@@ -105,6 +106,7 @@ typos.workspace = true
 typos-dict.workspace = true
 uncomment.workspace = true
 unicase.workspace = true
+ureq.workspace = true
 which.workspace = true
 
 [target.'cfg(unix)'.dependencies]

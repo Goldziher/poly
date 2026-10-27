@@ -37,7 +37,7 @@ pub use hooks::{
     BuiltinHook, BuiltinHooks, CargoHooks, DEFAULT_MAX_ADDED_FILE_KB, FileSafetyHooks, Guard, GuardCondition,
     GuardMatch, HooksConfig, Job, JobCache, ParseStageError, Patterns, Serial, Stage, StageConfig,
 };
-pub use tools::{ToolConfig, ToolsConfig};
+pub use tools::{InstallPolicy, ToolConfig, ToolsConfig};
 pub use typos_native::TyposNative;
 use typos_native::resolve_typos_native;
 

@@ -34,10 +34,17 @@ use std::thread;
 use anyhow::Context;
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use poly_catalog::{PATH_PLACEHOLDER, Tool};
+use poly_config::ToolConfig;
 
 use crate::config::EngineConfig;
-use crate::engine::{Capabilities, Diagnostic, Engine, FormatOutput, OptionKeys, OptionTable, Severity, SourceFile};
+use crate::engine::{
+    BatchSupport, Capabilities, Diagnostic, Engine, FormatOutput, OptionKeys, OptionTable, Severity, SourceFile,
+};
 use crate::language::Language;
+
+mod recipe;
+
+use self::recipe::{RecipeTool, Role};
 
 /// Argv **flags** that mutate the file rather than only reporting on it. A lint
 /// command carrying any of these is **rejected** by [`CatalogToolEngine::lint_engine`]:
@@ -270,9 +277,73 @@ pub struct CatalogToolEngine {
     /// `path_globs` at construction time; `None` when `path_globs` is empty.
     /// When `Some`, only files whose path matches at least one pattern are linted.
     path_glob_set: Option<GlobSet>,
+    /// Batched, grouped, report-parsing execution for a tool with a recipe.
+    recipe: Option<RecipeTool>,
+    /// Why a recipe tool cannot run (not installed); the engine is then inert.
+    unavailable: Option<String>,
 }
 
 impl CatalogToolEngine {
+    /// Build the engine for `tool` in the formatting role from its
+    /// `[tools.<name>]` config. A tool with a recipe gets batched, config-aware
+    /// execution; any other catalog tool the per-file path of ADR 0013.
+    pub fn format_engine_for(tool: &'static Tool, config: &ToolConfig) -> Option<Self> {
+        Self::engine_for(tool, config, Mode::Format)
+    }
+
+    /// Build the engine for `tool` in the linting role from its `[tools.<name>]`
+    /// config. See [`CatalogToolEngine::format_engine_for`].
+    pub fn lint_engine_for(tool: &'static Tool, config: &ToolConfig) -> Option<Self> {
+        Self::engine_for(tool, config, Mode::Lint)
+    }
+
+    fn engine_for(tool: &'static Tool, config: &ToolConfig, mode: Mode) -> Option<Self> {
+        let command = config.command.as_deref();
+        let args = config.args.as_deref();
+        let root = config.root.as_ref().map(PathBuf::from);
+        let Some(recipe) = tool.recipe.as_ref() else {
+            return match mode {
+                Mode::Format => Self::format_engine(tool, command, args, config.env.clone(), root),
+                Mode::Lint => Self::lint_engine(tool, command, args, config.env.clone(), root),
+            };
+        };
+        let role = match mode {
+            Mode::Format => Role::Format,
+            Mode::Lint => Role::Lint,
+        };
+        let has_command = match (mode, command) {
+            (_, Some(name)) => tool.command(name).is_some(),
+            (Mode::Format, None) => tool.format_command().is_some(),
+            (Mode::Lint, None) => tool.lint_command().is_some(),
+        };
+        if !has_command {
+            return None;
+        }
+        let (recipe_tool, unavailable) = match RecipeTool::build(tool, recipe, config, role, command) {
+            Ok(built) => (Some(built), None),
+            Err(message) => {
+                warn_unavailable_once(&tool.name, &message);
+                (None, Some(message))
+            }
+        };
+        let version = recipe_tool.as_ref().map_or_else(
+            || format!("{CATALOG_VERSION_PREFIX}{}:unavailable", tool.name),
+            |built| format!("{CATALOG_VERSION_PREFIX}{}", built.version()),
+        );
+        Some(CatalogToolEngine {
+            tool,
+            mode,
+            arguments: Vec::new(),
+            stdin: false,
+            version,
+            env: config.env.clone(),
+            root,
+            path_glob_set: None,
+            recipe: recipe_tool,
+            unavailable,
+        })
+    }
+
     /// Build a formatter engine for `tool`. `command_name` selects the catalog
     /// command (`None` → the tool's [`Tool::format_command`]); `args_override`
     /// replaces the command's argv when present. `env` and `root` are forwarded
@@ -369,6 +440,8 @@ impl CatalogToolEngine {
             env,
             root,
             path_glob_set,
+            recipe: None,
+            unavailable: None,
         }
     }
 
@@ -417,7 +490,7 @@ impl Engine for CatalogToolEngine {
         Capabilities {
             lint: self.is_lint(),
             format: !self.is_lint(),
-            fix: false,
+            fix: self.recipe.as_ref().is_some_and(RecipeTool::can_fix),
         }
     }
 
@@ -434,6 +507,9 @@ impl Engine for CatalogToolEngine {
     }
 
     fn supersedes_generic_formatter(&self) -> bool {
+        if self.tool.recipe.is_some() {
+            return !self.is_lint() && self.recipe.is_some();
+        }
         !self.is_lint() && probe_binary(&self.tool.binary).is_some()
     }
 
@@ -444,11 +520,25 @@ impl Engine for CatalogToolEngine {
     /// lint time, and coverage claimed on a tool that never ran is the failure
     /// this answer exists to report.
     fn provides_language_lint(&self, _language: &Language, _cfg: &EngineConfig) -> bool {
+        if self.tool.recipe.is_some() {
+            return self.is_lint() && self.recipe.is_some();
+        }
         self.is_lint() && probe_binary(&self.tool.binary).is_some()
     }
 
     fn format(&self, src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
         if self.is_lint() {
+            return Ok(FormatOutput::Unchanged);
+        }
+        if let Some(recipe) = &self.recipe {
+            return self.format_recipe(recipe, src);
+        }
+        if self.unavailable.is_some() {
+            return Ok(FormatOutput::Unchanged);
+        }
+        if let Some(ref set) = self.path_glob_set
+            && !set.is_match(&src.path)
+        {
             return Ok(FormatOutput::Unchanged);
         }
         if probe_binary(&self.tool.binary).is_none() {
@@ -465,6 +555,15 @@ impl Engine for CatalogToolEngine {
         if !self.is_lint() {
             return Ok(Vec::new());
         }
+        if let Some(recipe) = &self.recipe {
+            if !recipe.applies_to(&src.path) {
+                return Ok(Vec::new());
+            }
+            return recipe.lint_files(&[src]).pop().unwrap_or_else(|| Ok(Vec::new()));
+        }
+        if self.unavailable.is_some() {
+            return Ok(Vec::new());
+        }
         if let Some(ref set) = self.path_glob_set
             && !set.is_match(&src.path)
         {
@@ -479,6 +578,107 @@ impl Engine for CatalogToolEngine {
             self.lint_via_path(src)?
         };
         Ok(self.diagnostics_for(outcome))
+    }
+
+    fn batch_support(&self, cfg: &EngineConfig) -> BatchSupport {
+        let Some(recipe) = &self.recipe else {
+            return BatchSupport::default();
+        };
+        let wanted = cfg.options.get("batch").and_then(toml::Value::as_bool) != Some(false);
+        BatchSupport {
+            format: wanted && !self.is_lint() && recipe.can_batch(),
+            lint: wanted && self.is_lint() && recipe.can_batch(),
+        }
+    }
+
+    fn format_batch(
+        &self,
+        batch: &[SourceFile],
+        _cfg: &EngineConfig,
+    ) -> anyhow::Result<Vec<anyhow::Result<FormatOutput>>> {
+        let recipe = self.recipe.as_ref().context("this tool does not batch")?;
+        let (applicable, positions) = select(batch, |src| recipe.applies_to(&src.path));
+        let mut formatted = recipe.format_files(&applicable).into_iter();
+        Ok(scatter(batch.len(), &positions, &mut formatted, || {
+            Ok(FormatOutput::Unchanged)
+        }))
+    }
+
+    fn lint_batch(
+        &self,
+        batch: &[SourceFile],
+        _cfg: &EngineConfig,
+    ) -> anyhow::Result<Vec<anyhow::Result<Vec<Diagnostic>>>> {
+        let recipe = self.recipe.as_ref().context("this tool does not batch")?;
+        let (applicable, positions) = select(batch, |src| recipe.applies_to(&src.path));
+        let mut linted = recipe.lint_files(&applicable).into_iter();
+        Ok(scatter(batch.len(), &positions, &mut linted, || Ok(Vec::new())))
+    }
+
+    fn supplements_tier_one(&self) -> bool {
+        !self.is_lint() && !self.tool.path_globs.is_empty() && self.recipe.is_some()
+    }
+
+    fn lint_cache_salt(&self, src: &SourceFile) -> Option<String> {
+        self.recipe.as_ref().and_then(|recipe| recipe.cache_salt(src))
+    }
+
+    fn batch_shard_floor(&self) -> usize {
+        self.recipe.as_ref().map_or(2, RecipeTool::shard_floor)
+    }
+}
+
+/// The members of `batch` that satisfy `keep`, and where each came from.
+fn select(batch: &[SourceFile], keep: impl Fn(&SourceFile) -> bool) -> (Vec<&SourceFile>, Vec<usize>) {
+    batch
+        .iter()
+        .enumerate()
+        .filter(|(_, src)| keep(src))
+        .map(|(index, src)| (src, index))
+        .unzip()
+}
+
+/// Spread `answers` (one per selected member) back to their positions in a batch
+/// of `len`, with `otherwise` for every member that was not selected.
+fn scatter<T>(
+    len: usize,
+    positions: &[usize],
+    answers: &mut impl Iterator<Item = T>,
+    otherwise: impl Fn() -> T,
+) -> Vec<T> {
+    let mut out: Vec<T> = (0..len).map(|_| otherwise()).collect();
+    for &position in positions {
+        if let Some(answer) = answers.next() {
+            out[position] = answer;
+        }
+    }
+    out
+}
+
+impl CatalogToolEngine {
+    /// Format one file with a recipe tool: through stdin when the tool has that
+    /// form, else through a scratch copy.
+    fn format_recipe(&self, recipe: &RecipeTool, src: &SourceFile) -> anyhow::Result<FormatOutput> {
+        if !recipe.applies_to(&src.path) {
+            return Ok(FormatOutput::Unchanged);
+        }
+        if recipe.has_stdin_form() {
+            return recipe.format_stdin(src);
+        }
+        recipe.format_files(&[src]).pop().unwrap_or(Ok(FormatOutput::Unchanged))
+    }
+}
+
+/// Say once per tool that an enabled recipe tool cannot run, with how to fix it.
+fn warn_unavailable_once(name: &str, message: &str) {
+    static SEEN: OnceLock<Mutex<std::collections::HashSet<String>>> = OnceLock::new();
+    let first = SEEN
+        .get_or_init(Default::default)
+        .lock()
+        .expect("unavailable-tool set poisoned")
+        .insert(name.to_owned());
+    if first {
+        tracing::warn!(tool = name, "{message}");
     }
 }
 
