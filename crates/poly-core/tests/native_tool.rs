@@ -192,6 +192,37 @@ fn go_known_unformatted_snapshot() {
     insta::assert_snapshot!("go_native_known_unformatted", formatted);
 }
 
+/// A third-party import and a path with no dot in one run: `goimports` (what
+/// `golangci-lint fmt` runs) puts a blank line between the two groups; `gofmt` alone does not.
+const GO_MIXED_IMPORTS: &str = concat!(
+    "package main\n\n",
+    "import (\n",
+    "\t\"strconv\"\n\n",
+    "\t\"github.com/rivo/tview\"\n",
+    "\t\"deploy/services/utils\"\n",
+    ")\n\n",
+    "func main() { _ = strconv.Itoa; _ = tview.Box{}; utils.X() }\n",
+);
+
+#[test]
+fn go_imports_are_grouped_like_goimports() {
+    let engine = NativeToolEngine::for_language(Language::Go);
+    if !engine.is_available() {
+        eprintln!("gofmt not found on PATH — skipping go_imports_are_grouped_like_goimports");
+        return;
+    }
+
+    let src = make_src("main.go", Language::Go, GO_MIXED_IMPORTS);
+    let FormatOutput::Formatted(out) = engine.format(&src, &enabled_cfg()).unwrap() else {
+        panic!("expected the import run to be regrouped");
+    };
+
+    assert!(
+        out.contains("\t\"strconv\"\n\n\t\"deploy/services/utils\"\n\n\t\"github.com/rivo/tview\"\n"),
+        "got: {out}"
+    );
+}
+
 /// Known-unformatted Rust: cramped function body.
 const RUST_UNFORMATTED: &str = "fn main(){println!(\"hello\");let x=1+2;}\n";
 
