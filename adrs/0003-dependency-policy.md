@@ -266,3 +266,23 @@ builds that resolve the biome git dependency fail until upstream shortens the pa
 supports long paths. The maintainers chose that over holding the pin; the Windows CI job is expected
 to be red and is not a regression to chase. Revisit when biome next touches that fixture or when
 [libgit2/libgit2#3053] closes.
+
+## Amendment — 2026-10-27 (`dockerfile-parser` is vendored)
+
+`dockerfile-parser` is the one backend crate that is neither a registry dependency nor a git pin: it
+lives in the workspace as `crates/dockerfile-parser`. Its upstream, HewlettPackard/dockerfile-parser-rs,
+is archived and its last release (0.9.0) pins `snafu` 0.6, `lazy_static` and edition 2018, so waiting
+for a new release is not an option and a git pin would freeze unfixed parser bugs. The crate was
+copied from upstream commit `08f37891c84d4162daa8d05918e1fdd8f1528624` with its MIT license and
+copyright notice (`crates/dockerfile-parser/LICENSE`, `ATTRIBUTIONS.md`), is `publish = false`, and
+is maintained in-tree. The parser runs in-process, so panics and stack overflows are poly bugs; the
+crate carries property tests for both.
+
+The `version_audit` guard still applies: the lock entry is a path package with no registry source,
+so the engine's `version()` embeds the crate's own version (`0.10.0`) plus a `vendoredN` marker that
+is bumped whenever the vendored parser's behaviour changes.
+
+`psm` remains at 0.1.24. pest 2.9.5 and `pest_stack_guard` 1.0.0 are both the latest releases and
+`pest_stack_guard` still requires `psm =0.1.24` on the supported targets. Disabling pest's default
+features would drop the pin but also the stack guard, which is what converts deeply nested input
+into a parse error rather than a stack overflow, so the pin is kept.

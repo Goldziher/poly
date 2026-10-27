@@ -7,6 +7,22 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+### Added
+
+- **`dockerfile-parser` is now vendored as the `crates/dockerfile-parser` workspace crate** (ADR 0003
+  amendment). Upstream, HewlettPackard/dockerfile-parser-rs, is archived, so poly maintains it from
+  upstream commit `08f3789` (`v0.9.0` plus the image-digest change). It moved to edition 2024 with
+  `thiserror` and `LazyLock`, and now accepts input upstream rejected: heredocs (`RUN <<EOF`,
+  exposed as `Dockerfile::heredocs`), `ARG A=1 B`, empty `ARG A=` / `ENV A=` values, comments and
+  blank lines inside `\` continuations, `COPY ["a", "b"]`, a leading byte order mark and the
+  `# escape=` directive. `"\$HOME"` and Windows paths in quoted values no longer fail with an
+  unescape error, and a `FROM` digest is validated as 64 hex characters rather than any string
+  containing one hex digit. The Dockerfile engine's `version()` is now
+  `0.10.0+vendored1+parse-diag-v1+extendsel2`, so cached results from the crates.io parser are
+  ignored. `psm` stays at 0.1.24: pest 2.9.5 and `pest_stack_guard` 1.0.0 are the latest releases
+  and still pin it exactly, and the stack guard is what turns pathologically deep input into a
+  parse error instead of a stack overflow.
+
 ### Changed
 
 - **Dependency refresh.** `cargo upgrade --incompatible --pinned`, plus advancing all three git
