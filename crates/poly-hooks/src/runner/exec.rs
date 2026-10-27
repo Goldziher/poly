@@ -54,6 +54,9 @@ pub(super) fn build_command(
         }
     };
     cmd.current_dir(hook_working_dir(hook, root));
+    // The run that spawned this hook already warned about a shadowed `poly`; a
+    // child `poly` repeating it would land the warning inside the hook's output.
+    cmd.env("POLY_NO_SHADOW_WARN", "1");
     cmd.envs(hook.env.iter());
     if let Some(target) = cargo_target_dir {
         if !hook.env.contains_key("CARGO_TARGET_DIR") {

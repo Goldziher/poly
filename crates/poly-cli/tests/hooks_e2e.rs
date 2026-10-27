@@ -669,9 +669,24 @@ show_output = true
     let verbose = String::from_utf8_lossy(&verbose.stdout);
     assert!(verbose.contains("stale-lock-warning"), "{verbose}");
 }
+
+#[test]
+fn hook_children_inherit_the_shadow_warning_suppression() {
+    let repo = init_repo();
+    let root = repo.path();
+    write(
+        root,
+        "poly.toml",
+        r#"
+[[hooks.pre-commit.jobs]]
+name = "env"
+run = "echo suppress=$POLY_NO_SHADOW_WARN"
 show_output = true
 "#,
     );
     commit_all(root);
 
     let output = poly_hooks(root, &["run", "pre-commit", "--all-files", "--no-cache"]);
+
+    assert!(String::from_utf8_lossy(&output.stdout).contains("suppress=1"));
+}
