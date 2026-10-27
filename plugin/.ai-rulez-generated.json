@@ -1,6 +1,6 @@
 {
   "schema_version": "v1",
-  "source_hash": "blake3:840c919261146454e2836095406355dd3ba8664fc068055c202682015400e43f",
+  "source_hash": "blake3:d9bab8535cd154b065ab34124ae83d1cd2526a49e1c50a4259729470d62a78e4",
   "outputs": {
     ".claude-plugin/plugin.json": {
       "content_hash": "blake3:e126bd281392295c4e9d4112c630a1a51347198e56784b23897503ec872dcda5",
@@ -67,7 +67,7 @@
       "mode": "0644"
     },
     ".hermes/package/pyproject.toml": {
-      "content_hash": "blake3:5912e0f9091a3d5781734328f7a963b0b7cf4c4d80ff4d241db871c0f8fe2813",
+      "content_hash": "blake3:d1f53c7b67db56053bf3a9c30f35f5785b9ea5cc442d1ab88d4fc971cc075115",
       "mode": "0644"
     },
     ".hermes/package/src/poly_hermes_plugin/__init__.py": {
@@ -87,7 +87,7 @@
       "mode": "0644"
     },
     ".hermes/package/src/poly_hermes_plugin/plugin.yaml": {
-      "content_hash": "blake3:b86076844e7ccd02965fe11c4c72376647f4ca3eccce8c3438a75c1494da4189",
+      "content_hash": "blake3:56237d2d03d01fda2b3b9397b9ddf94a67a9395f5dcf44153edf16f07a95e35c",
       "mode": "0644"
     },
     ".hermes/package/src/poly_hermes_plugin/skills/poly-lint-and-format/SKILL.md": {
@@ -147,7 +147,7 @@
       "mode": "0644"
     },
     ".hermes/plugins/poly/plugin.yaml": {
-      "content_hash": "blake3:b86076844e7ccd02965fe11c4c72376647f4ca3eccce8c3438a75c1494da4189",
+      "content_hash": "blake3:56237d2d03d01fda2b3b9397b9ddf94a67a9395f5dcf44153edf16f07a95e35c",
       "mode": "0644"
     },
     ".hermes/plugins/poly/skills/poly-lint-and-format/SKILL.md": {

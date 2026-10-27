@@ -46,10 +46,8 @@ Public skills install independently with `npx skills add Goldziher/poly --skill 
 Their source is `plugin/.ai-rulez/skills`; `scripts/sync_public_skills.py --check` verifies the
 repository's `skills/` mirror, including resource bytes, namespaces and ownership.
 
-Generation and verification use ai-rulez 5.3.0 based on reviewed source
-`bdabc8a6e9211de60ca1e4ad76225ac92fcf218f`. CI pins that source because the initial 5.3.0
-release lacks several required plugin fixes. Run `task plugin:generate`, `task plugin:verify`
-and `task plugin:test`. Native package artifacts and marketplace indexes attach to tagged
+Generation and verification use ai-rulez 5.7.0, which CI installs from the published release.
+Run `task plugin:generate`, `task plugin:verify` and `task plugin:test`. Native package artifacts and marketplace indexes attach to tagged
 releases. The manual plugin artifact workflow packages its selected checkout after checking
 that the core and plugin versions match an existing release tag. Marketplace indexes pin the
 checkout's immutable commit, and the verified archive attaches to that release; the workflow
