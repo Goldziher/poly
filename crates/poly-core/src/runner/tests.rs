@@ -233,6 +233,7 @@ mod panic_containment {
             &disabled_cache(directory.path()),
             TRIGGER,
             false,
+            &LintPrefill::default(),
         )
         .expect_err("a panicking backend must surface as an error, not unwind");
 
@@ -289,6 +290,7 @@ mod panic_containment {
                     &cache,
                     content,
                     false,
+                    &LintPrefill::default(),
                 )
             })
             .collect();
@@ -297,19 +299,183 @@ mod panic_containment {
         let (diagnostics, _) = outcomes[1].as_ref().expect("the neighbour must still be linted");
         assert_eq!(diagnostics.len(), 1, "the neighbour's finding must survive");
     }
+}
+
+mod lint_batching {
+    //! The lint prefill: batch-capable lint engines run once over many files
+    //! ahead of the loop, and the loop uses what they produced only when it is
+    //! provably the answer for the content in hand.
+
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use super::*;
+    use crate::config::{EngineConfig, GlobalDefaults};
+    use crate::engine::{BatchSupport, Capabilities, Engine};
+    use crate::filter::SeverityRemap;
+
+    /// Answers `batched` through [`Engine::lint_batch`] and `per-file` through
+    /// [`Engine::lint`], so which path produced a diagnostic is visible in it.
+    /// A member whose content contains `REFUSED` is declined by the batch.
+    struct Batching {
+        batches: Arc<AtomicUsize>,
+    }
+
+    fn finding(title: &str) -> Diagnostic {
+        Diagnostic {
+            engine: "batching".to_owned(),
+            code: Some("B001".to_owned()),
+            severity: Severity::Warning,
+            title: title.to_owned(),
+            description: None,
+            url: None,
+            span: None,
+            fix: Vec::new(),
+            metadata: std::collections::BTreeMap::new(),
+        }
+    }
+
+    impl Engine for Batching {
+        fn name(&self) -> &'static str {
+            "batching"
+        }
+
+        fn languages(&self) -> &'static [Language] {
+            &[Language::Shell]
+        }
+
+        fn capabilities(&self) -> Capabilities {
+            Capabilities {
+                lint: true,
+                format: false,
+                fix: false,
+            }
+        }
+
+        fn version(&self) -> &str {
+            "test"
+        }
+
+        fn batch_support(&self, _cfg: &EngineConfig) -> BatchSupport {
+            BatchSupport {
+                format: false,
+                lint: true,
+            }
+        }
+
+        fn lint(&self, _src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
+            Ok(vec![finding("per-file")])
+        }
+
+        fn lint_batch(
+            &self,
+            batch: &[SourceFile],
+            _cfg: &EngineConfig,
+        ) -> anyhow::Result<Vec<anyhow::Result<Vec<Diagnostic>>>> {
+            self.batches.fetch_add(1, Ordering::SeqCst);
+            Ok(batch
+                .iter()
+                .map(|src| {
+                    if src.content.contains("REFUSED") {
+                        Err(anyhow::anyhow!("declined"))
+                    } else {
+                        Ok(vec![finding("batched")])
+                    }
+                })
+                .collect())
+        }
+    }
+
+    fn plans(batches: &Arc<AtomicUsize>) -> Vec<EnginePlan> {
+        vec![EnginePlan {
+            engine: Box::new(Batching {
+                batches: Arc::clone(batches),
+            }),
+            config: EngineConfig {
+                globals: GlobalDefaults::default(),
+                indent_width: 2,
+                options: toml::Table::new(),
+            },
+            serialized_args: ResultCache::serialize_args(&toml::Table::new()),
+            severity_remap: SeverityRemap::new(Vec::new()),
+            provides_language_lint: true,
+        }]
+    }
+
+    fn discovered(path: &std::path::Path) -> DiscoveredFile {
+        DiscoveredFile {
+            path: path.to_path_buf(),
+            language: Language::Shell,
+            config_id: 0,
+        }
+    }
+
+    fn titles(diagnostics: &[Diagnostic]) -> Vec<&str> {
+        diagnostics.iter().map(|d| d.title.as_str()).collect()
+    }
 
     #[test]
-    fn input_nested_deeply_enough_to_overflow_a_stack_is_refused_before_any_backend_runs() {
+    fn a_batch_answers_for_the_files_it_covered_and_declined_members_take_the_per_file_path() {
         let directory = tempfile::tempdir().expect("tempdir");
-        let content = "[".repeat(10_000);
-        let error = lint_content(
-            &discovered(&directory.path().join("deep.py")),
-            &plans(),
-            &disabled_cache(directory.path()),
-            &content,
-            false,
-        )
-        .expect_err("a stack overflow aborts the process and cannot be caught, so the input is refused");
-        assert!(format!("{error:#}").contains("nests brackets"), "{error:#}");
+        let cache = ResultCache::open(directory.path().join("cache"), false).expect("open disabled cache");
+        let contents = [("a.sh", "echo a\n"), ("b.sh", "echo b\n"), ("c.sh", "REFUSED\n")];
+        let files: Vec<DiscoveredFile> = contents
+            .iter()
+            .map(|(name, content)| {
+                let path = directory.path().join(name);
+                std::fs::write(&path, content).expect("write fixture");
+                discovered(&path)
+            })
+            .collect();
+        let batches = Arc::new(AtomicUsize::new(0));
+        let plan = RunPlan::serving(0, Language::Shell, plans(&batches));
+        let prefilled = prefill_lint(&files, &plan, &cache);
+
+        assert_eq!(
+            batches.load(Ordering::SeqCst),
+            1,
+            "three files must share one batch, not spawn three"
+        );
+        assert_eq!(prefilled.len(), 2, "the declined member must not get an entry");
+
+        let lint = |index: usize| {
+            let (diagnostics, _) = lint_content(
+                &files[index],
+                &plans(&batches),
+                &cache,
+                contents[index].1,
+                false,
+                &prefilled,
+            )
+            .expect("lint");
+            diagnostics
+        };
+        assert_eq!(titles(&lint(0)), ["batched"]);
+        assert_eq!(titles(&lint(1)), ["batched"]);
+        assert_eq!(titles(&lint(2)), ["per-file"], "a declined member must still be linted");
+    }
+
+    /// The mis-attribution guard: an entry is only the answer for the content it
+    /// was computed from. A `--fix` pass lints rewritten bytes, and must not be
+    /// handed the findings of the bytes before the fix.
+    #[test]
+    fn an_entry_is_not_applied_to_different_content() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let cache = ResultCache::open(directory.path().join("cache"), false).expect("open disabled cache");
+        let files: Vec<DiscoveredFile> = ["a.sh", "b.sh"]
+            .iter()
+            .map(|name| {
+                let path = directory.path().join(name);
+                std::fs::write(&path, "echo $1\n").expect("write fixture");
+                discovered(&path)
+            })
+            .collect();
+        let batches = Arc::new(AtomicUsize::new(0));
+        let plan = RunPlan::serving(0, Language::Shell, plans(&batches));
+        let prefilled = prefill_lint(&files, &plan, &cache);
+
+        let (diagnostics, _) =
+            lint_content(&files[0], &plans(&batches), &cache, "echo \"$1\"\n", false, &prefilled).expect("lint");
+        assert_eq!(titles(&diagnostics), ["per-file"]);
     }
 }

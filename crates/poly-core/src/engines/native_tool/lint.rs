@@ -51,13 +51,16 @@ use super::spec::ToolSpec;
 
 /// Top-level shellcheck JSON1 response object.
 #[derive(Debug, Deserialize)]
-struct ShellcheckOutput {
-    comments: Vec<ShellcheckComment>,
+pub(super) struct ShellcheckOutput {
+    pub(super) comments: Vec<ShellcheckComment>,
 }
 
 /// One shellcheck finding.
 #[derive(Debug, Deserialize)]
-struct ShellcheckComment {
+pub(super) struct ShellcheckComment {
+    /// The path as it was named on the command line (`-` for stdin).
+    #[serde(default)]
+    pub(super) file: String,
     /// 1-based start line.
     line: u32,
     /// 1-based end line.
@@ -96,28 +99,31 @@ fn shellcheck_level_to_severity(level: &str) -> Severity {
 pub(crate) fn parse_shellcheck_json(engine_name: &str, json: &str) -> anyhow::Result<Vec<Diagnostic>> {
     let output: ShellcheckOutput = serde_json::from_str(json).context("failed to parse shellcheck JSON1 output")?;
 
-    let diags = output
+    Ok(output
         .comments
         .into_iter()
-        .map(|c| Diagnostic {
-            engine: engine_name.to_owned(),
-            code: Some(format!("SC{}", c.code)),
-            severity: shellcheck_level_to_severity(&c.level),
-            title: c.message,
-            description: None,
-            url: None,
-            span: Some(Span {
-                start_line: c.line,
-                start_col: c.column,
-                end_line: c.end_line,
-                end_col: c.end_column,
-            }),
-            fix: Vec::new(),
-            metadata: Default::default(),
-        })
-        .collect();
+        .map(|comment| comment_to_diagnostic(engine_name, comment))
+        .collect())
+}
 
-    Ok(diags)
+/// Normalize one shellcheck finding.
+pub(super) fn comment_to_diagnostic(engine_name: &str, c: ShellcheckComment) -> Diagnostic {
+    Diagnostic {
+        engine: engine_name.to_owned(),
+        code: Some(format!("SC{}", c.code)),
+        severity: shellcheck_level_to_severity(&c.level),
+        title: c.message,
+        description: None,
+        url: None,
+        span: Some(Span {
+            start_line: c.line,
+            start_col: c.column,
+            end_line: c.end_line,
+            end_col: c.end_column,
+        }),
+        fix: Vec::new(),
+        metadata: Default::default(),
+    }
 }
 
 /// Pipe `src.content` through `shellcheck --format=json1 -` and parse the

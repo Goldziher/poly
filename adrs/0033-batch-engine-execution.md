@@ -650,3 +650,74 @@ not apply here because every batched tool has an empty `config_files`.
 - `dart format`'s batching is enabled on its 234 ms startup, by analogy with the
   two JVM tools; it was not itself benchmarked batched-vs-per-file.
 - `styler` (982 ms startup, the largest prize in the tier) is still unimplemented.
+
+## Amendment — 2026-10-27 (failures isolated; on by default; `shellcheck` batched)
+
+The first amendment shipped batching switched off because the one end-to-end
+measurement found it roughly four times slower for `shfmt`. That measurement
+did not survive a second look, and the decision it supported is reversed.
+
+### What the 4x was
+
+"Any non-zero exit discards the entire batch" (the first amendment's §1) made
+batching cost *more* than not batching whenever a shard held a single script the
+formatter could not parse: the shard's work was thrown away and every member took
+the per-file path anyway, having also paid for the mirror. A 400-file corpus
+always contains such a script. On the armis monorepo (477 `.sh` files, four that
+`shfmt` rejects) a one-shard attempt lost all 473 good files to those four.
+
+### What replaced it
+
+A failing invocation is never read back, for the reason already given (a tool
+that rejects a *flag* leaves every file untouched, which reads as clean). But it
+is no longer abandoned either: the range is halved and each half re-run from
+freshly written inputs until the failure is pinned to single members, which fall
+to the per-file path. Cost is about `log2(n)` extra spawns per bad member. Two
+single members refused with nothing ever accepted means the invocation itself is
+wrong, and the batch is abandoned at once instead of being halved into one doomed
+spawn per file (`native_tool/isolate.rs`).
+
+The convergence loop's confirming pass used to run per file: of 477 scripts,
+`shfmt` changes 382, and each of those needed a second spawn to prove pass two was
+a no-op, so a batched pass one still left 382 spawns. A shard now carries up to
+two further passes (`CONFIRM_PASSES`), each a batch over only the members that
+changed, and the lookup finds the stage whose input matches the content in hand.
+
+### Measured
+
+477 `.sh` files from the armis monorepo on a machine at load average 27–40, where
+a process spawn takes on the order of a second. Wall clock; CPU time (user plus
+system) was equal between the two modes to within noise, as expected of the same
+work done in fewer processes.
+
+| | per file | batched |
+| --- | ---: | ---: |
+| `poly lint` (`shellcheck`) | 41.4 s | 8.9 s |
+| `poly fmt --check` (`shfmt`), isolation only | 33–52 s | 18–33 s |
+
+The `shellcheck` diagnostics were identical, finding for finding (2,171 of them),
+between the two modes. The `fmt` row predates the carried confirming passes.
+
+### Decision
+
+Batching is **on by default** and `batch = false` opts out. The deciding fact is
+that it no longer has a bad case: equal CPU, byte-identical output, a per-file
+fallback for anything unproven, and a wall-clock win that grows with spawn
+latency.
+
+### `shellcheck` (§6, no longer deferred)
+
+Handing the tool real paths would change what it reports, which is why this was
+deferred. The batch instead reproduces the stdin invocation:
+
+- content is poly's own, written into the scratch mirror;
+- every member is named `input.sh` — shellcheck infers a dialect from `.bash`,
+  `.ksh` and `.dash` but nothing from `.sh`, which is what it infers from `-`;
+- the `.shellcheckrc` that poly's working directory resolves is passed with
+  `--rcfile`, since the tool would otherwise look beside the mirror;
+- a configuration that makes shellcheck follow `source` (`external-sources`,
+  `source-path`, or the same in `SHELLCHECK_OPTS`) declines the batch.
+
+`native_tool/lint_batch.rs` asserts equivalence with the stdin path per member on
+a corpus that includes the `.bash`-without-shebang case.
+

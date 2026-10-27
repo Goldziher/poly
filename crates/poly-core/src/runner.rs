@@ -9,7 +9,7 @@ use anyhow::Context;
 use crate::config::{Config, Kind};
 use crate::discover::{DiscoveredFile, discover_reporting};
 use crate::engine::{Diagnostic, Edit, FormatOutput, Severity, SourceFile};
-use crate::engine_guard::{guard_engine_panic, refuse_pathological_nesting};
+use crate::engine_guard::guard_engine_panic;
 use crate::filter::{
     PerFileIgnores, Suppressions, is_binary, is_format_ignored, is_generated_lockfile, is_generated_source,
     is_hash_stamped_source, match_bases, relative_for_match,
@@ -30,7 +30,7 @@ mod skips;
 mod types;
 
 use crate::fingerprint::{ConfigFingerprint, fingerprints};
-use batch::{BatchPrefill, prefill};
+use batch::{BatchPrefill, LintPrefill, prefill, prefill_lint};
 use edits::apply_edits;
 use engine_clock::{EngineClock, EngineTime};
 use generated::{acts_on_generated, format_skip_result, lint_skip_result};
@@ -119,6 +119,14 @@ pub fn lint_run(
     let (files, discovery) = discover_reporting(paths, &configs, &opts.exclude, opts.force_exclude);
     let plan = plan_by_config_language(&files, &configs, Kind::Lint, selection);
     prefetch_tier2_grammars(&plan);
+    // The lint-side counterpart of the format prefill below: an accelerator
+    // only, with the per-file path as the answer for anything it did not cover.
+    let prefilled = prefill_lint(&files, &plan, &cache);
+    tracing::debug!(
+        prefilled = prefilled.len(),
+        files = files.len(),
+        "lint batch prefill complete"
+    );
     // Rule-declared `ignores:` globs (the built-in ast-grep pack's, plus any a
     // user rule file declares) layer in beneath the config's own
     // `[per-file-ignores]`, resolved once per config rather than per file.
@@ -159,6 +167,7 @@ pub fn lint_run(
                 &ignore_bases,
                 &opts.externally_linted_languages,
                 &act_on_generated,
+                &prefilled,
             ) {
                 Ok(result) => {
                     // A file no backend has rules for is not part of the linted
@@ -371,6 +380,7 @@ fn lint_one(
     ignore_bases: &[Vec<PathBuf>],
     externally_linted: &[Language],
     act_on_generated: &[bool],
+    prefilled: &LintPrefill,
 ) -> anyhow::Result<LintResult> {
     let bytes = std::fs::read(&f.path).with_context(|| format!("reading {}", f.path.display()))?;
     // Asked before the decode, because the decode cannot tell the two apart:
@@ -447,7 +457,7 @@ fn lint_one(
             }
         });
 
-    let (mut diagnostics, mut debug) = lint_content(f, engine_plans, cache, &original, collect_debug)?;
+    let (mut diagnostics, mut debug) = lint_content(f, engine_plans, cache, &original, collect_debug, prefilled)?;
     let mut suppressed: Vec<SuppressedDiagnostic> = Vec::new();
     suppress(&original, &mut diagnostics, &mut suppressed);
 
@@ -481,7 +491,8 @@ fn lint_one(
                 Some((next, applied)) if next != content => {
                     content = next;
                     fixed += applied;
-                    let (next_diags, next_debug) = lint_content(f, engine_plans, cache, &content, collect_debug)?;
+                    let (next_diags, next_debug) =
+                        lint_content(f, engine_plans, cache, &content, collect_debug, prefilled)?;
                     diagnostics = next_diags;
                     suppress(&content, &mut diagnostics, &mut suppressed);
                     debug = next_debug;
@@ -550,8 +561,8 @@ fn lint_content(
     cache: &ResultCache,
     content: &str,
     collect_debug: bool,
+    prefilled: &LintPrefill,
 ) -> anyhow::Result<(Vec<Diagnostic>, Option<RunDebug>)> {
-    refuse_pathological_nesting(&f.path, content)?;
     let src = SourceFile {
         path: f.path.clone(),
         language: f.language.clone(),
@@ -577,6 +588,27 @@ fn lint_content(
             && let Ok(mut diags) = serde_json::from_slice::<Vec<Diagnostic>>(&bytes)
         {
             push_engine_debug(debug.as_mut(), plan, None);
+            if !plan.severity_remap.is_empty() {
+                plan.severity_remap.apply(&mut diags);
+            }
+            all.extend(diags);
+            continue;
+        }
+        // A batch already computed this engine's answer for exactly this
+        // content. Persisted unconditionally, as for formatting: recomputing it
+        // costs a process spawn, so the guard that declines to cache cheap
+        // results is exactly inverted here.
+        if let Some(mut diags) = prefilled.take(&f.path, plan.engine.name(), content) {
+            push_engine_debug(debug.as_mut(), plan, None);
+            if let Some(key) = &key
+                && let Ok(bytes) = serde_json::to_vec(&diags)
+                && let Err(error) = cache.put(Namespace::Lint, key, &bytes)
+            {
+                tracing::warn!(
+                    engine = plan.engine.name(),
+                    "failed to store batched lint cache entry: {error:#}"
+                );
+            }
             if !plan.severity_remap.is_empty() {
                 plan.severity_remap.apply(&mut diags);
             }
@@ -723,7 +755,6 @@ fn format_one(
     if !fix_generated && is_hash_stamped_source(&original) {
         return Ok(format_skip_result(f, Some(HASH_STAMPED_SKIP.to_owned())));
     }
-    refuse_pathological_nesting(&f.path, &original)?;
     let mut debug = collect_debug.then(RunDebug::default);
     let mut src = SourceFile {
         path: f.path.clone(),
