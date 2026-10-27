@@ -104,8 +104,7 @@ fn known_unformatted_snapshot() {
 }
 
 /// A `.tf` file with both a leading comment and an inline `//` comment.
-/// After formatting, every comment must still
-/// be present in the output — 
+/// After formatting, every comment must still be present in the output.
 const WITH_COMMENTS: &str = "\
 # This is a leading comment
 resource \"aws_instance\" \"web\" {
