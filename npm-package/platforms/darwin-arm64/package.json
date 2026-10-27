@@ -17,5 +17,5 @@
   "cpu": ["arm64"],
   "files": ["LICENSE", "README.md", "bin/"],
   "preferUnplugged": true,
-  "packageManager": "pnpm@12.11.2"
+  "packageManager": "pnpm@12.15.0"
 }

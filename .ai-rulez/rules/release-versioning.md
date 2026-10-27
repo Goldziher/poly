@@ -76,7 +76,7 @@ lock-step surface, not a separately tracked version. So do the wrapper packages:
   verify them against `sha256sums.txt` before packaging; a separate build would produce bytes
   the published checksums do not cover.
 - **Both registries authenticate with OIDC trusted publishing** — no `NPM_TOKEN`, no PyPI API
-  token. The jobs carry `permissions: id-token: write` and publish using pnpm 12.11.2, which
+  token. The jobs carry `permissions: id-token: write` and publish using pnpm 12.15.0, which
   supports token-less publishing and provenance. npm can only configure a trusted publisher for
   a package that *already exists*, so every new package needs one manual publish first (under a
   non-`latest` dist-tag).
