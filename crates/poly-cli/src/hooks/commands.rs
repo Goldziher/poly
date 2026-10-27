@@ -681,6 +681,12 @@ fn maybe_staged_snapshot(
         } else {
             SnapshotScope::Sparse { files, pinned: &pinned }
         };
+    let missing = super::isolation_check::jobs_missing_node_modules(hooks, root);
+    if !missing.is_empty() {
+        eprintln!("warning: {}", super::isolation_check::warning(&missing));
+    }
+    let snapshot =
+        StagedSnapshot::create_scoped(root, includes, scope).context("failed to create the staged-content snapshot")?;
     // Stated on every run, green ones included. The gate's whole claim is "these
     // are the bytes a commit would capture", and an allowlist is a deliberate
     // exception to it — a reader who does not know it is in force cannot judge

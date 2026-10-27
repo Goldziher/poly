@@ -118,6 +118,11 @@ tree; nothing a run validates is read through a link, and a hook in a sparse run
 through one. A `workspace = true` or cargo job that has files to run on needs the whole tree and gets
 the full snapshot as before; `snapshot = "full"` forces it. Every selected file is still read from
 the index, so a partially staged file is validated as staged.
+
+A job that needs the untracked `node_modules` cannot find it in the snapshot. `poly doctor` and
+`poly hooks run` warn about this; link it in with `snapshot_include = ["node_modules"]` or set
+`isolate = false`.
+
 The snapshot is a persistent cache in the per-user cache directory
 (`<platform-cache>/poly/<repo-key>/staged`, outside the repo), refreshed in place each run. Content
 is sourced straight from the git **index blob** — never copied from the worktree — so an unstaged
