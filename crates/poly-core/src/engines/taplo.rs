@@ -7,6 +7,15 @@
 //! - **Format**: reformat via `taplo::formatter` with opinionated overrides
 //!   (column width 120, indent width from `EngineConfig`).
 //!
+//! ## Formatter selection
+//! By default formatting goes through `oxc_formatter_toml`, the formatter oxfmt itself uses, so a
+//! repository formatted by oxfmt is a fixed point. It reads the shared layout keys `indent_width`,
+//! `line_width`, `line_ending` and `trailing_commas` (`"always"` / `"never"`), which
+//! `.oxfmtrc.json[c]` supplies by default. Setting any of the taplo-specific layout keys below
+//! (any key in the table below other than `indent_width`) selects the `taplo` formatter instead,
+//! which is what
+//! `poly migrate` produces from a `.taplo.toml`.
+//!
 //! ## Config layering
 //! `taplo` defaults → opinionated override (column_width 120) → user
 //! `[fmt.toml.taplo]` table.
@@ -36,12 +45,15 @@
 //! taplo options (`reorder_arrays`, `compact_entries`, etc.) stay at taplo's
 //! defaults until the feature is activated.
 
+use oxc_formatter_core::FormatOptions;
+use oxc_formatter_toml::{TomlFormatOptions, TrailingCommas};
 use taplo::{
     dom,
     formatter::{self, Options},
     parser,
 };
 
+use super::core_options::core_format_options;
 use crate::{
     config::EngineConfig,
     engine::OptionKeys,
@@ -52,7 +64,24 @@ use crate::{
 };
 
 /// The taplo crate version this backend wraps; used as part of the cache key.
-const TAPLO_VERSION: &str = "0.14.0+opts-2";
+const TAPLO_VERSION: &str = "0.14.0+opts-2+oxc_formatter_toml-e2be72d";
+
+/// Keys that only the taplo formatter understands; setting one selects it over `oxc_formatter_toml`.
+const TAPLO_LAYOUT_KEYS: &[&str] = &[
+    "column_width",
+    "allowed_blank_lines",
+    "align_entries",
+    "align_comments",
+    "reorder_keys",
+    "indent_tables",
+    "indent_entries",
+    "array_trailing_comma",
+    "array_auto_expand",
+    "array_auto_collapse",
+    "compact_arrays",
+    "compact_inline_tables",
+    "inline_table_expand",
+];
 
 /// Tier-1 languages handled by this backend.
 static LANGUAGES: &[Language] = &[Language::Toml];
@@ -115,6 +144,10 @@ impl Engine for TaploEngine {
                 ("compact_arrays", OptionType::BOOLEAN),
                 ("compact_inline_tables", OptionType::BOOLEAN),
                 ("inline_table_expand", OptionType::BOOLEAN),
+                ("line_width", OptionType::INTEGER),
+                ("line_ending", OptionType::STRING),
+                ("indent_style", OptionType::STRING),
+                ("trailing_commas", OptionType::STRING),
             ]),
             OptionTable::Lint | OptionTable::CrossCuttingLint => OptionKeys::declared(&[]),
         }
@@ -167,14 +200,30 @@ impl Engine for TaploEngine {
     }
 
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
-        let opts = build_options(cfg);
-        let formatted = formatter::format(&src.content, opts);
+        let formatted = if TAPLO_LAYOUT_KEYS.iter().any(|key| cfg.options.contains_key(*key)) {
+            formatter::format(&src.content, build_options(cfg))
+        } else {
+            match oxc_formatter_toml::format(&src.content, build_oxc_options(cfg)) {
+                Ok(formatted) => formatted,
+                Err(_) => return Ok(FormatOutput::Unchanged),
+            }
+        };
         if formatted == *src.content {
             Ok(FormatOutput::Unchanged)
         } else {
             Ok(FormatOutput::Formatted(formatted))
         }
     }
+}
+
+/// Build the `oxc_formatter_toml` options from the shared layout keys.
+fn build_oxc_options(cfg: &EngineConfig) -> TomlFormatOptions {
+    let mut options = TomlFormatOptions::default();
+    options.apply_core(core_format_options(cfg));
+    if cfg.options.get("trailing_commas").and_then(toml::Value::as_str) == Some("never") {
+        options.trailing_commas = TrailingCommas::Never;
+    }
+    options
 }
 
 /// Build `taplo::formatter::Options` from an [`EngineConfig`].

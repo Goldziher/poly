@@ -1,43 +1,42 @@
-//! YAML backend: validity lint via `saphyr`, structural format via `pretty_yaml`.
+//! YAML backend: validity lint via `serde_yaml` (libyaml), Prettier-compatible format via
+//! `oxc_formatter_yaml`.
 //!
 //! Capabilities: [`Capabilities::lint`] + [`Capabilities::format`]. No fix.
 //!
 //! # Lint
-//! Runs the source through [`saphyr::Yaml::load_from_str`]. Any
-//! [`saphyr::ScanError`] becomes a single [`Diagnostic`] with code
-//! `"syntax"` and [`Severity::Error`], carrying the 1-based line/column from
-//! the scanner's [`saphyr::Marker`].
+//! Scans every document of the stream with `serde_yaml`, a port of libyaml, so exactly what
+//! PyYAML and libyaml accept is accepted here too (multi-line quoted scalars continued at the
+//! parent's indent, flow collections closed at the parent key's column). Contents are
+//! discarded; only scanner and parser errors matter. A failure becomes a single [`Diagnostic`]
+//! with code `"syntax"` and [`Severity::Error`] carrying the 1-based line/column.
 //!
 //! # Format
-//! Delegates to [`pretty_yaml::format_text`] which performs a full CST-based
-//! structural reflow: normalized indentation, colon spacing, quote
-//! canonicalization, trailing whitespace removal, and final-newline
-//! enforcement.
+//! Delegates to the formatter oxfmt itself uses (`oxc_formatter_yaml`), so a repository
+//! formatted by oxfmt is a fixed point and the two tools agree byte for byte.
 //!
 //! ## Options layering
-//! pretty_yaml defaults → poly opinionated override (print_width=120,
-//! indent_width from language default, line_break from global line_ending) →
-//! user `[fmt.yaml.yaml]` table.  The user table is deserialized into
-//! [`pretty_yaml::config::FormatOptions`] (via the `config_serde` feature) and
-//! poly's globals fill in the layout fields the user did not set: `print_width`
-//! from `[defaults] line_length` and `line_break` from `[defaults]
-//! line_ending`.  `indent_width` comes from [`EngineConfig::indent_width`],
-//! itself resolved from the same table's `indent_width` key.  All
-//! [`pretty_yaml::config::LanguageOptions`] fields are user-controllable.
+//! oxfmt defaults → `[defaults]` globals (`line_length`, `line_ending`) → the project's
+//! `.oxfmtrc.json[c]` (see [`crate::oxfmt_native`]) → user `[fmt.yaml.yaml]` table. Recognised
+//! keys: `indent_width`, `line_width`, `line_ending`, `single_quote`, `bracket_spacing`,
+//! `trailing_commas` (`"always"` / `"never"`) and `prose_wrap` (`"preserve"` / `"always"` /
+//! `"never"`).
 //!
 //! Returns [`FormatOutput::Unchanged`] when the output equals the input.
 
-use pretty_yaml::config::{FormatOptions, LineBreak};
-use saphyr::{LoadableYamlNode, Yaml};
+use oxc_allocator::Allocator;
+use oxc_formatter_core::FormatOptions;
+use oxc_formatter_yaml::{ProseWrap, TrailingCommas, YamlFormatOptions};
+use serde::Deserialize as _;
 
+use super::core_options::core_format_options;
 use super::template::{GO_TEMPLATE_SKIP, contains_go_template};
-use crate::config::{EngineConfig, LineEnding};
+use crate::config::EngineConfig;
 use crate::engine::{
-    Capabilities, Diagnostic, Engine, FormatOutput, OptionKeys, OptionTable, Severity, SourceFile, Span,
+    Capabilities, Diagnostic, Engine, FormatOutput, OptionKeys, OptionTable, OptionType, Severity, SourceFile, Span,
 };
 use crate::language::Language;
 
-/// YAML backend (validity lint + structural format via `pretty_yaml`).
+/// YAML backend (validity lint + Prettier-compatible format via `oxc_formatter_yaml`).
 pub struct YamlEngine;
 
 static LANGUAGES: &[Language] = &[Language::Yaml];
@@ -59,20 +58,23 @@ impl Engine for YamlEngine {
         }
     }
 
-    /// The whole table is deserialized into `pretty_yaml::config::FormatOptions`,
-    /// so the recognised keys are derived from that type instead of copied out
-    /// of it — the upstream option set is large, versioned, and would drift.
     fn option_keys(&self, table: OptionTable) -> OptionKeys {
         match table {
-            OptionTable::Format => OptionKeys::declared(&[]).with_derived(
-                crate::engines::config_keys::recognized_by_type_probe::<pretty_yaml::config::FormatOptions>,
-            ),
+            OptionTable::Format => OptionKeys::declared(&[
+                ("line_width", OptionType::INTEGER),
+                ("line_ending", OptionType::STRING),
+                ("indent_style", OptionType::STRING),
+                ("single_quote", OptionType::BOOLEAN),
+                ("bracket_spacing", OptionType::BOOLEAN),
+                ("trailing_commas", OptionType::STRING),
+                ("prose_wrap", OptionType::STRING),
+            ]),
             OptionTable::Lint | OptionTable::CrossCuttingLint => OptionKeys::declared(&[]),
         }
     }
 
     fn version(&self) -> &str {
-        "0.0.10+saphyr-0.1.0+pretty_yaml-0.6.0+tmplskip"
+        "0.1.0+serde_yaml-0.9.34+oxc_formatter_yaml-e2be72d+tmplskip"
     }
 
     fn skip_reason(&self, src: &SourceFile) -> Option<&'static str> {
@@ -83,12 +85,12 @@ impl Engine for YamlEngine {
         if contains_go_template(&src.content) {
             return Ok(Vec::new());
         }
-        match Yaml::load_from_str(&src.content) {
-            Ok(_) => Ok(Vec::new()),
-            Err(err) => {
-                let marker = err.marker();
-                let line = marker.line() as u32;
-                let col = (marker.col() + 1) as u32;
+        match first_syntax_error(&src.content) {
+            None => Ok(Vec::new()),
+            Some(err) => {
+                let (line, col) = err
+                    .location()
+                    .map_or((1, 1), |location| (location.line() as u32, location.column() as u32));
                 Ok(vec![Diagnostic {
                     engine: "yaml".to_string(),
                     code: Some("syntax".to_string()),
@@ -113,10 +115,13 @@ impl Engine for YamlEngine {
         if contains_go_template(&src.content) {
             return Ok(FormatOutput::Unchanged);
         }
-        let options = build_format_options(cfg);
-        let formatted = match pretty_yaml::format_text(&src.content, &options) {
-            Ok(formatted) => formatted,
-            Err(_) => return Ok(FormatOutput::Unchanged),
+        let allocator = Allocator::new();
+        let formatted = match oxc_formatter_yaml::format(&allocator, &src.content, build_format_options(cfg))
+            .map_err(|_| ())
+            .and_then(|formatted| formatted.print().map_err(|_| ()))
+        {
+            Ok(printed) => printed.into_code(),
+            Err(()) => return Ok(FormatOutput::Unchanged),
         };
         if formatted == *src.content {
             Ok(FormatOutput::Unchanged)
@@ -126,38 +131,30 @@ impl Engine for YamlEngine {
     }
 }
 
-/// Build [`FormatOptions`] by layering user options over poly opinionated
-/// defaults over pretty_yaml's own defaults.
-///
-/// 1. Start with `FormatOptions::default()` (pretty_yaml's defaults).
-/// 2. If `cfg.options` is non-empty, deserialise it into `FormatOptions` via
-///    `config_serde`; unknown keys are silently ignored.
-/// 3. Override layout fields with poly's globals (print_width, indent_width,
-///    line_break) — these always come from poly, never from the user table.
-fn build_format_options(cfg: &EngineConfig) -> FormatOptions {
-    let mut options: FormatOptions = if cfg.options.is_empty() {
-        FormatOptions::default()
-    } else {
-        toml::Value::Table(cfg.options.clone())
-            .try_into()
-            .unwrap_or_else(|error| {
-                tracing::warn!(%error, "[fmt.yaml.yaml] options could not be parsed; using defaults");
-                FormatOptions::default()
-            })
-    };
+/// The first scanner or parser error in any document of `content`.
+fn first_syntax_error(content: &str) -> Option<serde_yaml::Error> {
+    serde_yaml::Deserializer::from_str(content).find_map(|document| serde::de::IgnoredAny::deserialize(document).err())
+}
 
-    // The opinionated globals are a layer *under* the user's table, not over it
-    // (ADR 0006 / ADR 0007): they apply only where the user did not set the key.
-    if !super::rule_config::sets_any(cfg, &["print_width", "printWidth"]) {
-        options.layout.print_width = cfg.globals.line_length;
+/// Resolve [`YamlFormatOptions`] from the engine table, the shared layout options and the
+/// oxfmt defaults for everything the table leaves unset.
+fn build_format_options(cfg: &EngineConfig) -> YamlFormatOptions {
+    let mut options = YamlFormatOptions::default();
+    options.apply_core(core_format_options(cfg));
+    if let Some(single) = cfg.options.get("single_quote").and_then(toml::Value::as_bool) {
+        options.single_quote = single.into();
     }
-    options.layout.indent_width = cfg.indent_width;
-    if !super::rule_config::sets_any(cfg, &["line_break", "lineBreak", "linebreak"]) {
-        options.layout.line_break = match cfg.globals.line_ending {
-            LineEnding::Crlf => LineBreak::Crlf,
-            LineEnding::Lf => LineBreak::Lf,
-        };
+    if let Some(spacing) = cfg.options.get("bracket_spacing").and_then(toml::Value::as_bool) {
+        options.bracket_spacing = spacing.into();
     }
+    if cfg.options.get("trailing_commas").and_then(toml::Value::as_str) == Some("never") {
+        options.trailing_commas = TrailingCommas::Never;
+    }
+    options.prose_wrap = match cfg.options.get("prose_wrap").and_then(toml::Value::as_str) {
+        Some("always") => ProseWrap::Always,
+        Some("never") => ProseWrap::Never,
+        _ => ProseWrap::Preserve,
+    };
     options
 }
 
@@ -187,7 +184,7 @@ mod tests {
     #[test]
     fn helm_templated_yaml_is_skipped_not_errored() {
         let engine = YamlEngine;
-        // Go-templated YAML is not valid YAML; without the skip saphyr reports a syntax error.
+        // Go-templated YAML is not valid YAML; without the skip the scanner reports a syntax error.
         let src =
             source("metadata:\n  name: {{ .Release.Name }}\n  {{- if .Values.labels }}\n  labels: {}\n  {{- end }}\n");
         assert!(

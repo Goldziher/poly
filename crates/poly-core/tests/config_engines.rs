@@ -525,13 +525,13 @@ fn yaml_user_print_width_overrides_the_global() {
         &engine,
         &src,
         &engine_cfg_from(
-            "[fmt.yaml.yaml]\nprint_width = 20\n",
+            "[fmt.yaml.yaml]\nline_width = 20\n",
             &Language::Yaml,
             "yaml",
             Kind::Format,
         ),
     );
-    assert_ne!(user, default, "a user-set print_width must reach pretty_yaml");
+    assert_ne!(user, default, "a user-set line_width must reach the yaml formatter");
 }
 
 #[test]

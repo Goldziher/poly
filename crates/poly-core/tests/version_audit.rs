@@ -177,18 +177,18 @@ fn engine_versions_track_cargo_lock() {
             MarkupFmtEngine.version(),
             vec![("markup_fmt", Registry), ("oxc_formatter", Git)],
         ),
-        check("taplo", TaploEngine.version(), vec![("taplo", Registry)]),
+        check(
+            "taplo",
+            TaploEngine.version(),
+            vec![("taplo", Registry), ("oxc_formatter_toml", Git)],
+        ),
         check("rumdl", RumdlEngine.version(), vec![("rumdl", Registry)]),
         check(
             "typos",
             TyposEngine.version(),
             vec![("typos", Registry), ("typos-dict", Registry)],
         ),
-        check(
-            "hcl",
-            HclEngine.version(),
-            vec![("hcl-edit", Registry)],
-        ),
+        check("hcl", HclEngine.version(), vec![("hcl-edit", Registry)]),
         check(
             "dockerfile",
             DockerfileEngine.version(),
@@ -199,7 +199,7 @@ fn engine_versions_track_cargo_lock() {
         // exhaustiveness guard above can find this check.
         check("alejandra", NixFmtEngine.version(), vec![("alejandra", Registry)]),
         check("graphql", GraphQlEngine.version(), vec![("pretty_graphql", Registry)]),
-        check("yaml", YamlEngine.version(), vec![("pretty_yaml", Registry)]),
+        check("yaml", YamlEngine.version(), vec![("oxc_formatter_yaml", Git)]),
         check(
             "treesitter",
             TreeSitterEngine.version(),

@@ -63,13 +63,14 @@ oxc_diagnostics.workspace = true
 oxc_formatter.workspace = true
 oxc_formatter_core.workspace = true
 oxc_formatter_json.workspace = true
+oxc_formatter_toml.workspace = true
+oxc_formatter_yaml.workspace = true
 oxc_linter.workspace = true
 oxc_span.workspace = true
 poly-cache.workspace = true
 poly-catalog.workspace = true
 poly-config.workspace = true
 pretty_graphql = { workspace = true, features = ["config_serde"] }
-pretty_yaml = { workspace = true, features = ["config_serde"] }
 rayon.workspace = true
 regex.workspace = true
 rubyfmt.workspace = true
@@ -82,13 +83,13 @@ ruff_text_size.workspace = true
 rumdl.workspace = true
 rust-ini.workspace = true
 rustc-hash.workspace = true
-saphyr.workspace = true
 # Optional: only compiled when the `schemars` feature is enabled (by poly-mcp) to
 # derive JsonSchema on the public report types for MCP structured output.
 schemars = { workspace = true, optional = true }
 serde.workspace = true
 serde_ignored.workspace = true
 serde_json.workspace = true
+serde_yaml.workspace = true
 serde_toon_format.workspace = true
 sqruff-lib.workspace = true
 sqruff-lib-core.workspace = true
