@@ -13,6 +13,8 @@ extend_ignore_words = ["ba", "crate"]
 
 [fmt.python.ruff]
 line_length = 100
+docstring_code_format = false
+line_ending = "auto"
 
 [per-file-ignores]
 "tests/**" = ["S101"]

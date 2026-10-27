@@ -27,11 +27,15 @@ pub(super) fn prepare(request: &HookRunRequest, spec: &StageSpec) -> Vec<Prepare
 fn prepare_one(request: &HookRunRequest, hook: &Hook, all_paths: &[&Path], tag_cache: &FileTagCache<'_>) -> Prepared {
     match RunInputMode::from(hook.stage) {
         RunInputMode::NoFiles => Prepared {
-            matched: Vec::new(),
+            matched: request.git_args.iter().map(PathBuf::from).collect(),
             skip: None,
         },
         RunInputMode::MessageFile => Prepared {
-            matched: request.message_file.iter().cloned().collect(),
+            matched: if request.git_args.is_empty() {
+                request.message_file.iter().cloned().collect()
+            } else {
+                request.git_args.iter().map(PathBuf::from).collect()
+            },
             skip: None,
         },
         RunInputMode::Files => {

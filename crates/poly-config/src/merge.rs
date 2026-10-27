@@ -34,6 +34,16 @@ const EXCLUDE_KEY: &str = "exclude";
 /// Sibling key that opts a table's [`EXCLUDE_KEY`] out of accumulation.
 const EXCLUDE_MODE_KEY: &str = "exclude_mode";
 
+/// Key that makes a nested table replace, rather than merge into, the same table
+/// of an ancestor config (`inherit_mode = "replace"`). Tools whose own nested
+/// configs replace their parents' (ruff) need it: the directory cascade merges
+/// table by table, so without it a nested `[lint.python.ruff]` would inherit
+/// every option its parent set and it did not.
+const INHERIT_MODE_KEY: &str = "inherit_mode";
+
+/// Accepted values of [`INHERIT_MODE_KEY`].
+const MERGE_INHERIT: &str = "merge";
+
 /// Accepted values of [`EXCLUDE_MODE_KEY`].
 const EXTEND_MODE: &str = "extend";
 const REPLACE_MODE: &str = "replace";
@@ -75,6 +85,9 @@ fn merge_into(base: &mut toml::Table, override_table: toml::Table, accumulate: b
     for (key, override_value) in override_table {
         match override_value {
             toml::Value::Table(override_child) => match base.get_mut(&key) {
+                Some(toml::Value::Table(_)) if replaces_inherited(&override_child) => {
+                    base.insert(key, toml::Value::Table(override_child));
+                }
                 Some(toml::Value::Table(base_child)) => merge_into(base_child, override_child, accumulate),
                 _ => {
                     base.insert(key, toml::Value::Table(override_child));
@@ -88,6 +101,11 @@ fn merge_into(base: &mut toml::Table, override_table: toml::Table, accumulate: b
             }
         }
     }
+}
+
+/// Whether a table declares `inherit_mode = "replace"`.
+fn replaces_inherited(table: &toml::Table) -> bool {
+    table.get(INHERIT_MODE_KEY).and_then(toml::Value::as_str) == Some(REPLACE_MODE)
 }
 
 /// The declared [`ExcludeMode`] of a table, defaulting to [`ExcludeMode::Extend`].
@@ -142,6 +160,12 @@ pub(crate) fn validate_directives(table: &toml::Table) -> anyhow::Result<()> {
                 _ => bail!("`{EXCLUDE_MODE_KEY}` must be {EXTEND_MODE:?} or {REPLACE_MODE:?}, found {value}"),
             }
         }
+        if key == INHERIT_MODE_KEY {
+            match value.as_str() {
+                Some(MERGE_INHERIT | REPLACE_MODE) => {}
+                _ => bail!("`{INHERIT_MODE_KEY}` must be {MERGE_INHERIT:?} or {REPLACE_MODE:?}, found {value}"),
+            }
+        }
         for child in child_tables(value) {
             validate_directives(child)?;
         }
@@ -156,6 +180,7 @@ pub(crate) fn validate_directives(table: &toml::Table) -> anyhow::Result<()> {
 /// deserialization.
 pub(crate) fn strip_directives(table: &mut toml::Table) {
     table.remove(EXCLUDE_MODE_KEY);
+    table.remove(INHERIT_MODE_KEY);
     for (_, value) in table.iter_mut() {
         for child in child_tables_mut(value) {
             strip_directives(child);
@@ -298,6 +323,43 @@ mod tests {
         let error =
             validate_directives(&table("[[hooks.pre-commit.jobs]]\nrun = \"x\"\nexclude_mode = true\n")).unwrap_err();
         assert!(error.to_string().contains("must be"), "{error}");
+    }
+
+    #[test]
+    fn a_nested_table_merges_into_its_ancestor_by_default() {
+        let mut base = table("[lint.python.ruff]\nselect = [\"E\"]\nisort_force_single_line = true\n");
+        merge_tables(&mut base, table("[lint.python.ruff]\nselect = [\"F\"]\n"));
+        assert_eq!(globs(&base, &["lint", "python", "ruff", "select"]), ["F"]);
+        assert_eq!(
+            base["lint"]["python"]["ruff"]["isort_force_single_line"].as_bool(),
+            Some(true),
+            "an option the nested table does not set is inherited"
+        );
+    }
+
+    #[test]
+    fn inherit_mode_replace_drops_what_the_ancestor_set() {
+        let mut base = table("[lint.python.ruff]\nselect = [\"E\"]\nisort_force_single_line = true\n[fmt]\nx = 1\n");
+        merge_tables(
+            &mut base,
+            table("[lint.python.ruff]\ninherit_mode = \"replace\"\nselect = [\"F\"]\n"),
+        );
+        assert_eq!(globs(&base, &["lint", "python", "ruff", "select"]), ["F"]);
+        assert!(base["lint"]["python"]["ruff"].get("isort_force_single_line").is_none());
+        assert!(base.contains_key("fmt"), "only the named table is replaced");
+    }
+
+    #[test]
+    fn validate_rejects_an_unknown_inherit_mode() {
+        let error = validate_directives(&table("[lint.python.ruff]\ninherit_mode = \"union\"\n")).unwrap_err();
+        assert!(error.to_string().contains("inherit_mode"), "{error}");
+    }
+
+    #[test]
+    fn strip_removes_the_inherit_directive() {
+        let mut merged = table("[lint.python.ruff]\ninherit_mode = \"replace\"\nselect = [\"F\"]\n");
+        strip_directives(&mut merged);
+        assert!(merged["lint"]["python"]["ruff"].get(INHERIT_MODE_KEY).is_none());
     }
 
     #[test]

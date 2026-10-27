@@ -195,8 +195,8 @@ group table.
 
 | Key | Type | Meaning |
 | --- | --- | --- |
-| `lint` / `fmt` / `commit` | boolean or table | `{ enabled, stages, files, exclude }`. |
-| `file_safety` | boolean or table | `{ enabled, stages, files, exclude, max_added_file_kb, merge_conflict, added_large_files, private_key, case_conflict, executables_have_shebangs, shebang_scripts_are_executable }`. |
+| `lint` / `fmt` / `commit` | boolean or table | `{ enabled, stages, files, exclude }`; `lint` and `fmt` also take `fix`, `priority` and `jobs` (see the hooks guide). |
+| `file_safety` | boolean or table | `{ enabled, stages, files, exclude, max_added_file_kb, merge_conflict, added_large_files, private_key, case_conflict, executables_have_shebangs, shebang_scripts_are_executable, aws_credentials, priority, jobs }`. |
 | `cargo` | boolean or table | `{ enabled, stages, clippy, sort, machete, deny, clippy_args, cache, lint }`. |
 
 A **stage** table (`[hooks.pre-commit]`) accepts:

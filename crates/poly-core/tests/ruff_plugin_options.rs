@@ -50,7 +50,25 @@ fn select(code: &'static str) -> (&'static str, toml::Value) {
     ("select", strings(&[code]))
 }
 
+fn preview() -> (&'static str, toml::Value) {
+    ("preview", toml::Value::Boolean(true))
+}
+
 const CASES: &[Case] = &[
+    Case {
+        name: "preview enables a preview-only rule",
+        code: "PLR0914",
+        source: "def f():\n    a = 1\n    b = 2\n    c = 3\n    return a + b + c\n",
+        base: || vec![select("PLR0914"), ("pylint_max_locals", toml::Value::Integer(2))],
+        tuned: || {
+            vec![
+                select("PLR0914"),
+                ("pylint_max_locals", toml::Value::Integer(2)),
+                preview(),
+            ]
+        },
+        fires_when_tuned: true,
+    },
     Case {
         name: "dummy_variable_rgx silences F841 for a matching name",
         code: "F841",
@@ -284,6 +302,346 @@ const CASES: &[Case] = &[
         },
         fires_when_tuned: false,
     },
+    Case {
+        name: "pylint_max_locals lowers PLR0914",
+        code: "PLR0914",
+        source: "def f():\n    a = 1\n    b = 2\n    c = 3\n    return a + b + c\n",
+        base: || vec![select("PLR0914"), preview()],
+        tuned: || {
+            vec![
+                select("PLR0914"),
+                preview(),
+                ("pylint_max_locals", toml::Value::Integer(2)),
+            ]
+        },
+        fires_when_tuned: true,
+    },
+    Case {
+        name: "pylint_max_statements lowers PLR0915",
+        code: "PLR0915",
+        source: "def f():\n    a = 1\n    b = 2\n    c = 3\n    return a + b + c\n",
+        base: || vec![select("PLR0915")],
+        tuned: || vec![select("PLR0915"), ("pylint_max_statements", toml::Value::Integer(2))],
+        fires_when_tuned: true,
+    },
+    Case {
+        name: "pylint_max_bool_expr lowers PLR0916",
+        code: "PLR0916",
+        source: "def f(a, b, c):\n    if a and b and c:\n        return 1\n    return 0\n",
+        base: || vec![select("PLR0916"), preview()],
+        tuned: || {
+            vec![
+                select("PLR0916"),
+                preview(),
+                ("pylint_max_bool_expr", toml::Value::Integer(1)),
+            ]
+        },
+        fires_when_tuned: true,
+    },
+    Case {
+        name: "pylint_max_nested_blocks lowers PLR1702",
+        code: "PLR1702",
+        source: "def f(x):\n    for a in x:\n        for b in a:\n            for c in b:\n                print(c)\n",
+        base: || vec![select("PLR1702"), preview()],
+        tuned: || {
+            vec![
+                select("PLR1702"),
+                preview(),
+                ("pylint_max_nested_blocks", toml::Value::Integer(2)),
+            ]
+        },
+        fires_when_tuned: true,
+    },
+    Case {
+        name: "pylint_max_public_methods lowers PLR0904",
+        code: "PLR0904",
+        source: "class C:\n    def a(self): ...\n    def b(self): ...\n    def c(self): ...\n",
+        base: || vec![select("PLR0904"), preview()],
+        tuned: || {
+            vec![
+                select("PLR0904"),
+                preview(),
+                ("pylint_max_public_methods", toml::Value::Integer(2)),
+            ]
+        },
+        fires_when_tuned: true,
+    },
+    Case {
+        name: "isort_combine_as_imports merges as-imports",
+        code: "I001",
+        source: "from a import b as c\nfrom a import d\n",
+        base: || vec![select("I001")],
+        tuned: || vec![select("I001"), ("isort_combine_as_imports", toml::Value::Boolean(true))],
+        fires_when_tuned: true,
+    },
+    Case {
+        name: "isort_force_single_line splits a multi-name import",
+        code: "I001",
+        source: "from a import b, c\n",
+        base: || vec![select("I001")],
+        tuned: || vec![select("I001"), ("isort_force_single_line", toml::Value::Boolean(true))],
+        fires_when_tuned: true,
+    },
+    Case {
+        name: "isort_force_sort_within_sections interleaves import styles",
+        code: "I001",
+        source: "import b\nfrom a import x\n",
+        base: || vec![select("I001")],
+        tuned: || {
+            vec![
+                select("I001"),
+                ("isort_force_sort_within_sections", toml::Value::Boolean(true)),
+            ]
+        },
+        fires_when_tuned: true,
+    },
+    Case {
+        name: "isort_lines_after_imports demands blank lines",
+        code: "I001",
+        source: "import os\n\nx = os.sep\n",
+        base: || vec![select("I001")],
+        tuned: || vec![select("I001"), ("isort_lines_after_imports", toml::Value::Integer(2))],
+        fires_when_tuned: true,
+    },
+    Case {
+        name: "isort_order_by_type false sorts names alphabetically",
+        code: "I001",
+        source: "from a import Zed, apple\n",
+        base: || vec![select("I001")],
+        tuned: || vec![select("I001"), ("isort_order_by_type", toml::Value::Boolean(false))],
+        fires_when_tuned: true,
+    },
+    Case {
+        name: "known_local_folder splits a section off the third-party block",
+        code: "I001",
+        source: "import requests\n\nimport zlocal\n",
+        base: || vec![select("I001")],
+        tuned: || vec![select("I001"), ("known_local_folder", strings(&["zlocal"]))],
+        fires_when_tuned: false,
+    },
+    Case {
+        name: "isort_from_first puts from-imports first",
+        code: "I001",
+        source: "import a\nfrom b import c\n",
+        base: || vec![select("I001")],
+        tuned: || vec![select("I001"), ("isort_from_first", toml::Value::Boolean(true))],
+        fires_when_tuned: true,
+    },
+    Case {
+        name: "isort_length_sort orders by module length",
+        code: "I001",
+        source: "import aaa\nimport b\n",
+        base: || vec![select("I001")],
+        tuned: || vec![select("I001"), ("isort_length_sort", toml::Value::Boolean(true))],
+        fires_when_tuned: true,
+    },
+    Case {
+        name: "isort_no_sections merges the sections",
+        code: "I001",
+        source: "import os\n\nimport requests\n",
+        base: || vec![select("I001")],
+        tuned: || vec![select("I001"), ("isort_no_sections", toml::Value::Boolean(true))],
+        fires_when_tuned: true,
+    },
+    Case {
+        name: "isort_section_order reorders the sections",
+        code: "I001",
+        source: "import os\n\nimport requests\n",
+        base: || vec![select("I001")],
+        tuned: || {
+            vec![
+                select("I001"),
+                (
+                    "isort_section_order",
+                    strings(&[
+                        "future",
+                        "third-party",
+                        "standard-library",
+                        "first-party",
+                        "local-folder",
+                    ]),
+                ),
+            ]
+        },
+        fires_when_tuned: true,
+    },
+    Case {
+        name: "isort_default_section reclassifies unknown modules",
+        code: "I001",
+        source: "import requests\n\nimport zzz\n",
+        base: || vec![select("I001"), ("known_third_party", strings(&["requests"]))],
+        tuned: || {
+            vec![
+                select("I001"),
+                ("known_third_party", strings(&["requests"])),
+                ("isort_default_section", text("first-party")),
+            ]
+        },
+        fires_when_tuned: false,
+    },
+    Case {
+        name: "extra_standard_library adds to the standard library",
+        code: "I001",
+        source: "import foo\nimport os\n",
+        base: || vec![select("I001")],
+        tuned: || vec![select("I001"), ("extra_standard_library", strings(&["foo"]))],
+        fires_when_tuned: false,
+    },
+    Case {
+        name: "isort_lines_between_types separates import styles",
+        code: "I001",
+        source: "import os\nfrom sys import path\n",
+        base: || vec![select("I001")],
+        tuned: || vec![select("I001"), ("isort_lines_between_types", toml::Value::Integer(1))],
+        fires_when_tuned: true,
+    },
+    Case {
+        name: "isort_forced_separate isolates a module",
+        code: "I001",
+        source: "import a_app\nimport a_other\n",
+        base: || vec![select("I001")],
+        tuned: || vec![select("I001"), ("isort_forced_separate", strings(&["a_app"]))],
+        fires_when_tuned: true,
+    },
+    Case {
+        name: "isort_force_to_top hoists a module",
+        code: "I001",
+        source: "import a\nimport b\n",
+        base: || vec![select("I001")],
+        tuned: || vec![select("I001"), ("isort_force_to_top", strings(&["b"]))],
+        fires_when_tuned: true,
+    },
+    Case {
+        name: "isort_single_line_exclusions exempts a module",
+        code: "I001",
+        source: "from a import b, c\n",
+        base: || vec![select("I001"), ("isort_force_single_line", toml::Value::Boolean(true))],
+        tuned: || {
+            vec![
+                select("I001"),
+                ("isort_force_single_line", toml::Value::Boolean(true)),
+                ("isort_single_line_exclusions", strings(&["a"])),
+            ]
+        },
+        fires_when_tuned: false,
+    },
+    Case {
+        name: "isort_variables reclassifies a member",
+        code: "I001",
+        source: "from a import ZETA, alpha\n",
+        base: || vec![select("I001")],
+        tuned: || vec![select("I001"), ("isort_variables", strings(&["ZETA"]))],
+        fires_when_tuned: true,
+    },
+    Case {
+        name: "isort_relative_imports_order flips relative imports",
+        code: "I001",
+        source: "from . import a\nfrom .. import b\n",
+        base: || vec![select("I001")],
+        tuned: || {
+            vec![
+                select("I001"),
+                ("isort_relative_imports_order", text("closest-to-furthest")),
+            ]
+        },
+        fires_when_tuned: false,
+    },
+    Case {
+        name: "isort_import_heading adds a section comment",
+        code: "I001",
+        source: "import os\n",
+        base: || vec![select("I001")],
+        tuned: || {
+            vec![
+                select("I001"),
+                (
+                    "isort_import_heading",
+                    toml::Value::Table(toml::Table::from_iter([(
+                        "standard-library".to_string(),
+                        text("Stdlib"),
+                    )])),
+                ),
+            ]
+        },
+        fires_when_tuned: true,
+    },
+    Case {
+        name: "isort_no_lines_before joins two sections",
+        code: "I001",
+        source: "import os\n\nimport requests\n",
+        base: || vec![select("I001")],
+        tuned: || vec![select("I001"), ("isort_no_lines_before", strings(&["third-party"]))],
+        fires_when_tuned: true,
+    },
+    Case {
+        name: "isort_split_on_trailing_comma false collapses a magic comma",
+        code: "I001",
+        source: "from a import (\n    b,\n    c,\n)\n",
+        base: || vec![select("I001")],
+        tuned: || {
+            vec![
+                select("I001"),
+                ("isort_split_on_trailing_comma", toml::Value::Boolean(false)),
+            ]
+        },
+        fires_when_tuned: true,
+    },
+    Case {
+        name: "known_section defines a custom section",
+        code: "I001",
+        source: "import requests\nimport zzz\n",
+        base: || vec![select("I001")],
+        tuned: || {
+            vec![
+                select("I001"),
+                (
+                    "known_section",
+                    toml::Value::Table(toml::Table::from_iter([("myco".to_string(), strings(&["zzz"]))])),
+                ),
+                (
+                    "isort_section_order",
+                    strings(&[
+                        "future",
+                        "standard-library",
+                        "third-party",
+                        "myco",
+                        "first-party",
+                        "local-folder",
+                    ]),
+                ),
+            ]
+        },
+        fires_when_tuned: true,
+    },
+    Case {
+        name: "flake8_import_conventions_banned_from bans from-imports",
+        code: "ICN003",
+        source: "from itertools import chain\n",
+        base: || vec![select("ICN003")],
+        tuned: || {
+            vec![
+                select("ICN003"),
+                ("flake8_import_conventions_banned_from", strings(&["itertools"])),
+            ]
+        },
+        fires_when_tuned: true,
+    },
+    Case {
+        name: "flake8_import_conventions_extend_aliases adds a convention",
+        code: "ICN001",
+        source: "import dask.dataframe as ddf\n",
+        base: || vec![select("ICN001")],
+        tuned: || {
+            vec![
+                select("ICN001"),
+                (
+                    "flake8_import_conventions_extend_aliases",
+                    toml::Value::Table(toml::Table::from_iter([("dask.dataframe".to_string(), text("dd"))])),
+                ),
+            ]
+        },
+        fires_when_tuned: true,
+    },
 ];
 
 #[test]
@@ -350,4 +708,59 @@ fn fixable_all_leaves_every_fix_in_place() {
 fn unfixable_wins_over_fixable() {
     let options = vec![("fixable", strings(&["ALL"])), ("unfixable", strings(&["F401"]))];
     assert_eq!(fix_of("F401", UNUSED_IMPORT, options), 0);
+}
+
+const UNUSED_ASSIGNMENT: &str = "def f():\n    scratch = print(1)\n";
+
+#[test]
+fn an_unsafe_fix_is_withheld_unless_unsafe_fixes_is_on() {
+    assert_eq!(fix_of("F841", UNUSED_ASSIGNMENT, Vec::new()), 0);
+    assert!(
+        fix_of(
+            "F841",
+            UNUSED_ASSIGNMENT,
+            vec![("unsafe_fixes", toml::Value::Boolean(true))]
+        ) > 0
+    );
+}
+
+#[test]
+fn unsafe_fixes_false_keeps_unsafe_fixes_withheld() {
+    let options = vec![("unsafe_fixes", toml::Value::Boolean(false))];
+    assert_eq!(fix_of("F841", UNUSED_ASSIGNMENT, options), 0);
+}
+
+#[test]
+fn unsafe_fixes_leaves_safe_fixes_alone() {
+    let options = vec![("unsafe_fixes", toml::Value::Boolean(true))];
+    assert!(fix_of("F401", UNUSED_IMPORT, options) > 0);
+}
+
+#[test]
+fn an_explicit_select_that_covers_a_held_back_rule_turns_it_on() {
+    let source = "x = 1  # noqa: E501\n";
+    assert!(
+        !fires("RUF100", source, vec![("extend_select", strings(&["RUF"]))]),
+        "extend_select keeps poly's hold-back"
+    );
+    assert!(
+        fires("RUF100", source, vec![select("RUF100")]),
+        "naming the rule enables it"
+    );
+    assert!(
+        fires("RUF100", source, vec![("select", strings(&["RUF"]))]),
+        "a replacing select owns the whole set"
+    );
+    assert!(
+        fires("RUF100", source, vec![("select", strings(&["ALL"]))]),
+        "ALL covers it"
+    );
+    assert!(
+        !fires(
+            "RUF100",
+            source,
+            vec![("select", strings(&["ALL"])), ("ignore", strings(&["RUF100"]))]
+        ),
+        "an explicit ignore still wins"
+    );
 }

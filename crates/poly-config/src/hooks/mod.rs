@@ -13,6 +13,7 @@
 //! key that is neither reserved nor a valid stage is a hard error.
 
 mod builtin;
+mod builtin_jobs;
 mod job;
 mod patterns;
 mod stage;
@@ -26,6 +27,7 @@ use serde::de::{self, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 
 pub use builtin::{BuiltinHook, BuiltinHooks, CargoHooks, DEFAULT_MAX_ADDED_FILE_KB, FileSafetyHooks};
+pub use builtin_jobs::{BuiltinJob, FILE_SAFETY_CHECKS, FileSafetyJob};
 pub use job::{Job, JobCache, Serial};
 pub use patterns::{Guard, GuardCondition, GuardMatch, Patterns};
 pub use stage::{ParseStageError, Stage};
@@ -92,6 +94,7 @@ impl HooksConfig {
     pub fn validate(&self) -> Result<(), String> {
         crate::hook_sources::validate_sources(&self.sources)?;
         validate_snapshot_include(&self.snapshot_include)?;
+        self.builtin.validate()?;
         for (stage, config) in &self.stage_configs {
             if config.skip.is_some() && config.only.is_some() {
                 return Err(format!("stage `{stage}` sets both `skip` and `only`; choose one"));

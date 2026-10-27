@@ -23,6 +23,8 @@ use anyhow::{Context, Result};
 use clap::Args;
 use poly_config::DEFAULT_MAX_ADDED_FILE_KB;
 
+mod aws;
+
 /// Number of bytes per kibibyte, for the large-file size ceiling.
 const BYTES_PER_KIB: u64 = 1024;
 
@@ -107,6 +109,10 @@ pub struct CheckArgs {
     /// Require files starting with `#!` to be executable.
     #[arg(long)]
     pub shebang_scripts_are_executable: bool,
+    /// Reject files containing an AWS secret from the environment or the AWS
+    /// credentials files. Passes when no credentials are configured.
+    #[arg(long)]
+    pub aws_credentials: bool,
     /// The matched files to check (appended by the hook runner).
     pub files: Vec<PathBuf>,
 }
@@ -185,6 +191,10 @@ fn collect_violations(root: &Path, args: &CheckArgs) -> Vec<Violation> {
     }
     if args.shebang_scripts_are_executable {
         violations.extend(check_shebang_scripts_are_executable(root, &args.files));
+    }
+    if args.aws_credentials {
+        let secrets = aws::collect_secrets(&aws::Sources::ambient());
+        violations.extend(aws::check_aws_credentials(root, &args.files, &secrets));
     }
     violations
 }

@@ -684,3 +684,206 @@ files = "**/*.py"
         "a per-file job still follows the stage's `parallel` flag"
     );
 }
+
+fn run_line(hook: &Hook) -> &str {
+    match &hook.command {
+        HookCommand::Run(line) => line,
+        other => panic!("expected a run command, got {other:?}"),
+    }
+}
+
+fn hook<'a>(spec: &'a StageSpec, id: &str) -> &'a Hook {
+    spec.hooks
+        .iter()
+        .find(|h| h.id == id)
+        .unwrap_or_else(|| panic!("no hook `{id}` in {:?}", ids(spec)))
+}
+
+#[test]
+fn a_fix_mode_builtin_rewrites_and_restages() {
+    let hooks = hooks_from("[hooks.builtin]\nlint = { fix = true }\nfmt = { fix = true }\n");
+    let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
+    let lint = hook(&spec, "lint");
+    assert!(
+        run_line(lint).ends_with(" lint --no-workspace --force-exclude --fix"),
+        "{}",
+        run_line(lint)
+    );
+    let fmt = hook(&spec, "fmt");
+    assert!(
+        run_line(fmt).ends_with(" fmt --force-exclude --fix --exit-zero-on-fix"),
+        "{}",
+        run_line(fmt)
+    );
+    assert!(!run_line(fmt).contains("--check"));
+    for fixer in [lint, fmt] {
+        assert!(fixer.stage_fixed, "{} must re-stage what it rewrote", fixer.id);
+        assert_eq!(fixer.serial_group.as_deref(), Some("fix"), "fixers must not overlap");
+    }
+}
+
+#[test]
+fn a_check_only_builtin_does_not_restage() {
+    let hooks = hooks_from("[hooks.builtin]\nfmt = true\n");
+    let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
+    let fmt = hook(&spec, "fmt");
+    assert!(run_line(fmt).contains("fmt --check"));
+    assert!(!fmt.stage_fixed);
+    assert!(fmt.serial_group.is_none());
+}
+
+#[test]
+fn builtin_priority_orders_the_hooks() {
+    let hooks = hooks_from("[hooks.builtin]\nlint = { priority = 2 }\nfmt = { priority = 1 }\n");
+    let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
+    assert_eq!(ids(&spec), vec!["fmt", "lint"]);
+}
+
+#[test]
+fn builtin_jobs_lower_to_one_hook_each_with_their_own_scope() {
+    let hooks = hooks_from(
+        r#"
+[hooks.builtin]
+fmt = { jobs = [
+  { files = "*.py", exclude = "gen/**", fix = true },
+  { files = "*.rb", name = "ruby", priority = 3 },
+] }
+"#,
+    );
+    let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
+    assert_eq!(ids(&spec), vec!["fmt-1", "ruby"]);
+    let python = hook(&spec, "fmt-1");
+    assert!(run_line(python).contains("--fix") && python.stage_fixed);
+    assert!(python.files.as_ref().unwrap().is_match(Path::new("a.py")));
+    assert!(!python.files.as_ref().unwrap().is_match(Path::new("a.rb")));
+    assert!(python.exclude.as_ref().unwrap().is_match(Path::new("gen/x.py")));
+    let ruby = hook(&spec, "ruby");
+    assert!(run_line(ruby).contains("--check") && !ruby.stage_fixed);
+    assert!(ruby.exclude.is_none(), "a job's scope is its own, not its sibling's");
+    assert_eq!(ruby.priority, 3);
+}
+
+#[test]
+fn a_builtin_job_inherits_what_it_does_not_set() {
+    let hooks = hooks_from(
+        r#"
+[hooks.builtin]
+lint = { files = "*.py", fix = true, jobs = [{ exclude = "gen/**" }] }
+"#,
+    );
+    let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
+    let lint = hook(&spec, "lint-1");
+    assert!(lint.files.as_ref().unwrap().is_match(Path::new("a.py")));
+    assert!(lint.stage_fixed, "fix is inherited from the builtin");
+}
+
+#[test]
+fn a_builtin_job_runs_only_in_its_own_stages() {
+    let hooks = hooks_from(
+        r#"
+[hooks.builtin]
+lint = { jobs = [{ name = "commit-time" }, { name = "push-time", stages = ["pre-push"] }] }
+"#,
+    );
+    let pre_commit = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
+    assert_eq!(ids(&pre_commit), vec!["commit-time"]);
+    let pre_push = lower_stage(&hooks, &poly(), HookStage::PrePush, &[], &HookCacheMode::Safe).unwrap();
+    assert_eq!(ids(&pre_push), vec!["push-time"]);
+}
+
+#[test]
+fn file_safety_jobs_run_their_own_checks_over_their_own_files() {
+    let hooks = hooks_from(
+        r#"
+[hooks.builtin.file_safety]
+aws_credentials = true
+jobs = [
+  { checks = ["private_key", "aws_credentials"] },
+  { checks = ["merge_conflict"], exclude = "demo/**" },
+]
+"#,
+    );
+    let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
+    assert_eq!(ids(&spec), vec!["file-safety-1", "file-safety-2"]);
+    let first = run_line(hook(&spec, "file-safety-1"));
+    assert!(
+        first.contains("--private-key") && first.contains("--aws-credentials"),
+        "{first}"
+    );
+    assert!(!first.contains("--merge-conflict"), "{first}");
+    let second = hook(&spec, "file-safety-2");
+    assert!(run_line(second).contains("--merge-conflict") && !run_line(second).contains("--private-key"));
+    assert!(second.exclude.as_ref().unwrap().is_match(Path::new("demo/a.txt")));
+    assert!(hook(&spec, "file-safety-1").exclude.is_none());
+}
+
+#[test]
+fn file_safety_without_jobs_is_one_hook_and_aws_is_opt_in() {
+    let hooks = hooks_from("[hooks.builtin]\nfile_safety = true\n");
+    let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
+    assert_eq!(ids(&spec), vec!["file-safety"]);
+    assert!(!run_line(hook(&spec, "file-safety")).contains("--aws-credentials"));
+    let with_aws = hooks_from("[hooks.builtin.file_safety]\naws_credentials = true\n");
+    let spec = lower_stage(&with_aws, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
+    assert!(run_line(hook(&spec, "file-safety")).contains("--aws-credentials"));
+}
+
+fn lower_with_git_args(hooks: &HooksConfig, stage: HookStage, git_args: &[&str]) -> StageSpec {
+    struct NoTools;
+    impl ToolProbe for NoTools {
+        fn is_available(&self, _tool: &str) -> bool {
+            false
+        }
+        fn is_cargo_project(&self) -> bool {
+            false
+        }
+        fn guard_passes(&self, _command: &str) -> bool {
+            true
+        }
+    }
+    let git_args: Vec<String> = git_args.iter().map(|arg| (*arg).to_string()).collect();
+    lower_stage_with_inputs(
+        hooks,
+        &poly(),
+        stage,
+        TemplateInputs {
+            files: &[],
+            git_args: &git_args,
+        },
+        &HookCacheMode::Safe,
+        &NoTools,
+        &poly_config::ToolsConfig::default(),
+    )
+    .unwrap()
+}
+
+#[test]
+fn git_hook_arguments_are_substituted_into_the_run_line() {
+    let hooks = hooks_from(
+        r#"
+[hooks.post-checkout.commands.lock]
+run = "bash lock.sh {0} && echo {2} ${1} {git_args}"
+"#,
+    );
+    let spec = lower_with_git_args(&hooks, HookStage::PostCheckout, &["abc", "d e", "1"]);
+    let lock = hook(&spec, "lock");
+    assert_eq!(
+        run_line(lock),
+        "bash lock.sh 'abc' 'd e' '1' && echo 'd e' ${1} 'abc' 'd e' '1'"
+    );
+    assert!(!lock.pass_filenames, "a templated run line takes no appended files");
+}
+
+#[test]
+fn a_missing_git_argument_substitutes_to_nothing() {
+    let hooks = hooks_from("[hooks.post-merge.commands.x]\nrun = \"echo [{1}] [{2}] [{0}]\"\n");
+    let spec = lower_with_git_args(&hooks, HookStage::PostMerge, &["0"]);
+    assert_eq!(run_line(hook(&spec, "x")), "echo ['0'] [] ['0']");
+}
+
+#[test]
+fn a_git_argument_is_quoted_against_the_shell() {
+    let hooks = hooks_from("[hooks.post-merge.commands.x]\nrun = \"echo {1}\"\n");
+    let spec = lower_with_git_args(&hooks, HookStage::PostMerge, &["a'; rm -rf /; '"]);
+    assert_eq!(run_line(hook(&spec, "x")), r"echo 'a'\''; rm -rf /; '\'''");
+}

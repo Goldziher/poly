@@ -308,6 +308,12 @@ pub struct FmtArgs {
     #[arg(long, conflicts_with = "fix")]
     pub check: bool,
 
+    /// With `--fix`, exit 0 when files were reformatted instead of 1. A git hook
+    /// that rewrites and re-stages files needs this: it treats exit 1 as a failed
+    /// check. Files the formatter could not process still exit 2.
+    #[arg(long, requires = "fix")]
+    pub exit_zero_on_fix: bool,
+
     /// Flags shared with `poly lint`.
     #[command(flatten)]
     pub common: CommonArgs,
@@ -601,7 +607,7 @@ pub fn run_fmt(args: FmtArgs) -> ExitCode {
     // those files were not verified, and 1 is a code callers treat as success.
     if format_errors > 0 || skips_over_budget {
         ExitCode::from(EXIT_NOT_VERIFIED)
-    } else if changed > 0 {
+    } else if changed > 0 && !(write && args.exit_zero_on_fix) {
         ExitCode::from(1)
     } else {
         ExitCode::SUCCESS

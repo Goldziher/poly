@@ -385,7 +385,7 @@ fn a_declared_key_an_upstream_type_also_recognizes_defers_to_the_upstream_type()
 /// registry without an entry here fails that test rather than silently escaping
 /// both drift checks.
 const ENGINE_SOURCES: &[(&str, &[&str])] = &[
-    ("ruff", &["ruff.rs", "ruff/plugins.rs"]),
+    ("ruff", &["ruff.rs", "ruff/plugins.rs", "ruff/format.rs"]),
     (
         "oxc",
         &[

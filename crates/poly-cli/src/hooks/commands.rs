@@ -236,6 +236,7 @@ fn run_stage(args: RunArgs) -> Result<ExitCode> {
         work_root,
         files,
         message_file,
+        git_args: Vec::new(),
         stages: vec![spec],
         concurrency: args.jobs,
         cache,
@@ -512,11 +513,17 @@ fn hook_impl(args: HookImplArgs) -> Result<ExitCode> {
         inputs.to_ref.as_deref(),
     )?;
     let cache = open_result_cache(&config, &root, args.no_cache)?;
-    let mut spec = lower::lower_stage(
+    let git_args: Vec<String> = args
+        .git_args
+        .iter()
+        .map(|arg| arg.to_string_lossy().into_owned())
+        .collect();
+    let mut spec = lower::lower_stage_with_git_args(
         &config.hooks,
         &poly_bin,
         stage,
         &files,
+        &git_args,
         &config.cache.results.hooks,
         &root,
         &config.tools,
@@ -543,6 +550,7 @@ fn hook_impl(args: HookImplArgs) -> Result<ExitCode> {
         work_root,
         files,
         message_file: inputs.message_file,
+        git_args,
         stages: vec![spec],
         concurrency: args.jobs,
         cache,

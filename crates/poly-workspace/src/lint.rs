@@ -158,6 +158,7 @@ pub fn run_workspace_lint(config: &PolyConfig, opts: &WorkspaceLintOptions) -> R
         work_root: None,
         files: Vec::new(),
         message_file: None,
+        git_args: Vec::new(),
         stages: vec![spec],
         concurrency: opts.jobs,
         cache,

@@ -23,7 +23,25 @@ use deletion::Action;
 use importers::{Absorb, ImportResult};
 
 /// Directory names never descended into during `--recurse`.
-const RECURSE_SKIP: &[&str] = &[".git", "node_modules", "target", ".polylint", "vendor", "dist", "build"];
+const RECURSE_SKIP: &[&str] = &[
+    ".git",
+    "node_modules",
+    "target",
+    ".polylint",
+    "vendor",
+    "dist",
+    "build",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "site-packages",
+    ".tox",
+    ".nox",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".pytest_cache",
+    ".direnv",
+];
 
 /// Source filenames that mark a directory as a migration target under `--recurse`.
 const MIGRATABLE_SOURCES: &[&str] = &[
@@ -160,6 +178,10 @@ fn run(args: MigrateArgs) -> Result<ExitCode> {
     let mut any_change = false;
     for dir in &dirs {
         let mut plan = build_plan(dir)?;
+        if dir != &root {
+            mark_replacing_ruff(&mut plan);
+            mark_nested_hooks(&mut plan);
+        }
         if args.strip_superseded {
             plan.actions.extend(superseded_actions(dir));
         }
@@ -227,6 +249,85 @@ pub fn build_plan(dir: &Path) -> Result<MigrationPlan> {
         kept,
         conflicts,
     })
+}
+
+/// Ruff tables a nested `poly.toml` must replace rather than merge into.
+const RUFF_TABLES: &[&[&str]] = &[
+    &["lint", "python", "ruff"],
+    &["fmt", "python", "ruff"],
+    &["per-file-ignores"],
+];
+
+/// Make a nested directory's ruff settings replace its ancestors', as a nested
+/// ruff config does.
+///
+/// Ruff gives a directory with its own `[tool.ruff]` exactly that table; poly's
+/// directory cascade merges table by table, so without `inherit_mode = "replace"`
+/// the nested `[lint.python.ruff]` would also pick up every option an ancestor
+/// `poly.toml` set and the nested config did not.
+fn mark_replacing_ruff(plan: &mut MigrationPlan) {
+    let Some(result) = plan
+        .results
+        .iter_mut()
+        .find(|result| result.tool == "ruff" && result.has_fragments())
+    else {
+        return;
+    };
+    let mut marked = false;
+    for path in RUFF_TABLES {
+        marked |= set_replace_marker(plan.doc.as_table_mut(), path);
+    }
+    if marked {
+        result.notes.push(
+            "nested ruff config: written with inherit_mode = \"replace\", so it replaces an ancestor poly.toml's ruff \
+             options the way a nested ruff config replaces its parent's"
+                .to_string(),
+        );
+    }
+}
+
+const NESTED_HOOKS_REASON: &str = "git runs hooks from the repository root, where poly reads only the root \
+    poly.toml; the [hooks] written to this nested poly.toml run only for `poly hooks run` started in this directory";
+
+/// A nested directory's hook configuration is not what git runs, so its source is
+/// kept and the plan says why.
+///
+/// Verified: `poly hooks hook-impl` and `poly hooks run` resolve the config from the
+/// working directory, which git sets to the repository root, so a `[hooks]` table in
+/// a nested `poly.toml` is never consulted by a commit.
+fn mark_nested_hooks(plan: &mut MigrationPlan) {
+    let mut marked = false;
+    for result in plan
+        .results
+        .iter_mut()
+        .filter(|result| matches!(result.tool, "lefthook" | "pre-commit") && result.has_fragments())
+    {
+        let mut leftovers = match std::mem::replace(&mut result.absorb, Absorb::None) {
+            Absorb::Partial(keys) => keys,
+            _ => Vec::new(),
+        };
+        leftovers.push(NESTED_HOOKS_REASON.to_string());
+        result.absorb = Absorb::Partial(leftovers);
+        marked = true;
+    }
+    if marked {
+        plan.actions = deletion::plan_actions(&plan.results);
+    }
+}
+
+/// Set `inherit_mode = "replace"` in the table at `path`; whether a table was marked.
+fn set_replace_marker(root: &mut toml_edit::Table, path: &[&str]) -> bool {
+    let Some((first, rest)) = path.split_first() else {
+        if root.contains_key("inherit_mode") {
+            return false;
+        }
+        root.insert("inherit_mode", toml_edit::value("replace"));
+        return true;
+    };
+    match root.get_mut(first).and_then(toml_edit::Item::as_table_mut) {
+        Some(child) => set_replace_marker(child, rest),
+        None => false,
+    }
 }
 
 /// Apply a plan: write `poly.toml`, then delete/strip absorbed sources.
@@ -315,25 +416,32 @@ fn guard_clean_tree(dir: &Path) -> Result<()> {
 }
 
 /// Discover migration-target directories under `root` for `--recurse`: any
-/// directory holding a migratable source, skipping vendored/build trees.
+/// directory holding a migratable source, skipping vendored and build trees, any
+/// virtualenv (a directory holding `pyvenv.cfg`, whatever it is called), Bazel
+/// output symlinks, and whatever `.gitignore` excludes.
 fn discover_dirs(root: &Path) -> Vec<PathBuf> {
-    let mut dirs = Vec::new();
-    let walker = walkdir::WalkDir::new(root).into_iter().filter_entry(|entry| {
-        if !entry.file_type().is_dir() {
-            return true;
-        }
-        entry.depth() == 0
-            || !entry
+    let walker = ignore::WalkBuilder::new(root)
+        .hidden(false)
+        .parents(false)
+        .git_global(false)
+        .require_git(false)
+        .follow_links(false)
+        .filter_entry(|entry| {
+            if !entry.file_type().is_some_and(|kind| kind.is_dir()) || entry.depth() == 0 {
+                return true;
+            }
+            let skipped = entry
                 .file_name()
                 .to_str()
-                .is_some_and(|name| RECURSE_SKIP.contains(&name))
-    });
-    for entry in walker.flatten() {
-        if entry.file_type().is_dir() && dir_has_source(entry.path()) {
-            dirs.push(entry.path().to_path_buf());
-        }
-    }
-    dirs
+                .is_some_and(|name| RECURSE_SKIP.contains(&name) || name.starts_with("bazel-"));
+            !skipped && !entry.path().join("pyvenv.cfg").is_file()
+        })
+        .build();
+    walker
+        .flatten()
+        .filter(|entry| entry.file_type().is_some_and(|kind| kind.is_dir()) && dir_has_source(entry.path()))
+        .map(ignore::DirEntry::into_path)
+        .collect()
 }
 
 /// Whether `dir` directly contains any migratable source file.
@@ -359,7 +467,7 @@ fn dir_has_source(dir: &Path) -> bool {
 /// preference about *discovery* — must not silence it.
 ///
 /// The concrete failure that avoids: under `--recurse`, targets come from
-/// [`discover_dirs`], which prunes `RECURSE_SKIP` and never consults
+/// [`discover_dirs`], which prunes `RECURSE_SKIP` and `.gitignore` and never consults
 /// `[discovery] exclude` — so a monorepo whose root config excludes `sub/**`
 /// still gets a `poly.toml` written into `sub/`. With force-exclude on, the
 /// verify run's only root is itself excluded, the run reaches zero files, and

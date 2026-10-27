@@ -18,7 +18,7 @@
 //!
 //! `E1`/`E2`/`E3`/`W1`/`W2`/`W3` are intentionally excluded — they overlap
 //! with the ruff formatter and would fire on every well-formatted file.
-//! Preview rules stay off ([`rules_for_codes`] uses `PreviewOptions::default()`).
+//! Preview rules stay off unless `preview = true` is set in `[lint.python.ruff]`.
 //!
 //! # Opinionated format defaults
 //!
@@ -39,23 +39,19 @@ use std::str::FromStr;
 use std::sync::OnceLock;
 
 use ruff_db::diagnostic::Severity as RuffSeverity;
-use ruff_formatter::LineWidth;
 use ruff_linter::linter::{ParseSource, lint_only};
 use ruff_linter::package::PackageRoot;
 use ruff_linter::packaging::detect_package_root;
 use ruff_linter::rule_selector::{PreviewOptions, RuleSelector};
-use ruff_linter::rules::isort::categorize::KnownModules;
 use ruff_linter::rules::pydocstyle::settings::Convention as PydocstyleConvention;
 use ruff_linter::settings::LinterSettings;
 use ruff_linter::settings::flags;
 use ruff_linter::settings::rule_table::RuleTable;
-use ruff_linter::settings::types::IdentifierPattern;
 use ruff_linter::source_kind::SourceKind;
 use ruff_python_ast::PySourceType;
-use ruff_python_formatter::{DocstringCode, DocstringCodeLineWidth, PyFormatOptions};
 use ruff_text_size::Ranged;
-use rustc_hash::FxHashMap;
 
+mod format;
 mod plugins;
 
 use crate::config::EngineConfig;
@@ -65,24 +61,11 @@ use crate::engine::{
 };
 use crate::language::Language;
 
-/// The keys `[fmt.python.ruff]` reads, with the type each is read as.
-///
-/// A named const rather than an inline literal because
-/// `docstring_code_line_length` takes a `const fn` union, and rustc does not
-/// promote a temporary array holding one to `'static`.
-const FORMAT_OPTION_KEYS: &[(&str, OptionType)] = &[
-    ("line_length", OptionType::INTEGER),
-    ("docstring_code_format", OptionType::BOOLEAN),
-    // `"dynamic"` is the documented alternative to a fixed width.
-    ("docstring_code_line_length", OptionType::INTEGER.or(OptionType::STRING)),
-];
-
 /// Opinionated rule selection: string codes resolved by [`RuleSelector::from_str`].
 ///
 /// Extends ruff's built-in defaults (F + E4/E7/E9). Omits E1/E2/E3/W1/W2/W3
 /// because the ruff formatter already handles those whitespace/blank-line rules,
-/// and keeps `PreviewOptions::default()` in [`rules_for_codes`] so preview rules
-/// stay off.
+/// and keeps preview rules off unless the user sets `preview = true`.
 ///
 /// Individual members of a selected category that fire on legitimate code are
 /// turned back off in [`DEFAULT_IGNORED_RULES`], each with the measurement that
@@ -170,19 +153,27 @@ static RULE_CODES: &[&str] = &[
 /// and is not selected at all — see [`RULE_CODES`].
 static DEFAULT_IGNORED_RULES: &[&str] = &["B008", "RUF100", "ANN002", "ANN003", "ARG002", "PLR2004", "TRY003"];
 
-/// The effective default ignore set: [`DEFAULT_IGNORED_RULES`] minus any rule the
-/// user explicitly turned back on via `select` / `extend_select`.
-fn default_ignored(user_enabled: &[String]) -> Vec<String> {
+/// The effective default ignore set: [`DEFAULT_IGNORED_RULES`] minus every rule
+/// the user's own selection covers, by exact code, by prefix (`RUF`) or by `ALL`.
+///
+/// `user_codes` is what the user asked for, not poly's defaults: an explicit
+/// `select` replaces poly's opinionated set and with it the reason to hold
+/// individual members back, while `extend_select` adds to a set whose held-back
+/// members stay held back unless it names them by their full code.
+fn default_ignored(user_codes: &[String], preview: &PreviewOptions) -> Vec<String> {
+    let enabled = rules_for_codes(user_codes, preview);
     DEFAULT_IGNORED_RULES
         .iter()
-        .filter(|rule| !user_enabled.iter().any(|e| e.eq_ignore_ascii_case(rule)))
-        .map(|rule| (*rule).to_owned())
+        .filter(|code| {
+            let rules = rules_for_codes(&[code.to_string()], preview);
+            !rules.iter().any(|rule| enabled.contains(rule))
+        })
+        .map(|code| code.to_string())
         .collect()
 }
 
 /// Resolve a list of rule-code strings to ruff `Rule`s.
-fn rules_for_codes(codes: &[String]) -> Vec<ruff_linter::registry::Rule> {
-    let preview = PreviewOptions::default();
+fn rules_for_codes(codes: &[String], preview: &PreviewOptions) -> Vec<ruff_linter::registry::Rule> {
     codes
         .iter()
         .filter_map(|s| match RuleSelector::from_str(s) {
@@ -192,14 +183,14 @@ fn rules_for_codes(codes: &[String]) -> Vec<ruff_linter::registry::Rule> {
                 None
             }
         })
-        .flat_map(|sel| sel.rules(&preview).collect::<Vec<_>>())
+        .flat_map(|sel| sel.rules(preview).collect::<Vec<_>>())
         .collect()
 }
 
 /// Build a [`RuleTable`] from a selected set of codes minus an ignored set.
-fn build_rule_table(select: &[String], ignore: &[String]) -> RuleTable {
-    let selected = rules_for_codes(select);
-    let ignored = rules_for_codes(ignore);
+fn build_rule_table(select: &[String], ignore: &[String], preview: &PreviewOptions) -> RuleTable {
+    let selected = rules_for_codes(select, preview);
+    let ignored = rules_for_codes(ignore, preview);
     RuleTable::from_iter(selected.into_iter().filter(|rule| !ignored.contains(rule)))
 }
 
@@ -213,7 +204,11 @@ fn default_settings() -> &'static LinterSettings {
     SETTINGS.get_or_init(|| {
         let codes: Vec<String> = RULE_CODES.iter().map(|s| (*s).to_owned()).collect();
         let mut settings = LinterSettings::new(Path::new("."));
-        settings.rules = build_rule_table(&codes, &default_ignored(&[]));
+        settings.rules = build_rule_table(
+            &codes,
+            &default_ignored(&[], &PreviewOptions::default()),
+            &PreviewOptions::default(),
+        );
         settings.line_length =
             ruff_linter::line_width::LineLength::try_from(120_u16).expect("120 is a valid line length");
         settings.pycodestyle.max_line_length = settings.line_length;
@@ -231,16 +226,28 @@ fn default_settings() -> &'static LinterSettings {
 fn build_settings(cfg: &EngineConfig) -> LinterSettings {
     let selection = super::rule_config::RuleSelection::from_options(cfg);
 
-    let mut codes: Vec<String> = if selection.select.is_empty() {
-        RULE_CODES.iter().map(|s| (*s).to_owned()).collect()
-    } else {
+    let preview = plugins::preview_options(cfg);
+    let replaces_defaults = !selection.select.is_empty();
+    let mut codes: Vec<String> = if replaces_defaults {
         selection.select
+    } else {
+        RULE_CODES.iter().map(|s| (*s).to_owned()).collect()
+    };
+    let user_codes: Vec<String> = if replaces_defaults {
+        codes.iter().chain(&selection.extend_select).cloned().collect()
+    } else {
+        selection
+            .extend_select
+            .iter()
+            .filter(|code| rules_for_codes(std::slice::from_ref(code), &preview).len() == 1)
+            .cloned()
+            .collect()
     };
     codes.extend(selection.extend_select);
-    // Fold in the default ignore set (e.g. B008), minus anything the user has
-    // explicitly enabled via `select` / `extend_select` (now all present in `codes`).
+    // Fold in the default ignore set (e.g. B008), minus what the user's own
+    // selection covers.
     let mut ignore = selection.ignore;
-    ignore.extend(default_ignored(&codes));
+    ignore.extend(default_ignored(&user_codes, &preview));
 
     let line_length = cfg
         .options
@@ -250,30 +257,22 @@ fn build_settings(cfg: &EngineConfig) -> LinterSettings {
         .unwrap_or(cfg.globals.line_length);
 
     let mut settings = LinterSettings::new(Path::new("."));
-    settings.rules = build_rule_table(&codes, &ignore);
+    settings.preview = preview.mode;
+    settings.explicit_preview_rules = preview.require_explicit;
+    settings.rules = build_rule_table(&codes, &ignore, &preview);
     settings.line_length = u16::try_from(line_length)
         .ok()
         .and_then(|w| ruff_linter::line_width::LineLength::try_from(w).ok())
         .unwrap_or_else(|| ruff_linter::line_width::LineLength::try_from(120_u16).expect("120 is valid"));
     settings.pycodestyle.max_line_length = settings.line_length;
 
-    let usize_opt = |key: &str| {
-        cfg.options
-            .get(key)
-            .and_then(toml::Value::as_integer)
-            .and_then(|v| usize::try_from(v).ok())
-    };
-    if let Some(v) = usize_opt("mccabe_max_complexity") {
+    if let Some(v) = cfg
+        .options
+        .get("mccabe_max_complexity")
+        .and_then(toml::Value::as_integer)
+        .and_then(|v| usize::try_from(v).ok())
+    {
         settings.mccabe.max_complexity = v;
-    }
-    if let Some(v) = usize_opt("pylint_max_args") {
-        settings.pylint.max_args = v;
-    }
-    if let Some(v) = usize_opt("pylint_max_branches") {
-        settings.pylint.max_branches = v;
-    }
-    if let Some(v) = usize_opt("pylint_max_returns") {
-        settings.pylint.max_returns = v;
     }
 
     if let Some(convention) = cfg
@@ -302,92 +301,9 @@ fn build_settings(cfg: &EngineConfig) -> LinterSettings {
         settings.unresolved_target_version = version.into();
     }
 
-    // isort: known-first-party and known-third-party — classify modules that
-    let str_list = |key: &str| -> Vec<String> {
-        cfg.options
-            .get(key)
-            .and_then(toml::Value::as_array)
-            .map(|arr| arr.iter().filter_map(toml::Value::as_str).map(str::to_owned).collect())
-            .unwrap_or_default()
-    };
-
-    let src_roots = str_list("src");
-    if !src_roots.is_empty() {
-        settings.src = src_roots.iter().map(std::path::PathBuf::from).collect();
-    }
-    let known_first_party: Vec<IdentifierPattern> = str_list("known_first_party")
-        .iter()
-        .filter_map(|s| IdentifierPattern::new(s).ok())
-        .collect();
-    let known_third_party: Vec<IdentifierPattern> = str_list("known_third_party")
-        .iter()
-        .filter_map(|s| IdentifierPattern::new(s).ok())
-        .collect();
-    if !known_first_party.is_empty() || !known_third_party.is_empty() {
-        settings.isort.known_modules = KnownModules::new(
-            known_first_party,
-            known_third_party,
-            vec![],
-            vec![],
-            FxHashMap::default(),
-        );
-    }
-
     plugins::apply(&mut settings, cfg);
 
     settings
-}
-
-/// Build [`PyFormatOptions`] from the `[fmt.python.ruff]` table layered over the
-/// opinionated defaults (line width from `[defaults] line_length`, docstring code
-/// formatting on at the same width).
-///
-/// Honors `line_length` (per-table override of the global, mirroring the lint
-/// side), `indent_width` (already resolved from the same table by
-/// [`crate::config::Config::engine_config`]), `docstring_code_format`, and
-/// `docstring_code_line_length` (an integer, or the string `"dynamic"` for
-/// ruff's dynamic width).
-fn build_format_options(src: &SourceFile, cfg: &EngineConfig) -> PyFormatOptions {
-    let width = |value: usize| {
-        u16::try_from(value)
-            .ok()
-            .and_then(|w| LineWidth::try_from(w).ok())
-            .unwrap_or_else(|| LineWidth::try_from(120_u16).expect("120 is a valid line width"))
-    };
-
-    let line_width = width(
-        cfg.options
-            .get("line_length")
-            .and_then(toml::Value::as_integer)
-            .and_then(|v| usize::try_from(v).ok())
-            .unwrap_or(cfg.globals.line_length),
-    );
-
-    let docstring_code = match cfg.options.get("docstring_code_format").and_then(toml::Value::as_bool) {
-        Some(false) => DocstringCode::Disabled,
-        _ => DocstringCode::Enabled,
-    };
-
-    let docstring_width = match cfg.options.get("docstring_code_line_length") {
-        Some(toml::Value::Integer(v)) => {
-            DocstringCodeLineWidth::Fixed(width(usize::try_from(*v).unwrap_or(cfg.globals.line_length)))
-        }
-        Some(toml::Value::String(s)) if s.eq_ignore_ascii_case("dynamic") => DocstringCodeLineWidth::Dynamic,
-        _ => DocstringCodeLineWidth::Fixed(line_width),
-    };
-
-    let mut options = PyFormatOptions::from_extension(&src.path)
-        .with_line_width(line_width)
-        .with_docstring_code(docstring_code)
-        .with_docstring_code_line_width(docstring_width);
-
-    if let Ok(indent_width) = u8::try_from(cfg.indent_width)
-        && let Ok(indent_width) = ruff_formatter::IndentWidth::try_from(indent_width)
-    {
-        options = options.with_indent_width(indent_width);
-    }
-
-    options
 }
 
 /// Parse a Python target version from either ruff's canonical `py310` spelling
@@ -502,14 +418,50 @@ impl Engine for RuffEngine {
             OptionTable::Lint => OptionKeys::declared(&[
                 ("line_length", OptionType::INTEGER),
                 ("mccabe_max_complexity", OptionType::INTEGER),
+                ("unsafe_fixes", OptionType::BOOLEAN),
+                ("preview", OptionType::BOOLEAN),
+                ("explicit_preview_rules", OptionType::BOOLEAN),
                 ("pylint_max_args", OptionType::INTEGER),
+                ("pylint_max_bool_expr", OptionType::INTEGER),
                 ("pylint_max_branches", OptionType::INTEGER),
+                ("pylint_max_locals", OptionType::INTEGER),
+                ("pylint_max_nested_blocks", OptionType::INTEGER),
+                ("pylint_max_public_methods", OptionType::INTEGER),
                 ("pylint_max_returns", OptionType::INTEGER),
+                ("pylint_max_statements", OptionType::INTEGER),
                 ("pydocstyle_convention", OptionType::STRING),
                 ("target_version", OptionType::STRING),
                 ("src", OptionType::ARRAY),
                 ("known_first_party", OptionType::ARRAY),
                 ("known_third_party", OptionType::ARRAY),
+                ("known_local_folder", OptionType::ARRAY),
+                ("extra_standard_library", OptionType::ARRAY),
+                ("known_section", OptionType::TABLE),
+                ("isort_case_sensitive", OptionType::BOOLEAN),
+                ("isort_classes", OptionType::ARRAY),
+                ("isort_combine_as_imports", OptionType::BOOLEAN),
+                ("isort_constants", OptionType::ARRAY),
+                ("isort_default_section", OptionType::STRING),
+                ("isort_detect_same_package", OptionType::BOOLEAN),
+                ("isort_force_single_line", OptionType::BOOLEAN),
+                ("isort_force_sort_within_sections", OptionType::BOOLEAN),
+                ("isort_force_to_top", OptionType::ARRAY),
+                ("isort_force_wrap_aliases", OptionType::BOOLEAN),
+                ("isort_forced_separate", OptionType::ARRAY),
+                ("isort_from_first", OptionType::BOOLEAN),
+                ("isort_import_heading", OptionType::TABLE),
+                ("isort_length_sort", OptionType::BOOLEAN),
+                ("isort_length_sort_straight", OptionType::BOOLEAN),
+                ("isort_lines_after_imports", OptionType::INTEGER),
+                ("isort_lines_between_types", OptionType::INTEGER),
+                ("isort_no_lines_before", OptionType::ARRAY),
+                ("isort_no_sections", OptionType::BOOLEAN),
+                ("isort_order_by_type", OptionType::BOOLEAN),
+                ("isort_relative_imports_order", OptionType::STRING),
+                ("isort_section_order", OptionType::ARRAY),
+                ("isort_single_line_exclusions", OptionType::ARRAY),
+                ("isort_split_on_trailing_comma", OptionType::BOOLEAN),
+                ("isort_variables", OptionType::ARRAY),
                 ("fixable", OptionType::ARRAY),
                 ("unfixable", OptionType::ARRAY),
                 ("external", OptionType::ARRAY),
@@ -521,6 +473,10 @@ impl Engine for RuffEngine {
                 ("pep8_naming_extend_ignore_names", OptionType::ARRAY),
                 ("pep8_naming_classmethod_decorators", OptionType::ARRAY),
                 ("pep8_naming_staticmethod_decorators", OptionType::ARRAY),
+                ("flake8_import_conventions_aliases", OptionType::TABLE),
+                ("flake8_import_conventions_extend_aliases", OptionType::TABLE),
+                ("flake8_import_conventions_banned_aliases", OptionType::TABLE),
+                ("flake8_import_conventions_banned_from", OptionType::ARRAY),
                 ("flake8_quotes_inline_quotes", OptionType::STRING),
                 ("flake8_quotes_multiline_quotes", OptionType::STRING),
                 ("flake8_quotes_docstring_quotes", OptionType::STRING),
@@ -537,13 +493,13 @@ impl Engine for RuffEngine {
                 ("flake8_pytest_style_parametrize_values_row_type", OptionType::STRING),
             ])
             .with_rule_selection(),
-            OptionTable::Format => OptionKeys::declared(FORMAT_OPTION_KEYS),
+            OptionTable::Format => OptionKeys::declared(format::OPTION_KEYS),
             OptionTable::CrossCuttingLint => OptionKeys::UNCHECKED,
         }
     }
 
     fn version(&self) -> &str {
-        "ruff-0.17.3+pkgroot+plugins+isort+e501+tgtsrc+ignore-b008+rules-v3+advisory-sev1+fmtopts1+plugopts1"
+        "ruff-0.17.3+pkgroot+plugins+isort+e501+tgtsrc+ignore-b008+rules-v3+advisory-sev1+fmtopts2+plugopts2+isort3+pylint2+impconv1+defignore2+unsafefix1"
     }
 
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
@@ -555,6 +511,7 @@ impl Engine for RuffEngine {
             &owned_settings
         };
 
+        let unsafe_fixes = cfg.options.get("unsafe_fixes").and_then(toml::Value::as_bool) == Some(true);
         let is_stub = src.path.extension().is_some_and(|e| e == "pyi");
         let source_kind = SourceKind::Python {
             code: src.content.to_string(),
@@ -606,7 +563,7 @@ impl Engine for RuffEngine {
 
                 let fix: Vec<Edit> = ruff_diag
                     .fix()
-                    .filter(|f| f.applicability().is_safe())
+                    .filter(|f| f.applicability().is_safe() || (unsafe_fixes && !f.applicability().is_display_only()))
                     .map(|f| {
                         f.edits()
                             .iter()
@@ -637,7 +594,7 @@ impl Engine for RuffEngine {
     }
 
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
-        let options = build_format_options(src, cfg);
+        let options = format::build_options(src, cfg);
 
         match ruff_python_formatter::format_module_source(&src.content, options) {
             Ok(printed) => {

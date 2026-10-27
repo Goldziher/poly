@@ -65,6 +65,16 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   `actions/upload-pages-artifact` v5. `deny.toml` ignores the `zip` 8.x extraction advisories
   (pinned by `ruff_db`; poly never extracts archives with it) and the `serde_yaml` unmaintained
   notice.
+- **Builtin `fix` mode, `jobs`, `priority` and the `aws_credentials` check** for `[hooks.builtin]`;
+  `{0}` / `{N}` / `{git_args}` placeholders and `$@` / `POLY_GIT_ARG_*` for git hook arguments;
+  `poly fmt --exit-zero-on-fix`.
+- **Ruff**: every isort key, the remaining pylint limits, `flake8-import-conventions`, format
+  `indent-style` / `quote-style` / `skip-magic-trailing-comma` / `line-ending`, `unsafe-fixes`,
+  `preview`, and `inherit_mode = "replace"` for nested configs. An explicit `select` that covers a
+  rule poly holds back by default (`RUF100`, `B008`, ...) now enables it.
+- **`poly migrate`**: lefthook / pre-commit fix-mode jobs, per-job scopes (no exclude is dropped),
+  git-argument jobs, `--unsafe-fixes`, `detect-aws-credentials`, ruff `extend`, `requires-python`,
+  ruff defaults pinned, and `--recurse` that skips virtualenvs, `.gitignore`d trees and `bazel-*`.
 
 ## [0.29.0] - 2026-10-11
 

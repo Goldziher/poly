@@ -62,6 +62,19 @@ pub(super) fn build_command(
     cmd
 }
 
+/// Export the arguments git passed to the hook as `POLY_GIT_ARG_COUNT` and
+/// `POLY_GIT_ARG_<n>` (1-based), so a hook that is not handed them as `$@` can
+/// still read them.
+pub(super) fn export_git_args(cmd: &mut Cmd, git_args: &[String]) {
+    if git_args.is_empty() {
+        return;
+    }
+    cmd.env("POLY_GIT_ARG_COUNT", git_args.len().to_string());
+    for (index, arg) in git_args.iter().enumerate() {
+        cmd.env(format!("POLY_GIT_ARG_{}", index + 1), arg);
+    }
+}
+
 /// The directory a hook (and therefore its own `precondition`/`before`) runs
 /// from: the execution root, plus the hook's `cwd` override when set.
 pub(super) fn hook_working_dir(hook: &Hook, root: &Path) -> std::path::PathBuf {

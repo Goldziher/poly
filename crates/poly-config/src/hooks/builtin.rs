@@ -18,6 +18,7 @@
 
 use serde::{Deserialize, Deserializer};
 
+use super::builtin_jobs::{BuiltinJob, FILE_SAFETY_CHECKS, FileSafetyJob};
 use super::patterns::Patterns;
 
 /// Default ceiling, in kibibytes, for [`FileSafetyHooks::added_large_files`].
@@ -43,6 +44,17 @@ pub struct BuiltinHooks {
     pub cargo: Option<CargoHooks>,
 }
 
+impl BuiltinHooks {
+    /// Reject settings a builtin cannot honor: `fix` / `jobs` on `commit`, and a
+    /// `file_safety` job naming a check that does not exist or is disabled.
+    pub(super) fn validate(&self) -> Result<(), String> {
+        if self.commit.fix || !self.commit.jobs.is_empty() {
+            return Err("[hooks.builtin] commit does not take `fix` or `jobs`".to_string());
+        }
+        self.file_safety.validate()
+    }
+}
+
 /// One builtin hook. Accepts either a bare boolean (`lint = true`) or a
 /// table (`fmt = { stages = ["pre-commit"] }`); a table without an explicit
 /// `enabled` key is treated as enabled.
@@ -56,6 +68,15 @@ pub struct BuiltinHook {
     pub files: Option<Patterns>,
     /// File exclude glob(s) filtered from the matched set before the hook runs.
     pub exclude: Option<Patterns>,
+    /// Apply fixes and re-stage them (`poly lint --fix` / `poly fmt --fix`)
+    /// instead of only checking. Not meaningful for `commit`.
+    pub fix: bool,
+    /// Lower values run first; hooks sharing a priority run in parallel.
+    pub priority: i64,
+    /// Separately scoped runs of this tool. When non-empty, the top-level
+    /// `files` / `exclude` / `fix` / `priority` are the defaults each job
+    /// inherits and no hook is built from them directly.
+    pub jobs: Vec<BuiltinJob>,
 }
 
 /// On-disk form of a builtin hook: bare toggle or a table.
@@ -73,6 +94,9 @@ struct BuiltinHookTable {
     stages: Vec<String>,
     files: Option<Patterns>,
     exclude: Option<Patterns>,
+    fix: Option<bool>,
+    priority: Option<i64>,
+    jobs: Vec<BuiltinJob>,
 }
 
 impl<'de> Deserialize<'de> for BuiltinHook {
@@ -80,15 +104,16 @@ impl<'de> Deserialize<'de> for BuiltinHook {
         match BuiltinHookRepr::deserialize(deserializer)? {
             BuiltinHookRepr::Toggle(enabled) => Ok(BuiltinHook {
                 enabled,
-                stages: Vec::new(),
-                files: None,
-                exclude: None,
+                ..BuiltinHook::default()
             }),
             BuiltinHookRepr::Table(table) => Ok(BuiltinHook {
                 enabled: table.enabled.unwrap_or(true),
                 stages: table.stages,
                 files: table.files,
                 exclude: table.exclude,
+                fix: table.fix.unwrap_or(false),
+                priority: table.priority.unwrap_or(0),
+                jobs: table.jobs,
             }),
         }
     }
@@ -132,6 +157,16 @@ pub struct FileSafetyHooks {
     pub executables_have_shebangs: bool,
     /// Require files starting with `#!` to be executable.
     pub shebang_scripts_are_executable: bool,
+    /// Reject files containing an AWS secret found in the environment or the AWS
+    /// credentials files. Off by default, unlike the other members; passes when
+    /// no credentials are configured.
+    pub aws_credentials: bool,
+    /// Lower values run first; hooks sharing a priority run in parallel.
+    pub priority: i64,
+    /// Separately scoped runs of subsets of the checks. When non-empty, the
+    /// top-level `files` / `exclude` / `priority` are the defaults each job
+    /// inherits and no hook is built from them directly.
+    pub jobs: Vec<FileSafetyJob>,
 }
 
 impl Default for FileSafetyHooks {
@@ -148,7 +183,49 @@ impl Default for FileSafetyHooks {
             case_conflict: true,
             executables_have_shebangs: true,
             shebang_scripts_are_executable: true,
+            aws_credentials: false,
+            priority: 0,
+            jobs: Vec::new(),
         }
+    }
+}
+
+impl FileSafetyHooks {
+    /// Whether the member check `name` is switched on.
+    #[must_use]
+    pub fn check_enabled(&self, name: &str) -> bool {
+        match name {
+            "merge_conflict" => self.merge_conflict,
+            "added_large_files" => self.added_large_files,
+            "private_key" => self.private_key,
+            "case_conflict" => self.case_conflict,
+            "executables_have_shebangs" => self.executables_have_shebangs,
+            "shebang_scripts_are_executable" => self.shebang_scripts_are_executable,
+            "aws_credentials" => self.aws_credentials,
+            _ => false,
+        }
+    }
+
+    /// Reject a job that names an unknown or disabled member check.
+    pub(super) fn validate(&self) -> Result<(), String> {
+        for (index, job) in self.jobs.iter().enumerate() {
+            for check in &job.checks {
+                if !FILE_SAFETY_CHECKS.contains(&check.as_str()) {
+                    return Err(format!(
+                        "[hooks.builtin.file_safety] job {} names unknown check `{check}`; expected one of {}",
+                        index + 1,
+                        FILE_SAFETY_CHECKS.join(", ")
+                    ));
+                }
+                if !self.check_enabled(check) {
+                    return Err(format!(
+                        "[hooks.builtin.file_safety] job {} lists `{check}`, which is disabled",
+                        index + 1
+                    ));
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -173,6 +250,9 @@ struct FileSafetyTable {
     case_conflict: Option<bool>,
     executables_have_shebangs: Option<bool>,
     shebang_scripts_are_executable: Option<bool>,
+    aws_credentials: Option<bool>,
+    priority: Option<i64>,
+    jobs: Vec<FileSafetyJob>,
 }
 
 impl<'de> Deserialize<'de> for FileSafetyHooks {
@@ -194,6 +274,9 @@ impl<'de> Deserialize<'de> for FileSafetyHooks {
                 case_conflict: table.case_conflict.unwrap_or(true),
                 executables_have_shebangs: table.executables_have_shebangs.unwrap_or(true),
                 shebang_scripts_are_executable: table.shebang_scripts_are_executable.unwrap_or(true),
+                aws_credentials: table.aws_credentials.unwrap_or(false),
+                priority: table.priority.unwrap_or(0),
+                jobs: table.jobs,
             }),
         }
     }
@@ -318,6 +401,7 @@ impl schemars::JsonSchema for BuiltinHook {
 
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         let patterns = generator.subschema_for::<Patterns>();
+        let jobs = generator.subschema_for::<Vec<BuiltinJob>>();
         schemars::json_schema!({
             "description": "`true`/`false`, or a table. A table without `enabled` is enabled.",
             "oneOf": [
@@ -339,7 +423,13 @@ impl schemars::JsonSchema for BuiltinHook {
                                 { "type": "array", "items": { "type": "string" } }
                             ],
                             "description": "File include/exclude glob(s) for this hook."
-                        }
+                        },
+                        "fix": {
+                            "type": "boolean",
+                            "description": "Apply fixes and re-stage them instead of only checking."
+                        },
+                        "priority": { "type": "integer" },
+                        "jobs": jobs
                     }
                 }
             ]
@@ -355,6 +445,7 @@ impl schemars::JsonSchema for FileSafetyHooks {
 
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         let patterns = generator.subschema_for::<Patterns>();
+        let jobs = generator.subschema_for::<Vec<FileSafetyJob>>();
         schemars::json_schema!({
             "description": "`true`/`false`, or a table tuning the file-safety checks. A table without \
                             `enabled` is enabled; each member check defaults on.",
@@ -383,7 +474,13 @@ impl schemars::JsonSchema for FileSafetyHooks {
                         "private_key": { "type": "boolean" },
                         "case_conflict": { "type": "boolean" },
                         "executables_have_shebangs": { "type": "boolean" },
-                        "shebang_scripts_are_executable": { "type": "boolean" }
+                        "shebang_scripts_are_executable": { "type": "boolean" },
+                        "aws_credentials": {
+                            "type": "boolean",
+                            "description": "Reject files containing an AWS secret from the environment or credentials files. Off by default."
+                        },
+                        "priority": { "type": "integer" },
+                        "jobs": jobs
                     }
                 }
             ]

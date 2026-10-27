@@ -5096,6 +5096,7 @@ dependencies = [
  "clap",
  "fs2",
  "gitfluff",
+ "ignore",
  "insta",
  "json5",
  "libc",

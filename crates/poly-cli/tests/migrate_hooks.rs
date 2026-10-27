@@ -148,7 +148,13 @@ fn armis_direct_tool_calls_map_to_builtins_and_catalog_tools() {
         "ruff format / rubyfmt / golangci-lint fmt / buf format -> fmt"
     );
     assert!(config.builtin.lint.enabled, "oxlint / ruff check -> lint");
-    let lint_files = globs(config.builtin.lint.files.as_ref());
+    let lint_files: Vec<String> = config
+        .builtin
+        .lint
+        .jobs
+        .iter()
+        .flat_map(|job| globs(job.files.as_ref()))
+        .collect();
     assert!(lint_files.contains(&"*.{py,pyi}".to_string()), "{lint_files:?}");
     assert!(
         lint_files.contains(&"*.{js,jsx,ts,tsx,mjs,cjs}".to_string()),
@@ -234,14 +240,9 @@ fn armis_run_jobs_keep_staged_files_templates_and_stage_fixed() {
 fn armis_unmappable_constructs_are_reported_and_sources_kept() {
     let plan = plan(&armis());
     let lossy = unrepresented(&plan, "lefthook").join("\n");
-    for needle in [
-        "post-checkout/check-env-lock: NOT MIGRATED",
-        "post-merge/check-env-lock: NOT MIGRATED",
-        "--unsafe-fixes",
-        "prek-hooks",
-        "builtin fmt:",
-    ] {
-        assert!(lossy.contains(needle), "missing `{needle}` in:\n{lossy}");
+    assert!(lossy.contains("prek-hooks"), "missing `prek-hooks` in:\n{lossy}");
+    for resolved in ["NOT MIGRATED", "--unsafe-fixes", "exclude pattern(s) dropped"] {
+        assert!(!lossy.contains(resolved), "`{resolved}` is now handled:\n{lossy}");
     }
     let kept = plan
         .actions
@@ -267,7 +268,8 @@ fn armis_pre_commit_hooks_map_or_are_reported() {
     assert!(!safety.merge_conflict, "check-merge-conflict is not in the config");
 
     let lossy = unrepresented(&plan, "pre-commit").join("\n");
-    assert!(lossy.contains("detect-aws-credentials"), "{lossy}");
+    assert!(safety.aws_credentials, "detect-aws-credentials is a file_safety member");
+    assert!(!lossy.contains("detect-aws-credentials"), "{lossy}");
     assert!(lossy.contains("trailing-whitespace: approximated"), "{lossy}");
     assert!(lossy.contains("buildifier: args --warnings=-native-build"), "{lossy}");
 }
@@ -297,12 +299,12 @@ fn a_fully_mapped_lefthook_config_is_deleted_on_write() {
 fn a_partially_mapped_config_is_kept_and_rewriting_is_idempotent() {
     let dir = repo(&[(
         "lefthook.yml",
-        "post-merge:\n  jobs:\n    - name: lock\n      run: bash check.sh {0}\npre-commit:\n  jobs:\n    - name: fmt\n      run: ruff format {staged_files}\n",
+        "post-merge:\n  jobs:\n    - name: lock\n      run: bash check.sh {push_files}\npre-commit:\n  jobs:\n    - name: fmt\n      run: ruff format {staged_files}\n",
     )]);
     run_migrate(migrate_args(dir.path(), true, false));
     assert!(
         dir.path().join("lefthook.yml").exists(),
-        "unmigrated {{0}} job keeps the source"
+        "an unmigrated {{push_files}} job keeps the source"
     );
     let first = fs::read_to_string(dir.path().join("poly.toml")).unwrap();
     run_migrate(migrate_args(dir.path(), true, false));
@@ -317,6 +319,10 @@ fn recurse_finds_directories_that_only_hold_a_hook_config() {
     )]);
     run_migrate(migrate_args(dir.path(), true, true));
     assert!(dir.path().join("svc/poly.toml").is_file());
+    assert!(
+        dir.path().join("svc/lefthook.yml").is_file(),
+        "a nested hook config stays: git never runs its poly replacement"
+    );
 }
 
 #[test]
@@ -398,18 +404,170 @@ fn extends_merge_jobs_by_name_with_the_main_file_winning() {
 }
 
 #[test]
-fn shared_builtin_drops_exclusions_only_some_jobs_had() {
+fn jobs_sharing_a_builtin_keep_their_own_exclusions() {
     let dir = repo(&[(
         "lefthook.yml",
         "pre-commit:\n  parallel: true\n  jobs:\n    - name: a\n      glob: '*.py'\n      exclude: 'gen/**'\n      run: ruff check {staged_files}\n    - name: b\n      glob: '*.pyi'\n      run: ruff check {staged_files}\n",
     )]);
     let plan = plan(dir.path());
-    let config = hooks_of(&plan);
-    assert!(
-        config.builtin.lint.exclude.is_none(),
-        "an exclusion b did not have must not hide b's files"
+    assert_eq!(
+        result(&plan, "lefthook").absorb,
+        Absorb::Full,
+        "no exclusion is dropped"
     );
-    assert!(unrepresented(&plan, "lefthook").join("\n").contains("gen/**"));
+    let lint = hooks_of(&plan).builtin.lint;
+    assert!(lint.exclude.is_none(), "the shared builtin carries no scope of its own");
+    let scopes: Vec<(Vec<String>, Vec<String>)> = lint
+        .jobs
+        .iter()
+        .map(|job| (globs(job.files.as_ref()), globs(job.exclude.as_ref())))
+        .collect();
+    assert_eq!(
+        scopes,
+        [
+            (vec!["*.py".to_string()], vec!["gen/**".to_string()]),
+            (vec!["*.pyi".to_string()], Vec::new()),
+        ]
+    );
+}
+
+#[test]
+fn identical_scopes_collapse_into_one_flat_builtin() {
+    let dir = repo(&[(
+        "lefthook.yml",
+        "pre-commit:\n  parallel: true\n  jobs:\n    - name: a\n      glob: '*.py'\n      run: ruff check {staged_files}\n    - name: b\n      glob: '*.py'\n      run: oxlint {staged_files}\n",
+    )]);
+    let lint = hooks_of(&plan(dir.path())).builtin.lint;
+    assert!(lint.jobs.is_empty());
+    assert_eq!(globs(lint.files.as_ref()), ["*.py"]);
+}
+
+#[test]
+fn file_safety_members_keep_the_exclusions_of_their_own_hook() {
+    let dir = repo(&[(
+        ".pre-commit-config.yaml",
+        "repos:\n  - repo: https://github.com/pre-commit/pre-commit-hooks\n    rev: v6.0.0\n    hooks:\n      - id: check-merge-conflict\n        exclude: ^demo/data/\n      - id: detect-private-key\n      - id: check-case-conflict\n        exclude: ^demo/data/\n",
+    )]);
+    let plan = plan(dir.path());
+    assert_eq!(result(&plan, "pre-commit").absorb, Absorb::Full);
+    let safety = hooks_of(&plan).builtin.file_safety;
+    let scopes: Vec<(Vec<String>, Vec<String>)> = safety
+        .jobs
+        .iter()
+        .map(|job| {
+            let mut checks = job.checks.clone();
+            checks.sort();
+            (checks, globs(job.exclude.as_ref()))
+        })
+        .collect();
+    let scoped = (
+        vec!["case_conflict".to_string(), "merge_conflict".to_string()],
+        vec!["demo/data/*".to_string()],
+    );
+    assert!(scopes.contains(&scoped), "{scopes:?}");
+    assert!(
+        scopes.contains(&(vec!["private_key".to_string()], Vec::new())),
+        "{scopes:?}"
+    );
+}
+
+fn parsed(plan: &MigrationPlan) -> toml::Table {
+    toml::from_str(&plan.doc.to_string()).unwrap()
+}
+
+#[test]
+fn rewriting_jobs_become_fix_mode_builtins_and_checking_jobs_do_not() {
+    let dir = repo(&[(
+        "lefthook.yml",
+        "pre-commit:\n  parallel: true\n  jobs:\n    - name: fmt\n      glob: '*.py'\n      stage_fixed: true\n      run: ruff format {staged_files}\n    - name: check\n      glob: '*.rs'\n      run: oxlint {staged_files}\n",
+    )]);
+    let plan = plan(dir.path());
+    assert_eq!(result(&plan, "lefthook").absorb, Absorb::Full);
+    let builtin = hooks_of(&plan).builtin;
+    assert!(builtin.fmt.fix, "`ruff format` rewrites its files");
+    assert!(!builtin.lint.fix, "`oxlint` without --fix only reports");
+    let doc = parsed(&plan);
+    assert_eq!(doc["hooks"]["builtin"]["fmt"]["fix"].as_bool(), Some(true));
+    assert!(doc["hooks"]["builtin"]["lint"].get("fix").is_none());
+}
+
+#[test]
+fn a_fixer_without_stage_fixed_is_reported_as_restaged() {
+    let dir = repo(&[(
+        "lefthook.yml",
+        "pre-commit:\n  jobs:\n    - name: fmt\n      run: ruff format {staged_files}\n",
+    )]);
+    let plan = plan(dir.path());
+    let notes = result(&plan, "lefthook").notes.join("\n");
+    assert!(notes.contains("re-stages them: pre-commit/fmt"), "{notes}");
+}
+
+#[test]
+fn layered_builtins_keep_their_priority() {
+    let dir = repo(&[(
+        "lefthook.yml",
+        "pre-commit:\n  jobs:\n    - group:\n        piped: true\n        jobs:\n          - name: fmt\n            glob: '*.py'\n            run: ruff format {staged_files}\n          - name: fix\n            glob: '*.py'\n            run: ruff check --fix {staged_files}\n",
+    )]);
+    let builtin = hooks_of(&plan(dir.path())).builtin;
+    assert_eq!(builtin.fmt.priority, 0);
+    assert_eq!(builtin.lint.priority, 1, "ruff check runs after ruff format");
+}
+
+#[test]
+fn unsafe_fixes_becomes_the_ruff_engine_option() {
+    let dir = repo(&[(
+        "lefthook.yml",
+        "pre-commit:\n  jobs:\n    - name: fix\n      glob: '*.py'\n      stage_fixed: true\n      run: ruff check --fix --unsafe-fixes {staged_files}\n",
+    )]);
+    let plan = plan(dir.path());
+    assert_eq!(result(&plan, "lefthook").absorb, Absorb::Full);
+    assert_eq!(
+        parsed(&plan)["lint"]["python"]["ruff"]["unsafe_fixes"].as_bool(),
+        Some(true)
+    );
+}
+
+#[test]
+fn git_argument_placeholders_are_migrated_not_dropped() {
+    let dir = repo(&[
+        (
+            "lefthook.yml",
+            "post-checkout:\n  jobs:\n    - name: lock\n      run: bash .lefthook/lock.sh {0}\npost-merge:\n  jobs:\n    - name: second\n      run: echo {2} {git_args}\n",
+        ),
+        (".lefthook/lock.sh", "echo lock\n"),
+    ]);
+    let plan = plan(dir.path());
+    assert_eq!(result(&plan, "lefthook").absorb, Absorb::Full);
+    let config = hooks_of(&plan);
+    let lock = &config.stage_configs[&Stage::PostCheckout].commands["lock"];
+    assert_eq!(lock.run.as_deref(), Some("bash .lefthook/lock.sh {0}"));
+    assert!(lock.workspace, "git arguments are not file lists");
+    let second = &config.stage_configs[&Stage::PostMerge].commands["second"];
+    assert_eq!(second.run.as_deref(), Some("echo {2} {git_args}"));
+}
+
+#[test]
+fn aws_credentials_maps_to_a_file_safety_member() {
+    let dir = repo(&[(
+        ".pre-commit-config.yaml",
+        "repos:\n  - repo: https://github.com/pre-commit/pre-commit-hooks\n    rev: v6.0.0\n    hooks:\n      - id: detect-aws-credentials\n        args: [--allow-missing-credentials]\n",
+    )]);
+    let plan = plan(dir.path());
+    assert_eq!(result(&plan, "pre-commit").absorb, Absorb::Full);
+    assert!(hooks_of(&plan).builtin.file_safety.aws_credentials);
+}
+
+#[test]
+fn aws_credentials_without_allow_missing_is_reported_as_relaxed() {
+    let dir = repo(&[(
+        ".pre-commit-config.yaml",
+        "repos:\n  - repo: https://github.com/pre-commit/pre-commit-hooks\n    rev: v6.0.0\n    hooks:\n      - id: detect-aws-credentials\n",
+    )]);
+    let lossy = unrepresented(&plan(dir.path()), "pre-commit").join("\n");
+    assert!(
+        lossy.contains("pre-commit fails when no AWS credentials are configured"),
+        "{lossy}"
+    );
 }
 
 #[test]
@@ -487,4 +645,62 @@ fn no_hook_config_leaves_the_plan_untouched() {
             .iter()
             .all(|r| r.tool != "lefthook" && r.tool != "pre-commit")
     );
+}
+
+#[test]
+fn recurse_skips_virtualenvs_gitignored_trees_and_build_output() {
+    let ruff = "[tool.ruff.lint]\nselect = [\"E\"]\n";
+    let dir = repo(&[
+        ("svc/pyproject.toml", ruff),
+        (".venv/lib/python3.12/site-packages/pkg/pyproject.toml", ruff),
+        ("renamed_env/pyvenv.cfg", "home = /usr/bin\n"),
+        ("renamed_env/lib/pkg/pyproject.toml", ruff),
+        ("generated/pyproject.toml", ruff),
+        ("bazel-out/pkg/pyproject.toml", ruff),
+        (".gitignore", "generated/\n"),
+    ]);
+    run_migrate(migrate_args(dir.path(), true, true));
+    assert!(
+        dir.path().join("svc/poly.toml").is_file(),
+        "the real project is migrated"
+    );
+    for skipped in [
+        ".venv/lib/python3.12/site-packages/pkg",
+        "renamed_env/lib/pkg",
+        "generated",
+        "bazel-out/pkg",
+    ] {
+        assert!(
+            !dir.path().join(skipped).join("poly.toml").exists(),
+            "{skipped} must not receive a poly.toml"
+        );
+    }
+}
+
+#[test]
+fn a_nested_ruff_config_replaces_the_ancestors_and_says_so() {
+    let ruff = "[tool.ruff.lint]\nselect = [\"E\"]\n[tool.ruff.lint.per-file-ignores]\n\"a.py\" = [\"F401\"]\n";
+    let dir = repo(&[("pyproject.toml", ruff), ("svc/pyproject.toml", ruff)]);
+    run_migrate(migrate_args(dir.path(), true, true));
+    let root: toml::Table = toml::from_str(&fs::read_to_string(dir.path().join("poly.toml")).unwrap()).unwrap();
+    let nested: toml::Table = toml::from_str(&fs::read_to_string(dir.path().join("svc/poly.toml")).unwrap()).unwrap();
+    assert!(root["lint"]["python"]["ruff"].get("inherit_mode").is_none());
+    assert_eq!(
+        nested["lint"]["python"]["ruff"]["inherit_mode"].as_str(),
+        Some("replace")
+    );
+    assert_eq!(nested["per-file-ignores"]["inherit_mode"].as_str(), Some("replace"));
+}
+
+#[test]
+fn the_root_hook_config_is_still_deleted_when_fully_absorbed_under_recurse() {
+    let dir = repo(&[
+        (
+            "lefthook.yml",
+            "pre-commit:\n  jobs:\n    - run: ruff format {staged_files}\n",
+        ),
+        ("svc/pyproject.toml", "[tool.ruff.lint]\nselect = [\"E\"]\n"),
+    ]);
+    run_migrate(migrate_args(dir.path(), true, true));
+    assert!(!dir.path().join("lefthook.yml").exists());
 }
