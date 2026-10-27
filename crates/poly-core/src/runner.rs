@@ -22,6 +22,7 @@ use rustc_hash::FxHashSet;
 
 mod batch;
 mod edits;
+mod engine_clock;
 mod generated;
 mod plan;
 mod selection;
@@ -31,6 +32,7 @@ mod types;
 use crate::fingerprint::{ConfigFingerprint, fingerprints};
 use batch::{BatchPrefill, prefill};
 use edits::apply_edits;
+use engine_clock::{EngineClock, EngineTime};
 use generated::{acts_on_generated, format_skip_result, lint_skip_result};
 use plan::{EnginePlan, RunPlan, plan_by_config_language, prefetch_tier2_grammars, provides_language_lint};
 use selection::{EngineSelection, validate_selection};
@@ -580,11 +582,12 @@ fn lint_content(
             all.extend(diags);
             continue;
         }
-        let started = std::time::Instant::now();
+        let clock = EngineClock::start();
         let mut diags = guard_engine_panic(plan.engine.name(), &f.path, || plan.engine.lint(&src, &plan.config))?;
-        let elapsed = started.elapsed();
-        note_slow_engine(&f.path, content.len(), plan.engine.name(), elapsed);
-        push_engine_debug(debug.as_mut(), plan, Some(started));
+        let time = clock.stop();
+        let elapsed = time.wall;
+        note_slow_engine(&f.path, content.len(), plan.engine.name(), time);
+        push_engine_debug(debug.as_mut(), plan, Some(clock.started()));
         // Cache raw severities so a later config-only remap can be applied
         // identically on both hits and misses.
         if let Some(key) = &key
@@ -613,18 +616,25 @@ fn should_cache_result(elapsed: std::time::Duration) -> bool {
     elapsed >= MIN_CACHE_DURATION
 }
 
-fn note_slow_engine(path: &std::path::Path, bytes: usize, engine: &str, elapsed: std::time::Duration) {
+/// Report an engine call that took long. Only a call that spent its time
+/// computing is flagged as a slow backend: one that mostly waited (on a lock, a
+/// saturated core, or a child process) says nothing about the backend's own
+/// cost on this file, so it is logged at `info` with both clocks instead.
+fn note_slow_engine(path: &std::path::Path, bytes: usize, engine: &str, time: EngineTime) {
     let bytes = bytes as u64;
-    let elapsed_ms = elapsed.as_millis() as u64;
+    let elapsed_ms = time.wall.as_millis() as u64;
+    let cpu_ms = time.cpu.map(|cpu| cpu.as_millis() as u64);
     let file = path.display();
-    if elapsed >= SLOW_ENGINE_WARN {
-        if engine == GENERIC_TIER_ENGINE {
-            tracing::warn!(%file, bytes, engine, elapsed_ms, "slow generic formatter run");
+    if time.wall >= SLOW_ENGINE_WARN {
+        if time.mostly_waiting() {
+            tracing::info!(%file, bytes, engine, elapsed_ms, ?cpu_ms, "backend run mostly waiting, not computing");
+        } else if engine == GENERIC_TIER_ENGINE {
+            tracing::warn!(%file, bytes, engine, elapsed_ms, ?cpu_ms, "slow generic formatter run");
         } else {
-            tracing::warn!(%file, bytes, engine, elapsed_ms, "slow backend run; consider reporting it upstream");
+            tracing::warn!(%file, bytes, engine, elapsed_ms, ?cpu_ms, "slow backend run; consider reporting it upstream");
         }
-    } else if elapsed >= SLOW_ENGINE_DEBUG {
-        tracing::debug!(%file, bytes, engine, elapsed_ms, "notable backend runtime");
+    } else if time.wall >= SLOW_ENGINE_DEBUG {
+        tracing::debug!(%file, bytes, engine, elapsed_ms, ?cpu_ms, "notable backend runtime");
     }
 }
 
@@ -785,17 +795,19 @@ fn format_one(
                 continue;
             }
             src.content = Arc::clone(&current);
-            let started = std::time::Instant::now();
+            let clock = EngineClock::start();
+            let started = clock.started();
             let formatted = guard_engine_panic(plan.engine.name(), &f.path, || plan.engine.format(&src, &plan.config))?;
             let out: Arc<str> = match formatted {
                 FormatOutput::Unchanged => Arc::clone(&current),
                 FormatOutput::Formatted(s) => Arc::from(s),
             };
-            let elapsed = started.elapsed();
+            let time = clock.stop();
+            let elapsed = time.wall;
             if record_debug {
                 push_engine_debug(debug.as_mut(), plan, Some(started));
             }
-            note_slow_engine(&f.path, src.content.len(), plan.engine.name(), elapsed);
+            note_slow_engine(&f.path, src.content.len(), plan.engine.name(), time);
             if let Some(key) = &key
                 && should_cache_result(elapsed)
                 && let Err(error) = cache.put(Namespace::Fmt, key, out.as_bytes())

@@ -5209,6 +5209,7 @@ dependencies = [
  "hcl-rs",
  "ignore",
  "insta",
+ "libc",
  "mago-allocator",
  "mago-database",
  "mago-formatter",
