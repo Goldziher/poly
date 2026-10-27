@@ -153,13 +153,22 @@ static RULE_CODES: &[&str] = &[
 /// and is not selected at all — see [`RULE_CODES`].
 static DEFAULT_IGNORED_RULES: &[&str] = &["B008", "RUF100", "ANN002", "ANN003", "ARG002", "PLR2004", "TRY003"];
 
-/// The effective default ignore set: [`DEFAULT_IGNORED_RULES`] minus any rule the
-/// user explicitly turned back on via `select` / `extend_select`.
-fn default_ignored(user_enabled: &[String]) -> Vec<String> {
+/// The effective default ignore set: [`DEFAULT_IGNORED_RULES`] minus every rule
+/// the user's own selection covers, by exact code, by prefix (`RUF`) or by `ALL`.
+///
+/// `user_codes` is what the user asked for, not poly's defaults: an explicit
+/// `select` replaces poly's opinionated set and with it the reason to hold
+/// individual members back, while `extend_select` adds to a set whose held-back
+/// members stay held back unless it names them by their full code.
+fn default_ignored(user_codes: &[String], preview: &PreviewOptions) -> Vec<String> {
+    let enabled = rules_for_codes(user_codes, preview);
     DEFAULT_IGNORED_RULES
         .iter()
-        .filter(|rule| !user_enabled.iter().any(|e| e.eq_ignore_ascii_case(rule)))
-        .map(|rule| (*rule).to_owned())
+        .filter(|code| {
+            let rules = rules_for_codes(&[code.to_string()], preview);
+            !rules.iter().any(|rule| enabled.contains(rule))
+        })
+        .map(|code| code.to_string())
         .collect()
 }
 
@@ -195,7 +204,11 @@ fn default_settings() -> &'static LinterSettings {
     SETTINGS.get_or_init(|| {
         let codes: Vec<String> = RULE_CODES.iter().map(|s| (*s).to_owned()).collect();
         let mut settings = LinterSettings::new(Path::new("."));
-        settings.rules = build_rule_table(&codes, &default_ignored(&[]), &PreviewOptions::default());
+        settings.rules = build_rule_table(
+            &codes,
+            &default_ignored(&[], &PreviewOptions::default()),
+            &PreviewOptions::default(),
+        );
         settings.line_length =
             ruff_linter::line_width::LineLength::try_from(120_u16).expect("120 is a valid line length");
         settings.pycodestyle.max_line_length = settings.line_length;
@@ -213,16 +226,28 @@ fn default_settings() -> &'static LinterSettings {
 fn build_settings(cfg: &EngineConfig) -> LinterSettings {
     let selection = super::rule_config::RuleSelection::from_options(cfg);
 
-    let mut codes: Vec<String> = if selection.select.is_empty() {
-        RULE_CODES.iter().map(|s| (*s).to_owned()).collect()
-    } else {
+    let preview = plugins::preview_options(cfg);
+    let replaces_defaults = !selection.select.is_empty();
+    let mut codes: Vec<String> = if replaces_defaults {
         selection.select
+    } else {
+        RULE_CODES.iter().map(|s| (*s).to_owned()).collect()
+    };
+    let user_codes: Vec<String> = if replaces_defaults {
+        codes.iter().chain(&selection.extend_select).cloned().collect()
+    } else {
+        selection
+            .extend_select
+            .iter()
+            .filter(|code| rules_for_codes(std::slice::from_ref(code), &preview).len() == 1)
+            .cloned()
+            .collect()
     };
     codes.extend(selection.extend_select);
-    // Fold in the default ignore set (e.g. B008), minus anything the user has
-    // explicitly enabled via `select` / `extend_select` (now all present in `codes`).
+    // Fold in the default ignore set (e.g. B008), minus what the user's own
+    // selection covers.
     let mut ignore = selection.ignore;
-    ignore.extend(default_ignored(&codes));
+    ignore.extend(default_ignored(&user_codes, &preview));
 
     let line_length = cfg
         .options
@@ -231,7 +256,6 @@ fn build_settings(cfg: &EngineConfig) -> LinterSettings {
         .map(|v| v as usize)
         .unwrap_or(cfg.globals.line_length);
 
-    let preview = plugins::preview_options(cfg);
     let mut settings = LinterSettings::new(Path::new("."));
     settings.preview = preview.mode;
     settings.explicit_preview_rules = preview.require_explicit;
@@ -449,6 +473,10 @@ impl Engine for RuffEngine {
                 ("pep8_naming_extend_ignore_names", OptionType::ARRAY),
                 ("pep8_naming_classmethod_decorators", OptionType::ARRAY),
                 ("pep8_naming_staticmethod_decorators", OptionType::ARRAY),
+                ("flake8_import_conventions_aliases", OptionType::TABLE),
+                ("flake8_import_conventions_extend_aliases", OptionType::TABLE),
+                ("flake8_import_conventions_banned_aliases", OptionType::TABLE),
+                ("flake8_import_conventions_banned_from", OptionType::ARRAY),
                 ("flake8_quotes_inline_quotes", OptionType::STRING),
                 ("flake8_quotes_multiline_quotes", OptionType::STRING),
                 ("flake8_quotes_docstring_quotes", OptionType::STRING),
@@ -471,7 +499,7 @@ impl Engine for RuffEngine {
     }
 
     fn version(&self) -> &str {
-        "ruff-0.17.3+pkgroot+plugins+isort+e501+tgtsrc+ignore-b008+rules-v3+advisory-sev1+fmtopts2+plugopts2+isort3+pylint2+unsafefix1"
+        "ruff-0.17.3+pkgroot+plugins+isort+e501+tgtsrc+ignore-b008+rules-v3+advisory-sev1+fmtopts2+plugopts2+isort3+pylint2+impconv1+defignore2+unsafefix1"
     }
 
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {

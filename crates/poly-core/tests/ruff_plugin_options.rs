@@ -613,6 +613,35 @@ const CASES: &[Case] = &[
         },
         fires_when_tuned: true,
     },
+    Case {
+        name: "flake8_import_conventions_banned_from bans from-imports",
+        code: "ICN003",
+        source: "from itertools import chain\n",
+        base: || vec![select("ICN003")],
+        tuned: || {
+            vec![
+                select("ICN003"),
+                ("flake8_import_conventions_banned_from", strings(&["itertools"])),
+            ]
+        },
+        fires_when_tuned: true,
+    },
+    Case {
+        name: "flake8_import_conventions_extend_aliases adds a convention",
+        code: "ICN001",
+        source: "import dask.dataframe as ddf\n",
+        base: || vec![select("ICN001")],
+        tuned: || {
+            vec![
+                select("ICN001"),
+                (
+                    "flake8_import_conventions_extend_aliases",
+                    toml::Value::Table(toml::Table::from_iter([("dask.dataframe".to_string(), text("dd"))])),
+                ),
+            ]
+        },
+        fires_when_tuned: true,
+    },
 ];
 
 #[test]
@@ -705,4 +734,33 @@ fn unsafe_fixes_false_keeps_unsafe_fixes_withheld() {
 fn unsafe_fixes_leaves_safe_fixes_alone() {
     let options = vec![("unsafe_fixes", toml::Value::Boolean(true))];
     assert!(fix_of("F401", UNUSED_IMPORT, options) > 0);
+}
+
+#[test]
+fn an_explicit_select_that_covers_a_held_back_rule_turns_it_on() {
+    let source = "x = 1  # noqa: E501\n";
+    assert!(
+        !fires("RUF100", source, vec![("extend_select", strings(&["RUF"]))]),
+        "extend_select keeps poly's hold-back"
+    );
+    assert!(
+        fires("RUF100", source, vec![select("RUF100")]),
+        "naming the rule enables it"
+    );
+    assert!(
+        fires("RUF100", source, vec![("select", strings(&["RUF"]))]),
+        "a replacing select owns the whole set"
+    );
+    assert!(
+        fires("RUF100", source, vec![("select", strings(&["ALL"]))]),
+        "ALL covers it"
+    );
+    assert!(
+        !fires(
+            "RUF100",
+            source,
+            vec![("select", strings(&["ALL"])), ("ignore", strings(&["RUF100"]))]
+        ),
+        "an explicit ignore still wins"
+    );
 }

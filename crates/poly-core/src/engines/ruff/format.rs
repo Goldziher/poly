@@ -36,12 +36,8 @@ fn width(value: usize) -> LineWidth {
         .unwrap_or_else(|| LineWidth::try_from(120_u16).expect("120 is a valid line width"))
 }
 
-fn string_option<'a>(cfg: &'a EngineConfig, key: &str) -> Option<&'a str> {
-    cfg.options.get(key).and_then(toml::Value::as_str)
-}
-
 fn indent_style(cfg: &EngineConfig) -> Option<IndentStyle> {
-    match string_option(cfg, "indent_style")? {
+    match cfg.options.get("indent_style").and_then(toml::Value::as_str)? {
         "space" => Some(IndentStyle::Space),
         "tab" => Some(IndentStyle::Tab),
         other => {
@@ -57,7 +53,7 @@ fn indent_style(cfg: &EngineConfig) -> Option<IndentStyle> {
 }
 
 fn quote_style(cfg: &EngineConfig) -> Option<QuoteStyle> {
-    match string_option(cfg, "quote_style")? {
+    match cfg.options.get("quote_style").and_then(toml::Value::as_str)? {
         "double" => Some(QuoteStyle::Double),
         "single" => Some(QuoteStyle::Single),
         "preserve" => Some(QuoteStyle::Preserve),
@@ -78,7 +74,7 @@ fn quote_style(cfg: &EngineConfig) -> Option<QuoteStyle> {
 /// `auto` follows the first line break in the file, so a CRLF file stays CRLF;
 /// `native` follows the platform. A file with no line break keeps `\n`.
 fn line_ending(cfg: &EngineConfig, content: &str) -> Option<LineEnding> {
-    match string_option(cfg, "line_ending")? {
+    match cfg.options.get("line_ending").and_then(toml::Value::as_str)? {
         "lf" => Some(LineEnding::LineFeed),
         "cr-lf" => Some(LineEnding::CarriageReturnLineFeed),
         "native" => Some(if cfg!(windows) {

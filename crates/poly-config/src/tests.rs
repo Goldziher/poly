@@ -365,6 +365,40 @@ select = ["ALL"]
     assert!(config.fmt.contains_key("javascript"), "oxc table from child");
 }
 
+fn ruff_options(config: &PolyConfig) -> &toml::Table {
+    config.lint["python"]["ruff"].as_table().expect("ruff table")
+}
+
+#[test]
+fn a_nested_ruff_table_inherits_the_roots_options_unless_it_replaces_them() {
+    let root = tempdir().unwrap();
+    fs::write(
+        root.path().join("poly.toml"),
+        "[workspace]\nroot = true\n[lint.python.ruff]\nisort_force_single_line = true\nselect = [\"E\"]\n",
+    )
+    .unwrap();
+    let merged = root.path().join("merged");
+    let replaced = root.path().join("replaced");
+    fs::create_dir_all(&merged).unwrap();
+    fs::create_dir_all(&replaced).unwrap();
+    fs::write(merged.join("poly.toml"), "[lint.python.ruff]\nselect = [\"F\"]\n").unwrap();
+    fs::write(
+        replaced.join("poly.toml"),
+        "[lint.python.ruff]\ninherit_mode = \"replace\"\nselect = [\"F\"]\n",
+    )
+    .unwrap();
+
+    let inherited = PolyConfig::resolve_for_dir(&merged).expect("resolve");
+    assert!(ruff_options(&inherited).contains_key("isort_force_single_line"));
+    let fresh = PolyConfig::resolve_for_dir(&replaced).expect("resolve");
+    assert!(!ruff_options(&fresh).contains_key("isort_force_single_line"));
+    assert!(
+        !ruff_options(&fresh).contains_key("inherit_mode"),
+        "the directive is consumed"
+    );
+    assert!(ruff_options(&fresh).contains_key("select"));
+}
+
 #[test]
 fn resolve_for_dir_child_scalar_overrides_root() {
     let root = tempdir().unwrap();

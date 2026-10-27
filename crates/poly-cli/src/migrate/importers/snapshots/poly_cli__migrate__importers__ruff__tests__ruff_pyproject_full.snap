@@ -11,7 +11,9 @@ ignore = ["D203", "COM812"]
 
 [fmt.python.ruff]
 line_length = 100
+docstring_code_format = false
+line_ending = "auto"
 
 [per-file-ignores]
-"__init__.py" = ["F401"]
+"**/__init__.py" = ["F401"]
 "tests/**" = ["S101", "ANN"]

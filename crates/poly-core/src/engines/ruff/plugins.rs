@@ -8,6 +8,7 @@
 use ruff_linter::line_width::LineLength;
 use ruff_linter::registry::Rule;
 use ruff_linter::rule_selector::PreviewOptions;
+use ruff_linter::rules::flake8_import_conventions::settings::BannedAliases;
 use ruff_linter::rules::flake8_pytest_style::types::{
     ParametrizeNameType, ParametrizeValuesRowType, ParametrizeValuesType,
 };
@@ -30,6 +31,7 @@ pub(super) fn apply(settings: &mut LinterSettings, cfg: &EngineConfig) {
     options.isort(settings);
     options.pycodestyle(settings);
     options.pep8_naming(settings);
+    options.flake8_import_conventions(settings);
     options.flake8_quotes(settings);
     options.flake8_type_checking(settings);
     options.flake8_pytest_style(settings);
@@ -61,14 +63,6 @@ impl Options<'_> {
         })
     }
 
-    fn int_opt(&self, key: &str) -> Option<isize> {
-        self.cfg
-            .options
-            .get(key)
-            .and_then(toml::Value::as_integer)
-            .and_then(|value| isize::try_from(value).ok())
-    }
-
     fn flag(&self, key: &str) -> Option<bool> {
         self.cfg.options.get(key).and_then(toml::Value::as_bool)
     }
@@ -97,20 +91,29 @@ impl Options<'_> {
 
     fn pylint(&self, settings: &mut LinterSettings) {
         let pylint = &mut settings.pylint;
-        let limits: [(&str, &mut usize); 8] = [
-            ("pylint_max_args", &mut pylint.max_args),
-            ("pylint_max_bool_expr", &mut pylint.max_bool_expr),
-            ("pylint_max_branches", &mut pylint.max_branches),
-            ("pylint_max_locals", &mut pylint.max_locals),
-            ("pylint_max_nested_blocks", &mut pylint.max_nested_blocks),
-            ("pylint_max_public_methods", &mut pylint.max_public_methods),
-            ("pylint_max_returns", &mut pylint.max_returns),
-            ("pylint_max_statements", &mut pylint.max_statements),
-        ];
-        for (key, slot) in limits {
-            if let Some(limit) = self.usize_opt(key) {
-                *slot = limit;
-            }
+        if let Some(limit) = self.usize_opt("pylint_max_args") {
+            pylint.max_args = limit;
+        }
+        if let Some(limit) = self.usize_opt("pylint_max_bool_expr") {
+            pylint.max_bool_expr = limit;
+        }
+        if let Some(limit) = self.usize_opt("pylint_max_branches") {
+            pylint.max_branches = limit;
+        }
+        if let Some(limit) = self.usize_opt("pylint_max_locals") {
+            pylint.max_locals = limit;
+        }
+        if let Some(limit) = self.usize_opt("pylint_max_nested_blocks") {
+            pylint.max_nested_blocks = limit;
+        }
+        if let Some(limit) = self.usize_opt("pylint_max_public_methods") {
+            pylint.max_public_methods = limit;
+        }
+        if let Some(limit) = self.usize_opt("pylint_max_returns") {
+            pylint.max_returns = limit;
+        }
+        if let Some(limit) = self.usize_opt("pylint_max_statements") {
+            pylint.max_statements = limit;
         }
     }
 
@@ -119,47 +122,16 @@ impl Options<'_> {
             settings.src = src.iter().map(std::path::PathBuf::from).collect();
         }
         self.known_modules(settings);
+        self.isort_flags(settings);
+        self.isort_lists(settings);
         let isort = &mut settings.isort;
-        let flags: [(&str, &mut bool); 11] = [
-            ("isort_case_sensitive", &mut isort.case_sensitive),
-            ("isort_combine_as_imports", &mut isort.combine_as_imports),
-            ("isort_detect_same_package", &mut isort.detect_same_package),
-            ("isort_force_single_line", &mut isort.force_single_line),
-            (
-                "isort_force_sort_within_sections",
-                &mut isort.force_sort_within_sections,
-            ),
-            ("isort_force_wrap_aliases", &mut isort.force_wrap_aliases),
-            ("isort_from_first", &mut isort.from_first),
-            ("isort_length_sort", &mut isort.length_sort),
-            ("isort_length_sort_straight", &mut isort.length_sort_straight),
-            ("isort_no_sections", &mut isort.no_sections),
-            ("isort_order_by_type", &mut isort.order_by_type),
-        ];
-        for (key, slot) in flags {
-            if let Some(value) = self.flag(key) {
-                *slot = value;
-            }
-        }
-        if let Some(value) = self.flag("isort_split_on_trailing_comma") {
-            isort.split_on_trailing_comma = value;
-        }
-        let sets: [(&str, &mut rustc_hash::FxHashSet<String>); 5] = [
-            ("isort_classes", &mut isort.classes),
-            ("isort_constants", &mut isort.constants),
-            ("isort_variables", &mut isort.variables),
-            ("isort_force_to_top", &mut isort.force_to_top),
-            ("isort_single_line_exclusions", &mut isort.single_line_exclusions),
-        ];
-        for (key, slot) in sets {
-            if let Some(items) = self.str_list(key) {
-                *slot = items.into_iter().collect();
-            }
-        }
-        if let Some(items) = self.str_list("isort_forced_separate") {
-            isort.forced_separate = items;
-        }
-        if let Some(lines) = self.int_opt("isort_lines_after_imports") {
+        let after = self
+            .cfg
+            .options
+            .get("isort_lines_after_imports")
+            .and_then(toml::Value::as_integer)
+            .and_then(|lines| isize::try_from(lines).ok());
+        if let Some(lines) = after {
             isort.lines_after_imports = lines;
         }
         if let Some(lines) = self.usize_opt("isort_lines_between_types") {
@@ -174,6 +146,68 @@ impl Options<'_> {
             isort.relative_imports_order = order;
         }
         self.isort_sections(settings);
+    }
+
+    fn isort_flags(&self, settings: &mut LinterSettings) {
+        let isort = &mut settings.isort;
+        if let Some(value) = self.flag("isort_case_sensitive") {
+            isort.case_sensitive = value;
+        }
+        if let Some(value) = self.flag("isort_combine_as_imports") {
+            isort.combine_as_imports = value;
+        }
+        if let Some(value) = self.flag("isort_detect_same_package") {
+            isort.detect_same_package = value;
+        }
+        if let Some(value) = self.flag("isort_force_single_line") {
+            isort.force_single_line = value;
+        }
+        if let Some(value) = self.flag("isort_force_sort_within_sections") {
+            isort.force_sort_within_sections = value;
+        }
+        if let Some(value) = self.flag("isort_force_wrap_aliases") {
+            isort.force_wrap_aliases = value;
+        }
+        if let Some(value) = self.flag("isort_from_first") {
+            isort.from_first = value;
+        }
+        if let Some(value) = self.flag("isort_length_sort") {
+            isort.length_sort = value;
+        }
+        if let Some(value) = self.flag("isort_length_sort_straight") {
+            isort.length_sort_straight = value;
+        }
+        if let Some(value) = self.flag("isort_no_sections") {
+            isort.no_sections = value;
+        }
+        if let Some(value) = self.flag("isort_order_by_type") {
+            isort.order_by_type = value;
+        }
+        if let Some(value) = self.flag("isort_split_on_trailing_comma") {
+            isort.split_on_trailing_comma = value;
+        }
+    }
+
+    fn isort_lists(&self, settings: &mut LinterSettings) {
+        let isort = &mut settings.isort;
+        if let Some(items) = self.str_list("isort_classes") {
+            isort.classes = items.into_iter().collect();
+        }
+        if let Some(items) = self.str_list("isort_constants") {
+            isort.constants = items.into_iter().collect();
+        }
+        if let Some(items) = self.str_list("isort_variables") {
+            isort.variables = items.into_iter().collect();
+        }
+        if let Some(items) = self.str_list("isort_force_to_top") {
+            isort.force_to_top = items.into_iter().collect();
+        }
+        if let Some(items) = self.str_list("isort_single_line_exclusions") {
+            isort.single_line_exclusions = items.into_iter().collect();
+        }
+        if let Some(items) = self.str_list("isort_forced_separate") {
+            isort.forced_separate = items;
+        }
     }
 
     /// `section_order`, `default_section`, `no_lines_before` and `import_heading`
@@ -221,7 +255,6 @@ impl Options<'_> {
                 .filter_map(|pattern| IdentifierPattern::new(pattern).ok())
                 .collect()
         };
-        let named = |key: &str| patterns(self.str_list(key).unwrap_or_default());
         let user_defined: FxHashMap<String, Vec<IdentifierPattern>> = self
             .cfg
             .options
@@ -247,10 +280,10 @@ impl Options<'_> {
             })
             .unwrap_or_default();
         let (first, third, local, standard) = (
-            named("known_first_party"),
-            named("known_third_party"),
-            named("known_local_folder"),
-            named("extra_standard_library"),
+            patterns(self.str_list("known_first_party").unwrap_or_default()),
+            patterns(self.str_list("known_third_party").unwrap_or_default()),
+            patterns(self.str_list("known_local_folder").unwrap_or_default()),
+            patterns(self.str_list("extra_standard_library").unwrap_or_default()),
         );
         if !(first.is_empty() && third.is_empty() && local.is_empty() && standard.is_empty() && user_defined.is_empty())
         {
@@ -382,6 +415,56 @@ impl Options<'_> {
             }
         }
     }
+}
+
+impl Options<'_> {
+    /// `aliases` replaces the conventional alias table, `extend_aliases` adds to
+    /// it, `banned_aliases` maps a module to the aliases it must not use, and
+    /// `banned_from` lists modules whose `from` imports are rejected.
+    fn flake8_import_conventions(&self, settings: &mut LinterSettings) {
+        let options = &self.cfg.options;
+        let conventions = &mut settings.flake8_import_conventions;
+        if let Some(aliases) = alias_pairs(
+            options
+                .get("flake8_import_conventions_aliases")
+                .and_then(toml::Value::as_table),
+        ) {
+            conventions.aliases = aliases.into_iter().collect();
+        }
+        if let Some(extra) = alias_pairs(
+            options
+                .get("flake8_import_conventions_extend_aliases")
+                .and_then(toml::Value::as_table),
+        ) {
+            conventions.aliases.extend(extra);
+        }
+        if let Some(banned) = options
+            .get("flake8_import_conventions_banned_aliases")
+            .and_then(toml::Value::as_table)
+        {
+            conventions.banned_aliases = banned
+                .iter()
+                .filter_map(|(module, aliases)| {
+                    let aliases = aliases.as_array()?.iter().filter_map(toml::Value::as_str);
+                    Some((module.clone(), aliases.map(str::to_owned).collect::<BannedAliases>()))
+                })
+                .collect();
+        }
+        if let Some(modules) = self.str_list("flake8_import_conventions_banned_from") {
+            conventions.banned_from = modules.into_iter().collect();
+        }
+    }
+}
+
+/// A table of `module = "alias"` pairs; entries whose value is not a string are
+/// skipped.
+fn alias_pairs(table: Option<&toml::Table>) -> Option<Vec<(String, String)>> {
+    table.map(|table| {
+        table
+            .iter()
+            .filter_map(|(module, alias)| Some((module.clone(), alias.as_str()?.to_owned())))
+            .collect()
+    })
 }
 
 fn line_length(value: Option<usize>) -> Option<LineLength> {

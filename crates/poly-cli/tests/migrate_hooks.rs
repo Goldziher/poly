@@ -319,6 +319,10 @@ fn recurse_finds_directories_that_only_hold_a_hook_config() {
     )]);
     run_migrate(migrate_args(dir.path(), true, true));
     assert!(dir.path().join("svc/poly.toml").is_file());
+    assert!(
+        dir.path().join("svc/lefthook.yml").is_file(),
+        "a nested hook config stays: git never runs its poly replacement"
+    );
 }
 
 #[test]
@@ -686,4 +690,17 @@ fn a_nested_ruff_config_replaces_the_ancestors_and_says_so() {
         Some("replace")
     );
     assert_eq!(nested["per-file-ignores"]["inherit_mode"].as_str(), Some("replace"));
+}
+
+#[test]
+fn the_root_hook_config_is_still_deleted_when_fully_absorbed_under_recurse() {
+    let dir = repo(&[
+        (
+            "lefthook.yml",
+            "pre-commit:\n  jobs:\n    - run: ruff format {staged_files}\n",
+        ),
+        ("svc/pyproject.toml", "[tool.ruff.lint]\nselect = [\"E\"]\n"),
+    ]);
+    run_migrate(migrate_args(dir.path(), true, true));
+    assert!(!dir.path().join("lefthook.yml").exists());
 }
