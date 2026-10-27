@@ -383,14 +383,16 @@ pub struct Capabilities {
 /// engine, which is why this defaults to off and every tier-1 backend leaves it
 /// there.
 ///
-/// Only `format` exists today. Lint batching is deferred: `shellcheck` is the
-/// one lint backend worth batching, and giving it real paths changes *what it
-/// reports* (`source` directives start resolving), which is a behaviour change
-/// needing its own decision rather than a performance change. See ADR 0033 §6.
+/// `lint` exists for `shellcheck` alone, the one lint backend worth batching. It
+/// batches by reproducing the stdin invocation rather than by handing the tool
+/// real paths, which would change *what it reports* (`source` directives start
+/// resolving). See ADR 0033 §6.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct BatchSupport {
     /// The backend implements [`Engine::format_batch`].
     pub format: bool,
+    /// The backend implements [`Engine::lint_batch`].
+    pub lint: bool,
 }
 
 /// Severity of a [`Diagnostic`].
@@ -646,6 +648,20 @@ pub trait Engine: Send + Sync {
         _cfg: &EngineConfig,
     ) -> anyhow::Result<Vec<anyhow::Result<FormatOutput>>> {
         anyhow::bail!("this backend does not implement batch formatting")
+    }
+
+    /// Lint every member of `batch` in one call.
+    ///
+    /// The contract is [`Engine::format_batch`]'s: one answer per input in
+    /// order, an outer `Err` for a batch that cannot be trusted, and an inner
+    /// `Err` for a member to be linted on its own. The answer for a member must
+    /// be exactly what [`Engine::lint`] would have returned for it.
+    fn lint_batch(
+        &self,
+        _batch: &[SourceFile],
+        _cfg: &EngineConfig,
+    ) -> anyhow::Result<Vec<anyhow::Result<Vec<Diagnostic>>>> {
+        anyhow::bail!("this backend does not implement batch linting")
     }
 
     /// Whether this backend reads [`ENABLED_OPTION_KEY`] itself and degrades

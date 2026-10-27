@@ -119,6 +119,7 @@ use crate::language::Language;
 use self::batch::format_batch_via_tool;
 use self::format::format_via_tool;
 use self::lint::lint_via_shellcheck;
+use self::lint_batch::lint_batch_via_shellcheck;
 use self::probe::probe_tool;
 use self::spec::NativeRole;
 
@@ -127,7 +128,9 @@ mod batch;
 mod cache_key_tests;
 mod edition;
 mod format;
+mod isolate;
 mod lint;
+mod lint_batch;
 mod probe;
 mod spec;
 mod tabs;
@@ -334,7 +337,12 @@ impl Engine for NativeToolEngine {
     /// shared `indent_width` cannot be `0`, the value shfmt reads as "tabs".
     fn option_keys(&self, table: OptionTable) -> OptionKeys {
         match table {
-            OptionTable::Lint => OptionKeys::declared(&[("enabled", OptionType::BOOLEAN)]),
+            OptionTable::Lint => match self.role {
+                NativeRole::Shellcheck => {
+                    OptionKeys::declared(&[("enabled", OptionType::BOOLEAN), ("batch", OptionType::BOOLEAN)])
+                }
+                _ => OptionKeys::declared(&[("enabled", OptionType::BOOLEAN)]),
+            },
             OptionTable::Format => match (self.role.spec().format_indent_flag, self.role.spec().batch_format_args) {
                 (true, Some(_)) => OptionKeys::declared(&[
                     ("enabled", OptionType::BOOLEAN),
@@ -456,23 +464,34 @@ impl Engine for NativeToolEngine {
     }
 
     /// Whether this backend batches: the tool must be able to rewrite named
-    /// files *and* the config must ask for it.
-    ///
-    /// "Can batch" and "should batch" are different questions. The per-file path
-    /// pipes content over stdin and the tool touches no files, while a batch
-    /// adds a scratch mirror to write and read back — so which is faster depends
-    /// on file sizes and machine contention, and poly does not guess. See
-    /// [`batch::wants_batch`].
+    /// files (or, for `shellcheck`, to lint several in one run) *and* the config
+    /// must not have opted out with `batch = false`. See [`batch::wants_batch`]
+    /// for why it is on by default.
     ///
     /// This answers from the static spec alone. Whether the tool is *enabled*
     /// and *present* is settled inside
-    /// [`format_batch`](crate::engine::Engine::format_batch), which fails the
-    /// batch so the caller falls back to the per-file path — the same path that
-    /// owns the tier-2 delegation.
+    /// [`format_batch`](crate::engine::Engine::format_batch) and
+    /// [`lint_batch`](crate::engine::Engine::lint_batch), which fail the batch so
+    /// the caller falls back to the per-file path — the same path that owns the
+    /// tier-2 delegation.
     fn batch_support(&self, cfg: &EngineConfig) -> BatchSupport {
         BatchSupport {
             format: self.role.spec().batch_format_args.is_some() && batch::wants_batch(cfg),
+            lint: self.role == NativeRole::Shellcheck && batch::wants_batch(cfg),
         }
+    }
+
+    fn lint_batch(
+        &self,
+        batch: &[SourceFile],
+        cfg: &EngineConfig,
+    ) -> anyhow::Result<Vec<anyhow::Result<Vec<Diagnostic>>>> {
+        // Not runnable: fail the batch rather than answering for these files, so
+        // the per-file path reports whatever a disabled or absent tool reports.
+        if self.role != NativeRole::Shellcheck || !self.is_enabled(cfg) || self.probed_version().is_none() {
+            anyhow::bail!("{} is not enabled or not installed; not batching", self.name());
+        }
+        lint_batch_via_shellcheck(self.role.spec(), batch)
     }
 
     fn format_batch(

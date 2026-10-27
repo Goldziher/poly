@@ -152,6 +152,19 @@ pub fn run_streaming(
     stream: &mut dyn FnMut(&[u8]),
     notify: &dyn Fn(Duration, Option<&str>),
 ) -> std::io::Result<Supervised> {
+    run_with_grace(command, budget, TERM_GRACE, stream, notify)
+}
+
+/// [`run_streaming`] with the `SIGTERM`-to-`SIGKILL` grace period supplied, so a
+/// test can hold it open for as long as the scenario needs instead of racing the
+/// production value against a loaded machine.
+fn run_with_grace(
+    command: &mut Command,
+    budget: Budget,
+    grace: Duration,
+    stream: &mut dyn FnMut(&[u8]),
+    notify: &dyn Fn(Duration, Option<&str>),
+) -> std::io::Result<Supervised> {
     command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -164,11 +177,11 @@ pub fn run_streaming(
     let lock_wait = Arc::new(LockWait::default());
     let mut live = Live::start(child.stdout.take(), child.stderr.take(), &lock_wait, stream);
 
-    let waited = wait_within(&mut child, &tree, budget, started, &lock_wait, &mut live, notify);
+    let waited = wait_within(&mut child, &tree, budget, grace, started, &lock_wait, &mut live, notify);
     if waited.is_err() {
         // Nothing left to report the status to; the kill is for the child's
         // benefit, not the caller's.
-        let _ = terminate(&mut child, &tree);
+        let _ = terminate(&mut child, &tree, grace);
     }
     let (status, timed_out) = waited?;
     let elapsed = started.elapsed();
@@ -189,10 +202,15 @@ pub fn run_streaming(
 /// `try_wait` taken microseconds earlier, and a child that exits in that gap
 /// would otherwise be reported as killed on the strength of a signal that ended
 /// nothing.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each argument is a distinct input of the one wait loop"
+)]
 fn wait_within(
     child: &mut Child,
     tree: &ProcessTree,
     budget: Budget,
+    grace: Duration,
     started: Instant,
     lock_wait: &LockWait,
     live: &mut Live<'_>,
@@ -210,7 +228,7 @@ fn wait_within(
         }
         let now = Instant::now();
         if budget.limit.is_some_and(|limit| now.duration_since(started) >= limit) {
-            if let Terminated::AlreadyExited(status) = terminate(child, tree) {
+            if let Terminated::AlreadyExited(status) = terminate(child, tree, grace) {
                 return Ok((status, false));
             }
             let status = child.wait()?;
@@ -357,7 +375,7 @@ enum Terminated {
 /// child that beat the decision; [`killed_by_signal`] covers the one that beats
 /// the signal itself.
 #[cfg(unix)]
-fn terminate(child: &mut Child, _tree: &ProcessTree) -> Terminated {
+fn terminate(child: &mut Child, _tree: &ProcessTree, grace: Duration) -> Terminated {
     if let Ok(Some(status)) = child.try_wait() {
         return Terminated::AlreadyExited(status);
     }
@@ -371,7 +389,7 @@ fn terminate(child: &mut Child, _tree: &ProcessTree) -> Terminated {
     // for this child by `isolate_process_group`, so nothing outside this hook's
     // own process tree can be signalled.
     unsafe { libc::kill(-group, libc::SIGTERM) };
-    if exited_within(child, TERM_GRACE) {
+    if exited_within(child, grace) {
         return Terminated::Signalled;
     }
     // SAFETY: as above; the group could not be talked into exiting.
@@ -389,11 +407,11 @@ fn terminate(child: &mut Child, _tree: &ProcessTree) -> Terminated {
 /// has no polite signal to precede it with, so the grace covers only the delay
 /// between asking for the job's death and the child being reapable.
 #[cfg(not(unix))]
-fn terminate(child: &mut Child, tree: &ProcessTree) -> Terminated {
+fn terminate(child: &mut Child, tree: &ProcessTree, grace: Duration) -> Terminated {
     if let Ok(Some(status)) = child.try_wait() {
         return Terminated::AlreadyExited(status);
     }
-    if tree.terminate() && exited_within(child, TERM_GRACE) {
+    if tree.terminate() && exited_within(child, grace) {
         return Terminated::Signalled;
     }
     let _ = child.kill();
@@ -441,14 +459,43 @@ fn exited_within(child: &mut Child, grace: Duration) -> bool {
 #[cfg(all(test, not(windows)))]
 mod tests {
     use std::num::NonZero;
+    use std::path::Path;
     use std::process::Command;
-    use std::sync::Mutex;
     use std::sync::atomic::AtomicUsize;
     use std::sync::atomic::Ordering::Relaxed;
-    use std::time::{Duration, Instant};
+    use std::sync::{Mutex, PoisonError, RwLock};
+    use std::time::Duration;
 
-    use super::{run, run_streaming};
+    use super::Supervised;
     use crate::timeout::Budget;
+
+    /// Held exclusively by the boundary hammer and shared by every other test.
+    ///
+    /// The hammer saturates the machine with 48 concurrent spawns by design.
+    /// Left to run beside the other tests it starves *their* children — a shell
+    /// that takes half a second to start has missed a budget or a grace period
+    /// that the supervisor kept correctly — so the load the hammer needs is kept
+    /// out of everything that is not measuring it.
+    static QUIET: RwLock<()> = RwLock::new(());
+
+    fn run(
+        command: &mut Command,
+        budget: Budget,
+        notify: &dyn Fn(Duration, Option<&str>),
+    ) -> std::io::Result<Supervised> {
+        let _quiet = QUIET.read().unwrap_or_else(PoisonError::into_inner);
+        super::run(command, budget, notify)
+    }
+
+    fn run_streaming(
+        command: &mut Command,
+        budget: Budget,
+        stream: &mut dyn FnMut(&[u8]),
+        notify: &dyn Fn(Duration, Option<&str>),
+    ) -> std::io::Result<Supervised> {
+        let _quiet = QUIET.read().unwrap_or_else(PoisonError::into_inner);
+        super::run_streaming(command, budget, stream, notify)
+    }
 
     fn budget(limit: Option<Duration>) -> Budget {
         Budget {
@@ -462,6 +509,36 @@ mod tests {
         let mut command = Command::new("/bin/sh");
         command.arg("-c").arg(line);
         command
+    }
+
+    /// [`sh`] with `args` as `$1`, `$2`, … so a script can be told where its
+    /// rendezvous files are.
+    fn sh_with(line: &str, args: &[&Path]) -> Command {
+        let mut command = sh(line);
+        command.arg("sh").args(args);
+        command
+    }
+
+    /// Start `command` with `SIGTERM` already ignored, the way `nohup` does for
+    /// `SIGHUP`. A `trap '' TERM` inside the script only takes effect once the
+    /// shell has started, and a loaded machine can spend longer than the budget
+    /// getting there; an ignore inherited across `exec` has no such window.
+    fn ignoring_sigterm(command: &mut Command) -> &mut Command {
+        use std::os::unix::process::CommandExt as _;
+
+        // SAFETY: the closure runs between `fork` and `exec` and calls only
+        // `signal`, which is async-signal-safe, with a valid signal number.
+        unsafe {
+            command.pre_exec(|| {
+                libc::signal(libc::SIGTERM, libc::SIG_IGN);
+                Ok(())
+            });
+        }
+        command
+    }
+
+    fn touch(path: &Path) {
+        std::fs::write(path, b"").expect("create rendezvous file");
     }
 
     /// A child that does nothing but succeed, spawned exactly the way a hook
@@ -529,60 +606,99 @@ mod tests {
     /// run prints its notice and then goes silent for the whole window — exactly
     /// what a wedged tool looks like. The liveness callback must be told which
     /// one it is watching.
+    ///
+    /// The child stays queued until the first notice that names its lock, so the
+    /// test waits on what it asserts instead of on a clock: a notice that fires
+    /// before the shell has even printed is correctly `None` and is not what is
+    /// being tested.
     #[test]
     fn a_child_queued_behind_a_cargo_lock_reports_what_it_is_waiting_for() {
+        let scratch = tempfile::tempdir().expect("scratch directory");
+        let granted = scratch.path().join("granted");
         let seen: Mutex<Vec<Option<String>>> = Mutex::new(Vec::new());
         let announce = Budget {
-            limit: Some(Duration::from_millis(600)),
-            announce_after: Some(Duration::from_millis(150)),
-            announce_every: Duration::from_millis(100),
+            limit: Some(Duration::from_mins(1)),
+            announce_after: Some(Duration::from_millis(10)),
+            announce_every: Duration::from_millis(10),
         };
         let supervised = run(
-            &mut sh("printf '    Blocking waiting for file lock on package cache\\n' >&2; sleep 30"),
+            &mut sh_with(
+                "printf '    Blocking waiting for file lock on package cache\\n' >&2; \
+                 while [ ! -e \"$1\" ]; do sleep 0.02; done",
+                &[&granted],
+            ),
             announce,
             &|_, waiting_on| {
                 seen.lock().expect("notice lock").push(waiting_on.map(str::to_owned));
+                if waiting_on == Some("package cache") {
+                    touch(&granted);
+                }
             },
         )
         .expect("run");
 
-        assert!(supervised.timed_out);
+        assert!(!supervised.timed_out);
         let notices = seen.into_inner().expect("notices");
-        assert!(!notices.is_empty(), "a silent child must still announce itself");
+        let first_named = notices
+            .iter()
+            .position(Option::is_some)
+            .expect("a silent child must still announce what it is queued on");
         assert!(
-            notices.iter().all(|notice| notice.as_deref() == Some("package cache")),
-            "every notice must name the lock the child is queued on: {notices:?}"
+            notices[first_named..]
+                .iter()
+                .all(|notice| notice.as_deref() == Some("package cache")),
+            "once the child has named its lock every notice must carry it: {notices:?}"
         );
     }
 
     /// …and it must stop saying so the moment the lock is granted, or the notice
     /// becomes a different false report.
+    ///
+    /// Each step waits for the notice that proves the previous one was observed:
+    /// the child prints its progress line only after a notice named the lock, and
+    /// stays alive until a notice no longer does.
     #[test]
     fn output_after_the_lock_notice_clears_the_wait() {
+        let scratch = tempfile::tempdir().expect("scratch directory");
+        let (queued, resumed) = (scratch.path().join("queued"), scratch.path().join("resumed"));
         let seen: Mutex<Vec<Option<String>>> = Mutex::new(Vec::new());
         let announce = Budget {
-            limit: Some(Duration::from_millis(800)),
-            announce_after: Some(Duration::from_millis(100)),
-            announce_every: Duration::from_millis(100),
+            limit: Some(Duration::from_mins(1)),
+            announce_after: Some(Duration::from_millis(10)),
+            announce_every: Duration::from_millis(10),
         };
         let supervised = run(
-            &mut sh(
-                "printf '    Blocking waiting for file lock on build directory\\n' >&2; sleep 0.35; \
-                 printf '    Checking poly-hooks v0.1.0\\n' >&2; sleep 30",
+            &mut sh_with(
+                "printf '    Blocking waiting for file lock on build directory\\n' >&2; \
+                 while [ ! -e \"$1\" ]; do sleep 0.02; done; \
+                 printf '    Checking poly-hooks v0.1.0\\n' >&2; \
+                 while [ ! -e \"$2\" ]; do sleep 0.02; done",
+                &[&queued, &resumed],
             ),
             announce,
             &|_, waiting_on| {
-                seen.lock().expect("notice lock").push(waiting_on.map(str::to_owned));
+                let mut notices = seen.lock().expect("notice lock");
+                let reported_wait = notices.iter().any(Option::is_some);
+                notices.push(waiting_on.map(str::to_owned));
+                match waiting_on {
+                    Some("build directory") => touch(&queued),
+                    None if reported_wait => touch(&resumed),
+                    _ => {}
+                }
             },
         )
         .expect("run");
 
-        assert!(supervised.timed_out);
+        assert!(!supervised.timed_out);
         let notices = seen.into_inner().expect("notices");
+        let first_named = notices
+            .iter()
+            .position(Option::is_some)
+            .expect("the wait must be reported while it is happening");
         assert_eq!(
-            notices.first().map(Option::as_deref),
-            Some(Some("build directory")),
-            "the wait must be reported while it is happening: {notices:?}"
+            notices[first_named].as_deref(),
+            Some("build directory"),
+            "the wait must name the lock: {notices:?}"
         );
         assert_eq!(
             notices.last().map(Option::as_deref),
@@ -645,22 +761,37 @@ mod tests {
         /// oversubscription to open the race window.
         #[cfg(target_os = "macos")]
         const MAX_MACOS_WORKERS: usize = 48;
-        /// A budget already spent by the time the child is spawned, so every run
+        /// A budget already spent by the time the child is spawned, so the run
         /// takes the deadline path on its first probe — right where the child's
         /// own exit lands.
         const SPENT: Duration = Duration::from_micros(500);
+        /// How far the budget ramps above `SPENT`, so the deadline sweeps across
+        /// wherever the child's exit happens to fall on this machine.
+        const RAMP_STEP: Duration = Duration::from_micros(250);
+        const RAMP_STEPS: usize = 40;
+        /// Every third run gets a budget no child can reach. The machine decides
+        /// where the ramp lands relative to a child's exit, so the two outcomes
+        /// the assertion below needs are guaranteed here rather than hoped for.
+        const AMPLE: Duration = Duration::from_mins(5);
 
         let workers = std::thread::available_parallelism().map_or(4, NonZero::get) * OVERSUBSCRIBE;
         #[cfg(target_os = "macos")]
         let workers = workers.min(MAX_MACOS_WORKERS);
         let per_worker = RUNS.div_ceil(workers);
+        let _exclusive = QUIET.write().unwrap_or_else(PoisonError::into_inner);
         let (false_reports, own_exit, killed) = (AtomicUsize::new(0), AtomicUsize::new(0), AtomicUsize::new(0));
 
         std::thread::scope(|scope| {
             for _ in 0..workers {
                 scope.spawn(|| {
-                    for _ in 0..per_worker {
-                        let supervised = run(&mut exits_immediately(), budget(Some(SPENT)), &|_, _| {}).expect("run");
+                    for index in 0..per_worker {
+                        let limit = if index % 3 == 0 {
+                            AMPLE
+                        } else {
+                            SPENT + RAMP_STEP * u32::try_from(index % RAMP_STEPS).expect("ramp index fits")
+                        };
+                        let supervised =
+                            super::run(&mut exits_immediately(), budget(Some(limit)), &|_, _| {}).expect("run");
                         match (supervised.output.status.code(), supervised.timed_out) {
                             (Some(0), true) => false_reports.fetch_add(1, Relaxed),
                             (Some(0), false) => own_exit.fetch_add(1, Relaxed),
@@ -688,14 +819,34 @@ mod tests {
     /// The same invariant with the timing taken out of it: a child that outlives
     /// `SIGTERM`, finishes its work and exits 0 was ended by itself, not by
     /// poly's kill. Deterministic where the hammer above is statistical.
+    ///
+    /// `SIGTERM` is ignored from `exec` on, so the kill cannot land however long
+    /// the shell takes to start, and the grace period before `SIGKILL` is held
+    /// open for minutes so a starved child cannot lose a race the test is not
+    /// about. The child is released by a file the test creates rather than by a
+    /// clock it has to win.
     #[test]
     fn a_child_that_outlives_the_signal_and_exits_zero_reports_its_own_status() {
-        let supervised = run(
-            &mut sh("trap '' TERM; sleep 0.2; exit 0"),
-            budget(Some(Duration::from_millis(50))),
-            &|_, _| {},
-        )
-        .expect("run");
+        let scratch = tempfile::tempdir().expect("scratch directory");
+        let release = scratch.path().join("release");
+        let mut command = sh_with("while [ ! -e \"$1\" ]; do sleep 0.02; done; exit 0", &[&release]);
+        ignoring_sigterm(&mut command);
+
+        let supervised = std::thread::scope(|scope| {
+            scope.spawn(|| {
+                std::thread::sleep(Duration::from_millis(150));
+                touch(&release);
+            });
+            let _quiet = QUIET.read().unwrap_or_else(PoisonError::into_inner);
+            super::run_with_grace(
+                &mut command,
+                budget(Some(Duration::from_millis(50))),
+                Duration::from_mins(5),
+                &mut |_| {},
+                &|_, _| {},
+            )
+            .expect("run")
+        });
 
         assert_eq!(supervised.output.status.code(), Some(0));
         assert!(
@@ -748,39 +899,36 @@ mod tests {
     /// bytes must reach the sink while the child is still alive, not merely by
     /// the time the call returns.
     ///
-    /// The child prints immediately and then blocks for the whole budget, so the
-    /// first chunk is due within a poll or two of the spawn — a post-mortem sink
-    /// cannot see it before the kill at 600 ms.
+    /// The child prints and then blocks until the sink has been handed what it
+    /// printed. A sink fed only after the kill never releases it, so the budget
+    /// expires and the run is reported as timed out; a live sink releases it at
+    /// once and the child exits on its own. No clock decides which.
     #[test]
     fn a_wedged_child_reaches_the_sink_before_it_is_killed() {
-        const LIMIT: Duration = Duration::from_millis(600);
-        /// 20× the poll interval, and less than half the budget: comfortably
-        /// after a live sink's first chunk, comfortably before a post-mortem
-        /// one's.
-        const WHILE_ALIVE: Duration = Duration::from_millis(200);
-
-        let started = Instant::now();
-        let (mut streamed, mut first_at) = (Vec::new(), None);
+        let scratch = tempfile::tempdir().expect("scratch directory");
+        let seen = scratch.path().join("seen");
+        let mut streamed = Vec::new();
         let supervised = run_streaming(
-            &mut sh("printf 'BEFORE\\n'; sleep 30"),
-            budget(Some(LIMIT)),
+            &mut sh_with(
+                "printf 'BEFORE\\n'; while [ ! -e \"$1\" ]; do sleep 0.02; done; exit 7",
+                &[&seen],
+            ),
+            budget(Some(Duration::from_secs(10))),
             &mut |chunk| {
-                first_at.get_or_insert_with(|| started.elapsed());
                 streamed.extend_from_slice(chunk);
+                touch(&seen);
             },
             &|_, _| {},
         )
         .expect("run");
 
-        assert!(supervised.timed_out);
+        assert!(
+            !supervised.timed_out,
+            "the child's output only reached the sink after it was killed"
+        );
+        assert_eq!(supervised.output.status.code(), Some(7));
         assert_eq!(streamed, b"BEFORE\n");
         assert_eq!(supervised.output.stdout, b"BEFORE\n");
-        assert!(supervised.elapsed >= LIMIT);
-        let first_at = first_at.expect("the sink was never called");
-        assert!(
-            first_at < WHILE_ALIVE,
-            "the child's output only reached the sink after it was killed, at {first_at:?}"
-        );
     }
 
     /// The tail of a hook's output can arrive after the process poly waited on

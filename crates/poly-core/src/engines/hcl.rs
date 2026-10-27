@@ -26,6 +26,7 @@ use crate::config::EngineConfig;
 use crate::engine::{
     Capabilities, Diagnostic, Engine, FormatOutput, OptionKeys, OptionTable, Severity, SourceFile, Span,
 };
+use crate::engine_guard::refuse_pathological_nesting;
 use crate::engines::treesitter::TreeSitterEngine;
 use crate::language::Language;
 
@@ -73,6 +74,7 @@ impl Engine for HclEngine {
     }
 
     fn lint(&self, src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
+        refuse_pathological_nesting(&src.path, &src.content)?;
         match hcl_edit_parser::parse_body(&src.content) {
             Ok(_) => Ok(Vec::new()),
             Err(error) => {
@@ -100,6 +102,7 @@ impl Engine for HclEngine {
     }
 
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
+        refuse_pathological_nesting(&src.path, &src.content)?;
         if hcl_edit_parser::parse_body(&src.content).is_err() {
             return Ok(FormatOutput::Unchanged);
         }
@@ -179,6 +182,13 @@ fn format_comment_free(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<F
     drop(formatter);
 
     let formatted = String::from_utf8(buf).map_err(|e| anyhow::anyhow!("hcl-rs produced non-UTF-8: {e}"))?;
+
+    // A body with no attributes or blocks serializes to nothing at all, so a
+    // file holding only whitespace would be rewritten to zero bytes. There is
+    // nothing in it to format, and emptying it is not formatting.
+    if formatted.is_empty() {
+        return Ok(FormatOutput::Unchanged);
+    }
 
     if formatted.parse::<hcl::Body>().is_err() || hcl_edit_parser::parse_body(&formatted).is_err() {
         return Ok(FormatOutput::Unchanged);
@@ -260,6 +270,26 @@ mod tests {
     #[test]
     fn has_comments_detects_trailing_slash_slash() {
         assert!(has_comments("x = 1 // trailing comment\n"));
+    }
+
+    #[test]
+    fn nesting_deep_enough_to_overflow_the_parser_stack_is_refused_not_parsed() {
+        let engine = HclEngine;
+        let src = make_src("deep.tf", Language::Hcl, &format!("a = {}\n", "[".repeat(3000)));
+        assert!(engine.lint(&src, &default_cfg()).is_err());
+        assert!(engine.format(&src, &default_cfg()).is_err());
+    }
+
+    #[test]
+    fn a_whitespace_only_file_is_never_emptied() {
+        let engine = HclEngine;
+        for content in ["\n", "\n\n", "  \n"] {
+            let src = make_src("output.tf", Language::Hcl, content);
+            assert!(
+                matches!(engine.format(&src, &default_cfg()).unwrap(), FormatOutput::Unchanged),
+                "{content:?} has nothing to format and must not be rewritten to zero bytes"
+            );
+        }
     }
 
     #[test]

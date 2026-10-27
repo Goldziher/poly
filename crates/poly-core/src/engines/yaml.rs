@@ -37,6 +37,33 @@ use crate::engine::{
 };
 use crate::language::Language;
 
+/// Flow-collection depth beyond which a document is validated before it is
+/// formatted. Valid documents nest this deep far more cheaply than malformed
+/// ones, so the bound only has to sit below where backtracking becomes visible
+/// (about 16 levels) and above anything hand-written.
+const FLOW_DEPTH_GUARD: usize = 12;
+
+/// Whether `text` opens more than [`FLOW_DEPTH_GUARD`] flow collections at once.
+///
+/// Deliberately blind to quoting and comments: a false positive only costs the
+/// validation parse, a false negative would let a pathological document through.
+fn exceeds_flow_depth(text: &str) -> bool {
+    let mut depth = 0usize;
+    for byte in text.bytes() {
+        match byte {
+            b'[' | b'{' => {
+                depth += 1;
+                if depth > FLOW_DEPTH_GUARD {
+                    return true;
+                }
+            }
+            b']' | b'}' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    false
+}
+
 /// YAML backend (validity lint + structural format via `pretty_yaml`).
 pub struct YamlEngine;
 
@@ -111,6 +138,13 @@ impl Engine for YamlEngine {
 
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
         if contains_go_template(&src.content) {
+            return Ok(FormatOutput::Unchanged);
+        }
+        // `pretty_yaml`'s parser backtracks exponentially on unclosed nested flow
+        // collections: 26 unclosed `[` take 30 s and 50 never return, which wedges
+        // a rayon worker and with it the whole run. A document `saphyr` rejects is
+        // one it would not format anyway, so deep flow nesting is checked first.
+        if exceeds_flow_depth(&src.content) && Yaml::load_from_str(&src.content).is_err() {
             return Ok(FormatOutput::Unchanged);
         }
         let options = build_format_options(cfg);
@@ -200,6 +234,38 @@ mod tests {
                 FormatOutput::Unchanged
             ),
             "templated YAML must be left unchanged by format"
+        );
+    }
+
+    #[test]
+    fn unclosed_nested_flow_collections_are_left_alone_instead_of_wedging_the_formatter() {
+        let engine = YamlEngine;
+        for opener in ["{", "["] {
+            let src = source(&format!("a: 1\n{}x\n", opener.repeat(60)));
+            assert!(
+                matches!(
+                    engine.format(&src, &default_cfg()).expect("format succeeded"),
+                    FormatOutput::Unchanged
+                ),
+                "an invalid document must come back untouched"
+            );
+        }
+    }
+
+    #[test]
+    fn deeply_nested_but_valid_flow_collections_are_still_formatted() {
+        let engine = YamlEngine;
+        let src = source(&format!("a:     {}1{}\n", "[".repeat(20), "]".repeat(20)));
+        assert!(
+            exceeds_flow_depth(&src.content),
+            "the fixture must be deep enough to take the validation path"
+        );
+        assert!(
+            matches!(
+                engine.format(&src, &default_cfg()).expect("format succeeded"),
+                FormatOutput::Formatted(_)
+            ),
+            "validity, not depth, decides whether a document is formatted"
         );
     }
 

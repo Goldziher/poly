@@ -35,7 +35,7 @@ use rustc_hash::FxHashMap;
 
 use super::plan::{EnginePlan, RunPlan};
 use crate::discover::DiscoveredFile;
-use crate::engine::{FormatOutput, SourceFile};
+use crate::engine::{Diagnostic, FormatOutput, SourceFile};
 use crate::filter::is_binary;
 use crate::language::Language;
 
@@ -61,18 +61,22 @@ const MIN_BATCH: usize = 2;
 /// files in a formatted repository are unchanged.
 const MAX_PREFILL_BYTES: usize = 64 * 1024 * 1024;
 
-/// One precomputed pass-one result.
+/// The precomputed passes for one file: `(input, output)` per format pass.
+///
+/// Pass one's input is the file's own bytes; pass two's is pass one's output, and
+/// so on until a pass changes nothing. Carrying the whole chain is what lets the
+/// convergence loop confirm a file is stable without spawning the tool again:
+/// of the files a formatter changes, the loop needs one more pass over every one
+/// of them just to see that the second pass is a no-op.
 struct PrefillEntry {
-    /// The engine that produced `output`, checked on lookup so an entry can
+    /// The engine that produced the stages, checked on lookup so an entry can
     /// never answer for a different backend.
     engine: &'static str,
-    /// The exact content the tool was fed. Compared before the output is used.
-    input: Arc<str>,
-    /// What the tool produced for it.
-    output: Arc<str>,
+    /// Each stage's exact input, compared before its output is used.
+    stages: Vec<(Arc<str>, Arc<str>)>,
 }
 
-/// Pass-one format results computed ahead of the per-file loop.
+/// Format results computed ahead of the per-file loop.
 ///
 /// Keyed by path alone — a file only ever has one batched engine, since
 /// [`sole_batchable_engine`] refuses a multi-engine chain — so a lookup borrows
@@ -91,12 +95,17 @@ impl BatchPrefill {
     /// The content comparison is the mis-attribution guard, and it is why a
     /// permuted or stale batch result cannot silently become some other file's
     /// formatting: an entry that does not match the content in hand is ignored
-    /// and the per-file path runs instead. It also confines the prefill to pass
-    /// one — by pass two `current` is the previous pass's output, which no batch
-    /// was ever fed.
+    /// and the per-file path runs instead.
     pub(super) fn take(&self, path: &Path, engine: &str, current: &str) -> Option<Arc<str>> {
         let entry = self.entries.get(path)?;
-        (entry.engine == engine && *entry.input == *current).then(|| Arc::clone(&entry.output))
+        if entry.engine != engine {
+            return None;
+        }
+        entry
+            .stages
+            .iter()
+            .find(|(input, _)| **input == *current)
+            .map(|(_, output)| Arc::clone(output))
     }
 
     /// How many pass-one results were precomputed. Reported under `--debug` so
@@ -182,12 +191,259 @@ pub(super) fn prefill(files: &[DiscoveredFile], plan: &RunPlan, cache: &ResultCa
     }
 }
 
+/// How many passes beyond the first a shard precomputes.
+///
+/// A formatter that changed a file is run once more over its output, which is
+/// the pass that confirms it settled. Two covers a formatter that is idempotent
+/// after one correction; anything that needs more is not converging in a way a
+/// prefill should paper over, and the per-file loop takes it from there.
+const CONFIRM_PASSES: usize = 2;
+
+/// One file's progress through a shard's passes.
+struct Member<'a> {
+    candidate: &'a Candidate,
+    /// What the next pass is fed: the previous pass's output.
+    current: Arc<str>,
+    stages: Vec<(Arc<str>, Arc<str>)>,
+}
+
 /// Run one shard, returning its per-file entries.
 ///
-/// Every failure mode returns nothing for the shard, which leaves those files to
-/// the per-file path. That is the whole error story: a batch is an optimisation,
-/// and an optimisation that cannot prove its answer declines to give one.
+/// Every failure mode returns nothing for the files it touches, which leaves
+/// those files to the per-file path. That is the whole error story: a batch is
+/// an optimisation, and an optimisation that cannot prove its answer declines to
+/// give one.
 fn run_shard<'a>((engine_plan, shard): (&'a EnginePlan, &'a [Candidate])) -> Vec<(PathBuf, PrefillEntry)> {
+    let mut members: Vec<Member<'_>> = shard
+        .iter()
+        .map(|candidate| Member {
+            candidate,
+            current: Arc::clone(&candidate.content),
+            stages: Vec::new(),
+        })
+        .collect();
+
+    let mut active: Vec<usize> = (0..members.len()).collect();
+    for _ in 0..=CONFIRM_PASSES {
+        if active.is_empty() {
+            break;
+        }
+        let batch: Vec<SourceFile> = active
+            .iter()
+            .map(|&index| SourceFile {
+                path: members[index].candidate.path.clone(),
+                language: members[index].candidate.language.clone(),
+                content: Arc::clone(&members[index].current),
+            })
+            .collect();
+        let outputs = match engine_plan.engine.format_batch(&batch, &engine_plan.config) {
+            Ok(outputs) if outputs.len() == batch.len() => outputs,
+            // A ragged answer is the one shape that would attribute one file's
+            // formatting to another, so it is refused wholesale rather than zipped.
+            Ok(outputs) => {
+                tracing::warn!(
+                    engine = engine_plan.engine.name(),
+                    expected = batch.len(),
+                    got = outputs.len(),
+                    "batch returned the wrong number of results; discarding it"
+                );
+                break;
+            }
+            Err(error) => {
+                tracing::debug!(
+                    engine = engine_plan.engine.name(),
+                    files = batch.len(),
+                    "batch formatting declined; falling back to per-file: {error:#}"
+                );
+                break;
+            }
+        };
+        let mut changed = Vec::new();
+        for (&index, output) in active.iter().zip(outputs) {
+            let member = &mut members[index];
+            // A per-file failure inside a successful batch: leave it to the
+            // per-file path, which will produce (and attribute) the error.
+            let Ok(output) = output else { continue };
+            let next = match output {
+                FormatOutput::Unchanged => Arc::clone(&member.current),
+                FormatOutput::Formatted(text) => Arc::from(text),
+            };
+            let moved = *next != *member.current;
+            member
+                .stages
+                .push((std::mem::replace(&mut member.current, Arc::clone(&next)), next));
+            if moved {
+                changed.push(index);
+            }
+        }
+        active = changed;
+    }
+
+    let name = engine_plan.engine.name();
+    members
+        .into_iter()
+        .filter(|member| !member.stages.is_empty())
+        .map(|member| {
+            (
+                member.candidate.path.clone(),
+                PrefillEntry {
+                    engine: name,
+                    stages: member.stages,
+                },
+            )
+        })
+        .collect()
+}
+
+/// One precomputed lint result.
+struct LintEntry {
+    engine: &'static str,
+    /// The exact content the tool was fed. Compared before the result is used.
+    input: Arc<str>,
+    diagnostics: Vec<Diagnostic>,
+}
+
+/// Lint results computed ahead of the per-file loop for the backends that batch
+/// (`shellcheck`).
+///
+/// Unlike the format chain, lint engines are independent — each reads the file's
+/// own bytes and none consumes another's output — so any number of a language's
+/// engines may batch and there is no single-engine restriction. A path can
+/// therefore carry several entries, one per engine.
+#[derive(Default)]
+pub(super) struct LintPrefill {
+    entries: FxHashMap<PathBuf, Vec<LintEntry>>,
+}
+
+impl LintPrefill {
+    /// The precomputed diagnostics for `path` under `engine`, but only if the
+    /// batch was fed exactly `content`. See [`BatchPrefill::take`]: the content
+    /// comparison is what makes a stale or permuted entry impossible to apply,
+    /// and what confines the prefill to the content the run started with (a
+    /// `--fix` pass lints different bytes and so runs the tool itself).
+    pub(super) fn take(&self, path: &Path, engine: &str, content: &str) -> Option<Vec<Diagnostic>> {
+        self.entries
+            .get(path)?
+            .iter()
+            .find(|entry| entry.engine == engine && *entry.input == *content)
+            .map(|entry| entry.diagnostics.clone())
+    }
+
+    /// How many results were precomputed, for the same reason as
+    /// [`BatchPrefill::len`].
+    pub(super) fn len(&self) -> usize {
+        self.entries.values().map(Vec::len).sum()
+    }
+}
+
+/// Compute lint results for every file a batching lint engine serves.
+///
+/// Files already answered by the result cache are excluded, as for formatting:
+/// the per-file loop answers them without spawning anything. Every failure mode
+/// returns nothing for the shard, which leaves its files to the per-file path.
+pub(super) fn prefill_lint(files: &[DiscoveredFile], plan: &RunPlan, cache: &ResultCache) -> LintPrefill {
+    let mut candidates: Vec<(usize, Candidate)> = files
+        .par_iter()
+        .flat_map_iter(|file| lint_candidates_for(file, plan, cache))
+        .collect();
+    if candidates.len() < MIN_BATCH {
+        return LintPrefill::default();
+    }
+    candidates.sort_by(|a, b| (a.0, &a.1.path).cmp(&(b.0, &b.1.path)));
+
+    let mut groups: FxHashMap<(usize, Language, usize), Vec<Candidate>> = FxHashMap::default();
+    for (engine_index, candidate) in candidates {
+        groups
+            .entry((candidate.config_id, candidate.language.clone(), engine_index))
+            .or_default()
+            .push(candidate);
+    }
+    let shards: Vec<(&EnginePlan, &[Candidate])> = groups
+        .iter()
+        .filter(|(_, group)| group.len() >= MIN_BATCH)
+        .flat_map(|((config_id, language, engine_index), group)| {
+            let engine_plan = &plan.engines(*config_id, language)[*engine_index];
+            shard_sizes(group.len())
+                .into_iter()
+                .scan(0usize, |offset, size| {
+                    let start = *offset;
+                    *offset += size;
+                    Some(&group[start..*offset])
+                })
+                .map(move |shard| (engine_plan, shard))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+
+    let mut entries: FxHashMap<PathBuf, Vec<LintEntry>> = FxHashMap::default();
+    for (path, entry) in shards.into_par_iter().flat_map(run_lint_shard).collect::<Vec<_>>() {
+        entries.entry(path).or_default().push(entry);
+    }
+    LintPrefill { entries }
+}
+
+/// The `(engine index, candidate)` pairs one file contributes: one per planned
+/// engine that batches, none when the file cannot be read as text or the cache
+/// already holds that engine's answer.
+fn lint_candidates_for(file: &DiscoveredFile, plan: &RunPlan, cache: &ResultCache) -> Vec<(usize, Candidate)> {
+    let engines = plan.engines(file.config_id, &file.language);
+    let batching: Vec<usize> = engines
+        .iter()
+        .enumerate()
+        .filter(|(_, engine_plan)| {
+            engine_plan.provides_language_lint && engine_plan.engine.batch_support(&engine_plan.config).lint
+        })
+        .map(|(index, _)| index)
+        .collect();
+    if batching.is_empty() {
+        return Vec::new();
+    }
+    let Ok(bytes) = std::fs::read(&file.path) else {
+        return Vec::new();
+    };
+    if is_binary(&bytes) {
+        return Vec::new();
+    }
+    let Ok(text) = String::from_utf8(bytes) else {
+        return Vec::new();
+    };
+    let content: Arc<str> = Arc::from(text.as_str());
+    let digest = cache
+        .enabled()
+        .then(|| ResultCache::single_file_digest_with_path(&file.path.to_string_lossy(), &content));
+
+    batching
+        .into_iter()
+        .filter(|&index| {
+            let engine_plan = &engines[index];
+            digest.as_ref().is_none_or(|digest| {
+                let key = ResultCache::key_with_args(
+                    Namespace::Lint,
+                    engine_plan.engine.name(),
+                    engine_plan.engine.version(),
+                    &engine_plan.serialized_args,
+                    digest,
+                );
+                cache.get(Namespace::Lint, &key).is_none()
+            })
+        })
+        .map(|index| {
+            (
+                index,
+                Candidate {
+                    path: file.path.clone(),
+                    language: file.language.clone(),
+                    content: Arc::clone(&content),
+                    config_id: file.config_id,
+                },
+            )
+        })
+        .collect()
+}
+
+/// Run one lint shard, returning its per-file entries. As for formatting, every
+/// failure returns nothing and leaves the files to the per-file path.
+fn run_lint_shard((engine_plan, shard): (&EnginePlan, &[Candidate])) -> Vec<(PathBuf, LintEntry)> {
     let batch: Vec<SourceFile> = shard
         .iter()
         .map(|candidate| SourceFile {
@@ -196,48 +452,38 @@ fn run_shard<'a>((engine_plan, shard): (&'a EnginePlan, &'a [Candidate])) -> Vec
             content: Arc::clone(&candidate.content),
         })
         .collect();
-
-    let outputs = match engine_plan.engine.format_batch(&batch, &engine_plan.config) {
-        Ok(outputs) => outputs,
+    let outputs = match engine_plan.engine.lint_batch(&batch, &engine_plan.config) {
+        Ok(outputs) if outputs.len() == batch.len() => outputs,
+        Ok(outputs) => {
+            tracing::warn!(
+                engine = engine_plan.engine.name(),
+                expected = batch.len(),
+                got = outputs.len(),
+                "batch lint returned the wrong number of results; discarding it"
+            );
+            return Vec::new();
+        }
         Err(error) => {
             tracing::debug!(
                 engine = engine_plan.engine.name(),
                 files = batch.len(),
-                "batch formatting declined; falling back to per-file: {error:#}"
+                "batch linting declined; falling back to per-file: {error:#}"
             );
             return Vec::new();
         }
     };
-    // A ragged answer is the one shape that would attribute one file's
-    // formatting to another, so it is refused wholesale rather than zipped.
-    if outputs.len() != batch.len() {
-        tracing::warn!(
-            engine = engine_plan.engine.name(),
-            expected = batch.len(),
-            got = outputs.len(),
-            "batch returned the wrong number of results; discarding it"
-        );
-        return Vec::new();
-    }
-
     let name = engine_plan.engine.name();
     batch
         .into_iter()
         .zip(outputs)
         .filter_map(|(src, output)| {
-            let formatted = match output {
-                Ok(FormatOutput::Unchanged) => Arc::clone(&src.content),
-                Ok(FormatOutput::Formatted(text)) => Arc::from(text),
-                // A per-file failure inside a successful batch: leave it to the
-                // per-file path, which will produce (and attribute) the error.
-                Err(_) => return None,
-            };
+            let diagnostics = output.ok()?;
             Some((
                 src.path,
-                PrefillEntry {
+                LintEntry {
                     engine: name,
                     input: src.content,
-                    output: formatted,
+                    diagnostics,
                 },
             ))
         })
@@ -389,5 +635,160 @@ mod tests {
         let min = sizes.iter().min().copied().unwrap_or(0);
         let max = sizes.iter().max().copied().unwrap_or(0);
         assert!(max - min <= 1, "shards differ by more than one file: {sizes:?}");
+    }
+
+    mod confirmation_passes {
+        //! A formatter that changed a file must be run once more over its output
+        //! to prove it settled, and that second run is as much a spawn as the
+        //! first. The batch carries it, so the loop never has to.
+
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        use poly_cache::ResultCache;
+
+        use super::super::{Candidate, PrefillEntry, prefill, run_shard};
+        use crate::config::{EngineConfig, GlobalDefaults};
+        use crate::discover::DiscoveredFile;
+        use crate::engine::{BatchSupport, Capabilities, Engine, FormatOutput, SourceFile};
+        use crate::filter::SeverityRemap;
+        use crate::language::Language;
+        use crate::runner::plan::{EnginePlan, RunPlan};
+
+        /// Appends `x` until a line holds three, then leaves it alone — settled
+        /// after two changing passes, so the loop needs three to see it.
+        struct Appender {
+            batches: Arc<AtomicUsize>,
+        }
+
+        impl Engine for Appender {
+            fn name(&self) -> &'static str {
+                "appender"
+            }
+
+            fn languages(&self) -> &'static [Language] {
+                &[Language::Shell]
+            }
+
+            fn capabilities(&self) -> Capabilities {
+                Capabilities {
+                    lint: false,
+                    format: true,
+                    fix: false,
+                }
+            }
+
+            fn version(&self) -> &str {
+                "test"
+            }
+
+            fn batch_support(&self, _cfg: &EngineConfig) -> BatchSupport {
+                BatchSupport {
+                    format: true,
+                    lint: false,
+                }
+            }
+
+            fn format_batch(
+                &self,
+                batch: &[SourceFile],
+                _cfg: &EngineConfig,
+            ) -> anyhow::Result<Vec<anyhow::Result<FormatOutput>>> {
+                self.batches.fetch_add(1, Ordering::SeqCst);
+                Ok(batch
+                    .iter()
+                    .map(|src| {
+                        if src.content.trim_end().len() >= 3 {
+                            Ok(FormatOutput::Unchanged)
+                        } else {
+                            Ok(FormatOutput::Formatted(format!("{}x\n", src.content.trim_end())))
+                        }
+                    })
+                    .collect())
+            }
+        }
+
+        fn plan(batches: &Arc<AtomicUsize>) -> RunPlan {
+            RunPlan::serving(
+                0,
+                Language::Shell,
+                vec![EnginePlan {
+                    engine: Box::new(Appender {
+                        batches: Arc::clone(batches),
+                    }),
+                    config: EngineConfig {
+                        globals: GlobalDefaults::default(),
+                        indent_width: 2,
+                        options: toml::Table::new(),
+                    },
+                    serialized_args: ResultCache::serialize_args(&toml::Table::new()),
+                    severity_remap: SeverityRemap::new(Vec::new()),
+                    provides_language_lint: false,
+                }],
+            )
+        }
+
+        #[test]
+        fn the_confirming_pass_is_precomputed_so_the_loop_spawns_nothing() {
+            let directory = tempfile::tempdir().expect("tempdir");
+            let cache = ResultCache::open(directory.path().join("cache"), false).expect("open disabled cache");
+            let files: Vec<DiscoveredFile> = ["a", "b"]
+                .iter()
+                .map(|name| {
+                    let path = directory.path().join(format!("{name}.sh"));
+                    std::fs::write(&path, "a\n").expect("write fixture");
+                    DiscoveredFile {
+                        path,
+                        language: Language::Shell,
+                        config_id: 0,
+                    }
+                })
+                .collect();
+            let batches = Arc::new(AtomicUsize::new(0));
+            let prefilled = prefill(&files, &plan(&batches), &cache);
+
+            let path = &files[0].path;
+            let first = prefilled.take(path, "appender", "a\n").expect("pass one");
+            assert_eq!(&*first, "ax\n");
+            let second = prefilled.take(path, "appender", &first).expect("pass two");
+            assert_eq!(&*second, "axx\n");
+            let third = prefilled.take(path, "appender", &second).expect("the confirming pass");
+            assert_eq!(&*third, "axx\n", "the last stage proves it settled");
+            assert!(
+                prefilled.take(path, "appender", "something else\n").is_none(),
+                "content the batch never saw must not be answered"
+            );
+            assert!(prefilled.take(path, "another-engine", "a\n").is_none());
+            assert_eq!(
+                batches.load(Ordering::SeqCst),
+                3,
+                "one spawn per pass for the whole shard, not one per file per pass"
+            );
+        }
+
+        #[test]
+        fn each_member_stops_at_its_own_fixed_point() {
+            let batches = Arc::new(AtomicUsize::new(0));
+            let candidates: Vec<Candidate> = ["a\n", "bb\n"]
+                .iter()
+                .enumerate()
+                .map(|(index, content)| Candidate {
+                    path: format!("/repo/{index}.sh").into(),
+                    language: Language::Shell,
+                    content: Arc::from(*content),
+                    config_id: 0,
+                })
+                .collect();
+            let plan = plan(&batches);
+            let engine_plan = &plan.engines(0, &Language::Shell)[0];
+
+            let entries: Vec<(std::path::PathBuf, PrefillEntry)> = run_shard((engine_plan, &candidates));
+
+            assert_eq!(entries.len(), 2);
+            let longer = entries.iter().find(|(path, _)| path.ends_with("1.sh")).expect("entry");
+            assert_eq!(longer.1.stages.len(), 2, "bb -> bbx, then bbx confirmed");
+            let shorter = entries.iter().find(|(path, _)| path.ends_with("0.sh")).expect("entry");
+            assert_eq!(shorter.1.stages.len(), 3, "a -> ax -> axx, then axx confirmed");
+        }
     }
 }

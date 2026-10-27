@@ -1148,3 +1148,54 @@ fn bash_unparsable_source_falls_back_to_whitespace_normalization() {
         "a tree with errors must only get whitespace normalization, leaving indentation alone"
     );
 }
+
+/// Starlark's bundled `indents.scm` opens a level at each bracket but has no
+/// notion of a `def` body, so reindenting by it flattened every statement
+/// outside a bracket to column 0 — one nesting level per pass, which surfaced
+/// as `formatting did not settle after 5 passes` on a real `.bzl` file.
+#[test]
+fn starlark_block_structure_is_never_reindented() {
+    let engine = TreeSitterEngine;
+    let input = concat!(
+        "def outer(items):\n",
+        "    result = []\n",
+        "    for item in items:\n",
+        "        if item:\n",
+        "            result.append([\n",
+        "                item,\n",
+        "            ])\n",
+        "    return result\n",
+    );
+    for path in ["rules.bzl", "BUILD.bazel"] {
+        let out = engine
+            .format(&src(path, Language::Other("starlark".into()), input), &cfg(2))
+            .unwrap();
+        assert!(
+            matches!(out, FormatOutput::Unchanged),
+            "{path}: the indentation is the program and must survive, got {out:?}"
+        );
+    }
+}
+
+/// The minimal form of the same defect: a single bracket in a function body.
+#[test]
+fn starlark_list_in_a_function_body_keeps_its_indentation() {
+    let engine = TreeSitterEngine;
+    let input = "def f(a):\n    x = [1]\n    return x\n";
+    let out = engine
+        .format(&src("o.bzl", Language::Other("starlark".into()), input), &cfg(2))
+        .unwrap();
+    assert!(matches!(out, FormatOutput::Unchanged), "got {out:?}");
+}
+
+#[test]
+fn layout_significant_grammars_still_get_whitespace_normalization() {
+    let engine = TreeSitterEngine;
+    let s = src(
+        "rules.bzl",
+        Language::Other("starlark".into()),
+        "def f():   \n    return 1\n",
+    );
+    let out = engine.format(&s, &cfg(2)).unwrap();
+    assert_eq!(formatted_text(out, &s.content), "def f():\n    return 1\n");
+}

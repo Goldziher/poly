@@ -162,6 +162,20 @@ pub(crate) fn fingerprint_at(anchor: &Path, names: &[&str]) -> String {
     }
 }
 
+/// The config file the tool would resolve from `anchor`: the nearest ancestor
+/// (including `anchor`) holding any of `names`, with `names` listed in the
+/// tool's own order of preference.
+///
+/// This is the single file a tool picks, where [`fingerprint_at`] deliberately
+/// hashes every candidate; it is what has to be handed to a tool that is run
+/// somewhere other than where it would have found the config itself.
+pub(crate) fn nearest_config_at(anchor: &Path, names: &[&str]) -> Option<std::path::PathBuf> {
+    anchor
+        .ancestors()
+        .flat_map(|dir| names.iter().map(move |name| dir.join(name)))
+        .find(|candidate| candidate.is_file())
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -245,6 +259,31 @@ mod tests {
         fs::write(dir.path().join("rustfmt.toml"), "max_width = 40\n").expect("write config");
 
         assert_eq!(fingerprint_at(dir.path(), SHELLCHECK_CONFIG_FILES), before);
+    }
+
+    #[test]
+    fn the_nearest_config_wins_and_the_dotted_name_is_preferred_within_a_directory() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let nested = dir.path().join("a");
+        fs::create_dir(&nested).expect("mkdir");
+        fs::write(dir.path().join(".shellcheckrc"), "").expect("write parent config");
+        assert_eq!(
+            nearest_config_at(&nested, SHELLCHECK_CONFIG_FILES),
+            Some(dir.path().join(".shellcheckrc"))
+        );
+
+        fs::write(nested.join("shellcheckrc"), "").expect("write undotted config");
+        fs::write(nested.join(".shellcheckrc"), "").expect("write dotted config");
+        assert_eq!(
+            nearest_config_at(&nested, SHELLCHECK_CONFIG_FILES),
+            Some(nested.join(".shellcheckrc"))
+        );
+    }
+
+    #[test]
+    fn no_config_anywhere_finds_nothing() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        assert_eq!(nearest_config_at(dir.path(), &["poly-test-no-such-config-file"]), None);
     }
 
     /// A tool with no config files is a constant: no filesystem access, always

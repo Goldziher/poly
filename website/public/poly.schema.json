@@ -3202,6 +3202,9 @@
     "lint_shellcheck": {
       "type": "object",
       "properties": {
+        "batch": {
+          "type": "boolean"
+        },
         "enabled": {
           "type": "boolean"
         },

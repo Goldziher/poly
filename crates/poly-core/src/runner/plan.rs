@@ -73,6 +73,20 @@ impl RunPlan {
     }
 }
 
+#[cfg(test)]
+impl RunPlan {
+    /// A plan serving one `(config, language)` pair with `engines`, for tests
+    /// that need to drive the pipeline with an engine of their own.
+    pub(super) fn serving(config_id: usize, language: Language, engines: Vec<EnginePlan>) -> Self {
+        let mut plans = PlanMap::default();
+        plans.insert((config_id, language), engines);
+        Self {
+            plans,
+            withdrawn: WithdrawnMap::default(),
+        }
+    }
+}
+
 /// Name of the generic tree-sitter engine — the tier-2 formatting fallback for
 /// languages with no dedicated backend. Matched by name so it can be dropped
 /// when a catalog formatter takes over the language.

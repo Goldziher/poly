@@ -113,6 +113,42 @@ const LEAVE_UNTOUCHED: &[&str] = &[
     "diff",
 ];
 
+/// Grammar names whose block structure **is** the leading whitespace: a line's
+/// indentation decides which block it belongs to, so reindenting by any model
+/// that does not read the layout rewrites the program.
+///
+/// A bundled `indents.scm` does not make such a language safe. Starlark's, for
+/// instance, opens a level at each bracket but has no notion of a `def` body, so
+/// the query model computed level 0 for every statement outside a bracket and
+/// flattened `.bzl` files to column 0 — one nesting level per pass, which is how
+/// it surfaced: `formatting did not settle after 5 passes` on a file nested six
+/// deep, with the file already destroyed. These grammars get whitespace
+/// normalization only, the same treatment as any grammar poly has no model of.
+const LAYOUT_SIGNIFICANT: &[&str] = &[
+    "python",
+    "starlark",
+    "yaml",
+    "haml",
+    "pug",
+    "slim",
+    "sass",
+    "stylus",
+    "nim",
+    "coffeescript",
+    "gdscript",
+    "mojo",
+    "haskell",
+    "elm",
+    "purescript",
+    "idris",
+    "agda",
+    "lean",
+    "fsharp",
+    "makefile",
+    "make",
+    "rst",
+];
+
 impl Engine for TreeSitterEngine {
     fn name(&self) -> &'static str {
         "treesitter"
@@ -145,6 +181,9 @@ impl Engine for TreeSitterEngine {
             return Ok(FormatOutput::Unchanged);
         }
         let formatted = match name {
+            Some(name) if LAYOUT_SIGNIFICANT.contains(&name.as_str()) => {
+                normalize_whitespace(&src.content, &cfg.globals)
+            }
             Some(name) => {
                 if BRACE_FAMILY.contains(&name.as_str()) {
                     reindent_braces(&name, src, cfg).unwrap_or_else(|| normalize_whitespace(&src.content, &cfg.globals))
