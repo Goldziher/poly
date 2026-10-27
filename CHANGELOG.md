@@ -37,6 +37,11 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   `plugin.yaml`/`pyproject.toml`; the contract test's stdio fixture uses `MCPServer`, the 2.x
   name for `FastMCP`.
 
+- **Final sweep.** The root `@opencode/plugin` 2.1.4 → 2.2.0 (lockfile refreshed with pnpm
+  12.15.0) and the `xberg-io/actions` SHA pins (`setup-ai-rulez`, `validate-ai-rulez`,
+  `package-ai-rulez-plugin`) advanced to `d922e0d`, whose setup action defaults to ai-rulez 5.7.0.
+  Cargo, the other pnpm workspaces and the GitHub Actions tags had nothing newer.
+
 - **Tooling refresh.** pnpm 12.11.2 → 12.15.0, `@opencode/plugin` 2.0.26 → 2.1.4, the OpenCode
   `@opencode-ai/plugin` 1.18.35 → 1.19.4, Astro 7.3.8 → 7.4.2, Starlight 0.42.6 → 0.42.7, the
   Hermes adapter's `mcp` pin 1.28.1 → 1.30.0 (taken further to 2.3.0 below),
