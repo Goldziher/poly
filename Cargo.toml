@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
   "crates/conformance",
+  "crates/dockerfile-parser",
   "crates/gitfluff",
   "crates/poly-buildinfo",
   "crates/poly-cache",
@@ -55,7 +56,7 @@ clap_complete = { version = "4.6.11", features = ["unstable-dynamic"] }
 console = { version = "0.16", default-features = false, features = ["ansi-parsing", "std"] }
 criterion = "0.8"
 ctrlc = "3.5.2"
-dockerfile-parser = "0.9.0"
+dockerfile-parser = { path = "crates/dockerfile-parser" }
 dotenv-analyzer = "0.1"
 dotenv-core = "0.1"
 dunce = "1.0.5"
