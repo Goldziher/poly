@@ -2956,6 +2956,16 @@
         "max_line_bytes": {
           "type": "integer"
         },
+        "oxlintrc": {
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
         "plugins": {
           "type": "array"
         },

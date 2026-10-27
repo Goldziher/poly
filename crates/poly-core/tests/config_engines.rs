@@ -439,6 +439,10 @@ fn typos_honors_per_language_keys_beyond_extend_ignore_words() {
 }
 
 /// A selector list wide enough that the print width decides whether it wraps.
+/// A malva-only key that changes no layout: it keeps the table on malva, not the oxfmt-compatible
+/// default formatter, so these tests exercise malva's own layering.
+const MALVA_ONLY: &str = "[fmt.css.malva]\nuse_tabs = false\n";
+
 const WIDE_CSS: &str = ".aaaaaaaaaa, .bbbbbbbbbb, .cccccccccc, .dddddddddd, .eeeeeeeeee, .ffffffffff { color: red; }\n";
 
 /// The opinionated `[defaults] line_length` is a layer *under* the user's table
@@ -456,7 +460,7 @@ fn malva_user_print_width_overrides_the_global() {
     let default = formatted(
         &engine,
         &src,
-        &engine_cfg_from("", &Language::Css, "malva", Kind::Format),
+        &engine_cfg_from(MALVA_ONLY, &Language::Css, "malva", Kind::Format),
     );
     let user = formatted(
         &engine,
@@ -471,7 +475,7 @@ fn malva_user_print_width_overrides_the_global() {
     assert_ne!(user, default, "a user-set print_width must reach malva");
 
     // The global still applies when the user leaves the key unset.
-    let mut narrowed_global = engine_cfg_from("", &Language::Css, "malva", Kind::Format);
+    let mut narrowed_global = engine_cfg_from(MALVA_ONLY, &Language::Css, "malva", Kind::Format);
     narrowed_global.globals.line_length = 30;
     assert_eq!(
         formatted(&engine, &src, &narrowed_global),
