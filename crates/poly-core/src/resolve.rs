@@ -21,7 +21,7 @@
 //! through the registered entry for the root directory rather than through
 //! `configs[0]`.
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
 
 use std::sync::{Mutex, PoisonError};
@@ -30,6 +30,10 @@ use ignore::{WalkBuilder, WalkState};
 
 use crate::config::Config;
 use crate::discover::keep_walk_entry;
+
+mod canon;
+
+use canon::Canon;
 
 /// One exclude rule in effect for a walk: the glob discovery matches paths
 /// with, paired with the text its author actually wrote.
@@ -101,6 +105,8 @@ pub struct ConfigSet {
     /// Precomputed because `walk_excludes` runs once per root, and a hook run has
     /// one root per staged file.
     root_config_registered: bool,
+    /// Memoized `canonicalize`, shared by every per-root query.
+    canon: Canon,
 }
 
 impl ConfigSet {
@@ -113,6 +119,7 @@ impl ConfigSet {
             lookup: Vec::new(),
             root_config_dir: None,
             root_config_registered: false,
+            canon: Canon::default(),
         }
     }
 
@@ -135,7 +142,8 @@ impl ConfigSet {
     ) -> anyhow::Result<Self> {
         let primary = roots.first().cloned().unwrap_or_else(|| PathBuf::from("."));
         let root_dir = dir_of_root(&primary);
-        let root_config_dir = shared_root_config_dir(roots).or_else(|| root_config_dir(&root_dir));
+        let canon = Canon::default();
+        let root_config_dir = shared_root_config_dir(roots, &canon).or_else(|| root_config_dir(&root_dir, &canon));
 
         // Taken before `root_config` is moved: the scan below prunes with the
         // same built-in set discovery uses, so a repo that un-pruned `build/`
@@ -147,7 +155,7 @@ impl ConfigSet {
         let mut seen: HashSet<PathBuf> = HashSet::new();
 
         for dir in config_dirs_governing(roots, resolver, &no_prune)? {
-            if !seen.insert(canonical_key(&dir)) {
+            if !seen.insert(canonical_key(&dir, &canon)) {
                 continue;
             }
             let resolved: Config = poly_config::PolyConfig::resolve_for_dir_with(&dir, resolver)?.into();
@@ -158,8 +166,8 @@ impl ConfigSet {
         }
         lookup.sort_by_key(|(dir, _)| std::cmp::Reverse(dir.components().count()));
         let root_config_registered = root_config_dir.as_ref().is_some_and(|root_config_dir| {
-            let key = canonical_key(root_config_dir);
-            lookup.iter().any(|(dir, _)| canonical_key(dir) == key)
+            let key = canonical_key(root_config_dir, &canon);
+            lookup.iter().any(|(dir, _)| canonical_key(dir, &canon) == key)
         });
         Ok(Self {
             configs,
@@ -167,6 +175,7 @@ impl ConfigSet {
             lookup,
             root_config_dir,
             root_config_registered,
+            canon,
         })
     }
 
@@ -247,11 +256,24 @@ impl ConfigSet {
         }
         self.lookup
             .iter()
-            .filter(|(config_dir, _)| relative_descent(&dir, config_dir).is_some())
+            .filter(|(config_dir, _)| self.relative_descent(&dir, config_dir).is_some())
             .min_by_key(|(config_dir, _)| config_dir.components().count())
             .map(|(config_dir, _)| config_dir.clone())
             .or_else(|| std::env::current_dir().ok())
             .unwrap_or(dir)
+    }
+
+    /// `descendant` expressed relative to `ancestor`, or `None` when it does not
+    /// sit under it. Tries the paths as written first — the common case, where
+    /// both come from the same run root and share a spelling — and only pays for
+    /// canonicalization when that fails.
+    fn relative_descent(&self, descendant: &Path, ancestor: &Path) -> Option<PathBuf> {
+        if let Ok(relative) = descendant.strip_prefix(ancestor) {
+            return Some(relative.to_path_buf());
+        }
+        let descendant = self.canon.canonicalize(descendant)?;
+        let ancestor = self.canon.canonicalize(ancestor)?;
+        descendant.strip_prefix(ancestor).ok().map(Path::to_path_buf)
     }
 
     /// Exclude globs for the run rooted at `root`, expressed relative to its
@@ -279,24 +301,32 @@ impl ConfigSet {
     ///
     /// [`root_config_excludes`]: ConfigSet::root_config_excludes
     pub fn walk_excludes(&self, root: &Path, extra: &[String], exclude_root: bool) -> Vec<ExcludeRule> {
-        let frame = self.match_frame(root);
+        self.excludes_in_frame(&self.match_frame(root), extra, exclude_root)
+    }
+
+    /// [`walk_excludes`](ConfigSet::walk_excludes) for an already-chosen
+    /// [`match_frame`](ConfigSet::match_frame).
+    ///
+    /// The answer depends on the frame alone, so a caller visiting many roots that
+    /// share one — a hook run names one file per root — computes it once.
+    pub fn excludes_in_frame(&self, frame: &Path, extra: &[String], exclude_root: bool) -> Vec<ExcludeRule> {
         let mut out = if self.root_config_registered {
             Vec::new()
         } else {
-            self.root_config_excludes(&frame)
+            self.root_config_excludes(frame)
         };
         for (config_dir, id) in &self.lookup {
             let globs = &self.configs[*id].exclude;
             if globs.is_empty() {
                 continue;
             }
-            if let Some(rel) = relative_descent(config_dir, &frame) {
+            if let Some(rel) = self.relative_descent(config_dir, frame) {
                 out.extend(
                     globs
                         .iter()
                         .map(|glob| ExcludeRule::reanchored(prefix_glob(&rel, glob), glob)),
                 );
-            } else if let Some(sub) = relative_descent(&frame, config_dir) {
+            } else if let Some(sub) = self.relative_descent(frame, config_dir) {
                 out.extend(globs.iter().filter_map(|glob| {
                     reanchor_glob(&sub, glob).map(|matcher| ExcludeRule::reanchored(matcher, glob))
                 }));
@@ -330,7 +360,7 @@ impl ConfigSet {
         let Some(config_dir) = &self.root_config_dir else {
             return verbatim_rules(globs);
         };
-        let Ok(abs_root) = std::fs::canonicalize(frame) else {
+        let Some(abs_root) = self.canon.canonicalize(frame) else {
             return verbatim_rules(globs);
         };
         match abs_root.strip_prefix(config_dir) {
@@ -388,14 +418,14 @@ fn nonempty_parent(path: &Path) -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
-fn shared_root_config_dir(roots: &[PathBuf]) -> Option<PathBuf> {
-    let root_dirs: Vec<PathBuf> = roots
+fn shared_root_config_dir(roots: &[PathBuf], canon: &Canon) -> Option<PathBuf> {
+    let root_dirs: BTreeSet<PathBuf> = roots
         .iter()
-        .filter_map(|root| std::fs::canonicalize(dir_of_root(root)).ok())
+        .filter_map(|root| canon.canonicalize(&dir_of_root(root)))
         .collect();
     root_dirs
         .iter()
-        .filter_map(|root| root_config_dir(root))
+        .filter_map(|root| root_config_dir(root, canon))
         .filter(|config_dir| root_dirs.iter().all(|root| root.starts_with(config_dir)))
         .max_by_key(|config_dir| config_dir.components().count())
 }
@@ -419,8 +449,8 @@ fn prefix_glob(rel: &Path, glob: &str) -> String {
 /// repository. Returns `None` when `walk_root` cannot be canonicalized or no
 /// config file is found within the boundary (in which case the run root config
 /// carries no re-anchorable excludes).
-fn root_config_dir(walk_root: &Path) -> Option<PathBuf> {
-    let mut current = Some(std::fs::canonicalize(walk_root).ok()?);
+fn root_config_dir(walk_root: &Path, canon: &Canon) -> Option<PathBuf> {
+    let mut current = Some(canon.canonicalize(walk_root)?);
     while let Some(dir) = current {
         if poly_config::CONFIG_FILE_NAMES
             .iter()
@@ -555,26 +585,8 @@ fn normalize_dir(dir: PathBuf) -> PathBuf {
 /// A stable identity for a directory, so the same directory reached by different
 /// spellings (relative vs absolute, via a symlink) is registered once. Falls back
 /// to the path as written when it cannot be canonicalized.
-fn canonical_key(dir: &Path) -> PathBuf {
-    let dir = if dir.as_os_str().is_empty() {
-        Path::new(".")
-    } else {
-        dir
-    };
-    std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf())
-}
-
-/// `descendant` expressed relative to `ancestor`, or `None` when it does not sit
-/// under it. Tries the paths as written first — the common case, where both come
-/// from the same run root and share a spelling — and only pays for
-/// canonicalization when that fails.
-fn relative_descent(descendant: &Path, ancestor: &Path) -> Option<PathBuf> {
-    if let Ok(relative) = descendant.strip_prefix(ancestor) {
-        return Some(relative.to_path_buf());
-    }
-    let descendant = std::fs::canonicalize(descendant).ok()?;
-    let ancestor = std::fs::canonicalize(ancestor).ok()?;
-    descendant.strip_prefix(ancestor).ok().map(Path::to_path_buf)
+fn canonical_key(dir: &Path, canon: &Canon) -> PathBuf {
+    canon.canonicalize(dir).unwrap_or_else(|| dir.to_path_buf())
 }
 
 /// Scan `roots` for every directory containing a config file, respecting
@@ -586,7 +598,7 @@ fn relative_descent(descendant: &Path, ancestor: &Path) -> Option<PathBuf> {
 /// config nested inside the directory it would un-prune.
 fn scan_config_dirs(roots: &[PathBuf], no_prune: &[String]) -> Vec<PathBuf> {
     let found = Mutex::new(Vec::new());
-    for root in roots {
+    for root in roots.iter().filter(|root| !root.is_file()) {
         let mut builder = WalkBuilder::new(root);
         builder
             .hidden(false)

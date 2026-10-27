@@ -378,6 +378,24 @@ run = "prettier --write {staged_files}"
 }
 
 #[test]
+fn template_paths_are_relative_to_the_job_root() {
+    let hooks = hooks_from(
+        r#"
+[hooks.pre-commit]
+[[hooks.pre-commit.jobs]]
+run = "echo {staged_files}"
+root = "pkg"
+"#,
+    );
+    let files = vec![PathBuf::from("pkg/src/a.py"), PathBuf::from("other/b.py")];
+    let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &files, &HookCacheMode::Safe).unwrap();
+    let HookCommand::Run(line) = &spec.hooks[0].command else {
+        panic!("expected run command");
+    };
+    assert_eq!(line, "echo 'src/a.py'");
+}
+
+#[test]
 fn template_substitution_is_scoped_by_the_job_glob() {
     let hooks = hooks_from(
         r#"
@@ -886,4 +904,37 @@ fn a_git_argument_is_quoted_against_the_shell() {
     let hooks = hooks_from("[hooks.post-merge.commands.x]\nrun = \"echo {1}\"\n");
     let spec = lower_with_git_args(&hooks, HookStage::PostMerge, &["a'; rm -rf /; '"]);
     assert_eq!(run_line(hook(&spec, "x")), r"echo 'a'\''; rm -rf /; '\'''");
+}
+
+#[test]
+fn builtin_fmt_fix_runs_fix_mode_and_restages_without_failing() {
+    let hooks = hooks_from(
+        r#"
+[hooks.builtin]
+fmt = { fix = true }
+"#,
+    );
+    let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
+    let hook = &spec.hooks[0];
+    let HookCommand::Run(line) = &hook.command else {
+        panic!("expected run command");
+    };
+    assert!(line.contains("fmt --fix --exit-zero-on-fix"), "{line}");
+    assert!(hook.stage_fixed);
+}
+
+#[test]
+fn builtin_fmt_defaults_to_check_only() {
+    let hooks = hooks_from(
+        r#"
+[hooks.builtin]
+fmt = true
+"#,
+    );
+    let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
+    let HookCommand::Run(line) = &spec.hooks[0].command else {
+        panic!("expected run command");
+    };
+    assert!(line.contains("fmt --check"), "{line}");
+    assert!(!spec.hooks[0].stage_fixed);
 }

@@ -179,6 +179,18 @@ pub fn run(request: HookRunRequest) -> anyhow::Result<HookRunOutcome> {
     pool.install(|| run_all(&request, ui.as_ref()))
 }
 
+/// Whether any hook of `spec` that will run reads the whole tree rather than its
+/// matched files — a `workspace` hook, or a cargo one — and so needs a full
+/// staged snapshot. A whole-workspace hook with no matching file is skipped and
+/// does not count: that is what lets a one-file commit avoid the full tree.
+#[must_use]
+pub fn requires_full_tree(request: &HookRunRequest, spec: &StageSpec) -> bool {
+    spec.hooks
+        .iter()
+        .zip(prepare::prepare(request, spec))
+        .any(|(hook, prepared)| prepared.skip.is_none() && (hook.workspace || hook.is_cargo()))
+}
+
 fn run_all(request: &HookRunRequest, ui: Option<&ProgressUi>) -> anyhow::Result<HookRunOutcome> {
     let mut stages = Vec::with_capacity(request.stages.len());
     for spec in &request.stages {
@@ -305,7 +317,13 @@ fn run_hooks(
         // Landing is a group-wide step: the hooks ran concurrently, so who
         // rewrote what has to be reconciled once, before any outcome is final.
         let stage_fixed: Vec<bool> = group.iter().map(|&pos| spec.hooks[pos].stage_fixed).collect();
-        fixes::land_group_rewrites(&request.root, request.work_root.as_deref(), &stage_fixed, &mut runs)?;
+        fixes::land_group_rewrites(
+            &request.root,
+            request.work_root.as_deref(),
+            &stage_fixed,
+            request.restage_partial,
+            &mut runs,
+        )?;
 
         let mut abort = false;
         for (&pos, run) in group.iter().zip(runs) {
@@ -503,7 +521,12 @@ fn run_group(
     // them back in group order before returning.
     let rank: BTreeMap<usize, usize> = group.iter().enumerate().map(|(rank, &pos)| (pos, rank)).collect();
     runs.sort_by_key(|(pos, _)| rank.get(pos).copied().unwrap_or(usize::MAX));
-    runs.into_iter().map(|(_, run)| run).collect()
+    runs.into_iter()
+        .map(|(_, mut run)| {
+            run.outcome.show_output |= request.verbose;
+            run
+        })
+        .collect()
 }
 
 /// Run a hook's own `before` steps in `hook_dir`, stopping at the first failure.
@@ -594,6 +617,7 @@ fn run_hook(
         output,
         duration: start.elapsed(),
         cached: false,
+        show_output: hook.show_output,
         validated: context.tree,
     }
 }
@@ -630,6 +654,7 @@ fn blank_outcome(hook: &Hook, position: usize, tree: ValidatedTree) -> HookOutco
         output: Vec::new(),
         duration: Duration::ZERO,
         cached: false,
+        show_output: hook.show_output,
         validated: tree,
     }
 }

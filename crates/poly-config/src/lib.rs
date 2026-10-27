@@ -35,8 +35,8 @@ pub use extends::{BaseConfigResolver, ExtendsSource, LocalPathResolver};
 pub use hook_sources::{HookMachinePreferences, HookSource, load_hook_preferences};
 pub use hooks::{
     BuiltinHook, BuiltinHooks, BuiltinJob, CargoHooks, DEFAULT_MAX_ADDED_FILE_KB, FILE_SAFETY_CHECKS, FileSafetyHooks,
-    FileSafetyJob, Guard, GuardCondition, GuardMatch, HooksConfig, Job, JobCache, ParseStageError, Patterns, Serial,
-    Stage, StageConfig,
+    FileSafetyJob, Guard, GuardCondition, GuardMatch, HooksConfig, Job, JobCache, ParseStageError, PartialStage,
+    Patterns, Serial, SnapshotMode, Stage, StageConfig,
 };
 pub use tools::{ToolConfig, ToolsConfig};
 pub use typos_native::TyposNative;

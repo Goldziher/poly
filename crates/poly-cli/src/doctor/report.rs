@@ -186,6 +186,7 @@ pub fn collect(explicit_config: Option<&Path>) -> DoctorReport {
     let path = build_path_report(&resolution);
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let loaded = load_config(explicit_config, &cwd);
+    let hooks_findings = hooks_findings(&loaded, &cwd);
     let config = build_config_report(explicit_config, &cwd, &loaded);
     let cache = build_cache_report();
     // The exclude scan needs the config that actually loaded, and the directory
@@ -193,10 +194,11 @@ pub fn collect(explicit_config: Option<&Path>) -> DoctorReport {
     // the working directory, so running `poly doctor` from a subdirectory still
     // diagnoses the repo-root excludes.
     let excludes = match &loaded {
-        Ok(loaded) => excludes::scan(config.path.as_deref().and_then(Path::parent), loaded),
+        Ok(loaded) => excludes::scan(config.path.as_deref().and_then(Path::parent), &loaded.config),
         Err(_) => ExcludeReport::default(),
     };
-    let findings = diagnose(&running, &resolution, &path, &config, &cache, &excludes);
+    let mut findings = diagnose(&running, &resolution, &path, &config, &cache, &excludes);
+    findings.extend(hooks_findings);
     DoctorReport {
         running,
         path,
@@ -237,7 +239,7 @@ fn build_path_report(resolution: &Resolution) -> PathReport {
 /// lint. It is passed in rather than loaded here because the loaded config is
 /// also what the exclude scan diagnoses, and loading it twice would double the
 /// only expensive part of `poly doctor`'s config work.
-fn build_config_report(explicit: Option<&Path>, cwd: &Path, loaded: &anyhow::Result<Config>) -> ConfigReport {
+fn build_config_report(explicit: Option<&Path>, cwd: &Path, loaded: &anyhow::Result<LoadedConfig>) -> ConfigReport {
     let path = match explicit {
         Some(path) => Some(path.to_path_buf()),
         None => poly_config::find_config(cwd),
@@ -265,14 +267,45 @@ fn build_config_report(explicit: Option<&Path>, cwd: &Path, loaded: &anyhow::Res
     }
 }
 
+/// The config `poly lint` runs with, plus the `[hooks]` table its conversion drops.
+struct LoadedConfig {
+    config: Config,
+    hooks: poly_config::HooksConfig,
+}
+
 /// Load the config exactly as `poly lint` does.
-fn load_config(explicit: Option<&Path>, cwd: &Path) -> anyhow::Result<Config> {
+fn load_config(explicit: Option<&Path>, cwd: &Path) -> anyhow::Result<LoadedConfig> {
     let resolver = crate::config_sources::resolver()?;
     let loaded = match explicit {
         Some(path) => poly_config::PolyConfig::load_file_with(path, &resolver)?,
         None => poly_config::PolyConfig::load_with(cwd, &resolver)?,
     };
-    Ok(loaded.into())
+    let hooks = loaded.hooks.clone();
+    Ok(LoadedConfig {
+        config: loaded.into(),
+        hooks,
+    })
+}
+
+/// Findings about the `[hooks]` table: today, jobs that need `node_modules`
+/// under an isolated commit gate that will not have it.
+fn hooks_findings(loaded: &anyhow::Result<LoadedConfig>, cwd: &Path) -> Vec<Finding> {
+    let Ok(loaded) = loaded else {
+        return Vec::new();
+    };
+    let root = crate::config_sources::repo_root().unwrap_or_else(|_| cwd.to_path_buf());
+    let jobs = crate::hooks::isolation_check::jobs_missing_node_modules(&loaded.hooks, &root);
+    if jobs.is_empty() {
+        return Vec::new();
+    }
+    vec![Finding {
+        severity: Severity::Warning,
+        summary: format!(
+            "[hooks] isolation is on but {} need node_modules, which the staged snapshot does not contain",
+            jobs.join(", ")
+        ),
+        remedy: Some("add `snapshot_include = [\"node_modules\"]` under [hooks], or set `isolate = false`".to_string()),
+    }]
 }
 
 /// Resolve the cache root the way `poly cache` does.

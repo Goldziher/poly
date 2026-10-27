@@ -102,16 +102,16 @@ use tracing::{debug, warn};
 use crate::git;
 
 mod include;
+mod links;
 mod manifest;
+mod scope;
 mod submodule;
+
+pub use self::scope::{SnapshotScope, referenced_paths};
 
 use self::include::materialize_includes;
 use self::manifest::{is_up_to_date, prune_stale, read_manifest, write_manifest};
 use self::submodule::materialize_submodules;
-
-/// Directory name for the snapshot under the per-repo cache dir
-/// (`<platform-cache>/poly/<repo-key>/staged`).
-const SNAPSHOT_SUBDIR: &str = "staged";
 
 /// Errors returned while creating or refreshing a [`StagedSnapshot`].
 #[derive(Debug, thiserror::Error)]
@@ -144,8 +144,17 @@ impl StagedSnapshot {
     /// The first call materializes the whole staged tree; later calls only touch
     /// what changed (see the module docs).
     pub fn create(root: &Path, includes: &[String]) -> Result<Self, Error> {
+        Self::create_scoped(root, includes, SnapshotScope::Full)
+    }
+
+    /// [`Self::create`] materializing only what `scope` selects.
+    ///
+    /// A [`SnapshotScope::Sparse`] snapshot lives beside the full one and holds
+    /// only the staged files and their directory context, so a one-file commit
+    /// writes a handful of files instead of the whole tree.
+    pub fn create_scoped(root: &Path, includes: &[String], scope: SnapshotScope<'_>) -> Result<Self, Error> {
         let cache_dir = poly_cache::repo_cache_dir(root).map_err(|e| Error::CacheDir(e.to_string()))?;
-        Self::create_in(&cache_dir, root, includes)
+        Self::create_scoped_in(&cache_dir, root, includes, scope)
     }
 
     /// Create or refresh the snapshot under `cache_dir/staged`, for a caller
@@ -156,9 +165,19 @@ impl StagedSnapshot {
     /// exact materialization path rather than a hand-rolled `git checkout-index`
     /// that would miss, for instance, the symlink sanitizing above.
     pub fn create_in(cache_dir: &Path, root: &Path, includes: &[String]) -> Result<Self, Error> {
-        let dir = cache_dir.join(SNAPSHOT_SUBDIR);
+        Self::create_scoped_in(cache_dir, root, includes, SnapshotScope::Full)
+    }
+
+    /// [`Self::create_in`] materializing only what `scope` selects.
+    pub fn create_scoped_in(
+        cache_dir: &Path,
+        root: &Path,
+        includes: &[String],
+        scope: SnapshotScope<'_>,
+    ) -> Result<Self, Error> {
+        let dir = cache_dir.join(scope.subdir());
         std::fs::create_dir_all(&dir)?;
-        refresh(root, &dir, includes)?;
+        refresh(root, &dir, includes, scope)?;
         debug!(snapshot = %dir.display(), "refreshed staged snapshot");
         Ok(Self { dir })
     }
@@ -171,8 +190,10 @@ impl StagedSnapshot {
 }
 
 /// Refresh `dir` so it mirrors the current staged (index) content of `root`.
-fn refresh(root: &Path, dir: &Path, includes: &[String]) -> Result<(), Error> {
-    let staged = git::list_staged_entries(root)?;
+fn refresh(root: &Path, dir: &Path, includes: &[String], scope: SnapshotScope<'_>) -> Result<(), Error> {
+    let selection = scope.select(git::list_staged_entries(root)?);
+    links::drop_stale(dir, &selection.links);
+    let staged = selection.entries;
     let previous = read_manifest(dir);
 
     prune_stale(dir, &staged, &previous);
@@ -186,6 +207,7 @@ fn refresh(root: &Path, dir: &Path, includes: &[String]) -> Result<(), Error> {
     git::checkout_index_paths(root, dir, &to_checkout)?;
     sanitize_symlinks(dir, &staged);
 
+    links::create(root, dir, &selection.links)?;
     materialize_submodules(root, dir)?;
     // After the sanitizing pass and outside the manifest, for the reasons the
     // `include` module documents.

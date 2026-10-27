@@ -52,6 +52,7 @@ fn prepare_one(request: &HookRunRequest, hook: &Hook, all_paths: &[&Path], tag_c
                 .iter()
                 .filter(|path| {
                     filter.matches_filename(path)
+                        && hook.cwd.as_deref().is_none_or(|cwd| path.starts_with(cwd))
                         && (!hook.pass_filenames || !missing_entry(execution_root, path))
                         && (!has_tag_filter || filter.matches_tags(tag_cache.tags_for(path)))
                 })

@@ -33,6 +33,8 @@ pub(super) fn build_command(
     sccache: Option<&SccacheSettings>,
     cargo_target_dir: Option<&Path>,
 ) -> Cmd {
+    let files = relative_to_cwd(hook, files);
+    let files = files.as_slice();
     let mut cmd = match &hook.command {
         HookCommand::Run(line) => shell_command(line, &hook.id, &hook.args, files, hook.pass_filenames),
         HookCommand::Script { path, runner } => {
@@ -52,6 +54,9 @@ pub(super) fn build_command(
         }
     };
     cmd.current_dir(hook_working_dir(hook, root));
+    // The run that spawned this hook already warned about a shadowed `poly`; a
+    // child `poly` repeating it would land the warning inside the hook's output.
+    cmd.env("POLY_NO_SHADOW_WARN", "1");
     cmd.envs(hook.env.iter());
     if let Some(target) = cargo_target_dir {
         if !hook.env.contains_key("CARGO_TARGET_DIR") {
@@ -72,6 +77,17 @@ pub(super) fn export_git_args(cmd: &mut Cmd, git_args: &[String]) {
     cmd.env("POLY_GIT_ARG_COUNT", git_args.len().to_string());
     for (index, arg) in git_args.iter().enumerate() {
         cmd.env(format!("POLY_GIT_ARG_{}", index + 1), arg);
+    }
+}
+
+/// The file arguments as the hook sees them: relative to its working directory
+/// when it has a `cwd`/`root`, so a hook run from `packages/web` receives
+/// `src/a.ts` rather than the unreachable `packages/web/src/a.ts`. Files outside
+/// that directory are not the hook's to receive and are dropped.
+pub(super) fn relative_to_cwd<'a>(hook: &Hook, files: &[&'a Path]) -> Vec<&'a Path> {
+    match hook.cwd.as_deref() {
+        Some(cwd) => files.iter().filter_map(|file| file.strip_prefix(cwd).ok()).collect(),
+        None => files.to_vec(),
     }
 }
 

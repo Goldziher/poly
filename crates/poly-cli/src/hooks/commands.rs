@@ -19,7 +19,7 @@ use anyhow::{Context, Result};
 use clap::{Args, Subcommand, ValueEnum as _};
 use poly_config::{PolyConfig, Stage as ConfigStage};
 use poly_core::report::theme::Theme;
-use poly_hooks::snapshot::StagedSnapshot;
+use poly_hooks::snapshot::{SnapshotScope, StagedSnapshot};
 use poly_hooks::stage::RunInputMode;
 // Shared hook-run helpers, now owned by the `poly-workspace` crate (single source
 // of truth for the CLI and the MCP server).
@@ -88,6 +88,11 @@ pub struct RunArgs {
     /// Disable tier-2 sccache env injection for compiler hooks this run.
     #[arg(long)]
     pub no_sccache: bool,
+
+    /// Show every job's output, including jobs that passed (warnings printed by
+    /// a successful job are otherwise dropped).
+    #[arg(short = 'v', long)]
+    pub verbose: bool,
 }
 
 /// `poly hooks install` arguments.
@@ -100,6 +105,16 @@ pub struct InstallArgs {
     /// Overwrite an existing hook, discarding any preserved legacy hook.
     #[arg(long)]
     pub overwrite: bool,
+
+    /// Discard an existing lefthook hook instead of keeping it as
+    /// `<hook>.legacy`.
+    ///
+    /// A foreign hook that is not lefthook's is kept as `<hook>.legacy` and run
+    /// before poly. A lefthook hook is kept but never run, because poly replaces
+    /// lefthook and running both would run every check twice; this flag removes it
+    /// outright. `poly hooks uninstall` restores whichever was kept.
+    #[arg(long)]
+    pub replace_lefthook: bool,
 }
 
 /// `poly hooks uninstall` arguments.
@@ -227,7 +242,8 @@ fn run_stage(args: RunArgs) -> Result<ExitCode> {
         isolation_active(&config.hooks, args.all_files, stage),
         &spec,
         &root,
-        config.hooks.snapshot_include.as_slice(),
+        &files,
+        &config.hooks,
     )?;
     let work_root = snapshot.as_ref().map(|snapshot| snapshot.path().to_path_buf());
 
@@ -242,6 +258,8 @@ fn run_stage(args: RunArgs) -> Result<ExitCode> {
         cache,
         sccache: sccache_settings(&config, args.no_sccache)?,
         progress: show_progress(),
+        verbose: args.verbose,
+        restage_partial: config.hooks.partial_stage == poly_config::PartialStage::Restage,
     };
     run_and_report(request)
 }
@@ -292,8 +310,16 @@ fn install(args: InstallArgs) -> Result<ExitCode> {
     } else {
         args.hook_types.clone()
     };
-    let written = poly_hooks::install::install(&hooks_dir, &hook_types, args.overwrite)?;
-    print_hook_summary("Installed", "install", &hooks_dir, &written);
+    let report = poly_hooks::install::install_with(
+        &hooks_dir,
+        &hook_types,
+        poly_hooks::install::InstallOptions {
+            overwrite: args.overwrite,
+            replace_lefthook: args.replace_lefthook,
+        },
+    )?;
+    print_hook_summary("Installed", "install", &hooks_dir, &report.written);
+    print_preserved_hooks(&report.preserved);
 
     // When the shim set is derived from config, prune any leftover poly shims for
     // stages the config no longer binds — so a repo that previously installed all
@@ -440,6 +466,30 @@ fn uninstall(args: UninstallArgs) -> Result<ExitCode> {
 /// bare infinitive used in the empty-set notice ("install" / "remove"). Paths
 /// are shown relative to the current directory (the hooks live under a single
 /// directory, printed once) so no absolute paths appear in the output.
+fn print_preserved_hooks(preserved: &[poly_hooks::install::Preserved]) {
+    use poly_hooks::install::Preserved;
+
+    let theme = Theme::STDOUT;
+    for entry in preserved {
+        let note = match entry {
+            Preserved::Chained(path) => format!(
+                "kept existing hook as {}; it runs before poly",
+                relative_to_cwd(path).display()
+            ),
+            Preserved::LefthookKept(path) => format!(
+                "kept existing lefthook hook as {} but it is NOT run (poly replaces lefthook; running both would \
+                 duplicate every check). Re-run with --replace-lefthook to discard it, or `poly hooks uninstall` \
+                 to restore it",
+                relative_to_cwd(path).display()
+            ),
+            Preserved::LefthookReplaced(path) => {
+                format!("replaced the lefthook hook {}", relative_to_cwd(path).display())
+            }
+        };
+        println!("{} {note}", theme.secondary("·"));
+    }
+}
+
 fn print_hook_summary(done: &str, verb: &str, hooks_dir: &Path, hooks: &[PathBuf]) {
     if hooks.is_empty() {
         println!("{} no poly git hooks to {verb}.", Theme::STDOUT.secondary("·"));
@@ -541,7 +591,8 @@ fn hook_impl(args: HookImplArgs) -> Result<ExitCode> {
         isolation_active(&config.hooks, inputs.all_files, stage),
         &spec,
         &root,
-        config.hooks.snapshot_include.as_slice(),
+        &files,
+        &config.hooks,
     )?;
     let work_root = snapshot.as_ref().map(|snapshot| snapshot.path().to_path_buf());
 
@@ -556,6 +607,8 @@ fn hook_impl(args: HookImplArgs) -> Result<ExitCode> {
         cache,
         sccache: sccache_settings(&config, args.no_sccache)?,
         progress: show_progress(),
+        verbose: false,
+        restage_partial: config.hooks.partial_stage == poly_config::PartialStage::Restage,
     };
     run_and_report(request)
 }
@@ -617,12 +670,31 @@ fn maybe_staged_snapshot(
     isolate: bool,
     spec: &poly_hooks::StageSpec,
     root: &Path,
-    includes: &[String],
+    files: &[PathBuf],
+    hooks: &poly_config::HooksConfig,
 ) -> Result<Option<StagedSnapshot>> {
     if !isolate || spec.hooks.is_empty() {
         return Ok(None);
     }
-    let snapshot = StagedSnapshot::create(root, includes).context("failed to create the staged-content snapshot")?;
+    let includes = hooks.snapshot_include.as_slice();
+    let pinned = poly_hooks::snapshot::referenced_paths(&spec.hooks);
+    let probe = poly_hooks::HookRunRequest {
+        root: root.to_path_buf(),
+        files: files.to_vec(),
+        ..poly_hooks::HookRunRequest::default()
+    };
+    let scope =
+        if hooks.snapshot == poly_config::SnapshotMode::Full || poly_hooks::runner::requires_full_tree(&probe, spec) {
+            SnapshotScope::Full
+        } else {
+            SnapshotScope::Sparse { files, pinned: &pinned }
+        };
+    let missing = super::isolation_check::jobs_missing_node_modules(hooks, root);
+    if !missing.is_empty() {
+        eprintln!("warning: {}", super::isolation_check::warning(&missing));
+    }
+    let snapshot =
+        StagedSnapshot::create_scoped(root, includes, scope).context("failed to create the staged-content snapshot")?;
     // Stated on every run, green ones included. The gate's whole claim is "these
     // are the bytes a commit would capture", and an allowlist is a deliberate
     // exception to it — a reader who does not know it is in force cannot judge

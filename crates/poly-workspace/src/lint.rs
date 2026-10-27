@@ -164,6 +164,8 @@ pub fn run_workspace_lint(config: &PolyConfig, opts: &WorkspaceLintOptions) -> R
         cache,
         sccache,
         progress: show_progress(),
+        verbose: false,
+        restage_partial: false,
     };
     let outcome = poly_hooks::run(request)?;
     Ok(WorkspaceLintOutcome::from_hook_outcome(&outcome))

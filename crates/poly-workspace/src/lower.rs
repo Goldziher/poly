@@ -389,6 +389,7 @@ fn job_to_hook(
     let types = (!job.file_types.is_empty()).then(|| TagSet::from_tags(&job.file_types));
 
     let scoped = filter_files(inputs.files, files_pattern.as_ref(), exclude_pattern.as_ref());
+    let scoped = root_relative(job.root.as_deref(), scoped);
     let (command, template_pass_filenames) = build_command(job, &scoped, inputs.git_args)?;
     let pass_filenames = template_pass_filenames && !job.workspace;
 
@@ -404,6 +405,7 @@ fn job_to_hook(
         args: job.args.clone(),
         env,
         cwd: job.root.as_ref().map(std::path::PathBuf::from),
+        show_output: job.show_output,
         precondition: job.precondition.clone(),
         before: job.before.as_ref().map(patterns_to_vec).unwrap_or_default(),
         files: files_pattern,
@@ -494,6 +496,18 @@ fn job_timeout(stage: HookStage, label: &str, job: &Job) -> Result<HookTimeout> 
             "hook job `{label}` in stage `{stage}`: invalid `timeout` value `{raw}`; expected {ACCEPTED_TIMEOUT_FORMS}"
         )
     })
+}
+
+/// The file set as a job running from `root` sees it: only files under `root`,
+/// named relative to it. A job without a `root` keeps repo-relative names.
+fn root_relative(root: Option<&str>, files: Vec<PathBuf>) -> Vec<PathBuf> {
+    let Some(root) = root else {
+        return files;
+    };
+    files
+        .into_iter()
+        .filter_map(|file| file.strip_prefix(root).map(std::path::Path::to_path_buf).ok())
+        .collect()
 }
 
 /// Build the [`HookCommand`] and resolve whether the runner should append the

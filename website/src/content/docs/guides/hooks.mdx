@@ -17,6 +17,15 @@ poly hooks install
 
 That wires the git shims once; the configured stages then run on every `git commit`.
 
+A hook that already exists is not lost: it is kept as `<hook>.legacy` and the poly shim runs it
+**before** poly, with the same arguments and stdin; if it fails, poly does not run. A **lefthook**
+hook is the exception. poly replaces lefthook, and running both would run every check twice, so it
+is kept (for `poly hooks uninstall` to restore) but never run, and `install` says so. Pass
+`--replace-lefthook` to discard it instead.
+
+By default only a failing job's output is printed. Set `show_output = true` on a job, or run
+`poly hooks run -v`, to see the output of jobs that passed too.
+
 ## Builtin hooks
 
 | Builtin | Runs |
@@ -136,6 +145,22 @@ whole run with:
 isolate = false   # validate the live worktree instead of the staged snapshot
 ```
 
+The snapshot holds as much of the index as the run needs. When every job that will run is per-file,
+`snapshot = "auto"` (the default) writes only the staged files, the tracked files beside them and in
+every directory above them (config files, `__init__.py`, sibling modules), and any tracked path a
+job's command line names. A one-file commit then costs a handful of files instead of the whole tree,
+and lives in a separate `staged-sparse` directory. Every other directory appears in the snapshot as a
+symlink to the same path in your working tree, so existence probes (ruff's isort deciding that
+`armis.common.lib` is first-party, a config found by walking up) answer as they would in the full
+tree; nothing a run validates is read through a link, and a hook in a sparse run must not write
+through one. A `workspace = true` or cargo job that has files to run on needs the whole tree and gets
+the full snapshot as before; `snapshot = "full"` forces it. Every selected file is still read from
+the index, so a partially staged file is validated as staged.
+
+A job that needs the untracked `node_modules` cannot find it in the snapshot. `poly doctor` and
+`poly hooks run` warn about this; link it in with `snapshot_include = ["node_modules"]` or set
+`isolate = false`.
+
 The snapshot is a persistent cache in the per-user cache directory
 (`<platform-cache>/poly/<repo-key>/staged`, outside the repo), refreshed in place each run. Content
 is sourced straight from the git **index blob** — never copied from the worktree — so an unstaged
@@ -155,7 +180,12 @@ A `stage_fixed` hook that rewrites its matched files writes into the snapshot, s
 carried back to the worktree copy — but **only where that copy is byte-identical to the index**.
 Where it differs, the author holds unstaged work the write-back must not silently overwrite or
 stage; the fix is withheld instead, and for a `stage_fixed` hook that fails the run rather than
-losing the unstaged edit.
+losing the unstaged edit. The failure names the files and the commands that resolve it (`git add`
+them, or `git stash push --keep-index`). To have poly stage just the fixed content and leave your
+unstaged edits in the worktree, set `partial_stage = "restage"` under `[hooks]`.
+
+A `stage_fixed` job running `poly fmt --fix` should add `--exit-zero-on-fix` (otherwise `fmt` exits
+1 after rewriting). The `fmt` and `lint` builtins do this for you with `fmt = { fix = true }`.
 
 ### Letting a build read an untracked file
 

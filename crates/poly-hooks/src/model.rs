@@ -101,6 +101,9 @@ pub struct Hook {
     /// Working directory override (relative to the repo root). `None` means
     /// the hook runs from the repo root, matching the existing behaviour.
     pub cwd: Option<PathBuf>,
+    /// Render this hook's output in the report even when it passes, so a warning
+    /// printed by a successful hook is not lost.
+    pub show_output: bool,
     /// Include filter; `None` means "no filename constraint".
     pub files: Option<FilePattern>,
     /// Exclude filter; `None` means "exclude nothing".
@@ -323,6 +326,12 @@ pub struct HookRunRequest {
     /// visibly *running* instead of looking like the commit has hung — the
     /// captured report is still rendered to stdout once the run completes.
     pub progress: bool,
+    /// Show the captured output of every hook, passing ones included.
+    pub verbose: bool,
+    /// When a `stage_fixed` hook fixes a staged file whose worktree copy holds
+    /// unstaged edits, stage just the fixed content (leaving the worktree alone)
+    /// instead of withholding the fix and failing the hook.
+    pub restage_partial: bool,
 }
 
 /// The result of running all requested stages.
@@ -470,6 +479,9 @@ pub struct HookOutcome {
     /// Whether this outcome was served from the tier-1 result cache (the hook
     /// body was not executed).
     pub cached: bool,
+    /// Render this hook's captured output even when it passed (the hook's
+    /// `show_output`, or the run's `verbose`). A failing hook always shows it.
+    pub show_output: bool,
     /// The tree this hook's verdict was computed against.
     ///
     /// Recorded — and rendered — because a gate that does not say which bytes it

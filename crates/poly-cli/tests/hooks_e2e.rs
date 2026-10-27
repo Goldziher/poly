@@ -660,3 +660,90 @@ fn hook_impl_prepare_commit_msg_hands_every_argument_to_jobs() {
         "MSG|commit|deadbeef|"
     );
 }
+
+fn commit_all(repo: &Path) {
+    git(repo, &["add", "-A"]);
+    git(repo, &["commit", "-qm", "init"]);
+}
+
+#[test]
+fn rooted_job_receives_root_relative_file_arguments() {
+    let repo = init_repo();
+    let root = repo.path();
+    std::fs::create_dir_all(root.join("pkg/src")).unwrap();
+    write(root, "pkg/src/x.py", "x = 1\n");
+    write(
+        root,
+        "poly.toml",
+        r#"
+[[hooks.pre-commit.jobs]]
+name = "rooted"
+root = "pkg"
+glob = "**/*.py"
+run = "echo ARGS: \"$@\"; test -f \"$1\""
+show_output = true
+"#,
+    );
+    commit_all(root);
+
+    let output = poly_hooks(root, &["run", "pre-commit", "--all-files", "--no-cache"]);
+    let report = String::from_utf8_lossy(&output.stdout);
+
+    assert!(
+        output.status.success(),
+        "{report}\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(report.contains("ARGS: src/x.py"), "{report}");
+}
+
+#[test]
+fn passing_job_output_is_hidden_unless_show_output_or_verbose() {
+    let repo = init_repo();
+    let root = repo.path();
+    write(
+        root,
+        "poly.toml",
+        r#"
+[[hooks.pre-commit.jobs]]
+name = "warns"
+run = "echo stale-lock-warning"
+
+[[hooks.pre-commit.jobs]]
+name = "chatty"
+run = "echo chatty-output"
+show_output = true
+"#,
+    );
+    commit_all(root);
+
+    let quiet = poly_hooks(root, &["run", "pre-commit", "--all-files", "--no-cache"]);
+    let quiet = String::from_utf8_lossy(&quiet.stdout);
+    assert!(!quiet.contains("stale-lock-warning"), "{quiet}");
+    assert!(quiet.contains("chatty-output"), "{quiet}");
+
+    let verbose = poly_hooks(root, &["run", "pre-commit", "--all-files", "--no-cache", "-v"]);
+    let verbose = String::from_utf8_lossy(&verbose.stdout);
+    assert!(verbose.contains("stale-lock-warning"), "{verbose}");
+}
+
+#[test]
+fn hook_children_inherit_the_shadow_warning_suppression() {
+    let repo = init_repo();
+    let root = repo.path();
+    write(
+        root,
+        "poly.toml",
+        r#"
+[[hooks.pre-commit.jobs]]
+name = "env"
+run = "echo suppress=$POLY_NO_SHADOW_WARN"
+show_output = true
+"#,
+    );
+    commit_all(root);
+
+    let output = poly_hooks(root, &["run", "pre-commit", "--all-files", "--no-cache"]);
+
+    assert!(String::from_utf8_lossy(&output.stdout).contains("suppress=1"));
+}

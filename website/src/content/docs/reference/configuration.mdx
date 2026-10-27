@@ -187,6 +187,8 @@ Reserved keys:
 | `sources` | array of tables | `[[hooks.sources]]` producer catalogs: `{ id, path \| git, revision, hooks }`. |
 | `snapshot_include` | string or array | Untracked paths pulled into the staged snapshot (ADR 0019). |
 | `isolate` | boolean | Force hooks onto the staged snapshot (unset uses the per-invocation default). |
+| `snapshot` | `"auto"` \| `"full"` | `auto` (default) materializes only the staged files and their directory context unless a `workspace` or cargo job will run; `full` always materializes the whole index. |
+| `partial_stage` | `"fail"` \| `"restage"` | What a `stage_fixed` job does when its fix lands on a file that also has unstaged edits. `fail` (default) withholds the fix and names the commands to resolve it; `restage` stages only the fixed content and leaves the edits in the worktree. |
 | `builtin` | table | See below. |
 
 `[hooks.builtin]` — poly's in-process hooks. Each of `lint`, `fmt`, `commit` is a
@@ -216,7 +218,16 @@ A **stage** table (`[hooks.pre-commit]`) accepts:
 A **job** accepts `name`, `run` **xor** `script`, `runner`, `args`, `glob`,
 `files`, `exclude`, `file_types`, `root`, `skip`, `only`, `precondition`,
 `before`, `tags`, `env`, `fail_text`, `timeout`, `priority`, `serial`,
-`stage_fixed`, `workspace`, `interactive`, `use_stdin` and `cache`.
+`stage_fixed`, `show_output`, `workspace`, `interactive`, `use_stdin` and `cache`.
+
+`root` runs the job from a subdirectory **and passes file arguments relative to it** (as lefthook
+and pre-commit do): a job with `root = "products/em/backend"` receives `src/x.py`, not
+`products/em/backend/src/x.py`, in `"$@"` and in `{staged_files}` / `{all_files}`. Files outside
+`root` are not passed, and a job none of whose files are under `root` is skipped.
+
+`show_output = true` prints the job's output even when it passes; by default only a failing job's
+output is shown, so a warning from a job that exits 0 is otherwise dropped.
+`poly hooks run --verbose` (`-v`) does the same for every job.
 
 ## `extends`
 

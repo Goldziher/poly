@@ -1785,6 +1785,12 @@
         "snapshot_include": {
           "$ref": "#/$defs/Patterns"
         },
+        "snapshot": {
+          "$ref": "#/$defs/SnapshotMode"
+        },
+        "partial_stage": {
+          "$ref": "#/$defs/PartialStage"
+        },
         "isolate": {
           "description": "Whether hooks run against the staged-content snapshot instead of the live worktree (ADR 0019). Unset uses the per-invocation default.",
           "type": "boolean"
@@ -2039,9 +2045,14 @@
           "default": []
         },
         "root": {
-          "description": "Run the job from this subdirectory.",
+          "description": "Run the job from this subdirectory.\n\nFile arguments (and `{staged_files}` / `{all_files}`) are passed relative\nto it, as lefthook and pre-commit do, and files outside it are not passed;\na job none of whose files are under `root` is skipped.",
           "type": ["string", "null"],
           "default": null
+        },
+        "show_output": {
+          "description": "Show the job's output in the report even when it passes (default: only a\nfailing job's output is shown). Use it for a check that prints warnings\nand exits 0. `poly hooks run --verbose` does this for every job.",
+          "type": "boolean",
+          "default": false
         },
         "skip": {
           "description": "Skip guard — when active, the job does not run.",
@@ -2572,6 +2583,36 @@
       },
       "additionalProperties": false,
       "required": ["id", "hooks"]
+    },
+    "SnapshotMode": {
+      "description": "`[hooks] snapshot` — how much of the staged index an isolated run writes out.",
+      "oneOf": [
+        {
+          "description": "Materialize only the staged files and their directory context when every\nhook that will run is per-file; the whole index when a `workspace` or\ncargo hook will run.",
+          "type": "string",
+          "const": "auto"
+        },
+        {
+          "description": "Always materialize the whole index.",
+          "type": "string",
+          "const": "full"
+        }
+      ]
+    },
+    "PartialStage": {
+      "description": "`[hooks] partial_stage` — how a `stage_fixed` fix lands on a partially staged file.",
+      "oneOf": [
+        {
+          "description": "Withhold the fix and fail the hook, naming the file and the commands to\nresolve it. Nothing of the author's is overwritten or staged.",
+          "type": "string",
+          "const": "fail"
+        },
+        {
+          "description": "Stage the fixed content only, leaving the unstaged edits in the worktree.",
+          "type": "string",
+          "const": "restage"
+        }
+      ]
     },
     "CacheConfig": {
       "description": "Configuration for the `[cache]` table in `poly.toml`.\n\nAll fields default so `[cache]` is entirely optional.",

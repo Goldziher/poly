@@ -22,6 +22,24 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   ignored. `psm` stays at 0.1.24: pest 2.9.5 and `pest_stack_guard` 1.0.0 are the latest releases
   and still pin it exactly, and the stack guard is what turns pathologically deep input into a
   parse error instead of a stack overflow.
+- **Hook runner fixes found on a 92k-file monorepo.** A job with `root = "<dir>"` now receives
+  file arguments (and `{staged_files}`) relative to `<dir>`, and is skipped when none of its files
+  are under it. A job's output is shown
+  when it passes with `show_output = true` or `poly hooks run -v`. The staged snapshot is sparse
+  (`[hooks] snapshot = "auto"`) unless a `workspace` or cargo job will run, so a one-file commit no
+  longer materializes the whole tree. `poly hooks install` keeps a foreign hook as `<hook>.legacy`
+  and runs it before poly (a lefthook hook is kept inert; `--replace-lefthook` discards it).
+  `[hooks] partial_stage = "restage"` stages only a `stage_fixed` fix over a partially staged file,
+  and the withheld-fix failure now names the commands to resolve it. `poly doctor` and `poly hooks
+  run` warn when a job needs `node_modules` under an isolated gate. Hook children no longer print
+  the shadowed-`poly` warning into their captured output.
+
+### Fixed
+
+- **`poly fmt` / `poly lint` on many explicit paths** spent seconds in config resolution and
+  discovery per run (a `canonicalize` and a `WalkBuilder` per named file, each re-reading the global
+  gitconfig and parent `.gitignore`s). Canonicalization is memoized, named files skip the walker,
+  and compiled exclude sets are shared per frame.
 
 ### Changed
 

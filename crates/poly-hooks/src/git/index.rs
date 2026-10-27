@@ -263,6 +263,103 @@ pub fn add(root: &Path, paths: &[PathBuf]) -> Result<(), Error> {
     Ok(())
 }
 
+/// Replace the index entries of the `(path, source)` pairs with the contents of
+/// each `source`, leaving the worktree untouched and keeping each entry's mode.
+///
+/// This is how a fix computed from staged content is committed when the worktree
+/// copy holds unstaged edits: `git add` would stage those edits too, so the
+/// fixed bytes go in through `hash-object` + `update-index --index-info`
+/// instead, three git processes for the whole batch. Every path needs a stage-0
+/// entry. Content is stored as the snapshot holds it, with no clean filters.
+#[instrument(level = "trace", skip(items))]
+pub fn stage_contents_from(root: &Path, items: &[(PathBuf, PathBuf)]) -> Result<(), Error> {
+    if items.is_empty() {
+        return Ok(());
+    }
+    for (path, source) in items {
+        reject_unsafe_path(path)?;
+        if source.as_os_str().as_encoded_bytes().contains(&b'\n') {
+            return Err(Error::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "a snapshot path containing a newline cannot be hashed in a batch",
+            )));
+        }
+    }
+    let mut listing = git_cmd("list entries to replace")?;
+    listing
+        .current_dir(root)
+        .arg("ls-files")
+        .arg("-s")
+        .arg("-z")
+        .arg("--")
+        .args(items.iter().map(|(path, _)| path));
+    let entries = parse_ls_files_stage(&listing.check(true).output()?.stdout)?;
+
+    let mut hashing = git_cmd("hash fixed content")?;
+    hashing
+        .current_dir(root)
+        .arg("hash-object")
+        .arg("-w")
+        .arg("--no-filters")
+        .arg("--stdin-paths");
+    let sources: Vec<u8> = items
+        .iter()
+        .flat_map(|(_, source)| {
+            let mut line = source.as_os_str().as_encoded_bytes().to_vec();
+            line.push(b'\n');
+            line
+        })
+        .collect();
+    let oids = String::from_utf8_lossy(&run_with_stdin(&mut hashing, sources)?).into_owned();
+    let oids: Vec<&str> = oids.lines().collect();
+    if oids.len() != items.len() {
+        return Err(Error::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "git hash-object returned an unexpected number of object ids",
+        )));
+    }
+
+    let mut index_info: Vec<u8> = Vec::new();
+    for ((path, _), oid) in items.iter().zip(oids) {
+        let Some(entry) = entries.iter().find(|entry| &entry.path == path) else {
+            return Err(Error::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("`{}` has no staged entry to replace", path.display()),
+            )));
+        };
+        let mode = if entry.is_executable { "100755" } else { "100644" };
+        index_info.extend_from_slice(format!("{mode} {oid}\t").as_bytes());
+        index_info.extend_from_slice(path.as_os_str().as_encoded_bytes());
+        index_info.push(0);
+    }
+    let mut updating = git_cmd("update index entries")?;
+    updating
+        .current_dir(root)
+        .arg("update-index")
+        .arg("-z")
+        .arg("--index-info");
+    run_with_stdin(&mut updating, index_info)?;
+    Ok(())
+}
+
+/// Run `cmd` with `input` on stdin and return its stdout, feeding stdin from its
+/// own thread so neither side can block the other on a full pipe.
+fn run_with_stdin(cmd: &mut crate::process::Cmd, input: Vec<u8>) -> Result<Vec<u8>, Error> {
+    use std::io::Write as _;
+    use std::process::Stdio;
+
+    cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = cmd.spawn()?;
+    let mut stdin = child.stdin.take().expect("piped stdin");
+    let writer = std::thread::spawn(move || stdin.write_all(&input));
+    let output = child.wait_with_output()?;
+    writer
+        .join()
+        .map_err(|_| std::io::Error::other("stdin writer panicked"))??;
+    cmd.check_output(&output)?;
+    Ok(output.stdout)
+}
+
 /// Read the staged (index) bytes of `path` — the content a commit would capture
 /// — or `None` when the path has no stage-0 entry.
 ///
@@ -296,6 +393,88 @@ pub fn staged_blob(root: &Path, path: &Path) -> Result<Option<Vec<u8>>, Error> {
         return Ok(None);
     }
     Ok(Some(output.stdout))
+}
+
+/// [`staged_blob`] for many paths through a single `git cat-file --batch`
+/// process, in `paths` order. A path with no stage-0 entry yields `None`.
+///
+/// One process instead of one per path matters when a formatter rewrote
+/// hundreds of files and each must be compared against the index: spawning git
+/// per file cost seconds. A path containing a newline cannot be addressed on
+/// the batch protocol's line-based input, so it falls back to [`staged_blob`].
+#[instrument(level = "trace", skip(paths))]
+pub fn staged_blobs(root: &Path, paths: &[PathBuf]) -> Result<Vec<Option<Vec<u8>>>, Error> {
+    use std::io::{BufRead as _, BufReader, Read as _, Write as _};
+    use std::process::Stdio;
+
+    for path in paths {
+        reject_unsafe_path(path)?;
+    }
+    let batchable = |path: &PathBuf| !path.as_os_str().as_encoded_bytes().contains(&b'\n');
+    let batch: Vec<&PathBuf> = paths.iter().filter(|path| batchable(path)).collect();
+    let mut fetched: Vec<Option<Vec<u8>>> = Vec::with_capacity(batch.len());
+    if !batch.is_empty() {
+        let mut child = git_cmd("read staged blobs")?
+            .current_dir(root)
+            .arg("cat-file")
+            .arg("--batch")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()?;
+        let mut stdin = child.stdin.take().expect("piped stdin");
+        let mut reader = BufReader::new(child.stdout.take().expect("piped stdout"));
+        let expected = batch.len();
+        let invalid = |what: &str| std::io::Error::new(std::io::ErrorKind::InvalidData, what.to_owned());
+        let result: Result<(), std::io::Error> = std::thread::scope(|scope| {
+            // Written from its own thread: git answers while it is still being
+            // asked, and a request list larger than the pipe buffer would
+            // otherwise block both sides.
+            let writer = scope.spawn(move || {
+                for path in &batch {
+                    stdin.write_all(b":0:")?;
+                    stdin.write_all(path.as_os_str().as_encoded_bytes())?;
+                    stdin.write_all(b"\n")?;
+                }
+                Ok::<(), std::io::Error>(())
+            });
+            let mut header = String::new();
+            for _ in 0..expected {
+                header.clear();
+                if reader.read_line(&mut header)? == 0 {
+                    return Err(invalid("git cat-file closed early"));
+                }
+                if header.trim_end().ends_with(" missing") {
+                    fetched.push(None);
+                    continue;
+                }
+                let size: usize = header
+                    .split_whitespace()
+                    .nth(2)
+                    .and_then(|size| size.parse().ok())
+                    .ok_or_else(|| invalid("unexpected cat-file header"))?;
+                let mut content = vec![0; size];
+                reader.read_exact(&mut content)?;
+                let mut newline = [0u8; 1];
+                reader.read_exact(&mut newline)?;
+                fetched.push(Some(content));
+            }
+            writer.join().map_err(|_| invalid("writer panicked"))?
+        });
+        let _ = child.wait();
+        result?;
+    }
+    let mut fetched = fetched.into_iter();
+    paths
+        .iter()
+        .map(|path| {
+            if batchable(path) {
+                Ok(fetched.next().flatten())
+            } else {
+                staged_blob(root, path)
+            }
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -451,5 +630,62 @@ mod tests {
             Some(&b"staged\n"[..]),
             "the index content must be visible even when the stat cache lies"
         );
+    }
+
+    #[test]
+    fn staged_blobs_match_single_reads_including_missing_and_odd_paths() {
+        let repo = init_temp_repo();
+        let root = repo.path();
+        std::fs::write(root.join("a.txt"), "staged a\n").expect("write");
+        std::fs::write(root.join("b b.txt"), "").expect("write");
+        std::fs::write(root.join("new\nline.txt"), "newline name\n").expect("write");
+        git_run(root, &["add", "-A"]);
+        std::fs::write(root.join("a.txt"), "worktree edit\n").expect("write");
+
+        let paths: Vec<PathBuf> = ["a.txt", "absent.txt", "b b.txt", "new\nline.txt"]
+            .iter()
+            .map(PathBuf::from)
+            .collect();
+        let blobs = staged_blobs(root, &paths).expect("batch");
+
+        assert_eq!(
+            blobs,
+            vec![
+                Some(b"staged a\n".to_vec()),
+                None,
+                Some(Vec::new()),
+                Some(b"newline name\n".to_vec())
+            ]
+        );
+    }
+
+    #[test]
+    fn staged_blobs_handle_more_requests_and_output_than_a_pipe_buffer_holds() {
+        let repo = init_temp_repo();
+        let root = repo.path();
+        let big = "x".repeat(200_000);
+        let names: Vec<PathBuf> = (0..3000)
+            .map(|i| PathBuf::from(format!("dir/file_with_a_long_name_{i}.txt")))
+            .collect();
+        std::fs::create_dir_all(root.join("dir")).expect("mkdir");
+        for name in &names {
+            std::fs::write(root.join(name), &big[..70]).expect("write");
+        }
+        std::fs::write(root.join(&names[7]), &big).expect("write big");
+        git_run(root, &["add", "-A"]);
+
+        let blobs = staged_blobs(root, &names).expect("batch");
+
+        assert_eq!(blobs.len(), 3000);
+        assert_eq!(blobs[7].as_ref().map(Vec::len), Some(200_000));
+        assert_eq!(blobs[8].as_ref().map(Vec::len), Some(70));
+    }
+
+    #[test]
+    fn staged_blobs_reject_an_unsafe_path_like_staged_blob() {
+        assert!(matches!(
+            staged_blobs(Path::new("."), &[PathBuf::from("../escape")]),
+            Err(Error::UnsafePath { .. })
+        ));
     }
 }
