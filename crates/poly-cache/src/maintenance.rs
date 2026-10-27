@@ -177,7 +177,20 @@ impl ResultCache {
                 modified,
             });
         }
+        entries.extend(self.index_entry(namespace));
         Ok(entries)
+    }
+
+    /// The namespace's stat-validated verdict index, counted as one entry so
+    /// `stats`, `size`, `gc` and `clean` see — and can reclaim — its bytes.
+    fn index_entry(&self, namespace: Namespace) -> Option<Entry> {
+        let path = self.stat_index_path(namespace);
+        let metadata = std::fs::metadata(&path).ok().filter(std::fs::Metadata::is_file)?;
+        Some(Entry {
+            path,
+            size: metadata.len(),
+            modified: metadata.modified().unwrap_or_else(|_| SystemTime::now()),
+        })
     }
 
     /// Snapshot the cache's on-disk footprint: per-namespace entry counts and
@@ -496,5 +509,78 @@ mod tests {
         assert_eq!(cache.total_size().unwrap(), 0);
         let version = std::fs::read_to_string(cache.root().join("VERSION")).unwrap();
         assert_eq!(version, CACHE_FORMAT_VERSION, "sentinel must be rewritten");
+    }
+
+    fn record_one_file(cache: &ResultCache, namespace: Namespace) {
+        let record = crate::Record {
+            stat: crate::FileStat::UNTRUSTED,
+            scope: crate::PlanKey::builder(namespace).finish(),
+            digest: crate::ContentDigest::of(b"x"),
+            verdict: crate::Verdict::Clean,
+            replayable: true,
+            segments: Vec::new(),
+        };
+        cache
+            .stat_index(namespace)
+            .put(crate::PathKey::of(std::path::Path::new("a.py")), record);
+        cache.flush_stat_indexes().expect("flush index");
+    }
+
+    fn index_len(cache: &ResultCache, namespace: Namespace) -> u64 {
+        std::fs::metadata(cache.stat_index_path(namespace))
+            .expect("index exists")
+            .len()
+    }
+
+    #[test]
+    fn stats_and_size_count_the_stat_index_under_its_namespace() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cache = cache_at(&tmp);
+        put(&cache, Namespace::Lint, "a", b"12345");
+        record_one_file(&cache, Namespace::Lint);
+        let index_bytes = index_len(&cache, Namespace::Lint);
+
+        let stats = cache.stats().unwrap();
+        let lint = stats
+            .per_namespace
+            .iter()
+            .find(|s| s.namespace == Namespace::Lint)
+            .unwrap();
+        assert_eq!(lint.entries, 2);
+        assert_eq!(lint.bytes, 5 + index_bytes);
+        assert_eq!(cache.total_size().unwrap(), 5 + index_bytes);
+    }
+
+    #[test]
+    fn clean_removes_the_stat_index() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cache = cache_at(&tmp);
+        record_one_file(&cache, Namespace::Fmt);
+        let index_bytes = index_len(&cache, Namespace::Fmt);
+
+        assert_eq!(cache.clean().unwrap(), index_bytes);
+        assert!(!cache.stat_index_path(Namespace::Fmt).exists());
+        assert_eq!(cache.total_size().unwrap(), 0);
+    }
+
+    #[test]
+    fn gc_reclaims_a_stale_stat_index_by_age_and_by_size() {
+        let tmp = tempfile::tempdir().unwrap();
+        let cache = cache_at(&tmp);
+        record_one_file(&cache, Namespace::Lint);
+        let index_bytes = index_len(&cache, Namespace::Lint);
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .open(cache.stat_index_path(Namespace::Lint))
+            .unwrap();
+        file.set_times(FileTimes::new().set_modified(SystemTime::now() - Duration::from_secs(100 * 86_400)))
+            .unwrap();
+
+        assert_eq!(cache.gc(Some(Duration::from_secs(86_400)), None).unwrap(), index_bytes);
+
+        record_one_file(&cache, Namespace::Lint);
+        let rewritten = index_len(&cache, Namespace::Lint);
+        assert_eq!(cache.gc(None, Some(0)).unwrap(), rewritten);
+        assert!(!cache.stat_index_path(Namespace::Lint).exists());
     }
 }

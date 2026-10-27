@@ -25,9 +25,12 @@
 //!                          get/put use atomic sibling-tmp + rename instead (see
 //!                          ADVISORY_LOCK_NOTE below)
 //!   results/
-//!     lint/<hex-key>     — serde_json-encoded Vec<Diagnostic>
-//!     fmt/<hex-key>      — UTF-8 formatted text
+//!     lint/<hex-key>     — serde_json-encoded Vec<Diagnostic> (no longer written by
+//!                          `poly lint`, which records per-engine output in index/)
+//!     fmt/<hex-key>      — a tag byte, then the formatted text (tag 0: unchanged, no text)
 //!     hook/<hex-key>     — JSON-encoded hook outcome
+//!   index/
+//!     lint.idx, fmt.idx  — stat-validated per-file records; see [`StatIndex`]
 //!
 //! <platform-cache>/poly/hook-sources/
 //!   <url-key>/mirror.git/             — shared bare Git mirror
@@ -43,6 +46,11 @@
 //! cache_key     = blake3( format_version \0 build_identity \0 namespace_dir \0 id \0 version
 //!                         \0 toml(args) \0 input_digest_hex )
 //! ```
+//!
+//! The result entries above are the content-addressed layer. On top of it sits the
+//! [`StatIndex`], which answers "was this path, with this `stat`, already judged
+//! under this exact plan?" without opening the file, and which `poly lint` uses
+//! as its only per-engine store.
 //!
 //! The preamble is a layered identity, outermost first:
 //!
@@ -110,13 +118,17 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, OnceLock, RwLock};
 
 mod maintenance;
 pub mod permissions;
+mod stat_index;
 
 pub use maintenance::{CacheStats, NamespaceStats};
 pub use permissions::{DirOrigin, create_dir_all_private, ensure_private_dir};
+pub use stat_index::{
+    ContentDigest, FileStat, PathKey, PlanKey, PlanKeyBuilder, RACY_WINDOW_NS, Record, Segment, StatIndex, Verdict,
+};
 
 /// On-disk format version written to the `VERSION` sentinel file.
 ///
@@ -124,11 +136,15 @@ pub use permissions::{DirOrigin, create_dir_all_private, ensure_private_dir};
 /// as `poly cache gc` compare the sentinel against this value to decide whether
 /// an existing tree is safe to reuse.
 ///
+/// Bumped to `5` when `poly lint` moved its per-engine entries into the
+/// [`StatIndex`] and fmt entries gained a leading tag byte, so entries written
+/// by an older build are neither misread nor left behind.
+///
 /// Bumped to `4` when the running binary's build identity joined the key
 /// preamble: every pre-existing entry became unreachable in one step, and the
 /// bump reclaims that dead weight on the first run instead of leaving it for a
 /// later `gc`.
-pub const CACHE_FORMAT_VERSION: &str = "4";
+pub const CACHE_FORMAT_VERSION: &str = "5";
 
 /// The running binary's build identity, folded into every result-cache key.
 ///
@@ -500,6 +516,19 @@ impl InputDigest {
     }
 }
 
+impl InputDigest {
+    /// This digest extended with inputs that live outside the file's bytes (a
+    /// sibling `__init__.py` that decides a package root), so an entry made
+    /// under one context is unreachable under another.
+    pub fn with_context(&self, context: &str) -> InputDigest {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(self.0.as_bytes());
+        hasher.update(b"\0context\0");
+        hasher.update(context.as_bytes());
+        InputDigest(hasher.finalize().to_hex().to_string())
+    }
+}
+
 impl std::fmt::Display for InputDigest {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.0)
@@ -559,6 +588,7 @@ pub struct ResultCache {
     root: PathBuf,
     enabled: bool,
     present: Arc<PresenceIndex>,
+    stat_indexes: Arc<[OnceLock<StatIndex>; 3]>,
 }
 
 impl ResultCache {
@@ -578,11 +608,7 @@ impl ResultCache {
     /// `[cache] dir`, `--cache-dir`, a test sandbox — so an existing directory
     /// there keeps whatever mode it has ([`DirOrigin::UserConfigured`]).
     pub fn open(root: PathBuf, enabled: bool) -> anyhow::Result<Self> {
-        let cache = Self {
-            root,
-            enabled,
-            present: Arc::new(PresenceIndex::empty()),
-        };
+        let cache = Self::unscanned(root, enabled);
         if enabled {
             Self::init_dirs(&cache.root, DirOrigin::UserConfigured)?;
         }
@@ -598,11 +624,7 @@ impl ResultCache {
     /// A failed sweep is reported and ignored: eviction is hygiene, and losing
     /// disk space is not a reason to fail a lint run.
     fn open_healed(root: PathBuf, enabled: bool, origin: DirOrigin) -> anyhow::Result<Self> {
-        let cache = Self {
-            root,
-            enabled,
-            present: Arc::new(PresenceIndex::empty()),
-        };
+        let cache = Self::unscanned(root, enabled);
         if enabled {
             cache.heal_stale_layout()?;
             Self::init_dirs(&cache.root, origin)?;
@@ -613,6 +635,15 @@ impl ResultCache {
             }
         }
         Ok(cache.with_scanned_presence())
+    }
+
+    fn unscanned(root: PathBuf, enabled: bool) -> Self {
+        Self {
+            root,
+            enabled,
+            present: Arc::new(PresenceIndex::empty()),
+            stat_indexes: Arc::new(std::array::from_fn(|_| OnceLock::new())),
+        }
     }
 
     fn with_scanned_presence(mut self) -> Self {
@@ -865,6 +896,33 @@ impl ResultCache {
         std::fs::write(&tmp, bytes).map_err(|e| anyhow::anyhow!("cache write {}: {e}", tmp.display()))?;
         std::fs::rename(&tmp, &dest).map_err(|e| anyhow::anyhow!("cache rename to {}: {e}", dest.display()))?;
         self.present.record(namespace, key);
+        Ok(())
+    }
+
+    /// Where the stat-validated verdict index for `namespace` lives.
+    pub(crate) fn stat_index_path(&self, namespace: Namespace) -> PathBuf {
+        self.root.join("index").join(format!("{}.idx", namespace.as_dir()))
+    }
+
+    /// The stat-validated verdict index for `namespace`, loaded on first use.
+    /// A disabled cache hands back an index that never hits and never records.
+    pub fn stat_index(&self, namespace: Namespace) -> &StatIndex {
+        self.stat_indexes[namespace.slot()].get_or_init(|| {
+            if self.enabled {
+                StatIndex::load(self.stat_index_path(namespace))
+            } else {
+                StatIndex::disabled()
+            }
+        })
+    }
+
+    /// Persist every verdict recorded this run. Call once, after the run.
+    pub fn flush_stat_indexes(&self) -> anyhow::Result<()> {
+        for namespace in Namespace::ALL {
+            if let Some(index) = self.stat_indexes[namespace.slot()].get() {
+                index.flush()?;
+            }
+        }
         Ok(())
     }
 
