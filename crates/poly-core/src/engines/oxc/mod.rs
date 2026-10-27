@@ -19,6 +19,7 @@ mod config;
 mod format;
 mod lint;
 mod plugins;
+mod sort_imports;
 
 use crate::config::EngineConfig;
 use crate::engine::{Capabilities, Diagnostic, FormatOutput, OptionKeys, OptionTable, OptionType, SourceFile};
@@ -53,6 +54,14 @@ pub(crate) const JS_FORMAT_OPTION_KEYS: &[(&str, OptionType)] = &[
     ("arrow_parentheses", OptionType::STRING),
     ("bracket_spacing", OptionType::BOOLEAN),
     ("bracket_same_line", OptionType::BOOLEAN),
+    ("line_width", OptionType::INTEGER),
+    ("line_ending", OptionType::STRING),
+    ("quote_properties", OptionType::STRING),
+    ("object_wrap", OptionType::STRING),
+    ("operator_position", OptionType::STRING),
+    ("single_attribute_per_line", OptionType::BOOLEAN),
+    ("single_quote", OptionType::BOOLEAN),
+    ("sort_imports", OptionType::TABLE.or(OptionType::BOOLEAN)),
 ];
 
 pub(crate) use self::format::{format_embedded_js, is_embedded_js_parse_error};
@@ -76,8 +85,11 @@ use self::lint::{lint_js, lint_json};
 ///                default set, so a file can now report rules (e.g.
 ///                `vitest/expect-expect`) that no configuration could reach
 ///                before.
+/// `+oxfmtrc-v1`: `line_width`, `line_ending`, `quote_properties`, `object_wrap`,
+///                `operator_position`, `single_attribute_per_line` and `sort_imports`
+///                reach the formatters, and `.oxfmtrc.json[c]` supplies them by default.
 const VERSION: &str = "oxc_formatter:0.75.0+oxlint+parser:0.156.0+rev:e2be72d+json-fmt+rules-v5+fmt-opts+\
-                       jsonc-trailing-comma+plugins-v1+minified-skip";
+                       jsonc-trailing-comma+plugins-v1+minified-skip+oxfmtrc-v1";
 
 static LANGUAGES: &[Language] = &[
     Language::JavaScript,

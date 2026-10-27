@@ -33,6 +33,7 @@ pub mod engines;
 pub(crate) mod filter;
 mod fingerprint;
 pub mod language;
+pub(crate) mod oxfmt_native;
 pub(crate) mod registry;
 pub mod report;
 #[doc(hidden)]

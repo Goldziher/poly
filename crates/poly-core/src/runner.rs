@@ -755,6 +755,9 @@ fn format_one(
     let run_pass = |input: &Arc<str>, record_debug: bool| -> anyhow::Result<Arc<str>> {
         let mut current = Arc::clone(input);
         for plan in engine_plans {
+            if plan.ignores_format(&f.path) {
+                continue;
+            }
             let key = digest_if_enabled(cache, || {
                 let digest = ResultCache::single_file_digest(&current);
                 ResultCache::key_with_args(

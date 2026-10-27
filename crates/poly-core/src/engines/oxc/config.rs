@@ -2,12 +2,24 @@
 //! resolved [`EngineConfig`].
 
 use oxc_formatter::JsFormatOptions;
-use oxc_formatter_core::{IndentStyle, IndentWidth, LineWidth};
 use oxc_formatter_json::{JsonFormatOptions, JsonVariant};
 
 use crate::config::EngineConfig;
 use crate::engine::SourceFile;
 use crate::language::Language;
+
+use super::sort_imports::build_sort_imports;
+use crate::engines::core_options::{
+    resolve_indent_style, resolve_indent_width, resolve_line_ending, resolve_line_width,
+};
+
+fn option_str<'a>(cfg: &'a EngineConfig, key: &str) -> Option<&'a str> {
+    cfg.options.get(key).and_then(toml::Value::as_str)
+}
+
+fn option_bool(cfg: &EngineConfig, key: &str) -> Option<bool> {
+    cfg.options.get(key).and_then(toml::Value::as_bool)
+}
 
 /// Build [`JsFormatOptions`] from a resolved [`EngineConfig`].
 ///
@@ -28,36 +40,13 @@ use crate::language::Language;
 /// and `cfg.indent_width` respectively — user cannot override them here.
 pub(super) fn build_js_options(cfg: &EngineConfig) -> JsFormatOptions {
     use oxc_formatter::{
-        ArrowParentheses, BracketSameLine, BracketSpacing, QuoteStyle, Semicolons, TrailingCommas as JsTrailingCommas,
+        ArrowParentheses, AttributePosition, BracketSameLine, BracketSpacing, Expand, OperatorPosition,
+        QuoteProperties, QuoteStyle, Semicolons, TrailingCommas as JsTrailingCommas,
     };
 
-    let line_width = u16::try_from(cfg.globals.line_length)
-        .ok()
-        .and_then(|w| LineWidth::try_from(w).ok())
-        .unwrap_or_else(|| {
-            // SAFETY: 120 is always in [LineWidth::MIN, LineWidth::MAX].
-            LineWidth::try_from(120u16).expect("120 is a valid LineWidth")
-        });
-
-    let indent_width = u8::try_from(cfg.indent_width)
-        .ok()
-        .and_then(|w| IndentWidth::try_from(w).ok())
-        .unwrap_or_default();
-
-    // oxc dropped `impl FromStr for IndentStyle`; the other option enums below
-    // keep theirs. Spelled out here rather than parsed so the accepted values
-    // stay exactly what the table above documents — and match the `QuoteStyle`
-    // handling immediately below.
-    let indent_style = cfg
-        .options
-        .get("indent_style")
-        .and_then(|v| v.as_str())
-        .and_then(|s| match s {
-            "tab" => Some(IndentStyle::Tab),
-            "space" => Some(IndentStyle::Space),
-            _ => None,
-        })
-        .unwrap_or_default();
+    let line_width = resolve_line_width(cfg);
+    let indent_width = resolve_indent_width(cfg);
+    let indent_style = resolve_indent_style(cfg);
 
     let quote_style = cfg
         .options
@@ -114,10 +103,38 @@ pub(super) fn build_js_options(cfg: &EngineConfig) -> JsFormatOptions {
         .map(BracketSameLine::from)
         .unwrap_or_default();
 
+    let quote_properties = option_str(cfg, "quote_properties")
+        .and_then(|s| match s {
+            "preserve" => Some(QuoteProperties::Preserve),
+            "consistent" => Some(QuoteProperties::Consistent),
+            "as-needed" => Some(QuoteProperties::AsNeeded),
+            _ => None,
+        })
+        .unwrap_or_default();
+    let expand = match option_str(cfg, "object_wrap") {
+        Some("collapse") => Expand::Never,
+        _ => Expand::Auto,
+    };
+    let operator_position = match option_str(cfg, "operator_position") {
+        Some("start") => OperatorPosition::Start,
+        _ => OperatorPosition::End,
+    };
+    let attribute_position = if option_bool(cfg, "single_attribute_per_line") == Some(true) {
+        AttributePosition::Multiline
+    } else {
+        AttributePosition::Auto
+    };
+
     JsFormatOptions {
         line_width,
+        line_ending: resolve_line_ending(cfg),
         indent_width,
         indent_style,
+        quote_properties,
+        expand,
+        operator_position,
+        attribute_position,
+        sort_imports: build_sort_imports(cfg),
         quote_style,
         jsx_quote_style,
         semicolons,
@@ -142,25 +159,18 @@ pub(super) fn build_js_options(cfg: &EngineConfig) -> JsFormatOptions {
 /// and `cfg.indent_width`. The variant (Json vs Jsonc) is derived from the file language
 /// and cannot be overridden per-option.
 pub(super) fn build_json_options(src: &SourceFile, cfg: &EngineConfig) -> JsonFormatOptions {
-    use oxc_formatter_json::{BracketSpacing as JsonBracketSpacing, TrailingCommas as JsonTc};
+    use oxc_formatter_json::{
+        BracketSpacing as JsonBracketSpacing, Expand as JsonExpand, QuoteProps as JsonQuoteProps,
+        TrailingCommas as JsonTc,
+    };
 
     let variant = match src.language {
         Language::Jsonc => JsonVariant::Jsonc,
         _ => JsonVariant::Json,
     };
 
-    let line_width = u16::try_from(cfg.globals.line_length)
-        .ok()
-        .and_then(|w| LineWidth::try_from(w).ok())
-        .unwrap_or_else(|| {
-            // SAFETY: 120 is always in [LineWidth::MIN, LineWidth::MAX].
-            LineWidth::try_from(120u16).expect("120 is a valid LineWidth")
-        });
-
-    let indent_width = u8::try_from(cfg.indent_width)
-        .ok()
-        .and_then(|w| IndentWidth::try_from(w).ok())
-        .unwrap_or_default();
+    let line_width = resolve_line_width(cfg);
+    let indent_width = resolve_indent_width(cfg);
 
     let bracket_spacing = cfg
         .options
@@ -179,10 +189,25 @@ pub(super) fn build_json_options(src: &SourceFile, cfg: &EngineConfig) -> JsonFo
         })
         .unwrap_or_default();
 
+    let expand = match option_str(cfg, "object_wrap") {
+        Some("collapse") => JsonExpand::Never,
+        _ => JsonExpand::Auto,
+    };
+    let quote_props = match option_str(cfg, "quote_properties") {
+        Some("preserve") => JsonQuoteProps::Preserve,
+        Some("consistent") => JsonQuoteProps::Consistent,
+        _ => JsonQuoteProps::AsNeeded,
+    };
+
     JsonFormatOptions {
         variant,
         line_width,
+        line_ending: resolve_line_ending(cfg),
+        indent_style: resolve_indent_style(cfg),
         indent_width,
+        expand,
+        quote_props,
+        single_quote: option_bool(cfg, "single_quote").unwrap_or_default().into(),
         bracket_spacing,
         trailing_commas,
         ..JsonFormatOptions::default()

@@ -362,15 +362,17 @@ fn a_declared_key_an_upstream_type_also_recognizes_defers_to_the_upstream_type()
         // test wants to observe rather than assert away.
         table.insert((*key).to_string(), toml::Value::Boolean(true));
         let reported = keys.value_problem(key, &table[*key], true).is_some();
+        let declared_accepts_boolean = keys
+            .expected_type(key, true)
+            .is_none_or(|declared| declared.accepts(&table[*key]));
         let recognized_upstream = keys.accepts(key, &table, true);
         assert!(
             recognized_upstream,
             "`{key}` must stay an accepted key of `[fmt.html.markup_fmt]`"
         );
         assert_eq!(
-            reported,
-            keys.expected_type(key, true) == Some(OptionType::STRING),
-            "`{key}`: a boolean is reported exactly when the declaration says the key is a string"
+            reported, !declared_accepts_boolean,
+            "`{key}`: a boolean is reported exactly when the declaration says the key is not boolean"
         );
     }
 }
@@ -394,6 +396,8 @@ const ENGINE_SOURCES: &[(&str, &[&str])] = &[
             "oxc/lint.rs",
             "oxc/format.rs",
             "oxc/plugins.rs",
+            "oxc/sort_imports.rs",
+            "core_options.rs",
         ],
     ),
     (
@@ -402,12 +406,20 @@ const ENGINE_SOURCES: &[(&str, &[&str])] = &[
     ),
     ("sqruff", &["sqruff.rs"]),
     ("rumdl", &["rumdl.rs"]),
-    ("taplo", &["taplo.rs"]),
-    ("yaml", &["yaml.rs"]),
+    ("taplo", &["taplo.rs", "core_options.rs"]),
+    ("yaml", &["yaml.rs", "core_options.rs"]),
     ("malva", &["malva.rs"]),
     // oxc/config.rs: markup_fmt hands *its* table to the oxc formatter for
     // Astro `<script>` blocks, so those keys are read from this table too.
-    ("markup_fmt", &["markup_fmt.rs", "oxc/config.rs"]),
+    (
+        "markup_fmt",
+        &[
+            "markup_fmt.rs",
+            "oxc/config.rs",
+            "oxc/sort_imports.rs",
+            "core_options.rs",
+        ],
+    ),
     ("graphql", &["graphql.rs"]),
     ("biome", &["biome_css.rs", "biome_graphql.rs", "biome_common.rs"]),
     ("alejandra", &["nixfmt.rs"]),
@@ -510,6 +522,8 @@ fn every_registry_engine_has_declared_sources() {
 /// Reader helpers whose *name* fixes the type of the key handed to them, when
 /// the key is that call's first string argument.
 const CALL_READERS: &[(&str, OptionType)] = &[
+    ("option_str", OptionType::STRING),
+    ("option_bool", OptionType::BOOLEAN),
     ("usize_opt", OptionType::INTEGER),
     ("integer", OptionType::INTEGER),
     ("rule", OptionType::BOOLEAN),
@@ -624,7 +638,7 @@ fn read_type_of(source: &str, key: &str) -> Option<OptionType> {
 /// for the call shapes an option read can take.
 fn keys_read_by(engine: &str) -> BTreeSet<String> {
     let reader = Regex::new(
-        r"(?s)(?:options\s*\.\s*(?:get|contains_key)|string_list(?:_from_table)?|str_array|sets_any|usize_opt|str_list|flag|integer|rule)\s*\(([^;]{0,200}?)\)",
+        r"(?s)(?:options\s*\.\s*(?:get|contains_key)|option_str|option_bool|string_list(?:_from_table)?|str_array|sets_any|usize_opt|str_list|flag|integer|rule)\s*\(([^;]{0,200}?)\)",
     )
     .expect("reader regex");
     let literal = Regex::new(r#""([a-zA-Z][a-zA-Z0-9_\-]*)""#).expect("literal regex");

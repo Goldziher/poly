@@ -17,6 +17,7 @@ use crate::engines::catalog_tool::{CatalogToolEngine, LintRefusal};
 use crate::engines::rule_config::RuleSelection;
 use crate::filter::SeverityRemap;
 use crate::language::Language;
+use crate::oxfmt_native::FormatIgnore;
 use crate::registry::engines_for;
 use crate::resolve::ConfigSet;
 use crate::runner::selection::{self, EngineSelection};
@@ -97,6 +98,19 @@ pub(super) struct EnginePlan {
     /// answer can cost a `PATH` probe or a rule-pack load — neither of which
     /// belongs in the per-file loop that asks it.
     pub(super) provides_language_lint: bool,
+    /// The project formatter config's `ignorePatterns` (`.oxfmtrc.json[c]`) when this plan
+    /// formats a language that config owns. A file it names is passed over by this engine
+    /// before the cache is consulted, because the cache key hashes content alone.
+    pub(super) format_ignore: Option<FormatIgnore>,
+}
+
+impl EnginePlan {
+    /// Whether the project's own formatter config excludes `path` from formatting.
+    pub(super) fn ignores_format(&self, path: &std::path::Path) -> bool {
+        self.format_ignore
+            .as_ref()
+            .is_some_and(|ignore| ignore.is_ignored(path))
+    }
 }
 
 /// Whether a catalog formatter takes over the language, displacing poly's generic
@@ -320,6 +334,11 @@ pub(super) fn plan_engines(
                 serialized_args,
                 severity_remap,
                 provides_language_lint,
+                format_ignore: if kind == Kind::Format {
+                    FormatIgnore::for_language(&config.oxfmt_native, language)
+                } else {
+                    None
+                },
             }
         })
         .collect()
