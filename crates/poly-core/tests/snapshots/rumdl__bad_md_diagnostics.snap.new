@@ -1,0 +1,9 @@
+---
+source: crates/poly-core/tests/rumdl.rs
+assertion_line: 89
+expression: summary
+---
+[
+    "line=1 code=MD018 msg=No space after # in heading",
+    "line=1 code=MD041 msg=First line in file should be a level 1 heading",
+]

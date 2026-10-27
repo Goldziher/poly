@@ -74,7 +74,7 @@ use settings::Settings;
 /// Cache-key version. Bump whenever `tree-sitter-language-pack` is upgraded
 /// (grammars can change) or this engine's own detection/threshold logic
 /// changes in a way that alters output.
-const QUALITY_VERSION: &str = "quality-4+parse-limit+tslp1.21.1+no-rust-allow+max-in-title+no-prose-lazy-ignore";
+const QUALITY_VERSION: &str = "quality-4+parse-limit+tslp1.22.1+no-rust-allow+max-in-title+no-prose-lazy-ignore";
 
 thread_local! {
     /// Per-thread parser pool keyed by grammar name, shared by every

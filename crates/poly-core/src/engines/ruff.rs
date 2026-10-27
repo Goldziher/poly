@@ -408,7 +408,7 @@ fn parse_python_version(s: &str) -> Option<ruff_python_ast::PythonVersion> {
 /// Convert a ruff [`RuffSeverity`] to the poly [`Severity`].
 fn map_severity(s: RuffSeverity) -> Severity {
     match s {
-        RuffSeverity::Info => Severity::Info,
+        RuffSeverity::Hint | RuffSeverity::Info => Severity::Info,
         RuffSeverity::Warning => Severity::Warning,
         RuffSeverity::Error | RuffSeverity::Fatal => Severity::Error,
     }
@@ -543,7 +543,7 @@ impl Engine for RuffEngine {
     }
 
     fn version(&self) -> &str {
-        "ruff-0.17.0+pkgroot+plugins+isort+e501+tgtsrc+ignore-b008+rules-v3+advisory-sev1+fmtopts1+plugopts1"
+        "ruff-0.17.3+pkgroot+plugins+isort+e501+tgtsrc+ignore-b008+rules-v3+advisory-sev1+fmtopts1+plugopts1"
     }
 
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
@@ -591,8 +591,12 @@ impl Engine for RuffEngine {
                 let message = ruff_diag.concise_message().to_string();
 
                 let span = ruff_diag
-                    .ruff_start_location()
-                    .zip(ruff_diag.ruff_end_location())
+                    .primary_span()
+                    .and_then(|primary| {
+                        let range = primary.range()?;
+                        let code = primary.as_ruff_file()?.to_source_code();
+                        Some((code.line_column(range.start()), code.line_column(range.end())))
+                    })
                     .map(|(start, end)| Span {
                         start_line: start.line.get() as u32,
                         start_col: start.column.get() as u32,

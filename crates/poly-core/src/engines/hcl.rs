@@ -32,7 +32,7 @@ use crate::language::Language;
 /// Combined version string used as the Engine cache key.
 /// Encodes both `hcl-rs` and `hcl-edit` versions so that bumping either dep
 /// invalidates stale cached results.
-const ENGINE_VERSION: &str = "hcl-rs 0.19.8 + hcl-edit 0.9.7 + trailing-comments-v2 + syntax-skip-v3";
+const ENGINE_VERSION: &str = "hcl-rs 0.19.9 + hcl-edit 0.9.8 + trailing-comments-v2 + syntax-skip-v3";
 
 static LANGUAGES: &[Language] = &[Language::Hcl];
 

@@ -112,7 +112,7 @@ use rules::{RuleMap, load_rules};
 /// that — but "intended" is not a property a cache may rely on: the rules are
 /// compiled through a different registration than the cached payload was, so
 /// the entry is invalidated rather than trusted.
-const ENGINE_VERSION: &str = "ast-grep-core-0.50.0-engine-3+tslp1.21.1+builtin-pack-3";
+const ENGINE_VERSION: &str = "ast-grep-core-0.51.0-engine-3+tslp1.22.1+builtin-pack-3";
 
 /// Cross-cutting custom-rule engine backed by ast-grep + TSLP grammars.
 ///
