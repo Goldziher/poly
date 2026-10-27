@@ -181,6 +181,13 @@ poly does not endorse elsewhere; and a one-class-per-file rule that fires on err
 mocks, `.d.ts` stubs and cohesive module groups rather than defects. Re-enable with
 `extend_select` under `[lint.javascript.oxc]` / `[lint.typescript.oxc]`.
 
+`[lint.python.ruff]` also reads ruff's isort options (`isort_*`, `known_*`, `extra_standard_library`,
+`known_section`), the remaining pylint limits (`pylint_max_*`), `flake8_import_conventions_*`,
+`unsafe_fixes`, `preview` and `explicit_preview_rules`; `[fmt.python.ruff]` reads `indent_style`,
+`quote_style`, `skip_magic_trailing_comma` and `line_ending`. A nested `poly.toml` merges table by
+table into its parent's; set `inherit_mode = "replace"` in a table to make it replace the parent's
+instead, as a nested ruff config does. `poly migrate` writes it for nested ruff configs.
+
 <Aside type="caution" title="Migration note">
     Selecting `C90`/`PLR` makes the already-existing `mccabe_max_complexity`, `pylint_max_args`,
     `pylint_max_branches` and `pylint_max_returns` options under `[lint.python.ruff]` take effect

@@ -5,6 +5,21 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
+## [Unreleased]
+
+### Added
+
+- **Builtin `fix` mode, `jobs`, `priority` and the `aws_credentials` check** for `[hooks.builtin]`;
+  `{0}` / `{N}` / `{git_args}` placeholders and `$@` / `POLY_GIT_ARG_*` for git hook arguments;
+  `poly fmt --exit-zero-on-fix`.
+- **Ruff**: every isort key, the remaining pylint limits, `flake8-import-conventions`, format
+  `indent-style` / `quote-style` / `skip-magic-trailing-comma` / `line-ending`, `unsafe-fixes`,
+  `preview`, and `inherit_mode = "replace"` for nested configs. An explicit `select` that covers a
+  rule poly holds back by default (`RUF100`, `B008`, ...) now enables it.
+- **`poly migrate`**: lefthook / pre-commit fix-mode jobs, per-job scopes (no exclude is dropped),
+  git-argument jobs, `--unsafe-fixes`, `detect-aws-credentials`, ruff `extend`, `requires-python`,
+  ruff defaults pinned, and `--recurse` that skips virtualenvs, `.gitignore`d trees and `bazel-*`.
+
 ## [0.29.0] - 2026-10-11
 
 ### Added

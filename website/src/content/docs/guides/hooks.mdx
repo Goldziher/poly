@@ -48,6 +48,44 @@ inherited globs; `exclude_mode = "replace"` in the hook's table opts out and kee
 exclude = ["**/tags.rs"]      # effective: [discovery] exclude + **/tags.rs
 ```
 
+### Fix mode, scoped runs and priority
+
+`lint` and `fmt` only check by default. `fix = true` makes them rewrite and re-stage what they
+change (`poly lint --fix`, `poly fmt --fix --exit-zero-on-fix`); fix-mode builtins never overlap each
+other. `priority` orders hooks (lower runs first, equal priorities run in parallel).
+
+A builtin that must run over different files with different excludes takes `jobs`; each entry
+becomes its own hook and inherits whatever it does not set from the builtin:
+
+```toml
+[hooks.builtin]
+fmt = { fix = true, jobs = [
+  { files = "*.py", exclude = "gen/**" },
+  { files = "*.rb", priority = 1 },
+] }
+file_safety = { aws_credentials = true, jobs = [
+  { checks = ["private_key", "aws_credentials"] },
+  { checks = ["added_large_files"], exclude = "demo/data/**" },
+] }
+```
+
+`aws_credentials` is off unless named: it rejects files containing an AWS secret found in the
+environment or the AWS credentials files, and passes when none are configured.
+
+### Git hook arguments
+
+A `run` line may use `{0}` / `{git_args}` (all arguments git passed to the hook), `{1}`, `{2}`, ...
+(one argument). Jobs in stages without a file list (`post-checkout`, `post-merge`, ...) and
+`prepare-commit-msg` also receive the arguments as `$@`, and every job sees `POLY_GIT_ARG_COUNT` and
+`POLY_GIT_ARG_<n>`.
+
+### Nested `poly.toml`
+
+Git runs hooks from the repository root, where poly reads that root's `poly.toml`. A `[hooks]`
+table in a nested `poly.toml` does not run on commit; it only applies to `poly hooks run` started
+in that directory. `poly migrate --recurse` keeps the hook sources of nested directories for this
+reason. A job `glob` is matched against the repository-relative path and `*` crosses `/`.
+
 ## Inline jobs
 
 Add a job for anything else — it wraps an existing script or task target, no plugin needed:
