@@ -13,7 +13,8 @@ use ruff_linter::rules::flake8_pytest_style::types::{
 };
 use ruff_linter::rules::flake8_quotes::settings::Quote;
 use ruff_linter::rules::flake8_type_checking::settings::RuntimeSemantics;
-use ruff_linter::rules::isort::categorize::KnownModules;
+use ruff_linter::rules::isort::categorize::{ImportSection, KnownModules};
+use ruff_linter::rules::isort::settings::RelativeImportsOrder;
 use ruff_linter::rules::pep8_naming::settings::IgnoreNames;
 use ruff_linter::settings::LinterSettings;
 use ruff_linter::settings::types::{IdentifierPattern, PreviewMode};
@@ -58,6 +59,14 @@ impl Options<'_> {
                 .map(str::to_owned)
                 .collect()
         })
+    }
+
+    fn int_opt(&self, key: &str) -> Option<isize> {
+        self.cfg
+            .options
+            .get(key)
+            .and_then(toml::Value::as_integer)
+            .and_then(|value| isize::try_from(value).ok())
     }
 
     fn flag(&self, key: &str) -> Option<bool> {
@@ -109,29 +118,22 @@ impl Options<'_> {
         if let Some(src) = self.str_list("src").filter(|roots| !roots.is_empty()) {
             settings.src = src.iter().map(std::path::PathBuf::from).collect();
         }
-        let patterns = |key: &str| -> Vec<IdentifierPattern> {
-            self.str_list(key)
-                .unwrap_or_default()
-                .iter()
-                .filter_map(|pattern| IdentifierPattern::new(pattern).ok())
-                .collect()
-        };
-        let (first, third, local) = (
-            patterns("known_first_party"),
-            patterns("known_third_party"),
-            patterns("known_local_folder"),
-        );
-        if !(first.is_empty() && third.is_empty() && local.is_empty()) {
-            settings.isort.known_modules = KnownModules::new(first, third, local, vec![], FxHashMap::default());
-        }
+        self.known_modules(settings);
         let isort = &mut settings.isort;
-        let flags: [(&str, &mut bool); 4] = [
+        let flags: [(&str, &mut bool); 11] = [
+            ("isort_case_sensitive", &mut isort.case_sensitive),
             ("isort_combine_as_imports", &mut isort.combine_as_imports),
+            ("isort_detect_same_package", &mut isort.detect_same_package),
             ("isort_force_single_line", &mut isort.force_single_line),
             (
                 "isort_force_sort_within_sections",
                 &mut isort.force_sort_within_sections,
             ),
+            ("isort_force_wrap_aliases", &mut isort.force_wrap_aliases),
+            ("isort_from_first", &mut isort.from_first),
+            ("isort_length_sort", &mut isort.length_sort),
+            ("isort_length_sort_straight", &mut isort.length_sort_straight),
+            ("isort_no_sections", &mut isort.no_sections),
             ("isort_order_by_type", &mut isort.order_by_type),
         ];
         for (key, slot) in flags {
@@ -139,14 +141,120 @@ impl Options<'_> {
                 *slot = value;
             }
         }
-        if let Some(lines) = self
+        if let Some(value) = self.flag("isort_split_on_trailing_comma") {
+            isort.split_on_trailing_comma = value;
+        }
+        let sets: [(&str, &mut rustc_hash::FxHashSet<String>); 5] = [
+            ("isort_classes", &mut isort.classes),
+            ("isort_constants", &mut isort.constants),
+            ("isort_variables", &mut isort.variables),
+            ("isort_force_to_top", &mut isort.force_to_top),
+            ("isort_single_line_exclusions", &mut isort.single_line_exclusions),
+        ];
+        for (key, slot) in sets {
+            if let Some(items) = self.str_list(key) {
+                *slot = items.into_iter().collect();
+            }
+        }
+        if let Some(items) = self.str_list("isort_forced_separate") {
+            isort.forced_separate = items;
+        }
+        if let Some(lines) = self.int_opt("isort_lines_after_imports") {
+            isort.lines_after_imports = lines;
+        }
+        if let Some(lines) = self.usize_opt("isort_lines_between_types") {
+            isort.lines_between_types = lines;
+        }
+        let order = self
             .cfg
             .options
-            .get("isort_lines_after_imports")
-            .and_then(toml::Value::as_integer)
-            .and_then(|value| isize::try_from(value).ok())
+            .get("isort_relative_imports_order")
+            .and_then(toml::Value::as_str);
+        if let Some(order) = choice::<RelativeImportsOrder>("isort_relative_imports_order", order) {
+            isort.relative_imports_order = order;
+        }
+        self.isort_sections(settings);
+    }
+
+    /// `section_order`, `default_section`, `no_lines_before` and `import_heading`
+    /// all name sections: a built-in one (`future`, `standard-library`,
+    /// `third-party`, `first-party`, `local-folder`) or one declared in
+    /// `known_section`.
+    fn isort_sections(&self, settings: &mut LinterSettings) {
+        let section = |name: &String| choice::<ImportSection>("isort_section", Some(name));
+        let isort = &mut settings.isort;
+        if let Some(order) = self.str_list("isort_section_order") {
+            isort.section_order = order.iter().filter_map(section).collect();
+        }
+        if let Some(name) = self
+            .cfg
+            .options
+            .get("isort_default_section")
+            .and_then(toml::Value::as_str)
         {
-            isort.lines_after_imports = lines;
+            if let Some(default) = section(&name.to_owned()) {
+                isort.default_section = default;
+            }
+        }
+        if let Some(names) = self.str_list("isort_no_lines_before") {
+            isort.no_lines_before = names.iter().filter_map(section).collect();
+        }
+        if let Some(headings) = self
+            .cfg
+            .options
+            .get("isort_import_heading")
+            .and_then(toml::Value::as_table)
+        {
+            isort.import_headings = headings
+                .iter()
+                .filter_map(|(name, text)| Some((section(name)?, text.as_str()?.to_owned())))
+                .collect();
+        }
+    }
+
+    /// The module classification: `known_first_party`, `known_third_party`,
+    /// `known_local_folder`, `extra_standard_library` and the user-defined
+    /// `known_section` table.
+    fn known_modules(&self, settings: &mut LinterSettings) {
+        let patterns = |list: Vec<String>| -> Vec<IdentifierPattern> {
+            list.iter()
+                .filter_map(|pattern| IdentifierPattern::new(pattern).ok())
+                .collect()
+        };
+        let named = |key: &str| patterns(self.str_list(key).unwrap_or_default());
+        let user_defined: FxHashMap<String, Vec<IdentifierPattern>> = self
+            .cfg
+            .options
+            .get("known_section")
+            .and_then(toml::Value::as_table)
+            .map(|table| {
+                table
+                    .iter()
+                    .map(|(section, modules)| {
+                        let modules = modules
+                            .as_array()
+                            .map(|items| {
+                                items
+                                    .iter()
+                                    .filter_map(toml::Value::as_str)
+                                    .map(str::to_owned)
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        (section.clone(), patterns(modules))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let (first, third, local, standard) = (
+            named("known_first_party"),
+            named("known_third_party"),
+            named("known_local_folder"),
+            named("extra_standard_library"),
+        );
+        if !(first.is_empty() && third.is_empty() && local.is_empty() && standard.is_empty() && user_defined.is_empty())
+        {
+            settings.isort.known_modules = KnownModules::new(first, third, local, standard, user_defined);
         }
     }
 

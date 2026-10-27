@@ -411,11 +411,33 @@ impl Engine for RuffEngine {
                 ("known_first_party", OptionType::ARRAY),
                 ("known_third_party", OptionType::ARRAY),
                 ("known_local_folder", OptionType::ARRAY),
+                ("extra_standard_library", OptionType::ARRAY),
+                ("known_section", OptionType::TABLE),
+                ("isort_case_sensitive", OptionType::BOOLEAN),
+                ("isort_classes", OptionType::ARRAY),
                 ("isort_combine_as_imports", OptionType::BOOLEAN),
+                ("isort_constants", OptionType::ARRAY),
+                ("isort_default_section", OptionType::STRING),
+                ("isort_detect_same_package", OptionType::BOOLEAN),
                 ("isort_force_single_line", OptionType::BOOLEAN),
                 ("isort_force_sort_within_sections", OptionType::BOOLEAN),
+                ("isort_force_to_top", OptionType::ARRAY),
+                ("isort_force_wrap_aliases", OptionType::BOOLEAN),
+                ("isort_forced_separate", OptionType::ARRAY),
+                ("isort_from_first", OptionType::BOOLEAN),
+                ("isort_import_heading", OptionType::TABLE),
+                ("isort_length_sort", OptionType::BOOLEAN),
+                ("isort_length_sort_straight", OptionType::BOOLEAN),
                 ("isort_lines_after_imports", OptionType::INTEGER),
+                ("isort_lines_between_types", OptionType::INTEGER),
+                ("isort_no_lines_before", OptionType::ARRAY),
+                ("isort_no_sections", OptionType::BOOLEAN),
                 ("isort_order_by_type", OptionType::BOOLEAN),
+                ("isort_relative_imports_order", OptionType::STRING),
+                ("isort_section_order", OptionType::ARRAY),
+                ("isort_single_line_exclusions", OptionType::ARRAY),
+                ("isort_split_on_trailing_comma", OptionType::BOOLEAN),
+                ("isort_variables", OptionType::ARRAY),
                 ("fixable", OptionType::ARRAY),
                 ("unfixable", OptionType::ARRAY),
                 ("external", OptionType::ARRAY),
@@ -449,7 +471,7 @@ impl Engine for RuffEngine {
     }
 
     fn version(&self) -> &str {
-        "ruff-0.17.3+pkgroot+plugins+isort+e501+tgtsrc+ignore-b008+rules-v3+advisory-sev1+fmtopts2+plugopts2+isort2+pylint2+unsafefix1"
+        "ruff-0.17.3+pkgroot+plugins+isort+e501+tgtsrc+ignore-b008+rules-v3+advisory-sev1+fmtopts2+plugopts2+isort3+pylint2+unsafefix1"
     }
 
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {

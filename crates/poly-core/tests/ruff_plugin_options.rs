@@ -419,6 +419,200 @@ const CASES: &[Case] = &[
         tuned: || vec![select("I001"), ("known_local_folder", strings(&["zlocal"]))],
         fires_when_tuned: false,
     },
+    Case {
+        name: "isort_from_first puts from-imports first",
+        code: "I001",
+        source: "import a\nfrom b import c\n",
+        base: || vec![select("I001")],
+        tuned: || vec![select("I001"), ("isort_from_first", toml::Value::Boolean(true))],
+        fires_when_tuned: true,
+    },
+    Case {
+        name: "isort_length_sort orders by module length",
+        code: "I001",
+        source: "import aaa\nimport b\n",
+        base: || vec![select("I001")],
+        tuned: || vec![select("I001"), ("isort_length_sort", toml::Value::Boolean(true))],
+        fires_when_tuned: true,
+    },
+    Case {
+        name: "isort_no_sections merges the sections",
+        code: "I001",
+        source: "import os\n\nimport requests\n",
+        base: || vec![select("I001")],
+        tuned: || vec![select("I001"), ("isort_no_sections", toml::Value::Boolean(true))],
+        fires_when_tuned: true,
+    },
+    Case {
+        name: "isort_section_order reorders the sections",
+        code: "I001",
+        source: "import os\n\nimport requests\n",
+        base: || vec![select("I001")],
+        tuned: || {
+            vec![
+                select("I001"),
+                (
+                    "isort_section_order",
+                    strings(&[
+                        "future",
+                        "third-party",
+                        "standard-library",
+                        "first-party",
+                        "local-folder",
+                    ]),
+                ),
+            ]
+        },
+        fires_when_tuned: true,
+    },
+    Case {
+        name: "isort_default_section reclassifies unknown modules",
+        code: "I001",
+        source: "import requests\n\nimport zzz\n",
+        base: || vec![select("I001"), ("known_third_party", strings(&["requests"]))],
+        tuned: || {
+            vec![
+                select("I001"),
+                ("known_third_party", strings(&["requests"])),
+                ("isort_default_section", text("first-party")),
+            ]
+        },
+        fires_when_tuned: false,
+    },
+    Case {
+        name: "extra_standard_library adds to the standard library",
+        code: "I001",
+        source: "import foo\nimport os\n",
+        base: || vec![select("I001")],
+        tuned: || vec![select("I001"), ("extra_standard_library", strings(&["foo"]))],
+        fires_when_tuned: false,
+    },
+    Case {
+        name: "isort_lines_between_types separates import styles",
+        code: "I001",
+        source: "import os\nfrom sys import path\n",
+        base: || vec![select("I001")],
+        tuned: || vec![select("I001"), ("isort_lines_between_types", toml::Value::Integer(1))],
+        fires_when_tuned: true,
+    },
+    Case {
+        name: "isort_forced_separate isolates a module",
+        code: "I001",
+        source: "import a_app\nimport a_other\n",
+        base: || vec![select("I001")],
+        tuned: || vec![select("I001"), ("isort_forced_separate", strings(&["a_app"]))],
+        fires_when_tuned: true,
+    },
+    Case {
+        name: "isort_force_to_top hoists a module",
+        code: "I001",
+        source: "import a\nimport b\n",
+        base: || vec![select("I001")],
+        tuned: || vec![select("I001"), ("isort_force_to_top", strings(&["b"]))],
+        fires_when_tuned: true,
+    },
+    Case {
+        name: "isort_single_line_exclusions exempts a module",
+        code: "I001",
+        source: "from a import b, c\n",
+        base: || vec![select("I001"), ("isort_force_single_line", toml::Value::Boolean(true))],
+        tuned: || {
+            vec![
+                select("I001"),
+                ("isort_force_single_line", toml::Value::Boolean(true)),
+                ("isort_single_line_exclusions", strings(&["a"])),
+            ]
+        },
+        fires_when_tuned: false,
+    },
+    Case {
+        name: "isort_variables reclassifies a member",
+        code: "I001",
+        source: "from a import ZETA, alpha\n",
+        base: || vec![select("I001")],
+        tuned: || vec![select("I001"), ("isort_variables", strings(&["ZETA"]))],
+        fires_when_tuned: true,
+    },
+    Case {
+        name: "isort_relative_imports_order flips relative imports",
+        code: "I001",
+        source: "from . import a\nfrom .. import b\n",
+        base: || vec![select("I001")],
+        tuned: || {
+            vec![
+                select("I001"),
+                ("isort_relative_imports_order", text("closest-to-furthest")),
+            ]
+        },
+        fires_when_tuned: false,
+    },
+    Case {
+        name: "isort_import_heading adds a section comment",
+        code: "I001",
+        source: "import os\n",
+        base: || vec![select("I001")],
+        tuned: || {
+            vec![
+                select("I001"),
+                (
+                    "isort_import_heading",
+                    toml::Value::Table(toml::Table::from_iter([(
+                        "standard-library".to_string(),
+                        text("Stdlib"),
+                    )])),
+                ),
+            ]
+        },
+        fires_when_tuned: true,
+    },
+    Case {
+        name: "isort_no_lines_before joins two sections",
+        code: "I001",
+        source: "import os\n\nimport requests\n",
+        base: || vec![select("I001")],
+        tuned: || vec![select("I001"), ("isort_no_lines_before", strings(&["third-party"]))],
+        fires_when_tuned: true,
+    },
+    Case {
+        name: "isort_split_on_trailing_comma false collapses a magic comma",
+        code: "I001",
+        source: "from a import (\n    b,\n    c,\n)\n",
+        base: || vec![select("I001")],
+        tuned: || {
+            vec![
+                select("I001"),
+                ("isort_split_on_trailing_comma", toml::Value::Boolean(false)),
+            ]
+        },
+        fires_when_tuned: true,
+    },
+    Case {
+        name: "known_section defines a custom section",
+        code: "I001",
+        source: "import requests\nimport zzz\n",
+        base: || vec![select("I001")],
+        tuned: || {
+            vec![
+                select("I001"),
+                (
+                    "known_section",
+                    toml::Value::Table(toml::Table::from_iter([("myco".to_string(), strings(&["zzz"]))])),
+                ),
+                (
+                    "isort_section_order",
+                    strings(&[
+                        "future",
+                        "standard-library",
+                        "third-party",
+                        "myco",
+                        "first-party",
+                        "local-folder",
+                    ]),
+                ),
+            ]
+        },
+        fires_when_tuned: true,
+    },
 ];
 
 #[test]

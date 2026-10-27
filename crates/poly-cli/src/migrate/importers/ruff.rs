@@ -69,6 +69,8 @@ enum Kind {
     IntOrStr,
     Bool,
     List,
+    /// A table whose values are strings or lists of strings.
+    Table,
 }
 
 /// `(ruff plugin table, ruff key, poly key, kind)` for every plugin setting the
@@ -97,6 +99,48 @@ const PLUGIN_KEYS: &[(&str, &str, &str, Kind)] = &[
     ),
     ("isort", "lines-after-imports", "isort_lines_after_imports", Kind::Int),
     ("isort", "order-by-type", "isort_order_by_type", Kind::Bool),
+    ("isort", "case-sensitive", "isort_case_sensitive", Kind::Bool),
+    ("isort", "classes", "isort_classes", Kind::List),
+    ("isort", "constants", "isort_constants", Kind::List),
+    ("isort", "variables", "isort_variables", Kind::List),
+    ("isort", "default-section", "isort_default_section", Kind::Str),
+    ("isort", "detect-same-package", "isort_detect_same_package", Kind::Bool),
+    ("isort", "extra-standard-library", "extra_standard_library", Kind::List),
+    ("isort", "force-to-top", "isort_force_to_top", Kind::List),
+    ("isort", "force-wrap-aliases", "isort_force_wrap_aliases", Kind::Bool),
+    ("isort", "forced-separate", "isort_forced_separate", Kind::List),
+    ("isort", "from-first", "isort_from_first", Kind::Bool),
+    ("isort", "import-heading", "isort_import_heading", Kind::Table),
+    ("isort", "known-section", "known_section", Kind::Table),
+    ("isort", "length-sort", "isort_length_sort", Kind::Bool),
+    (
+        "isort",
+        "length-sort-straight",
+        "isort_length_sort_straight",
+        Kind::Bool,
+    ),
+    ("isort", "lines-between-types", "isort_lines_between_types", Kind::Int),
+    ("isort", "no-lines-before", "isort_no_lines_before", Kind::List),
+    ("isort", "no-sections", "isort_no_sections", Kind::Bool),
+    (
+        "isort",
+        "relative-imports-order",
+        "isort_relative_imports_order",
+        Kind::Str,
+    ),
+    ("isort", "section-order", "isort_section_order", Kind::List),
+    (
+        "isort",
+        "single-line-exclusions",
+        "isort_single_line_exclusions",
+        Kind::List,
+    ),
+    (
+        "isort",
+        "split-on-trailing-comma",
+        "isort_split_on_trailing_comma",
+        Kind::Bool,
+    ),
     (
         "pycodestyle",
         "max-line-length",
@@ -468,6 +512,31 @@ fn push_carried(
     }
 }
 
+/// A table of strings and string lists as an inline table; `None` when any value
+/// is something else.
+fn table_item(table: &toml::Table) -> Option<Item> {
+    let mut inline = toml_edit::InlineTable::new();
+    for (key, value) in table {
+        let leaf = match value {
+            toml::Value::String(text) => toml_edit::Value::from(text.as_str()),
+            toml::Value::Array(_) => {
+                let items: Option<Vec<String>> = value
+                    .as_array()?
+                    .iter()
+                    .map(|v| v.as_str().map(str::to_string))
+                    .collect();
+                let Item::Value(array) = str_array(&items?) else {
+                    return None;
+                };
+                array
+            }
+            _ => return None,
+        };
+        inline.insert(key, leaf);
+    }
+    Some(Item::Value(toml_edit::Value::InlineTable(inline)))
+}
+
 fn carry(value: &toml::Value, kind: Kind) -> Option<Item> {
     match kind {
         Kind::Str => value.as_str().map(str_item),
@@ -477,6 +546,7 @@ fn carry(value: &toml::Value, kind: Kind) -> Option<Item> {
             .map(int_item)
             .or_else(|| value.as_str().map(str_item)),
         Kind::Bool => value.as_bool().map(bool_item),
+        Kind::Table => table_item(value.as_table()?),
         Kind::List => {
             let items: Option<Vec<String>> = value
                 .as_array()?
@@ -589,6 +659,44 @@ skip-magic-trailing-comma = true
     }
 
     #[test]
+    fn every_isort_key_poly_honors_is_carried_and_required_imports_is_reported() {
+        let (result, doc) = migrate_pyproject(
+            r#"
+[tool.ruff.lint.isort]
+case-sensitive = true
+default-section = "first-party"
+extra-standard-library = ["foo"]
+force-wrap-aliases = true
+from-first = true
+lines-between-types = 1
+no-lines-before = ["third-party"]
+relative-imports-order = "closest-to-furthest"
+section-order = ["future", "standard-library", "myco"]
+split-on-trailing-comma = false
+known-section = { myco = ["zzz", "yyy"] }
+import-heading = { standard-library = "Stdlib" }
+required-imports = ["from __future__ import annotations"]
+"#,
+        );
+        assert_eq!(
+            result.absorb,
+            Absorb::Partial(vec!["lint.isort.required-imports".to_string()])
+        );
+        let ruff = &doc["lint"]["python"]["ruff"];
+        assert_eq!(ruff["isort_case_sensitive"].as_bool(), Some(true));
+        assert_eq!(ruff["isort_default_section"].as_str(), Some("first-party"));
+        assert_eq!(ruff["extra_standard_library"][0].as_str(), Some("foo"));
+        assert_eq!(ruff["isort_lines_between_types"].as_integer(), Some(1));
+        assert_eq!(ruff["isort_split_on_trailing_comma"].as_bool(), Some(false));
+        assert_eq!(ruff["known_section"]["myco"][1].as_str(), Some("yyy"));
+        assert_eq!(
+            ruff["isort_import_heading"]["standard-library"].as_str(),
+            Some("Stdlib")
+        );
+        assert_eq!(ruff["isort_section_order"].as_array().unwrap().len(), 3);
+    }
+
+    #[test]
     fn lint_preview_is_carried_and_top_level_preview_keeps_the_source() {
         let (nested, doc) = migrate_pyproject("[tool.ruff.lint]\npreview = true\nexplicit-preview-rules = true\n");
         assert_eq!(nested.absorb, Absorb::Full);
@@ -688,7 +796,7 @@ lint.isort = { known-first-party = ["acme"], known-third-party = ["requests"] }
             r#"
 [tool.ruff.lint]
 select = ["E"]
-isort = { known-first-party = ["acme"], force-single-line = true, lines-after-imports = 2, split-on-trailing-comma = false }
+isort = { known-first-party = ["acme"], force-single-line = true, lines-after-imports = 2, required-imports = ["from __future__ import annotations"] }
 pylint = { max-args = 8, max-locals = 20, allow-magic-value-types = ["str"] }
 pydocstyle = { convention = "google", ignore-decorators = ["typing.overload"] }
 "#,
@@ -699,7 +807,7 @@ pydocstyle = { convention = "google", ignore-decorators = ["typing.overload"] }
         assert_eq!(
             keys,
             [
-                "lint.isort.split-on-trailing-comma",
+                "lint.isort.required-imports",
                 "lint.pydocstyle.ignore-decorators",
                 "lint.pylint.allow-magic-value-types",
             ]
