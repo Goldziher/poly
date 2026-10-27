@@ -24,7 +24,9 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use ignore::WalkBuilder;
+use std::sync::{Mutex, PoisonError};
+
+use ignore::{WalkBuilder, WalkState};
 
 use crate::config::Config;
 use crate::discover::keep_walk_entry;
@@ -583,8 +585,7 @@ fn relative_descent(descendant: &Path, ancestor: &Path) -> Option<PathBuf> {
 /// is why `no_prune` is read from the run's root config rather than from a
 /// config nested inside the directory it would un-prune.
 fn scan_config_dirs(roots: &[PathBuf], no_prune: &[String]) -> Vec<PathBuf> {
-    let mut dirs = Vec::new();
-    let mut seen = HashSet::new();
+    let found = Mutex::new(Vec::new());
     for root in roots {
         let mut builder = WalkBuilder::new(root);
         builder
@@ -599,22 +600,33 @@ fn scan_config_dirs(roots: &[PathBuf], no_prune: &[String]) -> Vec<PathBuf> {
                 let no_prune = no_prune.to_vec();
                 move |entry| keep_walk_entry(entry, &no_prune)
             });
-        for entry in builder.build().flatten() {
-            if !entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
-                continue;
-            }
-            let is_config = entry
-                .file_name()
-                .to_str()
-                .is_some_and(|name| poly_config::CONFIG_FILE_NAMES.contains(&name));
-            if is_config && let Some(dir) = entry.path().parent() {
-                let dir = dir.to_path_buf();
-                if seen.insert(dir.clone()) {
-                    dirs.push(dir);
+        // The tree is walked on every worker thread: this scan reads directories
+        // and nothing else, so it is bound by the filesystem, not by the CPU.
+        builder.build_parallel().run(|| {
+            let found = &found;
+            Box::new(move |entry| {
+                let Ok(entry) = entry else {
+                    return WalkState::Continue;
+                };
+                if !entry.file_type().is_some_and(|t| t.is_file()) {
+                    return WalkState::Continue;
                 }
-            }
-        }
+                let is_config = entry
+                    .file_name()
+                    .to_str()
+                    .is_some_and(|name| poly_config::CONFIG_FILE_NAMES.contains(&name));
+                if is_config && let Some(dir) = entry.path().parent() {
+                    found.lock().unwrap_or_else(PoisonError::into_inner).push(dir.to_path_buf());
+                }
+                WalkState::Continue
+            })
+        });
     }
+    // Workers finish in no particular order, and a config's id is its position
+    // here, so the order is fixed by path rather than left to the scheduler.
+    let mut dirs = found.into_inner().unwrap_or_else(PoisonError::into_inner);
+    dirs.sort();
+    dirs.dedup();
     dirs
 }
 
