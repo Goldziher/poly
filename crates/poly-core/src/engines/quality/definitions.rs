@@ -135,7 +135,7 @@ pub fn collect(grammar: &str, root: Node, source: &[u8]) -> Option<Vec<Definitio
     QUERY_STATE.with(|cell| {
         let mut pool = cell.borrow_mut();
         if !pool.contains_key(grammar) {
-            let language = tree_sitter_language_pack::get_language(grammar).ok()?;
+            let language = crate::engines::grammar::language(grammar)?;
             let query = Query::new(&language, query_src).ok()?;
             pool.insert(grammar.to_owned(), (QueryCursor::new(), query));
         }

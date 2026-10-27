@@ -74,7 +74,7 @@ use settings::Settings;
 /// Cache-key version. Bump whenever `tree-sitter-language-pack` is upgraded
 /// (grammars can change) or this engine's own detection/threshold logic
 /// changes in a way that alters output.
-const QUALITY_VERSION: &str = "quality-3+tslp1.21.1+no-rust-allow+max-in-title+no-prose-lazy-ignore";
+const QUALITY_VERSION: &str = "quality-4+parse-limit+tslp1.21.1+no-rust-allow+max-in-title+no-prose-lazy-ignore";
 
 thread_local! {
     /// Per-thread parser pool keyed by grammar name, shared by every
@@ -149,7 +149,10 @@ impl Engine for QualityEngine {
             diagnostics.extend(lazy_ignore::scan(&src.content));
         }
 
-        if let Some(grammar) = grammar_name(src) {
+        if settings.allows_parse(src.content.len())
+            && let Some(grammar) = grammar_name(src)
+            && needs_parse_tree(&grammar, &settings)
+        {
             run_structural_rules(&grammar, src, &settings, &mut diagnostics);
         }
 
@@ -174,6 +177,20 @@ fn grammar_name(src: &SourceFile) -> Option<String> {
     Some(coverage::grammar_for(&src.language).to_owned())
 }
 
+/// Whether any enabled structural rule can say something about `grammar`.
+///
+/// A grammar with neither a definitions query nor a construct table (XML, HTML,
+/// SQL, …) yields nothing from the default rules, so parsing it, which for a
+/// large file is the most expensive thing the engine does, is pure waste. The
+/// opt-in grammar-generic rules (`magic-number`, `law-of-demeter`) walk any tree
+/// and keep the parse alive when switched on.
+fn needs_parse_tree(grammar: &str, settings: &Settings) -> bool {
+    settings.magic_number
+        || settings.law_of_demeter
+        || definitions::has_query(grammar)
+        || kinds::has_table(grammar)
+}
+
 /// Parse `src` once (via the pooled parser for `grammar`) and run every
 /// structural rule against the resulting tree, degrading honestly per rule
 /// per the module docs when the grammar has no query/table for it.
@@ -181,7 +198,7 @@ fn run_structural_rules(grammar: &str, src: &SourceFile, settings: &Settings, di
     PARSERS.with(|cell| {
         let mut pool = cell.borrow_mut();
         if !pool.contains_key(grammar) {
-            let Ok(language) = tree_sitter_language_pack::get_language(grammar) else {
+            let Some(language) = crate::engines::grammar::language(grammar) else {
                 return;
             };
             let mut parser = Parser::new();

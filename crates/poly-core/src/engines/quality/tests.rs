@@ -238,3 +238,44 @@ fn unrecognized_grammar_still_gets_file_too_long_and_lazy_ignore() {
     let diags = QualityEngine.lint(&file, &cfg(toml::Table::new())).unwrap();
     assert!(codes(&diags).contains(&"file-too-long"));
 }
+
+const MANY_PARAMETERS_GO: &str = "package main\n\nfunc f(a, b, c, d, e, f, g, h int) int {\n\treturn a\n}\n";
+
+fn with_option(key: &str, value: i64) -> EngineConfig {
+    let mut options = toml::Table::new();
+    options.insert(key.to_owned(), toml::Value::Integer(value));
+    cfg(options)
+}
+
+#[test]
+fn file_over_the_parse_limit_gets_text_rules_but_no_structural_ones() {
+    let file = src("f.go", Language::Go, MANY_PARAMETERS_GO);
+    let within = QualityEngine.lint(&file, &with_option("max_parse_bytes", 1 << 20)).unwrap();
+    assert_eq!(codes(&within), ["too-many-parameters"]);
+
+    let over = QualityEngine.lint(&file, &with_option("max_parse_bytes", 10)).unwrap();
+    assert!(over.is_empty(), "{over:?}");
+
+    let long = src("f.go", Language::Go, &format!("{MANY_PARAMETERS_GO}{}", "// x\n".repeat(1200)));
+    let over = QualityEngine.lint(&long, &with_option("max_parse_bytes", 10)).unwrap();
+    assert_eq!(codes(&over), ["file-too-long"]);
+}
+
+#[test]
+fn zero_parse_limit_means_unlimited() {
+    let file = src("f.go", Language::Go, MANY_PARAMETERS_GO);
+    let diagnostics = QualityEngine.lint(&file, &with_option("max_parse_bytes", 0)).unwrap();
+    assert_eq!(codes(&diagnostics), ["too-many-parameters"]);
+}
+
+#[test]
+fn grammar_without_a_rule_model_is_not_parsed_unless_a_generic_rule_needs_it() {
+    use super::{needs_parse_tree, settings::Settings};
+    let default = Settings::from_config(&cfg(toml::Table::new()));
+    assert!(needs_parse_tree("python", &default));
+    assert!(!needs_parse_tree("xml", &default));
+
+    let mut options = toml::Table::new();
+    options.insert("magic_number".to_owned(), toml::Value::Boolean(true));
+    assert!(needs_parse_tree("xml", &Settings::from_config(&cfg(options))));
+}

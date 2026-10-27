@@ -93,7 +93,7 @@ impl TslpLanguage {
     /// does not recognise the name.
     pub fn new(name: &str) -> Option<Self> {
         let lowered = name.to_lowercase();
-        get_language(&lowered).ok().map(|_| TslpLanguage { name: lowered })
+        crate::engines::grammar::language(&lowered).map(|_| TslpLanguage { name: lowered })
     }
 
     /// Grammar name (lowercase, as TSLP expects it).

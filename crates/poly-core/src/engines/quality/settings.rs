@@ -24,6 +24,12 @@ pub const DEFAULT_NESTING_TOO_DEEP: i64 = 4;
 pub const DEFAULT_CYCLOMATIC_COMPLEXITY: i64 = 20;
 /// Default `law-of-demeter` chain-depth threshold.
 pub const DEFAULT_LAW_OF_DEMETER: i64 = 3;
+/// Default `max_parse_bytes`: files larger than this get only the text rules.
+/// A parse tree costs roughly a hundred bytes of memory per source byte, so a
+/// multi-megabyte generated file (bundle, data dump, inlined SVG) would
+/// otherwise spend seconds and about a gigabyte on rules that are meaningless
+/// for it. `0` removes the limit.
+pub const DEFAULT_MAX_PARSE_BYTES: i64 = 2 * 1024 * 1024;
 /// Default `magic-number` allowlist.
 pub const DEFAULT_MAGIC_NUMBER_ALLOW: &[i64] = &[-1, 0, 1, 2, 10, 100];
 
@@ -56,6 +62,7 @@ pub(crate) const INTEGER_OPTION_KEYS: &[&str] = &[
     "nesting_too_deep_depth",
     "cyclomatic_complexity_max",
     "law_of_demeter_depth",
+    "max_parse_bytes",
 ];
 
 /// The array-valued option keys, merged and declared like [`BOOL_OPTION_KEYS`].
@@ -96,6 +103,9 @@ pub struct Settings {
     /// Opt-in: off unless `[lint.quality] law_of_demeter = true`.
     pub law_of_demeter: bool,
     pub law_of_demeter_depth: i64,
+    /// Largest file, in bytes, the structural (parse-tree) rules run on; `0`
+    /// means no limit. The text rules (`file-too-long`, `lazy-ignore`) always run.
+    pub max_parse_bytes: i64,
 }
 
 /// A rule with an `on`/`off` toggle and an integer threshold.
@@ -164,7 +174,13 @@ impl Settings {
                 .unwrap_or_else(|| DEFAULT_MAGIC_NUMBER_ALLOW.to_vec()),
             law_of_demeter: flag(options, "law_of_demeter", false),
             law_of_demeter_depth: integer(options, "law_of_demeter_depth", DEFAULT_LAW_OF_DEMETER),
+            max_parse_bytes: integer(options, "max_parse_bytes", DEFAULT_MAX_PARSE_BYTES),
         }
+    }
+
+    /// Whether a file of `len` bytes is small enough for the structural rules.
+    pub fn allows_parse(&self, len: usize) -> bool {
+        self.max_parse_bytes <= 0 || i64::try_from(len).map_or(false, |len| len <= self.max_parse_bytes)
     }
 }
 
@@ -223,6 +239,20 @@ mod tests {
         assert_eq!(settings.magic_number_allow, vec![-1, 0, 1, 2, 10, 100]);
         assert!(!settings.law_of_demeter, "law-of-demeter is opt-in");
         assert_eq!(settings.law_of_demeter_depth, 3);
+        assert_eq!(settings.max_parse_bytes, DEFAULT_MAX_PARSE_BYTES);
+    }
+
+    #[test]
+    fn parse_limit_is_inclusive_and_zero_disables_it() {
+        let mut options = toml::Table::new();
+        options.insert("max_parse_bytes".to_owned(), toml::Value::Integer(100));
+        let limited = Settings::from_config(&cfg(options));
+        assert!(limited.allows_parse(100));
+        assert!(!limited.allows_parse(101));
+
+        let mut options = toml::Table::new();
+        options.insert("max_parse_bytes".to_owned(), toml::Value::Integer(0));
+        assert!(Settings::from_config(&cfg(options)).allows_parse(usize::MAX));
     }
 
     #[test]

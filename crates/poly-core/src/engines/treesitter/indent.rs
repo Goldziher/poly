@@ -35,7 +35,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 
 use tree_sitter::{Parser as RawParser, Query, QueryCursor, StreamingIterator};
-use tree_sitter_language_pack::{QueryKind, get_indents_query, get_language, get_query};
+use tree_sitter_language_pack::{QueryKind, get_indents_query, get_query};
 
 use crate::config::EngineConfig;
 use crate::engine::SourceFile;
@@ -185,7 +185,7 @@ pub fn try_reindent_builtin(name: &str, src: &SourceFile, cfg: &EngineConfig) ->
     let (adjustments, protected) = BUILTIN_STATE.with(|cell| {
         let mut pool = cell.borrow_mut();
         if !pool.contains_key(name) {
-            let language = get_language(name).ok()?;
+            let language = crate::engines::grammar::language(name)?;
             let mut parser = RawParser::new();
             parser.set_language(&language).ok()?;
             let query = Query::new(&language, query_src).ok()?;
@@ -229,7 +229,7 @@ pub fn try_reindent_query(name: &str, src: &SourceFile, cfg: &EngineConfig) -> O
     let (adjustments, protected) = QUERY_STATE.with(|cell| {
         let mut pool = cell.borrow_mut();
         if !pool.contains_key(name) {
-            let language = get_language(name).ok()?;
+            let language = crate::engines::grammar::language(name)?;
             let mut parser = RawParser::new();
             parser.set_language(&language).ok()?;
             pool.insert(name.to_string(), (parser, QueryCursor::new()));

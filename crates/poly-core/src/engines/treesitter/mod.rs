@@ -185,6 +185,7 @@ fn reindent_braces(name: &str, src: &SourceFile, cfg: &EngineConfig) -> Option<S
     PARSERS.with(|cell| {
         let mut pool = cell.borrow_mut();
         if !pool.contains_key(name) {
+            crate::engines::grammar::language(name)?;
             let parser = get_parser(name).ok()?;
             pool.insert(name.to_string(), parser);
         }
