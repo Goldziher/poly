@@ -2829,6 +2829,9 @@
         "magic_number_allow": {
           "type": "array"
         },
+        "max_parse_bytes": {
+          "type": "integer"
+        },
         "nesting_too_deep": {
           "type": "boolean"
         },
@@ -2873,6 +2876,9 @@
           "type": "array"
         },
         "indent_width": {
+          "type": "integer"
+        },
+        "max_line_bytes": {
           "type": "integer"
         },
         "plugins": {
@@ -3393,6 +3399,9 @@
         },
         "magic_number_allow": {
           "type": "array"
+        },
+        "max_parse_bytes": {
+          "type": "integer"
         },
         "nesting_too_deep": {
           "type": "boolean"

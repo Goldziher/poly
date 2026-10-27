@@ -30,7 +30,14 @@ use crate::language::Language;
 /// (`unicorn | typescript | oxc`) — the only way to reach a rule from a plugin
 /// that ships disabled, since rule selection cannot enable one. See
 /// `plugins::extra_lint_plugins`.
-const JS_LINT_OPTION_KEYS: &[(&str, OptionType)] = &[("plugins", OptionType::ARRAY)];
+///
+/// `max_line_bytes` is the length past which a line is over-long; a file with
+/// most of its bytes on such lines is minified output and left unlinted
+/// (default [`lint::DEFAULT_MAX_LINE_BYTES`]; `0` lints every file). Minified bundles
+/// are not authored code: their findings (single-letter shadowing, ...) are
+/// noise, and a megabyte of them costs seconds.
+const JS_LINT_OPTION_KEYS: &[(&str, OptionType)] =
+    &[("plugins", OptionType::ARRAY), ("max_line_bytes", OptionType::INTEGER)];
 
 /// The formatter keys `[fmt.<lang>.oxc]` reads, with the type each is read as.
 ///
@@ -70,7 +77,7 @@ use self::lint::{lint_js, lint_json};
 ///                `vitest/expect-expect`) that no configuration could reach
 ///                before.
 const VERSION: &str = "oxc_formatter:0.72.0+oxlint+parser:0.153.0+rev:98573d2+json-fmt+rules-v5+fmt-opts+\
-                       jsonc-trailing-comma+plugins-v1";
+                       jsonc-trailing-comma+plugins-v1+minified-skip";
 
 static LANGUAGES: &[Language] = &[
     Language::JavaScript,

@@ -3,7 +3,8 @@
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, OnceLock};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, OnceLock};
 
 use oxc_allocator::Allocator;
 use oxc_diagnostics::Severity as OxcSeverity;
@@ -15,27 +16,9 @@ use oxc_linter::{
 use super::plugins::extra_lint_plugins;
 use crate::config::EngineConfig;
 use crate::engine::{Diagnostic, Edit, Severity, SourceFile, Span};
+use crate::engines::line_index::LineIndex;
 use crate::engines::rule_config::{RuleOptions, RuleSelection};
 use crate::language::Language;
-
-/// Byte offset → 1-based `(line, col)`.
-fn offset_to_line_col(src: &str, offset: usize) -> (u32, u32) {
-    let safe_offset = offset.min(src.len());
-    let mut line: u32 = 1;
-    let mut col: u32 = 1;
-    for (i, ch) in src.char_indices() {
-        if i >= safe_offset {
-            break;
-        }
-        if ch == '\n' {
-            line += 1;
-            col = 1;
-        } else {
-            col += 1;
-        }
-    }
-    (line, col)
-}
 
 /// Feeds `oxc_linter`'s parser with file content from RAM.
 /// `read_to_arena_str` copies `content` into the oxc arena allocator — no disk
@@ -384,16 +367,65 @@ fn build_configured_service(cfg: &EngineConfig) -> anyhow::Result<LintService> {
     Ok(LintService::new(linter, options))
 }
 
+/// Length, in bytes, past which a line counts as over-long. No authored logic
+/// sits on a 20 KB line, but authored files do carry one (an inlined image, a
+/// data URI), so a single over-long line is not enough to call a file minified.
+pub(super) const DEFAULT_MAX_LINE_BYTES: i64 = 20_000;
+
+/// Whether `src` is minified output: more than half of its bytes sit on lines
+/// longer than the configured `max_line_bytes`.
+fn looks_minified(src: &SourceFile, cfg: &EngineConfig) -> bool {
+    let limit = cfg
+        .options
+        .get("max_line_bytes")
+        .and_then(toml::Value::as_integer)
+        .unwrap_or(DEFAULT_MAX_LINE_BYTES);
+    let Ok(limit) = usize::try_from(limit) else {
+        return false;
+    };
+    if limit == 0 || src.content.len() <= limit {
+        return false;
+    }
+    let over_long: usize = src.content.split('\n').map(str::len).filter(|&len| len > limit).sum();
+    over_long * 2 > src.content.len()
+}
+
+/// The [`LintService`] for a non-default option table, built once per distinct
+/// table. Building one constructs the whole rule table, so doing it per file
+/// made any `[lint.*.oxc]` setting cost far more than the linting itself.
+fn configured_service(cfg: &EngineConfig) -> anyhow::Result<Arc<LintService>> {
+    type Slot = Arc<OnceLock<Result<Arc<LintService>, String>>>;
+    static SERVICES: OnceLock<Mutex<HashMap<String, Slot>>> = OnceLock::new();
+    let slot = {
+        let mut services = SERVICES
+            .get_or_init(Mutex::default)
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        Arc::clone(services.entry(cfg.options.to_string()).or_default())
+    };
+    slot.get_or_init(|| {
+        build_configured_service(cfg)
+            .map(Arc::new)
+            .map_err(|error| format!("{error:#}"))
+    })
+    .clone()
+    .map_err(|message| anyhow::anyhow!(message))
+}
+
 pub(super) fn lint_js(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
+    if looks_minified(src, cfg) {
+        tracing::debug!(path = %src.path.display(), "not linting minified file");
+        return Ok(Vec::new());
+    }
     let messages = if cfg.options.is_empty() {
         run_with_service(lint_service(), src)
     } else {
-        let service = build_configured_service(cfg)?;
-        run_with_service(&service, src)
+        run_with_service(configured_service(cfg)?.as_ref(), src)
     };
+    let index = LineIndex::new(&src.content);
     let diagnostics = messages
         .into_iter()
-        .map(|msg| map_oxlint_message(msg, &src.content))
+        .map(|msg| map_oxlint_message(msg, &index))
         .collect();
     Ok(diagnostics)
 }
@@ -406,7 +438,7 @@ pub(super) fn lint_js(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Ve
 /// Fix: all edits are forwarded — `Single` as one edit, `Multiple` as the full
 /// list. The runner applies each diagnostic's edits atomically (all-or-nothing,
 /// with an overlap guard), so multi-edit fixes are safe to attach.
-fn map_oxlint_message(msg: Message, content: &str) -> Diagnostic {
+fn map_oxlint_message(msg: Message, index: &LineIndex) -> Diagnostic {
     let severity = match msg.error.severity {
         OxcSeverity::Error => Severity::Error,
         OxcSeverity::Warning => Severity::Warning,
@@ -431,8 +463,8 @@ fn map_oxlint_message(msg: Message, content: &str) -> Diagnostic {
 
     let start = msg.span.start as usize;
     let end = msg.span.end as usize;
-    let (start_line, start_col) = offset_to_line_col(content, start);
-    let (end_line, end_col) = offset_to_line_col(content, end);
+    let (start_line, start_col) = index.line_col(start);
+    let (end_line, end_col) = index.line_col(end);
     let span = Some(Span {
         start_line,
         start_col,
@@ -975,5 +1007,62 @@ max = 6
             diags.iter().any(|d| d.code.as_deref() == Some("no-console")),
             "an unknown rule with params must not suppress unrelated diagnostics; got: {diags:#?}"
         );
+    }
+
+    fn cfg_with(key: &str, value: i64) -> EngineConfig {
+        let mut options = toml::Table::new();
+        options.insert(key.to_owned(), toml::Value::Integer(value));
+        EngineConfig {
+            options,
+            ..default_cfg()
+        }
+    }
+
+    const SHADOWING: &str = "function f(e){return function(e){return e}}f(1);";
+
+    fn minified(len: usize) -> String {
+        format!("{SHADOWING}{}", "f(1);".repeat(len / 5))
+    }
+
+    #[test]
+    fn a_line_over_the_limit_marks_the_file_minified() {
+        let long = make_src(&minified(30_000), Language::JavaScript);
+        assert!(looks_minified(&long, &default_cfg()));
+        assert!(!looks_minified(&long, &cfg_with("max_line_bytes", 0)));
+        assert!(!looks_minified(&long, &cfg_with("max_line_bytes", 100_000)));
+    }
+
+    #[test]
+    fn one_embedded_long_line_in_an_authored_file_is_not_minified() {
+        let source = format!("{}const image = \"{}\";\n", format!("{SHADOWING}\n").repeat(2_000), "a".repeat(25_000));
+        assert!(!looks_minified(&make_src(&source, Language::JavaScript), &default_cfg()));
+    }
+
+    #[test]
+    fn many_short_lines_are_not_minified() {
+        let source = format!("{SHADOWING}\n").repeat(2_000);
+        assert!(source.len() > DEFAULT_MAX_LINE_BYTES as usize);
+        assert!(!looks_minified(&make_src(&source, Language::JavaScript), &default_cfg()));
+    }
+
+    #[test]
+    fn minified_file_is_skipped_but_authored_one_is_linted() {
+        let linted = lint_js(&make_src(SHADOWING, Language::JavaScript), &default_cfg()).unwrap();
+        assert!(linted.iter().any(|d| d.code.as_deref() == Some("no-shadow")), "{linted:?}");
+
+        let skipped = lint_js(&make_src(&minified(30_000), Language::JavaScript), &default_cfg()).unwrap();
+        assert!(skipped.is_empty());
+
+        let forced = lint_js(&make_src(&minified(30_000), Language::JavaScript), &cfg_with("max_line_bytes", 0)).unwrap();
+        assert!(!forced.is_empty());
+    }
+
+    #[test]
+    fn configured_service_is_built_once_per_option_table() {
+        let first = configured_service(&cfg_with("max_line_bytes", 123)).unwrap();
+        let second = configured_service(&cfg_with("max_line_bytes", 123)).unwrap();
+        assert!(Arc::ptr_eq(&first, &second));
+        let other = configured_service(&cfg_with("max_line_bytes", 124)).unwrap();
+        assert!(!Arc::ptr_eq(&first, &other));
     }
 }
