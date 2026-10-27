@@ -379,3 +379,50 @@ fn restage_partial_does_not_apply_to_a_hook_that_is_not_stage_fixed() {
     assert!(!outcome.success());
     assert_eq!(staged_blob(root, "f.txt"), "unformatted\n", "the index is not touched");
 }
+
+#[test]
+fn restage_partial_handles_several_files_and_keeps_the_executable_bit() {
+    let repo = init_repo();
+    let cache = TempDir::new().expect("cache home");
+    let root = repo.path();
+    std::fs::write(root.join("a.txt"), "unformatted a\n").unwrap();
+    std::fs::write(root.join("run.sh"), "#!/bin/sh\nunformatted\n").unwrap();
+    git(root, &["add", "a.txt", "run.sh"]);
+    git(root, &["update-index", "--chmod=+x", "run.sh"]);
+    std::fs::write(root.join("a.txt"), "unformatted a\nmine\n").unwrap();
+    std::fs::write(root.join("run.sh"), "#!/bin/sh\nunformatted\nmine\n").unwrap();
+
+    let snapshot = StagedSnapshot::create_in(cache.path(), root, &[]).expect("snapshot");
+    let mut hook = Hook::run(
+        "fixer",
+        "printf 'fixed\\n' > a.txt; printf '#!/bin/sh\\nfixed\\n' > run.sh",
+    );
+    hook.pass_filenames = false;
+    hook.stage_fixed = true;
+    let outcome = run(HookRunRequest {
+        root: root.to_path_buf(),
+        work_root: Some(snapshot.path().to_path_buf()),
+        files: vec![PathBuf::from("a.txt"), PathBuf::from("run.sh")],
+        restage_partial: true,
+        stages: vec![StageSpec {
+            stage: Stage::PreCommit,
+            hooks: vec![hook],
+            ..StageSpec::default()
+        }],
+        ..HookRunRequest::default()
+    })
+    .expect("run");
+
+    assert!(outcome.success(), "{}", report_of(&outcome));
+    assert_eq!(staged_blob(root, "a.txt"), "fixed\n");
+    assert_eq!(staged_blob(root, "run.sh"), "#!/bin/sh\nfixed\n");
+    let mode = git(root, &["ls-files", "-s", "run.sh"]);
+    assert!(
+        String::from_utf8_lossy(&mode.stdout).starts_with("100755"),
+        "the mode survives"
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join("a.txt")).unwrap(),
+        "unformatted a\nmine\n"
+    );
+}

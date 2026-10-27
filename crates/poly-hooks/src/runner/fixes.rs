@@ -246,12 +246,14 @@ fn write_back(
     restageable: &BTreeSet<PathBuf>,
 ) -> anyhow::Result<WriteBack> {
     let mut outcome = WriteBack::default();
+    let mut restage: Vec<(PathBuf, PathBuf)> = Vec::new();
+    let staged = staged_blobs_of(root, modified)?;
     for path in modified {
-        match withhold_reason(root, path)? {
+        match withhold_reason(root, path, &staged) {
             Some(WithheldReason::UnstagedChanges) if restageable.contains(path) => {
                 // The author's unstaged edits stay in the worktree; only the fixed
                 // content goes into the index, so the commit carries the fix.
-                git::stage_contents_from(root, path, &snapshot.join(path))?;
+                restage.push((path.clone(), snapshot.join(path)));
                 outcome.restaged.insert(path.clone());
                 continue;
             }
@@ -273,6 +275,7 @@ fn write_back(
         };
         write_atomic(&root.join(path), &bytes)?;
     }
+    git::stage_contents_from(root, &restage)?;
     Ok(outcome)
 }
 
@@ -303,34 +306,57 @@ struct WriteBack {
 /// `symlink_metadata` — which does not follow the final component — because the
 /// two produce different advice: one is a refusal to follow a link, the other is
 /// a destination that simply is not there.
-fn withhold_reason(root: &Path, path: &Path) -> anyhow::Result<Option<WithheldReason>> {
+fn withhold_reason(root: &Path, path: &Path, staged: &StagedBlobs) -> Option<WithheldReason> {
     if !git::is_safe_relative_path(path) {
-        return Ok(Some(WithheldReason::PathEscapesRepository));
+        return Some(WithheldReason::PathEscapesRepository);
     }
     let destination = root.join(path);
     match fs_err::symlink_metadata(&destination).map(|meta| meta.file_type()) {
         Ok(kind) if kind.is_file() => {}
-        Ok(kind) if kind.is_symlink() => return Ok(Some(WithheldReason::WorktreeIsSymlink)),
-        _ => return Ok(Some(WithheldReason::WorktreeNotRegularFile)),
+        Ok(kind) if kind.is_symlink() => return Some(WithheldReason::WorktreeIsSymlink),
+        _ => return Some(WithheldReason::WorktreeNotRegularFile),
     }
-    if worktree_matches_staged(root, path)? {
-        Ok(None)
+    if matches_staged(root, path, staged.get(path).and_then(Option::as_deref)) {
+        None
     } else {
-        Ok(Some(WithheldReason::UnstagedChanges))
+        Some(WithheldReason::UnstagedChanges)
     }
 }
 
-/// Whether the worktree copy of `path` is byte-identical to the staged blob —
-/// the content-based replacement for `git diff-files`.
+/// The staged bytes of each safe path in `paths`, fetched with one git process.
+/// An unsafe path is left out: [`withhold_reason`] refuses it before it is read.
+type StagedBlobs = std::collections::HashMap<PathBuf, Option<Vec<u8>>>;
+
+fn staged_blobs_of(root: &Path, paths: &[PathBuf]) -> anyhow::Result<StagedBlobs> {
+    let safe: Vec<PathBuf> = paths
+        .iter()
+        .filter(|path| git::is_safe_relative_path(path))
+        .cloned()
+        .collect();
+    let blobs = git::staged_blobs(root, &safe)?;
+    Ok(safe.into_iter().zip(blobs).collect())
+}
+
+/// Whether the worktree copy of `path` is byte-identical to `staged` — the
+/// content-based replacement for `git diff-files`.
 ///
 /// A path with no staged blob, a destination that is not a regular file, and an
 /// unreadable destination all answer `false`: every one of them means the
 /// worktree holds something the staged-content run did not see.
-pub(super) fn worktree_matches_staged(root: &Path, path: &Path) -> anyhow::Result<bool> {
-    let Some(staged) = git::staged_blob(root, path)? else {
-        return Ok(false);
-    };
-    Ok(hash_file(&root.join(path)) == Some(*blake3::hash(&staged).as_bytes()))
+fn matches_staged(root: &Path, path: &Path, staged: Option<&[u8]>) -> bool {
+    staged.is_some_and(|staged| hash_file(&root.join(path)) == Some(*blake3::hash(staged).as_bytes()))
+}
+
+/// The subset of `paths` whose worktree content differs from the index, with all
+/// the staged blobs read through a single git process.
+pub(super) fn differing_from_staged(root: &Path, paths: &[PathBuf]) -> anyhow::Result<Vec<PathBuf>> {
+    let blobs = git::staged_blobs(root, paths)?;
+    Ok(paths
+        .iter()
+        .zip(blobs)
+        .filter(|(path, staged)| !matches_staged(root, path, staged.as_deref()))
+        .map(|(path, _)| path.clone())
+        .collect())
 }
 
 /// Read `path` only if it is a regular file, so a symlink is never followed.

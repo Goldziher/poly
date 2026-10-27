@@ -19,13 +19,7 @@ use super::fixes;
 /// that pass. Anything unreadable or not a regular file counts as modified — the
 /// conservative direction, which only ever suppresses a store.
 pub(super) fn modified_matched(root: &Path, matched: &[PathBuf]) -> anyhow::Result<Vec<PathBuf>> {
-    let mut modified = Vec::new();
-    for path in matched {
-        if !fixes::worktree_matches_staged(root, path)? {
-            modified.push(path.clone());
-        }
-    }
-    Ok(modified)
+    fixes::differing_from_staged(root, matched)
 }
 
 /// Derive the [`Namespace::Hook`] cache key for `hook`, or `None` when the hook
