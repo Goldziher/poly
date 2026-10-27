@@ -711,7 +711,7 @@ fn a_fix_mode_builtin_rewrites_and_restages() {
     );
     let fmt = hook(&spec, "fmt");
     assert!(
-        run_line(fmt).ends_with(" fmt --force-exclude --fix"),
+        run_line(fmt).ends_with(" fmt --force-exclude --fix --exit-zero-on-fix"),
         "{}",
         run_line(fmt)
     );

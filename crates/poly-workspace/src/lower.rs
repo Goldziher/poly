@@ -291,7 +291,7 @@ impl Tool {
             (Tool::Lint, false) => format!("{poly} lint --no-workspace --force-exclude"),
             (Tool::Lint, true) => format!("{poly} lint --no-workspace --force-exclude --fix"),
             (Tool::Fmt, false) => format!("{poly} fmt --check --force-exclude"),
-            (Tool::Fmt, true) => format!("{poly} fmt --force-exclude --fix"),
+            (Tool::Fmt, true) => format!("{poly} fmt --force-exclude --fix --exit-zero-on-fix"),
         }
     }
 }
