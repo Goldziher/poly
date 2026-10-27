@@ -309,7 +309,14 @@ pub(super) fn plan_engines(
         .into_iter()
         .map(|engine| {
             let cfg = config.engine_config(language, engine.name(), kind);
-            let serialized_args = ResultCache::serialize_args(&cache_args(&cfg));
+            let mut args = cache_args(&cfg);
+            if kind == Kind::Lint {
+                let context = engine.run_context(&cfg);
+                if !context.is_empty() {
+                    args.insert("__run_context".to_string(), toml::Value::String(context));
+                }
+            }
+            let serialized_args = ResultCache::serialize_args(&args);
             let severity_remap = build_severity_remap(&cfg);
             // Only a lint plan can establish lint coverage; asking a formatter
             // would answer a question nobody posed.

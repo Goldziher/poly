@@ -8,7 +8,7 @@ use anyhow::Context;
 
 use crate::config::{Config, Kind};
 use crate::discover::{DiscoveredFile, discover_reporting};
-use crate::engine::{Diagnostic, Edit, FormatOutput, Severity, SourceFile};
+use crate::engine::{Diagnostic, Edit, FormatOutput, SourceFile};
 use crate::engine_guard::guard_engine_panic;
 use crate::filter::{
     PerFileIgnores, Suppressions, is_binary, is_format_ignored, is_generated_lockfile, is_generated_source,
@@ -16,14 +16,17 @@ use crate::filter::{
 };
 use crate::language::Language;
 use crate::resolve::ConfigSet;
-use poly_cache::{Namespace, ResultCache};
+use poly_cache::{Namespace, ResultCache, Verdict};
 use rayon::prelude::*;
 use rustc_hash::FxHashSet;
 
 mod batch;
 mod edits;
 mod engine_clock;
+mod fast;
+mod fmt_entry;
 mod generated;
+mod lint_pass;
 mod plan;
 mod selection;
 mod skips;
@@ -33,8 +36,12 @@ use crate::fingerprint::{ConfigFingerprint, fingerprints};
 use batch::{BatchPrefill, prefill};
 use edits::apply_edits;
 use engine_clock::{EngineClock, EngineTime};
-use generated::{acts_on_generated, format_skip_result, lint_skip_result};
-use plan::{EnginePlan, RunPlan, plan_by_config_language, prefetch_tier2_grammars, provides_language_lint};
+use fast::{
+    FastPath, Outcome, Replay, Resolution, flush_stat_indexes, lint_skip_reason, log_fast_path, replayed_lint_result,
+};
+use generated::{acts_on_generated, format_skip_result, invalid_utf8_result, lint_skip_result};
+use lint_pass::{LintPass, lint_content};
+use plan::{EnginePlan, RunPlan, plan_by_config_language, prefetch_tier2_grammars};
 use selection::{EngineSelection, validate_selection};
 use skips::unmatched_explicit_paths;
 pub use skips::{
@@ -143,6 +150,17 @@ pub fn lint_run(
     // were genuinely linted rather than how many were handed to the pipeline.
     // Negligible next to reading and parsing the file it counts.
     let checked = std::sync::atomic::AtomicUsize::new(0);
+    let replay = Replay {
+        diagnostics: !fix && !collect_debug,
+        verdicts: !collect_debug,
+    };
+    let fast = FastPath::new(
+        &cache,
+        Namespace::Lint,
+        &plan,
+        &|id| u8::from(act_on_generated[id]),
+        replay,
+    );
     // An engine error is carried, not swallowed: dropping the file here is what
     // let `poly lint` report success on a file it had failed to process.
     let (oks, errs): (Vec<_>, Vec<_>) = files
@@ -151,7 +169,6 @@ pub fn lint_run(
             match lint_one(
                 f,
                 &plan,
-                &cache,
                 fix,
                 opts.fix_generated,
                 collect_debug,
@@ -159,6 +176,7 @@ pub fn lint_run(
                 &ignore_bases,
                 &opts.externally_linted_languages,
                 &act_on_generated,
+                fast.as_ref(),
             ) {
                 Ok(result) => {
                     // A file no backend has rules for is not part of the linted
@@ -176,6 +194,8 @@ pub fn lint_run(
             }
         })
         .partition(Result::is_ok);
+    flush_stat_indexes(&cache);
+    log_fast_path(fast.as_ref(), "lint");
     let mut linted: Vec<LintResult> = oks.into_iter().map(Result::unwrap).collect();
     linted.sort_by(|a, b| a.path.cmp(&b.path));
     // Taken before the filter below, which keeps only files with something to
@@ -292,7 +312,27 @@ pub fn format_run(
     // Batch-capable formatters run once over many files here, before the loop.
     // Whatever this produces is an accelerator only: every filter below still
     // runs, and a file with no entry simply takes the per-file path (ADR 0033).
-    let prefilled = prefill(&files, &plan, &cache);
+    let fast = FastPath::new(
+        &cache,
+        Namespace::Fmt,
+        &plan,
+        &|id| u8::from(act_on_generated[id]) | u8::from(opts.fix_generated) << 1,
+        Replay {
+            diagnostics: false,
+            verdicts: !collect_debug,
+        },
+    );
+    let resolutions: Vec<Resolution> = files
+        .par_iter()
+        .map(|f| fast.as_ref().map_or(Resolution::Unavailable, |fast| fast.resolve(f)))
+        .collect();
+    let unresolved: Vec<DiscoveredFile> = files
+        .iter()
+        .zip(&resolutions)
+        .filter(|(_, resolution)| !matches!(resolution, Resolution::Hit(_)))
+        .map(|(f, _)| f.clone())
+        .collect();
+    let prefilled = prefill(&unresolved, &plan, &cache);
     tracing::debug!(
         prefilled = prefilled.len(),
         files = files.len(),
@@ -302,7 +342,8 @@ pub fn format_run(
     // let `poly fmt --check` report success on a file it could not parse.
     let (oks, errs): (Vec<_>, Vec<_>) = files
         .par_iter()
-        .map(|f| {
+        .zip(resolutions)
+        .map(|(f, resolution)| {
             format_one(
                 f,
                 &plan,
@@ -312,6 +353,7 @@ pub fn format_run(
                 collect_debug,
                 &act_on_generated,
                 &prefilled,
+                (fast.as_ref(), resolution),
             )
             .map_err(|error| FormatError {
                 path: f.path.clone(),
@@ -319,6 +361,8 @@ pub fn format_run(
             })
         })
         .partition(Result::is_ok);
+    flush_stat_indexes(&cache);
+    log_fast_path(fast.as_ref(), "format");
     let mut results: Vec<FormatResult> = oks.into_iter().map(Result::unwrap).collect();
     let mut errors: Vec<FormatError> = errs.into_iter().map(Result::unwrap_err).collect();
     results.sort_by(|a, b| a.path.cmp(&b.path));
@@ -363,7 +407,6 @@ pub fn format_run(
 fn lint_one(
     f: &DiscoveredFile,
     plan: &RunPlan,
-    cache: &ResultCache,
     fix: bool,
     fix_generated: bool,
     collect_debug: bool,
@@ -371,30 +414,8 @@ fn lint_one(
     ignore_bases: &[Vec<PathBuf>],
     externally_linted: &[Language],
     act_on_generated: &[bool],
+    fast: Option<&FastPath>,
 ) -> anyhow::Result<LintResult> {
-    let bytes = std::fs::read(&f.path).with_context(|| format!("reading {}", f.path.display()))?;
-    // Asked before the decode, because the decode cannot tell the two apart:
-    // a compiled artifact and a corrupted source file both fail
-    // `String::from_utf8`, and only the second is something to report.
-    if is_binary(&bytes) {
-        tracing::debug!(path = %f.path.display(), "not linting binary file");
-        return Ok(lint_skip_result(f, BINARY_SKIP));
-    }
-    let original = match String::from_utf8(bytes) {
-        Ok(content) => content,
-        Err(error) => return Ok(invalid_utf8_result(f, error.utf8_error())),
-    };
-    // `[discovery] generated = false` (opt-out; the default is `true`). The bool
-    // is tested first so the default path pays one indexed load and never scans
-    // the header.
-    //
-    // It wins over `--fix-generated`, which governs only whether a file poly did
-    // check may be rewritten: with the opt-out on there is nothing to fix, so
-    // asking to fix more cannot opt the file back into being linted.
-    if !act_on_generated[f.config_id] && is_generated_source(&original) {
-        tracing::debug!(path = %f.path.display(), "not linting generated file");
-        return Ok(lint_skip_result(f, GENERATED_SKIP));
-    }
     let this_ignores = &ignores[f.config_id];
     let rel = (!this_ignores.is_empty()).then(|| relative_for_match(&f.path, &ignore_bases[f.config_id]));
     // Inline `poly: allow[…]` directives (ADR 0028) are rebuilt from the content
@@ -412,44 +433,82 @@ fn lint_one(
     // `out` is cleared rather than appended to, because the fix loop calls this
     // once per pass over freshly re-linted diagnostics: appending would report
     // one suppression per pass for a finding that was suppressed once.
-    let suppress = |content: &str, diagnostics: &mut Vec<Diagnostic>, out: &mut Vec<SuppressedDiagnostic>| {
-        out.clear();
-        let suppressions = Suppressions::parse(content);
-        if !suppressions.is_empty() {
-            suppressions.apply(&f.path, diagnostics, out);
+    let suppress =
+        |suppressions: &Suppressions, diagnostics: &mut Vec<Diagnostic>, out: &mut Vec<SuppressedDiagnostic>| {
+            out.clear();
+            if !suppressions.is_empty() {
+                suppressions.apply(&f.path, diagnostics, out);
+            }
+            if let Some(rel) = &rel {
+                this_ignores.apply(rel, &f.path, diagnostics, out);
+            }
+        };
+    let engine_plans = plan.engines(f.config_id, &f.language);
+    let mut probe = None;
+    if let Some(fast) = fast {
+        match fast.resolve(f) {
+            Resolution::Hit(record) if record.verdict == Verdict::Binary => {
+                return Ok(lint_skip_result(f, BINARY_SKIP));
+            }
+            Resolution::Hit(record) => {
+                if let Some(mut diagnostics) = fast.decode(f, record) {
+                    let mut suppressed = Vec::new();
+                    suppress(&Suppressions::default(), &mut diagnostics, &mut suppressed);
+                    return Ok(replayed_lint_result(
+                        f,
+                        diagnostics,
+                        suppressed,
+                        lint_skip_reason(plan, f, externally_linted),
+                    ));
+                }
+                probe = fast.probe(f);
+            }
+            Resolution::Miss(missed) => probe = Some(missed),
+            Resolution::Unavailable => {}
         }
-        if let Some(rel) = &rel {
-            this_ignores.apply(rel, &f.path, diagnostics, out);
+    }
+    let record = |bytes: &[u8], outcome: Outcome| {
+        if let (Some(fast), Some(probe)) = (fast, &probe) {
+            fast.record(probe, bytes, outcome);
         }
     };
-    // Resolved once per file rather than inside `lint_content`, which the fix
-    // loop below calls up to `MAX_FIX_PASSES` times — each of those was a hash
-    // lookup keyed on a freshly cloned `Language`.
-    let engine_plans = plan.engines(f.config_id, &f.language);
-    // A language nothing holds rules for is not a clean file: the cross-cutting
-    // backends below still run and can still report findings, but no rule in
-    // this run knows the language, so the file must not be counted as linted.
+    let bytes = std::fs::read(&f.path).with_context(|| format!("reading {}", f.path.display()))?;
+    // Asked before the decode, because the decode cannot tell the two apart:
+    // a compiled artifact and a corrupted source file both fail
+    // `String::from_utf8`, and only the second is something to report.
+    if is_binary(&bytes) {
+        tracing::debug!(path = %f.path.display(), "not linting binary file");
+        record(&bytes, Outcome::binary());
+        return Ok(lint_skip_result(f, BINARY_SKIP));
+    }
+    let original = match String::from_utf8(bytes) {
+        Ok(content) => content,
+        Err(error) => return Ok(invalid_utf8_result(f, error.utf8_error())),
+    };
+    // `[discovery] generated = false` (opt-out; the default is `true`). The bool
+    // is tested first so the default path pays one indexed load and never scans
+    // the header.
     //
-    // `externally_linted` is the caller's declaration that another phase of the
-    // *same* run does lint the language (`cargo clippy` over Rust). A linear
-    // scan is the right shape here: the list holds one entry per whole-project
-    // tool, so it is a handful of comparisons against a slice already in cache —
-    // cheaper than the hash it would take to avoid them.
-    //
-    // A caller who narrowed the run with `--only` gets their own reason
-    // instead: nothing linted the file, but "no lint rules for Rust" would
-    // blame poly for a restriction the invocation asked for.
-    let skipped =
-        (!provides_language_lint(engine_plans) && !externally_linted.contains(&f.language)).then(|| {
-            match plan.withdrawal(f.config_id, &f.language) {
-                Some(withdrawal) => withdrawal.reason(),
-                None => SkippedFile::no_lint_rules_reason(&f.language),
-            }
-        });
+    // It wins over `--fix-generated`, which governs only whether a file poly did
+    // check may be rewritten: with the opt-out on there is nothing to fix, so
+    // asking to fix more cannot opt the file back into being linted.
+    if !act_on_generated[f.config_id] && is_generated_source(&original) {
+        tracing::debug!(path = %f.path.display(), "not linting generated file");
+        return Ok(lint_skip_result(f, GENERATED_SKIP));
+    }
+    let skipped = lint_skip_reason(plan, f, externally_linted);
 
-    let (mut diagnostics, mut debug) = lint_content(f, engine_plans, cache, &original, collect_debug)?;
+    let reuse = probe
+        .as_ref()
+        .map_or_else(Vec::new, |probe| probe.reusable(original.as_bytes()));
+    let LintPass {
+        mut diagnostics,
+        mut debug,
+        payloads,
+    } = lint_content(f, engine_plans, &original, collect_debug, &reuse, probe.is_some())?;
     let mut suppressed: Vec<SuppressedDiagnostic> = Vec::new();
-    suppress(&original, &mut diagnostics, &mut suppressed);
+    let directives = Suppressions::parse(&original);
+    suppress(&directives, &mut diagnostics, &mut suppressed);
 
     // Report on a hash-stamped file but never rewrite it — the same question
     // `format_one` asks, deliberately, so the two phases cannot disagree about
@@ -459,7 +518,8 @@ fn lint_one(
     // --fix` in the same repository. A stamp is a claim about the bytes, and
     // reformatting them puts the generator's verify step into a regen loop.
     // `--fix-generated` opts back in.
-    let generated = fix && !fix_generated && is_hash_stamped_source(&original);
+    let stamped = is_hash_stamped_source(&original);
+    let generated = fix && !fix_generated && stamped;
     if generated {
         tracing::debug!(path = %f.path.display(), "skipping --fix on generated file");
     }
@@ -481,10 +541,10 @@ fn lint_one(
                 Some((next, applied)) if next != content => {
                     content = next;
                     fixed += applied;
-                    let (next_diags, next_debug) = lint_content(f, engine_plans, cache, &content, collect_debug)?;
-                    diagnostics = next_diags;
-                    suppress(&content, &mut diagnostics, &mut suppressed);
-                    debug = next_debug;
+                    let next = lint_content(f, engine_plans, &content, collect_debug, &[], false)?;
+                    diagnostics = next.diagnostics;
+                    suppress(&Suppressions::parse(&content), &mut diagnostics, &mut suppressed);
+                    debug = next.debug;
                 }
                 _ => break,
             }
@@ -492,6 +552,24 @@ fn lint_one(
         if content != original {
             write_atomic(&f.path, &content)?;
         }
+    }
+
+    // A stamped file is never recorded: replaying it would have to reproduce the
+    // `--fix` withholding, which is a property of the run, not of the bytes.
+    if fixed == 0 && !stamped {
+        let found_nothing = payloads.iter().all(Vec::is_empty);
+        record(
+            original.as_bytes(),
+            Outcome {
+                verdict: if found_nothing {
+                    Verdict::Clean
+                } else {
+                    Verdict::Diagnostics
+                },
+                replayable: directives.is_empty(),
+                payloads,
+            },
+        );
     }
 
     Ok(LintResult {
@@ -505,107 +583,6 @@ fn lint_one(
         error: None,
         debug,
     })
-}
-
-fn invalid_utf8_result(f: &DiscoveredFile, error: std::str::Utf8Error) -> LintResult {
-    let invalid_at = error.valid_up_to();
-    let sequence = error.error_len().map_or_else(
-        || "an incomplete UTF-8 sequence reaches the end of the file".to_owned(),
-        |length| format!("{length} byte(s) do not form a valid UTF-8 sequence"),
-    );
-
-    LintResult {
-        path: f.path.clone(),
-        config: f.config_id,
-        suppressed: Vec::new(),
-        diagnostics: vec![Diagnostic {
-            engine: "poly".to_owned(),
-            code: Some("invalid-utf8".to_owned()),
-            severity: Severity::Error,
-            title: format!("file is not valid UTF-8 at byte {invalid_at}"),
-            description: Some(format!(
-                "text linting was skipped: {sequence}, starting at byte {invalid_at}"
-            )),
-            span: None,
-            url: None,
-            fix: Vec::new(),
-            metadata: std::collections::BTreeMap::new(),
-        }],
-        fix_withheld_generated: false,
-        fixed: 0,
-        skipped: Some(INVALID_UTF8_SKIP.to_owned()),
-        error: None,
-        debug: None,
-    }
-}
-
-/// Run every lint-capable engine for the file's language over `content`,
-/// content-hash caching each engine's diagnostics. When `collect_debug` is set,
-/// also returns per-engine cache hit/miss + timing; otherwise the second tuple
-/// element is `None`. Engine runtime is always measured because the cache-write
-/// policy uses that cost to avoid persisting cheap results.
-fn lint_content(
-    f: &DiscoveredFile,
-    engine_plans: &[EnginePlan],
-    cache: &ResultCache,
-    content: &str,
-    collect_debug: bool,
-) -> anyhow::Result<(Vec<Diagnostic>, Option<RunDebug>)> {
-    let src = SourceFile {
-        path: f.path.clone(),
-        language: f.language.clone(),
-        content: Arc::from(content),
-    };
-    let digest = digest_if_enabled(cache, || {
-        ResultCache::single_file_digest_with_path(&f.path.to_string_lossy(), content)
-    });
-    let mut all = Vec::new();
-    let mut debug = collect_debug.then(RunDebug::default);
-    for plan in engine_plans {
-        let key = digest.as_ref().map(|digest| {
-            ResultCache::key_with_args(
-                Namespace::Lint,
-                plan.engine.name(),
-                plan.engine.version(),
-                &plan.serialized_args,
-                digest,
-            )
-        });
-        if let Some(key) = &key
-            && let Some(bytes) = cache.get(Namespace::Lint, key)
-            && let Ok(mut diags) = serde_json::from_slice::<Vec<Diagnostic>>(&bytes)
-        {
-            push_engine_debug(debug.as_mut(), plan, None);
-            if !plan.severity_remap.is_empty() {
-                plan.severity_remap.apply(&mut diags);
-            }
-            all.extend(diags);
-            continue;
-        }
-        let clock = EngineClock::start();
-        let mut diags = guard_engine_panic(plan.engine.name(), &f.path, || plan.engine.lint(&src, &plan.config))?;
-        let time = clock.stop();
-        let elapsed = time.wall;
-        note_slow_engine(&f.path, content.len(), plan.engine.name(), time);
-        push_engine_debug(debug.as_mut(), plan, Some(clock.started()));
-        // Cache raw severities so a later config-only remap can be applied
-        // identically on both hits and misses.
-        if let Some(key) = &key
-            && should_cache_result(elapsed)
-            && let Ok(bytes) = serde_json::to_vec(&diags)
-            && let Err(error) = cache.put(Namespace::Lint, key, &bytes)
-        {
-            tracing::warn!(
-                engine = plan.engine.name(),
-                "failed to store lint cache entry: {error:#}"
-            );
-        }
-        if !plan.severity_remap.is_empty() {
-            plan.severity_remap.apply(&mut diags);
-        }
-        all.extend(diags);
-    }
-    Ok((all, debug))
 }
 
 fn digest_if_enabled<T>(cache: &ResultCache, compute: impl FnOnce() -> T) -> Option<T> {
@@ -666,12 +643,27 @@ fn format_one(
     collect_debug: bool,
     act_on_generated: &[bool],
     prefilled: &BatchPrefill,
+    (fast, resolution): (Option<&FastPath>, Resolution),
 ) -> anyhow::Result<FormatResult> {
+    let probe = match resolution {
+        Resolution::Hit(record) if record.verdict == Verdict::Binary => {
+            return Ok(format_skip_result(f, Some(BINARY_SKIP.to_owned())));
+        }
+        Resolution::Hit(_) => return Ok(format_skip_result(f, None)),
+        Resolution::Miss(probe) => Some(probe),
+        Resolution::Unavailable => None,
+    };
+    let record = |bytes: &[u8], outcome: Outcome| {
+        if let (Some(fast), Some(probe)) = (fast, &probe) {
+            fast.record(probe, bytes, outcome);
+        }
+    };
     let bytes = std::fs::read(&f.path).with_context(|| format!("reading {}", f.path.display()))?;
     // See the same guard on the lint path: a binary file is a skip, malformed
     // text is an error, and only a pre-decode check can distinguish them.
     if is_binary(&bytes) {
         tracing::debug!(path = %f.path.display(), "not formatting binary file");
+        record(&bytes, Outcome::binary());
         return Ok(format_skip_result(f, Some(BINARY_SKIP.to_owned())));
     }
     let original = match String::from_utf8(bytes) {
@@ -761,12 +753,12 @@ fn format_one(
             });
             if let Some(key) = &key
                 && let Some(bytes) = cache.get(Namespace::Fmt, key)
-                && let Ok(text) = String::from_utf8(bytes)
+                && let Some(text) = fmt_entry::decode(&current, &bytes)
             {
                 if record_debug {
                     push_engine_debug(debug.as_mut(), plan, None);
                 }
-                current = Arc::from(text);
+                current = text;
                 continue;
             }
             // A batch already computed this engine's answer for this exact
@@ -784,7 +776,7 @@ fn format_one(
                 // decline to cache precisely the results worth caching, and
                 // re-batch the whole corpus on every run (ADR 0033 §4).
                 if let Some(key) = &key
-                    && let Err(error) = cache.put(Namespace::Fmt, key, out.as_bytes())
+                    && let Err(error) = cache.put(Namespace::Fmt, key, &fmt_entry::encode(&current, &out))
                 {
                     tracing::warn!(
                         engine = plan.engine.name(),
@@ -810,7 +802,7 @@ fn format_one(
             note_slow_engine(&f.path, src.content.len(), plan.engine.name(), time);
             if let Some(key) = &key
                 && should_cache_result(elapsed)
-                && let Err(error) = cache.put(Namespace::Fmt, key, out.as_bytes())
+                && let Err(error) = cache.put(Namespace::Fmt, key, &fmt_entry::encode(&current, &out))
             {
                 tracing::warn!(
                     engine = plan.engine.name(),
@@ -839,6 +831,14 @@ fn format_one(
              so `poly fmt --check` will keep reporting it. This is a backend that does not converge \
              on this input, not a problem with the file"
         );
+    }
+    if !changed {
+        let clean = Outcome {
+            verdict: Verdict::Clean,
+            replayable: true,
+            payloads: Vec::new(),
+        };
+        record(original.as_bytes(), clean);
     }
     Ok(FormatResult {
         path: f.path.clone(),
