@@ -1,6 +1,7 @@
 //! File discovery: walk the given paths respecting `.gitignore`, and tag each
 //! file with its detected [`Language`].
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -328,8 +329,13 @@ impl ExcludeMatcher {
     /// Compile `exclude` relative to `root`. `None` when there is nothing to
     /// exclude, which lets the walk skip matching entirely.
     fn new(root: &Path, exclude: &[ExcludeRule]) -> Option<Arc<Self>> {
+        Self::with_compiled(root, exclude, &mut CompiledExcludes::default())
+    }
+
+    /// [`Self::new`], drawing the compiled glob set from `compiled`.
+    fn with_compiled(root: &Path, exclude: &[ExcludeRule], compiled: &mut CompiledExcludes) -> Option<Arc<Self>> {
         let globs: Vec<String> = exclude.iter().map(|rule| rule.glob.clone()).collect();
-        let combined = build_excludes(root, &globs)?;
+        let combined = compiled.get(root, globs)?;
         Some(Arc::new(Self {
             root: root.to_path_buf(),
             rules: exclude.to_vec(),
@@ -600,16 +606,36 @@ pub fn discover_reporting(
 ) -> (Vec<DiscoveredFile>, DiscoveryReport) {
     let mut out = Vec::new();
     let mut report = DiscoveryReport::default();
+    let mut by_frame: HashMap<PathBuf, Vec<ExcludeRule>> = HashMap::new();
+    let mut compiled = CompiledExcludes::default();
     for root in paths {
-        let exclude = configs.walk_excludes(root, extra, force_exclude);
-        if force_exclude && let Some(matcher) = explicit_matcher(root, configs, &exclude) {
+        let frame = configs.match_frame(root);
+        let exclude = by_frame
+            .entry(frame.clone())
+            .or_insert_with(|| configs.excludes_in_frame(&frame, extra, force_exclude));
+        if force_exclude && let Some(matcher) = explicit_matcher(root, &frame, exclude, &mut compiled) {
             let root_is_directory = root.is_dir();
             if matcher.record_if_excluded(root, root_is_directory, true) {
                 matcher.merge_into(&mut report);
                 continue;
             }
         }
-        let matcher = ExcludeMatcher::new(root, &exclude);
+        if root.is_file() {
+            // A named file has nothing to walk: ignore rules never apply to a
+            // walk root, the built-in prune set only prunes directories, and an
+            // exclude set rooted at the file itself cannot match it. Building a
+            // walker per file re-reads the global gitconfig and every parent
+            // `.gitignore`, once per staged file.
+            if let Some(language) = detect(root) {
+                out.push(DiscoveredFile {
+                    path: root.clone(),
+                    language,
+                    config_id: configs.config_id_for(root),
+                });
+            }
+            continue;
+        }
+        let matcher = ExcludeMatcher::new(root, exclude);
         let walk_matcher = matcher.clone();
         let pruner = PruneRecorder::new(root, configs.no_prune());
         let walk_pruner = Arc::clone(&pruner);
@@ -632,10 +658,6 @@ pub fn discover_reporting(
                     None => true,
                 }
             });
-        // A file *named* by the caller that no engine covers is reported as a
-        // skip by `runner::skips`, so counting it here as well would report the
-        // same path twice under two different headings.
-        let root_is_named_file = root.is_file();
         let walker = builder.build();
         for entry in walker.flatten() {
             if !entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
@@ -648,8 +670,7 @@ pub fn discover_reporting(
                     language,
                     config_id: configs.config_id_for(path),
                 }),
-                None if !root_is_named_file => report.record_unrecognized(path),
-                None => {}
+                None => report.record_unrecognized(path),
             }
         }
         if let Some(matcher) = &matcher {
@@ -673,13 +694,35 @@ pub fn discover_reporting(
 /// written relative to the walk root, the same frame of reference a user writing
 /// `terraform/**` in `poly.toml` at the repo root is using. A path outside the
 /// frame simply does not match, which is the safe direction: it gets checked.
-fn explicit_matcher(root: &Path, configs: &ConfigSet, exclude: &[ExcludeRule]) -> Option<Arc<ExcludeMatcher>> {
+fn explicit_matcher(
+    root: &Path,
+    frame: &Path,
+    exclude: &[ExcludeRule],
+    compiled: &mut CompiledExcludes,
+) -> Option<Arc<ExcludeMatcher>> {
     let base = if root.is_file() {
-        configs.match_frame(root)
+        frame.to_path_buf()
     } else {
         std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
     };
-    ExcludeMatcher::new(&base, exclude)
+    ExcludeMatcher::with_compiled(&base, exclude, compiled)
+}
+
+/// Compiled exclude sets, shared by every root of one discovery pass that is
+/// matched in the same base directory with the same globs.
+///
+/// Compiling a large exclude list costs far more than matching against it, and a
+/// hook run names one root per staged file, nearly all of them in one frame.
+#[derive(Default)]
+struct CompiledExcludes(HashMap<(PathBuf, Vec<String>), Option<Override>>);
+
+impl CompiledExcludes {
+    fn get(&mut self, base: &Path, globs: Vec<String>) -> Option<Override> {
+        self.0
+            .entry((base.to_path_buf(), globs))
+            .or_insert_with_key(|(base, globs)| build_excludes(base, globs))
+            .clone()
+    }
 }
 
 /// Build an [`ignore::overrides::Override`] from `[discovery] exclude` globs,

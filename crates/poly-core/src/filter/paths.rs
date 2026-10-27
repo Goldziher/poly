@@ -41,7 +41,11 @@ pub(crate) fn match_bases(paths: &[PathBuf]) -> Vec<PathBuf> {
                  per-file-ignores fall back to matching against the passed paths");
         }
     }
-    bases.extend(paths.iter().cloned());
+    // A named file prefixes nothing but itself, and `relative_for_match` skips
+    // that empty remainder. Keeping each one made the base list as long as the
+    // run and every file scan all of it: quadratic for a hook run, which names
+    // one file per root.
+    bases.extend(paths.iter().filter(|path| !path.is_file()).cloned());
     bases
 }
 
@@ -119,5 +123,17 @@ mod tests {
                 "{name} must not be treated as a lock file"
             );
         }
+    }
+
+    #[test]
+    fn named_files_are_not_match_bases() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("a.py");
+        std::fs::write(&file, "").unwrap();
+
+        let bases = match_bases(&[file.clone(), dir.path().to_path_buf()]);
+
+        assert!(!bases.contains(&file), "a file prefixes nothing: {bases:?}");
+        assert!(bases.contains(&dir.path().to_path_buf()));
     }
 }

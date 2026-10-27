@@ -468,3 +468,53 @@ fn an_explicitly_named_path_inside_a_pruned_directory_is_still_walked() {
     let named_dir = discover(&[root.join("src/probezone/build")], &cfg, &[]);
     assert_eq!(named_dir.len(), 1, "naming the directory walks it: {named_dir:?}");
 }
+
+#[test]
+fn a_named_file_is_discovered_even_when_gitignore_would_hide_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::process::Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(root)
+        .status()
+        .unwrap();
+    write_file(&root.join(".gitignore"), "ignored.py\n");
+    let named = root.join("ignored.py");
+    write_file(&named, "x = 1\n");
+
+    let cfg = ConfigSet::single(Config::default());
+    let (found, report) = discover_reporting(std::slice::from_ref(&named), &cfg, &[], true);
+
+    assert_eq!(found.iter().map(|f| f.path.clone()).collect::<Vec<_>>(), vec![named]);
+    assert_eq!(report.unrecognized_files, 0);
+}
+
+#[test]
+fn a_named_file_no_language_claims_is_neither_found_nor_counted_as_unrecognized() {
+    let dir = tempfile::tempdir().unwrap();
+    let named = dir.path().join("LICENSE-NOTES.zzz");
+    write_file(&named, "text\n");
+
+    let cfg = ConfigSet::single(Config::default());
+    let (found, report) = discover_reporting(&[named], &cfg, &[], true);
+
+    assert!(found.is_empty());
+    assert_eq!(
+        report.unrecognized_files, 0,
+        "a named file is reported as a skip by the runner instead"
+    );
+}
+
+#[test]
+fn many_named_files_in_one_directory_are_all_discovered() {
+    let dir = tempfile::tempdir().unwrap();
+    let files: Vec<_> = (0..50).map(|i| dir.path().join(format!("m{i}.py"))).collect();
+    for file in &files {
+        write_file(file, "x = 1\n");
+    }
+
+    let cfg = ConfigSet::single(Config::default());
+    let (found, _) = discover_reporting(&files, &cfg, &[], true);
+
+    assert_eq!(found.len(), 50);
+}

@@ -34,9 +34,10 @@
 //! and `docstring_code_line_length` (an integer, or `"dynamic"`); see
 //! [`build_format_options`].
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::str::FromStr;
-use std::sync::OnceLock;
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
 use ruff_db::diagnostic::Severity as RuffSeverity;
 use ruff_formatter::LineWidth;
@@ -219,6 +220,31 @@ fn default_settings() -> &'static LinterSettings {
         settings.pycodestyle.max_line_length = settings.line_length;
         settings
     })
+}
+
+/// [`build_settings`], computed once per distinct engine config for the process.
+///
+/// A run lints thousands of files under a handful of configs, and building the
+/// settings expands every selected rule family into a rule table — about a
+/// quarter of a file's lint time when rebuilt per file. The key is the config's
+/// serialized options plus the global line length, which is everything
+/// `build_settings` reads.
+fn settings_for(cfg: &EngineConfig) -> Arc<LinterSettings> {
+    static MEMO: OnceLock<Mutex<HashMap<String, Arc<LinterSettings>>>> = OnceLock::new();
+    let key = format!(
+        "{}\u{0}{}",
+        cfg.globals.line_length,
+        toml::to_string(&cfg.options).unwrap_or_default()
+    );
+    let memo = MEMO.get_or_init(Mutex::default);
+    if let Some(hit) = memo.lock().unwrap_or_else(PoisonError::into_inner).get(&key) {
+        return Arc::clone(hit);
+    }
+    let built = Arc::new(build_settings(cfg));
+    memo.lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .insert(key, Arc::clone(&built));
+    built
 }
 
 /// Build [`LinterSettings`] from user config, layered over the opinionated base.
@@ -551,8 +577,8 @@ impl Engine for RuffEngine {
         let settings = if cfg.options.is_empty() {
             default_settings()
         } else {
-            owned_settings = build_settings(cfg);
-            &owned_settings
+            owned_settings = settings_for(cfg);
+            &*owned_settings
         };
 
         let is_stub = src.path.extension().is_some_and(|e| e == "pyi");
@@ -655,7 +681,29 @@ impl Engine for RuffEngine {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_python_version;
+    use std::sync::Arc;
+
+    use super::{parse_python_version, settings_for};
+    use crate::config::{EngineConfig, GlobalDefaults};
+
+    fn engine_config(options: &str) -> EngineConfig {
+        EngineConfig {
+            globals: GlobalDefaults::default(),
+            indent_width: 4,
+            options: toml::from_str(options).unwrap(),
+        }
+    }
+
+    #[test]
+    fn settings_are_built_once_per_distinct_config() {
+        let a = settings_for(&engine_config("select = [\"F\"]\nline_length = 99"));
+        let same = settings_for(&engine_config("select = [\"F\"]\nline_length = 99"));
+        let other = settings_for(&engine_config("select = [\"F\"]\nline_length = 100"));
+
+        assert!(Arc::ptr_eq(&a, &same), "an identical config reuses the built settings");
+        assert!(!Arc::ptr_eq(&a, &other), "a different config does not");
+        assert_ne!(a.line_length, other.line_length);
+    }
 
     #[test]
     fn parses_ruff_style_py_prefix() {
