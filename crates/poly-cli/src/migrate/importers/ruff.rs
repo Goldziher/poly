@@ -14,9 +14,8 @@ use super::{Absorb, Fragment, ImportResult, bool_item, int_item, str_array, str_
 /// Top-level `[tool.ruff]` / `ruff.toml` keys this importer fully honors.
 ///
 /// `exclude` / `extend-exclude` fold into `[discovery] exclude`. `format`
-/// (`[tool.ruff.format]`) is intentionally dropped: poly formats Python with
-/// opinionated ruff-formatter defaults and does not read ruff's format options,
-/// so keeping the section would change nothing — it is recorded as a note.
+/// (`[tool.ruff.format]`) is carried for the keys in [`FORMAT_KEYS`]; any other
+/// key (`preview`, `exclude`, ...) is recorded as a note.
 const RECOGNIZED_TOP: &[&str] = &[
     "lint",
     "select",
@@ -28,6 +27,7 @@ const RECOGNIZED_TOP: &[&str] = &[
     "src",
     "line-length",
     "line_length",
+    "unsafe-fixes",
     "indent-width",
     "exclude",
     "extend-exclude",
@@ -47,6 +47,9 @@ const RECOGNIZED_LINT: &[&str] = &[
     "unfixable",
     "external",
     "dummy-variable-rgx",
+    "unsafe-fixes",
+    "preview",
+    "explicit-preview-rules",
     "pydocstyle",
     "mccabe",
     "pylint",
@@ -74,10 +77,26 @@ const PLUGIN_KEYS: &[(&str, &str, &str, Kind)] = &[
     ("pydocstyle", "convention", "pydocstyle_convention", Kind::Str),
     ("mccabe", "max-complexity", "mccabe_max_complexity", Kind::Int),
     ("pylint", "max-args", "pylint_max_args", Kind::Int),
+    ("pylint", "max-bool-expr", "pylint_max_bool_expr", Kind::Int),
     ("pylint", "max-branches", "pylint_max_branches", Kind::Int),
+    ("pylint", "max-locals", "pylint_max_locals", Kind::Int),
+    ("pylint", "max-nested-blocks", "pylint_max_nested_blocks", Kind::Int),
+    ("pylint", "max-public-methods", "pylint_max_public_methods", Kind::Int),
     ("pylint", "max-returns", "pylint_max_returns", Kind::Int),
+    ("pylint", "max-statements", "pylint_max_statements", Kind::Int),
     ("isort", "known-first-party", "known_first_party", Kind::List),
     ("isort", "known-third-party", "known_third_party", Kind::List),
+    ("isort", "known-local-folder", "known_local_folder", Kind::List),
+    ("isort", "combine-as-imports", "isort_combine_as_imports", Kind::Bool),
+    ("isort", "force-single-line", "isort_force_single_line", Kind::Bool),
+    (
+        "isort",
+        "force-sort-within-sections",
+        "isort_force_sort_within_sections",
+        Kind::Bool,
+    ),
+    ("isort", "lines-after-imports", "isort_lines_after_imports", Kind::Int),
+    ("isort", "order-by-type", "isort_order_by_type", Kind::Bool),
     (
         "pycodestyle",
         "max-line-length",
@@ -202,6 +221,8 @@ const LINT_KEYS: &[(&str, &str, Kind)] = &[
     ("unfixable", "unfixable", Kind::List),
     ("external", "external", Kind::List),
     ("dummy-variable-rgx", "dummy_variable_rgx", Kind::Str),
+    ("unsafe-fixes", "unsafe_fixes", Kind::Bool),
+    ("explicit-preview-rules", "explicit_preview_rules", Kind::Bool),
 ];
 
 /// `[format]` keys the poly ruff formatter reads: `(ruff key, poly key, kind)`.
@@ -212,6 +233,10 @@ const FORMAT_KEYS: &[(&str, &str, Kind)] = &[
         "docstring_code_line_length",
         Kind::IntOrStr,
     ),
+    ("indent-style", "indent_style", Kind::Str),
+    ("line-ending", "line_ending", Kind::Str),
+    ("quote-style", "quote_style", Kind::Str),
+    ("skip-magic-trailing-comma", "skip_magic_trailing_comma", Kind::Bool),
 ];
 
 /// Run the ruff importer against `dir`.
@@ -277,6 +302,15 @@ pub fn import(dir: &Path) -> Option<ImportResult> {
         );
     }
 
+    push_carried(
+        &mut ruff_entries,
+        &mut leftovers,
+        "lint.preview",
+        "preview",
+        pick("preview"),
+        Kind::Bool,
+    );
+
     let per_file = collect_per_file(pick("per-file-ignores"));
 
     let mut excludes = toml_string_list(table.get("extend-exclude"));
@@ -296,33 +330,19 @@ pub fn import(dir: &Path) -> Option<ImportResult> {
     if let Some(value) = table.get("indent-width").and_then(toml::Value::as_integer) {
         fmt_entries.push(("indent_width".to_string(), int_item(value)));
     }
-    let mut notes = Vec::new();
     if let Some(format) = table.get("format").and_then(toml::Value::as_table) {
-        let mut dropped = Vec::new();
         for (key, value) in format {
             match FORMAT_KEYS.iter().find(|(ruff_key, _, _)| ruff_key == key) {
-                Some((_, poly_key, kind)) => {
-                    let before = fmt_entries.len();
-                    push_carried(
-                        &mut fmt_entries,
-                        &mut leftovers,
-                        &format!("format.{key}"),
-                        poly_key,
-                        Some(value),
-                        *kind,
-                    );
-                    if fmt_entries.len() == before {
-                        dropped.push(key.clone());
-                    }
-                }
-                None => dropped.push(key.clone()),
+                Some((_, poly_key, kind)) => push_carried(
+                    &mut fmt_entries,
+                    &mut leftovers,
+                    &format!("format.{key}"),
+                    poly_key,
+                    Some(value),
+                    *kind,
+                ),
+                None => leftovers.push(format!("format.{key}")),
             }
-        }
-        if !dropped.is_empty() {
-            notes.push(format!(
-                "dropped [tool.ruff.format] keys poly's formatter does not read: {}",
-                dropped.join(", ")
-            ));
         }
     }
 
@@ -358,7 +378,7 @@ pub fn import(dir: &Path) -> Option<ImportResult> {
         tool: "ruff",
         sources: vec![source],
         fragments,
-        notes,
+        notes: Vec::new(),
         absorb,
     })
 }
@@ -539,27 +559,54 @@ convention = "google"
     }
 
     #[test]
-    fn ruff_format_section_is_dropped_and_not_blocking() {
-        let dir = tempdir().unwrap();
-        std::fs::write(
-            dir.path().join("pyproject.toml"),
+    fn format_style_keys_are_carried_into_the_formatter_table() {
+        let (result, doc) = migrate_pyproject(
             r#"
 [tool.ruff]
 line-length = 100
-[tool.ruff.lint]
-select = ["E"]
 [tool.ruff.format]
 quote-style = "single"
+indent-style = "tab"
+line-ending = "lf"
+skip-magic-trailing-comma = true
 "#,
-        )
-        .unwrap();
-        let result = import(dir.path()).unwrap();
-        assert_eq!(result.absorb, Absorb::Full, "format section must not block absorption");
-        assert!(
-            result.notes.iter().any(|n| n.contains("[tool.ruff.format]")),
-            "dropping ruff format must be noted: {:?}",
-            result.notes
         );
+        assert_eq!(result.absorb, Absorb::Full);
+        let fmt = &doc["fmt"]["python"]["ruff"];
+        assert_eq!(fmt["quote_style"].as_str(), Some("single"));
+        assert_eq!(fmt["indent_style"].as_str(), Some("tab"));
+        assert_eq!(fmt["line_ending"].as_str(), Some("lf"));
+        assert_eq!(fmt["skip_magic_trailing_comma"].as_bool(), Some(true));
+    }
+
+    #[test]
+    fn format_keys_poly_cannot_honor_keep_the_source() {
+        let (result, _) = migrate_pyproject("[tool.ruff.format]\npreview = true\nexclude = [\"gen/**\"]\n");
+        assert_eq!(
+            result.absorb,
+            Absorb::Partial(vec!["format.exclude".to_string(), "format.preview".to_string()])
+        );
+    }
+
+    #[test]
+    fn lint_preview_is_carried_and_top_level_preview_keeps_the_source() {
+        let (nested, doc) = migrate_pyproject("[tool.ruff.lint]\npreview = true\nexplicit-preview-rules = true\n");
+        assert_eq!(nested.absorb, Absorb::Full);
+        assert_eq!(doc["lint"]["python"]["ruff"]["preview"].as_bool(), Some(true));
+        assert_eq!(
+            doc["lint"]["python"]["ruff"]["explicit_preview_rules"].as_bool(),
+            Some(true)
+        );
+        let (top, _) = migrate_pyproject("[tool.ruff]\npreview = true\n");
+        assert_eq!(top.absorb, Absorb::Partial(vec!["preview".to_string()]));
+    }
+
+    #[test]
+    fn unsafe_fixes_is_carried_from_either_location() {
+        let (_, top) = migrate_pyproject("[tool.ruff]\nunsafe-fixes = true\n");
+        assert_eq!(top["lint"]["python"]["ruff"]["unsafe_fixes"].as_bool(), Some(true));
+        let (_, nested) = migrate_pyproject("[tool.ruff.lint]\nunsafe-fixes = true\n");
+        assert_eq!(nested["lint"]["python"]["ruff"]["unsafe_fixes"].as_bool(), Some(true));
     }
 
     const ARMIS_SHAPE: &str = r#"
@@ -569,6 +616,7 @@ line-length = 120
 format.docstring-code-format = true
 format.docstring-code-line-length = "dynamic"
 format.quote-style = "double"
+format.skip-magic-trailing-comma = false
 lint.select = ["E", "F"]
 lint.fixable = ["ALL"]
 lint.unfixable = ["T201"]
@@ -630,17 +678,8 @@ lint.isort = { known-first-party = ["acme"], known-third-party = ["requests"] }
         assert_eq!(fmt["line_length"].as_integer(), Some(120));
         assert_eq!(fmt["docstring_code_format"].as_bool(), Some(true));
         assert_eq!(fmt["docstring_code_line_length"].as_str(), Some("dynamic"));
-    }
-
-    #[test]
-    fn format_keys_the_formatter_ignores_are_noted_not_silent() {
-        let (result, _) = migrate_pyproject(ARMIS_SHAPE);
-        let note = result.notes.iter().find(|n| n.contains("[tool.ruff.format]")).unwrap();
-        assert!(note.contains("quote-style"), "{note}");
-        assert!(
-            !note.contains("docstring-code"),
-            "carried keys are not reported as dropped: {note}"
-        );
+        assert_eq!(fmt["quote_style"].as_str(), Some("double"));
+        assert_eq!(fmt["skip_magic_trailing_comma"].as_bool(), Some(false));
     }
 
     #[test]
@@ -649,8 +688,8 @@ lint.isort = { known-first-party = ["acme"], known-third-party = ["requests"] }
             r#"
 [tool.ruff.lint]
 select = ["E"]
-isort = { known-first-party = ["acme"], force-single-line = true, lines-after-imports = 2 }
-pylint = { max-args = 8, max-locals = 20 }
+isort = { known-first-party = ["acme"], force-single-line = true, lines-after-imports = 2, split-on-trailing-comma = false }
+pylint = { max-args = 8, max-locals = 20, allow-magic-value-types = ["str"] }
 pydocstyle = { convention = "google", ignore-decorators = ["typing.overload"] }
 "#,
         );
@@ -660,10 +699,9 @@ pydocstyle = { convention = "google", ignore-decorators = ["typing.overload"] }
         assert_eq!(
             keys,
             [
-                "lint.isort.force-single-line",
-                "lint.isort.lines-after-imports",
+                "lint.isort.split-on-trailing-comma",
                 "lint.pydocstyle.ignore-decorators",
-                "lint.pylint.max-locals",
+                "lint.pylint.allow-magic-value-types",
             ]
         );
     }

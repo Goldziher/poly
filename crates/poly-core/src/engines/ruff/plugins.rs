@@ -7,13 +7,17 @@
 
 use ruff_linter::line_width::LineLength;
 use ruff_linter::registry::Rule;
+use ruff_linter::rule_selector::PreviewOptions;
 use ruff_linter::rules::flake8_pytest_style::types::{
     ParametrizeNameType, ParametrizeValuesRowType, ParametrizeValuesType,
 };
 use ruff_linter::rules::flake8_quotes::settings::Quote;
 use ruff_linter::rules::flake8_type_checking::settings::RuntimeSemantics;
+use ruff_linter::rules::isort::categorize::KnownModules;
 use ruff_linter::rules::pep8_naming::settings::IgnoreNames;
 use ruff_linter::settings::LinterSettings;
+use ruff_linter::settings::types::{IdentifierPattern, PreviewMode};
+use rustc_hash::FxHashMap;
 
 use crate::config::EngineConfig;
 
@@ -21,12 +25,24 @@ use crate::config::EngineConfig;
 pub(super) fn apply(settings: &mut LinterSettings, cfg: &EngineConfig) {
     let options = Options { cfg };
     options.general(settings);
+    options.pylint(settings);
+    options.isort(settings);
     options.pycodestyle(settings);
     options.pep8_naming(settings);
     options.flake8_quotes(settings);
     options.flake8_type_checking(settings);
     options.flake8_pytest_style(settings);
     options.fix_policy(settings);
+}
+
+/// The preview selection: `preview` turns preview rules on, and
+/// `explicit_preview_rules` then requires them to be named by full code.
+pub(super) fn preview_options(cfg: &EngineConfig) -> PreviewOptions {
+    let flag = |key: &str| cfg.options.get(key).and_then(toml::Value::as_bool).unwrap_or(false);
+    PreviewOptions {
+        mode: PreviewMode::from(flag("preview")),
+        require_explicit: flag("explicit_preview_rules"),
+    }
 }
 
 struct Options<'a> {
@@ -67,6 +83,70 @@ impl Options<'_> {
                     tracing::warn!(%error, engine = "ruff", "invalid dummy_variable_rgx; keeping the default");
                 }
             }
+        }
+    }
+
+    fn pylint(&self, settings: &mut LinterSettings) {
+        let pylint = &mut settings.pylint;
+        let limits: [(&str, &mut usize); 8] = [
+            ("pylint_max_args", &mut pylint.max_args),
+            ("pylint_max_bool_expr", &mut pylint.max_bool_expr),
+            ("pylint_max_branches", &mut pylint.max_branches),
+            ("pylint_max_locals", &mut pylint.max_locals),
+            ("pylint_max_nested_blocks", &mut pylint.max_nested_blocks),
+            ("pylint_max_public_methods", &mut pylint.max_public_methods),
+            ("pylint_max_returns", &mut pylint.max_returns),
+            ("pylint_max_statements", &mut pylint.max_statements),
+        ];
+        for (key, slot) in limits {
+            if let Some(limit) = self.usize_opt(key) {
+                *slot = limit;
+            }
+        }
+    }
+
+    fn isort(&self, settings: &mut LinterSettings) {
+        if let Some(src) = self.str_list("src").filter(|roots| !roots.is_empty()) {
+            settings.src = src.iter().map(std::path::PathBuf::from).collect();
+        }
+        let patterns = |key: &str| -> Vec<IdentifierPattern> {
+            self.str_list(key)
+                .unwrap_or_default()
+                .iter()
+                .filter_map(|pattern| IdentifierPattern::new(pattern).ok())
+                .collect()
+        };
+        let (first, third, local) = (
+            patterns("known_first_party"),
+            patterns("known_third_party"),
+            patterns("known_local_folder"),
+        );
+        if !(first.is_empty() && third.is_empty() && local.is_empty()) {
+            settings.isort.known_modules = KnownModules::new(first, third, local, vec![], FxHashMap::default());
+        }
+        let isort = &mut settings.isort;
+        let flags: [(&str, &mut bool); 4] = [
+            ("isort_combine_as_imports", &mut isort.combine_as_imports),
+            ("isort_force_single_line", &mut isort.force_single_line),
+            (
+                "isort_force_sort_within_sections",
+                &mut isort.force_sort_within_sections,
+            ),
+            ("isort_order_by_type", &mut isort.order_by_type),
+        ];
+        for (key, slot) in flags {
+            if let Some(value) = self.flag(key) {
+                *slot = value;
+            }
+        }
+        if let Some(lines) = self
+            .cfg
+            .options
+            .get("isort_lines_after_imports")
+            .and_then(toml::Value::as_integer)
+            .and_then(|value| isize::try_from(value).ok())
+        {
+            isort.lines_after_imports = lines;
         }
     }
 
@@ -182,8 +262,9 @@ impl Options<'_> {
         if fixable.is_none() && unfixable.is_empty() {
             return;
         }
-        let allowed = fixable.map(|codes| super::rules_for_codes(&codes));
-        let denied = super::rules_for_codes(&unfixable);
+        let preview = preview_options(self.cfg);
+        let allowed = fixable.map(|codes| super::rules_for_codes(&codes, &preview));
+        let denied = super::rules_for_codes(&unfixable, &preview);
         let enabled: Vec<Rule> = settings.rules.iter_enabled().collect();
         for rule in enabled {
             let may_fix = allowed.as_ref().is_none_or(|rules| rules.contains(&rule)) && !denied.contains(&rule);
