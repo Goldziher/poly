@@ -30,9 +30,16 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   as `^2.0.26` (the earlier hand edit to `^2.1.4` cannot survive generation; the range still
   admits 2.1.4).
 
+- **Hermes adapter ported to `mcp` 2.3.0.** The adapter catches `MCPError` (renamed from
+  `McpError`), passes `read_timeout_seconds` as plain seconds, and dumps results with
+  `by_alias=True` so the camelCase wire keys (`inputSchema`, `isError`) stay the same. The pin
+  moved 1.30.0 → 2.3.0 in `Taskfile.yaml`, `config.plugins.toml` and the generated
+  `plugin.yaml`/`pyproject.toml`; the contract test's stdio fixture uses `MCPServer`, the 2.x
+  name for `FastMCP`.
+
 - **Tooling refresh.** pnpm 12.11.2 → 12.15.0, `@opencode/plugin` 2.0.26 → 2.1.4, the OpenCode
   `@opencode-ai/plugin` 1.18.35 → 1.19.4, Astro 7.3.8 → 7.4.2, Starlight 0.42.6 → 0.42.7, the
-  Hermes adapter's `mcp` pin 1.28.1 → 1.30.0 (mcp 2.x removed `McpError`, so it is not taken),
+  Hermes adapter's `mcp` pin 1.28.1 → 1.30.0 (taken further to 2.3.0 below),
   `astral-sh/setup-uv` v10.3.2, `pnpm/action-setup` v6, `actions/deploy-pages` and
   `actions/upload-pages-artifact` v5. `deny.toml` ignores the `zip` 8.x extraction advisories
   (pinned by `ruff_db`; poly never extracts archives with it) and the `serde_yaml` unmaintained

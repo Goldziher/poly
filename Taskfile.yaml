@@ -121,4 +121,4 @@ tasks:
     desc: Verify OpenCode, Hermes protocol, and public skill contracts
     cmds:
       - node --test scripts/tests/opencode-plugin.test.mjs
-      - uv run --no-project --with mcp==1.30.0 --with PyYAML==6.0.3 python -m unittest discover -s scripts/tests
+      - uv run --no-project --with mcp==2.3.0 --with PyYAML==6.0.3 python -m unittest discover -s scripts/tests

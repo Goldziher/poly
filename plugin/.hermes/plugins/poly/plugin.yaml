@@ -4,5 +4,5 @@ description: "Zero-dependency lint & format orchestrator over MCP — one pure-R
 author: "Na'aman Hirschfeld"
 kind: "standalone"
 python_dependencies:
-  - "mcp==1.30.0"
+  - "mcp==2.3.0"
   - "PyYAML==6.0.3"
