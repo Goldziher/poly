@@ -187,6 +187,7 @@ Reserved keys:
 | `sources` | array of tables | `[[hooks.sources]]` producer catalogs: `{ id, path \| git, revision, hooks }`. |
 | `snapshot_include` | string or array | Untracked paths pulled into the staged snapshot (ADR 0019). |
 | `isolate` | boolean | Force hooks onto the staged snapshot (unset uses the per-invocation default). |
+| `snapshot` | `"auto"` \| `"full"` | `auto` (default) materializes only the staged files and their directory context unless a `workspace` or cargo job will run; `full` always materializes the whole index. |
 | `builtin` | table | See below. |
 
 `[hooks.builtin]` — poly's in-process hooks. Each of `lint`, `fmt`, `commit` is a

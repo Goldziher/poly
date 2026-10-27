@@ -19,7 +19,7 @@ use anyhow::{Context, Result};
 use clap::{Args, Subcommand, ValueEnum as _};
 use poly_config::{PolyConfig, Stage as ConfigStage};
 use poly_core::report::theme::Theme;
-use poly_hooks::snapshot::StagedSnapshot;
+use poly_hooks::snapshot::{SnapshotScope, StagedSnapshot};
 use poly_hooks::stage::RunInputMode;
 // Shared hook-run helpers, now owned by the `poly-workspace` crate (single source
 // of truth for the CLI and the MCP server).
@@ -232,7 +232,8 @@ fn run_stage(args: RunArgs) -> Result<ExitCode> {
         isolation_active(&config.hooks, args.all_files, stage),
         &spec,
         &root,
-        config.hooks.snapshot_include.as_slice(),
+        &files,
+        &config.hooks,
     )?;
     let work_root = snapshot.as_ref().map(|snapshot| snapshot.path().to_path_buf());
 
@@ -540,7 +541,8 @@ fn hook_impl(args: HookImplArgs) -> Result<ExitCode> {
         isolation_active(&config.hooks, inputs.all_files, stage),
         &spec,
         &root,
-        config.hooks.snapshot_include.as_slice(),
+        &files,
+        &config.hooks,
     )?;
     let work_root = snapshot.as_ref().map(|snapshot| snapshot.path().to_path_buf());
 
@@ -616,12 +618,25 @@ fn maybe_staged_snapshot(
     isolate: bool,
     spec: &poly_hooks::StageSpec,
     root: &Path,
-    includes: &[String],
+    files: &[PathBuf],
+    hooks: &poly_config::HooksConfig,
 ) -> Result<Option<StagedSnapshot>> {
     if !isolate || spec.hooks.is_empty() {
         return Ok(None);
     }
-    let snapshot = StagedSnapshot::create(root, includes).context("failed to create the staged-content snapshot")?;
+    let includes = hooks.snapshot_include.as_slice();
+    let pinned = poly_hooks::snapshot::referenced_paths(&spec.hooks);
+    let probe = poly_hooks::HookRunRequest {
+        root: root.to_path_buf(),
+        files: files.to_vec(),
+        ..poly_hooks::HookRunRequest::default()
+    };
+    let scope =
+        if hooks.snapshot == poly_config::SnapshotMode::Full || poly_hooks::runner::requires_full_tree(&probe, spec) {
+            SnapshotScope::Full
+        } else {
+            SnapshotScope::Sparse { files, pinned: &pinned }
+        };
     // Stated on every run, green ones included. The gate's whole claim is "these
     // are the bytes a commit would capture", and an allowlist is a deliberate
     // exception to it — a reader who does not know it is in force cannot judge

@@ -176,6 +176,18 @@ pub fn run(request: HookRunRequest) -> anyhow::Result<HookRunOutcome> {
     pool.install(|| run_all(&request, ui.as_ref()))
 }
 
+/// Whether any hook of `spec` that will run reads the whole tree rather than its
+/// matched files — a `workspace` hook, or a cargo one — and so needs a full
+/// staged snapshot. A whole-workspace hook with no matching file is skipped and
+/// does not count: that is what lets a one-file commit avoid the full tree.
+#[must_use]
+pub fn requires_full_tree(request: &HookRunRequest, spec: &StageSpec) -> bool {
+    spec.hooks
+        .iter()
+        .zip(prepare::prepare(request, spec))
+        .any(|(hook, prepared)| prepared.skip.is_none() && (hook.workspace || hook.is_cargo()))
+}
+
 fn run_all(request: &HookRunRequest, ui: Option<&ProgressUi>) -> anyhow::Result<HookRunOutcome> {
     let mut stages = Vec::with_capacity(request.stages.len());
     for spec in &request.stages {
