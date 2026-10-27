@@ -56,6 +56,7 @@ use ruff_python_formatter::{DocstringCode, DocstringCodeLineWidth, PyFormatOptio
 use ruff_text_size::Ranged;
 use rustc_hash::FxHashMap;
 
+mod context;
 mod plugins;
 
 use crate::config::EngineConfig;
@@ -544,6 +545,20 @@ impl Engine for RuffEngine {
 
     fn version(&self) -> &str {
         "ruff-0.17.3+pkgroot+plugins+isort+e501+tgtsrc+ignore-b008+rules-v3+advisory-sev1+fmtopts1+plugopts1"
+    }
+
+    fn run_context(&self, cfg: &EngineConfig) -> String {
+        let src_roots: Vec<std::path::PathBuf> = cfg
+            .options
+            .get("src")
+            .and_then(toml::Value::as_array)
+            .map(|roots| roots.iter().filter_map(toml::Value::as_str).map(Into::into).collect())
+            .unwrap_or_default();
+        context::module_tree(&src_roots)
+    }
+
+    fn file_context(&self, path: &Path, _cfg: &EngineConfig) -> Option<String> {
+        Some(context::package_root(path))
     }
 
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {

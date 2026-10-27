@@ -535,6 +535,26 @@ pub trait Engine: Send + Sync {
     /// upgrade invalidates stale cached results.
     fn version(&self) -> &str;
 
+    /// Inputs this backend's **lint** output depends on that are shared by
+    /// every file in a run and live outside the file and `cfg` — e.g. a
+    /// directory listing the rules consult. Computed once per run; folded into
+    /// the cache key and the stat-index plan key, so a change here invalidates
+    /// results instead of serving stale ones. Empty (the default) means the
+    /// output is a function of the file's bytes, its path and `cfg` alone.
+    fn run_context(&self, _cfg: &EngineConfig) -> String {
+        String::new()
+    }
+
+    /// Inputs this backend's **lint** output depends on that are specific to
+    /// one file and live outside it — e.g. the sibling `__init__.py` files that
+    /// decide a Python file's package root. Called per file, so it must be
+    /// cheap (a few `stat`s), and consulted even when the file's own stat is
+    /// unchanged. `None` (the default) means the file's bytes, path and `cfg`
+    /// are the whole input.
+    fn file_context(&self, _path: &std::path::Path, _cfg: &EngineConfig) -> Option<String> {
+        None
+    }
+
     /// Whether this backend carries lint rules **for the language of the files
     /// routed to it**, under `cfg`.
     ///
