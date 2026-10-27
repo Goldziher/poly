@@ -23,9 +23,9 @@ use crate::language::Language;
 /// Feeds `oxc_linter`'s parser with file content from RAM.
 /// `read_to_arena_str` copies `content` into the oxc arena allocator — no disk
 /// access ever occurs inside the engine.
-struct MemoryFileSystem<'a> {
-    path: &'a Path,
-    content: &'a str,
+pub(super) struct MemoryFileSystem<'a> {
+    pub(super) path: &'a Path,
+    pub(super) content: &'a str,
 }
 
 impl RuntimeFileSystem for MemoryFileSystem<'_> {
@@ -417,7 +417,12 @@ pub(super) fn lint_js(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Ve
         tracing::debug!(path = %src.path.display(), "not linting minified file");
         return Ok(Vec::new());
     }
-    let messages = if cfg.options.is_empty() {
+    let messages = if let Some(governing) = super::native_lint::governing_for(cfg, &src.path) {
+        if governing.ignore.as_ref().is_some_and(|ignore| ignore.is_ignored(&src.path)) {
+            return Ok(Vec::new());
+        }
+        super::native_lint::run(super::native_lint::service_for(cfg, &governing.nearest)?.as_ref(), src)
+    } else if cfg.options.is_empty() {
         run_with_service(lint_service(), src)
     } else {
         run_with_service(configured_service(cfg)?.as_ref(), src)

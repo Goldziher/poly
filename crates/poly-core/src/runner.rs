@@ -565,7 +565,14 @@ fn lint_content(
     let mut all = Vec::new();
     let mut debug = collect_debug.then(RunDebug::default);
     for plan in engine_plans {
-        let key = digest.as_ref().map(|digest| {
+        // An engine whose config depends on the file's directory adds what governs this file to
+        // the input, so editing a nested config misses the cache instead of replaying old output.
+        let salted = plan.engine.lint_input_salt(&f.path, &plan.config).and_then(|salt| {
+            digest_if_enabled(cache, || {
+                ResultCache::single_file_digest_with_path(&f.path.to_string_lossy(), &format!("{salt}\n{content}"))
+            })
+        });
+        let key = salted.as_ref().or(digest.as_ref()).map(|digest| {
             ResultCache::key_with_args(
                 Namespace::Lint,
                 plan.engine.name(),

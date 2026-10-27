@@ -12,14 +12,14 @@
 //! extension), because poly resolves formatter options per language, not per path.
 
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 
-use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use poly_config::OxfmtNative;
 use serde_json::{Map, Value};
 
 use crate::language::Language;
+use crate::path_ignore::PathIgnore;
 
 /// The formatter family an engine/language pair belongs to.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -276,7 +276,10 @@ fn translate(family: Family, options: &Map<String, Value>) -> toml::Table {
                 put("single_quote", toml::Value::Boolean(single));
             }
             if let Some(comma) = comma {
-                put("trailing_commas", toml::Value::String(if comma == "none" { "never" } else { "always" }.into()));
+                put(
+                    "trailing_commas",
+                    toml::Value::String(if comma == "none" { "never" } else { "always" }.into()),
+                );
             }
         }
         Family::Markdown => {
@@ -368,38 +371,21 @@ fn camel_to_snake(key: &str) -> String {
 
 /// `ignorePatterns` of a native oxfmt config, compiled once per plan.
 #[derive(Debug)]
-pub(crate) struct FormatIgnore {
-    root: PathBuf,
-    matcher: Gitignore,
-}
+pub(crate) struct FormatIgnore(PathIgnore);
 
 impl FormatIgnore {
     /// The ignore set for `language`, or `None` when oxfmt does not own it or ignores nothing.
     pub(crate) fn for_language(native: &OxfmtNative, language: &Language) -> Option<FormatIgnore> {
-        if !native.is_present() || native.ignore_patterns.is_empty() || !is_oxfmt_language(language) {
+        if !native.is_present() || !is_oxfmt_language(language) {
             return None;
         }
         let root = native.dir()?.to_path_buf();
-        let mut builder = GitignoreBuilder::new(&root);
-        for pattern in &native.ignore_patterns {
-            if builder.add_line(None, pattern).is_err() {
-                warn_once(format!("oxfmt-bad-ignore:{pattern}"), || {
-                    tracing::warn!("oxfmt ignorePattern `{pattern}` is not a valid glob and is skipped");
-                });
-            }
-        }
-        Some(FormatIgnore {
-            root,
-            matcher: builder.build().ok()?,
-        })
+        PathIgnore::new(&[(root, native.ignore_patterns.clone())]).map(FormatIgnore)
     }
 
     /// Whether the oxfmt config says `path` is not to be formatted.
     pub(crate) fn is_ignored(&self, path: &Path) -> bool {
-        let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
-        absolute
-            .strip_prefix(&self.root)
-            .is_ok_and(|relative| self.matcher.matched_path_or_any_parents(relative, false).is_ignore())
+        self.0.is_ignored(path)
     }
 }
 
@@ -417,6 +403,8 @@ fn warn_once(key: String, report: impl FnOnce()) {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
 
     fn native(json: &str) -> OxfmtNative {

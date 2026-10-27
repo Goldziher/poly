@@ -68,7 +68,8 @@ pub(crate) fn resolve_oxfmt_native(dir: &Path) -> OxfmtNative {
 }
 
 fn find_oxfmt_file(dir: &Path) -> Option<PathBuf> {
-    let mut current = Some(dir);
+    let dir = std::path::absolute(dir).unwrap_or_else(|_| dir.to_path_buf());
+    let mut current = Some(dir.as_path());
     while let Some(candidate) = current {
         for name in OXFMT_FILE_NAMES {
             let path = candidate.join(name);

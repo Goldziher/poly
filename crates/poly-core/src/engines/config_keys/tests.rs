@@ -439,6 +439,7 @@ const ENGINE_SOURCES: &[(&str, &[&str])] = &[
             "oxc/format.rs",
             "oxc/plugins.rs",
             "oxc/sort_imports.rs",
+            "oxc/native_lint.rs",
             "core_options.rs",
         ],
     ),
