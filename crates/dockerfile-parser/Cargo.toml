@@ -1,0 +1,28 @@
+[package]
+name = "dockerfile-parser"
+version = "0.10.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors = ["Tim Buckley <timothy.jas.buckley@hpe.com>", "Na'aman Hirschfeld <nhirschfeld@gmail.com>"]
+repository = "https://github.com/HewlettPackard/dockerfile-parser-rs"
+description = "Dockerfile parser vendored from the archived HewlettPackard/dockerfile-parser-rs (upstream 08f3789) and maintained inside poly"
+keywords = ["parser", "docker", "dockerfile", "pest"]
+readme = "README.md"
+publish = false
+
+[lib]
+name = "dockerfile_parser"
+path = "src/lib.rs"
+
+[dependencies]
+enquote.workspace = true
+pest.workspace = true
+pest_derive.workspace = true
+regex.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+indoc.workspace = true
+pretty_assertions.workspace = true
+proptest.workspace = true
