@@ -9,6 +9,41 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ### Changed
 
+- **Formatter parity with the incumbent tools (measured on a 92k-file monorepo, 300-file samples).**
+  - **HCL** now formats with a port of `hclwrite.Format`, so `.tf`/`.tfvars`/`.hcl` output is
+    byte-identical to `terraform fmt` / `terragrunt hclfmt` (all 2,682 `.tf`/`.tfvars` files in the
+    sample repository are unchanged; before, 233 of 300 were rewritten). `hcl-rs` is gone.
+  - **`.oxfmtrc.json[c]` is honored** by the oxfmt-equivalent formatters: `printWidth`, `tabWidth`,
+    quotes, commas, `endOfLine`, extension-scoped `overrides`, `sortImports`, `sortPackageJson` and
+    `ignorePatterns`. An explicit `[fmt.<lang>.<engine>]` key still wins. Not supported, and warned
+    about once: `sortTailwindcss` (its class sorter is JavaScript), `jsdoc`,
+    `embeddedLanguageFormatting`, and overrides scoped to part of a language rather than an extension.
+    JS/TS went from 300 of 300 files differing from `oxfmt` to 0.
+  - **YAML, TOML, Markdown and CSS format with the same crates oxfmt uses** (`oxc_formatter_yaml`,
+    `_toml`, `_markdown`, `_css`); YAML is 95 of 95 identical on files oxfmt owns (was 20 of 95).
+    The previous formatters remain available: set a taplo layout key, a rumdl rule key or a malva
+    key in the engine's table. Fenced code and front matter in Markdown are left as written (oxfmt
+    re-formats them with its binary-only embed dispatcher).
+  - **`package.json`/`composer.json`/import maps** use the `JSON.stringify` layout npm writes;
+    `sort_package_json` (or `sortPackageJson`) sorts `package.json` keys.
+  - **Go**: imports are grouped like `goimports` after `gofmt`. **Proto**: default indent is 2 spaces
+    (300 of 300 byte-identical with `buf format`).
+- **oxlint config is honored.** With a `.oxlintrc.json[c]` poly runs exactly its rules, categories,
+  plugins, overrides and `ignorePatterns`, using the nearest config above each file as oxlint does
+  (`oxlintrc = false` opts out). On the sample repository poly reported 852 diagnostics against
+  oxlint's 2; it now reports the same two plus one `sort-keys` difference caused by the newer rule
+  implementation in the pinned oxc revision. `jsPlugins` need a JS runtime and are not run; a
+  single warning names them.
+- **YAML lint accepts what libyaml/PyYAML accept** (multi-line quoted scalars continued at the
+  parent's indent, flow collections closed at the parent key's column): 24 false syntax errors in
+  the sample repository are gone.
+- **Lock files are never formatted or linted** (`pnpm-lock.yaml`, `Cargo.lock`, `yarn.lock`, ...),
+  as `poly migrate` already claimed.
+- **SQL**: identifier capitalisation (`CP02`) is off unless selected; it lower-cased keywords the
+  dialect did not know (`ADD COLUMNS` became `ADD columns`).
+- **Config checks**: a `[lint.<id>]`/`[fmt.<id>]` language id that is a near miss of a known one
+  (`pyhton`, `yml`, `js`) is reported with the likely language; `poly doctor` says when a wildcard
+  exclude (`bazel-*`) only prunes directories below the config root.
 - **Dependency refresh.** `cargo upgrade --incompatible --pinned`, plus advancing all three git
   pins to their remotes' HEADs: biome `dd96b11` → `e2e5a36`, oxc `98573d2` → `e2be72d`, rubyfmt
   `f765808` → `884b9fd`. The ruff crates moved `0.0.17`/`0.17.0` → `0.0.20`/`0.17.3`, `rumdl`
@@ -21,7 +56,6 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   HEAD although ADR 0003 held it at `dd96b11`**: HEAD still carries the fixture whose checkout
   path exceeds Windows' `MAX_PATH`, so the Windows build must be watched. `psm` stays at 0.1.24
   because `pest_stack_guard` pins it exactly.
-
 - **Tooling refresh.** pnpm 12.11.2 → 12.15.0, `@opencode/plugin` 2.0.26 → 2.1.4, the OpenCode
   `@opencode-ai/plugin` 1.18.35 → 1.19.4, Astro 7.3.8 → 7.4.2, Starlight 0.42.6 → 0.42.7, the
   Hermes adapter's `mcp` pin 1.28.1 → 1.30.0 (mcp 2.x removed `McpError`, so it is not taken),
