@@ -29,7 +29,7 @@ use std::sync::{Mutex, PoisonError};
 use ignore::{WalkBuilder, WalkState};
 
 use crate::config::Config;
-use crate::discover::keep_walk_entry;
+use crate::discover::{PrunePolicy, keep_walk_entry};
 
 mod canon;
 
@@ -608,9 +608,9 @@ fn scan_config_dirs(roots: &[PathBuf], no_prune: &[String]) -> Vec<PathBuf> {
             .parents(true)
             .filter_entry({
                 // `filter_entry` demands a `'static` closure, and this walk runs
-                // once per root, so the opt-out list is cloned rather than borrowed.
-                let no_prune = no_prune.to_vec();
-                move |entry| keep_walk_entry(entry, &no_prune)
+                // once per root, so the policy owns its copy of the opt-out list.
+                let policy = PrunePolicy::new(root, no_prune);
+                move |entry| keep_walk_entry(entry, &policy)
             });
         // The tree is walked on every worker thread: this scan reads directories
         // and nothing else, so it is bound by the filesystem, not by the CPU.

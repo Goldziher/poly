@@ -450,6 +450,79 @@ fn no_prune_keeps_a_directory_the_builtin_set_would_have_pruned() {
     assert_eq!(report.pruned_directories, 1, "only dist/ is still pruned: {report:?}");
 }
 
+fn git(root: &Path, args: &[&str]) {
+    let status = std::process::Command::new("git")
+        .args(args)
+        .current_dir(root)
+        .status()
+        .unwrap();
+    assert!(status.success(), "git {args:?} failed");
+}
+
+/// `deploy/build/` holding tracked source is source, not output: git tracking is
+/// the evidence that tells the ambiguous names apart, and the untracked sibling
+/// with the same name stays pruned.
+#[test]
+fn a_git_tracked_build_directory_is_discovered_and_an_untracked_one_is_pruned() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    git(root, &["init", "-q"]);
+
+    let tracked = root.join("deploy/build/tool.py");
+    let untracked = root.join("service/build/out.py");
+    let tracked_target = root.join("tools/target/gen.py");
+    let cache = root.join("tools/node_modules/pkg/index.js");
+    write_file(&root.join("src/main.py"), "x = 1\n");
+    write_file(&tracked, "y = 2\n");
+    write_file(&tracked_target, "t = 4\n");
+    write_file(&untracked, "z = 3\n");
+    write_file(&cache, "const a = 1;\n");
+    git(root, &["add", "src", "deploy", "tools/target"]);
+
+    let cfg = ConfigSet::single(Config::default());
+    let (discovered, report) = discover_reporting(&[root.to_path_buf()], &cfg, &[], false);
+    let paths: Vec<_> = discovered.iter().map(|f| f.path.as_path()).collect();
+
+    assert!(paths.contains(&tracked.as_path()), "tracked build/ is source: {paths:?}");
+    assert!(
+        paths.contains(&tracked_target.as_path()),
+        "tracked target/ is source: {paths:?}"
+    );
+    assert!(
+        !paths.contains(&untracked.as_path()),
+        "untracked build/ is output: {paths:?}"
+    );
+    assert!(!paths.contains(&cache.as_path()), "node_modules stays pruned: {paths:?}");
+    assert!(
+        report
+            .pruned_samples
+            .iter()
+            .any(|sample| sample.path.ends_with("service/build")),
+        "the pruned untracked build/ is still named: {:?}",
+        report.pruned_samples
+    );
+}
+
+/// Tool caches and environments are pruned even when git tracks files in them.
+#[test]
+fn a_tracked_tool_cache_directory_is_still_pruned() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    git(root, &["init", "-q"]);
+
+    let cached = root.join("pkg/__pycache__/mod.py");
+    write_file(&root.join("pkg/mod.py"), "x = 1\n");
+    write_file(&cached, "y = 2\n");
+    git(root, &["add", "."]);
+
+    let cfg = ConfigSet::single(Config::default());
+    let discovered = discover(&[root.to_path_buf()], &cfg, &[]);
+    assert!(
+        discovered.iter().all(|f| f.path != cached),
+        "__pycache__ is never source: {discovered:?}"
+    );
+}
+
 /// Naming a path inside a pruned directory has always bypassed the prune — that
 /// asymmetry is what let issue #14's reporter get two contradictory verdicts for
 /// one unchanged file. Pin it, since it was documented only in a comment.

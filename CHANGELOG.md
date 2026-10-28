@@ -9,6 +9,15 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ### Added
 
+- **Dockerfile detection covers `Dockerfile-*`, `Dockerfile_*`, `Containerfile`, `*.Containerfile` and
+  `.tpl` / `.tmpl` wrappers**, so `Dockerfile-local` and `Dockerfile_pyspark_base` are linted. A
+  Go/Helm-templated Dockerfile that does not parse is skipped, with the reason reported, instead of
+  raising a syntax error. The Dockerfile engine's `version()` gained `+tmplskip`.
+- **The built-in directory prune no longer hides tracked source.** `build`, `dist`, `target`, `deps`,
+  `vendor` and `coverage` are pruned only when git tracks nothing inside them (one `git ls-files` per
+  walk root, loaded lazily), so a tracked `deploy/build/` is linted. Tool caches and environments
+  (`node_modules`, `.venv`, `__pycache__`, ...) stay pruned unconditionally, and `[discovery] exclude`
+  adds further pruning.
 - **`dockerfile-parser` is now vendored as the `crates/dockerfile-parser` workspace crate** (ADR 0003
   amendment). Upstream, HewlettPackard/dockerfile-parser-rs, is archived, so poly maintains it from
   upstream commit `08f3789` (`v0.9.0` plus the image-digest change). It moved to edition 2024 with

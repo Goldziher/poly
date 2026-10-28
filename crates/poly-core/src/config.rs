@@ -51,7 +51,7 @@ pub struct Config {
     /// explicitly named roots too. The CLI and MCP do so by default.
     pub force_exclude: bool,
     /// `[discovery] no_prune` — directory names kept despite the built-in
-    /// vendored/generated prune set (see `discover::PRUNED_DIRECTORIES`).
+    /// vendored/generated prune set (see `discover::CONDITIONALLY_PRUNED_DIRECTORIES`).
     pub no_prune: Vec<String>,
     /// `[discovery] generated` — whether poly lints and formats machine-generated
     /// files (those carrying a `DO NOT EDIT` / `@generated` banner or a

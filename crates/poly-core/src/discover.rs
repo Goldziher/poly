@@ -12,24 +12,15 @@ use serde::Serialize;
 use crate::language::Language;
 use crate::resolve::{ConfigSet, ExcludeRule};
 
-/// Directory names pruned from every walk regardless of git-tracking.
+/// Tool-cache and environment directory names pruned from every walk, whether
+/// or not git tracks anything in them (`node_modules`, `.git`, virtualenvs,
+/// linter and test caches, `.polylint`).
 ///
-/// These hold vendored third-party code (`node_modules`, `vendor`, `deps`),
-/// build artifacts (`target`, `dist`, `build`, `.next`, `.nuxt`, `.gradle`),
-/// or tool caches/environments (`.venv`, `venv`, `__pycache__`, `.mypy_cache`,
-/// `.ruff_cache`, `.pytest_cache`, `.tox`, `coverage`, `.polylint`, `.git`).
 /// None of it is source the user authored, so no linter or formatter should
-/// touch it — and these directories are frequently *tracked* in git (e.g.
-/// committed Hex `deps/` CHANGELOGs), so `.gitignore` alone does not exclude
-/// them. Pruning them at the walk boundary also avoids descending into large
-/// generated subtrees.
-const PRUNED_DIRECTORIES: &[&str] = &[
+/// touch it, and pruning it at the walk boundary avoids descending into large
+/// generated subtrees. `[discovery] no_prune` is the explicit opt-out.
+const ALWAYS_PRUNED_DIRECTORIES: &[&str] = &[
     "node_modules",
-    "vendor",
-    "deps",
-    "target",
-    "dist",
-    "build",
     ".git",
     ".venv",
     "venv",
@@ -41,9 +32,93 @@ const PRUNED_DIRECTORIES: &[&str] = &[
     ".gradle",
     ".next",
     ".nuxt",
-    "coverage",
     ".polylint",
 ];
+
+/// Directory names that are build output in most ecosystems and ordinary source
+/// in others (`deploy/build/`, a committed `vendor/` or Hex `deps/`).
+///
+/// These are pruned only when git tracks nothing inside them: a tracked
+/// directory is source by definition, an untracked one is output. Outside a git
+/// repository there is no such evidence, so they are pruned unconditionally.
+const CONDITIONALLY_PRUNED_DIRECTORIES: &[&str] = &["build", "dist", "target", "deps", "vendor", "coverage"];
+
+/// The decision rule for [`keep_walk_entry`]: which nested directories a walk
+/// drops, built once per walk root.
+///
+/// The set of git-tracked directories among [`CONDITIONALLY_PRUNED_DIRECTORIES`]
+/// is loaded lazily, by one `git ls-files` per root on the first such directory
+/// the walk meets, so a tree without any pays nothing and no git process is
+/// ever spawned per directory.
+#[derive(Debug)]
+pub(crate) struct PrunePolicy {
+    root: PathBuf,
+    no_prune: Vec<String>,
+    tracked: std::sync::OnceLock<Option<std::collections::HashSet<PathBuf>>>,
+}
+
+impl PrunePolicy {
+    pub(crate) fn new(root: &Path, no_prune: &[String]) -> Self {
+        Self {
+            root: root.to_path_buf(),
+            no_prune: no_prune.to_vec(),
+            tracked: std::sync::OnceLock::new(),
+        }
+    }
+
+    /// Whether the walk keeps the directory `name` at `path`.
+    fn keeps_directory(&self, name: &std::ffi::OsStr, path: &Path) -> bool {
+        if self.no_prune.iter().any(|kept| name == kept.as_str()) {
+            return true;
+        }
+        if ALWAYS_PRUNED_DIRECTORIES.iter().any(|pruned| name == *pruned) {
+            return false;
+        }
+        if CONDITIONALLY_PRUNED_DIRECTORIES.iter().any(|pruned| name == *pruned) {
+            return self
+                .tracked
+                .get_or_init(|| tracked_conditional_directories(&self.root))
+                .as_ref()
+                .is_some_and(|tracked| tracked.contains(path));
+        }
+        true
+    }
+}
+
+/// Every directory under `root` that is named like one of
+/// [`CONDITIONALLY_PRUNED_DIRECTORIES`] and holds at least one git-tracked file,
+/// as `root`-joined paths. `None` when `root` is not in a git repository (or git
+/// cannot run), in which case the caller has no evidence to keep anything.
+fn tracked_conditional_directories(root: &Path) -> Option<std::collections::HashSet<PathBuf>> {
+    let output = std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["ls-files", "-z"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let mut directories = std::collections::HashSet::new();
+    for raw in output.stdout.split(|byte| *byte == 0).filter(|path| !path.is_empty()) {
+        let Ok(relative) = std::str::from_utf8(raw) else {
+            continue;
+        };
+        let mut end = 0;
+        let mut segments = relative.split('/').peekable();
+        while let Some(segment) = segments.next() {
+            if segments.peek().is_none() {
+                break;
+            }
+            end += segment.len();
+            if CONDITIONALLY_PRUNED_DIRECTORIES.contains(&segment) {
+                directories.insert(root.join(&relative[..end]));
+            }
+            end += 1;
+        }
+    }
+    Some(directories)
+}
 
 /// A file found during discovery, tagged with its detected language and the id
 /// of the config (within the run's [`ConfigSet`]) that governs it.
@@ -424,21 +499,17 @@ impl ExcludeMatcher {
 }
 
 /// `filter_entry` predicate shared by discovery and config scanning: prune the
-/// vendored/generated directories in [`PRUNED_DIRECTORIES`], but only when they
-/// are nested (`depth > 0`) and are directories — so an explicitly passed root
-/// such as `node_modules/foo.js` is still walked, and a plain file that happens
-/// to share one of these names is never dropped. Returns `true` to keep.
+/// directories [`PrunePolicy`] rejects, but only when they are nested
+/// (`depth > 0`) and are directories — so an explicitly passed root such as
+/// `node_modules/foo.js` is still walked, and a plain file that happens to share
+/// one of these names is never dropped. Returns `true` to keep.
 ///
-/// `no_prune` subtracts names from the built-in set (`[discovery] no_prune`),
-/// for a repo where `build` or `dist` is ordinary source rather than output.
-pub(crate) fn keep_walk_entry(entry: &ignore::DirEntry, no_prune: &[String]) -> bool {
+/// `[discovery] no_prune` subtracts names from the pruned set, for a repo where
+/// an untracked `build` or `dist` is still ordinary source.
+pub(crate) fn keep_walk_entry(entry: &ignore::DirEntry, policy: &PrunePolicy) -> bool {
     let is_directory = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
     if entry.depth() > 0 && is_directory {
-        let name = entry.file_name();
-        if no_prune.iter().any(|kept| name == kept.as_str()) {
-            return true;
-        }
-        return !PRUNED_DIRECTORIES.iter().any(|pruned| name == *pruned);
+        return policy.keeps_directory(entry.file_name(), entry.path());
     }
     true
 }
@@ -490,7 +561,7 @@ fn push_pruned_sample(samples: &mut Vec<ExcludedDirectory>, sample: &ExcludedDir
 #[derive(Debug)]
 struct PruneRecorder {
     root: PathBuf,
-    no_prune: Vec<String>,
+    policy: PrunePolicy,
     hits: Mutex<PruneHits>,
 }
 
@@ -498,14 +569,14 @@ impl PruneRecorder {
     fn new(root: &Path, no_prune: &[String]) -> Arc<Self> {
         Arc::new(Self {
             root: root.to_path_buf(),
-            no_prune: no_prune.to_vec(),
+            policy: PrunePolicy::new(root, no_prune),
             hits: Mutex::new(PruneHits::default()),
         })
     }
 
     /// Whether the walk should keep `entry`; tallies it first when it will not.
     fn keep(&self, entry: &ignore::DirEntry) -> bool {
-        if keep_walk_entry(entry, &self.no_prune) {
+        if keep_walk_entry(entry, &self.policy) {
             return true;
         }
         let path = entry.path();
@@ -561,7 +632,7 @@ fn detect(path: &std::path::Path) -> Option<Language> {
 /// `[discovery] exclude` (each rooted at its own config directory via
 /// [`ConfigSet::walk_excludes`]) plus the call-time `extra` globs. Matching paths
 /// are pruned from the walk in addition to `.gitignore` and the built-in
-/// `PRUNED_DIRECTORIES` set.
+/// pruned-directory set.
 pub fn discover(paths: &[PathBuf], configs: &ConfigSet, extra: &[String]) -> Vec<DiscoveredFile> {
     discover_with(paths, configs, extra, false)
 }

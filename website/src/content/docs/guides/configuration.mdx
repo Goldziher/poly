@@ -405,13 +405,17 @@ Independently of `exclude`, poly never walks into a directory with one of these 
 depth:
 
 ```text
-node_modules  vendor  deps    target  dist   build  .git
-.venv         venv    .tox    .gradle .next  .nuxt  coverage
-__pycache__   .mypy_cache      .ruff_cache    .pytest_cache  .polylint
+node_modules  .git      .venv    venv     .tox     .gradle   .next   .nuxt
+__pycache__   .mypy_cache        .ruff_cache       .pytest_cache    .polylint
 ```
 
-These hold vendored code, build output or tool caches, and they are frequently *tracked*, so
-`.gitignore` alone does not exclude them. Every run reports what this pruned, so a directory you
+Tool caches and environments such as these are always pruned. The ambiguous output-or-source names
+`build`, `dist`, `target`, `deps`, `vendor` and `coverage` are pruned only when git tracks nothing
+inside them: a tracked `deploy/build/` is source and is linted, an untracked one is output. Outside
+a git repository there is no such evidence, so they are pruned. A directory covered by a `.gitignore`
+rule is skipped by the walk as before.
+
+These hold vendored code, build output or tool caches. Every run reports what this pruned, so a directory you
 did not expect to lose is visible rather than silently missing:
 
 ```console
@@ -421,8 +425,7 @@ All formatted. (2239 file(s) checked, 26 director(ies) skipped by the built-in p
   these were not walked, so the files inside them are not counted; keep one with [discovery] no_prune
 ```
 
-`build` and `dist` are build-output conventions in most ecosystems and ordinary domain nouns in
-some. Where one of them is real source, name it in `no_prune`:
+Where an untracked `build` or `dist` (or any other pruned name) is real source, name it in `no_prune`:
 
 ```toml
 [discovery]
