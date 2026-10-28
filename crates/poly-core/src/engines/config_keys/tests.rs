@@ -689,7 +689,7 @@ fn read_type_of(source: &str, key: &str) -> Option<OptionType> {
 /// for the call shapes an option read can take.
 fn keys_read_by(engine: &str) -> BTreeSet<String> {
     let reader = Regex::new(
-        r"(?s)(?:options\s*\.\s*(?:get|contains_key)|option_str|option_bool|string_list(?:_from_table)?|str_array|sets_any|usize_opt|str_list|flag|integer|rule)\s*\(([^;]{0,200}?)\)",
+        r"(?s)(?:options\s*\.\s*(?:get|contains_key)|option_str|option_bool|string_list(?:_from_table)?|str_array|sets_any|usize_opt|str_list|import_selector|flag|integer|rule)\s*\(([^;]{0,200}?)\)",
     )
     .expect("reader regex");
     let literal = Regex::new(r#""([a-zA-Z][a-zA-Z0-9_\-]*)""#).expect("literal regex");

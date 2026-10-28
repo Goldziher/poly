@@ -100,13 +100,13 @@ const CASES: &[Case] = &[
     },
     Case {
         name: "typing_modules treats another module as typing",
-        code: "UP006",
-        source: "from mylib.typing import List\n\nx: List[int] = []\n",
-        base: || vec![select("UP006"), ("target_version", text("py39"))],
+        code: "UP045",
+        source: "from mylib.typing import Optional\n\nx: Optional[int] = None\n",
+        base: || vec![select("UP045"), ("target_version", text("py310"))],
         tuned: || {
             vec![
-                select("UP006"),
-                ("target_version", text("py39")),
+                select("UP045"),
+                ("target_version", text("py310")),
                 ("typing_modules", strings(&["mylib.typing"])),
             ]
         },
@@ -308,12 +308,12 @@ const CASES: &[Case] = &[
         fires_when_tuned: true,
     },
     Case {
-        name: "flake8_implicit_str_concat_allow_multiline false stops joining strings across lines",
+        name: "flake8_implicit_str_concat_allow_multiline false flags a parenthesised multi-line join",
         code: "ISC002",
         source: "x = (\"a\"\n     \"b\")\n",
         base: || vec![select("ISC002")],
         tuned: || vec![select("ISC002"), ("flake8_implicit_str_concat_allow_multiline", flag(false))],
-        fires_when_tuned: false,
+        fires_when_tuned: true,
     },
     Case {
         name: "flake8_self_ignore_names replaces the ignored private names",
@@ -392,7 +392,7 @@ const CASES: &[Case] = &[
     Case {
         name: "flake8_unused_arguments_ignore_variadic_names spares *args",
         code: "ARG001",
-        source: "def f(*args):\n    pass\n",
+        source: "def f(*args):\n    return 1\n",
         base: || vec![select("ARG001")],
         tuned: || vec![select("ARG001"), ("flake8_unused_arguments_ignore_variadic_names", flag(true))],
         fires_when_tuned: false,
@@ -431,15 +431,8 @@ const CASES: &[Case] = &[
         name: "pydoclint_ignore_one_line_docstrings spares a one-line docstring",
         code: "DOC201",
         source: "def f():\n    \"\"\"Return one.\"\"\"\n    return 1\n",
-        base: || vec![select("DOC201"), preview(), ("pydocstyle_convention", text("google"))],
-        tuned: || {
-            vec![
-                select("DOC201"),
-                preview(),
-                ("pydocstyle_convention", text("google")),
-                ("pydoclint_ignore_one_line_docstrings", flag(true)),
-            ]
-        },
+        base: || vec![select("DOC201"), preview()],
+        tuned: || vec![select("DOC201"), preview(), ("pydoclint_ignore_one_line_docstrings", flag(true))],
         fires_when_tuned: false,
     },
     Case {
@@ -454,11 +447,11 @@ const CASES: &[Case] = &[
         name: "pyupgrade_keep_runtime_typing keeps typing.List under a future import",
         code: "UP006",
         source: "from __future__ import annotations\n\nfrom typing import List\n\nx: List[int] = []\n",
-        base: || vec![select("UP006"), ("target_version", text("py39"))],
+        base: || vec![select("UP006"), ("target_version", text("py38"))],
         tuned: || {
             vec![
                 select("UP006"),
-                ("target_version", text("py39")),
+                ("target_version", text("py38")),
                 ("pyupgrade_keep_runtime_typing", flag(true)),
             ]
         },
@@ -476,20 +469,18 @@ const CASES: &[Case] = &[
 
 #[test]
 fn each_option_changes_the_finding_it_governs() {
+    let mut failures = Vec::new();
     for case in CASES {
         let baseline = fires(case.code, case.source, (case.base)());
         let tuned = fires(case.code, case.source, (case.tuned)());
-        assert_eq!(
-            tuned, case.fires_when_tuned,
-            "{}: with the option {} should be {}",
-            case.name, case.code, case.fires_when_tuned
-        );
-        assert_ne!(
-            baseline, tuned,
-            "{}: the option must change whether {} fires (baseline {baseline})",
-            case.name, case.code
-        );
+        if tuned != case.fires_when_tuned || baseline == tuned {
+            failures.push(format!(
+                "{}: {} baseline {baseline}, tuned {tuned}, expected tuned {}",
+                case.name, case.code, case.fires_when_tuned
+            ));
+        }
     }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
 #[test]
