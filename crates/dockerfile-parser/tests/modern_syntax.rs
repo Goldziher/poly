@@ -217,6 +217,23 @@ fn backtick_escape_directive_continues_lines() {
 }
 
 #[test]
+fn backtick_escape_trailing_backslash_stays_inside_the_instruction_span() {
+    let input = "# escape=`\nFROM windows\nENV A=C:\\\nRUN echo done C:\\\nCOPY a C:\\dst\\\n";
+    let dockerfile = parse(input);
+
+    assert_eq!(dockerfile.instructions.len(), 4);
+    let spans: Vec<&str> = dockerfile
+        .instructions
+        .iter()
+        .map(|instruction| text(&dockerfile, &instruction.span()))
+        .collect();
+    assert_eq!(
+        spans,
+        ["FROM windows", "ENV A=C:\\", "RUN echo done C:\\", "COPY a C:\\dst\\"]
+    );
+}
+
+#[test]
 fn crlf_line_endings_with_heredoc() {
     let dockerfile = parse("FROM alpine\r\nRUN <<EOF\r\necho hi\r\nEOF\r\nENV A=1\r\n");
 

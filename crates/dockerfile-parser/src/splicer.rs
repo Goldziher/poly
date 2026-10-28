@@ -4,6 +4,7 @@ use std::convert::TryInto;
 use std::fmt;
 
 use crate::dockerfile_parser::Dockerfile;
+use crate::error::{Error, Result};
 use crate::parser::Pair;
 
 /// An offset used to adjust proceeding Spans after content has been spliced
@@ -122,7 +123,7 @@ impl fmt::Debug for Span {
 /// };
 ///
 /// let mut splicer = dockerfile.splicer();
-/// splicer.splice(&from.image.span, "alpine:3.11");
+/// splicer.splice(&from.image.span, "alpine:3.11")?;
 ///
 /// assert_eq!(splicer.content, r#"
 ///   FROM alpine:3.11
@@ -160,22 +161,40 @@ impl Splicer {
     /// Note that spans are always relative to the *original input document*.
     /// Span offsets are recalculated at call-time to account for previous calls
     /// to `splice(...)` that may have shifted one or both of the span bounds.
-    pub fn splice(&mut self, span: &Span, replacement: &str) {
-        let span = span.adjust_offsets(&self.splice_offsets);
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidSpan`] when the span is reversed, extends past the
+    /// buffer or does not fall on character boundaries; the buffer is left
+    /// unchanged.
+    pub fn splice(&mut self, span: &Span, replacement: &str) -> Result<()> {
+        let invalid = || Error::InvalidSpan {
+            start: span.start,
+            end: span.end,
+            len: self.content.len(),
+        };
+        if span.start > span.end {
+            return Err(invalid());
+        }
+        let adjusted = span.adjust_offsets(&self.splice_offsets);
+        if adjusted.start > adjusted.end
+            || !self.content.is_char_boundary(adjusted.start)
+            || !self.content.is_char_boundary(adjusted.end)
+        {
+            return Err(invalid());
+        }
 
         // determine the splice offset (only used on subsequent splices)
-        let prev_len = span.end - span.start;
+        let prev_len = adjusted.end - adjusted.start;
         let new_len = replacement.len();
         let offset = new_len as isize - prev_len as isize;
         self.splice_offsets.push(SpliceOffset {
-            position: span.start,
+            position: adjusted.start,
             offset,
         });
 
-        // split and rebuild the content with the replacement instead
-        let (beginning, rest) = self.content.split_at(span.start);
-        let (_, end) = rest.split_at(span.end - span.start);
-        self.content = format!("{}{}{}", beginning, replacement, end);
+        self.content.replace_range(adjusted.start..adjusted.end, replacement);
+        Ok(())
     }
 }
 
@@ -184,6 +203,29 @@ mod tests {
     use crate::*;
     use indoc::indoc;
     use std::convert::TryInto;
+
+    #[test]
+    fn splice_rejects_invalid_spans_without_panicking() {
+        let dockerfile = Dockerfile::parse("FROM alpine\n").unwrap();
+        let mut splicer = dockerfile.splicer();
+
+        for span in [Span::new(5, 2), Span::new(0, 999), Span::new(998, 999)] {
+            assert!(
+                matches!(splicer.splice(&span, "x"), Err(Error::InvalidSpan { .. })),
+                "{span:?}"
+            );
+        }
+        assert_eq!(splicer.content, "FROM alpine\n", "a rejected splice leaves the buffer untouched");
+    }
+
+    #[test]
+    fn splice_rejects_a_span_inside_a_multibyte_character() {
+        let dockerfile = Dockerfile::parse("FROM alpine\n# \u{e9}\n").unwrap();
+        let mut splicer = dockerfile.splicer();
+        let inside = dockerfile.content.find('\u{e9}').unwrap() + 1;
+
+        assert!(splicer.splice(&Span::new(inside, inside + 1), "x").is_err());
+    }
 
     #[test]
     fn test_relative_span() {

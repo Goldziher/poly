@@ -232,6 +232,20 @@ impl Instruction {
             Instruction::Misc(instruction) => instruction.span,
         }
     }
+
+    fn span_mut(&mut self) -> &mut Span {
+        match self {
+            Instruction::From(instruction) => &mut instruction.span,
+            Instruction::Arg(instruction) => &mut instruction.span,
+            Instruction::Label(instruction) => &mut instruction.span,
+            Instruction::Run(instruction) => &mut instruction.span,
+            Instruction::Entrypoint(instruction) => &mut instruction.span,
+            Instruction::Cmd(instruction) => &mut instruction.span,
+            Instruction::Copy(instruction) => &mut instruction.span,
+            Instruction::Env(instruction) => &mut instruction.span,
+            Instruction::Misc(instruction) => &mut instruction.span,
+        }
+    }
 }
 
 /// Maps an instruction struct to its enum variant, implementing From<T> on
@@ -367,6 +381,16 @@ fn parse_dockerfile(input: &str) -> Result<Dockerfile> {
         }
 
         instructions.push(instruction);
+    }
+
+    for &position in &prepared.literal_backslashes {
+        let first = instructions.partition_point(|instruction| instruction.span().end < position);
+        for instruction in instructions[first..]
+            .iter_mut()
+            .take_while(|instruction| instruction.span().end == position)
+        {
+            instruction.span_mut().end += 1;
+        }
     }
 
     let heredocs = prepared

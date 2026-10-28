@@ -49,6 +49,18 @@ pub enum Error {
         /// The name of the requested instruction type.
         to: String,
     },
+
+    #[error("span {start}..{end} does not select a valid range of the {len}-byte document")]
+    /// A span handed to [`Splicer::splice`](crate::Splicer::splice) is reversed, out of bounds or not on a character
+    /// boundary.
+    InvalidSpan {
+        /// The start of the offending span.
+        start: usize,
+        /// The end of the offending span.
+        end: usize,
+        /// The length of the splice buffer the span was applied to.
+        len: usize,
+    },
 }
 
 /// A Dockerfile parsing Result.

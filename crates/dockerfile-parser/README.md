@@ -29,8 +29,7 @@ Changes relative to upstream:
 
 ## Limitations
 
-* Only the `escape` parser directive is honoured; other BuildKit directives are ordinary comments. Under
-  `` # escape=` ``, a trailing backslash that cannot continue a line is reported one byte shorter in spans.
+* Only the `escape` parser directive is honoured; other BuildKit directives are ordinary comments.
 * Heredoc bodies are exposed as text; `RUN` and `COPY` spans cover only the instruction line.
 * Unknown instructions are parsed as `MiscInstruction` rather than producing an explicit error. A number of valid but
   less interesting Docker instructions are handled this way, e.g. `ONBUILD`, `MAINTAINER`, etc. See notes in

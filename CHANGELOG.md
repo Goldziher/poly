@@ -9,6 +9,9 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ### Added
 
+- **`dockerfile-parser`: `Splicer::splice` returns a `Result` instead of panicking on a bad span**
+  (`Error::InvalidSpan` for a reversed, out-of-bounds or mid-character span), and under a backtick
+  `# escape=` directive a trailing `\` that cannot continue a line now stays inside the instruction span.
 - **Dockerfile detection covers `Dockerfile-*`, `Dockerfile_*`, `Containerfile`, `*.Containerfile` and
   `.tpl` / `.tmpl` wrappers**, so `Dockerfile-local` and `Dockerfile_pyspark_base` are linted. A
   Go/Helm-templated Dockerfile that does not parse is skipped, with the reason reported, instead of

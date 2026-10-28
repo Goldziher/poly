@@ -151,7 +151,9 @@ fn exercise(input: &str) {
     let mut splicer = dockerfile.splicer();
     for instruction in &dockerfile.instructions {
         let span = instruction.span();
-        splicer.splice(&span, &input[span.start..span.end]);
+        splicer
+            .splice(&span, &input[span.start..span.end])
+            .expect("instruction spans are valid");
         let _ = span.relative_span(&dockerfile);
     }
     assert_eq!(

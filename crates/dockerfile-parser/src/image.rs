@@ -82,7 +82,9 @@ pub fn substitute<'b>(
         used_vars.insert(var_name.as_str().to_string());
 
         // splice the substituted content back into the output string
-        splicer.splice(&Span::new(full_range.start, full_range.end), &substituted_content);
+        splicer
+            .splice(&Span::new(full_range.start, full_range.end), &substituted_content)
+            .ok()?;
     }
 
     Some(splicer.content)

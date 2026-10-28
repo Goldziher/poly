@@ -44,6 +44,9 @@ pub(crate) struct Prepared {
     pub(crate) masked: String,
     /// The heredocs that were blanked out of `masked`, in input order.
     pub(crate) heredocs: Vec<RawHeredoc>,
+    /// Byte offsets of backslashes that were blanked in `masked` because, under a backtick `# escape=` directive, they
+    /// are ordinary characters. A token that ends right before one is one byte short of the original text.
+    pub(crate) literal_backslashes: Vec<usize>,
 }
 
 static HEREDOC_MARKER: LazyLock<Regex> = LazyLock::new(|| {
@@ -111,9 +114,11 @@ pub(crate) fn prepare(text: &str) -> Prepared {
         blank(&mut buffer, 0..BOM.len());
     }
 
-    if escape_is_backtick(text.strip_prefix(BOM).unwrap_or(text)) {
-        remap_backtick_escapes(text, &mut buffer);
-    }
+    let literal_backslashes = if escape_is_backtick(text.strip_prefix(BOM).unwrap_or(text)) {
+        remap_backtick_escapes(text, &mut buffer)
+    } else {
+        Vec::new()
+    };
 
     // Only ASCII bytes were overwritten with ASCII bytes, so the buffer is still valid UTF-8.
     let working = String::from_utf8(buffer).unwrap_or_else(|_| text.to_string());
@@ -127,12 +132,14 @@ pub(crate) fn prepare(text: &str) -> Prepared {
     Prepared {
         masked: String::from_utf8(buffer).unwrap_or_else(|_| text.to_string()),
         heredocs,
+        literal_backslashes,
     }
 }
 
 /// With `# escape=\``, a trailing backtick continues the line and a trailing backslash is an ordinary character. Swap
-/// them so the grammar's `\` handling applies unchanged.
-fn remap_backtick_escapes(text: &str, buffer: &mut [u8]) {
+/// them so the grammar's `\` handling applies unchanged. Returns the offsets of the backslashes that were blanked.
+fn remap_backtick_escapes(text: &str, buffer: &mut [u8]) -> Vec<usize> {
+    let mut literal_backslashes = Vec::new();
     for line in lines(text) {
         let content = content_of(&text[line.start..line.end]);
         if is_blank_or_comment(content) {
@@ -144,10 +151,14 @@ fn remap_backtick_escapes(text: &str, buffer: &mut [u8]) {
         };
         match trimmed.as_bytes()[last] {
             b'`' => buffer[line.start + last] = b'\\',
-            b'\\' => buffer[line.start + last] = b' ',
+            b'\\' => {
+                buffer[line.start + last] = b' ';
+                literal_backslashes.push(line.start + last);
+            }
             _ => {}
         }
     }
+    literal_backslashes
 }
 
 /// The text of a line without its trailing whitespace and without a trailing continuation backslash, and whether the
