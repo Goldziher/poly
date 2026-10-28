@@ -41,6 +41,7 @@ blake3.workspace = true
 dockerfile-parser.workspace = true
 dotenv-analyzer.workspace = true
 dotenv-core.workspace = true
+flate2.workspace = true
 globset.workspace = true
 graphql-parser.workspace = true
 hcl-edit.workspace = true
@@ -99,6 +100,7 @@ sha2.workspace = true
 sqruff-lib.workspace = true
 sqruff-lib-core.workspace = true
 taplo.workspace = true
+tar.workspace = true
 tempfile.workspace = true
 terminal_size.workspace = true
 toml.workspace = true
@@ -112,6 +114,7 @@ uncomment.workspace = true
 unicase.workspace = true
 ureq.workspace = true
 which.workspace = true
+zip.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true

@@ -22,6 +22,7 @@
 //! [`paths`], [`gofix`] (golangci-lint's fixes on a scratch copy of the module),
 //! [`unit`] (per-chart values, skipped charts, the prepare step) and [`exec`].
 
+mod archive;
 mod argv;
 mod exec;
 mod format;

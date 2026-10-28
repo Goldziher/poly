@@ -14,6 +14,11 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   run over the package directories of the files concerned, once per configured `goos`, and keeping
   `new_from_rev` working by pointing the copy at the repository. Only the files of the run are read back
   and your tree is untouched; a golangci-lint that rejects `--fix` leaves the findings report-only.
+- **Recipe tools can be auto-downloaded from archives.** A pinned asset may name a `member`; poly verifies the
+  SHA-256 of the `.tar.gz` / `.tgz` / `.zip` as downloaded, then extracts only that file (exact path match, no
+  `..` or absolute paths, regular files only, 512 MiB cap) and installs it atomically into the tool cache under
+  the member's name. helm, helm-template, golangci-lint, actionlint, tflint and tofu now ship pinned releases for
+  darwin and linux on arm64 and x86_64, so `install = "auto"` works for them.
 - **Ruby is detected for `Gemfile`, `Rakefile`, `Brewfile`, `Vagrantfile`, `Podfile`, `Capfile`, `Guardfile`,
   `Berksfile`, `*.rake`, `*.gemspec`, `*.ru` and `*.podspec`**, and `Tiltfile` is treated as Starlark.
 - **`dockerfile-parser`: `Splicer::splice` returns a `Result` instead of panicking on a bad span**
