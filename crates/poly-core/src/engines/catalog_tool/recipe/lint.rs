@@ -35,6 +35,8 @@ struct UnitGroup {
     rels: Vec<String>,
     /// `root` relative to the tree's base, slashed (`.` for the base itself).
     dir: String,
+    /// A chart in `skip_charts`: not linted, only run to check the skip still holds.
+    skipped: bool,
 }
 
 #[derive(Default)]
@@ -146,6 +148,7 @@ impl RecipeTool {
         let tasks: Vec<Task> = groups
             .iter()
             .enumerate()
+            .filter(|(_, unit)| !unit.skipped)
             .flat_map(|(group, unit)| {
                 let items = self.items_of(template, unit, members);
                 template
@@ -179,6 +182,17 @@ impl RecipeTool {
                         }
                     }
                 }
+            }
+        }
+
+        let stale: Vec<(&UnitGroup, String)> = groups
+            .par_iter()
+            .filter(|unit| unit.skipped)
+            .filter_map(|unit| self.stale_skip(template, unit, members).map(|reason| (unit, reason)))
+            .collect();
+        for (unit, reason) in stale {
+            for &index in &unit.members {
+                failures[index] = Some(reason.clone());
             }
         }
 
@@ -216,7 +230,8 @@ impl RecipeTool {
                 .strip_prefix(base)
                 .map_or_else(|_| ".".to_owned(), paths::slashed);
             let dir = if dir.is_empty() { ".".to_owned() } else { dir };
-            if self.units.skips(&dir) {
+            let skipped = self.units.skips(&dir);
+            if skipped && !self.units.verifies_skips() {
                 continue;
             }
             let unit = groups.entry(key).or_insert_with(|| UnitGroup {
@@ -224,11 +239,27 @@ impl RecipeTool {
                 members: Vec::new(),
                 rels: Vec::new(),
                 dir,
+                skipped,
             });
             unit.members.push(index);
             unit.rels.push(paths::slashed(&rel));
         }
         groups.into_values().collect()
+    }
+
+    /// The failure to report for a skipped chart the tool now succeeds on: the
+    /// skip is stale and should be removed, as it would otherwise outlive its
+    /// reason unnoticed.
+    fn stale_skip(&self, template: &Template, unit: &UnitGroup, members: &[Member<'_>]) -> Option<String> {
+        let mut argv = template.render(&self.items_of(template, unit, members));
+        argv.extend(self.units.extra_arguments(&unit.dir));
+        let captured = exec::run(&self.launcher, &argv, &unit.root, &self.env, self.unset_env).ok()?;
+        captured.exited_ok(&self.recipe.ok_exits).then(|| {
+            format!(
+                "{}: succeeds, but is listed in skip_charts; remove it from `skip_charts` of [tools.{}]",
+                unit.dir, self.tool.name
+            )
+        })
     }
 
     /// Make the root checkable before the tool runs on it (`helm dependency
@@ -242,12 +273,18 @@ impl RecipeTool {
             return;
         }
         let outcome = unit::once_per_root(&unit.root, argv, || {
-            let captured = exec::run(&self.launcher, argv, &unit.root, &self.env, &[]).map_err(|error| format!("{error:#}"))?;
-            if captured.exited_ok(&self.recipe.ok_exits) {
-                Ok(())
-            } else {
-                Err(captured.explanation())
-            }
+            self.units.retry().run(
+                || {
+                    let captured = exec::run(&self.launcher, argv, &unit.root, &self.env, &[])
+                        .map_err(|error| format!("{error:#}"))?;
+                    if captured.exited_ok(&self.recipe.ok_exits) {
+                        Ok(())
+                    } else {
+                        Err(captured.explanation())
+                    }
+                },
+                std::thread::sleep,
+            )
         });
         if let Err(reason) = outcome {
             tracing::warn!(

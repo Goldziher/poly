@@ -386,7 +386,7 @@ fn chart_recipe(extra: serde_json::Value) -> serde_json::Value {
 }
 
 #[test]
-fn each_chart_gets_its_own_values_files_and_skipped_charts_are_not_run() {
+fn each_chart_gets_its_own_values_files_and_unverified_skipped_charts_are_not_run() {
     let fx = Fixture::new();
     let tool_bin = fx.script("helm", SILENT);
     for chart in ["apps/a", "apps/b", "lib/common"] {
@@ -403,6 +403,7 @@ fn each_chart_gets_its_own_values_files_and_skipped_charts_are_not_run() {
     config.values_files = vec![format!("{root}/render/all.yaml")];
     config.chart_values = BTreeMap::from([("apps/a".to_owned(), vec![format!("{root}/render/a.yaml")])]);
     config.skip_charts = vec!["lib/*".to_owned()];
+    config.verify_skip_charts = Some(false);
     let tool = fx.tool("lint $ROOT", chart_recipe(serde_json::json!({})), Role::Lint, &config);
 
     let results = tool.lint_files(&refs(&files));
@@ -500,11 +501,14 @@ fn a_failing_prepare_step_does_not_stop_the_lint() {
     )
     .expect("chart");
     let files = vec![fx.file("needy/values.yaml", "a: 1\n")];
+    let mut config = fx.config(tool_bin);
+    config.prepare_backoff_secs = Some(0);
+    config.prepare_jitter_secs = Some(0);
     let tool = fx.tool(
         "lint $ROOT",
         chart_recipe(serde_json::json!({"prepare": "prep"})),
         Role::Lint,
-        &fx.config(tool_bin),
+        &config,
     );
 
     let results = tool.lint_files(&refs(&files));
@@ -512,6 +516,101 @@ fn a_failing_prepare_step_does_not_stop_the_lint() {
     assert!(results[0].as_ref().is_ok_and(Vec::is_empty), "{:?}", results[0]);
     let log = std::fs::read_to_string(&fx.log).expect("log");
     assert!(log.contains("needy lint"), "the lint still ran:\n{log}");
+    let prepares = log.lines().filter(|l| l.contains(" prepare .")).count();
+    assert_eq!(prepares, 5, "five attempts by default:\n{log}");
+}
+
+const FLAKY_PREPARE: &str = "#!/bin/sh\necho \"$PWD $*\" >> \"$POLY_TEST_LOG\"\ncase \"$1\" in prepare) n=$(cat \"$PWD/.attempts\" 2>/dev/null || echo 0); n=$((n+1)); echo $n > \"$PWD/.attempts\"; if [ $n -lt 3 ]; then echo 'throttled' >&2; exit 1; fi;; esac\nexit 0\n";
+
+fn needy_chart(fx: &Fixture) -> Vec<SourceFile> {
+    std::fs::create_dir_all(fx.dir.path().join("needy")).expect("needy");
+    std::fs::write(
+        fx.dir.path().join("needy/Chart.yaml"),
+        "name: needy\ndependencies:\n  - name: redis\n    version: 1.0.0\n",
+    )
+    .expect("chart");
+    vec![fx.file("needy/values.yaml", "a: 1\n")]
+}
+
+#[test]
+fn a_prepare_step_that_recovers_is_not_attempted_again() {
+    let fx = Fixture::new();
+    let files = needy_chart(&fx);
+    let mut config = fx.config(fx.script("helm", FLAKY_PREPARE));
+    config.prepare_backoff_secs = Some(0);
+    config.prepare_jitter_secs = Some(0);
+    let tool = fx.tool("lint $ROOT", chart_recipe(serde_json::json!({"prepare": "prep"})), Role::Lint, &config);
+
+    tool.lint_files(&refs(&files));
+
+    let log = std::fs::read_to_string(&fx.log).expect("log");
+    assert_eq!(log.lines().filter(|l| l.contains(" prepare .")).count(), 3, "{log}");
+}
+
+#[test]
+fn prepare_attempts_bounds_the_retries() {
+    let fx = Fixture::new();
+    let files = needy_chart(&fx);
+    let mut config = fx.config(fx.script("helm", FLAKY_PREPARE));
+    config.prepare_attempts = Some(1);
+    let tool = fx.tool("lint $ROOT", chart_recipe(serde_json::json!({"prepare": "prep"})), Role::Lint, &config);
+
+    let results = tool.lint_files(&refs(&files));
+
+    let log = std::fs::read_to_string(&fx.log).expect("log");
+    assert_eq!(log.lines().filter(|l| l.contains(" prepare .")).count(), 1, "{log}");
+    assert!(results[0].as_ref().is_ok_and(Vec::is_empty), "{:?}", results[0]);
+}
+
+fn library_chart(fx: &Fixture) -> Vec<SourceFile> {
+    std::fs::create_dir_all(fx.dir.path().join("lib/common")).expect("lib");
+    std::fs::write(fx.dir.path().join("lib/common/Chart.yaml"), "name: common\n").expect("chart");
+    vec![fx.file("lib/common/values.yaml", "x: 1\n")]
+}
+
+#[test]
+fn a_skipped_chart_that_now_succeeds_fails_the_run() {
+    let fx = Fixture::new();
+    let files = library_chart(&fx);
+    let mut config = fx.config(fx.script("helm", SILENT));
+    config.skip_charts = vec!["lib/*".to_owned()];
+    let tool = fx.tool("lint $ROOT", chart_recipe(serde_json::json!({})), Role::Lint, &config);
+
+    let results = tool.lint_files(&refs(&files));
+
+    let error = results[0].as_ref().expect_err("a stale skip is a failure").to_string();
+    assert!(error.contains("skip_charts") && error.contains("lib/common"), "{error}");
+    assert_eq!(fx.invocations(), 1, "the skipped chart is run once, to check it");
+}
+
+#[test]
+fn a_skipped_chart_that_still_fails_stays_skipped() {
+    let fx = Fixture::new();
+    let files = library_chart(&fx);
+    let failing = "#!/bin/sh\necho \"$PWD $*\" >> \"$POLY_TEST_LOG\"\necho 'library charts cannot be rendered' >&2\nexit 1\n";
+    let mut config = fx.config(fx.script("helm", failing));
+    config.skip_charts = vec!["lib/*".to_owned()];
+    let tool = fx.tool("lint $ROOT", chart_recipe(serde_json::json!({})), Role::Lint, &config);
+
+    let results = tool.lint_files(&refs(&files));
+
+    assert!(results[0].as_ref().is_ok_and(Vec::is_empty), "{:?}", results[0]);
+    assert_eq!(fx.invocations(), 1);
+}
+
+#[test]
+fn verify_skip_charts_false_never_runs_a_skipped_chart() {
+    let fx = Fixture::new();
+    let files = library_chart(&fx);
+    let mut config = fx.config(fx.script("helm", SILENT));
+    config.skip_charts = vec!["lib/*".to_owned()];
+    config.verify_skip_charts = Some(false);
+    let tool = fx.tool("lint $ROOT", chart_recipe(serde_json::json!({})), Role::Lint, &config);
+
+    let results = tool.lint_files(&refs(&files));
+
+    assert!(results[0].as_ref().is_ok_and(Vec::is_empty), "{:?}", results[0]);
+    assert_eq!(fx.invocations(), 0);
 }
 
 const GO_REPORTER: &str = r#"#!/bin/sh

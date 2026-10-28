@@ -181,6 +181,19 @@ pub struct ToolConfig {
     /// run once per chart before linting when `charts/` does not satisfy
     /// `Chart.lock`). The step is also skipped when `POLY_OFFLINE` is set.
     pub prepare: Option<bool>,
+    /// How many times the prepare step is attempted before the chart is checked
+    /// with the dependencies on disk (default 5). `1` disables the retry.
+    pub prepare_attempts: Option<u32>,
+    /// Seconds to wait after the first failed prepare attempt (default 4); the
+    /// wait doubles after each further failure (4, 8, 16, 32).
+    pub prepare_backoff_secs: Option<u64>,
+    /// Up to this many extra seconds, chosen at random, added to every wait so
+    /// concurrent runners do not retry in lockstep (default 4).
+    pub prepare_jitter_secs: Option<u64>,
+    /// Whether a chart in `skip_charts` is still run, and reported as a failure
+    /// when the tool now succeeds on it, so the list cannot outlive its reason
+    /// (default `true`). `false` skips such a chart without running it.
+    pub verify_skip_charts: Option<bool>,
     /// Report only findings introduced since this git revision
     /// (`golangci-lint --new-from-rev=<rev>`). Only for tools whose recipe has a
     /// new-from-rev flag; unset reports every finding of the package.

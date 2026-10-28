@@ -125,6 +125,11 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   inputs of helm and of no other engine. `[tools.golangci-lint]` gains `new_from_rev` (`--new-from-rev`)
   and a `goos` matrix; `poly migrate` carries the armis wrapper's `--new-from-rev=HEAD` instead of
   reporting it lost. buf 1.75.0 and hadolint 2.15.1 are pinned with checksums for `install = "auto"`.
+- **Recipe tools: `helm dependency build` is retried, and a stale `skip_charts` entry fails.** The prepare step is
+  attempted `prepare_attempts` (5) times, waiting `prepare_backoff_secs` (4) doubling after each failure plus up to
+  `prepare_jitter_secs` (4) at random, as the armis `check_charts.sh` does. A chart in `skip_charts` is still run
+  once, and a tool that succeeds on it fails the run, so the list cannot outlive its reason; `verify_skip_charts =
+  false` restores skipping without running.
 
 ### Fixed
 

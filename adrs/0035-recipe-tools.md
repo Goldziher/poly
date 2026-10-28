@@ -93,6 +93,10 @@ be provisioned yet: `ReleaseKind` has no archive kind, so only standalone binari
   runs once per chart before the lint, unless `charts/` already holds every locked dependency,
   `POLY_OFFLINE` is set, or `prepare = false`; a failed build is logged and the lint goes on so helm
   reports what is missing.
+  The build is retried (`prepare_attempts`, `prepare_backoff_secs`, `prepare_jitter_secs`; defaults 5, 4 and 4:
+  waits of 4, 8, 16 and 32 seconds plus jitter) because a throttled anonymous registry pull clears on retry. A
+  `skip_charts` entry is still run once and fails the run when the tool succeeds on it (`verify_skip_charts`,
+  default true), so the list cannot outlive its reason.
 - **Chart template files.** `.tpl` files and `NOTES.txt` under a `templates/` directory are detected as
   the `helm-template` pseudo-language. No built-in engine plans for it, so only a tool whose catalog
   `languages` names it (helm) sees them.

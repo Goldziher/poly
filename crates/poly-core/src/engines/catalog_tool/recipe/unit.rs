@@ -5,6 +5,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use globset::{Glob, GlobMatcher};
 use poly_catalog::{Recipe, Tool};
@@ -23,6 +24,69 @@ pub(super) struct UnitOptions {
     skip: Vec<(String, GlobMatcher)>,
     /// The prepare command's argv, ready to run in the root.
     prepare: Option<Vec<String>>,
+    retry: Retry,
+    /// Whether a skipped chart is still run, to catch a skip that no longer holds.
+    verify_skips: bool,
+}
+
+const DEFAULT_ATTEMPTS: u32 = 5;
+const DEFAULT_BACKOFF_SECS: u64 = 4;
+const DEFAULT_JITTER_SECS: u64 = 4;
+
+/// How a failing prepare step is retried: the wait after the n-th failure is
+/// `backoff_secs * 2^(n-1)` plus up to `jitter_secs` at random.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct Retry {
+    attempts: u32,
+    backoff_secs: u64,
+    jitter_secs: u64,
+}
+
+impl Retry {
+    fn from_config(config: &ToolConfig) -> Self {
+        Retry {
+            attempts: config.prepare_attempts.unwrap_or(DEFAULT_ATTEMPTS).max(1),
+            backoff_secs: config.prepare_backoff_secs.unwrap_or(DEFAULT_BACKOFF_SECS),
+            jitter_secs: config.prepare_jitter_secs.unwrap_or(DEFAULT_JITTER_SECS),
+        }
+    }
+
+    /// The wait after the `failed`-th consecutive failure; `entropy` picks the jitter.
+    fn delay(&self, failed: u32, entropy: u64) -> Duration {
+        let doubled = self
+            .backoff_secs
+            .saturating_mul(1_u64 << failed.saturating_sub(1).min(32));
+        let jitter = entropy % self.jitter_secs.saturating_add(1);
+        Duration::from_secs(doubled.saturating_add(jitter))
+    }
+
+    /// Run `step` until it succeeds or the attempts are spent, calling `wait`
+    /// between attempts. Returns the last failure.
+    pub(super) fn run(
+        &self,
+        mut step: impl FnMut() -> Result<(), String>,
+        mut wait: impl FnMut(Duration),
+    ) -> Result<(), String> {
+        let mut failed = 0;
+        loop {
+            match step() {
+                Ok(()) => return Ok(()),
+                Err(reason) => {
+                    failed += 1;
+                    if failed >= self.attempts {
+                        return Err(reason);
+                    }
+                    wait(self.delay(failed, clock_entropy()));
+                }
+            }
+        }
+    }
+}
+
+fn clock_entropy() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |elapsed| u64::from(elapsed.subsec_nanos()))
 }
 
 fn matcher(pattern: &str) -> Result<GlobMatcher, String> {
@@ -74,6 +138,8 @@ impl UnitOptions {
             chart_values,
             skip,
             prepare,
+            retry: Retry::from_config(config),
+            verify_skips: config.verify_skip_charts.unwrap_or(true),
         })
     }
 
@@ -81,6 +147,17 @@ impl UnitOptions {
     /// directory, slashed).
     pub(super) fn skips(&self, dir: &str) -> bool {
         self.skip.iter().any(|(_, matcher)| matcher.is_match(dir))
+    }
+
+    /// Whether a skipped chart is still run, and fails the run when the tool
+    /// now succeeds on it.
+    pub(super) fn verifies_skips(&self) -> bool {
+        self.verify_skips
+    }
+
+    /// How the prepare step is retried.
+    pub(super) fn retry(&self) -> Retry {
+        self.retry
     }
 
     /// The arguments that follow the rendered argv for the root `dir`.
@@ -113,7 +190,7 @@ impl UnitOptions {
     /// The options as a string for the engine's cache key.
     pub(super) fn fingerprint(&self) -> String {
         format!(
-            "values_flag={:?}:values={:?}:chart_values={:?}:skip={:?}:prepare={:?}",
+            "values_flag={:?}:values={:?}:chart_values={:?}:skip={:?}:prepare={:?}:verify_skips={}",
             self.values_flag,
             self.values_files,
             self.chart_values
@@ -122,6 +199,7 @@ impl UnitOptions {
                 .collect::<Vec<_>>(),
             self.skip.iter().map(|(pattern, _)| pattern).collect::<Vec<_>>(),
             self.prepare,
+            self.verify_skips,
         )
     }
 
@@ -300,6 +378,80 @@ mod tests {
         assert!(!dependencies_in_place(dir.path()), "a stale version does not satisfy the lock");
         std::fs::write(dir.path().join("charts/redis-19.0.1.tgz"), "").expect("redis");
         assert!(dependencies_in_place(dir.path()));
+    }
+
+    fn retry(attempts: u32) -> Retry {
+        Retry {
+            attempts,
+            backoff_secs: 4,
+            jitter_secs: 4,
+        }
+    }
+
+    #[test]
+    fn the_wait_doubles_from_four_seconds_with_up_to_four_of_jitter() {
+        let policy = retry(5);
+        let waits: Vec<u64> = (1..=4).map(|failed| policy.delay(failed, 0).as_secs()).collect();
+        assert_eq!(waits, [4, 8, 16, 32]);
+        assert_eq!(policy.delay(1, 4).as_secs(), 8, "jitter 4 on a 4 second base");
+        assert_eq!(policy.delay(1, 5).as_secs(), 4, "jitter wraps at jitter_secs + 1");
+    }
+
+    #[test]
+    fn defaults_match_the_charts_script() {
+        let retry = Retry::from_config(&ToolConfig::default());
+        assert_eq!((retry.attempts, retry.backoff_secs, retry.jitter_secs), (5, 4, 4));
+    }
+
+    #[test]
+    fn a_failing_step_is_attempted_five_times_with_four_waits() {
+        let mut runs = 0;
+        let mut waits = Vec::new();
+        let outcome = retry(5).run(
+            || {
+                runs += 1;
+                Err(format!("throttled {runs}"))
+            },
+            |wait| waits.push(wait.as_secs()),
+        );
+        assert_eq!(outcome, Err("throttled 5".to_owned()), "the last failure is reported");
+        assert_eq!(runs, 5);
+        assert_eq!(waits.len(), 4);
+        assert!(waits.iter().zip([4, 8, 16, 32]).all(|(wait, base)| (base..=base + 4).contains(wait)));
+    }
+
+    #[test]
+    fn a_step_that_recovers_stops_retrying() {
+        let mut runs = 0;
+        let mut waited = 0;
+        let outcome = retry(5).run(
+            || {
+                runs += 1;
+                if runs < 3 { Err("throttled".to_owned()) } else { Ok(()) }
+            },
+            |_| waited += 1,
+        );
+        assert_eq!(outcome, Ok(()));
+        assert_eq!((runs, waited), (3, 2));
+    }
+
+    #[test]
+    fn one_attempt_never_waits_and_zero_counts_as_one() {
+        let config = ToolConfig {
+            prepare_attempts: Some(0),
+            ..ToolConfig::default()
+        };
+        let policy = Retry::from_config(&config);
+        let mut runs = 0;
+        let outcome = policy.run(
+            || {
+                runs += 1;
+                Err("down".to_owned())
+            },
+            |_| panic!("no wait after the only attempt"),
+        );
+        assert_eq!(outcome, Err("down".to_owned()));
+        assert_eq!(runs, 1);
     }
 
     #[test]
