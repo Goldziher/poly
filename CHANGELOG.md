@@ -18,6 +18,11 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   where a link exposed worktree bytes git no longer compares with the index. The first snapshot after
   the fix writes the omitted entries once, as `snapshot = "full"` and 0.29.0 did, and later runs only
   re-check them; a checkout without skip-worktree entries is unaffected.
+- **A `snapshot_include` entry inside a linked directory no longer deletes the worktree file.** In a
+  sparse snapshot, `<snapshot>/other/gen.txt` under a linked `other/` is the working tree's own file,
+  and linking the entry there removed it and left a symlink pointing at itself; withdrawing an entry
+  could likewise unlink a symlink of yours. Such an entry is already reachable through the directory
+  link and is now left alone.
 
 [Goldziher/poly#44]: https://github.com/Goldziher/poly/issues/44
 

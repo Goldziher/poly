@@ -58,6 +58,13 @@ pub(super) fn materialize_includes(root: &Path, dir: &Path, includes: &[String])
             );
             continue;
         }
+        if behind_link(dir, relative) {
+            debug!(
+                entry,
+                "snapshot_include entry is already reachable through a linked directory"
+            );
+            continue;
+        }
         let source = root.join(relative);
         // `symlink_metadata`, not `exists`: a dangling symlink in the worktree
         // must be reported as such rather than silently treated as missing.
@@ -88,7 +95,7 @@ fn unlink_withdrawn(dir: &Path, includes: &[String]) {
             continue;
         }
         let relative = Path::new(entry);
-        if !git::is_safe_relative_path(relative) {
+        if !git::is_safe_relative_path(relative) || behind_link(dir, relative) {
             continue;
         }
         let link = dir.join(relative);
@@ -99,6 +106,17 @@ fn unlink_withdrawn(dir: &Path, includes: &[String]) {
             debug!(entry, "unlinked a withdrawn snapshot_include entry");
         }
     }
+}
+
+/// Whether a directory above `relative` in `dir` is a symlink — one a sparse
+/// snapshot links to the worktree. The path then *is* the worktree's own entry:
+/// already reachable, and never ours to replace or remove.
+fn behind_link(dir: &Path, relative: &Path) -> bool {
+    relative
+        .ancestors()
+        .skip(1)
+        .filter(|ancestor| !ancestor.as_os_str().is_empty())
+        .any(|ancestor| std::fs::symlink_metadata(dir.join(ancestor)).is_ok_and(|meta| meta.file_type().is_symlink()))
 }
 
 #[cfg(unix)]

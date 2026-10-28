@@ -502,3 +502,65 @@ fn a_skip_worktree_file_is_read_from_the_index_not_through_a_link() {
         "c = 99  # ignored by git\n"
     );
 }
+
+#[test]
+fn a_snapshot_include_inside_a_linked_directory_leaves_the_worktree_file_alone() {
+    // `other/` is linked, so `<snapshot>/other/gen.txt` *is* the worktree file:
+    // replacing it with a link would delete the author's untracked file.
+    let repo = repo();
+    let root = repo.path();
+    write(root, "other/gen.txt", "generated\n");
+    let cache = TempDir::new().unwrap();
+    let files = [PathBuf::from("pkg/a.py")];
+    let includes = ["other/gen.txt".to_string()];
+
+    let snap = StagedSnapshot::create_scoped_in(cache.path(), root, &includes, sparse(&files, &[])).unwrap();
+
+    let live = std::fs::symlink_metadata(root.join("other/gen.txt")).unwrap();
+    assert!(live.file_type().is_file(), "the worktree file is still a file");
+    assert_eq!(
+        std::fs::read_to_string(root.join("other/gen.txt")).unwrap(),
+        "generated\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(snap.path().join("other/gen.txt")).unwrap(),
+        "generated\n",
+        "the entry is reachable through the directory link"
+    );
+
+    StagedSnapshot::create_scoped_in(cache.path(), root, &[], sparse(&files, &[])).unwrap();
+
+    assert!(
+        root.join("other/gen.txt").is_file(),
+        "withdrawing the entry does not touch the worktree either"
+    );
+}
+
+#[test]
+fn withdrawing_an_include_never_unlinks_a_worktree_symlink_behind_a_directory_link() {
+    let repo = repo();
+    let root = repo.path();
+    std::os::unix::fs::symlink("c.py", root.join("other/alias.py")).unwrap();
+    let cache = TempDir::new().unwrap();
+    let files = [PathBuf::from("pkg/a.py")];
+    // Recorded while `other/` was written (a file in it was staged)...
+    let includes = ["other/alias.py".to_string()];
+    StagedSnapshot::create_scoped_in(
+        cache.path(),
+        root,
+        &includes,
+        sparse(&[PathBuf::from("other/c.py")], &[]),
+    )
+    .unwrap();
+
+    // ...then withdrawn while `other/` is linked.
+    StagedSnapshot::create_scoped_in(cache.path(), root, &[], sparse(&files, &[])).unwrap();
+
+    assert!(
+        std::fs::symlink_metadata(root.join("other/alias.py"))
+            .unwrap()
+            .file_type()
+            .is_symlink(),
+        "the author's own symlink survives"
+    );
+}
