@@ -73,6 +73,12 @@ How they differ from the breadth tier above:
 - **Reports.** Findings carry file, line, column, rule and URL, and are cached per file. A tool that
   judges a file in context (`buf`, `golangci-lint`) is cached against a digest of that context, so
   editing a neighbouring file invalidates the verdict.
+- **actionlint severities.** actionlint has none, so poly assigns one per finding `kind` (from
+  0.31.1): `runner-label` is a warning, since label validity depends on runners poly cannot see —
+  declare self-hosted labels under `self-hosted-runner.labels` in `.github/actionlint.yaml`;
+  `shellcheck` takes the level shellcheck printed (`error`, `warning`, `info`, `style` as hint);
+  every other kind is an error. Override one kind with
+  `[lint.yaml.actionlint.rules.<kind>] level = "error"`.
 - **Fixes.** `buildifier`'s auto-fixable warnings are applied by `poly lint --fix`; the tool's own
   rewrite is attached as the fix. `golangci-lint` findings that carry a suggested fix are fixed by
   `golangci-lint run --fix` on a scratch copy of the Go module, and only the run's files are read
