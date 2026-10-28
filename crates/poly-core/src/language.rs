@@ -121,6 +121,18 @@ const INI_FILENAMES: &[&str] = &[
     ".pypirc",
 ];
 
+/// Extensionless Ruby files that tooling names by convention.
+const RUBY_FILENAMES: &[&str] = &[
+    "gemfile",
+    "rakefile",
+    "podfile",
+    "brewfile",
+    "vagrantfile",
+    "capfile",
+    "guardfile",
+    "berksfile",
+];
+
 impl Language {
     /// Human-facing name for report text ("Kotlin", "TypeScript").
     ///
@@ -217,6 +229,9 @@ impl Language {
             if INI_FILENAMES.contains(&lower.as_str()) {
                 return Some(Language::Ini);
             }
+            if RUBY_FILENAMES.contains(&lower.as_str()) {
+                return Some(Language::Ruby);
+            }
             if is_starlark_name(&lower) {
                 return Some(Language::Other("starlark".to_string()));
             }
@@ -268,7 +283,7 @@ impl Language {
             "go" => Language::Go,
             "java" => Language::Java,
             "kt" | "kts" => Language::Kotlin,
-            "rb" => Language::Ruby,
+            "rb" | "rake" | "gemspec" | "ru" | "podspec" => Language::Ruby,
             "php" => Language::Php,
             "r" => Language::R,
             "ex" | "exs" => Language::Elixir,
@@ -414,7 +429,7 @@ fn is_dockerfile_name(lower: &str) -> bool {
 fn is_starlark_name(lower: &str) -> bool {
     matches!(
         lower,
-        "build" | "workspace" | "build.bazel" | "workspace.bazel" | "module.bazel"
+        "build" | "workspace" | "build.bazel" | "workspace.bazel" | "module.bazel" | "tiltfile"
     ) || lower.ends_with(".bazel")
         || lower.ends_with(".bzl")
         || lower.ends_with(".build")
@@ -493,6 +508,27 @@ mod tests {
                 "{name}"
             );
         }
+    }
+
+    #[test]
+    fn from_path_detects_conventional_ruby_and_starlark_names() {
+        for name in [
+            "Gemfile",
+            "Rakefile",
+            "Brewfile",
+            "Vagrantfile",
+            "Podfile",
+            "tasks/deploy.rake",
+            "foo.gemspec",
+            "config.ru",
+        ] {
+            assert_eq!(Language::from_path(Path::new(name)), Some(Language::Ruby), "{name}");
+        }
+        assert_eq!(
+            Language::from_path(Path::new("Tiltfile")),
+            Some(Language::Other("starlark".to_string()))
+        );
+        assert_ne!(Language::from_path(Path::new("Gemfile.lock")), Some(Language::Ruby));
     }
 
     #[test]

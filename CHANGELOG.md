@@ -9,6 +9,8 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ### Added
 
+- **Ruby is detected for `Gemfile`, `Rakefile`, `Brewfile`, `Vagrantfile`, `Podfile`, `Capfile`, `Guardfile`,
+  `Berksfile`, `*.rake`, `*.gemspec`, `*.ru` and `*.podspec`**, and `Tiltfile` is treated as Starlark.
 - **`dockerfile-parser`: `Splicer::splice` returns a `Result` instead of panicking on a bad span**
   (`Error::InvalidSpan` for a reversed, out-of-bounds or mid-character span), and under a backtick
   `# escape=` directive a trailing `\` that cannot continue a line now stays inside the instruction span.
