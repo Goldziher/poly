@@ -10,7 +10,7 @@ use ignore::overrides::{Override, OverrideBuilder};
 use serde::Serialize;
 
 use crate::language::Language;
-use crate::resolve::{ConfigSet, ExcludeRule};
+use crate::resolve::{ConfigSet, ExcludeRule, SnapshotEntry};
 
 /// Directory names pruned from every walk regardless of git-tracking.
 ///
@@ -434,13 +434,18 @@ impl ExcludeMatcher {
 pub(crate) fn keep_walk_entry(entry: &ignore::DirEntry, no_prune: &[String]) -> bool {
     let is_directory = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
     if entry.depth() > 0 && is_directory {
-        let name = entry.file_name();
-        if no_prune.iter().any(|kept| name == kept.as_str()) {
-            return true;
-        }
-        return !PRUNED_DIRECTORIES.iter().any(|pruned| name == *pruned);
+        return keep_directory_name(entry.file_name(), no_prune);
     }
     true
+}
+
+/// Whether a nested directory called `name` survives the built-in prune set,
+/// after the run's `no_prune` opt-outs.
+pub(crate) fn keep_directory_name(name: &std::ffi::OsStr, no_prune: &[String]) -> bool {
+    if no_prune.iter().any(|kept| name == kept.as_str()) {
+        return true;
+    }
+    !PRUNED_DIRECTORIES.iter().any(|pruned| name == *pruned)
 }
 
 /// How many distinct pruned directory *names* the report keeps an example of.
@@ -508,13 +513,29 @@ impl PruneRecorder {
         if keep_walk_entry(entry, &self.no_prune) {
             return true;
         }
-        let path = entry.path();
+        self.record_pruned(entry.path());
+        false
+    }
+
+    /// [`Self::keep`] for a directory replayed from the scan snapshot.
+    fn keep_directory(&self, path: &Path) -> bool {
+        let Some(name) = path.file_name() else {
+            return true;
+        };
+        if keep_directory_name(name, &self.no_prune) {
+            return true;
+        }
+        self.record_pruned(path);
+        false
+    }
+
+    fn record_pruned(&self, path: &Path) {
         // `.git` is pruned like the rest but never reported: it is the one name
         // on the list that is definitionally not source, so naming it adds a
         // line to every run and a directory to every count while telling nobody
         // anything. The point of this report is the surprising entry.
-        if entry.file_name() == UNREPORTED_PRUNE {
-            return false;
+        if path.file_name().is_some_and(|name| name == UNREPORTED_PRUNE) {
+            return;
         }
         let depth = path
             .strip_prefix(&self.root)
@@ -529,7 +550,6 @@ impl PruneRecorder {
                 depth,
             },
         );
-        false
     }
 
     /// Fold this root's tally into the run-wide report.
@@ -636,8 +656,16 @@ pub fn discover_reporting(
             continue;
         }
         let matcher = ExcludeMatcher::new(root, exclude);
-        let walk_matcher = matcher.clone();
         let pruner = PruneRecorder::new(root, configs.no_prune());
+        if let Some(entries) = configs.take_walk_snapshot(root) {
+            replay_snapshot(&entries, matcher.as_deref(), &pruner, configs, &mut out, &mut report);
+            if let Some(matcher) = &matcher {
+                matcher.merge_into(&mut report);
+            }
+            pruner.merge_into(&mut report);
+            continue;
+        }
+        let walk_matcher = matcher.clone();
         let walk_pruner = Arc::clone(&pruner);
         let mut builder = WalkBuilder::new(root);
         builder
@@ -663,15 +691,7 @@ pub fn discover_reporting(
             if !entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
                 continue;
             }
-            let path = entry.path();
-            match detect(path) {
-                Some(language) => out.push(DiscoveredFile {
-                    path: path.to_path_buf(),
-                    language,
-                    config_id: configs.config_id_for(path),
-                }),
-                None => report.record_unrecognized(path),
-            }
+            accept_file(entry.path(), configs, &mut out, &mut report);
         }
         if let Some(matcher) = &matcher {
             matcher.merge_into(&mut report);
@@ -680,6 +700,55 @@ pub fn discover_reporting(
     }
     report.sort_rules();
     (out, report)
+}
+
+/// Tag a walked file with its language and governing config, or count it as
+/// unrecognised.
+fn accept_file(path: &Path, configs: &ConfigSet, out: &mut Vec<DiscoveredFile>, report: &mut DiscoveryReport) {
+    match detect(path) {
+        Some(language) => out.push(DiscoveredFile {
+            path: path.to_path_buf(),
+            language,
+            config_id: configs.config_id_for(path),
+        }),
+        None => report.record_unrecognized(path),
+    }
+}
+
+/// Discover from the entries the config scan already recorded instead of walking
+/// the root again: the built-in prune set and the exclude globs are applied here,
+/// and a pruned directory logically drops everything beneath it.
+///
+/// `entries` is sorted by path, so a directory is followed immediately by its
+/// descendants and one `starts_with` test skips the whole subtree.
+fn replay_snapshot(
+    entries: &[SnapshotEntry],
+    matcher: Option<&ExcludeMatcher>,
+    pruner: &PruneRecorder,
+    configs: &ConfigSet,
+    out: &mut Vec<DiscoveredFile>,
+    report: &mut DiscoveryReport,
+) {
+    let mut skipped: Option<&Path> = None;
+    for entry in entries {
+        if let Some(dir) = skipped {
+            if entry.path.starts_with(dir) {
+                continue;
+            }
+            skipped = None;
+        }
+        let pruned = (entry.is_dir && !pruner.keep_directory(&entry.path))
+            || matcher.is_some_and(|m| m.record_if_excluded(&entry.path, entry.is_dir, false));
+        if pruned {
+            if entry.is_dir {
+                skipped = Some(entry.path.as_path());
+            }
+            continue;
+        }
+        if !entry.is_dir {
+            accept_file(&entry.path, configs, out, report);
+        }
+    }
 }
 
 /// The matcher used for an explicitly named root under `--force-exclude`.
