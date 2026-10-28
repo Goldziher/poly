@@ -183,8 +183,17 @@ mocks, `.d.ts` stubs and cohesive module groups rather than defects. Re-enable w
 
 `[lint.python.ruff]` also reads ruff's isort options (`isort_*`, `known_*`, `extra_standard_library`,
 `known_section`), the remaining pylint limits (`pylint_max_*`), `flake8_import_conventions_*`,
-`unsafe_fixes`, `preview` and `explicit_preview_rules`; `[fmt.python.ruff]` reads `indent_style`,
-`quote_style`, `skip_magic_trailing_comma` and `line_ending`. A nested `poly.toml` merges table by
+`unsafe_fixes`, `preview` and `explicit_preview_rules`, and every other ruff linter plugin table as
+a flat key prefixed with its table name (`flake8_bandit_check_typed_exception`,
+`flake8_tidy_imports_banned_api`, `pydocstyle_ignore_decorators`, `pyupgrade_keep_runtime_typing`,
+`ruff_parenthesize_tuple_in_subscript`, ... for `flake8-annotations`, `-bandit`, `-boolean-trap`,
+`-bugbear`, `-builtins`, `-comprehensions`, `-copyright`, `-errmsg`, `-gettext`,
+`-implicit-str-concat`, `-self`, `-tidy-imports`, `-unused-arguments`, `pydoclint`, `pyflakes`,
+`pyupgrade` and `ruff`), `isort_required_imports`, and the linter-wide `builtins`,
+`namespace_packages`, `allowed_confusables`, `logger_objects`, `task_tags`, `typing_modules`,
+`typing_extensions`, `future_annotations` and `ignore_init_module_imports`; `[fmt.python.ruff]` reads
+`indent_style`, `quote_style`, `skip_magic_trailing_comma`, `line_ending`, `preview` and `exclude`
+(globs matched at any depth). A nested `poly.toml` merges table by
 table into its parent's; set `inherit_mode = "replace"` in a table to make it replace the parent's
 instead, as a nested ruff config does. `poly migrate` writes it for nested ruff configs.
 
