@@ -5,6 +5,21 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
+## [Unreleased]
+
+### Fixed
+
+- **ruff lints for the project's own Python target again** ([Goldziher/poly#42]). poly never read
+  `[tool.ruff] target-version` or `requires-python`; it only appeared to while ruff's default target was
+  3.10, and the 0.17 ruff line moved that default to 3.11. Since 0.30.0 a 3.10 project was told to make
+  3.11-only rewrites (`UP017` `datetime.UTC`, `UP042` `StrEnum`) and `I001` filed `tomllib` as standard
+  library. Without a `target_version` in `[lint.python.ruff]`, the target now comes from the nearest
+  `.ruff.toml`, `ruff.toml` or `[tool.ruff]` (following its `extend` chain), then from
+  `project.requires-python`, and only then from ruff's default. The resolved target is part of the cache
+  key, so editing it invalidates cached results.
+
+[Goldziher/poly#42]: https://github.com/Goldziher/poly/issues/42
+
 ## [0.30.1] - 2026-10-28
 
 ### Fixed

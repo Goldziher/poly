@@ -20,6 +20,13 @@
 //! with the ruff formatter and would fire on every well-formatted file.
 //! Preview rules stay off unless `preview = true` is set in `[lint.python.ruff]`.
 //!
+//! # Target Python version
+//!
+//! `target_version` in `[lint.python.ruff]` wins. Without it, the target is the
+//! one the project's own ruff config declares — `target-version` in the nearest
+//! `.ruff.toml` / `ruff.toml` / `[tool.ruff]`, else `requires-python` — and only
+//! then ruff's default; see [`target`].
+//!
 //! # Opinionated format defaults
 //!
 //! | Setting | Polylint default | ruff default |
@@ -56,6 +63,7 @@ mod context;
 mod format;
 mod option_keys;
 mod plugins;
+mod target;
 
 use crate::config::EngineConfig;
 use crate::engine::{
@@ -230,17 +238,42 @@ fn default_settings() -> &'static LinterSettings {
 /// serialized options plus the global line length, which is everything
 /// `build_settings` reads.
 fn settings_for(cfg: &EngineConfig) -> Arc<LinterSettings> {
-    static MEMO: OnceLock<Mutex<HashMap<String, Arc<LinterSettings>>>> = OnceLock::new();
-    let key = format!(
+    settings_memo(settings_key(cfg), || build_settings(cfg))
+}
+
+/// The memo key for `cfg`: everything [`build_settings`] reads.
+fn settings_key(cfg: &EngineConfig) -> String {
+    format!(
         "{}\u{0}{}",
         cfg.globals.line_length,
         toml::to_string(&cfg.options).unwrap_or_default()
-    );
+    )
+}
+
+/// The settings for `cfg` with the target the project's own ruff config
+/// declares (see [`target`]) in place of ruff's default, memoized per config
+/// and target.
+fn settings_with_target(cfg: &EngineConfig, version: ruff_python_ast::PythonVersion) -> Arc<LinterSettings> {
+    let key = format!("{}\u{0}target={version}", settings_key(cfg));
+    settings_memo(key, || {
+        let mut settings = if cfg.options.is_empty() {
+            default_settings().clone()
+        } else {
+            (*settings_for(cfg)).clone()
+        };
+        settings.unresolved_target_version = version.into();
+        settings
+    })
+}
+
+/// The process-wide memo behind [`settings_for`] and [`settings_with_target`].
+fn settings_memo(key: String, build: impl FnOnce() -> LinterSettings) -> Arc<LinterSettings> {
+    static MEMO: OnceLock<Mutex<HashMap<String, Arc<LinterSettings>>>> = OnceLock::new();
     let memo = MEMO.get_or_init(Mutex::default);
     if let Some(hit) = memo.lock().unwrap_or_else(PoisonError::into_inner).get(&key) {
         return Arc::clone(hit);
     }
-    let built = Arc::new(build_settings(cfg));
+    let built = Arc::new(build());
     memo.lock()
         .unwrap_or_else(PoisonError::into_inner)
         .insert(key, Arc::clone(&built));
@@ -323,18 +356,31 @@ fn build_settings(cfg: &EngineConfig) -> LinterSettings {
         }
     }
 
-    if let Some(version) = cfg
-        .options
-        .get("target_version")
-        .and_then(toml::Value::as_str)
-        .and_then(parse_python_version)
-    {
+    if let Some(version) = configured_target(cfg) {
         settings.unresolved_target_version = version.into();
     }
 
     plugins::apply(&mut settings, cfg);
 
     settings
+}
+
+/// The `target_version` set in `[lint.python.ruff]`, when it parses.
+fn configured_target(cfg: &EngineConfig) -> Option<ruff_python_ast::PythonVersion> {
+    cfg.options
+        .get("target_version")
+        .and_then(toml::Value::as_str)
+        .and_then(parse_python_version)
+}
+
+/// The target `path` is linted for when poly's config sets none: what the
+/// project's own ruff config declares, or `None` for ruff's default. A
+/// `target_version` in `poly.toml` wins, so it is not looked up. See [`target`].
+fn project_target(path: &Path, cfg: &EngineConfig) -> Option<ruff_python_ast::PythonVersion> {
+    if configured_target(cfg).is_some() {
+        return None;
+    }
+    target::discovered_target(path)
 }
 
 /// Parse a Python target version from either ruff's canonical `py310` spelling
@@ -453,7 +499,7 @@ impl Engine for RuffEngine {
     }
 
     fn version(&self) -> &str {
-        "ruff-0.17.3+pkgroot+plugins+isort+e501+tgtsrc+ignore-b008+rules-v3+advisory-sev1+fmtopts2+plugopts2+isort3+pylint2+impconv1+defignore2+unsafefix1+plugopts3+fmtopts3"
+        "ruff-0.17.3+pkgroot+plugins+isort+e501+tgtsrc+ignore-b008+rules-v3+advisory-sev1+fmtopts2+plugopts2+isort3+pylint2+impconv1+defignore2+unsafefix1+plugopts3+fmtopts3+tgtdisc1"
     }
 
     fn run_context(&self, cfg: &EngineConfig) -> String {
@@ -464,16 +510,21 @@ impl Engine for RuffEngine {
             .map(|roots| roots.iter().filter_map(toml::Value::as_str).map(Into::into).collect())
             .unwrap_or_default();
         context::forget_package_roots();
+        target::forget_targets();
         context::module_tree(&src_roots)
     }
 
-    fn file_context(&self, path: &Path, _cfg: &EngineConfig) -> Option<String> {
-        Some(context::run_package_root(path))
+    fn file_context(&self, path: &Path, cfg: &EngineConfig) -> Option<String> {
+        let target = project_target(path, cfg).map_or_else(|| "-".to_owned(), |version| version.to_string());
+        Some(format!("{}\u{0}target={target}", context::run_package_root(path)))
     }
 
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
         let owned_settings;
-        let settings = if cfg.options.is_empty() {
+        let settings = if let Some(version) = project_target(&src.path, cfg) {
+            owned_settings = settings_with_target(cfg, version);
+            &*owned_settings
+        } else if cfg.options.is_empty() {
             default_settings()
         } else {
             owned_settings = settings_for(cfg);
