@@ -643,25 +643,25 @@ impl Importer<'_> {
         }
     }
 
-    /// Carry the release a repository pins for a catalog tool (`.checkstyle-version`)
-    /// to `[tools.<name>] version`, when poly can download that release.
+    /// Carry the release a repository pins for a catalog tool (`.checkstyle-version`,
+    /// `.tool-versions`) to `[tools.<name>] version`, when poly can download that
+    /// release, and say so when it cannot.
     fn pin_catalog_tools(&mut self, label: &str, tools: &[&str]) {
         for tool in tools {
-            let Some(file) = pin::pin_file(tool) else { continue };
-            let Some(version) = pin::read_version(&self.dir.join(file)) else {
+            let Some(pin) = pin::pin_for(&self.dir, tool) else {
                 continue;
             };
-            if pin::catalog_has_release(tool, &version) {
+            if pin::catalog_has_release(tool, &pin.version) {
                 let settings = ToolSettings {
-                    version: Some(version),
+                    version: Some(pin.version),
                     ..ToolSettings::default()
                 };
                 self.acc.add_tool_settings(tool, label, &settings);
-            } else {
-                self.acc.diag.lossy(format!(
-                    "{label}: {file} pins {tool} {version}, which poly cannot download; set \
-                     `[tools.{tool}] version`, `url` and `sha256` to pin it"
-                ));
+                continue;
+            }
+            match pin::unpinnable(tool, &pin.file, &pin.version) {
+                pin::Unpinnable::Release(message) => self.acc.diag.lossy(format!("{label}: {message}")),
+                pin::Unpinnable::OnPath(message) => self.acc.diag.note(format!("{label}: {message}")),
             }
         }
     }

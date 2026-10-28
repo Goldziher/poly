@@ -847,3 +847,84 @@ fn requirements_txt_fixer_maps_to_the_opt_in_file_safety_member() {
     assert!(!safety.merge_conflict, "only the requested member is on");
     assert_eq!(globs(safety.files.as_ref()), ["*requirements*.txt"]);
 }
+
+fn precommit_repo(repo_url: &str, rev: &str, hook: &str) -> tempfile::TempDir {
+    repo(&[(
+        ".pre-commit-config.yaml",
+        &format!("repos:\n  - repo: {repo_url}\n    rev: {rev}\n    hooks:\n      - id: {hook}\n"),
+    )])
+}
+
+#[test]
+fn a_pre_commit_rev_that_is_a_release_poly_cannot_download_is_noted_not_dropped() {
+    let dir = precommit_repo("https://github.com/golangci/golangci-lint", "v2.1.6", "golangci-lint");
+    let plan = plan(dir.path());
+    assert_eq!(
+        result(&plan, "pre-commit").absorb,
+        Absorb::Full,
+        "poly has no golangci-lint download, so the rev is information, not a loss"
+    );
+    let notes = result(&plan, "pre-commit").notes.join("\n");
+    assert!(notes.contains("rev v2.1.6 pins golangci-lint 2.1.6"), "{notes}");
+    assert!(notes.contains("runs the one on PATH"), "{notes}");
+    let tools = parsed(&plan);
+    assert!(tools["tools"]["golangci-lint"].get("version").is_none());
+}
+
+#[test]
+fn a_pre_commit_rev_poly_can_download_becomes_the_tool_version() {
+    let dir = precommit_repo("https://github.com/keith/pre-commit-buildifier", "8.5.1", "buildifier");
+    let tools = parsed(&plan(dir.path()));
+    assert_eq!(tools["tools"]["buildifier"]["version"].as_str(), Some("8.5.1"));
+    assert_eq!(tools["tools"]["buildifier"]["install"].as_str(), Some("auto"));
+}
+
+#[test]
+fn a_pre_commit_rev_missing_from_a_downloadable_tools_releases_keeps_the_source() {
+    let dir = precommit_repo("https://github.com/keith/pre-commit-buildifier", "7.0.0", "buildifier");
+    let lossy = unrepresented(&plan(dir.path()), "pre-commit").join("\n");
+    assert!(lossy.contains("pins buildifier 7.0.0, which poly cannot download"), "{lossy}");
+}
+
+#[test]
+fn tool_versions_pins_are_reported_for_a_lefthook_catalog_tool() {
+    let dir = repo(&[
+        (".tool-versions", "nodejs 22.1.0\ngolangci-lint 1.64.8\n"),
+        (
+            "lefthook.yml",
+            "pre-commit:\n  jobs:\n    - name: go\n      glob: '*.go'\n      run: golangci-lint run {staged_files}\n",
+        ),
+    ]);
+    let plan = plan(dir.path());
+    assert_eq!(result(&plan, "lefthook").absorb, Absorb::Full);
+    let notes = result(&plan, "lefthook").notes.join("\n");
+    assert!(notes.contains(".tool-versions pins golangci-lint 1.64.8"), "{notes}");
+}
+
+#[test]
+fn a_tool_versions_pin_for_a_downloadable_tool_at_an_unknown_release_is_a_loss() {
+    let dir = repo(&[
+        (".checkstyle-version", "1.0.0\n"),
+        (
+            "lefthook.yml",
+            "pre-commit:\n  jobs:\n    - name: java\n      glob: '*.java'\n      run: checkstyle -c checkstyle.xml {staged_files}\n",
+        ),
+    ]);
+    let lossy = unrepresented(&plan(dir.path()), "lefthook").join("\n");
+    assert!(lossy.contains(".checkstyle-version pins checkstyle 1.0.0, which poly cannot download"), "{lossy}");
+}
+
+#[test]
+fn hadolint_buf_and_tflint_pre_commit_hooks_map_to_catalog_tools() {
+    let dir = repo(&[(
+        ".pre-commit-config.yaml",
+        "repos:\n  - repo: https://github.com/hadolint/hadolint\n    rev: v2.12.0\n    hooks:\n      - id: hadolint\n  - repo: https://github.com/bufbuild/buf\n    rev: v1.50.0\n    hooks:\n      - id: buf-lint\n      - id: buf-format\n  - repo: https://github.com/antonbabenko/pre-commit-terraform\n    rev: v1.96.0\n    hooks:\n      - id: terraform_tflint\n",
+    )]);
+    let plan = plan(dir.path());
+    assert_eq!(result(&plan, "pre-commit").absorb, Absorb::Full, "{:?}", result(&plan, "pre-commit").absorb);
+    let doc = parsed(&plan);
+    for tool in ["hadolint", "buf", "tflint"] {
+        assert_eq!(doc["tools"][tool]["enabled"].as_bool(), Some(true), "[tools.{tool}]");
+    }
+    assert_eq!(doc["hooks"]["builtin"]["fmt"]["fix"].as_bool(), Some(true), "buf format rewrites");
+}

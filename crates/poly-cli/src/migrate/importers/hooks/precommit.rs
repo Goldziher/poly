@@ -8,6 +8,7 @@ use serde_json::Value;
 
 use super::acc::{Body, BuiltinUse, Effect, HookAcc, JobSpec, Shape, ToolSettings};
 use super::command::{EngineOption, RUFF_UNSAFE_FIXES, Target, tokenize};
+use super::pin;
 use super::filters::regex_to_globs;
 use crate::migrate::importers::load_yaml;
 
@@ -41,6 +42,10 @@ struct Configures {
     format_extra_args: &'static [&'static str],
     /// The hook also reports what it cannot fix, i.e. it lints too.
     also_lint: bool,
+    /// Whether the hook repository's `rev` is the tool's own release (true for
+    /// `rhysd/actionlint`, false for `pre-commit-terraform`, whose tags version the
+    /// hook repository).
+    rev_is_tool_version: bool,
 }
 
 impl Known {
@@ -135,6 +140,7 @@ const KNOWN: &[Known] = &[
             tool: "terraform",
             format_extra_args: &[],
             also_lint: false,
+            rev_is_tool_version: false,
         }),
         ..known("terraform_fmt", Mapping::Builtin(Target::Fmt, &["terraform"]), None).scoped(&["*.{tf,tfvars}"])
     },
@@ -145,6 +151,7 @@ const KNOWN: &[Known] = &[
             tool: "actionlint",
             format_extra_args: &[],
             also_lint: false,
+            rev_is_tool_version: true,
         }),
         ..known("actionlint", Mapping::Builtin(Target::Lint, &["actionlint"]), None)
             .scoped(&[".github/workflows/*.{yml,yaml}"])
@@ -154,6 +161,7 @@ const KNOWN: &[Known] = &[
             tool: "buildifier",
             format_extra_args: &["-lint=fix"],
             also_lint: true,
+            rev_is_tool_version: true,
         }),
         ..known("buildifier", Mapping::Builtin(Target::Fmt, &["buildifier"]), None).scoped(&[
             "*BUILD",
@@ -161,12 +169,62 @@ const KNOWN: &[Known] = &[
             "*.bzl",
         ])
     },
-    known(
-        "golangci-lint",
-        Mapping::Builtin(Target::Lint, &["golangci-lint"]),
-        None,
-    )
-    .scoped(&["*.go"]),
+    Known {
+        configures: Some(Configures {
+            tool: "golangci-lint",
+            format_extra_args: &[],
+            also_lint: false,
+            rev_is_tool_version: true,
+        }),
+        ..known(
+            "golangci-lint",
+            Mapping::Builtin(Target::Lint, &["golangci-lint"]),
+            None,
+        )
+        .scoped(&["*.go"])
+    },
+    Known {
+        configures: Some(Configures {
+            tool: "hadolint",
+            format_extra_args: &[],
+            also_lint: false,
+            rev_is_tool_version: true,
+        }),
+        ..known("hadolint", Mapping::Builtin(Target::Lint, &["hadolint"]), None).scoped(&[
+            "Dockerfile",
+            "**/Dockerfile",
+            "Dockerfile.*",
+            "**/Dockerfile.*",
+            "*.dockerfile",
+        ])
+    },
+    Known {
+        configures: Some(Configures {
+            tool: "buf",
+            format_extra_args: &[],
+            also_lint: false,
+            rev_is_tool_version: true,
+        }),
+        ..known("buf-lint", Mapping::Builtin(Target::Lint, &["buf"]), None).scoped(&["**/*.proto"])
+    },
+    Known {
+        configures: Some(Configures {
+            tool: "buf",
+            format_extra_args: &[],
+            also_lint: false,
+            rev_is_tool_version: true,
+        }),
+        ..known("buf-format", Mapping::Builtin(Target::Fmt, &["buf"]), None).scoped(&["**/*.proto"])
+    },
+    Known {
+        configures: Some(Configures {
+            tool: "tflint",
+            format_extra_args: &[],
+            also_lint: false,
+            rev_is_tool_version: false,
+        }),
+        ..known("terraform_tflint", Mapping::Builtin(Target::Lint, &["tflint"]), None).scoped(&["*.{tf,tfvars}"])
+    },
     known(
         "markdownlint",
         Mapping::Builtin(Target::Lint, &[]),
@@ -201,6 +259,7 @@ const FIXERS: &[&str] = &[
     "terraform_fmt",
     "taplo-format",
     "buildifier",
+    "buf-format",
 ];
 
 /// Linters that only rewrite files when given `--fix`.
@@ -233,6 +292,7 @@ pub(super) struct Outcome {
 }
 
 struct Context {
+    dir: PathBuf,
     default_stages: Vec<String>,
     global_exclude: Vec<String>,
 }
@@ -252,6 +312,7 @@ pub(super) fn import(dir: &Path, acc: &mut HookAcc) -> Option<Outcome> {
         });
     };
     let mut context = Context {
+        dir: dir.to_path_buf(),
         default_stages: stage_names(config.get("default_stages")),
         global_exclude: Vec::new(),
     };
@@ -406,7 +467,7 @@ fn remote_hook(acc: &mut HookAcc, context: &Context, repo: &str, rev: Option<&st
     }
     args.retain(|arg| !entry.benign_args.contains(&arg.as_str()));
     if let Some(configures) = entry.configures {
-        configure_tool(acc, &label, configures, rev, std::mem::take(&mut args));
+        configure_tool(acc, &context.dir, &label, configures, rev, std::mem::take(&mut args));
         if configures.also_lint {
             let lint_shape = Shape {
                 fix: false,
@@ -433,24 +494,31 @@ fn remote_hook(acc: &mut HookAcc, context: &Context, repo: &str, rev: Option<&st
     acc.diag.note(format!("{label}: mapped to a poly builtin"));
 }
 
-/// Carry a hook's arguments and pinned `rev` to the catalog tool it runs.
-fn configure_tool(acc: &mut HookAcc, label: &str, configures: Configures, rev: Option<&str>, args: Vec<String>) {
-    let version = rev
-        .map(|rev| rev.trim_start_matches('v').to_string())
-        .filter(|rev| super::pin::catalog_has_release(configures.tool, rev));
-    if version.is_none()
-        && let Some(rev) = rev
-        && super::pin::pin_file(configures.tool).is_none()
-        && poly_catalog::Catalog::get()
-            .tool(configures.tool)
-            .and_then(|tool| tool.recipe.as_ref())
-            .and_then(|recipe| recipe.install.as_ref())
-            .is_some_and(|install| !install.releases.is_empty())
-    {
-        acc.diag.lossy(format!(
-            "{label}: rev {rev} of {} is not a release poly can download; set `[tools.{}] version`, `url` and `sha256` to pin it",
-            configures.tool, configures.tool
-        ));
+/// Carry a hook's arguments and the release it pins (its `rev`, when that is the
+/// tool's own version, or a pin file beside the config) to the catalog tool it runs.
+fn configure_tool(
+    acc: &mut HookAcc,
+    dir: &Path,
+    label: &str,
+    configures: Configures,
+    rev: Option<&str>,
+    args: Vec<String>,
+) {
+    let tool = configures.tool;
+    let pinned = rev
+        .filter(|_| configures.rev_is_tool_version)
+        .map(|rev| (format!("rev {rev}"), rev.trim_start_matches('v').to_string()))
+        .or_else(|| pin::pin_for(dir, tool).map(|pin| (pin.file, pin.version)));
+    let mut version = None;
+    if let Some((source, wanted)) = pinned {
+        if super::pin::catalog_has_release(tool, &wanted) {
+            version = Some(wanted);
+        } else {
+            match super::pin::unpinnable(tool, &source, &wanted) {
+                super::pin::Unpinnable::Release(message) => acc.diag.lossy(format!("{label}: {message}")),
+                super::pin::Unpinnable::OnPath(message) => acc.diag.note(format!("{label}: {message}")),
+            }
+        }
     }
     let settings = ToolSettings {
         extra_args: args,
@@ -458,7 +526,7 @@ fn configure_tool(acc: &mut HookAcc, label: &str, configures: Configures, rev: O
         version,
         ..ToolSettings::default()
     };
-    acc.add_tool_settings(configures.tool, label, &settings);
+    acc.add_tool_settings(tool, label, &settings);
 }
 
 fn apply_maxkb(acc: &mut HookAcc, label: &str, args: &mut Vec<String>) {
