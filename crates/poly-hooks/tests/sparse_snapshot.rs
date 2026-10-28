@@ -373,3 +373,132 @@ fn a_pyproject_ruff_extend_is_followed_and_an_escaping_one_is_ignored() {
 
     assert!(is_written(snap.path(), "shared/base.toml"));
 }
+
+fn index_flags(repo: &Path) -> String {
+    let output = Command::new("git")
+        .args(["ls-files", "-v", "--stage"])
+        .current_dir(repo)
+        .output()
+        .expect("git ls-files");
+    assert!(output.status.success());
+    String::from_utf8(output.stdout).unwrap()
+}
+
+/// A cone sparse checkout of `included/`, with `omitted/` tracked but absent
+/// from the worktree, and `included/a.txt` staged with a later unstaged edit.
+fn cone_sparse_repo() -> TempDir {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+    git(root, &["init", "-q"]);
+    git(root, &["config", "user.email", "t@example.com"]);
+    git(root, &["config", "user.name", "T"]);
+    git(root, &["config", "commit.gpgsign", "false"]);
+    write(
+        root,
+        "proof.sh",
+        "grep -qx kept omitted/b.txt && grep -qx staged included/a.txt\n",
+    );
+    write(root, "included/a.txt", "base\n");
+    write(root, "omitted/b.txt", "kept\n");
+    write(root, "omitted/deep/c.txt", "deep\n");
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-qm", "init"]);
+    git(root, &["sparse-checkout", "init", "--cone"]);
+    git(root, &["sparse-checkout", "set", "included"]);
+    write(root, "included/a.txt", "staged\n");
+    git(root, &["add", "included/a.txt"]);
+    write(root, "included/a.txt", "unstaged\n");
+    assert!(!root.join("omitted").exists(), "the fixture omits a directory");
+    dir
+}
+
+#[test]
+fn a_cone_sparse_checkouts_omitted_files_are_written_from_the_index() {
+    let repo = cone_sparse_repo();
+    let root = repo.path();
+    let cache = TempDir::new().unwrap();
+    let flags = index_flags(root);
+    assert!(
+        flags.contains("S 100644 ") && flags.contains("\tomitted/b.txt"),
+        "{flags}"
+    );
+
+    let snap = snapshot(root, cache.path(), &[PathBuf::from("included/a.txt")], &[]);
+
+    for (path, content) in [
+        ("omitted/b.txt", "kept\n"),
+        ("omitted/deep/c.txt", "deep\n"),
+        ("included/a.txt", "staged\n"),
+    ] {
+        assert!(is_written(snap.path(), path), "{path} should be materialized");
+        assert_eq!(
+            std::fs::read_to_string(snap.path().join(path)).unwrap(),
+            content,
+            "{path}"
+        );
+    }
+    assert!(
+        !root.join("omitted").exists(),
+        "the live sparse checkout is not expanded"
+    );
+    assert_eq!(index_flags(root), flags, "skip-worktree bits and OIDs are preserved");
+    assert_eq!(
+        std::fs::read_to_string(root.join("included/a.txt")).unwrap(),
+        "unstaged\n"
+    );
+}
+
+#[test]
+fn a_hook_in_a_sparse_snapshot_reads_an_omitted_tracked_file() {
+    let repo = cone_sparse_repo();
+    let root = repo.path();
+    let cache = TempDir::new().unwrap();
+    let files = [PathBuf::from("included/a.txt")];
+    // The command names only the script, so nothing pins `omitted/`.
+    let hook = shell_hook("sh proof.sh");
+    let pinned = referenced_paths(std::slice::from_ref(&hook));
+    let snap = snapshot(root, cache.path(), &files, &pinned);
+
+    let outcome = poly_hooks::run(HookRunRequest {
+        root: root.to_path_buf(),
+        work_root: Some(snap.path().to_path_buf()),
+        files: files.to_vec(),
+        stages: vec![spec(vec![hook])],
+        ..HookRunRequest::default()
+    })
+    .unwrap();
+
+    assert!(outcome.success(), "the hook sees the omitted file and the staged bytes");
+    assert!(
+        !root.join("omitted").exists(),
+        "the live sparse checkout is not expanded"
+    );
+}
+
+#[test]
+fn a_skip_worktree_file_is_read_from_the_index_not_through_a_link() {
+    // `git update-index --skip-worktree` on a full checkout leaves the worktree
+    // copy in place, and git stops comparing it with the index, so it may hold
+    // anything. A link to its directory would expose those bytes.
+    let repo = repo();
+    let root = repo.path();
+    git(root, &["update-index", "--skip-worktree", "other/c.py"]);
+    write(root, "other/c.py", "c = 99  # ignored by git\n");
+    let cache = TempDir::new().unwrap();
+
+    let snap = snapshot(root, cache.path(), &[PathBuf::from("pkg/a.py")], &[]);
+
+    assert!(is_written(snap.path(), "other/c.py"));
+    assert_eq!(
+        std::fs::read_to_string(snap.path().join("other/c.py")).unwrap(),
+        "c = 1\n"
+    );
+    assert!(
+        snap.path().join("other/deep/d.py").is_file(),
+        "a subdirectory of a now-written directory still resolves"
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join("other/c.py")).unwrap(),
+        "c = 99  # ignored by git\n"
+    );
+}

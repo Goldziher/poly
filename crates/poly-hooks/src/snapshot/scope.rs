@@ -17,6 +17,14 @@
 //! Nothing reached through a link is a staged file or a sibling of one, so
 //! nothing the run validates is read from the worktree.
 //!
+//! A link only works for content the worktree holds, so every `skip-worktree`
+//! entry is selected and written from the index, with its directory chain like a
+//! staged file. In a sparse checkout the worktree lacks those entries outright;
+//! after `git update-index --skip-worktree` it holds bytes git no longer compares
+//! with the index. That costs one write per omitted entry on the first refresh,
+//! the price every snapshot paid before scoping existed, and later refreshes only
+//! stat them; a checkout without the bit pays nothing.
+//!
 //! The content of every selected entry still comes from the index blob, so the
 //! partially-staged guarantee is unchanged: a path is either absent from the
 //! snapshot or byte-identical to what the commit would capture.
@@ -32,8 +40,8 @@ use crate::model::{Hook, HookCommand};
 pub enum SnapshotScope<'a> {
     /// Every staged entry. Required by whole-workspace hooks.
     Full,
-    /// The staged `files`, their directory chain's direct entries, and the
-    /// tracked paths in `pinned`.
+    /// The staged `files`, their directory chain's direct entries, the tracked
+    /// paths in `pinned`, and every `skip-worktree` entry with its directory chain.
     Sparse {
         /// Repo-relative staged files the run validates.
         files: &'a [PathBuf],
@@ -67,11 +75,19 @@ impl SnapshotScope<'_> {
             .collect();
         let is_pinned = |path: &Path| path.ancestors().any(|ancestor| pinned.contains(ancestor));
 
+        // A `skip-worktree` entry is selected like a staged file: a link cannot
+        // expose it, since the worktree either lacks it (a sparse checkout) or
+        // holds bytes git no longer compares with the index.
+        let omitted = staged
+            .iter()
+            .filter(|entry| entry.skip_worktree)
+            .map(|entry| entry.path.as_path());
         let mut dirs: HashSet<&Path> = HashSet::from([Path::new("")]);
         for ancestors in files
             .iter()
             .map(PathBuf::as_path)
             .chain(pinned.iter().map(PathBuf::as_path))
+            .chain(omitted)
             .map(Path::ancestors)
         {
             dirs.extend(ancestors.skip(1));

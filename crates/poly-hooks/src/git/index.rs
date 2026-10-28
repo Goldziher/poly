@@ -165,6 +165,10 @@ pub struct StagedEntry {
     pub is_symlink: bool,
     /// `true` when the entry is an executable regular file (index mode `100755`).
     pub is_executable: bool,
+    /// `true` when the entry carries git's `skip-worktree` bit — an entry a sparse
+    /// checkout omits, or one marked with `git update-index --skip-worktree` — so
+    /// the worktree is no evidence of its content and may not hold it at all.
+    pub skip_worktree: bool,
 }
 
 /// List every entry staged in the index with its blob OID (`git ls-files -s`).
@@ -175,13 +179,16 @@ pub struct StagedEntry {
 /// genuinely-modified file as clean when the index stat cache is stale or
 /// inconsistent. The staged snapshot relies on this so that an unstaged worktree
 /// edit can never leak into the materialized content. Submodule gitlinks (mode
-/// `160000`) have no blob to materialize and are skipped.
+/// `160000`) have no blob to materialize and are skipped. `-t` prefixes each
+/// record with its status tag, which is how a `skip-worktree` entry (`S`) is
+/// told apart in the same pass.
 #[instrument(level = "trace")]
 pub fn list_staged_entries(root: &Path) -> Result<Vec<StagedEntry>, Error> {
     let output = git_cmd("list staged entries")?
         .current_dir(root)
         .arg("ls-files")
         .arg("-s")
+        .arg("-t")
         .arg("-z")
         .check(true)
         .output()?;
@@ -189,8 +196,9 @@ pub fn list_staged_entries(root: &Path) -> Result<Vec<StagedEntry>, Error> {
 }
 
 /// Parse `git ls-files -s -z` output: NUL-separated `<mode> <oid> <stage>\t<path>`
-/// records. Robust to 40- or 64-hex OIDs and to paths containing spaces (the
-/// path is taken verbatim after the tab).
+/// records, each optionally led by the one-letter status tag `-t` adds (`S` for a
+/// `skip-worktree` entry). Robust to 40- or 64-hex OIDs and to paths containing
+/// spaces (the path is taken verbatim after the tab).
 ///
 /// A path that would escape the tree it is joined onto is a hard error, not a
 /// skip: every consumer joins these paths onto a directory, and an index that
@@ -206,7 +214,9 @@ fn parse_ls_files_stage(bytes: &[u8]) -> Result<Vec<StagedEntry>, Error> {
         let path = path_from_git_bytes(&tab_and_path[1..])?;
         reject_unsafe_path(&path)?;
         let meta = std::str::from_utf8(meta)?;
-        let mut fields = meta.split_whitespace();
+        let mut fields = meta.split_whitespace().peekable();
+        // A mode is all digits, so a leading field that is not is the `-t` tag.
+        let tag = fields.next_if(|field| !field.bytes().all(|byte| byte.is_ascii_digit()));
         let mode = fields.next().unwrap_or_default();
         let oid = fields.next().unwrap_or_default();
         // Only regular files (`100644`), executables (`100755`) and symlinks
@@ -224,6 +234,7 @@ fn parse_ls_files_stage(bytes: &[u8]) -> Result<Vec<StagedEntry>, Error> {
             path,
             is_symlink: mode == "120000",
             is_executable: mode == "100755",
+            skip_worktree: tag == Some("S"),
         });
     }
     Ok(entries)
@@ -531,6 +542,18 @@ mod tests {
         assert!(!entries[0].is_symlink);
         assert_eq!(entries[1].path, PathBuf::from("link"));
         assert!(entries[1].is_symlink, "mode 120000 is a symlink");
+    }
+
+    #[test]
+    fn parse_ls_files_stage_reads_the_skip_worktree_tag() {
+        let input = b"H 100644 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0\tkept.rs\0\
+S 100755 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 0\tomitted/run.sh\0";
+        let entries = parse_ls_files_stage(input).expect("parse");
+        assert_eq!(entries.len(), 2);
+        assert!(!entries[0].skip_worktree);
+        assert!(entries[1].skip_worktree, "`S` is the skip-worktree tag");
+        assert!(entries[1].is_executable, "the mode is read after the tag");
+        assert_eq!(entries[1].oid, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
     }
 
     #[test]

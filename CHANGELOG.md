@@ -5,6 +5,22 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
+## [Unreleased]
+
+### Fixed
+
+- **A hook in a sparse checkout sees tracked files outside the cone again** ([Goldziher/poly#44]). Since
+  0.30.0 the default `snapshot = "auto"` links each directory it does not write to the working tree,
+  and a directory a sparse checkout omits is not there to link, so a hook reading
+  `omitted/b.txt` failed with `No such file or directory` where 0.29.0 passed. Every `skip-worktree`
+  entry is now written into the snapshot from the index, so it holds the staged bytes and the live
+  checkout is not expanded. This also covers `git update-index --skip-worktree` in a full checkout,
+  where a link exposed worktree bytes git no longer compares with the index. The first snapshot after
+  the fix writes the omitted entries once, as `snapshot = "full"` and 0.29.0 did, and later runs only
+  re-check them; a checkout without skip-worktree entries is unaffected.
+
+[Goldziher/poly#44]: https://github.com/Goldziher/poly/issues/44
+
 ## [0.31.1] - 2026-10-28
 
 ### Fixed

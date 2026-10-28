@@ -196,8 +196,9 @@ and is purgeable like any cache (`poly cache clean`).
 A **sparse-checkout worktree is supported**. An entry omitted from the live checkout (git's
 `skip-worktree` bit, set by `git sparse-checkout` or `git update-index --skip-worktree`) is still
 materialized into the snapshot — the checkout passes `--ignore-skip-worktree-bits` — and the live
-checkout is never expanded, so the omitted file does not appear in your working tree. This needs
-git 2.6 or newer.
+checkout is never expanded, so the omitted file does not appear in your working tree. A sparse
+`snapshot = "auto"` run writes every such entry too, since there is no working-tree file to link to;
+the first run pays for them once and later runs only re-check them. This needs git 2.6 or newer.
 
 The snapshot is not itself a git checkout, so a hook running there is handed the repository's git
 context: `GIT_DIR` is the absolute git dir (`.git/worktrees/<name>` in a linked worktree) and
