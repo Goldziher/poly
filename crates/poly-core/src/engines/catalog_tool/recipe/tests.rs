@@ -301,10 +301,9 @@ fn whole_unit_findings_in_files_outside_the_run_reach_the_files_that_are() {
         mine.iter().any(|d| d.title.starts_with("templates/other.yaml: ")),
         "{mine:?}"
     );
-    assert_eq!(
-        results[1].as_ref().expect("ok").len(),
-        1,
-        "values.yaml gets the unit-wide finding too"
+    assert!(
+        results[1].as_ref().expect("ok").is_empty(),
+        "the unit-wide finding is reported once, on the first file"
     );
 
     let own = fx.tool(

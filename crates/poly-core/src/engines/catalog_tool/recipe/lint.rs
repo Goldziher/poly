@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use anyhow::anyhow;
@@ -218,12 +218,21 @@ impl RecipeTool {
         groups.into_values().collect()
     }
 
+    fn is_go_module_tool(&self) -> bool {
+        matches!(&self.recipe.group, Group::Marker(markers) if markers.iter().any(|m| m == "go.mod"))
+    }
+
     /// What the template spends: the group's files, their directories, or nothing.
     fn items_of(&self, template: &Template, unit: &UnitGroup, _members: &[Member<'_>]) -> Vec<String> {
         match template.items() {
             Items::Files => unit.rels.clone(),
             Items::Dirs => {
-                let mut dirs: Vec<String> = unit.rels.iter().map(|rel| directory_of(rel)).collect();
+                let mut dirs: Vec<String> = unit
+                    .rels
+                    .iter()
+                    .filter(|rel| !(self.is_go_module_tool() && is_ignored_by_go_tooling(rel)))
+                    .map(|rel| directory_of(rel))
+                    .collect();
                 dirs.sort();
                 dirs.dedup();
                 dirs
@@ -360,21 +369,31 @@ impl RecipeTool {
                     .map(move |key| (key, index))
             })
             .collect();
+        // Tools run with `--chdir` print paths relative to that directory.
+        let mut hints: Vec<PathBuf> = covered
+            .iter()
+            .filter_map(|&index| members[index].rel.parent().map(Path::to_path_buf))
+            .collect();
+        hints.sort();
+        hints.dedup();
         for finding in batch {
             let owner = finding
                 .path
                 .as_deref()
-                .and_then(|raw| lookup.resolve(raw, &unit.root, &owners));
+                .and_then(|raw| lookup.resolve(raw, &unit.root, &hints, &owners));
             match (owner, self.recipe.findings) {
                 (Some(index), _) => findings[index].push(finding.clone()),
                 (None, Findings::All) => {
-                    for &index in covered {
+                    // One copy, on the first file: the verdict is not cached
+                    // (`RecipeTool::cache_salt`), so it cannot go stale.
+                    if let Some(&index) = covered.first() {
                         let mut copy = finding.clone();
-                        if let Some(path) = &finding.path {
+                        if let Some(path) = finding.path.as_deref().filter(|p| !lookup.is_root(p, &unit.root)) {
                             copy.message = format!("{path}: {}", copy.message);
-                            copy.line = None;
-                            copy.column = None;
                         }
+                        copy.path = None;
+                        copy.line = None;
+                        copy.column = None;
                         findings[index].push(copy);
                     }
                 }
@@ -458,6 +477,16 @@ impl RecipeTool {
 /// once the fix is attached.
 const FIXABLE: &str = "poly.fixable";
 
+/// Whether a `./...`-style package pattern would skip this file: Go tooling
+/// ignores directories named `testdata` or `vendor` and any starting with `.` or `_`.
+/// A tool pointed at directories one by one must apply the same rule, or it lints
+/// code the project never builds.
+fn is_ignored_by_go_tooling(rel: &str) -> bool {
+    let mut components = rel.split('/');
+    components.next_back();
+    components.any(|c| c == "testdata" || c == "vendor" || c.starts_with('.') || c.starts_with('_'))
+}
+
 /// `src/a/b.go` -> `./src/a`; a root-level file -> `.`.
 fn directory_of(rel: &str) -> String {
     match rel.rsplit_once('/') {
@@ -483,6 +512,14 @@ impl Lookup {
         Lookup { bases }
     }
 
+    /// Whether `raw` names the invocation root itself (helm prints the chart
+    /// directory for chart-wide problems).
+    fn is_root(&self, raw: &str, root: &Path) -> bool {
+        let path = Path::new(raw);
+        let joined = paths::normalize(&root.join(path));
+        joined == paths::normalize(root) || paths::canonical(&joined) == paths::canonical(root)
+    }
+
     /// Every spelling a member's path can be printed under.
     fn keys(&self, rel: &Path) -> Vec<PathBuf> {
         self.bases.iter().map(|base| base.join(rel)).collect()
@@ -491,20 +528,28 @@ impl Lookup {
     /// The member `raw` names, trying the spellings tools use: absolute (possibly
     /// through a symlinked prefix), relative to the invocation root, and relative
     /// with a leading chart-name component.
-    fn resolve(&self, raw: &str, root: &Path, owners: &HashMap<PathBuf, usize>) -> Option<usize> {
+    fn resolve(&self, raw: &str, root: &Path, hints: &[PathBuf], owners: &HashMap<PathBuf, usize>) -> Option<usize> {
         let path = Path::new(raw);
         let mut candidates: Vec<PathBuf> = Vec::new();
         if path.is_absolute() {
             candidates.push(paths::normalize(path));
         } else {
             candidates.push(paths::normalize(&root.join(path)));
+            // Some tools print paths relative to where their config lives
+            // (golangci-lint), not to where they ran.
+            candidates.extend(self.bases.iter().map(|base| paths::normalize(&base.join(path))));
+            for hint in hints {
+                for base in &self.bases {
+                    candidates.push(paths::normalize(&base.join(hint).join(path)));
+                }
+            }
             let mut components = path.components();
             if components.next().is_some() {
                 candidates.push(paths::normalize(&root.join(components.as_path())));
             }
         }
         let real_root = paths::canonical(root);
-        candidates.into_iter().find_map(|candidate| {
+        let found = candidates.into_iter().find_map(|candidate| {
             owners
                 .get(&candidate)
                 .or_else(|| owners.get(&paths::canonical(&candidate)))
@@ -513,6 +558,21 @@ impl Lookup {
                     owners.get(&paths::normalize(&root.join(tail)))
                 })
                 .copied()
-        })
+        });
+        found.or_else(|| Self::by_suffix(path, owners))
+    }
+
+    /// A path that climbs out of the invocation directory (`../../../x/y.tf`) is
+    /// a tool relativizing against a different spelling of the working directory
+    /// than poly's (a symlinked `/tmp`). What follows the climb is still the
+    /// file's own path, so match on that tail.
+    fn by_suffix(path: &Path, owners: &HashMap<PathBuf, usize>) -> Option<usize> {
+        let tail: PathBuf = path.components().skip_while(|c| matches!(c, Component::ParentDir)).collect();
+        if tail.as_os_str().is_empty() || tail == path {
+            return None;
+        }
+        let mut matches = owners.iter().filter(|(key, _)| key.ends_with(&tail));
+        let first = matches.next()?;
+        matches.next().is_none().then_some(*first.1)
     }
 }

@@ -14,6 +14,7 @@ use crate::config::{Config, EngineConfig, Kind};
 use crate::discover::DiscoveredFile;
 use crate::engine::{ENABLED_OPTION_KEY, Engine};
 use crate::engines::catalog_tool::{CatalogToolEngine, LintRefusal};
+use crate::engines::format_scope::FormatScope;
 use crate::engines::rule_config::RuleSelection;
 use crate::filter::SeverityRemap;
 use crate::language::Language;
@@ -302,12 +303,38 @@ pub(super) fn plan_engines(
     // format, which is what the lint side has always asked. ~keep
     let catalog = if has_tier_one_formatter(&engines, language, config, kind) {
         // A catalog formatter confined to named files (`pyproject-fmt` on
-        // `pyproject.toml`) supplements the tier-one formatter rather than
-        // competing with it for the whole language.
-        retaining_capable(catalog_engines_for(language, config, kind), kind)
-            .into_iter()
-            .filter(|engine| engine.supplements_tier_one())
-            .collect()
+        // `pyproject.toml`) supplements the tier-one formatter. One with a recipe
+        // that covers the whole language (`tofu fmt`, `golangci-lint fmt`) was
+        // asked for by name in `[tools]`, and is the authority the project's
+        // pre-commit gate runs; it takes the language over from the built-in
+        // formatter, whose opinions would otherwise fight it.
+        let candidates = retaining_capable(catalog_engines_for(language, config, kind), kind);
+        if candidates.iter().any(|engine| engine.takes_over_tier_one()) {
+            engines.retain(|engine| {
+                !engine.provides_language_format(language, &config.engine_config(language, engine.name(), kind))
+            });
+            candidates
+        } else {
+            let scoped: Vec<Box<dyn Engine>> = candidates
+                .into_iter()
+                .filter(|engine| engine.supplements_tier_one())
+                .collect();
+            let claimed: Vec<String> = scoped.iter().flat_map(|engine| engine.claimed_paths()).collect();
+            if let Some(set) = glob_set(&claimed) {
+                engines = engines
+                    .into_iter()
+                    .map(|engine| -> Box<dyn Engine> {
+                        let cfg = config.engine_config(language, engine.name(), kind);
+                        if engine.provides_language_format(language, &cfg) {
+                            Box::new(FormatScope::new(engine, set.clone()))
+                        } else {
+                            engine
+                        }
+                    })
+                    .collect();
+            }
+            scoped
+        }
     } else {
         retaining_capable(catalog_engines_for(language, config, kind), kind)
     };
@@ -603,3 +630,14 @@ pub(super) fn plan_by_config_language(
 
 #[cfg(test)]
 mod tests;
+
+fn glob_set(patterns: &[String]) -> Option<globset::GlobSet> {
+    if patterns.is_empty() {
+        return None;
+    }
+    let mut builder = globset::GlobSetBuilder::new();
+    for pattern in patterns {
+        builder.add(globset::Glob::new(pattern).ok()?);
+    }
+    builder.build().ok()
+}

@@ -36,7 +36,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use globset::{Glob, GlobSet, GlobSetBuilder};
-use poly_catalog::{Command, Group, Recipe, Tool};
+use poly_catalog::{Command, Findings, Group, Recipe, Tool};
 use poly_config::ToolConfig;
 
 use self::argv::Template;
@@ -128,8 +128,8 @@ impl RecipeTool {
             Some(root) => cwd.join(root),
             None => cwd,
         };
-        let extra = extra_args(config, role);
         let flags = &recipe.config_flags;
+        let extra = salt::absolutize_config_args(&extra_args(config, role), flags, &cwd);
         let main = config.args.as_deref();
 
         let (mut passes, stdin) = passes_for(command, main, &extra, role);
@@ -201,6 +201,12 @@ impl RecipeTool {
         }
     }
 
+    /// The globs of the files this tool formats, for displacing the tier-one
+    /// formatter from them.
+    pub(super) fn claimed_globs(&self) -> Vec<String> {
+        self.tool.path_globs.clone()
+    }
+
     pub(super) fn can_fix(&self) -> bool {
         !self.fix_passes.is_empty()
     }
@@ -212,6 +218,9 @@ impl RecipeTool {
     /// The part of a file's lint cache key that its own bytes do not cover: the
     /// digest of the files its project root's verdict depends on.
     pub(super) fn cache_salt(&self, src: &SourceFile) -> Option<String> {
+        if self.recipe.findings == Findings::All {
+            return Some(run_nonce().to_owned());
+        }
         if self.recipe.dependencies.is_empty() {
             return None;
         }
@@ -223,6 +232,23 @@ impl RecipeTool {
         };
         Some(salt::dependency_digest(&root, &self.recipe.dependencies))
     }
+}
+
+/// A string unique to this process.
+///
+/// A tool whose findings in files outside the run are reported on the run's files
+/// (`Findings::All`) gives a file a verdict that depends on *which other files
+/// were checked alongside it*. No per-file cache key can express that, so such a
+/// tool's results are keyed to the process and recomputed on every run; they are
+/// cheap by construction (one invocation per project root).
+fn run_nonce() -> &'static str {
+    static NONCE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    NONCE.get_or_init(|| {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_nanos());
+        format!("run-{}-{nanos}", std::process::id())
+    })
 }
 
 fn extra_args(config: &ToolConfig, role: Role) -> Vec<String> {

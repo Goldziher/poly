@@ -615,6 +615,14 @@ impl Engine for CatalogToolEngine {
         Ok(scatter(batch.len(), &positions, &mut linted, || Ok(Vec::new())))
     }
 
+    fn takes_over_tier_one(&self) -> bool {
+        !self.is_lint() && self.tool.path_globs.is_empty() && self.recipe.is_some()
+    }
+
+    fn claimed_paths(&self) -> Vec<String> {
+        self.recipe.as_ref().map_or_else(Vec::new, RecipeTool::claimed_globs)
+    }
+
     fn supplements_tier_one(&self) -> bool {
         !self.is_lint() && !self.tool.path_globs.is_empty() && self.recipe.is_some()
     }

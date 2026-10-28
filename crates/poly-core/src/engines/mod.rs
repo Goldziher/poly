@@ -12,6 +12,7 @@ pub mod css_hacks;
 pub mod dockerfile;
 pub mod dotenv;
 pub(crate) mod grammar;
+pub mod format_scope;
 pub mod graphql;
 pub mod hcl;
 pub mod ini;

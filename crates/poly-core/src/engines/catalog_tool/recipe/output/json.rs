@@ -11,8 +11,14 @@ use serde_json::Value;
 use super::{Finding, position};
 use crate::engine::Severity;
 
+/// The first JSON value in `text`. Some tools follow their report with a
+/// plain-text summary (golangci-lint prints `7 issues:` after the document).
 fn document(text: &str, tool: &str) -> Result<Value> {
-    serde_json::from_str(text.trim()).with_context(|| format!("{tool} did not print a JSON report"))
+    serde_json::Deserializer::from_str(text.trim())
+        .into_iter::<Value>()
+        .next()
+        .with_context(|| format!("{tool} printed no JSON report"))?
+        .with_context(|| format!("{tool} did not print a JSON report"))
 }
 
 fn text(value: &Value, key: &str) -> Option<String> {

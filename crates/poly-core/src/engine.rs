@@ -699,6 +699,18 @@ pub trait Engine: Send + Sync {
         2
     }
 
+    /// Whether this catalog backend, enabled by name and covering the whole
+    /// language, replaces the language's tier-one formatter.
+    fn takes_over_tier_one(&self) -> bool {
+        false
+    }
+
+    /// Glob patterns of the files this backend formats in place of the language's
+    /// tier-one formatter (see [`Engine::supplements_tier_one`]).
+    fn claimed_paths(&self) -> Vec<String> {
+        Vec::new()
+    }
+
     /// Whether this catalog backend, confined to named files, may run in
     /// addition to the language's tier-one formatter.
     fn supplements_tier_one(&self) -> bool {
