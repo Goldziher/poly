@@ -1,0 +1,2 @@
+{"path":"api/v1/thing.proto","start_line":5,"start_column":9,"end_line":5,"end_column":14,"type":"MESSAGE_PASCAL_CASE","message":"Message name \"thing\" should be PascalCase, such as \"Thing\"."}
+{"path":"api/v1/thing.proto","start_line":6,"start_column":10,"end_line":6,"end_column":18,"type":"FIELD_LOWER_SNAKE_CASE","message":"Field name \"BadField\" should be lower_snake_case, such as \"bad_field\"."}

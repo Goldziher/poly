@@ -1,0 +1,3 @@
+{"Issues":[{"FromLinter":"errcheck","Text":"Error return value of `os.Remove` is not checked","Severity":"","SourceLines":["\tos.Remove(\"a\")"],"Pos":{"Filename":"a.go","Offset":45,"Line":6,"Column":11},"ExpectNoLint":false,"ExpectedNoLintLinter":""}],"Report":{}}
+1 issues:
+* errcheck: 1
