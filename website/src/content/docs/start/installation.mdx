@@ -134,8 +134,9 @@ poly ships its own Claude/Codex plugin, registering `poly mcp` as a stdio server
 /plugin install poly@poly
 ```
 
-For Codex, add the `Goldziher/poly` marketplace through your client's plugin manager; the manifest
-is at `.codex-plugin/plugin.json`.
+For Codex, `codex plugin marketplace add Goldziher/poly` then `codex plugin add poly@poly`. OpenCode
+and Pi install `@goldziher/opencode-poly` from npm (`opencode plugin add @goldziher/opencode-poly`,
+`pi install npm:@goldziher/opencode-poly`), and Hermes installs `poly-hermes-plugin` from PyPI.
 
 <Aside type="caution">
     The plugin assumes `poly` is already on `PATH` — it does **not** bundle the binary. Install poly

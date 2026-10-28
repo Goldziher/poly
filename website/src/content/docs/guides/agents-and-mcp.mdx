@@ -1,14 +1,14 @@
 ---
 title: Agents and MCP
 description: >-
-  The Claude/Codex and Pi plugins, poly's eleven MCP tools, the async whole-project tasks, and the isError
+  The Claude Code, Codex, OpenCode, Pi and Hermes plugins, poly's eleven MCP tools, the async whole-project tasks, and the isError
   contract an agent must gate on.
 ---
 
 import { Aside, Tabs, TabItem, Code, Steps } from '@astrojs/starlight/components';
 
-poly ships its own agent integration rather than expecting one to be bolted on: a Claude/Codex
-plugin and a stdio MCP server exposing the same lint, format, cache, rules and config surface as
+poly ships its own agent integration rather than expecting one to be bolted on: plugins for Claude
+Code, Codex, OpenCode, Pi, Hermes and more, and a stdio MCP server exposing the same lint, format, cache, rules and config surface as
 the CLI — with structured output an agent can consume directly instead of parsing terminal text.
 
 ## The operating rule
@@ -31,26 +31,48 @@ That registers `poly mcp` as a stdio server, plus **5 skills** and **2 slash com
 (`/poly-check`, `/poly-fix`) that teach an agent poly's tiered backend model and when to reach for
 lint versus format versus hooks.
 
-For Codex, add the `Goldziher/poly` marketplace through your client's plugin manager; the manifest
-is at `.codex-plugin/plugin.json`.
+For Codex, the same repository is the marketplace:
+
+```sh
+codex plugin marketplace add Goldziher/poly
+codex plugin add poly@poly
+```
 
 The plugin assumes `poly` is already on `PATH` — it does not bundle the binary — and its version
 tracks the binary version in lock-step.
 
-### Pi
+### OpenCode and Pi
 
-Install the `poly` binary first, then install the Pi package from Git:
+Both install `@goldziher/opencode-poly` from npm, which CI publishes with every release:
 
 ```sh
-pi install git:github.com/Goldziher/poly
+opencode plugin add @goldziher/opencode-poly
+pi install npm:@goldziher/opencode-poly
 ```
 
-The package contains 5 skills and the `/poly-check` and `/poly-fix` prompt templates.
-Pi runs `poly` through its shell tool; this package does not register an MCP server or install the binary.
-Use `pi install -l git:github.com/Goldziher/poly` to save the package in the current project's configuration.
+The package contains 5 skills and the `/poly-check` and `/poly-fix` prompts. Pi runs `poly`
+through its shell tool; it does not register an MCP server. Pi can also install straight from
+Git — `pi install git:github.com/Goldziher/poly`, or `pi install -l …` to save it in the current
+project's configuration.
 
-The same bundle targets `@goldziher/opencode-poly` for OpenCode and Pi. After its first npm release,
-`pi install npm:@goldziher/opencode-poly` provides the registry installation path and Pi catalog discovery.
+### Hermes
+
+Install `poly-hermes-plugin` from PyPI into the Python environment Hermes runs in, then enable
+`poly` under `plugins.enabled` in that installation's `config.yaml`:
+
+```sh
+uv pip install --python /path/to/hermes/venv/bin/python poly-hermes-plugin
+```
+
+Hermes gets one `poly_call` tool that bridges all eleven MCP tools (`list_tools` shows their
+schemas), and the skills load by namespace, e.g. `poly:poly-mcp`.
+
+### Other runtimes
+
+Cursor, Gemini, Kimi, Factory and Copilot bundles are generated alongside these and attached to
+every GitHub release as `poly-plugins-v<version>.tar.gz`; the
+[plugin README](https://github.com/Goldziher/poly/blob/main/plugin/README.md) lists each entry
+point. The skills alone also install with `npx skills add Goldziher/poly --skill <name>`.
 
 ## As a plain MCP server
 
@@ -75,7 +97,7 @@ block mirroring the CLI's `--format json` — or the compact TOON encoding when 
 
 | Tool | Mirrors | Returns |
 | --- | --- | --- |
-| `lint` | `poly lint` | Diagnostics per file. |
+| `lint` | `poly lint --no-workspace` | Diagnostics per file (per-file tier only; the whole-project phase is `workspace_lint`). |
 | `format_check` | `poly fmt --check` | Formatting drift, without writing. |
 | `cache_stats` | `poly cache stats` | Result-cache footprint per namespace: entries, bytes, format version. |
 | `rules` | `poly rules list` / `test` | Every ast-grep rule a run would apply — the built-in pack plus `[rules] dirs` — with language, `source` (`builtin`/`user`), `default_severity`, the `severity` under the resolved config, and `enabled`. Optionally runs the `*-test.yml` snippets. |
@@ -142,8 +164,8 @@ answering with superseded behaviour.
 
 `lint` / `lint_fix` / `format_check` / `format_write` results tell three outcomes apart:
 
-- **Checked** — the file has a `results` entry with no `skipped` or `error` set. Diagnostics may
-  still be empty; that is a clean file, not a missing one.
+- **Checked** — counted in `summary.checked`. A checked file with findings has a `results` entry;
+  a checked, clean file has **no** entry at all, so absence from `results` alone proves nothing.
 - **Skipped** (`skipped` field) — poly correctly declined the file, for example a template dialect
   no backend handles. Not a failure.
 - **Errored** (`error` field) — poly failed to process a file it accepted: unreadable file, backend

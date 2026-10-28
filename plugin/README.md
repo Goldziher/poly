@@ -25,18 +25,25 @@ For local testing, clone the repository and use the generated files below:
 | Agent Plugins | `plugin.json` and `mcp.json`, spec 1.0 |
 | Copilot | `plugin.json` and `mcp.json` in the shared Agent Plugins layout; prompt commands are not bundled |
 
-Pi can also install the Git repository using `pi install git:github.com/Goldziher/poly`.
-The private root package manifest points to this directory's native skills and prompts.
-Pi uses its bash tool to call the installed CLI; it does not register MCP. The release job
-publishes `@goldziher/opencode-poly` from this directory, retaining its existing package name.
-Registry installs obtain these updated resources after the next package release; no current
-registry version is overwritten by this migration.
+Two runtimes also install from a registry. Each release publishes, through OIDC trusted
+publishing:
 
-For Hermes, install the generated local package with
-`uv pip install --python /path/to/hermes/venv/bin/python ./plugin/.hermes/package` from the
-repository root, then explicitly enable `poly` in that Hermes installation's
-`config.yaml` under `plugins.enabled`. Skills are opt-in namespace loads, such as
-`poly:poly-mcp`; they do not enter the flat system skill listing. The `poly_call` tool bridges
+- **`@goldziher/opencode-poly`** on npm — the OpenCode adapter plus the Pi skills and prompts.
+  For OpenCode, `opencode plugin add @goldziher/opencode-poly`; for Pi,
+  `pi install npm:@goldziher/opencode-poly`. Pi can also install from the Git repository with
+  `pi install git:github.com/Goldziher/poly`; the private root package manifest points to this
+  directory's skills and prompts. Pi uses its bash tool to call the installed CLI; it does not
+  register MCP.
+- **`poly-hermes-plugin`** on PyPI — the Hermes package.
+
+Every runtime bundle and both marketplace indexes are also attached to each GitHub release as
+`poly-plugins-v<version>.tar.gz`, with a `.sha256` beside it.
+
+For Hermes, install the package into the Python environment Hermes runs in —
+`uv pip install --python /path/to/hermes/venv/bin/python poly-hermes-plugin`, or
+`./plugin/.hermes/package` from a repository checkout — then explicitly enable `poly` in that
+Hermes installation's `config.yaml` under `plugins.enabled`. Skills are opt-in namespace loads,
+such as `poly:poly-mcp`; they do not enter the flat system skill listing. The `poly_call` tool bridges
 all eleven native MCP tools. Choose `list_tools` to inspect their request schemas, then pass
 `tool_arguments` to the selected tool. Checking workspace lint can compile dependencies;
 mutating tools (`lint_fix`, `format_write`, `cache_clean`, `workspace_lint_fix`) modify files
@@ -47,8 +54,8 @@ Their source is `plugin/.ai-rulez/skills`; `scripts/sync_public_skills.py --chec
 repository's `skills/` mirror, including resource bytes, namespaces and ownership.
 
 Generation and verification use ai-rulez 5.7.0, which CI installs from the published release.
-Run `task plugin:generate`, `task plugin:verify` and `task plugin:test`. Native package artifacts and marketplace indexes attach to tagged
-releases. The manual plugin artifact workflow packages its selected checkout after checking
-that the core and plugin versions match an existing release tag. Marketplace indexes pin the
+Run `task plugin:generate`, `task plugin:verify` and `task plugin:test`. Native package artifacts
+and marketplace indexes attach to tagged releases. The manual plugin artifact workflow packages
+its selected checkout after checking that the core and plugin versions match an existing release tag. Marketplace indexes pin the
 checkout's immutable commit, and the verified archive attaches to that release; the workflow
 does not create a product tag or publish registry packages.

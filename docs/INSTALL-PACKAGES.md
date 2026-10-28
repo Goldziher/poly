@@ -80,6 +80,14 @@ curl -fsSL https://raw.githubusercontent.com/Goldziher/poly/main/install.sh | sh
 irm https://raw.githubusercontent.com/Goldziher/poly/main/install.ps1 | iex
 ```
 
+## Agent plugins
+
+The coding-agent plugins are separate packages that teach an agent to use an installed `poly`;
+none of them contains the binary. Two are on registries — `@goldziher/opencode-poly` (npm, for
+OpenCode and Pi) and `poly-hermes-plugin` (PyPI, for Hermes) — and the Claude Code and Codex
+plugins install from this repository's marketplace. See [`plugin/README.md`](../plugin/README.md)
+for every runtime.
+
 ---
 
 ## Maintainer notes
@@ -163,19 +171,21 @@ task package:wheels    # build a platform wheel from target/debug/poly
 `plugin/package.json` is the combined OpenCode/Pi package, `@goldziher/opencode-poly`,
 separate from the `@goldziher/polylint` binary wrapper. `publish_plugin_npm` checks
 the tagged manifest version, ai-rulez provenance, and the packed five Pi skills,
-two Pi prompts, and OpenCode adapter before publishing.
+two Pi prompts, and OpenCode adapter before publishing with provenance. It skips a version
+already on the registry, so a re-run is a no-op.
 
-Configure its npm trusted publisher for `Goldziher/poly`, workflow `publish.yaml`,
-with no environment. The workflow rejects an unbootstrapped package with an actionable error;
-its first publication requires publishing from the repository
-root using `pnpm --dir plugin publish --access public` after generation and verification.
-The private root `package.json` aliases this bundle for Git-based Pi installs, which need no npm
-publication. The plugin package does not contain the `poly` binary.
+Its npm trusted publisher is configured: GitHub Actions, repository `Goldziher/poly`, workflow
+`publish.yaml`, no environment. The package's bootstrap publish is done, and since 0.31.0 CI
+publishes every release itself. The private root `package.json` aliases this bundle for
+Git-based Pi installs, which need no npm publication. The plugin package does not contain the
+`poly` binary.
 
-The generated Hermes wheel is `poly-hermes-plugin`. Its PyPI trusted or pending publisher
-must name owner `Goldziher`, repository `poly`, workflow `publish.yaml`, environment `pypi`.
-Configure that account-side publisher before the next release. Neither plugin package is
-currently available on its registry; local bundles and Git Pi installation work now.
-The release pipeline validates exact wheel/npm resource bytes before registry idempotency
-checks, then requires all three plugin distribution jobs to succeed. No registry release
-is created by this migration.
+The generated Hermes wheel is `poly-hermes-plugin`, published by `publish_plugin_hermes`
+through a PyPI trusted publisher naming owner `Goldziher`, repository `poly`, workflow
+`publish.yaml`, environment `pypi`.
+
+Unlike the binary wrappers, the plugin jobs are not `continue-on-error`: the pipeline validates
+exact wheel/npm resource bytes before the registry idempotency checks, then requires all three
+plugin distribution jobs (npm, PyPI, and the release-asset archive) to succeed. A
+`workflow_dispatch` run with `plugins-only` republishes the current `main` plugin packages
+without building a release, skipping versions already published.
