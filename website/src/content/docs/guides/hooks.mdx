@@ -172,8 +172,11 @@ job's command line names. A one-file commit then costs a handful of files instea
 and lives in a separate `staged-sparse` directory. Every other directory appears in the snapshot as a
 symlink to the same path in your working tree, so existence probes (ruff's isort deciding that
 `armis.common.lib` is first-party, a config found by walking up) answer as they would in the full
-tree; nothing a run validates is read through a link, and a hook in a sparse run must not write
-through one. A `workspace = true` or cargo job that has files to run on needs the whole tree and gets
+tree; nothing a run validates is read through a link. A ruff config that `extend`s a file elsewhere
+in the repository (`extend = "../shared/ruff-base.toml"`) has that file selected too, and read from the
+index. A hook in a sparse run must not write through a link: poly compares the working tree under
+every linked directory before and after the run and fails it, naming the directories, when they
+differ (use `snapshot = "full"` for a hook that writes outside its files). A `workspace = true` or cargo job that has files to run on needs the whole tree and gets
 the full snapshot as before; `snapshot = "full"` forces it. Every selected file is still read from
 the index, so a partially staged file is validated as staged.
 

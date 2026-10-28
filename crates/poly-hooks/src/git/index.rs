@@ -73,6 +73,41 @@ pub fn list_files(root: &Path) -> Result<Vec<PathBuf>, Error> {
     Ok(zsplit(&output.stdout)?)
 }
 
+/// A digest of the working-tree changes under the directory `dir`: its unstaged
+/// diff and its untracked, unignored files.
+///
+/// Two digests differ exactly when something under `dir` was modified, created or
+/// deleted in the worktree between them — which is how a write through a sparse
+/// snapshot's link to the worktree is noticed.
+#[instrument(level = "trace")]
+pub fn worktree_digest(root: &Path, dir: &Path) -> Result<[u8; 32], Error> {
+    reject_unsafe_path(dir)?;
+    let diff = git_cmd("diff a linked directory")?
+        .current_dir(root)
+        .arg("diff")
+        .arg("--no-ext-diff")
+        .arg("--binary")
+        .arg("--")
+        .arg(dir)
+        .check(true)
+        .output()?;
+    let untracked = git_cmd("list untracked files of a linked directory")?
+        .current_dir(root)
+        .arg("ls-files")
+        .arg("--others")
+        .arg("--exclude-standard")
+        .arg("-z")
+        .arg("--")
+        .arg(dir)
+        .check(true)
+        .output()?;
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(&diff.stdout);
+    hasher.update(&[0]);
+    hasher.update(&untracked.stdout);
+    Ok(*hasher.finalize().as_bytes())
+}
+
 /// Largest number of path arguments to pass to a single `git checkout-index`
 /// invocation. Batching keeps the argument vector well under the OS `ARG_MAX`
 /// limit on repositories with tens of thousands of files.

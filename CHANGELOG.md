@@ -9,6 +9,12 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ### Added
 
+- **Sparse staged snapshot hardening.** A hook that writes through a link into a directory the
+  sparse snapshot did not write now fails the run, naming the directory (the working tree under
+  each linked directory is compared before and after), instead of changing your working tree
+  silently. A ruff config that `extend`s a file outside the staged files' directory chain (a
+  `ruff.toml` or `[tool.ruff]` in `pyproject.toml`, followed through further `extend`s) has that file
+  written from the index too, not read from the working tree through a link.
 - **Nested `poly.toml` `[hooks]` tables now run on commit.** `poly hooks run` and `hook-impl` (git
   starts hooks at the repository root) add the hooks of every nested `poly.toml` with staged files
   under it: they run with that directory as their working directory, get file arguments and
