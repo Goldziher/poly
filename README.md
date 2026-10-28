@@ -111,7 +111,7 @@ and 2 slash commands (`/poly-check`, `/poly-fix`):
 ```
 
 Codex: add the `Goldziher/poly` marketplace through your client's plugin manager (manifest at
-`plugin/plugin.json`). The plugin assumes `poly` is already on `PATH` — it does not
+`plugin/.codex-plugin/plugin.json`). The plugin assumes `poly` is already on `PATH` — it does not
 bundle the binary — and its version tracks the `poly` binary version lock-step. See
 [AI Agents & MCP](#ai-agents--mcp).
 
