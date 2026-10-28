@@ -171,7 +171,9 @@ jobs:
           # skips the job with a notice rather than failing a release on a step
           # that cannot yet succeed. See docs/INSTALL-PACKAGES.md.
           npm_bootstrapped=false
-          if pnpm view "@goldziher/polylint" version >/dev/null 2>&1; then
+          # npm, not pnpm: this job never installs pnpm, and a missing binary reads as
+          # "not on npm", silently skipping the publish (v0.30.0 shipped no npm package).
+          if npm view "@goldziher/polylint" version >/dev/null 2>&1; then
             npm_bootstrapped=true
           else
             echo "::notice::@goldziher/polylint is not on npm; skipping the pnpm publish --no-git-checks. It needs a one-time manual publish before a trusted publisher can be configured for it (docs/INSTALL-PACKAGES.md)."
