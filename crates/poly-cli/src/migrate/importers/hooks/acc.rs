@@ -76,6 +76,18 @@ pub(super) enum Guard {
     Runs(Vec<String>),
 }
 
+/// What a job is known to do to the files it is given.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Effect {
+    /// Not classified; the job keeps the priority its source gave it.
+    #[default]
+    Unknown,
+    /// Only reports on the files, so it must run after every fixer.
+    Reports,
+    /// Rewrites the files.
+    Rewrites,
+}
+
 /// The body of an inline job.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum Body {
@@ -104,6 +116,7 @@ pub(super) struct JobSpec {
     pub interactive: bool,
     pub use_stdin: bool,
     pub priority: i64,
+    pub effect: Effect,
     pub skip: Option<Guard>,
     pub only: Option<Guard>,
 }
@@ -125,6 +138,7 @@ impl JobSpec {
             interactive: false,
             use_stdin: false,
             priority: 0,
+            effect: Effect::Unknown,
             skip: None,
             only: None,
         }
@@ -331,6 +345,41 @@ impl HookAcc {
 
     pub fn set_max_added_file_kb(&mut self, kb: i64) {
         self.file_safety.max_added_file_kb = Some(kb);
+    }
+
+    /// Move every check-only run behind the last fixer of its stage, so a check
+    /// never flags something a fixer repairs a moment later: lefthook runs its
+    /// `fix` group before its `check` group, and pre-commit runs hooks in order.
+    /// Runs already placed after the last fixer keep their priority.
+    pub fn order_checks_after_fixers(&mut self) {
+        let mut last_fixer: BTreeMap<String, i64> = BTreeMap::new();
+        let mut note_fixer = |stage: &str, priority: i64| {
+            let entry = last_fixer.entry(stage.to_string()).or_insert(priority);
+            *entry = (*entry).max(priority);
+        };
+        for scope in self.builtins.values().flatten().filter(|scope| scope.shape.fix) {
+            note_fixer(&scope.stage, scope.shape.priority);
+        }
+        for (stage, acc) in &self.stages {
+            for job in &acc.jobs {
+                if job.stage_fixed || job.effect == Effect::Rewrites {
+                    note_fixer(stage, job.priority);
+                }
+            }
+        }
+        for scope in self.builtins.values_mut().flatten().filter(|scope| !scope.shape.fix) {
+            if let Some(floor) = last_fixer.get(&scope.stage) {
+                scope.shape.priority = scope.shape.priority.max(floor + 1);
+            }
+        }
+        for (stage, acc) in &mut self.stages {
+            let Some(floor) = last_fixer.get(stage) else {
+                continue;
+            };
+            for job in acc.jobs.iter_mut().filter(|job| job.effect == Effect::Reports) {
+                job.priority = job.priority.max(floor + 1);
+            }
+        }
     }
 
     /// Report what a shared catalog tool could not keep. A builtin's scope lives

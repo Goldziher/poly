@@ -242,6 +242,9 @@ pub(super) fn recognize(run: &str) -> Recognition {
         "checkstyle" => checkstyle(&args),
         "palantir-java-format" => palantir(&args),
         "pyproject-fmt" => pyproject_fmt(&args),
+        "buildifier" => buildifier(&args),
+        "terraform" => terraform("terraform", &["terraform"], &args),
+        "tofu" => terraform("tofu", &["tofu"], &args),
         "helm-charts" => helm_charts(&args),
         _ => Recognition::Unknown,
     };
@@ -268,6 +271,15 @@ fn rewrites_files(program: &str, args: &[&str]) -> bool {
         ("golangci-lint", _) => has(&["--fix"]),
         ("buf", _) => has(&["-w", "--write"]),
         ("npm-groovy-lint", _) => has(&["--fix", "--format"]),
+        ("palantir-java-format", _) => has(&["--replace", "-r", "--in-place"]),
+        ("pyproject-fmt", _) => !has(&["--check", "--stdout"]),
+        ("buildifier", _) => !args.iter().any(|arg| {
+            matches!(
+                arg.trim_start_matches('-'),
+                "mode=check" | "mode=diff" | "mode=print_if_changed"
+            )
+        }),
+        ("terraform" | "tofu", _) => !has(&["-check", "-write=false"]),
         _ => false,
     }
 }
@@ -499,6 +511,48 @@ fn pyproject_fmt(args: &[&str]) -> Recognition {
     configured(Target::Fmt, &["pyproject-fmt"], vec![("pyproject-fmt", settings)], Vec::new())
 }
 
+/// `buildifier -mode=fix -lint=fix --warnings=... files`: `-lint=fix` shapes the
+/// formatting role, `--warnings` every role, and `-mode=check` selects linting.
+fn buildifier(args: &[&str]) -> Recognition {
+    let mut extra_args = Vec::new();
+    let mut format_extra_args = Vec::new();
+    let mut unknown = Vec::new();
+    let mut checks_only = false;
+    for arg in args {
+        match arg.trim_start_matches('-').split_once('=') {
+            Some(("mode", "fix") | ("lint", "warn")) => {}
+            Some(("mode", "check" | "diff")) => checks_only = true,
+            Some(("lint", "fix")) => format_extra_args.push("-lint=fix".to_string()),
+            Some(("warnings", _)) => extra_args.push((*arg).to_string()),
+            _ => unknown.push((*arg).to_string()),
+        }
+    }
+    if !unknown.is_empty() {
+        return not_representable("buildifier", unknown);
+    }
+    let settings = ToolSettings {
+        extra_args,
+        format_extra_args,
+        ..ToolSettings::default()
+    };
+    let target = if checks_only { Target::Lint } else { Target::Fmt };
+    configured(target, &["buildifier"], vec![("buildifier", settings)], Vec::new())
+}
+
+/// `terraform fmt` / `tofu fmt` over the staged files; `-check` only reports.
+fn terraform(program: &'static str, catalog_tools: &'static [&'static str], args: &[&str]) -> Recognition {
+    if args.first().copied() != Some("fmt") {
+        return Recognition::Unknown;
+    }
+    simple(
+        program,
+        Target::Fmt,
+        catalog_tools,
+        &args[1..],
+        &["-check", "-diff", "-list=false", "-write=true", "-write=false", "-no-color"],
+    )
+}
+
 /// `dev_tools/helm/check_charts.sh files`: `helm lint` and `helm template` per
 /// chart that contains a changed file.
 fn helm_charts(args: &[&str]) -> Recognition {
@@ -612,6 +666,42 @@ mod tests {
         assert!(!fixes("golangci-lint run {staged_files}"));
         assert!(!fixes("actionlint {staged_files}"));
         assert!(fixes("npm-groovy-lint --format {staged_files}"));
+    }
+
+    #[test]
+    fn in_place_formatters_are_fix_mode_and_their_check_modes_are_not() {
+        assert!(fixes("bash dev_tools/checkstyle/run_palantir_format.sh --replace {staged_files}"));
+        assert!(!fixes("bash dev_tools/checkstyle/run_checkstyle.sh -c checkstyle.xml {staged_files}"));
+        assert!(fixes("pyproject-fmt --keep-full-version {staged_files}"));
+        assert!(!fixes("pyproject-fmt --check {staged_files}"));
+        assert!(fixes("buildifier -mode=fix -lint=fix {staged_files}"));
+        assert!(fixes("buildifier {staged_files}"));
+        assert!(!fixes("buildifier -mode=check {staged_files}"));
+        assert!(fixes("terraform fmt {staged_files}"));
+        assert!(!fixes("terraform fmt -check {staged_files}"));
+        assert!(fixes("tofu fmt {staged_files}"));
+    }
+
+    #[test]
+    fn buildifier_flags_split_between_the_formatting_and_every_role() {
+        let settings = settings_of(
+            "buildifier -mode=fix -lint=fix --warnings=-native-build {staged_files}",
+            "buildifier",
+        );
+        assert_eq!(settings.format_extra_args, ["-lint=fix"]);
+        assert_eq!(settings.extra_args, ["--warnings=-native-build"]);
+        assert_eq!(
+            target("buildifier -mode=check {staged_files}"),
+            Some((Target::Lint, vec!["buildifier"]))
+        );
+        assert_eq!(
+            target("buildifier -mode=fix {staged_files}"),
+            Some((Target::Fmt, vec!["buildifier"]))
+        );
+        assert!(matches!(
+            recognize("buildifier -r {staged_files}"),
+            Recognition::FlagsNotRepresentable { tool: "buildifier", .. }
+        ));
     }
 
     #[test]

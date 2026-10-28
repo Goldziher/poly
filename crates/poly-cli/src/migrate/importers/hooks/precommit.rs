@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 use poly_config::Stage;
 use serde_json::Value;
 
-use super::acc::{Body, BuiltinUse, HookAcc, JobSpec, Shape, ToolSettings};
-use super::command::{EngineOption, RUFF_UNSAFE_FIXES, Target};
+use super::acc::{Body, BuiltinUse, Effect, HookAcc, JobSpec, Shape, ToolSettings};
+use super::command::{EngineOption, RUFF_UNSAFE_FIXES, Target, tokenize};
 use super::filters::regex_to_globs;
 use crate::migrate::importers::load_yaml;
 
@@ -202,6 +202,20 @@ const FIXES_WITH_FLAG: &[&str] = &["ruff", "ruff-check"];
 
 const NO_EQUIVALENT: &[(&str, &str)] = &[("requirements-txt-fixer", "poly does not sort requirements files")];
 
+/// Words that mark a local hook's command line as one that rewrites its files.
+const REWRITE_WORDS: &[&str] = &[
+    "--fix",
+    "--fix-only",
+    "--write",
+    "-w",
+    "--in-place",
+    "-i",
+    "--replace",
+    "fmt",
+    "format",
+    "--format",
+];
+
 const ALLOW_MISSING_CREDENTIALS: &str = "--allow-missing-credentials";
 
 /// What the pre-commit importer read.
@@ -388,12 +402,16 @@ fn remote_hook(acc: &mut HookAcc, context: &Context, repo: &str, rev: Option<&st
     if let Some(configures) = entry.configures {
         configure_tool(acc, &label, configures, rev, std::mem::take(&mut args));
         if configures.also_lint {
+            let lint_shape = Shape {
+                fix: false,
+                ..shape.clone()
+            };
             for stage in hook_stages(context, hook) {
                 acc.add_builtin(BuiltinUse {
                     target: Target::Lint,
                     stage: &stage,
                     label: &label,
-                    shape: shape.clone(),
+                    shape: lint_shape.clone(),
                     catalog_tools: &[configures.tool],
                     options: &[],
                 });
@@ -487,6 +505,9 @@ fn local_hook(acc: &mut HookAcc, context: &Context, dir: &Path, hook: &Value) {
         run.push(' ');
         run.push_str(&shell_word(&arg));
     }
+    let rewrites = tokenize(&run)
+        .iter()
+        .any(|word| REWRITE_WORDS.contains(&word.as_str()));
     let script_path = entry.split_whitespace().next().filter(|p| dir.join(p).is_file());
     let mut job = JobSpec::new(
         id.replace(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_', "_"),
@@ -518,6 +539,11 @@ fn local_hook(acc: &mut HookAcc, context: &Context, dir: &Path, hook: &Value) {
         .map(str::to_string)
         .collect();
     job.interactive = false;
+    job.effect = if rewrites {
+        Effect::Rewrites
+    } else {
+        Effect::Reports
+    };
     for stage in hook_stages(context, hook) {
         acc.add_job(&stage, job.clone());
     }

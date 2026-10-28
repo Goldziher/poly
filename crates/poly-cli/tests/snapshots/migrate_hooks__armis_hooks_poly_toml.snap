@@ -8,11 +8,11 @@ fmt = { jobs = [
   { files = ["**/*.proto"], fix = true },
   { files = ["*.go"], fix = true },
   { files = ["*.groovy"], exclude = ["playground/**"], fix = true, priority = 1 },
-  { files = ["*.java"], exclude = ["playground/**"] },
+  { files = ["*.java"], exclude = ["playground/**"], fix = true },
   { files = ["*.rb"], fix = true },
   { files = ["*.{py,pyi}"], fix = true },
   { files = ["*BUILD", "*BUILD.bazel", "*.BUILD", "*.bzl"], fix = true },
-  { files = ["pyproject.toml", "**/pyproject.toml"], exclude = ["*armis/public_sdks/python/public/pyproject.toml*"], priority = 2 },
+  { files = ["pyproject.toml", "**/pyproject.toml"], exclude = ["*armis/public_sdks/python/public/pyproject.toml*"], fix = true, priority = 2 },
 ] }
 lint = { jobs = [
   { files = ["**/*.proto"], priority = 4 },
@@ -22,11 +22,11 @@ lint = { jobs = [
   { files = ["*.java"], exclude = ["playground/**"], priority = 4 },
   { files = ["*.{js,jsx,ts,tsx,mjs,cjs}"], fix = true },
   { files = ["*.{py,pyi}"], fix = true, priority = 1 },
-  { files = ["*.{py,pyi}"], exclude = ["products/em/backend/*"] },
-  { files = ["*.{yml,yaml}"], exclude = ["armis/service_charts/*/templates/*", "deploy/manifests/jenkins_k8s_plugin.yaml"] },
-  { files = ["*BUILD", "*BUILD.bazel", "*.BUILD", "*.bzl"], fix = true },
+  { files = ["*.{py,pyi}"], exclude = ["products/em/backend/*"], priority = 3 },
+  { files = ["*.{yml,yaml}"], exclude = ["armis/service_charts/*/templates/*", "deploy/manifests/jenkins_k8s_plugin.yaml"], priority = 3 },
+  { files = ["*BUILD", "*BUILD.bazel", "*.BUILD", "*.bzl"], priority = 3 },
   { files = [".github/workflows/*.{yml,yaml}"], exclude = [".github/workflows/*/*"], priority = 4 },
-  { files = ["products/em/backend/*"] },
+  { files = ["products/em/backend/*"], priority = 3 },
 ] }
 file_safety = { jobs = [
   { checks = ["aws_credentials", "private_key"] },

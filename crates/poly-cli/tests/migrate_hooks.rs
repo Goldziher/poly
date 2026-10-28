@@ -744,3 +744,81 @@ fn the_root_hook_config_is_still_deleted_when_fully_absorbed_under_recurse() {
     run_migrate(migrate_args(dir.path(), true, true));
     assert!(!dir.path().join("lefthook.yml").exists());
 }
+
+#[test]
+fn pre_commit_checks_and_local_reporters_run_after_the_fixers() {
+    let dir = repo(&[(
+        ".pre-commit-config.yaml",
+        "repos:\n  - repo: https://github.com/pre-commit/pre-commit-hooks\n    rev: v6.0.0\n    hooks:\n      - id: trailing-whitespace\n      - id: check-yaml\n  - repo: local\n    hooks:\n      - id: gate\n        entry: make gate\n        language: system\n      - id: md\n        entry: markdownlint --fix\n        language: system\n",
+    )]);
+    let config = hooks_of(&plan(dir.path()));
+    assert_eq!(config.builtin.fmt.priority, 0, "the fixer keeps the first band");
+    assert_eq!(config.builtin.lint.priority, 1, "check-yaml only reports");
+    let stage = &config.stage_configs[&Stage::PreCommit];
+    assert_eq!(stage.commands["gate"].priority, 1, "a reporting local hook follows the fixers");
+    assert_eq!(stage.commands["md"].priority, 0, "a local hook that rewrites is a fixer");
+}
+
+#[test]
+fn flat_lefthook_checks_run_after_flat_lefthook_fixers() {
+    let dir = repo(&[(
+        "lefthook.yml",
+        "pre-commit:\n  parallel: true\n  jobs:\n    - name: fmt\n      glob: '*.py'\n      run: ruff format {staged_files}\n    - name: check\n      glob: '*.rs'\n      run: oxlint {staged_files}\n",
+    )]);
+    let builtin = hooks_of(&plan(dir.path())).builtin;
+    assert_eq!(builtin.fmt.priority, 0);
+    assert_eq!(builtin.lint.priority, 1);
+}
+
+#[test]
+fn armis_check_only_builtins_follow_every_fixing_builtin() {
+    let builtin = hooks_of(&plan(&armis())).builtin;
+    let jobs: Vec<_> = builtin.fmt.jobs.iter().chain(builtin.lint.jobs.iter()).collect();
+    let priority = |job: &&poly_config::BuiltinJob| job.priority.unwrap_or(0);
+    let last_fixer = jobs
+        .iter()
+        .filter(|job| job.fix == Some(true))
+        .map(priority)
+        .max()
+        .expect("armis has fixing builtins");
+    for job in jobs.iter().filter(|job| job.fix != Some(true)) {
+        assert!(
+            priority(job) > last_fixer,
+            "check-only {:?} runs at {} but a fixer runs at {last_fixer}",
+            globs(job.files.as_ref()),
+            priority(job)
+        );
+    }
+}
+
+#[test]
+fn in_place_formatters_migrate_as_fix_mode_builtins() {
+    let armis_plan = plan(&armis());
+    let fmt_fix = |files: &str| {
+        hooks_of(&armis_plan)
+            .builtin
+            .fmt
+            .jobs
+            .iter()
+            .find(|job| globs(job.files.as_ref()).iter().any(|glob| glob == files))
+            .and_then(|job| job.fix)
+    };
+    assert_eq!(fmt_fix("*.java"), Some(true), "palantir --replace rewrites");
+    assert_eq!(fmt_fix("pyproject.toml"), Some(true), "pyproject-fmt rewrites in place");
+    assert_eq!(fmt_fix("*BUILD"), Some(true), "buildifier -mode=fix rewrites");
+
+    let dir = repo(&[(
+        "lefthook.yml",
+        "pre-commit:\n  parallel: true\n  jobs:\n    - name: bazel\n      glob: '*.bzl'\n      run: buildifier -mode=fix -lint=fix {staged_files}\n    - name: bazel-check\n      glob: 'BUILD'\n      run: buildifier -mode=check {staged_files}\n    - name: tf\n      glob: '*.tf'\n      run: terraform fmt -check {staged_files}\n",
+    )]);
+    let builtin = hooks_of(&plan(dir.path())).builtin;
+    let fix_of = |jobs: &[poly_config::BuiltinJob], files: &str| {
+        jobs.iter()
+            .find(|job| globs(job.files.as_ref()).iter().any(|glob| glob == files))
+            .map(|job| job.fix)
+    };
+    assert_eq!(fix_of(&builtin.fmt.jobs, "*.bzl"), Some(Some(true)));
+    assert_eq!(fix_of(&builtin.fmt.jobs, "*.tf"), Some(None), "-check only reports");
+    assert_eq!(globs(builtin.lint.files.as_ref()), ["BUILD"], "-mode=check is the lint role");
+    assert!(!builtin.lint.fix);
+}
