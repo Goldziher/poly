@@ -95,10 +95,25 @@ A `run` line may use `{0}` / `{git_args}` (all arguments git passed to the hook)
 
 ### Nested `poly.toml`
 
-Git runs hooks from the repository root, where poly reads that root's `poly.toml`. A `[hooks]`
-table in a nested `poly.toml` does not run on commit; it only applies to `poly hooks run` started
-in that directory. `poly migrate --recurse` keeps the hook sources of nested directories for this
-reason. A job `glob` is matched against the repository-relative path and `*` crosses `/`.
+Git runs hooks from the repository root, where poly reads the root `poly.toml`. A `[hooks]` table in
+a `poly.toml` below the root runs on commit too, confined to its directory:
+
+- it applies only to files under that directory, and contributes nothing when none is staged;
+- its hooks run with that directory as their working directory and receive file arguments relative
+  to it (as a `root = "<dir>"` job does);
+- its `files` / `exclude` globs are relative to that directory (a glob starting with `*` matches at
+  any depth); a job `glob` is otherwise matched against the repository-relative path and `*` crosses
+  `/`;
+- hook ids are prefixed with the directory (`svc:ruff-format`), and `poly hooks install` binds the git
+  hooks a nested table uses.
+
+Only the nested file's own `[hooks]` applies: the root's hooks are not inherited, and a nested
+table's `isolate`, `snapshot`, `sources` and stage-level `precondition` / `before` / `after` are not
+honoured, because they belong to the run as a whole. A nested table needs a file-list stage
+(`pre-commit`, `pre-push`, ...); stages without files (`post-checkout`, ...) run the root's hooks only.
+`poly hooks run` started in a subdirectory loads that directory's cascaded config instead of adding
+nested tables. `poly migrate --recurse` writes a nested directory's hooks to its `poly.toml` and
+deletes the nested source when nothing was lost.
 
 ## Inline jobs
 

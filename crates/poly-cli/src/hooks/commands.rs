@@ -237,6 +237,9 @@ fn run_stage(args: RunArgs) -> Result<ExitCode> {
         &config.cache.results.hooks,
         &root,
     )?;
+    if args.config.is_none() && runs_from_root(&root) {
+        merge_nested(&mut spec, &root, &poly_bin, stage, &files, &[], &config)?;
+    }
 
     let snapshot = maybe_staged_snapshot(
         isolation_active(&config.hooks, args.all_files, stage),
@@ -306,7 +309,8 @@ fn install(args: InstallArgs) -> Result<ExitCode> {
     // (which fire — and provision, and print — on every git operation).
     let derived = args.hook_types.is_empty();
     let hook_types = if derived {
-        configured_hook_types(&config)
+        let nested = super::nested::discover_tracked(&root)?;
+        configured_hook_types(&config, &nested)
     } else {
         args.hook_types.clone()
     };
@@ -406,30 +410,11 @@ fn add_string_stages(set: &mut BTreeSet<poly_hooks::Stage>, stages: &[String]) {
 /// Producer hooks from `[[hooks.sources]]` declare their stages in the provisioned
 /// catalog manifest (a runtime detail, not in `poly.toml`); they are not folded in
 /// here, so a source-only repo installs at least the `pre-commit` fallback.
-fn configured_hook_types(config: &PolyConfig) -> Vec<poly_hooks::HookType> {
-    let hooks = &config.hooks;
+fn configured_hook_types(config: &PolyConfig, nested: &[super::nested::NestedHooks]) -> Vec<poly_hooks::HookType> {
     let mut set: BTreeSet<poly_hooks::Stage> = BTreeSet::new();
-
-    add_string_stages(&mut set, &hooks.stages);
-
-    add_string_stages(&mut set, &hooks.builtin.lint.stages);
-    add_string_stages(&mut set, &hooks.builtin.fmt.stages);
-    add_string_stages(&mut set, &hooks.builtin.commit.stages);
-    add_string_stages(&mut set, &hooks.builtin.file_safety.stages);
-    if let Some(cargo) = &hooks.builtin.cargo {
-        add_string_stages(&mut set, &cargo.stages);
-    }
-
-    for stage in hooks.stage_configs.keys() {
-        add_config_stage(&mut set, *stage);
-    }
-
-    for (_, tool) in config.tools.iter() {
-        if tool.enabled {
-            for stage in &tool.stages {
-                add_config_stage(&mut set, *stage);
-            }
-        }
+    add_configured_stages(&mut set, config);
+    for entry in nested {
+        add_configured_stages(&mut set, &entry.config);
     }
 
     let types: Vec<poly_hooks::HookType> = set.into_iter().filter_map(hook_type_of_stage).collect();
@@ -437,6 +422,32 @@ fn configured_hook_types(config: &PolyConfig) -> Vec<poly_hooks::HookType> {
         vec![poly_hooks::HookType::PreCommit]
     } else {
         types
+    }
+}
+
+/// Add every stage `config` references to `set`.
+fn add_configured_stages(set: &mut BTreeSet<poly_hooks::Stage>, config: &PolyConfig) {
+    let hooks = &config.hooks;
+    add_string_stages(set, &hooks.stages);
+
+    add_string_stages(set, &hooks.builtin.lint.stages);
+    add_string_stages(set, &hooks.builtin.fmt.stages);
+    add_string_stages(set, &hooks.builtin.commit.stages);
+    add_string_stages(set, &hooks.builtin.file_safety.stages);
+    if let Some(cargo) = &hooks.builtin.cargo {
+        add_string_stages(set, &cargo.stages);
+    }
+
+    for stage in hooks.stage_configs.keys() {
+        add_config_stage(set, *stage);
+    }
+
+    for (_, tool) in config.tools.iter() {
+        if tool.enabled {
+            for stage in &tool.stages {
+                add_config_stage(set, *stage);
+            }
+        }
     }
 }
 
@@ -586,6 +597,9 @@ fn hook_impl(args: HookImplArgs) -> Result<ExitCode> {
         &config.cache.results.hooks,
         &root,
     )?;
+    if args.config.is_none() {
+        merge_nested(&mut spec, &root, &poly_bin, stage, &files, &git_args, &config)?;
+    }
 
     let snapshot = maybe_staged_snapshot(
         isolation_active(&config.hooks, inputs.all_files, stage),
@@ -611,6 +625,41 @@ fn hook_impl(args: HookImplArgs) -> Result<ExitCode> {
         restage_partial: config.hooks.partial_stage == poly_config::PartialStage::Restage,
     };
     run_and_report(request)
+}
+
+/// Whether the working directory is the repository root, where the root
+/// `poly.toml` is the config in force. A run started in a subdirectory loads that
+/// directory's own cascaded config instead, so nested tables must not run again.
+fn runs_from_root(root: &Path) -> bool {
+    match (std::env::current_dir().and_then(|cwd| cwd.canonicalize()), root.canonicalize()) {
+        (Ok(cwd), Ok(root)) => cwd == root,
+        _ => false,
+    }
+}
+
+/// Add the hooks of every nested `poly.toml` that has staged files under it.
+fn merge_nested(
+    spec: &mut poly_hooks::StageSpec,
+    root: &Path,
+    poly_bin: &Path,
+    stage: poly_hooks::Stage,
+    files: &[PathBuf],
+    git_args: &[String],
+    config: &PolyConfig,
+) -> Result<()> {
+    let nested = super::nested::discover(root, files)?;
+    super::nested::merge_stage(
+        spec,
+        &nested,
+        &super::nested::NestedRun {
+            poly_bin,
+            stage,
+            files,
+            git_args,
+            cache_mode: &config.cache.results.hooks,
+            root,
+        },
+    )
 }
 
 /// Resolve the candidate file set for `stage`.
@@ -767,7 +816,7 @@ mod tests {
 
     /// The kebab-case names of the derived hook types, sorted for comparison.
     fn derived_names(config: &PolyConfig) -> Vec<String> {
-        let mut names: Vec<String> = configured_hook_types(config)
+        let mut names: Vec<String> = configured_hook_types(config, &[])
             .iter()
             .map(|hook_type| hook_type.as_ref().to_string())
             .collect();

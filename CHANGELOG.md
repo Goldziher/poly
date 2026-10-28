@@ -9,6 +9,13 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ### Added
 
+- **Nested `poly.toml` `[hooks]` tables now run on commit.** `poly hooks run` and `hook-impl` (git
+  starts hooks at the repository root) add the hooks of every nested `poly.toml` with staged files
+  under it: they run with that directory as their working directory, get file arguments and
+  `files` / `exclude` globs relative to it, and carry the directory in their id (`svc:fmt`).
+  `poly hooks install` binds the git hooks a nested table uses. `poly migrate --recurse` writes a
+  nested directory's hooks to its `poly.toml` and deletes the nested source when nothing was lost,
+  instead of keeping it.
 - **`requirements_txt_fixer` file-safety member**, off by default: sorts requirements files like the
   pre-commit-hooks `requirements-txt-fixer` and is re-staged as a fixer. `poly migrate` maps that
   hook to it, so it is no longer reported as unmapped.

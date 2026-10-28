@@ -360,9 +360,20 @@ fn recurse_finds_directories_that_only_hold_a_hook_config() {
     run_migrate(migrate_args(dir.path(), true, true));
     assert!(dir.path().join("svc/poly.toml").is_file());
     assert!(
-        dir.path().join("svc/lefthook.yml").is_file(),
-        "a nested hook config stays: git never runs its poly replacement"
+        !dir.path().join("svc/lefthook.yml").exists(),
+        "poly runs a nested [hooks] table on commit, so a fully absorbed nested source is deleted"
     );
+}
+
+#[test]
+fn a_nested_hook_config_that_loses_something_is_kept() {
+    let dir = repo(&[(
+        "svc/lefthook.yml",
+        "post-merge:\n  jobs:\n    - name: lock\n      run: bash check.sh {push_files}\npre-commit:\n  jobs:\n    - run: ruff format {staged_files}\n",
+    )]);
+    run_migrate(migrate_args(dir.path(), true, true));
+    assert!(dir.path().join("svc/poly.toml").is_file());
+    assert!(dir.path().join("svc/lefthook.yml").is_file(), "an unmigrated job keeps the source");
 }
 
 #[test]

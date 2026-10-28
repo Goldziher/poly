@@ -10,6 +10,7 @@
 pub mod checks;
 pub mod commands;
 pub mod isolation_check;
+pub mod nested;
 pub mod sources;
 
 // The hooks→`poly-hooks` lowering now lives in the shared `poly-workspace` crate

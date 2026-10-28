@@ -180,7 +180,7 @@ fn run(args: MigrateArgs) -> Result<ExitCode> {
         let mut plan = build_plan(dir)?;
         if dir != &root {
             mark_replacing_ruff(&mut plan);
-            mark_nested_hooks(&mut plan);
+            note_nested_hooks(&mut plan);
         }
         if args.strip_superseded {
             plan.actions.extend(superseded_actions(dir));
@@ -286,32 +286,23 @@ fn mark_replacing_ruff(plan: &mut MigrationPlan) {
     }
 }
 
-const NESTED_HOOKS_REASON: &str = "git runs hooks from the repository root, where poly reads only the root \
-    poly.toml; the [hooks] written to this nested poly.toml run only for `poly hooks run` started in this directory";
+const NESTED_HOOKS_NOTE: &str = "the [hooks] written to this nested poly.toml run on commit for staged files under \
+    this directory, with it as their working directory and their globs relative to it; the root poly.toml's \
+    hooks are not inherited";
 
-/// A nested directory's hook configuration is not what git runs, so its source is
-/// kept and the plan says why.
+/// Say how a nested directory's hook configuration runs under poly.
 ///
-/// Verified: `poly hooks hook-impl` and `poly hooks run` resolve the config from the
-/// working directory, which git sets to the repository root, so a `[hooks]` table in
-/// a nested `poly.toml` is never consulted by a commit.
-fn mark_nested_hooks(plan: &mut MigrationPlan) {
-    let mut marked = false;
+/// `poly hooks run` and `poly hooks hook-impl` run from the repository root, where
+/// git starts hooks, and add the hooks of every nested `poly.toml` that has staged
+/// files under it (see `crate::hooks::nested`). So the nested source is absorbed
+/// like the root's: deleted when nothing was lost, kept otherwise.
+fn note_nested_hooks(plan: &mut MigrationPlan) {
     for result in plan
         .results
         .iter_mut()
         .filter(|result| matches!(result.tool, "lefthook" | "pre-commit") && result.has_fragments())
     {
-        let mut leftovers = match std::mem::replace(&mut result.absorb, Absorb::None) {
-            Absorb::Partial(keys) => keys,
-            _ => Vec::new(),
-        };
-        leftovers.push(NESTED_HOOKS_REASON.to_string());
-        result.absorb = Absorb::Partial(leftovers);
-        marked = true;
-    }
-    if marked {
-        plan.actions = deletion::plan_actions(&plan.results);
+        result.notes.push(NESTED_HOOKS_NOTE.to_string());
     }
 }
 
@@ -506,6 +497,26 @@ fn verify(dir: &Path) -> Result<()> {
     poly_core::format(&paths, &config, &options, false, false).context("verify: poly fmt --check failed")?;
     println!("verify: config loaded and engines ran cleanly in {}", dir.display());
     Ok(())
+}
+
+#[cfg(test)]
+mod nested_hooks_tests {
+    use super::*;
+
+    #[test]
+    fn a_nested_hook_source_gets_the_note_and_is_not_forced_to_stay() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("lefthook.yml"),
+            "pre-commit:\n  jobs:\n    - run: ruff format {staged_files}\n",
+        )
+        .unwrap();
+        let mut plan = build_plan(dir.path()).unwrap();
+        note_nested_hooks(&mut plan);
+        let lefthook = plan.results.iter().find(|r| r.tool == "lefthook").unwrap();
+        assert!(lefthook.notes.iter().any(|note| note.contains("run on commit")));
+        assert_eq!(lefthook.absorb, Absorb::Full, "the nested table now runs, so nothing is left behind");
+    }
 }
 
 #[cfg(test)]
