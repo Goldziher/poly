@@ -9,6 +9,11 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ### Added
 
+- **`golangci-lint` fixes with `run --fix`.** A finding that carries `SuggestedFixes` (or a `Replacement`) is
+  fixed on a scratch copy of the whole Go module (nested modules and anything outside it are never copied),
+  run over the package directories of the files concerned, once per configured `goos`, and keeping
+  `new_from_rev` working by pointing the copy at the repository. Only the files of the run are read back
+  and your tree is untouched; a golangci-lint that rejects `--fix` leaves the findings report-only.
 - **Ruby is detected for `Gemfile`, `Rakefile`, `Brewfile`, `Vagrantfile`, `Podfile`, `Capfile`, `Guardfile`,
   `Berksfile`, `*.rake`, `*.gemspec`, `*.ru` and `*.podspec`**, and `Tiltfile` is treated as Starlark.
 - **`dockerfile-parser`: `Splicer::splice` returns a `Result` instead of panicking on a bad span**

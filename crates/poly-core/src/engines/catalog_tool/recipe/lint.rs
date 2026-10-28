@@ -259,7 +259,7 @@ impl RecipeTool {
         }
     }
 
-    fn is_go_module_tool(&self) -> bool {
+    pub(super) fn is_go_module_tool(&self) -> bool {
         matches!(&self.recipe.group, Group::Marker(markers) if markers.iter().any(|m| m == "go.mod"))
     }
 
@@ -516,10 +516,12 @@ impl RecipeTool {
         if fixable.is_empty() {
             return;
         }
-        let rewritten = self.rewrite(
-            &self.fix_passes,
-            &fixable.iter().map(|&i| &members[i]).collect::<Vec<_>>(),
-        );
+        let fixable_members = fixable.iter().map(|&i| &members[i]).collect::<Vec<_>>();
+        let rewritten = if self.is_go_module_tool() {
+            self.rewrite_modules(&self.fix_passes, &fixable_members)
+        } else {
+            self.rewrite(&self.fix_passes, &fixable_members)
+        };
         for (&index, outcome) in fixable.iter().zip(rewritten) {
             let Some(Ok(diags)) = &mut results[index] else { continue };
             if let Ok(Some(new)) = outcome
@@ -546,14 +548,14 @@ const FIXABLE: &str = "poly.fixable";
 /// ignores directories named `testdata` or `vendor` and any starting with `.` or `_`.
 /// A tool pointed at directories one by one must apply the same rule, or it lints
 /// code the project never builds.
-fn is_ignored_by_go_tooling(rel: &str) -> bool {
+pub(super) fn is_ignored_by_go_tooling(rel: &str) -> bool {
     let mut components = rel.split('/');
     components.next_back();
     components.any(|c| c == "testdata" || c == "vendor" || c.starts_with('.') || c.starts_with('_'))
 }
 
 /// `src/a/b.go` -> `./src/a`; a root-level file -> `.`.
-fn directory_of(rel: &str) -> String {
+pub(super) fn directory_of(rel: &str) -> String {
     match rel.rsplit_once('/') {
         Some((dir, _)) => format!("./{dir}"),
         None => ".".to_owned(),

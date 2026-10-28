@@ -16,6 +16,8 @@ use super::{RecipeTool, Role};
 use crate::engine::{FormatOutput, Severity, SourceFile};
 use crate::language::Language;
 
+mod go_fix;
+
 /// A buf-flavoured linter: `lint --path f ...` prints one JSON object per file
 /// whose content contains BAD, exits 2 with no report if a file contains CRASH,
 /// and logs `<cwd> <args>` per invocation.
@@ -101,6 +103,15 @@ impl Fixture {
             Command {
                 arguments: serde_json::from_value(serde_json::json!(command.split(' ').collect::<Vec<_>>()))
                     .expect("argv"),
+                stdin: false,
+                then: Vec::new(),
+                batch: None,
+            },
+        );
+        commands.insert(
+            "fix".to_owned(),
+            Command {
+                arguments: vec!["run".to_owned(), "--fix".to_owned(), "$DIR".to_owned()],
                 stdin: false,
                 then: Vec::new(),
                 batch: None,

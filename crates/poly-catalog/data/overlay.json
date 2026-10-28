@@ -394,6 +394,7 @@
     },
     "recipe": {
       "output": "golangci_json",
+      "fix": "fix",
       "group": {
         "marker": [
           "go.mod"

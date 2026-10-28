@@ -120,6 +120,11 @@ pub(super) fn golangci(stdout: &str) -> Result<Vec<Finding>> {
                 finding.line = number(pos, "Line");
                 finding.column = number(pos, "Column");
             }
+            finding.fixable = item
+                .get("SuggestedFixes")
+                .and_then(Value::as_array)
+                .is_some_and(|fixes| !fixes.is_empty())
+                || item.get("Replacement").is_some_and(|replacement| !replacement.is_null());
             finding
         })
         .collect())
