@@ -44,7 +44,7 @@ use oxfmt_native::resolve_oxfmt_native;
 use oxlint_native::resolve_oxlint_native;
 pub use oxfmt_native::{OxfmtNative, OxfmtOverride};
 pub use oxlint_native::OxlintNative;
-pub use tools::{ToolConfig, ToolsConfig};
+pub use tools::{InstallPolicy, ToolConfig, ToolsConfig};
 pub use typos_native::TyposNative;
 use typos_native::resolve_typos_native;
 

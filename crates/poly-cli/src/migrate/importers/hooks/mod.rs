@@ -9,6 +9,7 @@ mod acc;
 mod command;
 mod filters;
 mod lefthook;
+mod pin;
 mod precommit;
 mod tree;
 

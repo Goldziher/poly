@@ -141,6 +141,18 @@ Opt into tools from the vendored catalog, keyed by catalog name
 | `exclude` | string or array | — | Exclude glob(s). |
 | `env` | table | `{}` | Environment variables injected when running the tool. |
 | `root` | string | — | Working directory, relative to the config root. |
+| `extra_args` | array | `[]` | Flags added to every role's argv, just before the file list. Keeps the catalog's own flags, so this is where configuration goes (`["-c", "checkstyle.xml"]`). |
+| `format_extra_args` | array | `[]` | `extra_args` for the formatting role only. |
+| `lint_extra_args` | array | `[]` | `extra_args` for the linting role only. |
+| `bin` | string | — | Executable to run instead of the catalog binary on `PATH`. For a JVM tool, the `java`. |
+| `version` | string | — | Pinned release to use. Looked up in the catalog's checksummed releases. |
+| `url`, `sha256` | string | — | Download and digest for a `version` the catalog does not know. |
+| `install` | string | `"never"` | `"auto"` downloads the pinned `version` into poly's cache when the tool is missing. |
+
+Tools with a recipe (`checkstyle`, `palantir-java-format`, `buildifier`, `buf`, `actionlint`,
+`hadolint`, `golangci-lint`, `helm`, `helm-template`, `tflint`, `tofu`, `terraform`,
+`pyproject-fmt`, `npm-groovy-lint`) run batched, parse the tool's report into file/line/rule
+diagnostics, and are described in [Tool catalog](/poly/reference/catalog/#tools-with-a-recipe).
 
 ## `[cache]`
 

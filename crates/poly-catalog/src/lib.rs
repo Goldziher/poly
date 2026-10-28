@@ -19,6 +19,7 @@
 //! ```
 
 mod model;
+mod recipe;
 
 #[cfg(test)]
 mod tests;
@@ -28,10 +29,20 @@ use std::sync::OnceLock;
 
 use anyhow::{Context, Result};
 
-pub use model::{CATEGORY_FORMATTER, CATEGORY_LINTER, CATEGORY_SPELL_CHECK, Command, PATH_PLACEHOLDER, Tool};
+pub use model::{
+    CATEGORY_FORMATTER, CATEGORY_LINTER, CATEGORY_SPELL_CHECK, Command, DIR_PLACEHOLDER, FILES_PLACEHOLDER,
+    PATH_PLACEHOLDER, ROOT_PLACEHOLDER, Tool, takes_files,
+};
+pub use recipe::{Asset, Findings, Group, Install, Output, Recipe, Release, ReleaseKind, Target};
 
 /// The vendored catalog JSON, embedded at compile time.
 const CATALOG_JSON: &str = include_str!("../data/catalog.json");
+
+/// poly's own tools and execution recipes, layered over the vendored catalog. An
+/// entry here replaces the mdsf entry of the same name (its commands are merged
+/// over the mdsf ones, so the golden fixtures stay valid), or adds a tool the
+/// mdsf snapshot lacks.
+const OVERLAY_JSON: &str = include_str!("../data/overlay.json");
 
 /// The parsed tool registry: every [`Tool`] plus a name → index for O(1) lookup.
 ///
@@ -52,12 +63,28 @@ impl Catalog {
     /// integrity error, not a runtime input error (the data ships in the binary).
     pub fn get() -> &'static Catalog {
         static CATALOG: OnceLock<Catalog> = OnceLock::new();
-        CATALOG.get_or_init(|| Catalog::parse(CATALOG_JSON).expect("vendored data/catalog.json must be valid"))
+        CATALOG.get_or_init(|| {
+            Catalog::parse(CATALOG_JSON, OVERLAY_JSON)
+                .expect("vendored data/catalog.json and data/overlay.json must be valid")
+        })
     }
 
-    /// Parse a catalog from a JSON array of [`Tool`]s, building the name index.
-    fn parse(json: &str) -> Result<Catalog> {
-        let tools: Vec<Tool> = serde_json::from_str(json).context("parsing vendored tool catalog")?;
+    /// Parse a catalog from a JSON array of [`Tool`]s, apply the overlay's
+    /// replacements and additions, and build the name index.
+    fn parse(json: &str, overlay: &str) -> Result<Catalog> {
+        let mut tools: Vec<Tool> = serde_json::from_str(json).context("parsing vendored tool catalog")?;
+        let overlay: Vec<Tool> = serde_json::from_str(overlay).context("parsing tool overlay")?;
+        for mut tool in overlay {
+            match tools.iter().position(|existing| existing.name == tool.name) {
+                Some(position) => {
+                    let mut commands = std::mem::take(&mut tools[position].commands);
+                    commands.append(&mut tool.commands);
+                    tool.commands = commands;
+                    tools[position] = tool;
+                }
+                None => tools.push(tool),
+            }
+        }
         let index = tools
             .iter()
             .enumerate()

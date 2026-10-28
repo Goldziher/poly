@@ -6,6 +6,8 @@
 //! invocation or equivalent to what poly does by default; anything else stays a
 //! command job so its flags keep their effect.
 
+use super::acc::ToolSettings;
+
 /// File-list placeholders poly substitutes in a `run` line.
 const FILE_PLACEHOLDERS: &[&str] = &["staged_files", "all_files"];
 
@@ -42,6 +44,11 @@ pub(super) struct Recognized {
     pub fixes: bool,
     /// Engine options the command's flags map onto.
     pub options: Vec<EngineOption>,
+    /// How the catalog tools are configured, so the flags that shape their
+    /// output survive the migration (`tool`, settings).
+    pub settings: Vec<(&'static str, ToolSettings)>,
+    /// Behaviour of the original command that poly's equivalent does not have.
+    pub approximations: Vec<&'static str>,
 }
 
 /// A boolean engine option switched on by a command-line flag.
@@ -165,19 +172,34 @@ pub(super) fn is_file_list(token: &str) -> bool {
 }
 
 /// Why a tool has no poly counterpart, keyed by a substring of the command.
-const NO_EQUIVALENT: &[(&str, &str)] = &[
-    (
-        "pyproject-fmt",
-        "poly formats TOML with taplo but has no pyproject-fmt layout engine",
-    ),
-    ("checkstyle", "poly has no checkstyle backend"),
-    ("palantir", "poly has no palantir-java-format backend"),
-    (
-        "buf lint",
-        "the catalog's buf entry is a formatter only; there is no buf lint",
-    ),
-    ("helm", "poly has no helm chart checker"),
+const NO_EQUIVALENT: &[(&str, &str)] = &[];
+
+/// Wrapper scripts that exist only to find, pin and launch a tool, and the tool
+/// they launch. Recognised by file name: the wrapper's job is what `[tools]`
+/// `version` / `install` / `bin` now do.
+const LAUNCHER_SCRIPTS: &[(&str, &str)] = &[
+    ("run_checkstyle.sh", "checkstyle"),
+    ("run_palantir_format.sh", "palantir-java-format"),
+    ("run_groovy_lint.sh", "npm-groovy-lint"),
+    ("lint_changed.sh", "golangci-lint-changed"),
+    ("check_charts.sh", "helm-charts"),
 ];
+
+/// The program a command runs, looking through `bash script.sh` / `./script.sh`
+/// launchers to the tool inside. Returns the tool and the arguments after it.
+fn program_and_args(tokens: &[String]) -> Option<(&str, &[String])> {
+    let first = tokens.first()?.as_str();
+    let (script, rest) = match first {
+        "bash" | "sh" | "zsh" => (tokens.get(1)?.as_str(), &tokens[2..]),
+        other => (other, &tokens[1..]),
+    };
+    let name = script.rsplit('/').next().unwrap_or(script);
+    match LAUNCHER_SCRIPTS.iter().find(|(file, _)| *file == name) {
+        Some((_, tool)) => Some((tool, rest)),
+        None if matches!(first, "bash" | "sh" | "zsh") => None,
+        None => Some((first, &tokens[1..])),
+    }
+}
 
 /// Recognize the tool a `run` line invokes.
 pub(super) fn recognize(run: &str) -> Recognition {
@@ -188,17 +210,13 @@ pub(super) fn recognize(run: &str) -> Recognition {
     {
         return Recognition::Unknown;
     }
-    let Some(program) = tokens.first().map(String::as_str) else {
-        return Recognition::Unknown;
+    let Some((program, rest)) = program_and_args(&tokens) else {
+        return no_equivalent(run).map_or(Recognition::Unknown, Recognition::NoEquivalent);
     };
-    if !tokens.iter().skip(1).any(|t| is_file_list(t)) {
+    if !rest.iter().any(|t| is_file_list(t)) {
         return no_equivalent(run).map_or(Recognition::Unknown, Recognition::NoEquivalent);
     }
-    let args: Vec<&str> = tokens[1..]
-        .iter()
-        .map(String::as_str)
-        .filter(|t| !is_file_list(t))
-        .collect();
+    let args: Vec<&str> = rest.iter().map(String::as_str).filter(|t| !is_file_list(t)).collect();
     let recognition = match program {
         "ruff" => ruff(&args),
         "oxlint" => simple(
@@ -216,10 +234,15 @@ pub(super) fn recognize(run: &str) -> Recognition {
             &["--write", "--no-error-on-unmatched-pattern"],
         ),
         "rubyfmt" => simple("rubyfmt", Target::Fmt, &[], &args, &["--in-place", "-i"]),
-        "actionlint" => simple("actionlint", Target::Lint, &["actionlint"], &args, &[]),
+        "actionlint" => actionlint(&args),
         "golangci-lint" => golangci(&args),
+        "golangci-lint-changed" => golangci_changed(&args),
         "buf" => buf(&args),
         "npm-groovy-lint" => groovy(&args),
+        "checkstyle" => checkstyle(&args),
+        "palantir-java-format" => palantir(&args),
+        "pyproject-fmt" => pyproject_fmt(&args),
+        "helm-charts" => helm_charts(&args),
         _ => Recognition::Unknown,
     };
     match recognition {
@@ -263,7 +286,29 @@ fn builtin(target: Target, catalog_tools: &'static [&'static str], options: Vec<
         catalog_tools,
         fixes: false,
         options,
+        settings: Vec::new(),
+        approximations: Vec::new(),
     })
+}
+
+fn configured(
+    target: Target,
+    catalog_tools: &'static [&'static str],
+    settings: Vec<(&'static str, ToolSettings)>,
+    approximations: Vec<&'static str>,
+) -> Recognition {
+    Recognition::Builtin(Recognized {
+        target,
+        catalog_tools,
+        fixes: false,
+        options: Vec::new(),
+        settings,
+        approximations,
+    })
+}
+
+fn not_representable(tool: &'static str, flags: Vec<String>) -> Recognition {
+    Recognition::FlagsNotRepresentable { tool, flags }
 }
 
 fn simple(
@@ -314,8 +359,6 @@ fn ruff(args: &[&str]) -> Recognition {
     }
 }
 
-const GOLANGCI_CONFIGS: &[&str] = &[".golangci.yml", ".golangci.yaml", ".golangci.toml", ".golangci.json"];
-
 fn golangci(args: &[&str]) -> Recognition {
     let target = match args.first().copied() {
         Some("fmt") => Target::Fmt,
@@ -324,14 +367,14 @@ fn golangci(args: &[&str]) -> Recognition {
     };
     let mut rest = &args[1..];
     let mut unknown = Vec::new();
+    let mut extra = Vec::new();
     while let Some((&flag, tail)) = rest.split_first() {
         rest = tail;
         match flag {
             "--fix" => {}
             "-c" | "--config" => match rest.split_first() {
-                Some((&value, tail)) if GOLANGCI_CONFIGS.contains(&unquote(value)) => rest = tail,
                 Some((&value, tail)) => {
-                    unknown.push(format!("{flag} {value}"));
+                    extra.extend([flag.to_string(), unquote(value).to_string()]);
                     rest = tail;
                 }
                 None => unknown.push(flag.to_string()),
@@ -339,26 +382,149 @@ fn golangci(args: &[&str]) -> Recognition {
             other => unknown.push(other.to_string()),
         }
     }
-    if unknown.is_empty() {
-        builtin(target, &["golangci-lint"], Vec::new())
-    } else {
-        Recognition::FlagsNotRepresentable {
-            tool: "golangci-lint",
-            flags: unknown,
+    if !unknown.is_empty() {
+        return not_representable("golangci-lint", unknown);
+    }
+    let settings = ToolSettings {
+        extra_args: extra,
+        ..ToolSettings::default()
+    };
+    configured(target, &["golangci-lint"], vec![("golangci-lint", settings)], Vec::new())
+}
+
+/// `dev_tools/go/lint_changed.sh`: runs `golangci-lint run -c .golangci.yml
+/// --new-from-rev=HEAD ./...` once per Go module and GOOS touched.
+fn golangci_changed(args: &[&str]) -> Recognition {
+    if !args.is_empty() {
+        return not_representable("lint_changed.sh", args.iter().map(|a| (*a).to_string()).collect());
+    }
+    let settings = ToolSettings {
+        extra_args: vec!["-c".to_string(), ".golangci.yml".to_string()],
+        ..ToolSettings::default()
+    };
+    configured(
+        Target::Lint,
+        &["golangci-lint"],
+        vec![("golangci-lint", settings)],
+        vec![
+            "the wrapper passed --new-from-rev=HEAD so only new findings failed the commit; poly reports every finding in the package, so add `lint_extra_args = [\"--new-from-rev=HEAD\"]` to keep that",
+            "the wrapper ran once per GOOS implied by *_windows.go / *_darwin.go / *_linux.go files; poly runs for the host GOOS only",
+        ],
+    )
+}
+
+/// `actionlint -ignore PATTERN ... files`: the ignore patterns are the config.
+fn actionlint(args: &[&str]) -> Recognition {
+    let mut extra = Vec::new();
+    let mut unknown = Vec::new();
+    let mut rest = args;
+    while let Some((&flag, tail)) = rest.split_first() {
+        rest = tail;
+        match (flag, rest.split_first()) {
+            ("-ignore", Some((&value, tail))) => {
+                extra.extend(["-ignore".to_string(), unquote(value).to_string()]);
+                rest = tail;
+            }
+            (other, _) => unknown.push(other.to_string()),
         }
     }
+    if !unknown.is_empty() {
+        return not_representable("actionlint", unknown);
+    }
+    let settings = ToolSettings {
+        extra_args: extra,
+        ..ToolSettings::default()
+    };
+    configured(Target::Lint, &["actionlint"], vec![("actionlint", settings)], Vec::new())
+}
+
+/// `checkstyle -c checkstyle.xml -p checkstyle.properties files`.
+fn checkstyle(args: &[&str]) -> Recognition {
+    let mut extra = Vec::new();
+    let mut unknown = Vec::new();
+    let mut rest = args;
+    while let Some((&flag, tail)) = rest.split_first() {
+        rest = tail;
+        match (flag, rest.split_first()) {
+            ("-c" | "-p", Some((&value, tail))) => {
+                extra.extend([flag.to_string(), unquote(value).to_string()]);
+                rest = tail;
+            }
+            (other, _) => unknown.push(other.to_string()),
+        }
+    }
+    if !unknown.is_empty() {
+        return not_representable("checkstyle", unknown);
+    }
+    let settings = ToolSettings {
+        extra_args: extra,
+        ..ToolSettings::default()
+    };
+    configured(
+        Target::Lint,
+        &["checkstyle"],
+        vec![("checkstyle", settings)],
+        vec!["the wrapper selected the JDK named in .java-version; poly uses `bin`, JAVA_HOME or the java on PATH"],
+    )
+}
+
+/// `run_palantir_format.sh --replace files`: armis's two-pass pipeline.
+fn palantir(args: &[&str]) -> Recognition {
+    let unknown: Vec<String> = args
+        .iter()
+        .filter(|a| **a != "--replace")
+        .map(|a| (*a).to_string())
+        .collect();
+    if !unknown.is_empty() {
+        return not_representable("palantir-java-format", unknown);
+    }
+    let settings = ToolSettings {
+        command: Some("aosp".to_string()),
+        ..ToolSettings::default()
+    };
+    configured(
+        Target::Fmt,
+        &["palantir-java-format"],
+        vec![("palantir-java-format", settings)],
+        Vec::new(),
+    )
+}
+
+/// `pyproject-fmt --keep-full-version files`: every flag is formatting policy.
+fn pyproject_fmt(args: &[&str]) -> Recognition {
+    let settings = ToolSettings {
+        extra_args: args.iter().map(|a| (*a).to_string()).collect(),
+        ..ToolSettings::default()
+    };
+    configured(Target::Fmt, &["pyproject-fmt"], vec![("pyproject-fmt", settings)], Vec::new())
+}
+
+/// `dev_tools/helm/check_charts.sh files`: `helm lint` and `helm template` per
+/// chart that contains a changed file.
+fn helm_charts(args: &[&str]) -> Recognition {
+    if args.iter().any(|a| *a != "--annotations") {
+        return not_representable("check_charts.sh", args.iter().map(|a| (*a).to_string()).collect());
+    }
+    configured(
+        Target::Lint,
+        &["helm", "helm-template"],
+        Vec::new(),
+        vec![
+            "the wrapper built chart dependencies (`helm dependency build`, with retries) and chose a values file per chart from dev_tools/helm/charts.py; poly runs helm as it finds the chart, so run the dependency build first and pass `-f` through `extra_args` where a chart needs values",
+        ],
+    )
 }
 
 fn buf(args: &[&str]) -> Recognition {
+    let rest: Vec<&str> = args
+        .iter()
+        .skip(1)
+        .copied()
+        .filter(|a| !a.starts_with("$(printf"))
+        .collect();
     match args.first().copied() {
-        Some("format") => {
-            let rest: Vec<&str> = args[1..]
-                .iter()
-                .copied()
-                .filter(|a| !a.starts_with("$(printf"))
-                .collect();
-            simple("buf", Target::Fmt, &["buf"], &rest, &["-w", "--write"])
-        }
+        Some("format") => simple("buf", Target::Fmt, &["buf"], &rest, &["-w", "--write"]),
+        Some("lint") => simple("buf", Target::Lint, &["buf"], &rest, &[]),
         _ => Recognition::Unknown,
     }
 }
@@ -467,13 +633,97 @@ mod tests {
     #[test]
     fn behavior_changing_flags_keep_the_command_a_job() {
         assert!(matches!(
-            recognize("actionlint -ignore 'SC2129' {staged_files}"),
+            recognize("actionlint -shellcheck= {staged_files}"),
             Recognition::FlagsNotRepresentable { tool: "actionlint", .. }
         ));
         assert!(matches!(
-            recognize("golangci-lint run -c custom.yml {staged_files}"),
-            Recognition::FlagsNotRepresentable { .. }
+            recognize("checkstyle -x foo {staged_files}"),
+            Recognition::FlagsNotRepresentable { tool: "checkstyle", .. }
         ));
+    }
+
+    fn settings_of(run: &str, tool: &str) -> super::ToolSettings {
+        let Recognition::Builtin(recognized) = recognize(run) else {
+            panic!("`{run}` must map to a builtin");
+        };
+        recognized
+            .settings
+            .into_iter()
+            .find(|(name, _)| *name == tool)
+            .unwrap_or_else(|| panic!("no settings for {tool}"))
+            .1
+    }
+
+    #[test]
+    fn actionlint_ignores_become_extra_args() {
+        let settings = settings_of("actionlint -ignore 'SC2129' -ignore 'SC2016' {staged_files}", "actionlint");
+        assert_eq!(settings.extra_args, ["-ignore", "SC2129", "-ignore", "SC2016"]);
+    }
+
+    #[test]
+    fn golangci_config_flag_is_kept_as_an_extra_arg() {
+        assert_eq!(
+            settings_of("golangci-lint run -c custom.yml {staged_files}", "golangci-lint").extra_args,
+            ["-c", "custom.yml"]
+        );
+    }
+
+    #[test]
+    fn launcher_scripts_resolve_to_the_tool_they_start() {
+        assert_eq!(
+            target("bash dev_tools/checkstyle/run_checkstyle.sh -c checkstyle.xml -p checkstyle.properties {staged_files}"),
+            Some((Target::Lint, vec!["checkstyle"]))
+        );
+        assert_eq!(
+            settings_of(
+                "bash dev_tools/checkstyle/run_checkstyle.sh -c checkstyle.xml -p checkstyle.properties {staged_files}",
+                "checkstyle"
+            )
+            .extra_args,
+            ["-c", "checkstyle.xml", "-p", "checkstyle.properties"]
+        );
+        let palantir = settings_of(
+            "bash dev_tools/checkstyle/run_palantir_format.sh --replace {staged_files}",
+            "palantir-java-format",
+        );
+        assert_eq!(palantir.command.as_deref(), Some("aosp"));
+        assert_eq!(
+            target("bash dev_tools/helm/check_charts.sh {staged_files}"),
+            Some((Target::Lint, vec!["helm", "helm-template"]))
+        );
+        assert_eq!(
+            target("bash dev_tools/go/lint_changed.sh {staged_files}"),
+            Some((Target::Lint, vec!["golangci-lint"]))
+        );
+        assert_eq!(
+            target("dev_tools/groovy/run_groovy_lint.sh --no-insight --format {staged_files}"),
+            Some((Target::Fmt, vec!["npm-groovy-lint"]))
+        );
+    }
+
+    #[test]
+    fn an_unrelated_script_is_not_mistaken_for_a_launcher() {
+        assert_eq!(recognize("bash scripts/other.sh {staged_files}"), Recognition::Unknown);
+    }
+
+    #[test]
+    fn pyproject_fmt_flags_and_buf_lint_map_to_catalog_tools() {
+        assert_eq!(
+            settings_of("pyproject-fmt --keep-full-version {staged_files}", "pyproject-fmt").extra_args,
+            ["--keep-full-version"]
+        );
+        assert_eq!(
+            target("buf lint $(printf -- '--path %s ' {staged_files})"),
+            Some((Target::Lint, vec!["buf"]))
+        );
+    }
+
+    #[test]
+    fn wrapper_behaviour_poly_lacks_is_reported_as_an_approximation() {
+        let Recognition::Builtin(recognized) = recognize("bash dev_tools/go/lint_changed.sh {staged_files}") else {
+            panic!("lint_changed.sh must map to a builtin");
+        };
+        assert!(recognized.approximations.iter().any(|a| a.contains("--new-from-rev=HEAD")));
     }
 
     #[test]
@@ -483,14 +733,7 @@ mod tests {
 
     #[test]
     fn tools_without_a_counterpart_give_a_reason() {
-        assert!(matches!(
-            recognize("pyproject-fmt --keep-full-version {staged_files}"),
-            Recognition::NoEquivalent(_)
-        ));
-        assert!(matches!(
-            recognize("buf lint {staged_files}"),
-            Recognition::NoEquivalent(_)
-        ));
+        assert_eq!(recognize("some-unknown-tool {staged_files}"), Recognition::Unknown);
     }
 
     #[test]

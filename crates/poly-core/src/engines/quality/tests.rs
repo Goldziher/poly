@@ -250,13 +250,19 @@ fn with_option(key: &str, value: i64) -> EngineConfig {
 #[test]
 fn file_over_the_parse_limit_gets_text_rules_but_no_structural_ones() {
     let file = src("f.go", Language::Go, MANY_PARAMETERS_GO);
-    let within = QualityEngine.lint(&file, &with_option("max_parse_bytes", 1 << 20)).unwrap();
+    let within = QualityEngine
+        .lint(&file, &with_option("max_parse_bytes", 1 << 20))
+        .unwrap();
     assert_eq!(codes(&within), ["too-many-parameters"]);
 
     let over = QualityEngine.lint(&file, &with_option("max_parse_bytes", 10)).unwrap();
     assert!(over.is_empty(), "{over:?}");
 
-    let long = src("f.go", Language::Go, &format!("{MANY_PARAMETERS_GO}{}", "// x\n".repeat(1200)));
+    let long = src(
+        "f.go",
+        Language::Go,
+        &format!("{MANY_PARAMETERS_GO}{}", "// x\n".repeat(1200)),
+    );
     let over = QualityEngine.lint(&long, &with_option("max_parse_bytes", 10)).unwrap();
     assert_eq!(codes(&over), ["file-too-long"]);
 }

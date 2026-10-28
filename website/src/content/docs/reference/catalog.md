@@ -22,6 +22,73 @@ A tool whose lint command rewrites files (`sqruff fix`, `rubocop --autocorrect`,
 run by `poly lint`; enabling one for linting logs a warning naming the command it refused, while
 `poly fmt` still runs it as a formatter.
 
+## Tools with a recipe
+
+Fourteen tools carry a **recipe** (`crates/poly-catalog/data/overlay.json`): how poly runs them
+beyond one spawn per file with an exit-code verdict. They are what a repository's lefthook or
+pre-commit gate typically runs, and `poly migrate` maps those jobs onto them.
+
+| Tool | Role | Unit of work | Report |
+| --- | --- | --- | --- |
+| `checkstyle` | lint | all files, one JVM per shard | XML (rule, line, column) |
+| `palantir-java-format` | format | all files, in place on a scratch copy | -- |
+| `buildifier` | format, lint, fix | all files | JSON (category, URL, fixable) |
+| `buf` | format, lint | one run per `buf.yaml` module | JSON lines |
+| `actionlint` | lint | all workflow files | JSON |
+| `hadolint` | lint | all Dockerfiles | JSON |
+| `golangci-lint` | format, lint | one run per `go.mod`, over the packages of the files | JSON |
+| `helm`, `helm-template` | lint | one run per `Chart.yaml` chart | text |
+| `tflint` | lint | one run per directory | JSON |
+| `tofu`, `terraform` | format | all files | -- |
+| `pyproject-fmt` | format | `pyproject.toml` only | -- |
+| `npm-groovy-lint` | format, lint | all files | JSON |
+
+```toml
+[tools.checkstyle]
+enabled = true
+extra_args = ["-c", "checkstyle.xml", "-p", "checkstyle.properties"]
+version = "12.3.1"   # a pinned, checksummed release
+install = "auto"     # download it when it is missing
+
+[tools.actionlint]
+enabled = true
+extra_args = ["-ignore", "SC2129", "-ignore", "SC2016"]
+
+[tools.buildifier]
+enabled = true
+format_extra_args = ["-lint=fix"]
+extra_args = ["--warnings=-native-build"]
+```
+
+How they differ from the breadth tier above:
+
+- **Batched.** The run's files go to the tool in one invocation, sharded to stay under the
+  command-line limit and spread across cores. When the tool rejects one file, only that file is
+  reported as failed; the rest keep their results.
+- **Units.** `helm` runs once per chart, `golangci-lint` once per Go module, `buf` once per module,
+  however many of their files changed. Independent units run in parallel. Findings the tool reports
+  in a file that is not part of the run (a `values.yaml` change that breaks a template) are shown
+  once, on the first file of the unit.
+- **Reports.** Findings carry file, line, column, rule and URL, and are cached per file. A tool that
+  judges a file in context (`buf`, `golangci-lint`) is cached against a digest of that context, so
+  editing a neighbouring file invalidates the verdict.
+- **Fixes.** `buildifier`'s auto-fixable warnings are applied by `poly lint --fix`; the tool's own
+  rewrite is attached as the fix.
+- **Takes over its language.** An enabled formatter with a recipe replaces the language's built-in
+  formatter (`tofu` for HCL, `golangci-lint` for Go): the project's gate runs that tool, so its
+  opinions win. `pyproject-fmt` is confined to `pyproject.toml` and the TOML formatter leaves
+  those files to it. If the tool is missing, its files are reported as skipped rather than
+  formatted by something else.
+- **Provisioning.** `bin` names an executable; `version` selects a checksummed release; with
+  `install = "auto"` poly downloads it once into its cache and verifies the SHA-256. Otherwise a
+  missing tool produces a warning naming the command that installs it.
+
+Palantir's pipeline as armis runs it (AOSP layout, then Palantir import fixing) is the named
+command `aosp`: `[tools.palantir-java-format] command = "aosp"`.
+
+Formatters with a recipe that cover a whole language displace the built-in one, so disable nothing
+by hand; to keep the built-in, leave the tool disabled.
+
 <!-- BEGIN CATALOG -->
 
 <details>

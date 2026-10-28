@@ -127,7 +127,11 @@ pub(super) fn lint_php(
         let severity = issue_severity(issue, &selection);
         let span = issue.primary_span().map(|s| convert_span(s, &file));
         let fix = extract_safe_fixes(issue, file_id, &src.content);
-        let description = issue.help.as_ref().or_else(|| issue.notes.first()).map(ToString::to_string);
+        let description = issue
+            .help
+            .as_ref()
+            .or_else(|| issue.notes.first())
+            .map(ToString::to_string);
 
         diags.push(Diagnostic {
             engine: "mago".to_string(),

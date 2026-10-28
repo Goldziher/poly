@@ -21,7 +21,13 @@ impl<'a> LineIndex<'a> {
     pub(crate) fn new(src: &'a str) -> Self {
         let bytes = src.as_bytes();
         let mut line_starts = vec![0];
-        line_starts.extend(bytes.iter().enumerate().filter(|&(_, &b)| b == b'\n').map(|(i, _)| i + 1));
+        line_starts.extend(
+            bytes
+                .iter()
+                .enumerate()
+                .filter(|&(_, &b)| b == b'\n')
+                .map(|(i, _)| i + 1),
+        );
         let mut chars_before = Vec::with_capacity(bytes.len() / CHUNK + 1);
         let mut total = 0usize;
         chars_before.push(0);

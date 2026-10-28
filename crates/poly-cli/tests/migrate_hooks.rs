@@ -117,26 +117,20 @@ fn armis_nested_groups_become_ordered_priority_bands() {
         priority("oxfmt")
     );
     assert!(
-        priority("pyproject-format") > priority("oxfmt"),
-        "pyproject-format runs after every format chain"
+        priority("prek-hooks") > priority("oxfmt"),
+        "prek-hooks follows every format chain in the fix group"
     );
-    assert!(
-        priority("prek-hooks") > priority("pyproject-format"),
-        "prek-hooks follows pyproject-format in the fix group"
-    );
-    for check in [
-        "va-check",
-        "go-lint",
-        "java-checkstyle",
-        "actionlint",
-        "test-file-names",
-    ] {
+    for check in ["va-check", "test-file-names"] {
         assert!(
             priority(check) > priority("prek-hooks"),
             "check job {check} runs after the fix group"
         );
     }
-    assert_eq!(priority("va-check"), priority("go-lint"), "the check group is parallel");
+    assert_eq!(
+        priority("va-check"),
+        priority("rms-check"),
+        "the check group is parallel"
+    );
 }
 
 #[test]
@@ -161,7 +155,18 @@ fn armis_direct_tool_calls_map_to_builtins_and_catalog_tools() {
         "{lint_files:?}"
     );
     let tools: toml::Table = toml::from_str(&plan.doc.to_string()).unwrap();
-    for tool in ["golangci-lint", "buf"] {
+    for tool in [
+        "golangci-lint",
+        "buf",
+        "actionlint",
+        "buildifier",
+        "checkstyle",
+        "palantir-java-format",
+        "pyproject-fmt",
+        "helm",
+        "helm-template",
+        "npm-groovy-lint",
+    ] {
         assert_eq!(
             tools["tools"][tool]["enabled"].as_bool(),
             Some(true),
@@ -176,10 +181,25 @@ fn armis_direct_tool_calls_map_to_builtins_and_catalog_tools() {
         "go-format",
         "ruby-format",
         "buf-format",
+        "buf-lint",
+        "actionlint",
+        "pyproject-format",
+        "groovy-lint",
+        "groovy-format",
     ] {
         assert!(
             !stage.commands.contains_key(absorbed),
             "{absorbed} is a builtin, not a command"
+        );
+        assert!(
+            !stage.scripts.contains_key(absorbed),
+            "{absorbed} is a builtin, not a script"
+        );
+    }
+    for wrapper in ["java-format", "java-checkstyle", "go-lint", "helm-check"] {
+        assert!(
+            !stage.scripts.contains_key(wrapper),
+            "the {wrapper} wrapper script is now a [tools] entry"
         );
     }
 }
@@ -210,30 +230,47 @@ fn armis_wrapper_scripts_become_script_jobs_with_runner_and_args() {
 }
 
 #[test]
-fn armis_run_jobs_keep_staged_files_templates_and_stage_fixed() {
-    let config = hooks_of(&plan(&armis()));
-    let pyproject = pre_commit_job(&config, "pyproject-format");
+fn armis_tool_flags_move_to_the_tools_table() {
+    let plan = plan(&armis());
+    let table: toml::Table = toml::from_str(&plan.doc.to_string()).unwrap();
+    let tools = &table["tools"];
+    let strings = |tool: &str, key: &str| -> Vec<String> {
+        tools[tool][key]
+            .as_array()
+            .unwrap_or_else(|| panic!("[tools.{tool}] has no {key}"))
+            .iter()
+            .map(|v| v.as_str().unwrap().to_string())
+            .collect()
+    };
     assert_eq!(
-        pyproject.run.as_deref(),
-        Some("pyproject-fmt --keep-full-version {staged_files}")
+        strings("actionlint", "extra_args"),
+        ["-ignore", "SC2129", "-ignore", "SC2016"]
     );
-    assert!(pyproject.stage_fixed);
-    assert_eq!(globs(pyproject.files.as_ref()), ["pyproject.toml", "**/pyproject.toml"]);
     assert_eq!(
-        globs(pyproject.exclude.as_ref()),
+        strings("checkstyle", "extra_args"),
+        ["-c", "checkstyle.xml", "-p", "checkstyle.properties"]
+    );
+    assert_eq!(strings("golangci-lint", "extra_args"), ["-c", ".golangci.yml"]);
+    assert_eq!(strings("pyproject-fmt", "extra_args"), ["--keep-full-version"]);
+    assert_eq!(strings("buildifier", "format_extra_args"), ["-lint=fix"]);
+    assert_eq!(tools["palantir-java-format"]["command"].as_str(), Some("aosp"));
+    assert_eq!(
+        strings("pyproject-fmt", "exclude"),
         ["*armis/public_sdks/python/public/pyproject.toml*"],
         "the regex-escaped dot in the exclude is translated"
     );
-    let buf = pre_commit_job(&config, "buf-lint");
-    assert_eq!(
-        buf.run.as_deref(),
-        Some("buf lint $(printf -- '--path %s ' {staged_files})")
-    );
-    let actionlint = pre_commit_job(&config, "actionlint");
-    assert!(
-        actionlint.run.as_deref().unwrap().contains("-ignore 'SC2129'"),
-        "behavior-changing flags keep actionlint a command"
-    );
+}
+
+#[test]
+fn armis_wrapper_behaviour_poly_does_not_reproduce_is_reported() {
+    let lossy = unrepresented(&plan(&armis()), "lefthook").join("\n");
+    for needle in [
+        "--new-from-rev=HEAD",
+        "helm dependency build",
+        ".java-version",
+    ] {
+        assert!(lossy.contains(needle), "missing `{needle}` in:\n{lossy}");
+    }
 }
 
 #[test]
@@ -271,7 +308,10 @@ fn armis_pre_commit_hooks_map_or_are_reported() {
     assert!(safety.aws_credentials, "detect-aws-credentials is a file_safety member");
     assert!(!lossy.contains("detect-aws-credentials"), "{lossy}");
     assert!(lossy.contains("trailing-whitespace: approximated"), "{lossy}");
-    assert!(lossy.contains("buildifier: args --warnings=-native-build"), "{lossy}");
+    assert!(
+        !lossy.contains("buildifier: args"),
+        "buildifier's args now configure [tools.buildifier]: {lossy}"
+    );
 }
 
 #[test]

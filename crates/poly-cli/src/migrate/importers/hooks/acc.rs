@@ -153,6 +153,61 @@ pub(super) struct Shape {
     pub priority: i64,
 }
 
+/// What a migrated hook says about how a catalog tool should run, carried to
+/// `[tools.<name>]`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(super) struct ToolSettings {
+    /// Flags for every role (`-c checkstyle.xml`, `-ignore SC2129`).
+    pub extra_args: Vec<String>,
+    /// Flags for the formatting role only (`buildifier -lint=fix`).
+    pub format_extra_args: Vec<String>,
+    /// Flags for the linting role only.
+    pub lint_extra_args: Vec<String>,
+    /// A named catalog command (`palantir-java-format`'s `aosp` pipeline).
+    pub command: Option<String>,
+    /// The pinned release the hook ran; when set, poly may download it.
+    pub version: Option<String>,
+}
+
+impl ToolSettings {
+    pub(super) fn is_empty(&self) -> bool {
+        self == &ToolSettings::default()
+    }
+
+    /// Fold `other` in. A repeated sequence is kept once; a different sequence
+    /// for the same slot is a conflict, returned as the slot's name.
+    fn merge(&mut self, other: &ToolSettings) -> Vec<&'static str> {
+        let mut conflicts = Vec::new();
+        let slots = [
+            ("extra_args", &mut self.extra_args, &other.extra_args),
+            ("format_extra_args", &mut self.format_extra_args, &other.format_extra_args),
+            ("lint_extra_args", &mut self.lint_extra_args, &other.lint_extra_args),
+        ];
+        for (name, mine, theirs) in slots {
+            if theirs.is_empty() || *mine == *theirs {
+                continue;
+            }
+            if mine.is_empty() {
+                mine.clone_from(theirs);
+            } else {
+                conflicts.push(name);
+            }
+        }
+        for (name, mine, theirs) in [
+            ("command", &mut self.command, &other.command),
+            ("version", &mut self.version, &other.version),
+        ] {
+            match (&*mine, theirs) {
+                (_, None) => {}
+                (None, Some(_)) => mine.clone_from(theirs),
+                (Some(a), Some(b)) if a != b => conflicts.push(name),
+                _ => {}
+            }
+        }
+        conflicts
+    }
+}
+
 /// One source job's use of a builtin or catalog tool.
 #[derive(Debug, Clone)]
 struct Scope {
@@ -205,6 +260,7 @@ pub(super) struct HookAcc {
     file_safety: FileSafetyAcc,
     tools: BTreeMap<String, ToolAcc>,
     engine_options: BTreeMap<Vec<String>, BTreeSet<&'static str>>,
+    tool_settings: BTreeMap<String, ToolSettings>,
     pub diag: Diagnostics,
 }
 
@@ -249,6 +305,19 @@ impl HookAcc {
             self.engine_options.entry(table).or_default().insert(option.key);
         }
         self.builtins.entry(usage.target).or_default().push(scope);
+    }
+
+    /// Record how `tool` should be configured, from the hook labelled `label`.
+    pub fn add_tool_settings(&mut self, tool: &str, label: &str, settings: &ToolSettings) {
+        if settings.is_empty() {
+            return;
+        }
+        let entry = self.tool_settings.entry(tool.to_string()).or_default();
+        for slot in entry.merge(settings) {
+            self.diag.lossy(format!(
+                "{label}: [tools.{tool}] {slot} differs from what another hook set; the first was kept"
+            ));
+        }
     }
 
     pub fn add_file_safety(&mut self, member: &'static str, stage: &str, label: &str, shape: Shape) {
@@ -315,7 +384,8 @@ impl HookAcc {
             fragments.extend(stage_fragments(stage, acc));
         }
         for (name, tool) in &self.tools {
-            fragments.push(Fragment::new(&["tools", name], tool_entries(tool)));
+            let settings = self.tool_settings.get(name).cloned().unwrap_or_default();
+            fragments.push(Fragment::new(&["tools", name], tool_entries(tool, &settings)));
         }
         for (table, keys) in &self.engine_options {
             let path: Vec<&str> = table.iter().map(String::as_str).collect();
@@ -460,14 +530,30 @@ fn union<'a>(lists: impl Iterator<Item = &'a [String]>) -> Vec<String> {
     out
 }
 
-fn tool_entries(tool: &ToolAcc) -> Vec<(String, Item)> {
+fn tool_entries(tool: &ToolAcc, settings: &ToolSettings) -> Vec<(String, Item)> {
     let (files, exclude, _) = merge_tool_scopes(&tool.scopes);
     let mut entries = vec![("enabled".to_string(), bool_item(true))];
+    if let Some(command) = &settings.command {
+        entries.push(("command".to_string(), str_item(command)));
+    }
+    if let Some(version) = &settings.version {
+        entries.push(("version".to_string(), str_item(version)));
+        entries.push(("install".to_string(), str_item("auto")));
+    }
     if !files.is_empty() {
         entries.push(("files".to_string(), str_array(&files)));
     }
     if !exclude.is_empty() {
         entries.push(("exclude".to_string(), str_array(&exclude)));
+    }
+    for (key, args) in [
+        ("extra_args", &settings.extra_args),
+        ("format_extra_args", &settings.format_extra_args),
+        ("lint_extra_args", &settings.lint_extra_args),
+    ] {
+        if !args.is_empty() {
+            entries.push((key.to_string(), str_array(args)));
+        }
     }
     entries
 }

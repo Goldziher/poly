@@ -44,17 +44,17 @@ impl EngineClock {
     pub(super) fn stop(&self) -> EngineTime {
         EngineTime {
             wall: self.wall.elapsed(),
-            cpu: self.cpu.zip(thread_cpu_time()).map(|(start, end)| end.saturating_sub(start)),
+            cpu: self
+                .cpu
+                .zip(thread_cpu_time())
+                .map(|(start, end)| end.saturating_sub(start)),
         }
     }
 }
 
 #[cfg(unix)]
 fn thread_cpu_time() -> Option<Duration> {
-    let mut ts = libc::timespec {
-        tv_sec: 0,
-        tv_nsec: 0,
-    };
+    let mut ts = libc::timespec { tv_sec: 0, tv_nsec: 0 };
     // SAFETY: `ts` is a valid, writable timespec for the duration of the call.
     let status = unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut ts) };
     (status == 0).then(|| Duration::new(ts.tv_sec as u64, ts.tv_nsec as u32))

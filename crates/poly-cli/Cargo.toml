@@ -35,6 +35,7 @@ json5.workspace = true
 owo-colors.workspace = true
 poly-buildinfo.workspace = true
 poly-cache.workspace = true
+poly-catalog.workspace = true
 poly-config.workspace = true
 poly-core.workspace = true
 poly-hooks.workspace = true

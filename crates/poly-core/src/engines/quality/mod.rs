@@ -185,10 +185,7 @@ fn grammar_name(src: &SourceFile) -> Option<String> {
 /// opt-in grammar-generic rules (`magic-number`, `law-of-demeter`) walk any tree
 /// and keep the parse alive when switched on.
 fn needs_parse_tree(grammar: &str, settings: &Settings) -> bool {
-    settings.magic_number
-        || settings.law_of_demeter
-        || definitions::has_query(grammar)
-        || kinds::has_table(grammar)
+    settings.magic_number || settings.law_of_demeter || definitions::has_query(grammar) || kinds::has_table(grammar)
 }
 
 /// Parse `src` once (via the pooled parser for `grammar`) and run every

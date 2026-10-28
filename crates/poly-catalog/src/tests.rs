@@ -122,3 +122,81 @@ fn actionlint_has_path_globs_scoped_to_workflows() {
         tool.path_globs
     );
 }
+
+#[test]
+fn the_overlay_adds_the_tools_the_mdsf_snapshot_lacks() {
+    let catalog = Catalog::get();
+    for name in [
+        "checkstyle",
+        "palantir-java-format",
+        "helm",
+        "helm-template",
+        "tflint",
+        "pyproject-fmt",
+    ] {
+        assert!(
+            catalog.tool(name).is_some_and(|tool| tool.recipe.is_some()),
+            "{name} needs a recipe"
+        );
+    }
+}
+
+#[test]
+fn the_overlay_keeps_the_mdsf_commands_the_golden_fixtures_name() {
+    let actionlint = Catalog::get().tool("actionlint").expect("actionlint");
+    assert!(
+        actionlint.command("").is_some(),
+        "mdsf's default command survives the merge"
+    );
+    assert!(actionlint.command("lint").is_some(), "the recipe command is added");
+}
+
+#[test]
+fn every_recipe_command_is_runnable_with_the_run_s_files() {
+    for tool in Catalog::get().tools().iter().filter(|tool| tool.recipe.is_some()) {
+        for (name, command) in &tool.commands {
+            if name.is_empty() || command.arguments.iter().any(|a| a == PATH_PLACEHOLDER) {
+                continue;
+            }
+            let takes_target = command.batch_arguments().is_some()
+                || command
+                    .arguments
+                    .iter()
+                    .any(|a| a.contains("$ROOT") || a.contains("$DIR"));
+            assert!(takes_target, "{}:{name} names no file, directory or root", tool.name);
+        }
+    }
+}
+
+#[test]
+fn pinned_releases_carry_a_sha256_for_every_asset() {
+    for tool in Catalog::get().tools() {
+        let Some(install) = tool.recipe.as_ref().and_then(|recipe| recipe.install.as_ref()) else {
+            continue;
+        };
+        for (version, release) in &install.releases {
+            assert!(!release.assets.is_empty(), "{} {version} has no assets", tool.name);
+            for (platform, asset) in &release.assets {
+                assert_eq!(asset.sha256.len(), 64, "{} {version} {platform}", tool.name);
+                assert!(
+                    asset
+                        .sha256
+                        .chars()
+                        .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+                    "{}",
+                    tool.name
+                );
+                assert!(asset.url.starts_with("https://"), "{} {version} {platform}", tool.name);
+            }
+        }
+    }
+}
+
+#[test]
+fn buildifier_formats_lints_and_fixes_starlark() {
+    let buildifier = Catalog::get().tool("buildifier").expect("buildifier");
+    assert_eq!(buildifier.languages, ["starlark"]);
+    assert!(buildifier.format_command().is_some());
+    assert!(buildifier.lint_command().is_some());
+    assert!(buildifier.command("fix").is_some_and(|c| c.uses_files()));
+}

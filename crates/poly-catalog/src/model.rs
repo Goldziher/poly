@@ -6,9 +6,23 @@ use std::collections::BTreeMap;
 
 use serde::Deserialize;
 
+use crate::recipe::Recipe;
+
 /// The sole argument placeholder used by catalog commands. `poly` substitutes it
 /// with the concrete file path at invocation time (see [`Command::argv`]).
 pub const PATH_PLACEHOLDER: &str = "$PATH";
+
+/// Placeholder expanding to every file of an invocation. `$FILES:--path` repeats
+/// the flag before each file (`--path a --path b`).
+pub const FILES_PLACEHOLDER: &str = "$FILES";
+
+/// Placeholder for the group's project root, relative to the invocation's
+/// working directory (always `.`).
+pub const ROOT_PLACEHOLDER: &str = "$ROOT";
+
+/// Placeholder for the directory of the file under check, relative to the
+/// group's root and prefixed `./`.
+pub const DIR_PLACEHOLDER: &str = "$DIR";
 
 /// The `formatter` category string used by the catalog.
 pub const CATEGORY_FORMATTER: &str = "formatter";
@@ -45,6 +59,10 @@ pub struct Tool {
     /// workflow files only.
     #[serde(default)]
     pub path_globs: Vec<String>,
+    /// How poly runs the tool beyond one spawn per file with an exit-code
+    /// verdict. `None` for the mdsf breadth tier.
+    #[serde(default)]
+    pub recipe: Option<Recipe>,
 }
 
 /// One invocation recipe for a [`Tool`]: the argument vector (which may contain
@@ -58,6 +76,16 @@ pub struct Command {
     /// `true` when the tool consumes source on stdin rather than a file path.
     #[serde(default)]
     pub stdin: bool,
+    /// Further passes run, in order, over the same files after this one. A
+    /// pipeline of in-place rewrites (palantir-java-format formats with one
+    /// style, then fixes imports with another) is one command with `then`.
+    #[serde(default)]
+    pub then: Vec<Command>,
+    /// Argv for running many files in one invocation when `arguments` itself is
+    /// a single-file form (`tofu fmt -` reads one file on stdin; the batch form
+    /// is `tofu fmt -write=true $FILES`, rewriting a scratch copy in place).
+    #[serde(default)]
+    pub batch: Option<Vec<String>>,
 }
 
 impl Tool {
@@ -117,6 +145,22 @@ impl Tool {
 }
 
 impl Command {
+    /// Whether the argument vector takes the run's files as a list
+    /// ([`FILES_PLACEHOLDER`], with or without a per-file flag).
+    pub fn uses_files(&self) -> bool {
+        takes_files(&self.arguments)
+    }
+
+    /// The argv for a many-file invocation: [`Command::batch`] when the command
+    /// has a distinct one, else `arguments` when they already take a file list.
+    pub fn batch_arguments(&self) -> Option<&[String]> {
+        match &self.batch {
+            Some(batch) => Some(batch),
+            None if self.uses_files() => Some(&self.arguments),
+            None => None,
+        }
+    }
+
     /// Whether the argument vector references the file path via
     /// [`PATH_PLACEHOLDER`].
     pub fn uses_path(&self) -> bool {
@@ -137,4 +181,11 @@ impl Command {
             })
             .collect()
     }
+}
+
+/// Whether `arguments` contains the [`FILES_PLACEHOLDER`] in either form.
+pub fn takes_files(arguments: &[String]) -> bool {
+    arguments
+        .iter()
+        .any(|argument| argument == FILES_PLACEHOLDER || argument.starts_with("$FILES:"))
 }

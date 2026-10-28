@@ -7,9 +7,10 @@ use std::path::{Path, PathBuf};
 use poly_config::Stage;
 use serde_json::{Map, Value};
 
-use super::acc::{Body, BuiltinUse, Guard, HookAcc, JobSpec, Shape};
+use super::acc::{Body, BuiltinUse, Guard, HookAcc, JobSpec, Shape, ToolSettings};
 use super::command::{self, Recognition, Recognized, Target};
 use super::filters::filter_to_globs;
+use super::pin;
 use super::tree::{self, Mode, Node};
 use crate::migrate::importers::{load_json, load_yaml};
 
@@ -606,6 +607,13 @@ impl Importer<'_> {
             catalog_tools: recognized.catalog_tools,
             options: &recognized.options,
         });
+        for (name, settings) in &recognized.settings {
+            self.acc.add_tool_settings(name, label, settings);
+        }
+        for note in &recognized.approximations {
+            self.acc.diag.lossy(format!("{label}: {note}"));
+        }
+        self.pin_catalog_tools(label, recognized.catalog_tools);
         let tool = match recognized.target {
             Target::Fmt => "fmt",
             Target::Lint => "lint",
@@ -632,6 +640,29 @@ impl Importer<'_> {
             self.acc.diag.lossy(format!(
                 "{label}: `root` cannot be attached to a builtin hook and was dropped"
             ));
+        }
+    }
+
+    /// Carry the release a repository pins for a catalog tool (`.checkstyle-version`)
+    /// to `[tools.<name>] version`, when poly can download that release.
+    fn pin_catalog_tools(&mut self, label: &str, tools: &[&str]) {
+        for tool in tools {
+            let Some(file) = pin::pin_file(tool) else { continue };
+            let Some(version) = pin::read_version(&self.dir.join(file)) else {
+                continue;
+            };
+            if pin::catalog_has_release(tool, &version) {
+                let settings = ToolSettings {
+                    version: Some(version),
+                    ..ToolSettings::default()
+                };
+                self.acc.add_tool_settings(tool, label, &settings);
+            } else {
+                self.acc.diag.lossy(format!(
+                    "{label}: {file} pins {tool} {version}, which poly cannot download; set \
+                     `[tools.{tool}] version`, `url` and `sha256` to pin it"
+                ));
+            }
         }
     }
 

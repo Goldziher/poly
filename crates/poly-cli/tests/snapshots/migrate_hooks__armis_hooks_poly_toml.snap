@@ -7,15 +7,25 @@ fmt = { jobs = [
   { exclude = ["armis/pipeline/ios_like_ssh/test_files/*.log", "*.tar", "*.gz", "*.svg", "*.snap", "*.zip"], fix = true },
   { files = ["**/*.proto"], fix = true },
   { files = ["*.go"], fix = true },
+  { files = ["*.groovy"], exclude = ["playground/**"], fix = true, priority = 1 },
+  { files = ["*.java"], exclude = ["playground/**"] },
   { files = ["*.rb"], fix = true },
   { files = ["*.{py,pyi}"], fix = true },
   { files = ["*BUILD", "*BUILD.bazel", "*.BUILD", "*.bzl"], fix = true },
+  { files = ["pyproject.toml", "**/pyproject.toml"], exclude = ["*armis/public_sdks/python/public/pyproject.toml*"], priority = 2 },
 ] }
 lint = { jobs = [
+  { files = ["**/*.proto"], priority = 4 },
+  { files = ["**/{Chart.yaml,Chart.lock,requirements.yaml,requirements.lock,values.yaml,values.schema.json,templates/**}"], priority = 4 },
+  { files = ["*.go"], priority = 4 },
+  { files = ["*.groovy"], exclude = ["playground/**"], fix = true },
+  { files = ["*.java"], exclude = ["playground/**"], priority = 4 },
   { files = ["*.{js,jsx,ts,tsx,mjs,cjs}"], fix = true },
   { files = ["*.{py,pyi}"], fix = true, priority = 1 },
   { files = ["*.{py,pyi}"], exclude = ["products/em/backend/*"] },
   { files = ["*.{yml,yaml}"], exclude = ["armis/service_charts/*/templates/*", "deploy/manifests/jenkins_k8s_plugin.yaml"] },
+  { files = ["*BUILD", "*BUILD.bazel", "*.BUILD", "*.bzl"], fix = true },
+  { files = [".github/workflows/*.{yml,yaml}"], exclude = [".github/workflows/*/*"], priority = 4 },
   { files = ["products/em/backend/*"] },
 ] }
 file_safety = { jobs = [
@@ -36,13 +46,6 @@ runner = "bash"
 files = ["*.{js,jsx,ts,tsx,json,jsonc,mjs,cjs,toml,yml,yaml,md,mdx}"]
 stage_fixed = true
 priority = 1
-[hooks.pre-commit.scripts.java-format]
-script = "dev_tools/checkstyle/run_palantir_format.sh"
-runner = "bash"
-args = ["--replace"]
-files = ["*.java"]
-exclude = ["playground/**"]
-stage_fixed = true
 [hooks.pre-commit.scripts.va-check]
 script = ".lefthook/pnpm_gate.sh"
 runner = "bash"
@@ -100,54 +103,11 @@ args = ["products/platform/armis-assistant", "run type-check", "run test"]
 files = ["products/platform/armis-assistant/*.{js,jsx,ts,tsx,json}"]
 workspace = true
 priority = 4
-[hooks.pre-commit.scripts.go-lint]
-script = "dev_tools/go/lint_changed.sh"
-runner = "bash"
-files = ["*.go"]
-priority = 4
-[hooks.pre-commit.scripts.java-checkstyle]
-script = "dev_tools/checkstyle/run_checkstyle.sh"
-runner = "bash"
-args = ["-c", "checkstyle.xml", "-p", "checkstyle.properties"]
-files = ["*.java"]
-exclude = ["playground/**"]
-priority = 4
-[hooks.pre-commit.scripts.helm-check]
-script = "dev_tools/helm/check_charts.sh"
-runner = "bash"
-files = ["**/{Chart.yaml,Chart.lock,requirements.yaml,requirements.lock,values.yaml,values.schema.json,templates/**}"]
-priority = 4
 [hooks.pre-commit.scripts.test-file-names]
 script = "dev_tools/validate_test_names/check_names.sh"
 runner = "bash"
 files = ["*.{py,js,jsx,mjs,cjs,ts,tsx,mts,cts,go,java,rs,sh,bash,bats}"]
 exclude = ["playground/**", "armis/tenant_server/fe/qa_tests/**"]
-priority = 4
-[hooks.pre-commit.commands.groovy-lint]
-run = "dev_tools/groovy/run_groovy_lint.sh --no-insight --fix --failon=info {staged_files}"
-files = ["*.groovy"]
-exclude = ["playground/**"]
-stage_fixed = true
-[hooks.pre-commit.commands.groovy-format]
-run = "dev_tools/groovy/run_groovy_lint.sh --no-insight --format {staged_files}"
-files = ["*.groovy"]
-exclude = ["playground/**"]
-stage_fixed = true
-priority = 1
-[hooks.pre-commit.commands.pyproject-format]
-run = "pyproject-fmt --keep-full-version {staged_files}"
-files = ["pyproject.toml", "**/pyproject.toml"]
-exclude = ["*armis/public_sdks/python/public/pyproject.toml*"]
-stage_fixed = true
-priority = 2
-[hooks.pre-commit.commands.actionlint]
-run = "actionlint -ignore 'SC2129' -ignore 'SC2016' {staged_files}"
-files = [".github/workflows/*.{yml,yaml}"]
-exclude = [".github/workflows/*/*"]
-priority = 4
-[hooks.pre-commit.commands.buf-lint]
-run = "buf lint $(printf -- '--path %s ' {staged_files})"
-files = ["**/*.proto"]
 priority = 4
 [hooks.pre-commit.commands.env-lock-check]
 run = "acli lock-env"
@@ -161,14 +121,49 @@ priority = 3
 script = ".lefthook/prepare-commit-msg/custom_prepare_commit_msg.sh"
 runner = "bash"
 workspace = true
+[tools.actionlint]
+enabled = true
+files = [".github/workflows/*.{yml,yaml}"]
+exclude = [".github/workflows/*/*"]
+extra_args = ["-ignore", "SC2129", "-ignore", "SC2016"]
 [tools.buf]
 enabled = true
 files = ["**/*.proto"]
 [tools.buildifier]
 enabled = true
+version = "8.5.1"
+install = "auto"
 files = ["*BUILD", "*BUILD.bazel", "*.BUILD", "*.bzl"]
+extra_args = ["--warnings=-native-build"]
+format_extra_args = ["-lint=fix"]
+[tools.checkstyle]
+enabled = true
+files = ["*.java"]
+exclude = ["playground/**"]
+extra_args = ["-c", "checkstyle.xml", "-p", "checkstyle.properties"]
 [tools.golangci-lint]
 enabled = true
 files = ["*.go"]
+extra_args = ["-c", ".golangci.yml"]
+[tools.helm]
+enabled = true
+files = ["**/{Chart.yaml,Chart.lock,requirements.yaml,requirements.lock,values.yaml,values.schema.json,templates/**}"]
+[tools.helm-template]
+enabled = true
+files = ["**/{Chart.yaml,Chart.lock,requirements.yaml,requirements.lock,values.yaml,values.schema.json,templates/**}"]
+[tools.npm-groovy-lint]
+enabled = true
+files = ["*.groovy"]
+exclude = ["playground/**"]
+[tools.palantir-java-format]
+enabled = true
+command = "aosp"
+files = ["*.java"]
+exclude = ["playground/**"]
+[tools.pyproject-fmt]
+enabled = true
+files = ["pyproject.toml", "**/pyproject.toml"]
+exclude = ["*armis/public_sdks/python/public/pyproject.toml*"]
+extra_args = ["--keep-full-version"]
 [lint.python.ruff]
 unsafe_fixes = true

@@ -14,6 +14,12 @@
 //! files = "**/*.sh"           # include glob(s)
 //! exclude = "**/vendor/**"    # exclude glob(s)
 //! root = "packages/go"        # run from this subdirectory (relative to config root)
+//! extra_args = ["-ignore", "SC2129"]  # appended to the argv, before the file list
+//! format_extra_args = []      # ... only when the tool formats
+//! lint_extra_args = []        # ... only when the tool lints
+//! bin = "/opt/tools/shfmt"    # use this executable instead of the one on PATH
+//! version = "3.12.0"          # a pinned release poly can provision (see below)
+//! install = "auto"            # download the pinned release when it is missing
 //!
 //! [tools.shfmt.env]           # environment variables injected when running the tool
 //! GOPATH = "/home/user/go"
@@ -30,6 +36,19 @@ use poly_catalog::Catalog;
 use serde::Deserialize;
 
 use crate::hooks::{Patterns, Stage};
+
+/// What poly does when a tool's executable cannot be found.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum InstallPolicy {
+    /// Say so, with the command that installs it. The default: poly never
+    /// downloads an executable the config did not ask for.
+    #[default]
+    Never,
+    /// Download the pinned release ([`ToolConfig::version`]) into poly's tool
+    /// cache, verify its SHA-256, and use it.
+    Auto,
+}
 
 /// `[tools]` — a map from catalog tool name to its [`ToolConfig`].
 ///
@@ -120,6 +139,31 @@ pub struct ToolConfig {
     /// `None` means the repo root. Applied on both the direct-engine path and the
     /// hooks-lowering path.
     pub root: Option<String>,
+    /// Arguments added to the tool's argv for every role, immediately before the
+    /// file list. Unlike `args` this keeps the catalog's own flags (the ones the
+    /// report parser depends on), so it is the place for configuration:
+    /// `["-c", "checkstyle.xml", "-p", "checkstyle.properties"]`.
+    #[serde(default)]
+    pub extra_args: Vec<String>,
+    /// `extra_args` for the formatting role only.
+    #[serde(default)]
+    pub format_extra_args: Vec<String>,
+    /// `extra_args` for the linting role only.
+    #[serde(default)]
+    pub lint_extra_args: Vec<String>,
+    /// Executable to run instead of the catalog's `binary` looked up on `PATH`.
+    /// For a JVM tool this is the `java` to launch the jar with.
+    pub bin: Option<String>,
+    /// Release of the tool to use. Looked up in the catalog's pinned releases;
+    /// a version the catalog does not know needs `url` and `sha256` too.
+    pub version: Option<String>,
+    /// Download URL for `version` when the catalog has no such pinned release.
+    pub url: Option<String>,
+    /// Lower-case hex SHA-256 the download for `version` must have.
+    pub sha256: Option<String>,
+    /// Whether poly may download the pinned release when the tool is missing.
+    #[serde(default)]
+    pub install: InstallPolicy,
 }
 
 /// Maximum edit distance at which a closest-match name is worth suggesting.
@@ -309,5 +353,46 @@ OTHER = "world"
         let shfmt = tools.get("shfmt").expect("shfmt entry present");
         assert!(shfmt.env.is_empty(), "env defaults to empty BTreeMap");
         assert!(shfmt.root.is_none(), "root defaults to None");
+    }
+}
+
+#[cfg(test)]
+mod recipe_keys {
+    use super::*;
+
+    #[test]
+    fn should_parse_extra_args_pins_and_install_policy() {
+        let tools: ToolsConfig = toml::from_str(
+            r#"
+[checkstyle]
+enabled = true
+extra_args = ["-c", "checkstyle.xml"]
+lint_extra_args = ["-p", "checkstyle.properties"]
+version = "12.3.1"
+install = "auto"
+bin = "/opt/jdk/bin/java"
+
+[buildifier]
+enabled = true
+format_extra_args = ["-lint=fix"]
+"#,
+        )
+        .expect("parse");
+        let checkstyle = tools.get("checkstyle").expect("checkstyle");
+        assert_eq!(checkstyle.extra_args, ["-c", "checkstyle.xml"]);
+        assert_eq!(checkstyle.lint_extra_args, ["-p", "checkstyle.properties"]);
+        assert_eq!(checkstyle.version.as_deref(), Some("12.3.1"));
+        assert_eq!(checkstyle.install, InstallPolicy::Auto);
+        assert_eq!(
+            tools.get("buildifier").expect("buildifier").install,
+            InstallPolicy::Never
+        );
+        tools.validate().expect("both are catalog tools");
+    }
+
+    #[test]
+    fn should_reject_an_unknown_install_policy() {
+        let result: Result<ToolsConfig, _> = toml::from_str("[buf]\ninstall = \"sometimes\"\n");
+        assert!(result.is_err());
     }
 }

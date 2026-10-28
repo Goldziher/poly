@@ -5151,6 +5151,7 @@ dependencies = [
  "owo-colors",
  "poly-buildinfo",
  "poly-cache",
+ "poly-catalog",
  "poly-config",
  "poly-core",
  "poly-hooks",
@@ -5256,6 +5257,7 @@ dependencies = [
  "serde_json",
  "serde_toon_format",
  "serde_yaml",
+ "sha2",
  "sort-package-json",
  "sqruff-lib",
  "sqruff-lib-core",
@@ -5272,6 +5274,7 @@ dependencies = [
  "typos-dict",
  "uncomment",
  "unicase",
+ "ureq",
  "which",
 ]
 

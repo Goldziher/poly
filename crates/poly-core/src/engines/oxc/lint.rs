@@ -1,9 +1,9 @@
 //! oxc lint path: oxlint diagnostics for JS/TS/JSX/TSX and strict validation
 //! for JSON/JSONC.
 
+use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use oxc_allocator::Allocator;
@@ -826,26 +826,43 @@ max = 6
 
     #[test]
     fn one_embedded_long_line_in_an_authored_file_is_not_minified() {
-        let source = format!("{}const image = \"{}\";\n", format!("{SHADOWING}\n").repeat(2_000), "a".repeat(25_000));
-        assert!(!looks_minified(&make_src(&source, Language::JavaScript), &default_cfg()));
+        let source = format!(
+            "{}const image = \"{}\";\n",
+            format!("{SHADOWING}\n").repeat(2_000),
+            "a".repeat(25_000)
+        );
+        assert!(!looks_minified(
+            &make_src(&source, Language::JavaScript),
+            &default_cfg()
+        ));
     }
 
     #[test]
     fn many_short_lines_are_not_minified() {
         let source = format!("{SHADOWING}\n").repeat(2_000);
         assert!(source.len() > DEFAULT_MAX_LINE_BYTES as usize);
-        assert!(!looks_minified(&make_src(&source, Language::JavaScript), &default_cfg()));
+        assert!(!looks_minified(
+            &make_src(&source, Language::JavaScript),
+            &default_cfg()
+        ));
     }
 
     #[test]
     fn minified_file_is_skipped_but_authored_one_is_linted() {
         let linted = lint_js(&make_src(SHADOWING, Language::JavaScript), &default_cfg()).unwrap();
-        assert!(linted.iter().any(|d| d.code.as_deref() == Some("no-shadow")), "{linted:?}");
+        assert!(
+            linted.iter().any(|d| d.code.as_deref() == Some("no-shadow")),
+            "{linted:?}"
+        );
 
         let skipped = lint_js(&make_src(&minified(30_000), Language::JavaScript), &default_cfg()).unwrap();
         assert!(skipped.is_empty());
 
-        let forced = lint_js(&make_src(&minified(30_000), Language::JavaScript), &cfg_with("max_line_bytes", 0)).unwrap();
+        let forced = lint_js(
+            &make_src(&minified(30_000), Language::JavaScript),
+            &cfg_with("max_line_bytes", 0),
+        )
+        .unwrap();
         assert!(!forced.is_empty());
     }
 

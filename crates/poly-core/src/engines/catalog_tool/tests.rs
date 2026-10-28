@@ -19,10 +19,13 @@ fn leak_tool(name: &str, binary: &str, category: &str, arguments: Vec<String>) -
             CatalogCommand {
                 arguments,
                 stdin: false,
+                then: Vec::new(),
+                batch: None,
             },
         )]),
         homepage: String::new(),
         path_globs: vec![],
+        recipe: None,
     }))
 }
 
@@ -449,10 +452,13 @@ fn leak_tool_with_globs(
             CatalogCommand {
                 arguments,
                 stdin: false,
+                then: Vec::new(),
+                batch: None,
             },
         )]),
         homepage: String::new(),
         path_globs,
+        recipe: None,
     }))
 }
 
