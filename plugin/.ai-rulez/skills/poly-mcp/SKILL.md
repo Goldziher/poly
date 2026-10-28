@@ -26,7 +26,8 @@ the CLI's `--format json`, or the compact TOON encoding when asked.
 
 Eleven tools, no more. Read-only (never touch the tree):
 
-- `lint` — run the linters and return diagnostics. Mirrors `poly lint`.
+- `lint` — run the linters and return diagnostics. Mirrors `poly lint`, per-file tier only
+  (as `--no-workspace`); the whole-project phase is the separate `workspace_lint` tool.
 - `format_check` — report formatting drift without writing. Mirrors `poly fmt --check`.
 - `cache_stats` — result-cache footprint (entries, bytes, format version) per namespace.
 - `rules` — list every ast-grep rule a run would apply — poly's built-in pack plus the user

@@ -9,8 +9,8 @@ metadata:
 
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-Content-Hash: blake3:3363494043f7c9784c37f40b9ed195ca372dc87bebd5f35072722e988c20773a
-Source-Hash: blake3:a83f79775dab553a0f60281187d8dec3335f90da18104ff5dbd0512ab2c87f99
+Content-Hash: blake3:a7581f394fd984a61613639eac329a827d981dfecd4d88ec9ff3b9cc3bc98447
+Source-Hash: blake3:cc120355c9ad62f2b32bbc10e08dadecf4c460dffadf8adf9f92d7be5ec8c98c
 Schema-Version: v1
 -->
 
@@ -28,16 +28,28 @@ ast-grep rule pack, behind one binary, one config, and one report.
   tool default → poly's opinionated overrides → your `poly.toml`. In a monorepo a nested
   `poly.toml` deep-merges on top of its ancestors for the files beneath it.
 - **`poly migrate`** — absorb existing tool configs into `poly.toml` instead of
-  hand-writing it. It imports **ruff, typos, taplo, and markdownlint** configs; there is no
-  eslint, prettier, or pre-commit importer. The default is a dry-run report — pass `--write`
-  to apply, `--recurse` for a monorepo, `--verify` to re-run poly afterwards, and
-  `--strip-superseded` to also remove `pyproject.toml` sections for tools ruff replaces.
+  hand-writing it. It imports **ruff, typos, taplo, and markdownlint** configs, and turns a
+  **lefthook** or **pre-commit** config into `[hooks]`, `[hooks.builtin]` and `[tools]`
+  entries; there is no eslint or prettier importer (an existing `.oxlintrc.json` /
+  `.oxfmtrc.json` is read directly, so it needs none). The default is a dry-run report — pass
+  `--write` to apply (`--allow-dirty` on a dirty tree), `--recurse` for a monorepo, `--verify`
+  to re-run poly afterwards, and `--strip-superseded` to also remove `pyproject.toml` sections
+  for tools ruff replaces. It deletes a source only when nothing in it was lost.
 - **`poly hooks install`** — wire the git-hook shims so `poly` runs the configured stages on
-  every commit, replacing a `.pre-commit-config.yaml`. It installs the hook types your
-  `poly.toml` configures; `--hook-type` picks specific ones and `--overwrite` discards a
-  preserved legacy hook. `poly hooks uninstall` restores what was there before.
+  every commit, replacing a `.pre-commit-config.yaml` or lefthook setup. It installs the hook
+  types your `poly.toml` configures; `--hook-type` picks specific ones. A foreign hook already
+  there is kept as `<hook>.legacy` and run before poly; a lefthook hook is kept but not run
+  (`--replace-lefthook` discards it), and `--overwrite` discards any preserved hook.
+  `poly hooks uninstall` restores what was there before; `poly hooks run [stage]` runs a stage
+  by hand (`--all-files` for the whole tree, `-v` to show passing jobs' output).
+- **External tools** — enable any catalog tool with `[tools.<name>] enabled = true`
+  (`golangci-lint`, `actionlint`, `hadolint`, `helm`, `tflint`, `buf`, …). Pin `version` and set
+  `install = "auto"` to have poly download a checksum-verified release when it is missing; by
+  default it never downloads anything.
 - **`poly config show`** prints the effective merged config; **`poly config update`** pins a
-  symbolic remote `extends` ref into `poly-config.lock`.
+  symbolic remote `extends` ref into `poly-config.lock`; **`poly config schema`** prints the
+  JSON Schema for `poly.toml`. An unknown key in an engine table is an `unknown-config-key`
+  warning that suggests the nearest valid key (`--verbose` lists every key the table reads).
 - **`poly doctor`** reports which poly is running, every poly on PATH, and the config in
   effect — the first thing to run when two machines disagree.
 
@@ -55,12 +67,12 @@ in following steps.
 ```
 
 poly is one pinned binary with no *required* system dependencies, so local, hook, and CI
-runs agree — with one caveat: the native-toolchain tier means `rustfmt` and `gofmt` are used
-automatically whenever they are on `PATH`, and formatting output then depends on that tool's
-version. A machine without them silently falls through to the lower-fidelity tree-sitter
-tier. Pin the Rust/Go toolchain in CI (and expect drift otherwise), or set
-`[fmt.rust.rustfmt] enabled = false` / `[fmt.go.gofmt] enabled = false` to stop the subprocess.
-That does not leave the language unformatted: `rustfmt`/`gofmt` are the one pair of backends
-that read `enabled` themselves and hand the file to the tier-2 reindenter when disabled, rather
-than expecting the runner to drop them from the plan — so the file is still formatted, just at
-lower fidelity than the native tool.
+runs agree — with one caveat: the native-toolchain tier means `rustfmt`, `gofmt` and `shfmt`
+(and `shellcheck` for lint) are used automatically whenever they are on `PATH`, and output then
+depends on that tool's version. A machine without them silently falls through to the
+lower-fidelity tree-sitter tier. Pin those toolchains in CI (and expect drift otherwise), or set
+`[fmt.rust.rustfmt] enabled = false` / `[fmt.go.gofmt] enabled = false` /
+`[fmt.shell.shfmt] enabled = false` to stop the subprocess. That does not leave the language
+unformatted: native-toolchain backends read `enabled` themselves and hand the file to the
+tier-2 reindenter when disabled, rather than expecting the runner to drop them from the plan —
+so the file is still formatted, just at lower fidelity than the native tool.

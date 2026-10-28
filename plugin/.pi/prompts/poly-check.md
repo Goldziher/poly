@@ -5,7 +5,7 @@ description: Lint and check formatting with poly — apply no fixes; summarize f
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
 Content-Hash: blake3:ca78cf288e8ab665cc02727367c046a380bb4352170235ec1a49dcd1ac721114
-Source-Hash: blake3:a83f79775dab553a0f60281187d8dec3335f90da18104ff5dbd0512ab2c87f99
+Source-Hash: blake3:cc120355c9ad62f2b32bbc10e08dadecf4c460dffadf8adf9f92d7be5ec8c98c
 Schema-Version: v1
 -->
 

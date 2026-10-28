@@ -5,7 +5,7 @@ description: Apply poly lint --fix and fmt --fix, then re-check and report what 
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
 Content-Hash: blake3:660ea301a2d05715fb59392b8c12d12777aec7cd795f8c7aa94b9abca959ed5f
-Source-Hash: blake3:a83f79775dab553a0f60281187d8dec3335f90da18104ff5dbd0512ab2c87f99
+Source-Hash: blake3:cc120355c9ad62f2b32bbc10e08dadecf4c460dffadf8adf9f92d7be5ec8c98c
 Schema-Version: v1
 -->
 

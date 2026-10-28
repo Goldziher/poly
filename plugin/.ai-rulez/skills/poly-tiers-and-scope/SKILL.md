@@ -20,26 +20,28 @@ x-ai-rulez:
 Five mechanisms decide what actually inspects a file (`crates/poly-core/src/registry.rs`):
 
 1. **Tier-1 native crate backends** — one in-process Rust crate registered for specific
-   languages: ruff, oxc, taplo, rumdl, sqruff, yaml, malva (+ biome for CSS/SCSS), markup_fmt, mago, rubyfmt,
-   graphql, nixfmt, hcl, dockerfile, dotenv, ini.
+   languages, by engine id: `ruff`, `oxc`, `taplo`, `rumdl`, `sqruff`, `yaml`, `malva`
+   (+ `biome` for CSS/SCSS), `markup_fmt`, `mago`, `rubyfmt`, `graphql` (+ `biome`),
+   `alejandra` (Nix), `hcl`, `dockerfile`, `dotenv`, `ini`.
 2. **Tier-2 tree-sitter generic tier** (ADR 0004) — the catch-all for every language with no
    native backend. Structural reindent for brace-family grammars, whitespace normalization
    otherwise, and a leave-untouched list where whitespace is significant. This is the
    coverage mechanism, not a fallback to avoid — but it is explicitly *not* gofmt/rustfmt
    parity.
 3. **Native-toolchain tier** (ADR 0014, `engines/native_tool/`) — the language's canonical
-   first-party CLI, run per file over stdin/stdout. `rustfmt`, `gofmt` and `shellcheck` are
-   **on by default whenever the tool is found on PATH**; `zig fmt`, `shfmt`,
-   `google-java-format`, `ktfmt`, `styler`, `swift-format`, `dart format`, and
-   `gleam format` are opt-in via `[fmt.<lang>.<tool>] enabled = true` /
-   `[lint.<lang>.<tool>] enabled = true`. Absent tool ⇒ the language falls through to
-   tier 2 with an info-level notice, never an error.
+   first-party CLI, run per file over stdin/stdout. `rustfmt`, `gofmt`, `shfmt` and
+   `shellcheck` are **on by default whenever the tool is found on PATH**; `zigfmt`,
+   `google-java-format`, `ktfmt`, `styler`, `swift-format`, `dartfmt`, and `gleamfmt` are
+   opt-in via `[fmt.<lang>.<id>] enabled = true` / `[lint.<lang>.<id>] enabled = true`.
+   Absent tool ⇒ the language falls through to tier 2 with an info-level notice, never an error.
 4. **`quality`, the code-quality metric tier** (ADR 0027) — cross-cutting, appended to every
    language: file/function/type length, nesting depth, cyclomatic complexity, parameter
-   count, and `lazy-ignore`. Warning severity, on by default, configured under
-   `[lint.quality]`. The structural rules need a verified node-kind table and cover Python,
-   Rust, Go, JavaScript, TypeScript, TSX, Java, Kotlin, C, C++, C#, and Ruby; `magic-number`
-   and `law-of-demeter` are opt-in. A per-language deferral table keeps it from duplicating
+   count, `lazy-ignore`, and `uncollected-test-file` (a test-named file the language's runner
+   will not collect; on for Python, Go and Ruby, off for JavaScript/TypeScript). Warning
+   severity, on by default, configured under `[lint.quality]`. The structural rules need a
+   verified node-kind table and cover Python, Rust, Go, JavaScript, TypeScript, TSX, Java,
+   Kotlin, C, C++, C#, and Ruby; `magic-number` and `law-of-demeter` are opt-in. A
+   per-language deferral table keeps it from duplicating
    a tier-1 rule (ruff's `C901`/`PLR0913`, oxlint's `max-depth`/`max-params`).
 5. **The built-in ast-grep rule pack** (ADR 0029) — 26 rules across 9 languages (C#, Elixir,
    Go, Java, Kotlin, Python, Ruby, Rust, Swift) embedded in the binary and on by default; 13
@@ -48,7 +50,11 @@ Five mechanisms decide what actually inspects a file (`crates/poly-core/src/regi
    the pack wholesale.
 
 `typos` (spelling) and the opt-in `uncomment` engine are the other two cross-cutting
-backends appended to every language.
+backends appended to every language. On top of these, any **catalog or recipe tool** a config
+enables with `[tools.<name>] enabled = true` (`golangci-lint`, `helm`, `hadolint`, `buf`, …)
+joins the per-file tier. Recipe tools batch their files into as few spawns as possible, and
+one that works on a project (a Go module, a Helm chart) runs once per project root. A tool is
+never downloaded unless it pins `version` and sets `install = "auto"`.
 
 **Every engine table also accepts a universal `enabled` key**, read by the runner's plan
 rather than by any backend. Whether narrowing a file out of a run charges against
@@ -104,6 +110,14 @@ failures. Details that matter:
 - Isolation is active only for the index stages (`pre-commit`, `pre-merge-commit`) and is
   skipped for `--all-files` (which deliberately checks the whole tree) and for non-index
   stages such as `pre-push`. `[hooks] isolate = false` forces it off.
+- The snapshot is **sparse** by default (`[hooks] snapshot = "auto"`): only the staged files
+  and their directory context are written, unless a `workspace` or cargo hook will run, in
+  which case the whole index is. `snapshot = "full"` always writes the whole index.
+- The snapshot is not a checkout, so every hook gets the original repository's absolute
+  `GIT_DIR` and the `GIT_INDEX_FILE` of the index being committed: `git ls-files` and
+  `git diff --cached` inside a hook see the real staged state.
+- A fixer's change to a partially staged file is withheld and fails the hook by default;
+  `[hooks] partial_stage = "restage"` stages only the fixed content instead.
 - The snapshot lives in the per-user OS cache dir (`~/.cache/poly/<repo-key>/staged`), not
   in-repo, and is refreshed incrementally by index OID so tool caches stay warm.
 - `poly lint`'s whole-project phase is a *different* path: it runs against the live
@@ -122,7 +136,9 @@ Config resolves hierarchically: every `poly.toml` from the repository root down 
 being processed is deep-merged, so a nested config layers on top of its ancestors and each
 package can tune rules while sharing a root baseline. The upward walk is bounded at the
 `.git` directory (or an explicit `[workspace] root = true`), so a stray `poly.toml` in
-`$HOME` is never picked up. `poly.local.toml` remains the final local override layer, and a
+`$HOME` is never picked up. A nested `poly.toml`'s own `[hooks]` table also runs on commit, from
+that directory, for the staged files beneath it. `poly.local.toml` remains the final local
+override layer, and a
 top-level `extends` list (ADR 0020) shares sections from local or pinned-remote base
 configs — `poly config update` pins a symbolic remote ref into `poly-config.lock`, and
 `poly config show` prints the effective merged config.

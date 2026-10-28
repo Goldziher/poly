@@ -28,8 +28,9 @@ x-ai-rulez:
   the named paths and of `[discovery] exclude`.
 - `poly fmt [PATHS]…` — **dry run by default**: reports what would change and writes
   nothing. `--fix` writes changes; `--check` is the explicit form of the default dry run
-  and conflicts with `--fix`. `poly fmt` is a pure formatter — it never runs the
-  whole-project lint phase.
+  and conflicts with `--fix`. `poly fmt --fix` exits `1` when it rewrote files;
+  `--exit-zero-on-fix` makes that `0` (for a git hook that re-stages its fixes). `poly fmt`
+  is a pure formatter — it never runs the whole-project lint phase.
 
 ## Flags
 
@@ -45,15 +46,23 @@ x-ai-rulez:
   rule matches at more than one depth.
 - `--include-excluded` — check explicitly named files or directory roots even when they
   match the exclude set. Exclusions *below* an included directory stay active. Applying the
-  exclude set to explicitly named paths is already the default, so `--force-exclude` is
-  accepted only as a compatibility no-op — the flag is parsed and never read.
+  exclude set to explicitly named paths is the default; `--force-exclude` pins that default
+  back on in a repo that set `[discovery] force_exclude = false`.
 - `--config <path>` — point at a specific `poly.toml`.
 - `--no-cache` — bypass the blake3 content-hash result cache.
 - `-j <N>` — parallelism; `--no-color` — plain output; `--verbose` — extra per-finding
-  detail in `pretty` output; `--debug` — per-engine cache hit/miss and timing, plus
-  debug-level logs on stderr.
-- `--fix-generated` — let `--fix` rewrite files marked `DO NOT EDIT` / `@generated`, which
-  it otherwise reports on but leaves alone.
+  detail in `pretty` output; `-q`/`--quiet` — findings and summary only; `--debug` —
+  per-engine cache hit/miss and timing, plus debug-level logs on stderr.
+- `--only <ENGINE>` / `--skip <ENGINE>` — restrict the per-file tier to (or drop) engines by
+  the id you configure them under (`ruff`, `oxc`, `typos`, `quality`, …); repeatable and
+  comma-separated. They narrow and never enable an engine config left off, an unknown name
+  exits `2`, and naming any engine skips the whole-project phase.
+- Generated files are linted and formatted like any other by default. `--skip-generated`
+  (or `[discovery] generated = false`) skips anything with a `DO NOT EDIT` / `@generated`
+  banner; `--include-generated` pins the default back on. A file whose header stamps a
+  **content hash** over its body is different: `poly fmt` skips it and `lint --fix` will
+  not rewrite it, since that would break the generator's verify step — `--fix-generated`
+  opts back in.
 - `--deny-skips` / `--max-skips <N>` — strict coverage. A **skipped** file is one nothing
   inspected: a path named on the command line that no engine covers (`App.csproj`), or a
   file every routed backend declined (Go-templated YAML, a hash-stamped generated file). A
@@ -69,7 +78,8 @@ x-ai-rulez:
 ## Exit codes
 
 - `0` — clean (no findings, no drift).
-- `1` — error-severity findings, formatting drift, or a failing whole-project tool.
+- `1` — error-severity findings, formatting drift (or files `poly fmt --fix` rewrote), or a
+  failing whole-project tool.
 - `2` — an error (bad config, tool failure), or work the run could not verify: a missing
   path argument, a file an engine failed on — including a `poly fmt` file that could not
   reach a fixed point within its five-pass cap, now reported as an error rather than
