@@ -128,6 +128,7 @@ mod batch;
 mod cache_key_tests;
 mod edition;
 mod format;
+mod go_imports;
 mod isolate;
 mod lint;
 mod lint_batch;
@@ -408,7 +409,12 @@ impl Engine for NativeToolEngine {
                 [] => String::new(),
                 names => format!(" | cfg:{}", tool_config::fingerprint(names)),
             };
-            let markers = format!("{edition_marker}{config_path_marker}{default_marker}{config_marker}");
+            let post_marker = if self.role == NativeRole::GoFmt {
+                " | goimports-groups-v1"
+            } else {
+                ""
+            };
+            let markers = format!("{edition_marker}{config_path_marker}{default_marker}{config_marker}{post_marker}");
             match self.probed_version() {
                 Some(tool) => format!("{tool} | ts:{ts}{markers}"),
                 None => format!("native-tool:absent | ts:{ts}{markers}"),
@@ -457,7 +463,8 @@ impl Engine for NativeToolEngine {
                     self.notify_tier2_fallback(cfg);
                     return TreeSitterEngine.format(src, cfg);
                 }
-                format_via_tool(self.role.spec(), src, cfg.indent_width, tabs::use_tabs(cfg))
+                let formatted = format_via_tool(self.role.spec(), src, cfg.indent_width, tabs::use_tabs(cfg))?;
+                Ok(self.role.finish(formatted, src))
             }
             NativeRole::Shellcheck => Ok(FormatOutput::Unchanged),
         }
@@ -507,7 +514,12 @@ impl Engine for NativeToolEngine {
         if !self.is_enabled(cfg) || self.probed_version().is_none() {
             anyhow::bail!("{} is not enabled or not installed; not batching", self.name());
         }
-        format_batch_via_tool(self.role.spec(), batch, cfg.indent_width, tabs::use_tabs(cfg))
+        let results = format_batch_via_tool(self.role.spec(), batch, cfg.indent_width, tabs::use_tabs(cfg))?;
+        Ok(results
+            .into_iter()
+            .zip(batch)
+            .map(|(result, src)| result.map(|formatted| self.role.finish(formatted, src)))
+            .collect())
     }
 }
 

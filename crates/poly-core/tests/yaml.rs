@@ -28,7 +28,7 @@ fn make_src(path: &str, content: &str) -> SourceFile {
     }
 }
 
-/// Unclosed `[` — saphyr returns a ScanError at end-of-file.
+/// Unclosed `[` — the scanner errors at end-of-file.
 const KNOWN_BAD: &str = "items: [1, 2, 3\nother: value\n";
 
 #[test]
@@ -109,25 +109,24 @@ fn structural_reformat_canonicalizes_spacing() {
     }
 }
 
-/// A `pretty_yaml` LanguageOptions field set via `[fmt.yaml.yaml]` reaches the
-/// formatter: `quotes = "prefer-single"` flips a double-quoted scalar to single
-/// quotes (default is prefer-double).
+/// A key set via `[fmt.yaml.yaml]` reaches the formatter: `single_quote = true`
+/// flips a double-quoted scalar to single quotes (default is double).
 #[test]
 fn format_honors_language_option() {
     let engine = YamlEngine;
     let src = make_src("q.yaml", "key: \"value\"\n");
     let mut options = toml::Table::new();
-    options.insert("quotes".to_string(), toml::Value::String("prefer-single".into()));
+    options.insert("single_quote".to_string(), toml::Value::Boolean(true));
     let cfg = EngineConfig {
         options,
         ..engine_cfg()
     };
     let FormatOutput::Formatted(out) = engine.format(&src, &cfg).unwrap() else {
-        panic!("`quotes = prefer-single` should reformat the double-quoted scalar");
+        panic!("`single_quote = true` should reformat the double-quoted scalar");
     };
     assert!(
         out.contains("'value'") && !out.contains("\"value\""),
-        "[fmt.yaml.yaml] quotes must reach pretty_yaml; got: {out}"
+        "[fmt.yaml.yaml] single_quote must reach the formatter; got: {out}"
     );
 }
 
@@ -195,4 +194,32 @@ fn github_actions_expressions_are_still_not_templates() {
         "jobs:\n  build:\n    if: ${{ github.event_name == 'push' }}\n",
     );
     assert_eq!(engine.skip_reason(&src), None);
+}
+
+/// A quoted scalar continued on lines that sit at the parent key's indent is accepted by
+/// libyaml and PyYAML, so it must not be reported as a syntax error.
+#[test]
+fn multi_line_quoted_scalar_at_parent_indent_is_valid() {
+    let src = make_src(
+        "recorded.yaml",
+        "response:\n  body:\n    string: '{ \"status\": \"ok\", \"count\":\n    1, \"more\": true }'\n",
+    );
+    assert!(YamlEngine.lint(&src, &engine_cfg()).unwrap().is_empty());
+}
+
+/// A flow sequence whose closing bracket sits at the parent key's column is accepted by libyaml.
+#[test]
+fn flow_collection_closed_at_parent_indent_is_valid() {
+    let src = make_src(
+        "playbook.yml",
+        "- yum:\n    name: [\n      'a',\n      'b'\n    ]\n    state: present\n",
+    );
+    assert!(YamlEngine.lint(&src, &engine_cfg()).unwrap().is_empty());
+}
+
+#[test]
+fn every_document_of_a_stream_is_checked() {
+    let src = make_src("two.yaml", "a: 1\n---\nb: [1, 2\nc: 3\n");
+    let diags = YamlEngine.lint(&src, &engine_cfg()).unwrap();
+    assert_eq!(diags.len(), 1, "the broken second document must be reported");
 }

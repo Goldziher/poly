@@ -43,11 +43,11 @@ use generated::{acts_on_generated, format_skip_result, invalid_utf8_result, lint
 use lint_pass::{LintPass, lint_content};
 use plan::{EnginePlan, RunPlan, plan_by_config_language, prefetch_tier2_grammars};
 use selection::{EngineSelection, validate_selection};
-use skips::unmatched_explicit_paths;
 pub use skips::{
-    BINARY_SKIP, DISABLED_SKIP_PREFIX, FILTERED_SKIP, GENERATED_SKIP, NO_ENGINE_SKIP, NO_LINT_RULES_SKIP_PREFIX,
-    SkippedFile, is_withdrawal_reason,
+    BINARY_SKIP, DISABLED_SKIP_PREFIX, FILTERED_SKIP, GENERATED_SKIP, LOCKFILE_SKIP, NO_ENGINE_SKIP,
+    NO_LINT_RULES_SKIP_PREFIX, SkippedFile, is_withdrawal_reason,
 };
+use skips::{is_lock_file, unmatched_explicit_paths};
 // The suppression record lives beside the filters that produce it; re-exported
 // here so a consumer reaches it next to `SkippedFile`, the accounting it
 // completes.
@@ -442,6 +442,9 @@ fn lint_one(
     prefilled: &LintPrefill,
     (fast, resolution): (Option<&FastPath>, Resolution),
 ) -> anyhow::Result<LintResult> {
+    if is_lock_file(&f.path) {
+        return Ok(lint_skip_result(f, LOCKFILE_SKIP));
+    }
     let this_ignores = &ignores[f.config_id];
     let rel = (!this_ignores.is_empty()).then(|| relative_for_match(&f.path, &ignore_bases[f.config_id]));
     // Inline `poly: allow[…]` directives (ADR 0028) are rebuilt from the content
@@ -679,6 +682,9 @@ fn format_one(
     prefilled: &BatchPrefill,
     (fast, resolution): (Option<&FastPath>, Resolution),
 ) -> anyhow::Result<FormatResult> {
+    if is_lock_file(&f.path) {
+        return Ok(format_skip_result(f, Some(LOCKFILE_SKIP.to_owned())));
+    }
     let probe = match resolution {
         Resolution::Hit(record) if record.verdict == Verdict::Binary => {
             return Ok(format_skip_result(f, Some(BINARY_SKIP.to_owned())));
@@ -775,6 +781,9 @@ fn format_one(
     let run_pass = |input: &Arc<str>, record_debug: bool| -> anyhow::Result<Arc<str>> {
         let mut current = Arc::clone(input);
         for plan in engine_plans {
+            if plan.ignores_format(&f.path) {
+                continue;
+            }
             let key = digest_if_enabled(cache, || {
                 let digest = ResultCache::single_file_digest(&current);
                 ResultCache::key_with_args(

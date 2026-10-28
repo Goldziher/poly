@@ -481,3 +481,33 @@ fn format_leaves_well_formed_sql_unchanged() {
         "well-formed SQL must be reported Unchanged"
     );
 }
+
+/// `COLUMNS` is not a keyword in the default `ansi` dialect, so it parses as an identifier and
+/// identifier capitalisation (CP02) would lower-case it to `columns`. Identifier casing is off
+/// unless asked for.
+const ADD_COLUMNS_SQL: &str = "ALTER TABLE report ADD COLUMNS (\n    a bigint\n);\n";
+
+#[test]
+fn format_leaves_identifier_capitalisation_alone_by_default() {
+    let engine = SqruffEngine;
+    let src = make_source("t.sql", ADD_COLUMNS_SQL);
+    assert!(matches!(
+        engine.format(&src, &fmt_cfg()).unwrap(),
+        poly_core::engine::FormatOutput::Unchanged
+    ));
+}
+
+#[test]
+fn identifier_capitalisation_can_be_selected_back_on() {
+    let engine = SqruffEngine;
+    let src = make_source("t.sql", ADD_COLUMNS_SQL);
+    let mut cfg = fmt_cfg();
+    cfg.options.insert(
+        "extend_select".to_string(),
+        toml::Value::Array(vec![toml::Value::String("CP02".to_string())]),
+    );
+    match engine.format(&src, &cfg).unwrap() {
+        poly_core::engine::FormatOutput::Formatted(out) => assert!(out.contains("ADD columns"), "{out}"),
+        poly_core::engine::FormatOutput::Unchanged => panic!("CP02 was selected and should lower-case COLUMNS"),
+    }
+}

@@ -13,10 +13,20 @@
     "url": "git+https://github.com/Goldziher/poly.git",
     "directory": "npm-package/platforms/linux-x64-musl"
   },
-  "os": ["linux"],
-  "cpu": ["x64"],
-  "libc": ["musl"],
-  "files": ["LICENSE", "README.md", "bin/"],
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "libc": [
+    "musl"
+  ],
+  "files": [
+    "LICENSE",
+    "README.md",
+    "bin/"
+  ],
   "preferUnplugged": true,
   "packageManager": "pnpm@12.15.0"
 }

@@ -72,7 +72,20 @@ pub struct SqruffEngine;
 /// `-presentation-fmt` marks the lint/format partition below: `format` applies only
 /// [`FORMAT_OWNED_GROUPS`] and `lint` reports only the complement, so the same input
 /// yields different output for the same sqruff-lib version.
-const SQRUFF_VERSION: &str = "0.43.0+rule-configs-3-presentation-fmt";
+///
+/// `+cp02-off` marks identifier capitalisation (`CP02`) being off unless asked for.
+const SQRUFF_VERSION: &str = "0.43.0+rule-configs-3-presentation-fmt+cp02-off";
+
+/// Rules that are off unless the user selects them.
+///
+/// `CP02` re-cases unquoted identifiers to one "consistent" style inferred from the file. When the
+/// dialect does not know a keyword the token parses as an identifier, so `ALTER TABLE t ADD
+/// COLUMNS (…)` came out as `ADD columns` under the default `ansi` dialect (29 of 88 rewritten
+/// files in a 300-file sample, all of them this), and a mixed-case table name was lower-cased
+/// whether or not the target database folds case. Naming an identifier is not presentation.
+/// Selecting it by code (`CP02`), section (`capitalisation.identifiers`) or group
+/// (`capitalisation`) turns it back on.
+const DEFAULT_OFF_RULES: &[(&str, &[&str])] = &[("CP02", &["CP02", "capitalisation.identifiers", "capitalisation"])];
 
 /// The rule groups `poly fmt` applies — and, being the format-owned half of the
 /// partition, exactly the groups `poly lint` stays silent about.
@@ -299,6 +312,15 @@ fn build_fluff_config(cfg: &EngineConfig, mode: Mode) -> anyhow::Result<FluffCon
         "sqruff",
     );
     deny.extend(mode.suppressed_groups().iter().map(|group| (*group).to_owned()));
+    for (code, asked_by) in DEFAULT_OFF_RULES {
+        let asked = allow
+            .iter()
+            .chain(&selection.extend_select)
+            .any(|name| asked_by.iter().any(|candidate| candidate.eq_ignore_ascii_case(name)));
+        if !asked {
+            deny.push((*code).to_owned());
+        }
+    }
     if !deny.is_empty() {
         ini.push_str(&format!("exclude_rules = {}\n", deny.join(",")));
     }

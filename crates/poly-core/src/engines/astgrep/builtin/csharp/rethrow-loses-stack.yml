@@ -1,7 +1,7 @@
 id: rethrow-loses-stack
 language: csharp
 severity: warning
-message: "`throw ex;` restarts the stack trace here; use a bare `throw;` to rethrow, or `throw new T(\"..\", ex)` to wrap."
+message: '`throw ex;` restarts the stack trace here; use a bare `throw;` to rethrow, or `throw new T("..", ex)` to wrap.'
 note: |
   `throw ex;` is a *new* throw of an existing exception object. The runtime
   overwrites the exception's stack trace with the rethrow site, so the frame

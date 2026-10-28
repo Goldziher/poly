@@ -51,6 +51,7 @@ fn engine_plan(stub: Stub, args: &toml::Table) -> EnginePlan {
         },
         severity_remap: SeverityRemap::new(Vec::new()),
         provides_language_lint: true,
+        format_ignore: None,
     }
 }
 

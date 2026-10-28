@@ -143,6 +143,46 @@ pub const GENERATED_SKIP: &str = "machine-generated file ([discovery] generated 
 /// something in it turned out to be binary.
 pub const BINARY_SKIP: &str = "binary file";
 
+/// Reason recorded for a package-manager lock file.
+///
+/// Lock files are machine-written in the package manager's own canonical layout and verified
+/// byte for byte by it; a formatter rewriting one produces a diff the next install reverts, and
+/// a linter has nothing to say about generated pins. `poly migrate` already treats them as
+/// never linted or formatted; this makes the runner agree.
+pub const LOCKFILE_SKIP: &str = "lock file";
+
+/// File names of package-manager lock files, matched against the final path component.
+const LOCK_FILE_NAMES: &[&str] = &[
+    "Cargo.lock",
+    "Gemfile.lock",
+    "Gopkg.lock",
+    "MODULE.bazel.lock",
+    "Package.resolved",
+    "Pipfile.lock",
+    "Podfile.lock",
+    "bun.lock",
+    "composer.lock",
+    "deno.lock",
+    "flake.lock",
+    "go.sum",
+    "mix.lock",
+    "npm-shrinkwrap.json",
+    "package-lock.json",
+    "pdm.lock",
+    "pnpm-lock.yaml",
+    "poetry.lock",
+    "pubspec.lock",
+    "uv.lock",
+    "yarn.lock",
+];
+
+/// Whether `path` names a package-manager lock file.
+pub(super) fn is_lock_file(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| LOCK_FILE_NAMES.contains(&name))
+}
+
 /// One file the run did not inspect, and why.
 ///
 /// The reason is what makes the entry actionable: a bare list of paths tells a
@@ -263,6 +303,15 @@ fn excluded_rather_than_unmatched(path: &Path, configs: &ConfigSet, exclude: &[S
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lock_files_are_recognised_by_file_name_only() {
+        assert!(is_lock_file(Path::new("apps/web/pnpm-lock.yaml")));
+        assert!(is_lock_file(Path::new("Cargo.lock")));
+        assert!(is_lock_file(Path::new("go.sum")));
+        assert!(!is_lock_file(Path::new("pnpm-lock.yaml.bak")));
+        assert!(!is_lock_file(Path::new("docs/lock.yaml")));
+    }
 
     #[test]
     fn no_engine_skip_carries_the_path_and_the_shared_reason() {

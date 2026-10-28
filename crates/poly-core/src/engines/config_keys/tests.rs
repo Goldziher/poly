@@ -50,6 +50,48 @@ fn titles(diagnostics: &[Diagnostic]) -> Vec<String> {
 // ---------------------------------------------------------------- behaviour
 
 #[test]
+fn a_misspelled_language_id_is_reported_with_the_likely_language() {
+    let found = warnings("[fmt.pyhton.ruff]\nline_length = 100\n");
+    assert_eq!(found.len(), 1, "got {:?}", titles(&found));
+    assert_eq!(
+        found[0].title,
+        "unknown language `pyhton` in `[fmt]`: did you mean `python`?"
+    );
+    assert_eq!(found[0].code.as_deref(), Some("unknown-config-key"));
+}
+
+#[test]
+fn a_common_language_alias_is_reported_with_its_canonical_id() {
+    let found = warnings("[fmt.yml.yaml]\nsingle_quote = true\n[lint.js.oxc]\n");
+    assert_eq!(
+        titles(&found),
+        [
+            "unknown language `js` in `[lint]`: did you mean `javascript`?",
+            "unknown language `yml` in `[fmt]`: did you mean `yaml`?",
+        ]
+    );
+}
+
+#[test]
+fn an_unrelated_unknown_language_is_left_alone() {
+    let found = warnings("[fmt.fortranesque.somefmt]\nwidth = 1\n");
+    assert!(found.is_empty(), "got {:?}", titles(&found));
+}
+
+#[test]
+fn a_known_language_is_never_reported_as_a_typo() {
+    let found = warnings("[fmt.go.gofmt]\nenabled = true\n[fmt.yaml.yaml]\nsingle_quote = true\n");
+    assert!(found.is_empty(), "got {:?}", titles(&found));
+}
+
+#[test]
+fn sub_tables_of_the_yaml_formatter_that_it_never_reads_are_reported() {
+    let found = warnings("[fmt.yaml.yaml.language]\nquotes = \"prefer_single\"\n[fmt.yaml.yaml.layout]\nprint_width = 80\n");
+    assert_eq!(found.len(), 2, "got {:?}", titles(&found));
+    assert!(found.iter().all(|d| d.title.starts_with("unknown option")));
+}
+
+#[test]
 fn a_misspelled_key_is_reported_once_naming_the_key_and_the_engine() {
     let found = warnings("[lint.python.ruff]\nmccabe_max_complexit = 10\n");
     assert_eq!(found.len(), 1, "expected exactly one warning, got {:?}", titles(&found));
@@ -362,15 +404,17 @@ fn a_declared_key_an_upstream_type_also_recognizes_defers_to_the_upstream_type()
         // test wants to observe rather than assert away.
         table.insert((*key).to_string(), toml::Value::Boolean(true));
         let reported = keys.value_problem(key, &table[*key], true).is_some();
+        let declared_accepts_boolean = keys
+            .expected_type(key, true)
+            .is_none_or(|declared| declared.accepts(&table[*key]));
         let recognized_upstream = keys.accepts(key, &table, true);
         assert!(
             recognized_upstream,
             "`{key}` must stay an accepted key of `[fmt.html.markup_fmt]`"
         );
         assert_eq!(
-            reported,
-            keys.expected_type(key, true) == Some(OptionType::STRING),
-            "`{key}`: a boolean is reported exactly when the declaration says the key is a string"
+            reported, !declared_accepts_boolean,
+            "`{key}`: a boolean is reported exactly when the declaration says the key is not boolean"
         );
     }
 }
@@ -394,6 +438,9 @@ const ENGINE_SOURCES: &[(&str, &[&str])] = &[
             "oxc/lint.rs",
             "oxc/format.rs",
             "oxc/plugins.rs",
+            "oxc/sort_imports.rs",
+            "oxc/native_lint.rs",
+            "core_options.rs",
         ],
     ),
     (
@@ -401,18 +448,26 @@ const ENGINE_SOURCES: &[(&str, &[&str])] = &[
         &["mago/mod.rs", "mago/lint.rs", "mago/format.rs", "mago/rules.rs"],
     ),
     ("sqruff", &["sqruff.rs"]),
-    ("rumdl", &["rumdl.rs"]),
-    ("taplo", &["taplo.rs"]),
-    ("yaml", &["yaml.rs"]),
-    ("malva", &["malva.rs"]),
+    ("rumdl", &["rumdl.rs", "markdown_fmt.rs", "core_options.rs"]),
+    ("taplo", &["taplo.rs", "core_options.rs"]),
+    ("yaml", &["yaml.rs", "core_options.rs"]),
+    ("malva", &["malva.rs", "core_options.rs"]),
     // oxc/config.rs: markup_fmt hands *its* table to the oxc formatter for
     // Astro `<script>` blocks, so those keys are read from this table too.
-    ("markup_fmt", &["markup_fmt.rs", "oxc/config.rs"]),
+    (
+        "markup_fmt",
+        &[
+            "markup_fmt.rs",
+            "oxc/config.rs",
+            "oxc/sort_imports.rs",
+            "core_options.rs",
+        ],
+    ),
     ("graphql", &["graphql.rs"]),
     ("biome", &["biome_css.rs", "biome_graphql.rs", "biome_common.rs"]),
     ("alejandra", &["nixfmt.rs"]),
     ("rubyfmt", &["rubyfmt.rs"]),
-    ("hcl", &["hcl.rs"]),
+    ("hcl", &["hcl/mod.rs"]),
     ("dockerfile", &["dockerfile.rs"]),
     ("dotenv", &["dotenv.rs"]),
     ("ini", &["ini.rs"]),
@@ -510,6 +565,8 @@ fn every_registry_engine_has_declared_sources() {
 /// Reader helpers whose *name* fixes the type of the key handed to them, when
 /// the key is that call's first string argument.
 const CALL_READERS: &[(&str, OptionType)] = &[
+    ("option_str", OptionType::STRING),
+    ("option_bool", OptionType::BOOLEAN),
     ("usize_opt", OptionType::INTEGER),
     ("integer", OptionType::INTEGER),
     ("rule", OptionType::BOOLEAN),
@@ -624,7 +681,7 @@ fn read_type_of(source: &str, key: &str) -> Option<OptionType> {
 /// for the call shapes an option read can take.
 fn keys_read_by(engine: &str) -> BTreeSet<String> {
     let reader = Regex::new(
-        r"(?s)(?:options\s*\.\s*(?:get|contains_key)|string_list(?:_from_table)?|str_array|sets_any|usize_opt|str_list|flag|integer|rule)\s*\(([^;]{0,200}?)\)",
+        r"(?s)(?:options\s*\.\s*(?:get|contains_key)|option_str|option_bool|string_list(?:_from_table)?|str_array|sets_any|usize_opt|str_list|flag|integer|rule)\s*\(([^;]{0,200}?)\)",
     )
     .expect("reader regex");
     let literal = Regex::new(r#""([a-zA-Z][a-zA-Z0-9_\-]*)""#).expect("literal regex");

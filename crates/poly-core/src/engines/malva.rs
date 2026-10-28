@@ -1,9 +1,17 @@
-//! malva backend: CSS / SCSS / Less formatting via [`malva`].
+//! CSS / SCSS / Less formatting backend.
 //!
-//! malva is a format-only backend — it does not produce lint diagnostics.
-//! The `lint` method returns an empty `Vec` (the trait default).
+//! Format-only — it does not produce lint diagnostics. The `lint` method returns an empty
+//! `Vec` (the trait default).
 //!
-//! ## Options layering
+//! ## Formatter selection
+//! By default the file goes through `oxc_formatter_css`, the formatter oxfmt itself uses
+//! (Prettier-compatible), so a repository formatted by oxfmt is a fixed point. It reads the
+//! shared layout keys `indent_width`, `line_width`, `line_ending`, `indent_style`,
+//! `single_quote` and `trailing_commas` (`"always"` / `"never"`), which `.oxfmtrc.json[c]`
+//! supplies by default. Setting any other key in the table (every [`malva`] option) selects
+//! [`malva`] instead.
+//!
+//! ## Options layering (malva)
 //! malva defaults → poly opinionated override (line length 120, indent 2) →
 //! user `[fmt.css.malva]` / `[fmt.scss.malva]` / `[fmt.less.malva]`.
 //!
@@ -18,9 +26,14 @@
 
 use malva::Syntax;
 use malva::config::FormatOptions;
+use oxc_allocator::Allocator;
+use oxc_formatter_core::FormatOptions as _;
+use oxc_formatter_css::{CssFormatOptions, CssVariant, TrailingCommas};
+
+use super::core_options::core_format_options;
 
 use crate::config::EngineConfig;
-use crate::engine::{Capabilities, Engine, FormatOutput, OptionKeys, OptionTable, SourceFile};
+use crate::engine::{Capabilities, Engine, FormatOutput, OptionKeys, OptionTable, OptionType, SourceFile};
 use crate::engine_guard::{deep_unbalanced_nesting, refuse_pathological_nesting};
 use crate::engines::css_hacks::{IE_PROPERTY_HACK_SKIP, has_ie_property_hack};
 use crate::language::Language;
@@ -31,7 +44,18 @@ pub struct MalvaEngine;
 /// malva crate version — folded into the cache key so upgrades invalidate stale results.
 /// Bumped suffix to +opts-1 after exposing full LanguageOptions (options were previously
 /// ignored — existing caches must be invalidated).
-const MALVA_VERSION: &str = "0.16.0+opts-2+iehack-skip";
+const MALVA_VERSION: &str = "0.16.0+opts-2+iehack-skip+oxc_formatter_css-e2be72d";
+
+/// Keys the oxfmt-compatible formatter reads. The table is handed to malva instead as soon as it
+/// holds anything else, because only malva understands the rest.
+const SHARED_KEYS: &[&str] = &[
+    "indent_width",
+    "line_width",
+    "line_ending",
+    "indent_style",
+    "single_quote",
+    "trailing_commas",
+];
 
 /// Languages handled by this backend.
 static LANGUAGES: &[Language] = &[Language::Css, Language::Scss, Language::Less];
@@ -58,8 +82,14 @@ impl Engine for MalvaEngine {
     /// of it — the upstream option set is large, versioned, and would drift.
     fn option_keys(&self, table: OptionTable) -> OptionKeys {
         match table {
-            OptionTable::Format => OptionKeys::declared(&[])
-                .with_derived(crate::engines::config_keys::recognized_by_type_probe::<malva::config::FormatOptions>),
+            OptionTable::Format => OptionKeys::declared(&[
+                ("line_width", OptionType::INTEGER),
+                ("line_ending", OptionType::STRING),
+                ("indent_style", OptionType::STRING),
+                ("single_quote", OptionType::BOOLEAN),
+                ("trailing_commas", OptionType::STRING),
+            ])
+            .with_derived(crate::engines::config_keys::recognized_by_type_probe::<malva::config::FormatOptions>),
             OptionTable::Lint | OptionTable::CrossCuttingLint => OptionKeys::declared(&[]),
         }
     }
@@ -77,10 +107,9 @@ impl Engine for MalvaEngine {
     }
 
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
-        let syntax = language_to_syntax(&src.language)
-            .ok_or_else(|| anyhow::anyhow!("malva: unsupported language {:?}", src.language))?;
-        // The SCSS parser backtracks exponentially on unclosed parentheses: 26 take
-        // 25 s and 100 never return, wedging a worker for the whole run.
+        // Deeply nested brackets make CSS parsers backtrack exponentially (26 unclosed
+        // parentheses take 25 s and 100 never return) or overflow the stack, wedging a
+        // worker for the whole run, so both formatters are guarded.
         refuse_pathological_nesting(&src.path, &src.content)?;
         if deep_unbalanced_nesting(&src.content, MAX_UNCLOSED_NESTING) {
             anyhow::bail!(
@@ -88,6 +117,11 @@ impl Engine for MalvaEngine {
                  not parsed, because the parser takes exponential time on that"
             );
         }
+        if uses_oxc_formatter(cfg) {
+            return format_with_oxc(src, cfg);
+        }
+        let syntax = language_to_syntax(&src.language)
+            .ok_or_else(|| anyhow::anyhow!("malva: unsupported language {:?}", src.language))?;
         let options = build_options(cfg);
         let formatted = malva::format_text(&src.content, syntax, &options)
             .map_err(|e| anyhow::anyhow!("malva format error: {e}"))?;
@@ -102,6 +136,45 @@ impl Engine for MalvaEngine {
 /// Unclosed nesting deeper than this is refused rather than parsed; closed
 /// nesting is unaffected, and 18 unclosed levels still parse in about a second.
 const MAX_UNCLOSED_NESTING: usize = 12;
+
+/// Whether the table asks for nothing only the oxfmt-compatible formatter can serve.
+fn uses_oxc_formatter(cfg: &EngineConfig) -> bool {
+    cfg.options
+        .keys()
+        .all(|key| SHARED_KEYS.contains(&key.as_str()) || key == crate::engine::ENABLED_OPTION_KEY)
+}
+
+fn format_with_oxc(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
+    let variant = match src.language {
+        Language::Scss => CssVariant::Scss,
+        Language::Less => CssVariant::Less,
+        _ => CssVariant::Css,
+    };
+    let mut options = CssFormatOptions {
+        variant,
+        ..CssFormatOptions::default()
+    };
+    options.apply_core(core_format_options(cfg));
+    if let Some(single) = cfg.options.get("single_quote").and_then(toml::Value::as_bool) {
+        options.single_quote = single.into();
+    }
+    if cfg.options.get("trailing_commas").and_then(toml::Value::as_str) == Some("never") {
+        options.trailing_commas = TrailingCommas::Never;
+    }
+    let allocator = Allocator::new();
+    let formatted = match oxc_formatter_css::format(&allocator, &src.content, options)
+        .map_err(|_| ())
+        .and_then(|formatted| formatted.print().map_err(|_| ()))
+    {
+        Ok(printed) => printed.into_code(),
+        Err(()) => return Ok(FormatOutput::Unchanged),
+    };
+    if formatted == *src.content {
+        Ok(FormatOutput::Unchanged)
+    } else {
+        Ok(FormatOutput::Formatted(formatted))
+    }
+}
 
 /// Map a poly [`Language`] to the corresponding malva [`Syntax`].
 fn language_to_syntax(lang: &Language) -> Option<Syntax> {
@@ -220,5 +293,44 @@ mod tests {
             .format(&src, &engine_cfg())
             .expect_err("too deep to parse safely");
         assert!(error.to_string().contains("nests brackets"), "{error}");
+    }
+
+    fn formatted(options: &str) -> String {
+        let src = make_src(
+            "a.css",
+            Language::Css,
+            "a { background: var(--grad), var(--raise); }\n",
+        );
+        let cfg = EngineConfig {
+            options: toml::from_str(options).unwrap(),
+            ..engine_cfg()
+        };
+        match MalvaEngine.format(&src, &cfg).unwrap() {
+            FormatOutput::Formatted(out) => out,
+            FormatOutput::Unchanged => src.content.to_string(),
+        }
+    }
+
+    /// Prettier (and so oxfmt) keeps a short top-level comma list on one line; malva puts every
+    /// entry on its own line. The default layout is Prettier's.
+    #[test]
+    fn default_formatter_matches_oxfmt_comma_list_layout() {
+        assert_eq!(
+            formatted(""),
+            "a {\n  background: var(--grad), var(--raise);\n}\n"
+        );
+    }
+
+    #[test]
+    fn a_malva_only_key_selects_malva() {
+        assert_eq!(
+            formatted("print_width = 100"),
+            "a {\n  background:\n    var(--grad),\n    var(--raise);\n}\n"
+        );
+    }
+
+    #[test]
+    fn shared_keys_alone_keep_the_default_formatter() {
+        assert!(formatted("indent_width = 4\nsingle_quote = true").contains("background: var(--grad), var(--raise);"));
     }
 }

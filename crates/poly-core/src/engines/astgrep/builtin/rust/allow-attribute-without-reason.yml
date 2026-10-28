@@ -1,7 +1,7 @@
 id: allow-attribute-without-reason
 language: rust
 severity: off
-message: "`#[allow(..)]` with no `reason = \"..\"` and no `//` comment saying why the lint is wrong here."
+message: '`#[allow(..)]` with no `reason = ".."` and no `//` comment saying why the lint is wrong here.'
 note: |
   Silencing a lint is a claim that the lint is wrong for this code. The claim
   needs an argument attached to it, or the next reader cannot tell a considered

@@ -17,8 +17,11 @@
 
 mod config;
 mod format;
+mod json_lint;
 mod lint;
+mod native_lint;
 mod plugins;
+mod sort_imports;
 
 use crate::config::EngineConfig;
 use crate::engine::{Capabilities, Diagnostic, FormatOutput, OptionKeys, OptionTable, OptionType, SourceFile};
@@ -36,8 +39,14 @@ use crate::language::Language;
 /// (default [`lint::DEFAULT_MAX_LINE_BYTES`]; `0` lints every file). Minified bundles
 /// are not authored code: their findings (single-letter shadowing, ...) are
 /// noise, and a megabyte of them costs seconds.
-const JS_LINT_OPTION_KEYS: &[(&str, OptionType)] =
-    &[("plugins", OptionType::ARRAY), ("max_line_bytes", OptionType::INTEGER)];
+///
+/// `oxlintrc` names the project's `.oxlintrc.json[c]` (set by poly when it finds one); `false`
+/// switches that off and returns to poly's own rule set.
+const JS_LINT_OPTION_KEYS: &[(&str, OptionType)] = &[
+    ("plugins", OptionType::ARRAY),
+    ("max_line_bytes", OptionType::INTEGER),
+    ("oxlintrc", OptionType::STRING.or(OptionType::BOOLEAN)),
+];
 
 /// The formatter keys `[fmt.<lang>.oxc]` reads, with the type each is read as.
 ///
@@ -53,11 +62,21 @@ pub(crate) const JS_FORMAT_OPTION_KEYS: &[(&str, OptionType)] = &[
     ("arrow_parentheses", OptionType::STRING),
     ("bracket_spacing", OptionType::BOOLEAN),
     ("bracket_same_line", OptionType::BOOLEAN),
+    ("line_width", OptionType::INTEGER),
+    ("line_ending", OptionType::STRING),
+    ("quote_properties", OptionType::STRING),
+    ("object_wrap", OptionType::STRING),
+    ("operator_position", OptionType::STRING),
+    ("single_attribute_per_line", OptionType::BOOLEAN),
+    ("single_quote", OptionType::BOOLEAN),
+    ("sort_imports", OptionType::TABLE.or(OptionType::BOOLEAN)),
+    ("sort_package_json", OptionType::TABLE.or(OptionType::BOOLEAN)),
 ];
 
 pub(crate) use self::format::{format_embedded_js, is_embedded_js_parse_error};
 use self::format::{format_js, format_json};
-use self::lint::{lint_js, lint_json};
+use self::json_lint::lint_json;
+use self::lint::lint_js;
 
 /// Version string folded into the blake3 cache key.
 /// Bump whenever the output of `lint` or `format` could change.
@@ -76,8 +95,15 @@ use self::lint::{lint_js, lint_json};
 ///                default set, so a file can now report rules (e.g.
 ///                `vitest/expect-expect`) that no configuration could reach
 ///                before.
+/// `+oxlintrc-v1`: with a project `.oxlintrc.json[c]`, JS/TS lint runs that config (nested configs
+///                 included) instead of poly's rule set.
+/// `+package-json-v1`: `package.json`, `composer.json` and import maps use the
+///                     `json-stringify` variant; `sort_package_json` sorts `package.json` keys.
+/// `+oxfmtrc-v1`: `line_width`, `line_ending`, `quote_properties`, `object_wrap`,
+///                `operator_position`, `single_attribute_per_line` and `sort_imports`
+///                reach the formatters, and `.oxfmtrc.json[c]` supplies them by default.
 const VERSION: &str = "oxc_formatter:0.75.0+oxlint+parser:0.156.0+rev:e2be72d+json-fmt+rules-v5+fmt-opts+\
-                       jsonc-trailing-comma+plugins-v1+minified-skip";
+                       jsonc-trailing-comma+plugins-v1+minified-skip+oxfmtrc-v1+package-json-v1+oxlintrc-v1";
 
 static LANGUAGES: &[Language] = &[
     Language::JavaScript,
@@ -125,6 +151,12 @@ impl crate::engine::Engine for OxcEngine {
 
     fn version(&self) -> &str {
         VERSION
+    }
+
+    /// Digest of the oxlint configs governing `path`, when the project has any: they differ per
+    /// directory, so the options table alone cannot say which rules ran.
+    fn lint_input_salt(&self, path: &std::path::Path, cfg: &EngineConfig) -> Option<String> {
+        native_lint::governing_for(cfg, path).map(|governing| governing.digest.clone())
     }
 
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {

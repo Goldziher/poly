@@ -7,6 +7,7 @@
 use std::sync::{Once, OnceLock};
 
 use super::tool_config;
+use crate::engine::{FormatOutput, SourceFile};
 
 // ---------------------------------------------------------------------------
 
@@ -454,6 +455,24 @@ pub(super) enum NativeRole {
 }
 
 impl NativeRole {
+    /// Poly-side post-processing a role layers on its tool's output: `gofmt` output is regrouped
+    /// the way `goimports` groups imports.
+    pub(super) fn finish(self, output: FormatOutput, src: &SourceFile) -> FormatOutput {
+        if self != NativeRole::GoFmt {
+            return output;
+        }
+        let formatted = match &output {
+            FormatOutput::Formatted(text) => text.as_str(),
+            FormatOutput::Unchanged => &src.content,
+        };
+        let regrouped = super::go_imports::regroup_imports(formatted);
+        if regrouped == *src.content {
+            FormatOutput::Unchanged
+        } else {
+            FormatOutput::Formatted(regrouped)
+        }
+    }
+
     /// The static [`ToolSpec`] describing this role's CLI contract.
     pub(super) fn spec(self) -> &'static ToolSpec {
         match self {

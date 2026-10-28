@@ -17,11 +17,15 @@ fn fixtures_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/rumdl")
 }
 
+/// A config that selects rumdl's own rule-based formatter: setting any rumdl rule key does,
+/// and `line_length` is the one that changes nothing here (120 is the default).
 fn default_cfg() -> EngineConfig {
+    let mut options = toml::Table::new();
+    options.insert("line_length".to_string(), toml::Value::Integer(120));
     EngineConfig {
         globals: GlobalDefaults::default(),
         indent_width: 4,
-        options: toml::Table::new(),
+        options,
     }
 }
 
@@ -494,4 +498,22 @@ fn mdx_object_literals_are_still_not_templates() {
     src.language = Language::Mdx;
     src.path = PathBuf::from("jsx.mdx");
     assert_eq!(engine.skip_reason(&src), None);
+}
+
+/// With no rumdl rule key set, Markdown is formatted by the formatter oxfmt uses, not by
+/// applying markdownlint fixes: bullets become `-`, blocks are separated by blank lines, and a
+/// fence without a language is left without one.
+#[test]
+fn markdown_defaults_to_the_oxfmt_formatter() {
+    let engine = RumdlEngine;
+    let cfg = EngineConfig {
+        globals: GlobalDefaults::default(),
+        indent_width: 2,
+        options: toml::Table::new(),
+    };
+    let src = md_src("# T\n* a\n* b\n\n```\ncode\n```\n");
+    match engine.format(&src, &cfg).expect("format succeeded") {
+        FormatOutput::Formatted(out) => assert_eq!(out, "# T\n\n- a\n- b\n\n```\ncode\n```\n"),
+        FormatOutput::Unchanged => panic!("expected the list to be normalised"),
+    }
 }

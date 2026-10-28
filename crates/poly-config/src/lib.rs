@@ -23,6 +23,8 @@ pub mod extends;
 mod hook_sources;
 mod hooks;
 mod merge;
+mod oxfmt_native;
+mod oxlint_native;
 mod tools;
 mod typos_native;
 
@@ -38,6 +40,10 @@ pub use hooks::{
     FileSafetyJob, Guard, GuardCondition, GuardMatch, HooksConfig, Job, JobCache, ParseStageError, PartialStage,
     Patterns, Serial, SnapshotMode, Stage, StageConfig,
 };
+use oxfmt_native::resolve_oxfmt_native;
+use oxlint_native::resolve_oxlint_native;
+pub use oxfmt_native::{OxfmtNative, OxfmtOverride};
+pub use oxlint_native::OxlintNative;
 pub use tools::{ToolConfig, ToolsConfig};
 pub use typos_native::TyposNative;
 use typos_native::resolve_typos_native;
@@ -112,6 +118,10 @@ pub struct PolyConfig {
     /// Resolved native `_typos.toml` / `.typos.toml` content, if present near the
     /// config root. Combined with `[lint.typos]` in `poly-core`.
     pub typos_native: TyposNative,
+    /// Resolved native `.oxfmtrc.json[c]` content, if present near the config root.
+    pub oxfmt_native: OxfmtNative,
+    /// Resolved native `.oxlintrc.json[c]` location, if present near the config root.
+    pub oxlint_native: OxlintNative,
     /// `[workspace]` — nested-config cascade boundary marker (ADR 0018).
     pub workspace: WorkspaceConfig,
     /// `[rules]` — custom ast-grep YAML rule directories.
@@ -362,6 +372,8 @@ impl PolyConfig {
                 let mut config = PolyConfig::default();
                 config.rules.resolve_relative_to(dir);
                 config.typos_native = resolve_typos_native(dir);
+                config.oxfmt_native = resolve_oxfmt_native(dir);
+                config.oxlint_native = resolve_oxlint_native(dir);
                 Ok(config)
             }
         }
@@ -449,6 +461,8 @@ impl PolyConfig {
         let Some((merged, nearest_dir)) = cascade_table(dir, resolver)? else {
             let mut config = PolyConfig {
                 typos_native: resolve_typos_native(dir),
+                oxfmt_native: resolve_oxfmt_native(dir),
+                oxlint_native: resolve_oxlint_native(dir),
                 ..PolyConfig::default()
             };
             config.rules.resolve_relative_to(dir);
@@ -636,6 +650,8 @@ fn finalize(mut table: toml::Table, typos_dir: &Path) -> anyhow::Result<PolyConf
     let mut config: PolyConfig = raw.into();
     config.rules.resolve_relative_to(typos_dir);
     config.typos_native = resolve_typos_native(typos_dir);
+    config.oxfmt_native = resolve_oxfmt_native(typos_dir);
+    config.oxlint_native = resolve_oxlint_native(typos_dir);
     config
         .hooks
         .validate()
@@ -853,6 +869,8 @@ impl From<RawPolyConfig> for PolyConfig {
             tools: raw.tools,
             per_file_ignores: raw.per_file_ignores,
             typos_native: TyposNative::default(),
+            oxfmt_native: OxfmtNative::default(),
+            oxlint_native: OxlintNative::default(),
             workspace: raw.workspace,
             rules: raw.rules,
         }

@@ -618,6 +618,14 @@ pub trait Engine: Send + Sync {
         None
     }
 
+    /// Extra input this engine's *lint* result depends on besides the file's path and bytes, folded
+    /// into the cache key. A backend whose config can differ per directory (oxlint's nearest
+    /// `.oxlintrc.json`) returns a digest of the config governing `path`; `None` means the
+    /// options table already says everything.
+    fn lint_input_salt(&self, _path: &std::path::Path, _cfg: &EngineConfig) -> Option<String> {
+        None
+    }
+
     /// Lint a file, returning normalized diagnostics. Defaults to no findings.
     fn lint(&self, _src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
         Ok(Vec::new())

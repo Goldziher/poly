@@ -286,12 +286,12 @@ zero-dependency promise holds either way.
 |---|---|---:|---:|
 | Python | ruff | yes | yes |
 | JavaScript / TypeScript / JSX / TSX / JSON | oxc | yes | yes |
-| TOML | taplo | yes | yes |
-| YAML | saphyr + pretty_yaml | yes | yes |
-| Markdown / MDX | rumdl | yes | yes |
+| TOML | taplo (lint) + oxc_formatter_toml | yes | yes |
+| YAML | serde_yaml (libyaml) + oxc_formatter_yaml | yes | yes |
+| Markdown / MDX | rumdl (lint) + oxc_formatter_markdown | yes | yes |
 | SQL | sqruff | yes | yes |
-| CSS / SCSS | malva + biome | yes | yes |
-| Less | malva | no | yes |
+| CSS / SCSS | oxc_formatter_css (malva on request) + biome | yes | yes |
+| Less | oxc_formatter_css (malva on request) | no | yes |
 | GraphQL | graphql + biome | yes | yes |
 | PHP | mago | yes | yes |
 | HCL / Terraform | hcl | yes | yes |

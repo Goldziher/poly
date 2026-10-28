@@ -3,7 +3,7 @@ valid:
   - "func f(_ item: Any) { if let s = item as? String { use(s) } }"
   - "func f(_ item: Any) { guard let s = item as? String else { return } }"
   - "func f(_ n: Int) { let d = n as Double }"
-  - "func f(_ item: Any) { let s = item as? String ?? \"\" }"
+  - 'func f(_ item: Any) { let s = item as? String ?? "" }'
   - "func f(_ item: Any) { switch item { case let s as String: use(s); default: break } }"
 invalid:
   - "func f(_ item: Any) { let s = item as! String }"

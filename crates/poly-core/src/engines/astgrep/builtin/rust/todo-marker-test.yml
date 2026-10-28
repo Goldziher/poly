@@ -2,7 +2,7 @@ id: todo-marker
 valid:
   - "// wire the cache up next release (tracked in #421)\nfn f() {}"
   - "fn f() { let todo = 1; }"
-  - "fn f() { let s = \"TODO: not a comment\"; }"
+  - 'fn f() { let s = "TODO: not a comment"; }'
   - "/// Returns the todo list.\nfn f() {}"
 invalid:
   - "// TODO: handle the empty case\nfn f() {}"

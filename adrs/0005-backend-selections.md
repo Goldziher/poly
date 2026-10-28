@@ -34,7 +34,7 @@ Fast-follow tier-1 backends (each upgrades a language out of tier-2):
 | PHP                          | **mago**         | Published on crates.io. Provides linting and formatting. |
 | Ruby                         | **rubyfmt**      | Pure-Rust formatter. |
 | R                            | **air** / **jarl** | Static analysis (air) and formatter (jarl). |
-| HCL / Terraform              | **hcl-rs** / **hcl-edit** | Wraps hcl-rs for parsing and hcl-edit for comment-safe formatting. |
+| HCL / Terraform              | **hcl-edit** + `hclwrite` port | hcl-edit parses for lint; formatting is a token-level port of `hclwrite.Format` so output matches `terraform fmt`. |
 | Dockerfile                   | **markup_fmt**   | HTML/Vue/Svelte (reused via language registry). |
 | XML                          | **markup_fmt**   | HTML/Vue/Svelte (reused via language registry). |
 

@@ -208,6 +208,7 @@ mod panic_containment {
             serialized_args: ResultCache::serialize_args(&toml::Table::new()),
             severity_remap: SeverityRemap::new(Vec::new()),
             provides_language_lint: true,
+            format_ignore: None,
         }]
     }
 
@@ -401,6 +402,7 @@ mod lint_batching {
             serialized_args: ResultCache::serialize_args(&toml::Table::new()),
             severity_remap: SeverityRemap::new(Vec::new()),
             provides_language_lint: true,
+            format_ignore: None,
         }]
     }
 

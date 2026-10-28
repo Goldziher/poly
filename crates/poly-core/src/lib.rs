@@ -33,6 +33,9 @@ pub mod engines;
 pub(crate) mod filter;
 mod fingerprint;
 pub mod language;
+pub(crate) mod oxfmt_native;
+pub(crate) mod oxlint_native;
+pub(crate) mod path_ignore;
 pub(crate) mod registry;
 pub mod report;
 #[doc(hidden)]
@@ -48,7 +51,7 @@ pub use registry::engine_versions;
 pub use report::Verbosity;
 pub use resolve::{ConfigSet, ExcludeRule};
 pub use runner::{
-    DISABLED_SKIP_PREFIX, EngineDebug, FILTERED_SKIP, FormatError, FormatResult, FormatRun, GENERATED_SKIP, LintError,
-    LintResult, LintRun, NO_ENGINE_SKIP, NO_LINT_RULES_SKIP_PREFIX, RunDebug, RunOptions, SkippedFile,
-    SuppressedDiagnostic, SuppressionReason, format, format_run, is_withdrawal_reason, lint, lint_run,
+    DISABLED_SKIP_PREFIX, EngineDebug, FILTERED_SKIP, FormatError, FormatResult, FormatRun, GENERATED_SKIP,
+    LOCKFILE_SKIP, LintError, LintResult, LintRun, NO_ENGINE_SKIP, NO_LINT_RULES_SKIP_PREFIX, RunDebug, RunOptions,
+    SkippedFile, SuppressedDiagnostic, SuppressionReason, format, format_run, is_withdrawal_reason, lint, lint_run,
 };

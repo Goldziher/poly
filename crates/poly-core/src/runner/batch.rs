@@ -716,6 +716,7 @@ mod tests {
                     serialized_args: ResultCache::serialize_args(&toml::Table::new()),
                     severity_remap: SeverityRemap::new(Vec::new()),
                     provides_language_lint: false,
+                    format_ignore: None,
                 }],
             )
         }

@@ -69,7 +69,6 @@ gitfluff = { path = "crates/gitfluff" }
 globset = "0.4.20"
 graphql-parser = "0.4"
 hcl-edit = "0.9.8"
-hcl-rs = "0.19.9"
 hex = "0.4.3"
 http = "1.5.0"
 ignore = "0.4"
@@ -100,7 +99,11 @@ oxc_allocator = { git = "https://github.com/oxc-project/oxc", rev = "e2be72dfea8
 oxc_diagnostics = { git = "https://github.com/oxc-project/oxc", rev = "e2be72dfea8dff8ff7d6416fd21a1d8866ded4e4" }
 oxc_formatter = { git = "https://github.com/oxc-project/oxc", rev = "e2be72dfea8dff8ff7d6416fd21a1d8866ded4e4" }
 oxc_formatter_core = { git = "https://github.com/oxc-project/oxc", rev = "e2be72dfea8dff8ff7d6416fd21a1d8866ded4e4" }
+oxc_formatter_css = { git = "https://github.com/oxc-project/oxc", rev = "e2be72dfea8dff8ff7d6416fd21a1d8866ded4e4" }
 oxc_formatter_json = { git = "https://github.com/oxc-project/oxc", rev = "e2be72dfea8dff8ff7d6416fd21a1d8866ded4e4" }
+oxc_formatter_markdown = { git = "https://github.com/oxc-project/oxc", rev = "e2be72dfea8dff8ff7d6416fd21a1d8866ded4e4" }
+oxc_formatter_toml = { git = "https://github.com/oxc-project/oxc", rev = "e2be72dfea8dff8ff7d6416fd21a1d8866ded4e4" }
+oxc_formatter_yaml = { git = "https://github.com/oxc-project/oxc", rev = "e2be72dfea8dff8ff7d6416fd21a1d8866ded4e4" }
 oxc_linter = { git = "https://github.com/oxc-project/oxc", rev = "e2be72dfea8dff8ff7d6416fd21a1d8866ded4e4" }
 oxc_span = { git = "https://github.com/oxc-project/oxc", rev = "e2be72dfea8dff8ff7d6416fd21a1d8866ded4e4" }
 pest = "2.9.5"
@@ -119,7 +122,6 @@ pprof = "0.15.0"
 predicates = "3"
 pretty_assertions = "1.4.1"
 pretty_graphql = "0.2.3"
-pretty_yaml = "0.6"
 quick-xml = "0.42"
 proptest = "1.12.0"
 rand = "0.10.3"
@@ -138,7 +140,7 @@ rust-ini = { version = "0.21", features = ["inline-comment"] }
 rustc-hash = "2.1.3"
 rustix = { version = "1.1.6", features = ["pty", "process", "fs", "termios"] }
 same-file = "1.0.6"
-saphyr = "0.3.2"
+serde_yaml = "0.9"
 schemars = "1.2.3"
 seahash = "4.1.0"
 semver = { version = "1.0.28", features = ["serde"] }
@@ -150,6 +152,7 @@ serde_stacker = "0.1.14"
 serde_toon_format = "0.2"
 shlex = "2.0.1"
 similar = "3.2.1"
+sort-package-json = "1.0.0"
 sqruff-lib = "0.43"
 sqruff-lib-core = "0.43"
 strum = { version = "0.28.0", features = ["derive"] }
@@ -173,6 +176,11 @@ unicase = "2"
 unicode-width = { version = "0.2.2", default-features = false }
 walkdir = "2.5.0"
 which = "8.0.6"
+
+# oxc_formatter_yaml/toml pull `oxc_allocator` from the registry through their parsers; resolve it to
+# the same git copy as the rest of the oxc crates so there is a single `Allocator` type.
+[patch.crates-io]
+oxc_allocator = { git = "https://github.com/oxc-project/oxc", rev = "e2be72dfea8dff8ff7d6416fd21a1d8866ded4e4" }
 
 [profile.release]
 lto = "thin"

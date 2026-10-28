@@ -33,8 +33,11 @@
 //!
 //! - **Sub-table contents of `rules`.** `[rules.<id>]` holds `level` plus
 //!   arbitrary tool parameters by design (ADR 0016), so its keys are open-ended.
-//! - **Unknown language ids.** [`Language::Other`] means any tree-sitter pack id
-//!   is a legitimate language, so `[fmt.<id>.<tool>]` cannot be judged.
+//! - **Unknown language ids with no near match.** [`Language::Other`] means any
+//!   tree-sitter pack id is a legitimate language, so `[fmt.<id>.<tool>]` cannot be
+//!   judged outright. An id that is one or two edits from a known language, or a
+//!   common alias of one (`js`, `md`, `yml`), is reported as a likely typo: nothing
+//!   under it would ever run.
 //! - **Unknown tool names.** A `[tools.<name>]` catalog tool (ADR 0013) takes a
 //!   config table named after itself and may be declared in a base config this
 //!   file cannot see, so an unrecognised tool name is left alone.
@@ -82,7 +85,8 @@ const INVALID_VALUE_CODE: &str = "invalid-config-value";
 /// Bumped whenever the reported set changes: it is folded into the cache key,
 /// and a stale entry would replay warnings computed under an older schema.
 /// `2`: `invalid-config-value` joined `unknown-config-key`.
-const VERSION: &str = "3";
+/// `4`: a language id that is a near miss of a known one is reported.
+const VERSION: &str = "4";
 
 /// The `poly.toml` schema backend: reports keys under `[lint.*]` / `[fmt.*]`
 /// that no engine reads, and keys whose value no engine can use.
@@ -150,8 +154,14 @@ struct Finding {
     problem: Problem,
 }
 
-/// The three ways a key can be dead config.
+/// The ways a key can be dead config.
 enum Problem {
+    /// A `[lint.<id>]` / `[fmt.<id>]` table whose language id is a near miss of a
+    /// known one, so every table under it is dropped.
+    UnknownLanguage {
+        /// The language the id was most likely meant to be.
+        suggestion: String,
+    },
     /// A top-level section name the schema does not have. Distinct from
     /// [`Problem::UnknownKey`] because nothing is scoped to an engine here — the
     /// whole section is discarded, not one setting inside it.
@@ -231,6 +241,17 @@ fn collect_section(section: &str, kind: Kind, table: &toml::Table, findings: &mu
             continue;
         }
         let language = language_from_id(name);
+        if matches!(language, Language::Other(_))
+            && let Some(suggestion) = near_miss_language(name)
+        {
+            findings.push(Finding {
+                table: section.to_string(),
+                key: name.clone(),
+                engine: "poly",
+                problem: Problem::UnknownLanguage { suggestion },
+            });
+            continue;
+        }
         let engines = engines_for(&language);
         for (tool, tool_value) in inner {
             let Some(tool_table) = tool_value.as_table() else {
@@ -306,6 +327,7 @@ fn diagnostic(finding: Finding, spans: &KeySpans, engine_name: &str) -> Diagnost
     } = finding;
     let (code, title, description) = match problem {
         Problem::UnknownTopLevel => unknown_top_level_text(&key),
+        Problem::UnknownLanguage { suggestion } => unknown_language_text(&table, &key, &suggestion),
         Problem::UnknownKey { known, note } => unknown_key_text(&table, &key, engine, &known, note),
         Problem::InvalidValue { expected, found } => invalid_value_text(&table, &key, engine, expected, &found),
     };
@@ -336,6 +358,75 @@ fn unknown_top_level_text(key: &str) -> (&'static str, String, String) {
         poly_config::TOP_LEVEL_KEYS.join(", ")
     );
     (UNKNOWN_KEY_CODE, title, description)
+}
+
+/// Code, title and description for a language id that looks like a typo.
+fn unknown_language_text(section: &str, id: &str, suggestion: &str) -> (&'static str, String, String) {
+    let title = format!("unknown language `{id}` in `[{section}]`: did you mean `{suggestion}`?");
+    let description = format!(
+        "No language is called `{id}`, so every table under `[{section}.{id}]` is ignored and none of its \
+         settings take effect. If `{suggestion}` was meant, rename the table to `[{section}.{suggestion}]`."
+    );
+    (UNKNOWN_KEY_CODE, title, description)
+}
+
+/// The language a nearly-right, unrecognised id was probably meant to be.
+///
+/// An exact alias wins; otherwise the nearest known id within a small edit distance. Ids far from
+/// every known language return `None`: they may be legitimate tree-sitter pack languages this
+/// build has not downloaded, and a warning nobody can trust is worse than none.
+fn near_miss_language(id: &str) -> Option<String> {
+    const ALIASES: &[(&str, &str)] = &[
+        ("js", "javascript"),
+        ("ts", "typescript"),
+        ("md", "markdown"),
+        ("yml", "yaml"),
+        ("sh", "shell"),
+        ("bash", "shell"),
+        ("zsh", "shell"),
+        ("py", "python"),
+        ("rs", "rust"),
+        ("rb", "ruby"),
+        ("golang", "go"),
+        ("tf", "hcl"),
+        ("terraform", "hcl"),
+        ("kt", "kotlin"),
+        ("cs", "csharp"),
+        ("c++", "cpp"),
+        ("protobuf", "proto"),
+    ];
+    if let Some((_, target)) = ALIASES.iter().find(|(alias, _)| *alias == id) {
+        return Some((*target).to_string());
+    }
+    let known: Vec<String> = all_languages()
+        .iter()
+        .map(|language| language.id().to_string())
+        .chain(tree_sitter_language_pack::available_languages())
+        .collect();
+    if known.iter().any(|candidate| candidate == id) {
+        return None;
+    }
+    let limit = if id.chars().count() <= 4 { 1 } else { 2 };
+    known
+        .into_iter()
+        .map(|candidate| (edit_distance(id, &candidate), candidate))
+        .filter(|(distance, _)| *distance <= limit)
+        .min_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)))
+        .map(|(_, candidate)| candidate)
+}
+
+fn edit_distance(a: &str, b: &str) -> usize {
+    let b: Vec<char> = b.chars().collect();
+    let mut previous: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.chars().enumerate() {
+        let mut current = vec![i + 1];
+        for (j, cb) in b.iter().enumerate() {
+            let substitution = previous[j] + usize::from(ca != *cb);
+            current.push(substitution.min(previous[j + 1] + 1).min(current[j] + 1));
+        }
+        previous = current;
+    }
+    previous[b.len()]
 }
 
 /// Code, title and description for a key no engine reads.

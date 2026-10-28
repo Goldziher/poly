@@ -73,6 +73,11 @@ pub struct Config {
     pub per_file_ignores: BTreeMap<String, Vec<String>>,
     /// Native `_typos.toml` / `.typos.toml` configuration discovered near the config root.
     pub typos_native: poly_config::TyposNative,
+    /// Native `.oxfmtrc.json[c]` configuration discovered near the config root; supplies the
+    /// defaults and `ignorePatterns` of the oxfmt-equivalent formatters.
+    pub oxfmt_native: poly_config::OxfmtNative,
+    /// Location of the project's `.oxlintrc.json[c]`, whose rules the oxc linter then runs.
+    pub oxlint_native: poly_config::OxlintNative,
     /// `[rules] dirs` — custom ast-grep YAML rule directories.
     /// Paths are relative to the config file root; resolved absolute paths are
     /// stored here after projection from [`poly_config::PolyConfig`].
@@ -98,6 +103,8 @@ impl Default for Config {
             tools: Default::default(),
             per_file_ignores: Default::default(),
             typos_native: Default::default(),
+            oxfmt_native: Default::default(),
+            oxlint_native: Default::default(),
             rules_dirs: Default::default(),
             // Matches `poly_config::RulesConfig`'s own default: the pack is
             // on unless a user explicitly turns it off.
@@ -151,13 +158,26 @@ impl Config {
             Kind::Lint => &self.lint,
             Kind::Format => &self.fmt,
         };
-        let lang_options = tables
+        let mut lang_options = tables
             .get(lang.id())
             .and_then(|v| v.as_table())
             .and_then(|t| t.get(engine_name))
             .and_then(|v| v.as_table())
             .cloned()
             .unwrap_or_default();
+        let native_defaults = match kind {
+            Kind::Format => {
+                crate::oxfmt_native::warn_if_unusable(&self.oxfmt_native);
+                crate::oxfmt_native::engine_defaults(&self.oxfmt_native, lang, engine_name)
+            }
+            Kind::Lint if lang_options.get("oxlintrc").and_then(toml::Value::as_bool) == Some(false) => {
+                toml::Table::new()
+            }
+            Kind::Lint => crate::oxlint_native::engine_defaults(&self.oxlint_native, lang, engine_name),
+        };
+        for (key, value) in native_defaults {
+            lang_options.entry(key).or_insert(value);
+        }
         let indent_width = lang_options
             .get("indent_width")
             .and_then(toml::Value::as_integer)
@@ -439,6 +459,8 @@ impl From<poly_config::PolyConfig> for Config {
             tools: pc.tools,
             per_file_ignores: pc.per_file_ignores,
             typos_native: pc.typos_native,
+            oxfmt_native: pc.oxfmt_native,
+            oxlint_native: pc.oxlint_native,
             rules_builtin_pack: pc.rules.builtin,
             rules_dirs: pc.rules.dirs,
         }

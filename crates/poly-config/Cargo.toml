@@ -14,12 +14,13 @@ path = "src/lib.rs"
 
 [dependencies]
 anyhow.workspace = true
+json5.workspace = true
 poly-catalog.workspace = true
 schemars.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 toml.workspace = true
 
 [dev-dependencies]
 serde_ignored.workspace = true
-serde_json.workspace = true
 tempfile.workspace = true
