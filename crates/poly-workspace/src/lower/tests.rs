@@ -873,10 +873,12 @@ jobs = [
     assert!(!other.stage_fixed && other.serial_group.is_none());
 }
 
+#[cfg(unix)]
 fn lower_with_git_args(hooks: &HooksConfig, stage: HookStage, git_args: &[&str]) -> StageSpec {
     lower_with_files_and_git_args(hooks, stage, &[], git_args)
 }
 
+#[cfg(unix)]
 fn lower_with_files_and_git_args(
     hooks: &HooksConfig,
     stage: HookStage,
