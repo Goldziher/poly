@@ -922,7 +922,11 @@ fn hadolint_buf_and_tflint_pre_commit_hooks_map_to_catalog_tools() {
         "repos:\n  - repo: https://github.com/hadolint/hadolint\n    rev: v2.12.0\n    hooks:\n      - id: hadolint\n  - repo: https://github.com/bufbuild/buf\n    rev: v1.50.0\n    hooks:\n      - id: buf-lint\n      - id: buf-format\n  - repo: https://github.com/antonbabenko/pre-commit-terraform\n    rev: v1.96.0\n    hooks:\n      - id: terraform_tflint\n",
     )]);
     let plan = plan(dir.path());
-    assert_eq!(result(&plan, "pre-commit").absorb, Absorb::Full, "{:?}", result(&plan, "pre-commit").absorb);
+    // The catalog downloads other releases of hadolint and buf, so the older revs
+    // these hooks pin are reported as a loss rather than silently replaced.
+    let lossy = unrepresented(&plan, "pre-commit").join("\n");
+    assert!(lossy.contains("pins hadolint 2.12.0, which poly cannot download"), "{lossy}");
+    assert!(lossy.contains("pins buf 1.50.0, which poly cannot download"), "{lossy}");
     let doc = parsed(&plan);
     for tool in ["hadolint", "buf", "tflint"] {
         assert_eq!(doc["tools"][tool]["enabled"].as_bool(), Some(true), "[tools.{tool}]");

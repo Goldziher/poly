@@ -2436,6 +2436,10 @@
               "description": "Reject files containing an AWS secret from the environment or credentials files. Off by default.",
               "type": "boolean"
             },
+            "requirements_txt_fixer": {
+              "description": "Sort requirements files in place and fail when one was out of order. Off by default.",
+              "type": "boolean"
+            },
             "priority": {
               "type": "integer"
             },
@@ -2793,6 +2797,51 @@
         "install": {
           "description": "Whether poly may download the pinned release when the tool is missing.",
           "$ref": "#/$defs/InstallPolicy"
+        },
+        "values_files": {
+          "description": "Values files passed to every chart (`helm lint -f <file>`), relative to the\nconfig root. Only for tools whose recipe takes values files (helm).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "chart_values": {
+          "description": "Values files for particular charts. Each key is a glob matched against the\nchart directory relative to the config root (`armis/service_charts/redash`,\n`**/redash`); the value lists the files passed for the charts it matches.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "default": {}
+        },
+        "skip_charts": {
+          "description": "Chart directories (globs, relative to the config root) the tool does not\nrun on at all, e.g. a library chart `helm template` cannot render.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "prepare": {
+          "description": "Set to `false` to skip the tool's prepare step (`helm dependency build`,\nrun once per chart before linting when `charts/` does not satisfy\n`Chart.lock`). The step is also skipped when `POLY_OFFLINE` is set.",
+          "type": ["boolean", "null"],
+          "default": null
+        },
+        "new_from_rev": {
+          "description": "Report only findings introduced since this git revision\n(`golangci-lint --new-from-rev=<rev>`). Only for tools whose recipe has a\nnew-from-rev flag; unset reports every finding of the package.",
+          "type": ["string", "null"],
+          "default": null
+        },
+        "goos": {
+          "description": "Operating systems to run the tool for, one invocation per entry with\n`GOOS` set (`[\"linux\", \"windows\"]`); findings are merged. Empty runs once\nwith the inherited environment.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
         }
       },
       "additionalProperties": false
@@ -2863,6 +2912,12 @@
     "lint_ruff": {
       "type": "object",
       "properties": {
+        "allowed_confusables": {
+          "type": "array"
+        },
+        "builtins": {
+          "type": "array"
+        },
         "dummy_variable_rgx": {
           "type": "string"
         },
@@ -2883,6 +2938,75 @@
         },
         "fixable": {
           "type": "array"
+        },
+        "flake8_annotations_allow_star_arg_any": {
+          "type": "boolean"
+        },
+        "flake8_annotations_ignore_fully_untyped": {
+          "type": "boolean"
+        },
+        "flake8_annotations_mypy_init_return": {
+          "type": "boolean"
+        },
+        "flake8_annotations_suppress_dummy_args": {
+          "type": "boolean"
+        },
+        "flake8_annotations_suppress_none_returning": {
+          "type": "boolean"
+        },
+        "flake8_bandit_allowed_markup_calls": {
+          "type": "array"
+        },
+        "flake8_bandit_check_typed_exception": {
+          "type": "boolean"
+        },
+        "flake8_bandit_extend_markup_names": {
+          "type": "array"
+        },
+        "flake8_bandit_hardcoded_tmp_directory": {
+          "type": "array"
+        },
+        "flake8_bandit_hardcoded_tmp_directory_extend": {
+          "type": "array"
+        },
+        "flake8_boolean_trap_extend_allowed_calls": {
+          "type": "array"
+        },
+        "flake8_bugbear_extend_immutable_calls": {
+          "type": "array"
+        },
+        "flake8_builtins_allowed_modules": {
+          "type": "array"
+        },
+        "flake8_builtins_ignorelist": {
+          "type": "array"
+        },
+        "flake8_builtins_strict_checking": {
+          "type": "boolean"
+        },
+        "flake8_comprehensions_allow_dict_calls_with_keyword_arguments": {
+          "type": "boolean"
+        },
+        "flake8_copyright_author": {
+          "type": "string"
+        },
+        "flake8_copyright_min_file_size": {
+          "type": "integer"
+        },
+        "flake8_copyright_notice_rgx": {
+          "type": "string"
+        },
+        "flake8_errmsg_max_string_length": {
+          "type": "integer"
+        },
+        "flake8_gettext_extend_function_names": {
+          "type": "array"
+        },
+        "flake8_gettext_function_names": {
+          "type": "array"
+        },
+        "flake8_implicit_str_concat_allow_multiline": {
+          "type": "boolean"
         },
         "flake8_import_conventions_aliases": {
           "type": "object"
@@ -2923,6 +3047,50 @@
         "flake8_quotes_multiline_quotes": {
           "type": "string"
         },
+        "flake8_self_extend_ignore_names": {
+          "type": "array"
+        },
+        "flake8_self_ignore_names": {
+          "type": "array"
+        },
+        "flake8_tidy_imports_ban_lazy": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        },
+        "flake8_tidy_imports_ban_relative_imports": {
+          "type": "string"
+        },
+        "flake8_tidy_imports_banned_api": {
+          "type": "object"
+        },
+        "flake8_tidy_imports_banned_module_level_imports": {
+          "type": "array"
+        },
+        "flake8_tidy_imports_extend_banned_api": {
+          "type": "object"
+        },
+        "flake8_tidy_imports_require_lazy": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        },
         "flake8_type_checking_exempt_modules": {
           "type": "array"
         },
@@ -2938,8 +3106,17 @@
         "flake8_type_checking_strict": {
           "type": "boolean"
         },
+        "flake8_unused_arguments_ignore_variadic_names": {
+          "type": "boolean"
+        },
+        "future_annotations": {
+          "type": "boolean"
+        },
         "ignore": {
           "type": "array"
+        },
+        "ignore_init_module_imports": {
+          "type": "boolean"
         },
         "indent_width": {
           "type": "integer"
@@ -3007,6 +3184,9 @@
         "isort_relative_imports_order": {
           "type": "string"
         },
+        "isort_required_imports": {
+          "type": "array"
+        },
         "isort_section_order": {
           "type": "array"
         },
@@ -3034,8 +3214,14 @@
         "line_length": {
           "type": "integer"
         },
+        "logger_objects": {
+          "type": "array"
+        },
         "mccabe_max_complexity": {
           "type": "integer"
+        },
+        "namespace_packages": {
+          "type": "array"
         },
         "pep8_naming_classmethod_decorators": {
           "type": "array"
@@ -3061,8 +3247,26 @@
         "pycodestyle_max_line_length": {
           "type": "integer"
         },
+        "pydoclint_ignore_one_line_docstrings": {
+          "type": "boolean"
+        },
         "pydocstyle_convention": {
           "type": "string"
+        },
+        "pydocstyle_ignore_decorators": {
+          "type": "array"
+        },
+        "pydocstyle_ignore_var_parameters": {
+          "type": "boolean"
+        },
+        "pydocstyle_property_decorators": {
+          "type": "array"
+        },
+        "pyflakes_allowed_unused_imports": {
+          "type": "array"
+        },
+        "pyflakes_extend_generics": {
+          "type": "array"
         },
         "pylint_max_args": {
           "type": "integer"
@@ -3088,6 +3292,15 @@
         "pylint_max_statements": {
           "type": "integer"
         },
+        "pyupgrade_keep_runtime_typing": {
+          "type": "boolean"
+        },
+        "ruff_parenthesize_tuple_in_subscript": {
+          "type": "boolean"
+        },
+        "ruff_strictly_empty_init_modules": {
+          "type": "boolean"
+        },
         "rules": {
           "oneOf": [
             {
@@ -3106,6 +3319,15 @@
         },
         "target_version": {
           "type": "string"
+        },
+        "task_tags": {
+          "type": "array"
+        },
+        "typing_extensions": {
+          "type": "boolean"
+        },
+        "typing_modules": {
+          "type": "array"
         },
         "unfixable": {
           "type": "array"
@@ -3890,6 +4112,9 @@
         "enabled": {
           "type": "boolean"
         },
+        "exclude": {
+          "type": "array"
+        },
         "indent_style": {
           "type": "string"
         },
@@ -3901,6 +4126,9 @@
         },
         "line_length": {
           "type": "integer"
+        },
+        "preview": {
+          "type": "boolean"
         },
         "quote_style": {
           "type": "string"

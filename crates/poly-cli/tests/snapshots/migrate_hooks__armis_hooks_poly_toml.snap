@@ -143,6 +143,7 @@ exclude = ["playground/**"]
 extra_args = ["-c", "checkstyle.xml", "-p", "checkstyle.properties"]
 [tools.golangci-lint]
 enabled = true
+new_from_rev = "HEAD"
 files = ["*.go"]
 extra_args = ["-c", ".golangci.yml"]
 [tools.helm]

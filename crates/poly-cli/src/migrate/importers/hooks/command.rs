@@ -816,11 +816,16 @@ mod tests {
     }
 
     #[test]
-    fn wrapper_behaviour_poly_lacks_is_reported_as_an_approximation() {
+    fn the_wrappers_new_from_rev_is_carried_to_the_tool_settings() {
         let Recognition::Builtin(recognized) = recognize("bash dev_tools/go/lint_changed.sh {staged_files}") else {
             panic!("lint_changed.sh must map to a builtin");
         };
-        assert!(recognized.approximations.iter().any(|a| a.contains("--new-from-rev=HEAD")));
+        assert!(
+            recognized
+                .settings
+                .iter()
+                .any(|(tool, settings)| *tool == "golangci-lint" && settings.new_from_rev.as_deref() == Some("HEAD"))
+        );
     }
 
     #[test]
