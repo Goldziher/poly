@@ -591,3 +591,49 @@ fn many_named_files_in_one_directory_are_all_discovered() {
 
     assert_eq!(found.len(), 50);
 }
+
+#[test]
+fn discovery_replays_the_walk_the_config_scan_already_made() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    write_file(&root.join("poly.toml"), "[workspace]\nroot = true\n");
+    write_file(&root.join("kept.py"), "x = 1\n");
+    write_file(&root.join("node_modules/pkg/index.js"), "const a = 1;\n");
+
+    let roots = [root.to_path_buf()];
+    let configs = ConfigSet::build(&roots, Config::default()).unwrap();
+    write_file(&root.join("late.py"), "y = 2\n");
+
+    let has = |files: &[poly_core::discover::DiscoveredFile], name: &str| {
+        files.iter().any(|f| f.path.file_name().is_some_and(|n| n == name))
+    };
+
+    let first = discover(&roots, &configs, &[]);
+    assert!(has(&first, "kept.py"), "{first:?}");
+    assert!(!has(&first, "late.py"), "the first discovery replays the scan: {first:?}");
+
+    let second = discover(&roots, &configs, &[]);
+    assert!(has(&second, "late.py"), "the snapshot is consumed once: {second:?}");
+}
+
+#[test]
+fn a_replayed_walk_prunes_an_excluded_subtree_and_reports_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    write_file(&root.join("poly.toml"), "[workspace]\nroot = true\n");
+    write_file(&root.join("gen/deep/a.py"), "x = 1\n");
+    write_file(&root.join("gen/b.py"), "x = 1\n");
+    write_file(&root.join("src/c.py"), "x = 1\n");
+    write_file(&root.join("build/d.py"), "x = 1\n");
+
+    let roots = [root.to_path_buf()];
+    let configs = ConfigSet::build(&roots, Config::default()).unwrap();
+    let (found, report) = discover_reporting(&roots, &configs, &["gen/**".to_string()], false);
+
+    let paths: Vec<_> = found.iter().map(|f| f.path.clone()).collect();
+    assert!(paths.contains(&root.join("src/c.py")), "{paths:?}");
+    assert!(!paths.iter().any(|p| p.starts_with(root.join("gen"))), "{paths:?}");
+    assert!(!paths.iter().any(|p| p.starts_with(root.join("build"))), "{paths:?}");
+    assert_eq!(report.excluded_directories, 1, "{report:?}");
+    assert_eq!(report.pruned_directories, 1, "{report:?}");
+}

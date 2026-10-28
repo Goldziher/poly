@@ -41,14 +41,21 @@ use tempfile::TempDir;
 //   WORK         <  LIMIT   — a clock started when the lock cleared is not.
 //   HOLD         <= LIMIT/2 — the hold fits inside the derived wait bound, so
 //                             the wait ends at the release rather than expiring.
+//
+// Each side has at least a second of margin, so a loaded machine has to stall
+// the run for that long before either verdict flips.
 // ---------------------------------------------------------------------------
 
 /// How long the external holder keeps cargo's package-cache lock.
-const HOLD: Duration = Duration::from_secs(1);
+const HOLD: Duration = Duration::from_secs(3);
 /// How long the hook works for once it is unblocked.
-const WORK: Duration = Duration::from_millis(2_500);
+const WORK: Duration = Duration::from_secs(6);
 /// The hook's whole time budget.
-const LIMIT: Duration = Duration::from_secs(3);
+const LIMIT: Duration = Duration::from_secs(8);
+/// The budget for the test whose lock is held until the run returns. Far beyond
+/// any plausible stall, and half of it is the bound a wrongly-queued hook would
+/// wait out, so a regression shows as a wait of minutes rather than a flake.
+const UNBOUNDED_LIMIT: Duration = Duration::from_secs(600);
 
 static ENV_LOCK: Mutex<()> = Mutex::new(());
 
@@ -91,7 +98,14 @@ impl Drop for Env {
 ///
 /// `flock` is per-open-file-description, so a hold taken here contends with the
 /// runner's probe exactly as another process's would.
-fn hold_package_cache(cargo_home: &Path, sentinel: &Path) -> std::thread::JoinHandle<()> {
+///
+/// With `release`, the lock is instead held until that channel fires or closes,
+/// so the hold is decided by the test's own progress and not by a sleep.
+fn hold_package_cache(
+    cargo_home: &Path,
+    sentinel: &Path,
+    release: Option<std::sync::mpsc::Receiver<()>>,
+) -> std::thread::JoinHandle<()> {
     let lock = cargo_home.join(".package-cache");
     let sentinel = sentinel.to_path_buf();
     let (ready, holding) = std::sync::mpsc::channel();
@@ -102,7 +116,12 @@ fn hold_package_cache(cargo_home: &Path, sentinel: &Path) -> std::thread::JoinHa
         let taken = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) };
         assert_eq!(taken, 0, "the holder must actually acquire the lock");
         ready.send(()).expect("signal that the lock is held");
-        std::thread::sleep(HOLD);
+        match release {
+            Some(release) => {
+                let _ = release.recv();
+            }
+            None => std::thread::sleep(HOLD),
+        }
         std::fs::remove_file(&sentinel).expect("release the blocked hook");
         // SAFETY: as above.
         unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_UN) };
@@ -161,7 +180,7 @@ fn a_hook_is_not_charged_for_a_lock_held_outside_the_run() {
     env.set(EnvVars::CARGO_HOME, &cargo_home.path().display().to_string());
     env.set(HOOK_TIMEOUT_ENV, &format!("{}ms", LIMIT.as_millis()));
 
-    let holder = hold_package_cache(cargo_home.path(), &sentinel);
+    let holder = hold_package_cache(cargo_home.path(), &sentinel, None);
     let started = Instant::now();
     let outcome = run_one(repo.path(), blocked_cargo_hook(&sentinel));
     let wall = started.elapsed();
@@ -200,9 +219,10 @@ fn a_hook_outside_the_cargo_set_is_never_held_back() {
     std::fs::write(&sentinel, b"blocked").expect("arm the sentinel");
 
     env.set(EnvVars::CARGO_HOME, &cargo_home.path().display().to_string());
-    env.set(HOOK_TIMEOUT_ENV, &format!("{}ms", LIMIT.as_millis()));
+    env.set(HOOK_TIMEOUT_ENV, &format!("{}ms", UNBOUNDED_LIMIT.as_millis()));
 
-    let holder = hold_package_cache(cargo_home.path(), &sentinel);
+    let (release, released) = std::sync::mpsc::channel();
+    let holder = hold_package_cache(cargo_home.path(), &sentinel, Some(released));
     let mut hook = Hook::run("fmt", "true");
     hook.always_run = true;
     hook.pass_filenames = false;
@@ -211,11 +231,13 @@ fn a_hook_outside_the_cargo_set_is_never_held_back() {
     let started = Instant::now();
     let outcome = run_one(repo.path(), hook);
     let wall = started.elapsed();
+    drop(release);
     holder.join().expect("the holder thread");
 
     assert_eq!(outcome.status, HookStatus::Passed);
     assert!(
-        wall < HOLD,
-        "a non-cargo hook must not wait for cargo's lock: took {wall:?} against a {HOLD:?} hold"
+        wall < UNBOUNDED_LIMIT / 2,
+        "a non-cargo hook must not queue behind cargo's lock, whose wait bound is {:?}: took {wall:?}",
+        UNBOUNDED_LIMIT / 2
     );
 }

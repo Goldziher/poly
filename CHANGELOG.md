@@ -57,6 +57,14 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ### Changed
 
+- **Warm runs walk the tree once.** The nested-config scan now records every file and directory it
+  sees, and discovery replays that record in memory, applying the built-in prune set and the
+  effective `[discovery] exclude` globs (pruned subtrees are skipped logically) instead of walking
+  the same directories a second time. Discovered files now come back in path order. The ruff engine
+  remembers package roots per directory for the length of a run, `write_atomic` skips its `chmod`
+  when the temp file already has the original mode, and the stat index is sized once on load.
+  The doctor's version probe retries an executable the kernel reports as busy, and its bound can be
+  lifted with `POLY_PROBE_TIMEOUT_SECS`, so its tests no longer race the clock.
 - **Formatter parity with the incumbent tools (measured on a 92k-file monorepo, 300-file samples).**
   - **HCL** now formats with a port of `hclwrite.Format`, so `.tf`/`.tfvars`/`.hcl` output is
     byte-identical to `terraform fmt` / `terragrunt hclfmt` (all 2,682 `.tf`/`.tfvars` files in the

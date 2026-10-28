@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use super::{module_tree, package_root, walk};
+use super::{PackageRoots, module_tree, package_root, walk};
 use crate::config::{Config, Kind};
 use crate::language::Language;
 
@@ -61,6 +61,21 @@ fn an_init_file_in_a_parent_directory_moves_the_root() {
     touch(&dir.path().join("outer/__init__.py"));
 
     assert_ne!(inner_only, package_root(&module));
+}
+
+#[test]
+fn remembered_package_roots_hold_until_cleared() {
+    let dir = tempfile::tempdir().unwrap();
+    let pkg = dir.path().join("pkg");
+    touch(&pkg.join("mod.py"));
+    let roots = PackageRoots::default();
+    assert_eq!(roots.get(&pkg), None);
+
+    touch(&pkg.join("__init__.py"));
+    assert_eq!(roots.get(&pkg), None, "the answer is remembered, not recomputed");
+
+    roots.clear();
+    assert_eq!(roots.get(&pkg), Some(pkg.clone()));
 }
 
 #[test]

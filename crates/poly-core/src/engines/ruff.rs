@@ -540,11 +540,12 @@ impl Engine for RuffEngine {
             .and_then(toml::Value::as_array)
             .map(|roots| roots.iter().filter_map(toml::Value::as_str).map(Into::into).collect())
             .unwrap_or_default();
+        context::forget_package_roots();
         context::module_tree(&src_roots)
     }
 
     fn file_context(&self, path: &Path, _cfg: &EngineConfig) -> Option<String> {
-        Some(context::package_root(path))
+        Some(context::run_package_root(path))
     }
 
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
@@ -568,11 +569,14 @@ impl Engine for RuffEngine {
             PySourceType::Python
         };
 
-        let package = src
-            .path
-            .parent()
-            .and_then(|parent| detect_package_root(parent, &settings.namespace_packages))
-            .map(PackageRoot::root);
+        let package_dir = src.path.parent().and_then(|parent| {
+            if settings.namespace_packages.is_empty() {
+                context::cached_package_root(parent)
+            } else {
+                detect_package_root(parent, &settings.namespace_packages).map(Path::to_path_buf)
+            }
+        });
+        let package = package_dir.as_deref().map(PackageRoot::root);
 
         let result = lint_only(
             &src.path,

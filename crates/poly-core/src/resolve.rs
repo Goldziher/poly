@@ -24,16 +24,14 @@
 use std::collections::{BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
 
-use std::sync::{Mutex, PoisonError};
-
-use ignore::{WalkBuilder, WalkState};
-
 use crate::config::Config;
-use crate::discover::{PrunePolicy, keep_walk_entry};
 
 mod canon;
+mod scan;
 
 use canon::Canon;
+use scan::{WalkSnapshot, scan_config_dirs};
+pub(crate) use scan::SnapshotEntry;
 
 /// One exclude rule in effect for a walk: the glob discovery matches paths
 /// with, paired with the text its author actually wrote.
@@ -107,6 +105,9 @@ pub struct ConfigSet {
     root_config_registered: bool,
     /// Memoized `canonicalize`, shared by every per-root query.
     canon: Canon,
+    /// The tree the nested-config scan already walked, handed to discovery so it
+    /// need not walk the same directories a second time.
+    snapshot: WalkSnapshot,
 }
 
 impl ConfigSet {
@@ -120,6 +121,7 @@ impl ConfigSet {
             root_config_dir: None,
             root_config_registered: false,
             canon: Canon::default(),
+            snapshot: WalkSnapshot::default(),
         }
     }
 
@@ -154,7 +156,8 @@ impl ConfigSet {
         let mut lookup: Vec<(PathBuf, usize)> = Vec::new();
         let mut seen: HashSet<PathBuf> = HashSet::new();
 
-        for dir in config_dirs_governing(roots, resolver, &no_prune)? {
+        let (governing, snapshot) = config_dirs_governing(roots, resolver, &no_prune)?;
+        for dir in governing {
             if !seen.insert(canonical_key(&dir, &canon)) {
                 continue;
             }
@@ -176,7 +179,14 @@ impl ConfigSet {
             root_config_dir,
             root_config_registered,
             canon,
+            snapshot,
         })
+    }
+
+    /// The files and directories the config scan recorded below `root`, sorted by
+    /// path, handed over once. `None` means discovery must walk `root` itself.
+    pub(crate) fn take_walk_snapshot(&self, root: &Path) -> Option<Vec<SnapshotEntry>> {
+        self.snapshot.take(root)
     }
 
     /// `[discovery] no_prune` from the run's root config: directory names the
@@ -553,7 +563,7 @@ fn config_dirs_governing(
     roots: &[PathBuf],
     resolver: &dyn poly_config::BaseConfigResolver,
     no_prune: &[String],
-) -> anyhow::Result<Vec<PathBuf>> {
+) -> anyhow::Result<(Vec<PathBuf>, WalkSnapshot)> {
     let mut dirs = Vec::new();
     let mut frames = HashSet::new();
     for root in roots {
@@ -567,8 +577,9 @@ fn config_dirs_governing(
                 .map(normalize_dir),
         );
     }
-    dirs.extend(scan_config_dirs(roots, no_prune));
-    Ok(dirs)
+    let (scanned, snapshot) = scan_config_dirs(roots, no_prune);
+    dirs.extend(scanned);
+    Ok((dirs, snapshot))
 }
 
 /// Spell the current directory `.` rather than the empty path, which a relative
@@ -587,59 +598,6 @@ fn normalize_dir(dir: PathBuf) -> PathBuf {
 /// to the path as written when it cannot be canonicalized.
 fn canonical_key(dir: &Path, canon: &Canon) -> PathBuf {
     canon.canonicalize(dir).unwrap_or_else(|| dir.to_path_buf())
-}
-
-/// Scan `roots` for every directory containing a config file, respecting
-/// `.gitignore` and the same pruned-directory set as discovery — including the
-/// run's `[discovery] no_prune` opt-out, so the two walks agree on what exists.
-///
-/// A `poly.toml` inside a still-pruned directory remains undiscoverable, which
-/// is why `no_prune` is read from the run's root config rather than from a
-/// config nested inside the directory it would un-prune.
-fn scan_config_dirs(roots: &[PathBuf], no_prune: &[String]) -> Vec<PathBuf> {
-    let found = Mutex::new(Vec::new());
-    for root in roots.iter().filter(|root| !root.is_file()) {
-        let mut builder = WalkBuilder::new(root);
-        builder
-            .hidden(false)
-            .git_ignore(true)
-            .git_global(true)
-            .git_exclude(true)
-            .parents(true)
-            .filter_entry({
-                // `filter_entry` demands a `'static` closure, and this walk runs
-                // once per root, so the policy owns its copy of the opt-out list.
-                let policy = PrunePolicy::new(root, no_prune);
-                move |entry| keep_walk_entry(entry, &policy)
-            });
-        // The tree is walked on every worker thread: this scan reads directories
-        // and nothing else, so it is bound by the filesystem, not by the CPU.
-        builder.build_parallel().run(|| {
-            let found = &found;
-            Box::new(move |entry| {
-                let Ok(entry) = entry else {
-                    return WalkState::Continue;
-                };
-                if !entry.file_type().is_some_and(|t| t.is_file()) {
-                    return WalkState::Continue;
-                }
-                let is_config = entry
-                    .file_name()
-                    .to_str()
-                    .is_some_and(|name| poly_config::CONFIG_FILE_NAMES.contains(&name));
-                if is_config && let Some(dir) = entry.path().parent() {
-                    found.lock().unwrap_or_else(PoisonError::into_inner).push(dir.to_path_buf());
-                }
-                WalkState::Continue
-            })
-        });
-    }
-    // Workers finish in no particular order, and a config's id is its position
-    // here, so the order is fixed by path rather than left to the scheduler.
-    let mut dirs = found.into_inner().unwrap_or_else(PoisonError::into_inner);
-    dirs.sort();
-    dirs.dedup();
-    dirs
 }
 
 #[cfg(test)]
