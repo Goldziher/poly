@@ -24,6 +24,7 @@ use clap::Args;
 use poly_config::DEFAULT_MAX_ADDED_FILE_KB;
 
 mod aws;
+mod requirements;
 
 /// Number of bytes per kibibyte, for the large-file size ceiling.
 const BYTES_PER_KIB: u64 = 1024;
@@ -113,6 +114,10 @@ pub struct CheckArgs {
     /// credentials files. Passes when no credentials are configured.
     #[arg(long)]
     pub aws_credentials: bool,
+    /// Sort requirements files in place, failing when one was out of order
+    /// (pre-commit-hooks' `requirements-txt-fixer`).
+    #[arg(long)]
+    pub requirements_txt_fixer: bool,
     /// The matched files to check (appended by the hook runner).
     pub files: Vec<PathBuf>,
 }
@@ -195,6 +200,9 @@ fn collect_violations(root: &Path, args: &CheckArgs) -> Vec<Violation> {
     if args.aws_credentials {
         let secrets = aws::collect_secrets(&aws::Sources::ambient());
         violations.extend(aws::check_aws_credentials(root, &args.files, &secrets));
+    }
+    if args.requirements_txt_fixer {
+        violations.extend(requirements::fix_requirements(root, &args.files));
     }
     violations
 }

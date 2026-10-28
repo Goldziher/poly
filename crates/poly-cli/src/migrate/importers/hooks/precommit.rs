@@ -86,6 +86,12 @@ const KNOWN: &[Known] = &[
     },
     known("check-case-conflict", Mapping::FileSafety("case_conflict"), None),
     known(
+        "requirements-txt-fixer",
+        Mapping::FileSafety("requirements_txt_fixer"),
+        None,
+    )
+    .scoped(&["*requirements*.txt"]),
+    known(
         "check-executables-have-shebangs",
         Mapping::FileSafety("executables_have_shebangs"),
         None,
@@ -200,7 +206,7 @@ const FIXERS: &[&str] = &[
 /// Linters that only rewrite files when given `--fix`.
 const FIXES_WITH_FLAG: &[&str] = &["ruff", "ruff-check"];
 
-const NO_EQUIVALENT: &[(&str, &str)] = &[("requirements-txt-fixer", "poly does not sort requirements files")];
+const NO_EQUIVALENT: &[(&str, &str)] = &[];
 
 /// Words that mark a local hook's command line as one that rewrites its files.
 const REWRITE_WORDS: &[&str] = &[

@@ -165,16 +165,25 @@ pub(super) fn append_file_safety(
         hook.exclude = exclude;
         hook.priority = job.priority.unwrap_or(safety.priority);
         hook.cache = HookCache::Disabled;
+        if member_wanted(safety, &job.checks, "requirements_txt_fixer") {
+            hook.stage_fixed = true;
+            hook.serial_group = Some(super::FIX_SERIAL_GROUP.to_string());
+        }
         out.push(hook);
     }
     Ok(())
 }
 
+/// Whether the member check `name` is enabled and selected by `checks` (every
+/// enabled member when `checks` is empty).
+fn member_wanted(safety: &FileSafetyHooks, checks: &[String], name: &str) -> bool {
+    safety.check_enabled(name) && (checks.is_empty() || checks.iter().any(|check| check == name))
+}
+
 /// Build the `poly hooks check` flag string for `checks` (every enabled member
 /// when empty), or `None` when none is enabled.
 fn file_safety_flags(safety: &FileSafetyHooks, checks: &[String]) -> Option<String> {
-    let wanted =
-        |name: &str| safety.check_enabled(name) && (checks.is_empty() || checks.iter().any(|check| check == name));
+    let wanted = |name: &str| member_wanted(safety, checks, name);
     let mut flags: Vec<String> = Vec::new();
     if wanted("merge_conflict") {
         flags.push("--merge-conflict".to_string());
@@ -194,6 +203,9 @@ fn file_safety_flags(safety: &FileSafetyHooks, checks: &[String]) -> Option<Stri
     }
     if wanted("shebang_scripts_are_executable") {
         flags.push("--shebang-scripts-are-executable".to_string());
+    }
+    if wanted("requirements_txt_fixer") {
+        flags.push("--requirements-txt-fixer".to_string());
     }
     if wanted("aws_credentials") {
         flags.push("--aws-credentials".to_string());

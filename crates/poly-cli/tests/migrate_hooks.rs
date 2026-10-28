@@ -822,3 +822,17 @@ fn in_place_formatters_migrate_as_fix_mode_builtins() {
     assert_eq!(globs(builtin.lint.files.as_ref()), ["BUILD"], "-mode=check is the lint role");
     assert!(!builtin.lint.fix);
 }
+
+#[test]
+fn requirements_txt_fixer_maps_to_the_opt_in_file_safety_member() {
+    let dir = repo(&[(
+        ".pre-commit-config.yaml",
+        "repos:\n  - repo: https://github.com/pre-commit/pre-commit-hooks\n    rev: v6.0.0\n    hooks:\n      - id: requirements-txt-fixer\n",
+    )]);
+    let plan = plan(dir.path());
+    assert_eq!(result(&plan, "pre-commit").absorb, Absorb::Full, "the hook is no longer unmapped");
+    let safety = hooks_of(&plan).builtin.file_safety;
+    assert!(safety.requirements_txt_fixer);
+    assert!(!safety.merge_conflict, "only the requested member is on");
+    assert_eq!(globs(safety.files.as_ref()), ["*requirements*.txt"]);
+}

@@ -9,6 +9,21 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ### Added
 
+- **`requirements_txt_fixer` file-safety member**, off by default: sorts requirements files like the
+  pre-commit-hooks `requirements-txt-fixer` and is re-staged as a fixer. `poly migrate` maps that
+  hook to it, so it is no longer reported as unmapped.
+- **Ruff plugin tables and linter-wide settings.** `[lint.python.ruff]` now reads every remaining
+  `ruff_linter` setting: the `flake8_annotations_*`, `flake8_bandit_*`, `flake8_boolean_trap_*`,
+  `flake8_bugbear_*`, `flake8_builtins_*`, `flake8_comprehensions_*`, `flake8_copyright_*`,
+  `flake8_errmsg_*`, `flake8_gettext_*`, `flake8_implicit_str_concat_*`, `flake8_self_*`,
+  `flake8_tidy_imports_*`, `flake8_unused_arguments_*`, `pydocstyle_*` (decorators and var
+  parameters), `pydoclint_*`, `pyflakes_*`, `pyupgrade_*` and `ruff_*` keys, `isort_required_imports`,
+  and `builtins`, `namespace_packages`, `allowed_confusables`, `logger_objects`, `task_tags`,
+  `typing_modules`, `typing_extensions`, `future_annotations` and `ignore_init_module_imports`.
+  `[fmt.python.ruff]` takes `preview` and `exclude` (matched at any depth). `poly migrate` carries
+  all of them, so those ruff keys no longer keep the ruff source. The ruff engine's `version()` is
+  bumped.
+
 - **`dockerfile-parser` is now vendored as the `crates/dockerfile-parser` workspace crate** (ADR 0003
   amendment). Upstream, HewlettPackard/dockerfile-parser-rs, is archived, so poly maintains it from
   upstream commit `08f3789` (`v0.9.0` plus the image-digest change). It moved to edition 2024 with

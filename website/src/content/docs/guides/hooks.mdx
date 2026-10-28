@@ -81,6 +81,11 @@ file_safety = { aws_credentials = true, jobs = [
 `aws_credentials` is off unless named: it rejects files containing an AWS secret found in the
 environment or the AWS credentials files, and passes when none are configured.
 
+`requirements_txt_fixer` is also off unless named. It sorts requirements files the way the
+pre-commit-hooks hook of that name does (by lower-cased package name, comments staying with the
+requirement below them, a top comment block staying on top, `pkg-resources==0.0.0` removed) and is
+re-staged like any other fixer. Scope it with `files = "*requirements*.txt"`; `poly migrate` does.
+
 ### Git hook arguments
 
 A `run` line may use `{0}` / `{git_args}` (all arguments git passed to the hook), `{1}`, `{2}`, ...

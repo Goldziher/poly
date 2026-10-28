@@ -56,6 +56,7 @@ pub const FILE_SAFETY_CHECKS: &[&str] = &[
     "executables_have_shebangs",
     "shebang_scripts_are_executable",
     "aws_credentials",
+    "requirements_txt_fixer",
 ];
 
 #[cfg(test)]
@@ -117,6 +118,14 @@ fmt = { jobs = [{ stages = ["pre-push"] }] }
     fn aws_credentials_is_opt_in_even_when_the_group_is_on() {
         let on: crate::BuiltinHooks = toml::from_str("file_safety = true").unwrap();
         assert!(on.file_safety.merge_conflict && !on.file_safety.aws_credentials);
+    }
+
+    #[test]
+    fn requirements_txt_fixer_is_opt_in_even_when_the_group_is_on() {
+        let on: crate::BuiltinHooks = toml::from_str("file_safety = true").unwrap();
+        assert!(!on.file_safety.requirements_txt_fixer);
+        let named: crate::BuiltinHooks = toml::from_str("file_safety = { requirements_txt_fixer = true }").unwrap();
+        assert!(named.file_safety.check_enabled("requirements_txt_fixer"));
     }
 
     #[test]

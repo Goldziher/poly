@@ -261,10 +261,11 @@ pub(super) const FILE_SAFETY_MEMBERS: &[&str] = &[
     "executables_have_shebangs",
     "shebang_scripts_are_executable",
     "aws_credentials",
+    "requirements_txt_fixer",
 ];
 
 /// Members that are off unless named, rather than on unless disabled.
-const OPT_IN_MEMBERS: &[&str] = &["aws_credentials"];
+const OPT_IN_MEMBERS: &[&str] = &["aws_credentials", "requirements_txt_fixer"];
 
 /// Accumulates hook configuration from every source in one directory.
 #[derive(Debug, Default)]
