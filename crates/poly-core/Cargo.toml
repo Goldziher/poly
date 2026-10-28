@@ -11,6 +11,9 @@ documentation.workspace = true
 publish = false
 description = "Core engine for the poly universal, zero-dependency linter & formatter"
 
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+
 [package.metadata.cargo-machete]
 ignored = ["rumdl", "serde_toon_format", "rust-ini"]
 
@@ -93,10 +96,10 @@ schemars = { workspace = true, optional = true }
 serde.workspace = true
 serde_ignored.workspace = true
 serde_json.workspace = true
-serde_yaml.workspace = true
 serde_toon_format.workspace = true
-sort-package-json.workspace = true
+serde_yaml.workspace = true
 sha2.workspace = true
+sort-package-json.workspace = true
 sqruff-lib.workspace = true
 sqruff-lib-core.workspace = true
 taplo.workspace = true
@@ -115,9 +118,6 @@ unicase.workspace = true
 ureq.workspace = true
 which.workspace = true
 zip.workspace = true
-
-[target.'cfg(unix)'.dependencies]
-libc.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true
