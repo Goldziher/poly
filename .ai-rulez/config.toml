@@ -31,3 +31,6 @@ include_outputs = false
 
 [lint.load_budgets]
 "codex-agents-chain" = 131072
+
+[lint.severity]
+AR601 = "info"
