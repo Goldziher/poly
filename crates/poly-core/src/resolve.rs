@@ -31,7 +31,7 @@ mod scan;
 
 use canon::Canon;
 use scan::{WalkSnapshot, scan_config_dirs};
-pub(crate) use scan::SnapshotEntry;
+pub(crate) use scan::RootSnapshot;
 
 /// One exclude rule in effect for a walk: the glob discovery matches paths
 /// with, paired with the text its author actually wrote.
@@ -185,7 +185,7 @@ impl ConfigSet {
 
     /// The files and directories the config scan recorded below `root`, sorted by
     /// path, handed over once. `None` means discovery must walk `root` itself.
-    pub(crate) fn take_walk_snapshot(&self, root: &Path) -> Option<Vec<SnapshotEntry>> {
+    pub(crate) fn take_walk_snapshot(&self, root: &Path) -> Option<RootSnapshot> {
         self.snapshot.take(root)
     }
 

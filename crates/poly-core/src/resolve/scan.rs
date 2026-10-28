@@ -9,7 +9,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use ignore::{WalkBuilder, WalkState};
 
@@ -22,15 +22,25 @@ pub(crate) struct SnapshotEntry {
     pub(crate) is_dir: bool,
 }
 
-/// What the scan walk saw, per walk root, each list sorted by path so that a
-/// directory is immediately followed by everything beneath it.
+/// Everything the scan walk saw below one walk root.
 #[derive(Debug, Default)]
-pub(super) struct WalkSnapshot(Mutex<HashMap<PathBuf, Vec<SnapshotEntry>>>);
+pub(crate) struct RootSnapshot {
+    /// Files and directories kept, sorted by path so that a directory is
+    /// immediately followed by everything beneath it.
+    pub(crate) entries: Vec<SnapshotEntry>,
+    /// Directories the built-in prune set dropped, so the replay can still
+    /// report them.
+    pub(crate) pruned: Vec<PathBuf>,
+}
+
+/// What the scan walk saw, per walk root.
+#[derive(Debug, Default)]
+pub(super) struct WalkSnapshot(Mutex<HashMap<PathBuf, RootSnapshot>>);
 
 impl WalkSnapshot {
     /// Hand over the recorded entries of `root`, once. A second request, or one
     /// for a root that was never scanned, gets `None` and the caller walks live.
-    pub(super) fn take(&self, root: &Path) -> Option<Vec<SnapshotEntry>> {
+    pub(super) fn take(&self, root: &Path) -> Option<RootSnapshot> {
         self.0.lock().unwrap_or_else(PoisonError::into_inner).remove(root)
     }
 }
@@ -63,6 +73,7 @@ pub(super) fn scan_config_dirs(roots: &[PathBuf], no_prune: &[String]) -> (Vec<P
     let mut config_dirs = Vec::new();
     let mut snapshot = HashMap::new();
     for root in roots.iter().filter(|root| !root.is_file()) {
+        let pruned = Arc::new(Mutex::new(Vec::new()));
         let mut builder = WalkBuilder::new(root);
         builder
             .hidden(false)
@@ -74,7 +85,17 @@ pub(super) fn scan_config_dirs(roots: &[PathBuf], no_prune: &[String]) -> (Vec<P
                 // `filter_entry` demands a `'static` closure, and this walk runs
                 // once per root, so the policy owns its copy of the opt-out list.
                 let policy = PrunePolicy::new(root, no_prune);
-                move |entry| keep_walk_entry(entry, &policy)
+                let pruned = Arc::clone(&pruned);
+                move |entry| {
+                    let keep = keep_walk_entry(entry, &policy);
+                    if !keep {
+                        pruned
+                            .lock()
+                            .unwrap_or_else(PoisonError::into_inner)
+                            .push(entry.path().to_path_buf());
+                    }
+                    keep
+                }
             });
         let sink = Mutex::new((Vec::new(), Vec::new()));
         // The tree is walked on every worker thread: this scan reads directories
@@ -119,7 +140,9 @@ pub(super) fn scan_config_dirs(roots: &[PathBuf], no_prune: &[String]) -> (Vec<P
         // Workers finish in no particular order; a fixed order keeps the replay
         // (and so the discovered file list) deterministic.
         entries.sort_by(|a, b| a.path.cmp(&b.path));
-        snapshot.insert(root.clone(), entries);
+        let mut pruned = std::mem::take(&mut *pruned.lock().unwrap_or_else(PoisonError::into_inner));
+        pruned.sort();
+        snapshot.insert(root.clone(), RootSnapshot { entries, pruned });
     }
     // A config's id is its position here, so the order is fixed by path rather
     // than left to the scheduler.

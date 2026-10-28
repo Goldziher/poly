@@ -10,7 +10,7 @@ use ignore::overrides::{Override, OverrideBuilder};
 use serde::Serialize;
 
 use crate::language::Language;
-use crate::resolve::{ConfigSet, ExcludeRule, SnapshotEntry};
+use crate::resolve::{ConfigSet, ExcludeRule, RootSnapshot};
 
 /// Tool-cache and environment directory names pruned from every walk, whether
 /// or not git tracks anything in them (`node_modules`, `.git`, virtualenvs,
@@ -723,8 +723,8 @@ pub fn discover_reporting(
         }
         let matcher = ExcludeMatcher::new(root, exclude);
         let pruner = PruneRecorder::new(root, configs.no_prune());
-        if let Some(entries) = configs.take_walk_snapshot(root) {
-            replay_snapshot(&entries, matcher.as_deref(), &pruner, configs, &mut out, &mut report);
+        if let Some(snapshot) = configs.take_walk_snapshot(root) {
+            replay_snapshot(&snapshot, matcher.as_deref(), &pruner, configs, &mut out, &mut report);
             if let Some(matcher) = &matcher {
                 matcher.merge_into(&mut report);
             }
@@ -788,15 +788,18 @@ fn accept_file(path: &Path, configs: &ConfigSet, out: &mut Vec<DiscoveredFile>, 
 /// `entries` is sorted by path, so a directory is followed immediately by its
 /// descendants and one `starts_with` test skips the whole subtree.
 fn replay_snapshot(
-    entries: &[SnapshotEntry],
+    snapshot: &RootSnapshot,
     matcher: Option<&ExcludeMatcher>,
     pruner: &PruneRecorder,
     configs: &ConfigSet,
     out: &mut Vec<DiscoveredFile>,
     report: &mut DiscoveryReport,
 ) {
+    for path in &snapshot.pruned {
+        pruner.record_pruned(path);
+    }
     let mut skipped: Option<&Path> = None;
-    for entry in entries {
+    for entry in &snapshot.entries {
         if let Some(dir) = skipped {
             if entry.path.starts_with(dir) {
                 continue;
