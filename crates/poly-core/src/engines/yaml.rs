@@ -95,13 +95,26 @@ impl Engine for YamlEngine {
                 ("bracket_spacing", OptionType::BOOLEAN),
                 ("trailing_commas", OptionType::STRING),
                 ("prose_wrap", OptionType::STRING),
+                ("oxfmtrc", OptionType::STRING),
             ]),
             OptionTable::Lint | OptionTable::CrossCuttingLint => OptionKeys::declared(&[]),
         }
     }
 
     fn version(&self) -> &str {
-        "0.1.0+serde_yaml-0.9.34+oxc_formatter_yaml-e2be72d+tmplskip"
+        "0.1.0+serde_yaml-0.9.34+oxc_formatter_yaml-e2be72d+tmplskip+oxfmtrc-scope-1"
+    }
+
+    fn format_config<'a>(&self, src: &SourceFile, cfg: &'a EngineConfig) -> std::borrow::Cow<'a, EngineConfig> {
+        crate::oxfmt_scope::path_config(cfg, src, self.name())
+    }
+
+    fn format_input_salt(&self, path: &std::path::Path, cfg: &EngineConfig) -> Option<String> {
+        crate::oxfmt_scope::input_salt(cfg, path)
+    }
+
+    fn file_context(&self, path: &std::path::Path, cfg: &EngineConfig) -> Option<String> {
+        self.format_input_salt(path, cfg)
     }
 
     fn skip_reason(&self, src: &SourceFile) -> Option<&'static str> {

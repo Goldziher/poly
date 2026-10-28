@@ -64,7 +64,7 @@ use crate::{
 };
 
 /// The taplo crate version this backend wraps; used as part of the cache key.
-const TAPLO_VERSION: &str = "0.14.0+opts-2+oxc_formatter_toml-e2be72d";
+const TAPLO_VERSION: &str = "0.14.0+opts-2+oxc_formatter_toml-e2be72d+oxfmtrc-scope-1";
 
 /// Keys that only the taplo formatter understands; setting one selects it over `oxc_formatter_toml`.
 const TAPLO_LAYOUT_KEYS: &[&str] = &[
@@ -148,6 +148,7 @@ impl Engine for TaploEngine {
                 ("line_ending", OptionType::STRING),
                 ("indent_style", OptionType::STRING),
                 ("trailing_commas", OptionType::STRING),
+                ("oxfmtrc", OptionType::STRING),
             ]),
             OptionTable::Lint | OptionTable::CrossCuttingLint => OptionKeys::declared(&[]),
         }
@@ -155,6 +156,18 @@ impl Engine for TaploEngine {
 
     fn version(&self) -> &str {
         TAPLO_VERSION
+    }
+
+    fn format_config<'a>(&self, src: &SourceFile, cfg: &'a EngineConfig) -> std::borrow::Cow<'a, EngineConfig> {
+        crate::oxfmt_scope::path_config(cfg, src, self.name())
+    }
+
+    fn format_input_salt(&self, path: &std::path::Path, cfg: &EngineConfig) -> Option<String> {
+        crate::oxfmt_scope::input_salt(cfg, path)
+    }
+
+    fn file_context(&self, path: &std::path::Path, cfg: &EngineConfig) -> Option<String> {
+        self.format_input_salt(path, cfg)
     }
 
     fn lint(&self, src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {

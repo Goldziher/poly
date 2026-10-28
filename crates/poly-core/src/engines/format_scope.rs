@@ -117,6 +117,14 @@ impl Engine for FormatScope {
         self.inner.lint_cache_salt(src)
     }
 
+    fn format_config<'a>(&self, src: &SourceFile, cfg: &'a EngineConfig) -> std::borrow::Cow<'a, EngineConfig> {
+        self.inner.format_config(src, cfg)
+    }
+
+    fn format_input_salt(&self, path: &std::path::Path, cfg: &EngineConfig) -> Option<String> {
+        self.inner.format_input_salt(path, cfg)
+    }
+
     fn file_context(&self, path: &std::path::Path, cfg: &EngineConfig) -> Option<String> {
         self.inner.file_context(path, cfg)
     }

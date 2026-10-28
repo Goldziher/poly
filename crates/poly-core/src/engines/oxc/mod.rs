@@ -16,6 +16,7 @@
 //! * `plugins` — the oxlint plugin set `[lint.<lang>.oxc] plugins` enables.
 
 mod config;
+mod external;
 mod format;
 mod json_lint;
 mod lint;
@@ -42,10 +43,16 @@ use crate::language::Language;
 ///
 /// `oxlintrc` names the project's `.oxlintrc.json[c]` (set by poly when it finds one); `false`
 /// switches that off and returns to poly's own rule set.
+///
+/// `js_plugins` says what to do with the config's `jsPlugins`, JavaScript modules poly has no runtime
+/// for: `"skip"` (default) lints without them and warns once per config; `"external"` runs the real
+/// `oxlint` (from the nearest `node_modules/.bin`, else `PATH`) over the files those configs govern,
+/// one run per config, and reports its findings.
 const JS_LINT_OPTION_KEYS: &[(&str, OptionType)] = &[
     ("plugins", OptionType::ARRAY),
     ("max_line_bytes", OptionType::INTEGER),
     ("oxlintrc", OptionType::STRING.or(OptionType::BOOLEAN)),
+    ("js_plugins", OptionType::STRING),
 ];
 
 /// The formatter keys `[fmt.<lang>.oxc]` reads, with the type each is read as.
@@ -71,6 +78,9 @@ pub(crate) const JS_FORMAT_OPTION_KEYS: &[(&str, OptionType)] = &[
     ("single_quote", OptionType::BOOLEAN),
     ("sort_imports", OptionType::TABLE.or(OptionType::BOOLEAN)),
     ("sort_package_json", OptionType::TABLE.or(OptionType::BOOLEAN)),
+    ("oxfmtrc", OptionType::STRING),
+    ("requires_oxfmt", OptionType::BOOLEAN),
+    ("external", OptionType::BOOLEAN),
 ];
 
 pub(crate) use self::format::{format_embedded_js, is_embedded_js_parse_error};
@@ -123,7 +133,7 @@ use self::lint::lint_js;
 ///                `operator_position`, `single_attribute_per_line` and `sort_imports`
 ///                reach the formatters, and `.oxfmtrc.json[c]` supplies them by default.
 const VERSION: &str = "oxc_formatter:0.75.0+oxlint+parser:0.156.0+rev:e2be72d+json-fmt+rules-v5+fmt-opts+\
-                       jsonc-trailing-comma+plugins-v1+minified-skip+oxfmtrc-v1+package-json-v1+oxlintrc-v1+rule-args-1+safe-fix-1";
+                       jsonc-trailing-comma+plugins-v1+minified-skip+oxfmtrc-v1+package-json-v1+oxlintrc-v1+rule-args-1+safe-fix-1+js-plugins-ext-1+oxfmtrc-scope-1";
 
 static LANGUAGES: &[Language] = &[
     Language::JavaScript,
@@ -179,11 +189,47 @@ impl crate::engine::Engine for OxcEngine {
         native_lint::governing_for(cfg, path).map(|governing| governing.digest.clone())
     }
 
+    fn format_config<'a>(&self, src: &SourceFile, cfg: &'a EngineConfig) -> std::borrow::Cow<'a, EngineConfig> {
+        crate::oxfmt_scope::path_config(cfg, src, self.name())
+    }
+
+    fn format_input_salt(&self, path: &std::path::Path, cfg: &EngineConfig) -> Option<String> {
+        crate::oxfmt_scope::input_salt(cfg, path)
+    }
+
+    /// Both digests: a cached lint verdict goes stale with the oxlint config, a cached format
+    /// result with the oxfmt one.
+    fn file_context(&self, path: &std::path::Path, cfg: &EngineConfig) -> Option<String> {
+        match (self.lint_input_salt(path, cfg), self.format_input_salt(path, cfg)) {
+            (None, None) => None,
+            (lint, format) => Some(format!("{}|{}", lint.unwrap_or_default(), format.unwrap_or_default())),
+        }
+    }
+
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
         match src.language {
             Language::Json | Language::Jsonc => lint_json(src),
             _ => lint_js(src, cfg),
         }
+    }
+
+    fn batch_support(&self, cfg: &EngineConfig) -> crate::engine::BatchSupport {
+        crate::engine::BatchSupport {
+            format: false,
+            lint: external::lint_requested(cfg),
+        }
+    }
+
+    fn lint_batch(
+        &self,
+        batch: &[SourceFile],
+        cfg: &EngineConfig,
+    ) -> anyhow::Result<Vec<anyhow::Result<Vec<Diagnostic>>>> {
+        external::lint_batch(batch, cfg, |src| self.lint(src, cfg))
+    }
+
+    fn batch_shard_floor(&self) -> usize {
+        256
     }
 
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {

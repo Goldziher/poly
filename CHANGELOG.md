@@ -9,6 +9,16 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ### Added
 
+- **Real `oxlint` / `oxfmt` as a fallback, and path-scoped oxfmt config.**
+  `[lint.<lang>.oxc] js_plugins = "external"` lints the files governed by an `.oxlintrc.json` that
+  declares `jsPlugins` with the real `oxlint` (nearest `node_modules/.bin`, else `PATH`), one run per
+  config, and parses its JSON report into poly diagnostics; `"skip"` (default) keeps the warning.
+  `[fmt.<lang>.oxc] external = true` formats files whose `.oxfmtrc.json[c]` sets `sortTailwindcss`,
+  `jsdoc` or `experimentalTernaries` with the real `oxfmt`. `overrides[].files` /
+  `excludeFiles` globs are now resolved per file relative to the config, and the nearest nested
+  `.oxfmtrc.json[c]` replaces the root one. The formatting cache key carries the digest of the
+  governing config and the overrides that match, so editing a nested config re-formats; the oxc
+  engine's stat-cache context now also carries the governing oxlint config digest.
 - **oxc lint parity with oxlint.** `poly lint --fix` now applies oxlint's safe fixes: the linter
   was built with `FixKind::None`, so no rule produced an edit, and a finding with alternative fixes
   applied all of them instead of the first, as `oxlint --fix` does. `[rules.sort-keys]` options

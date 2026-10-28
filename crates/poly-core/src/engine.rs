@@ -626,6 +626,20 @@ pub trait Engine: Send + Sync {
         None
     }
 
+    /// The config to format `src` with, when it differs from the language-wide `cfg`: a backend
+    /// whose project config is scoped by path (oxfmt's `overrides` and nested configs) lays the
+    /// options that apply to this file over `cfg`. Defaults to `cfg` itself.
+    fn format_config<'a>(&self, _src: &SourceFile, cfg: &'a EngineConfig) -> std::borrow::Cow<'a, EngineConfig> {
+        std::borrow::Cow::Borrowed(cfg)
+    }
+
+    /// Extra input this engine's *format* result depends on besides the file's bytes and the
+    /// options table, folded into the cache key: the digest of the path-scoped config governing
+    /// `path`. `None` (the default) means the table already says everything.
+    fn format_input_salt(&self, _path: &std::path::Path, _cfg: &EngineConfig) -> Option<String> {
+        None
+    }
+
     /// Lint a file, returning normalized diagnostics. Defaults to no findings.
     fn lint(&self, _src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
         Ok(Vec::new())

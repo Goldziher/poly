@@ -40,9 +40,8 @@ pub use hooks::{
     FileSafetyJob, Guard, GuardCondition, GuardMatch, HooksConfig, Job, JobCache, ParseStageError, PartialStage,
     Patterns, Serial, SnapshotMode, Stage, StageConfig,
 };
-use oxfmt_native::resolve_oxfmt_native;
 use oxlint_native::resolve_oxlint_native;
-pub use oxfmt_native::{OxfmtNative, OxfmtOverride};
+pub use oxfmt_native::{OxfmtNative, OxfmtOverride, resolve_oxfmt_native};
 pub use oxlint_native::OxlintNative;
 pub use tools::{InstallPolicy, ToolConfig, ToolsConfig};
 pub use typos_native::TyposNative;

@@ -157,6 +157,26 @@ Enabling a plugin brings on its `correctness` rules, plus whatever poly's own de
 `.oxlintrc.json` would do. `ignore` and `[rules.<id>] level` then work on those rules like any
 other. An unrecognised plugin name is an error, not a silent no-op.
 
+### Project oxlint and oxfmt configs
+
+A repository's own `.oxlintrc.json[c]` and `.oxfmtrc.json[c]` drive the JS/TS/JSON/YAML/TOML/CSS/Markdown
+backends; keys written in `poly.toml` win over them.
+
+- `[lint.javascript.oxc] js_plugins = "skip" | "external"` decides what happens to `jsPlugins`, which
+  need a JavaScript runtime. `"skip"` (default) lints without them and warns once per config.
+  `"external"` runs the real `oxlint` (nearest `node_modules/.bin`, else `PATH`) over the files those
+  configs govern, one run per config, and reports its findings; without the binary it falls back to
+  `"skip"`.
+- `overrides[].files` globs are resolved per file, relative to the config's directory, and the nearest
+  `.oxfmtrc.json[c]` replaces the root one, as in oxfmt. The cache key carries the governing config.
+- `sortTailwindcss`, `jsdoc` and `experimentalTernaries` need oxfmt's JavaScript side. With
+  `[fmt.typescript.oxc] external = true` those files are formatted by the real `oxfmt`; otherwise they are
+  formatted in process without the option and a warning says so.
+- Markdown fences and front matter in JavaScript, TypeScript, JSON, YAML, CSS, SCSS, Less and TOML are
+  formatted in process, as oxfmt does; `embeddedLanguageFormatting: "off"` keeps them as written.
+- `[rules.<id>]` options reach oxlint rules. A positional rule such as `sort-keys` takes its leading
+  argument from `order` (`"asc"` / `"desc"`); `args = [...]` spells out the arguments of any other rule.
+
 ### Rules held back
 
 A handful of rules stay off even though their category is selected. Each was measured against a

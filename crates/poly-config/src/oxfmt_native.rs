@@ -53,7 +53,7 @@ impl OxfmtNative {
 
 /// Resolve the native oxfmt configuration governing `dir`: the nearest config file
 /// walking upward, bounded at the enclosing git root.
-pub(crate) fn resolve_oxfmt_native(dir: &Path) -> OxfmtNative {
+pub fn resolve_oxfmt_native(dir: &Path) -> OxfmtNative {
     let Some(file) = find_oxfmt_file(dir) else {
         return OxfmtNative::default();
     };
