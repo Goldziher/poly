@@ -648,7 +648,7 @@ impl Importer<'_> {
     /// release, and say so when it cannot.
     fn pin_catalog_tools(&mut self, label: &str, tools: &[&str]) {
         for tool in tools {
-            let Some(pin) = pin::pin_for(&self.dir, tool) else {
+            let Some(pin) = pin::pin_for(self.dir, tool) else {
                 continue;
             };
             if pin::catalog_has_release(tool, &pin.version) {

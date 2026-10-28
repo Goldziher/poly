@@ -306,9 +306,9 @@ fn a_hook_that_writes_only_inside_the_snapshot_passes() {
     run_in_snapshot(repo.path(), snap.path(), &files, shell_hook("echo changed >> pkg/a.py")).unwrap();
 
     assert_eq!(
-        std::fs::read_to_string(repo.path().join("pkg/a.py")).unwrap(),
-        "a = 1\n",
-        "the worktree copy is untouched"
+        std::fs::read_to_string(snap.path().join("pkg/a.py")).unwrap(),
+        "a = 1\nchanged\n",
+        "the hook wrote into the snapshot's own copy, which is not a link to the worktree"
     );
 }
 
