@@ -386,7 +386,8 @@
     ],
     "languages": [
       "yaml",
-      "json"
+      "json",
+      "helm-template"
     ],
     "homepage": "https://helm.sh",
     "path_globs": [
@@ -405,49 +406,11 @@
           "$ROOT"
         ],
         "stdin": false
-      }
-    },
-    "recipe": {
-      "output": "helm_text",
-      "group": {
-        "marker": [
-          "Chart.yaml"
-        ]
       },
-      "target": "root",
-      "findings": "all",
-      "dependencies": [
-        "**"
-      ],
-      "install": {
-        "hint": "brew install helm"
-      }
-    }
-  },
-  {
-    "name": "helm-template",
-    "binary": "helm",
-    "categories": [
-      "linter"
-    ],
-    "languages": [
-      "yaml",
-      "json"
-    ],
-    "homepage": "https://helm.sh/docs/helm/helm_template/",
-    "path_globs": [
-      "**/Chart.yaml",
-      "**/Chart.lock",
-      "**/requirements.yaml",
-      "**/requirements.lock",
-      "**/values.yaml",
-      "**/values.schema.json",
-      "**/templates/**"
-    ],
-    "commands": {
-      "lint": {
+      "dependency-build": {
         "arguments": [
-          "template",
+          "dependency",
+          "build",
           "$ROOT"
         ],
         "stdin": false
@@ -467,7 +430,66 @@
       ],
       "install": {
         "hint": "brew install helm"
+      },
+      "prepare": "dependency-build",
+      "values_flag": "-f"
+    }
+  },
+  {
+    "name": "helm-template",
+    "binary": "helm",
+    "categories": [
+      "linter"
+    ],
+    "languages": [
+      "yaml",
+      "json",
+      "helm-template"
+    ],
+    "homepage": "https://helm.sh/docs/helm/helm_template/",
+    "path_globs": [
+      "**/Chart.yaml",
+      "**/Chart.lock",
+      "**/requirements.yaml",
+      "**/requirements.lock",
+      "**/values.yaml",
+      "**/values.schema.json",
+      "**/templates/**"
+    ],
+    "commands": {
+      "lint": {
+        "arguments": [
+          "template",
+          "$ROOT"
+        ],
+        "stdin": false
+      },
+      "dependency-build": {
+        "arguments": [
+          "dependency",
+          "build",
+          "$ROOT"
+        ],
+        "stdin": false
       }
+    },
+    "recipe": {
+      "output": "helm_text",
+      "group": {
+        "marker": [
+          "Chart.yaml"
+        ]
+      },
+      "target": "root",
+      "findings": "all",
+      "dependencies": [
+        "**"
+      ],
+      "install": {
+        "hint": "brew install helm"
+      },
+      "prepare": "dependency-build",
+      "values_flag": "-f"
     }
   },
   {

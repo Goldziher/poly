@@ -164,6 +164,32 @@ pub struct ToolConfig {
     /// Whether poly may download the pinned release when the tool is missing.
     #[serde(default)]
     pub install: InstallPolicy,
+    /// Values files passed to every chart (`helm lint -f <file>`), relative to the
+    /// config root. Only for tools whose recipe takes values files (helm).
+    #[serde(default)]
+    pub values_files: Vec<String>,
+    /// Values files for particular charts. Each key is a glob matched against the
+    /// chart directory relative to the config root (`armis/service_charts/redash`,
+    /// `**/redash`); the value lists the files passed for the charts it matches.
+    #[serde(default)]
+    pub chart_values: BTreeMap<String, Vec<String>>,
+    /// Chart directories (globs, relative to the config root) the tool does not
+    /// run on at all, e.g. a library chart `helm template` cannot render.
+    #[serde(default)]
+    pub skip_charts: Vec<String>,
+    /// Set to `false` to skip the tool's prepare step (`helm dependency build`,
+    /// run once per chart before linting when `charts/` does not satisfy
+    /// `Chart.lock`). The step is also skipped when `POLY_OFFLINE` is set.
+    pub prepare: Option<bool>,
+    /// Report only findings introduced since this git revision
+    /// (`golangci-lint --new-from-rev=<rev>`). Only for tools whose recipe has a
+    /// new-from-rev flag; unset reports every finding of the package.
+    pub new_from_rev: Option<String>,
+    /// Operating systems to run the tool for, one invocation per entry with
+    /// `GOOS` set (`["linux", "windows"]`); findings are merged. Empty runs once
+    /// with the inherited environment.
+    #[serde(default)]
+    pub goos: Vec<String>,
 }
 
 /// Maximum edit distance at which a closest-match name is worth suggesting.

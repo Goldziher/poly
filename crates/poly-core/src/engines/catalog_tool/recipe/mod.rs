@@ -19,7 +19,8 @@
 //! [`lint`] (grouping, running, attributing), [`format`] (scratch copies and
 //! in-place passes), [`output`] (report parsers), [`launch`] and [`install`]
 //! (finding or downloading the program), [`salt`] (cache inputs), [`mirror`],
-//! [`paths`] and [`exec`].
+//! [`paths`], [`unit`] (per-chart values, skipped charts, the prepare step) and
+//! [`exec`].
 
 mod argv;
 mod exec;
@@ -31,6 +32,7 @@ mod mirror;
 mod output;
 mod paths;
 mod salt;
+mod unit;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -41,6 +43,7 @@ use poly_config::ToolConfig;
 
 use self::argv::Template;
 use self::launch::{Launcher, Resolved};
+use self::unit::UnitOptions;
 
 /// Which role a tool is built for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -70,6 +73,8 @@ pub(super) struct RecipeTool {
     context_names: Vec<String>,
     /// The part of the cache key that does not vary per file.
     version: String,
+    /// Per-root values files, skipped roots and the prepare step.
+    units: UnitOptions,
 }
 
 /// File selection for one tool.
@@ -144,10 +149,12 @@ impl RecipeTool {
             .map(|fix| fix_templates(fix, &extra, flags, &cwd))
             .unwrap_or_default();
 
+        let units = UnitOptions::new(tool, recipe, config, &cwd)?;
         let flagged: Vec<PathBuf> = passes
             .iter()
             .flat_map(|pass| salt::config_flag_files(pass.tokens(), flags))
             .map(|path| if path.is_absolute() { path } else { cwd.join(path) })
+            .chain(units.files())
             .collect();
         let fingerprint = salt::config_fingerprint(&cwd, &flagged, &recipe.config_files);
 
@@ -156,12 +163,13 @@ impl RecipeTool {
             context_names.extend(markers.iter().cloned());
         }
         let version = format!(
-            "{}:{}:role={role:?}:passes={:?}:fix={:?}:stdin={stdin:?}:env={:?}:cfg={fingerprint}",
+            "{}:{}:role={role:?}:passes={:?}:fix={:?}:stdin={stdin:?}:env={:?}:units={}:cfg={fingerprint}",
             tool.name,
             launcher.identity,
             passes.iter().map(Template::fingerprint).collect::<Vec<_>>(),
             fix_passes.iter().map(Template::fingerprint).collect::<Vec<_>>(),
             config.env,
+            units.fingerprint(),
         );
 
         Ok(RecipeTool {
@@ -176,6 +184,7 @@ impl RecipeTool {
             filter: filter_for(tool, config),
             context_names,
             version,
+            units,
         })
     }
 

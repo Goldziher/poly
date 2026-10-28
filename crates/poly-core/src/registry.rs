@@ -37,6 +37,9 @@ use crate::language::Language;
 
 /// Engines applicable to a language, in priority order (formatters run in sequence).
 pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
+    if matches!(lang, Language::Other(name) if name == crate::language::HELM_TEMPLATE) {
+        return Vec::new();
+    }
     let mut engines: Vec<Box<dyn Engine>> = match lang {
         Language::JavaScript
         | Language::TypeScript

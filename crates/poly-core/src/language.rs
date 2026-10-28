@@ -194,6 +194,9 @@ impl Language {
     /// Returns `None` for unknown extensions; the tree-sitter tier (M5) provides a
     /// secondary fallback for those.
     pub fn from_path(path: &Path) -> Option<Language> {
+        if is_helm_template_file(path) {
+            return Some(Language::Other(HELM_TEMPLATE.to_owned()));
+        }
         if let Some(lang) = path
             .extension()
             .and_then(|e| e.to_str())
@@ -387,6 +390,22 @@ impl Language {
     }
 }
 
+/// The grammar-less pseudo-language of the Go-template files under a chart's
+/// `templates/` (`_helpers.tpl`, `NOTES.txt`). They are discovered so a tool
+/// whose catalog `languages` names it (helm) can claim them; no built-in engine
+/// plans for it, so nothing else lints or reformats them.
+pub const HELM_TEMPLATE: &str = "helm-template";
+
+fn is_helm_template_file(path: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+        return false;
+    };
+    (name.ends_with(".tpl") || name == "NOTES.txt")
+        && path
+            .parent()
+            .is_some_and(|parent| parent.components().any(|c| c.as_os_str() == "templates"))
+}
+
 /// Bazel's extensionless and dot-suffixed Starlark files, which no extension
 /// table can name: `BUILD`, `WORKSPACE`, `MODULE.bazel`, `BUILD.bazel`, `*.BUILD`.
 fn is_starlark_name(lower: &str) -> bool {
@@ -418,6 +437,20 @@ mod tests {
             "elixir",
             "a tier-2 language has only its grammar id to go by"
         );
+    }
+
+    #[test]
+    fn chart_template_helpers_and_notes_are_the_helm_template_language() {
+        let helm = Some(Language::Other(super::HELM_TEMPLATE.to_owned()));
+        assert_eq!(Language::from_path(Path::new("chart/templates/_helpers.tpl")), helm);
+        assert_eq!(Language::from_path(Path::new("chart/templates/NOTES.txt")), helm);
+        assert_eq!(Language::from_path(Path::new("chart/templates/sub/x.tpl")), helm);
+        assert_eq!(
+            Language::from_path(Path::new("chart/other/_helpers.tpl")),
+            None,
+            "only files under a templates directory belong to a chart"
+        );
+        assert_eq!(Language::from_path(Path::new("NOTES.txt")), None);
     }
 
     #[test]

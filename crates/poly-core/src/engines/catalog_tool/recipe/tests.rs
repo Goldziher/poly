@@ -106,6 +106,15 @@ impl Fixture {
                 batch: None,
             },
         );
+        commands.insert(
+            "prep".to_owned(),
+            Command {
+                arguments: vec!["prepare".to_owned(), "$ROOT".to_owned()],
+                stdin: false,
+                then: Vec::new(),
+                batch: None,
+            },
+        );
         let recipe: Recipe = serde_json::from_value(recipe).expect("recipe");
         let tool: &'static Tool = Box::leak(Box::new(Tool {
             name: "faketool".to_owned(),
@@ -358,6 +367,151 @@ fn a_findings_all_tool_is_keyed_to_its_root_digest_not_to_the_process() {
         moved.cache_salt(&other_template).expect("salted"),
         "a different chart has a different digest"
     );
+}
+
+const SILENT: &str = "#!/bin/sh\necho \"$PWD $*\" >> \"$POLY_TEST_LOG\"\nexit 0\n";
+
+fn chart_recipe(extra: serde_json::Value) -> serde_json::Value {
+    let mut recipe = serde_json::json!({
+        "output": "helm_text",
+        "group": {"marker": ["Chart.yaml"]},
+        "target": "root",
+        "findings": "all",
+        "values_flag": "-f"
+    });
+    for (key, value) in extra.as_object().expect("object") {
+        recipe[key] = value.clone();
+    }
+    recipe
+}
+
+#[test]
+fn each_chart_gets_its_own_values_files_and_skipped_charts_are_not_run() {
+    let fx = Fixture::new();
+    let tool_bin = fx.script("helm", SILENT);
+    for chart in ["apps/a", "apps/b", "lib/common"] {
+        std::fs::create_dir_all(fx.dir.path().join(chart)).expect("chart dir");
+        std::fs::write(fx.dir.path().join(chart).join("Chart.yaml"), "name: c\n").expect("chart");
+    }
+    let files = vec![
+        fx.file("apps/a/values.yaml", "x: 1\n"),
+        fx.file("apps/b/values.yaml", "x: 1\n"),
+        fx.file("lib/common/values.yaml", "x: 1\n"),
+    ];
+    let root = fx.dir.path().to_string_lossy().into_owned();
+    let mut config = fx.config(tool_bin);
+    config.values_files = vec![format!("{root}/render/all.yaml")];
+    config.chart_values = BTreeMap::from([("apps/a".to_owned(), vec![format!("{root}/render/a.yaml")])]);
+    config.skip_charts = vec!["lib/*".to_owned()];
+    let tool = fx.tool("lint $ROOT", chart_recipe(serde_json::json!({})), Role::Lint, &config);
+
+    let results = tool.lint_files(&refs(&files));
+
+    let log = std::fs::read_to_string(&fx.log).expect("log");
+    assert_eq!(fx.invocations(), 2, "the library chart is skipped:\n{log}");
+    assert!(
+        log.lines()
+            .any(|l| l.contains("/apps/a lint . -f ") && l.ends_with(&format!("render/all.yaml -f {root}/render/a.yaml"))),
+        "chart a gets the shared and its own values:\n{log}"
+    );
+    assert!(
+        log.lines()
+            .any(|l| l.contains("/apps/b lint . -f ") && l.ends_with("render/all.yaml")),
+        "chart b gets only the shared values:\n{log}"
+    );
+    assert!(results.iter().all(|r| r.as_ref().is_ok_and(Vec::is_empty)));
+}
+
+#[test]
+fn values_files_are_refused_for_a_tool_whose_recipe_has_no_values_flag() {
+    let fx = Fixture::new();
+    let mut config = fx.config(fx.script("tool", SILENT));
+    config.values_files = vec!["values.yaml".to_owned()];
+    let recipe: &'static Recipe = Box::leak(Box::new(
+        serde_json::from_value(serde_json::json!({"output": "helm_text"})).expect("recipe"),
+    ));
+    let tool: &'static Tool = Box::leak(Box::new(Tool {
+        name: "faketool".to_owned(),
+        binary: "faketool".to_owned(),
+        categories: vec!["linter".to_owned()],
+        languages: Vec::new(),
+        commands: BTreeMap::from([(
+            "lint".to_owned(),
+            Command {
+                arguments: vec!["$FILES".to_owned()],
+                stdin: false,
+                then: Vec::new(),
+                batch: None,
+            },
+        )]),
+        homepage: String::new(),
+        path_globs: Vec::new(),
+        recipe: None,
+    }));
+    let error = RecipeTool::build(tool, recipe, &config, Role::Lint, None)
+        .err()
+        .expect("must refuse");
+    assert!(error.contains("values_files"), "{error}");
+}
+
+#[test]
+fn a_chart_with_missing_dependencies_is_prepared_once_before_it_is_linted() {
+    let fx = Fixture::new();
+    let tool_bin = fx.script("helm", SILENT);
+    std::fs::create_dir_all(fx.dir.path().join("needy")).expect("needy");
+    std::fs::write(
+        fx.dir.path().join("needy/Chart.yaml"),
+        "name: needy\ndependencies:\n  - name: redis\n    version: 1.0.0\n    repository: oci://x\n",
+    )
+    .expect("needy chart");
+    std::fs::create_dir_all(fx.dir.path().join("plain")).expect("plain");
+    std::fs::write(fx.dir.path().join("plain/Chart.yaml"), "name: plain\n").expect("plain chart");
+    let files = vec![fx.file("needy/values.yaml", "a: 1\n"), fx.file("plain/values.yaml", "a: 1\n")];
+    let tool = fx.tool(
+        "lint $ROOT",
+        chart_recipe(serde_json::json!({"prepare": "prep"})),
+        Role::Lint,
+        &fx.config(tool_bin),
+    );
+
+    tool.lint_files(&refs(&files));
+    tool.lint_files(&refs(&files));
+
+    let log = std::fs::read_to_string(&fx.log).expect("log");
+    let prepares: Vec<&str> = log.lines().filter(|l| l.contains(" prepare .")).collect();
+    assert_eq!(prepares.len(), 1, "once, for the chart that needs it:\n{log}");
+    assert!(prepares[0].contains("/needy "), "{log}");
+    let first_lint = log.lines().position(|l| l.contains("/needy lint")).expect("linted");
+    let prepare = log.lines().position(|l| l.contains(" prepare .")).expect("prepared");
+    assert!(prepare < first_lint, "the build precedes the lint:\n{log}");
+}
+
+#[test]
+fn a_failing_prepare_step_does_not_stop_the_lint() {
+    let fx = Fixture::new();
+    let tool_bin = fx.script(
+        "helm",
+        "#!/bin/sh\necho \"$PWD $*\" >> \"$POLY_TEST_LOG\"\ncase \"$1\" in prepare) echo 'no network' >&2; exit 1;; esac\nexit 0\n",
+    );
+    std::fs::create_dir_all(fx.dir.path().join("needy")).expect("needy");
+    std::fs::write(
+        fx.dir.path().join("needy/Chart.yaml"),
+        "name: needy\ndependencies:\n  - name: redis\n    version: 1.0.0\n",
+    )
+    .expect("chart");
+    let files = vec![fx.file("needy/values.yaml", "a: 1\n")];
+    let tool = fx.tool(
+        "lint $ROOT",
+        chart_recipe(serde_json::json!({"prepare": "prep"})),
+        Role::Lint,
+        &fx.config(tool_bin),
+    );
+
+    let results = tool.lint_files(&refs(&files));
+
+    assert!(results[0].as_ref().is_ok_and(Vec::is_empty), "{:?}", results[0]);
+    let log = std::fs::read_to_string(&fx.log).expect("log");
+    assert!(log.contains("needy lint"), "the lint still ran:\n{log}");
 }
 
 #[test]
