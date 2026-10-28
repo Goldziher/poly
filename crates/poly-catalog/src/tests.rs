@@ -5,7 +5,7 @@
 
 use serde::Deserialize;
 
-use crate::{Catalog, PATH_PLACEHOLDER};
+use crate::{Catalog, Findings, Group, Output, PATH_PLACEHOLDER, Recipe, Target};
 
 /// One `(input, output)` command fixture from the vendored `data/golden.json`.
 #[derive(Debug, Deserialize)]
@@ -199,4 +199,73 @@ fn buildifier_formats_lints_and_fixes_starlark() {
     assert!(buildifier.format_command().is_some());
     assert!(buildifier.lint_command().is_some());
     assert!(buildifier.command("fix").is_some_and(|c| c.uses_files()));
+}
+
+fn recipe_of(name: &str) -> &'static Recipe {
+    Catalog::get()
+        .tool(name)
+        .and_then(|tool| tool.recipe.as_ref())
+        .unwrap_or_else(|| panic!("{name} has a recipe"))
+}
+
+#[test]
+fn helm_is_a_chart_wide_recipe_that_prepares_dependencies_and_takes_values_files() {
+    for name in ["helm", "helm-template"] {
+        let recipe = recipe_of(name);
+        assert_eq!(recipe.output, Output::HelmText, "{name}");
+        assert_eq!(recipe.group, Group::Marker(vec!["Chart.yaml".to_owned()]), "{name}");
+        assert_eq!(recipe.target, Target::Root, "{name}");
+        assert_eq!(recipe.findings, Findings::All, "{name}");
+        assert_eq!(recipe.values_flag.as_deref(), Some("-f"), "{name}");
+        let prepare = recipe.prepare.as_deref().expect("a prepare step");
+        let command = Catalog::get().tool(name).expect(name).command(prepare).expect("prepare command");
+        assert_eq!(command.arguments, ["dependency", "build", "$ROOT"], "{name}");
+        let tool = Catalog::get().tool(name).expect(name);
+        assert!(tool.languages.iter().any(|l| l == "helm-template"), "{name} claims .tpl and NOTES.txt");
+        assert!(tool.path_globs.iter().any(|g| g == "**/templates/**"), "{name}");
+    }
+}
+
+#[test]
+fn golangci_lint_is_a_per_module_recipe_with_new_from_rev_and_config_discovery() {
+    let recipe = recipe_of("golangci-lint");
+    assert_eq!(recipe.output, Output::GolangciJson);
+    assert_eq!(recipe.group, Group::Marker(vec!["go.mod".to_owned()]));
+    assert_eq!(recipe.target, Target::Dir);
+    assert!(recipe.serial, "golangci-lint holds a global cache lock");
+    assert_eq!(recipe.ok_exits, [1]);
+    assert_eq!(recipe.new_from_rev_flag.as_deref(), Some("--new-from-rev"));
+    assert!(recipe.config_files.iter().any(|f| f == ".golangci.yml"));
+    assert!(recipe.config_flags.iter().any(|f| f == "-c"));
+}
+
+#[test]
+fn buf_discovers_its_module_and_config_through_buf_yaml() {
+    let recipe = recipe_of("buf");
+    assert_eq!(recipe.output, Output::BufJson);
+    assert_eq!(
+        recipe.group,
+        Group::Marker(vec!["buf.yaml".to_owned(), "buf.work.yaml".to_owned()])
+    );
+    assert!(recipe.config_files.iter().any(|f| f == "buf.yaml"));
+    assert!(recipe.dependencies.iter().any(|d| d == "**/*.proto"));
+    let lint = Catalog::get().tool("buf").expect("buf").command("lint").expect("lint");
+    assert_eq!(lint.arguments, ["lint", "--error-format=json", "$FILES:--path"]);
+}
+
+#[test]
+fn tflint_runs_once_per_directory_and_treats_exit_2_as_findings() {
+    let recipe = recipe_of("tflint");
+    assert_eq!(recipe.output, Output::TflintJson);
+    assert_eq!(recipe.group, Group::Dir);
+    assert_eq!(recipe.ok_exits, [2]);
+    assert!(recipe.dependencies.iter().any(|d| d == ".tflint.hcl"));
+}
+
+#[test]
+fn hadolint_reads_json_and_treats_exit_1_as_findings() {
+    let recipe = recipe_of("hadolint");
+    assert_eq!(recipe.output, Output::HadolintJson);
+    assert_eq!(recipe.ok_exits, [1]);
+    assert!(recipe.config_files.iter().any(|f| f == ".hadolint.yaml"));
 }

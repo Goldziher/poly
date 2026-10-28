@@ -612,6 +612,26 @@ fn a_goos_matrix_runs_once_per_os_and_merges_the_findings() {
 }
 
 #[test]
+fn editing_the_config_file_a_tool_discovers_changes_the_cache_identity() {
+    let fx = Fixture::new();
+    let linter = fx.script("linter", LINTER);
+    let module = fx.dir.path().join("module");
+    std::fs::create_dir_all(&module).expect("module");
+    std::fs::write(module.join("buf.yaml"), "version: v2\nlint:\n  use: [STANDARD]\n").expect("buf.yaml");
+    let recipe = serde_json::json!({"output": "buf_json", "config_files": ["buf.yaml"]});
+    let mut config = fx.config(linter);
+    config.root = Some(module.to_string_lossy().into_owned());
+
+    let before = fx.tool("lint $FILES:--path", recipe.clone(), Role::Lint, &config);
+    let unchanged = fx.tool("lint $FILES:--path", recipe.clone(), Role::Lint, &config);
+    std::fs::write(module.join("buf.yaml"), "version: v2\nlint:\n  use: [MINIMAL]\n").expect("edit buf.yaml");
+    let after = fx.tool("lint $FILES:--path", recipe, Role::Lint, &config);
+
+    assert_eq!(before.version(), unchanged.version());
+    assert_ne!(before.version(), after.version(), "a changed buf.yaml must not serve cached verdicts");
+}
+
+#[test]
 fn content_that_differs_from_disk_is_linted_from_a_scratch_copy() {
     let fx = Fixture::new();
     let linter = fx.script("linter", LINTER);
