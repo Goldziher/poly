@@ -9,8 +9,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 use oxc_allocator::Allocator;
 use oxc_diagnostics::Severity as OxcSeverity;
 use oxc_linter::{
-    AllowWarnDeny, ConfigStore, ConfigStoreBuilder, ExternalPluginStore, LintFilter, LintOptions, LintPlugins,
-    LintService, LintServiceOptions, Linter, Message, Oxlintrc, PossibleFixes, RuntimeFileSystem,
+    AllowWarnDeny, ConfigStore, ConfigStoreBuilder, ExternalPluginStore, FixKind, LintFilter, LintOptions,
+    LintPlugins, LintService, LintServiceOptions, Linter, Message, Oxlintrc, PossibleFixes, RuntimeFileSystem,
 };
 
 use super::plugins::extra_lint_plugins;
@@ -144,6 +144,16 @@ fn apply_default_filters(mut builder: ConfigStoreBuilder) -> ConfigStoreBuilder 
     builder
 }
 
+/// The linter options every service is built with: safe fixes are computed, as `oxlint --fix`
+/// does, so a diagnostic carries the edit `poly lint --fix` applies. With the default
+/// [`FixKind::None`] no rule produces one.
+pub(super) fn lint_options() -> LintOptions {
+    LintOptions {
+        fix: FixKind::SafeFix,
+        ..LintOptions::default()
+    }
+}
+
 /// A [`ConfigStoreBuilder`] carrying oxlint's defaults, widened by
 /// [`DEFAULT_LINT_FILTERS`] and narrowed by [`DEFAULT_ALLOWED_RULES`].
 fn opinionated_builder() -> ConfigStoreBuilder {
@@ -191,7 +201,7 @@ fn lint_service() -> &'static LintService {
             // SAFETY: the builder has no external inputs, so the build cannot fail.
             .expect("oxc_linter default ConfigStore build is infallible");
         let config_store = ConfigStore::new(config, Default::default(), plugin_store);
-        let linter = Linter::new(LintOptions::default(), config_store, None);
+        let linter = Linter::new(lint_options(), config_store, None);
         let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let options = LintServiceOptions::new(cwd);
         LintService::new(linter, options)
@@ -238,17 +248,16 @@ fn synthesized_rules_oxlintrc(selection: &RuleSelection) -> Option<Oxlintrc> {
             continue;
         }
         let severity = rule_options_severity_str(opts);
-        let params = match serde_json::to_value(toml::Value::Table(opts.params.clone())) {
-            Ok(value) => value,
+        let arguments = match rule_arguments(code, &opts.params) {
+            Ok(arguments) => arguments,
             Err(error) => {
                 tracing::warn!(rule = %code, %error, "could not encode [rules.<id>] parameters as JSON; skipping");
                 continue;
             }
         };
-        rules.insert(
-            code.clone(),
-            serde_json::Value::Array(vec![serde_json::Value::String(severity.to_owned()), params]),
-        );
+        let mut entry = vec![serde_json::Value::String(severity.to_owned())];
+        entry.extend(arguments);
+        rules.insert(code.clone(), serde_json::Value::Array(entry));
     }
     if rules.is_empty() {
         return None;
@@ -263,6 +272,30 @@ fn synthesized_rules_oxlintrc(selection: &RuleSelection) -> Option<Oxlintrc> {
             None
         }
     }
+}
+
+/// The arguments that follow the severity in a rule's ESLint-style configuration array.
+///
+/// Most rules take one options object, which is what the `[rules.<id>]` keys form. A rule whose
+/// configuration is positional (`sort-keys`: `["error", "asc", { "caseSensitive": false }]`) takes
+/// its leading argument from a named key (`order`, default `"asc"`) so the remaining keys are
+/// still the options object. `args = [...]` spells the arguments out for any other rule.
+fn rule_arguments(code: &str, params: &toml::Table) -> Result<Vec<serde_json::Value>, serde_json::Error> {
+    if let Some(toml::Value::Array(args)) = params.get("args") {
+        return args.iter().map(serde_json::to_value).collect();
+    }
+    let mut params = params.clone();
+    let mut arguments = Vec::new();
+    if code == "sort-keys" {
+        let order = params
+            .remove("order")
+            .unwrap_or_else(|| toml::Value::String("asc".to_owned()));
+        arguments.push(serde_json::to_value(order)?);
+    }
+    if !params.is_empty() {
+        arguments.push(serde_json::to_value(toml::Value::Table(params))?);
+    }
+    Ok(arguments)
 }
 
 /// Map a [`RuleOptions::level`] to oxlint's JSON severity string, defaulting to
@@ -360,7 +393,7 @@ fn build_configured_service(cfg: &EngineConfig) -> anyhow::Result<LintService> {
         .build(&mut plugin_store)
         .map_err(|e| anyhow::anyhow!("oxlint config error: {e}"))?;
     let config_store = ConfigStore::new(config, Default::default(), plugin_store);
-    let linter = Linter::new(LintOptions::default(), config_store, None);
+    let linter = Linter::new(lint_options(), config_store, None);
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let options = LintServiceOptions::new(cwd);
     Ok(LintService::new(linter, options))
@@ -439,9 +472,9 @@ pub(super) fn lint_js(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Ve
 /// Rule code: `plugin/rule` for non-eslint plugins; bare `rule` for
 /// `eslint/*`. `None` when the message has no rule (e.g. a parse error).
 ///
-/// Fix: all edits are forwarded — `Single` as one edit, `Multiple` as the full
-/// list. The runner applies each diagnostic's edits atomically (all-or-nothing,
-/// with an overlap guard), so multi-edit fixes are safe to attach.
+/// Fix: `Single` is one edit. `Multiple` holds alternative fixes for the same finding (a safe fix
+/// and a suggestion, say), not parts of one fix, so only the first is taken, as `oxlint --fix`
+/// does; applying every alternative would stack conflicting rewrites.
 fn map_oxlint_message(msg: Message, index: &LineIndex) -> Diagnostic {
     let severity = match msg.error.severity {
         OxcSeverity::Error => Severity::Error,
@@ -484,6 +517,7 @@ fn map_oxlint_message(msg: Message, index: &LineIndex) -> Diagnostic {
         }],
         PossibleFixes::Multiple(fixes) => fixes
             .into_iter()
+            .take(1)
             .map(|f| Edit {
                 start_byte: f.span.start as usize,
                 end_byte: f.span.end as usize,
@@ -648,6 +682,62 @@ level = "warning"
             Severity::Warning,
             "level = 'warning' should stay Severity::Warning via AllowWarnDeny::Warn"
         );
+    }
+
+    #[test]
+    fn safe_fixes_are_attached_to_the_diagnostic() {
+        let src = make_src("export function f() {\n  foo: for (;;) {\n    break;\n  }\n}\n", Language::JavaScript);
+        let diags = lint_js(&src, &default_cfg()).unwrap();
+        let unused = diags
+            .iter()
+            .find(|d| d.code.as_deref() == Some("no-unused-labels"))
+            .expect("the unused label is reported");
+        assert!(!unused.fix.is_empty(), "oxlint --fix removes the label; got: {unused:#?}");
+    }
+
+    #[test]
+    fn sort_keys_reports_computed_identifier_keys() {
+        let src = make_src(
+            "const S = 's';\nexport const o = { a: 1, [S]: 3, b: 2 };\n",
+            Language::JavaScript,
+        );
+        let cfg = EngineConfig {
+            globals: GlobalDefaults::default(),
+            indent_width: 2,
+            options: toml::from_str("[rules.sort-keys]\nlevel = \"error\"").unwrap(),
+        };
+        let diags = lint_js(&src, &cfg).unwrap();
+        assert!(
+            diags.iter().any(|d| d.code.as_deref() == Some("sort-keys")),
+            "ESLint reports `[S]` after `a`; got: {diags:#?}"
+        );
+    }
+
+    #[test]
+    fn sort_keys_options_reach_the_rule_after_its_order_argument() {
+        let src = make_src("export const o = { a: 1, B: 2, c: 3 };\n", Language::JavaScript);
+        let lint = |table: &str| {
+            let cfg = EngineConfig {
+                globals: GlobalDefaults::default(),
+                indent_width: 2,
+                options: toml::from_str(table).unwrap(),
+            };
+            lint_js(&src, &cfg).unwrap()
+        };
+        let has_finding = |diags: &[Diagnostic]| diags.iter().any(|d| d.code.as_deref() == Some("sort-keys"));
+        assert!(has_finding(&lint("[rules.sort-keys]\nlevel = \"error\"")));
+        assert!(!has_finding(&lint("[rules.sort-keys]\ncaseSensitive = false")));
+        assert!(has_finding(&lint(
+            "[rules.sort-keys]\ncaseSensitive = false\norder = \"desc\""
+        )));
+    }
+
+    #[test]
+    fn explicit_args_form_the_rule_configuration_array() {
+        let params: toml::Table = toml::from_str("args = [\"desc\", { natural = true }]").unwrap();
+        let arguments = rule_arguments("sort-keys", &params).unwrap();
+        assert_eq!(arguments[0], serde_json::json!("desc"));
+        assert_eq!(arguments[1], serde_json::json!({ "natural": true }));
     }
 
     /// The silent-config defect: `[rules.max-params] max = 6` (no `level` key at

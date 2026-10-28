@@ -9,6 +9,14 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ### Added
 
+- **oxc lint parity with oxlint.** `poly lint --fix` now applies oxlint's safe fixes: the linter
+  was built with `FixKind::None`, so no rule produced an edit, and a finding with alternative fixes
+  applied all of them instead of the first, as `oxlint --fix` does. `[rules.sort-keys]` options
+  (`caseSensitive`, `natural`, `minKeys`, `allowLineSeparatedGroups`) reach the rule: its
+  configuration is positional, so the options object follows an `order` argument (`order = "desc"`,
+  default `"asc"`), and `args = [...]` spells out the arguments of any other positional rule. The one
+  remaining `sort-keys` difference on the armis corpus is oxlint 1.87 skipping computed identifier
+  keys (`{ a, [S], b }`), which the pinned oxc revision reports as ESLint does.
 - **Markdown fences and front matter are formatted.** `[fmt.markdown.rumdl]` now installs a
   dispatcher on `oxc_formatter_markdown` as oxfmt does: JavaScript, TypeScript, JSON, YAML, CSS,
   SCSS, Less, TOML and nested Markdown fences, and YAML/TOML front matter, are formatted in

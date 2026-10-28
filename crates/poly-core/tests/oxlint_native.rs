@@ -106,3 +106,19 @@ fn oxlintrc_false_returns_to_the_builtin_rule_set() {
     write(&repo.path().join("a.js"), IF_WITHOUT_BRACES);
     assert!(!codes(repo.path(), "a.js").contains(&"curly".to_string()));
 }
+
+#[test]
+fn fix_applies_the_nested_configs_safe_fixes_like_oxlint() {
+    let repo = repo(r#"{ "rules": {} }"#);
+    write(
+        &repo.path().join("pkg/.oxlintrc.json"),
+        r#"{ "rules": { "no-unused-labels": "error" } }"#,
+    );
+    let file = repo.path().join("pkg/a.js");
+    write(&file, "export function f() {\n  foo: for (;;) {\n    break;\n  }\n}\n");
+    let config = Config::load(repo.path()).expect("load config");
+    poly_core::lint_run(&[file.clone()], &config, &options(), true, false).unwrap();
+    let fixed = fs::read_to_string(&file).unwrap();
+    assert!(!fixed.contains("foo:"), "{fixed}");
+    assert!(fixed.contains("for (;;)"), "{fixed}");
+}
