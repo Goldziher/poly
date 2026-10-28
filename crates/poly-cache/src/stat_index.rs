@@ -397,7 +397,9 @@ fn read_records(file: &Path) -> HashMap<PathKey, Record> {
     let Some(mut rest) = bytes.strip_prefix(MAGIC.as_slice()) else {
         return HashMap::new();
     };
-    let mut records = HashMap::new();
+    // A record with one segment is 104 bytes before its payload, so this sizes the
+    // map once instead of rehashing it through every doubling on a large index.
+    let mut records = HashMap::with_capacity(rest.len() / 104);
     while !rest.is_empty() {
         let Some((path, record, after)) = decode(rest) else {
             return HashMap::new();
