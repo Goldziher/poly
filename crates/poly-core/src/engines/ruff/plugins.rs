@@ -225,10 +225,9 @@ impl Options<'_> {
             .options
             .get("isort_default_section")
             .and_then(toml::Value::as_str)
+            && let Some(default) = section(&name.to_owned())
         {
-            if let Some(default) = section(&name.to_owned()) {
-                isort.default_section = default;
-            }
+            isort.default_section = default;
         }
         if let Some(names) = self.str_list("isort_no_lines_before") {
             isort.no_lines_before = names.iter().filter_map(section).collect();

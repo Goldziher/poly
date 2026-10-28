@@ -180,7 +180,7 @@ impl Settings {
 
     /// Whether a file of `len` bytes is small enough for the structural rules.
     pub fn allows_parse(&self, len: usize) -> bool {
-        self.max_parse_bytes <= 0 || i64::try_from(len).map_or(false, |len| len <= self.max_parse_bytes)
+        self.max_parse_bytes <= 0 || i64::try_from(len).is_ok_and(|len| len <= self.max_parse_bytes)
     }
 }
 
