@@ -81,10 +81,31 @@ Extend the catalog, not a parallel mechanism.
 Positive: one spawn per shard instead of per file; real file/line/rule diagnostics; the armis gate
 tools run from `poly.toml`; parity with the original wrappers measured on the armis corpus.
 
-Negative: the overlay is hand-maintained data (its checksums are verified by a catalog test);
-`helm` cannot run `helm dependency build`, and neither `helm template` values selection nor the
-UNRENDERABLE list is reproduced; `golangci-lint` reports every finding in a package rather than only
-new ones unless `--new-from-rev` is passed through `lint_extra_args`.
+Negative: the overlay is hand-maintained data (its checksums are verified by a catalog test).
+Releases that ship only as archives (helm, golangci-lint, actionlint, tflint, tofu, terraform) cannot
+be provisioned yet: `ReleaseKind` has no archive kind, so only standalone binaries and jars are pinned.
+
+## Amendments
+
+- **Per-chart options.** A recipe with `values_flag` (`-f`) lets `[tools.helm]` list `values_files`
+  (every chart) and `chart_values` (chart-directory glob to files), and `skip_charts` removes charts
+  the tool cannot run on (the UNRENDERABLE list). A recipe `prepare` command (`helm dependency build`)
+  runs once per chart before the lint, unless `charts/` already holds every locked dependency,
+  `POLY_OFFLINE` is set, or `prepare = false`; a failed build is logged and the lint goes on so helm
+  reports what is missing.
+- **Chart template files.** `.tpl` files and `NOTES.txt` under a `templates/` directory are detected as
+  the `helm-template` pseudo-language. No built-in engine plans for it, so only a tool whose catalog
+  `languages` names it (helm) sees them.
+- **Cache identity.** A `findings = "all"` tool is keyed to the digest of its whole project root plus
+  the tool version and arguments, not to the process: every file of the run receives the unit-wide
+  findings, so no verdict depends on which sibling files were checked beside it.
+- **Pins.** A `version` that cannot be provisioned (not cached and `install` is not `auto`, a failed
+  download, an unknown version) makes the tool unavailable with a message; poly never runs a
+  different version from `PATH` in its place.
+- **golangci-lint.** `new_from_rev` maps to the recipe's `new_from_rev_flag` (`--new-from-rev=<rev>`),
+  clears git's hook-time environment so the diff filter works, and folds the resolved commit into the
+  cache key. `goos = [...]` runs the tool once per operating system with `GOOS` set and merges the
+  findings.
 
 ## Alternatives considered
 

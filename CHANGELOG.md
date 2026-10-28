@@ -33,6 +33,13 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   and the withheld-fix failure now names the commands to resolve it. `poly doctor` and `poly hooks
   run` warn when a job needs `node_modules` under an isolated gate. Hook children no longer print
   the shadowed-`poly` warning into their captured output.
+- **Recipe tools: helm dependencies and per-chart values, golangci-lint `new_from_rev` / `goos`, pinned buf and
+  hadolint.** `[tools.helm]` gains `values_files`, `chart_values`, `skip_charts` and `prepare`
+  (`helm dependency build` once per chart, skipped when `charts/` satisfies `Chart.lock`, when
+  `POLY_OFFLINE` is set or with `prepare = false`); `.tpl` files and `NOTES.txt` under `templates/` are now
+  inputs of helm and of no other engine. `[tools.golangci-lint]` gains `new_from_rev` (`--new-from-rev`)
+  and a `goos` matrix; `poly migrate` carries the armis wrapper's `--new-from-rev=HEAD` instead of
+  reporting it lost. buf 1.75.0 and hadolint 2.15.1 are pinned with checksums for `install = "auto"`.
 
 ### Fixed
 
@@ -40,6 +47,11 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   discovery per run (a `canonicalize` and a `WalkBuilder` per named file, each re-reading the global
   gitconfig and parent `.gitignore`s). Canonicalization is memoized, named files skip the walker,
   and compiled exclude sets are shared per frame.
+- **Recipe tool cache keys and version pins.** A `findings = "all"` tool (helm) was keyed to the process and
+  recomputed on every run; it is now keyed to the digest of its project root, so unchanged charts are cache
+  hits, and its unit-wide findings reach every file of the run. A `version` pin poly cannot honour (not
+  cached with `install` not `auto`, failed download) now makes the tool unavailable with a message instead of
+  silently running whatever version is on `PATH`.
 
 ### Changed
 

@@ -269,3 +269,15 @@ fn hadolint_reads_json_and_treats_exit_1_as_findings() {
     assert_eq!(recipe.ok_exits, [1]);
     assert!(recipe.config_files.iter().any(|f| f == ".hadolint.yaml"));
 }
+
+#[test]
+fn buf_and_hadolint_are_pinned_for_every_desktop_and_server_platform() {
+    for (name, version) in [("buf", "1.75.0"), ("hadolint", "2.15.1")] {
+        let install = recipe_of(name).install.as_ref().expect("install");
+        let release = install.releases.get(version).unwrap_or_else(|| panic!("{name} {version}"));
+        assert_eq!(release.kind, crate::ReleaseKind::Binary);
+        for platform in ["darwin-aarch64", "darwin-x86_64", "linux-aarch64", "linux-x86_64"] {
+            assert!(release.assets.contains_key(platform), "{name} lacks {platform}");
+        }
+    }
+}
