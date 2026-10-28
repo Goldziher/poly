@@ -4,7 +4,7 @@
 version = 1
 ai_rulez_version = '5.7.0'
 scope = 'all'
-tree = 'sha256:11727041db11d84918297981545e9c3998a108a8401c47338bab4ba862e170d1'
+tree = 'sha256:7d24f6704ce972f4b7aebfb8e716cf3930041fb59d757a313f90ac69c04458ab'
 
 [[served]]
 name = 'adr-workflow'
@@ -154,7 +154,7 @@ digest = 'sha256:523d2f69192ccb9d1bd164d131e442dbbbe26aaa765507143b0076562580249
 kind = 'rule'
 id = 'agent-comms'
 path = 'rules/agent-comms.md'
-digest = 'sha256:c28ec8b3e37df5dc179f341948c59cfb5e7c75ef24f1cba166f38e06eb15c465'
+digest = 'sha256:fc06976e79113321574826fc8b13568a02e3e1471cd09014d58db3c67b6aaa41'
 
 [[item]]
 kind = 'rule'
