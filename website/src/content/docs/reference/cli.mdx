@@ -239,14 +239,20 @@ defect: a competing install on `PATH`, a `poly` that cannot report its own versi
 that fails to load. Each finding carries the concrete remedy, including the fact that a
 cargo-installed `~/.cargo/bin/poly` needs `rm`, not `cargo uninstall poly`.
 
+It also warns, without failing, about configuration that will not do what it looks like: an
+`exclude` glob that matches at more than one depth, a wildcard exclude (`bazel-*`) that only prunes
+directories below the config root, and a hook job that needs the untracked `node_modules` under
+staged isolation. The version probe of each `poly` on `PATH` is time-bounded;
+`POLY_PROBE_TIMEOUT_SECS` raises the bound.
+
 `poly --version` reports the build identifier too:
 
 ```console
 $ poly --version
-0.28.2 (release build v0.28.2, release)
+poly 0.31.0 (release build v0.31.0, release)
 ```
 
-versus `0.28.2 (dev build v0.28.2-8-g18aa5e8, debug)` — so a development build carrying unreleased
+versus `poly 0.31.0 (dev build v0.31.0-8-g18aa5e8, debug)` — so a development build carrying unreleased
 changes cannot be quoted as a release. The identifier comes from `git describe` at build time;
 outside a git checkout it reads `unknown` rather than guessing, and packagers can set
 `POLY_BUILD_ID`.
@@ -324,6 +330,15 @@ poly cache clean
 poly mcp --config /path/to/poly.toml
 ```
 
+| Command | Flags |
+| --- | --- |
+| `poly hooks run [STAGE]` | `--all-files` (the whole tracked tree, not the staged files), `--message-file <PATH>` (required to run `commit-msg` / `prepare-commit-msg` directly), `-j <N>`, `--no-cache`, `--no-sccache`, `-v` / `--verbose`, `--config <PATH>` |
+| `poly hooks install` | `--hook-type <TYPE>` (repeatable; default: the stages `poly.toml` configures), `--overwrite` (discard an existing hook instead of keeping it as `<hook>.legacy`), `--replace-lefthook` |
+| `poly hooks uninstall` | `--hook-type <TYPE>`; restores a kept `<hook>.legacy` |
+| `poly hooks update` | Refreshes git hook sources into `poly-hooks.lock` |
+| `poly cache gc` | `--max-age <DAYS>`, `--max-size <SIZE>` (`500M`, `2G`) |
+| `poly cache …` | `--cache-dir <DIR>` operates on another cache directory |
+
 See [Git hooks](/poly/guides/hooks/) for the full `[hooks]` surface, and
 [Agents and MCP](/poly/guides/agents-and-mcp/) for the MCP tool reference. In short: the MCP server
 is **stdio-only**; `lint`, `format_check`, `cache_stats`, `rules`, `config_show` and `version` are
@@ -348,30 +363,43 @@ It also absorbs **git-hook configs** into `[hooks]`: `lefthook.yml` (with every 
 merged the way lefthook merges them) and `.pre-commit-config.yaml`.
 
 - A direct call to a tool poly runs itself — `ruff format` / `ruff check`, `oxlint`, `oxfmt`,
-  `rubyfmt`, `golangci-lint`, `buf format`, `actionlint` — becomes the `fmt` / `lint` builtin, and
-  the catalog tool it needs is enabled under `[tools]`. These builtins only *check*; a job that
-  rewrote and re-staged files is reported as a behavior change. A call whose flags poly cannot
-  reproduce (`actionlint -ignore …`) stays a command.
+  `rubyfmt`, `shfmt`, `golangci-lint`, `buf format`, `buildifier`, `actionlint`, … — becomes the
+  `fmt` / `lint` builtin, and the catalog tool it needs is enabled (and version-pinned) under
+  `[tools]`. A job that rewrote files (`--fix`, `-w`, `stage_fixed`) maps to the builtin in **fix
+  mode**, which re-stages what it rewrites; a lefthook job that left its fixes unstaged is reported
+  as a behavior change. Flags with a poly equivalent are carried as config — `--unsafe-fixes`,
+  `shfmt -i N` (`[fmt.shell.shfmt] indent_width`), `golangci-lint --new-from-rev`, buildifier's
+  `-lint=fix` — and each job's own `files` / `exclude` scope becomes a builtin `jobs` entry, so no
+  exclude is dropped. A call whose flags poly cannot reproduce stays a command.
 - Every other job becomes `[hooks.<stage>.commands.<name>]` (keeping `{staged_files}`) or, for
   `bash path/to/script.sh …`, `[hooks.<stage>.scripts.<name>]`. A job with no `{staged_files}`
   becomes `workspace = true`. `glob` and `exclude` (including regex-style excludes, where they can
   be translated) become `files` / `exclude`, and `stage_fixed` is kept.
 - Nested `group:` trees become `priority` bands: lower bands finish first, and jobs sharing a band
   run together. Builtins always run at priority 0.
-- pre-commit hooks with a known id map to the `fmt`, `lint` and `file_safety` builtins;
-  `repo: local` hooks become commands. A `prek run` job is dropped once the pre-commit config is
-  fully absorbed.
+- pre-commit hooks with a known id map to the `fmt`, `lint` and `file_safety` builtins
+  (`detect-aws-credentials` to `aws_credentials`, `requirements-txt-fixer` to
+  `requirements_txt_fixer`); `repo: local` hooks become commands. A `prek run` job is dropped once
+  the pre-commit config is fully absorbed.
+- Git-hook argument placeholders (`{0}`, `{1}`, …, `{git_args}`) are carried as written; poly
+  substitutes them itself.
+- A ruff config's `extend` chain is followed, a target ruff would infer from `requires-python` is
+  written out, and the ruff defaults poly's own would replace (line length 88, …) are pinned, so
+  the migrated config behaves as the ruff config did.
+- Under `--recurse`, a nested directory's hooks are written to its own `poly.toml` (they then run
+  on commit, scoped to that directory), and virtualenvs, `.gitignore`d trees and `bazel-*` output
+  are not descended into.
 
-Anything it cannot map — `{0}` and other lefthook placeholders, `skip` / `only` git-operation
-conditions, an unknown pre-commit hook, an `exclude` that cannot be translated, an exclusion that a
-shared builtin cannot scope to one job — is listed as `unrepresented` in the plan, and the source
-file is kept.
+Anything it cannot map — a placeholder poly does not substitute (`{push_files}`), `skip` / `only`
+git-operation conditions, an unknown pre-commit hook, an `exclude` that cannot be translated, a
+`root` or guard on a job that became a builtin — is listed as `unrepresented` in the plan, and the
+source file is kept.
 
 | Flag | Effect |
 | --- | --- |
 | `--report` | Say explicitly that this is a dry run. This is the default behaviour. |
 | `--write` | Apply the migration. |
-| `--recurse` | Walk nested projects. |
+| `--recurse` | Walk nested projects, skipping `.git`, `node_modules`, virtualenvs, build output and `.gitignore`d trees. |
 | `--verify` | Re-run lint and format after writing. |
 | `--strip-superseded` | Additionally strip `pyproject.toml` `[tool.*]` sections for the Python tools ruff supersedes — black, isort, flake8, … |
 | `--allow-dirty` | Let it write into a repository with uncommitted changes. |

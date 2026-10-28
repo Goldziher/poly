@@ -92,7 +92,9 @@ taplo's lint pass takes no options at all.
 
 <Aside type="tip" title="Unknown keys are reported, not ignored">
     poly reports unknown config keys, unknown top-level sections and wrongly-typed values as
-    warnings. A misspelled key no longer parses silently and does nothing. `poly config show`
+    warnings, naming the nearest key the table accepts (`Did you mean mccabe_max_complexity?`), the
+    engine a near-miss table meant (`[fmt.python.rufff]`) or the language a near-miss id meant
+    (`[lint.yml]` for `yaml`). A misspelled key no longer parses silently and does nothing. `poly config show`
     prints the effective merged result so you can diff it against what you wrote.
 </Aside>
 
@@ -173,7 +175,11 @@ backends; keys written in `poly.toml` win over them.
   `[fmt.typescript.oxc] external = true` those files are formatted by the real `oxfmt`; otherwise they are
   formatted in process without the option and a warning says so.
 - Markdown fences and front matter in JavaScript, TypeScript, JSON, YAML, CSS, SCSS, Less and TOML are
-  formatted in process, as oxfmt does; `embeddedLanguageFormatting: "off"` keeps them as written.
+  formatted in process, as oxfmt does; `embeddedLanguageFormatting: "off"` (or
+  `[fmt.markdown.rumdl] embedded_language_formatting = "off"`) keeps them as written, and
+  `[fmt.markdown.rumdl.embedded.<js|json|yaml|css|toml>]` sub-tables set per-language options.
+- `sort_package_json` (`sortPackageJson`) sorts `package.json` keys; `package.json`,
+  `composer.json` and import maps otherwise keep the `JSON.stringify` layout npm writes.
 - `[rules.<id>]` options reach oxlint rules. A positional rule such as `sort-keys` takes its leading
   argument from `order` (`"asc"` / `"desc"`); `args = [...]` spells out the arguments of any other rule.
 
@@ -217,6 +223,13 @@ a flat key prefixed with its table name (`flake8_bandit_check_typed_exception`,
 table into its parent's; set `inherit_mode = "replace"` in a table to make it replace the parent's
 instead, as a nested ruff config does. `poly migrate` writes it for nested ruff configs.
 
+Version-gated rules (`UP017`, `UP042`, …) and isort's standard-library list follow the Python
+target. Without `target_version` in `[lint.python.ruff]`, poly resolves it the way ruff does,
+walking up from each file: the nearest `.ruff.toml`, `ruff.toml` or `pyproject.toml` `[tool.ruff]`
+`target-version` (following its `extend` chain), then the lowest version
+`project.requires-python` admits, and only then ruff's own default (3.11). The resolved target is
+part of the cache key.
+
 <Aside type="caution" title="Migration note">
     Selecting `C90`/`PLR` makes the already-existing `mccabe_max_complexity`, `pylint_max_args`,
     `pylint_max_branches` and `pylint_max_returns` options under `[lint.python.ruff]` take effect
@@ -240,15 +253,20 @@ level = "error"
 
 ### Formatter layering
 
-For the CSS/SCSS/Less (malva), HTML/Vue/Svelte (`markup_fmt`), GraphQL and YAML backends,
-`[defaults] line_length` and `[defaults] line_ending` supply `print_width` and `line_break` **only
-when you have not set those keys yourself** in the engine's own table — your config is always the
-top layer.
+For the formatters that layer on `[defaults]` — the oxfmt-equivalent JS/TS, JSON, YAML, TOML,
+Markdown and CSS/SCSS/Less formatters, HTML/Vue/Svelte (`markup_fmt`) and GraphQL —
+`[defaults] line_length` and `[defaults] line_ending` supply the line width and line ending **only
+when you have not set those keys yourself**, and a project `.oxfmtrc.json[c]` sits between the two.
+Your engine table is always the top layer.
+
+YAML, TOML, Markdown and CSS format with the same crates oxfmt uses. The previous formatters stay
+available per language: a taplo layout key in `[fmt.toml.taplo]` (`align_entries`,
+`reorder_keys`, …), a rumdl rule key in `[fmt.markdown.rumdl]`, or a malva key in
+`[fmt.css.malva]` selects that tool's formatter instead.
 
 Some tools expose no such setting at all. Nix (alejandra) and Ruby (rubyfmt) are zero-configuration
 formatters, so `[fmt.nix.alejandra]` and `[fmt.ruby.rubyfmt]` declare no keys — anything written
-there is reported as `unknown-config-key`. TOML (taplo) always trims trailing whitespace regardless
-of `[defaults] trim_trailing_whitespace`.
+there is reported as `unknown-config-key`.
 
 ## Turning one engine off
 
@@ -268,7 +286,7 @@ enabled = false      # ...or off for one language only
 
 An absent `enabled` means *the engine's own default*, which is not the same as `false`: most
 backends are on, `uncomment` is opt-in, and each native-toolchain tool carries its own default
-(`rustfmt` and `gofmt` run when present, `zig fmt` does not). Only an explicit `false` withdraws
+(`rustfmt`, `gofmt`, `shfmt` and `shellcheck` run when present, `zig fmt` does not). Only an explicit `false` withdraws
 an engine.
 
 Switching off the only backend that holds rules for a language withdraws that language's lint
@@ -569,8 +587,10 @@ enabled = true
 files = "**/*.py"
 ```
 
-Catalog tools are capability-probed on `PATH`; a missing binary is skipped instead of making the
-whole run fail. The full list of 348 tools is on the [tool catalog](/poly/reference/catalog/) page.
+Catalog tools are capability-probed on `PATH`; a missing binary is skipped with a warning instead
+of making the whole run fail. Fourteen tools carry a [recipe](/poly/reference/catalog/#tools-with-a-recipe)
+— batched runs, parsed per-line findings, and `install = "auto"` downloads of a pinned, checksummed
+release. The full list of 348 tools is on the [tool catalog](/poly/reference/catalog/) page.
 
 ## Custom rules
 

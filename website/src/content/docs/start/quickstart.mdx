@@ -102,8 +102,9 @@ monorepo. See [Configuration](/poly/guides/configuration/) for the full surface.
 
 <Aside type="tip" title="Already have a pile of tool configs?">
     `poly migrate` reads your existing `ruff`, `taplo`, markdownlint and `typos` configs (including
-    `pyproject.toml`'s `[tool.ruff]` / `[tool.typos]` / `[tool.codespell]`) and folds what it can
-    honor into `poly.toml`. It is a dry-run report by default; `--write` applies it.
+    `pyproject.toml`'s `[tool.ruff]` / `[tool.typos]` / `[tool.codespell]`), plus a `lefthook.yml`
+    or `.pre-commit-config.yaml`, and folds what it can honor into `poly.toml`. It is a dry-run
+    report by default; `--write` applies it.
 </Aside>
 
 ## Exit codes are a contract

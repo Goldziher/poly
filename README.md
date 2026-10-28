@@ -58,14 +58,14 @@ irm https://raw.githubusercontent.com/Goldziher/poly/main/install.ps1 | iex
 ```
 
 Both detect the platform, download the matching release archive, and verify it against
-`sha256sums.txt`. Set `POLY_VERSION=0.28.2` to pin an exact release.
+`sha256sums.txt`. Set `POLY_VERSION=0.31.0` to pin an exact release.
 
 ### GitHub Actions
 
 ```yaml
 - uses: Goldziher/poly@v0
   with:
-    version: v0.28.2 # omit for the latest release
+    version: v0.31.0 # omit for the latest release
 ```
 
 Forwards to `install.sh` and caches the installed binary by version and platform. See
@@ -272,9 +272,9 @@ does not redden an unconfigured CI.
 
 ### Native toolchain CLIs
 
-`gofmt`, `rustfmt` and `shellcheck` run automatically when found on `PATH`; `shellcheck` is the only one of the three
-that lints. `zig fmt`, `shfmt`, `google-java-format`, `ktfmt`, `styler` (R), `swift-format`, `dart format` and
-`gleam format` are opt-in. When a tool is absent the language falls through to the tree-sitter tier, so the
+`gofmt`, `rustfmt`, `shfmt` and `shellcheck` run automatically when found on `PATH`; `shellcheck` is the only one
+that lints. `zig fmt`, `google-java-format`, `ktfmt`, `styler` (R), `swift-format`, `dart format` and `gleam format`
+are opt-in. When a tool is absent the language falls through to the tree-sitter tier, so the
 zero-dependency promise holds either way.
 
 ---
@@ -304,14 +304,17 @@ zero-dependency promise holds either way.
 | Nix | alejandra | no | yes |
 | Go | `gofmt`, automatic when installed | no | yes |
 | Rust | `rustfmt`, automatic when installed | no | yes |
-| Shell | `shellcheck` automatic, `shfmt` opt-in | yes | opt-in |
+| Shell | `shellcheck` and `shfmt`, automatic when installed | yes | yes |
 | Zig / Java / Kotlin / R / Swift / Dart / Gleam | first-party CLI, opt-in | no | opt-in |
 | Everything else identified | tree-sitter generic tier | no | best effort |
 
 <!-- markdownlint-enable MD013 -->
 
 The `Lint` column is the language's own backend; the three cross-cutting tiers add findings on top, including where
-that column says `no`. Beyond this table, an opt-in catalog of 348 tools across 175 languages covers the long tail.
+that column says `no`. Beyond this table, an opt-in catalog of 348 tools across 175 languages covers the long tail;
+fourteen of them (`golangci-lint`, `helm`, `buf`, `hadolint`, `tflint`, `actionlint`, `buildifier`, `checkstyle`, …)
+carry recipes that run them batched, parse their reports into per-line findings, and can download a pinned,
+checksummed release with `install = "auto"`.
 Full per-language reference: [Backends](https://goldziher.github.io/poly/reference/backends/).
 
 ---
@@ -341,8 +344,8 @@ The package contains 5 skills and the `/poly-check` and `/poly-fix` prompt templ
 Pi runs `poly` through its shell tool; this package does not register an MCP server or install the binary.
 Use `pi install -l git:github.com/Goldziher/poly` to save the package in the current project's configuration.
 
-The same bundle targets `@goldziher/opencode-poly` for OpenCode and Pi. After its first npm release,
-`pi install npm:@goldziher/opencode-poly` provides the registry installation path and Pi catalog discovery.
+The same bundle is published to npm as `@goldziher/opencode-poly` for OpenCode and Pi:
+`pi install npm:@goldziher/opencode-poly` installs it from the registry and enables Pi catalog discovery.
 
 `poly mcp` is a stdio MCP server exposing eleven tools that mirror the CLI 1:1 — `lint`, `format_check`, `rules`,
 `config_show`, `cache_stats` and `version` (read-only), `lint_fix`, `format_write` and `cache_clean` (mutating), and

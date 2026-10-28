@@ -24,9 +24,9 @@ change to how you invoke poly.
 <Steps>
 
 1. **Native Rust backends (tier 1).** The highest-fidelity path: ruff for Python, oxc for
-   JavaScript/TypeScript/JSON, taplo for TOML, rumdl for Markdown, sqruff for SQL, malva for
-   CSS/SCSS/Less, mago for PHP, `markup_fmt` for HTML/Vue/Svelte, and more. All compiled in, all
-   in-process.
+   JavaScript/TypeScript/JSON (and oxfmt's own formatter crates for YAML, TOML, Markdown and CSS),
+   taplo and rumdl for TOML and Markdown lint, sqruff for SQL, mago for PHP, `markup_fmt` for
+   HTML/Vue/Svelte, and more. All compiled in, all in-process.
 
 2. **Tree-sitter generic tier (tier 2).** The catch-all for everything else — Java, Elixir, C,
    C++, protobuf, and the long tail of 300+ grammars. Best-effort structural reindent, still pure
@@ -34,13 +34,16 @@ change to how you invoke poly.
    coverage.
 
 3. **Native-toolchain backends.** For languages whose canonical formatter is a first-party CLI with
-   no usable Rust library. `rustfmt`, `gofmt` and `shellcheck` run automatically when present on
-   `PATH`; `zig fmt`, `shfmt`, `google-java-format`, `ktfmt`, `swift-format`, `dart format`,
+   no usable Rust library. `rustfmt`, `gofmt`, `shfmt` and `shellcheck` run automatically when
+   present on `PATH`; `zig fmt`, `google-java-format`, `ktfmt`, `swift-format`, `dart format`,
    `gleam format` and `styler` are opt-in. When the tool is absent the language simply falls
    through to tier 2.
 
 4. **Catalog tier.** Any of 348 tools from the embedded catalog, enabled per tool with
-   `[tools.<name>] enabled = true`. Probed on `PATH`; a missing binary is a no-op, never an error.
+   `[tools.<name>] enabled = true`. Probed on `PATH`; a missing binary is a warning, never an error.
+   Fourteen of them — `golangci-lint`, `helm`, `buf`, `hadolint`, `tflint`, `checkstyle`, … — carry
+   a recipe that runs them batched and parses their reports, and most can be downloaded as a
+   pinned, checksummed release with `install = "auto"`.
 
 </Steps>
 
@@ -48,7 +51,7 @@ On top of all four, two **cross-cutting** lint tiers run on every language, both
 *warning* severity so adopting poly never reddens an unconfigured CI:
 
 - The native **code-quality engine** — file and function length, parameter count, nesting depth,
-  cyclomatic complexity, and lazy ignore markers. It defers to a tier-1 backend wherever one
+  cyclomatic complexity, lazy ignore markers, and test files the test runner will not collect. It defers to a tier-1 backend wherever one
   already reports the same measurement, so no metric is reported twice.
 - The built-in **ast-grep rule pack** — 26 rules across C#, Elixir, Go, Java, Kotlin, Python,
   Ruby, Rust and Swift, embedded in the binary and loaded through the same parser as your own

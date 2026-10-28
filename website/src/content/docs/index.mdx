@@ -45,8 +45,8 @@ ast-grep pack, run on top of every language.
         cores.
     </Card>
     <Card title="No toolchain to install" icon="seti:rust">
-        Most backends are Rust crates compiled into the binary. `rustfmt`, `gofmt` and `shellcheck`
-        are used when found on `PATH`; everything else is opt-in. A missing tool lowers fidelity,
+        Most backends are Rust crates compiled into the binary. `rustfmt`, `gofmt`, `shfmt` and
+        `shellcheck` are used when found on `PATH`; everything else is opt-in. A missing tool lowers fidelity,
         never fails a run.
     </Card>
     <Card title="One config file" icon="setting">
@@ -54,7 +54,8 @@ ast-grep pack, run on top of every language.
         cascade in a monorepo; `extends` shares a baseline across repositories.
     </Card>
     <Card title="Built for agents" icon="comment">
-        A Claude/Codex plugin and a stdio MCP server ship in the box. An agent calls poly's eleven
+        Plugins for Claude, Codex, Cursor, OpenCode, Pi, Hermes, Gemini, Kimi and Copilot, and a
+        stdio MCP server, ship in the box. An agent calls poly's eleven
         tools directly instead of shelling out and parsing terminal text.
     </Card>
     <Card title="Git hooks without a framework" icon="approve-check">

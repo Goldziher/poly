@@ -6,7 +6,8 @@ description: >-
 ---
 
 The catalog tier is poly's breadth mechanism. Opt in per tool with `[tools.<name>] enabled = true`;
-each command is probed on `PATH` and skipped when absent, so listing one never makes a run fail.
+each command is probed on `PATH` and skipped with a warning when absent, so listing one never makes a
+run fail.
 
 ```toml
 [tools.prettier]
@@ -73,15 +74,31 @@ How they differ from the breadth tier above:
   judges a file in context (`buf`, `golangci-lint`) is cached against a digest of that context, so
   editing a neighbouring file invalidates the verdict.
 - **Fixes.** `buildifier`'s auto-fixable warnings are applied by `poly lint --fix`; the tool's own
-  rewrite is attached as the fix.
+  rewrite is attached as the fix. `golangci-lint` findings that carry a suggested fix are fixed by
+  `golangci-lint run --fix` on a scratch copy of the Go module, and only the run's files are read
+  back, so your tree is untouched until poly writes the result.
 - **Takes over its language.** An enabled formatter with a recipe replaces the language's built-in
   formatter (`tofu` for HCL, `golangci-lint` for Go): the project's gate runs that tool, so its
   opinions win. `pyproject-fmt` is confined to `pyproject.toml` and the TOML formatter leaves
   those files to it. If the tool is missing, its files are reported as skipped rather than
   formatted by something else.
 - **Provisioning.** `bin` names an executable; `version` selects a checksummed release; with
-  `install = "auto"` poly downloads it once into its cache and verifies the SHA-256. Otherwise a
-  missing tool produces a warning naming the command that installs it.
+  `install = "auto"` poly downloads it once into its cache and verifies the SHA-256 (of the
+  archive, for a tool shipped in a `.tar.gz` / `.zip`, before extracting only the binary). Pinned
+  releases ship for `checkstyle`, `palantir-java-format`, `buildifier`, `buf`, `actionlint`,
+  `hadolint`, `golangci-lint`, `helm`, `helm-template`, `tflint` and `tofu`, on macOS and Linux
+  (arm64 and x86_64; `checkstyle` is a platform-independent jar). A `version` poly cannot provision
+  makes the tool unavailable with a message — poly never runs a different version from `PATH`.
+  Otherwise a missing tool produces a warning naming the command that installs it.
+- **helm.** `prepare` runs `helm dependency build` once per chart (skipped when `charts/` already
+  satisfies `Chart.lock`, or when `POLY_OFFLINE` is set), retried `prepare_attempts` (5) times with
+  a doubling `prepare_backoff_secs` (4) plus up to `prepare_jitter_secs` (4) of jitter.
+  `values_files` and `chart_values` pass values files; `skip_charts` names library charts. A
+  skipped chart is still run once, and the run fails if the tool now passes on it, so the list
+  cannot outlive its reason (`verify_skip_charts = false` turns that off). `.tpl` files and
+  `NOTES.txt` under `templates/` are helm's inputs and no other engine's.
+- **golangci-lint.** `new_from_rev` reports only findings introduced since a git revision, and
+  `goos = ["linux", "darwin"]` runs once per target OS and merges the findings.
 
 Palantir's pipeline as armis runs it (AOSP layout, then Palantir import fixing) is the named
 command `aosp`: `[tools.palantir-java-format] command = "aosp"`.

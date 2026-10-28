@@ -31,14 +31,14 @@ poly resolves every file through a tiered model:
 | HTML / Vue / Svelte / Astro / Angular / templates / XML | `markup_fmt` | no | yes |
 | GraphQL | `graphql-parser` + `pretty_graphql` (parse-error lint + format) + biome (rule lint) | yes | yes |
 | HCL / Terraform | `hcl-edit` (lint) + a port of `hclwrite.Format` (the layout `terraform fmt` and `terragrunt hclfmt` produce) | yes | yes |
-| Dockerfile | `dockerfile-parser`, hadolint-style rules | yes | no |
+| Dockerfile (`Dockerfile`, `Dockerfile.*`, `Dockerfile-*`, `*.dockerfile`, `Containerfile`, …) | vendored `dockerfile-parser`, hadolint-style rules | yes | no |
 | `.env` files (`.env`, `.env.*`, `*.env`) | dotenv-analyzer | yes | no |
 | INI and compatible (`.ini`, `.cfg`, `.desktop`, `.npmrc`, `.editorconfig`, `.pylintrc`, `.coveragerc`, `.flake8`, …) | `rust-ini` | yes | no |
 | Nix | alejandra | no | yes |
-| Ruby | rubyfmt | no | yes |
+| Ruby (`*.rb`, `Gemfile`, `Rakefile`, `*.gemspec`, `*.rake`, `*.ru`, `Podfile`, …) | rubyfmt | no | yes |
 | PHP | mago | yes | yes |
 | R | opt-in `styler` (via `Rscript`), tree-sitter fallback otherwise | no | yes |
-| Go | `gofmt` when present (default-on), tree-sitter fallback otherwise | no | yes |
+| Go | `gofmt` when present (default-on), imports grouped as `goimports` does; tree-sitter fallback otherwise | no | yes |
 | Rust | `rustfmt` when present (default-on), tree-sitter fallback otherwise | no | yes |
 | Zig | opt-in `zig fmt`, tree-sitter fallback otherwise | no | yes |
 | Java | opt-in `google-java-format`, tree-sitter fallback otherwise | no | yes |
@@ -46,14 +46,16 @@ poly resolves every file through a tiered model:
 | Swift | opt-in `swift-format`, tree-sitter fallback otherwise | no | yes |
 | Dart | opt-in `dart format`, tree-sitter fallback otherwise | no | yes |
 | Gleam | opt-in `gleam format`, tree-sitter fallback otherwise | no | yes |
-| Shell | `shellcheck` when present (default-on), opt-in `shfmt`, tree-sitter fallback otherwise | optional | optional |
+| Shell | `shellcheck` and `shfmt` when present (both default-on), tree-sitter fallback otherwise | optional | yes |
+| Starlark / Bazel (`BUILD`, `*.bzl`, `WORKSPACE`, `Tiltfile`, …) | opt-in `buildifier` [recipe tool](/poly/reference/catalog/#tools-with-a-recipe), tree-sitter fallback otherwise | opt-in | yes |
 | All text files | typos spell-check | yes | no |
 | Any recognized language | opt-in `uncomment` comment removal | opt-in | no |
 | Other identified grammars | tree-sitter generic tier | no | best effort |
 
 Unsupported or unknown file types are skipped unless `tree-sitter-language-pack` can identify them.
 Some whitespace-sensitive data, template or patch grammars intentionally no-op rather than risk a
-destructive rewrite.
+destructive rewrite. Lock files (`Cargo.lock`, `pnpm-lock.yaml`, `yarn.lock`, …) are never linted or
+formatted.
 
 <Aside type="note" title="Enablement is a universal key, not a per-backend property">
     "opt-in" and "default-on" above describe each backend's *own* default. Every engine table also
@@ -62,11 +64,19 @@ destructive rewrite.
     default-on one. See [Turning one engine off](/poly/guides/configuration/#turning-one-engine-off).
 </Aside>
 
-<Aside type="tip" title="Tab-indented shell">
-    `shfmt` receives `-i <indent_width>`, and `indent_width` cannot be `0` — the value shfmt uses to
-    mean "indent with tabs". Set `[fmt.shell.shfmt] use_tabs = true` for a tree that indents shell
-    with tabs; otherwise turning the formatter on reindents every file in it. `indent_width` still
-    sets the width when `use_tabs` is off.
+<Aside type="note" title="Batching native tools">
+    A native tool runs once per file by default. `batch = true` in its table hands it many files per
+    invocation instead — `[fmt.<lang>.<tool>]` for `gofmt`, `shfmt`, `zigfmt`, `ktfmt`,
+    `google-java-format`, `dartfmt` and `gleamfmt`, and `[lint.shell.shellcheck]`. Output is
+    identical to the per-file path; whether it is faster depends on file sizes and machine load,
+    which is why it is opt-in. `rustfmt`, `swift-format` and `styler` cannot be batched.
+</Aside>
+
+<Aside type="tip" title="Shell indentation">
+    `shfmt` takes its indentation from the file's `.editorconfig` (`indent_style`, `indent_size`) as
+    shfmt itself would, falling back to poly's two spaces. `[fmt.shell.shfmt] indent_width = N` or
+    `use_tabs = true` overrides it; `indent_width` cannot be `0` (shfmt's "indent with tabs"), so use
+    `use_tabs` for that.
 </Aside>
 
 ## The two cross-cutting lint tiers

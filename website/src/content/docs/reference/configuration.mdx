@@ -29,9 +29,10 @@ Point your editor at it for validation and autocomplete. The simplest way is the
 line_length = 120
 ```
 
-poly's own TOML formatter is [taplo](https://taplo.tamasfe.dev/), which honors
-that directive, so `poly fmt` leaves it in place. You can also generate the
-schema locally — it is derived from the same types the parser uses:
+The directive is an ordinary TOML comment that [taplo](https://taplo.tamasfe.dev/)
+and the editors built on it understand, and `poly fmt` leaves it in place. You
+can also generate the schema locally — it is derived from the same types the
+parser uses:
 
 ```console
 poly config schema --output poly.schema.json
@@ -152,6 +153,10 @@ Opt into tools from the vendored catalog, keyed by catalog name
 | `chart_values` | table | `{}` | helm: chart-directory glob to the values files passed for the charts it matches. |
 | `skip_charts` | array | `[]` | helm: chart-directory globs the tool does not run on (library charts). |
 | `prepare` | bool | `true` | helm: run `helm dependency build` once per chart before linting, unless `charts/` already satisfies `Chart.lock` or `POLY_OFFLINE` is set. |
+| `prepare_attempts` | integer | `5` | helm: attempts at the prepare step before checking with the dependencies on disk. `1` disables the retry. |
+| `prepare_backoff_secs` | integer | `4` | helm: wait after the first failed attempt; doubles after each further failure. |
+| `prepare_jitter_secs` | integer | `4` | helm: up to this many random extra seconds added to every wait. |
+| `verify_skip_charts` | bool | `true` | helm: still run each `skip_charts` chart and fail when the tool now passes on it; `false` skips them without running. |
 | `new_from_rev` | string | — | golangci-lint: report only findings introduced since this git revision (`--new-from-rev`). |
 | `goos` | array | `[]` | golangci-lint: run once per operating system with `GOOS` set and merge the findings. |
 
