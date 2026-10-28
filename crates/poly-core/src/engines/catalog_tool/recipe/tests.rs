@@ -514,6 +514,103 @@ fn a_failing_prepare_step_does_not_stop_the_lint() {
     assert!(log.contains("needy lint"), "the lint still ran:\n{log}");
 }
 
+const GO_REPORTER: &str = r#"#!/bin/sh
+echo "$PWD GOOS=$GOOS $*" >> "$POLY_TEST_LOG"
+printf '{"Issues":[{"FromLinter":"common","Text":"everywhere","Pos":{"Filename":"a.go","Line":1,"Column":1}},{"FromLinter":"tag","Text":"only %s","Pos":{"Filename":"a.go","Line":2,"Column":1}}]}' "$GOOS"
+"#;
+
+fn go_module(fx: &Fixture) -> Vec<SourceFile> {
+    std::fs::write(fx.dir.path().join("go.mod"), "module x\n").expect("go.mod");
+    vec![fx.file("a.go", "package a\n")]
+}
+
+fn go_recipe() -> serde_json::Value {
+    serde_json::json!({
+        "output": "golangci_json",
+        "group": {"marker": ["go.mod"]},
+        "target": "dir",
+        "new_from_rev_flag": "--new-from-rev"
+    })
+}
+
+#[test]
+fn new_from_rev_becomes_the_tools_flag_before_the_package() {
+    let fx = Fixture::new();
+    let files = go_module(&fx);
+    let mut config = fx.config(fx.script("golangci", GO_REPORTER));
+    config.new_from_rev = Some("HEAD".to_owned());
+    let tool = fx.tool("run $DIR", go_recipe(), Role::Lint, &config);
+
+    tool.lint_files(&refs(&files));
+
+    let log = std::fs::read_to_string(&fx.log).expect("log");
+    assert!(log.contains(" run --new-from-rev=HEAD ."), "{log}");
+}
+
+#[test]
+fn new_from_rev_changes_the_cache_identity() {
+    let fx = Fixture::new();
+    let bin = fx.script("golangci", GO_REPORTER);
+    let plain = fx.tool("run $DIR", go_recipe(), Role::Lint, &fx.config(bin.clone()));
+    let mut config = fx.config(bin);
+    config.new_from_rev = Some("HEAD".to_owned());
+    let scoped = fx.tool("run $DIR", go_recipe(), Role::Lint, &config);
+    assert_ne!(plain.version(), scoped.version());
+}
+
+#[test]
+fn new_from_rev_is_refused_by_a_tool_without_the_flag() {
+    let fx = Fixture::new();
+    let mut config = fx.config(fx.script("tool", SILENT));
+    config.new_from_rev = Some("HEAD".to_owned());
+    let recipe: &'static Recipe = Box::leak(Box::new(Recipe::default()));
+    let tool: &'static Tool = Box::leak(Box::new(Tool {
+        name: "faketool".to_owned(),
+        binary: "faketool".to_owned(),
+        categories: vec!["linter".to_owned()],
+        languages: Vec::new(),
+        commands: BTreeMap::from([(
+            "lint".to_owned(),
+            Command {
+                arguments: vec!["$FILES".to_owned()],
+                stdin: false,
+                then: Vec::new(),
+                batch: None,
+            },
+        )]),
+        homepage: String::new(),
+        path_globs: Vec::new(),
+        recipe: None,
+    }));
+    let error = RecipeTool::build(tool, recipe, &config, Role::Lint, None)
+        .err()
+        .expect("must refuse");
+    assert!(error.contains("new_from_rev"), "{error}");
+}
+
+#[test]
+fn a_goos_matrix_runs_once_per_os_and_merges_the_findings() {
+    let fx = Fixture::new();
+    let files = go_module(&fx);
+    let mut config = fx.config(fx.script("golangci", GO_REPORTER));
+    config.goos = vec!["linux".to_owned(), "windows".to_owned()];
+    let tool = fx.tool("run $DIR", go_recipe(), Role::Lint, &config);
+
+    let results = tool.lint_files(&refs(&files));
+
+    let log = std::fs::read_to_string(&fx.log).expect("log");
+    assert_eq!(fx.invocations(), 2, "{log}");
+    assert!(log.contains("GOOS=linux") && log.contains("GOOS=windows"), "{log}");
+    let mut titles: Vec<String> = results[0]
+        .as_ref()
+        .expect("ok")
+        .iter()
+        .map(|d| d.title.clone())
+        .collect();
+    titles.sort();
+    assert_eq!(titles, ["everywhere", "only linux", "only windows"], "shared findings are not doubled");
+}
+
 #[test]
 fn content_that_differs_from_disk_is_linted_from_a_scratch_copy() {
     let fx = Fixture::new();

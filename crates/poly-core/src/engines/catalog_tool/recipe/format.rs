@@ -141,7 +141,7 @@ impl Rewrite<'_, '_> {
         for pass in self.passes {
             for chunk in pass.chunks(items) {
                 let argv = pass.render(&items[chunk]);
-                let captured = exec::run(&self.tool.launcher, &argv, self.mirror.root(), &self.tool.env)
+                let captured = exec::run(&self.tool.launcher, &argv, self.mirror.root(), &self.tool.env, &[])
                     .map_err(|error| format!("{error:#}"))?;
                 if !captured.exited_ok(&self.tool.recipe.ok_exits) {
                     return Err(captured.explanation());

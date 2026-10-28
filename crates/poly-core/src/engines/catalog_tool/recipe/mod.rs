@@ -75,6 +75,34 @@ pub(super) struct RecipeTool {
     version: String,
     /// Per-root values files, skipped roots and the prepare step.
     units: UnitOptions,
+    /// Operating systems to run the tool for, one invocation each (`GOOS`).
+    goos: Vec<String>,
+    /// Environment variables removed from every invocation.
+    unset_env: &'static [&'static str],
+}
+
+/// The overrides git sets while it runs a hook. A tool that asks git which lines
+/// are new (`--new-from-rev`) must see the repository itself: left set, the
+/// diff filter silently becomes a no-op.
+const GIT_HOOK_ENV: &[&str] = &["GIT_INDEX_FILE", "GIT_DIR", "GIT_WORK_TREE"];
+
+/// The commit `rev` names in `cwd`, so the cache key follows the commit and not
+/// the moving name (`HEAD`); `rev` itself when git cannot say.
+fn resolve_rev(cwd: &Path, rev: &str) -> String {
+    let resolved = std::process::Command::new("git")
+        .arg("-C")
+        .arg(cwd)
+        .args(["rev-parse", "--verify", "--quiet"])
+        .arg(format!("{rev}^{{commit}}"))
+        .env_remove("GIT_INDEX_FILE")
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+        .filter(|sha| !sha.is_empty());
+    resolved.unwrap_or_else(|| rev.to_owned())
 }
 
 /// File selection for one tool.
@@ -133,7 +161,16 @@ impl RecipeTool {
             None => cwd,
         };
         let flags = &recipe.config_flags;
-        let extra = salt::absolutize_config_args(&extra_args(config, role), flags, &cwd);
+        let new_from_rev = match (&config.new_from_rev, &recipe.new_from_rev_flag) {
+            (Some(rev), Some(flag)) => Some(format!("{flag}={rev}")),
+            (Some(_), None) => return Err(format!("`new_from_rev` is not supported by tool `{}`", tool.name)),
+            (None, _) => None,
+        };
+        let mut wanted = extra_args(config, role);
+        if role == Role::Lint {
+            wanted.extend(new_from_rev);
+        }
+        let extra = salt::absolutize_config_args(&wanted, flags, &cwd);
         let main = config.args.as_deref();
 
         let (mut passes, stdin) = passes_for(command, main, &extra, role);
@@ -162,8 +199,10 @@ impl RecipeTool {
         if let Group::Marker(markers) = &recipe.group {
             context_names.extend(markers.iter().cloned());
         }
+        let resolved_rev = config.new_from_rev.as_deref().map(|rev| resolve_rev(&cwd, rev));
+        let goos = config.goos.clone();
         let version = format!(
-            "{}:{}:role={role:?}:passes={:?}:fix={:?}:stdin={stdin:?}:env={:?}:units={}:cfg={fingerprint}",
+            "{}:{}:rev={resolved_rev:?}:goos={goos:?}:role={role:?}:passes={:?}:fix={:?}:stdin={stdin:?}:env={:?}:units={}:cfg={fingerprint}",
             tool.name,
             launcher.identity,
             passes.iter().map(Template::fingerprint).collect::<Vec<_>>(),
@@ -185,6 +224,8 @@ impl RecipeTool {
             context_names,
             version,
             units,
+            goos,
+            unset_env: if resolved_rev.is_some() { GIT_HOOK_ENV } else { &[] },
         })
     }
 

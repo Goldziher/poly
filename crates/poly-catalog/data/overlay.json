@@ -375,7 +375,8 @@
       ],
       "install": {
         "hint": "brew install golangci-lint"
-      }
+      },
+      "new_from_rev_flag": "--new-from-rev"
     }
   },
   {

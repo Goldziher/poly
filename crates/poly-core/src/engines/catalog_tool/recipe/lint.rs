@@ -242,7 +242,7 @@ impl RecipeTool {
             return;
         }
         let outcome = unit::once_per_root(&unit.root, argv, || {
-            let captured = exec::run(&self.launcher, argv, &unit.root, &self.env).map_err(|error| format!("{error:#}"))?;
+            let captured = exec::run(&self.launcher, argv, &unit.root, &self.env, &[]).map_err(|error| format!("{error:#}"))?;
             if captured.exited_ok(&self.recipe.ok_exits) {
                 Ok(())
             } else {
@@ -379,8 +379,30 @@ impl RecipeTool {
         cell.get_or_init(|| self.execute(&argv, &unit.root)).clone()
     }
 
+    /// Run once, or once per configured `GOOS` with the findings merged.
     fn execute(&self, argv: &[String], root: &Path) -> Outcome {
-        let captured = exec::run(&self.launcher, argv, root, &self.env).map_err(|error| format!("{error:#}"))?;
+        if self.goos.is_empty() {
+            return self.execute_with(argv, root, &self.env);
+        }
+        let mut merged: Vec<Finding> = Vec::new();
+        for goos in &self.goos {
+            let mut env = self.env.clone();
+            env.insert("GOOS".to_owned(), goos.clone());
+            let found = self
+                .execute_with(argv, root, &env)
+                .map_err(|reason| format!("GOOS={goos}: {reason}"))?;
+            for finding in found.iter() {
+                if !merged.contains(finding) {
+                    merged.push(finding.clone());
+                }
+            }
+        }
+        Ok(Arc::new(merged))
+    }
+
+    fn execute_with(&self, argv: &[String], root: &Path, env: &BTreeMap<String, String>) -> Outcome {
+        let captured =
+            exec::run(&self.launcher, argv, root, env, self.unset_env).map_err(|error| format!("{error:#}"))?;
         match output::parse(self.recipe.output, &captured.stdout, &captured.stderr) {
             // A failing exit that reported nothing is a tool that did not run to
             // completion, not a clean file.
