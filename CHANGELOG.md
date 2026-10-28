@@ -9,6 +9,16 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ### Added
 
+- **shfmt follows `.editorconfig`, and `poly migrate` carries `shfmt -i N`.** shfmt reads
+  `.editorconfig` only when given a filename, which poly never passes, so a repository indented
+  with four spaces was reformatted to poly's two. poly now resolves the file's `indent_style` /
+  `indent_size` itself, as shfmt does (`tab` indents with tabs; `space` takes `indent_size`, or 8
+  when it is missing; a file that sets no `indent_style` keeps poly's default), unless
+  `[fmt.shell.shfmt] indent_width` or `use_tabs` is set, and the formatting cache is keyed on the
+  resolved indentation. `poly migrate` maps a lefthook `shfmt -i N -w {staged_files}` job or a
+  pre-commit `shfmt` hook with `-i N` to `[fmt.shell.shfmt] indent_width = N` (`-i 0` to
+  `use_tabs = true`); other layout flags keep the job a command. The native-tool engine's
+  `version()` carries `editorconfig-v1` for shfmt.
 - **Real `oxlint` / `oxfmt` as a fallback, and path-scoped oxfmt config.**
   `[lint.<lang>.oxc] js_plugins = "external"` lints the files governed by an `.oxlintrc.json` that
   declares `jsPlugins` with the real `oxlint` (nearest `node_modules/.bin`, else `PATH`), one run per

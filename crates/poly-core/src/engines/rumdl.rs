@@ -130,7 +130,6 @@ impl Engine for RumdlEngine {
                 ("prose_wrap", OptionType::STRING),
                 ("embedded_language_formatting", OptionType::STRING),
                 ("embedded", OptionType::TABLE),
-                ("oxfmtrc", OptionType::STRING),
             ])
             .with_rule_selection(),
             OptionTable::CrossCuttingLint => OptionKeys::UNCHECKED,

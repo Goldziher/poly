@@ -607,6 +607,9 @@ impl Importer<'_> {
             catalog_tools: recognized.catalog_tools,
             options: &recognized.options,
         });
+        for value in &recognized.values {
+            self.acc.add_engine_value(value, label);
+        }
         for (name, settings) in &recognized.settings {
             self.acc.add_tool_settings(name, label, settings);
         }

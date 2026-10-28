@@ -784,10 +784,7 @@ fn format_one(
             if plan.ignores_format(&f.path) {
                 continue;
             }
-            let version: std::borrow::Cow<'_, str> = match plan.engine.format_input_salt(&f.path, &plan.config) {
-                Some(salt) => std::borrow::Cow::Owned(format!("{}+{salt}", plan.engine.version())),
-                None => std::borrow::Cow::Borrowed(plan.engine.version()),
-            };
+            let version = plan.format_version(&f.path);
             let key = digest_if_enabled(cache, || {
                 let digest = ResultCache::single_file_digest(&current);
                 ResultCache::key_with_args(

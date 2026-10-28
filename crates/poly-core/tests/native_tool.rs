@@ -577,3 +577,37 @@ fn shell_honours_a_non_default_indent_width() {
 
     assert_eq!(format_shell(&shell_cfg(4, false)), "greet() {\n    echo hi\n}\n");
 }
+
+/// shfmt reads `.editorconfig` only when it is given a filename, which poly never passes, so poly
+/// resolves the file's indentation itself; a table that sets the indentation wins.
+#[test]
+fn shell_follows_editorconfig_unless_the_table_sets_the_indent() {
+    let engine = NativeToolEngine::shell_format();
+    if !engine.is_available() {
+        eprintln!("shfmt not found on PATH — skipping shell_follows_editorconfig_unless_the_table_sets_the_indent");
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join(".editorconfig"),
+        "root = true\n[*.sh]\nindent_style = space\nindent_size = 4\n",
+    )
+    .unwrap();
+    let src = make_src(
+        dir.path().join("script.sh").to_str().unwrap(),
+        Language::Shell,
+        SHELL_UNFORMATTED,
+    );
+    let format = |cfg: &EngineConfig| match engine.format(&src, cfg).unwrap() {
+        FormatOutput::Formatted(text) => text,
+        FormatOutput::Unchanged => panic!("expected shfmt to reformat the unformatted source"),
+    };
+
+    assert_eq!(format(&shell_cfg(2, false)), "greet() {\n    echo hi\n}\n");
+
+    let mut explicit = shell_cfg(2, false);
+    explicit
+        .options
+        .insert("indent_width".to_string(), toml::Value::Integer(2));
+    assert_eq!(format(&explicit), "greet() {\n  echo hi\n}\n");
+}

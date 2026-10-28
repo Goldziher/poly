@@ -120,6 +120,16 @@ pub(super) struct EnginePlan {
 }
 
 impl EnginePlan {
+    /// The version a format result for `path` is keyed under: the engine's own, extended with
+    /// the path-scoped config input the engine reports for the file (see
+    /// [`Engine::format_input_salt`](crate::engine::Engine::format_input_salt)).
+    pub(super) fn format_version(&self, path: &std::path::Path) -> std::borrow::Cow<'_, str> {
+        match self.engine.format_input_salt(path, &self.config) {
+            Some(salt) => std::borrow::Cow::Owned(format!("{}+{salt}", self.engine.version())),
+            None => std::borrow::Cow::Borrowed(self.engine.version()),
+        }
+    }
+
     /// Whether the project's own formatter config excludes `path` from formatting.
     pub(super) fn ignores_format(&self, path: &std::path::Path) -> bool {
         self.format_ignore

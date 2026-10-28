@@ -148,7 +148,6 @@ impl Engine for TaploEngine {
                 ("line_ending", OptionType::STRING),
                 ("indent_style", OptionType::STRING),
                 ("trailing_commas", OptionType::STRING),
-                ("oxfmtrc", OptionType::STRING),
             ]),
             OptionTable::Lint | OptionTable::CrossCuttingLint => OptionKeys::declared(&[]),
         }

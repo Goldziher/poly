@@ -89,7 +89,6 @@ impl Engine for MalvaEngine {
                 ("indent_style", OptionType::STRING),
                 ("single_quote", OptionType::BOOLEAN),
                 ("trailing_commas", OptionType::STRING),
-                ("oxfmtrc", OptionType::STRING),
             ])
             .with_derived(crate::engines::config_keys::recognized_by_type_probe::<malva::config::FormatOptions>),
             OptionTable::Lint | OptionTable::CrossCuttingLint => OptionKeys::declared(&[]),

@@ -19,21 +19,19 @@ use crate::config::EngineConfig;
 use crate::engine::{Diagnostic, Severity, SourceFile, Span};
 use crate::engines::line_index::LineIndex;
 
-pub(super) const JS_PLUGINS_KEY: &str = "js_plugins";
-pub(super) const FORMAT_EXTERNAL_KEY: &str = "external";
 const OXLINT: &str = "oxlint";
 const OXFMT: &str = "oxfmt";
 const FILES_PER_RUN: usize = 400;
 
 /// Whether `[lint.<lang>.oxc] js_plugins = "external"`.
 pub(super) fn lint_requested(cfg: &EngineConfig) -> bool {
-    cfg.options.get(JS_PLUGINS_KEY).and_then(toml::Value::as_str) == Some("external")
+    cfg.options.get("js_plugins").and_then(toml::Value::as_str) == Some("external")
 }
 
 /// Whether `[fmt.<lang>.oxc] external = true`.
 pub(super) fn format_requested(cfg: &EngineConfig) -> bool {
     cfg.options
-        .get(FORMAT_EXTERNAL_KEY)
+        .get("external")
         .and_then(toml::Value::as_bool)
         .unwrap_or(false)
 }

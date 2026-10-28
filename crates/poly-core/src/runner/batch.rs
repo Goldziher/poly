@@ -515,7 +515,7 @@ fn candidate_for(file: &DiscoveredFile, plan: &RunPlan, cache: &ResultCache) -> 
         let key = ResultCache::key_with_args(
             Namespace::Fmt,
             engine_plan.engine.name(),
-            engine_plan.engine.version(),
+            &engine_plan.format_version(&file.path),
             &engine_plan.serialized_args,
             &digest,
         );

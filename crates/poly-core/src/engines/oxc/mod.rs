@@ -55,33 +55,48 @@ const JS_LINT_OPTION_KEYS: &[(&str, OptionType)] = &[
     ("js_plugins", OptionType::STRING),
 ];
 
+// The keys of `[fmt.<lang>.oxc]` shared with the markup_fmt backend, written once so the
+// oxc-only extras below cannot drift from them.
+macro_rules! js_format_keys {
+    ($($extra:tt)*) => {
+        &[
+            ("indent_style", OptionType::STRING),
+            ("quote_style", OptionType::STRING),
+            ("jsx_quote_style", OptionType::STRING),
+            ("semicolons", OptionType::STRING),
+            ("trailing_commas", OptionType::STRING),
+            ("arrow_parentheses", OptionType::STRING),
+            ("bracket_spacing", OptionType::BOOLEAN),
+            ("bracket_same_line", OptionType::BOOLEAN),
+            ("line_width", OptionType::INTEGER),
+            ("line_ending", OptionType::STRING),
+            ("quote_properties", OptionType::STRING),
+            ("object_wrap", OptionType::STRING),
+            ("operator_position", OptionType::STRING),
+            ("single_attribute_per_line", OptionType::BOOLEAN),
+            ("single_quote", OptionType::BOOLEAN),
+            ("sort_imports", OptionType::TABLE.or(OptionType::BOOLEAN)),
+            ("sort_package_json", OptionType::TABLE.or(OptionType::BOOLEAN)),
+            $($extra)*
+        ]
+    };
+}
+
 /// The formatter keys `[fmt.<lang>.oxc]` reads, with the type each is read as.
 ///
 /// Shared with the markup_fmt backend rather than copied: an Astro `<script>`
 /// block is formatted by `oxc::config` out of markup_fmt's *own* table, so the
 /// two tables read the same keys and a second list would drift.
-pub(crate) const JS_FORMAT_OPTION_KEYS: &[(&str, OptionType)] = &[
-    ("indent_style", OptionType::STRING),
-    ("quote_style", OptionType::STRING),
-    ("jsx_quote_style", OptionType::STRING),
-    ("semicolons", OptionType::STRING),
-    ("trailing_commas", OptionType::STRING),
-    ("arrow_parentheses", OptionType::STRING),
-    ("bracket_spacing", OptionType::BOOLEAN),
-    ("bracket_same_line", OptionType::BOOLEAN),
-    ("line_width", OptionType::INTEGER),
-    ("line_ending", OptionType::STRING),
-    ("quote_properties", OptionType::STRING),
-    ("object_wrap", OptionType::STRING),
-    ("operator_position", OptionType::STRING),
-    ("single_attribute_per_line", OptionType::BOOLEAN),
-    ("single_quote", OptionType::BOOLEAN),
-    ("sort_imports", OptionType::TABLE.or(OptionType::BOOLEAN)),
-    ("sort_package_json", OptionType::TABLE.or(OptionType::BOOLEAN)),
+pub(crate) const JS_FORMAT_OPTION_KEYS: &[(&str, OptionType)] = js_format_keys!();
+
+/// [`JS_FORMAT_OPTION_KEYS`] plus the keys only this backend reads: poly names the governing
+/// `.oxfmtrc.json[c]`, flags files that need oxfmt's JavaScript-side options, and `external`
+/// hands those to the real `oxfmt`.
+const OXC_FORMAT_OPTION_KEYS: &[(&str, OptionType)] = js_format_keys!(
     ("oxfmtrc", OptionType::STRING),
     ("requires_oxfmt", OptionType::BOOLEAN),
     ("external", OptionType::BOOLEAN),
-];
+);
 
 pub(crate) use self::format::{format_embedded_js, is_embedded_js_parse_error};
 
@@ -174,7 +189,7 @@ impl crate::engine::Engine for OxcEngine {
     fn option_keys(&self, table: OptionTable) -> OptionKeys {
         match table {
             OptionTable::Lint => OptionKeys::declared(JS_LINT_OPTION_KEYS).with_rule_selection(),
-            OptionTable::Format => OptionKeys::declared(JS_FORMAT_OPTION_KEYS),
+            OptionTable::Format => OptionKeys::declared(OXC_FORMAT_OPTION_KEYS),
             OptionTable::CrossCuttingLint => OptionKeys::UNCHECKED,
         }
     }

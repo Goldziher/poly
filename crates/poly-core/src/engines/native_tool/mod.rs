@@ -74,6 +74,10 @@
 //! enabled = false      # opt back out
 //! ```
 //!
+//! shfmt reads `.editorconfig` only when it is given a filename, which poly never passes, so poly
+//! resolves it for each file ([`mod@editorconfig`]): `indent_style = tab` indents with tabs and
+//! `indent_style = space` with `indent_size`. A table that sets `indent_width` or `use_tabs` wins.
+//!
 //! `indent_width` belongs on the **engine** table above, not on `[fmt.shell]`:
 //! `Config::engine_config` reads it from `tables[<language>][<engine>]`, so the
 //! language-table spelling parses without complaint and does nothing.
@@ -127,6 +131,7 @@ mod batch;
 #[cfg(test)]
 mod cache_key_tests;
 mod edition;
+mod editorconfig;
 mod format;
 mod go_imports;
 mod isolate;
@@ -241,6 +246,15 @@ impl NativeToolEngine {
             .probe_lock()
             .get_or_init(|| probe_tool(self.role.spec()))
             .as_deref()
+    }
+
+    /// shfmt indents as the file's `.editorconfig` says, unless the table sets the indentation
+    /// itself (see [`mod@editorconfig`]); every other tool takes `cfg` as it is.
+    fn scoped_config<'a>(&self, src: &SourceFile, cfg: &'a EngineConfig) -> std::borrow::Cow<'a, EngineConfig> {
+        match self.role {
+            NativeRole::Shfmt => editorconfig::apply(cfg, &src.path),
+            _ => std::borrow::Cow::Borrowed(cfg),
+        }
     }
 
     /// Whether the underlying native tool is installed on this host.
@@ -362,6 +376,17 @@ impl Engine for NativeToolEngine {
         }
     }
 
+    fn format_input_salt(&self, path: &std::path::Path, cfg: &EngineConfig) -> Option<String> {
+        match self.role {
+            NativeRole::Shfmt => editorconfig::salt(cfg, path),
+            _ => None,
+        }
+    }
+
+    fn file_context(&self, path: &std::path::Path, cfg: &EngineConfig) -> Option<String> {
+        self.format_input_salt(path, cfg)
+    }
+
     /// Cache-key version string. Folds in BOTH the native tool version (or an
     /// `absent` sentinel) AND the tree-sitter engine version, because every
     /// disabled/absent path delegates to tier-2 — so a tier-2 upgrade must
@@ -409,10 +434,10 @@ impl Engine for NativeToolEngine {
                 [] => String::new(),
                 names => format!(" | cfg:{}", tool_config::fingerprint(names)),
             };
-            let post_marker = if self.role == NativeRole::GoFmt {
-                " | goimports-groups-v1"
-            } else {
-                ""
+            let post_marker = match self.role {
+                NativeRole::GoFmt => " | goimports-groups-v1",
+                NativeRole::Shfmt => " | editorconfig-v1",
+                _ => "",
             };
             let markers = format!("{edition_marker}{config_path_marker}{default_marker}{config_marker}{post_marker}");
             match self.probed_version() {
@@ -463,7 +488,8 @@ impl Engine for NativeToolEngine {
                     self.notify_tier2_fallback(cfg);
                     return TreeSitterEngine.format(src, cfg);
                 }
-                let formatted = format_via_tool(self.role.spec(), src, cfg.indent_width, tabs::use_tabs(cfg))?;
+                let scoped = self.scoped_config(src, cfg);
+                let formatted = format_via_tool(self.role.spec(), src, scoped.indent_width, tabs::use_tabs(&scoped))?;
                 Ok(self.role.finish(formatted, src))
             }
             NativeRole::Shellcheck => Ok(FormatOutput::Unchanged),
@@ -514,7 +540,19 @@ impl Engine for NativeToolEngine {
         if !self.is_enabled(cfg) || self.probed_version().is_none() {
             anyhow::bail!("{} is not enabled or not installed; not batching", self.name());
         }
-        let results = format_batch_via_tool(self.role.spec(), batch, cfg.indent_width, tabs::use_tabs(cfg))?;
+        // One run indents every member alike, so a batch whose members `.editorconfig` indents
+        // differently is left to the per-file path.
+        let configs: Vec<_> = batch.iter().map(|src| self.scoped_config(src, cfg)).collect();
+        let Some(first) = configs.first() else {
+            return Ok(Vec::new());
+        };
+        if configs
+            .iter()
+            .any(|each| each.indent_width != first.indent_width || tabs::use_tabs(each) != tabs::use_tabs(first))
+        {
+            anyhow::bail!("{} files in this batch are indented differently; not batching", self.name());
+        }
+        let results = format_batch_via_tool(self.role.spec(), batch, first.indent_width, tabs::use_tabs(first))?;
         Ok(results
             .into_iter()
             .zip(batch)

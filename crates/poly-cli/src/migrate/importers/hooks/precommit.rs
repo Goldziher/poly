@@ -7,7 +7,7 @@ use poly_config::Stage;
 use serde_json::Value;
 
 use super::acc::{Body, BuiltinUse, HookAcc, JobSpec, Shape, ToolSettings};
-use super::command::{EngineOption, RUFF_UNSAFE_FIXES, Target};
+use super::command::{EngineOption, RUFF_UNSAFE_FIXES, Target, shfmt_indent};
 use super::filters::regex_to_globs;
 use crate::migrate::importers::load_yaml;
 
@@ -125,6 +125,10 @@ const KNOWN: &[Known] = &[
     known("typos", Mapping::Builtin(Target::Lint, &[]), None),
     known("shellcheck", Mapping::Builtin(Target::Lint, &[]), None).scoped(&["*.{sh,bash}"]),
     Known {
+        benign_args: &["-w"],
+        ..known("shfmt", Mapping::Builtin(Target::Fmt, &[]), None).scoped(&["*.{sh,bash}"])
+    },
+    Known {
         configures: Some(Configures {
             tool: "terraform",
             format_extra_args: &[],
@@ -195,6 +199,7 @@ const FIXERS: &[&str] = &[
     "terraform_fmt",
     "taplo-format",
     "buildifier",
+    "shfmt",
 ];
 
 /// Linters that only rewrite files when given `--fix`.
@@ -384,6 +389,9 @@ fn remote_hook(acc: &mut HookAcc, context: &Context, repo: &str, rev: Option<&st
     if entry.id == "check-added-large-files" {
         apply_maxkb(acc, &label, &mut args);
     }
+    if entry.id == "shfmt" {
+        apply_shfmt_indent(acc, &label, &mut args);
+    }
     args.retain(|arg| !entry.benign_args.contains(&arg.as_str()));
     if let Some(configures) = entry.configures {
         configure_tool(acc, &label, configures, rev, std::mem::take(&mut args));
@@ -435,6 +443,36 @@ fn configure_tool(acc: &mut HookAcc, label: &str, configures: Configures, rev: O
         ..ToolSettings::default()
     };
     acc.add_tool_settings(configures.tool, label, &settings);
+}
+
+/// Carry shfmt's `-i <width>` into `[fmt.shell.shfmt]`; the rest of the arguments are left for the
+/// caller to report.
+fn apply_shfmt_indent(acc: &mut HookAcc, label: &str, args: &mut Vec<String>) {
+    let mut kept = Vec::new();
+    let mut iter = std::mem::take(args).into_iter();
+    while let Some(arg) = iter.next() {
+        let value = match arg.strip_prefix("-i=") {
+            Some(value) => Some(value.to_string()),
+            None if arg == "-i" => iter.next(),
+            None => {
+                kept.push(arg);
+                continue;
+            }
+        };
+        match value.as_deref().and_then(|v| v.parse::<i64>().ok()).filter(|&w| w >= 0) {
+            Some(width) => {
+                let (option, indent) = shfmt_indent(width);
+                if let Some(option) = option {
+                    acc.add_engine_option(&option);
+                }
+                if let Some(indent) = indent {
+                    acc.add_engine_value(&indent, label);
+                }
+            }
+            None => acc.diag.lossy(format!("{label}: unreadable -i value")),
+        }
+    }
+    *args = kept;
 }
 
 fn apply_maxkb(acc: &mut HookAcc, label: &str, args: &mut Vec<String>) {

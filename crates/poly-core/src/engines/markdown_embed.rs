@@ -23,11 +23,6 @@ use oxc_span::SourceType;
 
 use crate::config::EngineConfig;
 
-/// Sub-table of `[fmt.markdown.rumdl]` holding per-family option overlays for embedded code.
-pub(super) const EMBEDDED_KEY: &str = "embedded";
-/// `"off"` keeps fenced code and front matter exactly as written.
-pub(super) const EMBEDDED_FORMATTING_KEY: &str = "embedded_language_formatting";
-
 enum Target {
     Js(SourceType),
     Css(CssVariant),
@@ -61,11 +56,11 @@ fn route(language: &str) -> Option<Target> {
 /// The host table with the `embedded.<family>` overlay applied, as one child formatter sees it.
 fn child_config(host: &EngineConfig, family: &str) -> EngineConfig {
     let mut options = host.options.clone();
-    options.remove(EMBEDDED_KEY);
+    options.remove("embedded");
     let mut indent_width = host.indent_width;
     let overlay = host
         .options
-        .get(EMBEDDED_KEY)
+        .get("embedded")
         .and_then(toml::Value::as_table)
         .and_then(|families| families.get(family))
         .and_then(toml::Value::as_table);
@@ -113,7 +108,7 @@ impl ChildConfigs {
 /// The dispatcher for a Markdown file formatted under `host`, or `None` when embedded
 /// formatting is switched off.
 pub(super) fn dispatcher(host: &EngineConfig) -> Option<FormatDispatcher> {
-    if host.options.get(EMBEDDED_FORMATTING_KEY).and_then(toml::Value::as_str) == Some("off") {
+    if host.options.get("embedded_language_formatting").and_then(toml::Value::as_str) == Some("off") {
         return None;
     }
     Some(build(Arc::new(ChildConfigs::new(host))))

@@ -95,7 +95,6 @@ impl Engine for YamlEngine {
                 ("bracket_spacing", OptionType::BOOLEAN),
                 ("trailing_commas", OptionType::STRING),
                 ("prose_wrap", OptionType::STRING),
-                ("oxfmtrc", OptionType::STRING),
             ]),
             OptionTable::Lint | OptionTable::CrossCuttingLint => OptionKeys::declared(&[]),
         }
