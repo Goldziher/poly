@@ -289,6 +289,46 @@ fn actionlint_report_locates_the_label_and_the_expression() {
     assert_eq!(findings[1].line, Some(7));
 }
 
+/// Captured from actionlint 1.7.12 on a workflow with an ARC runner label
+/// (`runs-on: runner-medium`), an unquoted `$FOO`, a mistyped context property
+/// and `actions/checkout@v1` (Goldziher/poly#43).
+const ACTIONLINT_KINDS: &str = include_str!("fixtures/actionlint_kinds.json");
+
+#[test]
+fn actionlint_severity_follows_the_kind_and_unknown_runner_labels_are_warnings() {
+    let findings = parse(Output::ActionlintJson, ACTIONLINT_KINDS, "").expect("parses");
+    let kinds: Vec<_> = findings
+        .iter()
+        .map(|f| (f.code.as_deref().unwrap_or_default(), f.severity))
+        .collect();
+    assert_eq!(
+        kinds,
+        [
+            // Depends on the runners a repository has registered, which poly cannot see.
+            ("runner-label", Severity::Warning),
+            // shellcheck's own level for SC2086, as poly's shellcheck backend maps it.
+            ("shellcheck", Severity::Info),
+            ("expression", Severity::Error),
+            ("action", Severity::Error),
+        ]
+    );
+}
+
+#[test]
+fn actionlint_shellcheck_findings_take_the_level_shellcheck_printed() {
+    let report = |level: &str| {
+        format!(
+            r#"[{{"message":"shellcheck reported issue in this script: SC2154:{level}:1:6: x is referenced but not assigned","filepath":"a.yml","line":6,"column":9,"kind":"shellcheck","snippet":"","end_column":12}}]"#
+        )
+    };
+    let severity = |level: &str| one(parse(Output::ActionlintJson, &report(level), "").expect("parses")).severity;
+    assert_eq!(severity("error"), Severity::Error);
+    assert_eq!(severity("warning"), Severity::Warning);
+    assert_eq!(severity("info"), Severity::Info);
+    assert_eq!(severity("style"), Severity::Hint);
+    assert_eq!(severity("unheard-of"), Severity::Warning);
+}
+
 #[test]
 fn checkstyle_14_report_names_the_check_after_its_source_class() {
     let findings = parse(Output::CheckstyleXml, CHECKSTYLE, "").expect("parses");

@@ -207,9 +207,10 @@ impl RecipeTool {
         let resolved_rev = config.new_from_rev.as_deref().map(|rev| resolve_rev(&cwd, rev));
         let goos = config.goos.clone();
         let version = format!(
-            "{}:{}:rev={resolved_rev:?}:goos={goos:?}:role={role:?}:passes={:?}:fix={:?}:stdin={stdin:?}:env={:?}:units={}:cfg={fingerprint}",
+            "{}:{}:parser={}:rev={resolved_rev:?}:goos={goos:?}:role={role:?}:passes={:?}:fix={:?}:stdin={stdin:?}:env={:?}:units={}:cfg={fingerprint}",
             tool.name,
             launcher.identity,
+            output::revision(recipe.output),
             passes.iter().map(Template::fingerprint).collect::<Vec<_>>(),
             fix_passes.iter().map(Template::fingerprint).collect::<Vec<_>>(),
             config.env,

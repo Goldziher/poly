@@ -5,6 +5,22 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
+## [Unreleased]
+
+### Fixed
+
+- **actionlint reports an unknown runner label as a warning again** ([Goldziher/poly#43]). Until 0.29.0
+  a failing actionlint run was one file-level warning. Since 0.30.0 poly reads actionlint's report, and
+  it made every finding an error, so a workflow on a self-hosted or ARC label (`runs-on: runner-medium`)
+  failed `poly lint` without a change to the file. actionlint has no severities of its own; poly now
+  assigns one per kind. `runner-label` is a warning, since whether a label exists depends on the runners
+  a repository has registered. `shellcheck` takes the level shellcheck printed (`SC2086:info` is info,
+  not an error). Every other kind (`syntax-check`, `expression`, `action`, …) stays an error. Declaring
+  the labels under `self-hosted-runner.labels` in `.github/actionlint.yaml` clears the warning, and
+  `[lint.yaml.actionlint.rules.runner-label] level = "error"` restores the failing exit.
+
+[Goldziher/poly#43]: https://github.com/Goldziher/poly/issues/43
+
 ## [0.31.0] - 2026-10-28
 
 ### Added

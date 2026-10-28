@@ -71,6 +71,18 @@ pub(in crate::engines::catalog_tool) fn parse(format: Output, stdout: &str, stde
     }
 }
 
+/// The revision of the parser for `format`, folded into the recipe tool's
+/// cache-key version. Bump a format's number whenever its parser changes what
+/// it reports for the same output, so cached findings of the old parser are not
+/// served under the new one.
+pub(in crate::engines::catalog_tool) fn revision(format: Output) -> u32 {
+    match format {
+        // 2: severity per kind; runner-label a warning, shellcheck at its own level.
+        Output::ActionlintJson => 2,
+        _ => 1,
+    }
+}
+
 /// A 1-based line/column the tool printed, or `None` for the `0` some tools use
 /// for "unknown".
 pub(super) fn position(value: Option<u64>) -> Option<u32> {

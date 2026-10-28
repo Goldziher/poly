@@ -40,15 +40,57 @@ pub(super) fn actionlint(stdout: &str) -> Result<Vec<Finding>> {
     Ok(items
         .iter()
         .map(|item| {
-            let mut finding = Finding::new(Severity::Error, text(item, "message").unwrap_or_default());
+            let message = text(item, "message").unwrap_or_default();
+            let kind = text(item, "kind");
+            let severity = actionlint_severity(kind.as_deref(), &message);
+            let mut finding = Finding::new(severity, message);
             finding.path = text(item, "filepath");
             finding.line = number(item, "line");
             finding.column = number(item, "column");
             finding.end_column = number(item, "end_column");
-            finding.code = text(item, "kind");
+            finding.code = kind;
             finding
         })
         .collect())
+}
+
+/// actionlint has no severities — every finding fails it — so poly assigns one
+/// per `kind`.
+///
+/// - `runner-label` is a warning: whether a label exists depends on the runners
+///   the repository has registered, which a file cannot show. Self-hosted and
+///   ARC labels are flagged until declared in `.github/actionlint.yaml`
+///   (`self-hosted-runner.labels`), and before 0.30 this was a warning too.
+/// - `shellcheck` takes the level shellcheck printed in the message
+///   (`SC2086:info:…`), mapped as poly's own shellcheck backend maps it, so an
+///   `info` or `style` note in a `run:` block does not fail the run.
+/// - Every other kind (`syntax-check`, `expression`, `action`, `job-needs`, …)
+///   is a defect in the workflow itself and stays an error.
+fn actionlint_severity(kind: Option<&str>, message: &str) -> Severity {
+    match kind {
+        Some("runner-label") => Severity::Warning,
+        Some("shellcheck") => shellcheck_level(message),
+        _ => Severity::Error,
+    }
+}
+
+/// The level in actionlint's `shellcheck reported issue in this script:
+/// SC2086:info:1:6: …` message; `Warning` when the message has no level.
+fn shellcheck_level(message: &str) -> Severity {
+    let level = message
+        .split_whitespace()
+        .find(|word| {
+            word.strip_prefix("SC")
+                .is_some_and(|rest| rest.starts_with(|c: char| c.is_ascii_digit()))
+        })
+        .and_then(|code| code.split(':').nth(1))
+        .unwrap_or_default();
+    match level {
+        "error" => Severity::Error,
+        "info" => Severity::Info,
+        "style" => Severity::Hint,
+        _ => Severity::Warning,
+    }
 }
 
 /// buf prints one JSON object per line.
