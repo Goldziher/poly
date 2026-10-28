@@ -322,10 +322,6 @@ fn a_cargo_job_held_back_by_an_external_lock_reports_the_wait() {
     use std::io::Write as _;
     use std::os::fd::AsRawFd as _;
 
-    /// Longer than the pre-spawn announce threshold (2s), so exactly one notice
-    /// is due while the lock is held.
-    const HOLD: std::time::Duration = std::time::Duration::from_secs(3);
-
     let repo = init_repo();
     let root = repo.path();
     write(
@@ -361,6 +357,7 @@ workspace = true
 
     let lock = cargo_home.path().join(".package-cache");
     let (ready, holding) = std::sync::mpsc::channel();
+    let (release, released) = std::sync::mpsc::channel::<()>();
     let holder = std::thread::spawn(move || {
         let mut file = std::fs::File::create(&lock).expect("create the package-cache lock");
         file.write_all(b"held").expect("write the package-cache lock");
@@ -368,7 +365,9 @@ workspace = true
         let taken = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) };
         assert_eq!(taken, 0, "the holder must actually acquire the lock");
         ready.send(()).expect("signal that the lock is held");
-        std::thread::sleep(HOLD);
+        // Held until the run has printed the notice under test (or has exited
+        // without printing it): no clock decides when the lock is released.
+        let _ = released.recv();
         // SAFETY: as above.
         unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_UN) };
     });
@@ -376,19 +375,47 @@ workspace = true
     // free lock and the test proves nothing.
     holding.recv().expect("wait until the lock is held");
 
-    let output = Command::new(POLY)
+    let mut child = Command::new(POLY)
         .args(["hooks", "run", "pre-commit"])
         .current_dir(root)
         .env("CARGO_HOME", cargo_home.path())
-        .output()
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
         .expect("poly invocation");
+    let stdout_pipe = child.stdout.take().expect("piped stdout");
+    let stderr_pipe = child.stderr.take().expect("piped stderr");
+    let (noticed, notice_seen) = std::sync::mpsc::channel::<()>();
+    let stderr_reader = std::thread::spawn(move || {
+        use std::io::BufRead as _;
+        let mut collected = String::new();
+        for line in std::io::BufReader::new(stderr_pipe).lines().map_while(Result::ok) {
+            collected.push_str(&line);
+            collected.push('\n');
+            if line.contains("waiting to start: cargo-deny") {
+                let _ = noticed.send(());
+            }
+        }
+        collected
+    });
+    let stdout_reader = std::thread::spawn(move || {
+        use std::io::Read as _;
+        let mut collected = String::new();
+        let _ = std::io::BufReader::new(stdout_pipe).read_to_string(&mut collected);
+        collected
+    });
+    // Returns once the notice is printed, or with an error once stderr closes
+    // without it; either way the lock is released and the assertions below judge.
+    let _ = notice_seen.recv();
+    drop(release);
     holder.join().expect("the holder thread");
+    let status = child.wait().expect("poly exits");
+    let stderr = stderr_reader.join().expect("stderr reader");
+    let stdout = stdout_reader.join().expect("stdout reader");
 
-    let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        output.status.success(),
-        "the job must still run, late: {stderr}\n{}",
-        String::from_utf8_lossy(&output.stdout)
+        status.success(),
+        "the job must still run, late: {stderr}\n{stdout}"
     );
     assert!(
         stderr.contains("⏸ waiting to start: cargo-deny"),
