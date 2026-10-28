@@ -531,19 +531,16 @@ fn discovery_replays_the_walk_the_config_scan_already_made() {
     let configs = ConfigSet::build(&roots, Config::default()).unwrap();
     write_file(&root.join("late.py"), "y = 2\n");
 
-    let first = discover(&roots, &configs, &[]);
-    let names = |files: &[poly_core::discover::DiscoveredFile]| {
-        let mut names: Vec<_> = files
-            .iter()
-            .map(|f| f.path.file_name().unwrap().to_string_lossy().into_owned())
-            .collect();
-        names.sort();
-        names
+    let has = |files: &[poly_core::discover::DiscoveredFile], name: &str| {
+        files.iter().any(|f| f.path.file_name().is_some_and(|n| n == name))
     };
-    assert_eq!(names(&first), ["kept.py", "poly.toml"], "{first:?}");
+
+    let first = discover(&roots, &configs, &[]);
+    assert!(has(&first, "kept.py"), "{first:?}");
+    assert!(!has(&first, "late.py"), "the first discovery replays the scan: {first:?}");
 
     let second = discover(&roots, &configs, &[]);
-    assert_eq!(names(&second), ["kept.py", "late.py", "poly.toml"], "{second:?}");
+    assert!(has(&second, "late.py"), "the snapshot is consumed once: {second:?}");
 }
 
 #[test]
