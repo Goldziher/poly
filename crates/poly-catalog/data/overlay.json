@@ -231,7 +231,30 @@
         "buf.yaml"
       ],
       "install": {
-        "hint": "brew install bufbuild/buf/buf"
+        "hint": "brew install bufbuild/buf/buf, or set [tools.buf] version to a pinned release poly can download",
+        "releases": {
+          "1.75.0": {
+            "kind": "binary",
+            "assets": {
+              "darwin-aarch64": {
+                "url": "https://github.com/bufbuild/buf/releases/download/v1.75.0/buf-Darwin-arm64",
+                "sha256": "f71b009ebd8530b12fd85b060c6c245e15d6e5110ccc8da48d8b6fa71e59330b"
+              },
+              "darwin-x86_64": {
+                "url": "https://github.com/bufbuild/buf/releases/download/v1.75.0/buf-Darwin-x86_64",
+                "sha256": "ff6d0979143c661d59178a032c57be883b2ac03dc9bf7d00ffca222b0354bd46"
+              },
+              "linux-aarch64": {
+                "url": "https://github.com/bufbuild/buf/releases/download/v1.75.0/buf-Linux-aarch64",
+                "sha256": "00eb190aa82df17f393e05b04889cc60a0b13b3259d336e21a87d5f23ab4fd26"
+              },
+              "linux-x86_64": {
+                "url": "https://github.com/bufbuild/buf/releases/download/v1.75.0/buf-Linux-x86_64",
+                "sha256": "fad1e38d6909bbb583a4da81d8c02a01046e2cd663bde7e337dd24277393764b"
+              }
+            }
+          }
+        }
       }
     }
   },
@@ -303,7 +326,30 @@
         1
       ],
       "install": {
-        "hint": "brew install hadolint"
+        "hint": "brew install hadolint, or set [tools.hadolint] version to a pinned release poly can download",
+        "releases": {
+          "2.15.1": {
+            "kind": "binary",
+            "assets": {
+              "darwin-aarch64": {
+                "url": "https://github.com/hadolint/hadolint/releases/download/v2.15.1/hadolint-macos-arm64",
+                "sha256": "5c09f3213f8e40406abe048233d985eebef336d4a6a20021be47fadb6cf480a2"
+              },
+              "darwin-x86_64": {
+                "url": "https://github.com/hadolint/hadolint/releases/download/v2.15.1/hadolint-macos-x86_64",
+                "sha256": "ffe9bb18b23d5ed1eae50237aecdbb523d016e96da0bd4e7aa432040acfc3fde"
+              },
+              "linux-aarch64": {
+                "url": "https://github.com/hadolint/hadolint/releases/download/v2.15.1/hadolint-linux-arm64",
+                "sha256": "f6198ef8090f404dbb771abfee086eb8c48ac177f30da7fd3510aca35b344b5d"
+              },
+              "linux-x86_64": {
+                "url": "https://github.com/hadolint/hadolint/releases/download/v2.15.1/hadolint-linux-x86_64",
+                "sha256": "c7187db94eeeeca956519a6af171adc31453941a1e777961f6e680f697c8c507"
+              }
+            }
+          }
+        }
       }
     }
   },
