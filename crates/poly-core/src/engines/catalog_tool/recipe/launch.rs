@@ -172,6 +172,7 @@ fn pinned_release<'a>(tool: &'a Tool, recipe: &'a Recipe, config: &ToolConfig) -
             asset: Asset {
                 url: url.clone(),
                 sha256: sha256.to_ascii_lowercase(),
+                member: None,
             },
             kind,
             known: None,

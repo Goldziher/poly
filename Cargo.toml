@@ -63,6 +63,7 @@ enquote = "1.1.0"
 dunce = "1.0.5"
 etcetera = "0.11.0"
 fancy-regex = "0.20.0"
+flate2 = "1.1"
 fs-err = "3.3.2"
 fs2 = "0.4"
 gitfluff = { path = "crates/gitfluff" }
@@ -159,6 +160,7 @@ sqruff-lib = "0.43"
 sqruff-lib-core = "0.43"
 strum = { version = "0.28.0", features = ["derive"] }
 taplo = "0.14"
+tar = { version = "0.4", default-features = false }
 target-lexicon = "0.13.5"
 tempfile = "3"
 terminal_size = "0.4.4"
@@ -179,6 +181,7 @@ ureq = "3"
 unicode-width = { version = "0.2.2", default-features = false }
 walkdir = "2.5.0"
 which = "8.0.6"
+zip = { version = "8.6", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 # oxc_formatter_yaml/toml pull `oxc_allocator` from the registry through their parsers; resolve it to
 # the same git copy as the rest of the oxc crates so there is a single `Allocator` type.

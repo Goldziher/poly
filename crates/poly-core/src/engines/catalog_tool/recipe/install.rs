@@ -5,7 +5,9 @@
 //! `install = "auto"`; poly does not fetch executables on its own initiative.
 //! The download is verified against a SHA-256 digest before it is made
 //! executable and renamed into place, so a truncated or substituted file is never
-//! left where a later run would trust it.
+//! left where a later run would trust it. An asset that names a `member` is a
+//! `.tar.gz` / `.tgz` / `.zip`: the digest covers the archive as downloaded, and
+//! only that member is installed.
 
 use std::fs::File;
 use std::io::{Read, Write};
@@ -16,6 +18,9 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use poly_catalog::{Asset, Release, ReleaseKind};
 use sha2::{Digest, Sha256};
+use tempfile::NamedTempFile;
+
+use super::archive::{self, Format};
 
 /// Platform key of the running host in the catalog's asset tables.
 pub(super) fn platform() -> String {
@@ -32,9 +37,14 @@ pub(super) fn asset_for(release: &Release) -> Option<&Asset> {
     release.assets.get(&platform()).or_else(|| release.assets.get("any"))
 }
 
-/// Where a release of `tool` is stored: `<cache>/tools/<tool>/<version>/<file>`.
+/// Where a release of `tool` is stored: `<cache>/tools/<tool>/<version>/<file>`,
+/// where `<file>` is the archive member's name, or the download's own name.
 pub(super) fn destination(tool: &str, version: &str, asset: &Asset) -> Result<PathBuf> {
-    let file = asset.url.rsplit('/').next().filter(|f| !f.is_empty()).unwrap_or(tool);
+    let named = match &asset.member {
+        Some(member) => Path::new(member).file_name().and_then(|name| name.to_str()),
+        None => asset.url.rsplit('/').next(),
+    };
+    let file = named.filter(|f| !f.is_empty()).unwrap_or(tool);
     Ok(poly_cache::cache_home()?
         .join("tools")
         .join(tool)
@@ -82,18 +92,36 @@ pub(super) fn ensure(path: &Path, asset: &Asset, kind: ReleaseKind) -> Result<()
             asset.sha256
         );
     }
+    let staged = match &asset.member {
+        Some(member) => unpack(&partial, &asset.url, member, directory)?,
+        None => partial,
+    };
     #[cfg(unix)]
     if kind == ReleaseKind::Binary {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(partial.path(), std::fs::Permissions::from_mode(0o755))
+        std::fs::set_permissions(staged.path(), std::fs::Permissions::from_mode(0o755))
             .context("marking the download executable")?;
     }
     let _ = kind;
-    partial
+    staged
         .persist(path)
         .with_context(|| format!("installing to {}", path.display()))?;
     std::fs::write(stamp(path), format!("{}\n", asset.sha256)).context("recording the install digest")?;
     Ok(())
+}
+
+/// Extract `member` from the verified `archive` download into a fresh file
+/// beside it, so the final rename stays on one filesystem.
+fn unpack(download: &NamedTempFile, url: &str, member: &str, directory: &Path) -> Result<NamedTempFile> {
+    let format = Format::of(url).with_context(|| format!("{url} is not a .tar.gz, .tgz or .zip archive"))?;
+    let source = download.reopen().context("reopening the download")?;
+    let mut extracted = tempfile::Builder::new()
+        .prefix(".extract-")
+        .tempfile_in(directory)
+        .with_context(|| format!("creating an extraction file in {}", directory.display()))?;
+    archive::extract_member(source, format, member, extracted.as_file_mut())
+        .with_context(|| format!("extracting `{member}` from {url}"))?;
+    Ok(extracted)
 }
 
 /// Stream `url` into `target`, returning the hex SHA-256 of what was written.
@@ -131,6 +159,10 @@ mod tests {
     use super::*;
 
     fn serve(body: &'static [u8]) -> String {
+        serve_as(body, "tool-1.0")
+    }
+
+    fn serve_as(body: &'static [u8], name: &str) -> String {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
         let address = listener.local_addr().expect("addr");
         std::thread::spawn(move || {
@@ -146,7 +178,7 @@ mod tests {
                 stream.write_all(body).expect("body");
             }
         });
-        format!("http://{address}/tool-1.0")
+        format!("http://{address}/{name}")
     }
 
     fn sha(body: &[u8]) -> String {
@@ -159,6 +191,7 @@ mod tests {
         let asset = Asset {
             url,
             sha256: sha(b"#!/bin/sh\nexit 0\n"),
+            member: None,
         };
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("tool-1.0");
@@ -174,12 +207,97 @@ mod tests {
         }
     }
 
+    fn archive_asset(archive: Vec<u8>, name: &str, member: &str) -> Asset {
+        let body: &'static [u8] = Box::leak(archive.into_boxed_slice());
+        Asset {
+            url: serve_as(body, name),
+            sha256: sha(body),
+            member: Some(member.to_owned()),
+        }
+    }
+
+    #[test]
+    fn an_archive_installs_only_its_member_under_the_member_name() {
+        let archive = archive::tar_gz(&[
+            ("pkg/LICENSE", tar::EntryType::Regular, "license"),
+            ("pkg/bin/tool", tar::EntryType::Regular, "#!/bin/sh\nexit 0\n"),
+        ]);
+        let asset = archive_asset(archive, "tool-1.0.tar.gz", "pkg/bin/tool");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let version_dir = dir.path().join("1.0");
+        let path = version_dir.join("tool");
+        ensure(&path, &asset, ReleaseKind::Binary).expect("install");
+        assert_eq!(std::fs::read(&path).expect("read"), b"#!/bin/sh\nexit 0\n");
+        assert!(is_installed(&path, &asset));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&path).expect("meta").permissions().mode() & 0o111,
+                0o111
+            );
+        }
+        let mut left: Vec<_> = std::fs::read_dir(&version_dir)
+            .expect("read_dir")
+            .map(|entry| entry.expect("entry").file_name())
+            .collect();
+        left.sort();
+        assert_eq!(left, ["tool", "tool.sha256"], "no download or extraction files remain");
+    }
+
+    #[test]
+    fn the_cache_file_of_an_archive_asset_is_named_after_the_member() {
+        let asset = Asset {
+            url: "https://example.invalid/helm-v4.tar.gz".to_owned(),
+            sha256: String::new(),
+            member: Some("linux-amd64/helm".to_owned()),
+        };
+        let path = destination("helm", "4.0.0", &asset).expect("destination");
+        assert!(path.ends_with("tools/helm/4.0.0/helm"), "{}", path.display());
+    }
+
+    #[test]
+    fn an_archive_missing_its_member_installs_nothing() {
+        let archive = archive::tar_gz(&[("other", tar::EntryType::Regular, "x")]);
+        let asset = archive_asset(archive, "tool-1.0.tar.gz", "tool");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("tool");
+        let error = ensure(&path, &asset, ReleaseKind::Binary).expect_err("no member");
+        assert!(format!("{error:#}").contains("no member"), "{error:#}");
+        assert!(!path.exists());
+        assert!(!is_installed(&path, &asset));
+    }
+
+    #[test]
+    fn an_archive_with_an_unknown_extension_is_refused() {
+        let archive = archive::tar_gz(&[("tool", tar::EntryType::Regular, "x")]);
+        let asset = archive_asset(archive, "tool-1.0.tar.xz", "tool");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("tool");
+        let error = ensure(&path, &asset, ReleaseKind::Binary).expect_err("unknown format");
+        assert!(format!("{error:#}").contains("not a .tar.gz"), "{error:#}");
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn a_tampered_archive_is_refused_before_it_is_opened() {
+        let archive = archive::tar_gz(&[("tool", tar::EntryType::Regular, "x")]);
+        let mut asset = archive_asset(archive, "tool-1.0.tar.gz", "tool");
+        asset.sha256 = sha(b"what was pinned");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("tool");
+        let error = ensure(&path, &asset, ReleaseKind::Binary).expect_err("digest mismatch");
+        assert!(error.to_string().contains("refusing to install"), "{error:#}");
+        assert!(!path.exists());
+    }
+
     #[test]
     fn a_digest_mismatch_installs_nothing() {
         let url = serve(b"not what was pinned");
         let asset = Asset {
             url,
             sha256: sha(b"what was pinned"),
+            member: None,
         };
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("tool-1.0");
@@ -195,6 +313,7 @@ mod tests {
         let asset = Asset {
             url: "http://127.0.0.1:1/unreachable".to_owned(),
             sha256: sha(body),
+            member: None,
         };
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("tool");

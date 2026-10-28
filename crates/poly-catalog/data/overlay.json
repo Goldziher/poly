@@ -292,7 +292,34 @@
         1
       ],
       "install": {
-        "hint": "brew install actionlint"
+        "hint": "brew install actionlint, or set [tools.actionlint] version to a pinned release poly can download",
+        "releases": {
+          "1.7.12": {
+            "kind": "binary",
+            "assets": {
+              "darwin-aarch64": {
+                "url": "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_darwin_arm64.tar.gz",
+                "sha256": "aba9ced2dee8d27fecca3dc7feb1a7f9a52caefa1eb46f3271ea66b6e0e6953f",
+                "member": "actionlint"
+              },
+              "darwin-x86_64": {
+                "url": "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_darwin_amd64.tar.gz",
+                "sha256": "5b44c3bc2255115c9b69e30efc0fecdf498fdb63c5d58e17084fd5f16324c644",
+                "member": "actionlint"
+              },
+              "linux-aarch64": {
+                "url": "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_arm64.tar.gz",
+                "sha256": "325e971b6ba9bfa504672e29be93c24981eeb1c07576d730e9f7c8805afff0c6",
+                "member": "actionlint"
+              },
+              "linux-x86_64": {
+                "url": "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz",
+                "sha256": "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8",
+                "member": "actionlint"
+              }
+            }
+          }
+        }
       }
     }
   },
@@ -420,7 +447,34 @@
         1
       ],
       "install": {
-        "hint": "brew install golangci-lint"
+        "hint": "brew install golangci-lint, or set [tools.golangci-lint] version to a pinned release poly can download",
+        "releases": {
+          "2.15.0": {
+            "kind": "binary",
+            "assets": {
+              "darwin-aarch64": {
+                "url": "https://github.com/golangci/golangci-lint/releases/download/v2.15.0/golangci-lint-2.15.0-darwin-arm64.tar.gz",
+                "sha256": "d1e409481a8ca846c4bc97e781eb5cb1bd5c23353a0b3977a1cbda1b1b6447d5",
+                "member": "golangci-lint-2.15.0-darwin-arm64/golangci-lint"
+              },
+              "darwin-x86_64": {
+                "url": "https://github.com/golangci/golangci-lint/releases/download/v2.15.0/golangci-lint-2.15.0-darwin-amd64.tar.gz",
+                "sha256": "767b899a28285e88ded2823d5dcc4bc5ef681173eb2d80f029a7b17ee4ece3b8",
+                "member": "golangci-lint-2.15.0-darwin-amd64/golangci-lint"
+              },
+              "linux-aarch64": {
+                "url": "https://github.com/golangci/golangci-lint/releases/download/v2.15.0/golangci-lint-2.15.0-linux-arm64.tar.gz",
+                "sha256": "b4d8f17068b35ee6060cc2f69a16fb48740d706fbba81661c318649c114a6998",
+                "member": "golangci-lint-2.15.0-linux-arm64/golangci-lint"
+              },
+              "linux-x86_64": {
+                "url": "https://github.com/golangci/golangci-lint/releases/download/v2.15.0/golangci-lint-2.15.0-linux-amd64.tar.gz",
+                "sha256": "9b7fe6a6bf6334b98decf8d86b11415ea7889afdabdd1959fdce23af2a9ebcea",
+                "member": "golangci-lint-2.15.0-linux-amd64/golangci-lint"
+              }
+            }
+          }
+        }
       },
       "new_from_rev_flag": "--new-from-rev"
     }
@@ -476,7 +530,34 @@
         "**"
       ],
       "install": {
-        "hint": "brew install helm"
+        "hint": "brew install helm, or set [tools.helm] version to a pinned release poly can download",
+        "releases": {
+          "4.3.1": {
+            "kind": "binary",
+            "assets": {
+              "darwin-aarch64": {
+                "url": "https://get.helm.sh/helm-v4.3.1-darwin-arm64.tar.gz",
+                "sha256": "6b4e61c8cd27d99e5a801e63ff25dd5c70b36875c2cd659d3e9ce6b76fc23198",
+                "member": "darwin-arm64/helm"
+              },
+              "darwin-x86_64": {
+                "url": "https://get.helm.sh/helm-v4.3.1-darwin-amd64.tar.gz",
+                "sha256": "34bec4eba761ba5c16d1965ee6b8f5b0abe5993974a802274e2a4f0418893d89",
+                "member": "darwin-amd64/helm"
+              },
+              "linux-aarch64": {
+                "url": "https://get.helm.sh/helm-v4.3.1-linux-arm64.tar.gz",
+                "sha256": "8cf8f66ecbc252ac8f7f06cca68aba88508ddfde3a6a34feb1678ad1694b4f88",
+                "member": "linux-arm64/helm"
+              },
+              "linux-x86_64": {
+                "url": "https://get.helm.sh/helm-v4.3.1-linux-amd64.tar.gz",
+                "sha256": "0403a88ae20913d11b10a2467b50087721fea7581736da6b9d3992f5357fe54b",
+                "member": "linux-amd64/helm"
+              }
+            }
+          }
+        }
       },
       "prepare": "dependency-build",
       "values_flag": "-f"
@@ -533,7 +614,34 @@
         "**"
       ],
       "install": {
-        "hint": "brew install helm"
+        "hint": "brew install helm, or set [tools.helm-template] version to a pinned release poly can download",
+        "releases": {
+          "4.3.1": {
+            "kind": "binary",
+            "assets": {
+              "darwin-aarch64": {
+                "url": "https://get.helm.sh/helm-v4.3.1-darwin-arm64.tar.gz",
+                "sha256": "6b4e61c8cd27d99e5a801e63ff25dd5c70b36875c2cd659d3e9ce6b76fc23198",
+                "member": "darwin-arm64/helm"
+              },
+              "darwin-x86_64": {
+                "url": "https://get.helm.sh/helm-v4.3.1-darwin-amd64.tar.gz",
+                "sha256": "34bec4eba761ba5c16d1965ee6b8f5b0abe5993974a802274e2a4f0418893d89",
+                "member": "darwin-amd64/helm"
+              },
+              "linux-aarch64": {
+                "url": "https://get.helm.sh/helm-v4.3.1-linux-arm64.tar.gz",
+                "sha256": "8cf8f66ecbc252ac8f7f06cca68aba88508ddfde3a6a34feb1678ad1694b4f88",
+                "member": "linux-arm64/helm"
+              },
+              "linux-x86_64": {
+                "url": "https://get.helm.sh/helm-v4.3.1-linux-amd64.tar.gz",
+                "sha256": "0403a88ae20913d11b10a2467b50087721fea7581736da6b9d3992f5357fe54b",
+                "member": "linux-amd64/helm"
+              }
+            }
+          }
+        }
       },
       "prepare": "dependency-build",
       "values_flag": "-f"
@@ -575,7 +683,34 @@
         2
       ],
       "install": {
-        "hint": "brew install tflint"
+        "hint": "brew install tflint, or set [tools.tflint] version to a pinned release poly can download",
+        "releases": {
+          "0.65.0": {
+            "kind": "binary",
+            "assets": {
+              "darwin-aarch64": {
+                "url": "https://github.com/terraform-linters/tflint/releases/download/v0.65.0/tflint_darwin_arm64.zip",
+                "sha256": "5a71c63481ba56760864298011fdb7317a9ae80a0bbaeceefa35883c7f62ac71",
+                "member": "tflint"
+              },
+              "darwin-x86_64": {
+                "url": "https://github.com/terraform-linters/tflint/releases/download/v0.65.0/tflint_darwin_amd64.zip",
+                "sha256": "27696ea23ed77c1918945147ebfe6485a74f58560b9557ccecc77379205702c5",
+                "member": "tflint"
+              },
+              "linux-aarch64": {
+                "url": "https://github.com/terraform-linters/tflint/releases/download/v0.65.0/tflint_linux_arm64.zip",
+                "sha256": "843017c47a98be1de4d88fa038daa293770fe25cd01656c4f08b2e30d1d3b3a0",
+                "member": "tflint"
+              },
+              "linux-x86_64": {
+                "url": "https://github.com/terraform-linters/tflint/releases/download/v0.65.0/tflint_linux_amd64.zip",
+                "sha256": "d4c545ed2e29d6338604b586f34f544f380f70f243aa72f7b484713835eaec61",
+                "member": "tflint"
+              }
+            }
+          }
+        }
       }
     }
   },
@@ -637,7 +772,34 @@
     },
     "recipe": {
       "install": {
-        "hint": "brew install opentofu"
+        "hint": "brew install opentofu, or set [tools.tofu] version to a pinned release poly can download",
+        "releases": {
+          "1.13.2": {
+            "kind": "binary",
+            "assets": {
+              "darwin-aarch64": {
+                "url": "https://github.com/opentofu/opentofu/releases/download/v1.13.2/tofu_1.13.2_darwin_arm64.tar.gz",
+                "sha256": "0d1cdc85f38992055b48e7fb161304a2ddfe2e5ee0ff68ffec9d0349c8bd1b59",
+                "member": "tofu"
+              },
+              "darwin-x86_64": {
+                "url": "https://github.com/opentofu/opentofu/releases/download/v1.13.2/tofu_1.13.2_darwin_amd64.tar.gz",
+                "sha256": "dc6e4eb1d3ed6550c2ef052596f933dbcd8c806957665ea83ae7537147cb3074",
+                "member": "tofu"
+              },
+              "linux-aarch64": {
+                "url": "https://github.com/opentofu/opentofu/releases/download/v1.13.2/tofu_1.13.2_linux_arm64.tar.gz",
+                "sha256": "88e2d9e3f94f97b76ab2faf55ade87578f56aed19c5e45fa139d70e994366d1f",
+                "member": "tofu"
+              },
+              "linux-x86_64": {
+                "url": "https://github.com/opentofu/opentofu/releases/download/v1.13.2/tofu_1.13.2_linux_amd64.tar.gz",
+                "sha256": "ac05d9952662c7db28dd57e93f0a68018837bfdf9342384ec0987977c16a9645",
+                "member": "tofu"
+              }
+            }
+          }
+        }
       }
     }
   },

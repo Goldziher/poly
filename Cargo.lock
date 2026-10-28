@@ -5205,6 +5205,7 @@ dependencies = [
  "dockerfile-parser",
  "dotenv-analyzer",
  "dotenv-core",
+ "flate2",
  "globset",
  "graphql-parser",
  "hcl-edit",
@@ -5263,6 +5264,7 @@ dependencies = [
  "sqruff-lib",
  "sqruff-lib-core",
  "taplo",
+ "tar",
  "tempfile",
  "terminal_size",
  "toml 1.1.8+spec-1.1.0",
@@ -5277,6 +5279,7 @@ dependencies = [
  "unicase",
  "ureq",
  "which",
+ "zip",
 ]
 
 [[package]]
@@ -8650,6 +8653,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2d04a6b5381502aa6087c94c669499eb1602eb9c5e8198e534de571f7154809b"
 dependencies = [
  "crc32fast",
+ "flate2",
  "indexmap 2.14.2",
  "memchr",
  "typed-path",

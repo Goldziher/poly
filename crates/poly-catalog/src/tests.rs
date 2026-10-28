@@ -271,6 +271,32 @@ fn hadolint_reads_json_and_treats_exit_1_as_findings() {
 }
 
 #[test]
+fn archive_tools_are_pinned_for_every_platform_with_a_member_inside_the_archive() {
+    for (name, version) in [
+        ("helm", "4.3.1"),
+        ("helm-template", "4.3.1"),
+        ("golangci-lint", "2.15.0"),
+        ("actionlint", "1.7.12"),
+        ("tflint", "0.65.0"),
+        ("tofu", "1.13.2"),
+    ] {
+        let install = recipe_of(name).install.as_ref().expect("install");
+        let release = install.releases.get(version).unwrap_or_else(|| panic!("{name} {version}"));
+        assert_eq!(release.kind, crate::ReleaseKind::Binary);
+        for platform in ["darwin-aarch64", "darwin-x86_64", "linux-aarch64", "linux-x86_64"] {
+            let asset = release.assets.get(platform).unwrap_or_else(|| panic!("{name} lacks {platform}"));
+            let member = asset.member.as_deref().unwrap_or_else(|| panic!("{name} {platform} has no member"));
+            assert!(!member.starts_with('/') && !member.split('/').any(|part| part == ".."), "{member}");
+            assert!(
+                [".tar.gz", ".tgz", ".zip"].iter().any(|ext| asset.url.ends_with(ext)),
+                "{name} {platform}: {}",
+                asset.url
+            );
+        }
+    }
+}
+
+#[test]
 fn buf_and_hadolint_are_pinned_for_every_desktop_and_server_platform() {
     for (name, version) in [("buf", "1.75.0"), ("hadolint", "2.15.1")] {
         let install = recipe_of(name).install.as_ref().expect("install");

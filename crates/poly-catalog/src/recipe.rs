@@ -133,6 +133,10 @@ pub struct Asset {
     pub url: String,
     /// Lower-case hex SHA-256 of the downloaded file.
     pub sha256: String,
+    /// Path of the executable inside a `.tar.gz` / `.tgz` / `.zip` download.
+    /// Absent when the download is the executable itself.
+    #[serde(default)]
+    pub member: Option<String>,
 }
 
 /// Execution recipe for one catalog tool.
