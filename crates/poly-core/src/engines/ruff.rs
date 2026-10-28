@@ -32,7 +32,7 @@
 //! `[lint.python.ruff]` table in the user's `poly.toml`. On the format side the
 //! recognized keys are `line_length`, `indent_width`, `docstring_code_format`,
 //! and `docstring_code_line_length` (an integer, or `"dynamic"`); see
-//! [`build_format_options`].
+//! [`format::build_options`].
 
 use std::collections::HashMap;
 use std::path::Path;
