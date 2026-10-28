@@ -67,15 +67,23 @@ x-ai-rulez:
   extension becomes `Language::Other(name)`, and it is the tier-2 engine — not this module —
   that hands that name to `tree-sitter-language-pack`.
 - `engines/` — one module per backend. Most are a single `engines/<tool>.rs`; a backend that
-  outgrows the 1000-line cap becomes a directory split per concern (`oxc/`, `mago/`,
-  `native_tool/`, `astgrep/`, `quality/`, `treesitter/`, `catalog_tool/`):
-  - tier-1 native crate backends, registered per language in `registry.rs`: `ruff.rs`
-    (Python), `oxc/` (JS/TS/JSX/TSX/JSON/JSONC), `taplo.rs` (TOML), `rumdl.rs`
-    (Markdown/MDX), `sqruff.rs` (SQL), `yaml.rs`, `malva.rs` (CSS/SCSS/Less), `biome_css.rs`
-    and `biome_graphql.rs` (both named `"biome"`; shared helpers in `biome_common.rs`),
-    `graphql.rs`, `markup_fmt.rs` (HTML/Vue/Svelte/Astro/Angular/Jinja/Vento/Mustache/XML),
-    `mago/` (PHP), `nixfmt.rs` (Nix — named `"alejandra"`, the formatter it wraps),
-    `rubyfmt.rs` (Ruby), `hcl.rs`, `dockerfile.rs`, `dotenv.rs`, `ini.rs`.
+  outgrows the 1000-line cap becomes a directory split per concern (`oxc/`, `mago/`, `hcl/`,
+  `native_tool/`, `astgrep/`, `quality/`, `treesitter/`, `catalog_tool/`; `ruff.rs` keeps its
+  submodules in `ruff/`):
+  - tier-1 native crate backends, registered per language in `registry.rs`: `ruff.rs` +
+    `ruff/` (Python; `ruff/target.rs` resolves the target version from the project's ruff
+    config or `requires-python`), `oxc/` (JS/TS/JSX/TSX/JSON/JSONC), `taplo.rs` (TOML: taplo
+    lint, `oxc_formatter_toml` format unless a taplo layout key selects taplo's formatter),
+    `rumdl.rs` (Markdown/MDX lint; `markdown_fmt.rs` formats through `oxc_formatter_markdown`
+    with `markdown_embed.rs` dispatching fences and front matter), `sqruff.rs` (SQL), `yaml.rs`
+    (`serde_yaml` lint, `oxc_formatter_yaml` format), `malva.rs` (CSS/SCSS/Less — formats via
+    `oxc_formatter_css` unless a malva key is set), `biome_css.rs` and `biome_graphql.rs` (both
+    named `"biome"`; shared helpers in `biome_common.rs`), `graphql.rs`, `markup_fmt.rs`
+    (HTML/Vue/Svelte/Astro/Angular/Jinja/Vento/Mustache/XML), `mago/` (PHP), `nixfmt.rs` (Nix —
+    named `"alejandra"`, the formatter it wraps), `rubyfmt.rs` (Ruby), `hcl/` (`hcl-edit` lint
+    plus a port of `hclwrite.Format`), `dockerfile.rs` (on the vendored `dockerfile-parser`
+    crate), `dotenv.rs`, `ini.rs`. A project `.oxfmtrc.json[c]` / `.oxlintrc.json[c]` is read by
+    the crate-level `oxfmt_native.rs` / `oxfmt_scope.rs` / `oxlint_native.rs`.
   - **cross-cutting backends** (`languages() == &[]`, appended by the registry to every
     language): `typos.rs` (spell-check), `astgrep/` (ast-grep rules — user rule dirs plus the
     built-in pack, see Coverage tiers), `uncomment.rs`, and `quality/` (ADR 0027 code-quality
@@ -89,15 +97,23 @@ x-ai-rulez:
     whitespace is significant. Parsers are pooled thread-locally, never built per file.
   - `native_tool/` — the **native-toolchain backend** (table-driven, `spec.rs`): wraps a
     language's canonical first-party CLI as a stdin→stdout subprocess when present and
-    enabled. Eleven specs today — `gofmt`, `rustfmt` and `shellcheck` (default-on), plus
-    `zig fmt`, `shfmt`, `google-java-format`, `ktfmt`, `Rscript`/styler, `swift-format`,
-    `dart format`, `gleam format` (all opt-in). One directory, one table — not one file per
-    tool.
+    enabled (or batched over many files, opt-in per tool with `batch`, ADR 0033). Eleven specs
+    today — `gofmt`, `rustfmt`, `shfmt` and `shellcheck` (default-on), plus `zig fmt`,
+    `google-java-format`, `ktfmt`, `Rscript`/styler, `swift-format`, `dart format`,
+    `gleam format` (all opt-in). One directory, one table — not one file per tool.
   - `catalog_tool/` — the opt-in **catalog tier** (ADR 0013): runs any `poly-catalog` tool a
     user enables with `[tools.<name>] enabled = true`, over stdin or a temp file. Capability-
-    probed, so a missing binary is a no-op rather than an error.
+    probed, so a missing binary is a warning rather than an error. `catalog_tool/recipe/` is
+    the **recipe tier** (ADR 0035): fourteen tools (`golangci-lint`, `helm`, `buf`, `hadolint`,
+    `tflint`, `checkstyle`, …) whose overlay entry in `poly-catalog`'s `overlay.json` carries a
+    recipe run batched per unit (module, chart, directory), with their report parsed into
+    per-line diagnostics and an optional pinned, checksummed download (`install = "auto"`).
   - support modules, not backends: `biome_common.rs`, `rule_config.rs` (the shared
     `select` / `extend_select` / `ignore` / `[lint.<lang>.<tool>.rules.<id>]` schema),
+    `config_keys/` (each engine's declared option keys, behind `unknown-config-key` and the
+    published JSON Schema), `core_options.rs` (layout options shared by the oxfmt-equivalent
+    formatters), `format_scope.rs` (hands named files such as `pyproject.toml` to a more specific
+    formatter), `grammar.rs` / `line_index.rs` (shared grammar memo and offset-to-line index),
     `template.rs` (Go/Helm
     template detection behind the `yaml` and `rumdl` `skip_reason`s; `markup_fmt` has its own
     template-target check).

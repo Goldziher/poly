@@ -4,7 +4,7 @@
 version = 1
 ai_rulez_version = '5.7.0'
 scope = 'all'
-tree = 'sha256:7d24f6704ce972f4b7aebfb8e716cf3930041fb59d757a313f90ac69c04458ab'
+tree = 'sha256:938cc25525c0a1ff548911600e53ebde90fad1614079bc5027c349edc08d052a'
 
 [[served]]
 name = 'adr-workflow'
@@ -100,7 +100,7 @@ digest = 'sha256:f406604437e2998fc756a0a5b6a08cd832b871c188f76ee5ecbfef33184e965
 kind = 'agent'
 id = 'backend-author'
 path = 'agents/backend-author.md'
-digest = 'sha256:eefdbc3711a51d4302a1a9f7c8541c24f75715f66526ca0302f7467ce16f7f25'
+digest = 'sha256:6ba10488f7b72634edcc26b8050d1b323764f9eff1e10ed8656674359a35f33c'
 
 [[item]]
 kind = 'agent'
@@ -118,25 +118,25 @@ digest = 'sha256:cce650aeeb6442614a1867d6f4e64adb1a4181276c70d4d6b71ef5431f952d1
 kind = 'context'
 id = 'code-style'
 path = 'context/code-style.md'
-digest = 'sha256:2dfce88443cf44a501f646579d214bc7a7d554adb1761b63ec39e251937e7d55'
+digest = 'sha256:235e15dccae8b58fa4725c3085f5420f3cc6e1adc9e0854eb7f8df881735f8fe'
 
 [[item]]
 kind = 'context'
 id = 'crate-layout'
 path = 'context/crate-layout.md'
-digest = 'sha256:06692692273edbccc44fd1790d5f7a1ca01351b3a08013b4fafe54b7833da7a6'
+digest = 'sha256:7b3af7de7cdd8fffabd4a4b9171d85a4d3e81a6e9cca4ba26239bec149311aec'
 
 [[item]]
 kind = 'context'
 id = 'engine-library'
 path = 'context/engine-library.md'
-digest = 'sha256:ef38f76d787f21dd61a983494449b4bda0da39e58c825f30ac834f321bdf40e4'
+digest = 'sha256:cfcab90e69e58a8c73a724e13a2713151e1fc425abb0dc62f3ff5c5b0532f964'
 
 [[item]]
 kind = 'context'
 id = 'poly'
 path = 'context/poly.md'
-digest = 'sha256:e4b6a287748a23b11d1a31108ccada1d66f3ca9af3351e5db67a668da88c290e'
+digest = 'sha256:db3671d724268a3de53601b9d24f4fc7379264e2ec975a546058722498c1d9cb'
 
 [[item]]
 kind = 'context'
@@ -148,7 +148,7 @@ digest = 'sha256:aaa68ec45e6880b163c4d3484facbf5721fa212c3490adfba2c2e0721ccacd6
 kind = 'context'
 id = 'runtime-architecture'
 path = 'context/runtime-architecture.md'
-digest = 'sha256:523d2f69192ccb9d1bd164d131e442dbbbe26aaa765507143b0076562580249f'
+digest = 'sha256:588266f5c5112977a0213b3a87c301a93ce68379f65ee9aa391029ee91b2b99b'
 
 [[item]]
 kind = 'rule'
@@ -160,7 +160,7 @@ digest = 'sha256:fc06976e79113321574826fc8b13568a02e3e1471cd09014d58db3c67b6aaa4
 kind = 'rule'
 id = 'module-size-cap'
 path = 'rules/module-size-cap.md'
-digest = 'sha256:9da8c3cb04d108123c4f482f073e6f8ab4f29fa72aa49c160ef03a02d06e2934'
+digest = 'sha256:0ce8e5a971ac14cd56b0ae397c57f2520c1bc36d045fcc1b043899c60866cb69'
 
 [[item]]
 kind = 'rule'

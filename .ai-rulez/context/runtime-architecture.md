@@ -30,18 +30,21 @@ pub trait Engine: Send + Sync {
     fn version(&self) -> &str;                         // folded into the cache key
 
     // Defaulted methods:
+    fn option_keys(&self, table: OptionTable) -> OptionKeys;      // declared [lint]/[fmt] keys
     fn provides_language_lint(&self, language: &Language, cfg: &EngineConfig) -> bool;
     fn skip_reason(&self, src: &SourceFile) -> Option<&'static str>;
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>>;
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput>;
     fn self_manages_enabled(&self) -> bool;
     fn supersedes_generic_formatter(&self) -> bool;
+    // ...plus cache salts (`*_context`, `*_salt`), batching (`*_batch`) and catalog takeover.
 }
 pub enum FormatOutput { Unchanged, Formatted(String) }
 ```
 
 Contract rules: `Engine` is `Send + Sync` (it runs inside a rayon `par_iter`); `version()`
-must change whenever output could change, because it is part of the cache key; `format`
+must change whenever output could change, because it is part of the cache key (other inputs,
+such as a project config file, go in through the salt/context methods); `format`
 returns `Unchanged` rather than echoing input so the runner can skip writes; `lint`/`format`
 default to no-ops for engines that lack a capability (declare honestly via `capabilities()`).
 The trait is an **internal extension point**, not stable public API — backends live in
@@ -97,19 +100,19 @@ Per-language resolution order:
    pure-Rust crate can match these tools, and reimplementing them is a disproportionate
    maintenance sink. Strict discipline keeps the exception honest:
 
-   - **`rustfmt` and `gofmt` are default-on when present; everything else is opt-in, off by
-     default.** The two canonical formatters with no viable Rust library run automatically when
-     found on PATH (ADR 0014 amendment, 2026-06-28), matching what `cargo fmt`/`gofmt` users
-     already expect; `zig fmt` and every native *lint* tool stay opt-in via config
-     (`[fmt.<lang>.<tool>] enabled = true`). Output then depends on the host tool's presence and
+   - **`rustfmt`, `gofmt`, `shellcheck` and `shfmt` are default-on when present; everything
+     else is opt-in.** `rustfmt`/`gofmt` per ADR 0014's 2026-06-28 amendment, the shell pair per
+     the 2026-08-29 / 2026-09-15 ones (shell has no first-party tool); the rest stay opt-in via
+     `[fmt.<lang>.<tool>] enabled = true`. Output then depends on the host tool's presence and
      version, which is at odds with reproducibility — so CI must pin the toolchain. Either way,
      when the tool is absent the language falls through to tier-2, so the zero-dependency promise
      is intact for anyone without the toolchain installed.
    - **Capability-gated, graceful degradation.** Probe for the tool once (cached); declare the
      `format`/`lint` capability only when it is found *and* enabled; otherwise the language
      falls through to tier-2. A missing toolchain is never an error — just lower fidelity.
-   - **Per-file, stdin→stdout only.** Wrap only tools that process a single file over
-     stdin/stdout (`gofmt`, `rustfmt`, `zig fmt`). Project-wide tools that must compile a
+   - **Per-file, stdin→stdout.** Wrap only tools that process a single file over
+     stdin/stdout (`gofmt`, `rustfmt`, `zig fmt`); opt-in `batch = true` (ADR 0033) must match
+     the per-file output exactly. Project-wide tools that must compile a
      package — `clippy`, `go vet`, `mix format` — do **not** fit the rayon per-file unit or the
      content-hash cache and are explicitly out of scope for this tier.
    - **Honest cache key + least privilege.** Fold the tool's resolved `--version` into
@@ -118,7 +121,9 @@ Per-language resolution order:
 4. **Catalog tier** (`catalog_tool/`, ADR 0013) — any `poly-catalog` tool a user opts into with
    `[tools.<name>] enabled = true`, run per file over stdin or a temp file. Breadth over
    fidelity: a lint failure maps to one file-level `Diagnostic` with no span and no rule code.
-   Capability-probed, so an absent binary is a no-op.
+   An absent binary is a warning, not an error. **Recipe tools** (`catalog_tool/recipe/`, ADR
+   0035; `golangci-lint`, `helm`, `buf`, …) run batched per unit with parsed per-line reports and
+   optional pinned downloads (`install = "auto"`); a whole-language one takes over tier-1.
 
 ### Cross-cutting backends (every language)
 
@@ -131,7 +136,8 @@ Two of them carry poly's lint coverage for languages no tier-1 backend reaches:
 - **`quality/` — the code-quality tier (ADR 0027).** Tree-sitter metric rules at *warning*
   severity, on by default: `file-too-long` (1000), `function-too-long` (80), `type-too-long`
   (300), `too-many-parameters` (6), `nesting-too-deep` (4), `cyclomatic-complexity` (20),
-  `lazy-ignore`; `magic-number` and `law-of-demeter` ship opt-in. A **per-language deferral
+  `lazy-ignore`; `magic-number` and `law-of-demeter` ship opt-in; path-only
+  `uncollected-test-file` (ADR 0036) is on for Python, Go and Ruby. A **per-language deferral
   table** (`quality/family.rs`) keeps the tier from ever duplicating a tier-1 rule (ruff's
   `C901`/`PLR0913`, oxlint's `max-depth`/`max-params`). Coverage is claimed honestly: only where
   poly has both a definition query (`definitions::has_query`) **and** a construct table

@@ -15,12 +15,12 @@ crate dependencies — ruff, oxc, biome (CSS/GraphQL), mago (PHP), taplo, rumdl,
 markup_fmt, rubyfmt, nixfmt, typos, and more under `crates/poly-core/src/engines/` — with a
 tree-sitter generic tier for the long tail. Two cross-cutting lint tiers run on top: the native
 `quality` metric engine and ast-grep with a built-in rule pack. Canonical first-party CLIs are
-used when found on `PATH` (`rustfmt`, `gofmt` and `shellcheck` are default-on; `zig fmt`,
-`shfmt`, `google-java-format`, `ktfmt`, `swift-format`, `dartfmt`, `styler`, `gleamfmt` are
-opt-in), and
-whole-project tools (`cargo clippy` / `cargo-sort` / `cargo-machete` / `cargo-deny`, plus opt-in
-catalog tools such as `golangci-lint` and `actionlint`) run in the whole-project phase, not the
-per-file tier.
+used when found on `PATH` (`rustfmt`, `gofmt`, `shfmt` and `shellcheck` are default-on;
+`zig fmt`, `google-java-format`, `ktfmt`, `swift-format`, `dartfmt`, `styler`, `gleamfmt` are
+opt-in). Opt-in catalog tools run in the per-file tier; fourteen (`golangci-lint`, `helm`,
+`buf`, …) carry recipes: batched runs, parsed reports, pinned downloads. Whole-project tools (`cargo clippy` / `cargo-sort` / `cargo-machete` /
+`cargo-deny` and `workspace = true` hook jobs) run in the whole-project phase, not the per-file
+tier.
 
 ## Commands
 
@@ -36,11 +36,13 @@ Both `lint` and `fmt` share: `--format pretty|json|toon`, `--config <PATH>`, `--
 `--skip-generated` / `--include-generated`, `--only <ENGINE>` / `--skip <ENGINE>` (restrict the
 per-file tier to named engines, comma-separated and repeatable — narrows only, never enables a
 backend config left off, and skips the whole-project phase since it is tools, not engines), and
-`--deny-skips` / `--max-skips <N>`. `poly lint` adds `--no-workspace` and `--workspace`.
+`--deny-skips` / `--max-skips <N>`. `poly lint` adds `--no-workspace` and `--workspace`; `poly
+fmt` adds `--check` and `--exit-zero-on-fix`.
 
 The other subcommands: `poly hooks` (native git-hook runner over `[hooks]`), `poly commit`
 (commit-message lint, gitfluff), `poly rules test|list` (custom + built-in ast-grep rule packs),
-`poly config update|show`, `poly cache`, `poly migrate`, `poly mcp`, `poly doctor`.
+`poly config update|show|schema`, `poly cache`, `poly migrate` (absorbs ruff / taplo /
+markdownlint / typos configs and lefthook / pre-commit hook configs), `poly mcp`, `poly doctor`.
 
 ## Machine-readable output
 
@@ -106,7 +108,9 @@ beneath the file, `poly.local.toml` wins on top; `poly config update` locks a sy
 ref into `poly-config.lock`, and `poly config show` prints the effective merged config. The
 result cache and hook staged snapshot live in the per-user OS cache dir (`~/.cache/poly/<repo-key>`
 on Linux, `~/Library/Caches/poly/…` on macOS, `%LOCALAPPDATA%\poly\…` on Windows) — not in-repo.
-`POLY_CACHE_HOME` overrides the base; `[cache] dir` pins an explicit path. `[hooks]
+`POLY_CACHE_HOME` overrides the base; `[cache] dir` pins an explicit path. The staged snapshot
+is sparse by default (`[hooks] snapshot = "auto"`: the staged files and their directory context)
+unless a `workspace` or cargo job will run; `snapshot = "full"` forces the whole index. `[hooks]
 snapshot_include` symlinks named, git-untracked paths into that staged snapshot for a
 `workspace` hook whose build needs to read a gitignored input; an included file's fixes are
 withheld and it is never a per-file hook's own input.
@@ -118,7 +122,8 @@ Beyond the per-language backends, two cross-cutting lint mechanisms run on by de
 
 - **The native `quality` engine** — `file-too-long` (1000 lines), `function-too-long` (80),
   `type-too-long` (300), `too-many-parameters` (6), `nesting-too-deep` (4),
-  `cyclomatic-complexity` (20) and `lazy-ignore`, plus opt-in `magic-number` and `law-of-demeter`.
+  `cyclomatic-complexity` (20) and `lazy-ignore`, plus opt-in `magic-number` and `law-of-demeter`,
+  and `uncollected-test-file` (a test the runner will not collect; on for Python, Go, Ruby).
   Configured under `[lint.quality]` / `[lint.<lang>.quality]` with flat keys — a boolean toggle
   plus a threshold, e.g. `file_too_long = false`, `file_too_long_lines = 800`,
   `cyclomatic_complexity_max = 15`; `enabled = false` disables the tier. It never duplicates a

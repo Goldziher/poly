@@ -23,8 +23,9 @@ x-ai-rulez:
   `crates/poly-core/src/engines/<tool>.rs`, and when it outgrows the cap it becomes a directory
   split per concern (`engines/<tool>/lint.rs`, `format.rs`, `config.rs`) rather than one
   oversized module — as `engines/oxc/`, `engines/quality/`, `engines/treesitter/`,
-  `engines/astgrep/`, `engines/mago/`, `engines/native_tool/` and `engines/catalog_tool/`
-  already have. Pipeline stages follow the same shape: `discover.rs` and `resolve.rs` are single
-  files, `runner.rs` carries a `runner/` submodule directory (`plan.rs`, `edits.rs`, `skips.rs`,
-  `types.rs`), and reporting is the `report/` directory. The result cache is not a `poly-core`
+  `engines/astgrep/`, `engines/mago/`, `engines/hcl/`, `engines/native_tool/` and
+  `engines/catalog_tool/` already have (`engines/ruff.rs` keeps its submodules in `engines/ruff/`).
+  Pipeline stages follow the same shape: `discover.rs` is a single file, `resolve.rs` carries a
+  `resolve/` submodule directory (`canon.rs`, `scan.rs`), `runner.rs` carries `runner/` (`plan.rs`,
+  `edits.rs`, `skips.rs`, `types.rs`, `batch.rs`, …), and reporting is the `report/` directory. The result cache is not a `poly-core`
   module at all — it is the separate `poly-cache` crate.

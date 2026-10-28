@@ -31,7 +31,7 @@ Project-specific conventions baked into context so they ship into every AI tool'
   version + resolved config. **When an engine's dependency source changes, `Engine::version()`
   must change with it** — otherwise the cache serves results computed by the old dependency under
   the new one, a stale-cache correctness bug no test run reveals. (`RuffEngine::version()`
-  embedded the git rev and now embeds `ruff-0.16.9+…`; ADR 0003's dependency-refresh amendment.)
+  embedded the git rev and now embeds `ruff-0.17.3+…`; ADR 0003's dependency-refresh amendment.)
 - Reuse tree-sitter parsers via a pool — never construct one per file.
 - Avoid `.clone()` in inner loops; prefer `&str` / `&[u8]`. Defer ownership to the boundary.
 
@@ -43,15 +43,17 @@ Project-specific conventions baked into context so they ship into every AI tool'
   first-party CLI — `gofmt`, `rustfmt`, `zig fmt`, … — when it is present on the host. The two
   canonical formatters with no viable Rust library, **`rustfmt` and `gofmt`, are default-on when
   present** (ADR 0014 amendment, 2026-06-28) — matching what `cargo fmt`/`gofmt` users already
-  expect; the rest (`zig fmt`, and all opt-in lint/format tools) stay **off by default**. In
+  expect — and so are `shellcheck` and `shfmt` (2026-08-29 and 2026-09-15 amendments), since
+  shell has no first-party linter or formatter; the rest (`zig fmt`, the JVM formatters,
+  `styler`, `swift-format`, `dart format`, `gleam format`) stay **off by default**. In
   every case, when the tool is absent the language falls through to the tree-sitter tier, so the
   zero-dependency guarantee still holds for anyone without the toolchain installed. (`poly
   hooks`/polyhooks is a separate, pre-existing exception, since running foreign hooks inherently
   shells out.)
 - **Prefer crates.io, at an exact `=` version; use a pinned git `rev` only when the library we
-  need isn't published.** Since 2026-08-29 ruff comes from the registry: `ruff_linter = "=0.16.9"`
+  need isn't published.** Since 2026-08-29 ruff comes from the registry: `ruff_linter = "=0.17.3"`
   and `ruff_db` / `ruff_formatter` / `ruff_python_ast` / `ruff_python_formatter` /
-  `ruff_text_size` = `"=0.0.15"`.
+  `ruff_python_semantic` / `ruff_text_size` = `"=0.0.20"`.
 - **The `=` is deliberate.** These upstream internals are private-by-intent APIs their authors do
   not semver. A caret range on such a crate lets `cargo update` walk into unannounced breakage
   between releases — exactly the failure the git `rev` used to prevent. An exact pin keeps that
@@ -71,8 +73,9 @@ Project-specific conventions baked into context so they ship into every AI tool'
   pin also means dropping its `deny.toml` `allow-git` entry, and changing the engine's
   `version()` (see Performance). Read ADR 0003's 2026-08-29 amendment before touching this.
 - **Do not vendor.** A pinned git dep tracks upstream without a forked copy to maintain. (There
-  is no `vendor/` directory. Two documented exceptions predate this — the prek port in
-  `crates/poly-hooks` and the mdsf tool-catalog data — both recorded in `ATTRIBUTIONS.md`.)
+  is no `vendor/` directory. Three documented exceptions, all recorded in `ATTRIBUTIONS.md`: the
+  prek port in `crates/poly-hooks`, the mdsf tool-catalog data, and `crates/dockerfile-parser`,
+  maintained in-tree because upstream `dockerfile-parser-rs` is archived — ADR 0003 amendment.)
 - We do **not** publish our own crates to crates.io (see release-versioning), so git deps are
   fine — crates.io only forbids them when *publishing*, which we don't do.
 - Empirically verify a tool's library API before wiring it — clone a git dep to `/tmp` at the
