@@ -1,0 +1,30 @@
+---
+source: crates/poly-core/tests/uncollected_test_file.rs
+expression: "findings(dir.path(), &run)"
+---
+[
+    (
+        "pkg/parser.test.go",
+        "`parser.test.go` looks like a test, but go test will not collect it (expects `*_test.go`)",
+    ),
+    (
+        "tests/install_test.sh",
+        "`install_test.sh` is a Shell test, which this repository forbids (`forbid_test_files`)",
+    ),
+    (
+        "tests/kebab-name.test.py",
+        "`kebab-name.test.py` looks like a test, but the test runner will not collect it (expects `check_*.py`, `test_*.py`)",
+    ),
+    (
+        "tests/parser.test.py",
+        "`parser.test.py` looks like a test, but the test runner will not collect it (expects `check_*.py`, `test_*.py`)",
+    ),
+    (
+        "tests/parser_test.py",
+        "`parser_test.py` looks like a test, but the test runner will not collect it (expects `check_*.py`, `test_*.py`)",
+    ),
+    (
+        "web/test/parser_test.ts",
+        "`parser_test.ts` looks like a test, but Jest/Vitest will not collect it (expects `*.test.*`, `*.spec.*`, `**/__tests__/**`)",
+    ),
+]

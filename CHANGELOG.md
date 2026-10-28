@@ -7,6 +7,20 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+### Added
+
+- **`uncollected-test-file` flags tests the runner never collects** ([Goldziher/poly#39]). A green run
+  cannot show a test that did not run: pytest's default `python_files` skips `parser.test.py`, so a suite
+  of such files passes by running none of them. The `quality` tier now reports a file whose name marks
+  it as a test (a dotted `.test`/`.spec` stem anywhere, or a `test-`/`-test`-style name inside a test
+  directory) but which the language's runner will not collect, skipping helpers (`conftest.py`, `*_helper.rb`, `fixtures/`, `testdata/`, …). It is
+  on at warning severity for Python, Go and Ruby; JavaScript and TypeScript ship off, since Deno and
+  `node --test` collect the `*_test.ts` names Jest and Vitest skip. `[lint.<lang>.quality]` takes
+  `test_file_patterns` to match a custom runner config and `forbid_test_files` to rule a language's
+  tests out entirely (e.g. shell tests must be `.bats`). See ADR 0036.
+
+[Goldziher/poly#39]: https://github.com/Goldziher/poly/issues/39
+
 ### Fixed
 
 - **ruff lints for the project's own Python target again** ([Goldziher/poly#42]). poly never read

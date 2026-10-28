@@ -50,6 +50,7 @@ Context, Decision, Consequences (positive and negative/risks), and Alternatives 
 | [0033](0033-batch-engine-execution.md) | Batch Engine Execution for Native-Toolchain Backends | Accepted |
 | [0034](0034-test-context.md) | Test Context: Two Mechanisms, One Per-Language Predicate Each | Accepted |
 | [0035](0035-recipe-tools.md) | Recipe Tools: Batched, Grouped, Report-Parsing External Tools | Accepted |
+| [0036](0036-uncollected-test-files.md) | Uncollected Test Files: A Path-Only Rule in the Quality Tier | Accepted |
 
 ## Conventions
 

@@ -6,6 +6,7 @@
 //! runner (same mechanism every other engine relies on), so changing any of
 //! these invalidates cached results automatically.
 
+use super::test_files::TestFileSettings;
 use crate::config::EngineConfig;
 use crate::engine::OptionType;
 
@@ -50,6 +51,8 @@ pub(crate) const BOOL_OPTION_KEYS: &[&str] = &[
     "lazy_ignore",
     "magic_number",
     "law_of_demeter",
+    "uncollected_test_file",
+    "forbid_test_files",
 ];
 
 /// The integer (threshold) option keys, merged and declared like
@@ -66,7 +69,7 @@ pub(crate) const INTEGER_OPTION_KEYS: &[&str] = &[
 ];
 
 /// The array-valued option keys, merged and declared like [`BOOL_OPTION_KEYS`].
-pub(crate) const ARRAY_OPTION_KEYS: &[&str] = &["magic_number_allow"];
+pub(crate) const ARRAY_OPTION_KEYS: &[&str] = &["magic_number_allow", "test_file_patterns"];
 
 /// Every option key the quality backend reads, paired with the type it is read
 /// as, in one slice for `Engine::option_keys`.
@@ -106,6 +109,10 @@ pub struct Settings {
     /// Largest file, in bytes, the structural (parse-tree) rules run on; `0`
     /// means no limit. The text rules (`file-too-long`, `lazy-ignore`) always run.
     pub max_parse_bytes: i64,
+    /// `uncollected-test-file`: a path-only rule whose default depends on the
+    /// file's language, so its toggle stays unresolved here (see
+    /// [`TestFileSettings::enabled`]).
+    pub test_files: TestFileSettings,
 }
 
 /// A rule with an `on`/`off` toggle and an integer threshold.
@@ -175,6 +182,20 @@ impl Settings {
             law_of_demeter: flag(options, "law_of_demeter", false),
             law_of_demeter_depth: integer(options, "law_of_demeter_depth", DEFAULT_LAW_OF_DEMETER),
             max_parse_bytes: integer(options, "max_parse_bytes", DEFAULT_MAX_PARSE_BYTES),
+            test_files: TestFileSettings {
+                enabled: options.get("uncollected_test_file").and_then(toml::Value::as_bool),
+                patterns: options
+                    .get("test_file_patterns")
+                    .and_then(toml::Value::as_array)
+                    .map(|values| {
+                        values
+                            .iter()
+                            .filter_map(toml::Value::as_str)
+                            .map(str::to_owned)
+                            .collect()
+                    }),
+                forbid: flag(options, "forbid_test_files", false),
+            },
         }
     }
 
@@ -240,6 +261,34 @@ mod tests {
         assert!(!settings.law_of_demeter, "law-of-demeter is opt-in");
         assert_eq!(settings.law_of_demeter_depth, 3);
         assert_eq!(settings.max_parse_bytes, DEFAULT_MAX_PARSE_BYTES);
+        assert_eq!(
+            settings.test_files,
+            TestFileSettings::default(),
+            "uncollected-test-file defers its default to the language"
+        );
+    }
+
+    #[test]
+    fn test_file_keys_are_read() {
+        // Parsed from TOML rather than built with `toml::Value::String`, which the
+        // `config_keys` source audit would read as a string-typed use of the key.
+        let options: toml::Table = toml::from_str(
+            r#"
+uncollected_test_file = true
+forbid_test_files = true
+test_file_patterns = ["check_*.py"]
+"#,
+        )
+        .expect("valid TOML");
+        let settings = Settings::from_config(&cfg(options));
+        assert_eq!(
+            settings.test_files,
+            TestFileSettings {
+                enabled: Some(true),
+                patterns: Some(vec!["check_*.py".to_owned()]),
+                forbid: true,
+            }
+        );
     }
 
     #[test]

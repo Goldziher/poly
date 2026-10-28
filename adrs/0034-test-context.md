@@ -2,6 +2,8 @@
 
 - Status: Accepted
 - Date: 2026-10-11
+- Updated: 2026-10-28 (ADR 0036): the quality tier gained `uncollected-test-file`, whose subject is a
+  test file's *name*. The metric rules stay test-blind; nothing is carved out of a test.
 
 ## Context
 

@@ -261,6 +261,7 @@ A fourth cross-cutting engine, `uncomment` (comment removal), is off by default.
 | `lazy-ignore` | on |
 | `magic-number` | opt-in — allows −1, 0, 1, 2, 10, 100 |
 | `law-of-demeter` | opt-in — chain depth 3 |
+| `uncollected-test-file` | on for Python, Go, Ruby — a test name the runner will not collect |
 
 The quality engine never duplicates a backend rule: where ruff or oxlint already covers a metric, it defers. It counts
 as lint *coverage* only for languages whose control flow it can model — Python, Rust, Go, JavaScript, JSX, TypeScript,

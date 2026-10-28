@@ -1,0 +1,22 @@
+---
+source: crates/poly-core/tests/uncollected_test_file.rs
+expression: "findings(dir.path(), &run)"
+---
+[
+    (
+        "pkg/parser.test.go",
+        "`parser.test.go` looks like a test, but go test will not collect it (expects `*_test.go`)",
+    ),
+    (
+        "spec/parser.spec.rb",
+        "`parser.spec.rb` looks like a test, but RSpec/Minitest will not collect it (expects `*_spec.rb`, `test_*.rb`, `*_test.rb`)",
+    ),
+    (
+        "tests/kebab-name.test.py",
+        "`kebab-name.test.py` looks like a test, but pytest will not collect it (expects `test_*.py`, `*_test.py`)",
+    ),
+    (
+        "tests/parser.test.py",
+        "`parser.test.py` looks like a test, but pytest will not collect it (expects `test_*.py`, `*_test.py`)",
+    ),
+]

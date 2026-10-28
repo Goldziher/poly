@@ -74,7 +74,8 @@ destructive rewrite.
 Beyond the dedicated backends above, two lint tiers run on **every** language:
 
 - The native **`quality` metric engine** — file and function length, type length, parameter count,
-  nesting depth, cyclomatic complexity, and lazy ignore markers. See
+  nesting depth, cyclomatic complexity, lazy ignore markers, and test files the runner will not
+  collect. See
   [code quality metrics](/poly/guides/configuration/#code-quality-metrics).
 - A built-in **ast-grep rule pack** of 26 rules across C#, Elixir, Go, Java, Kotlin, Python, Ruby,
   Rust and Swift. **13 are on by default**; the other 13 author their own `severity: off` and are

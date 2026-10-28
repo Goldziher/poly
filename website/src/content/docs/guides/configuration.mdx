@@ -696,6 +696,7 @@ languages that have no linter of their own as much as for those that do. Every f
 | `lazy-ignore` | — | yes |
 | `magic-number` | allows `-1, 0, 1, 2, 10, 100` | no |
 | `law-of-demeter` | depth 3 | no |
+| `uncollected-test-file` | the runner's defaults | Python, Go and Ruby |
 
 `lazy-ignore` reports a suppression written for *another* tool with no reason attached — a bare
 `# noqa`, a `// biome-ignore` with nothing after the colon, or an `// eslint-disable*` /
@@ -728,6 +729,56 @@ function_too_long_lines = 200      # per-language override wins
 Where a backend already reports the same measurement, poly defers to it rather than reporting it
 twice — Python keeps ruff's `C901` for complexity, JavaScript and TypeScript keep oxlint's
 `max-depth`.
+
+### Test files the runner will not collect
+
+A green test run cannot show a test that never ran. `uncollected-test-file` reads only the path and
+reports a file named like a test that the language's runner skips by default — `parser.test.py`
+under pytest, `parser.test.go` under `go test`, `parser.spec.rb` under RSpec.
+
+A file is a candidate only when its **name** says it is a test, in one of two shapes:
+
+- **Dotted, anywhere** — the stem ends in `.test` or `.spec` (`parser.test.py`), a shape only test
+  files use.
+- **Joined with `_` or `-`, inside a test directory** (`test/`, `tests/`, `spec/`, `specs/`,
+  `__tests__/`) — the first or last part of the stem is a test word (`tests/test-parser.py`).
+  Outside one, names like `scripts/test-snippets.py` are tools as often as tests. Go reads only the
+  dotted shape, since a Go `test/` directory is an ordinary package.
+
+Python and Go count only `test`/`tests` as test words, because `spec` there means a specification;
+Ruby and JavaScript add `spec`/`specs`. A file merely under `tests/` is not enough, since that is
+where helper modules live too. Helpers are never flagged: a name containing
+`helper`, `utils`, `setup`, `fixtures`, `conftest` and similar words, or a file under `fixtures/`,
+`testdata/`, `__mocks__/`, `support/`, `helpers/` (or `lib/`, `utils/`, `data/` inside a test
+directory).
+
+| Language | Collected by default | On by default |
+| --- | --- | --- |
+| Python (pytest) | `test_*.py`, `*_test.py` | yes |
+| Go | `*_test.go` | yes |
+| Ruby (RSpec, Minitest) | `*_spec.rb`, `test_*.rb`, `*_test.rb` | yes |
+| JS / TS (Jest, Vitest) | `*.test.*`, `*.spec.*`, `**/__tests__/**` | no |
+| any other language | — | once configured |
+
+JavaScript and TypeScript ship off because their runners disagree: Deno and `node --test` collect
+`*_test.ts`, which Jest and Vitest do not. Set the keys on the **per-language** table, since a
+pattern list is about one language's file names:
+
+```toml
+[lint.python.quality]
+test_file_patterns = ["test_*.py", "check_*.py"]   # match a custom pytest `python_files`
+
+[lint.typescript.quality]
+uncollected_test_file = true                      # opt in with the Jest/Vitest defaults
+
+[lint.shell.quality]
+forbid_test_files = true                          # shell tests must be .bats
+```
+
+`test_file_patterns` replaces the language's defaults. A pattern without `/` matches the file name;
+one with `/` matches the whole path. Configuring patterns or `forbid_test_files` switches the rule on
+for that language; `uncollected_test_file = false` switches it off. The rule claims no lint coverage
+for any language: it judges a name, not the code inside.
 
 ## Comment removal (opt-in)
 

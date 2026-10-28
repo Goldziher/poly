@@ -18,13 +18,14 @@
 //! | `lazy-ignore` | — | yes (Rust `#[allow(..)]` deferred to the pack) |
 //! | `magic-number` | allow `-1,0,1,2,10,100` | **no** (opt-in) |
 //! | `law-of-demeter` | depth 3 | **no** (opt-in) |
+//! | `uncollected-test-file` | runner defaults | Python, Go, Ruby only (see [`test_files`]) |
 //!
 //! See [`family`] for the full deferral-table derivation.
 //!
 //! # Honest degradation
 //!
 //! `file-too-long` and `lazy-ignore` are pure text scans and work for every
-//! language. The structural rules (`function-too-long`, `type-too-long`,
+//! language; `uncollected-test-file` reads only the path. The structural rules (`function-too-long`, `type-too-long`,
 //! `too-many-parameters`, `nesting-too-deep`, `cyclomatic-complexity`,
 //! `magic-number`, `law-of-demeter`) need a parse tree: they run only for a
 //! grammar `tree-sitter-language-pack` can load, and the two per-grammar
@@ -58,6 +59,7 @@ pub mod magic_number;
 mod metrics;
 pub mod nesting;
 pub mod settings;
+pub mod test_files;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -74,7 +76,8 @@ use settings::Settings;
 /// Cache-key version. Bump whenever `tree-sitter-language-pack` is upgraded
 /// (grammars can change) or this engine's own detection/threshold logic
 /// changes in a way that alters output.
-const QUALITY_VERSION: &str = "quality-4+parse-limit+tslp1.22.1+no-rust-allow+max-in-title+no-prose-lazy-ignore";
+const QUALITY_VERSION: &str =
+    "quality-4+parse-limit+tslp1.22.1+no-rust-allow+max-in-title+no-prose-lazy-ignore+uncollected-test-file";
 
 thread_local! {
     /// Per-thread parser pool keyed by grammar name, shared by every
@@ -148,6 +151,7 @@ impl Engine for QualityEngine {
         if settings.lazy_ignore && lazy_ignore::applies_to(&src.language) {
             diagnostics.extend(lazy_ignore::scan(&src.content));
         }
+        diagnostics.extend(test_files::check(&src.path, &src.language, &settings.test_files)?);
 
         if settings.allows_parse(src.content.len())
             && let Some(grammar) = grammar_name(src)

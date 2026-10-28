@@ -3487,6 +3487,9 @@
         "file_too_long_lines": {
           "type": "integer"
         },
+        "forbid_test_files": {
+          "type": "boolean"
+        },
         "function_too_long": {
           "type": "boolean"
         },
@@ -3530,6 +3533,9 @@
             }
           ]
         },
+        "test_file_patterns": {
+          "type": "array"
+        },
         "too_many_parameters": {
           "type": "boolean"
         },
@@ -3541,6 +3547,9 @@
         },
         "type_too_long_lines": {
           "type": "integer"
+        },
+        "uncollected_test_file": {
+          "type": "boolean"
         }
       },
       "additionalProperties": true
@@ -4077,6 +4086,9 @@
         "file_too_long_lines": {
           "type": "integer"
         },
+        "forbid_test_files": {
+          "type": "boolean"
+        },
         "function_too_long": {
           "type": "boolean"
         },
@@ -4107,6 +4119,9 @@
         "nesting_too_deep_depth": {
           "type": "integer"
         },
+        "test_file_patterns": {
+          "type": "array"
+        },
         "too_many_parameters": {
           "type": "boolean"
         },
@@ -4118,6 +4133,9 @@
         },
         "type_too_long_lines": {
           "type": "integer"
+        },
+        "uncollected_test_file": {
+          "type": "boolean"
         }
       },
       "additionalProperties": true
