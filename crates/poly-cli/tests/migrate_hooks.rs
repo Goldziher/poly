@@ -580,6 +580,39 @@ fn unsafe_fixes_becomes_the_ruff_engine_option() {
 }
 
 #[test]
+fn a_lefthook_shfmt_indent_flag_becomes_the_shell_engine_width() {
+    let dir = repo(&[(
+        "lefthook.yml",
+        "pre-commit:\n  jobs:\n    - name: shfmt\n      glob: '*.sh'\n      stage_fixed: true\n      run: shfmt -i 4 -w {staged_files}\n",
+    )]);
+    let plan = plan(dir.path());
+    assert_eq!(result(&plan, "lefthook").absorb, Absorb::Full);
+    assert_eq!(parsed(&plan)["fmt"]["shell"]["shfmt"]["indent_width"].as_integer(), Some(4));
+    assert!(hooks_of(&plan).builtin.fmt.enabled);
+}
+
+#[test]
+fn a_pre_commit_shfmt_indent_argument_becomes_the_shell_engine_width() {
+    let dir = repo(&[(
+        ".pre-commit-config.yaml",
+        "repos:\n  - repo: https://github.com/scop/pre-commit-shfmt\n    rev: v3.10.0-1\n    hooks:\n      - id: shfmt\n        args: [-i, '4', -w]\n",
+    )]);
+    let plan = plan(dir.path());
+    assert_eq!(result(&plan, "pre-commit").absorb, Absorb::Full);
+    assert_eq!(parsed(&plan)["fmt"]["shell"]["shfmt"]["indent_width"].as_integer(), Some(4));
+}
+
+#[test]
+fn a_shfmt_indent_of_zero_means_tabs() {
+    let dir = repo(&[(
+        "lefthook.yml",
+        "pre-commit:\n  jobs:\n    - name: shfmt\n      glob: '*.sh'\n      run: shfmt -i 0 {staged_files}\n",
+    )]);
+    let plan = plan(dir.path());
+    assert_eq!(parsed(&plan)["fmt"]["shell"]["shfmt"]["use_tabs"].as_bool(), Some(true));
+}
+
+#[test]
 fn git_argument_placeholders_are_migrated_not_dropped() {
     let dir = repo(&[
         (

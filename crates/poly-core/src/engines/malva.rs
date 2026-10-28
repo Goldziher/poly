@@ -44,7 +44,7 @@ pub struct MalvaEngine;
 /// malva crate version — folded into the cache key so upgrades invalidate stale results.
 /// Bumped suffix to +opts-1 after exposing full LanguageOptions (options were previously
 /// ignored — existing caches must be invalidated).
-const MALVA_VERSION: &str = "0.16.0+opts-2+iehack-skip+oxc_formatter_css-e2be72d";
+const MALVA_VERSION: &str = "0.16.0+opts-2+iehack-skip+oxc_formatter_css-e2be72d+oxfmtrc-scope-1";
 
 /// Keys the oxfmt-compatible formatter reads. The table is handed to malva instead as soon as it
 /// holds anything else, because only malva understands the rest.
@@ -55,6 +55,7 @@ const SHARED_KEYS: &[&str] = &[
     "indent_style",
     "single_quote",
     "trailing_commas",
+    crate::oxfmt_scope::RC_KEY,
 ];
 
 /// Languages handled by this backend.
@@ -96,6 +97,18 @@ impl Engine for MalvaEngine {
 
     fn version(&self) -> &str {
         MALVA_VERSION
+    }
+
+    fn format_config<'a>(&self, src: &SourceFile, cfg: &'a EngineConfig) -> std::borrow::Cow<'a, EngineConfig> {
+        crate::oxfmt_scope::path_config(cfg, src, self.name())
+    }
+
+    fn format_input_salt(&self, path: &std::path::Path, cfg: &EngineConfig) -> Option<String> {
+        crate::oxfmt_scope::input_salt(cfg, path)
+    }
+
+    fn file_context(&self, path: &std::path::Path, cfg: &EngineConfig) -> Option<String> {
+        self.format_input_salt(path, cfg)
     }
 
     /// malva rejects the IE `*property` hack with a syntax error, so a legacy
@@ -150,19 +163,8 @@ fn format_with_oxc(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Forma
         Language::Less => CssVariant::Less,
         _ => CssVariant::Css,
     };
-    let mut options = CssFormatOptions {
-        variant,
-        ..CssFormatOptions::default()
-    };
-    options.apply_core(core_format_options(cfg));
-    if let Some(single) = cfg.options.get("single_quote").and_then(toml::Value::as_bool) {
-        options.single_quote = single.into();
-    }
-    if cfg.options.get("trailing_commas").and_then(toml::Value::as_str) == Some("never") {
-        options.trailing_commas = TrailingCommas::Never;
-    }
     let allocator = Allocator::new();
-    let formatted = match oxc_formatter_css::format(&allocator, &src.content, options)
+    let formatted = match oxc_formatter_css::format(&allocator, &src.content, oxc_css_options(cfg, variant))
         .map_err(|_| ())
         .and_then(|formatted| formatted.print().map_err(|_| ()))
     {
@@ -174,6 +176,22 @@ fn format_with_oxc(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Forma
     } else {
         Ok(FormatOutput::Formatted(formatted))
     }
+}
+
+/// The `oxc_formatter_css` options a `[fmt.<css|scss|less>.malva]` table resolves to.
+pub(super) fn oxc_css_options(cfg: &EngineConfig, variant: CssVariant) -> CssFormatOptions {
+    let mut options = CssFormatOptions {
+        variant,
+        ..CssFormatOptions::default()
+    };
+    options.apply_core(core_format_options(cfg));
+    if let Some(single) = cfg.options.get("single_quote").and_then(toml::Value::as_bool) {
+        options.single_quote = single.into();
+    }
+    if cfg.options.get("trailing_commas").and_then(toml::Value::as_str) == Some("never") {
+        options.trailing_commas = TrailingCommas::Never;
+    }
+    options
 }
 
 /// Map a poly [`Language`] to the corresponding malva [`Syntax`].

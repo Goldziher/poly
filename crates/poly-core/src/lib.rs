@@ -34,6 +34,7 @@ pub(crate) mod filter;
 mod fingerprint;
 pub mod language;
 pub(crate) mod oxfmt_native;
+pub(crate) mod oxfmt_scope;
 pub(crate) mod oxlint_native;
 pub(crate) mod path_ignore;
 pub(crate) mod registry;

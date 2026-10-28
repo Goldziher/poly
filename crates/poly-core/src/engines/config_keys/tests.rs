@@ -104,6 +104,57 @@ fn a_misspelled_key_is_reported_once_naming_the_key_and_the_engine() {
 }
 
 #[test]
+fn a_misspelled_key_names_the_nearest_accepted_one() {
+    let found = warnings("[lint.python.ruff]\nmccabe_max_complexit = 10\n");
+    let description = found[0].description.clone().expect("description");
+    assert!(
+        description.starts_with("Did you mean `mccabe_max_complexity`? "),
+        "{description}"
+    );
+    let far = warnings("[fmt.python.ruff]\nnope = 1\n");
+    let description = far[0].description.clone().expect("description");
+    assert!(!description.contains("Did you mean"), "{description}");
+}
+
+#[test]
+fn an_unknown_option_is_reported_in_every_kind_of_engine_table() {
+    for table in [
+        "fmt.javascript.oxc",
+        "lint.javascript.oxc",
+        "fmt.typescript.oxc",
+        "fmt.json.oxc",
+        "fmt.yaml.yaml",
+        "fmt.toml.taplo",
+        "fmt.markdown.rumdl",
+        "lint.markdown.rumdl",
+        "fmt.python.ruff",
+        "lint.python.ruff",
+        "fmt.shell.shfmt",
+        "lint.shell.shellcheck",
+        "fmt.go.gofmt",
+    ] {
+        let found = warnings(&format!("[{table}]\nzzzz_not_an_option = true\n"));
+        assert_eq!(found.len(), 1, "`[{table}]`: got {:?}", titles(&found));
+        assert!(
+            found[0].title.starts_with("unknown option `zzzz_not_an_option`"),
+            "`[{table}]`: {}",
+            found[0].title
+        );
+    }
+}
+
+#[test]
+fn a_tool_table_one_edit_from_an_engine_is_reported_with_the_engine() {
+    let found = warnings("[fmt.python.rufff]\nline_length = 100\n");
+    assert_eq!(
+        titles(&found),
+        ["unknown tool `rufff` in `[fmt.python]`: did you mean `ruff`?"]
+    );
+    assert_eq!(found[0].code.as_deref(), Some("unknown-config-key"));
+    assert!(warnings("[fmt.python.unrelated_catalog_tool]\nx = 1\n").is_empty());
+}
+
+#[test]
 fn a_correctly_spelled_key_is_not_reported() {
     let found = warnings("[lint.python.ruff]\nmccabe_max_complexity = 10\n");
     assert!(found.is_empty(), "unexpected warnings: {:?}", titles(&found));
@@ -443,6 +494,7 @@ const ENGINE_SOURCES: &[(&str, &[&str])] = &[
             "oxc/plugins.rs",
             "oxc/sort_imports.rs",
             "oxc/native_lint.rs",
+            "oxc/external.rs",
             "core_options.rs",
         ],
     ),
@@ -451,7 +503,7 @@ const ENGINE_SOURCES: &[(&str, &[&str])] = &[
         &["mago/mod.rs", "mago/lint.rs", "mago/format.rs", "mago/rules.rs"],
     ),
     ("sqruff", &["sqruff.rs"]),
-    ("rumdl", &["rumdl.rs", "markdown_fmt.rs", "core_options.rs"]),
+    ("rumdl", &["rumdl.rs", "markdown_fmt.rs", "markdown_embed.rs", "core_options.rs"]),
     ("taplo", &["taplo.rs", "core_options.rs"]),
     ("yaml", &["yaml.rs", "core_options.rs"]),
     ("malva", &["malva.rs", "core_options.rs"]),
@@ -494,7 +546,12 @@ const ENGINE_SOURCES: &[(&str, &[&str])] = &[
     ("zigfmt", &["native_tool/mod.rs", "native_tool/batch.rs"]),
     (
         "shfmt",
-        &["native_tool/mod.rs", "native_tool/tabs.rs", "native_tool/batch.rs"],
+        &[
+            "native_tool/mod.rs",
+            "native_tool/tabs.rs",
+            "native_tool/editorconfig.rs",
+            "native_tool/batch.rs",
+        ],
     ),
     ("shellcheck", &["native_tool/mod.rs", "native_tool/batch.rs"]),
     ("google-java-format", &["native_tool/mod.rs", "native_tool/batch.rs"]),

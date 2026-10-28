@@ -74,6 +74,18 @@ pub(crate) fn format_embedded_js(
 /// `arrow_parentheses`, `bracket_spacing`, `bracket_same_line`, `indent_style`)
 /// can be set via `[fmt.<lang>.oxc]` in `poly.toml`.
 pub(super) fn format_js(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
+    if super::external::format_requested(cfg)
+        && cfg.options.get("requires_oxfmt").and_then(toml::Value::as_bool) == Some(true)
+    {
+        let config = cfg.options.get("oxfmtrc").and_then(toml::Value::as_str).map(std::path::Path::new);
+        if let Some(code) = super::external::format_with_oxfmt(src, config) {
+            return Ok(if code == *src.content {
+                FormatOutput::Unchanged
+            } else {
+                FormatOutput::Formatted(code)
+            });
+        }
+    }
     let allocator = Allocator::new();
     let source_type = source_type_for(&src.language);
     let options = build_js_options(cfg);

@@ -44,6 +44,8 @@ pub(super) struct Recognized {
     pub fixes: bool,
     /// Engine options the command's flags map onto.
     pub options: Vec<EngineOption>,
+    /// Integer engine options the command's flags map onto.
+    pub values: Vec<EngineValue>,
     /// How the catalog tools are configured, so the flags that shape their
     /// output survive the migration (`tool`, settings).
     pub settings: Vec<(&'static str, ToolSettings)>,
@@ -57,6 +59,36 @@ pub(super) struct EngineOption {
     /// The `poly.toml` table, e.g. `["lint", "python", "ruff"]`.
     pub table: &'static [&'static str],
     pub key: &'static str,
+}
+
+/// An integer engine option set by a command-line flag (`shfmt -i 4`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct EngineValue {
+    /// The `poly.toml` table, e.g. `["fmt", "shell", "shfmt"]`.
+    pub table: &'static [&'static str],
+    pub key: &'static str,
+    pub value: i64,
+}
+
+const SHFMT_TABLE: &[&str] = &["fmt", "shell", "shfmt"];
+
+/// The `[fmt.shell.shfmt]` setting shfmt's `-i <width>` maps onto: `use_tabs` for `-i 0`, which
+/// shfmt reads as "indent with tabs", else `indent_width`.
+pub(super) fn shfmt_indent(width: i64) -> (Option<EngineOption>, Option<EngineValue>) {
+    if width == 0 {
+        let tabs = EngineOption {
+            table: SHFMT_TABLE,
+            key: "use_tabs",
+        };
+        (Some(tabs), None)
+    } else {
+        let value = EngineValue {
+            table: SHFMT_TABLE,
+            key: "indent_width",
+            value: width,
+        };
+        (None, Some(value))
+    }
 }
 
 pub(super) const RUFF_UNSAFE_FIXES: EngineOption = EngineOption {
@@ -234,6 +266,7 @@ pub(super) fn recognize(run: &str) -> Recognition {
             &["--write", "--no-error-on-unmatched-pattern"],
         ),
         "rubyfmt" => simple("rubyfmt", Target::Fmt, &[], &args, &["--in-place", "-i"]),
+        "shfmt" => shfmt(&args),
         "actionlint" => actionlint(&args),
         "golangci-lint" => golangci(&args),
         "golangci-lint-changed" => golangci_changed(&args),
@@ -268,6 +301,7 @@ fn rewrites_files(program: &str, args: &[&str]) -> bool {
         ("oxlint", _) => has(&["--fix"]),
         ("oxfmt", _) => has(&["--write"]),
         ("rubyfmt", _) => has(&["--in-place", "-i"]),
+        ("shfmt", _) => has(&["-w"]),
         ("golangci-lint", _) => has(&["--fix"]),
         ("buf", _) => has(&["-w", "--write"]),
         ("npm-groovy-lint", _) => has(&["--fix", "--format"]),
@@ -298,6 +332,7 @@ fn builtin(target: Target, catalog_tools: &'static [&'static str], options: Vec<
         catalog_tools,
         fixes: false,
         options,
+        values: Vec::new(),
         settings: Vec::new(),
         approximations: Vec::new(),
     })
@@ -314,6 +349,7 @@ fn configured(
         catalog_tools,
         fixes: false,
         options: Vec::new(),
+        values: Vec::new(),
         settings,
         approximations,
     })
@@ -340,6 +376,48 @@ fn simple(
     } else {
         Recognition::FlagsNotRepresentable { tool, flags: unknown }
     }
+}
+
+/// `shfmt -i N -w files`: `-i` is the indentation, carried into `[fmt.shell.shfmt]`; the other
+/// layout flags (`-ci`, `-bn`, ...) have no poly counterpart.
+fn shfmt(args: &[&str]) -> Recognition {
+    let mut width = None;
+    let mut unknown = Vec::new();
+    let mut rest = args;
+    while let Some((&flag, tail)) = rest.split_first() {
+        rest = tail;
+        let inline = flag.strip_prefix("-i=");
+        let value = match (flag, inline) {
+            (_, Some(value)) => Some(value),
+            ("-i", None) => match rest.split_first() {
+                Some((&value, tail)) => {
+                    rest = tail;
+                    Some(value)
+                }
+                None => None,
+            },
+            _ => {
+                if flag != "-w" {
+                    unknown.push(flag.to_string());
+                }
+                continue;
+            }
+        };
+        match value.and_then(|value| unquote(value).parse::<i64>().ok()) {
+            Some(parsed) if parsed >= 0 => width = Some(parsed),
+            _ => unknown.push(flag.to_string()),
+        }
+    }
+    if !unknown.is_empty() {
+        return not_representable("shfmt", unknown);
+    }
+    let mut recognized = builtin(Target::Fmt, &[], Vec::new());
+    if let (Recognition::Builtin(found), Some(width)) = (&mut recognized, width) {
+        let (option, value) = shfmt_indent(width);
+        found.options.extend(option);
+        found.values.extend(value);
+    }
+    recognized
 }
 
 fn ruff(args: &[&str]) -> Recognition {
@@ -748,6 +826,45 @@ mod tests {
     fn actionlint_ignores_become_extra_args() {
         let settings = settings_of("actionlint -ignore 'SC2129' -ignore 'SC2016' {staged_files}", "actionlint");
         assert_eq!(settings.extra_args, ["-ignore", "SC2129", "-ignore", "SC2016"]);
+    }
+
+    fn recognized(run: &str) -> Recognized {
+        match recognize(run) {
+            Recognition::Builtin(recognized) => recognized,
+            other => panic!("`{run}` must map to a builtin, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn shfmt_indent_becomes_the_shell_engine_width() {
+        let found = recognized("shfmt -i 4 -w {staged_files}");
+        assert_eq!(found.target, Target::Fmt);
+        assert!(found.fixes, "-w rewrites the files");
+        assert_eq!(
+            found.values,
+            [EngineValue {
+                table: &["fmt", "shell", "shfmt"],
+                key: "indent_width",
+                value: 4
+            }]
+        );
+        assert_eq!(recognized("shfmt -i=2 {staged_files}").values[0].value, 2);
+        assert!(!recognized("shfmt -i=2 {staged_files}").fixes);
+    }
+
+    #[test]
+    fn shfmt_indent_zero_means_tabs_and_other_layout_flags_stay_a_job() {
+        let tabs = recognized("shfmt -i 0 -w {staged_files}");
+        assert!(tabs.values.is_empty());
+        assert_eq!(tabs.options[0].key, "use_tabs");
+        assert!(matches!(
+            recognize("shfmt -i 4 -ci -w {staged_files}"),
+            Recognition::FlagsNotRepresentable { tool: "shfmt", .. }
+        ));
+        assert!(matches!(
+            recognize("shfmt -i four {staged_files}"),
+            Recognition::FlagsNotRepresentable { tool: "shfmt", .. }
+        ));
     }
 
     #[test]

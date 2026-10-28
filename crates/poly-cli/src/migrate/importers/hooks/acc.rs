@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use toml_edit::{Array, InlineTable, Item, Value};
 
-use super::command::{EngineOption, Target};
+use super::command::{EngineOption, EngineValue, Target};
 use crate::migrate::importers::{Fragment, bool_item, inline_map, int_item, str_array, str_item};
 
 /// Which source file a diagnostic belongs to.
@@ -278,6 +278,7 @@ pub(super) struct HookAcc {
     file_safety: FileSafetyAcc,
     tools: BTreeMap<String, ToolAcc>,
     engine_options: BTreeMap<Vec<String>, BTreeSet<&'static str>>,
+    engine_values: BTreeMap<Vec<String>, BTreeMap<&'static str, i64>>,
     tool_settings: BTreeMap<String, ToolSettings>,
     pub diag: Diagnostics,
 }
@@ -323,6 +324,27 @@ impl HookAcc {
             self.engine_options.entry(table).or_default().insert(option.key);
         }
         self.builtins.entry(usage.target).or_default().push(scope);
+    }
+
+    /// Record a boolean engine option switched on by the hook's flags.
+    pub fn add_engine_option(&mut self, option: &EngineOption) {
+        let table = option.table.iter().map(|segment| (*segment).to_string()).collect();
+        self.engine_options.entry(table).or_default().insert(option.key);
+    }
+
+    /// Record an integer engine option set by the hook labelled `label`; when another hook
+    /// set it differently the first value is kept and the difference reported.
+    pub fn add_engine_value(&mut self, value: &EngineValue, label: &str) {
+        let table = value.table.iter().map(|segment| (*segment).to_string()).collect();
+        let slot = self.engine_values.entry(table).or_default().entry(value.key).or_insert(value.value);
+        if *slot != value.value {
+            let (kept, key) = (*slot, value.key);
+            self.diag.lossy(format!(
+                "{label}: {} {key} = {} differs from what another hook set ({kept}); the first was kept",
+                value.table.join("."),
+                value.value
+            ));
+        }
     }
 
     /// Record how `tool` should be configured, from the hook labelled `label`.
@@ -440,9 +462,23 @@ impl HookAcc {
             let settings = self.tool_settings.get(name).cloned().unwrap_or_default();
             fragments.push(Fragment::new(&["tools", name], tool_entries(tool, &settings)));
         }
-        for (table, keys) in &self.engine_options {
+        let tables: BTreeSet<&Vec<String>> = self.engine_options.keys().chain(self.engine_values.keys()).collect();
+        for table in tables {
             let path: Vec<&str> = table.iter().map(String::as_str).collect();
-            let entries = keys.iter().map(|key| ((*key).to_string(), bool_item(true))).collect();
+            let mut entries: Vec<(String, Item)> = self
+                .engine_options
+                .get(table)
+                .into_iter()
+                .flatten()
+                .map(|key| ((*key).to_string(), bool_item(true)))
+                .collect();
+            entries.extend(
+                self.engine_values
+                    .get(table)
+                    .into_iter()
+                    .flatten()
+                    .map(|(key, value)| ((*key).to_string(), int_item(*value))),
+            );
             fragments.push(Fragment::new(&path, entries));
         }
         (fragments, self.diag)

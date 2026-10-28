@@ -86,7 +86,9 @@ const INVALID_VALUE_CODE: &str = "invalid-config-value";
 /// and a stale entry would replay warnings computed under an older schema.
 /// `2`: `invalid-config-value` joined `unknown-config-key`.
 /// `4`: a language id that is a near miss of a known one is reported.
-const VERSION: &str = "4";
+/// `5`: an unknown key suggests the nearest accepted one, and a tool name one edit from an engine of the
+/// language is reported.
+const VERSION: &str = "5";
 
 /// The `poly.toml` schema backend: reports keys under `[lint.*]` / `[fmt.*]`
 /// that no engine reads, and keys whose value no engine can use.
@@ -161,6 +163,12 @@ enum Problem {
     UnknownLanguage {
         /// The language the id was most likely meant to be.
         suggestion: String,
+    },
+    /// A `[lint.<lang>.<tool>]` / `[fmt.<lang>.<tool>]` table named one edit away from an engine of
+    /// the language, so the engine never sees the settings in it.
+    UnknownEngine {
+        /// The engine the name was most likely meant to be.
+        suggestion: &'static str,
     },
     /// A top-level section name the schema does not have. Distinct from
     /// [`Problem::UnknownKey`] because nothing is scoped to an engine here — the
@@ -260,6 +268,14 @@ fn collect_section(section: &str, kind: Kind, table: &toml::Table, findings: &mu
             // An unrecognised tool name is left alone: it may be a catalog tool
             // (ADR 0013) declared in a base config this file cannot see.
             let Some(engine) = engines.iter().find(|engine| engine.name() == tool) else {
+                if let Some(suggestion) = near_miss_engine(tool, &engines) {
+                    findings.push(Finding {
+                        table: format!("{section}.{name}"),
+                        key: tool.clone(),
+                        engine: "poly",
+                        problem: Problem::UnknownEngine { suggestion },
+                    });
+                }
                 continue;
             };
             let table_kind = match kind {
@@ -328,6 +344,7 @@ fn diagnostic(finding: Finding, spans: &KeySpans, engine_name: &str) -> Diagnost
     let (code, title, description) = match problem {
         Problem::UnknownTopLevel => unknown_top_level_text(&key),
         Problem::UnknownLanguage { suggestion } => unknown_language_text(&table, &key, &suggestion),
+        Problem::UnknownEngine { suggestion } => unknown_engine_text(&table, &key, suggestion),
         Problem::UnknownKey { known, note } => unknown_key_text(&table, &key, engine, &known, note),
         Problem::InvalidValue { expected, found } => invalid_value_text(&table, &key, engine, expected, &found),
     };
@@ -368,6 +385,41 @@ fn unknown_language_text(section: &str, id: &str, suggestion: &str) -> (&'static
          settings take effect. If `{suggestion}` was meant, rename the table to `[{section}.{suggestion}]`."
     );
     (UNKNOWN_KEY_CODE, title, description)
+}
+
+/// Code, title and description for a tool table that looks like a misspelt engine name.
+fn unknown_engine_text(section: &str, tool: &str, suggestion: &str) -> (&'static str, String, String) {
+    let title = format!("unknown tool `{tool}` in `[{section}]`: did you mean `{suggestion}`?");
+    let description = format!(
+        "No backend for this language is called `{tool}`, so the settings in `[{section}.{tool}]` are not read \
+         by any of them. If `{suggestion}` was meant, rename the table to `[{section}.{suggestion}]`. A catalog \
+         tool is configured under `[tools.{tool}]` instead."
+    );
+    (UNKNOWN_KEY_CODE, title, description)
+}
+
+/// The engine of `engines` whose name is one edit from `tool`, when `tool` is not itself one.
+///
+/// Held to a single edit and to names of four letters or more: a catalog tool is configured
+/// under a table of its own name and may sit next to a built-in one, and a warning nobody can
+/// trust is worse than none.
+fn near_miss_engine(tool: &str, engines: &[Box<dyn Engine>]) -> Option<&'static str> {
+    engines
+        .iter()
+        .map(|engine| engine.name())
+        .filter(|name| name.chars().count() >= 4)
+        .find(|name| edit_distance(tool, name) == 1)
+}
+
+/// The key of `known` nearest to `key`, when it is close enough to be a typo of it.
+fn near_miss_key(key: &str, known: &[&'static str]) -> Option<&'static str> {
+    let limit = if key.chars().count() <= 4 { 1 } else { 2 };
+    known
+        .iter()
+        .map(|candidate| (edit_distance(key, candidate), *candidate))
+        .filter(|(distance, _)| (1..=limit).contains(distance))
+        .min_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(b.1)))
+        .map(|(_, candidate)| candidate)
 }
 
 /// The language a nearly-right, unrecognised id was probably meant to be.
@@ -440,7 +492,10 @@ fn unknown_key_text(
     let mut description = if known.is_empty() {
         format!("`[{table}]` reads no options at all, so `{key}` has no effect.")
     } else {
-        format!("Keys `[{table}]` reads: {}.", known.join(", "))
+        let hint = near_miss_key(key, known)
+            .map(|suggestion| format!("Did you mean `{suggestion}`? "))
+            .unwrap_or_default();
+        format!("{hint}Keys `[{table}]` reads: {}.", known.join(", "))
     };
     if let Some(note) = note {
         description.push(' ');

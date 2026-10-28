@@ -784,12 +784,13 @@ fn format_one(
             if plan.ignores_format(&f.path) {
                 continue;
             }
+            let version = plan.format_version(&f.path);
             let key = digest_if_enabled(cache, || {
                 let digest = ResultCache::single_file_digest(&current);
                 ResultCache::key_with_args(
                     Namespace::Fmt,
                     plan.engine.name(),
-                    plan.engine.version(),
+                    &version,
                     &plan.serialized_args,
                     &digest,
                 )
@@ -832,7 +833,8 @@ fn format_one(
             src.content = Arc::clone(&current);
             let clock = EngineClock::start();
             let started = clock.started();
-            let formatted = guard_engine_panic(plan.engine.name(), &f.path, || plan.engine.format(&src, &plan.config))?;
+            let config = plan.engine.format_config(&src, &plan.config);
+            let formatted = guard_engine_panic(plan.engine.name(), &f.path, || plan.engine.format(&src, &config))?;
             let out: Arc<str> = match formatted {
                 FormatOutput::Unchanged => Arc::clone(&current),
                 FormatOutput::Formatted(s) => Arc::from(s),

@@ -2,17 +2,21 @@
 //!
 //! Prettier-compatible: list markers, emphasis, blank lines between blocks, table alignment and
 //! escaping are normalised the way oxfmt normalises them, so a repository formatted by oxfmt is a
-//! fixed point. Code inside fences and front matter is left as written (oxfmt re-formats it with
-//! the matching language formatter; that dispatch lives in its binary and is not available here).
+//! fixed point. Code inside fences and front matter is re-formatted with the matching language
+//! formatter through [`super::markdown_embed`], as oxfmt does; a fence in a language poly does not
+//! format in process, or one that does not parse, stays as written.
 //!
 //! Keys read from `[fmt.markdown.rumdl]`: `indent_width`, `indent_style`, `line_width`,
-//! `line_ending`, `single_quote` and `prose_wrap` (`"preserve"` / `"always"` / `"never"`).
+//! `line_ending`, `single_quote`, `prose_wrap` (`"preserve"` / `"always"` / `"never"`),
+//! `embedded_language_formatting` (`"off"` keeps fences and front matter as written) and the
+//! `embedded` option overlays.
 
 use oxc_allocator::Allocator;
-use oxc_formatter_core::FormatOptions;
+use oxc_formatter_core::{FormatOptions, FormatSession, InputKind, SessionServices};
 use oxc_formatter_markdown::{MarkdownFormatOptions, ProseWrap};
 
 use super::core_options::core_format_options;
+use super::markdown_embed;
 use crate::config::EngineConfig;
 use crate::engine::{FormatOutput, SourceFile};
 
@@ -34,7 +38,15 @@ pub(super) fn uses_rumdl_formatter(cfg: &EngineConfig) -> bool {
 
 pub(super) fn format(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
     let allocator = Allocator::new();
-    let formatted = match oxc_formatter_markdown::format(&allocator, &src.content, build_options(cfg))
+    let session = FormatSession::with_services(
+        &allocator,
+        InputKind::PhysicalFile,
+        SessionServices {
+            dispatcher: markdown_embed::dispatcher(cfg),
+            ..SessionServices::default()
+        },
+    );
+    let formatted = match oxc_formatter_markdown::format_with_session(&session, &src.content, build_options(cfg))
         .map_err(|_| ())
         .and_then(|formatted| formatted.print().map_err(|_| ()))
     {
@@ -48,7 +60,7 @@ pub(super) fn format(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<For
     }
 }
 
-fn build_options(cfg: &EngineConfig) -> MarkdownFormatOptions {
+pub(super) fn build_options(cfg: &EngineConfig) -> MarkdownFormatOptions {
     let mut options = MarkdownFormatOptions::default();
     options.apply_core(core_format_options(cfg));
     if let Some(single) = cfg.options.get("single_quote").and_then(toml::Value::as_bool) {
@@ -71,6 +83,10 @@ mod tests {
     use crate::language::Language;
 
     fn run(content: &str) -> String {
+        run_with(content, toml::Table::new())
+    }
+
+    fn run_with(content: &str, options: toml::Table) -> String {
         let src = SourceFile {
             path: PathBuf::from("README.md"),
             language: Language::Markdown,
@@ -79,12 +95,16 @@ mod tests {
         let cfg = EngineConfig {
             globals: GlobalDefaults::default(),
             indent_width: 2,
-            options: toml::Table::new(),
+            options,
         };
         match format(&src, &cfg).unwrap() {
             FormatOutput::Formatted(text) => text,
             FormatOutput::Unchanged => content.to_string(),
         }
+    }
+
+    fn table(source: &str) -> toml::Table {
+        source.parse().unwrap()
     }
 
     #[test]
@@ -93,9 +113,51 @@ mod tests {
     }
 
     #[test]
-    fn fenced_code_is_left_alone() {
+    fn fenced_javascript_is_formatted() {
+        assert_eq!(
+            run("```js\nconst a={b:1}\n```\n"),
+            "```js\nconst a = { b: 1 };\n```\n"
+        );
+    }
+
+    #[test]
+    fn fenced_json_is_formatted() {
+        assert_eq!(
+            run("```json\n{\"a\":1,\"b\":[1,2]}\n```\n"),
+            "```json\n{ \"a\": 1, \"b\": [1, 2] }\n```\n"
+        );
+    }
+
+    #[test]
+    fn front_matter_is_formatted_as_yaml() {
+        assert_eq!(
+            run("---\ntitle:   x\n---\n\n# T\n"),
+            "---\ntitle: x\n---\n\n# T\n"
+        );
+    }
+
+    #[test]
+    fn unknown_and_unparseable_fences_are_left_alone() {
+        let rust = "```rust\nfn  main( ){}\n```\n";
+        assert_eq!(run(rust), rust);
+        let broken = "```js\nconst = ;\n```\n";
+        assert_eq!(run(broken), broken);
+    }
+
+    #[test]
+    fn embedded_language_formatting_off_keeps_fences_as_written() {
         let src = "```js\nconst a={b:1}\n```\n";
-        assert_eq!(run(src), src);
+        let options = table("embedded_language_formatting = \"off\"");
+        assert_eq!(run_with(src, options), src);
+    }
+
+    #[test]
+    fn embedded_overlay_reaches_only_its_family() {
+        let options = table("[embedded.js]\nsemicolons = \"as-needed\"");
+        assert_eq!(
+            run_with("```js\nconst a={b:1};\n```\n", options),
+            "```js\nconst a = { b: 1 }\n```\n"
+        );
     }
 
     #[test]

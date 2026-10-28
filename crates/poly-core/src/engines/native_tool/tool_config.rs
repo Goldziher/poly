@@ -36,9 +36,11 @@
 //!
 //! - **`shfmt`** consults `.editorconfig` only when it is given a filename.
 //!   poly pipes stdin without `--filename` and always passes `-i <width>`, and
-//!   under that argv `.editorconfig` is provably inert. Adding `--filename`
-//!   to [`super::spec::SHFMT_SPEC`] would make `.editorconfig` an input and
-//!   require listing it here.
+//!   under that argv `.editorconfig` is inert to shfmt itself. poly resolves it
+//!   per file instead ([`super::editorconfig`]) and keys the cache on the
+//!   resolved indentation, so it is not a fingerprinted config file here.
+//!   Adding `--filename` to [`super::spec::SHFMT_SPEC`] would make
+//!   `.editorconfig` an input of shfmt and require listing it here.
 //! - **`dart format`** reads `formatter: page_width:` from
 //!   `analysis_options.yaml` only when formatting a named file; over stdin the
 //!   setting has no effect (the `--page-width` flag does, which is how the

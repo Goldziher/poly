@@ -55,7 +55,7 @@ pub struct RumdlEngine;
 /// [`contains_go_template_markdown`]), and the MD020 guard ([`GuardedMd020`]). Bump the
 /// suffix whenever any of these change so stale cached diagnostics are
 /// invalidated.
-const RUMDL_VERSION: &str = "0.3.0+defaults5-mdx-rules-tmplskip-codeaware-md020guard-structfix+ruleparams1+extendsel2+oxc_formatter_markdown-e2be72d";
+const RUMDL_VERSION: &str = "0.3.0+defaults5-mdx-rules-tmplskip-codeaware-md020guard-structfix+ruleparams1+extendsel2+oxc_formatter_markdown-e2be72d+md-embed-1+oxfmtrc-scope-1";
 
 /// rumdl-proprietary stylistic rules disabled by default.
 ///
@@ -128,6 +128,8 @@ impl Engine for RumdlEngine {
                 ("indent_style", OptionType::STRING),
                 ("single_quote", OptionType::BOOLEAN),
                 ("prose_wrap", OptionType::STRING),
+                ("embedded_language_formatting", OptionType::STRING),
+                ("embedded", OptionType::TABLE),
             ])
             .with_rule_selection(),
             OptionTable::CrossCuttingLint => OptionKeys::UNCHECKED,
@@ -136,6 +138,18 @@ impl Engine for RumdlEngine {
 
     fn version(&self) -> &str {
         RUMDL_VERSION
+    }
+
+    fn format_config<'a>(&self, src: &SourceFile, cfg: &'a EngineConfig) -> std::borrow::Cow<'a, EngineConfig> {
+        crate::oxfmt_scope::path_config(cfg, src, self.name())
+    }
+
+    fn format_input_salt(&self, path: &std::path::Path, cfg: &EngineConfig) -> Option<String> {
+        crate::oxfmt_scope::input_salt(cfg, path)
+    }
+
+    fn file_context(&self, path: &std::path::Path, cfg: &EngineConfig) -> Option<String> {
+        self.format_input_salt(path, cfg)
     }
 
     fn skip_reason(&self, src: &SourceFile) -> Option<&'static str> {

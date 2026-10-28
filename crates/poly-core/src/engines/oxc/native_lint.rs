@@ -9,7 +9,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use oxc_linter::{
-    AllowWarnDeny, ConfigStore, ConfigStoreBuilder, ExternalPluginStore, LintFilter, LintOptions, LintService,
+    AllowWarnDeny, ConfigStore, ConfigStoreBuilder, ExternalPluginStore, LintFilter, LintService,
     LintServiceOptions, Linter, Message, Oxlintrc,
 };
 
@@ -79,7 +79,7 @@ fn build(file: &Path, selection: &RuleSelection) -> anyhow::Result<LintService> 
         .map_err(|error| anyhow::anyhow!("{}: {error}", file.display()))?;
     let dir = file.parent().unwrap_or(Path::new("")).to_path_buf();
     let linter = Linter::new(
-        LintOptions::default(),
+        super::lint::lint_options(),
         ConfigStore::new(config, Default::default(), store),
         None,
     );

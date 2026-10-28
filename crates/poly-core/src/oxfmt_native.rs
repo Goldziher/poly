@@ -6,10 +6,11 @@
 //! output. Everything derived here sits *under* the user's `poly.toml` tables: an explicit
 //! `[fmt.<lang>.<engine>]` key always wins.
 //!
+//! `overrides` scoped to an extension fold into the language's table here; ones scoped to a path
+//! are resolved per file by [`crate::oxfmt_scope`], which finds the governing config for each file.
 //! What cannot be honored is reported once per process with a warning instead of being dropped
 //! silently: options the Rust formatters do not implement (`sortTailwindcss`, whose class sorter
-//! is JavaScript-side), and `overrides` scoped to part of a language (a directory rather than an
-//! extension), because poly resolves formatter options per language, not per path.
+//! is JavaScript-side; `[fmt.<lang>.oxc] external = true` hands those files to the real `oxfmt`).
 
 use std::collections::HashSet;
 use std::path::Path;
@@ -76,7 +77,36 @@ pub(crate) fn engine_defaults(native: &OxfmtNative, language: &Language, engine:
         return toml::Table::new();
     }
     let effective = effective_options(native, language);
-    translate(family, &effective)
+    let mut table = translate(family, &effective);
+    if let Some(file) = &native.file {
+        table.insert(
+            crate::oxfmt_scope::RC_KEY.to_owned(),
+            toml::Value::String(file.to_string_lossy().into_owned()),
+        );
+    }
+    table
+}
+
+/// The table `native` gives `language` for a file that `matched` overrides apply to, whatever
+/// their scope, or `None` when no backend of this family reads the config. With `with_defaults`
+/// the keys oxfmt always has a value for are filled in, so the table can replace another config's.
+pub(crate) fn path_table(
+    native: &OxfmtNative,
+    language: &Language,
+    engine: &str,
+    matched: &[&poly_config::OxfmtOverride],
+    with_defaults: bool,
+) -> Option<toml::Table> {
+    let family = family(language, engine)?;
+    let mut merged = native.options.clone();
+    for entry in matched {
+        deep_merge(&mut merged, &entry.options);
+    }
+    Some(if with_defaults {
+        translate(family, &merged)
+    } else {
+        translate_values(family, &merged)
+    })
 }
 
 /// Report a native config that was found but could not be read, once.
@@ -104,15 +134,7 @@ fn effective_options(native: &OxfmtNative, language: &Language) -> Map<String, V
                 }
                 deep_merge(&mut merged, &entry.options);
             }
-            Scope::Languages(_) => {}
-            Scope::Partial => warn_once(format!("oxfmt-partial-override:{:?}", entry.files), || {
-                tracing::warn!(
-                    "oxfmt override for {:?} is scoped to part of a language and is not applied: poly resolves \
-                     formatter options per language, not per path (options: {})",
-                    entry.files,
-                    entry.options.keys().cloned().collect::<Vec<_>>().join(", ")
-                );
-            }),
+            Scope::Languages(_) | Scope::Partial => {}
         }
     }
     merged
@@ -168,6 +190,13 @@ fn extension_glob(glob: &str) -> Option<Vec<String>> {
 }
 
 fn translate(family: Family, options: &Map<String, Value>) -> toml::Table {
+    let mut out = translate_values(family, options);
+    out.entry("line_width").or_insert(toml::Value::Integer(100));
+    report_unsupported(family, options);
+    out
+}
+
+fn translate_values(family: Family, options: &Map<String, Value>) -> toml::Table {
     let mut out = toml::Table::new();
     let mut put = |key: &str, value: toml::Value| {
         out.insert(key.to_owned(), value);
@@ -176,7 +205,9 @@ fn translate(family: Family, options: &Map<String, Value>) -> toml::Table {
     let flag = |key: &str| options.get(key).and_then(Value::as_bool);
     let number = |key: &str| options.get(key).and_then(Value::as_i64);
 
-    put("line_width", toml::Value::Integer(number("printWidth").unwrap_or(100)));
+    if let Some(width) = number("printWidth") {
+        put("line_width", toml::Value::Integer(width));
+    }
     if let Some(width) = number("tabWidth") {
         put("indent_width", toml::Value::Integer(width));
     }
@@ -226,6 +257,12 @@ fn translate(family: Family, options: &Map<String, Value>) -> toml::Table {
             }
             if let Some(single) = flag("singleAttributePerLine") {
                 put("single_attribute_per_line", toml::Value::Boolean(single));
+            }
+            if ["sortTailwindcss", "jsdoc", "experimentalTernaries"]
+                .iter()
+                .any(|key| enabled_option(options, key))
+            {
+                put("requires_oxfmt", toml::Value::Boolean(true));
             }
             if let Some(sort) = options.get("sortImports").and_then(snake_case_keys) {
                 put("sort_imports", sort);
@@ -289,6 +326,20 @@ fn translate(family: Family, options: &Map<String, Value>) -> toml::Table {
             if let Some(wrap) = text("proseWrap") {
                 put("prose_wrap", toml::Value::String(wrap.to_owned()));
             }
+            if let Some(mode) = text("embeddedLanguageFormatting") {
+                put("embedded_language_formatting", toml::Value::String(mode.to_owned()));
+            }
+            let embedded: toml::Table = [
+                ("js", Family::Js),
+                ("json", Family::Json),
+                ("yaml", Family::Yaml),
+                ("css", Family::Css),
+                ("toml", Family::Toml),
+            ]
+            .into_iter()
+            .map(|(name, family)| (name.to_owned(), toml::Value::Table(translate_values(family, options))))
+            .collect();
+            put("embedded", toml::Value::Table(embedded));
         }
         Family::Toml => {
             if let Some(comma) = comma {
@@ -299,7 +350,6 @@ fn translate(family: Family, options: &Map<String, Value>) -> toml::Table {
             }
         }
     }
-    report_unsupported(family, options);
     out
 }
 
@@ -312,16 +362,18 @@ fn quote_style(put: &mut impl FnMut(&str, toml::Value), key: &str, single: Optio
     }
 }
 
+fn enabled_option(options: &Map<String, Value>, key: &str) -> bool {
+    !matches!(options.get(key), None | Some(Value::Bool(false) | Value::Null))
+}
+
 fn report_unsupported(family: Family, options: &Map<String, Value>) {
-    let enabled = |key: &str| match options.get(key) {
-        None | Some(Value::Bool(false) | Value::Null) => false,
-        Some(_) => true,
-    };
+    let enabled = |key: &str| enabled_option(options, key);
     if family == Family::Js && enabled("sortTailwindcss") {
         warn_once("oxfmt-sort-tailwindcss".to_owned(), || {
             tracing::warn!(
                 "oxfmt `sortTailwindcss` is not applied: its class sorter runs in JavaScript and cannot run \
-                 in poly's in-process formatter, so Tailwind classes are left in source order"
+                 in poly's in-process formatter, so Tailwind classes are left in source order unless \
+                 `[fmt.<lang>.oxc] external = true` runs the real `oxfmt` for those files"
             );
         });
     }
@@ -461,12 +513,43 @@ mod tests {
     }
 
     #[test]
-    fn path_scoped_overrides_are_not_applied() {
+    fn path_scoped_overrides_are_resolved_per_file_not_per_language() {
         let rc = native(r#"{"tabWidth":4,"overrides":[{"files":["products/**"],"options":{"tabWidth":8}}]}"#);
         assert_eq!(
             engine_defaults(&rc, &Language::TypeScript, "oxc")["indent_width"].as_integer(),
             Some(4)
         );
+    }
+
+    #[test]
+    fn markdown_carries_the_option_overlays_of_the_languages_it_embeds() {
+        let rc = native(r#"{"semi":false,"trailingComma":"none","embeddedLanguageFormatting":"off"}"#);
+        let table = engine_defaults(&rc, &Language::Markdown, "rumdl");
+        assert_eq!(table["embedded_language_formatting"].as_str(), Some("off"));
+        assert_eq!(table["embedded"]["js"]["semicolons"].as_str(), Some("as-needed"));
+        assert_eq!(table["embedded"]["json"]["trailing_commas"].as_str(), Some("never"));
+        assert!(table["embedded"]["yaml"].is_table());
+    }
+
+    #[test]
+    fn options_only_the_real_oxfmt_implements_are_flagged_and_the_config_is_named() {
+        let rc = native(r#"{"sortTailwindcss":{"functions":["clsx"]}}"#);
+        let table = engine_defaults(&rc, &Language::TypeScript, "oxc");
+        assert_eq!(table["requires_oxfmt"].as_bool(), Some(true));
+        assert_eq!(table["oxfmtrc"].as_str(), Some("/repo/.oxfmtrc.jsonc"));
+        assert!(!engine_defaults(&native("{}"), &Language::TypeScript, "oxc").contains_key("requires_oxfmt"));
+    }
+
+    #[test]
+    fn path_tables_carry_only_the_keys_the_config_sets() {
+        let rc = native(r#"{"tabWidth":4,"overrides":[{"files":["products/**"],"options":{"tabWidth":8}}]}"#);
+        let matched: Vec<&poly_config::OxfmtOverride> = rc.overrides.iter().collect();
+        let table = path_table(&rc, &Language::TypeScript, "oxc", &matched, false).unwrap();
+        assert_eq!(table["indent_width"].as_integer(), Some(8));
+        assert!(!table.contains_key("line_width"));
+        let replacing = path_table(&rc, &Language::TypeScript, "oxc", &[], true).unwrap();
+        assert_eq!(replacing["indent_width"].as_integer(), Some(4));
+        assert_eq!(replacing["line_width"].as_integer(), Some(100));
     }
 
     #[test]

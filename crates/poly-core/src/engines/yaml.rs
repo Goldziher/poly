@@ -101,7 +101,19 @@ impl Engine for YamlEngine {
     }
 
     fn version(&self) -> &str {
-        "0.1.0+serde_yaml-0.9.34+oxc_formatter_yaml-e2be72d+tmplskip"
+        "0.1.0+serde_yaml-0.9.34+oxc_formatter_yaml-e2be72d+tmplskip+oxfmtrc-scope-1"
+    }
+
+    fn format_config<'a>(&self, src: &SourceFile, cfg: &'a EngineConfig) -> std::borrow::Cow<'a, EngineConfig> {
+        crate::oxfmt_scope::path_config(cfg, src, self.name())
+    }
+
+    fn format_input_salt(&self, path: &std::path::Path, cfg: &EngineConfig) -> Option<String> {
+        crate::oxfmt_scope::input_salt(cfg, path)
+    }
+
+    fn file_context(&self, path: &std::path::Path, cfg: &EngineConfig) -> Option<String> {
+        self.format_input_salt(path, cfg)
     }
 
     fn skip_reason(&self, src: &SourceFile) -> Option<&'static str> {
@@ -172,7 +184,7 @@ fn first_syntax_error(content: &str) -> Option<serde_yaml::Error> {
 
 /// Resolve [`YamlFormatOptions`] from the engine table, the shared layout options and the
 /// oxfmt defaults for everything the table leaves unset.
-fn build_format_options(cfg: &EngineConfig) -> YamlFormatOptions {
+pub(super) fn build_format_options(cfg: &EngineConfig) -> YamlFormatOptions {
     let mut options = YamlFormatOptions::default();
     options.apply_core(core_format_options(cfg));
     if let Some(single) = cfg.options.get("single_quote").and_then(toml::Value::as_bool) {

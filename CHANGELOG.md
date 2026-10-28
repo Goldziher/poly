@@ -51,6 +51,49 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   all of them, so those ruff keys no longer keep the ruff source. The ruff engine's `version()` is
   bumped.
 
+- **Config key diagnostics suggest the fix.** An unknown option in a `[lint.<lang>.<engine>]` /
+  `[fmt.<lang>.<engine>]` table names the nearest key the table accepts (`Did you mean
+  \`mccabe_max_complexity\`?`), and a tool table one edit from an engine of the language
+  (`[fmt.python.rufff]`) is reported with the engine it was probably meant to be. Every registry engine
+  declares the keys of both tables; no engine table is left unchecked.
+- **SQL formatting audit.** `poly fmt` for SQL applies only the `layout` and `capitalisation` groups,
+  with identifier capitalisation (`CP02`) off unless selected; a regression test now pins that mixed-case
+  table, column and quoted names come through a format untouched.
+- **shfmt follows `.editorconfig`, and `poly migrate` carries `shfmt -i N`.** shfmt reads
+  `.editorconfig` only when given a filename, which poly never passes, so a repository indented
+  with four spaces was reformatted to poly's two. poly now resolves the file's `indent_style` /
+  `indent_size` itself, as shfmt does (`tab` indents with tabs; `space` takes `indent_size`, or 8
+  when it is missing; a file that sets no `indent_style` keeps poly's default), unless
+  `[fmt.shell.shfmt] indent_width` or `use_tabs` is set, and the formatting cache is keyed on the
+  resolved indentation. `poly migrate` maps a lefthook `shfmt -i N -w {staged_files}` job or a
+  pre-commit `shfmt` hook with `-i N` to `[fmt.shell.shfmt] indent_width = N` (`-i 0` to
+  `use_tabs = true`); other layout flags keep the job a command. The native-tool engine's
+  `version()` carries `editorconfig-v1` for shfmt.
+- **Real `oxlint` / `oxfmt` as a fallback, and path-scoped oxfmt config.**
+  `[lint.<lang>.oxc] js_plugins = "external"` lints the files governed by an `.oxlintrc.json` that
+  declares `jsPlugins` with the real `oxlint` (nearest `node_modules/.bin`, else `PATH`), one run per
+  config, and parses its JSON report into poly diagnostics; `"skip"` (default) keeps the warning.
+  `[fmt.<lang>.oxc] external = true` formats files whose `.oxfmtrc.json[c]` sets `sortTailwindcss`,
+  `jsdoc` or `experimentalTernaries` with the real `oxfmt`. `overrides[].files` /
+  `excludeFiles` globs are now resolved per file relative to the config, and the nearest nested
+  `.oxfmtrc.json[c]` replaces the root one. The formatting cache key carries the digest of the
+  governing config and the overrides that match, so editing a nested config re-formats; the oxc
+  engine's stat-cache context now also carries the governing oxlint config digest.
+- **oxc lint parity with oxlint.** `poly lint --fix` now applies oxlint's safe fixes: the linter
+  was built with `FixKind::None`, so no rule produced an edit, and a finding with alternative fixes
+  applied all of them instead of the first, as `oxlint --fix` does. `[rules.sort-keys]` options
+  (`caseSensitive`, `natural`, `minKeys`, `allowLineSeparatedGroups`) reach the rule: its
+  configuration is positional, so the options object follows an `order` argument (`order = "desc"`,
+  default `"asc"`), and `args = [...]` spells out the arguments of any other positional rule. The one
+  remaining `sort-keys` difference on the armis corpus is oxlint 1.87 skipping computed identifier
+  keys (`{ a, [S], b }`), which the pinned oxc revision reports as ESLint does.
+- **Markdown fences and front matter are formatted.** `[fmt.markdown.rumdl]` now installs a
+  dispatcher on `oxc_formatter_markdown` as oxfmt does: JavaScript, TypeScript, JSON, YAML, CSS,
+  SCSS, Less, TOML and nested Markdown fences, and YAML/TOML front matter, are formatted in
+  process; other languages and fences that do not parse stay as written.
+  `embedded_language_formatting = "off"` (oxfmt `embeddedLanguageFormatting`) turns it off, and the
+  `embedded.<js|json|yaml|css|toml>` sub-tables carry the per-family options a `.oxfmtrc.json[c]`
+  supplies. The rumdl engine's `version()` carries `+md-embed-1`.
 - **`dockerfile-parser` is now vendored as the `crates/dockerfile-parser` workspace crate** (ADR 0003
   amendment). Upstream, HewlettPackard/dockerfile-parser-rs, is archived, so poly maintains it from
   upstream commit `08f3789` (`v0.9.0` plus the image-digest change). It moved to edition 2024 with
