@@ -4,7 +4,7 @@ build-backend = 'hatchling.build'
 
 [project]
 name = 'poly-hermes-plugin'
-version = '0.29.0'
+version = '0.30.0'
 description = 'Zero-dependency lint & format orchestrator over MCP — one pure-Rust binary wrapping ruff/oxc/taplo/rumdl and more as in-process backends, plus a tree-sitter generic tier for everything else. Exposes lint/format/cache tools with structured JSON output.'
 license = 'MIT'
 requires-python = '>=3.11'
