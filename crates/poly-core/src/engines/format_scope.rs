@@ -129,3 +129,104 @@ impl Engine for FormatScope {
         self.inner.supersedes_generic_formatter()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use globset::{Glob, GlobSetBuilder};
+
+    use super::*;
+    use crate::config::GlobalDefaults;
+
+    /// Upper-cases every file it formats.
+    struct Upper;
+
+    impl Engine for Upper {
+        fn name(&self) -> &'static str {
+            "upper"
+        }
+
+        fn languages(&self) -> &'static [Language] {
+            &[Language::Toml]
+        }
+
+        fn capabilities(&self) -> Capabilities {
+            Capabilities {
+                lint: false,
+                format: true,
+                fix: false,
+            }
+        }
+
+        fn version(&self) -> &str {
+            "test"
+        }
+
+        fn format(&self, src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
+            Ok(FormatOutput::Formatted(src.content.to_uppercase()))
+        }
+
+        fn format_batch(
+            &self,
+            batch: &[SourceFile],
+            cfg: &EngineConfig,
+        ) -> anyhow::Result<Vec<anyhow::Result<FormatOutput>>> {
+            Ok(batch.iter().map(|src| self.format(src, cfg)).collect())
+        }
+    }
+
+    fn scoped() -> FormatScope {
+        let mut builder = GlobSetBuilder::new();
+        builder.add(Glob::new("**/pyproject.toml").expect("glob"));
+        FormatScope::new(Box::new(Upper), builder.build().expect("set"))
+    }
+
+    fn source(path: &str) -> SourceFile {
+        SourceFile {
+            path: path.into(),
+            language: Language::Toml,
+            content: Arc::from("a = 1\n"),
+        }
+    }
+
+    fn cfg() -> EngineConfig {
+        EngineConfig {
+            globals: GlobalDefaults::default(),
+            indent_width: 2,
+            options: toml::Table::new(),
+        }
+    }
+
+    #[test]
+    fn a_claimed_file_is_left_to_the_specific_formatter() {
+        let engine = scoped();
+        assert!(matches!(
+            engine.format(&source("svc/pyproject.toml"), &cfg()),
+            Ok(FormatOutput::Unchanged)
+        ));
+        assert!(matches!(
+            engine.format(&source("svc/other.toml"), &cfg()),
+            Ok(FormatOutput::Formatted(text)) if text == "A = 1\n"
+        ));
+    }
+
+    #[test]
+    fn a_batch_keeps_its_order_around_the_claimed_files() {
+        let engine = scoped();
+        let batch = [source("a.toml"), source("x/pyproject.toml"), source("b.toml")];
+        let out = engine.format_batch(&batch, &cfg()).expect("batch");
+        assert_eq!(out.len(), 3);
+        assert!(matches!(&out[0], Ok(FormatOutput::Formatted(_))));
+        assert!(matches!(&out[1], Ok(FormatOutput::Unchanged)));
+        assert!(matches!(&out[2], Ok(FormatOutput::Formatted(_))));
+    }
+
+    #[test]
+    fn identity_is_the_wrapped_engines() {
+        let engine = scoped();
+        assert_eq!(engine.name(), "upper");
+        assert_eq!(engine.version(), "test");
+        assert!(engine.capabilities().format);
+    }
+}

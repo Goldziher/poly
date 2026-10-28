@@ -448,3 +448,58 @@ fn a_missing_tool_is_a_message_with_the_remedy_not_a_silent_pass() {
     );
     assert!(error.contains("[tools.faketool]"), "names the config entry: {error}");
 }
+
+#[test]
+fn go_package_directories_follow_the_dot_dot_dot_pattern() {
+    let fx = Fixture::new();
+    let tool_bin = fx.script(
+        "golint",
+        "#!/bin/sh\necho \"$PWD $*\" >> \"$POLY_TEST_LOG\"\nprintf '{\"Issues\":[]}'\n",
+    );
+    std::fs::write(fx.dir.path().join("go.mod"), "module x\n").expect("go.mod");
+    let files = vec![
+        fx.file("pkg/a.go", "package a\n"),
+        fx.file("pkg/b.go", "package a\n"),
+        fx.file("testdata/c.go", "package c\n"),
+        fx.file("_scratch/d.go", "package d\n"),
+    ];
+    let tool = fx.tool(
+        "run $DIR",
+        serde_json::json!({"output": "golangci_json", "group": {"marker": ["go.mod"]}, "target": "dir"}),
+        Role::Lint,
+        &fx.config(tool_bin),
+    );
+
+    let results = tool.lint_files(&refs(&files));
+
+    let log = std::fs::read_to_string(&fx.log).expect("log");
+    assert_eq!(fx.invocations(), 1, "one module, one run:\n{log}");
+    assert!(log.trim_end().ends_with("run ./pkg"), "only the package directory is passed: {log}");
+    assert!(results.iter().all(|r| r.as_ref().is_ok_and(Vec::is_empty)));
+}
+
+#[test]
+fn findings_printed_relative_to_a_chdir_reach_the_files_in_that_directory() {
+    let fx = Fixture::new();
+    let reporter = fx.script(
+        "reporter",
+        "#!/bin/sh\necho \"$PWD $*\" >> \"$POLY_TEST_LOG\"\necho 'user.tf:3: boom'\nexit 1\n",
+    );
+    let files = vec![fx.file("infra/user.tf", "x\n"), fx.file("other/user.tf", "y\n")];
+    let tool = fx.tool(
+        "--chdir=$DIR",
+        serde_json::json!({"output": "path_line", "group": "dir", "target": "dir"}),
+        Role::Lint,
+        &fx.config(reporter),
+    );
+
+    let results = tool.lint_files(&refs(&files));
+
+    assert_eq!(fx.invocations(), 2, "one invocation per directory");
+    for result in &results {
+        let diagnostics = result.as_ref().expect("ok");
+        assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+        assert_eq!(diagnostics[0].title, "boom");
+        assert_eq!(diagnostics[0].span.map(|s| s.start_line), Some(3));
+    }
+}

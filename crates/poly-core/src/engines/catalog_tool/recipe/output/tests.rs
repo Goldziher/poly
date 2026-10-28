@@ -167,3 +167,17 @@ fn helm_lint_lines_map_levels_and_template_errors_are_located() {
     assert_eq!(finding.path.as_deref(), Some("coralogix/templates/secret.yaml"));
     assert_eq!((finding.line, finding.column), (Some(6), Some(11)));
 }
+
+#[test]
+fn a_summary_printed_after_the_report_is_ignored() {
+    let json = "{\"Issues\":[]}\n7 issues:\n* gofmt: 5\n";
+    assert!(parse(Output::GolangciJson, json, "").expect("parses").is_empty());
+}
+
+#[test]
+fn path_line_reports_are_read_from_either_stream() {
+    let findings = parse(Output::PathLine, "main.tf:12:3: bad block\n", "other.tf:4: also bad\n").expect("parses");
+    assert_eq!(findings.len(), 2);
+    assert_eq!((findings[0].line, findings[0].column), (Some(12), Some(3)));
+    assert_eq!((findings[1].line, findings[1].column), (Some(4), None));
+}

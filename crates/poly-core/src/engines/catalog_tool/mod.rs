@@ -194,6 +194,9 @@ fn quoted_argv(tool: &Tool, arguments: &[String]) -> String {
 /// file-level diagnostic message, so a chatty tool cannot flood the report.
 const MAX_SNIPPET_LEN: usize = 2000;
 
+/// Why a file is not formatted when the formatter configured for it is not installed.
+const UNAVAILABLE_SKIP: &str = "formatter enabled in [tools] but not installed (see the warning above)";
+
 /// Prefix every [`CatalogToolEngine`] stamps on its [`Engine::version`].
 ///
 /// A catalog tool and a registry backend can answer the same [`Engine::name`] —
@@ -508,9 +511,17 @@ impl Engine for CatalogToolEngine {
 
     fn supersedes_generic_formatter(&self) -> bool {
         if self.tool.recipe.is_some() {
-            return !self.is_lint() && self.recipe.is_some();
+            // Even when the tool is missing: the generic reindenter's opinions are
+            // not the tool's, and falling back to them would rewrite files the
+            // user handed to a specific formatter. A missing tool is reported
+            // (the warning, and `skip_reason`), not papered over.
+            return !self.is_lint();
         }
         !self.is_lint() && probe_binary(&self.tool.binary).is_some()
+    }
+
+    fn skip_reason(&self, _src: &SourceFile) -> Option<&'static str> {
+        (!self.is_lint() && self.unavailable.is_some()).then_some(UNAVAILABLE_SKIP)
     }
 
     /// A catalog engine is built for the specific language it was matched to, so
@@ -624,7 +635,7 @@ impl Engine for CatalogToolEngine {
     }
 
     fn supplements_tier_one(&self) -> bool {
-        !self.is_lint() && !self.tool.path_globs.is_empty() && self.recipe.is_some()
+        !self.is_lint() && !self.tool.path_globs.is_empty() && self.tool.recipe.is_some()
     }
 
     fn lint_cache_salt(&self, src: &SourceFile) -> Option<String> {
