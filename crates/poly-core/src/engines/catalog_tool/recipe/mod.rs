@@ -19,12 +19,13 @@
 //! [`lint`] (grouping, running, attributing), [`format`] (scratch copies and
 //! in-place passes), [`output`] (report parsers), [`launch`] and [`install`]
 //! (finding or downloading the program), [`salt`] (cache inputs), [`mirror`],
-//! [`paths`], [`unit`] (per-chart values, skipped charts, the prepare step) and
-//! [`exec`].
+//! [`paths`], [`gofix`] (golangci-lint's fixes on a scratch copy of the module),
+//! [`unit`] (per-chart values, skipped charts, the prepare step) and [`exec`].
 
 mod argv;
 mod exec;
 mod format;
+mod gofix;
 mod install;
 mod launch;
 mod lint;
@@ -79,6 +80,9 @@ pub(super) struct RecipeTool {
     goos: Vec<String>,
     /// Environment variables removed from every invocation.
     unset_env: &'static [&'static str],
+    /// The run is scoped to a git revision (`new_from_rev`), so a scratch copy
+    /// must keep seeing the repository.
+    scoped_to_rev: bool,
 }
 
 /// The overrides git sets while it runs a hook. A tool that asks git which lines
@@ -226,6 +230,7 @@ impl RecipeTool {
             units,
             goos,
             unset_env: if resolved_rev.is_some() { GIT_HOOK_ENV } else { &[] },
+            scoped_to_rev: resolved_rev.is_some(),
         })
     }
 

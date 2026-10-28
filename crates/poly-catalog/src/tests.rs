@@ -240,6 +240,15 @@ fn golangci_lint_is_a_per_module_recipe_with_new_from_rev_and_config_discovery()
 }
 
 #[test]
+fn golangci_lint_fixes_with_run_fix_over_the_package_directories() {
+    let recipe = recipe_of("golangci-lint");
+    assert_eq!(recipe.fix.as_deref(), Some("fix"));
+    let fix = Catalog::get().tool("golangci-lint").expect("golangci-lint").command("fix").expect("fix");
+    assert_eq!(fix.arguments[..2], ["run", "--fix"]);
+    assert_eq!(fix.arguments.last().map(String::as_str), Some("$DIR"));
+}
+
+#[test]
 fn buf_discovers_its_module_and_config_through_buf_yaml() {
     let recipe = recipe_of("buf");
     assert_eq!(recipe.output, Output::BufJson);

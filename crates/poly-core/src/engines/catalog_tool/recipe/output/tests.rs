@@ -109,6 +109,22 @@ fn golangci_issues_are_read_and_a_null_list_is_clean() {
 }
 
 #[test]
+fn golangci_issues_with_suggested_fixes_or_a_replacement_are_fixable() {
+    let json = r#"{"Issues":[
+        {"FromLinter":"godot","Text":"a","Pos":{"Filename":"a.go","Line":1,"Column":1},"SuggestedFixes":[{"TextEdits":[]}]},
+        {"FromLinter":"old","Text":"b","Pos":{"Filename":"a.go","Line":2,"Column":1},"Replacement":{"NeedOnlyDelete":true}},
+        {"FromLinter":"none","Text":"c","Pos":{"Filename":"a.go","Line":3,"Column":1},"SuggestedFixes":null},
+        {"FromLinter":"empty","Text":"d","Pos":{"Filename":"a.go","Line":4,"Column":1},"SuggestedFixes":[],"Replacement":null}
+    ]}"#;
+    let fixable: Vec<bool> = parse(Output::GolangciJson, json, "")
+        .expect("parses")
+        .iter()
+        .map(|finding| finding.fixable)
+        .collect();
+    assert_eq!(fixable, [true, true, false, false]);
+}
+
+#[test]
 fn buildifier_warnings_carry_category_url_and_fixability() {
     let json = r#"{"success":false,"files":[{"filename":"a/BUILD","formatted":true,"valid":true,"warnings":[{"start":{"line":3,"column":1},"end":{"line":3,"column":11},"category":"native-py","actionable":true,"autoFixable":true,"message":"Function \"py_library\" is not global anymore","url":"https://example/native-py"}]}]}"#;
     let finding = one(parse(Output::BuildifierJson, json, "").expect("parses"));
