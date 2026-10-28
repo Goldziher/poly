@@ -20,6 +20,7 @@
 use dockerfile_parser::{Dockerfile, Instruction};
 
 use super::rule_config::RuleSelection;
+use super::template::{GO_TEMPLATE_SKIP, contains_go_template};
 use crate::config::EngineConfig;
 use crate::engine::{
     Capabilities, Diagnostic, Engine, FormatOutput, OptionKeys, OptionTable, Severity, SourceFile, Span as EngineSpan,
@@ -54,7 +55,7 @@ const DL4001: &str = "DL4001";
 // ---------------------------------------------------------------------------
 
 /// dockerfile-parser crate version embedded into the cache key.
-const DOCKERFILE_PARSER_VERSION: &str = "0.10.0+vendored1+parse-diag-v1+extendsel2";
+const DOCKERFILE_PARSER_VERSION: &str = "0.10.0+vendored1+parse-diag-v1+extendsel2+tmplskip";
 
 /// Diagnostic code emitted when the Dockerfile cannot be parsed at all.
 const PARSE_ERROR: &str = "parse-error";
@@ -95,7 +96,17 @@ impl Engine for DockerfileEngine {
         DOCKERFILE_PARSER_VERSION
     }
 
+    /// A Go/Helm-templated Dockerfile is not valid Dockerfile syntax; it is skipped rather than
+    /// reported as a parse error. A real Dockerfile that merely mentions `{{.Field}}` (a
+    /// `docker inspect --format`) still parses and is linted.
+    fn skip_reason(&self, src: &SourceFile) -> Option<&'static str> {
+        (contains_go_template(&src.content) && Dockerfile::parse(&src.content).is_err()).then_some(GO_TEMPLATE_SKIP)
+    }
+
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
+        if self.skip_reason(src).is_some() {
+            return Ok(Vec::new());
+        }
         // `[lint.dockerfile] select` / `extend_select` / `ignore` filter which
         // DLxxxx rules fire; empty selection keeps every rule (the default).
         let selection = RuleSelection::from_options(cfg);
@@ -575,6 +586,31 @@ extend_select = ["DL3000"]
             !diags.iter().any(|d| d.code.as_deref() == Some(DL3000)),
             "should not fire DL3000 for absolute WORKDIR"
         );
+    }
+
+    #[test]
+    fn go_templated_unparseable_dockerfile_is_skipped_not_reported() {
+        let engine = DockerfileEngine;
+        let src = SourceFile {
+            path: "Dockerfile.tpl".into(),
+            language: Language::Dockerfile,
+            content: "{{- if .Values.x }}\nFROM alpine:3\n{{- end }}\n".into(),
+        };
+        assert_eq!(engine.skip_reason(&src), Some(GO_TEMPLATE_SKIP));
+        assert!(engine.lint(&src, &engine_cfg()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn valid_dockerfile_mentioning_go_template_syntax_is_still_linted() {
+        let engine = DockerfileEngine;
+        let src = SourceFile {
+            path: "Dockerfile".into(),
+            language: Language::Dockerfile,
+            content: "FROM alpine:3\nHEALTHCHECK CMD docker inspect --format '{{.State.Running}}' x\nWORKDIR app\n".into(),
+        };
+        assert_eq!(engine.skip_reason(&src), None);
+        let diags = engine.lint(&src, &engine_cfg()).unwrap();
+        assert!(diags.iter().any(|d| d.code.as_deref() == Some(DL3000)), "{diags:?}");
     }
 
     #[test]

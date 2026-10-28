@@ -203,7 +203,7 @@ impl Language {
         }
         if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
             let lower = name.to_ascii_lowercase();
-            if lower == "dockerfile" || lower.starts_with("dockerfile.") || lower.ends_with(".dockerfile") {
+            if is_dockerfile_name(&lower) {
                 return Some(Language::Dockerfile);
             }
             // dotenv is detected by filename, not extension: `Path::extension()`
@@ -387,6 +387,28 @@ impl Language {
     }
 }
 
+/// Template suffixes that wrap a Dockerfile (`Dockerfile.tpl`, `base.Dockerfile.tmpl`).
+const TEMPLATE_SUFFIXES: &[&str] = &[".tpl", ".tmpl", ".template"];
+
+/// Whether a lowercase file name is a Dockerfile or Containerfile: the bare name,
+/// a `Dockerfile` / `Containerfile` stem followed by `.`, `-` or `_` (`Dockerfile.prod`,
+/// `Dockerfile-local`, `Dockerfile_base`), or a `*.dockerfile` / `*.containerfile` suffix,
+/// optionally wrapped in a template suffix.
+fn is_dockerfile_name(lower: &str) -> bool {
+    let name = TEMPLATE_SUFFIXES
+        .iter()
+        .find_map(|suffix| lower.strip_suffix(suffix))
+        .unwrap_or(lower);
+    if name.ends_with(".dockerignore") {
+        return false;
+    }
+    ["dockerfile", "containerfile"].iter().any(|stem| {
+        name.strip_prefix(stem)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with(['.', '-', '_']))
+            || name.ends_with(&format!(".{stem}"))
+    })
+}
+
 /// Bazel's extensionless and dot-suffixed Starlark files, which no extension
 /// table can name: `BUILD`, `WORKSPACE`, `MODULE.bazel`, `BUILD.bazel`, `*.BUILD`.
 fn is_starlark_name(lower: &str) -> bool {
@@ -449,6 +471,35 @@ mod tests {
             Language::from_path(Path::new("something.dockerfile")),
             Some(Language::Dockerfile)
         );
+    }
+
+    #[test]
+    fn from_path_detects_dockerfile_name_variants() {
+        for name in [
+            "Dockerfile-local",
+            "Dockerfile_pyspark_base_py311",
+            "Dockerfile-template",
+            "Dockerfile.tpl",
+            "Dockerfile_add_frag.tpl",
+            "web.Dockerfile",
+            "Containerfile",
+            "Containerfile.prod",
+            "base.Containerfile",
+            "base.Dockerfile.tmpl",
+        ] {
+            assert_eq!(
+                Language::from_path(Path::new(name)),
+                Some(Language::Dockerfile),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn from_path_does_not_steal_dockerfile_lookalikes() {
+        for name in ["dockerfile_parse.py", "dockerfile-notes.md", "dockerfilex", "my-dockerfile", "a.dockerignore"] {
+            assert_ne!(Language::from_path(Path::new(name)), Some(Language::Dockerfile), "{name}");
+        }
     }
 
     #[test]
