@@ -384,9 +384,10 @@ impl RecipeTool {
             match (owner, self.recipe.findings) {
                 (Some(index), _) => findings[index].push(finding.clone()),
                 (None, Findings::All) => {
-                    // One copy, on the first file: the verdict is not cached
-                    // (`RecipeTool::cache_salt`), so it cannot go stale.
-                    if let Some(&index) = covered.first() {
+                    // Every file of the run gets the finding, so a file's verdict is a
+                    // function of the root's digest alone (`RecipeTool::cache_salt`) and
+                    // never of which sibling files were checked beside it.
+                    for &index in covered {
                         let mut copy = finding.clone();
                         if let Some(path) = finding.path.as_deref().filter(|p| !lookup.is_root(p, &unit.root)) {
                             copy.message = format!("{path}: {}", copy.message);

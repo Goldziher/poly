@@ -215,12 +215,18 @@ impl RecipeTool {
     }
 
     /// The part of a file's lint cache key that its own bytes do not cover: the
-    /// digest of the files its project root's verdict depends on.
+    /// digest of the files its project root's verdict depends on, so an edit
+    /// anywhere in the chart or module invalidates every file of it and nothing
+    /// else does. A tool that reports every finding of its invocation depends on
+    /// the whole root.
     pub(super) fn cache_salt(&self, path: &Path) -> Option<String> {
-        if self.recipe.findings == Findings::All {
-            return Some(run_nonce().to_owned());
-        }
-        if self.recipe.dependencies.is_empty() {
+        let whole_root = [String::from("**")];
+        let dependencies: &[String] = if self.recipe.findings == Findings::All && self.recipe.dependencies.is_empty() {
+            &whole_root
+        } else {
+            &self.recipe.dependencies
+        };
+        if dependencies.is_empty() {
             return None;
         }
         let abs = paths::absolute(&self.cwd, path);
@@ -229,25 +235,8 @@ impl RecipeTool {
             Group::Dir => abs.parent()?.to_path_buf(),
             Group::Marker(markers) => paths::project_root(&abs, markers)?,
         };
-        Some(salt::dependency_digest(&root, &self.recipe.dependencies))
+        Some(salt::dependency_digest(&root, dependencies))
     }
-}
-
-/// A string unique to this process.
-///
-/// A tool whose findings in files outside the run are reported on the run's files
-/// (`Findings::All`) gives a file a verdict that depends on *which other files
-/// were checked alongside it*. No per-file cache key can express that, so such a
-/// tool's results are keyed to the process and recomputed on every run; they are
-/// cheap by construction (one invocation per project root).
-fn run_nonce() -> &'static str {
-    static NONCE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-    NONCE.get_or_init(|| {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.as_nanos());
-        format!("run-{}-{nanos}", std::process::id())
-    })
 }
 
 fn extra_args(config: &ToolConfig, role: Role) -> Vec<String> {

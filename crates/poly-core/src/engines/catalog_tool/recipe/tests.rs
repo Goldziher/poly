@@ -301,10 +301,13 @@ fn whole_unit_findings_in_files_outside_the_run_reach_the_files_that_are() {
         mine.iter().any(|d| d.title.starts_with("templates/other.yaml: ")),
         "{mine:?}"
     );
-    assert!(
-        results[1].as_ref().expect("ok").is_empty(),
-        "the unit-wide finding is reported once, on the first file"
+    let values = results[1].as_ref().expect("ok");
+    assert_eq!(
+        values.len(),
+        1,
+        "the unit-wide finding reaches every file of the run, so no verdict depends on its siblings: {values:?}"
     );
+    assert!(values[0].title.starts_with("templates/other.yaml: "), "{values:?}");
 
     let own = fx.tool(
         "lint $ROOT",
@@ -319,6 +322,42 @@ fn whole_unit_findings_in_files_outside_the_run_reach_the_files_that_are() {
         "own: only findings in the run's files"
     );
     assert!(results[1].as_ref().expect("ok").is_empty());
+}
+
+#[test]
+fn a_findings_all_tool_is_keyed_to_its_root_digest_not_to_the_process() {
+    let fx = Fixture::new();
+    let reporter = fx.script("reporter", "#!/bin/sh\nexit 0\n");
+    std::fs::write(fx.dir.path().join("Chart.yaml"), "name: c\n").expect("chart");
+    let template = fx.file("templates/a.yaml", "a: 1\n");
+    let tool = fx.tool(
+        "lint $ROOT",
+        serde_json::json!({"output": "helm_text", "group": {"marker": ["Chart.yaml"]}, "target": "root", "findings": "all"}),
+        Role::Lint,
+        &fx.config(reporter),
+    );
+
+    let salt = tool.cache_salt(&template.path).expect("a findings=all tool is salted");
+
+    assert!(!salt.starts_with("run-"), "the salt is a digest, not a process nonce: {salt}");
+    assert_eq!(salt, tool.cache_salt(&template.path).expect("salted"), "stable across calls");
+    let other = tempfile::tempdir().expect("other chart");
+    std::fs::write(other.path().join("Chart.yaml"), "name: d\n").expect("chart");
+    std::fs::create_dir_all(other.path().join("templates")).expect("templates");
+    std::fs::write(other.path().join("templates/a.yaml"), "a: 2\n").expect("template");
+    let other_template = other.path().join("templates/a.yaml");
+    let mut moved = fx.tool(
+        "lint $ROOT",
+        serde_json::json!({"output": "helm_text", "group": {"marker": ["Chart.yaml"]}, "target": "root", "findings": "all"}),
+        Role::Lint,
+        &fx.config(fx.dir.path().join("reporter").to_string_lossy().into_owned()),
+    );
+    moved.cwd = std::fs::canonicalize(other.path()).expect("canonical");
+    assert_ne!(
+        salt,
+        moved.cache_salt(&other_template).expect("salted"),
+        "a different chart has a different digest"
+    );
 }
 
 #[test]

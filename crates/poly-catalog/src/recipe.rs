@@ -89,8 +89,9 @@ pub enum Findings {
     Own,
     /// Every finding of the invocation. Right when a change in one file breaks
     /// another (a chart whose `values.yaml` no longer satisfies a template):
-    /// findings in files outside the run are attached to the run's files with
-    /// the real path in the message.
+    /// findings in files outside the run are attached to every file of the run
+    /// with the real path in the message, and the cache key of each file is the
+    /// digest of the whole project root, so unchanged roots are cache hits.
     All,
 }
 
