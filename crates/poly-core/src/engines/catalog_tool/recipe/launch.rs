@@ -6,7 +6,9 @@
 //! 2. The pinned release in poly's tool cache, when `version` names one — a pin
 //!    in the config beats whatever happens to be on `PATH`.
 //! 3. The pinned release downloaded now, when `install = "auto"`.
-//! 4. The tool's binary on `PATH`.
+//! 4. The tool's binary on `PATH`, only when no `version` is pinned: a pin that
+//!    cannot be honoured makes the tool unavailable instead of running another
+//!    version.
 //!
 //! A tool that is nowhere is [`Resolved::Missing`] with a message that says what
 //! to run, never a silent no-op: a linter that did not run must not look like a
@@ -49,10 +51,11 @@ pub(in crate::engines::catalog_tool) fn resolve(tool: &Tool, recipe: &Recipe, co
             None => Resolved::Missing(format!("`bin = \"{bin}\"` for tool `{}` does not exist", tool.name)),
         };
     }
-    if let Some(pin) = &pinned
-        && let Some(path) = provision(tool, config, pin)
-    {
-        return ready(path, Vec::new(), &pin.version);
+    if let Some(pin) = &pinned {
+        return match provision(tool, config, pin) {
+            Ok(path) => ready(path, Vec::new(), &pin.version),
+            Err(reason) => Resolved::Missing(unmet_pin(tool, pin, &reason)),
+        };
     }
     match which::which(&tool.binary) {
         Ok(path) => ready(path, Vec::new(), "path"),
@@ -61,9 +64,11 @@ pub(in crate::engines::catalog_tool) fn resolve(tool: &Tool, recipe: &Recipe, co
 }
 
 fn resolve_jvm(tool: &Tool, recipe: &Recipe, config: &ToolConfig, pinned: Option<Pinned<'_>>) -> Resolved {
-    if let Some(pin) = &pinned
-        && let Some(jar) = provision(tool, config, pin)
-    {
+    if let Some(pin) = &pinned {
+        let jar = match provision(tool, config, pin) {
+            Ok(jar) => jar,
+            Err(reason) => return Resolved::Missing(unmet_pin(tool, pin, &reason)),
+        };
         let Some(java) = java_program(config) else {
             return Resolved::Missing(format!(
                 "tool `{}` is a JVM tool but no `java` was found; set `bin` to one or put it on PATH",
@@ -205,21 +210,34 @@ fn pinned_release<'a>(tool: &'a Tool, recipe: &'a Recipe, config: &ToolConfig) -
 
 /// The installed path of the pinned release, downloading it first when the
 /// config allows.
-fn provision(tool: &Tool, config: &ToolConfig, pin: &Pinned<'_>) -> Option<PathBuf> {
-    let path = install::destination(&tool.name, &pin.version, &pin.asset).ok()?;
+fn provision(tool: &Tool, config: &ToolConfig, pin: &Pinned<'_>) -> Result<PathBuf, String> {
+    let path = install::destination(&tool.name, &pin.version, &pin.asset)
+        .map_err(|error| format!("locating poly's tool cache failed: {error:#}"))?;
     if install::is_installed(&path, &pin.asset) {
-        return Some(path);
+        return Ok(path);
     }
     if config.install != InstallPolicy::Auto {
-        return None;
+        return Err(format!(
+            "release {} is not in poly's tool cache and `install` is not \"auto\"",
+            pin.version
+        ));
     }
-    match install::ensure(&path, &pin.asset, pin.kind) {
-        Ok(()) => Some(path),
-        Err(error) => {
-            tracing::warn!(tool = %tool.name, "could not install {} {}: {error:#}", tool.name, pin.version);
-            None
-        }
-    }
+    install::ensure(&path, &pin.asset, pin.kind)
+        .map(|()| path)
+        .map_err(|error| format!("installing release {} failed: {error:#}", pin.version))
+}
+
+/// The message for a `version` pin poly cannot honour. A pin that falls back to
+/// whatever `PATH` holds would lint with a tool the config did not ask for.
+fn unmet_pin(tool: &Tool, pin: &Pinned<'_>, reason: &str) -> String {
+    format!(
+        "tool `{name}` is pinned to version {version} in [tools.{name}] but {reason}; \
+         poly will not run a different `{binary}` from PATH instead. Set `install = \"auto\"`, \
+         point `bin` at the pinned build, or remove `version`",
+        name = tool.name,
+        version = pin.version,
+        binary = tool.binary,
+    )
 }
 
 fn missing_message(tool: &Tool, recipe: &Recipe, pinned: Option<&Pinned<'_>>) -> String {

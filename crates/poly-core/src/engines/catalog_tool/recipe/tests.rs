@@ -450,6 +450,50 @@ fn a_missing_tool_is_a_message_with_the_remedy_not_a_silent_pass() {
 }
 
 #[test]
+fn a_version_pin_that_cannot_be_honoured_never_falls_back_to_the_path_binary() {
+    let recipe: &'static Recipe = Box::leak(Box::new(
+        serde_json::from_value(serde_json::json!({
+            "install": {"hint": "brew install sh", "releases": {"1.0": {"kind": "binary", "assets": {"any": {
+                "url": "http://127.0.0.1:1/never-1.0", "sha256": "00"
+            }}}}}
+        }))
+        .expect("recipe"),
+    ));
+    let tool: &'static Tool = Box::leak(Box::new(Tool {
+        name: "faketool".to_owned(),
+        binary: "sh".to_owned(),
+        categories: vec!["linter".to_owned()],
+        languages: Vec::new(),
+        commands: BTreeMap::from([(
+            "lint".to_owned(),
+            Command {
+                arguments: vec!["$FILES".to_owned()],
+                stdin: false,
+                then: Vec::new(),
+                batch: None,
+            },
+        )]),
+        homepage: String::new(),
+        path_globs: Vec::new(),
+        recipe: None,
+    }));
+
+    let unpinned = RecipeTool::build(tool, recipe, &ToolConfig::default(), Role::Lint, None);
+    assert!(unpinned.is_ok(), "`sh` is on PATH, so an unpinned tool runs");
+
+    let pinned = ToolConfig {
+        version: Some("1.0".to_owned()),
+        ..ToolConfig::default()
+    };
+    let error = RecipeTool::build(tool, recipe, &pinned, Role::Lint, None)
+        .err()
+        .expect("a pin that is not installed must not run the PATH binary");
+    assert!(error.contains("pinned to version 1.0"), "{error}");
+    assert!(error.contains("will not run a different"), "{error}");
+    assert!(error.contains("install = \"auto\""), "names the remedy: {error}");
+}
+
+#[test]
 fn go_package_directories_follow_the_dot_dot_dot_pattern() {
     let fx = Fixture::new();
     let tool_bin = fx.script(
