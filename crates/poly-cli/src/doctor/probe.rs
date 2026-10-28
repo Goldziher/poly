@@ -20,6 +20,17 @@ use serde::Serialize;
 /// genuinely hung executable cannot hang `poly doctor` with it.
 const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// Environment variable overriding [`PROBE_TIMEOUT`], in whole seconds. Lets a
+/// harness running many processes at once lift the bound instead of racing it.
+const PROBE_TIMEOUT_ENV: &str = "POLY_PROBE_TIMEOUT_SECS";
+
+/// How many times a spawn refused with "text file busy" is retried.
+///
+/// A script written moments ago can still be open for writing in a concurrently
+/// forked child until that child reaches `exec`, and the kernel refuses to
+/// execute a file open for writing. The refusal is transient by construction.
+const TEXT_BUSY_RETRIES: u32 = 200;
+
 /// Polling interval while waiting for the probe to exit.
 const POLL_INTERVAL: Duration = Duration::from_millis(10);
 
@@ -68,12 +79,37 @@ impl Probe {
 /// Never panics and never blocks indefinitely: the child is killed once
 /// [`PROBE_TIMEOUT`] elapses.
 pub fn probe_version(path: &Path) -> Probe {
-    let spawned = Command::new(path)
-        .arg("--version")
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn();
+    let timeout = std::env::var(PROBE_TIMEOUT_ENV)
+        .ok()
+        .and_then(|seconds| seconds.parse().ok())
+        .map_or(PROBE_TIMEOUT, Duration::from_secs);
+    probe_version_within(path, timeout)
+}
+
+/// Spawn `<path> --version`, retrying while the kernel reports the executable as
+/// busy (`ETXTBSY`).
+fn spawn_probe(path: &Path) -> std::io::Result<std::process::Child> {
+    let mut attempts = 0;
+    loop {
+        let spawned = Command::new(path)
+            .arg("--version")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn();
+        match spawned {
+            Err(error) if error.kind() == std::io::ErrorKind::ExecutableFileBusy && attempts < TEXT_BUSY_RETRIES => {
+                attempts += 1;
+                std::thread::sleep(POLL_INTERVAL);
+            }
+            other => return other,
+        }
+    }
+}
+
+/// [`probe_version`] with an explicit bound on how long the executable may take.
+pub fn probe_version_within(path: &Path, timeout: Duration) -> Probe {
+    let spawned = spawn_probe(path);
     let mut child = match spawned {
         Ok(child) => child,
         Err(error) => {
@@ -83,7 +119,7 @@ pub fn probe_version(path: &Path) -> Probe {
         }
     };
 
-    let deadline = Instant::now() + PROBE_TIMEOUT;
+    let deadline = Instant::now() + timeout;
     loop {
         match child.try_wait() {
             Ok(Some(status)) => {
@@ -100,7 +136,7 @@ pub fn probe_version(path: &Path) -> Probe {
                 let _ = child.kill();
                 let _ = child.wait();
                 return Probe::Failed {
-                    detail: format!("did not answer `--version` within {}s (hung)", PROBE_TIMEOUT.as_secs()),
+                    detail: format!("did not answer `--version` within {}s (hung)", timeout.as_secs()),
                 };
             }
             Ok(None) => std::thread::sleep(POLL_INTERVAL),
@@ -177,9 +213,14 @@ fn first_line(bytes: &[u8]) -> String {
 mod tests {
     use super::*;
 
+    /// No assertion here depends on elapsed time: the bound is lifted far past
+    /// any plausible stall so a loaded machine cannot turn a slow spawn into a
+    /// false "hung" verdict.
+    const UNBOUNDED: Duration = Duration::from_secs(24 * 3600);
+
     #[test]
     fn a_missing_executable_reports_a_failure_not_a_panic() {
-        let probe = probe_version(Path::new("/nonexistent/poly"));
+        let probe = probe_version_within(Path::new("/nonexistent/poly"), UNBOUNDED);
         assert!(probe.is_failure(), "a missing executable is a failed probe");
         assert!(probe.version().is_none());
         assert!(
@@ -200,7 +241,7 @@ mod tests {
         let path = dir.path().join("silent-poly");
         std::fs::write(&path, "#!/bin/sh\nexit 0\n").unwrap();
         make_executable(&path);
-        let probe = probe_version(&path);
+        let probe = probe_version_within(&path, UNBOUNDED);
         assert!(
             probe.is_failure(),
             "exit 0 with no output must not be read as a version"
@@ -214,7 +255,7 @@ mod tests {
         let path = dir.path().join("fake-poly");
         std::fs::write(&path, "#!/bin/sh\necho 'poly 9.9.9 (dev build vX, debug)'\n").unwrap();
         make_executable(&path);
-        let probe = probe_version(&path);
+        let probe = probe_version_within(&path, UNBOUNDED);
         assert_eq!(
             probe.version(),
             Some("poly 9.9.9 (dev build vX, debug)"),
@@ -231,7 +272,7 @@ mod tests {
         // failure, which the shell surfaces as exit 137.
         std::fs::write(&path, "#!/bin/sh\nkill -9 $$\n").unwrap();
         make_executable(&path);
-        let probe = probe_version(&path);
+        let probe = probe_version_within(&path, UNBOUNDED);
         assert!(probe.is_failure());
         let detail = probe.display();
         assert!(detail.contains("exit 137"), "names the shell-visible status: {detail}");
@@ -242,5 +283,16 @@ mod tests {
     fn make_executable(path: &Path) {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_binary_that_never_answers_is_reported_hung_at_the_given_bound() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("hung-poly");
+        std::fs::write(&path, "#!/bin/sh\nexec sleep 3600\n").unwrap();
+        make_executable(&path);
+        let probe = probe_version_within(&path, Duration::ZERO);
+        assert!(probe.display().contains("(hung)"), "{}", probe.display());
     }
 }

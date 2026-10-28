@@ -20,6 +20,11 @@ use tempfile::TempDir;
 
 const POLY: &str = env!("CARGO_BIN_EXE_poly");
 
+/// Lifts the doctor's per-install probe bound so a loaded machine cannot turn a
+/// slow spawn into a spurious "did not answer" verdict; no assertion here reads
+/// a clock.
+const PROBE_TIMEOUT_ENV: (&str, &str) = ("POLY_PROBE_TIMEOUT_SECS", "86400");
+
 /// A `PATH` layout with the real binary and a stand-in "other install".
 struct Installs {
     _dir: TempDir,
@@ -73,6 +78,7 @@ impl Installs {
             .join(":");
         Command::new(&self.real)
             .args(args)
+            .env(PROBE_TIMEOUT_ENV.0, PROBE_TIMEOUT_ENV.1)
             .env("PATH", format!("{path}:/usr/bin:/bin"))
             .env_remove("POLY_NO_SHADOW_WARN")
             .output()
@@ -108,6 +114,7 @@ fn version_reports_the_build_identity_not_just_the_number() {
 #[test]
 fn doctor_reports_the_running_binary_and_its_config() {
     let output = Command::new(POLY)
+        .env(PROBE_TIMEOUT_ENV.0, PROBE_TIMEOUT_ENV.1)
         .args(["doctor", "--no-color"])
         .output()
         .expect("run poly");
@@ -121,6 +128,7 @@ fn doctor_reports_the_running_binary_and_its_config() {
 #[test]
 fn doctor_emits_json_when_asked() {
     let output = Command::new(POLY)
+        .env(PROBE_TIMEOUT_ENV.0, PROBE_TIMEOUT_ENV.1)
         .args(["doctor", "--format", "json"])
         .output()
         .expect("run poly");
@@ -221,6 +229,7 @@ fn crawlberg_shaped_repo(exclude: &str) -> TempDir {
 
 fn doctor_json(repo: &TempDir) -> serde_json::Value {
     let output = Command::new(POLY)
+        .env(PROBE_TIMEOUT_ENV.0, PROBE_TIMEOUT_ENV.1)
         .args(["doctor", "--format", "json"])
         .current_dir(repo.path())
         .output()
