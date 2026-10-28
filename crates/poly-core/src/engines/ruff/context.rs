@@ -17,7 +17,9 @@
 //! `namespace-packages` is not a poly option, so the package walk passes none;
 //! `namespace_packages_are_not_configurable` fails if that ever changes.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::{LazyLock, Mutex, PoisonError};
 
 use ruff_linter::packaging::detect_package_root;
 
@@ -31,6 +33,37 @@ const SKIPPED_DIRS: [&str; 3] = ["node_modules", "target", "__pycache__"];
 pub(super) fn package_root(path: &Path) -> String {
     path.parent()
         .and_then(|parent| detect_package_root(parent, &[]))
+        .map_or_else(|| "-".to_owned(), |root| root.to_string_lossy().into_owned())
+}
+
+/// Package roots already found this run, keyed by the directory they were found
+/// for. A run asks for the same few directories once per file, twice over (cache
+/// key, then lint), and every ask is a walk up the tree; see [`forget_package_roots`].
+static PACKAGE_ROOTS: LazyLock<Mutex<HashMap<PathBuf, Option<PathBuf>>>> = LazyLock::new(Mutex::default);
+
+/// Drop every remembered package root. Called when a run is planned, so an
+/// `__init__.py` added or removed between runs of a long-lived process is seen.
+pub(super) fn forget_package_roots() {
+    PACKAGE_ROOTS.lock().unwrap_or_else(PoisonError::into_inner).clear();
+}
+
+/// [`detect_package_root`] for `dir`, remembered for the rest of the run.
+pub(super) fn cached_package_root(dir: &Path) -> Option<PathBuf> {
+    if let Some(hit) = PACKAGE_ROOTS.lock().unwrap_or_else(PoisonError::into_inner).get(dir) {
+        return hit.clone();
+    }
+    let found = detect_package_root(dir, &[]).map(Path::to_path_buf);
+    PACKAGE_ROOTS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .insert(dir.to_path_buf(), found.clone());
+    found
+}
+
+/// [`package_root`] answered from the run's remembered roots.
+pub(super) fn run_package_root(path: &Path) -> String {
+    path.parent()
+        .and_then(cached_package_root)
         .map_or_else(|| "-".to_owned(), |root| root.to_string_lossy().into_owned())
 }
 
