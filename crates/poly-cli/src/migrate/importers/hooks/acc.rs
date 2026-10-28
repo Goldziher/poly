@@ -167,6 +167,8 @@ pub(super) struct ToolSettings {
     pub command: Option<String>,
     /// The pinned release the hook ran; when set, poly may download it.
     pub version: Option<String>,
+    /// Report only findings new since this git revision (`--new-from-rev`).
+    pub new_from_rev: Option<String>,
 }
 
 impl ToolSettings {
@@ -196,6 +198,7 @@ impl ToolSettings {
         for (name, mine, theirs) in [
             ("command", &mut self.command, &other.command),
             ("version", &mut self.version, &other.version),
+            ("new_from_rev", &mut self.new_from_rev, &other.new_from_rev),
         ] {
             match (&*mine, theirs) {
                 (_, None) => {}
@@ -539,6 +542,9 @@ fn tool_entries(tool: &ToolAcc, settings: &ToolSettings) -> Vec<(String, Item)> 
     if let Some(version) = &settings.version {
         entries.push(("version".to_string(), str_item(version)));
         entries.push(("install".to_string(), str_item("auto")));
+    }
+    if let Some(rev) = &settings.new_from_rev {
+        entries.push(("new_from_rev".to_string(), str_item(rev)));
     }
     if !files.is_empty() {
         entries.push(("files".to_string(), str_array(&files)));
