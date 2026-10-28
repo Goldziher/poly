@@ -36,8 +36,6 @@ jobs:
   clippy:
     name: clippy
     runs-on: ${{ matrix.os }}
-    # The biome pin at HEAD cannot be fetched on Windows (adrs/0003-dependency-policy.md).
-    continue-on-error: ${{ matrix.os == 'windows-latest' }}
     timeout-minutes: 40
     strategy:
       fail-fast: false
@@ -45,6 +43,12 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v7
+      - name: Shorten paths for the biome checkout (adrs/0003-dependency-policy.md)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          git config --global core.longpaths true
+          echo 'CARGO_HOME=D:\c' >> "$GITHUB_ENV"
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -54,8 +58,6 @@ jobs:
   test:
     name: test / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    # The biome pin at HEAD cannot be fetched on Windows (adrs/0003-dependency-policy.md).
-    continue-on-error: ${{ matrix.os == 'windows-latest' }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -63,6 +65,12 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v7
+      - name: Shorten paths for the biome checkout (adrs/0003-dependency-policy.md)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          git config --global core.longpaths true
+          echo 'CARGO_HOME=D:\c' >> "$GITHUB_ENV"
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         # --no-fail-fast is not optional: cargo stops at the first failing test
@@ -81,8 +89,6 @@ jobs:
     # that is reachable from a test that never touches a real tree.
     name: dogfood / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    # The biome pin at HEAD cannot be fetched on Windows (adrs/0003-dependency-policy.md).
-    continue-on-error: ${{ matrix.os == 'windows-latest' }}
     timeout-minutes: 40
     strategy:
       fail-fast: false
@@ -90,6 +96,12 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v7
+      - name: Shorten paths for the biome checkout (adrs/0003-dependency-policy.md)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          git config --global core.longpaths true
+          echo 'CARGO_HOME=D:\c' >> "$GITHUB_ENV"
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       # --no-workspace skips the whole-project phase: `cargo clippy` over this
