@@ -60,7 +60,6 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   `[fmt.python.ruff]` takes `preview` and `exclude` (matched at any depth). `poly migrate` carries
   all of them, so those ruff keys no longer keep the ruff source. The ruff engine's `version()` is
   bumped.
-
 - **Config key diagnostics suggest the fix.** An unknown option in a `[lint.<lang>.<engine>]` /
   `[fmt.<lang>.<engine>]` table names the nearest key the table accepts (`Did you mean
   \`mccabe_max_complexity\`?`), and a tool table one edit from an engine of the language
@@ -210,7 +209,6 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   HEAD although ADR 0003 held it at `dd96b11`**: HEAD still carries the fixture whose checkout
   path exceeds Windows' `MAX_PATH`, so the Windows build must be watched. `psm` stays at 0.1.24
   because `pest_stack_guard` pins it exactly.
-
 - **ai-rulez 5.3.0 → 5.7.0.** Every pin (`poly.toml` hook source, the four workflow setups, both
   `ai-rulez.lock` files) moved to the published 5.7.0 release; the reviewed-source build pin is
   gone because 5.7.0 carries the plugin fixes it existed for. The plugin bundles and public
@@ -218,19 +216,16 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   `plugin/package.json`, whose `@opencode/plugin` range the OpenCode generator owns and now emits
   as `^2.0.26` (the earlier hand edit to `^2.1.4` cannot survive generation; the range still
   admits 2.1.4).
-
 - **Hermes adapter ported to `mcp` 2.3.0.** The adapter catches `MCPError` (renamed from
   `McpError`), passes `read_timeout_seconds` as plain seconds, and dumps results with
   `by_alias=True` so the camelCase wire keys (`inputSchema`, `isError`) stay the same. The pin
   moved 1.30.0 → 2.3.0 in `Taskfile.yaml`, `config.plugins.toml` and the generated
   `plugin.yaml`/`pyproject.toml`; the contract test's stdio fixture uses `MCPServer`, the 2.x
   name for `FastMCP`.
-
 - **Final sweep.** The root `@opencode/plugin` 2.1.4 → 2.2.0 (lockfile refreshed with pnpm
   12.15.0) and the `xberg-io/actions` SHA pins (`setup-ai-rulez`, `validate-ai-rulez`,
   `package-ai-rulez-plugin`) advanced to `d922e0d`, whose setup action defaults to ai-rulez 5.7.0.
   Cargo, the other pnpm workspaces and the GitHub Actions tags had nothing newer.
-
 - **Tooling refresh.** pnpm 12.11.2 → 12.15.0, `@opencode/plugin` 2.0.26 → 2.1.4, the OpenCode
   `@opencode-ai/plugin` 1.18.35 → 1.19.4, Astro 7.3.8 → 7.4.2, Starlight 0.42.6 → 0.42.7, the
   Hermes adapter's `mcp` pin 1.28.1 → 1.30.0 (taken further to 2.3.0 below),

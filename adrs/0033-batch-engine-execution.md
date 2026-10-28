@@ -720,4 +720,3 @@ deferred. The batch instead reproduces the stdin invocation:
 
 `native_tool/lint_batch.rs` asserts equivalence with the stdin path per member on
 a corpus that includes the `.bash`-without-shebang case.
-
