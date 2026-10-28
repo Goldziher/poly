@@ -250,3 +250,104 @@ fn per_file_hooks_never_require_the_full_tree() {
         &spec(vec![hook])
     ));
 }
+
+fn run_in_snapshot(repo: &Path, snapshot: &Path, files: &[PathBuf], hook: Hook) -> anyhow::Result<()> {
+    poly_hooks::run(HookRunRequest {
+        root: repo.to_path_buf(),
+        work_root: Some(snapshot.to_path_buf()),
+        files: files.to_vec(),
+        stages: vec![spec(vec![hook])],
+        ..HookRunRequest::default()
+    })
+    .map(|_| ())
+}
+
+fn shell_hook(command: &str) -> Hook {
+    let mut hook = Hook::run("writer", command);
+    hook.pass_filenames = false;
+    hook.always_run = true;
+    hook
+}
+
+#[test]
+fn a_hook_writing_through_a_link_into_the_worktree_fails_the_run_and_names_the_directory() {
+    let repo = repo();
+    let cache = TempDir::new().unwrap();
+    let files = [PathBuf::from("pkg/a.py")];
+    let snap = snapshot(repo.path(), cache.path(), &files, &[]);
+
+    let outcome = run_in_snapshot(repo.path(), snap.path(), &files, shell_hook("echo changed >> other/c.py"));
+
+    let error = outcome.expect_err("a write through a link must fail the run");
+    let message = format!("{error:#}");
+    assert!(message.contains("other"), "{message}");
+    assert!(message.contains("snapshot"), "{message}");
+}
+
+#[test]
+fn a_hook_creating_an_untracked_file_through_a_link_is_caught_too() {
+    let repo = repo();
+    let cache = TempDir::new().unwrap();
+    let files = [PathBuf::from("pkg/a.py")];
+    let snap = snapshot(repo.path(), cache.path(), &files, &[]);
+
+    let outcome = run_in_snapshot(repo.path(), snap.path(), &files, shell_hook("echo x > other/new.txt"));
+
+    assert!(outcome.is_err(), "an untracked file in a linked directory is a write too");
+}
+
+#[test]
+fn a_hook_that_writes_only_inside_the_snapshot_passes() {
+    let repo = repo();
+    let cache = TempDir::new().unwrap();
+    let files = [PathBuf::from("pkg/a.py")];
+    let snap = snapshot(repo.path(), cache.path(), &files, &[]);
+
+    run_in_snapshot(repo.path(), snap.path(), &files, shell_hook("echo changed >> pkg/a.py")).unwrap();
+
+    assert_eq!(
+        std::fs::read_to_string(repo.path().join("pkg/a.py")).unwrap(),
+        "a = 1\n",
+        "the worktree copy is untouched"
+    );
+}
+
+#[test]
+fn a_ruff_config_extending_a_file_outside_the_directory_chain_gets_it_from_the_index() {
+    let repo = repo();
+    let root = repo.path();
+    write(root, "pkg/ruff.toml", "extend = \"../shared/base.toml\"\n");
+    write(root, "shared/base.toml", "extend = \"../more/other.toml\"\nline-length = 100\n");
+    write(root, "more/other.toml", "indent-width = 2\n");
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-qm", "configs"]);
+    write(root, "shared/base.toml", "line-length = 7  # unstaged\n");
+    let cache = TempDir::new().unwrap();
+
+    let snap = snapshot(root, cache.path(), &[PathBuf::from("pkg/a.py")], &[]);
+
+    assert!(is_written(snap.path(), "shared/base.toml"), "the extended file is materialized");
+    assert_eq!(
+        std::fs::read_to_string(snap.path().join("shared/base.toml")).unwrap(),
+        "extend = \"../more/other.toml\"\nline-length = 100\n",
+        "from the index, not the unstaged edit"
+    );
+    assert!(is_written(snap.path(), "more/other.toml"), "so is the file it extends");
+    assert!(!is_written(snap.path(), "other/c.py"), "unrelated directories stay linked");
+}
+
+#[test]
+fn a_pyproject_ruff_extend_is_followed_and_an_escaping_one_is_ignored() {
+    let repo = repo();
+    let root = repo.path();
+    write(root, "pkg/pyproject.toml", "[tool.ruff]\nextend = \"../shared/base.toml\"\n");
+    write(root, "shared/base.toml", "line-length = 100\n");
+    write(root, "pkg/sub/ruff.toml", "extend = \"../../../outside.toml\"\n");
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-qm", "configs"]);
+    let cache = TempDir::new().unwrap();
+
+    let snap = snapshot(root, cache.path(), &[PathBuf::from("pkg/sub/b.py")], &[]);
+
+    assert!(is_written(snap.path(), "shared/base.toml"));
+}

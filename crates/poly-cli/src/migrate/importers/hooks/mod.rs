@@ -45,6 +45,7 @@ pub fn import(dir: &Path) -> Vec<ImportResult> {
             }
         }
     }
+    acc.order_checks_after_fixers();
     acc.settle();
     let (fragments, diag) = acc.into_fragments();
 

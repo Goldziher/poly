@@ -161,6 +161,11 @@ pub struct FileSafetyHooks {
     /// credentials files. Off by default, unlike the other members; passes when
     /// no credentials are configured.
     pub aws_credentials: bool,
+    /// Sort requirements files in place and fail the commit when one was out of
+    /// order, like pre-commit-hooks' `requirements-txt-fixer`. Off by default,
+    /// unlike the other members, because it rewrites files; scope it with
+    /// `files = "*requirements*.txt"`.
+    pub requirements_txt_fixer: bool,
     /// Lower values run first; hooks sharing a priority run in parallel.
     pub priority: i64,
     /// Separately scoped runs of subsets of the checks. When non-empty, the
@@ -184,6 +189,7 @@ impl Default for FileSafetyHooks {
             executables_have_shebangs: true,
             shebang_scripts_are_executable: true,
             aws_credentials: false,
+            requirements_txt_fixer: false,
             priority: 0,
             jobs: Vec::new(),
         }
@@ -202,6 +208,7 @@ impl FileSafetyHooks {
             "executables_have_shebangs" => self.executables_have_shebangs,
             "shebang_scripts_are_executable" => self.shebang_scripts_are_executable,
             "aws_credentials" => self.aws_credentials,
+            "requirements_txt_fixer" => self.requirements_txt_fixer,
             _ => false,
         }
     }
@@ -251,6 +258,7 @@ struct FileSafetyTable {
     executables_have_shebangs: Option<bool>,
     shebang_scripts_are_executable: Option<bool>,
     aws_credentials: Option<bool>,
+    requirements_txt_fixer: Option<bool>,
     priority: Option<i64>,
     jobs: Vec<FileSafetyJob>,
 }
@@ -275,6 +283,7 @@ impl<'de> Deserialize<'de> for FileSafetyHooks {
                 executables_have_shebangs: table.executables_have_shebangs.unwrap_or(true),
                 shebang_scripts_are_executable: table.shebang_scripts_are_executable.unwrap_or(true),
                 aws_credentials: table.aws_credentials.unwrap_or(false),
+                requirements_txt_fixer: table.requirements_txt_fixer.unwrap_or(false),
                 priority: table.priority.unwrap_or(0),
                 jobs: table.jobs,
             }),
@@ -478,6 +487,10 @@ impl schemars::JsonSchema for FileSafetyHooks {
                         "aws_credentials": {
                             "type": "boolean",
                             "description": "Reject files containing an AWS secret from the environment or credentials files. Off by default."
+                        },
+                        "requirements_txt_fixer": {
+                            "type": "boolean",
+                            "description": "Sort requirements files in place and fail when one was out of order. Off by default."
                         },
                         "priority": { "type": "integer" },
                         "jobs": jobs

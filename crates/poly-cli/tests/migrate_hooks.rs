@@ -360,9 +360,20 @@ fn recurse_finds_directories_that_only_hold_a_hook_config() {
     run_migrate(migrate_args(dir.path(), true, true));
     assert!(dir.path().join("svc/poly.toml").is_file());
     assert!(
-        dir.path().join("svc/lefthook.yml").is_file(),
-        "a nested hook config stays: git never runs its poly replacement"
+        !dir.path().join("svc/lefthook.yml").exists(),
+        "poly runs a nested [hooks] table on commit, so a fully absorbed nested source is deleted"
     );
+}
+
+#[test]
+fn a_nested_hook_config_that_loses_something_is_kept() {
+    let dir = repo(&[(
+        "svc/lefthook.yml",
+        "post-merge:\n  jobs:\n    - name: lock\n      run: bash check.sh {push_files}\npre-commit:\n  jobs:\n    - run: ruff format {staged_files}\n",
+    )]);
+    run_migrate(migrate_args(dir.path(), true, true));
+    assert!(dir.path().join("svc/poly.toml").is_file());
+    assert!(dir.path().join("svc/lefthook.yml").is_file(), "an unmigrated job keeps the source");
 }
 
 #[test]
@@ -743,4 +754,212 @@ fn the_root_hook_config_is_still_deleted_when_fully_absorbed_under_recurse() {
     ]);
     run_migrate(migrate_args(dir.path(), true, true));
     assert!(!dir.path().join("lefthook.yml").exists());
+}
+
+#[test]
+fn pre_commit_checks_and_local_reporters_run_after_the_fixers() {
+    let dir = repo(&[(
+        ".pre-commit-config.yaml",
+        "repos:\n  - repo: https://github.com/pre-commit/pre-commit-hooks\n    rev: v6.0.0\n    hooks:\n      - id: trailing-whitespace\n      - id: check-yaml\n  - repo: local\n    hooks:\n      - id: gate\n        entry: make gate\n        language: system\n      - id: md\n        entry: markdownlint --fix\n        language: system\n",
+    )]);
+    let config = hooks_of(&plan(dir.path()));
+    assert_eq!(config.builtin.fmt.priority, 0, "the fixer keeps the first band");
+    assert_eq!(config.builtin.lint.priority, 1, "check-yaml only reports");
+    let stage = &config.stage_configs[&Stage::PreCommit];
+    assert_eq!(stage.commands["gate"].priority, 1, "a reporting local hook follows the fixers");
+    assert_eq!(stage.commands["md"].priority, 0, "a local hook that rewrites is a fixer");
+}
+
+#[test]
+fn flat_lefthook_checks_run_after_flat_lefthook_fixers() {
+    let dir = repo(&[(
+        "lefthook.yml",
+        "pre-commit:\n  parallel: true\n  jobs:\n    - name: fmt\n      glob: '*.py'\n      run: ruff format {staged_files}\n    - name: check\n      glob: '*.rs'\n      run: oxlint {staged_files}\n",
+    )]);
+    let builtin = hooks_of(&plan(dir.path())).builtin;
+    assert_eq!(builtin.fmt.priority, 0);
+    assert_eq!(builtin.lint.priority, 1);
+}
+
+#[test]
+fn armis_check_only_builtins_follow_every_fixing_builtin() {
+    let builtin = hooks_of(&plan(&armis())).builtin;
+    let jobs: Vec<_> = builtin.fmt.jobs.iter().chain(builtin.lint.jobs.iter()).collect();
+    let priority = |job: &&poly_config::BuiltinJob| job.priority.unwrap_or(0);
+    let last_fixer = jobs
+        .iter()
+        .filter(|job| job.fix == Some(true))
+        .map(priority)
+        .max()
+        .expect("armis has fixing builtins");
+    for job in jobs.iter().filter(|job| job.fix != Some(true)) {
+        assert!(
+            priority(job) > last_fixer,
+            "check-only {:?} runs at {} but a fixer runs at {last_fixer}",
+            globs(job.files.as_ref()),
+            priority(job)
+        );
+    }
+}
+
+#[test]
+fn in_place_formatters_migrate_as_fix_mode_builtins() {
+    let armis_plan = plan(&armis());
+    let fmt_fix = |files: &str| {
+        hooks_of(&armis_plan)
+            .builtin
+            .fmt
+            .jobs
+            .iter()
+            .find(|job| globs(job.files.as_ref()).iter().any(|glob| glob == files))
+            .and_then(|job| job.fix)
+    };
+    assert_eq!(fmt_fix("*.java"), Some(true), "palantir --replace rewrites");
+    assert_eq!(fmt_fix("pyproject.toml"), Some(true), "pyproject-fmt rewrites in place");
+    assert_eq!(fmt_fix("*BUILD"), Some(true), "buildifier -mode=fix rewrites");
+
+    let dir = repo(&[(
+        "lefthook.yml",
+        "pre-commit:\n  parallel: true\n  jobs:\n    - name: bazel\n      glob: '*.bzl'\n      run: buildifier -mode=fix -lint=fix {staged_files}\n    - name: bazel-check\n      glob: 'BUILD'\n      run: buildifier -mode=check {staged_files}\n    - name: tf\n      glob: '*.tf'\n      run: terraform fmt -check {staged_files}\n",
+    )]);
+    let builtin = hooks_of(&plan(dir.path())).builtin;
+    let fix_of = |jobs: &[poly_config::BuiltinJob], files: &str| {
+        jobs.iter()
+            .find(|job| globs(job.files.as_ref()).iter().any(|glob| glob == files))
+            .map(|job| job.fix)
+    };
+    assert_eq!(fix_of(&builtin.fmt.jobs, "*.bzl"), Some(Some(true)));
+    assert_eq!(fix_of(&builtin.fmt.jobs, "*.tf"), Some(None), "-check only reports");
+    assert_eq!(globs(builtin.lint.files.as_ref()), ["BUILD"], "-mode=check is the lint role");
+    assert!(!builtin.lint.fix);
+}
+
+#[test]
+fn requirements_txt_fixer_maps_to_the_opt_in_file_safety_member() {
+    let dir = repo(&[(
+        ".pre-commit-config.yaml",
+        "repos:\n  - repo: https://github.com/pre-commit/pre-commit-hooks\n    rev: v6.0.0\n    hooks:\n      - id: requirements-txt-fixer\n",
+    )]);
+    let plan = plan(dir.path());
+    assert_eq!(result(&plan, "pre-commit").absorb, Absorb::Full, "the hook is no longer unmapped");
+    let safety = hooks_of(&plan).builtin.file_safety;
+    assert!(safety.requirements_txt_fixer);
+    assert!(!safety.merge_conflict, "only the requested member is on");
+    assert_eq!(globs(safety.files.as_ref()), ["*requirements*.txt"]);
+}
+
+fn precommit_repo(repo_url: &str, rev: &str, hook: &str) -> tempfile::TempDir {
+    repo(&[(
+        ".pre-commit-config.yaml",
+        &format!("repos:\n  - repo: {repo_url}\n    rev: {rev}\n    hooks:\n      - id: {hook}\n"),
+    )])
+}
+
+#[test]
+fn a_pre_commit_rev_that_is_a_release_poly_cannot_download_is_noted_not_dropped() {
+    let dir = precommit_repo("https://github.com/golangci/golangci-lint", "v2.1.6", "golangci-lint");
+    let plan = plan(dir.path());
+    assert_eq!(
+        result(&plan, "pre-commit").absorb,
+        Absorb::Full,
+        "poly has no golangci-lint download, so the rev is information, not a loss"
+    );
+    let notes = result(&plan, "pre-commit").notes.join("\n");
+    assert!(notes.contains("rev v2.1.6 pins golangci-lint 2.1.6"), "{notes}");
+    assert!(notes.contains("runs the one on PATH"), "{notes}");
+    let tools = parsed(&plan);
+    assert!(tools["tools"]["golangci-lint"].get("version").is_none());
+}
+
+#[test]
+fn a_pre_commit_rev_poly_can_download_becomes_the_tool_version() {
+    let dir = precommit_repo("https://github.com/keith/pre-commit-buildifier", "8.5.1", "buildifier");
+    let tools = parsed(&plan(dir.path()));
+    assert_eq!(tools["tools"]["buildifier"]["version"].as_str(), Some("8.5.1"));
+    assert_eq!(tools["tools"]["buildifier"]["install"].as_str(), Some("auto"));
+}
+
+#[test]
+fn a_pre_commit_rev_missing_from_a_downloadable_tools_releases_keeps_the_source() {
+    let dir = precommit_repo("https://github.com/keith/pre-commit-buildifier", "7.0.0", "buildifier");
+    let lossy = unrepresented(&plan(dir.path()), "pre-commit").join("\n");
+    assert!(lossy.contains("pins buildifier 7.0.0, which poly cannot download"), "{lossy}");
+}
+
+#[test]
+fn tool_versions_pins_are_reported_for_a_lefthook_catalog_tool() {
+    let dir = repo(&[
+        (".tool-versions", "nodejs 22.1.0\ngolangci-lint 1.64.8\n"),
+        (
+            "lefthook.yml",
+            "pre-commit:\n  jobs:\n    - name: go\n      glob: '*.go'\n      run: golangci-lint run {staged_files}\n",
+        ),
+    ]);
+    let plan = plan(dir.path());
+    assert_eq!(result(&plan, "lefthook").absorb, Absorb::Full);
+    let notes = result(&plan, "lefthook").notes.join("\n");
+    assert!(notes.contains(".tool-versions pins golangci-lint 1.64.8"), "{notes}");
+}
+
+#[test]
+fn a_tool_versions_pin_for_a_downloadable_tool_at_an_unknown_release_is_a_loss() {
+    let dir = repo(&[
+        (".checkstyle-version", "1.0.0\n"),
+        (
+            "lefthook.yml",
+            "pre-commit:\n  jobs:\n    - name: java\n      glob: '*.java'\n      run: checkstyle -c checkstyle.xml {staged_files}\n",
+        ),
+    ]);
+    let lossy = unrepresented(&plan(dir.path()), "lefthook").join("\n");
+    assert!(lossy.contains(".checkstyle-version pins checkstyle 1.0.0, which poly cannot download"), "{lossy}");
+}
+
+#[test]
+fn hadolint_buf_and_tflint_pre_commit_hooks_map_to_catalog_tools() {
+    let dir = repo(&[(
+        ".pre-commit-config.yaml",
+        "repos:\n  - repo: https://github.com/hadolint/hadolint\n    rev: v2.12.0\n    hooks:\n      - id: hadolint\n  - repo: https://github.com/bufbuild/buf\n    rev: v1.50.0\n    hooks:\n      - id: buf-lint\n      - id: buf-format\n  - repo: https://github.com/antonbabenko/pre-commit-terraform\n    rev: v1.96.0\n    hooks:\n      - id: terraform_tflint\n",
+    )]);
+    let plan = plan(dir.path());
+    assert_eq!(result(&plan, "pre-commit").absorb, Absorb::Full, "{:?}", result(&plan, "pre-commit").absorb);
+    let doc = parsed(&plan);
+    for tool in ["hadolint", "buf", "tflint"] {
+        assert_eq!(doc["tools"][tool]["enabled"].as_bool(), Some(true), "[tools.{tool}]");
+    }
+    assert_eq!(doc["hooks"]["builtin"]["fmt"]["fix"].as_bool(), Some(true), "buf format rewrites");
+}
+
+fn copy_tree(from: &Path, to: &Path) {
+    fs::create_dir_all(to).unwrap();
+    for entry in fs::read_dir(from).unwrap() {
+        let entry = entry.unwrap();
+        let target = to.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_tree(&entry.path(), &target);
+        } else {
+            fs::copy(entry.path(), target).unwrap();
+        }
+    }
+}
+
+#[test]
+fn migrating_the_armis_fixture_writes_a_config_the_loader_accepts() {
+    let dir = tempdir().unwrap();
+    copy_tree(&armis(), dir.path());
+
+    run_migrate(migrate_args(dir.path(), true, false));
+
+    let written = dir.path().join("poly.toml");
+    assert!(written.is_file(), "--write must produce poly.toml");
+    let config = poly_config::PolyConfig::load_file(&written)
+        .unwrap_or_else(|error| panic!("the migrated config must load: {error:#}\n{}", fs::read_to_string(&written).unwrap()));
+    assert!(config.hooks.present);
+    assert!(config.hooks.builtin.fmt.enabled && config.hooks.builtin.lint.enabled);
+    assert!(config.hooks.builtin.file_safety.enabled);
+    assert!(config.tools.iter().any(|(name, tool)| name == "buildifier" && tool.enabled));
+    assert!(
+        config.hooks.stage_configs.contains_key(&Stage::PreCommit),
+        "the lefthook jobs that stay jobs are written"
+    );
+    assert!(dir.path().join("lefthook.yml").exists(), "unmapped constructs keep the source");
 }

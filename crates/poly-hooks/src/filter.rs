@@ -47,6 +47,33 @@ impl GlobPatterns {
     pub fn is_match(&self, path: &Path) -> bool {
         self.set.is_match(path)
     }
+
+    /// The same patterns, written for paths that carry the `base` directory as a
+    /// prefix.
+    ///
+    /// A pattern that starts with `*` already matches at any depth and is kept;
+    /// every other pattern (`src/**`, `Brewfile`, `/dist/*`) was written relative
+    /// to `base` and gains the prefix.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if a rebased pattern is invalid glob syntax.
+    pub fn rebased(&self, base: &Path) -> Result<Self, globset::Error> {
+        let base = base.to_string_lossy().replace('\\', "/");
+        let patterns = self
+            .patterns
+            .iter()
+            .map(|pattern| {
+                let pattern = pattern.strip_prefix('/').unwrap_or(pattern);
+                if pattern.starts_with('*') {
+                    pattern.to_owned()
+                } else {
+                    format!("{base}/{pattern}")
+                }
+            })
+            .collect();
+        Self::new(patterns)
+    }
 }
 
 impl std::fmt::Debug for GlobPatterns {
@@ -92,6 +119,17 @@ impl FilePattern {
     /// (lookaround / backreferences) the linear-time engine rejects.
     pub fn regex(pattern: &str) -> Result<Self, regex::Error> {
         Ok(Self::Regex(regex::Regex::new(pattern)?))
+    }
+
+    /// This pattern as it must be written to match paths under `base`: see
+    /// [`GlobPatterns::rebased`]. A regex pattern is kept as it is, and so is a
+    /// glob set that cannot be rebased.
+    #[must_use]
+    pub fn rebased(&self, base: &Path) -> Self {
+        match self {
+            Self::Glob(globs) => globs.rebased(base).map_or_else(|_| self.clone(), Self::Glob),
+            Self::Never | Self::Regex(_) => self.clone(),
+        }
     }
 
     /// Return `true` if `path` matches this pattern.
@@ -391,6 +429,27 @@ mod tests {
         let path = Path::new(OsStr::from_bytes(b"bad-\xff.py"));
         let filter = FilenameFilter::new(Some(&include), None);
         assert!(!filter.matches(path));
+    }
+
+    #[test]
+    fn a_rebased_glob_matches_paths_under_the_base() {
+        let rebased = glob("src/**").rebased(Path::new("svc"));
+        assert!(rebased.is_match(Path::new("svc/src/a.py")));
+        assert!(!rebased.is_match(Path::new("src/a.py")), "the original anchor is gone");
+        assert!(!rebased.is_match(Path::new("svc/lib/a.py")));
+    }
+
+    #[test]
+    fn a_rebased_glob_that_starts_with_a_star_keeps_matching_at_any_depth() {
+        let rebased = glob("*.py").rebased(Path::new("svc"));
+        assert!(rebased.is_match(Path::new("svc/deep/a.py")));
+    }
+
+    #[test]
+    fn a_rebased_anchored_pattern_is_anchored_at_the_base() {
+        let rebased = glob("/dist/*").rebased(Path::new("svc"));
+        assert!(rebased.is_match(Path::new("svc/dist/a.js")));
+        assert!(!rebased.is_match(Path::new("other/dist/a.js")));
     }
 
     #[test]

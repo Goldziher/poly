@@ -846,6 +846,32 @@ fn file_safety_without_jobs_is_one_hook_and_aws_is_opt_in() {
     assert!(run_line(hook(&spec, "file-safety")).contains("--aws-credentials"));
 }
 
+#[test]
+fn the_requirements_fixer_is_opt_in_and_its_hook_is_a_serial_restaged_fixer() {
+    let off = hooks_from("[hooks.builtin]\nfile_safety = true\n");
+    let spec = lower_stage(&off, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
+    let plain = hook(&spec, "file-safety");
+    assert!(!run_line(plain).contains("--requirements-txt-fixer") && !plain.stage_fixed);
+
+    let on = hooks_from(
+        r#"
+[hooks.builtin.file_safety]
+requirements_txt_fixer = true
+jobs = [
+  { checks = ["requirements_txt_fixer"], files = "*requirements*.txt" },
+  { checks = ["private_key"] },
+]
+"#,
+    );
+    let spec = lower_stage(&on, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
+    let fixer = hook(&spec, "file-safety-1");
+    assert!(run_line(fixer).contains("--requirements-txt-fixer"));
+    assert!(fixer.stage_fixed, "the sorted file must be re-staged");
+    assert!(fixer.serial_group.is_some(), "it must not race another fixer");
+    let other = hook(&spec, "file-safety-2");
+    assert!(!other.stage_fixed && other.serial_group.is_none());
+}
+
 fn lower_with_git_args(hooks: &HooksConfig, stage: HookStage, git_args: &[&str]) -> StageSpec {
     lower_with_files_and_git_args(hooks, stage, &[], git_args)
 }

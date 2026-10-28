@@ -261,8 +261,24 @@ fn run_stage(request: &HookRunRequest, spec: &StageSpec, ui: Option<&ProgressUi>
     }
 
     let prepared = prepare::prepare(request, spec);
+    let link_guard = request
+        .work_root
+        .as_deref()
+        .and_then(|work_root| crate::snapshot::LinkGuard::arm(&request.root, work_root));
     let (mut hooks, any_failed) = run_hooks(request, spec, &prepared, ui)?;
     hooks.sort_by_key(|hook| hook.position);
+    if let Some(guard) = link_guard {
+        let written = guard.changed();
+        if !written.is_empty() {
+            let dirs: Vec<String> = written.iter().map(|dir| dir.display().to_string()).collect();
+            anyhow::bail!(
+                "a hook modified the working tree through the staged snapshot's links ({}): a sparse snapshot \
+                 links the directories it does not write, so those writes bypass the staged content. Set \
+                 `[hooks] snapshot = \"full\"` to give hooks a private copy, or scope the hook to its files",
+                dirs.join(", ")
+            );
+        }
+    }
 
     let mut after = Vec::new();
     if !any_failed {

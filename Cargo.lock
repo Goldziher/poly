@@ -5247,6 +5247,7 @@ dependencies = [
  "ruff_linter",
  "ruff_python_ast",
  "ruff_python_formatter",
+ "ruff_python_semantic",
  "ruff_text_size",
  "rumdl",
  "rust-ini",

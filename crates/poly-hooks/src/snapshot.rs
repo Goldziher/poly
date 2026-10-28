@@ -101,12 +101,15 @@ use tracing::{debug, warn};
 
 use crate::git;
 
+mod extends;
 mod include;
+mod link_guard;
 mod links;
 mod manifest;
 mod scope;
 mod submodule;
 
+pub use self::link_guard::LinkGuard;
 pub use self::scope::{SnapshotScope, referenced_paths};
 
 use self::include::materialize_includes;
@@ -191,7 +194,7 @@ impl StagedSnapshot {
 
 /// Refresh `dir` so it mirrors the current staged (index) content of `root`.
 fn refresh(root: &Path, dir: &Path, includes: &[String], scope: SnapshotScope<'_>) -> Result<(), Error> {
-    let selection = scope.select(git::list_staged_entries(root)?);
+    let selection = select_with_extended_configs(root, scope, git::list_staged_entries(root)?)?;
     links::drop_stale(dir, &selection.links);
     let staged = selection.entries;
     let previous = read_manifest(dir);
@@ -215,6 +218,40 @@ fn refresh(root: &Path, dir: &Path, includes: &[String], scope: SnapshotScope<'_
 
     write_manifest(dir, &staged)?;
     Ok(())
+}
+
+/// The most `extend` hops followed from a selected ruff config.
+const MAX_EXTEND_DEPTH: usize = 8;
+
+/// [`SnapshotScope::select`], also pinning every file the selected ruff configs
+/// `extend`, so it is written from the index rather than read through a link.
+///
+/// An extended file may itself extend another; the selection is widened until no
+/// new file appears, up to [`MAX_EXTEND_DEPTH`] hops.
+fn select_with_extended_configs(
+    root: &Path,
+    scope: SnapshotScope<'_>,
+    staged: Vec<git::StagedEntry>,
+) -> Result<scope::Selection, Error> {
+    let SnapshotScope::Sparse { files, pinned } = scope else {
+        return Ok(scope.select(staged));
+    };
+    let mut extended: Vec<String> = Vec::new();
+    let mut selection = scope.select(staged.clone());
+    for _ in 0..MAX_EXTEND_DEPTH {
+        let found = extends::extended_configs(root, &selection.entries, &extended)?;
+        if found.is_empty() {
+            break;
+        }
+        extended.extend(found);
+        let pinned: Vec<String> = pinned.iter().cloned().chain(extended.iter().cloned()).collect();
+        selection = SnapshotScope::Sparse {
+            files,
+            pinned: &pinned,
+        }
+        .select(staged.clone());
+    }
+    Ok(selection)
 }
 
 /// Remove every materialized symlink whose target does not resolve inside the

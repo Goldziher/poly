@@ -21,6 +21,18 @@ use crate::git;
 
 const LINKS_FILE: &str = ".poly-links";
 
+/// The links the last refresh recorded under `dir`, as repo-relative directories.
+pub(super) fn recorded(dir: &Path) -> Vec<PathBuf> {
+    std::fs::read_to_string(dir.join(LINKS_FILE))
+        .map(|text| {
+            text.lines()
+                .map(PathBuf::from)
+                .filter(|entry| git::is_safe_relative_path(entry))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// Remove the links the previous refresh created that `wanted` does not keep.
 /// Only symlinks are removed: the ledger is a cache, and a path that is a real
 /// directory now is not ours.

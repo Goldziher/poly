@@ -11,305 +11,9 @@ use toml_edit::Item;
 
 use super::{Absorb, Fragment, ImportResult, bool_item, int_item, str_array, str_item, toml_string_list};
 
-/// Top-level `[tool.ruff]` / `ruff.toml` keys this importer fully honors.
-///
-/// `exclude` / `extend-exclude` fold into `[discovery] exclude`. `format`
-/// (`[tool.ruff.format]`) is carried for the keys in [`FORMAT_KEYS`]; any other
-/// key (`preview`, `exclude`, ...) is recorded as a note.
-const RECOGNIZED_TOP: &[&str] = &[
-    "lint",
-    "select",
-    "extend-select",
-    "ignore",
-    "per-file-ignores",
-    "target-version",
-    "target_version",
-    "src",
-    "line-length",
-    "line_length",
-    "unsafe-fixes",
-    "indent-width",
-    "exclude",
-    "extend-exclude",
-    "extend_exclude",
-    "format",
-    "extend",
-];
+mod keys;
 
-/// `[lint]`-subtable keys this importer honors, at least in part. Plugin tables
-/// (`pylint`, `isort`, …) are only honored for the keys in [`PLUGIN_KEYS`]; any
-/// other key inside them is reported as unrepresented.
-const RECOGNIZED_LINT: &[&str] = &[
-    "select",
-    "extend-select",
-    "ignore",
-    "extend-ignore",
-    "per-file-ignores",
-    "extend-per-file-ignores",
-    "fixable",
-    "unfixable",
-    "external",
-    "dummy-variable-rgx",
-    "unsafe-fixes",
-    "preview",
-    "explicit-preview-rules",
-    "pydocstyle",
-    "mccabe",
-    "pylint",
-    "isort",
-    "pycodestyle",
-    "pep8-naming",
-    "flake8-import-conventions",
-    "flake8-quotes",
-    "flake8-type-checking",
-    "flake8-pytest-style",
-];
-
-/// How a plugin key's value is carried across.
-#[derive(Clone, Copy)]
-enum Kind {
-    Str,
-    Int,
-    IntOrStr,
-    Bool,
-    List,
-    /// A table whose values are strings or lists of strings.
-    Table,
-}
-
-/// `(ruff plugin table, ruff key, poly key, kind)` for every plugin setting the
-/// poly ruff engine reads (`engines/ruff.rs`, `engines/ruff/plugins.rs`).
-const PLUGIN_KEYS: &[(&str, &str, &str, Kind)] = &[
-    ("pydocstyle", "convention", "pydocstyle_convention", Kind::Str),
-    ("mccabe", "max-complexity", "mccabe_max_complexity", Kind::Int),
-    ("pylint", "max-args", "pylint_max_args", Kind::Int),
-    ("pylint", "max-bool-expr", "pylint_max_bool_expr", Kind::Int),
-    ("pylint", "max-branches", "pylint_max_branches", Kind::Int),
-    ("pylint", "max-locals", "pylint_max_locals", Kind::Int),
-    ("pylint", "max-nested-blocks", "pylint_max_nested_blocks", Kind::Int),
-    ("pylint", "max-public-methods", "pylint_max_public_methods", Kind::Int),
-    ("pylint", "max-returns", "pylint_max_returns", Kind::Int),
-    ("pylint", "max-statements", "pylint_max_statements", Kind::Int),
-    ("isort", "known-first-party", "known_first_party", Kind::List),
-    ("isort", "known-third-party", "known_third_party", Kind::List),
-    ("isort", "known-local-folder", "known_local_folder", Kind::List),
-    ("isort", "combine-as-imports", "isort_combine_as_imports", Kind::Bool),
-    ("isort", "force-single-line", "isort_force_single_line", Kind::Bool),
-    (
-        "isort",
-        "force-sort-within-sections",
-        "isort_force_sort_within_sections",
-        Kind::Bool,
-    ),
-    ("isort", "lines-after-imports", "isort_lines_after_imports", Kind::Int),
-    ("isort", "order-by-type", "isort_order_by_type", Kind::Bool),
-    ("isort", "case-sensitive", "isort_case_sensitive", Kind::Bool),
-    ("isort", "classes", "isort_classes", Kind::List),
-    ("isort", "constants", "isort_constants", Kind::List),
-    ("isort", "variables", "isort_variables", Kind::List),
-    ("isort", "default-section", "isort_default_section", Kind::Str),
-    ("isort", "detect-same-package", "isort_detect_same_package", Kind::Bool),
-    ("isort", "extra-standard-library", "extra_standard_library", Kind::List),
-    ("isort", "force-to-top", "isort_force_to_top", Kind::List),
-    ("isort", "force-wrap-aliases", "isort_force_wrap_aliases", Kind::Bool),
-    ("isort", "forced-separate", "isort_forced_separate", Kind::List),
-    ("isort", "from-first", "isort_from_first", Kind::Bool),
-    ("isort", "import-heading", "isort_import_heading", Kind::Table),
-    ("isort", "known-section", "known_section", Kind::Table),
-    ("isort", "length-sort", "isort_length_sort", Kind::Bool),
-    (
-        "isort",
-        "length-sort-straight",
-        "isort_length_sort_straight",
-        Kind::Bool,
-    ),
-    ("isort", "lines-between-types", "isort_lines_between_types", Kind::Int),
-    ("isort", "no-lines-before", "isort_no_lines_before", Kind::List),
-    ("isort", "no-sections", "isort_no_sections", Kind::Bool),
-    (
-        "isort",
-        "relative-imports-order",
-        "isort_relative_imports_order",
-        Kind::Str,
-    ),
-    ("isort", "section-order", "isort_section_order", Kind::List),
-    (
-        "isort",
-        "single-line-exclusions",
-        "isort_single_line_exclusions",
-        Kind::List,
-    ),
-    (
-        "isort",
-        "split-on-trailing-comma",
-        "isort_split_on_trailing_comma",
-        Kind::Bool,
-    ),
-    (
-        "pycodestyle",
-        "max-line-length",
-        "pycodestyle_max_line_length",
-        Kind::Int,
-    ),
-    ("pycodestyle", "max-doc-length", "pycodestyle_max_doc_length", Kind::Int),
-    (
-        "pycodestyle",
-        "ignore-overlong-task-comments",
-        "pycodestyle_ignore_overlong_task_comments",
-        Kind::Bool,
-    ),
-    ("pep8-naming", "ignore-names", "pep8_naming_ignore_names", Kind::List),
-    (
-        "pep8-naming",
-        "extend-ignore-names",
-        "pep8_naming_extend_ignore_names",
-        Kind::List,
-    ),
-    (
-        "pep8-naming",
-        "classmethod-decorators",
-        "pep8_naming_classmethod_decorators",
-        Kind::List,
-    ),
-    (
-        "pep8-naming",
-        "staticmethod-decorators",
-        "pep8_naming_staticmethod_decorators",
-        Kind::List,
-    ),
-    (
-        "flake8-import-conventions",
-        "aliases",
-        "flake8_import_conventions_aliases",
-        Kind::Table,
-    ),
-    (
-        "flake8-import-conventions",
-        "extend-aliases",
-        "flake8_import_conventions_extend_aliases",
-        Kind::Table,
-    ),
-    (
-        "flake8-import-conventions",
-        "banned-aliases",
-        "flake8_import_conventions_banned_aliases",
-        Kind::Table,
-    ),
-    (
-        "flake8-import-conventions",
-        "banned-from",
-        "flake8_import_conventions_banned_from",
-        Kind::List,
-    ),
-    (
-        "flake8-quotes",
-        "inline-quotes",
-        "flake8_quotes_inline_quotes",
-        Kind::Str,
-    ),
-    (
-        "flake8-quotes",
-        "multiline-quotes",
-        "flake8_quotes_multiline_quotes",
-        Kind::Str,
-    ),
-    (
-        "flake8-quotes",
-        "docstring-quotes",
-        "flake8_quotes_docstring_quotes",
-        Kind::Str,
-    ),
-    (
-        "flake8-quotes",
-        "avoid-escape",
-        "flake8_quotes_avoid_escape",
-        Kind::Bool,
-    ),
-    (
-        "flake8-type-checking",
-        "strict",
-        "flake8_type_checking_strict",
-        Kind::Bool,
-    ),
-    (
-        "flake8-type-checking",
-        "quote-annotations",
-        "flake8_type_checking_quote_annotations",
-        Kind::Bool,
-    ),
-    (
-        "flake8-type-checking",
-        "exempt-modules",
-        "flake8_type_checking_exempt_modules",
-        Kind::List,
-    ),
-    (
-        "flake8-type-checking",
-        "runtime-evaluated-base-classes",
-        "flake8_type_checking_runtime_evaluated_base_classes",
-        Kind::List,
-    ),
-    (
-        "flake8-type-checking",
-        "runtime-evaluated-decorators",
-        "flake8_type_checking_runtime_evaluated_decorators",
-        Kind::List,
-    ),
-    (
-        "flake8-pytest-style",
-        "fixture-parentheses",
-        "flake8_pytest_style_fixture_parentheses",
-        Kind::Bool,
-    ),
-    (
-        "flake8-pytest-style",
-        "mark-parentheses",
-        "flake8_pytest_style_mark_parentheses",
-        Kind::Bool,
-    ),
-    (
-        "flake8-pytest-style",
-        "parametrize-names-type",
-        "flake8_pytest_style_parametrize_names_type",
-        Kind::Str,
-    ),
-    (
-        "flake8-pytest-style",
-        "parametrize-values-type",
-        "flake8_pytest_style_parametrize_values_type",
-        Kind::Str,
-    ),
-    (
-        "flake8-pytest-style",
-        "parametrize-values-row-type",
-        "flake8_pytest_style_parametrize_values_row_type",
-        Kind::Str,
-    ),
-];
-
-/// Top-level `[lint]` settings carried as-is: `(ruff key, poly key, kind)`.
-const LINT_KEYS: &[(&str, &str, Kind)] = &[
-    ("fixable", "fixable", Kind::List),
-    ("unfixable", "unfixable", Kind::List),
-    ("external", "external", Kind::List),
-    ("dummy-variable-rgx", "dummy_variable_rgx", Kind::Str),
-    ("unsafe-fixes", "unsafe_fixes", Kind::Bool),
-    ("explicit-preview-rules", "explicit_preview_rules", Kind::Bool),
-];
-
-/// `[format]` keys the poly ruff formatter reads: `(ruff key, poly key, kind)`.
-const FORMAT_KEYS: &[(&str, &str, Kind)] = &[
-    ("docstring-code-format", "docstring_code_format", Kind::Bool),
-    (
-        "docstring-code-line-length",
-        "docstring_code_line_length",
-        Kind::IntOrStr,
-    ),
-    ("indent-style", "indent_style", Kind::Str),
-    ("line-ending", "line_ending", Kind::Str),
-    ("quote-style", "quote_style", Kind::Str),
-    ("skip-magic-trailing-comma", "skip_magic_trailing_comma", Kind::Bool),
-];
+use keys::{FORMAT_KEYS, Kind, LINT_KEYS, PLUGIN_KEYS, RECOGNIZED_LINT, RECOGNIZED_TOP, carry};
 
 /// Run the ruff importer against `dir`.
 pub fn import(dir: &Path) -> Option<ImportResult> {
@@ -722,52 +426,6 @@ fn push_carried(
     }
 }
 
-/// A table of strings and string lists as an inline table; `None` when any value
-/// is something else.
-fn table_item(table: &toml::Table) -> Option<Item> {
-    let mut inline = toml_edit::InlineTable::new();
-    for (key, value) in table {
-        let leaf = match value {
-            toml::Value::String(text) => toml_edit::Value::from(text.as_str()),
-            toml::Value::Array(_) => {
-                let items: Option<Vec<String>> = value
-                    .as_array()?
-                    .iter()
-                    .map(|v| v.as_str().map(str::to_string))
-                    .collect();
-                let Item::Value(array) = str_array(&items?) else {
-                    return None;
-                };
-                array
-            }
-            _ => return None,
-        };
-        inline.insert(key, leaf);
-    }
-    Some(Item::Value(toml_edit::Value::InlineTable(inline)))
-}
-
-fn carry(value: &toml::Value, kind: Kind) -> Option<Item> {
-    match kind {
-        Kind::Str => value.as_str().map(str_item),
-        Kind::Int => value.as_integer().map(int_item),
-        Kind::IntOrStr => value
-            .as_integer()
-            .map(int_item)
-            .or_else(|| value.as_str().map(str_item)),
-        Kind::Bool => value.as_bool().map(bool_item),
-        Kind::Table => table_item(value.as_table()?),
-        Kind::List => {
-            let items: Option<Vec<String>> = value
-                .as_array()?
-                .iter()
-                .map(|v| v.as_str().map(str::to_string))
-                .collect();
-            items.map(|items| str_array(&items))
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -860,11 +518,20 @@ skip-magic-trailing-comma = true
     }
 
     #[test]
+    fn format_preview_and_exclude_are_carried_into_the_formatter_table() {
+        let (result, doc) = migrate_pyproject("[tool.ruff.format]\npreview = true\nexclude = [\"gen/**\"]\n");
+        assert_eq!(result.absorb, Absorb::Full);
+        let fmt = &doc["fmt"]["python"]["ruff"];
+        assert_eq!(fmt["preview"].as_bool(), Some(true));
+        assert_eq!(fmt["exclude"][0].as_str(), Some("gen/**"));
+    }
+
+    #[test]
     fn format_keys_poly_cannot_honor_keep_the_source() {
-        let (result, _) = migrate_pyproject("[tool.ruff.format]\npreview = true\nexclude = [\"gen/**\"]\n");
+        let (result, _) = migrate_pyproject("[tool.ruff.format]\nnested-string-quote-style = \"preferred\"\n");
         assert_eq!(
             result.absorb,
-            Absorb::Partial(vec!["format.exclude".to_string(), "format.preview".to_string()])
+            Absorb::Partial(vec!["format.nested-string-quote-style".to_string()])
         );
     }
 
@@ -1017,7 +684,7 @@ skip-magic-trailing-comma = true
     }
 
     #[test]
-    fn every_isort_key_poly_honors_is_carried_and_required_imports_is_reported() {
+    fn every_isort_key_poly_honors_is_carried_including_required_imports() {
         let (result, doc) = migrate_pyproject(
             r#"
 [tool.ruff.lint.isort]
@@ -1036,11 +703,12 @@ import-heading = { standard-library = "Stdlib" }
 required-imports = ["from __future__ import annotations"]
 "#,
         );
-        assert_eq!(
-            result.absorb,
-            Absorb::Partial(vec!["lint.isort.required-imports".to_string()])
-        );
+        assert_eq!(result.absorb, Absorb::Full);
         let ruff = &doc["lint"]["python"]["ruff"];
+        assert_eq!(
+            ruff["isort_required_imports"][0].as_str(),
+            Some("from __future__ import annotations")
+        );
         assert_eq!(ruff["isort_case_sensitive"].as_bool(), Some(true));
         assert_eq!(ruff["isort_default_section"].as_str(), Some("first-party"));
         assert_eq!(ruff["extra_standard_library"][0].as_str(), Some("foo"));
@@ -1154,9 +822,9 @@ lint.isort = { known-first-party = ["acme"], known-third-party = ["requests"] }
             r#"
 [tool.ruff.lint]
 select = ["E"]
-isort = { known-first-party = ["acme"], force-single-line = true, lines-after-imports = 2, required-imports = ["from __future__ import annotations"] }
+isort = { known-first-party = ["acme"], force-single-line = true, lines-after-imports = 2 }
 pylint = { max-args = 8, max-locals = 20, allow-magic-value-types = ["str"] }
-pydocstyle = { convention = "google", ignore-decorators = ["typing.overload"] }
+pydocstyle = { convention = "google", ignore-decorators = ["typing.overload"], unknown-key = true }
 "#,
         );
         let Absorb::Partial(keys) = result.absorb else {
@@ -1164,11 +832,7 @@ pydocstyle = { convention = "google", ignore-decorators = ["typing.overload"] }
         };
         assert_eq!(
             keys,
-            [
-                "lint.isort.required-imports",
-                "lint.pydocstyle.ignore-decorators",
-                "lint.pylint.allow-magic-value-types",
-            ]
+            ["lint.pydocstyle.unknown-key", "lint.pylint.allow-magic-value-types"]
         );
     }
 
@@ -1180,5 +844,141 @@ pydocstyle = { convention = "google", ignore-decorators = ["typing.overload"] }
             Absorb::Partial(vec!["lint.fixable (unexpected value type)".to_string()])
         );
         assert!(doc["lint"]["python"]["ruff"].get("fixable").is_none());
+    }
+
+    const EVERY_PLUGIN_TABLE: &str = r#"
+[tool.ruff]
+builtins = ["_"]
+namespace-packages = ["pkg/ns"]
+
+[tool.ruff.lint]
+select = ["E"]
+logger-objects = ["app.log"]
+task-tags = ["MYTAG"]
+typing-modules = ["mylib.typing"]
+typing-extensions = false
+future-annotations = true
+allowed-confusables = ["a"]
+
+[tool.ruff.lint.isort]
+required-imports = ["from __future__ import annotations"]
+sections = { myco = ["zzz"] }
+
+[tool.ruff.lint.flake8-annotations]
+mypy-init-return = true
+suppress-none-returning = true
+
+[tool.ruff.lint.flake8-bandit]
+hardcoded-tmp-directory = ["/mnt/scratch"]
+hardcoded-tmp-directory-extend = ["/srv/tmp"]
+check-typed-exception = true
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["lib.make"]
+
+[tool.ruff.lint.flake8-builtins]
+builtins-ignorelist = ["id"]
+allowed-modules = ["types"]
+strict-checking = true
+
+[tool.ruff.lint.flake8-copyright]
+notice-rgx = "Acme"
+author = "Acme Corp"
+min-file-size = 100
+
+[tool.ruff.lint.flake8-errmsg]
+max-string-length = 20
+
+[tool.ruff.lint.flake8-gettext]
+function-names = ["tr"]
+extend-function-names = ["ngettext"]
+
+[tool.ruff.lint.flake8-self]
+extend-ignore-names = ["_secret"]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+banned-module-level-imports = ["torch"]
+require-lazy = { include = "all", exclude = ["typing"] }
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"cgi".msg = "deprecated"
+
+[tool.ruff.lint.pydocstyle]
+ignore-decorators = ["typing.overload"]
+property-decorators = ["lib.cached"]
+ignore-var-parameters = true
+
+[tool.ruff.lint.pyflakes]
+allowed-unused-imports = ["hvplot.pandas"]
+
+[tool.ruff.lint.pyupgrade]
+keep-runtime-typing = true
+
+[tool.ruff.lint.ruff]
+parenthesize-tuple-in-subscript = true
+"#;
+
+    #[test]
+    fn every_plugin_table_poly_honors_is_carried_and_the_source_is_fully_absorbed() {
+        let (result, doc) = migrate_pyproject(EVERY_PLUGIN_TABLE);
+        assert_eq!(result.absorb, Absorb::Full, "notes: {:?}", result.notes);
+        let ruff = &doc["lint"]["python"]["ruff"];
+        assert_eq!(ruff["builtins"][0].as_str(), Some("_"));
+        assert_eq!(ruff["namespace_packages"][0].as_str(), Some("pkg/ns"));
+        assert_eq!(ruff["logger_objects"][0].as_str(), Some("app.log"));
+        assert_eq!(ruff["task_tags"][0].as_str(), Some("MYTAG"));
+        assert_eq!(ruff["typing_modules"][0].as_str(), Some("mylib.typing"));
+        assert_eq!(ruff["typing_extensions"].as_bool(), Some(false));
+        assert_eq!(ruff["future_annotations"].as_bool(), Some(true));
+        assert_eq!(ruff["allowed_confusables"][0].as_str(), Some("a"));
+        assert_eq!(
+            ruff["isort_required_imports"][0].as_str(),
+            Some("from __future__ import annotations")
+        );
+        assert_eq!(ruff["known_section"]["myco"][0].as_str(), Some("zzz"));
+        assert_eq!(ruff["flake8_annotations_mypy_init_return"].as_bool(), Some(true));
+        assert_eq!(ruff["flake8_annotations_suppress_none_returning"].as_bool(), Some(true));
+        assert_eq!(ruff["flake8_bandit_hardcoded_tmp_directory"][0].as_str(), Some("/mnt/scratch"));
+        assert_eq!(
+            ruff["flake8_bandit_hardcoded_tmp_directory_extend"][0].as_str(),
+            Some("/srv/tmp")
+        );
+        assert_eq!(ruff["flake8_bandit_check_typed_exception"].as_bool(), Some(true));
+        assert_eq!(ruff["flake8_bugbear_extend_immutable_calls"][0].as_str(), Some("lib.make"));
+        assert_eq!(ruff["flake8_builtins_ignorelist"][0].as_str(), Some("id"));
+        assert_eq!(ruff["flake8_builtins_allowed_modules"][0].as_str(), Some("types"));
+        assert_eq!(ruff["flake8_builtins_strict_checking"].as_bool(), Some(true));
+        assert_eq!(ruff["flake8_copyright_notice_rgx"].as_str(), Some("Acme"));
+        assert_eq!(ruff["flake8_copyright_author"].as_str(), Some("Acme Corp"));
+        assert_eq!(ruff["flake8_copyright_min_file_size"].as_integer(), Some(100));
+        assert_eq!(ruff["flake8_errmsg_max_string_length"].as_integer(), Some(20));
+        assert_eq!(ruff["flake8_gettext_function_names"][0].as_str(), Some("tr"));
+        assert_eq!(ruff["flake8_gettext_extend_function_names"][0].as_str(), Some("ngettext"));
+        assert_eq!(ruff["flake8_self_extend_ignore_names"][0].as_str(), Some("_secret"));
+        assert_eq!(ruff["flake8_tidy_imports_ban_relative_imports"].as_str(), Some("all"));
+        assert_eq!(ruff["flake8_tidy_imports_banned_module_level_imports"][0].as_str(), Some("torch"));
+        assert_eq!(
+            ruff["flake8_tidy_imports_banned_api"]["cgi"]["msg"].as_str(),
+            Some("deprecated"),
+            "a nested table survives"
+        );
+        assert_eq!(ruff["flake8_tidy_imports_require_lazy"]["include"].as_str(), Some("all"));
+        assert_eq!(ruff["flake8_tidy_imports_require_lazy"]["exclude"][0].as_str(), Some("typing"));
+        assert_eq!(ruff["pydocstyle_ignore_decorators"][0].as_str(), Some("typing.overload"));
+        assert_eq!(ruff["pydocstyle_property_decorators"][0].as_str(), Some("lib.cached"));
+        assert_eq!(ruff["pydocstyle_ignore_var_parameters"].as_bool(), Some(true));
+        assert_eq!(ruff["pyflakes_allowed_unused_imports"][0].as_str(), Some("hvplot.pandas"));
+        assert_eq!(ruff["pyupgrade_keep_runtime_typing"].as_bool(), Some(true));
+        assert_eq!(ruff["ruff_parenthesize_tuple_in_subscript"].as_bool(), Some(true));
+    }
+
+    #[test]
+    fn a_plugin_key_ruff_does_not_define_is_still_reported() {
+        let (result, _) = migrate_pyproject("[tool.ruff.lint.flake8-bugbear]\nmade-up = true\n");
+        assert_eq!(
+            result.absorb,
+            Absorb::Partial(vec!["lint.flake8-bugbear.made-up".to_string()])
+        );
     }
 }
