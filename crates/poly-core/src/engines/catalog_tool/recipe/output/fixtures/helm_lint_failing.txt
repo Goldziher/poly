@@ -1,0 +1,6 @@
+level=WARN msg="missing required values" message="name is required"
+==> Linting c
+[INFO] Chart.yaml: icon is recommended
+[WARNING] templates/cm.yaml: object name does not conform to Kubernetes naming requirements: "": metadata.name: Invalid value: "": a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character (e.g. 'example.com', regex used for validation is '[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*')
+
+1 chart(s) linted, 0 chart(s) failed

@@ -181,3 +181,121 @@ fn path_line_reports_are_read_from_either_stream() {
     assert_eq!((findings[0].line, findings[0].column), (Some(12), Some(3)));
     assert_eq!((findings[1].line, findings[1].column), (Some(4), None));
 }
+
+const HADOLINT: &str = include_str!("fixtures/hadolint.json");
+const GOLANGCI: &str = include_str!("fixtures/golangci.json");
+const TFLINT: &str = include_str!("fixtures/tflint.json");
+const BUF_LINT: &str = include_str!("fixtures/buf_lint.ndjson");
+const ACTIONLINT: &str = include_str!("fixtures/actionlint.json");
+const CHECKSTYLE: &str = include_str!("fixtures/checkstyle.xml");
+const HELM_LINT_CLEAN: &str = include_str!("fixtures/helm_lint_clean.txt");
+const HELM_LINT_FAILING: &str = include_str!("fixtures/helm_lint_failing.txt");
+const HELM_TEMPLATE_ERROR: &str = include_str!("fixtures/helm_template_error.txt");
+
+#[test]
+fn hadolint_2_15_report_is_read_from_a_real_run() {
+    let findings = parse(Output::HadolintJson, HADOLINT, "").expect("parses");
+    let codes: Vec<_> = findings.iter().map(|f| f.code.as_deref().unwrap_or_default()).collect();
+    assert_eq!(codes, ["DL3006", "DL3015", "DL3014", "DL3008", "DL3003"]);
+    let severities: Vec<_> = findings.iter().map(|f| f.severity).collect();
+    assert_eq!(
+        severities,
+        [
+            Severity::Warning,
+            Severity::Info,
+            Severity::Warning,
+            Severity::Warning,
+            Severity::Warning
+        ]
+    );
+    assert_eq!(findings[0].path.as_deref(), Some("Dockerfile"));
+    assert_eq!((findings[4].line, findings[4].column), (Some(3), Some(1)));
+}
+
+#[test]
+fn golangci_lint_2_report_is_read_and_its_trailing_summary_ignored() {
+    let finding = one(parse(Output::GolangciJson, GOLANGCI, "").expect("parses"));
+    assert_eq!(finding.code.as_deref(), Some("errcheck"));
+    assert_eq!(finding.message, "Error return value of `os.Remove` is not checked");
+    assert_eq!(
+        (finding.path.as_deref(), finding.line, finding.column),
+        (Some("a.go"), Some(6), Some(11))
+    );
+    assert_eq!(finding.severity, Severity::Error);
+}
+
+#[test]
+fn tflint_report_carries_rule_link_range_and_severity() {
+    let findings = parse(Output::TflintJson, TFLINT, "").expect("parses");
+    assert_eq!(findings.len(), 2);
+    assert_eq!(findings[0].code.as_deref(), Some("terraform_typed_variables"));
+    assert_eq!(findings[1].code.as_deref(), Some("terraform_unused_declarations"));
+    assert!(findings.iter().all(|f| f.severity == Severity::Warning));
+    assert!(findings[1].url.as_deref().is_some_and(|url| url.ends_with("terraform_unused_declarations.md")));
+    assert_eq!(findings[0].path.as_deref(), Some("main.tf"));
+    assert_eq!(
+        (findings[0].line, findings[0].column, findings[0].end_column),
+        (Some(1), Some(1), Some(18))
+    );
+    assert_eq!(findings[1].message, "variable \"unused\" is declared but not used");
+}
+
+#[test]
+fn buf_lint_report_found_through_buf_yaml_names_the_module_relative_path() {
+    let findings = parse(Output::BufJson, BUF_LINT, "").expect("parses");
+    assert_eq!(findings.len(), 2);
+    assert!(findings.iter().all(|f| f.path.as_deref() == Some("api/v1/thing.proto")));
+    assert_eq!(findings[0].code.as_deref(), Some("MESSAGE_PASCAL_CASE"));
+    assert_eq!(
+        (findings[0].line, findings[0].column, findings[0].end_column),
+        (Some(5), Some(9), Some(14))
+    );
+    assert_eq!(findings[1].code.as_deref(), Some("FIELD_LOWER_SNAKE_CASE"));
+    assert_eq!((findings[1].line, findings[1].column), (Some(6), Some(10)));
+}
+
+#[test]
+fn actionlint_report_locates_the_label_and_the_expression() {
+    let findings = parse(Output::ActionlintJson, ACTIONLINT, "").expect("parses");
+    assert_eq!(findings.len(), 2);
+    assert_eq!(findings[0].code.as_deref(), Some("runner-label"));
+    assert_eq!(findings[0].path.as_deref(), Some(".github/workflows/a.yml"));
+    assert_eq!((findings[0].line, findings[0].column, findings[0].end_column), (Some(5), Some(14), Some(25)));
+    assert_eq!(findings[1].code.as_deref(), Some("expression"));
+    assert_eq!(findings[1].line, Some(7));
+}
+
+#[test]
+fn checkstyle_14_report_names_the_check_after_its_source_class() {
+    let findings = parse(Output::CheckstyleXml, CHECKSTYLE, "").expect("parses");
+    let codes: Vec<_> = findings.iter().map(|f| f.code.as_deref().unwrap_or_default()).collect();
+    assert_eq!(codes, ["TypeName", "MethodName"]);
+    assert_eq!(findings[0].path.as_deref(), Some("/repo/Bad.java"));
+    assert_eq!((findings[0].line, findings[0].column), (Some(1), Some(14)));
+    assert_eq!(findings[0].message, "Name 'bad' must match pattern '^[A-Z][a-zA-Z0-9]*$'.");
+}
+
+#[test]
+fn helm_lint_clean_run_has_only_the_icon_recommendation() {
+    let finding = one(parse(Output::HelmText, HELM_LINT_CLEAN, "").expect("parses"));
+    assert_eq!(finding.severity, Severity::Info);
+    assert_eq!(finding.path.as_deref(), Some("Chart.yaml"));
+}
+
+#[test]
+fn helm_lint_ignores_the_slog_line_and_keeps_the_long_warning_whole() {
+    let findings = parse(Output::HelmText, HELM_LINT_FAILING, "").expect("parses");
+    assert_eq!(findings.len(), 2, "{findings:?}");
+    assert_eq!(findings[1].severity, Severity::Warning);
+    assert_eq!(findings[1].path.as_deref(), Some("templates/cm.yaml"));
+    assert!(findings[1].message.contains("a lowercase RFC 1123 subdomain"), "{findings:?}");
+}
+
+#[test]
+fn helm_template_error_is_located_in_the_template() {
+    let finding = one(parse(Output::HelmText, "", HELM_TEMPLATE_ERROR).expect("parses"));
+    assert_eq!(finding.severity, Severity::Error);
+    assert_eq!(finding.path.as_deref(), Some("c/templates/cm.yaml"));
+    assert_eq!((finding.line, finding.column), (Some(6), Some(8)));
+    assert_eq!(finding.message, "execution error at (c/templates/cm.yaml:6:8): name is required");
+}

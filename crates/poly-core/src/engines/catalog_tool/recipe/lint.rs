@@ -13,7 +13,7 @@ use rayon::prelude::*;
 use super::argv::{Items, Template};
 use super::mirror::Mirror;
 use super::output::{self, Finding};
-use super::{RecipeTool, exec, paths};
+use super::{RecipeTool, exec, paths, unit};
 use crate::engine::{Diagnostic, Edit, SourceFile, Span};
 
 /// One answer per input file, in order.
@@ -33,6 +33,8 @@ struct UnitGroup {
     members: Vec<usize>,
     /// Each member's path relative to `root`, slashed.
     rels: Vec<String>,
+    /// `root` relative to the tree's base, slashed (`.` for the base itself).
+    dir: String,
 }
 
 #[derive(Default)]
@@ -134,6 +136,9 @@ impl RecipeTool {
             return;
         };
         let groups = self.plan(base, members, indices);
+        if base == self.cwd.as_path() {
+            groups.par_iter().for_each(|unit| self.prepare(unit));
+        }
         let mut findings: Vec<Vec<Finding>> = members.iter().map(|_| Vec::new()).collect();
         let mut failures: Vec<Option<String>> = members.iter().map(|_| None).collect();
         let lookup = Lookup::new(base);
@@ -207,15 +212,51 @@ impl RecipeTool {
             let rel = abs
                 .strip_prefix(&root)
                 .map_or_else(|_| members[index].rel.clone(), Path::to_path_buf);
+            let dir = root
+                .strip_prefix(base)
+                .map_or_else(|_| ".".to_owned(), paths::slashed);
+            let dir = if dir.is_empty() { ".".to_owned() } else { dir };
+            if self.units.skips(&dir) {
+                continue;
+            }
             let unit = groups.entry(key).or_insert_with(|| UnitGroup {
                 root: root.clone(),
                 members: Vec::new(),
                 rels: Vec::new(),
+                dir,
             });
             unit.members.push(index);
             unit.rels.push(paths::slashed(&rel));
         }
         groups.into_values().collect()
+    }
+
+    /// Make the root checkable before the tool runs on it (`helm dependency
+    /// build`). Best effort: a tool judges a root with missing dependencies
+    /// itself, and says which, so a failed build is logged and the run goes on.
+    fn prepare(&self, unit: &UnitGroup) {
+        let Some(argv) = self.units.prepare_argv() else {
+            return;
+        };
+        if unit::offline() || unit::dependencies_in_place(&unit.root) {
+            return;
+        }
+        let outcome = unit::once_per_root(&unit.root, argv, || {
+            let captured = exec::run(&self.launcher, argv, &unit.root, &self.env, &[]).map_err(|error| format!("{error:#}"))?;
+            if captured.exited_ok(&self.recipe.ok_exits) {
+                Ok(())
+            } else {
+                Err(captured.explanation())
+            }
+        });
+        if let Err(reason) = outcome {
+            tracing::warn!(
+                tool = %self.tool.name,
+                chart = %unit.dir,
+                "`{}` failed, linting with the dependencies on disk: {reason}",
+                argv.join(" ")
+            );
+        }
     }
 
     fn is_go_module_tool(&self) -> bool {
@@ -319,7 +360,8 @@ impl RecipeTool {
     fn invoke(&self, template: &Template, unit: &UnitGroup, items: &[String]) -> Outcome {
         type Cell = Arc<OnceLock<Outcome>>;
         static MEMO: OnceLock<Mutex<HashMap<String, Cell>>> = OnceLock::new();
-        let argv = template.render(items);
+        let mut argv = template.render(items);
+        argv.extend(self.units.extra_arguments(&unit.dir));
         let key = format!(
             "{}\u{1e}{}\u{1e}{}\u{1e}{}",
             self.launcher.identity,
@@ -337,8 +379,30 @@ impl RecipeTool {
         cell.get_or_init(|| self.execute(&argv, &unit.root)).clone()
     }
 
+    /// Run once, or once per configured `GOOS` with the findings merged.
     fn execute(&self, argv: &[String], root: &Path) -> Outcome {
-        let captured = exec::run(&self.launcher, argv, root, &self.env).map_err(|error| format!("{error:#}"))?;
+        if self.goos.is_empty() {
+            return self.execute_with(argv, root, &self.env);
+        }
+        let mut merged: Vec<Finding> = Vec::new();
+        for goos in &self.goos {
+            let mut env = self.env.clone();
+            env.insert("GOOS".to_owned(), goos.clone());
+            let found = self
+                .execute_with(argv, root, &env)
+                .map_err(|reason| format!("GOOS={goos}: {reason}"))?;
+            for finding in found.iter() {
+                if !merged.contains(finding) {
+                    merged.push(finding.clone());
+                }
+            }
+        }
+        Ok(Arc::new(merged))
+    }
+
+    fn execute_with(&self, argv: &[String], root: &Path, env: &BTreeMap<String, String>) -> Outcome {
+        let captured =
+            exec::run(&self.launcher, argv, root, env, self.unset_env).map_err(|error| format!("{error:#}"))?;
         match output::parse(self.recipe.output, &captured.stdout, &captured.stderr) {
             // A failing exit that reported nothing is a tool that did not run to
             // completion, not a clean file.
@@ -384,9 +448,10 @@ impl RecipeTool {
             match (owner, self.recipe.findings) {
                 (Some(index), _) => findings[index].push(finding.clone()),
                 (None, Findings::All) => {
-                    // One copy, on the first file: the verdict is not cached
-                    // (`RecipeTool::cache_salt`), so it cannot go stale.
-                    if let Some(&index) = covered.first() {
+                    // Every file of the run gets the finding, so a file's verdict is a
+                    // function of the root's digest alone (`RecipeTool::cache_salt`) and
+                    // never of which sibling files were checked beside it.
+                    for &index in covered {
                         let mut copy = finding.clone();
                         if let Some(path) = finding.path.as_deref().filter(|p| !lookup.is_root(p, &unit.root)) {
                             copy.message = format!("{path}: {}", copy.message);

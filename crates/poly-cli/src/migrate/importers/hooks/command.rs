@@ -412,6 +412,7 @@ fn golangci_changed(args: &[&str]) -> Recognition {
     }
     let settings = ToolSettings {
         extra_args: vec!["-c".to_string(), ".golangci.yml".to_string()],
+        new_from_rev: Some("HEAD".to_string()),
         ..ToolSettings::default()
     };
     configured(
@@ -419,8 +420,7 @@ fn golangci_changed(args: &[&str]) -> Recognition {
         &["golangci-lint"],
         vec![("golangci-lint", settings)],
         vec![
-            "the wrapper passed --new-from-rev=HEAD so only new findings failed the commit; poly reports every finding in the package, so add `lint_extra_args = [\"--new-from-rev=HEAD\"]` to keep that",
-            "the wrapper ran once per GOOS implied by *_windows.go / *_darwin.go / *_linux.go files; poly runs for the host GOOS only",
+            "the wrapper chose the GOOS from the *_windows.go / *_darwin.go / *_linux.go files being committed; poly runs for the inherited GOOS unless `[tools.golangci-lint] goos = [\"linux\", \"windows\"]` lists the matrix",
         ],
     )
 }
@@ -564,7 +564,7 @@ fn helm_charts(args: &[&str]) -> Recognition {
         &["helm", "helm-template"],
         Vec::new(),
         vec![
-            "the wrapper built chart dependencies (`helm dependency build`, with retries) and chose a values file per chart from dev_tools/helm/charts.py; poly runs helm as it finds the chart, so run the dependency build first and pass `-f` through `extra_args` where a chart needs values",
+            "the wrapper chose a values file per chart (dev_tools/helm/render_values) and listed unrenderable charts in dev_tools/helm/charts.py; poly builds the chart dependencies itself, but map those lists to `[tools.helm-template] chart_values` and `skip_charts`",
         ],
     )
 }
@@ -748,6 +748,13 @@ mod tests {
     fn actionlint_ignores_become_extra_args() {
         let settings = settings_of("actionlint -ignore 'SC2129' -ignore 'SC2016' {staged_files}", "actionlint");
         assert_eq!(settings.extra_args, ["-ignore", "SC2129", "-ignore", "SC2016"]);
+    }
+
+    #[test]
+    fn the_go_wrapper_carries_new_from_rev_instead_of_reporting_it_lost() {
+        let settings = settings_of("bash dev_tools/go/lint_changed.sh {staged_files}", "golangci-lint");
+        assert_eq!(settings.new_from_rev.as_deref(), Some("HEAD"));
+        assert_eq!(settings.extra_args, ["-c", ".golangci.yml"]);
     }
 
     #[test]

@@ -147,7 +147,13 @@ Opt into tools from the vendored catalog, keyed by catalog name
 | `bin` | string | — | Executable to run instead of the catalog binary on `PATH`. For a JVM tool, the `java`. |
 | `version` | string | — | Pinned release to use. Looked up in the catalog's checksummed releases. |
 | `url`, `sha256` | string | — | Download and digest for a `version` the catalog does not know. |
-| `install` | string | `"never"` | `"auto"` downloads the pinned `version` into poly's cache when the tool is missing. |
+| `install` | string | `"never"` | `"auto"` downloads the pinned `version` into poly's cache when the tool is missing. A `version` that cannot be provisioned makes the tool unavailable; poly never runs a different version from `PATH`. |
+| `values_files` | array | `[]` | helm: values files (`-f`) passed to every chart, relative to the config root. |
+| `chart_values` | table | `{}` | helm: chart-directory glob to the values files passed for the charts it matches. |
+| `skip_charts` | array | `[]` | helm: chart-directory globs the tool does not run on (library charts). |
+| `prepare` | bool | `true` | helm: run `helm dependency build` once per chart before linting, unless `charts/` already satisfies `Chart.lock` or `POLY_OFFLINE` is set. |
+| `new_from_rev` | string | — | golangci-lint: report only findings introduced since this git revision (`--new-from-rev`). |
+| `goos` | array | `[]` | golangci-lint: run once per operating system with `GOOS` set and merge the findings. |
 
 Tools with a recipe (`checkstyle`, `palantir-java-format`, `buildifier`, `buf`, `actionlint`,
 `hadolint`, `golangci-lint`, `helm`, `helm-template`, `tflint`, `tofu`, `terraform`,

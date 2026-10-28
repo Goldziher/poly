@@ -19,7 +19,8 @@
 //! [`lint`] (grouping, running, attributing), [`format`] (scratch copies and
 //! in-place passes), [`output`] (report parsers), [`launch`] and [`install`]
 //! (finding or downloading the program), [`salt`] (cache inputs), [`mirror`],
-//! [`paths`] and [`exec`].
+//! [`paths`], [`unit`] (per-chart values, skipped charts, the prepare step) and
+//! [`exec`].
 
 mod argv;
 mod exec;
@@ -31,6 +32,7 @@ mod mirror;
 mod output;
 mod paths;
 mod salt;
+mod unit;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -41,6 +43,7 @@ use poly_config::ToolConfig;
 
 use self::argv::Template;
 use self::launch::{Launcher, Resolved};
+use self::unit::UnitOptions;
 
 /// Which role a tool is built for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -70,6 +73,36 @@ pub(super) struct RecipeTool {
     context_names: Vec<String>,
     /// The part of the cache key that does not vary per file.
     version: String,
+    /// Per-root values files, skipped roots and the prepare step.
+    units: UnitOptions,
+    /// Operating systems to run the tool for, one invocation each (`GOOS`).
+    goos: Vec<String>,
+    /// Environment variables removed from every invocation.
+    unset_env: &'static [&'static str],
+}
+
+/// The overrides git sets while it runs a hook. A tool that asks git which lines
+/// are new (`--new-from-rev`) must see the repository itself: left set, the
+/// diff filter silently becomes a no-op.
+const GIT_HOOK_ENV: &[&str] = &["GIT_INDEX_FILE", "GIT_DIR", "GIT_WORK_TREE"];
+
+/// The commit `rev` names in `cwd`, so the cache key follows the commit and not
+/// the moving name (`HEAD`); `rev` itself when git cannot say.
+fn resolve_rev(cwd: &Path, rev: &str) -> String {
+    let resolved = std::process::Command::new("git")
+        .arg("-C")
+        .arg(cwd)
+        .args(["rev-parse", "--verify", "--quiet"])
+        .arg(format!("{rev}^{{commit}}"))
+        .env_remove("GIT_INDEX_FILE")
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+        .filter(|sha| !sha.is_empty());
+    resolved.unwrap_or_else(|| rev.to_owned())
 }
 
 /// File selection for one tool.
@@ -128,7 +161,16 @@ impl RecipeTool {
             None => cwd,
         };
         let flags = &recipe.config_flags;
-        let extra = salt::absolutize_config_args(&extra_args(config, role), flags, &cwd);
+        let new_from_rev = match (&config.new_from_rev, &recipe.new_from_rev_flag) {
+            (Some(rev), Some(flag)) => Some(format!("{flag}={rev}")),
+            (Some(_), None) => return Err(format!("`new_from_rev` is not supported by tool `{}`", tool.name)),
+            (None, _) => None,
+        };
+        let mut wanted = extra_args(config, role);
+        if role == Role::Lint {
+            wanted.extend(new_from_rev);
+        }
+        let extra = salt::absolutize_config_args(&wanted, flags, &cwd);
         let main = config.args.as_deref();
 
         let (mut passes, stdin) = passes_for(command, main, &extra, role);
@@ -144,10 +186,12 @@ impl RecipeTool {
             .map(|fix| fix_templates(fix, &extra, flags, &cwd))
             .unwrap_or_default();
 
+        let units = UnitOptions::new(tool, recipe, config, &cwd)?;
         let flagged: Vec<PathBuf> = passes
             .iter()
             .flat_map(|pass| salt::config_flag_files(pass.tokens(), flags))
             .map(|path| if path.is_absolute() { path } else { cwd.join(path) })
+            .chain(units.files())
             .collect();
         let fingerprint = salt::config_fingerprint(&cwd, &flagged, &recipe.config_files);
 
@@ -155,13 +199,16 @@ impl RecipeTool {
         if let Group::Marker(markers) = &recipe.group {
             context_names.extend(markers.iter().cloned());
         }
+        let resolved_rev = config.new_from_rev.as_deref().map(|rev| resolve_rev(&cwd, rev));
+        let goos = config.goos.clone();
         let version = format!(
-            "{}:{}:role={role:?}:passes={:?}:fix={:?}:stdin={stdin:?}:env={:?}:cfg={fingerprint}",
+            "{}:{}:rev={resolved_rev:?}:goos={goos:?}:role={role:?}:passes={:?}:fix={:?}:stdin={stdin:?}:env={:?}:units={}:cfg={fingerprint}",
             tool.name,
             launcher.identity,
             passes.iter().map(Template::fingerprint).collect::<Vec<_>>(),
             fix_passes.iter().map(Template::fingerprint).collect::<Vec<_>>(),
             config.env,
+            units.fingerprint(),
         );
 
         Ok(RecipeTool {
@@ -176,6 +223,9 @@ impl RecipeTool {
             filter: filter_for(tool, config),
             context_names,
             version,
+            units,
+            goos,
+            unset_env: if resolved_rev.is_some() { GIT_HOOK_ENV } else { &[] },
         })
     }
 
@@ -215,12 +265,18 @@ impl RecipeTool {
     }
 
     /// The part of a file's lint cache key that its own bytes do not cover: the
-    /// digest of the files its project root's verdict depends on.
+    /// digest of the files its project root's verdict depends on, so an edit
+    /// anywhere in the chart or module invalidates every file of it and nothing
+    /// else does. A tool that reports every finding of its invocation depends on
+    /// the whole root.
     pub(super) fn cache_salt(&self, path: &Path) -> Option<String> {
-        if self.recipe.findings == Findings::All {
-            return Some(run_nonce().to_owned());
-        }
-        if self.recipe.dependencies.is_empty() {
+        let whole_root = [String::from("**")];
+        let dependencies: &[String] = if self.recipe.findings == Findings::All && self.recipe.dependencies.is_empty() {
+            &whole_root
+        } else {
+            &self.recipe.dependencies
+        };
+        if dependencies.is_empty() {
             return None;
         }
         let abs = paths::absolute(&self.cwd, path);
@@ -229,25 +285,8 @@ impl RecipeTool {
             Group::Dir => abs.parent()?.to_path_buf(),
             Group::Marker(markers) => paths::project_root(&abs, markers)?,
         };
-        Some(salt::dependency_digest(&root, &self.recipe.dependencies))
+        Some(salt::dependency_digest(&root, dependencies))
     }
-}
-
-/// A string unique to this process.
-///
-/// A tool whose findings in files outside the run are reported on the run's files
-/// (`Findings::All`) gives a file a verdict that depends on *which other files
-/// were checked alongside it*. No per-file cache key can express that, so such a
-/// tool's results are keyed to the process and recomputed on every run; they are
-/// cheap by construction (one invocation per project root).
-fn run_nonce() -> &'static str {
-    static NONCE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-    NONCE.get_or_init(|| {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.as_nanos());
-        format!("run-{}-{nanos}", std::process::id())
-    })
 }
 
 fn extra_args(config: &ToolConfig, role: Role) -> Vec<String> {

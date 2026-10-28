@@ -251,6 +251,11 @@ fn armis_tool_flags_move_to_the_tools_table() {
         ["-c", "checkstyle.xml", "-p", "checkstyle.properties"]
     );
     assert_eq!(strings("golangci-lint", "extra_args"), ["-c", ".golangci.yml"]);
+    assert_eq!(
+        tools["golangci-lint"]["new_from_rev"].as_str(),
+        Some("HEAD"),
+        "the wrapper's --new-from-rev is carried, not reported lost"
+    );
     assert_eq!(strings("pyproject-fmt", "extra_args"), ["--keep-full-version"]);
     assert_eq!(strings("buildifier", "format_extra_args"), ["-lint=fix"]);
     assert_eq!(tools["palantir-java-format"]["command"].as_str(), Some("aosp"));
@@ -264,11 +269,7 @@ fn armis_tool_flags_move_to_the_tools_table() {
 #[test]
 fn armis_wrapper_behaviour_poly_does_not_reproduce_is_reported() {
     let lossy = unrepresented(&plan(&armis()), "lefthook").join("\n");
-    for needle in [
-        "--new-from-rev=HEAD",
-        "helm dependency build",
-        ".java-version",
-    ] {
+    for needle in ["GOOS", "chart_values", ".java-version"] {
         assert!(lossy.contains(needle), "missing `{needle}` in:\n{lossy}");
     }
 }

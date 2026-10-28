@@ -80,14 +80,20 @@ pub(super) fn run_with_stdin(
 /// Run `launcher` with `argv` in `cwd`, never touching stdin.
 ///
 /// Tools are asked not to colour their reports (`NO_COLOR`): the parsers read
-/// plain text.
+/// plain text. The variables in `unset` are removed from the inherited
+/// environment.
 pub(super) fn run(
     launcher: &Launcher,
     argv: &[String],
     cwd: &Path,
     env: &BTreeMap<String, String>,
+    unset: &[&str],
 ) -> Result<Captured> {
-    let output = Command::new(&launcher.program)
+    let mut command = Command::new(&launcher.program);
+    for name in unset {
+        command.env_remove(name);
+    }
+    let output = command
         .args(&launcher.prefix)
         .args(argv)
         .current_dir(cwd)

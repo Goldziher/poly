@@ -89,8 +89,9 @@ pub enum Findings {
     Own,
     /// Every finding of the invocation. Right when a change in one file breaks
     /// another (a chart whose `values.yaml` no longer satisfies a template):
-    /// findings in files outside the run are attached to the run's files with
-    /// the real path in the message.
+    /// findings in files outside the run are attached to every file of the run
+    /// with the real path in the message, and the cache key of each file is the
+    /// digest of the whole project root, so unchanged roots are cache hits.
     All,
 }
 
@@ -159,6 +160,16 @@ pub struct Recipe {
     pub config_flags: Vec<String>,
     /// Name of the command that applies the tool's own fixes in place.
     pub fix: Option<String>,
+    /// Name of the command run once per project root before linting
+    /// (`helm dependency build`). Skipped when the root's dependencies are
+    /// already in place, when `POLY_OFFLINE` is set, or with `prepare = false`.
+    pub prepare: Option<String>,
+    /// Flag that takes a values file (`-f`); enables `values_files` and
+    /// `chart_values` in the tool's config.
+    pub values_flag: Option<String>,
+    /// Flag that restricts findings to those introduced since a git revision
+    /// (`--new-from-rev`); enables `new_from_rev` in the tool's config.
+    pub new_from_rev_flag: Option<String>,
     /// The tool is a JVM jar launched as `java -jar <jar>`.
     pub java: bool,
     /// Never run two invocations of this tool at once (a tool holding a global
