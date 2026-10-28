@@ -928,3 +928,38 @@ fn hadolint_buf_and_tflint_pre_commit_hooks_map_to_catalog_tools() {
     }
     assert_eq!(doc["hooks"]["builtin"]["fmt"]["fix"].as_bool(), Some(true), "buf format rewrites");
 }
+
+fn copy_tree(from: &Path, to: &Path) {
+    fs::create_dir_all(to).unwrap();
+    for entry in fs::read_dir(from).unwrap() {
+        let entry = entry.unwrap();
+        let target = to.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_tree(&entry.path(), &target);
+        } else {
+            fs::copy(entry.path(), target).unwrap();
+        }
+    }
+}
+
+#[test]
+fn migrating_the_armis_fixture_writes_a_config_the_loader_accepts() {
+    let dir = tempdir().unwrap();
+    copy_tree(&armis(), dir.path());
+
+    run_migrate(migrate_args(dir.path(), true, false));
+
+    let written = dir.path().join("poly.toml");
+    assert!(written.is_file(), "--write must produce poly.toml");
+    let config = poly_config::PolyConfig::load_file(&written)
+        .unwrap_or_else(|error| panic!("the migrated config must load: {error:#}\n{}", fs::read_to_string(&written).unwrap()));
+    assert!(config.hooks.present);
+    assert!(config.hooks.builtin.fmt.enabled && config.hooks.builtin.lint.enabled);
+    assert!(config.hooks.builtin.file_safety.enabled);
+    assert!(config.tools.iter().any(|(name, tool)| name == "buildifier" && tool.enabled));
+    assert!(
+        config.hooks.stage_configs.contains_key(&Stage::PreCommit),
+        "the lefthook jobs that stay jobs are written"
+    );
+    assert!(dir.path().join("lefthook.yml").exists(), "unmapped constructs keep the source");
+}
