@@ -6,13 +6,13 @@
 //! integer, or `"dynamic"`). Poly's defaults differ from ruff's where it says so
 //! in [`super`]: width 120 and docstring code formatting on.
 
+use std::path::Path;
+
 use ruff_formatter::printer::LineEnding;
 use ruff_formatter::{IndentStyle, IndentWidth, LineWidth};
 use ruff_python_formatter::{
     DocstringCode, DocstringCodeLineWidth, MagicTrailingComma, PreviewMode, PyFormatOptions, QuoteStyle,
 };
-
-use std::path::Path;
 
 use crate::config::EngineConfig;
 use crate::engine::{OptionType, SourceFile};
