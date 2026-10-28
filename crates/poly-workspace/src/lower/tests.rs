@@ -378,6 +378,7 @@ run = "prettier --write {staged_files}"
 }
 
 #[test]
+#[cfg(unix)]
 fn template_paths_are_relative_to_the_job_root() {
     let hooks = hooks_from(
         r#"
@@ -911,6 +912,7 @@ fn lower_with_files_and_git_args(
 }
 
 #[test]
+#[cfg(unix)]
 fn git_hook_arguments_are_substituted_into_the_run_line() {
     let hooks = hooks_from(
         r#"
@@ -928,6 +930,7 @@ run = "bash lock.sh {0} && echo {2} ${1} {git_args}"
 }
 
 #[test]
+#[cfg(unix)]
 fn a_missing_git_argument_substitutes_to_nothing() {
     let hooks = hooks_from("[hooks.post-merge.commands.x]\nrun = \"echo [{1}] [{2}] [{0}]\"\n");
     let spec = lower_with_git_args(&hooks, HookStage::PostMerge, &["0"]);
@@ -935,6 +938,7 @@ fn a_missing_git_argument_substitutes_to_nothing() {
 }
 
 #[test]
+#[cfg(unix)]
 fn a_git_argument_is_quoted_against_the_shell() {
     let hooks = hooks_from("[hooks.post-merge.commands.x]\nrun = \"echo {1}\"\n");
     let spec = lower_with_git_args(&hooks, HookStage::PostMerge, &["a'; rm -rf /; '"]);
@@ -975,6 +979,7 @@ fmt = true
 }
 
 #[test]
+#[cfg(unix)]
 fn a_rooted_job_scopes_files_before_stripping_the_root_and_leaves_git_arguments_alone() {
     let hooks = hooks_from(
         r#"

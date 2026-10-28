@@ -86,7 +86,13 @@ fn resolve(dir: &Path, target: &str) -> Option<String> {
             Component::RootDir | Component::Prefix(_) => return None,
         }
     }
-    (!parts.is_empty()).then(|| parts.iter().collect::<PathBuf>().to_string_lossy().into_owned())
+    (!parts.is_empty()).then(|| {
+        parts
+            .iter()
+            .map(|part| part.to_string_lossy())
+            .collect::<Vec<_>>()
+            .join("/")
+    })
 }
 
 #[cfg(test)]

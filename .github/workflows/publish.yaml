@@ -297,6 +297,13 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || '' }}
 
+      - name: Shorten paths for the biome checkout (adrs/0003-dependency-policy.md)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          git config --global core.longpaths true
+          echo 'CARGO_HOME=D:\c' >> "$GITHUB_ENV"
+
       - name: Setup Rust
         if: ${{ !matrix.alpine }}
         uses: dtolnay/rust-toolchain@stable

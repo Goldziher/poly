@@ -267,6 +267,13 @@ supports long paths. The maintainers chose that over holding the pin; the Window
 to be red and is not a regression to chase. Revisit when biome next touches that fixture or when
 [libgit2/libgit2#3053] closes.
 
+## Amendment — 2026-10-28 (the Windows build works again)
+
+Windows CI sets `CARGO_HOME=D:\c` and `core.longpaths`, which shortens the checkout prefix from about
+75 to about 30 characters; the longest stray biome snapshot path (205 characters) then fits in
+`MAX_PATH`. The Windows jobs are green again and no longer `continue-on-error`. The stray files are
+reported upstream as biomejs/biome#12725. Local Windows builds need the same short `CARGO_HOME`.
+
 ## Amendment — 2026-10-27 (`dockerfile-parser` is vendored)
 
 `dockerfile-parser` is the one backend crate that is neither a registry dependency nor a git pin: it

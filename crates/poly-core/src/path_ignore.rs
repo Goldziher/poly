@@ -48,6 +48,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg(unix)]
     fn each_list_applies_only_beneath_its_own_directory() {
         let ignore = PathIgnore::new(&[
             (PathBuf::from("/repo"), vec!["**/dist/**".to_string()]),

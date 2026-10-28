@@ -589,6 +589,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn ignore_patterns_cover_oxfmt_languages_only() {
         let rc = native(r#"{"ignorePatterns":["**/*.md","fixtures/**"]}"#);
         let ignore = FormatIgnore::for_language(&rc, &Language::Markdown).unwrap();

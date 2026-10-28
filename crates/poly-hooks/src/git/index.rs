@@ -668,6 +668,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn staged_blobs_match_single_reads_including_missing_and_odd_paths() {
         let repo = init_temp_repo();
         let root = repo.path();

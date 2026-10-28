@@ -165,6 +165,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn relative_config_values_become_absolute_under_the_base() {
         let rewritten = absolutize_config_args(
             &strings(&["run", "-c", ".golangci.yml", "--add_tables=./t.json", "./pkg"]),
@@ -178,6 +179,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn an_absolute_config_value_is_left_alone() {
         let rewritten = absolutize_config_args(&strings(&["-c", "/etc/x.xml"]), &strings(&["-c"]), Path::new("/repo"));
         assert_eq!(rewritten, strings(&["-c", "/etc/x.xml"]));
