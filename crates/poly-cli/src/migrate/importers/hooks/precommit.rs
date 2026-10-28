@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use poly_config::Stage;
 use serde_json::Value;
 
-use super::acc::{Body, HookAcc, JobSpec};
+use super::acc::{Body, HookAcc, JobSpec, ToolSettings};
 use super::command::Target;
 use super::filters::regex_to_globs;
 use crate::migrate::importers::load_yaml;
@@ -29,6 +29,18 @@ struct Known {
     benign_args: &'static [&'static str],
     /// The files the hook inherently applies to, used when the config sets no `files`.
     default_files: &'static [&'static str],
+    /// The catalog tool the hook's remaining `args` configure, and the settings the
+    /// hook's own entry point implies (buildifier's `-mode=fix -lint=fix`).
+    configures: Option<Configures>,
+}
+
+#[derive(Clone, Copy)]
+struct Configures {
+    tool: &'static str,
+    /// Flags the hook always passes, for the formatting role.
+    format_extra_args: &'static [&'static str],
+    /// The hook also reports what it cannot fix, i.e. it lints too.
+    also_lint: bool,
 }
 
 impl Known {
@@ -108,21 +120,37 @@ const KNOWN: &[Known] = &[
     .scoped(&["*.{py,pyi}"]),
     known("typos", Mapping::Builtin(Target::Lint, &[]), None),
     known("shellcheck", Mapping::Builtin(Target::Lint, &[]), None).scoped(&["*.{sh,bash}"]),
-    known(
-        "terraform_fmt",
-        Mapping::Builtin(Target::Fmt, &[]),
-        Some("poly formats HCL with its own engine, not terraform fmt"),
-    )
-    .scoped(&["*.{tf,tfvars}"]),
+    Known {
+        configures: Some(Configures {
+            tool: "terraform",
+            format_extra_args: &[],
+            also_lint: false,
+        }),
+        ..known("terraform_fmt", Mapping::Builtin(Target::Fmt, &["terraform"]), None).scoped(&["*.{tf,tfvars}"])
+    },
     known("taplo-format", Mapping::Builtin(Target::Fmt, &[]), None).scoped(&["*.toml"]),
     known("taplo-lint", Mapping::Builtin(Target::Lint, &[]), None).scoped(&["*.toml"]),
-    known("actionlint", Mapping::Builtin(Target::Lint, &["actionlint"]), None)
-        .scoped(&[".github/workflows/*.{yml,yaml}"]),
-    known("buildifier", Mapping::Builtin(Target::Fmt, &["buildifier"]), None).scoped(&[
-        "*BUILD",
-        "*BUILD.bazel",
-        "*.bzl",
-    ]),
+    Known {
+        configures: Some(Configures {
+            tool: "actionlint",
+            format_extra_args: &[],
+            also_lint: false,
+        }),
+        ..known("actionlint", Mapping::Builtin(Target::Lint, &["actionlint"]), None)
+            .scoped(&[".github/workflows/*.{yml,yaml}"])
+    },
+    Known {
+        configures: Some(Configures {
+            tool: "buildifier",
+            format_extra_args: &["-lint=fix"],
+            also_lint: true,
+        }),
+        ..known("buildifier", Mapping::Builtin(Target::Fmt, &["buildifier"]), None).scoped(&[
+            "*BUILD",
+            "*BUILD.bazel",
+            "*.bzl",
+        ])
+    },
     known(
         "golangci-lint",
         Mapping::Builtin(Target::Lint, &["golangci-lint"]),
@@ -148,6 +176,7 @@ const fn known(id: &'static str, mapping: Mapping, approximation: Option<&'stati
         approximation,
         benign_args: &[],
         default_files: &[],
+        configures: None,
     }
 }
 
@@ -205,7 +234,7 @@ pub(super) fn import(dir: &Path, acc: &mut HookAcc) -> Option<Outcome> {
             match location {
                 "local" => local_hook(acc, &context, dir, hook),
                 "meta" => acc.diag.note(format!("{CONFIG_NAME}: meta hook skipped")),
-                _ => remote_hook(acc, &context, location, hook),
+                _ => remote_hook(acc, &context, location, repo.get("rev").and_then(Value::as_str), hook),
             }
         }
     }
@@ -277,7 +306,7 @@ fn scope(acc: &mut HookAcc, context: &Context, label: &str, hook: &Value) -> (Ve
     (files, exclude)
 }
 
-fn remote_hook(acc: &mut HookAcc, context: &Context, repo: &str, hook: &Value) {
+fn remote_hook(acc: &mut HookAcc, context: &Context, repo: &str, rev: Option<&str>, hook: &Value) {
     let Some(id) = hook.get("id").and_then(Value::as_str) else {
         return;
     };
@@ -313,6 +342,14 @@ fn remote_hook(acc: &mut HookAcc, context: &Context, repo: &str, hook: &Value) {
         apply_maxkb(acc, &label, &mut args);
     }
     args.retain(|arg| !entry.benign_args.contains(&arg.as_str()));
+    if let Some(configures) = entry.configures {
+        configure_tool(acc, &label, configures, rev, std::mem::take(&mut args));
+        if configures.also_lint {
+            for stage in hook_stages(context, hook) {
+                acc.add_builtin(Target::Lint, &stage, &label, &files, &exclude, &[configures.tool]);
+            }
+        }
+    }
     if !args.is_empty() {
         acc.diag.lossy(format!(
             "{label}: args {} have no poly equivalent and were dropped",
@@ -320,6 +357,34 @@ fn remote_hook(acc: &mut HookAcc, context: &Context, repo: &str, hook: &Value) {
         ));
     }
     acc.diag.note(format!("{label}: mapped to a poly builtin"));
+}
+
+/// Carry a hook's arguments and pinned `rev` to the catalog tool it runs.
+fn configure_tool(acc: &mut HookAcc, label: &str, configures: Configures, rev: Option<&str>, args: Vec<String>) {
+    let version = rev
+        .map(|rev| rev.trim_start_matches('v').to_string())
+        .filter(|rev| super::pin::catalog_has_release(configures.tool, rev));
+    if version.is_none()
+        && let Some(rev) = rev
+        && super::pin::pin_file(configures.tool).is_none()
+        && poly_catalog::Catalog::get()
+            .tool(configures.tool)
+            .and_then(|tool| tool.recipe.as_ref())
+            .and_then(|recipe| recipe.install.as_ref())
+            .is_some_and(|install| !install.releases.is_empty())
+    {
+        acc.diag.lossy(format!(
+            "{label}: rev {rev} of {} is not a release poly can download; set `[tools.{}] version`, `url` and `sha256` to pin it",
+            configures.tool, configures.tool
+        ));
+    }
+    let settings = ToolSettings {
+        extra_args: args,
+        format_extra_args: configures.format_extra_args.iter().map(|a| (*a).to_string()).collect(),
+        version,
+        ..ToolSettings::default()
+    };
+    acc.add_tool_settings(configures.tool, label, &settings);
 }
 
 fn apply_maxkb(acc: &mut HookAcc, label: &str, args: &mut Vec<String>) {

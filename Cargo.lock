@@ -5102,6 +5102,7 @@ dependencies = [
  "owo-colors",
  "poly-buildinfo",
  "poly-cache",
+ "poly-catalog",
  "poly-config",
  "poly-core",
  "poly-hooks",
