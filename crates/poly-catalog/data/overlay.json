@@ -896,5 +896,81 @@
         "hint": "npm install --global npm-groovy-lint"
       }
     }
+  },
+  {
+    "name": "pydocstyle",
+    "binary": "pydocstyle",
+    "categories": [
+      "linter"
+    ],
+    "languages": [
+      "python"
+    ],
+    "homepage": "https://github.com/pycqa/pydocstyle",
+    "commands": {
+      "": {
+        "arguments": [
+          "$PATH"
+        ],
+        "stdin": false
+      }
+    }
+  },
+  {
+    "name": "bashate",
+    "binary": "bashate",
+    "categories": [
+      "linter"
+    ],
+    "languages": [
+      "bash"
+    ],
+    "homepage": "https://github.com/openstack/bashate",
+    "commands": {
+      "": {
+        "arguments": [
+          "$PATH"
+        ],
+        "stdin": false
+      }
+    }
+  },
+  {
+    "name": "luacheck",
+    "binary": "luacheck",
+    "categories": [
+      "linter"
+    ],
+    "languages": [
+      "lua"
+    ],
+    "homepage": "https://github.com/lunarmodules/luacheck",
+    "commands": {
+      "": {
+        "arguments": [
+          "$PATH"
+        ],
+        "stdin": false
+      }
+    }
+  },
+  {
+    "name": "mh_style",
+    "binary": "mh_style",
+    "categories": [
+      "linter"
+    ],
+    "languages": [
+      "matlab"
+    ],
+    "homepage": "https://github.com/florianschanda/miss_hit",
+    "commands": {
+      "": {
+        "arguments": [
+          "$PATH"
+        ],
+        "stdin": false
+      }
+    }
   }
 ]

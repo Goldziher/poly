@@ -28,3 +28,11 @@ the snapshot lacks (`checkstyle`, `palantir-java-format`, `helm`, `tflint`,
 `pyproject-fmt`, ...). Its distinguishing field is `recipe` (see `src/recipe.rs`):
 the report format to parse, how files group into invocations, what else decides the
 verdict (for the result cache), and pinned, checksummed releases poly can download.
+
+The overlay also corrects mdsf's classification where it is wrong. `pydocstyle`,
+`bashate`, `luacheck` and `mh_style` are report-only checkers (their catalog argv
+carries no write flag) that mdsf files under `formatter`; the overlay re-declares
+them as `linter`, so `poly lint` surfaces their findings instead of the format path
+reading a failing exit as "unchanged" (Goldziher/poly#36).
+`scripts/gen-catalog-md.py` reads `catalog.json` only, so re-running it reverts
+those rows in the website's catalog table; fix them by hand afterwards.

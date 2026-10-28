@@ -17,6 +17,13 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   `GIT_WORK_TREE` is exported, so a snapshot-local `git init` cannot re-point the checkout, and
   `GIT_OPTIONAL_LOCKS=0` keeps `git status` from rewriting the index's stat cache.
 
+- **`pydocstyle`, `bashate`, `luacheck` and `mh_style` are linters, not formatters.** The mdsf catalog filed
+  these report-only checkers as formatters, so an enabled one ran through the format path, where a failing exit
+  reads as "unchanged" and every finding was discarded. `overlay.json` reclassifies them, and `poly lint` now
+  reports their findings. An enabled catalog tool whose binary is not on `PATH` now logs a warning, since the
+  file can still count as checked through another engine and the missing check would otherwise look like a pass
+  (Goldziher/poly#36).
+
 [Goldziher/poly#37]: https://github.com/Goldziher/poly/issues/37
 
 ## [0.30.0] - 2026-10-28

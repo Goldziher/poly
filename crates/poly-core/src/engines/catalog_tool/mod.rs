@@ -13,7 +13,9 @@
 //!
 //! The engine is **capability-probed**: when the tool's binary is absent from
 //! `PATH` it is a no-op ([`FormatOutput::Unchanged`]), so a missing tool
-//! degrades gracefully rather than erroring. It is registered only for tools a
+//! degrades gracefully rather than erroring — with a one-time warning, and no
+//! lint coverage claimed ([`Engine::provides_language_lint`]), so an enabled but
+//! absent tool never reads as a clean check. It is registered only for tools a
 //! user has explicitly enabled, and routed by `crate::registry` (hence
 //! [`Engine::languages`] returns an empty slice).
 //!
@@ -417,6 +419,17 @@ impl CatalogToolEngine {
         root: Option<PathBuf>,
     ) -> Self {
         let probe = probe_binary(&tool.binary);
+        if probe.is_none() {
+            // Enabled but absent is not a clean run: say so, since the file can
+            // still count as checked through another engine for its language.
+            warn_unavailable_once(
+                &tool.name,
+                &format!(
+                    "'{}' is enabled in [tools] but '{}' is not on PATH, so its checks did not run",
+                    tool.name, tool.binary
+                ),
+            );
+        }
         let path_globs = tool.path_globs.clone();
         let path_glob_set = if path_globs.is_empty() {
             None
@@ -692,7 +705,7 @@ impl CatalogToolEngine {
     }
 }
 
-/// Say once per tool that an enabled recipe tool cannot run, with how to fix it.
+/// Say once per tool that an enabled catalog tool cannot run, with how to fix it.
 fn warn_unavailable_once(name: &str, message: &str) {
     static SEEN: OnceLock<Mutex<std::collections::HashSet<String>>> = OnceLock::new();
     let first = SEEN

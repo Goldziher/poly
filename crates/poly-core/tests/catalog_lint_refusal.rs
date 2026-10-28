@@ -177,6 +177,40 @@ fn an_accepted_lint_command_warns_about_nothing() {
     }
 }
 
+/// Goldziher/poly#36: an enabled linter that is not installed runs nothing, yet
+/// the Python file still counts as checked through ruff — so without a warning,
+/// "pydocstyle is missing" and "pydocstyle passed" look identical.
+#[test]
+fn an_enabled_but_absent_linter_is_reported_not_passed_off_as_clean() {
+    if binary_on_path("pydocstyle") {
+        eprintln!("note: pydocstyle is on PATH; skipped the absent-tool test");
+        return;
+    }
+    let run = lint_with_tools("[tools.pydocstyle]\nenabled = true\n", "m.py", "\"\"\"Module.\"\"\"\n");
+
+    assert!(
+        run.warnings
+            .contains("'pydocstyle' is enabled in [tools] but 'pydocstyle' is not on PATH"),
+        "the missing tool must be named, got: {:?}",
+        run.warnings
+    );
+    assert!(
+        !run.engines.iter().any(|engine| engine == "pydocstyle"),
+        "an absent tool cannot have run, got engines: {:?}",
+        run.engines
+    );
+}
+
+/// Whether `binary` is on `PATH`, judged by `which` as the catalog probe does.
+fn binary_on_path(binary: &str) -> bool {
+    std::env::var_os("PATH").is_some_and(|paths| {
+        std::env::split_paths(&paths).any(|dir| {
+            let candidate = dir.join(binary);
+            candidate.is_file() || candidate.with_extension("exe").is_file()
+        })
+    })
+}
+
 /// Whether a `shellcheck` the catalog engine could probe is on `PATH`.
 fn shellcheck_on_path() -> bool {
     std::process::Command::new("shellcheck")

@@ -72,6 +72,23 @@ fn pure_linter_does_not_masquerade_as_formatter() {
     }
 }
 
+/// mdsf files these report-only checkers under `formatter`, so their default
+/// command ran through the format path, where a non-zero exit reads as
+/// "unchanged" and every finding vanished (Goldziher/poly#36). The overlay
+/// reclassifies them; their catalog argv has no write flag, so they only report.
+#[test]
+fn report_only_checkers_resolve_as_linters_not_formatters() {
+    for name in ["pydocstyle", "bashate", "luacheck", "mh_style"] {
+        let tool = Catalog::get().tool(name).unwrap_or_else(|| panic!("{name} in catalog"));
+        assert!(tool.is_linter(), "{name} must be a linter");
+        assert!(!tool.is_formatter(), "{name} must not be a formatter");
+        assert!(tool.format_command().is_none(), "{name} must expose no format command");
+        let (command_name, command) = tool.lint_command().unwrap_or_else(|| panic!("{name} lints"));
+        assert_eq!(command_name, "", "{name} lints with mdsf's default command");
+        assert_eq!(command.arguments, vec![PATH_PLACEHOLDER.to_string()]);
+    }
+}
+
 #[test]
 fn argv_substitutes_the_path_placeholder() {
     let gofmt = Catalog::get().tool("gofmt").expect("gofmt present");

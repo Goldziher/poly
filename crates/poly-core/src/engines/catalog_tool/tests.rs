@@ -504,3 +504,83 @@ fn actionlint_catalog_entry_has_github_workflows_path_globs() {
         tool.path_globs
     );
 }
+
+/// The shipped `pydocstyle` catalog entry with its binary pointed at `binary`,
+/// so the real catalog classification and argv are exercised without needing
+/// pydocstyle itself on `PATH`.
+fn pydocstyle_with_binary(binary: &str) -> &'static Tool {
+    let mut tool = Catalog::get()
+        .tool("pydocstyle")
+        .expect("pydocstyle in catalog")
+        .clone();
+    tool.binary = binary.to_string();
+    Box::leak(Box::new(tool))
+}
+
+/// Goldziher/poly#36: pydocstyle was classified as a formatter, so its check ran
+/// through the format path, where a non-zero exit reads as "unchanged" and the
+/// violation vanished. As a linter, the violation is a diagnostic and a clean
+/// file passes. The stub mimics pydocstyle's CLI: report-only, exit 1 on a
+/// finding, exit 0 when clean.
+#[cfg(unix)]
+#[test]
+fn pydocstyle_reports_a_docstring_violation_and_passes_a_clean_file() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let stub = dir.path().join("pydocstyle");
+    std::fs::write(
+        &stub,
+        "#!/bin/sh\nhead -n 1 \"$1\" | grep -q '\"\"\"' && exit 0\n\
+         printf '%s:1 at module level:\\n        D100: Missing docstring in public module\\n' \"$1\"\nexit 1\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let tool = pydocstyle_with_binary(stub.to_str().unwrap());
+
+    assert!(
+        format_engine_default(tool, None, None).is_none(),
+        "pydocstyle must not wire as a formatter, where its findings are discarded"
+    );
+    let engine = lint_engine_default(tool, None, None).expect("pydocstyle wires as a linter");
+    assert!(engine.provides_language_lint(&Language::Python, &cfg()));
+
+    let bad = dir.path().join("bad.py");
+    let bad_content = "def f():\n    pass\n";
+    std::fs::write(&bad, bad_content).unwrap();
+    let diagnostics = engine
+        .lint(&make_src(bad.to_str().unwrap(), bad_content), &cfg())
+        .unwrap();
+    assert_eq!(diagnostics.len(), 1, "the violation must surface: {diagnostics:?}");
+    assert_eq!(diagnostics[0].engine, "pydocstyle");
+    assert!(
+        diagnostics[0].title.contains("D100"),
+        "the diagnostic carries the tool's finding: {}",
+        diagnostics[0].title
+    );
+
+    let good = dir.path().join("good.py");
+    let good_content = "\"\"\"Module.\"\"\"\n";
+    std::fs::write(&good, good_content).unwrap();
+    let diagnostics = engine
+        .lint(&make_src(good.to_str().unwrap(), good_content), &cfg())
+        .unwrap();
+    assert!(diagnostics.is_empty(), "a clean file passes: {diagnostics:?}");
+}
+
+/// An enabled linter whose binary is absent runs nothing, so it must not claim
+/// lint coverage: the run then counts the file as not linted (unless another
+/// engine genuinely lints it) instead of as a clean check, and the engine's
+/// cache-key version records the absence.
+#[test]
+fn an_absent_enabled_linter_claims_no_coverage() {
+    let tool = pydocstyle_with_binary("poly-test-absent-pydocstyle");
+    let engine = lint_engine_default(tool, None, None).expect("the lint role still wires");
+    assert!(
+        !engine.provides_language_lint(&Language::Python, &cfg()),
+        "an absent tool must not count as lint coverage"
+    );
+    assert!(engine.version().contains(":absent:"), "version: {}", engine.version());
+    let diagnostics = engine.lint(&make_src("m.py", "x = 1\n"), &cfg()).unwrap();
+    assert!(diagnostics.is_empty());
+}

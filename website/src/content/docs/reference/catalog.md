@@ -115,7 +115,7 @@ Opt in per tool with `[tools.<name>] enabled = true`. Each command is probed on 
 | [autocorrect](https://github.com/huacnlee/autocorrect) | spell-check |  |
 | [autoflake](https://github.com/pycqa/autoflake) | linter | python |
 | [autopep8](https://github.com/hhatto/autopep8) | formatter | python |
-| [bashate](https://github.com/openstack/bashate) | formatter | bash |
+| [bashate](https://github.com/openstack/bashate) | linter | bash |
 | [beancount-black](https://github.com/launchplatform/beancount-black) | formatter | beancount |
 | [beautysh](https://github.com/lovesegfault/beautysh) | formatter | bash, shell |
 | [bibtex-tidy](https://github.com/flamingtempura/bibtex-tidy) | formatter | bibtex |
@@ -260,7 +260,7 @@ Opt in per tool with `[tools.<name>] enabled = true`. Each command is probed on 
 | [kulala-fmt](https://github.com/mistweaverco/kulala-fmt) | formatter | http |
 | [leptosfmt](https://github.com/bram209/leptosfmt) | formatter | rust |
 | [liquidsoap-prettier](https://github.com/savonet/liquidsoap-prettier) | formatter | liquidsoap |
-| [luacheck](https://github.com/lunarmodules/luacheck) | formatter | lua |
+| [luacheck](https://github.com/lunarmodules/luacheck) | linter | lua |
 | [luaformatter](https://github.com/koihik/luaformatter) | formatter | lua |
 | [luau-analyze](https://luau.org) | linter | luau |
 | [mado](https://github.com/akiomik/mado) | linter | markdown |
@@ -276,7 +276,7 @@ Opt in per tool with `[tools.<name>] enabled = true`. Each command is probed on 
 | [mdslw](https://github.com/razziel89/mdslw) | formatter | markdown |
 | [meson](https://mesonbuild.com) | formatter | meson |
 | [mh_lint](https://github.com/florianschanda/miss_hit) | linter | matlab |
-| [mh_style](https://github.com/florianschanda/miss_hit) | formatter | matlab |
+| [mh_style](https://github.com/florianschanda/miss_hit) | linter | matlab |
 | [mise](https://github.com/jdx/mise) | tool |  |
 | [misspell](https://github.com/client9/misspell) | spell-check |  |
 | [mix](https://hexdocs.pm/mix/main/Mix.Tasks.Format.html) | formatter | elixir |
@@ -330,7 +330,7 @@ Opt in per tool with `[tools.<name>] enabled = true`. Each command is probed on 
 | [pycodestyle](https://github.com/pycqa/pycodestyle) | linter | python |
 | [pydoclint](https://github.com/jsh9/pydoclint) | linter | python |
 | [pydocstringformatter](https://github.com/danielnoord/pydocstringformatter) | formatter | python |
-| [pydocstyle](https://github.com/pycqa/pydocstyle) | formatter | python |
+| [pydocstyle](https://github.com/pycqa/pydocstyle) | linter | python |
 | [pyflakes](https://github.com/pycqa/pyflakes) | linter | python |
 | [pyink](https://github.com/google/pyink) | formatter | python |
 | [pylint](https://github.com/pylint-dev/pylint) | linter | python |
