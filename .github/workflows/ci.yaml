@@ -36,6 +36,8 @@ jobs:
   clippy:
     name: clippy
     runs-on: ${{ matrix.os }}
+    # The biome pin at HEAD cannot be fetched on Windows (adrs/0003-dependency-policy.md).
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
     timeout-minutes: 40
     strategy:
       fail-fast: false
@@ -52,6 +54,8 @@ jobs:
   test:
     name: test / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    # The biome pin at HEAD cannot be fetched on Windows (adrs/0003-dependency-policy.md).
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -77,6 +81,8 @@ jobs:
     # that is reachable from a test that never touches a real tree.
     name: dogfood / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    # The biome pin at HEAD cannot be fetched on Windows (adrs/0003-dependency-policy.md).
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
     timeout-minutes: 40
     strategy:
       fail-fast: false

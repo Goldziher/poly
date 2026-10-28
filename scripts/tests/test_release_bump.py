@@ -5,10 +5,9 @@ import os
 import shutil
 import subprocess
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
-
-import tomllib
 
 
 class ReleaseBumpTests(unittest.TestCase):

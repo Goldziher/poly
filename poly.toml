@@ -10,6 +10,8 @@ exclude = [
   "**/package-lock.json",
   "**/pnpm-lock.yaml",
   "vendor/**",
+  # Saved real tool output, kept byte-for-byte: golangci.json is two JSON documents, not one.
+  "crates/poly-core/src/engines/catalog_tool/recipe/output/fixtures/**",
   "**/identify/tags.rs",
   ".ai-rulez/**",
   # Everything `ai-rulez generate --plugin` emits. These are generated bundles,

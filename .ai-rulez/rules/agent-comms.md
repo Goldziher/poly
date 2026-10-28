@@ -63,4 +63,4 @@ the `agents` tool:
 - Before editing a shared checkout, `workspace` modes `workspaces` / `worktrees` / `branches` /
   `claim` show who already owns the tree.
 
-See the `multi-agent-room` skill for coordinating a team.
+Coordinate a team of named subagents through one shared thread per task.

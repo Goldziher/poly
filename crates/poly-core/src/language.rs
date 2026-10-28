@@ -421,9 +421,9 @@ fn is_dockerfile_name(lower: &str) -> bool {
         return false;
     }
     ["dockerfile", "containerfile"].iter().any(|stem| {
-        name.strip_prefix(stem)
-            .is_some_and(|rest| rest.is_empty() || rest.starts_with(['.', '-', '_']))
-            || name.ends_with(&format!(".{stem}"))
+        name.strip_prefix(stem).is_some_and(|rest| {
+            rest.is_empty() || rest.starts_with('.') || (rest.starts_with(['-', '_']) && !rest.contains('.'))
+        }) || name.ends_with(&format!(".{stem}"))
     })
 }
 
@@ -536,6 +536,17 @@ mod tests {
             "base.Dockerfile.tmpl",
         ] {
             assert_eq!(
+                Language::from_path(Path::new(name)),
+                Some(Language::Dockerfile),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_source_file_named_after_a_dockerfile_stem_is_not_a_dockerfile() {
+        for name in ["dockerfile_parser.pest", "dockerfile-parser.rs", "Dockerfile_utils.py"] {
+            assert_ne!(
                 Language::from_path(Path::new(name)),
                 Some(Language::Dockerfile),
                 "{name}"
