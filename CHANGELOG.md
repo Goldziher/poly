@@ -9,6 +9,13 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ### Added
 
+- **Markdown fences and front matter are formatted.** `[fmt.markdown.rumdl]` now installs a
+  dispatcher on `oxc_formatter_markdown` as oxfmt does: JavaScript, TypeScript, JSON, YAML, CSS,
+  SCSS, Less, TOML and nested Markdown fences, and YAML/TOML front matter, are formatted in
+  process; other languages and fences that do not parse stay as written.
+  `embedded_language_formatting = "off"` (oxfmt `embeddedLanguageFormatting`) turns it off, and the
+  `embedded.<js|json|yaml|css|toml>` sub-tables carry the per-family options a `.oxfmtrc.json[c]`
+  supplies. The rumdl engine's `version()` carries `+md-embed-1`.
 - **`dockerfile-parser` is now vendored as the `crates/dockerfile-parser` workspace crate** (ADR 0003
   amendment). Upstream, HewlettPackard/dockerfile-parser-rs, is archived, so poly maintains it from
   upstream commit `08f3789` (`v0.9.0` plus the image-digest change). It moved to edition 2024 with

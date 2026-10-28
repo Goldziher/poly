@@ -55,7 +55,7 @@ pub struct RumdlEngine;
 /// [`contains_go_template_markdown`]), and the MD020 guard ([`GuardedMd020`]). Bump the
 /// suffix whenever any of these change so stale cached diagnostics are
 /// invalidated.
-const RUMDL_VERSION: &str = "0.3.0+defaults5-mdx-rules-tmplskip-codeaware-md020guard-structfix+ruleparams1+extendsel2+oxc_formatter_markdown-e2be72d";
+const RUMDL_VERSION: &str = "0.3.0+defaults5-mdx-rules-tmplskip-codeaware-md020guard-structfix+ruleparams1+extendsel2+oxc_formatter_markdown-e2be72d+md-embed-1";
 
 /// rumdl-proprietary stylistic rules disabled by default.
 ///
@@ -128,6 +128,8 @@ impl Engine for RumdlEngine {
                 ("indent_style", OptionType::STRING),
                 ("single_quote", OptionType::BOOLEAN),
                 ("prose_wrap", OptionType::STRING),
+                ("embedded_language_formatting", OptionType::STRING),
+                ("embedded", OptionType::TABLE),
             ])
             .with_rule_selection(),
             OptionTable::CrossCuttingLint => OptionKeys::UNCHECKED,

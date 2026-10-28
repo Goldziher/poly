@@ -74,6 +74,26 @@ pub(crate) const JS_FORMAT_OPTION_KEYS: &[(&str, OptionType)] = &[
 ];
 
 pub(crate) use self::format::{format_embedded_js, is_embedded_js_parse_error};
+
+/// `oxc_formatter` options for a JS/TS block embedded in another document (a Markdown fence).
+pub(crate) fn embedded_js_options(cfg: &EngineConfig) -> oxc_formatter::JsFormatOptions {
+    config::build_js_options(cfg)
+}
+
+/// `oxc_formatter_json` options for a JSON block embedded in another document.
+pub(crate) fn embedded_json_options(
+    cfg: &EngineConfig,
+    variant: oxc_formatter_json::JsonVariant,
+) -> oxc_formatter_json::JsonFormatOptions {
+    let anonymous = SourceFile {
+        path: std::path::PathBuf::new(),
+        language: Language::Json,
+        content: "".into(),
+    };
+    let mut options = config::build_json_options(&anonymous, cfg);
+    options.variant = variant;
+    options
+}
 use self::format::{format_js, format_json};
 use self::json_lint::lint_json;
 use self::lint::lint_js;

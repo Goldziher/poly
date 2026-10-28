@@ -150,19 +150,8 @@ fn format_with_oxc(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Forma
         Language::Less => CssVariant::Less,
         _ => CssVariant::Css,
     };
-    let mut options = CssFormatOptions {
-        variant,
-        ..CssFormatOptions::default()
-    };
-    options.apply_core(core_format_options(cfg));
-    if let Some(single) = cfg.options.get("single_quote").and_then(toml::Value::as_bool) {
-        options.single_quote = single.into();
-    }
-    if cfg.options.get("trailing_commas").and_then(toml::Value::as_str) == Some("never") {
-        options.trailing_commas = TrailingCommas::Never;
-    }
     let allocator = Allocator::new();
-    let formatted = match oxc_formatter_css::format(&allocator, &src.content, options)
+    let formatted = match oxc_formatter_css::format(&allocator, &src.content, oxc_css_options(cfg, variant))
         .map_err(|_| ())
         .and_then(|formatted| formatted.print().map_err(|_| ()))
     {
@@ -174,6 +163,22 @@ fn format_with_oxc(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Forma
     } else {
         Ok(FormatOutput::Formatted(formatted))
     }
+}
+
+/// The `oxc_formatter_css` options a `[fmt.<css|scss|less>.malva]` table resolves to.
+pub(super) fn oxc_css_options(cfg: &EngineConfig, variant: CssVariant) -> CssFormatOptions {
+    let mut options = CssFormatOptions {
+        variant,
+        ..CssFormatOptions::default()
+    };
+    options.apply_core(core_format_options(cfg));
+    if let Some(single) = cfg.options.get("single_quote").and_then(toml::Value::as_bool) {
+        options.single_quote = single.into();
+    }
+    if cfg.options.get("trailing_commas").and_then(toml::Value::as_str) == Some("never") {
+        options.trailing_commas = TrailingCommas::Never;
+    }
+    options
 }
 
 /// Map a poly [`Language`] to the corresponding malva [`Syntax`].

@@ -168,6 +168,12 @@ fn extension_glob(glob: &str) -> Option<Vec<String>> {
 }
 
 fn translate(family: Family, options: &Map<String, Value>) -> toml::Table {
+    let out = translate_values(family, options);
+    report_unsupported(family, options);
+    out
+}
+
+fn translate_values(family: Family, options: &Map<String, Value>) -> toml::Table {
     let mut out = toml::Table::new();
     let mut put = |key: &str, value: toml::Value| {
         out.insert(key.to_owned(), value);
@@ -289,6 +295,20 @@ fn translate(family: Family, options: &Map<String, Value>) -> toml::Table {
             if let Some(wrap) = text("proseWrap") {
                 put("prose_wrap", toml::Value::String(wrap.to_owned()));
             }
+            if let Some(mode) = text("embeddedLanguageFormatting") {
+                put("embedded_language_formatting", toml::Value::String(mode.to_owned()));
+            }
+            let embedded: toml::Table = [
+                ("js", Family::Js),
+                ("json", Family::Json),
+                ("yaml", Family::Yaml),
+                ("css", Family::Css),
+                ("toml", Family::Toml),
+            ]
+            .into_iter()
+            .map(|(name, family)| (name.to_owned(), toml::Value::Table(translate_values(family, options))))
+            .collect();
+            put("embedded", toml::Value::Table(embedded));
         }
         Family::Toml => {
             if let Some(comma) = comma {
@@ -299,7 +319,6 @@ fn translate(family: Family, options: &Map<String, Value>) -> toml::Table {
             }
         }
     }
-    report_unsupported(family, options);
     out
 }
 
@@ -467,6 +486,16 @@ mod tests {
             engine_defaults(&rc, &Language::TypeScript, "oxc")["indent_width"].as_integer(),
             Some(4)
         );
+    }
+
+    #[test]
+    fn markdown_carries_the_option_overlays_of_the_languages_it_embeds() {
+        let rc = native(r#"{"semi":false,"trailingComma":"none","embeddedLanguageFormatting":"off"}"#);
+        let table = engine_defaults(&rc, &Language::Markdown, "rumdl");
+        assert_eq!(table["embedded_language_formatting"].as_str(), Some("off"));
+        assert_eq!(table["embedded"]["js"]["semicolons"].as_str(), Some("as-needed"));
+        assert_eq!(table["embedded"]["json"]["trailing_commas"].as_str(), Some("never"));
+        assert!(table["embedded"]["yaml"].is_table());
     }
 
     #[test]

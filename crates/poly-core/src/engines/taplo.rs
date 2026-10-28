@@ -217,7 +217,7 @@ impl Engine for TaploEngine {
 }
 
 /// Build the `oxc_formatter_toml` options from the shared layout keys.
-fn build_oxc_options(cfg: &EngineConfig) -> TomlFormatOptions {
+pub(super) fn build_oxc_options(cfg: &EngineConfig) -> TomlFormatOptions {
     let mut options = TomlFormatOptions::default();
     options.apply_core(core_format_options(cfg));
     if cfg.options.get("trailing_commas").and_then(toml::Value::as_str) == Some("never") {

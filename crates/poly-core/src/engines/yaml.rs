@@ -172,7 +172,7 @@ fn first_syntax_error(content: &str) -> Option<serde_yaml::Error> {
 
 /// Resolve [`YamlFormatOptions`] from the engine table, the shared layout options and the
 /// oxfmt defaults for everything the table leaves unset.
-fn build_format_options(cfg: &EngineConfig) -> YamlFormatOptions {
+pub(super) fn build_format_options(cfg: &EngineConfig) -> YamlFormatOptions {
     let mut options = YamlFormatOptions::default();
     options.apply_core(core_format_options(cfg));
     if let Some(single) = cfg.options.get("single_quote").and_then(toml::Value::as_bool) {
