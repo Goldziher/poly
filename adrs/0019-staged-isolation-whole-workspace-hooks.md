@@ -223,6 +223,43 @@ defense. And the checkout now runs via `.output()` rather than `.status()`, so a
 — a missing blob in a partial clone, an unreachable promisor remote, an unsupported git — carries
 git's own message into the poly error instead of an empty captured-output block.
 
+## Amendment: git context for isolated hooks (2026-10-28)
+
+The snapshot is a plain directory in the per-user cache, not a checkout, and the hook ran there with
+only the environment git gave poly. For an ordinary commit that is `GIT_INDEX_FILE=.git/index` —
+relative — and no `GIT_DIR`, so a hook enumerating the index (`git ls-files` feeding a whole-tree
+secret scan) failed with "not a git repository" ([Goldziher/poly#37]). The `.poly-manifest` is no
+substitute: it stores object ids, not bytes, for the externally-pointing symlinks the snapshot drops.
+
+**Every hook in a staged run now gets the context git itself gives a hook in a linked worktree**:
+the repository's absolute `GIT_DIR` (`git rev-parse --absolute-git-dir`, so a linked worktree gets
+`.git/worktrees/<name>`), and the absolute `GIT_INDEX_FILE` of the index the commit is building —
+the inherited one when git set it (`git commit <paths>` and `-a` build in an alternate index),
+resolved against the repository root, else `<git dir>/index`. A hook's own `env` wins.
+
+Standard variables rather than poly-specific ones (`POLY_GIT_DIR`, …) because the point is that an
+unmodified `git ls-files` works; a dedicated name would make every hook opt in by rewriting itself.
+They are what git already exports to every hook in a linked worktree, so a hook that must not see
+them (a test suite creating scratch repositories) already has to clear them. Two side effects of
+pointing git at the real repository from the snapshot were measured and closed:
+
+- **No `GIT_WORK_TREE`, and an inherited one is removed.** With `GIT_DIR` alone, git takes the
+  hook's working directory — the snapshot — as the work tree, so `git diff` / `git status` compare
+  the staged bytes against the index. Exporting `GIT_WORK_TREE` would do the same, but then a
+  snapshot-local `git init` writes it into the repository's config as `core.worktree`, re-pointing
+  the real checkout at a cache directory. Without it that `git init` only re-initializes the
+  repository, leaving its config byte-identical.
+- **`GIT_OPTIONAL_LOCKS=0`.** `git status` refreshes the index's stat cache opportunistically; run
+  from the snapshot it wrote the snapshot's stat data into the commit's index.
+
+An explicit index write from a hook (`git add`) still reaches the commit's index, exactly as it does
+for a hook run without isolation. In a sparse snapshot the linked directories are symlinks, so
+`git status` there reports their contents as changed; read the index (`ls-files`, `cat-file`)
+rather than diffing the snapshot. Stage-level and per-hook `precondition` / `before` / `after`
+steps are not given the context.
+
+[Goldziher/poly#37]: https://github.com/Goldziher/poly/issues/37
+
 ## Consequences
 
 Positive:

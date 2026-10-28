@@ -5,6 +5,20 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
+## [Unreleased]
+
+### Fixed
+
+- **Hooks under staged isolation get the original repository's git context** ([Goldziher/poly#37]).
+  The snapshot is not a checkout, so a hook enumerating the index (`git ls-files` feeding a
+  whole-tree secret scan) failed with "not a git repository". Every hook in a staged run now gets the
+  absolute `GIT_DIR` (a linked worktree's own git dir) and the absolute `GIT_INDEX_FILE` of the index
+  the commit is building, the alternate index of `git commit <paths>` / `-a` included. No
+  `GIT_WORK_TREE` is exported, so a snapshot-local `git init` cannot re-point the checkout, and
+  `GIT_OPTIONAL_LOCKS=0` keeps `git status` from rewriting the index's stat cache.
+
+[Goldziher/poly#37]: https://github.com/Goldziher/poly/issues/37
+
 ## [0.30.0] - 2026-10-28
 
 ### Added

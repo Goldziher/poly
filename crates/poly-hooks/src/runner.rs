@@ -76,7 +76,9 @@
 //!
 //! Submodules: [`exec`] builds and runs subprocesses, [`cache_key`] derives the
 //! tier-1 result-cache key, [`prepare`] resolves per-hook file sets and priority
-//! groups, [`fixes`] detects rewritten files and lands their fixes.
+//! groups, [`fixes`] detects rewritten files and lands their fixes, and
+//! [`git_context`] gives hooks in the staged snapshot the original repository's
+//! `GIT_DIR` and active `GIT_INDEX_FILE`.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -101,9 +103,11 @@ static EMPTY_ENV: BTreeMap<String, String> = BTreeMap::new();
 mod cache_key;
 mod exec;
 mod fixes;
+mod git_context;
 mod prepare;
 
 use self::fixes::Fingerprints;
+use self::git_context::GitContext;
 use self::prepare::Prepared;
 
 /// The tree every hook in `request` is evaluated against, and the root it runs
@@ -135,17 +139,23 @@ struct ExecContext<'a> {
     cargo_target_dir: Option<PathBuf>,
     /// The arguments git passed to the hook, exported to every hook's environment.
     git_args: &'a [String],
+    /// The original repository's git dir and active index, exported to every
+    /// hook under a staged run so `git` still reaches the index from inside the
+    /// snapshot. `None` in a worktree run, where git finds both unaided.
+    git_context: Option<GitContext>,
 }
 
 impl<'a> ExecContext<'a> {
     fn new(request: &'a HookRunRequest) -> Self {
         let (root, tree) = execution_root(request);
+        let staged = matches!(tree, ValidatedTree::StagedIndex);
         Self {
             root,
             tree,
             sccache: request.sccache.as_ref(),
-            cargo_target_dir: matches!(tree, ValidatedTree::StagedIndex).then(|| request.root.join("target")),
+            cargo_target_dir: staged.then(|| request.root.join("target")),
             git_args: &request.git_args,
+            git_context: staged.then(|| GitContext::resolve(&request.root)).flatten(),
         }
     }
 }
@@ -611,6 +621,9 @@ fn run_hook(
                 context.cargo_target_dir.as_deref(),
             );
             exec::export_git_args(&mut cmd, context.git_args);
+            if let Some(git) = &context.git_context {
+                git.export(&mut cmd, &hook.env);
+            }
             exec::execute(cmd, bar, &hook.id, budget)
         })
         .collect();

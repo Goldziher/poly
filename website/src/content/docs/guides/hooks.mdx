@@ -199,6 +199,17 @@ materialized into the snapshot — the checkout passes `--ignore-skip-worktree-b
 checkout is never expanded, so the omitted file does not appear in your working tree. This needs
 git 2.6 or newer.
 
+The snapshot is not itself a git checkout, so a hook running there is handed the repository's git
+context: `GIT_DIR` is the absolute git dir (`.git/worktrees/<name>` in a linked worktree) and
+`GIT_INDEX_FILE` the absolute path of the index the commit is building — the alternate index of a
+`git commit <paths>` or `git commit -a` included. A plain `git ls-files` or `git cat-file` therefore
+reads the commit's index, and `git diff` / `git status` compare the snapshot against it.
+`GIT_WORK_TREE` is never set (an inherited one is removed), so a snapshot-local `git init` cannot
+re-point your checkout, and `GIT_OPTIONAL_LOCKS=0` stops `git status` from rewriting the index's
+stat cache. A hook that creates scratch repositories must clear `GIT_DIR` and `GIT_INDEX_FILE`, as
+it already must in a linked worktree, where git exports both. A hook's own `env` overrides any of
+these.
+
 A `stage_fixed` hook that rewrites its matched files writes into the snapshot, so the fix is
 carried back to the worktree copy — but **only where that copy is byte-identical to the index**.
 Where it differs, the author holds unstaged work the write-back must not silently overwrite or
