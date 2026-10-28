@@ -964,9 +964,11 @@ fn write_atomic(path: &std::path::Path, contents: &str) -> anyhow::Result<()> {
         // an executable script silently clears its exec bit. Creating the file with the original mode
         // makes the follow-up `fchmod` a no-op in the common case, so it is skipped then.
         #[cfg(unix)]
-        if let Some(permissions) = &original_permissions {
+        {
             use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
-            options.mode(permissions.mode() & 0o7777);
+            if let Some(permissions) = &original_permissions {
+                options.mode(permissions.mode() & 0o7777);
+            }
         }
         let mut file = options.open(&tmp)?;
         file.write_all(contents.as_bytes())?;
