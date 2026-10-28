@@ -9,6 +9,11 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ### Added
 
+- **Config key diagnostics suggest the fix.** An unknown option in a `[lint.<lang>.<engine>]` /
+  `[fmt.<lang>.<engine>]` table names the nearest key the table accepts (`Did you mean
+  \`mccabe_max_complexity\`?`), and a tool table one edit from an engine of the language
+  (`[fmt.python.rufff]`) is reported with the engine it was probably meant to be. Every registry engine
+  declares the keys of both tables; no engine table is left unchecked.
 - **SQL formatting audit.** `poly fmt` for SQL applies only the `layout` and `capitalisation` groups,
   with identifier capitalisation (`CP02`) off unless selected; a regression test now pins that mixed-case
   table, column and quoted names come through a format untouched.
