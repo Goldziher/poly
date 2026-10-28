@@ -5,7 +5,7 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
-## [Unreleased]
+## [0.30.1] - 2026-10-28
 
 ### Fixed
 
@@ -23,6 +23,10 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
   reports their findings. An enabled catalog tool whose binary is not on `PATH` now logs a warning, since the
   file can still count as checked through another engine and the missing check would otherwise look like a pass
   (Goldziher/poly#36).
+
+- **The npm package is published again.** The release workflow checked for `@goldziher/polylint` with
+  `pnpm view` in a job that never installs pnpm, so the check failed and v0.30.0 skipped npm. It uses
+  `npm view` now.
 
 [Goldziher/poly#37]: https://github.com/Goldziher/poly/issues/37
 
