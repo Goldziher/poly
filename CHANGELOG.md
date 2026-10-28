@@ -9,6 +9,9 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ### Added
 
+- **SQL formatting audit.** `poly fmt` for SQL applies only the `layout` and `capitalisation` groups,
+  with identifier capitalisation (`CP02`) off unless selected; a regression test now pins that mixed-case
+  table, column and quoted names come through a format untouched.
 - **shfmt follows `.editorconfig`, and `poly migrate` carries `shfmt -i N`.** shfmt reads
   `.editorconfig` only when given a filename, which poly never passes, so a repository indented
   with four spaces was reformatted to poly's two. poly now resolves the file's `indent_style` /

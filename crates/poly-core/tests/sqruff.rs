@@ -511,3 +511,21 @@ fn identifier_capitalisation_can_be_selected_back_on() {
         poly_core::engine::FormatOutput::Unchanged => panic!("CP02 was selected and should lower-case COLUMNS"),
     }
 }
+
+/// Table, column and alias names are the author's, not presentation. Whatever the dialect fails
+/// to recognise parses as an identifier, so the only protection is that no default-on rule
+/// re-cases an identifier: mixed-case unquoted names and a quoted one come through untouched,
+/// and a second pass changes nothing.
+#[test]
+fn format_never_re_cases_identifiers_it_was_not_asked_to() {
+    let engine = SqruffEngine;
+    let sql = "SELECT Id, userName, \"Quoted Col\"\nFROM MyTable\nWHERE OrderId = 1\n";
+    let src = make_source("t.sql", sql);
+    assert!(
+        matches!(
+            engine.format(&src, &fmt_cfg()).unwrap(),
+            poly_core::engine::FormatOutput::Unchanged
+        ),
+        "identifier casing must be left to the author"
+    );
+}
