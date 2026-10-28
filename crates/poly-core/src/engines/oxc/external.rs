@@ -436,7 +436,7 @@ mod tests {
         )
         .unwrap();
         let canned = repo.path().join("report.json");
-        std::fs::write(&canned, REPORT.replace("a.js", "tools/a.js")).unwrap();
+        std::fs::write(&canned, REPORT).unwrap();
         let bin = script(
             &repo.path().join("node_modules/.bin"),
             "oxlint",

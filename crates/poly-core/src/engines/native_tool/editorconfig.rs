@@ -209,7 +209,8 @@ mod tests {
         let repo = repo(&[(".editorconfig", "[*]\nindent_style = tab\nindent_size = 4\n")]);
         let path = repo.path().join("run.sh");
         assert_eq!(indent_for(&path), Some(Indent::Tabs));
-        let applied = apply(&cfg(""), &path);
+        let base = cfg("");
+        let applied = apply(&base, &path);
         assert_eq!(applied.options.get("use_tabs").and_then(toml::Value::as_bool), Some(true));
     }
 

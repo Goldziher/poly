@@ -3534,6 +3534,9 @@
         "indent_width": {
           "type": "integer"
         },
+        "js_plugins": {
+          "type": "string"
+        },
         "max_line_bytes": {
           "type": "integer"
         },
@@ -4164,6 +4167,9 @@
         "enabled": {
           "type": "boolean"
         },
+        "external": {
+          "type": "boolean"
+        },
         "indent_style": {
           "type": "string"
         },
@@ -4185,11 +4191,17 @@
         "operator_position": {
           "type": "string"
         },
+        "oxfmtrc": {
+          "type": "string"
+        },
         "quote_properties": {
           "type": "string"
         },
         "quote_style": {
           "type": "string"
+        },
+        "requires_oxfmt": {
+          "type": "boolean"
         },
         "rules": {
           "oneOf": [
@@ -4357,6 +4369,12 @@
       "properties": {
         "disable": {
           "type": "array"
+        },
+        "embedded": {
+          "type": "object"
+        },
+        "embedded_language_formatting": {
+          "type": "string"
         },
         "enable": {
           "type": "array"

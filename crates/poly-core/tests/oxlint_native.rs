@@ -117,7 +117,7 @@ fn fix_applies_the_nested_configs_safe_fixes_like_oxlint() {
     let file = repo.path().join("pkg/a.js");
     write(&file, "export function f() {\n  foo: for (;;) {\n    break;\n  }\n}\n");
     let config = Config::load(repo.path()).expect("load config");
-    poly_core::lint_run(&[file.clone()], &config, &options(), true, false).unwrap();
+    poly_core::lint_run(std::slice::from_ref(&file), &config, &options(), true, false).unwrap();
     let fixed = fs::read_to_string(&file).unwrap();
     assert!(!fixed.contains("foo:"), "{fixed}");
     assert!(fixed.contains("for (;;)"), "{fixed}");
