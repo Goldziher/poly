@@ -890,17 +890,11 @@ fn precommit_repo(repo_url: &str, rev: &str, hook: &str) -> tempfile::TempDir {
 }
 
 #[test]
-fn a_pre_commit_rev_that_is_a_release_poly_cannot_download_is_noted_not_dropped() {
+fn a_pre_commit_rev_for_a_downloadable_tool_at_an_unknown_release_is_a_loss() {
     let dir = precommit_repo("https://github.com/golangci/golangci-lint", "v2.1.6", "golangci-lint");
     let plan = plan(dir.path());
-    assert_eq!(
-        result(&plan, "pre-commit").absorb,
-        Absorb::Full,
-        "poly has no golangci-lint download, so the rev is information, not a loss"
-    );
-    let notes = result(&plan, "pre-commit").notes.join("\n");
-    assert!(notes.contains("rev v2.1.6 pins golangci-lint 2.1.6"), "{notes}");
-    assert!(notes.contains("runs the one on PATH"), "{notes}");
+    let lossy = unrepresented(&plan, "pre-commit").join("\n");
+    assert!(lossy.contains("pins golangci-lint 2.1.6, which poly cannot download"), "{lossy}");
     let tools = parsed(&plan);
     assert!(tools["tools"]["golangci-lint"].get("version").is_none());
 }
@@ -929,10 +923,8 @@ fn tool_versions_pins_are_reported_for_a_lefthook_catalog_tool() {
             "pre-commit:\n  jobs:\n    - name: go\n      glob: '*.go'\n      run: golangci-lint run {staged_files}\n",
         ),
     ]);
-    let plan = plan(dir.path());
-    assert_eq!(result(&plan, "lefthook").absorb, Absorb::Full);
-    let notes = result(&plan, "lefthook").notes.join("\n");
-    assert!(notes.contains(".tool-versions pins golangci-lint 1.64.8"), "{notes}");
+    let lossy = unrepresented(&plan(dir.path()), "lefthook").join("\n");
+    assert!(lossy.contains(".tool-versions pins golangci-lint 1.64.8, which poly cannot download"), "{lossy}");
 }
 
 #[test]

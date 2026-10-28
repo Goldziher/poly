@@ -203,7 +203,7 @@ mod tests {
             Unpinnable::Release(_)
         ));
         assert!(matches!(
-            unpinnable("golangci-lint", ".tool-versions", "1.0.0"),
+            unpinnable("terraform", ".tool-versions", "1.0.0"),
             Unpinnable::OnPath(_)
         ));
     }

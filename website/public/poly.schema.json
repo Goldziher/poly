@@ -2830,6 +2830,32 @@
           "type": ["boolean", "null"],
           "default": null
         },
+        "prepare_attempts": {
+          "description": "How many times the prepare step is attempted before the chart is checked\nwith the dependencies on disk (default 5). `1` disables the retry.",
+          "type": ["integer", "null"],
+          "format": "uint32",
+          "minimum": 0,
+          "default": null
+        },
+        "prepare_backoff_secs": {
+          "description": "Seconds to wait after the first failed prepare attempt (default 4); the\nwait doubles after each further failure (4, 8, 16, 32).",
+          "type": ["integer", "null"],
+          "format": "uint64",
+          "minimum": 0,
+          "default": null
+        },
+        "prepare_jitter_secs": {
+          "description": "Up to this many extra seconds, chosen at random, added to every wait so\nconcurrent runners do not retry in lockstep (default 4).",
+          "type": ["integer", "null"],
+          "format": "uint64",
+          "minimum": 0,
+          "default": null
+        },
+        "verify_skip_charts": {
+          "description": "Whether a chart in `skip_charts` is still run, and reported as a failure\nwhen the tool now succeeds on it, so the list cannot outlive its reason\n(default `true`). `false` skips such a chart without running it.",
+          "type": ["boolean", "null"],
+          "default": null
+        },
         "new_from_rev": {
           "description": "Report only findings introduced since this git revision\n(`golangci-lint --new-from-rev=<rev>`). Only for tools whose recipe has a\nnew-from-rev flag; unset reports every finding of the package.",
           "type": ["string", "null"],
