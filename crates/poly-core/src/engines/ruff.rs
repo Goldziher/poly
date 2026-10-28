@@ -59,8 +59,7 @@ mod plugins;
 
 use crate::config::EngineConfig;
 use crate::engine::{
-    Capabilities, Diagnostic, Edit, Engine, FormatOutput, OptionKeys, OptionTable, Severity, SourceFile,
-    Span,
+    Capabilities, Diagnostic, Edit, Engine, FormatOutput, OptionKeys, OptionTable, Severity, SourceFile, Span,
 };
 use crate::language::Language;
 

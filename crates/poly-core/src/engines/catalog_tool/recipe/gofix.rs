@@ -134,7 +134,9 @@ impl RecipeTool {
         }
 
         let mirror = Mirror::new()?;
-        let module = root.strip_prefix(&self.cwd).context("the module is outside the working directory")?;
+        let module = root
+            .strip_prefix(&self.cwd)
+            .context("the module is outside the working directory")?;
         let module_dir = mirror.root().join(&layout.prefix).join(module);
         copy_module(root, &module_dir)?;
         for &index in indices {
@@ -199,8 +201,7 @@ fn copy_module(source: &Path, target: &Path) -> anyhow::Result<()> {
                 copy_module(&entry.path(), &destination)?;
             }
         } else if kind.is_file() {
-            std::fs::copy(entry.path(), &destination)
-                .with_context(|| format!("copying {}", entry.path().display()))?;
+            std::fs::copy(entry.path(), &destination).with_context(|| format!("copying {}", entry.path().display()))?;
         }
     }
     Ok(())

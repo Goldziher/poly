@@ -114,10 +114,7 @@ mod tests {
 
     #[test]
     fn fenced_javascript_is_formatted() {
-        assert_eq!(
-            run("```js\nconst a={b:1}\n```\n"),
-            "```js\nconst a = { b: 1 };\n```\n"
-        );
+        assert_eq!(run("```js\nconst a={b:1}\n```\n"), "```js\nconst a = { b: 1 };\n```\n");
     }
 
     #[test]
@@ -130,10 +127,7 @@ mod tests {
 
     #[test]
     fn front_matter_is_formatted_as_yaml() {
-        assert_eq!(
-            run("---\ntitle:   x\n---\n\n# T\n"),
-            "---\ntitle: x\n---\n\n# T\n"
-        );
+        assert_eq!(run("---\ntitle:   x\n---\n\n# T\n"), "---\ntitle: x\n---\n\n# T\n");
     }
 
     #[test]

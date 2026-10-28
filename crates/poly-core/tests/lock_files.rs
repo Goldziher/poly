@@ -43,7 +43,14 @@ fn a_named_lock_file_is_skipped_by_lint() {
     let lock = repo.path().join("pnpm-lock.yaml");
     fs::write(&lock, "a: [1, 2\n").unwrap();
 
-    let run = poly_core::lint_run(std::slice::from_ref(&lock), &Config::default(), &options(), false, false).unwrap();
+    let run = poly_core::lint_run(
+        std::slice::from_ref(&lock),
+        &Config::default(),
+        &options(),
+        false,
+        false,
+    )
+    .unwrap();
 
     assert!(run.results.iter().all(|result| result.diagnostics.is_empty()));
     assert!(

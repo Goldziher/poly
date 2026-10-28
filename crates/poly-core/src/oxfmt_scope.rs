@@ -38,7 +38,11 @@ impl Scope {
             .map(|bytes| blake3::hash(&bytes).to_hex().to_string())
             .unwrap_or_default();
         let include = native.overrides.iter().map(|entry| compile(&entry.files)).collect();
-        let exclude = native.overrides.iter().map(|entry| compile(&entry.exclude_files)).collect();
+        let exclude = native
+            .overrides
+            .iter()
+            .map(|entry| compile(&entry.exclude_files))
+            .collect();
         Scope {
             native,
             digest,
@@ -134,7 +138,10 @@ pub(crate) fn path_config<'a>(cfg: &'a EngineConfig, src: &SourceFile, engine: &
             options.remove(&key);
         }
         if let Some(file) = &scope.native.file {
-            options.insert(RC_KEY.to_owned(), toml::Value::String(file.to_string_lossy().into_owned()));
+            options.insert(
+                RC_KEY.to_owned(),
+                toml::Value::String(file.to_string_lossy().into_owned()),
+            );
         }
     }
     options.extend(layer);
@@ -170,11 +177,7 @@ fn root_keys(root_rc: &str, language: &Language, engine: &str) -> Vec<String> {
 pub(crate) fn input_salt(cfg: &EngineConfig, path: &Path) -> Option<String> {
     cfg.options.get(RC_KEY)?;
     let (scope, absolute) = scope_of(path)?;
-    let matched: Vec<String> = scope
-        .matching(&absolute)
-        .iter()
-        .map(ToString::to_string)
-        .collect();
+    let matched: Vec<String> = scope.matching(&absolute).iter().map(ToString::to_string).collect();
     Some(format!("oxfmtrc:{}:{}", scope.digest, matched.join(",")))
 }
 
@@ -192,7 +195,10 @@ mod tests {
 
     fn engine_cfg(repo: &Path, indent: i64) -> EngineConfig {
         let mut options = toml::Table::new();
-        options.insert(RC_KEY.to_owned(), toml::Value::String(repo.join(".oxfmtrc.json").display().to_string()));
+        options.insert(
+            RC_KEY.to_owned(),
+            toml::Value::String(repo.join(".oxfmtrc.json").display().to_string()),
+        );
         options.insert("indent_width".to_owned(), toml::Value::Integer(indent));
         options.insert("line_width".to_owned(), toml::Value::Integer(100));
         EngineConfig {
@@ -252,7 +258,10 @@ mod tests {
         assert_eq!(resolved.indent_width, 3);
         assert!(!resolved.options.contains_key("quote_style"), "{:?}", resolved.options);
         let outside = path_config(&cfg, &source(repo.path().join("a.ts")), "oxc");
-        assert_eq!(outside.options.get("quote_style").and_then(toml::Value::as_str), Some("single"));
+        assert_eq!(
+            outside.options.get("quote_style").and_then(toml::Value::as_str),
+            Some("single")
+        );
     }
 
     #[test]
@@ -265,6 +274,15 @@ mod tests {
         let outside = |repo: &tempfile::TempDir, cfg: &EngineConfig| input_salt(cfg, &repo.path().join("armis/a.ts"));
         assert_ne!(inside(&first, &cfg_first), inside(&second, &cfg_second));
         assert_ne!(inside(&first, &cfg_first), outside(&first, &cfg_first));
-        assert_eq!(input_salt(&EngineConfig { options: toml::Table::new(), ..cfg_first }, Path::new("a.ts")), None);
+        assert_eq!(
+            input_salt(
+                &EngineConfig {
+                    options: toml::Table::new(),
+                    ..cfg_first
+                },
+                Path::new("a.ts")
+            ),
+            None
+        );
     }
 }

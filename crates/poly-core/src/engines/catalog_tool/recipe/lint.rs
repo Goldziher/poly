@@ -226,9 +226,7 @@ impl RecipeTool {
             let rel = abs
                 .strip_prefix(&root)
                 .map_or_else(|_| members[index].rel.clone(), Path::to_path_buf);
-            let dir = root
-                .strip_prefix(base)
-                .map_or_else(|_| ".".to_owned(), paths::slashed);
+            let dir = root.strip_prefix(base).map_or_else(|_| ".".to_owned(), paths::slashed);
             let dir = if dir.is_empty() { ".".to_owned() } else { dir };
             let skipped = self.units.skips(&dir);
             if skipped && !self.units.verifies_skips() {
@@ -671,7 +669,10 @@ impl Lookup {
     /// than poly's (a symlinked `/tmp`). What follows the climb is still the
     /// file's own path, so match on that tail.
     fn by_suffix(path: &Path, owners: &HashMap<PathBuf, usize>) -> Option<usize> {
-        let tail: PathBuf = path.components().skip_while(|c| matches!(c, Component::ParentDir)).collect();
+        let tail: PathBuf = path
+            .components()
+            .skip_while(|c| matches!(c, Component::ParentDir))
+            .collect();
         if tail.as_os_str().is_empty() || tail == path {
             return None;
         }

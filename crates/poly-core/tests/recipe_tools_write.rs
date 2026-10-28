@@ -75,7 +75,11 @@ fn lint_fix_applies_the_edit_a_recipe_tool_attaches_to_its_finding() {
     assert_eq!(finding.code.as_deref(), Some("old"));
     assert_eq!(finding.fix.len(), 1, "the tool's rewrite is attached as one edit");
     assert_eq!(finding.fix[0].replacement, "NEW()\n");
-    assert_eq!(std::fs::read_to_string(&build).expect("BUILD"), "OLD()\n", "a check writes nothing");
+    assert_eq!(
+        std::fs::read_to_string(&build).expect("BUILD"),
+        "OLD()\n",
+        "a check writes nothing"
+    );
 
     poly_core::lint(&[dir.path().to_path_buf()], &config, &options(), true, false).expect("lint --fix");
     assert_eq!(std::fs::read_to_string(&build).expect("BUILD"), "NEW()\n");
@@ -90,8 +94,15 @@ fn fmt_fix_writes_what_a_recipe_formatter_produces() {
     std::fs::write(&main, "resource\n").expect("main.tf");
 
     let checked = poly_core::format_run(&[dir.path().to_path_buf()], &config, &options(), false, false).expect("check");
-    assert!(checked.results.iter().any(|r| r.changed), "the formatter's change is seen");
-    assert_eq!(std::fs::read_to_string(&main).expect("main.tf"), "resource\n", "a check writes nothing");
+    assert!(
+        checked.results.iter().any(|r| r.changed),
+        "the formatter's change is seen"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&main).expect("main.tf"),
+        "resource\n",
+        "a check writes nothing"
+    );
 
     let written = poly_core::format_run(&[dir.path().to_path_buf()], &config, &options(), true, false).expect("fix");
     assert!(written.results.iter().any(|r| r.changed));

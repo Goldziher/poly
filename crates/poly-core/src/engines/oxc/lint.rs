@@ -9,8 +9,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 use oxc_allocator::Allocator;
 use oxc_diagnostics::Severity as OxcSeverity;
 use oxc_linter::{
-    AllowWarnDeny, ConfigStore, ConfigStoreBuilder, ExternalPluginStore, FixKind, LintFilter, LintOptions,
-    LintPlugins, LintService, LintServiceOptions, Linter, Message, Oxlintrc, PossibleFixes, RuntimeFileSystem,
+    AllowWarnDeny, ConfigStore, ConfigStoreBuilder, ExternalPluginStore, FixKind, LintFilter, LintOptions, LintPlugins,
+    LintService, LintServiceOptions, Linter, Message, Oxlintrc, PossibleFixes, RuntimeFileSystem,
 };
 
 use super::plugins::extra_lint_plugins;
@@ -450,7 +450,11 @@ pub(super) fn lint_js(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Ve
         return Ok(Vec::new());
     }
     let messages = if let Some(governing) = super::native_lint::governing_for(cfg, &src.path) {
-        if governing.ignore.as_ref().is_some_and(|ignore| ignore.is_ignored(&src.path)) {
+        if governing
+            .ignore
+            .as_ref()
+            .is_some_and(|ignore| ignore.is_ignored(&src.path))
+        {
             return Ok(Vec::new());
         }
         super::native_lint::run(super::native_lint::service_for(cfg, &governing.nearest)?.as_ref(), src)
@@ -686,13 +690,19 @@ level = "warning"
 
     #[test]
     fn safe_fixes_are_attached_to_the_diagnostic() {
-        let src = make_src("export function f() {\n  foo: for (;;) {\n    break;\n  }\n}\n", Language::JavaScript);
+        let src = make_src(
+            "export function f() {\n  foo: for (;;) {\n    break;\n  }\n}\n",
+            Language::JavaScript,
+        );
         let diags = lint_js(&src, &default_cfg()).unwrap();
         let unused = diags
             .iter()
             .find(|d| d.code.as_deref() == Some("no-unused-labels"))
             .expect("the unused label is reported");
-        assert!(!unused.fix.is_empty(), "oxlint --fix removes the label; got: {unused:#?}");
+        assert!(
+            !unused.fix.is_empty(),
+            "oxlint --fix removes the label; got: {unused:#?}"
+        );
     }
 
     #[test]

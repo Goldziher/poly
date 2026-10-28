@@ -550,7 +550,10 @@ impl Engine for NativeToolEngine {
             .iter()
             .any(|each| each.indent_width != first.indent_width || tabs::use_tabs(each) != tabs::use_tabs(first))
         {
-            anyhow::bail!("{} files in this batch are indented differently; not batching", self.name());
+            anyhow::bail!(
+                "{} files in this batch are indented differently; not batching",
+                self.name()
+            );
         }
         let results = format_batch_via_tool(self.role.spec(), batch, first.indent_width, tabs::use_tabs(first))?;
         Ok(results

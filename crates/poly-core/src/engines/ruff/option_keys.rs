@@ -107,7 +107,10 @@ pub(super) const LINT: &[(&str, OptionType)] = &[
     // ── flake8-boolean-trap, bugbear, comprehensions, errmsg, implicit-str-concat, unused-arguments ──
     ("flake8_boolean_trap_extend_allowed_calls", OptionType::ARRAY),
     ("flake8_bugbear_extend_immutable_calls", OptionType::ARRAY),
-    ("flake8_comprehensions_allow_dict_calls_with_keyword_arguments", OptionType::BOOLEAN),
+    (
+        "flake8_comprehensions_allow_dict_calls_with_keyword_arguments",
+        OptionType::BOOLEAN,
+    ),
     ("flake8_errmsg_max_string_length", OptionType::INTEGER),
     ("flake8_implicit_str_concat_allow_multiline", OptionType::BOOLEAN),
     ("flake8_unused_arguments_ignore_variadic_names", OptionType::BOOLEAN),

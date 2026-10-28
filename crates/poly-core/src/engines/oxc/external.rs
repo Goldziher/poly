@@ -87,7 +87,11 @@ pub(super) fn lint_batch(
         let Some(governing) = super::native_lint::governing_for(cfg, &src.path) else {
             continue;
         };
-        if governing.ignore.as_ref().is_some_and(|ignore| ignore.is_ignored(&src.path)) {
+        if governing
+            .ignore
+            .as_ref()
+            .is_some_and(|ignore| ignore.is_ignored(&src.path))
+        {
             continue;
         }
         if declares_js_plugins(&governing.nearest) {
@@ -351,7 +355,11 @@ mod tests {
         let fake = script(
             &repo.path().join("bin"),
             "oxlint",
-            &format!("printf '%s\\n' \"$@\" > '{}/args.txt'\ncat '{}'", repo.path().display(), canned.display()),
+            &format!(
+                "printf '%s\\n' \"$@\" > '{}/args.txt'\ncat '{}'",
+                repo.path().display(),
+                canned.display()
+            ),
         );
         let file = repo.path().join("a.js");
         let src = source(&file);
@@ -363,7 +371,10 @@ mod tests {
         assert_eq!(codes, ["my-plugin/no-foo", "no-debugger"]);
         assert_eq!(results[0][0].severity, Severity::Error);
         assert_eq!(results[0][0].span.as_ref().unwrap().start_line, 2);
-        assert_eq!(results[0][1].description.as_deref(), Some("Remove the debugger statement"));
+        assert_eq!(
+            results[0][1].description.as_deref(),
+            Some("Remove the debugger statement")
+        );
         let args = std::fs::read_to_string(repo.path().join("args.txt")).unwrap();
         assert!(args.contains("--disable-nested-config"), "{args}");
         assert!(args.contains("--format\njson"), "{args}");
@@ -385,7 +396,11 @@ mod tests {
     #[test]
     fn a_failing_oxfmt_leaves_the_file_to_the_in_process_formatter() {
         let repo = tempfile::tempdir().unwrap();
-        script(&repo.path().join("node_modules/.bin"), "oxfmt", "cat > /dev/null\nexit 2");
+        script(
+            &repo.path().join("node_modules/.bin"),
+            "oxfmt",
+            "cat > /dev/null\nexit 2",
+        );
         let src = source(&repo.path().join("a.tsx"));
         assert_eq!(format_with_oxfmt(&src, None), None);
     }
@@ -447,11 +462,7 @@ mod tests {
         let cfg = EngineConfig {
             globals: GlobalDefaults::default(),
             indent_width: 2,
-            options: toml::from_str(&format!(
-                "js_plugins = \"external\"\noxlintrc = \"{}\"",
-                root.display()
-            ))
-            .unwrap(),
+            options: toml::from_str(&format!("js_plugins = \"external\"\noxlintrc = \"{}\"", root.display())).unwrap(),
         };
         let plain = source(&repo.path().join("a.js"));
         let governed = source(&repo.path().join("tools/a.js"));

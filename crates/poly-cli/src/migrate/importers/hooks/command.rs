@@ -479,7 +479,12 @@ fn golangci(args: &[&str]) -> Recognition {
         extra_args: extra,
         ..ToolSettings::default()
     };
-    configured(target, &["golangci-lint"], vec![("golangci-lint", settings)], Vec::new())
+    configured(
+        target,
+        &["golangci-lint"],
+        vec![("golangci-lint", settings)],
+        Vec::new(),
+    )
 }
 
 /// `dev_tools/go/lint_changed.sh`: runs `golangci-lint run -c .golangci.yml
@@ -525,7 +530,12 @@ fn actionlint(args: &[&str]) -> Recognition {
         extra_args: extra,
         ..ToolSettings::default()
     };
-    configured(Target::Lint, &["actionlint"], vec![("actionlint", settings)], Vec::new())
+    configured(
+        Target::Lint,
+        &["actionlint"],
+        vec![("actionlint", settings)],
+        Vec::new(),
+    )
 }
 
 /// `checkstyle -c checkstyle.xml -p checkstyle.properties files`.
@@ -586,7 +596,12 @@ fn pyproject_fmt(args: &[&str]) -> Recognition {
         extra_args: args.iter().map(|a| (*a).to_string()).collect(),
         ..ToolSettings::default()
     };
-    configured(Target::Fmt, &["pyproject-fmt"], vec![("pyproject-fmt", settings)], Vec::new())
+    configured(
+        Target::Fmt,
+        &["pyproject-fmt"],
+        vec![("pyproject-fmt", settings)],
+        Vec::new(),
+    )
 }
 
 /// `buildifier -mode=fix -lint=fix --warnings=... files`: `-lint=fix` shapes the
@@ -627,7 +642,14 @@ fn terraform(program: &'static str, catalog_tools: &'static [&'static str], args
         Target::Fmt,
         catalog_tools,
         &args[1..],
-        &["-check", "-diff", "-list=false", "-write=true", "-write=false", "-no-color"],
+        &[
+            "-check",
+            "-diff",
+            "-list=false",
+            "-write=true",
+            "-write=false",
+            "-no-color",
+        ],
     )
 }
 
@@ -748,8 +770,12 @@ mod tests {
 
     #[test]
     fn in_place_formatters_are_fix_mode_and_their_check_modes_are_not() {
-        assert!(fixes("bash dev_tools/checkstyle/run_palantir_format.sh --replace {staged_files}"));
-        assert!(!fixes("bash dev_tools/checkstyle/run_checkstyle.sh -c checkstyle.xml {staged_files}"));
+        assert!(fixes(
+            "bash dev_tools/checkstyle/run_palantir_format.sh --replace {staged_files}"
+        ));
+        assert!(!fixes(
+            "bash dev_tools/checkstyle/run_checkstyle.sh -c checkstyle.xml {staged_files}"
+        ));
         assert!(fixes("pyproject-fmt --keep-full-version {staged_files}"));
         assert!(!fixes("pyproject-fmt --check {staged_files}"));
         assert!(fixes("buildifier -mode=fix -lint=fix {staged_files}"));
@@ -824,7 +850,10 @@ mod tests {
 
     #[test]
     fn actionlint_ignores_become_extra_args() {
-        let settings = settings_of("actionlint -ignore 'SC2129' -ignore 'SC2016' {staged_files}", "actionlint");
+        let settings = settings_of(
+            "actionlint -ignore 'SC2129' -ignore 'SC2016' {staged_files}",
+            "actionlint",
+        );
         assert_eq!(settings.extra_args, ["-ignore", "SC2129", "-ignore", "SC2016"]);
     }
 
@@ -885,7 +914,9 @@ mod tests {
     #[test]
     fn launcher_scripts_resolve_to_the_tool_they_start() {
         assert_eq!(
-            target("bash dev_tools/checkstyle/run_checkstyle.sh -c checkstyle.xml -p checkstyle.properties {staged_files}"),
+            target(
+                "bash dev_tools/checkstyle/run_checkstyle.sh -c checkstyle.xml -p checkstyle.properties {staged_files}"
+            ),
             Some((Target::Lint, vec!["checkstyle"]))
         );
         assert_eq!(

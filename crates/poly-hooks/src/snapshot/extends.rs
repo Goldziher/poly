@@ -112,8 +112,14 @@ mod tests {
 
     #[test]
     fn a_target_is_resolved_against_the_config_directory() {
-        assert_eq!(resolve(Path::new("pkg/sub"), "../../shared/base.toml").as_deref(), Some("shared/base.toml"));
-        assert_eq!(resolve(Path::new("pkg"), "./base.toml").as_deref(), Some("pkg/base.toml"));
+        assert_eq!(
+            resolve(Path::new("pkg/sub"), "../../shared/base.toml").as_deref(),
+            Some("shared/base.toml")
+        );
+        assert_eq!(
+            resolve(Path::new("pkg"), "./base.toml").as_deref(),
+            Some("pkg/base.toml")
+        );
     }
 
     #[test]

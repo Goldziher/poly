@@ -215,7 +215,10 @@ mod tests {
                 "{span:?}"
             );
         }
-        assert_eq!(splicer.content, "FROM alpine\n", "a rejected splice leaves the buffer untouched");
+        assert_eq!(
+            splicer.content, "FROM alpine\n",
+            "a rejected splice leaves the buffer untouched"
+        );
     }
 
     #[test]

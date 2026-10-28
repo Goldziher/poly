@@ -21,10 +21,10 @@ mod lex;
 use hcl_edit::parser as hcl_edit_parser;
 
 use crate::config::EngineConfig;
-use crate::engine_guard::refuse_pathological_nesting;
 use crate::engine::{
     Capabilities, Diagnostic, Engine, FormatOutput, OptionKeys, OptionTable, Severity, SourceFile, Span,
 };
+use crate::engine_guard::refuse_pathological_nesting;
 use crate::language::Language;
 
 /// Version string used as the Engine cache key; bump the suffix whenever formatter output changes.

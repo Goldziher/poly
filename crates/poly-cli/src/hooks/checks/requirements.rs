@@ -93,7 +93,11 @@ fn sorted(text: &str) -> Option<String> {
             continue;
         };
         if first && line.trim().is_empty() {
-            if requirement.comments.first().is_some_and(|comment| comment.starts_with('#')) {
+            if requirement
+                .comments
+                .first()
+                .is_some_and(|comment| comment.starts_with('#'))
+            {
                 requirement.value = Some(TOP_COMMENT.to_owned());
             } else {
                 requirement.comments.push(line.clone());
@@ -111,7 +115,8 @@ fn sorted(text: &str) -> Option<String> {
         Vec::new()
     };
     requirements.retain(|requirement| requirement.value.as_deref() != Some(PKG_RESOURCES));
-    requirements.sort_by_cached_key(|requirement| (requirement.value.as_deref() != Some(TOP_COMMENT), requirement.name()));
+    requirements
+        .sort_by_cached_key(|requirement| (requirement.value.as_deref() != Some(TOP_COMMENT), requirement.name()));
 
     let mut after = String::with_capacity(text.len() + 1);
     for requirement in requirements {
@@ -182,7 +187,10 @@ mod tests {
 
     #[test]
     fn a_continued_requirement_is_one_unit() {
-        assert_eq!(fixed("b==1\na==1 \\\n    --hash=sha256:x\n"), "a==1 \\\n    --hash=sha256:x\nb==1\n");
+        assert_eq!(
+            fixed("b==1\na==1 \\\n    --hash=sha256:x\n"),
+            "a==1 \\\n    --hash=sha256:x\nb==1\n"
+        );
     }
 
     #[test]

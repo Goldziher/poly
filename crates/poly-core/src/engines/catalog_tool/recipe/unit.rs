@@ -317,7 +317,11 @@ type Prepared = Arc<OnceLock<Result<(), String>>>;
 
 /// Run `step` once per `(root, argv)` for the process, however many tools or
 /// files ask.
-pub(super) fn once_per_root(root: &Path, argv: &[String], step: impl FnOnce() -> Result<(), String>) -> Result<(), String> {
+pub(super) fn once_per_root(
+    root: &Path,
+    argv: &[String],
+    step: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
     static MEMO: OnceLock<Mutex<HashMap<String, Prepared>>> = OnceLock::new();
     let key = format!("{}\u{1e}{}", root.display(), argv.join("\u{1f}"));
     let cell = {
@@ -375,7 +379,10 @@ mod tests {
         std::fs::write(dir.path().join("charts/common-1.2.0.tgz"), "").expect("common");
         assert!(!dependencies_in_place(dir.path()), "redis is missing");
         std::fs::write(dir.path().join("charts/redis-19.0.0.tgz"), "").expect("stale redis");
-        assert!(!dependencies_in_place(dir.path()), "a stale version does not satisfy the lock");
+        assert!(
+            !dependencies_in_place(dir.path()),
+            "a stale version does not satisfy the lock"
+        );
         std::fs::write(dir.path().join("charts/redis-19.0.1.tgz"), "").expect("redis");
         assert!(dependencies_in_place(dir.path()));
     }
@@ -417,7 +424,12 @@ mod tests {
         assert_eq!(outcome, Err("throttled 5".to_owned()), "the last failure is reported");
         assert_eq!(runs, 5);
         assert_eq!(waits.len(), 4);
-        assert!(waits.iter().zip([4, 8, 16, 32]).all(|(wait, base)| (base..=base + 4).contains(wait)));
+        assert!(
+            waits
+                .iter()
+                .zip([4, 8, 16, 32])
+                .all(|(wait, base)| (base..=base + 4).contains(wait))
+        );
     }
 
     #[test]

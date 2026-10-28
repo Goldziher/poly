@@ -86,7 +86,8 @@ fn a_known_language_is_never_reported_as_a_typo() {
 
 #[test]
 fn sub_tables_of_the_yaml_formatter_that_it_never_reads_are_reported() {
-    let found = warnings("[fmt.yaml.yaml.language]\nquotes = \"prefer_single\"\n[fmt.yaml.yaml.layout]\nprint_width = 80\n");
+    let found =
+        warnings("[fmt.yaml.yaml.language]\nquotes = \"prefer_single\"\n[fmt.yaml.yaml.layout]\nprint_width = 80\n");
     assert_eq!(found.len(), 2, "got {:?}", titles(&found));
     assert!(found.iter().all(|d| d.title.starts_with("unknown option")));
 }
@@ -503,7 +504,10 @@ const ENGINE_SOURCES: &[(&str, &[&str])] = &[
         &["mago/mod.rs", "mago/lint.rs", "mago/format.rs", "mago/rules.rs"],
     ),
     ("sqruff", &["sqruff.rs"]),
-    ("rumdl", &["rumdl.rs", "markdown_fmt.rs", "markdown_embed.rs", "core_options.rs"]),
+    (
+        "rumdl",
+        &["rumdl.rs", "markdown_fmt.rs", "markdown_embed.rs", "core_options.rs"],
+    ),
     ("taplo", &["taplo.rs", "core_options.rs"]),
     ("yaml", &["yaml.rs", "core_options.rs"]),
     ("malva", &["malva.rs", "core_options.rs"]),

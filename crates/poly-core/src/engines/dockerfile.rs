@@ -606,7 +606,8 @@ extend_select = ["DL3000"]
         let src = SourceFile {
             path: "Dockerfile".into(),
             language: Language::Dockerfile,
-            content: "FROM alpine:3\nHEALTHCHECK CMD docker inspect --format '{{.State.Running}}' x\nWORKDIR app\n".into(),
+            content: "FROM alpine:3\nHEALTHCHECK CMD docker inspect --format '{{.State.Running}}' x\nWORKDIR app\n"
+                .into(),
         };
         assert_eq!(engine.skip_reason(&src), None);
         let diags = engine.lint(&src, &engine_cfg()).unwrap();

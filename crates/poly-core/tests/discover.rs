@@ -483,7 +483,10 @@ fn a_git_tracked_build_directory_is_discovered_and_an_untracked_one_is_pruned() 
     let (discovered, report) = discover_reporting(&[root.to_path_buf()], &cfg, &[], false);
     let paths: Vec<_> = discovered.iter().map(|f| f.path.as_path()).collect();
 
-    assert!(paths.contains(&tracked.as_path()), "tracked build/ is source: {paths:?}");
+    assert!(
+        paths.contains(&tracked.as_path()),
+        "tracked build/ is source: {paths:?}"
+    );
     assert!(
         paths.contains(&tracked_target.as_path()),
         "tracked target/ is source: {paths:?}"
@@ -492,7 +495,10 @@ fn a_git_tracked_build_directory_is_discovered_and_an_untracked_one_is_pruned() 
         !paths.contains(&untracked.as_path()),
         "untracked build/ is output: {paths:?}"
     );
-    assert!(!paths.contains(&cache.as_path()), "node_modules stays pruned: {paths:?}");
+    assert!(
+        !paths.contains(&cache.as_path()),
+        "node_modules stays pruned: {paths:?}"
+    );
     assert!(
         report
             .pruned_samples
@@ -610,7 +616,10 @@ fn discovery_replays_the_walk_the_config_scan_already_made() {
 
     let first = discover(&roots, &configs, &[]);
     assert!(has(&first, "kept.py"), "{first:?}");
-    assert!(!has(&first, "late.py"), "the first discovery replays the scan: {first:?}");
+    assert!(
+        !has(&first, "late.py"),
+        "the first discovery replays the scan: {first:?}"
+    );
 
     let second = discover(&roots, &configs, &[]);
     assert!(has(&second, "late.py"), "the snapshot is consumed once: {second:?}");

@@ -128,7 +128,10 @@ const CASES: &[Case] = &[
         tuned: || {
             vec![
                 select("I002"),
-                ("isort_required_imports", strings(&["from __future__ import annotations"])),
+                (
+                    "isort_required_imports",
+                    strings(&["from __future__ import annotations"]),
+                ),
             ]
         },
         fires_when_tuned: true,
@@ -146,7 +149,12 @@ const CASES: &[Case] = &[
         code: "ANN201",
         source: "def f(a: int):\n    pass\n",
         base: || vec![select("ANN201")],
-        tuned: || vec![select("ANN201"), ("flake8_annotations_suppress_none_returning", flag(true))],
+        tuned: || {
+            vec![
+                select("ANN201"),
+                ("flake8_annotations_suppress_none_returning", flag(true)),
+            ]
+        },
         fires_when_tuned: false,
     },
     Case {
@@ -170,7 +178,12 @@ const CASES: &[Case] = &[
         code: "ANN001",
         source: "def f(a):\n    pass\n",
         base: || vec![select("ANN001")],
-        tuned: || vec![select("ANN001"), ("flake8_annotations_ignore_fully_untyped", flag(true))],
+        tuned: || {
+            vec![
+                select("ANN001"),
+                ("flake8_annotations_ignore_fully_untyped", flag(true)),
+            ]
+        },
         fires_when_tuned: false,
     },
     Case {
@@ -194,7 +207,10 @@ const CASES: &[Case] = &[
         tuned: || {
             vec![
                 select("S108"),
-                ("flake8_bandit_hardcoded_tmp_directory_extend", strings(&["/mnt/scratch"])),
+                (
+                    "flake8_bandit_hardcoded_tmp_directory_extend",
+                    strings(&["/mnt/scratch"]),
+                ),
             ]
         },
         fires_when_tuned: true,
@@ -215,7 +231,10 @@ const CASES: &[Case] = &[
         tuned: || {
             vec![
                 select("FBT003"),
-                ("flake8_boolean_trap_extend_allowed_calls", strings(&["mylib.configure"])),
+                (
+                    "flake8_boolean_trap_extend_allowed_calls",
+                    strings(&["mylib.configure"]),
+                ),
             ]
         },
         fires_when_tuned: false,
@@ -249,7 +268,10 @@ const CASES: &[Case] = &[
         tuned: || {
             vec![
                 select("C408"),
-                ("flake8_comprehensions_allow_dict_calls_with_keyword_arguments", flag(true)),
+                (
+                    "flake8_comprehensions_allow_dict_calls_with_keyword_arguments",
+                    flag(true),
+                ),
             ]
         },
         fires_when_tuned: false,
@@ -267,7 +289,12 @@ const CASES: &[Case] = &[
         code: "CPY001",
         source: "# Copyright 2024 Acme\nx = 1\n",
         base: || vec![select("CPY001")],
-        tuned: || vec![select("CPY001"), ("flake8_copyright_notice_rgx", text("Licensed under"))],
+        tuned: || {
+            vec![
+                select("CPY001"),
+                ("flake8_copyright_notice_rgx", text("Licensed under")),
+            ]
+        },
         fires_when_tuned: true,
     },
     Case {
@@ -312,7 +339,12 @@ const CASES: &[Case] = &[
         code: "ISC002",
         source: "x = (\"a\"\n     \"b\")\n",
         base: || vec![select("ISC002")],
-        tuned: || vec![select("ISC002"), ("flake8_implicit_str_concat_allow_multiline", flag(false))],
+        tuned: || {
+            vec![
+                select("ISC002"),
+                ("flake8_implicit_str_concat_allow_multiline", flag(false)),
+            ]
+        },
         fires_when_tuned: true,
     },
     Case {
@@ -328,7 +360,12 @@ const CASES: &[Case] = &[
         code: "SLF001",
         source: "def f(x):\n    return x._secret\n",
         base: || vec![select("SLF001")],
-        tuned: || vec![select("SLF001"), ("flake8_self_extend_ignore_names", strings(&["_secret"]))],
+        tuned: || {
+            vec![
+                select("SLF001"),
+                ("flake8_self_extend_ignore_names", strings(&["_secret"])),
+            ]
+        },
         fires_when_tuned: false,
     },
     Case {
@@ -394,7 +431,12 @@ const CASES: &[Case] = &[
         code: "ARG001",
         source: "def f(*args):\n    return 1\n",
         base: || vec![select("ARG001")],
-        tuned: || vec![select("ARG001"), ("flake8_unused_arguments_ignore_variadic_names", flag(true))],
+        tuned: || {
+            vec![
+                select("ARG001"),
+                ("flake8_unused_arguments_ignore_variadic_names", flag(true)),
+            ]
+        },
         fires_when_tuned: false,
     },
     Case {
@@ -402,7 +444,12 @@ const CASES: &[Case] = &[
         code: "D102",
         source: "from lib import custom\n\n\nclass C:\n    \"\"\"Doc.\"\"\"\n\n    @custom\n    def method(self):\n        pass\n",
         base: || vec![select("D102")],
-        tuned: || vec![select("D102"), ("pydocstyle_ignore_decorators", strings(&["lib.custom"]))],
+        tuned: || {
+            vec![
+                select("D102"),
+                ("pydocstyle_ignore_decorators", strings(&["lib.custom"])),
+            ]
+        },
         fires_when_tuned: false,
     },
     Case {
@@ -410,7 +457,12 @@ const CASES: &[Case] = &[
         code: "D401",
         source: "from lib import cached\n\n\nclass C:\n    \"\"\"Doc.\"\"\"\n\n    @cached\n    def value(self):\n        \"\"\"Returns the value.\"\"\"\n        return 1\n",
         base: || vec![select("D401")],
-        tuned: || vec![select("D401"), ("pydocstyle_property_decorators", strings(&["lib.cached"]))],
+        tuned: || {
+            vec![
+                select("D401"),
+                ("pydocstyle_property_decorators", strings(&["lib.cached"])),
+            ]
+        },
         fires_when_tuned: false,
     },
     Case {
@@ -432,7 +484,13 @@ const CASES: &[Case] = &[
         code: "DOC201",
         source: "def f():\n    \"\"\"Return one.\"\"\"\n    return 1\n",
         base: || vec![select("DOC201"), preview()],
-        tuned: || vec![select("DOC201"), preview(), ("pydoclint_ignore_one_line_docstrings", flag(true))],
+        tuned: || {
+            vec![
+                select("DOC201"),
+                preview(),
+                ("pydoclint_ignore_one_line_docstrings", flag(true)),
+            ]
+        },
         fires_when_tuned: false,
     },
     Case {
@@ -440,7 +498,12 @@ const CASES: &[Case] = &[
         code: "F401",
         source: "import hvplot.pandas\n",
         base: || vec![select("F401")],
-        tuned: || vec![select("F401"), ("pyflakes_allowed_unused_imports", strings(&["hvplot.pandas"]))],
+        tuned: || {
+            vec![
+                select("F401"),
+                ("pyflakes_allowed_unused_imports", strings(&["hvplot.pandas"])),
+            ]
+        },
         fires_when_tuned: false,
     },
     Case {
@@ -462,7 +525,13 @@ const CASES: &[Case] = &[
         code: "RUF031",
         source: "d = {}\nd[1, 2]\n",
         base: || vec![select("RUF031"), preview()],
-        tuned: || vec![select("RUF031"), preview(), ("ruff_parenthesize_tuple_in_subscript", flag(true))],
+        tuned: || {
+            vec![
+                select("RUF031"),
+                preview(),
+                ("ruff_parenthesize_tuple_in_subscript", flag(true)),
+            ]
+        },
         fires_when_tuned: true,
     },
 ];
@@ -491,7 +560,10 @@ fn a_malformed_required_import_is_ignored_not_fatal() {
 
 #[test]
 fn a_relative_required_import_is_demanded() {
-    let options = vec![select("I002"), ("isort_required_imports", strings(&["from . import sibling"]))];
+    let options = vec![
+        select("I002"),
+        ("isort_required_imports", strings(&["from . import sibling"])),
+    ];
     assert!(fires("I002", "x = 1\n", options));
 }
 
@@ -506,7 +578,10 @@ fn formatted(path: &str, options: Options) -> bool {
 fn format_exclude_keeps_the_formatter_away_from_matching_files() {
     let exclude = || vec![("exclude", strings(&["gen"]))];
     assert!(formatted("pkg/gen/x.py", Vec::new()), "unexcluded files are formatted");
-    assert!(!formatted("pkg/gen/x.py", exclude()), "a directory pattern covers its contents");
+    assert!(
+        !formatted("pkg/gen/x.py", exclude()),
+        "a directory pattern covers its contents"
+    );
     assert!(formatted("pkg/src/x.py", exclude()), "other files are still formatted");
 }
 

@@ -193,7 +193,10 @@ mod tests {
         let dir = tempfile::tempdir().expect("dir");
         std::fs::write(dir.path().join(".tool-versions"), "buf 1.0.0\n").expect("write");
         std::fs::write(dir.path().join(".buf-version"), "1.2.3\n").expect("write");
-        assert_eq!(pin_for(dir.path(), "buf").map(|pin| pin.version).as_deref(), Some("1.2.3"));
+        assert_eq!(
+            pin_for(dir.path(), "buf").map(|pin| pin.version).as_deref(),
+            Some("1.2.3")
+        );
     }
 
     #[test]

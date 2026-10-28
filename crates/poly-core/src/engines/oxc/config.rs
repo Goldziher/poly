@@ -234,7 +234,10 @@ pub(super) fn sorted_package_json(src: &SourceFile, cfg: &EngineConfig) -> Optio
     }
     let sort_scripts = match cfg.options.get("sort_package_json")? {
         toml::Value::Boolean(true) => false,
-        toml::Value::Table(table) => table.get("sort_scripts").and_then(toml::Value::as_bool).unwrap_or(false),
+        toml::Value::Table(table) => table
+            .get("sort_scripts")
+            .and_then(toml::Value::as_bool)
+            .unwrap_or(false),
         _ => return None,
     };
     let options = sort_package_json::SortOptions::new()

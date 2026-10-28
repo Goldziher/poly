@@ -566,8 +566,18 @@ mod tests {
 
     #[test]
     fn from_path_does_not_steal_dockerfile_lookalikes() {
-        for name in ["dockerfile_parse.py", "dockerfile-notes.md", "dockerfilex", "my-dockerfile", "a.dockerignore"] {
-            assert_ne!(Language::from_path(Path::new(name)), Some(Language::Dockerfile), "{name}");
+        for name in [
+            "dockerfile_parse.py",
+            "dockerfile-notes.md",
+            "dockerfilex",
+            "my-dockerfile",
+            "a.dockerignore",
+        ] {
+            assert_ne!(
+                Language::from_path(Path::new(name)),
+                Some(Language::Dockerfile),
+                "{name}"
+            );
         }
     }
 

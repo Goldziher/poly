@@ -359,8 +359,15 @@ fn a_findings_all_tool_is_keyed_to_its_root_digest_not_to_the_process() {
 
     let salt = tool.cache_salt(&template.path).expect("a findings=all tool is salted");
 
-    assert!(!salt.starts_with("run-"), "the salt is a digest, not a process nonce: {salt}");
-    assert_eq!(salt, tool.cache_salt(&template.path).expect("salted"), "stable across calls");
+    assert!(
+        !salt.starts_with("run-"),
+        "the salt is a digest, not a process nonce: {salt}"
+    );
+    assert_eq!(
+        salt,
+        tool.cache_salt(&template.path).expect("salted"),
+        "stable across calls"
+    );
     let other = tempfile::tempdir().expect("other chart");
     std::fs::write(other.path().join("Chart.yaml"), "name: d\n").expect("chart");
     std::fs::create_dir_all(other.path().join("templates")).expect("templates");
@@ -423,7 +430,8 @@ fn each_chart_gets_its_own_values_files_and_unverified_skipped_charts_are_not_ru
     assert_eq!(fx.invocations(), 2, "the library chart is skipped:\n{log}");
     assert!(
         log.lines()
-            .any(|l| l.contains("/apps/a lint . -f ") && l.ends_with(&format!("render/all.yaml -f {root}/render/a.yaml"))),
+            .any(|l| l.contains("/apps/a lint . -f ")
+                && l.ends_with(&format!("render/all.yaml -f {root}/render/a.yaml"))),
         "chart a gets the shared and its own values:\n{log}"
     );
     assert!(
@@ -478,7 +486,10 @@ fn a_chart_with_missing_dependencies_is_prepared_once_before_it_is_linted() {
     .expect("needy chart");
     std::fs::create_dir_all(fx.dir.path().join("plain")).expect("plain");
     std::fs::write(fx.dir.path().join("plain/Chart.yaml"), "name: plain\n").expect("plain chart");
-    let files = vec![fx.file("needy/values.yaml", "a: 1\n"), fx.file("plain/values.yaml", "a: 1\n")];
+    let files = vec![
+        fx.file("needy/values.yaml", "a: 1\n"),
+        fx.file("plain/values.yaml", "a: 1\n"),
+    ];
     let tool = fx.tool(
         "lint $ROOT",
         chart_recipe(serde_json::json!({"prepare": "prep"})),
@@ -550,7 +561,12 @@ fn a_prepare_step_that_recovers_is_not_attempted_again() {
     let mut config = fx.config(fx.script("helm", FLAKY_PREPARE));
     config.prepare_backoff_secs = Some(0);
     config.prepare_jitter_secs = Some(0);
-    let tool = fx.tool("lint $ROOT", chart_recipe(serde_json::json!({"prepare": "prep"})), Role::Lint, &config);
+    let tool = fx.tool(
+        "lint $ROOT",
+        chart_recipe(serde_json::json!({"prepare": "prep"})),
+        Role::Lint,
+        &config,
+    );
 
     tool.lint_files(&refs(&files));
 
@@ -564,7 +580,12 @@ fn prepare_attempts_bounds_the_retries() {
     let files = needy_chart(&fx);
     let mut config = fx.config(fx.script("helm", FLAKY_PREPARE));
     config.prepare_attempts = Some(1);
-    let tool = fx.tool("lint $ROOT", chart_recipe(serde_json::json!({"prepare": "prep"})), Role::Lint, &config);
+    let tool = fx.tool(
+        "lint $ROOT",
+        chart_recipe(serde_json::json!({"prepare": "prep"})),
+        Role::Lint,
+        &config,
+    );
 
     let results = tool.lint_files(&refs(&files));
 
@@ -598,7 +619,8 @@ fn a_skipped_chart_that_now_succeeds_fails_the_run() {
 fn a_skipped_chart_that_still_fails_stays_skipped() {
     let fx = Fixture::new();
     let files = library_chart(&fx);
-    let failing = "#!/bin/sh\necho \"$PWD $*\" >> \"$POLY_TEST_LOG\"\necho 'library charts cannot be rendered' >&2\nexit 1\n";
+    let failing =
+        "#!/bin/sh\necho \"$PWD $*\" >> \"$POLY_TEST_LOG\"\necho 'library charts cannot be rendered' >&2\nexit 1\n";
     let mut config = fx.config(fx.script("helm", failing));
     config.skip_charts = vec!["lib/*".to_owned()];
     let tool = fx.tool("lint $ROOT", chart_recipe(serde_json::json!({})), Role::Lint, &config);
@@ -718,7 +740,11 @@ fn a_goos_matrix_runs_once_per_os_and_merges_the_findings() {
         .map(|d| d.title.clone())
         .collect();
     titles.sort();
-    assert_eq!(titles, ["everywhere", "only linux", "only windows"], "shared findings are not doubled");
+    assert_eq!(
+        titles,
+        ["everywhere", "only linux", "only windows"],
+        "shared findings are not doubled"
+    );
 }
 
 #[test]
@@ -738,7 +764,11 @@ fn editing_the_config_file_a_tool_discovers_changes_the_cache_identity() {
     let after = fx.tool("lint $FILES:--path", recipe, Role::Lint, &config);
 
     assert_eq!(before.version(), unchanged.version());
-    assert_ne!(before.version(), after.version(), "a changed buf.yaml must not serve cached verdicts");
+    assert_ne!(
+        before.version(),
+        after.version(),
+        "a changed buf.yaml must not serve cached verdicts"
+    );
 }
 
 #[test]
@@ -938,7 +968,10 @@ fn go_package_directories_follow_the_dot_dot_dot_pattern() {
 
     let log = std::fs::read_to_string(&fx.log).expect("log");
     assert_eq!(fx.invocations(), 1, "one module, one run:\n{log}");
-    assert!(log.trim_end().ends_with("run ./pkg"), "only the package directory is passed: {log}");
+    assert!(
+        log.trim_end().ends_with("run ./pkg"),
+        "only the package directory is passed: {log}"
+    );
     assert!(results.iter().all(|r| r.as_ref().is_ok_and(Vec::is_empty)));
 }
 

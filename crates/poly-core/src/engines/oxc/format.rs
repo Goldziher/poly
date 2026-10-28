@@ -77,7 +77,11 @@ pub(super) fn format_js(src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<
     if super::external::format_requested(cfg)
         && cfg.options.get("requires_oxfmt").and_then(toml::Value::as_bool) == Some(true)
     {
-        let config = cfg.options.get("oxfmtrc").and_then(toml::Value::as_str).map(std::path::Path::new);
+        let config = cfg
+            .options
+            .get("oxfmtrc")
+            .and_then(toml::Value::as_str)
+            .map(std::path::Path::new);
         if let Some(code) = super::external::format_with_oxfmt(src, config) {
             return Ok(if code == *src.content {
                 FormatOutput::Unchanged
@@ -223,7 +227,10 @@ mod tests {
             "{\n  \"files\": [\n    \"dist\"\n  ]\n}\n"
         );
         let plain = make_src("{ \"files\": [\"dist\"] }\n", Language::Json);
-        assert!(matches!(format_json(&plain, &default_cfg()).unwrap(), FormatOutput::Unchanged));
+        assert!(matches!(
+            format_json(&plain, &default_cfg()).unwrap(),
+            FormatOutput::Unchanged
+        ));
     }
 
     #[test]

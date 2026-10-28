@@ -30,8 +30,8 @@ mod canon;
 mod scan;
 
 use canon::Canon;
-use scan::{WalkSnapshot, scan_config_dirs};
 pub(crate) use scan::RootSnapshot;
+use scan::{WalkSnapshot, scan_config_dirs};
 
 /// One exclude rule in effect for a walk: the glob discovery matches paths
 /// with, paired with the text its author actually wrote.

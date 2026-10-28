@@ -314,11 +314,7 @@ mod tests {
     }
 
     fn formatted(options: &str) -> String {
-        let src = make_src(
-            "a.css",
-            Language::Css,
-            "a { background: var(--grad), var(--raise); }\n",
-        );
+        let src = make_src("a.css", Language::Css, "a { background: var(--grad), var(--raise); }\n");
         let cfg = EngineConfig {
             options: toml::from_str(options).unwrap(),
             ..engine_cfg()
@@ -333,10 +329,7 @@ mod tests {
     /// entry on its own line. The default layout is Prettier's.
     #[test]
     fn default_formatter_matches_oxfmt_comma_list_layout() {
-        assert_eq!(
-            formatted(""),
-            "a {\n  background: var(--grad), var(--raise);\n}\n"
-        );
+        assert_eq!(formatted(""), "a {\n  background: var(--grad), var(--raise);\n}\n");
     }
 
     #[test]

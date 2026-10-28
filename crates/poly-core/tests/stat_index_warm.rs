@@ -459,10 +459,18 @@ fn batched_lint_results_are_recorded_and_a_warm_file_is_never_batched_again() {
     let expected = findings(&cold);
     assert!(!expected.is_empty(), "the premise: shellcheck reports on the fixtures");
     let (_, second_log) = run(&project);
-    assert_eq!(batched(&second_log), 0, "every file is clean to the index by now or reused");
+    assert_eq!(
+        batched(&second_log),
+        0,
+        "every file is clean to the index by now or reused"
+    );
 
     let (warm, warm_log) = run(&project);
-    assert_eq!(findings(&warm), expected, "batched findings must be replayed from the index");
+    assert_eq!(
+        findings(&warm),
+        expected,
+        "batched findings must be replayed from the index"
+    );
     assert_eq!(batched(&warm_log), 0, "an indexed file must not be batched again");
     let resolution = Resolution::parse(&warm_log);
     assert_eq!(resolution.misses, 0, "{resolution:?}");

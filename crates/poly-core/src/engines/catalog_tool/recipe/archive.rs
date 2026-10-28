@@ -189,7 +189,10 @@ mod tests {
             regular("linux-amd64/helm", "the binary"),
             regular("helm", "a different file"),
         ]);
-        assert_eq!(unpack(archive, Format::TarGz, "linux-amd64/helm").expect("extract"), b"the binary");
+        assert_eq!(
+            unpack(archive, Format::TarGz, "linux-amd64/helm").expect("extract"),
+            b"the binary"
+        );
     }
 
     #[test]

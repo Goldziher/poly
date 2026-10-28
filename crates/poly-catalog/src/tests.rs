@@ -218,10 +218,17 @@ fn helm_is_a_chart_wide_recipe_that_prepares_dependencies_and_takes_values_files
         assert_eq!(recipe.findings, Findings::All, "{name}");
         assert_eq!(recipe.values_flag.as_deref(), Some("-f"), "{name}");
         let prepare = recipe.prepare.as_deref().expect("a prepare step");
-        let command = Catalog::get().tool(name).expect(name).command(prepare).expect("prepare command");
+        let command = Catalog::get()
+            .tool(name)
+            .expect(name)
+            .command(prepare)
+            .expect("prepare command");
         assert_eq!(command.arguments, ["dependency", "build", "$ROOT"], "{name}");
         let tool = Catalog::get().tool(name).expect(name);
-        assert!(tool.languages.iter().any(|l| l == "helm-template"), "{name} claims .tpl and NOTES.txt");
+        assert!(
+            tool.languages.iter().any(|l| l == "helm-template"),
+            "{name} claims .tpl and NOTES.txt"
+        );
         assert!(tool.path_globs.iter().any(|g| g == "**/templates/**"), "{name}");
     }
 }
@@ -243,7 +250,11 @@ fn golangci_lint_is_a_per_module_recipe_with_new_from_rev_and_config_discovery()
 fn golangci_lint_fixes_with_run_fix_over_the_package_directories() {
     let recipe = recipe_of("golangci-lint");
     assert_eq!(recipe.fix.as_deref(), Some("fix"));
-    let fix = Catalog::get().tool("golangci-lint").expect("golangci-lint").command("fix").expect("fix");
+    let fix = Catalog::get()
+        .tool("golangci-lint")
+        .expect("golangci-lint")
+        .command("fix")
+        .expect("fix");
     assert_eq!(fix.arguments[..2], ["run", "--fix"]);
     assert_eq!(fix.arguments.last().map(String::as_str), Some("$DIR"));
 }
@@ -290,12 +301,24 @@ fn archive_tools_are_pinned_for_every_platform_with_a_member_inside_the_archive(
         ("tofu", "1.13.2"),
     ] {
         let install = recipe_of(name).install.as_ref().expect("install");
-        let release = install.releases.get(version).unwrap_or_else(|| panic!("{name} {version}"));
+        let release = install
+            .releases
+            .get(version)
+            .unwrap_or_else(|| panic!("{name} {version}"));
         assert_eq!(release.kind, crate::ReleaseKind::Binary);
         for platform in ["darwin-aarch64", "darwin-x86_64", "linux-aarch64", "linux-x86_64"] {
-            let asset = release.assets.get(platform).unwrap_or_else(|| panic!("{name} lacks {platform}"));
-            let member = asset.member.as_deref().unwrap_or_else(|| panic!("{name} {platform} has no member"));
-            assert!(!member.starts_with('/') && !member.split('/').any(|part| part == ".."), "{member}");
+            let asset = release
+                .assets
+                .get(platform)
+                .unwrap_or_else(|| panic!("{name} lacks {platform}"));
+            let member = asset
+                .member
+                .as_deref()
+                .unwrap_or_else(|| panic!("{name} {platform} has no member"));
+            assert!(
+                !member.starts_with('/') && !member.split('/').any(|part| part == ".."),
+                "{member}"
+            );
             assert!(
                 [".tar.gz", ".tgz", ".zip"].iter().any(|ext| asset.url.ends_with(ext)),
                 "{name} {platform}: {}",
@@ -309,7 +332,10 @@ fn archive_tools_are_pinned_for_every_platform_with_a_member_inside_the_archive(
 fn buf_and_hadolint_are_pinned_for_every_desktop_and_server_platform() {
     for (name, version) in [("buf", "1.75.0"), ("hadolint", "2.15.1")] {
         let install = recipe_of(name).install.as_ref().expect("install");
-        let release = install.releases.get(version).unwrap_or_else(|| panic!("{name} {version}"));
+        let release = install
+            .releases
+            .get(version)
+            .unwrap_or_else(|| panic!("{name} {version}"));
         assert_eq!(release.kind, crate::ReleaseKind::Binary);
         for platform in ["darwin-aarch64", "darwin-x86_64", "linux-aarch64", "linux-x86_64"] {
             assert!(release.assets.contains_key(platform), "{name} lacks {platform}");

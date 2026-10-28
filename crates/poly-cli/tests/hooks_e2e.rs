@@ -413,10 +413,7 @@ workspace = true
     let stderr = stderr_reader.join().expect("stderr reader");
     let stdout = stdout_reader.join().expect("stdout reader");
 
-    assert!(
-        status.success(),
-        "the job must still run, late: {stderr}\n{stdout}"
-    );
+    assert!(status.success(), "the job must still run, late: {stderr}\n{stdout}");
     assert!(
         stderr.contains("⏸ waiting to start: cargo-deny"),
         "a held-back job must name itself and its state:\n{stderr}"

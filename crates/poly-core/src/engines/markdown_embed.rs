@@ -108,7 +108,12 @@ impl ChildConfigs {
 /// The dispatcher for a Markdown file formatted under `host`, or `None` when embedded
 /// formatting is switched off.
 pub(super) fn dispatcher(host: &EngineConfig) -> Option<FormatDispatcher> {
-    if host.options.get("embedded_language_formatting").and_then(toml::Value::as_str) == Some("off") {
+    if host
+        .options
+        .get("embedded_language_formatting")
+        .and_then(toml::Value::as_str)
+        == Some("off")
+    {
         return None;
     }
     Some(build(Arc::new(ChildConfigs::new(host))))

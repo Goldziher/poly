@@ -245,11 +245,7 @@ fn select_with_extended_configs(
         }
         extended.extend(found);
         let pinned: Vec<String> = pinned.iter().cloned().chain(extended.iter().cloned()).collect();
-        selection = SnapshotScope::Sparse {
-            files,
-            pinned: &pinned,
-        }
-        .select(staged.clone());
+        selection = SnapshotScope::Sparse { files, pinned: &pinned }.select(staged.clone());
     }
     Ok(selection)
 }

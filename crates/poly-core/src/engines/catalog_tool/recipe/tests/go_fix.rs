@@ -53,16 +53,31 @@ fn fix_log(fx: &Fixture) -> Vec<String> {
 fn golangci_fixes_come_from_a_scratch_copy_of_the_module_and_the_tree_stays_untouched() {
     let fx = Fixture::new();
     let files = go_fix_module(&fx);
-    let tool = fx.tool("run $DIR", go_fix_recipe(), Role::Lint, &fx.config(fx.script("golangci", GO_FIXER)));
+    let tool = fx.tool(
+        "run $DIR",
+        go_fix_recipe(),
+        Role::Lint,
+        &fx.config(fx.script("golangci", GO_FIXER)),
+    );
 
     let results = tool.lint_files(&refs(&files));
 
     let diags = results[0].as_ref().expect("ok");
     let fix = &diags[0].fix;
-    assert_eq!(fix.len(), 1, "the fixable finding carries the module-aware fix: {diags:?}");
+    assert_eq!(
+        fix.len(),
+        1,
+        "the fixable finding carries the module-aware fix: {diags:?}"
+    );
     assert_eq!(fix[0].replacement, "package a\nfixed\n");
-    assert_eq!(std::fs::read_to_string(fx.dir.path().join("a.go")).expect("a.go"), "package a\n");
-    assert_eq!(std::fs::read_to_string(fx.dir.path().join("b.go")).expect("b.go"), "package a\n");
+    assert_eq!(
+        std::fs::read_to_string(fx.dir.path().join("a.go")).expect("a.go"),
+        "package a\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(fx.dir.path().join("b.go")).expect("b.go"),
+        "package a\n"
+    );
     let runs = fix_log(&fx);
     assert_eq!(runs.len(), 1, "{runs:?}");
     assert!(runs[0].ends_with(" run --fix ."), "{}", runs[0]);
@@ -86,7 +101,10 @@ fn golangci_fixes_run_once_per_configured_goos() {
 
     let runs = fix_log(&fx);
     assert_eq!(runs.len(), 2, "{runs:?}");
-    assert!(runs[0].contains("GOOS=linux") && runs[1].contains("GOOS=windows"), "{runs:?}");
+    assert!(
+        runs[0].contains("GOOS=linux") && runs[1].contains("GOOS=windows"),
+        "{runs:?}"
+    );
     let diags = results[0].as_ref().expect("ok");
     assert_eq!(diags[0].fix[0].replacement, "package a\nfixed\nfixed\n");
 }
@@ -136,5 +154,9 @@ fn a_golangci_without_the_fix_flag_leaves_the_findings_report_only() {
     let diags = results[0].as_ref().expect("lint still succeeds");
     assert_eq!(diags.len(), 1);
     assert!(diags[0].fix.is_empty());
-    assert!(diags[0].metadata.is_empty(), "no stale fixable marker: {:?}", diags[0].metadata);
+    assert!(
+        diags[0].metadata.is_empty(),
+        "no stale fixable marker: {:?}",
+        diags[0].metadata
+    );
 }

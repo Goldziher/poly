@@ -9,8 +9,8 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use oxc_linter::{
-    AllowWarnDeny, ConfigStore, ConfigStoreBuilder, ExternalPluginStore, LintFilter, LintService,
-    LintServiceOptions, Linter, Message, Oxlintrc,
+    AllowWarnDeny, ConfigStore, ConfigStoreBuilder, ExternalPluginStore, LintFilter, LintService, LintServiceOptions,
+    Linter, Message, Oxlintrc,
 };
 
 use crate::config::EngineConfig;

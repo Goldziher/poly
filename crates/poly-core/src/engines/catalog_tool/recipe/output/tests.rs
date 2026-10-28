@@ -247,7 +247,12 @@ fn tflint_report_carries_rule_link_range_and_severity() {
     assert_eq!(findings[0].code.as_deref(), Some("terraform_typed_variables"));
     assert_eq!(findings[1].code.as_deref(), Some("terraform_unused_declarations"));
     assert!(findings.iter().all(|f| f.severity == Severity::Warning));
-    assert!(findings[1].url.as_deref().is_some_and(|url| url.ends_with("terraform_unused_declarations.md")));
+    assert!(
+        findings[1]
+            .url
+            .as_deref()
+            .is_some_and(|url| url.ends_with("terraform_unused_declarations.md"))
+    );
     assert_eq!(findings[0].path.as_deref(), Some("main.tf"));
     assert_eq!(
         (findings[0].line, findings[0].column, findings[0].end_column),
@@ -276,7 +281,10 @@ fn actionlint_report_locates_the_label_and_the_expression() {
     assert_eq!(findings.len(), 2);
     assert_eq!(findings[0].code.as_deref(), Some("runner-label"));
     assert_eq!(findings[0].path.as_deref(), Some(".github/workflows/a.yml"));
-    assert_eq!((findings[0].line, findings[0].column, findings[0].end_column), (Some(5), Some(14), Some(25)));
+    assert_eq!(
+        (findings[0].line, findings[0].column, findings[0].end_column),
+        (Some(5), Some(14), Some(25))
+    );
     assert_eq!(findings[1].code.as_deref(), Some("expression"));
     assert_eq!(findings[1].line, Some(7));
 }
@@ -288,7 +296,10 @@ fn checkstyle_14_report_names_the_check_after_its_source_class() {
     assert_eq!(codes, ["TypeName", "MethodName"]);
     assert_eq!(findings[0].path.as_deref(), Some("/repo/Bad.java"));
     assert_eq!((findings[0].line, findings[0].column), (Some(1), Some(14)));
-    assert_eq!(findings[0].message, "Name 'bad' must match pattern '^[A-Z][a-zA-Z0-9]*$'.");
+    assert_eq!(
+        findings[0].message,
+        "Name 'bad' must match pattern '^[A-Z][a-zA-Z0-9]*$'."
+    );
 }
 
 #[test]
@@ -304,7 +315,10 @@ fn helm_lint_ignores_the_slog_line_and_keeps_the_long_warning_whole() {
     assert_eq!(findings.len(), 2, "{findings:?}");
     assert_eq!(findings[1].severity, Severity::Warning);
     assert_eq!(findings[1].path.as_deref(), Some("templates/cm.yaml"));
-    assert!(findings[1].message.contains("a lowercase RFC 1123 subdomain"), "{findings:?}");
+    assert!(
+        findings[1].message.contains("a lowercase RFC 1123 subdomain"),
+        "{findings:?}"
+    );
 }
 
 #[test]
@@ -313,5 +327,8 @@ fn helm_template_error_is_located_in_the_template() {
     assert_eq!(finding.severity, Severity::Error);
     assert_eq!(finding.path.as_deref(), Some("c/templates/cm.yaml"));
     assert_eq!((finding.line, finding.column), (Some(6), Some(8)));
-    assert_eq!(finding.message, "execution error at (c/templates/cm.yaml:6:8): name is required");
+    assert_eq!(
+        finding.message,
+        "execution error at (c/templates/cm.yaml:6:8): name is required"
+    );
 }

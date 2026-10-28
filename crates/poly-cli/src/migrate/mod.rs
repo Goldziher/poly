@@ -515,7 +515,11 @@ mod nested_hooks_tests {
         note_nested_hooks(&mut plan);
         let lefthook = plan.results.iter().find(|r| r.tool == "lefthook").unwrap();
         assert!(lefthook.notes.iter().any(|note| note.contains("run on commit")));
-        assert_eq!(lefthook.absorb, Absorb::Full, "the nested table now runs, so nothing is left behind");
+        assert_eq!(
+            lefthook.absorb,
+            Absorb::Full,
+            "the nested table now runs, so nothing is left behind"
+        );
     }
 }
 

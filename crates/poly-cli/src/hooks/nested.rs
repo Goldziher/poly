@@ -67,7 +67,10 @@ fn config_dirs(root: &Path, files: &[PathBuf]) -> Vec<PathBuf> {
             dir = current.parent();
         }
     }
-    seen.into_iter().filter(|(_, has_config)| *has_config).map(|(dir, _)| dir).collect()
+    seen.into_iter()
+        .filter(|(_, has_config)| *has_config)
+        .map(|(dir, _)| dir)
+        .collect()
 }
 
 /// Load every nested `poly.toml` above a file in `files` that declares `[hooks]`.
@@ -185,8 +188,17 @@ mod tests {
 
     #[test]
     fn config_dirs_are_the_ancestors_of_a_file_that_hold_a_poly_toml() {
-        let repo = tree(&["poly.toml", "svc/poly.toml", "svc/a/b.py", "svc/a/deep/c.py", "other/d.py"]);
-        let dirs = config_dirs(repo.path(), &paths(&["svc/a/b.py", "svc/a/deep/c.py", "other/d.py", "top.txt"]));
+        let repo = tree(&[
+            "poly.toml",
+            "svc/poly.toml",
+            "svc/a/b.py",
+            "svc/a/deep/c.py",
+            "other/d.py",
+        ]);
+        let dirs = config_dirs(
+            repo.path(),
+            &paths(&["svc/a/b.py", "svc/a/deep/c.py", "other/d.py", "top.txt"]),
+        );
         assert_eq!(dirs, [PathBuf::from("svc")], "the root's own poly.toml is not nested");
     }
 

@@ -80,7 +80,10 @@ fn a_nested_hook_runs_in_its_directory_when_a_file_under_it_is_staged() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(report.contains("svc:nested-job"), "{report}");
-    assert!(root.join("svc/ran.txt").is_file(), "the nested job runs with svc as its cwd");
+    assert!(
+        root.join("svc/ran.txt").is_file(),
+        "the nested job runs with svc as its cwd"
+    );
     assert!(!root.join("ran.txt").exists());
     assert!(root.join("root-ran.txt").is_file(), "the root hooks still run");
 }
@@ -116,7 +119,10 @@ run = '''sh -c 'for f; do echo "$f"; done > args.txt' --'''
     stage(root, "svc/lib/skipped.txt");
     let skipped = run_pre_commit(root);
     assert!(skipped.status.success());
-    assert!(!root.join("svc/args.txt").exists(), "svc/lib/skipped.txt is not under svc/src");
+    assert!(
+        !root.join("svc/args.txt").exists(),
+        "svc/lib/skipped.txt is not under svc/src"
+    );
 
     stage(root, "svc/src/used.txt");
     let ran = run_pre_commit(root);
@@ -163,5 +169,8 @@ fn installing_binds_the_git_hooks_a_nested_config_uses() {
         .output()
         .expect("poly invocation");
     assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
-    assert!(root.join(".git/hooks/pre-push").is_file(), "the nested pre-push table binds its shim");
+    assert!(
+        root.join(".git/hooks/pre-push").is_file(),
+        "the nested pre-push table binds its shim"
+    );
 }

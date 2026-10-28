@@ -2,9 +2,9 @@
 
 use std::sync::Arc;
 
+use super::batch::LintPrefill;
 use super::engine_clock::EngineClock;
 use super::fast::decode_payload;
-use super::batch::LintPrefill;
 use super::fast::encode_payload;
 use super::plan::EnginePlan;
 use super::types::RunDebug;

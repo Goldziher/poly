@@ -196,7 +196,11 @@ impl ToolSettings {
         let mut conflicts = Vec::new();
         let slots = [
             ("extra_args", &mut self.extra_args, &other.extra_args),
-            ("format_extra_args", &mut self.format_extra_args, &other.format_extra_args),
+            (
+                "format_extra_args",
+                &mut self.format_extra_args,
+                &other.format_extra_args,
+            ),
             ("lint_extra_args", &mut self.lint_extra_args, &other.lint_extra_args),
         ];
         for (name, mine, theirs) in slots {
@@ -336,7 +340,12 @@ impl HookAcc {
     /// set it differently the first value is kept and the difference reported.
     pub fn add_engine_value(&mut self, value: &EngineValue, label: &str) {
         let table = value.table.iter().map(|segment| (*segment).to_string()).collect();
-        let slot = self.engine_values.entry(table).or_default().entry(value.key).or_insert(value.value);
+        let slot = self
+            .engine_values
+            .entry(table)
+            .or_default()
+            .entry(value.key)
+            .or_insert(value.value);
         if *slot != value.value {
             let (kept, key) = (*slot, value.key);
             self.diag.lossy(format!(

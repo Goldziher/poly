@@ -84,11 +84,7 @@ fn parse(text: &str) -> EditorConfig {
 fn load(dir: &Path) -> Option<Arc<EditorConfig>> {
     static MEMO: OnceLock<Mutex<HashMap<PathBuf, Option<Arc<EditorConfig>>>>> = OnceLock::new();
     let memo = MEMO.get_or_init(Mutex::default);
-    if let Some(known) = memo
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .get(dir)
-    {
+    if let Some(known) = memo.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get(dir) {
         return known.clone();
     }
     let parsed = std::fs::read_to_string(dir.join(".editorconfig"))
@@ -119,7 +115,11 @@ pub(super) fn indent_for(path: &Path) -> Option<Indent> {
         let Ok(relative) = absolute.strip_prefix(dir) else {
             continue;
         };
-        for section in config.sections.iter().filter(|section| section.matcher.is_match(relative)) {
+        for section in config
+            .sections
+            .iter()
+            .filter(|section| section.matcher.is_match(relative))
+        {
             for (key, value) in &section.properties {
                 let slot = match key.as_str() {
                     "indent_style" => &mut style,
@@ -133,7 +133,9 @@ pub(super) fn indent_for(path: &Path) -> Option<Indent> {
     match style.as_deref() {
         Some("tab") => Some(Indent::Tabs),
         Some("space") => Some(Indent::Spaces(
-            size.and_then(|size| size.parse().ok()).filter(|&size| size > 0).unwrap_or(8),
+            size.and_then(|size| size.parse().ok())
+                .filter(|&size| size > 0)
+                .unwrap_or(8),
         )),
         _ => None,
     }
@@ -198,7 +200,10 @@ mod tests {
 
     #[test]
     fn space_style_takes_the_indent_size() {
-        let repo = repo(&[(".editorconfig", "root = true\n[*.sh]\nindent_style = space\nindent_size = 4\n")]);
+        let repo = repo(&[(
+            ".editorconfig",
+            "root = true\n[*.sh]\nindent_style = space\nindent_size = 4\n",
+        )]);
         let path = repo.path().join("bin/run.sh");
         assert_eq!(indent_for(&path), Some(Indent::Spaces(4)));
         assert_eq!(apply(&cfg(""), &path).indent_width, 4);
@@ -211,7 +216,10 @@ mod tests {
         assert_eq!(indent_for(&path), Some(Indent::Tabs));
         let base = cfg("");
         let applied = apply(&base, &path);
-        assert_eq!(applied.options.get("use_tabs").and_then(toml::Value::as_bool), Some(true));
+        assert_eq!(
+            applied.options.get("use_tabs").and_then(toml::Value::as_bool),
+            Some(true)
+        );
     }
 
     #[test]
@@ -231,7 +239,10 @@ mod tests {
     #[test]
     fn later_sections_and_nearer_files_win() {
         let repo = repo(&[
-            (".editorconfig", "root = true\n[*]\nindent_style = space\nindent_size = 4\n[*.sh]\nindent_size = 2\n"),
+            (
+                ".editorconfig",
+                "root = true\n[*]\nindent_style = space\nindent_size = 4\n[*.sh]\nindent_size = 2\n",
+            ),
             ("deep/.editorconfig", "[*.sh]\nindent_size = 6\n"),
         ]);
         assert_eq!(indent_for(&repo.path().join("a.sh")), Some(Indent::Spaces(2)));
@@ -243,9 +254,15 @@ mod tests {
     fn root_true_stops_the_search_and_slash_sections_are_anchored() {
         let repo = repo(&[
             (".editorconfig", "[*]\nindent_style = tab\n"),
-            ("pkg/.editorconfig", "root = true\n[scripts/*.sh]\nindent_style = space\nindent_size = 3\n"),
+            (
+                "pkg/.editorconfig",
+                "root = true\n[scripts/*.sh]\nindent_style = space\nindent_size = 3\n",
+            ),
         ]);
-        assert_eq!(indent_for(&repo.path().join("pkg/scripts/a.sh")), Some(Indent::Spaces(3)));
+        assert_eq!(
+            indent_for(&repo.path().join("pkg/scripts/a.sh")),
+            Some(Indent::Spaces(3))
+        );
         assert_eq!(indent_for(&repo.path().join("pkg/other/a.sh")), None);
     }
 

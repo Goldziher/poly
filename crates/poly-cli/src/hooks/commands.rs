@@ -631,7 +631,10 @@ fn hook_impl(args: HookImplArgs) -> Result<ExitCode> {
 /// `poly.toml` is the config in force. A run started in a subdirectory loads that
 /// directory's own cascaded config instead, so nested tables must not run again.
 fn runs_from_root(root: &Path) -> bool {
-    match (std::env::current_dir().and_then(|cwd| cwd.canonicalize()), root.canonicalize()) {
+    match (
+        std::env::current_dir().and_then(|cwd| cwd.canonicalize()),
+        root.canonicalize(),
+    ) {
         (Ok(cwd), Ok(root)) => cwd == root,
         _ => false,
     }

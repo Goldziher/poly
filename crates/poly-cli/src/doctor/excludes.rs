@@ -249,7 +249,10 @@ mod tests {
         };
         let summary = rule.finding().summary;
         assert!(!summary.contains("the one directory it names"), "{summary}");
-        assert!(summary.contains("root-level entries it was probably written for"), "{summary}");
+        assert!(
+            summary.contains("root-level entries it was probably written for"),
+            "{summary}"
+        );
         assert!(summary.contains("(none of them at the config root)"), "{summary}");
     }
 

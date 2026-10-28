@@ -939,13 +939,19 @@ parenthesize-tuple-in-subscript = true
         assert_eq!(ruff["known_section"]["myco"][0].as_str(), Some("zzz"));
         assert_eq!(ruff["flake8_annotations_mypy_init_return"].as_bool(), Some(true));
         assert_eq!(ruff["flake8_annotations_suppress_none_returning"].as_bool(), Some(true));
-        assert_eq!(ruff["flake8_bandit_hardcoded_tmp_directory"][0].as_str(), Some("/mnt/scratch"));
+        assert_eq!(
+            ruff["flake8_bandit_hardcoded_tmp_directory"][0].as_str(),
+            Some("/mnt/scratch")
+        );
         assert_eq!(
             ruff["flake8_bandit_hardcoded_tmp_directory_extend"][0].as_str(),
             Some("/srv/tmp")
         );
         assert_eq!(ruff["flake8_bandit_check_typed_exception"].as_bool(), Some(true));
-        assert_eq!(ruff["flake8_bugbear_extend_immutable_calls"][0].as_str(), Some("lib.make"));
+        assert_eq!(
+            ruff["flake8_bugbear_extend_immutable_calls"][0].as_str(),
+            Some("lib.make")
+        );
         assert_eq!(ruff["flake8_builtins_ignorelist"][0].as_str(), Some("id"));
         assert_eq!(ruff["flake8_builtins_allowed_modules"][0].as_str(), Some("types"));
         assert_eq!(ruff["flake8_builtins_strict_checking"].as_bool(), Some(true));
@@ -954,21 +960,39 @@ parenthesize-tuple-in-subscript = true
         assert_eq!(ruff["flake8_copyright_min_file_size"].as_integer(), Some(100));
         assert_eq!(ruff["flake8_errmsg_max_string_length"].as_integer(), Some(20));
         assert_eq!(ruff["flake8_gettext_function_names"][0].as_str(), Some("tr"));
-        assert_eq!(ruff["flake8_gettext_extend_function_names"][0].as_str(), Some("ngettext"));
+        assert_eq!(
+            ruff["flake8_gettext_extend_function_names"][0].as_str(),
+            Some("ngettext")
+        );
         assert_eq!(ruff["flake8_self_extend_ignore_names"][0].as_str(), Some("_secret"));
         assert_eq!(ruff["flake8_tidy_imports_ban_relative_imports"].as_str(), Some("all"));
-        assert_eq!(ruff["flake8_tidy_imports_banned_module_level_imports"][0].as_str(), Some("torch"));
+        assert_eq!(
+            ruff["flake8_tidy_imports_banned_module_level_imports"][0].as_str(),
+            Some("torch")
+        );
         assert_eq!(
             ruff["flake8_tidy_imports_banned_api"]["cgi"]["msg"].as_str(),
             Some("deprecated"),
             "a nested table survives"
         );
-        assert_eq!(ruff["flake8_tidy_imports_require_lazy"]["include"].as_str(), Some("all"));
-        assert_eq!(ruff["flake8_tidy_imports_require_lazy"]["exclude"][0].as_str(), Some("typing"));
-        assert_eq!(ruff["pydocstyle_ignore_decorators"][0].as_str(), Some("typing.overload"));
+        assert_eq!(
+            ruff["flake8_tidy_imports_require_lazy"]["include"].as_str(),
+            Some("all")
+        );
+        assert_eq!(
+            ruff["flake8_tidy_imports_require_lazy"]["exclude"][0].as_str(),
+            Some("typing")
+        );
+        assert_eq!(
+            ruff["pydocstyle_ignore_decorators"][0].as_str(),
+            Some("typing.overload")
+        );
         assert_eq!(ruff["pydocstyle_property_decorators"][0].as_str(), Some("lib.cached"));
         assert_eq!(ruff["pydocstyle_ignore_var_parameters"].as_bool(), Some(true));
-        assert_eq!(ruff["pyflakes_allowed_unused_imports"][0].as_str(), Some("hvplot.pandas"));
+        assert_eq!(
+            ruff["pyflakes_allowed_unused_imports"][0].as_str(),
+            Some("hvplot.pandas")
+        );
         assert_eq!(ruff["pyupgrade_keep_runtime_typing"].as_bool(), Some(true));
         assert_eq!(ruff["ruff_parenthesize_tuple_in_subscript"].as_bool(), Some(true));
     }
