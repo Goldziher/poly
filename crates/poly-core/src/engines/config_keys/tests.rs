@@ -429,7 +429,10 @@ fn a_declared_key_an_upstream_type_also_recognizes_defers_to_the_upstream_type()
 /// registry without an entry here fails that test rather than silently escaping
 /// both drift checks.
 const ENGINE_SOURCES: &[(&str, &[&str])] = &[
-    ("ruff", &["ruff.rs", "ruff/plugins.rs", "ruff/format.rs"]),
+    (
+        "ruff",
+        &["ruff.rs", "ruff/plugins.rs", "ruff/plugins/extra.rs", "ruff/format.rs"],
+    ),
     (
         "oxc",
         &[
@@ -575,6 +578,11 @@ const CALL_READERS: &[(&str, OptionType)] = &[
     ("string_list", OptionType::ARRAY),
     ("str_array", OptionType::ARRAY),
     ("str_list", OptionType::ARRAY),
+    // ruff's `require-lazy` / `ban-lazy`: `"all"`, a list, or an `{ include, exclude }` table.
+    (
+        "import_selector",
+        OptionType::STRING.or(OptionType::ARRAY).or(OptionType::TABLE),
+    ),
 ];
 
 /// Reader helpers taking a *second* key argument of a different type — the

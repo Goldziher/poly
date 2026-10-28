@@ -8,7 +8,11 @@
 
 use ruff_formatter::printer::LineEnding;
 use ruff_formatter::{IndentStyle, IndentWidth, LineWidth};
-use ruff_python_formatter::{DocstringCode, DocstringCodeLineWidth, MagicTrailingComma, PyFormatOptions, QuoteStyle};
+use ruff_python_formatter::{
+    DocstringCode, DocstringCodeLineWidth, MagicTrailingComma, PreviewMode, PyFormatOptions, QuoteStyle,
+};
+
+use std::path::Path;
 
 use crate::config::EngineConfig;
 use crate::engine::{OptionType, SourceFile};
@@ -27,6 +31,8 @@ pub(super) const OPTION_KEYS: &[(&str, OptionType)] = &[
     ("quote_style", OptionType::STRING),
     ("skip_magic_trailing_comma", OptionType::BOOLEAN),
     ("line_ending", OptionType::STRING),
+    ("preview", OptionType::BOOLEAN),
+    ("exclude", OptionType::ARRAY),
 ];
 
 fn width(value: usize) -> LineWidth {
@@ -67,6 +73,31 @@ fn quote_style(cfg: &EngineConfig) -> Option<QuoteStyle> {
             None
         }
     }
+}
+
+/// Whether `exclude` keeps the formatter away from `path`.
+///
+/// The engine is handed no config root, so each pattern matches at any depth, the
+/// way a gitignore pattern without a leading slash does; a pattern also covers
+/// everything below a directory it names.
+pub(super) fn excluded(path: &Path, cfg: &EngineConfig) -> bool {
+    let Some(patterns) = cfg.options.get("exclude").and_then(toml::Value::as_array) else {
+        return false;
+    };
+    let mut builder = globset::GlobSetBuilder::new();
+    for pattern in patterns.iter().filter_map(toml::Value::as_str) {
+        let pattern = pattern
+            .strip_prefix("./")
+            .unwrap_or(pattern)
+            .trim_start_matches('/')
+            .trim_end_matches('/');
+        for glob in [format!("**/{pattern}"), format!("**/{pattern}/**")] {
+            if let Ok(glob) = globset::Glob::new(&glob) {
+                builder.add(glob);
+            }
+        }
+    }
+    builder.build().is_ok_and(|set| set.is_match(path))
 }
 
 /// The line ending a `line_ending` value selects for `content`.
@@ -155,6 +186,9 @@ pub(super) fn build_options(src: &SourceFile, cfg: &EngineConfig) -> PyFormatOpt
     }
     if let Some(ending) = line_ending(cfg, &src.content) {
         options = options.with_line_ending(ending);
+    }
+    if cfg.options.get("preview").and_then(toml::Value::as_bool) == Some(true) {
+        options = options.with_preview(PreviewMode::Enabled);
     }
     options
 }

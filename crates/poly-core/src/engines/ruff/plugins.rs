@@ -23,6 +23,8 @@ use rustc_hash::FxHashMap;
 
 use crate::config::EngineConfig;
 
+mod extra;
+
 /// Apply the plugin options and the fix policy onto `settings`.
 pub(super) fn apply(settings: &mut LinterSettings, cfg: &EngineConfig) {
     let options = Options { cfg };
@@ -35,6 +37,7 @@ pub(super) fn apply(settings: &mut LinterSettings, cfg: &EngineConfig) {
     options.flake8_quotes(settings);
     options.flake8_type_checking(settings);
     options.flake8_pytest_style(settings);
+    options.extra_plugins(settings);
     options.fix_policy(settings);
 }
 

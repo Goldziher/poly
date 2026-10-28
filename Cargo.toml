@@ -134,6 +134,7 @@ ruff_formatter = "=0.0.20"
 ruff_linter = "=0.17.3"
 ruff_python_ast = "=0.0.20"
 ruff_python_formatter = "=0.0.20"
+ruff_python_semantic = "=0.0.20"
 ruff_text_size = "=0.0.20"
 rumdl = { version = "0.3", default-features = false }
 rust-ini = { version = "0.21", features = ["inline-comment"] }

@@ -81,6 +81,7 @@ ruff_formatter.workspace = true
 ruff_linter.workspace = true
 ruff_python_ast.workspace = true
 ruff_python_formatter.workspace = true
+ruff_python_semantic.workspace = true
 ruff_text_size.workspace = true
 rumdl.workspace = true
 rust-ini.workspace = true
