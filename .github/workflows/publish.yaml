@@ -834,8 +834,12 @@ jobs:
   publish_plugin_artifacts:
     name: Publish all agent runtime archives and marketplaces
     needs: [meta, finalize_release]
+    # Keyed on meta, not on finalize_release: a dispatch that re-runs an already
+    # finalized release leaves finalize_release skipped, which used to skip the archives
+    # job and make the verifier reject an otherwise complete release. Uploads are
+    # idempotent, so running it again is safe.
     if: >-
-      !inputs.plugins-only && (needs.finalize_release.result == 'success')
+      always() && !inputs.plugins-only && needs.meta.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
