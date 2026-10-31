@@ -266,6 +266,28 @@ fn mirrored_files_are_hardlinks_not_copies() {
 }
 
 #[test]
+fn a_mirror_whose_worktree_directory_is_gone_is_written_from_the_index() {
+    let repo = repo();
+    let cache = TempDir::new().unwrap();
+    let files = [PathBuf::from("pkg/a.py")];
+    // An unstaged deletion of the whole directory: the index still tracks it.
+    std::fs::remove_dir_all(repo.path().join("other")).unwrap();
+
+    let snap = snapshot(repo.path(), cache.path(), &files, &[]);
+
+    assert!(is_written(snap.path(), "other/c.py"), "a real file, not a link");
+    assert_eq!(
+        std::fs::read_to_string(snap.path().join("other/c.py")).unwrap(),
+        "c = 1\n",
+        "the index blob, since the worktree has nothing to hardlink"
+    );
+    assert!(
+        !repo.path().join("other").exists(),
+        "the snapshot must not resurrect a worktree directory"
+    );
+}
+
+#[test]
 fn a_mirror_the_selection_keeps_is_not_recreated_on_refresh() {
     let repo = repo();
     let cache = TempDir::new().unwrap();

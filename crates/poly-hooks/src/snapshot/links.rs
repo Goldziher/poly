@@ -108,15 +108,11 @@ pub(super) fn materialize(
     let root = std::fs::canonicalize(root)?;
     let wanted: HashSet<&Path> = roots.iter().copied().collect();
 
-    // Prepare first, so an entry whose root the worktree does not have (a sparse
-    // checkout's omitted directory) is skipped rather than half-written.
+    // Prepare first, so an entry whose worktree copy is missing has a real
+    // directory to be checked out into rather than a half-written path.
     let mut prepared: Vec<&Path> = Vec::with_capacity(roots.len());
     let mut expected: HashMap<&Path, HashSet<&Path>> = HashMap::new();
     for &link in &roots {
-        if !root.join(link).is_dir() {
-            debug!(path = %link.display(), "not mirroring a directory the worktree does not have");
-            continue;
-        }
         prepare(&dir.join(link))?;
         prepared.push(link);
         expected.insert(link, HashSet::new());

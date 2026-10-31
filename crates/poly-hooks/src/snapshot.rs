@@ -58,12 +58,11 @@
 //!
 //! The mirror is built from the index entries under each root, never from a walk
 //! of the worktree, so untracked build output is not pulled in. A tracked entry
-//! the worktree does not have (a sparse checkout's omitted directory is skipped
-//! as a root; a deleted worktree file inside one is not) is materialized from its
-//! index blob by the same checkout as the selected entries. When hardlinking is
-//! unavailable — a cache directory on another filesystem, a permissions or
-//! filesystem limitation — the bytes are copied and the source mtime is
-//! preserved.
+//! the worktree does not have — a file deleted there, or anything the index
+//! tracks without a worktree file — is materialized from its index blob by the
+//! same checkout as the selected entries. When hardlinking is unavailable — a
+//! cache directory on another filesystem, a permissions or filesystem limitation
+//! — the bytes are copied and the source mtime is preserved.
 //!
 //! # Persistent, incremental cache
 //!

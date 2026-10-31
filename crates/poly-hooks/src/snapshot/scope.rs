@@ -20,12 +20,15 @@
 //! a mirror is a staged file or a sibling of one, so nothing the run validates is
 //! read from the worktree.
 //!
-//! A mirror only works for content the worktree holds, so every `skip-worktree`
-//! entry is selected and written from the index, with its directory chain like a
-//! staged file. In a sparse checkout the worktree lacks those entries outright;
-//! after `git update-index --skip-worktree` it holds bytes git no longer compares
-//! with the index. That costs one write per omitted entry on the first refresh,
-//! the price every snapshot paid before scoping existed, and later refreshes only
+//! A mirror prefers the worktree copy because a hardlink is free, but a tracked
+//! entry the worktree does not have is materialized from its index blob by the
+//! same checkout as the selected entries. Every `skip-worktree` entry is
+//! nevertheless **selected** and written from the index, with its directory chain
+//! like a staged file, because the worktree copy is not evidence of its content:
+//! in a sparse checkout it is absent outright; after
+//! `git update-index --skip-worktree` it holds bytes git no longer compares with
+//! the index. That costs one write per omitted entry on the first refresh, the
+//! price every snapshot paid before scoping existed, and later refreshes only
 //! stat them; a checkout without the bit pays nothing.
 //!
 //! The content of every selected entry still comes from the index blob, so the
