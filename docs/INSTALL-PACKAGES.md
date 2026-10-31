@@ -162,8 +162,8 @@ release's binary under the new version, which installs cleanly and is wrong.
 ### Building the packages locally
 
 ```sh
-task package:npm       # stage target/debug/poly into the host platform package, then pnpm pack
-task package:wheels    # build a platform wheel from target/debug/poly
+mise run package:npm       # stage target/debug/poly into the host platform package, then pnpm pack
+mise run package:wheels    # build a platform wheel from target/debug/poly
 ```
 
 ### Agent plugin package

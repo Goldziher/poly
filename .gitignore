@@ -23,8 +23,10 @@ __pycache__/
 
 # BEGIN ai-rulez (DO NOT EDIT - managed by ai-rulez)
 .agents/skills/
+.ai-rulez/.config.local.*
 .ai-rulez/.generated-manifest.json
 .ai-rulez/.generated-manifest.local.json
+.ai-rulez/config.local.*
 .ai-rulez/local/
 .claude/agents/
 .claude/settings.json
@@ -44,14 +46,14 @@ __pycache__/
 .github/prompts/parallelize.prompt.md
 .kimi-code/agents/
 .kimi-code/mcp.json
-.mcp.json
 .opencode/agents/
 .opencode/commands/
 .pi/agents/
 .pi/prompts/
 .vscode/mcp.json
-AGENTS.md
-CLAUDE.md
+/.mcp.json
+/AGENTS.md
+/CLAUDE.md
 # END ai-rulez
 
 /*.tgz

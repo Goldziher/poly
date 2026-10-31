@@ -2,9 +2,9 @@
 # Refresh it with `ai-rulez lock`; `ai-rulez generate --locked` fails when it is stale.
 
 version = 1
-ai_rulez_version = '5.9.2'
+ai_rulez_version = '5.9.7'
 scope = 'all'
-tree = 'sha256:613947ae84dcc6427ac870ad74675be3c7ccb681f8013ad79201a99b0b48f7fe'
+tree = 'sha256:96a4f391e43ae78c1b7047bdcb19cef14e2a31e3c16e194395018e74519c443c'
 
 [[served]]
 name = 'adr-workflow'
@@ -142,7 +142,7 @@ digest = 'sha256:6e291802d3eb29dd31a5d3a85b19ae0eab9a7f683aad24881c3b7be18c04ef7
 kind = 'context'
 id = 'poly-ci'
 path = 'context/poly-ci.md'
-digest = 'sha256:aaa68ec45e6880b163c4d3484facbf5721fa212c3490adfba2c2e0721ccacd64'
+digest = 'sha256:359f273beefbd3b6a488f8efddfcdf0a5660af9ed5ae29e6e9b7cd99bd23cfa5'
 
 [[item]]
 kind = 'context'
@@ -178,7 +178,7 @@ digest = 'sha256:fa3bc1e3e4281b4f05efe00064e0ffc5f0004da236d60659d144c42d03e3cf4
 kind = 'rule'
 id = 'tdd-and-hooks'
 path = 'rules/tdd-and-hooks.md'
-digest = 'sha256:55df679e8b47f119b1adea3b0ca5f695b4341923000f725ebd4b725719e02cef'
+digest = 'sha256:28e212e96c90230ca8550fdd47436326f9f589a7d7680ac6f479c2ab734c118e'
 
 [[item]]
 kind = 'settings'

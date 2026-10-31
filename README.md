@@ -450,9 +450,9 @@ converges in two passes, that the cache never serves a different answer than a c
 language poly claims to lint reports `no lint rules for` it:
 
 ```sh
-task harden           # pinned third-party repositories
-task harden:local     # the sibling working trees next door, read-only
-task harden:generated # machine-generated code (corpus C)
+mise run harden           # pinned third-party repositories
+mise run harden:local     # the sibling working trees next door, read-only
+mise run harden:generated # machine-generated code (corpus C)
 ```
 
 It also reports per-rule finding counts per repository, which is how a pack rule earns a default
