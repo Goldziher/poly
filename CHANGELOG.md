@@ -5,6 +5,28 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
+## [0.32.1] - 2026-10-31
+
+### Fixed
+
+- **A sparse staged snapshot no longer hides unchanged directories from tools that walk the tree**
+  ([Goldziher/poly#45]). Since 0.30.0 the default `snapshot = "auto"` represented every directory it
+  did not write as a symlink back into the worktree, recorded in `.poly-links`. Tools that walk the
+  snapshot without following directory symlinks saw none of the files under those directories, so
+  `ai-rulez validate` (the `ai-rulez-validate` hook source) reported every rule glob over an
+  unchanged directory as `AR101 glob-no-match` and blocked any commit touching `.ai-rulez/`, while
+  `--all-files` and a normal checkout were clean. Those directories are now mirrored as real
+  directories whose tracked files are hardlinked to the worktree — no byte copy, worktree mtimes
+  preserved, with a copy fallback when hardlinking is unavailable — so a non-following walk reaches
+  every tracked path; a mirrored path is still never a staged file, and a hook that writes through
+  one is still caught by the link guard. The snapshot root also carries a `.git` file pointing at
+  the real git dir, since a library-based repository reader does not see the exported `GIT_DIR` and
+  otherwise falls back to a walk that skips hidden directories such as `.agents/`. `.poly-links`,
+  sparse-checkout handling, submodule and `snapshot_include` links, cleanup and idempotency are
+  unchanged.
+
+[Goldziher/poly#45]: https://github.com/Goldziher/poly/issues/45
+
 ## [0.32.0] - 2026-10-31
 
 ### Added
