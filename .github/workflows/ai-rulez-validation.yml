@@ -38,10 +38,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: xberg-io/actions/setup-ai-rulez@d922e0d1126e82b39b2eb8d3be899d7fe7345190
+      - uses: xberg-io/actions/setup-ai-rulez@v1
         with:
           ai-rulez-version: "5.7.0"
-      - uses: xberg-io/actions/validate-ai-rulez@d922e0d1126e82b39b2eb8d3be899d7fe7345190
+      - uses: xberg-io/actions/validate-ai-rulez@v1
         with:
           expected-config-count: "2"
           additional-config-directories: "plugin/.ai-rulez"

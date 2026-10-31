@@ -308,8 +308,9 @@ jobs:
 
       - name: Setup Rust
         if: ${{ !matrix.alpine }}
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@v1
         with:
+          toolchain: stable
           targets: ${{ matrix.triple }}
 
       - name: Setup cache
@@ -756,7 +757,7 @@ jobs:
           ref: ${{ inputs.plugins-only && github.sha || needs.meta.outputs.tag }}
 
       - name: Install reviewed ai-rulez
-        uses: xberg-io/actions/setup-ai-rulez@d922e0d1126e82b39b2eb8d3be899d7fe7345190
+        uses: xberg-io/actions/setup-ai-rulez@v1
         with:
           ai-rulez-version: "5.7.0"
 
@@ -846,13 +847,13 @@ jobs:
           ref: ${{ needs.meta.outputs.tag }}
           fetch-depth: 0
       - name: Install ai-rulez
-        uses: xberg-io/actions/setup-ai-rulez@d922e0d1126e82b39b2eb8d3be899d7fe7345190
+        uses: xberg-io/actions/setup-ai-rulez@v1
         with:
           ai-rulez-version: "5.7.0"
       - name: Verify public skill exports
         run: python3 scripts/sync_public_skills.py --check
       - name: Package all supported plugin runtimes
-        uses: xberg-io/actions/package-ai-rulez-plugin@d922e0d1126e82b39b2eb8d3be899d7fe7345190
+        uses: xberg-io/actions/package-ai-rulez-plugin@v1
         with:
           cursor-marketplace: "true"
           tag: ${{ needs.meta.outputs.tag }}
@@ -895,7 +896,7 @@ jobs:
           ref: ${{ inputs.plugins-only && github.sha || needs.meta.outputs.tag }}
           fetch-depth: 0
       - name: Install ai-rulez
-        uses: xberg-io/actions/setup-ai-rulez@d922e0d1126e82b39b2eb8d3be899d7fe7345190
+        uses: xberg-io/actions/setup-ai-rulez@v1
         with:
           ai-rulez-version: "5.7.0"
       - name: Verify plugin versions and generated resources before publishing
@@ -993,7 +994,7 @@ jobs:
       - name: Publish to PyPI
         # Trusted publishing (OIDC) — no API token. skip-existing keeps a re-run
         # of a partially uploaded release from failing on the files that landed.
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@v1.14.3
         with:
           packages-dir: pip-package/dist
           skip-existing: true
