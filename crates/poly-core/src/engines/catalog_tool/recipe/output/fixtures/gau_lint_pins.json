@@ -1,0 +1,27 @@
+{
+  "version": "0.4.0",
+  "summary": {
+    "files_scanned": 2,
+    "references_checked": 4,
+    "findings": 2
+  },
+  "findings": [
+    {
+      "file": ".github/workflows/ci.yml",
+      "line": 8,
+      "uses": "actions/setup-node@v4.1.0",
+      "ref": "v4.1.0",
+      "kind": "full_tag",
+      "reason": "full version tag; pin the major tag v4"
+    },
+    {
+      "file": ".github/workflows/ci.yml",
+      "line": 9,
+      "uses": "Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6",
+      "ref": "9d47c6ad4b02e050fd481d890b2ea34778fd09d6",
+      "kind": "sha",
+      "reason": "commit SHA; pin a vN major tag"
+    }
+  ],
+  "diagnostics": []
+}

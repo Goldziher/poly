@@ -25,7 +25,7 @@ run by `poly lint`; enabling one for linting logs a warning naming the command i
 
 ## Tools with a recipe
 
-Fourteen tools carry a **recipe** (`crates/poly-catalog/data/overlay.json`): how poly runs them
+Fifteen tools carry a **recipe** (`crates/poly-catalog/data/overlay.json`): how poly runs them
 beyond one spawn per file with an exit-code verdict. They are what a repository's lefthook or
 pre-commit gate typically runs, and `poly migrate` maps those jobs onto them.
 
@@ -36,6 +36,7 @@ pre-commit gate typically runs, and `poly migrate` maps those jobs onto them.
 | `buildifier` | format, lint, fix | all files | JSON (category, URL, fixable) |
 | `buf` | format, lint | one run per `buf.yaml` module | JSON lines |
 | `actionlint` | lint | all workflow files | JSON |
+| `gau` | lint | all workflow files and `action.yml` manifests | JSON (kind) |
 | `hadolint` | lint | all Dockerfiles | JSON |
 | `golangci-lint` | format, lint | one run per `go.mod`, over the packages of the files | JSON |
 | `helm`, `helm-template` | lint | one run per `Chart.yaml` chart | text |
@@ -54,6 +55,9 @@ install = "auto"     # download it when it is missing
 [tools.actionlint]
 enabled = true
 extra_args = ["-ignore", "SC2129", "-ignore", "SC2016"]
+
+[tools.gau]
+enabled = true       # flag uses: refs that are not a bare @vN major tag
 
 [tools.buildifier]
 enabled = true
@@ -79,6 +83,15 @@ How they differ from the breadth tier above:
   `shellcheck` takes the level shellcheck printed (`error`, `warning`, `info`, `style` as hint);
   every other kind is an error. Override one kind with
   `[lint.yaml.actionlint.rules.<kind>] level = "error"`.
+- **gau (action pins).** `gau --lint-pins` from
+  [gh-actions-updater](https://github.com/Goldziher/gh-actions-updater) 0.4.0 or later flags every
+  remote `uses:` ref that is not a bare major tag (`@vN`): a commit SHA (`sha`), a full version tag
+  (`full_tag`), or a branch or other ref (`branch_or_other`), each on its line with the kind as the
+  rule. It runs offline over `.github/workflows/*.y*ml` and `action.y*ml`, reads
+  `.gh-actions-updater.toml` (`[update] allow_full` permits a full tag for an action with no major
+  tag), and honours `# gau: ignore` on a `uses:` line. A file it cannot parse is reported as
+  `scan_failure`. It is off until `[tools.gau] enabled = true`; no release is pinned yet, so install
+  it yourself or point `bin` at it.
 - **Fixes.** `buildifier`'s auto-fixable warnings are applied by `poly lint --fix`; the tool's own
   rewrite is attached as the fix. `golangci-lint` findings that carry a suggested fix are fixed by
   `golangci-lint run --fix` on a scratch copy of the Go module, and only the run's files are read

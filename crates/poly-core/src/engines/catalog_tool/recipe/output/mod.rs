@@ -68,6 +68,7 @@ pub(in crate::engines::catalog_tool) fn parse(format: Output, stdout: &str, stde
         Output::GroovyJson => json::groovy(stdout),
         Output::HelmText => Ok(helm::parse(stdout, stderr)),
         Output::PathLine => Ok(helm::path_lines(stdout, stderr)),
+        Output::GauJson => json::gau(stdout),
     }
 }
 

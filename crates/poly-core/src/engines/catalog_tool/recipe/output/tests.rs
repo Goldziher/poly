@@ -372,3 +372,72 @@ fn helm_template_error_is_located_in_the_template() {
         "execution error at (c/templates/cm.yaml:6:8): name is required"
     );
 }
+
+/// Captured from gau 0.4.0 `--lint-pins --format json` on a workflow pinning
+/// `actions/checkout@v5`, `actions/setup-node@v4.1.0`, a SHA and a local
+/// action, plus a second workflow whose only ref is `actions/checkout@v5`.
+const GAU_LINT_PINS: &str = include_str!("fixtures/gau_lint_pins.json");
+
+/// Captured from gau 0.4.0 on a workflow that is not valid YAML (exit 3).
+const GAU_UNPARSEABLE: &str = include_str!("fixtures/gau_lint_pins_unparseable.json");
+
+#[test]
+fn gau_reports_each_ref_that_is_not_a_bare_major_tag_and_none_for_a_clean_ref() {
+    let findings = parse(Output::GauJson, GAU_LINT_PINS, "").expect("parses");
+    assert_eq!(findings.len(), 2, "{findings:?}");
+    assert!(
+        findings
+            .iter()
+            .all(|f| f.path.as_deref() == Some(".github/workflows/ci.yml")),
+        "the clean workflow and the @v5 ref report nothing: {findings:?}"
+    );
+    assert_eq!(findings[0].line, Some(8));
+    assert_eq!(findings[0].code.as_deref(), Some("full_tag"));
+    assert_eq!(
+        findings[0].message,
+        "actions/setup-node@v4.1.0: full version tag; pin the major tag v4"
+    );
+    assert_eq!(findings[1].line, Some(9));
+    assert_eq!(findings[1].code.as_deref(), Some("sha"));
+    assert!(findings.iter().all(|f| f.severity == Severity::Error));
+    assert_eq!(findings[0].column, None);
+}
+
+#[test]
+fn gau_clean_report_has_no_findings() {
+    let clean = r#"{"version":"0.4.0","summary":{"files_scanned":1,"references_checked":1,"findings":0},"findings":[],"diagnostics":[]}"#;
+    assert!(parse(Output::GauJson, clean, "").expect("parses").is_empty());
+}
+
+#[test]
+fn gau_unparseable_file_is_a_finding_even_without_a_line() {
+    let finding = one(parse(Output::GauJson, GAU_UNPARSEABLE, "").expect("parses"));
+    assert_eq!(finding.path.as_deref(), Some(".github/workflows/broken.yml"));
+    assert_eq!(finding.line, None);
+    assert_eq!(finding.code.as_deref(), Some("scan_failure"));
+    assert_eq!(finding.severity, Severity::Error);
+    assert!(finding.message.contains("failed to parse YAML"), "{}", finding.message);
+}
+
+#[test]
+fn gau_output_that_is_not_its_report_is_an_error_not_a_clean_run() {
+    for (stdout, why) in [
+        ("", "no output"),
+        (
+            "error: unexpected argument '--lint-pins' found",
+            "a gau without --lint-pins",
+        ),
+        (
+            ".github/workflows/ci.yml:8: actions/setup-node@v4.1.0: full version tag",
+            "the text report",
+        ),
+        (r#"{"findings":[]}"#, "no summary"),
+        (r#"{"summary":{"findings":0}}"#, "no findings list"),
+        (
+            r#"{"summary":{"findings":2},"findings":[{"file":"a.yml","line":1,"uses":"a/b@main","kind":"branch_or_other","reason":"r"}]}"#,
+            "a findings list shorter than the summary",
+        ),
+    ] {
+        assert!(parse(Output::GauJson, stdout, "").is_err(), "{why}");
+    }
+}

@@ -1,5 +1,5 @@
 //! The JSON reports: actionlint, buf, hadolint, golangci-lint, buildifier,
-//! tflint and npm-groovy-lint.
+//! tflint, npm-groovy-lint and gh-actions-updater (`gau --lint-pins`).
 //!
 //! Each reader pulls only the fields it needs through `serde_json::Value`, so a
 //! tool adding a field never breaks it; a field it needs going missing, or the
@@ -305,6 +305,56 @@ pub(super) fn groovy(stdout: &str) -> Result<Vec<Finding>> {
             }
             findings.push(finding);
         }
+    }
+    Ok(findings)
+}
+
+/// gh-actions-updater's `--lint-pins --format json`: a `summary` with counts,
+/// one `findings` entry per remote `uses:` ref that is not a bare `vN` major
+/// tag (exit 1), and `diagnostics` for files it could not parse (exit 3).
+///
+/// The summary's finding count must match the list, so a report cut short is
+/// an error rather than fewer findings.
+pub(super) fn gau(stdout: &str) -> Result<Vec<Finding>> {
+    let report = document(stdout, "gau")?;
+    let expected = report
+        .get("summary")
+        .and_then(|summary| summary.get("findings"))
+        .and_then(Value::as_u64)
+        .context("gau's JSON report has no summary.findings count")?;
+    let items = report
+        .get("findings")
+        .and_then(Value::as_array)
+        .context("gau's JSON report has no findings list")?;
+    if usize::try_from(expected).ok() != Some(items.len()) {
+        bail!(
+            "gau's summary counts {expected} finding(s) but its report lists {}",
+            items.len()
+        );
+    }
+    let mut findings: Vec<Finding> = items
+        .iter()
+        .map(|item| {
+            let uses = text(item, "uses").unwrap_or_default();
+            let reason = text(item, "reason").unwrap_or_default();
+            let mut finding = Finding::new(Severity::Error, format!("{uses}: {reason}"));
+            finding.path = text(item, "file");
+            finding.line = number(item, "line");
+            finding.code = text(item, "kind");
+            finding
+        })
+        .collect();
+    for diagnostic in report
+        .get("diagnostics")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let mut finding = Finding::new(Severity::Error, text(diagnostic, "message").unwrap_or_default());
+        finding.path = text(diagnostic, "file");
+        finding.line = number(diagnostic, "line");
+        finding.code = text(diagnostic, "code");
+        findings.push(finding);
     }
     Ok(findings)
 }

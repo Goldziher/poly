@@ -1,0 +1,18 @@
+{
+  "version": "0.4.0",
+  "summary": {
+    "files_scanned": 1,
+    "references_checked": 1,
+    "findings": 0
+  },
+  "findings": [],
+  "diagnostics": [
+    {
+      "file": ".github/workflows/broken.yml",
+      "line": null,
+      "message": "failed to parse YAML in .github/workflows/broken.yml",
+      "code": "scan_failure",
+      "category": "scan_failure"
+    }
+  ]
+}

@@ -46,6 +46,8 @@ pub enum Output {
     HelmText,
     /// `path:line:col: message` lines (gcc style), e.g. `terraform validate`.
     PathLine,
+    /// gh-actions-updater `gau --lint-pins --format json`.
+    GauJson,
 }
 
 /// How a run's files are split into invocations.

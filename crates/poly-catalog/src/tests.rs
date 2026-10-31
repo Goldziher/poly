@@ -150,6 +150,7 @@ fn the_overlay_adds_the_tools_the_mdsf_snapshot_lacks() {
         "helm-template",
         "tflint",
         "pyproject-fmt",
+        "gau",
     ] {
         assert!(
             catalog.tool(name).is_some_and(|tool| tool.recipe.is_some()),
@@ -305,6 +306,19 @@ fn hadolint_reads_json_and_treats_exit_1_as_findings() {
     assert_eq!(recipe.output, Output::HadolintJson);
     assert_eq!(recipe.ok_exits, [1]);
     assert!(recipe.config_files.iter().any(|f| f == ".hadolint.yaml"));
+}
+
+#[test]
+fn gau_lints_the_pins_of_workflows_and_action_manifests_as_json() {
+    let gau = Catalog::get().tool("gau").expect("gau");
+    assert_eq!(gau.binary, "gau");
+    assert_eq!(gau.path_globs, ["**/.github/workflows/*.y*ml", "**/action.y*ml"]);
+    let (_, lint) = gau.lint_command().expect("a lint command");
+    assert_eq!(lint.arguments, ["--lint-pins", "--format", "json", "$FILES"]);
+    let recipe = recipe_of("gau");
+    assert_eq!(recipe.output, Output::GauJson);
+    assert_eq!(recipe.ok_exits, [1, 3], "findings exit 1, an unparseable file exits 3");
+    assert_eq!(recipe.config_files, [".gh-actions-updater.toml"]);
 }
 
 #[test]

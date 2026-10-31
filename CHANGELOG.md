@@ -7,6 +7,13 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+### Added
+
+- **`gau` catalog recipe for GitHub Actions pins.** `[tools.gau] enabled = true` runs
+  `gau --lint-pins --format json` (gh-actions-updater 0.4.0 or later) over workflow files and
+  `action.yml` manifests and reports every `uses:` ref that is not a bare `@vN` major tag on its
+  line, with `sha`, `full_tag` or `branch_or_other` as the rule. Off by default.
+
 ### Changed
 
 - **The GitHub Action's `cache: true` caches through `actions/cache@v6`.** That major runs on the
