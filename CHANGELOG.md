@@ -5,6 +5,14 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
+## [Unreleased]
+
+### Changed
+
+- **The GitHub Action's `cache: true` caches through `actions/cache@v6`.** That major runs on the
+  Node.js 24 runtime, so a self-hosted runner needs Actions Runner 2.327.1 or newer; GitHub-hosted
+  runners already qualify. The action's inputs and outputs are unchanged.
+
 ## [0.32.1] - 2026-10-31
 
 ### Fixed
