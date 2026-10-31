@@ -1,7 +1,7 @@
 # Reference formatter: `zig fmt` — the canonical Zig formatter bundled with the
 # compiler. Installed from the pinned static release tarball (no official slim
 # image). `zig fmt` formats in place, so the entrypoint buffers, formats, cats.
-FROM alpine:3.20
+FROM alpine:3.24
 ARG ZIG_VERSION=0.13.0
 RUN apk add --no-cache wget xz \
     && wget -q "https://ziglang.org/download/${ZIG_VERSION}/zig-linux-$(uname -m)-${ZIG_VERSION}.tar.xz" -O /tmp/zig.tar.xz \
