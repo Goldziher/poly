@@ -277,6 +277,26 @@ that lints. `zig fmt`, `google-java-format`, `ktfmt`, `styler` (R), `swift-forma
 are opt-in. When a tool is absent the language falls through to the tree-sitter tier, so the
 zero-dependency promise holds either way.
 
+### Architecture decision records
+
+[adrlint](https://github.com/Goldziher/adrlint) is linked in as an opt-in MADR backend for numbered ADR files
+(`NNNN-*.md`). It checks the decision structure (`MADR01`–`MADR08`), front-matter YAML, list style and the
+document-local link rules, and its structural heading fix runs under `poly lint --fix`:
+
+```toml
+[lint.markdown.adrlint]
+enabled = true
+# Optional: narrow or extend the rule set. Codes match by prefix, so MADR07 covers MADR07a/b.
+# select = ["MADR01", "MADR05", "MADR06", "MADR31"]
+# ignore = ["MADR12"]
+```
+
+It is **off by default**, because an existing log may follow a different template. It also deliberately leaves the
+log-level rules to the `adrlint` CLI: directory numbering and file names (`MADR41`–`MADR44`) need the whole
+directory, the immutability lock (`ADR50`/`ADR51`) needs `adrlint.lock`, and link-target existence (`MADR12a`/`c`)
+and external links (`MADR11`) need the tree or the network — none of which a per-file, content-hash-cached engine
+can model honestly. See [ADR 0037](adrs/0037-adrlint-madr-linting.md).
+
 ---
 
 ## Backend Coverage
@@ -290,6 +310,7 @@ zero-dependency promise holds either way.
 | TOML | taplo (lint) + oxc_formatter_toml | yes | yes |
 | YAML | serde_yaml (libyaml) + oxc_formatter_yaml | yes | yes |
 | Markdown / MDX | rumdl (lint) + oxc_formatter_markdown | yes | yes |
+| Markdown ADRs (`NNNN-*.md`) | adrlint, opt-in | opt-in | no |
 | SQL | sqruff | yes | yes |
 | CSS / SCSS | oxc_formatter_css (malva on request) + biome | yes | yes |
 | Less | oxc_formatter_css (malva on request) | no | yes |

@@ -74,7 +74,7 @@ pub struct SqruffEngine;
 /// yields different output for the same sqruff-lib version.
 ///
 /// `+cp02-off` marks identifier capitalisation (`CP02`) being off unless asked for.
-const SQRUFF_VERSION: &str = "0.43.0+rule-configs-3-presentation-fmt+cp02-off";
+const SQRUFF_VERSION: &str = "0.44.0+rule-configs-3-presentation-fmt+cp02-off";
 
 /// Rules that are off unless the user selects them.
 ///

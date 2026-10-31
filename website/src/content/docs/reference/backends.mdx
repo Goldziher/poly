@@ -24,6 +24,7 @@ poly resolves every file through a tiered model:
 | Python | ruff internals | yes | yes |
 | TOML | taplo (lint) + `oxc_formatter_toml` (format; taplo's formatter when a taplo layout key is set) | yes | yes |
 | Markdown | rumdl (lint) + `oxc_formatter_markdown` (format; rumdl's fixer when a rumdl rule key is set) | yes | yes |
+| Markdown ADRs (`NNNN-*.md`) | adrlint (opt-in MADR structural rules) | opt-in | no |
 | SQL | sqruff | yes | yes |
 | YAML | `serde_yaml` (libyaml, the grammar PyYAML implements) + `oxc_formatter_yaml` | yes | yes |
 | CSS / SCSS | `oxc_formatter_css` (format; malva when a malva key is set) + biome (lint) | yes | yes |
@@ -109,6 +110,19 @@ unconfigured CI on its own.
 </Aside>
 
 ## Backend notes
+
+### Architecture decision records
+
+Numbered ADR files (`NNNN-*.md`) can additionally be checked against the MADR template by the
+opt-in `adrlint` backend. It is separate from rumdl on purpose: rumdl judges the Markdown, adrlint
+judges the decision record's section structure, front-matter metadata, list style and document-local
+link anchors. Enable it with `[lint.markdown.adrlint] enabled = true`.
+
+It runs the **document** rules only. Directory numbering and file names (`MADR41`–`MADR44`), the
+immutability lock (`ADR50`/`ADR51`), link-target existence (`MADR12a`/`MADR12c`) and external links
+(`MADR11`) depend on the rest of the tree or the network, which a per-file, content-hash-cached
+engine cannot model honestly; the `adrlint` CLI remains the tool for those. See
+[architecture decision records](/poly/guides/configuration/#architecture-decision-records-opt-in).
 
 ### Reaching an oxlint plugin
 

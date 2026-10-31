@@ -5,6 +5,30 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
+## [0.32.0] - 2026-10-31
+
+### Added
+
+- **The `adrlint` backend checks MADR architecture decision records** ([ADR 0037](adrs/0037-adrlint-madr-linting.md)).
+  Numbered ADR files (`NNNN-*.md`) can now be checked against the MADR template — section presence,
+  order and heading level (`MADR01`–`MADR08`), front-matter YAML (`MADR21`), list markers
+  (`MADR31`), document-local link anchors (`MADR12b`/`MADR12d`) —
+  with `[lint.markdown.adrlint] enabled = true`. It is off by default, because an existing log may
+  follow another template, and it is in-process, content-hash cached, configured through poly's
+  uniform `select` / `extend_select` / `ignore` vocabulary, and `poly lint --fix` applies the
+  structural heading fix. Directory numbering and file names (`MADR41`–`MADR44`), the immutability
+  lock (`ADR50`/`ADR51`), link-target existence (`MADR12a`/`MADR12c`) and external links
+  (`MADR11`) deliberately stay in the `adrlint` CLI: they need the whole tree, the lock manifest or
+  the network, which a per-file cache cannot model honestly.
+- The backend reference and configuration guide document the new backend and its rule boundary.
+
+### Changed
+
+- **Dependencies upgraded.** Registry requirements moved to `globset` 0.4.21, `hcl-edit` 0.10.0,
+  `json5` 1.3.6, `sqruff-lib`/`sqruff-lib-core` 0.44, `unicode-width` 0.2.3 and `zip` 9.1, with the
+  lockfile refreshed across the tree. `rumdl` resolves to 0.3.2 (raised by `adrlint`), so the
+  rumdl backend's cache identity now names 0.3.2.
+
 ## [0.31.2] - 2026-10-28
 
 ### Fixed

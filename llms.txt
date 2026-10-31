@@ -1,8 +1,8 @@
 # poly
 
 > Universal zero-dependency linter and formatter. One pure-Rust binary that lints and formats a
-> whole repository across ~30 languages in-process — ruff, oxc, biome, mago, taplo, rumdl, sqruff,
-> malva, markup_fmt and more compiled in — with a tree-sitter generic tier for the long tail. One
+> whole repository across ~30 languages in-process — ruff, oxc, biome, mago, taplo, rumdl, adrlint,
+> sqruff, malva, markup_fmt and more compiled in — with a tree-sitter generic tier for the long tail. One
 > `poly.toml` drives linting, formatting, git hooks and commit-message policy, and `poly mcp`
 > exposes the same surface to agents over MCP.
 

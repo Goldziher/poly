@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 use std::sync::LazyLock;
 
 use crate::engine::Engine;
+use crate::engines::adrlint::AdrlintEngine;
 use crate::engines::astgrep::AstGrepEngine;
 use crate::engines::biome_css::BiomeCssEngine;
 use crate::engines::biome_graphql::BiomeGraphqlEngine;
@@ -48,7 +49,8 @@ pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
         | Language::Json
         | Language::Jsonc => vec![Box::new(OxcEngine)],
         Language::Toml => vec![Box::new(TaploEngine::new()), Box::new(PolyConfigEngine)],
-        Language::Markdown | Language::Mdx => vec![Box::new(RumdlEngine)],
+        Language::Markdown => vec![Box::new(RumdlEngine), Box::new(AdrlintEngine)],
+        Language::Mdx => vec![Box::new(RumdlEngine)],
         Language::Python => vec![Box::new(RuffEngine)],
         Language::Sql => vec![Box::new(SqruffEngine)],
         Language::Yaml => vec![Box::new(YamlEngine)],

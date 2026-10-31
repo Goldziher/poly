@@ -75,7 +75,8 @@ x-ai-rulez:
     config or `requires-python`), `oxc/` (JS/TS/JSX/TSX/JSON/JSONC), `taplo.rs` (TOML: taplo
     lint, `oxc_formatter_toml` format unless a taplo layout key selects taplo's formatter),
     `rumdl.rs` (Markdown/MDX lint; `markdown_fmt.rs` formats through `oxc_formatter_markdown`
-    with `markdown_embed.rs` dispatching fences and front matter), `sqruff.rs` (SQL), `yaml.rs`
+    with `markdown_embed.rs` dispatching fences and front matter), `adrlint.rs` (opt-in MADR rules
+    for numbered ADRs — document rules only, see ADR 0037), `sqruff.rs` (SQL), `yaml.rs`
     (`serde_yaml` lint, `oxc_formatter_yaml` format), `malva.rs` (CSS/SCSS/Less — formats via
     `oxc_formatter_css` unless a malva key is set), `biome_css.rs` and `biome_graphql.rs` (both
     named `"biome"`; shared helpers in `biome_common.rs`), `graphql.rs`, `markup_fmt.rs`

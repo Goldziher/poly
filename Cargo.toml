@@ -16,7 +16,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.31.2"
+version = "0.32.0"
 edition = "2024"
 rust-version = "1.99"
 license = "MIT"
@@ -26,6 +26,7 @@ homepage = "https://github.com/Goldziher/poly"
 documentation = "https://github.com/Goldziher/poly"
 
 [workspace.dependencies]
+adrlint = "=0.4.0"
 aho-corasick = "1.1.5"
 # alejandra — Nix formatter (UNLICENSE, pure Rust via rnix); chosen over
 alejandra = "3.1"
@@ -67,9 +68,9 @@ flate2 = "1.1"
 fs-err = "3.3.2"
 fs2 = "0.4"
 gitfluff = { path = "crates/gitfluff" }
-globset = "0.4.20"
+globset = "0.4.21"
 graphql-parser = "0.4"
-hcl-edit = "0.9.8"
+hcl-edit = "0.10.0"
 hex = "0.4.3"
 http = "1.5.0"
 ignore = "0.4"
@@ -78,7 +79,7 @@ indoc = "2.0.8"
 insta = "1"
 insta-cmd = "0.7.0"
 itertools = "0.15.0"
-json5 = "1.3.4"
+json5 = "1.3.6"
 libc = "0.2.191"
 liblzma = { version = "0.4.9", features = ["static"] }
 mago-allocator = { version = "1.59" }
@@ -156,8 +157,8 @@ sha2 = "0.11"
 shlex = "2.0.1"
 similar = "3.2.1"
 sort-package-json = "1.0.0"
-sqruff-lib = "0.43"
-sqruff-lib-core = "0.43"
+sqruff-lib = "0.44"
+sqruff-lib-core = "0.44"
 strum = { version = "0.28.0", features = ["derive"] }
 taplo = "0.14"
 tar = { version = "0.4", default-features = false }
@@ -177,11 +178,11 @@ typos = "0.10"
 typos-dict = "0.14"
 uncomment = "3.10"
 unicase = "2"
-unicode-width = { version = "0.2.2", default-features = false }
+unicode-width = { version = "0.2.3", default-features = false }
 ureq = "3"
 walkdir = "2.5.0"
 which = "8.0.6"
-zip = { version = "8.6", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+zip = { version = "9.1", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 # oxc_formatter_yaml/toml pull `oxc_allocator` from the registry through their parsers; resolve it to
 # the same git copy as the rest of the oxc crates so there is a single `Allocator` type.

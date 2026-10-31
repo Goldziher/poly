@@ -11,7 +11,8 @@ x-ai-rulez:
 # poly
 
 poly is a single-binary, multi-language linter and formatter. Tier-1 backends are compiled in as
-crate dependencies — ruff, oxc, biome (CSS/GraphQL), mago (PHP), taplo, rumdl, sqruff, malva,
+crate dependencies — ruff, oxc, biome (CSS/GraphQL), mago (PHP), taplo, rumdl, adrlint (MADR ADRs,
+opt-in), sqruff, malva,
 markup_fmt, rubyfmt, nixfmt, typos, and more under `crates/poly-core/src/engines/` — with a
 tree-sitter generic tier for the long tail. Two cross-cutting lint tiers run on top: the native
 `quality` metric engine and ast-grep with a built-in rule pack. Canonical first-party CLIs are

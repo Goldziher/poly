@@ -1,0 +1,12 @@
+---
+source: crates/poly-core/tests/adrlint.rs
+expression: summary
+---
+[
+    "line=1 code=MADR01c severity=Error msg=missing or ill-formatted section: Considered Options",
+    "line=1 code=MADR01d severity=Error msg=missing or ill-formatted section: Decision Outcome",
+    "line=5 code=MADR12b severity=Error msg=anchor '#considered-options' does not match any heading in this document",
+    "line=7 code=MADR31 severity=Error msg=expected '*' as the list marker, found '-'",
+    "line=8 code=MADR31 severity=Error msg=expected '*' as the list marker, found '-'",
+    "line=10 code=MADR06 severity=Error msg=expected level 3 for 'Consequences', found level 2",
+]

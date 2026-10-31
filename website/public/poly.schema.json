@@ -229,6 +229,9 @@
             "rumdl": {
               "$ref": "#/$defs/lint_rumdl"
             },
+            "adrlint": {
+              "$ref": "#/$defs/lint_adrlint"
+            },
             "typos": {
               "$ref": "#/$defs/lint_typos"
             },
@@ -3695,6 +3698,37 @@
           "type": "integer"
         },
         "line_length": {
+          "type": "integer"
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "type": "array"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        },
+        "select": {
+          "type": "array"
+        }
+      },
+      "additionalProperties": true
+    },
+    "lint_adrlint": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "extend_select": {
+          "type": "array"
+        },
+        "ignore": {
+          "type": "array"
+        },
+        "indent_width": {
           "type": "integer"
         },
         "rules": {

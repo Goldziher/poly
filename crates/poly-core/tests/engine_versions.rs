@@ -15,6 +15,7 @@ fn it_names_the_compiled_in_backends() {
         "oxc",
         "taplo",
         "rumdl",
+        "adrlint",
         "typos",
         "astgrep",
         "quality",

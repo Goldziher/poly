@@ -29,6 +29,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use poly_core::engine::Engine;
+use poly_core::engines::adrlint::AdrlintEngine;
 use poly_core::engines::astgrep::AstGrepEngine;
 use poly_core::engines::biome_css::BiomeCssEngine;
 use poly_core::engines::biome_graphql::BiomeGraphqlEngine;
@@ -171,6 +172,7 @@ fn engine_versions_track_cargo_lock() {
         ),
         check("biome", BiomeCssEngine.version(), vec![("biome_css_analyze", Git)]),
         check("sqruff", SqruffEngine.version(), vec![("sqruff-lib", Registry)]),
+        check("adrlint", AdrlintEngine.version(), vec![("adrlint", Registry)]),
         check(
             "malva",
             MalvaEngine.version(),

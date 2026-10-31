@@ -523,6 +523,7 @@ const ENGINE_SOURCES: &[(&str, &[&str])] = &[
         ],
     ),
     ("graphql", &["graphql.rs"]),
+    ("adrlint", &["adrlint.rs"]),
     ("biome", &["biome_css.rs", "biome_graphql.rs", "biome_common.rs"]),
     ("alejandra", &["nixfmt.rs"]),
     ("rubyfmt", &["rubyfmt.rs"]),

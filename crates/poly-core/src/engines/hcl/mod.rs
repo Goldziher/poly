@@ -28,7 +28,7 @@ use crate::engine_guard::refuse_pathological_nesting;
 use crate::language::Language;
 
 /// Version string used as the Engine cache key; bump the suffix whenever formatter output changes.
-const ENGINE_VERSION: &str = "hcl-edit 0.9.8 + hclwrite-format-v1";
+const ENGINE_VERSION: &str = "hcl-edit 0.10.0 + hclwrite-format-v1";
 
 static LANGUAGES: &[Language] = &[Language::Hcl];
 

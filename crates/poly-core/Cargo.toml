@@ -28,6 +28,7 @@ path = "src/lib.rs"
 schemars = ["dep:schemars"]
 
 [dependencies]
+adrlint.workspace = true
 alejandra.workspace = true
 anyhow.workspace = true
 ast-grep-config.workspace = true
