@@ -30,7 +30,7 @@ description = "Run the test suite"
 run = "cargo test --workspace --exclude conformance"
 
 [tasks."test:hooks"]
-description = "Run native hook tests (mise run test:hooks -- [cargo test arguments])"
+description = "Run native hook tests; cargo test arguments follow -- -- (mise run test:hooks -- -- filter -- --nocapture)"
 usage = 'arg "[args]..." var=#true help="Arguments passed to cargo test"'
 run = 'eval "set -- ${usage_args:-}"; cargo test -p poly-hooks "$@"'
 
