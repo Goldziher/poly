@@ -670,15 +670,12 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || '' }}
 
-      - uses: pnpm/action-setup@v6
+      - name: Setup Node.js and pnpm
+        uses: xberg-io/actions/setup-mise@v1
         with:
-          version: 12.15.0
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: "22"
-          registry-url: "https://registry.npmjs.org"
+          # A dispatched tag can predate mise.toml; restore the config from the workflow's commit. ~keep
+          config-ref: ${{ github.sha }}
+          tools: node pnpm
 
       - name: Download the published release archives
         env:
@@ -769,15 +766,12 @@ jobs:
           python3 scripts/sync_public_skills.py --check
           python3 scripts/sync_plugin_version.py --check
 
-      - uses: pnpm/action-setup@v6
+      - name: Setup Node.js and pnpm
+        uses: xberg-io/actions/setup-mise@v1
         with:
-          version: 12.15.0
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: "24"
-          registry-url: "https://registry.npmjs.org"
+          # A dispatched tag can predate mise.toml; restore the config from the workflow's commit. ~keep
+          config-ref: ${{ github.sha }}
+          tools: node pnpm
 
       - name: Verify packed Pi and OpenCode resources
         run: |
@@ -912,9 +906,12 @@ jobs:
           python3 scripts/sync_plugin_version.py --expect "$VERSION"
           python3 scripts/sync_public_skills.py --check
           ai-rulez verify --plugin
-      - uses: astral-sh/setup-uv@v10.3.2
+      - name: Setup Python and uv
+        uses: xberg-io/actions/setup-mise@v1
         with:
-          python-version: "3.13"
+          # A dispatched tag can predate mise.toml; restore the config from the workflow's commit. ~keep
+          config-ref: ${{ github.sha }}
+          tools: python uv
       - name: Read the verified Hermes package version
         id: wheel-version
         run: |
@@ -963,9 +960,11 @@ jobs:
           ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || '' }}
 
       - name: Setup Python
-        uses: actions/setup-python@v7
+        uses: xberg-io/actions/setup-mise@v1
         with:
-          python-version: "3.12"
+          # A dispatched tag can predate mise.toml; restore the config from the workflow's commit. ~keep
+          config-ref: ${{ github.sha }}
+          tools: python
 
       - name: Download the published release archives
         env:

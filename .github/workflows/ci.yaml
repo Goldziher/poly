@@ -21,6 +21,14 @@ env:
   CARGO_PROFILE_TEST_DEBUG: line-tables-only
 
 jobs:
+  toolchain:
+    name: toolchain baseline
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: xberg-io/actions/check-toolchain@v1
+
   fmt:
     name: fmt
     runs-on: ubuntu-latest
