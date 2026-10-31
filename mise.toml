@@ -10,3 +10,103 @@ python = "3.13.18"
 uv = "0.13.6"
 node = "26.12.1"
 pnpm = "12.15.0"
+
+[vars]
+# Tasks run poly built from this checkout, so they lint and format with the code under change. ~keep
+poly = "cargo run -q -p poly-cli --bin poly --"
+# ai-rulez is never pinned: every task runs its newest release on the baseline Node. ~keep
+ai_rulez = "npx -y ai-rulez@latest"
+
+[tasks.setup]
+description = "Fetch dependencies and install the git hooks"
+run = ["mise install", "cargo fetch", "{{vars.poly}} hooks install"]
+
+[tasks.build]
+description = "Build the whole workspace"
+run = "cargo build --workspace --exclude conformance"
+
+[tasks.test]
+description = "Run the test suite"
+run = "cargo test --workspace --exclude conformance"
+
+[tasks."test:hooks"]
+description = "Run native hook tests (mise run test:hooks -- [cargo test arguments])"
+usage = 'arg "[args]..." var=#true help="Arguments passed to cargo test"'
+run = 'eval "set -- ${usage_args:-}"; cargo test -p poly-hooks "$@"'
+
+[tasks.lint]
+description = "Clippy (deny warnings) plus poly's own lint over the repo"
+run = ["cargo clippy --workspace --exclude conformance --all-targets -- -D warnings", "{{vars.poly}} lint ."]
+
+[tasks.format]
+description = "Format Rust with rustfmt and the rest of the tree with polyfmt"
+alias = ["fmt"]
+run = ["cargo fmt", "{{vars.poly}} fmt --fix ."]
+
+[tasks."format:check"]
+description = "Verify formatting without writing changes"
+alias = ["fmt:check"]
+run = ["cargo fmt --check", "{{vars.poly}} fmt ."]
+
+[tasks.hooks]
+description = "Run the full pre-commit hook stage from poly.toml over all files"
+run = "{{vars.poly}} hooks run pre-commit --all-files"
+
+[tasks.bench]
+description = "Run benchmarks"
+run = "cargo bench --workspace --exclude conformance"
+
+[tasks.conformance]
+description = "Run the Docker-based conformance harness vs reference formatters"
+run = "cargo test -p conformance"
+
+[tasks.harden]
+description = "Run poly against pinned third-party trees (usage: mise run harden -- django ripgrep)"
+usage = 'arg "[targets]..." var=#true help="Corpus entries to run"'
+run = 'eval "set -- ${usage_targets:-}"; ./scripts/harden.sh "$@"'
+
+[tasks."harden:local"]
+description = "Run the harness against the sibling working trees next door — read-only"
+usage = 'arg "[targets]..." var=#true help="Corpus entries to run"'
+run = 'eval "set -- ${usage_targets:-}"; POLY_HARDEN_CORPUS=a ./scripts/harden.sh "$@"'
+
+[tasks."harden:generated"]
+description = "Run the harness against generated-code repositories (rule-audit input)"
+usage = 'arg "[targets]..." var=#true help="Corpus entries to run"'
+run = 'eval "set -- ${usage_targets:-}"; POLY_HARDEN_CORPUS=c ./scripts/harden.sh "$@"'
+
+[tasks.check]
+description = "Full local gate (format check, lint, test) — run before pushing"
+run = [{ task = "format:check" }, { task = "lint" }, { task = "test" }]
+
+[tasks."package:npm"]
+description = "Stage a local poly build into the npm platform package and pack it (usage: mise run package:npm)"
+run = ['./npm-package/stage-binaries.sh --local "$PWD/target/debug/poly"', "cd npm-package && pnpm pack"]
+
+[tasks."package:wheels"]
+description = "Build a platform wheel from a local poly build (usage: mise run package:wheels)"
+run = 'uv run --no-project --with build --with hatchling python pip-package/build_wheels.py --local "$PWD/target/debug/poly"'
+
+[tasks.set-version]
+description = "Set the release version in the workspace Cargo.toml (usage: mise run set-version 0.1.8)"
+usage = 'arg "<version>" help="Release version, without the leading v"'
+run = './scripts/release-bump.sh "{{usage.version}}"'
+
+[tasks."plugin:generate"]
+description = "Generate all coding-agent plugin profiles and public skills"
+run = ["{{vars.ai_rulez}} generate --plugin --no-local --strict-config", "python3 scripts/sync_public_skills.py"]
+
+[tasks."plugin:verify"]
+description = "Verify native plugin bundles, versions, and public exports"
+run = [
+  "{{vars.ai_rulez}} verify --plugin",
+  "python3 scripts/sync_plugin_version.py --check",
+  "python3 scripts/sync_public_skills.py --check",
+]
+
+[tasks."plugin:test"]
+description = "Verify OpenCode, Hermes protocol, and public skill contracts"
+run = [
+  "node --test scripts/tests/opencode-plugin.test.mjs",
+  "uv run --no-project --with mcp==2.3.0 --with PyYAML==6.0.3 python -m unittest discover -s scripts/tests",
+]
