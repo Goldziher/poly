@@ -24,8 +24,6 @@ jobs:
           fetch-depth: 0
       - name: Install ai-rulez
         uses: xberg-io/actions/setup-ai-rulez@v1
-        with:
-          ai-rulez-version: "5.7.0"
       - name: Verify the target release version matches the plugin
         env:
           PLUGIN_RELEASE_TAG: ${{ inputs.tag }}
