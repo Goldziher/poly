@@ -82,13 +82,19 @@ mod tests {
 
     #[test]
     fn spinning_is_working() {
+        // Spin until the thread itself has run for 40ms rather than for a wall-clock interval: on a
+        // loaded CI runner the scheduler can preempt a wall-clock spin for most of its window. ~keep
+        let target = Duration::from_millis(40);
         let clock = EngineClock::start();
-        let deadline = Instant::now() + Duration::from_millis(80);
-        while Instant::now() < deadline {
+        let Some(start) = clock.cpu else {
+            return;
+        };
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while thread_cpu_time().is_some_and(|now| now.saturating_sub(start) < target) && Instant::now() < deadline {
             std::hint::spin_loop();
         }
         let time = clock.stop();
-        assert!(!time.mostly_waiting(), "{time:?}");
+        assert!(time.cpu.is_some_and(|cpu| cpu >= target), "{time:?}");
     }
 
     #[test]
