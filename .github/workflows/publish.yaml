@@ -287,9 +287,9 @@ jobs:
             os: ubuntu-latest
             alpine: true
           - triple: x86_64-apple-darwin
-            os: macos-14
+            os: macos-26-intel
           - triple: aarch64-apple-darwin
-            os: macos-14
+            os: macos-26
           - triple: x86_64-pc-windows-msvc
             os: windows-latest
     steps:
