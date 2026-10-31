@@ -8,16 +8,19 @@
 //! package markers and its sibling modules), and whatever a hook's command line
 //! names. Everything else is not read, so it is not written.
 //!
-//! Everything else is **linked**, not written: each directory outside the
-//! selection appears in the snapshot as a symlink to the same path in the live
-//! worktree. Tools probe the tree by existence as well as by content — ruff's
-//! isort decides a module is first-party by finding `armis/common/lib` on disk,
-//! and without it a staged file's import blocks are reflowed differently from the
-//! full tree. A link answers those probes and costs one symlink per directory.
-//! Nothing reached through a link is a staged file or a sibling of one, so
-//! nothing the run validates is read from the worktree.
+//! Everything else is **mirrored**, not written: each directory outside the
+//! selection appears in the snapshot as a real directory whose tracked files are
+//! hardlinks to the same path in the live worktree (see [`super::links`]). Tools
+//! probe the tree by existence as well as by content — ruff's isort decides a
+//! module is first-party by finding `armis/common/lib` on disk, and without it a
+//! staged file's import blocks are reflowed differently from the full tree — and
+//! a plain directory walk must see the files too, which a directory symlink hid
+//! from every walker that does not follow one (Goldziher/poly#45). A mirror costs
+//! one inode reference per tracked file and no byte copy. Nothing reached through
+//! a mirror is a staged file or a sibling of one, so nothing the run validates is
+//! read from the worktree.
 //!
-//! A link only works for content the worktree holds, so every `skip-worktree`
+//! A mirror only works for content the worktree holds, so every `skip-worktree`
 //! entry is selected and written from the index, with its directory chain like a
 //! staged file. In a sparse checkout the worktree lacks those entries outright;
 //! after `git update-index --skip-worktree` it holds bytes git no longer compares
@@ -60,10 +63,10 @@ impl SnapshotScope<'_> {
         }
     }
 
-    pub(super) fn select(self, staged: Vec<StagedEntry>) -> Selection {
+    pub(super) fn select(self, staged: &[StagedEntry]) -> Selection {
         let Self::Sparse { files, pinned } = self else {
             return Selection {
-                entries: staged,
+                entries: staged.to_vec(),
                 links: Vec::new(),
             };
         };
@@ -93,7 +96,7 @@ impl SnapshotScope<'_> {
             dirs.extend(ancestors.skip(1));
         }
         let mut pinned_dirs: HashSet<PathBuf> = HashSet::new();
-        for entry in &staged {
+        for entry in staged {
             if is_pinned(&entry.path) {
                 pinned_dirs.extend(entry.path.parent().map(Path::to_path_buf));
             }
@@ -109,7 +112,7 @@ impl SnapshotScope<'_> {
             })
             .cloned()
             .collect();
-        let links = unselected_roots(&staged, &entries);
+        let links = unselected_roots(staged, &entries);
         Selection { entries, links }
     }
 }
@@ -148,7 +151,7 @@ fn unselected_roots(staged: &[StagedEntry], selected: &[StagedEntry]) -> Vec<Pat
 pub(super) struct Selection {
     /// The entries to materialize, content from the index.
     pub(super) entries: Vec<StagedEntry>,
-    /// Directories to link to the worktree rather than write, see the module docs.
+    /// Directories to mirror from the worktree rather than write, see the module docs.
     pub(super) links: Vec<PathBuf>,
 }
 

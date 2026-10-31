@@ -40,6 +40,31 @@
 //! outside that rule — they point at the live worktree's submodule checkout by
 //! design (above) and are created after the sanitizing pass.
 //!
+//! # Mirrored directories
+//!
+//! A [`SnapshotScope::Sparse`] snapshot writes the staged files and their
+//! directory context, and **mirrors** every other tracked directory as a real
+//! directory whose files are hardlinks to the worktree ([`links`]). A directory
+//! symlink — the pre-0.32.1 shape — is invisible to a walker that does not
+//! follow directory links, so `ai-rulez validate` saw no tracked file under an
+//! unchanged directory and reported every rule glob over one as `AR101`
+//! (Goldziher/poly#45). The mirror is a real tree, so a non-following walk sees
+//! every path the index tracks, while an unchanged file still costs no byte copy
+//! and keeps its worktree mtime. A mirrored path is never a staged file (the
+//! selection plus its directory context covers those), so what the run validates
+//! is still index content; a hook that *writes* through a mirror mutates the
+//! worktree inode it shares and is caught by [`LinkGuard`], exactly as it was
+//! when the directory itself was a symlink.
+//!
+//! The mirror is built from the index entries under each root, never from a walk
+//! of the worktree, so untracked build output is not pulled in. A tracked entry
+//! the worktree does not have (a sparse checkout's omitted directory is skipped
+//! as a root; a deleted worktree file inside one is not) is materialized from its
+//! index blob by the same checkout as the selected entries. When hardlinking is
+//! unavailable — a cache directory on another filesystem, a permissions or
+//! filesystem limitation — the bytes are copied and the source mtime is
+//! preserved.
+//!
 //! # Persistent, incremental cache
 //!
 //! The snapshot is a **persistent cache** at a stable path outside the repo
@@ -106,6 +131,7 @@ mod include;
 mod link_guard;
 mod links;
 mod manifest;
+mod repository;
 mod scope;
 mod submodule;
 
@@ -194,7 +220,8 @@ impl StagedSnapshot {
 
 /// Refresh `dir` so it mirrors the current staged (index) content of `root`.
 fn refresh(root: &Path, dir: &Path, includes: &[String], scope: SnapshotScope<'_>) -> Result<(), Error> {
-    let selection = select_with_extended_configs(root, scope, git::list_staged_entries(root)?)?;
+    let all = git::list_staged_entries(root)?;
+    let selection = select_with_extended_configs(root, scope, &all)?;
     links::drop_stale(dir, &selection.links);
     let staged = selection.entries;
     let previous = read_manifest(dir);
@@ -207,14 +234,20 @@ fn refresh(root: &Path, dir: &Path, includes: &[String], scope: SnapshotScope<'_
             to_checkout.push(entry.path.clone());
         }
     }
+    // Mirror the unselected directories before the checkout, and let the same
+    // checkout supply any tracked entry their worktree copy cannot (a sparse
+    // checkout's omitted file, a worktree deletion).
+    to_checkout.extend(links::materialize(root, dir, &selection.links, &all)?);
     git::checkout_index_paths(root, dir, &to_checkout)?;
     sanitize_symlinks(dir, &staged);
 
-    links::create(root, dir, &selection.links)?;
     materialize_submodules(root, dir)?;
     // After the sanitizing pass and outside the manifest, for the reasons the
     // `include` module documents.
     materialize_includes(root, dir, includes)?;
+    // A `.git` file pointing at the real git dir, so a library-based repository
+    // reader sees the same work tree the exported `GIT_DIR` describes.
+    repository::materialize(root, dir);
 
     write_manifest(dir, &staged)?;
     Ok(())
@@ -231,13 +264,13 @@ const MAX_EXTEND_DEPTH: usize = 8;
 fn select_with_extended_configs(
     root: &Path,
     scope: SnapshotScope<'_>,
-    staged: Vec<git::StagedEntry>,
+    staged: &[git::StagedEntry],
 ) -> Result<scope::Selection, Error> {
     let SnapshotScope::Sparse { files, pinned } = scope else {
         return Ok(scope.select(staged));
     };
     let mut extended: Vec<String> = Vec::new();
-    let mut selection = scope.select(staged.clone());
+    let mut selection = scope.select(staged);
     for _ in 0..MAX_EXTEND_DEPTH {
         let found = extends::extended_configs(root, &selection.entries, &extended)?;
         if found.is_empty() {
@@ -245,7 +278,7 @@ fn select_with_extended_configs(
         }
         extended.extend(found);
         let pinned: Vec<String> = pinned.iter().cloned().chain(extended.iter().cloned()).collect();
-        selection = SnapshotScope::Sparse { files, pinned: &pinned }.select(staged.clone());
+        selection = SnapshotScope::Sparse { files, pinned: &pinned }.select(staged);
     }
     Ok(selection)
 }

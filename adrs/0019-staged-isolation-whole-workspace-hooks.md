@@ -19,6 +19,10 @@
   now passes `--ignore-skip-worktree-bits`, so an entry omitted from the live checkout
   (`skip-worktree`) materializes into the snapshot instead of failing the step. See "Amendment:
   sparse checkouts" below.
+- Updated: 2026-10-31: a sparse snapshot's unselected directories are **mirrored as real
+  directories of hardlinks**, not symlinks, so a walk that does not follow directory symlinks
+  sees every tracked file; the snapshot also carries a `.git` pointer to the original
+  repository. See "Amendment: mirrored directories" below.
 
 ## Context
 
@@ -253,12 +257,59 @@ pointing git at the real repository from the snapshot were measured and closed:
   from the snapshot it wrote the snapshot's stat data into the commit's index.
 
 An explicit index write from a hook (`git add`) still reaches the commit's index, exactly as it does
-for a hook run without isolation. In a sparse snapshot the linked directories are symlinks, so
+for a hook run without isolation. In a sparse snapshot the mirrored directories hold hardlinks, so
 `git status` there reports their contents as changed; read the index (`ls-files`, `cat-file`)
 rather than diffing the snapshot. Stage-level and per-hook `precondition` / `before` / `after`
 steps are not given the context.
 
 [Goldziher/poly#37]: https://github.com/Goldziher/poly/issues/37
+
+## Amendment: mirrored directories (2026-10-31)
+
+Since 0.30.0 a sparse snapshot wrote the staged files and their directory context and represented
+every other tracked directory as a **symlink back into the worktree** (`.agents -> <worktree>/.agents`,
+recorded in `.poly-links`). That answered existence probes, but a walker that does not follow
+directory symlinks saw none of the files under it. `ai-rulez validate` — the `ai-rulez-validate`
+hook source — resolves its rule globs that way, so every glob over an unchanged directory reported
+`AR101 glob-no-match` and blocked any commit touching `.ai-rulez/`, while the same tree validated
+clean with `--all-files` and in a normal checkout (Goldziher/poly#45; regressions #29, #44).
+
+**The unselected directories are now mirrored as real directories.** Each tracked entry under a
+mirror root is `std::fs::hard_link`ed from the live worktree, so unchanged content costs one inode
+reference instead of a byte copy and keeps its worktree mtime. When hardlinking is unavailable —
+the cache directory on another filesystem, a permissions or filesystem limitation — the bytes are
+copied and the source mtime preserved. The mirror is built from the **index entries** under the
+root, never from a walk of the worktree, so untracked build output is not pulled in; an entry the
+worktree cannot supply (a file deleted there, or anything the index tracks without a worktree file)
+is materialized from its index blob by the same `checkout-index` as the selected entries. `.poly-links`
+still records the roots, so a refresh dismantles the ones the selection no longer mirrors and prunes
+paths the index dropped, while a root it keeps is reconciled in place — an entry already linked to
+the current worktree inode is left alone, so directory mtimes and inodes do not churn.
+
+The guarantees are unchanged, and now stated as a contract a hook tool can rely on:
+
+- **A real tree.** Every tracked path is reachable by a walk that never follows a directory symlink.
+  A directory component of a tracked path is a real directory; a tracked symlink is still a symlink.
+- **Not a validation input.** A mirrored path is never a staged file: the selection plus its
+  directory context covers those, and their content still comes from the index blob. A mirror only
+  gives a tool the rest of the tree — existence, module layout, rule-glob matches.
+- **The worktree is not mutated by the snapshot.** Unlinking a mirror's hardlinks never touches the
+  worktree file they share an inode with. A hook that *writes* through one does change that inode;
+  [`LinkGuard`] fingerprints each mirror root before and after the run and fails it, exactly as it
+  did for a directory symlink. A hook creating a *new* file under a mirror now lands in the
+  snapshot's own directory and is discarded on the next refresh, instead of appearing in the
+  worktree.
+- **The snapshot is a git work tree.** The refresh writes a `.git` **file** —
+  `gitdir: <absolute git dir>` — at the snapshot root. Exported `GIT_DIR` / `GIT_INDEX_FILE` already
+  pointed hooks at the real repository, but a library-based reader (ai-rulez uses one) does not see
+  process environment; with no `.git` it fell back to a filesystem walk that skips hidden
+  directories, which is why the `.agents/plugins/**` glob stayed unmatched even once the file was
+  materialized. The pointer grants no new capability — a hook could already read and write the real
+  index — and a hook's `git init` keeps it as a pointer rather than creating a second repository.
+- **No shrinking of the validated set.** `snapshot_include` links are unaffected: an included path
+  inside a mirrored directory is now linked on its own rather than reached through the directory.
+
+[`LinkGuard`]: ../crates/poly-hooks/src/snapshot/link_guard.rs
 
 ## Consequences
 

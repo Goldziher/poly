@@ -61,6 +61,47 @@ fn is_written(snap: &Path, rel: &str) -> bool {
     true
 }
 
+/// The inode of `path`, read without following a symlink.
+fn inode(path: &Path) -> u64 {
+    std::os::unix::fs::MetadataExt::ino(&std::fs::symlink_metadata(path).unwrap())
+}
+
+/// `rel` is a regular file in `snap` that shares an inode with the same path in
+/// the worktree — i.e. a hardlink the mirror made, not a byte copy.
+fn is_hardlinked(snap: &Path, repo: &Path, rel: &str) -> bool {
+    let mirrored = snap.join(rel);
+    let live = repo.join(rel);
+    let Ok(meta) = std::fs::symlink_metadata(&mirrored) else {
+        return false;
+    };
+    meta.file_type().is_file() && is_written(snap, rel) && inode(&mirrored) == inode(&live)
+}
+
+/// Every regular file reachable from `root` by a walk that **never follows a
+/// directory symlink** — the walker `ai-rulez validate` and friends use.
+fn walked_files(root: &Path) -> Vec<PathBuf> {
+    fn visit(dir: &Path, root: &Path, out: &mut Vec<PathBuf>) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            let path = entry.path();
+            if file_type.is_dir() {
+                visit(&path, root, out);
+            } else if file_type.is_file() {
+                out.push(path.strip_prefix(root).unwrap().to_path_buf());
+            }
+        }
+    }
+    let mut out = Vec::new();
+    visit(root, root, &mut out);
+    out.sort();
+    out
+}
+
 fn sparse<'a>(files: &'a [PathBuf], pinned: &'a [String]) -> SnapshotScope<'a> {
     SnapshotScope::Sparse { files, pinned }
 }
@@ -70,7 +111,7 @@ fn snapshot(repo: &Path, cache: &Path, files: &[PathBuf], pinned: &[String]) -> 
 }
 
 #[test]
-fn sparse_snapshot_holds_staged_files_and_directory_context_only() {
+fn sparse_snapshot_writes_staged_files_and_directory_context_only() {
     let repo = repo();
     let cache = TempDir::new().unwrap();
     let files = [PathBuf::from("pkg/sub/b.py")];
@@ -80,13 +121,18 @@ fn sparse_snapshot_holds_staged_files_and_directory_context_only() {
     for present in ["pkg/sub/b.py", "pkg/__init__.py", "pkg/a.py", "pyproject.toml"] {
         assert!(is_written(snap.path(), present), "{present} should be materialized");
     }
-    for absent in ["other/c.py", "other/deep/d.py", "scripts/check.sh"] {
-        assert!(!is_written(snap.path(), absent), "{absent} should not be written");
+    // Everything else is mirrored, not written from the index: present to a
+    // walker, but the same inode as the worktree rather than a fresh copy.
+    for mirrored in ["other/c.py", "other/deep/d.py", "scripts/check.sh", "scripts/lib.sh"] {
+        assert!(
+            is_hardlinked(snap.path(), repo.path(), mirrored),
+            "{mirrored} should be mirrored from the worktree"
+        );
     }
 }
 
 #[test]
-fn unselected_directories_are_linked_so_existence_probes_see_the_tree() {
+fn unselected_directories_are_real_trees_so_a_non_following_walk_sees_them() {
     let repo = repo();
     let cache = TempDir::new().unwrap();
     let files = [PathBuf::from("pkg/sub/b.py")];
@@ -94,28 +140,152 @@ fn unselected_directories_are_linked_so_existence_probes_see_the_tree() {
     let snap = snapshot(repo.path(), cache.path(), &files, &[]);
 
     let other = snap.path().join("other");
-    assert!(std::fs::symlink_metadata(&other).unwrap().file_type().is_symlink());
+    assert!(
+        !std::fs::symlink_metadata(&other).unwrap().file_type().is_symlink(),
+        "a directory symlink is invisible to a walker that does not follow one"
+    );
+    assert!(other.is_dir());
     assert!(
         snap.path().join("other/deep").is_dir(),
-        "a nested directory resolves through the link"
+        "nested directories are real too"
     );
-    assert!(snap.path().join("other/c.py").is_file(), "so does a module file");
+    assert!(snap.path().join("other/c.py").is_file(), "so is a module file");
+    assert!(is_hardlinked(snap.path(), repo.path(), "other/c.py"));
 }
 
+/// THE AR101 REGRESSION (Goldziher/poly#45). A tool that walks the snapshot
+/// without following directory symlinks — `ai-rulez validate` resolving rule
+/// globs is the one that reported it — must reach every tracked file, including
+/// those under a directory the sparse selection did not write. A directory
+/// symlink hid all of them.
 #[test]
-fn a_link_the_selection_keeps_survives_a_refresh() {
+fn a_walk_that_does_not_follow_directory_symlinks_sees_every_tracked_file() {
+    let repo = repo();
+    let cache = TempDir::new().unwrap();
+    let files = [PathBuf::from("pkg/sub/b.py")];
+
+    let snap = snapshot(repo.path(), cache.path(), &files, &[]);
+
+    let walked = walked_files(snap.path());
+    for tracked in [
+        "pkg/a.py",
+        "pkg/sub/b.py",
+        "other/c.py",
+        "other/deep/d.py",
+        "scripts/check.sh",
+        "scripts/lib.sh",
+        "pyproject.toml",
+    ] {
+        assert!(
+            walked.iter().any(|path| path == Path::new(tracked)),
+            "{tracked} must be reachable without following a directory symlink: {walked:?}"
+        );
+    }
+}
+
+/// The snapshot must look like a git work tree to a **library-based** repository
+/// reader: ai-rulez resolves rule globs against tracked files, and with no
+/// `.git` falls back to a hidden-skipping walk, which reported a glob over
+/// `.agents/` as `AR101` even though the file is in the snapshot (Goldziher/poly#45).
+#[test]
+fn the_snapshot_carries_a_git_pointer_to_the_original_repository() {
+    let repo = repo();
+    let cache = TempDir::new().unwrap();
+    let snap = snapshot(repo.path(), cache.path(), &[PathBuf::from("pkg/a.py")], &[]);
+
+    let pointer = std::fs::read_to_string(snap.path().join(".git")).expect("a .git pointer");
+    let git_dir = git_output(repo.path(), &["rev-parse", "--absolute-git-dir"]);
+    assert_eq!(pointer, format!("gitdir: {git_dir}\n"));
+    assert!(
+        !snap.path().join(".git").is_dir(),
+        "a directory pointer would be a second repository, not the real one"
+    );
+
+    let toplevel = git_output(snap.path(), &["rev-parse", "--show-toplevel"]);
+    assert_eq!(
+        std::fs::canonicalize(toplevel).unwrap(),
+        std::fs::canonicalize(snap.path()).unwrap(),
+        "git must see the snapshot as the work tree"
+    );
+}
+
+/// A hook that ran `git init` in the snapshot left a real `.git` directory;
+/// the next refresh must restore the pointer rather than keep a second, empty
+/// repository.
+#[test]
+fn a_refresh_replaces_a_snapshot_local_git_directory_with_the_pointer() {
     let repo = repo();
     let cache = TempDir::new().unwrap();
     let files = [PathBuf::from("pkg/a.py")];
     let snap = snapshot(repo.path(), cache.path(), &files, &[]);
-    let before = std::fs::read_link(snap.path().join("other")).unwrap();
-    let inode = |path: &Path| std::os::unix::fs::MetadataExt::ino(&std::fs::symlink_metadata(path).unwrap());
-    let created = inode(&snap.path().join("other"));
+    let pointer = std::fs::read_to_string(snap.path().join(".git")).unwrap();
+
+    std::fs::remove_file(snap.path().join(".git")).unwrap();
+    std::fs::create_dir(snap.path().join(".git")).unwrap();
 
     snapshot(repo.path(), cache.path(), &files, &[]);
 
-    assert_eq!(std::fs::read_link(snap.path().join("other")).unwrap(), before);
-    assert_eq!(inode(&snap.path().join("other")), created, "the link was not recreated");
+    assert_eq!(std::fs::read_to_string(snap.path().join(".git")).unwrap(), pointer);
+}
+
+fn git_output(repo: &Path, args: &[&str]) -> String {
+    let output = Command::new("git").args(args).current_dir(repo).output().expect("git");
+    assert!(
+        output.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8_lossy(&output.stdout).trim().to_string()
+}
+
+/// The mirror is a hardlink, not a copy: unchanged content costs an inode
+/// reference, keeps the worktree mtime, and reflects a worktree edit without a
+/// refresh.
+#[test]
+fn mirrored_files_are_hardlinks_not_copies() {
+    let repo = repo();
+    let cache = TempDir::new().unwrap();
+    let files = [PathBuf::from("pkg/a.py")];
+
+    let snap = snapshot(repo.path(), cache.path(), &files, &[]);
+    let mirrored = snap.path().join("other/c.py");
+    let live = repo.path().join("other/c.py");
+
+    assert!(is_hardlinked(snap.path(), repo.path(), "other/c.py"));
+    assert_eq!(
+        std::fs::metadata(&mirrored).unwrap().modified().unwrap(),
+        std::fs::metadata(&live).unwrap().modified().unwrap(),
+        "a hardlink shares the mtime it was linked with"
+    );
+    std::fs::write(&live, "c = 2  # written in the worktree\n").unwrap();
+    assert_eq!(
+        std::fs::read_to_string(&mirrored).unwrap(),
+        "c = 2  # written in the worktree\n",
+        "the mirror is the worktree file, not a snapshot-time copy"
+    );
+}
+
+#[test]
+fn a_mirror_the_selection_keeps_is_not_recreated_on_refresh() {
+    let repo = repo();
+    let cache = TempDir::new().unwrap();
+    let files = [PathBuf::from("pkg/a.py")];
+    let snap = snapshot(repo.path(), cache.path(), &files, &[]);
+    let created = inode(&snap.path().join("other/c.py"));
+    let directory = inode(&snap.path().join("other"));
+
+    snapshot(repo.path(), cache.path(), &files, &[]);
+
+    assert_eq!(
+        inode(&snap.path().join("other/c.py")),
+        created,
+        "a steady-state refresh must not churn the hardlink"
+    );
+    assert_eq!(
+        inode(&snap.path().join("other")),
+        directory,
+        "nor the directory that holds it"
+    );
 }
 
 #[test]
@@ -165,20 +335,28 @@ fn pinned_paths_are_materialized_with_their_siblings() {
 
     assert!(is_written(snap.path(), "scripts/check.sh"));
     assert!(is_written(snap.path(), "scripts/lib.sh"), "sibling of a pinned script");
-    assert!(!is_written(snap.path(), "other/c.py"));
+    assert!(is_hardlinked(snap.path(), repo.path(), "other/c.py"));
 }
 
 #[test]
-fn files_that_leave_the_selection_are_pruned_on_refresh() {
+fn a_mirror_drops_a_path_the_index_no_longer_tracks() {
     let repo = repo();
     let cache = TempDir::new().unwrap();
-    let snap = snapshot(repo.path(), cache.path(), &[PathBuf::from("other/deep/d.py")], &[]);
-    assert!(is_written(snap.path(), "other/deep/d.py"));
+    let files = [PathBuf::from("pkg/a.py")];
+    let snap = snapshot(repo.path(), cache.path(), &files, &[]);
+    assert!(is_hardlinked(snap.path(), repo.path(), "other/deep/d.py"));
 
-    snapshot(repo.path(), cache.path(), &[PathBuf::from("pkg/a.py")], &[]);
+    git(repo.path(), &["rm", "-q", "other/deep/d.py"]);
+    snapshot(repo.path(), cache.path(), &files, &[]);
 
-    assert!(!is_written(snap.path(), "other/deep/d.py"));
-    assert!(is_written(snap.path(), "pkg/a.py"));
+    assert!(
+        !snap.path().join("other/deep/d.py").exists(),
+        "a mirror must not keep serving a path the index dropped"
+    );
+    assert!(
+        is_hardlinked(snap.path(), repo.path(), "other/c.py"),
+        "and the rest of the mirror is untouched"
+    );
 }
 
 #[test]
@@ -290,17 +468,20 @@ fn a_hook_writing_through_a_link_into_the_worktree_fails_the_run_and_names_the_d
 }
 
 #[test]
-fn a_hook_creating_an_untracked_file_through_a_link_is_caught_too() {
+fn a_hook_creating_a_file_in_a_mirrored_directory_only_touches_the_snapshot() {
     let repo = repo();
     let cache = TempDir::new().unwrap();
     let files = [PathBuf::from("pkg/a.py")];
     let snap = snapshot(repo.path(), cache.path(), &files, &[]);
 
-    let outcome = run_in_snapshot(repo.path(), snap.path(), &files, shell_hook("echo x > other/new.txt"));
+    // A mirrored directory is a real directory inside the snapshot, so a new
+    // file lands there — never in the author's worktree.
+    run_in_snapshot(repo.path(), snap.path(), &files, shell_hook("echo x > other/new.txt")).unwrap();
 
+    assert!(snap.path().join("other/new.txt").is_file());
     assert!(
-        outcome.is_err(),
-        "an untracked file in a linked directory is a write too"
+        !repo.path().join("other/new.txt").exists(),
+        "an untracked write must not reach the worktree"
     );
 }
 
@@ -349,8 +530,8 @@ fn a_ruff_config_extending_a_file_outside_the_directory_chain_gets_it_from_the_i
     );
     assert!(is_written(snap.path(), "more/other.toml"), "so is the file it extends");
     assert!(
-        !is_written(snap.path(), "other/c.py"),
-        "unrelated directories stay linked"
+        is_hardlinked(snap.path(), root, "other/c.py"),
+        "unrelated directories stay mirrored, not written from the index"
     );
 }
 
@@ -504,9 +685,10 @@ fn a_skip_worktree_file_is_read_from_the_index_not_through_a_link() {
 }
 
 #[test]
-fn a_snapshot_include_inside_a_linked_directory_leaves_the_worktree_file_alone() {
-    // `other/` is linked, so `<snapshot>/other/gen.txt` *is* the worktree file:
-    // replacing it with a link would delete the author's untracked file.
+fn a_snapshot_include_inside_a_mirrored_directory_leaves_the_worktree_file_alone() {
+    // `other/` is mirrored, so `<snapshot>/other/` is a real directory of
+    // hardlinks; the untracked entry is linked into it on its own. Replacing it
+    // with a link must never delete the author's untracked file.
     let repo = repo();
     let root = repo.path();
     write(root, "other/gen.txt", "generated\n");
@@ -537,7 +719,7 @@ fn a_snapshot_include_inside_a_linked_directory_leaves_the_worktree_file_alone()
 }
 
 #[test]
-fn withdrawing_an_include_never_unlinks_a_worktree_symlink_behind_a_directory_link() {
+fn withdrawing_an_include_never_unlinks_a_worktree_symlink_inside_a_mirrored_directory() {
     let repo = repo();
     let root = repo.path();
     std::os::unix::fs::symlink("c.py", root.join("other/alias.py")).unwrap();

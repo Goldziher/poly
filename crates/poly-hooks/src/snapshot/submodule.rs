@@ -79,7 +79,7 @@ fn is_symlink_to(link: &Path, target: &Path) -> bool {
 /// A **directory** symlink on Windows must be removed with `remove_dir`, not
 /// `remove_file` (which fails on a directory reparse point); a real directory (a
 /// leftover empty `checkout-index` dir) is removed recursively.
-fn remove_existing_entry(link: &Path) -> Result<(), Error> {
+pub(super) fn remove_existing_entry(link: &Path) -> Result<(), Error> {
     let Ok(meta) = std::fs::symlink_metadata(link) else {
         return Ok(());
     };
