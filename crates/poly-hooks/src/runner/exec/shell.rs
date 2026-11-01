@@ -131,9 +131,8 @@ pub(super) fn shell_command(line: &str, id: &str, args: &[String], files: &[&Pat
 /// and the run that precedes the closing quote fixes that while leaving an
 /// ordinary path like `C:\src\main.rs` byte-for-byte unchanged.
 ///
-/// This is string-level defence: it is unit-tested as a pure function and never
-/// handed to a real `cmd.exe`, so it proves the shape of the output, not that
-/// cmd.exe parses it safely.
+/// String-shape tests alone do not establish native parsing. Windows effect
+/// tests also exercise the assembled command through `cmd.exe`.
 ///
 /// Kept un-gated so the quoting logic is unit-tested on every platform; it is
 /// only *called* from the `cfg(windows)` `shell_command` below.
@@ -175,6 +174,8 @@ fn cmd_quote(value: &str) -> String {
 // `_id`: cmd.exe has no `$0`, so the hook id cannot travel with the command
 // line the way it does on Unix; it still reaches the report via the runner.
 pub(super) fn shell_command(line: &str, _id: &str, args: &[String], files: &[&Path], pass_filenames: bool) -> Cmd {
+    use std::os::windows::process::CommandExt;
+
     let mut joined = line.to_string();
     if appends_positionals(line) {
         for arg in args {
@@ -189,7 +190,8 @@ pub(super) fn shell_command(line: &str, _id: &str, args: &[String], files: &[&Pa
         }
     }
     let mut cmd = Cmd::new(SHELL, line.to_string());
-    cmd.arg(SHELL_ARG).arg(joined);
+    // CMD parses a command string, not CRT argv: preserve inner quotes (#46).
+    cmd.inner.arg(SHELL_ARG).raw_arg(format!("\"{joined}\""));
     cmd
 }
 
@@ -213,7 +215,14 @@ mod tests {
     /// The `run` line as the shell actually receives it — poly's append included
     /// when it made one.
     fn shell_script(hook: &Hook, files: &[&Path]) -> String {
-        shell_argv(hook, files).get(1).cloned().unwrap_or_default()
+        let script = shell_argv(hook, files).get(1).cloned().unwrap_or_default();
+        #[cfg(windows)]
+        let script = script
+            .strip_prefix('"')
+            .and_then(|inner| inner.strip_suffix('"'))
+            .expect("CMD command must have exactly one outer transport quote pair")
+            .to_owned();
+        script
     }
 
     /// A simple command cannot forward the matched files by itself, so poly
@@ -595,3 +604,7 @@ mod tests {
         assert_eq!(cmd_quote("   "), "\"   \"");
     }
 }
+
+#[cfg(all(test, windows))]
+#[path = "shell/windows_tests.rs"]
+mod windows_tests;

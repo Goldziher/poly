@@ -88,6 +88,24 @@ jobs:
         # --no-fail-fast is not optional: cargo stops at the first failing test
         # binary, so a run with failures in three crates reports only the first
         # and the rest are rediscovered one CI round at a time.
+      - name: Setup managed Python for native CMD regressions
+        if: runner.os == 'Windows'
+        uses: xberg-io/actions/setup-mise@v1
+        with:
+          tools: python
+      - name: Select native Python and require eight CMD regression tests
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'POLY_TEST_PYTHON=%s\n' "$(mise which python)" >> "$GITHUB_ENV"
+          cargo test -p poly-hooks windows_cmd_transport -- --list > cmd-transport-tests.txt
+          count="$(awk '
+            /^runner::exec::shell::windows_tests::windows_cmd_transport_.*: test$/ {n++}
+            END {print n+0}
+          ' cmd-transport-tests.txt)"
+          echo "Native CMD regression tests collected: $count/8"
+          test "$count" -eq 8
       - run: cargo test --workspace --exclude conformance --no-fail-fast
 
   dogfood:
