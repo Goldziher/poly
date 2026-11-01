@@ -1509,7 +1509,7 @@ checksum = "031ad3d167622974ed636505ae4556267ed4aa2aea0464122fa6bc9698a32825"
 
 [[package]]
 name = "conformance"
-version = "0.32.2"
+version = "0.32.3"
 dependencies = [
  "anyhow",
  "clap",
@@ -5167,11 +5167,11 @@ dependencies = [
 
 [[package]]
 name = "poly-buildinfo"
-version = "0.32.2"
+version = "0.32.3"
 
 [[package]]
 name = "poly-cache"
-version = "0.32.2"
+version = "0.32.3"
 dependencies = [
  "anyhow",
  "blake3",
@@ -5186,7 +5186,7 @@ dependencies = [
 
 [[package]]
 name = "poly-catalog"
-version = "0.32.2"
+version = "0.32.3"
 dependencies = [
  "anyhow",
  "serde",
@@ -5195,7 +5195,7 @@ dependencies = [
 
 [[package]]
 name = "poly-cli"
-version = "0.32.2"
+version = "0.32.3"
 dependencies = [
  "aho-corasick",
  "anyhow",
@@ -5229,7 +5229,7 @@ dependencies = [
 
 [[package]]
 name = "poly-config"
-version = "0.32.2"
+version = "0.32.3"
 dependencies = [
  "anyhow",
  "json5",
@@ -5244,7 +5244,7 @@ dependencies = [
 
 [[package]]
 name = "poly-core"
-version = "0.32.2"
+version = "0.32.3"
 dependencies = [
  "adrlint",
  "alejandra",
@@ -5338,12 +5338,12 @@ dependencies = [
  "unicase",
  "ureq",
  "which",
- "zip 9.2.0",
+ "zip 9.2.1",
 ]
 
 [[package]]
 name = "poly-hooks"
-version = "0.32.2"
+version = "0.32.3"
 dependencies = [
  "anstyle-query",
  "anyhow",
@@ -5378,7 +5378,7 @@ dependencies = [
 
 [[package]]
 name = "poly-mcp"
-version = "0.32.2"
+version = "0.32.3"
 dependencies = [
  "anyhow",
  "blake3",
@@ -5398,7 +5398,7 @@ dependencies = [
 
 [[package]]
 name = "poly-workspace"
-version = "0.32.2"
+version = "0.32.3"
 dependencies = [
  "anyhow",
  "clap",
@@ -8001,9 +8001,9 @@ checksum = "eaea85b334db583fe3274d12b4cd1880032beab409c0d774be044d4480ab9a94"
 
 [[package]]
 name = "uncomment"
-version = "3.10.3"
+version = "3.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4fda21c4070151ab18e12c305ef42f01f228ca3b2e6e5467df4e48639dab6ab4"
+checksum = "c5b8dedd9a4108f57d02b02a28269a5c8dc1ac7f8c2e56cdb43a9b15faf72c9e"
 dependencies = [
  "ahash",
  "anstream",
@@ -8768,9 +8768,9 @@ dependencies = [
 
 [[package]]
 name = "zip"
-version = "9.2.0"
+version = "9.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f5b58784007ff6e5f280ec82c8596686a3b9b5dd5836c63288d4479f84728b9"
+checksum = "848dad21639597378c3be94c59fd4de683f0f6d8a5387575896e1245737d4f37"
 dependencies = [
  "crc32fast",
  "flate2",

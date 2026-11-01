@@ -7,6 +7,20 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+## [0.32.3] - 2026-11-01
+
+### Security
+
+- Publish SDK-free OpenCode and Hermes plugin packages that the existing-version skips left stale in 0.32.2.
+
+### Fixed
+
+- Verify immutable registry payloads before accepting skips, preserving matching retries and older-tag recovery (#47).
+
+### Changed
+
+- Update uncomment to 3.10.4 and ZIP to 9.2.1.
+
 ## [0.32.2] - 2026-11-01
 
 ### Added
