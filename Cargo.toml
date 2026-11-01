@@ -79,7 +79,7 @@ indoc = "2.0.8"
 insta = "1"
 insta-cmd = "0.7.0"
 itertools = "0.15.0"
-json5 = "1.3.6"
+json5 = "1.3.7"
 libc = "0.2.191"
 liblzma = { version = "0.4.9", features = ["static"] }
 mago-allocator = { version = "1.59" }
@@ -182,7 +182,7 @@ unicode-width = { version = "0.2.3", default-features = false }
 ureq = "3"
 walkdir = "2.5.0"
 which = "8.0.6"
-zip = { version = "9.1", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+zip = { version = "9.2", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 # oxc_formatter_yaml/toml pull `oxc_allocator` from the registry through their parsers; resolve it to
 # the same git copy as the rest of the oxc crates so there is a single `Allocator` type.
