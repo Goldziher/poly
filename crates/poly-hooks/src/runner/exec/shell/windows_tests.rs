@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 use tempfile::TempDir;
 
 use crate::model::Hook;
-use crate::runner::exec::build_command;
+use crate::runner::exec::{build_command, partition_hook_files};
 
 const CAPTURE: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -83,6 +83,9 @@ impl Probe {
     }
 
     fn execute(&self, hook: &Hook, files: &[&Path]) -> std::process::Output {
+        if self.capture.exists() {
+            std::fs::remove_file(&self.capture).unwrap();
+        }
         let mut command = build_command(hook, &self.cwd, files, None, None);
         command.check(false);
         command
@@ -101,6 +104,42 @@ impl Probe {
         let output = self.execute(hook, files);
         assert!(output.status.success(), "{output:?}");
         self.assert_capture(args);
+    }
+
+    fn assert_partitioned_files(&self, hook: &Hook, names: &[String]) {
+        let files: Vec<&Path> = names.iter().map(Path::new).collect();
+        let batches = partition_hook_files(hook, &files).expect("encoded filenames must be partitionable");
+        assert!(batches.len() > 1, "percent data must exceed one CMD invocation");
+        assert_eq!(batches.iter().map(|batch| batch.len()).sum::<usize>(), files.len());
+        let crate::model::HookCommand::Run(line) = &hook.command else {
+            panic!("native Run fixture required")
+        };
+        let encoding = super::CmdEncoding::new(line, &hook.env);
+        let mut seen = Vec::new();
+        for batch in batches {
+            assert!(!batch.is_empty());
+            let projected = crate::runner::exec::relative_to_cwd(hook, batch);
+            assert!(encoding.units(line, &hook.args, &projected, true) <= super::CMD_MAX_UNITS);
+            let expected: Vec<&str> = std::iter::once("--marker")
+                .chain(batch.iter().map(|path| path.to_str().expect("UTF-8 fixture filename")))
+                .collect();
+            self.assert_success(hook, batch, &expected);
+            let actual: Value = serde_json::from_slice(&std::fs::read(&self.capture).unwrap()).unwrap();
+            seen.extend(
+                actual["argv"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .skip(1)
+                    .map(|arg| arg.as_str().unwrap().to_owned()),
+            );
+            assert!(!self.cwd.join("marker.txt").exists());
+        }
+        assert_eq!(seen.as_slice(), names);
+        let mut ignored = hook.clone();
+        ignored.pass_filenames = false;
+        assert_eq!(partition_hook_files(&ignored, &files).unwrap().len(), 1);
+        self.assert_success(&ignored, &files, &["--marker"]);
     }
 }
 
@@ -158,13 +197,19 @@ fn windows_cmd_transport_preserves_literal_percent_and_exclamation() {
         "tail%",
     ];
     probe.assert_success(&probe.hook(&args), &[], &args);
+    let mut hook = probe.hook(&args);
+    hook.env
+        .insert("poly_cmd_literal_percent_0".into(), "configured zero".into());
+    hook.env
+        .insert("POLY_CMD_LITERAL_PERCENT_1".into(), "configured one".into());
+    probe.assert_success(&hook, &[], &args);
 }
 
 #[test]
 fn windows_cmd_transport_preserves_configured_chaining_pipes_and_redirection() {
     let probe = Probe::new();
     let line = format!(
-        "\"{}\" -c \"{}\" && echo trusted>operator.txt && echo piped|findstr piped>piped.txt",
+        "\"{}\" -c \"{}\" && >operator.txt echo trusted&& echo piped|findstr piped>piped.txt",
         probe.python.display(),
         CAPTURE.trim()
     );
@@ -186,21 +231,44 @@ fn windows_cmd_transport_preserves_configured_variable_expansion() {
     let mut hook = Hook::run("windows-cmd-transport", line);
     hook.pass_filenames = false;
     probe.assert_success(&hook, &[], &["expanded sentinel"]);
+    let line = format!(
+        "\"{}\" -c \"{}\" \"%POLY_CMD_LITERAL_PERCENT_0%\" \"%POLY_CMD_PROBE%\"",
+        probe.python.display(),
+        CAPTURE.trim()
+    );
+    let mut hook = Hook::run("windows-cmd-transport", line);
+    hook.pass_filenames = false;
+    hook.args = vec!["%POLY_CMD_PROBE%".into()];
+    hook.env
+        .insert("poly_cmd_literal_percent_0".into(), "configured sentinel".into());
+    probe.assert_success(
+        &hook,
+        &[],
+        &["configured sentinel", "expanded sentinel", "%POLY_CMD_PROBE%"],
+    );
 }
 
 #[test]
 fn windows_cmd_transport_forwards_only_requested_filenames_once() {
     let probe = Probe::new();
-    let names = ["first file.py", "second & file.py"];
+    let names = ["first file.py", "second & file.py", "third %POLY_CMD_PROBE%.py"];
     for name in names {
         std::fs::write(probe.cwd.join(name), "pass\n").unwrap();
     }
     let files: Vec<&Path> = names.iter().map(Path::new).collect();
     let mut hook = probe.hook(&["--marker"]);
     hook.pass_filenames = true;
-    probe.assert_success(&hook, &files, &["--marker", names[0], names[1]]);
+    probe.assert_success(&hook, &files, &["--marker", names[0], names[1], names[2]]);
     hook.pass_filenames = false;
     probe.assert_success(&hook, &files, &["--marker"]);
+    let many: Vec<String> = (0..400)
+        .map(|index| format!("file-{index:04}-%POLY_CMD_PROBE%-雪.txt"))
+        .collect();
+    for name in &many {
+        std::fs::write(probe.cwd.join(name), "pass\n").unwrap();
+    }
+    hook.pass_filenames = true;
+    probe.assert_partitioned_files(&hook, &many);
 }
 
 #[test]

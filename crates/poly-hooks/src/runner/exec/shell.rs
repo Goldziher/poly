@@ -10,8 +10,11 @@
 //! its tests, and the quoting tests, run everywhere rather than only on the
 //! platform whose `shell_command` calls them.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
+#[cfg(any(test, windows))]
+use crate::model::Hook;
 use crate::process::Cmd;
 
 #[cfg(not(windows))]
@@ -97,7 +100,14 @@ fn appends_positionals(line: &str) -> bool {
 }
 
 #[cfg(not(windows))]
-pub(super) fn shell_command(line: &str, id: &str, args: &[String], files: &[&Path], pass_filenames: bool) -> Cmd {
+pub(super) fn shell_command(
+    line: &str,
+    id: &str,
+    args: &[String],
+    files: &[&Path],
+    pass_filenames: bool,
+    _env: &BTreeMap<String, String>,
+) -> Cmd {
     let mut cmd = Cmd::new(SHELL, line.to_string());
     let script = if appends_positionals(line) {
         format!("{line} \"$@\"")
@@ -120,7 +130,8 @@ pub(super) fn shell_command(line: &str, id: &str, args: &[String], files: &[&Pat
 /// attacker-controlled value (notably a tracked filename like `foo & evil.exe`)
 /// cannot inject cmd.exe syntax. Wrap in double quotes — which neutralizes the
 /// metacharacters cmd interprets outside quotes (`&`, `|`, `<`, `>`, `(`, `)`,
-/// whitespace) — doubling any embedded `"` and escaping `%`.
+/// whitespace) — doubling any embedded `"`. Percent expansion is encoded by
+/// `shell_command` after choosing a child-only environment variable.
 ///
 /// Backslashes need care for the opposite reason: `CommandLineToArgvW` (and the
 /// C runtime's argv parser) treat a run of backslashes as an escape *only when a
@@ -154,10 +165,6 @@ fn cmd_quote(value: &str) -> String {
                 backslashes = 0;
                 quoted.push_str("\"\"");
             }
-            '%' => {
-                backslashes = 0;
-                quoted.push_str("%%");
-            }
             _ => {
                 backslashes = 0;
                 quoted.push(character);
@@ -170,27 +177,144 @@ fn cmd_quote(value: &str) -> String {
     quoted
 }
 
-#[cfg(windows)]
-// `_id`: cmd.exe has no `$0`, so the hook id cannot travel with the command
-// line the way it does on Unix; it still reaches the report via the runner.
-pub(super) fn shell_command(line: &str, _id: &str, args: &[String], files: &[&Path], pass_filenames: bool) -> Cmd {
-    use std::os::windows::process::CommandExt;
+#[cfg(any(test, windows))]
+fn cmd_percent_variable(line: &str, reserved: impl Iterator<Item = String>) -> String {
+    let reserved: std::collections::HashSet<_> = reserved.map(|name| name.to_ascii_uppercase()).collect();
+    let line = line.to_ascii_uppercase();
+    // Distinct blocked names cannot exceed the reserved keys plus command byte endpoints. ~keep
+    let blocked = reserved.len().saturating_add(line.len());
+    (0..=blocked)
+        .map(|index| format!("POLY_CMD_LITERAL_PERCENT_{index}"))
+        .find(|name| !reserved.contains(name) && !line.contains(name.as_str()))
+        .expect("finite command and environment cannot reserve every percent variable")
+}
 
-    let mut joined = line.to_string();
-    if appends_positionals(line) {
-        for arg in args {
-            joined.push(' ');
-            joined.push_str(&cmd_quote(arg));
-        }
-        if pass_filenames {
-            for file in files {
-                joined.push(' ');
-                joined.push_str(&cmd_quote(&file.to_string_lossy()));
-            }
+// Include quoted argv0, separators, /C, the raw quote envelope and terminating NUL. ~keep
+#[cfg(any(test, windows))]
+const CMD_TRANSPORT_OVERHEAD: usize = 12;
+#[cfg(any(test, windows))]
+const CMD_MAX_UNITS: usize = 8191;
+
+#[cfg(any(test, windows))]
+struct CmdEncoding {
+    percent_name: String,
+}
+
+#[cfg(any(test, windows))]
+impl CmdEncoding {
+    fn new(line: &str, env: &BTreeMap<String, String>) -> Self {
+        let inherited = std::env::vars_os().map(|(name, _)| name.to_string_lossy().into_owned());
+        Self {
+            percent_name: cmd_percent_variable(line, inherited.chain(env.keys().cloned())),
         }
     }
+
+    fn marker(&self) -> String {
+        format!("%{}%", self.percent_name)
+    }
+
+    fn token(&self, value: &str) -> String {
+        // CMD expands this once: unlike `%%`, the inserted percent is not reparsed (#46). ~keep
+        cmd_quote(value).replace('%', &self.marker())
+    }
+
+    fn body(&self, line: &str, args: &[String], files: &[&Path], pass_filenames: bool) -> String {
+        let mut joined = line.to_string();
+        if appends_positionals(line) {
+            for arg in args {
+                joined.push(' ');
+                joined.push_str(&self.token(arg));
+            }
+            if pass_filenames {
+                for file in files {
+                    joined.push(' ');
+                    joined.push_str(&self.token(&file.to_string_lossy()));
+                }
+            }
+        }
+        joined
+    }
+
+    fn units(&self, line: &str, args: &[String], files: &[&Path], pass_filenames: bool) -> usize {
+        self.body(line, args, files, pass_filenames)
+            .encode_utf16()
+            .count()
+            .saturating_add(CMD_TRANSPORT_OVERHEAD)
+    }
+}
+
+#[cfg(any(test, windows))]
+fn cmd_file_units(encoding: &CmdEncoding, hook: &Hook, file: &Path) -> usize {
+    let projected = hook
+        .cwd
+        .as_deref()
+        .map_or(Some(file), |cwd| file.strip_prefix(cwd).ok());
+    projected.map_or(0, |path| {
+        encoding
+            .token(&path.to_string_lossy())
+            .encode_utf16()
+            .count()
+            .saturating_add(1)
+    })
+}
+
+#[cfg(any(test, windows))]
+pub(super) fn partition_cmd_files<'a>(
+    line: &str,
+    hook: &Hook,
+    files: &'a [&'a Path],
+) -> Result<Vec<&'a [&'a Path]>, String> {
+    let encoding = CmdEncoding::new(line, &hook.env);
+    let fixed = encoding.units(line, &hook.args, &[], false);
+    if fixed > CMD_MAX_UNITS {
+        return Err(format!(
+            "Windows CMD fixed command exceeds {CMD_MAX_UNITS} UTF-16 units"
+        ));
+    }
+    if files.is_empty() || !hook.pass_filenames || !appends_positionals(line) {
+        return Ok(vec![files]);
+    }
+    let mut batches = Vec::new();
+    let mut start = 0;
+    let mut used = fixed;
+    for (index, file) in files.iter().enumerate() {
+        let size = cmd_file_units(&encoding, hook, file);
+        if fixed.saturating_add(size) > CMD_MAX_UNITS {
+            return Err(format!(
+                "filename cannot fit Windows CMD's {CMD_MAX_UNITS}-unit command: {}",
+                file.display()
+            ));
+        }
+        if index > start && used.saturating_add(size) > CMD_MAX_UNITS {
+            batches.push(&files[start..index]);
+            start = index;
+            used = fixed;
+        }
+        used = used.saturating_add(size);
+    }
+    batches.push(&files[start..]);
+    Ok(batches)
+}
+
+#[cfg(windows)]
+// `_id`: CMD has no `$0`; the hook id still reaches the report through the runner. ~keep
+pub(super) fn shell_command(
+    line: &str,
+    _id: &str,
+    args: &[String],
+    files: &[&Path],
+    pass_filenames: bool,
+    env: &BTreeMap<String, String>,
+) -> Cmd {
+    use std::os::windows::process::CommandExt;
+
+    let encoding = CmdEncoding::new(line, env);
+    let joined = encoding.body(line, args, files, pass_filenames);
     let mut cmd = Cmd::new(SHELL, line.to_string());
-    // CMD parses a command string, not CRT argv: preserve inner quotes (#46).
+    if joined.contains(encoding.marker().as_str()) {
+        cmd.env(&encoding.percent_name, "%");
+    }
+    // CMD parses a command string, not CRT argv: preserve inner quotes (#46). ~keep
     cmd.inner.arg(SHELL_ARG).raw_arg(format!("\"{joined}\""));
     cmd
 }
@@ -514,23 +638,114 @@ mod tests {
         assert_eq!(cmd_quote(breakout_attempt), "\"foo\"\" & calc.exe & \"\"bar\"");
     }
 
-    /// cmd.exe still expands `%VAR%` *inside* a double-quoted region (unlike
-    /// `&`/`|`/etc., which quoting alone neutralizes), so `cmd_quote` doubles
-    /// every `%` to turn it into a literal percent rather than a variable
-    /// reference.
     #[test]
-    fn cmd_quote_escapes_percent_variable_expansion() {
-        assert_eq!(cmd_quote("100%done"), "\"100%%done\"");
-        assert_eq!(cmd_quote("%PATH%"), "\"%%PATH%%\"");
-        assert_eq!(cmd_quote("%CD%"), "\"%%CD%%\"");
+    fn cmd_quote_leaves_percent_encoding_to_the_command_transport() {
+        assert_eq!(cmd_quote("100%done"), "\"100%done\"");
+        assert_eq!(cmd_quote("%PATH%"), "\"%PATH%\"");
+        assert_eq!(cmd_quote("%CD%"), "\"%CD%\"");
     }
 
-    /// An already-doubled `%%` in the source value must still have *each* `%`
-    /// doubled independently — the replacement is per-character, not
-    /// pattern-aware, so two input percents become four output percents.
     #[test]
-    fn cmd_quote_doubles_each_percent_in_already_doubled_input() {
-        assert_eq!(cmd_quote("100%%done"), "\"100%%%%done\"");
+    fn cmd_quote_preserves_already_doubled_percent_input() {
+        assert_eq!(cmd_quote("100%%done"), "\"100%%done\"");
+    }
+
+    #[test]
+    fn percent_variable_avoids_environment_keys_and_configured_references_case_insensitively() {
+        let reserved = ["poly_cmd_literal_percent_0", "POLY_CMD_LITERAL_PERCENT_1"];
+        assert_eq!(
+            super::cmd_percent_variable(
+                "echo %poly_cmd_literal_percent_2%",
+                reserved.into_iter().map(str::to_owned),
+            ),
+            "POLY_CMD_LITERAL_PERCENT_3"
+        );
+        assert_eq!(
+            super::cmd_percent_variable("echo trusted", std::iter::empty()),
+            "POLY_CMD_LITERAL_PERCENT_0"
+        );
+    }
+
+    #[test]
+    fn percent_variable_remains_available_after_dense_collisions() {
+        let reserved_count = 128;
+        let reserved = (0..reserved_count).map(|index| format!("POLY_CMD_LITERAL_PERCENT_{index}"));
+        let line = format!("echo %POLY_CMD_LITERAL_PERCENT_{reserved_count}%");
+        assert_eq!(
+            super::cmd_percent_variable(&line, reserved),
+            format!("POLY_CMD_LITERAL_PERCENT_{}", reserved_count + 1)
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn percent_environment_is_only_injected_for_appended_percent_data() {
+        for line in ["echo %PATH%", "echo trusted &&"] {
+            let mut hook = Hook::run("percent-environment", line);
+            if line.ends_with("&&") {
+                hook.args = vec!["%literal%".into()];
+            }
+            let cmd = build_command(&hook, Path::new("."), &[], None, None);
+            let has_percent_variable = cmd
+                .get_envs()
+                .any(|(name, _)| name.to_string_lossy().starts_with("POLY_CMD_LITERAL_PERCENT_"));
+            assert!(!has_percent_variable);
+        }
+    }
+
+    #[test]
+    fn cmd_budget_counts_utf16_and_actual_collision_marker() {
+        let encoding = super::CmdEncoding {
+            percent_name: "POLY_CMD_LITERAL_PERCENT_100".into(),
+        };
+        assert_eq!(encoding.token("雪😀"), "\"雪😀\"");
+        assert_eq!(encoding.token("雪😀").encode_utf16().count(), 5);
+        assert_eq!(encoding.token("雪😀").len(), 9);
+        assert_eq!(encoding.token("%"), "\"%POLY_CMD_LITERAL_PERCENT_100%\"");
+        assert_eq!(encoding.token("%").encode_utf16().count(), encoding.marker().len() + 2);
+        assert_eq!(
+            super::CMD_TRANSPORT_OVERHEAD,
+            "\"cmd\" /C \"\"\0".encode_utf16().count()
+        );
+    }
+
+    #[test]
+    fn cmd_budget_accepts_boundary_and_refuses_fixed_or_single_file_overflow() {
+        let limit = super::CMD_MAX_UNITS - super::CMD_TRANSPORT_OVERHEAD;
+        let line = "x".repeat(limit);
+        let mut hook = Hook::run("budget", line.clone());
+        assert_eq!(super::partition_cmd_files(&line, &hook, &[]).unwrap().len(), 1);
+        assert!(super::partition_cmd_files(&(line + "x"), &hook, &[]).is_err());
+        hook.args = vec!["%".repeat(400)];
+        assert!(super::partition_cmd_files("tool", &hook, &[]).is_err());
+        hook.args.clear();
+        let oversized = "%".repeat(400);
+        let files = [Path::new(&oversized)];
+        assert!(super::partition_cmd_files("tool", &hook, &files).is_err());
+    }
+
+    #[test]
+    fn cmd_budget_projects_paths_and_ignores_unforwarded_data() {
+        let mut hook = Hook::run("budget", "tool");
+        hook.cwd = Some("pkg".into());
+        let first = format!("pkg/{}-雪😀", "%".repeat(150));
+        let second = format!("pkg/{}-other", "%".repeat(150));
+        let outside = "%".repeat(400);
+        let files = [Path::new(&first), Path::new(&outside), Path::new(&second)];
+        let batches = super::partition_cmd_files("tool", &hook, &files).unwrap();
+        assert_eq!(batches.len(), 2);
+        assert_eq!(batches.concat(), files);
+        hook.pass_filenames = false;
+        assert_eq!(
+            super::partition_cmd_files("tool", &hook, &files).unwrap(),
+            vec![files.as_slice()]
+        );
+        hook.pass_filenames = true;
+        hook.args = vec!["%".repeat(400)];
+        assert_eq!(
+            super::partition_cmd_files("echo trusted &&", &hook, &files).unwrap(),
+            vec![files.as_slice()]
+        );
     }
 
     #[test]
@@ -579,9 +794,8 @@ mod tests {
     fn cmd_quote_leaves_interior_backslashes_untouched() {
         assert_eq!(cmd_quote("C:\\src\\main.rs"), "\"C:\\src\\main.rs\"");
         assert_eq!(cmd_quote("C:\\\\server\\share\\file"), "\"C:\\\\server\\share\\file\"");
-        // A `%` is not a quote, so the run in front of it is left alone while the
-        // percent itself is still escaped.
-        assert_eq!(cmd_quote("C:\\dir\\%PATH%"), "\"C:\\dir\\%%PATH%%\"");
+        // Percent expansion is handled separately from quote/backslash encoding. ~keep
+        assert_eq!(cmd_quote("C:\\dir\\%PATH%"), "\"C:\\dir\\%PATH%\"");
     }
 
     /// The breakout this defect enables, in the shape it actually occurs: the

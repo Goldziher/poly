@@ -36,7 +36,7 @@ pub(super) fn build_command(
     let files = relative_to_cwd(hook, files);
     let files = files.as_slice();
     let mut cmd = match &hook.command {
-        HookCommand::Run(line) => shell_command(line, &hook.id, &hook.args, files, hook.pass_filenames),
+        HookCommand::Run(line) => shell_command(line, &hook.id, &hook.args, files, hook.pass_filenames, &hook.env),
         HookCommand::Script { path, runner } => {
             let mut cmd = match runner {
                 Some(runner) => {
@@ -97,6 +97,14 @@ pub(super) fn hook_working_dir(hook: &Hook, root: &Path) -> std::path::PathBuf {
     hook.cwd
         .as_deref()
         .map_or_else(|| root.to_path_buf(), |relative| root.join(relative))
+}
+
+#[cfg(windows)]
+pub(super) fn partition_hook_files<'a>(hook: &Hook, files: &'a [&'a Path]) -> Result<Vec<&'a [&'a Path]>, String> {
+    if let HookCommand::Run(line) = &hook.command {
+        return shell::partition_cmd_files(line, hook, files);
+    }
+    Ok(crate::concurrency::partition_files(files, base_arg_len(hook)))
 }
 
 /// Estimate the argv bytes consumed by everything except the matched files, so

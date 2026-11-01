@@ -588,8 +588,18 @@ fn run_hook(
     matched: &[&Path],
     bar: Option<&ProgressBar>,
 ) -> HookOutcome {
-    let base_len = exec::base_arg_len(hook);
-    let batches = crate::concurrency::partition_files(matched, base_len);
+    #[cfg(windows)]
+    let batches = match exec::partition_hook_files(hook, matched) {
+        Ok(batches) => batches,
+        Err(error) => {
+            return HookOutcome {
+                status: HookStatus::Error(error),
+                ..blank_outcome(hook, position, context.tree)
+            };
+        }
+    };
+    #[cfg(not(windows))]
+    let batches = crate::concurrency::partition_files(matched, exec::base_arg_len(hook));
     // Resolved once per hook, not per batch: the budget is a property of the
     // hook, and each spawned batch process gets the whole of it.
     let budget = crate::timeout::budget_for(hook);
