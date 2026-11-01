@@ -7,6 +7,8 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+## [0.32.2] - 2026-11-01
+
 ### Added
 
 - **`gau` catalog recipe for GitHub Actions pins.** `[tools.gau] enabled = true` runs
@@ -19,6 +21,13 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 - **The GitHub Action's `cache: true` caches through `actions/cache@v6`.** That major runs on the
   Node.js 24 runtime, so a self-hosted runner needs Actions Runner 2.327.1 or newer; GitHub-hosted
   runners already qualify. The action's inputs and outputs are unchanged.
+
+### Fixed
+
+- **Hook commands keep their quoting on Windows.** `cmd /C` received each joined command as a
+  CRT-escaped argument, so inner quotes reached the child as literal `\"` and checks such as
+  `python3 -c "..."` failed with a syntax error. Poly now passes the command line verbatim, and
+  literal `%` in arguments is transported within CMD's limits.
 
 ## [0.32.1] - 2026-10-31
 
