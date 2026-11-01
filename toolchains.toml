@@ -1,5 +1,1 @@
-baseline = "v1.12.4"
-
-[overrides.ruby]
-version = "4.0.9"
-reason = "Current conformance reference image from 5f1478b; its corpus output stayed byte-identical."
+baseline = "v1.13.0"

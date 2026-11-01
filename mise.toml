@@ -6,10 +6,10 @@ lockfile = true
 lockfile_platforms = ["linux-x64", "linux-arm64", "macos-arm64", "windows-x64"]
 
 [tools]
-python = "3.13.18"
+python = "3.15.2"
 uv = "0.13.6"
-node = "26.12.1"
-pnpm = "12.15.0"
+node = "26.13.0"
+pnpm = "12.16.1"
 
 [vars]
 # Tasks run poly built from this checkout, so they lint and format with the code under change. ~keep
