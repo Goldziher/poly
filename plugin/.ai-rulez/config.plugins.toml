@@ -1,6 +1,7 @@
 [plugin]
 name = "poly"
 version = "0.32.2"
+opencode_dependency_enabled = false
 include = ["assets/**"]
 display_name = "poly"
 description = "Zero-dependency lint & format orchestrator over MCP — one pure-Rust binary wrapping ruff/oxc/taplo/rumdl and more as in-process backends, plus a tree-sitter generic tier for everything else. Exposes lint/format/cache tools with structured JSON output."
@@ -11,7 +12,19 @@ category = "developer-tools"
 keywords = ["linter", "formatter", "mcp", "code-quality", "rust"]
 tags = ["mcp", "linter", "formatter", "tree-sitter", "git-hooks", "ci"]
 
-runtimes = ["claude", "cursor", "codex", "gemini", "kimi", "opencode", "factory", "hermes", "pi", "agent-plugins", "copilot"]
+runtimes = [
+  "claude",
+  "cursor",
+  "codex",
+  "gemini",
+  "kimi",
+  "opencode",
+  "factory",
+  "hermes",
+  "pi",
+  "agent-plugins",
+  "copilot",
+]
 
 [plugin.author]
 name = "Na'aman Hirschfeld"
@@ -26,14 +39,13 @@ developer_name = "Na'aman Hirschfeld"
 category = "Developer Tools"
 capabilities = ["Read", "Write"]
 default_prompt = [
-    "Lint this repository with poly and summarize the findings.",
-    "Check formatting drift with poly and list the affected files.",
-    "Apply poly's lint and format autofixes, then report what remains.",
-    "Show poly's effective configuration for this repo.",
+  "Lint this repository with poly and summarize the findings.",
+  "Check formatting drift with poly and list the affected files.",
+  "Apply poly's lint and format autofixes, then report what remains.",
+  "Show poly's effective configuration for this repo.",
 ]
 website_url = "https://github.com/Goldziher/poly"
 brand_color = "#F97316"
-
 
 
 [[plugin.mcp]]

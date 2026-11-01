@@ -24,6 +24,7 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ### Fixed
 
+- Remove the unused OpenCode SDK dependency from agent plugin packages.
 - **Hook commands keep their quoting on Windows.** `cmd /C` received each joined command as a
   CRT-escaped argument, so inner quotes reached the child as literal `\"` and checks such as
   `python3 -c "..."` failed with a syntax error. Poly now passes the command line verbatim, and
