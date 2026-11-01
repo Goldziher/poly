@@ -117,7 +117,7 @@ impl Probe {
         let encoding = super::CmdEncoding::new(line, &hook.env);
         let mut seen = Vec::new();
         for batch in batches {
-            assert_ne!(batch, []);
+            assert_ne!(batch, &[] as &[&Path]);
             let projected = crate::runner::exec::relative_to_cwd(hook, batch);
             assert!(encoding.units(line, &hook.args, &projected, true) <= super::CMD_MAX_UNITS);
             let expected: Vec<&str> = std::iter::once("--marker")
