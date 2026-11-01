@@ -14,7 +14,6 @@ class PluginDispatchTests(unittest.TestCase):
         text = WORKFLOW.read_text()
         self.assertIn("plugins-only:", text)
         self.assertIn("if: steps.npm-version.outputs.exists != 'true'", text)
-        self.assertIn("if error.code != 404:", text)
         blocks = dict(
             re.findall(r"^  ([\w-]+):\n(.*?)(?=^  [\w-]+:|\Z)", text.split("jobs:\n", 1)[1], re.MULTILINE | re.DOTALL)
         )
@@ -30,41 +29,43 @@ class PluginDispatchTests(unittest.TestCase):
             else:
                 self.assertIn("!inputs.plugins-only", block, name)
 
-    def test_npm_preflight_skips_only_matching_versions_and_fails_closed(self) -> None:
+    def test_registry_payload_guards_run_before_each_upload_or_skip(self) -> None:
         text = WORKFLOW.read_text()
-        script = (
-            text.split("        id: npm-version\n", 1)[1]
-            .split("          python3 - <<'PY'\n", 1)[1]
-            .split("          PY", 1)[0]
+        blocks = dict(
+            re.findall(r"^  ([\w-]+):\n(.*?)(?=^  [\w-]+:|\Z)", text.split("jobs:\n", 1)[1], re.MULTILINE | re.DOTALL)
         )
-        script = "\n".join(line[10:] for line in script.splitlines())
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            (root / "plugin").mkdir()
-            (root / "plugin/package.json").write_text('{"name":"@example/plugin","version":"1.2.3"}')
-            cases = [
-                ('{"name":"@example/plugin","version":"1.2.3"}', 200, 0, "exists=true\n"),
-                ("{}", 404, 0, "exists=false\n"),
-                ("{}", 500, 1, None),
-                ('{"name":"wrong","version":"1.2.3"}', 200, 1, None),
-            ]
-            for payload, status, expected, output in cases:
-                with self.subTest(payload=payload, status=status):
-                    prelude = (
-                        "import io, urllib.error, urllib.request\n"
-                        "def request(*args, **kwargs):\n"
-                        f'    if {status} != 200: raise urllib.error.HTTPError("url", {status}, "test", None, None)\n'
-                        f"    return io.StringIO({payload!r})\n"
-                        "urllib.request.urlopen = request\n"
-                    )
-                    target = root / f"output-{status}-{expected}"
-                    env = dict(os.environ, GITHUB_OUTPUT=str(target))
-                    result = subprocess.run(
-                        ["python3", "-c", prelude + script], cwd=root, env=env, capture_output=True, text=True
-                    )
-                    self.assertEqual(result.returncode, expected, result.stderr)
-                    if output is not None:
-                        self.assertEqual(target.read_text(), output)
+        cases = [
+            ("publish_npm", "npm", 'if [ "$verdict" = "exists=true" ]'),
+            ("publish_plugin_npm", "npm", "if: steps.npm-version.outputs.exists"),
+            ("publish_plugin_hermes", "wheel", "uses: xberg-io/actions/publish-pypi@v1"),
+            ("publish_pypi", "wheel", "uses: pypa/gh-action-pypi-publish@v1.14.3"),
+        ]
+        self.assertEqual(len(cases), 4)
+        for name, kind, boundary in cases:
+            with self.subTest(job=name):
+                block = blocks[name]
+                guard = 'python3 "$POLY_REGISTRY_GUARD" ' + kind
+                self.assertEqual(block.count(guard), 1)
+                self.assertLess(block.index(guard), block.index(boundary))
+                self.assertNotIn("continue-on-error", block)
+                self.assertNotIn("pypi_exists", block)
+                self.assertNotIn("npm_bootstrapped", block)
+        native = blocks["publish_npm"]
+        self.assertNotIn("pnpm view", native)
+        self.assertLess(native.index('"$POLY_REGISTRY_GUARD"'), native.index('pnpm publish "$archive"'))
+        self.assertNotIn("Detect registry readiness", text)
+        self.assertEqual(text.count("&registry-controller"), 1)
+        self.assertEqual(text.count("*registry-controller"), 3)
+        self.assertIn("CONTROLLER_SHA: ${{ github.workflow_sha }}", text)
+        self.assertIn('git fetch --no-tags --no-write-fetch-head origin "$CONTROLLER_SHA"', text)
+        self.assertIn('git show "$CONTROLLER_SHA:scripts/$helper"', text)
+        self.assertIn("verify_registry_payload.py registry_archive.py", text)
+        for name, _, _ in cases:
+            self.assertIn("registry-controller", blocks[name])
+            self.assertIn('python3 "$POLY_REGISTRY_GUARD"', blocks[name])
+        self.assertIn("wheel --expected-count 1 dist-hermes/*.whl", blocks["publish_plugin_hermes"])
+        self.assertIn("wheel --expected-count 7 pip-package/dist/*.whl", blocks["publish_pypi"])
+        self.assertLess(native.index("Incomplete npm platform inventory"), native.index('for dir in "${platforms[@]}"'))
 
     def test_metadata_rejects_version_mismatch_and_unsafe_ref(self) -> None:
         text = WORKFLOW.read_text()

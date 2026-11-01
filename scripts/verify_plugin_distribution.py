@@ -56,8 +56,10 @@ def verify_npm(archive: Path) -> int:
             member.name.removeprefix("package/"): tar.extractfile(member).read() for member in tar if member.isfile()
         }
     manifest = json.loads(files["package.json"])
-    if manifest["name"] != package["name"] or manifest["version"] != package["version"]:
-        raise ValueError("npm package name or version mismatch")
+    expected = {key: value for key, value in package.items() if key != "packageManager"}
+    packed = {key: value for key, value in manifest.items() if key != "packageManager"}
+    if packed != expected:
+        raise ValueError("npm package manifest mismatch")
     names = [".pi/skills", ".pi/prompts", ".opencode", "scripts", "assets"]
     return verify_resources(files, directory, names)
 

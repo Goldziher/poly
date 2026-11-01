@@ -69,8 +69,6 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
       release_assets_exist: ${{ steps.release_assets.outputs.release_assets_exist }}
-      npm_bootstrapped: ${{ steps.registries.outputs.npm_bootstrapped }}
-      pypi_exists: ${{ steps.registries.outputs.pypi_exists }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -157,40 +155,6 @@ jobs:
           fi
 
           echo "✓ Version verified across Cargo + npm + PyPI: $cargo_version"
-
-      - name: Detect registry readiness
-        id: registries
-        run: |
-          set -euo pipefail
-          version="${{ steps.version.outputs.version }}"
-
-          # npm can only name a trusted publisher for a package that already
-          # exists, so a package's first publish is always manual. The umbrella
-          # package was bootstrapped and has a trusted publisher configured; this
-          # check exists so that a *new* platform package added to the matrix
-          # skips the job with a notice rather than failing a release on a step
-          # that cannot yet succeed. See docs/INSTALL-PACKAGES.md.
-          npm_bootstrapped=false
-          # npm, not pnpm: this job never installs pnpm, and a missing binary reads as
-          # "not on npm", silently skipping the publish (v0.30.0 shipped no npm package).
-          if npm view "@goldziher/polylint" version >/dev/null 2>&1; then
-            npm_bootstrapped=true
-          else
-            echo "::notice::@goldziher/polylint is not on npm; skipping the pnpm publish --no-git-checks. It needs a one-time manual publish before a trusted publisher can be configured for it (docs/INSTALL-PACKAGES.md)."
-          fi
-
-          # PyPI `polylint` already exists, so only the per-version check matters.
-          pypi_exists=false
-          if curl -fsS "https://pypi.org/pypi/polylint/${version}/json" >/dev/null 2>&1; then
-            pypi_exists=true
-          fi
-
-          {
-            echo "npm_bootstrapped=$npm_bootstrapped"
-            echo "pypi_exists=$pypi_exists"
-          } >> "$GITHUB_OUTPUT"
-
-          echo "npm bootstrapped? $npm_bootstrapped   PyPI ${version} already published? $pypi_exists"
 
       - name: Detect existing GitHub release assets
         id: release_assets
@@ -645,20 +609,10 @@ jobs:
   publish_npm:
     name: Publish npm (@goldziher/polylint)
     needs: [meta, finalize_release]
-    # Gated on finalize_release because the packages carry the release archives'
-    # binaries: publishing before the release is live would ship bytes nobody can
-    # verify against sha256sums.txt. Gated on npm_bootstrapped because a package
-    # npm has never seen cannot have a trusted publisher, so there is nothing
-    # this job could succeed at — skipping with a notice is more honest than
-    # failing. Publishing is token-less: OIDC only, no NODE_AUTH_TOKEN.
+    # Registry payloads must match the finalized release binaries before any skip or upload. ~keep
     if: >-
-      !inputs.plugins-only && (needs.finalize_release.result == 'success' && needs.meta.outputs.npm_bootstrapped == 'true')
+      !inputs.plugins-only && needs.finalize_release.result == 'success'
     runs-on: ubuntu-latest
-    # Non-blocking, same reasoning as publish_scoop: a not-yet-configured trusted
-    # publisher must show up as a failed job, not as a failed release. The
-    # GitHub release is already published and un-drafted before this job starts,
-    # and nothing depends on it, so it cannot undo that.
-    continue-on-error: true
     permissions:
       contents: read
       # Mints the OIDC token npm trusted publishing exchanges for a publish
@@ -670,6 +624,20 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || '' }}
+
+      - &registry-controller
+        name: Load immutable controller publication guard
+        env:
+          CONTROLLER_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --no-write-fetch-head origin "$CONTROLLER_SHA"
+          controller="$(mktemp -d "$RUNNER_TEMP/poly-registry-controller.XXXXXX")"
+          for helper in verify_registry_payload.py registry_archive.py; do
+            git show "$CONTROLLER_SHA:scripts/$helper" > "$controller/$helper"
+            test -s "$controller/$helper"
+          done
+          echo "POLY_REGISTRY_GUARD=$controller/verify_registry_payload.py" >> "$GITHUB_ENV"
 
       - name: Setup Node.js and pnpm
         uses: xberg-io/actions/setup-mise@v1
@@ -720,14 +688,21 @@ jobs:
             local dir="$1"
             local name
             name="$(jq -r '.name' "$dir/package.json")"
-            if pnpm view "${name}@${version}" version >/dev/null 2>&1; then
-              echo "· ${name}@${version} is already published; skipping"
+            local pack_dir archive verdict
+            pack_dir="$(mktemp -d)"
+            ( cd "$dir" && pnpm pack --json --pack-destination "$pack_dir" ) > "$pack_dir/pack.json"
+            archive="$(jq -r '.filename' "$pack_dir/pack.json")"
+            case "$archive" in /*) ;; *) archive="$pack_dir/$archive" ;; esac
+            verdict="$(python3 "$POLY_REGISTRY_GUARD" npm "$archive")"
+            if [ "$verdict" = "exists=true" ]; then
+              echo "· ${name}@${version} has the identical payload; skipping"
               return 0
             fi
+            [ "$verdict" = "exists=false" ] || { echo "Invalid parity verdict" >&2; exit 1; }
             echo "→ publishing ${name}@${version} (--tag ${npm_tag})"
             # --provenance attaches a signed build-provenance attestation using
             # the job's id-token.
-            ( cd "$dir" && pnpm publish --no-git-checks --provenance --access public --tag "$npm_tag" )
+            ( cd "$dir" && pnpm publish "$archive" --no-git-checks --provenance --access public --tag "$npm_tag" )
           }
 
           # Platform packages first, and `set -e` means a failed one aborts the
@@ -735,7 +710,10 @@ jobs:
           # partial failure from producing the worst outcome: an umbrella package
           # on `latest` whose pinned binaries do not exist, which installs
           # cleanly and then has no `poly` to run.
-          for dir in npm-package/platforms/*/; do
+          platforms=(npm-package/platforms/*/)
+          expected="$(jq -er '.optionalDependencies | length | select(. > 0)' npm-package/package.json)"
+          [ "${#platforms[@]}" -eq "$expected" ] || { echo "Incomplete npm platform inventory" >&2; exit 1; }
+          for dir in "${platforms[@]}"; do
             publish_one "${dir%/}"
           done
           publish_one npm-package
@@ -755,6 +733,8 @@ jobs:
         uses: actions/checkout@v7
         with:
           ref: ${{ inputs.plugins-only && github.sha || needs.meta.outputs.tag }}
+
+      - *registry-controller
 
       - name: Install reviewed ai-rulez
         uses: xberg-io/actions/setup-ai-rulez@v1
@@ -793,34 +773,12 @@ jobs:
           case "$archive" in /*) ;; *) archive="$RUNNER_TEMP/$archive" ;; esac
           python3 scripts/verify_plugin_distribution.py npm "$archive"
 
-      - name: Check the exact npm plugin version
+      - name: Check the exact npm plugin payload
         id: npm-version
         run: |
-          python3 - <<'PY'
-          import json
-          import os
-          import urllib.error
-          import urllib.parse
-          import urllib.request
-          from pathlib import Path
-
-          package = json.loads(Path('plugin/package.json').read_text())
-          name = urllib.parse.quote(package['name'], safe='@')
-          version = urllib.parse.quote(package['version'], safe='')
-          try:
-              with urllib.request.urlopen(f'https://registry.npmjs.org/{name}/{version}', timeout=30) as response:
-                  metadata = json.load(response)
-              if metadata['name'] != package['name'] or metadata['version'] != package['version']:
-                  raise SystemExit('npm registry returned an unexpected version')
-              exists = True
-          except urllib.error.HTTPError as error:
-              if error.code != 404:
-                  raise
-              exists = False
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
-              output.write(f'exists={str(exists).lower()}\n')
-          print(f"npm {package['name']}@{package['version']}: {'already published; skipping' if exists else 'missing'}")
-          PY
+          archive="$(jq -r '.filename' "$RUNNER_TEMP/plugin-pack.json")"
+          case "$archive" in /*) ;; *) archive="$RUNNER_TEMP/$archive" ;; esac
+          python3 "$POLY_REGISTRY_GUARD" npm "$archive" >> "$GITHUB_OUTPUT"
       - name: Publish verified agent package
         if: steps.npm-version.outputs.exists != 'true'
         uses: xberg-io/actions/publish-npm@v1
@@ -895,6 +853,8 @@ jobs:
         with:
           ref: ${{ inputs.plugins-only && github.sha || needs.meta.outputs.tag }}
           fetch-depth: 0
+      - *registry-controller
+
       - name: Install ai-rulez
         uses: xberg-io/actions/setup-ai-rulez@v1
       - name: Verify plugin versions and generated resources before publishing
@@ -929,6 +889,8 @@ jobs:
         run: uv build --wheel --out-dir dist-hermes plugin/.hermes/package
       - name: Verify every packaged Hermes runtime resource
         run: python3 scripts/verify_plugin_distribution.py wheel dist-hermes/*.whl
+      - name: Verify immutable Hermes registry payloads
+        run: python3 "$POLY_REGISTRY_GUARD" wheel --expected-count 1 dist-hermes/*.whl
       - name: Publish verified Hermes wheel
         uses: xberg-io/actions/publish-pypi@v1
         with:
@@ -938,13 +900,9 @@ jobs:
   publish_pypi:
     name: Publish PyPI (polylint)
     needs: [meta, finalize_release]
-    # Same gating as npm: the wheels embed the release archives' binaries, so the
-    # release has to be live first. PyPI `polylint` already exists, so the only
-    # per-version guard needed is "not already published".
     if: >-
-      !inputs.plugins-only && (needs.finalize_release.result == 'success' && needs.meta.outputs.pypi_exists != 'true')
+      !inputs.plugins-only && needs.finalize_release.result == 'success'
     runs-on: ubuntu-latest
-    continue-on-error: true
     # PyPI's trusted publisher for this project names this environment; the two
     # must agree or the OIDC exchange is refused.
     environment: pypi
@@ -957,6 +915,8 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || '' }}
+
+      - *registry-controller
 
       - name: Setup Python
         uses: xberg-io/actions/setup-mise@v1
@@ -988,6 +948,9 @@ jobs:
           python -m pip install --upgrade pip build hatchling
           python pip-package/build_wheels.py --artifacts artifacts --out pip-package/dist
           ls -l pip-package/dist
+
+      - name: Verify immutable native PyPI registry payloads
+        run: python3 "$POLY_REGISTRY_GUARD" wheel --expected-count 7 pip-package/dist/*.whl
 
       - name: Publish to PyPI
         # Trusted publishing (OIDC) — no API token. skip-existing keeps a re-run

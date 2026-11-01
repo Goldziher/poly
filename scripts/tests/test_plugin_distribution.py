@@ -1,6 +1,7 @@
 """Verify real registry archives and reject missing bytes or false release success."""
 
 import importlib.util
+import io
 import json
 import re
 import subprocess
@@ -53,6 +54,24 @@ class RegistryArchiveTests(unittest.TestCase):
         """Both builders include their exact generated skill, prompt and adapter bytes."""
         self.assertEqual(self.helper.verify_wheel(self.wheel), 15)
         self.assertEqual(self.helper.verify_npm(self.npm), 28)
+
+    def test_should_reject_changed_runtime_dependencies_in_an_npm_archive(self) -> None:
+        """A valid identity cannot mask the stale SDK dependency from Poly47."""
+        target = self.directory / "stale-sdk.tgz"
+        with tarfile.open(self.npm) as source, tarfile.open(target, "w:gz") as output:
+            for member in source:
+                if not member.isfile():
+                    output.addfile(member)
+                    continue
+                data = source.extractfile(member).read()
+                if member.name == "package/package.json":
+                    manifest = json.loads(data)
+                    manifest["dependencies"] = {"@opencode/plugin": "^2.0.26"}
+                    data = json.dumps(manifest).encode()
+                member.size = len(data)
+                output.addfile(member, io.BytesIO(data))
+        with self.assertRaisesRegex(ValueError, "npm package manifest mismatch"):
+            self.helper.verify_npm(target)
 
     def test_should_reject_an_npm_archive_missing_an_adapter_dependency(self) -> None:
         """The OpenCode entry point imports this sibling module at runtime."""
