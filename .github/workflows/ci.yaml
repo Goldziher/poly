@@ -69,6 +69,10 @@ jobs:
     name: test / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
+    # Integration binaries link the full engine registry; line tables exhaust the Linux runner disk.
+    env:
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
     strategy:
       fail-fast: false
       matrix:
