@@ -21,7 +21,7 @@ classifiers = [
   "Topic :: Software Development :: Quality Assurance",
 ]
 keywords = ["linter", "formatter", "lint", "format", "polyglot", "poly"]
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 dependencies = []
 
 [project.urls]
