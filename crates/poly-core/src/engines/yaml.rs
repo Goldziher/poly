@@ -27,6 +27,7 @@ use oxc_allocator::Allocator;
 use oxc_formatter_core::FormatOptions;
 use oxc_formatter_yaml::{ProseWrap, TrailingCommas, YamlFormatOptions};
 use serde::Deserialize as _;
+use std::borrow::Cow;
 
 use super::core_options::core_format_options;
 use super::template::{GO_TEMPLATE_SKIP, contains_go_template};
@@ -116,8 +117,8 @@ impl Engine for YamlEngine {
         self.format_input_salt(path, cfg)
     }
 
-    fn skip_reason(&self, src: &SourceFile) -> Option<&'static str> {
-        contains_go_template(&src.content).then_some(GO_TEMPLATE_SKIP)
+    fn skip_reason(&self, src: &SourceFile) -> Option<Cow<'static, str>> {
+        contains_go_template(&src.content).then_some(Cow::Borrowed(GO_TEMPLATE_SKIP))
     }
 
     fn lint(&self, src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {

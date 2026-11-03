@@ -26,6 +26,7 @@
 //! rule code). Structured, per-rule diagnostics remain the job of the curated
 //! native backends — the catalog tier trades fidelity for breadth.
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -533,8 +534,8 @@ impl Engine for CatalogToolEngine {
         !self.is_lint() && probe_binary(&self.tool.binary).is_some()
     }
 
-    fn skip_reason(&self, _src: &SourceFile) -> Option<&'static str> {
-        (!self.is_lint() && self.unavailable.is_some()).then_some(UNAVAILABLE_SKIP)
+    fn skip_reason(&self, _src: &SourceFile) -> Option<Cow<'static, str>> {
+        (!self.is_lint() && self.unavailable.is_some()).then_some(Cow::Borrowed(UNAVAILABLE_SKIP))
     }
 
     /// A catalog engine is built for the specific language it was matched to, so

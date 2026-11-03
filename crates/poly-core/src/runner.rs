@@ -922,7 +922,7 @@ fn skip_reason_for(plans: &[EnginePlan], src: &SourceFile) -> Option<String> {
         // `?` short-circuits the moment any engine is willing to look at the
         // file: one willing backend means the file was not skipped.
         let why = plan.engine.skip_reason(src)?;
-        reason.get_or_insert_with(|| why.to_owned());
+        reason.get_or_insert_with(|| why.into_owned());
     }
     reason
 }

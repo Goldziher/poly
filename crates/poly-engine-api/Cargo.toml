@@ -21,6 +21,7 @@ schemars = ["dep:schemars"]
 
 [dependencies]
 anyhow.workspace = true
+blake3.workspace = true
 poly-component-protocol.workspace = true
 poly-config.workspace = true
 schemars = { workspace = true, optional = true }

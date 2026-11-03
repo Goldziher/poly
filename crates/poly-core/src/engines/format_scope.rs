@@ -9,6 +9,7 @@
 //! unchanged — the wrapped engine still lints them.
 
 use globset::GlobSet;
+use std::borrow::Cow;
 
 use crate::config::EngineConfig;
 use crate::engine::{
@@ -62,7 +63,7 @@ impl Engine for FormatScope {
         self.inner.provides_language_format(language, cfg)
     }
 
-    fn skip_reason(&self, src: &SourceFile) -> Option<&'static str> {
+    fn skip_reason(&self, src: &SourceFile) -> Option<Cow<'static, str>> {
         if self.claims(src) {
             return None;
         }

@@ -40,6 +40,7 @@
 //!
 //! [ADR 0016]: ../../../../adrs/0016-uniform-rule-selection.md
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -123,8 +124,8 @@ impl Engine for AdrlintEngine {
         *language == Language::Markdown && enabled(cfg)
     }
 
-    fn skip_reason(&self, src: &SourceFile) -> Option<&'static str> {
-        (!is_adr_file(&src.path)).then_some(NOT_AN_ADR)
+    fn skip_reason(&self, src: &SourceFile) -> Option<Cow<'static, str>> {
+        (!is_adr_file(&src.path)).then_some(Cow::Borrowed(NOT_AN_ADR))
     }
 
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
@@ -370,7 +371,7 @@ Chosen option: Rust, because it is fast.
             .expect("lint");
         assert!(found.is_empty());
         assert_eq!(
-            AdrlintEngine.skip_reason(&source("README.md", "# Broken\n")),
+            AdrlintEngine.skip_reason(&source("README.md", "# Broken\n")).as_deref(),
             Some(NOT_AN_ADR)
         );
     }

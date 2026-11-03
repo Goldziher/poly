@@ -29,6 +29,7 @@ use malva::config::FormatOptions;
 use oxc_allocator::Allocator;
 use oxc_formatter_core::FormatOptions as _;
 use oxc_formatter_css::{CssFormatOptions, CssVariant, TrailingCommas};
+use std::borrow::Cow;
 
 use super::core_options::core_format_options;
 
@@ -115,8 +116,8 @@ impl Engine for MalvaEngine {
     /// stylesheet nobody intends to modernise reported as unformattable on
     /// every run. A skip says the same thing without failing the check. See
     /// [`has_ie_property_hack`](crate::engines::css_hacks::has_ie_property_hack).
-    fn skip_reason(&self, src: &SourceFile) -> Option<&'static str> {
-        has_ie_property_hack(&src.content).then_some(IE_PROPERTY_HACK_SKIP)
+    fn skip_reason(&self, src: &SourceFile) -> Option<Cow<'static, str>> {
+        has_ie_property_hack(&src.content).then_some(Cow::Borrowed(IE_PROPERTY_HACK_SKIP))
     }
 
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {

@@ -161,7 +161,7 @@ spec:
 fn helm_yaml_is_still_skipped() {
     let engine = YamlEngine;
     let src = make_src("templates/deployment.yaml", HELM_TEMPLATE);
-    assert_eq!(engine.skip_reason(&src), Some(TEMPLATE_SKIP));
+    assert_eq!(engine.skip_reason(&src).as_deref(), Some(TEMPLATE_SKIP));
     assert_eq!(engine.lint(&src, &engine_cfg()).unwrap().len(), 0);
     assert!(matches!(
         engine.format(&src, &engine_cfg()).unwrap(),
@@ -174,14 +174,14 @@ fn yaml_template_inside_backticks_or_fences_is_still_skipped() {
     let engine = YamlEngine;
     let fenced = make_src("notes.yaml", "notes: |\n  ```\n  image: {{ .Values.image }}\n  ```\n");
     assert_eq!(
-        engine.skip_reason(&fenced),
+        engine.skip_reason(&fenced).as_deref(),
         Some(TEMPLATE_SKIP),
         "a Markdown fence inside YAML is a plain scalar, not a code block"
     );
 
     let inline = make_src("notes.yaml", "note: \"see `{{ .Values.image }}`\"\n");
     assert_eq!(
-        engine.skip_reason(&inline),
+        engine.skip_reason(&inline).as_deref(),
         Some(TEMPLATE_SKIP),
         "backticks inside YAML are plain characters, not an inline code span"
     );
@@ -194,7 +194,7 @@ fn github_actions_expressions_are_still_not_templates() {
         ".github/workflows/ci.yaml",
         "jobs:\n  build:\n    if: ${{ github.event_name == 'push' }}\n",
     );
-    assert_eq!(engine.skip_reason(&src), None);
+    assert_eq!(engine.skip_reason(&src).as_deref(), None);
 }
 
 /// A quoted scalar continued on lines that sit at the parent key's indent is accepted by

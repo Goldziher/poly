@@ -5364,6 +5364,7 @@ name = "poly-engine-api"
 version = "0.32.3"
 dependencies = [
  "anyhow",
+ "blake3",
  "poly-component-protocol",
  "poly-config",
  "schemars 1.2.3",

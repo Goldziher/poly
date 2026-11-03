@@ -1,6 +1,7 @@
 //! The [`Engine`] trait every backend implements, plus the normalized diagnostic
 //! and format-output types backends produce.
 
+use std::borrow::Cow;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -61,6 +62,23 @@ impl OptionType {
     /// TOML value maps to exactly one bit and a datetime is therefore reported
     /// rather than silently unclassifiable.
     const DATETIME: OptionType = OptionType(1 << 6);
+
+    /// The type set as wire bits: 1 boolean, 2 integer, 4 float, 8 string,
+    /// 16 array, 32 table, 64 datetime (`WireOptionKey::types`).
+    #[must_use]
+    pub const fn bits(self) -> u8 {
+        self.0
+    }
+
+    /// Rebuild a type set from wire bits; `None` for zero or any bit above 64.
+    #[must_use]
+    pub const fn from_bits(bits: u8) -> Option<OptionType> {
+        if bits == 0 || bits & 0x80 != 0 {
+            None
+        } else {
+            Some(OptionType(bits))
+        }
+    }
 
     /// A key that accepts either shape.
     #[must_use]
@@ -153,7 +171,7 @@ pub struct OptionKeys {
     /// the *whole* table into. `None` from the probe means "could not tell"
     /// (a malformed table), which is treated as "everything is recognised" so a
     /// type error never turns into a pile of unknown-key warnings.
-    derived: Option<DerivedOptionKeys>,
+    derived: Option<DerivedProbe>,
     /// Extra guidance rendered as the diagnostic's description.
     note: Option<&'static str>,
 }
@@ -162,6 +180,34 @@ pub struct OptionKeys {
 /// is offered. Returns `None` when the answer cannot be established. See
 /// `engines::config_keys::probe`.
 pub type DerivedOptionKeys = fn(&toml::Table) -> Option<Vec<String>>;
+
+/// Where a derived option-key probe runs.
+#[derive(Debug, Clone, Copy)]
+pub enum DerivedProbe {
+    /// An in-process probe over a serde type linked into this binary.
+    Local(DerivedOptionKeys),
+    /// A probe that lives in a downloaded engine component; the component host
+    /// resolves it by asking `engine` of `component` (the wire request
+    /// `DerivedOptionKeys`). Until resolved, [`OptionKeys::accepts`] treats every
+    /// key as recognised, exactly like a probe that "could not tell".
+    Component {
+        /// Component (package) name that hosts the engine.
+        component: &'static str,
+        /// Engine name inside that component.
+        engine: &'static str,
+    },
+}
+
+impl DerivedProbe {
+    /// Run the probe when it is local. `None` for a [`DerivedProbe::Component`]
+    /// (unresolved here) and for a local probe that could not tell.
+    pub fn recognized(&self, table: &toml::Table) -> Option<Vec<String>> {
+        match self {
+            DerivedProbe::Local(probe) => probe(table),
+            DerivedProbe::Component { .. } => None,
+        }
+    }
+}
 
 /// poly's uniform rule-selection vocabulary (ADR 0016), accepted by every
 /// backend that declares [`OptionKeys::with_rule_selection`].
@@ -237,8 +283,21 @@ impl OptionKeys {
     /// whole table into recognises, as reported by `probe`.
     #[must_use]
     pub const fn with_derived(mut self, probe: DerivedOptionKeys) -> OptionKeys {
-        self.derived = Some(probe);
+        self.derived = Some(DerivedProbe::Local(probe));
         self
+    }
+
+    /// Like [`OptionKeys::with_derived`], but the probe lives in the engine
+    /// component `component`, answered at run time by the component host.
+    #[must_use]
+    pub const fn with_component_derived(mut self, component: &'static str, engine: &'static str) -> OptionKeys {
+        self.derived = Some(DerivedProbe::Component { component, engine });
+        self
+    }
+
+    /// The derived probe this table declares, if any.
+    pub fn derived_probe(&self) -> Option<DerivedProbe> {
+        self.derived
     }
 
     /// Attach guidance shown with each unknown-key warning for this table.
@@ -279,7 +338,9 @@ impl OptionKeys {
         match self.derived {
             // `None` means the probe could not tell — accept rather than
             // invent a warning out of a parse failure.
-            Some(probe) => probe(options).is_none_or(|recognized| recognized.iter().any(|k| k == key)),
+            Some(probe) => probe
+                .recognized(options)
+                .is_none_or(|recognized| recognized.iter().any(|k| k == key)),
             None => false,
         }
     }
@@ -324,7 +385,10 @@ impl OptionKeys {
             single.insert(key.to_string(), value.clone());
             // `None` — the probe could not tell — counts as "recognised", for
             // the same reason it does in `accepts`.
-            if probe(&single).is_none_or(|recognized| recognized.iter().any(|k| k == key)) {
+            if probe
+                .recognized(&single)
+                .is_none_or(|recognized| recognized.iter().any(|k| k == key))
+            {
                 return None;
             }
         }
@@ -613,8 +677,11 @@ pub trait Engine: Send + Sync {
     /// — rather than bailing out inside [`Engine::lint`] / [`Engine::format`] —
     /// lets the runner count skips and the report surface them.
     ///
+    /// Returns a `Cow` so a component proxy can hand back an owned reason; native
+    /// backends return `Cow::Borrowed` of a constant.
+    ///
     /// Defaults to `None`: the backend handles everything routed to it.
-    fn skip_reason(&self, _src: &SourceFile) -> Option<&'static str> {
+    fn skip_reason(&self, _src: &SourceFile) -> Option<Cow<'static, str>> {
         None
     }
 
@@ -787,5 +854,48 @@ pub trait Engine: Send + Sync {
     /// would leave the language with no formatter at all.
     fn supersedes_generic_formatter(&self) -> bool {
         false
+    }
+}
+
+#[cfg(test)]
+mod api_tests {
+    use super::*;
+
+    #[test]
+    fn option_type_bits_round_trip_and_match_the_wire_layout() {
+        assert_eq!(OptionType::BOOLEAN.bits(), 1);
+        assert_eq!(OptionType::INTEGER.bits(), 2);
+        assert_eq!(OptionType::FLOAT.bits(), 4);
+        assert_eq!(OptionType::STRING.bits(), 8);
+        assert_eq!(OptionType::ARRAY.bits(), 16);
+        assert_eq!(OptionType::TABLE.bits(), 32);
+        for bits in 1u8..=127 {
+            assert_eq!(OptionType::from_bits(bits).map(OptionType::bits), Some(bits));
+        }
+        let widened = OptionType::INTEGER.or(OptionType::STRING);
+        assert_eq!(OptionType::from_bits(widened.bits()), Some(widened));
+        assert!(OptionType::from_bits(0).is_none());
+        assert!(OptionType::from_bits(128).is_none());
+    }
+
+    fn probe(_: &toml::Table) -> Option<Vec<String>> {
+        Some(vec!["known".to_string()])
+    }
+
+    #[test]
+    fn local_probe_filters_keys_and_component_probe_accepts_all() {
+        let table = toml::Table::new();
+        let local = OptionKeys::declared(&[]).with_derived(probe);
+        assert!(local.accepts("known", &table, false));
+        assert!(!local.accepts("other", &table, false));
+        let remote = OptionKeys::declared(&[]).with_component_derived("poly-engine-x", "x");
+        assert!(matches!(
+            remote.derived_probe(),
+            Some(DerivedProbe::Component {
+                component: "poly-engine-x",
+                engine: "x"
+            })
+        ));
+        assert!(remote.accepts("anything", &table, false));
     }
 }

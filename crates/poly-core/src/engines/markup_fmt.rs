@@ -119,14 +119,14 @@ impl Engine for MarkupFmtEngine {
         VERSION
     }
 
-    fn skip_reason(&self, src: &SourceFile) -> Option<&'static str> {
+    fn skip_reason(&self, src: &SourceFile) -> Option<Cow<'static, str>> {
         if !is_generic_template(&src.language) {
             return None;
         }
         match template_target(&src.path) {
             TemplateTarget::Markup => None,
-            TemplateTarget::NonMarkup => Some(NON_MARKUP_TEMPLATE_SKIP),
-            TemplateTarget::Ambiguous => Some(AMBIGUOUS_TEMPLATE_SKIP),
+            TemplateTarget::NonMarkup => Some(Cow::Borrowed(NON_MARKUP_TEMPLATE_SKIP)),
+            TemplateTarget::Ambiguous => Some(Cow::Borrowed(AMBIGUOUS_TEMPLATE_SKIP)),
         }
     }
 
@@ -337,7 +337,7 @@ mod tests {
         let src = make_src("service_method.jinja", Language::Jinja, content);
 
         assert_eq!(
-            MarkupFmtEngine.skip_reason(&src),
+            MarkupFmtEngine.skip_reason(&src).as_deref(),
             Some("ambiguous template target; add .html or .xml before the template extension")
         );
         assert!(matches!(
@@ -388,7 +388,10 @@ mod tests {
             ("page.mustache", Language::Mustache),
         ] {
             let src = make_src(path, language, "<summary>{{ docs }}</summary>\n");
-            assert_eq!(MarkupFmtEngine.skip_reason(&src), Some(AMBIGUOUS_TEMPLATE_SKIP));
+            assert_eq!(
+                MarkupFmtEngine.skip_reason(&src).as_deref(),
+                Some(AMBIGUOUS_TEMPLATE_SKIP)
+            );
         }
     }
 

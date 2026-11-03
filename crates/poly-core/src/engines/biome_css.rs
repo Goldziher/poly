@@ -43,6 +43,7 @@ use biome_analyze::{AnalyzerOptions, ControlFlow, Never};
 use biome_css_analyze::CssAnalyzerServices;
 use biome_css_parser::{CssParserOptions, parse_css};
 use biome_languages::CssFileSource;
+use std::borrow::Cow;
 
 use crate::config::EngineConfig;
 use crate::engine::{Capabilities, Diagnostic, Engine, OptionKeys, OptionTable, SourceFile};
@@ -114,8 +115,8 @@ impl Engine for BiomeCssEngine {
     /// number of hacks, so a real stylesheet carrying 37 of them consumed 27 GB
     /// and was OOM-killed rather than reporting anything. See
     /// [`has_ie_property_hack`](crate::engines::css_hacks::has_ie_property_hack).
-    fn skip_reason(&self, src: &SourceFile) -> Option<&'static str> {
-        has_ie_property_hack(&src.content).then_some(IE_PROPERTY_HACK_SKIP)
+    fn skip_reason(&self, src: &SourceFile) -> Option<Cow<'static, str>> {
+        has_ie_property_hack(&src.content).then_some(Cow::Borrowed(IE_PROPERTY_HACK_SKIP))
     }
 
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {

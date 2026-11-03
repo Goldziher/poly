@@ -19,6 +19,7 @@
 //! `enable` / `extend_enable` / `disable` keys remain accepted as aliases and are
 //! unioned with their canonical counterparts.
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, HashSet};
 use std::sync::{Arc, LazyLock};
 
@@ -152,8 +153,8 @@ impl Engine for RumdlEngine {
         self.format_input_salt(path, cfg)
     }
 
-    fn skip_reason(&self, src: &SourceFile) -> Option<&'static str> {
-        contains_go_template_markdown(&src.content).then_some(GO_TEMPLATE_SKIP)
+    fn skip_reason(&self, src: &SourceFile) -> Option<Cow<'static, str>> {
+        contains_go_template_markdown(&src.content).then_some(Cow::Borrowed(GO_TEMPLATE_SKIP))
     }
 
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {

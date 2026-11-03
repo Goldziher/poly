@@ -18,6 +18,7 @@
 //! | DL4001 | warning  | Both `wget` and `curl` used in `RUN` commands               |
 
 use dockerfile_parser::{Dockerfile, Instruction};
+use std::borrow::Cow;
 
 use super::rule_config::RuleSelection;
 use super::template::{GO_TEMPLATE_SKIP, contains_go_template};
@@ -99,8 +100,9 @@ impl Engine for DockerfileEngine {
     /// A Go/Helm-templated Dockerfile is not valid Dockerfile syntax; it is skipped rather than
     /// reported as a parse error. A real Dockerfile that merely mentions `{{.Field}}` (a
     /// `docker inspect --format`) still parses and is linted.
-    fn skip_reason(&self, src: &SourceFile) -> Option<&'static str> {
-        (contains_go_template(&src.content) && Dockerfile::parse(&src.content).is_err()).then_some(GO_TEMPLATE_SKIP)
+    fn skip_reason(&self, src: &SourceFile) -> Option<Cow<'static, str>> {
+        (contains_go_template(&src.content) && Dockerfile::parse(&src.content).is_err())
+            .then_some(Cow::Borrowed(GO_TEMPLATE_SKIP))
     }
 
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
@@ -596,7 +598,7 @@ extend_select = ["DL3000"]
             language: Language::Dockerfile,
             content: "{{- if .Values.x }}\nFROM alpine:3\n{{- end }}\n".into(),
         };
-        assert_eq!(engine.skip_reason(&src), Some(GO_TEMPLATE_SKIP));
+        assert_eq!(engine.skip_reason(&src).as_deref(), Some(GO_TEMPLATE_SKIP));
         assert!(engine.lint(&src, &engine_cfg()).unwrap().is_empty());
     }
 
