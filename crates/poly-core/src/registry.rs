@@ -248,6 +248,16 @@ pub(crate) const CROSS_CUTTING_ENGINES: &[&str] = &[
     "quality",
 ];
 
+/// Engines that are planned only when their `enabled` option is explicitly `true`.
+///
+/// Every other engine runs unless switched off. An absent key on one of these means
+/// "off", so a project that never mentions `typos` neither spell-checks nor loads it.
+/// `uncomment` is also opt-in but gates itself inside `lint`, so it is not listed.
+pub(crate) const OPT_IN_ENGINES: &[&str] = &[
+    #[cfg(feature = "engine-typos")]
+    "typos",
+];
+
 /// Every concrete (non-[`Language::Other`]) [`Language`] variant, used to
 /// walk every arm of [`engines_for`]. Kept from silently narrowing by
 /// `tests::assert_all_language_variants_listed`: adding a new `Language`

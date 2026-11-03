@@ -1,8 +1,10 @@
 //! Cross-cutting spell-checker backend: wraps the `typos` + `typos-dict` crates.
 //!
 //! Declared for zero languages (`languages() = &[]`). The registry appends
-//! this engine to **every** language match arm so all files are spell-checked
-//! in addition to their own formatter/linter.
+//! this engine to **every** language match arm, but the runner plans it only
+//! when `[engines.typos] enabled = true` (v1: `[lint.typos] enabled = true`) is
+//! set (`OPT_IN_ENGINES` in poly-core's registry). `poly migrate` writes that
+//! key for v1 configs that relied on the old default-on behaviour.
 //!
 //! # Capabilities
 //!

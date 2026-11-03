@@ -18,8 +18,8 @@ x-ai-rulez:
 - `registry.rs` — crate-private `engines_for(&Language) -> Vec<Box<dyn Engine>>`. A static
   `match` (alef-style): the native crate backend(s) registered for the language, else the
   tree-sitter generic backend — then the four **cross-cutting** backends (`typos`, `astgrep`,
-  `uncomment`, `quality`) appended for every language. `runner/plan.rs` merges enabled catalog
-  tools into that list.
+  `uncomment`, `quality`) appended for every language. `runner/plan.rs` plans `typos` only when config enables it (`registry::OPT_IN_ENGINES`)
+  and merges enabled catalog tools into that list.
 - `config.rs` — normalization and per-engine config slices of the schema the `poly-config`
   crate parses. The config file is `poly.toml` and nothing else (`CONFIG_FILE_NAMES` has one
   entry; there is no YAML form), read with the `toml` crate — `toml_edit` appears only in

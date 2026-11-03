@@ -19,7 +19,7 @@ use crate::engines::rule_config::RuleSelection;
 use crate::filter::SeverityRemap;
 use crate::host_hooks::oxfmt_native::FormatIgnore;
 use crate::language::Language;
-use crate::registry::engines_for;
+use crate::registry::{OPT_IN_ENGINES, engines_for};
 use crate::resolve::ConfigSet;
 use crate::runner::selection::{self, EngineSelection};
 use crate::runner::skips::Withdrawal;
@@ -238,7 +238,8 @@ fn merge_catalog_engines(
 
 /// Drop every registry engine explicitly switched off with `enabled = false`.
 ///
-/// Only an explicit `false` counts. An absent key means "this engine's own
+/// Only an explicit `false` counts, except for the `OPT_IN_ENGINES` (`typos`),
+/// which need an explicit `true`. An absent key means "this engine's own
 /// default", which differs per backend — `uncomment` is opt-in, `quality` is
 /// on, and each `native_tool` spec carries its own `default_on` — so reading
 /// absence as `false` would withdraw every engine that never declared the key.
@@ -267,7 +268,12 @@ fn retaining_enabled(
                 return true;
             }
             let cfg = config.engine_config(language, engine.name(), kind);
-            if cfg.options.get(ENABLED_OPTION_KEY).and_then(toml::Value::as_bool) != Some(false) {
+            let enabled = cfg.options.get(ENABLED_OPTION_KEY).and_then(toml::Value::as_bool);
+            // Never switched on is not a withdrawal worth reporting: the engine was never in play.
+            if enabled.is_none() && OPT_IN_ENGINES.contains(&engine.name()) {
+                return false;
+            }
+            if enabled != Some(false) {
                 return true;
             }
             // The same question `selection::apply` asks, for the same reason:

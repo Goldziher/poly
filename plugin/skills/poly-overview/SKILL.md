@@ -9,8 +9,8 @@ metadata:
 
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-Content-Hash: blake3:c6b5e72418a6df02b61259069de999fe2d7be8a259b2adde256940dc8afb2d15
-Source-Hash: blake3:5e5d158b473660c0b1dc17fa4ebb6b149b87916bfc1fc6acb82e05f789a24ca0
+Content-Hash: blake3:f08e662b14c5f7948dccd5f8d850166d71e592966d925105625c0af9b6161ab2
+Source-Hash: blake3:6ca9b4de5513ea722b2742620f27eb668a08d80a175d5cdd17a044fc6d320155
 Schema-Version: v1
 -->
 
@@ -53,9 +53,9 @@ below, which uses a language's canonical CLI when it happens to be installed.
 
 ## Cross-cutting engines (every language)
 
-Four engines are appended to every language regardless of tier:
+Four engines apply to every language regardless of tier (`typos` only when enabled):
 
-- **`typos`** — spelling in identifiers, comments, and strings.
+- **`typos`** — spelling in identifiers, comments, and strings. Opt-in: `[engines.typos] enabled = true`.
 - **`quality`** — structural code-quality metrics off the tree-sitter parse: file/function/
   type length, nesting depth, cyclomatic complexity, parameter count, and `lazy-ignore`.
   Warning severity, on by default. The structural rules need a verified node-kind table and

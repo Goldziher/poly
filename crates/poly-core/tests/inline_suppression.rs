@@ -37,6 +37,14 @@ fn write(path: &Path, contents: &str) {
     fs::write(path, contents).unwrap();
 }
 
+/// Typos is opt-in, so the tests that read its findings enable it explicitly.
+fn typos_enabled() -> Config {
+    Config {
+        lint: toml::from_str("[typos]\nenabled = true\n").expect("valid lint config"),
+        ..Config::default()
+    }
+}
+
 /// Lint a single file with the given contents in a throwaway tree and return the
 /// codes it reports. The `tempfile::TempDir` is returned alongside so callers
 /// that need the file afterwards can keep it alive.
@@ -44,7 +52,7 @@ fn codes_for(name: &str, contents: &str) -> Vec<String> {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join(name);
     write(&path, contents);
-    let results = lint(&[dir.path().to_path_buf()], &Config::default(), &opts(), false, false).unwrap();
+    let results = lint(&[dir.path().to_path_buf()], &typos_enabled(), &opts(), false, false).unwrap();
     results
         .iter()
         .flat_map(|result| result.diagnostics.iter())

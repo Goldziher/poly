@@ -128,7 +128,7 @@ Per-language resolution order:
 
 The registry appends four backends with `languages() == &[]` to every language, so they are
 orthogonal to the tiers above rather than a step in the resolution order: `typos` (spell-check,
-warning, on by default), `astgrep`, `uncomment` (opt-in), and `quality`.
+warning, opt-in via `[engines.typos] enabled = true`), `astgrep`, `uncomment` (opt-in), and `quality`.
 
 Two of them carry poly's lint coverage for languages no tier-1 backend reaches:
 

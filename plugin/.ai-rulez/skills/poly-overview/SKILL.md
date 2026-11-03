@@ -52,9 +52,9 @@ below, which uses a language's canonical CLI when it happens to be installed.
 
 ## Cross-cutting engines (every language)
 
-Four engines are appended to every language regardless of tier:
+Four engines apply to every language regardless of tier (`typos` only when enabled):
 
-- **`typos`** — spelling in identifiers, comments, and strings.
+- **`typos`** — spelling in identifiers, comments, and strings. Opt-in: `[engines.typos] enabled = true`.
 - **`quality`** — structural code-quality metrics off the tree-sitter parse: file/function/
   type length, nesting depth, cyclomatic complexity, parameter count, and `lazy-ignore`.
   Warning severity, on by default. The structural rules need a verified node-kind table and

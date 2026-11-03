@@ -49,7 +49,7 @@ Five mechanisms decide what actually inspects a file (`crates/poly-core/src/regi
    a user rule with the same `id` replaces a pack rule. `[rules] builtin = false` disables
    the pack wholesale.
 
-`typos` (spelling) and the opt-in `uncomment` engine are the other two cross-cutting
+the opt-in `typos` (spelling; `[engines.typos] enabled = true`) and `uncomment` engines are the other two cross-cutting
 backends appended to every language. On top of these, any **catalog or recipe tool** a config
 enables with `[tools.<name>] enabled = true` (`golangci-lint`, `helm`, `hadolint`, `buf`, …)
 joins the per-file tier. Recipe tools batch their files into as few spawns as possible, and

@@ -1,7 +1,7 @@
 //! Switching one engine off — and back on for a single language.
 //!
-//! `typos` is the case that matters most in practice: it is cross-cutting and on
-//! by default, so it is the engine people most often want to silence for one
+//! `typos` is the case that matters most in practice: it is cross-cutting and
+//! opt-in, so it is the engine people most often enable and then want to silence for one
 //! language (a vocabulary-heavy corpus, generated identifiers) while keeping it
 //! everywhere else. It is also the sharpest test of the layering, because a
 //! cross-cutting backend has *two* tables — the language-agnostic
@@ -58,13 +58,37 @@ fn flagged(run: &LintRun) -> Vec<String> {
 }
 
 #[test]
-fn typos_reports_on_every_language_by_default() {
+fn typos_is_off_by_default() {
+    let dir = tempfile::tempdir().expect("tmp");
+    fixture(dir.path());
+    let run = lint(dir.path(), &Config::default());
+    assert!(flagged(&run).is_empty(), "got {:?}", flagged(&run));
+}
+
+#[test]
+fn typos_reports_on_every_language_when_enabled() {
     let dir = tempfile::tempdir().expect("tmp");
     fixture(dir.path());
     assert_eq!(
-        flagged(&lint(dir.path(), &Config::default())),
+        flagged(&lint(dir.path(), &config("[typos]\nenabled = true\n"))),
         vec!["app.py", "main.rs"]
     );
+}
+
+#[test]
+fn typos_is_enabled_through_the_v2_engines_table() {
+    let dir = tempfile::tempdir().expect("tmp");
+    fixture(dir.path());
+    let engines: std::collections::BTreeMap<String, poly_config::v2::EngineTable> =
+        toml::from_str::<toml::Table>("[typos]\nenabled = true\n")
+            .expect("valid TOML")
+            .try_into()
+            .expect("valid [engines] map");
+    let v2 = Config {
+        engines,
+        ..Config::default()
+    };
+    assert_eq!(flagged(&lint(dir.path(), &v2)), vec!["app.py", "main.rs"]);
 }
 
 #[test]
@@ -79,7 +103,10 @@ fn typos_can_be_switched_off_globally() {
 fn typos_can_be_switched_off_for_one_language_only() {
     let dir = tempfile::tempdir().expect("tmp");
     fixture(dir.path());
-    let run = lint(dir.path(), &config("[python.typos]\nenabled = false\n"));
+    let run = lint(
+        dir.path(),
+        &config("[typos]\nenabled = true\n\n[python.typos]\nenabled = false\n"),
+    );
     assert_eq!(flagged(&run), vec!["main.rs"]);
 }
 
@@ -103,7 +130,7 @@ fn a_language_can_re_enable_typos_the_global_table_switched_off() {
 fn disabling_typos_leaves_the_language_backend_running() {
     let dir = tempfile::tempdir().expect("tmp");
     std::fs::write(dir.path().join("app.py"), "# teh fox\nimport os\n").expect("write");
-    let run = lint(dir.path(), &config("[typos]\nenabled = false\n"));
+    let run = lint(dir.path(), &Config::default());
     assert!(
         run.results
             .iter()

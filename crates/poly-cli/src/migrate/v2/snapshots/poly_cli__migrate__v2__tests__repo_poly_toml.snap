@@ -85,7 +85,6 @@ serial = "cargo"
 disable = ["MD025", "MD013", "MD024", "MD033", "MD036", "MD041"]
 
 [engines.typos]
-# typos is opt-in in poly v2; this keeps the v1 default (on).
 enabled = true
 
 [engines.typos.lang.markdown]

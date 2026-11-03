@@ -607,6 +607,55 @@ fn a_cross_cutting_engine_is_disabled_from_its_language_agnostic_table() {
     }
 }
 
+/// typos is opt-in: absent config plans nothing, an explicit `true` plans it, and the
+/// per-language `true` re-enables it under a global `false`.
+#[test]
+fn typos_is_planned_only_when_enabled() {
+    let absent = planned_names(&plan_engines(
+        &Language::Python,
+        &Config::default(),
+        Kind::Lint,
+        unrestricted(),
+        &mut None,
+    ));
+    assert!(!absent.contains(&"typos"), "typos planned without config: {absent:?}");
+    assert!(absent.contains(&"ruff"), "other engines are unaffected: {absent:?}");
+
+    let on = lint_config("[typos]\nenabled = true\n");
+    let planned = planned_names(&plan_engines(
+        &Language::Python,
+        &on,
+        Kind::Lint,
+        unrestricted(),
+        &mut None,
+    ));
+    assert!(planned.contains(&"typos"), "enabled typos missing: {planned:?}");
+
+    let per_language = lint_config("[typos]\nenabled = false\n[python.typos]\nenabled = true\n");
+    let python = planned_names(&plan_engines(
+        &Language::Python,
+        &per_language,
+        Kind::Lint,
+        unrestricted(),
+        &mut None,
+    ));
+    assert!(python.contains(&"typos"), "{python:?}");
+}
+
+/// Leaving an opt-in engine off is not a user withdrawal, so it must not be reported as one.
+#[test]
+fn an_unconfigured_opt_in_engine_is_not_reported_as_disabled() {
+    let mut withdrawal = None;
+    let _ = plan_engines(
+        &Language::Python,
+        &Config::default(),
+        Kind::Lint,
+        unrestricted(),
+        &mut withdrawal,
+    );
+    assert!(withdrawal.is_none(), "default-off typos must not count as a withdrawal");
+}
+
 /// ...and from a per-language table, which overrides the global one. This
 /// is the case `build_astgrep_options` could not express: it never reads
 /// `lang_options` at all, so the key is carried by `engine_config` itself

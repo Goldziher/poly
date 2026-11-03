@@ -349,6 +349,9 @@ impl Config {
     #[cfg(feature = "engine-typos")]
     /// Build the merged `options` table for the typos engine.
     ///
+    /// typos is opt-in: the runner plans it only when `enabled = true` reaches it (see
+    /// `registry::OPT_IN_ENGINES`); this builder only merges its dictionary options.
+    ///
     /// Precedence (lowest → highest):
     /// 1. Native `_typos.toml` / `.typos.toml` values (`typos_native`).
     /// 2. Language-agnostic `[lint.typos]` table from `poly.toml` (poly wins on conflict).

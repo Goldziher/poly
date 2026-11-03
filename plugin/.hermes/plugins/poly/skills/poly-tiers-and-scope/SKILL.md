@@ -9,8 +9,8 @@ metadata:
 
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-Content-Hash: blake3:40ee83eb1c0d17f033a1f38ad346f44ca50560fc81d3445655d298198b79b50f
-Source-Hash: blake3:5e5d158b473660c0b1dc17fa4ebb6b149b87916bfc1fc6acb82e05f789a24ca0
+Content-Hash: blake3:b947b61621799808cf35d9bb8449f0374bab6d8bb3cb03f384da93127ef940a7
+Source-Hash: blake3:6ca9b4de5513ea722b2742620f27eb668a08d80a175d5cdd17a044fc6d320155
 Schema-Version: v1
 -->
 
@@ -50,7 +50,7 @@ Five mechanisms decide what actually inspects a file (`crates/poly-core/src/regi
    a user rule with the same `id` replaces a pack rule. `[rules] builtin = false` disables
    the pack wholesale.
 
-`typos` (spelling) and the opt-in `uncomment` engine are the other two cross-cutting
+the opt-in `typos` (spelling; `[engines.typos] enabled = true`) and `uncomment` engines are the other two cross-cutting
 backends appended to every language. On top of these, any **catalog or recipe tool** a config
 enables with `[tools.<name>] enabled = true` (`golangci-lint`, `helm`, `hadolint`, `buf`, …)
 joins the per-file tier. Recipe tools batch their files into as few spawns as possible, and

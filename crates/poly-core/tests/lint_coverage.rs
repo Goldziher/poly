@@ -41,6 +41,14 @@ fn write(dir: &Path, name: &str, content: &str) {
     std::fs::write(dir.join(name), content).expect("write fixture");
 }
 
+/// Typos is opt-in, so the tests that read its findings enable it explicitly.
+fn typos_enabled() -> Config {
+    Config {
+        lint: toml::from_str("[typos]\nenabled = true\n").expect("valid lint config"),
+        ..Config::default()
+    }
+}
+
 fn lint(dir: &Path) -> LintRun {
     poly_core::lint_run(&[dir.to_path_buf()], &Config::default(), &options(), false, false).expect("lint run")
 }
@@ -220,7 +228,8 @@ fn cross_cutting_findings_survive_on_a_file_with_no_language_rules() {
     let dir = tempfile::tempdir().expect("tempdir");
     write(dir.path(), "a.zig", "// teh quick brown fox\npub fn main() void {}\n");
 
-    let run = lint(dir.path());
+    let run =
+        poly_core::lint_run(&[dir.path().to_path_buf()], &typos_enabled(), &options(), false, false).expect("lint run");
 
     assert_eq!(run.checked, 0);
     assert_eq!(

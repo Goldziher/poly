@@ -52,6 +52,14 @@ fn conformance_fixtures_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/conformance")
 }
 
+/// Typos is opt-in, so the tests that read its findings enable it explicitly.
+fn typos_enabled() -> Config {
+    Config {
+        lint: toml::from_str("[typos]\nenabled = true\n").expect("valid lint config"),
+        ..Config::default()
+    }
+}
+
 /// Run the real lint pipeline over the conformance fixture tree and return all
 /// diagnostics grouped by engine name.
 ///
@@ -72,7 +80,7 @@ fn run_and_group() -> HashMap<String, Vec<Diagnostic>> {
         only: Vec::new(),
         skip: Vec::new(),
     };
-    let results = poly_core::lint(&[conformance_fixtures_dir()], &Config::default(), &opts, false, false)
+    let results = poly_core::lint(&[conformance_fixtures_dir()], &typos_enabled(), &opts, false, false)
         .expect("conformance lint run must not fail");
 
     let mut by_engine: HashMap<String, Vec<Diagnostic>> = HashMap::new();

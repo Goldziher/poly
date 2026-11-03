@@ -74,7 +74,12 @@ fn a_file_can_be_both_skipped_and_carry_findings() {
         "// recieve the value\npub fn main() void {}\n",
     )
     .expect("write");
-    let document = LintDocument::from_run(&lint(dir.path()));
+    let typos_on = Config {
+        lint: toml::from_str("[typos]\nenabled = true\n").expect("valid lint config"),
+        ..Config::default()
+    };
+    let run = poly_core::lint_run(&[dir.path().to_path_buf()], &typos_on, &options(), false, false).expect("lint run");
+    let document = LintDocument::from_run(&run);
     assert!(
         document
             .results

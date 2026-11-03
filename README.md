@@ -242,7 +242,8 @@ marked as such.
 
 ### Three tiers that run on every language
 
-- **`typos`** — spell-checks identifiers, comments and strings. Always on; it has no enable key.
+- **`typos`** — spell-checks identifiers, comments and strings. Opt-in: enable it with `[engines.typos] enabled = true`.
+  `poly migrate` writes that key for configs that relied on the old default.
 - **The code-quality engine** — tree-sitter metric rules, listed below.
 - **The built-in ast-grep pack** — 26 rules across C#, Elixir, Go, Java, Kotlin, Python, Ruby, Rust and Swift. **13
   are on by default**; the other 13 ship `severity: off` and are one config line away. Your own rules under

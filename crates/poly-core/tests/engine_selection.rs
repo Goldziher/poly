@@ -41,6 +41,15 @@ fn lint_with(dir: &Path, opts: RunOptions) -> LintRun {
     poly_core::lint_run(&[dir.to_path_buf()], &Config::default(), &opts, false, true).expect("lint run")
 }
 
+/// Typos is opt-in, so the tests that expect it in the plan enable it explicitly.
+fn lint_with_typos(dir: &Path, opts: RunOptions) -> LintRun {
+    let config = Config {
+        lint: toml::from_str("[typos]\nenabled = true\n").expect("valid lint config"),
+        ..Config::default()
+    };
+    poly_core::lint_run(&[dir.to_path_buf()], &config, &opts, false, true).expect("lint run")
+}
+
 /// Engines that ran on `name`, sorted, from the `--debug` record.
 fn engines_for_file(run: &LintRun, name: &str) -> Vec<String> {
     let mut engines: Vec<String> = run
@@ -91,17 +100,27 @@ fn only_runs_the_named_engine_and_nothing_else() {
 fn an_unnarrowed_run_still_evaluates_every_routed_engine() {
     let dir = tempfile::tempdir().expect("tmp");
     fixture(dir.path());
-    let run = lint_with(dir.path(), options());
+    let run = lint_with_typos(dir.path(), options());
     let engines = engines_for_file(&run, "app.py");
     assert!(engines.contains(&"ruff".to_string()), "{engines:?}");
     assert!(engines.contains(&"typos".to_string()), "{engines:?}");
 }
 
 #[test]
+fn typos_is_not_planned_without_config() {
+    let dir = tempfile::tempdir().expect("tmp");
+    fixture(dir.path());
+    let run = lint_with(dir.path(), options());
+    let engines = engines_for_file(&run, "app.py");
+    assert!(engines.contains(&"ruff".to_string()), "{engines:?}");
+    assert!(!engines.contains(&"typos".to_string()), "{engines:?}");
+}
+
+#[test]
 fn skip_removes_only_the_named_engine() {
     let dir = tempfile::tempdir().expect("tmp");
     fixture(dir.path());
-    let run = lint_with(
+    let run = lint_with_typos(
         dir.path(),
         RunOptions {
             skip: vec!["typos".to_string()],
