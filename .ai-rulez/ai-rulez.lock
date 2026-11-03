@@ -4,7 +4,7 @@
 version = 1
 ai_rulez_version = '5.10.0'
 scope = 'all'
-tree = 'sha256:2ceb3e723441246bdf518a03d135b7556e6754a63c508eb2de9a99aa6915daaa'
+tree = 'sha256:9016f0a6149e35b2cc4451787a8d1186b287705c4763e9aa43162201e53d3df8'
 
 [[served]]
 name = 'adr-workflow'
@@ -106,7 +106,7 @@ digest = 'sha256:6ba10488f7b72634edcc26b8050d1b323764f9eff1e10ed8656674359a35f33
 kind = 'agent'
 id = 'rust-perf-engineer'
 path = 'agents/rust-perf-engineer.md'
-digest = 'sha256:16fb9735271ea425bf97bee34eb1fc705732af24a0f9d5412a87a1b865af8e98'
+digest = 'sha256:422bf0f931c06d6e235f2d75fceeb67b2fd35c3433ecf2b967a61c09e5cd5b7b'
 
 [[item]]
 kind = 'context'

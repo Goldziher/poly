@@ -57,5 +57,5 @@ If the diff is clean against this rubric, say so in one sentence. Don't pad revi
   pools the underlying `tree_sitter::Parser` per thread per language internally
   (`PARSER_CACHE` in its `tree_sitter` module). A pool of poly's own on top of it was
   implemented, measured to give no benefit, and reverted; the reason is recorded inline at
-  `crates/poly-core/src/engines/astgrep/mod.rs`. The tier-2 pools above are a different thing
+  `crates/poly-engines-astgrep/src/lib.rs`. The tier-2 pools above are a different thing
   and are still required.
