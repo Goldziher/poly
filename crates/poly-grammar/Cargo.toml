@@ -1,0 +1,23 @@
+[package]
+name = "poly-grammar"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+publish = false
+description = "Process-wide memo over tree-sitter-language-pack grammar lookups."
+
+[lib]
+name = "poly_grammar"
+path = "src/lib.rs"
+
+[dependencies]
+poly-config.workspace = true
+tree-sitter-language-pack.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"

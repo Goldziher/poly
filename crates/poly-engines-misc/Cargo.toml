@@ -1,0 +1,41 @@
+[package]
+name = "poly-engines-misc"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+publish = false
+description = "The dockerfile, dotenv, HCL and GraphQL engine family for poly."
+
+[lib]
+name = "poly_engines_misc"
+path = "src/lib.rs"
+
+[features]
+default = ["dockerfile", "dotenv", "hcl", "graphql"]
+dockerfile = ["dep:dockerfile-parser"]
+dotenv = ["dep:dotenv-analyzer", "dep:dotenv-core"]
+hcl = ["dep:hcl-edit"]
+graphql = ["dep:graphql-parser", "dep:pretty_graphql"]
+
+[dependencies]
+anyhow.workspace = true
+dockerfile-parser = { workspace = true, optional = true }
+dotenv-analyzer = { workspace = true, optional = true }
+dotenv-core = { workspace = true, optional = true }
+graphql-parser = { workspace = true, optional = true }
+hcl-edit = { workspace = true, optional = true }
+poly-engine-api.workspace = true
+pretty_graphql = { workspace = true, features = ["config_serde"], optional = true }
+toml.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"

@@ -142,7 +142,7 @@ pub fn lint_run(
                 crate::engines::astgrep::exclusions::default_path_ignores(&c.rules_dirs, c.rules_builtin_pack);
             // No ast-grep engine, so no rule-declared `ignores:` globs to layer in.
             #[cfg(not(feature = "engine-astgrep"))]
-            let defaults = crate::filter::DefaultPathIgnores::new();
+            let defaults = Vec::new();
             PerFileIgnores::compile_with_defaults(&c.per_file_ignores, &defaults)
         })
         .collect();

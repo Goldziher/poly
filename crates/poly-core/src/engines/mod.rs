@@ -1,12 +1,13 @@
 //! Backend implementations. Each backend is a self-contained module implementing
 //! [`crate::engine::Engine`]. New backends are added here and wired into the
-//! crate-private registry that routes each language to its backend(s). The python, php, sql and nix
-//! families live in their own `poly-engines-*` crates and are re-exported here at their old paths.
+//! crate-private registry that routes each language to its backend(s). The python, php, sql, nix, typos,
+//! astgrep, uncomment and misc (dockerfile, dotenv, hcl, graphql) families live in their own
+//! `poly-engines-*` crates and are re-exported here at their old paths.
 
 #[cfg(feature = "engine-web")]
 pub mod adrlint;
 #[cfg(feature = "engine-astgrep")]
-pub mod astgrep;
+pub use poly_engines_astgrep as astgrep;
 #[cfg(feature = "engine-biome")]
 pub mod biome_common;
 #[cfg(feature = "engine-biome")]
@@ -19,11 +20,11 @@ pub mod config_keys;
 mod core_options;
 pub mod css_hacks;
 #[cfg(feature = "engine-dockerfile")]
-pub mod dockerfile;
+pub use poly_engines_misc::dockerfile;
 #[cfg(feature = "engine-dotenv")]
-pub mod dotenv;
+pub use poly_engines_misc::dotenv;
 pub mod format_scope;
-pub(crate) mod grammar;
+pub(crate) use poly_grammar as grammar;
 
 /// Whether the tree-sitter grammar `name` can be loaded right now. Offline this
 /// never downloads: a grammar that is not cached reports `false`.
@@ -32,9 +33,9 @@ pub fn grammar_available(name: &str) -> bool {
     grammar::language(name).is_some()
 }
 #[cfg(feature = "engine-graphql")]
-pub mod graphql;
+pub use poly_engines_misc::graphql;
 #[cfg(feature = "engine-hcl")]
-pub mod hcl;
+pub use poly_engines_misc::hcl;
 #[cfg(feature = "engine-ini")]
 pub mod ini;
 pub mod line_index;
@@ -69,8 +70,8 @@ pub mod taplo;
 pub mod template;
 pub mod treesitter;
 #[cfg(feature = "engine-typos")]
-pub mod typos;
+pub use poly_engines_typos::typos;
 #[cfg(feature = "engine-uncomment")]
-pub mod uncomment;
+pub use poly_engines_uncomment::uncomment;
 #[cfg(feature = "engine-web")]
 pub mod yaml;

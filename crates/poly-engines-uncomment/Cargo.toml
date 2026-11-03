@@ -1,0 +1,29 @@
+[package]
+name = "poly-engines-uncomment"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+publish = false
+description = "The uncomment comment-removal engine family for poly."
+
+[lib]
+name = "poly_engines_uncomment"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow.workspace = true
+poly-engine-api.workspace = true
+toml.workspace = true
+tracing.workspace = true
+uncomment.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"

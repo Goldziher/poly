@@ -10,21 +10,11 @@ use std::sync::LazyLock;
 use crate::engine::Engine;
 #[cfg(feature = "engine-web")]
 use crate::engines::adrlint::AdrlintEngine;
-#[cfg(feature = "engine-astgrep")]
-use crate::engines::astgrep::AstGrepEngine;
 #[cfg(feature = "engine-biome")]
 use crate::engines::biome_css::BiomeCssEngine;
 #[cfg(feature = "engine-biome")]
 use crate::engines::biome_graphql::BiomeGraphqlEngine;
 use crate::engines::config_keys::PolyConfigEngine;
-#[cfg(feature = "engine-dockerfile")]
-use crate::engines::dockerfile::DockerfileEngine;
-#[cfg(feature = "engine-dotenv")]
-use crate::engines::dotenv::DotenvEngine;
-#[cfg(feature = "engine-graphql")]
-use crate::engines::graphql::GraphQlEngine;
-#[cfg(feature = "engine-hcl")]
-use crate::engines::hcl::HclEngine;
 #[cfg(feature = "engine-ini")]
 use crate::engines::ini::IniEngine;
 #[cfg(feature = "engine-web")]
@@ -43,10 +33,6 @@ use crate::engines::rumdl::RumdlEngine;
 #[cfg(feature = "engine-web")]
 use crate::engines::taplo::TaploEngine;
 use crate::engines::treesitter::TreeSitterEngine;
-#[cfg(feature = "engine-typos")]
-use crate::engines::typos::TyposEngine;
-#[cfg(feature = "engine-uncomment")]
-use crate::engines::uncomment::UncommentEngine;
 #[cfg(feature = "engine-web")]
 use crate::engines::yaml::YamlEngine;
 use crate::language::Language;
@@ -100,13 +86,17 @@ pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
         #[cfg(feature = "engine-ruby")]
         Language::Ruby => vec![Box::new(RubyfmtEngine)],
         #[cfg(all(feature = "engine-graphql", feature = "engine-biome"))]
-        Language::GraphQl => vec![Box::new(GraphQlEngine), Box::new(BiomeGraphqlEngine)],
+        Language::GraphQl => {
+            let mut engines = poly_engines_misc::engines_for(lang);
+            engines.push(Box::new(BiomeGraphqlEngine));
+            engines
+        }
         #[cfg(all(feature = "engine-graphql", not(feature = "engine-biome")))]
-        Language::GraphQl => vec![Box::new(GraphQlEngine)],
+        Language::GraphQl => poly_engines_misc::engines_for(lang),
         #[cfg(all(not(feature = "engine-graphql"), feature = "engine-biome"))]
         Language::GraphQl => vec![Box::new(BiomeGraphqlEngine)],
         #[cfg(feature = "engine-hcl")]
-        Language::Hcl => vec![Box::new(HclEngine)],
+        Language::Hcl => poly_engines_misc::engines_for(lang),
         #[cfg(feature = "engine-web")]
         Language::Html
         | Language::Vue
@@ -120,9 +110,9 @@ pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
         #[cfg(feature = "engine-php")]
         Language::Php => poly_engines_php::engines_for(lang),
         #[cfg(feature = "engine-dockerfile")]
-        Language::Dockerfile => vec![Box::new(DockerfileEngine)],
+        Language::Dockerfile => poly_engines_misc::engines_for(lang),
         #[cfg(feature = "engine-dotenv")]
-        Language::Dotenv => vec![Box::new(DotenvEngine)],
+        Language::Dotenv => poly_engines_misc::engines_for(lang),
         #[cfg(feature = "engine-ini")]
         Language::Ini => vec![Box::new(IniEngine)],
         Language::Go => vec![Box::new(NativeToolEngine::for_language(Language::Go))],
@@ -141,11 +131,11 @@ pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
         _ => vec![Box::new(TreeSitterEngine)],
     };
     #[cfg(feature = "engine-typos")]
-    engines.push(Box::new(TyposEngine));
+    engines.extend(poly_engines_typos::engines_for(lang));
     #[cfg(feature = "engine-astgrep")]
-    engines.push(Box::new(AstGrepEngine));
+    engines.extend(poly_engines_astgrep::engines_for(lang));
     #[cfg(feature = "engine-uncomment")]
-    engines.push(Box::new(UncommentEngine));
+    engines.extend(poly_engines_uncomment::engines_for(lang));
     #[cfg(feature = "engine-quality")]
     engines.push(Box::new(QualityEngine));
     engines
@@ -455,6 +445,24 @@ pub(crate) mod tests {
     }
 
     use super::NATIVE_TOOLCHAIN_ENGINES;
+
+    #[cfg(feature = "engine-astgrep")]
+    /// The guard on `GRAMMAR_FOR_LANGUAGE_ID`: every language poly can detect
+    /// must reach a grammar ast-grep can parse with, or that language silently
+    /// has no custom-rule coverage at all. `all_languages` is itself held
+    /// exhaustive by a compile-time match in `registry`, so a newly added
+    /// `Language` variant reaches this assertion.
+    #[test]
+    fn every_language_id_resolves_to_a_grammar() {
+        for language in all_languages() {
+            let grammar = poly_engines_astgrep::language::grammar_for_language_id(language.id());
+            assert!(
+                poly_engines_astgrep::language::TslpLanguage::new(grammar).is_some(),
+                "{} maps to grammar {grammar:?}, which tree-sitter-language-pack does not ship",
+                language.id()
+            );
+        }
+    }
 
     /// Engine names `tests/version_audit.rs` declares via `check("name", ...)`.
     /// Read from the sibling file's source text rather than duplicating the

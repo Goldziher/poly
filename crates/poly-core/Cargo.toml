@@ -91,22 +91,20 @@ engine-biome = [
 ]
 engine-ruby = ["dep:rubyfmt"]
 engine-nix = ["dep:poly-engines-nix"]
-engine-typos = ["dep:typos", "dep:typos-dict", "dep:unicase"]
+engine-typos = ["dep:poly-engines-typos"]
 # The poly-native structural quality rules (no third-party engine dependency).
 engine-quality = []
-engine-astgrep = ["dep:ast-grep-config", "dep:ast-grep-core"]
-engine-uncomment = ["dep:uncomment"]
-engine-dockerfile = ["dep:dockerfile-parser"]
-engine-dotenv = ["dep:dotenv-analyzer", "dep:dotenv-core"]
+engine-astgrep = ["dep:poly-engines-astgrep"]
+engine-uncomment = ["dep:poly-engines-uncomment"]
+engine-dockerfile = ["dep:poly-engines-misc", "poly-engines-misc/dockerfile"]
+engine-dotenv = ["dep:poly-engines-misc", "poly-engines-misc/dotenv"]
 engine-ini = ["dep:rust-ini"]
-engine-hcl = ["dep:hcl-edit"]
-engine-graphql = ["dep:graphql-parser", "dep:pretty_graphql"]
+engine-hcl = ["dep:poly-engines-misc", "poly-engines-misc/hcl"]
+engine-graphql = ["dep:poly-engines-misc", "poly-engines-misc/graphql"]
 
 [dependencies]
 adrlint = { workspace = true, optional = true }
 anyhow.workspace = true
-ast-grep-config = { workspace = true, optional = true }
-ast-grep-core = { workspace = true, optional = true }
 biome_analyze = { workspace = true, optional = true }
 biome_css_analyze = { workspace = true, optional = true }
 biome_css_parser = { workspace = true, optional = true }
@@ -116,13 +114,8 @@ biome_graphql_parser = { workspace = true, optional = true }
 biome_languages = { workspace = true, optional = true }
 biome_rowan = { workspace = true, optional = true }
 blake3.workspace = true
-dockerfile-parser = { workspace = true, optional = true }
-dotenv-analyzer = { workspace = true, optional = true }
-dotenv-core = { workspace = true, optional = true }
 flate2.workspace = true
 globset.workspace = true
-graphql-parser = { workspace = true, optional = true }
-hcl-edit = { workspace = true, optional = true }
 ignore.workspace = true
 malva = { workspace = true, features = ["config_serde"], optional = true }
 markup_fmt = { workspace = true, features = ["config_serde"], optional = true }
@@ -145,11 +138,15 @@ poly-catalog.workspace = true
 poly-component-protocol.workspace = true
 poly-config.workspace = true
 poly-engine-api.workspace = true
+poly-engines-astgrep = { workspace = true, optional = true }
+poly-engines-misc = { workspace = true, optional = true }
 poly-engines-nix = { workspace = true, optional = true }
 poly-engines-php = { workspace = true, optional = true }
 poly-engines-python = { workspace = true, optional = true }
 poly-engines-sql = { workspace = true, optional = true }
-pretty_graphql = { workspace = true, features = ["config_serde"], optional = true }
+poly-engines-typos = { workspace = true, optional = true }
+poly-engines-uncomment = { workspace = true, optional = true }
+poly-grammar.workspace = true
 rayon.workspace = true
 regex.workspace = true
 rubyfmt = { workspace = true, optional = true }
@@ -174,10 +171,6 @@ toml_edit.workspace = true
 tracing.workspace = true
 tree-sitter.workspace = true
 tree-sitter-language-pack.workspace = true
-typos = { workspace = true, optional = true }
-typos-dict = { workspace = true, optional = true }
-uncomment = { workspace = true, optional = true }
-unicase = { workspace = true, optional = true }
 ureq.workspace = true
 which.workspace = true
 zip.workspace = true

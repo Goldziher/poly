@@ -5289,8 +5289,6 @@ version = "0.32.3"
 dependencies = [
  "adrlint",
  "anyhow",
- "ast-grep-config",
- "ast-grep-core",
  "biome_analyze",
  "biome_css_analyze",
  "biome_css_parser",
@@ -5301,13 +5299,8 @@ dependencies = [
  "biome_rowan",
  "blake3",
  "criterion",
- "dockerfile-parser",
- "dotenv-analyzer",
- "dotenv-core",
  "flate2",
  "globset",
- "graphql-parser",
- "hcl-edit",
  "ignore",
  "insta",
  "libc",
@@ -5333,11 +5326,15 @@ dependencies = [
  "poly-component-protocol",
  "poly-config",
  "poly-engine-api",
+ "poly-engines-astgrep",
+ "poly-engines-misc",
  "poly-engines-nix",
  "poly-engines-php",
  "poly-engines-python",
  "poly-engines-sql",
- "pretty_graphql",
+ "poly-engines-typos",
+ "poly-engines-uncomment",
+ "poly-grammar",
  "proptest",
  "rayon",
  "regex",
@@ -5362,10 +5359,6 @@ dependencies = [
  "tracing-subscriber",
  "tree-sitter",
  "tree-sitter-language-pack",
- "typos",
- "typos-dict",
- "uncomment",
- "unicase",
  "ureq",
  "which",
  "zip 9.3.0",
@@ -5395,11 +5388,52 @@ dependencies = [
 name = "poly-engines"
 version = "0.32.3"
 dependencies = [
+ "poly-engines-astgrep",
+ "poly-engines-misc",
  "poly-engines-nix",
  "poly-engines-php",
  "poly-engines-python",
  "poly-engines-sql",
+ "poly-engines-typos",
+ "poly-engines-uncomment",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "poly-engines-astgrep"
+version = "0.32.3"
+dependencies = [
+ "anyhow",
+ "ast-grep-config",
+ "ast-grep-core",
+ "blake3",
+ "globset",
+ "insta",
+ "poly-engine-api",
+ "poly-grammar",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "toml 1.1.8+spec-1.1.0",
+ "tracing",
+ "tree-sitter-language-pack",
+]
+
+[[package]]
+name = "poly-engines-misc"
+version = "0.32.3"
+dependencies = [
+ "anyhow",
+ "dockerfile-parser",
+ "dotenv-analyzer",
+ "dotenv-core",
+ "graphql-parser",
+ "hcl-edit",
+ "insta",
+ "poly-engine-api",
+ "pretty_graphql",
+ "toml 1.1.8+spec-1.1.0",
+ "tracing",
 ]
 
 [[package]]
@@ -5468,6 +5502,42 @@ dependencies = [
  "sqruff-lib-core",
  "toml 1.1.8+spec-1.1.0",
  "tracing",
+]
+
+[[package]]
+name = "poly-engines-typos"
+version = "0.32.3"
+dependencies = [
+ "anyhow",
+ "globset",
+ "insta",
+ "poly-engine-api",
+ "regex",
+ "toml 1.1.8+spec-1.1.0",
+ "tracing",
+ "typos",
+ "typos-dict",
+ "unicase",
+]
+
+[[package]]
+name = "poly-engines-uncomment"
+version = "0.32.3"
+dependencies = [
+ "anyhow",
+ "insta",
+ "poly-engine-api",
+ "toml 1.1.8+spec-1.1.0",
+ "tracing",
+ "uncomment",
+]
+
+[[package]]
+name = "poly-grammar"
+version = "0.32.3"
+dependencies = [
+ "poly-config",
+ "tree-sitter-language-pack",
 ]
 
 [[package]]

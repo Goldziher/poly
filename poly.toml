@@ -34,7 +34,7 @@ exclude = [
   "commands/**",
   "agents/**",
   "crates/*/tests/fixtures/**",
-  "crates/poly-core/tests/typos.rs",
+  "crates/poly-engines-typos/tests/typos.rs",
   "crates/conformance/corpus/**",
   "crates/conformance/golden/**",
   "crates/conformance/docker/**",
@@ -89,7 +89,7 @@ extend_ignore_words = ["markdwon", "restructredtext", "brightscripter"]
 # fixtures in their `#[cfg(test)]` modules (e.g. `_typos.toml` sample dicts).
 [lint.rust.typos]
 extend_ignore_words = ["teh", "inh", "te", "tha"]
-extend_exclude = ["crates/poly-core/tests/typos.rs"]
+extend_exclude = ["crates/poly-engines-typos/tests/typos.rs"]
 
 [lint.markdown.rumdl]
 disable = ["MD025", "MD013", "MD024", "MD033", "MD036", "MD041"]
@@ -149,8 +149,8 @@ disable = ["MD025", "MD013", "MD024", "MD033", "MD036", "MD041"]
 "crates/*-ffi/include/*.h" = ["comment", "doc-comment"]
 "packages/go/include/*.h" = ["comment", "doc-comment"]
 "Package.swift" = ["comment", "doc-comment"]
-"crates/poly-core/src/engines/dockerfile.rs" = ["comment", "doc-comment"]
-"crates/poly-core/tests/dockerfile.rs" = ["comment", "doc-comment"]
+"crates/poly-engines-misc/src/dockerfile.rs" = ["comment", "doc-comment"]
+"crates/poly-engines-misc/tests/dockerfile.rs" = ["comment", "doc-comment"]
 [[hooks.sources]]
 id = "ai-rulez"
 git = "https://github.com/Goldziher/ai-rulez.git"
