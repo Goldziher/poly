@@ -2,8 +2,9 @@
 //! `oxc_formatter`, plus JSON/JSONC format via `oxc_formatter_json`.
 //!
 //! Lint path uses `oxc_linter` (oxlint) to run the full correctness rule set
-//! in-process via `LintService::run_source`. An in-memory `RuntimeFileSystem`
-//! adapter feeds file content from RAM — no disk read inside the engine.
+//! in-process via `run::SourceLinter`, which parses, builds semantics and calls
+//! `Linter::run` on the calling thread (no `LintService`, so no rayon scope). File content comes
+//! from RAM — no disk read inside the engine.
 //!
 //! `oxc_formatter` (Prettier-compatible, v0.56.0) handles JS/TS formatting.
 //! `oxc_formatter_json` handles JSON/JSONC formatting: Prettier-compatible,
@@ -22,6 +23,7 @@ mod json_lint;
 mod lint;
 mod native_lint;
 mod plugins;
+mod run;
 mod sort_imports;
 
 use crate::config::EngineConfig;

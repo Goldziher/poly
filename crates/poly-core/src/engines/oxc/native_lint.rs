@@ -1,18 +1,16 @@
 //! Linting JS/TS with the project's own `.oxlintrc.json[c]` instead of poly's opinionated rule set.
 //!
 //! The config governing a file is the nearest one above it (see [`crate::oxlint_native`]); one
-//! [`LintService`] is built per config and reused. `[lint.<lang>.oxc]` `select` / `extend_select` /
+//! [`SourceLinter`] is built per config and reused. `[lint.<lang>.oxc]` `select` / `extend_select` /
 //! `ignore` / `[rules.<id>]` levels are layered on top, like oxlint's own `-A` / `-D` / `-W` flags.
 
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex, OnceLock};
 
-use oxc_linter::{
-    AllowWarnDeny, ConfigStore, ConfigStoreBuilder, ExternalPluginStore, LintFilter, LintService, LintServiceOptions,
-    Linter, Message, Oxlintrc,
-};
+use oxc_linter::{AllowWarnDeny, ConfigStore, ConfigStoreBuilder, ExternalPluginStore, LintFilter, Message, Oxlintrc};
 
+use super::run::SourceLinter;
 use crate::config::EngineConfig;
 use crate::engine::{Severity, SourceFile};
 use crate::engines::rule_config::RuleSelection;
@@ -34,8 +32,8 @@ pub(super) fn governing_for(cfg: &EngineConfig, path: &Path) -> Option<Arc<Gover
 }
 
 /// The service for `config`, built once per (config file, options table).
-pub(super) fn service_for(cfg: &EngineConfig, config: &Path) -> anyhow::Result<Arc<LintService>> {
-    type Slot = Arc<OnceLock<Result<Arc<LintService>, String>>>;
+pub(super) fn service_for(cfg: &EngineConfig, config: &Path) -> anyhow::Result<Arc<SourceLinter>> {
+    type Slot = Arc<OnceLock<Result<Arc<SourceLinter>, String>>>;
     static SERVICES: OnceLock<Mutex<HashMap<String, Slot>>> = OnceLock::new();
     let slot = {
         let mut services = SERVICES
@@ -59,16 +57,12 @@ pub(super) fn service_for(cfg: &EngineConfig, config: &Path) -> anyhow::Result<A
 
 /// Run `service` over one source file with an absolute path, which is what override globs and
 /// nested-config lookup are matched against.
-pub(super) fn run(service: &LintService, src: &SourceFile) -> Vec<Message> {
+pub(super) fn run(service: &SourceLinter, src: &SourceFile) -> Vec<Message> {
     let absolute = std::path::absolute(&src.path).unwrap_or_else(|_| src.path.clone());
-    let fs = super::lint::MemoryFileSystem {
-        path: &absolute,
-        content: &src.content,
-    };
-    service.run_source(&fs, vec![Arc::from(absolute.as_os_str())])
+    service.run(&absolute, &src.content)
 }
 
-fn build(file: &Path, selection: &RuleSelection) -> anyhow::Result<LintService> {
+fn build(file: &Path, selection: &RuleSelection) -> anyhow::Result<SourceLinter> {
     let oxlintrc = Oxlintrc::from_file(file).map_err(|error| anyhow::anyhow!("{error}"))?;
     warn_about_js_plugins(file, &oxlintrc);
     let mut store = ExternalPluginStore::new(false);
@@ -77,14 +71,12 @@ fn build(file: &Path, selection: &RuleSelection) -> anyhow::Result<LintService> 
         .with_filters(&user_filters(selection))
         .build(&mut store)
         .map_err(|error| anyhow::anyhow!("{}: {error}", file.display()))?;
-    let dir = file.parent().unwrap_or(Path::new("")).to_path_buf();
-    let linter = Linter::new(
+    Ok(SourceLinter::new(
         super::lint::lint_options(),
         ConfigStore::new(config, Default::default(), store),
-        None,
-    );
-    Ok(LintService::new(linter, LintServiceOptions::new(dir)))
+    ))
 }
+
 /// The poly-side rule selection as oxlint filters, in the order oxlint applies its own flags.
 fn user_filters(selection: &RuleSelection) -> Vec<LintFilter> {
     let mut filters = Vec::new();

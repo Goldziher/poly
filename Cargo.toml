@@ -108,6 +108,8 @@ oxc_formatter_markdown = { git = "https://github.com/oxc-project/oxc", rev = "e2
 oxc_formatter_toml = { git = "https://github.com/oxc-project/oxc", rev = "e2be72dfea8dff8ff7d6416fd21a1d8866ded4e4" }
 oxc_formatter_yaml = { git = "https://github.com/oxc-project/oxc", rev = "e2be72dfea8dff8ff7d6416fd21a1d8866ded4e4" }
 oxc_linter = { git = "https://github.com/oxc-project/oxc", rev = "e2be72dfea8dff8ff7d6416fd21a1d8866ded4e4" }
+oxc_parser = { git = "https://github.com/oxc-project/oxc", rev = "e2be72dfea8dff8ff7d6416fd21a1d8866ded4e4" }
+oxc_semantic = { git = "https://github.com/oxc-project/oxc", rev = "e2be72dfea8dff8ff7d6416fd21a1d8866ded4e4" }
 oxc_span = { git = "https://github.com/oxc-project/oxc", rev = "e2be72dfea8dff8ff7d6416fd21a1d8866ded4e4" }
 pest = "2.9.5"
 pest_derive = "2.9.5"

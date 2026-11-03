@@ -65,6 +65,8 @@ engine-web = [
   "dep:oxc_formatter_toml",
   "dep:oxc_formatter_yaml",
   "dep:oxc_linter",
+  "dep:oxc_parser",
+  "dep:oxc_semantic",
   "dep:oxc_span",
   "dep:rumdl",
   "dep:serde_yaml",
@@ -163,6 +165,8 @@ oxc_formatter_markdown = { workspace = true, optional = true }
 oxc_formatter_toml = { workspace = true, optional = true }
 oxc_formatter_yaml = { workspace = true, optional = true }
 oxc_linter = { workspace = true, optional = true }
+oxc_parser = { workspace = true, optional = true }
+oxc_semantic = { workspace = true, optional = true }
 oxc_span = { workspace = true, optional = true }
 poly-cache.workspace = true
 poly-catalog.workspace = true

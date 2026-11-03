@@ -2,51 +2,20 @@
 //! for JSON/JSONC.
 
 use std::collections::HashMap;
-use std::ffi::OsStr;
-use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 
-use oxc_allocator::Allocator;
 use oxc_diagnostics::Severity as OxcSeverity;
 use oxc_linter::{
     AllowWarnDeny, ConfigStore, ConfigStoreBuilder, ExternalPluginStore, FixKind, LintFilter, LintOptions, LintPlugins,
-    LintService, LintServiceOptions, Linter, Message, Oxlintrc, PossibleFixes, RuntimeFileSystem,
+    Message, Oxlintrc, PossibleFixes,
 };
 
 use super::plugins::extra_lint_plugins;
+use super::run::SourceLinter;
 use crate::config::EngineConfig;
 use crate::engine::{Diagnostic, Edit, Severity, SourceFile, Span};
 use crate::engines::line_index::LineIndex;
 use crate::engines::rule_config::{RuleOptions, RuleSelection};
-
-/// Feeds `oxc_linter`'s parser with file content from RAM.
-/// `read_to_arena_str` copies `content` into the oxc arena allocator — no disk
-/// access ever occurs inside the engine.
-pub(super) struct MemoryFileSystem<'a> {
-    pub(super) path: &'a Path,
-    pub(super) content: &'a str,
-}
-
-impl RuntimeFileSystem for MemoryFileSystem<'_> {
-    fn read_to_arena_str<'arena>(
-        &self,
-        path: &Path,
-        allocator: &'arena Allocator,
-    ) -> Result<&'arena str, std::io::Error> {
-        if path == self.path {
-            Ok(allocator.alloc_str(self.content))
-        } else {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "path not available in memory",
-            ))
-        }
-    }
-
-    fn write_file(&self, _path: &Path, _content: &str) -> Result<(), std::io::Error> {
-        Ok(())
-    }
-}
 
 /// The opinionated filters layered on top of oxlint's own default.
 ///
@@ -183,7 +152,7 @@ fn enable_extra_plugins(builder: ConfigStoreBuilder, extra: LintPlugins) -> Conf
     builder.and_builtin_plugins(extra, true).with_filter(&filter)
 }
 
-/// Returns the lazily-initialised shared [`LintService`] configured with
+/// Returns the lazily-initialised shared [`SourceLinter`] configured with
 /// oxlint's default rule set widened by [`DEFAULT_LINT_FILTERS`].
 ///
 /// Building the service (rule table + allocator pool) is expensive; the
@@ -192,8 +161,8 @@ fn enable_extra_plugins(builder: ConfigStoreBuilder, extra: LintPlugins) -> Conf
 /// # Panics
 /// Panics on first call if the default `ConfigStore` cannot be built — this is
 /// a compile-time invariant that cannot fail with no external inputs.
-fn lint_service() -> &'static LintService {
-    static SERVICE: OnceLock<LintService> = OnceLock::new();
+fn lint_service() -> &'static SourceLinter {
+    static SERVICE: OnceLock<SourceLinter> = OnceLock::new();
     SERVICE.get_or_init(|| {
         let mut plugin_store = ExternalPluginStore::default();
         let config = opinionated_builder()
@@ -201,10 +170,7 @@ fn lint_service() -> &'static LintService {
             // SAFETY: the builder has no external inputs, so the build cannot fail.
             .expect("oxc_linter default ConfigStore build is infallible");
         let config_store = ConfigStore::new(config, Default::default(), plugin_store);
-        let linter = Linter::new(lint_options(), config_store, None);
-        let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        let options = LintServiceOptions::new(cwd);
-        LintService::new(linter, options)
+        SourceLinter::new(lint_options(), config_store)
     })
 }
 
@@ -212,13 +178,8 @@ fn lint_service() -> &'static LintService {
 ///
 /// Extracted so both the cached-service and the per-config-service paths share
 /// identical call-site code.
-fn run_with_service(service: &LintService, src: &SourceFile) -> Vec<Message> {
-    let arc_path: Arc<OsStr> = Arc::from(src.path.as_os_str());
-    let fs = MemoryFileSystem {
-        path: &src.path,
-        content: &src.content,
-    };
-    service.run_source(&fs, vec![arc_path])
+fn run_with_service(service: &SourceLinter, src: &SourceFile) -> Vec<Message> {
+    service.run(&src.path, &src.content)
 }
 
 /// Build a minimal `{"rules": {...}}` oxlint config document carrying only the
@@ -308,7 +269,7 @@ fn rule_options_severity_str(opts: &RuleOptions) -> &'static str {
     }
 }
 
-/// Build a fresh [`LintService`] applying rule filters from `cfg.options`.
+/// Build a fresh [`SourceLinter`] applying rule filters from `cfg.options`.
 ///
 /// Only called when `cfg.options` is non-empty; the empty-config fast path
 /// reuses the shared [`OnceLock`] service from [`lint_service`].
@@ -331,7 +292,7 @@ fn rule_options_severity_str(opts: &RuleOptions) -> &'static str {
 ///
 /// Unrecognised or malformed rule names are silently skipped so that a typo
 /// in the user's config does not prevent the other rules from running.
-fn build_configured_service(cfg: &EngineConfig) -> anyhow::Result<LintService> {
+fn build_configured_service(cfg: &EngineConfig) -> anyhow::Result<SourceLinter> {
     let selection = RuleSelection::from_options(cfg);
 
     let mut plugin_store = ExternalPluginStore::default();
@@ -393,10 +354,7 @@ fn build_configured_service(cfg: &EngineConfig) -> anyhow::Result<LintService> {
         .build(&mut plugin_store)
         .map_err(|e| anyhow::anyhow!("oxlint config error: {e}"))?;
     let config_store = ConfigStore::new(config, Default::default(), plugin_store);
-    let linter = Linter::new(lint_options(), config_store, None);
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let options = LintServiceOptions::new(cwd);
-    Ok(LintService::new(linter, options))
+    Ok(SourceLinter::new(lint_options(), config_store))
 }
 
 /// Length, in bytes, past which a line counts as over-long. No authored logic
@@ -422,11 +380,11 @@ fn looks_minified(src: &SourceFile, cfg: &EngineConfig) -> bool {
     over_long * 2 > src.content.len()
 }
 
-/// The [`LintService`] for a non-default option table, built once per distinct
+/// The [`SourceLinter`] for a non-default option table, built once per distinct
 /// table. Building one constructs the whole rule table, so doing it per file
 /// made any `[lint.*.oxc]` setting cost far more than the linting itself.
-fn configured_service(cfg: &EngineConfig) -> anyhow::Result<Arc<LintService>> {
-    type Slot = Arc<OnceLock<Result<Arc<LintService>, String>>>;
+fn configured_service(cfg: &EngineConfig) -> anyhow::Result<Arc<SourceLinter>> {
+    type Slot = Arc<OnceLock<Result<Arc<SourceLinter>, String>>>;
     static SERVICES: OnceLock<Mutex<HashMap<String, Slot>>> = OnceLock::new();
     let slot = {
         let mut services = SERVICES
@@ -605,32 +563,6 @@ mod tests {
         assert!(!diags.is_empty(), "expected at least one diagnostic for broken JS");
         assert_eq!(diags[0].severity, Severity::Error);
         assert!(diags[0].code.is_none(), "parse error should not have a rule code");
-    }
-
-    /// Parser used by oxlint still needs an Allocator; verify it works
-    /// with our MemoryFileSystem adapter.
-    #[test]
-    fn memory_fs_returns_source_for_matching_path() {
-        let path = PathBuf::from("test.ts");
-        let content = "const x: number = 1;\n";
-        let allocator = Allocator::new();
-        let fs = MemoryFileSystem { path: &path, content };
-        let result = fs.read_to_arena_str(&path, &allocator);
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), content);
-    }
-
-    #[test]
-    fn memory_fs_errors_on_unknown_path() {
-        let path = PathBuf::from("test.ts");
-        let allocator = Allocator::new();
-        let fs = MemoryFileSystem {
-            path: &path,
-            content: "const x = 1;\n",
-        };
-        let other = PathBuf::from("other.ts");
-        let result = fs.read_to_arena_str(&other, &allocator);
-        assert!(result.is_err());
     }
 
     /// `[rules.no-debugger] level = "error"` must promote the `no-debugger`
