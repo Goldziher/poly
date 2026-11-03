@@ -165,6 +165,8 @@ pub struct DoctorReport {
     pub cache: CacheReport,
     /// `[discovery] exclude` globs that prune more of the tree than they name.
     pub excludes: ExcludeReport,
+    /// Engine components: flavor, cache, what is installed and what the current directory needs.
+    pub components: crate::components_cmd::DoctorComponents,
     /// Everything diagnosed, worst first.
     pub findings: Vec<Finding>,
 }
@@ -205,6 +207,7 @@ pub fn collect(explicit_config: Option<&Path>) -> DoctorReport {
         config,
         cache,
         excludes,
+        components: crate::components_cmd::doctor_components(),
         findings,
     }
 }
@@ -523,6 +526,14 @@ mod tests {
                 error: None,
             },
             excludes: ExcludeReport::default(),
+            components: crate::components_cmd::DoctorComponents {
+                flavor: "core",
+                cache_root: String::new(),
+                offline: false,
+                lock: None,
+                installed: Vec::new(),
+                needed_missing: Vec::new(),
+            },
             findings: vec![Finding {
                 severity,
                 summary: "x".to_string(),

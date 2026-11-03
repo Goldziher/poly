@@ -10,6 +10,7 @@ use poly_core::{Config, LintResult, RunOptions, Severity, Verbosity, report};
 use crate::config_sources::RemoteExtendsResolver;
 
 pub mod cache_cmd;
+pub mod components_cmd;
 pub mod config_cmd;
 pub mod config_sources;
 pub mod doctor;
@@ -25,6 +26,7 @@ pub mod rules_cmd;
 pub mod workspace_coverage;
 
 pub use cache_cmd::{CacheArgs, run_cache};
+pub use components_cmd::{ComponentsArgs, run_components};
 pub use config_cmd::{ConfigArgs, run_config};
 pub use doctor::{DoctorArgs, run_doctor};
 pub use global::{ColorChoice, GlobalArgs, OnMissing, global, offline};

@@ -5338,6 +5338,7 @@ name = "poly-cli"
 version = "0.32.3"
 dependencies = [
  "aho-corasick",
+ "alef-component-runtime",
  "anyhow",
  "clap",
  "fs2",
@@ -5350,6 +5351,8 @@ dependencies = [
  "poly-buildinfo",
  "poly-cache",
  "poly-catalog",
+ "poly-component-host",
+ "poly-component-index",
  "poly-config",
  "poly-core",
  "poly-hooks",
@@ -5358,6 +5361,7 @@ dependencies = [
  "serde",
  "serde-saphyr",
  "serde_json",
+ "sha2",
  "tempfile",
  "toml 1.1.8+spec-1.1.0",
  "toml_edit",

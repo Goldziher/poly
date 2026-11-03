@@ -1,0 +1,20 @@
+---
+source: crates/poly-cli/tests/components_cli.rs
+assertion_line: 59
+expression: "Sandbox::new().stdout(&[\"components\", \"list\"])"
+---
+flavor      bundled
+cache       <cache>
+offline     false
+lock        none (this build embeds no component lock (set POLY_COMPONENT_DEV_LOCK for a development lock))
+web      bundled      adrlint, malva, markup_fmt, oxc, rumdl, taplo, yaml
+python   bundled      ruff
+sql      bundled      sqruff
+php      bundled      mago
+biome    bundled      biome
+ruby     bundled      rubyfmt
+nix      bundled      alejandra
+typos    bundled      typos  (opt-in)
+astgrep  bundled      astgrep
+misc     bundled      dockerfile, dotenv, graphql, hcl
+mcp      unavailable    [this build embeds no component lock (set POLY_COMPONENT_DEV_LOCK for a development lock)]

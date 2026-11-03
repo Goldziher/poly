@@ -46,7 +46,7 @@ adds `--exit-nonzero-on-fix` (a successful `--fix` exits 0 by default). The v1 f
 
 The other subcommands: `poly hooks` (native git-hook runner over `[hooks]`), `poly commit`
 (commit-message lint, gitfluff), `poly rules test|list` (custom + built-in ast-grep rule packs),
-`poly lock [--upgrade] [--check]`, `poly config show|schema|validate`, `poly cache`, `poly migrate` (absorbs ruff / taplo /
+`poly lock [--upgrade] [--check]`, `poly config show|schema|validate`, `poly cache`, `poly components`, `poly migrate` (absorbs ruff / taplo /
 markdownlint / typos configs and lefthook / pre-commit hook configs), `poly mcp`, `poly doctor`.
 
 ## Machine-readable output

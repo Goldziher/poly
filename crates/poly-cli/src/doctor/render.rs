@@ -19,6 +19,7 @@ pub fn print_pretty(report: &DoctorReport) {
     print_running(report);
     print_path(&report.path);
     print_config(report);
+    print_components(&report.components);
     print_findings(&report.findings);
 }
 
@@ -117,6 +118,28 @@ fn print_config(report: &DoctorReport) {
         (Some(directory), _) => println!("  cache     {}", directory.display()),
         (None, Some(error)) => println!("  cache     {} {error}", THEME.skipped("unresolved:")),
         (None, None) => println!("  cache     (unresolved)"),
+    }
+    println!();
+}
+
+fn print_components(components: &crate::components_cmd::DoctorComponents) {
+    println!("{}", heading("components"));
+    println!("  flavor    {}", components.flavor);
+    println!("  cache     {}", components.cache_root);
+    println!("  offline   {}", components.offline);
+    if let Some(lock) = &components.lock {
+        println!("  lock      none ({lock})");
+    }
+    if components.installed.is_empty() {
+        println!("  installed (none)");
+    } else {
+        println!("  installed {}", components.installed.join(", "));
+    }
+    if !components.needed_missing.is_empty() {
+        println!(
+            "  missing   {} (needed here; run `poly components sync`)",
+            components.needed_missing.join(", ")
+        );
     }
     println!();
 }

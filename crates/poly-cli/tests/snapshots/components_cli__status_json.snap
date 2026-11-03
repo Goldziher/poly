@@ -1,0 +1,15 @@
+---
+source: crates/poly-cli/tests/components_cli.rs
+assertion_line: 84
+expression: json
+---
+{
+  "schema": 1,
+  "command": "status",
+  "flavor": "bundled",
+  "offline": false,
+  "cache_root": "<cache>",
+  "lock": "this build embeds no component lock (set POLY_COMPONENT_DEV_LOCK for a development lock)",
+  "components": [],
+  "missing": []
+}

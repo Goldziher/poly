@@ -53,7 +53,7 @@ pub(crate) fn feature_is_linked(name: &str) -> bool {
 
 /// Whether every engine family `component` is built from is linked into this binary, so it
 /// never needs downloading.
-fn is_linked(component: &Component, linked: &dyn Fn(&str) -> bool) -> bool {
+pub(super) fn is_linked(component: &Component, linked: &dyn Fn(&str) -> bool) -> bool {
     !component.features.is_empty() && component.features.iter().all(|f| linked(f))
 }
 

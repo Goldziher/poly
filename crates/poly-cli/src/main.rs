@@ -8,8 +8,8 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 use poly_cli::{
-    CacheArgs, ConfigArgs, DoctorArgs, FmtArgs, GlobalArgs, HooksArgs, LintArgs, LockArgs, MigrateArgs, run_cache,
-    run_config, run_doctor, run_fmt, run_hooks, run_lint, run_lock, run_migrate,
+    CacheArgs, ComponentsArgs, ConfigArgs, DoctorArgs, FmtArgs, GlobalArgs, HooksArgs, LintArgs, LockArgs, MigrateArgs,
+    run_cache, run_components, run_config, run_doctor, run_fmt, run_hooks, run_lint, run_lock, run_migrate,
 };
 #[cfg(feature = "engine-astgrep")]
 use poly_cli::{RulesArgs, run_rules};
@@ -58,6 +58,9 @@ enum Command {
     /// Inspect and test custom ast-grep rule packs (test / list).
     #[cfg(feature = "engine-astgrep")]
     Rules(RulesArgs),
+    /// Inspect and manage downloadable engine components (list / status / install / sync / prune).
+    #[command(alias = "component")]
+    Components(ComponentsArgs),
     /// Pin remote `extends` bases and Git hook sources in `poly.lock`.
     Lock(LockArgs),
     /// Inspect the effective config and print the `poly.toml` JSON Schema.
@@ -115,6 +118,10 @@ fn main() -> ExitCode {
         Command::Rules(args) => {
             poly_cli::init_logging_with(debug);
             run_rules(args)
+        }
+        Command::Components(args) => {
+            poly_cli::init_logging_with(debug);
+            run_components(args)
         }
         Command::Lock(args) => {
             poly_cli::init_logging_with(debug);

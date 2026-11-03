@@ -295,6 +295,29 @@ When another `poly` on `PATH` differs from the running one, every command warns 
 points at `poly doctor`. A correctly-installed poly finds a single entry and prints nothing;
 `POLY_NO_SHADOW_WARN=1` silences it regardless.
 
+## `poly components` — engine components
+
+```sh
+poly components list                      # every component: bundled, installed, not installed
+poly components status [PATHS] [--verify] # what these paths need; --verify re-checks installed archives
+poly components install <name|preset|all> # download and verify (also: uninstall)
+poly components sync [PATHS]              # install everything these paths need
+poly components prune [--all] [--dry-run] # drop cached archives the lock no longer references
+poly components import <archive>          # seed an air-gapped host from a downloaded archive
+```
+
+`component` is an alias. Every subcommand takes `--format pretty|json|toon`; the machine-readable
+documents carry `schema: 1`.
+
+A build that links every engine family is **bundled**: its components never download, and
+`install` only prints a note. `list` and `status` never download on any build; they read the cache
+and nothing else. `status` exits 1 when a component the paths need is missing or fails `--verify`.
+`install`, `sync` and `import` exit 2 on a failure. `sync --offline` is a check that exits 2 when
+something is missing. `prune` keeps archives the lock references and archives used within
+`--keep-days` (default 30); `--all` removes every one. `sync` covers components only; grammars and
+tool downloads are fetched by the run that needs them. `poly doctor` carries a `components` section
+with the flavor, cache root, installed components and what the current directory needs.
+
 ## `poly lock` — pin remote sources
 
 ```text

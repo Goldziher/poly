@@ -15,10 +15,12 @@ mod needed;
 mod preplan;
 mod report;
 mod seam;
+mod select;
 
 pub(crate) use preplan::resolve;
 pub use report::{ComponentsReport, MissingComponent};
 pub use seam::{ComponentInjection, LOCK_ENV};
+pub use select::{component_is_linked, default_cache_root, host_options, needed_component_names};
 
 pub(crate) use needed::{feature_is_linked, needed_components, selected_components};
 

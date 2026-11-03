@@ -1,0 +1,122 @@
+---
+source: crates/poly-cli/tests/components_cli.rs
+assertion_line: 69
+expression: json
+---
+{
+  "schema": 1,
+  "command": "list",
+  "flavor": "bundled",
+  "offline": false,
+  "cache_root": "<cache>",
+  "lock": "this build embeds no component lock (set POLY_COMPONENT_DEV_LOCK for a development lock)",
+  "components": [
+    {
+      "name": "web",
+      "kind": "engines",
+      "state": "bundled",
+      "opt_in": false,
+      "engines": [
+        "adrlint",
+        "malva",
+        "markup_fmt",
+        "oxc",
+        "rumdl",
+        "taplo",
+        "yaml"
+      ]
+    },
+    {
+      "name": "python",
+      "kind": "engines",
+      "state": "bundled",
+      "opt_in": false,
+      "engines": [
+        "ruff"
+      ]
+    },
+    {
+      "name": "sql",
+      "kind": "engines",
+      "state": "bundled",
+      "opt_in": false,
+      "engines": [
+        "sqruff"
+      ]
+    },
+    {
+      "name": "php",
+      "kind": "engines",
+      "state": "bundled",
+      "opt_in": false,
+      "engines": [
+        "mago"
+      ]
+    },
+    {
+      "name": "biome",
+      "kind": "engines",
+      "state": "bundled",
+      "opt_in": false,
+      "engines": [
+        "biome"
+      ]
+    },
+    {
+      "name": "ruby",
+      "kind": "engines",
+      "state": "bundled",
+      "opt_in": false,
+      "engines": [
+        "rubyfmt"
+      ]
+    },
+    {
+      "name": "nix",
+      "kind": "engines",
+      "state": "bundled",
+      "opt_in": false,
+      "engines": [
+        "alejandra"
+      ]
+    },
+    {
+      "name": "typos",
+      "kind": "engines",
+      "state": "bundled",
+      "opt_in": true,
+      "engines": [
+        "typos"
+      ]
+    },
+    {
+      "name": "astgrep",
+      "kind": "engines",
+      "state": "bundled",
+      "opt_in": false,
+      "engines": [
+        "astgrep"
+      ]
+    },
+    {
+      "name": "misc",
+      "kind": "engines",
+      "state": "bundled",
+      "opt_in": false,
+      "engines": [
+        "dockerfile",
+        "dotenv",
+        "graphql",
+        "hcl"
+      ]
+    },
+    {
+      "name": "mcp",
+      "kind": "frontend",
+      "state": "unavailable",
+      "opt_in": false,
+      "engines": [],
+      "detail": "this build embeds no component lock (set POLY_COMPONENT_DEV_LOCK for a development lock)"
+    }
+  ]
+}

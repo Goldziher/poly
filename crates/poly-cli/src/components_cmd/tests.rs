@@ -1,0 +1,270 @@
+//! The subcommand logic over a fake connector and a temporary cache.
+
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+use alef_component_runtime::ComponentManager;
+use poly_component_host::{ComponentHost, ComponentTransport, HostOptions, TransportConnector};
+use poly_component_index::{Component, ComponentIndex};
+use tempfile::TempDir;
+
+use super::ops::{self, Env, State};
+
+const TARGET: &str = "test-target";
+const DEMO_SHA: &str = "abababababababababababababababababababababababababababababababab";
+const ORPHAN_SHA: &str = "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd";
+
+struct Counting(Arc<AtomicUsize>);
+
+struct Null;
+
+impl ComponentTransport for Null {
+    fn describe(&self) -> anyhow::Result<Vec<u8>> {
+        anyhow::bail!("not a real component")
+    }
+
+    fn call(&self, _header: &[u8], _body: &[u8]) -> anyhow::Result<Vec<u8>> {
+        anyhow::bail!("not a real component")
+    }
+}
+
+impl TransportConnector for Counting {
+    fn connect(&self, _manager: &ComponentManager, _id: &str) -> anyhow::Result<Arc<dyn ComponentTransport>> {
+        self.0.fetch_add(1, Ordering::SeqCst);
+        Ok(Arc::new(Null))
+    }
+}
+
+fn component(name: &str) -> Component {
+    Component {
+        name: name.into(),
+        features: vec![format!("engine-{name}")],
+        ..Component::default()
+    }
+}
+
+fn index() -> ComponentIndex {
+    ComponentIndex {
+        schema: 1,
+        components: vec![component("demo"), component("baked")],
+        presets: [("all".to_owned(), vec!["demo".to_owned(), "baked".to_owned()])].into(),
+    }
+}
+
+fn is_baked(component: &Component) -> bool {
+    component.name == "baked"
+}
+
+fn lock() -> String {
+    format!(
+        r#"{{"schema_version":2,"public_keys":{{}},"artifacts":[{{
+            "identity":{{"crate_name":"c","component":"demo","version":"1.0.0","target":"{TARGET}",
+                         "feature_hash":"{h}","contract_hash":"{h}"}},
+            "provides":[],"mode":"download","url":"https://127.0.0.1:9/unreachable/demo.tar.gz",
+            "sha256":"{DEMO_SHA}","size":1,"manifest_sha256":"{h}","key_id":"k"}}]}}"#,
+        h = "11".repeat(32),
+    )
+}
+
+struct Fixture {
+    tmp: TempDir,
+    index: ComponentIndex,
+    host: ComponentHost,
+    lock: String,
+    connects: Arc<AtomicUsize>,
+    offline: bool,
+}
+
+impl Fixture {
+    fn new(offline: bool) -> Self {
+        let tmp = TempDir::new().unwrap();
+        let lock = lock();
+        let mut options = HostOptions::new(lock.clone(), tmp.path().join("cache"));
+        options.target = Some(TARGET.into());
+        options.offline = offline;
+        options.gate_loads = true;
+        let connects = Arc::new(AtomicUsize::new(0));
+        let host = ComponentHost::new(options)
+            .unwrap()
+            .with_connector(Arc::new(Counting(Arc::clone(&connects))));
+        Self {
+            tmp,
+            index: index(),
+            host,
+            lock,
+            connects,
+            offline,
+        }
+    }
+
+    fn env(&self) -> Env<'_> {
+        Env {
+            index: &self.index,
+            host: Some(&self.host),
+            no_host: None,
+            lock_json: Some(&self.lock),
+            linked: &is_baked,
+            offline: self.offline,
+            cache_root: self.root(),
+        }
+    }
+
+    fn root(&self) -> PathBuf {
+        self.host.manager().cache_root().to_path_buf()
+    }
+
+    fn object(&self, sha: &str) -> PathBuf {
+        self.root().join("sha256").join(sha)
+    }
+
+    fn seed(&self, sha: &str) {
+        std::fs::create_dir_all(self.object(sha)).unwrap();
+        std::fs::write(self.object(sha).join("component.json"), "{}").unwrap();
+    }
+}
+
+fn names(items: &[&str]) -> Vec<String> {
+    items.iter().map(|s| (*s).to_owned()).collect()
+}
+
+#[test]
+fn list_and_status_never_download() {
+    let fixture = Fixture::new(true);
+    let env = fixture.env();
+
+    let listing = ops::list(&env);
+    let states: Vec<_> = listing.components.iter().map(|c| (c.name.as_str(), c.state)).collect();
+    assert_eq!(states, [("demo", State::NotInstalled), ("baked", State::Bundled)]);
+    let status = ops::status(&env, &names(&["demo"]), true);
+    assert_eq!(status.missing, Some(names(&["demo"])));
+    assert!(!status.ok());
+
+    assert_eq!(
+        fixture.connects.load(Ordering::SeqCst),
+        0,
+        "list/status reached the connector"
+    );
+    assert!(
+        !fixture.root().join("sha256").exists(),
+        "list/status wrote to the cache"
+    );
+}
+
+#[test]
+fn install_does_reach_the_connector() {
+    let fixture = Fixture::new(false);
+    let demo = ops::resolve(&fixture.index, &names(&["demo"])).unwrap();
+    let actions = ops::install(&fixture.env(), &demo).unwrap();
+    assert_eq!(actions.results[0].action, "installed");
+    assert!(actions.ok);
+    assert_eq!(fixture.connects.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn offline_install_fails_without_connecting() {
+    let fixture = Fixture::new(true);
+    let demo = ops::resolve(&fixture.index, &names(&["demo"])).unwrap();
+    let actions = ops::install(&fixture.env(), &demo).unwrap();
+    assert_eq!(actions.results[0].action, "failed");
+    assert!(actions.results[0].detail.as_deref().unwrap().contains("offline"));
+    assert!(!actions.ok);
+    assert_eq!(fixture.connects.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn sync_is_a_check_when_offline() {
+    let fixture = Fixture::new(true);
+    let missing = ops::sync(&fixture.env(), &names(&["demo"])).unwrap();
+    assert!(!missing.ok);
+    // A host remembers what `ensure` answered for the rest of its run, as one CLI invocation does.
+    let fixture = Fixture::new(true);
+    fixture.seed(DEMO_SHA);
+    let present = ops::sync(&fixture.env(), &names(&["demo"])).unwrap();
+    assert!(present.ok);
+    assert_eq!(present.results[0].action, "already_installed");
+}
+
+#[test]
+fn installed_state_reports_size_path_and_verification() {
+    let fixture = Fixture::new(true);
+    fixture.seed(DEMO_SHA);
+    let listing = ops::status(&fixture.env(), &names(&["demo"]), true);
+    let row = &listing.components[0];
+    assert_eq!(row.state, State::Installed);
+    assert!(row.size_bytes.is_some());
+    assert_eq!(row.path.as_deref(), Some(fixture.object(DEMO_SHA).as_path()));
+    assert_eq!(row.verified, Some(false), "a stub archive must fail verification");
+    assert!(!listing.ok());
+    assert_eq!(fixture.connects.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn uninstall_removes_the_cached_archive() {
+    let fixture = Fixture::new(true);
+    fixture.seed(DEMO_SHA);
+    let demo = ops::resolve(&fixture.index, &names(&["demo"])).unwrap();
+    let first = ops::uninstall(&fixture.env(), &demo).unwrap();
+    assert_eq!(first.results[0].action, "removed");
+    assert!(!fixture.object(DEMO_SHA).exists());
+    let second = ops::uninstall(&fixture.env(), &demo).unwrap();
+    assert_eq!(second.results[0].action, "not_installed");
+}
+
+#[test]
+fn bundled_components_install_as_a_noop_with_a_note() {
+    let fixture = Fixture::new(false);
+    let mut env = fixture.env();
+    env.host = None;
+    env.no_host = Some("no lock".into());
+    let baked = ops::resolve(&fixture.index, &names(&["baked"])).unwrap();
+    let actions = ops::install(&env, &baked).unwrap();
+    assert_eq!(actions.results[0].action, "bundled");
+    assert!(actions.ok);
+    assert!(!actions.notes.is_empty());
+    let demo = ops::resolve(&fixture.index, &names(&["demo"])).unwrap();
+    assert!(ops::install(&env, &demo).unwrap_err().to_string().contains("no lock"));
+}
+
+#[test]
+fn prune_keeps_referenced_and_recent_unless_all() {
+    let fixture = Fixture::new(true);
+    fixture.seed(DEMO_SHA);
+    fixture.seed(ORPHAN_SHA);
+
+    let dry = ops::prune(&fixture.env(), true, true, 30).unwrap();
+    assert_eq!(dry.results.len(), 2);
+    assert!(fixture.object(DEMO_SHA).exists() && fixture.object(ORPHAN_SHA).exists());
+
+    let kept = ops::prune(&fixture.env(), false, false, 30).unwrap();
+    assert!(kept.results.is_empty());
+    assert!(fixture.object(ORPHAN_SHA).exists());
+
+    let all = ops::prune(&fixture.env(), true, false, 30).unwrap();
+    assert_eq!(all.results.len(), 2);
+    assert!(!fixture.object(DEMO_SHA).exists() && !fixture.object(ORPHAN_SHA).exists());
+}
+
+#[test]
+fn resolve_expands_presets_and_rejects_unknown_names() {
+    let index = index();
+    let all: Vec<_> = ops::resolve(&index, &names(&["all"])).unwrap();
+    assert_eq!(all.len(), 2);
+    let error = ops::resolve(&index, &names(&["nope"])).unwrap_err().to_string();
+    assert!(error.contains("`nope`") && error.contains("demo"), "{error}");
+}
+
+#[test]
+fn flavor_is_partial_when_some_families_are_linked() {
+    let fixture = Fixture::new(true);
+    assert_eq!(ops::flavor(&fixture.env()), "partial");
+}
+
+#[test]
+fn import_rejects_an_archive_the_lock_does_not_name() {
+    let fixture = Fixture::new(true);
+    let archive = fixture.tmp.path().join("x.tar.gz");
+    std::fs::write(&archive, b"not an archive").unwrap();
+    let error = ops::import(&fixture.env(), &archive).unwrap_err().to_string();
+    assert!(error.contains("matches no component"), "{error}");
+}

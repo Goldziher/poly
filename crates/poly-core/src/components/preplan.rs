@@ -52,7 +52,7 @@ enum Hosted {
     Unavailable(String),
 }
 
-fn component_lock() -> anyhow::Result<String> {
+pub(super) fn component_lock() -> anyhow::Result<String> {
     let path = std::env::var_os(LOCK_ENV).ok_or_else(|| {
         anyhow::anyhow!("this build embeds no component lock (set {LOCK_ENV} for a development lock)")
     })?;
@@ -75,10 +75,7 @@ fn open_host(injected: Option<&ComponentInjection>) -> Hosted {
         return Hosted::Host(Arc::clone(&injected.host), false);
     }
     let built = component_lock().and_then(|lock| {
-        let cache_root = poly_cache::cache_home()
-            .map(|home| home.join("components"))
-            .unwrap_or_else(|_| std::env::temp_dir().join("poly-components"));
-        let mut options = HostOptions::new(lock, cache_root);
+        let mut options = HostOptions::new(lock, super::default_cache_root());
         options.offline = network::offline();
         options.gate_loads = true;
         ComponentHost::new(options)

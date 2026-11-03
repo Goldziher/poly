@@ -36,6 +36,7 @@ engine-astgrep = ["poly-core/engine-astgrep"]
 
 [dependencies]
 aho-corasick.workspace = true
+alef-component-runtime.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 fs2.workspace = true
@@ -46,6 +47,8 @@ owo-colors.workspace = true
 poly-buildinfo.workspace = true
 poly-cache.workspace = true
 poly-catalog.workspace = true
+poly-component-host.workspace = true
+poly-component-index.workspace = true
 poly-config.workspace = true
 poly-core.workspace = true
 poly-hooks.workspace = true
@@ -55,6 +58,7 @@ poly-workspace.workspace = true
 serde.workspace = true
 serde-saphyr.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 tempfile.workspace = true
 toml.workspace = true
 toml_edit.workspace = true

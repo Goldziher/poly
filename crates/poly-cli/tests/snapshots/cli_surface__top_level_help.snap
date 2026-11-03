@@ -1,5 +1,6 @@
 ---
 source: crates/poly-cli/tests/cli_surface.rs
+assertion_line: 40
 expression: "help(&[\"--help\"])"
 ---
 Universal, zero-dependency linter & formatter
@@ -7,18 +8,20 @@ Universal, zero-dependency linter & formatter
 Usage: poly [OPTIONS] <COMMAND>
 
 Commands:
-  lint     Lint files (poly applies no fixes without --fix)
-  fmt      Format files (dry-run by default; use --fix to write in place)
-  commit   Lint and optionally clean a commit message (reads `[commit]` from poly.toml)
-  hooks    Run git hooks declared in `[hooks]` of poly.toml (native runner)
-  migrate  Absorb foreign tool configs into poly.toml and remove what poly can honor
-  cache    Inspect and maintain the result cache (stats / gc / clean)
-  rules    Inspect and test custom ast-grep rule packs (test / list)
-  lock     Pin remote `extends` bases and Git hook sources in `poly.lock`
-  config   Inspect the effective config and print the `poly.toml` JSON Schema
-  mcp      Run an MCP server over stdio (mirrors the CLI)
-  doctor   Report which poly is running, every poly on PATH, and the config in effect
-  help     Print this message or the help of the given subcommand(s)
+  lint        Lint files (poly applies no fixes without --fix)
+  fmt         Format files (dry-run by default; use --fix to write in place)
+  commit      Lint and optionally clean a commit message (reads `[commit]` from poly.toml)
+  hooks       Run git hooks declared in `[hooks]` of poly.toml (native runner)
+  migrate     Absorb foreign tool configs into poly.toml and remove what poly can honor
+  cache       Inspect and maintain the result cache (stats / gc / clean)
+  rules       Inspect and test custom ast-grep rule packs (test / list)
+  components  Inspect and manage downloadable engine components (list / status / install / sync /
+              prune)
+  lock        Pin remote `extends` bases and Git hook sources in `poly.lock`
+  config      Inspect the effective config and print the `poly.toml` JSON Schema
+  mcp         Run an MCP server over stdio (mirrors the CLI)
+  doctor      Report which poly is running, every poly on PATH, and the config in effect
+  help        Print this message or the help of the given subcommand(s)
 
 Options:
       --config <PATH>
