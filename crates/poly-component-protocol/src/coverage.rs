@@ -42,6 +42,7 @@ pub const ENGINE_METHODS: &[(&str, Coverage)] = &[
         Coverage::HostSide("derived by the host from version() and LintCacheSalt"),
     ),
     ("batch_shard_floor", Coverage::Index("WireEngineDesc.batch_shard_floor")),
+    ("overridden_hooks", Coverage::Index("WireEngineDesc.hooks")),
     (
         "takes_over_tier_one",
         Coverage::Index("WireEngineDesc.takes_over_tier_one"),

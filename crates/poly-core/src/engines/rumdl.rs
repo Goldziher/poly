@@ -91,6 +91,10 @@ const MDX_DEFAULT_DISABLED_RULES: &[&str] = &["MD033", "MD036", "MD041", "MD051"
 static LANGUAGES: &[Language] = &[Language::Markdown, Language::Mdx];
 
 impl Engine for RumdlEngine {
+    fn overridden_hooks(&self) -> u32 {
+        poly_engine_api::desc::hooks::SKIP_REASON
+    }
+
     fn name(&self) -> &'static str {
         "rumdl"
     }

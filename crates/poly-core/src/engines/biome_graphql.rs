@@ -68,6 +68,10 @@ const DEFAULT_GROUPS: &[&str] = &["correctness", "suspicious"];
 const VERSION: &str = "biome_graphql_analyze+rev:e2e5a36+lint-v1";
 
 impl Engine for BiomeGraphqlEngine {
+    fn overridden_hooks(&self) -> u32 {
+        0
+    }
+
     fn name(&self) -> &'static str {
         "biome"
     }

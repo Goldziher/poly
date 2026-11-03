@@ -607,6 +607,23 @@ pub trait Engine: Send + Sync {
         OptionKeys::UNCHECKED
     }
 
+    /// The per-file hook methods this backend overrides, as a bit set of
+    /// [`poly_component_protocol::hooks`].
+    ///
+    /// Recorded in the component index so the host answers every undeclared hook with the trait
+    /// default instead of loading the component to ask. Declaring too many bits only costs a
+    /// load; declaring too few makes the host return a default where the engine would have
+    /// answered otherwise, so an engine that overrides one of [`Engine::run_context`],
+    /// [`Engine::file_context`], [`Engine::provides_language_lint`] /
+    /// [`Engine::provides_language_format`], [`Engine::skip_reason`], [`Engine::lint_input_salt`],
+    /// [`Engine::format_input_salt`], [`Engine::lint_cache_salt`] or [`Engine::batch_support`]
+    /// must set its bit. Methods answered by [`Engine::host_hook`] count as not overridden.
+    /// Defaults to every bit, the safe answer for an engine that does not say.
+    /// `tests/component_hooks.rs` in `poly-core` fails an engine that overrides an undeclared hook.
+    fn overridden_hooks(&self) -> u32 {
+        crate::desc::ALL_HOOKS
+    }
+
     /// Version of the wrapped tool/crate; folded into the cache key so a tool
     /// upgrade invalidates stale cached results.
     fn version(&self) -> &str;

@@ -167,6 +167,10 @@ static LANGUAGES: &[Language] = &[
 pub struct OxcEngine;
 
 impl crate::engine::Engine for OxcEngine {
+    fn overridden_hooks(&self) -> u32 {
+        poly_engine_api::desc::hooks::BATCH_SUPPORT
+    }
+
     fn name(&self) -> &'static str {
         "oxc"
     }

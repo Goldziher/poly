@@ -48,6 +48,10 @@ pub struct GraphQlEngine;
 static LANGUAGES: &[Language] = &[Language::GraphQl];
 
 impl Engine for GraphQlEngine {
+    fn overridden_hooks(&self) -> u32 {
+        0
+    }
+
     fn name(&self) -> &'static str {
         "graphql"
     }

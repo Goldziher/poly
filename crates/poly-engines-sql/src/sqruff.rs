@@ -187,6 +187,10 @@ impl Mode {
 pub static LANGUAGES: &[Language] = &[Language::Sql];
 
 impl Engine for SqruffEngine {
+    fn overridden_hooks(&self) -> u32 {
+        0
+    }
+
     fn name(&self) -> &'static str {
         "sqruff"
     }

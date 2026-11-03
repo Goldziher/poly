@@ -8,7 +8,7 @@ use std::sync::Arc;
 use common::{FakeComponent, config, desc, describe_of, init, source};
 use poly_component_host::{ComponentEngine, ComponentSlot, SlotStatus, component_version};
 use poly_component_protocol::hooks;
-use poly_engine_api::engine::{Engine, FormatOutput};
+use poly_engine_api::engine::{BatchSupport, Engine, FormatOutput};
 
 fn engine_with(hooks: u32, host_hook: &str) -> (ComponentEngine, Arc<FakeComponent>) {
     let wire = desc(hooks, host_hook);
@@ -110,6 +110,22 @@ fn per_file_hooks_are_called_only_when_the_bit_is_set() {
     assert!(!engine.provides_language_lint(&poly_engine_api::language::Language::Go, &cfg));
     assert_eq!(fake.count("SkipReason"), 1);
     assert_eq!(fake.count("ProvidesLanguage"), 2);
+}
+
+#[test]
+fn undeclared_per_file_hooks_answer_the_default_without_connecting() {
+    let (engine, fake) = engine_with(0, "none");
+    let src = source("x");
+    let cfg = config(4);
+    assert_eq!(engine.lint_cache_salt(&src), None);
+    assert_eq!(engine.lint_cache_version(&src), engine.version());
+    assert_eq!(engine.batch_support(&cfg), BatchSupport::default());
+    assert!(engine.provides_language_lint(&src.language, &cfg));
+    assert!(engine.provides_language_format(&src.language, &cfg));
+    assert!(engine.provides_language_lint(&poly_engine_api::language::Language::Go, &cfg));
+    assert!(engine.skip_reason(&src).is_none());
+    assert!(fake.calls().is_empty(), "{:?}", fake.calls());
+    assert_eq!(engine.slot().status(), SlotStatus::Unloaded);
 }
 
 #[test]

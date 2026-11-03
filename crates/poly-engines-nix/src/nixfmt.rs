@@ -35,6 +35,10 @@ const VERSION: &str = "3.1.0";
 pub static LANGUAGES: &[Language] = &[Language::Nix];
 
 impl Engine for NixFmtEngine {
+    fn overridden_hooks(&self) -> u32 {
+        0
+    }
+
     fn name(&self) -> &'static str {
         "alejandra"
     }

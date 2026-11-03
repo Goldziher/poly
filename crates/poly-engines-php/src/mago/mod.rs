@@ -68,6 +68,10 @@ impl Default for MagoEngine {
 pub static LANGUAGES: &[Language] = &[Language::Php];
 
 impl Engine for MagoEngine {
+    fn overridden_hooks(&self) -> u32 {
+        0
+    }
+
     fn name(&self) -> &'static str {
         "mago"
     }

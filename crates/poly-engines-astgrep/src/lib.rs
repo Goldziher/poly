@@ -130,6 +130,10 @@ const ENGINE_VERSION: &str = "ast-grep-core-0.51.1-engine-3+tslp1.23.1+builtin-p
 pub struct AstGrepEngine;
 
 impl Engine for AstGrepEngine {
+    fn overridden_hooks(&self) -> u32 {
+        poly_engine_api::desc::hooks::PROVIDES_LANGUAGE
+    }
+
     fn name(&self) -> &'static str {
         "astgrep"
     }

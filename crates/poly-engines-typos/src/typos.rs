@@ -154,6 +154,10 @@ pub(crate) static OPTION_KEYS: std::sync::LazyLock<Vec<(&'static str, OptionType
 });
 
 impl Engine for TyposEngine {
+    fn overridden_hooks(&self) -> u32 {
+        0
+    }
+
     fn name(&self) -> &'static str {
         "typos"
     }

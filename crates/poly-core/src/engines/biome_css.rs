@@ -82,6 +82,10 @@ fn css_file_source(lang: &Language) -> CssFileSource {
 }
 
 impl Engine for BiomeCssEngine {
+    fn overridden_hooks(&self) -> u32 {
+        poly_engine_api::desc::hooks::SKIP_REASON
+    }
+
     fn name(&self) -> &'static str {
         "biome"
     }

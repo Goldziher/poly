@@ -36,6 +36,10 @@ static LANGUAGES: &[Language] = &[Language::Hcl];
 pub struct HclEngine;
 
 impl Engine for HclEngine {
+    fn overridden_hooks(&self) -> u32 {
+        0
+    }
+
     fn name(&self) -> &'static str {
         "hcl"
     }

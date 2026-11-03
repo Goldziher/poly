@@ -70,6 +70,10 @@ pub struct YamlEngine;
 static LANGUAGES: &[Language] = &[Language::Yaml];
 
 impl Engine for YamlEngine {
+    fn overridden_hooks(&self) -> u32 {
+        poly_engine_api::desc::hooks::SKIP_REASON
+    }
+
     fn name(&self) -> &'static str {
         "yaml"
     }

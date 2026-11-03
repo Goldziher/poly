@@ -3,17 +3,17 @@
 //! Component producers answer `describe()` with it and the compiled component index generator
 //! records it, so both read the same fields the same way.
 
-use poly_component_protocol::{
-    WireCapabilities, WireEngineDesc, WireOptionKey, WireOptionKeys, WireOptionTable, hooks,
-};
+use poly_component_protocol::{WireCapabilities, WireEngineDesc, WireOptionKey, WireOptionKeys, WireOptionTable};
+
+pub use poly_component_protocol::hooks;
 
 use crate::engine::{Engine, OptionKeys, OptionTable};
 
 /// Every optional per-engine request the host may send ([`hooks`]).
 ///
 /// An unset bit lets the host skip a call, so claiming all of them is always correct; it only
-/// forgoes the saving. The trait cannot say which defaults an engine overrides, so a producer that
-/// knows better narrows this per engine.
+/// forgoes the saving. It is the default of [`Engine::overridden_hooks`]; an engine narrows it to the
+/// hooks it overrides.
 pub const ALL_HOOKS: u32 = hooks::RUN_CONTEXT
     | hooks::FILE_CONTEXT
     | hooks::PROVIDES_LANGUAGE
@@ -69,7 +69,7 @@ pub fn engine_desc(engine: &dyn Engine) -> WireEngineDesc {
             .into_iter()
             .map(|(table, wire)| option_keys_desc(&engine.option_keys(table), wire))
             .collect(),
-        hooks: ALL_HOOKS,
+        hooks: engine.overridden_hooks(),
         takes_over_tier_one: engine.takes_over_tier_one(),
         claimed_paths: engine.claimed_paths(),
         host_hook,
@@ -123,5 +123,30 @@ mod tests {
         assert_eq!(desc.host_hook, "none");
         assert_eq!(desc.batch_shard_floor, 2);
         assert!(desc.claimed_paths.is_empty() && !desc.takes_over_tier_one);
+    }
+
+    struct Narrow;
+
+    impl Engine for Narrow {
+        fn name(&self) -> &'static str {
+            "narrow"
+        }
+        fn languages(&self) -> &'static [Language] {
+            &[Language::Python]
+        }
+        fn capabilities(&self) -> Capabilities {
+            Capabilities::default()
+        }
+        fn version(&self) -> &str {
+            "1"
+        }
+        fn overridden_hooks(&self) -> u32 {
+            hooks::SKIP_REASON
+        }
+    }
+
+    #[test]
+    fn describes_the_hooks_an_engine_declares() {
+        assert_eq!(engine_desc(&Narrow).hooks, hooks::SKIP_REASON);
     }
 }

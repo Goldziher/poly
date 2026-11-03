@@ -63,6 +63,10 @@ const SHARED_KEYS: &[&str] = &[
 static LANGUAGES: &[Language] = &[Language::Css, Language::Scss, Language::Less];
 
 impl Engine for MalvaEngine {
+    fn overridden_hooks(&self) -> u32 {
+        poly_engine_api::desc::hooks::SKIP_REASON
+    }
+
     fn name(&self) -> &'static str {
         "malva"
     }

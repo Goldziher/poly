@@ -72,6 +72,10 @@ static LANGUAGES: &[Language] = &[Language::Dotenv];
 pub struct DotenvEngine;
 
 impl Engine for DotenvEngine {
+    fn overridden_hooks(&self) -> u32 {
+        0
+    }
+
     fn name(&self) -> &'static str {
         "dotenv"
     }

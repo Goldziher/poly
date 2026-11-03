@@ -445,6 +445,10 @@ pub struct RuffEngine;
 pub static LANGUAGES: &[Language] = &[Language::Python];
 
 impl Engine for RuffEngine {
+    fn overridden_hooks(&self) -> u32 {
+        0
+    }
+
     fn name(&self) -> &'static str {
         "ruff"
     }

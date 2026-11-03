@@ -29,6 +29,10 @@ const VERSION: &str = "rubyfmt-git:884b9fd";
 static LANGUAGES: &[Language] = &[Language::Ruby];
 
 impl Engine for RubyfmtEngine {
+    fn overridden_hooks(&self) -> u32 {
+        0
+    }
+
     fn name(&self) -> &'static str {
         "rubyfmt"
     }

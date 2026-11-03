@@ -78,6 +78,10 @@ static LANGUAGES: &[Language] = &[Language::Markdown];
 pub struct AdrlintEngine;
 
 impl Engine for AdrlintEngine {
+    fn overridden_hooks(&self) -> u32 {
+        poly_engine_api::desc::hooks::PROVIDES_LANGUAGE | poly_engine_api::desc::hooks::SKIP_REASON
+    }
+
     fn name(&self) -> &'static str {
         "adrlint"
     }

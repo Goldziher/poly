@@ -60,7 +60,7 @@
               "note": null
             }
           ],
-          "hooks": 255,
+          "hooks": 12,
           "takes_over_tier_one": false,
           "claimed_paths": [],
           "host_hook": "none",
@@ -126,7 +126,7 @@
               "note": null
             }
           ],
-          "hooks": 255,
+          "hooks": 8,
           "takes_over_tier_one": false,
           "claimed_paths": [],
           "host_hook": "oxfmt-scope",
@@ -240,7 +240,7 @@
               "note": null
             }
           ],
-          "hooks": 255,
+          "hooks": 8,
           "takes_over_tier_one": false,
           "claimed_paths": [],
           "host_hook": "none",
@@ -383,7 +383,7 @@
               "note": null
             }
           ],
-          "hooks": 255,
+          "hooks": 128,
           "takes_over_tier_one": false,
           "claimed_paths": [],
           "host_hook": "oxc",
@@ -490,7 +490,7 @@
               "note": null
             }
           ],
-          "hooks": 255,
+          "hooks": 8,
           "takes_over_tier_one": false,
           "claimed_paths": [],
           "host_hook": "oxfmt-scope",
@@ -608,7 +608,7 @@
               "note": null
             }
           ],
-          "hooks": 255,
+          "hooks": 0,
           "takes_over_tier_one": false,
           "claimed_paths": [],
           "host_hook": "oxfmt-scope",
@@ -682,7 +682,7 @@
               "note": null
             }
           ],
-          "hooks": 255,
+          "hooks": 8,
           "takes_over_tier_one": false,
           "claimed_paths": [],
           "host_hook": "oxfmt-scope",
@@ -1278,7 +1278,7 @@
               "note": null
             }
           ],
-          "hooks": 255,
+          "hooks": 0,
           "takes_over_tier_one": false,
           "claimed_paths": [],
           "host_hook": "ruff-context",
@@ -1358,7 +1358,7 @@
               "note": null
             }
           ],
-          "hooks": 255,
+          "hooks": 0,
           "takes_over_tier_one": false,
           "claimed_paths": [],
           "host_hook": "none",
@@ -1426,7 +1426,7 @@
               "note": null
             }
           ],
-          "hooks": 255,
+          "hooks": 0,
           "takes_over_tier_one": false,
           "claimed_paths": [],
           "host_hook": "none",
@@ -1480,7 +1480,7 @@
               "note": null
             }
           ],
-          "hooks": 255,
+          "hooks": 8,
           "takes_over_tier_one": false,
           "claimed_paths": [],
           "host_hook": "none",
@@ -1525,7 +1525,7 @@
               "note": null
             }
           ],
-          "hooks": 255,
+          "hooks": 0,
           "takes_over_tier_one": false,
           "claimed_paths": [],
           "host_hook": "none",
@@ -1579,7 +1579,7 @@
               "note": null
             }
           ],
-          "hooks": 255,
+          "hooks": 0,
           "takes_over_tier_one": false,
           "claimed_paths": [],
           "host_hook": "none",
@@ -1633,7 +1633,7 @@
               "note": null
             }
           ],
-          "hooks": 255,
+          "hooks": 0,
           "takes_over_tier_one": false,
           "claimed_paths": [],
           "host_hook": "none",
@@ -1745,7 +1745,7 @@
               "note": null
             }
           ],
-          "hooks": 255,
+          "hooks": 0,
           "takes_over_tier_one": false,
           "claimed_paths": [],
           "host_hook": "none",
@@ -1799,7 +1799,7 @@
               "note": null
             }
           ],
-          "hooks": 255,
+          "hooks": 4,
           "takes_over_tier_one": false,
           "claimed_paths": [],
           "host_hook": "none",
@@ -1853,7 +1853,7 @@
               "note": null
             }
           ],
-          "hooks": 255,
+          "hooks": 8,
           "takes_over_tier_one": false,
           "claimed_paths": [],
           "host_hook": "none",
@@ -1898,7 +1898,7 @@
               "note": null
             }
           ],
-          "hooks": 255,
+          "hooks": 0,
           "takes_over_tier_one": false,
           "claimed_paths": [],
           "host_hook": "none",
@@ -1943,7 +1943,7 @@
               "note": null
             }
           ],
-          "hooks": 255,
+          "hooks": 0,
           "takes_over_tier_one": false,
           "claimed_paths": [],
           "host_hook": "none",
@@ -1988,7 +1988,7 @@
               "note": null
             }
           ],
-          "hooks": 255,
+          "hooks": 0,
           "takes_over_tier_one": false,
           "claimed_paths": [],
           "host_hook": "none",

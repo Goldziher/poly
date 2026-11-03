@@ -68,6 +68,10 @@ static LANGUAGES: &[Language] = &[Language::Dockerfile];
 pub struct DockerfileEngine;
 
 impl Engine for DockerfileEngine {
+    fn overridden_hooks(&self) -> u32 {
+        poly_engine_api::desc::hooks::SKIP_REASON
+    }
+
     fn name(&self) -> &'static str {
         "dockerfile"
     }

@@ -103,6 +103,10 @@ impl Default for TaploEngine {
 }
 
 impl Engine for TaploEngine {
+    fn overridden_hooks(&self) -> u32 {
+        0
+    }
+
     fn name(&self) -> &'static str {
         "taplo"
     }
