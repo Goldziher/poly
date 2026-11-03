@@ -142,7 +142,7 @@ fn build(configs: Arc<ChildConfigs>) -> FormatDispatcher {
                 session,
                 text,
                 super::malva::oxc_css_options(&configs.css, variant),
-                false,
+                None,
             ),
             Target::Json(variant) => oxc_formatter_json::format_to_ir(
                 session,

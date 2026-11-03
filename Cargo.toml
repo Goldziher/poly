@@ -117,19 +117,19 @@ markdown = "1.0.0"
 markup_fmt = "0.27"
 memchr = "2.8.3"
 owo-colors = { version = "4", features = ["supports-colors"] }
-oxc_allocator = { git = "https://github.com/oxc-project/oxc", rev = "e2be72dfea8dff8ff7d6416fd21a1d8866ded4e4" }
-oxc_diagnostics = { git = "https://github.com/oxc-project/oxc", rev = "e2be72dfea8dff8ff7d6416fd21a1d8866ded4e4" }
-oxc_formatter = { git = "https://github.com/oxc-project/oxc", rev = "e2be72dfea8dff8ff7d6416fd21a1d8866ded4e4" }
-oxc_formatter_core = { git = "https://github.com/oxc-project/oxc", rev = "e2be72dfea8dff8ff7d6416fd21a1d8866ded4e4" }
-oxc_formatter_css = { git = "https://github.com/oxc-project/oxc", rev = "e2be72dfea8dff8ff7d6416fd21a1d8866ded4e4" }
-oxc_formatter_json = { git = "https://github.com/oxc-project/oxc", rev = "e2be72dfea8dff8ff7d6416fd21a1d8866ded4e4" }
-oxc_formatter_markdown = { git = "https://github.com/oxc-project/oxc", rev = "e2be72dfea8dff8ff7d6416fd21a1d8866ded4e4" }
-oxc_formatter_toml = { git = "https://github.com/oxc-project/oxc", rev = "e2be72dfea8dff8ff7d6416fd21a1d8866ded4e4" }
-oxc_formatter_yaml = { git = "https://github.com/oxc-project/oxc", rev = "e2be72dfea8dff8ff7d6416fd21a1d8866ded4e4" }
-oxc_linter = { git = "https://github.com/oxc-project/oxc", rev = "e2be72dfea8dff8ff7d6416fd21a1d8866ded4e4" }
-oxc_parser = { git = "https://github.com/oxc-project/oxc", rev = "e2be72dfea8dff8ff7d6416fd21a1d8866ded4e4" }
-oxc_semantic = { git = "https://github.com/oxc-project/oxc", rev = "e2be72dfea8dff8ff7d6416fd21a1d8866ded4e4" }
-oxc_span = { git = "https://github.com/oxc-project/oxc", rev = "e2be72dfea8dff8ff7d6416fd21a1d8866ded4e4" }
+oxc_allocator = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }
+oxc_diagnostics = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }
+oxc_formatter = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }
+oxc_formatter_core = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }
+oxc_formatter_css = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }
+oxc_formatter_json = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }
+oxc_formatter_markdown = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }
+oxc_formatter_toml = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }
+oxc_formatter_yaml = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }
+oxc_linter = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }
+oxc_parser = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }
+oxc_semantic = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }
+oxc_span = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }
 pest = "2.9.5"
 pest_derive = "2.9.5"
 phf = { version = "0.14.0", default-features = false, features = ["macros"] }
@@ -241,7 +241,7 @@ ignored = ["futures"]
 # oxc_formatter_yaml/toml pull `oxc_allocator` from the registry through their parsers; resolve it to
 # the same git copy as the rest of the oxc crates so there is a single `Allocator` type.
 [patch.crates-io]
-oxc_allocator = { git = "https://github.com/oxc-project/oxc", rev = "e2be72dfea8dff8ff7d6416fd21a1d8866ded4e4" }
+oxc_allocator = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }
 
 [profile.release]
 lto = "thin"

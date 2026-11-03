@@ -107,7 +107,7 @@ impl Engine for YamlEngine {
     }
 
     fn version(&self) -> &str {
-        "0.1.0+serde_yaml-0.9.34+oxc_formatter_yaml-e2be72d+tmplskip+oxfmtrc-scope-1"
+        "0.1.0+serde_yaml-0.9.34+oxc_formatter_yaml-f799f17+tmplskip+oxfmtrc-scope-1"
     }
 
     /// The path-scoped oxfmt config (`overrides`, nested configs) shapes the output and the cache key.

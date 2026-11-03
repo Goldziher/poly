@@ -11,6 +11,9 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 - Minimum supported versions raised: Node.js 22.
 - Python 3.11 is now the minimum supported version; Python 3.10 reached end of life.
+- oxc moves to the `crates_v0.157.0` release-tag commit (`f799f17`), so the git-pinned linter and
+  formatters match the oxc crates published as 0.157.0. Cached JS/TS, CSS, Markdown, TOML, YAML and
+  HTML results are recomputed once.
 
 ## [0.32.3] - 2026-11-01
 

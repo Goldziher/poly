@@ -45,7 +45,7 @@ pub struct MalvaEngine;
 /// malva crate version — folded into the cache key so upgrades invalidate stale results.
 /// Bumped suffix to +opts-1 after exposing full LanguageOptions (options were previously
 /// ignored — existing caches must be invalidated).
-const MALVA_VERSION: &str = "0.16.0+opts-2+iehack-skip+oxc_formatter_css-e2be72d+oxfmtrc-scope-1";
+const MALVA_VERSION: &str = "0.16.0+opts-2+iehack-skip+oxc_formatter_css-f799f17+oxfmtrc-scope-1";
 
 /// Keys the oxfmt-compatible formatter reads. The table is handed to malva instead as soon as it
 /// holds anything else, because only malva understands the rest.
