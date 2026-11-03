@@ -24,13 +24,13 @@ Apply these patterns by default; deviate only with measurement.
 - **Reuse tree-sitter parsers via a pool.** Parsers and compiled queries are expensive to
   build; pull them from the pool — never construct one per file. The pools are `thread_local!`
   maps keyed by grammar name: `engines/treesitter/mod.rs` and `engines/treesitter/indent.rs`
-  (the latter caches the `QueryCursor` and compiled `Query` too), `engines/uncomment.rs`, and
+  (the latter caches the `QueryCursor` and compiled `Query` too), `crates/poly-engines-uncomment/src/uncomment.rs`, and
   `engines/quality/mod.rs`, whose pool is shared by every structural sub-rule so a file is
   parsed once per lint pass rather than once per rule.
   **Exception — do not add one for ast-grep.** `ast_grep_core::AstGrep::try_new` owns the parse
   and `ast-grep-core` already pools the underlying `tree_sitter::Parser` per thread per language
   behind it (its `PARSER_CACHE` thread-local). A poly-side pool there was tried and reverted as
-  measurably useless; see the comment in `engines/astgrep/mod.rs`. Skipping the parse entirely
+  measurably useless; see the comment in `crates/poly-engines-astgrep/src/lib.rs`. Skipping the parse entirely
   when no rule applies is the win that did pay off.
 - **blake3 content-hash cache skips unchanged work.** The key
   (`ResultCache::key_with_args`, `crates/poly-cache/src/lib.rs`) folds in, in order: cache

@@ -35,15 +35,23 @@ an installer (see release-versioning).
 
 ## Workspace root
 
-- `Cargo.toml` — `[workspace]` (resolver 3, edition 2024, `rust-version = "1.99"`). Twelve
+- `Cargo.toml` — `[workspace]` (resolver 3, edition 2024, `rust-version = "1.99"`). Twenty-seven
   members: `poly-core` (the engine library), `poly-cli` (builds the `poly` binary),
   `poly-config`, `poly-cache`, `poly-catalog`, `poly-hooks`, `poly-workspace`, `poly-mcp`,
-  `poly-buildinfo`, and three that do **not** carry the prefix — `gitfluff` (the commit-message
+  `poly-buildinfo`, the engine split (`poly-engine-api`, `poly-engines`, the nine
+  `poly-engines-*` family crates, `poly-grammar` and the three `poly-component-*` crates, below),
+  and three that do **not** carry the prefix — `gitfluff` (the commit-message
   linter behind `poly commit`), `dockerfile-parser` (the vendored Dockerfile parser behind the
   `dockerfile` engine) and `conformance` (a dev-only differential formatter-conformance harness
   the shipped binary never depends on). Engine families are split out as `poly-engines-<family>`
-  crates (`sql`, `nix`, `php`, `python` so far; each exposes `engines_for(&Language)` and `LANGUAGES`), and
-  `poly-engines` is their feature-gated facade plus the `PolyComponent` contract trait; `poly-core`'s
+  crates (`sql`, `nix`, `php`, `python`, `typos`, `astgrep`, `uncomment`, `misc` — the last holds
+  dockerfile, dotenv, hcl and graphql; `poly-engines-sql-component` is the sql component build),
+  and
+  `poly-engines` is their feature-gated facade plus the `PolyComponent` contract trait and
+  `producer/`. `poly-engine-api` holds the `Engine` trait, config, `host_hooks/`, `rule_config`,
+  `template` and `line_index`; `poly-grammar` the shared tree-sitter grammar memo;
+  `poly-component-protocol`, `poly-component-index` and `poly-component-host` the component wire
+  protocol, compiled component index and host-side runtime; `poly-core`'s
   `engine-*` features link them and its `bundled` feature aliases `all-engines`. Shared deps live under `[workspace.dependencies]`; git deps are pinned to a `rev`
   (crates from one monorepo share one `rev`).
 - `deny.toml` — `cargo deny` license / source allow-list (no GPL/AGPL), applied across the full

@@ -14,7 +14,8 @@ Project-specific conventions baked into context so they ship into every AI tool'
 
 ## Module layout
 
-- **One concern per file.** A backend lives in `crates/poly-core/src/engines/<tool>.rs`;
+- **One concern per file.** A backend lives in `crates/poly-core/src/engines/<tool>.rs` (or, for the sql, nix, php, python, typos, astgrep,
+  uncomment and misc families, in the matching `crates/poly-engines-<family>` crate);
   pipeline stages live in their own files (`discover.rs`, `cache.rs`, `runner.rs`,
   `report.rs`, …). Match that shape when adding a new tool area.
 - **1000-line cap** on every `*.rs` file, enforced by the `rust-max-lines` hook in `poly.toml`. Refactor

@@ -13,7 +13,7 @@ x-ai-rulez:
 `src/`:
 
 - `lib.rs` — public re-exports.
-- `engine.rs` — the **`Engine` trait** contract plus `SourceFile`, `Capabilities`,
+- `engine.rs` — re-exports `poly-engine-api`'s `engine`: the **`Engine` trait** contract plus `SourceFile`, `Capabilities`,
   `Severity`, `Span`, `Edit`, `Diagnostic`, `FormatOutput`. This is the keystone abstraction.
 - `registry.rs` — crate-private `engines_for(&Language) -> Vec<Box<dyn Engine>>`. A static
   `match` (alef-style): the native crate backend(s) registered for the language, else the
@@ -66,32 +66,35 @@ x-ai-rulez:
 - `language.rs` — `Language` enum + detection **by filename and extension**; an unrecognized
   extension becomes `Language::Other(name)`, and it is the tier-2 engine — not this module —
   that hands that name to `tree-sitter-language-pack`.
-- `engines/` — one module per backend. The python (`ruff`), php (`mago`), sql (`sqruff`) and nix
-  (`nixfmt`) backends now live in `crates/poly-engines-<family>` and are re-exported here at their
-  old paths. Most are a single `engines/<tool>.rs`; a backend that
-  outgrows the 1000-line cap becomes a directory split per concern (`oxc/`, `mago/`, `hcl/`,
-  `native_tool/`, `astgrep/`, `quality/`, `treesitter/`, `catalog_tool/`; `ruff.rs` keeps its
-  submodules in `ruff/`):
+- `engines/` — one module per backend. The python (`ruff`), php (`mago`), sql (`sqruff`), nix
+  (`nixfmt`), `typos`, `astgrep`, `uncomment` and misc (`dockerfile`, `dotenv`, `hcl`, `graphql`)
+  backends now live in `crates/poly-engines-<family>` and are re-exported here at their
+  old paths (`engines/mod.rs`). Most of the rest are a single `engines/<tool>.rs`; a backend that
+  outgrows the 1000-line cap becomes a directory split per concern (`oxc/`,
+  `native_tool/`, `quality/`, `treesitter/`, `catalog_tool/`; in the family crates `mago/`, `hcl/`
+  and `ruff/`, whose `ruff/` submodules sit beside `ruff.rs`):
   - tier-1 native crate backends, registered per language in `registry.rs`: `ruff.rs` +
-    `ruff/` (Python; `ruff/target.rs` resolves the target version from the project's ruff
-    config or `requires-python`), `oxc/` (JS/TS/JSX/TSX/JSON/JSONC), `taplo.rs` (TOML: taplo
+    `ruff/` (Python, in `poly-engines-python`; target version: `poly-engine-api`'s
+    `host_hooks/ruff_target.rs`), `oxc/` (JS/TS/JSX/TSX/JSON/JSONC), `taplo.rs` (TOML: taplo
     lint, `oxc_formatter_toml` format unless a taplo layout key selects taplo's formatter),
     `rumdl.rs` (Markdown/MDX lint; `markdown_fmt.rs` formats through `oxc_formatter_markdown`
     with `markdown_embed.rs` dispatching fences and front matter), `adrlint.rs` (opt-in MADR rules
-    for numbered ADRs — document rules only, see ADR 0037), `sqruff.rs` (SQL), `yaml.rs`
+    for numbered ADRs — document rules only, see ADR 0037), `sqruff.rs` (SQL, in
+    `poly-engines-sql`), `yaml.rs`
     (`serde_yaml` lint, `oxc_formatter_yaml` format), `malva.rs` (CSS/SCSS/Less — formats via
     `oxc_formatter_css` unless a malva key is set), `biome_css.rs` and `biome_graphql.rs` (both
     named `"biome"`; shared helpers in `biome_common.rs`), `graphql.rs`, `markup_fmt.rs`
-    (HTML/Vue/Svelte/Astro/Angular/Jinja/Vento/Mustache/XML), `mago/` (PHP), `nixfmt.rs` (Nix —
-    named `"alejandra"`, the formatter it wraps), `rubyfmt.rs` (Ruby), `hcl/` (`hcl-edit` lint
-    plus a port of `hclwrite.Format`), `dockerfile.rs` (on the vendored `dockerfile-parser`
-    crate), `dotenv.rs`, `ini.rs`. A project `.oxfmtrc.json[c]` / `.oxlintrc.json[c]` is read by
-    the crate-level `oxfmt_native.rs` / `oxfmt_scope.rs` / `oxlint_native.rs`.
+    (HTML/Vue/Svelte/Astro/Angular/Jinja/Vento/Mustache/XML), `mago/` (PHP, in `poly-engines-php`),
+    `nixfmt.rs` (Nix, in `poly-engines-nix` — named `"alejandra"`, the formatter it wraps),
+    `rubyfmt.rs` (Ruby), `hcl/` (`hcl-edit` lint plus a port of `hclwrite.Format`),
+    `dockerfile.rs` (vendored `dockerfile-parser`), `dotenv.rs` (with `graphql.rs`, in `poly-engines-misc`),
+    `ini.rs`. A project `.oxfmtrc.json[c]` / `.oxlintrc.json[c]` is read by
+    `poly-engine-api`'s `host_hooks/oxfmt_native.rs` / `oxfmt_scope.rs` and `poly-config`'s `oxlint_native.rs`.
   - **cross-cutting backends** (`languages() == &[]`, appended by the registry to every
-    language): `typos.rs` (spell-check), `astgrep/` (ast-grep rules — user rule dirs plus the
-    built-in pack, see Coverage tiers), `uncomment.rs`, and `quality/` (ADR 0027 code-quality
-    metrics).
-  - `uncomment.rs` — the **opt-in comment-removal lint backend** wrapping the `uncomment`
+    language): `typos.rs` (spell-check, opt-in; `poly-engines-typos`), `poly-engines-astgrep` (ast-grep
+    rules — user rule dirs plus the built-in pack in `src/builtin/`, see Coverage tiers),
+    `uncomment.rs` (`poly-engines-uncomment`), and `quality/` (ADR 0027 code-quality metrics).
+  - `uncomment.rs` (in `poly-engines-uncomment`) — the **opt-in comment-removal lint backend** wrapping the `uncomment`
     crate: reports each removable comment as a warning with a delete-edit, gated on
     `[lint.uncomment] enabled = true` (or per-language `[lint.<lang>.uncomment]`).
   - `treesitter/` — the **tier-2 generic formatter** built on `tree-sitter-language-pack`:
@@ -111,13 +114,15 @@ x-ai-rulez:
     `tflint`, `checkstyle`, …) whose overlay entry in `poly-catalog`'s `overlay.json` carries a
     recipe run batched per unit (module, chart, directory), with their report parsed into
     per-line diagnostics and an optional pinned, checksummed download (`install = "auto"`).
-  - support modules, not backends: `biome_common.rs`, `rule_config.rs` (the shared
+  - support modules, not backends: `biome_common.rs`, `rule_config.rs` (re-exported from
+    `poly-engine-api`; the shared
     `select` / `extend_select` / `ignore` / `[lint.<lang>.<tool>.rules.<id>]` schema),
     `config_keys/` (each engine's declared option keys, behind `unknown-config-key` and the
     published JSON Schema), `core_options.rs` (layout options shared by the oxfmt-equivalent
     formatters), `format_scope.rs` (hands named files such as `pyproject.toml` to a more specific
-    formatter), `grammar.rs` / `line_index.rs` (shared grammar memo and offset-to-line index),
-    `template.rs` (Go/Helm
+    formatter), `line_index.rs` (offset-to-line index; lives in `poly-engine-api`, the shared grammar
+    memo in `poly-grammar`),
+    `template.rs` (also `poly-engine-api`; Go/Helm
     template detection behind the `yaml` and `rumdl` `skip_reason`s; `markup_fmt` has its own
     template-target check).
 

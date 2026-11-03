@@ -20,11 +20,13 @@ x-ai-rulez:
 - When a file approaches the cap, refactor by extracting helpers, types, or submodules — **do
   not raise the cap**.
 - The cap reinforces the project's one-concern-per-file shape: a backend starts as
-  `crates/poly-core/src/engines/<tool>.rs`, and when it outgrows the cap it becomes a directory
+  `crates/poly-core/src/engines/<tool>.rs` (or in a `crates/poly-engines-<family>` crate), and
+  when it outgrows the cap it becomes a directory
   split per concern (`engines/<tool>/lint.rs`, `format.rs`, `config.rs`) rather than one
   oversized module — as `engines/oxc/`, `engines/quality/`, `engines/treesitter/`,
-  `engines/astgrep/`, `engines/mago/`, `engines/hcl/`, `engines/native_tool/` and
-  `engines/catalog_tool/` already have (`engines/ruff.rs` keeps its submodules in `engines/ruff/`).
+  `engines/native_tool/`, `engines/catalog_tool/`, and the family-crate `mago/` (`poly-engines-php`),
+  `hcl/` (`poly-engines-misc`) and `builtin/` (`poly-engines-astgrep`) already have (`ruff.rs` keeps
+  its submodules in `poly-engines-python/src/ruff/`).
   Pipeline stages follow the same shape: `discover.rs` is a single file, `resolve.rs` carries a
   `resolve/` submodule directory (`canon.rs`, `scan.rs`), `runner.rs` carries `runner/` (`plan.rs`,
   `edits.rs`, `skips.rs`, `types.rs`, `batch.rs`, …), and reporting is the `report/` directory. The result cache is not a `poly-core`

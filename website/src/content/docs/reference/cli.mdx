@@ -163,7 +163,7 @@ The three counts are **not** a partition of `results`, and cannot be derived fro
 - a file that was checked and found clean produces **no record at all** — `results` holds only files
   with something to report;
 - a file whose language poly has no lint rules for can be **both** a skip and a result, because the
-  cross-cutting backends (typos, ast-grep, the quality tier) still run over it.
+  cross-cutting backends (ast-grep, the quality tier, and typos when enabled) still run over it.
 
 `errors` and `skipped` repeat what the corresponding records already carry, deliberately: the defect
 they exist to close is a consumer reading a clean-looking list and concluding the files are fine.
@@ -228,7 +228,7 @@ than counted.
 
 <Aside type="note">
     A skip is **coverage information, not a failure**. The run still exits 0 unless you ask for
-    `--deny-skips` / `--max-skips`. Cross-cutting checks — typos, ast-grep rules, comment removal —
+    `--deny-skips` / `--max-skips`. Cross-cutting checks — opt-in typos, ast-grep rules, comment removal —
     still run on these files, and their findings are still reported.
 </Aside>
 
@@ -243,7 +243,7 @@ it is reported as a skip.
 | Code | Meaning |
 | ---: | --- |
 | `0` | Clean: no lint findings, no formatting drift, or all writes succeeded. |
-| `1` | Error-severity lint findings remain, a whole-project tool failed, or (for `poly fmt`) files would change. Warning-severity findings alone never trigger this — typos and the quality tier don't redden CI. |
+| `1` | Error-severity lint findings remain, a whole-project tool failed, or (for `poly fmt`) files would change. Warning-severity findings alone never trigger this — the quality tier (and typos, when enabled) doesn't redden CI. |
 | `2` | The run verified less than it claims: a file an engine failed on, a formatter that did not converge within its pass cap, a skip budget exceeded (`--deny-skips` / `--max-skips`), a config or pipeline error, or a machine-readable report that failed to serialize. |
 
 <Aside type="caution" title="Changed in 0.24.0: non-convergence is now an error">

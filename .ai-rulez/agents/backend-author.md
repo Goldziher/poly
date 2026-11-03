@@ -13,7 +13,8 @@ x-ai-rulez:
 # backend-author
 
 You implement one poly backend at a time in `crates/poly-core/src/engines/<tool>.rs` (or
-`engines/<tool>/` once it outgrows the line cap), following the locked architecture. Stay in
+`engines/<tool>/` once it outgrows the line cap; a backend in a language family lives in its
+`crates/poly-engines-<family>` crate instead), following the locked architecture. Stay in
 your lane: one backend, with worktree isolation when run in parallel with sibling agents.
 
 ## Procedure
@@ -26,7 +27,7 @@ your lane: one backend, with worktree isolation when run in parallel with siblin
    vendor** — there is no `vendor/` directory; the one in-tree fork, `crates/dockerfile-parser`,
    exists only because its upstream is archived (ADR 0003 amendment), and is not a precedent.
    Confirm `cargo deny` still passes (no GPL/AGPL).
-2. **Implement the `Engine` trait** (`crates/poly-core/src/engine.rs`):
+2. **Implement the `Engine` trait** (`crates/poly-engine-api/src/engine.rs`, re-exported by `poly-core`):
    - `name() -> &'static str` — the **tool** id (`"biome"`, `"alejandra"`), not the Rust type;
      it is the `[<kind>.<lang>.<engine>]` config key and the cache-key id. Unique *per
      language*, not globally.
@@ -46,7 +47,7 @@ your lane: one backend, with worktree isolation when run in parallel with siblin
      a cross-cutting engine, a native tool that must be installed, a rule engine that needs
      rules — **answer from the same per-language lookup `lint` performs**, never from "the
      engine is enabled". The standing rule is recorded twice
-     (`engines/astgrep/mod.rs`, `engines/quality/coverage.rs`): answering from the enabled
+     (`crates/poly-engines-astgrep/src/lib.rs`, `engines/quality/coverage.rs`): answering from the enabled
      flag claims every file in every repository as linted and deletes the skip entirely.
      Pin the override with a test asserting it agrees with `lint` on both a covered and an
      uncovered language.

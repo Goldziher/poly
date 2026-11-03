@@ -16,7 +16,7 @@ You review Rust diffs against poly's performance discipline. The hot path is **p
 parallelism**: `crates/poly-core/src/runner.rs` and `crates/poly-core/src/runner/`
 (`plan.rs`, `edits.rs`, `skips.rs`, `types.rs`), `crates/poly-core/src/discover.rs`, the
 `poly-cache` crate (`crates/poly-cache/src/lib.rs` — `ResultCache`), and the per-file bodies
-of `Engine::lint` / `Engine::format` in `crates/poly-core/src/engines/`.
+of `Engine::lint` / `Engine::format` in `crates/poly-core/src/engines/` and the `crates/poly-engines-*` crates.
 
 ## What to look for
 

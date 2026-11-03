@@ -41,8 +41,8 @@ them. What is worth keeping is the measurement, not the YAML.
 **Settled empirically. One rule file covers exactly one language, the family is
 three grammars rather than four, and `.jsx` is unreachable today.**
 
-The pack loader (`engines/astgrep/pack.rs`) groups parsed rules into a
-`RuleMap` keyed by `rule.language.name()`, and `mod.rs`'s `resolve_rules` looks
+The pack loader (`crates/poly-engines-astgrep/src/pack.rs`) groups parsed rules into a
+`RuleMap` keyed by `rule.language.name()`, and `lib.rs`'s `resolve_rules` looks
 that map up by `src.language.id()`. `Language::id()` returns four distinct
 strings for the family — `"javascript"`, `"jsx"`, `"typescript"`, `"tsx"` — so
 a rule file's single `language:` field selects exactly one key. Verified: a
@@ -85,7 +85,7 @@ changes, both in `pack.rs`, neither touching the rule schema:
 2. Route `Language::Jsx` to the `javascript` grammar for ast-grep. TSLP's
    `javascript` grammar parses JSX (tree-sitter-javascript has always included
    it), so the fix is a `Language::id()` → grammar-name mapping in
-   `engines/astgrep/` rather than the identity it uses today. That is a
+   `crates/poly-engines-astgrep/` rather than the identity it uses today. That is a
    prerequisite for JSX coverage of *any* rule, and it also closes the
    silent-no-coverage hole for the user-rule path.
 
