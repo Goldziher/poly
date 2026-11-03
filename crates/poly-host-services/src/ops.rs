@@ -21,10 +21,12 @@ use poly_cache::{ResultCache, root_from_cwd};
 use poly_config::PolyConfig;
 use poly_core::{Config, FormatRun, LintRun, RunOptions};
 
+use poly_config::v2::{ComponentInstallPolicy, OnMissing};
 use poly_frontend_api::dto::{
     CacheCleanReport, CacheNamespace, CacheStatsReport, ConfigDefaults, ConfigShowReport, RulesReport, WorkspaceReport,
     WorkspaceToolReport,
 };
+use poly_frontend_api::wire::InstallMode;
 
 /// Resolve the `poly-core` run configuration the way the CLI does, but
 /// network-free (see the module docs): load an explicit file when supplied,
@@ -74,13 +76,28 @@ fn resolve_paths(paths: &[String]) -> Vec<PathBuf> {
 ///
 /// It was previously hardcoded `true`, which made the key inert for every MCP
 /// caller: one `poly.toml` answered differently depending on which surface asked.
-fn run_options(config: &Config, exclude: &[String], explicit_config: bool) -> RunOptions {
+fn run_options(config: &Config, exclude: &[String], explicit_config: bool, install: InstallMode) -> RunOptions {
+    let (install, on_missing) = install_policy(install);
     RunOptions {
         exclude: exclude.to_vec(),
         force_exclude: config.force_exclude,
         fix_generated: false,
         explicit_config,
+        install,
+        on_missing,
         ..RunOptions::default()
+    }
+}
+
+/// The run overrides an `install` parameter stands for. `never` also makes a missing component a
+/// skip rather than a failure, since the caller asked for no download and would otherwise get an
+/// error for honouring it; `config` and `auto` leave `on_missing` to the config.
+#[must_use]
+pub fn install_policy(mode: InstallMode) -> (Option<ComponentInstallPolicy>, Option<OnMissing>) {
+    match mode {
+        InstallMode::Config => (None, None),
+        InstallMode::Auto => (Some(ComponentInstallPolicy::Auto), None),
+        InstallMode::Never => (Some(ComponentInstallPolicy::Never), Some(OnMissing::Skip)),
     }
 }
 
@@ -94,13 +111,24 @@ fn run_options(config: &Config, exclude: &[String], explicit_config: bool) -> Ru
 /// MCP caller — who has no exit code to fall back on — turns a file poly failed
 /// to read into a clean-looking answer.
 pub fn lint_run(paths: &[String], exclude: &[String], config: Option<&str>, fix: bool) -> anyhow::Result<LintRun> {
+    lint_run_with(paths, exclude, config, fix, InstallMode::Config)
+}
+
+/// [`lint_run`] under an explicit component install policy.
+pub fn lint_run_with(
+    paths: &[String],
+    exclude: &[String],
+    config: Option<&str>,
+    fix: bool,
+    install: InstallMode,
+) -> anyhow::Result<LintRun> {
     let explicit_config = config.is_some();
     let config = resolve_config(config.map(Path::new))?;
     let resolved = resolve_paths(paths);
     poly_core::lint_run(
         &resolved,
         &config,
-        &run_options(&config, exclude, explicit_config),
+        &run_options(&config, exclude, explicit_config, install),
         fix,
         false,
     )
@@ -115,13 +143,24 @@ pub fn format_run(
     config: Option<&str>,
     write: bool,
 ) -> anyhow::Result<FormatRun> {
+    format_run_with(paths, exclude, config, write, InstallMode::Config)
+}
+
+/// [`format_run`] under an explicit component install policy.
+pub fn format_run_with(
+    paths: &[String],
+    exclude: &[String],
+    config: Option<&str>,
+    write: bool,
+    install: InstallMode,
+) -> anyhow::Result<FormatRun> {
     let explicit_config = config.is_some();
     let config = resolve_config(config.map(Path::new))?;
     let resolved = resolve_paths(paths);
     poly_core::format_run(
         &resolved,
         &config,
-        &run_options(&config, exclude, explicit_config),
+        &run_options(&config, exclude, explicit_config, install),
         write,
         false,
     )
@@ -321,5 +360,19 @@ mod tests {
         // A missing explicit config is an error, exercising the PolyConfig path.
         let err = resolve_poly_config(Some(Path::new("/nonexistent/poly.toml")));
         assert!(err.is_err(), "missing explicit config should error");
+    }
+
+    #[test]
+    fn the_install_parameter_maps_to_the_run_overrides() {
+        assert_eq!(install_policy(InstallMode::Config), (None, None));
+        assert_eq!(
+            install_policy(InstallMode::Auto),
+            (Some(ComponentInstallPolicy::Auto), None)
+        );
+        assert_eq!(
+            install_policy(InstallMode::Never),
+            (Some(ComponentInstallPolicy::Never), Some(OnMissing::Skip)),
+            "never downloads nothing and skips rather than fails"
+        );
     }
 }

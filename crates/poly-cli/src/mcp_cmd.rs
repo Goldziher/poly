@@ -13,24 +13,17 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
 
-use poly_host_services::{ComponentsProvider, Services};
+use poly_host_services::Services;
+
+use crate::components_cmd::HostComponents;
 
 /// The component the server ships as.
 #[cfg(not(feature = "bundled-mcp"))]
 const COMPONENT: &str = "mcp";
 
-/// Lists components for the `components.list` host service.
-struct Listing;
-
-impl ComponentsProvider for Listing {
-    fn components(&self) -> anyhow::Result<Vec<poly_frontend_api::dto::ComponentSummary>> {
-        Ok(crate::components_cmd::component_summaries())
-    }
-}
-
 /// The host services every frontend gets.
 fn services() -> Arc<Services> {
-    Arc::new(Services::new().with_components(Arc::new(Listing)))
+    Arc::new(Services::new().with_components(Arc::new(HostComponents)))
 }
 
 /// Run `poly mcp`; `config` is the global `--config`, the fallback for requests naming none.

@@ -1,5 +1,5 @@
 ---
-description: The poly MCP server — the eleven tools and which are read-only vs mutating, the paths/exclude/config/format params, async Tasks for the whole-project phase, and the isError contract
+description: The poly MCP server — the fourteen tools and which are read-only vs mutating, the paths/exclude/config/install/format params, component downloads, async Tasks, and the isError contract
 name: poly-mcp
 license: MIT
 metadata:
@@ -9,8 +9,8 @@ metadata:
 
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-Content-Hash: blake3:05da331ae324d7407479259e3eedd5593fbf6ba871c12e0ab736e6c337ab3397
-Source-Hash: blake3:6ca9b4de5513ea722b2742620f27eb668a08d80a175d5cdd17a044fc6d320155
+Content-Hash: blake3:e39204d062bfb08989d303cf38ed55352d55b8e75a3bebba83e87ecf27141cca
+Source-Hash: blake3:80b02e3c38da8987136959b755f0ed07d25af7e123f02e924970a78f96f751a7
 Schema-Version: v1
 -->
 
@@ -25,11 +25,16 @@ the CLI's `--format json`, or the compact TOON encoding when asked.
 
 ## Tool surface
 
-Eleven tools, no more. Read-only (never touch the tree):
+Fourteen tools, no more. Read-only (never touch the tree):
 
 - `lint` — run the linters and return diagnostics. Mirrors `poly lint`, per-file tier only
   (as `--workspace never`); the whole-project phase is the separate `workspace_lint` tool.
-- `format_check` — report formatting drift without writing. Mirrors `poly fmt`.
+  May download a missing engine component (see "Components" below).
+- `format_check` — report formatting drift without writing. Mirrors `poly fmt`. May download.
+- `components` — the downloadable engine components and where each stands (`bundled`,
+  `installed`, `not installed`, `unavailable`). Given `paths`, only the components they need,
+  which are `missing`, and which a run would `would_download`. Never downloads. Mirrors `poly
+  components list` / `status`.
 - `cache_stats` — result-cache footprint (entries, bytes, format version) per namespace.
 - `rules` — list every ast-grep rule a run would apply — poly's built-in pack plus the user
   rules from `[rules] dirs` — and optionally run their `*-test.yml` snippets. Mirrors `poly
@@ -44,9 +49,15 @@ Eleven tools, no more. Read-only (never touch the tree):
 
 Mutating (write to the tree):
 
-- `lint_fix` — apply lint autofixes. Mirrors `poly lint --fix`.
-- `format_write` — format files in place. Mirrors `poly fmt --fix`.
+- `lint_fix` — apply lint autofixes. Mirrors `poly lint --fix`. May download.
+- `format_write` — format files in place. Mirrors `poly fmt --fix`. May download.
 - `cache_clean` — clear the result cache and report freed bytes.
+- `components_install` — download and verify components by `names` (components or presets),
+  `languages` and/or `paths` (everything those paths need); `dry_run` reports the plan. Writes
+  only the component cache. Mirrors `poly components install`.
+- `components_uninstall` — remove components by `names`, and with `stale: true` the cached
+  archives nothing references or used recently. Refuses a component loaded in this process
+  (`refused`, and `isError`). Mirrors `poly components uninstall` / `prune`.
 
 Whole-project (long-running):
 
@@ -64,6 +75,26 @@ so the tools work either way.
 executes those tools against the live worktree, and their own side effects — a refreshed
 lock file, a populated build or type-checker cache — are not poly's to control.
 
+## Components
+
+In a core build the engines are downloadable components; a bundled build links them in and
+nothing is ever missing. The result's `components` block (`used`, `installed_now`, `missing`) is
+present only when a run needed one. A missing component that fails the run sets `isError`; one
+skipped under `install: "never"` shows in `skipped` and `components.missing` without failing it.
+Check `components.missing` before reading an empty `results` as clean.
+
+`lint`, `format_check`, `lint_fix` and `format_write` are open-world: with `install: "config"`
+(default, follows `[components] install`) or `"auto"` they download what the run needs before
+running. `"never"` downloads nothing and skips the files a missing component would have
+handled. A server started `--offline` never downloads whatever `install` says. `install`
+governs engine components only; an opt-in recipe tool with `[tools.<name>] install = "auto"`
+follows its own setting.
+
+When the client declared the tasks capability and the run (or `components_install`) would
+download, the call returns a Task: poll `tasks/get`. Its status message names the components;
+there is no byte-level progress, and no `notifications/progress`. Otherwise the call blocks and
+returns the result.
+
 There is no `hooks` tool: `poly hooks` is CLI-only.
 
 ## Parameters
@@ -71,7 +102,12 @@ There is no `hooks` tool: `poly hooks` is CLI-only.
 - `lint` / `format_check` / `lint_fix` / `format_write`: `paths` (files or directories;
   empty means the current directory), `exclude` (gitignore-style globs merged with
   `[discovery] exclude` — unanchored globs match at any depth), `config` (path to a
-  `poly.toml`), `format` (`"json"` default, or `"toon"`).
+  `poly.toml`), `install` (`"config"` default, `"auto"` or `"never"`), `format` (`"json"`
+  default, or `"toon"`).
+- `components`: `paths`, `config`, `install` (the policy `would_download` is judged under),
+  `format`.
+- `components_install`: `names`, `languages`, `paths`, `config`, `dry_run`, `format`.
+- `components_uninstall`: `names`, `stale`, `format`.
 - `rules`: `dirs` (empty means `[rules] dirs` from the config), `config`, `test` (bool),
   `format`.
 - `config_show`: `config`, `format`.
@@ -86,8 +122,9 @@ intent since they change files.
 
 ## Every result identifies the binary that answered
 
-Each result carries a `poly` block (version, build id, channel, executable, pid, and an
-`engines` digest — a blake3 hash over the sorted compiled-in engine name + version pairs,
+Each result carries a `poly` block (version, build id, channel, executable, pid, `flavor` —
+`bundled`, `core` or `partial` — `components_lock` — a digest of the embedded component lock,
+or null — and an `engines` digest — a blake3 hash over the sorted compiled-in engine name + version pairs,
 excluding native-toolchain and catalog engines since those depend on the host and on config)
 in `structured_content` and in `_meta`, because an MCP caller has no `poly --version` to fall
 back on. The digest is what distinguishes two builds sharing one version number (a `dev`

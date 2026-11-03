@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 PLUGIN_NAME = "poly"
 CLI_COMMAND = "poly"
 SERVER_ARGUMENTS = ["mcp"]
-TOOL_NAMES = ['cache_clean', 'cache_stats', 'config_show', 'format_check', 'format_write', 'lint', 'lint_fix', 'rules', 'version', 'workspace_lint', 'workspace_lint_fix']
+TOOL_NAMES = ['cache_clean', 'cache_stats', 'components', 'components_install', 'components_uninstall', 'config_show', 'format_check', 'format_write', 'lint', 'lint_fix', 'rules', 'version', 'workspace_lint', 'workspace_lint_fix']
 DISCOVERY_TOOL = "list_tools"
 REQUEST_TIMEOUT_SECONDS = 300
 

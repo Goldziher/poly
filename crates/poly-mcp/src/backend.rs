@@ -4,14 +4,15 @@
 //! engine: whether the caller is the component ABI's service table, an in-process host or a test
 //! fake is invisible to the server.
 
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use poly_frontend_api::dto::{
-    CacheCleanReport, CacheStatsReport, ComponentSummary, ConfigShowReport, RulesReport, WorkspaceReport,
+    CacheCleanReport, CacheStatsReport, ComponentActions, ComponentSummary, ComponentsStatus, ConfigShowReport,
+    RulesReport, WorkspaceReport,
 };
 use poly_frontend_api::wire::{
-    ConfigRequest, Engines, PathsRequest, RulesRequest, RunReply, Schemas, WorkspaceRequest, service,
+    ComponentsInstallRequest, ComponentsStatusRequest, ComponentsUninstallRequest, ConfigRequest, Engines,
+    PathsRequest, RulesRequest, RunReply, Schemas, WorkspaceRequest, service,
 };
 use poly_frontend_api::{ServiceCaller, call};
 
@@ -100,13 +101,40 @@ impl Backend {
         call(&*self.caller, service::COMPONENTS, &())
     }
 
-    /// The host's compiled-in engine versions.
+    /// What each component needs and where it stands. Never downloads.
     ///
     /// # Errors
     ///
     /// As [`Backend::lint`].
-    pub fn engines(&self) -> anyhow::Result<BTreeMap<String, String>> {
-        Ok(call::<_, Engines>(&*self.caller, service::ENGINES, &())?.engines)
+    pub fn components_status(&self, request: &ComponentsStatusRequest) -> anyhow::Result<ComponentsStatus> {
+        call(&*self.caller, service::COMPONENTS_STATUS, request)
+    }
+
+    /// Download components, or report what would be downloaded when `request.dry_run` is set.
+    ///
+    /// # Errors
+    ///
+    /// As [`Backend::lint`].
+    pub fn components_install(&self, request: &ComponentsInstallRequest) -> anyhow::Result<ComponentActions> {
+        call(&*self.caller, service::COMPONENTS_INSTALL, request)
+    }
+
+    /// Remove components the process has not loaded.
+    ///
+    /// # Errors
+    ///
+    /// As [`Backend::lint`].
+    pub fn components_uninstall(&self, request: &ComponentsUninstallRequest) -> anyhow::Result<ComponentActions> {
+        call(&*self.caller, service::COMPONENTS_UNINSTALL, request)
+    }
+
+    /// The host's compiled-in engine versions, flavor and component lock.
+    ///
+    /// # Errors
+    ///
+    /// As [`Backend::lint`].
+    pub fn engines(&self) -> anyhow::Result<Engines> {
+        call(&*self.caller, service::ENGINES, &())
     }
 
     /// The lint and format document schemas, for the tools' output schemas.

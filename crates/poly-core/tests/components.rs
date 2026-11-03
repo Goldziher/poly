@@ -315,6 +315,40 @@ fn install_never_does_not_connect_and_says_why() {
 }
 
 #[test]
+fn the_run_override_beats_the_config_install_policy() {
+    let dir = project();
+
+    let f = fixture(Mode::Works, false);
+    let options = RunOptions {
+        install: Some(ComponentInstallPolicy::Never),
+        on_missing: Some(OnMissing::Skip),
+        ..inject(f.host, index())
+    };
+    let run = lint(dir.path(), &default_config(), &options);
+    assert_eq!(
+        f.connector.connects.load(Ordering::SeqCst),
+        0,
+        "install = never downloads nothing"
+    );
+    assert_eq!(run.components.missing[0].kind, "install_never");
+    assert!(!run.components.blocking());
+
+    let f = fixture(Mode::Works, false);
+    let options = RunOptions {
+        install: Some(ComponentInstallPolicy::Auto),
+        ..inject(f.host, index())
+    };
+    let config = config(ComponentInstallPolicy::Never, OnMissing::Fail);
+    let run = lint(dir.path(), &config, &options);
+    assert_eq!(
+        f.connector.connects.load(Ordering::SeqCst),
+        1,
+        "install = auto downloads"
+    );
+    assert_eq!(run.components.installed_now, ["demo"]);
+}
+
+#[test]
 fn a_failed_download_errors_each_file_and_blocks_even_under_skip() {
     let f = fixture(Mode::DownloadFails, false);
     let dir = project();

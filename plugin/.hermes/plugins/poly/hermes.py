@@ -1,6 +1,6 @@
 # AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-# Content-Hash: blake3:10be5b14c5299419b2bc9b81578097ef7a9de40d8e63664152f66026ec1864db
-# Source-Hash: blake3:6ca9b4de5513ea722b2742620f27eb668a08d80a175d5cdd17a044fc6d320155
+# Content-Hash: blake3:c7839d639400cf4de5cedf158b50ce64b98364768c1538f10afc91e3e17d5360
+# Source-Hash: blake3:80b02e3c38da8987136959b755f0ed07d25af7e123f02e924970a78f96f751a7
 # Schema-Version: v1
 
 """Register product skills and a local MCP tool bridge with Hermes."""
@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 PLUGIN_NAME = "poly"
 CLI_COMMAND = "poly"
 SERVER_ARGUMENTS = ["mcp"]
-TOOL_NAMES = ['cache_clean', 'cache_stats', 'config_show', 'format_check', 'format_write', 'lint', 'lint_fix', 'rules', 'version', 'workspace_lint', 'workspace_lint_fix']
+TOOL_NAMES = ['cache_clean', 'cache_stats', 'components', 'components_install', 'components_uninstall', 'config_show', 'format_check', 'format_write', 'lint', 'lint_fix', 'rules', 'version', 'workspace_lint', 'workspace_lint_fix']
 DISCOVERY_TOOL = "list_tools"
 REQUEST_TIMEOUT_SECONDS = 300
 

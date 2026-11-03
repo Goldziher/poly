@@ -182,7 +182,7 @@ pub struct Actions {
 }
 
 impl Actions {
-    fn new(command: &'static str, env: &Env<'_>) -> Self {
+    pub(super) fn new(command: &'static str, env: &Env<'_>) -> Self {
         Self {
             schema: SCHEMA,
             command,
@@ -194,7 +194,7 @@ impl Actions {
         }
     }
 
-    fn push(&mut self, name: &str, action: &'static str, detail: Option<String>) {
+    pub(super) fn push(&mut self, name: &str, action: &'static str, detail: Option<String>) {
         if action == "failed" {
             self.ok = false;
         }
@@ -230,7 +230,7 @@ fn engine_names(component: &Component) -> Vec<String> {
     names.into_iter().map(str::to_owned).collect()
 }
 
-fn state_of(env: &Env<'_>, component: &Component) -> (State, Option<String>) {
+pub(super) fn state_of(env: &Env<'_>, component: &Component) -> (State, Option<String>) {
     if (env.linked)(component) {
         return (State::Bundled, None);
     }
@@ -513,7 +513,7 @@ fn path_name(path: &Path) -> String {
         .map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned())
 }
 
-fn hex(bytes: &[u8]) -> String {
+pub(super) fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 

@@ -309,6 +309,9 @@ fn registered_tools_have_expected_names_and_annotations() {
         vec![
             "cache_clean",
             "cache_stats",
+            "components",
+            "components_install",
+            "components_uninstall",
             "config_show",
             "format_check",
             "format_write",
@@ -321,15 +324,83 @@ fn registered_tools_have_expected_names_and_annotations() {
         ]
     );
 
-    for tool in ["lint", "format_check", "cache_stats", "rules", "config_show", "version"] {
+    for tool in [
+        "lint",
+        "format_check",
+        "cache_stats",
+        "rules",
+        "config_show",
+        "components",
+        "version",
+    ] {
         let (read_only, destructive) = server.tool_hints(tool).unwrap();
         assert_eq!(read_only, Some(true), "{tool} should be read-only");
         assert_eq!(destructive, Some(false), "{tool} should not be destructive");
     }
-    for tool in ["lint_fix", "format_write", "cache_clean", "workspace_lint_fix"] {
+    let (read_only, destructive) = server.tool_hints("components_install").unwrap();
+    assert_eq!(
+        (read_only, destructive),
+        (Some(false), Some(false)),
+        "the installer writes the component cache and removes nothing"
+    );
+    for tool in [
+        "lint_fix",
+        "format_write",
+        "cache_clean",
+        "workspace_lint_fix",
+        "components_uninstall",
+    ] {
         let (read_only, destructive) = server.tool_hints(tool).unwrap();
         assert_eq!(read_only, Some(false), "{tool} should not be read-only");
         assert_eq!(destructive, Some(true), "{tool} should be destructive");
+    }
+}
+
+/// A run that needs a missing component downloads it, so the tools that can start one reach beyond
+/// the machine; the rest never touch the network. Clients read `open_world_hint` for exactly this.
+#[test]
+fn tools_that_may_download_are_open_world_and_the_rest_are_not() {
+    let server = common::server(None);
+    let open_world = |name: &str| {
+        server
+            .get_tool(name)
+            .unwrap_or_else(|| panic!("{name} is registered"))
+            .annotations
+            .and_then(|annotations| annotations.open_world_hint)
+    };
+    for tool in ["lint", "format_check", "lint_fix", "format_write", "components_install"] {
+        assert_eq!(open_world(tool), Some(true), "{tool} may download");
+    }
+    for tool in [
+        "components",
+        "components_uninstall",
+        "cache_stats",
+        "cache_clean",
+        "rules",
+        "config_show",
+        "version",
+        "workspace_lint",
+        "workspace_lint_fix",
+    ] {
+        assert_eq!(open_world(tool), Some(false), "{tool} never downloads");
+    }
+}
+
+#[test]
+fn the_install_parameter_is_declared_on_the_four_run_tools() {
+    let server = common::server(None);
+    for name in ["lint", "format_check", "lint_fix", "format_write"] {
+        let tool = server.get_tool(name).unwrap();
+        let install = &tool.input_schema["properties"]["install"];
+        assert!(
+            install.is_object(),
+            "{name} declares `install`: {:?}",
+            tool.input_schema
+        );
+        let schema = serde_json::to_string(&tool.input_schema).unwrap();
+        for mode in ["config", "auto", "never"] {
+            assert!(schema.contains(mode), "{name}'s `install` offers `{mode}`: {schema}");
+        }
     }
 }
 
@@ -379,7 +450,7 @@ fn declared_output_schemas_include_the_identity_they_send() {
 #[test]
 fn server_constructs_with_config_override() {
     let server = common::server(Some(PathBuf::from("poly.toml")));
-    assert_eq!(server.tool_names().len(), 11);
+    assert_eq!(server.tool_names().len(), 14);
 }
 
 // ── Layer 3: in-process round-trips ───────────────────────────────────────
@@ -871,6 +942,37 @@ async fn version_expands_the_engines_digest_into_a_map() {
         !engines.contains_key("rustfmt"),
         "a host toolchain is not part of the binary's identity"
     );
+
+    client.cancel().await.unwrap();
+    let _ = server_task.await;
+}
+
+/// A host with no component manager says so rather than answering as if nothing were missing:
+/// install and uninstall fail, status carries the reason, and the identity names the flavor as
+/// unknown with a null lock.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_host_without_a_component_manager_is_explicit_about_it() {
+    let (client, server_task) = connect().await;
+
+    let status = client
+        .call_tool(CallToolRequestParams::new("components").with_arguments(arguments(&[])))
+        .await
+        .unwrap();
+    let structured = status.structured_content.as_ref().unwrap();
+    assert!(structured["lock_error"].is_string(), "{structured}");
+    assert_eq!(structured["components"], serde_json::json!([]));
+    assert_eq!(structured["poly"]["flavor"], "unknown");
+    assert!(structured["poly"]["components_lock"].is_null(), "{structured}");
+
+    for tool in ["components_install", "components_uninstall"] {
+        let error = client
+            .call_tool(
+                CallToolRequestParams::new(tool).with_arguments(arguments(&[("names", Value::from(vec!["web"]))])),
+            )
+            .await
+            .unwrap_err();
+        assert!(format!("{error}").contains("no component manager"), "{tool}: {error}");
+    }
 
     client.cancel().await.unwrap();
     let _ = server_task.await;

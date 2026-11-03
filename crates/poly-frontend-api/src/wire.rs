@@ -27,6 +27,12 @@ pub mod service {
     pub const RULES: &str = "rules.report";
     /// The downloadable components (no request -> `Vec<ComponentSummary>`).
     pub const COMPONENTS: &str = "components.list";
+    /// What the components need and where each stands ([`super::ComponentsStatusRequest`] -> `ComponentsStatus`).
+    pub const COMPONENTS_STATUS: &str = "components.status";
+    /// Download components ([`super::ComponentsInstallRequest`] -> `ComponentActions`).
+    pub const COMPONENTS_INSTALL: &str = "components.install";
+    /// Remove components ([`super::ComponentsUninstallRequest`] -> `ComponentActions`).
+    pub const COMPONENTS_UNINSTALL: &str = "components.uninstall";
     /// Compiled-in engine versions (no request -> [`super::Engines`]).
     pub const ENGINES: &str = "engines.versions";
     /// JSON Schemas of the lint and format documents (no request -> [`super::Schemas`]).
@@ -39,6 +45,20 @@ pub struct FrontendArgs {
     /// Config file pinned on the command line, used for every request that names none.
     #[serde(default)]
     pub config: Option<String>,
+}
+
+/// Whether a run may download a missing component.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(rename_all = "lowercase")]
+pub enum InstallMode {
+    /// Follow `[components] install` in the config.
+    #[default]
+    Config,
+    /// Download a missing component, whatever the config says.
+    Auto,
+    /// Download nothing; a missing component is skipped.
+    Never,
 }
 
 /// Request body of `lint.run` and `format.run`.
@@ -56,6 +76,54 @@ pub struct PathsRequest {
     /// Apply fixes (`lint.run`) or write files (`format.run`).
     #[serde(default)]
     pub apply: bool,
+    /// Whether a missing component may be downloaded.
+    #[serde(default)]
+    pub install: InstallMode,
+}
+
+/// Request body of `components.status`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ComponentsStatusRequest {
+    /// Files or directories to inspect; empty lists every component without judging need.
+    #[serde(default)]
+    pub paths: Vec<String>,
+    /// Config file to use instead of discovery.
+    #[serde(default)]
+    pub config: Option<String>,
+    /// The install policy `would_download` is judged under.
+    #[serde(default)]
+    pub install: InstallMode,
+}
+
+/// Request body of `components.install`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ComponentsInstallRequest {
+    /// Component names or presets.
+    #[serde(default)]
+    pub names: Vec<String>,
+    /// Languages whose components to install (ids or preset aliases such as `python`).
+    #[serde(default)]
+    pub languages: Vec<String>,
+    /// Files or directories; installs every component they need.
+    #[serde(default)]
+    pub paths: Vec<String>,
+    /// Config file to use instead of discovery (for `paths`).
+    #[serde(default)]
+    pub config: Option<String>,
+    /// Report what would be downloaded and download nothing.
+    #[serde(default)]
+    pub dry_run: bool,
+}
+
+/// Request body of `components.uninstall`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ComponentsUninstallRequest {
+    /// Component names or presets.
+    #[serde(default)]
+    pub names: Vec<String>,
+    /// Also remove cached archives the lock no longer references and nothing used recently.
+    #[serde(default)]
+    pub stale: bool,
 }
 
 /// Request body of `config.show`.
@@ -116,6 +184,16 @@ pub struct RunReply {
 pub struct Engines {
     /// Every compiled-in backend and the upstream version it wraps.
     pub engines: BTreeMap<String, String>,
+    /// `bundled`, `core` or `partial`; `unknown` for a host with no component manager.
+    #[serde(default = "unknown_flavor")]
+    pub flavor: String,
+    /// Digest of the component lock the host embeds, or none.
+    #[serde(default)]
+    pub components_lock: Option<String>,
+}
+
+fn unknown_flavor() -> String {
+    "unknown".to_owned()
 }
 
 /// Reply of `schemas.output`: draft 2020-12 root schemas.

@@ -45,7 +45,7 @@ shelling out and parsing terminal text.
 - [Lint](https://goldziher.github.io/poly/reference/cli/): `poly lint .` runs every backend registered for each discovered file, plus the cross-cutting typos, code-quality and ast-grep tiers. `--fix` applies autofixes.
 - [Format](https://goldziher.github.io/poly/reference/cli/): `poly fmt .` is a dry run by default; `--fix` writes. Formatting and linting are separate commands with separate exit semantics.
 - [Machine-readable output](https://goldziher.github.io/poly/reference/cli/#the-json--toon-document): `--format json`/`toon` emit one object — `{results, errors, skipped, summary, configs}` — never a bare array. Gate on `summary.checked`, not on an empty `results`: a run that skipped everything reports no diagnostics and is not an error. The MCP server returns the identical document.
-- [Agents and MCP](https://goldziher.github.io/poly/guides/agents-and-mcp/): `poly mcp` is a stdio MCP server exposing eleven tools that mirror the CLI — `lint`, `format_check`, `rules`, `config_show`, `cache_stats`, `version` (read-only), `lint_fix`, `format_write`, `cache_clean` (mutating), and `workspace_lint` / `workspace_lint_fix` as async Tasks.
+- [Agents and MCP](https://goldziher.github.io/poly/guides/agents-and-mcp/): `poly mcp` is a stdio MCP server exposing fourteen tools that mirror the CLI — `lint`, `format_check`, `rules`, `config_show`, `cache_stats`, `components`, `version` (read-only), `lint_fix`, `format_write`, `cache_clean`, `components_install`, `components_uninstall` (mutating), and `workspace_lint` / `workspace_lint_fix` as async Tasks.
 - [Git hooks](https://goldziher.github.io/poly/guides/hooks/): a native hook runner driven by `[hooks]`, replacing a `.pre-commit-config.yaml` and its framework. Hooks validate a staged snapshot of the git index, run concurrently, and cache their own results.
 - [Code quality](https://goldziher.github.io/poly/guides/configuration/): tree-sitter metric rules on every language whose control flow poly can model, deferring to a tier-1 backend wherever one already covers the metric.
 - [Custom rules](https://goldziher.github.io/poly/guides/configuration/): ast-grep rule directories under `[rules] dirs`, layered above the built-in pack — a user rule replaces a pack rule with the same `id`.
@@ -57,7 +57,7 @@ shelling out and parsing terminal text.
 - [poly-overview](https://github.com/Goldziher/poly/blob/main/skills/poly-overview/SKILL.md): what poly is, its coverage tiers, and when to reach for it.
 - [poly-lint-and-format](https://github.com/Goldziher/poly/blob/main/skills/poly-lint-and-format/SKILL.md): running lint and fmt, output formats, exit codes, and the check-fix-recheck loop.
 - [poly-tiers-and-scope](https://github.com/Goldziher/poly/blob/main/skills/poly-tiers-and-scope/SKILL.md): the coverage tiers, the per-file tier vs the whole-project phase, staged isolation, and monorepo config.
-- [poly-mcp](https://github.com/Goldziher/poly/blob/main/skills/poly-mcp/SKILL.md): the eleven MCP tools, which mutate, and the `isError` contract.
+- [poly-mcp](https://github.com/Goldziher/poly/blob/main/skills/poly-mcp/SKILL.md): the fourteen MCP tools, which mutate, and the `isError` contract.
 - [poly-orchestrator](https://github.com/Goldziher/poly/blob/main/skills/poly-orchestrator/SKILL.md): using poly as the single lint/format gate instead of invoking each tool directly.
 
 ## Optional

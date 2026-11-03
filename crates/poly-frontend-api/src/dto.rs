@@ -180,3 +180,88 @@ pub struct ComponentSummary {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
 }
+
+/// One component in a [`ComponentsStatus`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct ComponentRow {
+    /// Component name.
+    pub name: String,
+    /// `engines` or `frontend`.
+    pub kind: String,
+    /// `bundled`, `installed`, `not installed` or `unavailable`.
+    pub state: String,
+    /// Installed only when asked for, never by the `all` preset.
+    pub opt_in: bool,
+    /// The engines it hosts.
+    pub engines: Vec<String>,
+    /// Whether the paths asked about need it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub needed: Option<bool>,
+    /// Size on disk of the installed archive.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size_bytes: Option<u64>,
+    /// Why it is unavailable, when it is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+/// What the `components` tool reports (mirrors `poly components status`). Never downloads.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct ComponentsStatus {
+    /// `bundled` (every engine component linked), `core` (none) or `partial`.
+    pub flavor: String,
+    /// Whether the host is offline.
+    pub offline: bool,
+    /// Where components are cached.
+    pub cache_root: String,
+    /// Digest of the component lock this build embeds, or null when it has none.
+    pub components_lock: Option<String>,
+    /// Why no component lock is available, when none is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lock_error: Option<String>,
+    /// The components: every one in the index, or only those the paths need when paths were given.
+    pub components: Vec<ComponentRow>,
+    /// Needed components that are not usable (only when paths were given).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub missing: Option<Vec<String>>,
+    /// Needed components a run under the requested install policy would download now: missing,
+    /// downloadable, and neither offline nor `install = never`.
+    #[serde(default)]
+    pub would_download: Vec<String>,
+}
+
+/// What happened to one component in an install or uninstall.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct ComponentAction {
+    /// The component, or the cached object a prune names.
+    pub name: String,
+    /// `installed`, `already_installed`, `would_install`, `bundled`, `removed`, `not_installed`,
+    /// `would_remove`, `skipped`, `refused` or `failed`.
+    pub action: String,
+    /// The reason, for a failure, a refusal or a skipped removal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+/// Outcome of `components_install` / `components_uninstall` (mirrors the CLI's action documents).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct ComponentActions {
+    /// `install` or `uninstall`.
+    pub command: String,
+    /// Whether the host is offline.
+    pub offline: bool,
+    /// Whether every component came out usable (or removed, for an uninstall).
+    pub ok: bool,
+    /// What happened to each.
+    pub results: Vec<ComponentAction>,
+    /// Bytes an uninstall freed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub freed_bytes: Option<u64>,
+    /// Remarks for a human.
+    #[serde(default)]
+    pub notes: Vec<String>,
+}

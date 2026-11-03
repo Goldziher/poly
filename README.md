@@ -203,7 +203,7 @@ agent without burning its context; `--format json` is there when you want a docu
 ![poly emitting TOON output](docs/media/toon.gif)
 
 **And an agent can skip the terminal entirely.** `poly mcp` speaks MCP over stdio and advertises
-the same eleven tools the CLI exposes.
+fourteen tools that mirror the CLI.
 
 ![the poly MCP server listing its tools](docs/media/agent.gif)
 
@@ -381,9 +381,9 @@ Use `pi install -l git:github.com/Goldziher/poly` to save the package in the cur
 The same bundle is published to npm as `@goldziher/opencode-poly` for OpenCode and Pi:
 `pi install npm:@goldziher/opencode-poly` installs it from the registry and enables Pi catalog discovery.
 
-`poly mcp` is a stdio MCP server exposing eleven tools that mirror the CLI 1:1 — `lint`, `format_check`, `rules`,
-`config_show`, `cache_stats` and `version` (read-only), `lint_fix`, `format_write` and `cache_clean` (mutating), and
-`workspace_lint` / `workspace_lint_fix`. The last two run the multi-minute whole-project phase (`cargo clippy`,
+`poly mcp` is a stdio MCP server exposing fourteen tools that mirror the CLI 1:1 — `lint`, `format_check`, `rules`,
+`config_show`, `cache_stats`, `components` and `version` (read-only), `lint_fix`, `format_write` and `cache_clean`
+(mutating), `components_install` / `components_uninstall`, and `workspace_lint` / `workspace_lint_fix`. The last two run the multi-minute whole-project phase (`cargo clippy`,
 `cargo-sort`, `cargo-machete`, `cargo-deny`) and are exposed as async **Tasks**: the call returns a handle the client
 polls with `tasks/get`, falling back to a synchronous result for clients that do not declare the capability.
 

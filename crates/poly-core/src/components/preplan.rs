@@ -113,7 +113,7 @@ fn expected_describe(component: &Component) -> Describe {
 ///
 /// This is the only pass that installs anything. It runs before planning and outside the
 /// workers, ensures each needed component once, then seals the host it built. The policy is the
-/// root config's `[components] install` / `on_missing` (`opts.on_missing`, the `--on-missing` flag, wins), and `--offline`.
+/// root config's `[components] install` / `on_missing` (`opts.on_missing` and `opts.install`, when set, win), and `--offline`.
 ///
 /// A component that is not installed because the run is offline or `install = "never"` becomes a
 /// stand-in that skips its files (charged to the skip budget); `on_missing = "fail"` still fails
@@ -141,7 +141,7 @@ pub(crate) fn resolve(files: &[DiscoveredFile], configs: &ConfigSet, opts: &RunO
 
     let root = &configs.config(0).components;
     let on_missing = opts.on_missing.unwrap_or(root.on_missing);
-    let allow_install = root.install == ComponentInstallPolicy::Auto;
+    let allow_install = opts.install.unwrap_or(root.install) == ComponentInstallPolicy::Auto;
     let hosted = open_host(injected);
 
     let mut report = ComponentsReport::default();

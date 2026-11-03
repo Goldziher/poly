@@ -42,8 +42,9 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
 
 pub use poly_frontend_api::dto::{
-    CacheCleanReport, CacheNamespace, CacheStatsReport, ComponentSummary, ConfigDefaults, ConfigShowReport, RuleInfo,
-    RuleTestOutcome, RulesReport, WorkspaceReport, WorkspaceToolReport,
+    CacheCleanReport, CacheNamespace, CacheStatsReport, ComponentAction, ComponentActions, ComponentRow,
+    ComponentSummary, ComponentsStatus, ConfigDefaults, ConfigShowReport, RuleInfo, RuleTestOutcome, RulesReport,
+    WorkspaceReport, WorkspaceToolReport,
 };
 use poly_frontend_api::wire::{RunReply, Schemas};
 use rmcp::ErrorData;
@@ -220,6 +221,15 @@ pub fn dto_result<T: Serialize>(value: &T, repr: TextRepr) -> Result<CallToolRes
     let json_text = serde_json::to_string_pretty(value).map_err(serialize_error)?;
     let toon_text = serde_toon::to_string(value).unwrap_or_else(|_| json_text.clone());
     Ok(build(structured, json_text, toon_text, repr))
+}
+
+/// The result of an install or uninstall. A component that failed or was refused is a tool error:
+/// the caller asked for it to be usable (or gone) and it is not.
+pub fn actions_result(actions: &ComponentActions, repr: TextRepr) -> Result<CallToolResult, ErrorData> {
+    let structured = serde_json::to_value(actions).map_err(serialize_error)?;
+    let json_text = serde_json::to_string_pretty(actions).map_err(serialize_error)?;
+    let toon_text = serde_toon::to_string(actions).unwrap_or_else(|_| json_text.clone());
+    Ok(build_with_status(structured, json_text, toon_text, repr, !actions.ok))
 }
 
 /// Build the tool result for a whole lint run.

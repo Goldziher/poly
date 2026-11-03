@@ -29,11 +29,13 @@ mod engine;
 mod ensure;
 mod frontend;
 mod host;
+mod loaded;
 mod slot;
 mod transport;
 
 pub use engine::{ComponentEngine, component_version};
 pub use ensure::{Availability, Unavailable, UnavailableKind};
 pub use host::{ComponentHost, HostOptions};
+pub use loaded::loaded_components;
 pub use slot::{ComponentSlot, Connection, InitParams, SlotStatus, wire_error_to_anyhow};
 pub use transport::{AlefConnector, ComponentTransport, TransportConnector};

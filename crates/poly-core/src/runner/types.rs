@@ -97,6 +97,9 @@ pub struct RunOptions {
     /// `--on-missing` — what to do when a needed component is not available, overriding
     /// `[components] on_missing`. `None` leaves the config in charge.
     pub on_missing: Option<poly_config::v2::OnMissing>,
+    /// Whether a missing component may be downloaded, overriding `[components] install`. `None`
+    /// leaves the config in charge. `--offline` still wins.
+    pub install: Option<poly_config::v2::ComponentInstallPolicy>,
     /// A host and index standing in for the embedded ones. Test seam; not part of the supported
     /// API.
     #[doc(hidden)]

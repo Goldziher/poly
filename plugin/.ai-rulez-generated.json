@@ -1,6 +1,6 @@
 {
   "schema_version": "v1",
-  "source_hash": "blake3:6ca9b4de5513ea722b2742620f27eb668a08d80a175d5cdd17a044fc6d320155",
+  "source_hash": "blake3:80b02e3c38da8987136959b755f0ed07d25af7e123f02e924970a78f96f751a7",
   "outputs": {
     ".claude-plugin/plugin.json": {
       "content_hash": "blake3:d283143ef3fea73c46d74e79e302e06ee71b899fff0afa3b006766adb2857774",
@@ -31,11 +31,11 @@
       "mode": "0644"
     },
     ".cursor-plugin/skills/poly-mcp/SKILL.md": {
-      "content_hash": "blake3:05da331ae324d7407479259e3eedd5593fbf6ba871c12e0ab736e6c337ab3397",
+      "content_hash": "blake3:e39204d062bfb08989d303cf38ed55352d55b8e75a3bebba83e87ecf27141cca",
       "mode": "0644"
     },
     ".cursor-plugin/skills/poly-mcp/index.md": {
-      "content_hash": "blake3:4a22e7b54533907c72e86f7a7777795ba0cc8dc871bbcb029bfbdd6780c309b9",
+      "content_hash": "blake3:7c44feb2a979b3b3c33cf8b95423f48f31e4323c9a6d600f9e7ba4c43239569a",
       "mode": "0644"
     },
     ".cursor-plugin/skills/poly-orchestrator/SKILL.md": {
@@ -83,7 +83,7 @@
       "mode": "0644"
     },
     ".hermes/package/src/poly_hermes_plugin/hermes.py": {
-      "content_hash": "blake3:10be5b14c5299419b2bc9b81578097ef7a9de40d8e63664152f66026ec1864db",
+      "content_hash": "blake3:c7839d639400cf4de5cedf158b50ce64b98364768c1538f10afc91e3e17d5360",
       "mode": "0644"
     },
     ".hermes/package/src/poly_hermes_plugin/plugin.yaml": {
@@ -99,11 +99,11 @@
       "mode": "0644"
     },
     ".hermes/package/src/poly_hermes_plugin/skills/poly-mcp/SKILL.md": {
-      "content_hash": "blake3:05da331ae324d7407479259e3eedd5593fbf6ba871c12e0ab736e6c337ab3397",
+      "content_hash": "blake3:e39204d062bfb08989d303cf38ed55352d55b8e75a3bebba83e87ecf27141cca",
       "mode": "0644"
     },
     ".hermes/package/src/poly_hermes_plugin/skills/poly-mcp/index.md": {
-      "content_hash": "blake3:4a22e7b54533907c72e86f7a7777795ba0cc8dc871bbcb029bfbdd6780c309b9",
+      "content_hash": "blake3:7c44feb2a979b3b3c33cf8b95423f48f31e4323c9a6d600f9e7ba4c43239569a",
       "mode": "0644"
     },
     ".hermes/package/src/poly_hermes_plugin/skills/poly-orchestrator/SKILL.md": {
@@ -143,7 +143,7 @@
       "mode": "0644"
     },
     ".hermes/plugins/poly/hermes.py": {
-      "content_hash": "blake3:10be5b14c5299419b2bc9b81578097ef7a9de40d8e63664152f66026ec1864db",
+      "content_hash": "blake3:c7839d639400cf4de5cedf158b50ce64b98364768c1538f10afc91e3e17d5360",
       "mode": "0644"
     },
     ".hermes/plugins/poly/plugin.yaml": {
@@ -159,11 +159,11 @@
       "mode": "0644"
     },
     ".hermes/plugins/poly/skills/poly-mcp/SKILL.md": {
-      "content_hash": "blake3:05da331ae324d7407479259e3eedd5593fbf6ba871c12e0ab736e6c337ab3397",
+      "content_hash": "blake3:e39204d062bfb08989d303cf38ed55352d55b8e75a3bebba83e87ecf27141cca",
       "mode": "0644"
     },
     ".hermes/plugins/poly/skills/poly-mcp/index.md": {
-      "content_hash": "blake3:4a22e7b54533907c72e86f7a7777795ba0cc8dc871bbcb029bfbdd6780c309b9",
+      "content_hash": "blake3:7c44feb2a979b3b3c33cf8b95423f48f31e4323c9a6d600f9e7ba4c43239569a",
       "mode": "0644"
     },
     ".hermes/plugins/poly/skills/poly-orchestrator/SKILL.md": {
@@ -195,7 +195,7 @@
       "mode": "0644"
     },
     ".opencode/ai-rulez-bundle.json": {
-      "content_hash": "blake3:d174a99ce3c31944a29881de66d2d6d856fc1e156e20a0301d71ff486faa2cab",
+      "content_hash": "blake3:eb8e02539ecf692b117a8e0fbdbc45fb6cc74424341a8243bd280aafe03f88c4",
       "mode": "0644"
     },
     ".opencode/ai-rulez-content.js": {
@@ -223,11 +223,11 @@
       "mode": "0644"
     },
     ".opencode/skills/poly-mcp/SKILL.md": {
-      "content_hash": "blake3:05da331ae324d7407479259e3eedd5593fbf6ba871c12e0ab736e6c337ab3397",
+      "content_hash": "blake3:e39204d062bfb08989d303cf38ed55352d55b8e75a3bebba83e87ecf27141cca",
       "mode": "0644"
     },
     ".opencode/skills/poly-mcp/index.md": {
-      "content_hash": "blake3:4a22e7b54533907c72e86f7a7777795ba0cc8dc871bbcb029bfbdd6780c309b9",
+      "content_hash": "blake3:7c44feb2a979b3b3c33cf8b95423f48f31e4323c9a6d600f9e7ba4c43239569a",
       "mode": "0644"
     },
     ".opencode/skills/poly-orchestrator/SKILL.md": {
@@ -271,11 +271,11 @@
       "mode": "0644"
     },
     ".pi/skills/poly-mcp/SKILL.md": {
-      "content_hash": "blake3:05da331ae324d7407479259e3eedd5593fbf6ba871c12e0ab736e6c337ab3397",
+      "content_hash": "blake3:e39204d062bfb08989d303cf38ed55352d55b8e75a3bebba83e87ecf27141cca",
       "mode": "0644"
     },
     ".pi/skills/poly-mcp/index.md": {
-      "content_hash": "blake3:4a22e7b54533907c72e86f7a7777795ba0cc8dc871bbcb029bfbdd6780c309b9",
+      "content_hash": "blake3:7c44feb2a979b3b3c33cf8b95423f48f31e4323c9a6d600f9e7ba4c43239569a",
       "mode": "0644"
     },
     ".pi/skills/poly-orchestrator/SKILL.md": {
@@ -351,11 +351,11 @@
       "mode": "0644"
     },
     "skills/poly-mcp/SKILL.md": {
-      "content_hash": "blake3:05da331ae324d7407479259e3eedd5593fbf6ba871c12e0ab736e6c337ab3397",
+      "content_hash": "blake3:e39204d062bfb08989d303cf38ed55352d55b8e75a3bebba83e87ecf27141cca",
       "mode": "0644"
     },
     "skills/poly-mcp/index.md": {
-      "content_hash": "blake3:4a22e7b54533907c72e86f7a7777795ba0cc8dc871bbcb029bfbdd6780c309b9",
+      "content_hash": "blake3:7c44feb2a979b3b3c33cf8b95423f48f31e4323c9a6d600f9e7ba4c43239569a",
       "mode": "0644"
     },
     "skills/poly-orchestrator/SKILL.md": {

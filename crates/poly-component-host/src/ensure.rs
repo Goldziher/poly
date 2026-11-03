@@ -260,6 +260,7 @@ impl ComponentHost {
         match installed {
             Ok(transport) => {
                 if let Some(transport) = transport {
+                    crate::loaded::record(component_id);
                     self.shared
                         .connected
                         .lock()

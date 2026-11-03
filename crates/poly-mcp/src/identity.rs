@@ -20,6 +20,7 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 use std::time::Instant;
 
+use poly_frontend_api::wire::Engines;
 use schemars::JsonSchema;
 use serde::Serialize;
 
@@ -58,11 +59,17 @@ pub struct PolyIdentity {
     /// on every machine running the same binary. The full map is available from
     /// the `version` tool.
     pub engines: String,
+    /// How this build carries its engines: `bundled` (all linked in), `core` (none; each is a
+    /// downloadable component) or `partial`. `unknown` before the host has answered.
+    pub flavor: String,
+    /// Digest of the component lock the build embeds, or null when it embeds none. Two builds
+    /// with equal versions and engines but different locks would download different components.
+    pub components_lock: Option<String>,
 }
 
 impl PolyIdentity {
     /// Read the identity of the running process, with `engines` as the host's engine versions.
-    fn detect(engines: &BTreeMap<String, String>) -> Self {
+    fn detect(engines: &BTreeMap<String, String>, flavor: &str, components_lock: Option<&str>) -> Self {
         PolyIdentity {
             version: poly_buildinfo::VERSION.to_string(),
             build_id: poly_buildinfo::build_id().to_string(),
@@ -72,6 +79,8 @@ impl PolyIdentity {
             executable: std::env::current_exe().ok().map(|path| path.display().to_string()),
             pid: std::process::id(),
             engines: engines_digest(engines),
+            flavor: flavor.to_owned(),
+            components_lock: components_lock.map(str::to_owned),
         }
     }
 }
@@ -107,17 +116,21 @@ fn engines_digest<K: AsRef<str>>(versions: &BTreeMap<K, String>) -> String {
 
 static IDENTITY: OnceLock<PolyIdentity> = OnceLock::new();
 
-/// Record the engine versions the host reported, so the identity's digest describes the host's
-/// engines rather than this frontend's (which links none). The first call wins; call it before
-/// [`identity`] is first read.
-pub fn install_engines(engines: &BTreeMap<String, String>) {
-    let _ = IDENTITY.set(PolyIdentity::detect(engines));
+/// Record what the host reported about itself (engine versions, flavor, component lock), so the
+/// identity describes the host's build rather than this frontend's (which links no engine). The
+/// first call wins; call it before [`identity`] is first read.
+pub fn install_host(host: &Engines) {
+    let _ = IDENTITY.set(PolyIdentity::detect(
+        &host.engines,
+        &host.flavor,
+        host.components_lock.as_deref(),
+    ));
 }
 
-/// The identity of this process, computed once. Without [`install_engines`] the digest covers
+/// The identity of this process, computed once. Without [`install_host`] the digest covers
 /// no engines.
 pub fn identity() -> &'static PolyIdentity {
-    IDENTITY.get_or_init(|| PolyIdentity::detect(&BTreeMap::new()))
+    IDENTITY.get_or_init(|| PolyIdentity::detect(&BTreeMap::new(), "unknown", None))
 }
 
 /// The identity as a JSON value, computed once.

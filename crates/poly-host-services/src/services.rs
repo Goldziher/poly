@@ -6,9 +6,10 @@ use anyhow::Context;
 use poly_core::report::{FormatDocument, LintDocument};
 use poly_core::{FormatRun, LintRun};
 use poly_frontend_api::ServiceCaller;
-use poly_frontend_api::dto::ComponentSummary;
+use poly_frontend_api::dto::{ComponentActions, ComponentSummary, ComponentsStatus};
 use poly_frontend_api::wire::{
-    ConfigRequest, Engines, PathsRequest, RulesRequest, RunReply, Schemas, WorkspaceRequest, service,
+    ComponentsInstallRequest, ComponentsStatusRequest, ComponentsUninstallRequest, ConfigRequest, Engines,
+    PathsRequest, RulesRequest, RunReply, Schemas, WorkspaceRequest, service,
 };
 use schemars::generate::SchemaSettings;
 use serde::Serialize;
@@ -26,12 +27,41 @@ pub trait ComponentsProvider: Send + Sync {
     ///
     /// When the component state cannot be read.
     fn components(&self) -> anyhow::Result<Vec<ComponentSummary>>;
+
+    /// The build's flavor (`bundled`, `core` or `partial`) and the digest of its component lock,
+    /// for the identity every result carries. Never downloads.
+    fn identity(&self) -> (String, Option<String>);
+
+    /// Where each component stands and which ones `request.paths` need. Never downloads.
+    ///
+    /// # Errors
+    ///
+    /// When the paths or their config cannot be resolved.
+    fn status(&self, request: &ComponentsStatusRequest) -> anyhow::Result<ComponentsStatus>;
+
+    /// Download the components `request` selects, or report what would be downloaded.
+    ///
+    /// # Errors
+    ///
+    /// When a name is neither a component nor a preset, or no component lock is available.
+    fn install(&self, request: &ComponentsInstallRequest) -> anyhow::Result<ComponentActions>;
+
+    /// Remove the components `request` selects, refusing any this process has loaded.
+    ///
+    /// # Errors
+    ///
+    /// When a name is neither a component nor a preset, or no component lock is available.
+    fn uninstall(&self, request: &ComponentsUninstallRequest) -> anyhow::Result<ComponentActions>;
 }
 
 /// The host side of the frontend service table.
 #[derive(Clone, Default)]
 pub struct Services {
     components: Option<Arc<dyn ComponentsProvider>>,
+}
+
+fn no_manager<T>() -> anyhow::Result<T> {
+    anyhow::bail!("this host has no component manager")
 }
 
 impl Services {
@@ -58,12 +88,13 @@ impl Services {
         match service_name {
             service::LINT => {
                 let req: PathsRequest = decode(request)?;
-                let run = ops::lint_run(&req.paths, &req.exclude, req.config.as_deref(), req.apply)?;
+                let run = ops::lint_run_with(&req.paths, &req.exclude, req.config.as_deref(), req.apply, req.install)?;
                 encode(&lint_reply(&run)?)
             }
             service::FORMAT => {
                 let req: PathsRequest = decode(request)?;
-                let run = ops::format_run(&req.paths, &req.exclude, req.config.as_deref(), req.apply)?;
+                let run =
+                    ops::format_run_with(&req.paths, &req.exclude, req.config.as_deref(), req.apply, req.install)?;
                 encode(&format_reply(&run)?)
             }
             service::WORKSPACE_LINT => {
@@ -92,12 +123,41 @@ impl Services {
                 };
                 encode(&listed)
             }
-            service::ENGINES => encode(&Engines {
-                engines: poly_core::engine_versions()
-                    .iter()
-                    .map(|(name, version)| ((*name).to_owned(), version.clone()))
-                    .collect(),
-            }),
+            service::COMPONENTS_STATUS => {
+                let req: ComponentsStatusRequest = decode(request)?;
+                match &self.components {
+                    Some(provider) => encode(&provider.status(&req)?),
+                    None => encode(&empty_status()),
+                }
+            }
+            service::COMPONENTS_INSTALL => {
+                let req: ComponentsInstallRequest = decode(request)?;
+                match &self.components {
+                    Some(provider) => encode(&provider.install(&req)?),
+                    None => no_manager(),
+                }
+            }
+            service::COMPONENTS_UNINSTALL => {
+                let req: ComponentsUninstallRequest = decode(request)?;
+                match &self.components {
+                    Some(provider) => encode(&provider.uninstall(&req)?),
+                    None => no_manager(),
+                }
+            }
+            service::ENGINES => {
+                let (flavor, components_lock) = match &self.components {
+                    Some(provider) => provider.identity(),
+                    None => ("unknown".to_owned(), None),
+                };
+                encode(&Engines {
+                    engines: poly_core::engine_versions()
+                        .iter()
+                        .map(|(name, version)| ((*name).to_owned(), version.clone()))
+                        .collect(),
+                    flavor,
+                    components_lock,
+                })
+            }
             service::SCHEMAS => encode(&Schemas {
                 lint: root_schema::<LintDocument>()?,
                 format: root_schema::<FormatDocument>()?,
@@ -110,6 +170,20 @@ impl Services {
 impl ServiceCaller for Services {
     fn call(&self, service: &str, request: &[u8]) -> Result<Vec<u8>, String> {
         self.dispatch(service, request).map_err(|error| format!("{error:#}"))
+    }
+}
+
+/// The status of a host with no component manager: nothing listed, nothing needed.
+fn empty_status() -> ComponentsStatus {
+    ComponentsStatus {
+        flavor: "unknown".to_owned(),
+        offline: false,
+        cache_root: String::new(),
+        components_lock: None,
+        lock_error: Some("this host has no component manager".to_owned()),
+        components: Vec::new(),
+        missing: None,
+        would_download: Vec::new(),
     }
 }
 
@@ -176,6 +250,89 @@ mod tests {
     fn components_list_is_empty_without_a_provider() {
         let reply = Services::new().dispatch(service::COMPONENTS, b"null").unwrap();
         assert_eq!(reply, b"[]");
+    }
+
+    #[test]
+    fn components_status_is_empty_without_a_provider() {
+        let reply = Services::new().dispatch(service::COMPONENTS_STATUS, b"{}").unwrap();
+        let status: ComponentsStatus = serde_json::from_slice(&reply).unwrap();
+        assert!(status.components.is_empty() && status.would_download.is_empty());
+        assert!(status.lock_error.is_some(), "the absence is stated, not a clean report");
+    }
+
+    #[test]
+    fn install_and_uninstall_without_a_provider_are_errors_not_no_ops() {
+        for name in [service::COMPONENTS_INSTALL, service::COMPONENTS_UNINSTALL] {
+            let error = Services::new().dispatch(name, b"{}").unwrap_err();
+            assert!(
+                format!("{error:#}").contains("no component manager"),
+                "{name}: {error:#}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_engines_service_names_the_flavor_even_without_a_provider() {
+        let reply = Services::new().dispatch(service::ENGINES, b"null").unwrap();
+        let engines: Engines = serde_json::from_slice(&reply).unwrap();
+        assert_eq!(engines.flavor, "unknown");
+        assert_eq!(engines.components_lock, None);
+    }
+
+    /// A provider whose answers are fixed, to check what the service table does with them.
+    struct Fixed;
+
+    impl ComponentsProvider for Fixed {
+        fn components(&self) -> anyhow::Result<Vec<ComponentSummary>> {
+            Ok(Vec::new())
+        }
+        fn identity(&self) -> (String, Option<String>) {
+            ("core".to_owned(), Some("abc".to_owned()))
+        }
+        fn status(&self, request: &ComponentsStatusRequest) -> anyhow::Result<ComponentsStatus> {
+            let mut status = empty_status();
+            status.would_download = request.paths.clone();
+            Ok(status)
+        }
+        fn install(&self, request: &ComponentsInstallRequest) -> anyhow::Result<ComponentActions> {
+            Ok(ComponentActions {
+                command: "install".to_owned(),
+                offline: false,
+                ok: true,
+                results: Vec::new(),
+                freed_bytes: None,
+                notes: request.names.clone(),
+            })
+        }
+        fn uninstall(&self, _: &ComponentsUninstallRequest) -> anyhow::Result<ComponentActions> {
+            anyhow::bail!("refused by the fixed provider")
+        }
+    }
+
+    #[test]
+    fn the_component_services_reach_the_provider_and_pass_its_errors_on() {
+        let services = Services::new().with_components(Arc::new(Fixed));
+        let engines: Engines = serde_json::from_slice(&services.dispatch(service::ENGINES, b"null").unwrap()).unwrap();
+        assert_eq!(
+            (engines.flavor.as_str(), engines.components_lock.as_deref()),
+            ("core", Some("abc"))
+        );
+        let status: ComponentsStatus = serde_json::from_slice(
+            &services
+                .dispatch(service::COMPONENTS_STATUS, br#"{"paths":["x"]}"#)
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(status.would_download, ["x"]);
+        let actions: ComponentActions = serde_json::from_slice(
+            &services
+                .dispatch(service::COMPONENTS_INSTALL, br#"{"names":["web"]}"#)
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(actions.notes, ["web"]);
+        let error = services.dispatch(service::COMPONENTS_UNINSTALL, b"{}").unwrap_err();
+        assert!(format!("{error:#}").contains("refused by the fixed provider"));
     }
 
     #[test]

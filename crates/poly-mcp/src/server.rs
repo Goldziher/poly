@@ -29,6 +29,16 @@
 //! the binary is replaced or deleted underneath a long-lived server, every tool
 //! but `version` fails rather than answering with superseded behaviour.
 //!
+//! ## Component downloads
+//!
+//! `lint`, `format_check`, `lint_fix`, `format_write` and `components_install` are registered by
+//! hand, like the whole-project tools, because a `#[tool]` fn cannot return a Task. They return a
+//! Task only when the client declared the tasks capability and a probe (`components.status`,
+//! which never downloads) finds components the run would download; otherwise the call blocks and
+//! returns the result. The Task carries a status message naming the components. There is no
+//! byte-level progress: host services are component-to-host only and one blocking call, so the
+//! host has no way to report mid-call, and `notifications/progress` is not sent.
+//!
 //! ## Async Tasks
 //!
 //! The whole-project tools (`workspace_lint` / `workspace_lint_fix`) drive the
@@ -57,12 +67,22 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 use poly_frontend_api::ServiceCaller;
-use poly_frontend_api::wire::{ConfigRequest, PathsRequest as PathsCall, RulesRequest, WorkspaceRequest};
+use poly_frontend_api::wire::{
+    ComponentsStatusRequest, ComponentsUninstallRequest, ConfigRequest, InstallMode, PathsRequest as PathsCall,
+    RulesRequest, WorkspaceRequest,
+};
+
+mod components;
 
 use crate::backend::Backend;
 use crate::dto;
-use crate::dto::{TextRepr, VersionReport, WorkspaceReport, dto_result, schema_for_output_with_identity};
+use crate::dto::{
+    ComponentActions, ComponentsStatus, TextRepr, VersionReport, WorkspaceReport, actions_result, dto_result,
+    schema_for_output_with_identity,
+};
 use crate::identity::{self, ExecutableWatch};
+use components::{COMPONENTS_INSTALL, PathsTool};
+pub use components::{ComponentsInstallParams, ComponentsParams, ComponentsUninstallParams};
 
 /// Tool name for the check-mode whole-project lint Task.
 ///
@@ -98,6 +118,13 @@ pub struct PathsParams {
     /// `/` anchors it to the config directory (`"/e2e/**"`).
     #[serde(default)]
     pub exclude: Vec<String>,
+    /// Whether a component this run needs may be downloaded: `config` (default) follows
+    /// `[components] install` in the config, `auto` downloads whatever is missing, `never`
+    /// downloads nothing and skips the files a missing component would have handled. A server
+    /// started with `--offline` never downloads, whatever this says. It governs engine components
+    /// only: an opt-in recipe tool with `[tools.<name>] install = "auto"` follows its own setting.
+    #[serde(default)]
+    pub install: InstallMode,
     /// Text representation for the result's text content block (`structured_content`
     /// stays JSON). `json` (default) or `toon`.
     #[serde(default)]
@@ -180,12 +207,19 @@ pub struct PolyMcpServer {
 }
 
 /// The host request for a lint or format call; `apply` is `--fix` / write.
-fn paths_call(paths: Vec<String>, exclude: Vec<String>, config: Option<String>, apply: bool) -> PathsCall {
+fn paths_call(
+    paths: Vec<String>,
+    exclude: Vec<String>,
+    config: Option<String>,
+    apply: bool,
+    install: InstallMode,
+) -> PathsCall {
     PathsCall {
         paths,
         exclude,
         config,
         apply,
+        install,
     }
 }
 
@@ -194,7 +228,7 @@ fn paths_call(paths: Vec<String>, exclude: Vec<String>, config: Option<String>, 
 /// tools themselves report the host's error when it matters.
 fn install_host_metadata(backend: &Backend) {
     match backend.engines() {
-        Ok(engines) => identity::install_engines(&engines),
+        Ok(engines) => identity::install_host(&engines),
         Err(error) => eprintln!("poly mcp: cannot read the host's engine versions: {error:#}"),
     }
     match backend.schemas() {
@@ -283,74 +317,6 @@ impl PolyMcpServer {
     }
 
     #[tool(
-        description = "Lint files and report diagnostics as structured JSON (plus JSON/TOON text). Never writes. Mirrors `poly lint`. \
-                      A file poly could not process is reported with an `error` (never as clean) and sets `isError`. \
-                      The result carries `skipped` and a `summary` of checked/skipped/errored counts: check those, not just \
-                      an empty `results`, since a run that skipped everything reports no diagnostics and is not an error.",
-        annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false),
-        output_schema = dto::lint_output_schema()
-    )]
-    async fn lint(&self, params: Parameters<PathsParams>) -> Result<CallToolResult, ErrorData> {
-        let Parameters(args) = params;
-        let config = effective_config(args.config, &self.config_override);
-        let repr = args.format;
-        let backend = self.backend.clone();
-        let reply = run_blocking(move || backend.lint(&paths_call(args.paths, args.exclude, config, false))).await?;
-        Ok(dto::lint_result(reply, repr))
-    }
-
-    #[tool(
-        description = "Check formatting without writing; reports which files would change as structured JSON (plus JSON/TOON text). Mirrors `poly fmt` (the dry run). \
-                      A file poly could not process is reported with an `error` (never as clean) and sets `isError`. \
-                      The result carries `skipped` and a `summary` of checked/skipped/errored counts: check those, not just \
-                      an empty `results`, since a run that skipped everything reports no diagnostics and is not an error.",
-        annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false),
-        output_schema = dto::format_output_schema()
-    )]
-    async fn format_check(&self, params: Parameters<PathsParams>) -> Result<CallToolResult, ErrorData> {
-        let Parameters(args) = params;
-        let config = effective_config(args.config, &self.config_override);
-        let repr = args.format;
-        let backend = self.backend.clone();
-        let reply = run_blocking(move || backend.format(&paths_call(args.paths, args.exclude, config, false))).await?;
-        Ok(dto::format_result(reply, repr))
-    }
-
-    #[tool(
-        description = "Lint files and apply available autofixes in place, then report remaining diagnostics. Writes files. Mirrors `poly lint --fix`. \
-                      A file poly could not process is reported with an `error` (never as clean) and sets `isError`. \
-                      The result carries `skipped` and a `summary` of checked/skipped/errored counts: check those, not just \
-                      an empty `results`, since a run that skipped everything reports no diagnostics and is not an error.",
-        annotations(read_only_hint = false, destructive_hint = true, open_world_hint = false),
-        output_schema = dto::lint_output_schema()
-    )]
-    async fn lint_fix(&self, params: Parameters<PathsParams>) -> Result<CallToolResult, ErrorData> {
-        let Parameters(args) = params;
-        let config = effective_config(args.config, &self.config_override);
-        let repr = args.format;
-        let backend = self.backend.clone();
-        let reply = run_blocking(move || backend.lint(&paths_call(args.paths, args.exclude, config, true))).await?;
-        Ok(dto::lint_result(reply, repr))
-    }
-
-    #[tool(
-        description = "Format files in place and report which files changed. Writes files. Mirrors `poly fmt --fix`. \
-                      A file poly could not process is reported with an `error` (never as clean) and sets `isError`. \
-                      The result carries `skipped` and a `summary` of checked/skipped/errored counts: check those, not just \
-                      an empty `results`, since a run that skipped everything reports no diagnostics and is not an error.",
-        annotations(read_only_hint = false, destructive_hint = true, open_world_hint = false),
-        output_schema = dto::format_output_schema()
-    )]
-    async fn format_write(&self, params: Parameters<PathsParams>) -> Result<CallToolResult, ErrorData> {
-        let Parameters(args) = params;
-        let config = effective_config(args.config, &self.config_override);
-        let repr = args.format;
-        let backend = self.backend.clone();
-        let reply = run_blocking(move || backend.format(&paths_call(args.paths, args.exclude, config, true))).await?;
-        Ok(dto::format_result(reply, repr))
-    }
-
-    #[tool(
         description = "Report result-cache footprint (entry counts, sizes, format version). Mirrors `poly cache stats`.",
         annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false),
         output_schema = schema_for_output_with_identity::<crate::dto::CacheStatsReport>()
@@ -411,6 +377,46 @@ impl PolyMcpServer {
     }
 
     #[tool(
+        description = "Report the downloadable engine components and where each stands (bundled, installed, not installed, \
+                      unavailable). With `paths`, only the components those paths need, which are missing, and which a run \
+                      would download under `install`. Never downloads. Mirrors `poly components list` / `status`.",
+        annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false),
+        output_schema = schema_for_output_with_identity::<ComponentsStatus>()
+    )]
+    async fn components(&self, params: Parameters<ComponentsParams>) -> Result<CallToolResult, ErrorData> {
+        let Parameters(args) = params;
+        let request = ComponentsStatusRequest {
+            paths: args.paths,
+            config: effective_config(args.config, &self.config_override),
+            install: args.install,
+        };
+        let backend = self.backend.clone();
+        let report = run_blocking(move || backend.components_status(&request)).await?;
+        dto_result(&report, args.format)
+    }
+
+    #[tool(
+        description = "Remove downloaded components (names or presets), and with `stale` the cached archives nothing \
+                      references or used recently. Refuses a component loaded in this process (`refused`, and `isError`). \
+                      Never downloads. Mirrors `poly components uninstall` / `prune`.",
+        annotations(read_only_hint = false, destructive_hint = true, open_world_hint = false),
+        output_schema = schema_for_output_with_identity::<ComponentActions>()
+    )]
+    async fn components_uninstall(
+        &self,
+        params: Parameters<ComponentsUninstallParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let Parameters(args) = params;
+        let request = ComponentsUninstallRequest {
+            names: args.names,
+            stale: args.stale,
+        };
+        let backend = self.backend.clone();
+        let report = run_blocking(move || backend.components_uninstall(&request)).await?;
+        actions_result(&report, args.format)
+    }
+
+    #[tool(
         name = "version",
         description = "Report which poly binary is serving this session (version, build id, channel, executable, pid) and whether that executable is still the one on disk. Answers even when the binary has moved — it is the tool that explains why the others stopped. Read-only.",
         annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false),
@@ -424,7 +430,7 @@ impl PolyMcpServer {
         // failure in the status instead of failing the call.
         let (engines, components, host_error) = run_blocking(move || {
             Ok(match (backend.engines(), backend.components()) {
-                (Ok(engines), Ok(components)) => (engines, components, None),
+                (Ok(engines), Ok(components)) => (engines.engines, components, None),
                 (Err(error), _) | (_, Err(error)) => (Default::default(), Vec::new(), Some(format!("{error:#}"))),
             })
         })
@@ -452,7 +458,7 @@ impl PolyMcpServer {
     /// Definitions for the two whole-project Task tools, which are not `#[tool]`
     /// methods (a macro tool cannot return a task handle).
     fn task_tool_definitions(&self) -> Vec<Tool> {
-        vec![
+        let mut tools = vec![
             Tool::new(
                 WORKSPACE_LINT,
                 "Run the whole-project lint phase (cargo clippy / cargo-sort / cargo-machete / cargo-deny and inline whole-project jobs) in check mode. \
@@ -471,7 +477,9 @@ impl PolyMcpServer {
             )
             .with_output_schema::<WorkspaceReport>()
             .annotate(mutating_annotations()),
-        ]
+        ];
+        tools.extend(components::tool_definitions());
+        tools
     }
 
     /// Handle a whole-project tool call. Spawns an async Task when the client
@@ -572,11 +580,21 @@ impl ServerHandler for PolyMcpServer {
             .with_server_info(Implementation::new("poly-mcp", env!("CARGO_PKG_VERSION")))
             .with_instructions(
                 "Universal zero-dependency linter & formatter. Tools mirror the `poly` CLI. Read-only: \
-                 lint / format_check / cache_stats / rules / config_show / version. Mutating: lint_fix / \
-                 format_write / cache_clean. Whole-project (long-running): workspace_lint / workspace_lint_fix, \
-                 run as async Tasks (poll tasks/get). Every tool returns structured JSON plus a JSON/TOON text \
-                 block (`format`), and every result carries a `poly` block (version, build id, channel, \
-                 executable, pid) identifying the binary that answered — check it before acting on a result. \
+                 lint / format_check / cache_stats / rules / config_show / components / version. Mutating: lint_fix / \
+                 format_write / cache_clean / components_uninstall. Component management: components (status, never \
+                 downloads), components_install (downloads; a Task when the client supports them and something must be \
+                 fetched), components_uninstall (refuses a component loaded in this process). Whole-project \
+                 (long-running): workspace_lint / workspace_lint_fix, run as async Tasks (poll tasks/get). \
+                 Engines may ship as downloadable components: lint / format_check / lint_fix / format_write take \
+                 `install` (`config`|`auto`|`never`) and are open-world, since a run that needs a missing component \
+                 may download it (never offline, never under `install: never`); with a Tasks-capable client such a \
+                 call returns a Task whose status message names the components (no byte-level progress). \
+                 Results carry a `components` block (`used`, `installed_now`, `missing`) when a run needed any; a \
+                 missing component that fails the run sets `isError`, while one skipped under `install: never` \
+                 shows in `skipped` and `components.missing`. Every tool returns structured JSON plus a JSON/TOON \
+                 text block (`format`), and every result carries a `poly` block (version, build id, channel, \
+                 flavor, components_lock, executable, pid) identifying the binary that answered — check it before \
+                 acting on a result. \
                  lint/format results tell three per-file outcomes apart — checked, `skipped`, and `error` \
                  (poly failed on the file, so it was NOT checked) — and set `isError` when any file failed. \
                  They also carry top-level `errors` and `skipped` lists and a `summary` of \
@@ -599,9 +617,13 @@ impl ServerHandler for PolyMcpServer {
         if request.name.as_ref() != VERSION {
             self.reject_if_stale()?;
         }
+        if let Some(tool) = PathsTool::from_name(request.name.as_ref()) {
+            return self.run_paths_tool(tool, request, &context).await;
+        }
         match request.name.as_ref() {
             WORKSPACE_LINT => self.run_workspace_tool(request, &context, false).await,
             WORKSPACE_LINT_FIX => self.run_workspace_tool(request, &context, true).await,
+            COMPONENTS_INSTALL => self.run_components_install(request, &context).await,
             _ => {
                 let tcc = ToolCallContext::new(self, request, context);
                 self.tool_router.call(tcc).await

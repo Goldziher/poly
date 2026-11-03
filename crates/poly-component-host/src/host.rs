@@ -168,14 +168,18 @@ impl ComponentHost {
         let shared = Arc::clone(&self.shared);
         let id = component_id.to_owned();
         let slot = ComponentSlot::lazy(component_id, expected, self.init.clone(), move || {
-            if let Some(transport) = shared.take_connected(&id) {
-                return Ok(transport);
-            }
-            anyhow::ensure!(
-                shared.may_load(&id),
-                "component `{id}` was not made available before the run was planned; loading never installs"
-            );
-            connector.connect(&manager, &id)
+            let transport = match shared.take_connected(&id) {
+                Some(transport) => transport,
+                None => {
+                    anyhow::ensure!(
+                        shared.may_load(&id),
+                        "component `{id}` was not made available before the run was planned; loading never installs"
+                    );
+                    connector.connect(&manager, &id)?
+                }
+            };
+            crate::loaded::record(&id);
+            Ok(transport)
         });
         slots.insert(component_id.to_owned(), Arc::clone(&slot));
         Ok(slot)

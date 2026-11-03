@@ -7,11 +7,13 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use poly_host_services::Services;
+use poly_host_services::{ComponentsProvider, Services};
 use poly_mcp::PolyMcpServer;
 use poly_mcp::identity::ExecutableWatch;
 
 /// A server over the host services.
+// Each test binary compiles this module on its own, and not every one uses every helper.
+#[allow(dead_code)]
 pub fn server(config: Option<PathBuf>) -> PolyMcpServer {
     PolyMcpServer::new(Arc::new(Services::new()), config)
 }
@@ -21,4 +23,11 @@ pub fn server(config: Option<PathBuf>) -> PolyMcpServer {
 #[allow(dead_code)]
 pub fn server_watching(config: Option<PathBuf>, watch: ExecutableWatch) -> PolyMcpServer {
     PolyMcpServer::with_executable_watch(Arc::new(Services::new()), config, watch)
+}
+
+/// A server over host services whose component answers come from `provider`.
+// Only the component tests supply one.
+#[allow(dead_code)]
+pub fn server_with_components(provider: Arc<dyn ComponentsProvider>) -> PolyMcpServer {
+    PolyMcpServer::new(Arc::new(Services::new().with_components(provider)), None)
 }

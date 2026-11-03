@@ -1,10 +1,10 @@
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-Content-Hash: blake3:4a22e7b54533907c72e86f7a7777795ba0cc8dc871bbcb029bfbdd6780c309b9
-Source-Hash: blake3:6ca9b4de5513ea722b2742620f27eb668a08d80a175d5cdd17a044fc6d320155
+Content-Hash: blake3:7c44feb2a979b3b3c33cf8b95423f48f31e4323c9a6d600f9e7ba4c43239569a
+Source-Hash: blake3:80b02e3c38da8987136959b755f0ed07d25af7e123f02e924970a78f96f751a7
 Schema-Version: v1
 -->
 
 # Concepts
 
-- [Poly Mcp](SKILL.md) - The poly MCP server — the eleven tools and which are read-only vs mutating, the paths/exclude/config/format params, async Tasks for the whole-project phase, and the isError contract
+- [Poly Mcp](SKILL.md) - The poly MCP server — the fourteen tools and which are read-only vs mutating, the paths/exclude/config/install/format params, component downloads, async Tasks, and the isError contract
