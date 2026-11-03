@@ -51,9 +51,17 @@ targets = [
   "x86_64-pc-windows-msvc",
 ]
 
-# No [crates.component_distribution] yet: alef 0.118 refuses one without a signing public key
-# (src/core/config/new_config/component_validation.rs, validate_component_distribution), and release
-# signing is not set up. `components:dev` therefore passes the file:// URL template on the command line.
+# Release distribution: component archives are GitHub release assets of the tag they were built for
+# ({version} is the version the artifact was packaged at, so an asset reused from an earlier release
+# keeps pointing at that release). The signing key is the repository secret POLY_COMPONENT_SIGNING_KEY
+# (publish.yaml); this is its public half, the only key the embedded lock trusts.
+# `components:dev` passes its own file:// URL template and --unsigned, so it is unaffected.
+[crates.component_distribution]
+url_template = "https://github.com/Goldziher/poly/releases/download/v{version}/{artifact}"
+artifact_name_template = "poly-component-{component}-{version}-{target}-{fh16}-{ch16}.tar.gz"
+
+[crates.component_distribution.public_keys]
+poly-release-1 = "MCowBQYDK2VwAyEAYsuzY1XKROcD4zvNJga55ojbCvMHKkzxx4O/Cz/ANBU="
 
 [crates.component_host]
 output = "crates/poly-component-host/src/components_gen.rs"

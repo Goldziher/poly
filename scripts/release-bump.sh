@@ -9,6 +9,8 @@
 #   pip-package/polylint/__init__.py      __version__
 #   plugin/.ai-rulez/config.plugins.toml                 [plugin] version
 #   .claude-plugin/*.json                 generated — asserted to match
+#   components                            no surface of their own: alef.toml reads the version from Cargo.toml
+#                                         (version_from), and the component archive names and lock follow it
 
 set -euo pipefail
 

@@ -54,11 +54,13 @@ enum Hosted {
     Unavailable(String),
 }
 
-/// The lock this build embeds. None is embedded yet, so this is an error unless the `dev-lock`
-/// feature is on and `LOCK_ENV` names a development lock.
+/// The lock this build embeds (`POLY_COMPONENT_LOCK_FILE` at build time); an error for a build
+/// that embeds none.
 #[cfg(not(feature = "dev-lock"))]
 pub(super) fn component_lock() -> anyhow::Result<String> {
-    Err(anyhow::anyhow!("this build embeds no component lock"))
+    super::embedded::embedded_lock()
+        .map(str::to_owned)
+        .ok_or_else(|| anyhow::anyhow!("this build embeds no component lock"))
 }
 
 /// The lock a development build reads from `LOCK_ENV`, since none is embedded yet.

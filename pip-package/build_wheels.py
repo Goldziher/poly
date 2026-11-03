@@ -94,8 +94,31 @@ def required_glibc_minor(binary: Path) -> int:
     return max(versions) if versions else MANYLINUX_FALLBACK_MINOR
 
 
-def platform_tag(target: Target, binary: Path) -> str:
-    """The PEP 425 platform tag for a target's wheel."""
+def component_libraries_glibc_minor(artifacts: Path, target: Target) -> list[int]:
+    """The glibc requirement of each downloadable component built for ``target``.
+
+    Components are separate release assets, not part of the wheel, but the wheel's ``poly`` loads
+    them on the machine pip installed it on. A tag taken from the core alone would admit hosts whose
+    glibc cannot load a component, which then fails at the first lint rather than at install.
+    """
+    minors: list[int] = []
+    for archive in sorted(artifacts.glob(f"poly-component-*-{target.triple}-*.tar.gz")):
+        with tarfile.open(archive, "r:gz") as tf:
+            for member in tf.getmembers():
+                if not member.isfile() or member.name in ("component.json", "component.sig"):
+                    continue
+                data = tf.extractfile(member)
+                if data is not None:
+                    minors.extend(int(match) for match in GLIBC_SYMBOL.findall(data.read()))
+    return minors
+
+
+def platform_tag(target: Target, binary: Path, component_minors: list[int] | None = None) -> str:
+    """The PEP 425 platform tag for a target's wheel.
+
+    On glibc Linux the minor version is the maximum over the core binary and every component
+    built for the target (``component_minors``).
+    """
     if target.triple == "x86_64-apple-darwin":
         return f"macosx_{MACOS_X86_64_MIN}_x86_64"
     if target.triple == "aarch64-apple-darwin":
@@ -105,7 +128,8 @@ def platform_tag(target: Target, binary: Path) -> str:
     if target.triple == "x86_64-unknown-linux-musl":
         return f"musllinux_{MUSLLINUX_VERSION}_x86_64"
     machine = "aarch64" if target.triple.startswith("aarch64") else "x86_64"
-    return f"manylinux_2_{required_glibc_minor(binary)}_{machine}"
+    minor = max([required_glibc_minor(binary), *(component_minors or [])])
+    return f"manylinux_2_{minor}_{machine}"
 
 
 def extract_binary(archive: Path, target: Target, destination: Path) -> Path:
@@ -183,8 +207,13 @@ def run_build(out_dir: Path, env_overrides: dict[str, str]) -> Path:
     return produced.pop()
 
 
-def build_platform_wheel(target: Target, binary: Path, out_dir: Path) -> Path:
-    tag = platform_tag(target, binary)
+def build_platform_wheel(
+    target: Target,
+    binary: Path,
+    out_dir: Path,
+    component_minors: list[int] | None = None,
+) -> Path:
+    tag = platform_tag(target, binary, component_minors)
     wheel = run_build(out_dir, {"POLY_WHEEL_TAG": tag, "POLY_WHEEL_BINARY": str(binary)})
     force_executable_bit(wheel)
     print(f"  ✓ {target.triple:32} → {wheel.name}")
@@ -254,7 +283,8 @@ def main() -> None:
                     message = f"missing release archive: {archive}"
                     raise SystemExit(message)
                 binary = extract_binary(archive, target, staging / target.triple)
-                build_platform_wheel(target, binary, out_dir)
+                minors = component_libraries_glibc_minor(artifacts, target)
+                build_platform_wheel(target, binary, out_dir, minors)
 
         if not args.no_fallback and (args.only in (None, "fallback")):
             build_fallback_wheel(out_dir)

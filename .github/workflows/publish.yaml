@@ -14,6 +14,16 @@ on:
         description: "Release tag to publish (e.g., v0.1.0)"
         required: false
         type: string
+      rebuild_components:
+        description: "Rebuild every component instead of reusing the previous release's unchanged assets"
+        type: boolean
+        default: false
+
+# Component signing: the build-components jobs sign each archive with the Ed25519 private key in the
+# repository secret POLY_COMPONENT_SIGNING_KEY (PKCS#8 PEM, or base64 of the PKCS#8 DER or a raw
+# 32-byte seed). Its public half is `poly-release-1` in alef.toml
+# ([crates.component_distribution.public_keys]); rotate by adding a second key id there and changing
+# KEY_ID in scripts/components-release.sh. A missing secret fails the release.
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -224,9 +234,170 @@ jobs:
             gh release create "$tag" --title "$tag" --notes "Release $tag" --verify-tag --draft $prerelease
           fi
 
+  build-components:
+    name: Build components / ${{ matrix.triple }}
+    needs: [meta, create_release]
+    if: >-
+      !inputs.plugins-only && (needs.meta.outputs.release_assets_exist != 'true')
+    runs-on: ${{ matrix.os }}
+    env:
+      RELEASE_TAG: ${{ needs.meta.outputs.tag }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Part of each component's input hash, so a new image rebuilds instead of reusing. Empty
+      # for the native builds.
+      BUILD_IMAGE: ${{ matrix.image }}
+      # One exact toolchain for every component build: the host setup, the manylinux container's
+      # rustup and the input hash all use this value. Bump it deliberately; it rebuilds everything.
+      RUST_TOOLCHAIN: "1.99.1"
+      REBUILD_COMPONENTS: ${{ github.event.inputs.rebuild_components || 'false' }}
+    strategy:
+      fail-fast: false
+      # musl is absent on purpose: that binary is fully bundled and downloads no component.
+      matrix:
+        include:
+          # glibc is the floor the components' symbols are linked against, so the gnu builds run in
+          # a pinned manylinux_2_28 image rather than on the runner's newer glibc. Bump the tag and
+          # digest together.
+          - triple: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            image: quay.io/pypa/manylinux_2_28_x86_64:2026.11.01-2@sha256:7e41b1c7fd64dfc69703a1124b43c404382973ee06ec5d764b85c34d2221fded
+          - triple: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+            image: quay.io/pypa/manylinux_2_28_aarch64:2026.11.01-2@sha256:54b271d9562a3686298880df05367909e949ed317e7b1b79b59c696d75f78676
+          - triple: x86_64-apple-darwin
+            os: macos-26-intel
+          - triple: aarch64-apple-darwin
+            os: macos-26
+          - triple: x86_64-pc-windows-msvc
+            os: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || '' }}
+
+      - name: Shorten paths for the biome checkout (adrs/0003-dependency-policy.md)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          git config --global core.longpaths true
+          echo 'CARGO_HOME=D:\c' >> "$GITHUB_ENV"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: ${{ matrix.triple }}
+
+      - name: Setup cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: components-${{ matrix.triple }}
+
+      - name: Setup mise (alef)
+        uses: xberg-io/actions/setup-mise@v1
+
+      - name: Plan (input hashes, reuse of the previous release's assets)
+        shell: bash
+        run: scripts/components-release.sh plan "${{ matrix.triple }}"
+
+      - name: Build components (manylinux_2_28 container)
+        if: ${{ matrix.image }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm -v "$PWD":/work -w /work \
+            -e TARGET="${{ matrix.triple }}" -e RUST_TOOLCHAIN="$RUST_TOOLCHAIN" -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
+            "${{ matrix.image }}" bash -euo pipefail -c '
+              curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain "$RUST_TOOLCHAIN" --target "$TARGET"
+              . "$HOME/.cargo/env"
+              scripts/components-release.sh build "$TARGET"
+              chown -R "$HOST_UID:$HOST_GID" target
+            '
+
+      - name: Build components
+        if: ${{ !matrix.image }}
+        shell: bash
+        run: scripts/components-release.sh build "${{ matrix.triple }}"
+
+      - name: Sign and package components
+        shell: bash
+        env:
+          POLY_COMPONENT_SIGNING_KEY: ${{ secrets.POLY_COMPONENT_SIGNING_KEY }}
+        run: scripts/components-release.sh package "${{ matrix.triple }}"
+
+      - name: Upload component assets to the release
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release upload "$RELEASE_TAG" target/components-release/${{ matrix.triple }}/dist/* --clobber
+
+      - name: Save artifact for the lock and checksums
+        uses: actions/upload-artifact@v7
+        with:
+          name: releases-components-${{ matrix.triple }}
+          path: target/components-release/${{ matrix.triple }}/dist/*
+          if-no-files-found: error
+
+  component-lock:
+    name: Merge the component lock
+    needs: [meta, build-components]
+    if: >-
+      !inputs.plugins-only && (needs.meta.outputs.release_assets_exist != 'true')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || '' }}
+
+      - name: Setup mise (alef)
+        uses: xberg-io/actions/setup-mise@v1
+
+      - name: Download every triple's component assets
+        uses: actions/download-artifact@v8
+        with:
+          pattern: releases-components-*
+          merge-multiple: true
+          path: components
+
+      - name: Merge into one signed lock
+        run: |
+          set -euo pipefail
+          mise x github:xberg-io/alef@0.118.0 -- alef component lock --input components --output poly-components.lock.json
+
+      - name: Assert the lock is complete and signed
+        run: |
+          set -euo pipefail
+          expected="$(python3 -I scripts/components_release.py count-targets)"
+          jq -e --argjson expected "$expected" --arg prefix "https://github.com/${GITHUB_REPOSITORY}/releases/download/" '
+            (.artifacts | length) == $expected
+            and ((.public_keys | keys) == ["poly-release-1"])
+            and all(.artifacts[]; .key_id == "poly-release-1" and (.url | startswith($prefix)))
+          ' poly-components.lock.json >/dev/null || {
+            echo "::error::component lock is incomplete, unsigned or points outside this repository's releases (expected $expected artifacts)"
+            jq '{keys: (.public_keys | keys), artifacts: [.artifacts[] | {c: .identity.component, t: .identity.target, key: .key_id, url}]}' poly-components.lock.json
+            exit 1
+          }
+          echo "lock carries $expected signed artifacts"
+
+      - name: Upload the lock to the release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ needs.meta.outputs.tag }}" poly-components.lock.json --clobber
+
+      - name: Save the lock for the core builds and checksums
+        uses: actions/upload-artifact@v7
+        with:
+          name: releases-components-lock
+          path: poly-components.lock.json
+          if-no-files-found: error
+
   build-binaries:
     name: Build binaries / ${{ matrix.triple }}
-    needs: [meta, create_release]
+    # The component lock is embedded in every build that downloads components (all but musl).
+    needs: [meta, create_release, component-lock]
     if: >-
       !inputs.plugins-only && (needs.meta.outputs.release_assets_exist != 'true')
     runs-on: ${{ matrix.os }}
@@ -288,8 +459,17 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y clang libclang-dev
         shell: bash
 
-      - name: Build binary (native)
+      - name: Download the component lock
+        uses: actions/download-artifact@v8
+        with:
+          name: releases-components-lock
+          path: components-lock
+
+      - name: Build binary (native, component lock embedded)
         if: ${{ !matrix.alpine }}
+        env:
+          # Read by crates/poly-core/build.rs and compiled into the binary.
+          POLY_COMPONENT_LOCK_FILE: ${{ github.workspace }}/components-lock/poly-components.lock.json
         run: cargo build --release --target ${{ matrix.triple }}
         shell: bash
 
@@ -302,7 +482,9 @@ jobs:
           # static-musl — and ruby-prism-sys's bindgen build script must be
           # dynamically linked (-crt-static off) to dlopen libclang. Building
           # host-native applies the flag everywhere. Then place the binary at the
-          # triple path the shared packaging step expects.
+          # triple path the shared packaging step expects. The musl build stays fully bundled
+          # (default features link every engine family) and is given no POLY_COMPONENT_LOCK_FILE,
+          # so it embeds no lock and downloads nothing.
           docker run --rm -v "$PWD":/work -w /work \
             -e CARGO_TARGET_DIR=/work/target \
             -e LIBCLANG_PATH=/usr/lib \
@@ -347,6 +529,31 @@ jobs:
             exit 1
           fi
           echo "dev-lock absent from $bin"
+        shell: bash
+
+      - name: Assert the component lock is embedded (absent for musl)
+        # The lock's URLs are string data in the binary only when build.rs embedded the lock, so
+        # reading the artifact shows what the build actually carries. The binary path is the one
+        # the build steps above produce: the musl container copies target/release/poly to it.
+        run: |
+          set -euo pipefail
+          bin="target/${{ matrix.triple }}/release/poly"
+          case "${{ matrix.triple }}" in *windows*) bin="$bin.exe" ;; esac
+          test -s "$bin" || { echo "::error::no binary at $bin"; exit 1; }
+          lock=components-lock/poly-components.lock.json
+          total="$(jq -er '.artifacts | length' "$lock")"
+          [ "$total" -gt 0 ] || { echo "::error::the component lock lists no artifacts"; exit 1; }
+          found=0
+          while IFS= read -r url; do
+            if grep -aqF "$url" "$bin"; then found=$((found + 1)); fi
+          done < <(jq -er '.artifacts[].url' "$lock")
+          if [ "${{ matrix.alpine }}" = "true" ]; then
+            [ "$found" -eq 0 ] || { echo "::error::the musl binary embeds $found of $total component artifact URLs"; exit 1; }
+            echo "no component lock in $bin (0 of $total URLs)"
+          else
+            [ "$found" -eq "$total" ] || { echo "::error::$bin embeds $found of $total component artifact URLs"; exit 1; }
+            echo "component lock embedded in $bin ($found of $total URLs)"
+          fi
         shell: bash
 
       - name: Create release artifacts
@@ -399,7 +606,7 @@ jobs:
   checksums:
     if: ${{ !inputs.plugins-only }}
     name: Generate and upload checksums
-    needs: [meta, build-binaries]
+    needs: [meta, build-binaries, build-components, component-lock]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -443,11 +650,47 @@ jobs:
 
           echo "✓ All 6 expected archives present"
 
+      - name: Verify every component asset is present
+        run: |
+          set -euo pipefail
+          missing=0
+          [ -f artifacts/poly-components.lock.json ] || {
+            echo "::error::missing poly-components.lock.json"
+            missing=$((missing + 1))
+          }
+          expected="$(python3 -I scripts/components_release.py count-targets)"
+          pairs=0
+          while IFS= read -r triple; do
+            while IFS=$'\t' read -r component _manifest; do
+              [ -n "$component" ] || continue
+              pairs=$((pairs + 1))
+              for suffix in '.tar.gz' '.tar.gz.record.json'; do
+                if ! compgen -G "artifacts/poly-component-${component}-*-${triple}-????????????????-????????????????${suffix}" >/dev/null; then
+                  echo "::error::missing component asset: $component for $triple ($suffix)"
+                  missing=$((missing + 1))
+                fi
+              done
+              [ -f "artifacts/poly-component-${component}-${triple}.input-hash" ] || {
+                echo "::error::missing input hash: $component for $triple"
+                missing=$((missing + 1))
+              }
+            done < <(python3 -I scripts/components_release.py list --target "$triple")
+          done < <(python3 -I scripts/components_release.py triples)
+          [ "$pairs" -eq "$expected" ] && [ "$pairs" -gt 0 ] || {
+            echo "::error::checked $pairs component/triple pairs, alef.toml configures $expected"
+            exit 1
+          }
+          [ "$missing" -eq 0 ] || exit 1
+          echo "✓ every component asset and the lock are present ($pairs component/triple pairs)"
+
       - name: Generate checksums
         run: |
           set -euo pipefail
           cd artifacts
-          find . -type f \( -name "*.tar.gz" -o -name "*.zip" \) -exec sha256sum {} \; | sort > ../sha256sums.txt
+          # Core and component archives, component records and input hashes, and the lock. Every
+          # name starts with poly-, which is the pattern the registry jobs download and check.
+          find . -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.record.json" -o -name "*.input-hash" \
+            -o -name "poly-components.lock.json" \) -exec sha256sum {} \; | sort > ../sha256sums.txt
           cat ../sha256sums.txt
 
       - name: Upload checksums to release
@@ -465,6 +708,11 @@ jobs:
       !inputs.plugins-only && (always() && needs.meta.result == 'success')
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || '' }}
+
       - name: Promote draft to published release once complete
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -482,8 +730,24 @@ jobs:
             "poly-${version}-x86_64-apple-darwin.tar.gz"
             "poly-${version}-aarch64-apple-darwin.tar.gz"
             "poly-${version}-x86_64-pc-windows-msvc.zip"
+            "poly-components.lock.json"
             "sha256sums.txt"
           )
+
+          # Every component asset the lock references, per triple.
+          expected_pairs="$(python3 -I scripts/components_release.py count-targets)"
+          pairs=0
+          while IFS= read -r triple; do
+            while IFS=$'\t' read -r component _manifest; do
+              [ -n "$component" ] || continue
+              pairs=$((pairs + 1))
+              required+=("poly-component-${component}-${triple}.input-hash")
+            done < <(python3 -I scripts/components_release.py list --target "$triple")
+          done < <(python3 -I scripts/components_release.py triples)
+          if [ "$pairs" -ne "$expected_pairs" ] || [ "$pairs" -eq 0 ]; then
+            echo "::error::found $pairs component/triple pairs, alef.toml configures $expected_pairs"
+            exit 1
+          fi
 
           gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets -q '.assets[].name' \
             > /tmp/assets.txt || true
@@ -494,6 +758,19 @@ jobs:
               missing=$((missing + 1))
             fi
           done
+          # The archives and records carry the packaged version and hashes in their names, so they
+          # are matched by shape: one of each per component and triple.
+          while IFS= read -r triple; do
+            while IFS=$'\t' read -r component _manifest; do
+              [ -n "$component" ] || continue
+              for suffix in '\.tar\.gz' '\.tar\.gz\.record\.json'; do
+                if ! grep -qE "^poly-component-${component}-.+-${triple}-[0-9a-f]{16}-[0-9a-f]{16}${suffix}$" /tmp/assets.txt; then
+                  echo "::error::release $tag is missing the $component component for $triple ($suffix)"
+                  missing=$((missing + 1))
+                fi
+              done
+            done < <(python3 -I scripts/components_release.py list --target "$triple")
+          done < <(python3 -I scripts/components_release.py triples)
           if [ "$missing" -gt 0 ]; then
             echo "::error::release $tag is incomplete ($missing required assets missing); leaving it as a draft"
             exit 1

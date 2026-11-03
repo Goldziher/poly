@@ -12,9 +12,23 @@ branding:
 
 inputs:
   version:
-    description: 'Release version to install (e.g. v0.1.0 or 0.1.0). Omit or pass "latest" to resolve the latest release dynamically.'
+    description: >-
+      Release version to install (e.g. v0.1.0 or 0.1.0). Omit or pass "latest" to resolve the latest
+      release dynamically. Pass "from-config" to use the version `required_version` in `config-file`
+      names: a version, or a lower bound such as ">=2.0, <3" resolved to the newest stable release inside it.
     required: false
     default: ""
+  config-file:
+    description: "The poly.toml `version: from-config` reads `required_version` from."
+    required: false
+    default: "poly.toml"
+  components:
+    description: >-
+      Engine components to download before the first run: "auto" (what the checked-out repository
+      needs, `poly components sync`), "all", "none", or a comma-separated list of component names or
+      presets. Downloaded components are cached between runs.
+    required: false
+    default: "auto"
   cache:
     description: "Cache the installed binaries locally with actions/cache."
     required: false
@@ -39,10 +53,76 @@ runs:
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.github-token }}
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_CONFIG_FILE: ${{ inputs.config-file }}
       run: |
         set -euo pipefail
-        version="${{ inputs.version }}"
-        if [ -z "$version" ] || [ "$version" = "latest" ]; then
+        version="${INPUT_VERSION}"
+        if [ "$version" = "from-config" ]; then
+          if [ ! -f "$INPUT_CONFIG_FILE" ]; then
+            echo "::error::version: from-config needs $INPUT_CONFIG_FILE, which does not exist" >&2
+            exit 1
+          fi
+          # Only a top-level key counts: stop at the first [table] header.
+          requirement="$(awk '/^[[:space:]]*\[/ { exit } { print }' "$INPUT_CONFIG_FILE" \
+            | sed -nE "s/^[[:space:]]*required_version[[:space:]]*=[[:space:]]*[\"']([^\"']*)[\"'].*/\1/p" | head -n 1)"
+          if [ -z "$requirement" ]; then
+            echo "::error::version: from-config found no top-level required_version in $INPUT_CONFIG_FILE" >&2
+            exit 1
+          fi
+          lower=""
+          upper=""
+          upper_inclusive=false
+          exact=""
+          IFS=',' read -ra parts <<< "$requirement"
+          for part in "${parts[@]}"; do
+            part="${part//[[:space:]]/}"
+            if [[ "$part" =~ ^(>=|=|\^|~)?v?([0-9]+(\.[0-9]+){0,2})$ ]]; then
+              op="${BASH_REMATCH[1]}"
+              num="${BASH_REMATCH[2]}"
+              while [ "$(tr -cd . <<< "$num" | wc -c)" -lt 2 ]; do num="$num.0"; done
+              if [ -z "$op" ] || [ "$op" = "=" ]; then
+                if [[ "${BASH_REMATCH[2]}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then exact="$num"; fi
+              fi
+              lower="$num"
+            elif [[ "$part" =~ ^(<|<=)v?([0-9]+(\.[0-9]+){0,2})$ ]]; then
+              upper="${BASH_REMATCH[2]}"
+              while [ "$(tr -cd . <<< "$upper" | wc -c)" -lt 2 ]; do upper="$upper.0"; done
+              [ "${BASH_REMATCH[1]}" = "<=" ] && upper_inclusive=true
+            else
+              echo "::error::required_version \"$requirement\": cannot read \"$part\" (supported: >=X[.Y[.Z]], =X.Y.Z, X.Y.Z, ^ and ~ lower bounds, and < or <= upper bounds; pass version explicitly otherwise)" >&2
+              exit 1
+            fi
+          done
+          if [ -n "$exact" ] && [ -z "$upper" ]; then
+            version="$exact"
+          elif [ -z "$lower" ]; then
+            echo "::error::required_version \"$requirement\" has no lower bound to resolve; pass version explicitly" >&2
+            exit 1
+          else
+            ver_ge() { [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n 1)" = "$2" ]; }
+            tags="$(gh api --paginate repos/Goldziher/poly/releases --jq '.[] | select(.draft | not) | .tag_name' 2>/dev/null || true)"
+            version=""
+            while IFS= read -r tag; do
+              [[ "$tag" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]] || continue
+              candidate="${BASH_REMATCH[1]}"
+              ver_ge "$candidate" "$lower" || continue
+              if [ -n "$upper" ]; then
+                if [ "$upper_inclusive" = true ]; then
+                  ver_ge "$upper" "$candidate" || continue
+                else
+                  { ver_ge "$upper" "$candidate" && [ "$upper" != "$candidate" ]; } || continue
+                fi
+              fi
+              if [ -z "$version" ] || ver_ge "$candidate" "$version"; then version="$candidate"; fi
+            done <<< "$tags"
+            if [ -z "$version" ]; then
+              echo "::error::no released poly version satisfies required_version \"$requirement\" (found $(grep -c . <<< "$tags" || true) releases)" >&2
+              exit 1
+            fi
+          fi
+          echo "required_version \"$requirement\" -> poly $version"
+        elif [ -z "$version" ] || [ "$version" = "latest" ]; then
           version="$(gh release view --repo Goldziher/poly --json tagName -q '.tagName' 2>/dev/null || true)"
           if [ -z "$version" ]; then
             echo "::error::could not resolve the latest polylint release" >&2
@@ -82,3 +162,87 @@ runs:
     - shell: bash
       run: |
         "${{ steps.resolve.outputs.install-dir }}/poly" --version
+
+    - id: components-cache-key
+      if: inputs.components != 'none'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        POLY_VERSION: ${{ steps.resolve.outputs.version }}
+        COMPONENTS: ${{ inputs.components }}
+      run: |
+        set -euo pipefail
+        # One directory on every OS, exported for the later steps of the job too, so what this
+        # action caches is what poly downloads into (POLY_COMPONENT_CACHE overrides poly's default).
+        dir="${RUNNER_TEMP}/poly-components"
+        mkdir -p "$dir"
+        echo "POLY_COMPONENT_CACHE=$dir" >> "$GITHUB_ENV"
+        # The lock a release embeds is also attached to it. Its hash keys the cache, so a release
+        # that changes a component (or its signing key) never restores another's downloads.
+        lock_dir="${RUNNER_TEMP}/poly-lock"
+        mkdir -p "$lock_dir"
+        # "none" (a release that predates components) skips the component steps entirely.
+        lock_hash="none"
+        if [ "$COMPONENTS" != "auto" ] && [ "$COMPONENTS" != "all" ]; then
+          IFS=', ' read -ra names <<< "$COMPONENTS"
+          for name in "${names[@]}"; do
+            if [[ ! "$name" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
+              echo "::error::components: invalid name \"$name\" (expected lowercase letters, digits and dashes)" >&2
+              exit 1
+            fi
+          done
+        fi
+        if [ "$COMPONENTS" = "auto" ] || [ "$COMPONENTS" = "all" ]; then
+          selection="$COMPONENTS"
+        elif command -v sha256sum >/dev/null 2>&1; then
+          selection="$(printf '%s' "$COMPONENTS" | sha256sum | cut -c1-16)"
+        else
+          selection="$(printf '%s' "$COMPONENTS" | shasum -a 256 | cut -c1-16)"
+        fi
+        echo "selection=$selection" >> "$GITHUB_OUTPUT"
+        # A release without the asset genuinely has no components; any other failure is a warning.
+        assets="$(gh release view "v${POLY_VERSION}" --repo Goldziher/poly --json assets -q '.assets[].name' 2>&1)" || {
+          echo "::warning::could not read release v${POLY_VERSION}; skipping components: $assets"
+          assets=""
+        }
+        if grep -qx poly-components.lock.json <<< "$assets"; then
+          if err="$(gh release download "v${POLY_VERSION}" --repo Goldziher/poly --pattern poly-components.lock.json \
+            --dir "$lock_dir" --clobber 2>&1)"; then
+            if command -v sha256sum >/dev/null 2>&1; then
+              lock_hash="$(sha256sum "$lock_dir/poly-components.lock.json" | cut -c1-16)"
+            else
+              lock_hash="$(shasum -a 256 "$lock_dir/poly-components.lock.json" | cut -c1-16)"
+            fi
+          else
+            echo "::warning::could not download poly-components.lock.json from v${POLY_VERSION}; skipping components: $err"
+          fi
+        fi
+        echo "lock-hash=$lock_hash" >> "$GITHUB_OUTPUT"
+        echo "dir=$dir" >> "$GITHUB_OUTPUT"
+
+    - id: components-cache
+      if: inputs.components != 'none'
+      uses: actions/cache@v6
+      with:
+        path: ${{ steps.components-cache-key.outputs.dir }}
+        # "auto" downloads what the repository's configs need, so the key follows them.
+        key: poly-components-v${{ steps.resolve.outputs.version }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.components-cache-key.outputs.lock-hash }}-${{ inputs.components == 'auto' && hashFiles('**/poly.toml', '**/poly.local.toml') || steps.components-cache-key.outputs.selection }}
+
+    - if: inputs.components != 'none' && steps.components-cache-key.outputs.lock-hash != 'none'
+      shell: bash
+      env:
+        COMPONENTS: ${{ inputs.components }}
+        POLY_BIN: ${{ steps.resolve.outputs.install-dir }}/poly
+      run: |
+        set -euo pipefail
+        case "$COMPONENTS" in
+          auto) "$POLY_BIN" components sync ;;
+          all) "$POLY_BIN" components install all ;;
+          *)
+            IFS=', ' read -ra names <<< "$COMPONENTS"
+            for name in "${names[@]}"; do
+              [[ "$name" =~ ^[a-z0-9][a-z0-9-]*$ ]] || { echo "::error::components: invalid name \"$name\"" >&2; exit 1; }
+            done
+            "$POLY_BIN" components install "${names[@]}"
+            ;;
+        esac

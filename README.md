@@ -71,6 +71,18 @@ Both detect the platform, download the matching release archive, and verify it a
 Forwards to `install.sh` and caches the installed binary by version and platform. See
 [`ACTION_USAGE.md`](ACTION_USAGE.md) for the full input/output reference.
 
+Engine components (the engines a slim `poly` downloads instead of bundling) are fetched before the
+first run and cached by version and component lock, so a second run downloads nothing:
+
+```yaml
+- uses: actions/checkout@v7
+- uses: Goldziher/poly@v0
+  with:
+    version: from-config # the version `required_version` in poly.toml names
+    components: auto # what this repository needs; or all, none, or e.g. "sql,php"
+- run: poly lint .
+```
+
 ### Package managers
 
 ```sh

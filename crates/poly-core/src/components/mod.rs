@@ -11,6 +11,8 @@
 //! (`all-engines`) build links every family, so [`resolve`] finds nothing to do there and never
 //! builds a host.
 
+#[cfg(not(feature = "dev-lock"))]
+mod embedded;
 mod needed;
 mod preplan;
 mod report;
