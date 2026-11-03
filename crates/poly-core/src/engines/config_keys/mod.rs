@@ -60,10 +60,14 @@ use crate::engine::{
 use crate::language::Language;
 use crate::registry::{all_languages, engines_for};
 
+// The probes only serve the serde-derived formatters (malva, markup_fmt, pretty_graphql, mago).
 pub(crate) mod probe;
-#[cfg(test)]
+// The assertions name individual engines (taplo, ruff, oxc, quality, ...), so they need every family.
+#[cfg(all(test, feature = "all-engines"))]
 mod tests;
 
+// Each probe serves a different subset of engine families.
+#[cfg_attr(not(feature = "all-engines"), allow(unused_imports))]
 pub(crate) use probe::{recognized_by_deserialize, recognized_by_type_probe};
 
 /// Config file names this backend checks. Mirrors `poly_config`'s own

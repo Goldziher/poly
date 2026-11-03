@@ -7,6 +7,7 @@
 //!   `terraform fmt` layout.
 //! - `commented_file_preserves_comments` — a `.tf` file with comments asserts
 //!   that comments survive the format pass.
+#![cfg(feature = "engine-hcl")]
 
 use poly_core::{
     Language,

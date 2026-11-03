@@ -1,3 +1,4 @@
+#![cfg(feature = "all-engines")]
 use poly_core::{Config, RunOptions, Severity};
 
 const INVALID_UTF8: &[u8] = b"x = 1\n\xff\xfe not utf-8\n";

@@ -3,6 +3,7 @@
 //! Two fixture categories:
 //! - known-bad: a SQL file with known violations → asserts the `Diagnostic` list.
 //! - known-unformatted: a SQL file sqruff can reformat → asserts exact formatted output.
+#![cfg(feature = "engine-sql")]
 
 use std::path::PathBuf;
 

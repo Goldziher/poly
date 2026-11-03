@@ -17,6 +17,7 @@
 //! by the `extends` resolver and the other is a merge directive stripped before
 //! deserialization — so a naive "is this a field of `RawPolyConfig`?" check
 //! reports both, on configs that are entirely correct.
+#![cfg(feature = "all-engines")]
 
 use poly_core::{Config, RunOptions};
 

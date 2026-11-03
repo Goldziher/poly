@@ -1,6 +1,7 @@
 //! End-to-end configuration tests: schema parsing, file discovery, per-engine
 //! slicing, the opinionated-default layering, and proof that user config
 //! actually changes engine behavior (ruff rule `ignore`).
+#![cfg(feature = "engine-python")]
 
 use std::fs;
 

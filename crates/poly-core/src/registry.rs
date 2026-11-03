@@ -8,58 +8,114 @@ use std::collections::BTreeMap;
 use std::sync::LazyLock;
 
 use crate::engine::Engine;
+#[cfg(feature = "engine-web")]
 use crate::engines::adrlint::AdrlintEngine;
+#[cfg(feature = "engine-astgrep")]
 use crate::engines::astgrep::AstGrepEngine;
+#[cfg(feature = "engine-biome")]
 use crate::engines::biome_css::BiomeCssEngine;
+#[cfg(feature = "engine-biome")]
 use crate::engines::biome_graphql::BiomeGraphqlEngine;
 use crate::engines::config_keys::PolyConfigEngine;
+#[cfg(feature = "engine-dockerfile")]
 use crate::engines::dockerfile::DockerfileEngine;
+#[cfg(feature = "engine-dotenv")]
 use crate::engines::dotenv::DotenvEngine;
+#[cfg(feature = "engine-graphql")]
 use crate::engines::graphql::GraphQlEngine;
+#[cfg(feature = "engine-hcl")]
 use crate::engines::hcl::HclEngine;
+#[cfg(feature = "engine-ini")]
 use crate::engines::ini::IniEngine;
+#[cfg(feature = "engine-php")]
 use crate::engines::mago::MagoEngine;
+#[cfg(feature = "engine-web")]
 use crate::engines::malva::MalvaEngine;
+#[cfg(feature = "engine-web")]
 use crate::engines::markup_fmt::MarkupFmtEngine;
 use crate::engines::native_tool::NativeToolEngine;
+#[cfg(feature = "engine-nix")]
 use crate::engines::nixfmt::NixFmtEngine;
+#[cfg(feature = "engine-web")]
 use crate::engines::oxc::OxcEngine;
+#[cfg(feature = "engine-quality")]
 use crate::engines::quality::QualityEngine;
+#[cfg(feature = "engine-ruby")]
 use crate::engines::rubyfmt::RubyfmtEngine;
+#[cfg(feature = "engine-python")]
 use crate::engines::ruff::RuffEngine;
+#[cfg(feature = "engine-web")]
 use crate::engines::rumdl::RumdlEngine;
+#[cfg(feature = "engine-sql")]
 use crate::engines::sqruff::SqruffEngine;
+#[cfg(feature = "engine-web")]
 use crate::engines::taplo::TaploEngine;
 use crate::engines::treesitter::TreeSitterEngine;
+#[cfg(feature = "engine-typos")]
 use crate::engines::typos::TyposEngine;
+#[cfg(feature = "engine-uncomment")]
 use crate::engines::uncomment::UncommentEngine;
+#[cfg(feature = "engine-web")]
 use crate::engines::yaml::YamlEngine;
 use crate::language::Language;
 
 /// Engines applicable to a language, in priority order (formatters run in sequence).
+///
+/// Every arm that names an engine family is gated on that family's `engine-*` feature. With the
+/// family off the arm disappears and its languages reach the final `_ => TreeSitterEngine` arm,
+/// the same tier any language without a native backend gets. Arms that combine two families
+/// (CSS: `engine-web` + `engine-biome`; GraphQL: `engine-graphql` + `engine-biome`) are spelled
+/// out once per combination.
 pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
     if matches!(lang, Language::Other(name) if name == crate::language::HELM_TEMPLATE) {
         return Vec::new();
     }
+    // `mut` is unused when every cross-cutting family is compiled out.
+    #[allow(unused_mut)]
     let mut engines: Vec<Box<dyn Engine>> = match lang {
+        #[cfg(feature = "engine-web")]
         Language::JavaScript
         | Language::TypeScript
         | Language::Jsx
         | Language::Tsx
         | Language::Json
         | Language::Jsonc => vec![Box::new(OxcEngine)],
+        #[cfg(feature = "engine-web")]
         Language::Toml => vec![Box::new(TaploEngine::new()), Box::new(PolyConfigEngine)],
+        // `poly.toml` key checking is core; only the TOML formatter is the web family's.
+        #[cfg(not(feature = "engine-web"))]
+        Language::Toml => vec![Box::new(TreeSitterEngine), Box::new(PolyConfigEngine)],
+        #[cfg(feature = "engine-web")]
         Language::Markdown => vec![Box::new(RumdlEngine), Box::new(AdrlintEngine)],
+        #[cfg(feature = "engine-web")]
         Language::Mdx => vec![Box::new(RumdlEngine)],
+        #[cfg(feature = "engine-python")]
         Language::Python => vec![Box::new(RuffEngine)],
+        #[cfg(feature = "engine-sql")]
         Language::Sql => vec![Box::new(SqruffEngine)],
+        #[cfg(feature = "engine-web")]
         Language::Yaml => vec![Box::new(YamlEngine)],
+        #[cfg(feature = "engine-web")]
         Language::Less => vec![Box::new(MalvaEngine)],
+        #[cfg(all(feature = "engine-web", feature = "engine-biome"))]
         Language::Css | Language::Scss => vec![Box::new(MalvaEngine), Box::new(BiomeCssEngine)],
+        #[cfg(all(feature = "engine-web", not(feature = "engine-biome")))]
+        Language::Css | Language::Scss => vec![Box::new(MalvaEngine)],
+        #[cfg(all(not(feature = "engine-web"), feature = "engine-biome"))]
+        Language::Css | Language::Scss => vec![Box::new(BiomeCssEngine)],
+        #[cfg(feature = "engine-nix")]
         Language::Nix => vec![Box::new(NixFmtEngine)],
+        #[cfg(feature = "engine-ruby")]
         Language::Ruby => vec![Box::new(RubyfmtEngine)],
+        #[cfg(all(feature = "engine-graphql", feature = "engine-biome"))]
         Language::GraphQl => vec![Box::new(GraphQlEngine), Box::new(BiomeGraphqlEngine)],
+        #[cfg(all(feature = "engine-graphql", not(feature = "engine-biome")))]
+        Language::GraphQl => vec![Box::new(GraphQlEngine)],
+        #[cfg(all(not(feature = "engine-graphql"), feature = "engine-biome"))]
+        Language::GraphQl => vec![Box::new(BiomeGraphqlEngine)],
+        #[cfg(feature = "engine-hcl")]
         Language::Hcl => vec![Box::new(HclEngine)],
+        #[cfg(feature = "engine-web")]
         Language::Html
         | Language::Vue
         | Language::Svelte
@@ -69,9 +125,13 @@ pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
         | Language::Vento
         | Language::Mustache
         | Language::Xml => vec![Box::new(MarkupFmtEngine)],
+        #[cfg(feature = "engine-php")]
         Language::Php => vec![Box::new(MagoEngine::default())],
+        #[cfg(feature = "engine-dockerfile")]
         Language::Dockerfile => vec![Box::new(DockerfileEngine)],
+        #[cfg(feature = "engine-dotenv")]
         Language::Dotenv => vec![Box::new(DotenvEngine)],
+        #[cfg(feature = "engine-ini")]
         Language::Ini => vec![Box::new(IniEngine)],
         Language::Go => vec![Box::new(NativeToolEngine::for_language(Language::Go))],
         Language::Rust => vec![Box::new(NativeToolEngine::for_language(Language::Rust))],
@@ -88,9 +148,13 @@ pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
         ],
         _ => vec![Box::new(TreeSitterEngine)],
     };
+    #[cfg(feature = "engine-typos")]
     engines.push(Box::new(TyposEngine));
+    #[cfg(feature = "engine-astgrep")]
     engines.push(Box::new(AstGrepEngine));
+    #[cfg(feature = "engine-uncomment")]
     engines.push(Box::new(UncommentEngine));
+    #[cfg(feature = "engine-quality")]
     engines.push(Box::new(QualityEngine));
     engines
 }
@@ -161,7 +225,16 @@ pub fn engine_versions() -> &'static BTreeMap<&'static str, String> {
 /// know where a global setting for one of them may live. Kept honest by
 /// `tests::cross_cutting_engines_are_the_ones_claiming_no_languages`, which
 /// derives the same set from `languages()` rather than trusting this list.
-pub(crate) const CROSS_CUTTING_ENGINES: &[&str] = &["typos", "astgrep", "uncomment", "quality"];
+pub(crate) const CROSS_CUTTING_ENGINES: &[&str] = &[
+    #[cfg(feature = "engine-typos")]
+    "typos",
+    #[cfg(feature = "engine-astgrep")]
+    "astgrep",
+    #[cfg(feature = "engine-uncomment")]
+    "uncomment",
+    #[cfg(feature = "engine-quality")]
+    "quality",
+];
 
 /// Every concrete (non-[`Language::Other`]) [`Language`] variant, used to
 /// walk every arm of [`engines_for`]. Kept from silently narrowing by
@@ -350,7 +423,8 @@ pub(crate) mod tests {
     /// `[lint.<engine>]` table.
     #[test]
     fn cross_cutting_engines_are_the_ones_claiming_no_languages() {
-        let derived: Vec<&str> = engines_for(&Language::Python)
+        // Go, not Python: Python falls through to the (language-less) tree-sitter tier when `engine-python` is off.
+        let derived: Vec<&str> = engines_for(&Language::Go)
             .iter()
             .filter(|engine| engine.languages().is_empty())
             .map(|engine| engine.name())

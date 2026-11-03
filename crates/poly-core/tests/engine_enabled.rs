@@ -12,6 +12,7 @@
 //! Asserted on diagnostics rather than on the plan: the question a user asks is
 //! "did it stop reporting", and a plan that still holds the engine while the
 //! engine reports nothing would pass a plan-shaped test while failing theirs.
+#![cfg(feature = "all-engines")]
 
 use std::path::Path;
 

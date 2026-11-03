@@ -6,6 +6,7 @@
 //! absence would pass just as happily against a backend that had stopped
 //! reporting anything at all — which is the exact failure mode ADR 0028 calls
 //! out (a suppression comment that is documented but read by no code).
+#![cfg(feature = "all-engines")]
 
 use std::collections::BTreeMap;
 use std::fs;

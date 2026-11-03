@@ -6,6 +6,7 @@
 //! Python patterns, forbids shell tests and switches TypeScript on. Each run
 //! snapshots exactly which files the rule names, so a helper or a collected
 //! name gaining a finding shows up as a snapshot diff.
+#![cfg(feature = "all-engines")]
 
 use std::path::Path;
 

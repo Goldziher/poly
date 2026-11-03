@@ -2,6 +2,7 @@
 //! Two kinds:
 //!   1. known-bad file  → expected `Diagnostic`s
 //!   2. known-unformatted file → exact formatted output
+#![cfg(feature = "engine-web")]
 
 use std::path::PathBuf;
 

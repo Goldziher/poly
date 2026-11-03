@@ -7,6 +7,7 @@
 //! shell out to the built binary (via `CARGO_BIN_EXE_poly`), so they exercise
 //! the whole path: arg parsing → config resolution → rule merge/selection →
 //! human and machine output.
+#![cfg(feature = "engine-astgrep")]
 #![cfg(unix)]
 
 use std::path::Path;

@@ -96,6 +96,7 @@ const MAX_NESTING_DEPTH: usize = 400;
 /// it is for engines whose language makes brackets syntax. A balanced run
 /// inside a string never accumulates; only unclosed or genuinely nested input
 /// reaches the limit.
+#[cfg_attr(not(any(feature = "engine-web", feature = "engine-hcl")), allow(dead_code))]
 pub(crate) fn refuse_pathological_nesting(path: &Path, content: &str) -> anyhow::Result<()> {
     let mut depth = 0usize;
     for byte in content.bytes() {
@@ -125,6 +126,7 @@ pub(crate) fn refuse_pathological_nesting(path: &Path, content: &str) -> anyhow:
 /// it the run — where the same depth *closed* parses in linear time. Like
 /// [`refuse_pathological_nesting`] it ignores quoting; a false positive costs
 /// one file's formatting, a false negative costs the run.
+#[cfg_attr(not(feature = "engine-web"), allow(dead_code))]
 pub(crate) fn deep_unbalanced_nesting(content: &str, depth: usize) -> bool {
     let (mut open, mut deepest, mut underflowed) = (0usize, 0usize, false);
     for byte in content.bytes() {

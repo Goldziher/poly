@@ -7,6 +7,7 @@
 //!   output produced by malva with polylint's opinionated defaults
 //!   (print_width=120, indent_width=2).
 //! - `format_scss_snapshot` — same for SCSS with nested rules.
+#![cfg(feature = "engine-web")]
 
 use poly_core::{
     Language,

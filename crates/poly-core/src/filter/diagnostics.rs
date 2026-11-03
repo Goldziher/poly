@@ -8,7 +8,7 @@
 //! resolved `poly.toml`'s `[per-file-ignores]` table. A **default** entry comes
 //! from a lint rule that declares its own path exclusions next to the rule it
 //! belongs to — poly's built-in ast-grep pack ships several, as `ignores:` in
-//! the rule YAML (see [`crate::engines::astgrep::exclusions`]).
+//! the rule YAML (see `crate::engines::astgrep::exclusions`).
 //!
 //! A user entry naming a rule **replaces** that rule's declared defaults rather
 //! than unioning with them, matching the layering the pack already follows for

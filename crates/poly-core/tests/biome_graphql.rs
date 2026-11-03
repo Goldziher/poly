@@ -4,6 +4,7 @@
 //!   asserts the expected [`Diagnostic`]s from the biome correctness rules.
 //! - `valid_graphql_no_diagnostics` — a correctly-named operation has no
 //!   diagnostics from the biome engine.
+#![cfg(feature = "engine-biome")]
 
 use poly_core::{
     Language,

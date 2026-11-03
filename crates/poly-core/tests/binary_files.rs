@@ -13,6 +13,7 @@
 //! file that is genuinely malformed UTF-8 is a real finding, it is what
 //! `tests/invalid_utf8.rs` covers, and widening the binary skip to swallow it
 //! would hide exactly the corruption poly exists to report.
+#![cfg(feature = "all-engines")]
 
 use poly_core::{Config, RunOptions};
 

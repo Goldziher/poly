@@ -13,6 +13,7 @@
 //! `POLY_CACHE_HOME` at a private temp directory for the duration of the
 //! test (serialized against any other test in this binary that also touches
 //! process environment, since `std::env::set_var` is process-global).
+#![cfg(feature = "engine-web")]
 
 use std::fs;
 use std::sync::Mutex;

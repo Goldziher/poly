@@ -13,6 +13,7 @@
 //! - their `version()` strings differ, so even a hypothetical shared plan yields
 //!   distinct cache keys;
 //! - `[lint.css.biome]` configures CSS only — it cannot reach the GraphQL engine.
+#![cfg(feature = "all-engines")]
 
 use std::fs;
 

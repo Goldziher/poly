@@ -3,6 +3,7 @@
 //! Two fixtures are required per the project's tdd-and-prek contract:
 //! - `bad.md`         — known-bad file asserting expected `Diagnostic`s
 //! - `unformatted.md` — known-unformatted file asserting exact formatted output
+#![cfg(feature = "engine-web")]
 
 use std::fs;
 use std::path::PathBuf;

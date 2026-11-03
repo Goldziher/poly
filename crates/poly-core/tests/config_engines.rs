@@ -10,6 +10,7 @@
 //!   - sqruff  — `exclude_rules` suppresses a named rule
 //!   - typos   — `extend_ignore_words` silences a user-defined word
 //!   - graphql — `indent_width` changes the formatted indentation depth
+#![cfg(feature = "all-engines")]
 
 use std::fs;
 use std::path::PathBuf;

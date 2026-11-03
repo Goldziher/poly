@@ -32,7 +32,7 @@ poly-cache.workspace = true
 poly-config.workspace = true
 # `schemars` feature: derive JsonSchema on the report types so tools can return
 # rmcp structured content (`Json`-style output schema) mirroring the CLI JSON.
-poly-core = { workspace = true, features = ["schemars"] }
+poly-core = { workspace = true, features = ["schemars", "all-engines"] }
 # Whole-project (workspace) lint orchestration shared with the CLI, exposed as the
 # long-running `workspace_lint` / `workspace_lint_fix` async Task tools.
 poly-workspace.workspace = true

@@ -134,8 +134,12 @@ pub fn lint_run(
     let ignores: Vec<PerFileIgnores> = configs
         .iter()
         .map(|c| {
+            #[cfg(feature = "engine-astgrep")]
             let defaults =
                 crate::engines::astgrep::exclusions::default_path_ignores(&c.rules_dirs, c.rules_builtin_pack);
+            // No ast-grep engine, so no rule-declared `ignores:` globs to layer in.
+            #[cfg(not(feature = "engine-astgrep"))]
+            let defaults = crate::filter::DefaultPathIgnores::new();
             PerFileIgnores::compile_with_defaults(&c.per_file_ignores, &defaults)
         })
         .collect();
@@ -978,5 +982,6 @@ fn configure_pool(jobs: Option<usize>) {
     });
 }
 
-#[cfg(test)]
+// These tests lint real Python/JS/... sources, so they need every engine family.
+#[cfg(all(test, feature = "all-engines"))]
 mod tests;

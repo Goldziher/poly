@@ -12,6 +12,7 @@
 //!
 //! Rule YAML is written to a temp dir at runtime (not committed fixture files)
 //! so the repo's own fixable pre-commit hooks cannot rewrite the rule bodies.
+#![cfg(feature = "engine-astgrep")]
 
 use std::fs;
 use std::path::Path;

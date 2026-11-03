@@ -17,6 +17,7 @@ pub mod hooks;
 pub mod migrate;
 pub mod progress;
 pub mod remote;
+#[cfg(feature = "engine-astgrep")]
 pub mod rules_cmd;
 pub mod workspace_coverage;
 
@@ -25,6 +26,7 @@ pub use config_cmd::{ConfigArgs, run_config};
 pub use doctor::{DoctorArgs, run_doctor};
 pub use hooks::{HooksArgs, run_hooks};
 pub use migrate::{MigrateArgs, run_migrate};
+#[cfg(feature = "engine-astgrep")]
 pub use rules_cmd::{RulesArgs, run_rules};
 
 /// Install the process-wide `tracing` subscriber for the CLI binaries at the

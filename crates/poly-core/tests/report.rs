@@ -1,6 +1,7 @@
 //! Snapshot tests for the three output renderers (pretty / json / toon) over a
 //! synthetic result set that includes a diagnostic with populated `metadata`
 //! and one without. Color is forced off so the `pretty` snapshot is stable.
+#![cfg(feature = "all-engines")]
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;

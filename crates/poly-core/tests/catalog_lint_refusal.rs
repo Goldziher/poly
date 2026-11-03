@@ -9,6 +9,7 @@
 //! nothing for it, and the run reports success — a green result standing in for
 //! work that was never done. These tests pin the warning, because the run exits 0
 //! either way: only the message distinguishes "clean" from "not checked".
+#![cfg(feature = "all-engines")]
 
 use std::io;
 use std::path::Path;

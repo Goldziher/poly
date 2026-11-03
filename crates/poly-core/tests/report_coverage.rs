@@ -7,6 +7,7 @@
 //! produced an empty diagnostic list, no error flag, and read exactly like a
 //! clean pass. An agent told to "lint the changed files and fix what it finds"
 //! is right to read that as done.
+#![cfg(feature = "all-engines")]
 
 use std::path::Path;
 

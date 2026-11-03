@@ -8,6 +8,7 @@
 //!   by the first diagnostic and asserts the exact corrected text.
 //! - `clean_file_has_no_dotenv_diagnostics` — a properly-ordered, uppercase,
 //!   unique-key `.env` file produces no findings.
+#![cfg(feature = "engine-dotenv")]
 
 use poly_core::{
     Language,

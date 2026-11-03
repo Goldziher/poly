@@ -8,6 +8,7 @@
 //!   diagnostics.
 //! - `already_formatted_returns_unchanged` — a well-formatted PHP file is
 //!   returned as [`FormatOutput::Unchanged`].
+#![cfg(feature = "engine-php")]
 
 use poly_core::{
     Language,

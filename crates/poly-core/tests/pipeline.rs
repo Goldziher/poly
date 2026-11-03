@@ -1,4 +1,5 @@
 //! End-to-end pipeline tests for the core: discovery → routing → run → cache.
+#![cfg(feature = "all-engines")]
 
 use std::fs;
 

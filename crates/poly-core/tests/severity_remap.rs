@@ -1,6 +1,7 @@
 //! End-to-end per-rule severity remap: a configured `[lint.<lang>.<tool>.rules
 //! .<code>] level` overrides the reported severity of a diagnostic carrying that
 //! code, applied uniformly by the runner (not by the engine's own config).
+#![cfg(feature = "all-engines")]
 
 use std::fs;
 use std::path::Path;

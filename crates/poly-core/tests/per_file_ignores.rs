@@ -1,5 +1,6 @@
 //! End-to-end per-file-ignores: a glob-matched rule is suppressed from the
 //! report AND skipped by `--fix`, while non-matching files are unaffected.
+#![cfg(feature = "all-engines")]
 
 use std::collections::BTreeMap;
 use std::fs;

@@ -116,7 +116,8 @@ poly-cache = { path = "crates/poly-cache" }
 poly-catalog = { path = "crates/poly-catalog" }
 poly-cli = { path = "crates/poly-cli" }
 poly-config = { path = "crates/poly-config" }
-poly-core = { path = "crates/poly-core" }
+# `default-features = false`: members opt into engine families explicitly (`all-engines`, `engine-*`).
+poly-core = { path = "crates/poly-core", default-features = false }
 poly-hooks = { path = "crates/poly-hooks" }
 poly-mcp = { path = "crates/poly-mcp" }
 poly-workspace = { path = "crates/poly-workspace" }

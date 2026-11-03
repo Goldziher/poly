@@ -25,6 +25,15 @@ path = "src/lib.rs"
 name = "poly"
 path = "src/main.rs"
 
+[features]
+default = ["mcp", "all-engines"]
+# `poly mcp` subcommand (pulls rmcp + tokio, and every engine via poly-mcp).
+mcp = ["dep:poly-mcp"]
+# Every engine family compiled in. Drop it (`--no-default-features`) for the core-only binary.
+all-engines = ["poly-core/all-engines", "engine-astgrep"]
+# `poly rules` drives the ast-grep engine directly, so the subcommand needs the family.
+engine-astgrep = ["poly-core/engine-astgrep"]
+
 [dependencies]
 aho-corasick.workspace = true
 anyhow.workspace = true
@@ -40,7 +49,8 @@ poly-catalog.workspace = true
 poly-config.workspace = true
 poly-core.workspace = true
 poly-hooks.workspace = true
-poly-mcp.workspace = true
+# Optional: the `poly mcp` subcommand (rmcp + tokio). See the `mcp` feature.
+poly-mcp = { workspace = true, optional = true }
 poly-workspace.workspace = true
 serde.workspace = true
 serde-saphyr.workspace = true

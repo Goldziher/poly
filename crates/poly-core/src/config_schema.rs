@@ -135,9 +135,11 @@ fn offers(engine: &dyn Engine, kind: Kind) -> bool {
 }
 
 /// The language-agnostic cross-cutting backends, taken from any language's
-/// registry list (they are appended to every one).
+/// registry list (they are appended to every one). Go is the probe language because its engine is
+/// a native-toolchain one, present in every build; a family-gated language would fall through to
+/// the tree-sitter tier, which also declares no languages.
 fn cross_cutting() -> Vec<Box<dyn Engine>> {
-    engines_for(&Language::Python)
+    engines_for(&Language::Go)
         .into_iter()
         .filter(|engine| engine.languages().is_empty())
         .collect()
@@ -199,7 +201,8 @@ fn type_schema(ty: OptionType) -> Option<Value> {
     }
 }
 
-#[cfg(test)]
+// Asserts on ruff / typos / taplo tables, so it needs every family.
+#[cfg(all(test, feature = "all-engines"))]
 mod tests {
     use super::*;
 

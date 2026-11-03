@@ -6,6 +6,7 @@
 //! - `should_return_unchanged_on_unparsable_ruby` — an unclosed `def`
 //!   asserts `FormatOutput::Unchanged` (robustness rule: parse errors must
 //!   not crash the run or corrupt the file).
+#![cfg(feature = "engine-ruby")]
 
 use poly_core::{
     Language,

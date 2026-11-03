@@ -173,7 +173,12 @@ impl Config {
             Kind::Lint if lang_options.get("oxlintrc").and_then(toml::Value::as_bool) == Some(false) => {
                 toml::Table::new()
             }
+            #[cfg(feature = "engine-web")]
             Kind::Lint => crate::oxlint_native::engine_defaults(&self.oxlint_native, lang, engine_name),
+            // `oxlint_native` links `oxc_linter`, so without the web family there is no oxlint
+            // config to turn into defaults.
+            #[cfg(not(feature = "engine-web"))]
+            Kind::Lint => toml::Table::new(),
         };
         for (key, value) in native_defaults {
             lang_options.entry(key).or_insert(value);
@@ -190,16 +195,18 @@ impl Config {
         // key carried by the engine rather than by any backend has to be
         // lifted out here or it silently does nothing.
         let enabled = self.resolve_enabled(tables, engine_name, &lang_options);
-        let mut options = if engine_name == "typos" {
-            self.build_typos_options(&lang_options)
-        } else if engine_name == "astgrep" {
-            self.build_astgrep_options()
-        } else if engine_name == "uncomment" {
-            self.build_uncomment_options(&lang_options)
-        } else if engine_name == "quality" {
-            self.build_quality_options(&lang_options)
-        } else {
-            lang_options
+        // An engine whose family is compiled out has no builder: its table passes through verbatim,
+        // exactly as for any other engine without a cross-cutting option set.
+        let mut options = match engine_name {
+            #[cfg(feature = "engine-typos")]
+            "typos" => self.build_typos_options(&lang_options),
+            #[cfg(feature = "engine-astgrep")]
+            "astgrep" => self.build_astgrep_options(),
+            #[cfg(feature = "engine-uncomment")]
+            "uncomment" => self.build_uncomment_options(&lang_options),
+            #[cfg(feature = "engine-quality")]
+            "quality" => self.build_quality_options(&lang_options),
+            _ => lang_options,
         };
         if let Some(enabled) = enabled {
             options.insert(ENABLED_OPTION_KEY.to_string(), toml::Value::Boolean(enabled));
@@ -231,6 +238,7 @@ impl Config {
         })
     }
 
+    #[cfg(feature = "engine-uncomment")]
     /// Build the merged `options` table for the uncomment engine.
     ///
     /// The uncomment backend is language-agnostic (opt-in comment removal), so its
@@ -265,6 +273,7 @@ impl Config {
         options
     }
 
+    #[cfg(feature = "engine-quality")]
     /// Build the merged `options` table for the `quality` engine.
     ///
     /// Like `uncomment`, `quality` is cross-cutting: its base config lives in
@@ -311,6 +320,7 @@ impl Config {
         options
     }
 
+    #[cfg(feature = "engine-typos")]
     /// Build the merged `options` table for the typos engine.
     ///
     /// Precedence (lowest → highest):
@@ -373,6 +383,7 @@ impl Config {
         options
     }
 
+    #[cfg(feature = "engine-astgrep")]
     /// Build the `options` table for the `astgrep` engine.
     ///
     /// Injects the resolved `rules_dirs` so that the engine can discover rule
@@ -414,6 +425,7 @@ impl Config {
     }
 }
 
+#[cfg(feature = "engine-typos")]
 /// Merge the string entries of `table[key]` (a TOML table) into `dest`, with the
 /// incoming layer winning on a duplicate key. Non-table values and non-string
 /// entries are ignored.
@@ -427,6 +439,7 @@ fn extend_string_map(dest: &mut BTreeMap<String, String>, table: &toml::Table, k
     }
 }
 
+#[cfg(any(feature = "engine-typos", feature = "engine-uncomment"))]
 /// Append the string elements of `table[key]` (a TOML array) onto `dest`.
 /// Non-array values and non-string elements are ignored.
 fn extend_string_array(dest: &mut Vec<String>, table: &toml::Table, key: &str) {
@@ -435,6 +448,7 @@ fn extend_string_array(dest: &mut Vec<String>, table: &toml::Table, key: &str) {
     }
 }
 
+#[cfg(any(feature = "engine-typos", feature = "engine-uncomment", feature = "engine-astgrep"))]
 /// Insert `values` into `options` under `key` as a TOML string array, skipping
 /// the insert entirely when the list is empty (keeps the options table minimal).
 fn insert_string_array(options: &mut toml::Table, key: &str, values: Vec<String>) {
@@ -467,7 +481,7 @@ impl From<poly_config::PolyConfig> for Config {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "engine-quality"))]
 mod quality_options_tests {
     use super::{Config, Kind};
     use crate::language::Language;

@@ -11,6 +11,9 @@
 //! for "could not tell" — which the caller treats as "recognise everything",
 //! because a warning invented out of a parse failure is worse than a missed one.
 
+// Each probe serves a different subset of engine families; partial builds leave one unused.
+#![cfg_attr(not(feature = "all-engines"), allow(dead_code))]
+
 use std::collections::BTreeSet;
 
 use serde::de::DeserializeOwned;

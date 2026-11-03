@@ -3,6 +3,7 @@
 //! - `known_bad_diagnostics` — a CSS file with an unknown property asserts the
 //!   expected [`Diagnostic`]s from the biome correctness rules.
 //! - `valid_css_no_diagnostics` — a valid CSS rule has no diagnostics.
+#![cfg(feature = "engine-biome")]
 
 use poly_core::{
     Language,

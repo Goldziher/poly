@@ -19,6 +19,7 @@
 //! `engines/quality/mod.rs`), so there is no matching known-unformatted
 //! fixture — `Engine::format` always returns `Unchanged` for it, which is
 //! covered by `format_is_always_a_no_op` below instead.
+#![cfg(feature = "engine-quality")]
 
 use poly_core::{
     Language,

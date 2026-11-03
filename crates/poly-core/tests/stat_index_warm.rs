@@ -8,7 +8,7 @@
 //! Files must age past the index's racy window before they are recorded, so each
 //! scenario sleeps once after writing its fixtures. `POLY_CACHE_HOME` is
 //! process-global, so every test holds `ENV_LOCK`.
-
+#![cfg(feature = "all-engines")]
 #![cfg(unix)]
 
 use std::fs;

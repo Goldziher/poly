@@ -15,6 +15,16 @@
 //! `registry` is crate-private. Downstream consumers use the curated re-exports
 //! below plus [`lint`] / [`format()`].
 //!
+//! # Cargo features
+//!
+//! The registry, runner, config, cache and report code, the tree-sitter generic tier and the
+//! catalog / native-toolchain tiers are always compiled. Each heavy in-process engine family is
+//! behind an `engine-*` feature (`engine-web`, `engine-python`, `engine-php`, `engine-sql`,
+//! `engine-biome`, `engine-ruby`, `engine-nix`, `engine-typos`, `engine-quality`, `engine-astgrep`,
+//! `engine-uncomment`, `engine-dockerfile`, `engine-dotenv`, `engine-ini`, `engine-hcl`,
+//! `engine-graphql`); `all-engines` (the default) enables all of them. A language whose engine is
+//! compiled out is served by the tree-sitter generic tier.
+//!
 //! [`lint`] and [`format()`] return only the per-file results and **drop** the
 //! per-file failures the run recorded, so a file an engine failed on is simply
 //! absent from what they return — indistinguishable from one that was checked
@@ -33,8 +43,13 @@ pub mod engines;
 pub(crate) mod filter;
 mod fingerprint;
 pub mod language;
+// Only the web family's engines read the oxfmt config; the module itself has no heavy deps.
+#[cfg_attr(not(feature = "engine-web"), allow(dead_code))]
 pub(crate) mod oxfmt_native;
+// Only the web family's engines read the oxfmt config; the module itself has no heavy deps.
+#[cfg_attr(not(feature = "engine-web"), allow(dead_code))]
 pub(crate) mod oxfmt_scope;
+#[cfg(feature = "engine-web")]
 pub(crate) mod oxlint_native;
 pub(crate) mod path_ignore;
 pub(crate) mod registry;

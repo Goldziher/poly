@@ -4,14 +4,19 @@
 //! lints/cleans a commit message (gitfluff). The same engine powers lint/fmt.
 
 use std::ffi::OsString;
+#[cfg(feature = "mcp")]
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use clap::{Args, Parser, Subcommand};
+#[cfg(feature = "mcp")]
+use clap::Args;
+use clap::{Parser, Subcommand};
 use poly_cli::{
-    CacheArgs, ConfigArgs, DoctorArgs, FmtArgs, HooksArgs, LintArgs, MigrateArgs, RulesArgs, run_cache, run_config,
-    run_doctor, run_fmt, run_hooks, run_lint, run_migrate, run_rules,
+    CacheArgs, ConfigArgs, DoctorArgs, FmtArgs, HooksArgs, LintArgs, MigrateArgs, run_cache, run_config, run_doctor,
+    run_fmt, run_hooks, run_lint, run_migrate,
 };
+#[cfg(feature = "engine-astgrep")]
+use poly_cli::{RulesArgs, run_rules};
 
 /// The `doctor` subcommand, which reports PATH conflicts itself and so is
 /// exempt from the one-line warning.
@@ -51,10 +56,12 @@ enum Command {
     /// Inspect and maintain the result cache (stats / size / gc / clean).
     Cache(CacheArgs),
     /// Inspect and test custom ast-grep rule packs (test / list).
+    #[cfg(feature = "engine-astgrep")]
     Rules(RulesArgs),
     /// Manage shared configuration: lock remote `extends` bases and inspect the effective config.
     Config(ConfigArgs),
     /// Run an MCP server over stdio (mirrors the CLI).
+    #[cfg(feature = "mcp")]
     Mcp(McpArgs),
     /// Report which poly is running, every poly on PATH, and the config in effect.
     Doctor(DoctorArgs),
@@ -62,6 +69,7 @@ enum Command {
 
 /// Arguments for `poly mcp`. The server reads `poly.toml` per request like the
 /// CLI; `--config` pins a fallback config file for requests that don't name one.
+#[cfg(feature = "mcp")]
 #[derive(Args)]
 struct McpArgs {
     /// Path to a config file used for requests that do not specify their own.
@@ -99,6 +107,7 @@ fn main() -> ExitCode {
             poly_cli::init_logging();
             run_cache(args)
         }
+        #[cfg(feature = "engine-astgrep")]
         Command::Rules(args) => {
             poly_cli::init_logging();
             run_rules(args)
@@ -111,6 +120,7 @@ fn main() -> ExitCode {
             poly_cli::init_logging();
             run_doctor(args)
         }
+        #[cfg(feature = "mcp")]
         Command::Mcp(args) => {
             poly_cli::init_logging();
             match poly_mcp::serve(args.config) {

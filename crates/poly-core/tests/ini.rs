@@ -13,6 +13,7 @@
 //!   separator) produces no findings.
 //! - `clean_file_has_no_ini_diagnostics` — a well-formed `.ini` file produces
 //!   no findings.
+#![cfg(feature = "engine-ini")]
 
 use poly_core::{
     Language,

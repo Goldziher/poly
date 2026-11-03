@@ -13,6 +13,7 @@
 //! time budget is deliberately generous — enough that ordinary CI contention
 //! cannot trip it, and far below the point where the exponential blowup is
 //! survivable, so a regression fails the test instead of hanging the suite.
+#![cfg(feature = "all-engines")]
 
 use std::time::{Duration, Instant};
 

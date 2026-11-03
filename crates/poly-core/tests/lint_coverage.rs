@@ -19,6 +19,7 @@
 //! These tests pin the two halves that make the difference visible — the count,
 //! and the reason attached to what the count leaves out — because a run that
 //! merely exits 0 passes just as well against the broken behaviour.
+#![cfg(feature = "all-engines")]
 
 use std::path::{Path, PathBuf};
 

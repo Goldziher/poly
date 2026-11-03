@@ -17,6 +17,7 @@
 //!
 //! The rule must keep firing everywhere it earns its keep, so the second test
 //! pins a real Python suppression rather than only asserting the silence.
+#![cfg(feature = "all-engines")]
 
 use poly_core::{Config, RunOptions};
 

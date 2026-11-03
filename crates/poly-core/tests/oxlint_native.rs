@@ -1,4 +1,5 @@
 //! A repository's own `.oxlintrc.json[c]` decides which rules poly's oxc linter runs on JS/TS.
+#![cfg(feature = "engine-web")]
 
 use std::fs;
 use std::path::Path;

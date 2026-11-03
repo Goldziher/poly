@@ -2,6 +2,7 @@
 //! (`ruff_plugin_options.rs`): each test lints one source with and without the
 //! option and asserts the finding appears or disappears, so a key that is
 //! accepted but ignored fails here.
+#![cfg(feature = "engine-python")]
 
 use poly_core::{
     Language,

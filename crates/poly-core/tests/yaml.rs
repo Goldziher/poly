@@ -4,6 +4,7 @@
 //!   asserts the expected parse-error [`Diagnostic`] (`syntax`).
 //! - `known_unformatted_output` — a YAML file with trailing whitespace and a
 //!   missing final newline asserts the normalized output.
+#![cfg(feature = "engine-web")]
 
 use poly_core::{
     Language,

@@ -176,6 +176,7 @@ mod tests {
     /// never runs, so Python must still get the rule. Asserted against
     /// `Rule::is_preview` (not the rule selector) so a future stabilization
     /// flips this test rather than poly silently double-reporting.
+    #[cfg(feature = "engine-python")]
     #[test]
     fn python_nesting_too_deep_is_not_deferred_because_plr1702_is_preview_only() {
         use ruff_linter::registry::Rule as RuffRule;

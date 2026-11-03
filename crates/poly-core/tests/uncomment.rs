@@ -12,6 +12,7 @@
 //! - `remove_todos_option` — `remove_todos = true` makes the TODO removable.
 //! - `unsupported_language_is_noop` — an unknown extension yields no findings and
 //!   no error.
+#![cfg(feature = "engine-uncomment")]
 
 use poly_core::{
     Diagnostic, Language, Severity,

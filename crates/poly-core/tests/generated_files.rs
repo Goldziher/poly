@@ -5,6 +5,7 @@
 //! that it reaches **both** phases from one key, and that a file it removes is
 //! *reported* as skipped rather than silently dropped — a silent drop is how a
 //! gate stops covering a tree without anything going red.
+#![cfg(feature = "all-engines")]
 
 use std::path::{Path, PathBuf};
 

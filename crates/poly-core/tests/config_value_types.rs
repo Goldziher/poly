@@ -6,6 +6,7 @@
 //! enforced and was not. These tests pin the reported form of that finding
 //! through the real pipeline, so the check cannot be satisfied by a unit test
 //! against a backend that is never wired in.
+#![cfg(feature = "all-engines")]
 
 use std::fs;
 use std::path::Path;

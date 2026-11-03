@@ -24,6 +24,7 @@
 //! asserts each one either has a `check(...)` entry in this file or is listed
 //! in that test's `NATIVE_TOOLCHAIN_ENGINES` exemption. Run it alongside this
 //! file: `cargo test -p poly-core --lib registry::tests`.
+#![cfg(feature = "all-engines")]
 
 use std::collections::HashMap;
 use std::path::Path;

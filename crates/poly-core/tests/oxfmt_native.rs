@@ -1,5 +1,6 @@
 //! A repository's own `.oxfmtrc.json[c]` configures poly's oxfmt-equivalent formatters, and its
 //! `ignorePatterns` keep the files oxfmt does not own out of the run.
+#![cfg(feature = "engine-web")]
 
 use std::fs;
 use std::path::Path;

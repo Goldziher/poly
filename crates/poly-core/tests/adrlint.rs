@@ -3,6 +3,7 @@
 //! adrlint is a linter only — its formatter is rumdl, which poly already runs — so the
 //! backend's contract is one **known-bad** fixture asserting the expected diagnostics plus
 //! a **known-good** one proving a conforming record is clean.
+#![cfg(feature = "engine-web")]
 
 use std::fs;
 use std::path::PathBuf;

@@ -10,6 +10,7 @@
 //! Each case lints a real file inside a temporary project, and each "honoured"
 //! assertion is paired with a py311 counterpart that must still fire, so none
 //! of them passes merely because the rule is off.
+#![cfg(feature = "engine-python")]
 
 use std::path::Path;
 

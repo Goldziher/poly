@@ -19,6 +19,10 @@
 //! `"hint"` (or `"help"`).  An unrecognised value silently leaves `level` as
 //! `None` (the engine uses its own default).
 
+// Each helper serves a different subset of engine families; a build with only some families
+// compiled in leaves the others unused, which is expected rather than dead code.
+#![cfg_attr(not(feature = "all-engines"), allow(dead_code))]
+
 use std::collections::BTreeMap;
 
 use crate::config::EngineConfig;

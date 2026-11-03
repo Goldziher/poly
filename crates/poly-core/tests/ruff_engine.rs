@@ -6,6 +6,7 @@
 //!   exact output produced by the ruff formatter.
 //! - `docstring_code_format_output` — proves the opinionated
 //!   `docstring-code-format` default reformats code blocks inside docstrings.
+#![cfg(feature = "engine-python")]
 
 use poly_core::{
     Language,

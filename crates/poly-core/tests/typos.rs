@@ -4,6 +4,7 @@
 //!   asserts the expected [`Diagnostic`]s (code `"typo"`, message with suggestion,
 //!   1-based line/column span).
 //! - `clean_file_has_no_typo_diagnostics` — verifies clean input produces no findings.
+#![cfg(feature = "engine-typos")]
 
 use poly_core::{
     Language,

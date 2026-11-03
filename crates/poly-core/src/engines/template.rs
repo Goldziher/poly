@@ -22,6 +22,10 @@
 //! code blocks are rendered verbatim, so template actions inside them are
 //! documentation, not a template.
 
+// The Markdown helpers serve rumdl (engine-web) and the plain ones dockerfile and yaml; a build
+// with only one of those families leaves the other half unused.
+#![cfg_attr(not(feature = "all-engines"), allow(dead_code))]
+
 /// Go-template action keywords that, when they open a `{{ … }}` block, mark the
 /// content as a Go / Helm template rather than an incidental `{{`.
 const GO_TEMPLATE_KEYWORDS: &[&str] = &[

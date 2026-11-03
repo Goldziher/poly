@@ -24,6 +24,7 @@
 //! are private to `poly-core` anyway, which is part of the point). A fixture
 //! derived from the constant moves with it, so narrowing the constant would leave
 //! this test green — which is precisely the failure it exists to catch.
+#![cfg(feature = "all-engines")]
 
 use std::fs;
 use std::path::Path;

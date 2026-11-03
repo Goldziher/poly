@@ -41,6 +41,7 @@
 //!     `span.start_line = 0`. These are documented quirks, not contract
 //!     violations. The sqruff fixture in `tests/sqruff.rs` covers that behaviour
 //!     separately. SQL files are not included in this conformance tree.
+#![cfg(feature = "all-engines")]
 
 use std::collections::HashMap;
 use std::path::PathBuf;

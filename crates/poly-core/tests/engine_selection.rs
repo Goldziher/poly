@@ -11,6 +11,7 @@
 //! fails a `--deny-skips` run for a reason the caller created on purpose. So a
 //! narrowed run reports its own reason, and that reason is not charged to the
 //! skip budget.
+#![cfg(feature = "all-engines")]
 
 use std::path::{Path, PathBuf};
 

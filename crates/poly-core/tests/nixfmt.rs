@@ -2,6 +2,7 @@
 //!
 //! - `known_unformatted_snapshot` — a known-unformatted Nix expression asserts
 //!   the exact formatted output produced by nixpkgs-fmt.
+#![cfg(feature = "engine-nix")]
 
 use poly_core::{
     Language,

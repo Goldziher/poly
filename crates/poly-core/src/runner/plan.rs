@@ -664,7 +664,8 @@ pub(super) fn plan_by_config_language(
     RunPlan { plans, withdrawn }
 }
 
-#[cfg(test)]
+// These tests lint real Python/JS/... sources, so they need every engine family.
+#[cfg(all(test, feature = "all-engines"))]
 mod tests;
 
 fn glob_set(patterns: &[String]) -> Option<globset::GlobSet> {

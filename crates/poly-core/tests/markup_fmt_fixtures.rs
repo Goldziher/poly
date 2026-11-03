@@ -12,6 +12,7 @@
 //! - `markup_fmt_known_unformatted_vento`    — Vento template
 //! - `markup_fmt_known_unformatted_mustache` — Mustache / Handlebars template
 //! - `markup_fmt_known_unformatted_xml`      — XML document
+#![cfg(feature = "engine-web")]
 
 use poly_core::{
     Language,

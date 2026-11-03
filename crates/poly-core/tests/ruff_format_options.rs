@@ -1,5 +1,6 @@
 //! `[fmt.python.ruff]` formatter options: each test formats one source with the
 //! option set and asserts the output changed in the way the option documents.
+#![cfg(feature = "engine-python")]
 
 use poly_core::{
     Language,

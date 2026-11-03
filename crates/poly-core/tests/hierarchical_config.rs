@@ -1,6 +1,7 @@
 //! End-to-end tests for hierarchical (monorepo) config resolution (ADR 0018):
 //! a nested `poly.toml` cascades over the root and governs only its own subtree,
 //! while a single-root repo behaves exactly as before.
+#![cfg(feature = "all-engines")]
 
 use std::fs;
 use std::path::Path;

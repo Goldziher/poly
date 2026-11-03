@@ -7,6 +7,7 @@
 
 use poly_core::engine_versions;
 
+#[cfg(feature = "all-engines")]
 #[test]
 fn it_names_the_compiled_in_backends() {
     let versions = engine_versions();

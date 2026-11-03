@@ -6,6 +6,7 @@
 //!
 //! No known-unformatted fixture is needed: the engine is lint-only and returns
 //! [`FormatOutput::Unchanged`] unconditionally.
+#![cfg(feature = "engine-dockerfile")]
 
 use poly_core::{
     Language,

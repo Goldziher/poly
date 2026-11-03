@@ -4,6 +4,7 @@
 //!   expected parse-error [`Diagnostic`].
 //! - `known_unformatted_query_output` — a messy query is canonicalized.
 //! - `known_unformatted_schema_output` — a messy SDL schema is canonicalized.
+#![cfg(feature = "engine-graphql")]
 
 use poly_core::{
     Language,
