@@ -42,7 +42,7 @@
     "@goldziher/polylint-win32-x64": "0.32.3"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   },
   "packageManager": "pnpm@12.16.1"
 }
