@@ -1,13 +1,13 @@
-//! `poly config` — manage shared configuration: lock remote `extends` bases
-//! (`poly config update`) and inspect the effective, fully-resolved config
-//! (`poly config show`).
+//! `poly config` — inspect shared configuration: the effective, fully-resolved
+//! config (`poly config show`) and the `poly.toml` JSON Schema. Locking remote
+//! `extends` bases is `poly lock`.
 
 mod effective;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use anyhow::{Context as _, Result, bail};
+use anyhow::{Context as _, Result};
 use clap::{Args, Subcommand, ValueEnum};
 use poly_core::report::{render_json, render_toon};
 
@@ -24,16 +24,6 @@ pub struct ConfigArgs {
 
 #[derive(Subcommand)]
 enum ConfigCommand {
-    /// Resolve symbolic `extends` git refs to pinned object IDs and write
-    /// `poly-config.lock`.
-    ///
-    /// v1 locks only the top-level config's direct git bases; a base's own
-    /// (transitive) `extends` are not resolved.
-    Update {
-        /// Config file to lock (defaults to the repo-root `poly.toml`).
-        #[arg(long, value_name = "PATH")]
-        config: Option<PathBuf>,
-    },
     /// Print the effective, fully-merged config — every section and key poly
     /// resolved, after `extends` bases, the `poly.toml` cascade and
     /// `poly.local.toml` were applied.
@@ -83,7 +73,6 @@ pub enum ConfigFormat {
 /// Run `poly config`, mapping any error to exit code 2.
 pub fn run_config(args: ConfigArgs) -> ExitCode {
     let result = match args.command {
-        ConfigCommand::Update { config } => update(config.as_deref()),
         ConfigCommand::Show { config, format } => show(config.as_deref(), format),
         ConfigCommand::Schema { output } => schema(output.as_deref()),
     };
@@ -94,23 +83,6 @@ pub fn run_config(args: ConfigArgs) -> ExitCode {
             ExitCode::from(2)
         }
     }
-}
-
-fn update(explicit: Option<&Path>) -> Result<ExitCode> {
-    let root = config_sources::repo_root()?;
-    let config_path = explicit
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| config_sources::root_config_path(&root));
-    if !config_path.is_file() {
-        bail!("config file not found: {}", config_path.display());
-    }
-    let lock = config_sources::update(&root, &config_path)?;
-    let count = lock.source_count();
-    println!(
-        "Locked {count} remote config base{}.",
-        if count == 1 { "" } else { "s" }
-    );
-    Ok(ExitCode::SUCCESS)
 }
 
 fn show(explicit: Option<&Path>, format: ConfigFormat) -> Result<ExitCode> {

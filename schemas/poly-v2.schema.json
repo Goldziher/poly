@@ -1421,7 +1421,7 @@
           "type": ["string", "null"]
         },
         "revision": {
-          "description": "Git ref resolved by `poly hooks update`.",
+          "description": "Git ref resolved by `poly lock`.",
           "type": ["string", "null"]
         },
         "hooks": {

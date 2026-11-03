@@ -131,7 +131,7 @@ pub struct ConfigReport {
     /// A sibling `poly.local.toml`, which layers on top.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub local_override: Option<PathBuf>,
-    /// The `poly-config.lock` pinning remote `extends` bases.
+    /// The `poly.lock` pinning remote `extends` bases and hook sources.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lock: Option<PathBuf>,
     /// Whether the config loaded cleanly.
@@ -251,7 +251,7 @@ fn build_config_report(explicit: Option<&Path>, cwd: &Path, loaded: &anyhow::Res
         .filter(|p| p.is_file());
     let lock = crate::config_sources::repo_root()
         .ok()
-        .map(|root| root.join("poly-config.lock"))
+        .map(|root| root.join(crate::polylock::LOCK_FILE_NAME))
         .filter(|p| p.is_file());
 
     let (loaded_ok, error) = match loaded {

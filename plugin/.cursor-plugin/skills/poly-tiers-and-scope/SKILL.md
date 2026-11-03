@@ -9,8 +9,8 @@ metadata:
 
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-Content-Hash: blake3:ba190e4af355b89cf28111cc4f9dd23b6ed826792efb1852cc151844dad57cec
-Source-Hash: blake3:3633763550fc7ab03c8b4858fa09d835fb684c19d8bcd088790666d0ba85c5f8
+Content-Hash: blake3:ce11b795e07a9de2075a7a64bc6b48e8af9babde1aabbd9e6696257ff2b409cf
+Source-Hash: blake3:3924425873d8ba40774b06fcf27ccf1f993e9df0a5cb1878ed38d7bdcf57716a
 Schema-Version: v1
 -->
 
@@ -141,5 +141,5 @@ package can tune rules while sharing a root baseline. The upward walk is bounded
 that directory, for the staged files beneath it. `poly.local.toml` remains the final local
 override layer, and a
 top-level `extends` list (ADR 0020) shares sections from local or pinned-remote base
-configs — `poly config update` pins a symbolic remote ref into `poly-config.lock`, and
+configs — `poly lock` pins a symbolic remote ref into `poly.lock`, and
 `poly config show` prints the effective merged config.

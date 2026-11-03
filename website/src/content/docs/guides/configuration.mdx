@@ -560,7 +560,7 @@ inheritance, and it applies to `exclude` only — rule selections, `[rules] dirs
 every other array still replace.
 
 A `git` base pinned to a full commit OID needs no lock; a branch or tag ref requires running
-`poly config update` first, which resolves it into `poly-config.lock` and prints the `[hooks]` /
+`poly lock` first, which resolves it into `poly.lock` and prints the `[hooks]` /
 `[tools]` the base introduces. `extends` is forbidden in `poly.local.toml`.
 
 <Aside type="danger" title="A remote base is a dependency">

@@ -425,7 +425,7 @@ isolation. For Rust compile times, enable `[cache.sccache]` to content-cache `ru
 ## Hook catalogs
 
 Hooks can also come from local or Git **producer catalogs**. Git refs are resolved into
-`poly-hooks.lock`; normal runs stay on the locked commit, and `poly hooks update` refreshes
+`poly.lock`; normal runs stay on the locked commit, and `poly lock --upgrade` refreshes
 configured branches or tags.
 
 ```toml title="poly.toml — the consumer"
@@ -499,7 +499,7 @@ path sources bypass the global cache.
     `poly hooks install` validates every selected hook path before installing git shims. Treat
     producer catalogs, and their checks and commands, as trusted code: they execute with your user
     permissions. Normal runs never resolve git refs or modify the lock — review changes and run
-    `poly hooks update` explicitly.
+    `poly lock` explicitly.
 </Aside>
 
 ## Skipping hooks

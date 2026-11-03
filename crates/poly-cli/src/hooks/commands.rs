@@ -45,8 +45,6 @@ pub enum HooksCommand {
     Install(InstallArgs),
     /// Remove poly's git-hook shims, restoring any preserved hook.
     Uninstall(UninstallArgs),
-    /// Refresh remote hook sources and update poly-hooks.lock.
-    Update,
     /// Internal: invoked by an installed shim when a git hook fires.
     #[command(name = "hook-impl")]
     HookImpl(HookImplArgs),
@@ -197,7 +195,6 @@ pub fn run_hooks(args: HooksArgs) -> ExitCode {
         Some(HooksCommand::Run(run_args)) => run_stage(run_args),
         Some(HooksCommand::Install(install_args)) => install(install_args),
         Some(HooksCommand::Uninstall(uninstall_args)) => uninstall(uninstall_args),
-        Some(HooksCommand::Update) => update_sources(),
         Some(HooksCommand::HookImpl(hook_impl_args)) => hook_impl(hook_impl_args),
         Some(HooksCommand::Check(check_args)) => checks::run_file_safety_checks(&check_args),
     };
@@ -217,7 +214,7 @@ fn run_stage(args: RunArgs) -> Result<ExitCode> {
 
     let message_file = resolve_message_file(stage, args.message_file)?;
     let root = poly_hooks::git::get_root().context("failed to resolve the git repository root")?;
-    let sources = super::sources::provision(&root, &config.hooks, false, false).context("provisioning hook sources")?;
+    let sources = super::sources::provision(&root, &config.hooks, false).context("provisioning hook sources")?;
     let files = candidate_files(&root, stage, args.all_files, None, None)?;
     let cache = open_result_cache(&config, &root, args.no_cache)?;
     let mut spec = lower::lower_stage(
@@ -302,7 +299,7 @@ fn resolve_run_stage(requested: Option<&str>, hooks: &poly_config::HooksConfig) 
 fn install(args: InstallArgs) -> Result<ExitCode> {
     let root = poly_hooks::git::get_root().context("failed to resolve the git repository root")?;
     let config = load_config(None)?;
-    super::sources::provision(&root, &config.hooks, false, true).context("provisioning hook sources")?;
+    super::sources::provision(&root, &config.hooks, true).context("provisioning hook sources")?;
     let hooks_dir = poly_hooks::git::get_git_hooks_dir().context("failed to resolve the git hooks directory")?;
     // An explicit `--hook-type` list is honoured verbatim; otherwise install
     // only the shims the config actually binds work to, rather than all ten
@@ -451,19 +448,6 @@ fn add_configured_stages(set: &mut BTreeSet<poly_hooks::Stage>, config: &PolyCon
     }
 }
 
-fn update_sources() -> Result<ExitCode> {
-    let root = poly_hooks::git::get_root().context("failed to resolve the git repository root")?;
-    let config = load_config(None)?;
-    super::sources::provision(&root, &config.hooks, true, false).context("updating hook sources")?;
-    let source_count = config.hooks.sources.len();
-    println!(
-        "Updated {} hook source{}.",
-        source_count,
-        if source_count == 1 { "" } else { "s" }
-    );
-    Ok(ExitCode::SUCCESS)
-}
-
 fn uninstall(args: UninstallArgs) -> Result<ExitCode> {
     let hooks_dir = poly_hooks::git::get_git_hooks_dir().context("failed to resolve the git hooks directory")?;
     let removed = poly_hooks::install::uninstall(&hooks_dir, &args.hook_types)?;
@@ -544,7 +528,7 @@ fn provision_for_hook(
     root: &Path,
     hooks: &poly_config::HooksConfig,
 ) -> Result<Vec<super::sources::ResolvedHook>> {
-    let result = super::sources::provision(root, hooks, false, false).context("provisioning hook sources");
+    let result = super::sources::provision(root, hooks, false).context("provisioning hook sources");
     match result {
         Ok(sources) => Ok(sources),
         Err(error) if matches!(hook_type, poly_hooks::HookType::PrepareCommitMsg) => {

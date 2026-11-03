@@ -14,7 +14,9 @@ pub mod config_cmd;
 pub mod config_sources;
 pub mod doctor;
 pub mod hooks;
+pub mod lock_cmd;
 pub mod migrate;
+pub mod polylock;
 pub mod progress;
 pub mod remote;
 #[cfg(feature = "engine-astgrep")]
@@ -25,6 +27,7 @@ pub use cache_cmd::{CacheArgs, run_cache};
 pub use config_cmd::{ConfigArgs, run_config};
 pub use doctor::{DoctorArgs, run_doctor};
 pub use hooks::{HooksArgs, run_hooks};
+pub use lock_cmd::{LockArgs, run_lock};
 pub use migrate::{MigrateArgs, run_migrate};
 #[cfg(feature = "engine-astgrep")]
 pub use rules_cmd::{RulesArgs, run_rules};

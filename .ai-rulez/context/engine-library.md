@@ -26,8 +26,8 @@ x-ai-rulez:
   `poly migrate`, which *writes* into an existing `poly.toml` without disturbing comments.
   `poly.local.toml` layers local overrides on top. A top-level `extends` list shares config
   from local or pinned-remote base configs (ADR 0020): bases deep-merge beneath the declaring
-  file, `poly.local.toml` stays the final layer, and `poly config update` locks a symbolic git
-  ref into `poly-config.lock`. Schema + the network-free `BaseConfigResolver` trait live in the
+  file, `poly.local.toml` stays the final layer, and `poly lock` pins a symbolic git
+  ref into `poly.lock`. Schema + the network-free `BaseConfigResolver` trait live in the
   `poly-config` crate (`extends.rs`); the git fetch lives in the `poly-cli` `remote` module.
 - `defaults.rs` — `normalize_whitespace`, the shared final pass any formatter can reuse (line
   endings, trailing whitespace, trailing blank lines, single final newline). The opinionated

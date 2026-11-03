@@ -140,5 +140,5 @@ package can tune rules while sharing a root baseline. The upward walk is bounded
 that directory, for the staged files beneath it. `poly.local.toml` remains the final local
 override layer, and a
 top-level `extends` list (ADR 0020) shares sections from local or pinned-remote base
-configs — `poly config update` pins a symbolic remote ref into `poly-config.lock`, and
+configs — `poly lock` pins a symbolic remote ref into `poly.lock`, and
 `poly config show` prints the effective merged config.

@@ -45,8 +45,8 @@ ast-grep rule pack, behind one binary, one config, and one report.
   (`golangci-lint`, `actionlint`, `hadolint`, `helm`, `tflint`, `buf`, …). Pin `version` and set
   `install = "auto"` to have poly download a checksum-verified release when it is missing; by
   default it never downloads anything.
-- **`poly config show`** prints the effective merged config; **`poly config update`** pins a
-  symbolic remote `extends` ref into `poly-config.lock`; **`poly config schema`** prints the
+- **`poly config show`** prints the effective merged config; **`poly lock [--upgrade] [--check]`**
+  pins symbolic remote `extends` refs and Git hook sources into `poly.lock`; **`poly config schema`** prints the
   JSON Schema for `poly.toml`. An unknown key in an engine table is an `unknown-config-key`
   warning that suggests the nearest valid key (`--verbose` lists every key the table reads).
 - **`poly doctor`** reports which poly is running, every poly on PATH, and the config in

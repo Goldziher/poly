@@ -1,6 +1,6 @@
 {
   "schema_version": "v1",
-  "source_hash": "blake3:3633763550fc7ab03c8b4858fa09d835fb684c19d8bcd088790666d0ba85c5f8",
+  "source_hash": "blake3:3924425873d8ba40774b06fcf27ccf1f993e9df0a5cb1878ed38d7bdcf57716a",
   "outputs": {
     ".claude-plugin/plugin.json": {
       "content_hash": "blake3:d283143ef3fea73c46d74e79e302e06ee71b899fff0afa3b006766adb2857774",
@@ -39,7 +39,7 @@
       "mode": "0644"
     },
     ".cursor-plugin/skills/poly-orchestrator/SKILL.md": {
-      "content_hash": "blake3:a7581f394fd984a61613639eac329a827d981dfecd4d88ec9ff3b9cc3bc98447",
+      "content_hash": "blake3:d84ca9f172feee6ace64c00babd7265bd7bc0bdf281f18a37624766c1d82de8e",
       "mode": "0644"
     },
     ".cursor-plugin/skills/poly-orchestrator/index.md": {
@@ -55,7 +55,7 @@
       "mode": "0644"
     },
     ".cursor-plugin/skills/poly-tiers-and-scope/SKILL.md": {
-      "content_hash": "blake3:ba190e4af355b89cf28111cc4f9dd23b6ed826792efb1852cc151844dad57cec",
+      "content_hash": "blake3:ce11b795e07a9de2075a7a64bc6b48e8af9babde1aabbd9e6696257ff2b409cf",
       "mode": "0644"
     },
     ".cursor-plugin/skills/poly-tiers-and-scope/index.md": {
@@ -107,7 +107,7 @@
       "mode": "0644"
     },
     ".hermes/package/src/poly_hermes_plugin/skills/poly-orchestrator/SKILL.md": {
-      "content_hash": "blake3:a7581f394fd984a61613639eac329a827d981dfecd4d88ec9ff3b9cc3bc98447",
+      "content_hash": "blake3:d84ca9f172feee6ace64c00babd7265bd7bc0bdf281f18a37624766c1d82de8e",
       "mode": "0644"
     },
     ".hermes/package/src/poly_hermes_plugin/skills/poly-orchestrator/index.md": {
@@ -123,7 +123,7 @@
       "mode": "0644"
     },
     ".hermes/package/src/poly_hermes_plugin/skills/poly-tiers-and-scope/SKILL.md": {
-      "content_hash": "blake3:ba190e4af355b89cf28111cc4f9dd23b6ed826792efb1852cc151844dad57cec",
+      "content_hash": "blake3:ce11b795e07a9de2075a7a64bc6b48e8af9babde1aabbd9e6696257ff2b409cf",
       "mode": "0644"
     },
     ".hermes/package/src/poly_hermes_plugin/skills/poly-tiers-and-scope/index.md": {
@@ -167,7 +167,7 @@
       "mode": "0644"
     },
     ".hermes/plugins/poly/skills/poly-orchestrator/SKILL.md": {
-      "content_hash": "blake3:a7581f394fd984a61613639eac329a827d981dfecd4d88ec9ff3b9cc3bc98447",
+      "content_hash": "blake3:d84ca9f172feee6ace64c00babd7265bd7bc0bdf281f18a37624766c1d82de8e",
       "mode": "0644"
     },
     ".hermes/plugins/poly/skills/poly-orchestrator/index.md": {
@@ -183,7 +183,7 @@
       "mode": "0644"
     },
     ".hermes/plugins/poly/skills/poly-tiers-and-scope/SKILL.md": {
-      "content_hash": "blake3:ba190e4af355b89cf28111cc4f9dd23b6ed826792efb1852cc151844dad57cec",
+      "content_hash": "blake3:ce11b795e07a9de2075a7a64bc6b48e8af9babde1aabbd9e6696257ff2b409cf",
       "mode": "0644"
     },
     ".hermes/plugins/poly/skills/poly-tiers-and-scope/index.md": {
@@ -231,7 +231,7 @@
       "mode": "0644"
     },
     ".opencode/skills/poly-orchestrator/SKILL.md": {
-      "content_hash": "blake3:a7581f394fd984a61613639eac329a827d981dfecd4d88ec9ff3b9cc3bc98447",
+      "content_hash": "blake3:d84ca9f172feee6ace64c00babd7265bd7bc0bdf281f18a37624766c1d82de8e",
       "mode": "0644"
     },
     ".opencode/skills/poly-orchestrator/index.md": {
@@ -247,7 +247,7 @@
       "mode": "0644"
     },
     ".opencode/skills/poly-tiers-and-scope/SKILL.md": {
-      "content_hash": "blake3:ba190e4af355b89cf28111cc4f9dd23b6ed826792efb1852cc151844dad57cec",
+      "content_hash": "blake3:ce11b795e07a9de2075a7a64bc6b48e8af9babde1aabbd9e6696257ff2b409cf",
       "mode": "0644"
     },
     ".opencode/skills/poly-tiers-and-scope/index.md": {
@@ -279,7 +279,7 @@
       "mode": "0644"
     },
     ".pi/skills/poly-orchestrator/SKILL.md": {
-      "content_hash": "blake3:a7581f394fd984a61613639eac329a827d981dfecd4d88ec9ff3b9cc3bc98447",
+      "content_hash": "blake3:d84ca9f172feee6ace64c00babd7265bd7bc0bdf281f18a37624766c1d82de8e",
       "mode": "0644"
     },
     ".pi/skills/poly-orchestrator/index.md": {
@@ -295,7 +295,7 @@
       "mode": "0644"
     },
     ".pi/skills/poly-tiers-and-scope/SKILL.md": {
-      "content_hash": "blake3:ba190e4af355b89cf28111cc4f9dd23b6ed826792efb1852cc151844dad57cec",
+      "content_hash": "blake3:ce11b795e07a9de2075a7a64bc6b48e8af9babde1aabbd9e6696257ff2b409cf",
       "mode": "0644"
     },
     ".pi/skills/poly-tiers-and-scope/index.md": {
@@ -359,7 +359,7 @@
       "mode": "0644"
     },
     "skills/poly-orchestrator/SKILL.md": {
-      "content_hash": "blake3:a7581f394fd984a61613639eac329a827d981dfecd4d88ec9ff3b9cc3bc98447",
+      "content_hash": "blake3:d84ca9f172feee6ace64c00babd7265bd7bc0bdf281f18a37624766c1d82de8e",
       "mode": "0644"
     },
     "skills/poly-orchestrator/index.md": {
@@ -375,7 +375,7 @@
       "mode": "0644"
     },
     "skills/poly-tiers-and-scope/SKILL.md": {
-      "content_hash": "blake3:ba190e4af355b89cf28111cc4f9dd23b6ed826792efb1852cc151844dad57cec",
+      "content_hash": "blake3:ce11b795e07a9de2075a7a64bc6b48e8af9babde1aabbd9e6696257ff2b409cf",
       "mode": "0644"
     },
     "skills/poly-tiers-and-scope/index.md": {

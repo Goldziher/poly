@@ -9,8 +9,8 @@ metadata:
 
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-Content-Hash: blake3:a7581f394fd984a61613639eac329a827d981dfecd4d88ec9ff3b9cc3bc98447
-Source-Hash: blake3:3633763550fc7ab03c8b4858fa09d835fb684c19d8bcd088790666d0ba85c5f8
+Content-Hash: blake3:d84ca9f172feee6ace64c00babd7265bd7bc0bdf281f18a37624766c1d82de8e
+Source-Hash: blake3:3924425873d8ba40774b06fcf27ccf1f993e9df0a5cb1878ed38d7bdcf57716a
 Schema-Version: v1
 -->
 
@@ -46,8 +46,8 @@ ast-grep rule pack, behind one binary, one config, and one report.
   (`golangci-lint`, `actionlint`, `hadolint`, `helm`, `tflint`, `buf`, …). Pin `version` and set
   `install = "auto"` to have poly download a checksum-verified release when it is missing; by
   default it never downloads anything.
-- **`poly config show`** prints the effective merged config; **`poly config update`** pins a
-  symbolic remote `extends` ref into `poly-config.lock`; **`poly config schema`** prints the
+- **`poly config show`** prints the effective merged config; **`poly lock [--upgrade] [--check]`**
+  pins symbolic remote `extends` refs and Git hook sources into `poly.lock`; **`poly config schema`** prints the
   JSON Schema for `poly.toml`. An unknown key in an engine table is an `unknown-config-key`
   warning that suggests the nearest valid key (`--verbose` lists every key the table reads).
 - **`poly doctor`** reports which poly is running, every poly on PATH, and the config in

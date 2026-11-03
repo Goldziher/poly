@@ -6,9 +6,10 @@ use std::path::{Path, PathBuf};
 use anyhow::Context;
 use poly_config::{HookSource, HooksConfig, load_hook_preferences};
 
-use super::lock::{HookSourceLock, LockedSource, lock_source, read_lock, remove_lock, write_lock};
+use super::lock::lock_source;
 use super::manifest::{load_manifest, reject_legacy_consumer_file};
 use super::select::{ResolvedHook, select_hooks};
+use crate::polylock::{self, LockedHookSource, PolyLock};
 use crate::remote::{
     checkout_is_valid, ensure_commit, ensure_mirror, git_output, make_read_only, materialize_checkout, run_git,
     validate_locked_revision,
@@ -47,7 +48,10 @@ fn main_worktree_root() -> Option<PathBuf> {
 }
 
 /// Resolve selected sources and choose one eligible path for every selected hook.
-pub fn provision(root: &Path, hooks: &HooksConfig, update: bool, install: bool) -> anyhow::Result<Vec<ResolvedHook>> {
+///
+/// Reads revisions from `poly.lock` only; a Git source with no entry fails with a
+/// hint to run `poly lock`.
+pub fn provision(root: &Path, hooks: &HooksConfig, install: bool) -> anyhow::Result<Vec<ResolvedHook>> {
     reject_legacy_consumer_file(root)?;
     if hooks.sources.is_empty() {
         return Ok(Vec::new());
@@ -56,40 +60,75 @@ pub fn provision(root: &Path, hooks: &HooksConfig, update: bool, install: bool) 
     let cache_root = poly_cache::hook_sources_dir()?;
     std::fs::create_dir_all(&cache_root)
         .with_context(|| format!("creating hook source cache {}", cache_root.display()))?;
-    let existing = read_lock(root)?;
-    let mut locked = Vec::new();
+    let existing = polylock::read(root)?;
     let mut resolved = Vec::new();
     for source in &hooks.sources {
-        let (entry, source_root) = provision_source(root, &cache_root, source, existing.as_ref(), update)?;
-        if let Some(entry) = entry {
-            locked.push(entry);
-        }
+        let (_, source_root) = provision_source(
+            root,
+            &cache_root,
+            source,
+            existing.as_ref().map(|lock| lock.hook_sources.as_slice()),
+            false,
+        )?;
         let manifest = load_manifest(&source_root)?;
         resolved.extend(select_hooks(source, &source_root, manifest, &preferences, install)?);
     }
-    if update {
-        if locked.is_empty() {
-            remove_lock(root)?;
-        } else {
-            write_lock(
-                root,
-                &HookSourceLock {
-                    version: 1,
-                    sources: locked,
-                },
-            )?;
-        }
-    }
     Ok(resolved)
+}
+
+/// The `(id, url)` key of every Git hook source declared in `hooks`, sorted.
+pub fn declared_git_keys(hooks: &HooksConfig) -> Vec<(String, String)> {
+    let mut keys: Vec<_> = hooks
+        .sources
+        .iter()
+        .filter(|source| source.path.is_none())
+        .filter_map(|source| Some((source.id.clone(), source.git.clone()?)))
+        .collect();
+    keys.sort();
+    keys.dedup();
+    keys
+}
+
+/// Resolve every Git hook source in `hooks` to a pinned revision for `poly.lock`.
+///
+/// Without `upgrade`, a source already recorded in `existing` keeps its entry;
+/// with it, each declared revision is re-resolved against the remote. Local
+/// `path` sources need no entry.
+pub fn lock_sources(hooks: &HooksConfig, existing: &PolyLock, upgrade: bool) -> anyhow::Result<Vec<LockedHookSource>> {
+    let mut locked = Vec::new();
+    let mut cache_root = None;
+    for source in hooks.sources.iter().filter(|source| source.path.is_none()) {
+        let url = source.git.as_deref().expect("validated Git source");
+        if !upgrade && let Some(entry) = existing.hook_source(&source.id, url) {
+            locked.push(entry.clone());
+            continue;
+        }
+        if cache_root.is_none() {
+            let dir = poly_cache::hook_sources_dir()?;
+            std::fs::create_dir_all(&dir).with_context(|| format!("creating hook source cache {}", dir.display()))?;
+            cache_root = Some(dir);
+        }
+        let cache_root = cache_root.as_deref().expect("cache root set above");
+        let (entry, _) = provision_source(Path::new("."), cache_root, source, None, true)?;
+        let entry = entry.expect("an update run always pins a Git source");
+        println!(
+            "{} {} -> {}",
+            entry.source,
+            source.revision.as_deref().unwrap_or_default(),
+            entry.revision
+        );
+        locked.push(entry);
+    }
+    Ok(locked)
 }
 
 fn provision_source(
     root: &Path,
     cache_root: &Path,
     source: &HookSource,
-    existing: Option<&HookSourceLock>,
+    existing: Option<&[LockedHookSource]>,
     update: bool,
-) -> anyhow::Result<(Option<LockedSource>, PathBuf)> {
+) -> anyhow::Result<(Option<LockedHookSource>, PathBuf)> {
     if let Some(path) = &source.path {
         let candidate = if path.is_absolute() {
             path.clone()
@@ -105,16 +144,17 @@ fn provision_source(
     let source_key = poly_cache::hook_source_key(url);
     let source_cache = cache_root.join(&source_key);
     let mirror = source_cache.join("mirror.git");
-    let locked = existing.and_then(|lock| {
-        lock.sources
+    let locked = existing.and_then(|entries| {
+        entries
             .iter()
             .find(|entry| entry.id == source.id && entry.source == url)
     });
     if !update {
         let locked = locked.ok_or_else(|| {
             anyhow::anyhow!(
-                "Git hook source {:?} has no lock entry; run `poly hooks update` first",
-                source.id
+                "Git hook source {:?} has no lock entry; run `poly lock` first{}",
+                source.id,
+                polylock::legacy_hint(root)
             )
         })?;
         validate_locked_revision(&locked.revision)?;
@@ -139,7 +179,7 @@ fn provision_source(
     materialize_source_checkout(&mirror, &checkout, &resolved, &source.id)?;
     let cache_path = format!("cache://hook-sources/{source_key}/{resolved}");
     Ok((
-        Some(LockedSource {
+        Some(LockedHookSource {
             id: source.id.clone(),
             source: url.to_string(),
             revision: resolved,
@@ -237,7 +277,7 @@ mod tests {
         write_catalog(producer.path());
         preferences(consumer.path());
         let hooks = write_consumer(consumer.path(), producer.path(), &["validate"]);
-        let selected = provision(consumer.path(), &hooks, false, true).unwrap();
+        let selected = provision(consumer.path(), &hooks, true).unwrap();
         assert_eq!(selected.len(), 1);
         assert_eq!(selected[0].command, "printf");
     }
@@ -250,7 +290,7 @@ mod tests {
         preferences(consumer.path());
         let hooks = write_consumer(consumer.path(), producer.path(), &["missing"]);
         assert!(
-            provision(consumer.path(), &hooks, false, true)
+            provision(consumer.path(), &hooks, true)
                 .unwrap_err()
                 .to_string()
                 .contains("unknown hook")
@@ -278,9 +318,9 @@ run = "printf"
         .unwrap();
         preferences(consumer.path());
         let hooks = write_consumer(consumer.path(), producer.path(), &["validate"]);
-        provision(consumer.path(), &hooks, false, false).unwrap();
+        provision(consumer.path(), &hooks, false).unwrap();
         assert!(!producer.path().join("installed.txt").exists());
-        provision(consumer.path(), &hooks, false, true).unwrap();
+        provision(consumer.path(), &hooks, true).unwrap();
         assert_eq!(
             std::fs::read_to_string(producer.path().join("installed.txt")).unwrap(),
             "installed"
@@ -295,7 +335,7 @@ run = "printf"
         preferences(root.path());
         let hooks = write_consumer(root.path(), producer.path(), &["validate"]);
         assert!(
-            provision(root.path(), &hooks, false, true)
+            provision(root.path(), &hooks, true)
                 .unwrap_err()
                 .to_string()
                 .contains("producer catalog")
@@ -340,20 +380,15 @@ run = "printf"
         let cache = tempfile::tempdir().unwrap();
         let source = git_source(producer.path());
         let (locked, checkout) = provision_source(Path::new("."), cache.path(), &source, None, true).unwrap();
-        let lock = HookSourceLock {
-            version: 1,
-            sources: vec![locked.unwrap()],
-        };
+        let lock = vec![locked.unwrap()];
         make_writable(&checkout);
         std::fs::write(checkout.join(".git/HEAD"), "0000000000000000000000000000000000000000\n").unwrap();
 
-        let (_, reconstructed) = provision_source(Path::new("."), cache.path(), &source, Some(&lock), false).unwrap();
+        let (_, reconstructed) =
+            provision_source(Path::new("."), cache.path(), &source, Some(lock.as_slice()), false).unwrap();
 
         assert_eq!(reconstructed, checkout);
-        assert_eq!(
-            git_output(&checkout, &["rev-parse", "HEAD"]).unwrap(),
-            lock.sources[0].revision
-        );
+        assert_eq!(git_output(&checkout, &["rev-parse", "HEAD"]).unwrap(), lock[0].revision);
     }
 
     #[test]
@@ -362,10 +397,7 @@ run = "printf"
         let cache = tempfile::tempdir().unwrap();
         let source = git_source(producer.path());
         let (locked, checkout) = provision_source(Path::new("."), cache.path(), &source, None, true).unwrap();
-        let lock = HookSourceLock {
-            version: 1,
-            sources: vec![locked.unwrap()],
-        };
+        let lock = vec![locked.unwrap()];
         make_writable(&checkout);
         std::fs::write(
             checkout.join(PRODUCER_MANIFEST_NAME),
@@ -373,7 +405,7 @@ run = "printf"
         )
         .unwrap();
 
-        provision_source(Path::new("."), cache.path(), &source, Some(&lock), false).unwrap();
+        provision_source(Path::new("."), cache.path(), &source, Some(lock.as_slice()), false).unwrap();
 
         assert!(
             !std::fs::read_to_string(checkout.join(PRODUCER_MANIFEST_NAME))
@@ -388,16 +420,14 @@ run = "printf"
         let cache = tempfile::tempdir().unwrap();
         let source = git_source(producer.path());
         let (locked, checkout) = provision_source(Path::new("."), cache.path(), &source, None, true).unwrap();
-        let lock = HookSourceLock {
-            version: 1,
-            sources: vec![locked.unwrap()],
-        };
+        let lock = vec![locked.unwrap()];
         let source_cache = cache
             .path()
             .join(poly_cache::hook_source_key(source.git.as_deref().unwrap()));
         std::fs::remove_dir_all(source_cache.join("mirror.git")).unwrap();
 
-        let (_, reused) = provision_source(Path::new("."), cache.path(), &source, Some(&lock), false).unwrap();
+        let (_, reused) =
+            provision_source(Path::new("."), cache.path(), &source, Some(lock.as_slice()), false).unwrap();
 
         assert_eq!(reused, checkout);
         assert!(!source_cache.join("mirror.git").exists());
@@ -409,17 +439,14 @@ run = "printf"
         let producer = create_git_source();
         let cache = tempfile::tempdir().unwrap();
         let source = git_source(producer.path());
-        let lock = HookSourceLock {
-            version: 1,
-            sources: vec![LockedSource {
-                id: source.id.clone(),
-                source: source.git.clone().unwrap(),
-                revision: "../../outside".to_string(),
-                path: "cache://invalid".to_string(),
-            }],
-        };
+        let lock = vec![LockedHookSource {
+            id: source.id.clone(),
+            source: source.git.clone().unwrap(),
+            revision: "../../outside".to_string(),
+            path: "cache://invalid".to_string(),
+        }];
 
-        let error = provision_source(Path::new("."), cache.path(), &source, Some(&lock), false).unwrap_err();
+        let error = provision_source(Path::new("."), cache.path(), &source, Some(lock.as_slice()), false).unwrap_err();
 
         assert!(error.to_string().contains("full hexadecimal Git object ID"));
     }

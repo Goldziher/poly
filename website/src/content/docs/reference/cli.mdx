@@ -261,11 +261,23 @@ When another `poly` on `PATH` differs from the running one, every command warns 
 points at `poly doctor`. A correctly-installed poly finds a single entry and prints nothing;
 `POLY_NO_SHADOW_WARN=1` silences it regardless.
 
+## `poly lock` — pin remote sources
+
+```text
+poly lock [--upgrade] [--check] [--config <PATH>]
+```
+
+`poly lock` writes `poly.lock`, the one lock file for remote `extends` bases (`[[extends]]`) and
+Git hook sources (`[[hook_sources]]`). A plain run keeps every revision already recorded and
+resolves only new sources; `--upgrade` re-resolves every symbolic ref to its latest object ID.
+`--check` writes nothing and exits `1` when `poly.lock` would change, so CI can gate on it.
+`poly.lock` replaces `poly-config.lock`, `poly-hooks.lock`, `poly config update` and
+`poly hooks update`; commands read only `poly.lock`.
+
 ## `poly config` — what did poly actually parse?
 
 ```text
 poly config show   [--config <PATH>] [--format <toml|json|toon>]
-poly config update [--config <PATH>]
 poly config schema [--output <PATH>]
 ```
 
@@ -305,8 +317,8 @@ bases, and whether `[hooks]` is present — the facts the TOML form carries as c
     contributed a value, not which file each key came from.
 </Aside>
 
-`poly config update` resolves symbolic `extends` git refs to pinned object IDs and writes
-`poly-config.lock`. Config validation reports unknown top-level sections, unknown keys within a
+`poly lock` resolves symbolic `extends` git refs and Git hook sources to pinned object IDs and
+writes `poly.lock`. Config validation reports unknown top-level sections, unknown keys within a
 recognized section, and wrongly-typed values as warnings — a misspelled key no longer parses
 silently and does nothing.
 
@@ -335,7 +347,6 @@ poly mcp --config /path/to/poly.toml
 | `poly hooks run [STAGE]` | `--all-files` (the whole tracked tree, not the staged files), `--message-file <PATH>` (required to run `commit-msg` / `prepare-commit-msg` directly), `-j <N>`, `--no-cache`, `--no-sccache`, `-v` / `--verbose`, `--config <PATH>` |
 | `poly hooks install` | `--hook-type <TYPE>` (repeatable; default: the stages `poly.toml` configures), `--overwrite` (discard an existing hook instead of keeping it as `<hook>.legacy`), `--replace-lefthook` |
 | `poly hooks uninstall` | `--hook-type <TYPE>`; restores a kept `<hook>.legacy` |
-| `poly hooks update` | Refreshes git hook sources into `poly-hooks.lock` |
 | `poly cache gc` | `--max-age <DAYS>`, `--max-size <SIZE>` (`500M`, `2G`) |
 | `poly cache …` | `--cache-dir <DIR>` operates on another cache directory |
 

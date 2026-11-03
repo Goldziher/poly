@@ -1,15 +1,17 @@
 //! Integration coverage for the `extends` remote-config resolver + lock flow.
 //!
 //! Each test builds a real temporary git repository as a config base and drives
-//! the `poly-cli` resolver (`RemoteExtendsResolver`) and `config_sources::update`
-//! end to end. `POLY_CACHE_HOME` is redirected at a process-shared tempdir so the
+//! the `poly-cli` resolver (`RemoteExtendsResolver`) and `lock_cmd::sync`
+//! (`poly lock`) end to end. `POLY_CACHE_HOME` is redirected at a process-shared tempdir so the
 //! real per-user cache is never touched.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Once, OnceLock};
 
-use poly_cli::config_sources::{self, RemoteExtendsResolver};
+use poly_cli::config_sources::RemoteExtendsResolver;
+use poly_cli::lock_cmd::{LockOutcome, sync};
+use poly_cli::polylock;
 use poly_config::{Patterns, PolyConfig};
 
 /// Redirect `POLY_CACHE_HOME` at a process-shared tempdir exactly once. Remote
@@ -144,8 +146,40 @@ fn remote_base_exclude_globs_accumulate_under_the_consumers_own() {
     assert_eq!(replaced.discovery.exclude.as_slice(), &["generated/**".to_string()]);
 }
 
+/// Commit `config` as a new revision of the base repo and return its object ID.
+fn commit_base(repo: &Path, config: &str) -> String {
+    std::fs::write(repo.join("poly.toml"), config).expect("rewrite base config");
+    git(&["add", "poly.toml"], repo);
+    git(
+        &[
+            "-c",
+            "user.name=Poly Test",
+            "-c",
+            "user.email=poly@example.invalid",
+            "-c",
+            "commit.gpgSign=false",
+            "commit",
+            "--quiet",
+            "-m",
+            "next",
+        ],
+        repo,
+    );
+    String::from_utf8(
+        Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(repo)
+            .output()
+            .expect("rev-parse")
+            .stdout,
+    )
+    .expect("utf8 oid")
+    .trim()
+    .to_string()
+}
+
 #[test]
-fn update_locks_symbolic_ref_then_offline_load_succeeds() {
+fn lock_pins_symbolic_ref_then_offline_load_succeeds() {
     init_cache_home();
     let (_base, url, oid) = create_git_base("[defaults]\nline_length = 55\n");
     let (consumer_dir, config_path) = consumer(&format!(
@@ -153,11 +187,13 @@ fn update_locks_symbolic_ref_then_offline_load_succeeds() {
     ));
     let root = consumer_dir.path();
 
-    let lock = config_sources::update(root, &config_path).expect("update writes lock");
-    assert_eq!(lock.source_count(), 1);
+    let LockOutcome::Written(lock) = sync(root, &config_path, false, false).expect("lock writes poly.lock") else {
+        panic!("first lock must write");
+    };
+    assert_eq!(lock.extends.len(), 1);
 
-    let lock_path = root.join("poly-config.lock");
-    let lock_text = std::fs::read_to_string(&lock_path).expect("read lock");
+    let lock_text = std::fs::read_to_string(root.join(polylock::LOCK_FILE_NAME)).expect("read lock");
+    assert!(lock_text.contains("[[extends]]"), "{lock_text}");
     assert!(
         lock_text.contains(&format!("locked = \"{oid}\"")),
         "lock records resolved oid:\n{lock_text}"
@@ -175,6 +211,49 @@ fn update_locks_symbolic_ref_then_offline_load_succeeds() {
 }
 
 #[test]
+fn lock_check_reports_drift_and_upgrade_moves_the_pin() {
+    init_cache_home();
+    let (base, url, first_oid) = create_git_base("[defaults]\nline_length = 55\n");
+    let (consumer_dir, config_path) = consumer(&format!(
+        "extends = [{{ git = \"{url}\", revision = \"HEAD\", file = \"poly.toml\" }}]\n"
+    ));
+    let root = consumer_dir.path();
+    let lock_path = root.join(polylock::LOCK_FILE_NAME);
+
+    // Nothing locked yet: --check flags drift and writes nothing.
+    assert_eq!(sync(root, &config_path, false, true).unwrap(), LockOutcome::Drift);
+    assert!(!lock_path.exists());
+
+    sync(root, &config_path, false, false).unwrap();
+    assert!(matches!(
+        sync(root, &config_path, false, true).unwrap(),
+        LockOutcome::InSync(_)
+    ));
+
+    // The remote moves on; a plain lock keeps the recorded pin, --upgrade moves it.
+    let second_oid = commit_base(base.path(), "[defaults]\nline_length = 56\n");
+    assert_ne!(first_oid, second_oid);
+    assert!(matches!(
+        sync(root, &config_path, false, false).unwrap(),
+        LockOutcome::InSync(_)
+    ));
+    assert_eq!(sync(root, &config_path, true, true).unwrap(), LockOutcome::Drift);
+    assert!(
+        std::fs::read_to_string(&lock_path).unwrap().contains(&first_oid),
+        "--check must not write"
+    );
+
+    let LockOutcome::Written(lock) = sync(root, &config_path, true, false).unwrap() else {
+        panic!("--upgrade must rewrite the moved pin");
+    };
+    assert_eq!(lock.extends[0].locked, second_oid);
+    assert!(matches!(
+        sync(root, &config_path, true, true).unwrap(),
+        LockOutcome::InSync(_)
+    ));
+}
+
+#[test]
 fn symbolic_ref_without_lock_entry_errors() {
     init_cache_home();
     let (_base, url, _oid) = create_git_base("[defaults]\nline_length = 40\n");
@@ -185,7 +264,8 @@ fn symbolic_ref_without_lock_entry_errors() {
     let resolver = RemoteExtendsResolver::new(consumer_dir.path()).unwrap();
     let error = PolyConfig::load_file_with(&config_path, &resolver).unwrap_err();
     let chain = format!("{error:#}");
-    assert!(chain.contains("run `poly config update` first"), "{chain}");
+    assert!(chain.contains("run `poly lock` first"), "{chain}");
+    assert!(!chain.contains("no longer read"), "no legacy file here: {chain}");
 }
 
 #[test]
@@ -284,4 +364,19 @@ fn path_base_resolves_like_local_resolver() {
     let config = PolyConfig::load_file_with(&config_path, &resolver).expect("load path base");
     assert_eq!(config.defaults.line_length, 88);
     assert!(!config.defaults.trim_trailing_whitespace);
+}
+
+#[test]
+fn legacy_lock_file_is_ignored_with_a_hint() {
+    init_cache_home();
+    let (_base, url, _oid) = create_git_base("[defaults]\nline_length = 40\n");
+    let (consumer_dir, config_path) = consumer(&format!(
+        "extends = [{{ git = \"{url}\", revision = \"HEAD\", file = \"poly.toml\" }}]\n"
+    ));
+    std::fs::write(consumer_dir.path().join("poly-config.lock"), "version = 1\n").unwrap();
+
+    let resolver = RemoteExtendsResolver::new(consumer_dir.path()).unwrap();
+    let chain = format!("{:#}", PolyConfig::load_file_with(&config_path, &resolver).unwrap_err());
+    assert!(chain.contains("poly-config.lock is no longer read"), "{chain}");
+    assert!(chain.contains("`poly lock`"), "{chain}");
 }

@@ -42,7 +42,7 @@ fmt` adds `--check` and `--exit-zero-on-fix`.
 
 The other subcommands: `poly hooks` (native git-hook runner over `[hooks]`), `poly commit`
 (commit-message lint, gitfluff), `poly rules test|list` (custom + built-in ast-grep rule packs),
-`poly config update|show|schema`, `poly cache`, `poly migrate` (absorbs ruff / taplo /
+`poly lock [--upgrade] [--check]`, `poly config show|schema`, `poly cache`, `poly migrate` (absorbs ruff / taplo /
 markdownlint / typos configs and lefthook / pre-commit hook configs), `poly mcp`, `poly doctor`.
 
 ## Machine-readable output
@@ -105,8 +105,8 @@ workspace through `scripts/release-bump.sh` and `scripts/sync_plugin_version.py`
 
 Per-repo `poly.toml` (with `poly.local.toml` for local overrides). A top-level `extends` list
 shares any config section from local or pinned-remote base configs (ADR 0020) — bases merge
-beneath the file, `poly.local.toml` wins on top; `poly config update` locks a symbolic remote
-ref into `poly-config.lock`, and `poly config show` prints the effective merged config. The
+beneath the file, `poly.local.toml` wins on top; `poly lock` pins a symbolic remote
+ref (and Git hook sources) into `poly.lock`, and `poly config show` prints the effective merged config. The
 result cache and hook staged snapshot live in the per-user OS cache dir (`~/.cache/poly/<repo-key>`
 on Linux, `~/Library/Caches/poly/…` on macOS, `%LOCALAPPDATA%\poly\…` on Windows) — not in-repo.
 `POLY_CACHE_HOME` overrides the base; `[cache] dir` pins an explicit path. The staged snapshot

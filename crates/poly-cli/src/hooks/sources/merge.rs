@@ -120,7 +120,7 @@ run = "printf"
         .unwrap();
         preferences(consumer.path());
         let config = write_consumer(consumer.path(), producer.path(), &["validate"]);
-        let selected = provision(consumer.path(), &config, false, true).unwrap();
+        let selected = provision(consumer.path(), &config, true).unwrap();
         let mut spec = poly_hooks::StageSpec {
             stage: poly_hooks::Stage::PreCommit,
             ..poly_hooks::StageSpec::default()
@@ -163,7 +163,7 @@ run = "printf"
         write_catalog(producer.path());
         preferences(consumer.path());
         let config = write_consumer(consumer.path(), producer.path(), &["validate"]);
-        let selected = provision(consumer.path(), &config, false, true).unwrap();
+        let selected = provision(consumer.path(), &config, true).unwrap();
         let mut spec = poly_hooks::StageSpec {
             stage: poly_hooks::Stage::PreCommit,
             ..poly_hooks::StageSpec::default()

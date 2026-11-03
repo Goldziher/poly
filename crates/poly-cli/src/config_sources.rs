@@ -1,10 +1,10 @@
 //! Remote `extends` config bases: the CLI-side [`BaseConfigResolver`] and the
-//! `poly-config.lock` lock flow.
+//! `[[extends]]` half of the `poly.lock` flow.
 //!
 //! `poly-config` is deliberately network-free: it merges only local files that a
 //! [`BaseConfigResolver`] hands back. This module implements the resolver the CLI
 //! injects, materializing pinned remote git bases (via [`crate::remote`]) and
-//! pinning symbolic refs through a repo-root `poly-config.lock`. It is the config
+//! pinning symbolic refs through a repo-root `poly.lock`. It is the config
 //! analogue of the `[[hooks.sources]]` lock flow in [`crate::hooks::sources`].
 
 use std::path::{Path, PathBuf};
@@ -13,88 +13,40 @@ use anyhow::{Context, bail};
 use fs2::FileExt;
 use poly_config::extends::{self, ExtendsSource};
 use poly_config::{BaseConfigResolver, LocalPathResolver, PolyConfig};
-use serde::{Deserialize, Serialize};
 
+use crate::polylock::{self, LockedExtends, PolyLock};
 use crate::remote::{self, validate_locked_revision};
-
-/// Repo-root lock file pinning every symbolic-ref remote config base to a
-/// resolved object ID. Mirrors `poly-hooks.lock` for `[[hooks.sources]]`.
-const LOCK_FILE_NAME: &str = "poly-config.lock";
-
-/// The only supported lock schema version.
-const LOCK_VERSION: u32 = 1;
 
 /// The default config file re-parsed for a repo's top-level `extends` list.
 const ROOT_CONFIG_NAME: &str = "poly.toml";
 
-/// A resolved remote config base pinned in [`ConfigLock`].
-///
-/// The key is `(git, file, revision)` — the declared repository URL, the file
-/// read from the base, and the declared *symbolic* revision (branch/tag/`HEAD`).
-/// `locked` is the full object ID that revision resolved to at `poly config
-/// update` time.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-struct LockedConfigSource {
-    /// Repository URL of the base.
-    git: String,
-    /// File read from the base repository.
-    file: String,
-    /// Declared symbolic revision (branch/tag/`HEAD`) that was locked.
-    revision: String,
-    /// Full object ID `revision` resolved to.
-    locked: String,
-}
-
-/// The parsed `poly-config.lock`: every symbolic-ref remote base pinned to an OID.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct ConfigLock {
-    /// Lock schema version (always [`LOCK_VERSION`]).
-    version: u32,
-    /// Locked remote config bases, in declared order.
-    #[serde(default)]
-    sources: Vec<LockedConfigSource>,
-}
-
-impl ConfigLock {
-    /// An empty, current-version lock (used when no lock file exists).
-    fn empty() -> Self {
-        ConfigLock {
-            version: LOCK_VERSION,
-            sources: Vec::new(),
-        }
-    }
-
-    /// Number of pinned remote bases recorded in the lock.
-    pub fn source_count(&self) -> usize {
-        self.sources.len()
-    }
-
-    /// The locked object ID for a `(git, file, revision)` key, if recorded.
-    fn locked_oid(&self, git: &str, file: &str, revision: &str) -> Option<&str> {
-        self.sources
-            .iter()
-            .find(|entry| entry.git == git && entry.file == file && entry.revision == revision)
-            .map(|entry| entry.locked.as_str())
-    }
-}
-
 /// The CLI's [`BaseConfigResolver`]: resolves local `path` bases exactly like
 /// [`LocalPathResolver`] and materializes pinned remote `git` bases from the
-/// per-user source cache, pinning symbolic refs through `poly-config.lock`.
+/// per-user source cache, pinning symbolic refs through `poly.lock`.
 ///
 /// A full-object-ID `revision` is self-pinning and needs no lock entry; any other
-/// (symbolic) revision must have been locked by `poly config update` first.
+/// (symbolic) revision must have been locked by `poly lock` first.
 #[derive(Debug)]
 pub struct RemoteExtendsResolver {
-    lock: ConfigLock,
+    lock: PolyLock,
+    root: PathBuf,
 }
 
 impl RemoteExtendsResolver {
     /// Build a resolver for the repository rooted at `root`, loading its
-    /// `poly-config.lock` if present (an empty lock otherwise).
+    /// `poly.lock` if present (an empty lock otherwise).
     pub fn new(root: &Path) -> anyhow::Result<Self> {
-        let lock = read_lock(root)?.unwrap_or_else(ConfigLock::empty);
-        Ok(RemoteExtendsResolver { lock })
+        let lock = polylock::read(root)?.unwrap_or_default();
+        Ok(Self::from_lock(root, lock))
+    }
+
+    /// Build a resolver over an in-memory `lock`, used by `poly lock` itself to
+    /// load the config against the extends it has just resolved.
+    pub fn from_lock(root: &Path, lock: PolyLock) -> Self {
+        RemoteExtendsResolver {
+            lock,
+            root: root.to_path_buf(),
+        }
     }
 
     /// The object ID a git `source` resolves to for display: the revision itself
@@ -128,8 +80,9 @@ impl BaseConfigResolver for RemoteExtendsResolver {
                 Some(oid) => oid.to_string(),
                 None => bail!(
                     "remote config base {} pinned to a symbolic ref has no lock entry; \
-                     run `poly config update` first",
-                    source.display_id()
+                     run `poly lock` first{}",
+                    source.display_id(),
+                    polylock::legacy_hint(&self.root)
                 ),
             }
         };
@@ -205,7 +158,7 @@ pub fn resolver() -> anyhow::Result<RemoteExtendsResolver> {
 ///
 /// This deliberately does **not** shell out to `git` (unlike
 /// [`poly_hooks::git::get_root`]): it runs on every `poly lint`/`poly fmt`
-/// invocation to locate `poly-config.lock`, and the pure-Rust walk keeps those
+/// invocation to locate `poly.lock`, and the pure-Rust walk keeps those
 /// commands subprocess-free when no remote `extends` base is in play.
 pub fn repo_root() -> anyhow::Result<PathBuf> {
     let cwd = std::env::current_dir().context("resolving the working directory")?;
@@ -221,92 +174,110 @@ pub fn repo_root() -> anyhow::Result<PathBuf> {
     }
 }
 
-/// Resolve every symbolic-ref remote `extends` git base declared by `config_path`
-/// to a full object ID and (re)write `poly-config.lock` at `root`.
+/// The `(git, file, revision)` key of every symbolic-ref git base in `declared`.
 ///
-/// Full-object-ID bases are self-pinning and are skipped (no lock entry). `path`
-/// bases are local and need no lock. Only the top-level config's **direct** git
-/// bases are locked — transitive `extends` of a base are out of scope for v1.
+/// Full-object-ID bases are self-pinning and `path` bases are local, so neither
+/// carries a lock entry.
+pub fn lockable_keys(declared: &[ExtendsSource]) -> Vec<(String, String, String)> {
+    let mut keys: Vec<_> = declared
+        .iter()
+        .filter_map(|source| {
+            let git = source.git.as_deref()?;
+            let revision = source.revision.as_deref().unwrap_or_default();
+            validate_locked_revision(revision).is_err().then(|| {
+                (
+                    git.to_string(),
+                    source.file_or_default().to_string(),
+                    revision.to_string(),
+                )
+            })
+        })
+        .collect();
+    keys.sort();
+    keys.dedup();
+    keys
+}
+
+/// Resolve every symbolic-ref remote `extends` git base in `declared` to a full
+/// object ID, returning the entries for `poly.lock`.
+///
+/// Without `upgrade`, a base already recorded in `existing` keeps its pinned
+/// object ID and is not fetched; with it, every base is re-resolved against the
+/// remote. Only the top-level config's **direct** git bases are locked —
+/// transitive `extends` of a base are out of scope for v1.
 ///
 /// Prints each resolved `url revision -> oid` and, per base, whether it introduces
 /// a `[hooks]` or `[tools]` section (a safety-review aid before adopting it).
-pub fn update(root: &Path, config_path: &Path) -> anyhow::Result<ConfigLock> {
-    let mut table = parse_table(config_path)?;
-    let sources =
-        extends::take_extends(&mut table).with_context(|| format!("parsing `extends` in {}", config_path.display()))?;
-    let cache_root = poly_cache::remote_sources_dir()?;
-    std::fs::create_dir_all(&cache_root)
-        .with_context(|| format!("creating remote source cache {}", cache_root.display()))?;
-
+pub fn resolve_extends(
+    declared: &[ExtendsSource],
+    existing: &PolyLock,
+    upgrade: bool,
+) -> anyhow::Result<Vec<LockedExtends>> {
     let mut locked = Vec::new();
-    for source in &sources {
-        let Some(git) = source.git.as_deref() else {
-            continue; // Local `path` base — nothing to lock.
-        };
-        let revision = source.revision.as_deref().unwrap_or_default();
-        let file = source.file_or_default();
-        if validate_locked_revision(revision).is_ok() {
-            println!("{git} {revision} -> {revision} (already pinned)");
+    let mut cache_root = None;
+    for (git, file, revision) in lockable_keys(declared) {
+        if !upgrade && let Some(oid) = existing.locked_oid(&git, &file, &revision) {
+            locked.push(LockedExtends {
+                git,
+                file,
+                revision,
+                locked: oid.to_string(),
+            });
             continue;
         }
-
-        let checkout = materialize_locked(git, revision, &cache_root, true)
-            .with_context(|| format!("resolving remote config base {}", source.display_id()))?;
+        let display = format!("{git}@{revision}");
+        if cache_root.is_none() {
+            let dir = poly_cache::remote_sources_dir()?;
+            std::fs::create_dir_all(&dir).with_context(|| format!("creating remote source cache {}", dir.display()))?;
+            cache_root = Some(dir);
+        }
+        let cache_root = cache_root.as_deref().expect("cache root set above");
+        let checkout = materialize_locked(&git, &revision, cache_root, true)
+            .with_context(|| format!("resolving remote config base {display}"))?;
         let oid = checkout
             .file_name()
             .and_then(|name| name.to_str())
             .map(str::to_string)
-            .with_context(|| format!("reading resolved object id for {}", source.display_id()))?;
-        validate_locked_revision(&oid)
-            .with_context(|| format!("validating resolved object id for {}", source.display_id()))?;
+            .with_context(|| format!("reading resolved object id for {display}"))?;
+        validate_locked_revision(&oid).with_context(|| format!("validating resolved object id for {display}"))?;
 
-        let base_file = checkout.join(file);
+        let base_file = checkout.join(&file);
         if !base_file.is_file() {
-            bail!("remote config base {} does not contain {}", source.display_id(), file);
+            bail!("remote config base {display} does not contain {file}");
         }
         let (has_hooks, has_tools) = base_sections(&base_file)?;
         println!("{git} {revision} -> {oid}");
         println!("    {file}: introduces [hooks]={has_hooks} [tools]={has_tools}");
-
-        locked.push(LockedConfigSource {
-            git: git.to_string(),
-            file: file.to_string(),
-            revision: revision.to_string(),
+        locked.push(LockedExtends {
+            git,
+            file,
+            revision,
             locked: oid,
         });
     }
+    Ok(locked)
+}
 
-    let lock = ConfigLock {
-        version: LOCK_VERSION,
-        sources: locked,
-    };
-    if lock.sources.is_empty() {
-        remove_lock(root)?;
-    } else {
-        write_lock(root, &lock)?;
-    }
-
-    if sources.iter().any(|source| source.git.is_some()) {
-        // The per-base lines above only reflect each *direct* base file. The
-        // loader merges the FULL transitive chain, so inspect the merged result
-        // — a base's own (full-OID, lock-free) bases can introduce [hooks]/[tools]
-        // that the direct-base summary never shows.
-        match RemoteExtendsResolver::new(root).and_then(|resolver| PolyConfig::load_file_with(config_path, &resolver)) {
-            Ok(merged) => println!(
-                "merged effective config introduces [hooks]={} [tools]={} (transitive bases included)",
-                merged.hooks.present,
-                !merged.tools.is_empty()
-            ),
-            Err(error) => {
-                println!("warning: could not fully resolve the merged config for review: {error:#}");
-            }
+/// Print what the merged effective config (transitive bases included) introduces.
+///
+/// The per-base lines from [`resolve_extends`] only reflect each *direct* base
+/// file, while the loader merges the FULL chain — a base's own (full-OID,
+/// lock-free) bases can introduce `[hooks]`/`[tools]` the summary never shows.
+pub fn review_merged(config_path: &Path, resolver: &RemoteExtendsResolver) {
+    match PolyConfig::load_file_with(config_path, resolver) {
+        Ok(merged) => println!(
+            "merged effective config introduces [hooks]={} [tools]={} (transitive bases included)",
+            merged.hooks.present,
+            !merged.tools.is_empty()
+        ),
+        Err(error) => {
+            println!("warning: could not fully resolve the merged config for review: {error:#}");
         }
-        println!(
-            "note: remote bases are trusted transitively — a pinned base may itself `extends` \
-             further bases whose [hooks]/[tools] would run on your machine."
-        );
     }
-    Ok(lock)
+    println!(
+        "note: remote bases are trusted transitively — a pinned base may itself `extends` \
+         further bases whose [hooks]/[tools] would run on your machine."
+    );
 }
 
 /// Parse `config_path`'s top-level `extends` list without resolving it — used by
@@ -330,41 +301,4 @@ fn parse_table(path: &Path) -> anyhow::Result<toml::Table> {
 fn base_sections(path: &Path) -> anyhow::Result<(bool, bool)> {
     let table = parse_table(path)?;
     Ok((table.contains_key("hooks"), table.contains_key("tools")))
-}
-
-fn write_lock(root: &Path, lock: &ConfigLock) -> anyhow::Result<()> {
-    let path = root.join(LOCK_FILE_NAME);
-    let temporary = root.join(format!("{LOCK_FILE_NAME}.tmp"));
-    std::fs::write(
-        &temporary,
-        toml::to_string_pretty(lock).context("serializing config source lock")?,
-    )
-    .with_context(|| format!("writing {}", temporary.display()))?;
-    std::fs::rename(&temporary, &path).with_context(|| format!("installing {}", path.display()))
-}
-
-fn remove_lock(root: &Path) -> anyhow::Result<()> {
-    let path = root.join(LOCK_FILE_NAME);
-    if path.is_file() {
-        std::fs::remove_file(&path).with_context(|| format!("removing {}", path.display()))?;
-    }
-    Ok(())
-}
-
-fn read_lock(root: &Path) -> anyhow::Result<Option<ConfigLock>> {
-    let path = root.join(LOCK_FILE_NAME);
-    if !path.is_file() {
-        return Ok(None);
-    }
-    let text = std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
-    let lock: ConfigLock = toml::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
-    if lock.version != LOCK_VERSION {
-        bail!(
-            "unsupported {} version {}; expected {}",
-            LOCK_FILE_NAME,
-            lock.version,
-            LOCK_VERSION
-        );
-    }
-    Ok(Some(lock))
 }

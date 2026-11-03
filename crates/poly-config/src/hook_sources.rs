@@ -15,7 +15,7 @@ pub struct HookSource {
     pub path: Option<PathBuf>,
     /// Git repository URL, mutually exclusive with `path`.
     pub git: Option<String>,
-    /// Git ref resolved by `poly hooks update`.
+    /// Git ref resolved by `poly lock`.
     pub revision: Option<String>,
     /// Explicit producer hook identifiers to enable.
     pub hooks: Vec<String>,
