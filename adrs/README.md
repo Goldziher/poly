@@ -29,7 +29,7 @@ Context, Decision, Consequences (positive and negative/risks), and Alternatives 
 | [0012](0012-native-hook-runner.md) | Native Hook Runner Replaces the prek Bridge | Accepted |
 | [0013](0013-catalog-tool-config.md) | Catalog-Driven Tool Config: Retire .pre-commit-config.yaml | Accepted |
 | [0014](0014-toolchain-interop.md) | Toolchain Interop: Capability-Probed First-Party CLIs | Accepted |
-| [0015](0015-fat-cli-vs-modular-backends.md) | Fat CLI vs. Modular Backends | Accepted |
+| [0015](0015-fat-cli-vs-modular-backends.md) | Fat CLI vs. Modular Backends | Superseded by 0039 |
 | [0016](0016-uniform-rule-selection.md) | Uniform Per-Tool Rule-Selection Model | Accepted |
 | [0017](0017-path-excludes-per-file-ignores.md) | Path Exclusions and Per-File Rule Ignores | Accepted |
 | [0018](0018-hierarchical-configuration.md) | Hierarchical Configuration Resolution for Monorepos | Accepted |
@@ -53,6 +53,7 @@ Context, Decision, Consequences (positive and negative/risks), and Alternatives 
 | [0036](0036-uncollected-test-files.md) | Uncollected Test Files: A Path-Only Rule in the Quality Tier | Accepted |
 | [0037](0037-adrlint-madr-linting.md) | adrlint: MADR Architecture Decision Record Linting in poly | Accepted |
 | [0038](0038-poly-toml-v2-and-cli-surface.md) | poly.toml v2 and the CLI Surface | Accepted |
+| [0039](0039-downloadable-engine-components.md) | Downloadable Engine Components | Accepted |
 
 ## Conventions
 

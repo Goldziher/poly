@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-06-26
 - Updated: 2026-06-28 (two scoped subprocess exceptions documented)
+- Updated: 2026-11-03 (downloaded components are executable code, not data; see ADR 0039)
 
 ## Context
 

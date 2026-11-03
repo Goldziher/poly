@@ -1,7 +1,7 @@
 # 0015 — Fat CLI vs. Modular Backends
 
-- Status: Accepted
-- Date: 2026-06-29
+- Status: Superseded by ADR 0039
+- Date: 2026-11-03
 - Supersedes: the on-demand modular-install direction (closes that exploration)
 
 ## Context
