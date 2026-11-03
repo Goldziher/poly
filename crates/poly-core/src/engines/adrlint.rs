@@ -58,7 +58,7 @@ use crate::language::Language;
 ///
 /// Bump the suffix whenever the diagnostic/edit mapping below changes, and the version whenever
 /// `adrlint` is upgraded — either alters output, and a stale cache entry would survive both.
-const VERSION: &str = "adrlint-0.4.0+poly1";
+const VERSION: &str = "adrlint-0.4.1+poly1";
 
 /// Why a Markdown file is routed past this backend.
 const NOT_AN_ADR: &str = "not a numbered ADR file";

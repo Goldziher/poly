@@ -33,7 +33,7 @@ homepage = "https://github.com/Goldziher/poly"
 documentation = "https://github.com/Goldziher/poly"
 
 [workspace.dependencies]
-adrlint = "=0.4.0"
+adrlint = "=0.4.1"
 aho-corasick = "1.1.5"
 # alejandra — Nix formatter (UNLICENSE, pure Rust via rnix); chosen over
 alejandra = "3.1"
@@ -43,8 +43,8 @@ anstyle-query = "1.1.5"
 anyhow = "1"
 assert_cmd = "2"
 assert_fs = "1.1.4"
-ast-grep-config = "0.51.0"
-ast-grep-core = "0.51.0"
+ast-grep-config = "0.51.1"
+ast-grep-core = "0.51.1"
 axoupdater = { version = "0.10.3", default-features = false, features = ["github_releases"] }
 biome_analyze = { git = "https://github.com/biomejs/biome", rev = "e2e5a36e1be8581419742a85268ad82f020da62e" }
 biome_css_analyze = { git = "https://github.com/biomejs/biome", rev = "e2e5a36e1be8581419742a85268ad82f020da62e" }
@@ -191,7 +191,7 @@ toml_edit = "0.25"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 tree-sitter = "0.27"
-tree-sitter-language-pack = "1.22"
+tree-sitter-language-pack = "1.23"
 typos = "0.10"
 typos-dict = "0.14"
 uncomment = "3.10"
@@ -200,7 +200,7 @@ unicode-width = { version = "0.2.3", default-features = false }
 ureq = "3"
 walkdir = "2.5.0"
 which = "8.0.6"
-zip = { version = "9.2", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+zip = { version = "9.3", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 # oxc_formatter_yaml/toml pull `oxc_allocator` from the registry through their parsers; resolve it to
 # the same git copy as the rest of the oxc crates so there is a single `Allocator` type.
