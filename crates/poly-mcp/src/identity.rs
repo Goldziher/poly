@@ -15,7 +15,9 @@
 //!   forever, with no expiry. The watch fingerprints the executable at startup
 //!   and re-checks it per request.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::OnceLock;
 use std::time::Instant;
 
 use schemars::JsonSchema;
@@ -52,15 +54,15 @@ pub struct PolyIdentity {
     /// The binary's version does not move when a wrapped crate does — a `dev`
     /// build, or two builds of one tag, can carry different backends. This is
     /// what distinguishes them. Host-toolchain backends are deliberately not
-    /// folded in (see [`poly_core::engine_versions`]), so the digest is the same
+    /// folded in (see `poly_core::engine_versions`), so the digest is the same
     /// on every machine running the same binary. The full map is available from
     /// the `version` tool.
     pub engines: String,
 }
 
 impl PolyIdentity {
-    /// Read the identity of the running process.
-    fn detect() -> Self {
+    /// Read the identity of the running process, with `engines` as the host's engine versions.
+    fn detect(engines: &BTreeMap<String, String>) -> Self {
         PolyIdentity {
             version: poly_buildinfo::VERSION.to_string(),
             build_id: poly_buildinfo::build_id().to_string(),
@@ -69,7 +71,7 @@ impl PolyIdentity {
             commit: poly_buildinfo::commit().map(str::to_string),
             executable: std::env::current_exe().ok().map(|path| path.display().to_string()),
             pid: std::process::id(),
-            engines: engines_digest(poly_core::engine_versions()),
+            engines: engines_digest(engines),
         }
     }
 }
@@ -91,22 +93,31 @@ const ENGINES_DIGEST_VERSION: &str = "1";
 /// so no pair of `(name, version)` values can collide by concatenation. The map
 /// is a `BTreeMap`, so iteration order is the sorted order and the digest is
 /// stable across runs.
-fn engines_digest(versions: &std::collections::BTreeMap<&'static str, String>) -> String {
+fn engines_digest<K: AsRef<str>>(versions: &BTreeMap<K, String>) -> String {
     let mut hasher = blake3::Hasher::new();
     hasher.update(ENGINES_DIGEST_VERSION.as_bytes());
     for (name, version) in versions {
         hasher.update(b"\0");
-        hasher.update(name.as_bytes());
+        hasher.update(name.as_ref().as_bytes());
         hasher.update(b"\0");
         hasher.update(version.as_bytes());
     }
     format!("engines/{ENGINES_DIGEST_VERSION}/{}", &hasher.finalize().to_hex()[..16])
 }
 
-/// The identity of this process, computed once.
+static IDENTITY: OnceLock<PolyIdentity> = OnceLock::new();
+
+/// Record the engine versions the host reported, so the identity's digest describes the host's
+/// engines rather than this frontend's (which links none). The first call wins; call it before
+/// [`identity`] is first read.
+pub fn install_engines(engines: &BTreeMap<String, String>) {
+    let _ = IDENTITY.set(PolyIdentity::detect(engines));
+}
+
+/// The identity of this process, computed once. Without [`install_engines`] the digest covers
+/// no engines.
 pub fn identity() -> &'static PolyIdentity {
-    static IDENTITY: std::sync::LazyLock<PolyIdentity> = std::sync::LazyLock::new(PolyIdentity::detect);
-    &IDENTITY
+    IDENTITY.get_or_init(|| PolyIdentity::detect(&BTreeMap::new()))
 }
 
 /// The identity as a JSON value, computed once.

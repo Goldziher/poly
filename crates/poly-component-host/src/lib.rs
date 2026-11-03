@@ -15,6 +15,10 @@
 //!   production uses [`AlefConnector`], which drives the dylib through the proxy `alef generate`
 //!   emits into `components_gen.rs`.
 //!
+//! A frontend component (the MCP server) is not an engine: [`ComponentHost::ensure_frontend`] makes
+//! it available and [`ComponentHost::run_frontend`] loads it and hands it the process, with the
+//! host services given in [`HostOptions::services`] as its only way back into the core.
+//!
 //! This crate depends on neither `poly-core` nor any engine crate; it links `poly-engines` without
 //! features only for the `PolyComponent` contract trait the generated proxy implements.
 
@@ -23,6 +27,7 @@
 mod components_gen;
 mod engine;
 mod ensure;
+mod frontend;
 mod host;
 mod slot;
 mod transport;

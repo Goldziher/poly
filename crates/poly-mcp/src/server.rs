@@ -40,6 +40,7 @@
 //! the [`ServerHandler`] impl is hand-written rather than `#[tool_handler]`.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::tool::ToolCallContext;
@@ -55,12 +56,13 @@ use rmcp::{ErrorData, RoleServer, ServerHandler, tool, tool_router};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::dto;
-use poly_core::report::{FormatDocument, LintDocument};
+use poly_frontend_api::ServiceCaller;
+use poly_frontend_api::wire::{ConfigRequest, PathsRequest as PathsCall, RulesRequest, WorkspaceRequest};
 
+use crate::backend::Backend;
+use crate::dto;
 use crate::dto::{TextRepr, VersionReport, WorkspaceReport, dto_result, schema_for_output_with_identity};
-use crate::identity::ExecutableWatch;
-use crate::ops;
+use crate::identity::{self, ExecutableWatch};
 
 /// Tool name for the check-mode whole-project lint Task.
 ///
@@ -166,6 +168,8 @@ pub struct PolyMcpServer {
     tool_router: ToolRouter<PolyMcpServer>,
     /// Store and executor for the whole-project async Tasks.
     task_manager: TaskManager,
+    /// The host's services, the only way this server reaches an engine.
+    backend: Backend,
     /// Config path passed on the command line (`poly mcp --config`); used as the
     /// fallback when a request does not name its own config.
     config_override: Option<PathBuf>,
@@ -173,6 +177,30 @@ pub struct PolyMcpServer {
     /// every request so an upgrade underneath a running server fails loudly
     /// instead of answering with superseded behaviour.
     executable: ExecutableWatch,
+}
+
+/// The host request for a lint or format call; `apply` is `--fix` / write.
+fn paths_call(paths: Vec<String>, exclude: Vec<String>, config: Option<String>, apply: bool) -> PathsCall {
+    PathsCall {
+        paths,
+        exclude,
+        config,
+        apply,
+    }
+}
+
+/// Teach the process the host's engine versions and output schemas. A failure leaves the
+/// defaults (an empty engine digest, bare output schemas) rather than refusing to serve: the
+/// tools themselves report the host's error when it matters.
+fn install_host_metadata(backend: &Backend) {
+    match backend.engines() {
+        Ok(engines) => identity::install_engines(&engines),
+        Err(error) => eprintln!("poly mcp: cannot read the host's engine versions: {error:#}"),
+    }
+    match backend.schemas() {
+        Ok(schemas) => dto::install_document_schemas(schemas),
+        Err(error) => eprintln!("poly mcp: cannot read the host's output schemas: {error:#}"),
+    }
 }
 
 /// Resolve the effective config path for a request: an explicit per-request
@@ -225,10 +253,10 @@ fn mutating_annotations() -> ToolAnnotations {
 
 #[tool_router]
 impl PolyMcpServer {
-    /// Build a server, optionally pinning a config file used for every request
-    /// that does not name its own.
-    pub fn new(config_override: Option<PathBuf>) -> Self {
-        Self::with_executable_watch(config_override, ExecutableWatch::capture())
+    /// Build a server over the host's services, optionally pinning a config file used for every
+    /// request that does not name its own.
+    pub fn new(caller: Arc<dyn ServiceCaller>, config_override: Option<PathBuf>) -> Self {
+        Self::with_executable_watch(caller, config_override, ExecutableWatch::capture())
     }
 
     /// Build a server watching a specific executable rather than the running
@@ -238,8 +266,15 @@ impl PolyMcpServer {
     /// explicit dependency for an embedder that knows which file backs the
     /// server — a supervisor watching the binary it launched, or a harness
     /// exercising the replaced-underneath-a-running-server path.
-    pub fn with_executable_watch(config_override: Option<PathBuf>, executable: ExecutableWatch) -> Self {
+    pub fn with_executable_watch(
+        caller: Arc<dyn ServiceCaller>,
+        config_override: Option<PathBuf>,
+        executable: ExecutableWatch,
+    ) -> Self {
+        let backend = Backend::new(caller);
+        install_host_metadata(&backend);
         Self {
+            backend,
             tool_router: Self::tool_router(),
             task_manager: TaskManager::new(),
             config_override,
@@ -253,14 +288,15 @@ impl PolyMcpServer {
                       The result carries `skipped` and a `summary` of checked/skipped/errored counts: check those, not just \
                       an empty `results`, since a run that skipped everything reports no diagnostics and is not an error.",
         annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false),
-        output_schema = schema_for_output_with_identity::<LintDocument>()
+        output_schema = dto::lint_output_schema()
     )]
     async fn lint(&self, params: Parameters<PathsParams>) -> Result<CallToolResult, ErrorData> {
         let Parameters(args) = params;
         let config = effective_config(args.config, &self.config_override);
         let repr = args.format;
-        let run = run_blocking(move || ops::lint_run(&args.paths, &args.exclude, config.as_deref(), false)).await?;
-        dto::lint_result(run, repr)
+        let backend = self.backend.clone();
+        let reply = run_blocking(move || backend.lint(&paths_call(args.paths, args.exclude, config, false))).await?;
+        Ok(dto::lint_result(reply, repr))
     }
 
     #[tool(
@@ -269,14 +305,15 @@ impl PolyMcpServer {
                       The result carries `skipped` and a `summary` of checked/skipped/errored counts: check those, not just \
                       an empty `results`, since a run that skipped everything reports no diagnostics and is not an error.",
         annotations(read_only_hint = true, destructive_hint = false, idempotent_hint = true, open_world_hint = false),
-        output_schema = schema_for_output_with_identity::<FormatDocument>()
+        output_schema = dto::format_output_schema()
     )]
     async fn format_check(&self, params: Parameters<PathsParams>) -> Result<CallToolResult, ErrorData> {
         let Parameters(args) = params;
         let config = effective_config(args.config, &self.config_override);
         let repr = args.format;
-        let run = run_blocking(move || ops::format_run(&args.paths, &args.exclude, config.as_deref(), false)).await?;
-        dto::format_result(run, repr)
+        let backend = self.backend.clone();
+        let reply = run_blocking(move || backend.format(&paths_call(args.paths, args.exclude, config, false))).await?;
+        Ok(dto::format_result(reply, repr))
     }
 
     #[tool(
@@ -285,14 +322,15 @@ impl PolyMcpServer {
                       The result carries `skipped` and a `summary` of checked/skipped/errored counts: check those, not just \
                       an empty `results`, since a run that skipped everything reports no diagnostics and is not an error.",
         annotations(read_only_hint = false, destructive_hint = true, open_world_hint = false),
-        output_schema = schema_for_output_with_identity::<LintDocument>()
+        output_schema = dto::lint_output_schema()
     )]
     async fn lint_fix(&self, params: Parameters<PathsParams>) -> Result<CallToolResult, ErrorData> {
         let Parameters(args) = params;
         let config = effective_config(args.config, &self.config_override);
         let repr = args.format;
-        let run = run_blocking(move || ops::lint_run(&args.paths, &args.exclude, config.as_deref(), true)).await?;
-        dto::lint_result(run, repr)
+        let backend = self.backend.clone();
+        let reply = run_blocking(move || backend.lint(&paths_call(args.paths, args.exclude, config, true))).await?;
+        Ok(dto::lint_result(reply, repr))
     }
 
     #[tool(
@@ -301,14 +339,15 @@ impl PolyMcpServer {
                       The result carries `skipped` and a `summary` of checked/skipped/errored counts: check those, not just \
                       an empty `results`, since a run that skipped everything reports no diagnostics and is not an error.",
         annotations(read_only_hint = false, destructive_hint = true, open_world_hint = false),
-        output_schema = schema_for_output_with_identity::<FormatDocument>()
+        output_schema = dto::format_output_schema()
     )]
     async fn format_write(&self, params: Parameters<PathsParams>) -> Result<CallToolResult, ErrorData> {
         let Parameters(args) = params;
         let config = effective_config(args.config, &self.config_override);
         let repr = args.format;
-        let run = run_blocking(move || ops::format_run(&args.paths, &args.exclude, config.as_deref(), true)).await?;
-        dto::format_result(run, repr)
+        let backend = self.backend.clone();
+        let reply = run_blocking(move || backend.format(&paths_call(args.paths, args.exclude, config, true))).await?;
+        Ok(dto::format_result(reply, repr))
     }
 
     #[tool(
@@ -318,7 +357,8 @@ impl PolyMcpServer {
     )]
     async fn cache_stats(&self, params: Parameters<FormatParams>) -> Result<CallToolResult, ErrorData> {
         let Parameters(args) = params;
-        let report = run_blocking(ops::cache_stats).await?;
+        let backend = self.backend.clone();
+        let report = run_blocking(move || backend.cache_stats()).await?;
         dto_result(&report, args.format)
     }
 
@@ -329,7 +369,8 @@ impl PolyMcpServer {
     )]
     async fn cache_clean(&self, params: Parameters<FormatParams>) -> Result<CallToolResult, ErrorData> {
         let Parameters(args) = params;
-        let report = run_blocking(ops::cache_clean).await?;
+        let backend = self.backend.clone();
+        let report = run_blocking(move || backend.cache_clean()).await?;
         dto_result(&report, args.format)
     }
 
@@ -345,7 +386,13 @@ impl PolyMcpServer {
         let Parameters(args) = params;
         let config = effective_config(args.config, &self.config_override);
         let repr = args.format;
-        let report = run_blocking(move || ops::rules_report(&args.dirs, config.as_deref(), args.test)).await?;
+        let backend = self.backend.clone();
+        let request = RulesRequest {
+            dirs: args.dirs,
+            config,
+            test: args.test,
+        };
+        let report = run_blocking(move || backend.rules(&request)).await?;
         dto_result(&report, repr)
     }
 
@@ -358,7 +405,8 @@ impl PolyMcpServer {
         let Parameters(args) = params;
         let config = effective_config(args.config, &self.config_override);
         let repr = args.format;
-        let report = run_blocking(move || ops::config_show(config.as_deref())).await?;
+        let backend = self.backend.clone();
+        let report = run_blocking(move || backend.config_show(&ConfigRequest { config })).await?;
         dto_result(&report, repr)
     }
 
@@ -371,17 +419,30 @@ impl PolyMcpServer {
     async fn version(&self, params: Parameters<FormatParams>) -> Result<CallToolResult, ErrorData> {
         let Parameters(args) = params;
         let staleness = self.executable.check();
+        let backend = self.backend.clone();
+        // The host lookups may fail exactly when this tool is needed to explain why; report the
+        // failure in the status instead of failing the call.
+        let (engines, components, host_error) = run_blocking(move || {
+            Ok(match (backend.engines(), backend.components()) {
+                (Ok(engines), Ok(components)) => (engines, components, None),
+                (Err(error), _) | (_, Err(error)) => (Default::default(), Vec::new(), Some(format!("{error:#}"))),
+            })
+        })
+        .await?;
+        let executable_current = staleness.is_none();
+        let mut executable_status = match staleness {
+            Some(staleness) => self.executable.stale_message(staleness),
+            None => "the executable serving this session is still the file on disk".to_string(),
+        };
+        if let Some(error) = host_error {
+            executable_status.push_str(&format!("; the host could not report engines and components: {error}"));
+        }
         let report = VersionReport {
-            executable_current: staleness.is_none(),
-            executable_status: match staleness {
-                Some(staleness) => self.executable.stale_message(staleness),
-                None => "the executable serving this session is still the file on disk".to_string(),
-            },
+            executable_current,
+            executable_status,
             uptime_seconds: self.executable.uptime_seconds(),
-            engines: poly_core::engine_versions()
-                .iter()
-                .map(|(name, version)| ((*name).to_string(), version.clone()))
-                .collect(),
+            engines,
+            components,
         };
         dto_result(&report, args.format)
     }
@@ -425,12 +486,18 @@ impl PolyMcpServer {
         let args: WorkspaceParams = parse_arguments(request.arguments)?;
         let config = effective_config(args.config, &self.config_override);
         let repr = args.format;
-        let (jobs, no_cache) = (args.jobs, args.no_cache);
+        let request = WorkspaceRequest {
+            config,
+            fix,
+            jobs: args.jobs,
+            no_cache: args.no_cache,
+        };
+        let backend = self.backend.clone();
 
         let supports_tasks = context.client_capabilities().is_some_and(|caps| caps.supports_tasks());
         if !supports_tasks {
             // Synchronous fallback for clients without the tasks extension.
-            let report = run_blocking(move || ops::workspace_lint(config.as_deref(), fix, jobs, no_cache)).await?;
+            let report = run_blocking(move || backend.workspace_lint(&request)).await?;
             return Ok(CallToolResponse::Complete(dto_result(&report, repr)?));
         }
 
@@ -445,17 +512,15 @@ impl PolyMcpServer {
             TaskOptions::new().with_ttl_ms(None).with_status_message(status),
             move |_ctx| {
                 Box::pin(async move {
-                    let report = tokio::task::spawn_blocking(move || {
-                        ops::workspace_lint(config.as_deref(), fix, jobs, no_cache)
-                    })
-                    .await
-                    .map_err(|error| {
-                        TaskExit::Error(ErrorData::internal_error(
-                            format!("workspace task panicked: {error}"),
-                            None,
-                        ))
-                    })?
-                    .map_err(|error| TaskExit::Error(ErrorData::internal_error(format!("{error:#}"), None)))?;
+                    let report = tokio::task::spawn_blocking(move || backend.workspace_lint(&request))
+                        .await
+                        .map_err(|error| {
+                            TaskExit::Error(ErrorData::internal_error(
+                                format!("workspace task panicked: {error}"),
+                                None,
+                            ))
+                        })?
+                        .map_err(|error| TaskExit::Error(ErrorData::internal_error(format!("{error:#}"), None)))?;
                     dto_result(&report, repr).map_err(TaskExit::Error)
                 })
             },

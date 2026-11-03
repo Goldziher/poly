@@ -1,17 +1,17 @@
-//! Synchronous engine operations shared by every MCP tool.
+//! Synchronous engine operations behind the host services.
 //!
 //! These functions are deliberately free of any `rmcp`/`tokio` types: they run
 //! the same `poly-core` pipeline the CLI runs and return **typed** results — the
 //! `poly-core` *run* structs for lint/format (results **plus** the files the run
-//! failed on or declined), and the MCP-local DTOs in
-//! [`crate::dto`] for cache/rules/config/workspace. The async tool handlers in
-//! [`crate::server`] serialize them to structured content and call these from a
-//! blocking task so the synchronous, rayon-driven engine never runs on a tokio
-//! worker thread.
+//! failed on or declined), and the report types in
+//! [`poly_frontend_api::dto`] for cache/rules/config/workspace. The MCP
+//! frontend reaches them through the host services in [`crate::Services`] and
+//! calls those from a blocking task, so the synchronous, rayon-driven engine
+//! never runs on a tokio worker thread.
 //!
 //! Config resolution is **network-free**: local `extends` bases resolve as
 //! usual, but remote **git** `extends` bases are not fetched (the git resolver
-//! lives in `poly-cli`, which the server cannot depend on without a dependency
+//! lives in `poly-cli`, which this crate cannot depend on without a dependency
 //! cycle). A repo whose config extends a remote git base should be served via
 //! the `poly` CLI. This is a documented v1 limitation (ADR 0020).
 
@@ -19,13 +19,11 @@ use std::path::{Path, PathBuf};
 
 use poly_cache::{ResultCache, root_from_cwd};
 use poly_config::PolyConfig;
-use poly_core::engines::astgrep::list_rules;
-use poly_core::engines::astgrep::test::{CaseKind, run_tests};
-use poly_core::{Config, FormatRun, Kind, Language, LintRun, RunOptions};
+use poly_core::{Config, FormatRun, LintRun, RunOptions};
 
-use crate::dto::{
-    CacheCleanReport, CacheNamespace, CacheStatsReport, ConfigDefaults, ConfigShowReport, RuleInfo, RuleTestOutcome,
-    RulesReport, WorkspaceReport, WorkspaceToolReport,
+use poly_frontend_api::dto::{
+    CacheCleanReport, CacheNamespace, CacheStatsReport, ConfigDefaults, ConfigShowReport, RulesReport, WorkspaceReport,
+    WorkspaceToolReport,
 };
 
 /// Resolve the `poly-core` run configuration the way the CLI does, but
@@ -177,7 +175,13 @@ pub fn cache_clean() -> anyhow::Result<CacheCleanReport> {
 /// merge + selection path `lint` runs, so it reflects `[rules] builtin` and the
 /// `[lint.astgrep]` `select` / `extend_select` / `ignore` / per-rule `level`
 /// keys rather than reporting a raw on-disk inventory.
+#[cfg(feature = "engine-astgrep")]
 pub fn rules_report(dirs: &[String], config: Option<&str>, test: bool) -> anyhow::Result<RulesReport> {
+    use poly_core::engines::astgrep::list_rules;
+    use poly_core::engines::astgrep::test::{CaseKind, run_tests};
+    use poly_core::{Kind, Language};
+    use poly_frontend_api::dto::{RuleInfo, RuleTestOutcome};
+
     let resolved = resolve_config(config.map(Path::new))?;
     // `astgrep`'s options table is language-agnostic (built from `[rules]` +
     // `[lint.astgrep]`), so the language here only has to be *some* language.
@@ -236,6 +240,12 @@ pub fn rules_report(dirs: &[String], config: Option<&str>, test: bool) -> anyhow
     }
 
     Ok(report)
+}
+
+/// Without the ast-grep engine family there is no rule inventory to report.
+#[cfg(not(feature = "engine-astgrep"))]
+pub fn rules_report(_dirs: &[String], _config: Option<&str>, _test: bool) -> anyhow::Result<RulesReport> {
+    anyhow::bail!("this poly build does not include the ast-grep engine family, so it has no rules to list")
 }
 
 /// Summarize the effective, merged config (mirrors `poly config show`), resolved

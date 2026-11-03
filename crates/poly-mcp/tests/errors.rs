@@ -16,10 +16,12 @@
 //! every file as text before any engine sees it, so the error is deterministic,
 //! parallel-safe, and independent of the host toolchain.
 
+mod common;
+
 use std::path::Path;
 
 use poly_core::report::{FormatDocument, LintDocument};
-use poly_mcp::{PolyMcpServer, ops};
+use poly_host_services::ops;
 use rmcp::ServiceExt;
 use rmcp::model::{CallToolRequestParams, ClientCapabilities, ClientConfig};
 use serde_json::Value;
@@ -172,10 +174,7 @@ async fn connect() -> (
     let (client_read, client_write) = tokio::io::split(client_io);
 
     let server_task = tokio::spawn(async move {
-        let service = PolyMcpServer::new(None)
-            .serve((server_read, server_write))
-            .await
-            .unwrap();
+        let service = common::server(None).serve((server_read, server_write)).await.unwrap();
         service.waiting().await.unwrap();
     });
 

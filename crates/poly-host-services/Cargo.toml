@@ -1,0 +1,37 @@
+[package]
+name = "poly-host-services"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+publish = false
+description = "The services poly's core exposes to a frontend component: lint, format, workspace lint, cache, config, rules and components."
+
+[lib]
+name = "poly_host_services"
+path = "src/lib.rs"
+
+[features]
+# `rules.report` needs the ast-grep engine family; without it the service answers with an error.
+engine-astgrep = ["poly-core/engine-astgrep"]
+# Every engine family, for a host that links them all (the bundled build and the tests).
+all-engines = ["poly-core/all-engines", "engine-astgrep"]
+
+[dependencies]
+anyhow.workspace = true
+poly-cache.workspace = true
+poly-config.workspace = true
+# `schemars` feature: the `schemas.output` service publishes the lint and format document schemas.
+poly-core = { workspace = true, features = ["schemars"] }
+poly-frontend-api.workspace = true
+poly-workspace.workspace = true
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

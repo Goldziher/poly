@@ -18,6 +18,8 @@ path = "src/lib.rs"
 [features]
 # One feature per engine family; each links and re-exports that family crate.
 astgrep = ["dep:poly-engines-astgrep"]
+# The MCP frontend component: poly-mcp (rmcp, tokio) behind the `PolyFrontend` contract.
+mcp = ["dep:alef-component-abi", "dep:poly-frontend-api", "dep:poly-mcp", "dep:serde_json"]
 misc = [
   "dep:poly-engines-misc",
   "poly-engines-misc/dockerfile",
@@ -33,6 +35,7 @@ typos = ["dep:poly-engines-typos"]
 uncomment = ["dep:poly-engines-uncomment"]
 
 [dependencies]
+alef-component-abi = { workspace = true, optional = true }
 anyhow.workspace = true
 poly-component-protocol.workspace = true
 poly-engine-api.workspace = true
@@ -44,6 +47,9 @@ poly-engines-python = { workspace = true, optional = true }
 poly-engines-sql = { workspace = true, optional = true }
 poly-engines-typos = { workspace = true, optional = true }
 poly-engines-uncomment = { workspace = true, optional = true }
+poly-frontend-api = { workspace = true, optional = true }
+poly-mcp = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
 thiserror.workspace = true
 toml.workspace = true
 tracing.workspace = true

@@ -8,11 +8,11 @@
 //! machine-readable structured JSON *and* a human/compact text view from one
 //! call.
 //!
-//! Lint and format return `poly-core`'s own [`LintDocument`] / [`FormatDocument`]
-//! — the exact value `poly lint --format json` prints, with its `JsonSchema`
-//! derive gated behind the `schemars` feature this crate enables. There is no
-//! MCP-local copy, so the two surfaces cannot answer the same question
-//! differently.
+//! Lint and format return `poly-core`'s own `LintDocument` / `FormatDocument`
+//! — the exact value `poly lint --format json` prints. The host renders it
+//! (see [`RunReply`]) and publishes its JSON Schema, so this crate links no
+//! engine and there is no MCP-local copy: the two surfaces cannot answer the
+//! same question differently.
 //!
 //! The document is built from the whole *run*, not just its results, and states
 //! three things a caller would otherwise have to reconstruct by walking every
@@ -34,14 +34,18 @@
 //! when empty, unlike `errors`/`skipped`, which are always present because a
 //! consumer must be able to test them unconditionally.
 //!
-//! The cache/rules/config/workspace DTOs are MCP-local because their CLI
-//! counterparts print prose rather than a serializable value.
+//! The cache/rules/config/workspace DTOs live in [`poly_frontend_api::dto`],
+//! shared with the host that builds them, because their CLI counterparts print
+//! prose rather than a serializable value.
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
-use poly_core::report::{FormatDocument, LintDocument};
-use poly_core::{FormatRun, LintRun};
+pub use poly_frontend_api::dto::{
+    CacheCleanReport, CacheNamespace, CacheStatsReport, ComponentSummary, ConfigDefaults, ConfigShowReport, RuleInfo,
+    RuleTestOutcome, RulesReport, WorkspaceReport, WorkspaceToolReport,
+};
+use poly_frontend_api::wire::{RunReply, Schemas};
 use rmcp::ErrorData;
 use rmcp::model::{CallToolResult, ContentBlock, JsonObject, MetaObject};
 use schemars::JsonSchema;
@@ -133,7 +137,50 @@ fn identity_meta() -> MetaObject {
 /// The output schema for `T`, extended with the `poly` identity property that
 /// [`build`] injects, so the declared schema matches what is actually sent.
 pub fn schema_for_output_with_identity<T: JsonSchema + std::any::Any>() -> Arc<JsonObject> {
-    let base = rmcp::handler::server::tool::schema_for_output::<T>();
+    with_identity_property(rmcp::handler::server::tool::schema_for_output::<T>())
+}
+
+/// The root schemas the host published for the lint and format documents.
+static DOCUMENT_SCHEMAS: OnceLock<Schemas> = OnceLock::new();
+
+/// Remember the host's document schemas so the lint and format tools can declare them. The first
+/// call wins: the host's documents do not change while it runs.
+pub fn install_document_schemas(schemas: Schemas) {
+    let _ = DOCUMENT_SCHEMAS.set(schemas);
+}
+
+/// The declared output schema of the lint tools, with the identity property.
+///
+/// Before the host's schema is known it is the bare object schema carrying only the identity, so
+/// a tool list never fails for want of it.
+pub fn lint_output_schema() -> Arc<JsonObject> {
+    document_output_schema(DOCUMENT_SCHEMAS.get().map(|schemas| &schemas.lint))
+}
+
+/// The declared output schema of the format tools; see [`lint_output_schema`].
+pub fn format_output_schema() -> Arc<JsonObject> {
+    document_output_schema(DOCUMENT_SCHEMAS.get().map(|schemas| &schemas.format))
+}
+
+/// A host-published root schema in the shape rmcp gives an output schema (top-level `title` and
+/// `description` removed), plus the identity property.
+fn document_output_schema(published: Option<&Value>) -> Arc<JsonObject> {
+    let mut object = match published {
+        Some(Value::Object(object)) => object.clone(),
+        _ => {
+            let mut object = JsonObject::new();
+            object.insert("type".to_string(), Value::String("object".to_string()));
+            object.insert("properties".to_string(), Value::Object(JsonObject::new()));
+            object
+        }
+    };
+    object.remove("title");
+    object.remove("description");
+    with_identity_property(Arc::new(object))
+}
+
+/// Extend an object schema with the `poly` identity property.
+fn with_identity_property(base: Arc<JsonObject>) -> Arc<JsonObject> {
     let mut object = base.as_ref().clone();
     // Only object schemas have properties to extend; anything else is returned
     // unchanged rather than reshaped.
@@ -177,157 +224,25 @@ pub fn dto_result<T: Serialize>(value: &T, repr: TextRepr) -> Result<CallToolRes
 
 /// Build the tool result for a whole lint run.
 ///
-/// The payload is `poly-core`'s own [`LintDocument`] — the same value
+/// The payload is the host's rendering of `poly-core`'s own `LintDocument` — the same value
 /// `poly lint --format json` prints — so `structured_content` and the text block
 /// carry one shape, and the CLI and this server cannot answer "what did you
-/// actually check" differently.
-pub fn lint_result(run: LintRun, repr: TextRepr) -> Result<CallToolResult, ErrorData> {
-    let document = LintDocument::from_run(&run);
-    let is_error = !document.errors.is_empty() || document.components.blocking();
-    let structured = serde_json::to_value(&document).map_err(serialize_error)?;
-    // A render failure is surfaced as a tool error, never as an empty document:
-    // an MCP caller has no other way to tell "clean" from "poly could not tell
-    // you".
-    let json_text = poly_core::report::report_lint_json_run(&run).map_err(serialize_error)?;
-    let toon_text = poly_core::report::report_lint_toon_run(&run).map_err(serialize_error)?;
-    Ok(build_with_status(structured, json_text, toon_text, repr, is_error))
+/// actually check" differently. A render failure never reaches here: the host
+/// reports it as a failed call, which becomes a tool error rather than an empty
+/// document, since an MCP caller has no other way to tell "clean" from "poly
+/// could not tell you".
+pub fn lint_result(reply: RunReply, repr: TextRepr) -> CallToolResult {
+    run_result(reply, repr)
 }
 
 /// Build the tool result for a whole format run — the counterpart of
 /// [`lint_result`], and for the same reasons.
-pub fn format_result(run: FormatRun, repr: TextRepr) -> Result<CallToolResult, ErrorData> {
-    let document = FormatDocument::from_run(&run);
-    let is_error = !document.errors.is_empty() || document.components.blocking();
-    let structured = serde_json::to_value(&document).map_err(serialize_error)?;
-    let json_text = poly_core::report::report_format_json_run(&run).map_err(serialize_error)?;
-    let toon_text = poly_core::report::report_format_toon_run(&run).map_err(serialize_error)?;
-    Ok(build_with_status(structured, json_text, toon_text, repr, is_error))
+pub fn format_result(reply: RunReply, repr: TextRepr) -> CallToolResult {
+    run_result(reply, repr)
 }
 
-/// One result-cache namespace's footprint.
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct CacheNamespace {
-    /// Namespace directory name (e.g. `results`, `hooks`).
-    pub namespace: String,
-    /// Number of cached entries in this namespace.
-    pub entries: u64,
-    /// On-disk size of this namespace, in bytes.
-    pub bytes: u64,
-}
-
-/// Result-cache footprint (mirrors `poly cache stats`).
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct CacheStatsReport {
-    /// Cache format version this binary writes.
-    pub format_version: String,
-    /// Cache format version found on disk, if any.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub on_disk_version: Option<String>,
-    /// Total on-disk size across all namespaces, in bytes.
-    pub total_bytes: u64,
-    /// Per-namespace footprint.
-    pub per_namespace: Vec<CacheNamespace>,
-}
-
-/// Freed-byte report for `poly cache clean`.
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct CacheCleanReport {
-    /// Bytes reclaimed by removing every cached entry.
-    pub freed_bytes: u64,
-}
-
-/// One resolved ast-grep rule — from poly's built-in pack or a user rule dir.
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct RuleInfo {
-    /// Rule id (the `code` a diagnostic reports).
-    pub id: String,
-    /// Target language name.
-    pub language: String,
-    /// `builtin` for a rule from poly's embedded pack, `user` for a rule loaded
-    /// from `[rules] dirs`.
-    pub source: String,
-    /// The severity the rule's own definition declares: `error`, `warning`,
-    /// `info`, `hint`, or `off` for a rule that ships opt-in.
-    pub default_severity: String,
-    /// The severity a finding reports at under the resolved config, or `off`
-    /// when the rule does not run.
-    pub severity: String,
-    /// Whether the rule participates in a scan under the resolved config.
-    pub enabled: bool,
-}
-
-/// One rule-test snippet outcome.
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct RuleTestOutcome {
-    /// The rule id the snippet was checked against.
-    pub rule_id: String,
-    /// Snippet expectation: `valid`, `invalid`, or `fixed`.
-    pub kind: String,
-    /// Index of the snippet within its list.
-    pub index: usize,
-    /// Whether the snippet met its expectation.
-    pub passed: bool,
-    /// Failure detail, if any.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub detail: Option<String>,
-}
-
-/// Rule inventory and optional test report (mirrors `poly rules`).
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct RulesReport {
-    /// Rule directories that were searched for user rules.
-    pub dirs: Vec<String>,
-    /// Whether poly's built-in rule pack is enabled (`[rules] builtin`) — why a
-    /// listing may hold no `builtin` rules at all.
-    pub builtin_pack_enabled: bool,
-    /// Every resolved rule, built-in pack and user rules alike, active or not.
-    pub rules: Vec<RuleInfo>,
-    /// Per-snippet test outcomes, present only when `test` was requested.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tests: Option<Vec<RuleTestOutcome>>,
-    /// Test files naming an unknown rule id (only when `test` was requested).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub missing_rule_ids: Option<Vec<String>>,
-    /// Rules with no test file (only when `test` was requested).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub untested_rule_ids: Option<Vec<String>>,
-    /// Whether every snippet passed and every test named a real rule (only when
-    /// `test` was requested).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ok: Option<bool>,
-}
-
-/// Effective `[defaults]` section (mirrors `poly config show`).
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct ConfigDefaults {
-    /// Opinionated line length.
-    pub line_length: usize,
-    /// Line ending policy (debug rendering of the enum).
-    pub line_ending: String,
-    /// Whether a trailing final newline is enforced.
-    pub final_newline: bool,
-    /// Whether trailing whitespace is trimmed.
-    pub trim_trailing_whitespace: bool,
-}
-
-/// The effective, merged config summary (mirrors `poly config show`, without
-/// remote-`extends` fetching — see the network-free `ops::resolve_poly_config`).
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct ConfigShowReport {
-    /// Resolved config file path.
-    pub config_path: String,
-    /// Effective defaults.
-    pub defaults: ConfigDefaults,
-    /// Configured `[lint.<lang>.<tool>]` top-level keys.
-    pub lint_keys: Vec<String>,
-    /// Configured `[fmt.<lang>.<tool>]` top-level keys.
-    pub fmt_keys: Vec<String>,
-    /// Opted-in catalog tool names.
-    pub tools: Vec<String>,
-    /// Whether a `[hooks]` section is present.
-    pub hooks_present: bool,
-    /// Custom ast-grep rule directories.
-    pub rule_dirs: Vec<String>,
+fn run_result(reply: RunReply, repr: TextRepr) -> CallToolResult {
+    build_with_status(reply.document, reply.json, reply.toon, repr, reply.is_error)
 }
 
 /// Health of the binary serving this MCP session (the `version` tool).
@@ -355,30 +270,8 @@ pub struct VersionReport {
     /// Host-toolchain backends are excluded: their version depends on the
     /// machine and the checkout, not on the binary.
     pub engines: BTreeMap<String, String>,
-}
-
-/// One whole-project tool's outcome.
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct WorkspaceToolReport {
-    /// Hook id (e.g. `cargo-clippy`) or inline job label.
-    pub id: String,
-    /// Whether the tool reported a failure.
-    pub failed: bool,
-    /// Whether the result was served from cache.
-    pub cached: bool,
-    /// The tool's captured combined output (lossily decoded UTF-8).
-    pub output: String,
-}
-
-/// Whole-project (workspace) lint outcome (mirrors `poly lint`'s whole-project
-/// phase). Produced by the long-running `workspace_lint` / `workspace_lint_fix`
-/// Task tools.
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct WorkspaceReport {
-    /// Overall pass/fail: `false` means a whole-project tool reported failures.
-    pub passed: bool,
-    /// Whether autofixes were applied (`workspace_lint_fix`).
-    pub fixed: bool,
-    /// Per-tool results, in run order. Empty when the phase did not run.
-    pub tools: Vec<WorkspaceToolReport>,
+    /// The downloadable components and where each stands (installed, not installed,
+    /// unavailable). Empty when the host has no component state to report.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub components: Vec<ComponentSummary>,
 }

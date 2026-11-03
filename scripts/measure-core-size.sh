@@ -20,7 +20,7 @@ FEATURES=("${@:2}")
 [[ ${#FEATURES[@]} -gt 0 ]] || FEATURES=(
   poly-core/engine-quality poly-core/engine-astgrep poly-core/engine-uncomment poly-core/engine-typos
   poly-core/engine-dockerfile poly-core/engine-dotenv poly-core/engine-ini poly-core/engine-hcl
-  poly-core/engine-graphql mcp
+  poly-core/engine-graphql bundled-mcp
   poly-core/engine-web poly-core/engine-python poly-core/engine-php poly-core/engine-sql
   poly-core/engine-biome poly-core/engine-ruby poly-core/engine-nix
 )
@@ -37,5 +37,5 @@ for feature in "${FEATURES[@]}"; do
   bytes=$(build --features "$feature")
   printf '%s\t%s\t%s\n' "$feature" "$bytes" "$((bytes - core))" | tee -a "$out_dir/sizes.tsv"
 done
-bytes=$(build --features poly-core/all-engines,mcp)
+bytes=$(build --features poly-core/all-engines,bundled-mcp)
 printf 'all\t%s\t%s\n' "$bytes" "$((bytes - core))" | tee -a "$out_dir/sizes.tsv"

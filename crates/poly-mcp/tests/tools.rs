@@ -7,11 +7,13 @@
 //!    JSON/TOON text for the per-file tools and the new read-only tools, and the
 //!    whole-project async **Task** lifecycle (`tools/call` → `tasks/get`).
 
+mod common;
+
 use std::path::PathBuf;
 use std::time::Duration;
 
+use poly_host_services::ops;
 use poly_mcp::identity::ExecutableWatch;
-use poly_mcp::{PolyMcpServer, ops};
 use rmcp::model::{
     CallToolRequestParams, CallToolResponse, CallToolResult, ClientCapabilities, ClientConfig, GetTaskParams,
     Implementation, TaskPayload, TaskStatus,
@@ -299,7 +301,7 @@ fn rules_report_omits_the_pack_when_builtin_is_disabled() {
 
 #[test]
 fn registered_tools_have_expected_names_and_annotations() {
-    let server = PolyMcpServer::new(None);
+    let server = common::server(None);
     let mut names = server.tool_names();
     names.sort();
     assert_eq!(
@@ -338,7 +340,7 @@ fn registered_tools_have_expected_names_and_annotations() {
 /// the read-only set and the destructive set rather than folded into either.
 #[test]
 fn workspace_lint_is_not_annotated_read_only_because_its_tools_touch_the_tree() {
-    let server = PolyMcpServer::new(None);
+    let server = common::server(None);
     let (read_only, destructive) = server.tool_hints("workspace_lint").unwrap();
     assert_eq!(
         read_only,
@@ -354,7 +356,7 @@ fn workspace_lint_is_not_annotated_read_only_because_its_tools_touch_the_tree() 
 
 #[test]
 fn declared_output_schemas_include_the_identity_they_send() {
-    let server = PolyMcpServer::new(None);
+    let server = common::server(None);
     for name in ["lint", "format_check", "cache_stats", "config_show", "version"] {
         let tool = server.get_tool(name).unwrap();
         let schema = tool
@@ -376,7 +378,7 @@ fn declared_output_schemas_include_the_identity_they_send() {
 
 #[test]
 fn server_constructs_with_config_override() {
-    let server = PolyMcpServer::new(Some(PathBuf::from("poly.toml")));
+    let server = common::server(Some(PathBuf::from("poly.toml")));
     assert_eq!(server.tool_names().len(), 11);
 }
 
@@ -393,10 +395,7 @@ async fn connect() -> (
     let (client_read, client_write) = tokio::io::split(client_io);
 
     let server_task = tokio::spawn(async move {
-        let service = PolyMcpServer::new(None)
-            .serve((server_read, server_write))
-            .await
-            .unwrap();
+        let service = common::server(None).serve((server_read, server_write)).await.unwrap();
         service.waiting().await.unwrap();
     });
 
@@ -726,7 +725,7 @@ async fn connect_watching(
 
     let server_task = tokio::spawn(async move {
         let watch = ExecutableWatch::over(Some(executable));
-        let service = PolyMcpServer::with_executable_watch(None, watch)
+        let service = common::server_watching(None, watch)
             .serve((server_read, server_write))
             .await
             .unwrap();

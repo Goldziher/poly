@@ -57,6 +57,21 @@ pub trait PolyComponent: Send + Sync {
     fn call(&self, header: &[u8], body: &[u8]) -> Result<Vec<u8>, ComponentCallError>;
 }
 
+/// The contract between the host and a frontend component (the MCP server).
+///
+/// A frontend hosts no engines. It is started once, takes over the process's stdio and serves its
+/// client until that client leaves, doing its work through the host services the component ABI
+/// hands it when it is created (see `poly_frontend_api`). Both calls exchange opaque, encoded
+/// byte buffers, as [`PolyComponent`] does.
+pub trait PolyFrontend: Send + Sync {
+    /// The frontend's self-description (name, version), encoded for the host.
+    fn describe(&self) -> Result<Vec<u8>, ComponentCallError>;
+
+    /// Serve until the client disconnects. `args` is a JSON `FrontendArgs`
+    /// (`poly_frontend_api::wire`); the reply is empty on a clean end.
+    fn run(&self, args: &[u8]) -> Result<Vec<u8>, ComponentCallError>;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

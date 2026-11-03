@@ -17,6 +17,7 @@ pub mod doctor;
 pub mod global;
 pub mod hooks;
 pub mod lock_cmd;
+pub mod mcp_cmd;
 pub mod migrate;
 pub mod polylock;
 pub mod progress;
@@ -32,6 +33,7 @@ pub use doctor::{DoctorArgs, run_doctor};
 pub use global::{ColorChoice, GlobalArgs, OnMissing, global, offline};
 pub use hooks::{HooksArgs, run_hooks};
 pub use lock_cmd::{LockArgs, run_lock};
+pub use mcp_cmd::run_mcp;
 pub use migrate::{MigrateArgs, run_migrate};
 #[cfg(feature = "engine-astgrep")]
 pub use rules_cmd::{RulesArgs, run_rules};

@@ -26,15 +26,18 @@ name = "poly"
 path = "src/main.rs"
 
 [features]
-default = ["mcp", "all-engines"]
-# `poly mcp` subcommand (pulls rmcp + tokio, and every engine via poly-mcp).
-mcp = ["dep:poly-mcp"]
+# The default build is the bundled flavor: every engine and the MCP server compiled in. The core
+# build is `--no-default-features` plus whatever it links.
+default = ["all-engines", "bundled-mcp"]
+# Link the MCP server (rmcp + tokio) into the binary and serve it in-process. Without it `poly mcp`
+# fetches the `mcp` component and the binary holds neither rmcp nor tokio.
+bundled-mcp = ["dep:poly-mcp"]
 # Every engine family compiled in. Drop it (`--no-default-features`) for the core-only binary.
-all-engines = ["poly-core/all-engines", "engine-astgrep"]
+all-engines = ["poly-core/all-engines", "poly-host-services/all-engines", "engine-astgrep"]
 # Forwarded dev-lock: lets a local build install components from the `components:dev` lock.
 dev-lock = ["poly-core/dev-lock"]
 # `poly rules` drives the ast-grep engine directly, so the subcommand needs the family.
-engine-astgrep = ["poly-core/engine-astgrep"]
+engine-astgrep = ["poly-core/engine-astgrep", "poly-host-services/engine-astgrep"]
 
 [dependencies]
 aho-corasick.workspace = true
@@ -53,8 +56,10 @@ poly-component-host.workspace = true
 poly-component-index.workspace = true
 poly-config.workspace = true
 poly-core.workspace = true
+poly-frontend-api.workspace = true
 poly-hooks.workspace = true
-# Optional: the `poly mcp` subcommand (rmcp + tokio). See the `mcp` feature.
+poly-host-services.workspace = true
+# Optional: the in-process MCP server (rmcp + tokio). See the `bundled-mcp` feature.
 poly-mcp = { workspace = true, optional = true }
 poly-workspace.workspace = true
 serde.workspace = true

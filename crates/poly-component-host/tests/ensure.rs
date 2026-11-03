@@ -223,3 +223,41 @@ fn inspecting_a_host_never_installs() {
         .unwrap();
     assert_eq!(f.connector.connects.load(Ordering::SeqCst), 0);
 }
+
+#[test]
+fn a_frontend_is_never_fetched_offline_or_under_install_never() {
+    let offline = fixture(Mode::Works, true, true);
+    assert_eq!(
+        unavailable_kind(offline.host.ensure_frontend("demo-component", true)),
+        UnavailableKind::Offline
+    );
+    let never = fixture(Mode::Works, false, true);
+    assert_eq!(
+        unavailable_kind(never.host.ensure_frontend("demo-component", false)),
+        UnavailableKind::InstallNever
+    );
+    assert_eq!(
+        never.connector.connects.load(Ordering::SeqCst),
+        0,
+        "a frontend is never connected as an engine component"
+    );
+}
+
+#[test]
+fn a_frontend_missing_from_the_lock_is_incompatible() {
+    let f = fixture(Mode::Works, false, true);
+    assert_eq!(
+        unavailable_kind(f.host.ensure_frontend("not-in-the-lock", true)),
+        UnavailableKind::Incompatible
+    );
+}
+
+#[test]
+fn a_frontend_that_was_not_ensured_is_not_run() {
+    let f = fixture(Mode::Works, false, true);
+    let error = f.host.run_frontend("demo-component", b"").unwrap_err();
+    assert!(
+        format!("{error:#}").contains("was not made available"),
+        "an unensured frontend must fail before any load: {error:#}"
+    );
+}

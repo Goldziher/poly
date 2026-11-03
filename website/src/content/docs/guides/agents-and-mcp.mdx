@@ -88,6 +88,12 @@ Any MCP-capable client can run poly directly:
 
 `poly mcp --config <PATH>` pins a fallback config file for requests that do not name one.
 
+The release binary links the server in (the `bundled-mcp` feature, on by default). A core build
+without it serves MCP through the downloadable `mcp` component instead: `poly mcp` installs it on
+first use (unless `--offline` or `[components] install = "never"` forbids it) and hands it stdio, and
+the component does its work through services the `poly` binary provides, so that binary carries no
+async runtime.
+
 ## The eleven tools
 
 Every tool returns typed `structured_content` against a declared output schema, plus one text

@@ -5356,7 +5356,9 @@ dependencies = [
  "poly-component-index",
  "poly-config",
  "poly-core",
+ "poly-frontend-api",
  "poly-hooks",
+ "poly-host-services",
  "poly-mcp",
  "poly-workspace",
  "serde",
@@ -5536,6 +5538,7 @@ dependencies = [
 name = "poly-engines"
 version = "0.32.3"
 dependencies = [
+ "alef-component-abi",
  "anyhow",
  "poly-component-protocol",
  "poly-engine-api",
@@ -5547,6 +5550,9 @@ dependencies = [
  "poly-engines-sql",
  "poly-engines-typos",
  "poly-engines-uncomment",
+ "poly-frontend-api",
+ "poly-mcp",
+ "serde_json",
  "thiserror 2.0.21",
  "toml 1.1.8+spec-1.1.0",
  "tracing",
@@ -5571,6 +5577,15 @@ dependencies = [
  "toml 1.1.8+spec-1.1.0",
  "tracing",
  "tree-sitter-language-pack",
+]
+
+[[package]]
+name = "poly-engines-mcp-component"
+version = "0.32.3"
+dependencies = [
+ "alef-component-abi",
+ "futures",
+ "poly-engines",
 ]
 
 [[package]]
@@ -5703,6 +5718,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "poly-frontend-api"
+version = "0.32.3"
+dependencies = [
+ "anyhow",
+ "schemars 1.2.3",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "poly-grammar"
 version = "0.32.3"
 dependencies = [
@@ -5746,16 +5771,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "poly-host-services"
+version = "0.32.3"
+dependencies = [
+ "anyhow",
+ "poly-cache",
+ "poly-config",
+ "poly-core",
+ "poly-frontend-api",
+ "poly-workspace",
+ "schemars 1.2.3",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "poly-mcp"
 version = "0.32.3"
 dependencies = [
  "anyhow",
  "blake3",
  "poly-buildinfo",
- "poly-cache",
- "poly-config",
  "poly-core",
- "poly-workspace",
+ "poly-frontend-api",
+ "poly-host-services",
  "rmcp",
  "schemars 1.2.3",
  "serde",

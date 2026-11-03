@@ -181,6 +181,16 @@ fn unavailable(kind: UnavailableKind, detail: impl Into<String>) -> Availability
     })
 }
 
+/// How [`ComponentHost::ensure`] installs a component that is not cached.
+#[derive(Clone, Copy)]
+enum Install {
+    /// Download, verify, load and connect an engine component (the `poly` contract), keeping the
+    /// connection for the slot that will use it.
+    Connect,
+    /// Download and verify only: a frontend is loaded, once, by [`ComponentHost::run_frontend`].
+    Fetch,
+}
+
 impl ComponentHost {
     /// Make `component_id` usable: report it present, or install it.
     ///
@@ -194,6 +204,17 @@ impl ComponentHost {
     /// The answer is remembered: a second call never fetches. After [`ComponentHost::seal`] a
     /// component not yet ensured is refused, so the call cannot be made late by accident.
     pub fn ensure(&self, component_id: &str, allow_install: bool) -> Availability {
+        self.ensure_as(component_id, allow_install, Install::Connect)
+    }
+
+    /// [`ComponentHost::ensure`] for a frontend component (one providing the `poly_frontend`
+    /// contract): the same present, offline, install-never and failure answers, but an install
+    /// only downloads and verifies the archive. [`ComponentHost::run_frontend`] loads it.
+    pub fn ensure_frontend(&self, component_id: &str, allow_install: bool) -> Availability {
+        self.ensure_as(component_id, allow_install, Install::Fetch)
+    }
+
+    fn ensure_as(&self, component_id: &str, allow_install: bool, install: Install) -> Availability {
         if let Some(done) = self.shared.recorded(component_id) {
             return done;
         }
@@ -203,11 +224,11 @@ impl ComponentHost {
                 "components are installed only before a run is planned",
             );
         }
-        let availability = self.ensure_now(component_id, allow_install);
+        let availability = self.ensure_now(component_id, allow_install, install);
         self.shared.record(component_id, availability)
     }
 
-    fn ensure_now(&self, component_id: &str, allow_install: bool) -> Availability {
+    fn ensure_now(&self, component_id: &str, allow_install: bool, install: Install) -> Availability {
         if let Err(error) = self.manager.lock_entry(component_id) {
             return unavailable(
                 UnavailableKind::Incompatible,
@@ -228,13 +249,23 @@ impl ComponentHost {
         if !allow_install {
             return unavailable(UnavailableKind::InstallNever, "");
         }
-        match self.connector.connect(&self.manager, component_id) {
+        let installed = match install {
+            Install::Connect => self.connector.connect(&self.manager, component_id).map(Some),
+            Install::Fetch => self
+                .manager
+                .prefetch(&[component_id])
+                .map(|_| None)
+                .map_err(anyhow::Error::new),
+        };
+        match installed {
             Ok(transport) => {
-                self.shared
-                    .connected
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .insert(component_id.to_owned(), transport);
+                if let Some(transport) = transport {
+                    self.shared
+                        .connected
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .insert(component_id.to_owned(), transport);
+                }
                 Availability::InstalledNow
             }
             // `connect` installs and loads (`ensure_contract`), so a component that downloaded but

@@ -1,0 +1,26 @@
+[package]
+name = "poly-frontend-api"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+publish = false
+description = "Wire types and the service seam between poly and a frontend component such as the MCP server."
+
+[lib]
+name = "poly_frontend_api"
+path = "src/lib.rs"
+
+[features]
+# Derive `schemars::JsonSchema` on the report types, for a frontend that publishes output schemas.
+schemars = ["dep:schemars"]
+
+[dependencies]
+anyhow.workspace = true
+schemars = { workspace = true, optional = true }
+serde.workspace = true
+serde_json.workspace = true

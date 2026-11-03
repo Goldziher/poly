@@ -8,7 +8,9 @@ mod component;
 mod components;
 pub mod producer;
 
-pub use component::{ComponentCallError, PolyComponent};
+pub use component::{ComponentCallError, PolyComponent, PolyFrontend};
+#[cfg(feature = "mcp")]
+pub use components::McpComponent;
 #[cfg(feature = "sql")]
 pub use components::SqlComponent;
 pub use producer::Producer;

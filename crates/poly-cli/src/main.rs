@@ -66,16 +66,15 @@ enum Command {
     /// Inspect the effective config and print the `poly.toml` JSON Schema.
     Config(ConfigArgs),
     /// Run an MCP server over stdio (mirrors the CLI).
-    #[cfg(feature = "mcp")]
     Mcp(McpArgs),
     /// Report which poly is running, every poly on PATH, and the config in effect.
     Doctor(DoctorArgs),
 }
 
-/// Arguments for `poly mcp`. The server reads `poly.toml` per request like the
+/// Arguments for `poly mcp`. The server is the `mcp` component, fetched on first use, unless this
+/// build links it in (`bundled-mcp`). It reads `poly.toml` per request like the
 /// CLI; the global `--config` pins a fallback config file for requests that
 /// don't name one.
-#[cfg(feature = "mcp")]
 #[derive(clap::Args)]
 struct McpArgs {}
 
@@ -92,7 +91,6 @@ fn main() -> ExitCode {
 
     let cli = Cli::parse_from(arguments);
     let debug = cli.global.debug;
-    #[cfg(feature = "mcp")]
     let mcp_config = cli.global.config.clone();
     cli.global.install();
     match cli.command {
@@ -135,16 +133,9 @@ fn main() -> ExitCode {
             poly_cli::init_logging_with(debug);
             run_doctor(args)
         }
-        #[cfg(feature = "mcp")]
         Command::Mcp(_args) => {
             poly_cli::init_logging_with(debug);
-            match poly_mcp::serve(mcp_config) {
-                Ok(()) => ExitCode::SUCCESS,
-                Err(error) => {
-                    eprintln!("poly mcp: {error:#}");
-                    ExitCode::FAILURE
-                }
-            }
+            poly_cli::run_mcp(mcp_config)
         }
     }
 }

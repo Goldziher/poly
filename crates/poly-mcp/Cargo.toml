@@ -9,7 +9,7 @@ repository.workspace = true
 homepage.workspace = true
 documentation.workspace = true
 publish = false
-description = "MCP (Model Context Protocol) server over stdio that mirrors the poly CLI's lint/format/cache capabilities."
+description = "MCP (Model Context Protocol) server over stdio that mirrors the poly CLI's lint/format/cache capabilities, reaching the engines through host services."
 keywords = ["mcp", "linter", "formatter", "lint", "format"]
 categories = ["development-tools"]
 
@@ -20,32 +20,29 @@ ignored = ["serde_toon_format"]
 
 [dependencies]
 anyhow.workspace = true
-# Folds the compiled-in engine versions into one digest on the identity block,
+# Folds the host's engine versions into one digest on the identity block,
 # framed the way the result cache frames its key.
 blake3.workspace = true
 # The build identity every tool response carries, so an MCP caller can tell
 # which binary answered (an MCP caller cannot run `poly --version`).
 poly-buildinfo.workspace = true
-poly-cache.workspace = true
-# Direct config access for the `config_show` tool and the network-free
-# `PolyConfig` resolution the whole-project (workspace) tools need.
-poly-config.workspace = true
-# `schemars` feature: derive JsonSchema on the report types so tools can return
-# rmcp structured content (`Json`-style output schema) mirroring the CLI JSON.
-poly-core = { workspace = true, features = ["schemars", "all-engines"] }
-# Whole-project (workspace) lint orchestration shared with the CLI, exposed as the
-# long-running `workspace_lint` / `workspace_lint_fix` async Task tools.
-poly-workspace.workspace = true
+# The service seam to the host, and the report types both sides share. The `schemars`
+# feature derives the output schemas the tools publish.
+poly-frontend-api = { workspace = true, features = ["schemars"] }
 rmcp = { workspace = true, features = ["server", "transport-io", "macros"] }
 schemars.workspace = true
 serde = { workspace = true }
 serde_json.workspace = true
-# TOON rendering for the non-lint/format tool DTOs (lint/format reuse poly-core's
-# `report::report_*_toon`). Imported as `serde_toon`. ~keep
+# TOON rendering for the non-lint/format tool DTOs (lint/format arrive pre-rendered from the
+# host). Imported as `serde_toon`. ~keep
 serde_toon_format.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]
+# The tests run the server over the real host services, in process: the same wire path a
+# downloaded component takes, with `Services` standing in for the component ABI's service table.
+poly-core = { workspace = true, features = ["all-engines", "schemars"] }
+poly-host-services = { workspace = true, features = ["all-engines"] }
 rmcp = { workspace = true, features = ["client"] }
 tempfile.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }

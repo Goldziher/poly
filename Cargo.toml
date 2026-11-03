@@ -16,6 +16,7 @@ members = [
   "crates/poly-engine-api",
   "crates/poly-engines",
   "crates/poly-engines-astgrep",
+  "crates/poly-engines-mcp-component",
   "crates/poly-engines-misc",
   "crates/poly-engines-nix",
   "crates/poly-engines-php",
@@ -24,8 +25,10 @@ members = [
   "crates/poly-engines-sql-component",
   "crates/poly-engines-typos",
   "crates/poly-engines-uncomment",
+  "crates/poly-frontend-api",
   "crates/poly-grammar",
   "crates/poly-hooks",
+  "crates/poly-host-services",
   "crates/poly-mcp",
   "crates/poly-workspace",
 ]
@@ -150,8 +153,10 @@ poly-engines-python = { path = "crates/poly-engines-python" }
 poly-engines-sql = { path = "crates/poly-engines-sql" }
 poly-engines-typos = { path = "crates/poly-engines-typos" }
 poly-engines-uncomment = { path = "crates/poly-engines-uncomment" }
+poly-frontend-api = { path = "crates/poly-frontend-api" }
 poly-grammar = { path = "crates/poly-grammar" }
 poly-hooks = { path = "crates/poly-hooks" }
+poly-host-services = { path = "crates/poly-host-services", default-features = false }
 poly-mcp = { path = "crates/poly-mcp" }
 poly-workspace = { path = "crates/poly-workspace" }
 pprof = "0.15.0"

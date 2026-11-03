@@ -191,6 +191,36 @@ fn finish(format: OutputFormat, actions: &Actions) -> anyhow::Result<ExitCode> {
     })
 }
 
+/// Every component and where it stands, as the `components.list` host service reports it to a
+/// frontend. Never downloads; a host that cannot be opened (no lock) lists each component as
+/// unavailable with the reason.
+#[must_use]
+pub fn component_summaries() -> Vec<poly_frontend_api::dto::ComponentSummary> {
+    let (host, no_host) = match open_host(true) {
+        Ok((host, _)) => (Some(host), None),
+        Err(error) => (None, Some(format!("{error:#}"))),
+    };
+    let env = Env {
+        index: poly_component_index::index(),
+        host: host.as_ref(),
+        no_host,
+        lock_json: None,
+        linked: &component_is_linked,
+        offline: crate::offline(),
+        cache_root: cache_root_of(host.as_ref()),
+    };
+    ops::list(&env)
+        .components
+        .into_iter()
+        .map(|row| poly_frontend_api::dto::ComponentSummary {
+            name: row.name,
+            kind: row.kind.to_owned(),
+            state: row.state.label().to_owned(),
+            detail: row.detail,
+        })
+        .collect()
+}
+
 /// What `poly doctor` reports about components.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct DoctorComponents {

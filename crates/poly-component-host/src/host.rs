@@ -6,7 +6,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use alef_component_abi::AlefHostApiV1;
 use alef_component_runtime::{
-    ComponentLock, ComponentManager, ComponentStatus, DownloadOptions, ProgressCallback, target::host_target,
+    ComponentLock, ComponentManager, ComponentStatus, DownloadOptions, HostServices, ProgressCallback,
+    target::host_target,
 };
 use anyhow::Context;
 use poly_component_protocol::{Describe, WireEngineDesc};
@@ -38,6 +39,9 @@ pub struct HostOptions {
     /// Refuse to load a component [`ComponentHost::ensure`] did not report usable. The runner
     /// sets this so a worker thread can only load, never install.
     pub gate_loads: bool,
+    /// What the components this host loads may call back into (the component ABI's host service
+    /// table). `None` leaves the table empty, so a component sees every service as unsupported.
+    pub services: Option<Arc<dyn HostServices>>,
 }
 
 impl HostOptions {
@@ -52,6 +56,7 @@ impl HostOptions {
             progress: None,
             init: InitParams::default(),
             gate_loads: false,
+            services: None,
         }
     }
 }
@@ -94,12 +99,15 @@ impl ComponentHost {
         if let Some(progress) = options.progress {
             downloads = downloads.with_progress(move |done, total| progress(done, total));
         }
-        let manager = ComponentManager::from_lock(lock, cache_root, target, AlefHostApiV1::EMPTY)
+        let mut manager = ComponentManager::from_lock(lock, cache_root, target, AlefHostApiV1::EMPTY)
             .context("the embedded component lock was rejected")?
             .offline(options.offline)
             .with_download_options(downloads)
             .with_url_override(|entry| component_url(&entry.url))
             .with_verified_stamp(true);
+        if let Some(services) = options.services {
+            manager = manager.with_host_services(services);
+        }
         Ok(Self {
             manager: Arc::new(manager),
             connector: Arc::new(AlefConnector),

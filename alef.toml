@@ -16,10 +16,32 @@ name = "poly"
 trait_path = "poly_engines::PolyComponent"
 interface_version = 1
 
+# The frontend contract: a component that hosts no engines and serves a client over the process's
+# stdio, doing its work through the host-service table (alef 0.118 `AlefHostApiV1::service_call`).
+[[crates.component_contracts]]
+name = "poly_frontend"
+trait_path = "poly_engines::PolyFrontend"
+interface_version = 1
+
 [[crates.components]]
 name = "sql"
 provides = [{ contract = "poly", implementation = "poly_engines::SqlComponent" }]
 features = ["sql"]
+default_features = false
+targets = [
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+  "x86_64-pc-windows-msvc",
+]
+
+# The MCP server as a frontend component: poly-mcp (rmcp, tokio) lives here instead of in the core
+# binary. It reaches the engines through the host services `poly mcp` registers.
+[[crates.components]]
+name = "mcp"
+provides = [{ contract = "poly_frontend", implementation = "poly_engines::McpComponent" }]
+features = ["mcp"]
 default_features = false
 targets = [
   "aarch64-apple-darwin",
