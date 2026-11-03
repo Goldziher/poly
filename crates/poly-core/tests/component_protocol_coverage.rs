@@ -9,7 +9,8 @@ use proptest::prelude::*;
 
 /// Method names declared inside `pub trait Engine { ... }`, scanned from source text.
 fn engine_trait_methods() -> BTreeSet<String> {
-    let source = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/engine.rs")).unwrap();
+    let source =
+        std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../poly-engine-api/src/engine.rs")).unwrap();
     let mut lines = source.lines().skip_while(|l| !l.starts_with("pub trait Engine"));
     assert!(lines.next().is_some(), "`pub trait Engine` not found in engine.rs");
     let mut methods = BTreeSet::new();

@@ -25,7 +25,7 @@ path = "src/lib.rs"
 # Derive `schemars::JsonSchema` on the public report types (Diagnostic, Span,
 # Edit, Severity, LintResult, FormatResult, RunDebug, EngineDebug) so downstream
 # crates (poly-mcp) can expose them as MCP structured tool output. Off by default. ~keep
-schemars = ["dep:schemars"]
+schemars = ["dep:schemars", "poly-engine-api/schemars"]
 
 # Engine families. The core (registry, runner, config, cache, report, tree-sitter generic tier,
 # catalog/native-toolchain tiers) is always compiled; each family below adds its heavy engines.
@@ -172,6 +172,7 @@ poly-cache.workspace = true
 poly-catalog.workspace = true
 poly-component-protocol.workspace = true
 poly-config.workspace = true
+poly-engine-api.workspace = true
 pretty_graphql = { workspace = true, features = ["config_serde"], optional = true }
 rayon.workspace = true
 regex.workspace = true

@@ -1,0 +1,32 @@
+[package]
+name = "poly-engine-api"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+publish = false
+description = "The Engine contract and shared helpers for poly engines (no engine crates in its tree)."
+
+[lib]
+name = "poly_engine_api"
+path = "src/lib.rs"
+
+[features]
+# Derive `schemars::JsonSchema` on the public report types. Off by default. ~keep
+schemars = ["dep:schemars"]
+
+[dependencies]
+anyhow.workspace = true
+poly-component-protocol.workspace = true
+poly-config.workspace = true
+schemars = { workspace = true, optional = true }
+serde.workspace = true
+toml.workspace = true
+tracing.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"

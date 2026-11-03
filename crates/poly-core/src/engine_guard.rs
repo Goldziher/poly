@@ -49,6 +49,8 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::Path;
 
+use poly_engine_api::engine_guard::panic_message;
+
 /// Run `operation`, converting a panic into an `Err` that names the engine and
 /// the file.
 ///
@@ -143,17 +145,6 @@ pub(crate) fn deep_unbalanced_nesting(content: &str, depth: usize) -> bool {
         }
     }
     deepest > depth && (open != 0 || underflowed)
-}
-
-/// Best-effort recovery of a panic payload's message.
-fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
-    if let Some(text) = payload.downcast_ref::<String>() {
-        text.clone()
-    } else if let Some(text) = payload.downcast_ref::<&'static str>() {
-        (*text).to_owned()
-    } else {
-        "panic payload was not a string".to_owned()
-    }
 }
 
 #[cfg(test)]

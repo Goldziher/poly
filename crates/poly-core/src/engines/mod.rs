@@ -16,7 +16,6 @@ pub mod catalog_tool;
 pub mod config_keys;
 #[cfg(feature = "engine-web")]
 mod core_options;
-#[cfg(any(feature = "engine-web", feature = "engine-biome"))]
 pub mod css_hacks;
 #[cfg(feature = "engine-dockerfile")]
 pub mod dockerfile;
@@ -30,8 +29,7 @@ pub mod graphql;
 pub mod hcl;
 #[cfg(feature = "engine-ini")]
 pub mod ini;
-#[cfg(feature = "engine-web")]
-pub(crate) mod line_index;
+pub mod line_index;
 #[cfg(feature = "engine-php")]
 pub mod mago;
 #[cfg(feature = "engine-web")]
@@ -60,7 +58,6 @@ pub mod rumdl;
 pub mod sqruff;
 #[cfg(feature = "engine-web")]
 pub mod taplo;
-#[cfg(any(feature = "engine-web", feature = "engine-dockerfile"))]
 pub mod template;
 pub mod treesitter;
 #[cfg(feature = "engine-typos")]

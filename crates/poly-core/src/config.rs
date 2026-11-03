@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 pub use poly_config::{GlobalDefaults, LineEnding};
+pub use poly_engine_api::config::EngineConfig;
 
 use crate::engine::ENABLED_OPTION_KEY;
 use crate::language::Language;
@@ -111,17 +112,6 @@ impl Default for Config {
             rules_builtin_pack: true,
         }
     }
-}
-
-/// The slice of config handed to one engine for one file.
-#[derive(Debug, Clone)]
-pub struct EngineConfig {
-    /// Global opinionated defaults.
-    pub globals: GlobalDefaults,
-    /// Indent width for this file's language.
-    pub indent_width: usize,
-    /// Tool-specific options from `[<kind>.<lang>.<engine>]` (engine merges its own defaults).
-    pub options: toml::Table,
 }
 
 impl Config {

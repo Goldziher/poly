@@ -1,0 +1,680 @@
+//! Language identification and per-language defaults.
+
+use std::path::Path;
+
+/// A source language / file format. Tier-1 languages have dedicated variants;
+/// anything else identified by the tree-sitter language pack is [`Language::Other`].
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Language {
+    /// Python.
+    Python,
+    /// JavaScript.
+    JavaScript,
+    /// TypeScript.
+    TypeScript,
+    /// JSX (React JavaScript).
+    Jsx,
+    /// TSX (React TypeScript).
+    Tsx,
+    /// JSON.
+    Json,
+    /// JSON with comments.
+    Jsonc,
+    /// YAML.
+    Yaml,
+    /// TOML.
+    Toml,
+    /// Markdown.
+    Markdown,
+    /// MDX (Markdown + JSX / ESM).
+    Mdx,
+    /// SQL.
+    Sql,
+    /// CSS.
+    Css,
+    /// SCSS.
+    Scss,
+    /// Less.
+    Less,
+    /// HTML.
+    Html,
+    /// Vue single-file component.
+    Vue,
+    /// Svelte component.
+    Svelte,
+    /// Astro component.
+    Astro,
+    /// Angular component template (matched via `*.component.html` filename convention).
+    Angular,
+    /// Jinja2 / Twig / Nunjucks template.
+    Jinja,
+    /// Vento template.
+    Vento,
+    /// Mustache / Handlebars template.
+    Mustache,
+    /// XML / SVG document.
+    Xml,
+    /// GraphQL.
+    GraphQl,
+    /// HCL / Terraform configuration language.
+    Hcl,
+    /// Nix.
+    Nix,
+    /// Shell / Bash.
+    Shell,
+    /// Dockerfile.
+    Dockerfile,
+    /// Go.
+    Go,
+    /// Java.
+    Java,
+    /// Kotlin.
+    Kotlin,
+    /// Ruby.
+    Ruby,
+    /// PHP.
+    Php,
+    /// R.
+    R,
+    /// Elixir.
+    Elixir,
+    /// C.
+    C,
+    /// C++.
+    Cpp,
+    /// Rust.
+    Rust,
+    /// Protocol Buffers.
+    Proto,
+    /// Zig.
+    Zig,
+    /// Swift.
+    Swift,
+    /// Dart.
+    Dart,
+    /// Gleam.
+    Gleam,
+    /// C#.
+    CSharp,
+    /// dotenv (`.env` / `.env.*` files).
+    Dotenv,
+    /// INI (also covers INI-shaped dotfiles like `.npmrc`, `.editorconfig`).
+    Ini,
+    /// Any other language, identified by its tree-sitter-language-pack id.
+    Other(String),
+}
+
+/// Filenames (lowercased, no extension) detected as [`Language::Ini`].
+///
+/// Deliberately narrow — see `crates/poly-core/src/engines/ini.rs` module docs
+/// for what is excluded and why (`*.conf`, `*.properties`, `.gitconfig`,
+/// systemd units, `*.reg`).
+const INI_FILENAMES: &[&str] = &[
+    ".npmrc",
+    ".editorconfig",
+    ".coveragerc",
+    ".pylintrc",
+    "pylintrc",
+    ".flake8",
+    ".gitlint",
+    ".hgrc",
+    ".pypirc",
+];
+
+/// Extensionless Ruby files that tooling names by convention.
+const RUBY_FILENAMES: &[&str] = &[
+    "gemfile",
+    "rakefile",
+    "podfile",
+    "brewfile",
+    "vagrantfile",
+    "capfile",
+    "guardfile",
+    "berksfile",
+];
+
+impl Language {
+    /// Human-facing name for report text ("Kotlin", "TypeScript").
+    ///
+    /// Derived from the variant name rather than a second hand-written table:
+    /// the variants are already spelled the way users say the languages, and a
+    /// parallel table would silently drift the day someone adds a language to
+    /// one of them and not the other. [`Language::Other`] carries the
+    /// tree-sitter-language-pack id, which is the only name that language has.
+    pub fn display_name(&self) -> String {
+        match self {
+            Language::Other(name) => name.clone(),
+            named => format!("{named:?}"),
+        }
+    }
+
+    /// Canonical lowercase id used in config tables and the tree-sitter pack.
+    pub fn id(&self) -> &str {
+        match self {
+            Language::Python => "python",
+            Language::JavaScript => "javascript",
+            Language::TypeScript => "typescript",
+            Language::Jsx => "jsx",
+            Language::Tsx => "tsx",
+            Language::Json => "json",
+            Language::Jsonc => "jsonc",
+            Language::Yaml => "yaml",
+            Language::Toml => "toml",
+            Language::Markdown => "markdown",
+            Language::Mdx => "mdx",
+            Language::Sql => "sql",
+            Language::Css => "css",
+            Language::Scss => "scss",
+            Language::Less => "less",
+            Language::Html => "html",
+            Language::Vue => "vue",
+            Language::Svelte => "svelte",
+            Language::Astro => "astro",
+            Language::Angular => "angular",
+            Language::Jinja => "jinja",
+            Language::Vento => "vento",
+            Language::Mustache => "mustache",
+            Language::Xml => "xml",
+            Language::GraphQl => "graphql",
+            Language::Hcl => "hcl",
+            Language::Nix => "nix",
+            Language::Shell => "shell",
+            Language::Dockerfile => "dockerfile",
+            Language::Go => "go",
+            Language::Java => "java",
+            Language::Kotlin => "kotlin",
+            Language::Ruby => "ruby",
+            Language::Php => "php",
+            Language::R => "r",
+            Language::Elixir => "elixir",
+            Language::C => "c",
+            Language::Cpp => "cpp",
+            Language::Rust => "rust",
+            Language::Proto => "proto",
+            Language::Zig => "zig",
+            Language::Swift => "swift",
+            Language::Dart => "dart",
+            Language::Gleam => "gleam",
+            Language::CSharp => "csharp",
+            Language::Dotenv => "dotenv",
+            Language::Ini => "ini",
+            Language::Other(s) => s.as_str(),
+        }
+    }
+
+    /// Detect a language from a file path (special filenames first, then extension).
+    /// Returns `None` for unknown extensions; the tree-sitter tier (M5) provides a
+    /// secondary fallback for those.
+    pub fn from_path(path: &Path) -> Option<Language> {
+        if is_helm_template_file(path) {
+            return Some(Language::Other(HELM_TEMPLATE.to_owned()));
+        }
+        if let Some(lang) = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .and_then(|ext| Self::from_extension(&ext.to_ascii_lowercase(), path))
+        {
+            return Some(lang);
+        }
+        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+            let lower = name.to_ascii_lowercase();
+            if is_dockerfile_name(&lower) {
+                return Some(Language::Dockerfile);
+            }
+            // dotenv is detected by filename, not extension: `Path::extension()`
+            // treats a leading-dot file like `.env` or `.env.local` as having no
+            // extension (the whole name is the stem), so `.env`, every
+            // `.env.<suffix>` variant, and a trailing `*.env` all need an
+            // explicit filename check.
+            if lower == ".env" || lower.starts_with(".env.") || lower.ends_with(".env") {
+                return Some(Language::Dotenv);
+            }
+            if INI_FILENAMES.contains(&lower.as_str()) {
+                return Some(Language::Ini);
+            }
+            if RUBY_FILENAMES.contains(&lower.as_str()) {
+                return Some(Language::Ruby);
+            }
+            if is_starlark_name(&lower) {
+                return Some(Language::Other("starlark".to_string()));
+            }
+        }
+        None
+    }
+
+    /// Map a lowercase file extension to a [`Language`], returning `None` for
+    /// unknown extensions. `path` is used only to disambiguate `*.component.html`.
+    fn from_extension(ext: &str, path: &Path) -> Option<Language> {
+        let lang = match ext {
+            "ini" | "cfg" | "desktop" | "pypirc" => Language::Ini,
+            "py" | "pyi" => Language::Python,
+            "js" | "cjs" | "mjs" => Language::JavaScript,
+            "jsx" => Language::Jsx,
+            "ts" | "cts" | "mts" => Language::TypeScript,
+            "tsx" => Language::Tsx,
+            "json" => Language::Json,
+            "jsonc" => Language::Jsonc,
+            "yaml" | "yml" => Language::Yaml,
+            "toml" => Language::Toml,
+            "md" | "markdown" => Language::Markdown,
+            "mdx" => Language::Mdx,
+            "sql" => Language::Sql,
+            "css" => Language::Css,
+            "scss" => Language::Scss,
+            "less" => Language::Less,
+            "html" | "htm" => {
+                if path
+                    .file_stem()
+                    .is_some_and(|s| s.to_string_lossy().ends_with(".component"))
+                {
+                    Language::Angular
+                } else {
+                    Language::Html
+                }
+            }
+            "vue" => Language::Vue,
+            "svelte" => Language::Svelte,
+            "astro" => Language::Astro,
+            "jinja" | "jinja2" | "j2" | "twig" | "njk" => Language::Jinja,
+            "vto" => Language::Vento,
+            "mustache" | "hbs" | "handlebars" => Language::Mustache,
+            "xml" | "svg" | "wsdl" | "xsd" | "xslt" | "xsl" => Language::Xml,
+            "graphql" | "gql" => Language::GraphQl,
+            "hcl" | "tf" | "tfvars" => Language::Hcl,
+            "nix" => Language::Nix,
+            "sh" | "bash" | "zsh" => Language::Shell,
+            "go" => Language::Go,
+            "java" => Language::Java,
+            "kt" | "kts" => Language::Kotlin,
+            "rb" | "rake" | "gemspec" | "ru" | "podspec" => Language::Ruby,
+            "php" => Language::Php,
+            "r" => Language::R,
+            "ex" | "exs" => Language::Elixir,
+            "c" | "h" => Language::C,
+            "cpp" | "cc" | "cxx" | "hpp" | "hh" => Language::Cpp,
+            "rs" => Language::Rust,
+            "proto" => Language::Proto,
+            "zig" => Language::Zig,
+            "swift" => Language::Swift,
+            "dart" => Language::Dart,
+            "gleam" => Language::Gleam,
+            "cs" => Language::CSharp,
+            _ => return None,
+        };
+        Some(lang)
+    }
+
+    /// Map a catalog (mdsf) language identifier to a poly [`Language`].
+    ///
+    /// Used to route an enabled `[tools.<name>]` catalog tool to the files it
+    /// handles: a tool declaring `languages = ["go"]` is routed to
+    /// [`Language::Go`]. Names with a dedicated tier-1 variant map to it
+    /// (handling spelling differences like `c++` / `c#` and the template-family
+    /// aliases); anything else maps to [`Language::Other`] so a tool for a
+    /// long-tail language still routes to files the tree-sitter tier detects
+    /// under that same id.
+    pub fn from_catalog_name(name: &str) -> Language {
+        match name {
+            "python" => Language::Python,
+            "javascript" => Language::JavaScript,
+            "typescript" => Language::TypeScript,
+            "jsx" => Language::Jsx,
+            "tsx" => Language::Tsx,
+            "json" => Language::Json,
+            "json5" | "jsonc" => Language::Jsonc,
+            "yaml" => Language::Yaml,
+            "toml" => Language::Toml,
+            "markdown" => Language::Markdown,
+            "mdx" => Language::Mdx,
+            "sql" => Language::Sql,
+            "css" => Language::Css,
+            "scss" => Language::Scss,
+            "less" => Language::Less,
+            "html" => Language::Html,
+            "angular" => Language::Angular,
+            "vue" => Language::Vue,
+            "svelte" => Language::Svelte,
+            "astro" => Language::Astro,
+            "jinja" | "twig" | "nunjucks" | "django" => Language::Jinja,
+            "vento" => Language::Vento,
+            "handlebars" | "mustache" => Language::Mustache,
+            "xml" => Language::Xml,
+            "graphql" => Language::GraphQl,
+            "hcl" | "terraform" => Language::Hcl,
+            "nix" => Language::Nix,
+            "bash" | "shell" | "sh" | "zsh" => Language::Shell,
+            "docker" | "dockerfile" => Language::Dockerfile,
+            "go" => Language::Go,
+            "java" => Language::Java,
+            "kotlin" => Language::Kotlin,
+            "ruby" => Language::Ruby,
+            "php" => Language::Php,
+            "r" => Language::R,
+            "elixir" => Language::Elixir,
+            "c" => Language::C,
+            "c++" | "cpp" => Language::Cpp,
+            "c#" | "csharp" => Language::CSharp,
+            "rust" => Language::Rust,
+            "protobuf" | "proto" => Language::Proto,
+            "zig" => Language::Zig,
+            "swift" => Language::Swift,
+            "dart" => Language::Dart,
+            "gleam" => Language::Gleam,
+            // Matches the `dotenv-linter` catalog entry's `languages = ["env"]`.
+            "env" | "dotenv" => Language::Dotenv,
+            "make" | "makefile" => Language::Other("make".to_string()),
+            "vim" | "vimscript" => Language::Other("vim".to_string()),
+            other => Language::Other(other.to_string()),
+        }
+    }
+
+    /// Opinionated default indentation width for this language.
+    pub fn default_indent_width(&self) -> usize {
+        match self {
+            Language::JavaScript
+            | Language::TypeScript
+            | Language::Jsx
+            | Language::Tsx
+            | Language::Json
+            | Language::Jsonc
+            | Language::Yaml
+            | Language::Toml
+            | Language::Ruby
+            | Language::R
+            | Language::Css
+            | Language::Scss
+            | Language::Less
+            | Language::Html
+            | Language::Vue
+            | Language::Svelte
+            | Language::Astro
+            | Language::Angular
+            | Language::Jinja
+            | Language::Vento
+            | Language::Mustache
+            | Language::Xml
+            | Language::GraphQl
+            | Language::Hcl
+            | Language::Dart
+            | Language::Gleam
+            | Language::Proto
+            | Language::Markdown
+            | Language::Shell => 2,
+            _ => 4,
+        }
+    }
+}
+
+/// Template suffixes that wrap a Dockerfile (`Dockerfile.tpl`, `base.Dockerfile.tmpl`).
+const TEMPLATE_SUFFIXES: &[&str] = &[".tpl", ".tmpl", ".template"];
+
+/// Whether a lowercase file name is a Dockerfile or Containerfile: the bare name,
+/// a `Dockerfile` / `Containerfile` stem followed by `.`, `-` or `_` (`Dockerfile.prod`,
+/// `Dockerfile-local`, `Dockerfile_base`), or a `*.dockerfile` / `*.containerfile` suffix,
+/// optionally wrapped in a template suffix.
+fn is_dockerfile_name(lower: &str) -> bool {
+    let name = TEMPLATE_SUFFIXES
+        .iter()
+        .find_map(|suffix| lower.strip_suffix(suffix))
+        .unwrap_or(lower);
+    if name.ends_with(".dockerignore") {
+        return false;
+    }
+    ["dockerfile", "containerfile"].iter().any(|stem| {
+        name.strip_prefix(stem).is_some_and(|rest| {
+            rest.is_empty() || rest.starts_with('.') || (rest.starts_with(['-', '_']) && !rest.contains('.'))
+        }) || name.ends_with(&format!(".{stem}"))
+    })
+}
+
+/// The grammar-less pseudo-language of the Go-template files under a chart's
+/// `templates/` (`_helpers.tpl`, `NOTES.txt`). They are discovered so a tool
+/// whose catalog `languages` names it (helm) can claim them; no built-in engine
+/// plans for it, so nothing else lints or reformats them.
+pub const HELM_TEMPLATE: &str = "helm-template";
+
+fn is_helm_template_file(path: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+        return false;
+    };
+    (name.ends_with(".tpl") || name == "NOTES.txt")
+        && path
+            .parent()
+            .is_some_and(|parent| parent.components().any(|c| c.as_os_str() == "templates"))
+}
+
+/// Bazel's extensionless and dot-suffixed Starlark files, which no extension
+/// table can name: `BUILD`, `WORKSPACE`, `MODULE.bazel`, `BUILD.bazel`, `*.BUILD`.
+fn is_starlark_name(lower: &str) -> bool {
+    matches!(
+        lower,
+        "build" | "workspace" | "build.bazel" | "workspace.bazel" | "module.bazel" | "tiltfile"
+    ) || lower.ends_with(".bazel")
+        || lower.ends_with(".bzl")
+        || lower.ends_with(".build")
+        || lower.ends_with(".sky")
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::{Path, PathBuf};
+
+    use super::Language;
+
+    /// Report text names a language the way a person writes it, while `id()`
+    /// stays the lowercase config key. The two are different jobs and a message
+    /// built from `id()` reads as a config fragment rather than a sentence.
+    #[test]
+    fn display_name_is_the_human_spelling_not_the_config_key() {
+        assert_eq!(Language::Kotlin.display_name(), "Kotlin");
+        assert_eq!(Language::Kotlin.id(), "kotlin");
+        assert_eq!(Language::TypeScript.display_name(), "TypeScript");
+        assert_eq!(
+            Language::Other("elixir".to_owned()).display_name(),
+            "elixir",
+            "a tier-2 language has only its grammar id to go by"
+        );
+    }
+
+    #[test]
+    fn chart_template_helpers_and_notes_are_the_helm_template_language() {
+        let helm = Some(Language::Other(super::HELM_TEMPLATE.to_owned()));
+        assert_eq!(Language::from_path(Path::new("chart/templates/_helpers.tpl")), helm);
+        assert_eq!(Language::from_path(Path::new("chart/templates/NOTES.txt")), helm);
+        assert_eq!(Language::from_path(Path::new("chart/templates/sub/x.tpl")), helm);
+        assert_eq!(
+            Language::from_path(Path::new("chart/other/_helpers.tpl")),
+            None,
+            "only files under a templates directory belong to a chart"
+        );
+        assert_eq!(Language::from_path(Path::new("NOTES.txt")), None);
+    }
+
+    #[test]
+    fn from_path_prefers_rs_extension_over_dockerfile_filename() {
+        assert_eq!(Language::from_path(Path::new("dockerfile.rs")), Some(Language::Rust));
+        assert_eq!(
+            Language::from_path(Path::new("foo/dockerfile.rs")),
+            Some(Language::Rust)
+        );
+    }
+
+    #[test]
+    fn javascript_and_typescript_extensions_use_tier_one_languages() {
+        for extension in ["js", "mjs", "cjs"] {
+            let path = PathBuf::from(format!("fixture.{extension}"));
+            assert_eq!(Language::from_path(&path), Some(Language::JavaScript));
+        }
+        assert_eq!(Language::from_path(Path::new("fixture.ts")), Some(Language::TypeScript));
+    }
+
+    #[test]
+    fn from_path_still_detects_real_dockerfiles() {
+        assert_eq!(Language::from_path(Path::new("Dockerfile")), Some(Language::Dockerfile));
+        assert_eq!(
+            Language::from_path(Path::new("Dockerfile.prod")),
+            Some(Language::Dockerfile)
+        );
+        assert_eq!(
+            Language::from_path(Path::new("something.dockerfile")),
+            Some(Language::Dockerfile)
+        );
+    }
+
+    #[test]
+    fn from_path_detects_dockerfile_name_variants() {
+        for name in [
+            "Dockerfile-local",
+            "Dockerfile_pyspark_base_py311",
+            "Dockerfile-template",
+            "Dockerfile.tpl",
+            "Dockerfile_add_frag.tpl",
+            "web.Dockerfile",
+            "Containerfile",
+            "Containerfile.prod",
+            "base.Containerfile",
+            "base.Dockerfile.tmpl",
+        ] {
+            assert_eq!(
+                Language::from_path(Path::new(name)),
+                Some(Language::Dockerfile),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_source_file_named_after_a_dockerfile_stem_is_not_a_dockerfile() {
+        for name in ["dockerfile_parser.pest", "dockerfile-parser.rs", "Dockerfile_utils.py"] {
+            assert_ne!(
+                Language::from_path(Path::new(name)),
+                Some(Language::Dockerfile),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn from_path_detects_conventional_ruby_and_starlark_names() {
+        for name in [
+            "Gemfile",
+            "Rakefile",
+            "Brewfile",
+            "Vagrantfile",
+            "Podfile",
+            "tasks/deploy.rake",
+            "foo.gemspec",
+            "config.ru",
+        ] {
+            assert_eq!(Language::from_path(Path::new(name)), Some(Language::Ruby), "{name}");
+        }
+        assert_eq!(
+            Language::from_path(Path::new("Tiltfile")),
+            Some(Language::Other("starlark".to_string()))
+        );
+        assert_ne!(Language::from_path(Path::new("Gemfile.lock")), Some(Language::Ruby));
+    }
+
+    #[test]
+    fn from_path_does_not_steal_dockerfile_lookalikes() {
+        for name in [
+            "dockerfile_parse.py",
+            "dockerfile-notes.md",
+            "dockerfilex",
+            "my-dockerfile",
+            "a.dockerignore",
+        ] {
+            assert_ne!(
+                Language::from_path(Path::new(name)),
+                Some(Language::Dockerfile),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn from_catalog_name_maps_angular_and_vento_to_their_variants() {
+        assert_eq!(Language::from_catalog_name("angular"), Language::Angular);
+        assert_eq!(Language::from_catalog_name("vento"), Language::Vento);
+    }
+
+    #[test]
+    fn from_catalog_name_normalises_make_aliases_to_pack_id() {
+        let expected = Language::Other("make".to_string());
+        assert_eq!(Language::from_catalog_name("make"), expected);
+        assert_eq!(Language::from_catalog_name("makefile"), expected);
+    }
+
+    #[test]
+    fn from_catalog_name_normalises_vimscript_to_pack_id() {
+        let expected = Language::Other("vim".to_string());
+        assert_eq!(Language::from_catalog_name("vimscript"), expected);
+        assert_eq!(Language::from_catalog_name("vim"), expected);
+    }
+
+    #[test]
+    fn detects_mdx_by_extension() {
+        assert_eq!(Language::from_path(Path::new("docs/index.mdx")), Some(Language::Mdx));
+        assert_eq!(Language::from_catalog_name("mdx"), Language::Mdx);
+        assert_eq!(Language::Mdx.id(), "mdx");
+    }
+
+    /// A leading-dot name with no second dot has no extension in Rust, so the
+    /// `pypirc` entry in the extension table only ever matched a file literally
+    /// named `something.pypirc` — a shape nobody writes. The file that exists in
+    /// the wild is `.pypirc`, which reached no INI detection at all.
+    #[test]
+    fn dotfile_ini_names_are_detected_by_filename_not_extension() {
+        assert_eq!(Language::from_path(Path::new(".pypirc")), Some(Language::Ini));
+        assert_eq!(Language::from_path(Path::new("home/.pypirc")), Some(Language::Ini));
+        assert_eq!(Language::from_path(Path::new(".npmrc")), Some(Language::Ini));
+    }
+
+    /// Shell is two-space, not four.
+    ///
+    /// It is the convention modern shell is actually written in (and what the
+    /// Google Shell Style Guide prescribes), and the width poly passes to
+    /// `shfmt -i`. Measured over the pinned corpus B trees, four spaces
+    /// rewrites 61 of 97 shell files where two rewrites 19 — 87% of that churn
+    /// is the width alone, not shfmt's structural opinions. Shell reaching the
+    /// `_ => 4` catch-all was the fallback firing, never a decision. ~keep
+    #[test]
+    fn shell_defaults_to_two_space_indentation() {
+        assert_eq!(Language::Shell.default_indent_width(), 2);
+    }
+
+    /// Protocol Buffers are two-space, not four: `buf format` is the canonical formatter and
+    /// indents two spaces, and the tree-sitter reindenter reproduces its layout at that width
+    /// (300 of 300 sampled files byte-identical, against 1 of 300 at four spaces).
+    #[test]
+    fn proto_defaults_to_two_space_indentation() {
+        assert_eq!(Language::Proto.default_indent_width(), 2);
+    }
+
+    #[test]
+    fn from_catalog_name_maps_csharp() {
+        assert_eq!(Language::from_catalog_name("c#"), Language::CSharp);
+        assert_eq!(Language::from_catalog_name("csharp"), Language::CSharp);
+        assert_eq!(
+            Language::from_path(std::path::Path::new("Foo.cs")),
+            Some(Language::CSharp)
+        );
+    }
+
+    #[test]
+    fn bazel_files_are_starlark_by_name_and_extension() {
+        let starlark = Some(Language::Other("starlark".to_string()));
+        for name in [
+            "BUILD",
+            "BUILD.bazel",
+            "WORKSPACE",
+            "MODULE.bazel",
+            "foo.BUILD",
+            "pkg/defs.bzl",
+            "deps.bazel",
+        ] {
+            assert_eq!(Language::from_path(Path::new(name)), starlark, "{name}");
+        }
+        assert_eq!(Language::from_path(Path::new("builder.txt")), None);
+    }
+}

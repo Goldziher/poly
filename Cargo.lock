@@ -5314,6 +5314,7 @@ dependencies = [
  "poly-catalog",
  "poly-component-protocol",
  "poly-config",
+ "poly-engine-api",
  "pretty_graphql",
  "proptest",
  "rayon",
@@ -5356,6 +5357,19 @@ dependencies = [
  "ureq",
  "which",
  "zip 9.2.1",
+]
+
+[[package]]
+name = "poly-engine-api"
+version = "0.32.3"
+dependencies = [
+ "anyhow",
+ "poly-component-protocol",
+ "poly-config",
+ "schemars 1.2.3",
+ "serde",
+ "toml 1.1.8+spec-1.1.0",
+ "tracing",
 ]
 
 [[package]]
