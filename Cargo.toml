@@ -8,6 +8,7 @@ members = [
   "crates/poly-cache",
   "crates/poly-catalog",
   "crates/poly-cli",
+  "crates/poly-component-host",
   "crates/poly-component-index",
   "crates/poly-component-protocol",
   "crates/poly-config",
@@ -41,6 +42,8 @@ documentation = "https://github.com/Goldziher/poly"
 [workspace.dependencies]
 adrlint = "=0.4.1"
 aho-corasick = "1.1.5"
+alef-component-abi = "=0.118.0"
+alef-component-runtime = "=0.118.0"
 # alejandra — Nix formatter (UNLICENSE, pure Rust via rnix); chosen over
 alejandra = "3.1"
 annotate-snippets = "0.12.17"
@@ -130,6 +133,7 @@ poly-buildinfo = { path = "crates/poly-buildinfo" }
 poly-cache = { path = "crates/poly-cache" }
 poly-catalog = { path = "crates/poly-catalog" }
 poly-cli = { path = "crates/poly-cli" }
+poly-component-host = { path = "crates/poly-component-host" }
 poly-component-index = { path = "crates/poly-component-index" }
 poly-component-protocol = { path = "crates/poly-component-protocol" }
 poly-config = { path = "crates/poly-config" }

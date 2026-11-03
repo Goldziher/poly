@@ -1,0 +1,27 @@
+//! Host side of poly's engine components.
+//!
+//! A component is a downloadable dylib exposing the bytes contract of
+//! [`poly_component_protocol`]: `describe()` and `call(header, body)`. This crate turns one into
+//! ordinary [`Engine`](poly_engine_api::engine::Engine)s:
+//!
+//! - [`ComponentHost`] wraps alef's `ComponentManager` (verified download, cache, mirrors) and
+//!   hands out one lazily loaded [`ComponentSlot`] per component. A load that fails is
+//!   remembered for the rest of the run, and a loaded component is never unloaded.
+//! - [`ComponentEngine`] is the `Engine` proxy. Static metadata and every cache-path hook are
+//!   answered locally from the component's [`WireEngineDesc`](poly_component_protocol::WireEngineDesc)
+//!   and [`poly_engine_api::host_hooks`], so a warm run never loads a dylib. Per-file work is
+//!   encoded as protocol requests and sent through a [`ComponentTransport`].
+//! - [`ComponentTransport`] is the thin byte-level seam. Tests plug in an in-process fake;
+//!   production uses [`AlefConnector`].
+//!
+//! This crate depends on neither `poly-core` nor any engine crate.
+
+mod engine;
+mod host;
+mod slot;
+mod transport;
+
+pub use engine::{ComponentEngine, component_version};
+pub use host::{ComponentHost, HostOptions};
+pub use slot::{ComponentSlot, Connection, InitParams, SlotStatus, wire_error_to_anyhow};
+pub use transport::{AlefConnector, ComponentTransport, TRANSPORT_NOT_GENERATED, TransportConnector};
