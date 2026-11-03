@@ -89,17 +89,38 @@ fn hash_table(table: &toml::Table, dir: &Path) -> String {
     format!("{FINGERPRINT_VERSION}/{}", &hasher.finalize().to_hex()[..16])
 }
 
-/// Rewrite `[rules] dirs` entries as paths relative to `dir`, leaving anything
-/// already relative alone.
+/// Rewrite `[rules] dirs` (v1) and `[engines.astgrep] rule_dirs` (v2) entries as
+/// paths relative to `dir`, leaving anything already relative alone.
 fn relativize_rule_dirs(table: &mut toml::Table, dir: &Path) {
-    let Some(dirs) = table
+    if let Some(dirs) = table
         .get_mut("rules")
         .and_then(toml::Value::as_table_mut)
         .and_then(|rules| rules.get_mut("dirs"))
-        .and_then(toml::Value::as_array_mut)
-    else {
-        return;
-    };
+    {
+        relativize_entries(dirs, dir);
+    }
+    if let Some(astgrep) = table
+        .get_mut("engines")
+        .and_then(toml::Value::as_table_mut)
+        .and_then(|engines| engines.get_mut("astgrep"))
+        .and_then(toml::Value::as_table_mut)
+    {
+        if let Some(dirs) = astgrep.get_mut(poly_config::v2::RULE_DIRS_KEY) {
+            relativize_entries(dirs, dir);
+        }
+        if let Some(dirs) = astgrep
+            .get_mut("lint")
+            .and_then(toml::Value::as_table_mut)
+            .and_then(|lint| lint.get_mut(poly_config::v2::RULE_DIRS_KEY))
+        {
+            relativize_entries(dirs, dir);
+        }
+    }
+}
+
+/// Rewrite each string of a TOML array as a path relative to `dir`.
+fn relativize_entries(dirs: &mut toml::Value, dir: &Path) {
+    let Some(dirs) = dirs.as_array_mut() else { return };
     for entry in dirs {
         let Some(path) = entry.as_str() else { continue };
         let relative = Path::new(path)

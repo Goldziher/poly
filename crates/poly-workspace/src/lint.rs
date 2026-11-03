@@ -200,7 +200,7 @@ pub fn planned_workspace_tool_ids(config: &PolyConfig) -> Result<Vec<String>> {
 /// past the disabled check, so a repo that has turned the phase off never pays
 /// for the `git rev-parse` that finding it costs.
 fn planned_workspace_stage(config: &PolyConfig) -> Result<Option<(PathBuf, poly_hooks::StageSpec)>> {
-    if workspace_lint_disabled(&config.lint) {
+    if workspace_phase_disabled(config) {
         return Ok(None);
     }
     let root = poly_hooks::git::get_root()
@@ -272,6 +272,17 @@ fn retain_workspace_hooks(spec: &mut poly_hooks::StageSpec) {
     spec.after.clear();
 }
 
+/// Whether the whole-project phase is switched off: v2 `[workspace] run = "never"`
+/// when the file uses that spelling, else the v1 `[lint] workspace = false` toggle.
+/// `"always"` and `"auto"` both leave it enabled here; path scoping is the caller's.
+fn workspace_phase_disabled(config: &PolyConfig) -> bool {
+    match config.workspace.run {
+        Some(poly_config::v2::RunMode::Never) => true,
+        Some(_) => false,
+        None => workspace_lint_disabled(&config.lint),
+    }
+}
+
 /// `[lint] workspace = false` disables the whole-project phase. Any other value
 /// (absent, `true`, or a non-boolean) leaves it enabled.
 fn workspace_lint_disabled(lint: &toml::Table) -> bool {
@@ -341,7 +352,9 @@ fn append_output(buffer: &mut String, output: &[u8], color: bool) {
 
 #[cfg(test)]
 mod tests {
-    use super::{append_output, force_child_color, retain_workspace_hooks, workspace_lint_disabled};
+    use super::{
+        append_output, force_child_color, retain_workspace_hooks, workspace_lint_disabled, workspace_phase_disabled,
+    };
 
     const RED_HELLO: &str = "\x1b[31mhello\x1b[0m";
 
@@ -421,6 +434,28 @@ mod tests {
         assert!(spec.precondition.is_none(), "commit-gate precondition is dropped");
         assert!(spec.before.is_empty(), "commit-gate before steps are dropped");
         assert!(spec.after.is_empty(), "commit-gate after steps are dropped");
+    }
+
+    #[test]
+    fn v2_workspace_run_wins_over_the_v1_toggle() {
+        use poly_config::v2::RunMode;
+        let mut config = poly_config::PolyConfig::default();
+        config.lint.insert("workspace".to_string(), toml::Value::Boolean(false));
+        assert!(
+            workspace_phase_disabled(&config),
+            "v1 false still disables when run is absent"
+        );
+
+        config.workspace.run = Some(RunMode::Auto);
+        assert!(
+            !workspace_phase_disabled(&config),
+            "an explicit v2 run replaces the v1 toggle"
+        );
+        config.workspace.run = Some(RunMode::Always);
+        assert!(!workspace_phase_disabled(&config));
+        config.workspace.run = Some(RunMode::Never);
+        config.lint.clear();
+        assert!(workspace_phase_disabled(&config));
     }
 
     #[test]

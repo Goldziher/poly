@@ -2,8 +2,8 @@
 //! by the [`poly_config`] crate and sliced per-engine here. Layering is: tool
 //! defaults (inside each engine) → opinionated [`GlobalDefaults`] → user config.
 //!
-//! `poly-core` consumes only the `[defaults]`, `[lint.*]`, and `[fmt.*]`
-//! tables; the `[commit]` and `[hooks]` sections of the same file are read
+//! `poly-core` consumes only the `[defaults]`, `[lint.*]`, `[fmt.*]` and (v2)
+//! `[engines.*]` tables; the `[commit]` and `[hooks]` sections of the same file are read
 //! directly from [`poly_config`] by the `poly commit` / `poly hooks` surfaces.
 
 use std::collections::BTreeMap;
@@ -11,6 +11,8 @@ use std::path::Path;
 
 pub use poly_config::{GlobalDefaults, LineEnding};
 pub use poly_engine_api::config::EngineConfig;
+
+mod engine_first;
 
 use crate::engine::ENABLED_OPTION_KEY;
 use crate::language::Language;
@@ -63,6 +65,9 @@ pub struct Config {
     /// ([`crate::runner::GENERATED_SKIP`]). See
     /// [`poly_config::DiscoveryConfig::generated`] for the full rationale.
     pub generated: bool,
+    /// v2 `[engines.<id>]` tables. When non-empty the engines resolve engine-first
+    /// (see [`Config::engine_config`]) and `lint` / `fmt` are not consulted for them.
+    pub engines: BTreeMap<String, poly_config::v2::EngineTable>,
     /// `[lint.<lang>.<tool>]` tables.
     pub lint: toml::Table,
     /// `[fmt.<lang>.<tool>]` tables.
@@ -99,6 +104,7 @@ impl Default for Config {
             // Matches `poly_config::DiscoveryConfig`'s own default: poly acts on
             // generated files unless a user explicitly opts out.
             generated: true,
+            engines: Default::default(),
             lint: Default::default(),
             fmt: Default::default(),
             tools: Default::default(),
@@ -143,18 +149,29 @@ impl Config {
     }
 
     /// Build the [`EngineConfig`] slice for a given language + engine + phase.
+    ///
+    /// With v2 `[engines.*]` tables present the options come from
+    /// `[engines.<engine>]`, then its phase table, then `.lang.<language>`, then
+    /// `.lang.<language>.<phase>`, each overriding the last; otherwise from the v1
+    /// `[<phase>.<language>.<engine>]` table. Native config files fill whatever the
+    /// config left unset in both cases.
     pub fn engine_config(&self, lang: &Language, engine_name: &str, kind: Kind) -> EngineConfig {
         let tables = match kind {
             Kind::Lint => &self.lint,
             Kind::Format => &self.fmt,
         };
-        let mut lang_options = tables
-            .get(lang.id())
-            .and_then(|v| v.as_table())
-            .and_then(|t| t.get(engine_name))
-            .and_then(|v| v.as_table())
-            .cloned()
-            .unwrap_or_default();
+        let v2_layers =
+            (!self.engines.is_empty()).then(|| engine_first::layers(&self.engines, engine_name, lang.id(), kind));
+        let mut lang_options = match &v2_layers {
+            Some(layers) => engine_first::merge(layers),
+            None => tables
+                .get(lang.id())
+                .and_then(|v| v.as_table())
+                .and_then(|t| t.get(engine_name))
+                .and_then(|v| v.as_table())
+                .cloned()
+                .unwrap_or_default(),
+        };
         let native_defaults = match kind {
             Kind::Format => {
                 crate::host_hooks::oxfmt_native::warn_if_unusable(&self.oxfmt_native);
@@ -180,18 +197,24 @@ impl Config {
         // `build_astgrep_options` never looks at `lang_options` at all, so a
         // key carried by the engine rather than by any backend has to be
         // lifted out here or it silently does nothing.
-        let enabled = self.resolve_enabled(tables, engine_name, &lang_options);
+        let enabled = match &v2_layers {
+            // The layers already folded the language and engine levels together.
+            Some(_) => lang_options.get(ENABLED_OPTION_KEY).and_then(toml::Value::as_bool),
+            None => self.resolve_enabled(tables, engine_name, &lang_options),
+        };
         // An engine whose family is compiled out has no builder: its table passes through verbatim,
         // exactly as for any other engine without a cross-cutting option set.
         let mut options = match engine_name {
             #[cfg(feature = "engine-typos")]
-            "typos" => self.build_typos_options(&lang_options),
+            "typos" => self.build_typos_options(&self.cross_cutting_layers(&v2_layers, engine_name, &lang_options)),
             #[cfg(feature = "engine-astgrep")]
-            "astgrep" => self.build_astgrep_options(),
+            "astgrep" => self.build_astgrep_options(&self.astgrep_layers(&v2_layers)),
             #[cfg(feature = "engine-uncomment")]
-            "uncomment" => self.build_uncomment_options(&lang_options),
+            "uncomment" => {
+                self.build_uncomment_options(&self.cross_cutting_layers(&v2_layers, engine_name, &lang_options))
+            }
             #[cfg(feature = "engine-quality")]
-            "quality" => self.build_quality_options(&lang_options),
+            "quality" => self.build_quality_options(&self.cross_cutting_layers(&v2_layers, engine_name, &lang_options)),
             _ => lang_options,
         };
         if let Some(enabled) = enabled {
@@ -201,6 +224,43 @@ impl Config {
             globals: self.defaults.clone(),
             indent_width,
             options,
+        }
+    }
+
+    #[cfg(any(feature = "engine-typos", feature = "engine-uncomment", feature = "engine-quality"))]
+    /// The option layers a cross-cutting builder folds, lowest precedence first: the v2
+    /// engine layers, or for v1 the language-agnostic `[lint.<engine>]` table beneath the
+    /// per-language `[<phase>.<language>.<engine>]` one.
+    fn cross_cutting_layers<'a>(
+        &'a self,
+        v2_layers: &'a Option<Vec<toml::Table>>,
+        engine_name: &str,
+        lang_options: &'a toml::Table,
+    ) -> Vec<&'a toml::Table> {
+        match v2_layers {
+            Some(layers) => layers.iter().collect(),
+            None => self
+                .lint
+                .get(engine_name)
+                .and_then(toml::Value::as_table)
+                .into_iter()
+                .chain(std::iter::once(lang_options))
+                .collect(),
+        }
+    }
+
+    #[cfg(feature = "engine-astgrep")]
+    /// The option layers `build_astgrep_options` reads. ast-grep's rule selection is
+    /// language-agnostic, so v1 reads only `[lint.astgrep]`; v2 reads every level.
+    fn astgrep_layers<'a>(&'a self, v2_layers: &'a Option<Vec<toml::Table>>) -> Vec<&'a toml::Table> {
+        match v2_layers {
+            Some(layers) => layers.iter().collect(),
+            None => self
+                .lint
+                .get("astgrep")
+                .and_then(toml::Value::as_table)
+                .into_iter()
+                .collect(),
         }
     }
 
@@ -233,26 +293,20 @@ impl Config {
     /// (`lang_options`) layers on top: each boolean overrides the global value, and
     /// `preserve_patterns` are *unioned* onto the global list so a language adds
     /// patterns without dropping the shared ones.
-    fn build_uncomment_options(&self, lang_options: &toml::Table) -> toml::Table {
-        let global = self.lint.get("uncomment").and_then(toml::Value::as_table);
+    fn build_uncomment_options(&self, layers: &[&toml::Table]) -> toml::Table {
         let mut options = toml::Table::new();
 
         for key in crate::engines::uncomment::BOOL_OPTION_KEYS {
-            let value = lang_options
-                .get(*key)
-                .or_else(|| global.and_then(|table| table.get(*key)))
-                .and_then(toml::Value::as_bool);
-            if let Some(value) = value {
+            if let Some(value) = last_value(layers, key).and_then(toml::Value::as_bool) {
                 options.insert((*key).to_string(), toml::Value::Boolean(value));
             }
         }
 
         for key in crate::engines::uncomment::ARRAY_OPTION_KEYS {
             let mut merged: Vec<String> = Vec::new();
-            if let Some(global) = global {
-                extend_string_array(&mut merged, global, key);
+            for layer in layers {
+                extend_string_array(&mut merged, layer, key);
             }
-            extend_string_array(&mut merged, lang_options, key);
             insert_string_array(&mut options, key, merged);
         }
 
@@ -268,38 +322,24 @@ impl Config {
     /// keys on top. Every key is a plain bool/integer/array (never a nested
     /// table), so the merge is a flat "per-language wins when present, else
     /// fall back to the global value".
-    fn build_quality_options(&self, lang_options: &toml::Table) -> toml::Table {
-        let global = self.lint.get("quality").and_then(toml::Value::as_table);
+    fn build_quality_options(&self, layers: &[&toml::Table]) -> toml::Table {
         let mut options = toml::Table::new();
 
         for key in crate::engines::quality::settings::BOOL_OPTION_KEYS {
-            let value = lang_options
-                .get(*key)
-                .or_else(|| global.and_then(|table| table.get(*key)))
-                .and_then(toml::Value::as_bool);
-            if let Some(value) = value {
+            if let Some(value) = last_value(layers, key).and_then(toml::Value::as_bool) {
                 options.insert((*key).to_string(), toml::Value::Boolean(value));
             }
         }
 
         for key in crate::engines::quality::settings::INTEGER_OPTION_KEYS {
-            let value = lang_options
-                .get(*key)
-                .or_else(|| global.and_then(|table| table.get(*key)))
-                .and_then(toml::Value::as_integer);
-            if let Some(value) = value {
+            if let Some(value) = last_value(layers, key).and_then(toml::Value::as_integer) {
                 options.insert((*key).to_string(), toml::Value::Integer(value));
             }
         }
 
         for key in crate::engines::quality::settings::ARRAY_OPTION_KEYS {
-            let values = lang_options
-                .get(*key)
-                .or_else(|| global.and_then(|table| table.get(*key)))
-                .and_then(|v| v.as_array())
-                .cloned();
-            if let Some(values) = values {
-                options.insert((*key).to_string(), toml::Value::Array(values));
+            if let Some(values) = last_value(layers, key).and_then(|v| v.as_array()) {
+                options.insert((*key).to_string(), toml::Value::Array(values.clone()));
             }
         }
 
@@ -316,7 +356,7 @@ impl Config {
     ///    layered on top: the two maps (`extend_words` / `extend_identifiers`)
     ///    override per key, the five arrays are unioned onto the global list so a
     ///    language adds entries without dropping the shared ones.
-    fn build_typos_options(&self, lang_options: &toml::Table) -> toml::Table {
+    fn build_typos_options(&self, layers: &[&toml::Table]) -> toml::Table {
         let native = &self.typos_native;
         let mut maps: Vec<(&&str, BTreeMap<String, String>)> = crate::engines::typos::MAP_OPTION_KEYS
             .iter()
@@ -344,8 +384,7 @@ impl Config {
             })
             .collect();
 
-        let global = self.lint.get("typos").and_then(|v| v.as_table());
-        for layer in global.into_iter().chain(std::iter::once(lang_options)) {
+        for layer in layers {
             for (key, dest) in &mut maps {
                 extend_string_map(dest, layer, key);
             }
@@ -387,7 +426,7 @@ impl Config {
     /// `ignore` / `rules` keys — poly's uniform rule-selection vocabulary
     /// (ADR 0016), passed through verbatim for `RuleSelection::from_options` to
     /// parse inside the engine.
-    fn build_astgrep_options(&self) -> toml::Table {
+    fn build_astgrep_options(&self, layers: &[&toml::Table]) -> toml::Table {
         let mut options = toml::Table::new();
         if !self.rules_dirs.is_empty() {
             insert_string_array(&mut options, "rules_dirs", self.rules_dirs.clone());
@@ -400,15 +439,20 @@ impl Config {
             "builtin_pack_enabled".to_string(),
             toml::Value::Boolean(self.rules_builtin_pack),
         );
-        if let Some(astgrep_table) = self.lint.get("astgrep").and_then(|v| v.as_table()) {
-            for key in ["select", "extend_select", "ignore", "rules"] {
-                if let Some(value) = astgrep_table.get(key) {
-                    options.insert(key.to_string(), value.clone());
-                }
+        let selection = engine_first::merge(layers.iter().copied());
+        for key in ["select", "extend_select", "ignore", "rules"] {
+            if let Some(value) = selection.get(key) {
+                options.insert(key.to_string(), value.clone());
             }
         }
         options
     }
+}
+
+#[cfg(any(feature = "engine-uncomment", feature = "engine-quality"))]
+/// The value `key` has in the highest-precedence layer that sets it.
+fn last_value<'a>(layers: &[&'a toml::Table], key: &str) -> Option<&'a toml::Value> {
+    layers.iter().rev().find_map(|layer| layer.get(key))
 }
 
 #[cfg(feature = "engine-typos")]
@@ -448,7 +492,11 @@ fn insert_string_array(options: &mut toml::Table, key: &str, values: Vec<String>
 
 impl From<poly_config::PolyConfig> for Config {
     fn from(pc: poly_config::PolyConfig) -> Self {
+        // v2 moved `[rules] dirs` / `builtin` into `[engines.astgrep] rule_dirs` /
+        // `builtin_pack`; when the file spells them that way, that wins.
+        let (v2_dirs, v2_builtin) = engine_first::astgrep_rule_settings(&pc.engines);
         Config {
+            engines: pc.engines,
             defaults: pc.defaults,
             exclude: pc.discovery.exclude.as_slice().to_vec(),
             force_exclude: pc.discovery.force_exclude,
@@ -461,8 +509,8 @@ impl From<poly_config::PolyConfig> for Config {
             typos_native: pc.typos_native,
             oxfmt_native: pc.oxfmt_native,
             oxlint_native: pc.oxlint_native,
-            rules_builtin_pack: pc.rules.builtin,
-            rules_dirs: pc.rules.dirs,
+            rules_builtin_pack: v2_builtin.unwrap_or(pc.rules.builtin),
+            rules_dirs: v2_dirs.unwrap_or(pc.rules.dirs),
         }
     }
 }

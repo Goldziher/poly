@@ -78,14 +78,19 @@ pub const LOCAL_OVERRIDE_NAME: &str = "poly.local.toml";
 pub const TOP_LEVEL_KEYS: &[&str] = &[
     "cache",
     "commit",
+    "components",
     "defaults",
     "discovery",
+    "engines",
     "exclude_mode",
     "extends",
     "fmt",
     "hooks",
     "lint",
     "per-file-ignores",
+    "per_file_ignores",
+    "required_version",
+    "root",
     "rules",
     "tools",
     "workspace",
@@ -129,6 +134,13 @@ pub struct PolyConfig {
     pub workspace: WorkspaceConfig,
     /// `[rules]` — custom ast-grep YAML rule directories.
     pub rules: RulesConfig,
+    /// v2 `[engines.<id>]` tables (ADR 0038), resolved engine-first by `poly-core`.
+    /// Empty for a v1 file; a file may not mix this with v1 engine tables.
+    pub engines: BTreeMap<String, v2::EngineTable>,
+    /// v2 `[components]` — carried for the component loader.
+    pub components: v2::ComponentsConfig,
+    /// v2 `required_version` — a semver requirement on the running `poly`.
+    pub required_version: Option<String>,
 }
 
 /// `[rules]` — user-defined ast-grep YAML custom-rule directories.
@@ -192,6 +204,9 @@ pub struct WorkspaceConfig {
     /// When `true`, upward cascade resolution stops here — this config is the
     /// base of the merge chain.
     pub root: bool,
+    /// v2 `[workspace] run` — when the whole-project phase runs. `None` means the
+    /// file did not say, so the v1 `[lint] workspace` toggle still decides.
+    pub run: Option<v2::RunMode>,
 }
 
 /// `[discovery]` — tunes the file walk that direct `poly lint` / `poly fmt` /
@@ -658,9 +673,11 @@ fn finalize(mut table: toml::Table, typos_dir: &Path) -> anyhow::Result<PolyConf
     let raw: RawPolyConfig = table.try_into()?;
     let mut config: PolyConfig = raw.into();
     config.rules.resolve_relative_to(typos_dir);
+    v2::resolve_rule_dirs_typed(&mut config.engines, typos_dir);
     config.typos_native = resolve_typos_native(typos_dir);
     config.oxfmt_native = resolve_oxfmt_native(typos_dir);
     config.oxlint_native = resolve_oxlint_native(typos_dir);
+    v2::reject_mixed(&config.lint, &config.fmt, &config.engines).map_err(anyhow::Error::msg)?;
     config
         .hooks
         .validate()
@@ -686,6 +703,7 @@ fn config_chain(dir: &Path, resolver: &dyn BaseConfigResolver) -> anyhow::Result
             let mut visited = Vec::new();
             let mut table = read_config_table(&path, resolver, &mut visited)?;
             resolve_rules_dirs_in_table(&mut table, &d);
+            v2::resolve_rule_dirs_in_raw(&mut table, &d);
             let is_root = table_marks_workspace_root(&table);
             chain.push((d.clone(), table));
             if is_root {
@@ -726,12 +744,13 @@ fn config_file_in(dir: &Path) -> Option<PathBuf> {
 
 /// Whether a raw config table declares `[workspace] root = true`.
 fn table_marks_workspace_root(table: &toml::Table) -> bool {
-    table
-        .get("workspace")
-        .and_then(|v| v.as_table())
-        .and_then(|t| t.get("root"))
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false)
+    table.get("root").and_then(|v| v.as_bool()) == Some(true)
+        || table
+            .get("workspace")
+            .and_then(|v| v.as_table())
+            .and_then(|t| t.get("root"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
 }
 
 /// The git repository root at or above `dir`: the nearest ancestor directory
@@ -779,8 +798,14 @@ struct RawPolyConfig {
     tools: ToolsConfig,
     #[serde(rename = "per-file-ignores")]
     per_file_ignores: BTreeMap<String, Vec<String>>,
+    #[serde(rename = "per_file_ignores")]
+    per_file_ignores_v2: BTreeMap<String, Vec<String>>,
     workspace: WorkspaceConfig,
     rules: RulesConfig,
+    engines: BTreeMap<String, v2::EngineTable>,
+    components: v2::ComponentsConfig,
+    required_version: Option<String>,
+    root: bool,
 }
 
 /// A free-form table — `[lint]` / `[fmt]`.
@@ -876,12 +901,23 @@ impl From<RawPolyConfig> for PolyConfig {
             hooks: raw.hooks,
             cache: raw.cache,
             tools: raw.tools,
-            per_file_ignores: raw.per_file_ignores,
+            // The v2 spelling wins whenever the file uses it.
+            per_file_ignores: if raw.per_file_ignores_v2.is_empty() {
+                raw.per_file_ignores
+            } else {
+                raw.per_file_ignores_v2
+            },
             typos_native: TyposNative::default(),
             oxfmt_native: OxfmtNative::default(),
             oxlint_native: OxlintNative::default(),
-            workspace: raw.workspace,
+            workspace: WorkspaceConfig {
+                root: raw.workspace.root || raw.root,
+                run: raw.workspace.run,
+            },
             rules: raw.rules,
+            engines: raw.engines,
+            components: raw.components,
+            required_version: raw.required_version,
         }
     }
 }

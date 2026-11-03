@@ -18,11 +18,14 @@ use crate::{CacheConfig, CommitConfig, DiscoveryConfig, HooksConfig, RawDefaults
 mod components;
 mod detect;
 mod engines;
+mod paths;
 mod workspace;
 
 pub use components::{ComponentInstallPolicy, ComponentsConfig, Enable, OnMissing};
 pub use detect::{V1Marker, detect_v1, v1_error};
 pub use engines::{EngineTable, LangTable, PhaseTable, RESERVED_ENGINE_KEYS, RuleOverride};
+pub use paths::{BUILTIN_PACK_KEY, RULE_DIRS_KEY};
+pub(crate) use paths::{reject_mixed, resolve_rule_dirs_in_raw, resolve_rule_dirs_typed};
 pub use workspace::{RunMode, WorkspaceV2};
 
 /// Every key v2 `poly.toml` recognises at the top level, sorted.

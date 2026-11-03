@@ -1261,6 +1261,8 @@ fn top_level_keys_cover_the_typed_schema() {
         let value = match *key {
             "extends" => toml::Value::Array(Vec::new()),
             "exclude_mode" => toml::Value::String("replace".to_owned()),
+            "required_version" => toml::Value::String(">=2.0".to_owned()),
+            "root" => toml::Value::Boolean(true),
             _ => toml::Value::Table(toml::Table::new()),
         };
         table.insert((*key).to_owned(), value);
@@ -1359,4 +1361,88 @@ fn config_schema_reaches_the_hand_written_sections() {
     ] {
         assert!(text.contains(needle), "schema is missing `{needle}`");
     }
+}
+
+fn load_text(text: &str) -> anyhow::Result<PolyConfig> {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("poly.toml");
+    fs::write(&path, text).unwrap();
+    PolyConfig::load_file(&path)
+}
+
+#[test]
+fn v2_engine_tables_survive_parsing() {
+    let config = load_text(
+        "required_version = \">=2.0\"\n[engines.ruff]\nselect = [\"E\"]\n[engines.ruff.lang.python]\nline_length = 99\n",
+    )
+    .expect("a v2 config loads");
+    assert_eq!(config.required_version.as_deref(), Some(">=2.0"));
+    let ruff = config.engines.get("ruff").expect("ruff table");
+    assert_eq!(
+        ruff.options.get("select").and_then(toml::Value::as_array).map(Vec::len),
+        Some(1)
+    );
+    assert_eq!(
+        ruff.lang
+            .get("python")
+            .and_then(|l| l.options.get("line_length"))
+            .and_then(toml::Value::as_integer),
+        Some(99)
+    );
+}
+
+#[test]
+fn mixing_v1_engine_tables_with_engines_is_an_error_naming_the_migration() {
+    let error = load_text("[lint.python.ruff]\nselect = [\"E\"]\n[engines.typos]\nenabled = true\n")
+        .expect_err("a mixed config must not load");
+    let message = error.to_string();
+    assert!(message.contains("poly migrate --to-v2"), "{message}");
+    assert!(message.contains("[lint.python]"), "{message}");
+}
+
+#[test]
+fn lint_workspace_may_sit_beside_engines() {
+    let config = load_text("[lint]\nworkspace = false\n[engines.typos]\nenabled = true\n").expect("loads");
+    assert_eq!(config.lint.get("workspace").and_then(toml::Value::as_bool), Some(false));
+}
+
+#[test]
+fn v2_spellings_of_root_run_and_per_file_ignores_are_read() {
+    let config = load_text(
+        "root = true\n[workspace]\nrun = \"never\"\n[per_file_ignores]\n\"a/**\" = [\"X1\"]\n[per-file-ignores]\n\"b/**\" = [\"Y1\"]\n",
+    )
+    .expect("loads");
+    assert!(config.workspace.root);
+    assert_eq!(config.workspace.run, Some(v2::RunMode::Never));
+    assert!(config.per_file_ignores.contains_key("a/**"), "the v2 spelling wins");
+    assert!(!config.per_file_ignores.contains_key("b/**"));
+}
+
+#[test]
+fn v2_root_stops_the_cascade() {
+    let dir = tempdir().unwrap();
+    fs::create_dir(dir.path().join(".git")).unwrap();
+    fs::write(dir.path().join("poly.toml"), "[defaults]\nline_length = 77\n").unwrap();
+    let child = dir.path().join("pkg");
+    fs::create_dir(&child).unwrap();
+    fs::write(child.join("poly.toml"), "root = true\n").unwrap();
+    let config = PolyConfig::load(&child).expect("load");
+    assert_eq!(config.defaults.line_length, 120, "a root config inherits nothing");
+}
+
+#[test]
+fn astgrep_rule_dirs_resolve_against_the_config_root() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("poly.toml");
+    fs::write(&path, "[engines.astgrep]\nrule_dirs = [\"lint/rules\"]\n").unwrap();
+    let config = PolyConfig::load_file(&path).expect("load");
+    let dirs = config.engines["astgrep"]
+        .options
+        .get("rule_dirs")
+        .and_then(toml::Value::as_array)
+        .unwrap();
+    assert_eq!(
+        dirs[0].as_str(),
+        Some(dir.path().join("lint/rules").to_string_lossy().as_ref())
+    );
 }

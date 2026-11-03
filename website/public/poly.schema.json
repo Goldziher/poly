@@ -1470,11 +1470,44 @@
       },
       "default": {}
     },
+    "per_file_ignores": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "default": {}
+    },
     "workspace": {
       "$ref": "#/$defs/WorkspaceConfig"
     },
     "rules": {
       "$ref": "#/$defs/RulesConfig"
+    },
+    "engines": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/EngineTable"
+      }
+    },
+    "components": {
+      "$ref": "#/$defs/ComponentsConfig",
+      "default": {
+        "enable": "auto",
+        "disable": [],
+        "install": "auto",
+        "on_missing": "fail"
+      }
+    },
+    "required_version": {
+      "type": ["string", "null"],
+      "default": null
+    },
+    "root": {
+      "type": "boolean",
+      "default": false
     }
   },
   "required": ["extends"],
@@ -2916,8 +2949,40 @@
           "description": "When `true`, upward cascade resolution stops here — this config is the\nbase of the merge chain.",
           "type": "boolean",
           "default": false
+        },
+        "run": {
+          "description": "v2 `[workspace] run` — when the whole-project phase runs. `None` means the\nfile did not say, so the v1 `[lint] workspace` toggle still decides.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RunMode"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       }
+    },
+    "RunMode": {
+      "description": "When `poly lint` runs the whole-project phase (`cargo clippy`, `cargo-deny`,\nproject-level type checkers, `workspace = true` hook jobs).",
+      "oneOf": [
+        {
+          "description": "Run it for repository-wide invocations (`poly lint .`), skip it when\nexplicit paths are named.",
+          "type": "string",
+          "const": "auto"
+        },
+        {
+          "description": "Always run it.",
+          "type": "string",
+          "const": "always"
+        },
+        {
+          "description": "Never run it.",
+          "type": "string",
+          "const": "never"
+        }
+      ]
     },
     "RulesConfig": {
       "description": "`[rules]` — user-defined ast-grep YAML custom-rule directories.\n\nDirectories listed here are scanned for `*.yml` / `*.yaml` rule files on\nevery lint run. Paths are interpreted relative to the config file's directory.\nThe default is `[\".poly/rules\"]`; set to an empty array `dirs = []` to\ndisable custom rules entirely.",
@@ -2937,6 +3002,186 @@
           "default": true
         }
       }
+    },
+    "EngineTable": {
+      "description": "One `[engines.<id>]` table.\n\nPrecedence, lowest to highest: poly defaults, native config files, this\ntable's `options`, then the `lint` / `format` phase table, the `lang.<id>`\ntable, and the `lang.<id>.lint|format` table.\n\n`[engines.astgrep]` absorbs v1's `[rules]`: its `rule_dirs` (directories of\nuser ast-grep YAML rules, relative to the config file) and `builtin_pack`\n(whether the embedded rule pack is loaded) are ordinary options here, declared\nby the engine like any other.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "description": "`true` / `false` to switch the engine on or off; absent keeps its default\n(`typos`, for one, is opt-in in v2).",
+          "type": ["boolean", "null"],
+          "default": null
+        },
+        "lint": {
+          "description": "`[engines.<id>.lint]` — options for the lint phase only.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PhaseTable"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "format": {
+          "description": "`[engines.<id>.format]` — options for the format phase only.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PhaseTable"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lang": {
+          "description": "`[engines.<id>.lang.<language>]` — per-language narrowing.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/LangTable"
+          }
+        },
+        "rules": {
+          "description": "`[engines.<id>.rules.<code>]` — per-rule overrides.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/RuleOverride"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "PhaseTable": {
+      "description": "A phase-narrowing table: `[engines.<id>.lint]` or `[engines.<id>.format]`.\nOptions set here apply to that phase only and win over the engine table.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "description": "Turn the engine off for this phase only.",
+          "type": ["boolean", "null"],
+          "default": null
+        }
+      },
+      "additionalProperties": true
+    },
+    "LangTable": {
+      "description": "A language-narrowing table: `[engines.<id>.lang.<language>]`, with optional\nper-phase sub-tables for the language+phase combination.",
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "description": "Turn the engine off for this language only.",
+          "type": ["boolean", "null"],
+          "default": null
+        },
+        "lint": {
+          "description": "`[engines.<id>.lang.<language>.lint]`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PhaseTable"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "format": {
+          "description": "`[engines.<id>.lang.<language>.format]`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PhaseTable"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "RuleOverride": {
+      "description": "A per-rule override: `[engines.<id>.rules.<code>]`.",
+      "type": "object",
+      "properties": {
+        "level": {
+          "description": "Severity or `\"off\"` for this rule (`\"error\"`, `\"warn\"`, `\"off\"`, ...).",
+          "type": ["string", "null"],
+          "default": null
+        }
+      },
+      "additionalProperties": true
+    },
+    "ComponentsConfig": {
+      "description": "`[components]` — selection, install and missing-component policy.",
+      "type": "object",
+      "properties": {
+        "enable": {
+          "description": "`\"auto\"` (default) or an explicit list of component names and presets.",
+          "$ref": "#/$defs/ComponentsEnable",
+          "default": "auto"
+        },
+        "disable": {
+          "description": "Components never to use, even when `enable = \"auto\"` would select them.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "install": {
+          "description": "Whether poly may download missing components. Defaults to `\"auto\"`.",
+          "$ref": "#/$defs/ComponentInstallPolicy",
+          "default": "auto"
+        },
+        "on_missing": {
+          "description": "What to do when a needed component is unavailable. Defaults to `\"fail\"`.",
+          "$ref": "#/$defs/OnMissing",
+          "default": "fail"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ComponentsEnable": {
+      "description": "`\"auto\"` (derive from the discovered files) or an explicit list of component names and presets.",
+      "oneOf": [
+        {
+          "const": "auto"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "ComponentInstallPolicy": {
+      "description": "Whether `poly` may download a missing component on its own.",
+      "oneOf": [
+        {
+          "description": "Download and verify a missing component when a run needs it.",
+          "type": "string",
+          "const": "auto"
+        },
+        {
+          "description": "Never download; a missing component is handled by `on_missing`.",
+          "type": "string",
+          "const": "never"
+        }
+      ]
+    },
+    "OnMissing": {
+      "description": "What a run does when a needed component is not available.",
+      "oneOf": [
+        {
+          "description": "Fail the run (exit 2).",
+          "type": "string",
+          "const": "fail"
+        },
+        {
+          "description": "Skip the files the component would have handled and report the skip.",
+          "type": "string",
+          "const": "skip"
+        }
+      ]
     },
     "lint_ruff": {
       "type": "object",
