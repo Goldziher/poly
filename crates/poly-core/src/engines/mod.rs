@@ -1,6 +1,7 @@
 //! Backend implementations. Each backend is a self-contained module implementing
 //! [`crate::engine::Engine`]. New backends are added here and wired into the
-//! crate-private registry that routes each language to its backend(s).
+//! crate-private registry that routes each language to its backend(s). The python, php, sql and nix
+//! families live in their own `poly-engines-*` crates and are re-exported here at their old paths.
 
 #[cfg(feature = "engine-web")]
 pub mod adrlint;
@@ -38,7 +39,7 @@ pub mod hcl;
 pub mod ini;
 pub mod line_index;
 #[cfg(feature = "engine-php")]
-pub mod mago;
+pub use poly_engines_php::mago;
 #[cfg(feature = "engine-web")]
 pub mod malva;
 #[cfg(feature = "engine-web")]
@@ -49,7 +50,7 @@ mod markdown_fmt;
 pub mod markup_fmt;
 pub mod native_tool;
 #[cfg(feature = "engine-nix")]
-pub mod nixfmt;
+pub use poly_engines_nix::nixfmt;
 #[cfg(feature = "engine-web")]
 pub mod oxc;
 #[cfg(feature = "engine-quality")]
@@ -57,12 +58,12 @@ pub mod quality;
 #[cfg(feature = "engine-ruby")]
 pub mod rubyfmt;
 #[cfg(feature = "engine-python")]
-pub mod ruff;
+pub use poly_engines_python::ruff;
 pub mod rule_config;
 #[cfg(feature = "engine-web")]
 pub mod rumdl;
 #[cfg(feature = "engine-sql")]
-pub mod sqruff;
+pub use poly_engines_sql::sqruff;
 #[cfg(feature = "engine-web")]
 pub mod taplo;
 pub mod template;

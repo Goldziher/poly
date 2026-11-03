@@ -35,7 +35,7 @@
 //! **Trap already found and pinned by a test below:** ruff's `PLR1702`
 //! (too-many-nested-blocks) sits in `RULE_CODES` but is preview-gated
 //! (`Rule::is_preview`) and `PreviewMode` defaults to `Disabled`
-//! (`engines/ruff.rs:162`), so it never actually runs — Python is **not**
+//! (`ruff.rs:162` in `poly-engines-python`), so it never actually runs — Python is **not**
 //! deferred for `nesting-too-deep`. Asserting this against `Rule::is_preview`
 //! rather than against the rule selector is deliberate: the day ruff
 //! stabilizes `PLR1702`, this table must flip, and a selector-only assertion
@@ -179,7 +179,7 @@ mod tests {
     #[cfg(feature = "engine-python")]
     #[test]
     fn python_nesting_too_deep_is_not_deferred_because_plr1702_is_preview_only() {
-        use ruff_linter::registry::Rule as RuffRule;
+        use poly_engines_python::ruff_linter::registry::Rule as RuffRule;
 
         assert!(
             RuffRule::TooManyNestedBlocks.is_preview(),

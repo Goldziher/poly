@@ -1,0 +1,40 @@
+[package]
+name = "poly-engines-python"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+publish = false
+description = "The Python engine family for poly (ruff)."
+
+[lib]
+name = "poly_engines_python"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow.workspace = true
+globset.workspace = true
+poly-engine-api.workspace = true
+regex.workspace = true
+ruff_db.workspace = true
+ruff_formatter.workspace = true
+ruff_linter.workspace = true
+ruff_python_ast.workspace = true
+ruff_python_formatter.workspace = true
+ruff_python_semantic.workspace = true
+ruff_text_size.workspace = true
+rustc-hash.workspace = true
+serde.workspace = true
+toml.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
+tempfile.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"

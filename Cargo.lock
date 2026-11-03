@@ -5260,7 +5260,6 @@ name = "poly-core"
 version = "0.32.3"
 dependencies = [
  "adrlint",
- "alejandra",
  "anyhow",
  "ast-grep-config",
  "ast-grep-core",
@@ -5284,16 +5283,6 @@ dependencies = [
  "ignore",
  "insta",
  "libc",
- "mago-allocator",
- "mago-database",
- "mago-formatter",
- "mago-linter",
- "mago-names",
- "mago-php-version",
- "mago-reporting",
- "mago-span",
- "mago-syntax",
- "mago-text-edit",
  "malva",
  "markup_fmt",
  "owo-colors",
@@ -5315,31 +5304,25 @@ dependencies = [
  "poly-component-protocol",
  "poly-config",
  "poly-engine-api",
+ "poly-engines-nix",
+ "poly-engines-php",
+ "poly-engines-python",
+ "poly-engines-sql",
  "pretty_graphql",
  "proptest",
  "rayon",
  "regex",
  "rubyfmt",
- "ruff_db",
- "ruff_formatter",
- "ruff_linter",
- "ruff_python_ast",
- "ruff_python_formatter",
- "ruff_python_semantic",
- "ruff_text_size",
  "rumdl",
  "rust-ini",
  "rustc-hash 2.1.3",
  "schemars 1.2.3",
  "serde",
- "serde_ignored",
  "serde_json",
  "serde_toon_format",
  "serde_yaml",
  "sha2",
  "sort-package-json",
- "sqruff-lib",
- "sqruff-lib-core",
  "taplo",
  "tar",
  "tempfile",
@@ -5372,8 +5355,88 @@ dependencies = [
  "poly-config",
  "schemars 1.2.3",
  "serde",
+ "serde_ignored",
  "serde_json",
  "tempfile",
+ "toml 1.1.8+spec-1.1.0",
+ "tracing",
+]
+
+[[package]]
+name = "poly-engines"
+version = "0.32.3"
+dependencies = [
+ "poly-engines-nix",
+ "poly-engines-php",
+ "poly-engines-python",
+ "poly-engines-sql",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "poly-engines-nix"
+version = "0.32.3"
+dependencies = [
+ "alejandra",
+ "anyhow",
+ "insta",
+ "poly-engine-api",
+ "toml 1.1.8+spec-1.1.0",
+]
+
+[[package]]
+name = "poly-engines-php"
+version = "0.32.3"
+dependencies = [
+ "anyhow",
+ "insta",
+ "mago-allocator",
+ "mago-database",
+ "mago-formatter",
+ "mago-linter",
+ "mago-names",
+ "mago-php-version",
+ "mago-reporting",
+ "mago-span",
+ "mago-syntax",
+ "mago-text-edit",
+ "poly-engine-api",
+ "toml 1.1.8+spec-1.1.0",
+ "tracing",
+]
+
+[[package]]
+name = "poly-engines-python"
+version = "0.32.3"
+dependencies = [
+ "anyhow",
+ "globset",
+ "insta",
+ "poly-engine-api",
+ "regex",
+ "ruff_db",
+ "ruff_formatter",
+ "ruff_linter",
+ "ruff_python_ast",
+ "ruff_python_formatter",
+ "ruff_python_semantic",
+ "ruff_text_size",
+ "rustc-hash 2.1.3",
+ "serde",
+ "tempfile",
+ "toml 1.1.8+spec-1.1.0",
+ "tracing",
+]
+
+[[package]]
+name = "poly-engines-sql"
+version = "0.32.3"
+dependencies = [
+ "anyhow",
+ "insta",
+ "poly-engine-api",
+ "sqruff-lib",
+ "sqruff-lib-core",
  "toml 1.1.8+spec-1.1.0",
  "tracing",
 ]

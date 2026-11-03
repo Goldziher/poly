@@ -27,27 +27,19 @@ use crate::engines::graphql::GraphQlEngine;
 use crate::engines::hcl::HclEngine;
 #[cfg(feature = "engine-ini")]
 use crate::engines::ini::IniEngine;
-#[cfg(feature = "engine-php")]
-use crate::engines::mago::MagoEngine;
 #[cfg(feature = "engine-web")]
 use crate::engines::malva::MalvaEngine;
 #[cfg(feature = "engine-web")]
 use crate::engines::markup_fmt::MarkupFmtEngine;
 use crate::engines::native_tool::NativeToolEngine;
-#[cfg(feature = "engine-nix")]
-use crate::engines::nixfmt::NixFmtEngine;
 #[cfg(feature = "engine-web")]
 use crate::engines::oxc::OxcEngine;
 #[cfg(feature = "engine-quality")]
 use crate::engines::quality::QualityEngine;
 #[cfg(feature = "engine-ruby")]
 use crate::engines::rubyfmt::RubyfmtEngine;
-#[cfg(feature = "engine-python")]
-use crate::engines::ruff::RuffEngine;
 #[cfg(feature = "engine-web")]
 use crate::engines::rumdl::RumdlEngine;
-#[cfg(feature = "engine-sql")]
-use crate::engines::sqruff::SqruffEngine;
 #[cfg(feature = "engine-web")]
 use crate::engines::taplo::TaploEngine;
 use crate::engines::treesitter::TreeSitterEngine;
@@ -90,9 +82,9 @@ pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
         #[cfg(feature = "engine-web")]
         Language::Mdx => vec![Box::new(RumdlEngine)],
         #[cfg(feature = "engine-python")]
-        Language::Python => vec![Box::new(RuffEngine)],
+        Language::Python => poly_engines_python::engines_for(lang),
         #[cfg(feature = "engine-sql")]
-        Language::Sql => vec![Box::new(SqruffEngine)],
+        Language::Sql => poly_engines_sql::engines_for(lang),
         #[cfg(feature = "engine-web")]
         Language::Yaml => vec![Box::new(YamlEngine)],
         #[cfg(feature = "engine-web")]
@@ -104,7 +96,7 @@ pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
         #[cfg(all(not(feature = "engine-web"), feature = "engine-biome"))]
         Language::Css | Language::Scss => vec![Box::new(BiomeCssEngine)],
         #[cfg(feature = "engine-nix")]
-        Language::Nix => vec![Box::new(NixFmtEngine)],
+        Language::Nix => poly_engines_nix::engines_for(lang),
         #[cfg(feature = "engine-ruby")]
         Language::Ruby => vec![Box::new(RubyfmtEngine)],
         #[cfg(all(feature = "engine-graphql", feature = "engine-biome"))]
@@ -126,7 +118,7 @@ pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
         | Language::Mustache
         | Language::Xml => vec![Box::new(MarkupFmtEngine)],
         #[cfg(feature = "engine-php")]
-        Language::Php => vec![Box::new(MagoEngine::default())],
+        Language::Php => poly_engines_php::engines_for(lang),
         #[cfg(feature = "engine-dockerfile")]
         Language::Dockerfile => vec![Box::new(DockerfileEngine)],
         #[cfg(feature = "engine-dotenv")]

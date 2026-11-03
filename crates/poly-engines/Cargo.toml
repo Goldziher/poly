@@ -1,0 +1,33 @@
+[package]
+name = "poly-engines"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+publish = false
+description = "Facade over poly's engine family crates and the component contract trait."
+
+[lib]
+name = "poly_engines"
+path = "src/lib.rs"
+
+[features]
+# One feature per engine family; each links and re-exports that family crate.
+nix = ["dep:poly-engines-nix"]
+php = ["dep:poly-engines-php"]
+python = ["dep:poly-engines-python"]
+sql = ["dep:poly-engines-sql"]
+
+[dependencies]
+poly-engines-nix = { workspace = true, optional = true }
+poly-engines-php = { workspace = true, optional = true }
+poly-engines-python = { workspace = true, optional = true }
+poly-engines-sql = { workspace = true, optional = true }
+thiserror.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"

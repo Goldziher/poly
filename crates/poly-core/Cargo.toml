@@ -31,6 +31,8 @@ schemars = ["dep:schemars", "poly-engine-api/schemars"]
 # catalog/native-toolchain tiers) is always compiled; each family below adds its heavy engines.
 # A language whose family is off falls through to the tree-sitter generic tier.
 default = ["all-engines"]
+# Link every engine family into the binary (the dev and test configuration). Alias of `all-engines`.
+bundled = ["all-engines"]
 all-engines = [
   "engine-web",
   "engine-python",
@@ -73,28 +75,9 @@ engine-web = [
   "dep:sort-package-json",
   "dep:taplo",
 ]
-engine-python = [
-  "dep:ruff_db",
-  "dep:ruff_formatter",
-  "dep:ruff_linter",
-  "dep:ruff_python_ast",
-  "dep:ruff_python_formatter",
-  "dep:ruff_python_semantic",
-  "dep:ruff_text_size",
-]
-engine-php = [
-  "dep:mago-allocator",
-  "dep:mago-database",
-  "dep:mago-formatter",
-  "dep:mago-linter",
-  "dep:mago-names",
-  "dep:mago-php-version",
-  "dep:mago-reporting",
-  "dep:mago-span",
-  "dep:mago-syntax",
-  "dep:mago-text-edit",
-]
-engine-sql = ["dep:sqruff-lib", "dep:sqruff-lib-core"]
+engine-python = ["dep:poly-engines-python"]
+engine-php = ["dep:poly-engines-php"]
+engine-sql = ["dep:poly-engines-sql"]
 # Biome-backed CSS and GraphQL lint.
 engine-biome = [
   "dep:biome_analyze",
@@ -107,7 +90,7 @@ engine-biome = [
   "dep:biome_rowan",
 ]
 engine-ruby = ["dep:rubyfmt"]
-engine-nix = ["dep:alejandra"]
+engine-nix = ["dep:poly-engines-nix"]
 engine-typos = ["dep:typos", "dep:typos-dict", "dep:unicase"]
 # The poly-native structural quality rules (no third-party engine dependency).
 engine-quality = []
@@ -121,7 +104,6 @@ engine-graphql = ["dep:graphql-parser", "dep:pretty_graphql"]
 
 [dependencies]
 adrlint = { workspace = true, optional = true }
-alejandra = { workspace = true, optional = true }
 anyhow.workspace = true
 ast-grep-config = { workspace = true, optional = true }
 ast-grep-core = { workspace = true, optional = true }
@@ -142,16 +124,6 @@ globset.workspace = true
 graphql-parser = { workspace = true, optional = true }
 hcl-edit = { workspace = true, optional = true }
 ignore.workspace = true
-mago-allocator = { workspace = true, optional = true }
-mago-database = { workspace = true, optional = true }
-mago-formatter = { workspace = true, optional = true }
-mago-linter = { workspace = true, optional = true }
-mago-names = { workspace = true, optional = true }
-mago-php-version = { workspace = true, optional = true }
-mago-reporting = { workspace = true, optional = true }
-mago-span = { workspace = true, optional = true }
-mago-syntax = { workspace = true, optional = true }
-mago-text-edit = { workspace = true, optional = true }
 malva = { workspace = true, features = ["config_serde"], optional = true }
 markup_fmt = { workspace = true, features = ["config_serde"], optional = true }
 owo-colors.workspace = true
@@ -173,17 +145,14 @@ poly-catalog.workspace = true
 poly-component-protocol.workspace = true
 poly-config.workspace = true
 poly-engine-api.workspace = true
+poly-engines-nix = { workspace = true, optional = true }
+poly-engines-php = { workspace = true, optional = true }
+poly-engines-python = { workspace = true, optional = true }
+poly-engines-sql = { workspace = true, optional = true }
 pretty_graphql = { workspace = true, features = ["config_serde"], optional = true }
 rayon.workspace = true
 regex.workspace = true
 rubyfmt = { workspace = true, optional = true }
-ruff_db = { workspace = true, optional = true }
-ruff_formatter = { workspace = true, optional = true }
-ruff_linter = { workspace = true, optional = true }
-ruff_python_ast = { workspace = true, optional = true }
-ruff_python_formatter = { workspace = true, optional = true }
-ruff_python_semantic = { workspace = true, optional = true }
-ruff_text_size = { workspace = true, optional = true }
 rumdl = { workspace = true, optional = true }
 rust-ini = { workspace = true, optional = true }
 rustc-hash.workspace = true
@@ -191,14 +160,11 @@ rustc-hash.workspace = true
 # derive JsonSchema on the public report types for MCP structured output.
 schemars = { workspace = true, optional = true }
 serde.workspace = true
-serde_ignored.workspace = true
 serde_json.workspace = true
 serde_toon_format.workspace = true
 serde_yaml = { workspace = true, optional = true }
 sha2.workspace = true
 sort-package-json = { workspace = true, optional = true }
-sqruff-lib = { workspace = true, optional = true }
-sqruff-lib-core = { workspace = true, optional = true }
 taplo = { workspace = true, optional = true }
 tar.workspace = true
 tempfile.workspace = true

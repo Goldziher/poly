@@ -1,0 +1,42 @@
+---
+source: crates/poly-engines-python/tests/ruff_engine.rs
+expression: summary
+---
+[
+    (
+        "ANN001",
+        Some(
+            3,
+        ),
+    ),
+    (
+        "ANN201",
+        Some(
+            3,
+        ),
+    ),
+    (
+        "E711",
+        Some(
+            4,
+        ),
+    ),
+    (
+        "F401",
+        Some(
+            1,
+        ),
+    ),
+    (
+        "I001",
+        Some(
+            1,
+        ),
+    ),
+    (
+        "W605",
+        Some(
+            2,
+        ),
+    ),
+]

@@ -41,7 +41,10 @@ an installer (see release-versioning).
   `poly-buildinfo`, and three that do **not** carry the prefix — `gitfluff` (the commit-message
   linter behind `poly commit`), `dockerfile-parser` (the vendored Dockerfile parser behind the
   `dockerfile` engine) and `conformance` (a dev-only differential formatter-conformance harness
-  the shipped binary never depends on). Shared deps live under `[workspace.dependencies]`; git deps are pinned to a `rev`
+  the shipped binary never depends on). Engine families are split out as `poly-engines-<family>`
+  crates (`sql`, `nix`, `php`, `python` so far; each exposes `engines_for(&Language)` and `LANGUAGES`), and
+  `poly-engines` is their feature-gated facade plus the `PolyComponent` contract trait; `poly-core`'s
+  `engine-*` features link them and its `bundled` feature aliases `all-engines`. Shared deps live under `[workspace.dependencies]`; git deps are pinned to a `rev`
   (crates from one monorepo share one `rev`).
 - `deny.toml` — `cargo deny` license / source allow-list (no GPL/AGPL), applied across the full
   dependency tree including git deps and their transitive dependencies.

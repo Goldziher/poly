@@ -1,9 +1,0 @@
----
-source: crates/poly-core/tests/mago.rs
-expression: formatted
----
-<?php
-
-function foo() {
-    return 1;
-}

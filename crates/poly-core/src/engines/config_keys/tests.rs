@@ -484,10 +484,10 @@ const ENGINE_SOURCES: &[(&str, &[&str])] = &[
     (
         "ruff",
         &[
-            "ruff.rs",
-            "ruff/plugins.rs",
-            "ruff/plugins/extra.rs",
-            "ruff/format.rs",
+            "../../../poly-engines-python/src/ruff.rs",
+            "../../../poly-engines-python/src/ruff/plugins.rs",
+            "../../../poly-engines-python/src/ruff/plugins/extra.rs",
+            "../../../poly-engines-python/src/ruff/format.rs",
             // The target-version read is a host hook shared with the component host.
             "../../../poly-engine-api/src/host_hooks/ruff_target.rs",
         ],
@@ -510,9 +510,14 @@ const ENGINE_SOURCES: &[(&str, &[&str])] = &[
     ),
     (
         "mago",
-        &["mago/mod.rs", "mago/lint.rs", "mago/format.rs", "mago/rules.rs"],
+        &[
+            "../../../poly-engines-php/src/mago/mod.rs",
+            "../../../poly-engines-php/src/mago/lint.rs",
+            "../../../poly-engines-php/src/mago/format.rs",
+            "../../../poly-engines-php/src/mago/rules.rs",
+        ],
     ),
-    ("sqruff", &["sqruff.rs"]),
+    ("sqruff", &["../../../poly-engines-sql/src/sqruff.rs"]),
     (
         "rumdl",
         &["rumdl.rs", "markdown_fmt.rs", "markdown_embed.rs", "core_options.rs"],
@@ -534,7 +539,7 @@ const ENGINE_SOURCES: &[(&str, &[&str])] = &[
     ("graphql", &["graphql.rs"]),
     ("adrlint", &["adrlint.rs"]),
     ("biome", &["biome_css.rs", "biome_graphql.rs", "biome_common.rs"]),
-    ("alejandra", &["nixfmt.rs"]),
+    ("alejandra", &["../../../poly-engines-nix/src/nixfmt.rs"]),
     ("rubyfmt", &["rubyfmt.rs"]),
     ("hcl", &["hcl/mod.rs"]),
     ("dockerfile", &["dockerfile.rs"]),

@@ -12,6 +12,7 @@ pub mod engine_guard;
 pub mod host_hooks;
 pub mod language;
 pub mod line_index;
+pub mod option_probe;
 pub mod project;
 pub mod rule_config;
 pub mod template;

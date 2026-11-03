@@ -1,0 +1,5 @@
+---
+source: crates/poly-engines-sql/tests/sqruff.rs
+expression: formatted
+---
+select id, name from users where id = 1

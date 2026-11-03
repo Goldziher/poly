@@ -1,0 +1,38 @@
+[package]
+name = "poly-engines-php"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+publish = false
+description = "The PHP engine family for poly (mago)."
+
+[lib]
+name = "poly_engines_php"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow.workspace = true
+mago-allocator.workspace = true
+mago-database.workspace = true
+mago-formatter.workspace = true
+mago-linter.workspace = true
+mago-names.workspace = true
+mago-php-version.workspace = true
+mago-reporting.workspace = true
+mago-span.workspace = true
+mago-syntax.workspace = true
+mago-text-edit.workspace = true
+poly-engine-api.workspace = true
+toml.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"
