@@ -194,8 +194,9 @@ package)
         echo "components-release: expected one record for ${component} on ${TARGET}, got: ${record}" >&2
         exit 1
       }
-      printf '%s\n%s\n%s\n' "$(cat "${PLAN}/${component}.hash")" "$(jq -r '.archive' "${record}")" "${RELEASE_TAG}" \
-        >"${DIST}/poly-component-${component}-${TARGET}.input-hash"
+      archive="$(jq -r '.archive' "${record}")"
+      hash_file="${DIST}/poly-component-${component}-${TARGET}.input-hash"
+      printf '%s\n%s\n%s\n' "$(cat "${PLAN}/${component}.hash")" "${archive}" "${RELEASE_TAG}" >"${hash_file}"
     done <"${TO_BUILD}"
   fi
   # Reused records are checked too: signature against the key in alef.toml, archive hash, contract.

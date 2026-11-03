@@ -53,15 +53,20 @@ LIBRARY="$(find "${BUILD}/${TARGET}/debug" -maxdepth 1 -type f \
 }
 
 alef component package --unsigned --component sql --target "${TARGET}" --library "${LIBRARY}" --output "${DIST}"
-# `component lock` wants a record for every target alef.toml lists and has no target filter, so the
-# dev lock is written against a copy of the config narrowed to the host triple.
+# `component lock` wants a record for every component and target alef.toml lists and has neither
+# filter, so the dev lock is written against a copy of the config narrowed to the sql component and
+# the host triple.
 DEV_CONFIG="${OUT}/alef.dev.toml"
 python3 - "${TARGET}" "${DEV_CONFIG}" <<'PY'
 import re
 import sys
 
 text = open("alef.toml", encoding="utf-8").read()
-narrowed, count = re.subn(r"targets = \[[^\]]*\]", f'targets = ["{sys.argv[1]}"]', text, flags=re.S)
+sections = re.split(r"(?m)^(?=\[)", text)
+kept = [s for s in sections if not s.startswith("[[crates.components]]") or re.search(r'(?m)^name = "sql"$', s)]
+if sum(s.startswith("[[crates.components]]") for s in kept) != 1:
+    sys.exit("components:dev: expected exactly one sql [[crates.components]] block in alef.toml")
+narrowed, count = re.subn(r"targets = \[[^\]]*\]", f'targets = ["{sys.argv[1]}"]', "".join(kept), flags=re.S)
 if count == 0:
     sys.exit("components:dev: no `targets = [...]` in alef.toml")
 open(sys.argv[2], "w", encoding="utf-8").write(narrowed)
