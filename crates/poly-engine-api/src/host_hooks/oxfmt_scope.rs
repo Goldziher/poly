@@ -1,6 +1,6 @@
 //! The `.oxfmtrc.json[c]` that governs one file, and the options it gives that file.
 //!
-//! [`crate::oxfmt_native`] turns the project's config into per-language tables. oxfmt, though,
+//! [`super::oxfmt_native`] turns the project's config into per-language tables. oxfmt, though,
 //! decides per file: the nearest config above a file replaces the root one, and an
 //! `overrides[].files` glob (relative to the config's directory) changes the options of the files
 //! it matches. This module resolves both at format time, so a directory-scoped override reaches
@@ -20,7 +20,7 @@ use crate::engine::SourceFile;
 use crate::language::Language;
 
 /// Key of the root config's path in an oxfmt-equivalent engine's table; set by poly.
-pub(crate) const RC_KEY: &str = "oxfmtrc";
+pub const RC_KEY: &str = "oxfmtrc";
 
 struct Scope {
     native: OxfmtNative,
@@ -113,7 +113,7 @@ fn scope_of(path: &Path) -> Option<(Arc<Scope>, PathBuf)> {
 /// `cfg` as it applies to `src`: the options of the nearest oxfmt config when it is not the root
 /// one the table was built from, with every matching `overrides` entry laid over them.
 /// `cfg` itself when neither changes anything.
-pub(crate) fn path_config<'a>(cfg: &'a EngineConfig, src: &SourceFile, engine: &str) -> Cow<'a, EngineConfig> {
+pub fn path_config<'a>(cfg: &'a EngineConfig, src: &SourceFile, engine: &str) -> Cow<'a, EngineConfig> {
     let Some(root_rc) = cfg.options.get(RC_KEY).and_then(toml::Value::as_str) else {
         return Cow::Borrowed(cfg);
     };
@@ -129,7 +129,7 @@ pub(crate) fn path_config<'a>(cfg: &'a EngineConfig, src: &SourceFile, engine: &
     if !nested && matched.is_empty() {
         return Cow::Borrowed(cfg);
     }
-    let Some(layer) = crate::oxfmt_native::path_table(&scope.native, &src.language, engine, &matched, nested) else {
+    let Some(layer) = super::oxfmt_native::path_table(&scope.native, &src.language, engine, &matched, nested) else {
         return Cow::Borrowed(cfg);
     };
     let mut options = cfg.options.clone();
@@ -165,7 +165,7 @@ fn root_keys(root_rc: &str, language: &Language, engine: &str) -> Vec<String> {
         return Vec::new();
     };
     let root = scope_for(dir);
-    crate::oxfmt_native::engine_defaults(&root.native, language, engine)
+    super::oxfmt_native::engine_defaults(&root.native, language, engine)
         .into_iter()
         .map(|(key, _)| key)
         .collect()
@@ -174,7 +174,7 @@ fn root_keys(root_rc: &str, language: &Language, engine: &str) -> Vec<String> {
 /// What the formatted output of `path` depends on beyond its bytes and the engine's table: the
 /// content of the governing config and which of its overrides match. `None` without an oxfmt
 /// config, where the table says everything.
-pub(crate) fn input_salt(cfg: &EngineConfig, path: &Path) -> Option<String> {
+pub fn input_salt(cfg: &EngineConfig, path: &Path) -> Option<String> {
     cfg.options.get(RC_KEY)?;
     let (scope, absolute) = scope_of(path)?;
     let matched: Vec<String> = scope.matching(&absolute).iter().map(ToString::to_string).collect();

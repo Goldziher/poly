@@ -43,16 +43,8 @@ pub(crate) mod engine_guard;
 pub mod engines;
 pub(crate) mod filter;
 mod fingerprint;
+pub use poly_engine_api::host_hooks;
 pub mod language;
-// Only the web family's engines read the oxfmt config; the module itself has no heavy deps.
-#[cfg_attr(not(feature = "engine-web"), allow(dead_code))]
-pub(crate) mod oxfmt_native;
-// Only the web family's engines read the oxfmt config; the module itself has no heavy deps.
-#[cfg_attr(not(feature = "engine-web"), allow(dead_code))]
-pub(crate) mod oxfmt_scope;
-#[cfg(feature = "engine-web")]
-pub(crate) mod oxlint_native;
-pub(crate) mod path_ignore;
 pub(crate) mod registry;
 pub mod report;
 #[doc(hidden)]

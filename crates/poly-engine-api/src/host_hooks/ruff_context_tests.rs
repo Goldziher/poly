@@ -2,8 +2,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use super::{PackageRoots, module_tree, package_root, walk};
-use crate::config::{Config, Kind};
-use crate::language::Language;
 
 fn touch(path: &Path) {
     fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -122,11 +120,4 @@ fn the_module_tree_ignores_vendored_and_non_identifier_directories() {
 
     assert_eq!(before, module_tree(&src));
     assert!(!digest_of(dir.path()).contains("bazel-out"));
-}
-
-#[test]
-fn namespace_packages_are_not_configurable() {
-    let mut cfg = Config::default().engine_config(&Language::Python, "ruff", Kind::Lint);
-    cfg.options.insert("select".into(), toml::Value::Array(vec![]));
-    assert!(super::super::build_settings(&cfg).namespace_packages.is_empty());
 }

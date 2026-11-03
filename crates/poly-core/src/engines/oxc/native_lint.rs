@@ -1,6 +1,6 @@
 //! Linting JS/TS with the project's own `.oxlintrc.json[c]` instead of poly's opinionated rule set.
 //!
-//! The config governing a file is the nearest one above it (see [`crate::oxlint_native`]); one
+//! The config governing a file is the nearest one above it (see [`crate::host_hooks::oxlintrc`]); one
 //! [`SourceLinter`] is built per config and reused. `[lint.<lang>.oxc]` `select` / `extend_select` /
 //! `ignore` / `[rules.<id>]` levels are layered on top, like oxlint's own `-A` / `-D` / `-W` flags.
 
@@ -14,21 +14,26 @@ use super::run::SourceLinter;
 use crate::config::EngineConfig;
 use crate::engine::{Severity, SourceFile};
 use crate::engines::rule_config::RuleSelection;
-use crate::oxlint_native::{Governing, governing, warn_about_js_plugins};
+pub(super) use crate::host_hooks::oxlintrc::governing_for;
 
-/// The project's root oxlint config named by `cfg`, if any.
-fn root_of(cfg: &EngineConfig) -> Option<&Path> {
-    match cfg.options.get("oxlintrc") {
-        Some(toml::Value::String(path)) => Some(Path::new(path)),
-        Some(toml::Value::Boolean(_)) | None => None,
-        Some(_) => None,
+/// Report a config's `jsPlugins` once: they are JavaScript modules, which poly's in-process
+/// linter has no runtime to execute, so the rules they define are not applied.
+fn warn_about_js_plugins(file: &Path, config: &Oxlintrc) {
+    let mut specifiers: Vec<&str> = config
+        .external_plugins
+        .iter()
+        .flatten()
+        .map(|entry| entry.specifier.as_str())
+        .collect();
+    specifiers.sort_unstable();
+    if !specifiers.is_empty() {
+        tracing::warn!(
+            "oxlint jsPlugins in {} are not run: they are JavaScript modules and poly lints in-process \
+             without a JS runtime, so the rules they define are skipped ({}). Run oxlint for those rules.",
+            file.display(),
+            specifiers.join(", ")
+        );
     }
-}
-
-/// The configs governing `src`, or `None` when the project has no oxlint config for this table.
-pub(super) fn governing_for(cfg: &EngineConfig, path: &Path) -> Option<Arc<Governing>> {
-    let root = root_of(cfg)?;
-    Some(governing(root, path.parent().unwrap_or(Path::new(""))))
 }
 
 /// The service for `config`, built once per (config file, options table).

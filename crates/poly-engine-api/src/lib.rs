@@ -9,6 +9,7 @@ pub mod config;
 pub mod css_hacks;
 pub mod engine;
 pub mod engine_guard;
+pub mod host_hooks;
 pub mod language;
 pub mod line_index;
 pub mod rule_config;

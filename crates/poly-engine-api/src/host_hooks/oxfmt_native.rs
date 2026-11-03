@@ -7,20 +7,19 @@
 //! `[fmt.<lang>.<engine>]` key always wins.
 //!
 //! `overrides` scoped to an extension fold into the language's table here; ones scoped to a path
-//! are resolved per file by [`crate::oxfmt_scope`], which finds the governing config for each file.
+//! are resolved per file by [`super::oxfmt_scope`], which finds the governing config for each file.
 //! What cannot be honored is reported once per process with a warning instead of being dropped
 //! silently: options the Rust formatters do not implement (`sortTailwindcss`, whose class sorter
 //! is JavaScript-side; `[fmt.<lang>.oxc] external = true` hands those files to the real `oxfmt`).
 
-use std::collections::HashSet;
 use std::path::Path;
-use std::sync::{Mutex, OnceLock};
 
 use poly_config::OxfmtNative;
 use serde_json::{Map, Value};
 
+use super::path_ignore::PathIgnore;
+use super::warn_once;
 use crate::language::Language;
-use crate::path_ignore::PathIgnore;
 
 /// The formatter family an engine/language pair belongs to.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -34,7 +33,7 @@ enum Family {
 }
 
 /// The languages oxfmt formats (and therefore owns `ignorePatterns` for).
-pub(crate) fn is_oxfmt_language(language: &Language) -> bool {
+pub fn is_oxfmt_language(language: &Language) -> bool {
     matches!(
         language,
         Language::JavaScript
@@ -69,7 +68,7 @@ fn family(language: &Language, engine: &str) -> Option<Family> {
 }
 
 /// `[fmt.<lang>.<engine>]` defaults derived from the native config for one language/engine.
-pub(crate) fn engine_defaults(native: &OxfmtNative, language: &Language, engine: &str) -> toml::Table {
+pub fn engine_defaults(native: &OxfmtNative, language: &Language, engine: &str) -> toml::Table {
     let Some(family) = family(language, engine) else {
         return toml::Table::new();
     };
@@ -80,7 +79,7 @@ pub(crate) fn engine_defaults(native: &OxfmtNative, language: &Language, engine:
     let mut table = translate(family, &effective);
     if let Some(file) = &native.file {
         table.insert(
-            crate::oxfmt_scope::RC_KEY.to_owned(),
+            super::oxfmt_scope::RC_KEY.to_owned(),
             toml::Value::String(file.to_string_lossy().into_owned()),
         );
     }
@@ -90,7 +89,7 @@ pub(crate) fn engine_defaults(native: &OxfmtNative, language: &Language, engine:
 /// The table `native` gives `language` for a file that `matched` overrides apply to, whatever
 /// their scope, or `None` when no backend of this family reads the config. With `with_defaults`
 /// the keys oxfmt always has a value for are filled in, so the table can replace another config's.
-pub(crate) fn path_table(
+pub fn path_table(
     native: &OxfmtNative,
     language: &Language,
     engine: &str,
@@ -110,7 +109,7 @@ pub(crate) fn path_table(
 }
 
 /// Report a native config that was found but could not be read, once.
-pub(crate) fn warn_if_unusable(native: &OxfmtNative) {
+pub fn warn_if_unusable(native: &OxfmtNative) {
     if let Some(error) = &native.error {
         warn_once(format!("oxfmt-unusable:{error}"), || {
             tracing::warn!("ignoring the oxfmt configuration: {error}");
@@ -423,11 +422,11 @@ fn camel_to_snake(key: &str) -> String {
 
 /// `ignorePatterns` of a native oxfmt config, compiled once per plan.
 #[derive(Debug)]
-pub(crate) struct FormatIgnore(PathIgnore);
+pub struct FormatIgnore(PathIgnore);
 
 impl FormatIgnore {
     /// The ignore set for `language`, or `None` when oxfmt does not own it or ignores nothing.
-    pub(crate) fn for_language(native: &OxfmtNative, language: &Language) -> Option<FormatIgnore> {
+    pub fn for_language(native: &OxfmtNative, language: &Language) -> Option<FormatIgnore> {
         if !native.is_present() || !is_oxfmt_language(language) {
             return None;
         }
@@ -436,20 +435,8 @@ impl FormatIgnore {
     }
 
     /// Whether the oxfmt config says `path` is not to be formatted.
-    pub(crate) fn is_ignored(&self, path: &Path) -> bool {
+    pub fn is_ignored(&self, path: &Path) -> bool {
         self.0.is_ignored(path)
-    }
-}
-
-fn warn_once(key: String, report: impl FnOnce()) {
-    static SEEN: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
-    let first = SEEN
-        .get_or_init(|| Mutex::new(HashSet::new()))
-        .lock()
-        .expect("warning set poisoned")
-        .insert(key);
-    if first {
-        report();
     }
 }
 

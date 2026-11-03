@@ -157,16 +157,9 @@ impl Engine for TaploEngine {
         TAPLO_VERSION
     }
 
-    fn format_config<'a>(&self, src: &SourceFile, cfg: &'a EngineConfig) -> std::borrow::Cow<'a, EngineConfig> {
-        crate::oxfmt_scope::path_config(cfg, src, self.name())
-    }
-
-    fn format_input_salt(&self, path: &std::path::Path, cfg: &EngineConfig) -> Option<String> {
-        crate::oxfmt_scope::input_salt(cfg, path)
-    }
-
-    fn file_context(&self, path: &std::path::Path, cfg: &EngineConfig) -> Option<String> {
-        self.format_input_salt(path, cfg)
+    /// The path-scoped oxfmt config (`overrides`, nested configs) shapes the output and the cache key.
+    fn host_hook(&self) -> poly_engine_api::host_hooks::HostHook {
+        poly_engine_api::host_hooks::HostHook::OxfmtScope
     }
 
     fn lint(&self, src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {

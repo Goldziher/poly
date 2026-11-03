@@ -1288,6 +1288,10 @@
             "type": "string"
           }
         },
+        "host_hook": {
+          "description": "`Engine::host_hook` in kebab-case (`none`, `oxfmt-scope`, `oxc`, `ruff-context`): which\ncache-path hook the host computes locally for this engine, so a cache hit never loads\nthe component.",
+          "type": "string"
+        },
         "supplements_tier_one": {
           "description": "`Engine::supplements_tier_one`.",
           "type": "boolean"
@@ -1316,6 +1320,7 @@
         "hooks",
         "takes_over_tier_one",
         "claimed_paths",
+        "host_hook",
         "supplements_tier_one",
         "self_manages_enabled",
         "supersedes_generic_formatter",

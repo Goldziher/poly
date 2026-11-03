@@ -46,6 +46,7 @@ pub const ENGINE_METHODS: &[(&str, Coverage)] = &[
         Coverage::Index("WireEngineDesc.takes_over_tier_one"),
     ),
     ("claimed_paths", Coverage::Index("WireEngineDesc.claimed_paths")),
+    ("host_hook", Coverage::Index("WireEngineDesc.host_hook")),
     (
         "supplements_tier_one",
         Coverage::Index("WireEngineDesc.supplements_tier_one"),

@@ -25,7 +25,7 @@
 //! `target_version` in `[lint.python.ruff]` wins. Without it, the target is the
 //! one the project's own ruff config declares — `target-version` in the nearest
 //! `.ruff.toml` / `ruff.toml` / `[tool.ruff]`, else `requires-python` — and only
-//! then ruff's default; see [`target`].
+//! then ruff's default; see [`ruff_target`](poly_engine_api::host_hooks::ruff_target).
 //!
 //! # Opinionated format defaults
 //!
@@ -46,6 +46,7 @@ use std::path::Path;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
+use poly_engine_api::host_hooks::{ruff_context, ruff_target};
 use ruff_db::diagnostic::Severity as RuffSeverity;
 use ruff_linter::linter::{ParseSource, lint_only};
 use ruff_linter::package::PackageRoot;
@@ -59,11 +60,9 @@ use ruff_linter::source_kind::SourceKind;
 use ruff_python_ast::PySourceType;
 use ruff_text_size::Ranged;
 
-mod context;
 mod format;
 mod option_keys;
 mod plugins;
-mod target;
 
 use crate::config::EngineConfig;
 use crate::engine::{
@@ -367,35 +366,14 @@ fn build_settings(cfg: &EngineConfig) -> LinterSettings {
 
 /// The `target_version` set in `[lint.python.ruff]`, when it parses.
 fn configured_target(cfg: &EngineConfig) -> Option<ruff_python_ast::PythonVersion> {
-    cfg.options
-        .get("target_version")
-        .and_then(toml::Value::as_str)
-        .and_then(parse_python_version)
+    ruff_target::configured_target(cfg).map(Into::into)
 }
 
 /// The target `path` is linted for when poly's config sets none: what the
 /// project's own ruff config declares, or `None` for ruff's default. A
-/// `target_version` in `poly.toml` wins, so it is not looked up. See [`target`].
+/// `target_version` in `poly.toml` wins, so it is not looked up. See [`ruff_target`].
 fn project_target(path: &Path, cfg: &EngineConfig) -> Option<ruff_python_ast::PythonVersion> {
-    if configured_target(cfg).is_some() {
-        return None;
-    }
-    target::discovered_target(path)
-}
-
-/// Parse a Python target version from either ruff's canonical `py310` spelling
-/// or the dotted `3.10` form. Returns `None` for anything unrecognised so the
-/// caller keeps ruff's default.
-fn parse_python_version(s: &str) -> Option<ruff_python_ast::PythonVersion> {
-    let trimmed = s.trim();
-    if let Some(rest) = trimmed.strip_prefix("py")
-        && rest.len() >= 2
-        && rest.chars().all(|c| c.is_ascii_digit())
-    {
-        let (major, minor) = rest.split_at(1);
-        return format!("{major}.{minor}").parse().ok();
-    }
-    trimmed.parse().ok()
+    ruff_target::project_target(path, cfg).map(Into::into)
 }
 
 /// Convert a ruff [`RuffSeverity`] to the poly [`Severity`].
@@ -502,21 +480,10 @@ impl Engine for RuffEngine {
         "ruff-0.17.3+pkgroot+plugins+isort+e501+tgtsrc+ignore-b008+rules-v3+advisory-sev1+fmtopts2+plugopts2+isort3+pylint2+impconv1+defignore2+unsafefix1+plugopts3+fmtopts3+tgtdisc1"
     }
 
-    fn run_context(&self, cfg: &EngineConfig) -> String {
-        let src_roots: Vec<std::path::PathBuf> = cfg
-            .options
-            .get("src")
-            .and_then(toml::Value::as_array)
-            .map(|roots| roots.iter().filter_map(toml::Value::as_str).map(Into::into).collect())
-            .unwrap_or_default();
-        context::forget_package_roots();
-        target::forget_targets();
-        context::module_tree(&src_roots)
-    }
-
-    fn file_context(&self, path: &Path, cfg: &EngineConfig) -> Option<String> {
-        let target = project_target(path, cfg).map_or_else(|| "-".to_owned(), |version| version.to_string());
-        Some(format!("{}\u{0}target={target}", context::run_package_root(path)))
+    /// The package root, module tree and discovered target version are computed host-side (see
+    /// [`poly_engine_api::host_hooks::ruff_context`]) so a cache lookup never needs this engine.
+    fn host_hook(&self) -> poly_engine_api::host_hooks::HostHook {
+        poly_engine_api::host_hooks::HostHook::RuffContext
     }
 
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
@@ -545,7 +512,7 @@ impl Engine for RuffEngine {
 
         let package_dir = src.path.parent().and_then(|parent| {
             if settings.namespace_packages.is_empty() {
-                context::cached_package_root(parent)
+                ruff_context::cached_package_root(parent)
             } else {
                 detect_package_root(parent, &settings.namespace_packages).map(Path::to_path_buf)
             }
@@ -640,7 +607,7 @@ impl Engine for RuffEngine {
 mod tests {
     use std::sync::Arc;
 
-    use super::{parse_python_version, settings_for};
+    use super::settings_for;
     use crate::config::{EngineConfig, GlobalDefaults};
 
     fn engine_config(options: &str) -> EngineConfig {
@@ -691,23 +658,12 @@ mod tests {
     }
 
     #[test]
-    fn parses_ruff_style_py_prefix() {
-        let py310: ruff_python_ast::PythonVersion = "3.10".parse().unwrap();
-        assert_eq!(parse_python_version("py310"), Some(py310));
-        let py38: ruff_python_ast::PythonVersion = "3.8".parse().unwrap();
-        assert_eq!(parse_python_version("py38"), Some(py38));
-    }
+    fn namespace_packages_are_not_configurable() {
+        use crate::config::{Config, Kind};
+        use crate::language::Language;
 
-    #[test]
-    fn parses_dotted_form() {
-        let py312: ruff_python_ast::PythonVersion = "3.12".parse().unwrap();
-        assert_eq!(parse_python_version("3.12"), Some(py312));
-    }
-
-    #[test]
-    fn rejects_garbage() {
-        assert_eq!(parse_python_version("nonsense"), None);
-        assert_eq!(parse_python_version("py"), None);
-        assert_eq!(parse_python_version("pyABC"), None);
+        let mut cfg = Config::default().engine_config(&Language::Python, "ruff", Kind::Lint);
+        cfg.options.insert("select".into(), toml::Value::Array(vec![]));
+        assert!(super::build_settings(&cfg).namespace_packages.is_empty());
     }
 }

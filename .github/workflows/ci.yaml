@@ -147,6 +147,18 @@ jobs:
       - name: poly fmt (self)
         run: cargo run --locked -p poly-cli -- fmt .
 
+  core-no-oxc:
+    name: core links no oxc
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@v2
+      - run: scripts/check-core-no-oxc.sh
+
   deny:
     name: cargo-deny
     runs-on: ubuntu-latest

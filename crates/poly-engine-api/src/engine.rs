@@ -607,8 +607,8 @@ pub trait Engine: Send + Sync {
     /// the cache key and the stat-index plan key, so a change here invalidates
     /// results instead of serving stale ones. Empty (the default) means the
     /// output is a function of the file's bytes, its path and `cfg` alone.
-    fn run_context(&self, _cfg: &EngineConfig) -> String {
-        String::new()
+    fn run_context(&self, cfg: &EngineConfig) -> String {
+        crate::host_hooks::run_context(self.host_hook(), cfg)
     }
 
     /// Inputs this backend's **lint** output depends on that are specific to
@@ -617,8 +617,19 @@ pub trait Engine: Send + Sync {
     /// cheap (a few `stat`s), and consulted even when the file's own stat is
     /// unchanged. `None` (the default) means the file's bytes, path and `cfg`
     /// are the whole input.
-    fn file_context(&self, _path: &std::path::Path, _cfg: &EngineConfig) -> Option<String> {
-        None
+    fn file_context(&self, path: &std::path::Path, cfg: &EngineConfig) -> Option<String> {
+        crate::host_hooks::file_context(self.host_hook(), path, cfg)
+    }
+
+    /// Which host-side cache-path inputs this backend's results depend on.
+    ///
+    /// The default [`Engine::run_context`], [`Engine::file_context`], [`Engine::lint_input_salt`],
+    /// [`Engine::format_input_salt`] and [`Engine::format_config`] are computed from this by
+    /// [`crate::host_hooks`], so an engine hosted in a component (whose implementation the host
+    /// cannot call during a cache lookup) gets byte-identical cache keys from the same code.
+    /// `HostHook::None` (the default) means the file, its path and `cfg` are the whole input.
+    fn host_hook(&self) -> crate::host_hooks::HostHook {
+        crate::host_hooks::HostHook::None
     }
 
     /// Whether this backend carries lint rules **for the language of the files
@@ -689,22 +700,22 @@ pub trait Engine: Send + Sync {
     /// into the cache key. A backend whose config can differ per directory (oxlint's nearest
     /// `.oxlintrc.json`) returns a digest of the config governing `path`; `None` means the
     /// options table already says everything.
-    fn lint_input_salt(&self, _path: &std::path::Path, _cfg: &EngineConfig) -> Option<String> {
-        None
+    fn lint_input_salt(&self, path: &std::path::Path, cfg: &EngineConfig) -> Option<String> {
+        crate::host_hooks::lint_input_salt(self.host_hook(), path, cfg)
     }
 
     /// The config to format `src` with, when it differs from the language-wide `cfg`: a backend
     /// whose project config is scoped by path (oxfmt's `overrides` and nested configs) lays the
     /// options that apply to this file over `cfg`. Defaults to `cfg` itself.
-    fn format_config<'a>(&self, _src: &SourceFile, cfg: &'a EngineConfig) -> std::borrow::Cow<'a, EngineConfig> {
-        std::borrow::Cow::Borrowed(cfg)
+    fn format_config<'a>(&self, src: &SourceFile, cfg: &'a EngineConfig) -> std::borrow::Cow<'a, EngineConfig> {
+        crate::host_hooks::format_config(self.host_hook(), self.name(), src, cfg)
     }
 
     /// Extra input this engine's *format* result depends on besides the file's bytes and the
     /// options table, folded into the cache key: the digest of the path-scoped config governing
     /// `path`. `None` (the default) means the table already says everything.
-    fn format_input_salt(&self, _path: &std::path::Path, _cfg: &EngineConfig) -> Option<String> {
-        None
+    fn format_input_salt(&self, path: &std::path::Path, cfg: &EngineConfig) -> Option<String> {
+        crate::host_hooks::format_input_salt(self.host_hook(), path, cfg)
     }
 
     /// Lint a file, returning normalized diagnostics. Defaults to no findings.

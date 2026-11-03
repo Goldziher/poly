@@ -16,7 +16,7 @@
 //!
 //! ## Options layering
 //! oxfmt defaults → `[defaults]` globals (`line_length`, `line_ending`) → the project's
-//! `.oxfmtrc.json[c]` (see [`crate::oxfmt_native`]) → user `[fmt.yaml.yaml]` table. Recognised
+//! `.oxfmtrc.json[c]` (see [`crate::host_hooks::oxfmt_native`]) → user `[fmt.yaml.yaml]` table. Recognised
 //! keys: `indent_width`, `line_width`, `line_ending`, `single_quote`, `bracket_spacing`,
 //! `trailing_commas` (`"always"` / `"never"`) and `prose_wrap` (`"preserve"` / `"always"` /
 //! `"never"`).
@@ -105,16 +105,9 @@ impl Engine for YamlEngine {
         "0.1.0+serde_yaml-0.9.34+oxc_formatter_yaml-e2be72d+tmplskip+oxfmtrc-scope-1"
     }
 
-    fn format_config<'a>(&self, src: &SourceFile, cfg: &'a EngineConfig) -> std::borrow::Cow<'a, EngineConfig> {
-        crate::oxfmt_scope::path_config(cfg, src, self.name())
-    }
-
-    fn format_input_salt(&self, path: &std::path::Path, cfg: &EngineConfig) -> Option<String> {
-        crate::oxfmt_scope::input_salt(cfg, path)
-    }
-
-    fn file_context(&self, path: &std::path::Path, cfg: &EngineConfig) -> Option<String> {
-        self.format_input_salt(path, cfg)
+    /// The path-scoped oxfmt config (`overrides`, nested configs) shapes the output and the cache key.
+    fn host_hook(&self) -> poly_engine_api::host_hooks::HostHook {
+        poly_engine_api::host_hooks::HostHook::OxfmtScope
     }
 
     fn skip_reason(&self, src: &SourceFile) -> Option<Cow<'static, str>> {

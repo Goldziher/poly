@@ -200,6 +200,10 @@ pub struct WireEngineDesc {
     pub takes_over_tier_one: bool,
     /// `Engine::claimed_paths`.
     pub claimed_paths: Vec<String>,
+    /// `Engine::host_hook` in kebab-case (`none`, `oxfmt-scope`, `oxc`, `ruff-context`): which
+    /// cache-path hook the host computes locally for this engine, so a cache hit never loads
+    /// the component.
+    pub host_hook: String,
     /// `Engine::supplements_tier_one`.
     pub supplements_tier_one: bool,
     /// `Engine::self_manages_enabled`.

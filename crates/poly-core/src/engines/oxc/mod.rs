@@ -200,27 +200,11 @@ impl crate::engine::Engine for OxcEngine {
         VERSION
     }
 
-    /// Digest of the oxlint configs governing `path`, when the project has any: they differ per
-    /// directory, so the options table alone cannot say which rules ran.
-    fn lint_input_salt(&self, path: &std::path::Path, cfg: &EngineConfig) -> Option<String> {
-        native_lint::governing_for(cfg, path).map(|governing| governing.digest.clone())
-    }
-
-    fn format_config<'a>(&self, src: &SourceFile, cfg: &'a EngineConfig) -> std::borrow::Cow<'a, EngineConfig> {
-        crate::oxfmt_scope::path_config(cfg, src, self.name())
-    }
-
-    fn format_input_salt(&self, path: &std::path::Path, cfg: &EngineConfig) -> Option<String> {
-        crate::oxfmt_scope::input_salt(cfg, path)
-    }
-
-    /// Both digests: a cached lint verdict goes stale with the oxlint config, a cached format
-    /// result with the oxfmt one.
-    fn file_context(&self, path: &std::path::Path, cfg: &EngineConfig) -> Option<String> {
-        match (self.lint_input_salt(path, cfg), self.format_input_salt(path, cfg)) {
-            (None, None) => None,
-            (lint, format) => Some(format!("{}|{}", lint.unwrap_or_default(), format.unwrap_or_default())),
-        }
+    /// The oxlint config chain governing a path (lint) and the path-scoped oxfmt config (format)
+    /// shape the output, so both feed the cache key: a cached lint verdict goes stale with the
+    /// oxlint config, a cached format result with the oxfmt one.
+    fn host_hook(&self) -> poly_engine_api::host_hooks::HostHook {
+        poly_engine_api::host_hooks::HostHook::Oxc
     }
 
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {

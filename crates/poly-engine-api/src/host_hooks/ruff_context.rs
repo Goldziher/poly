@@ -7,7 +7,7 @@
 //!   directory while each directory holds an `__init__.py`; the root it stops
 //!   at feeds module-name rules (`N999`, `INP001`) and import sorting. Editing
 //!   a sibling `__init__.py` therefore changes this file's diagnostics without
-//!   touching the file: [`package_root`] is the per-file answer.
+//!   touching the file: `package_root` is the per-file answer.
 //! - **Which modules exist.** isort classifies `import a.b` as first-party only
 //!   when `<src-root>/a/b` is a directory or `<src-root>/a/b.py[i]` is a file,
 //!   so adding, removing or renaming a Python module can move an import
@@ -15,13 +15,28 @@
 //!   per-run answer, a digest of every importable path under the source roots.
 //!
 //! `namespace-packages` is not a poly option, so the package walk passes none;
-//! `namespace_packages_are_not_configurable` fails if that ever changes.
+//! `namespace_packages_are_not_configurable` (in the ruff engine's tests) fails if that ever changes.
+//!
+//! This module deliberately does not depend on `ruff_linter`: the cache lookup must run without the
+//! ruff component loaded, so the package walk is reimplemented here (it is a loop over `__init__.py`).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex, PoisonError};
 
-use ruff_linter::packaging::detect_package_root;
+/// The outermost directory at or above `dir` reached by walking up while each directory holds an
+/// `__init__.py`: ruff's `detect_package_root` for a project with no `namespace-packages`, which
+/// poly does not expose. `None` when `dir` itself is not a package.
+fn detect_package_root(dir: &Path) -> Option<PathBuf> {
+    let mut root = None;
+    for ancestor in dir.ancestors() {
+        if !ancestor.join("__init__.py").is_file() {
+            return root;
+        }
+        root = Some(ancestor.to_path_buf());
+    }
+    root
+}
 
 /// Directories never descended into: they hold vendored or generated trees
 /// that a project does not import as first-party packages, and walking them
@@ -33,7 +48,7 @@ const SKIPPED_DIRS: [&str; 3] = ["node_modules", "target", "__pycache__"];
 #[cfg(test)]
 pub(super) fn package_root(path: &Path) -> String {
     path.parent()
-        .and_then(|parent| detect_package_root(parent, &[]))
+        .and_then(detect_package_root)
         .map_or_else(|| "-".to_owned(), |root| root.to_string_lossy().into_owned())
 }
 
@@ -52,7 +67,7 @@ impl PackageRoots {
         if let Some(hit) = self.0.lock().unwrap_or_else(PoisonError::into_inner).get(dir) {
             return hit.clone();
         }
-        let found = detect_package_root(dir, &[]).map(Path::to_path_buf);
+        let found = detect_package_root(dir);
         self.0
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -65,17 +80,17 @@ static PACKAGE_ROOTS: LazyLock<PackageRoots> = LazyLock::new(PackageRoots::defau
 
 /// Drop every remembered package root. Called when a run is planned, so an
 /// `__init__.py` added or removed between runs of a long-lived process is seen.
-pub(super) fn forget_package_roots() {
+pub fn forget_package_roots() {
     PACKAGE_ROOTS.clear();
 }
 
-/// [`detect_package_root`] for `dir`, remembered until the next plan.
-pub(super) fn cached_package_root(dir: &Path) -> Option<PathBuf> {
+/// The package root of `dir`, remembered until the next plan.
+pub fn cached_package_root(dir: &Path) -> Option<PathBuf> {
     PACKAGE_ROOTS.get(dir)
 }
 
-/// [`package_root`] answered from the run's remembered roots.
-pub(super) fn run_package_root(path: &Path) -> String {
+/// The package root of `path`, answered from the run's remembered roots.
+pub fn run_package_root(path: &Path) -> String {
     path.parent()
         .and_then(cached_package_root)
         .map_or_else(|| "-".to_owned(), |root| root.to_string_lossy().into_owned())
@@ -84,7 +99,7 @@ pub(super) fn run_package_root(path: &Path) -> String {
 /// A digest of the module tree isort probes: the current directory (which ruff
 /// treats as the base of its default source roots), the resolved source roots,
 /// and every directory and `.py`/`.pyi` path beneath them.
-pub(super) fn module_tree(src_roots: &[PathBuf]) -> String {
+pub fn module_tree(src_roots: &[PathBuf]) -> String {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let roots: Vec<PathBuf> = if src_roots.is_empty() {
         vec![cwd.clone(), cwd.join("src")]
@@ -145,4 +160,5 @@ fn walk(root: &Path) -> Vec<String> {
 }
 
 #[cfg(test)]
+#[path = "ruff_context_tests.rs"]
 mod tests;

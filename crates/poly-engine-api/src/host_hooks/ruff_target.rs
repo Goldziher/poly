@@ -17,29 +17,35 @@
 //!    no ruff config), taken as its lowest admitted minor version.
 //!
 //! Answers are remembered per directory until the next plan, like the package
-//! roots in [`super::context`].
+//! roots in [`super::ruff_context`].
+//!
+//! Versions are plain `(major, minor)` pairs ([`PyVersion`]) so the lookup, which the cache key
+//! needs, never links ruff; the ruff engine converts to its own `PythonVersion`.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex, PoisonError};
 
-use ruff_python_ast::PythonVersion;
+use crate::config::EngineConfig;
+
+/// A Python version as `(major, minor)`, ruff's `PythonVersion` without the dependency.
+pub type PyVersion = (u8, u8);
 
 /// How many `extend` hops are followed before giving up, so a cycle ends.
 const MAX_EXTEND_DEPTH: usize = 8;
 
 /// Targets already found, keyed by the directory they were found for.
-static TARGETS: LazyLock<Mutex<HashMap<PathBuf, Option<PythonVersion>>>> = LazyLock::new(Mutex::default);
+static TARGETS: LazyLock<Mutex<HashMap<PathBuf, Option<PyVersion>>>> = LazyLock::new(Mutex::default);
 
 /// Drop every remembered target, so a config edited between runs of a
 /// long-lived process is read again.
-pub(super) fn forget_targets() {
+pub fn forget_targets() {
     TARGETS.lock().unwrap_or_else(PoisonError::into_inner).clear();
 }
 
 /// The target version the project configuration governing `path` declares,
 /// or `None` when it declares none (ruff's default then applies).
-pub(super) fn discovered_target(path: &Path) -> Option<PythonVersion> {
+pub fn discovered_target(path: &Path) -> Option<PyVersion> {
     let parent = path.parent().unwrap_or(Path::new(""));
     let dir = if parent.is_absolute() {
         parent.to_path_buf()
@@ -57,10 +63,10 @@ pub(super) fn discovered_target(path: &Path) -> Option<PythonVersion> {
     found
 }
 
-fn discover(dir: &Path) -> Option<PythonVersion> {
+fn discover(dir: &Path) -> Option<PyVersion> {
     let (config_dir, config) = nearest_ruff_config(dir).map_or((dir, None), |(d, t)| (d, Some(t)));
     if let Some((table, source)) = config
-        && let Some(version) = configured_target(table, &source, 0)
+        && let Some(version) = extended_target(table, &source, 0)
     {
         return Some(version);
     }
@@ -96,13 +102,13 @@ fn nearest_ruff_config(dir: &Path) -> Option<(&Path, (toml::Table, PathBuf))> {
 }
 
 /// `target-version` from a ruff table, or from the config it `extend`s.
-fn configured_target(table: toml::Table, source: &Path, depth: usize) -> Option<PythonVersion> {
+fn extended_target(table: toml::Table, source: &Path, depth: usize) -> Option<PyVersion> {
     if let Some(version) = table
         .get("target-version")
         .or_else(|| table.get("target_version"))
         .and_then(toml::Value::as_str)
     {
-        return super::parse_python_version(version);
+        return parse_python_version(version);
     }
     if depth >= MAX_EXTEND_DEPTH {
         return None;
@@ -122,12 +128,12 @@ fn configured_target(table: toml::Table, source: &Path, depth: usize) -> Option<
     } else {
         loaded
     };
-    configured_target(ruff, &base, depth + 1)
+    extended_target(ruff, &base, depth + 1)
 }
 
 /// The lowest minor version `project.requires-python` admits, the way ruff
 /// infers a target from it.
-fn requires_python(pyproject: &toml::Table) -> Option<PythonVersion> {
+fn requires_python(pyproject: &toml::Table) -> Option<PyVersion> {
     let requires = pyproject.get("project")?.as_table()?.get("requires-python")?.as_str()?;
     let mut lowest: Option<(u8, u8)> = None;
     for clause in requires.split(',').map(str::trim) {
@@ -151,29 +157,95 @@ fn requires_python(pyproject: &toml::Table) -> Option<PythonVersion> {
         // Every clause must hold, so the tightest lower bound is the largest.
         lowest = lowest.max(Some(bound));
     }
-    lowest.map(PythonVersion::from)
+    lowest
 }
 
 fn load(path: &Path) -> Option<toml::Table> {
     std::fs::read_to_string(path).ok()?.parse().ok()
 }
 
+/// Parse a Python target version from either ruff's canonical `py310` spelling or the dotted
+/// `3.10` form. `None` for anything else, so the caller keeps ruff's default.
+pub fn parse_python_version(text: &str) -> Option<PyVersion> {
+    let trimmed = text.trim();
+    if let Some(rest) = trimmed.strip_prefix("py")
+        && rest.len() >= 2
+        && rest.chars().all(|c| c.is_ascii_digit())
+    {
+        let (major, minor) = rest.split_at(1);
+        return Some((major.parse().ok()?, minor.parse().ok()?));
+    }
+    let (major, minor) = trimmed.split_once('.')?;
+    Some((major.parse().ok()?, minor.parse().ok()?))
+}
+
+/// The `target_version` set in `[lint.python.ruff]`, when it parses.
+pub fn configured_target(cfg: &EngineConfig) -> Option<PyVersion> {
+    cfg.options
+        .get("target_version")
+        .and_then(toml::Value::as_str)
+        .and_then(parse_python_version)
+}
+
+/// The target `path` is linted for when poly's config sets none: what the project's own ruff
+/// config declares, or `None` for ruff's default. A `target_version` in `poly.toml` wins, so it is
+/// not looked up.
+pub fn project_target(path: &Path, cfg: &EngineConfig) -> Option<PyVersion> {
+    if configured_target(cfg).is_some() {
+        return None;
+    }
+    discovered_target(path)
+}
+
+/// A target as the text folded into the cache key (`3.10`, as ruff prints it).
+pub fn format_version(version: PyVersion) -> String {
+    format!("{}.{}", version.0, version.1)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::requires_python;
-    use ruff_python_ast::PythonVersion;
+    use super::*;
 
-    fn infer(spec: &str) -> Option<PythonVersion> {
+    fn infer(spec: &str) -> Option<PyVersion> {
         requires_python(&format!("[project]\nrequires-python = \"{spec}\"\n").parse().unwrap())
     }
 
     #[test]
     fn requires_python_takes_the_lowest_admitted_minor() {
-        assert_eq!(infer(">=3.10"), Some(PythonVersion::PY310));
-        assert_eq!(infer(">=3.9,<4"), Some(PythonVersion::PY39));
-        assert_eq!(infer("~=3.11.2"), Some(PythonVersion::PY311));
-        assert_eq!(infer(">3.10"), Some(PythonVersion::PY311));
-        assert_eq!(infer("==3.12.*"), Some(PythonVersion::PY312));
+        assert_eq!(infer(">=3.10"), Some((3, 10)));
+        assert_eq!(infer(">=3.9,<4"), Some((3, 9)));
+        assert_eq!(infer("~=3.11.2"), Some((3, 11)));
+        assert_eq!(infer(">3.10"), Some((3, 11)));
+        assert_eq!(infer("==3.12.*"), Some((3, 12)));
         assert_eq!(infer("<4"), None);
+    }
+
+    #[test]
+    fn parses_ruff_style_py_prefix_and_dotted_form() {
+        assert_eq!(parse_python_version("py310"), Some((3, 10)));
+        assert_eq!(parse_python_version("py38"), Some((3, 8)));
+        assert_eq!(parse_python_version("3.12"), Some((3, 12)));
+        assert_eq!(format_version((3, 10)), "3.10");
+    }
+
+    #[test]
+    fn rejects_garbage() {
+        assert_eq!(parse_python_version("nonsense"), None);
+        assert_eq!(parse_python_version("py"), None);
+        assert_eq!(parse_python_version("pyABC"), None);
+        assert_eq!(parse_python_version("3"), None);
+    }
+
+    #[test]
+    fn a_target_in_poly_toml_suppresses_discovery() {
+        let mut options = toml::Table::new();
+        options.insert("target_version".into(), toml::Value::String("py39".into()));
+        let cfg = EngineConfig {
+            globals: crate::config::GlobalDefaults::default(),
+            indent_width: 4,
+            options,
+        };
+        assert_eq!(configured_target(&cfg), Some((3, 9)));
+        assert_eq!(project_target(Path::new("a.py"), &cfg), None);
     }
 }

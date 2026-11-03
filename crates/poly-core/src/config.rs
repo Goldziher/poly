@@ -157,18 +157,14 @@ impl Config {
             .unwrap_or_default();
         let native_defaults = match kind {
             Kind::Format => {
-                crate::oxfmt_native::warn_if_unusable(&self.oxfmt_native);
-                crate::oxfmt_native::engine_defaults(&self.oxfmt_native, lang, engine_name)
+                crate::host_hooks::oxfmt_native::warn_if_unusable(&self.oxfmt_native);
+                crate::host_hooks::oxfmt_native::engine_defaults(&self.oxfmt_native, lang, engine_name)
             }
             Kind::Lint if lang_options.get("oxlintrc").and_then(toml::Value::as_bool) == Some(false) => {
                 toml::Table::new()
             }
-            #[cfg(feature = "engine-web")]
-            Kind::Lint => crate::oxlint_native::engine_defaults(&self.oxlint_native, lang, engine_name),
-            // `oxlint_native` links `oxc_linter`, so without the web family there is no oxlint
-            // config to turn into defaults.
-            #[cfg(not(feature = "engine-web"))]
-            Kind::Lint => toml::Table::new(),
+            // Read host-side, so the defaults do not depend on the web family being compiled in.
+            Kind::Lint => crate::host_hooks::oxlintrc::engine_defaults(&self.oxlint_native, lang, engine_name),
         };
         for (key, value) in native_defaults {
             lang_options.entry(key).or_insert(value);

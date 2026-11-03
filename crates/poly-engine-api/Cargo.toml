@@ -22,12 +22,19 @@ schemars = ["dep:schemars"]
 [dependencies]
 anyhow.workspace = true
 blake3.workspace = true
+globset.workspace = true
+ignore.workspace = true
+json5.workspace = true
 poly-component-protocol.workspace = true
 poly-config.workspace = true
 schemars = { workspace = true, optional = true }
 serde.workspace = true
+serde_json.workspace = true
 toml.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [lints.rust]
 unsafe_code = "forbid"

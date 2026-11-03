@@ -483,7 +483,14 @@ fn a_declared_key_an_upstream_type_also_recognizes_defers_to_the_upstream_type()
 const ENGINE_SOURCES: &[(&str, &[&str])] = &[
     (
         "ruff",
-        &["ruff.rs", "ruff/plugins.rs", "ruff/plugins/extra.rs", "ruff/format.rs"],
+        &[
+            "ruff.rs",
+            "ruff/plugins.rs",
+            "ruff/plugins/extra.rs",
+            "ruff/format.rs",
+            // The target-version read is a host hook shared with the component host.
+            "../../../poly-engine-api/src/host_hooks/ruff_target.rs",
+        ],
     ),
     (
         "oxc",
@@ -497,6 +504,8 @@ const ENGINE_SOURCES: &[(&str, &[&str])] = &[
             "oxc/native_lint.rs",
             "oxc/external.rs",
             "core_options.rs",
+            // The `oxlintrc` read is a host hook shared with the component host.
+            "../../../poly-engine-api/src/host_hooks/oxlintrc.rs",
         ],
     ),
     (

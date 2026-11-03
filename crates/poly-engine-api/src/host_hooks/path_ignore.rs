@@ -6,13 +6,13 @@ use ignore::gitignore::{Gitignore, GitignoreBuilder};
 
 /// Pattern lists from one or more config files, each relative to its own directory.
 #[derive(Debug)]
-pub(crate) struct PathIgnore {
+pub struct PathIgnore {
     matchers: Vec<(PathBuf, Gitignore)>,
 }
 
 impl PathIgnore {
     /// Compile `(directory, patterns)` pairs. `None` when there is nothing to match.
-    pub(crate) fn new(sets: &[(PathBuf, Vec<String>)]) -> Option<PathIgnore> {
+    pub fn new(sets: &[(PathBuf, Vec<String>)]) -> Option<PathIgnore> {
         let matchers: Vec<(PathBuf, Gitignore)> = sets
             .iter()
             .filter(|(_, patterns)| !patterns.is_empty())
@@ -33,7 +33,7 @@ impl PathIgnore {
     }
 
     /// Whether any pattern list excludes `path`.
-    pub(crate) fn is_ignored(&self, path: &Path) -> bool {
+    pub fn is_ignored(&self, path: &Path) -> bool {
         let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
         self.matchers.iter().any(|(dir, matcher)| {
             absolute

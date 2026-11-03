@@ -330,6 +330,7 @@ fn describe_round_trips() {
             hooks: hooks::RUN_CONTEXT | hooks::SKIP_REASON,
             takes_over_tier_one: false,
             claimed_paths: vec![],
+            host_hook: "none".into(),
             supplements_tier_one: false,
             self_manages_enabled: false,
             supersedes_generic_formatter: true,
