@@ -165,6 +165,7 @@ mod panic_containment {
                 lint: true,
                 format: true,
                 fix: false,
+                project: false,
             }
         }
 
@@ -352,6 +353,7 @@ mod lint_batching {
                 lint: true,
                 format: false,
                 fix: false,
+                project: false,
             }
         }
 

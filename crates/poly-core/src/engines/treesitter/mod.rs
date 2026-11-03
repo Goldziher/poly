@@ -163,6 +163,7 @@ impl Engine for TreeSitterEngine {
             lint: false,
             format: true,
             fix: true,
+            project: false,
         }
     }
 

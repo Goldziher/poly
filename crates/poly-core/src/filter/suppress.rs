@@ -183,6 +183,21 @@ impl Suppressions {
         diagnostics: &mut Vec<Diagnostic>,
         suppressed: &mut Vec<SuppressedDiagnostic>,
     ) {
+        self.apply_directives(path, diagnostics, suppressed);
+        diagnostics.extend(self.lazy.iter().cloned());
+    }
+
+    /// [`Suppressions::apply`] without appending the `lazy-ignore` findings.
+    ///
+    /// For a second filtering pass over a file the per-file tier already reported on (the
+    /// project-check phase): the reason-less directives were reported then, and reporting them
+    /// again would double every one.
+    pub(crate) fn apply_directives(
+        &self,
+        path: &std::path::Path,
+        diagnostics: &mut Vec<Diagnostic>,
+        suppressed: &mut Vec<SuppressedDiagnostic>,
+    ) {
         if !self.file.is_empty() || !self.lines.is_empty() {
             diagnostics.retain(|diagnostic| {
                 if self.suppresses(diagnostic) {
@@ -196,7 +211,6 @@ impl Suppressions {
                 true
             });
         }
-        diagnostics.extend(self.lazy.iter().cloned());
     }
 
     fn suppresses(&self, diagnostic: &Diagnostic) -> bool {

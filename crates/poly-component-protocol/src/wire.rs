@@ -149,6 +149,8 @@ pub struct WireCapabilities {
     pub format: bool,
     /// Can produce autofixes.
     pub fix: bool,
+    /// Answers `Request::ProjectCheck` over a whole file set.
+    pub project: bool,
 }
 
 /// Which batch operations an engine supports.
@@ -338,13 +340,16 @@ pub enum Request {
     },
     /// Whole-project check (no file content; the component reads from `root`).
     ProjectCheck {
+        /// Engine name (a component may host several project engines).
+        engine: String,
         /// Project root.
         root: String,
-        /// Files in scope, relative to `root`.
-        files: Vec<String>,
+        /// Files in scope, relative to `root`; their contents are slices of `body`.
+        files: Vec<WireFileSlice>,
         /// Registered config.
         config: ConfigId,
-        /// Environment variables the check may see.
+        /// The host-resolved environment as flat pairs (`python.interpreter`,
+        /// `python.site_packages`, `python.version`); the component never probes the system.
         environment: Vec<(String, String)>,
     },
     /// `Engine::skip_reason` for one file (content in `body`).

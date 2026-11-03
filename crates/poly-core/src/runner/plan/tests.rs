@@ -28,6 +28,7 @@ impl Engine for StubEngine {
             lint: false,
             format: true,
             fix: false,
+            project: false,
         }
     }
 

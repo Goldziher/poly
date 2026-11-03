@@ -61,6 +61,7 @@ impl Engine for GraphQlEngine {
             lint: true,
             format: true,
             fix: false,
+            project: false,
         }
     }
 

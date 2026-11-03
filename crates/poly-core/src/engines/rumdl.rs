@@ -104,6 +104,7 @@ impl Engine for RumdlEngine {
             lint: true,
             format: true,
             fix: true,
+            project: false,
         }
     }
 

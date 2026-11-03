@@ -100,6 +100,7 @@ impl Engine for MarkupFmtEngine {
             lint: false,
             format: true,
             fix: false,
+            project: false,
         }
     }
 

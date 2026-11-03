@@ -76,6 +76,7 @@ impl Engine for MalvaEngine {
             lint: false,
             format: true,
             fix: false,
+            project: false,
         }
     }
 

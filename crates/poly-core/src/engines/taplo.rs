@@ -116,6 +116,7 @@ impl Engine for TaploEngine {
             lint: true,
             format: true,
             fix: false,
+            project: false,
         }
     }
 

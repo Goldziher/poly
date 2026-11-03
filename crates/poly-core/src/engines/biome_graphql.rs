@@ -81,6 +81,7 @@ impl Engine for BiomeGraphqlEngine {
             lint: true,
             format: false,
             fix: false,
+            project: false,
         }
     }
 

@@ -43,6 +43,7 @@ impl Engine for RubyfmtEngine {
             lint: false,
             format: true,
             fix: false,
+            project: false,
         }
     }
 

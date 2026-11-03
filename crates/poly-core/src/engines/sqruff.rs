@@ -200,6 +200,7 @@ impl Engine for SqruffEngine {
             lint: true,
             format: true,
             fix: false,
+            project: false,
         }
     }
 

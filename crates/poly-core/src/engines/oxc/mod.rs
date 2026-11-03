@@ -180,6 +180,7 @@ impl crate::engine::Engine for OxcEngine {
             lint: true,
             format: true,
             fix: false,
+            project: false,
         }
     }
 

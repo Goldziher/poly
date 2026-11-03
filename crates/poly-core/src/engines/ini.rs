@@ -87,6 +87,7 @@ impl Engine for IniEngine {
             lint: true,
             format: false,
             fix: false,
+            project: false,
         }
     }
 

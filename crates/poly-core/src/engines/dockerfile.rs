@@ -81,6 +81,7 @@ impl Engine for DockerfileEngine {
             lint: true,
             format: false,
             fix: false,
+            project: false,
         }
     }
 

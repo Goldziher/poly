@@ -95,6 +95,7 @@ impl Engine for BiomeCssEngine {
             lint: true,
             format: false,
             fix: false,
+            project: false,
         }
     }
 

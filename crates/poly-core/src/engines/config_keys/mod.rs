@@ -113,6 +113,7 @@ impl Engine for PolyConfigEngine {
             lint: true,
             format: false,
             fix: false,
+            project: false,
         }
     }
 

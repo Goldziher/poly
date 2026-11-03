@@ -171,8 +171,9 @@ fn sample_requests() -> Vec<Request> {
             files: vec![slice(0)],
         },
         Request::ProjectCheck {
+            engine: "ty".into(),
             root: "/r".into(),
-            files: vec!["a".into()],
+            files: vec![slice(0)],
             config: 3,
             environment: vec![("K".into(), "V".into())],
         },
@@ -314,6 +315,7 @@ fn describe_round_trips() {
                 lint: true,
                 format: true,
                 fix: true,
+                project: false,
             },
             version: "0.17".into(),
             option_keys: vec![WireOptionKeys {

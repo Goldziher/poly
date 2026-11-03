@@ -98,6 +98,7 @@ impl Engine for UncommentEngine {
             lint: true,
             format: false,
             fix: true,
+            project: false,
         }
     }
 

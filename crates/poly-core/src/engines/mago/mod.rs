@@ -78,6 +78,7 @@ impl Engine for MagoEngine {
             lint: true,
             format: true,
             fix: true,
+            project: false,
         }
     }
 

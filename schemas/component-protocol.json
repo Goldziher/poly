@@ -211,15 +211,19 @@
             "ProjectCheck": {
               "type": "object",
               "properties": {
+                "engine": {
+                  "description": "Engine name (a component may host several project engines).",
+                  "type": "string"
+                },
                 "root": {
                   "description": "Project root.",
                   "type": "string"
                 },
                 "files": {
-                  "description": "Files in scope, relative to `root`.",
+                  "description": "Files in scope, relative to `root`; their contents are slices of `body`.",
                   "type": "array",
                   "items": {
-                    "type": "string"
+                    "$ref": "#/$defs/WireFileSlice"
                   }
                 },
                 "config": {
@@ -229,7 +233,7 @@
                   "minimum": 0
                 },
                 "environment": {
-                  "description": "Environment variables the check may see.",
+                  "description": "The host-resolved environment as flat pairs (`python.interpreter`,\n`python.site_packages`, `python.version`); the component never probes the system.",
                   "type": "array",
                   "items": {
                     "type": "array",
@@ -246,7 +250,7 @@
                   }
                 }
               },
-              "required": ["root", "files", "config", "environment"]
+              "required": ["engine", "root", "files", "config", "environment"]
             }
           },
           "required": ["ProjectCheck"],
@@ -1342,9 +1346,13 @@
         "fix": {
           "description": "Can produce autofixes.",
           "type": "boolean"
+        },
+        "project": {
+          "description": "Answers `Request::ProjectCheck` over a whole file set.",
+          "type": "boolean"
         }
       },
-      "required": ["lint", "format", "fix"]
+      "required": ["lint", "format", "fix", "project"]
     },
     "WireOptionKeys": {
       "description": "The static option keys an engine reads from one table.",

@@ -104,6 +104,7 @@ impl Engine for QualityEngine {
             lint: true,
             format: false,
             fix: false,
+            project: false,
         }
     }
 

@@ -457,6 +457,7 @@ impl Engine for RuffEngine {
             lint: true,
             format: true,
             fix: true,
+            project: false,
         }
     }
 

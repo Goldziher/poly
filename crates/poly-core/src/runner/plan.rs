@@ -423,7 +423,7 @@ pub(super) fn provides_language_lint(plans: &[EnginePlan]) -> bool {
 /// the `[lint.<lang>.<tool>.rules.<code>] level` entries where a level was set.
 /// Applied uniformly as a post-lint remap, so an engine with no native severity
 /// config still honors a configured `level`.
-fn build_severity_remap(cfg: &EngineConfig) -> SeverityRemap {
+pub(super) fn build_severity_remap(cfg: &EngineConfig) -> SeverityRemap {
     let selection = RuleSelection::from_options(cfg);
     let entries = selection
         .rules

@@ -28,6 +28,7 @@ mod fmt_entry;
 mod generated;
 mod lint_pass;
 mod plan;
+mod project;
 mod selection;
 mod skips;
 mod types;
@@ -43,6 +44,8 @@ use fast::{
 use generated::{acts_on_generated, format_skip_result, invalid_utf8_result, lint_skip_result};
 use lint_pass::{LintPass, lint_content};
 use plan::{EnginePlan, RunPlan, plan_by_config_language, prefetch_tier2_grammars};
+#[doc(hidden)]
+pub use project::with_extra_project_engines;
 use selection::{EngineSelection, validate_selection};
 pub use skips::{
     BINARY_SKIP, DISABLED_SKIP_PREFIX, FILTERED_SKIP, GENERATED_SKIP, LOCKFILE_SKIP, NO_ENGINE_SKIP,
@@ -228,6 +231,11 @@ pub fn lint_run(
     flush_stat_indexes(&cache);
     log_fast_path(fast.as_ref(), "lint");
     let mut linted: Vec<LintResult> = oks.into_iter().map(Result::unwrap).collect();
+    // Whole-project engines run after the per-file tier, on the files as the fix passes left them,
+    // and their findings join the per-file results before anything is counted or sorted.
+    let mut project_phase = project::run_project_phase(&files, &configs, selection, &cache, &act_on_generated);
+    let project_errors = std::mem::take(&mut project_phase.errors);
+    project::merge_findings(&mut linted, project_phase, &ignores, &ignore_bases);
     linted.sort_by(|a, b| a.path.cmp(&b.path));
     // Taken before the filter below, which keeps only files with something to
     // report: a skipped file has nothing to report and would be dropped, which
@@ -256,6 +264,7 @@ pub fn lint_run(
         .filter(|r| !r.diagnostics.is_empty() || r.fixed > 0)
         .collect();
     let mut errors: Vec<LintError> = errs.into_iter().map(Result::unwrap_err).collect();
+    errors.extend(project_errors);
     errors.sort_by(|a, b| a.path.cmp(&b.path));
     for error in &errors {
         tracing::warn!(path = %error.path.display(), "lint failed: {}", error.message);

@@ -49,6 +49,7 @@ impl Engine for HclEngine {
             lint: true,
             format: true,
             fix: false,
+            project: false,
         }
     }
 

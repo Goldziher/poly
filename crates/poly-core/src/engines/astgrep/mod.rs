@@ -138,6 +138,7 @@ impl Engine for AstGrepEngine {
             lint: true,
             format: false,
             fix: true,
+            project: false,
         }
     }
 

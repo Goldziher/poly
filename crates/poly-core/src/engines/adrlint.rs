@@ -92,6 +92,7 @@ impl Engine for AdrlintEngine {
             // adrlint's formatter *is* rumdl, which poly already runs.
             format: false,
             fix: true,
+            project: false,
         }
     }
 

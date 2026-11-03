@@ -83,6 +83,7 @@ impl Engine for YamlEngine {
             lint: true,
             format: true,
             fix: false,
+            project: false,
         }
     }
 

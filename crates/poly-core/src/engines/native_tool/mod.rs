@@ -321,11 +321,13 @@ impl Engine for NativeToolEngine {
                 lint: false,
                 format: true,
                 fix: false,
+                project: false,
             },
             NativeRole::Shellcheck => Capabilities {
                 lint: true,
                 format: false,
                 fix: false,
+                project: false,
             },
         }
     }

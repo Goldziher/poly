@@ -165,6 +165,7 @@ impl Engine for TyposEngine {
             lint: true,
             format: false,
             fix: false,
+            project: false,
         }
     }
 

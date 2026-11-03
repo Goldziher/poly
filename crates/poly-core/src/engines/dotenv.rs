@@ -83,6 +83,7 @@ impl Engine for DotenvEngine {
             lint: true,
             format: false,
             fix: true,
+            project: false,
         }
     }
 

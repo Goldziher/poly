@@ -45,6 +45,7 @@ pub(crate) mod filter;
 mod fingerprint;
 pub use poly_engine_api::host_hooks;
 pub mod language;
+pub(crate) mod project;
 pub(crate) mod registry;
 pub mod report;
 #[doc(hidden)]

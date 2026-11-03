@@ -508,6 +508,7 @@ impl Engine for CatalogToolEngine {
             lint: self.is_lint(),
             format: !self.is_lint(),
             fix: self.recipe.as_ref().is_some_and(RecipeTool::can_fix),
+            project: false,
         }
     }
 

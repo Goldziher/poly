@@ -426,6 +426,8 @@ pub struct SourceFile {
     pub content: Arc<str>,
 }
 
+pub use crate::project::{ProjectEnvironment, ProjectFile, ProjectRequest, PythonEnvironment};
+
 /// What a backend is able to do for its language(s).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Capabilities {
@@ -435,6 +437,9 @@ pub struct Capabilities {
     pub format: bool,
     /// The backend can produce autofixes for its diagnostics.
     pub fix: bool,
+    /// The backend implements [`Engine::project_check`]: analysis that needs the whole project
+    /// (tree-wide ADR numbering, Python type checking) rather than one file at a time.
+    pub project: bool,
 }
 
 /// Which operations a backend can perform over a whole batch in one call.
@@ -720,6 +725,17 @@ pub trait Engine: Send + Sync {
 
     /// Lint a file, returning normalized diagnostics. Defaults to no findings.
     fn lint(&self, _src: &SourceFile, _cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
+        Ok(Vec::new())
+    }
+
+    /// Whole-project analysis, run once per project after the per-file tier. Only called when
+    /// [`Capabilities::project`] is set. Returns findings grouped by the file they belong to;
+    /// a file need not be among `req.files`. Defaults to no findings.
+    ///
+    /// Must be a pure function of the request: it may read nothing but `req` (the host already
+    /// loaded file contents and resolved the toolchain in `req.environment`), and must never spawn
+    /// a process, so the result can be cached on the request's inputs.
+    fn project_check(&self, _req: &ProjectRequest<'_>) -> anyhow::Result<Vec<(PathBuf, Vec<Diagnostic>)>> {
         Ok(Vec::new())
     }
 

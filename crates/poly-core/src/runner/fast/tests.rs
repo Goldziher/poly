@@ -24,6 +24,7 @@ impl Engine for Stub {
             lint: true,
             format: false,
             fix: false,
+            project: false,
         }
     }
 

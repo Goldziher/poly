@@ -49,6 +49,7 @@ impl Engine for NixFmtEngine {
             lint: false,
             format: true,
             fix: false,
+            project: false,
         }
     }
 
