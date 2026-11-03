@@ -13,6 +13,7 @@
   auto-detected input format were never implemented and are corrected in place. `CONFIG_FILE_NAMES`
   has always had exactly one entry, `poly.toml`, parsed as TOML; there is no YAML form and never
   was one shipped.
+- Updated: 2026-11-03: amended by ADR 0038 (poly.toml v2: engine-first tables, v1 configs rejected).
 
 ## Context
 

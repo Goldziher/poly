@@ -52,6 +52,7 @@ Context, Decision, Consequences (positive and negative/risks), and Alternatives 
 | [0035](0035-recipe-tools.md) | Recipe Tools: Batched, Grouped, Report-Parsing External Tools | Accepted |
 | [0036](0036-uncollected-test-files.md) | Uncollected Test Files: A Path-Only Rule in the Quality Tier | Accepted |
 | [0037](0037-adrlint-madr-linting.md) | adrlint: MADR Architecture Decision Record Linting in poly | Accepted |
+| [0038](0038-poly-toml-v2-and-cli-surface.md) | poly.toml v2 and the CLI Surface | Accepted |
 
 ## Conventions
 

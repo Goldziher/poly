@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-06-28
 - Updated: 2026-06-30 (implementation complete: poly-catalog crate, `[tools]` schema, catalog_tool engine)
+- Updated: 2026-11-03: amended by ADR 0038 (poly.toml v2: unified `poly.lock`, `--offline`).
 
 ## Context
 

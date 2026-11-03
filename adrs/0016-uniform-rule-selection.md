@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-07-01
 - Updated: 2026-08-29 (see "Amendment" below)
+- Updated: 2026-11-03: amended by ADR 0038 (rule selection moves to `[engines.<id>]` tables).
 
 ## Context
 

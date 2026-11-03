@@ -6,6 +6,7 @@
   governed by different nested configs, and there is no coherent "the" config for a pair.
   Participation in duplicate detection is decided by each file's own config; the reduce-side
   thresholds and severity come from the root config. See ADR 0026.)
+- Updated: 2026-11-03: amended by ADR 0038 (top-level `root`, `[workspace] run`).
 
 ## Context
 
