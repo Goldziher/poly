@@ -1,7 +1,7 @@
 ---
 type: Playbook
 title: Poly Tiers And Scope
-description: poly's coverage tiers (native / tree-sitter / native-toolchain / quality / built-in ast-grep pack), the per-file tier vs the whole-project phase (--no-workspace), staged isolation (ADR 0019), and hierarchical poly.toml in monorepos (ADR 0018)
+description: poly's coverage tiers (native / tree-sitter / native-toolchain / quality / built-in ast-grep pack), the per-file tier vs the whole-project phase (--workspace never), staged isolation (ADR 0019), and hierarchical poly.toml in monorepos (ADR 0018)
 x-ai-rulez:
   kind: skill
   id: poly-tiers-and-scope
@@ -69,12 +69,12 @@ generated-file skip are poly's own limitations, and are charged.
 `poly lint` runs in two phases:
 
 - **Per-file tier** — the parallel, cached engine pass over every discovered file, using the
-  five mechanisms above. This is all `--no-workspace` runs.
+  five mechanisms above. This is all `--workspace never` runs.
 - **Whole-project phase** — invokes the same whole-workspace tools a pre-commit hook would
   (`cargo clippy` / `cargo-sort` / `cargo-machete` / `cargo-deny`, plus any inline
   `workspace = true` job such as a type checker) on the live worktree, folding their
   pass/fail into the report and exit code. It reuses the `[hooks]` config as its single
-  source of truth. On by default; disable with `--no-workspace` or `[lint] workspace =
+  source of truth. On by default; disable with `--workspace never` or `[lint] workspace =
   false`. A repo with no `[hooks]` section has no whole-workspace hooks to lower, so it runs
   only the per-file tier.
 
@@ -82,11 +82,11 @@ generated-file skip are poly's own limitations, and are charged.
 whole-project phase *executes* those tools against the live worktree, and their own side
 effects are not poly's to control (`cargo clippy` populating `target/` or refreshing
 `Cargo.lock`, a `go` invocation appending to `go.work.sum`, a type checker writing its
-cache). Only `--no-workspace` / `[lint] workspace = false` gives a run that cannot touch the
+cache). Only `--workspace never` / `[lint] workspace = false` gives a run that cannot touch the
 tree.
 
 The phase is also **not path-scoped**: `poly lint <paths>` skips it when the paths *narrow*
-the run, and `--workspace` opts back in with the tools covering the whole repository —
+the run, and `--workspace always` opts back in with the tools covering the whole repository —
 regardless of the named paths and of `[discovery] exclude`, which filters poly's own
 discovery only. Naming the directory poly is running in (`poly lint .`) is a request for the
 whole project, not a narrowing, so the phase still runs. A note on stderr says which branch
@@ -94,7 +94,7 @@ was taken.
 
 Under `--fix`, the whole-project phase runs the tools in fix mode (`cargo sort` in place,
 `cargo-machete --fix`, `cargo clippy --fix --allow-dirty --allow-staged`; `cargo deny` stays
-check-only). Fix mode is what `--fix` adds — the phase runs either way, so `--no-workspace`,
+check-only). Fix mode is what `--fix` adds — the phase runs either way, so `--workspace never`,
 not the absence of `--fix`, is what skips it. The git-hook / commit-gate path never requests
 fix mode. `poly fmt` never runs this phase.
 

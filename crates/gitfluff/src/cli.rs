@@ -116,8 +116,9 @@ pub struct LintArgs {
     #[arg(long)]
     pub write: bool,
 
-    /// Control ANSI color output (auto uses TTY detection).
-    #[arg(long, value_enum, default_value = "auto")]
+    /// ANSI color output. Not a flag of its own: inside poly it follows the global
+    /// `--color`, which the caller copies in before linting.
+    #[arg(skip = ColorMode::Auto)]
     pub color: ColorMode,
 
     #[arg(long, conflicts_with = "require_body")]

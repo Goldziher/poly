@@ -9,8 +9,8 @@ metadata:
 
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-Content-Hash: blake3:e070b09742c9e4c86602bb5d514d471c6cfa4983e44c36f8de97ff2d46464e60
-Source-Hash: blake3:3924425873d8ba40774b06fcf27ccf1f993e9df0a5cb1878ed38d7bdcf57716a
+Content-Hash: blake3:05da331ae324d7407479259e3eedd5593fbf6ba871c12e0ab736e6c337ab3397
+Source-Hash: blake3:5e5d158b473660c0b1dc17fa4ebb6b149b87916bfc1fc6acb82e05f789a24ca0
 Schema-Version: v1
 -->
 
@@ -28,8 +28,8 @@ the CLI's `--format json`, or the compact TOON encoding when asked.
 Eleven tools, no more. Read-only (never touch the tree):
 
 - `lint` — run the linters and return diagnostics. Mirrors `poly lint`, per-file tier only
-  (as `--no-workspace`); the whole-project phase is the separate `workspace_lint` tool.
-- `format_check` — report formatting drift without writing. Mirrors `poly fmt --check`.
+  (as `--workspace never`); the whole-project phase is the separate `workspace_lint` tool.
+- `format_check` — report formatting drift without writing. Mirrors `poly fmt`.
 - `cache_stats` — result-cache footprint (entries, bytes, format version) per namespace.
 - `rules` — list every ast-grep rule a run would apply — poly's built-in pack plus the user
   rules from `[rules] dirs` — and optionally run their `*-test.yml` snippets. Mirrors `poly

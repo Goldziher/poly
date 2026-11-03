@@ -154,7 +154,7 @@ fn combined(output: &Output) -> String {
 #[test]
 fn a_run_that_lints_rust_in_the_whole_project_phase_does_not_call_rust_unlinted() {
     let dir = repo_with_clippy();
-    let output = poly(dir.path(), &["lint", "--no-cache", "--no-color", "."]);
+    let output = poly(dir.path(), &["lint", "--no-cache", "--color", "never", "."]);
     let text = combined(&output);
 
     assert!(
@@ -174,7 +174,7 @@ fn a_run_that_lints_rust_in_the_whole_project_phase_does_not_call_rust_unlinted(
 #[test]
 fn a_rust_file_covered_by_the_whole_project_phase_is_counted_as_linted() {
     let dir = repo_with_clippy();
-    let output = poly(dir.path(), &["lint", "--no-cache", "--no-color", "."]);
+    let output = poly(dir.path(), &["lint", "--no-cache", "--color", "never", "."]);
     let text = combined(&output);
 
     assert!(
@@ -190,7 +190,7 @@ fn json_carries_no_rust_skip_when_the_whole_project_phase_covers_it() {
     let dir = repo_with_clippy();
     let output = poly(
         dir.path(),
-        &["lint", "--no-cache", "--no-color", "--format", "json", "."],
+        &["lint", "--no-cache", "--color", "never", "--format", "json", "."],
     );
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     let value: serde_json::Value = serde_json::from_str(&stdout).expect("stdout stays valid JSON");
@@ -215,7 +215,10 @@ fn json_carries_no_rust_skip_when_the_whole_project_phase_covers_it() {
 #[test]
 fn deny_skips_passes_when_the_whole_project_phase_covers_the_language() {
     let dir = repo_with_clippy();
-    let output = poly(dir.path(), &["lint", "--no-cache", "--no-color", "--deny-skips", "."]);
+    let output = poly(
+        dir.path(),
+        &["lint", "--no-cache", "--color", "never", "--deny-skips", "."],
+    );
 
     assert_eq!(
         output.status.code(),
@@ -230,7 +233,10 @@ fn deny_skips_passes_when_the_whole_project_phase_covers_the_language() {
 #[test]
 fn no_workspace_keeps_the_rust_skip_because_nothing_lints_rust_then() {
     let dir = repo_with_clippy();
-    let output = poly(dir.path(), &["lint", "--no-workspace", "--no-cache", "--no-color", "."]);
+    let output = poly(
+        dir.path(),
+        &["lint", "--workspace", "never", "--no-cache", "--color", "never", "."],
+    );
     let text = combined(&output);
 
     assert_eq!(
@@ -251,7 +257,7 @@ fn no_workspace_keeps_the_rust_skip_because_nothing_lints_rust_then() {
 #[test]
 fn a_repo_with_no_hooks_config_keeps_the_rust_skip() {
     let dir = repo_without_workspace_phase();
-    let output = poly_per_file_rust_disabled(dir.path(), &["lint", "--no-cache", "--no-color", "."]);
+    let output = poly_per_file_rust_disabled(dir.path(), &["lint", "--no-cache", "--color", "never", "."]);
     let text = combined(&output);
 
     assert_eq!(
@@ -275,9 +281,11 @@ fn deny_skips_still_fires_on_rust_without_the_whole_project_phase() {
         dir.path(),
         &[
             "lint",
-            "--no-workspace",
+            "--workspace",
+            "never",
             "--no-cache",
-            "--no-color",
+            "--color",
+            "never",
             "--deny-skips",
             ".",
         ],
@@ -299,7 +307,7 @@ fn a_language_nothing_lints_keeps_its_skip_beside_a_covered_one() {
     let dir = repo_with_clippy();
     write(&dir, "a.zig", "pub fn main() void {}\n");
 
-    let output = poly(dir.path(), &["lint", "--no-cache", "--no-color", "."]);
+    let output = poly(dir.path(), &["lint", "--no-cache", "--color", "never", "."]);
     let text = combined(&output);
 
     assert!(
@@ -320,7 +328,10 @@ fn deny_skips_fires_on_zig_while_the_whole_project_phase_covers_rust() {
     let dir = repo_with_clippy();
     write(&dir, "a.zig", "pub fn main() void {}\n");
 
-    let output = poly(dir.path(), &["lint", "--no-cache", "--no-color", "--deny-skips", "."]);
+    let output = poly(
+        dir.path(),
+        &["lint", "--no-cache", "--color", "never", "--deny-skips", "."],
+    );
     let text = combined(&output);
 
     assert_eq!(output.status.code(), Some(2), "got:\n{text}");
@@ -351,7 +362,10 @@ fn uncovered_repo() -> TempDir {
 #[test]
 fn a_bulk_reason_is_aggregated_in_the_end_to_end_note() {
     let dir = uncovered_repo();
-    let output = poly(dir.path(), &["lint", "--no-workspace", "--no-cache", "--no-color", "."]);
+    let output = poly(
+        dir.path(),
+        &["lint", "--workspace", "never", "--no-cache", "--color", "never", "."],
+    );
     let text = combined(&output);
 
     assert_eq!(
@@ -375,7 +389,16 @@ fn verbose_expands_the_aggregated_note() {
     let dir = uncovered_repo();
     let output = poly(
         dir.path(),
-        &["lint", "--no-workspace", "--no-cache", "--no-color", "--verbose", "."],
+        &[
+            "lint",
+            "--workspace",
+            "never",
+            "--no-cache",
+            "--color",
+            "never",
+            "--verbose",
+            ".",
+        ],
     );
     let text = combined(&output);
 

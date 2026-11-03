@@ -40,9 +40,9 @@ fn poly(root: &Path, args: &[&str]) -> Output {
 fn progress_emits_no_control_characters_into_a_pipe() {
     let dir = repo();
     for args in [
-        vec!["lint", "--no-workspace", "."],
-        vec!["fmt", "--check", "."],
-        vec!["lint", "--no-workspace", "--format", "json", "."],
+        vec!["lint", "--workspace", "never", "."],
+        vec!["fmt", "."],
+        vec!["lint", "--workspace", "never", "--format", "json", "."],
     ] {
         let output = poly(dir.path(), &args);
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -67,7 +67,7 @@ fn progress_emits_no_control_characters_into_a_pipe() {
 #[test]
 fn json_document_is_a_single_valid_document_with_progress_available() {
     let dir = repo();
-    let output = poly(dir.path(), &["lint", "--no-workspace", "--format", "json", "."]);
+    let output = poly(dir.path(), &["lint", "--workspace", "never", "--format", "json", "."]);
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     serde_json::from_str::<serde_json::Value>(&stdout)

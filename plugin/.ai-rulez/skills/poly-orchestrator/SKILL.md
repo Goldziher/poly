@@ -61,7 +61,7 @@ in following steps.
 ```yaml
 - uses: actions/checkout@v4
 - uses: Goldziher/poly@v0        # inputs: version (default latest), cache, github-token
-- run: poly fmt --check .
+- run: poly fmt .
 - run: poly lint .
 ```
 

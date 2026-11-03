@@ -238,7 +238,7 @@ const EXPLICIT_PATHS_INDEX_THRESHOLD: usize = 8;
 /// does not match is not a skip) and either discovery never identified a
 /// language for it, or the language it identified has an empty engine plan.
 ///
-/// Under `--force-exclude` an absent path is ambiguous: the exclude set may have
+/// Under `force_exclude` an absent path is ambiguous: the exclude set may have
 /// dropped it, which the discovery note already reports. The two are told apart
 /// by re-walking that single path with excludes off — an O(1) walk of one file,
 /// paid only for a path that is already known to be missing from the run.
@@ -291,7 +291,7 @@ pub(super) fn unmatched_explicit_paths(
 /// set dropped it (already reported by the discovery note) rather than because
 /// no engine covers it.
 fn excluded_rather_than_unmatched(path: &Path, configs: &ConfigSet, exclude: &[String], force_exclude: bool) -> bool {
-    // Without `--force-exclude` an explicitly named file is never dropped by the
+    // Without `force_exclude` an explicitly named file is never dropped by the
     // exclude set, so absence can only mean "unidentified".
     if !force_exclude {
         return false;

@@ -17,7 +17,7 @@ fn nested_config(select: &str, line_length: u32) -> String {
 
 fn lint_json(root: &std::path::Path) -> serde_json::Value {
     let output = Command::new(POLY)
-        .args(["lint", "--no-workspace", "--no-cache", "--format", "json", "."])
+        .args(["lint", "--workspace", "never", "--no-cache", "--format", "json", "."])
         .current_dir(root)
         .output()
         .expect("run poly");

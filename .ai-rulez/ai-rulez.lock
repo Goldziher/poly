@@ -4,7 +4,7 @@
 version = 1
 ai_rulez_version = '5.10.0'
 scope = 'all'
-tree = 'sha256:c8e286159ea093c975a5aef7f61dd9baee7794c930b50e9609de489c3083c074'
+tree = 'sha256:bbc3203731225cf13f9be0cbc736497e57d26d6cee59844b0b5aa34e44e301e5'
 
 [[served]]
 name = 'adr-workflow'
@@ -136,19 +136,19 @@ digest = 'sha256:bcae52374e2ac79d2b27e9a51a97e8e5d89bf95fc5f86db75960a9d8f2b0bb2
 kind = 'context'
 id = 'poly'
 path = 'context/poly.md'
-digest = 'sha256:0ebe4d0d353ed1d1a4f976b727b64156fc84378b36f7a080a20eb431b9092d35'
+digest = 'sha256:38e76722bdc409f537681069fd2e896d260c5f1b49e5337a03c234ecff417788'
 
 [[item]]
 kind = 'context'
 id = 'poly-ci'
 path = 'context/poly-ci.md'
-digest = 'sha256:359f273beefbd3b6a488f8efddfcdf0a5660af9ed5ae29e6e9b7cd99bd23cfa5'
+digest = 'sha256:f6a3a80d33dfc4b8f34dafee2f1be77c26a7c02ea38e0c74f0b403428b793a5b'
 
 [[item]]
 kind = 'context'
 id = 'runtime-architecture'
 path = 'context/runtime-architecture.md'
-digest = 'sha256:588266f5c5112977a0213b3a87c301a93ce68379f65ee9aa391029ee91b2b99b'
+digest = 'sha256:76a1757331c5f2e97e4e7cdafde979ac9b3b80de1c7f816e7b1bb3de154802a1'
 
 [[item]]
 kind = 'rule'

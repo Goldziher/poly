@@ -207,11 +207,12 @@ fn lower_stage_with_inputs(
 /// job with no `files` filter (which sets `always_run = true`) — a deliberate
 /// distinction, since `poly lint`/`fmt` over zero files is a no-op anyway.
 ///
-/// The `lint` and `fmt` lines pass `--force-exclude` deliberately. A hook is
-/// handed staged paths rather than deliberately named ones, so the repo's
-/// `[discovery] exclude` must apply to them; the flag pins that on even in a repo
-/// that set `[discovery] force_exclude = false`, which is a per-run convenience
-/// for the direct CLI and not something a commit gate should inherit.
+/// The `lint` and `fmt` lines pass `--set discovery.force_exclude=true`
+/// deliberately. A hook is handed staged paths rather than deliberately named
+/// ones, so the repo's `[discovery] exclude` must apply to them; the override pins
+/// that on even in a repo that set `[discovery] force_exclude = false`, which is
+/// a per-run convenience for the direct CLI and not something a commit gate
+/// should inherit.
 fn append_builtins(
     hooks: &HooksConfig,
     poly_bin: &Path,
@@ -278,6 +279,9 @@ enum Tool {
     Fmt,
 }
 
+/// The run-scoped override every hook line carries; see [`append_builtins`].
+const FORCE_EXCLUDE: &str = "--set discovery.force_exclude=true";
+
 impl Tool {
     fn id(self) -> &'static str {
         match self {
@@ -288,10 +292,10 @@ impl Tool {
 
     fn command(self, poly: &str, fix: bool) -> String {
         match (self, fix) {
-            (Tool::Lint, false) => format!("{poly} lint --no-workspace --force-exclude"),
-            (Tool::Lint, true) => format!("{poly} lint --no-workspace --force-exclude --fix"),
-            (Tool::Fmt, false) => format!("{poly} fmt --check --force-exclude"),
-            (Tool::Fmt, true) => format!("{poly} fmt --force-exclude --fix --exit-zero-on-fix"),
+            (Tool::Lint, false) => format!("{poly} lint --workspace never {FORCE_EXCLUDE}"),
+            (Tool::Lint, true) => format!("{poly} lint --workspace never {FORCE_EXCLUDE} --fix"),
+            (Tool::Fmt, false) => format!("{poly} fmt {FORCE_EXCLUDE}"),
+            (Tool::Fmt, true) => format!("{poly} fmt {FORCE_EXCLUDE} --fix"),
         }
     }
 }

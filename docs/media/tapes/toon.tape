@@ -19,5 +19,5 @@ Type "# Every report has a machine-readable form: --format json, or TOON." Enter
 Sleep 1200ms
 Type "# TOON is compact enough to hand an agent without burning its context." Enter
 Sleep 1500ms
-Type "poly lint --no-workspace --format toon deconstruct.py | head -30" Enter
+Type "poly lint --workspace never --format toon deconstruct.py | head -30" Enter
 Sleep 6s

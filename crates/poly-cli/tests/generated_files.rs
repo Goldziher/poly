@@ -80,7 +80,7 @@ fn read(dir: &Path, name: &str) -> String {
 fn a_banner_only_generated_file_is_linted_formatted_and_fixed() {
     let dir = repo(None);
 
-    let output = poly(dir.path(), &["lint", "--no-cache", "--no-workspace", "banner.py"]);
+    let output = poly(dir.path(), &["lint", "--no-cache", "--workspace", "never", "banner.py"]);
     let text = combined(&output);
     assert!(text.contains("F401") || text.contains("asyncio"), "got:\n{text}");
     assert!(
@@ -90,7 +90,7 @@ fn a_banner_only_generated_file_is_linted_formatted_and_fixed() {
 
     let output = poly(
         dir.path(),
-        &["lint", "--fix", "--no-cache", "--no-workspace", "banner.py"],
+        &["lint", "--fix", "--no-cache", "--workspace", "never", "banner.py"],
     );
     assert!(
         !read(dir.path(), "banner.py").contains("import asyncio"),
@@ -116,7 +116,7 @@ fn a_hash_stamped_file_is_reported_but_never_rewritten() {
 
     let output = poly(
         dir.path(),
-        &["lint", "--fix", "--no-cache", "--no-workspace", "stamped.py"],
+        &["lint", "--fix", "--no-cache", "--workspace", "never", "stamped.py"],
     );
     let text = combined(&output);
     assert_eq!(
@@ -154,8 +154,8 @@ fn the_config_opt_out_skips_generated_files_in_both_phases() {
     let dir = repo(Some("[discovery]\ngenerated = false\n"));
 
     for args in [
-        vec!["lint", "--no-cache", "--no-workspace", "--verbose", "."],
-        vec!["fmt", "--check", "--no-cache", "--verbose", "."],
+        vec!["lint", "--no-cache", "--workspace", "never", "--verbose", "."],
+        vec!["fmt", "--no-cache", "--verbose", "."],
     ] {
         let output = poly(dir.path(), &args);
         let text = combined(&output);
@@ -170,7 +170,7 @@ fn the_config_opt_out_skips_generated_files_in_both_phases() {
     // Reported, therefore countable: a gate can make it fatal.
     let output = poly(
         dir.path(),
-        &["lint", "--no-cache", "--no-workspace", "--deny-skips", "."],
+        &["lint", "--no-cache", "--workspace", "never", "--deny-skips", "."],
     );
     assert_eq!(
         output.status.code(),
@@ -195,15 +195,17 @@ fn the_flags_override_the_config_in_both_directions() {
         &[
             "lint",
             "--no-cache",
-            "--no-workspace",
-            "--include-generated",
+            "--workspace",
+            "never",
+            "--set",
+            "discovery.generated=true",
             "banner.py",
         ],
     );
     let text = combined(&output);
     assert!(
         !text.contains("machine-generated file"),
-        "--include-generated must put the file back in the run, got:\n{text}"
+        "--set discovery.generated=true must put the file back in the run, got:\n{text}"
     );
     assert!(text.contains("F401") || text.contains("asyncio"), "got:\n{text}");
 
@@ -215,7 +217,8 @@ fn the_flags_override_the_config_in_both_directions() {
             "--fix",
             "--fix-generated",
             "--no-cache",
-            "--no-workspace",
+            "--workspace",
+            "never",
             "--verbose",
             "banner.py",
         ],
@@ -231,8 +234,10 @@ fn the_flags_override_the_config_in_both_directions() {
         &[
             "lint",
             "--no-cache",
-            "--no-workspace",
-            "--skip-generated",
+            "--workspace",
+            "never",
+            "--set",
+            "discovery.generated=false",
             "--verbose",
             "banner.py",
         ],
@@ -240,7 +245,7 @@ fn the_flags_override_the_config_in_both_directions() {
     let text = combined(&output);
     assert!(
         text.contains("machine-generated file ([discovery] generated = false)"),
-        "--skip-generated must skip and name the key it overrides, got:\n{text}"
+        "--set discovery.generated=false must skip and name the key it overrides, got:\n{text}"
     );
 }
 
@@ -257,7 +262,8 @@ fn fix_generated_remains_accepted_on_a_banner_only_file() {
             "--fix",
             "--fix-generated",
             "--no-cache",
-            "--no-workspace",
+            "--workspace",
+            "never",
             "banner.py",
         ],
     );

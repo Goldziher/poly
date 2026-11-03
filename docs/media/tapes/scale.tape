@@ -20,5 +20,5 @@ Type "# Kubernetes: 31,303 files. Go, YAML, JSON, Markdown, shell, protobuf." En
 Sleep 1200ms
 Type "# poly is one binary. No Go toolchain, no Node, no Python." Enter
 Sleep 1200ms
-Type "time poly lint --no-workspace --quiet ." Enter
+Type "time poly lint --workspace never --quiet ." Enter
 Sleep 30s

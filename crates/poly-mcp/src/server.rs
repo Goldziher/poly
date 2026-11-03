@@ -264,7 +264,7 @@ impl PolyMcpServer {
     }
 
     #[tool(
-        description = "Check formatting without writing; reports which files would change as structured JSON (plus JSON/TOON text). Mirrors `poly fmt --check`. \
+        description = "Check formatting without writing; reports which files would change as structured JSON (plus JSON/TOON text). Mirrors `poly fmt` (the dry run). \
                       A file poly could not process is reported with an `error` (never as clean) and sets `isError`. \
                       The result carries `skipped` and a `summary` of checked/skipped/errored counts: check those, not just \
                       an empty `results`, since a run that skipped everything reports no diagnostics and is not an error.",

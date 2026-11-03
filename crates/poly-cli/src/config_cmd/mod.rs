@@ -32,10 +32,6 @@ enum ConfigCommand {
     /// against your own `poly.toml` shows exactly what poly kept.
     #[command(alias = "resolve")]
     Show {
-        /// Config file to resolve (defaults to the discovered `poly.toml`).
-        #[arg(long, value_name = "PATH")]
-        config: Option<PathBuf>,
-
         /// Output format (`pretty` is an alias for `toml`).
         #[arg(long, value_enum, default_value_t = ConfigFormat::Toml)]
         format: ConfigFormat,
@@ -73,7 +69,7 @@ pub enum ConfigFormat {
 /// Run `poly config`, mapping any error to exit code 2.
 pub fn run_config(args: ConfigArgs) -> ExitCode {
     let result = match args.command {
-        ConfigCommand::Show { config, format } => show(config.as_deref(), format),
+        ConfigCommand::Show { format } => show(crate::global().config.as_deref(), format),
         ConfigCommand::Schema { output } => schema(output.as_deref()),
     };
     match result {

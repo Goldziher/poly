@@ -73,7 +73,16 @@ fn summary_block(text: &str) -> String {
 #[test]
 fn quiet_suppresses_skip_detail_and_keeps_the_summary_line_byte_identical() {
     let dir = repo();
-    let args = ["lint", "--no-workspace", "App.csproj", "a.py", "b.py", "c.json", "d.md"];
+    let args = [
+        "lint",
+        "--workspace",
+        "never",
+        "App.csproj",
+        "a.py",
+        "b.py",
+        "c.json",
+        "d.md",
+    ];
 
     let loud = poly(dir.path(), &args);
     let hushed = poly(dir.path(), &[&args[..], &["--quiet"]].concat());
@@ -114,7 +123,7 @@ fn quiet_suppresses_skip_detail_and_keeps_the_summary_line_byte_identical() {
 #[test]
 fn quiet_suppresses_skip_detail_for_fmt_and_keeps_the_summary() {
     let dir = repo();
-    let args = ["fmt", "--check", "App.csproj", "a.py"];
+    let args = ["fmt", "App.csproj", "a.py"];
 
     let loud = combined(&poly(dir.path(), &args));
     let hushed = combined(&poly(dir.path(), &[&args[..], &["--quiet"]].concat()));
@@ -135,7 +144,7 @@ fn quiet_still_prints_findings() {
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::write(dir.path().join("a.py"), "import os\n").expect("write");
 
-    let output = poly(dir.path(), &["lint", "--no-workspace", "--quiet", "a.py"]);
+    let output = poly(dir.path(), &["lint", "--workspace", "never", "--quiet", "a.py"]);
     let text = combined(&output);
 
     assert!(
@@ -174,7 +183,7 @@ fn quiet_conflicts_with_verbose_and_debug() {
 #[test]
 fn quiet_does_not_change_json_output() {
     let dir = repo();
-    let args = ["lint", "--no-workspace", "--format", "json", "."];
+    let args = ["lint", "--workspace", "never", "--format", "json", "."];
 
     let loud = poly(dir.path(), &args);
     let hushed = poly(dir.path(), &[&args[..], &["--quiet"]].concat());
@@ -191,7 +200,7 @@ fn quiet_does_not_change_json_output() {
 #[test]
 fn quiet_does_not_change_toon_output() {
     let dir = repo();
-    let args = ["fmt", "--check", "--format", "toon", "."];
+    let args = ["fmt", "--format", "toon", "."];
 
     let loud = poly(dir.path(), &args);
     let hushed = poly(dir.path(), &[&args[..], &["--quiet"]].concat());

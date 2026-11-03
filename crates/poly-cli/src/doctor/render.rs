@@ -5,7 +5,7 @@
 //! and *what is wrong*.
 //!
 //! Coloring goes through owo-colors' `if_supports_color`, matching the rest of
-//! poly's human output, so `--no-color`, a pipe, and `NO_COLOR` all strip it.
+//! poly's human output, so `--color never`, a pipe, and `NO_COLOR` all strip it.
 
 use poly_core::report::theme::Theme;
 

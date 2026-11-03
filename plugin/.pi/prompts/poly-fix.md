@@ -4,8 +4,8 @@ description: Apply poly lint --fix and fmt --fix, then re-check and report what 
 
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-Content-Hash: blake3:660ea301a2d05715fb59392b8c12d12777aec7cd795f8c7aa94b9abca959ed5f
-Source-Hash: blake3:3924425873d8ba40774b06fcf27ccf1f993e9df0a5cb1878ed38d7bdcf57716a
+Content-Hash: blake3:fca3fe31294ba5dd2ded4dcaa5409408baba4eab34ab738858ee2d7acb1fa30e
+Source-Hash: blake3:5e5d158b473660c0b1dc17fa4ebb6b149b87916bfc1fc6acb82e05f789a24ca0
 Schema-Version: v1
 -->
 
@@ -20,11 +20,11 @@ Use `.` when no paths are supplied. Treat supplied arguments as paths, not addit
    --allow-staged`; `cargo deny` has no autofix and stays check-only).
 2. `poly fmt --fix $ARGUMENTS` — format files in place. `poly fmt` is a pure formatter and never
    runs the whole-project phase, in either direction; only step 1 does.
-3. Re-check: `poly fmt --check $ARGUMENTS --format json` and `poly lint $ARGUMENTS --format json`.
+3. Re-check: `poly fmt $ARGUMENTS --format json` and `poly lint $ARGUMENTS --format json`.
 
 The whole-project phase in step 1 runs only because the argument is the repository root (the
 `.` default). Narrower paths make the run path-scoped — per-file autofixes only — unless you
-add `--workspace`; `--no-workspace` suppresses the phase outright.
+add `--workspace always`; `--workspace never` suppresses the phase outright.
 
 Report:
 
@@ -35,5 +35,5 @@ Report:
   `1` when they changed something; only `2` means the run failed to verify.
 
 To apply no fixes, use `/poly-check` instead. (Even there poly's whole-project phase executes
-`cargo clippy` and friends against the live worktree; add `--no-workspace` if the tree must be
+`cargo clippy` and friends against the live worktree; add `--workspace never` if the tree must be
 left untouched.)

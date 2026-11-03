@@ -142,7 +142,7 @@ $ poly lint
   2 files linted
   1 issue fixable with the `--fix` option
 
-$ poly fmt --check
+$ poly fmt
 would reformat ./src/main.rs
 
 1 file will change.
@@ -390,13 +390,13 @@ individually with `npx skills add Goldziher/poly --skill poly-mcp`.
 ## Performance
 
 Release build, Apple Silicon, cold cache (`--no-cache`), best of three runs on an idle machine.
-`poly lint --no-workspace` and `poly fmt --check` over the whole repository, counting the files
+`poly lint --workspace never` and `poly fmt` over the whole repository, counting the files
 poly actually inspected. These are poly's own numbers — **not** a comparison against ruff,
 oxlint, biome or anything else; no such benchmark was run.
 
 <!-- markdownlint-disable MD013 -->
 
-| Project | `poly lint` | Findings | Peak RSS | `poly fmt --check` |
+| Project | `poly lint` | Findings | Peak RSS | `poly fmt` |
 |---|---|---|---|---|
 | Django | 3,113 files in **0.82s** | 66,839 | 0.21 GB | 5,539 files in 0.30s |
 | home-assistant | 25,443 files in **3.5s** | 376,829 | 0.48 GB | 25,559 files in 1.2s |

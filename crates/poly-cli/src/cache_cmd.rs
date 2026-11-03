@@ -4,7 +4,6 @@
 //! (`<platform-cache>/poly/<repo-key>`, or an explicit `--cache-dir`):
 //!
 //! - `poly cache stats` — entry counts, sizes, and format version (default).
-//! - `poly cache size` — the total on-disk size in bytes.
 //! - `poly cache gc [--max-age <days>] [--max-size <500M|2G|…>]` — evict stale
 //!   and/or oversized entries (and wipe a tree from an incompatible layout).
 //! - `poly cache clean` — remove every cached entry.
@@ -37,8 +36,6 @@ pub struct CacheArgs {
 pub enum CacheCommand {
     /// Show entry counts, sizes, and the cache format version.
     Stats,
-    /// Print the total on-disk size of all cached entries (bytes).
-    Size,
     /// Evict stale or oversized entries (and wipe an incompatible-layout tree).
     Gc {
         /// Evict entries older than this many days.
@@ -69,7 +66,6 @@ fn run(args: CacheArgs) -> Result<ExitCode> {
 
     match args.command.unwrap_or(CacheCommand::Stats) {
         CacheCommand::Stats => print_stats(&cache.stats()?),
-        CacheCommand::Size => println!("{}", cache.total_size()?),
         CacheCommand::Gc { max_age, max_size } => {
             let max_age = max_age.map(|days| Duration::from_secs(days * SECONDS_PER_DAY));
             let max_size = max_size.as_deref().map(parse_size).transpose()?;

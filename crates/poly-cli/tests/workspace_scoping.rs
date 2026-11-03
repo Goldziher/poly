@@ -58,7 +58,7 @@ fn explicit_paths_skip_the_whole_project_phase_and_say_so() {
 #[test]
 fn workspace_flag_opts_back_in() {
     let dir = repo();
-    let output = poly(dir.path(), &["lint", "--workspace", "ok.py"]);
+    let output = poly(dir.path(), &["lint", "--workspace", "always", "ok.py"]);
 
     assert!(!stderr(&output).contains(NOTE));
 }
@@ -72,7 +72,7 @@ fn workspace_flag_opts_back_in() {
 #[test]
 fn workspace_flag_on_scoped_paths_announces_repository_wide_coverage() {
     let dir = repo();
-    let output = poly(dir.path(), &["lint", "--workspace", "ok.py"]);
+    let output = poly(dir.path(), &["lint", "--workspace", "always", "ok.py"]);
 
     assert!(
         stderr(&output).contains(WIDE),
@@ -90,8 +90,8 @@ fn whole_repository_runs_are_not_narrated_as_repository_wide() {
     for args in [
         vec!["lint"],
         vec!["lint", "."],
-        vec!["lint", "--workspace"],
-        vec!["lint", "--workspace", "."],
+        vec!["lint", "--workspace", "always"],
+        vec!["lint", "--workspace", "always", "."],
     ] {
         let output = poly(dir.path(), &args);
         assert!(
@@ -109,7 +109,7 @@ fn whole_repository_runs_are_not_narrated_as_repository_wide() {
 fn a_phase_that_does_not_run_is_not_narrated_as_repository_wide() {
     let dir = repo();
 
-    for args in [vec!["lint", "ok.py"], vec!["lint", "--no-workspace", "ok.py"]] {
+    for args in [vec!["lint", "ok.py"], vec!["lint", "--workspace", "never", "ok.py"]] {
         let output = poly(dir.path(), &args);
         assert!(
             !stderr(&output).contains(WIDE),
@@ -135,17 +135,20 @@ fn no_paths_still_runs_the_whole_project_phase() {
 #[test]
 fn no_workspace_flag_is_not_narrated() {
     let dir = repo();
-    let output = poly(dir.path(), &["lint", "--no-workspace", "ok.py"]);
+    let output = poly(dir.path(), &["lint", "--workspace", "never", "ok.py"]);
 
     assert!(!stderr(&output).contains(NOTE));
 }
 
-/// The two flags express opposite intents; taking both is a mistake worth
-/// reporting rather than silently resolving.
+/// Two `--workspace` values express opposite intents; taking both is a mistake
+/// worth reporting rather than silently resolving.
 #[test]
-fn workspace_and_no_workspace_conflict() {
+fn workspace_given_twice_is_a_usage_error() {
     let dir = repo();
-    let output = poly(dir.path(), &["lint", "--workspace", "--no-workspace", "ok.py"]);
+    let output = poly(
+        dir.path(),
+        &["lint", "--workspace", "always", "--workspace", "never", "ok.py"],
+    );
 
     assert_eq!(output.status.code(), Some(2), "clap usage error");
 }

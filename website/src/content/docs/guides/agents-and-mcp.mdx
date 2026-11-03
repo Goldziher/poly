@@ -97,8 +97,8 @@ block mirroring the CLI's `--format json` — or the compact TOON encoding when 
 
 | Tool | Mirrors | Returns |
 | --- | --- | --- |
-| `lint` | `poly lint --no-workspace` | Diagnostics per file (per-file tier only; the whole-project phase is `workspace_lint`). |
-| `format_check` | `poly fmt --check` | Formatting drift, without writing. |
+| `lint` | `poly lint --workspace never` | Diagnostics per file (per-file tier only; the whole-project phase is `workspace_lint`). |
+| `format_check` | `poly fmt` | Formatting drift, without writing. |
 | `cache_stats` | `poly cache stats` | Result-cache footprint per namespace: entries, bytes, format version. |
 | `rules` | `poly rules list` / `test` | Every ast-grep rule a run would apply — the built-in pack plus `[rules] dirs` — with language, `source` (`builtin`/`user`), `default_severity`, the `severity` under the resolved config, and `enabled`. Optionally runs the `*-test.yml` snippets. |
 | `config_show` | `poly config show` | The merged effective configuration. **Network-free**: remote `extends` bases are not fetched. |
@@ -224,7 +224,7 @@ If you are not going through MCP, the same discipline applies with `--format jso
 1. Check, and read the machine-readable report:
 
    ```sh
-   poly lint --format json --no-workspace . > findings.json
+   poly lint --format json --workspace never . > findings.json
    ```
 
 2. **Read the exit code, not just the payload.** `0` is clean, `1` means error-severity findings,
@@ -236,7 +236,7 @@ If you are not going through MCP, the same discipline applies with `--format jso
    ```sh
    poly lint --fix .
    poly fmt --fix .
-   poly lint --format json --no-workspace .
+   poly lint --format json --workspace never .
    ```
 
 </Steps>

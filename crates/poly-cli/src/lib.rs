@@ -13,6 +13,7 @@ pub mod cache_cmd;
 pub mod config_cmd;
 pub mod config_sources;
 pub mod doctor;
+pub mod global;
 pub mod hooks;
 pub mod lock_cmd;
 pub mod migrate;
@@ -26,6 +27,7 @@ pub mod workspace_coverage;
 pub use cache_cmd::{CacheArgs, run_cache};
 pub use config_cmd::{ConfigArgs, run_config};
 pub use doctor::{DoctorArgs, run_doctor};
+pub use global::{ColorChoice, GlobalArgs, OnMissing, global, offline};
 pub use hooks::{HooksArgs, run_hooks};
 pub use lock_cmd::{LockArgs, run_lock};
 pub use migrate::{MigrateArgs, run_migrate};
@@ -78,7 +80,7 @@ pub enum OutputFormat {
     Toon,
 }
 
-/// Flags shared by both subcommands.
+/// Flags shared by `lint` and `fmt`.
 #[derive(Args)]
 pub struct CommonArgs {
     /// Files or directories to process (default: current directory).
@@ -87,10 +89,6 @@ pub struct CommonArgs {
     /// Output format.
     #[arg(long, value_enum, default_value_t = OutputFormat::Pretty)]
     pub format: OutputFormat,
-
-    /// Path to a config file (default: nearest poly.toml).
-    #[arg(long)]
-    pub config: Option<PathBuf>,
 
     /// Disable the result cache.
     #[arg(long)]
@@ -113,50 +111,19 @@ pub struct CommonArgs {
     #[arg(long = "exclude", value_name = "GLOB")]
     pub exclude: Vec<String>,
 
-    /// Disable colored output.
-    #[arg(long)]
-    pub no_color: bool,
-
     /// Apply fixes in place: autofixes for `lint`, formatting for `fmt`. The
     /// default is a dry run that reports what would change and writes nothing.
     #[arg(long)]
     pub fix: bool,
-
-    /// Show extra per-finding detail in `pretty` output: description, rule URL,
-    /// and metadata, and list every skipped file instead of the first few. For
-    /// `--format json`/`toon` the findings are always fully structured, so this
-    /// only lifts the cap on the skip note printed to stderr.
-    #[arg(long, conflicts_with = "quiet")]
-    pub verbose: bool,
-
-    /// Trim `pretty` output to the findings and the summary: drop the per-file
-    /// discovery and skip detail printed beneath it.
-    ///
-    /// Every count and reason stays — the summary still reports how many files
-    /// were linted, how many were skipped and why, and what discovery excluded.
-    /// Only the itemised list of paths goes away. Findings still print (this is
-    /// not `--silent`) and exit codes are unchanged. No effect on the
-    /// `--format json`/`toon` document. Mutually exclusive with `--verbose` and
-    /// `--debug`.
-    #[arg(short = 'q', long)]
-    pub quiet: bool,
-
-    /// Apply `[discovery] exclude` to explicitly named files as well as to the
-    /// directory walk.
-    ///
-    /// This is the default, so the flag matters only in a repo that turned it
-    /// off with `[discovery] force_exclude = false`: passing it pins the default
-    /// back on for this run. Mutually exclusive with `--include-excluded`.
-    #[arg(long, conflicts_with = "include_excluded")]
-    pub force_exclude: bool,
 
     /// Check explicitly named files or directory roots even when they match the
     /// exclude set.
     ///
     /// This is an explicit safety override for one-off inspection, and it beats
     /// `[discovery] force_exclude`. Exclusions below an included directory remain
-    /// active. Mutually exclusive with `--force-exclude`.
-    #[arg(long, conflicts_with = "force_exclude")]
+    /// active. To pin the opposite for one run, use
+    /// `--set discovery.force_exclude=true`.
+    #[arg(long)]
     pub include_excluded: bool,
 
     /// Rewrite hash-stamped generated files too.
@@ -170,36 +137,11 @@ pub struct CommonArgs {
     /// files and `poly lint --fix` reports on them without rewriting; this opts
     /// back in.
     ///
-    /// Unrelated to `--skip-generated`, which decides whether poly looks at
-    /// generated files at all.
+    /// Unrelated to `[discovery] generated`, which decides whether poly looks at
+    /// generated files at all (`--set discovery.generated=false` skips them for
+    /// one run).
     #[arg(long)]
     pub fix_generated: bool,
-
-    /// Skip machine-generated files: do not lint or format anything whose header
-    /// carries a `DO NOT EDIT` / `@generated` banner or a content-hash stamp.
-    ///
-    /// Overrides `[discovery] generated` for this run. Skipped files are
-    /// reported as skipped — they are not counted as checked, they appear in the
-    /// `json`/`toon` `skipped` payload, and they count against `--deny-skips` /
-    /// `--max-skips`. Mutually exclusive with `--include-generated`.
-    #[arg(long, conflicts_with = "include_generated")]
-    pub skip_generated: bool,
-
-    /// Lint and format machine-generated files.
-    ///
-    /// This is the default, so the flag matters only in a repository that turned
-    /// it off with `[discovery] generated = false`: passing it pins the default
-    /// back on for this run. Mutually exclusive with `--skip-generated`.
-    #[arg(long, conflicts_with = "skip_generated")]
-    pub include_generated: bool,
-
-    /// Emit debug data: per-engine cache hit/miss and timing (shown in `pretty`,
-    /// attached to `json`/`toon`), and raise log verbosity to `debug` on stderr.
-    ///
-    /// The top of the verbosity ladder, so it implies `--verbose`. Mutually
-    /// exclusive with `--quiet`.
-    #[arg(long, conflicts_with = "quiet")]
-    pub debug: bool,
 
     /// Restrict the run to the named engines, by the tool id you configure them
     /// under (`ruff`, `typos`, `oxc`, …). Repeatable and comma-separated.
@@ -239,6 +181,25 @@ pub struct CommonArgs {
     /// letting it grow unnoticed.
     #[arg(long, value_name = "N")]
     pub max_skips: Option<usize>,
+
+    /// Override a config key for this run (repeatable), as a TOML layer above
+    /// `poly.local.toml`. `KEY` is a dotted TOML path, `VALUE` a TOML value; a
+    /// value that is not valid TOML is taken as a string.
+    ///
+    /// Replaces the old per-option flags: `--set discovery.force_exclude=true`
+    /// (was `--force-exclude`), `--set discovery.generated=true` (was
+    /// `--include-generated`) and `--set discovery.generated=false` (was
+    /// `--skip-generated`).
+    #[arg(long = "set", value_name = "KEY=VALUE")]
+    pub set: Vec<String>,
+
+    /// What to do when a file needs an engine component that is not installed.
+    /// Overrides `[components] on_missing`.
+    ///
+    /// Accepted and recorded now; the missing-component handling that acts on it
+    /// is wired with the components work.
+    #[arg(long, value_enum, value_name = "ACTION")]
+    pub on_missing: Option<OnMissing>,
 }
 
 /// Exit code for a run that could not verify what it was asked to.
@@ -272,33 +233,40 @@ fn emit_structured(rendered: Result<String, report::RenderError>) -> Result<(), 
     }
 }
 
+/// When `poly lint` runs the whole-project phase (`--workspace`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
+pub enum WorkspaceMode {
+    /// Run it for a whole-repository run, skip it for a path-scoped one, and
+    /// follow `[lint] workspace`.
+    #[default]
+    Auto,
+    /// Run it even though explicit paths were given.
+    Always,
+    /// Skip it: only the per-file tier runs.
+    Never,
+}
+
 /// `poly lint` arguments.
 #[derive(Args)]
 pub struct LintArgs {
-    /// Skip the whole-project phase (`cargo clippy` and the other configured
-    /// whole-workspace tools). By default a whole-repository `poly lint` also
-    /// runs the same whole-project tools a `pre-commit` hook would; this checks
-    /// only the per-file tier. Equivalent to `[lint] workspace = false`.
+    /// Whether to run the whole-project phase (`cargo clippy` and the other
+    /// configured whole-workspace tools).
     ///
-    /// This is also what makes a run read-only. Without `--fix` poly applies no
-    /// fixes, but the whole-project phase still *executes* those tools against
-    /// the live worktree, and their own side effects (a refreshed lock file, a
-    /// populated build or type-checker cache) are not poly's to control.
-    #[arg(long)]
-    pub no_workspace: bool,
-
-    /// Run the whole-project phase even though explicit paths were given.
+    /// `auto` runs it for a whole-repository `poly lint` (what a `pre-commit`
+    /// hook would run) and skips it when explicit paths narrow the run, because
+    /// naming a file should not escalate to an unbounded whole-workspace `cargo`
+    /// build. `always` opts back in for a path-scoped run — a commit gate that
+    /// lints staged paths and wants clippy should say so — and the phase is
+    /// still never path-scoped: the tools cover the whole repository regardless
+    /// of the named paths and of `[discovery] exclude`. `never` checks only the
+    /// per-file tier.
     ///
-    /// A path-scoped `poly lint <paths>` runs only the per-file tier, because
-    /// naming a file should not silently escalate to an unbounded whole-workspace
-    /// `cargo` build. Pass this to opt back in — a commit gate that lints staged
-    /// paths and wants clippy should set it explicitly.
-    ///
-    /// The phase itself is never path-scoped: the tools cover the whole
-    /// repository regardless of the named paths and of `[discovery] exclude`. The
-    /// run says so on stderr.
-    #[arg(long, conflicts_with = "no_workspace")]
-    pub workspace: bool,
+    /// `never` is also what makes a run read-only. Without `--fix` poly applies
+    /// no fixes, but the whole-project phase still *executes* those tools
+    /// against the live worktree, and their own side effects (a refreshed lock
+    /// file, a populated build or type-checker cache) are not poly's to control.
+    #[arg(long, value_enum, default_value_t = WorkspaceMode::Auto, value_name = "WHEN")]
+    pub workspace: WorkspaceMode,
 
     /// Flags shared with `poly fmt`.
     #[command(flatten)]
@@ -308,16 +276,16 @@ pub struct LintArgs {
 /// `poly fmt` arguments.
 #[derive(Args)]
 pub struct FmtArgs {
-    /// Explicit dry run (the default): report what would change, write nothing,
-    /// exit non-zero if any file would change. Conflicts with `--fix`.
-    #[arg(long, conflicts_with = "fix")]
+    /// Removed: the dry run is already the default. Kept hidden for one major
+    /// version so the failure carries a hint instead of an unknown-flag error.
+    #[arg(long, hide = true)]
     pub check: bool,
 
-    /// With `--fix`, exit 0 when files were reformatted instead of 1. A git hook
-    /// that rewrites and re-stages files needs this: it treats exit 1 as a failed
-    /// check. Files the formatter could not process still exit 2.
+    /// With `--fix`, exit 1 when files were reformatted instead of 0. For a CI
+    /// step that must fail when the committed tree was not already formatted.
+    /// Files the formatter could not process exit 2 either way.
     #[arg(long, requires = "fix")]
-    pub exit_zero_on_fix: bool,
+    pub exit_nonzero_on_fix: bool,
 
     /// Flags shared with `poly lint`.
     #[command(flatten)]
@@ -326,12 +294,13 @@ pub struct FmtArgs {
 
 /// Run the lint pipeline and map the outcome to a process exit code.
 pub fn run_lint(args: LintArgs) -> ExitCode {
-    let no_workspace = args.no_workspace;
-    let force_workspace = args.workspace;
+    let no_workspace = args.workspace == WorkspaceMode::Never;
+    let force_workspace = args.workspace == WorkspaceMode::Always;
     let common = args.common;
-    init_logging_with(common.debug);
-    apply_color(&common);
-    let verbosity = Verbosity::from_flags(common.quiet, common.verbose, common.debug);
+    let flags = global();
+    init_logging_with(flags.debug);
+    apply_color();
+    let verbosity = Verbosity::from_flags(flags.quiet, flags.verbose, flags.debug);
     let (paths, config, mut opts) = match prepare(&common) {
         Ok(triple) => triple,
         Err(code) => return code,
@@ -369,7 +338,7 @@ pub fn run_lint(args: LintArgs) -> ExitCode {
     // every `.rs` file nothing looked at.
     let engines_selected = !common.only.is_empty() || !common.skip.is_empty();
     let workspace_config = (!no_workspace && !path_scoped && !engines_selected)
-        .then(|| hooks::commands::load_config(common.config.as_deref()));
+        .then(|| hooks::commands::load_config(flags.config.as_deref()));
     opts.externally_linted_languages = match &workspace_config {
         Some(Ok(config)) => workspace_coverage::workspace_lint_languages(config),
         _ => Vec::new(),
@@ -379,7 +348,7 @@ pub fn run_lint(args: LintArgs) -> ExitCode {
     // which reads as a hang. The indicator is transient, stderr-only, and never
     // reaches the worker threads — see `progress`.
     let spinner = progress::Progress::start("linting", animations_enabled(&common));
-    let run = poly_core::lint_run(&paths, &config, &opts, common.fix, common.debug);
+    let run = poly_core::lint_run(&paths, &config, &opts, common.fix, flags.debug);
     spinner.finish();
     let run = match run {
         Ok(run) => run,
@@ -418,20 +387,22 @@ pub fn run_lint(args: LintArgs) -> ExitCode {
     let skips_over_budget = report_skip_budget(&common, &run.skipped);
 
     let workspace_ok = match &workspace_config {
-        // Only explain the skip when path scoping caused it. `--no-workspace` is
-        // an explicit opt-out and needs no narration.
+        // Only explain the skip when path scoping caused it. `--workspace never`
+        // is an explicit opt-out and needs no narration.
         None => {
             if engines_selected && !no_workspace && pretty {
                 eprintln!(
                     "note: whole-project phase skipped because --only/--skip names engines, and that phase runs tools"
                 );
             } else if path_scoped && !no_workspace && pretty {
-                eprintln!("note: whole-project phase skipped for path-scoped run (pass --workspace to include it)");
+                eprintln!(
+                    "note: whole-project phase skipped for path-scoped run (pass --workspace always to include it)"
+                );
             }
             true
         }
         Some(Ok(config)) => {
-            // The mirror of the skip note above: `--workspace` reverses the
+            // The mirror of the skip note above: `--workspace always` reverses the
             // scoping the paths asked for, and the phase then covers the whole
             // repository — a whole-project tool has no file list to narrow (the
             // phase passes none) and `[discovery] exclude` filters poly's own
@@ -514,7 +485,7 @@ fn report_skip_budget(common: &CommonArgs, skipped: &[poly_core::SkippedFile]) -
 /// the per-file run, so the tool set predicted there is the tool set run here.
 /// Delegates the orchestration to the shared [`poly_workspace`] crate and prints
 /// the outcome. Returns whether the phase passed (the caller folds a `false`
-/// into a non-zero exit code). The `--no-workspace` short-circuit is handled by
+/// into a non-zero exit code). The `--workspace never` short-circuit is handled by
 /// the caller, before this runs.
 fn run_workspace_phase(config: &poly_config::PolyConfig, common: &CommonArgs, pretty: bool) -> anyhow::Result<bool> {
     // `cargo clippy` over a cold target directory is the longest silence poly
@@ -541,8 +512,8 @@ fn run_workspace_phase(config: &poly_config::PolyConfig, common: &CommonArgs, pr
 /// decoration by the same argument; `NO_COLOR` says the same thing from the
 /// environment. Everything else — a pipe, a file, a CI log — is ruled out by
 /// [`progress::Progress::start`] itself, which draws only to a terminal.
-fn animations_enabled(common: &CommonArgs) -> bool {
-    !common.no_color && std::env::var_os("NO_COLOR").is_none()
+fn animations_enabled(_common: &CommonArgs) -> bool {
+    global().color != ColorChoice::Never && std::env::var_os("NO_COLOR").is_none()
 }
 
 /// Whether any diagnostic across all results is error-severity.
@@ -554,10 +525,15 @@ fn lint_has_errors(results: &[LintResult]) -> bool {
 
 /// Run the format pipeline and map the outcome to a process exit code.
 pub fn run_fmt(args: FmtArgs) -> ExitCode {
+    if args.check {
+        eprintln!("error: `poly fmt --check` was removed: the dry run is the default, so drop --check");
+        return ExitCode::from(EXIT_NOT_VERIFIED);
+    }
     let common = &args.common;
-    init_logging_with(common.debug);
-    apply_color(common);
-    let verbosity = Verbosity::from_flags(common.quiet, common.verbose, common.debug);
+    let flags = global();
+    init_logging_with(flags.debug);
+    apply_color();
+    let verbosity = Verbosity::from_flags(flags.quiet, flags.verbose, flags.debug);
     let (paths, config, opts) = match prepare(common) {
         Ok(triple) => triple,
         Err(code) => return code,
@@ -565,7 +541,7 @@ pub fn run_fmt(args: FmtArgs) -> ExitCode {
 
     let write = common.fix;
     let spinner = progress::Progress::start("formatting", animations_enabled(common));
-    let formatted = poly_core::format_run(&paths, &config, &opts, write, common.debug);
+    let formatted = poly_core::format_run(&paths, &config, &opts, write, flags.debug);
     spinner.finish();
     let (changed, format_errors, skips_over_budget) = match formatted {
         Ok(run) => {
@@ -604,24 +580,29 @@ pub fn run_fmt(args: FmtArgs) -> ExitCode {
     // `-machete`/`-deny`). Those are linting, not formatting — they belong to
     // `poly lint` (and the commit gate), never to `fmt`.
     //
-    // Exit codes are a contract consumers automate against: 0 = clean, 1 =
-    // files changed (or would change), 2 = the run failed. A file the engine
+    // Exit codes are a contract consumers automate against: 0 = clean, or fixed
+    // under `--fix` (1 with `--exit-nonzero-on-fix`), 1 = files would change
+    // (dry run), 2 = the run failed. A file the engine
     // could not parse belongs in 2, never in 0 — it was not verified — and
     // never in 1, which callers legitimately treat as success for `--fix`.
     // A skip budget breach lands in 2 for the same reason a parse failure does:
     // those files were not verified, and 1 is a code callers treat as success.
     if format_errors > 0 || skips_over_budget {
         ExitCode::from(EXIT_NOT_VERIFIED)
-    } else if changed > 0 && !(write && args.exit_zero_on_fix) {
+    } else if changed > 0 && !(write && !args.exit_nonzero_on_fix) {
         ExitCode::from(1)
     } else {
         ExitCode::SUCCESS
     }
 }
 
-fn apply_color(common: &CommonArgs) {
-    if common.no_color {
-        owo_colors::set_override(false);
+/// Map `--color` onto owo-colors' process-wide override. `auto` installs none,
+/// leaving TTY detection and `NO_COLOR` to `if_supports_color`.
+fn apply_color() {
+    match global().color {
+        ColorChoice::Never => owo_colors::set_override(false),
+        ColorChoice::Always => owo_colors::set_override(true),
+        ColorChoice::Auto => {}
     }
 }
 
@@ -634,13 +615,10 @@ fn apply_color(common: &CommonArgs) {
 ///
 /// 1. **`--include-excluded`** — the explicit "check it anyway" override, for
 ///    one-off inspection of a path the repo excludes.
-/// 2. **`--force-exclude`** — the explicit "honor the excludes" override, which
-///    is only distinguishable from the default in a repo that turned the default
-///    off. clap rejects the two flags together (`conflicts_with`), so the
-///    ordering between 1 and 2 is defensive, not reachable from the CLI.
-/// 3. **`[discovery] force_exclude`** — the repo's standing preference.
-/// 4. **The built-in default, force-exclude on** — the config key defaults to
-///    `true` in [`poly_config::DiscoveryConfig`], so case 3 already carries this;
+/// 2. **`[discovery] force_exclude`** — the repo's standing preference, which
+///    `--set discovery.force_exclude=…` overrides for one run before it gets here.
+/// 3. **The built-in default, force-exclude on** — the config key defaults to
+///    `true` in [`poly_config::DiscoveryConfig`], so case 2 already carries this;
 ///    an unset key and `force_exclude = true` are the same value on purpose.
 ///
 /// A flag beats the config because a flag is typed for one run and the config is
@@ -648,9 +626,6 @@ fn apply_color(common: &CommonArgs) {
 fn resolve_force_exclude(common: &CommonArgs, config: &Config) -> bool {
     if common.include_excluded {
         return false;
-    }
-    if common.force_exclude {
-        return true;
     }
     config.force_exclude
 }
@@ -664,6 +639,8 @@ fn prepare(common: &CommonArgs) -> Result<(Vec<PathBuf>, Config, RunOptions), Ex
         common.paths.clone()
     };
     reject_missing_paths(&paths)?;
+    install_set_overrides(&common.set)?;
+    global::set_on_missing(common.on_missing);
     // Build the remote `extends` resolver rooted at the repository so both the
     // top-level load and the runner's nested-config resolution honor shared bases.
     let resolver = match config_sources::repo_root().and_then(|root| RemoteExtendsResolver::new(&root)) {
@@ -673,7 +650,7 @@ fn prepare(common: &CommonArgs) -> Result<(Vec<PathBuf>, Config, RunOptions), Ex
             return Err(ExitCode::from(2));
         }
     };
-    let config = match load_config(common.config.as_deref(), resolver.as_ref()) {
+    let config = match load_config(global().config.as_deref(), resolver.as_ref()) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("error: failed to load config: {e:#}");
@@ -686,8 +663,11 @@ fn prepare(common: &CommonArgs) -> Result<(Vec<PathBuf>, Config, RunOptions), Ex
         exclude: common.exclude.clone(),
         force_exclude: resolve_force_exclude(common, &config),
         fix_generated: common.fix_generated,
-        generated: resolve_generated(common),
-        explicit_config: common.config.is_some(),
+        // `--set discovery.generated=…` reaches every config through `poly_config`,
+        // so a nested config's own value is still the one that governs its subtree
+        // unless the run overrides it.
+        generated: None,
+        explicit_config: global().config.is_some(),
         config_resolver: Some(resolver),
         // Filled in by `run_lint` once it knows whether the whole-project phase
         // runs; `poly fmt` never runs that phase, so it keeps the empty default.
@@ -698,22 +678,21 @@ fn prepare(common: &CommonArgs) -> Result<(Vec<PathBuf>, Config, RunOptions), Ex
     Ok((paths, config, opts))
 }
 
-/// The run-level override of `[discovery] generated`, or `None` to defer to the
-/// config governing each file.
-///
-/// Deliberately *not* resolved against the root config the way
-/// [`resolve_force_exclude`] is: `generated` is read per config, so a nested
-/// `poly.toml` (ADR 0018) can set it for its own subtree. Folding the root
-/// config's value in here would flatten that back out and silently override
-/// every nested config with the root's answer.
-fn resolve_generated(common: &CommonArgs) -> Option<bool> {
-    if common.include_generated {
-        return Some(true);
+/// Parse every `--set KEY=VALUE` and install the merged layer so each config
+/// loaded afterwards — the root one and the runner's nested ones — sees it.
+fn install_set_overrides(sets: &[String]) -> Result<(), ExitCode> {
+    let mut layers = Vec::with_capacity(sets.len());
+    for arg in sets {
+        match poly_config::parse_set(arg) {
+            Ok(layer) => layers.push(layer),
+            Err(e) => {
+                eprintln!("error: --set: {e:#}");
+                return Err(ExitCode::from(EXIT_NOT_VERIFIED));
+            }
+        }
     }
-    if common.skip_generated {
-        return Some(false);
-    }
-    None
+    poly_config::set_run_overrides(layers);
+    Ok(())
 }
 
 /// Whether any path argument names the directory poly is running in — i.e. the

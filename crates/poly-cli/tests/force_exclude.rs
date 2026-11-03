@@ -3,8 +3,8 @@
 //!
 //! `--force-exclude` was declared on `CommonArgs` and never read, and the
 //! matching `[discovery] force_exclude` key parsed into a field nothing
-//! consumed. Both appeared in `--help` and in the generated hook command lines
-//! and did nothing; the behaviour was hard-wired to `!--include-excluded`.
+//! consumed. The flag is now gone: `--set discovery.force_exclude=…` overrides
+//! the key for one run, and `--include-excluded` is the other explicit override.
 //!
 //! The load-bearing case is the one that could not pass before: `force_exclude
 //! = false` in `poly.toml` must actually check an explicitly named excluded
@@ -98,18 +98,27 @@ fn config_force_exclude_false_checks_an_explicitly_named_excluded_path() {
     );
 }
 
-/// The CLI flag is the explicit override and beats a config `false`.
+/// `--set` is the run-scoped override and beats a config `false`.
 #[test]
-fn cli_force_exclude_beats_config_force_exclude_false() {
+fn set_force_exclude_beats_config_force_exclude_false() {
     let dir = repo("force_exclude = false\n");
-    let text = format_both(&dir, &["--force-exclude"]);
+    let text = format_both(&dir, &["--set", "discovery.force_exclude=true"]);
 
     assert_eq!(
         read(&dir, "a.py"),
         UNFORMATTED,
-        "--force-exclude must override the config's `false`, got:\n{text}"
+        "--set discovery.force_exclude=true must override the config's `false`, got:\n{text}"
     );
     assert!(text.contains("matched exclusions"), "got:\n{text}");
+}
+
+/// The old flag is gone rather than aliased.
+#[test]
+fn the_force_exclude_flag_is_removed() {
+    let dir = repo("");
+    let output = poly(dir.path(), &["fmt", "--force-exclude", "b.py"]);
+    assert_eq!(output.status.code(), Some(2), "{}", combined(&output));
+    assert_eq!(read(&dir, "b.py"), UNFORMATTED, "a rejected run must not write");
 }
 
 /// `--include-excluded` is the opposite-direction explicit override and beats a

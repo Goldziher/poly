@@ -47,7 +47,7 @@ fn fix_reports_what_it_rewrote_instead_of_claiming_nothing_was_found() {
     let dir = repo();
     let output = poly(
         dir.path(),
-        &["lint", "--no-workspace", "--no-cache", "--fix", "unused.py"],
+        &["lint", "--workspace", "never", "--no-cache", "--fix", "unused.py"],
     );
     let text = stdout(&output);
 
@@ -79,7 +79,7 @@ fn fix_reports_both_what_it_fixed_and_what_remains() {
 
     let output = poly(
         dir.path(),
-        &["lint", "--no-workspace", "--no-cache", "--fix", "unused.py"],
+        &["lint", "--workspace", "never", "--no-cache", "--fix", "unused.py"],
     );
     let text = stdout(&output);
 
@@ -98,7 +98,7 @@ fn fix_with_nothing_to_do_still_reports_a_clean_run() {
 
     let output = poly(
         dir.path(),
-        &["lint", "--no-workspace", "--no-cache", "--fix", "unused.py"],
+        &["lint", "--workspace", "never", "--no-cache", "--fix", "unused.py"],
     );
     let text = stdout(&output);
 
@@ -110,7 +110,7 @@ fn fix_with_nothing_to_do_still_reports_a_clean_run() {
 #[test]
 fn check_mode_reports_fixable_findings_not_fixed_ones() {
     let dir = repo();
-    let output = poly(dir.path(), &["lint", "--no-workspace", "--no-cache", "unused.py"]);
+    let output = poly(dir.path(), &["lint", "--workspace", "never", "--no-cache", "unused.py"]);
     let text = stdout(&output);
 
     assert!(
@@ -129,7 +129,8 @@ fn json_output_carries_the_fixed_count_per_file() {
         dir.path(),
         &[
             "lint",
-            "--no-workspace",
+            "--workspace",
+            "never",
             "--no-cache",
             "--fix",
             "--format",

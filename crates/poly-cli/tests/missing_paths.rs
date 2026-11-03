@@ -42,8 +42,8 @@ fn stderr(output: &Output) -> String {
 fn missing_path_fails_instead_of_reporting_success() {
     let dir = repo();
     for subcommand in [
-        vec!["fmt", "--check", "does-not-exist.py"],
-        vec!["lint", "--no-workspace", "does-not-exist.py"],
+        vec!["fmt", "does-not-exist.py"],
+        vec!["lint", "--workspace", "never", "does-not-exist.py"],
     ] {
         let output = poly(dir.path(), &subcommand);
 
@@ -65,7 +65,7 @@ fn missing_path_fails_instead_of_reporting_success() {
 #[test]
 fn missing_path_mixed_with_real_ones_still_fails() {
     let dir = repo();
-    let output = poly(dir.path(), &["fmt", "--check", "ok.py", "nope.py"]);
+    let output = poly(dir.path(), &["fmt", "ok.py", "nope.py"]);
 
     assert_eq!(output.status.code(), Some(2));
     assert!(stderr(&output).contains("nope.py"));
@@ -74,7 +74,7 @@ fn missing_path_mixed_with_real_ones_still_fails() {
 #[test]
 fn every_missing_path_is_named_not_just_the_first() {
     let dir = repo();
-    let output = poly(dir.path(), &["fmt", "--check", "a.py", "b.py", "c.py"]);
+    let output = poly(dir.path(), &["fmt", "a.py", "b.py", "c.py"]);
 
     assert_eq!(output.status.code(), Some(2));
     let stderr = stderr(&output);
@@ -89,10 +89,10 @@ fn every_missing_path_is_named_not_just_the_first() {
 fn resolvable_paths_are_unaffected() {
     let dir = repo();
 
-    let file = poly(dir.path(), &["fmt", "--check", "ok.py"]);
+    let file = poly(dir.path(), &["fmt", "ok.py"]);
     assert_eq!(file.status.code(), Some(1), "unformatted file still reports drift");
 
-    let directory = poly(dir.path(), &["fmt", "--check", "."]);
+    let directory = poly(dir.path(), &["fmt", "."]);
     assert_eq!(directory.status.code(), Some(1));
 }
 
@@ -106,7 +106,7 @@ fn unparseable_file_fails_the_run_and_is_named() {
     std::fs::write(dir.path().join("broken.py"), "def f(:\n").expect("write broken.py");
 
     for subcommand in [
-        vec!["fmt", "--check", "--no-cache", "broken.py"],
+        vec!["fmt", "--no-cache", "broken.py"],
         vec!["fmt", "--fix", "--no-cache", "broken.py"],
     ] {
         let output = poly(dir.path(), &subcommand);
@@ -125,14 +125,18 @@ fn unparseable_file_fails_the_run_and_is_named() {
 }
 
 /// The rest of the contract must not shift: consumers automate against it, and
-/// at least one treats 0 and 1 as success for `--fix`.
+/// a successful `--fix` is 0.
 #[test]
 fn format_exit_codes_keep_their_meanings() {
     let dir = repo();
 
-    // ok.py is unformatted -> a rewrite happened -> 1, still success for --fix.
+    // ok.py is unformatted: a dry run reports drift -> 1.
+    let drift = poly(dir.path(), &["fmt", "--no-cache", "ok.py"]);
+    assert_eq!(drift.status.code(), Some(1));
+
+    // A successful rewrite under --fix is success -> 0.
     let rewrote = poly(dir.path(), &["fmt", "--fix", "--no-cache", "ok.py"]);
-    assert_eq!(rewrote.status.code(), Some(1));
+    assert_eq!(rewrote.status.code(), Some(0));
 
     // Second run has nothing to do -> 0.
     let clean = poly(dir.path(), &["fmt", "--fix", "--no-cache", "ok.py"]);

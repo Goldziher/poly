@@ -63,7 +63,7 @@ fn combined(output: &Output) -> String {
 #[test]
 fn invalid_utf8_is_named_and_fails_without_aborting_the_run() {
     let dir = repo();
-    let output = poly(dir.path(), &["lint", "--no-workspace", "--no-cache", "bad.py"]);
+    let output = poly(dir.path(), &["lint", "--workspace", "never", "--no-cache", "bad.py"]);
     let text = combined(&output);
 
     assert_eq!(output.status.code(), Some(1), "got:\n{text}");
@@ -88,7 +88,15 @@ fn invalid_utf8_and_unmatched_paths_keep_distinct_skip_reasons() {
     let dir = repo();
     let output = poly(
         dir.path(),
-        &["lint", "--no-workspace", "--no-cache", "bad.py", "App.csproj", "ok.py"],
+        &[
+            "lint",
+            "--workspace",
+            "never",
+            "--no-cache",
+            "bad.py",
+            "App.csproj",
+            "ok.py",
+        ],
     );
     let text = combined(&output);
 
@@ -118,7 +126,15 @@ fn invalid_utf8_consumes_the_skip_budget() {
     let dir = repo();
     let output = poly(
         dir.path(),
-        &["lint", "--no-workspace", "--no-cache", "--max-skips", "0", "bad.py"],
+        &[
+            "lint",
+            "--workspace",
+            "never",
+            "--no-cache",
+            "--max-skips",
+            "0",
+            "bad.py",
+        ],
     );
     let text = combined(&output);
 
@@ -134,7 +150,7 @@ fn invalid_utf8_consumes_the_skip_budget() {
 #[test]
 fn a_clean_run_is_unaffected() {
     let dir = repo();
-    let output = poly(dir.path(), &["lint", "--no-workspace", "--no-cache", "ok.py"]);
+    let output = poly(dir.path(), &["lint", "--workspace", "never", "--no-cache", "ok.py"]);
     let text = combined(&output);
 
     assert_eq!(output.status.code(), Some(0), "got:\n{text}");
@@ -149,7 +165,7 @@ fn mixed_run_reports_clean_skipped_and_errored_distinctly() {
     let dir = repo();
     let output = poly(
         dir.path(),
-        &["lint", "--no-workspace", "--no-cache", "--format", "json", "."],
+        &["lint", "--workspace", "never", "--no-cache", "--format", "json", "."],
     );
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
@@ -207,7 +223,7 @@ fn fix_preserves_invalid_utf8_error_while_fixing_readable_files() {
 
     let output = poly(
         dir.path(),
-        &["lint", "--no-workspace", "--no-cache", "--fix", "ok.py", "bad.py"],
+        &["lint", "--workspace", "never", "--no-cache", "--fix", "ok.py", "bad.py"],
     );
     let text = combined(&output);
 

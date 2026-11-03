@@ -1,7 +1,7 @@
 //! `poly lock` — resolve remote `extends` bases and Git hook sources into the
 //! single `poly.lock` (ADR 0038), or verify it is current (`--check`).
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::ExitCode;
 
 use anyhow::{Context, Result, bail};
@@ -28,10 +28,6 @@ pub struct LockArgs {
     /// against their remotes and compared.
     #[arg(long)]
     check: bool,
-
-    /// Config file to lock (defaults to the repo-root `poly.toml`).
-    #[arg(long, value_name = "PATH")]
-    config: Option<PathBuf>,
 }
 
 /// What a `poly lock` run found or did.
@@ -58,7 +54,10 @@ pub fn run_lock(args: LockArgs) -> ExitCode {
 
 fn lock(args: LockArgs) -> Result<ExitCode> {
     let root = config_sources::repo_root()?;
-    let config_path = args.config.unwrap_or_else(|| config_sources::root_config_path(&root));
+    let config_path = crate::global()
+        .config
+        .clone()
+        .unwrap_or_else(|| config_sources::root_config_path(&root));
     if !config_path.is_file() {
         bail!("config file not found: {}", config_path.display());
     }
@@ -184,6 +183,8 @@ fn matches_disk(root: &Path, lock: &PolyLock) -> Result<bool> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
 
     fn write_config(root: &Path, text: &str) -> PathBuf {

@@ -90,7 +90,7 @@ pub struct MigrateArgs {
     #[arg(long)]
     pub recurse: bool,
 
-    /// After `--write`, run `poly lint` / `poly fmt --check` to confirm the new
+    /// After `--write`, run `poly lint` / `poly fmt` (dry run) to confirm the new
     /// config loads and every engine runs without error.
     #[arg(long)]
     pub verify: bool,
@@ -528,7 +528,7 @@ fn verify(dir: &Path) -> Result<()> {
     let options = verify_options();
     let paths = [dir.to_path_buf()];
     poly_core::lint(&paths, &config, &options, false, false).context("verify: poly lint failed")?;
-    poly_core::format(&paths, &config, &options, false, false).context("verify: poly fmt --check failed")?;
+    poly_core::format(&paths, &config, &options, false, false).context("verify: poly fmt failed")?;
     println!("verify: config loaded and engines ran cleanly in {}", dir.display());
     Ok(())
 }

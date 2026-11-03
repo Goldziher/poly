@@ -61,8 +61,8 @@ fn combined(output: &Output) -> String {
 fn unmatched_explicit_path_is_named_in_the_summary() {
     let dir = repo();
     for subcommand in [
-        vec!["lint", "--no-workspace", "App.csproj"],
-        vec!["fmt", "--check", "App.csproj"],
+        vec!["lint", "--workspace", "never", "App.csproj"],
+        vec!["fmt", "App.csproj"],
     ] {
         let output = poly(dir.path(), &subcommand);
         let text = combined(&output);
@@ -84,7 +84,7 @@ fn unmatched_explicit_path_is_named_in_the_summary() {
 #[test]
 fn unmatched_explicit_path_keeps_exit_zero() {
     let dir = repo();
-    let output = poly(dir.path(), &["lint", "--no-workspace", "App.csproj"]);
+    let output = poly(dir.path(), &["lint", "--workspace", "never", "App.csproj"]);
     assert_eq!(
         output.status.code(),
         Some(0),
@@ -100,7 +100,16 @@ fn five_paths_four_linted_names_the_fifth() {
     let dir = repo();
     let output = poly(
         dir.path(),
-        &["lint", "--no-workspace", "App.csproj", "a.py", "b.py", "c.json", "d.md"],
+        &[
+            "lint",
+            "--workspace",
+            "never",
+            "App.csproj",
+            "a.py",
+            "b.py",
+            "c.json",
+            "d.md",
+        ],
     );
     let text = combined(&output);
 
@@ -117,7 +126,7 @@ fn five_paths_four_linted_names_the_fifth() {
 #[test]
 fn directory_walk_stays_quiet_about_unmatched_files() {
     let dir = repo();
-    let output = poly(dir.path(), &["lint", "--no-workspace", "."]);
+    let output = poly(dir.path(), &["lint", "--workspace", "never", "."]);
     let text = combined(&output);
 
     assert!(
@@ -132,7 +141,10 @@ fn directory_walk_stays_quiet_about_unmatched_files() {
 #[test]
 fn deny_skips_fails_and_names_the_skipped_file() {
     let dir = repo();
-    let output = poly(dir.path(), &["lint", "--no-workspace", "--deny-skips", "App.csproj"]);
+    let output = poly(
+        dir.path(),
+        &["lint", "--workspace", "never", "--deny-skips", "App.csproj"],
+    );
     let text = combined(&output);
 
     assert_eq!(
@@ -151,7 +163,7 @@ fn deny_skips_covers_engine_declined_files_in_fmt() {
     let dir = repo();
     std::fs::write(dir.path().join("gen.py"), "# @checksum: abc\nx  =  1\n").expect("write gen.py");
 
-    let output = poly(dir.path(), &["fmt", "--check", "--no-cache", "--deny-skips", "gen.py"]);
+    let output = poly(dir.path(), &["fmt", "--no-cache", "--deny-skips", "gen.py"]);
     let text = combined(&output);
 
     assert_eq!(output.status.code(), Some(2), "got:\n{text}");
@@ -169,7 +181,7 @@ fn skips_alone_do_not_change_the_exit_code() {
     let dir = repo();
     std::fs::write(dir.path().join("gen.py"), "# @checksum: abc\nx  =  1\n").expect("write gen.py");
 
-    let output = poly(dir.path(), &["fmt", "--check", "--no-cache", "gen.py"]);
+    let output = poly(dir.path(), &["fmt", "--no-cache", "gen.py"]);
     assert_eq!(output.status.code(), Some(0), "got:\n{}", combined(&output));
 }
 
@@ -181,7 +193,7 @@ fn max_skips_budget_passes_at_the_limit_and_fails_above_it() {
 
     let at_limit = poly(
         dir.path(),
-        &["lint", "--no-workspace", "--max-skips", "1", "App.csproj"],
+        &["lint", "--workspace", "never", "--max-skips", "1", "App.csproj"],
     );
     assert_eq!(
         at_limit.status.code(),
@@ -192,7 +204,7 @@ fn max_skips_budget_passes_at_the_limit_and_fails_above_it() {
 
     let over_limit = poly(
         dir.path(),
-        &["lint", "--no-workspace", "--max-skips", "0", "App.csproj"],
+        &["lint", "--workspace", "never", "--max-skips", "0", "App.csproj"],
     );
     assert_eq!(
         over_limit.status.code(),
@@ -210,8 +222,8 @@ fn json_output_carries_skipped_paths_structurally() {
     std::fs::write(dir.path().join("gen.py"), "# @checksum: abc\nx  =  1\n").expect("write gen.py");
 
     for subcommand in [
-        vec!["lint", "--no-workspace", "--format", "json", "App.csproj"],
-        vec!["fmt", "--check", "--no-cache", "--format", "json", "App.csproj"],
+        vec!["lint", "--workspace", "never", "--format", "json", "App.csproj"],
+        vec!["fmt", "--no-cache", "--format", "json", "App.csproj"],
     ] {
         let output = poly(dir.path(), &subcommand);
         let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
@@ -238,7 +250,7 @@ fn verbose_names_engine_declined_files() {
     let dir = repo();
     std::fs::write(dir.path().join("gen.py"), "# @checksum: abc\nx  =  1\n").expect("write gen.py");
 
-    let output = poly(dir.path(), &["fmt", "--check", "--no-cache", "--verbose", "."]);
+    let output = poly(dir.path(), &["fmt", "--no-cache", "--verbose", "."]);
     let text = combined(&output);
     assert!(text.contains("gen.py"), "got:\n{text}");
 }
@@ -248,7 +260,7 @@ fn verbose_names_engine_declined_files() {
 #[test]
 fn clean_run_gains_no_skip_narration() {
     let dir = repo();
-    let output = poly(dir.path(), &["fmt", "--check", "--no-cache", "a.py", "b.py"]);
+    let output = poly(dir.path(), &["fmt", "--no-cache", "a.py", "b.py"]);
     let text = combined(&output);
 
     assert!(!text.contains("skipped"), "got:\n{text}");
@@ -282,7 +294,7 @@ fn no_rules_repo() -> TempDir {
 #[test]
 fn language_with_no_lint_rules_leaves_the_linted_count_and_is_named() {
     let dir = no_rules_repo();
-    let output = poly(dir.path(), &["lint", "--no-workspace", "--no-cache", "."]);
+    let output = poly(dir.path(), &["lint", "--workspace", "never", "--no-cache", "."]);
     let text = combined(&output);
 
     assert!(
@@ -301,7 +313,7 @@ fn language_with_no_lint_rules_leaves_the_linted_count_and_is_named() {
 #[test]
 fn language_with_no_lint_rules_keeps_exit_zero_by_default() {
     let dir = no_rules_repo();
-    let output = poly(dir.path(), &["lint", "--no-workspace", "--no-cache", "."]);
+    let output = poly(dir.path(), &["lint", "--workspace", "never", "--no-cache", "."]);
     assert_eq!(
         output.status.code(),
         Some(0),
@@ -319,7 +331,7 @@ fn deny_skips_fails_on_a_language_with_no_lint_rules() {
     let dir = no_rules_repo();
     let output = poly(
         dir.path(),
-        &["lint", "--no-workspace", "--no-cache", "--deny-skips", "."],
+        &["lint", "--workspace", "never", "--no-cache", "--deny-skips", "."],
     );
     let text = combined(&output);
 
@@ -342,14 +354,14 @@ fn max_skips_budgets_languages_with_no_lint_rules() {
 
     let at_limit = poly(
         dir.path(),
-        &["lint", "--no-workspace", "--no-cache", "--max-skips", "1", "."],
+        &["lint", "--workspace", "never", "--no-cache", "--max-skips", "1", "."],
     );
     assert_eq!(at_limit.status.code(), Some(0), "got:\n{}", combined(&at_limit));
 
     std::fs::write(dir.path().join("b.dart"), "void main() {}\n").expect("write b.dart");
     let over_limit = poly(
         dir.path(),
-        &["lint", "--no-workspace", "--no-cache", "--max-skips", "1", "."],
+        &["lint", "--workspace", "never", "--no-cache", "--max-skips", "1", "."],
     );
     let text = combined(&over_limit);
     assert_eq!(over_limit.status.code(), Some(2), "got:\n{text}");
@@ -363,7 +375,7 @@ fn json_carries_the_no_lint_rules_reason() {
     let dir = no_rules_repo();
     let output = poly(
         dir.path(),
-        &["lint", "--no-workspace", "--no-cache", "--format", "json", "."],
+        &["lint", "--workspace", "never", "--no-cache", "--format", "json", "."],
     );
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     let value: serde_json::Value = serde_json::from_str(&stdout).expect("stdout stays valid JSON");
@@ -389,7 +401,7 @@ fn unknown_extension_in_a_walk_is_counted_not_skipped() {
 
     let output = poly(
         dir.path(),
-        &["lint", "--no-workspace", "--no-cache", "--deny-skips", "."],
+        &["lint", "--workspace", "never", "--no-cache", "--deny-skips", "."],
     );
     let text = combined(&output);
 
@@ -417,7 +429,10 @@ fn force_excluded_path_is_not_reported_as_unmatched() {
     let dir = repo();
     std::fs::write(dir.path().join("poly.toml"), "[discovery]\nexclude = [\"a.py\"]\n").expect("write poly.toml");
 
-    let output = poly(dir.path(), &["fmt", "--check", "--no-cache", "--force-exclude", "a.py"]);
+    let output = poly(
+        dir.path(),
+        &["fmt", "--no-cache", "--set", "discovery.force_exclude=true", "a.py"],
+    );
     let text = combined(&output);
 
     assert!(
@@ -451,7 +466,7 @@ fn explicit_paths_honor_excludes_unless_the_caller_overrides_them() {
         dir.path(),
         &["fmt", "--fix", "--no-cache", "--include-excluded", "a.py"],
     );
-    assert_eq!(included.status.code(), Some(1), "got:\n{}", combined(&included));
+    assert_eq!(included.status.code(), Some(0), "got:\n{}", combined(&included));
     assert_ne!(
         std::fs::read_to_string(dir.path().join("a.py")).expect("read included file"),
         original
@@ -498,7 +513,7 @@ fn excluded_directory_stays_excluded_in_every_multiroot_order() {
         let output = poly(dir.path(), &["fmt", "--fix", "--no-cache", paths[0], paths[1]]);
         let text = combined(&output);
 
-        assert_eq!(output.status.code(), Some(1), "order {paths:?} failed:\n{text}");
+        assert_eq!(output.status.code(), Some(0), "order {paths:?} failed:\n{text}");
         assert_eq!(
             std::fs::read_to_string(excluded).expect("read excluded"),
             "x   =    1\n"
@@ -529,7 +544,7 @@ fn unanchored_rule_excludes_a_named_root_it_matches() {
     );
     let text = combined(&output);
 
-    assert_eq!(output.status.code(), Some(1), "got:\n{text}");
+    assert_eq!(output.status.code(), Some(0), "got:\n{text}");
     assert_eq!(std::fs::read_to_string(excluded).unwrap(), "x   =    1\n");
     assert!(text.contains("matched exclusions (use --include-excluded to check them)"));
 }
@@ -549,7 +564,7 @@ fn include_excluded_overrides_an_explicit_excluded_directory() {
         ],
     );
 
-    assert_eq!(output.status.code(), Some(1), "got:\n{}", combined(&output));
+    assert_eq!(output.status.code(), Some(0), "got:\n{}", combined(&output));
     assert_eq!(std::fs::read_to_string(excluded).unwrap(), "x = 1\n");
 }
 
@@ -570,7 +585,7 @@ fn include_excluded_keeps_descendant_exclusions_active() {
         &["fmt", "--fix", "--no-cache", "--include-excluded", "docs/snippets"],
     );
 
-    assert_eq!(output.status.code(), Some(1), "got:\n{}", combined(&output));
+    assert_eq!(output.status.code(), Some(0), "got:\n{}", combined(&output));
     assert_eq!(std::fs::read_to_string(excluded).unwrap(), "x = 1\n");
     assert_eq!(std::fs::read_to_string(private).unwrap(), "secret   =    3\n");
 }

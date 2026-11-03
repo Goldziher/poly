@@ -31,7 +31,7 @@ By default only a failing job's output is printed. Set `show_output = true` on a
 | Builtin | Runs |
 | --- | --- |
 | `lint` | `poly lint` over the staged files |
-| `fmt` | `poly fmt --check` over the staged files |
+| `fmt` | `poly fmt` over the staged files |
 | `commit` | Conventional Commit and AI-trailer check on the commit message (gitfluff) |
 | `file_safety` | Pure-Rust checks: merge-conflict markers, added large files, private keys, case conflicts, and shebang/executable parity |
 | `cargo` | Whole-workspace `cargo clippy`, `cargo sort`, `cargo machete` and `cargo deny` — each `PATH`-probed and skipped when absent |
@@ -60,7 +60,7 @@ exclude = ["**/tags.rs"]      # effective: [discovery] exclude + **/tags.rs
 ### Fix mode, scoped runs and priority
 
 `lint` and `fmt` only check by default. `fix = true` makes them rewrite and re-stage what they
-change (`poly lint --fix`, `poly fmt --fix --exit-zero-on-fix`); fix-mode builtins never overlap each
+change (`poly lint --fix`, `poly fmt --fix`); fix-mode builtins never overlap each
 other. `priority` orders hooks (lower runs first, equal priorities run in parallel).
 
 A builtin that must run over different files with different excludes takes `jobs`; each entry
@@ -219,8 +219,9 @@ losing the unstaged edit. The failure names the files and the commands that reso
 them, or `git stash push --keep-index`). To have poly stage just the fixed content and leave your
 unstaged edits in the worktree, set `partial_stage = "restage"` under `[hooks]`.
 
-A `stage_fixed` job running `poly fmt --fix` should add `--exit-zero-on-fix` (otherwise `fmt` exits
-1 after rewriting). The `fmt` and `lint` builtins do this for you with `fmt = { fix = true }`.
+A `stage_fixed` job running `poly fmt --fix` needs nothing extra: a successful `--fix` exits 0.
+(`--exit-nonzero-on-fix` is the opposite, for a CI step that must fail on an unformatted tree.) The
+`fmt` and `lint` builtins write the right command line for you with `fmt = { fix = true }`.
 
 ### Letting a build read an untracked file
 
@@ -548,11 +549,11 @@ cache. So a plain `poly lint` can leave the tree changed, even though poly itsel
 Three consequences worth knowing:
 
 - **The phase is not path-scoped.** `poly lint <paths>` skips it entirely for that reason;
-  `--workspace` opts back in. Under `--workspace` the tools still see the whole repository,
+  `--workspace always` opts back in. Under `--workspace always` the tools still see the whole repository,
   regardless of the named paths and of `[discovery] exclude`; poly prints a note saying so.
 - **`[discovery] exclude` does not apply to it.** That key filters poly's own file discovery, not
   what a whole-project tool chooses to read.
-- **Opting out makes the run fully read-only.** Pass `--no-workspace`, or set
+- **Opting out makes the run fully read-only.** Pass `--workspace never`, or set
   `[lint] workspace = false`. Use one of them for a checkout that must stay pristine — a CI job
   that diffs the tree afterwards, or a gate on a read-only source tree.
 
@@ -562,7 +563,7 @@ Under `--fix`, the whole-project phase runs its tools in **fix mode**: `cargo so
 `cargo-machete --fix` prunes unused dependencies, and `cargo clippy --fix --allow-dirty
 --allow-staged` applies clippy autofixes (`cargo deny` has no autofix and stays check-only).
 
-Fix mode is what `--fix` adds; the phase itself runs either way, so `--no-workspace` — not the
+Fix mode is what `--fix` adds; the phase itself runs either way, so `--workspace never` — not the
 absence of `--fix` — is what skips it. `poly fmt` is a pure formatter and never runs the
 whole-project phase, since that phase is linting, not formatting. The git-hook and commit-gate path
 never requests fix mode, so a commit is never silently auto-rewritten by it.

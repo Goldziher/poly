@@ -26,19 +26,26 @@ tier.
 ## Commands
 
 - Lint: `poly lint .`
-- Lint, per-file tier only (skip whole-project tools): `poly lint --no-workspace .`
-- Check formatting (dry-run, the default): `poly fmt --check .`
+- Lint, per-file tier only (skip whole-project tools): `poly lint --workspace never .`
+- Check formatting (dry-run, the default): `poly fmt .`
 - Apply formatting only (no linting): `poly fmt --fix .`
 - Apply lint autofixes (and whole-project autofixes): `poly lint --fix .`
 
-Both `lint` and `fmt` share: `--format pretty|json|toon`, `--config <PATH>`, `--no-cache`,
-`-j/--jobs <N>`, `--exclude <GLOB>` (repeatable), `--no-color`, `--fix`, `--verbose` /
-`-q/--quiet`, `--debug`, `--force-exclude` / `--include-excluded`, `--fix-generated`,
-`--skip-generated` / `--include-generated`, `--only <ENGINE>` / `--skip <ENGINE>` (restrict the
+Global flags (accepted before or after any subcommand): `--config <PATH>`, `--color
+auto|always|never` (`auto` honours `NO_COLOR`), `--offline` (or `POLY_OFFLINE=1`; parsed now, its
+effects land with the components work), `-q/--quiet`, `-v/--verbose`, `--debug`.
+
+Both `lint` and `fmt` share: `--format pretty|json|toon`, `--no-cache`, `-j/--jobs <N>`,
+`--exclude <GLOB>` (repeatable), `--fix`, `--include-excluded`, `--fix-generated`,
+`--set KEY=VALUE` (repeatable; a TOML layer above `poly.local.toml`, e.g.
+`--set discovery.force_exclude=true`, `--set discovery.generated=false`), `--on-missing fail|skip`
+(accepted; acted on once components land), `--only <ENGINE>` / `--skip <ENGINE>` (restrict the
 per-file tier to named engines, comma-separated and repeatable — narrows only, never enables a
 backend config left off, and skips the whole-project phase since it is tools, not engines), and
-`--deny-skips` / `--max-skips <N>`. `poly lint` adds `--no-workspace` and `--workspace`; `poly
-fmt` adds `--check` and `--exit-zero-on-fix`.
+`--deny-skips` / `--max-skips <N>`. `poly lint` adds `--workspace auto|always|never`; `poly fmt`
+adds `--exit-nonzero-on-fix` (a successful `--fix` exits 0 by default). `--force-exclude`,
+`--include-generated`, `--skip-generated`, `--no-workspace`, `--no-color`, `fmt --check` (hidden;
+errors with a hint) and `--exit-zero-on-fix` no longer exist.
 
 The other subcommands: `poly hooks` (native git-hook runner over `[hooks]`), `poly commit`
 (commit-message lint, gitfluff), `poly rules test|list` (custom + built-in ast-grep rule packs),
@@ -63,7 +70,7 @@ whole-workspace tools a `pre-commit` hook would — `cargo clippy`/`cargo-sort`/
 `cargo-deny` and any configured whole-project type checkers — on the live worktree, folding
 their pass/fail into the report and exit code. It reuses the `[hooks.builtin.cargo]` + inline
 `workspace = true` config as the single source of truth, and is on by default. Turn it off with
-`--no-workspace` or `[lint] workspace = false`; a repo with no `[hooks]` section runs only the
+`--workspace never` or `[lint] workspace = false`; a repo with no `[hooks]` section runs only the
 per-file tier. With `--format json`/`toon` the whole-project section is written to stderr (stdout
 stays a single valid document), so a machine consumer must check the **exit code** — not just the
 JSON payload — to detect a whole-project tool failure.
@@ -73,10 +80,10 @@ per-file tier only writes under `--fix`, and the phase is asked for check mode �
 *executes* the configured tools against the live worktree, and their own side effects are not
 poly's to control (`cargo clippy` populates `target/` and can refresh `Cargo.lock`; a `go`
 invocation can append to `go.work.sum`; a type checker writes its cache). A run that must leave
-the tree untouched needs `--no-workspace` or `[lint] workspace = false`.
+the tree untouched needs `--workspace never` or `[lint] workspace = false`.
 
 The phase is also **not path-scoped**: `poly lint <paths>` skips it for that reason, and
-`--workspace` opts back in with the tools still covering the whole repository — regardless of the
+`--workspace always` opts back in with the tools still covering the whole repository — regardless of the
 named paths and of `[discovery] exclude`, which filters poly's own discovery only. poly prints a
 note on both branches. Naming the workspace root is *not* path scoping: `poly lint .` is how
 people say "lint everything", so it runs the phase.
@@ -84,7 +91,7 @@ people say "lint everything", so it runs the phase.
 Under `--fix`, this phase runs the tools in **fix mode**: `cargo sort` sorts in place,
 `cargo-machete --fix` prunes unused deps, and `cargo clippy --fix --allow-dirty --allow-staged`
 applies clippy autofixes (`cargo deny` has no autofix and stays check-only). Fix mode is what
-`--fix` adds; the phase itself runs either way, so `--no-workspace` — not the absence of `--fix` —
+`--fix` adds; the phase itself runs either way, so `--workspace never` — not the absence of `--fix` —
 is what skips it. `poly fmt` is a pure formatter — it never runs the whole-project phase, since
 that phase is linting, not formatting. The git-hook / commit-gate path never requests fix mode.
 
@@ -157,11 +164,11 @@ mechanism `[per-file-ignores]` (ADR 0017) still exists for whole-file exemptions
 
 - `0` — clean.
 - `1` — **error-severity** lint findings, a failing whole-project tool, or (for `poly fmt`)
-  files that would change. Warning-severity findings alone do not fail a run, so `typos` and the
+  files that would change in a dry run (or were rewritten, under `--fix --exit-nonzero-on-fix`). Warning-severity findings alone do not fail a run, so `typos` and the
   quality tier don't redden CI.
 - `2` — the run verified less than it claims: a file poly failed on — including a `poly fmt`
   file that did not converge to a fixed point within its five-pass cap, reported as an error
-  rather than as formatted, since a following `poly fmt --check` would keep reporting drift on
+  rather than as formatted, since a following `poly fmt` would keep reporting drift on
   it — a skip budget exceeded (`--deny-skips` / `--max-skips`), a config/pipeline error, or a
   machine-readable report that failed to serialize.
 

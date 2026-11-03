@@ -9,8 +9,8 @@ metadata:
 
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-Content-Hash: blake3:d84ca9f172feee6ace64c00babd7265bd7bc0bdf281f18a37624766c1d82de8e
-Source-Hash: blake3:3924425873d8ba40774b06fcf27ccf1f993e9df0a5cb1878ed38d7bdcf57716a
+Content-Hash: blake3:e5c6dcf67c9486d996242f9c54b686c3cf524a004bd87704e2e39e485d8db4ca
+Source-Hash: blake3:5e5d158b473660c0b1dc17fa4ebb6b149b87916bfc1fc6acb82e05f789a24ca0
 Schema-Version: v1
 -->
 
@@ -62,7 +62,7 @@ in following steps.
 ```yaml
 - uses: actions/checkout@v4
 - uses: Goldziher/poly@v0        # inputs: version (default latest), cache, github-token
-- run: poly fmt --check .
+- run: poly fmt .
 - run: poly lint .
 ```
 

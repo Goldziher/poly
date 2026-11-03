@@ -36,9 +36,8 @@ use super::types::{FormatResult, LintResult};
 /// scan is cheap; cheap per file times a repository is not, and nothing about
 /// the default path needs it.
 ///
-/// `run_override` is the caller's per-run flag (`--skip-generated` /
-/// `--include-generated`), which beats every config in the set: a one-off
-/// override that a nested `poly.toml` could veto would not be an override.
+/// `run_override` is the caller's per-run override (`--set discovery.generated=…`), which beats
+/// every config in the set: a one-off override that a nested `poly.toml` could veto would not be an override.
 /// `None` defers to each config, so a nested config governs its own subtree
 /// (ADR 0018).
 pub(crate) fn acts_on_generated(configs: &ConfigSet, run_override: Option<bool>) -> Vec<bool> {

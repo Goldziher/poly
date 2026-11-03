@@ -62,10 +62,6 @@ pub struct RunArgs {
     /// Stage to run (accepts aliases: `commit`, `push`, `merge-commit`).
     pub stage: Option<String>,
 
-    /// Path to the config file (default: nearest poly.toml).
-    #[arg(long)]
-    pub config: Option<PathBuf>,
-
     /// Run over the whole tracked tree rather than just the staged files.
     #[arg(long)]
     pub all_files: bool,
@@ -86,11 +82,6 @@ pub struct RunArgs {
     /// Disable tier-2 sccache env injection for compiler hooks this run.
     #[arg(long)]
     pub no_sccache: bool,
-
-    /// Show every job's output, including jobs that passed (warnings printed by
-    /// a successful job are otherwise dropped).
-    #[arg(short = 'v', long)]
-    pub verbose: bool,
 }
 
 /// `poly hooks install` arguments.
@@ -129,10 +120,6 @@ pub struct HookImplArgs {
     /// The git hook type that fired.
     #[arg(long = "hook-type", value_enum)]
     pub hook_type: poly_hooks::HookType,
-
-    /// Path to the config file (default: nearest poly.toml).
-    #[arg(long)]
-    pub config: Option<PathBuf>,
 
     /// Number of parallel jobs (default: env / all logical cores).
     #[arg(short = 'j', long)]
@@ -208,7 +195,10 @@ pub fn run_hooks(args: HooksArgs) -> ExitCode {
 }
 
 fn run_stage(args: RunArgs) -> Result<ExitCode> {
-    let config = load_config(args.config.as_deref())?;
+    // `-v` (show every job's output, passing jobs included) is the global flag.
+    let flags = crate::global();
+    let explicit_config = flags.config.as_deref();
+    let config = load_config(explicit_config)?;
     let poly_bin = std::env::current_exe().context("failed to resolve the running poly binary")?;
     let stage = resolve_run_stage(args.stage.as_deref(), &config.hooks)?;
 
@@ -234,7 +224,7 @@ fn run_stage(args: RunArgs) -> Result<ExitCode> {
         &config.cache.results.hooks,
         &root,
     )?;
-    if args.config.is_none() && runs_from_root(&root) {
+    if explicit_config.is_none() && runs_from_root(&root) {
         merge_nested(&mut spec, &root, &poly_bin, stage, &files, &[], &config)?;
     }
 
@@ -258,7 +248,7 @@ fn run_stage(args: RunArgs) -> Result<ExitCode> {
         cache,
         sccache: sccache_settings(&config, args.no_sccache)?,
         progress: show_progress(),
-        verbose: args.verbose,
+        verbose: flags.verbose,
         restage_partial: config.hooks.partial_stage == poly_config::PartialStage::Restage,
     };
     run_and_report(request)
@@ -542,7 +532,8 @@ fn provision_for_hook(
 
 fn hook_impl(args: HookImplArgs) -> Result<ExitCode> {
     let root = poly_hooks::git::get_root().context("failed to resolve the git repository root")?;
-    let config = load_config(args.config.as_deref())?;
+    let explicit_config = crate::global().config.as_deref();
+    let config = load_config(explicit_config)?;
     let sources = provision_for_hook(args.hook_type, &root, &config.hooks)?;
     let Some(inputs) = poly_hooks::hook_impl::hook_impl(args.hook_type, &args.git_args, &root)? else {
         return Ok(ExitCode::SUCCESS);
@@ -581,7 +572,7 @@ fn hook_impl(args: HookImplArgs) -> Result<ExitCode> {
         &config.cache.results.hooks,
         &root,
     )?;
-    if args.config.is_none() {
+    if explicit_config.is_none() {
         merge_nested(&mut spec, &root, &poly_bin, stage, &files, &git_args, &config)?;
     }
 

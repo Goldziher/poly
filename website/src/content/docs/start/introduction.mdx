@@ -111,7 +111,7 @@ less than it claims exits **2**, distinct from the **1** that means real finding
     whole-workspace tools (`cargo clippy`, `cargo sort`, `cargo machete`, `cargo deny`, any
     configured type checker) against the live worktree. poly writes nothing without `--fix`, but
     those tools have their own side effects — `cargo clippy` populates `target/` and can refresh
-    `Cargo.lock`. Pass `--no-workspace`, or set `[lint] workspace = false`, for a run that must
+    `Cargo.lock`. Pass `--workspace never`, or set `[lint] workspace = false`, for a run that must
     leave the tree untouched.
 </Aside>
 

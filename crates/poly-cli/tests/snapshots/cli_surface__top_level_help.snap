@@ -1,0 +1,68 @@
+---
+source: crates/poly-cli/tests/cli_surface.rs
+expression: "help(&[\"--help\"])"
+---
+Universal, zero-dependency linter & formatter
+
+Usage: poly [OPTIONS] <COMMAND>
+
+Commands:
+  lint     Lint files (poly applies no fixes without --fix)
+  fmt      Format files (dry-run by default; use --fix to write in place)
+  commit   Lint and optionally clean a commit message (reads `[commit]` from poly.toml)
+  hooks    Run git hooks declared in `[hooks]` of poly.toml (native runner)
+  migrate  Absorb foreign tool configs into poly.toml and remove what poly can honor
+  cache    Inspect and maintain the result cache (stats / gc / clean)
+  rules    Inspect and test custom ast-grep rule packs (test / list)
+  lock     Pin remote `extends` bases and Git hook sources in `poly.lock`
+  config   Inspect the effective config and print the `poly.toml` JSON Schema
+  mcp      Run an MCP server over stdio (mirrors the CLI)
+  doctor   Report which poly is running, every poly on PATH, and the config in effect
+  help     Print this message or the help of the given subcommand(s)
+
+Options:
+      --config <PATH>
+          Path to a config file (default: nearest poly.toml)
+
+      --color <WHEN>
+          When to colour output. `auto` honours `NO_COLOR` and TTY detection
+
+          Possible values:
+          - auto:   Colour only when stdout is a terminal and `NO_COLOR` is unset
+          - always: Always colour, even when piped
+          - never:  Never colour
+          
+          [default: auto]
+
+      --offline
+          Never use the network: no component, grammar, catalog-tool, remote `extends` or
+          hook-source fetches. Also set by `POLY_OFFLINE=1`.
+          
+          Parsed and exposed through [`offline`] (which also reads the environment variable); the
+          components work wires the individual fetch paths to it.
+
+  -q, --quiet
+          Trim `pretty` output to the findings and the summary: drop the per-file discovery and skip
+          detail printed beneath it.
+          
+          Every count and reason stays — the summary still reports how many files were linted, how
+          many were skipped and why, and what discovery excluded. Only the itemised list of paths
+          goes away. Findings still print and exit codes are unchanged. No effect on the `--format
+          json`/`toon` document. Mutually exclusive with `--verbose` and `--debug`.
+
+  -v, --verbose
+          Show extra per-finding detail in `pretty` output: description, rule URL, and metadata, and
+          list every skipped file instead of the first few. For `--format json`/`toon` the findings
+          are always fully structured, so this only lifts the cap on the skip note printed to stderr
+
+      --debug
+          Emit debug data: per-engine cache hit/miss and timing (shown in `pretty`, attached to
+          `json`/`toon`), and raise log verbosity to `debug` on stderr.
+          
+          The top of the verbosity ladder, so it implies `--verbose`.
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version

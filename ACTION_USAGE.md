@@ -48,7 +48,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: Goldziher/poly@v0
       - run: poly lint .
-      - run: poly fmt --check .
+      - run: poly fmt .
 ```
 
 ## Pinning is a real pin, not verify-after-the-fact

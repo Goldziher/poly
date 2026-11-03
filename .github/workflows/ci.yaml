@@ -140,12 +140,12 @@ jobs:
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@v2
-      # --no-workspace skips the whole-project phase: `cargo clippy` over this
+      # --workspace never skips the whole-project phase: `cargo clippy` over this
       # repo is already its own job above, and running it twice buys nothing.
       - name: poly lint (self)
-        run: cargo run --locked -p poly-cli -- lint --no-workspace .
-      - name: poly fmt --check (self)
-        run: cargo run --locked -p poly-cli -- fmt --check .
+        run: cargo run --locked -p poly-cli -- lint --workspace never .
+      - name: poly fmt (self)
+        run: cargo run --locked -p poly-cli -- fmt .
 
   deny:
     name: cargo-deny

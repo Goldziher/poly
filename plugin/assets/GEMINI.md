@@ -4,7 +4,7 @@ Install the `poly` binary and put it on PATH before using this plugin. The plugi
 `poly mcp`; it does not install or bundle the CLI. Start with `poly-overview`, then use
 `poly-lint-and-format` for checking or applying changes and `poly-orchestrator` for configuration.
 
-Use `poly lint --no-workspace .` when a check must avoid executing project toolchains.
+Use `poly lint --workspace never .` when a check must avoid executing project toolchains.
 Whole-project lint can build dependencies and refresh toolchain caches even without `--fix`.
 Request approval for modifying files when the current task only authorizes inspection.
 

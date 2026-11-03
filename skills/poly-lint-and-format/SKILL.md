@@ -9,8 +9,8 @@ metadata:
 
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-Content-Hash: blake3:2a8450d704bbc95a79151c473deeb3338aba3cb32b9c666851a5dd2797b19131
-Source-Hash: blake3:3924425873d8ba40774b06fcf27ccf1f993e9df0a5cb1878ed38d7bdcf57716a
+Content-Hash: blake3:db7a79867584dc59a6c04f7b9d6188be7149f541d18ccc047f506e5043216597
+Source-Hash: blake3:5e5d158b473660c0b1dc17fa4ebb6b149b87916bfc1fc6acb82e05f789a24ca0
 Schema-Version: v1
 -->
 
@@ -19,19 +19,18 @@ Schema-Version: v1
 ## Commands
 
 - `poly lint [PATHS]…` — run the linters. poly applies no fixes without `--fix`; `--fix`
-  applies autofixes (and the whole-project fix phase). `--no-workspace` restricts to the
+  applies autofixes (and the whole-project fix phase). `--workspace never` restricts to the
   per-file tier — and is also what makes a run read-only: without it, plain `poly lint`
   still *executes* the configured whole-project tools against the live worktree, and their
   own side effects (a refreshed lock file, a populated build or type-checker cache) are not
   poly's to control. Naming paths that **narrow** the run skips that phase by default
   (`poly lint .` names the repo root, so it does *not* narrow and the phase still runs);
-  `--workspace` opts back in, and the tools then cover the whole repository regardless of
+  `--workspace always` opts back in, and the tools then cover the whole repository regardless of
   the named paths and of `[discovery] exclude`.
 - `poly fmt [PATHS]…` — **dry run by default**: reports what would change and writes
-  nothing. `--fix` writes changes; `--check` is the explicit form of the default dry run
-  and conflicts with `--fix`. `poly fmt --fix` exits `1` when it rewrote files;
-  `--exit-zero-on-fix` makes that `0` (for a git hook that re-stages its fixes). `poly fmt`
-  is a pure formatter — it never runs the whole-project lint phase.
+  nothing and exits `1` when files would change. `--fix` writes changes and exits `0`;
+  `--exit-nonzero-on-fix` makes a rewrite exit `1` (for a CI step that must fail on an
+  unformatted tree). `--check` was removed. `poly fmt` is a pure formatter — it never runs the whole-project lint phase.
 
 ## Flags
 
@@ -47,20 +46,22 @@ Schema-Version: v1
   rule matches at more than one depth.
 - `--include-excluded` — check explicitly named files or directory roots even when they
   match the exclude set. Exclusions *below* an included directory stay active. Applying the
-  exclude set to explicitly named paths is the default; `--force-exclude` pins that default
-  back on in a repo that set `[discovery] force_exclude = false`.
-- `--config <path>` — point at a specific `poly.toml`.
+  exclude set to explicitly named paths is the default; `--set discovery.force_exclude=true`
+  pins that default back on in a repo that set `[discovery] force_exclude = false`.
+- `--config <path>` — point at a specific `poly.toml` (global; so are `--color`, `--offline`,
+  `-q`, `-v` and `--debug`).
+- `--set KEY=VALUE` — override one config key for this run, above `poly.local.toml`.
 - `--no-cache` — bypass the blake3 content-hash result cache.
-- `-j <N>` — parallelism; `--no-color` — plain output; `--verbose` — extra per-finding
+- `-j <N>` — parallelism; `--color never` — plain output; `-v`/`--verbose` — extra per-finding
   detail in `pretty` output; `-q`/`--quiet` — findings and summary only; `--debug` —
   per-engine cache hit/miss and timing, plus debug-level logs on stderr.
 - `--only <ENGINE>` / `--skip <ENGINE>` — restrict the per-file tier to (or drop) engines by
   the id you configure them under (`ruff`, `oxc`, `typos`, `quality`, …); repeatable and
   comma-separated. They narrow and never enable an engine config left off, an unknown name
   exits `2`, and naming any engine skips the whole-project phase.
-- Generated files are linted and formatted like any other by default. `--skip-generated`
+- Generated files are linted and formatted like any other by default. `--set discovery.generated=false`
   (or `[discovery] generated = false`) skips anything with a `DO NOT EDIT` / `@generated`
-  banner; `--include-generated` pins the default back on. A file whose header stamps a
+  banner; `--set discovery.generated=true` pins the default back on. A file whose header stamps a
   **content hash** over its body is different: `poly fmt` skips it and `lint --fix` will
   not rewrite it, since that would break the generator's verify step — `--fix-generated`
   opts back in.
@@ -113,7 +114,7 @@ let value = map.get(key).unwrap(); // poly: allow[unwrap-used] key is validated 
 
 ## The loop
 
-1. `poly fmt --check . --format json` and `poly lint . --format json` — capture drift and
+1. `poly fmt . --format json` and `poly lint . --format json` — capture drift and
    findings, checking the exit code.
 2. Read the JSON to see exactly which files and rules are involved.
 3. `poly fmt --fix .` then `poly lint --fix .` to apply what is auto-fixable.

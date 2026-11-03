@@ -16,21 +16,39 @@ poly fmt  [PATHS]...
 
 Both `poly lint` and `poly fmt` accept every flag below unless the description says otherwise.
 
+### Global flags
+
+These work on every subcommand, before or after it (`poly --color never lint` and
+`poly lint --color never` are the same).
+
+| Flag | Effect |
+| --- | --- |
+| `--config <PATH>` | Use an explicit config file. Bypasses nested config resolution. |
+| `--color <auto\|always\|never>` | When to colour output. `auto` (the default) colours a terminal and honours `NO_COLOR`. Replaces `--no-color`. |
+| `--offline` | Never use the network. Also set by `POLY_OFFLINE=1`. The flag is parsed and stored; the component, grammar, catalog-install, remote `extends` and hook-source fetch paths are wired to it separately. |
+| `-q`, `--quiet` | Trim pretty output to the findings and the summary. Conflicts with `--verbose` and `--debug`. |
+| `-v`, `--verbose` | Pretty output includes descriptions, URLs and metadata, and names **every** skipped file rather than the first 3 per skip reason. For `poly hooks run`, also shows the output of jobs that passed. |
+| `--debug` | Include cache hit/miss and timing data. Implies `--verbose`. Conflicts with `--quiet`. |
+
 ### Writing changes
 
 | Flag | Effect |
 | --- | --- |
 | `--fix` | Apply lint fixes or formatting in place. |
-| `--check` | `poly fmt` only. Explicit dry run — **this is the default**. |
-| `--exit-zero-on-fix` | `poly fmt --fix` only. Exit `0` after rewriting files instead of `1` (errors still exit `2`). For callers that treat non-zero as failure, such as a `stage_fixed` hook. |
+| `--exit-nonzero-on-fix` | `poly fmt --fix` only. Exit `1` after rewriting files instead of `0` (errors still exit `2`). For a CI step that must fail when the tree was not already formatted. |
+
+A dry run is the default for `poly fmt`; `--fix` writes and exits `0` on success. `poly fmt --check`
+was removed: it is still accepted for one major version, hidden, and fails with a hint to drop it.
 
 ### Generated files
 
 | Flag | Effect |
 | --- | --- |
 | `--fix-generated` | Also rewrite files whose header stamps a content hash over the body (`<project>:hash:<digest>`). |
-| `--skip-generated` | Do not lint or format machine-generated files at all (banner or stamp). Overrides `[discovery] generated` for this run. Conflicts with `--include-generated`. |
-| `--include-generated` | Lint and format machine-generated files. The default, so it only matters in a repo that set `[discovery] generated = false`. Conflicts with `--skip-generated`. |
+
+To skip machine-generated files for one run (banner or stamp), use `--set discovery.generated=false`;
+`--set discovery.generated=true` pins the default back on in a repo that set
+`[discovery] generated = false`. These replace `--skip-generated` and `--include-generated`.
 
 Hash-stamped files are the **only** generated files poly withholds a write from — `poly fmt` skips
 them and `poly lint --fix` reports without rewriting — because reformatting invalidates the hash
@@ -38,17 +56,27 @@ and the generator's verify step then reports drift on a file nobody edited. A pl
 or `@generated` banner does not hold poly back: those files are linted, formatted and fixed like
 any other, so `--fix-generated` has no effect on them.
 
-Under `--skip-generated` the files are *reported* as skipped, so they count against `--deny-skips`
+Under `--set discovery.generated=false` the files are *reported* as skipped, so they count against `--deny-skips`
 and `--max-skips`.
 
 ### Discovery
 
 | Flag | Effect |
 | --- | --- |
-| `--config <PATH>` | Use an explicit config file. Bypasses nested config resolution. |
 | `--exclude <GLOB>` | Exclude paths from discovery. Repeatable; merged with `[discovery] exclude`. An unanchored glob matches at any depth — lead with `/` to anchor it to the config directory. |
-| `--force-exclude` | Apply `[discovery] exclude` to explicitly named files too. The default, so it only matters in a repo that set `[discovery] force_exclude = false`. |
 | `--include-excluded` | Check explicitly named files or directory roots even when excluded. Overrides `[discovery] force_exclude`. Exclusions below an included directory remain active. |
+
+### Run-scoped overrides
+
+| Flag | Effect |
+| --- | --- |
+| `--set <KEY=VALUE>` | Override one config key for this run. Repeatable. A TOML layer applied above `poly.local.toml`, so it beats every file. `KEY` is a dotted TOML path; `VALUE` is parsed as a TOML value (`true`, `3`, `["a/**"]`) and falls back to a plain string. |
+| `--on-missing <fail\|skip>` | What to do when a file needs an engine component that is not installed. Overrides `[components] on_missing`. Accepted now; it takes effect with the components work. |
+
+`--set discovery.force_exclude=true` applies `[discovery] exclude` to explicitly named files too (the
+default, so it matters only in a repo that set `force_exclude = false`); it replaces
+`--force-exclude`. Together with the `discovery.generated` values above, that covers the three flags
+`--set` replaced. A malformed `KEY=VALUE` fails the run with exit 2.
 
 ### Selecting engines
 
@@ -88,13 +116,14 @@ To turn an engine off for every run rather than one invocation, use
 
 | Flag | Effect |
 | --- | --- |
-| `--workspace` | Run the whole-project phase even though explicit paths were given (a path-scoped run normally skips it). Conflicts with `--no-workspace`. |
-| `--no-workspace` | Skip the whole-project phase — `cargo clippy` / `sort` / `machete` / `deny` and any other configured whole-workspace tools. Equivalent to `[lint] workspace = false`. |
+| `--workspace auto` | The default. Run the phase for a whole-repository run, skip it for a path-scoped one, and follow `[lint] workspace`. |
+| `--workspace always` | Run the whole-project phase even though explicit paths were given. |
+| `--workspace never` | Skip the whole-project phase — `cargo clippy` / `sort` / `machete` / `deny` and any other configured whole-workspace tools. Equivalent to `[lint] workspace = false`. |
 
-The phase is never path-scoped: under `--workspace` the tools cover the whole repository regardless
+These replace the old `--workspace` / `--no-workspace` pair. The phase is never path-scoped: under `--workspace always` the tools cover the whole repository regardless
 of the named paths and of `[discovery] exclude`, and the run says so on stderr.
 
-<Aside type="caution" title="`--no-workspace` is what makes a run read-only">
+<Aside type="caution" title="`--workspace never` is what makes a run read-only">
     Without it, plain `poly lint` executes those tools against the live worktree, and their own side
     effects are not poly's to control.
 </Aside>
@@ -104,10 +133,8 @@ of the named paths and of `[discovery] exclude`, and the run says so on stderr.
 | Flag | Effect |
 | --- | --- |
 | `--format <pretty\|json\|toon>` | Output format. Default: `pretty`. |
-| `--no-color` | Disable colored output. |
-| `-q`, `--quiet` | Trim pretty output to the findings and the summary. Conflicts with `--verbose` and `--debug`. |
-| `--verbose` | Pretty output includes descriptions, URLs and metadata, and names **every** skipped file rather than the first 3 per skip reason. Conflicts with `--quiet`. |
-| `--debug` | Include cache hit/miss and timing data. Implies `--verbose`. Conflicts with `--quiet`. |
+
+`--color`, `-q`, `-v` and `--debug` are [global flags](#global-flags).
 
 The levels are a ladder — quiet &lt; normal &lt; verbose &lt; debug — each a superset of the one
 below. `--quiet` drops the per-file discovery and skip detail printed beneath the findings; every
@@ -215,7 +242,7 @@ it is reported as a skip.
 <Aside type="caution" title="Changed in 0.24.0: non-convergence is now an error">
     `poly fmt` runs each formatter to a fixed point, capped at five passes. A file still changing
     after five passes is now a **per-file error**, exiting `2`. Previously it was silent success,
-    with every following `poly fmt --check` reporting drift on that file forever — this is the one
+    with every following `poly fmt` reporting drift on that file forever — this is the one
     change in this release that turns a previously-green file red.
 </Aside>
 
@@ -229,7 +256,7 @@ it is reported as a skip.
 
 ```sh
 poly doctor                  # human report; exits 1 when something is actively wrong
-poly doctor --format json    # the same report, for a bug report or a CI check
+poly doctor --format json    # the same report, for a bug report or a CI check (also: --format toon)
 ```
 
 Run this before filing a bug. It prints the resolved path of the running executable with its
@@ -277,7 +304,7 @@ resolves only new sources; `--upgrade` re-resolves every symbolic ref to its lat
 ## `poly config` — what did poly actually parse?
 
 ```text
-poly config show   [--config <PATH>] [--format <toml|json|toon>]
+poly config show   [--format <toml|json|toon>]
 poly config schema [--output <PATH>]
 ```
 
@@ -336,15 +363,14 @@ poly hooks install                  # a foreign hook is kept as <hook>.legacy an
 poly hooks install --replace-lefthook   # discard a lefthook hook instead of keeping it inert
 poly hooks run pre-commit -v        # also show the output of jobs that passed
 poly cache stats
-poly cache size
 poly cache gc
 poly cache clean
-poly mcp --config /path/to/poly.toml
+poly --config /path/to/poly.toml mcp
 ```
 
 | Command | Flags |
 | --- | --- |
-| `poly hooks run [STAGE]` | `--all-files` (the whole tracked tree, not the staged files), `--message-file <PATH>` (required to run `commit-msg` / `prepare-commit-msg` directly), `-j <N>`, `--no-cache`, `--no-sccache`, `-v` / `--verbose`, `--config <PATH>` |
+| `poly hooks run [STAGE]` | `--all-files` (the whole tracked tree, not the staged files), `--message-file <PATH>` (required to run `commit-msg` / `prepare-commit-msg` directly), `-j <N>`, `--no-cache`, `--no-sccache` (and the global `-v`, `--config`) |
 | `poly hooks install` | `--hook-type <TYPE>` (repeatable; default: the stages `poly.toml` configures), `--overwrite` (discard an existing hook instead of keeping it as `<hook>.legacy`), `--replace-lefthook` |
 | `poly hooks uninstall` | `--hook-type <TYPE>`; restores a kept `<hook>.legacy` |
 | `poly cache gc` | `--max-age <DAYS>`, `--max-size <SIZE>` (`500M`, `2G`) |

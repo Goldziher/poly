@@ -115,11 +115,11 @@ fmt = true
     let HookCommand::Run(line) = &spec.hooks[0].command else {
         panic!("expected run command");
     };
-    // `--force-exclude` is not optional here: a hook is handed staged paths
+    // `--set discovery.force_exclude=true` is not optional here: a hook is handed staged paths
     // rather than deliberately named ones, so without it the repo's
     // `[discovery] exclude` is silently inert in the one place it matters most.
     assert!(
-        line.ends_with(" lint --no-workspace --force-exclude"),
+        line.ends_with(" lint --workspace never --set discovery.force_exclude=true"),
         "unexpected line: {line}"
     );
     assert!(line.contains("/opt/poly/bin/poly"));
@@ -724,13 +724,13 @@ fn a_fix_mode_builtin_rewrites_and_restages() {
     let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
     let lint = hook(&spec, "lint");
     assert!(
-        run_line(lint).ends_with(" lint --no-workspace --force-exclude --fix"),
+        run_line(lint).ends_with(" lint --workspace never --set discovery.force_exclude=true --fix"),
         "{}",
         run_line(lint)
     );
     let fmt = hook(&spec, "fmt");
     assert!(
-        run_line(fmt).ends_with(" fmt --force-exclude --fix --exit-zero-on-fix"),
+        run_line(fmt).ends_with(" fmt --set discovery.force_exclude=true --fix"),
         "{}",
         run_line(fmt)
     );
@@ -746,7 +746,7 @@ fn a_check_only_builtin_does_not_restage() {
     let hooks = hooks_from("[hooks.builtin]\nfmt = true\n");
     let spec = lower_stage(&hooks, &poly(), HookStage::PreCommit, &[], &HookCacheMode::Safe).unwrap();
     let fmt = hook(&spec, "fmt");
-    assert!(run_line(fmt).contains("fmt --check"));
+    assert!(!run_line(fmt).contains("--fix"));
     assert!(!fmt.stage_fixed);
     assert!(fmt.serial_group.is_none());
 }
@@ -777,7 +777,7 @@ fmt = { jobs = [
     assert!(!python.files.as_ref().unwrap().is_match(Path::new("a.rb")));
     assert!(python.exclude.as_ref().unwrap().is_match(Path::new("gen/x.py")));
     let ruby = hook(&spec, "ruby");
-    assert!(run_line(ruby).contains("--check") && !ruby.stage_fixed);
+    assert!(!run_line(ruby).contains("--fix") && !ruby.stage_fixed);
     assert!(ruby.exclude.is_none(), "a job's scope is its own, not its sibling's");
     assert_eq!(ruby.priority, 3);
 }
@@ -960,7 +960,10 @@ fmt = { fix = true }
     let HookCommand::Run(line) = &hook.command else {
         panic!("expected run command");
     };
-    assert!(line.contains("--fix --exit-zero-on-fix"), "{line}");
+    assert!(
+        line.ends_with(" --fix") && !line.contains("--exit-nonzero-on-fix"),
+        "{line}"
+    );
     assert!(hook.stage_fixed);
 }
 
@@ -976,7 +979,7 @@ fmt = true
     let HookCommand::Run(line) = &spec.hooks[0].command else {
         panic!("expected run command");
     };
-    assert!(line.contains("fmt --check"), "{line}");
+    assert!(line.contains(" fmt ") && !line.contains("--fix"), "{line}");
     assert!(!spec.hooks[0].stage_fixed);
 }
 

@@ -36,7 +36,7 @@ exclude = ["test_apps/**", "docs/snippets/**", "artifacts/**"]
 
 # Whether a file or directory named on the command line honors `exclude`.
 # Defaults to true, which is what a hook — always handed explicit staged paths —
-# needs. --force-exclude / --include-excluded override it for one run.
+# needs. --set discovery.force_exclude=… / --include-excluded override it for one run.
 force_exclude = true
 
 # Directory names to keep despite the built-in prune set, for a repo where one of
@@ -466,7 +466,7 @@ These hold vendored code, build output or tool caches. Every run reports what th
 did not expect to lose is visible rather than silently missing:
 
 ```console
-$ poly fmt --check .
+$ poly fmt .
 All formatted. (2239 file(s) checked, 26 director(ies) skipped by the built-in prune set)
   26 director(ies) skipped by the built-in prune set (e.g. src/cli/pipeline/commands/build, node_modules)
   these were not walked, so the files inside them are not counted; keep one with [discovery] no_prune
@@ -522,7 +522,7 @@ Nothing was linted. (0 file(s) linted, 1 skipped (machine-generated file ([disco
 ```
 
 The key is read from the config nearest each file, so a nested `poly.toml` can opt out one subtree
-without touching the rest. `--skip-generated` and `--include-generated` override it in either
+without touching the rest. `--set discovery.generated=false` and `--set discovery.generated=true` override it in either
 direction for a single run, and beat every config in the tree.
 
 ## Sharing configuration

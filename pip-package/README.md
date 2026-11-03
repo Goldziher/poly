@@ -20,7 +20,7 @@ Then:
 
 ```sh
 poly lint .
-poly fmt --check .
+poly fmt .
 ```
 
 ## How the binary gets here

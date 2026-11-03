@@ -17,11 +17,11 @@ Show
 
 Type "# Django is not a Python repo. It is Python, JavaScript, CSS, HTML, TOML, YAML, Markdown." Enter
 Sleep 1800ms
-Type "time poly fmt --check --quiet ." Enter
+Type "time poly fmt --quiet ." Enter
 Sleep 6s
 Type "clear" Enter
 Sleep 500ms
 Type "# One tool, one config, one pass. No per-language runner to install." Enter
 Sleep 1800ms
-Type "time poly lint --no-workspace --quiet ." Enter
+Type "time poly lint --workspace never --quiet ." Enter
 Sleep 10s

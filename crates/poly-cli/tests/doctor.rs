@@ -115,7 +115,7 @@ fn version_reports_the_build_identity_not_just_the_number() {
 fn doctor_reports_the_running_binary_and_its_config() {
     let output = Command::new(POLY)
         .env(PROBE_TIMEOUT_ENV.0, PROBE_TIMEOUT_ENV.1)
-        .args(["doctor", "--no-color"])
+        .args(["doctor", "--color", "never"])
         .output()
         .expect("run poly");
     let text = stdout(&output);
@@ -144,7 +144,7 @@ fn doctor_fails_and_names_the_remedy_when_another_poly_is_ahead_on_path() {
     // The stand-in comes first: a bare `poly` would not run the binary under test.
     let output = installs.run(
         &[&installs.other_dir, &installs.real_dir],
-        &["doctor", "--no-color", "--format", "json"],
+        &["doctor", "--color", "never", "--format", "json"],
     );
     assert_eq!(output.status.code(), Some(1), "a shadowed install is a failure");
 
@@ -326,7 +326,10 @@ fn a_single_install_never_warns() {
 #[test]
 fn doctor_does_not_duplicate_the_warning_it_already_reports_in_full() {
     let installs = Installs::new();
-    let output = installs.run(&[&installs.other_dir, &installs.real_dir], &["doctor", "--no-color"]);
+    let output = installs.run(
+        &[&installs.other_dir, &installs.real_dir],
+        &["doctor", "--color", "never"],
+    );
     assert!(
         !stderr(&output).contains("run `poly doctor`"),
         "doctor does not tell you to run doctor: {}",

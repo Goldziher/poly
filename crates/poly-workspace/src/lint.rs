@@ -41,7 +41,7 @@ use crate::support::{open_result_cache, sccache_settings, show_progress};
 /// Per-invocation inputs the whole-project lint phase needs from the caller.
 ///
 /// Everything else (the tool set, its toggles, the cache policy) comes from the
-/// injected [`PolyConfig`]. The `--no-workspace` short-circuit is the caller's
+/// injected [`PolyConfig`]. The `--workspace never` short-circuit is the caller's
 /// responsibility: skip calling [`run_workspace_lint`] entirely rather than
 /// threading a flag through here.
 #[derive(Debug, Clone, Copy, Default)]
@@ -127,7 +127,7 @@ impl WorkspaceLintOutcome {
 /// `config` is the already-resolved poly configuration (the caller owns
 /// `extends` resolution). The phase is off when `[lint] workspace = false` or
 /// when the repo configures no whole-project tools — both return a passing,
-/// empty [`WorkspaceLintOutcome`]. The caller handles the `--no-workspace`
+/// empty [`WorkspaceLintOutcome`]. The caller handles the `--workspace never`
 /// short-circuit before calling.
 ///
 /// # Errors
@@ -144,7 +144,7 @@ pub fn run_workspace_lint(config: &PolyConfig, opts: &WorkspaceLintOptions) -> R
 
     // When poly's own output is coloured, make the captured tools emit colour too
     // (they otherwise see a capture pipe, not a TTY, and self-disable it). Gated on
-    // the same decision as the report below, so `--no-color`/redirected output stays
+    // the same decision as the report below, so `--color never`/redirected output stays
     // clean. Paired with the pass-through in `append_output`.
     let color = color_enabled(opts.report_to_stdout);
     if color {
@@ -238,7 +238,7 @@ fn force_child_color(spec: &mut poly_hooks::StageSpec) {
 }
 
 /// Whether coloured output is enabled for the sink the report prints to. Matches
-/// the decision owo-colors makes for poly's own markers — honouring `--no-color`
+/// the decision owo-colors makes for poly's own markers — honouring `--color never`
 /// (global override), `NO_COLOR`/`CLICOLOR`, and per-stream TTY detection — by
 /// probing it directly, so the force-colour and ANSI-passthrough paths stay in
 /// lock-step with the rest of the report's colouring.
@@ -324,7 +324,7 @@ fn sink_stream(to_stdout: bool) -> Stream {
 
 /// Append a failing tool's captured output, indented. ANSI colour codes are kept
 /// when `color` is set (poly's output is a colour-capable terminal) and stripped
-/// otherwise, so redirected/`--no-color` output stays plain.
+/// otherwise, so redirected/`--color never` output stays plain.
 fn append_output(buffer: &mut String, output: &[u8], color: bool) {
     let raw = String::from_utf8_lossy(output);
     let text = if color {

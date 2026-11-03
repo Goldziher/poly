@@ -23,7 +23,6 @@ pub mod render;
 pub mod report;
 pub mod shadow;
 
-use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::Args;
@@ -38,6 +37,8 @@ pub enum DoctorFormat {
     Pretty,
     /// JSON — paste it into a bug report, or assert on it in CI.
     Json,
+    /// TOON (Token-Oriented Object Notation), the same document as `json`.
+    Toon,
 }
 
 /// `poly doctor` arguments.
@@ -46,14 +47,6 @@ pub struct DoctorArgs {
     /// Output format.
     #[arg(long, value_enum, default_value_t = DoctorFormat::Pretty)]
     pub format: DoctorFormat,
-
-    /// Diagnose this config file instead of the discovered `poly.toml`.
-    #[arg(long, value_name = "PATH")]
-    pub config: Option<PathBuf>,
-
-    /// Disable colored output.
-    #[arg(long)]
-    pub no_color: bool,
 }
 
 /// Run `poly doctor`.
@@ -63,13 +56,23 @@ pub struct DoctorArgs {
 /// not load. Notes (a development build, an executable invoked by path) do not
 /// fail the run.
 pub fn run_doctor(args: DoctorArgs) -> ExitCode {
-    if args.no_color {
-        owo_colors::set_override(false);
+    let flags = crate::global();
+    match flags.color {
+        crate::ColorChoice::Never => owo_colors::set_override(false),
+        crate::ColorChoice::Always => owo_colors::set_override(true),
+        crate::ColorChoice::Auto => {}
     }
-    let report = report::collect(args.config.as_deref());
+    let report = report::collect(flags.config.as_deref());
     match args.format {
         DoctorFormat::Pretty => render::print_pretty(&report),
         DoctorFormat::Json => println!("{}", render::to_json(&report)),
+        DoctorFormat::Toon => match poly_core::report::render_toon(&report) {
+            Ok(document) => println!("{document}"),
+            Err(error) => {
+                eprintln!("error: {error}");
+                return ExitCode::from(2);
+            }
+        },
     }
     if report.has_errors() {
         ExitCode::from(1)

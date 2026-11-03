@@ -68,7 +68,7 @@ fn resolve_paths(paths: &[String]) -> Vec<PathBuf> {
 ///
 /// `force_exclude` is read from the resolved config rather than written as a
 /// literal. The CLI resolves the same question in one place — `--include-excluded`,
-/// then `--force-exclude`, then `[discovery] force_exclude`, then the built-in
+/// then `[discovery] force_exclude` (which `--set` can override), then the built-in
 /// default — and this surface has no flags, so only the last two steps can apply.
 /// Reading the key *is* that resolution here: it defaults to `true` in
 /// [`poly_config::DiscoveryConfig`], so an unset key still yields the CLI's
