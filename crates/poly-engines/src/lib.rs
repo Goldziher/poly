@@ -5,8 +5,10 @@
 //! [`PolyComponent`] contract a component implements to be driven by the host.
 
 mod component;
+pub mod producer;
 
 pub use component::{ComponentCallError, PolyComponent};
+pub use producer::Producer;
 
 #[cfg(feature = "astgrep")]
 pub use poly_engines_astgrep as astgrep;

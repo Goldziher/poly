@@ -5388,6 +5388,9 @@ dependencies = [
 name = "poly-engines"
 version = "0.32.3"
 dependencies = [
+ "anyhow",
+ "poly-component-protocol",
+ "poly-engine-api",
  "poly-engines-astgrep",
  "poly-engines-misc",
  "poly-engines-nix",
@@ -5397,6 +5400,9 @@ dependencies = [
  "poly-engines-typos",
  "poly-engines-uncomment",
  "thiserror 2.0.21",
+ "toml 1.1.8+spec-1.1.0",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

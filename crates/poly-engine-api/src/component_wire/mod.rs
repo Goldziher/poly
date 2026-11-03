@@ -2,9 +2,12 @@
 //!
 //! The wire types carry every field explicitly (no `skip_serializing_if`), so a round trip through
 //! [`WireDiagnostic`] is lossless.
-// TODO(#53): move with `Diagnostic` into `poly-engine-api`.
+
+mod config;
 
 use poly_component_protocol::{WireDiagnostic, WireEdit, WireSeverity, WireSpan};
+
+pub use config::{engine_config_from_wire, engine_config_to_wire};
 
 use crate::engine::{Diagnostic, Edit, Severity, Span};
 

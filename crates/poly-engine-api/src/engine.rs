@@ -295,6 +295,11 @@ impl OptionKeys {
         self
     }
 
+    /// Whether the table accepts poly's uniform rule-selection vocabulary ([`RULE_SELECTION_KEYS`]).
+    pub fn has_rule_selection(&self) -> bool {
+        self.rule_selection
+    }
+
     /// The derived probe this table declares, if any.
     pub fn derived_probe(&self) -> Option<DerivedProbe> {
         self.derived
@@ -316,11 +321,6 @@ impl OptionKeys {
     /// Whether this table's keys are checked at all.
     pub fn is_checked(&self) -> bool {
         self.checked
-    }
-
-    /// Whether this table accepts poly's uniform rule-selection vocabulary ([`RULE_SELECTION_KEYS`]).
-    pub fn has_rule_selection(&self) -> bool {
-        self.rule_selection
     }
 
     /// Guidance to render with an unknown-key warning for this table.
