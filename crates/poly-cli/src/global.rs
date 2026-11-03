@@ -31,6 +31,15 @@ pub enum OnMissing {
     Skip,
 }
 
+impl From<OnMissing> for poly_config::v2::OnMissing {
+    fn from(value: OnMissing) -> Self {
+        match value {
+            OnMissing::Fail => Self::Fail,
+            OnMissing::Skip => Self::Skip,
+        }
+    }
+}
+
 /// The global flags.
 #[derive(Args, Clone, Debug, Default)]
 pub struct GlobalArgs {
@@ -74,7 +83,6 @@ pub struct GlobalArgs {
 }
 
 static GLOBAL: OnceLock<GlobalArgs> = OnceLock::new();
-static ON_MISSING: OnceLock<OnMissing> = OnceLock::new();
 
 impl GlobalArgs {
     /// Record these flags for the rest of the process. First call wins.
@@ -95,18 +103,4 @@ pub fn global() -> &'static GlobalArgs {
 #[must_use]
 pub fn offline() -> bool {
     global().offline || poly_config::network::offline()
-}
-
-/// Record `--on-missing` for the run. Accepted and stored here; the missing
-/// component handling that reads it lands with the components work.
-pub fn set_on_missing(value: Option<OnMissing>) {
-    if let Some(value) = value {
-        let _ = ON_MISSING.set(value);
-    }
-}
-
-/// The `--on-missing` override, if one was given.
-#[must_use]
-pub fn on_missing() -> Option<OnMissing> {
-    ON_MISSING.get().copied()
 }

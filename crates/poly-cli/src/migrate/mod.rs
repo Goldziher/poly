@@ -516,6 +516,7 @@ fn verify_options() -> poly_core::RunOptions {
         externally_linted_languages: Vec::new(),
         only: Vec::new(),
         skip: Vec::new(),
+        ..poly_core::RunOptions::default()
     }
 }
 

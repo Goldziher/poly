@@ -32,6 +32,7 @@
 //! [`format_run`] and inspect [`LintRun::errors`] / [`FormatRun::errors`].
 
 pub mod component_wire;
+pub mod components;
 pub mod config;
 pub mod config_schema;
 pub mod config_validate;

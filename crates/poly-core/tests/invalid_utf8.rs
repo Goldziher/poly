@@ -24,6 +24,7 @@ fn invalid_utf8_is_a_contextual_error_without_aborting_the_run() {
             externally_linted_languages: Vec::new(),
             only: Vec::new(),
             skip: Vec::new(),
+            ..RunOptions::default()
         },
         false,
         false,
@@ -86,6 +87,7 @@ fn invalid_utf8_format_is_a_contextual_per_file_error_without_mutation() {
             externally_linted_languages: Vec::new(),
             only: Vec::new(),
             skip: Vec::new(),
+            ..RunOptions::default()
         },
         true,
         false,

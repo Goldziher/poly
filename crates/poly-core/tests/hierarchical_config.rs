@@ -29,6 +29,7 @@ fn options(force_exclude: bool) -> RunOptions {
         externally_linted_languages: Vec::new(),
         only: Vec::new(),
         skip: Vec::new(),
+        ..RunOptions::default()
     }
 }
 
@@ -282,6 +283,7 @@ fn nested_per_file_ignores_apply_only_to_their_subtree() {
         externally_linted_languages: Vec::new(),
         only: Vec::new(),
         skip: Vec::new(),
+        ..RunOptions::default()
     };
     let results = poly_core::lint(&[root.to_path_buf()], &config, &opts, false, false).unwrap();
 
@@ -331,6 +333,7 @@ fn single_root_repo_reports_unsuppressed_diagnostic() {
         externally_linted_languages: Vec::new(),
         only: Vec::new(),
         skip: Vec::new(),
+        ..RunOptions::default()
     };
     let results = poly_core::lint(&[root.to_path_buf()], &config, &opts, false, false).unwrap();
 

@@ -55,7 +55,8 @@ fn a_run_that_checked_something_counts_it() {
         RunSummary {
             checked: 1,
             skipped: 0,
-            errored: 0
+            errored: 0,
+            missing_components: 0
         }
     );
 }

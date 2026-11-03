@@ -72,6 +72,12 @@ pub(super) enum Withdrawal {
     Selection,
     /// `enabled = false` did, in the named table (e.g. `[lint.python.ruff]`).
     Disabled(String),
+    /// A downloadable component the language needs is not installed, or failed to install; the
+    /// payload is the full reason (`component not installed: python (offline)`).
+    ///
+    /// Unlike the other two this is a limit of the environment, not an instruction, so
+    /// [`is_withdrawal_reason`] does not match it and the skip is charged to `--deny-skips`.
+    ComponentMissing(String),
 }
 
 impl Withdrawal {
@@ -80,6 +86,7 @@ impl Withdrawal {
         match self {
             Self::Selection => FILTERED_SKIP.to_owned(),
             Self::Disabled(table) => format!("{DISABLED_SKIP_PREFIX} {table}"),
+            Self::ComponentMissing(reason) => reason.clone(),
         }
     }
 }

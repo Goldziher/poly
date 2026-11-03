@@ -92,6 +92,9 @@ pub struct Config {
     /// is loaded, layered beneath `rules_dirs` (a user rule wins on id
     /// conflict). Defaults to `true`.
     pub rules_builtin_pack: bool,
+    /// v2 `[components]` — which downloadable engine components a run may use, whether poly may
+    /// install them and what an unavailable one does to the run.
+    pub components: poly_config::v2::ComponentsConfig,
 }
 
 impl Default for Config {
@@ -116,6 +119,7 @@ impl Default for Config {
             // Matches `poly_config::RulesConfig`'s own default: the pack is
             // on unless a user explicitly turns it off.
             rules_builtin_pack: true,
+            components: Default::default(),
         }
     }
 }
@@ -514,6 +518,7 @@ impl From<poly_config::PolyConfig> for Config {
             oxlint_native: pc.oxlint_native,
             rules_builtin_pack: v2_builtin.unwrap_or(pc.rules.builtin),
             rules_dirs: v2_dirs.unwrap_or(pc.rules.dirs),
+            components: pc.components,
         }
     }
 }

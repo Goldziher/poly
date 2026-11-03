@@ -76,7 +76,8 @@ impl std::fmt::Debug for ComponentSlot {
 
 impl ComponentSlot {
     /// A slot that runs `loader` on first use. When `expected` is set, the component's
-    /// `describe()` must equal it (the index the host answered static questions from).
+    /// `describe()` must agree with it on the protocol and the engines (the index the host answered
+    /// static questions from); the component version is not compared.
     pub fn lazy(
         component_id: impl Into<String>,
         expected: Option<Describe>,
@@ -195,8 +196,10 @@ impl ComponentSlot {
         )
         .with_context(|| format!("component `{id}` returned a malformed description"))?;
         if let Some(expected) = &self.expected {
+            // The index records no component version, so only the protocol and the engines are
+            // compared.
             anyhow::ensure!(
-                &describe == expected,
+                describe.protocol == expected.protocol && describe.engines == expected.engines,
                 "component `{id}` describes itself differently from the index it was resolved with"
             );
         }

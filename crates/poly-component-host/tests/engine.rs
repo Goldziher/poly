@@ -147,7 +147,7 @@ fn unavailable_engine_carries_its_reason() {
     assert_eq!(engine.unavailable_reason(), Some("offline and not cached"));
     assert_eq!(engine.skip_reason(&src).as_deref(), Some("offline and not cached"));
     assert!(!engine.provides_language_lint(&src.language, &cfg));
-    assert_eq!(engine.version(), "1.2.3+cfeedfacefeedface");
+    assert_eq!(engine.version(), "1.2.3+cfeedfacefeedface+unavailable");
     let error = engine.lint(&src, &cfg).unwrap_err();
     assert!(error.to_string().contains("offline and not cached"), "{error:#}");
 }
@@ -166,4 +166,29 @@ fn describe_mismatch_fails_the_load_once() {
     assert_eq!(first, second);
     assert_eq!(fake.count("Init"), 1);
     assert!(matches!(engine.slot().status(), SlotStatus::Failed(_)));
+}
+
+#[test]
+fn failing_stub_declines_nothing_and_fails_every_call() {
+    let wire = desc(0, "none");
+    let engine = ComponentEngine::unavailable_failing("demo-component", &wire, "feedfacefeedface00", "boom").unwrap();
+    let src = source("x");
+    assert_eq!(engine.skip_reason(&src), None);
+    assert_eq!(engine.unavailable_reason(), Some("boom"));
+    let error = engine.lint(&src, &config(4)).unwrap_err();
+    assert!(error.to_string().contains("boom"), "{error:#}");
+}
+
+#[test]
+fn declining_stub_skips_and_does_nothing_else() {
+    let wire = desc(0, "none");
+    let engine =
+        ComponentEngine::unavailable_declining("demo-component", &wire, "feedfacefeedface00", "absent").unwrap();
+    let src = source("x");
+    assert_eq!(engine.skip_reason(&src).as_deref(), Some("absent"));
+    assert!(engine.lint(&src, &config(4)).unwrap().is_empty());
+    assert!(matches!(
+        engine.format(&src, &config(4)).unwrap(),
+        FormatOutput::Unchanged
+    ));
 }

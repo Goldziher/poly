@@ -149,8 +149,8 @@ Options:
           What to do when a file needs an engine component that is not installed. Overrides
           `[components] on_missing`.
           
-          Accepted and recorded now; the missing-component handling that acts on it is wired with
-          the components work.
+          `fail` (the default) exits 2 when a needed component is not installed; `skip` skips the
+          files it would have handled and charges them to the skip budget.
 
           Possible values:
           - fail: Exit 2

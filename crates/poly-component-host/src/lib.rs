@@ -22,11 +22,13 @@
 #[allow(unsafe_code, clippy::all, clippy::pedantic, missing_docs)]
 mod components_gen;
 mod engine;
+mod ensure;
 mod host;
 mod slot;
 mod transport;
 
 pub use engine::{ComponentEngine, component_version};
+pub use ensure::{Availability, Unavailable, UnavailableKind};
 pub use host::{ComponentHost, HostOptions};
 pub use slot::{ComponentSlot, Connection, InitParams, SlotStatus, wire_error_to_anyhow};
 pub use transport::{AlefConnector, ComponentTransport, TransportConnector};

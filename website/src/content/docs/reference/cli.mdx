@@ -71,7 +71,7 @@ and `--max-skips`.
 | Flag | Effect |
 | --- | --- |
 | `--set <KEY=VALUE>` | Override one config key for this run. Repeatable. A TOML layer applied above `poly.local.toml`, so it beats every file. `KEY` is a dotted TOML path; `VALUE` is parsed as a TOML value (`true`, `3`, `["a/**"]`) and falls back to a plain string. |
-| `--on-missing <fail\|skip>` | What to do when a file needs an engine component that is not installed. Overrides `[components] on_missing`. Accepted now; it takes effect with the components work. |
+| `--on-missing <fail\|skip>` | What to do when a file needs an engine component that is not installed. Overrides `[components] on_missing`. `fail` (the default) exits `2` when a needed component is not installed; `skip` skips its files and charges them to the skip budget, so `--deny-skips` still fails. A download, verification or compatibility failure is an error either way. |
 
 `--set discovery.force_exclude=true` applies `[discovery] exclude` to explicitly named files too (the
 default, so it matters only in a repo that set `force_exclude = false`); it replaces
@@ -167,6 +167,13 @@ The three counts are **not** a partition of `results`, and cannot be derived fro
 
 `errors` and `skipped` repeat what the corresponding records already carry, deliberately: the defect
 they exist to close is a consumer reading a clean-looking list and concluding the files are fine.
+
+When the binary does not link an engine family and a run needs its component, the document also
+carries `components: { used, installed_now, missing }` and `summary.missing_components`. Each
+`missing` entry has the component `name`, a `kind` (`offline`, `install_never`, `download_failed`,
+`verify_failed` or `incompatible`), the `reason`, and whether it is `blocking`. A bundled build that
+links every family omits both fields. Components are fetched only before a run is planned, never
+while files are being checked.
 
 `configs` is the fingerprint of every configuration that governed the run — `root`, the nearest
 governing `poly.toml` directory **relative to the run root** (omitted entirely at the root, and

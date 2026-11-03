@@ -5429,6 +5429,7 @@ name = "poly-core"
 version = "0.32.3"
 dependencies = [
  "adrlint",
+ "alef-component-runtime",
  "anyhow",
  "biome_analyze",
  "biome_css_analyze",
@@ -5463,6 +5464,7 @@ dependencies = [
  "oxc_span 0.156.0",
  "poly-cache",
  "poly-catalog",
+ "poly-component-host",
  "poly-component-index",
  "poly-component-protocol",
  "poly-config",

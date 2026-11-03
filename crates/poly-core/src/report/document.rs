@@ -17,6 +17,7 @@
 use serde::Serialize;
 
 use crate::ConfigFingerprint;
+use crate::components::ComponentsReport;
 use crate::runner::{
     FormatError, FormatResult, FormatRun, LintError, LintResult, LintRun, SkippedFile, SuppressedDiagnostic,
 };
@@ -45,6 +46,18 @@ pub struct RunSummary {
     /// Files the run **failed** on — the length of the `errors` list. These were
     /// not checked, whatever else the document says.
     pub errored: usize,
+    /// Downloadable components the run needed and could not use. Omitted when zero, so a run
+    /// that needed none serializes exactly as before.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub missing_components: usize,
+}
+
+fn is_zero(count: &usize) -> bool {
+    *count == 0
+}
+
+fn no_components(report: &ComponentsReport) -> bool {
+    report.is_empty()
 }
 
 /// A whole lint run, as a machine consumer sees it.
@@ -91,6 +104,9 @@ pub struct LintDocument {
     /// resolved from, so a difference between sibling packages is attributable
     /// rather than anomalous.
     pub configs: Vec<ConfigFingerprint>,
+    /// Downloadable engine components the run needed. Omitted when it needed none.
+    #[serde(skip_serializing_if = "no_components")]
+    pub components: ComponentsReport,
 }
 
 impl LintDocument {
@@ -105,8 +121,10 @@ impl LintDocument {
                 checked: run.checked,
                 skipped: run.skipped.len(),
                 errored: run.errors.len(),
+                missing_components: run.components.missing.len(),
             },
             configs: run.configs.clone(),
+            components: run.components.clone(),
         }
     }
 }
@@ -136,6 +154,9 @@ pub struct FormatDocument {
     /// resolved from, so a difference between sibling packages is attributable
     /// rather than anomalous.
     pub configs: Vec<ConfigFingerprint>,
+    /// Downloadable engine components the run needed. Omitted when it needed none.
+    #[serde(skip_serializing_if = "no_components")]
+    pub components: ComponentsReport,
 }
 
 impl FormatDocument {
@@ -149,8 +170,10 @@ impl FormatDocument {
                 checked: run.checked,
                 skipped: run.skipped.len(),
                 errored: run.errors.len(),
+                missing_components: run.components.missing.len(),
             },
             configs: run.configs.clone(),
+            components: run.components.clone(),
         }
     }
 }

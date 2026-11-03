@@ -135,6 +135,7 @@ oxc_semantic = { workspace = true, optional = true }
 oxc_span = { workspace = true, optional = true }
 poly-cache.workspace = true
 poly-catalog.workspace = true
+poly-component-host.workspace = true
 poly-component-index.workspace = true
 poly-component-protocol.workspace = true
 poly-config.workspace = true
@@ -177,6 +178,7 @@ which.workspace = true
 zip.workspace = true
 
 [dev-dependencies]
+alef-component-runtime.workspace = true
 criterion.workspace = true
 insta.workspace = true
 owo-colors.workspace = true

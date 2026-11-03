@@ -30,7 +30,7 @@ use crate::engine::Diagnostic;
 use crate::language::Language;
 
 use super::plan::{EnginePlan, RunPlan, provides_language_lint};
-use super::skips::SkippedFile;
+use super::skips::{SkippedFile, Withdrawal};
 use super::types::LintResult;
 use crate::filter::suppressed::SuppressedDiagnostic;
 
@@ -342,6 +342,13 @@ pub(super) fn lint_skip_reason(plan: &RunPlan, f: &DiscoveredFile, externally_li
     // A caller who narrowed the run with `--only` gets their own reason
     // instead: nothing linted the file, but "no lint rules for Rust" would
     // blame poly for a restriction the invocation asked for.
+    //
+    // A component that is absent by policy is different: its files are skipped whatever else
+    // covers the language, since the linked `quality` and ast-grep tiers cover most of what a
+    // component would have handled and would otherwise hide the missing coverage.
+    if let Some(Withdrawal::ComponentMissing(reason)) = plan.withdrawal(f.config_id, &f.language) {
+        return Some(reason.clone());
+    }
     (!provides_language_lint(engine_plans) && !externally_linted.contains(&f.language)).then(|| {
         match plan.withdrawal(f.config_id, &f.language) {
             Some(withdrawal) => withdrawal.reason(),

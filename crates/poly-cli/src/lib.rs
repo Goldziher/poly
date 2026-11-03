@@ -196,8 +196,8 @@ pub struct CommonArgs {
     /// What to do when a file needs an engine component that is not installed.
     /// Overrides `[components] on_missing`.
     ///
-    /// Accepted and recorded now; the missing-component handling that acts on it
-    /// is wired with the components work.
+    /// `fail` (the default) exits 2 when a needed component is not installed; `skip`
+    /// skips the files it would have handled and charges them to the skip budget.
     #[arg(long, value_enum, value_name = "ACTION")]
     pub on_missing: Option<OnMissing>,
 }
@@ -385,6 +385,7 @@ pub fn run_lint(args: LintArgs) -> ExitCode {
     // Reported here, folded into the exit code at the end: a strictness flag
     // must change the verdict, not what else the run does.
     let skips_over_budget = report_skip_budget(&common, &run.skipped);
+    let components_blocking = report_blocking_components(&run.components);
 
     let workspace_ok = match &workspace_config {
         // Only explain the skip when path scoping caused it. `--workspace never`
@@ -434,13 +435,24 @@ pub fn run_lint(args: LintArgs) -> ExitCode {
     // coverage failures in 2 — never in 1, which callers treat as "findings to
     // fix" and, under `--fix`, as success. The findings that *were* produced are
     // still reported above; only the verdict changes.
-    if skips_over_budget || !run.errors.is_empty() {
+    if skips_over_budget || components_blocking || !run.errors.is_empty() {
         ExitCode::from(EXIT_NOT_VERIFIED)
     } else if lint_has_errors(results) || !workspace_ok {
         ExitCode::from(1)
     } else {
         ExitCode::SUCCESS
     }
+}
+
+/// Print why each needed component that fails the run could not be used, once, and say whether
+/// any does. A skipped component is not blocking: its files are in the skip list instead.
+fn report_blocking_components(components: &poly_core::components::ComponentsReport) -> bool {
+    let mut blocking = false;
+    for missing in components.missing.iter().filter(|m| m.blocking) {
+        eprintln!("error: {}", missing.reason);
+        blocking = true;
+    }
+    blocking
 }
 
 /// Apply `--deny-skips` / `--max-skips`, naming every file that put the run over
@@ -545,7 +557,7 @@ pub fn run_fmt(args: FmtArgs) -> ExitCode {
     spinner.finish();
     let (changed, format_errors, skips_over_budget) = match formatted {
         Ok(run) => {
-            let errors = run.errors.len();
+            let errors = run.errors.len() + usize::from(report_blocking_components(&run.components));
             let changed = match common.format {
                 OutputFormat::Pretty => report::report_format_pretty_run(&run, !write, verbosity),
                 OutputFormat::Json => {
@@ -640,7 +652,6 @@ fn prepare(common: &CommonArgs) -> Result<(Vec<PathBuf>, Config, RunOptions), Ex
     };
     reject_missing_paths(&paths)?;
     install_set_overrides(&common.set)?;
-    global::set_on_missing(common.on_missing);
     // Build the remote `extends` resolver rooted at the repository so both the
     // top-level load and the runner's nested-config resolution honor shared bases.
     let resolver = match config_sources::repo_root().and_then(|root| RemoteExtendsResolver::new(&root)) {
@@ -674,6 +685,8 @@ fn prepare(common: &CommonArgs) -> Result<(Vec<PathBuf>, Config, RunOptions), Ex
         externally_linted_languages: Vec::new(),
         only: common.only.clone(),
         skip: common.skip.clone(),
+        on_missing: common.on_missing.map(Into::into),
+        ..RunOptions::default()
     };
     Ok((paths, config, opts))
 }

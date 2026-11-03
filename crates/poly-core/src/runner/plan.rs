@@ -10,6 +10,9 @@
 use poly_cache::{ResultCache, SerializedArgs};
 use rustc_hash::{FxHashMap, FxHashSet};
 
+use poly_component_host::ComponentEngine;
+
+use crate::components::{ComponentsReport, resolve as resolve_components};
 use crate::config::{Config, EngineConfig, Kind};
 use crate::discover::DiscoveredFile;
 use crate::engine::{ENABLED_OPTION_KEY, Engine};
@@ -21,6 +24,7 @@ use crate::host_hooks::oxfmt_native::FormatIgnore;
 use crate::language::Language;
 use crate::registry::{OPT_IN_ENGINES, engines_for};
 use crate::resolve::ConfigSet;
+use crate::runner::RunOptions;
 use crate::runner::selection::{self, EngineSelection};
 use crate::runner::skips::Withdrawal;
 
@@ -47,6 +51,7 @@ pub(super) type WithdrawnMap = FxHashMap<(usize, Language), Withdrawal>;
 pub(super) struct RunPlan {
     plans: PlanMap,
     withdrawn: WithdrawnMap,
+    components: ComponentsReport,
 }
 
 impl RunPlan {
@@ -55,6 +60,11 @@ impl RunPlan {
         self.plans
             .get(&(config_id, language.clone()))
             .map_or(&[], Vec::as_slice)
+    }
+
+    /// What the run needed of downloadable components, and what was missing.
+    pub(super) fn components(&self) -> &ComponentsReport {
+        &self.components
     }
 
     /// The instruction that withdrew this pair's engines, if one did.
@@ -85,6 +95,7 @@ impl RunPlan {
         Self {
             plans,
             withdrawn: WithdrawnMap::default(),
+            components: ComponentsReport::default(),
         }
     }
 }
@@ -308,6 +319,8 @@ struct Disabled {
     dropped_coverage: bool,
 }
 
+/// [`plan_engines_with`] for a run with no downloadable components.
+#[cfg(test)]
 pub(super) fn plan_engines(
     language: &Language,
     config: &Config,
@@ -315,8 +328,39 @@ pub(super) fn plan_engines(
     selection: EngineSelection<'_>,
     withdrawal: &mut Option<Withdrawal>,
 ) -> Vec<EnginePlan> {
+    plan_engines_with(language, config, kind, selection, &[], withdrawal)
+}
+
+/// Add the engines of downloadable components to the registry's list for a language.
+///
+/// When one of them formats the language it displaces the tier-2 reindenter, as a linked tier-1
+/// engine does by being registered instead of it: otherwise a component that is missing would
+/// silently leave the language formatted at lower fidelity instead of skipped.
+fn with_component_engines(mut engines: Vec<Box<dyn Engine>>, components: &[ComponentEngine]) -> Vec<Box<dyn Engine>> {
+    if components
+        .iter()
+        .any(|engine| engine.capabilities().format && !engine.languages().is_empty())
+    {
+        engines.retain(|engine| engine.name() != TREE_SITTER_ENGINE);
+    }
+    engines.extend(
+        components
+            .iter()
+            .map(|engine| Box::new(engine.clone()) as Box<dyn Engine>),
+    );
+    engines
+}
+
+pub(super) fn plan_engines_with(
+    language: &Language,
+    config: &Config,
+    kind: Kind,
+    selection: EngineSelection<'_>,
+    components: &[ComponentEngine],
+    withdrawal: &mut Option<Withdrawal>,
+) -> Vec<EnginePlan> {
     let mut disabled = None;
-    let engines = retaining_capable(engines_for(language), kind);
+    let engines = retaining_capable(with_component_engines(engines_for(language), components), kind);
     let mut engines = retaining_enabled(engines, language, config, kind, &mut disabled);
     // Asked *after* the enabled filter, not before: a disabled tier-one
     // formatter is not a tier-one formatter, and asking first discarded the
@@ -646,7 +690,11 @@ pub(super) fn plan_by_config_language(
     configs: &ConfigSet,
     kind: Kind,
     selection: EngineSelection<'_>,
+    opts: &RunOptions,
 ) -> RunPlan {
+    // The only pass that installs components; the plans below, and the workers after them,
+    // only ever load what it made available.
+    let resolved = resolve_components(files, configs, opts);
     let mut plans: PlanMap = FxHashMap::default();
     let mut withdrawn: WithdrawnMap = FxHashMap::default();
     for f in files {
@@ -655,19 +703,30 @@ pub(super) fn plan_by_config_language(
             continue;
         }
         let mut withdrawal = None;
-        let plan = plan_engines(
+        let components = resolved.engines(f.config_id, &f.language);
+        let plan = plan_engines_with(
             &f.language,
             configs.config(f.config_id),
             kind,
             selection,
+            components,
             &mut withdrawal,
         );
+        if withdrawal.is_none()
+            && let Some(reason) = components.iter().find_map(|engine| engine.declining_reason())
+        {
+            withdrawal = Some(Withdrawal::ComponentMissing(reason.to_owned()));
+        }
         if let Some(withdrawal) = withdrawal {
             withdrawn.insert(key.clone(), withdrawal);
         }
         plans.insert(key, plan);
     }
-    RunPlan { plans, withdrawn }
+    RunPlan {
+        plans,
+        withdrawn,
+        components: resolved.report().clone(),
+    }
 }
 
 // These tests lint real Python/JS/... sources, so they need every engine family.

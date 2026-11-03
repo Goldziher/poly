@@ -183,7 +183,7 @@ pub fn dto_result<T: Serialize>(value: &T, repr: TextRepr) -> Result<CallToolRes
 /// actually check" differently.
 pub fn lint_result(run: LintRun, repr: TextRepr) -> Result<CallToolResult, ErrorData> {
     let document = LintDocument::from_run(&run);
-    let is_error = !document.errors.is_empty();
+    let is_error = !document.errors.is_empty() || document.components.blocking();
     let structured = serde_json::to_value(&document).map_err(serialize_error)?;
     // A render failure is surfaced as a tool error, never as an empty document:
     // an MCP caller has no other way to tell "clean" from "poly could not tell
@@ -197,7 +197,7 @@ pub fn lint_result(run: LintRun, repr: TextRepr) -> Result<CallToolResult, Error
 /// [`lint_result`], and for the same reasons.
 pub fn format_result(run: FormatRun, repr: TextRepr) -> Result<CallToolResult, ErrorData> {
     let document = FormatDocument::from_run(&run);
-    let is_error = !document.errors.is_empty();
+    let is_error = !document.errors.is_empty() || document.components.blocking();
     let structured = serde_json::to_value(&document).map_err(serialize_error)?;
     let json_text = poly_core::report::report_format_json_run(&run).map_err(serialize_error)?;
     let toon_text = poly_core::report::report_format_toon_run(&run).map_err(serialize_error)?;

@@ -45,6 +45,7 @@ pub fn component_version(index_version: &str, lock_sha256: &str) -> String {
 ///
 /// The name, languages and option keys are leaked: an engine is built once per component per
 /// process and lives for the rest of it, and the [`Engine`] trait demands `'static` data.
+#[derive(Clone)]
 pub struct ComponentEngine {
     name: &'static str,
     languages: &'static [Language],
@@ -61,6 +62,8 @@ pub struct ComponentEngine {
     batch_shard_floor: usize,
     slot: Arc<ComponentSlot>,
     unavailable: Option<String>,
+    unavailable_skips: bool,
+    unavailable_noop: bool,
 }
 
 fn table_slot(table: OptionTable) -> usize {
@@ -155,6 +158,8 @@ impl ComponentEngine {
             batch_shard_floor: usize::try_from(desc.batch_shard_floor).unwrap_or(usize::MAX),
             slot,
             unavailable: None,
+            unavailable_skips: false,
+            unavailable_noop: false,
         })
     }
 
@@ -163,7 +168,8 @@ impl ComponentEngine {
     ///
     /// It answers statics from the index like any component engine but claims no language
     /// coverage, reports `reason` as the skip reason of every file, and fails every call with
-    /// `reason`.
+    /// `reason`. Its version carries an `+unavailable` marker so nothing it records can be
+    /// replayed under the real engine's cache key.
     ///
     /// # Errors
     ///
@@ -177,7 +183,45 @@ impl ComponentEngine {
         let reason = reason.into();
         let slot = ComponentSlot::failed(component_id, reason.clone());
         let mut engine = Self::new(component_id, desc, lock_sha256, slot)?;
+        engine.version.push_str("+unavailable");
         engine.unavailable = Some(reason);
+        engine.unavailable_skips = true;
+        Ok(engine)
+    }
+
+    /// Like [`ComponentEngine::unavailable`], but the engine only declines: it reports `reason`
+    /// as the skip reason and otherwise does nothing, so a lint or format call succeeds with no
+    /// findings and no change instead of failing. For a component that is absent by policy
+    /// (offline, install never), where the files are reported as skipped and nothing else.
+    ///
+    /// # Errors
+    ///
+    /// When the index entry is malformed, as for [`ComponentEngine::new`].
+    pub fn unavailable_declining(
+        component_id: &str,
+        desc: &WireEngineDesc,
+        lock_sha256: &str,
+        reason: impl Into<String>,
+    ) -> anyhow::Result<Self> {
+        let mut engine = Self::unavailable(component_id, desc, lock_sha256, reason)?;
+        engine.unavailable_noop = true;
+        Ok(engine)
+    }
+
+    /// Like [`ComponentEngine::unavailable`], but the engine declines nothing: it takes every
+    /// file and fails it with `reason`, so a run reports each one as an error instead of a skip.
+    ///
+    /// # Errors
+    ///
+    /// When the index entry is malformed, as for [`ComponentEngine::new`].
+    pub fn unavailable_failing(
+        component_id: &str,
+        desc: &WireEngineDesc,
+        lock_sha256: &str,
+        reason: impl Into<String>,
+    ) -> anyhow::Result<Self> {
+        let mut engine = Self::unavailable(component_id, desc, lock_sha256, reason)?;
+        engine.unavailable_skips = false;
         Ok(engine)
     }
 
@@ -185,6 +229,14 @@ impl ComponentEngine {
     #[must_use]
     pub fn unavailable_reason(&self) -> Option<&str> {
         self.unavailable.as_deref()
+    }
+
+    /// The reason, for an engine that declines its files because the component is absent by
+    /// policy ([`ComponentEngine::unavailable_declining`]); `None` for a usable engine and for
+    /// a failing stand-in.
+    #[must_use]
+    pub fn declining_reason(&self) -> Option<&str> {
+        self.unavailable.as_deref().filter(|_| self.unavailable_skips)
     }
 
     /// The slot this engine loads its component through.
@@ -299,7 +351,7 @@ impl Engine for ComponentEngine {
 
     fn skip_reason(&self, src: &SourceFile) -> Option<Cow<'static, str>> {
         if let Some(reason) = &self.unavailable {
-            return Some(Cow::Owned(reason.clone()));
+            return self.unavailable_skips.then(|| Cow::Owned(reason.clone()));
         }
         if !self.hook(hooks::SKIP_REASON) {
             return None;
@@ -327,6 +379,9 @@ impl Engine for ComponentEngine {
     }
 
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>> {
+        if self.unavailable_noop {
+            return Ok(Vec::new());
+        }
         let connection = self.connect()?;
         let file = wire_file(src);
         let payload = connection.call(
@@ -346,6 +401,9 @@ impl Engine for ComponentEngine {
     }
 
     fn format(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<FormatOutput> {
+        if self.unavailable_noop {
+            return Ok(FormatOutput::Unchanged);
+        }
         let connection = self.connect()?;
         let file = wire_file(src);
         let payload = connection.call(
@@ -365,6 +423,9 @@ impl Engine for ComponentEngine {
     }
 
     fn project_check(&self, req: &ProjectRequest<'_>) -> anyhow::Result<Vec<(PathBuf, Vec<Diagnostic>)>> {
+        if self.unavailable_noop {
+            return Ok(Vec::new());
+        }
         let connection = self.connect()?;
         let relative = |path: &Path| path.strip_prefix(req.root).unwrap_or(path).to_path_buf();
         let mut body = Vec::new();

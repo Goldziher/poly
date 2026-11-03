@@ -100,6 +100,6 @@ fn unknown_component_is_an_error_and_unavailable_engines_still_build() {
     let engine = host
         .unavailable_engine("missing", &wire, "no artifact for this target")
         .unwrap();
-    assert_eq!(engine.version(), "1.2.3+c0000000000000000");
+    assert_eq!(engine.version(), "1.2.3+c0000000000000000+unavailable");
     assert_eq!(engine.unavailable_reason(), Some("no artifact for this target"));
 }

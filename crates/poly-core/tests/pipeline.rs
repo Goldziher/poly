@@ -29,6 +29,7 @@ fn lint_does_not_flag_trailing_whitespace() {
         externally_linted_languages: Vec::new(),
         only: Vec::new(),
         skip: Vec::new(),
+        ..RunOptions::default()
     };
     let results = poly_core::lint(&[dir.path().to_path_buf()], &cfg, &opts, false, false).unwrap();
     assert!(
@@ -56,6 +57,7 @@ fn format_check_does_not_write_but_reports_change() {
         externally_linted_languages: Vec::new(),
         only: Vec::new(),
         skip: Vec::new(),
+        ..RunOptions::default()
     };
 
     let results = poly_core::format(&[dir.path().to_path_buf()], &cfg, &opts, false, false).unwrap();
@@ -81,6 +83,7 @@ fn format_write_is_idempotent() {
         externally_linted_languages: Vec::new(),
         only: Vec::new(),
         skip: Vec::new(),
+        ..RunOptions::default()
     };
 
     let first = poly_core::format(&[dir.path().to_path_buf()], &cfg, &opts, true, false).unwrap();
@@ -113,6 +116,7 @@ fn format_write_preserves_the_executable_bit() {
         externally_linted_languages: Vec::new(),
         only: Vec::new(),
         skip: Vec::new(),
+        ..RunOptions::default()
     };
 
     let results = poly_core::format(&[dir.path().to_path_buf()], &cfg, &opts, true, false).unwrap();
@@ -146,6 +150,7 @@ fn lint_fix_applies_autofixes_and_dry_run_does_not() {
         externally_linted_languages: Vec::new(),
         only: Vec::new(),
         skip: Vec::new(),
+        ..RunOptions::default()
     };
 
     poly_core::lint(&[dir.path().to_path_buf()], &cfg, &opts, false, false).unwrap();
@@ -215,6 +220,7 @@ fn lint_json_output_schema_conforms_to_diagnostic_contract() {
         externally_linted_languages: Vec::new(),
         only: Vec::new(),
         skip: Vec::new(),
+        ..RunOptions::default()
     };
 
     let results = poly_core::lint(&[dir.path().to_path_buf()], &cfg, &opts, false, false).unwrap();

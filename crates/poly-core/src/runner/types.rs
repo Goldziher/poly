@@ -11,6 +11,7 @@ use std::sync::Arc;
 
 use serde::Serialize;
 
+use crate::components::{ComponentInjection, ComponentsReport};
 use crate::discover::DiscoveryReport;
 use crate::engine::Diagnostic;
 use crate::language::Language;
@@ -93,6 +94,13 @@ pub struct RunOptions {
     /// `--skip` — drop engines with these names from the run. Empty drops
     /// nothing. Mutually exclusive with [`RunOptions::only`] at the CLI.
     pub skip: Vec<String>,
+    /// `--on-missing` — what to do when a needed component is not available, overriding
+    /// `[components] on_missing`. `None` leaves the config in charge.
+    pub on_missing: Option<poly_config::v2::OnMissing>,
+    /// A host and index standing in for the embedded ones. Test seam; not part of the supported
+    /// API.
+    #[doc(hidden)]
+    pub component_injection: Option<ComponentInjection>,
 }
 
 /// Per-engine debug record for one file. Collected only when debug output is
@@ -295,6 +303,9 @@ pub struct LintRun {
     pub configs: Vec<crate::ConfigFingerprint>,
     /// What `[discovery] exclude` / `--exclude` pruned before any of that.
     pub discovery: DiscoveryReport,
+    /// The downloadable engine components the run needed: which it used, which it installed, and
+    /// which it could not use. Empty for a run that needed none.
+    pub components: ComponentsReport,
 }
 
 /// A complete format run: the per-file results plus what discovery pruned.
@@ -332,6 +343,9 @@ pub struct FormatRun {
     pub configs: Vec<crate::ConfigFingerprint>,
     /// What `[discovery] exclude` / `--exclude` pruned before any of that.
     pub discovery: DiscoveryReport,
+    /// The downloadable engine components the run needed: which it used, which it installed, and
+    /// which it could not use. Empty for a run that needed none.
+    pub components: ComponentsReport,
 }
 
 /// One file the formatter could not process, and why.

@@ -13,6 +13,7 @@ use poly_component_protocol::{Describe, WireEngineDesc};
 use poly_config::network::{component_cache_dir, component_url};
 
 use crate::engine::ComponentEngine;
+use crate::ensure::Shared;
 use crate::slot::{ComponentSlot, InitParams};
 use crate::transport::{AlefConnector, TransportConnector};
 
@@ -34,6 +35,9 @@ pub struct HostOptions {
     pub progress: Option<ProgressCallback>,
     /// Settings sent to each component with `Init`.
     pub init: InitParams,
+    /// Refuse to load a component [`ComponentHost::ensure`] did not report usable. The runner
+    /// sets this so a worker thread can only load, never install.
+    pub gate_loads: bool,
 }
 
 impl HostOptions {
@@ -47,6 +51,7 @@ impl HostOptions {
             target: None,
             progress: None,
             init: InitParams::default(),
+            gate_loads: false,
         }
     }
 }
@@ -56,8 +61,10 @@ impl HostOptions {
 /// A component is loaded the first time one of its engines needs it, never unloaded, and a failed
 /// load is remembered for the rest of the run.
 pub struct ComponentHost {
-    manager: Arc<ComponentManager>,
-    connector: Arc<dyn TransportConnector>,
+    pub(crate) manager: Arc<ComponentManager>,
+    pub(crate) connector: Arc<dyn TransportConnector>,
+    pub(crate) offline: bool,
+    pub(crate) shared: Arc<Shared>,
     init: InitParams,
     slots: Mutex<HashMap<String, Arc<ComponentSlot>>>,
 }
@@ -96,6 +103,8 @@ impl ComponentHost {
         Ok(Self {
             manager: Arc::new(manager),
             connector: Arc::new(AlefConnector),
+            offline: options.offline,
+            shared: Arc::new(Shared::new(options.gate_loads)),
             init: options.init,
             slots: Mutex::new(HashMap::new()),
         })
@@ -148,8 +157,16 @@ impl ComponentHost {
         }
         let manager = Arc::clone(&self.manager);
         let connector = Arc::clone(&self.connector);
+        let shared = Arc::clone(&self.shared);
         let id = component_id.to_owned();
         let slot = ComponentSlot::lazy(component_id, expected, self.init.clone(), move || {
+            if let Some(transport) = shared.take_connected(&id) {
+                return Ok(transport);
+            }
+            anyhow::ensure!(
+                shared.may_load(&id),
+                "component `{id}` was not made available before the run was planned; loading never installs"
+            );
             connector.connect(&manager, &id)
         });
         slots.insert(component_id.to_owned(), Arc::clone(&slot));
@@ -189,5 +206,41 @@ impl ComponentHost {
             .lock_sha256(component_id)
             .unwrap_or_else(|| NO_LOCK_DIGEST.to_owned());
         ComponentEngine::unavailable(component_id, desc, &sha, reason)
+    }
+
+    /// Like [`ComponentHost::unavailable_engine`], but the engine fails each file instead of
+    /// declining it (see [`ComponentEngine::unavailable_failing`]).
+    ///
+    /// # Errors
+    ///
+    /// When `desc` is malformed.
+    pub fn unavailable_failing_engine(
+        &self,
+        component_id: &str,
+        desc: &WireEngineDesc,
+        reason: impl Into<String>,
+    ) -> anyhow::Result<ComponentEngine> {
+        let sha = self
+            .lock_sha256(component_id)
+            .unwrap_or_else(|| NO_LOCK_DIGEST.to_owned());
+        ComponentEngine::unavailable_failing(component_id, desc, &sha, reason)
+    }
+
+    /// Like [`ComponentHost::unavailable_engine`], but the engine only declines
+    /// (see [`ComponentEngine::unavailable_declining`]).
+    ///
+    /// # Errors
+    ///
+    /// When `desc` is malformed.
+    pub fn unavailable_declining_engine(
+        &self,
+        component_id: &str,
+        desc: &WireEngineDesc,
+        reason: impl Into<String>,
+    ) -> anyhow::Result<ComponentEngine> {
+        let sha = self
+            .lock_sha256(component_id)
+            .unwrap_or_else(|| NO_LOCK_DIGEST.to_owned());
+        ComponentEngine::unavailable_declining(component_id, desc, &sha, reason)
     }
 }

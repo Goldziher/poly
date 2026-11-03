@@ -34,6 +34,7 @@ fn options() -> RunOptions {
         externally_linted_languages: Vec::new(),
         only: Vec::new(),
         skip: Vec::new(),
+        ..RunOptions::default()
     }
 }
 
