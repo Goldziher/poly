@@ -9,11 +9,25 @@ repository.workspace = true
 homepage.workspace = true
 documentation.workspace = true
 publish = false
-description = "The Python engine family for poly (ruff)."
+description = "The Python engine family for poly (ruff lint and format, ty type checking)."
 
 [lib]
 name = "poly_engines_python"
 path = "src/lib.rs"
+
+[features]
+default = ["ty"]
+# The `python-types` project-check engine, backed by the published ty crates.
+ty = [
+  "ruff_db/os",
+  "dep:ruff_notebook",
+  "dep:salsa",
+  "dep:ty_module_resolver",
+  "dep:ty_python_core",
+  "dep:ty_python_semantic",
+  "dep:ty_site_packages",
+  "dep:ty_vendored",
+]
 
 [dependencies]
 anyhow.workspace = true
@@ -23,18 +37,26 @@ regex.workspace = true
 ruff_db.workspace = true
 ruff_formatter.workspace = true
 ruff_linter.workspace = true
+ruff_notebook = { workspace = true, optional = true }
 ruff_python_ast.workspace = true
 ruff_python_formatter.workspace = true
 ruff_python_semantic.workspace = true
 ruff_text_size.workspace = true
 rustc-hash.workspace = true
+salsa = { workspace = true, optional = true }
 serde.workspace = true
 toml.workspace = true
 tracing.workspace = true
+ty_module_resolver = { workspace = true, optional = true }
+ty_python_core = { workspace = true, optional = true }
+ty_python_semantic = { workspace = true, optional = true }
+ty_site_packages = { workspace = true, optional = true }
+ty_vendored = { workspace = true, optional = true }
 
 [dev-dependencies]
 insta.workspace = true
 tempfile.workspace = true
 
 [lints.rust]
-unsafe_code = "forbid"
+# `deny`, not `forbid`: `#[salsa::db]` expands to an `unsafe impl`, allowed in `ty/db.rs` alone.
+unsafe_code = "deny"

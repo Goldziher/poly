@@ -277,3 +277,37 @@ fn disabled_engine_does_not_run() {
         assert_eq!(calls.load(Ordering::SeqCst), 0);
     });
 }
+
+/// The real ty engine through `lint_run`: off until `backend` is set, then its findings land on
+/// the file like any other diagnostic.
+#[test]
+fn python_types_runs_only_with_a_backend() {
+    let dir = tempfile::tempdir().unwrap();
+    let cache_home = tempfile::tempdir().unwrap();
+    with_extra_project_engines(Vec::new(), || {
+        // SAFETY: `with_extra_project_engines` serialises every caller in this process.
+        unsafe {
+            std::env::set_var("POLY_CACHE_HOME", cache_home.path());
+        }
+        write(dir.path(), "app.py", "count: int = \"three\"\n");
+        let codes = |run: &LintRun| -> Vec<String> {
+            run.results
+                .iter()
+                .flat_map(|r| &r.diagnostics)
+                .filter(|d| d.engine == "python-types")
+                .filter_map(|d| d.code.clone())
+                .collect()
+        };
+
+        let off = lint(dir.path(), &Config::default(), true);
+        assert!(codes(&off).is_empty(), "{:?}", off.results);
+
+        let lint_table: toml::Table = toml::from_str("[python.python-types]\nbackend = \"ty\"\n").unwrap();
+        let config = Config {
+            lint: lint_table,
+            ..Config::default()
+        };
+        let on = lint(dir.path(), &config, true);
+        assert_eq!(codes(&on), ["invalid-assignment"]);
+    });
+}

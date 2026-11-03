@@ -60,6 +60,8 @@ pub mod quality;
 pub mod rubyfmt;
 #[cfg(feature = "engine-python")]
 pub use poly_engines_python::ruff;
+#[cfg(feature = "engine-python")]
+pub use poly_engines_python::ty;
 pub mod rule_config;
 #[cfg(feature = "engine-web")]
 pub mod rumdl;

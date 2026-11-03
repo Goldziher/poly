@@ -33,6 +33,7 @@ const PLACEMENT: &[(&str, Placement)] = &[
     ("malva", In("web")),
     ("markup_fmt", In("web")),
     ("ruff", In("python")),
+    ("python-types", In("python")),
     ("sqruff", In("sql")),
     ("mago", In("php")),
     ("biome", In("biome")),

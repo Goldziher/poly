@@ -1,6 +1,5 @@
 ---
 source: crates/poly-cli/tests/components_cli.rs
-assertion_line: 69
 expression: json
 ---
 {
@@ -32,6 +31,7 @@ expression: json
       "state": "bundled",
       "opt_in": false,
       "engines": [
+        "python-types",
         "ruff"
       ]
     },

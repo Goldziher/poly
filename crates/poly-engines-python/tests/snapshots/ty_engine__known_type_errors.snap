@@ -1,0 +1,6 @@
+---
+source: crates/poly-engines-python/tests/ty_engine.rs
+expression: "summarize(dir.path(), &reported).join(\"\\n\")"
+---
+app.py:5:5 invalid-argument-type Argument to function `add` is incorrect: Expected `int`, found `Literal["x"]`
+app.py:6:14 invalid-assignment Object of type `Literal["three"]` is not assignable to `int`

@@ -30,7 +30,7 @@ use crate::engine::{Diagnostic, ENABLED_OPTION_KEY, Engine, ProjectEnvironment, 
 use crate::engine_guard::guard_engine_panic;
 use crate::filter::{PerFileIgnores, Suppressions, is_binary, is_generated_source, relative_for_match};
 use crate::language::Language;
-use crate::registry::engines_for;
+use crate::registry::{GATED_PROJECT_ENGINES, engines_for};
 use crate::resolve::ConfigSet;
 use crate::runner::SuppressedDiagnostic;
 
@@ -126,6 +126,12 @@ fn plan_project_engines(
                 .config(*config_id)
                 .engine_config(language, engine.name(), Kind::Lint);
             if config.options.get(ENABLED_OPTION_KEY).and_then(toml::Value::as_bool) == Some(false) {
+                continue;
+            }
+            let gated_off = GATED_PROJECT_ENGINES
+                .iter()
+                .any(|(name, key)| *name == engine.name() && !config.options.contains_key(*key));
+            if gated_off {
                 continue;
             }
             plans.push(ProjectPlan {
@@ -363,5 +369,39 @@ pub(super) fn merge_findings(
                 });
             }
         }
+    }
+}
+
+#[cfg(all(test, feature = "engine-python"))]
+mod gate_tests {
+    use super::*;
+    use crate::config::Config;
+
+    fn planned(config: Config) -> Vec<&'static str> {
+        let files = [DiscoveredFile {
+            path: PathBuf::from("app.py"),
+            language: Language::Python,
+            config_id: 0,
+        }];
+        let configs = ConfigSet::single(config);
+        plan_project_engines(&files, &configs, EngineSelection::new(&[], &[]))
+            .iter()
+            .map(|plan| plan.engine.name())
+            .collect()
+    }
+
+    #[test]
+    fn python_types_is_not_planned_without_a_backend() {
+        assert!(!planned(Config::default()).contains(&"python-types"));
+    }
+
+    #[test]
+    fn python_types_is_planned_once_a_backend_is_set() {
+        let lint: toml::Table = toml::from_str("[python.python-types]\nbackend = \"ty\"\n").unwrap();
+        let config = Config {
+            lint,
+            ..Config::default()
+        };
+        assert!(planned(config).contains(&"python-types"));
     }
 }

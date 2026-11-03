@@ -258,6 +258,15 @@ pub(crate) const OPT_IN_ENGINES: &[&str] = &[
     "typos",
 ];
 
+/// Project-check engines planned only when their config table sets the named key, paired as
+/// `(engine, key)`. Without the gate the project phase would read and hash every file such an
+/// engine serves on every run, only for the engine to decline; `python-types` is switched on by
+/// `backend`, so a Python project that never mentions it pays nothing.
+pub(crate) const GATED_PROJECT_ENGINES: &[(&str, &str)] = &[
+    #[cfg(feature = "engine-python")]
+    ("python-types", "backend"),
+];
+
 /// Every concrete (non-[`Language::Other`]) [`Language`] variant, used to
 /// walk every arm of [`engines_for`]. Kept from silently narrowing by
 /// `tests::assert_all_language_variants_listed`: adding a new `Language`

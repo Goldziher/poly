@@ -701,6 +701,68 @@
       "features": ["engine-python"],
       "engines": [
         {
+          "name": "python-types",
+          "languages": ["python"],
+          "capabilities": {
+            "lint": false,
+            "format": false,
+            "fix": false,
+            "project": true
+          },
+          "version": "ty-0.0.20+proj1",
+          "option_keys": [
+            {
+              "table": "Lint",
+              "checked": true,
+              "declared": [
+                {
+                  "name": "backend",
+                  "types": 8
+                },
+                {
+                  "name": "python_version",
+                  "types": 8
+                },
+                {
+                  "name": "src",
+                  "types": 16
+                },
+                {
+                  "name": "extra_paths",
+                  "types": 16
+                }
+              ],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "Format",
+              "checked": true,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "CrossCuttingLint",
+              "checked": false,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            }
+          ],
+          "hooks": 255,
+          "takes_over_tier_one": false,
+          "claimed_paths": [],
+          "host_hook": "none",
+          "supplements_tier_one": false,
+          "self_manages_enabled": false,
+          "supersedes_generic_formatter": false,
+          "batch_shard_floor": 2
+        },
+        {
           "name": "ruff",
           "languages": ["python"],
           "capabilities": {

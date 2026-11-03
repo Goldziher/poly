@@ -482,6 +482,13 @@ fn a_declared_key_an_upstream_type_also_recognizes_defers_to_the_upstream_type()
 /// both drift checks.
 const ENGINE_SOURCES: &[(&str, &[&str])] = &[
     (
+        "python-types",
+        &[
+            "../../../poly-engines-python/src/ty.rs",
+            "../../../poly-engines-python/src/ty/settings.rs",
+        ],
+    ),
+    (
         "ruff",
         &[
             "../../../poly-engines-python/src/ruff.rs",
