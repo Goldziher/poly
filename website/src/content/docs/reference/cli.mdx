@@ -304,8 +304,9 @@ resolves only new sources; `--upgrade` re-resolves every symbolic ref to its lat
 ## `poly config` — what did poly actually parse?
 
 ```text
-poly config show   [--format <toml|json|toon>]
-poly config schema [--output <PATH>]
+poly config show     [--format <toml|json|toon>]
+poly config schema   [--output <PATH>]
+poly config validate [PATHS]...
 ```
 
 `poly config show` prints the **effective, fully-merged configuration** — every section and key
@@ -348,6 +349,14 @@ bases, and whether `[hooks]` is present — the facts the TOML form carries as c
 writes `poly.lock`. Config validation reports unknown top-level sections, unknown keys within a
 recognized section, and wrongly-typed values as warnings — a misspelled key no longer parses
 silently and does nothing.
+
+`poly config validate` checks one or more `poly.toml` files (a directory means its `poly.toml`;
+with no path, the nearest one) without loading or downloading any engine component. Option keys
+come from the component index compiled into poly. A key that an engine recognises only by probing
+its own option type is checked in-process when that engine is linked into the binary. Otherwise
+it is accepted, and the engine's component is listed as `partially validated`. Configuring an
+engine whose component is in `[components] disable` is an error. Exit `0` means valid; `2` means
+a problem was found or a file could not be read. `extends` bases are not resolved.
 
 `poly config schema` prints the JSON Schema for `poly.toml` — derived from the same config types
 the parser uses, with each backend's declared `[lint]` / `[fmt]` option keys included. Use it for

@@ -47,6 +47,17 @@ enum ConfigCommand {
         #[arg(long, value_name = "PATH")]
         output: Option<PathBuf>,
     },
+    /// Check `poly.toml` against poly's static knowledge of every engine, without loading or
+    /// downloading any component.
+    ///
+    /// Option keys are read from the compiled component index, so the verdict is the same
+    /// whatever is installed. Exits 0 when valid and 2 when not. Components whose engines derive
+    /// further keys at run time are listed as only partially validated.
+    Validate {
+        /// Config files, or directories holding a `poly.toml`. Defaults to the nearest `poly.toml`.
+        #[arg(value_name = "PATHS")]
+        paths: Vec<PathBuf>,
+    },
 }
 
 /// Output format for `poly config show`.
@@ -71,6 +82,7 @@ pub fn run_config(args: ConfigArgs) -> ExitCode {
     let result = match args.command {
         ConfigCommand::Show { format } => show(crate::global().config.as_deref(), format),
         ConfigCommand::Schema { output } => schema(output.as_deref()),
+        ConfigCommand::Validate { paths } => validate(&paths),
     };
     match result {
         Ok(code) => code,
@@ -107,4 +119,51 @@ fn schema(output: Option<&Path>) -> Result<ExitCode> {
         None => print!("{text}"),
     }
     Ok(ExitCode::SUCCESS)
+}
+
+/// Validate each config file; exit 0 when all are valid, 2 when any is not.
+fn validate(paths: &[PathBuf]) -> Result<ExitCode> {
+    let files = if paths.is_empty() {
+        let cwd = std::env::current_dir().context("reading the current directory")?;
+        vec![poly_config::find_config(&cwd).context("no poly.toml found")?]
+    } else {
+        paths
+            .iter()
+            .map(|path| {
+                if path.is_dir() {
+                    path.join(poly_config::CONFIG_FILE_NAMES[0])
+                } else {
+                    path.clone()
+                }
+            })
+            .collect()
+    };
+    let mut valid = true;
+    let mut partial: std::collections::BTreeMap<String, std::collections::BTreeSet<String>> = Default::default();
+    for file in &files {
+        let source = std::fs::read_to_string(file).with_context(|| format!("reading {}", file.display()))?;
+        let report = poly_core::config_validate::validate_source(&source);
+        for problem in &report.problems {
+            let at = if problem.path.is_empty() {
+                String::new()
+            } else {
+                format!(" [{}]", problem.path)
+            };
+            println!("{}{at}: {}", file.display(), problem.message);
+        }
+        valid &= report.is_valid();
+        for entry in report.partial {
+            partial.entry(entry.component).or_default().extend(entry.engines);
+        }
+    }
+    for (component, engines) in &partial {
+        let engines = engines.iter().cloned().collect::<Vec<_>>().join(", ");
+        println!("partially validated: component `{component}` (engines: {engines}); derived keys could not be probed");
+    }
+    if valid {
+        println!("config is valid ({} checked)", files.len());
+        Ok(ExitCode::SUCCESS)
+    } else {
+        Ok(ExitCode::from(2))
+    }
 }

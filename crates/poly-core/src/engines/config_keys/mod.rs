@@ -60,6 +60,9 @@ use crate::engine::{
 use crate::language::Language;
 use crate::registry::{all_languages, engines_for};
 
+mod static_keys;
+pub(crate) use static_keys::StaticKeys;
+
 // The assertions name individual engines (taplo, ruff, oxc, quality, ...), so they need every family.
 #[cfg(all(test, feature = "all-engines"))]
 mod tests;
@@ -154,7 +157,7 @@ struct Finding {
     /// The offending key.
     key: String,
     /// Engine the table belongs to.
-    engine: &'static str,
+    engine: String,
     /// What is wrong with it.
     problem: Problem,
 }
@@ -171,7 +174,7 @@ enum Problem {
     /// the language, so the engine never sees the settings in it.
     UnknownEngine {
         /// The engine the name was most likely meant to be.
-        suggestion: &'static str,
+        suggestion: String,
     },
     /// A top-level section name the schema does not have. Distinct from
     /// [`Problem::UnknownKey`] because nothing is scoped to an engine here — the
@@ -180,9 +183,9 @@ enum Problem {
     /// No engine reads the key.
     UnknownKey {
         /// Keys that table does accept, for the hint.
-        known: Vec<&'static str>,
+        known: Vec<String>,
         /// Extra guidance from the engine's declaration.
-        note: Option<&'static str>,
+        note: Option<String>,
     },
     /// The key is read, but not at the type it was given.
     InvalidValue {
@@ -209,7 +212,7 @@ fn config_key_diagnostics(source: &str, engine_name: &str) -> Vec<Diagnostic> {
             findings.push(Finding {
                 table: String::new(),
                 key: name.clone(),
-                engine: "poly",
+                engine: "poly".to_string(),
                 problem: Problem::UnknownTopLevel,
             });
         }
@@ -226,6 +229,13 @@ fn config_key_diagnostics(source: &str, engine_name: &str) -> Vec<Diagnostic> {
         .collect()
 }
 
+/// Check the `[lint.*]` / `[fmt.*]` tables and top-level keys of a v1 `poly.toml` source against the
+/// compiled component index, so the answer never depends on which engines this binary links.
+#[must_use]
+pub fn check_source(source: &str) -> Vec<Diagnostic> {
+    config_key_diagnostics(source, "polyconfig")
+}
+
 /// Walk one `[lint]` / `[fmt]` section: cross-cutting engine tables at the top
 /// level, `<lang>.<engine>` tables below it.
 fn collect_section(section: &str, kind: Kind, table: &toml::Table, findings: &mut Vec<Finding>) {
@@ -234,21 +244,32 @@ fn collect_section(section: &str, kind: Kind, table: &toml::Table, findings: &mu
         let Some(inner) = value.as_table() else {
             continue;
         };
-        if let Some(engine) = cross_cutting.iter().find(|engine| engine.name() == name) {
-            // `[lint.typos]` and friends: the language-agnostic table, whose
-            // merge in `Config::engine_config` drops the universal keys.
-            let table_kind = match kind {
-                Kind::Lint => OptionTable::CrossCuttingLint,
-                Kind::Format => OptionTable::Format,
-            };
-            collect_table(
-                &format!("{section}.{name}"),
-                engine.as_ref(),
-                engine.option_keys(table_kind),
-                inner,
-                false,
-                findings,
-            );
+        // `[lint.typos]` and friends: the language-agnostic table, whose merge in
+        // `Config::engine_config` drops the universal keys. The index describes the engines of
+        // components; only the core's own cross-cutting backends are asked directly.
+        let table_kind = match kind {
+            Kind::Lint => OptionTable::CrossCuttingLint,
+            Kind::Format => OptionTable::Format,
+        };
+        let indexed = poly_component_index::index()
+            .engine_descs(name)
+            .find(|desc| desc.languages.is_empty())
+            .and_then(|desc| {
+                desc.option_keys
+                    .iter()
+                    .find(|keys| keys.table == static_keys::wire_table(table_kind))
+            })
+            .map(StaticKeys::from_wire);
+        let linked_cross = cross_cutting
+            .iter()
+            .find(|engine| engine.name() == name)
+            .map(|engine| engine.option_keys(table_kind));
+        let cross_keys = match indexed {
+            Some(keys) => Some(keys.resolved_with(linked_cross.as_ref())),
+            None => linked_cross.as_ref().map(StaticKeys::from_linked),
+        };
+        if let Some(keys) = cross_keys {
+            collect_table(&format!("{section}.{name}"), name, &keys, inner, false, findings);
             continue;
         }
         let language = language_from_id(name);
@@ -258,7 +279,7 @@ fn collect_section(section: &str, kind: Kind, table: &toml::Table, findings: &mu
             findings.push(Finding {
                 table: section.to_string(),
                 key: name.clone(),
-                engine: "poly",
+                engine: "poly".to_string(),
                 problem: Problem::UnknownLanguage { suggestion },
             });
             continue;
@@ -270,25 +291,33 @@ fn collect_section(section: &str, kind: Kind, table: &toml::Table, findings: &mu
             };
             // An unrecognised tool name is left alone: it may be a catalog tool
             // (ADR 0013) declared in a base config this file cannot see.
-            let Some(engine) = engines.iter().find(|engine| engine.name() == tool) else {
-                if let Some(suggestion) = near_miss_engine(tool, &engines) {
+            let table_kind = match kind {
+                Kind::Lint => OptionTable::Lint,
+                Kind::Format => OptionTable::Format,
+            };
+            let linked = engines
+                .iter()
+                .find(|engine| engine.name() == tool)
+                .map(|engine| engine.option_keys(table_kind));
+            let keys = match StaticKeys::from_index(tool, Some(language.id()), table_kind) {
+                Some(keys) => Some(keys.resolved_with(linked.as_ref())),
+                None => linked.as_ref().map(StaticKeys::from_linked),
+            };
+            let Some(keys) = keys else {
+                if let Some(suggestion) = near_miss_engine(tool, language.id(), &engines) {
                     findings.push(Finding {
                         table: format!("{section}.{name}"),
                         key: tool.clone(),
-                        engine: "poly",
+                        engine: "poly".to_string(),
                         problem: Problem::UnknownEngine { suggestion },
                     });
                 }
                 continue;
             };
-            let table_kind = match kind {
-                Kind::Lint => OptionTable::Lint,
-                Kind::Format => OptionTable::Format,
-            };
             collect_table(
                 &format!("{section}.{name}.{tool}"),
-                engine.as_ref(),
-                engine.option_keys(table_kind),
+                tool,
+                &keys,
                 tool_table,
                 true,
                 findings,
@@ -301,8 +330,8 @@ fn collect_section(section: &str, kind: Kind, table: &toml::Table, findings: &mu
 /// accepted key whose value the backend cannot read.
 fn collect_table(
     path: &str,
-    engine: &dyn Engine,
-    keys: OptionKeys,
+    engine: &str,
+    keys: &StaticKeys,
     table: &toml::Table,
     universal: bool,
     findings: &mut Vec<Finding>,
@@ -324,13 +353,13 @@ fn collect_table(
         } else {
             Problem::UnknownKey {
                 known: keys.known_keys(universal),
-                note: keys.note(),
+                note: keys.note().map(str::to_string),
             }
         };
         findings.push(Finding {
             table: path.to_string(),
             key: key.clone(),
-            engine: engine.name(),
+            engine: engine.to_string(),
             problem,
         });
     }
@@ -347,9 +376,9 @@ fn diagnostic(finding: Finding, spans: &KeySpans, engine_name: &str) -> Diagnost
     let (code, title, description) = match problem {
         Problem::UnknownTopLevel => unknown_top_level_text(&key),
         Problem::UnknownLanguage { suggestion } => unknown_language_text(&table, &key, &suggestion),
-        Problem::UnknownEngine { suggestion } => unknown_engine_text(&table, &key, suggestion),
-        Problem::UnknownKey { known, note } => unknown_key_text(&table, &key, engine, &known, note),
-        Problem::InvalidValue { expected, found } => invalid_value_text(&table, &key, engine, expected, &found),
+        Problem::UnknownEngine { suggestion } => unknown_engine_text(&table, &key, &suggestion),
+        Problem::UnknownKey { known, note } => unknown_key_text(&table, &key, &engine, &known, note.as_deref()),
+        Problem::InvalidValue { expected, found } => invalid_value_text(&table, &key, &engine, expected, &found),
     };
     Diagnostic {
         engine: engine_name.to_string(),
@@ -401,25 +430,34 @@ fn unknown_engine_text(section: &str, tool: &str, suggestion: &str) -> (&'static
     (UNKNOWN_KEY_CODE, title, description)
 }
 
-/// The engine of `engines` whose name is one edit from `tool`, when `tool` is not itself one.
+/// The engine serving `language` (linked, or described by the index) whose name is one edit from
+/// `tool`, when `tool` is not itself one.
 ///
 /// Held to a single edit and to names of four letters or more: a catalog tool is configured
 /// under a table of its own name and may sit next to a built-in one, and a warning nobody can
 /// trust is worse than none.
-fn near_miss_engine(tool: &str, engines: &[Box<dyn Engine>]) -> Option<&'static str> {
+fn near_miss_engine(tool: &str, language: &str, engines: &[Box<dyn Engine>]) -> Option<String> {
+    let indexed = poly_component_index::index()
+        .components_for_language(language)
+        .into_iter()
+        .flat_map(|component| component.engines.iter())
+        .filter(|desc| desc.languages.iter().any(|l| l == language))
+        .map(|desc| desc.name.as_str());
     engines
         .iter()
         .map(|engine| engine.name())
+        .chain(indexed)
         .filter(|name| name.chars().count() >= 4)
         .find(|name| edit_distance(tool, name) == 1)
+        .map(str::to_string)
 }
 
 /// The key of `known` nearest to `key`, when it is close enough to be a typo of it.
-fn near_miss_key(key: &str, known: &[&'static str]) -> Option<&'static str> {
+pub(crate) fn near_miss_key<'a>(key: &str, known: &'a [String]) -> Option<&'a str> {
     let limit = if key.chars().count() <= 4 { 1 } else { 2 };
     known
         .iter()
-        .map(|candidate| (edit_distance(key, candidate), *candidate))
+        .map(|candidate| (edit_distance(key, candidate), candidate.as_str()))
         .filter(|(distance, _)| (1..=limit).contains(distance))
         .min_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(b.1)))
         .map(|(_, candidate)| candidate)
@@ -470,7 +508,7 @@ fn near_miss_language(id: &str) -> Option<String> {
         .map(|(_, candidate)| candidate)
 }
 
-fn edit_distance(a: &str, b: &str) -> usize {
+pub(crate) fn edit_distance(a: &str, b: &str) -> usize {
     let b: Vec<char> = b.chars().collect();
     let mut previous: Vec<usize> = (0..=b.len()).collect();
     for (i, ca) in a.chars().enumerate() {
@@ -489,8 +527,8 @@ fn unknown_key_text(
     table: &str,
     key: &str,
     engine: &str,
-    known: &[&'static str],
-    note: Option<&'static str>,
+    known: &[String],
+    note: Option<&str>,
 ) -> (&'static str, String, String) {
     let mut description = if known.is_empty() {
         format!("`[{table}]` reads no options at all, so `{key}` has no effect.")

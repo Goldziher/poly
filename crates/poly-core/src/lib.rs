@@ -34,6 +34,7 @@
 pub mod component_wire;
 pub mod config;
 pub mod config_schema;
+pub mod config_validate;
 pub mod defaults;
 #[doc(hidden)]
 pub mod discover;

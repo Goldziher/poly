@@ -4,7 +4,7 @@
 version = 1
 ai_rulez_version = '5.10.0'
 scope = 'all'
-tree = 'sha256:49dbbe979271bcd4220baece263309276a8a7ae21003da684ce5322a728bad60'
+tree = 'sha256:2ceb3e723441246bdf518a03d135b7556e6754a63c508eb2de9a99aa6915daaa'
 
 [[served]]
 name = 'adr-workflow'
@@ -136,7 +136,7 @@ digest = 'sha256:671f906d6a77151ad56341f0240911fe402d52dbacba1ad0eb1c6245c442d5e
 kind = 'context'
 id = 'poly'
 path = 'context/poly.md'
-digest = 'sha256:d738db0661e83a259cbe72988adbc3efb0fb2506c0f93c484a0b80fa31c1a2c9'
+digest = 'sha256:3c8415d11e3a81d2cd3c5886edf97fcb9f72831d2dea94ab1c0bebb774d3d755'
 
 [[item]]
 kind = 'context'

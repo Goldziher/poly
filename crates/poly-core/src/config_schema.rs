@@ -26,7 +26,8 @@
 use serde_json::{Map, Value, json};
 
 use crate::config::Kind;
-use crate::engine::{Engine, OptionKeys, OptionTable, OptionType};
+use crate::engine::{Engine, OptionTable, OptionType};
+use crate::engines::config_keys::StaticKeys;
 use crate::language::Language;
 use crate::registry::{all_languages, engines_for};
 
@@ -62,16 +63,10 @@ fn table_schema(kind: Kind, defs: &mut Map<String, Value>) -> Value {
 
     for language in all_languages() {
         let mut engines = Map::new();
-        for engine in engines_for(&language) {
-            if !offers(engine.as_ref(), kind) {
-                continue;
-            }
-            let key = def_key(kind, engine.name(), false);
-            defs.entry(key.clone()).or_insert_with(|| {
-                let keys = engine.option_keys(option_table(kind));
-                engine_table(&keys, true)
-            });
-            engines.insert(engine.name().to_owned(), json!({ "$ref": format!("#/$defs/{key}") }));
+        for (name, keys) in language_engines(&language, kind) {
+            let key = def_key(kind, &name, false);
+            defs.entry(key.clone()).or_insert_with(|| engine_table(&keys, true));
+            engines.insert(name, json!({ "$ref": format!("#/$defs/{key}") }));
         }
         if !engines.is_empty() {
             properties.insert(
@@ -90,13 +85,10 @@ fn table_schema(kind: Kind, defs: &mut Map<String, Value>) -> Value {
     // (`[lint.typos]`, `[lint.quality]`, …); their universal keys (indent_width,
     // rules) do not apply at that level.
     if matches!(kind, Kind::Lint) {
-        for engine in cross_cutting() {
-            let key = def_key(kind, engine.name(), true);
-            defs.entry(key.clone()).or_insert_with(|| {
-                let keys = engine.option_keys(OptionTable::CrossCuttingLint);
-                engine_table(&keys, false)
-            });
-            properties.insert(engine.name().to_owned(), json!({ "$ref": format!("#/$defs/{key}") }));
+        for (name, keys) in cross_cutting_keys() {
+            let key = def_key(kind, &name, true);
+            defs.entry(key.clone()).or_insert_with(|| engine_table(&keys, false));
+            properties.insert(name, json!({ "$ref": format!("#/$defs/{key}") }));
         }
     }
 
@@ -134,6 +126,68 @@ fn offers(engine: &dyn Engine, kind: Kind) -> bool {
     }
 }
 
+/// The engines of `language` that offer a table for `kind`, with their declared keys.
+///
+/// The compiled component index is the authority on every engine it describes, so the schema does
+/// not depend on which families this binary links; the core's own backends are asked directly.
+fn language_engines(language: &Language, kind: Kind) -> Vec<(String, StaticKeys)> {
+    let table = option_table(kind);
+    let mut engines: Vec<(String, StaticKeys)> = engines_for(language)
+        .iter()
+        .filter(|engine| offers(engine.as_ref(), kind))
+        .map(|engine| {
+            let keys = StaticKeys::from_index(engine.name(), Some(language.id()), table)
+                .unwrap_or_else(|| StaticKeys::from_linked(&engine.option_keys(table)));
+            (engine.name().to_owned(), keys)
+        })
+        .collect();
+    let index = poly_component_index::index();
+    for desc in index
+        .components
+        .iter()
+        .flat_map(|component| component.engines.iter())
+        .filter(|desc| desc.languages.is_empty() || desc.languages.iter().any(|l| l == language.id()))
+    {
+        let offered = match kind {
+            Kind::Lint => desc.capabilities.lint,
+            Kind::Format => desc.capabilities.format,
+        };
+        if offered
+            && engines.iter().all(|(name, _)| *name != desc.name)
+            && let Some(keys) = StaticKeys::from_index(&desc.name, Some(language.id()), table)
+        {
+            engines.push((desc.name.clone(), keys));
+        }
+    }
+    engines
+}
+
+/// The language-agnostic lint tables: the core's own cross-cutting backends plus those the index
+/// describes, with their declared keys.
+fn cross_cutting_keys() -> Vec<(String, StaticKeys)> {
+    let mut engines: Vec<(String, StaticKeys)> = cross_cutting()
+        .iter()
+        .map(|engine| {
+            let keys = StaticKeys::from_index(engine.name(), None, OptionTable::CrossCuttingLint)
+                .unwrap_or_else(|| StaticKeys::from_linked(&engine.option_keys(OptionTable::CrossCuttingLint)));
+            (engine.name().to_owned(), keys)
+        })
+        .collect();
+    for desc in poly_component_index::index()
+        .components
+        .iter()
+        .flat_map(|component| component.engines.iter())
+        .filter(|desc| desc.languages.is_empty())
+    {
+        if engines.iter().all(|(name, _)| *name != desc.name)
+            && let Some(keys) = StaticKeys::from_index(&desc.name, None, OptionTable::CrossCuttingLint)
+        {
+            engines.push((desc.name.clone(), keys));
+        }
+    }
+    engines
+}
+
 /// The language-agnostic cross-cutting backends, taken from any language's
 /// registry list (they are appended to every one). Go is the probe language because its engine is
 /// a native-toolchain one, present in every build; a family-gated language would fall through to
@@ -155,13 +209,13 @@ fn option_table(kind: Kind) -> OptionTable {
 
 /// One engine's `[<kind>.<lang>.<engine>]` table schema, from the keys it
 /// declares.
-fn engine_table(keys: &OptionKeys, universal: bool) -> Value {
+fn engine_table(keys: &StaticKeys, universal: bool) -> Value {
     let mut properties = Map::new();
     for key in keys.known_keys(universal) {
-        if let Some(ty) = keys.expected_type(key, universal)
+        if let Some(ty) = keys.expected_type(&key, universal)
             && let Some(schema) = type_schema(ty)
         {
-            properties.insert(key.to_owned(), schema);
+            properties.insert(key, schema);
         }
     }
     json!({
