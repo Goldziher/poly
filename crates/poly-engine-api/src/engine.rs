@@ -318,6 +318,11 @@ impl OptionKeys {
         self.checked
     }
 
+    /// Whether this table accepts poly's uniform rule-selection vocabulary ([`RULE_SELECTION_KEYS`]).
+    pub fn has_rule_selection(&self) -> bool {
+        self.rule_selection
+    }
+
     /// Guidance to render with an unknown-key warning for this table.
     pub fn note(&self) -> Option<&'static str> {
         self.note

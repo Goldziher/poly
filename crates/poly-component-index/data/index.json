@@ -1,0 +1,2032 @@
+{
+  "schema": 1,
+  "components": [
+    {
+      "name": "web",
+      "kind": "engines",
+      "opt_in": false,
+      "features": ["engine-web"],
+      "engines": [
+        {
+          "name": "adrlint",
+          "languages": ["markdown"],
+          "capabilities": {
+            "lint": true,
+            "format": false,
+            "fix": true,
+            "project": false
+          },
+          "version": "adrlint-0.4.1+poly1",
+          "option_keys": [
+            {
+              "table": "Lint",
+              "checked": true,
+              "declared": [
+                {
+                  "name": "enabled",
+                  "types": 1
+                },
+                {
+                  "name": "select",
+                  "types": 16
+                },
+                {
+                  "name": "extend_select",
+                  "types": 16
+                },
+                {
+                  "name": "ignore",
+                  "types": 16
+                }
+              ],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "Format",
+              "checked": true,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "CrossCuttingLint",
+              "checked": false,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            }
+          ],
+          "hooks": 255,
+          "takes_over_tier_one": false,
+          "claimed_paths": [],
+          "host_hook": "none",
+          "supplements_tier_one": false,
+          "self_manages_enabled": false,
+          "supersedes_generic_formatter": false,
+          "batch_shard_floor": 2
+        },
+        {
+          "name": "malva",
+          "languages": ["css", "scss", "less"],
+          "capabilities": {
+            "lint": false,
+            "format": true,
+            "fix": false,
+            "project": false
+          },
+          "version": "0.16.0+opts-2+iehack-skip+oxc_formatter_css-e2be72d+oxfmtrc-scope-1",
+          "option_keys": [
+            {
+              "table": "Lint",
+              "checked": true,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "Format",
+              "checked": true,
+              "declared": [
+                {
+                  "name": "line_width",
+                  "types": 2
+                },
+                {
+                  "name": "line_ending",
+                  "types": 8
+                },
+                {
+                  "name": "indent_style",
+                  "types": 8
+                },
+                {
+                  "name": "single_quote",
+                  "types": 1
+                },
+                {
+                  "name": "trailing_commas",
+                  "types": 8
+                }
+              ],
+              "rule_selection": false,
+              "has_derived": true,
+              "note": null
+            },
+            {
+              "table": "CrossCuttingLint",
+              "checked": true,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            }
+          ],
+          "hooks": 255,
+          "takes_over_tier_one": false,
+          "claimed_paths": [],
+          "host_hook": "oxfmt-scope",
+          "supplements_tier_one": false,
+          "self_manages_enabled": false,
+          "supersedes_generic_formatter": false,
+          "batch_shard_floor": 2
+        },
+        {
+          "name": "markup_fmt",
+          "languages": ["html", "vue", "svelte", "astro", "angular", "jinja", "vento", "mustache", "xml"],
+          "capabilities": {
+            "lint": false,
+            "format": true,
+            "fix": false,
+            "project": false
+          },
+          "version": "0.27.6+opts-2+tmpltarget-2+embedded-oxc-2+rev:e2be72d+syntax-skip-2",
+          "option_keys": [
+            {
+              "table": "Lint",
+              "checked": true,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "Format",
+              "checked": true,
+              "declared": [
+                {
+                  "name": "indent_style",
+                  "types": 8
+                },
+                {
+                  "name": "quote_style",
+                  "types": 8
+                },
+                {
+                  "name": "jsx_quote_style",
+                  "types": 8
+                },
+                {
+                  "name": "semicolons",
+                  "types": 8
+                },
+                {
+                  "name": "trailing_commas",
+                  "types": 8
+                },
+                {
+                  "name": "arrow_parentheses",
+                  "types": 8
+                },
+                {
+                  "name": "bracket_spacing",
+                  "types": 1
+                },
+                {
+                  "name": "bracket_same_line",
+                  "types": 1
+                },
+                {
+                  "name": "line_width",
+                  "types": 2
+                },
+                {
+                  "name": "line_ending",
+                  "types": 8
+                },
+                {
+                  "name": "quote_properties",
+                  "types": 8
+                },
+                {
+                  "name": "object_wrap",
+                  "types": 8
+                },
+                {
+                  "name": "operator_position",
+                  "types": 8
+                },
+                {
+                  "name": "single_attribute_per_line",
+                  "types": 1
+                },
+                {
+                  "name": "single_quote",
+                  "types": 1
+                },
+                {
+                  "name": "sort_imports",
+                  "types": 33
+                },
+                {
+                  "name": "sort_package_json",
+                  "types": 33
+                }
+              ],
+              "rule_selection": false,
+              "has_derived": true,
+              "note": "Astro `<script>` blocks are formatted by the oxc backend from *this* table, so its format keys are read here too."
+            },
+            {
+              "table": "CrossCuttingLint",
+              "checked": true,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            }
+          ],
+          "hooks": 255,
+          "takes_over_tier_one": false,
+          "claimed_paths": [],
+          "host_hook": "none",
+          "supplements_tier_one": false,
+          "self_manages_enabled": false,
+          "supersedes_generic_formatter": false,
+          "batch_shard_floor": 2
+        },
+        {
+          "name": "oxc",
+          "languages": ["javascript", "typescript", "jsx", "tsx", "json", "jsonc"],
+          "capabilities": {
+            "lint": true,
+            "format": true,
+            "fix": false,
+            "project": false
+          },
+          "version": "oxc_formatter:0.75.0+oxlint+parser:0.156.0+rev:e2be72d+json-fmt+rules-v5+fmt-opts+jsonc-trailing-comma+plugins-v1+minified-skip+oxfmtrc-v1+package-json-v1+oxlintrc-v1+rule-args-1+safe-fix-1+js-plugins-ext-1+oxfmtrc-scope-1",
+          "option_keys": [
+            {
+              "table": "Lint",
+              "checked": true,
+              "declared": [
+                {
+                  "name": "plugins",
+                  "types": 16
+                },
+                {
+                  "name": "max_line_bytes",
+                  "types": 2
+                },
+                {
+                  "name": "oxlintrc",
+                  "types": 9
+                },
+                {
+                  "name": "js_plugins",
+                  "types": 8
+                }
+              ],
+              "rule_selection": true,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "Format",
+              "checked": true,
+              "declared": [
+                {
+                  "name": "indent_style",
+                  "types": 8
+                },
+                {
+                  "name": "quote_style",
+                  "types": 8
+                },
+                {
+                  "name": "jsx_quote_style",
+                  "types": 8
+                },
+                {
+                  "name": "semicolons",
+                  "types": 8
+                },
+                {
+                  "name": "trailing_commas",
+                  "types": 8
+                },
+                {
+                  "name": "arrow_parentheses",
+                  "types": 8
+                },
+                {
+                  "name": "bracket_spacing",
+                  "types": 1
+                },
+                {
+                  "name": "bracket_same_line",
+                  "types": 1
+                },
+                {
+                  "name": "line_width",
+                  "types": 2
+                },
+                {
+                  "name": "line_ending",
+                  "types": 8
+                },
+                {
+                  "name": "quote_properties",
+                  "types": 8
+                },
+                {
+                  "name": "object_wrap",
+                  "types": 8
+                },
+                {
+                  "name": "operator_position",
+                  "types": 8
+                },
+                {
+                  "name": "single_attribute_per_line",
+                  "types": 1
+                },
+                {
+                  "name": "single_quote",
+                  "types": 1
+                },
+                {
+                  "name": "sort_imports",
+                  "types": 33
+                },
+                {
+                  "name": "sort_package_json",
+                  "types": 33
+                },
+                {
+                  "name": "oxfmtrc",
+                  "types": 8
+                },
+                {
+                  "name": "requires_oxfmt",
+                  "types": 1
+                },
+                {
+                  "name": "external",
+                  "types": 1
+                }
+              ],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "CrossCuttingLint",
+              "checked": false,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            }
+          ],
+          "hooks": 255,
+          "takes_over_tier_one": false,
+          "claimed_paths": [],
+          "host_hook": "oxc",
+          "supplements_tier_one": false,
+          "self_manages_enabled": false,
+          "supersedes_generic_formatter": false,
+          "batch_shard_floor": 256
+        },
+        {
+          "name": "rumdl",
+          "languages": ["markdown", "mdx"],
+          "capabilities": {
+            "lint": true,
+            "format": true,
+            "fix": true,
+            "project": false
+          },
+          "version": "0.3.2+defaults5-mdx-rules-tmplskip-codeaware-md020guard-structfix+ruleparams1+extendsel2+oxc_formatter_markdown-e2be72d+md-embed-1+oxfmtrc-scope-1",
+          "option_keys": [
+            {
+              "table": "Lint",
+              "checked": true,
+              "declared": [
+                {
+                  "name": "line_length",
+                  "types": 2
+                },
+                {
+                  "name": "enable",
+                  "types": 16
+                },
+                {
+                  "name": "extend_enable",
+                  "types": 16
+                },
+                {
+                  "name": "disable",
+                  "types": 16
+                }
+              ],
+              "rule_selection": true,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "Format",
+              "checked": true,
+              "declared": [
+                {
+                  "name": "line_length",
+                  "types": 2
+                },
+                {
+                  "name": "enable",
+                  "types": 16
+                },
+                {
+                  "name": "extend_enable",
+                  "types": 16
+                },
+                {
+                  "name": "disable",
+                  "types": 16
+                },
+                {
+                  "name": "line_width",
+                  "types": 2
+                },
+                {
+                  "name": "line_ending",
+                  "types": 8
+                },
+                {
+                  "name": "indent_style",
+                  "types": 8
+                },
+                {
+                  "name": "single_quote",
+                  "types": 1
+                },
+                {
+                  "name": "prose_wrap",
+                  "types": 8
+                },
+                {
+                  "name": "embedded_language_formatting",
+                  "types": 8
+                },
+                {
+                  "name": "embedded",
+                  "types": 32
+                }
+              ],
+              "rule_selection": true,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "CrossCuttingLint",
+              "checked": false,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            }
+          ],
+          "hooks": 255,
+          "takes_over_tier_one": false,
+          "claimed_paths": [],
+          "host_hook": "oxfmt-scope",
+          "supplements_tier_one": false,
+          "self_manages_enabled": false,
+          "supersedes_generic_formatter": false,
+          "batch_shard_floor": 2
+        },
+        {
+          "name": "taplo",
+          "languages": ["toml"],
+          "capabilities": {
+            "lint": true,
+            "format": true,
+            "fix": false,
+            "project": false
+          },
+          "version": "0.14.0+opts-2+oxc_formatter_toml-e2be72d+oxfmtrc-scope-1",
+          "option_keys": [
+            {
+              "table": "Lint",
+              "checked": true,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "Format",
+              "checked": true,
+              "declared": [
+                {
+                  "name": "column_width",
+                  "types": 2
+                },
+                {
+                  "name": "indent_width",
+                  "types": 2
+                },
+                {
+                  "name": "allowed_blank_lines",
+                  "types": 2
+                },
+                {
+                  "name": "align_entries",
+                  "types": 1
+                },
+                {
+                  "name": "align_comments",
+                  "types": 1
+                },
+                {
+                  "name": "reorder_keys",
+                  "types": 1
+                },
+                {
+                  "name": "indent_tables",
+                  "types": 1
+                },
+                {
+                  "name": "indent_entries",
+                  "types": 1
+                },
+                {
+                  "name": "array_trailing_comma",
+                  "types": 1
+                },
+                {
+                  "name": "array_auto_expand",
+                  "types": 1
+                },
+                {
+                  "name": "array_auto_collapse",
+                  "types": 1
+                },
+                {
+                  "name": "compact_arrays",
+                  "types": 1
+                },
+                {
+                  "name": "compact_inline_tables",
+                  "types": 1
+                },
+                {
+                  "name": "inline_table_expand",
+                  "types": 1
+                },
+                {
+                  "name": "line_width",
+                  "types": 2
+                },
+                {
+                  "name": "line_ending",
+                  "types": 8
+                },
+                {
+                  "name": "indent_style",
+                  "types": 8
+                },
+                {
+                  "name": "trailing_commas",
+                  "types": 8
+                }
+              ],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "CrossCuttingLint",
+              "checked": true,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            }
+          ],
+          "hooks": 255,
+          "takes_over_tier_one": false,
+          "claimed_paths": [],
+          "host_hook": "oxfmt-scope",
+          "supplements_tier_one": false,
+          "self_manages_enabled": false,
+          "supersedes_generic_formatter": false,
+          "batch_shard_floor": 2
+        },
+        {
+          "name": "yaml",
+          "languages": ["yaml"],
+          "capabilities": {
+            "lint": true,
+            "format": true,
+            "fix": false,
+            "project": false
+          },
+          "version": "0.1.0+serde_yaml-0.9.34+oxc_formatter_yaml-e2be72d+tmplskip+oxfmtrc-scope-1",
+          "option_keys": [
+            {
+              "table": "Lint",
+              "checked": true,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "Format",
+              "checked": true,
+              "declared": [
+                {
+                  "name": "line_width",
+                  "types": 2
+                },
+                {
+                  "name": "line_ending",
+                  "types": 8
+                },
+                {
+                  "name": "indent_style",
+                  "types": 8
+                },
+                {
+                  "name": "single_quote",
+                  "types": 1
+                },
+                {
+                  "name": "bracket_spacing",
+                  "types": 1
+                },
+                {
+                  "name": "trailing_commas",
+                  "types": 8
+                },
+                {
+                  "name": "prose_wrap",
+                  "types": 8
+                }
+              ],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "CrossCuttingLint",
+              "checked": true,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            }
+          ],
+          "hooks": 255,
+          "takes_over_tier_one": false,
+          "claimed_paths": [],
+          "host_hook": "oxfmt-scope",
+          "supplements_tier_one": false,
+          "self_manages_enabled": false,
+          "supersedes_generic_formatter": false,
+          "batch_shard_floor": 2
+        }
+      ],
+      "lock_sha": null
+    },
+    {
+      "name": "python",
+      "kind": "engines",
+      "opt_in": false,
+      "features": ["engine-python"],
+      "engines": [
+        {
+          "name": "ruff",
+          "languages": ["python"],
+          "capabilities": {
+            "lint": true,
+            "format": true,
+            "fix": true,
+            "project": false
+          },
+          "version": "ruff-0.17.3+pkgroot+plugins+isort+e501+tgtsrc+ignore-b008+rules-v3+advisory-sev1+fmtopts2+plugopts2+isort3+pylint2+impconv1+defignore2+unsafefix1+plugopts3+fmtopts3+tgtdisc1",
+          "option_keys": [
+            {
+              "table": "Lint",
+              "checked": true,
+              "declared": [
+                {
+                  "name": "line_length",
+                  "types": 2
+                },
+                {
+                  "name": "mccabe_max_complexity",
+                  "types": 2
+                },
+                {
+                  "name": "unsafe_fixes",
+                  "types": 1
+                },
+                {
+                  "name": "preview",
+                  "types": 1
+                },
+                {
+                  "name": "explicit_preview_rules",
+                  "types": 1
+                },
+                {
+                  "name": "pylint_max_args",
+                  "types": 2
+                },
+                {
+                  "name": "pylint_max_bool_expr",
+                  "types": 2
+                },
+                {
+                  "name": "pylint_max_branches",
+                  "types": 2
+                },
+                {
+                  "name": "pylint_max_locals",
+                  "types": 2
+                },
+                {
+                  "name": "pylint_max_nested_blocks",
+                  "types": 2
+                },
+                {
+                  "name": "pylint_max_public_methods",
+                  "types": 2
+                },
+                {
+                  "name": "pylint_max_returns",
+                  "types": 2
+                },
+                {
+                  "name": "pylint_max_statements",
+                  "types": 2
+                },
+                {
+                  "name": "pydocstyle_convention",
+                  "types": 8
+                },
+                {
+                  "name": "target_version",
+                  "types": 8
+                },
+                {
+                  "name": "src",
+                  "types": 16
+                },
+                {
+                  "name": "known_first_party",
+                  "types": 16
+                },
+                {
+                  "name": "known_third_party",
+                  "types": 16
+                },
+                {
+                  "name": "known_local_folder",
+                  "types": 16
+                },
+                {
+                  "name": "extra_standard_library",
+                  "types": 16
+                },
+                {
+                  "name": "known_section",
+                  "types": 32
+                },
+                {
+                  "name": "isort_case_sensitive",
+                  "types": 1
+                },
+                {
+                  "name": "isort_classes",
+                  "types": 16
+                },
+                {
+                  "name": "isort_combine_as_imports",
+                  "types": 1
+                },
+                {
+                  "name": "isort_constants",
+                  "types": 16
+                },
+                {
+                  "name": "isort_default_section",
+                  "types": 8
+                },
+                {
+                  "name": "isort_detect_same_package",
+                  "types": 1
+                },
+                {
+                  "name": "isort_force_single_line",
+                  "types": 1
+                },
+                {
+                  "name": "isort_force_sort_within_sections",
+                  "types": 1
+                },
+                {
+                  "name": "isort_force_to_top",
+                  "types": 16
+                },
+                {
+                  "name": "isort_force_wrap_aliases",
+                  "types": 1
+                },
+                {
+                  "name": "isort_forced_separate",
+                  "types": 16
+                },
+                {
+                  "name": "isort_from_first",
+                  "types": 1
+                },
+                {
+                  "name": "isort_import_heading",
+                  "types": 32
+                },
+                {
+                  "name": "isort_length_sort",
+                  "types": 1
+                },
+                {
+                  "name": "isort_length_sort_straight",
+                  "types": 1
+                },
+                {
+                  "name": "isort_lines_after_imports",
+                  "types": 2
+                },
+                {
+                  "name": "isort_lines_between_types",
+                  "types": 2
+                },
+                {
+                  "name": "isort_no_lines_before",
+                  "types": 16
+                },
+                {
+                  "name": "isort_no_sections",
+                  "types": 1
+                },
+                {
+                  "name": "isort_order_by_type",
+                  "types": 1
+                },
+                {
+                  "name": "isort_relative_imports_order",
+                  "types": 8
+                },
+                {
+                  "name": "isort_section_order",
+                  "types": 16
+                },
+                {
+                  "name": "isort_single_line_exclusions",
+                  "types": 16
+                },
+                {
+                  "name": "isort_split_on_trailing_comma",
+                  "types": 1
+                },
+                {
+                  "name": "isort_variables",
+                  "types": 16
+                },
+                {
+                  "name": "fixable",
+                  "types": 16
+                },
+                {
+                  "name": "unfixable",
+                  "types": 16
+                },
+                {
+                  "name": "external",
+                  "types": 16
+                },
+                {
+                  "name": "dummy_variable_rgx",
+                  "types": 8
+                },
+                {
+                  "name": "pycodestyle_max_line_length",
+                  "types": 2
+                },
+                {
+                  "name": "pycodestyle_max_doc_length",
+                  "types": 2
+                },
+                {
+                  "name": "pycodestyle_ignore_overlong_task_comments",
+                  "types": 1
+                },
+                {
+                  "name": "pep8_naming_ignore_names",
+                  "types": 16
+                },
+                {
+                  "name": "pep8_naming_extend_ignore_names",
+                  "types": 16
+                },
+                {
+                  "name": "pep8_naming_classmethod_decorators",
+                  "types": 16
+                },
+                {
+                  "name": "pep8_naming_staticmethod_decorators",
+                  "types": 16
+                },
+                {
+                  "name": "flake8_import_conventions_aliases",
+                  "types": 32
+                },
+                {
+                  "name": "flake8_import_conventions_extend_aliases",
+                  "types": 32
+                },
+                {
+                  "name": "flake8_import_conventions_banned_aliases",
+                  "types": 32
+                },
+                {
+                  "name": "flake8_import_conventions_banned_from",
+                  "types": 16
+                },
+                {
+                  "name": "flake8_quotes_inline_quotes",
+                  "types": 8
+                },
+                {
+                  "name": "flake8_quotes_multiline_quotes",
+                  "types": 8
+                },
+                {
+                  "name": "flake8_quotes_docstring_quotes",
+                  "types": 8
+                },
+                {
+                  "name": "flake8_quotes_avoid_escape",
+                  "types": 1
+                },
+                {
+                  "name": "flake8_type_checking_strict",
+                  "types": 1
+                },
+                {
+                  "name": "flake8_type_checking_quote_annotations",
+                  "types": 1
+                },
+                {
+                  "name": "flake8_type_checking_exempt_modules",
+                  "types": 16
+                },
+                {
+                  "name": "flake8_type_checking_runtime_evaluated_base_classes",
+                  "types": 16
+                },
+                {
+                  "name": "flake8_type_checking_runtime_evaluated_decorators",
+                  "types": 16
+                },
+                {
+                  "name": "flake8_pytest_style_fixture_parentheses",
+                  "types": 1
+                },
+                {
+                  "name": "flake8_pytest_style_mark_parentheses",
+                  "types": 1
+                },
+                {
+                  "name": "flake8_pytest_style_parametrize_names_type",
+                  "types": 8
+                },
+                {
+                  "name": "flake8_pytest_style_parametrize_values_type",
+                  "types": 8
+                },
+                {
+                  "name": "flake8_pytest_style_parametrize_values_row_type",
+                  "types": 8
+                },
+                {
+                  "name": "builtins",
+                  "types": 16
+                },
+                {
+                  "name": "namespace_packages",
+                  "types": 16
+                },
+                {
+                  "name": "allowed_confusables",
+                  "types": 16
+                },
+                {
+                  "name": "logger_objects",
+                  "types": 16
+                },
+                {
+                  "name": "task_tags",
+                  "types": 16
+                },
+                {
+                  "name": "typing_modules",
+                  "types": 16
+                },
+                {
+                  "name": "typing_extensions",
+                  "types": 1
+                },
+                {
+                  "name": "future_annotations",
+                  "types": 1
+                },
+                {
+                  "name": "ignore_init_module_imports",
+                  "types": 1
+                },
+                {
+                  "name": "isort_required_imports",
+                  "types": 16
+                },
+                {
+                  "name": "flake8_annotations_mypy_init_return",
+                  "types": 1
+                },
+                {
+                  "name": "flake8_annotations_suppress_dummy_args",
+                  "types": 1
+                },
+                {
+                  "name": "flake8_annotations_suppress_none_returning",
+                  "types": 1
+                },
+                {
+                  "name": "flake8_annotations_allow_star_arg_any",
+                  "types": 1
+                },
+                {
+                  "name": "flake8_annotations_ignore_fully_untyped",
+                  "types": 1
+                },
+                {
+                  "name": "flake8_bandit_hardcoded_tmp_directory",
+                  "types": 16
+                },
+                {
+                  "name": "flake8_bandit_hardcoded_tmp_directory_extend",
+                  "types": 16
+                },
+                {
+                  "name": "flake8_bandit_check_typed_exception",
+                  "types": 1
+                },
+                {
+                  "name": "flake8_bandit_extend_markup_names",
+                  "types": 16
+                },
+                {
+                  "name": "flake8_bandit_allowed_markup_calls",
+                  "types": 16
+                },
+                {
+                  "name": "flake8_boolean_trap_extend_allowed_calls",
+                  "types": 16
+                },
+                {
+                  "name": "flake8_bugbear_extend_immutable_calls",
+                  "types": 16
+                },
+                {
+                  "name": "flake8_comprehensions_allow_dict_calls_with_keyword_arguments",
+                  "types": 1
+                },
+                {
+                  "name": "flake8_errmsg_max_string_length",
+                  "types": 2
+                },
+                {
+                  "name": "flake8_implicit_str_concat_allow_multiline",
+                  "types": 1
+                },
+                {
+                  "name": "flake8_unused_arguments_ignore_variadic_names",
+                  "types": 1
+                },
+                {
+                  "name": "flake8_builtins_ignorelist",
+                  "types": 16
+                },
+                {
+                  "name": "flake8_builtins_allowed_modules",
+                  "types": 16
+                },
+                {
+                  "name": "flake8_builtins_strict_checking",
+                  "types": 1
+                },
+                {
+                  "name": "flake8_copyright_notice_rgx",
+                  "types": 8
+                },
+                {
+                  "name": "flake8_copyright_author",
+                  "types": 8
+                },
+                {
+                  "name": "flake8_copyright_min_file_size",
+                  "types": 2
+                },
+                {
+                  "name": "flake8_gettext_function_names",
+                  "types": 16
+                },
+                {
+                  "name": "flake8_gettext_extend_function_names",
+                  "types": 16
+                },
+                {
+                  "name": "flake8_self_ignore_names",
+                  "types": 16
+                },
+                {
+                  "name": "flake8_self_extend_ignore_names",
+                  "types": 16
+                },
+                {
+                  "name": "flake8_tidy_imports_ban_relative_imports",
+                  "types": 8
+                },
+                {
+                  "name": "flake8_tidy_imports_banned_api",
+                  "types": 32
+                },
+                {
+                  "name": "flake8_tidy_imports_extend_banned_api",
+                  "types": 32
+                },
+                {
+                  "name": "flake8_tidy_imports_banned_module_level_imports",
+                  "types": 16
+                },
+                {
+                  "name": "flake8_tidy_imports_require_lazy",
+                  "types": 56
+                },
+                {
+                  "name": "flake8_tidy_imports_ban_lazy",
+                  "types": 56
+                },
+                {
+                  "name": "pydocstyle_ignore_decorators",
+                  "types": 16
+                },
+                {
+                  "name": "pydocstyle_property_decorators",
+                  "types": 16
+                },
+                {
+                  "name": "pydocstyle_ignore_var_parameters",
+                  "types": 1
+                },
+                {
+                  "name": "pydoclint_ignore_one_line_docstrings",
+                  "types": 1
+                },
+                {
+                  "name": "pyflakes_extend_generics",
+                  "types": 16
+                },
+                {
+                  "name": "pyflakes_allowed_unused_imports",
+                  "types": 16
+                },
+                {
+                  "name": "pyupgrade_keep_runtime_typing",
+                  "types": 1
+                },
+                {
+                  "name": "ruff_parenthesize_tuple_in_subscript",
+                  "types": 1
+                },
+                {
+                  "name": "ruff_strictly_empty_init_modules",
+                  "types": 1
+                }
+              ],
+              "rule_selection": true,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "Format",
+              "checked": true,
+              "declared": [
+                {
+                  "name": "line_length",
+                  "types": 2
+                },
+                {
+                  "name": "docstring_code_format",
+                  "types": 1
+                },
+                {
+                  "name": "docstring_code_line_length",
+                  "types": 10
+                },
+                {
+                  "name": "indent_style",
+                  "types": 8
+                },
+                {
+                  "name": "quote_style",
+                  "types": 8
+                },
+                {
+                  "name": "skip_magic_trailing_comma",
+                  "types": 1
+                },
+                {
+                  "name": "line_ending",
+                  "types": 8
+                },
+                {
+                  "name": "preview",
+                  "types": 1
+                },
+                {
+                  "name": "exclude",
+                  "types": 16
+                }
+              ],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "CrossCuttingLint",
+              "checked": false,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            }
+          ],
+          "hooks": 255,
+          "takes_over_tier_one": false,
+          "claimed_paths": [],
+          "host_hook": "ruff-context",
+          "supplements_tier_one": false,
+          "self_manages_enabled": false,
+          "supersedes_generic_formatter": false,
+          "batch_shard_floor": 2
+        }
+      ],
+      "lock_sha": null
+    },
+    {
+      "name": "sql",
+      "kind": "engines",
+      "opt_in": false,
+      "features": ["engine-sql"],
+      "engines": [
+        {
+          "name": "sqruff",
+          "languages": ["sql"],
+          "capabilities": {
+            "lint": true,
+            "format": true,
+            "fix": false,
+            "project": false
+          },
+          "version": "0.44.0+rule-configs-3-presentation-fmt+cp02-off",
+          "option_keys": [
+            {
+              "table": "Lint",
+              "checked": true,
+              "declared": [
+                {
+                  "name": "dialect",
+                  "types": 8
+                },
+                {
+                  "name": "exclude_rules",
+                  "types": 16
+                },
+                {
+                  "name": "rule_configs",
+                  "types": 32
+                }
+              ],
+              "rule_selection": true,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "Format",
+              "checked": true,
+              "declared": [
+                {
+                  "name": "dialect",
+                  "types": 8
+                },
+                {
+                  "name": "exclude_rules",
+                  "types": 16
+                },
+                {
+                  "name": "rule_configs",
+                  "types": 32
+                }
+              ],
+              "rule_selection": true,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "CrossCuttingLint",
+              "checked": false,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            }
+          ],
+          "hooks": 255,
+          "takes_over_tier_one": false,
+          "claimed_paths": [],
+          "host_hook": "none",
+          "supplements_tier_one": false,
+          "self_manages_enabled": false,
+          "supersedes_generic_formatter": false,
+          "batch_shard_floor": 2
+        }
+      ],
+      "lock_sha": null
+    },
+    {
+      "name": "php",
+      "kind": "engines",
+      "opt_in": false,
+      "features": ["engine-php"],
+      "engines": [
+        {
+          "name": "mago",
+          "languages": ["php"],
+          "capabilities": {
+            "lint": true,
+            "format": true,
+            "fix": true,
+            "project": false
+          },
+          "version": "mago-1.59.0+advisory-sev1",
+          "option_keys": [
+            {
+              "table": "Lint",
+              "checked": true,
+              "declared": [
+                {
+                  "name": "php_version",
+                  "types": 8
+                },
+                {
+                  "name": "integrations",
+                  "types": 16
+                }
+              ],
+              "rule_selection": true,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "Format",
+              "checked": true,
+              "declared": [
+                {
+                  "name": "php_version",
+                  "types": 8
+                }
+              ],
+              "rule_selection": false,
+              "has_derived": true,
+              "note": null
+            },
+            {
+              "table": "CrossCuttingLint",
+              "checked": false,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            }
+          ],
+          "hooks": 255,
+          "takes_over_tier_one": false,
+          "claimed_paths": [],
+          "host_hook": "none",
+          "supplements_tier_one": false,
+          "self_manages_enabled": false,
+          "supersedes_generic_formatter": false,
+          "batch_shard_floor": 2
+        }
+      ],
+      "lock_sha": null
+    },
+    {
+      "name": "biome",
+      "kind": "engines",
+      "opt_in": false,
+      "features": ["engine-biome"],
+      "engines": [
+        {
+          "name": "biome",
+          "languages": ["css", "scss"],
+          "capabilities": {
+            "lint": true,
+            "format": false,
+            "fix": false,
+            "project": false
+          },
+          "version": "biome_css_analyze+rev:e2e5a36+lint-v1+iehack-skip",
+          "option_keys": [
+            {
+              "table": "Lint",
+              "checked": true,
+              "declared": [],
+              "rule_selection": true,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "Format",
+              "checked": true,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "CrossCuttingLint",
+              "checked": true,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            }
+          ],
+          "hooks": 255,
+          "takes_over_tier_one": false,
+          "claimed_paths": [],
+          "host_hook": "none",
+          "supplements_tier_one": false,
+          "self_manages_enabled": false,
+          "supersedes_generic_formatter": false,
+          "batch_shard_floor": 2
+        },
+        {
+          "name": "biome",
+          "languages": ["graphql"],
+          "capabilities": {
+            "lint": true,
+            "format": false,
+            "fix": false,
+            "project": false
+          },
+          "version": "biome_graphql_analyze+rev:e2e5a36+lint-v1",
+          "option_keys": [
+            {
+              "table": "Lint",
+              "checked": true,
+              "declared": [],
+              "rule_selection": true,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "Format",
+              "checked": true,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "CrossCuttingLint",
+              "checked": true,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            }
+          ],
+          "hooks": 255,
+          "takes_over_tier_one": false,
+          "claimed_paths": [],
+          "host_hook": "none",
+          "supplements_tier_one": false,
+          "self_manages_enabled": false,
+          "supersedes_generic_formatter": false,
+          "batch_shard_floor": 2
+        }
+      ],
+      "lock_sha": null
+    },
+    {
+      "name": "ruby",
+      "kind": "engines",
+      "opt_in": false,
+      "features": ["engine-ruby"],
+      "engines": [
+        {
+          "name": "rubyfmt",
+          "languages": ["ruby"],
+          "capabilities": {
+            "lint": false,
+            "format": true,
+            "fix": false,
+            "project": false
+          },
+          "version": "rubyfmt-git:884b9fd",
+          "option_keys": [
+            {
+              "table": "Lint",
+              "checked": true,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "Format",
+              "checked": true,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "CrossCuttingLint",
+              "checked": true,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            }
+          ],
+          "hooks": 255,
+          "takes_over_tier_one": false,
+          "claimed_paths": [],
+          "host_hook": "none",
+          "supplements_tier_one": false,
+          "self_manages_enabled": false,
+          "supersedes_generic_formatter": false,
+          "batch_shard_floor": 2
+        }
+      ],
+      "lock_sha": null
+    },
+    {
+      "name": "nix",
+      "kind": "engines",
+      "opt_in": false,
+      "features": ["engine-nix"],
+      "engines": [
+        {
+          "name": "alejandra",
+          "languages": ["nix"],
+          "capabilities": {
+            "lint": false,
+            "format": true,
+            "fix": false,
+            "project": false
+          },
+          "version": "3.1.0",
+          "option_keys": [
+            {
+              "table": "Lint",
+              "checked": true,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "Format",
+              "checked": true,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "CrossCuttingLint",
+              "checked": true,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            }
+          ],
+          "hooks": 255,
+          "takes_over_tier_one": false,
+          "claimed_paths": [],
+          "host_hook": "none",
+          "supplements_tier_one": false,
+          "self_manages_enabled": false,
+          "supersedes_generic_formatter": false,
+          "batch_shard_floor": 2
+        }
+      ],
+      "lock_sha": null
+    },
+    {
+      "name": "typos",
+      "kind": "engines",
+      "opt_in": true,
+      "features": ["engine-typos"],
+      "engines": [
+        {
+          "name": "typos",
+          "languages": [],
+          "capabilities": {
+            "lint": true,
+            "format": false,
+            "fix": false,
+            "project": false
+          },
+          "version": "0.10.44+dict-0.14.4+guards1+cfg3+warn-noautofix+builtins1+rulecodes1",
+          "option_keys": [
+            {
+              "table": "Lint",
+              "checked": true,
+              "declared": [
+                {
+                  "name": "extend_words",
+                  "types": 32
+                },
+                {
+                  "name": "extend_identifiers",
+                  "types": 32
+                },
+                {
+                  "name": "extend_exclude",
+                  "types": 16
+                },
+                {
+                  "name": "extend_ignore_words",
+                  "types": 16
+                },
+                {
+                  "name": "extend_ignore_re",
+                  "types": 16
+                },
+                {
+                  "name": "extend_ignore_words_re",
+                  "types": 16
+                },
+                {
+                  "name": "extend_ignore_identifiers_re",
+                  "types": 16
+                }
+              ],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "Format",
+              "checked": true,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "CrossCuttingLint",
+              "checked": true,
+              "declared": [
+                {
+                  "name": "extend_words",
+                  "types": 32
+                },
+                {
+                  "name": "extend_identifiers",
+                  "types": 32
+                },
+                {
+                  "name": "extend_exclude",
+                  "types": 16
+                },
+                {
+                  "name": "extend_ignore_words",
+                  "types": 16
+                },
+                {
+                  "name": "extend_ignore_re",
+                  "types": 16
+                },
+                {
+                  "name": "extend_ignore_words_re",
+                  "types": 16
+                },
+                {
+                  "name": "extend_ignore_identifiers_re",
+                  "types": 16
+                }
+              ],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            }
+          ],
+          "hooks": 255,
+          "takes_over_tier_one": false,
+          "claimed_paths": [],
+          "host_hook": "none",
+          "supplements_tier_one": false,
+          "self_manages_enabled": false,
+          "supersedes_generic_formatter": false,
+          "batch_shard_floor": 2
+        }
+      ],
+      "lock_sha": null
+    },
+    {
+      "name": "astgrep",
+      "kind": "engines",
+      "opt_in": false,
+      "features": ["engine-astgrep"],
+      "engines": [
+        {
+          "name": "astgrep",
+          "languages": [],
+          "capabilities": {
+            "lint": true,
+            "format": false,
+            "fix": true,
+            "project": false
+          },
+          "version": "ast-grep-core-0.51.1-engine-3+tslp1.23.1+builtin-pack-3",
+          "option_keys": [
+            {
+              "table": "Lint",
+              "checked": true,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": "ast-grep is configured in the language-agnostic `[lint.astgrep]` table; a per-language `[lint.<lang>.astgrep]` table is never read."
+            },
+            {
+              "table": "Format",
+              "checked": true,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "CrossCuttingLint",
+              "checked": true,
+              "declared": [],
+              "rule_selection": true,
+              "has_derived": false,
+              "note": null
+            }
+          ],
+          "hooks": 255,
+          "takes_over_tier_one": false,
+          "claimed_paths": [],
+          "host_hook": "none",
+          "supplements_tier_one": false,
+          "self_manages_enabled": false,
+          "supersedes_generic_formatter": false,
+          "batch_shard_floor": 2
+        }
+      ],
+      "lock_sha": null
+    },
+    {
+      "name": "misc",
+      "kind": "engines",
+      "opt_in": false,
+      "features": ["engine-dockerfile", "engine-dotenv", "engine-hcl", "engine-graphql"],
+      "engines": [
+        {
+          "name": "dockerfile",
+          "languages": ["dockerfile"],
+          "capabilities": {
+            "lint": true,
+            "format": false,
+            "fix": false,
+            "project": false
+          },
+          "version": "0.10.0+vendored1+parse-diag-v1+extendsel2+tmplskip",
+          "option_keys": [
+            {
+              "table": "Lint",
+              "checked": true,
+              "declared": [],
+              "rule_selection": true,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "Format",
+              "checked": true,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "CrossCuttingLint",
+              "checked": true,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            }
+          ],
+          "hooks": 255,
+          "takes_over_tier_one": false,
+          "claimed_paths": [],
+          "host_hook": "none",
+          "supplements_tier_one": false,
+          "self_manages_enabled": false,
+          "supersedes_generic_formatter": false,
+          "batch_shard_floor": 2
+        },
+        {
+          "name": "dotenv",
+          "languages": ["dotenv"],
+          "capabilities": {
+            "lint": true,
+            "format": false,
+            "fix": true,
+            "project": false
+          },
+          "version": "dotenv-analyzer-0.1.1+core-0.1.1+map1",
+          "option_keys": [
+            {
+              "table": "Lint",
+              "checked": true,
+              "declared": [],
+              "rule_selection": true,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "Format",
+              "checked": true,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "CrossCuttingLint",
+              "checked": true,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            }
+          ],
+          "hooks": 255,
+          "takes_over_tier_one": false,
+          "claimed_paths": [],
+          "host_hook": "none",
+          "supplements_tier_one": false,
+          "self_manages_enabled": false,
+          "supersedes_generic_formatter": false,
+          "batch_shard_floor": 2
+        },
+        {
+          "name": "graphql",
+          "languages": ["graphql"],
+          "capabilities": {
+            "lint": true,
+            "format": true,
+            "fix": false,
+            "project": false
+          },
+          "version": "pretty_graphql-0.2.3+config2",
+          "option_keys": [
+            {
+              "table": "Lint",
+              "checked": true,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "Format",
+              "checked": true,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": true,
+              "note": null
+            },
+            {
+              "table": "CrossCuttingLint",
+              "checked": true,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            }
+          ],
+          "hooks": 255,
+          "takes_over_tier_one": false,
+          "claimed_paths": [],
+          "host_hook": "none",
+          "supplements_tier_one": false,
+          "self_manages_enabled": false,
+          "supersedes_generic_formatter": false,
+          "batch_shard_floor": 2
+        },
+        {
+          "name": "hcl",
+          "languages": ["hcl"],
+          "capabilities": {
+            "lint": true,
+            "format": true,
+            "fix": false,
+            "project": false
+          },
+          "version": "hcl-edit 0.10.0 + hclwrite-format-v1",
+          "option_keys": [
+            {
+              "table": "Lint",
+              "checked": true,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "Format",
+              "checked": true,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            },
+            {
+              "table": "CrossCuttingLint",
+              "checked": true,
+              "declared": [],
+              "rule_selection": false,
+              "has_derived": false,
+              "note": null
+            }
+          ],
+          "hooks": 255,
+          "takes_over_tier_one": false,
+          "claimed_paths": [],
+          "host_hook": "none",
+          "supplements_tier_one": false,
+          "self_manages_enabled": false,
+          "supersedes_generic_formatter": false,
+          "batch_shard_floor": 2
+        }
+      ],
+      "lock_sha": null
+    },
+    {
+      "name": "mcp",
+      "kind": "frontend",
+      "opt_in": false,
+      "features": [],
+      "engines": [],
+      "lock_sha": null
+    }
+  ],
+  "presets": {
+    "all": ["web", "python", "sql", "php", "biome", "ruby", "nix", "astgrep", "misc"],
+    "css": ["web", "biome"],
+    "dockerfile": ["misc"],
+    "dotenv": ["misc"],
+    "graphql": ["biome", "misc"],
+    "hcl": ["misc"],
+    "html": ["web"],
+    "js": ["web"],
+    "json": ["web"],
+    "markdown": ["web"],
+    "nix": ["nix"],
+    "php": ["php"],
+    "python": ["python"],
+    "ruby": ["ruby"],
+    "sql": ["sql"],
+    "toml": ["web"],
+    "ts": ["web"],
+    "yaml": ["web"]
+  }
+}

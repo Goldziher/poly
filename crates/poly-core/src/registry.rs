@@ -151,6 +151,16 @@ pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
     engines
 }
 
+/// One instance of every engine [`engines_for`] registers, across every language (duplicates
+/// included: an engine serving several languages appears once per language).
+///
+/// Exists for the compiled component index generator and its drift test, which describe the
+/// registered engines without a second hand-maintained list.
+#[doc(hidden)]
+pub fn registered_engines() -> Vec<Box<dyn Engine>> {
+    all_languages().iter().flat_map(engines_for).collect()
+}
+
 /// Every engine name the registry can plan, across every language.
 ///
 /// Walks [`all_languages`] rather than holding a second hand-maintained list,

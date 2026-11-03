@@ -1,0 +1,25 @@
+[package]
+name = "poly-component-index"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+publish = false
+description = "The compiled index of poly engine components: which component hosts which engine, language and option keys."
+
+[lib]
+name = "poly_component_index"
+path = "src/lib.rs"
+
+[dependencies]
+poly-component-protocol.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"

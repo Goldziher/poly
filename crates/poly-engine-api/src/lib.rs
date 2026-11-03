@@ -7,6 +7,7 @@
 pub mod component_wire;
 pub mod config;
 pub mod css_hacks;
+pub mod desc;
 pub mod engine;
 pub mod engine_guard;
 pub mod host_hooks;

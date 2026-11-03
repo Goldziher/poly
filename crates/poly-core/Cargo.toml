@@ -186,6 +186,7 @@ zip.workspace = true
 criterion.workspace = true
 insta.workspace = true
 owo-colors.workspace = true
+poly-component-index.workspace = true
 proptest.workspace = true
 tracing-subscriber.workspace = true
 

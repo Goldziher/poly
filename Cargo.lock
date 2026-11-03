@@ -5246,6 +5246,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "poly-component-index"
+version = "0.32.3"
+dependencies = [
+ "poly-component-protocol",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "poly-component-protocol"
 version = "0.32.3"
 dependencies = [
@@ -5319,6 +5329,7 @@ dependencies = [
  "oxc_span 0.156.0",
  "poly-cache",
  "poly-catalog",
+ "poly-component-index",
  "poly-component-protocol",
  "poly-config",
  "poly-engine-api",

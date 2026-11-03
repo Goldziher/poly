@@ -8,6 +8,7 @@ members = [
   "crates/poly-cache",
   "crates/poly-catalog",
   "crates/poly-cli",
+  "crates/poly-component-index",
   "crates/poly-component-protocol",
   "crates/poly-config",
   "crates/poly-core",
@@ -124,6 +125,7 @@ poly-buildinfo = { path = "crates/poly-buildinfo" }
 poly-cache = { path = "crates/poly-cache" }
 poly-catalog = { path = "crates/poly-catalog" }
 poly-cli = { path = "crates/poly-cli" }
+poly-component-index = { path = "crates/poly-component-index" }
 poly-component-protocol = { path = "crates/poly-component-protocol" }
 poly-config = { path = "crates/poly-config" }
 # `default-features = false`: members opt into engine families explicitly (`all-engines`, `engine-*`).
