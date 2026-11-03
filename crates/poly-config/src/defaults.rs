@@ -47,17 +47,17 @@ impl Default for GlobalDefaults {
 
 /// On-disk representation of `[defaults]`. `line_ending` is a string so the TOML
 /// stays human-friendly; it is normalized into [`LineEnding`] on load.
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 #[serde(default)]
-pub(crate) struct RawDefaults {
+pub struct RawDefaults {
     /// Target maximum line length, applied wherever a tool exposes the setting.
-    pub(crate) line_length: usize,
+    pub line_length: usize,
     /// Whether to enforce a single trailing newline.
-    pub(crate) final_newline: bool,
+    pub final_newline: bool,
     /// Whether to strip trailing whitespace on each line.
-    pub(crate) trim_trailing_whitespace: bool,
+    pub trim_trailing_whitespace: bool,
     /// Line-ending style to enforce: `"lf"` (default) or `"crlf"`.
-    pub(crate) line_ending: String,
+    pub line_ending: String,
 }
 
 impl Default for RawDefaults {
