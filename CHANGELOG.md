@@ -5,6 +5,14 @@ All notable changes to this project are documented here. The format is based on
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). The single `poly`
 binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
+## [Unreleased]
+
+### Changed
+
+- **`poly commit`.** Consumes the upstream `gitfluff` 0.10.0 library from crates.io instead of the in-tree fork
+  (`crates/gitfluff` is removed); the `[commit]` config loading and `poly.toml` `extends` resolution live in
+  `poly-cli`'s `commit/` module.
+
 ## [0.33.1] - 2026-11-05
 
 ### Fixed

@@ -11,6 +11,7 @@ use crate::config_sources::RemoteExtendsResolver;
 
 pub mod cache_cmd;
 pub mod cli;
+pub mod commit;
 pub mod components_cmd;
 pub mod config_cmd;
 pub mod config_sources;
@@ -27,6 +28,7 @@ pub mod rules_cmd;
 pub mod workspace_coverage;
 
 pub use cache_cmd::{CacheArgs, run_cache};
+pub use commit::{CommitArgs, run_commit_lint};
 pub use components_cmd::{ComponentsArgs, run_components};
 pub use config_cmd::{ConfigArgs, run_config};
 pub use doctor::{DoctorArgs, run_doctor};

@@ -35,13 +35,12 @@ an installer (see release-versioning).
 
 ## Workspace root
 
-- `Cargo.toml` — `[workspace]` (resolver 3, edition 2024, `rust-version = "1.99"`). Twenty-seven
+- `Cargo.toml` — `[workspace]` (resolver 3, edition 2024, `rust-version = "1.99"`). Twenty-six
   members: `poly-core` (the engine library), `poly-cli` (builds the `poly` binary),
   `poly-config`, `poly-cache`, `poly-catalog`, `poly-hooks`, `poly-workspace`, `poly-mcp`,
   `poly-buildinfo`, the engine split (`poly-engine-api`, `poly-engines`, the nine
   `poly-engines-*` family crates, `poly-grammar` and the three `poly-component-*` crates, below),
-  and three that do **not** carry the prefix — `gitfluff` (the commit-message
-  linter behind `poly commit`), `dockerfile-parser` (the vendored Dockerfile parser behind the
+  and two that do **not** carry the prefix — `dockerfile-parser` (the vendored Dockerfile parser behind the
   `dockerfile` engine) and `conformance` (a dev-only differential formatter-conformance harness
   the shipped binary never depends on). Engine families are split out as `poly-engines-<family>`
   crates (`sql`, `nix`, `php`, `python`, `typos`, `astgrep`, `uncomment`, `misc` — the last holds
@@ -58,7 +57,7 @@ an installer (see release-versioning).
   `poly-bundled`). Every other release triple ships `--no-default-features --features core`,
   linking only the quality, uncomment and ini engines; the rest, and the MCP server, are downloaded
   components (`poly-host-services` provides the services a frontend component calls,
-  `poly-frontend-api` is its wire contract). `poly-cli`'s `components_cmd/` is `poly components`. Shared deps live under `[workspace.dependencies]`; git deps are pinned to a `rev`
+  `poly-frontend-api` is its wire contract). `poly-cli`'s `components_cmd/` is `poly components`. `poly commit` is the upstream `gitfluff` library (crates.io) plus the glue in `poly-cli`'s `commit/` module. Shared deps live under `[workspace.dependencies]`; git deps are pinned to a `rev`
   (crates from one monorepo share one `rev`).
 - `deny.toml` — `cargo deny` license / source allow-list (no GPL/AGPL), applied across the full
   dependency tree including git deps and their transitive dependencies.

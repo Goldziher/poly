@@ -4,7 +4,6 @@ resolver = "3"
 members = [
   "crates/conformance",
   "crates/dockerfile-parser",
-  "crates/gitfluff",
   "crates/poly-buildinfo",
   "crates/poly-cache",
   "crates/poly-catalog",
@@ -83,7 +82,7 @@ fancy-regex = "0.20.0"
 flate2 = "1.1"
 fs-err = "3.3.2"
 fs2 = "0.4"
-gitfluff = { path = "crates/gitfluff" }
+gitfluff = { version = "0.10.0", default-features = false }
 globset = "0.4.21"
 graphql-parser = "0.4"
 hcl-edit = "0.10.0"

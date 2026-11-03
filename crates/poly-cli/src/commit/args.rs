@@ -1,38 +1,24 @@
+//! The `poly commit` command line.
+
 use std::path::PathBuf;
 
-use clap::{Args, Parser, Subcommand};
+use clap::Args;
 
-use crate::hooks::HookKind;
+use crate::global::ColorChoice;
 
-#[derive(Debug, Clone, Copy, clap::ValueEnum)]
-pub enum ColorMode {
-    Auto,
-    Always,
-    Never,
-}
-
-#[derive(Debug, Parser)]
-#[command(author, version, about, propagate_version = true)]
-pub struct Cli {
-    #[command(subcommand)]
-    pub command: Commands,
-}
-
-#[derive(Debug, Subcommand)]
-pub enum Commands {
-    Lint(Box<LintArgs>),
-    #[command(subcommand)]
-    Hook(HookSubcommand),
-}
-
+/// Arguments of `poly commit`: where the message comes from, the rule overrides layered over
+/// the `[commit]` config, and whether to rewrite the message in place.
 #[derive(Debug, Args)]
-pub struct LintArgs {
+pub struct CommitArgs {
+    /// Read the message from this file.
     #[arg(long, conflicts_with_all = ["stdin", "message", "commit_file"])]
     pub from_file: Option<PathBuf>,
 
+    /// Read the message from standard input.
     #[arg(long, conflicts_with_all = ["from_file", "message", "commit_file"])]
     pub stdin: bool,
 
+    /// Lint this literal message.
     #[arg(long, conflicts_with_all = ["from_file", "stdin", "commit_file"])]
     pub message: Option<String>,
 
@@ -44,6 +30,7 @@ pub struct LintArgs {
     )]
     pub commit_file: Option<PathBuf>,
 
+    /// Named preset to seed the rules from.
     #[arg(long)]
     pub preset: Option<String>,
 
@@ -60,19 +47,36 @@ pub struct LintArgs {
     #[arg(long = "msg-pattern-description", alias = "message-description", value_name = "TEXT")]
     pub msg_pattern_description: Option<String>,
 
-    #[arg(long)]
+    /// Reject commit messages matching a regex, optionally with a custom error message.
+    #[arg(
+        long,
+        value_name = "REGEX[->MESSAGE]",
+        help = "Reject messages matching REGEX. Append `->MESSAGE` to supply a custom error \
+                text; without it the whole argument is the regex, so colons in constructs \
+                like (?:...) and (?i) are safe."
+    )]
     pub exclude: Vec<String>,
 
-    #[arg(long)]
+    /// Rewrite matches of a regex, as `FIND->REPLACE`.
+    #[arg(
+        long,
+        value_name = "FIND->REPLACE",
+        help = "Rewrite matches of the FIND regex with REPLACE. The `->` delimiter is \
+                required; REPLACE may be empty to delete matches."
+    )]
     pub cleanup: Vec<String>,
 
     /// Regex used to sanitize commit messages (replacement defaults to empty).
     #[arg(long = "cleanup-pattern", value_name = "REGEX")]
     pub cleanup_pattern: Option<String>,
 
+    // A doc comment would become clap `--help` text, which `poly commit` has never shown for this flag.
+    #[allow(missing_docs)]
     #[arg(long = "cleanup-replacement", value_name = "TEXT", requires = "cleanup_pattern")]
     pub cleanup_replacement: Option<String>,
 
+    // A doc comment would become clap `--help` text, which `poly commit` has never shown for this flag.
+    #[allow(missing_docs)]
     #[arg(long = "cleanup-description", value_name = "TEXT", requires = "cleanup_pattern")]
     pub cleanup_description: Option<String>,
 
@@ -110,43 +114,32 @@ pub struct LintArgs {
     )]
     pub title_suffix_separator: String,
 
+    /// Disable the built-in detection and cleanup of AI attribution trailers and banners.
+    #[arg(long = "no-ai-cleanup")]
+    pub no_ai_cleanup: bool,
+
+    /// Explicit config file, instead of discovery.
     #[arg(long)]
     pub config: Option<PathBuf>,
 
+    /// Write the cleaned message back to its source.
     #[arg(long)]
     pub write: bool,
 
-    /// ANSI color output. Not a flag of its own: inside poly it follows the global
-    /// `--color`, which the caller copies in before linting.
-    #[arg(skip = ColorMode::Auto)]
-    pub color: ColorMode,
+    /// ANSI color output. Not a flag of its own: it follows the global `--color`, which
+    /// the caller copies in before linting.
+    #[arg(skip)]
+    pub color: ColorChoice,
 
+    /// Require a single-line message.
     #[arg(long, conflicts_with = "require_body")]
     pub single_line: bool,
 
+    /// Require a message body.
     #[arg(long, conflicts_with = "single_line")]
     pub require_body: bool,
 
     /// Exit with code 1 if `--write` rewrote the message (even if it becomes valid).
     #[arg(long)]
     pub exit_nonzero_on_rewrite: bool,
-}
-
-#[derive(Debug, Subcommand)]
-pub enum HookCommand {
-    Install(HookInstallArgs),
-}
-
-pub type HookSubcommand = HookCommand;
-
-#[derive(Debug, Args)]
-pub struct HookInstallArgs {
-    #[arg(value_enum)]
-    pub kind: HookKind,
-
-    #[arg(long)]
-    pub write: bool,
-
-    #[arg(long)]
-    pub force: bool,
 }
