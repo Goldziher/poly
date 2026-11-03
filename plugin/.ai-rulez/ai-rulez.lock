@@ -2,48 +2,48 @@
 # Refresh it with `ai-rulez lock`; `ai-rulez generate --locked` fails when it is stale.
 
 version = 1
-ai_rulez_version = '5.9.8'
+ai_rulez_version = '5.10.0'
 scope = 'all'
-tree = 'sha256:76268d2444c7cc566161c69aaf7e6a38e0b442074fdeea1ffd73914a4d8fe204'
+tree = 'sha256:29d55d4cd9e6ec90ca5865d6b523030b27e52a2e9de258150619b4850b5a621e'
 
 [[item]]
 kind = 'command'
 id = 'poly-check'
 path = 'commands/poly-check.md'
-digest = 'sha256:ad4e43faab7bcec5df93867e184df34d71dd2f0b355b7744ba1e2505f60afaa2'
+digest = 'sha256:a52a80566b7d70f926bd69fa8c13d485cd730498bf4f5f659b5465bfd91120ee'
 
 [[item]]
 kind = 'command'
 id = 'poly-fix'
 path = 'commands/poly-fix.md'
-digest = 'sha256:30d1715e687da06d556450d8ccf67a99839a3fd4995e977f95855121ef345d8b'
+digest = 'sha256:a39409654bea6351cea8ffe9fc58245557bcc2dcfd47e2cbe4e7600b3910c783'
 
 [[item]]
 kind = 'skill'
 id = 'poly-lint-and-format'
 path = 'skills/poly-lint-and-format'
-digest = 'sha256:edc4e428acef60ee8eaf67eb3dcd0e54221f4288fe5b5f747df64f0c523a3d87'
+digest = 'sha256:f5254f05aef0792e293d1872fa6ccc06af784f8553771bbc62c7f7ce284fd9af'
 
 [[item]]
 kind = 'skill'
 id = 'poly-mcp'
 path = 'skills/poly-mcp'
-digest = 'sha256:579ee34a50f10eaa40b8b619027ae6d4bb4f5a464039022e34f18f9535fac868'
+digest = 'sha256:287d47d5629c291491a3ed5356365d6e5e3f4036d543d8d4ac6c993953fd35fc'
 
 [[item]]
 kind = 'skill'
 id = 'poly-orchestrator'
 path = 'skills/poly-orchestrator'
-digest = 'sha256:5969e37d6cf477c769c0abc22a344f56aee1a830a497ae13d0dadb42fb34ab5a'
+digest = 'sha256:0a4b153c9f1a2fc292c8a434b045a0237b93ef38e57ab8f97db29686c7b36e9e'
 
 [[item]]
 kind = 'skill'
 id = 'poly-overview'
 path = 'skills/poly-overview'
-digest = 'sha256:f789644c0147bfa1d1dc2503f2a72b9c486ab6ea646d4fb9deea8e5a3978b8d5'
+digest = 'sha256:03baae336b0a1ac4ed5545ecb4fffe6f7e09e16f56c1a8c2b8ff3a18bd8437f2'
 
 [[item]]
 kind = 'skill'
 id = 'poly-tiers-and-scope'
 path = 'skills/poly-tiers-and-scope'
-digest = 'sha256:0c7f21fa1cb1a96e976cae2413a1ec5bf20af8ae673c788a4957302e284afb1c'
+digest = 'sha256:30ff9be84270de9631616e910eca38cdede2dadf0d941db0b78352518f0e158c'
