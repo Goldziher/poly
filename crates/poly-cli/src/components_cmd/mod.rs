@@ -5,6 +5,7 @@
 //! components are bundled, so `install` only prints a note.
 
 mod ops;
+mod prune;
 mod render;
 #[cfg(test)]
 mod tests;

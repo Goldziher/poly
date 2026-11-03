@@ -8,14 +8,16 @@
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 
-use alef_component_runtime::{ArtifactCache, ComponentLock, ComponentStatus, Retain, TrustPolicy};
+use alef_component_runtime::{ArtifactCache, ComponentLock, ComponentStatus, TrustPolicy};
 use anyhow::{Context, bail};
 use poly_component_host::{Availability, ComponentHost};
 use poly_component_index::{Component, ComponentIndex, ComponentKind};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
+
+use super::prune;
 
 /// Version of the `--format json|toon` documents.
 pub const SCHEMA: u32 = 1;
@@ -152,7 +154,7 @@ pub struct ActionRow {
     /// The component, or the cached object a prune names.
     pub name: String,
     /// What happened: `installed`, `already_installed`, `bundled`, `removed`, `not_installed`,
-    /// `would_remove`, `imported` or `failed`.
+    /// `would_remove`, `skipped`, `imported` or `failed`.
     pub action: &'static str,
     /// The reason, for a failure or a skipped removal.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -439,47 +441,70 @@ pub fn uninstall(env: &Env<'_>, components: &[&Component]) -> anyhow::Result<Act
     Ok(actions)
 }
 
-/// Remove cached archives the lock no longer references and that nothing used within `keep_days`;
-/// with `all`, remove every one. `dry_run` only reports.
+/// Remove cached archives the lock no longer references and that nothing used within `keep_days`,
+/// plus orphaned staging directories; with `all`, remove every archive. `dry_run` only reports.
 ///
-/// A dry run decides from this target's lock entries, so it can name an archive a lock entry for
-/// another target still references; the real prune asks alef, which sees every target.
+/// The dry run and the real prune execute one [`prune::plan`], so they name the same paths. An
+/// archive the lock references for any target is kept; one only an older poly version's lock names
+/// is removed once stale. A removal the OS refuses because a loaded library holds the file is
+/// reported as `skipped` and left for a later prune.
 ///
 /// # Errors
 ///
 /// When there is no lock, or the cache cannot be read or modified.
 pub fn prune(env: &Env<'_>, all: bool, dry_run: bool, keep_days: u64) -> anyhow::Result<Actions> {
+    prune_with(env, all, dry_run, keep_days, &prune::remove_path)
+}
+
+/// [`prune`] with the removal injected, so a test can simulate a file the OS will not delete.
+///
+/// # Errors
+///
+/// As [`prune`].
+pub fn prune_with(
+    env: &Env<'_>,
+    all: bool,
+    dry_run: bool,
+    keep_days: u64,
+    remover: &dyn Fn(&Path) -> std::io::Result<()>,
+) -> anyhow::Result<Actions> {
     let host = env.host()?;
     let mut actions = Actions::new("prune", env);
+    let objects = host.manager().list_cached()?;
+    let referenced = prune::locked_digests(env.lock_json);
+    let candidates = prune::plan(
+        &env.cache_root,
+        &objects,
+        &referenced,
+        all,
+        keep_days,
+        SystemTime::now(),
+    )
+    .context("cannot read the component cache")?;
     if dry_run {
-        let window = Duration::from_secs(keep_days.saturating_mul(86_400));
-        let now = SystemTime::now();
         let mut freed = 0;
-        for object in host.manager().list_cached()? {
-            let recent = object
-                .last_used
-                .is_some_and(|used| !now.duration_since(used).is_ok_and(|age| age > window));
-            if all || (object.component.is_none() && !recent) {
-                freed += object.size_bytes;
-                actions.push(&object.sha256, "would_remove", object.component.clone());
-            }
+        for candidate in &candidates {
+            freed += candidate.size_bytes;
+            actions.push(&path_name(&candidate.path), "would_remove", candidate.component.clone());
         }
         actions.freed_bytes = Some(freed);
         return Ok(actions);
     }
-    let retain = if all {
-        Retain::new()
-    } else {
-        Retain::new().referenced_by_lock().used_within_days(keep_days)
-    };
-    let report = host.manager().prune(&retain)?;
-    for path in &report.removed {
-        actions.push(&path_name(path), "removed", None);
+    let outcome = prune::execute(candidates, remover).context("cannot remove from the component cache")?;
+    let mut freed = 0;
+    for candidate in &outcome.removed {
+        freed += candidate.size_bytes;
+        actions.push(&path_name(&candidate.path), "removed", candidate.component.clone());
     }
-    for skipped in &report.skipped {
-        actions.push(&path_name(&skipped.path), "failed", Some(skipped.reason.clone()));
+    for (candidate, reason) in &outcome.skipped {
+        actions.push(&path_name(&candidate.path), "skipped", Some(reason.clone()));
     }
-    actions.freed_bytes = Some(report.freed_bytes);
+    if !outcome.skipped.is_empty() {
+        actions
+            .notes
+            .push("skipped paths are in use and stay until a later prune".into());
+    }
+    actions.freed_bytes = Some(freed);
     Ok(actions)
 }
 
