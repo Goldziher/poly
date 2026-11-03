@@ -11,10 +11,8 @@ x-ai-rulez:
 ## The `poly` binary (thin CLI)
 
 `crates/poly-cli` is a thin clap wrapper over `poly-core`. Lint and format are subcommands:
-`poly lint [PATHS]… --fix --format pretty|json|toon --no-cache -j <N> --exclude <GLOB>
---deny-skips|--max-skips <N> --set KEY=VALUE --on-missing fail|skip --workspace auto|always|never`,
-with the global flags `--config <p> --color auto|always|never --offline -q -v --debug`;
-`poly fmt [PATHS]… [--fix] [--exit-nonzero-on-fix] …` (the dry run is the default; `--check` was removed). A
+`poly lint [PATHS]…` and `poly fmt [PATHS]…` (flags: the `poly` context; the dry run is the
+default). A
 consuming repo collapses its hook sprawl onto poly's own `poly hooks`
 runner via `poly.toml [hooks]` (ADR 0012) — poly no longer ships a `.pre-commit-hooks.yaml`, so
 there is no external pre-commit-framework dependency in between.

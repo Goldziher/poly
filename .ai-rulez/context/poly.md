@@ -31,21 +31,18 @@ tier.
 - Apply formatting only (no linting): `poly fmt --fix .`
 - Apply lint autofixes (and whole-project autofixes): `poly lint --fix .`
 
-Global flags (accepted before or after any subcommand): `--config <PATH>`, `--color
-auto|always|never` (`auto` honours `NO_COLOR`), `--offline` (or `POLY_OFFLINE=1`; parsed now, its
-effects land with the components work), `-q/--quiet`, `-v/--verbose`, `--debug`.
+Global flags: `--config <PATH>`, `--color auto|always|never`, `--offline` (`POLY_OFFLINE=1`),
+`-q`, `-v`, `--debug`.
 
 Both `lint` and `fmt` share: `--format pretty|json|toon`, `--no-cache`, `-j/--jobs <N>`,
 `--exclude <GLOB>` (repeatable), `--fix`, `--include-excluded`, `--fix-generated`,
-`--set KEY=VALUE` (repeatable; a TOML layer above `poly.local.toml`, e.g.
-`--set discovery.force_exclude=true`, `--set discovery.generated=false`), `--on-missing fail|skip`
-(accepted; acted on once components land), `--only <ENGINE>` / `--skip <ENGINE>` (restrict the
-per-file tier to named engines, comma-separated and repeatable — narrows only, never enables a
-backend config left off, and skips the whole-project phase since it is tools, not engines), and
+`--set KEY=VALUE` (a TOML layer above `poly.local.toml`, e.g.
+`--set discovery.generated=false`), `--on-missing fail|skip`, `--only <ENGINE>` / `--skip <ENGINE>` (narrow the
+per-file tier; never enable an engine config left off; skip the whole-project phase), and
 `--deny-skips` / `--max-skips <N>`. `poly lint` adds `--workspace auto|always|never`; `poly fmt`
-adds `--exit-nonzero-on-fix` (a successful `--fix` exits 0 by default). `--force-exclude`,
-`--include-generated`, `--skip-generated`, `--no-workspace`, `--no-color`, `fmt --check` (hidden;
-errors with a hint) and `--exit-zero-on-fix` no longer exist.
+adds `--exit-nonzero-on-fix` (a successful `--fix` exits 0 by default). The v1 flags
+`--force-exclude`, `--{include,skip}-generated`, `--no-workspace`, `--no-color`, `fmt --check` and
+`--exit-zero-on-fix` are gone (ADR 0038).
 
 The other subcommands: `poly hooks` (native git-hook runner over `[hooks]`), `poly commit`
 (commit-message lint, gitfluff), `poly rules test|list` (custom + built-in ast-grep rule packs),
@@ -58,9 +55,8 @@ markdownlint / typos configs and lefthook / pre-commit hook configs), `poly mcp`
 configs}`. `summary` is `{checked, skipped, errored}` — the run's own account of what it did,
 and the field to gate on. The counts do not sum to `results.len()`: a file that was checked and
 found clean produces no `results` entry at all, and a file can appear in both `results` (as a
-synthetic entry with empty diagnostics) and in the top-level `skipped`/`errors` arrays — those
-top-level arrays are redundant with `results` on purpose, so a consumer scanning either one
-cannot miss what the other names. `configs` holds one `ConfigFingerprint` per directory-scoped
+synthetic entry with empty diagnostics) and in the top-level `skipped`/`errors` arrays (redundant on
+purpose). `configs` holds one `ConfigFingerprint` per directory-scoped
 config that governed the run, indexed by each result's `config` field.
 
 ## Whole-project lint phase
@@ -101,12 +97,10 @@ identical behavior against the live worktree.
 
 ## Agent distribution
 
-Public plugin content lives in `plugin/.ai-rulez/`; contributor rules, context and agents remain
-in the root `.ai-rulez/`. `ai-rulez generate --plugin` emits eleven runtime profiles under
-`plugin/` and repository marketplace indexes. `scripts/sync_public_skills.py` mirrors the
-five native public skills to `skills/`, with an ownership manifest and resource checks.
-The MCP command is `poly mcp`; Pi uses CLI workflows. Release versions track the Cargo
-workspace through `scripts/release-bump.sh` and `scripts/sync_plugin_version.py`.
+Public plugin content lives in `plugin/.ai-rulez/`, contributor content in the root `.ai-rulez/`.
+`ai-rulez generate --plugin` emits the runtime profiles under `plugin/`;
+`scripts/sync_public_skills.py` mirrors the public skills to `skills/`. Plugin versions follow the
+Cargo workspace via `scripts/release-bump.sh`.
 
 ## Configuration
 
