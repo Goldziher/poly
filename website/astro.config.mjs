@@ -77,6 +77,8 @@ export default defineConfig({
           label: "Guides",
           items: [
             { label: "Configuration", slug: "guides/configuration" },
+            { label: "Components and offline use", slug: "guides/components" },
+            { label: "Migrating to poly 2", slug: "guides/migrating-to-v2" },
             { label: "Git hooks", slug: "guides/hooks" },
             { label: "Agents and MCP", slug: "guides/agents-and-mcp" },
           ],

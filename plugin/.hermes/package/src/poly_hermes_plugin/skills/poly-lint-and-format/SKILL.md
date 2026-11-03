@@ -9,8 +9,8 @@ metadata:
 
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-Content-Hash: blake3:db7a79867584dc59a6c04f7b9d6188be7149f541d18ccc047f506e5043216597
-Source-Hash: blake3:80b02e3c38da8987136959b755f0ed07d25af7e123f02e924970a78f96f751a7
+Content-Hash: blake3:bba795374d3f977b162bca8ebb5c81474ebff89a807bd4315464446bacb4819b
+Source-Hash: blake3:b235022c5efd503e65d1d6fe44889912f02b72b7c3f0af6cd4c1d11d30441097
 Schema-Version: v1
 -->
 
@@ -51,6 +51,8 @@ Schema-Version: v1
 - `--config <path>` — point at a specific `poly.toml` (global; so are `--color`, `--offline`,
   `-q`, `-v` and `--debug`).
 - `--set KEY=VALUE` — override one config key for this run, above `poly.local.toml`.
+- `--offline` (global; also `POLY_OFFLINE=1`) — never use the network; `--on-missing fail|skip`
+  — what a run does when an engine component it needs is not installed (`fail` exits `2`).
 - `--no-cache` — bypass the blake3 content-hash result cache.
 - `-j <N>` — parallelism; `--color never` — plain output; `-v`/`--verbose` — extra per-finding
   detail in `pretty` output; `-q`/`--quiet` — findings and summary only; `--debug` —
@@ -80,8 +82,8 @@ Schema-Version: v1
 ## Exit codes
 
 - `0` — clean (no findings, no drift).
-- `1` — error-severity findings, formatting drift (or files `poly fmt --fix` rewrote), or a
-  failing whole-project tool.
+- `1` — error-severity findings, formatting drift in a `poly fmt` dry run (or files
+  `poly fmt --fix --exit-nonzero-on-fix` rewrote), or a failing whole-project tool.
 - `2` — an error (bad config, tool failure), or work the run could not verify: a missing
   path argument, a file an engine failed on — including a `poly fmt` file that could not
   reach a fixed point within its five-pass cap, now reported as an error rather than
@@ -109,7 +111,7 @@ let value = map.get(key).unwrap(); // poly: allow[unwrap-used] key is validated 
   does **not** suppress, and reports `lazy-ignore` instead — an empty comment cannot buy a
   bypass.
 - Applied centrally in the runner, so it works for every engine (ruff, oxlint, quality,
-  ast-grep, …). For a whole file or a class of files, use `[per-file-ignores]` in
+  ast-grep, …). For a whole file or a class of files, use `[per_file_ignores]` in
   `poly.toml` instead.
 
 ## The loop

@@ -12,7 +12,8 @@ x-ai-rulez:
 
 `crates/poly-cli` is a thin clap wrapper over `poly-core`. Lint and format are subcommands:
 `poly lint [PATHS]…` and `poly fmt [PATHS]…` (flags: the `poly` context; the dry run is the
-default). A
+default; `poly components` manages the downloadable engine components, `--offline` forbids
+every download). A
 consuming repo collapses its hook sprawl onto poly's own `poly hooks`
 runner via `poly.toml [hooks]` (ADR 0012) — poly no longer ships a `.pre-commit-hooks.yaml`, so
 there is no external pre-commit-framework dependency in between.
@@ -29,7 +30,7 @@ pub trait Engine: Send + Sync {
     fn version(&self) -> &str;                         // folded into the cache key
 
     // Defaulted methods:
-    fn option_keys(&self, table: OptionTable) -> OptionKeys;      // declared [lint]/[fmt] keys
+    fn option_keys(&self, table: OptionTable) -> OptionKeys;      // declared lint/format option keys
     fn provides_language_lint(&self, language: &Language, cfg: &EngineConfig) -> bool;
     fn skip_reason(&self, src: &SourceFile) -> Option<&'static str>;
     fn lint(&self, src: &SourceFile, cfg: &EngineConfig) -> anyhow::Result<Vec<Diagnostic>>;
@@ -83,7 +84,9 @@ The four defaulted predicates carry the coverage, skip and enablement accounting
 Per-language resolution order:
 
 1. **Native Rust crate backend (tier-1)** where one exists — highest-fidelity, fully
-   in-process, zero deps; registered for its specific languages in `registry.rs`.
+   in-process, zero deps; registered for its specific languages in `registry.rs`. Linked in
+   (bundled build) or loaded from a downloaded component (core build); a missing component is
+   never replaced by tier-2 — the run fails (exit 2) or skips per `on_missing`.
 2. **Tree-sitter generic tier (tier-2)** (`treesitter/`) — the catch-all for *everything else*
    (Java, Elixir, C/C++, protobuf, and the long tail of 300+ grammars). Best-effort structural
    reindent, pure Rust, grammars fetched on demand → still zero system deps. This is the
@@ -102,7 +105,7 @@ Per-language resolution order:
    - **`rustfmt`, `gofmt`, `shellcheck` and `shfmt` are default-on when present; everything
      else is opt-in.** `rustfmt`/`gofmt` per ADR 0014's 2026-06-28 amendment, the shell pair per
      the 2026-08-29 / 2026-09-15 ones (shell has no first-party tool); the rest stay opt-in via
-     `[fmt.<lang>.<tool>] enabled = true`. Output then depends on the host tool's presence and
+     `[engines.<tool>] enabled = true`. Output then depends on the host tool's presence and
      version, which is at odds with reproducibility — so CI must pin the toolchain. Either way,
      when the tool is absent the language falls through to tier-2, so the zero-dependency promise
      is intact for anyone without the toolchain installed.
@@ -148,14 +151,13 @@ Two of them carry poly's lint coverage for languages no tier-1 backend reaches:
   with `include_str!` and compiled once into a `OnceLock`. Pack rules go through the same
   `ast_grep_config::from_yaml_string` path as user rules and sit **beneath** them — a user rule
   with the same `id` replaces the pack's outright. Each rule authors its own default `severity:`,
-  including `off`; 13 of the 26 ship `off`. `[lint.astgrep]` `select`/`extend_select`/`ignore`
-  and `[lint.astgrep.rules.<id>] level` move any of them; the *top-level* `[rules] builtin =
-  false` disables the pack wholesale. (Two tables named `rules`: top-level `[rules]` holds
-  `dirs` and `builtin`; the per-rule override table is nested inside the engine's own table.) A
+  including `off`; 13 of the 26 ship `off`. `[engines.astgrep]` `select`/`extend_select`/`ignore`
+  and `[engines.astgrep.rules.<id>] level` move any of them; `builtin_pack = false` in the same
+  table disables the pack wholesale, and `rule_dirs` names the user rule directories. A
   rule whose findings concentrate in generated or test code declares its own default path
   exclusions with the standard ast-grep `ignores:` key in its YAML (four rules do today);
   `crates/poly-engines-astgrep/src/exclusions.rs` collects them per config and the runner merges them into
-  `PerFileIgnores` as **defaults** — a `[per-file-ignores]` entry naming the rule replaces them
+  `PerFileIgnores` as **defaults** — a `[per_file_ignores]` entry naming the rule replaces them
   outright. Every finding they drop appears in the run's `suppressed` list.
 
 Both answer `provides_language_lint` from the same lookup their `lint` performs, never from "the

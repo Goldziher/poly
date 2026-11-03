@@ -36,7 +36,7 @@ Fourteen tools, no more. Read-only (never touch the tree):
   components list` / `status`.
 - `cache_stats` — result-cache footprint (entries, bytes, format version) per namespace.
 - `rules` — list every ast-grep rule a run would apply — poly's built-in pack plus the user
-  rules from `[rules] dirs` — and optionally run their `*-test.yml` snippets. Mirrors `poly
+  rules from `[engines.astgrep] rule_dirs` — and optionally run their `*-test.yml` snippets. Mirrors `poly
   rules list` / `poly rules test`. Each rule carries its language, `source` (`builtin`/`user`),
   `default_severity`, the `severity` it reports at under the resolved config, and `enabled`.
 - `config_show` — the merged effective configuration. Mirrors `poly config show`, and is
@@ -107,7 +107,7 @@ There is no `hooks` tool: `poly hooks` is CLI-only.
   `format`.
 - `components_install`: `names`, `languages`, `paths`, `config`, `dry_run`, `format`.
 - `components_uninstall`: `names`, `stale`, `format`.
-- `rules`: `dirs` (empty means `[rules] dirs` from the config), `config`, `test` (bool),
+- `rules`: `dirs` (empty means `rule_dirs` from the config), `config`, `test` (bool),
   `format`.
 - `config_show`: `config`, `format`.
 - `cache_stats` / `cache_clean` / `version`: `format` only.

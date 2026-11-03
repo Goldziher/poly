@@ -26,7 +26,7 @@ is and which backend should handle it.
      1 issue fixable with the `--fix` option
    ```
 
-   Only the `error` line fails the run. Warning-severity findings — the code-quality tier, opt-in `typos`,
+   Only the `error` line fails the run. Warning-severity findings — the code-quality tier, opt-in `typos` (`[engines.typos] enabled = true`),
    and the widened rule selections — never redden CI on their own.
 
 2. ### Check formatting
@@ -39,8 +39,8 @@ is and which backend should handle it.
      2 files checked
    ```
 
-   `poly fmt` is a **dry run by default**, which is what a CI job wants. `--check` is just the
-   explicit form of the default.
+   `poly fmt` is a **dry run by default**, which is what a CI job wants. There is no `--check`
+   flag; `--fix` is what writes.
 
 3. ### Apply changes
 
@@ -84,7 +84,7 @@ trim_trailing_whitespace = true
 [discovery]
 exclude = ["vendor/**", "fixtures/**"]
 
-[lint.python.ruff]
+[engines.ruff]
 extend_select = ["D"]
 
 [hooks]
@@ -115,9 +115,10 @@ monorepo. See [Configuration](/poly/guides/configuration/) for the full surface.
 | `1` | Error-severity findings, a failed whole-project tool, or (for `poly fmt`) files that would change. |
 | `2` | The run verified less than it claims — a file an engine failed on, a skip budget exceeded, a config error, or a report that failed to serialize. |
 
-<Aside type="caution" title="`poly fmt --fix` exits 1 when it rewrites">
-    In fix mode, `1` reports *that files were rewritten* — so a script running `poly fmt --fix`
-    should treat `1` as success, not failure.
+<Aside type="note" title="`poly fmt --fix` exits 0 when it rewrites">
+    In fix mode, rewriting files is success. Add `--exit-nonzero-on-fix` for a CI step that must
+    fail when the committed tree was not already formatted (`poly fmt --fix --exit-nonzero-on-fix`
+    then exits `1` after rewriting).
 </Aside>
 
 A `--format json` or `--format toon` consumer must check the **exit code**, not just the payload:
@@ -154,6 +155,7 @@ appears in the summary.
 
 <CardGrid>
     <LinkCard title="Configuration" href="/poly/guides/configuration/" description="Rule selection, inline suppression, monorepo cascade, quality metrics." />
+    <LinkCard title="Components and offline use" href="/poly/guides/components/" description="Bundled and core builds, downloads, mirrors, air-gapped hosts." />
     <LinkCard title="Git hooks" href="/poly/guides/hooks/" description="Builtins, stages, staged isolation, timeouts, caching." />
     <LinkCard title="CLI reference" href="/poly/reference/cli/" description="Every flag and every subcommand." />
     <LinkCard title="Backend coverage" href="/poly/reference/backends/" description="Which backend handles which language." />

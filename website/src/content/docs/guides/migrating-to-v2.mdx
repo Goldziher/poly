@@ -1,0 +1,113 @@
+---
+title: Migrating to poly 2
+description: >-
+  The poly.toml v1 to v2 schema change, the removed and replaced CLI flags, and the commands that
+  move a repository across.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+poly 2 changes the `poly.toml` schema and the CLI surface together
+([ADR 0038](https://github.com/Goldziher/poly/blob/main/adrs/0038-poly-toml-v2-and-cli-surface.md)).
+The config is engine-first, and a handful of flags that were switches for a three-way choice or
+redundant with a default are gone.
+
+<Aside type="caution" title="What the loader accepts today">
+    The loader reads both schemas. A file that mixes v1 engine tables (`[lint.*]`, `[fmt.*]`) with
+    `[engines.*]` is rejected. v1 files keep loading, so the CLI changes below are the ones that
+    can break a script today; migrate the config at your own pace.
+</Aside>
+
+## Migrate the config
+
+```sh
+poly migrate --to-v2            # dry run: show the plan
+poly migrate --to-v2 --write    # rewrite poly.toml and poly.local.toml, keeping comments
+poly config validate            # check the result against the component index, offline
+```
+
+`--to-v2` is idempotent: a file with no v1 constructs is left untouched. It conflicts with
+`--verify`. Anything it cannot place without loss is listed in the plan's notes.
+
+## Config changes
+
+| v1 | v2 |
+| --- | --- |
+| `[lint.<lang>.<tool>]`, `[fmt.<lang>.<tool>]` | `[engines.<id>]`, narrowed with `[engines.<id>.lint]`, `[engines.<id>.format]` and `[engines.<id>.lang.<language>]` |
+| `[lint.<tool>]` for a cross-cutting engine (`typos`, `astgrep`, `uncomment`, `quality`) | `[engines.<tool>]` |
+| `[rules]` `dirs`, `builtin` | `[engines.astgrep]` `rule_dirs`, `builtin_pack` |
+| `[workspace] root = true` | top-level `root = true` |
+| `[lint] workspace = false` | `[workspace] run = "never"` (`"auto"` is the default, `"always"` is new) |
+| `per-file-ignores` | `per_file_ignores` |
+| typos on by default | off; `[engines.typos] enabled = true`. `--to-v2` writes this for you |
+| `poly-config.lock`, `poly-hooks.lock` | `poly.lock`, written by `poly lock` |
+| (none) | `required_version`, `[components]`. `--to-v2` writes `required_version = ">=<the poly that ran it>"` when absent |
+
+Before:
+
+```toml
+[lint.python.ruff]
+select = ["E", "F"]
+
+[fmt.python.ruff]
+line_length = 100
+
+[rules]
+dirs = [".poly/rules"]
+builtin = true
+
+[per-file-ignores]
+"tests/**" = ["ANN"]
+```
+
+After:
+
+```toml
+required_version = ">=2.0"
+
+[engines.ruff]
+select = ["E", "F"]
+
+[engines.ruff.format]
+line_length = 100
+
+[engines.astgrep]
+rule_dirs = [".poly/rules"]
+builtin_pack = true
+
+[per_file_ignores]
+"tests/**" = ["ANN"]
+```
+
+Precedence, lowest to highest: tool defaults, the tool's native config files, `[engines.<id>]`, its
+`lint` or `format` sub-table, its `lang.<language>` sub-table, then `lang.<language>.lint` or
+`.format`. The names `enabled`, `lint`, `format`, `lang` and `rules` are reserved inside an engine
+table. Per-rule overrides are `[engines.<id>.rules.<code>] level = "..."`.
+
+`poly lock` replaces `poly config update` and `poly hooks update`. `--to-v2` does not merge the old
+lock files: delete `poly-config.lock` and `poly-hooks.lock`, then run `poly lock`.
+
+## CLI flag changes
+
+| Removed | Use instead |
+| --- | --- |
+| `--no-color` | `--color auto\|always\|never` |
+| `--workspace`, `--no-workspace` | `--workspace auto\|always\|never` |
+| `--force-exclude` | `--set discovery.force_exclude=true` |
+| `--include-generated` | `--set discovery.generated=true` |
+| `--skip-generated` | `--set discovery.generated=false` |
+| `poly fmt --check` | `poly fmt` (the dry run is the default); the flag still parses, hidden, and fails with a hint |
+| `poly fmt --fix --exit-zero-on-fix` | `poly fmt --fix` exits `0` on success; add `--exit-nonzero-on-fix` for the opposite |
+| `poly config update`, `poly hooks update` | `poly lock [--upgrade] [--check]` |
+
+CI that ran `poly fmt --check .` becomes `poly fmt .`. A step that ran `poly lint --no-workspace`
+becomes `poly lint --workspace never`.
+
+New and additive: `--offline` (or `POLY_OFFLINE=1`), `--on-missing fail|skip`, `--set KEY=VALUE`,
+`poly components`, `poly config validate`. See [Components and offline use](/poly/guides/components/).
+
+## Engines that moved out of the default build
+
+The release binaries are bundled and need no component downloads. A core build downloads engines on
+first use; a missing component fails the run with exit `2` unless `[components] install` allows the
+download or `on_missing = "skip"` is set. typos is opt-in in both flavors.

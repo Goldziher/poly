@@ -9,8 +9,8 @@ metadata:
 
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-Content-Hash: blake3:f08e662b14c5f7948dccd5f8d850166d71e592966d925105625c0af9b6161ab2
-Source-Hash: blake3:80b02e3c38da8987136959b755f0ed07d25af7e123f02e924970a78f96f751a7
+Content-Hash: blake3:19286af5b2f34f90d47844a4ad098a2ec5d7d28f197049062d0a45279148f05c
+Source-Hash: blake3:b235022c5efd503e65d1d6fe44889912f02b72b7c3f0af6cd4c1d11d30441097
 Schema-Version: v1
 -->
 
@@ -24,9 +24,10 @@ below, which uses a language's canonical CLI when it happens to be installed.
 
 ## Per-language coverage tiers
 
-- **Tier 1 — native in-process backends.** Highest fidelity, compiled straight into the
-  binary and registered per language. Listed by the engine id you configure them under
-  (`[lint.<lang>.<id>]` / `[fmt.<lang>.<id>]`): `ruff` (Python), `oxc`
+- **Tier 1 — native in-process backends.** Highest fidelity, registered per language: linked
+  into a bundled build (the release binary) or loaded from signed components that a core build
+  downloads on first use (`poly components list`). Listed by the engine id you configure them
+  under (`[engines.<id>]`): `ruff` (Python), `oxc`
   (JS/TS/JSX/TSX/JSON/JSONC), `taplo` (TOML), `rumdl` (Markdown/MDX), `sqruff` (SQL), `yaml`,
   `malva` (CSS/SCSS/Less) + `biome` (CSS/SCSS), `markup_fmt` (HTML/Vue/Svelte/Astro/Angular/
   Jinja/Vento/Mustache/XML), `mago` (PHP), `rubyfmt` (Ruby), `graphql` + `biome` (GraphQL),
@@ -42,7 +43,7 @@ below, which uses a language's canonical CLI when it happens to be installed.
   per file over stdin/stdout when installed: `rustfmt`, `gofmt`, `shfmt` and `shellcheck` are
   **on by default when found on PATH**; `zigfmt`, `google-java-format`, `ktfmt`, `styler` (R),
   `swift-format`, `dartfmt`, and `gleamfmt` are opt-in via
-  `[fmt.<lang>.<id>] enabled = true` / `[lint.<lang>.<id>] enabled = true`. When the
+  `[engines.<id>] enabled = true`. When the
   tool is absent, formatting falls through to tier 2 with an info-level notice, so the
   zero-dependency guarantee always holds.
 - **Catalog and recipe tools (opt-in).** Any tool in poly's vendored catalog —
@@ -63,13 +64,13 @@ Four engines apply to every language regardless of tier (`typos` only when enabl
   `magic-number` and `law-of-demeter` are opt-in. `uncollected-test-file` flags a file named
   like a test that the language's test runner will not collect (`parser.test.py` under
   pytest) — on for Python, Go and Ruby, off for JavaScript/TypeScript. Configure under
-  `[lint.quality]` / `[lint.<lang>.quality]`.
+  `[engines.quality]` / `[engines.quality.lang.<lang>]`.
 - **`astgrep`** — ast-grep pattern rules. poly embeds a **built-in rule pack** of 26 rules
   across 9 languages (C#, Elixir, Go, Java, Kotlin, Python, Ruby, Rust, Swift), on by
-  default; 13 of them ship `severity: off`. User rules under `[rules] dirs` (default
-  `.poly/rules`) layer on top and replace a pack rule sharing its `id`. Disable the pack
-  wholesale with `[rules] builtin = false`.
-- **`uncomment`** — opt-in comment removal, off unless `[lint.uncomment] enabled = true`.
+  default; 13 of them ship `severity: off`. User rules under `[engines.astgrep] rule_dirs`
+  (default `.poly/rules`) layer on top and replace a pack rule sharing its `id`. Disable the
+  pack wholesale with `builtin_pack = false` in the same table.
+- **`uncomment`** — opt-in comment removal, off unless `[engines.uncomment] enabled = true`.
 
 ## When to use it
 

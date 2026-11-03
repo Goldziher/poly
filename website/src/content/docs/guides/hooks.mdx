@@ -534,7 +534,7 @@ while a dedicated job runs clippy — set `lint = false`:
 lint = false   # runs in git hooks, excluded from `poly lint`'s whole-project phase
 ```
 
-This is the per-group counterpart to `[lint] workspace = false`, which disables the whole-project
+This is the per-group counterpart to `[workspace] run = "never"`, which disables the whole-project
 phase for **every** tool at once.
 
 ### The phase executes tools
@@ -554,7 +554,7 @@ Three consequences worth knowing:
 - **`[discovery] exclude` does not apply to it.** That key filters poly's own file discovery, not
   what a whole-project tool chooses to read.
 - **Opting out makes the run fully read-only.** Pass `--workspace never`, or set
-  `[lint] workspace = false`. Use one of them for a checkout that must stay pristine — a CI job
+  `[workspace] run = "never"`. Use one of them for a checkout that must stay pristine — a CI job
   that diffs the tree afterwards, or a gate on a read-only source tree.
 
 ### Applying whole-project fixes

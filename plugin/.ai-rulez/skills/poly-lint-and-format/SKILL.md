@@ -50,6 +50,8 @@ x-ai-rulez:
 - `--config <path>` — point at a specific `poly.toml` (global; so are `--color`, `--offline`,
   `-q`, `-v` and `--debug`).
 - `--set KEY=VALUE` — override one config key for this run, above `poly.local.toml`.
+- `--offline` (global; also `POLY_OFFLINE=1`) — never use the network; `--on-missing fail|skip`
+  — what a run does when an engine component it needs is not installed (`fail` exits `2`).
 - `--no-cache` — bypass the blake3 content-hash result cache.
 - `-j <N>` — parallelism; `--color never` — plain output; `-v`/`--verbose` — extra per-finding
   detail in `pretty` output; `-q`/`--quiet` — findings and summary only; `--debug` —
@@ -79,8 +81,8 @@ x-ai-rulez:
 ## Exit codes
 
 - `0` — clean (no findings, no drift).
-- `1` — error-severity findings, formatting drift (or files `poly fmt --fix` rewrote), or a
-  failing whole-project tool.
+- `1` — error-severity findings, formatting drift in a `poly fmt` dry run (or files
+  `poly fmt --fix --exit-nonzero-on-fix` rewrote), or a failing whole-project tool.
 - `2` — an error (bad config, tool failure), or work the run could not verify: a missing
   path argument, a file an engine failed on — including a `poly fmt` file that could not
   reach a fixed point within its five-pass cap, now reported as an error rather than
@@ -108,7 +110,7 @@ let value = map.get(key).unwrap(); // poly: allow[unwrap-used] key is validated 
   does **not** suppress, and reports `lazy-ignore` instead — an empty comment cannot buy a
   bypass.
 - Applied centrally in the runner, so it works for every engine (ruff, oxlint, quality,
-  ast-grep, …). For a whole file or a class of files, use `[per-file-ignores]` in
+  ast-grep, …). For a whole file or a class of files, use `[per_file_ignores]` in
   `poly.toml` instead.
 
 ## The loop

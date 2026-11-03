@@ -8,7 +8,9 @@ description: >-
 import { Aside, Tabs, TabItem, Code, Steps } from '@astrojs/starlight/components';
 
 poly ships **one binary**. Every channel below installs that same prebuilt executable: none of
-them compiles anything, and none needs a Rust, Node or Python toolchain at run time.
+them compiles anything, and none needs a Rust, Node or Python toolchain at run time. The
+executable is the **bundled** build, with every engine and the MCP server linked in; see
+[Bundled and core builds](#bundled-and-core-builds).
 
 <Aside type="note" title="The command is `poly` everywhere">
     The package is called `polylint` on PyPI and `@goldziher/polylint` on npm, because the unscoped
@@ -47,7 +49,10 @@ POLY_VERSION=0.31.0 curl -fsSL https://raw.githubusercontent.com/Goldziher/poly/
 ```
 
 The action forwards to the same `install.sh` and caches the installed binary by version and
-platform. Its full input/output reference lives in
+platform. `version: from-config` installs the version that `required_version` in `poly.toml` names
+(`config-file` picks another file), and `components` (`auto`, `all`, `none` or a list such as
+`sql,php`) downloads engine components before the first run and caches them. Its full input/output
+reference lives in
 [`ACTION_USAGE.md`](https://github.com/Goldziher/poly/blob/main/ACTION_USAGE.md).
 
 ## Homebrew
@@ -123,6 +128,19 @@ This resolves the same GitHub release archives — it does not build from source
     in published crates. The prebuilt binary is the only thing any channel ships, so `cargo install
     poly` will not work.
 </Aside>
+
+## Bundled and core builds
+
+The release archives are **bundled** builds: every engine family and the MCP server are linked in
+(the default `all-engines` and `bundled-mcp` features), so nothing is downloaded at run time. All
+release archives except the Linux musl one also embed the release's component lock; the musl build
+embeds none and downloads nothing.
+
+Building from source with `cargo build --no-default-features` gives the **core** build: 7.6 MiB at
+the size profile (fat LTO, `opt-level = "z"`), with engines delivered as signed components that
+poly downloads the first time a run needs them. Use it where binary size matters and the host can
+reach the download origin (or a mirror), or can be seeded with `poly components import`. See
+[Components and offline use](/poly/guides/components/).
 
 ## As an agent plugin
 

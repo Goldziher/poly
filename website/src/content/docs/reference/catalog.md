@@ -82,7 +82,7 @@ How they differ from the breadth tier above:
   declare self-hosted labels under `self-hosted-runner.labels` in `.github/actionlint.yaml`;
   `shellcheck` takes the level shellcheck printed (`error`, `warning`, `info`, `style` as hint);
   every other kind is an error. Override one kind with
-  `[lint.yaml.actionlint.rules.<kind>] level = "error"`.
+  `[engines.actionlint.rules.<kind>] level = "error"`.
 - **gau (action pins).** `gau --lint-pins` from
   [gh-actions-updater](https://github.com/Goldziher/gh-actions-updater) 0.4.0 or later flags every
   remote `uses:` ref that is not a bare major tag (`@vN`): a commit SHA (`sha`), a full version tag

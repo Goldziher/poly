@@ -91,7 +91,7 @@ Engines are named by the id you configure them under — `ruff`, `oxc`, `typos`,
 Three things worth knowing before you reach for it:
 
 - **It narrows, it never widens.** An engine your config leaves off stays off when you name it.
-  `--only uncomment` on a repo without `[lint.uncomment] enabled = true` selects nothing rather than
+  `--only uncomment` on a repo without `[engines.uncomment] enabled = true` selects nothing rather than
   switching the backend on, so the flag can never become a second, invisible way to enable a tool.
 - **Engine ids are unique per language, not globally.** `--only biome` selects every engine
   answering to that name — the CSS one and the GraphQL one both.
@@ -116,9 +116,9 @@ To turn an engine off for every run rather than one invocation, use
 
 | Flag | Effect |
 | --- | --- |
-| `--workspace auto` | The default. Run the phase for a whole-repository run, skip it for a path-scoped one, and follow `[lint] workspace`. |
+| `--workspace auto` | The default. Run the phase for a whole-repository run, skip it for a path-scoped one, and follow `[workspace] run`. |
 | `--workspace always` | Run the whole-project phase even though explicit paths were given. |
-| `--workspace never` | Skip the whole-project phase — `cargo clippy` / `sort` / `machete` / `deny` and any other configured whole-workspace tools. Equivalent to `[lint] workspace = false`. |
+| `--workspace never` | Skip the whole-project phase — `cargo clippy` / `sort` / `machete` / `deny` and any other configured whole-workspace tools. Equivalent to `[workspace] run = "never"`. |
 
 These replace the old `--workspace` / `--no-workspace` pair. The phase is never path-scoped: under `--workspace always` the tools cover the whole repository regardless
 of the named paths and of `[discovery] exclude`, and the run says so on stderr.
@@ -307,7 +307,8 @@ poly components import <archive>          # seed an air-gapped host from a downl
 ```
 
 `component` is an alias. Every subcommand takes `--format pretty|json|toon`; the machine-readable
-documents carry `schema: 1`.
+documents carry `schema: 1`. Selection, offline use and mirrors are covered in
+[Components and offline use](/poly/guides/components/).
 
 A build that links every engine family is **bundled**: its components never download, and
 `install` only prints a note. `list` and `status` never download on any build; they read the cache
@@ -358,13 +359,13 @@ been applied:
 line_length = 120
 ...
 
-[lint.python.ruff]
+[engines.ruff]
 mccabe_max_complexity = 3
 ```
 
 The default output is a valid TOML document, so `diff` against your own `poly.toml` shows exactly
 what poly kept — including keys poly does not recognize, which are printed as written rather than
-dropped. `[defaults]`, `[discovery]`, `[rules]` and `[workspace]` are shown fully resolved, so a
+dropped. `[defaults]`, `[discovery]` and `[workspace]` are shown fully resolved, so a
 setting nobody wrote (`line_length = 120`) is still visible; every other section is shown exactly
 as merged.
 
@@ -391,7 +392,7 @@ engine whose component is in `[components] disable` is an error. Exit `0` means 
 a problem was found or a file could not be read. `extends` bases are not resolved.
 
 `poly config schema` prints the JSON Schema for `poly.toml` — derived from the same config types
-the parser uses, with each backend's declared `[lint]` / `[fmt]` option keys included. Use it for
+the parser uses, with each backend's declared `[engines.<id>]` option keys included. Use it for
 editor validation and autocomplete; the schema is also published at
 `https://goldziher.github.io/poly/poly.schema.json`. `--output <PATH>` writes it to a file. See the
 [configuration reference](/poly/reference/configuration/#editor-setup-json-schema).
@@ -419,8 +420,9 @@ poly --config /path/to/poly.toml mcp
 
 See [Git hooks](/poly/guides/hooks/) for the full `[hooks]` surface, and
 [Agents and MCP](/poly/guides/agents-and-mcp/) for the MCP tool reference. In short: the MCP server
-is **stdio-only**; `lint`, `format_check`, `cache_stats`, `rules`, `config_show` and `version` are
-read-only; `lint_fix`, `format_write` and `cache_clean` are mutating; `workspace_lint` and
+is **stdio-only**; `lint`, `format_check`, `components`, `cache_stats`, `rules`, `config_show` and
+`version` are read-only; `lint_fix`, `format_write`, `cache_clean`, `components_install` and
+`components_uninstall` are mutating; `workspace_lint` and
 `workspace_lint_fix` run the whole-project phase as async **Tasks** — the call returns a task handle
 and the client polls `tasks/get`, while a client without the tasks capability gets a synchronous
 result instead.
@@ -446,7 +448,7 @@ merged the way lefthook merges them) and `.pre-commit-config.yaml`.
   `[tools]`. A job that rewrote files (`--fix`, `-w`, `stage_fixed`) maps to the builtin in **fix
   mode**, which re-stages what it rewrites; a lefthook job that left its fixes unstaged is reported
   as a behavior change. Flags with a poly equivalent are carried as config — `--unsafe-fixes`,
-  `shfmt -i N` (`[fmt.shell.shfmt] indent_width`), `golangci-lint --new-from-rev`, buildifier's
+  `shfmt -i N` (`[engines.shfmt] indent_width`), `golangci-lint --new-from-rev`, buildifier's
   `-lint=fix` — and each job's own `files` / `exclude` scope becomes a builtin `jobs` entry, so no
   exclude is dropped. A call whose flags poly cannot reproduce stays a command.
 - Every other job becomes `[hooks.<stage>.commands.<name>]` (keeping `{staged_files}`) or, for
@@ -480,7 +482,7 @@ source file is kept.
 | `--recurse` | Walk nested projects, skipping `.git`, `node_modules`, virtualenvs, build output and `.gitignore`d trees. |
 | `--verify` | Re-run lint and format after writing. |
 | `--strip-superseded` | Additionally strip `pyproject.toml` `[tool.*]` sections for the Python tools ruff supersedes — black, isort, flake8, … |
-| `--to-v2` | After the importers, rewrite `poly.toml` and `poly.local.toml` from the v1 to the v2 schema (ADR 0038), keeping comments. Conflicts with `--verify` until the loader reads v2. |
+| `--to-v2` | After the importers, rewrite `poly.toml` and `poly.local.toml` from the v1 to the v2 schema (ADR 0038), keeping comments. Conflicts with `--verify`. See [Migrating to poly 2](/poly/guides/migrating-to-v2/). |
 | `--allow-dirty` | Let it write into a repository with uncommitted changes. |
 
 It takes an optional path, defaulting to the current directory.
@@ -498,6 +500,6 @@ reports at under the current config, and the rule's own declared default (`off` 
 rule) — so a warning you did not recognise can be traced to the rule that raised it, and turned
 off. `--format json` / `--format toon` carry the same fields.
 
-With no `DIR`, both read `[rules] dirs` from the nearest `poly.toml`. `poly rules test` exits
+With no `DIR`, both read `[engines.astgrep] rule_dirs` from the nearest `poly.toml`. `poly rules test` exits
 non-zero on any failed snippet: a `valid` snippet that matched, an `invalid` one that didn't, a
 `fixed:` autofix that differed, or a test naming an unknown rule id.

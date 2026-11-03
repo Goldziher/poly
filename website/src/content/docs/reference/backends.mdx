@@ -15,6 +15,12 @@ poly resolves every file through a tiered model:
 3. **Tree-sitter generic formatting** for identified languages without a dedicated backend.
 4. **Optional catalog tools** from the embedded registry.
 
+The curated Rust backends ship as engine components (`web`, `python`, `sql`, `php`, `biome`,
+`ruby`, `nix`, `astgrep`, `misc`, `typos`). A bundled build links them all in; a core build
+downloads the ones a run needs. Either way they are configured the same way, as
+`[engines.<id>]`. See [Components and offline use](/poly/guides/components/); `poly components
+list` names the engines in each component.
+
 ## Language table
 
 | Language or files | Backend | Lint | Format |
@@ -61,22 +67,22 @@ formatted.
 
 <Aside type="note" title="Enablement is a universal key, not a per-backend property">
     "opt-in" and "default-on" above describe each backend's *own* default. Every engine table also
-    accepts an explicit `enabled`, which always wins over that default — `[fmt.zig.zigfmt] enabled =
-    true` turns on an opt-in formatter, and `[lint.python.ruff] enabled = false` turns off a
+    accepts an explicit `enabled`, which always wins over that default — `[engines.zigfmt] enabled =
+    true` turns on an opt-in formatter, and `[engines.ruff] enabled = false` turns off a
     default-on one. See [Turning one engine off](/poly/guides/configuration/#turning-one-engine-off).
 </Aside>
 
 <Aside type="note" title="Batching native tools">
     A native tool runs once per file by default. `batch = true` in its table hands it many files per
-    invocation instead — `[fmt.<lang>.<tool>]` for `gofmt`, `shfmt`, `zigfmt`, `ktfmt`,
-    `google-java-format`, `dartfmt` and `gleamfmt`, and `[lint.shell.shellcheck]`. Output is
+    invocation instead — `[engines.<tool>]` for `gofmt`, `shfmt`, `zigfmt`, `ktfmt`,
+    `google-java-format`, `dartfmt`, `gleamfmt` and `shellcheck`. Output is
     identical to the per-file path; whether it is faster depends on file sizes and machine load,
     which is why it is opt-in. `rustfmt`, `swift-format` and `styler` cannot be batched.
 </Aside>
 
 <Aside type="tip" title="Shell indentation">
     `shfmt` takes its indentation from the file's `.editorconfig` (`indent_style`, `indent_size`) as
-    shfmt itself would, falling back to poly's two spaces. `[fmt.shell.shfmt] indent_width = N` or
+    shfmt itself would, falling back to poly's two spaces. `[engines.shfmt] indent_width = N` or
     `use_tabs = true` overrides it; `indent_width` cannot be `0` (shfmt's "indent with tabs"), so use
     `use_tabs` for that.
 </Aside>
@@ -97,7 +103,7 @@ A pack rule whose findings are concentrated in generated or test code declares t
 own YAML, with the standard ast-grep `ignores:` key — `placeholder-implementation` excludes
 `**/*_generated.rs`, `force-cast` excludes `**/RustBridge/**`, `not-null-assertion` excludes Kotlin
 test source sets, and `unwrap-used` excludes test and generated paths. Those are **defaults**: a
-`[per-file-ignores]` entry naming the rule replaces them, and every finding they drop is listed in
+`[per_file_ignores]` entry naming the rule replaces them, and every finding they drop is listed in
 the run's `suppressed` array. See
 [per-file ignores](/poly/guides/configuration/#suppressing-a-rule-inline).
 
@@ -117,7 +123,7 @@ unconfigured CI on its own.
 Numbered ADR files (`NNNN-*.md`) can additionally be checked against the MADR template by the
 opt-in `adrlint` backend. It is separate from rumdl on purpose: rumdl judges the Markdown, adrlint
 judges the decision record's section structure, front-matter metadata, list style and document-local
-link anchors. Enable it with `[lint.markdown.adrlint] enabled = true`.
+link anchors. Enable it with `[engines.adrlint] enabled = true`.
 
 It runs the **document** rules only. Directory numbering and file names (`MADR41`–`MADR44`), the
 immutability lock (`ADR50`/`ADR51`), link-target existence (`MADR12a`/`MADR12c`) and external links
@@ -134,7 +140,7 @@ enabled, so `extend_select = ["vitest/expect-expect"]` on its own does nothing a
 plugin instead:
 
 ```toml
-[lint.typescript.oxc]
+[engines.oxc]
 plugins = ["vitest"]
 ```
 

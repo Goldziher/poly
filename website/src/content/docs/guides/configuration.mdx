@@ -11,6 +11,12 @@ poly is configured by a single `poly.toml`. It discovers the nearest one, layers
 over it for machine-local overrides, and — in a monorepo — cascades nested configs from the
 workspace root down.
 
+<Aside type="note" title="poly.toml v2">
+    This guide uses the v2 schema: one `[engines.<id>]` table per engine. The loader still reads
+    v1 files (`[lint.<lang>.<tool>]`, `[fmt.<lang>.<tool>]`), but not a file that mixes both. See
+    [Migrating to poly 2](/poly/guides/migrating-to-v2/) to convert.
+</Aside>
+
 <Aside type="tip" title="Editor autocomplete">
     poly publishes a JSON Schema for `poly.toml` at
     `https://goldziher.github.io/poly/poly.schema.json`. Add
@@ -22,6 +28,10 @@ workspace root down.
 ## An annotated `poly.toml`
 
 ```toml title="poly.toml"
+# Pin the poly version (and with it every engine component); the GitHub Action
+# reads this for `version: from-config`.
+required_version = ">=2.0"
+
 [defaults]
 line_length = 120
 line_ending = "lf"
@@ -46,30 +56,34 @@ no_prune = ["build", "dist"]
 # Whether poly lints and formats machine-generated files. Defaults to true.
 generated = true
 
-[fmt.python.ruff]
+[components]
+install = "auto"       # "never" forbids downloads; see the components guide
+on_missing = "fail"    # or "skip"
+
+[engines.ruff]
+select = ["E", "F", "W"]
+
+[engines.ruff.format]
 docstring_code_format = true
 docstring_code_line_length = 120
 
-[lint.python.ruff]
-select = ["E", "F", "W"]
-
-[lint.php.mago]
+[engines.mago]
 select = ["correctness", "security"]   # categories or rule codes
 ignore = ["no-else-clause"]
 php_version = "8.2"
 
 # A per-rule `level` override works for every backend — poly applies it after
 # linting, so it does not depend on the tool having its own severity config.
-[lint.php.mago.rules.cyclomatic-complexity]
+[engines.mago.rules.cyclomatic-complexity]
 level = "warning"   # error | warning | info | hint
 
 # Any *other* key in a rules table is forwarded to the backend as a tool
 # parameter, where the backend supports it — today oxlint, rumdl and sqruff.
-[lint.javascript.oxc.rules.max-params]
+[engines.oxc.rules.max-params]
 max = 6
 
 # Suppress specific rules per path glob (lint-only), across every backend.
-[per-file-ignores]
+[per_file_ignores]
 "tests/**" = ["F401"]
 "**/*.generated.php" = ["correctness"]
 
@@ -90,11 +104,15 @@ biome, dockerfile, dotenv, ini, and the ast-grep rule engine. `extend_select` ad
 `select` replaces them. `typos`, `quality` and `uncomment` take their own flat keys instead, and
 taplo's lint pass takes no options at all.
 
+Narrow an engine's options to one phase or one language with sub-tables: `[engines.ruff.format]`,
+`[engines.ruff.lint]`, `[engines.ruff.lang.python]` and `[engines.ruff.lang.python.format]`. Each
+is more specific than the one before it and wins over it; all of them win over the tool's own
+config files.
+
 <Aside type="tip" title="Unknown keys are reported, not ignored">
     poly reports unknown config keys, unknown top-level sections and wrongly-typed values as
     warnings, naming the nearest key the table accepts (`Did you mean mccabe_max_complexity?`), the
-    engine a near-miss table meant (`[fmt.python.rufff]`) or the language a near-miss id meant
-    (`[lint.yml]` for `yaml`). A misspelled key no longer parses silently and does nothing. `poly config show`
+    engine a near-miss table meant (`[engines.rufff]`). A misspelled key no longer parses silently and does nothing. `poly config show`
     prints the effective merged result so you can diff it against what you wrote.
 </Aside>
 
@@ -133,7 +151,7 @@ other language — so JS/TS gets the metric from oxlint rather than from a separ
 Promote one you want enforced with a per-rule override:
 
 ```toml
-[lint.python.ruff.rules.ANN201]
+[engines.ruff.rules.ANN201]
 level = "error"
 ```
 
@@ -147,16 +165,16 @@ until the plugin is on, and **rule selection cannot turn one on**: `extend_selec
 of already-enabled plugins. Name the plugin instead:
 
 ```toml
-[lint.typescript.oxc]
+[engines.oxc]
 plugins = ["vitest"]                      # the plugin's correctness rules now run
 
-[lint.typescript.oxc.rules.expect-expect]
+[engines.oxc.rules.expect-expect]
 assertFunctionNames = ["expect", "expectTypeOf", "assert"]
 ```
 
 Enabling a plugin brings on its `correctness` rules, plus whatever poly's own default categories
 (`suspicious`, `pedantic`, `complexity`) select from it — the same thing enabling it in an
-`.oxlintrc.json` would do. `ignore` and `[rules.<id>] level` then work on those rules like any
+`.oxlintrc.json` would do. `ignore` and `[engines.oxc.rules.<id>] level` then work on those rules like any
 other. An unrecognised plugin name is an error, not a silent no-op.
 
 ### Project oxlint and oxfmt configs
@@ -164,7 +182,7 @@ other. An unrecognised plugin name is an error, not a silent no-op.
 A repository's own `.oxlintrc.json[c]` and `.oxfmtrc.json[c]` drive the JS/TS/JSON/YAML/TOML/CSS/Markdown
 backends; keys written in `poly.toml` win over them.
 
-- `[lint.javascript.oxc] js_plugins = "skip" | "external"` decides what happens to `jsPlugins`, which
+- `[engines.oxc] js_plugins = "skip" | "external"` decides what happens to `jsPlugins`, which
   need a JavaScript runtime. `"skip"` (default) lints without them and warns once per config.
   `"external"` runs the real `oxlint` (nearest `node_modules/.bin`, else `PATH`) over the files those
   configs govern, one run per config, and reports its findings; without the binary it falls back to
@@ -172,15 +190,15 @@ backends; keys written in `poly.toml` win over them.
 - `overrides[].files` globs are resolved per file, relative to the config's directory, and the nearest
   `.oxfmtrc.json[c]` replaces the root one, as in oxfmt. The cache key carries the governing config.
 - `sortTailwindcss`, `jsdoc` and `experimentalTernaries` need oxfmt's JavaScript side. With
-  `[fmt.typescript.oxc] external = true` those files are formatted by the real `oxfmt`; otherwise they are
+  `[engines.oxc.format] external = true` those files are formatted by the real `oxfmt`; otherwise they are
   formatted in process without the option and a warning says so.
 - Markdown fences and front matter in JavaScript, TypeScript, JSON, YAML, CSS, SCSS, Less and TOML are
   formatted in process, as oxfmt does; `embeddedLanguageFormatting: "off"` (or
-  `[fmt.markdown.rumdl] embedded_language_formatting = "off"`) keeps them as written, and
-  `[fmt.markdown.rumdl.embedded.<js|json|yaml|css|toml>]` sub-tables set per-language options.
+  `[engines.rumdl.format] embedded_language_formatting = "off"`) keeps them as written, and
+  `[engines.rumdl.format.embedded.<js|json|yaml|css|toml>]` sub-tables set per-language options.
 - `sort_package_json` (`sortPackageJson`) sorts `package.json` keys; `package.json`,
   `composer.json` and import maps otherwise keep the `JSON.stringify` layout npm writes.
-- `[rules.<id>]` options reach oxlint rules. A positional rule such as `sort-keys` takes its leading
+- `[engines.oxc.rules.<id>]` options reach oxlint rules. A positional rule such as `sort-keys` takes its leading
   argument from `order` (`"asc"` / `"desc"`); `args = [...]` spells out the arguments of any other rule.
 
 ### Rules held back
@@ -197,7 +215,7 @@ multi-repo corpus and found to fire on legitimate code rather than a defect:
 | `PLR2004` | Pylint | Overwhelmingly HTTP status codes in test assertions. |
 | `TRY003` | tryceratops | Demands a dedicated exception subclass for every `raise ValueError("…")`. |
 
-Re-enable any of them with `extend_select = ["<code>"]` under `[lint.python.ruff]`. The `EM`
+Re-enable any of them with `extend_select = ["<code>"]` under `[engines.ruff]`. The `EM`
 category (exception message assigned to a variable before `raise`) is not selected at all.
 
 For oxlint, `no-underscore-dangle`, `max-lines-per-function`, `max-lines` and
@@ -205,9 +223,9 @@ For oxlint, `no-underscore-dangle`, `max-lines-per-function`, `max-lines` and
 convention; `describe()` blocks that always exceed the 50-line default; a 300-line-per-file default
 poly does not endorse elsewhere; and a one-class-per-file rule that fires on error taxonomies, test
 mocks, `.d.ts` stubs and cohesive module groups rather than defects. Re-enable with
-`extend_select` under `[lint.javascript.oxc]` / `[lint.typescript.oxc]`.
+`extend_select` under `[engines.oxc]`.
 
-`[lint.python.ruff]` also reads ruff's isort options (`isort_*`, `known_*`, `extra_standard_library`,
+`[engines.ruff]` also reads ruff's isort options (`isort_*`, `known_*`, `extra_standard_library`,
 `known_section`), the remaining pylint limits (`pylint_max_*`), `flake8_import_conventions_*`,
 `unsafe_fixes`, `preview` and `explicit_preview_rules`, and every other ruff linter plugin table as
 a flat key prefixed with its table name (`flake8_bandit_check_typed_exception`,
@@ -217,14 +235,14 @@ a flat key prefixed with its table name (`flake8_bandit_check_typed_exception`,
 `-implicit-str-concat`, `-self`, `-tidy-imports`, `-unused-arguments`, `pydoclint`, `pyflakes`,
 `pyupgrade` and `ruff`), `isort_required_imports`, and the linter-wide `builtins`,
 `namespace_packages`, `allowed_confusables`, `logger_objects`, `task_tags`, `typing_modules`,
-`typing_extensions`, `future_annotations` and `ignore_init_module_imports`; `[fmt.python.ruff]` reads
+`typing_extensions`, `future_annotations` and `ignore_init_module_imports`; `[engines.ruff.format]` reads
 `indent_style`, `quote_style`, `skip_magic_trailing_comma`, `line_ending`, `preview` and `exclude`
 (globs matched at any depth). A nested `poly.toml` merges table by
 table into its parent's; set `inherit_mode = "replace"` in a table to make it replace the parent's
 instead, as a nested ruff config does. `poly migrate` writes it for nested ruff configs.
 
 Version-gated rules (`UP017`, `UP042`, …) and isort's standard-library list follow the Python
-target. Without `target_version` in `[lint.python.ruff]`, poly resolves it the way ruff does,
+target. Without `target_version` in `[engines.ruff]`, poly resolves it the way ruff does,
 walking up from each file: the nearest `.ruff.toml`, `ruff.toml` or `pyproject.toml` `[tool.ruff]`
 `target-version` (following its `extend` chain), then the lowest version
 `project.requires-python` admits, and only then ruff's own default (3.11). The resolved target is
@@ -232,7 +250,7 @@ part of the cache key.
 
 <Aside type="caution" title="Migration note">
     Selecting `C90`/`PLR` makes the already-existing `mccabe_max_complexity`, `pylint_max_args`,
-    `pylint_max_branches` and `pylint_max_returns` options under `[lint.python.ruff]` take effect
+    `pylint_max_branches` and `pylint_max_returns` options under `[engines.ruff]` take effect
     for the first time. A repo that previously set `mccabe_max_complexity = 10` and saw no effect
     now gets `C901` findings — at warning severity, so it won't fail CI unless promoted.
 </Aside>
@@ -247,7 +265,7 @@ safety and security rules (`no-ffi`, `no-eval`, `no-literal-password`, `tainted-
 `no-unsafe-finally`, `no-empty`, …) keep error severity. Promote one back with:
 
 ```toml
-[lint.php.mago.rules.cyclomatic-complexity]
+[engines.mago.rules.cyclomatic-complexity]
 level = "error"
 ```
 
@@ -260,12 +278,12 @@ when you have not set those keys yourself**, and a project `.oxfmtrc.json[c]` si
 Your engine table is always the top layer.
 
 YAML, TOML, Markdown and CSS format with the same crates oxfmt uses. The previous formatters stay
-available per language: a taplo layout key in `[fmt.toml.taplo]` (`align_entries`,
-`reorder_keys`, …), a rumdl rule key in `[fmt.markdown.rumdl]`, or a malva key in
-`[fmt.css.malva]` selects that tool's formatter instead.
+available per language: a taplo layout key in `[engines.taplo.format]` (`align_entries`,
+`reorder_keys`, …), a rumdl rule key in `[engines.rumdl.format]`, or a malva key in
+`[engines.malva.format]` selects that tool's formatter instead.
 
 Some tools expose no such setting at all. Nix (alejandra) and Ruby (rubyfmt) are zero-configuration
-formatters, so `[fmt.nix.alejandra]` and `[fmt.ruby.rubyfmt]` declare no keys — anything written
+formatters, so `[engines.alejandra]` and `[engines.rubyfmt]` declare no keys — anything written
 there is reported as `unknown-config-key`.
 
 ## Turning one engine off
@@ -274,23 +292,23 @@ Every engine table accepts `enabled`, whether or not the backend it configures r
 itself:
 
 ```toml
-[lint.python.ruff]
-enabled = false      # this language keeps its other backends, but ruff does not run
+[engines.ruff]
+enabled = false      # ruff does not run; the language keeps its other backends
 
-[lint.typos]
-enabled = false      # a cross-cutting backend, off for every language
-
-[lint.rust.astgrep]
+[engines.astgrep.lang.rust]
 enabled = false      # ...or off for one language only
+
+[engines.ruff.format]
+enabled = false      # ...or for one phase only
 ```
 
 An absent `enabled` means *the engine's own default*, which is not the same as `false`: most
-backends are on, `uncomment` and `adrlint` are opt-in, and each native-toolchain tool carries its own default
+backends are on, `typos`, `uncomment` and `adrlint` are opt-in (`[engines.typos] enabled = true`), and each native-toolchain tool carries its own default
 (`rustfmt`, `gofmt`, `shfmt` and `shellcheck` run when present, `zig fmt` does not). Only an explicit `false` withdraws
 an engine.
 
 Switching off the only backend that holds rules for a language withdraws that language's lint
-coverage too, so its files are reported as `every engine disabled by config: [lint.<lang>.<engine>]`
+coverage too, so its files are reported as `every engine disabled by config: [engines.<engine>]`
 rather than silently counted as checked. That is deliberate: a run must not claim to have linted
 what nothing linted. Unlike `no lint rules for <language>` (a limit of poly), this reason names a
 config line the reader wrote, so it is **not** charged to `--deny-skips` / `--max-skips` — see
@@ -298,7 +316,7 @@ config line the reader wrote, so it is **not** charged to `--deny-skips` / `--ma
 
 Catalog tools (see [Optional catalog tools](#optional-catalog-tools)) have their own switch in
 `[tools.<name>]`. Where a catalog tool shares a name with a built-in backend, `enabled = false` in
-the `[lint.<lang>.<name>]` table names the *built-in* — the catalog tool keeps running.
+the `[engines.<name>]` table names the *built-in* — the catalog tool keeps running.
 
 ## Coverage and withdrawal
 
@@ -321,7 +339,7 @@ Not charged (a caller instruction — the run is doing exactly what it was told)
 
 - `no engine selected by --only/--skip for this file` — `--only` / `--skip` removed every engine
   that covered the file for this invocation.
-- `every engine disabled by config: [lint.<lang>.<engine>]` — `enabled = false` removed every
+- `every engine disabled by config: [engines.<engine>]` — `enabled = false` removed every
   engine that covered the language in `poly.toml`.
 
 The split follows what would fix the reader's problem: a poly-charged reason means the reader needs
@@ -331,7 +349,7 @@ the flag unusable under the very gate that most wants it.
 
 ## Suppressing a rule inline
 
-`[per-file-ignores]` is the right tool for a whole file or a class of files. For a *single*
+`[per_file_ignores]` is the right tool for a whole file or a class of files. For a *single*
 justified exception inside an otherwise-normal file, write the directive in the file itself, in
 that language's own comment syntax:
 
@@ -355,7 +373,7 @@ that language's own comment syntax:
 - **`poly: allow-file[RULE] reason`** — covers the whole file, wherever in the file it appears.
   This is the only form that can suppress a diagnostic with no span.
 - Rule codes are comma-separated and matched exactly or as a code-family prefix, the same way
-  `[per-file-ignores]` matches them: `allow[F]` covers `F401` but not `FOO1`. `allow[*]` covers
+  `[per_file_ignores]` matches them: `allow[F]` covers `F401` but not `FOO1`. `allow[*]` covers
   every rule.
 - It works for every backend, because the runner applies it centrally — ruff, oxlint, typos, the
   tree-sitter tier, and any backend added later, with no per-engine wiring.
@@ -378,17 +396,17 @@ code — `placeholder-implementation` excludes `**/*_generated.rs`, `force-cast`
 `**/RustBridge/**`, `not-null-assertion` excludes Kotlin test source sets, and `unwrap-used`
 excludes test and generated paths. The same key works in your own rule files.
 
-Those are **defaults, and `[per-file-ignores]` replaces them** — it does not add to them. Naming a
-rule id in `[per-file-ignores]` takes the rule's declared globs out of force entirely, so the entry
+Those are **defaults, and `[per_file_ignores]` replaces them** — it does not add to them. Naming a
+rule id in `[per_file_ignores]` takes the rule's declared globs out of force entirely, so the entry
 you wrote is the only one governing it:
 
 ```toml
 # `placeholder-implementation` no longer excludes **/*_generated.rs — only this glob applies.
-[per-file-ignores]
+[per_file_ignores]
 "crates/**/generated/**" = ["placeholder-implementation"]
 ```
 
-All three suppression mechanisms — a rule's declared exclusions, `[per-file-ignores]`, and inline
+All three suppression mechanisms — a rule's declared exclusions, `[per_file_ignores]`, and inline
 `poly: allow[…]` directives — are reported. `poly lint --format json` carries a `suppressed` array
 alongside `results`, one entry per dropped finding:
 
@@ -411,18 +429,17 @@ saying so is the whole point.
 
 Run poly from a monorepo root and each sub-project's `poly.toml` cascades over the root, the way
 ruff and eslint resolve config. A nested config declares **only the diff** — it inherits
-`[defaults]`, the `[lint.*]` / `[fmt.*]` rule tables, and `[per-file-ignores]` from its ancestors,
+`[defaults]`, the `[engines.*]` tables, and `[per_file_ignores]` from its ancestors,
 up to the workspace root.
 
 ```toml title="repo/poly.toml — the workspace root"
-[workspace]
 root = true            # stops the upward cascade here (a repo's .git dir is an
                        # implicit boundary too, so this is optional in a repo)
 
 [defaults]
 line_length = 120
 
-[lint.python.ruff]
+[engines.ruff]
 select = ["E", "F", "W"]
 ```
 
@@ -430,7 +447,7 @@ select = ["E", "F", "W"]
 [defaults]
 line_length = 100      # overrides the root; ruff select is inherited
 
-[per-file-ignores]
+[per_file_ignores]
 "*.spec.ts" = ["no-console"]   # glob is relative to repo/frontend/
 ```
 
@@ -443,7 +460,7 @@ Resolution rules:
 - **Rules and defaults cascade** (root to child, deep-merged; the nearest config wins).
 - **`[discovery] exclude` globs are additive** across the tree — each config's excludes prune its
   own subtree, so a parent exclude already covers its children.
-- **`[per-file-ignores]` globs are relative** to the directory of the config that declares them.
+- **`[per_file_ignores]` globs are relative** to the directory of the config that declares them.
 - `--config <path>` pins one config for the whole run and bypasses nested resolution.
 
 ## The built-in prune set
@@ -527,8 +544,8 @@ direction for a single run, and beat every config in the tree.
 
 ## Sharing configuration
 
-A top-level `extends` list inherits any section of `poly.toml` — `[defaults]`, `[lint.*]` /
-`[fmt.*]`, `[tools.*]`, `[per-file-ignores]`, `[hooks.*]` and so on — from local or pinned remote
+A top-level `extends` list inherits any section of `poly.toml` — `[defaults]`, `[engines.*]`,
+`[tools.*]`, `[per_file_ignores]`, `[hooks.*]` and so on — from local or pinned remote
 base configs, so an org can maintain one baseline instead of copy-pasting it into every repo.
 Entries use the same `path` / `git` / `revision` vocabulary as `[[hooks.sources]]`:
 
@@ -556,7 +573,7 @@ exclude = ["generated/**"]   # effective: vendor/**, target/**, generated/**
 
 To drop what you inherited and state the whole list yourself, add `exclude_mode = "replace"` next
 to the `exclude` in that table. The same rule governs `[discovery] exclude` to `[hooks.builtin.*]`
-inheritance, and it applies to `exclude` only — rule selections, `[rules] dirs`, `clippy_args` and
+inheritance, and it applies to `exclude` only — rule selections, `[engines.astgrep] rule_dirs`, `clippy_args` and
 every other array still replace.
 
 A `git` base pinned to a full commit OID needs no lock; a branch or tag ref requires running
@@ -599,13 +616,13 @@ of the 300+ languages poly can parse. Custom rules run in-process alongside the 
 every `poly lint`, and `poly lint --fix` applies any `fix:` rewrites they declare. No plugin, no
 fork, no extra toolchain: rules run on the same tree-sitter grammars poly already bundles.
 
-Point `[rules] dirs` at one or more directories of rule files. Paths are resolved relative to the
-`poly.toml` that declares them, so a rule set works from any working directory:
+Point `[engines.astgrep] rule_dirs` at one or more directories of rule files. Paths are resolved
+relative to the `poly.toml` that declares them, so a rule set works from any working directory:
 
 ```toml
-[rules]
-dirs = [".poly/rules"]   # default; set to [] to disable custom rules
-builtin = true           # set false to disable poly's own 26-rule pack wholesale
+[engines.astgrep]
+rule_dirs = [".poly/rules"]   # default; set to [] to disable custom rules
+builtin_pack = true           # set false to disable poly's own 26-rule pack wholesale
 ```
 
 Each rule is a standard ast-grep YAML document. The `language:` field names a tree-sitter grammar;
@@ -686,13 +703,13 @@ invalid:
 ```
 
 Run the checks with `poly rules test` (exits non-zero on any failed snippet) and list the resolved
-rules with `poly rules list`. Both default to the configured `[rules] dirs`, or accept explicit
+rules with `poly rules list`. Both default to the configured `rule_dirs`, or accept explicit
 directories as arguments.
 
 `poly rules list` covers poly's **built-in rule pack** — 26 rules across C#, Elixir, Go, Java,
 Kotlin, Python, Ruby, Rust and Swift — as well as your own, marking each row `builtin` or `user`,
-and reflects the config that governs them: `[rules] builtin = false`, `[lint.astgrep]` `select` /
-`extend_select` / `ignore`, and `[lint.astgrep.rules.<id>] level`.
+and reflects the config that governs them: `builtin_pack = false`, `[engines.astgrep]` `select` /
+`extend_select` / `ignore`, and `[engines.astgrep.rules.<id>] level`.
 
 <Aside type="note">
     A user rule with the same `id` as a pack rule **replaces** the pack's outright. Each pack rule
@@ -728,11 +745,11 @@ and ships off by default. Opt in with `extend_select = ["allow-attribute-without
 Configure the tier with flat keys — a boolean toggle plus a threshold:
 
 ```toml
-[lint.quality]
+[engines.quality]
 function_too_long_lines = 120      # raise the budget everywhere
 magic_number = true                # opt in to a rule that ships off
 
-[lint.go.quality]
+[engines.quality.lang.go]
 function_too_long_lines = 200      # per-language override wins
 ```
 
@@ -785,13 +802,13 @@ JavaScript and TypeScript ship off because their runners disagree: Deno and `nod
 pattern list is about one language's file names:
 
 ```toml
-[lint.python.quality]
+[engines.quality.lang.python]
 test_file_patterns = ["test_*.py", "check_*.py"]   # match a custom pytest `python_files`
 
-[lint.typescript.quality]
+[engines.quality.lang.typescript]
 uncollected_test_file = true                      # opt in with the Jest/Vitest defaults
 
-[lint.shell.quality]
+[engines.quality.lang.shell]
 forbid_test_files = true                          # shell tests must be .bats
 ```
 
@@ -809,10 +826,10 @@ patterns). It is a **lint** backend: `poly lint` reports each removable comment 
 that look like *commented-out code*; set `code_only = false` to report every removable comment.
 
 It is **off by default**. Enable it, and tune what it keeps, with a language-agnostic
-`[lint.uncomment]` block plus optional per-language overrides:
+`[engines.uncomment]` block plus optional per-language overrides:
 
 ```toml
-[lint.uncomment]
+[engines.uncomment]
 enabled = true              # required — the backend is opt-in
 remove_todos = false        # keep TODO comments (default)
 remove_fixme = false        # keep FIXME comments (default)
@@ -822,7 +839,7 @@ code_only = true            # only report comments that look like commented-out 
 preserve_patterns = ["HACK", "NOTE"]  # keep comments containing these substrings
 
 # Per-language override: strip Python docstrings but keep them elsewhere.
-[lint.python.uncomment]
+[engines.uncomment.lang.python]
 remove_docs = true
 ```
 
@@ -837,13 +854,13 @@ answers the different question of whether it is a well-formed decision record. I
 default**, because an existing log may follow another template.
 
 ```toml
-[lint.markdown.adrlint]
+[engines.adrlint]
 enabled = true
 # Both lists take codes or prefixes, case-insensitively: MADR07 covers MADR07a and MADR07b.
 select = ["MADR01", "MADR05", "MADR06", "MADR07", "MADR08", "MADR21", "MADR31"]
 ignore = ["MADR12"]
 
-[lint.markdown.adrlint.rules.MADR07a]
+[engines.adrlint.rules.MADR07a]
 level = "warning"
 ```
 

@@ -23,7 +23,9 @@ x-ai-rulez:
 - `config.rs` — normalization and per-engine config slices of the schema the `poly-config`
   crate parses. The config file is `poly.toml` and nothing else (`CONFIG_FILE_NAMES` has one
   entry; there is no YAML form), read with the `toml` crate — `toml_edit` appears only in
-  `poly migrate`, which *writes* into an existing `poly.toml` without disturbing comments.
+  `poly migrate`, which *writes* into an existing `poly.toml` without disturbing comments. v2
+  `[engines.<id>]` tables are resolved by `config/engine_first.rs` (v1 `lint`/`fmt` tables still
+  load; mixing is rejected).
   `poly.local.toml` layers local overrides on top. A top-level `extends` list shares config
   from local or pinned-remote base configs (ADR 0020): bases deep-merge beneath the declaring
   file, `poly.local.toml` stays the final layer, and `poly lock` pins a symbolic git
@@ -32,13 +34,11 @@ x-ai-rulez:
 - `defaults.rs` — `normalize_whitespace`, the shared final pass any formatter can reuse (line
   endings, trailing whitespace, trailing blank lines, single final newline). The opinionated
   values themselves are `poly_config::GlobalDefaults` (`line_length = 120`, `line_ending = lf`,
-  `final_newline`, `trim_trailing_whitespace`), re-exported through `config.rs`; per-tool
-  opinions such as "always format docstrings" live in the engine that owns the setting.
-  Layering is **tool default → opinionated override → user `poly.toml`**.
+  `final_newline`, `trim_trailing_whitespace`), re-exported through `config.rs`. Layering is **tool default → opinionated override → user `poly.toml`**.
 - `resolve.rs` — hierarchical, monorepo-aware config resolution (ADR 0018): discovers every
   in-tree `poly.toml` and maps each discovered file to the nearest config governing it.
 - `fingerprint.rs` — `ConfigFingerprint`, a stable digest of the configuration governing a run,
-  one per directory-scoped config (ADR 0018 again). Feeds `LintDocument`/`FormatDocument`'s
+  one per directory-scoped config. Feeds `LintDocument`/`FormatDocument`'s
   `configs` list, so two clean reports are only comparable when their fingerprints match.
 - `discover.rs` — file walk via the `ignore` crate (respects `.gitignore`).
 - `runner.rs` + `runner/` — the pipeline: discover → cache → engine → report, parallelized with
@@ -50,19 +50,19 @@ x-ai-rulez:
   already-planned engine set and never enables one that config left off; rejects an unknown
   engine name before the run starts), `runner/generated.rs` (whether the run acts on
   machine-generated files at all vs. whether it may rewrite one it did check),
-  `runner/types.rs` (`LintRun`/`FormatRun`/`RunOptions` and friends), and `runner/tests.rs`
-  (split out because `runner.rs` sits at the 1000-line cap).
+  `runner/types.rs` (`LintRun`/`FormatRun`/`RunOptions` and friends), and `runner/tests.rs`.
+- `components/` — which engine components a run needs (`needed.rs`), the install/`on_missing`
+  policy applied before planning (`preplan.rs`), and the component-host seam (`seam.rs`). An
+  engine family whose `engine-*` feature is off is served by a downloaded component.
 - `filter/` — result and discovery filtering, one question per file: `diagnostics.rs`
   (`PerFileIgnores`, `SeverityRemap`), `paths.rs`, `generated.rs` (generated-source detection),
   `suppress.rs` (in-source `poly: allow[…]` directives).
-- `report/` — three formats: `pretty` (colored via `owo-colors`' `if_supports_color`), `json`
-  (`serde_json`), and `toon`. `report/shared.rs` holds `Verbosity`, `notes.rs` the
+- `report/` — three formats: `pretty`, `json` and `toon`. `report/shared.rs` holds `Verbosity`, `notes.rs` the
   discovery/skip notes, `lint.rs`/`format.rs` the human renderers, `structured.rs` the
   machine-readable ones, `document.rs` the `LintDocument`/`FormatDocument` object shape
   (`results` + `errors` + `skipped` + `summary` + `configs`) both renderers serialize,
   `render.rs` the `RenderError` a failed serialization must surface rather than emit an empty
-  document, `theme.rs` the named ANSI palette, and `layout.rs` the grouped-number/pluralized/
-  width-aware typography the human renderers share.
+  document, `theme.rs` the palette, `layout.rs` shared typography.
 - `language.rs` — `Language` enum + detection **by filename and extension**; an unrecognized
   extension becomes `Language::Other(name)`, and it is the tier-2 engine — not this module —
   that hands that name to `tree-sitter-language-pack`.
@@ -96,7 +96,7 @@ x-ai-rulez:
     `uncomment.rs` (`poly-engines-uncomment`), and `quality/` (ADR 0027 code-quality metrics).
   - `uncomment.rs` (in `poly-engines-uncomment`) — the **opt-in comment-removal lint backend** wrapping the `uncomment`
     crate: reports each removable comment as a warning with a delete-edit, gated on
-    `[lint.uncomment] enabled = true` (or per-language `[lint.<lang>.uncomment]`).
+    `[engines.uncomment] enabled = true` (or per-language `[engines.uncomment.lang.<lang>]`).
   - `treesitter/` — the **tier-2 generic formatter** built on `tree-sitter-language-pack`:
     CST-driven structural reindent for brace grammars, whitespace normalization
     (`defaults.rs::normalize_whitespace`) otherwise, and leave-untouched for grammars where
@@ -116,7 +116,7 @@ x-ai-rulez:
     per-line diagnostics and an optional pinned, checksummed download (`install = "auto"`).
   - support modules, not backends: `biome_common.rs`, `rule_config.rs` (re-exported from
     `poly-engine-api`; the shared
-    `select` / `extend_select` / `ignore` / `[lint.<lang>.<tool>.rules.<id>]` schema),
+    `select` / `extend_select` / `ignore` / `[engines.<tool>.rules.<id>]` schema),
     `config_keys/` (each engine's declared option keys, behind `unknown-config-key` and the
     published JSON Schema), `core_options.rs` (layout options shared by the oxfmt-equivalent
     formatters), `format_scope.rs` (hands named files such as `pyproject.toml` to a more specific
@@ -129,7 +129,7 @@ x-ai-rulez:
 Result caching is **not** in this crate: it lives in `crates/poly-cache` (`ResultCache`), a
 blake3 content-hash cache whose key is `blake3(cache format version \0 build identity \0
 namespace \0 engine name \0 engine version \0 toml(resolved engine config) \0 input digest)`.
-`get`/`put` take no lock and rely on atomic sibling-tmp-then-rename. The cache lives in the
+The cache lives in the
 per-user OS cache dir (`~/.cache/poly/<repo-key>`, `~/Library/Caches/poly/…`,
 `%LOCALAPPDATA%\poly\…`) resolved via `etcetera`, overridable with `POLY_CACHE_HOME` or pinned
 via `[cache] dir`; `--no-cache` bypasses.

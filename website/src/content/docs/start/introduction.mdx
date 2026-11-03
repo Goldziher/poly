@@ -26,7 +26,9 @@ change to how you invoke poly.
 1. **Native Rust backends (tier 1).** The highest-fidelity path: ruff for Python, oxc for
    JavaScript/TypeScript/JSON (and oxfmt's own formatter crates for YAML, TOML, Markdown and CSS),
    taplo and rumdl for TOML and Markdown lint, sqruff for SQL, mago for PHP, `markup_fmt` for
-   HTML/Vue/Svelte, and more. All compiled in, all in-process.
+   HTML/Vue/Svelte, and more. All in-process: compiled into a bundled build, or loaded from
+   signed components that a core build downloads on first use (see
+   [Components and offline use](/poly/guides/components/)).
 
 2. **Tree-sitter generic tier (tier 2).** The catch-all for everything else — Java, Elixir, C,
    C++, protobuf, and the long tail of 300+ grammars. Best-effort structural reindent, still pure
@@ -111,7 +113,7 @@ less than it claims exits **2**, distinct from the **1** that means real finding
     whole-workspace tools (`cargo clippy`, `cargo sort`, `cargo machete`, `cargo deny`, any
     configured type checker) against the live worktree. poly writes nothing without `--fix`, but
     those tools have their own side effects — `cargo clippy` populates `target/` and can refresh
-    `Cargo.lock`. Pass `--workspace never`, or set `[lint] workspace = false`, for a run that must
+    `Cargo.lock`. Pass `--workspace never`, or set `[workspace] run = "never"`, for a run that must
     leave the tree untouched.
 </Aside>
 

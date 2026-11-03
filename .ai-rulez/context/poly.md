@@ -10,10 +10,10 @@ x-ai-rulez:
 
 # poly
 
-poly is a single-binary, multi-language linter and formatter. Tier-1 backends are compiled in as
-crate dependencies — ruff, oxc, biome (CSS/GraphQL), mago (PHP), taplo, rumdl, adrlint (MADR ADRs,
-opt-in), sqruff, malva,
-markup_fmt, rubyfmt, nixfmt, typos (opt-in), and more — with a
+poly is a single-binary, multi-language linter and formatter. Tier-1 backends are Rust crates —
+ruff, oxc, biome (CSS/GraphQL), mago (PHP), taplo, rumdl, adrlint (opt-in), sqruff, malva,
+markup_fmt, rubyfmt, nixfmt, typos (opt-in), and more — linked in (the bundled release build) or
+loaded as signed downloadable components (core build, `poly components`), with a
 tree-sitter generic tier for the long tail. Two cross-cutting lint tiers run on top: the native
 `quality` metric engine and ast-grep with a built-in rule pack. Canonical first-party CLIs are
 used when found on `PATH` (`rustfmt`, `gofmt`, `shfmt` and `shellcheck` are default-on;
@@ -66,7 +66,7 @@ whole-workspace tools a `pre-commit` hook would — `cargo clippy`/`cargo-sort`/
 `cargo-deny` and any configured whole-project type checkers — on the live worktree, folding
 their pass/fail into the report and exit code. It reuses the `[hooks.builtin.cargo]` + inline
 `workspace = true` config as the single source of truth, and is on by default. Turn it off with
-`--workspace never` or `[lint] workspace = false`; a repo with no `[hooks]` section runs only the
+`--workspace never` or `[workspace] run = "never"`; a repo with no `[hooks]` section runs only the
 per-file tier. With `--format json`/`toon` the whole-project section is written to stderr (stdout
 stays a single valid document), so a machine consumer must check the **exit code** — not just the
 JSON payload — to detect a whole-project tool failure.
@@ -76,35 +76,36 @@ per-file tier only writes under `--fix`, and the phase is asked for check mode �
 *executes* the configured tools against the live worktree, and their own side effects are not
 poly's to control (`cargo clippy` populates `target/` and can refresh `Cargo.lock`; a `go`
 invocation can append to `go.work.sum`; a type checker writes its cache). A run that must leave
-the tree untouched needs `--workspace never` or `[lint] workspace = false`.
+the tree untouched needs `--workspace never` or `[workspace] run = "never"`.
 
 The phase is also **not path-scoped**: `poly lint <paths>` skips it for that reason, and
 `--workspace always` opts back in with the tools still covering the whole repository — regardless of the
-named paths and of `[discovery] exclude`, which filters poly's own discovery only. poly prints a
-note on both branches. Naming the workspace root is *not* path scoping: `poly lint .` is how
-people say "lint everything", so it runs the phase.
+named paths and of `[discovery] exclude`. poly prints a note on both branches. Naming the
+workspace root is *not* path scoping: `poly lint .` runs the phase.
 
 Under `--fix`, this phase runs the tools in **fix mode**: `cargo sort` sorts in place,
 `cargo-machete --fix` prunes unused deps, and `cargo clippy --fix --allow-dirty --allow-staged`
 applies clippy autofixes (`cargo deny` has no autofix and stays check-only). Fix mode is what
 `--fix` adds; the phase itself runs either way, so `--workspace never` — not the absence of `--fix` —
-is what skips it. `poly fmt` is a pure formatter — it never runs the whole-project phase, since
-that phase is linting, not formatting. The git-hook / commit-gate path never requests fix mode.
+is what skips it. `poly fmt` never runs the whole-project phase, and the git-hook path never
+requests fix mode.
 
-The orchestration itself lives in `crates/poly-workspace` (`run_workspace_lint`), shared by
-`poly-cli` and the `poly mcp` `workspace_lint`/`workspace_lint_fix` tools so both surfaces run
-identical behavior against the live worktree.
+The orchestration lives in `crates/poly-workspace` (`run_workspace_lint`), shared by `poly-cli`
+and the `poly mcp` `workspace_lint` tools.
 
 ## Agent distribution
 
 Public plugin content lives in `plugin/.ai-rulez/`, contributor content in the root `.ai-rulez/`.
 `ai-rulez generate --plugin` emits the runtime profiles under `plugin/`;
-`scripts/sync_public_skills.py` mirrors the public skills to `skills/`. Plugin versions follow the
-Cargo workspace via `scripts/release-bump.sh`.
+`scripts/sync_public_skills.py` mirrors the public skills to `skills/`; versions follow
+`scripts/release-bump.sh`.
 
 ## Configuration
 
-Per-repo `poly.toml` (with `poly.local.toml` for local overrides). A top-level `extends` list
+Per-repo `poly.toml` (with `poly.local.toml` for local overrides), schema v2 (ADR 0038):
+`[engines.<id>]` per engine (`.lint`/`.format`/`.lang.<id>` sub-tables), `[components]`
+(`enable`/`disable`/`install`/`on_missing`), `required_version`, `root`, `[workspace] run`,
+`per_file_ignores`. The loader still reads v1 (`poly migrate --to-v2` converts) but rejects a mix. A top-level `extends` list
 shares any config section from local or pinned-remote base configs (ADR 0020) — bases merge
 beneath the file, `poly.local.toml` wins on top; `poly lock` pins a symbolic remote
 ref (and Git hook sources) into `poly.lock`, and `poly config show` prints the effective merged config. The
@@ -126,7 +127,7 @@ Beyond the per-language backends, two cross-cutting lint mechanisms run on by de
   `type-too-long` (300), `too-many-parameters` (6), `nesting-too-deep` (4),
   `cyclomatic-complexity` (20) and `lazy-ignore`, plus opt-in `magic-number` and `law-of-demeter`,
   and `uncollected-test-file` (a test the runner will not collect; on for Python, Go, Ruby).
-  Configured under `[lint.quality]` / `[lint.<lang>.quality]` with flat keys — a boolean toggle
+  Configured under `[engines.quality]` / `[engines.quality.lang.<lang>]` with flat keys — a boolean toggle
   plus a threshold, e.g. `file_too_long = false`, `file_too_long_lines = 800`,
   `cyclomatic_complexity_max = 15`; `enabled = false` disables the tier. It never duplicates a
   tier-1 backend: a per-language deferral table yields each metric to the existing rule (ruff
@@ -136,12 +137,10 @@ Beyond the per-language backends, two cross-cutting lint mechanisms run on by de
   while others still get the line-counting floor without being counted as linted.
 - **The built-in ast-grep rule pack** (ADR 0029) — 26 rules across C#, Elixir, Go, Java, Kotlin,
   Python, Ruby, Rust and Swift, embedded in the binary and loaded through the same parse path as
-  user rules. It sits *beneath* `[rules] dirs` (a user rule with the same `id` replaces a pack
-  rule). Each rule carries its own `severity:`, 13 of the 26 `off`. `[rules] builtin = false`
-  disables the pack wholesale; `[lint.astgrep]` `select`/`extend_select`/`ignore` and
-  `[lint.astgrep.rules.<id>] level` move individual rules. (`[rules]` — `dirs`, default
-  `[".poly/rules"]`, and `builtin` — is a separate top-level table from the per-rule overrides
-  that live under a backend's own `[lint.…]` table.)
+  user rules. It sits *beneath* `[engines.astgrep] rule_dirs` (default `[".poly/rules"]`; a user
+  rule with the same `id` replaces a pack rule); `builtin_pack = false` disables the pack
+  wholesale. Each rule carries its own `severity:`, 13 of the 26 `off`; `select`/`extend_select`/
+  `ignore` and `[engines.astgrep.rules.<id>] level` move individual rules.
 
 ## Inline suppression
 
@@ -152,14 +151,14 @@ that line; `allow-file` covers the whole file, and is the only form that can sup
 span-less diagnostic. `RULE` may be a list, or `*` for every rule. **A reason is mandatory**: a
 directive with no alphanumeric text after `]` does not suppress at all and reports `lazy-ignore`
 instead. The filter is applied centrally in the runner, so every engine inherits it. The file-glob
-mechanism `[per-file-ignores]` (ADR 0017) still exists for whole-file exemptions.
+mechanism `[per_file_ignores]` (ADR 0017) still exists for whole-file exemptions.
 
 ## Exit codes
 
 - `0` — clean.
 - `1` — **error-severity** lint findings, a failing whole-project tool, or (for `poly fmt`)
-  files that would change in a dry run (or were rewritten, under `--fix --exit-nonzero-on-fix`). Warning-severity findings alone do not fail a run, so `typos` and the
-  quality tier don't redden CI.
+  files that would change in a dry run (or were rewritten, under `--fix --exit-nonzero-on-fix`).
+  Warning-severity findings alone do not fail a run, so the quality tier doesn't redden CI.
 - `2` — the run verified less than it claims: a file poly failed on — including a `poly fmt`
   file that did not converge to a fixed point within its five-pass cap, reported as an error
   rather than as formatted, since a following `poly fmt` would keep reporting drift on

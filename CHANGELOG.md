@@ -7,6 +7,55 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+### Breaking changes
+
+See [Migrating to poly 2](https://goldziher.github.io/poly/guides/migrating-to-v2/) and
+[ADR 0038](adrs/0038-poly-toml-v2-and-cli-surface.md).
+
+- **CLI flags.** `--no-color` is replaced by `--color auto|always|never`. The `--workspace` /
+  `--no-workspace` pair is replaced by `poly lint --workspace auto|always|never`.
+  `--force-exclude`, `--include-generated` and `--skip-generated` are replaced by
+  `--set KEY=VALUE` (`discovery.force_exclude`, `discovery.generated`). `poly fmt --check` is
+  removed because the dry run is the default; it is still parsed, hidden, and fails with a hint.
+  `poly fmt --exit-zero-on-fix` is replaced by `--exit-nonzero-on-fix`: `poly fmt --fix` exits `0`
+  after rewriting files unless that flag is given.
+- **Lock files.** `poly-config.lock` and `poly-hooks.lock` are replaced by a single `poly.lock`,
+  written by `poly lock [--upgrade] [--check]`; `poly config update` and `poly hooks update` are
+  removed. `poly migrate --to-v2` does not merge the old files: delete them and run `poly lock`.
+- **typos is opt-in.** Spell-checking runs only with `[engines.typos] enabled = true`.
+  `poly migrate --to-v2` writes that key for a config that relied on the old default.
+- **poly.toml v2.** `[engines.<id>]` replaces `[lint.<lang>.<tool>]` and `[fmt.<lang>.<tool>]`;
+  `[engines.astgrep]` (`rule_dirs`, `builtin_pack`) replaces `[rules]`; top-level `root` replaces
+  `[workspace] root`; `[workspace] run = "auto|always|never"` replaces `[lint] workspace`;
+  `per_file_ignores` replaces `per-file-ignores`. The loader reads both schemas and rejects a file
+  that mixes them; `poly migrate --to-v2 --write` rewrites a v1 file and keeps its comments.
+- **A needed engine component that is not installed fails the run** with exit `2` (or skips its
+  files under `--on-missing skip` / `[components] on_missing = "skip"`); poly never falls back to
+  the tree-sitter tier for it.
+
+### Added
+
+- **Downloadable engine components.** Engines ship as signed components, fetched on first use by a
+  core build (`cargo build --no-default-features`, 7.6 MiB at the size profile). The default build
+  stays bundled, with every engine and the MCP server linked in, and the Linux musl release is
+  fully bundled and embeds no component lock. `poly components list|status|install|uninstall|sync|prune|import`
+  manages them; `[components]` (`enable`, `disable`, `install`, `on_missing`) selects them;
+  `--offline` / `POLY_OFFLINE=1` forbids every download; `POLY_COMPONENT_MIRROR` and
+  `POLY_COMPONENT_CACHE` set the download origin and cache root. `poly components prune` keeps
+  archives the lock references for any target and archives used within `--keep-days` (default 30),
+  and skips a file a loaded library still holds.
+- **`poly config validate`**, which checks a config against the compiled component index without
+  downloading anything, and a `components` section in `poly doctor`.
+- **`required_version`** in `poly.toml`, a semver requirement on the running poly.
+- **`--set KEY=VALUE`**, a run-scoped TOML override layered above `poly.local.toml`, and
+  `--on-missing fail|skip`.
+- **Python type checking with ty**: `[engines.python-types] backend = "ty"`, opt-in.
+- **MCP.** Fourteen tools: `components`, `components_install` and `components_uninstall` join the
+  set, and `lint`, `format_check`, `lint_fix` and `format_write` take an `install` parameter
+  (`config`, `auto`, `never`). A core build serves MCP through the downloadable `mcp` component.
+- **GitHub Action.** The `components` input pre-installs components and caches them;
+  `version: from-config` reads `required_version`, and `config-file` names the file it reads.
+
 ### Changed
 
 - Minimum supported versions raised: Node.js 22.

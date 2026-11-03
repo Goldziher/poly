@@ -9,8 +9,8 @@ metadata:
 
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-Content-Hash: blake3:e39204d062bfb08989d303cf38ed55352d55b8e75a3bebba83e87ecf27141cca
-Source-Hash: blake3:80b02e3c38da8987136959b755f0ed07d25af7e123f02e924970a78f96f751a7
+Content-Hash: blake3:93d3501f02debb45afc6bb614e881b2c08f7f4288ca05b4d0e979e5718554aee
+Source-Hash: blake3:b235022c5efd503e65d1d6fe44889912f02b72b7c3f0af6cd4c1d11d30441097
 Schema-Version: v1
 -->
 
@@ -37,7 +37,7 @@ Fourteen tools, no more. Read-only (never touch the tree):
   components list` / `status`.
 - `cache_stats` — result-cache footprint (entries, bytes, format version) per namespace.
 - `rules` — list every ast-grep rule a run would apply — poly's built-in pack plus the user
-  rules from `[rules] dirs` — and optionally run their `*-test.yml` snippets. Mirrors `poly
+  rules from `[engines.astgrep] rule_dirs` — and optionally run their `*-test.yml` snippets. Mirrors `poly
   rules list` / `poly rules test`. Each rule carries its language, `source` (`builtin`/`user`),
   `default_severity`, the `severity` it reports at under the resolved config, and `enabled`.
 - `config_show` — the merged effective configuration. Mirrors `poly config show`, and is
@@ -108,7 +108,7 @@ There is no `hooks` tool: `poly hooks` is CLI-only.
   `format`.
 - `components_install`: `names`, `languages`, `paths`, `config`, `dry_run`, `format`.
 - `components_uninstall`: `names`, `stale`, `format`.
-- `rules`: `dirs` (empty means `[rules] dirs` from the config), `config`, `test` (bool),
+- `rules`: `dirs` (empty means `rule_dirs` from the config), `config`, `test` (bool),
   `format`.
 - `config_show`: `config`, `format`.
 - `cache_stats` / `cache_clean` / `version`: `format` only.

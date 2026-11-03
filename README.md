@@ -83,6 +83,24 @@ first run and cached by version and component lock, so a second run downloads no
 - run: poly lint .
 ```
 
+### Bundled and core builds
+
+The release binaries are **bundled**: every engine and the MCP server are linked in, so nothing is
+downloaded at run time. `cargo build --no-default-features` produces a **core** build, 7.6 MiB at
+the size profile, whose engines are signed components downloaded on first use:
+
+```sh
+poly components status .             # which components this directory needs, and their state
+poly components sync .               # install them (poly --offline components sync . only checks)
+poly components import <archive>     # seed an air-gapped host
+poly components prune                # drop cached archives the lock no longer references
+```
+
+`[components]` in `poly.toml` selects components and sets `install` (`auto` or `never`) and
+`on_missing` (`fail` or `skip`); `--offline` / `POLY_OFFLINE=1` forbids every download, and
+`POLY_COMPONENT_MIRROR` points downloads at an internal mirror. See
+[Components and offline use](https://goldziher.github.io/poly/guides/components/).
+
 ### Package managers
 
 ```sh
@@ -177,9 +195,10 @@ $ poly hooks install
 commit checks then run on every `git commit`.
 
 Exit codes are a contract: `0` is clean, `2` means the run verified less than it claims, and `1`
-means findings — which for `poly fmt --fix` reports *that files were rewritten*, so a script
-running it in fix mode should treat `1` as success. Add `-q` to trim the per-file detail on a
-large repository; the summary keeps every count and reason.
+means findings or, for a `poly fmt` dry run, files that would change. `poly fmt --fix` exits `0`
+after rewriting; add `--exit-nonzero-on-fix` for a CI step that must fail when the tree was not
+already formatted. Add `-q` to trim the per-file detail on a large repository; the summary keeps
+every count and reason.
 
 ---
 
@@ -259,7 +278,7 @@ marked as such.
 - **The code-quality engine** — tree-sitter metric rules, listed below.
 - **The built-in ast-grep pack** — 26 rules across C#, Elixir, Go, Java, Kotlin, Python, Ruby, Rust and Swift. **13
   are on by default**; the other 13 ship `severity: off` and are one config line away. Your own rules under
-  `[rules] dirs` sit above the pack — a rule with the same `id` replaces the built-in one outright.
+  `[engines.astgrep] rule_dirs` sit above the pack — a rule with the same `id` replaces the built-in one outright.
 
 A fourth cross-cutting engine, `uncomment` (comment removal), is off by default.
 
@@ -297,7 +316,7 @@ zero-dependency promise holds either way.
 document-local link rules, and its structural heading fix runs under `poly lint --fix`:
 
 ```toml
-[lint.markdown.adrlint]
+[engines.adrlint]
 enabled = true
 # Optional: narrow or extend the rule set. Codes match by prefix, so MADR07 covers MADR07a/b.
 # select = ["MADR01", "MADR05", "MADR06", "MADR31"]
@@ -440,6 +459,10 @@ Unknown keys, unknown sections and wrongly-typed values are reported as warnings
   suppression, monorepo cascading, shared and remote config.
 - [Hooks](https://goldziher.github.io/poly/guides/hooks/) — `poly hooks install`, builtin hooks, staged isolation,
   timeouts, concurrency, caching.
+- [Components and offline use](https://goldziher.github.io/poly/guides/components/) — bundled and core builds,
+  `[components]`, mirrors, air-gapped hosts.
+- [Migrating to poly 2](https://goldziher.github.io/poly/guides/migrating-to-v2/) — the `poly.toml` v2 schema and the
+  removed CLI flags.
 - [CLI reference](https://goldziher.github.io/poly/reference/cli/) — every subcommand and flag, and the exit-code
   contract.
 - [Backends](https://goldziher.github.io/poly/reference/backends/) — full language table and the tool catalog.

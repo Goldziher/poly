@@ -107,7 +107,7 @@ block mirroring the CLI's `--format json` — or the compact TOON encoding when 
 | `format_check` | `poly fmt` | Formatting drift, without writing. May download a component. |
 | `components` | `poly components list` / `status` | The downloadable engine components and where each stands; with `paths`, which ones they need, which are missing and which a run would download. Never downloads. |
 | `cache_stats` | `poly cache stats` | Result-cache footprint per namespace: entries, bytes, format version. |
-| `rules` | `poly rules list` / `test` | Every ast-grep rule a run would apply — the built-in pack plus `[rules] dirs` — with language, `source` (`builtin`/`user`), `default_severity`, the `severity` under the resolved config, and `enabled`. Optionally runs the `*-test.yml` snippets. |
+| `rules` | `poly rules list` / `test` | Every ast-grep rule a run would apply — the built-in pack plus `[engines.astgrep] rule_dirs` — with language, `source` (`builtin`/`user`), `default_severity`, the `severity` under the resolved config, and `enabled`. Optionally runs the `*-test.yml` snippets. |
 | `config_show` | `poly config show` | The merged effective configuration. **Network-free**: remote `extends` bases are not fetched. |
 | `version` | `poly --version` | Which binary is serving this session — version, build id, channel, executable, pid, uptime — whether that executable is still the file on disk, and the full engine→version map (host-toolchain backends excluded). |
 
@@ -171,7 +171,7 @@ returns the result.
 - `components` — `paths`, `config`, `install` (the policy `would_download` is judged under), `format`.
 - `components_install` — `names` (components or presets), `languages`, `paths`, `config`, `dry_run`, `format`.
 - `components_uninstall` — `names`, `stale` (also remove unreferenced, long-unused archives), `format`.
-- `rules` — `dirs` (empty means `[rules] dirs` from the config), `config`, `test` (bool), `format`.
+- `rules` — `dirs` (empty means `rule_dirs` from the config), `config`, `test` (bool), `format`.
 - `config_show` — `config`, `format`.
 - `cache_stats` / `cache_clean` / `version` — `format` only.
 - `workspace_lint` / `workspace_lint_fix` — `config`, `format`, `jobs`, `no_cache`. No `paths`.

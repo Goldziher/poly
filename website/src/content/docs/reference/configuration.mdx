@@ -38,27 +38,55 @@ parser uses:
 poly config schema --output poly.schema.json
 ```
 
-The per-engine `[lint]` / `[fmt]` tables are **autocomplete hints**: each backend
+The per-engine `[engines.<id>]` tables are **autocomplete hints**: each backend
 lists the keys it declares, but the tables stay open because a language id may be
 any tree-sitter grammar and some backends derive their key set from an upstream
 type. `poly lint` remains the authority — it reports `unknown-config-key` for any
-key no engine reads.
+key no engine reads. The v2 schema is committed as `schemas/poly-v2.schema.json`;
+`poly config schema` prints the one the running binary uses.
+
+<Aside type="note" title="Schema versions">
+    This page documents the v2 schema (ADR 0038). The loader still reads v1 files
+    (`[lint.<lang>.<tool>]`, `[fmt.<lang>.<tool>]`, `[rules]`, `[lint] workspace`,
+    `[workspace] root`, `per-file-ignores`), and rejects a file that mixes the two.
+    [Migrating to poly 2](/poly/guides/migrating-to-v2/) maps each v1 spelling to v2.
+</Aside>
 
 ## Top-level sections
 
 | Section | Purpose |
 | --- | --- |
+| [`required_version`, `root`](#required_version-and-root) | Pin the poly version; stop the config cascade. |
+| [`[components]`](#components) | Which downloadable engine components a run may use. |
 | [`[defaults]`](#defaults) | Line width, line endings, whitespace — the base every formatter layers on. |
 | [`[discovery]`](#discovery) | The file walk: excludes, the prune set, generated files. |
-| [`[lint]` / `[fmt]`](#lint-and-fmt) | Per-language, per-engine rule and formatter configuration. |
-| [`[workspace]`](#workspace) | Monorepo cascade boundary. |
-| [`[per-file-ignores]`](#per-file-ignores) | Suppress rules by path glob. |
-| [`[rules]`](#rules) | Custom ast-grep rule directories and the built-in pack toggle. |
+| [`[engines.<id>]`](#engines) | Per-engine rule and formatter configuration, including ast-grep's rule directories. |
+| [`[workspace]`](#workspace) | When the whole-project phase of `poly lint` runs. |
+| [`[per_file_ignores]`](#per_file_ignores) | Suppress rules by path glob. |
 | [`[tools]`](#tools) | Opt into catalog tools. |
 | [`[cache]`](#cache) | Result-cache and sccache configuration. |
 | [`[commit]`](#commit) | `poly commit` message linting and cleanup. |
 | [`[hooks]`](#hooks) | Git-hook stages, builtins and inline jobs. |
 | [`extends`](#extends) | Share configuration from local or pinned-remote bases. |
+
+## `required_version` and `root`
+
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `required_version` | string | — | Semver requirement on the running poly (`">=2.0, <3"`). Components version in lock-step with poly, so it pins them too. The GitHub Action reads it for `version: from-config`. |
+| `root` | boolean | `false` | Stop the upward config cascade here (a `.git` directory is an implicit boundary). Replaces v1's `[workspace] root`. |
+
+## `[components]`
+
+Selection and policy for downloadable engine components. See
+[Components and offline use](/poly/guides/components/).
+
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `enable` | `"auto"` or array | `"auto"` | `"auto"` derives components from the discovered files and configured engines; an array names components or presets. |
+| `disable` | array | `[]` | Components never to use. Configuring an engine of a disabled component is a config error. |
+| `install` | `"auto"` \| `"never"` | `"auto"` | Whether a run may download a missing component. |
+| `on_missing` | `"fail"` \| `"skip"` | `"fail"` | Exit `2`, or skip the files and charge them to the skip budget, when a needed component is unavailable. `--on-missing` overrides it. |
 
 ## `[defaults]`
 
@@ -81,51 +109,85 @@ setting.
 | `no_prune` | string or array | `[]` | Directory **names** to keep despite the built-in prune set (`build`, `dist`, …). |
 | `generated` | boolean | `true` | Whether poly lints and formats machine-generated files. |
 
-## `[lint]` and `[fmt]`
+## Engines
 
-Per-language, per-engine tables: `[lint.<lang>.<engine>]` and
-`[fmt.<lang>.<engine>]`. See the [Backend coverage](/poly/reference/backends/)
-page for which engine serves each language.
+`[engines.<id>]`: one table per engine, keyed by the engine id (`ruff`, `oxc`, `taplo`, `rumdl`, `typos`,
+`astgrep`, `quality`, `uncomment`, …). See the [Backend coverage](/poly/reference/backends/)
+page for which engine serves each language. Options that apply everywhere sit directly in the
+table; narrow with sub-tables:
+
+```toml
+[engines.ruff]                 # every phase, every language
+select = ["E", "F"]
+
+[engines.ruff.format]          # the format phase only (also: .lint)
+line_length = 100
+
+[engines.ruff.lang.python]     # one language (also: .lang.python.lint / .format)
+target_version = "py312"
+
+[engines.ruff.rules.ANN201]    # a per-rule override
+level = "error"
+```
+
+Precedence, lowest to highest: tool defaults, the tool's native config files, `[engines.<id>]`, its
+`lint` or `format` sub-table, its `lang.<language>` sub-table, then `lang.<language>.lint` or
+`.format`. The names `enabled`, `lint`, `format`, `lang` and `rules` are reserved.
 
 Every engine table accepts `enabled` (boolean; an absent key means the engine's
-own default). Linter backends that participate in rule selection accept the
-uniform triple:
+own default — `typos` is off unless `[engines.typos] enabled = true`). Linter backends that
+participate in rule selection accept the uniform triple:
 
 | Key | Type | Meaning |
 | --- | --- | --- |
 | `select` | array | Replace the default rule set with these codes / categories. |
 | `extend_select` | array | Add to the default rule set. |
 | `ignore` | array | Remove from the selected set. |
-| `rules` | array or table | As an array, rule codes; as a table, per-rule parameters, including `[lint.<lang>.<engine>.rules.<id>] level = "error" \| "warning" \| "info" \| "hint"`. |
+| `rules.<id>` | table | Per-rule override: `[engines.<id>.rules.<code>] level = "error" \| "warning" \| "info" \| "hint"`, plus rule parameters. |
 
-Each engine also reads its own keys (`[lint.python.ruff] line_length`,
-`[lint.php.mago] php_version`, `[fmt.toml.taplo] …`). `poly lint` reports a key
-that no engine reads as `unknown-config-key` with a source span. Cross-cutting
-backends (`typos`, `quality`, `uncomment`, `astgrep`) are also configurable
-language-agnostically at `[lint.<engine>]`.
+Each engine also reads its own keys (`[engines.ruff] line_length`, `[engines.mago] php_version`, …).
+`poly lint` reports a key that no engine reads as `unknown-config-key` with a source span, and
+`poly config validate` checks the keys offline from the component index.
+
+### ast-grep rules
+
+`[engines.astgrep]` also carries the ast-grep rule settings that v1 kept in a top-level `[rules]` table:
+
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `rule_dirs` | array | `[".poly/rules"]` | Directories of custom ast-grep `*.yml` rule files, relative to the config. Set to `[]` to disable. |
+| `builtin_pack` | boolean | `true` | Load poly's built-in ast-grep rule pack. |
+
+### Python type checking
+
+`[engines.python-types]` is opt-in Python type checking with ty, a project-check engine. `ty` is the only backend; pyrefly is
+not supported.
+
+```toml
+[engines.python-types]
+backend = "ty"
+python_version = "3.12"    # default: the interpreter's, else ty's latest
+src = ["src"]              # first-party roots; default: the project root and src/
+extra_paths = ["stubs"]    # searched before first-party code
+```
+
+ty's own `ty.toml` and `[tool.ty]` are not read.
 
 ## `[workspace]`
 
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
-| `root` | boolean | `false` | Stop the upward config cascade here (a `.git` directory is an implicit boundary). |
+| `run` | `"auto"` \| `"always"` \| `"never"` | `"auto"` | When `poly lint` runs the whole-project phase: for repository-wide runs only (`auto`), even for named paths (`always`), or never. `--workspace` overrides it. |
 
-## `[per-file-ignores]`
+## `[per_file_ignores]`
 
 A table of path glob → rule codes to suppress for files matching the glob. Globs
 are relative to the config that declares them.
 
 ```toml
-[per-file-ignores]
+[per_file_ignores]
 "tests/**" = ["F401"]
 ```
-
-## `[rules]`
-
-| Key | Type | Default | Meaning |
-| --- | --- | --- | --- |
-| `dirs` | array | `[".poly/rules"]` | Directories of custom ast-grep `*.yml` rule files, relative to the config. Set to `[]` to disable. |
-| `builtin` | boolean | `true` | Load poly's built-in ast-grep rule pack. |
 
 ## `[tools]`
 

@@ -4,7 +4,7 @@
 version = 1
 ai_rulez_version = '5.10.0'
 scope = 'all'
-tree = 'sha256:41c2ac27828c7aee93be70463edc2bed2614e74d27870653039c483b30f25857'
+tree = 'sha256:295a7974c9b24c98103771603c8d1ae1c8937003baa59cdfdc0434f8b8bff53c'
 
 [[item]]
 kind = 'command'
@@ -22,28 +22,28 @@ digest = 'sha256:a39409654bea6351cea8ffe9fc58245557bcc2dcfd47e2cbe4e7600b3910c78
 kind = 'skill'
 id = 'poly-lint-and-format'
 path = 'skills/poly-lint-and-format'
-digest = 'sha256:f5254f05aef0792e293d1872fa6ccc06af784f8553771bbc62c7f7ce284fd9af'
+digest = 'sha256:f057c4b523389ca83572abb8d329eef339b7b26228569738b6ce591f09c522b7'
 
 [[item]]
 kind = 'skill'
 id = 'poly-mcp'
 path = 'skills/poly-mcp'
-digest = 'sha256:96792367ae6c37433113c6f6a3d62ad989fdffed1e32b6f391e20c9dc4da5e8f'
+digest = 'sha256:1d1d9421d261a2e404ef2cd652b0089a73b9da4a1cc144f3f822f178d39b7081'
 
 [[item]]
 kind = 'skill'
 id = 'poly-orchestrator'
 path = 'skills/poly-orchestrator'
-digest = 'sha256:0a4b153c9f1a2fc292c8a434b045a0237b93ef38e57ab8f97db29686c7b36e9e'
+digest = 'sha256:558e86d368b53377019622189113f974df8be357530a20576bcfa2be74a845a8'
 
 [[item]]
 kind = 'skill'
 id = 'poly-overview'
 path = 'skills/poly-overview'
-digest = 'sha256:03baae336b0a1ac4ed5545ecb4fffe6f7e09e16f56c1a8c2b8ff3a18bd8437f2'
+digest = 'sha256:a61383df265d3ba213a83ca1b5f365ec20ee74acdd2ea7deb9b725ab49ca8cd8'
 
 [[item]]
 kind = 'skill'
 id = 'poly-tiers-and-scope'
 path = 'skills/poly-tiers-and-scope'
-digest = 'sha256:30ff9be84270de9631616e910eca38cdede2dadf0d941db0b78352518f0e158c'
+digest = 'sha256:8b856fcd67a4fd79badd782babe541e62c8e6f5271243d2d04a69d3356546fc9'

@@ -9,8 +9,8 @@ metadata:
 
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-Content-Hash: blake3:e5c6dcf67c9486d996242f9c54b686c3cf524a004bd87704e2e39e485d8db4ca
-Source-Hash: blake3:80b02e3c38da8987136959b755f0ed07d25af7e123f02e924970a78f96f751a7
+Content-Hash: blake3:f3fea40b05ca287d290e6e54354cdda302647750623ddc70195ad71472d5e72f
+Source-Hash: blake3:b235022c5efd503e65d1d6fe44889912f02b72b7c3f0af6cd4c1d11d30441097
 Schema-Version: v1
 -->
 
@@ -34,7 +34,9 @@ ast-grep rule pack, behind one binary, one config, and one report.
   `.oxfmtrc.json` is read directly, so it needs none). The default is a dry-run report — pass
   `--write` to apply (`--allow-dirty` on a dirty tree), `--recurse` for a monorepo, `--verify`
   to re-run poly afterwards, and `--strip-superseded` to also remove `pyproject.toml` sections
-  for tools ruff replaces. It deletes a source only when nothing in it was lost.
+  for tools ruff replaces. It deletes a source only when nothing in it was lost. `--to-v2`
+  rewrites an existing v1 `poly.toml` (`[lint.<lang>.<tool>]`, `[rules]`, `per-file-ignores`, …)
+  into the v2 schema (`[engines.<id>]`, `[workspace] run`, `per_file_ignores`), keeping comments.
 - **`poly hooks install`** — wire the git-hook shims so `poly` runs the configured stages on
   every commit, replacing a `.pre-commit-config.yaml` or lefthook setup. It installs the hook
   types your `poly.toml` configures; `--hook-type` picks specific ones. A foreign hook already
@@ -50,6 +52,10 @@ ast-grep rule pack, behind one binary, one config, and one report.
   pins symbolic remote `extends` refs and Git hook sources into `poly.lock`; **`poly config schema`** prints the
   JSON Schema for `poly.toml`. An unknown key in an engine table is an `unknown-config-key`
   warning that suggests the nearest valid key (`--verbose` lists every key the table reads).
+- **Components.** The release binary is bundled (every engine linked in). A core build downloads
+  engines as signed components on first use: `poly components list|status|sync|install`, and
+  `--offline` / `POLY_OFFLINE=1` forbids downloads. `[components]` in `poly.toml` sets `install`
+  and `on_missing`; `[engines.typos] enabled = true` opts into spell-checking.
 - **`poly doctor`** reports which poly is running, every poly on PATH, and the config in
   effect — the first thing to run when two machines disagree.
 
@@ -61,7 +67,7 @@ in following steps.
 
 ```yaml
 - uses: actions/checkout@v4
-- uses: Goldziher/poly@v0        # inputs: version (default latest), cache, github-token
+- uses: Goldziher/poly@v0        # inputs: version (latest, or from-config), config-file, components, cache, github-token
 - run: poly fmt .
 - run: poly lint .
 ```
@@ -71,8 +77,8 @@ runs agree — with one caveat: the native-toolchain tier means `rustfmt`, `gofm
 (and `shellcheck` for lint) are used automatically whenever they are on `PATH`, and output then
 depends on that tool's version. A machine without them silently falls through to the
 lower-fidelity tree-sitter tier. Pin those toolchains in CI (and expect drift otherwise), or set
-`[fmt.rust.rustfmt] enabled = false` / `[fmt.go.gofmt] enabled = false` /
-`[fmt.shell.shfmt] enabled = false` to stop the subprocess. That does not leave the language
+`[engines.rustfmt] enabled = false` / `[engines.gofmt] enabled = false` /
+`[engines.shfmt] enabled = false` to stop the subprocess. That does not leave the language
 unformatted: native-toolchain backends read `enabled` themselves and hand the file to the
 tier-2 reindenter when disabled, rather than expecting the runner to drop them from the plan —
 so the file is still formatted, just at lower fidelity than the native tool.

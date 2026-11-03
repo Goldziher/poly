@@ -107,7 +107,9 @@ and `python`, about 17 MB.
 
 ## Cold start
 
-`hyperfine -N --warmup 3 --runs 30` against today's fat binary (thin LTO, O3, unstripped):
+`hyperfine -N --warmup 3 --runs 30` against today's fat binary (thin LTO, O3, unstripped). The
+commands are as measured on 0.32.3; since then `fmt --check` is `poly fmt` and `--no-workspace` is
+`--workspace never`:
 
 | Command | Mean | ± |
 | --- | ---: | ---: |

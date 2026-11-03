@@ -32,22 +32,22 @@ Five mechanisms decide what actually inspects a file (`crates/poly-core/src/regi
    first-party CLI, run per file over stdin/stdout. `rustfmt`, `gofmt`, `shfmt` and
    `shellcheck` are **on by default whenever the tool is found on PATH**; `zigfmt`,
    `google-java-format`, `ktfmt`, `styler`, `swift-format`, `dartfmt`, and `gleamfmt` are
-   opt-in via `[fmt.<lang>.<id>] enabled = true` / `[lint.<lang>.<id>] enabled = true`.
+   opt-in via `[engines.<id>] enabled = true`.
    Absent tool ⇒ the language falls through to tier 2 with an info-level notice, never an error.
 4. **`quality`, the code-quality metric tier** (ADR 0027) — cross-cutting, appended to every
    language: file/function/type length, nesting depth, cyclomatic complexity, parameter
    count, `lazy-ignore`, and `uncollected-test-file` (a test-named file the language's runner
    will not collect; on for Python, Go and Ruby, off for JavaScript/TypeScript). Warning
-   severity, on by default, configured under `[lint.quality]`. The structural rules need a
+   severity, on by default, configured under `[engines.quality]`. The structural rules need a
    verified node-kind table and cover Python, Rust, Go, JavaScript, TypeScript, TSX, Java,
    Kotlin, C, C++, C#, and Ruby; `magic-number` and `law-of-demeter` are opt-in. A
    per-language deferral table keeps it from duplicating
    a tier-1 rule (ruff's `C901`/`PLR0913`, oxlint's `max-depth`/`max-params`).
 5. **The built-in ast-grep rule pack** (ADR 0029) — 26 rules across 9 languages (C#, Elixir,
    Go, Java, Kotlin, Python, Ruby, Rust, Swift) embedded in the binary and on by default; 13
-   of them ship `severity: off`. It sits *beneath* `[rules] dirs` (default `.poly/rules`), so
-   a user rule with the same `id` replaces a pack rule. `[rules] builtin = false` disables
-   the pack wholesale.
+   of them ship `severity: off`. It sits *beneath* `[engines.astgrep] rule_dirs` (default
+   `.poly/rules`), so a user rule with the same `id` replaces a pack rule. `builtin_pack = false`
+   in the same table disables the pack wholesale.
 
 the opt-in `typos` (spelling; `[engines.typos] enabled = true`) and `uncomment` engines are the other two cross-cutting
 backends appended to every language. On top of these, any **catalog or recipe tool** a config
@@ -74,15 +74,15 @@ generated-file skip are poly's own limitations, and are charged.
   (`cargo clippy` / `cargo-sort` / `cargo-machete` / `cargo-deny`, plus any inline
   `workspace = true` job such as a type checker) on the live worktree, folding their
   pass/fail into the report and exit code. It reuses the `[hooks]` config as its single
-  source of truth. On by default; disable with `--workspace never` or `[lint] workspace =
-  false`. A repo with no `[hooks]` section has no whole-workspace hooks to lower, so it runs
+  source of truth. On by default; disable with `--workspace never` or `[workspace] run =
+  "never"`. A repo with no `[hooks]` section has no whole-workspace hooks to lower, so it runs
   only the per-file tier.
 
 **Plain `poly lint` is not read-only.** poly applies no fixes without `--fix`, but the
 whole-project phase *executes* those tools against the live worktree, and their own side
 effects are not poly's to control (`cargo clippy` populating `target/` or refreshing
 `Cargo.lock`, a `go` invocation appending to `go.work.sum`, a type checker writing its
-cache). Only `--workspace never` / `[lint] workspace = false` gives a run that cannot touch the
+cache). Only `--workspace never` / `[workspace] run = "never"` gives a run that cannot touch the
 tree.
 
 The phase is also **not path-scoped**: `poly lint <paths>` skips it when the paths *narrow*

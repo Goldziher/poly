@@ -12,8 +12,8 @@ x-ai-rulez:
 
 poly is a Cargo **workspace** that ships a single self-contained binary, `poly`, driven by one
 config. Its subcommands cover the whole surface: `poly lint`, `poly fmt`, `poly hooks`, `poly
-commit`, `poly rules`, `poly cache`, `poly config`, `poly migrate`, `poly mcp`, and `poly
-doctor`. Everything runs **in-process, pure Rust** — no subprocess, no system dependency by
+commit`, `poly rules`, `poly cache`, `poly config`, `poly lock`, `poly components`, `poly
+migrate`, `poly mcp`, and `poly doctor`. Everything runs **in-process, pure Rust** — no subprocess, no system dependency by
 default (three scoped exceptions: **native-toolchain backends**, the opt-in **catalog-tool**
 tier, and the `poly hooks` engine — see Coverage tiers below).
 
@@ -52,7 +52,11 @@ an installer (see release-versioning).
   `template` and `line_index`; `poly-grammar` the shared tree-sitter grammar memo;
   `poly-component-protocol`, `poly-component-index` and `poly-component-host` the component wire
   protocol, compiled component index and host-side runtime; `poly-core`'s
-  `engine-*` features link them and its `bundled` feature aliases `all-engines`. Shared deps live under `[workspace.dependencies]`; git deps are pinned to a `rev`
+  `engine-*` features link them and its `bundled` feature aliases `all-engines`. `poly-cli`'s
+  defaults (`all-engines`, `bundled-mcp`) give the **bundled** build the release ships;
+  `--no-default-features` gives the **core** build, whose engines and MCP server are downloaded
+  components (`poly-host-services` provides the services a frontend component calls,
+  `poly-frontend-api` is its wire contract). `poly-cli`'s `components_cmd/` is `poly components`. Shared deps live under `[workspace.dependencies]`; git deps are pinned to a `rev`
   (crates from one monorepo share one `rev`).
 - `deny.toml` — `cargo deny` license / source allow-list (no GPL/AGPL), applied across the full
   dependency tree including git deps and their transitive dependencies.
