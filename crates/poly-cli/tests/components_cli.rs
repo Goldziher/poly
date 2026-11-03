@@ -1,6 +1,6 @@
 //! `poly components` on the default (bundled) build: every engine family is linked, so nothing is
 //! downloadable, `install` is a no-op and `list`/`status` need no lock.
-#![cfg(all(unix, feature = "all-engines"))]
+#![cfg(all(unix, feature = "all-engines", not(feature = "dev-lock")))]
 
 use std::path::Path;
 use std::process::{Command, Output};

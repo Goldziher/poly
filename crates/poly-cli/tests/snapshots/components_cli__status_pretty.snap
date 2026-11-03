@@ -6,5 +6,5 @@ expression: "Sandbox::new().stdout(&[\"components\", \"status\"])"
 flavor      bundled
 cache       <cache>
 offline     false
-lock        none (this build embeds no component lock (set POLY_COMPONENT_DEV_LOCK for a development lock))
+lock        none (this build embeds no component lock)
 no downloadable components needed

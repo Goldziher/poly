@@ -331,6 +331,24 @@ jobs:
           esac
         shell: bash
 
+      - name: Assert the binary was built without dev-lock
+        # The `dev-lock` feature is the only code that names POLY_COMPONENT_DEV_LOCK, so the name
+        # appearing in the binary means a development lock path is compiled into the release.
+        # Reading the artifact (not the cargo invocation or `cargo tree`) covers every way the
+        # feature could be switched on, and needs no execution, so it also works for the musl
+        # build made in a container and for cross-built targets.
+        run: |
+          set -euo pipefail
+          bin="target/${{ matrix.triple }}/release/poly"
+          case "${{ matrix.triple }}" in *windows*) bin="$bin.exe" ;; esac
+          test -s "$bin" || { echo "::error::no binary at $bin"; exit 1; }
+          if grep -aq POLY_COMPONENT_DEV_LOCK "$bin"; then
+            echo "::error::$bin was built with the dev-lock feature"
+            exit 1
+          fi
+          echo "dev-lock absent from $bin"
+        shell: bash
+
       - name: Create release artifacts
         run: |
           cd target/${{ matrix.triple }}/release

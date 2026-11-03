@@ -7,7 +7,10 @@ use poly_component_host::ComponentHost;
 use poly_component_index::ComponentIndex;
 
 /// Names a component lock file that stands in for the embedded one, so a development build can
-/// install from a `file://` lock.
+/// install from a `file://` lock. Compiled only under the `dev-lock` feature: a build without it
+/// never reads the variable, and the name is absent from the binary (the release workflow
+/// greps for it).
+#[cfg(feature = "dev-lock")]
 pub const LOCK_ENV: &str = "POLY_COMPONENT_DEV_LOCK";
 
 /// A host and the index its components are described by, carried in

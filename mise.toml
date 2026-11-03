@@ -83,6 +83,10 @@ run = "./scripts/components-generate.sh"
 description = "Build the sql component (debug), package it unsigned and write a file:// dev lock under target/components/"
 run = "./scripts/components-dev.sh"
 
+[tasks."components:parity"]
+description = "Test poly-core in components mode (no engine-sql, dev-lock) against the dev lock from components:dev"
+run = "./scripts/components-parity.sh"
+
 [tasks.check]
 description = "Full local gate (format check, lint, test) — run before pushing"
 run = [{ task = "format:check" }, { task = "lint" }, { task = "test" }]

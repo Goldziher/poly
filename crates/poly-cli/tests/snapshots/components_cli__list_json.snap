@@ -9,7 +9,7 @@ expression: json
   "flavor": "bundled",
   "offline": false,
   "cache_root": "<cache>",
-  "lock": "this build embeds no component lock (set POLY_COMPONENT_DEV_LOCK for a development lock)",
+  "lock": "this build embeds no component lock",
   "components": [
     {
       "name": "web",
@@ -116,7 +116,7 @@ expression: json
       "state": "unavailable",
       "opt_in": false,
       "engines": [],
-      "detail": "this build embeds no component lock (set POLY_COMPONENT_DEV_LOCK for a development lock)"
+      "detail": "this build embeds no component lock"
     }
   ]
 }

@@ -31,6 +31,9 @@ schemars = ["dep:schemars", "poly-engine-api/schemars"]
 # catalog/native-toolchain tiers) is always compiled; each family below adds its heavy engines.
 # A language whose family is off falls through to the tree-sitter generic tier.
 default = ["all-engines"]
+# Read a development component lock from `POLY_COMPONENT_DEV_LOCK` (`mise run components:dev`).
+# Never in a release build: publish.yaml fails the build if the binary names the variable. ~keep
+dev-lock = []
 # Link every engine family into the binary (the dev and test configuration). Alias of `all-engines`.
 bundled = ["all-engines"]
 all-engines = [
@@ -184,6 +187,10 @@ insta.workspace = true
 owo-colors.workspace = true
 proptest.workspace = true
 tracing-subscriber.workspace = true
+
+[[test]]
+name = "component_parity"
+required-features = ["dev-lock"]
 
 [[bench]]
 name = "generic_formatter"

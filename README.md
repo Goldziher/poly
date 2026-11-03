@@ -460,6 +460,20 @@ It also reports per-rule finding counts per repository, which is how a pack rule
 severity. See [`docs/harden-corpus.md`](docs/harden-corpus.md) for what each corpus is allowed to
 assert, and why a count needs a pinned input while an invariant does not.
 
+For anything touching an engine component (the `sql` family today), run the component dev loop. It
+builds the component in debug, packages it unsigned, writes a `file://` lock under
+`target/components/`, then tests `poly-core` with `engine-sql` off and the `dev-lock` feature on, so
+sql can only come from the component. The lint and format output must match the in-process snapshots
+byte for byte, and a component whose hash differs from its lock must fail the run:
+
+```sh
+mise run components:dev      # build the component and write target/components/components.lock.json
+mise run components:parity   # components-mode tests; fails, never skips, if the lock is missing
+```
+
+`dev-lock` makes poly read the lock named by `POLY_COMPONENT_DEV_LOCK`. It is for development only,
+and the release workflow fails a binary that was built with it.
+
 ---
 
 ## License

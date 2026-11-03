@@ -10,7 +10,9 @@ use poly_config::network;
 use poly_config::v2::{ComponentInstallPolicy, OnMissing};
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use super::seam::{ComponentInjection, LOCK_ENV};
+use super::seam::ComponentInjection;
+#[cfg(feature = "dev-lock")]
+use super::seam::LOCK_ENV;
 use super::{ComponentsReport, MissingComponent, feature_is_linked, needed_components, selected_components};
 use crate::config::Config;
 use crate::discover::DiscoveredFile;
@@ -52,6 +54,15 @@ enum Hosted {
     Unavailable(String),
 }
 
+/// The lock this build embeds. None is embedded yet, so this is an error unless the `dev-lock`
+/// feature is on and `LOCK_ENV` names a development lock.
+#[cfg(not(feature = "dev-lock"))]
+pub(super) fn component_lock() -> anyhow::Result<String> {
+    Err(anyhow::anyhow!("this build embeds no component lock"))
+}
+
+/// The lock a development build reads from `LOCK_ENV`, since none is embedded yet.
+#[cfg(feature = "dev-lock")]
 pub(super) fn component_lock() -> anyhow::Result<String> {
     let path = std::env::var_os(LOCK_ENV).ok_or_else(|| {
         anyhow::anyhow!("this build embeds no component lock (set {LOCK_ENV} for a development lock)")

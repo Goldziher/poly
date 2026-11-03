@@ -50,7 +50,7 @@ pub fn needed_component_names(
         .collect())
 }
 
-/// Host options over the lock a run uses (`POLY_COMPONENT_DEV_LOCK`; no lock is embedded yet)
+/// Host options over the lock a run uses (none is embedded yet; a `dev-lock` build reads `POLY_COMPONENT_DEV_LOCK`)
 /// and poly's component cache directory. The caller sets `offline` and the rest.
 ///
 /// # Errors
