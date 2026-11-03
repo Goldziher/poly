@@ -5378,6 +5378,7 @@ dependencies = [
  "poly-config",
  "poly-engine-api",
  "poly-engines",
+ "rayon",
  "serde_json",
  "tempfile",
  "toml 1.1.8+spec-1.1.0",
@@ -5648,6 +5649,15 @@ dependencies = [
  "sqruff-lib-core",
  "toml 1.1.8+spec-1.1.0",
  "tracing",
+]
+
+[[package]]
+name = "poly-engines-sql-component"
+version = "0.32.3"
+dependencies = [
+ "alef-component-abi",
+ "futures",
+ "poly-engines",
 ]
 
 [[package]]

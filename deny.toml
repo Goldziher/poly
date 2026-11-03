@@ -1,6 +1,9 @@
 
 [licenses]
 version = 2
+# Workspace crates are never published; the alef-generated component producer crates carry no
+# license field.
+private = { ignore = true }
 confidence-threshold = 0.9
 allow = [
   "MIT",

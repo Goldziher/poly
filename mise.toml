@@ -75,6 +75,14 @@ description = "Run the harness against generated-code repositories (rule-audit i
 usage = 'arg "[targets]..." var=#true help="Corpus entries to run"'
 run = 'eval "set -- ${usage_targets:-}"; POLY_HARDEN_CORPUS=c ./scripts/harden.sh "$@"'
 
+[tasks."components:generate"]
+description = "Regenerate the alef component producer crate and host module (alef.toml)"
+run = "./scripts/components-generate.sh"
+
+[tasks."components:dev"]
+description = "Build the sql component (debug), package it unsigned and write a file:// dev lock under target/components/"
+run = "./scripts/components-dev.sh"
+
 [tasks.check]
 description = "Full local gate (format check, lint, test) — run before pushing"
 run = [{ task = "format:check" }, { task = "lint" }, { task = "test" }]

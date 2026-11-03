@@ -21,6 +21,7 @@ members = [
   "crates/poly-engines-php",
   "crates/poly-engines-python",
   "crates/poly-engines-sql",
+  "crates/poly-engines-sql-component",
   "crates/poly-engines-typos",
   "crates/poly-engines-uncomment",
   "crates/poly-grammar",
@@ -217,6 +218,11 @@ ureq = "3"
 walkdir = "2.5.0"
 which = "8.0.6"
 zip = { version = "9.3", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+
+# alef 0.118 emits `futures` into every component producer crate, even for a contract with no async
+# method.
+[workspace.metadata.cargo-machete]
+ignored = ["futures"]
 
 # oxc_formatter_yaml/toml pull `oxc_allocator` from the registry through their parsers; resolve it to
 # the same git copy as the rest of the oxc crates so there is a single `Allocator` type.

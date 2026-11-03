@@ -1,0 +1,37 @@
+# Components-only alef config: no binding languages, so `alef generate` emits the component producer
+# crates and the standalone Rust host module and nothing else. Regenerate with `mise run components:generate`.
+
+[workspace]
+
+[[crates]]
+name = "poly-engines"
+sources = ["crates/poly-engines/src/lib.rs"]
+version_from = "Cargo.toml"
+# The facade also exports Producer and engine-facing types the contract never uses; only the
+# PolyComponent trait is extracted into a component contract.
+suppress_validation_codes = ["lossy_sanitized_surface", "backend_stub_path"]
+
+[[crates.component_contracts]]
+name = "poly"
+trait_path = "poly_engines::PolyComponent"
+interface_version = 1
+
+[[crates.components]]
+name = "sql"
+provides = [{ contract = "poly", implementation = "poly_engines::SqlComponent" }]
+features = ["sql"]
+default_features = false
+targets = [
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+  "x86_64-pc-windows-msvc",
+]
+
+# No [crates.component_distribution] yet: alef 0.118 refuses one without a signing public key
+# (src/core/config/new_config/component_validation.rs, validate_component_distribution), and release
+# signing is not set up. `components:dev` therefore passes the file:// URL template on the command line.
+
+[crates.component_host]
+output = "crates/poly-component-host/src/components_gen.rs"

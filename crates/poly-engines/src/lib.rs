@@ -5,9 +5,12 @@
 //! [`PolyComponent`] contract a component implements to be driven by the host.
 
 mod component;
+mod components;
 pub mod producer;
 
 pub use component::{ComponentCallError, PolyComponent};
+#[cfg(feature = "sql")]
+pub use components::SqlComponent;
 pub use producer::Producer;
 
 #[cfg(feature = "astgrep")]
