@@ -18,6 +18,7 @@ use toml_edit::DocumentMut;
 pub mod deletion;
 pub mod importers;
 pub mod report;
+pub mod v2;
 
 use deletion::Action;
 use importers::{Absorb, ImportResult};
@@ -66,6 +67,9 @@ const MIGRATABLE_SOURCES: &[&str] = &[
     ".pre-commit-config.yaml",
 ];
 
+/// poly's own config files, migrated by `--to-v2`.
+const V2_SOURCES: &[&str] = &["poly.toml", "poly.local.toml"];
+
 /// `poly migrate` arguments.
 #[derive(Args)]
 pub struct MigrateArgs {
@@ -101,6 +105,12 @@ pub struct MigrateArgs {
     /// harmless — this is an opt-in cleanup for repos consolidating onto poly.
     #[arg(long)]
     pub strip_superseded: bool,
+
+    /// After the foreign-config importers, rewrite `poly.toml` (and `poly.local.toml`) from the
+    /// v1 schema to the v2 schema, keeping comments (ADR 0038). With `--recurse`, nested
+    /// configs are rewritten too. Opt-in until the loader reads v2.
+    #[arg(long, conflicts_with = "verify")]
+    pub to_v2: bool,
 }
 
 /// `pyproject.toml` `[tool.<x>]` sections whose tool is superseded by ruff (or
@@ -136,12 +146,22 @@ pub struct MigrationPlan {
     pub kept: Vec<Action>,
     /// Conflict notes (existing keys left untouched).
     pub conflicts: Vec<String>,
+    /// The v1 to v2 rewrite of `poly.toml`, when `--to-v2` ran.
+    pub v2: Option<v2::V2Outcome>,
+    /// The v1 to v2 rewrite of a sibling `poly.local.toml`, when it needed one.
+    pub local_v2: Option<v2::LocalRewrite>,
 }
 
 impl MigrationPlan {
+    /// Whether `--to-v2` rewrote a config file.
+    pub fn has_v2_changes(&self) -> bool {
+        self.v2.as_ref().is_some_and(|outcome| outcome.changed) || self.local_v2.is_some()
+    }
+
     /// Whether the plan would change anything on disk.
     pub fn is_empty(&self) -> bool {
-        self.results.iter().all(|r| !r.has_fragments())
+        !self.has_v2_changes()
+            && self.results.iter().all(|r| !r.has_fragments())
             && !self
                 .actions
                 .iter()
@@ -166,7 +186,7 @@ fn run(args: MigrateArgs) -> Result<ExitCode> {
         bail!("not a directory: {}", root.display());
     }
     let dirs = if args.recurse {
-        discover_dirs(&root)
+        discover_dirs(&root, args.to_v2)
     } else {
         vec![root.clone()]
     };
@@ -185,7 +205,14 @@ fn run(args: MigrateArgs) -> Result<ExitCode> {
         if args.strip_superseded {
             plan.actions.extend(superseded_actions(dir));
         }
-        if plan.results.iter().any(|r| r.absorb != Absorb::None) || !plan.kept.is_empty() || !plan.actions.is_empty() {
+        if args.to_v2 {
+            v2::apply_to_plan(&mut plan)?;
+        }
+        if plan.results.iter().any(|r| r.absorb != Absorb::None)
+            || !plan.kept.is_empty()
+            || !plan.actions.is_empty()
+            || plan.has_v2_changes()
+        {
             print!("{}", report::render_plan(&plan, args.write));
         }
         if args.write && !plan.is_empty() {
@@ -248,6 +275,8 @@ pub fn build_plan(dir: &Path) -> Result<MigrationPlan> {
         actions,
         kept,
         conflicts,
+        v2: None,
+        local_v2: None,
     })
 }
 
@@ -325,6 +354,10 @@ fn set_replace_marker(root: &mut toml_edit::Table, path: &[&str]) -> bool {
 fn apply_plan(plan: &MigrationPlan) -> Result<()> {
     std::fs::write(&plan.poly_toml_path, plan.doc.to_string())
         .with_context(|| format!("writing {}", plan.poly_toml_path.display()))?;
+    if let Some(local) = &plan.local_v2 {
+        std::fs::write(&local.path, local.doc.to_string())
+            .with_context(|| format!("writing {}", local.path.display()))?;
+    }
     for action in &plan.actions {
         match action {
             Action::DeleteFile(path) => {
@@ -410,7 +443,7 @@ fn guard_clean_tree(dir: &Path) -> Result<()> {
 /// directory holding a migratable source, skipping vendored and build trees, any
 /// virtualenv (a directory holding `pyvenv.cfg`, whatever it is called), Bazel
 /// output symlinks, and whatever `.gitignore` excludes.
-fn discover_dirs(root: &Path) -> Vec<PathBuf> {
+fn discover_dirs(root: &Path, to_v2: bool) -> Vec<PathBuf> {
     let walker = ignore::WalkBuilder::new(root)
         .hidden(false)
         .parents(false)
@@ -430,14 +463,15 @@ fn discover_dirs(root: &Path) -> Vec<PathBuf> {
         .build();
     walker
         .flatten()
-        .filter(|entry| entry.file_type().is_some_and(|kind| kind.is_dir()) && dir_has_source(entry.path()))
+        .filter(|entry| entry.file_type().is_some_and(|kind| kind.is_dir()) && dir_has_source(entry.path(), to_v2))
         .map(ignore::DirEntry::into_path)
         .collect()
 }
 
-/// Whether `dir` directly contains any migratable source file.
-fn dir_has_source(dir: &Path) -> bool {
+/// Whether `dir` directly contains any migratable source file; under `--to-v2` a poly config is one.
+fn dir_has_source(dir: &Path, to_v2: bool) -> bool {
     MIGRATABLE_SOURCES.iter().any(|name| dir.join(name).is_file())
+        || (to_v2 && V2_SOURCES.iter().any(|name| dir.join(name).is_file()))
 }
 
 /// The run options `--verify` re-runs lint and format under.

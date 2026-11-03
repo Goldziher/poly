@@ -172,6 +172,26 @@ pub(crate) fn all_engine_names() -> std::collections::BTreeSet<&'static str> {
         .collect()
 }
 
+/// Ids of the languages `engine` is registered for in the lint (`format == false`) or format
+/// (`format == true`) phase.
+///
+/// Walks [`all_languages`] through [`engines_for`], so it answers what the planner would do, with
+/// the same feature gating: a compiled-out engine family yields an empty list. Cross-cutting
+/// engines are registered for every language and say so here. Used by `poly migrate` to hoist a
+/// per-language option to engine level only when every served language carries it.
+pub fn engine_languages(engine: &str, format: bool) -> Vec<String> {
+    all_languages()
+        .iter()
+        .filter(|language| {
+            engines_for(language).iter().any(|candidate| {
+                let capabilities = candidate.capabilities();
+                candidate.name() == engine && if format { capabilities.format } else { capabilities.lint }
+            })
+        })
+        .map(|language| language.id().to_string())
+        .collect()
+}
+
 /// Engines that wrap a **host** toolchain rather than a compiled-in crate.
 ///
 /// Their `version()` probes `PATH` and fingerprints repo-local tool config, so

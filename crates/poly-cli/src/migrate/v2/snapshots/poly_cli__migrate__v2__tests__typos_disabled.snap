@@ -1,0 +1,8 @@
+---
+source: crates/poly-cli/src/migrate/v2/tests.rs
+expression: output
+---
+required_version = ">=2.0.0"
+
+[engines.typos]
+enabled = false

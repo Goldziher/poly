@@ -18,6 +18,7 @@ pub fn render_plan(plan: &MigrationPlan, write: bool) -> String {
     render_actions(&mut out, plan);
     render_conflicts(&mut out, plan);
     render_poly_toml(&mut out, plan, write);
+    render_v2(&mut out, plan, write);
     out
 }
 
@@ -90,4 +91,30 @@ fn render_poly_toml(out: &mut String, plan: &MigrationPlan, write: bool) {
         let _ = writeln!(out);
     }
     let _ = writeln!(out, "--- end poly.toml ---");
+}
+
+fn render_v2(out: &mut String, plan: &MigrationPlan, write: bool) {
+    if let Some(outcome) = plan.v2.as_ref().filter(|outcome| outcome.changed) {
+        let _ = writeln!(out, "\npoly.toml rewritten from the v1 to the v2 schema:");
+        for note in &outcome.notes {
+            let _ = writeln!(out, "  note: {note}");
+        }
+    }
+    if let Some(local) = &plan.local_v2 {
+        let verb = if write {
+            "written to"
+        } else {
+            "planned (not written) at"
+        };
+        let _ = writeln!(out, "\n--- poly.local.toml {verb} {} ---", local.path.display());
+        for note in &local.outcome.notes {
+            let _ = writeln!(out, "  note: {note}");
+        }
+        let rendered = local.doc.to_string();
+        let _ = write!(out, "{rendered}");
+        if !rendered.ends_with('\n') {
+            let _ = writeln!(out);
+        }
+        let _ = writeln!(out, "--- end poly.local.toml ---");
+    }
 }

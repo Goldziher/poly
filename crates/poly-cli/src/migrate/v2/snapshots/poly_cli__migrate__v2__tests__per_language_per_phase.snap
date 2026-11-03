@@ -1,0 +1,44 @@
+---
+source: crates/poly-cli/src/migrate/v2/tests.rs
+expression: output
+---
+#:schema https://goldziher.github.io/poly/poly-v2.schema.json
+required_version = ">=2.0.0"
+
+[discovery]
+exclude = ["target/**"]
+
+[engines.oxc.lang.javascript.lint]
+categories = ["correctness"]
+max_warnings = 10
+
+[engines.oxc.lang.javascript.format]
+semi = true
+print_width = 80
+
+[engines.oxc.lang.typescript.lint]
+categories = ["correctness"]
+max_warnings = 0
+
+[engines.oxc.lang.typescript.format]
+semi = true
+print_width = 100
+
+[engines.ruff]
+line_length = 120
+
+[engines.ruff.lint]
+# Python lint settings
+# the rule families we enforce
+select = ["E", "F"]
+target_version = "py312"
+
+[engines.ruff.format]
+quote_style = "double"
+
+[engines.ruff.rules.ANN201]
+level = "error"
+
+[engines.typos]
+# typos is opt-in in poly v2; this keeps the v1 default (on).
+enabled = true

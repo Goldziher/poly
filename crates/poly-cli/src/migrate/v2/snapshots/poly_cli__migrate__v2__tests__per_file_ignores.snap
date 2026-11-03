@@ -1,0 +1,17 @@
+---
+source: crates/poly-cli/src/migrate/v2/tests.rs
+expression: output
+---
+required_version = ">=2.0.0"
+
+[engines.ruff.lint]
+select = ["E"]
+
+[engines.typos]
+# typos is opt-in in poly v2; this keeps the v1 default (on).
+enabled = true
+
+# tests may be loose
+[per_file_ignores]
+"tests/**" = ["F401"]
+"**/generated/**" = ["comment"]

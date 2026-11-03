@@ -19,6 +19,7 @@ fn args(dir: &Path, write: bool) -> MigrateArgs {
         verify: false,
         allow_dirty: true,
         strip_superseded: false,
+        to_v2: false,
     }
 }
 

@@ -1,0 +1,163 @@
+---
+source: crates/poly-cli/src/migrate/v2/tests.rs
+expression: output
+---
+required_version = ">=2.0.0"
+
+[discovery]
+exclude = [
+  "node_modules/**",
+  "target/**",
+  "dist/**",
+  # A generated lockfile is not prose: typos reports every vendored package name
+  # in it, and the quality tier reports its length. pnpm writes these in its own
+  # YAML style, so reformatting them is a loop the next `pnpm install` reverts.
+  "**/package-lock.json",
+  "**/pnpm-lock.yaml",
+  "vendor/**",
+  # Saved real tool output, kept byte-for-byte: golangci.json is two JSON documents, not one.
+  "crates/poly-core/src/engines/catalog_tool/recipe/output/fixtures/**",
+  "**/identify/tags.rs",
+  ".ai-rulez/**",
+  # Everything `ai-rulez generate --plugin` emits. These are generated bundles,
+  # not sources: poly reformatting them and the next generation reverting it is
+  # a loop, and the JS adapter is a template poly's own oxlint rules have no say
+  # over. The set follows `[plugin] runtimes` in .ai-rulez/config.toml.
+  ".claude-plugin/**",
+  ".codex-plugin/**",
+  ".cursor-plugin/**",
+  ".factory-plugin/**",
+  ".opencode/**",
+  ".pi/skills/**",
+  ".pi/prompts/**",
+  "/.pi/mcp.json",
+  "gemini-extension.json",
+  "kimi.plugin.json",
+  "/package.json",
+  "/plugin/**",
+  "skills/**",
+  "commands/**",
+  "agents/**",
+  "crates/*/tests/fixtures/**",
+  "crates/poly-core/tests/typos.rs",
+  "crates/conformance/corpus/**",
+  "crates/conformance/golden/**",
+  "crates/conformance/docker/**",
+  "crates/poly-catalog/data/**",
+  "crates/*-ffi/include/*.h",
+  "packages/go/include/*.h",
+]
+
+[hooks]
+stages = ["pre-commit"]
+
+
+# Each file-scoped builtin inherits `[discovery] exclude`; these lists carry only
+# what is specific to the hook.
+[hooks.builtin]
+lint = true
+
+fmt = { exclude = ["crates/*/tests/snapshots/**"] }
+
+commit = { stages = ["commit-msg"] }
+
+file_safety = { exclude = ["crates/poly-cli/src/hooks/checks.rs"] }
+
+cargo = true
+
+[hooks.pre-commit.scripts.rust-max-lines]
+script = "scripts/hooks/rust-max-lines.sh"
+runner = "bash"
+args = ["--max=1000"]
+files = "**/*.rs"
+exclude = "**/identify/tags.rs"
+
+[hooks.pre-commit.scripts.rustdoc-lint]
+script = "scripts/hooks/rustdoc-lint.sh"
+runner = "bash"
+files = "**/*.rs"
+workspace = true
+# The script runs `cargo doc --workspace`, which takes cargo's build-directory
+# lock — poly cannot see inside a script, so the set is named here.
+serial = "cargo"
+
+[engines.rumdl.lang.markdown]
+disable = ["MD025", "MD013", "MD024", "MD033", "MD036", "MD041"]
+
+[engines.typos]
+# typos is opt-in in poly v2; this keeps the v1 default (on).
+enabled = true
+
+[engines.typos.lang.markdown]
+extend_ignore_words = ["markdwon", "restructredtext", "brightscripter"]
+
+[engines.typos.lang.python]
+extend_ignore_words = ["certifi"]
+
+[engines.typos.lang.rust]
+# fixtures in their `#[cfg(test)]` modules (e.g. `_typos.toml` sample dicts).
+extend_ignore_words = ["teh", "inh", "te", "tha"]
+extend_exclude = ["crates/poly-core/tests/typos.rs"]
+
+[engines.typos.lang.toml]
+extend_ignore_words = ["certifi", "markdwon", "restructredtext", "brightscripter", "teh", "inh", "tha"]
+
+[engines.uncomment]
+enabled = true
+remove_todos = false
+remove_fixme = false
+remove_docs = false
+use_default_ignores = true
+preserve_patterns = [
+  "SAFETY",
+  "HACK",
+  "WORKAROUND",
+  "NOTE",
+  "Copyright",
+  "Licensed",
+  "License",
+  "SPDX",
+  "Apache",
+  "MIT",
+  "WITHOUT WARRANTIES",
+  "limitations under the License",
+  "copyright",
+  "licensed",
+  "license",
+  "apache",
+  "you may not use this file except in compliance",
+  "You may obtain a copy of the License",
+  "you may obtain a copy of the license",
+  "http://www.apache.org/licenses/LICENSE-2.0",
+  "http://www.apache.org/licenses/license-2.0",
+  "Unless required by applicable law",
+  "unless required by applicable law",
+  "distributed under the License",
+  "distributed under the license",
+  "AS IS",
+  "as is",
+  "without warranties",
+  "specific language governing permissions",
+  "limitations under the license",
+]
+
+[per_file_ignores]
+"e2e/**" = ["comment", "doc-comment"]
+"**/e2e/**" = ["comment", "doc-comment"]
+"test_apps/**" = ["comment", "doc-comment"]
+"**/test_apps/**" = ["comment", "doc-comment"]
+"docs/assets/**" = ["comment", "doc-comment"]
+"**/generated/**" = ["comment", "doc-comment"]
+"**/*.generated.*" = ["comment", "doc-comment"]
+"**/*.g.*" = ["comment", "doc-comment"]
+"**/*.freezed.*" = ["comment", "doc-comment"]
+"crates/*-ffi/include/*.h" = ["comment", "doc-comment"]
+"packages/go/include/*.h" = ["comment", "doc-comment"]
+"Package.swift" = ["comment", "doc-comment"]
+"crates/poly-core/src/engines/dockerfile.rs" = ["comment", "doc-comment"]
+"crates/poly-core/tests/dockerfile.rs" = ["comment", "doc-comment"]
+[[hooks.sources]]
+id = "ai-rulez"
+git = "https://github.com/Goldziher/ai-rulez.git"
+revision = "v5"
+hooks = ["ai-rulez-validate", "ai-rulez-plugin-verify"]

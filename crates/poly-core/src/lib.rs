@@ -64,7 +64,7 @@ pub use discover::{DiscoveryReport, ExcludedDirectory, ExcludedRule};
 pub use engine::{BatchSupport, Capabilities, Diagnostic, Edit, Engine, FormatOutput, Severity, SourceFile, Span};
 pub use fingerprint::ConfigFingerprint;
 pub use language::Language;
-pub use registry::engine_versions;
+pub use registry::{engine_languages, engine_versions};
 pub use report::Verbosity;
 pub use resolve::{ConfigSet, ExcludeRule};
 pub use runner::{

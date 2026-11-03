@@ -1,0 +1,25 @@
+---
+source: crates/poly-cli/src/migrate/v2/tests.rs
+expression: output
+---
+required_version = ">=2.0.0"
+
+[engines.astgrep.rules.no-unwrap]
+level = "error"
+
+[engines.quality]
+# quality thresholds
+function_too_long_lines = 100
+cyclomatic_complexity_max = 15
+
+[engines.typos]
+# typos is opt-in in poly v2; this keeps the v1 default (on).
+enabled = true
+extend_ignore_words = ["teh"]
+
+[engines.typos.lang.python]
+extend_ignore_words = ["certifi"]
+
+[engines.uncomment]
+enabled = true
+remove_todos = false

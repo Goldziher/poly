@@ -413,6 +413,7 @@ source file is kept.
 | `--recurse` | Walk nested projects, skipping `.git`, `node_modules`, virtualenvs, build output and `.gitignore`d trees. |
 | `--verify` | Re-run lint and format after writing. |
 | `--strip-superseded` | Additionally strip `pyproject.toml` `[tool.*]` sections for the Python tools ruff supersedes — black, isort, flake8, … |
+| `--to-v2` | After the importers, rewrite `poly.toml` and `poly.local.toml` from the v1 to the v2 schema (ADR 0038), keeping comments. Conflicts with `--verify` until the loader reads v2. |
 | `--allow-dirty` | Let it write into a repository with uncommitted changes. |
 
 It takes an optional path, defaulting to the current directory.

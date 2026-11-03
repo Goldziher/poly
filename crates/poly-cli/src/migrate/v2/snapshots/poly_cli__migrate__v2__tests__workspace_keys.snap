@@ -1,0 +1,18 @@
+---
+source: crates/poly-cli/src/migrate/v2/tests.rs
+expression: output
+---
+required_version = ">=2.0.0"
+# stop the config cascade here
+root = true
+
+[workspace]
+# the whole-project phase is slow in this repo
+run = "never"
+
+[engines.ruff.lint]
+select = ["E"]
+
+[engines.typos]
+# typos is opt-in in poly v2; this keeps the v1 default (on).
+enabled = true
