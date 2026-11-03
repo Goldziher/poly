@@ -1,0 +1,1397 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ProtocolSchema",
+  "description": "Root type used to emit one JSON Schema covering every top-level message.",
+  "type": "object",
+  "properties": {
+    "request": {
+      "description": "Request header.",
+      "$ref": "#/$defs/Request"
+    },
+    "response": {
+      "description": "Response.",
+      "$ref": "#/$defs/Response"
+    },
+    "describe": {
+      "description": "`describe()` payload.",
+      "$ref": "#/$defs/Describe"
+    }
+  },
+  "required": ["request", "response", "describe"],
+  "$defs": {
+    "Request": {
+      "description": "A request header. File content never appears here; it travels in the call's `body`.",
+      "oneOf": [
+        {
+          "description": "First call: negotiate the protocol and pass host settings.",
+          "type": "object",
+          "properties": {
+            "Init": {
+              "type": "object",
+              "properties": {
+                "protocol": {
+                  "description": "Protocol version the host speaks.",
+                  "type": "integer",
+                  "format": "uint32",
+                  "minimum": 0
+                },
+                "host_version": {
+                  "description": "Host (poly) version.",
+                  "type": "string"
+                },
+                "threads": {
+                  "description": "Worker threads the component may use.",
+                  "type": "integer",
+                  "format": "uint32",
+                  "minimum": 0
+                },
+                "stack_size": {
+                  "description": "Stack size in bytes of the host's worker threads.",
+                  "type": "integer",
+                  "format": "uint64",
+                  "minimum": 0
+                },
+                "max_log_level": {
+                  "description": "Most verbose level the host wants in [`Response::logs`].",
+                  "$ref": "#/$defs/WireLogLevel"
+                }
+              },
+              "required": ["protocol", "host_version", "threads", "stack_size", "max_log_level"]
+            }
+          },
+          "required": ["Init"],
+          "additionalProperties": false
+        },
+        {
+          "description": "Register a config; later requests refer to it by `id`.",
+          "type": "object",
+          "properties": {
+            "RegisterConfig": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "description": "Id chosen by the host, unique per component.",
+                  "type": "integer",
+                  "format": "uint32",
+                  "minimum": 0
+                },
+                "config": {
+                  "description": "The engine config: a table with `indent_width` and `options`, plus globals.",
+                  "$ref": "#/$defs/WireValue"
+                }
+              },
+              "required": ["id", "config"]
+            }
+          },
+          "required": ["RegisterConfig"],
+          "additionalProperties": false
+        },
+        {
+          "description": "Lint one file (content in `body`).",
+          "type": "object",
+          "properties": {
+            "Lint": {
+              "type": "object",
+              "properties": {
+                "engine": {
+                  "description": "Engine name.",
+                  "type": "string"
+                },
+                "config": {
+                  "description": "Registered config.",
+                  "type": "integer",
+                  "format": "uint32",
+                  "minimum": 0
+                },
+                "file": {
+                  "description": "The file.",
+                  "$ref": "#/$defs/WireFile"
+                }
+              },
+              "required": ["engine", "config", "file"]
+            }
+          },
+          "required": ["Lint"],
+          "additionalProperties": false
+        },
+        {
+          "description": "Format one file (content in `body`).",
+          "type": "object",
+          "properties": {
+            "Format": {
+              "type": "object",
+              "properties": {
+                "engine": {
+                  "description": "Engine name.",
+                  "type": "string"
+                },
+                "config": {
+                  "description": "Registered config.",
+                  "type": "integer",
+                  "format": "uint32",
+                  "minimum": 0
+                },
+                "file": {
+                  "description": "The file.",
+                  "$ref": "#/$defs/WireFile"
+                }
+              },
+              "required": ["engine", "config", "file"]
+            }
+          },
+          "required": ["Format"],
+          "additionalProperties": false
+        },
+        {
+          "description": "Lint a batch; each member is a slice of `body`.",
+          "type": "object",
+          "properties": {
+            "LintBatch": {
+              "type": "object",
+              "properties": {
+                "engine": {
+                  "description": "Engine name.",
+                  "type": "string"
+                },
+                "config": {
+                  "description": "Registered config.",
+                  "type": "integer",
+                  "format": "uint32",
+                  "minimum": 0
+                },
+                "files": {
+                  "description": "Members, in order.",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/WireFileSlice"
+                  }
+                }
+              },
+              "required": ["engine", "config", "files"]
+            }
+          },
+          "required": ["LintBatch"],
+          "additionalProperties": false
+        },
+        {
+          "description": "Format a batch; each member is a slice of `body`.",
+          "type": "object",
+          "properties": {
+            "FormatBatch": {
+              "type": "object",
+              "properties": {
+                "engine": {
+                  "description": "Engine name.",
+                  "type": "string"
+                },
+                "config": {
+                  "description": "Registered config.",
+                  "type": "integer",
+                  "format": "uint32",
+                  "minimum": 0
+                },
+                "files": {
+                  "description": "Members, in order.",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/WireFileSlice"
+                  }
+                }
+              },
+              "required": ["engine", "config", "files"]
+            }
+          },
+          "required": ["FormatBatch"],
+          "additionalProperties": false
+        },
+        {
+          "description": "Whole-project check (no file content; the component reads from `root`).",
+          "type": "object",
+          "properties": {
+            "ProjectCheck": {
+              "type": "object",
+              "properties": {
+                "root": {
+                  "description": "Project root.",
+                  "type": "string"
+                },
+                "files": {
+                  "description": "Files in scope, relative to `root`.",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "config": {
+                  "description": "Registered config.",
+                  "type": "integer",
+                  "format": "uint32",
+                  "minimum": 0
+                },
+                "environment": {
+                  "description": "Environment variables the check may see.",
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ],
+                    "minItems": 2,
+                    "maxItems": 2
+                  }
+                }
+              },
+              "required": ["root", "files", "config", "environment"]
+            }
+          },
+          "required": ["ProjectCheck"],
+          "additionalProperties": false
+        },
+        {
+          "description": "`Engine::skip_reason` for one file (content in `body`).",
+          "type": "object",
+          "properties": {
+            "SkipReason": {
+              "type": "object",
+              "properties": {
+                "engine": {
+                  "description": "Engine name.",
+                  "type": "string"
+                },
+                "file": {
+                  "description": "The file.",
+                  "$ref": "#/$defs/WireFile"
+                }
+              },
+              "required": ["engine", "file"]
+            }
+          },
+          "required": ["SkipReason"],
+          "additionalProperties": false
+        },
+        {
+          "description": "`Engine::lint_cache_salt` for one file (content in `body`).",
+          "type": "object",
+          "properties": {
+            "LintCacheSalt": {
+              "type": "object",
+              "properties": {
+                "engine": {
+                  "description": "Engine name.",
+                  "type": "string"
+                },
+                "file": {
+                  "description": "The file.",
+                  "$ref": "#/$defs/WireFile"
+                }
+              },
+              "required": ["engine", "file"]
+            }
+          },
+          "required": ["LintCacheSalt"],
+          "additionalProperties": false
+        },
+        {
+          "description": "`Engine::provides_language_lint` / `provides_language_format`.",
+          "type": "object",
+          "properties": {
+            "ProvidesLanguage": {
+              "type": "object",
+              "properties": {
+                "engine": {
+                  "description": "Engine name.",
+                  "type": "string"
+                },
+                "config": {
+                  "description": "Registered config.",
+                  "type": "integer",
+                  "format": "uint32",
+                  "minimum": 0
+                },
+                "language": {
+                  "description": "Language id.",
+                  "type": "string"
+                },
+                "kind": {
+                  "description": "Which of the two predicates.",
+                  "$ref": "#/$defs/WireKind"
+                }
+              },
+              "required": ["engine", "config", "language", "kind"]
+            }
+          },
+          "required": ["ProvidesLanguage"],
+          "additionalProperties": false
+        },
+        {
+          "description": "`Engine::batch_support`.",
+          "type": "object",
+          "properties": {
+            "BatchSupport": {
+              "type": "object",
+              "properties": {
+                "engine": {
+                  "description": "Engine name.",
+                  "type": "string"
+                },
+                "config": {
+                  "description": "Registered config.",
+                  "type": "integer",
+                  "format": "uint32",
+                  "minimum": 0
+                }
+              },
+              "required": ["engine", "config"]
+            }
+          },
+          "required": ["BatchSupport"],
+          "additionalProperties": false
+        },
+        {
+          "description": "The keys a serde-derived probe recognises in `options` (see [`WireOptionKeys::has_derived`]).",
+          "type": "object",
+          "properties": {
+            "DerivedOptionKeys": {
+              "type": "object",
+              "properties": {
+                "engine": {
+                  "description": "Engine name.",
+                  "type": "string"
+                },
+                "table": {
+                  "description": "Table the keys belong to.",
+                  "$ref": "#/$defs/WireOptionTable"
+                },
+                "options": {
+                  "description": "The user's options table.",
+                  "$ref": "#/$defs/WireValue"
+                }
+              },
+              "required": ["engine", "table", "options"]
+            }
+          },
+          "required": ["DerivedOptionKeys"],
+          "additionalProperties": false
+        },
+        {
+          "description": "`Engine::run_context`.",
+          "type": "object",
+          "properties": {
+            "RunContext": {
+              "type": "object",
+              "properties": {
+                "engine": {
+                  "description": "Engine name.",
+                  "type": "string"
+                },
+                "config": {
+                  "description": "Registered config.",
+                  "type": "integer",
+                  "format": "uint32",
+                  "minimum": 0
+                }
+              },
+              "required": ["engine", "config"]
+            }
+          },
+          "required": ["RunContext"],
+          "additionalProperties": false
+        },
+        {
+          "description": "`Engine::file_context`.",
+          "type": "object",
+          "properties": {
+            "FileContext": {
+              "type": "object",
+              "properties": {
+                "engine": {
+                  "description": "Engine name.",
+                  "type": "string"
+                },
+                "config": {
+                  "description": "Registered config.",
+                  "type": "integer",
+                  "format": "uint32",
+                  "minimum": 0
+                },
+                "path": {
+                  "description": "File path.",
+                  "type": "string"
+                }
+              },
+              "required": ["engine", "config", "path"]
+            }
+          },
+          "required": ["FileContext"],
+          "additionalProperties": false
+        },
+        {
+          "description": "`Engine::lint_input_salt`.",
+          "type": "object",
+          "properties": {
+            "LintInputSalt": {
+              "type": "object",
+              "properties": {
+                "engine": {
+                  "description": "Engine name.",
+                  "type": "string"
+                },
+                "config": {
+                  "description": "Registered config.",
+                  "type": "integer",
+                  "format": "uint32",
+                  "minimum": 0
+                },
+                "path": {
+                  "description": "File path.",
+                  "type": "string"
+                }
+              },
+              "required": ["engine", "config", "path"]
+            }
+          },
+          "required": ["LintInputSalt"],
+          "additionalProperties": false
+        },
+        {
+          "description": "`Engine::format_input_salt`.",
+          "type": "object",
+          "properties": {
+            "FormatInputSalt": {
+              "type": "object",
+              "properties": {
+                "engine": {
+                  "description": "Engine name.",
+                  "type": "string"
+                },
+                "config": {
+                  "description": "Registered config.",
+                  "type": "integer",
+                  "format": "uint32",
+                  "minimum": 0
+                },
+                "path": {
+                  "description": "File path.",
+                  "type": "string"
+                }
+              },
+              "required": ["engine", "config", "path"]
+            }
+          },
+          "required": ["FormatInputSalt"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "WireLogLevel": {
+      "description": "Log level, ordered from most to least severe.",
+      "oneOf": [
+        {
+          "description": "Errors.",
+          "type": "string",
+          "const": "Error"
+        },
+        {
+          "description": "Warnings.",
+          "type": "string",
+          "const": "Warn"
+        },
+        {
+          "description": "Informational.",
+          "type": "string",
+          "const": "Info"
+        },
+        {
+          "description": "Debug.",
+          "type": "string",
+          "const": "Debug"
+        },
+        {
+          "description": "Trace.",
+          "type": "string",
+          "const": "Trace"
+        }
+      ]
+    },
+    "WireValue": {
+      "description": "A dynamically typed config value. Mirrors the TOML data model so a component never links `toml`.\n\nTables are an ordered list of pairs rather than a map: the order is preserved exactly as the\nsender produced it, and a non-Rust implementer needs no ordered-map type.",
+      "oneOf": [
+        {
+          "description": "A string.",
+          "type": "object",
+          "properties": {
+            "String": {
+              "type": "string"
+            }
+          },
+          "required": ["String"],
+          "additionalProperties": false
+        },
+        {
+          "description": "A 64-bit signed integer.",
+          "type": "object",
+          "properties": {
+            "Integer": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          "required": ["Integer"],
+          "additionalProperties": false
+        },
+        {
+          "description": "A 64-bit float.",
+          "type": "object",
+          "properties": {
+            "Float": {
+              "type": "number",
+              "format": "double"
+            }
+          },
+          "required": ["Float"],
+          "additionalProperties": false
+        },
+        {
+          "description": "A boolean.",
+          "type": "object",
+          "properties": {
+            "Boolean": {
+              "type": "boolean"
+            }
+          },
+          "required": ["Boolean"],
+          "additionalProperties": false
+        },
+        {
+          "description": "A TOML datetime in its canonical string form (RFC 3339 / TOML local forms).",
+          "type": "object",
+          "properties": {
+            "Datetime": {
+              "type": "string"
+            }
+          },
+          "required": ["Datetime"],
+          "additionalProperties": false
+        },
+        {
+          "description": "An array.",
+          "type": "object",
+          "properties": {
+            "Array": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/WireValue"
+              }
+            }
+          },
+          "required": ["Array"],
+          "additionalProperties": false
+        },
+        {
+          "description": "A table; keys are unique.",
+          "type": "object",
+          "properties": {
+            "Table": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "prefixItems": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "$ref": "#/$defs/WireValue"
+                  }
+                ],
+                "minItems": 2,
+                "maxItems": 2
+              }
+            }
+          },
+          "required": ["Table"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "WireFile": {
+      "description": "A file whose content is the entire `body` of the call.",
+      "type": "object",
+      "properties": {
+        "path": {
+          "description": "Path, used for naming and config discovery only.",
+          "type": "string"
+        },
+        "language": {
+          "description": "Language id (see `Language::id`).",
+          "type": "string"
+        },
+        "len": {
+          "description": "Byte length of the content in `body`; must equal `body.len()`.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "required": ["path", "language", "len"]
+    },
+    "WireFileSlice": {
+      "description": "One member of a batch: a byte range of the call's `body`.",
+      "type": "object",
+      "properties": {
+        "path": {
+          "description": "Path, used for naming and config discovery only.",
+          "type": "string"
+        },
+        "language": {
+          "description": "Language id.",
+          "type": "string"
+        },
+        "offset": {
+          "description": "Offset of the content within `body`.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "len": {
+          "description": "Byte length of the content.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "required": ["path", "language", "offset", "len"]
+    },
+    "WireKind": {
+      "description": "Whether a query concerns linting or formatting.",
+      "oneOf": [
+        {
+          "description": "Lint.",
+          "type": "string",
+          "const": "Lint"
+        },
+        {
+          "description": "Format.",
+          "type": "string",
+          "const": "Format"
+        }
+      ]
+    },
+    "WireOptionTable": {
+      "description": "Which config table an option declaration describes.",
+      "oneOf": [
+        {
+          "description": "`[lint.<lang>.<engine>]`.",
+          "type": "string",
+          "const": "Lint"
+        },
+        {
+          "description": "`[fmt.<lang>.<engine>]`.",
+          "type": "string",
+          "const": "Format"
+        },
+        {
+          "description": "The language-agnostic `[lint.<engine>]` table of a cross-cutting engine.",
+          "type": "string",
+          "const": "CrossCuttingLint"
+        }
+      ]
+    },
+    "Response": {
+      "description": "The answer to every call.",
+      "type": "object",
+      "properties": {
+        "result": {
+          "description": "Outcome.",
+          "$ref": "#/$defs/Result_of_Payload_or_WireError"
+        },
+        "logs": {
+          "description": "Log records produced during the call.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WireLog"
+          }
+        }
+      },
+      "required": ["result", "logs"]
+    },
+    "Result_of_Payload_or_WireError": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "Ok": {
+              "$ref": "#/$defs/Payload"
+            }
+          },
+          "required": ["Ok"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Err": {
+              "$ref": "#/$defs/WireError"
+            }
+          },
+          "required": ["Err"]
+        }
+      ]
+    },
+    "Payload": {
+      "description": "The successful payload of a [`Response`].",
+      "oneOf": [
+        {
+          "description": "Success with no data (`RegisterConfig`).",
+          "type": "string",
+          "const": "Ok"
+        },
+        {
+          "description": "Answer to `Init`.",
+          "type": "object",
+          "properties": {
+            "Init": {
+              "type": "object",
+              "properties": {
+                "protocol": {
+                  "description": "Protocol version the component speaks.",
+                  "type": "integer",
+                  "format": "uint32",
+                  "minimum": 0
+                },
+                "component_version": {
+                  "description": "Component version.",
+                  "type": "string"
+                }
+              },
+              "required": ["protocol", "component_version"]
+            }
+          },
+          "required": ["Init"],
+          "additionalProperties": false
+        },
+        {
+          "description": "Answer to `Lint`.",
+          "type": "object",
+          "properties": {
+            "Diagnostics": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/WireDiagnostic"
+              }
+            }
+          },
+          "required": ["Diagnostics"],
+          "additionalProperties": false
+        },
+        {
+          "description": "Answer to `Format`.",
+          "type": "object",
+          "properties": {
+            "Formatted": {
+              "$ref": "#/$defs/WireFormatOutput"
+            }
+          },
+          "required": ["Formatted"],
+          "additionalProperties": false
+        },
+        {
+          "description": "Answer to `LintBatch`: one item per member, in order.",
+          "type": "object",
+          "properties": {
+            "LintBatch": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/WireLintItem"
+              }
+            }
+          },
+          "required": ["LintBatch"],
+          "additionalProperties": false
+        },
+        {
+          "description": "Answer to `FormatBatch`: one item per member, in order.",
+          "type": "object",
+          "properties": {
+            "FormatBatch": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/WireFormatItem"
+              }
+            }
+          },
+          "required": ["FormatBatch"],
+          "additionalProperties": false
+        },
+        {
+          "description": "Answer to `ProjectCheck`.",
+          "type": "object",
+          "properties": {
+            "Project": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/WireFileDiagnostics"
+              }
+            }
+          },
+          "required": ["Project"],
+          "additionalProperties": false
+        },
+        {
+          "description": "Answer to `ProvidesLanguage`.",
+          "type": "object",
+          "properties": {
+            "Bool": {
+              "type": "boolean"
+            }
+          },
+          "required": ["Bool"],
+          "additionalProperties": false
+        },
+        {
+          "description": "Answer to `SkipReason`, the salts and the contexts; `None` is the trait default.",
+          "type": "object",
+          "properties": {
+            "OptString": {
+              "type": ["string", "null"]
+            }
+          },
+          "required": ["OptString"],
+          "additionalProperties": false
+        },
+        {
+          "description": "Answer to `RunContext`.",
+          "type": "object",
+          "properties": {
+            "Text": {
+              "type": "string"
+            }
+          },
+          "required": ["Text"],
+          "additionalProperties": false
+        },
+        {
+          "description": "Answer to `BatchSupport`.",
+          "type": "object",
+          "properties": {
+            "BatchSupport": {
+              "$ref": "#/$defs/WireBatchSupport"
+            }
+          },
+          "required": ["BatchSupport"],
+          "additionalProperties": false
+        },
+        {
+          "description": "Answer to `DerivedOptionKeys`; `None` means the probe could not tell.",
+          "type": "object",
+          "properties": {
+            "OptionKeys": {
+              "type": ["array", "null"],
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": ["OptionKeys"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "WireDiagnostic": {
+      "description": "A normalized lint finding. Every field is always present on the wire.",
+      "type": "object",
+      "properties": {
+        "engine": {
+          "description": "Id of the engine that produced the finding.",
+          "type": "string"
+        },
+        "code": {
+          "description": "Tool-specific rule code.",
+          "type": ["string", "null"]
+        },
+        "severity": {
+          "description": "Severity.",
+          "$ref": "#/$defs/WireSeverity"
+        },
+        "title": {
+          "description": "One-line title.",
+          "type": "string"
+        },
+        "description": {
+          "description": "Longer explanation.",
+          "type": ["string", "null"]
+        },
+        "span": {
+          "description": "Source location.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireSpan"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "url": {
+          "description": "Rule documentation URL.",
+          "type": ["string", "null"]
+        },
+        "fix": {
+          "description": "Suggested autofix, applied atomically; empty when there is none.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WireEdit"
+          }
+        },
+        "metadata": {
+          "description": "Tool-specific extras.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": ["engine", "severity", "title", "fix", "metadata"]
+    },
+    "WireSeverity": {
+      "description": "Severity of a [`WireDiagnostic`].",
+      "oneOf": [
+        {
+          "description": "A problem that should fail the run.",
+          "type": "string",
+          "const": "Error"
+        },
+        {
+          "description": "A likely problem.",
+          "type": "string",
+          "const": "Warning"
+        },
+        {
+          "description": "Informational note.",
+          "type": "string",
+          "const": "Info"
+        },
+        {
+          "description": "A low-priority suggestion.",
+          "type": "string",
+          "const": "Hint"
+        }
+      ]
+    },
+    "WireSpan": {
+      "description": "1-based line/column span.",
+      "type": "object",
+      "properties": {
+        "start_line": {
+          "description": "1-based start line.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "start_col": {
+          "description": "1-based start column.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "end_line": {
+          "description": "1-based end line.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "end_col": {
+          "description": "1-based end column.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "required": ["start_line", "start_col", "end_line", "end_col"]
+    },
+    "WireEdit": {
+      "description": "A byte-range replacement.",
+      "type": "object",
+      "properties": {
+        "start_byte": {
+          "description": "Inclusive start byte offset.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "end_byte": {
+          "description": "Exclusive end byte offset.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "replacement": {
+          "description": "Replacement text.",
+          "type": "string"
+        }
+      },
+      "required": ["start_byte", "end_byte", "replacement"]
+    },
+    "WireFormatOutput": {
+      "description": "Result of formatting one file.",
+      "oneOf": [
+        {
+          "description": "Already formatted.",
+          "type": "string",
+          "const": "Unchanged"
+        },
+        {
+          "description": "The formatted source.",
+          "type": "object",
+          "properties": {
+            "Formatted": {
+              "type": "string"
+            }
+          },
+          "required": ["Formatted"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "WireLintItem": {
+      "description": "Per-member result of a batch lint.",
+      "oneOf": [
+        {
+          "description": "Diagnostics for the member.",
+          "type": "object",
+          "properties": {
+            "Ok": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/WireDiagnostic"
+              }
+            }
+          },
+          "required": ["Ok"],
+          "additionalProperties": false
+        },
+        {
+          "description": "The member failed on its own.",
+          "type": "object",
+          "properties": {
+            "Err": {
+              "$ref": "#/$defs/WireError"
+            }
+          },
+          "required": ["Err"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "WireError": {
+      "description": "A failed call.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "description": "Classification.",
+          "$ref": "#/$defs/WireErrorKind"
+        },
+        "message": {
+          "description": "Top-level message.",
+          "type": "string"
+        },
+        "chain": {
+          "description": "Causes, outermost first.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": ["kind", "message", "chain"]
+    },
+    "WireErrorKind": {
+      "description": "Classification of a [`WireError`].",
+      "oneOf": [
+        {
+          "description": "The engine returned an error.",
+          "type": "string",
+          "const": "Error"
+        },
+        {
+          "description": "The engine panicked; the call was caught.",
+          "type": "string",
+          "const": "Panic"
+        },
+        {
+          "description": "A request named a [`ConfigId`] that was never registered.",
+          "type": "string",
+          "const": "UnknownConfig"
+        },
+        {
+          "description": "A request named an engine the component does not host.",
+          "type": "string",
+          "const": "UnknownEngine"
+        },
+        {
+          "description": "The request was malformed or violated the protocol.",
+          "type": "string",
+          "const": "Protocol"
+        }
+      ]
+    },
+    "WireFormatItem": {
+      "description": "Per-member result of a batch format.",
+      "oneOf": [
+        {
+          "description": "Output for the member.",
+          "type": "object",
+          "properties": {
+            "Ok": {
+              "$ref": "#/$defs/WireFormatOutput"
+            }
+          },
+          "required": ["Ok"],
+          "additionalProperties": false
+        },
+        {
+          "description": "The member failed on its own.",
+          "type": "object",
+          "properties": {
+            "Err": {
+              "$ref": "#/$defs/WireError"
+            }
+          },
+          "required": ["Err"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "WireFileDiagnostics": {
+      "description": "Diagnostics of one file from a project check.",
+      "type": "object",
+      "properties": {
+        "path": {
+          "description": "Path as given in the request.",
+          "type": "string"
+        },
+        "diagnostics": {
+          "description": "Findings for that file.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WireDiagnostic"
+          }
+        }
+      },
+      "required": ["path", "diagnostics"]
+    },
+    "WireBatchSupport": {
+      "description": "Which batch operations an engine supports.",
+      "type": "object",
+      "properties": {
+        "format": {
+          "description": "`format_batch` is implemented.",
+          "type": "boolean"
+        },
+        "lint": {
+          "description": "`lint_batch` is implemented.",
+          "type": "boolean"
+        }
+      },
+      "required": ["format", "lint"]
+    },
+    "WireLog": {
+      "description": "A log record emitted by the component during a call.",
+      "type": "object",
+      "properties": {
+        "level": {
+          "description": "Level.",
+          "$ref": "#/$defs/WireLogLevel"
+        },
+        "target": {
+          "description": "Emitting target (module path).",
+          "type": "string"
+        },
+        "message": {
+          "description": "Message.",
+          "type": "string"
+        }
+      },
+      "required": ["level", "target", "message"]
+    },
+    "Describe": {
+      "description": "The answer to `describe()`.",
+      "type": "object",
+      "properties": {
+        "protocol": {
+          "description": "Protocol version the component speaks.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "component_version": {
+          "description": "Version of the component itself.",
+          "type": "string"
+        },
+        "engines": {
+          "description": "Hosted engines.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WireEngineDesc"
+          }
+        }
+      },
+      "required": ["protocol", "component_version", "engines"]
+    },
+    "WireEngineDesc": {
+      "description": "Static description of one engine hosted by a component.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Tool id (`Engine::name`).",
+          "type": "string"
+        },
+        "languages": {
+          "description": "Language ids served; empty means cross-cutting.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "capabilities": {
+          "description": "Capabilities.",
+          "$ref": "#/$defs/WireCapabilities"
+        },
+        "version": {
+          "description": "Tool version, folded into the cache key.",
+          "type": "string"
+        },
+        "option_keys": {
+          "description": "Static option keys per table.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WireOptionKeys"
+          }
+        },
+        "hooks": {
+          "description": "Bit set of [`hooks`] the host must call.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "takes_over_tier_one": {
+          "description": "`Engine::takes_over_tier_one`.",
+          "type": "boolean"
+        },
+        "claimed_paths": {
+          "description": "`Engine::claimed_paths`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "supplements_tier_one": {
+          "description": "`Engine::supplements_tier_one`.",
+          "type": "boolean"
+        },
+        "self_manages_enabled": {
+          "description": "`Engine::self_manages_enabled`.",
+          "type": "boolean"
+        },
+        "supersedes_generic_formatter": {
+          "description": "`Engine::supersedes_generic_formatter`.",
+          "type": "boolean"
+        },
+        "batch_shard_floor": {
+          "description": "`Engine::batch_shard_floor`.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "name",
+        "languages",
+        "capabilities",
+        "version",
+        "option_keys",
+        "hooks",
+        "takes_over_tier_one",
+        "claimed_paths",
+        "supplements_tier_one",
+        "self_manages_enabled",
+        "supersedes_generic_formatter",
+        "batch_shard_floor"
+      ]
+    },
+    "WireCapabilities": {
+      "description": "What an engine can do.",
+      "type": "object",
+      "properties": {
+        "lint": {
+          "description": "Can report diagnostics.",
+          "type": "boolean"
+        },
+        "format": {
+          "description": "Can reformat source.",
+          "type": "boolean"
+        },
+        "fix": {
+          "description": "Can produce autofixes.",
+          "type": "boolean"
+        }
+      },
+      "required": ["lint", "format", "fix"]
+    },
+    "WireOptionKeys": {
+      "description": "The static option keys an engine reads from one table.",
+      "type": "object",
+      "properties": {
+        "table": {
+          "description": "The table described.",
+          "$ref": "#/$defs/WireOptionTable"
+        },
+        "checked": {
+          "description": "`false` when the engine declares nothing and no key is reported.",
+          "type": "boolean"
+        },
+        "declared": {
+          "description": "Keys read by name.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WireOptionKey"
+          }
+        },
+        "rule_selection": {
+          "description": "The engine accepts poly's uniform rule-selection vocabulary.",
+          "type": "boolean"
+        },
+        "has_derived": {
+          "description": "Further keys are answered at run time by [`Request::DerivedOptionKeys`].",
+          "type": "boolean"
+        },
+        "note": {
+          "description": "Guidance shown with unknown-key warnings.",
+          "type": ["string", "null"]
+        }
+      },
+      "required": ["table", "checked", "declared", "rule_selection", "has_derived"]
+    },
+    "WireOptionKey": {
+      "description": "One declared option key.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Key name.",
+          "type": "string"
+        },
+        "types": {
+          "description": "Accepted value types as bits: 1 boolean, 2 integer, 4 float, 8 string, 16 array, 32 table, 64 datetime.",
+          "type": "integer",
+          "format": "uint8",
+          "minimum": 0,
+          "maximum": 255
+        }
+      },
+      "required": ["name", "types"]
+    }
+  }
+}
