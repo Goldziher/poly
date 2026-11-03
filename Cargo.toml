@@ -126,14 +126,14 @@ poly-catalog = { path = "crates/poly-catalog" }
 poly-cli = { path = "crates/poly-cli" }
 poly-component-protocol = { path = "crates/poly-component-protocol" }
 poly-config = { path = "crates/poly-config" }
+# `default-features = false`: members opt into engine families explicitly (`all-engines`, `engine-*`).
+poly-core = { path = "crates/poly-core", default-features = false }
 poly-engine-api = { path = "crates/poly-engine-api" }
 poly-engines = { path = "crates/poly-engines" }
 poly-engines-nix = { path = "crates/poly-engines-nix" }
 poly-engines-php = { path = "crates/poly-engines-php" }
 poly-engines-python = { path = "crates/poly-engines-python" }
 poly-engines-sql = { path = "crates/poly-engines-sql" }
-# `default-features = false`: members opt into engine families explicitly (`all-engines`, `engine-*`).
-poly-core = { path = "crates/poly-core", default-features = false }
 poly-hooks = { path = "crates/poly-hooks" }
 poly-mcp = { path = "crates/poly-mcp" }
 poly-workspace = { path = "crates/poly-workspace" }
