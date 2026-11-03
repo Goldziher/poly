@@ -130,6 +130,7 @@ fn head_lines(text: &str) -> String {
 /// rewrites) to block a cache-poisoning source substitution.
 pub fn ensure_mirror(mirror: &Path, url: &str) -> anyhow::Result<()> {
     if !mirror.is_dir() {
+        poly_config::network::require_online(&format!("clone remote source {url}"))?;
         let parent = mirror.parent().context("source mirror has no parent")?;
         let temporary = tempfile::Builder::new()
             .prefix("mirror-")
@@ -163,12 +164,20 @@ pub fn ensure_commit(mirror: &Path, url: &str, revision: &str) -> anyhow::Result
     if git_object_exists(mirror, revision)? {
         return Ok(());
     }
+    poly_config::network::require_online(&format!("fetch locked source commit {revision} from {url}"))?;
     run_git(mirror, &["fetch", "--quiet", "origin", revision])
         .with_context(|| format!("fetching locked source commit {revision} from {url}"))?;
     if !git_object_exists(mirror, revision)? {
         bail!("locked source commit {revision} is unavailable from {url}");
     }
     Ok(())
+}
+
+/// Refresh `revision` (a ref or object ID) from `origin` into `mirror` so
+/// `FETCH_HEAD` names it. Always network access, so it fails offline.
+pub fn fetch_revision(mirror: &Path, url: &str, revision: &str) -> anyhow::Result<()> {
+    poly_config::network::require_online(&format!("fetch {revision} from {url}"))?;
+    run_git(mirror, &["fetch", "--quiet", "--force", "origin", revision])
 }
 
 /// Whether `revision^{commit}` resolves to an existing object in `repository`.

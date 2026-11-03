@@ -25,7 +25,7 @@ These work on every subcommand, before or after it (`poly --color never lint` an
 | --- | --- |
 | `--config <PATH>` | Use an explicit config file. Bypasses nested config resolution. |
 | `--color <auto\|always\|never>` | When to colour output. `auto` (the default) colours a terminal and honours `NO_COLOR`. Replaces `--no-color`. |
-| `--offline` | Never use the network. Also set by `POLY_OFFLINE=1`. The flag is parsed and stored; the component, grammar, catalog-install, remote `extends` and hook-source fetch paths are wired to it separately. |
+| `--offline` | Never use the network. Also set by `POLY_OFFLINE=1`. Uncached tree-sitter grammars are treated as missing, catalog-tool downloads are refused, and remote `extends` and `[[hooks.sources]]` use only what `poly.lock` pins and the cache already holds (anything else fails with an `offline mode` error). `POLY_COMPONENT_MIRROR` (base URL replacing the origin of component downloads) and `POLY_COMPONENT_CACHE` (component cache root) are the related environment variables. |
 | `-q`, `--quiet` | Trim pretty output to the findings and the summary. Conflicts with `--verbose` and `--debug`. |
 | `-v`, `--verbose` | Pretty output includes descriptions, URLs and metadata, and names **every** skipped file rather than the first 3 per skip reason. For `poly hooks run`, also shows the output of jobs that passed. |
 | `--debug` | Include cache hit/miss and timing data. Implies `--verbose`. Conflicts with `--quiet`. |

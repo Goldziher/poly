@@ -211,11 +211,7 @@ impl UnitOptions {
 
 /// Whether the process was asked not to touch the network.
 pub(super) fn offline() -> bool {
-    offline_from(std::env::var("POLY_OFFLINE").ok().as_deref())
-}
-
-fn offline_from(value: Option<&str>) -> bool {
-    value.is_some_and(|value| !value.is_empty() && value != "0" && !value.eq_ignore_ascii_case("false"))
+    poly_config::network::offline()
 }
 
 /// A dependency a chart declares: its name and, when locked, the version.
@@ -464,15 +460,6 @@ mod tests {
         );
         assert_eq!(outcome, Err("down".to_owned()));
         assert_eq!(runs, 1);
-    }
-
-    #[test]
-    fn offline_reads_the_environment_value() {
-        assert!(!offline_from(None));
-        assert!(!offline_from(Some("")));
-        assert!(!offline_from(Some("0")));
-        assert!(!offline_from(Some("false")));
-        assert!(offline_from(Some("1")));
     }
 
     #[test]

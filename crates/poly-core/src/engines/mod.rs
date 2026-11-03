@@ -23,6 +23,13 @@ pub mod dockerfile;
 pub mod dotenv;
 pub mod format_scope;
 pub(crate) mod grammar;
+
+/// Whether the tree-sitter grammar `name` can be loaded right now. Offline this
+/// never downloads: a grammar that is not cached reports `false`.
+#[must_use]
+pub fn grammar_available(name: &str) -> bool {
+    grammar::language(name).is_some()
+}
 #[cfg(feature = "engine-graphql")]
 pub mod graphql;
 #[cfg(feature = "engine-hcl")]

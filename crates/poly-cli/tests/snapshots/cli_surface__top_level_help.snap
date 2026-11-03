@@ -36,10 +36,7 @@ Options:
 
       --offline
           Never use the network: no component, grammar, catalog-tool, remote `extends` or
-          hook-source fetches. Also set by `POLY_OFFLINE=1`.
-          
-          Parsed and exposed through [`offline`] (which also reads the environment variable); the
-          components work wires the individual fetch paths to it.
+          hook-source fetches. Also set by `POLY_OFFLINE=1`
 
   -q, --quiet
           Trim `pretty` output to the findings and the summary: drop the per-file discovery and skip

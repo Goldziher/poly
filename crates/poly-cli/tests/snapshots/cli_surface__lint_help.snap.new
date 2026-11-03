@@ -1,0 +1,192 @@
+---
+source: crates/poly-cli/tests/cli_surface.rs
+assertion_line: 45
+expression: "help(&[\"lint\", \"--help\"])"
+---
+Lint files (poly applies no fixes without --fix).
+
+Not read-only, though: the whole-project phase executes the configured whole-project tools (cargo
+clippy and friends) against the live worktree even without --fix. poly asks them for check mode, but
+their own side effects — a refreshed lock file, a populated build or type-checker cache — are not
+poly's to control. Pass --workspace never, or set `[lint] workspace = false`, for a run that leaves
+the tree untouched.
+
+Usage: poly lint [OPTIONS] [PATHS]...
+
+Arguments:
+  [PATHS]...
+          Files or directories to process (default: current directory)
+
+Options:
+      --config <PATH>
+          Path to a config file (default: nearest poly.toml)
+
+      --workspace <WHEN>
+          Whether to run the whole-project phase (`cargo clippy` and the other configured
+          whole-workspace tools).
+          
+          `auto` runs it for a whole-repository `poly lint` (what a `pre-commit` hook would run) and
+          skips it when explicit paths narrow the run, because naming a file should not escalate to
+          an unbounded whole-workspace `cargo` build. `always` opts back in for a path-scoped run —
+          a commit gate that lints staged paths and wants clippy should say so — and the phase is
+          still never path-scoped: the tools cover the whole repository regardless of the named
+          paths and of `[discovery] exclude`. `never` checks only the per-file tier.
+          
+          `never` is also what makes a run read-only. Without `--fix` poly applies no fixes, but the
+          whole-project phase still *executes* those tools against the live worktree, and their own
+          side effects (a refreshed lock file, a populated build or type-checker cache) are not
+          poly's to control.
+
+          Possible values:
+          - auto:   Run it for a whole-repository run, skip it for a path-scoped one, and follow
+            `[lint] workspace`
+          - always: Run it even though explicit paths were given
+          - never:  Skip it: only the per-file tier runs
+          
+          [default: auto]
+
+      --color <WHEN>
+          When to colour output. `auto` honours `NO_COLOR` and TTY detection
+
+          Possible values:
+          - auto:   Colour only when stdout is a terminal and `NO_COLOR` is unset
+          - always: Always colour, even when piped
+          - never:  Never colour
+          
+          [default: auto]
+
+      --format <FORMAT>
+          Output format
+
+          Possible values:
+          - pretty: Colored, human-oriented output
+          - json:   JSON
+          - toon:   TOON (Token-Oriented Object Notation)
+          
+          [default: pretty]
+
+      --no-cache
+          Disable the result cache
+
+      --offline
+          Never use the network: no component, grammar, catalog-tool, remote `extends` or
+          hook-source fetches. Also set by `POLY_OFFLINE=1`.
+          
+          [`GlobalArgs::install`] publishes it to `poly_config::network`, the process-wide switch
+          every fetch path reads.
+
+  -j, --jobs <JOBS>
+          Number of parallel jobs (default: all logical cores)
+
+  -q, --quiet
+          Trim `pretty` output to the findings and the summary: drop the per-file discovery and skip
+          detail printed beneath it.
+          
+          Every count and reason stays — the summary still reports how many files were linted, how
+          many were skipped and why, and what discovery excluded. Only the itemised list of paths
+          goes away. Findings still print and exit codes are unchanged. No effect on the `--format
+          json`/`toon` document. Mutually exclusive with `--verbose` and `--debug`.
+
+      --exclude <GLOB>
+          Gitignore-style glob to exclude from discovery (repeatable). Merged with the config's
+          `[discovery] exclude`. Example: `--exclude 'test_apps/**'`.
+          
+          Matching is gitignore-style, which means a pattern that does not start with `/` matches a
+          directory of that name **at any depth**, not only at the root: `--exclude 'e2e/**'` prunes
+          the top-level `e2e/` and also `src/test/java/io/xberg/e2e/`, where `e2e` is just a package
+          name. Anchor the pattern with a leading slash to mean only the top-level directory:
+          `--exclude '/e2e/**'`. Run `poly doctor` to see which rules are matching at more than one
+          depth.
+
+  -v, --verbose
+          Show extra per-finding detail in `pretty` output: description, rule URL, and metadata, and
+          list every skipped file instead of the first few. For `--format json`/`toon` the findings
+          are always fully structured, so this only lifts the cap on the skip note printed to stderr
+
+      --debug
+          Emit debug data: per-engine cache hit/miss and timing (shown in `pretty`, attached to
+          `json`/`toon`), and raise log verbosity to `debug` on stderr.
+          
+          The top of the verbosity ladder, so it implies `--verbose`.
+
+      --fix
+          Apply fixes in place: autofixes for `lint`, formatting for `fmt`. The default is a dry run
+          that reports what would change and writes nothing
+
+      --include-excluded
+          Check explicitly named files or directory roots even when they match the exclude set.
+          
+          This is an explicit safety override for one-off inspection, and it beats `[discovery]
+          force_exclude`. Exclusions below an included directory remain active. To pin the opposite
+          for one run, use `--set discovery.force_exclude=true`.
+
+      --fix-generated
+          Rewrite hash-stamped generated files too.
+          
+          A `DO NOT EDIT` / `@generated` banner does **not** hold poly back: those files are linted,
+          formatted and fixed like any other. What this flag overrides is narrower — a header that
+          stamps a content hash over the file body (`<project>:hash:<digest>`). Reformatting one
+          invalidates the hash, so the generator's verify step reports drift on a file nobody edited
+          and the remedy is a regen that throws the change away. `poly fmt` skips those files and
+          `poly lint --fix` reports on them without rewriting; this opts back in.
+          
+          Unrelated to `[discovery] generated`, which decides whether poly looks at generated files
+          at all (`--set discovery.generated=false` skips them for one run).
+
+      --only <ENGINE>
+          Restrict the run to the named engines, by the tool id you configure them under (`ruff`,
+          `typos`, `oxc`, …). Repeatable and comma-separated.
+          
+          Narrows and never widens: an engine your config leaves off stays off when you name it
+          here, so this cannot switch a backend on. A name no engine answers to fails the run (exit
+          2) rather than quietly checking nothing.
+          
+          Engine ids are unique per language, not globally, so `--only biome` selects every engine
+          answering to that name — the CSS one and the GraphQL one both.
+          
+          Naming any engine also skips the whole-project phase, which is made of tools rather than
+          engines; `poly lint` prints a note saying so.
+
+      --skip <ENGINE>
+          Drop the named engines from the run, keeping every other routed engine. The complement of
+          `--only`, and subject to the same rules
+
+      --deny-skips
+          Fail the run (exit 2) if any file was skipped. Equivalent to `--max-skips 0`.
+          
+          A skipped file is one nothing inspected: a path named on the command line that no engine
+          covers, or a file every routed backend declined. They are always reported; this makes them
+          fatal for a gate that needs coverage to be total. The failure names every file it fired
+          on.
+
+      --max-skips <N>
+          Fail the run (exit 2) if more than N files were skipped.
+          
+          The budgeted form of `--deny-skips`, for a repo with a known, bounded set of files poly
+          cannot check: the gate holds the number steady instead of letting it grow unnoticed.
+
+      --set <KEY=VALUE>
+          Override a config key for this run (repeatable), as a TOML layer above `poly.local.toml`.
+          `KEY` is a dotted TOML path, `VALUE` a TOML value; a value that is not valid TOML is taken
+          as a string.
+          
+          Replaces the old per-option flags: `--set discovery.force_exclude=true` (was
+          `--force-exclude`), `--set discovery.generated=true` (was `--include-generated`) and
+          `--set discovery.generated=false` (was `--skip-generated`).
+
+      --on-missing <ACTION>
+          What to do when a file needs an engine component that is not installed. Overrides
+          `[components] on_missing`.
+          
+          Accepted and recorded now; the missing-component handling that acts on it is wired with
+          the components work.
+
+          Possible values:
+          - fail: Exit 2
+          - skip: Skip the file and count it as skipped
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version

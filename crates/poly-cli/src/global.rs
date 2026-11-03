@@ -44,9 +44,6 @@ pub struct GlobalArgs {
 
     /// Never use the network: no component, grammar, catalog-tool, remote
     /// `extends` or hook-source fetches. Also set by `POLY_OFFLINE=1`.
-    ///
-    /// Parsed and exposed through [`offline`] (which also reads the environment
-    /// variable); the components work wires the individual fetch paths to it.
     #[arg(long, global = true)]
     pub offline: bool,
 
@@ -82,6 +79,7 @@ static ON_MISSING: OnceLock<OnMissing> = OnceLock::new();
 impl GlobalArgs {
     /// Record these flags for the rest of the process. First call wins.
     pub fn install(self) {
+        poly_config::network::set_offline(self.offline);
         let _ = GLOBAL.set(self);
     }
 }
@@ -96,17 +94,7 @@ pub fn global() -> &'static GlobalArgs {
 /// Whether the run is offline (`--offline` or `POLY_OFFLINE`).
 #[must_use]
 pub fn offline() -> bool {
-    global().offline || env_flag("POLY_OFFLINE")
-}
-
-/// Whether the environment variable is set to anything but a falsey word.
-fn env_flag(name: &str) -> bool {
-    std::env::var(name).is_ok_and(|value| {
-        !matches!(
-            value.trim().to_ascii_lowercase().as_str(),
-            "" | "0" | "false" | "no" | "off"
-        )
-    })
+    global().offline || poly_config::network::offline()
 }
 
 /// Record `--on-missing` for the run. Accepted and stored here; the missing

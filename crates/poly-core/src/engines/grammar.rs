@@ -16,6 +16,10 @@ type Slot = Arc<OnceLock<Option<Language>>>;
 
 /// The grammar named `name`, resolved at most once per process. `None` means
 /// the pack cannot provide it; that answer is remembered too.
+///
+/// Offline (`poly_config::network::offline`), only grammars the pack can load
+/// without a download count: an uncached one is absent, exactly like an unknown
+/// name (callers then degrade as they do for any missing grammar).
 pub(crate) fn language(name: &str) -> Option<Language> {
     static SLOTS: OnceLock<Mutex<HashMap<String, Slot>>> = OnceLock::new();
     let slot = {
@@ -25,8 +29,16 @@ pub(crate) fn language(name: &str) -> Option<Language> {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         Arc::clone(slots.entry(name.to_owned()).or_default())
     };
-    slot.get_or_init(|| tree_sitter_language_pack::get_language(name).ok())
-        .clone()
+    slot.get_or_init(|| resolve(name)).clone()
+}
+
+fn resolve(name: &str) -> Option<Language> {
+    // `has_parser` answers from the static table and the download cache and never
+    // fetches; `get_language` would take the download lock and hit the network.
+    if poly_config::network::offline() && !tree_sitter_language_pack::has_parser(name) {
+        return None;
+    }
+    tree_sitter_language_pack::get_language(name).ok()
 }
 
 #[cfg(test)]

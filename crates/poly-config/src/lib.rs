@@ -23,6 +23,7 @@ pub mod extends;
 mod hook_sources;
 mod hooks;
 mod merge;
+pub mod network;
 mod overrides;
 mod oxfmt_native;
 mod oxlint_native;

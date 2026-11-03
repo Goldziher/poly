@@ -73,10 +73,22 @@ fn stamp(path: &Path) -> PathBuf {
 /// Returns `Err` on a network failure, a digest mismatch, or an unwritable
 /// cache directory.
 pub(super) fn ensure(path: &Path, asset: &Asset, kind: ReleaseKind) -> Result<()> {
+    ensure_when(poly_config::network::offline(), path, asset, kind)
+}
+
+/// [`ensure`] with the offline decision passed in, so it can be tested without
+/// flipping the process-wide switch.
+fn ensure_when(offline: bool, path: &Path, asset: &Asset, kind: ReleaseKind) -> Result<()> {
     static LOCK: Mutex<()> = Mutex::new(());
     let _held = LOCK.lock().expect("install lock poisoned");
     if is_installed(path, asset) {
         return Ok(());
+    }
+    if offline {
+        bail!(
+            "{}",
+            poly_config::network::offline_message(&format!("download {}", asset.url))
+        );
     }
     let directory = path.parent().context("install path has no parent directory")?;
     std::fs::create_dir_all(directory).with_context(|| format!("creating {}", directory.display()))?;
@@ -320,6 +332,35 @@ mod tests {
         std::fs::write(&path, body).expect("write");
         std::fs::write(stamp(&path), format!("{}\n", asset.sha256)).expect("stamp");
         ensure(&path, &asset, ReleaseKind::Binary).expect("already installed, so no network is needed");
+    }
+
+    #[test]
+    fn offline_refuses_a_missing_install_without_touching_the_network() {
+        let asset = Asset {
+            url: "http://127.0.0.1:1/never-requested".to_owned(),
+            sha256: sha(b"x"),
+            member: None,
+        };
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("sub").join("tool");
+        let error = ensure_when(true, &path, &asset, ReleaseKind::Binary).expect_err("offline must refuse");
+        assert!(error.to_string().contains("offline mode"), "{error:#}");
+        assert!(!path.parent().unwrap().exists(), "nothing may be created offline");
+    }
+
+    #[test]
+    fn offline_still_accepts_an_installed_tool() {
+        let body: &'static [u8] = b"payload";
+        let asset = Asset {
+            url: "http://127.0.0.1:1/x".to_owned(),
+            sha256: sha(body),
+            member: None,
+        };
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("tool");
+        std::fs::write(&path, body).expect("write");
+        std::fs::write(stamp(&path), format!("{}\n", asset.sha256)).expect("stamp");
+        ensure_when(true, &path, &asset, ReleaseKind::Binary).expect("installed tools need no network");
     }
 
     #[test]

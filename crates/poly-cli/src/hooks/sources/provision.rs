@@ -11,7 +11,7 @@ use super::manifest::{load_manifest, reject_legacy_consumer_file};
 use super::select::{ResolvedHook, select_hooks};
 use crate::polylock::{self, LockedHookSource, PolyLock};
 use crate::remote::{
-    checkout_is_valid, ensure_commit, ensure_mirror, git_output, make_read_only, materialize_checkout, run_git,
+    checkout_is_valid, ensure_commit, ensure_mirror, fetch_revision, git_output, make_read_only, materialize_checkout,
     validate_locked_revision,
 };
 
@@ -172,7 +172,7 @@ fn provision_source(
     let revision = source.revision.as_deref().expect("validated Git revision");
     let _guard = lock_source(&source_cache)?;
     ensure_mirror(&mirror, url)?;
-    run_git(&mirror, &["fetch", "--quiet", "--force", "origin", revision])?;
+    fetch_revision(&mirror, url, revision)?;
     let resolved = git_output(&mirror, &["rev-parse", "FETCH_HEAD^{commit}"])?;
     validate_locked_revision(&resolved)?;
     let checkout = source_cache.join("checkouts").join(&resolved);
@@ -211,7 +211,7 @@ mod tests {
     use super::super::manifest::PRODUCER_MANIFEST_NAME;
     use super::super::test_support::{preferences, write_catalog, write_consumer};
     use super::*;
-    use crate::remote::run_command;
+    use crate::remote::{run_command, run_git};
 
     fn git_source(repository: &Path) -> HookSource {
         HookSource {

@@ -30,8 +30,8 @@ use anyhow::Context;
 
 pub use checkout::{checkout_is_valid, make_read_only, make_writable, materialize_checkout};
 pub use git::{
-    ensure_commit, ensure_mirror, git_command, git_env_to_remove, git_object_exists, git_output, run_command, run_git,
-    validate_locked_revision,
+    ensure_commit, ensure_mirror, fetch_revision, git_command, git_env_to_remove, git_object_exists, git_output,
+    run_command, run_git, validate_locked_revision,
 };
 
 /// Materialize a read-only checkout of `url` at `revision` under `cache_root`.
@@ -55,7 +55,7 @@ pub fn materialize(url: &str, revision: &str, cache_root: &Path, update: bool) -
     let mirror = source_cache.join("mirror.git");
     if update {
         ensure_mirror(&mirror, url)?;
-        run_git(&mirror, &["fetch", "--quiet", "--force", "origin", revision])?;
+        fetch_revision(&mirror, url, revision)?;
         let resolved = git_output(&mirror, &["rev-parse", "FETCH_HEAD^{commit}"])?;
         validate_locked_revision(&resolved)?;
         let checkout = source_cache.join("checkouts").join(&resolved);
