@@ -485,3 +485,34 @@ fn a_malformed_index_entry_blocks_the_run_as_incompatible() {
         "no on_missing policy turns a broken component into a skip"
     );
 }
+
+/// `--only` names an engine the run's component index describes but this build does not link,
+/// as `--only sqruff` does on a core build; it must select that engine, not reject the name.
+#[test]
+fn only_accepts_an_engine_that_only_the_component_index_describes() {
+    let f = fixture(Mode::Works, false);
+    let dir = project();
+    let options = RunOptions {
+        only: vec!["demo".to_owned()],
+        ..inject(f.host, index())
+    };
+    let run = lint(dir.path(), &default_config(), &options);
+    assert_eq!(run.components.used, ["demo"]);
+    assert_eq!(run.checked, 1);
+    assert!(run.errors.is_empty(), "{:?}", run.errors);
+    assert_eq!(run.results[0].diagnostics[0].engine, "demo");
+}
+
+#[test]
+fn only_still_rejects_a_name_neither_the_build_nor_the_index_knows() {
+    let f = fixture(Mode::Works, false);
+    let dir = project();
+    let options = RunOptions {
+        only: vec!["demos".to_owned()],
+        ..inject(f.host, index())
+    };
+    let error = poly_core::lint_run(&[dir.path().to_path_buf()], &default_config(), &options, false, false)
+        .expect_err("an unknown engine name must be rejected");
+    assert!(error.to_string().contains("demos"), "{error}");
+    assert_eq!(f.connector.connects.load(Ordering::SeqCst), 0);
+}

@@ -127,7 +127,7 @@ pub fn lint_run(
     let cache = ResultCache::open_default(!opts.no_cache)?;
     let configs = build_config_set(paths, config, opts)?;
     let selection = EngineSelection::new(&opts.only, &opts.skip);
-    validate_selection(&configs, &opts.only, &opts.skip)?;
+    validate_selection(&configs, crate::components::run_index(opts), &opts.only, &opts.skip)?;
     let (files, discovery) = discover_reporting(paths, &configs, &opts.exclude, opts.force_exclude);
     let plan = plan_by_config_language(&files, &configs, Kind::Lint, selection, opts);
     prefetch_tier2_grammars(&plan);
@@ -340,7 +340,7 @@ pub fn format_run(
     let explicit: FxHashSet<&std::path::Path> = paths.iter().map(PathBuf::as_path).collect();
     let configs = build_config_set(paths, config, opts)?;
     let selection = EngineSelection::new(&opts.only, &opts.skip);
-    validate_selection(&configs, &opts.only, &opts.skip)?;
+    validate_selection(&configs, crate::components::run_index(opts), &opts.only, &opts.skip)?;
     let (discovered, discovery) = discover_reporting(paths, &configs, &opts.exclude, opts.force_exclude);
     let files: Vec<DiscoveredFile> = discovered
         .into_iter()

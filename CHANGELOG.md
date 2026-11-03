@@ -66,6 +66,7 @@ See [Migrating to poly 2](https://goldziher.github.io/poly/guides/migrating-to-v
 
 ### Fixed
 
+- `--only` / `--skip` accept engines served by a component, so `poly lint --only sqruff` works on a core build instead of failing with an unknown engine name.
 - The generic shell formatter (used when `shfmt` is not installed) keeps the indent of a `\`-continued line that starts with a redirect instead of dedenting it to the command's level.
 
 ## [0.32.3] - 2026-11-01

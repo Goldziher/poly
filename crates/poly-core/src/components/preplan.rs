@@ -121,10 +121,7 @@ fn expected_describe(component: &Component) -> Describe {
 /// failed becomes a stand-in that errors on each of its files.
 pub(crate) fn resolve(files: &[DiscoveredFile], configs: &ConfigSet, opts: &RunOptions) -> ResolvedComponents {
     let injected = opts.component_injection.as_ref();
-    let index: &ComponentIndex = match injected {
-        Some(injected) => &injected.index,
-        None => poly_component_index::index(),
-    };
+    let index: &ComponentIndex = super::seam::run_index(opts);
     let mut seen: FxHashSet<(usize, Language)> = FxHashSet::default();
     let mut pairs = Vec::new();
     for file in files {

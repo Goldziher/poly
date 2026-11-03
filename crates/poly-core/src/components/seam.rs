@@ -38,6 +38,16 @@ impl ComponentInjection {
     }
 }
 
+/// The component index a run resolves engines against: the injected one, else the compiled-in
+/// index. The pre-plan pass and `--only` / `--skip` validation both read it, so a name the
+/// validation accepts is one the pre-plan pass can serve.
+pub(crate) fn run_index(opts: &crate::RunOptions) -> &ComponentIndex {
+    match opts.component_injection.as_ref() {
+        Some(injected) => &injected.index,
+        None => poly_component_index::index(),
+    }
+}
+
 impl std::fmt::Debug for ComponentInjection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ComponentInjection").finish_non_exhaustive()
