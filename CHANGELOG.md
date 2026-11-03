@@ -64,6 +64,10 @@ See [Migrating to poly 2](https://goldziher.github.io/poly/guides/migrating-to-v
   formatters match the oxc crates published as 0.157.0. Cached JS/TS, CSS, Markdown, TOML, YAML and
   HTML results are recomputed once.
 
+### Fixed
+
+- The generic shell formatter (used when `shfmt` is not installed) keeps the indent of a `\`-continued line that starts with a redirect instead of dedenting it to the command's level.
+
 ## [0.32.3] - 2026-11-01
 
 ### Security

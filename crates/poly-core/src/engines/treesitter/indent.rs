@@ -119,7 +119,7 @@ const ELIXIR_INDENTS: &str = r#"
 ///   `if [ y ]; then echo; fi` written inline inside a function body must keep
 ///   the body's indent, and an unconditional `-1` on its trailing `fi` would
 ///   pull the whole line out of the block.
-/// - `(command)` / `(list)` / `(pipeline)` / `(test_command)` /
+/// - `(command)` / `(redirected_statement)` / `(list)` / `(pipeline)` / `(test_command)` /
 ///   `(arithmetic_expansion)` as `@indent.keep`: these are the multi-line
 ///   *continuation* shapes (`\` line joins, `&&`/`||` lists, `|` pipelines).
 ///   A level-counting model cannot tell an aligned continuation from an
@@ -162,6 +162,7 @@ const BASH_INDENTS: &str = r#"
 
 ; Continuation shapes: every line after the first is emitted byte-for-byte.
 (command) @indent.keep
+(redirected_statement) @indent.keep
 (list) @indent.keep
 (pipeline) @indent.keep
 (test_command) @indent.keep

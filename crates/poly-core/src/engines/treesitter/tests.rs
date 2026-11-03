@@ -936,6 +936,69 @@ fn bash_line_continuation_lines_are_left_verbatim() {
     );
 }
 
+/// A redirect on a continuation line is a `file_redirect` of the
+/// `redirected_statement` wrapping the command, outside the `command` node, so
+/// it needs its own keep range or it dedents to the command's level.
+#[test]
+fn bash_redirect_continuation_inside_loop_is_left_verbatim() {
+    let input = concat!(
+        "#!/usr/bin/env bash\n",
+        "f() {\n",
+        "  while read -r c; do\n",
+        "    printf '%s\\n' \"${c}\" \\\n",
+        "      >\"out.txt\"\n",
+        "  done <in.txt\n",
+        "}\n",
+    );
+    assert_eq!(
+        bash(input),
+        input,
+        "redirect continuation keeps its indent inside a loop"
+    );
+}
+
+#[test]
+fn bash_redirect_continuations_with_fd_dup_and_input_are_left_verbatim() {
+    let input = concat!(
+        "f() {\n",
+        "  cmd --a \\\n",
+        "    2>&1 \\\n",
+        "    <in.txt \\\n",
+        "    >>log.txt\n",
+        "}\n",
+    );
+    assert_eq!(bash(input), input, "2>&1 / <file / >> continuations are untouched");
+}
+
+#[test]
+fn bash_redirect_continuation_on_plain_command_is_left_verbatim() {
+    let input = concat!("echo hi \\\n", "  >out.txt\n");
+    assert_eq!(bash(input), input, "top-level redirect continuation is untouched");
+}
+
+/// A compound statement with a redirect is a `redirected_statement` too; its body
+/// must still be reindented rather than kept verbatim.
+#[test]
+fn bash_redirected_loop_and_group_bodies_are_still_reindented() {
+    let input = concat!(
+        "while read -r c; do\n",
+        "echo \"$c\"\n",
+        "done <in.txt\n",
+        "{\n",
+        "echo a\n",
+        "} >out.txt\n",
+    );
+    let expected = concat!(
+        "while read -r c; do\n",
+        "  echo \"$c\"\n",
+        "done <in.txt\n",
+        "{\n",
+        "  echo a\n",
+        "} >out.txt\n",
+    );
+    assert_eq!(bash(input), expected, "redirected compound bodies reindent");
+}
+
 #[test]
 fn bash_and_or_list_and_pipeline_continuations_are_left_verbatim() {
     let input = concat!("foo &&\n", "  bar &&\n", "  baz\n", "\n", "a |\n", "  b |\n", "  c\n",);
