@@ -7,6 +7,12 @@ binary drives lint, format, hooks, and commit checks from one `poly.toml`.
 
 ## [Unreleased]
 
+## [0.32.4] - 2026-11-04
+
+### Fixed
+
+- Git hooks installed by `poly hooks install` re-exec under `mise exec` when mise provides poly in the repository, so a commit from an IDE or GUI without mise activation runs the mise-pinned poly and tools instead of failing with "poly binary is not on your PATH" or running another poly. The repository's mise `[env]` applies to hooks too, and hooks never auto-install tools. When the repository pins poly but mise cannot provide it (an untrusted config, poly not installed), the hook says so in one line and uses poly from PATH; set `POLY_HOOK_MISE=1` to skip mise for a git command. Re-run `poly hooks install` to update existing hooks.
+
 ## [0.32.3] - 2026-11-01
 
 ### Security

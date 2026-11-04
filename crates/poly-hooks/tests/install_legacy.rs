@@ -79,12 +79,14 @@ fn replace_lefthook_still_preserves_a_foreign_hook() {
 }
 
 /// Run the installed `pre-push` shim with a fake `poly` on `PATH`, returning the
-/// log both programs append to and the shim's exit code.
+/// log both programs append to and the shim's exit code. `POLY_HOOK_MISE` keeps
+/// the host's mise out of the run (`mise_exec.rs` covers that path).
 fn run_shim(hooks: &Path, bin: &Path, log: &Path, stdin: &str) -> i32 {
     let mut child = Command::new(hooks.join("pre-push"))
         .args(["origin", "url"])
         .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
         .env("LOG", log)
+        .env("POLY_HOOK_MISE", "1")
         .stdin(Stdio::piped())
         .spawn()
         .unwrap();
