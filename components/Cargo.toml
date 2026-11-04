@@ -17,7 +17,18 @@ documentation = "https://github.com/Goldziher/poly"
 
 [workspace.dependencies]
 anyhow = "1"
+biome_analyze = { git = "https://github.com/biomejs/biome", rev = "e2e5a36e1be8581419742a85268ad82f020da62e" }
+biome_css_analyze = { git = "https://github.com/biomejs/biome", rev = "e2e5a36e1be8581419742a85268ad82f020da62e" }
+biome_css_parser = { git = "https://github.com/biomejs/biome", rev = "e2e5a36e1be8581419742a85268ad82f020da62e" }
+biome_diagnostics = { git = "https://github.com/biomejs/biome", rev = "e2e5a36e1be8581419742a85268ad82f020da62e" }
+biome_graphql_analyze = { git = "https://github.com/biomejs/biome", rev = "e2e5a36e1be8581419742a85268ad82f020da62e" }
+biome_graphql_parser = { git = "https://github.com/biomejs/biome", rev = "e2e5a36e1be8581419742a85268ad82f020da62e" }
+biome_languages = { git = "https://github.com/biomejs/biome", rev = "e2e5a36e1be8581419742a85268ad82f020da62e", features = [
+  "lang_css",
+] }
+biome_rowan = { git = "https://github.com/biomejs/biome", rev = "e2e5a36e1be8581419742a85268ad82f020da62e" }
 insta = "1"
+poly-cache = { path = "../crates/poly-cache" }
 poly-cli = { path = "../crates/poly-cli" }
 poly-component-host = { path = "../crates/poly-component-host" }
 poly-component-index = { path = "../crates/poly-component-index" }
@@ -25,11 +36,13 @@ poly-component-protocol = { path = "../crates/poly-component-protocol" }
 poly-core = { path = "../crates/poly-core" }
 poly-engine-api = { path = "../crates/poly-engine-api" }
 poly-engines = { path = "../crates/poly-engines", default-features = false }
+poly-engines-biome = { path = "crates/poly-engines-biome" }
 poly-engines-ruby = { path = "crates/poly-engines-ruby" }
 rubyfmt = { git = "https://github.com/fables-tales/rubyfmt", rev = "884b9fd85bbdaa44376641cf9a803156bce7d0da", default-features = false }
 serde_json = { version = "1", features = ["preserve_order"] }
 tempfile = "3"
 toml = "1"
+tracing = "0.1"
 
 [profile.release]
 lto = "thin"

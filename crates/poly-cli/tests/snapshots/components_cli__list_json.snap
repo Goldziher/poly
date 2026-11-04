@@ -1,5 +1,6 @@
 ---
 source: crates/poly-cli/tests/components_cli.rs
+assertion_line: 70
 expression: json
 ---
 {
@@ -56,11 +57,12 @@ expression: json
     {
       "name": "biome",
       "kind": "engines",
-      "state": "bundled",
+      "state": "unavailable",
       "opt_in": false,
       "engines": [
         "biome"
-      ]
+      ],
+      "detail": "this build embeds no component lock"
     },
     {
       "name": "ruby",

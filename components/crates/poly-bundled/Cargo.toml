@@ -18,6 +18,7 @@ path = "src/main.rs"
 [dependencies]
 poly-cli.workspace = true
 poly-core.workspace = true
+poly-engines-biome.workspace = true
 poly-engines-ruby.workspace = true
 
 [dev-dependencies]

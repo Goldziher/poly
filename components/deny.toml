@@ -56,5 +56,7 @@ ignore = [
 unknown-registry = "deny"
 unknown-git = "deny"
 # rubyfmt is only available from git: the crates.io `rubyfmt` is a 0.0.0-wip name reservation.
+# biome: the analyzer crates (biome_css_analyze, biome_graphql_*, biome_languages) are unpublished
+# and the published biome_analyze/biome_css_parser are 2024 code.
 # The root workspace carries no git sources (ADR 0040); this workspace is where they live.
-allow-git = ["https://github.com/fables-tales/rubyfmt"]
+allow-git = ["https://github.com/biomejs/biome", "https://github.com/fables-tales/rubyfmt"]

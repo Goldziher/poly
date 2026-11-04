@@ -1,4 +1,4 @@
-//! Shared helpers for the biome lint backends (`biome_graphql` and `biome_css`).
+//! Shared helpers for the biome lint backends ([`crate::css`] and [`crate::graphql`]).
 //!
 //! Centralises diagnostic mapping, byte-offset → line/col conversion, and rule
 //! filter construction so that each engine file is focused on its
@@ -7,9 +7,9 @@
 use biome_analyze::{AnalysisFilter, AnalyzerDiagnostic, RuleCategoriesBuilder, RuleFilter};
 use biome_diagnostics::Diagnostic as BiomeDiag;
 
-use crate::config::EngineConfig;
-use crate::engine::{Diagnostic, Severity, Span};
-use crate::engines::rule_config::RuleSelection;
+use poly_engine_api::config::EngineConfig;
+use poly_engine_api::engine::{Diagnostic, Severity, Span};
+use poly_engine_api::rule_config::RuleSelection;
 
 /// Convert a byte offset to 1-based `(line, col)` in a UTF-8 source string.
 ///

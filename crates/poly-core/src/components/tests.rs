@@ -172,24 +172,33 @@ fn needed_is_the_union_over_pairs_in_index_order() {
     );
 }
 
+/// Families whose engines live outside `poly-core`: a build links them only through an engine
+/// provider that declares the feature with `register_linked_features`.
+#[cfg(feature = "all-engines")]
+const EXTERNAL_FAMILIES: &[&str] = &["engine-biome", "engine-ruby"];
+
 #[cfg(feature = "all-engines")]
 #[test]
-fn the_committed_index_needs_nothing_in_the_bundled_build() {
+fn the_committed_index_needs_only_the_external_families_in_the_core_build() {
     let committed = poly_component_index::index();
-    // Families linked by a bundled binary through an engine provider, not a `poly-core` feature.
-    let external: &[&str] = &["engine-ruby"];
     for component in committed.components.iter().filter(|c| c.kind == ComponentKind::Engines) {
-        for feature in component.features.iter().filter(|f| !external.contains(&f.as_str())) {
-            assert!(super::feature_is_linked(feature), "{feature} is not recognised");
+        for feature in &component.features {
+            assert!(
+                super::feature_is_linked(feature) || EXTERNAL_FAMILIES.contains(&feature.as_str()),
+                "{feature} is not recognised"
+            );
         }
     }
     let pairs: Vec<(usize, Language)> = crate::registry::all_languages().into_iter().map(|l| (0, l)).collect();
     let config = Config::default();
     assert_eq!(
-        names(needed_components(committed, &[&config], &pairs, &|feature| external
-            .contains(&feature)
-            || super::feature_is_linked(feature))),
-        Vec::<&str>::new()
+        names(needed_components(
+            committed,
+            &[&config],
+            &pairs,
+            &super::feature_is_linked
+        )),
+        ["biome", "ruby"]
     );
 }
 

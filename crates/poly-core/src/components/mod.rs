@@ -8,8 +8,10 @@
 //! workers can load but never reach the network.
 //!
 //! A component replaces an engine only for families the binary does not link. The default
-//! (`all-engines`) build links every family, so [`resolve`] finds nothing to do there and never
-//! builds a host.
+//! (`all-engines`) build links every family `poly-core` carries; the families kept in the
+//! `components/` workspace (biome) come from a bundled binary's engine provider, which declares them
+//! with [`register_linked_features`]. With every needed family linked, [`resolve`] finds nothing to do
+//! and never builds a host.
 
 #[cfg(not(feature = "dev-lock"))]
 mod embedded;
@@ -19,6 +21,7 @@ mod report;
 mod seam;
 mod select;
 
+pub use needed::register_linked_features;
 pub(crate) use preplan::resolve;
 pub use report::{ComponentsReport, MissingComponent};
 pub use seam::ComponentInjection;
@@ -27,7 +30,6 @@ pub use seam::LOCK_ENV;
 pub(crate) use seam::run_index;
 pub use select::{component_is_linked, default_cache_root, host_options, needed_component_names};
 
-pub use needed::register_linked_features;
 pub(crate) use needed::{feature_is_linked, needed_components, selected_components};
 
 #[cfg(test)]

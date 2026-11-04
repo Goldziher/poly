@@ -55,4 +55,4 @@ ignore = [
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
-allow-git = ["https://github.com/oxc-project/oxc", "https://github.com/biomejs/biome"]
+allow-git = ["https://github.com/oxc-project/oxc"]

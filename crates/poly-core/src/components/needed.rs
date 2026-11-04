@@ -19,8 +19,6 @@ const LINKED_FEATURES: &[&str] = &[
     "engine-php",
     #[cfg(feature = "engine-sql")]
     "engine-sql",
-    #[cfg(feature = "engine-biome")]
-    "engine-biome",
     #[cfg(feature = "engine-nix")]
     "engine-nix",
     #[cfg(feature = "engine-typos")]

@@ -32,8 +32,6 @@ use std::path::Path;
 use poly_core::engine::Engine;
 use poly_core::engines::adrlint::AdrlintEngine;
 use poly_core::engines::astgrep::AstGrepEngine;
-use poly_core::engines::biome_css::BiomeCssEngine;
-use poly_core::engines::biome_graphql::BiomeGraphqlEngine;
 use poly_core::engines::dockerfile::DockerfileEngine;
 use poly_core::engines::dotenv::DotenvEngine;
 use poly_core::engines::graphql::GraphQlEngine;
@@ -102,7 +100,7 @@ fn parse_cargo_lock() -> HashMap<String, LockEntry> {
 struct Check {
     /// Human label for the failure message, derived from the backend module —
     /// deliberately *not* `Engine::name()`, which is a per-language tool id and
-    /// is neither unique (`biome_css` and `biome_graphql` are both `"biome"`)
+    /// is neither unique (two engines can share one tool id)
     /// nor always the module name (`nixfmt` wraps, and is named, `alejandra`).
     /// See the [`Engine::name`] contract; this list needs one distinct label per
     /// *row*, which the tool ids cannot supply.
@@ -161,17 +159,6 @@ fn engine_versions_track_cargo_lock() {
     };
 
     let checks = vec![
-        // `BiomeGraphqlEngine` and `BiomeCssEngine` both answer `Engine::name()
-        // == "biome"` (one config/cache namespace, two wrapped analyzer
-        // crates), so both checks below use the label `"biome"` — matching the
-        // real `name()` is what lets `registry::tests::
-        // every_registered_engine_is_audited_or_declared_exempt` find them.
-        check(
-            "biome",
-            BiomeGraphqlEngine.version(),
-            vec![("biome_graphql_analyze", Git)],
-        ),
-        check("biome", BiomeCssEngine.version(), vec![("biome_css_analyze", Git)]),
         check("sqruff", SqruffEngine.version(), vec![("sqruff-lib", Registry)]),
         check("adrlint", AdrlintEngine.version(), vec![("adrlint", Registry)]),
         check(

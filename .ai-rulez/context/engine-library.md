@@ -82,8 +82,7 @@ x-ai-rulez:
     for numbered ADRs — document rules only, see ADR 0037), `sqruff.rs` (SQL, in
     `poly-engines-sql`), `yaml.rs`
     (`serde_yaml` lint, `oxc_formatter_yaml` format), `malva.rs` (CSS/SCSS/Less — formats via
-    `oxc_formatter_css` unless a malva key is set), `biome_css.rs` and `biome_graphql.rs` (both
-    named `"biome"`; shared helpers in `biome_common.rs`), `graphql.rs`, `markup_fmt.rs`
+    `oxc_formatter_css` unless a malva key is set), `graphql.rs`, `markup_fmt.rs`
     (HTML/Vue/Svelte/Astro/Angular/Jinja/Vento/Mustache/XML), `mago/` (PHP, in `poly-engines-php`),
     `nixfmt.rs` (Nix, in `poly-engines-nix` — named `"alejandra"`, the formatter it wraps),
     `rubyfmt` (Ruby, in `components/crates/poly-engines-ruby`, outside the root workspace), `hcl/` (`hcl-edit` lint plus a port of `hclwrite.Format`),
@@ -114,7 +113,7 @@ x-ai-rulez:
     `tflint`, `checkstyle`, …) whose overlay entry in `poly-catalog`'s `overlay.json` carries a
     recipe run batched per unit (module, chart, directory), with their report parsed into
     per-line diagnostics and an optional pinned, checksummed download (`install = "auto"`).
-  - support modules, not backends: `biome_common.rs`, `rule_config.rs` (re-exported from
+  - support modules, not backends: `rule_config.rs` (re-exported from
     `poly-engine-api`; the shared
     `select` / `extend_select` / `ignore` / `[engines.<tool>.rules.<id>]` schema),
     `config_keys/` (each engine's declared option keys, behind `unknown-config-key` and the

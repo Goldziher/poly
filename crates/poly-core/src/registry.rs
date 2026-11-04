@@ -11,10 +11,6 @@ use std::sync::{LazyLock, OnceLock};
 use crate::engine::Engine;
 #[cfg(feature = "engine-web")]
 use crate::engines::adrlint::AdrlintEngine;
-#[cfg(feature = "engine-biome")]
-use crate::engines::biome_css::BiomeCssEngine;
-#[cfg(feature = "engine-biome")]
-use crate::engines::biome_graphql::BiomeGraphqlEngine;
 use crate::engines::config_keys::PolyConfigEngine;
 #[cfg(feature = "engine-ini")]
 use crate::engines::ini::IniEngine;
@@ -126,9 +122,8 @@ fn with_external_engines(lang: &Language, mut engines: Vec<Box<dyn Engine>>) -> 
 ///
 /// Every arm that names an engine family is gated on that family's `engine-*` feature. With the
 /// family off the arm disappears and its languages reach the final `_ => TreeSitterEngine` arm,
-/// the same tier any language without a native backend gets. Arms that combine two families
-/// (CSS: `engine-web` + `engine-biome`; GraphQL: `engine-graphql` + `engine-biome`) are spelled
-/// out once per combination.
+/// the same tier any language without a native backend gets. The biome lint engines for CSS and
+/// GraphQL are not here: they come from the `biome` component or a bundled binary's provider.
 pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
     if matches!(lang, Language::Other(name) if name == crate::language::HELM_TEMPLATE) {
         return Vec::new();
@@ -158,24 +153,12 @@ pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
         Language::Yaml => vec![Box::new(YamlEngine)],
         #[cfg(feature = "engine-web")]
         Language::Less => vec![Box::new(MalvaEngine)],
-        #[cfg(all(feature = "engine-web", feature = "engine-biome"))]
-        Language::Css | Language::Scss => vec![Box::new(MalvaEngine), Box::new(BiomeCssEngine)],
-        #[cfg(all(feature = "engine-web", not(feature = "engine-biome")))]
+        #[cfg(feature = "engine-web")]
         Language::Css | Language::Scss => vec![Box::new(MalvaEngine)],
-        #[cfg(all(not(feature = "engine-web"), feature = "engine-biome"))]
-        Language::Css | Language::Scss => vec![Box::new(BiomeCssEngine)],
         #[cfg(feature = "engine-nix")]
         Language::Nix => poly_engines_nix::engines_for(lang),
-        #[cfg(all(feature = "engine-graphql", feature = "engine-biome"))]
-        Language::GraphQl => {
-            let mut engines = poly_engines_misc::engines_for(lang);
-            engines.push(Box::new(BiomeGraphqlEngine));
-            engines
-        }
-        #[cfg(all(feature = "engine-graphql", not(feature = "engine-biome")))]
+        #[cfg(feature = "engine-graphql")]
         Language::GraphQl => poly_engines_misc::engines_for(lang),
-        #[cfg(all(not(feature = "engine-graphql"), feature = "engine-biome"))]
-        Language::GraphQl => vec![Box::new(BiomeGraphqlEngine)],
         #[cfg(feature = "engine-hcl")]
         Language::Hcl => poly_engines_misc::engines_for(lang),
         #[cfg(feature = "engine-web")]
@@ -620,9 +603,9 @@ pub(crate) mod tests {
     /// Two engines may share a name only while they never serve the same
     /// language. Everything that keys off `Engine::name()` — the
     /// `[<kind>.<lang>.<engine>]` config table, the per-plan severity remap, the
-    /// cache id — is scoped by language first, so the shared `"biome"` name is
-    /// safe precisely because `BiomeCssEngine` (Css/Scss) and
-    /// `BiomeGraphqlEngine` (GraphQl) are disjoint.
+    /// cache id — is scoped by language first, so a shared name is safe while the
+    /// engines sharing it serve disjoint languages (the biome pair, checked in
+    /// `poly-engines-biome`'s `tests/identity.rs`).
     ///
     /// If this fails, either give the colliding backends distinct names — and
     /// bump both `version()` strings, so entries cached under the old name are

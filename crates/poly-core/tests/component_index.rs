@@ -36,7 +36,6 @@ const PLACEMENT: &[(&str, Placement)] = &[
     ("python-types", In("python")),
     ("sqruff", In("sql")),
     ("mago", In("php")),
-    ("biome", In("biome")),
     ("alejandra", In("nix")),
     ("typos", In("typos")),
     ("astgrep", In("astgrep")),
@@ -64,9 +63,9 @@ const PLACEMENT: &[(&str, Placement)] = &[
 
 /// Components whose engines `poly-core` cannot link (their upstream crates are git pins that live in
 /// the `components/` workspace), so their index entries are carried over from the committed index.
-/// The family crate's own test (`components/crates/poly-engines-ruby/tests/rubyfmt.rs`) checks the
-/// entry against the real engines.
-const EXTERNAL_COMPONENTS: &[&str] = &["ruby"];
+/// Each family crate's own test (`poly-engines-ruby`'s `tests/rubyfmt.rs`, `poly-engines-biome`'s
+/// `tests/index.rs`) checks its entry against the real engines.
+const EXTERNAL_COMPONENTS: &[&str] = &["biome", "ruby"];
 
 /// Components in index order: name, kind, opt-in, cargo features.
 const COMPONENTS: &[(&str, ComponentKind, bool, &[&str])] = &[

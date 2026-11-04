@@ -36,18 +36,19 @@
 //! `[lint.graphql.biome]` cannot configure CSS, and the cache key folds in
 //! [`Engine::version`] (which differs) next to the name. The two never share a
 //! language, so they never meet in one file's engine plan. See
-//! `tests/engine_identity.rs`, which asserts each of those properties rather
+//! `tests/identity.rs`, which asserts each of those properties rather
 //! than leaving them to be re-derived.
 //!
-//! [`BiomeCssEngine`]: crate::engines::biome_css::BiomeCssEngine
+//! [`BiomeCssEngine`]: crate::css::BiomeCssEngine
 
 use biome_analyze::{AnalyzerOptions, ControlFlow, Never};
 use biome_graphql_parser::parse_graphql;
 
-use crate::config::EngineConfig;
-use crate::engine::{Capabilities, Diagnostic, Engine, OptionKeys, OptionTable, SourceFile};
-use crate::engines::biome_common::{build_lint_filter, map_biome_diag, rule_filter_strings, str_to_rule_filter};
-use crate::language::Language;
+use poly_engine_api::config::EngineConfig;
+use poly_engine_api::engine::{Capabilities, Diagnostic, Engine, OptionKeys, OptionTable, SourceFile};
+use poly_engine_api::language::Language;
+
+use crate::common::{build_lint_filter, map_biome_diag, rule_filter_strings, str_to_rule_filter};
 
 /// Biome GraphQL lint engine.
 ///
@@ -126,9 +127,9 @@ impl Engine for BiomeGraphqlEngine {
 
 #[cfg(test)]
 mod tests {
-    use crate::config::GlobalDefaults;
-    use crate::engine::Engine;
-    use crate::language::Language;
+    use poly_engine_api::config::GlobalDefaults;
+    use poly_engine_api::engine::Engine;
+    use poly_engine_api::language::Language;
 
     use super::*;
 
@@ -153,7 +154,7 @@ mod tests {
     #[test]
     fn valid_graphql_produces_no_diagnostics() {
         let engine = BiomeGraphqlEngine;
-        let src = crate::engine::SourceFile {
+        let src = poly_engine_api::engine::SourceFile {
             path: "test.graphql".into(),
             language: Language::GraphQl,
             content: "query GetUser { user { id name } }\n".into(),

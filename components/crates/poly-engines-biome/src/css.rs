@@ -34,10 +34,10 @@
 //! `[lint.css.biome]` cannot configure GraphQL, and the cache key folds in
 //! [`Engine::version`] (which differs) next to the name. The two never share a
 //! language, so they never meet in one file's engine plan. See
-//! `tests/engine_identity.rs`, which asserts each of those properties rather
+//! `tests/identity.rs`, which asserts each of those properties rather
 //! than leaving them to be re-derived.
 //!
-//! [`BiomeGraphqlEngine`]: crate::engines::biome_graphql::BiomeGraphqlEngine
+//! [`BiomeGraphqlEngine`]: crate::graphql::BiomeGraphqlEngine
 
 use biome_analyze::{AnalyzerOptions, ControlFlow, Never};
 use biome_css_analyze::CssAnalyzerServices;
@@ -45,11 +45,12 @@ use biome_css_parser::{CssParserOptions, parse_css};
 use biome_languages::CssFileSource;
 use std::borrow::Cow;
 
-use crate::config::EngineConfig;
-use crate::engine::{Capabilities, Diagnostic, Engine, OptionKeys, OptionTable, SourceFile};
-use crate::engines::biome_common::{build_lint_filter, map_biome_diag, rule_filter_strings, str_to_rule_filter};
-use crate::engines::css_hacks::{IE_PROPERTY_HACK_SKIP, has_ie_property_hack};
-use crate::language::Language;
+use poly_engine_api::config::EngineConfig;
+use poly_engine_api::css_hacks::{IE_PROPERTY_HACK_SKIP, has_ie_property_hack};
+use poly_engine_api::engine::{Capabilities, Diagnostic, Engine, OptionKeys, OptionTable, SourceFile};
+use poly_engine_api::language::Language;
+
+use crate::common::{build_lint_filter, map_biome_diag, rule_filter_strings, str_to_rule_filter};
 
 /// Biome CSS lint engine.
 ///
@@ -119,7 +120,7 @@ impl Engine for BiomeCssEngine {
     /// catastrophically: biome's parser error recovery is exponential in the
     /// number of hacks, so a real stylesheet carrying 37 of them consumed 27 GB
     /// and was OOM-killed rather than reporting anything. See
-    /// [`has_ie_property_hack`](crate::engines::css_hacks::has_ie_property_hack).
+    /// [`has_ie_property_hack`](poly_engine_api::css_hacks::has_ie_property_hack).
     fn skip_reason(&self, src: &SourceFile) -> Option<Cow<'static, str>> {
         has_ie_property_hack(&src.content).then_some(Cow::Borrowed(IE_PROPERTY_HACK_SKIP))
     }
@@ -160,9 +161,9 @@ impl Engine for BiomeCssEngine {
 
 #[cfg(test)]
 mod tests {
-    use crate::config::GlobalDefaults;
-    use crate::engine::Engine;
-    use crate::language::Language;
+    use poly_engine_api::config::GlobalDefaults;
+    use poly_engine_api::engine::Engine;
+    use poly_engine_api::language::Language;
 
     use super::*;
 
@@ -189,7 +190,7 @@ mod tests {
     #[test]
     fn valid_css_produces_no_diagnostics() {
         let engine = BiomeCssEngine;
-        let src = crate::engine::SourceFile {
+        let src = poly_engine_api::engine::SourceFile {
             path: "test.css".into(),
             language: Language::Css,
             content: "a { color: blue; }\n".into(),

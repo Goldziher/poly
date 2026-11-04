@@ -4,14 +4,12 @@
 //!   asserts the expected [`Diagnostic`]s from the biome correctness rules.
 //! - `valid_graphql_no_diagnostics` — a correctly-named operation has no
 //!   diagnostics from the biome engine.
-#![cfg(feature = "engine-biome")]
-
-use poly_core::{
-    Language,
+use poly_engine_api::{
     config::{EngineConfig, GlobalDefaults},
     engine::{Engine, SourceFile},
-    engines::biome_graphql::BiomeGraphqlEngine,
+    language::Language,
 };
+use poly_engines_biome::BiomeGraphqlEngine;
 
 fn engine_cfg() -> EngineConfig {
     EngineConfig {

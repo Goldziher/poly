@@ -1,5 +1,5 @@
 ---
-source: crates/poly-core/tests/biome_graphql.rs
+source: components/crates/poly-engines-biome/tests/graphql.rs
 expression: summary
 ---
 [

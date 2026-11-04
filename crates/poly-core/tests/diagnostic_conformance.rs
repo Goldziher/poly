@@ -78,7 +78,9 @@ fn run_and_group() -> HashMap<String, Vec<Diagnostic>> {
         config_resolver: None,
         externally_linted_languages: Vec::new(),
         only: Vec::new(),
-        skip: Vec::new(),
+        // biome is a component in this build and the test embeds no lock; this contract covers the
+        // core engines, so leave the biome engines (and their component) out of the run.
+        skip: vec!["biome".into()],
         ..RunOptions::default()
     };
     let results = poly_core::lint(&[conformance_fixtures_dir()], &typos_enabled(), &opts, false, false)

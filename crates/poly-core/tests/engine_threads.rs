@@ -11,13 +11,12 @@
 //! Audit behind the allowlist (see `allowed_growth`): oxc (`LintService::run_source` used a
 //! `rayon::scope`, now replaced by `engines/oxc/run.rs`), sqruff (`lint_files` rayon, not reached by
 //! `lint_string`), mago (`mago-database` loader and the extension worker pool are not reached by
-//! `File::ephemeral` + `Linter::lint`), ruff (no rayon or salsa database on the lint path), biome
-//! (`biome_fs` is not used; analyzers are single-threaded).
+//! `File::ephemeral` + `Linter::lint`), ruff (no rayon or salsa database on the lint path).
+//! The biome engines are checked in `poly-engines-biome`'s `tests/threads.rs`.
 #![cfg(all(target_os = "linux", feature = "all-engines"))]
 
 use poly_core::config::{Config, EngineConfig, GlobalDefaults, Kind};
 use poly_core::engine::{Engine, SourceFile};
-use poly_core::engines::biome_css::BiomeCssEngine;
 use poly_core::engines::mago::MagoEngine;
 use poly_core::engines::oxc::OxcEngine;
 use poly_core::engines::ruff::RuffEngine;
@@ -47,8 +46,6 @@ fn allowed_growth(engine: &str) -> usize {
         "mago" => 0,
         // `lint_only` has no rayon, and poly builds no salsa database.
         "ruff" => 0,
-        // `biome_css_analyze::analyze` is single-threaded; `biome_fs` is not linked into the call.
-        "biome" => 0,
         other => panic!("no thread allowance recorded for engine {other}"),
     }
 }
@@ -128,14 +125,11 @@ fn lint_engines_do_not_grow_the_thread_count() {
             "import os\nx = 1\nif x == None:\n    pass\n",
         );
         record("ruff", RuffEngine.lint(&py, &plain_cfg(4)).unwrap().len());
-
-        let css = source("fixture.css", Language::Css, "a { colr: blue; }\n");
-        record("biome", BiomeCssEngine.lint(&css, &plain_cfg(2)).unwrap().len());
     }
 
     // A call that returns nothing may mean the fixture was not linted at all, which would make the
-    // thread assertion below vacuous; the oxc, ruff and biome fixtures each carry a finding.
-    for engine in ["oxc", "ruff", "biome"] {
+    // thread assertion below vacuous; the oxc and ruff fixtures each carry a finding.
+    for engine in ["oxc", "ruff"] {
         assert!(
             observed
                 .iter()

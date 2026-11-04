@@ -1,0 +1,44 @@
+[package]
+name = "poly-engines-biome"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+publish = false
+description = "The biome engine family for poly (CSS and GraphQL lint) and its component."
+
+[lib]
+name = "poly_engines_biome"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow.workspace = true
+biome_analyze.workspace = true
+biome_css_analyze.workspace = true
+biome_css_parser.workspace = true
+biome_diagnostics.workspace = true
+biome_graphql_analyze.workspace = true
+biome_graphql_parser.workspace = true
+biome_languages.workspace = true
+biome_rowan.workspace = true
+poly-engine-api.workspace = true
+poly-engines.workspace = true
+toml.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
+poly-cache.workspace = true
+poly-component-host.workspace = true
+poly-component-index.workspace = true
+poly-component-protocol.workspace = true
+poly-core.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"

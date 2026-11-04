@@ -5131,6 +5131,7 @@ version = "0.32.3"
 dependencies = [
  "poly-cli",
  "poly-core",
+ "poly-engines-biome",
  "poly-engines-ruby",
  "serde_json",
  "tempfile",
@@ -5253,14 +5254,6 @@ version = "0.32.3"
 dependencies = [
  "adrlint",
  "anyhow",
- "biome_analyze",
- "biome_css_analyze",
- "biome_css_parser",
- "biome_diagnostics",
- "biome_graphql_analyze",
- "biome_graphql_parser",
- "biome_languages",
- "biome_rowan",
  "blake3",
  "flate2",
  "globset",
@@ -5372,6 +5365,42 @@ dependencies = [
  "toml 1.2.0+spec-1.1.0",
  "tracing",
  "tree-sitter-language-pack",
+]
+
+[[package]]
+name = "poly-engines-biome"
+version = "0.32.3"
+dependencies = [
+ "anyhow",
+ "biome_analyze",
+ "biome_css_analyze",
+ "biome_css_parser",
+ "biome_diagnostics",
+ "biome_graphql_analyze",
+ "biome_graphql_parser",
+ "biome_languages",
+ "biome_rowan",
+ "insta",
+ "poly-cache",
+ "poly-component-host",
+ "poly-component-index",
+ "poly-component-protocol",
+ "poly-core",
+ "poly-engine-api",
+ "poly-engines",
+ "serde_json",
+ "tempfile",
+ "toml 1.2.0+spec-1.1.0",
+ "tracing",
+]
+
+[[package]]
+name = "poly-engines-biome-component"
+version = "0.32.3"
+dependencies = [
+ "alef-component-abi",
+ "poly-engines",
+ "poly-engines-biome",
 ]
 
 [[package]]

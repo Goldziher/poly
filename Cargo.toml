@@ -60,16 +60,6 @@ assert_fs = "1.1.4"
 ast-grep-config = "0.51.1"
 ast-grep-core = "0.51.1"
 axoupdater = { version = "0.10.3", default-features = false, features = ["github_releases"] }
-biome_analyze = { git = "https://github.com/biomejs/biome", rev = "e2e5a36e1be8581419742a85268ad82f020da62e" }
-biome_css_analyze = { git = "https://github.com/biomejs/biome", rev = "e2e5a36e1be8581419742a85268ad82f020da62e" }
-biome_css_parser = { git = "https://github.com/biomejs/biome", rev = "e2e5a36e1be8581419742a85268ad82f020da62e" }
-biome_diagnostics = { git = "https://github.com/biomejs/biome", rev = "e2e5a36e1be8581419742a85268ad82f020da62e" }
-biome_graphql_analyze = { git = "https://github.com/biomejs/biome", rev = "e2e5a36e1be8581419742a85268ad82f020da62e" }
-biome_graphql_parser = { git = "https://github.com/biomejs/biome", rev = "e2e5a36e1be8581419742a85268ad82f020da62e" }
-biome_languages = { git = "https://github.com/biomejs/biome", rev = "e2e5a36e1be8581419742a85268ad82f020da62e", features = [
-  "lang_css",
-] }
-biome_rowan = { git = "https://github.com/biomejs/biome", rev = "e2e5a36e1be8581419742a85268ad82f020da62e" }
 blake3 = "1"
 bstr = "1.13.1"
 cargo_metadata = "0.23.1"

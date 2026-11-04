@@ -8,12 +8,6 @@
 pub mod adrlint;
 #[cfg(feature = "engine-astgrep")]
 pub use poly_engines_astgrep as astgrep;
-#[cfg(feature = "engine-biome")]
-pub mod biome_common;
-#[cfg(feature = "engine-biome")]
-pub mod biome_css;
-#[cfg(feature = "engine-biome")]
-pub mod biome_graphql;
 pub mod catalog_tool;
 pub mod config_keys;
 #[cfg(feature = "engine-web")]
