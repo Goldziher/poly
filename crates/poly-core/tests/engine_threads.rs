@@ -96,14 +96,12 @@ fn lint_engines_do_not_grow_the_thread_count() {
 
     // A call that returns nothing may mean the fixture was not linted at all, which would make the
     // thread assertion below vacuous; the ruff fixture carries a finding.
-    for engine in ["ruff"] {
-        assert!(
-            observed
-                .iter()
-                .any(|(name, diagnostics, _)| *name == engine && *diagnostics > 0),
-            "{engine} fixture produced no diagnostics, so the engine may not have run"
-        );
-    }
+    assert!(
+        observed
+            .iter()
+            .any(|(name, diagnostics, _)| *name == "ruff" && *diagnostics > 0),
+        "ruff fixture produced no diagnostics, so the engine may not have run"
+    );
 
     for (engine, _, threads) in &observed {
         let allowed = baseline + allowed_growth(engine);
