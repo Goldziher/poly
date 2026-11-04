@@ -97,10 +97,15 @@ fn engine_in_play(config: &Config, language: Option<&Language>, desc: &WireEngin
 
 /// Whether `config` switches on one of opt-in `component`'s engines for `language`, through any
 /// table the engine's own `enabled` resolves from (a v1 `[lint.<lang>.<engine>]` or cross-cutting
-/// `[lint.<engine>]` table as much as a v2 language layer).
+/// `[lint.<engine>]` table as much as a v2 language layer). Only the kinds an engine serves count:
+/// the planner never runs a lint-only engine from a `[fmt]` table, so that table fetches nothing.
 fn opted_in(config: &Config, language: &Language, component: &Component) -> bool {
     component.engines.iter().any(|desc| {
-        [Kind::Lint, Kind::Format].into_iter().any(|kind| {
+        let kinds = [
+            (Kind::Lint, desc.capabilities.lint),
+            (Kind::Format, desc.capabilities.format),
+        ];
+        kinds.into_iter().filter(|(_, capable)| *capable).any(|(kind, _)| {
             config
                 .engine_config(language, &desc.name, kind)
                 .options

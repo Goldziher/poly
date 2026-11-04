@@ -144,6 +144,25 @@ fn an_opt_in_component_enabled_through_a_v1_lint_table_is_selected() {
 }
 
 #[test]
+fn an_opt_in_component_ignores_tables_for_a_capability_it_lacks() {
+    let mut lint_only = engine("typos", &[]);
+    lint_only.capabilities.format = false;
+    let mut index = index();
+    index
+        .components
+        .push(component("typos", "engine-typos", true, vec![lint_only]));
+    let fmt_table = Config {
+        fmt: toml::toml! { [typos] enabled = true },
+        ..Config::default()
+    };
+    assert_eq!(
+        names(selected_components(&index, &fmt_table, &lua(), &linked, &|_| true)),
+        ["lua", "everywhere"],
+        "a lint-only engine never runs from [fmt], so [fmt.typos] does not opt in"
+    );
+}
+
+#[test]
 fn an_explicit_list_is_exact_and_presets_expand() {
     let config = config(ComponentsConfig {
         enable: Enable::List(vec!["lua".into()]),
