@@ -365,7 +365,7 @@ jobs:
       - name: Merge into one signed lock
         run: |
           set -euo pipefail
-          mise x github:xberg-io/alef@0.118.0 -- alef component lock --input components --output poly-components.lock.json
+          mise x github:xberg-io/alef@0.121.0 -- alef component lock --input components --output poly-components.lock.json
 
       - name: Assert the lock is complete and signed
         run: |

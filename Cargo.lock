@@ -66,15 +66,15 @@ dependencies = [
 
 [[package]]
 name = "alef-component-abi"
-version = "0.118.0"
+version = "0.121.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf2432620c5be642be2040be57da43d876253e726c984454e549086cba43f56f"
+checksum = "939b700797cbeef99ec749d9193535e4b5163f45532cb3e132254643344f8613"
 
 [[package]]
 name = "alef-component-runtime"
-version = "0.118.0"
+version = "0.121.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8eed1a9d52ce6d5c1b99d84cd37751ea3398526b24f184f99407582357602c84"
+checksum = "90a3eb314a91c85514606ee54fdbb78d899cc9d59613370a9c2e677c53e7043c"
 dependencies = [
  "alef-component-abi",
  "base64",
@@ -5587,7 +5587,6 @@ name = "poly-engines-mcp-component"
 version = "0.32.3"
 dependencies = [
  "alef-component-abi",
- "futures",
  "poly-engines",
 ]
 
@@ -5688,7 +5687,6 @@ name = "poly-engines-sql-component"
 version = "0.32.3"
 dependencies = [
  "alef-component-abi",
- "futures",
  "poly-engines",
 ]
 

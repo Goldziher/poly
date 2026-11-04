@@ -11,7 +11,7 @@ uv = "0.13.6"
 node = "26.13.0"
 pnpm = "12.16.1"
 # The component build tool; keep in step with alef-component-abi/runtime in Cargo.toml.
-"github:xberg-io/alef" = "0.118.0"
+"github:xberg-io/alef" = "0.121.0"
 
 [vars]
 # Tasks run poly built from this checkout, so they lint and format with the code under change. ~keep

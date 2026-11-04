@@ -14,7 +14,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT_DIR}"
 
-ALEF_VERSION="0.118.0"
+ALEF_VERSION="0.121.0"
 if [[ -n "${ALEF:-}" ]]; then
   alef() { "${ALEF}" "$@"; }
 else

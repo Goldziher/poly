@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Regenerate the alef outputs: the sql producer crate and the standalone host module.
 #
-# alef 0.118.0 also rewrites the version of every workspace crate that carries its own (gitfluff) and
+# alef also rewrites the version of every workspace crate that carries its own (gitfluff) and
 # seeds a rust-toolchain.toml; both are undone here because poly wants neither.
 
 set -euo pipefail
@@ -17,7 +17,7 @@ for file in "${KEEP[@]}"; do
   cp "${file}" "${BACKUP}/${file}"
 done
 
-ALEF_VERSION="0.118.0"
+ALEF_VERSION="0.121.0"
 if [[ -n "${ALEF:-}" ]]; then
   "${ALEF}" generate --skip-compile
 else

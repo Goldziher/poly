@@ -25,7 +25,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT_DIR}"
 
-ALEF_VERSION="0.118.0"
+ALEF_VERSION="0.121.0"
 KEY_ID="poly-release-1"
 # Stripped at link time. A dylib must never be stripped after linking: that removes the exported
 # symbols the host looks up.
