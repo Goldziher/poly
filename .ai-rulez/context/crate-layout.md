@@ -53,8 +53,10 @@ an installer (see release-versioning).
   `poly-component-protocol`, `poly-component-index` and `poly-component-host` the component wire
   protocol, compiled component index and host-side runtime; `poly-core`'s
   `engine-*` features link them and its `bundled` feature aliases `all-engines`. `poly-cli`'s
-  defaults (`all-engines`, `bundled-mcp`) give the **bundled** build the release ships;
-  `--no-default-features` gives the **core** build, whose engines and MCP server are downloaded
+  defaults (`all-engines`, `bundled-mcp`) give the full-engine build; only the
+  `x86_64-unknown-linux-musl` release ships a **bundled** build (the `components/` crate
+  `poly-bundled`). Every other release triple ships `--no-default-features --features core`,
+  linking only the quality, uncomment and ini engines; the rest, and the MCP server, are downloaded
   components (`poly-host-services` provides the services a frontend component calls,
   `poly-frontend-api` is its wire contract). `poly-cli`'s `components_cmd/` is `poly components`. Shared deps live under `[workspace.dependencies]`; git deps are pinned to a `rev`
   (crates from one monorepo share one `rev`).

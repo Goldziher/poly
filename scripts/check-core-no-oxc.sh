@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fail when the core binary (`poly-cli --no-default-features`) links any oxc crate, or the MCP
+# Fail when the released core binary (`poly-cli --no-default-features --features core`) links any oxc crate, or the MCP
 # server stack (`rmcp`, `tokio`), or when any crate of the root workspace, with every feature on,
 # depends on an oxc crate.
 #
@@ -11,7 +11,7 @@
 set -euo pipefail
 shopt -s inherit_errexit
 
-tree="$(cargo tree --locked -p poly-cli --no-default-features -e normal --prefix none)"
+tree="$(cargo tree --locked -p poly-cli --no-default-features --features core -e normal --prefix none)"
 # The tree must be non-empty and name the root, or a failed resolution would read as "no oxc".
 grep -q '^poly-cli ' <<<"$tree" || {
   echo "check-core-no-oxc: cargo tree did not list poly-cli; refusing to report a pass" >&2

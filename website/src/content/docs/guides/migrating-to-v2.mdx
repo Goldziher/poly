@@ -108,6 +108,6 @@ New and additive: `--offline` (or `POLY_OFFLINE=1`), `--on-missing fail|skip`, `
 
 ## Engines that moved out of the default build
 
-The release binaries are bundled and need no component downloads. A core build downloads engines on
-first use; a missing component fails the run with exit `2` unless `[components] install` allows the
+Only the Linux musl release binary is bundled and needs no component downloads. The other release
+binaries are core builds that download engines on first use; a missing component fails the run with exit `2` unless `[components] install` allows the
 download or `on_missing = "skip"` is set. typos is opt-in in both flavors.

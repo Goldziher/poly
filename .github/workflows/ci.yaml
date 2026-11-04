@@ -214,6 +214,8 @@ jobs:
           toolchain: stable
       - uses: Swatinem/rust-cache@v2
       - run: scripts/check-core-no-oxc.sh
+      - name: the released core flavour builds warning-free
+        run: cargo clippy --locked -p poly-cli --no-default-features --features core -- -D warnings
       - name: no git dependencies in the root workspace
         run: scripts/check-no-git-deps.sh
 

@@ -9,8 +9,8 @@ metadata:
 
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-Content-Hash: blake3:93d3501f02debb45afc6bb614e881b2c08f7f4288ca05b4d0e979e5718554aee
-Source-Hash: blake3:b235022c5efd503e65d1d6fe44889912f02b72b7c3f0af6cd4c1d11d30441097
+Content-Hash: blake3:6c31e1f5ea74423cf0f61265220d539d6333c0b6967a8baa23f3e94d799a91bc
+Source-Hash: blake3:c1ca09f2359d1bda9b055974a600dcf09b17245b67bd6b3415417dad7a67c99f
 Schema-Version: v1
 -->
 
@@ -77,8 +77,8 @@ lock file, a populated build or type-checker cache — are not poly's to control
 
 ## Components
 
-In a core build the engines are downloadable components; a bundled build links them in and
-nothing is ever missing. The result's `components` block (`used`, `installed_now`, `missing`) is
+In a core build (every release binary except Linux musl) the engines are downloadable components;
+the bundled Linux musl build links them in and nothing is ever missing. The result's `components` block (`used`, `installed_now`, `missing`) is
 present only when a run needed one. A missing component that fails the run sets `isError`; one
 skipped under `install: "never"` shows in `skipped` and `components.missing` without failing it.
 Check `components.missing` before reading an empty `results` as clean.

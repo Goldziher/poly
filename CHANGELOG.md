@@ -37,13 +37,18 @@ See [Migrating to poly 2](https://goldziher.github.io/poly/guides/migrating-to-v
 
 - **Downloadable engine components.** Engines ship as signed components, fetched on first use by a
   core build (`cargo build --no-default-features`, 7.6 MiB at the size profile). The default build
-  stays bundled, with every engine and the MCP server linked in, and the Linux musl release is
-  fully bundled and embeds no component lock. `poly components list|status|install|uninstall|sync|prune|import`
+  stays bundled, with every engine and the MCP server linked in. `poly components list|status|install|uninstall|sync|prune|import`
   manages them; `[components]` (`enable`, `disable`, `install`, `on_missing`) selects them;
   `--offline` / `POLY_OFFLINE=1` forbids every download; `POLY_COMPONENT_MIRROR` and
   `POLY_COMPONENT_CACHE` set the download origin and cache root. `poly components prune` keeps
   archives the lock references for any target and archives used within `--keep-days` (default 30),
   and skips a file a loaded library still holds.
+- **Core release binaries.** Only `x86_64-unknown-linux-musl` ships the bundled binary (every
+  engine linked in, built from the `components/` crate `poly-bundled`, no embedded lock). The other
+  five release targets ship a core binary (`--no-default-features --features core`, linking only
+  the quality, uncomment and ini engines) with a signed component lock embedded. `python`, `php`,
+  `nix`, `typos`, `astgrep` and `misc` are now downloadable components, alongside `web`, `sql`,
+  `biome`, `ruby` and `mcp`. `poly rules` is not available in a core binary.
 - **`poly config validate`**, which checks a config against the compiled component index without
   downloading anything, and a `components` section in `poly doctor`.
 - **`required_version`** in `poly.toml`, a semver requirement on the running poly.

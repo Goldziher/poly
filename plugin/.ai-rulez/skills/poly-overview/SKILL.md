@@ -24,8 +24,8 @@ below, which uses a language's canonical CLI when it happens to be installed.
 ## Per-language coverage tiers
 
 - **Tier 1 — native in-process backends.** Highest fidelity, registered per language: linked
-  into a bundled build (the release binary) or loaded from signed components that a core build
-  downloads on first use (`poly components list`). Listed by the engine id you configure them
+  into a bundled build (the Linux musl release binary) or loaded from signed components that a core
+  build (every other release binary) downloads on first use (`poly components list`). Listed by the engine id you configure them
   under (`[engines.<id>]`): `ruff` (Python), `oxc`
   (JS/TS/JSX/TSX/JSON/JSONC), `taplo` (TOML), `rumdl` (Markdown/MDX), `sqruff` (SQL), `yaml`,
   `malva` (CSS/SCSS/Less) + `biome` (CSS/SCSS), `markup_fmt` (HTML/Vue/Svelte/Astro/Angular/

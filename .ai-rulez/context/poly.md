@@ -12,8 +12,9 @@ x-ai-rulez:
 
 poly is a single-binary, multi-language linter and formatter. Tier-1 backends are Rust crates —
 ruff, oxc, biome (CSS/GraphQL), mago (PHP), taplo, rumdl, adrlint (opt-in), sqruff, malva,
-markup_fmt, rubyfmt, nixfmt, typos (opt-in), and more — linked in (the bundled release build) or
-loaded as signed downloadable components (core build, `poly components`), with a
+markup_fmt, rubyfmt, nixfmt, typos (opt-in), and more — linked in (the bundled build, shipped only for
+`x86_64-unknown-linux-musl`) or loaded as signed downloadable components (the core build every
+other release triple ships, `poly components`), with a
 tree-sitter generic tier for the long tail. Two cross-cutting lint tiers run on top: the native
 `quality` metric engine and ast-grep with a built-in rule pack. Canonical first-party CLIs are
 used when found on `PATH` (`rustfmt`, `gofmt`, `shfmt` and `shellcheck` are default-on;

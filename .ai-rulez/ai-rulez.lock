@@ -4,7 +4,7 @@
 version = 1
 ai_rulez_version = '5.10.0'
 scope = 'all'
-tree = 'sha256:240fc35e488ae739e0b8c4c45e03ffeb84f9dd6fb49e54e8a255ffa844c82b6f'
+tree = 'sha256:28899dbd4447fcad3cb5b34371d34766b056bc763834423277ddd0cd3675634a'
 
 [[served]]
 name = 'adr-workflow'
@@ -124,7 +124,7 @@ digest = 'sha256:021fc58cf5f25175c50318a3f8a4d53551bbcfd9b0c91dff79c95411a6afcb3
 kind = 'context'
 id = 'crate-layout'
 path = 'context/crate-layout.md'
-digest = 'sha256:c560a694973742020c43b5c873bb943d17b3f138234670dcfea65591d40a5b9a'
+digest = 'sha256:0ab8bf3f7fe189eb6ca0a5b09625bf06bd981ff6ebc371f627783d42c94010bc'
 
 [[item]]
 kind = 'context'
@@ -136,7 +136,7 @@ digest = 'sha256:7f0c250139ce06b3ca83cb13ed3e9672c569379981ca72dcfa0442f440f638a
 kind = 'context'
 id = 'poly'
 path = 'context/poly.md'
-digest = 'sha256:226d47b0761b711e1eb418a9cbda425b991bd71dc1b994924468c826e8c6aaa2'
+digest = 'sha256:8ba2f86d3c159de6efee12e720d387aa6e0fdc068d2fb9757d5d9c2943c2c405'
 
 [[item]]
 kind = 'context'

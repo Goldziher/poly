@@ -34,6 +34,9 @@ default = ["all-engines", "bundled-mcp"]
 bundled-mcp = ["dep:poly-mcp"]
 # Every engine family compiled in. Drop it (`--no-default-features`) for the core-only binary.
 all-engines = ["poly-core/all-engines", "poly-host-services/all-engines", "engine-astgrep"]
+# The released core binary of every triple but musl: `--no-default-features --features core`. The
+# other engine families, and the MCP server, come from downloadable components.
+core = ["poly-core/core"]
 # Forwarded dev-lock: lets a local build install components from the `components:dev` lock.
 dev-lock = ["poly-core/dev-lock"]
 # `poly rules` drives the ast-grep engine directly, so the subcommand needs the family.

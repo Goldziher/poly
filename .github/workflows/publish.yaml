@@ -587,7 +587,9 @@ jobs:
         env:
           # Read by crates/poly-core/build.rs and compiled into the binary.
           POLY_COMPONENT_LOCK_FILE: ${{ github.workspace }}/components-lock/poly-components.lock.json
-        run: cargo build --release --target ${{ matrix.triple }}
+        # The core flavour (ADR 0039): every other engine family and the MCP server are components
+        # this binary downloads on first use, from the lock embedded above.
+        run: cargo build --release --locked --target ${{ matrix.triple }} -p poly-cli --no-default-features --features core
         shell: bash
 
       - name: Build binary (musl, Alpine container)
