@@ -71,14 +71,12 @@ x-ai-rulez:
   backends now live in `crates/poly-engines-<family>` and are re-exported here at their
   old paths (`engines/mod.rs`). Most of the rest are a single `engines/<tool>.rs`; a backend that
   outgrows the 1000-line cap becomes a directory split per concern (`native_tool/`, `quality/`,
-  `treesitter/`, `catalog_tool/`; in the family crates `mago/`, `hcl/`, `ruff/` and the web family's
-  `oxc/`, whose `ruff/` submodules sit beside `ruff.rs`). The web family (`oxc/`, `taplo.rs`,
-  `rumdl.rs`, `adrlint.rs`, `yaml.rs`, `malva.rs`, `markup_fmt.rs`, `markdown_fmt.rs`,
-  `markdown_embed.rs`, `core_options.rs`) lives in `components/crates/poly-engines-web`, outside the
-  root workspace because its oxc crates are git pins:
+  `treesitter/`, `catalog_tool/`, and in the family crates `mago/`, `hcl/`, `ruff/`, `oxc/`). The web family (oxc, taplo, rumdl,
+  adrlint, yaml, malva, markup_fmt, markdown) lives in `components/crates/poly-engines-web` (oxc is a
+  git pin):
   - tier-1 native crate backends, registered per language in `registry.rs`: `ruff.rs` +
     `ruff/` (Python, in `poly-engines-python`; target version: `poly-engine-api`'s
-    `host_hooks/ruff_target.rs`), `oxc/` (JS/TS/JSX/TSX/JSON/JSONC; the web family, in `poly-engines-web`), `taplo.rs` (TOML: taplo
+    `host_hooks/ruff_target.rs`), `oxc/` (JS/TS/JSX/TSX/JSON/JSONC), `taplo.rs` (TOML: taplo
     lint, `oxc_formatter_toml` format unless a taplo layout key selects taplo's formatter),
     `rumdl.rs` (Markdown/MDX lint; `markdown_fmt.rs` formats through `oxc_formatter_markdown`
     with `markdown_embed.rs` dispatching fences and front matter), `adrlint.rs` (opt-in MADR rules
@@ -88,7 +86,7 @@ x-ai-rulez:
     `oxc_formatter_css` unless a malva key is set), `graphql.rs`, `markup_fmt.rs`
     (HTML/Vue/Svelte/Astro/Angular/Jinja/Vento/Mustache/XML), `mago/` (PHP, in `poly-engines-php`),
     `nixfmt.rs` (Nix, in `poly-engines-nix` — named `"alejandra"`, the formatter it wraps),
-    `rubyfmt` (Ruby, in `components/crates/poly-engines-ruby`, outside the root workspace), `hcl/` (`hcl-edit` lint plus a port of `hclwrite.Format`),
+    `rubyfmt` (Ruby, in `components/crates/poly-engines-ruby`), `hcl/` (`hcl-edit` lint plus a port of `hclwrite.Format`),
     `dockerfile.rs` (vendored `dockerfile-parser`), `dotenv.rs` (with `graphql.rs`, in `poly-engines-misc`),
     `ini.rs`. A project `.oxfmtrc.json[c]` / `.oxlintrc.json[c]` is read by
     `poly-engine-api`'s `host_hooks/oxfmt_native.rs` / `oxfmt_scope.rs` and `poly-config`'s `oxlint_native.rs`.

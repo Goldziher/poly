@@ -12,9 +12,8 @@ x-ai-rulez:
 
 poly is a single-binary, multi-language linter and formatter. Tier-1 backends are Rust crates —
 ruff, oxc, biome (CSS/GraphQL), mago (PHP), taplo, rumdl, adrlint (opt-in), sqruff, malva,
-markup_fmt, rubyfmt, nixfmt, typos (opt-in), and more — linked in (the bundled build, shipped only for
-`x86_64-unknown-linux-musl`) or loaded as signed downloadable components (the core build every
-other release triple ships, `poly components`), with a
+markup_fmt, rubyfmt, nixfmt, typos (opt-in), and more — linked in (the bundled build, musl only)
+or loaded as signed components (the core build on every other triple, `poly components`), with a
 tree-sitter generic tier for the long tail. Two cross-cutting lint tiers run on top: the native
 `quality` metric engine and ast-grep with a built-in rule pack. Canonical first-party CLIs are
 used when found on `PATH` (`rustfmt`, `gofmt`, `shfmt` and `shellcheck` are default-on;
@@ -66,7 +65,7 @@ config that governed the run, indexed by each result's `config` field.
 whole-workspace tools a `pre-commit` hook would — `cargo clippy`/`cargo-sort`/`cargo-machete`/
 `cargo-deny` and any configured whole-project type checkers — on the live worktree, folding
 their pass/fail into the report and exit code. It reuses the `[hooks.builtin.cargo]` + inline
-`workspace = true` config as the single source of truth, and is on by default. Turn it off with
+`workspace = true` config and is on by default. Turn it off with
 `--workspace never` or `[workspace] run = "never"`; a repo with no `[hooks]` section runs only the
 per-file tier. With `--format json`/`toon` the whole-project section is written to stderr (stdout
 stays a single valid document), so a machine consumer must check the **exit code** — not just the
