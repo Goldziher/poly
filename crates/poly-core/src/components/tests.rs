@@ -116,6 +116,34 @@ fn an_opt_in_component_needs_its_engine_table_enabled() {
 }
 
 #[test]
+fn an_opt_in_component_enabled_through_a_v1_lint_table_is_selected() {
+    let per_language = Config {
+        lint: toml::toml! { [lua.speller] enabled = true },
+        ..Config::default()
+    };
+    assert_eq!(
+        names(selected_components(&index(), &per_language, &lua(), &linked, &|_| true)),
+        ["lua", "everywhere", "spell"],
+        "[lint.<lang>.<engine>] enabled = true opts in"
+    );
+
+    // typos is cross-cutting, so v1 also reads its language-agnostic `[lint.typos]` table.
+    let mut index = index();
+    index
+        .components
+        .push(component("typos", "engine-typos", true, vec![engine("typos", &[])]));
+    let cross_cutting = Config {
+        lint: toml::toml! { [typos] enabled = true },
+        ..Config::default()
+    };
+    assert_eq!(
+        names(selected_components(&index, &cross_cutting, &lua(), &linked, &|_| true)),
+        ["lua", "everywhere", "typos"],
+        "[lint.typos] enabled = true opts in"
+    );
+}
+
+#[test]
 fn an_explicit_list_is_exact_and_presets_expand() {
     let config = config(ComponentsConfig {
         enable: Enable::List(vec!["lua".into()]),

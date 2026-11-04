@@ -124,21 +124,7 @@ static TOKENIZER: typos::tokens::Tokenizer = typos::tokens::Tokenizer::new();
 /// Cross-cutting spell-checker backed by the published `typos`/`typos-dict` crates.
 pub struct TyposEngine;
 
-/// The map-valued option keys `[lint.typos]` / `[lint.<lang>.typos]` accept.
-///
-/// One list, read twice: `Config::build_typos_options` merges exactly these keys
-/// out of the user's tables (layering them over any native `_typos.toml`), and
-/// `TyposEngine::option_keys` declares them as what the backend reads.
-pub const MAP_OPTION_KEYS: &[&str] = &["extend_words", "extend_identifiers"];
-
-/// The array-valued option keys, merged and declared like [`MAP_OPTION_KEYS`].
-pub const ARRAY_OPTION_KEYS: &[&str] = &[
-    "extend_exclude",
-    "extend_ignore_words",
-    "extend_ignore_re",
-    "extend_ignore_words_re",
-    "extend_ignore_identifiers_re",
-];
+pub use poly_engine_api::host_hooks::typos_options::{ARRAY_OPTION_KEYS, MAP_OPTION_KEYS};
 
 /// Every option key the typos backend reads, paired with the type it is read
 /// as, in one slice for `Engine::option_keys`.

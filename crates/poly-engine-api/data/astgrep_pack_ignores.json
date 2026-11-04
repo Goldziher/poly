@@ -1,0 +1,18 @@
+[
+  {
+    "id": "force-cast",
+    "ignores": ["**/RustBridge/**"]
+  },
+  {
+    "id": "not-null-assertion",
+    "ignores": ["**/test/**", "**/androidTest/**", "**/*Test.kt"]
+  },
+  {
+    "id": "placeholder-implementation",
+    "ignores": ["**/*_generated.rs"]
+  },
+  {
+    "id": "unwrap-used",
+    "ignores": ["**/tests/**", "**/benches/**", "**/tests.rs", "**/test_support.rs", "**/*_generated.rs"]
+  }
+]

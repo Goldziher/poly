@@ -206,12 +206,10 @@ impl Config {
             Some(_) => lang_options.get(ENABLED_OPTION_KEY).and_then(toml::Value::as_bool),
             None => self.resolve_enabled(tables, engine_name, &lang_options),
         };
-        // An engine whose family is compiled out has no builder: its table passes through verbatim,
-        // exactly as for any other engine without a cross-cutting option set.
+        // typos and astgrep build host-side whether or not their families are linked, so a component
+        // serving them gets the same options. Any other engine's table passes through verbatim.
         let mut options = match engine_name {
-            #[cfg(feature = "engine-typos")]
             "typos" => self.build_typos_options(&self.cross_cutting_layers(&v2_layers, engine_name, &lang_options)),
-            #[cfg(feature = "engine-astgrep")]
             "astgrep" => self.build_astgrep_options(&self.astgrep_layers(&v2_layers)),
             #[cfg(feature = "engine-uncomment")]
             "uncomment" => {
@@ -231,7 +229,6 @@ impl Config {
         }
     }
 
-    #[cfg(any(feature = "engine-typos", feature = "engine-uncomment", feature = "engine-quality"))]
     /// The option layers a cross-cutting builder folds, lowest precedence first: the v2
     /// engine layers, or for v1 the language-agnostic `[lint.<engine>]` table beneath the
     /// per-language `[<phase>.<language>.<engine>]` one.
@@ -253,7 +250,6 @@ impl Config {
         }
     }
 
-    #[cfg(feature = "engine-astgrep")]
     /// The option layers `build_astgrep_options` reads. ast-grep's rule selection is
     /// language-agnostic, so v1 reads only `[lint.astgrep]`; v2 reads every level.
     fn astgrep_layers<'a>(&'a self, v2_layers: &'a Option<Vec<toml::Table>>) -> Vec<&'a toml::Table> {
@@ -350,7 +346,6 @@ impl Config {
         options
     }
 
-    #[cfg(feature = "engine-typos")]
     /// Build the merged `options` table for the typos engine.
     ///
     /// typos is opt-in: the runner plans it only when `enabled = true` reaches it (see
@@ -365,18 +360,19 @@ impl Config {
     ///    language adds entries without dropping the shared ones.
     fn build_typos_options(&self, layers: &[&toml::Table]) -> toml::Table {
         let native = &self.typos_native;
-        let mut maps: Vec<(&&str, BTreeMap<String, String>)> = crate::engines::typos::MAP_OPTION_KEYS
-            .iter()
-            .map(|key| {
-                let seed = match *key {
-                    "extend_words" => native.extend_words.clone(),
-                    "extend_identifiers" => native.extend_identifiers.clone(),
-                    _ => BTreeMap::new(),
-                };
-                (key, seed)
-            })
-            .collect();
-        let mut arrays: Vec<(&&str, Vec<String>)> = crate::engines::typos::ARRAY_OPTION_KEYS
+        let mut maps: Vec<(&&str, BTreeMap<String, String>)> =
+            poly_engine_api::host_hooks::typos_options::MAP_OPTION_KEYS
+                .iter()
+                .map(|key| {
+                    let seed = match *key {
+                        "extend_words" => native.extend_words.clone(),
+                        "extend_identifiers" => native.extend_identifiers.clone(),
+                        _ => BTreeMap::new(),
+                    };
+                    (key, seed)
+                })
+                .collect();
+        let mut arrays: Vec<(&&str, Vec<String>)> = poly_engine_api::host_hooks::typos_options::ARRAY_OPTION_KEYS
             .iter()
             .map(|key| {
                 let seed = match *key {
@@ -415,7 +411,6 @@ impl Config {
         options
     }
 
-    #[cfg(feature = "engine-astgrep")]
     /// Build the `options` table for the `astgrep` engine.
     ///
     /// Injects the resolved `rules_dirs` so that the engine can discover rule
@@ -437,7 +432,7 @@ impl Config {
         let mut options = toml::Table::new();
         if !self.rules_dirs.is_empty() {
             insert_string_array(&mut options, "rules_dirs", self.rules_dirs.clone());
-            let hash = crate::engines::astgrep::rules::rules_hash(&self.rules_dirs);
+            let hash = poly_engine_api::host_hooks::astgrep_rules::rules_hash(&self.rules_dirs);
             if !hash.is_empty() {
                 options.insert("rules_hash".to_string(), toml::Value::String(hash));
             }
@@ -462,7 +457,6 @@ fn last_value<'a>(layers: &[&'a toml::Table], key: &str) -> Option<&'a toml::Val
     layers.iter().rev().find_map(|layer| layer.get(key))
 }
 
-#[cfg(feature = "engine-typos")]
 /// Merge the string entries of `table[key]` (a TOML table) into `dest`, with the
 /// incoming layer winning on a duplicate key. Non-table values and non-string
 /// entries are ignored.
@@ -476,7 +470,6 @@ fn extend_string_map(dest: &mut BTreeMap<String, String>, table: &toml::Table, k
     }
 }
 
-#[cfg(any(feature = "engine-typos", feature = "engine-uncomment"))]
 /// Append the string elements of `table[key]` (a TOML array) onto `dest`.
 /// Non-array values and non-string elements are ignored.
 fn extend_string_array(dest: &mut Vec<String>, table: &toml::Table, key: &str) {
@@ -485,7 +478,6 @@ fn extend_string_array(dest: &mut Vec<String>, table: &toml::Table, key: &str) {
     }
 }
 
-#[cfg(any(feature = "engine-typos", feature = "engine-uncomment", feature = "engine-astgrep"))]
 /// Insert `values` into `options` under `key` as a TOML string array, skipping
 /// the insert entirely when the list is empty (keeps the options table minimal).
 fn insert_string_array(options: &mut toml::Table, key: &str, values: Vec<String>) {

@@ -127,6 +127,139 @@ fn read_globs<G: serde::Serialize>(rule_id: &str, entries: Option<&[G]>) -> Vec<
 }
 
 #[cfg(test)]
+mod host_parity {
+    //! The host computes these exclusions without this crate (a core build serves ast-grep from a
+    //! component), from a committed copy of the pack's `ignores:` and its own reading of user rules.
+    //! These tests hold both to what the engine itself reads.
+
+    use std::path::PathBuf;
+
+    use poly_engine_api::host_hooks::astgrep_rules::{self, IgnoreGlob, RuleIgnores};
+
+    use super::*;
+
+    fn rendered(ignores: &DefaultPathIgnores) -> Vec<(String, Vec<String>)> {
+        ignores
+            .iter()
+            .map(|(id, globs)| (id.clone(), globs.iter().map(|g| g.glob().to_owned()).collect()))
+            .collect()
+    }
+
+    fn data_path() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../poly-engine-api/data/astgrep_pack_ignores.json")
+    }
+
+    /// Regenerate with `UPDATE_PACK_IGNORES=1 cargo test -p poly-engines-astgrep`.
+    #[test]
+    fn committed_pack_ignores_match_the_pack() {
+        let mut rules: Vec<RuleIgnores> = builtin_pack()
+            .values()
+            .flatten()
+            .filter_map(|rule| {
+                let entries = rule.ignores.as_deref()?;
+                let ignores: Vec<IgnoreGlob> = entries
+                    .iter()
+                    .map(|entry| serde_json::from_value(serde_json::to_value(entry).unwrap()).unwrap())
+                    .collect();
+                Some(RuleIgnores {
+                    id: rule.id.clone(),
+                    ignores: Some(ignores),
+                })
+            })
+            .collect();
+        rules.sort_by(|a, b| a.id.cmp(&b.id));
+        rules.dedup();
+        let ids: std::collections::BTreeSet<&str> = rules.iter().map(|rule| rule.id.as_str()).collect();
+        assert_eq!(
+            ids.len(),
+            rules.len(),
+            "a pack id declares different `ignores:` in two rules"
+        );
+        let generated = serde_json::to_string_pretty(&rules).unwrap() + "\n";
+        if std::env::var_os("UPDATE_PACK_IGNORES").is_some() {
+            std::fs::write(data_path(), &generated).unwrap();
+            return;
+        }
+        let committed: Vec<RuleIgnores> =
+            serde_json::from_str(&std::fs::read_to_string(data_path()).unwrap()).expect("committed file is JSON");
+        assert!(
+            !committed.is_empty(),
+            "the pack declares exclusions, so the committed copy cannot be empty"
+        );
+        assert_eq!(committed, rules, "stale: rerun with UPDATE_PACK_IGNORES=1");
+    }
+
+    #[test]
+    fn the_host_reads_the_same_exclusions_as_the_engine() {
+        let dir = tempfile::tempdir().unwrap();
+        // Replaces a pack rule and clears its exclusions; declares new ones in both entry forms;
+        // and a multi-document file.
+        std::fs::write(
+            dir.path().join("override.yml"),
+            "id: unwrap-used\nlanguage: rust\nrule:\n  pattern: $A.unwrap()\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("own.yml"),
+            "id: own-rule\nlanguage: rust\nignores:\n  - \"gen/**\"\n  - glob: \"**/*.PB.rs\"\n    caseInsensitive: true\nrule:\n  pattern: todo!()\n---\nid: second\nlanguage: rust\nignores: [\"x/**\"]\nrule:\n  pattern: dbg!($A)\n",
+        )
+        .unwrap();
+        let dirs = vec![dir.path().to_string_lossy().into_owned()];
+        for (dirs, pack) in [(&dirs[..], true), (&dirs[..], false), (&[][..], true)] {
+            let engine = default_path_ignores(dirs, pack);
+            let host = astgrep_rules::default_path_ignores(dirs, pack);
+            let mut engine = rendered(&engine);
+            let mut host = rendered(&host);
+            engine.sort();
+            host.sort();
+            assert_eq!(host, engine, "dirs={dirs:?} pack={pack}");
+        }
+        let with_user = rendered(&astgrep_rules::default_path_ignores(&dirs, true));
+        assert!(with_user.iter().any(|(id, _)| id == "own-rule"));
+        assert!(
+            with_user
+                .iter()
+                .any(|(id, globs)| id == "unwrap-used" && globs.is_empty()),
+            "the override clears the pack's globs"
+        );
+    }
+
+    /// Each case is one rules directory: `(files, expect user entries)`; host and engine must agree.
+    #[test]
+    fn the_host_and_engine_agree_on_edge_cases() {
+        let rule = |id: &str, ignores: &str| format!("id: {id}\nlanguage: rust\n{ignores}rule:\n  pattern: todo!()\n");
+        let cases: Vec<(Vec<(&str, String)>, bool)> = vec![
+            (vec![("nested/deep/a.yml", rule("a", "ignores: [\"a/**\"]\n"))], true),
+            (vec![("a.yml", rule("a", "ignores: []\n"))], false),
+            (vec![("a.yml", rule("a", "ignores: [\"a/**\"]\n") + "---\n")], true),
+            (vec![("a-test.yml", rule("a", "ignores: [\"a/**\"]\n"))], false),
+            (
+                vec![
+                    ("a.yml", rule("a", "ignores: [\"a/**\"]\n")),
+                    ("b.yml", "id: [not, a, string]\n".to_owned()),
+                ],
+                false,
+            ),
+        ];
+        for (files, expect_user) in cases {
+            let dir = tempfile::tempdir().unwrap();
+            for (name, text) in &files {
+                let path = dir.path().join(name);
+                std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+                std::fs::write(path, text).unwrap();
+            }
+            let dirs = vec![dir.path().to_string_lossy().into_owned()];
+            let mut engine = rendered(&default_path_ignores(&dirs, false));
+            let mut host = rendered(&astgrep_rules::default_path_ignores(&dirs, false));
+            engine.sort();
+            host.sort();
+            assert_eq!(host, engine, "files={files:?}");
+            assert_eq!(!host.is_empty(), expect_user, "files={files:?}");
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

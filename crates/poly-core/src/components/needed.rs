@@ -95,6 +95,22 @@ fn engine_in_play(config: &Config, language: Option<&Language>, desc: &WireEngin
     !(off(Kind::Lint) && off(Kind::Format))
 }
 
+/// Whether `config` switches on one of opt-in `component`'s engines for `language`, through any
+/// table the engine's own `enabled` resolves from (a v1 `[lint.<lang>.<engine>]` or cross-cutting
+/// `[lint.<engine>]` table as much as a v2 language layer).
+fn opted_in(config: &Config, language: &Language, component: &Component) -> bool {
+    component.engines.iter().any(|desc| {
+        [Kind::Lint, Kind::Format].into_iter().any(|kind| {
+            config
+                .engine_config(language, &desc.name, kind)
+                .options
+                .get("enabled")
+                .and_then(toml::Value::as_bool)
+                == Some(true)
+        })
+    })
+}
+
 fn expand<'a>(index: &'a ComponentIndex, names: &[String]) -> impl Iterator<Item = &'a Component> {
     names.iter().filter_map(|name| index.expand_preset(name)).flatten()
 }
@@ -126,7 +142,7 @@ fn explicit<'a>(index: &'a ComponentIndex, config: &Config) -> BTreeSet<&'a str>
 /// The downloadable components that apply to `language` under `config`, in index order.
 ///
 /// `enable = "auto"` derives them from the components hosting an engine for the language (and
-/// the cross-cutting ones), minus opt-in components; an explicit list is exact. Explicit
+/// the cross-cutting ones), minus opt-in components nothing switches on; an explicit list is exact. Explicit
 /// `[engines.X]` tables add to either. `disable` removes, and components whose families are
 /// linked ([`feature_is_linked`]) and front ends never appear. A component none of whose engines
 /// is still in play (`selected`, `enabled = false`) is not selected, and a component derived from the language needs one of them to serve it: a run that
@@ -147,7 +163,7 @@ pub(crate) fn selected_components<'a>(
                 .components_for_language(language.id())
                 .into_iter()
                 .chain(index.cross_cutting_components())
-                .filter(|c| !c.opt_in)
+                .filter(|c| !c.opt_in || opted_in(config, language, c))
                 .map(|c| c.name.as_str()),
         );
     }

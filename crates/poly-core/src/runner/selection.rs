@@ -194,10 +194,12 @@ mod tests {
 
     #[test]
     fn a_recognized_selection_validates() {
+        // The compiled index, so the names resolve whether this build links their families or a
+        // component serves them.
         assert!(
             validate_selection(
                 &set(Config::default()),
-                &ComponentIndex::default(),
+                poly_component_index::index(),
                 &names(&["ruff", "typos"]),
                 &names(&["sqruff"])
             )
@@ -209,7 +211,7 @@ mod tests {
     fn an_unknown_name_is_rejected_and_quoted_back() {
         let error = validate_selection(
             &set(Config::default()),
-            &ComponentIndex::default(),
+            poly_component_index::index(),
             &names(&["ruffs"]),
             &[],
         )
