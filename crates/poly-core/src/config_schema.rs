@@ -126,6 +126,17 @@ fn offers(engine: &dyn Engine, kind: Kind) -> bool {
     }
 }
 
+/// Whether an index engine formats `language`. A lint-only one (dockerfile, dotenv) leaves the
+/// generic tree-sitter tier as that language's formatter.
+fn index_formats(index: &poly_component_index::ComponentIndex, language: &str) -> bool {
+    index.components_for_language(language).iter().any(|component| {
+        component
+            .engines
+            .iter()
+            .any(|engine| engine.capabilities.format && engine.languages.iter().any(|l| l == language))
+    })
+}
+
 /// The engines of `language` that offer a table for `kind`, with their declared keys.
 ///
 /// The compiled component index is the authority on every engine it describes, so the schema does
@@ -133,10 +144,10 @@ fn offers(engine: &dyn Engine, kind: Kind) -> bool {
 fn language_engines(language: &Language, kind: Kind) -> Vec<(String, StaticKeys)> {
     let table = option_table(kind);
     let index = poly_component_index::index();
-    // With a language's tier-1 family unlinked, the registry falls back to the generic tree-sitter
-    // engine; a language the index serves has a tier-1 engine regardless, so that fallback is not
+    // With a language's tier-1 formatter unlinked, the registry falls back to the generic
+    // tree-sitter engine; when the index serves the language with a formatter, that fallback is not
     // part of its schema.
-    let index_serves = !index.components_for_language(language.id()).is_empty();
+    let index_serves = index_formats(index, language.id());
     let mut engines: Vec<(String, StaticKeys)> = engines_for(language)
         .iter()
         .filter(|engine| offers(engine.as_ref(), kind))
@@ -302,5 +313,13 @@ mod tests {
         let ruby = &schema["properties"]["fmt"]["properties"]["ruby"]["properties"];
         assert_eq!(ruby["rubyfmt"]["$ref"], "#/$defs/fmt_rubyfmt");
         assert!(ruby.get("treesitter").is_none(), "{ruby}");
+    }
+
+    #[test]
+    fn only_a_formatting_index_engine_displaces_the_generic_formatter() {
+        let index = poly_component_index::index();
+        assert!(super::index_formats(index, "ruby"));
+        assert!(!super::index_formats(index, "dockerfile"));
+        assert!(!super::index_formats(index, "dotenv"));
     }
 }
