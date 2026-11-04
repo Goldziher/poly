@@ -57,7 +57,7 @@ impl std::error::Error for ProviderRegistrationError {}
 ///
 /// Meant for a bundled binary linking engines `poly-core` does not carry (the git-pinned
 /// oxc, biome and rubyfmt families): call it once at startup, before the first lint or format
-/// run. The provider's engines are placed after the language's built-in engines and before the
+/// run. The provider's engines are placed among the language's built-in engines (before any lint-only built-in) and before the
 /// cross-cutting ones. When one of them formats the language, the tree-sitter generic formatter
 /// is dropped for it so the two never compete over indentation; lint-only engines leave it in
 /// place. Provider engine names must not collide with the language's built-in engine names.
@@ -84,24 +84,46 @@ pub(crate) fn displaces_tree_sitter<'a>(engines: impl IntoIterator<Item = &'a dy
         .any(|engine| engine.capabilities().format && !engine.languages().is_empty())
 }
 
-/// Appends the external provider's engines for `lang`, dropping the tree-sitter fallback when
-/// one of them formats.
-fn with_external_engines(lang: &Language, mut engines: Vec<Box<dyn Engine>>) -> Vec<Box<dyn Engine>> {
-    let Some(provider) = EXTERNAL_PROVIDER.get() else {
+/// Merges engines contributed from outside the registry (a provider's, or a downloadable
+/// component's) into a language's built-in engines.
+///
+/// When one of them formats the language the tree-sitter reindenter is dropped. The contributed
+/// engines are placed before the first built-in engine that cannot format (a lint-only core engine
+/// such as `PolyConfigEngine`), otherwise appended, which restores the order the engines had when
+/// they were all built in: TOML is `[Taplo, PolyConfig]`, not `[PolyConfig, Taplo]`.
+pub(crate) fn merge_external_engines(
+    mut engines: Vec<Box<dyn Engine>>,
+    external: Vec<Box<dyn Engine>>,
+) -> Vec<Box<dyn Engine>> {
+    if external.is_empty() {
         return engines;
-    };
-    let external = provider(lang);
+    }
     if displaces_tree_sitter(external.iter().map(|engine| &**engine)) {
         engines.retain(|engine| engine.name() != TREE_SITTER_ENGINE);
     }
-    debug_assert!(
-        external
-            .iter()
-            .all(|new| engines.iter().all(|existing| existing.name() != new.name())),
-        "an external engine provider supplied an engine whose name collides with a built-in one for {lang:?}"
-    );
-    engines.extend(external);
+    let at = engines
+        .iter()
+        .position(|engine| !engine.capabilities().format)
+        .unwrap_or(engines.len());
+    engines.splice(at..at, external);
     engines
+}
+
+/// Merges the external provider's engines for `lang` into the built-in ones.
+fn with_external_engines(lang: &Language, engines: Vec<Box<dyn Engine>>) -> Vec<Box<dyn Engine>> {
+    match EXTERNAL_PROVIDER.get() {
+        Some(provider) => {
+            let external = provider(lang);
+            debug_assert!(
+                external
+                    .iter()
+                    .all(|new| engines.iter().all(|existing| existing.name() != new.name())),
+                "an external engine provider supplied an engine whose name collides with a built-in one for {lang:?}"
+            );
+            merge_external_engines(engines, external)
+        }
+        None => engines,
+    }
 }
 
 /// Engines applicable to a language, in priority order (formatters run in sequence).

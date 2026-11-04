@@ -9,10 +9,11 @@
 //! engine to bump. The root workspace's `tests/version_audit.rs` audits the engines that remain in
 //! `poly-core`.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 
 use poly_engine_api::engine::Engine;
+use poly_engine_api::language::Language;
 use poly_engines_web::{AdrlintEngine, MalvaEngine, MarkupFmtEngine, OxcEngine, RumdlEngine, TaploEngine, YamlEngine};
 
 /// A resolved package as recorded in `Cargo.lock`.
@@ -134,8 +135,98 @@ fn engine_versions_track_cargo_lock() {
         ),
         ("oxc", OxcEngine.version().to_owned(), vec![("oxc_formatter", Git)]),
     ];
-    assert_eq!(checks.len(), 7, "every engine of the web family is audited");
+    let audited: BTreeSet<&str> = checks.iter().map(|(name, ..)| *name).collect();
+    assert_eq!(
+        audited,
+        registered_engine_names(),
+        "every engine `engines_for` serves must have a `Cargo.lock` check here, and no check may name an engine it does not serve"
+    );
     for (engine, version, deps) in &checks {
         assert_tracks(engine, version, deps, &lock);
     }
+}
+
+/// Every `Language` variant, so [`registered_engine_names`] sees every engine `engines_for` can
+/// serve. The exhaustive match in [`assert_all_language_variants_listed`] stops this file compiling
+/// when a variant is added without updating the list.
+fn all_languages() -> Vec<Language> {
+    use Language::{
+        Angular, Astro, C, CSharp, Cpp, Css, Dart, Dockerfile, Dotenv, Elixir, Gleam, Go, GraphQl, Hcl, Html, Ini,
+        Java, JavaScript, Jinja, Json, Jsonc, Jsx, Kotlin, Less, Markdown, Mdx, Mustache, Nix, Php, Proto, Python, R,
+        Ruby, Rust, Scss, Shell, Sql, Svelte, Swift, Toml, Tsx, TypeScript, Vento, Vue, Xml, Yaml, Zig,
+    };
+    vec![
+        Python, JavaScript, TypeScript, Jsx, Tsx, Json, Jsonc, Yaml, Toml, Markdown, Mdx, Sql, Css, Scss, Less, Html,
+        Vue, Svelte, Astro, Angular, Jinja, Vento, Mustache, Xml, GraphQl, Hcl, Nix, Shell, Dockerfile, Go, Java,
+        Kotlin, Ruby, Php, R, Elixir, C, Cpp, Rust, Proto, Zig, Swift, Dart, Gleam, CSharp, Dotenv, Ini,
+    ]
+}
+
+/// Compile-time companion to [`all_languages`]: no wildcard arm over the named variants.
+#[allow(dead_code)]
+fn assert_all_language_variants_listed(language: &Language) {
+    match language {
+        Language::Python
+        | Language::JavaScript
+        | Language::TypeScript
+        | Language::Jsx
+        | Language::Tsx
+        | Language::Json
+        | Language::Jsonc
+        | Language::Yaml
+        | Language::Toml
+        | Language::Markdown
+        | Language::Mdx
+        | Language::Sql
+        | Language::Css
+        | Language::Scss
+        | Language::Less
+        | Language::Html
+        | Language::Vue
+        | Language::Svelte
+        | Language::Astro
+        | Language::Angular
+        | Language::Jinja
+        | Language::Vento
+        | Language::Mustache
+        | Language::Xml
+        | Language::GraphQl
+        | Language::Hcl
+        | Language::Nix
+        | Language::Shell
+        | Language::Dockerfile
+        | Language::Go
+        | Language::Java
+        | Language::Kotlin
+        | Language::Ruby
+        | Language::Php
+        | Language::R
+        | Language::Elixir
+        | Language::C
+        | Language::Cpp
+        | Language::Rust
+        | Language::Proto
+        | Language::Zig
+        | Language::Swift
+        | Language::Dart
+        | Language::Gleam
+        | Language::CSharp
+        | Language::Dotenv
+        | Language::Ini
+        | Language::Other(_) => {}
+    }
+}
+
+/// The name of every engine `poly_engines_web::engines_for` serves for any language.
+fn registered_engine_names() -> BTreeSet<&'static str> {
+    let names: BTreeSet<&'static str> = all_languages()
+        .iter()
+        .flat_map(|language| poly_engines_web::engines_for(language))
+        .map(|engine| engine.name())
+        .collect();
+    assert!(
+        !names.is_empty(),
+        "collected zero engines; the traversal is broken, not the audit"
+    );
+    names
 }

@@ -713,3 +713,38 @@ fn disabling_the_language_backend_withdraws_its_lint_coverage() {
         "a disabled engine must not claim coverage"
     );
 }
+
+/// A downloadable component's formatter displaces the tree-sitter reindenter and lands before the
+/// lint-only core engine, the order the TOML engines had when taplo was built in.
+#[test]
+fn component_engines_keep_the_built_in_order_for_toml() {
+    let wire = poly_component_protocol::WireEngineDesc {
+        name: "taplo".into(),
+        languages: vec!["toml".into()],
+        capabilities: poly_component_protocol::WireCapabilities {
+            lint: true,
+            format: true,
+            fix: false,
+            project: false,
+        },
+        version: "1.0.0".into(),
+        option_keys: Vec::new(),
+        hooks: 0,
+        takes_over_tier_one: false,
+        claimed_paths: Vec::new(),
+        host_hook: "none".into(),
+        supplements_tier_one: false,
+        self_manages_enabled: false,
+        supersedes_generic_formatter: false,
+        batch_shard_floor: 2,
+    };
+    let component = ComponentEngine::unavailable("web", &wire, "feedfacefeedface00", "not installed").unwrap();
+
+    let names: Vec<&str> = with_component_engines(engines_for(&Language::Toml), &[component])
+        .iter()
+        .map(|engine| engine.name())
+        .filter(|name| matches!(*name, "taplo" | "polyconfig" | TREE_SITTER_ENGINE))
+        .collect();
+
+    assert_eq!(names, ["taplo", "polyconfig"]);
+}
