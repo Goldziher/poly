@@ -390,8 +390,8 @@ fn a_warm_format_check_does_not_open_unchanged_files_and_still_reports_unformatt
     assert_eq!(warm.changed, vec!["b.py".to_owned()]);
     assert!(warm.errors.is_empty());
     assert_eq!(
-        warm.resolution.stat_hits, 1,
-        "a.py is answered from its stat; b.py needs a formatter (`poly.toml` has no formatter in a core build, so it is not a hit)"
+        warm.resolution.stat_hits, 2,
+        "poly.toml and a.py are answered from their stat; b.py needs a formatter"
     );
 }
 

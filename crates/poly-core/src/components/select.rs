@@ -44,7 +44,7 @@ pub fn needed_component_names(
         }
     }
     let all: Vec<&Config> = configs.iter().collect();
-    Ok(needed_components(index, &all, &seen, &feature_is_linked)
+    Ok(needed_components(index, &all, &seen, &feature_is_linked, &|_| true)
         .into_iter()
         .map(|c| c.name.clone())
         .collect())

@@ -131,7 +131,11 @@ pub(crate) fn resolve(files: &[DiscoveredFile], configs: &ConfigSet, opts: &RunO
         }
     }
     let all: Vec<&Config> = configs.iter().collect();
-    let needed = needed_components(index, &all, &pairs, &feature_is_linked);
+    let selected = |name: &str| {
+        (opts.only.is_empty() || opts.only.iter().any(|entry| entry == name))
+            && !opts.skip.iter().any(|entry| entry == name)
+    };
+    let needed = needed_components(index, &all, &pairs, &feature_is_linked, &selected);
     if needed.is_empty() {
         return ResolvedComponents::default();
     }
@@ -218,13 +222,14 @@ pub(crate) fn resolve(files: &[DiscoveredFile], configs: &ConfigSet, opts: &RunO
     let mut by_pair: FxHashMap<(usize, Language), Vec<ComponentEngine>> = FxHashMap::default();
     for (config_id, language) in pairs {
         let config = configs.config(config_id);
-        let serving: Vec<ComponentEngine> = selected_components(index, config, &language, &feature_is_linked)
-            .into_iter()
-            .filter_map(|component| engines.get(component.name.as_str()))
-            .flatten()
-            .filter(|engine| engine.languages().is_empty() || engine.languages().contains(&language))
-            .cloned()
-            .collect();
+        let serving: Vec<ComponentEngine> =
+            selected_components(index, config, &language, &feature_is_linked, &selected)
+                .into_iter()
+                .filter_map(|component| engines.get(component.name.as_str()))
+                .flatten()
+                .filter(|engine| engine.languages().is_empty() || engine.languages().contains(&language))
+                .cloned()
+                .collect();
         if !serving.is_empty() {
             by_pair.insert((config_id, language), serving);
         }
