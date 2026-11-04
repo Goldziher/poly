@@ -14,7 +14,7 @@
 //! # Covered backends
 //!
 //! **Structured** (contract: every real finding sets BOTH `code` and `span`):
-//!   `taplo`, `graphql`, `yaml`, `typos`, `hcl`, `dockerfile`, `dotenv`, `ini`
+//!   `graphql`, `typos`, `hcl`, `dockerfile`, `dotenv`, `ini`
 //!
 //! The `treesitter` tier-2 engine is format-only and emits no lint diagnostics,
 //! so it is not part of the lint-conformance set.
@@ -22,8 +22,9 @@
 //! **Structured with edge-case exemptions** (contract: ≥1 *normal* finding sets
 //! BOTH `code` and `span`):
 //!   `ruff`  — file-level parse findings can have `span = None`
-//!   `oxc`   — same as ruff for syntax-error findings
-//!   `rumdl` — a minority of rules emit `code = None`
+//!
+//! The web family's backends (`taplo`, `yaml`, `oxc`, `rumdl`) are checked against the same contract in
+//! `components/crates/poly-engines-web/tests/diagnostic_conformance.rs`.
 //!
 //! # Explicitly excluded (documented allowlist)
 //!
@@ -78,9 +79,10 @@ fn run_and_group() -> HashMap<String, Vec<Diagnostic>> {
         config_resolver: None,
         externally_linted_languages: Vec::new(),
         only: Vec::new(),
-        // biome is a component in this build and the test embeds no lock; this contract covers the
-        // core engines, so leave the biome engines (and their component) out of the run.
-        skip: vec!["biome".into()],
+        // The fixture tree holds files the `web` (markdown) and `biome` (GraphQL) components would serve.
+        // Skipping their engines keeps the run from planning components a core build has no lock for;
+        // the core engines under test (graphql, typos, ...) still run on those files.
+        skip: ["rumdl", "adrlint", "biome"].map(str::to_owned).to_vec(),
         ..RunOptions::default()
     };
     let results = poly_core::lint(&[conformance_fixtures_dir()], &typos_enabled(), &opts, false, false)
@@ -100,12 +102,8 @@ fn run_and_group() -> HashMap<String, Vec<Diagnostic>> {
 ///
 /// Fixture → engine mapping:
 ///   `bad.py`      → ruff (F401 unused import, W605 invalid escape, E711 == None)
-///   `bad.js`      → oxc  (no-debugger rule)
-///   `bad.toml`    → taplo (duplicate key)
-///   `bad.md`      → rumdl (MD018 no space after `#`)
 ///   `bad.graphql` → graphql (parse error)
-///   `bad.yaml`    → yaml (unclosed flow sequence)
-///   `typos.md`    → typos (misspellings; rumdl also runs cross-file)
+///   `typos.md`    → typos (misspellings)
 ///   `bad.tf`      → hcl (unclosed block body syntax error)
 ///   `bad.R`       → treesitter (tier-2, format-only; emits no lint diagnostics)
 ///   `Dockerfile`  → dockerfile (DL3006 FROM without tag)
@@ -138,16 +136,7 @@ fn diagnostic_contract_all_backends_conform() {
         );
     }
 
-    const STRUCTURED: &[&str] = &[
-        "taplo",
-        "graphql",
-        "yaml",
-        "typos",
-        "hcl",
-        "dockerfile",
-        "dotenv",
-        "ini",
-    ];
+    const STRUCTURED: &[&str] = &["graphql", "typos", "hcl", "dockerfile", "dotenv", "ini"];
     for backend in STRUCTURED {
         let diags = by_engine.get(*backend).unwrap_or_else(|| {
             panic!(
@@ -184,23 +173,6 @@ fn diagnostic_contract_all_backends_conform() {
          got: {ruff_diags:?}"
     );
 
-    let oxc_diags = by_engine
-        .get("oxc")
-        .unwrap_or_else(|| panic!("oxc produced no diagnostics; check tests/fixtures/conformance/bad.js"));
-    assert!(
-        oxc_diags.iter().any(|d| d.code.is_some() && d.span.is_some()),
-        "oxc: expected ≥1 finding with both code and span on normal rule violations; \
-         got: {oxc_diags:?}"
-    );
-
-    let rumdl_diags = by_engine
-        .get("rumdl")
-        .unwrap_or_else(|| panic!("rumdl produced no diagnostics; check tests/fixtures/conformance/bad.md"));
-    assert!(
-        rumdl_diags.iter().any(|d| d.span.is_some()),
-        "rumdl: expected ≥1 finding with a span; got: {rumdl_diags:?}"
-    );
-
     let mut covered: Vec<&str> = by_engine.keys().map(String::as_str).collect();
     covered.sort_unstable();
     println!(
@@ -210,19 +182,7 @@ fn diagnostic_contract_all_backends_conform() {
         covered.len()
     );
 
-    const ALL_REQUIRED: &[&str] = &[
-        "taplo",
-        "graphql",
-        "yaml",
-        "typos",
-        "hcl",
-        "dockerfile",
-        "dotenv",
-        "ini",
-        "ruff",
-        "oxc",
-        "rumdl",
-    ];
+    const ALL_REQUIRED: &[&str] = &["graphql", "typos", "hcl", "dockerfile", "dotenv", "ini", "ruff"];
     for required in ALL_REQUIRED {
         assert!(
             by_engine.contains_key(*required),

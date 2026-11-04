@@ -20,6 +20,7 @@ poly-cli.workspace = true
 poly-core.workspace = true
 poly-engines-biome.workspace = true
 poly-engines-ruby.workspace = true
+poly-engines-web.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true

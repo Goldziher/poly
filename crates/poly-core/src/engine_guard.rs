@@ -28,7 +28,7 @@
 //! process before any handler runs, with the same total loss. Several in-process
 //! parsers recurse once per nesting level (`hcl-rs`, `malva`) and overflow the
 //! worker stack on input a few thousand brackets deep, which fuzzing produced
-//! from truncated files. [`refuse_pathological_nesting`] turns that input into
+//! from truncated files. `poly_engine_api::engine_guard::refuse_pathological_nesting` turns that input into
 //! the same per-file error before those engines see it. It is called by the
 //! engines that need it rather than by the runner for every file, because a
 //! bracket count is only meaningful where brackets are syntax: a shell script
@@ -84,11 +84,6 @@ pub(crate) fn guard_engine_panic<T>(
         }
     }
 }
-
-#[cfg_attr(not(feature = "engine-web"), allow(unused_imports))]
-pub(crate) use poly_engine_api::engine_guard::deep_unbalanced_nesting;
-#[cfg_attr(not(any(feature = "engine-web", feature = "engine-hcl")), allow(unused_imports))]
-pub(crate) use poly_engine_api::engine_guard::refuse_pathological_nesting;
 
 #[cfg(test)]
 mod tests {

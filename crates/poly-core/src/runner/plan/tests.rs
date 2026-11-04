@@ -77,16 +77,15 @@ fn tier_one_formatter_prevents_catalog_formatter_chaining() {
         tools: toml::from_str("[clang-format]\nenabled = true\n").expect("valid tool config"),
         ..Config::default()
     };
-    for language in [Language::JavaScript, Language::TypeScript, Language::Jsx, Language::Tsx] {
-        let engines = engines_for(&language);
-        assert!(
-            has_tier_one_formatter(&engines, &language, &config, Kind::Format),
-            "{language:?} must remain owned by its tier-one formatter"
-        );
-        let plan = plan_engines(&language, &config, Kind::Format, unrestricted(), &mut None);
-        assert!(plan.iter().any(|entry| entry.engine.name() == "oxc"));
-        assert!(!plan.iter().any(|entry| entry.engine.name() == "clang-format"));
-    }
+    let language = Language::Python;
+    let engines = engines_for(&language);
+    assert!(
+        has_tier_one_formatter(&engines, &language, &config, Kind::Format),
+        "{language:?} must remain owned by its tier-one formatter"
+    );
+    let plan = plan_engines(&language, &config, Kind::Format, unrestricted(), &mut None);
+    assert!(plan.iter().any(|entry| entry.engine.name() == "ruff"));
+    assert!(!plan.iter().any(|entry| entry.engine.name() == "clang-format"));
 }
 
 /// The engines in `plan` that claim to hold lint rules for the language it
@@ -178,7 +177,7 @@ fn a_language_both_the_pack_and_the_quality_tier_cover_lists_both() {
 #[test]
 fn a_language_with_a_native_backend_has_lint_coverage() {
     let config = Config::default();
-    for language in [Language::Python, Language::Toml, Language::Yaml, Language::Markdown] {
+    for language in [Language::Python, Language::Sql, Language::Hcl, Language::Dockerfile] {
         assert!(
             provides_language_lint(&plan_engines(&language, &config, Kind::Lint, unrestricted(), &mut None)),
             "{language:?} is linted by its own backend"
@@ -432,20 +431,20 @@ fn planned_names(plan: &[EnginePlan]) -> Vec<&'static str> {
 fn a_disabled_tier_one_formatter_stops_suppressing_the_catalog_tier() {
     let enabled = Config::default();
     let disabled = Config {
-        fmt: toml::from_str("[javascript.oxc]\nenabled = false\n").expect("valid fmt config"),
+        fmt: toml::from_str("[python.ruff]\nenabled = false\n").expect("valid fmt config"),
         ..Config::default()
     };
-    let capable = || retaining_capable(engines_for(&Language::JavaScript), Kind::Format);
+    let capable = || retaining_capable(engines_for(&Language::Python), Kind::Format);
 
-    let on = retaining_enabled(capable(), &Language::JavaScript, &enabled, Kind::Format, &mut None);
+    let on = retaining_enabled(capable(), &Language::Python, &enabled, Kind::Format, &mut None);
     assert!(
-        has_tier_one_formatter(&on, &Language::JavaScript, &enabled, Kind::Format),
-        "oxc owns JavaScript formatting while it is on"
+        has_tier_one_formatter(&on, &Language::Python, &enabled, Kind::Format),
+        "ruff owns Python formatting while it is on"
     );
 
-    let off = retaining_enabled(capable(), &Language::JavaScript, &disabled, Kind::Format, &mut None);
+    let off = retaining_enabled(capable(), &Language::Python, &disabled, Kind::Format, &mut None);
     assert!(
-        !has_tier_one_formatter(&off, &Language::JavaScript, &disabled, Kind::Format),
+        !has_tier_one_formatter(&off, &Language::Python, &disabled, Kind::Format),
         "a disabled formatter is not a tier-one formatter, and must not keep the catalog tier out"
     );
 }

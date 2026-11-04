@@ -151,7 +151,7 @@ fn the_reason_names_the_language_and_is_not_the_no_engine_reason() {
 fn a_language_with_rules_is_still_counted_and_silent() {
     let dir = tempfile::tempdir().expect("tempdir");
     write(dir.path(), "d.py", "x = 1\n");
-    write(dir.path(), "c.toml", "a = 1\n");
+    write(dir.path(), "c.py", "y = 2\n");
 
     let run = lint(dir.path());
 

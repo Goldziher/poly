@@ -9,27 +9,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{LazyLock, OnceLock};
 
 use crate::engine::Engine;
-#[cfg(feature = "engine-web")]
-use crate::engines::adrlint::AdrlintEngine;
 use crate::engines::config_keys::PolyConfigEngine;
 #[cfg(feature = "engine-ini")]
 use crate::engines::ini::IniEngine;
-#[cfg(feature = "engine-web")]
-use crate::engines::malva::MalvaEngine;
-#[cfg(feature = "engine-web")]
-use crate::engines::markup_fmt::MarkupFmtEngine;
 use crate::engines::native_tool::NativeToolEngine;
-#[cfg(feature = "engine-web")]
-use crate::engines::oxc::OxcEngine;
 #[cfg(feature = "engine-quality")]
 use crate::engines::quality::QualityEngine;
-#[cfg(feature = "engine-web")]
-use crate::engines::rumdl::RumdlEngine;
-#[cfg(feature = "engine-web")]
-use crate::engines::taplo::TaploEngine;
 use crate::engines::treesitter::TreeSitterEngine;
-#[cfg(feature = "engine-web")]
-use crate::engines::yaml::YamlEngine;
 use crate::language::Language;
 
 /// A function supplying engines for a language from outside `poly-core`.
@@ -122,55 +108,25 @@ fn with_external_engines(lang: &Language, mut engines: Vec<Box<dyn Engine>>) -> 
 ///
 /// Every arm that names an engine family is gated on that family's `engine-*` feature. With the
 /// family off the arm disappears and its languages reach the final `_ => TreeSitterEngine` arm,
-/// the same tier any language without a native backend gets. The biome lint engines for CSS and
-/// GraphQL are not here: they come from the `biome` component or a bundled binary's provider.
+/// the same tier any language without a native backend gets. The web and biome families are not
+/// here: their engines come from the `web` and `biome` components or a bundled binary's provider.
 pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
     if matches!(lang, Language::Other(name) if name == crate::language::HELM_TEMPLATE) {
         return Vec::new();
     }
     let engines: Vec<Box<dyn Engine>> = match lang {
-        #[cfg(feature = "engine-web")]
-        Language::JavaScript
-        | Language::TypeScript
-        | Language::Jsx
-        | Language::Tsx
-        | Language::Json
-        | Language::Jsonc => vec![Box::new(OxcEngine)],
-        #[cfg(feature = "engine-web")]
-        Language::Toml => vec![Box::new(TaploEngine::new()), Box::new(PolyConfigEngine)],
-        // `poly.toml` key checking is core; only the TOML formatter is the web family's.
-        #[cfg(not(feature = "engine-web"))]
+        // `poly.toml` key checking is core; the TOML formatter and linter are the web family's.
         Language::Toml => vec![Box::new(TreeSitterEngine), Box::new(PolyConfigEngine)],
-        #[cfg(feature = "engine-web")]
-        Language::Markdown => vec![Box::new(RumdlEngine), Box::new(AdrlintEngine)],
-        #[cfg(feature = "engine-web")]
-        Language::Mdx => vec![Box::new(RumdlEngine)],
         #[cfg(feature = "engine-python")]
         Language::Python => poly_engines_python::engines_for(lang),
         #[cfg(feature = "engine-sql")]
         Language::Sql => poly_engines_sql::engines_for(lang),
-        #[cfg(feature = "engine-web")]
-        Language::Yaml => vec![Box::new(YamlEngine)],
-        #[cfg(feature = "engine-web")]
-        Language::Less => vec![Box::new(MalvaEngine)],
-        #[cfg(feature = "engine-web")]
-        Language::Css | Language::Scss => vec![Box::new(MalvaEngine)],
         #[cfg(feature = "engine-nix")]
         Language::Nix => poly_engines_nix::engines_for(lang),
         #[cfg(feature = "engine-graphql")]
         Language::GraphQl => poly_engines_misc::engines_for(lang),
         #[cfg(feature = "engine-hcl")]
         Language::Hcl => poly_engines_misc::engines_for(lang),
-        #[cfg(feature = "engine-web")]
-        Language::Html
-        | Language::Vue
-        | Language::Svelte
-        | Language::Astro
-        | Language::Angular
-        | Language::Jinja
-        | Language::Vento
-        | Language::Mustache
-        | Language::Xml => vec![Box::new(MarkupFmtEngine)],
         #[cfg(feature = "engine-php")]
         Language::Php => poly_engines_php::engines_for(lang),
         #[cfg(feature = "engine-dockerfile")]
@@ -235,11 +191,11 @@ pub(crate) fn all_engine_names() -> std::collections::BTreeSet<&'static str> {
 /// (`format == true`) phase.
 ///
 /// Walks [`all_languages`] through [`engines_for`], so it answers what the planner would do, with
-/// the same feature gating: a compiled-out engine family yields an empty list. Cross-cutting
-/// engines are registered for every language and say so here. Used by `poly migrate` to hoist a
+/// the same feature gating; an engine none of whose family is linked is answered from the compiled
+/// component index instead. Cross-cutting engines are registered for every language and say so here. Used by `poly migrate` to hoist a
 /// per-language option to engine level only when every served language carries it.
 pub fn engine_languages(engine: &str, format: bool) -> Vec<String> {
-    all_languages()
+    let linked: Vec<String> = all_languages()
         .iter()
         .filter(|language| {
             engines_for(language).iter().any(|candidate| {
@@ -247,6 +203,27 @@ pub fn engine_languages(engine: &str, format: bool) -> Vec<String> {
                 candidate.name() == engine && if format { capabilities.format } else { capabilities.lint }
             })
         })
+        .map(|language| language.id().to_string())
+        .collect();
+    if !linked.is_empty() {
+        return linked;
+    }
+    // An engine this binary does not link (its family is a component) is answered from the compiled
+    // component index, so what `poly migrate` hoists does not depend on which families are linked.
+    let served: std::collections::BTreeSet<&str> = poly_component_index::index()
+        .engine_descs(engine)
+        .filter(|desc| {
+            if format {
+                desc.capabilities.format
+            } else {
+                desc.capabilities.lint
+            }
+        })
+        .flat_map(|desc| desc.languages.iter().map(String::as_str))
+        .collect();
+    all_languages()
+        .iter()
+        .filter(|language| served.contains(language.id()))
         .map(|language| language.id().to_string())
         .collect()
 }

@@ -19,11 +19,14 @@
 //!
 //! The registry, runner, config, cache and report code, the tree-sitter generic tier and the
 //! catalog / native-toolchain tiers are always compiled. Each heavy in-process engine family is
-//! behind an `engine-*` feature (`engine-web`, `engine-python`, `engine-php`, `engine-sql`,
+//! behind an `engine-*` feature (`engine-python`, `engine-php`, `engine-sql`,
 //! `engine-nix`, `engine-typos`, `engine-quality`, `engine-astgrep`,
 //! `engine-uncomment`, `engine-dockerfile`, `engine-dotenv`, `engine-ini`, `engine-hcl`,
 //! `engine-graphql`); `all-engines` (the default) enables all of them. A language whose engine is
-//! compiled out is served by the tree-sitter generic tier.
+//! compiled out is served by the tree-sitter generic tier. The web, biome and ruby families have no
+//! feature here: their upstream crates are git pins that live in the `components/` workspace, and a
+//! core build reaches them as downloadable components (the bundled binary supplies them through
+//! [`register_engine_provider`]).
 //!
 //! [`lint`] and [`format()`] return only the per-file results and **drop** the
 //! per-file failures the run recorded, so a file an engine failed on is simply

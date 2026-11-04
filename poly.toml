@@ -34,6 +34,7 @@ exclude = [
   "commands/**",
   "agents/**",
   "crates/*/tests/fixtures/**",
+  "components/crates/*/tests/fixtures/**",
   "crates/poly-engines-typos/tests/typos.rs",
   "crates/conformance/corpus/**",
   "crates/conformance/golden/**",

@@ -68,6 +68,23 @@ targets = [
   "x86_64-pc-windows-msvc",
 ]
 
+# The web family (oxc, taplo, markup_fmt, malva, rumdl, adrlint, yaml) depends on the git-pinned oxc
+# crates, so its family crate also lives in `components/`; alef generates and builds the producer there
+# (`alef generate` creates `components/crates/poly-engines-web-component`).
+[[crates.components]]
+name = "web"
+provides = [{ contract = "poly", implementation = "poly_engines_web::WebComponent" }]
+source_manifest = "components/crates/poly-engines-web/Cargo.toml"
+producer_dir = "components/crates/poly-engines-web-component"
+default_features = false
+targets = [
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+  "x86_64-pc-windows-msvc",
+]
+
 # The MCP server as a frontend component: poly-mcp (rmcp, tokio) lives here instead of in the core
 # binary. It reaches the engines through the host services `poly mcp` registers.
 [[crates.components]]

@@ -2,16 +2,14 @@
 //! [`crate::engine::Engine`]. New backends are added here and wired into the
 //! crate-private registry that routes each language to its backend(s). The python, php, sql, nix, typos,
 //! astgrep, uncomment and misc (dockerfile, dotenv, hcl, graphql) families live in their own
-//! `poly-engines-*` crates and are re-exported here at their old paths.
+//! `poly-engines-*` crates and are re-exported here at their old paths. The web (oxc, taplo, markup_fmt,
+//! malva, rumdl, adrlint, yaml) and ruby families depend on git-pinned crates, so they live in the
+//! separate `components/` workspace and reach the registry through [`crate::register_engine_provider`].
 
-#[cfg(feature = "engine-web")]
-pub mod adrlint;
 #[cfg(feature = "engine-astgrep")]
 pub use poly_engines_astgrep as astgrep;
 pub mod catalog_tool;
 pub mod config_keys;
-#[cfg(feature = "engine-web")]
-mod core_options;
 pub mod css_hacks;
 #[cfg(feature = "engine-dockerfile")]
 pub use poly_engines_misc::dockerfile;
@@ -35,19 +33,9 @@ pub mod ini;
 pub mod line_index;
 #[cfg(feature = "engine-php")]
 pub use poly_engines_php::mago;
-#[cfg(feature = "engine-web")]
-pub mod malva;
-#[cfg(feature = "engine-web")]
-mod markdown_embed;
-#[cfg(feature = "engine-web")]
-mod markdown_fmt;
-#[cfg(feature = "engine-web")]
-pub mod markup_fmt;
 pub mod native_tool;
 #[cfg(feature = "engine-nix")]
 pub use poly_engines_nix::nixfmt;
-#[cfg(feature = "engine-web")]
-pub mod oxc;
 #[cfg(feature = "engine-quality")]
 pub mod quality;
 #[cfg(feature = "engine-python")]
@@ -55,17 +43,11 @@ pub use poly_engines_python::ruff;
 #[cfg(feature = "engine-python")]
 pub use poly_engines_python::ty;
 pub mod rule_config;
-#[cfg(feature = "engine-web")]
-pub mod rumdl;
 #[cfg(feature = "engine-sql")]
 pub use poly_engines_sql::sqruff;
-#[cfg(feature = "engine-web")]
-pub mod taplo;
 pub mod template;
 pub mod treesitter;
 #[cfg(feature = "engine-typos")]
 pub use poly_engines_typos::typos;
 #[cfg(feature = "engine-uncomment")]
 pub use poly_engines_uncomment::uncomment;
-#[cfg(feature = "engine-web")]
-pub mod yaml;

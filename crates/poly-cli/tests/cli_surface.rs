@@ -184,13 +184,21 @@ fn on_missing_is_accepted_and_validated() {
 #[test]
 fn set_overrides_poly_toml_for_one_run() {
     let dir = repo();
-    std::fs::write(dir.path().join("poly.toml"), "[discovery]\nexclude = [\"ok.py\"]\n").expect("write poly.toml");
+    // The config lives outside the walked tree: a `poly.toml` inside it would be a walked TOML file,
+    // which the `web` component lints and this core binary has no lock to fetch it with.
+    let config_dir = tempfile::tempdir().expect("config dir");
+    let config = config_dir.path().join("poly.toml");
+    std::fs::write(&config, "[discovery]\nexclude = [\"ok.py\"]\n").expect("write poly.toml");
+    let config = config.to_str().expect("utf8 path");
     std::fs::write(dir.path().join("ok.py"), "x   =    1\n").expect("write ok.py");
 
-    let excluded = poly(dir.path(), &["fmt", "."]);
+    let excluded = poly(dir.path(), &["fmt", "--config", config, "."]);
     assert_eq!(excluded.status.code(), Some(0), "the config excludes the only file");
 
-    let included = poly(dir.path(), &["fmt", "--set", "discovery.exclude=[]", "."]);
+    let included = poly(
+        dir.path(),
+        &["fmt", "--config", config, "--set", "discovery.exclude=[]", "."],
+    );
     assert_eq!(
         included.status.code(),
         Some(1),

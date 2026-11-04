@@ -22,7 +22,7 @@ published**. That includes ruff, which moved off its git pin on 2026-08-29: `ruf
 "=0.17.3"` and `ruff_db` / `ruff_formatter` / `ruff_python_ast` / `ruff_python_formatter` /
 `ruff_python_semantic` / `ruff_text_size` = `"=0.0.20"`. The `=` is deliberate — these are unsemvered internals, and an
 exact pin preserves the property the git `rev` had. The only remaining **pinned git `rev`** deps
-are **oxc**, **biome**, and **rubyfmt** (the last in the separate `components/` workspace), each for a reason recorded in ADR 0003's 2026-08-29
+are **oxc**, **biome**, and **rubyfmt** (oxc and rubyfmt in the separate `components/` workspace), each for a reason recorded in ADR 0003's 2026-08-29
 amendment: four of oxc's crates are `publish = false` and a partial migration is a hard compile
 error (a registry `SourceType` will not typecheck against the git `oxc_formatter`); biome's
 published crates ship 2024 code under today's version numbers; the crates.io `rubyfmt` is a

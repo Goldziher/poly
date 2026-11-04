@@ -13,7 +13,7 @@ use poly_engine_api::rule_config::RuleSelection;
 
 /// Convert a byte offset to 1-based `(line, col)` in a UTF-8 source string.
 ///
-/// Mirrors the identical helper in `oxc.rs`; centralised here so both biome
+/// Mirrors the identical helper in `poly-engines-web`'s oxc backend; centralised here so both biome
 /// engine backends share one copy rather than duplicating the logic.
 pub(crate) fn offset_to_line_col(src: &str, offset: usize) -> (u32, u32) {
     let safe_offset = offset.min(src.len());

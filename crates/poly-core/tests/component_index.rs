@@ -25,13 +25,6 @@ use Placement::{Component as In, Core};
 /// Engine name to placement (docs/size-baseline.md "Decisions"). An engine missing here fails the
 /// test, so a new engine must be placed deliberately.
 const PLACEMENT: &[(&str, Placement)] = &[
-    ("oxc", In("web")),
-    ("taplo", In("web")),
-    ("rumdl", In("web")),
-    ("adrlint", In("web")),
-    ("yaml", In("web")),
-    ("malva", In("web")),
-    ("markup_fmt", In("web")),
     ("ruff", In("python")),
     ("python-types", In("python")),
     ("sqruff", In("sql")),
@@ -63,9 +56,11 @@ const PLACEMENT: &[(&str, Placement)] = &[
 
 /// Components whose engines `poly-core` cannot link (their upstream crates are git pins that live in
 /// the `components/` workspace), so their index entries are carried over from the committed index.
-/// Each family crate's own test (`poly-engines-ruby`'s `tests/rubyfmt.rs`, `poly-engines-biome`'s
-/// `tests/index.rs`) checks its entry against the real engines.
-const EXTERNAL_COMPONENTS: &[&str] = &["biome", "ruby"];
+/// The family crates' own tests (`components/crates/poly-engines-ruby/tests/rubyfmt.rs`,
+/// `components/crates/poly-engines-biome/tests/index.rs`,
+/// `components/crates/poly-engines-web/tests/component_index.rs`) check the entries against the real
+/// engines.
+const EXTERNAL_COMPONENTS: &[&str] = &["biome", "ruby", "web"];
 
 /// Components in index order: name, kind, opt-in, cargo features.
 const COMPONENTS: &[(&str, ComponentKind, bool, &[&str])] = &[

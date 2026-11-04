@@ -59,8 +59,8 @@ Project-specific conventions baked into context so they ship into every AI tool'
   not semver. A caret range on such a crate lets `cargo update` walk into unannounced breakage
   between releases — exactly the failure the git `rev` used to prevent. An exact pin keeps that
   property. (Ordinary, publicly-semvered dependencies take normal ranges.)
-- **Three git pins remain — `oxc`, `biome`, `rubyfmt`** (`rubyfmt` lives in the separate `components/`
-  workspace, whose `deny.toml` carries its `allow-git`; the root `deny.toml` lists the rest). Each is *unpublishable*, not merely unpublished: four of the oxc crates poly uses carry
+- **Three git pins remain — `oxc`, `biome`, `rubyfmt`** (`oxc` and `rubyfmt` live in the separate
+  `components/` workspace, whose `deny.toml` carries their `allow-git`; the root `deny.toml` lists the rest). Each is *unpublishable*, not merely unpublished: four of the oxc crates poly uses carry
   `publish = false`, and a partial migration is a hard compile error because cargo treats a
   registry crate and a git crate as distinct instances; biome's published `biome_analyze 0.5.7`
   is a 2024 tarball under the same version number as our 2026 pin; crates.io `rubyfmt` is a

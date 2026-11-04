@@ -1,0 +1,12 @@
+---
+source: components/crates/poly-engines-web/tests/oxc_fixtures.rs
+expression: summary
+---
+[
+    (
+        Some(
+            "no-debugger",
+        ),
+        Warning,
+    ),
+]

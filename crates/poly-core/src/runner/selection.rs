@@ -199,7 +199,7 @@ mod tests {
                 &set(Config::default()),
                 &ComponentIndex::default(),
                 &names(&["ruff", "typos"]),
-                &names(&["oxc"])
+                &names(&["sqruff"])
             )
             .is_ok()
         );

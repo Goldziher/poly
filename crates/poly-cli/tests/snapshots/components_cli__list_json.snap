@@ -1,6 +1,5 @@
 ---
 source: crates/poly-cli/tests/components_cli.rs
-assertion_line: 70
 expression: json
 ---
 {
@@ -14,7 +13,7 @@ expression: json
     {
       "name": "web",
       "kind": "engines",
-      "state": "bundled",
+      "state": "unavailable",
       "opt_in": false,
       "engines": [
         "adrlint",
@@ -24,7 +23,8 @@ expression: json
         "rumdl",
         "taplo",
         "yaml"
-      ]
+      ],
+      "detail": "this build embeds no component lock"
     },
     {
       "name": "python",

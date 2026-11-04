@@ -11,8 +11,6 @@ use crate::language::Language;
 
 /// The `poly-core` engine features compiled into this binary.
 const LINKED_FEATURES: &[&str] = &[
-    #[cfg(feature = "engine-web")]
-    "engine-web",
     #[cfg(feature = "engine-python")]
     "engine-python",
     #[cfg(feature = "engine-php")]

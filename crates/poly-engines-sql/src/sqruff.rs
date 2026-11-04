@@ -96,7 +96,7 @@ const DEFAULT_OFF_RULES: &[(&str, &[&str])] = &[("CP02", &["CP02", "capitalisati
 ///
 /// - `layout` (`LT01`–`LT15`) — spacing, indentation, commas, operators, line
 ///   length, blank lines, file start/end. Pure whitespace; the direct analogue of
-///   rumdl's `RuleCategory::Whitespace`, which `engines/rumdl.rs` suppresses in
+///   rumdl's `RuleCategory::Whitespace`, which the web family's `rumdl.rs` suppresses in
 ///   `lint` for the same reason.
 /// - `capitalisation` (`CP01`–`CP05`) — keyword/identifier/function/literal/type
 ///   casing. `select` → `SELECT` is what every user expects a SQL formatter to

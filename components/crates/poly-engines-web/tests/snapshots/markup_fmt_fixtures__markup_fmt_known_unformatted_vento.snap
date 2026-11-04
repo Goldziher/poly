@@ -1,0 +1,10 @@
+---
+source: components/crates/poly-engines-web/tests/markup_fmt_fixtures.rs
+expression: "format_to_string(\"layout.html.vto\", Language::Vento, KNOWN_UNFORMATTED_VENTO)"
+---
+<html>
+  <body>
+    <p>{{ title }}</p>
+    <ul>{{ for item of items }}<li>{{ item }}</li>{{ /for }}</ul>
+  </body>
+</html>

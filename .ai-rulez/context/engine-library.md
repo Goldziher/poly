@@ -70,12 +70,15 @@ x-ai-rulez:
   (`nixfmt`), `typos`, `astgrep`, `uncomment` and misc (`dockerfile`, `dotenv`, `hcl`, `graphql`)
   backends now live in `crates/poly-engines-<family>` and are re-exported here at their
   old paths (`engines/mod.rs`). Most of the rest are a single `engines/<tool>.rs`; a backend that
-  outgrows the 1000-line cap becomes a directory split per concern (`oxc/`,
-  `native_tool/`, `quality/`, `treesitter/`, `catalog_tool/`; in the family crates `mago/`, `hcl/`
-  and `ruff/`, whose `ruff/` submodules sit beside `ruff.rs`):
+  outgrows the 1000-line cap becomes a directory split per concern (`native_tool/`, `quality/`,
+  `treesitter/`, `catalog_tool/`; in the family crates `mago/`, `hcl/`, `ruff/` and the web family's
+  `oxc/`, whose `ruff/` submodules sit beside `ruff.rs`). The web family (`oxc/`, `taplo.rs`,
+  `rumdl.rs`, `adrlint.rs`, `yaml.rs`, `malva.rs`, `markup_fmt.rs`, `markdown_fmt.rs`,
+  `markdown_embed.rs`, `core_options.rs`) lives in `components/crates/poly-engines-web`, outside the
+  root workspace because its oxc crates are git pins:
   - tier-1 native crate backends, registered per language in `registry.rs`: `ruff.rs` +
     `ruff/` (Python, in `poly-engines-python`; target version: `poly-engine-api`'s
-    `host_hooks/ruff_target.rs`), `oxc/` (JS/TS/JSX/TSX/JSON/JSONC), `taplo.rs` (TOML: taplo
+    `host_hooks/ruff_target.rs`), `oxc/` (JS/TS/JSX/TSX/JSON/JSONC; the web family, in `poly-engines-web`), `taplo.rs` (TOML: taplo
     lint, `oxc_formatter_toml` format unless a taplo layout key selects taplo's formatter),
     `rumdl.rs` (Markdown/MDX lint; `markdown_fmt.rs` formats through `oxc_formatter_markdown`
     with `markdown_embed.rs` dispatching fences and front matter), `adrlint.rs` (opt-in MADR rules

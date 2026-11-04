@@ -103,13 +103,29 @@ fn repo_without_workspace_phase() -> TempDir {
     dir
 }
 
-/// The same `lib.rs`, plus the config that gives the run a whole-project phase.
-/// The `poly.toml` is itself a file the per-file tier lints, which is why the
-/// counts below are two rather than one.
-fn repo_with_clippy() -> TempDir {
+/// A repo holding `lib.rs`, plus the `--config` file that gives the run a whole-project phase.
+///
+/// The config lives outside the walked tree: a `poly.toml` inside it would be a walked TOML file,
+/// which the `web` component lints, and this core binary has no lock to fetch that component with.
+/// Keeping it out also keeps the linted count at the one file under test.
+struct ClippyRepo {
+    dir: TempDir,
+    config: TempDir,
+}
+
+impl std::ops::Deref for ClippyRepo {
+    type Target = TempDir;
+
+    fn deref(&self) -> &TempDir {
+        &self.dir
+    }
+}
+
+fn repo_with_clippy() -> ClippyRepo {
     let dir = repo_without_workspace_phase();
-    write(&dir, "poly.toml", WORKSPACE_HOOKS);
-    dir
+    let config = tempfile::tempdir().expect("tempdir");
+    write(&config, "poly.toml", WORKSPACE_HOOKS);
+    ClippyRepo { dir, config }
 }
 
 /// Run `poly` with the per-file Rust tier disabled via an out-of-tree
@@ -140,6 +156,17 @@ fn poly(root: &Path, args: &[&str]) -> Output {
         .expect("run poly")
 }
 
+/// Run `poly` over a [`ClippyRepo`] with its out-of-tree config. `--config` is a per-subcommand flag,
+/// so it follows the subcommand.
+fn poly_in(repo: &ClippyRepo, args: &[&str]) -> Output {
+    let config_path = repo.config.path().join("poly.toml");
+    let config_path = config_path.to_str().expect("utf8 path").to_owned();
+    let (&subcommand, rest) = args.split_first().expect("at least a subcommand");
+    let mut full_args: Vec<&str> = vec![subcommand, "--config", &config_path];
+    full_args.extend_from_slice(rest);
+    poly(repo.dir.path(), &full_args)
+}
+
 fn combined(output: &Output) -> String {
     format!(
         "{}{}",
@@ -154,7 +181,7 @@ fn combined(output: &Output) -> String {
 #[test]
 fn a_run_that_lints_rust_in_the_whole_project_phase_does_not_call_rust_unlinted() {
     let dir = repo_with_clippy();
-    let output = poly(dir.path(), &["lint", "--no-cache", "--color", "never", "."]);
+    let output = poly_in(&dir, &["lint", "--no-cache", "--color", "never", "."]);
     let text = combined(&output);
 
     assert!(
@@ -174,13 +201,14 @@ fn a_run_that_lints_rust_in_the_whole_project_phase_does_not_call_rust_unlinted(
 #[test]
 fn a_rust_file_covered_by_the_whole_project_phase_is_counted_as_linted() {
     let dir = repo_with_clippy();
-    let output = poly(dir.path(), &["lint", "--no-cache", "--color", "never", "."]);
+    let output = poly_in(&dir, &["lint", "--no-cache", "--color", "never", "."]);
     let text = combined(&output);
 
     assert!(
-        text.starts_with("No issues found.\n  2 files linted\n"),
-        "lib.rs and poly.toml, nothing skipped, got:\n{text}"
+        text.starts_with("No issues found.\n  1 file linted\n"),
+        "lib.rs is the one linted file, got:\n{text}"
     );
+    assert!(!text.contains("skipped"), "nothing is skipped, got:\n{text}");
 }
 
 /// The same claim, machine-readable: the JSON document must not carry a skip
@@ -188,8 +216,8 @@ fn a_rust_file_covered_by_the_whole_project_phase_is_counted_as_linted() {
 #[test]
 fn json_carries_no_rust_skip_when_the_whole_project_phase_covers_it() {
     let dir = repo_with_clippy();
-    let output = poly(
-        dir.path(),
+    let output = poly_in(
+        &dir,
         &["lint", "--no-cache", "--color", "never", "--format", "json", "."],
     );
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
@@ -215,10 +243,7 @@ fn json_carries_no_rust_skip_when_the_whole_project_phase_covers_it() {
 #[test]
 fn deny_skips_passes_when_the_whole_project_phase_covers_the_language() {
     let dir = repo_with_clippy();
-    let output = poly(
-        dir.path(),
-        &["lint", "--no-cache", "--color", "never", "--deny-skips", "."],
-    );
+    let output = poly_in(&dir, &["lint", "--no-cache", "--color", "never", "--deny-skips", "."]);
 
     assert_eq!(
         output.status.code(),
@@ -233,8 +258,8 @@ fn deny_skips_passes_when_the_whole_project_phase_covers_the_language() {
 #[test]
 fn no_workspace_keeps_the_rust_skip_because_nothing_lints_rust_then() {
     let dir = repo_with_clippy();
-    let output = poly(
-        dir.path(),
+    let output = poly_in(
+        &dir,
         &["lint", "--workspace", "never", "--no-cache", "--color", "never", "."],
     );
     let text = combined(&output);
@@ -244,8 +269,8 @@ fn no_workspace_keeps_the_rust_skip_because_nothing_lints_rust_then() {
         concat!(
             "  skipped ./lib.rs: no lint rules for Rust\n",
             "\n",
-            "No issues found.\n",
-            "  1 file linted\n",
+            "Nothing was linted.\n",
+            "  0 files linted\n",
             "  1 file skipped: no lint rules for Rust\n",
         )
     );
@@ -277,8 +302,8 @@ fn a_repo_with_no_hooks_config_keeps_the_rust_skip() {
 #[test]
 fn deny_skips_still_fires_on_rust_without_the_whole_project_phase() {
     let dir = repo_with_clippy();
-    let output = poly(
-        dir.path(),
+    let output = poly_in(
+        &dir,
         &[
             "lint",
             "--workspace",
@@ -307,11 +332,11 @@ fn a_language_nothing_lints_keeps_its_skip_beside_a_covered_one() {
     let dir = repo_with_clippy();
     write(&dir, "a.zig", "pub fn main() void {}\n");
 
-    let output = poly(dir.path(), &["lint", "--no-cache", "--color", "never", "."]);
+    let output = poly_in(&dir, &["lint", "--no-cache", "--color", "never", "."]);
     let text = combined(&output);
 
     assert!(
-        text.contains("No issues found.\n  2 files linted\n  1 file skipped: no lint rules for Zig"),
+        text.contains("No issues found.\n  1 file linted\n  1 file skipped: no lint rules for Zig"),
         "Rust is covered by the phase, Zig is covered by nothing, got:\n{text}"
     );
     assert!(
@@ -328,10 +353,7 @@ fn deny_skips_fires_on_zig_while_the_whole_project_phase_covers_rust() {
     let dir = repo_with_clippy();
     write(&dir, "a.zig", "pub fn main() void {}\n");
 
-    let output = poly(
-        dir.path(),
-        &["lint", "--no-cache", "--color", "never", "--deny-skips", "."],
-    );
+    let output = poly_in(&dir, &["lint", "--no-cache", "--color", "never", "--deny-skips", "."]);
     let text = combined(&output);
 
     assert_eq!(output.status.code(), Some(2), "got:\n{text}");

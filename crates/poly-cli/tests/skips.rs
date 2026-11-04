@@ -34,8 +34,8 @@ fn repo() -> TempDir {
     write("App.csproj", CSPROJ);
     write("a.py", "x = 1\n");
     write("b.py", "y = 2\n");
-    write("c.json", "{ \"a\": 1 }\n");
-    write("d.md", "# Title\n");
+    write("c.py", "z = 3\n");
+    write("d.py", "w = 4\n");
     dir
 }
 
@@ -107,8 +107,8 @@ fn five_paths_four_linted_names_the_fifth() {
             "App.csproj",
             "a.py",
             "b.py",
-            "c.json",
-            "d.md",
+            "c.py",
+            "d.py",
         ],
     );
     let text = combined(&output);
@@ -471,25 +471,6 @@ fn explicit_paths_honor_excludes_unless_the_caller_overrides_them() {
         std::fs::read_to_string(dir.path().join("a.py")).expect("read included file"),
         original
     );
-}
-
-#[test]
-fn bare_jinja_template_is_preserved_and_reports_how_to_opt_in() {
-    let dir = repo();
-    let template = dir.path().join("service.jinja");
-    let content = "{% if docs %}\n/// <summary>\n/// {{ docs }}\n/// </summary>\n{% endif %}\n";
-    std::fs::write(&template, content).expect("write template");
-
-    let output = poly(dir.path(), &["fmt", "--fix", "--no-cache", "service.jinja"]);
-    let text = combined(&output);
-
-    assert_eq!(output.status.code(), Some(0), "got:\n{text}");
-    assert!(text.contains("ambiguous template target"), "got:\n{text}");
-    assert!(
-        text.contains("add .html or .xml before the template extension"),
-        "got:\n{text}"
-    );
-    assert_eq!(std::fs::read_to_string(template).expect("read template"), content);
 }
 
 fn multiroot_repo() -> (TempDir, std::path::PathBuf) {

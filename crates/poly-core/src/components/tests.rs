@@ -175,7 +175,7 @@ fn needed_is_the_union_over_pairs_in_index_order() {
 /// Families whose engines live outside `poly-core`: a build links them only through an engine
 /// provider that declares the feature with `register_linked_features`.
 #[cfg(feature = "all-engines")]
-const EXTERNAL_FAMILIES: &[&str] = &["engine-biome", "engine-ruby"];
+const EXTERNAL_FAMILIES: &[&str] = &["engine-biome", "engine-ruby", "engine-web"];
 
 #[cfg(feature = "all-engines")]
 #[test]
@@ -198,7 +198,7 @@ fn the_committed_index_needs_only_the_external_families_in_the_core_build() {
             &pairs,
             &super::feature_is_linked
         )),
-        ["biome", "ruby"]
+        ["web", "biome", "ruby"]
     );
 }
 

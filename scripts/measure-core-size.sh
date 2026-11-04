@@ -21,7 +21,7 @@ FEATURES=("${@:2}")
   poly-core/engine-quality poly-core/engine-astgrep poly-core/engine-uncomment poly-core/engine-typos
   poly-core/engine-dockerfile poly-core/engine-dotenv poly-core/engine-ini poly-core/engine-hcl
   poly-core/engine-graphql bundled-mcp
-  poly-core/engine-web poly-core/engine-python poly-core/engine-php poly-core/engine-sql
+  poly-core/engine-python poly-core/engine-php poly-core/engine-sql
   poly-core/engine-nix
 )
 

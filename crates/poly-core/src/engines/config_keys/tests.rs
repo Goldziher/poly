@@ -301,42 +301,6 @@ fn an_unparsable_config_is_left_to_the_config_loader() {
 }
 
 #[test]
-fn keys_the_upstream_formatter_type_recognizes_are_accepted() {
-    // malva's `FormatOptions` flattens its layout/language sub-structs, so the
-    // recognised set is derived from the type rather than copied from it.
-    let found = warnings(
-        "[fmt.css.malva]\nprint_width = 100\nprintWidth = 100\nhex_case = \"lower\"\nsingle_line_top_level_declarations = true\n",
-    );
-    assert!(found.is_empty(), "unexpected warnings: {:?}", titles(&found));
-
-    let misspelled = warnings("[fmt.css.malva]\nhex_cased = \"lower\"\n");
-    assert_eq!(misspelled.len(), 1, "{:?}", titles(&misspelled));
-}
-
-#[test]
-fn an_upstream_dotted_option_is_accepted_in_the_one_form_that_works() {
-    // `attr_selector.quotes` is a single serde field name upstream, so only
-    // TOML's quoted-key form reaches it...
-    let quoted = warnings("[fmt.css.malva]\n\"attr_selector.quotes\" = \"always double\"\n");
-    assert!(quoted.is_empty(), "unexpected warnings: {:?}", titles(&quoted));
-
-    // ...while the sub-table form produces a key named `attr_selector`, which
-    // malva ignores. That is dead config, and saying so is the whole point.
-    let sub_table = warnings("[fmt.css.malva.attr_selector]\nquotes = \"always double\"\n");
-    assert_eq!(sub_table.len(), 1, "{:?}", titles(&sub_table));
-}
-
-#[test]
-fn an_optional_upstream_field_is_not_mistaken_for_an_unknown_key() {
-    // These four default to `None` and vanish from a serialized default, which
-    // is why the recognised set is probed by type rather than by serialization.
-    let found = warnings(
-        "[fmt.css.malva]\nhex_color_length = \"short\"\ndeclaration_order = \"alphabetical\"\nsingle_line_block_threshold = 1\nkeyframe_selector_notation = \"percentage\"\n",
-    );
-    assert!(found.is_empty(), "unexpected warnings: {:?}", titles(&found));
-}
-
-#[test]
 fn the_mago_format_settings_are_derived_from_the_upstream_type() {
     // mago's `RawFormatSettings` is kebab-case and ~96 fields wide; a copied
     // list would drift on the next upgrade.
@@ -438,49 +402,6 @@ fn a_cross_cutting_key_given_an_unusable_value_is_reported() {
     );
 }
 
-#[test]
-fn a_key_only_an_upstream_serde_type_recognizes_is_not_type_checked() {
-    // The false-positive boundary. malva's own `FormatOptions` decides what
-    // `print_width` accepts; poly declares no type for it and so cannot name
-    // one, and a guess would be exactly the untrustworthy warning this module
-    // refuses to emit.
-    let found = warnings("[fmt.css.malva]\nprint_width = \"wide\"\n");
-    assert!(found.is_empty(), "unexpected warnings: {:?}", titles(&found));
-}
-
-#[test]
-fn a_declared_key_an_upstream_type_also_recognizes_defers_to_the_upstream_type() {
-    // markup_fmt declares the oxc formatter keys (Astro `<script>` blocks are
-    // formatted from *its* table) while also deriving keys from its own
-    // `FormatOptions`. Where both could answer, the upstream type wins: it is
-    // the one that actually parses the table.
-    let engine = registry_engines()
-        .into_iter()
-        .find(|engine| engine.name() == "markup_fmt")
-        .expect("markup_fmt is registered");
-    let keys = engine.option_keys(OptionTable::Format);
-    for (key, _) in keys.declared_keys() {
-        let mut table = toml::Table::new();
-        // A datetime is the one value no option in either schema accepts, so a
-        // `None` here means the declaration alone decided — which is what this
-        // test wants to observe rather than assert away.
-        table.insert((*key).to_string(), toml::Value::Boolean(true));
-        let reported = keys.value_problem(key, &table[*key], true).is_some();
-        let declared_accepts_boolean = keys
-            .expected_type(key, true)
-            .is_none_or(|declared| declared.accepts(&table[*key]));
-        let recognized_upstream = keys.accepts(key, &table, true);
-        assert!(
-            recognized_upstream,
-            "`{key}` must stay an accepted key of `[fmt.html.markup_fmt]`"
-        );
-        assert_eq!(
-            reported, !declared_accepts_boolean,
-            "`{key}`: a boolean is reported exactly when the declaration says the key is not boolean"
-        );
-    }
-}
-
 // ------------------------------------------------- honesty of declarations
 
 /// Where each backend's option reads live, so the two drift tests below can
@@ -510,22 +431,6 @@ const ENGINE_SOURCES: &[(&str, &[&str])] = &[
         ],
     ),
     (
-        "oxc",
-        &[
-            "oxc/mod.rs",
-            "oxc/config.rs",
-            "oxc/lint.rs",
-            "oxc/format.rs",
-            "oxc/plugins.rs",
-            "oxc/sort_imports.rs",
-            "oxc/native_lint.rs",
-            "oxc/external.rs",
-            "core_options.rs",
-            // The `oxlintrc` read is a host hook shared with the component host.
-            "../../../poly-engine-api/src/host_hooks/oxlintrc.rs",
-        ],
-    ),
-    (
         "mago",
         &[
             "../../../poly-engines-php/src/mago/mod.rs",
@@ -535,26 +440,7 @@ const ENGINE_SOURCES: &[(&str, &[&str])] = &[
         ],
     ),
     ("sqruff", &["../../../poly-engines-sql/src/sqruff.rs"]),
-    (
-        "rumdl",
-        &["rumdl.rs", "markdown_fmt.rs", "markdown_embed.rs", "core_options.rs"],
-    ),
-    ("taplo", &["taplo.rs", "core_options.rs"]),
-    ("yaml", &["yaml.rs", "core_options.rs"]),
-    ("malva", &["malva.rs", "core_options.rs"]),
-    // oxc/config.rs: markup_fmt hands *its* table to the oxc formatter for
-    // Astro `<script>` blocks, so those keys are read from this table too.
-    (
-        "markup_fmt",
-        &[
-            "markup_fmt.rs",
-            "oxc/config.rs",
-            "oxc/sort_imports.rs",
-            "core_options.rs",
-        ],
-    ),
     ("graphql", &["../../../poly-engines-misc/src/graphql.rs"]),
-    ("adrlint", &["adrlint.rs"]),
     ("alejandra", &["../../../poly-engines-nix/src/nixfmt.rs"]),
     ("hcl", &["../../../poly-engines-misc/src/hcl/mod.rs"]),
     ("dockerfile", &["../../../poly-engines-misc/src/dockerfile.rs"]),
@@ -960,22 +846,6 @@ fn source_file(path: &str, language: Language, content: &str) -> SourceFile {
 }
 
 #[test]
-fn a_declared_taplo_key_changes_the_formatted_output() {
-    let src = source_file("a.toml", Language::Toml, "b = 1\naaa = 2\n");
-    let engine = crate::engines::taplo::TaploEngine::new();
-    let plain = engine_config("fmt", &Language::Toml, "taplo", "[toml.taplo]\n");
-    let sorted = engine_config("fmt", &Language::Toml, "taplo", "[toml.taplo]\nreorder_keys = true\n");
-    assert!(matches!(
-        engine.format(&src, &plain).expect("fmt"),
-        FormatOutput::Unchanged
-    ));
-    assert!(
-        matches!(engine.format(&src, &sorted).expect("fmt"), FormatOutput::Formatted(text) if text.starts_with("aaa")),
-        "`reorder_keys` is declared but does nothing"
-    );
-}
-
-#[test]
 fn a_declared_ruff_key_changes_the_formatted_output() {
     let src = source_file(
         "a.py",
@@ -1014,27 +884,6 @@ fn a_declared_quality_key_changes_the_reported_diagnostics() {
     assert!(
         !engine.lint(&src, &strict).expect("lint").is_empty(),
         "`function_too_long_lines` is declared but does nothing"
-    );
-}
-
-#[test]
-fn a_declared_oxc_key_changes_the_formatted_output() {
-    let src = source_file("a.js", Language::JavaScript, "const a = \"x\";\n");
-    let engine = crate::engines::oxc::OxcEngine;
-    let double = engine_config("fmt", &Language::JavaScript, "oxc", "[javascript.oxc]\n");
-    let single = engine_config(
-        "fmt",
-        &Language::JavaScript,
-        "oxc",
-        "[javascript.oxc]\nquote_style = \"single\"\n",
-    );
-    assert!(matches!(
-        engine.format(&src, &double).expect("fmt"),
-        FormatOutput::Unchanged
-    ));
-    assert!(
-        matches!(engine.format(&src, &single).expect("fmt"), FormatOutput::Formatted(text) if text.contains('\'')),
-        "`quote_style` is declared but does nothing"
     );
 }
 

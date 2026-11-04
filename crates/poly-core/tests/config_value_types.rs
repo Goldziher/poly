@@ -26,7 +26,9 @@ fn options() -> RunOptions {
         config_resolver: None,
         externally_linted_languages: Vec::new(),
         only: Vec::new(),
-        skip: Vec::new(),
+        // The taplo engine lives in the `web` component; skipping it keeps the run from planning (and
+        // needing) that component, since this test's subject is the core `polyconfig` key check.
+        skip: vec!["taplo".to_owned()],
         ..RunOptions::default()
     }
 }
