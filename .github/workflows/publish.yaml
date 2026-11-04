@@ -599,9 +599,10 @@ jobs:
           # static-musl — and ruby-prism-sys's bindgen build script must be
           # dynamically linked (-crt-static off) to dlopen libclang. Building
           # host-native applies the flag everywhere. Then place the binary at the
-          # triple path the shared packaging step expects. The musl build stays fully bundled
-          # (default features link every engine family) and is given no POLY_COMPONENT_LOCK_FILE,
-          # so it embeds no lock and downloads nothing.
+          # triple path the shared packaging step expects. The musl build is the poly-bundled crate
+          # of the components/ workspace (every engine statically linked, including the git-pinned
+          # oxc, biome and rubyfmt ones) and is given no POLY_COMPONENT_LOCK_FILE, so it embeds no
+          # lock and downloads nothing. CARGO_TARGET_DIR puts its output at target/release/poly.
           docker run --rm -v "$PWD":/work -w /work \
             -e CARGO_TARGET_DIR=/work/target \
             -e LIBCLANG_PATH=/usr/lib \
@@ -610,7 +611,7 @@ jobs:
             rust:alpine sh -c '
               set -e
               apk add --no-cache build-base musl-dev clang clang-dev llvm-dev pkgconf git perl
-              cargo build --release
+              cargo build --release --locked --manifest-path components/Cargo.toml -p poly-bundled
               mkdir -p "target/${{ matrix.triple }}/release"
               cp target/release/poly "target/${{ matrix.triple }}/release/poly"
               strip "target/${{ matrix.triple }}/release/poly"

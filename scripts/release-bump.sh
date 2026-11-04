@@ -9,8 +9,9 @@
 #   pip-package/polylint/__init__.py      __version__
 #   plugin/.ai-rulez/config.plugins.toml                 [plugin] version
 #   .claude-plugin/*.json                 generated — asserted to match
-#   components                            no surface of their own: alef.toml reads the version from Cargo.toml
-#                                         (version_from), and the component archive names and lock follow it
+#   components/Cargo.toml                 [workspace.package] version (poly-bundled and the poly-engines-* crates
+#                                         inherit it); components/Cargo.lock is refreshed with the root lock.
+#                                         alef.toml reads the component version from Cargo.toml (version_from)
 
 set -euo pipefail
 
@@ -34,10 +35,20 @@ if ! grep -qxF "version = \"$VERSION\"" Cargo.toml; then
   exit 1
 fi
 
+echo "→ components/Cargo.toml [workspace.package] → $VERSION"
+sed -i.bak -E "s/^version = \"[^\"]+\"$/version = \"$VERSION\"/" components/Cargo.toml
+rm components/Cargo.toml.bak
+if ! grep -qxF "version = \"$VERSION\"" components/Cargo.toml; then
+  echo "error: components/Cargo.toml [workspace.package] version bump did not apply" >&2
+  exit 1
+fi
+
 # Refresh the workspace lockfile so the tagged build is reproducible. Optional here to keep
 # the bump offline-friendly — drop the guard to force it.
 if [[ "${SKIP_CARGO_UPDATE:-0}" != "1" ]]; then
   cargo update --workspace >/dev/null 2>&1 || echo "warn: cargo update --workspace skipped/failed (offline?)"
+  cargo update --workspace --manifest-path components/Cargo.toml >/dev/null 2>&1 ||
+    echo "warn: cargo update --workspace (components) skipped/failed (offline?)"
 fi
 
 echo "→ npm-package → $VERSION"
