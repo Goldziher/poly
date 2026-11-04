@@ -27,8 +27,6 @@ use crate::engines::native_tool::NativeToolEngine;
 use crate::engines::oxc::OxcEngine;
 #[cfg(feature = "engine-quality")]
 use crate::engines::quality::QualityEngine;
-#[cfg(feature = "engine-ruby")]
-use crate::engines::rubyfmt::RubyfmtEngine;
 #[cfg(feature = "engine-web")]
 use crate::engines::rumdl::RumdlEngine;
 #[cfg(feature = "engine-web")]
@@ -168,8 +166,6 @@ pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
         Language::Css | Language::Scss => vec![Box::new(BiomeCssEngine)],
         #[cfg(feature = "engine-nix")]
         Language::Nix => poly_engines_nix::engines_for(lang),
-        #[cfg(feature = "engine-ruby")]
-        Language::Ruby => vec![Box::new(RubyfmtEngine)],
         #[cfg(all(feature = "engine-graphql", feature = "engine-biome"))]
         Language::GraphQl => {
             let mut engines = poly_engines_misc::engines_for(lang);

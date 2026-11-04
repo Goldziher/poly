@@ -33,16 +33,6 @@ expression = "MIT"
 path = "../../LICENSE"
 hash = 0x3B9B906C
 
-# MIT LICENSE file. `clarify` provides the XxHash32 of the LICENSE file so
-[[licenses.clarify]]
-name = "rubyfmt"
-expression = "MIT"
-
-[[licenses.clarify.license-files]]
-# The rubyfmt package root is `librubyfmt/`; the LICENSE file lives in the
-path = "../LICENSE"
-hash = 0x3634FEBB
-
 [bans]
 multiple-versions = "allow"
 wildcards = "allow"
@@ -65,8 +55,4 @@ ignore = [
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
-allow-git = [
-  "https://github.com/fables-tales/rubyfmt",
-  "https://github.com/oxc-project/oxc",
-  "https://github.com/biomejs/biome",
-]
+allow-git = ["https://github.com/oxc-project/oxc", "https://github.com/biomejs/biome"]

@@ -1,0 +1,24 @@
+[package]
+name = "poly-bundled"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+publish = false
+description = "The full `poly` binary: poly-cli plus the engine families that live in this workspace."
+
+[[bin]]
+name = "poly"
+path = "src/main.rs"
+
+[dependencies]
+poly-cli.workspace = true
+poly-core.workspace = true
+poly-engines-ruby.workspace = true
+
+[lints.rust]
+unsafe_code = "forbid"

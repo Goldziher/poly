@@ -71,7 +71,7 @@ Size profile (fat LTO, `opt-level = "z"`, one codegen unit, stripped).
 | `engine-dotenv` | dotenv | 252,528 |
 | `engine-graphql` | pretty_graphql | 565,128 |
 | `engine-nix` | alejandra | 271,048 |
-| `engine-ruby` | rubyfmt | 448,704 |
+| `engine-ruby` (now built from `components/`) | rubyfmt | 448,704 |
 | `engine-php` | mago | 2,729,016 |
 | `engine-biome` | biome CSS/GraphQL lint | 5,480,160 |
 | `engine-python` | ruff | 6,150,312 |

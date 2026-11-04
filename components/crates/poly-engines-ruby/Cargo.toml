@@ -22,8 +22,11 @@ poly-engines.workspace = true
 rubyfmt.workspace = true
 
 [dev-dependencies]
+insta.workspace = true
 poly-component-host.workspace = true
+poly-component-index.workspace = true
 poly-component-protocol.workspace = true
+serde_json.workspace = true
 tempfile.workspace = true
 toml.workspace = true
 

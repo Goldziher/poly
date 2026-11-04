@@ -42,7 +42,6 @@ all-engines = [
   "engine-php",
   "engine-sql",
   "engine-biome",
-  "engine-ruby",
   "engine-nix",
   "engine-typos",
   "engine-quality",
@@ -92,7 +91,6 @@ engine-biome = [
   "dep:biome_languages",
   "dep:biome_rowan",
 ]
-engine-ruby = ["dep:rubyfmt"]
 engine-nix = ["dep:poly-engines-nix"]
 engine-typos = ["dep:poly-engines-typos"]
 # The poly-native structural quality rules (no third-party engine dependency).
@@ -154,7 +152,6 @@ poly-engines-uncomment = { workspace = true, optional = true }
 poly-grammar.workspace = true
 rayon.workspace = true
 regex.workspace = true
-rubyfmt = { workspace = true, optional = true }
 rumdl = { workspace = true, optional = true }
 rust-ini = { workspace = true, optional = true }
 rustc-hash.workspace = true

@@ -176,20 +176,19 @@ fn needed_is_the_union_over_pairs_in_index_order() {
 #[test]
 fn the_committed_index_needs_nothing_in_the_bundled_build() {
     let committed = poly_component_index::index();
+    // Families linked by a bundled binary through an engine provider, not a `poly-core` feature.
+    let external: &[&str] = &["engine-ruby"];
     for component in committed.components.iter().filter(|c| c.kind == ComponentKind::Engines) {
-        for feature in &component.features {
+        for feature in component.features.iter().filter(|f| !external.contains(&f.as_str())) {
             assert!(super::feature_is_linked(feature), "{feature} is not recognised");
         }
     }
     let pairs: Vec<(usize, Language)> = crate::registry::all_languages().into_iter().map(|l| (0, l)).collect();
     let config = Config::default();
     assert_eq!(
-        names(needed_components(
-            committed,
-            &[&config],
-            &pairs,
-            &super::feature_is_linked
-        )),
+        names(needed_components(committed, &[&config], &pairs, &|feature| external
+            .contains(&feature)
+            || super::feature_is_linked(feature))),
         Vec::<&str>::new()
     );
 }

@@ -17,11 +17,17 @@ documentation = "https://github.com/Goldziher/poly"
 
 [workspace.dependencies]
 anyhow = "1"
+insta = "1"
+poly-cli = { path = "../crates/poly-cli" }
 poly-component-host = { path = "../crates/poly-component-host" }
+poly-component-index = { path = "../crates/poly-component-index" }
 poly-component-protocol = { path = "../crates/poly-component-protocol" }
+poly-core = { path = "../crates/poly-core" }
 poly-engine-api = { path = "../crates/poly-engine-api" }
 poly-engines = { path = "../crates/poly-engines", default-features = false }
+poly-engines-ruby = { path = "crates/poly-engines-ruby" }
 rubyfmt = { git = "https://github.com/fables-tales/rubyfmt", rev = "884b9fd85bbdaa44376641cf9a803156bce7d0da", default-features = false }
+serde_json = { version = "1", features = ["preserve_order"] }
 tempfile = "3"
 toml = "1"
 
@@ -33,3 +39,6 @@ codegen-units = 1
 [patch.crates-io]
 alef-component-abi = { path = "/Users/naamanhirschfeld/workspace/xberg-io/.worktrees/alef/feat-component-release-plan/crates/alef-component-abi" }
 alef-component-runtime = { path = "/Users/naamanhirschfeld/workspace/xberg-io/.worktrees/alef/feat-component-release-plan/crates/alef-component-runtime" }
+# Same as the root workspace: poly-core's oxc engines and the crates.io oxc parsers must share one
+# oxc_allocator.
+oxc_allocator = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }

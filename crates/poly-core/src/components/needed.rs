@@ -1,6 +1,7 @@
 //! Which components a run needs. Pure: no host, no network, no I/O.
 
 use std::collections::BTreeSet;
+use std::sync::OnceLock;
 
 use poly_component_index::{Component, ComponentIndex, ComponentKind};
 use poly_config::v2::Enable;
@@ -20,8 +21,6 @@ const LINKED_FEATURES: &[&str] = &[
     "engine-sql",
     #[cfg(feature = "engine-biome")]
     "engine-biome",
-    #[cfg(feature = "engine-ruby")]
-    "engine-ruby",
     #[cfg(feature = "engine-nix")]
     "engine-nix",
     #[cfg(feature = "engine-typos")]
@@ -44,11 +43,26 @@ const LINKED_FEATURES: &[&str] = &[
     "engine-graphql",
 ];
 
-/// Whether the `poly-core` cargo feature `name` is compiled into this binary. An unknown name is
-/// not linked, so a component naming it is treated as downloadable.
+/// Component feature names a bundled binary links through an engine provider rather than a
+/// `poly-core` cargo feature.
+static PROVIDED_FEATURES: OnceLock<&'static [&'static str]> = OnceLock::new();
+
+/// Declares the component feature names (`engine-ruby`, ...) whose engines the process supplies
+/// through [`register_engine_provider`](crate::register_engine_provider), so the component planner
+/// treats those components as linked and never downloads them.
+///
+/// Call it once at startup next to the provider registration. Returns `false` when a set was
+/// already declared (the first wins).
+pub fn register_linked_features(features: &'static [&'static str]) -> bool {
+    PROVIDED_FEATURES.set(features).is_ok()
+}
+
+/// Whether the engine family named `name` is linked into this binary: a `poly-core` cargo feature
+/// compiled in, or one declared through [`register_linked_features`]. An unknown name is not
+/// linked, so a component naming it is treated as downloadable.
 #[must_use]
 pub(crate) fn feature_is_linked(name: &str) -> bool {
-    LINKED_FEATURES.contains(&name)
+    LINKED_FEATURES.contains(&name) || PROVIDED_FEATURES.get().is_some_and(|provided| provided.contains(&name))
 }
 
 /// Whether every engine family `component` is built from is linked into this binary, so it

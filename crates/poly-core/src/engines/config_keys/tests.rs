@@ -547,7 +547,6 @@ const ENGINE_SOURCES: &[(&str, &[&str])] = &[
     ("adrlint", &["adrlint.rs"]),
     ("biome", &["biome_css.rs", "biome_graphql.rs", "biome_common.rs"]),
     ("alejandra", &["../../../poly-engines-nix/src/nixfmt.rs"]),
-    ("rubyfmt", &["rubyfmt.rs"]),
     ("hcl", &["../../../poly-engines-misc/src/hcl/mod.rs"]),
     ("dockerfile", &["../../../poly-engines-misc/src/dockerfile.rs"]),
     ("dotenv", &["../../../poly-engines-misc/src/dotenv.rs"]),

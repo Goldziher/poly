@@ -86,7 +86,7 @@ x-ai-rulez:
     named `"biome"`; shared helpers in `biome_common.rs`), `graphql.rs`, `markup_fmt.rs`
     (HTML/Vue/Svelte/Astro/Angular/Jinja/Vento/Mustache/XML), `mago/` (PHP, in `poly-engines-php`),
     `nixfmt.rs` (Nix, in `poly-engines-nix` — named `"alejandra"`, the formatter it wraps),
-    `rubyfmt.rs` (Ruby), `hcl/` (`hcl-edit` lint plus a port of `hclwrite.Format`),
+    `rubyfmt` (Ruby, in `components/crates/poly-engines-ruby`, outside the root workspace), `hcl/` (`hcl-edit` lint plus a port of `hclwrite.Format`),
     `dockerfile.rs` (vendored `dockerfile-parser`), `dotenv.rs` (with `graphql.rs`, in `poly-engines-misc`),
     `ini.rs`. A project `.oxfmtrc.json[c]` / `.oxlintrc.json[c]` is read by
     `poly-engine-api`'s `host_hooks/oxfmt_native.rs` / `oxfmt_scope.rs` and `poly-config`'s `oxlint_native.rs`.

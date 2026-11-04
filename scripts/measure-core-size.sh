@@ -22,7 +22,7 @@ FEATURES=("${@:2}")
   poly-core/engine-dockerfile poly-core/engine-dotenv poly-core/engine-ini poly-core/engine-hcl
   poly-core/engine-graphql bundled-mcp
   poly-core/engine-web poly-core/engine-python poly-core/engine-php poly-core/engine-sql
-  poly-core/engine-biome poly-core/engine-ruby poly-core/engine-nix
+  poly-core/engine-biome poly-core/engine-nix
 )
 
 build() {

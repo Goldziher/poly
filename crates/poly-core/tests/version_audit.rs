@@ -45,7 +45,6 @@ use poly_core::engines::markup_fmt::MarkupFmtEngine;
 use poly_core::engines::nixfmt::NixFmtEngine;
 use poly_core::engines::oxc::OxcEngine;
 use poly_core::engines::quality::QualityEngine;
-use poly_core::engines::rubyfmt::RubyfmtEngine;
 use poly_core::engines::ruff::RuffEngine;
 use poly_core::engines::rumdl::RumdlEngine;
 use poly_core::engines::sqruff::SqruffEngine;
@@ -229,7 +228,6 @@ fn engine_versions_track_cargo_lock() {
             TyEngine.version(),
             vec![("ty_python_semantic", Registry)],
         ),
-        check("rubyfmt", RubyfmtEngine.version(), vec![("rubyfmt", Git)]),
         check("uncomment", UncommentEngine.version(), vec![("uncomment", Registry)]),
         check(
             "dotenv",

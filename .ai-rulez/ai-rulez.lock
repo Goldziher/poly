@@ -4,7 +4,7 @@
 version = 1
 ai_rulez_version = '5.10.0'
 scope = 'all'
-tree = 'sha256:a9c31701ec8b24b17bde78d68d8acd3f4014cd4253002a0196741e117bacd93f'
+tree = 'sha256:76e11ea27e9f415a03dac22155bc4d7399b59634fe1e33143846ffd6723323cc'
 
 [[served]]
 name = 'adr-workflow'
@@ -100,7 +100,7 @@ digest = 'sha256:f406604437e2998fc756a0a5b6a08cd832b871c188f76ee5ecbfef33184e965
 kind = 'agent'
 id = 'backend-author'
 path = 'agents/backend-author.md'
-digest = 'sha256:0abf327aed79db752fe890e081365d676c7d9200bac346affb23787887de9470'
+digest = 'sha256:90dc619e44d7f59c87084ba9c2a20501f2fd3110bd4dc0bcb62bb7570490fe80'
 
 [[item]]
 kind = 'agent'
@@ -118,19 +118,19 @@ digest = 'sha256:cce650aeeb6442614a1867d6f4e64adb1a4181276c70d4d6b71ef5431f952d1
 kind = 'context'
 id = 'code-style'
 path = 'context/code-style.md'
-digest = 'sha256:9dc352c06f11e2ae1d3d2bd2c35d8cc5c4e8ba84c26e51e38b509cec1f3749ed'
+digest = 'sha256:b76e149c6544a6fbb45dd24e67b9962f4a19432780a1123f9e6223821e15c1de'
 
 [[item]]
 kind = 'context'
 id = 'crate-layout'
 path = 'context/crate-layout.md'
-digest = 'sha256:f19d0117e138e37de1a9e50ea8509c7cedf3e1d9fdcdb8692023b4b7dca72fc8'
+digest = 'sha256:6441eb72d9a7fe9dfd5153f51eab1dec15ada8a5999d5ed11c4c514917d914c8'
 
 [[item]]
 kind = 'context'
 id = 'engine-library'
 path = 'context/engine-library.md'
-digest = 'sha256:52f9b5ca06be708f2666621220106b3c8f6f103e1f1fb376e0e34ba6ece87eb6'
+digest = 'sha256:74604272ca3ad976650334db17951ab57127e74f1a239838bbac8b80b4ecd2e2'
 
 [[item]]
 kind = 'context'
@@ -172,7 +172,7 @@ digest = 'sha256:c7332e641d1edc0a2d39fed803765c3e8c841e91979a5d086b796ab7ee3de22
 kind = 'rule'
 id = 'release-versioning'
 path = 'rules/release-versioning.md'
-digest = 'sha256:fa3bc1e3e4281b4f05efe00064e0ffc5f0004da236d60659d144c42d03e3cf47'
+digest = 'sha256:4d3c72ca2471fd880b35322b8971dc86a782ff2fc4aba20211e9fd3a1a009e1c'
 
 [[item]]
 kind = 'rule'

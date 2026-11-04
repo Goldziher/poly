@@ -23,7 +23,7 @@ your lane: one backend, with worktree isolation when run in parallel with siblin
    version/rev you intend to depend on and confirm it externalizes lint/format the way you
    need. Then add it as a workspace dep and **wrap** it: crates.io when the library is
    published (`ruff_linter = "=0.17.3"`), otherwise a **pinned git `rev`** of the upstream
-   repo (oxc, biome, rubyfmt). Crates from one monorepo share a single `rev`. **Never
+   repo (oxc, biome, rubyfmt; rubyfmt is built from the `components/` workspace). Crates from one monorepo share a single `rev`. **Never
    vendor** — there is no `vendor/` directory; the one in-tree fork, `crates/dockerfile-parser`,
    exists only because its upstream is archived (ADR 0003 amendment), and is not a precedent.
    Confirm `cargo deny` still passes (no GPL/AGPL).

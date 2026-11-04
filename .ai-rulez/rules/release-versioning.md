@@ -19,7 +19,7 @@ same `install.sh`), Homebrew (`brew install Goldziher/tap/poly`), Scoop
 (`polylint`)**. The release artifacts are named `poly-<version>-<triple>.tar.gz` (`.zip` on
 Windows), six targets, plus a `sha256sums.txt`; every other channel serves those same archives.
 We do **NOT publish to crates.io** — our crates depend on pinned git dependencies (**oxc, biome,
-rubyfmt** — see `deny.toml`'s `allow-git`), which crates.io forbids in published crates, and we
+rubyfmt** — see the `allow-git` lists in `deny.toml` and `components/deny.toml`), which crates.io forbids in published crates, and we
 have no need for a source-distribution channel. Ruff is **not** a git pin: since 2026-08-29 the
 ruff crates come from crates.io at exact `=` versions (ADR 0003's "Amendment — 2026-08-29"); the
 `=` is deliberate, since those are unsemvered internals.

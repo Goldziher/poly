@@ -56,8 +56,6 @@ pub use poly_engines_nix::nixfmt;
 pub mod oxc;
 #[cfg(feature = "engine-quality")]
 pub mod quality;
-#[cfg(feature = "engine-ruby")]
-pub mod rubyfmt;
 #[cfg(feature = "engine-python")]
 pub use poly_engines_python::ruff;
 #[cfg(feature = "engine-python")]

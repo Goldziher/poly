@@ -3975,15 +3975,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "num_threads"
-version = "0.1.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cabcc654086861f9e1bc5115258de62ef92c79b20f4615a1b0cc57c4e82027d4"
-dependencies = [
- "libc",
-]
-
-[[package]]
 name = "objc2-core-foundation"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5487,7 +5478,6 @@ dependencies = [
  "proptest",
  "rayon",
  "regex",
- "rubyfmt",
  "rumdl",
  "rust-ini",
  "rustc-hash 2.1.3",
@@ -6438,37 +6428,6 @@ dependencies = [
  "hashbrown 0.14.5",
  "rustc-hash 1.1.0",
  "text-size",
-]
-
-[[package]]
-name = "ruby-prism"
-version = "2.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef9dd23fe10d6335d390c9fd23cf7dac83f594be5676ad28de58d6f2bac65f4c"
-dependencies = [
- "ruby-prism-sys",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "ruby-prism-sys"
-version = "2.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f3e6b1801eb164c6b2c6c6cd42e55bf61d73f973719f675370769ce0295ba7f1"
-dependencies = [
- "cc",
- "shlex",
-]
-
-[[package]]
-name = "rubyfmt"
-version = "0.14.1"
-source = "git+https://github.com/fables-tales/rubyfmt?rev=884b9fd85bbdaa44376641cf9a803156bce7d0da#884b9fd85bbdaa44376641cf9a803156bce7d0da"
-dependencies = [
- "log",
- "ruby-prism",
- "simplelog",
 ]
 
 [[package]]
@@ -7589,17 +7548,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "simplelog"
-version = "0.12.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "16257adbfaef1ee58b1363bdc0664c9b8e1e30aed86049635fb5f147d065a9c0"
-dependencies = [
- "log",
- "termcolor",
- "time",
-]
-
-[[package]]
 name = "siphasher"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8065,9 +8013,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cdb87b95ec50ddfa440816d227a17b2ccbdda963a316a727fda0fc4334f7d134"
 dependencies = [
  "deranged",
- "libc",
  "num-conv",
- "num_threads",
  "powerfmt",
  "serde_core",
  "time-core",
