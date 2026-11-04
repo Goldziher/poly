@@ -36,7 +36,7 @@ See [Migrating to poly 2](https://goldziher.github.io/poly/guides/migrating-to-v
 ### Added
 
 - **Downloadable engine components.** Engines ship as signed components, fetched on first use by a
-  core build (`cargo build --no-default-features`, 7.6 MiB at the size profile). The default build
+  core build (`cargo build --no-default-features --features core`). The default build
   stays bundled, with every engine and the MCP server linked in. `poly components list|status|install|uninstall|sync|prune|import`
   manages them; `[components]` (`enable`, `disable`, `install`, `on_missing`) selects them;
   `--offline` / `POLY_OFFLINE=1` forbids every download; `POLY_COMPONENT_MIRROR` and
