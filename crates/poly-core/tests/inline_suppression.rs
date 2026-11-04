@@ -28,7 +28,12 @@ fn opts() -> RunOptions {
         config_resolver: None,
         externally_linted_languages: Vec::new(),
         only: Vec::new(),
-        skip: Vec::new(),
+        // These cases are about directive handling over the core typos and ruff engines; skipping the
+        // `web` component's engines keeps TOML/YAML/JS/TS files from planning a component a core build
+        // has no lock for.
+        skip: ["oxc", "taplo", "yaml", "rumdl", "adrlint", "malva", "markup_fmt"]
+            .map(str::to_owned)
+            .to_vec(),
         ..RunOptions::default()
     }
 }
@@ -99,14 +104,15 @@ fn python_comment_only_directive_covers_the_next_non_blank_line() {
     );
 }
 
-/// TypeScript, `//` comment: oxlint's `no-debugger`.
+/// TypeScript, `//` comment: the cross-cutting typos backend's `typo`. The oxlint-backed variants live
+/// with the web family in `components/crates/poly-engines-web/tests/inline_suppression.rs`.
 #[test]
-fn typescript_slash_directive_suppresses_oxlint_no_debugger() {
+fn typescript_slash_directive_suppresses_a_typo() {
     assert_suppresses(
         "app.ts",
-        "no-debugger",
-        "export function stop(): void {\n    debugger;\n}\n",
-        "export function stop(): void {\n    debugger; // poly: allow[no-debugger] deliberate breakpoint in the debug build\n}\n",
+        "typo",
+        "export const teh = 1;\n",
+        "export const teh = 1; // poly: allow[typo] upstream spells the vendor key this way\n",
     );
 }
 
@@ -115,9 +121,31 @@ fn typescript_slash_directive_suppresses_oxlint_no_debugger() {
 fn javascript_block_comment_directive_suppresses_the_next_line() {
     assert_suppresses(
         "app.js",
-        "no-debugger",
-        "function stop() {\n    debugger;\n}\n",
-        "function stop() {\n    /* poly: allow[no-debugger] deliberate breakpoint in the debug build */\n    debugger;\n}\n",
+        "typo",
+        "export const teh = 1;\n",
+        "/* poly: allow[typo] upstream spells the vendor key this way */\nexport const teh = 1;\n",
+    );
+}
+
+/// `allow-file` covers the whole file wherever it sits — here below the finding it suppresses.
+#[test]
+fn allow_file_covers_findings_above_the_directive() {
+    assert_suppresses(
+        "app.js",
+        "typo",
+        "export const teh = 1;\n",
+        "export const teh = 1;\n// poly: allow-file[typo] upstream spells the vendor key this way\n",
+    );
+}
+
+/// A directive-shaped string literal is not a directive: the character before the marker is a quote,
+/// which is deliberately not a comment opener.
+#[test]
+fn a_string_literal_does_not_suppress() {
+    let codes = codes_for("app.js", "const s = \"poly: allow[typo] nope\"; const teh = 1;\n");
+    assert!(
+        codes.iter().any(|c| c == "typo"),
+        "a string literal must not suppress; got {codes:?}"
     );
 }
 
@@ -140,36 +168,6 @@ fn yaml_hash_directive_suppresses_a_typo() {
         "typo",
         "key: teh\n",
         "# poly: allow[typo] upstream spells the vendor key this way\nkey: teh\n",
-    );
-}
-
-/// `allow-file` covers the whole file wherever it sits — here below both of the
-/// findings it suppresses.
-#[test]
-fn allow_file_covers_findings_above_the_directive() {
-    assert_suppresses(
-        "app.js",
-        "no-debugger",
-        "debugger;\ndebugger;\n",
-        "debugger;\ndebugger;\n// poly: allow-file[no-debugger] debug-only entrypoint, excluded from the bundle\n",
-    );
-}
-
-/// A rule the directive does not name keeps firing: suppression is per-rule, not
-/// a blanket line mute.
-#[test]
-fn an_unnamed_rule_on_the_same_line_still_fires() {
-    let codes = codes_for(
-        "app.js",
-        "debugger; console.log(1); // poly: allow[no-debugger] deliberate breakpoint\n",
-    );
-    assert!(
-        !codes.iter().any(|c| c == "no-debugger"),
-        "the named rule is suppressed; got {codes:?}"
-    );
-    assert!(
-        codes.iter().any(|c| c == "no-console"),
-        "an unnamed rule must survive; got {codes:?}"
     );
 }
 
@@ -224,17 +222,6 @@ fn per_file_ignores_can_silence_lazy_ignore() {
         "per-file-ignores must be able to silence lazy-ignore; got {codes:?}"
     );
     assert!(codes.iter().any(|c| c == "F401"), "the rule itself still fires");
-}
-
-/// A directive-shaped string literal is not a directive: the character before
-/// the marker is a quote, which is deliberately not a comment opener.
-#[test]
-fn a_string_literal_does_not_suppress() {
-    let codes = codes_for("app.js", "const s = \"poly: allow[no-debugger] nope\";\ndebugger;\n");
-    assert!(
-        codes.iter().any(|c| c == "no-debugger"),
-        "a string literal must not suppress; got {codes:?}"
-    );
 }
 
 /// `--fix` must not rewrite a suppressed finding, and the suppression must

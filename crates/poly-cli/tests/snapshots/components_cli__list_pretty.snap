@@ -2,16 +2,16 @@
 source: crates/poly-cli/tests/components_cli.rs
 expression: "Sandbox::new().stdout(&[\"components\", \"list\"])"
 ---
-flavor      bundled
+flavor      partial
 cache       <cache>
 offline     false
 lock        none (this build embeds no component lock)
-web      bundled      adrlint, malva, markup_fmt, oxc, rumdl, taplo, yaml
+web      unavailable  adrlint, malva, markup_fmt, oxc, rumdl, taplo, yaml  [this build embeds no component lock]
 python   bundled      python-types, ruff
 sql      bundled      sqruff
 php      bundled      mago
-biome    bundled      biome
-ruby     bundled      rubyfmt
+biome    unavailable  biome  [this build embeds no component lock]
+ruby     unavailable  rubyfmt  [this build embeds no component lock]
 nix      bundled      alejandra
 typos    bundled      typos  (opt-in)
 astgrep  bundled      astgrep

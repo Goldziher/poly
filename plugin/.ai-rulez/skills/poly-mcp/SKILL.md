@@ -76,8 +76,8 @@ lock file, a populated build or type-checker cache — are not poly's to control
 
 ## Components
 
-In a core build the engines are downloadable components; a bundled build links them in and
-nothing is ever missing. The result's `components` block (`used`, `installed_now`, `missing`) is
+In a core build (every release binary except Linux musl) the engines are downloadable components;
+the bundled Linux musl build links them in and nothing is ever missing. The result's `components` block (`used`, `installed_now`, `missing`) is
 present only when a run needed one. A missing component that fails the run sets `isError`; one
 skipped under `install: "never"` shows in `skipped` and `components.missing` without failing it.
 Check `components.missing` before reading an empty `results` as clean.

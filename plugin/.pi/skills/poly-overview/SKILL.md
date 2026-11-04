@@ -9,8 +9,8 @@ metadata:
 
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-Content-Hash: blake3:19286af5b2f34f90d47844a4ad098a2ec5d7d28f197049062d0a45279148f05c
-Source-Hash: blake3:b235022c5efd503e65d1d6fe44889912f02b72b7c3f0af6cd4c1d11d30441097
+Content-Hash: blake3:5278b4cb21420b3a8c4a2dc35e202b7001d1041e8319913baa4978442db2bff4
+Source-Hash: blake3:c1ca09f2359d1bda9b055974a600dcf09b17245b67bd6b3415417dad7a67c99f
 Schema-Version: v1
 -->
 
@@ -25,8 +25,8 @@ below, which uses a language's canonical CLI when it happens to be installed.
 ## Per-language coverage tiers
 
 - **Tier 1 — native in-process backends.** Highest fidelity, registered per language: linked
-  into a bundled build (the release binary) or loaded from signed components that a core build
-  downloads on first use (`poly components list`). Listed by the engine id you configure them
+  into a bundled build (the Linux musl release binary) or loaded from signed components that a core
+  build (every other release binary) downloads on first use (`poly components list`). Listed by the engine id you configure them
   under (`[engines.<id>]`): `ruff` (Python), `oxc`
   (JS/TS/JSX/TSX/JSON/JSONC), `taplo` (TOML), `rumdl` (Markdown/MDX), `sqruff` (SQL), `yaml`,
   `malva` (CSS/SCSS/Less) + `biome` (CSS/SCSS), `markup_fmt` (HTML/Vue/Svelte/Astro/Angular/

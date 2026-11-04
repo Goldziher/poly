@@ -15,7 +15,7 @@ description = "Core engine for the poly universal, zero-dependency linter & form
 libc.workspace = true
 
 [package.metadata.cargo-machete]
-ignored = ["rumdl", "serde_toon_format", "rust-ini"]
+ignored = ["serde_toon_format", "rust-ini"]
 
 [lib]
 name = "poly_core"
@@ -36,13 +36,13 @@ default = ["all-engines"]
 dev-lock = []
 # Link every engine family into the binary (the dev and test configuration). Alias of `all-engines`.
 bundled = ["all-engines"]
+# The families the released core links (ADR 0039): the ones that share the tree-sitter runtime or
+# cost too little to ship separately. Every other family is a downloadable component.
+core = ["engine-quality", "engine-uncomment", "engine-ini"]
 all-engines = [
-  "engine-web",
   "engine-python",
   "engine-php",
   "engine-sql",
-  "engine-biome",
-  "engine-ruby",
   "engine-nix",
   "engine-typos",
   "engine-quality",
@@ -54,45 +54,9 @@ all-engines = [
   "engine-hcl",
   "engine-graphql",
 ]
-# oxc (JS/TS/JSON format + lint, oxlint/oxfmt native config), taplo, markup_fmt, malva,
-# markdown (rumdl + adrlint + markdown_fmt/embed), yaml, sort-package-json.
-engine-web = [
-  "dep:adrlint",
-  "dep:malva",
-  "dep:markup_fmt",
-  "dep:oxc_allocator",
-  "dep:oxc_diagnostics",
-  "dep:oxc_formatter",
-  "dep:oxc_formatter_core",
-  "dep:oxc_formatter_css",
-  "dep:oxc_formatter_json",
-  "dep:oxc_formatter_markdown",
-  "dep:oxc_formatter_toml",
-  "dep:oxc_formatter_yaml",
-  "dep:oxc_linter",
-  "dep:oxc_parser",
-  "dep:oxc_semantic",
-  "dep:oxc_span",
-  "dep:rumdl",
-  "dep:serde_yaml",
-  "dep:sort-package-json",
-  "dep:taplo",
-]
 engine-python = ["dep:poly-engines-python"]
 engine-php = ["dep:poly-engines-php"]
 engine-sql = ["dep:poly-engines-sql"]
-# Biome-backed CSS and GraphQL lint.
-engine-biome = [
-  "dep:biome_analyze",
-  "dep:biome_css_analyze",
-  "dep:biome_css_parser",
-  "dep:biome_diagnostics",
-  "dep:biome_graphql_analyze",
-  "dep:biome_graphql_parser",
-  "dep:biome_languages",
-  "dep:biome_rowan",
-]
-engine-ruby = ["dep:rubyfmt"]
 engine-nix = ["dep:poly-engines-nix"]
 engine-typos = ["dep:poly-engines-typos"]
 # The poly-native structural quality rules (no third-party engine dependency).
@@ -106,36 +70,12 @@ engine-hcl = ["dep:poly-engines-misc", "poly-engines-misc/hcl"]
 engine-graphql = ["dep:poly-engines-misc", "poly-engines-misc/graphql"]
 
 [dependencies]
-adrlint = { workspace = true, optional = true }
 anyhow.workspace = true
-biome_analyze = { workspace = true, optional = true }
-biome_css_analyze = { workspace = true, optional = true }
-biome_css_parser = { workspace = true, optional = true }
-biome_diagnostics = { workspace = true, optional = true }
-biome_graphql_analyze = { workspace = true, optional = true }
-biome_graphql_parser = { workspace = true, optional = true }
-biome_languages = { workspace = true, optional = true }
-biome_rowan = { workspace = true, optional = true }
 blake3.workspace = true
 flate2.workspace = true
 globset.workspace = true
 ignore.workspace = true
-malva = { workspace = true, features = ["config_serde"], optional = true }
-markup_fmt = { workspace = true, features = ["config_serde"], optional = true }
 owo-colors.workspace = true
-oxc_allocator = { workspace = true, optional = true }
-oxc_diagnostics = { workspace = true, optional = true }
-oxc_formatter = { workspace = true, optional = true }
-oxc_formatter_core = { workspace = true, optional = true }
-oxc_formatter_css = { workspace = true, optional = true }
-oxc_formatter_json = { workspace = true, optional = true }
-oxc_formatter_markdown = { workspace = true, optional = true }
-oxc_formatter_toml = { workspace = true, optional = true }
-oxc_formatter_yaml = { workspace = true, optional = true }
-oxc_linter = { workspace = true, optional = true }
-oxc_parser = { workspace = true, optional = true }
-oxc_semantic = { workspace = true, optional = true }
-oxc_span = { workspace = true, optional = true }
 poly-cache.workspace = true
 poly-catalog.workspace = true
 poly-component-host.workspace = true
@@ -154,8 +94,6 @@ poly-engines-uncomment = { workspace = true, optional = true }
 poly-grammar.workspace = true
 rayon.workspace = true
 regex.workspace = true
-rubyfmt = { workspace = true, optional = true }
-rumdl = { workspace = true, optional = true }
 rust-ini = { workspace = true, optional = true }
 rustc-hash.workspace = true
 # Optional: only compiled when the `schemars` feature is enabled (by poly-mcp) to
@@ -164,10 +102,7 @@ schemars = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
 serde_toon_format.workspace = true
-serde_yaml = { workspace = true, optional = true }
 sha2.workspace = true
-sort-package-json = { workspace = true, optional = true }
-taplo = { workspace = true, optional = true }
 tar.workspace = true
 tempfile.workspace = true
 terminal_size.workspace = true

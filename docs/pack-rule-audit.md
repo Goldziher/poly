@@ -232,7 +232,7 @@ engine a `plugins` key and enable `jest`/`vitest`**: upstream's matcher is
 framework-aware, knows `it.each` and `it.todo`, and exposes
 `assertFunctionNames` so a repo can name its own assertion helpers — which is
 precisely the escape hatch the pack rule's 60% comes from lacking. That is a
-poly-side change this task could not make; it belongs in `engines/oxc/lint.rs`.
+poly-side change this task could not make; it belongs in `components/crates/poly-engines-web/src/oxc/lint.rs`.
 
 ### `placeholder-implementation` — javascript, typescript, tsx — **drop**
 

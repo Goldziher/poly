@@ -30,8 +30,8 @@ fn repo() -> TempDir {
     write("App.csproj", CSPROJ);
     write("a.py", "x = 1\n");
     write("b.py", "y = 2\n");
-    write("c.json", "{ \"a\": 1 }\n");
-    write("d.md", "# Title\n");
+    write("c.py", "z = 3\n");
+    write("d.py", "w = 4\n");
     dir
 }
 
@@ -80,8 +80,8 @@ fn quiet_suppresses_skip_detail_and_keeps_the_summary_line_byte_identical() {
         "App.csproj",
         "a.py",
         "b.py",
-        "c.json",
-        "d.md",
+        "c.py",
+        "d.py",
     ];
 
     let loud = poly(dir.path(), &args);

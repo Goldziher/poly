@@ -5,7 +5,7 @@ expression: json
 {
   "schema": 1,
   "command": "list",
-  "flavor": "bundled",
+  "flavor": "partial",
   "offline": false,
   "cache_root": "<cache>",
   "lock": "this build embeds no component lock",
@@ -13,7 +13,7 @@ expression: json
     {
       "name": "web",
       "kind": "engines",
-      "state": "bundled",
+      "state": "unavailable",
       "opt_in": false,
       "engines": [
         "adrlint",
@@ -23,7 +23,8 @@ expression: json
         "rumdl",
         "taplo",
         "yaml"
-      ]
+      ],
+      "detail": "this build embeds no component lock"
     },
     {
       "name": "python",
@@ -56,20 +57,22 @@ expression: json
     {
       "name": "biome",
       "kind": "engines",
-      "state": "bundled",
+      "state": "unavailable",
       "opt_in": false,
       "engines": [
         "biome"
-      ]
+      ],
+      "detail": "this build embeds no component lock"
     },
     {
       "name": "ruby",
       "kind": "engines",
-      "state": "bundled",
+      "state": "unavailable",
       "opt_in": false,
       "engines": [
         "rubyfmt"
-      ]
+      ],
+      "detail": "this build embeds no component lock"
     },
     {
       "name": "nix",

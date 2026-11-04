@@ -8,18 +8,16 @@
 //! It is a single `#[test]` on purpose: tests in one binary run on parallel threads, which would make
 //! the task count unstable.
 //!
-//! Audit behind the allowlist (see `allowed_growth`): oxc (`LintService::run_source` used a
-//! `rayon::scope`, now replaced by `engines/oxc/run.rs`), sqruff (`lint_files` rayon, not reached by
+//! Audit behind the allowlist (see `allowed_growth`): sqruff (`lint_files` rayon, not reached by
 //! `lint_string`), mago (`mago-database` loader and the extension worker pool are not reached by
-//! `File::ephemeral` + `Linter::lint`), ruff (no rayon or salsa database on the lint path), biome
-//! (`biome_fs` is not used; analyzers are single-threaded).
+//! `File::ephemeral` + `Linter::lint`), ruff (no rayon or salsa database on the lint path). The biome
+//! engines are checked in `poly-engines-biome`'s `tests/threads.rs`; the oxc audit lives with the web
+//! family in `components/crates/poly-engines-web/tests/engine_threads.rs`.
 #![cfg(all(target_os = "linux", feature = "all-engines"))]
 
 use poly_core::config::{Config, EngineConfig, GlobalDefaults, Kind};
 use poly_core::engine::{Engine, SourceFile};
-use poly_core::engines::biome_css::BiomeCssEngine;
 use poly_core::engines::mago::MagoEngine;
-use poly_core::engines::oxc::OxcEngine;
 use poly_core::engines::ruff::RuffEngine;
 use poly_core::engines::sqruff::SqruffEngine;
 use poly_core::language::Language;
@@ -37,9 +35,6 @@ fn thread_count() -> usize {
 /// in-memory source. An entry raised above `0` must name the file and line that spawns the thread.
 fn allowed_growth(engine: &str) -> usize {
     match engine {
-        // `engines/oxc/run.rs` drives `Linter::run` directly; no `LintService`, so no rayon scope and no
-        // global pool (`Runtime::new` builds one with `ThreadPoolBuilder::build_global`).
-        "oxc" => 0,
         // `lint_string` is single-threaded; rayon is only in `Linter::lint_files` (core.rs:257).
         "sqruff" => 0,
         // `File::ephemeral` + `Linter::lint` with no external linter; `mago-database` rayon and
@@ -47,8 +42,6 @@ fn allowed_growth(engine: &str) -> usize {
         "mago" => 0,
         // `lint_only` has no rayon, and poly builds no salsa database.
         "ruff" => 0,
-        // `biome_css_analyze::analyze` is single-threaded; `biome_fs` is not linked into the call.
-        "biome" => 0,
         other => panic!("no thread allowance recorded for engine {other}"),
     }
 }
@@ -73,10 +66,6 @@ fn plain_cfg(indent_width: usize) -> EngineConfig {
 fn lint_engines_do_not_grow_the_thread_count() {
     let baseline = thread_count();
 
-    let oxc_error_cfg = EngineConfig {
-        options: toml::from_str("[rules.no-debugger]\nlevel = \"error\"\n").unwrap(),
-        ..plain_cfg(2)
-    };
     let sqruff_cfg = Config::default().engine_config(&Language::Sql, "sqruff", Kind::Lint);
 
     // (engine name for the allowlist, diagnostics produced, thread count after the call)
@@ -87,31 +76,6 @@ fn lint_engines_do_not_grow_the_thread_count() {
 
     // Each call runs twice: the first exercises lazy initialisation, the second the cached path.
     for _ in 0..2 {
-        let js = source(
-            "fixture.js",
-            Language::JavaScript,
-            "const x = 1;\ndebugger;\nfoo: for (;;) { break; }\n",
-        );
-        record("oxc", OxcEngine.lint(&js, &plain_cfg(2)).unwrap().len());
-
-        let ts = source(
-            "fixture.ts",
-            Language::TypeScript,
-            "export const f = (a: number): number => a == 1 ? 1 : 2;\n",
-        );
-        record("oxc", OxcEngine.lint(&ts, &plain_cfg(2)).unwrap().len());
-
-        // A non-empty option table takes the per-config cached linter path.
-        record("oxc", OxcEngine.lint(&js, &oxc_error_cfg).unwrap().len());
-
-        // A parse error takes the diagnostics-only path.
-        let broken = source(
-            "broken.js",
-            Language::JavaScript,
-            "const x = {\n  a: 1,\nconst y = 2;\n",
-        );
-        record("oxc", OxcEngine.lint(&broken, &plain_cfg(2)).unwrap().len());
-
         let sql = source("fixture.sql", Language::Sql, "SELECT a,b FROM t WHERE a=1\n");
         record("sqruff", SqruffEngine.lint(&sql, &sqruff_cfg).unwrap().len());
 
@@ -128,21 +92,16 @@ fn lint_engines_do_not_grow_the_thread_count() {
             "import os\nx = 1\nif x == None:\n    pass\n",
         );
         record("ruff", RuffEngine.lint(&py, &plain_cfg(4)).unwrap().len());
-
-        let css = source("fixture.css", Language::Css, "a { colr: blue; }\n");
-        record("biome", BiomeCssEngine.lint(&css, &plain_cfg(2)).unwrap().len());
     }
 
     // A call that returns nothing may mean the fixture was not linted at all, which would make the
-    // thread assertion below vacuous; the oxc, ruff and biome fixtures each carry a finding.
-    for engine in ["oxc", "ruff", "biome"] {
-        assert!(
-            observed
-                .iter()
-                .any(|(name, diagnostics, _)| *name == engine && *diagnostics > 0),
-            "{engine} fixture produced no diagnostics, so the engine may not have run"
-        );
-    }
+    // thread assertion below vacuous; the ruff fixture carries a finding.
+    assert!(
+        observed
+            .iter()
+            .any(|(name, diagnostics, _)| *name == "ruff" && *diagnostics > 0),
+        "ruff fixture produced no diagnostics, so the engine may not have run"
+    );
 
     for (engine, _, threads) in &observed {
         let allowed = baseline + allowed_growth(engine);

@@ -29,6 +29,11 @@ use std::sync::{Arc, OnceLock, RwLock};
 use anyhow::Context;
 use ast_grep_config::{DeserializeEnv, GlobalRules, RuleConfig, SerializableGlobalRule, from_yaml_string};
 
+pub use poly_engine_api::host_hooks::astgrep_rules::rules_hash;
+use poly_engine_api::host_hooks::astgrep_rules::{
+    collect_rule_paths, collect_utils_paths, collect_yaml_paths, is_test_file,
+};
+
 use super::language::TslpLanguage;
 
 /// Rules grouped by lowercase language name.
@@ -77,39 +82,6 @@ pub fn load_rules(dirs: &[String], content_hash: &str) -> anyhow::Result<Arc<Rul
     }
     guard.insert(content_hash.to_string(), Arc::clone(&arc));
     Ok(arc)
-}
-
-/// Compute a stable hash of all rule files under `dirs` so rule edits
-/// invalidate the cache key.  Returns an empty string when no rule files exist.
-pub fn rules_hash(dirs: &[String]) -> String {
-    let mut hasher = blake3::Hasher::new();
-    let mut had_any = false;
-
-    // Utils files are inputs to the parse, so an edit to one must invalidate
-    // the cache exactly as a rule edit does — hash the rule files *and* the
-    // `utils.yml` they resolve against, not just the former.
-    let mut paths: Vec<PathBuf> = dirs
-        .iter()
-        .flat_map(|d| {
-            let dir = Path::new(d);
-            collect_rule_paths(dir).into_iter().chain(collect_utils_paths(dir))
-        })
-        .collect();
-    paths.sort();
-
-    for path in paths {
-        if let Ok(bytes) = fs::read(&path) {
-            hasher.update(path.to_string_lossy().as_bytes());
-            hasher.update(&bytes);
-            had_any = true;
-        }
-    }
-
-    if had_any {
-        hasher.finalize().to_hex().to_string()
-    } else {
-        String::new()
-    }
 }
 
 /// Load every rule from `dirs` into a flat list, paired with the file it came
@@ -183,73 +155,6 @@ fn load_from_dirs(dirs: &[String]) -> anyhow::Result<RuleMap> {
         map.entry(rule.language.name().to_string()).or_default().push(rule);
     }
     Ok(map)
-}
-
-/// A YAML file is a *test* file when its name ends in `-test.yml` / `-test.yaml`
-/// (ast-grep's convention). Test files hold `valid`/`invalid` snippets, not rules.
-fn is_test_file(path: &Path) -> bool {
-    path.file_name()
-        .and_then(|n| n.to_str())
-        .map(|n| n.ends_with("-test.yml") || n.ends_with("-test.yaml"))
-        .unwrap_or(false)
-}
-
-fn is_yaml(path: &Path) -> bool {
-    path.extension()
-        .map(|ext| ext == "yml" || ext == "yaml")
-        .unwrap_or(false)
-}
-
-/// Recursively collect every `*.yml` / `*.yaml` path under `dir`, sorted.
-fn collect_yaml_paths(dir: &Path) -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    collect_yaml_rec(dir, &mut out);
-    out.sort();
-    out
-}
-
-fn collect_yaml_rec(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let Ok(file_type) = entry.file_type() else {
-            continue;
-        };
-        let path = entry.path();
-        if file_type.is_dir() {
-            collect_yaml_rec(&path, out);
-        } else if file_type.is_file() && is_yaml(&path) {
-            out.push(path);
-        }
-    }
-}
-
-/// A YAML file declares *global utils* when it is named `utils.yml` /
-/// `utils.yaml`. Such a file holds a list of utility rules, not rule configs,
-/// so it must never reach `from_yaml_string`.
-fn is_utils_file(path: &Path) -> bool {
-    path.file_name()
-        .and_then(|n| n.to_str())
-        .map(|n| n == "utils.yml" || n == "utils.yaml")
-        .unwrap_or(false)
-}
-
-/// Rule files under `dir` (recursive) — every `*.yml`/`*.yaml` except test
-/// files and `utils.yml`.
-fn collect_rule_paths(dir: &Path) -> Vec<PathBuf> {
-    collect_yaml_paths(dir)
-        .into_iter()
-        .filter(|p| !is_test_file(p) && !is_utils_file(p))
-        .collect()
-}
-
-/// Global-utils files under `dir` (recursive), sorted.
-fn collect_utils_paths(dir: &Path) -> Vec<PathBuf> {
-    collect_yaml_paths(dir)
-        .into_iter()
-        .filter(|p| is_utils_file(p))
-        .collect()
 }
 
 /// Test files (`*-test.yml`) under any of `dirs` (recursive).

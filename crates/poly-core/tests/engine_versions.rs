@@ -11,17 +11,7 @@ use poly_core::engine_versions;
 #[test]
 fn it_names_the_compiled_in_backends() {
     let versions = engine_versions();
-    for expected in [
-        "ruff",
-        "oxc",
-        "taplo",
-        "rumdl",
-        "adrlint",
-        "typos",
-        "astgrep",
-        "quality",
-        "treesitter",
-    ] {
+    for expected in ["ruff", "typos", "astgrep", "quality", "treesitter"] {
         assert!(
             versions.contains_key(expected),
             "{expected} is compiled in and must be listed: {:?}",

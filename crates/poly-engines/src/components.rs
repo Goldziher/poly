@@ -5,35 +5,92 @@
 //! `Default`-constructible and takes its version from this crate, which inherits the workspace
 //! version the component artifacts are published under.
 
-#[cfg(feature = "sql")]
-mod sql {
-    use crate::{ComponentCallError, PolyComponent, Producer};
+/// Declares a component type: a [`Producer`](crate::Producer) over the engines `$engines` builds.
+macro_rules! family_component {
+    ($feature:literal, $module:ident, $name:ident, $doc:literal, $engines:expr) => {
+        #[cfg(feature = $feature)]
+        mod $module {
+            use crate::{ComponentCallError, PolyComponent, Producer};
 
-    /// The `sql` component: sqruff behind the component protocol.
-    pub struct SqlComponent(Producer);
+            #[doc = $doc]
+            pub struct $name(Producer);
 
-    impl Default for SqlComponent {
-        fn default() -> Self {
-            Self(Producer::new(
-                env!("CARGO_PKG_VERSION"),
-                vec![Box::new(crate::sql::SqruffEngine)],
-            ))
+            impl Default for $name {
+                fn default() -> Self {
+                    Self(Producer::new(env!("CARGO_PKG_VERSION"), $engines))
+                }
+            }
+
+            impl PolyComponent for $name {
+                fn describe(&self) -> Result<Vec<u8>, ComponentCallError> {
+                    self.0.describe()
+                }
+
+                fn call(&self, header: &[u8], body: &[u8]) -> Result<Vec<u8>, ComponentCallError> {
+                    self.0.call(header, body)
+                }
+            }
         }
-    }
 
-    impl PolyComponent for SqlComponent {
-        fn describe(&self) -> Result<Vec<u8>, ComponentCallError> {
-            self.0.describe()
-        }
-
-        fn call(&self, header: &[u8], body: &[u8]) -> Result<Vec<u8>, ComponentCallError> {
-            self.0.call(header, body)
-        }
-    }
+        #[cfg(feature = $feature)]
+        pub use $module::$name;
+    };
 }
 
-#[cfg(feature = "sql")]
-pub use sql::SqlComponent;
+family_component!(
+    "sql",
+    sql,
+    SqlComponent,
+    "The `sql` component: sqruff behind the component protocol.",
+    vec![Box::new(crate::sql::SqruffEngine)]
+);
+family_component!(
+    "python",
+    python,
+    PythonComponent,
+    "The `python` component: ruff, and ty for project type checking.",
+    crate::python::engines_for(&poly_engine_api::language::Language::Python)
+);
+family_component!(
+    "php",
+    php,
+    PhpComponent,
+    "The `php` component: mago behind the component protocol.",
+    vec![Box::new(crate::php::MagoEngine::default())]
+);
+family_component!(
+    "nix",
+    nix,
+    NixComponent,
+    "The `nix` component: alejandra behind the component protocol.",
+    vec![Box::new(crate::nix::NixFmtEngine)]
+);
+family_component!(
+    "typos",
+    typos,
+    TyposComponent,
+    "The `typos` component: the cross-cutting spell-checker.",
+    vec![Box::new(crate::typos::TyposEngine)]
+);
+family_component!(
+    "astgrep",
+    astgrep,
+    AstgrepComponent,
+    "The `astgrep` component: ast-grep with the built-in rule pack.",
+    vec![Box::new(crate::astgrep::AstGrepEngine)]
+);
+family_component!(
+    "misc",
+    misc,
+    MiscComponent,
+    "The `misc` component: the Dockerfile, dotenv, GraphQL and HCL engines.",
+    vec![
+        Box::new(crate::misc::dockerfile::DockerfileEngine),
+        Box::new(crate::misc::dotenv::DotenvEngine),
+        Box::new(crate::misc::graphql::GraphQlEngine),
+        Box::new(crate::misc::hcl::HclEngine),
+    ]
+);
 
 #[cfg(feature = "mcp")]
 mod mcp {

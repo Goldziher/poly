@@ -9,33 +9,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{LazyLock, OnceLock};
 
 use crate::engine::Engine;
-#[cfg(feature = "engine-web")]
-use crate::engines::adrlint::AdrlintEngine;
-#[cfg(feature = "engine-biome")]
-use crate::engines::biome_css::BiomeCssEngine;
-#[cfg(feature = "engine-biome")]
-use crate::engines::biome_graphql::BiomeGraphqlEngine;
 use crate::engines::config_keys::PolyConfigEngine;
 #[cfg(feature = "engine-ini")]
 use crate::engines::ini::IniEngine;
-#[cfg(feature = "engine-web")]
-use crate::engines::malva::MalvaEngine;
-#[cfg(feature = "engine-web")]
-use crate::engines::markup_fmt::MarkupFmtEngine;
 use crate::engines::native_tool::NativeToolEngine;
-#[cfg(feature = "engine-web")]
-use crate::engines::oxc::OxcEngine;
 #[cfg(feature = "engine-quality")]
 use crate::engines::quality::QualityEngine;
-#[cfg(feature = "engine-ruby")]
-use crate::engines::rubyfmt::RubyfmtEngine;
-#[cfg(feature = "engine-web")]
-use crate::engines::rumdl::RumdlEngine;
-#[cfg(feature = "engine-web")]
-use crate::engines::taplo::TaploEngine;
 use crate::engines::treesitter::TreeSitterEngine;
-#[cfg(feature = "engine-web")]
-use crate::engines::yaml::YamlEngine;
 use crate::language::Language;
 
 /// A function supplying engines for a language from outside `poly-core`.
@@ -77,7 +57,7 @@ impl std::error::Error for ProviderRegistrationError {}
 ///
 /// Meant for a bundled binary linking engines `poly-core` does not carry (the git-pinned
 /// oxc, biome and rubyfmt families): call it once at startup, before the first lint or format
-/// run. The provider's engines are placed after the language's built-in engines and before the
+/// run. The provider's engines are placed among the language's built-in engines (before any lint-only built-in) and before the
 /// cross-cutting ones. When one of them formats the language, the tree-sitter generic formatter
 /// is dropped for it so the two never compete over indentation; lint-only engines leave it in
 /// place. Provider engine names must not collide with the language's built-in engine names.
@@ -104,94 +84,85 @@ pub(crate) fn displaces_tree_sitter<'a>(engines: impl IntoIterator<Item = &'a dy
         .any(|engine| engine.capabilities().format && !engine.languages().is_empty())
 }
 
-/// Appends the external provider's engines for `lang`, dropping the tree-sitter fallback when
-/// one of them formats.
-fn with_external_engines(lang: &Language, mut engines: Vec<Box<dyn Engine>>) -> Vec<Box<dyn Engine>> {
-    let Some(provider) = EXTERNAL_PROVIDER.get() else {
+/// Merges engines contributed from outside the registry (a provider's, or a downloadable
+/// component's) into a language's built-in engines.
+///
+/// When one of them formats the language the tree-sitter reindenter is dropped. The order is the
+/// one the engines had when they were all built in. A contributed language engine goes before the
+/// first built-in engine that cannot format (a lint-only core engine such as `PolyConfigEngine`):
+/// TOML is `[Taplo, PolyConfig]`, not `[PolyConfig, Taplo]`; among themselves the contributed
+/// formatters come first. A contributed cross-cutting engine
+/// (one claiming no languages, such as a component-served `typos`) goes before the first built-in
+/// cross-cutting one, since the registry appends those after every language engine.
+pub(crate) fn merge_external_engines(
+    mut engines: Vec<Box<dyn Engine>>,
+    external: Vec<Box<dyn Engine>>,
+) -> Vec<Box<dyn Engine>> {
+    if external.is_empty() {
         return engines;
-    };
-    let external = provider(lang);
+    }
     if displaces_tree_sitter(external.iter().map(|engine| &**engine)) {
         engines.retain(|engine| engine.name() != TREE_SITTER_ENGINE);
     }
-    debug_assert!(
-        external
-            .iter()
-            .all(|new| engines.iter().all(|existing| existing.name() != new.name())),
-        "an external engine provider supplied an engine whose name collides with a built-in one for {lang:?}"
-    );
-    engines.extend(external);
+    let (cross_cutting, mut language): (Vec<_>, Vec<_>) =
+        external.into_iter().partition(|engine| engine.languages().is_empty());
+    // Component engines arrive in index order (by name), not the family's own: a language's
+    // formatter leads its lint-only engines in every family (Markdown `[rumdl, adrlint]`, GraphQL
+    // `[graphql, biome]`), so a stable sort on that restores it.
+    language.sort_by_key(|engine| !engine.capabilities().format);
+    let at = engines
+        .iter()
+        .position(|engine| !engine.capabilities().format)
+        .unwrap_or(engines.len());
+    engines.splice(at..at, language);
+    let at = engines
+        .iter()
+        .position(|engine| engine.languages().is_empty() && engine.name() != TREE_SITTER_ENGINE)
+        .unwrap_or(engines.len());
+    engines.splice(at..at, cross_cutting);
     engines
+}
+
+/// Merges the external provider's engines for `lang` into the built-in ones.
+fn with_external_engines(lang: &Language, engines: Vec<Box<dyn Engine>>) -> Vec<Box<dyn Engine>> {
+    match EXTERNAL_PROVIDER.get() {
+        Some(provider) => {
+            let external = provider(lang);
+            debug_assert!(
+                external
+                    .iter()
+                    .all(|new| engines.iter().all(|existing| existing.name() != new.name())),
+                "an external engine provider supplied an engine whose name collides with a built-in one for {lang:?}"
+            );
+            merge_external_engines(engines, external)
+        }
+        None => engines,
+    }
 }
 
 /// Engines applicable to a language, in priority order (formatters run in sequence).
 ///
 /// Every arm that names an engine family is gated on that family's `engine-*` feature. With the
 /// family off the arm disappears and its languages reach the final `_ => TreeSitterEngine` arm,
-/// the same tier any language without a native backend gets. Arms that combine two families
-/// (CSS: `engine-web` + `engine-biome`; GraphQL: `engine-graphql` + `engine-biome`) are spelled
-/// out once per combination.
+/// the same tier any language without a native backend gets. The web and biome families are not
+/// here: their engines come from the `web` and `biome` components or a bundled binary's provider.
 pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
     if matches!(lang, Language::Other(name) if name == crate::language::HELM_TEMPLATE) {
         return Vec::new();
     }
     let engines: Vec<Box<dyn Engine>> = match lang {
-        #[cfg(feature = "engine-web")]
-        Language::JavaScript
-        | Language::TypeScript
-        | Language::Jsx
-        | Language::Tsx
-        | Language::Json
-        | Language::Jsonc => vec![Box::new(OxcEngine)],
-        #[cfg(feature = "engine-web")]
-        Language::Toml => vec![Box::new(TaploEngine::new()), Box::new(PolyConfigEngine)],
-        // `poly.toml` key checking is core; only the TOML formatter is the web family's.
-        #[cfg(not(feature = "engine-web"))]
+        // `poly.toml` key checking is core; the TOML formatter and linter are the web family's.
         Language::Toml => vec![Box::new(TreeSitterEngine), Box::new(PolyConfigEngine)],
-        #[cfg(feature = "engine-web")]
-        Language::Markdown => vec![Box::new(RumdlEngine), Box::new(AdrlintEngine)],
-        #[cfg(feature = "engine-web")]
-        Language::Mdx => vec![Box::new(RumdlEngine)],
         #[cfg(feature = "engine-python")]
         Language::Python => poly_engines_python::engines_for(lang),
         #[cfg(feature = "engine-sql")]
         Language::Sql => poly_engines_sql::engines_for(lang),
-        #[cfg(feature = "engine-web")]
-        Language::Yaml => vec![Box::new(YamlEngine)],
-        #[cfg(feature = "engine-web")]
-        Language::Less => vec![Box::new(MalvaEngine)],
-        #[cfg(all(feature = "engine-web", feature = "engine-biome"))]
-        Language::Css | Language::Scss => vec![Box::new(MalvaEngine), Box::new(BiomeCssEngine)],
-        #[cfg(all(feature = "engine-web", not(feature = "engine-biome")))]
-        Language::Css | Language::Scss => vec![Box::new(MalvaEngine)],
-        #[cfg(all(not(feature = "engine-web"), feature = "engine-biome"))]
-        Language::Css | Language::Scss => vec![Box::new(BiomeCssEngine)],
         #[cfg(feature = "engine-nix")]
         Language::Nix => poly_engines_nix::engines_for(lang),
-        #[cfg(feature = "engine-ruby")]
-        Language::Ruby => vec![Box::new(RubyfmtEngine)],
-        #[cfg(all(feature = "engine-graphql", feature = "engine-biome"))]
-        Language::GraphQl => {
-            let mut engines = poly_engines_misc::engines_for(lang);
-            engines.push(Box::new(BiomeGraphqlEngine));
-            engines
-        }
-        #[cfg(all(feature = "engine-graphql", not(feature = "engine-biome")))]
+        #[cfg(feature = "engine-graphql")]
         Language::GraphQl => poly_engines_misc::engines_for(lang),
-        #[cfg(all(not(feature = "engine-graphql"), feature = "engine-biome"))]
-        Language::GraphQl => vec![Box::new(BiomeGraphqlEngine)],
         #[cfg(feature = "engine-hcl")]
         Language::Hcl => poly_engines_misc::engines_for(lang),
-        #[cfg(feature = "engine-web")]
-        Language::Html
-        | Language::Vue
-        | Language::Svelte
-        | Language::Astro
-        | Language::Angular
-        | Language::Jinja
-        | Language::Vento
-        | Language::Mustache
-        | Language::Xml => vec![Box::new(MarkupFmtEngine)],
         #[cfg(feature = "engine-php")]
         Language::Php => poly_engines_php::engines_for(lang),
         #[cfg(feature = "engine-dockerfile")]
@@ -256,11 +227,11 @@ pub(crate) fn all_engine_names() -> std::collections::BTreeSet<&'static str> {
 /// (`format == true`) phase.
 ///
 /// Walks [`all_languages`] through [`engines_for`], so it answers what the planner would do, with
-/// the same feature gating: a compiled-out engine family yields an empty list. Cross-cutting
-/// engines are registered for every language and say so here. Used by `poly migrate` to hoist a
+/// the same feature gating; an engine none of whose family is linked is answered from the compiled
+/// component index instead. Cross-cutting engines are registered for every language and say so here. Used by `poly migrate` to hoist a
 /// per-language option to engine level only when every served language carries it.
 pub fn engine_languages(engine: &str, format: bool) -> Vec<String> {
-    all_languages()
+    let linked: Vec<String> = all_languages()
         .iter()
         .filter(|language| {
             engines_for(language).iter().any(|candidate| {
@@ -268,6 +239,27 @@ pub fn engine_languages(engine: &str, format: bool) -> Vec<String> {
                 candidate.name() == engine && if format { capabilities.format } else { capabilities.lint }
             })
         })
+        .map(|language| language.id().to_string())
+        .collect();
+    if !linked.is_empty() {
+        return linked;
+    }
+    // An engine this binary does not link (its family is a component) is answered from the compiled
+    // component index, so what `poly migrate` hoists does not depend on which families are linked.
+    let served: std::collections::BTreeSet<&str> = poly_component_index::index()
+        .engine_descs(engine)
+        .filter(|desc| {
+            if format {
+                desc.capabilities.format
+            } else {
+                desc.capabilities.lint
+            }
+        })
+        .flat_map(|desc| desc.languages.iter().map(String::as_str))
+        .collect();
+    all_languages()
+        .iter()
+        .filter(|language| served.contains(language.id()))
         .map(|language| language.id().to_string())
         .collect()
 }
@@ -326,35 +318,26 @@ pub fn engine_versions() -> &'static BTreeMap<&'static str, String> {
 /// know where a global setting for one of them may live. Kept honest by
 /// `tests::cross_cutting_engines_are_the_ones_claiming_no_languages`, which
 /// derives the same set from `languages()` rather than trusting this list.
-pub(crate) const CROSS_CUTTING_ENGINES: &[&str] = &[
-    #[cfg(feature = "engine-typos")]
-    "typos",
-    #[cfg(feature = "engine-astgrep")]
-    "astgrep",
-    #[cfg(feature = "engine-uncomment")]
-    "uncomment",
-    #[cfg(feature = "engine-quality")]
-    "quality",
-];
+///
+/// Not feature-gated: a family left out of the build is served by a component, and its engine
+/// reads the same tables.
+pub(crate) const CROSS_CUTTING_ENGINES: &[&str] = &["typos", "astgrep", "uncomment", "quality"];
 
 /// Engines that are planned only when their `enabled` option is explicitly `true`.
 ///
 /// Every other engine runs unless switched off. An absent key on one of these means
 /// "off", so a project that never mentions `typos` neither spell-checks nor loads it.
-/// `uncomment` is also opt-in but gates itself inside `lint`, so it is not listed.
-pub(crate) const OPT_IN_ENGINES: &[&str] = &[
-    #[cfg(feature = "engine-typos")]
-    "typos",
-];
+/// `uncomment` is also opt-in but gates itself inside `lint`, so it is not listed. Not
+/// feature-gated, like [`CROSS_CUTTING_ENGINES`]: a component-served typos is opt-in too.
+pub(crate) const OPT_IN_ENGINES: &[&str] = &["typos"];
 
 /// Project-check engines planned only when their config table sets the named key, paired as
 /// `(engine, key)`. Without the gate the project phase would read and hash every file such an
 /// engine serves on every run, only for the engine to decline; `python-types` is switched on by
 /// `backend`, so a Python project that never mentions it pays nothing.
-pub(crate) const GATED_PROJECT_ENGINES: &[(&str, &str)] = &[
-    #[cfg(feature = "engine-python")]
-    ("python-types", "backend"),
-];
+///
+/// Not feature-gated: the `python` component serves `python-types` to a core build.
+pub(crate) const GATED_PROJECT_ENGINES: &[(&str, &str)] = &[("python-types", "backend")];
 
 /// Every concrete (non-[`Language::Other`]) [`Language`] variant, used to
 /// walk every arm of [`engines_for`]. Kept from silently narrowing by
@@ -544,12 +527,27 @@ pub(crate) mod tests {
     #[test]
     fn cross_cutting_engines_are_the_ones_claiming_no_languages() {
         // Go, not Python: Python falls through to the (language-less) tree-sitter tier when `engine-python` is off.
-        let derived: Vec<&str> = engines_for(&Language::Go)
+        // A family this build does not link is served by a component, so its engines come from
+        // the compiled component index instead.
+        let mut derived: Vec<&str> = engines_for(&Language::Go)
             .iter()
             .filter(|engine| engine.languages().is_empty())
             .map(|engine| engine.name())
             .collect();
-        assert_eq!(derived, super::CROSS_CUTTING_ENGINES);
+        let index = poly_component_index::index();
+        derived.extend(
+            index
+                .components
+                .iter()
+                .flat_map(|component| &component.engines)
+                .filter(|desc| desc.languages.is_empty())
+                .map(|desc| desc.name.as_str()),
+        );
+        derived.sort_unstable();
+        derived.dedup();
+        let mut listed = super::CROSS_CUTTING_ENGINES.to_vec();
+        listed.sort_unstable();
+        assert_eq!(derived, listed);
     }
 
     use super::NATIVE_TOOLCHAIN_ENGINES;
@@ -624,9 +622,9 @@ pub(crate) mod tests {
     /// Two engines may share a name only while they never serve the same
     /// language. Everything that keys off `Engine::name()` — the
     /// `[<kind>.<lang>.<engine>]` config table, the per-plan severity remap, the
-    /// cache id — is scoped by language first, so the shared `"biome"` name is
-    /// safe precisely because `BiomeCssEngine` (Css/Scss) and
-    /// `BiomeGraphqlEngine` (GraphQl) are disjoint.
+    /// cache id — is scoped by language first, so a shared name is safe while the
+    /// engines sharing it serve disjoint languages (the biome pair, checked in
+    /// `poly-engines-biome`'s `tests/identity.rs`).
     ///
     /// If this fails, either give the colliding backends distinct names — and
     /// bump both `version()` strings, so entries cached under the old name are
@@ -655,5 +653,66 @@ pub(crate) mod tests {
                 seen.push(name);
             }
         }
+    }
+
+    /// A fake engine with a name, a language set and whether it formats.
+    struct Fake(&'static str, &'static [Language], bool);
+
+    impl crate::engine::Engine for Fake {
+        fn name(&self) -> &'static str {
+            self.0
+        }
+
+        fn languages(&self) -> &'static [Language] {
+            self.1
+        }
+
+        fn capabilities(&self) -> crate::engine::Capabilities {
+            crate::engine::Capabilities {
+                lint: true,
+                format: self.2,
+                fix: false,
+                project: false,
+            }
+        }
+
+        fn version(&self) -> &str {
+            "0"
+        }
+    }
+
+    /// A core build gets taplo, typos and astgrep from components and links only polyconfig,
+    /// uncomment and quality for TOML; the merge must give the bundled build's order, with each
+    /// cross-cutting component engine among the cross-cutting built-ins, not before polyconfig.
+    #[test]
+    fn external_engines_keep_the_bundled_order() {
+        const TOML: &[Language] = &[Language::Toml];
+        let built_in: Vec<Box<dyn crate::engine::Engine>> = vec![
+            Box::new(Fake("polyconfig", TOML, false)),
+            Box::new(Fake("uncomment", &[], false)),
+            Box::new(Fake("quality", &[], false)),
+        ];
+        let external: Vec<Box<dyn crate::engine::Engine>> = vec![
+            Box::new(Fake("taplo", TOML, true)),
+            Box::new(Fake("typos", &[], false)),
+            Box::new(Fake("astgrep", &[], false)),
+        ];
+        let merged = super::merge_external_engines(built_in, external);
+        let names: Vec<&str> = merged.iter().map(|engine| engine.name()).collect();
+        assert_eq!(
+            names,
+            ["taplo", "polyconfig", "typos", "astgrep", "uncomment", "quality"]
+        );
+
+        // Several component engines for one language arrive in index (name) order; the bundled
+        // order has the formatter first.
+        const MARKDOWN: &[Language] = &[Language::Markdown];
+        let external: Vec<Box<dyn crate::engine::Engine>> = vec![
+            Box::new(Fake("adrlint", MARKDOWN, false)),
+            Box::new(Fake("rumdl", MARKDOWN, true)),
+        ];
+        let merged = super::merge_external_engines(vec![Box::new(Fake("quality", &[], false))], external);
+        let names: Vec<&str> = merged.iter().map(|engine| engine.name()).collect();
+        assert_eq!(names, ["rumdl", "adrlint", "quality"]);
     }
 }

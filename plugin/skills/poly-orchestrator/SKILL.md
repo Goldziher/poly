@@ -9,8 +9,8 @@ metadata:
 
 <!--
 AI-RULEZ :: GENERATED FILE — DO NOT EDIT
-Content-Hash: blake3:f3fea40b05ca287d290e6e54354cdda302647750623ddc70195ad71472d5e72f
-Source-Hash: blake3:b235022c5efd503e65d1d6fe44889912f02b72b7c3f0af6cd4c1d11d30441097
+Content-Hash: blake3:5c633335a7a7dba63745e193ba481a4c97fe6023ac74a0a3d76871515ec2028e
+Source-Hash: blake3:c1ca09f2359d1bda9b055974a600dcf09b17245b67bd6b3415417dad7a67c99f
 Schema-Version: v1
 -->
 
@@ -52,8 +52,9 @@ ast-grep rule pack, behind one binary, one config, and one report.
   pins symbolic remote `extends` refs and Git hook sources into `poly.lock`; **`poly config schema`** prints the
   JSON Schema for `poly.toml`. An unknown key in an engine table is an `unknown-config-key`
   warning that suggests the nearest valid key (`--verbose` lists every key the table reads).
-- **Components.** The release binary is bundled (every engine linked in). A core build downloads
-  engines as signed components on first use: `poly components list|status|sync|install`, and
+- **Components.** Only the Linux musl release binary is bundled (every engine linked in). Every
+  other release binary is a core build that downloads engines as signed components on first use
+  (`poly rules` is unavailable there): `poly components list|status|sync|install`, and
   `--offline` / `POLY_OFFLINE=1` forbids downloads. `[components]` in `poly.toml` sets `install`
   and `on_missing`; `[engines.typos] enabled = true` opts into spell-checking.
 - **`poly doctor`** reports which poly is running, every poly on PATH, and the config in

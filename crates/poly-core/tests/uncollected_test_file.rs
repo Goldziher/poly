@@ -55,6 +55,10 @@ fn lint(dir: &Path, config: &Config) -> LintRun {
         no_cache: true,
         jobs: Some(1),
         explicit_config: true,
+        // The oxc and taplo engines live in the `web` component; skipping them keeps the `.ts` fixture
+        // and `poly.toml` from planning a component a core build has no lock for, so the core
+        // `quality` rule under test still runs on them.
+        skip: vec!["oxc".to_owned(), "taplo".to_owned()],
         ..RunOptions::default()
     };
     poly_core::lint_run(&[dir.to_path_buf()], config, &options, false, false).expect("lint run")

@@ -1,9 +1,0 @@
----
-source: crates/poly-core/tests/yaml.rs
-assertion_line: 122
-expression: text
----
-a: 1
-b:
-  - x
-  - y

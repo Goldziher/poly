@@ -495,6 +495,10 @@ poly rules list [DIR]...          # list every resolved rule (built-in pack + us
 poly rules list --format json     # same rows as JSON (also: --format toon)
 ```
 
+`poly rules` needs the ast-grep engine linked in, so only the bundled binary (the
+`x86_64-unknown-linux-musl` release, or a default `cargo build`) has it; a core binary serves
+ast-grep as a component and does not.
+
 `poly rules list` prints one row per rule — id, language, `builtin` or `user`, the severity it
 reports at under the current config, and the rule's own declared default (`off` for an opt-in
 rule) — so a warning you did not recognise can be traced to the rule that raised it, and turned

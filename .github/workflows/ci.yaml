@@ -41,6 +41,8 @@ jobs:
           components: rustfmt
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all --check
+      # components/ is excluded from the root workspace, so `--all` above never reaches it.
+      - run: cargo fmt --manifest-path components/Cargo.toml --all --check
 
   clippy:
     name: clippy
@@ -63,7 +65,18 @@ jobs:
           toolchain: stable
           components: clippy
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            components
       - run: cargo clippy --workspace --exclude conformance --all-targets -- -D warnings
+      - name: clippy (components workspace)
+        shell: bash
+        run: scripts/hooks/components-check.sh clippy
+      # Linux only: rustdoc output does not vary by host, and the hook runs the same script.
+      - name: rustdoc lint (components workspace)
+        if: runner.os == 'Linux'
+        run: scripts/hooks/components-check.sh rustdoc
 
   test:
     name: test / ${{ matrix.os }}
@@ -89,6 +102,10 @@ jobs:
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            components
         # --no-fail-fast is not optional: cargo stops at the first failing test
         # binary, so a run with failures in three crates reports only the first
         # and the rest are rediscovered one CI round at a time.
@@ -111,6 +128,8 @@ jobs:
           echo "Native CMD regression tests collected: $count/8"
           test "$count" -eq 8
       - run: cargo test --workspace --exclude conformance --no-fail-fast
+      - name: test (components workspace)
+        run: cargo test --locked --manifest-path components/Cargo.toml --workspace --no-fail-fast
 
   dogfood:
     # poly is a linter, and the repository is a real polyglot tree — Rust, TOML,
@@ -140,12 +159,16 @@ jobs:
         with:
           toolchain: stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: components
+      # The core binary cannot lint TOML, Markdown, JSON, YAML, JS/TS or CSS without the downloadable
+      # component, so dogfooding runs the bundled binary built from components/.
       # --workspace never skips the whole-project phase: `cargo clippy` over this
       # repo is already its own job above, and running it twice buys nothing.
       - name: poly lint (self)
-        run: cargo run --locked -p poly-cli -- lint --workspace never .
+        run: cargo run --locked --manifest-path components/Cargo.toml -p poly-bundled --bin poly -- lint --workspace never .
       - name: poly fmt (self)
-        run: cargo run --locked -p poly-cli -- fmt .
+        run: cargo run --locked --manifest-path components/Cargo.toml -p poly-bundled --bin poly -- fmt .
 
   component-parity:
     # The sql family is left out of poly-core and served by the sql component built from this
@@ -169,6 +192,17 @@ jobs:
       - name: Test poly-core in components mode
         run: mise run components:parity
 
+  alef-verify:
+    # The checked-in alef outputs (producer crate, host module, versions) must match alef.toml.
+    name: alef verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: xberg-io/actions/setup-mise@v1
+      - name: alef verify
+        run: mise x -- alef verify
+
   core-no-oxc:
     name: core links no oxc
     runs-on: ubuntu-latest
@@ -180,6 +214,10 @@ jobs:
           toolchain: stable
       - uses: Swatinem/rust-cache@v2
       - run: scripts/check-core-no-oxc.sh
+      - name: the released core flavour builds warning-free
+        run: cargo clippy --locked -p poly-cli --no-default-features --features core -- -D warnings
+      - name: no git dependencies in the root workspace
+        run: scripts/check-no-git-deps.sh
 
   deny:
     name: cargo-deny
@@ -193,3 +231,9 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check
+      - name: cargo-deny (components workspace)
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+          manifest-path: components/Cargo.toml
+          arguments: --all-features --config components/deny.toml

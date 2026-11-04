@@ -11,10 +11,14 @@ pub(crate) const TABLES: [(OptionTable, WireOptionTable); 3] = [
     (OptionTable::CrossCuttingLint, WireOptionTable::CrossCuttingLint),
 ];
 
+/// Engines are listed in the order the compiled component index records them, by name and then
+/// languages, because the host compares a component's description with its index entry as is.
 pub(crate) fn describe(component_version: &str, engines: &[Box<dyn Engine>]) -> Describe {
+    let mut engines: Vec<_> = engines.iter().map(|engine| engine_desc(engine.as_ref())).collect();
+    engines.sort_by(|a, b| (&a.name, &a.languages).cmp(&(&b.name, &b.languages)));
     Describe {
         protocol: PROTOCOL_VERSION,
         component_version: component_version.to_owned(),
-        engines: engines.iter().map(|engine| engine_desc(engine.as_ref())).collect(),
+        engines,
     }
 }

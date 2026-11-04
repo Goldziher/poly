@@ -36,6 +36,139 @@ targets = [
   "x86_64-pc-windows-msvc",
 ]
 
+# The python family: ruff, and ty for project type checking.
+[[crates.components]]
+name = "python"
+provides = [{ contract = "poly", implementation = "poly_engines::PythonComponent" }]
+features = ["python"]
+default_features = false
+targets = [
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+  "x86_64-pc-windows-msvc",
+]
+
+# The php family: mago.
+[[crates.components]]
+name = "php"
+provides = [{ contract = "poly", implementation = "poly_engines::PhpComponent" }]
+features = ["php"]
+default_features = false
+targets = [
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+  "x86_64-pc-windows-msvc",
+]
+
+# The nix family: alejandra.
+[[crates.components]]
+name = "nix"
+provides = [{ contract = "poly", implementation = "poly_engines::NixComponent" }]
+features = ["nix"]
+default_features = false
+targets = [
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+  "x86_64-pc-windows-msvc",
+]
+
+# The typos family: the typos spell-checker, opt-in.
+[[crates.components]]
+name = "typos"
+provides = [{ contract = "poly", implementation = "poly_engines::TyposComponent" }]
+features = ["typos"]
+default_features = false
+targets = [
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+  "x86_64-pc-windows-msvc",
+]
+
+# The astgrep family: ast-grep and its built-in rule pack.
+[[crates.components]]
+name = "astgrep"
+provides = [{ contract = "poly", implementation = "poly_engines::AstgrepComponent" }]
+features = ["astgrep"]
+default_features = false
+targets = [
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+  "x86_64-pc-windows-msvc",
+]
+
+# The misc family: Dockerfile, dotenv, GraphQL and HCL.
+[[crates.components]]
+name = "misc"
+provides = [{ contract = "poly", implementation = "poly_engines::MiscComponent" }]
+features = ["misc"]
+default_features = false
+targets = [
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+  "x86_64-pc-windows-msvc",
+]
+
+# rubyfmt is a git-pinned dependency, so its family crate lives in the separate `components/`
+# workspace; alef generates and builds the producer there.
+[[crates.components]]
+name = "ruby"
+provides = [{ contract = "poly", implementation = "poly_engines_ruby::RubyComponent" }]
+source_manifest = "components/crates/poly-engines-ruby/Cargo.toml"
+producer_dir = "components/crates/poly-engines-ruby-component"
+default_features = false
+targets = [
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+  "x86_64-pc-windows-msvc",
+]
+
+# biome is a git-pinned dependency, so its family crate lives in the separate `components/`
+# workspace; alef generates and builds the producer there.
+[[crates.components]]
+name = "biome"
+provides = [{ contract = "poly", implementation = "poly_engines_biome::BiomeComponent" }]
+source_manifest = "components/crates/poly-engines-biome/Cargo.toml"
+producer_dir = "components/crates/poly-engines-biome-component"
+default_features = false
+targets = [
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+  "x86_64-pc-windows-msvc",
+]
+
+# The web family (oxc, taplo, markup_fmt, malva, rumdl, adrlint, yaml) depends on the git-pinned oxc
+# crates, so its family crate also lives in `components/`; alef generates and builds the producer there
+# (`alef generate` creates `components/crates/poly-engines-web-component`).
+[[crates.components]]
+name = "web"
+provides = [{ contract = "poly", implementation = "poly_engines_web::WebComponent" }]
+source_manifest = "components/crates/poly-engines-web/Cargo.toml"
+producer_dir = "components/crates/poly-engines-web-component"
+default_features = false
+targets = [
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+  "x86_64-pc-windows-msvc",
+]
+
 # The MCP server as a frontend component: poly-mcp (rmcp, tokio) lives here instead of in the core
 # binary. It reaches the engines through the host services `poly mcp` registers.
 [[crates.components]]

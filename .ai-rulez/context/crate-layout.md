@@ -22,7 +22,7 @@ published**. That includes ruff, which moved off its git pin on 2026-08-29: `ruf
 "=0.17.3"` and `ruff_db` / `ruff_formatter` / `ruff_python_ast` / `ruff_python_formatter` /
 `ruff_python_semantic` / `ruff_text_size` = `"=0.0.20"`. The `=` is deliberate — these are unsemvered internals, and an
 exact pin preserves the property the git `rev` had. The only remaining **pinned git `rev`** deps
-are **oxc**, **biome**, and **rubyfmt**, each for a reason recorded in ADR 0003's 2026-08-29
+are **oxc**, **biome**, and **rubyfmt** (oxc and rubyfmt in the separate `components/` workspace), each for a reason recorded in ADR 0003's 2026-08-29
 amendment: four of oxc's crates are `publish = false` and a partial migration is a hard compile
 error (a registry `SourceType` will not typecheck against the git `oxc_formatter`); biome's
 published crates ship 2024 code under today's version numbers; the crates.io `rubyfmt` is a
@@ -53,8 +53,10 @@ an installer (see release-versioning).
   `poly-component-protocol`, `poly-component-index` and `poly-component-host` the component wire
   protocol, compiled component index and host-side runtime; `poly-core`'s
   `engine-*` features link them and its `bundled` feature aliases `all-engines`. `poly-cli`'s
-  defaults (`all-engines`, `bundled-mcp`) give the **bundled** build the release ships;
-  `--no-default-features` gives the **core** build, whose engines and MCP server are downloaded
+  defaults (`all-engines`, `bundled-mcp`) give the full-engine build; only the
+  `x86_64-unknown-linux-musl` release ships a **bundled** build (the `components/` crate
+  `poly-bundled`). Every other release triple ships `--no-default-features --features core`,
+  linking only the quality, uncomment and ini engines; the rest, and the MCP server, are downloaded
   components (`poly-host-services` provides the services a frontend component calls,
   `poly-frontend-api` is its wire contract). `poly-cli`'s `components_cmd/` is `poly components`. Shared deps live under `[workspace.dependencies]`; git deps are pinned to a `rev`
   (crates from one monorepo share one `rev`).

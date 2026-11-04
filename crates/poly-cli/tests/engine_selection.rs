@@ -115,3 +115,70 @@ fn a_comma_separated_list_selects_every_name_in_it() {
     let output = poly(dir.path(), &["lint", "--only", "ruff,typos", "--deny-skips", "."]);
     assert_eq!(output.status.code(), Some(0), "{}", combined(&output));
 }
+
+/// Every engine the `web` component serves. A `poly.toml` in the walk is a TOML file, so it is the
+/// cheapest way to make a run discover files whose engines live in that component.
+const WEB_ENGINES: &str = "adrlint,malva,markup_fmt,oxc,rumdl,taplo,yaml";
+
+/// A Python file with an unused import beside a `poly.toml`, whose TOML the `web` component would lint.
+fn repo_with_poly_toml() -> TempDir {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(dir.path().join("poly.toml"), "[discovery]\nexclude = []\n").expect("write poly.toml");
+    std::fs::write(dir.path().join("a.py"), "import os\n").expect("write a.py");
+    dir
+}
+
+/// This core build embeds no component lock, so a needed component is incompatible and the run exits 2.
+#[test]
+fn a_toml_file_needs_the_web_component_which_a_lockless_build_cannot_serve() {
+    let dir = repo_with_poly_toml();
+    let output = poly(dir.path(), &["lint", "--no-cache", "--workspace", "never", "."]);
+    let text = combined(&output);
+    assert_eq!(output.status.code(), Some(2), "{text}");
+    assert!(text.contains("incompatible: web"), "{text}");
+}
+
+/// A component whose every engine is skipped is not needed, so nothing asks the missing lock for it.
+#[test]
+fn skipping_every_engine_of_a_component_does_not_need_it() {
+    let dir = repo_with_poly_toml();
+    let output = poly(
+        dir.path(),
+        &["lint", "--no-cache", "--workspace", "never", "--skip", WEB_ENGINES, "."],
+    );
+    let text = combined(&output);
+    assert!(!text.contains("incompatible"), "{text}");
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "the unused import is still found: {text}"
+    );
+    assert!(text.contains("F401"), "{text}");
+}
+
+/// `--only` naming no engine of the component drops it the same way.
+#[test]
+fn only_naming_no_engine_of_a_component_does_not_need_it() {
+    let dir = repo_with_poly_toml();
+    let output = poly(
+        dir.path(),
+        &["lint", "--no-cache", "--workspace", "never", "--only", "ruff", "."],
+    );
+    let text = combined(&output);
+    assert!(!text.contains("incompatible"), "{text}");
+    assert_eq!(output.status.code(), Some(1), "{text}");
+    assert!(text.contains("F401"), "{text}");
+}
+
+/// Skipping one engine of a component that still has others selected must keep it needed.
+#[test]
+fn skipping_only_some_engines_of_a_component_still_needs_it() {
+    let dir = repo_with_poly_toml();
+    let output = poly(
+        dir.path(),
+        &["lint", "--no-cache", "--workspace", "never", "--skip", "adrlint", "."],
+    );
+    let text = combined(&output);
+    assert_eq!(output.status.code(), Some(2), "{text}");
+    assert!(text.contains("incompatible: web"), "{text}");
+}

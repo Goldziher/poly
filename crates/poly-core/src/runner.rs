@@ -137,12 +137,9 @@ pub fn lint_run(
     let ignores: Vec<PerFileIgnores> = configs
         .iter()
         .map(|c| {
-            #[cfg(feature = "engine-astgrep")]
+            // Host-side, so a core build serving ast-grep from a component drops the same findings.
             let defaults =
-                crate::engines::astgrep::exclusions::default_path_ignores(&c.rules_dirs, c.rules_builtin_pack);
-            // No ast-grep engine, so no rule-declared `ignores:` globs to layer in.
-            #[cfg(not(feature = "engine-astgrep"))]
-            let defaults = Vec::new();
+                poly_engine_api::host_hooks::astgrep_rules::default_path_ignores(&c.rules_dirs, c.rules_builtin_pack);
             PerFileIgnores::compile_with_defaults(&c.per_file_ignores, &defaults)
         })
         .collect();

@@ -70,9 +70,10 @@ x-ai-rulez:
   (`nixfmt`), `typos`, `astgrep`, `uncomment` and misc (`dockerfile`, `dotenv`, `hcl`, `graphql`)
   backends now live in `crates/poly-engines-<family>` and are re-exported here at their
   old paths (`engines/mod.rs`). Most of the rest are a single `engines/<tool>.rs`; a backend that
-  outgrows the 1000-line cap becomes a directory split per concern (`oxc/`,
-  `native_tool/`, `quality/`, `treesitter/`, `catalog_tool/`; in the family crates `mago/`, `hcl/`
-  and `ruff/`, whose `ruff/` submodules sit beside `ruff.rs`):
+  outgrows the 1000-line cap becomes a directory split per concern (`native_tool/`, `quality/`,
+  `treesitter/`, `catalog_tool/`, and in the family crates `mago/`, `hcl/`, `ruff/`, `oxc/`). The web family (oxc, taplo, rumdl,
+  adrlint, yaml, malva, markup_fmt, markdown) lives in `components/crates/poly-engines-web` (oxc is a
+  git pin):
   - tier-1 native crate backends, registered per language in `registry.rs`: `ruff.rs` +
     `ruff/` (Python, in `poly-engines-python`; target version: `poly-engine-api`'s
     `host_hooks/ruff_target.rs`), `oxc/` (JS/TS/JSX/TSX/JSON/JSONC), `taplo.rs` (TOML: taplo
@@ -82,11 +83,10 @@ x-ai-rulez:
     for numbered ADRs — document rules only, see ADR 0037), `sqruff.rs` (SQL, in
     `poly-engines-sql`), `yaml.rs`
     (`serde_yaml` lint, `oxc_formatter_yaml` format), `malva.rs` (CSS/SCSS/Less — formats via
-    `oxc_formatter_css` unless a malva key is set), `biome_css.rs` and `biome_graphql.rs` (both
-    named `"biome"`; shared helpers in `biome_common.rs`), `graphql.rs`, `markup_fmt.rs`
+    `oxc_formatter_css` unless a malva key is set), `graphql.rs`, `markup_fmt.rs`
     (HTML/Vue/Svelte/Astro/Angular/Jinja/Vento/Mustache/XML), `mago/` (PHP, in `poly-engines-php`),
     `nixfmt.rs` (Nix, in `poly-engines-nix` — named `"alejandra"`, the formatter it wraps),
-    `rubyfmt.rs` (Ruby), `hcl/` (`hcl-edit` lint plus a port of `hclwrite.Format`),
+    `rubyfmt` (Ruby, in `components/crates/poly-engines-ruby`), `hcl/` (`hcl-edit` lint plus a port of `hclwrite.Format`),
     `dockerfile.rs` (vendored `dockerfile-parser`), `dotenv.rs` (with `graphql.rs`, in `poly-engines-misc`),
     `ini.rs`. A project `.oxfmtrc.json[c]` / `.oxlintrc.json[c]` is read by
     `poly-engine-api`'s `host_hooks/oxfmt_native.rs` / `oxfmt_scope.rs` and `poly-config`'s `oxlint_native.rs`.
@@ -114,7 +114,7 @@ x-ai-rulez:
     `tflint`, `checkstyle`, …) whose overlay entry in `poly-catalog`'s `overlay.json` carries a
     recipe run batched per unit (module, chart, directory), with their report parsed into
     per-line diagnostics and an optional pinned, checksummed download (`install = "auto"`).
-  - support modules, not backends: `biome_common.rs`, `rule_config.rs` (re-exported from
+  - support modules, not backends: `rule_config.rs` (re-exported from
     `poly-engine-api`; the shared
     `select` / `extend_select` / `ignore` / `[engines.<tool>.rules.<id>]` schema),
     `config_keys/` (each engine's declared option keys, behind `unknown-config-key` and the

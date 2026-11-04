@@ -1,0 +1,68 @@
+
+[licenses]
+version = 2
+# Workspace crates are never published; the alef-generated component producer crates carry no
+# license field.
+private = { ignore = true }
+confidence-threshold = 0.9
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Unlicense",
+  "MPL-2.0",
+  "Zlib",
+  "CC0-1.0",
+  "Unicode-DFS-2016",
+  "Unicode-3.0",
+  "BSL-1.0",
+  "CDLA-Permissive-2.0",
+  "PSF-2.0",
+]
+
+# MIT LICENSE file. `clarify` provides the XxHash32 of the LICENSE file so
+# the package root `librubyfmt/` resolves to the repository LICENSE one level up.
+[[licenses.clarify]]
+name = "rubyfmt"
+expression = "MIT"
+
+[[licenses.clarify.license-files]]
+path = "../LICENSE"
+hash = 0x3634FEBB
+
+[bans]
+multiple-versions = "allow"
+wildcards = "allow"
+
+[advisories]
+version = 2
+ignore = [
+  "RUSTSEC-2024-0436",
+  # `zip` 8.x is pinned by ruff_db (`zip = "8"`); the fix is in zip 9. poly never calls
+  # `ZipArchive::extract`, the entry point all four advisories concern (ruff_db only reads the
+  # typeshed archive embedded in its own binary).
+  "RUSTSEC-2026-0367",
+  "RUSTSEC-2026-0368",
+  "RUSTSEC-2026-0369",
+  "RUSTSEC-2026-0429",
+  # `serde_yaml` (-> `unsafe-libyaml`) is a dependency of rumdl and sqruff-lib-dialects.
+  "RUSTSEC-2024-0449",
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+# rubyfmt is only available from git: the crates.io `rubyfmt` is a 0.0.0-wip name reservation.
+# biome: the analyzer crates (biome_css_analyze, biome_graphql_*, biome_languages) are unpublished
+# and the published biome_analyze/biome_css_parser are 2024 code.
+# oxc: four of the oxc crates are `publish = false`, and a partial move to the registry is a hard
+# compile error.
+# The root workspace carries no git sources (ADR 0040); this workspace is where they live.
+allow-git = [
+  "https://github.com/biomejs/biome",
+  "https://github.com/fables-tales/rubyfmt",
+  "https://github.com/oxc-project/oxc",
+]

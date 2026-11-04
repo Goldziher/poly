@@ -316,42 +316,6 @@ fn ruff_format_honors_indent_width_option() {
     );
 }
 
-/// ADR 0016 promises that any non-`level` key under `[rules.<id>]` is passed to
-/// the backend as a tool parameter. rumdl's MD044 (proper names) takes a `names`
-/// list, and nothing fires without it — so a diagnostic appearing at all proves
-/// the parameter was forwarded.
-#[test]
-fn rumdl_honors_canonical_per_rule_params() {
-    let engine = poly_core::engines::rumdl::RumdlEngine;
-    let src = SourceFile {
-        path: PathBuf::from("doc.md"),
-        language: Language::Markdown,
-        content: "# Title\n\nI use javascript daily.\n".into(),
-    };
-
-    let default = engine
-        .lint(&src, &engine_cfg_from("", &Language::Markdown, "rumdl", Kind::Lint))
-        .unwrap();
-    assert!(
-        !default.iter().any(|d| d.code.as_deref() == Some("MD044")),
-        "MD044 has no configured names by default, so it must not fire; got: {default:?}"
-    );
-
-    for id in ["MD044", "proper-names"] {
-        let cfg = engine_cfg_from(
-            &format!("[lint.markdown.rumdl.rules.{id}]\nnames = [\"JavaScript\"]\n"),
-            &Language::Markdown,
-            "rumdl",
-            Kind::Lint,
-        );
-        let diags = engine.lint(&src, &cfg).unwrap();
-        assert!(
-            diags.iter().any(|d| d.code.as_deref() == Some("MD044")),
-            "[rules.{id}] names must reach rumdl and make MD044 fire; got: {diags:?}"
-        );
-    }
-}
-
 /// sqruff files per-rule config by rule *name*, so the canonical `[rules.<id>]`
 /// form must accept both the name and the code a user is more likely to reach
 /// for. Both used to be discarded; only the sqruff-native `rule_configs` worked.
@@ -439,52 +403,6 @@ fn typos_honors_per_language_keys_beyond_extend_ignore_words() {
     );
 }
 
-/// A selector list wide enough that the print width decides whether it wraps.
-/// A malva-only key that changes no layout: it keeps the table on malva, not the oxfmt-compatible
-/// default formatter, so these tests exercise malva's own layering.
-const MALVA_ONLY: &str = "[fmt.css.malva]\nuse_tabs = false\n";
-
-const WIDE_CSS: &str = ".aaaaaaaaaa, .bbbbbbbbbb, .cccccccccc, .dddddddddd, .eeeeeeeeee, .ffffffffff { color: red; }\n";
-
-/// The opinionated `[defaults] line_length` is a layer *under* the user's table
-/// (ADR 0006/0007), not over it. `print_width` deserialized into the upstream
-/// options struct and was then unconditionally clobbered by the global.
-#[test]
-fn malva_user_print_width_overrides_the_global() {
-    let engine = poly_core::engines::malva::MalvaEngine;
-    let src = SourceFile {
-        path: PathBuf::from("a.css"),
-        language: Language::Css,
-        content: WIDE_CSS.into(),
-    };
-
-    let default = formatted(
-        &engine,
-        &src,
-        &engine_cfg_from(MALVA_ONLY, &Language::Css, "malva", Kind::Format),
-    );
-    let user = formatted(
-        &engine,
-        &src,
-        &engine_cfg_from(
-            "[fmt.css.malva]\nprint_width = 30\n",
-            &Language::Css,
-            "malva",
-            Kind::Format,
-        ),
-    );
-    assert_ne!(user, default, "a user-set print_width must reach malva");
-
-    // The global still applies when the user leaves the key unset.
-    let mut narrowed_global = engine_cfg_from(MALVA_ONLY, &Language::Css, "malva", Kind::Format);
-    narrowed_global.globals.line_length = 30;
-    assert_eq!(
-        formatted(&engine, &src, &narrowed_global),
-        user,
-        "with print_width unset, [defaults] line_length still drives the width"
-    );
-}
-
 #[test]
 fn graphql_user_print_width_overrides_the_global() {
     let engine = GraphQlEngine;
@@ -510,58 +428,4 @@ fn graphql_user_print_width_overrides_the_global() {
         ),
     );
     assert_ne!(user, default, "a user-set print_width must reach pretty_graphql");
-}
-
-#[test]
-fn yaml_user_print_width_overrides_the_global() {
-    let engine = poly_core::engines::yaml::YamlEngine;
-    let src = SourceFile {
-        path: PathBuf::from("a.yaml"),
-        language: Language::Yaml,
-        content: "a: [1111111, 2222222, 3333333, 4444444, 5555555, 6666666, 7777777, 8888888]\n".into(),
-    };
-
-    let default = formatted(
-        &engine,
-        &src,
-        &engine_cfg_from("", &Language::Yaml, "yaml", Kind::Format),
-    );
-    let user = formatted(
-        &engine,
-        &src,
-        &engine_cfg_from(
-            "[fmt.yaml.yaml]\nline_width = 20\n",
-            &Language::Yaml,
-            "yaml",
-            Kind::Format,
-        ),
-    );
-    assert_ne!(user, default, "a user-set line_width must reach the yaml formatter");
-}
-
-#[test]
-fn markup_fmt_user_print_width_overrides_the_global() {
-    let engine = poly_core::engines::markup_fmt::MarkupFmtEngine;
-    let src = SourceFile {
-        path: PathBuf::from("a.html"),
-        language: Language::Html,
-        content: "<div><span>aaaaaaa</span><span>bbbbbbb</span><span>ccccccc</span><span>ddddddd</span></div>\n".into(),
-    };
-
-    let default = formatted(
-        &engine,
-        &src,
-        &engine_cfg_from("", &Language::Html, "markup_fmt", Kind::Format),
-    );
-    let user = formatted(
-        &engine,
-        &src,
-        &engine_cfg_from(
-            "[fmt.html.markup_fmt]\nprint_width = 20\n",
-            &Language::Html,
-            "markup_fmt",
-            Kind::Format,
-        ),
-    );
-    assert_ne!(user, default, "a user-set print_width must reach markup_fmt");
 }

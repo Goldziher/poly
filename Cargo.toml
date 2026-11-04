@@ -1,4 +1,5 @@
 [workspace]
+exclude = ["components"]
 resolver = "3"
 members = [
   "crates/conformance",
@@ -16,14 +17,20 @@ members = [
   "crates/poly-engine-api",
   "crates/poly-engines",
   "crates/poly-engines-astgrep",
+  "crates/poly-engines-astgrep-component",
   "crates/poly-engines-mcp-component",
   "crates/poly-engines-misc",
+  "crates/poly-engines-misc-component",
   "crates/poly-engines-nix",
+  "crates/poly-engines-nix-component",
   "crates/poly-engines-php",
+  "crates/poly-engines-php-component",
   "crates/poly-engines-python",
+  "crates/poly-engines-python-component",
   "crates/poly-engines-sql",
   "crates/poly-engines-sql-component",
   "crates/poly-engines-typos",
+  "crates/poly-engines-typos-component",
   "crates/poly-engines-uncomment",
   "crates/poly-frontend-api",
   "crates/poly-grammar",
@@ -44,10 +51,9 @@ homepage = "https://github.com/Goldziher/poly"
 documentation = "https://github.com/Goldziher/poly"
 
 [workspace.dependencies]
-adrlint = "=0.4.1"
 aho-corasick = "1.1.5"
-alef-component-abi = "=0.121.0"
-alef-component-runtime = "=0.121.0"
+alef-component-abi = "=0.124.0"
+alef-component-runtime = "=0.124.0"
 # alejandra — Nix formatter (UNLICENSE, pure Rust via rnix); chosen over
 alejandra = "3.1"
 annotate-snippets = "0.12.17"
@@ -59,16 +65,6 @@ assert_fs = "1.1.4"
 ast-grep-config = "0.51.1"
 ast-grep-core = "0.51.1"
 axoupdater = { version = "0.10.3", default-features = false, features = ["github_releases"] }
-biome_analyze = { git = "https://github.com/biomejs/biome", rev = "e2e5a36e1be8581419742a85268ad82f020da62e" }
-biome_css_analyze = { git = "https://github.com/biomejs/biome", rev = "e2e5a36e1be8581419742a85268ad82f020da62e" }
-biome_css_parser = { git = "https://github.com/biomejs/biome", rev = "e2e5a36e1be8581419742a85268ad82f020da62e" }
-biome_diagnostics = { git = "https://github.com/biomejs/biome", rev = "e2e5a36e1be8581419742a85268ad82f020da62e" }
-biome_graphql_analyze = { git = "https://github.com/biomejs/biome", rev = "e2e5a36e1be8581419742a85268ad82f020da62e" }
-biome_graphql_parser = { git = "https://github.com/biomejs/biome", rev = "e2e5a36e1be8581419742a85268ad82f020da62e" }
-biome_languages = { git = "https://github.com/biomejs/biome", rev = "e2e5a36e1be8581419742a85268ad82f020da62e", features = [
-  "lang_css",
-] }
-biome_rowan = { git = "https://github.com/biomejs/biome", rev = "e2e5a36e1be8581419742a85268ad82f020da62e" }
 blake3 = "1"
 bstr = "1.13.1"
 cargo_metadata = "0.23.1"
@@ -112,24 +108,9 @@ mago-reporting = { version = "1.59" }
 mago-span = { version = "1.59" }
 mago-syntax = { version = "1.59" }
 mago-text-edit = { version = "1.59" }
-malva = "0.16"
 markdown = "1.0.0"
-markup_fmt = "0.27"
 memchr = "2.8.3"
 owo-colors = { version = "4", features = ["supports-colors"] }
-oxc_allocator = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }
-oxc_diagnostics = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }
-oxc_formatter = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }
-oxc_formatter_core = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }
-oxc_formatter_css = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }
-oxc_formatter_json = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }
-oxc_formatter_markdown = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }
-oxc_formatter_toml = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }
-oxc_formatter_yaml = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }
-oxc_linter = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }
-oxc_parser = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }
-oxc_semantic = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }
-oxc_span = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }
 pest = "2.9.5"
 pest_derive = "2.9.5"
 phf = { version = "0.14.0", default-features = false, features = ["macros"] }
@@ -170,7 +151,6 @@ rayon = "1"
 regex = "1"
 rmcp = { version = "3.8.0", features = ["schemars"] }
 rmp-serde = "1.3"
-rubyfmt = { git = "https://github.com/fables-tales/rubyfmt", rev = "884b9fd85bbdaa44376641cf9a803156bce7d0da", default-features = false }
 ruff_db = "=0.0.20"
 ruff_formatter = "=0.0.20"
 ruff_linter = "=0.17.3"
@@ -179,7 +159,6 @@ ruff_python_ast = "=0.0.20"
 ruff_python_formatter = "=0.0.20"
 ruff_python_semantic = "=0.0.20"
 ruff_text_size = "=0.0.20"
-rumdl = { version = "0.3", default-features = false }
 rust-ini = { version = "0.21", features = ["inline-comment"] }
 rustc-hash = "2.1.3"
 rustix = { version = "1.1.6", features = ["pty", "process", "fs", "termios"] }
@@ -194,15 +173,12 @@ serde_ignored = "0.1"
 serde_json = { version = "1", features = ["preserve_order"] }
 serde_stacker = "0.1.14"
 serde_toon_format = "0.2"
-serde_yaml = "0.9"
 sha2 = "0.11"
 shlex = "2.0.1"
 similar = "3.2.1"
-sort-package-json = "1.0.0"
 sqruff-lib = "0.44"
 sqruff-lib-core = "0.44"
 strum = { version = "0.28.0", features = ["derive"] }
-taplo = "0.14"
 tar = { version = "0.4", default-features = false }
 target-lexicon = "0.13.5"
 tempfile = "3"
@@ -233,12 +209,7 @@ walkdir = "2.5.0"
 which = "8.0.6"
 zip = { version = "9.3", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
-
-# oxc_formatter_yaml/toml pull `oxc_allocator` from the registry through their parsers; resolve it to
-# the same git copy as the rest of the oxc crates so there is a single `Allocator` type.
-[patch.crates-io]
-oxc_allocator = { git = "https://github.com/oxc-project/oxc", rev = "f799f174b5db10f1fa9e136594e53de82d4f4f83" }
-
 [profile.release]
 lto = "thin"
 codegen-units = 1
+

@@ -384,7 +384,8 @@ fn describe_matches_the_engines() {
     assert_eq!(describe.protocol, PROTOCOL_VERSION);
     assert_eq!(describe.component_version, "1.2.3");
     let names: Vec<_> = describe.engines.iter().map(|e| e.name.as_str()).collect();
-    assert_eq!(names, ["fake-ok", "fake-panic", "fake-error"]);
+    // Sorted by name, the order the compiled component index records engines in.
+    assert_eq!(names, ["fake-error", "fake-ok", "fake-panic"]);
     let engine = &describe.engines[0];
     assert_eq!(engine.languages, ["sql"]);
     assert!(

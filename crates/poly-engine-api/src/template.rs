@@ -115,7 +115,7 @@ struct Fence {
 /// - An **unterminated inline span** likewise leaves the rest of its line prose.
 ///
 /// This is Markdown/MDX-only. YAML has no code constructs — backticks and
-/// fence-looking lines there are ordinary scalar text — so `yaml.rs` keeps
+/// fence-looking lines there are ordinary scalar text — so the web family's `yaml.rs` keeps
 /// calling [`contains_go_template`] unchanged.
 pub fn contains_go_template_markdown(content: &str) -> bool {
     let mut fence: Option<Fence> = None;

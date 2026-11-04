@@ -25,19 +25,10 @@ use Placement::{Component as In, Core};
 /// Engine name to placement (docs/size-baseline.md "Decisions"). An engine missing here fails the
 /// test, so a new engine must be placed deliberately.
 const PLACEMENT: &[(&str, Placement)] = &[
-    ("oxc", In("web")),
-    ("taplo", In("web")),
-    ("rumdl", In("web")),
-    ("adrlint", In("web")),
-    ("yaml", In("web")),
-    ("malva", In("web")),
-    ("markup_fmt", In("web")),
     ("ruff", In("python")),
     ("python-types", In("python")),
     ("sqruff", In("sql")),
     ("mago", In("php")),
-    ("biome", In("biome")),
-    ("rubyfmt", In("ruby")),
     ("alejandra", In("nix")),
     ("typos", In("typos")),
     ("astgrep", In("astgrep")),
@@ -62,6 +53,14 @@ const PLACEMENT: &[(&str, Placement)] = &[
     ("dartfmt", Core),
     ("gleamfmt", Core),
 ];
+
+/// Components whose engines `poly-core` cannot link (their upstream crates are git pins that live in
+/// the `components/` workspace), so their index entries are carried over from the committed index.
+/// The family crates' own tests (`components/crates/poly-engines-ruby/tests/rubyfmt.rs`,
+/// `components/crates/poly-engines-biome/tests/index.rs`,
+/// `components/crates/poly-engines-web/tests/component_index.rs`) check the entries against the real
+/// engines.
+const EXTERNAL_COMPONENTS: &[&str] = &["biome", "ruby", "web"];
 
 /// Components in index order: name, kind, opt-in, cargo features.
 const COMPONENTS: &[(&str, ComponentKind, bool, &[&str])] = &[
@@ -148,6 +147,9 @@ fn regenerate(committed: &ComponentIndex) -> ComponentIndex {
         .iter()
         .map(|(name, kind, opt_in, features)| {
             let mut engines = by_component.remove(name).unwrap_or_default();
+            if EXTERNAL_COMPONENTS.contains(name) {
+                engines = committed.component(name).map(|c| c.engines.clone()).unwrap_or_default();
+            }
             engines.sort_by(|a, b| (&a.name, &a.languages).cmp(&(&b.name, &b.languages)));
             Component {
                 name: (*name).to_owned(),
@@ -219,7 +221,9 @@ fn committed_index_matches_the_registered_engines() {
 
 #[test]
 fn every_engine_component_hosts_engines_and_every_engine_has_one_home() {
-    let index = regenerate(&ComponentIndex::default());
+    let committed = ComponentIndex::parse(&std::fs::read_to_string(index_path()).expect("index.json is committed"))
+        .expect("index.json parses");
+    let index = regenerate(&committed);
     for component in &index.components {
         assert_eq!(
             component.kind == ComponentKind::Engines,

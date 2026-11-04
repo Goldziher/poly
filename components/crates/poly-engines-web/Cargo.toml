@@ -1,0 +1,63 @@
+[package]
+name = "poly-engines-web"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+publish = false
+description = "The web engine family for poly (oxc, taplo, markup_fmt, malva, rumdl, adrlint, yaml) and its component."
+
+[lib]
+name = "poly_engines_web"
+path = "src/lib.rs"
+
+[package.metadata.cargo-machete]
+ignored = ["rumdl"]
+
+[dependencies]
+adrlint.workspace = true
+anyhow.workspace = true
+malva = { workspace = true, features = ["config_serde"] }
+markup_fmt = { workspace = true, features = ["config_serde"] }
+oxc_allocator.workspace = true
+oxc_diagnostics.workspace = true
+oxc_formatter.workspace = true
+oxc_formatter_core.workspace = true
+oxc_formatter_css.workspace = true
+oxc_formatter_json.workspace = true
+oxc_formatter_markdown.workspace = true
+oxc_formatter_toml.workspace = true
+oxc_formatter_yaml.workspace = true
+oxc_linter.workspace = true
+oxc_parser.workspace = true
+oxc_semantic.workspace = true
+oxc_span.workspace = true
+poly-config.workspace = true
+poly-engine-api.workspace = true
+poly-engines.workspace = true
+regex.workspace = true
+rumdl.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+sort-package-json.workspace = true
+taplo.workspace = true
+toml.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
+poly-component-host.workspace = true
+poly-component-index.workspace = true
+poly-component-protocol.workspace = true
+poly-core.workspace = true
+tempfile.workspace = true
+
+[lints.rust]
+# `deny`, not `forbid`: `tests/generated_skip_cache_ordering.rs` sets `POLY_CACHE_HOME` (an unsafe call in
+# edition 2024) and allows it for that file alone.
+unsafe_code = "deny"

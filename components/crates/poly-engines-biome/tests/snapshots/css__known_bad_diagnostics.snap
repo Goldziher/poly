@@ -1,0 +1,11 @@
+---
+source: components/crates/poly-engines-biome/tests/css.rs
+expression: summary
+---
+[
+    (
+        "biome",
+        "lint/correctness/noUnknownProperty",
+        true,
+    ),
+]

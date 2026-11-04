@@ -6,7 +6,7 @@ SHA-NI.
 
 ## Method
 
-- The engine families are cargo features of `poly-core` (`engine-web`, `engine-python`, …,
+- The engine families are cargo features of `poly-core` (`engine-python`, `engine-php`, …,
   `all-engines` is the default). `poly-cli --no-default-features` builds the **core-only** binary:
   no engine family and no `poly mcp` (`poly-mcp` pulls every engine).
 - `scripts/measure-core-size.sh` builds the core once, then the core plus one feature at a time,
@@ -71,12 +71,12 @@ Size profile (fat LTO, `opt-level = "z"`, one codegen unit, stripped).
 | `engine-dotenv` | dotenv | 252,528 |
 | `engine-graphql` | pretty_graphql | 565,128 |
 | `engine-nix` | alejandra | 271,048 |
-| `engine-ruby` | rubyfmt | 448,704 |
+| `engine-ruby` (now built from `components/`) | rubyfmt | 448,704 |
 | `engine-php` | mago | 2,729,016 |
 | `engine-biome` | biome CSS/GraphQL lint | 5,480,160 |
 | `engine-python` | ruff | 6,150,312 |
 | `engine-sql` | sqruff | 7,188,376 |
-| `engine-web` | oxc, oxfmt, markup_fmt, rumdl, adrlint, malva, yaml, taplo | 15,810,992 |
+| `engine-web` (now built from `components/`) | oxc, oxfmt, markup_fmt, rumdl, adrlint, malva, yaml, taplo | 15,810,992 |
 
 MCP (rmcp + tokio + schemars + `poly_mcp`) cannot be built alone yet because `poly-mcp` depends
 on every engine; its own code is about 1.3 MB at O3 (`rmcp` 0.59, `poly_mcp` 0.27, `schemars`

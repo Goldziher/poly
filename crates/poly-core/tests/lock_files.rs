@@ -1,11 +1,11 @@
-//! Package-manager lock files are never formatted or linted, matching what `poly migrate` says.
+//! Package-manager lock files are never linted, matching what `poly migrate` says. The format half
+//! (a lock file is left alone while its YAML neighbour is rewritten) needs the web family's formatter and
+//! lives in `components/crates/poly-engines-web/tests/lock_files.rs`.
 
 use std::fs;
 
 use poly_core::{Config, LOCKFILE_SKIP, RunOptions};
 use tempfile::tempdir;
-
-const LOOSE_YAML: &str = "a:     1\nb:   [1,2]\n";
 
 fn options() -> RunOptions {
     RunOptions {
@@ -13,28 +13,6 @@ fn options() -> RunOptions {
         jobs: Some(1),
         ..RunOptions::default()
     }
-}
-
-#[test]
-fn lock_files_are_not_formatted_but_their_neighbours_are() {
-    let repo = tempdir().unwrap();
-    fs::write(repo.path().join("pnpm-lock.yaml"), LOOSE_YAML).unwrap();
-    fs::write(repo.path().join("values.yaml"), LOOSE_YAML).unwrap();
-
-    poly_core::format_run(
-        &[repo.path().to_path_buf()],
-        &Config::default(),
-        &options(),
-        true,
-        false,
-    )
-    .unwrap();
-
-    assert_eq!(
-        fs::read_to_string(repo.path().join("pnpm-lock.yaml")).unwrap(),
-        LOOSE_YAML
-    );
-    assert_ne!(fs::read_to_string(repo.path().join("values.yaml")).unwrap(), LOOSE_YAML);
 }
 
 #[test]

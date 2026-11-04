@@ -85,9 +85,10 @@ first run and cached by version and component lock, so a second run downloads no
 
 ### Bundled and core builds
 
-The release binaries are **bundled**: every engine and the MCP server are linked in, so nothing is
-downloaded at run time. `cargo build --no-default-features` produces a **core** build, 7.6 MiB at
-the size profile, whose engines are signed components downloaded on first use:
+`x86_64-unknown-linux-musl` is the only **bundled** release binary: every engine and the MCP server
+are linked in, and nothing is downloaded at run time. The other five release binaries (Linux gnu
+x86_64 and aarch64, macOS x86_64 and aarch64, Windows x86_64) are **core** builds with an embedded signed component lock. Their engines are components downloaded on
+first use, and `poly rules` is not available in them:
 
 ```sh
 poly components status .             # which components this directory needs, and their state

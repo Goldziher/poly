@@ -65,6 +65,9 @@ impl Project {
         RunOptions {
             jobs: Some(2),
             explicit_config: true,
+            // The taplo engine lives in the `web` component; skipping it keeps `poly.toml` from
+            // planning a component a core build has no lock for. The core config check still answers it.
+            skip: vec!["taplo".to_owned()],
             ..RunOptions::default()
         }
     }
@@ -378,31 +381,31 @@ fn touching_a_file_without_changing_it_keeps_the_verdict_without_re_linting() {
 #[test]
 fn a_warm_format_check_does_not_open_unchanged_files_and_still_reports_unformatted_ones() {
     let project = Project::new("F401");
-    project.write("a.toml", "a = 1\n");
-    project.write("b.toml", "b   =   2\n");
+    project.write("a.py", "a = 1\n");
+    project.write("b.py", "b   =   2\n");
     settle();
     project.fmt_changed();
     let warm = project.fmt_changed();
 
-    assert_eq!(warm.changed, vec!["b.toml".to_owned()]);
+    assert_eq!(warm.changed, vec!["b.py".to_owned()]);
     assert!(warm.errors.is_empty());
     assert_eq!(
         warm.resolution.stat_hits, 2,
-        "a.toml is answered from its stat; b.toml needs a formatter"
+        "poly.toml and a.py are answered from their stat; b.py needs a formatter"
     );
 }
 
 #[test]
 fn editing_a_formatted_file_into_an_unformatted_one_is_reported() {
     let project = Project::new("F401");
-    project.write("a.toml", "a = 1\n");
+    project.write("a.py", "a = 1\n");
     settle();
     project.fmt_changed();
     assert!(project.fmt_changed().changed.is_empty());
 
-    project.write("a.toml", "a    = 1\n");
+    project.write("a.py", "a    = 1\n");
 
-    assert_eq!(project.fmt_changed().changed, vec!["a.toml".to_owned()]);
+    assert_eq!(project.fmt_changed().changed, vec!["a.py".to_owned()]);
 }
 
 /// The `prefilled` count of the run's lint batch, from its debug log.

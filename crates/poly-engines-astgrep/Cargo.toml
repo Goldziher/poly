@@ -19,7 +19,6 @@ path = "src/lib.rs"
 anyhow.workspace = true
 ast-grep-config.workspace = true
 ast-grep-core.workspace = true
-blake3.workspace = true
 globset.workspace = true
 poly-engine-api.workspace = true
 poly-grammar.workspace = true

@@ -67,10 +67,6 @@ pub(crate) use static_keys::StaticKeys;
 #[cfg(all(test, feature = "all-engines"))]
 mod tests;
 
-// Each probe serves a different subset of engine families.
-#[cfg_attr(not(feature = "all-engines"), allow(unused_imports))]
-pub(crate) use poly_engine_api::option_probe::recognized_by_type_probe;
-
 /// Config file names this backend checks. Mirrors `poly_config`'s own
 /// `CONFIG_FILE_NAMES` + `LOCAL_OVERRIDE_NAME`; a file poly does not load as
 /// config must not be reported against a config schema.

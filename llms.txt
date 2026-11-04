@@ -7,8 +7,9 @@
 > exposes the same surface to agents over MCP.
 
 poly replaces a stack of per-language runners with a single binary. There is no Node, Python, Go
-or JVM to install: the backends are Rust crates, linked into the release executable (the bundled
-build) or loaded from signed, downloadable components (the core build), so a fresh checkout lints
+or JVM to install: the backends are Rust crates, linked into the Linux musl release executable (the
+bundled build) or loaded from signed, downloadable components (the core build every other release
+ships), so a fresh checkout lints
 and formats with nothing but `poly` on `PATH`. Canonical first-party CLIs are used where no
 usable Rust library exists — `gofmt`, `rustfmt` and `shellcheck` run automatically when present,
 and eight more are opt-in — and a language with no dedicated backend falls through to the

@@ -23,9 +23,9 @@ x-ai-rulez:
   `crates/poly-core/src/engines/<tool>.rs` (or in a `crates/poly-engines-<family>` crate), and
   when it outgrows the cap it becomes a directory
   split per concern (`engines/<tool>/lint.rs`, `format.rs`, `config.rs`) rather than one
-  oversized module — as `engines/oxc/`, `engines/quality/`, `engines/treesitter/`,
+  oversized module — as `engines/quality/`, `engines/treesitter/`,
   `engines/native_tool/`, `engines/catalog_tool/`, and the family-crate `mago/` (`poly-engines-php`),
-  `hcl/` (`poly-engines-misc`) and `builtin/` (`poly-engines-astgrep`) already have (`ruff.rs` keeps
+  `oxc/` (`components/crates/poly-engines-web`), `hcl/` (`poly-engines-misc`) and `builtin/` (`poly-engines-astgrep`) already have (`ruff.rs` keeps
   its submodules in `poly-engines-python/src/ruff/`).
   Pipeline stages follow the same shape: `discover.rs` is a single file, `resolve.rs` carries a
   `resolve/` submodule directory (`canon.rs`, `scan.rs`), `runner.rs` carries `runner/` (`plan.rs`,
