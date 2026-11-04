@@ -22,7 +22,7 @@ use crate::engines::rule_config::RuleSelection;
 use crate::filter::SeverityRemap;
 use crate::host_hooks::oxfmt_native::FormatIgnore;
 use crate::language::Language;
-use crate::registry::{OPT_IN_ENGINES, engines_for};
+use crate::registry::{OPT_IN_ENGINES, TREE_SITTER_ENGINE, displaces_tree_sitter, engines_for};
 use crate::resolve::ConfigSet;
 use crate::runner::RunOptions;
 use crate::runner::selection::{self, EngineSelection};
@@ -99,11 +99,6 @@ impl RunPlan {
         }
     }
 }
-
-/// Name of the generic tree-sitter engine — the tier-2 formatting fallback for
-/// languages with no dedicated backend. Matched by name so it can be dropped
-/// when a catalog formatter takes over the language.
-const TREE_SITTER_ENGINE: &str = "treesitter";
 
 /// One engine paired with its resolved config and once-serialised cache args.
 ///
@@ -337,10 +332,7 @@ pub(super) fn plan_engines(
 /// engine does by being registered instead of it: otherwise a component that is missing would
 /// silently leave the language formatted at lower fidelity instead of skipped.
 fn with_component_engines(mut engines: Vec<Box<dyn Engine>>, components: &[ComponentEngine]) -> Vec<Box<dyn Engine>> {
-    if components
-        .iter()
-        .any(|engine| engine.capabilities().format && !engine.languages().is_empty())
-    {
+    if displaces_tree_sitter(components.iter().map(|engine| engine as &dyn Engine)) {
         engines.retain(|engine| engine.name() != TREE_SITTER_ENGINE);
     }
     engines.extend(

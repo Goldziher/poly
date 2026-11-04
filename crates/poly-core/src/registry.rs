@@ -5,7 +5,8 @@
 //! otherwise).
 
 use std::collections::BTreeMap;
-use std::sync::LazyLock;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{LazyLock, OnceLock};
 
 use crate::engine::Engine;
 #[cfg(feature = "engine-web")]
@@ -37,6 +38,92 @@ use crate::engines::treesitter::TreeSitterEngine;
 use crate::engines::yaml::YamlEngine;
 use crate::language::Language;
 
+/// A function supplying engines for a language from outside `poly-core`.
+///
+/// Returns an empty list for languages it does not serve.
+pub type EngineProvider = fn(&Language) -> Vec<Box<dyn Engine>>;
+
+static EXTERNAL_PROVIDER: OnceLock<EngineProvider> = OnceLock::new();
+
+/// Set once [`engine_versions`] has built its process-wide table, after which a provider could no
+/// longer contribute to it.
+static VERSIONS_BUILT: AtomicBool = AtomicBool::new(false);
+
+/// Name of the generic tree-sitter engine, the tier-2 formatting fallback for languages with no
+/// dedicated backend. Matched by name so it can be dropped when another formatter takes over.
+pub(crate) const TREE_SITTER_ENGINE: &str = "treesitter";
+
+/// Why [`register_engine_provider`] refused a provider.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProviderRegistrationError {
+    /// A provider is already registered; the first registration wins.
+    AlreadyRegistered,
+    /// The registry's process-wide engine table was already built without a provider.
+    TooLate,
+}
+
+impl std::fmt::Display for ProviderRegistrationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::AlreadyRegistered => f.write_str("an engine provider is already registered"),
+            Self::TooLate => f.write_str("the engine registry was already consulted; register providers at startup"),
+        }
+    }
+}
+
+impl std::error::Error for ProviderRegistrationError {}
+
+/// Registers the process-wide external engine provider.
+///
+/// Meant for a bundled binary linking engines `poly-core` does not carry (the git-pinned
+/// oxc, biome and rubyfmt families): call it once at startup, before the first lint or format
+/// run. The provider's engines are placed after the language's built-in engines and before the
+/// cross-cutting ones. When one of them formats the language, the tree-sitter generic formatter
+/// is dropped for it so the two never compete over indentation; lint-only engines leave it in
+/// place. Provider engine names must not collide with the language's built-in engine names.
+///
+/// # Errors
+///
+/// [`ProviderRegistrationError::AlreadyRegistered`] if a provider is already set (first wins), and
+/// [`ProviderRegistrationError::TooLate`] if [`engine_versions`] has already been built, since
+/// that table would silently omit the provider's engines.
+pub fn register_engine_provider(provider: EngineProvider) -> Result<(), ProviderRegistrationError> {
+    if VERSIONS_BUILT.load(Ordering::Acquire) {
+        return Err(ProviderRegistrationError::TooLate);
+    }
+    EXTERNAL_PROVIDER
+        .set(provider)
+        .map_err(|_| ProviderRegistrationError::AlreadyRegistered)
+}
+
+/// Whether any of `engines` formats a language it serves, and so displaces the tree-sitter
+/// reindenter. Shared by the planner (component engines) and the registry (external provider).
+pub(crate) fn displaces_tree_sitter<'a>(engines: impl IntoIterator<Item = &'a dyn Engine>) -> bool {
+    engines
+        .into_iter()
+        .any(|engine| engine.capabilities().format && !engine.languages().is_empty())
+}
+
+/// Appends the external provider's engines for `lang`, dropping the tree-sitter fallback when
+/// one of them formats.
+fn with_external_engines(lang: &Language, mut engines: Vec<Box<dyn Engine>>) -> Vec<Box<dyn Engine>> {
+    let Some(provider) = EXTERNAL_PROVIDER.get() else {
+        return engines;
+    };
+    let external = provider(lang);
+    if displaces_tree_sitter(external.iter().map(|engine| &**engine)) {
+        engines.retain(|engine| engine.name() != TREE_SITTER_ENGINE);
+    }
+    debug_assert!(
+        external
+            .iter()
+            .all(|new| engines.iter().all(|existing| existing.name() != new.name())),
+        "an external engine provider supplied an engine whose name collides with a built-in one for {lang:?}"
+    );
+    engines.extend(external);
+    engines
+}
+
 /// Engines applicable to a language, in priority order (formatters run in sequence).
 ///
 /// Every arm that names an engine family is gated on that family's `engine-*` feature. With the
@@ -48,9 +135,7 @@ pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
     if matches!(lang, Language::Other(name) if name == crate::language::HELM_TEMPLATE) {
         return Vec::new();
     }
-    // `mut` is unused when every cross-cutting family is compiled out.
-    #[allow(unused_mut)]
-    let mut engines: Vec<Box<dyn Engine>> = match lang {
+    let engines: Vec<Box<dyn Engine>> = match lang {
         #[cfg(feature = "engine-web")]
         Language::JavaScript
         | Language::TypeScript
@@ -130,6 +215,9 @@ pub fn engines_for(lang: &Language) -> Vec<Box<dyn Engine>> {
         ],
         _ => vec![Box::new(TreeSitterEngine)],
     };
+    // `mut` is unused when every cross-cutting family is compiled out.
+    #[allow(unused_mut)]
+    let mut engines = with_external_engines(lang, engines);
     #[cfg(feature = "engine-typos")]
     engines.extend(poly_engines_typos::engines_for(lang));
     #[cfg(feature = "engine-astgrep")]
@@ -220,6 +308,7 @@ pub(crate) const NATIVE_TOOLCHAIN_ENGINES: &[&str] = &[
 /// the binary at all.
 pub fn engine_versions() -> &'static BTreeMap<&'static str, String> {
     static VERSIONS: LazyLock<BTreeMap<&'static str, String>> = LazyLock::new(|| {
+        VERSIONS_BUILT.store(true, Ordering::Release);
         all_languages()
             .iter()
             .flat_map(|language| engines_for(language))

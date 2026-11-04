@@ -61,7 +61,9 @@ pub use fingerprint::ConfigFingerprint;
 pub use language::Language;
 #[doc(hidden)]
 pub use registry::registered_engines;
-pub use registry::{engine_languages, engine_versions};
+pub use registry::{
+    EngineProvider, ProviderRegistrationError, engine_languages, engine_versions, register_engine_provider,
+};
 pub use report::Verbosity;
 pub use resolve::{ConfigSet, ExcludeRule};
 pub use runner::{
