@@ -4,9 +4,7 @@
     "name": "Na'aman Hirschfeld",
     "url": "https://github.com/Goldziher"
   },
-  "dependencies": {
-    "@opencode/plugin": "^2.0.26"
-  },
+  "dependencies": {},
   "description": "Zero-dependency lint & format orchestrator over MCP — one pure-Rust binary wrapping ruff/oxc/taplo/rumdl and more as in-process backends, plus a tree-sitter generic tier for everything else. Exposes lint/format/cache tools with structured JSON output.",
   "exports": {
     ".": "./.opencode/plugins/poly.js"
@@ -72,5 +70,5 @@
     "url": "https://github.com/Goldziher/poly"
   },
   "type": "module",
-  "version": "0.32.4"
+  "version": "0.32.5"
 }
