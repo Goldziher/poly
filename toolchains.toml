@@ -1,7 +1,7 @@
 baseline = "v1.13.0"
 
-# The component crates alef-component-abi/runtime are pinned at =0.121.0 in Cargo.toml, and the CLI
+# The component crates alef-component-abi/runtime are pinned at =0.124.0 in Cargo.toml, and the CLI
 # that builds and locks components must match that ABI; the baseline still carries 0.116.0.
 [overrides."github:xberg-io/alef"]
-version = "0.121.0"
-reason = "must match the alef-component-abi/runtime =0.121.0 crates the component ABI is built on"
+version = "0.124.0"
+reason = "must match the alef-component-abi/runtime =0.124.0 crates the component ABI is built on"

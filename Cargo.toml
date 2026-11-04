@@ -209,10 +209,6 @@ walkdir = "2.5.0"
 which = "8.0.6"
 zip = { version = "9.3", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
-[patch.crates-io]
-alef-component-abi = { path = "/Users/naamanhirschfeld/workspace/xberg-io/.worktrees/alef/pin-v0-124-0/crates/alef-component-abi" }
-alef-component-runtime = { path = "/Users/naamanhirschfeld/workspace/xberg-io/.worktrees/alef/pin-v0-124-0/crates/alef-component-runtime" }
-
 [profile.release]
 lto = "thin"
 codegen-units = 1
